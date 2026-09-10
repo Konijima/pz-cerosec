@@ -170,9 +170,104 @@ function CeroSecOS.splitHash(stored)
 	return salt, hash
 end
 
+--
+-- /etc/passwd
+--
+-- One account per line, four fields, in the order a Unix passwd has them:
+--
+--     name:$cs1$<salt>$<hash>:home:admin|user
+--
+-- The file IS the accounts. There is no table of users beside it and nothing
+-- caches a user record across a change to it, so root editing the file with the
+-- editor adds, removes and re-homes accounts, and the parser is what the
+-- machine believes.
+--
+-- Parsing is strict and silent: a line that is not exactly four fields, or
+-- whose name is not a name, or whose second field is not one of our hashes, or
+-- whose home is not an absolute path, or whose last field is neither "admin"
+-- nor "user", is skipped. A file that parses to nothing is a machine nobody can
+-- log in to -- which is what the BIOS restore is for, and not something to
+-- paper over by inventing an account.
+--
+
+local function isValidHome(home)
+	if type(home) ~= "string" then return false end
+	if #home < 1 or #home > 128 then return false end
+	if string.sub(home, 1, 1) ~= "/" then return false end
+	return string.find(home, "[^A-Za-z0-9._/%-]") == nil
+end
+
+-- One line -> a user record, or nil. The four captures are all "no colon", so a
+-- line with three fields or with five never matches at all.
+function CeroSecOS.parsePasswdLine(line)
+	if type(line) ~= "string" then return nil end
+	local name, password, home, kind = string.match(line, "^([^:]*):([^:]*):([^:]*):([^:]*)$")
+	if name == nil then return nil end
+	if not CeroSecOS.isValidName(name) then return nil end
+	if CeroSecOS.splitHash(password) == nil then return nil end
+	if not isValidHome(home) then return nil end
+	if kind ~= "admin" and kind ~= "user" then return nil end
+	return { name = name, password = password, home = home, admin = kind == "admin" }
+end
+
+-- The record as it is written. The single place a line is built, so what
+-- parsePasswdLine reads and what a rewrite produces cannot drift apart.
+function CeroSecOS.passwdLine(user)
+	local kind = "user"
+	if user.admin then kind = "admin" end
+	return user.name .. ":" .. user.password .. ":" .. user.home .. ":" .. kind
+end
+
+-- text -> users by name, names in the order the file has them. A name that
+-- appears twice keeps its FIRST line, the way a lookup down a file does.
+function CeroSecOS.parsePasswd(text)
+	local users, order = {}, {}
+	local lines = CeroSecOS.splitLines(text)
+	for i = 1, #lines do
+		local user = CeroSecOS.parsePasswdLine(lines[i])
+		if user ~= nil and users[user.name] == nil then
+			users[user.name] = user
+			order[#order + 1] = user.name
+		end
+	end
+	return users, order
+end
+
+-- The accounts of a machine, parsed on demand.
+--
+-- The cache is one slot, and what invalidates it is the file itself: a
+-- different node table, or the same one carrying different text. Every write to
+-- /etc/passwd goes through setData, which replaces node.data, so there is no
+-- write this can miss -- including root saving the file out of the editor,
+-- which nothing here is told about. Not in the state: the state is serialized
+-- into the save file, and a parsed copy of the accounts sitting next to the
+-- file would be a second truth.
+CeroSecOS.passwdCache = { node = nil, text = nil, users = {}, order = {} }
+
+function CeroSecOS.readUsers(state)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	if node == nil or node.type ~= "file" then return {}, {} end
+	local cache = CeroSecOS.passwdCache
+	if cache.node ~= node or cache.text ~= node.data then
+		local users, order = CeroSecOS.parsePasswd(node.data or "")
+		cache.node = node
+		cache.text = node.data
+		cache.users = users
+		cache.order = order
+	end
+	return cache.users, cache.order
+end
+
 function CeroSecOS.getUser(state, name)
-	if state == nil or state.users == nil or type(name) ~= "string" then return nil end
-	return state.users[name]
+	if type(name) ~= "string" then return nil end
+	local users = CeroSecOS.readUsers(state)
+	return users[name]
+end
+
+-- Whether the machine has anybody at all to log in as.
+function CeroSecOS.hasUsers(state)
+	local _, order = CeroSecOS.readUsers(state)
+	return #order > 0
 end
 
 -- Longest password the machine will take, in clear. Nothing forces one this
@@ -200,28 +295,104 @@ function CeroSecOS.checkPassword(user, password)
 	return CeroSecOS.hashPassword(password, salt) == user.password
 end
 
+-- The whole file, rewritten in one setData: a line is never patched where it
+-- lies. So a refusal -- a full disk, a control byte -- leaves /etc/passwd
+-- exactly as it was rather than half rewritten, and the write goes through the
+-- ordinary filesystem gate like any other, ceilings and printable rule
+-- included. The session is root's because the file is root's and mode 600.
+function CeroSecOS.writePasswd(state, users, order, name, stored)
+	local out = {}
+	for i = 1, #order do
+		local user = users[order[i]]
+		if user.name == name then
+			out[i] = CeroSecOS.passwdLine({
+				name = user.name, password = stored, home = user.home, admin = user.admin,
+			})
+		else
+			out[i] = CeroSecOS.passwdLine(user)
+		end
+	end
+	local done, reason =
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH, table.concat(out, "\n"))
+	if done == nil then return nil, reason end
+	return true, nil
+end
+
 -- The single place a password is written.
 function CeroSecOS.setPassword(state, name, password, extra)
-	local user = CeroSecOS.getUser(state, name)
+	local users, order = CeroSecOS.readUsers(state)
+	local user = users[name]
 	if user == nil then return nil, "no such user" end
 	if type(password) ~= "string" then password = "" end
 	if #password > CeroSecOS.MAX_PASSWORD then return nil, "password too long" end
 	if CeroSecOS.hasControlBytes(password) then return nil, "invalid characters" end
-	user.password = CeroSecOS.hashPassword(password, CeroSecOS.newSalt(state, name .. tostring(extra)))
-	return true, nil
+	local stored = CeroSecOS.hashPassword(password, CeroSecOS.newSalt(state, name .. tostring(extra)))
+	return CeroSecOS.writePasswd(state, users, order, name, stored)
 end
 
--- A machine saved before this rung carries its passwords in clear. They are
--- hashed in place, with a fresh salt each, so the account keeps working and the
--- cleartext is gone from the next save. Anything already hashed is left alone.
+-- The two accounts a machine ships with, as the file has them. Both open: an
+-- account that ships open is one whose stored hash is the hash of "".
+function CeroSecOS.defaultPasswd()
+	return CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
+		.. "\n" .. CeroSecOS.passwdLine(CeroSecOS.newUser("admin", "", "/home/admin", false))
+end
+
+-- A machine saved before /etc/passwd carries its accounts in a table on the
+-- state, and one saved before that carries their passwords in clear. Both are
+-- repaired here, once, and the table is then dropped: the file is the source of
+-- accounts and two of them would be one too many.
+--
+-- The file wins. A state that somehow has both keeps the file untouched and
+-- only loses the table -- what is on the disk is what the machine has been
+-- running on.
 function CeroSecOS.migrateUsers(state)
-	if type(state) ~= "table" or type(state.users) ~= "table" then return state end
-	for name, user in pairs(state.users) do
-		if type(user) == "table" and type(user.password) == "string"
-				and CeroSecOS.splitHash(user.password) == nil then
-			user.password = CeroSecOS.hashPassword(user.password, CeroSecOS.newSalt(state, name))
+	if type(state) ~= "table" then return state end
+	local users = state.users
+	if type(users) ~= "table" then return state end
+
+	-- Cleartext first: what goes into the file is only ever a hash.
+	local names = {}
+	for name, user in pairs(users) do
+		if type(name) == "string" and type(user) == "table" then
+			if type(user.password) ~= "string" or CeroSecOS.splitHash(user.password) == nil then
+				local clear = user.password
+				if type(clear) ~= "string" then clear = "" end
+				user.password = CeroSecOS.hashPassword(clear, CeroSecOS.newSalt(state, name))
+			end
+			names[#names + 1] = name
 		end
 	end
+	-- pairs() has no order and the file must come out the same every time.
+	table.sort(names)
+
+	if not CeroSecOS.hasUsers(state) then
+		local lines = {}
+		for i = 1, #names do
+			local user = users[names[i]]
+			local home = user.home
+			if type(home) ~= "string" then home = "/" end
+			if CeroSecOS.isValidName(names[i]) then
+				lines[#lines + 1] = CeroSecOS.passwdLine({
+					name = names[i], password = user.password, home = home,
+					admin = user.admin and true or false,
+				})
+			end
+		end
+		CeroSecOS.ensureSystemDir(state, "etc")
+		local etc = CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH)
+		etc.children.passwd =
+			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, table.concat(lines, "\n"))
+	end
+
+	-- A machine converted from a users table has never had a /bin either: it was
+	-- made before there were executables to put in one. Filling it here is what
+	-- keeps such a save booting straight to its login prompt instead of meeting
+	-- a BIOS that thinks its disk was wiped. Damage done in the game is a
+	-- different thing and still goes through the restore.
+	CeroSecOS.ensureSystemDir(state, "bin")
+	CeroSecOS.fillBin(CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH))
+
+	state.users = nil
 	return state
 end
 

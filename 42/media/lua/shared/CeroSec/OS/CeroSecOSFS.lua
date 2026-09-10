@@ -142,6 +142,35 @@ function CeroSecOS.getNode(state, session, path)
 	return node, nil, abs
 end
 
+-- A node the machine itself reads, by absolute path, with no session and no
+-- permission check. This is the ONE read in the whole core that does not go
+-- through getNode, and it exists because the kernel has to read /etc/passwd
+-- before anybody is logged in -- the file is root's and mode 600, so there is
+-- no session that could read it and no session to read it with.
+--
+-- Nothing a command can reach ever calls this: it is used by the passwd parser,
+-- by the boot check and by the BIOS repair, and by nothing else.
+function CeroSecOS.systemNode(state, path)
+	if type(state) ~= "table" or type(state.fs) ~= "table" then return nil end
+	local _, parts = CeroSecOS.resolve(nil, path)
+	local node = state.fs
+	for i = 1, #parts do
+		if node.type ~= "dir" or node.children == nil then return nil end
+		node = node.children[parts[i]]
+		if node == nil then return nil end
+	end
+	return node
+end
+
+-- The session the machine acts under when it writes one of its own files: a
+-- passwd rewrite, a hostname change. Fresh each time, so nothing can be left
+-- behind in it, and root so that the write lands wherever the file is -- but
+-- still through setData and writeFile, so the ceilings and the printable rule
+-- apply to the kernel exactly as they apply to a player.
+function CeroSecOS.rootSession()
+	return { user = "root", cwd = "/" }
+end
+
 --
 -- Writing.
 --

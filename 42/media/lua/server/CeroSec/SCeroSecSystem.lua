@@ -189,13 +189,29 @@ function SCeroSecSystem:computerFor(playerObj, x, y, z, token)
 	return luaObject
 end
 
--- The computer, its filesystem and its screen, or nil after having told the
--- player why not. Every path into a console goes through here.
-function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
+-- The computer and its screen, with no working OS required. A machine whose
+-- disk has been wiped still has power and still has a screen, and that screen
+-- is where it is repaired from -- so the BIOS' own two commands come in this
+-- way and everything else comes in through consoleFor below.
+function SCeroSecSystem:biosConsoleFor(playerObj, x, y, z, token)
 	-- A window with no usable token is a window nothing can be addressed to:
 	-- every answer is matched on it, so there is nothing to answer here.
 	if token == nil then return nil end
 	local luaObject = self:computerFor(playerObj, x, y, z, token)
+	if not luaObject then return nil end
+
+	local console = luaObject:consoleState()
+	if not console then
+		self:replyClosed(playerObj, x, y, z, "off", token)
+		return nil
+	end
+	return luaObject, console
+end
+
+-- The computer, its filesystem and its screen, or nil after having told the
+-- player why not. Every path that needs a filesystem goes through here.
+function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
+	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
 	if not luaObject then return nil end
 
 	local state, reason = luaObject:osState()
@@ -204,25 +220,121 @@ function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
 		if reason then CeroSec.log("console refused: " .. tostring(reason)) end
 		return nil
 	end
+	return luaObject, state, console
+end
 
-	local console = luaObject:consoleState()
-	if not console then
-		self:replyClosed(playerObj, x, y, z, "off", token)
+--
+-- The BIOS
+--
+-- Before a machine hands over its login prompt it looks at what is on the disk:
+-- the commands in /bin and the accounts in /etc/passwd. Root may take either
+-- away -- that is what root is -- and a machine with neither is not broken so
+-- much as blank, so what it says is what a 1993 machine with an empty disk
+-- says, and it offers to put the system back.
+--
+-- The question is an ordinary console prompt with an ordinary continuation
+-- token, so the window needs to know nothing about any of this: it draws the
+-- prompt it is handed and sends back the line that was typed. The token's
+-- command is answered HERE and never by CeroSecOS.continue, because there is no
+-- session to run it under -- nobody is logged in, and on a machine with no
+-- /etc/passwd nobody could be.
+--
+
+SCeroSecSystem.BIOS_PROMPT = "Restore system? (y/n) "
+
+-- The state, or nil when this machine has nothing to boot. Both halves of the
+-- test in one place: a state the validator refuses (osState is nil) and a state
+-- that runs but is no longer an operating system are the same thing to a BIOS.
+function SCeroSecSystem:biosState(luaObject)
+	local state = luaObject:osState()
+	if state == nil then return nil end
+	local ok, reason = CeroSecOS.systemOk(state)
+	if not ok then
+		CeroSec.log("no system at " .. luaObject.x .. "," .. luaObject.y .. ": " .. tostring(reason))
 		return nil
 	end
-	return luaObject, state, console
+	return state
+end
+
+-- Is the screen the BIOS' rather than the OS'? Either the question is up, or it
+-- was answered "n" and the machine is sitting on its refusal.
+function SCeroSecSystem:atBios(console)
+	if CeroSec.consoleHalted(console) then return true end
+	local prompt = console.prompt
+	return type(prompt) == "table" and type(prompt.cont) == "table"
+		and prompt.cont.cmd == "bios" and true or false
+end
+
+function SCeroSecSystem:askBios(console)
+	console.halted = nil
+	CeroSec.consolePush(console, "No operating system found.")
+	console.prompt = {
+		text = SCeroSecSystem.BIOS_PROMPT,
+		mask = false,
+		cont = { cmd = "bios" },
+	}
+end
+
+-- The screen, worked out again from whatever the machine is now: a repair that
+-- worked means the state is back and the login prompt with it.
+function SCeroSecSystem:pushBios(luaObject, console)
+	self:pushScreen(luaObject, self:biosState(luaObject), console)
+end
+
+-- The answer to the BIOS' question, and every line typed while the machine is
+-- sitting on "No operating system found." -- there is nothing else it can be.
+function SCeroSecSystem:answerBios(luaObject, console, playerObj, token, text)
+	local asked = console.prompt
+	console.prompt = nil
+	if asked ~= nil then CeroSec.consolePush(console, asked.text .. text) end
+	local answer = string.lower(text)
+
+	-- The way out of a machine that cannot be repaired.
+	if answer == "exit" then
+		console.halted = true
+		self:pushBios(luaObject, console)
+		self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z, "exit", token)
+		return
+	end
+
+	if asked ~= nil and (answer == "y" or answer == "yes") then
+		CeroSec.consolePush(console, "Restoring system ...")
+		luaObject:restoreOS()
+	elseif asked ~= nil and (answer == "n" or answer == "no") then
+		-- The screen stays where it is. Anything typed at it brings the
+		-- question back, which is the whole of what a halted machine does.
+		console.halted = true
+		self:pushBios(luaObject, console)
+		return
+	end
+
+	local state = self:biosState(luaObject)
+	if state == nil then
+		self:askBios(console)
+	else
+		console.halted = nil
+		CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
+	end
+	self:pushScreen(luaObject, state, console)
 end
 
 -- Whether an account wears the "#" prompt. nil (nobody logged in) is not one.
 -- The prompt line, in one place. The user's home comes with it so that the
 -- shell can say "~" instead of spelling out /home/admin on a thirty column
 -- prompt -- the home is the account's, not a guess from the name.
-function SCeroSecSystem:promptFor(state, console)
+function SCeroSecSystem:promptFor(state, console, hostname)
 	local home = nil
 	local user = CeroSecOS.getUser(state, console.user)
 	if user ~= nil and type(user.home) == "string" then home = user.home end
-	return CeroSec.consolePrompt(console, state.hostname,
-		self:isAdmin(state, console.user), home)
+	return CeroSec.consolePrompt(console, hostname, self:isAdmin(state, console.user), home)
+end
+
+-- What the machine is called. The file, when there is a filesystem to read it
+-- out of; the name its square gives it when there is not, so a window on a
+-- machine with a wiped disk still has a title.
+function SCeroSecSystem:hostnameOf(luaObject, state)
+	if state == nil then return luaObject:hostname() end
+	return CeroSecOS.hostname(state)
 end
 
 function SCeroSecSystem:isAdmin(state, name)
@@ -300,7 +412,7 @@ end
 -- asking), and whether this window is the one that may type.
 function SCeroSecSystem:editArgs(luaObject, state, console, playerObj)
 	local edit = console.edit
-	if edit == nil then return nil end
+	if edit == nil or state == nil then return nil end
 	local disk = ""
 	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 	local node = CeroSecOS.getNode(state, session, edit.path)
@@ -324,13 +436,14 @@ end
 -- One screen, as a window has to be told it. The prompt is derived from the
 -- console here and nowhere else, so no two windows can disagree about it.
 function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
+	local hostname = self:hostnameOf(luaObject, state)
 	return {
 		x = luaObject.x, y = luaObject.y, z = luaObject.z,
 		token = token,
-		hostname = state.hostname,
+		hostname = hostname,
 		booted = console.booted and true or false,
 		lines = console.lines,
-		prompt = self:promptFor(state, console),
+		prompt = self:promptFor(state, console, hostname),
 		mode = CeroSec.consoleMode(console),
 		mask = CeroSec.consoleMask(console),
 		edit = self:editArgs(luaObject, state, console, playerObj),
@@ -404,11 +517,16 @@ Commands.toggle = function(self, playerObj, x, y, z)
 end
 
 Commands.open = function(self, playerObj, x, y, z, token)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local key = watcherKeyOf(playerObj, token)
 	luaObject:addWatcher(key, playerObj, token)
+
+	-- What the machine has on its disk, decided before a single line is put on
+	-- the screen: the boot either ends at a login prompt or it ends at the
+	-- BIOS' question, and which of the two is not the window's business.
+	local state = self:biosState(luaObject)
 
 	-- The BIOS belongs to the power-on, not to the window: the first player to
 	-- open a machine that has just been switched on watches it type itself out,
@@ -417,8 +535,12 @@ Commands.open = function(self, playerObj, x, y, z, token)
 	if animate then
 		console.booted = true
 		CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
-		CeroSec.consolePush(console, CeroSecOS.MOTD)
+		if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
 	end
+
+	-- Asked once. A machine already sitting on the question, or on the refusal
+	-- that answered it, is left exactly as the last player left it.
+	if state == nil and not self:atBios(console) then self:askBios(console) end
 
 	local args = self:screenArgs(luaObject, state, console, token, playerObj)
 	args.animate = animate
@@ -432,11 +554,24 @@ end
 -- that typed at a prompt that has since changed gets the screen back and
 -- nothing else.
 Commands.input = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local text = args.text
 	if type(text) ~= "string" then text = "" end
+
+	-- The BIOS' question is answered before anything asks for a filesystem:
+	-- there may not be one, and that is what is being asked about.
+	if self:atBios(console) then
+		self:answerBios(luaObject, console, playerObj, token, text)
+		return
+	end
+
+	local state = luaObject:osState()
+	if not state then
+		self:replyClosed(playerObj, x, y, z, "broken", token)
+		return
+	end
 
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "login" then
@@ -454,7 +589,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		if session then
 			console.user = session.user
 			console.cwd = session.cwd
-			CeroSec.consolePush(console, CeroSecOS.MOTD)
+			CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
 		else
 			-- One answer for a bad name and for a bad password alike: the
 			-- machine does not say which half was wrong.

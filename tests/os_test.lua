@@ -3,8 +3,8 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath",
-	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSUsers",
+	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
+	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 }
 for i = 1, #FILES do
 	local path = DIR .. FILES[i] .. ".lua"
@@ -33,6 +33,41 @@ end
 -- reading the field.
 local function holds(state, name, password)
 	return CeroSecOS.checkPassword(CeroSecOS.getUser(state, name), password)
+end
+
+-- The accounts are a file now, so a test that wants another one writes a line
+-- into it -- through setData, the way root would with the editor.
+local function addUser(state, name, password, home, admin)
+	local user = CeroSecOS.newUser(name, password or "", home or ("/home/" .. name), admin)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	local text = node.data
+	if text ~= "" then text = text .. "\n" end
+	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
+		CeroSecOS.PASSWD_PATH, text .. CeroSecOS.passwdLine(user))
+	if done == nil then error("cannot add " .. name .. ": " .. tostring(reason), 2) end
+	return user
+end
+
+-- The stored field of one account, replaced where it lies and NOT through
+-- setData: what goes in is often something no write would take, which is the
+-- point -- it is how a forged file or an older save is put on the disk.
+local function setStored(state, name, stored)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	local lines = CeroSecOS.splitLines(node.data)
+	for i = 1, #lines do
+		if string.sub(lines[i], 1, #name + 1) == name .. ":" then
+			local _, _, home, kind = string.match(lines[i], "^([^:]*):([^:]*):([^:]*):([^:]*)$")
+			lines[i] = name .. ":" .. stored .. ":" .. home .. ":" .. kind
+		end
+	end
+	node.data = table.concat(lines, "\n")
+end
+
+-- What the account's line holds, read back out of the file.
+local function stored(state, name)
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return nil end
+	return user.password
 end
 
 local function open(state, name, password)
@@ -101,18 +136,51 @@ do
 	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 
+	-- The skeleton is nine nodes plus one executable per command plus
+	-- /etc/passwd, and every byte of it is accounted for: the machine's name,
+	-- the motd, the accounts file, and the one-line description in each
+	-- executable.
+	local binNames = CeroSecOS.binNames()
+	local binBytes = 0
+	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.COMMAND_INFO[binNames[i]] end
+	local passwd = state.fs.children.etc.children.passwd
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9)
-	eq("skeleton byte count", bytes, #"ksp-front-01" + #CeroSecOS.MOTD)
+	eq("skeleton node count", nodes, 9 + #binNames + 1)
+	eq("skeleton byte count", bytes,
+		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	eq("empty hostname falls back", CeroSecOS.newState("").hostname, CeroSecOS.DEFAULT_HOSTNAME)
+	eq("a hostname that is not one falls back",
+		CeroSecOS.newState("Not A Host").hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	check("newState returns a fresh tree", CeroSecOS.newState().fs ~= CeroSecOS.newState().fs)
 
-	eq("root user home", state.users.root.home, "/root")
-	eq("root user is admin", state.users.root.admin, true)
-	eq("admin user home", state.users.admin.home, "/home/admin")
-	eq("admin user is not admin", state.users.admin.admin, false)
+	-- The accounts are a file and nothing else: no table of users beside it.
+	eq("no users table on the state", state.users, nil)
+	eq("/etc/passwd owner", passwd.owner, "root")
+	eq("/etc/passwd mode", passwd.mode, 600)
+	eq("root user home", CeroSecOS.getUser(state, "root").home, "/root")
+	eq("root user is admin", CeroSecOS.getUser(state, "root").admin, true)
+	eq("admin user home", CeroSecOS.getUser(state, "admin").home, "/home/admin")
+	eq("admin user is not admin", CeroSecOS.getUser(state, "admin").admin, false)
+
+	-- Every command has an executable and every executable has a command.
+	for i = 1, #binNames do
+		local node = state.fs.children.bin.children[binNames[i]]
+		check("/bin/" .. binNames[i] .. " exists", node ~= nil)
+		eq("/bin/" .. binNames[i] .. " is a file", node.type, "file")
+		eq("/bin/" .. binNames[i] .. " owner", node.owner, "root")
+		eq("/bin/" .. binNames[i] .. " mode", node.mode, 755)
+		eq("/bin/" .. binNames[i] .. " describes itself",
+			node.data, CeroSecOS.COMMAND_INFO[binNames[i]])
+		check("/bin/" .. binNames[i] .. " has a command behind it",
+			CeroSecOS.commands[binNames[i]] ~= nil)
+	end
+	local described = 0
+	for _, _ in pairs(CeroSecOS.COMMAND_INFO) do described = described + 1 end
+	local implemented = 0
+	for _, _ in pairs(CeroSecOS.commands) do implemented = implemented + 1 end
+	eq("every command is in /bin", implemented, described)
 end
 
 --
@@ -194,7 +262,7 @@ do
 	eq("bad password reason", why2, "wrong password")
 	check("good password logs in", CeroSecOS.login(state, "root", "hunter2") ~= nil)
 	eq("checkPassword on nil user", CeroSecOS.checkPassword(nil, ""), false)
-	eq("checkPassword nil means empty", CeroSecOS.checkPassword(state.users.admin, nil), true)
+	eq("checkPassword nil means empty", CeroSecOS.checkPassword(CeroSecOS.getUser(state, "admin"), nil), true)
 
 	-- The session is never written into the state.
 	eq("login does not touch state.sessions", #state.sessions, 0)
@@ -404,7 +472,8 @@ do
 	bad(state, admin, 'write /etc/x "hi"', "write: /etc/x: permission denied")
 	bad(state, admin, "pwd x", "pwd: usage: pwd")
 	bad(state, admin, "whoami x", "whoami: usage: whoami")
-	bad(state, admin, "hostname x", "hostname: usage: hostname")
+	bad(state, admin, "hostname x", "hostname: permission denied")
+	bad(state, admin, "hostname a b", "hostname: usage: hostname [name]")
 
 	-- Syntax.
 	bad(state, admin, 'echo "abc', "syntax error: unterminated quote")
@@ -590,7 +659,8 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	eq("starting node count", nodes, 9)
+	-- The skeleton, plus one executable per command, plus /etc/passwd.
+	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 1)
 	local made = 0
 	local dir = 0
 	while true do
@@ -599,7 +669,7 @@ do
 		made = made + 1
 		local full = false
 		for i = 1, 64 do
-			if 9 + made >= 256 then full = true break end
+			if nodes + made >= 256 then full = true break end
 			if not CeroSecOS.exec(state, rootSession, "touch /p" .. dir .. "/f" .. i) then break end
 			made = made + 1
 		end
@@ -630,7 +700,8 @@ do
 	eq("ls -l lists 5 entries", #lines, 5)
 	eq("ls -l bin",
 		lines[1],
-		"drwxr-xr-x" .. "  " .. "root    " .. "  " .. "bin" .. string.rep(" ", 28) .. "  " .. "    0")
+		"drwxr-xr-x" .. "  " .. "root    " .. "  " .. "bin" .. string.rep(" ", 28) .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.binNames()), 5))
 	eq("ls -l root dir",
 		lines[5],
 		"drwx------" .. "  " .. "root    " .. "  " .. "root" .. string.rep(" ", 27) .. "  " .. "    0")
@@ -643,7 +714,7 @@ do
 		etc[2],
 		"-rw-r--r--" .. "  " .. "root    " .. "  " .. "motd" .. string.rep(" ", 27) .. "  "
 			.. "   52")
-	eq("ls -l /etc has 2 lines", #etc, 2)
+	eq("ls -l /etc has 3 lines", #etc, 3)
 
 	-- Every permission digit renders.
 	ok(state, admin, "touch /home/admin/perm", {})
@@ -668,7 +739,7 @@ do
 	eq("the long name is cut with a tilde", string.sub(cut, 23, 53), string.rep("n", 30) .. "~")
 
 	-- A long owner is cut the same way.
-	state.users.administrator = CeroSecOS.newUser("administrator", "", "/home/admin", false)
+	addUser(state, "administrator", "", "/home/admin", false)
 	ok(state, rootSession, "chown administrator /home/admin/perm", {})
 	local owned = ok(state, rootSession, "ls -l /home/admin/perm", nil)
 	eq("the long owner is cut with a tilde", string.sub(owned[1], 13, 20), "adminis~")
@@ -709,11 +780,33 @@ do
 	wrongVersion.v = 2
 	eq("a v2 state is refused", CeroSecOS.validate(wrongVersion), false)
 
-	local noRoot = fresh()
-	noRoot.users.root = nil
-	local nrOk, nrReason = CeroSecOS.validate(noRoot)
-	eq("a state without root is refused", nrOk, false)
-	eq("no-root reason", nrReason, "no root user")
+	-- The accounts are a file, so this is what validate has left to say about
+	-- them: it is there, it is a file, and it is root's.
+	local noPasswd = fresh()
+	noPasswd.fs.children.etc.children.passwd = nil
+	local nrOk, nrReason = CeroSecOS.validate(noPasswd)
+	eq("a state without /etc/passwd is refused", nrOk, false)
+	eq("no-passwd reason", nrReason, "no /etc/passwd")
+
+	local passwdDir = fresh()
+	passwdDir.fs.children.etc.children.passwd = CeroSecOS.newDir("root", 755)
+	local pdOk, pdReason = CeroSecOS.validate(passwdDir)
+	eq("a /etc/passwd that is a directory is refused", pdOk, false)
+	eq("and says so", pdReason, "/etc/passwd: not a file")
+
+	local passwdMine = fresh()
+	passwdMine.fs.children.etc.children.passwd.owner = "admin"
+	local pmOk, pmReason = CeroSecOS.validate(passwdMine)
+	eq("a /etc/passwd that is not root's is refused", pmOk, false)
+	eq("and says so", pmReason, "/etc/passwd: not root's")
+
+	-- A file full of nonsense is NOT a state the core cannot run on: it is a
+	-- machine nobody can log in to, which is the boot check's business.
+	local unparseable = fresh()
+	unparseable.fs.children.etc.children.passwd.data = "nonsense"
+	eq("an unparseable /etc/passwd still validates", CeroSecOS.validate(unparseable), true)
+	eq("but there is nobody on the machine", CeroSecOS.hasUsers(unparseable), false)
+	eq("and the boot check says so", CeroSecOS.systemOk(unparseable), false)
 
 	local badHost = fresh()
 	badHost.hostname = "not a hostname"
@@ -755,13 +848,6 @@ do
 	badChildName.fs.children["bad name"] = CeroSecOS.newDir("root", 755)
 	eq("an invalid child name is refused", CeroSecOS.validate(badChildName), false)
 
-	local badUser = fresh()
-	badUser.users.admin.admin = "yes"
-	eq("a non-boolean admin flag is refused", CeroSecOS.validate(badUser), false)
-
-	local mismatched = fresh()
-	mismatched.users.admin.name = "someone"
-	eq("a user keyed under the wrong name is refused", CeroSecOS.validate(mismatched), false)
 
 	-- migrate.
 	local migrated = CeroSecOS.migrate(nil)
@@ -775,7 +861,7 @@ do
 	local live = fresh()
 	check("migrate passes a valid v1 state through", CeroSecOS.migrate(live) == live)
 	local broken = fresh()
-	broken.users.root = nil
+	broken.fs.children.etc.children.passwd = nil
 	check("migrate replaces a broken v1 state", CeroSecOS.migrate(broken) ~= broken)
 	eq("the replacement validates", CeroSecOS.validate(CeroSecOS.migrate(broken)), true)
 end
@@ -1060,54 +1146,92 @@ do
 	local state = fresh()
 	check("root ships open", CeroSecOS.login(state, "root", "") ~= nil)
 	check("admin ships open", CeroSecOS.login(state, "admin", "") ~= nil)
-	check("root's stored password is a hash",
-		CeroSecOS.splitHash(state.users.root.password) ~= nil)
-	check("and it is not the word", state.users.root.password ~= "")
+	check("root's stored password is a hash", CeroSecOS.splitHash(stored(state, "root")) ~= nil)
+	check("and it is not the word", stored(state, "root") ~= "")
 	-- Two accounts, the same (empty) password, two different lines.
 	check("two accounts with one password do not look alike",
-		state.users.root.password ~= state.users.admin.password)
+		stored(state, "root") ~= stored(state, "admin"))
 	eq("the state validates", CeroSecOS.validate(state), true)
 
-	-- A password in clear is not a password: the validator refuses it.
-	state.users.admin.password = "hunter2"
-	local vOk, vWhy = CeroSecOS.validate(state)
-	eq("a cleartext password is refused", vOk, false)
-	eq("and says which user", vWhy, "user admin: bad password")
-	state.users.admin.password = "$cs1$abcdef$" .. string.rep("z", 32)
-	eq("nor is a hash with digits that are not hex", CeroSecOS.validate(state), false)
+	-- A password in clear is not a password: the parser drops the whole line,
+	-- so the account is simply not on the machine. Nobody logs in as somebody
+	-- whose line does not parse -- least of all with the word itself.
+	setStored(state, "admin", "hunter2")
+	eq("a cleartext line is skipped", CeroSecOS.getUser(state, "admin"), nil)
+	eq("and nobody logs in on it", CeroSecOS.login(state, "admin", "hunter2"), nil)
+	check("the other account is untouched", CeroSecOS.getUser(state, "root") ~= nil)
+	setStored(state, "admin", "$cs1$abcdef$" .. string.rep("z", 32))
+	eq("nor is a hash with digits that are not hex accepted",
+		CeroSecOS.getUser(state, "admin"), nil)
+end
+
+-- A machine saved before /etc/passwd: the accounts are a table on the state and
+-- there is no accounts file, no /bin and nothing to run. Built here rather than
+-- copied from a save file, because that is the only shape such a save has.
+local function oldState(rootPassword, adminPassword)
+	local state = fresh()
+	state.fs.children.etc.children.passwd = nil
+	state.fs.children.bin = CeroSecOS.newDir("root", 755)
+	state.users = {
+		root = { name = "root", password = rootPassword, home = "/root", admin = true },
+		admin = { name = "admin", password = adminPassword, home = "/home/admin", admin = false },
+	}
+	state.fs.children.etc.children.kept = CeroSecOS.newFile("root", 644, "still here")
+	return state
 end
 
 do
-	-- A machine saved before this rung. Its passwords are in clear; migrate
-	-- hashes them in place and the accounts go on working.
-	local old = fresh()
-	old.users.root.password = "toor"
-	old.users.admin.password = ""
-	old.fs.children.etc.children.kept = CeroSecOS.newFile("root", 644, "still here")
-
-	local migrated = CeroSecOS.migrate(old, "ksp-front-01")
+	-- Passwords in clear AND no file: migrate hashes them, writes the file,
+	-- fills /bin, and drops the table. The accounts go on working.
+	local migrated = CeroSecOS.migrate(oldState("toor", ""), "ksp-front-01")
 	check("the machine was kept, not replaced",
 		migrated.fs.children.etc.children.kept ~= nil)
+	eq("the users table is gone", migrated.users, nil)
+	check("the accounts are a file now",
+		migrated.fs.children.etc.children.passwd ~= nil)
+	eq("owned by root", migrated.fs.children.etc.children.passwd.owner, "root")
+	eq("and closed to everybody else", migrated.fs.children.etc.children.passwd.mode, 600)
 	check("root's password is a hash now",
-		CeroSecOS.splitHash(migrated.users.root.password) ~= nil)
+		CeroSecOS.splitHash(stored(migrated, "root")) ~= nil)
 	check("and so is the empty one",
-		CeroSecOS.splitHash(migrated.users.admin.password) ~= nil)
+		CeroSecOS.splitHash(stored(migrated, "admin")) ~= nil)
 	check("root still logs in with what he had",
 		CeroSecOS.login(migrated, "root", "toor") ~= nil)
 	check("and not with anything else", CeroSecOS.login(migrated, "root", "") == nil)
 	check("admin still logs in with nothing",
 		CeroSecOS.login(migrated, "admin", "") ~= nil)
+	eq("admin is still not an admin", CeroSecOS.getUser(migrated, "admin").admin, false)
+	eq("root still is one", CeroSecOS.getUser(migrated, "root").admin, true)
 	eq("and the state validates now", CeroSecOS.validate(migrated), true)
+	-- A machine converted this way boots: it was made before there were
+	-- executables, so the migration gives it the ones it never had.
+	eq("the converted machine boots", CeroSecOS.systemOk(migrated), true)
+	local session = open(migrated, "admin")
+	ok(migrated, session, "pwd", { "/home/admin" })
 
-	-- Running it twice does not re-hash what is already hashed.
-	local before = migrated.users.root.password
+	-- Running it twice changes nothing: the table is gone and the file stands.
+	local before = stored(migrated, "root")
 	CeroSecOS.migrateUsers(migrated)
-	eq("a hash is left alone", migrated.users.root.password, before)
+	eq("a second pass leaves the hash alone", stored(migrated, "root"), before)
 
 	-- Nothing to do, and nothing thrown.
 	local empty = {}
 	eq("no users, no complaint", CeroSecOS.migrateUsers(empty), empty)
 	eq("not a state, no complaint", CeroSecOS.migrateUsers("x"), "x")
+end
+
+do
+	-- A file on the disk wins over a table beside it: what the machine has been
+	-- running on is not something a migration may quietly replace.
+	local state = oldState("toor", "toor")
+	state.fs.children.etc.children.passwd = CeroSecOS.newFile("root", 600,
+		CeroSecOS.passwdLine(CeroSecOS.newUser("root", "onthedisk", "/root", true)))
+	CeroSecOS.migrateUsers(state)
+	eq("the table is dropped", state.users, nil)
+	check("the file is the one that was there",
+		CeroSecOS.login(state, "root", "onthedisk") ~= nil)
+	eq("and not the table", CeroSecOS.login(state, "root", "toor"), nil)
+	eq("an account only the table had is gone", CeroSecOS.getUser(state, "admin"), nil)
 end
 
 do
@@ -1290,8 +1414,7 @@ do
 	-- token today -- it never leaves the server -- but a check that lives only
 	-- in the command is a check one refactor away from being no check at all.
 	local state = fresh()
-	local bob = CeroSecOS.newUser("bob", "", "/home/bob", false)
-	state.users.bob = bob
+	addUser(state, "bob", "", "/home/bob", false)
 	local session = open(state, "bob")
 
 	says(run(state, session, "passwd root"), "passwd: permission denied")

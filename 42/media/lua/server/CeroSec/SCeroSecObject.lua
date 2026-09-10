@@ -7,6 +7,7 @@ require "CeroSec/OS/CeroSecOSPath"
 require "CeroSec/OS/CeroSecOSFS"
 require "CeroSec/OS/CeroSecOSUsers"
 require "CeroSec/OS/CeroSecOSState"
+require "CeroSec/OS/CeroSecOSSystem"
 require "CeroSec/OS/CeroSecOSShell"
 
 SCeroSecObject = SGlobalObject:derive("SCeroSecObject")
@@ -172,6 +173,31 @@ function SCeroSecObject:osState()
 		return nil, reason
 	end
 	return self.os
+end
+
+-- The BIOS' own repair, and the only path that touches a state the validator
+-- has already refused: a machine whose disk is unreadable is exactly the
+-- machine this is for, so it runs on self.os raw rather than on osState().
+--
+-- A state of the current version is repaired in place, which is what keeps
+-- /home: migrate would hand back a brand new machine instead. Anything else --
+-- a version we do not know, junk, nothing at all -- has no filesystem worth
+-- keeping and goes through migrate.
+--
+-- true when the machine boots afterwards.
+function SCeroSecObject:restoreOS()
+	if type(self.os) ~= "table" or self.os.v ~= CeroSecOS.STATE_VERSION then
+		self.os = CeroSecOS.migrate(self.os, self:hostname())
+	else
+		CeroSecOS.restoreSystem(self.os)
+	end
+	-- The refusal was sticky on purpose; the repair is the one thing that lifts
+	-- it, and osState below is what decides whether it stays lifted.
+	self.osBroken = nil
+	self:mirrorOS()
+	local state = self:osState()
+	if state == nil then return false end
+	return CeroSecOS.systemOk(state) and true or false
 end
 
 -- Bring the IsoObject mirror in line with the state. Cheap: the mirror holds

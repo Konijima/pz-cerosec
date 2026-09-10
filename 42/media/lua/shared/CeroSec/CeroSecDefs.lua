@@ -398,6 +398,7 @@ function CeroSec.consoleLogout(console)
 	-- exactly as it would be on a real machine.
 	console.prompt = nil
 	console.edit = nil
+	console.halted = nil
 	console.lines = {}
 	return console
 end
@@ -408,6 +409,9 @@ end
 -- through one and the same client command.
 function CeroSec.consoleWaiting(console)
 	if type(console) ~= "table" then return "login" end
+	-- A machine whose BIOS found nothing to boot and was told not to repair it.
+	-- Nothing of the OS is reachable from there, so this comes first.
+	if console.halted then return "halted" end
 	if console.edit ~= nil then return "edit" end
 	if console.prompt ~= nil then return "prompt" end
 	if console.pending ~= nil then return "password" end
@@ -422,7 +426,16 @@ function CeroSec.consoleMode(console)
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "edit" then return "edit" end
 	if waiting == "shell" then return "shell" end
+	-- "halted" included: the window keeps the keyboard, because pressing a key
+	-- at a halted machine is what brings the BIOS' question back.
 	return "prompt"
+end
+
+-- Whether the machine is sitting on "No operating system found." with nothing
+-- asked. The server's own flag, and the one thing the console holds that is not
+-- about a session.
+function CeroSec.consoleHalted(console)
+	return type(console) == "table" and console.halted and true or false
 end
 
 -- The prompt that goes with it. Derived from the console and from nothing else,
@@ -430,6 +443,7 @@ end
 function CeroSec.consolePrompt(console, hostname, admin, home)
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "edit" then return "" end
+	if waiting == "halted" then return "" end
 	if waiting == "prompt" then
 		local text = console.prompt.text
 		if type(text) ~= "string" then return "" end
@@ -463,6 +477,7 @@ function CeroSec.repairConsole(console)
 	if type(console) ~= "table" then return CeroSec.newConsole() end
 	local out = CeroSec.newConsole()
 	out.booted = console.booted and true or false
+	if console.halted then out.halted = true end
 	if type(console.user) == "string" then out.user = console.user end
 	if type(console.cwd) == "string" then out.cwd = console.cwd end
 	if type(console.pending) == "string" then out.pending = console.pending end

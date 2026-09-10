@@ -184,6 +184,7 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
 	"shared/CeroSec/OS/CeroSecOSShell.lua",
 	"shared/CeroSec/OS/CeroSecOSState.lua",
+	"shared/CeroSec/OS/CeroSecOSSystem.lua",
 	"shared/CeroSec/OS/CeroSecOSUsers.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",

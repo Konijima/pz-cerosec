@@ -159,13 +159,77 @@ end
 -- Commands.
 --
 
+--
+-- What is in /bin
+--
+-- One line each, and it is the file's contents: `cat /bin/ls` prints it, `ls -l
+-- /bin` sizes it, and `help` is nothing but a listing of the directory. So a
+-- machine whose /bin has been cut down says so by having a shorter help, and a
+-- machine with no /bin at all cannot describe commands it no longer has.
+--
+-- This table is also the list fillBin builds from: a command that is not in
+-- here gets no executable, and one with no Lua behind it is a file the shell
+-- will refuse to run. os_test pins the two sets against each other.
+--
+CeroSecOS.COMMAND_INFO = {
+	cat = "print a file",
+	cd = "change the working directory",
+	chmod = "change a file's mode",
+	chown = "change a file's owner",
+	clear = "clear the screen",
+	cp = "copy a file",
+	echo = "print its arguments",
+	edit = "edit a file",
+	exit = "log out",
+	hash = "hash a string the way a password is",
+	help = "list the commands in /bin",
+	hostname = "print or set the machine's name",
+	ls = "list a directory",
+	mkdir = "make a directory",
+	mv = "move or rename a file",
+	passwd = "change a password",
+	pwd = "print the working directory",
+	rm = "remove a file or a directory",
+	touch = "create an empty file",
+	whoami = "print the current user",
+	write = "write a line into a file",
+}
+
+-- The two that do not need a file behind them. A machine can be broken from
+-- inside -- root may `rm -r /bin` and that is root's right -- and a player
+-- standing in front of a broken one must still be able to ask what happened and
+-- to walk away from it. Everything else is an executable or it is nothing.
+CeroSecOS.BUILTINS = { exit = true, help = true }
+
+-- Column the descriptions line up in, in help. The longest name is "hostname".
+local L_CMD = 9
+
 commands.help = function(state, session, args)
-	return true, {
-		"CeroSec OS commands:",
-		" cat cd chmod chown clear cp echo edit exit hash help",
-		" hostname ls mkdir mv passwd pwd rm touch whoami write",
-		" redirect output with > file or >> file",
-	}
+	local bin, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH)
+	if bin == nil and reason ~= "no such file" then
+		return fail("help", CeroSecOS.BIN_PATH, reason)
+	end
+
+	local names = {}
+	if bin ~= nil and bin.type == "dir" then names = CeroSecOS.childNames(bin) end
+	if #names == 0 then
+		-- Said by the one command that still answers on a machine with nothing
+		-- left to run, so it says the way back as well as the trouble.
+		return false, {
+			"help: no commands in " .. CeroSecOS.BIN_PATH .. ": the system is damaged.",
+			"help: switch the computer off and on to repair it.",
+		}
+	end
+
+	local out = { "CeroSec OS commands:" }
+	for i = 1, #names do
+		local node = bin.children[names[i]]
+		if node.type == "file" then
+			out[#out + 1] = " " .. CeroSecOS.padRight(names[i], L_CMD) .. (node.data or "")
+		end
+	end
+	out[#out + 1] = " redirect output with > file or >> file"
+	return true, out
 end
 
 commands.pwd = function(state, session, args)
@@ -178,9 +242,15 @@ commands.whoami = function(state, session, args)
 	return true, { session.user }
 end
 
+-- The name is /etc/hostname and this reads it. Root may write it; nobody else
+-- may, because the name is on every prompt of every session on the machine.
 commands.hostname = function(state, session, args)
-	if #args > 1 then return usage("hostname", "hostname") end
-	return true, { state.hostname }
+	if #args > 2 then return usage("hostname", "hostname [name]") end
+	if args[2] == nil then return true, { CeroSecOS.hostname(state) } end
+	if CeroSecOS.userOf(session) ~= "root" then return fail("hostname", nil, "permission denied") end
+	local done, reason = CeroSecOS.setHostname(state, args[2])
+	if done == nil then return fail("hostname", args[2], reason) end
+	return true, {}
 end
 
 commands.clear = function(state, session, args)
@@ -539,6 +609,34 @@ commands.edit = function(state, session, args)
 end
 
 --
+-- Resolving a command
+--
+-- A name typed at the shell is a file in /bin and nothing else. There is no
+-- PATH, no ./thing and no command hiding in a home directory: /bin/<name> or
+-- the machine has never heard of it.
+--
+-- nil when the command may run, or the bare reason it may not -- the caller
+-- puts the name in front of it, so the two lines a player ever sees here are
+--   ls: command not found
+--   ls: permission denied
+--
+function CeroSecOS.whyNotRun(state, session, name)
+	local node, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH .. "/" .. name)
+	if node == nil then
+		-- Nothing there, /bin itself gone, /bin turned into a file: from where
+		-- the shell stands they are the same answer. A refusal on the way in --
+		-- /bin chmodded shut -- is not, and says what it is.
+		if reason == "no such file" or reason == "not a directory" then return "command not found" end
+		return reason
+	end
+	-- A directory called /bin/ls is not a command, and saying "is a directory"
+	-- about something the player never named as a path would only puzzle him.
+	if node.type ~= "file" then return "command not found" end
+	if not CeroSecOS.can(state, session, node, "x") then return "permission denied" end
+	return nil
+end
+
+--
 -- The one entry point.
 --
 
@@ -576,6 +674,10 @@ function CeroSecOS.exec(state, session, line)
 	local name = args[1]
 	local fn = commands[name]
 	if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
+	if not CeroSecOS.BUILTINS[name] then
+		local refusal = CeroSecOS.whyNotRun(state, session, name)
+		if refusal ~= nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
+	end
 
 	local ok, lines, control, data = fn(state, session, args)
 	if lines == nil then lines = {} end
