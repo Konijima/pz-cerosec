@@ -153,4 +153,29 @@ check("newState returns a fresh table", CeroSec.newState() ~= CeroSec.newState()
 check("DEBUG off by default", CeroSec.DEBUG == false)
 CeroSec.log("this must not print")
 
+-- Screen geometry: the box test copies the picker's own comparison, left and
+-- top edges exclusive, right and bottom inclusive.
+check("point inside the box", CeroSec.pointInBox(50, 50, 0, 0, 128, 256))
+check("point on the left edge is out", not CeroSec.pointInBox(0, 50, 0, 0, 128, 256))
+check("point on the top edge is out", not CeroSec.pointInBox(50, 0, 0, 0, 128, 256))
+check("point on the right edge is in", CeroSec.pointInBox(128, 50, 0, 0, 128, 256))
+check("point on the bottom edge is in", CeroSec.pointInBox(50, 256, 0, 0, 128, 256))
+check("point past the right edge is out", not CeroSec.pointInBox(129, 50, 0, 0, 128, 256))
+check("point past the bottom edge is out", not CeroSec.pointInBox(50, 257, 0, 0, 128, 256))
+check("point left of the box is out", not CeroSec.pointInBox(-1, 50, 0, 0, 128, 256))
+check("point above the box is out", not CeroSec.pointInBox(50, -1, 0, 0, 128, 256))
+-- A box that does not sit at the origin, the camera having moved.
+check("offset box holds its own point", CeroSec.pointInBox(-70, -110, -100, -150, 128, 256))
+check("offset box rejects a point behind it", not CeroSec.pointInBox(-200, -110, -100, -150, 128, 256))
+
+-- Draw order: bigger x+y is nearer the viewer, so it comes first.
+check("nearer square first", CeroSec.drawnBefore(11, 10, 0, 10, 10, 0))
+check("farther square not first", not CeroSec.drawnBefore(10, 10, 0, 11, 10, 0))
+check("the diagonal counts, not each axis", CeroSec.drawnBefore(9, 12, 0, 10, 10, 0))
+check("equal diagonals fall through to the index", CeroSec.drawnBefore(9, 11, 5, 10, 10, 4))
+check("same diagonal, lower index is behind", not CeroSec.drawnBefore(9, 11, 4, 10, 10, 5))
+check("same square and index orders neither way", not CeroSec.drawnBefore(10, 10, 3, 10, 10, 3))
+check("a missing index reads as zero", CeroSec.drawnBefore(10, 10, 1, 10, 10, nil))
+check("two missing indexes order neither way", not CeroSec.drawnBefore(10, 10, nil, 10, 10, nil))
+
 print("defs_test: " .. count .. " assertions passed")

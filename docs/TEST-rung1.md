@@ -165,3 +165,55 @@ Same rules as above: fresh game, mod enabled, eyes on the screen. Rung 1b change
 - The pivot costs a fraction of a second before the action starts. If it ever reads
   as a hitch, or if the character seems stuck turning forever without the animation
   beginning, `shouldBeTurning` never returns false and the action never starts.
+
+## E — Picking
+
+The option must appear wherever the computer is *drawn*, not wherever the game
+decides the click belongs. Right-click each spot and read the menu; turn
+`CeroSec.DEBUG = true` in `CeroSecDefs.lua` first if a spot misbehaves — the
+console then prints the mouse point and every candidate box that was tested.
+
+36. **Bottom of the monitor, on a crate.** A computer on a crate, right-click the
+    lower half of the screen. "Turn on computer" is there. (This already worked.)
+37. **Top of the monitor, on a crate.** Same computer, right-click the topmost
+    pixels of the monitor. "Turn on computer" is there now. Before the fix this
+    showed only the options of the square behind ("Sit on ground", "Walk to").
+38. **Just above the monitor.** Right-click one or two pixels above the sprite's
+    top edge. The option is **gone** — we must not steal clicks off the object.
+39. **On the crate behind.** Right-click a crate standing on the square behind the
+    computer, on pixels that belong to that crate and not to the monitor. The
+    crate's own options show and there is no "Turn on computer".
+40. **Between the keys.** Right-click a transparent gap inside the computer's
+    sprite box (the corner of the tile diamond, beside the tower). No option: the
+    test is on the sprite's pixels, not on its box.
+41. **On the floor.** A computer sitting on the ground, right-click low and high on
+    it. The option is there both times, and the greying rules are unchanged.
+42. **On a desk.** Same, on a desk or counter: both halves of the monitor answer.
+43. **Zoomed all the way in, and all the way out.** Repeat 37 and 39 at both zoom
+    ends. The boxes are scaled by the zoom, so a spot that works at one zoom and
+    misses at another means the zoom factor is wrong, not the offset.
+44. **Two computers, one behind the other.** Put a computer on a desk and another
+    on the square in front of it. Right-click where the front one covers the back
+    one: the option acts on the **front** one (walk target, on/off state).
+45. **Joypad.** With a controller, open the world menu on a computer. There is no
+    mouse to test, so the old square scan answers and the option still appears.
+
+## Picking doubts only the game can settle
+
+- The whole diagnosis rests on `FBORenderObjectPicker.getObjectsAt`, read in the
+  **older** decompiled build. If 42.20.4 widened its `leftSideXy`/`rightSideXy`
+  walk, or if `PerformanceSettings.fboRenderChunk` is off (the legacy
+  `IsoObjectPicker.Add` path registers every rendered sprite and has no such
+  window), the top-of-monitor click was already working and our pass simply
+  agrees with it. Step 37 is what tells us the fix was needed.
+- The drawn box is rebuilt as vanilla does for the water shader's click box
+  (`FBORenderObjectPicker.handleWaterShader`): 64 x 128 tile units at the
+  square's screen position, raised by `getRenderYOffset() * tileScale`. It leaves
+  out `IsoObject.offsetX/offsetY`, which are public fields with no getter and are
+  zero for a static world object. A computer that answers a few pixels off in one
+  direction only would be that.
+- `PICK_REACH = 2` covers a raise of 128 screen pixels at zoom 1, which is the
+  vanilla placement ceiling (`Surface <= 64`, times `tileScale` 2). A computer on
+  something taller than the game itself allows would need a third step.
+- Step 44 assumes the front-most computer wins. The order is by `x + y` then by
+  index in the square; if the wrong one answers, that ordering is the suspect.

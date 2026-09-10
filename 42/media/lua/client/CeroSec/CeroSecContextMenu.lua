@@ -23,7 +23,18 @@ end
 -- is the counter, not the table-top computer on it. Vanilla menus that target
 -- one object scan the square of every picked object instead
 -- (ISRadioAndTvMenu.lua:16-26, ISBBQMenu.lua:20), so do the same.
-function CeroSecContextMenu.findComputer(worldobjects)
+--
+-- Two passes, cheapest last. First the mouse itself, because a computer raised
+-- on a crate is drawn over the square behind it and the picker never names its
+-- square at all (see the picking notes in CeroSecReach). Then the plain scan of
+-- the picked squares, which is what answers for a joypad, for a click the mouse
+-- test does not settle, and for everything that worked before.
+function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
+	if playerIndex and not JoypadState.players[playerIndex + 1] then
+		local picked = CeroSecReach.pickComputer(playerIndex, getMouseX(), getMouseY(), worldobjects)
+		if picked then return picked end
+	end
+
 	local done = {}
 	for _, object in ipairs(worldobjects) do
 		local square = object:getSquare()
@@ -47,7 +58,7 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	local playerObj = getSpecificPlayer(player)
 	if not playerObj or playerObj:getVehicle() then return end
 
-	local computer = CeroSecContextMenu.findComputer(worldobjects)
+	local computer = CeroSecContextMenu.findComputer(worldobjects, player)
 	if not computer then return end
 
 	local height = CeroSecReach.height(computer)

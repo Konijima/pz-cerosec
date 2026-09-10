@@ -110,3 +110,29 @@ function CeroSec.frontOffset(facing)
 	if not offset then return nil, nil end
 	return offset[1], offset[2]
 end
+
+--
+-- Screen geometry
+--
+-- Isometric projection, from IsoUtils (zombie/iso/IsoUtils.java): screen X is
+-- (x - y) * 32 * tileScale and screen Y is (x + y) * 16 * tileScale plus the
+-- floor term. So a square with a bigger x+y is drawn LOWER on the screen and
+-- LATER, over its neighbours: it is the one nearer the viewer.
+
+-- Is a point inside a drawn box? Copied comparison for comparison from the
+-- picker's own test (IsoObjectPicker.ContextPick: x > obj.x and y > obj.y and
+-- x <= obj.x + obj.width and y <= obj.y + obj.height), left edge exclusive,
+-- right edge inclusive, so that two boxes sharing an edge never both claim the
+-- same pixel.
+function CeroSec.pointInBox(px, py, x, y, width, height)
+	return px > x and py > y and px <= x + width and py <= y + height
+end
+
+-- Order two drawn objects front to back: the one nearer the viewer first.
+-- Bigger x+y is nearer; on the same square the object drawn last (higher index
+-- in the square's object list) is on top. Returns true when a comes first.
+function CeroSec.drawnBefore(ax, ay, aIndex, bx, by, bIndex)
+	local a, b = ax + ay, bx + by
+	if a ~= b then return a > b end
+	return (aIndex or 0) > (bIndex or 0)
+end

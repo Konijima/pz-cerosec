@@ -103,3 +103,137 @@ function CeroSecReach.walkToFront(playerObj, computer, onArrived)
 	onArrived()
 	return true
 end
+
+--
+-- Picking a computer under the mouse
+--
+-- The game's picker only ever hands the menu ONE object, and it never even
+-- considers ours when the click lands high on the monitor. Its candidate
+-- squares come from a fixed diagonal walk out of the clicked point
+-- (FBORenderObjectPicker.getObjectsAt: for each z it steps through
+-- leftSideXy/rightSideXy, {0,0} {0,1} {1,1} {1,2} {2,2} {2,3} {3,3}), which
+-- budgets three tiles -- 192 screen pixels at zoom 1 -- for a sprite that
+-- overhangs the square it belongs to. A table-top computer is drawn a further
+-- renderYOffset * tileScale pixels up (IsoObject.setRenderInfo:
+-- sy -= offsetY + renderYOffset * Core.tileScale), so on a crate its top pixels
+-- climb out of that budget and its square is never even looked at. Below the
+-- cut-off the option appears, above it the square behind wins: exactly what the
+-- screenshots show.
+--
+-- So we redo the picking ourselves, for computers only: gather the computers of
+-- the squares near the ones the picker did attribute the click to, rebuild each
+-- one's drawn box the way vanilla does, and ask the sprite's own click mask.
+--
+
+-- How many squares toward the viewer to look. A raised sprite moves straight up
+-- the screen by renderYOffset * tileScale pixels, and renderYOffset never
+-- exceeds SURFACE_MAX (64), so the shift is at most 64 * tileScale = 128 pixels
+-- at zoom 1. One step of (+1,+1) is 32 * tileScale = 64 pixels down
+-- (IsoUtils.YToScreen), so two steps cover the whole raise. We scan the square
+-- block (0..2, 0..2) rather than just the diagonal because the sprite is a full
+-- tile wide, so the half-overlapping neighbours (+1,0) and (0,+1) can be the
+-- square the picker names too.
+CeroSecReach.PICK_REACH = 2
+
+-- The drawn box of an object in the picker's screen space -- that is, screen
+-- pixels multiplied by the zoom. Same construction vanilla uses for the water
+-- shader's own click box (FBORenderObjectPicker.handleWaterShader): the
+-- square's screen position less the camera offset, a box of 64 x 128 tile
+-- units, and the render offset that raises a table-top sprite.
+-- Returns x, y, width, height, texture; nil when the object has no sprite yet.
+function CeroSecReach.drawnBox(object)
+	local square = object and object:getSquare()
+	if not square then return nil end
+	local sprite = object:getSprite()
+	local texture = sprite and sprite:getTextureForCurrentFrame(object:getDir())
+	if not texture then return nil end
+
+	local tileScale = Core.getTileScale()
+	local x, y = ISCoordConversion.ToScreen(square:getX(), square:getY(), square:getZ())
+	y = y - object:getRenderYOffset() * tileScale
+	return x, y, 64 * tileScale, 128 * tileScale, texture
+end
+
+-- Is the mouse on this object's drawn pixels? The box first, then the sprite's
+-- click mask, which is the very test the picker settles on
+-- (IsoObjectPicker.ContextPick -> IsoObject.isMaskClicked). The mask is indexed
+-- in texture pixels, so a box drawn bigger than its texture is divided back
+-- down the way ContextPick divides by scaleX/scaleY.
+-- Returns hit, x, y, width, height so the caller can log the box it tested.
+function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
+	local x, y, width, height, texture = CeroSecReach.drawnBox(object)
+	if not x then return false end
+
+	local zoom = getCore():getZoom(playerIndex or 0)
+	local px, py = mouseX * zoom, mouseY * zoom
+	if not CeroSec.pointInBox(px, py, x, y, width, height) then
+		return false, x, y, width, height
+	end
+
+	local scaleX = width / texture:getWidthOrig()
+	local scaleY = height / texture:getHeightOrig()
+	local hit = object:isMaskClicked(math.floor((px - x) / scaleX), math.floor((py - y) / scaleY), false)
+	return hit == true, x, y, width, height
+end
+
+-- Every computer on the squares that could be drawn under the cursor, nearest
+-- to the viewer first.
+local function pickCandidates(worldobjects)
+	local seen, candidates = {}, {}
+	for _, object in ipairs(worldobjects) do
+		local square = object:getSquare()
+		if square then
+			local x0, y0, z0 = square:getX(), square:getY(), square:getZ()
+			for dy = 0, CeroSecReach.PICK_REACH do
+				for dx = 0, CeroSecReach.PICK_REACH do
+					local near = getCell():getGridSquare(x0 + dx, y0 + dy, z0)
+					if near and not seen[near] then
+						seen[near] = true
+						local objects = near:getObjects()
+						for i = 0, objects:size() - 1 do
+							local candidate = objects:get(i)
+							if CeroSec.isComputerSprite(candidate:getSpriteName()) then
+								table.insert(candidates, candidate)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	table.sort(candidates, function(a, b)
+		local sa, sb = a:getSquare(), b:getSquare()
+		return CeroSec.drawnBefore(sa:getX(), sa:getY(), a:getObjectIndex(),
+			sb:getX(), sb:getY(), b:getObjectIndex())
+	end)
+	return candidates
+end
+
+-- The computer the mouse is really on, or nil. Purely a screen test: whether
+-- the player may touch it is still the caller's business.
+function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
+	if not mouseX or not mouseY then return nil end
+
+	local candidates = pickCandidates(worldobjects)
+	if CeroSec.DEBUG then
+		local zoom = getCore():getZoom(playerIndex or 0)
+		CeroSec.log("pick: mouse " .. tostring(mouseX) .. "," .. tostring(mouseY) ..
+			" zoom " .. tostring(zoom) .. " -> " .. tostring(mouseX * zoom) .. "," .. tostring(mouseY * zoom) ..
+			" (" .. tostring(#candidates) .. " candidates)")
+	end
+
+	for _, candidate in ipairs(candidates) do
+		local hit, x, y, width, height = CeroSecReach.isMouseOn(candidate, mouseX, mouseY, playerIndex)
+		if CeroSec.DEBUG then
+			local square = candidate:getSquare()
+			CeroSec.log("pick:   " .. tostring(candidate:getSpriteName()) ..
+				" at " .. tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ()) ..
+				" raise " .. tostring(candidate:getRenderYOffset()) ..
+				" box " .. tostring(x) .. "," .. tostring(y) .. " " .. tostring(width) .. "x" .. tostring(height) ..
+				" -> " .. tostring(hit))
+		end
+		if hit then return candidate end
+	end
+	return nil
+end
