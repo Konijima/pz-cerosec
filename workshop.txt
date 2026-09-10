@@ -1,0 +1,5 @@
+version=1
+title=CeroSec
+description=CeroSec OS for the computers of Knox County. Turn vanilla computers on, open a terminal, run a small OS, network machines together and automate doors, locks and lights.
+tags=Build 42;Interface;Multiplayer
+visibility=unlisted
