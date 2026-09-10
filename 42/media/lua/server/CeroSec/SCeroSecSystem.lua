@@ -54,9 +54,25 @@ function SCeroSecSystem:OnObjectAdded(isoObject)
 	luaObject:resetForPlacement(isoObject)
 end
 
+-- The client walks the player to the square in front of the screen before it
+-- sends anything, but the client is not to be trusted. Vanilla's own global
+-- object commands do not check proximity at all (SCampfireSystemCommands.lua),
+-- so the tolerance comes from the one place vanilla decides a player is close
+-- enough to interact without walking: luautils.lua:138-140, half a square of
+-- centre offset and 1.6 of slack on each axis. Adjacency only -- which of the
+-- four sides he stands on is the client's business.
+local function isAdjacent(playerObj, x, y, z)
+	if not playerObj then return false end
+	local square = playerObj:getCurrentSquare()
+	if not square or square:getZ() ~= z then return false end
+	return math.abs(x + 0.5 - playerObj:getX()) <= 1.6
+		and math.abs(y + 0.5 - playerObj:getY()) <= 1.6
+end
+
 function SCeroSecSystem:OnClientCommand(command, playerObj, args)
 	if command ~= "toggle" then return end
 	if not args or not args.x then return end
+	if not isAdjacent(playerObj, args.x, args.y, args.z) then return end
 
 	local luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
 	if not luaObject then
