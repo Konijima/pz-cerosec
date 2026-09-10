@@ -62,11 +62,17 @@ owns the state and the session, and the answer comes back addressed to one playe
       closed {x,y,z,reason}
 
 Every one of them re-checks that the computer exists, is on, and has the player
-standing next to it; `exec` also wants a live session. The answer travels by
+standing next to it; `exec` also wants a live session, and the coordinates have to
+be three numbers before they reach any arithmetic. The answer travels by
 `sendServerCommand(player, ...)` on a server -- the only vanilla call that reaches
 one client and not the room -- and, because that call does nothing without a
 `GameServer`, by the global object broadcast in singleplayer, where the one
-connection is the one player. Both carry the player key so the window can tell.
+connection is the one player.
+
+Neither of those is routing enough, so every command carries the terminal's own
+token and every answer carries it back: a server addresses a *connection*, and
+split screen puts several players on one, so without the token two local players
+at the same computer would read each other's screens.
 
 The OS state lives on the GlobalObject (`os`, saved to `gos_cerosec.bin` -- the
 table serializer recurses into nested tables) and is mirrored into the IsoObject's

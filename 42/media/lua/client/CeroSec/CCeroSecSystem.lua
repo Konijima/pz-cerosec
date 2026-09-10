@@ -1,6 +1,5 @@
 require "Map/CGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
-require "CeroSec/CeroSecIdentity"
 require "CeroSec/CCeroSecObject"
 require "CeroSec/CeroSecTerminal"
 
@@ -44,17 +43,17 @@ end
 
 -- Singleplayer: the server answers by broadcast on the global object channel,
 -- because sendServerCommand does nothing when there is no GameServer
--- (LuaManager.GlobalObject.sendServerCommand). Nothing routed it, so the
--- terminal has to check the answer is addressed to it.
+-- (LuaManager.GlobalObject.sendServerCommand).
 function CCeroSecSystem:OnServerCommand(command, args)
-	CeroSecTerminal.onServerAnswer(command, args, false)
+	CeroSecTerminal.onServerAnswer(command, args)
 end
 
--- Multiplayer: the server answers this player and no other, so what arrives
--- here is ours by construction.
+-- Multiplayer: the server answers one connection. That is not one window --
+-- split screen puts several players on a connection -- so the terminal still
+-- checks the token before it believes a word of it.
 Events.OnServerCommand.Add(function(module, command, args)
 	if module ~= CeroSec.MODULE then return end
-	CeroSecTerminal.onServerAnswer(command, args, true)
+	CeroSecTerminal.onServerAnswer(command, args)
 end)
 
 -- Idempotent sweep. Catches the cases no single event covers: objects announced

@@ -98,7 +98,6 @@ local playerKeyOf = CeroSec.playerKey
 --
 
 function SCeroSecSystem:reply(playerObj, command, args)
-	args.player = playerKeyOf(playerObj)
 	if isServer() then
 		sendServerCommand(playerObj, SCeroSecSystem.MODULE, command, args)
 	else
@@ -107,24 +106,26 @@ function SCeroSecSystem:reply(playerObj, command, args)
 end
 
 -- Tell a terminal to shut itself: the machine is off, out of reach, or broken.
-function SCeroSecSystem:replyClosed(playerObj, x, y, z, reason)
-	self:reply(playerObj, "closed", { x = x, y = y, z = z, reason = reason })
+function SCeroSecSystem:replyClosed(playerObj, x, y, z, reason, token)
+	self:reply(playerObj, "closed", { x = x, y = y, z = z, reason = reason, token = token })
 end
 
 --
 -- Commands
 --
--- client -> server, all of them carrying the computer's x, y, z:
+-- client -> server, all of them carrying the computer's x, y, z and the
+-- terminal's token:
 --   toggle  {}                      -- rung 1
 --   open    {}                      -- boot preamble, and is it on?
 --   login   { name, password }
 --   exec    { line }
 --   close   {}
--- server -> client:
---   opened  { x, y, z, lines, hostname }
---   login   { x, y, z, ok, lines, prompt }
---   exec    { x, y, z, ok, lines, control, prompt }
---   closed  { x, y, z, reason }
+-- server -> client, every answer carrying the token of the terminal it belongs
+-- to, because a connection is not a window:
+--   opened  { x, y, z, token, hostname, lines }
+--   login   { x, y, z, token, ok, lines, prompt }
+--   exec    { x, y, z, token, ok, lines, control, prompt }
+--   closed  { x, y, z, token, reason }
 --
 
 local Commands = {}
@@ -132,56 +133,55 @@ local Commands = {}
 -- The computer a command names, or nil after having told the player why not.
 -- Every command re-checks the three things a terminal depends on: the computer
 -- exists, the player is next to it, and it is on.
-function SCeroSecSystem:computerFor(playerObj, args)
-	if not args or not args.x then return nil end
-	if not isAdjacent(playerObj, args.x, args.y, args.z) then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "reach")
+function SCeroSecSystem:computerFor(playerObj, x, y, z, token)
+	if not isAdjacent(playerObj, x, y, z) then
+		self:replyClosed(playerObj, x, y, z, "reach", token)
 		return nil
 	end
 
-	local luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
+	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then
 		-- The client saw a computer we have no GlobalObject for; adopt it.
-		local isoObject = self:getIsoObjectAt(args.x, args.y, args.z)
+		local isoObject = self:getIsoObjectAt(x, y, z)
 		if isoObject then
 			self:loadIsoObject(isoObject)
-			luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
+			luaObject = self:getLuaObjectAt(x, y, z)
 		end
 	end
 	if not luaObject then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "gone")
+		self:replyClosed(playerObj, x, y, z, "gone", token)
 		return nil
 	end
 
 	if not luaObject.on then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "off")
+		self:replyClosed(playerObj, x, y, z, "off", token)
 		return nil
 	end
 	return luaObject
 end
 
-Commands.toggle = function(self, playerObj, args)
-	if not args or not args.x then return end
-	if not isAdjacent(playerObj, args.x, args.y, args.z) then return end
+Commands.toggle = function(self, playerObj, x, y, z)
+	if not isAdjacent(playerObj, x, y, z) then return end
 
-	local luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
+	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then
-		local isoObject = self:getIsoObjectAt(args.x, args.y, args.z)
+		local isoObject = self:getIsoObjectAt(x, y, z)
 		if not isoObject then return end
 		self:loadIsoObject(isoObject)
-		luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
+		luaObject = self:getLuaObjectAt(x, y, z)
 		if not luaObject then return end
 	end
 	luaObject:toggle()
 end
 
-Commands.open = function(self, playerObj, args)
-	local luaObject = self:computerFor(playerObj, args)
+Commands.open = function(self, playerObj, x, y, z, token)
+	local luaObject = self:computerFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local state, reason = luaObject:osState()
 	if not state then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "broken")
+		self:replyClosed(playerObj, x, y, z, "broken", token)
+		if reason then CeroSec.log("open refused: " .. tostring(reason)) end
 		return
 	end
 
@@ -189,20 +189,19 @@ Commands.open = function(self, playerObj, args)
 	luaObject:closeSession(playerKeyOf(playerObj))
 
 	self:reply(playerObj, "opened", {
-		x = args.x, y = args.y, z = args.z,
+		x = x, y = y, z = z, token = token,
 		hostname = state.hostname,
 		lines = CeroSecOS.fit({ CeroSecOS.MOTD }),
 	})
-	if reason then CeroSec.log("open: " .. tostring(reason)) end
 end
 
-Commands.login = function(self, playerObj, args)
-	local luaObject = self:computerFor(playerObj, args)
+Commands.login = function(self, playerObj, x, y, z, token, args)
+	local luaObject = self:computerFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local state = luaObject:osState()
 	if not state then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "broken")
+		self:replyClosed(playerObj, x, y, z, "broken", token)
 		return
 	end
 
@@ -215,39 +214,42 @@ Commands.login = function(self, playerObj, args)
 	if not session then
 		luaObject:closeSession(playerKeyOf(playerObj))
 		self:reply(playerObj, "login", {
-			x = args.x, y = args.y, z = args.z,
+			x = x, y = y, z = z, token = token,
 			ok = false,
+			-- One answer for a bad name and for a bad password alike: the
+			-- machine does not say which half was wrong.
 			lines = CeroSecOS.fit({ "login incorrect" }),
 		})
 		CeroSec.log("login refused: " .. tostring(reason))
 		return
 	end
 
-	luaObject:openSession(playerKeyOf(playerObj), { session = session, player = playerObj })
+	luaObject:openSession(playerKeyOf(playerObj),
+		{ session = session, player = playerObj, token = token })
 	local user = CeroSecOS.getUser(state, session.user)
 	self:reply(playerObj, "login", {
-		x = args.x, y = args.y, z = args.z,
+		x = x, y = y, z = z, token = token,
 		ok = true,
 		lines = CeroSecOS.fit({ CeroSecOS.MOTD }),
 		prompt = CeroSec.prompt(session.user, state.hostname, session.cwd, user and user.admin),
 	})
 end
 
-Commands.exec = function(self, playerObj, args)
-	local luaObject = self:computerFor(playerObj, args)
+Commands.exec = function(self, playerObj, x, y, z, token, args)
+	local luaObject = self:computerFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local playerKey = playerKeyOf(playerObj)
 	local open = luaObject:sessionFor(playerKey)
 	if not open then
-		self:replyClosed(playerObj, args.x, args.y, args.z, "session")
+		self:replyClosed(playerObj, x, y, z, "session", token)
 		return
 	end
 
 	local state = luaObject:osState()
 	if not state then
 		luaObject:closeSession(playerKey)
-		self:replyClosed(playerObj, args.x, args.y, args.z, "broken")
+		self:replyClosed(playerObj, x, y, z, "broken", token)
 		return
 	end
 
@@ -261,7 +263,7 @@ Commands.exec = function(self, playerObj, args)
 
 	local user = CeroSecOS.getUser(state, open.session.user)
 	self:reply(playerObj, "exec", {
-		x = args.x, y = args.y, z = args.z,
+		x = x, y = y, z = z, token = token,
 		ok = ok and true or false,
 		lines = lines,
 		control = control,
@@ -269,18 +271,38 @@ Commands.exec = function(self, playerObj, args)
 	})
 end
 
-Commands.close = function(self, playerObj, args)
-	if not args or not args.x then return end
-	local luaObject = self:getLuaObjectAt(args.x, args.y, args.z)
+Commands.close = function(self, playerObj, x, y, z)
+	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then return end
 	luaObject:closeSession(playerKeyOf(playerObj))
+end
+
+-- Nothing a client sends is believed on its word. Coordinates have to be three
+-- numbers before they reach any arithmetic or any Java call, and the token is a
+-- string of a sane length before it is ever echoed back.
+local function coordsOf(args)
+	if type(args) ~= "table" then return nil end
+	if type(args.x) ~= "number" or type(args.y) ~= "number" or type(args.z) ~= "number" then
+		return nil
+	end
+	return math.floor(args.x), math.floor(args.y), math.floor(args.z)
+end
+
+local TOKEN_MAX = 64
+
+local function tokenOf(args)
+	local token = args.token
+	if type(token) ~= "string" or #token > TOKEN_MAX then return nil end
+	return token
 end
 
 function SCeroSecSystem:OnClientCommand(command, playerObj, args)
 	local fn = Commands[command]
 	if not fn then return end
 	if not playerObj then return end
-	fn(self, playerObj, args)
+	local x, y, z = coordsOf(args)
+	if not x then return end
+	fn(self, playerObj, x, y, z, tokenOf(args), args)
 end
 
 --
@@ -292,7 +314,7 @@ function SCeroSecSystem:evictSessions(luaObject, reason)
 	if not luaObject.sessions then return end
 	for _, open in pairs(luaObject.sessions) do
 		if open.player then
-			self:replyClosed(open.player, luaObject.x, luaObject.y, luaObject.z, reason)
+			self:replyClosed(open.player, luaObject.x, luaObject.y, luaObject.z, reason, open.token)
 		end
 	end
 	luaObject:dropSessions()
@@ -313,7 +335,8 @@ function SCeroSecSystem:checkPower()
 						or not isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
 					luaObject.sessions[key] = nil
 					if playerObj then
-						self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z, "reach")
+						self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z,
+							"reach", open.token)
 					end
 					luaObject:publishOS()
 				end

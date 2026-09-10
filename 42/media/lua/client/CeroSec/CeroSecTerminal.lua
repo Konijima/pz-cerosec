@@ -1,7 +1,6 @@
 require "ISUI/ISCollapsableWindow"
 require "ISUI/ISTextEntryBox"
 require "CeroSec/CeroSecDefs"
-require "CeroSec/CeroSecIdentity"
 require "CeroSec/CeroSecReach"
 
 --
@@ -50,6 +49,20 @@ CeroSecTerminal.BOOT_LINES = {
 }
 CeroSecTerminal.BOOT_MS = 2000
 
+-- Every window stamps its commands with a token and only listens to answers
+-- carrying it back. The player key would not do on its own: a server addresses
+-- a *connection*, and in split screen two local players share one, so both
+-- windows would read each other's output. The token is the window, not the
+-- player, so it also settles the case of one player closing a terminal and
+-- opening another before an answer lands.
+CeroSecTerminal.tokenCount = 0
+
+local function newToken(playerNum)
+	CeroSecTerminal.tokenCount = CeroSecTerminal.tokenCount + 1
+	return tostring(playerNum) .. "-" .. tostring(getTimestampMs()) ..
+		"-" .. tostring(CeroSecTerminal.tokenCount)
+end
+
 --
 -- Opening
 --
@@ -88,12 +101,14 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.fx, o.fy, o.fz = nil, nil, nil
 	if front then o.fx, o.fy, o.fz = front:getX(), front:getY(), front:getZ() end
 	o.hostname = "cerosec"
+	o.token = newToken(o.playerNum)
 
 	o.lines = {}
 	o.history = {}
 	o.historyIndex = 0
 	o.scroll = 0
 	o.phase = "boot"
+	o.prompt = ""
 	o.bootShown = 0
 	o.bootStart = 0
 	o.opened = false
@@ -116,7 +131,8 @@ function CeroSecTerminal:createChildren()
 	self.resizeWidget2:setVisible(false)
 	self.collapseButton:setVisible(false)
 
-	-- The input line sits on the last row of the screen. Its own drawing is
+	-- The input line sits on the row right under the last line printed. Its
+	-- own drawing is
 	-- turned off as far as it can be -- no frame, no background, no border, and
 	-- a text colour equal to the screen -- because the terminal draws the line
 	-- itself, with the glow and the block cursor. What is left of the box is
@@ -125,7 +141,7 @@ function CeroSecTerminal:createChildren()
 	-- every game key, GameKeyboard.java:118), and it hands back Enter, Escape
 	-- and the arrows.
 	local colors = CeroSec.COLORS
-	local entry = ISTextEntryBox:new("", self:inputX(), self:inputY(), SCREEN_W, CELL_H + 4)
+	local entry = ISTextEntryBox:new("", self:inputX(), self:inputY(0), SCREEN_W, CELL_H + 4)
 	entry.font = UIFont.Code
 	entry:initialise()
 	entry:instantiate()
@@ -134,7 +150,6 @@ function CeroSecTerminal:createChildren()
 	entry.borderColor = { r = 0, g = 0, b = 0, a = 0 }
 	entry:setTextRGBA(colors.screen.r, colors.screen.g, colors.screen.b, 1)
 	entry:setMaxLines(1)
-	entry:setMaxTextLength(CeroSec.COLS)
 	entry:setUIName("cerosec terminal entry")
 	entry.onCommandEntered = function() self:onCommandEntered() end
 	entry.onOtherKey = function(_, key) self:onOtherKey(key) end
@@ -144,7 +159,12 @@ function CeroSecTerminal:createChildren()
 	entry.onMouseWheel = function(_, del) return self:onMouseWheel(del) end
 	self:addChild(entry)
 	self.entry = entry
-	self:setEntryActive(false)
+
+	-- Focused from the first frame, before the BIOS has finished typing: an
+	-- unfocused window would let the boot sequence be walked away from with
+	-- WASD and would leave Escape to the pause menu.
+	self:setEntryActive(true)
+	self.entry:ignoreFirstInput()
 end
 
 -- Where the input line starts on screen. The text box draws its text two
@@ -154,8 +174,8 @@ function CeroSecTerminal:inputX()
 	return BEZEL + PAD - 2
 end
 
-function CeroSecTerminal:inputY()
-	return TITLE_H + BEZEL + PAD + (CeroSec.ROWS - 1) * CELL_H - 2
+function CeroSecTerminal:inputY(row)
+	return TITLE_H + BEZEL + PAD + (row or 0) * CELL_H - 2
 end
 
 function CeroSecTerminal:boot()
@@ -170,13 +190,14 @@ end
 
 function CeroSecTerminal:send(command, args)
 	args.x, args.y, args.z = self.cx, self.cy, self.cz
+	args.token = self.token
 	CCeroSecSystem.instance:sendCommand(self.playerObj, command, args)
 end
 
--- Every answer names the computer it is about, because a player can close one
--- terminal and open another before an answer arrives.
+-- An answer is ours when it carries our token back. Nothing else is enough:
+-- the coordinates are shared by every terminal open on the same computer.
 function CeroSecTerminal:isMine(args)
-	return args and args.x == self.cx and args.y == self.cy and args.z == self.cz
+	return args ~= nil and args.token ~= nil and args.token == self.token
 end
 
 function CeroSecTerminal:onServerCommand(command, args)
@@ -235,27 +256,17 @@ function CeroSecTerminal:addLines(lines)
 	self.scroll = 0
 end
 
+-- The keyboard is never given back for the length of a phase: waiting on the
+-- server, or on the BIOS, must not hand the next keystroke to the game.
 function CeroSecTerminal:setPhase(phase)
 	self.phase = phase
 	if phase == "login" then
 		self.pendingUser = nil
 		self.prompt = "login: "
-		self:setEntryActive(true)
-		self.entry:setMasked(false)
 	elseif phase == "password" then
 		self.prompt = "password: "
-		self:setEntryActive(true)
-		self.entry:setMasked(true)
-	elseif phase == "shell" then
-		self:setEntryActive(true)
-		self.entry:setMasked(false)
-	elseif phase == "wait" then
-		-- Waiting on the server keeps the keyboard: letting it go for the
-		-- length of a round trip would hand the next keystroke to the game.
-		self.entry:setMasked(false)
-	else
-		self:setEntryActive(false)
 	end
+	self.entry:setMasked(phase == "password")
 	self.entry:setText("")
 	self.historyIndex = 0
 	self:layoutEntry()
@@ -265,20 +276,44 @@ function CeroSecTerminal:setEntryActive(active)
 	self.entryActive = active
 	self.entry:setVisible(active)
 	self.entry:setEditable(active)
+	-- setEditable writes its own grey borderColor (ISTextEntryBox.lua:64-71) and
+	-- prerender then draws it, so the border is put back out afterwards, every
+	-- time: nothing of the box may show on the glass.
+	self.entry.borderColor = { r = 0, g = 0, b = 0, a = 0 }
 	if active then
 		self.entry:focus()
-		self.entry:ignoreFirstInput()
 	else
 		self.entry:unfocus()
 	end
 end
 
+-- Which row the prompt is on: right under the last line printed, the way a
+-- terminal fills its screen, and pinned to the last row once the screen is
+-- full. The entry box follows it.
+function CeroSecTerminal:inputRow()
+	local rows = self:viewRows()
+	local shown = #self.lines - self.scroll
+	if shown < 0 then shown = 0 end
+	if shown > rows then shown = rows end
+	return shown
+end
+
 -- The entry starts where the prompt ends, so the prompt is drawn by us and
--- never typed over.
+-- never typed over, and it may only hold what still fits on the line.
 function CeroSecTerminal:layoutEntry()
-	local width = getTextManager():MeasureStringX(UIFont.Code, self.prompt or "")
+	local prompt = self.prompt or ""
+	local row = self:inputRow()
+	if self.laidOut == prompt and self.laidOutRow == row then return end
+	self.laidOut, self.laidOutRow = prompt, row
+
+	local width = getTextManager():MeasureStringX(UIFont.Code, prompt)
 	self.entry:setX(self:inputX() + width)
+	self.entry:setY(self:inputY(row))
 	self.entry:setWidth(SCREEN_W - width)
+	-- 60 columns is the whole line, prompt included.
+	local room = CeroSec.COLS - #prompt
+	if room < 1 then room = 1 end
+	self.entry:setMaxTextLength(room)
 end
 
 --
@@ -294,7 +329,7 @@ function CeroSecTerminal:onTyped()
 end
 
 function CeroSecTerminal:onCommandEntered()
-	if self.busy then return end
+	if self.busy or self.phase == "boot" then return end
 	local text = self.entry:getInternalText() or ""
 	self.entry:setText("")
 	self.historyIndex = 0
@@ -333,14 +368,14 @@ function CeroSecTerminal:onHistory(delta)
 	self.entry:setText(text)
 end
 
+-- Escape and nothing else: the game hands a focused text box exactly two keys,
+-- Escape (1) and Tab (15), and dispatches every other key to a method of its
+-- own (Core.updateKeyboardAux in the shipped build). PageUp and PageDown never
+-- arrive, and cannot be polled for either -- isKeyPressed and isShiftKeyDown
+-- both answer false while a box is taking text (GameKeyboard.isKeyDown). So the
+-- scrollback scrolls with the wheel; see the note in docs/TEST-rung2.md.
 function CeroSecTerminal:onOtherKey(key)
-	if key == Keyboard.KEY_ESCAPE then
-		self:close()
-	elseif key == Keyboard.KEY_PRIOR then
-		self:scrollBy(self:viewRows())
-	elseif key == Keyboard.KEY_NEXT then
-		self:scrollBy(-self:viewRows())
-	end
+	if key == Keyboard.KEY_ESCAPE then self:close() end
 end
 
 function CeroSecTerminal:viewRows()
@@ -422,6 +457,7 @@ function CeroSecTerminal:prerender()
 		return
 	end
 	self:updateBoot()
+	self:layoutEntry()
 	ISCollapsableWindow.prerender(self)
 	self:drawMonitor()
 end
@@ -461,7 +497,7 @@ function CeroSecTerminal:render()
 	local left = BEZEL + PAD
 	local top = TITLE_H + BEZEL + PAD
 
-	-- The scrollback, oldest first, ending on the row above the input line.
+	-- The scrollback, oldest first, with the prompt on the row right after it.
 	local rows = self:viewRows()
 	local last = #self.lines - self.scroll
 	local first = last - rows + 1
@@ -473,7 +509,7 @@ function CeroSecTerminal:render()
 	end
 
 	if self.entryActive then
-		self:drawInput(left, top + (CeroSec.ROWS - 1) * CELL_H)
+		self:drawInput(left, top + self:inputRow() * CELL_H)
 	end
 
 	-- Scrolled up: say so on the top row, where nothing else is being typed.
@@ -500,12 +536,15 @@ function CeroSecTerminal:drawInput(x, y)
 	local textX = x + getTextManager():MeasureStringX(UIFont.Code, prompt)
 	self:drawScreenText(text, textX, y, colors.text)
 
-	-- Solid block, on for half a second and off for half a second.
-	if math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0 then
-		local before = string.sub(text, 1, self.entry:getCursorPos() or #text)
-		local cursorX = textX + getTextManager():MeasureStringX(UIFont.Code, before)
-		self:drawRect(cursorX, y, CELL_W, CELL_H, 0.9, colors.text.r, colors.text.g, colors.text.b)
-	end
+	-- Solid block, on for half a second and off for half a second. The cell is
+	-- painted in both halves -- green, then the screen's own colour -- because
+	-- the text box draws a caret of its own in a hardcoded lavender
+	-- (UITextBox2.textEntryCursorColour, no setter) and this is what buries it.
+	local before = string.sub(text, 1, self.entry:getCursorPos() or #text)
+	local cursorX = textX + getTextManager():MeasureStringX(UIFont.Code, before)
+	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
+	local block = lit and colors.text or colors.screen
+	self:drawRect(cursorX, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
 end
 
 -- One line of phosphor: a faint copy one pixel off, then the line itself.
@@ -534,15 +573,14 @@ end
 -- The one door the server knocks on
 --
 
--- targeted says the answer was addressed to one player by the network itself,
--- which is what a server does; a broadcast (singleplayer) carries the player
--- key instead and is matched against the window's own player.
-function CeroSecTerminal.onServerAnswer(command, args, targeted)
+-- Both transports land here: the singleplayer broadcast, which every window
+-- sees, and the server's answer to one connection, which every local player on
+-- that connection sees. Neither is routing enough, so isMine settles it on the
+-- token and nothing else.
+function CeroSecTerminal.onServerAnswer(command, args)
 	if not args then return end
 	for _, window in pairs(CeroSecTerminal.instances) do
-		if targeted or args.player == nil or CeroSec.playerKey(window.playerObj) == args.player then
-			window:onServerCommand(command, args)
-		end
+		window:onServerCommand(command, args)
 	end
 end
 

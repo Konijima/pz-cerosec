@@ -72,10 +72,15 @@ password prompt.
     found`.
 23. **History.** Up walks back through the last lines, Down walks forward, Down past
     the newest leaves an empty line. Only the last 20 are kept.
-24. **Scrolling.** Fill the screen (`ls -l /` a few times), then PageUp / PageDown and
-    the mouse wheel. `-- more --` shows on the top row while you are scrolled up, and
-    any new output snaps back to the bottom.
-25. **clear.** `clear` empties the screen and leaves the prompt at the top.
+24. **Scrolling.** Fill the screen (`ls -l /` a few times), then scroll with the mouse
+    wheel over the window. `-- more --` shows on the top row while you are scrolled
+    up, and any new output snaps back to the bottom. The wheel is the only way:
+    a focused text box is handed exactly two keys by the game, Escape and Tab
+    (`Core.updateKeyboardAux`), and key polling answers false while it has the
+    keyboard, so PageUp and PageDown cannot reach us at all.
+25. **clear.** `clear` empties the screen and leaves the prompt on the top row. The
+    prompt always sits right under the last line printed, never at the bottom of an
+    empty screen.
 26. **exit.** `exit` prints `logout` and goes back to `login:`. Logging in again
     works, and lands in the user's home.
 
@@ -119,6 +124,9 @@ password prompt.
 42. One turns the computer off from the context menu: **both** windows close.
 43. One walks away: only that window closes.
 44. The second client logs out and back in: still fine.
+45. **Split screen.** Two local players on one connection, both with a terminal open
+    on the same computer. Each screen must still show only its own output: the
+    answers are matched on the window's token, not on the connection.
 
 ## What is not in this rung
 
