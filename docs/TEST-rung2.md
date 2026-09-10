@@ -128,6 +128,38 @@ password prompt.
     on the same computer. Each screen must still show only its own output: the
     answers are matched on the window's token, not on the connection.
 
+## G — Chair
+
+"Use computer" takes the chair when there is one. The rule is one line: a chair
+standing on the **front square** and **looking at the screen** — a computer facing
+S wants a chair facing N — is sat on with vanilla's own rest action on the way in.
+Anything else and the player works standing, exactly as before. Turning the
+computer on and off never sits anybody down.
+
+46. **Chair in front, facing the computer.** Push a desk chair onto the front square
+    with its back to the screen (so the seat looks at the monitor). Right-click the
+    computer from across the room, "Use computer": the character walks to the front
+    square, **sits down**, and the terminal opens on the seated character. He does
+    not turn once more after sitting — the sit is the turn.
+47. **Chair facing away.** Turn the same chair around (or use one facing left or
+    right). "Use computer": the character walks up and works **standing**, with the
+    usual loot animation. No sit, and the chair is not disturbed.
+48. **No chair.** Empty front square: unchanged from step A3, standing.
+49. **Already seated.** Rest on the chair by hand first (vanilla "Rest"), then
+    "Use computer" from the seat. He must **not** sit a second time, stand up, or
+    shuffle: the window just opens.
+50. **Stand up while the window is open.** Press the sit/stand key. The rule is the
+    square, not the posture: if standing up leaves him on the front square the
+    window **stays open** and typing still works; the moment he steps off it, it
+    closes (step 29). Closing the window with Escape or the close box must never
+    stand him up — he stays in the chair.
+51. **Too high, with a chair.** Chair on the front square, computer stacked out of
+    reach (surface > 64). "Use computer" is greyed out with "This computer is too
+    high to reach.", nothing is queued, and the character does not sit.
+52. **Bed, sofa, stool.** Anything the game lets you "Rest" on counts as a chair if
+    it sits on the front square and faces the screen. A sofa across the front square
+    seats him; that is intended, not a bug.
+
 ## What is not in this rung
 
 - The editor (`edit`), and the inverted bars its screen uses.

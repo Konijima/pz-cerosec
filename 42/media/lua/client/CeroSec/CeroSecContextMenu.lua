@@ -20,10 +20,25 @@ function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj, height)
 	end)
 end
 
--- Same walk, same turn, same posture as the toggle: only the last gesture
--- differs, and the action checks in its isValid that the player made it.
+-- Same walk and same turn as the toggle, plus a chair. Sitting down at a
+-- computer is what a chair pulled up to a desk is for, so when there is one on
+-- the front square looking at the screen the player takes it on the way in:
+-- vanilla's own rest action, with the arguments the vanilla menu passes it
+-- (ISWorldObjectContextMenu.onRestPathFound, ISWorldObjectContextMenu.lua:948:
+-- ISRestAction:new(playerObj, furniture, true)). It is a short action, not a
+-- nap: with useAnimations it force-completes as soon as the sitting animation
+-- reports itself started (ISRestAction.lua:47-53), leaving the character seated
+-- and the queue free for the terminal behind it.
+--
+-- The walk is not vanilla's pathToSitOnFurniture, because that one picks its
+-- own seat and its own square; ours is the front square or nothing, and the use
+-- action checks in its isValid that the player made it.
 function CeroSecContextMenu.onUse(worldobjects, computer, playerObj, height)
 	CeroSecReach.walkToFront(playerObj, computer, function()
+		local chair = CeroSecReach.chairInFront(computer)
+		if chair and not CeroSecReach.isSeatedOn(playerObj, chair) then
+			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
+		end
 		ISTimedActionQueue.add(ISCeroSecUseAction:new(playerObj, computer, height))
 	end)
 end

@@ -111,6 +111,31 @@ function CeroSec.frontOffset(facing)
 	return offset[1], offset[2]
 end
 
+-- The facing whose front offset is this step, or nil when the step is not one
+-- of the four cardinal neighbours. The inverse of frontOffset.
+function CeroSec.facingForOffset(dx, dy)
+	for i = 1, #CeroSec.FACINGS do
+		local facing = CeroSec.FACINGS[i]
+		local offset = CeroSec.FRONT_OFFSET[facing]
+		if offset[1] == dx and offset[2] == dy then return facing end
+	end
+	return nil
+end
+
+-- Which way a chair standing on the front square has to look for the player
+-- sitting on it to be looking at the screen: back along the step that put the
+-- square in front of the computer. Derived, not tabulated, so it can never
+-- disagree with FRONT_OFFSET. A furniture tile's facing is the direction the
+-- character seated on it looks (ISRestAction:setBeforeSitDirection, facing "N"
+-- with the "Front" seat gives faceDirection(IsoDirections.N)), the same
+-- convention the computer sprites use. So a computer facing S wants a chair
+-- facing N, and so on for the other three.
+function CeroSec.chairFacingFor(computerFacing)
+	local dx, dy = CeroSec.frontOffset(computerFacing)
+	if not dx then return nil end
+	return CeroSec.facingForOffset(-dx, -dy)
+end
+
 --
 -- Screen geometry
 --

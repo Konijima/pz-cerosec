@@ -83,6 +83,82 @@ function CeroSecReach.height(computer)
 	return "high"
 end
 
+--
+-- The chair in front
+--
+-- Vanilla asks the question in two halves, and so do we.
+--
+-- Sittable at all: the sprite carries IsoFlagType.bed. That flag is what
+-- IsoGridSquare.getBed collects, and IsoPlayer.doContextRestOnFurniture offers
+-- the "Rest" contextual action on whatever it returns; the one Lua place that
+-- reads it does the same (ISWorldObjectContextMenu.lua:2657). "bed" is the
+-- flag's name, not its meaning -- every chair the game lets you rest on has it.
+--
+-- Sittable with an animation: the tile has seating data, which is exactly the
+-- test the rest action makes before it plays the sitting animation
+-- (ISRestAction:furnitureHasSittingData -> SeatingManager:getTilePositionCount(bed) > 0,
+-- ISRestAction.lua:143-145). Without it vanilla falls back to sitting on the
+-- ground, which is not what a desk chair is for.
+--
+-- Which way it looks: SeatingManager:getFacingDirection(object), the same call
+-- the bed code uses (ISWorldObjectContextMenu.lua:2650, ISGetOnBedAction.lua:37),
+-- returning "N", "S", "E" or "W" -- the id of the tile's seating position
+-- (media/seating.txt, `position { id = S, ... }`). It is the direction the
+-- seated character ends up looking: facing "N" on the "Front" seat ends in
+-- faceDirection(IsoDirections.N) (ISRestAction.lua:156-169).
+--
+
+-- The chair standing on the computer's front square and looking at the screen,
+-- or nil: no chair there, a chair with its back to the screen (that one belongs
+-- to another desk), or a computer with no front square at all.
+function CeroSecReach.chairInFront(computer)
+	if not computer then return nil end
+	local wanted = CeroSec.chairFacingFor(CeroSec.facingOf(computer:getSpriteName()))
+	if not wanted then return nil end
+
+	local front = CeroSecReach.frontSquare(computer)
+	if not front then return nil end
+
+	local seating = SeatingManager.getInstance()
+	local objects = front:getObjects()
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		local sprite = object:getSprite()
+		local props = sprite and sprite:getProperties()
+		if props and props:has(IsoFlagType.bed)
+			and seating:getTilePositionCount(object) > 0
+			and seating:getFacingDirection(object) == wanted then
+			return object
+		end
+	end
+	return nil
+end
+
+-- Is the player sitting on that very chair? Asked the way vanilla asks it
+-- (ISWorldObjectContextMenu.lua:1018: isSittingOnFurniture and the object
+-- getSitOnFurnitureObject hands back).
+function CeroSecReach.isSeatedOn(playerObj, chair)
+	if not playerObj or not chair then return false end
+	if not playerObj:isSittingOnFurniture() then return false end
+	return playerObj:getSitOnFurnitureObject() == chair
+end
+
+-- The square the player counts as occupying for this computer. Normally his
+-- own; but a seated character is placed by the seat's own translation inside
+-- the tile (SeatingManager:getTilePositionTranslate), so a sit that pushes him
+-- over a tile boundary would otherwise read as having left the front square and
+-- would shut the terminal under him. Sitting on the chair that stands in front
+-- of the computer therefore counts as standing on the chair's square.
+function CeroSecReach.standingSquare(playerObj, computer)
+	if playerObj and playerObj:isSittingOnFurniture() then
+		local chair = CeroSecReach.chairInFront(computer)
+		if chair and playerObj:getSitOnFurnitureObject() == chair then
+			return chair:getSquare()
+		end
+	end
+	return playerObj and playerObj:getCurrentSquare()
+end
+
 -- Walk to the front square -- that one, not any free neighbour -- and then call
 -- onArrived. The callback runs right away because it only queues the follow-up
 -- action behind the walk; the action itself checks in its isValid that the

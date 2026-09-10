@@ -18,17 +18,28 @@ function ISCeroSecUseAction:isValid()
 	if not self.object or not self.object:getSquare() then return false end
 	if not CeroSec.isOnSprite(self.object:getSpriteName()) then return false end
 	local front = CeroSecReach.frontSquare(self.object)
-	return front ~= nil and self.character:getCurrentSquare() == front
+	return front ~= nil and CeroSecReach.standingSquare(self.character, self.object) == front
+end
+
+-- Seated on the chair that stands in front of this computer, the sit is already
+-- the turn: the rest action faces the character the chair's way
+-- (ISRestAction:setWhileSittingDirection, ISRestAction.lua:238-243) and a chair
+-- only counts as the one in front when that way is the screen. Turning him
+-- again would fight the pose vanilla has just set.
+function ISCeroSecUseAction:seated()
+	return CeroSecReach.isSeatedOn(self.character, CeroSecReach.chairInFront(self.object))
 end
 
 -- Turn to the screen first and hold the action back until the turn is done
 -- (ISAddTakeDispenserBottle.lua:9-11).
 function ISCeroSecUseAction:waitToStart()
+	if self:seated() then return false end
 	self.character:faceThisObject(self.object)
 	return self.character:shouldBeTurning()
 end
 
 function ISCeroSecUseAction:update()
+	if self:seated() then return end
 	self.character:faceThisObject(self.object)
 end
 

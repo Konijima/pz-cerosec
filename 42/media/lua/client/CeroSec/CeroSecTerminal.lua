@@ -443,7 +443,11 @@ function CeroSecTerminal:stillValid()
 	if not self.computer or not self.computer:getSquare() then return false end
 	if not CeroSec.isOnSprite(self.computer:getSpriteName()) then return false end
 	if not self.fx then return false end
-	local square = playerObj:getCurrentSquare()
+	-- Not getCurrentSquare: a player seated on the chair in front of the screen
+	-- counts as standing on the chair's square, so the sit does not shut the
+	-- window under him (CeroSecReach.standingSquare). Standing up does not close
+	-- it either, and never has: the rule is the square, not the posture.
+	local square = CeroSecReach.standingSquare(playerObj, self.computer)
 	if not square then return false end
 	if square:getX() ~= self.fx or square:getY() ~= self.fy or square:getZ() ~= self.fz then
 		return false

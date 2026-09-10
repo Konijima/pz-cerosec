@@ -139,6 +139,35 @@ local dx, dy = CeroSec.frontOffset("NE")
 eq("frontOffset(NE) dx is nil", dx, nil)
 eq("frontOffset(NE) dy is nil", dy, nil)
 
+-- facingForOffset is the inverse of frontOffset, and answers nil for anything
+-- that is not one of the four steps.
+for facing in pairs(wantedOffset) do
+	local ox, oy = CeroSec.frontOffset(facing)
+	eq("facingForOffset undoes frontOffset(" .. facing .. ")", CeroSec.facingForOffset(ox, oy), facing)
+end
+eq("facingForOffset of a standing step is nil", CeroSec.facingForOffset(0, 0), nil)
+eq("facingForOffset of a diagonal is nil", CeroSec.facingForOffset(1, 1), nil)
+eq("facingForOffset of a two square step is nil", CeroSec.facingForOffset(0, 2), nil)
+eq("facingForOffset of nothing is nil", CeroSec.facingForOffset(nil, nil), nil)
+
+-- A chair on the front square looks back at the screen, so its facing is the
+-- computer's turned around: the two steps cancel.
+local wantedChair = { S = "N", N = "S", E = "W", W = "E" }
+for facing, wanted in pairs(wantedChair) do
+	eq("chairFacingFor(" .. facing .. ")", CeroSec.chairFacingFor(facing), wanted)
+	-- Said again as geometry rather than as a table: the chair's own front
+	-- square is the computer's square.
+	local cx, cy = CeroSec.frontOffset(facing)
+	local kx, ky = CeroSec.frontOffset(CeroSec.chairFacingFor(facing))
+	eq("chair looks back on x", cx + kx, 0)
+	eq("chair looks back on y", cy + ky, 0)
+	-- And it is never the computer's own facing: a chair with its back to the
+	-- screen is a chair for another desk.
+	check("chair facing differs from the computer's", CeroSec.chairFacingFor(facing) ~= facing)
+end
+eq("chairFacingFor of a diagonal is nil", CeroSec.chairFacingFor("NE"), nil)
+eq("chairFacingFor of nothing is nil", CeroSec.chairFacingFor(nil), nil)
+
 -- State schema v1.
 local state = CeroSec.newState("E")
 eq("state version", state.v, 1)
