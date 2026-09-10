@@ -156,7 +156,12 @@ Same rules as above: fresh game, mod enabled, eyes on the screen. Rung 1b change
 - A desk whose tile lacks `IsTable`/`Surface` reads as height 0, so the character
   would crouch to a desk-height computer. If step 21 plays the low animation, that
   desk is the reason.
-- `isFacing` accepts the cardinal direction and its two diagonal neighbours, because
-  `faceThisObject` picks the direction from an angle and the character rarely stops
-  dead centre. If a toggle ever cancels itself the instant it starts, that tolerance
-  is too tight.
+- The turn is a step of its own, not a condition. On arrival the character stands
+  still on the front square, pivots to the screen, and only then starts the loot
+  animation; he stays turned for the whole animation. Watch that order in steps 21,
+  23 and 28 — a toggle that fires while he still faces the way he walked in, or a
+  character who drifts back to his walking direction mid-animation, means
+  `waitToStart`/`update` are not doing their job.
+- The pivot costs a fraction of a second before the action starts. If it ever reads
+  as a hitch, or if the character seems stuck turning forever without the animation
+  beginning, `shouldBeTurning` never returns false and the action never starts.

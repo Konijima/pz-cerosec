@@ -6,19 +6,34 @@ ISCeroSecToggleAction = ISBaseTimedAction:derive("ISCeroSecToggleAction")
 
 -- The engine re-runs isValid every tick, so this is also what stops the toggle
 -- when the walk in front of the computer failed or the player wandered off.
+-- It must only ask what can already be true before the action runs: valid() is
+-- evaluated *before* waitToStart and start (IsoGameCharacter.StartAction:
+-- `if (act.valid()) act.waitToStart()`, and the per-tick loop drops an invalid
+-- action without ever starting it). Which way the player looks is not one of
+-- those things -- he is still facing the way he walked in -- so the turn is a
+-- precondition to wait for, below, not a test to fail here.
 function ISCeroSecToggleAction:isValid()
 	if not self.object or not self.object:getSquare() then return false end
 	if not CeroSec.isComputerSprite(self.object:getSpriteName()) then return false end
 	local front = CeroSecReach.frontSquare(self.object)
-	if not front or self.character:getCurrentSquare() ~= front then return false end
-	return CeroSecReach.isFacing(self.character, self.object)
+	return front ~= nil and self.character:getCurrentSquare() == front
 end
 
+-- Turn to the screen first and hold the action back until the turn is done.
+-- Vanilla's own "face the object, then work on it" pattern
+-- (ISAddTakeDispenserBottle.lua:9-11).
+function ISCeroSecToggleAction:waitToStart()
+	self.character:faceThisObject(self.object)
+	return self.character:shouldBeTurning()
+end
+
+-- Keep him turned for the length of the animation, as the dispenser does
+-- (ISAddTakeDispenserBottle.lua:14-17).
 function ISCeroSecToggleAction:update()
+	self.character:faceThisObject(self.object)
 end
 
 function ISCeroSecToggleAction:start()
-	self.character:faceThisObject(self.object)
 	-- Same three calls the grab action makes (ISGrabItemAction.lua:50-52).
 	-- LootPosition picks the animation: "Low" is the crouched reach
 	-- (AnimSets/player/actions/LootLow.xml), and "Mid" -- the value vanilla uses

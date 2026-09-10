@@ -54,34 +54,6 @@ function CeroSecReach.canStandInFront(playerObj, computer)
 	return true
 end
 
--- The player stands in front of the screen, so he looks the other way round.
-local OPPOSITE = { N = "S", S = "N", E = "W", W = "E" }
-
--- IsoDirections is a Java enum: build the lookup on first use rather than at
--- file load, so nothing here depends on when the engine exposes it.
-local isoDirections
-local function isoDirection(name)
-	if not isoDirections then
-		isoDirections = { N = IsoDirections.N, S = IsoDirections.S, E = IsoDirections.E, W = IsoDirections.W }
-	end
-	return isoDirections[name]
-end
-
--- Is the player looking at the screen? faceThisObject turns him with
--- IsoDirections.fromAngle on the vector to the object (IsoGameCharacter.java
--- DirectionFromVector), which lands on a diagonal whenever he stopped a little
--- off the centre of his square, so the two neighbouring 45 degree steps count as
--- facing too (IsoDirections.RotLeft/RotRight).
-function CeroSecReach.isFacing(playerObj, computer)
-	if not playerObj or not computer then return false end
-	local facing = CeroSec.facingOf(computer:getSpriteName())
-	if not facing then return false end
-	local wanted = isoDirection(OPPOSITE[facing])
-	if not wanted then return false end
-	local dir = playerObj:getDir()
-	return dir == wanted or dir == wanted:RotLeft() or dir == wanted:RotRight()
-end
-
 -- Height of the surface the computer sits on, in the pixel units vanilla uses
 -- for stacking. Copied from ISMoveableSpriteProps:getTopTable and
 -- :getTotalTableHeight (ISMoveableSpriteProps.lua:1421-1443): the topmost object
