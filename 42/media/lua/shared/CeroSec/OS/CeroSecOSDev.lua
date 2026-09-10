@@ -14,8 +14,9 @@
 -- and a state, both handed over by whoever is running the machine, and a write
 -- is a call back out to that same caller.
 --
---   dev = { type = "dev", owner = "root", mode = 660, id = "light0",
---           kind = "light", desc = "office", side = "N", state = "on" }
+--   dev = { type = "dev", owner = "root", group = "sudo", mode = 660,
+--           id = "light0", kind = "light", desc = "office", side = "N",
+--           state = "on" }
 --
 -- Where they come from
 --
@@ -61,11 +62,17 @@ CeroSecOS = CeroSecOS or {}
 
 CeroSecOS.DEV_PATH = "/dev"
 
--- rw for root and for the sudo group; nothing for anybody else. The group
--- triplet is not evaluated yet (see CeroSecOS.can), so today this is root's
--- alone -- and it is written 660 rather than 600 so that the rung which gives
--- the groups meaning makes it true without a migration.
+-- rw for root and for the sudo group; nothing for anybody else. Written 660
+-- since the rung that mounted the first device, and true since the rung that
+-- gave the middle digit meaning: an account /etc/sudoers names is in the group
+-- sudo (CeroSecOS.inGroup), so it throws a light switch with a plain
+-- `echo off > /dev/light0` and no sudo typed. Everybody else gets nothing.
 CeroSecOS.DEV_MODE = 660
+
+-- Every device belongs to it. Not the caller's to choose: a device's owner is
+-- root by construction and its group is what makes 660 mean "the people who may
+-- become root", which is a fact about the machine and not about the world.
+CeroSecOS.DEV_GROUP = "sudo"
 
 -- What may be written to each kind, and nothing else. The vocabulary is the
 -- CORE's and not the world's: a value that is not one of these never reaches
@@ -124,6 +131,7 @@ local function nodeFor(entry)
 	local node = {
 		type = "dev",
 		owner = "root",
+		group = CeroSecOS.DEV_GROUP,
 		mode = mode,
 		id = id,
 		kind = entry.kind,
@@ -251,18 +259,22 @@ end
 -- at a time -- so those two columns are what it IS instead: what it is fixed
 -- to, which way it faces, and what it is doing.
 --
---   crw-rw----  root  lock1   kitchen-hallway  N  unlocked
+--   crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked
 --
--- 10 perm + 2 + 4 owner + 2 + 8 id + 15 desc + 2 + 1 side + 2 + state, which
--- leaves the widest state ("barricaded") ending at column 56 of 60. /dev holds
--- nothing but devices -- creating in it is refused -- so these columns never
--- have to line up with an ordinary file's.
+-- 10 perm + 2 + 4 owner + 2 + 4 group + 2 + 8 id + 13 desc + 2 + 1 side + 2 +
+-- state, which puts the widest state ("barricaded") exactly on column 60. The
+-- owner is always "root" and the group always "sudo", so four is the whole of
+-- either; what paid for the group column is the description, cut from 15 to 13.
+-- /dev holds nothing but devices -- creating in it is refused -- so these
+-- columns never have to line up with an ordinary file's.
 --
-local V_OWNER, V_ID, V_DESC, V_SIDE = 4, 8, 15, 1
+local V_OWNER, V_GROUP, V_ID, V_DESC, V_SIDE = 4, 4, 8, 13, 1
 
 function CeroSecOS.devLine(node)
 	return CeroSecOS.permString(node)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", V_OWNER), V_OWNER)
+		.. "  " .. CeroSecOS.padRight(
+			CeroSecOS.truncate(CeroSecOS.groupOf(node), V_GROUP), V_GROUP)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", V_ID), V_ID)
 		.. CeroSecOS.padRight(CeroSecOS.truncate(node.desc or "", V_DESC), V_DESC)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.side or "", V_SIDE), V_SIDE)

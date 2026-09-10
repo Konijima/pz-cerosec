@@ -6,8 +6,15 @@
 -- enforced there and only there, so a new command cannot invent a hole.
 --
 -- Nodes are plain tables:
---   dir  = { type = "dir",  owner = "root",  mode = 750, children = { [name] = node } }
---   file = { type = "file", owner = "admin", mode = 640, data = "text" }
+--   dir  = { type = "dir",  owner = "root",  group = "root",  mode = 750,
+--            children = { [name] = node } }
+--   file = { type = "file", owner = "admin", group = "users", mode = 640,
+--            data = "text" }
+--
+-- The group is what the middle digit of the mode is about, and a node that has
+-- none reads as its owner's own name -- every node of every machine saved before
+-- this build has none, validate accepts them, and nothing anywhere reads
+-- node.group off the field (see CeroSecOS.groupOf).
 --
 -- and each of them may carry an mtime: the clock exec was handed at the moment
 -- the node was last touched (see the clock section of CeroSecOS.lua). Absent is
@@ -31,21 +38,31 @@ local BITS = { r = 4, w = 2, x = 1 }
 -- Node constructors.
 --
 
+-- A fresh node belongs to the group of its owner's own name -- his primary
+-- group, the one every account has without a line in /etc/group. That is what
+-- a real umask-less machine does, and it means a file starts shared with
+-- nobody until somebody says otherwise with chgrp.
 function CeroSecOS.newDir(owner, mode, mtime)
-	local node = { type = "dir", owner = owner or "root", mode = mode or 755, children = {} }
+	local who = owner or "root"
+	local node = { type = "dir", owner = who, group = who, mode = mode or 755, children = {} }
 	if mtime ~= nil then node.mtime = mtime end
 	return node
 end
 
 function CeroSecOS.newFile(owner, mode, data, mtime)
-	local node = { type = "file", owner = owner or "root", mode = mode or 644, data = data or "" }
+	local who = owner or "root"
+	local node =
+		{ type = "file", owner = who, group = who, mode = mode or 644, data = data or "" }
 	if mtime ~= nil then node.mtime = mtime end
 	return node
 end
 
 --
--- Permissions. Octal owner/group/other; only owner and other are enforced, the
--- group digit is kept for a later rung. root bypasses everything.
+-- Permissions. Octal owner/group/other, and all three digits are read: the
+-- owner's if the account owns it, else the group's if the account is in the
+-- node's group, else everybody else's. Membership is CeroSecOS.inGroup's
+-- question -- a primary group, a line in /etc/group, or /etc/sudoers for the
+-- group "sudo" -- and root bypasses everything before any of it is asked.
 --
 
 function CeroSecOS.userOf(session)
@@ -61,6 +78,8 @@ function CeroSecOS.can(state, session, node, what)
 	local digit
 	if node.owner == user then
 		digit = math.floor(mode / 100) % 10
+	elseif CeroSecOS.inGroup(state, user, CeroSecOS.groupOf(node)) then
+		digit = math.floor(mode / 10) % 10
 	else
 		digit = mode % 10
 	end

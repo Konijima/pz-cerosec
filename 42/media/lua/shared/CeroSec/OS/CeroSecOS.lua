@@ -25,7 +25,9 @@ CeroSecOS.STATE_VERSION = 1
 -- 2: /bin/sudo, /bin/shutdown, /bin/reboot, /bin/restart and /etc/sudoers.
 -- 3: /bin/date, /bin/df, /bin/grep, /bin/head, /bin/tail, /bin/wc, /bin/man.
 -- 4: /bin/adduser, /bin/deluser, /bin/id, /bin/su.
-CeroSecOS.SYSTEM_VERSION = 4
+-- 5: /bin/chgrp, /bin/gpasswd, /bin/groupadd, /bin/groupdel, /bin/groups and
+--    /etc/group.
+CeroSecOS.SYSTEM_VERSION = 5
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -76,6 +78,7 @@ CeroSecOS.ETC_PATH = "/etc"
 CeroSecOS.HOME_PATH = "/home"
 CeroSecOS.HOME_MODE = 750
 CeroSecOS.PASSWD_PATH = "/etc/passwd"
+CeroSecOS.GROUP_PATH = "/etc/group"
 CeroSecOS.SUDOERS_PATH = "/etc/sudoers"
 CeroSecOS.MOTD_PATH = "/etc/motd"
 CeroSecOS.HOSTNAME_PATH = "/etc/hostname"
@@ -90,6 +93,17 @@ CeroSecOS.PASSWD_MODE = 600
 -- rewrite the list of people who may run as root. Root may still edit it -- root
 -- walks through the bits everywhere -- but he has to mean it.
 CeroSecOS.SUDOERS_MODE = 440
+
+-- /etc/group holds no secret -- it is who shares files with whom -- so it is
+-- readable by everybody and writable by root: 644, the mode a real one wears.
+-- `groups` and `id` read it for any account, so a mode that hid it would only
+-- make two commands lie.
+CeroSecOS.GROUP_MODE = 644
+
+-- The three groups a machine ships with, and the only ones groupdel refuses to
+-- take away: root's own, the one the devices belong to, and the one an account
+-- joins to share files.
+CeroSecOS.GROUP_KEEP = { root = true, sudo = true, users = true }
 
 -- A machine name is 1..16 characters of [a-z0-9-] and never starts with "-".
 -- The leading digit rule is isValidName's: the name is also written into the

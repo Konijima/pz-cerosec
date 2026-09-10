@@ -9,10 +9,11 @@
 CeroSecOS = CeroSecOS or {}
 
 -- A fresh machine: the standard skeleton, the commands in /bin, root and admin
--- in /etc/passwd, both open, and admin in /etc/sudoers. Nothing about the
--- machine lives outside its own filesystem -- there is no table of users beside
--- /etc/passwd, no list of commands beside /bin and no list of sudoers beside
--- /etc/sudoers.
+-- in /etc/passwd, both open, admin in /etc/sudoers, and the three shipped
+-- groups in /etc/group. Nothing about the machine lives outside its own
+-- filesystem -- there is no table of users beside /etc/passwd, no list of
+-- commands beside /bin, no list of sudoers beside /etc/sudoers and no table of
+-- groups beside /etc/group.
 function CeroSecOS.newState(hostname)
 	if not CeroSecOS.isValidHostname(hostname) then
 		hostname = CeroSecOS.DEFAULT_HOSTNAME
@@ -30,6 +31,8 @@ function CeroSecOS.newState(hostname)
 	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
 	root.children.etc.children.passwd =
 		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
+	root.children.etc.children.group =
+		CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.defaultGroup())
 	root.children.etc.children.sudoers =
 		CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
 
@@ -68,6 +71,13 @@ end
 local function checkNode(node, where, depth, tally)
 	if type(node) ~= "table" then return false, where .. ": not a node" end
 	if type(node.owner) ~= "string" then return false, where .. ": bad owner" end
+	-- A group is optional, exactly as a timestamp is: every node of every
+	-- machine saved before this build has none, and none reads as the owner's
+	-- own name. One that is there has to be a string -- a number in that field
+	-- would be a mode digit chosen by something nobody can name.
+	if node.group ~= nil and type(node.group) ~= "string" then
+		return false, where .. ": bad group"
+	end
 	if type(node.mode) ~= "number" then return false, where .. ": bad mode" end
 	if node.mode < 0 or node.mode > 777 or node.mode ~= math.floor(node.mode) then
 		return false, where .. ": bad mode"

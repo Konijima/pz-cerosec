@@ -149,12 +149,19 @@ local function listedNames(node)
 	return out
 end
 
--- ls -l columns: 10 perm + 2 + 8 owner + 2 + 5 size + 2 + 12 date + 2 + 17 name
--- = exactly 60. The name is LAST, the way every ls prints it, so it is the one
--- that gets cut when it is too long and the only one that ever has to be; and
--- it is not padded, because a trailing run of spaces is not something a screen
--- should be asked to hold.
-local L_OWNER, L_SIZE, L_NAME = 8, 5, 17
+-- ls -l columns: 10 perm + 2 + 6 owner + 1 + 6 group + 2 + 5 size + 2 + 12 date
+-- + 2 + 12 name = exactly 60.
+--
+--   -rw-r-----  admin  users     412  Jul  8 14:32  notes.txt
+--
+-- The owner and the group sit side by side with a single space between their
+-- fields, the way every ls prints the pair, and six characters is what a
+-- sixty-column screen leaves for either once the middle digit has a column of
+-- its own to explain it. The name is LAST, the way every ls prints it, so it is
+-- the one that gets cut when it is too long and the only one that ever has to
+-- be; and it is not padded, because a trailing run of spaces is not something a
+-- screen should be asked to hold.
+local L_OWNER, L_GROUP, L_SIZE, L_NAME = 6, 6, 5, 12
 
 local function longLine(node, name)
 	local size
@@ -165,6 +172,8 @@ local function longLine(node, name)
 	end
 	return CeroSecOS.permString(node)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", L_OWNER), L_OWNER)
+		.. " " .. CeroSecOS.padRight(
+			CeroSecOS.truncate(CeroSecOS.groupOf(node), L_GROUP), L_GROUP)
 		.. "  " .. CeroSecOS.padLeft(tostring(size), L_SIZE)
 		.. "  " .. CeroSecOS.formatStamp(CeroSecOS.mtimeOf(node))
 		.. "  " .. CeroSecOS.truncate(name, L_NAME)
@@ -230,6 +239,7 @@ CeroSecOS.COMMAND_INFO = {
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	cat      = { desc = "print a file", usage = "cat <file>..." },
 	cd       = { desc = "change the working directory", usage = "cd [dir]" },
+	chgrp    = { desc = "change a file's group", usage = "chgrp <group> <path>" },
 	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>" },
 	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
 	clear    = { desc = "clear the screen", usage = "clear" },
@@ -240,7 +250,11 @@ CeroSecOS.COMMAND_INFO = {
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
 	exit     = { desc = "log out", usage = "exit" },
+	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files", usage = "grep [-i] [-n] <text> <file>..." },
+	groupadd = { desc = "make a group", usage = "groupadd <name>" },
+	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
+	groups   = { desc = "print an account's groups", usage = "groups [name]" },
 	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
 	head     = { desc = "print the first lines of a file", usage = "head [-n N] <file>" },
 	help     = { desc = "list the commands in /bin", usage = "help" },
@@ -683,6 +697,33 @@ commands.chown = function(state, session, args, env)
 	if CeroSecOS.isDev(node) then return fail("chown", args[3], "is a device") end
 	if not isOwnerOrRoot(session, node) then return fail("chown", args[3], "permission denied") end
 	node.owner = user.name
+	local now = CeroSecOS.clockOf(env)
+	if now ~= nil then node.mtime = now end
+	return true, {}
+end
+
+-- chgrp. The owner's to give away and root's to take, exactly as chown is: a
+-- file is shared by the account that owns it, and asking root every time would
+-- make sharing a thing only root does.
+--
+-- The group has to EXIST -- a line in /etc/group, or an account, whose primary
+-- group needs no line -- so that a typo is caught at the moment it is typed
+-- rather than three days later when nobody can read the file. A group that is
+-- deleted afterwards is a different thing: the name stays on the file, dangling,
+-- and it is `ls -l` that says so.
+commands.chgrp = function(state, session, args, env)
+	if #args ~= 3 then return usage("chgrp") end
+	if not CeroSecOS.groupExists(state, args[2]) then
+		return fail("chgrp", args[2], "no such group")
+	end
+	local node, reason = CeroSecOS.getNode(state, session, args[3])
+	if node == nil then return fail("chgrp", args[3], reason) end
+	-- A device's group is what makes its 660 mean "whoever may sudo", and only
+	-- the MODE of one is remembered across a command (see CeroSecOS.mountDev),
+	-- so a group given away here would be back to sudo by the next line.
+	if CeroSecOS.isDev(node) then return fail("chgrp", args[3], "is a device") end
+	if not isOwnerOrRoot(session, node) then return fail("chgrp", args[3], "permission denied") end
+	node.group = args[2]
 	local now = CeroSecOS.clockOf(env)
 	if now ~= nil then node.mtime = now end
 	return true, {}
@@ -1396,9 +1437,11 @@ commands.deluser = function(state, session, args, env)
 end
 
 -- id. What the machine knows about an account in one line: the name, the flag
--- its /etc/passwd line carries, and whether /etc/sudoers names it. Anybody may
--- ask, about anybody: who may become root is not a secret on a machine where
--- the answer is a file the kernel reads out loud at every sudo.
+-- its /etc/passwd line carries, and every group it is in -- its own primary
+-- group first, then the /etc/group lines that name it, then "sudo" when
+-- /etc/sudoers is what puts it there. Anybody may ask, about anybody: who may
+-- become root is not a secret on a machine where the answer is a file the
+-- kernel reads out loud at every sudo.
 commands.id = function(state, session, args, env)
 	if #args > 2 then return usage("id") end
 	local name = args[2]
@@ -1407,9 +1450,83 @@ commands.id = function(state, session, args, env)
 	if user == nil then return fail("id", name, "no such user") end
 	local flag = "user"
 	if user.admin then flag = "admin" end
-	local groups = "-"
-	if CeroSecOS.sudoer(state, user.name) ~= nil then groups = "sudo" end
-	return true, { "uid=" .. user.name .. " flag=" .. flag .. " groups=" .. groups }
+	local groups = CeroSecOS.groupsOf(state, user.name)
+	return true, { "uid=" .. user.name .. " flag=" .. flag
+		.. " groups=" .. table.concat(groups, ",") }
+end
+
+-- groups. The same list id prints, on its own and separated by blanks, which is
+-- how `groups` has printed it since it was one line of shell. Anybody may ask,
+-- about anybody, for the reason id may be asked: /etc/group is world-readable
+-- and the answer is already on the disk for whoever wants to cat it.
+commands.groups = function(state, session, args, env)
+	if #args > 2 then return usage("groups") end
+	local name = args[2]
+	if name == nil or name == "" then name = CeroSecOS.userOf(session) end
+	if CeroSecOS.getUser(state, name) == nil then return fail("groups", name, "no such user") end
+	return true, { table.concat(CeroSecOS.groupsOf(state, name), " ") }
+end
+
+--
+-- Groups
+--
+-- Making, unmaking and filling one is root's, and root's alone: /etc/group says
+-- who may read whose files, so it is root's file the way /etc/passwd is. An
+-- admin does it the way he does everything else that is root's -- `sudo
+-- groupadd crew` -- and there is no second rule for who may.
+--
+-- What /etc/group is NOT is the authority on sudo. /etc/sudoers is, and stays:
+-- the group "sudo" here MIRRORS it -- id and groups show it for a name the
+-- sudoers file carries, whether a line in this file names him or not -- and
+-- putting somebody in the sudo group by hand shares the group's files with him
+-- without giving him root. Only /etc/sudoers does that.
+--
+
+commands.groupadd = function(state, session, args, env)
+	if #args ~= 2 then return usage("groupadd") end
+	if CeroSecOS.userOf(session) ~= "root" then return fail("groupadd", nil, "permission denied") end
+	local name = args[2]
+	if not CeroSecOS.isValidGroupName(name) then return fail("groupadd", name, "invalid name") end
+	if CeroSecOS.groupExists(state, name) then return fail("groupadd", name, "already exists") end
+	local done, reason = CeroSecOS.addGroup(state, name, CeroSecOS.clockOf(env))
+	if done == nil then return fail("groupadd", name, reason) end
+	return true, {}
+end
+
+-- The three shipped groups cannot be taken away: root's own, the one the
+-- devices belong to, and the one an account joins to share a file. Files still
+-- carrying any other name are left carrying it -- a dangling group is what
+-- `ls -l` will show, and it is the truth rather than a tidy lie about who those
+-- files were shared with.
+commands.groupdel = function(state, session, args, env)
+	if #args ~= 2 then return usage("groupdel") end
+	if CeroSecOS.userOf(session) ~= "root" then return fail("groupdel", nil, "permission denied") end
+	local name = args[2]
+	if CeroSecOS.GROUP_KEEP[name] then return fail("groupdel", name, "cannot remove") end
+	local groups = CeroSecOS.readGroups(state)
+	-- A primary group has no line to take out, so this is about the file and
+	-- only about the file: `groupdel bob` on an account is "no such group".
+	if groups[name] == nil then return fail("groupdel", name, "no such group") end
+	local done, reason = CeroSecOS.removeGroup(state, name, CeroSecOS.clockOf(env))
+	if done == nil then return fail("groupdel", name, reason) end
+	return true, {}
+end
+
+-- gpasswd -a bob crew / gpasswd -d bob crew. A primary group is not a
+-- membership anybody granted, so it is not one anybody may grant or take away:
+-- `gpasswd -a bob bob` is refused as "no such group", because there is no line
+-- for it and never will be.
+commands.gpasswd = function(state, session, args, env)
+	if #args ~= 4 then return usage("gpasswd") end
+	local flag = args[2]
+	if flag ~= "-a" and flag ~= "-d" then return usage("gpasswd") end
+	if CeroSecOS.userOf(session) ~= "root" then return fail("gpasswd", nil, "permission denied") end
+	local name, group = args[3], args[4]
+	if CeroSecOS.getUser(state, name) == nil then return fail("gpasswd", name, "no such user") end
+	local done, reason =
+		CeroSecOS.setGroupMember(state, name, group, flag == "-a", CeroSecOS.clockOf(env))
+	if done == nil then return fail("gpasswd", group, reason) end
+	return true, {}
 end
 
 --

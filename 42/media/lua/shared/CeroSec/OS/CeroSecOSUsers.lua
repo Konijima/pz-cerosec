@@ -649,3 +649,255 @@ function CeroSecOS.defaultSudoers()
 	return "# who may run a command as root, and whether he is asked for his password\n"
 		.. "admin"
 end
+
+--
+-- /etc/group
+--
+-- Who shares files with whom. One group a line, the name and its members:
+--
+--     root:
+--     sudo:admin
+--     users:admin,bob
+--
+-- The file IS the groups, exactly as /etc/passwd is the accounts: nothing
+-- caches across a change to it, and root editing it with the editor changes who
+-- may read whose files. Owner root, mode 644 -- there is no secret in it, and
+-- `groups` answers about anybody.
+--
+-- Parsing is strict and silent, like the other two parsers. A blank line and a
+-- line whose first non-blank character is "#" are comments. Anything else is
+-- exactly one colon, a valid name in front of it, and behind it a possibly
+-- empty list of valid names separated by commas -- a line that is not that is
+-- skipped, so a typo takes one group off the list and never puts a wrong one
+-- on it. A name that appears twice keeps its FIRST line, the way a lookup down
+-- a file does.
+--
+-- Every account is a member of a group of its OWN NAME whether the file says so
+-- or not: that is its primary group, the one a file it makes belongs to, and it
+-- needs no line. adduser writes none.
+--
+
+-- One line -> { name, members, set }, or nil. `set` is the members again, by
+-- name, because membership is asked far more often than it is listed.
+function CeroSecOS.parseGroupLine(line)
+	if type(line) ~= "string" then return nil end
+	local body = trim(line)
+	if body == "" then return nil end
+	if string.sub(body, 1, 1) == "#" then return nil end
+
+	local name, rest = string.match(body, "^([^:]*):([^:]*)$")
+	if name == nil then return nil end
+	if not CeroSecOS.isValidName(name) then return nil end
+
+	local members, set = {}, {}
+	if rest ~= "" then
+		-- Split by hand rather than by gmatch: an empty field between two
+		-- commas has to be seen, and a pattern that matches runs of non-commas
+		-- would silently skip it.
+		local start = 1
+		while true do
+			local p = string.find(rest, ",", start, true)
+			local piece
+			if p == nil then
+				piece = string.sub(rest, start)
+			else
+				piece = string.sub(rest, start, p - 1)
+			end
+			if not CeroSecOS.isValidName(piece) then return nil end
+			if set[piece] == nil then
+				set[piece] = true
+				members[#members + 1] = piece
+			end
+			if p == nil then break end
+			start = p + 1
+		end
+	end
+	return { name = name, members = members, set = set }
+end
+
+-- The record as it is written. The single place a line is built, so what
+-- parseGroupLine reads and what a rewrite produces cannot drift apart.
+function CeroSecOS.groupLine(group)
+	return group.name .. ":" .. table.concat(group.members or {}, ",")
+end
+
+-- text -> groups by name, names in the order the file has them.
+function CeroSecOS.parseGroup(text)
+	local groups, order = {}, {}
+	local lines = CeroSecOS.splitLines(text)
+	for i = 1, #lines do
+		local group = CeroSecOS.parseGroupLine(lines[i])
+		if group ~= nil and groups[group.name] == nil then
+			groups[group.name] = group
+			order[#order + 1] = group.name
+		end
+	end
+	return groups, order
+end
+
+-- The same one-slot, content-keyed cache the other two parsers have: the file
+-- is the truth, and what makes the answer stale is the file changing.
+CeroSecOS.groupCache = { node = nil, text = nil, groups = {}, order = {} }
+
+function CeroSecOS.readGroups(state)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if node == nil or node.type ~= "file" then return {}, {} end
+	local cache = CeroSecOS.groupCache
+	if cache.node ~= node or cache.text ~= node.data then
+		local groups, order = CeroSecOS.parseGroup(node.data or "")
+		cache.node = node
+		cache.text = node.data
+		cache.groups = groups
+		cache.order = order
+	end
+	return cache.groups, cache.order
+end
+
+-- Is there such a group? A line in the file is one, and so is an account: every
+-- account carries a primary group of its own name that no line has to declare,
+-- and chgrp takes it.
+function CeroSecOS.groupExists(state, name)
+	if type(name) ~= "string" then return false end
+	local groups = CeroSecOS.readGroups(state)
+	if groups[name] ~= nil then return true end
+	return CeroSecOS.getUser(state, name) ~= nil
+end
+
+-- Is this account in this group? Three ways, and root is not one of them: root
+-- walks through the bits in CeroSecOS.can before this is ever asked.
+--
+--   the primary group -- bob is in group bob, always;
+--   a line in /etc/group that names him;
+--   /etc/sudoers, for the group "sudo" alone. That file is the authority on
+--   who may become root, and the sudo GROUP mirrors it rather than competing
+--   with it -- which is what makes crw-rw----  root  sudo on a light switch
+--   mean "whoever may sudo may throw it", with no sudo typed.
+function CeroSecOS.inGroup(state, user, group)
+	if type(user) ~= "string" or type(group) ~= "string" then return false end
+	if user == group then return true end
+	local groups = CeroSecOS.readGroups(state)
+	local entry = groups[group]
+	if entry ~= nil and entry.set[user] then return true end
+	if group == "sudo" and CeroSecOS.sudoer(state, user) ~= nil then return true end
+	return false
+end
+
+-- Every group an account is in, in the order `groups` and `id` print them: the
+-- primary first, then the file's own order, then sudo when /etc/sudoers is what
+-- puts him there.
+function CeroSecOS.groupsOf(state, name)
+	local out, seen = {}, {}
+	if type(name) ~= "string" then return out end
+	out[1] = name
+	seen[name] = true
+	local groups, order = CeroSecOS.readGroups(state)
+	for i = 1, #order do
+		local entry = groups[order[i]]
+		if entry.set[name] and not seen[entry.name] then
+			seen[entry.name] = true
+			out[#out + 1] = entry.name
+		end
+	end
+	if not seen.sudo and CeroSecOS.sudoer(state, name) ~= nil then
+		out[#out + 1] = "sudo"
+	end
+	return out
+end
+
+-- The group a node belongs to. Absent is the owner's own name: every node of
+-- every machine saved before this build has none, and validate accepts them, so
+-- nothing anywhere may read node.group raw.
+function CeroSecOS.groupOf(node)
+	if type(node) ~= "table" then return "" end
+	if type(node.group) == "string" then return node.group end
+	if type(node.owner) == "string" then return node.owner end
+	return ""
+end
+
+-- The rule for a group name the machine will MAKE, and it is the rule for an
+-- account name: the two share a namespace -- every account has a group of its
+-- own name -- so a group nobody could ever have as a primary would be a trap.
+function CeroSecOS.isValidGroupName(name)
+	return CeroSecOS.isValidUserName(name)
+end
+
+-- The file, replaced whole, through the ordinary filesystem gate.
+local function writeGroupText(state, text, now)
+	local done, reason =
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, text, now)
+	if done == nil then return nil, reason end
+	return true, nil
+end
+
+-- A new group, appended with no members. The lines already in the file are left
+-- exactly as they lie, comments and unparseable lines included.
+function CeroSecOS.addGroup(state, name, now)
+	if CeroSecOS.groupExists(state, name) then return nil, "already exists" end
+	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if node == nil or node.type ~= "file" then return nil, "no such file" end
+	local text = node.data or ""
+	if text ~= "" then text = text .. "\n" end
+	return writeGroupText(state, text .. CeroSecOS.groupLine({ name = name, members = {} }), now)
+end
+
+-- Every line that names this group, taken out; every other line kept exactly as
+-- it lies. Files still carrying the name are LEFT carrying it: a dangling group
+-- is the truth about them, and `ls -l` says so.
+function CeroSecOS.removeGroup(state, name, now)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if node == nil or node.type ~= "file" then return nil, "no such file" end
+	local lines = CeroSecOS.splitLines(node.data or "")
+	local out = {}
+	for i = 1, #lines do
+		local group = CeroSecOS.parseGroupLine(lines[i])
+		if group == nil or group.name ~= name then out[#out + 1] = lines[i] end
+	end
+	return writeGroupText(state, table.concat(out, "\n"), now)
+end
+
+-- Add or drop one member of one group. The line is rewritten where it lies and
+-- every other line is kept as it is; a change that would leave the line exactly
+-- as it was is not a write at all, so the file keeps its timestamp.
+-- true, reason -- and "not a member" / "already a member" are refusals, not
+-- silences: gpasswd is typed by hand and a no-op that says nothing reads as a
+-- change that happened.
+function CeroSecOS.setGroupMember(state, name, group, member, now)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if node == nil or node.type ~= "file" then return nil, "no such file" end
+	local lines = CeroSecOS.splitLines(node.data or "")
+	local out, found = {}, false
+	for i = 1, #lines do
+		local entry = CeroSecOS.parseGroupLine(lines[i])
+		-- Only the FIRST line with this name, which is the only one a lookup
+		-- down the file ever sees.
+		if entry ~= nil and entry.name == group and not found then
+			found = true
+			local members = {}
+			for j = 1, #entry.members do
+				if entry.members[j] ~= name then members[#members + 1] = entry.members[j] end
+			end
+			if member then
+				if entry.set[name] then return nil, "already a member" end
+				members[#members + 1] = name
+			elseif not entry.set[name] then
+				return nil, "not a member"
+			end
+			out[#out + 1] = CeroSecOS.groupLine({ name = group, members = members })
+		else
+			out[#out + 1] = lines[i]
+		end
+	end
+	if not found then return nil, "no such group" end
+	return writeGroupText(state, table.concat(out, "\n"), now)
+end
+
+-- What a machine ships with. root's own group, empty; the group the devices
+-- belong to, mirroring the shipped /etc/sudoers; and the one an account joins
+-- to share a file with the next survivor who sits down.
+function CeroSecOS.defaultGroup()
+	return "# name:member,member,... -- one group a line\n"
+		.. "# every account is also in a group of its own name\n"
+		.. "root:\n"
+		.. "sudo:admin\n"
+		.. "users:admin"
+end

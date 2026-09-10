@@ -137,18 +137,21 @@ do
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 
 	-- The skeleton is nine nodes plus one executable per command plus
-	-- /etc/passwd and /etc/sudoers, and every byte of it is accounted for: the
-	-- machine's name, the motd, the accounts file, the sudoers file, and the
-	-- one-line description in each executable.
+	-- /etc/passwd, /etc/sudoers and /etc/group, and every byte of it is
+	-- accounted for: the machine's name, the motd, the accounts file, the
+	-- sudoers file, the groups file, and the one-line description in each
+	-- executable.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
 	local passwd = state.fs.children.etc.children.passwd
 	local sudoers = state.fs.children.etc.children.sudoers
+	local group = state.fs.children.etc.children.group
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + #binNames + 2)
+	eq("skeleton node count", nodes, 9 + #binNames + 3)
 	eq("skeleton byte count", bytes,
-		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data + binBytes)
+		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
+			+ #group.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	eq("empty hostname falls back", CeroSecOS.newState("").hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -162,6 +165,8 @@ do
 	eq("/etc/passwd mode", passwd.mode, 600)
 	eq("/etc/sudoers owner", sudoers.owner, "root")
 	eq("/etc/sudoers mode", sudoers.mode, 440)
+	eq("/etc/group owner", group.owner, "root")
+	eq("/etc/group mode", group.mode, 644)
 	eq("admin ships in the sudoers file", CeroSecOS.sudoer(state, "admin").name, "admin")
 	eq("and is asked for his password", CeroSecOS.sudoer(state, "admin").nopasswd, false)
 	eq("nobody else ships in it", CeroSecOS.sudoer(state, "root"), nil)
@@ -679,7 +684,7 @@ do
 	local nodes = CeroSecOS.usage(state)
 	-- The skeleton, plus one executable per command, plus /etc/passwd and
 	-- /etc/sudoers.
-	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 2)
+	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 3)
 	local made = 0
 	local dir = 0
 	while true do
@@ -714,33 +719,49 @@ do
 	local admin = open(state, "admin")
 	local rootSession = open(state, "root")
 
-	-- 10 perm + 2 + 8 owner + 2 + 5 size + 2 + 12 date + 2 + name = 60 at most.
-	-- Nothing on a fresh machine was ever stamped, so every date is the epoch:
-	-- an unstamped node is mtime 0 and 0 is a real moment, not a blank.
+	-- 10 perm + 2 + 6 owner + 1 + 6 group + 2 + 5 size + 2 + 12 date + 2 + name
+	-- = 60 at most. Nothing on a fresh machine was ever stamped, so every date
+	-- is the epoch: an unstamped node is mtime 0 and 0 is a real moment, not a
+	-- blank. Nothing on a fresh machine has been chgrp'd either, so every group
+	-- is still the owner's own name.
 	local EPOCH = "Jan  1 00:00"
 	local lines = ok(state, admin, "ls -l /", nil)
 	eq("ls -l lists 5 entries", #lines, 5)
 	eq("ls -l bin",
 		lines[1],
-		"drwxr-xr-x" .. "  " .. "root    " .. "  "
+		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.binNames()), 5) .. "  " .. EPOCH .. "  bin")
 	eq("ls -l root dir",
 		lines[5],
-		"drwx------" .. "  " .. "root    " .. "  " .. "    0" .. "  " .. EPOCH .. "  root")
+		"drwx------" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "    0"
+			.. "  " .. EPOCH .. "  root")
 	for i = 1, #lines do
 		check("ls -l line " .. i .. " fits 60 columns", #lines[i] <= 60)
 	end
 
 	local etc = ok(state, admin, "ls -l /etc", nil)
+	eq("ls -l group",
+		etc[1],
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup()), 5)
+			.. "  " .. EPOCH .. "  group")
 	eq("ls -l motd",
-		etc[2],
-		"-rw-r--r--" .. "  " .. "root    " .. "  " .. "   52" .. "  " .. EPOCH .. "  motd")
+		etc[3],
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   52"
+			.. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
-		etc[4],
-		"-r--r-----" .. "  " .. "root    " .. "  "
+		etc[5],
+		"-r--r-----" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
 			.. "  " .. EPOCH .. "  sudoers")
-	eq("ls -l /etc has 4 lines", #etc, 4)
+	eq("ls -l /etc has 5 lines", #etc, 5)
+
+	-- The group column is the node's group and not its owner once they differ.
+	ok(state, rootSession, "chgrp users /etc/motd", {})
+	local grouped = ok(state, admin, "ls -l /etc/motd", nil)
+	eq("the group column moved", string.sub(grouped[1], 20, 25), "users ")
+	eq("and the owner column did not", string.sub(grouped[1], 13, 18), "root  ")
+	ok(state, rootSession, "chgrp root /etc/motd", {})
 
 	-- Every permission digit renders.
 	ok(state, admin, "touch /home/admin/perm", {})
@@ -752,8 +773,8 @@ do
 	eq("421 renders", string.sub(ok(state, admin, "ls -l /home/admin/perm", nil)[1], 1, 10), "-r---w---x")
 	ok(state, admin, "chmod 644 /home/admin/perm", {})
 
-	-- The name is the LAST column and the only one that is ever cut: 17
-	-- characters, then a "~".
+	-- The name is the LAST column and the only one that is ever cut: 12
+	-- characters, then a "~" in the twelfth.
 	local longName = string.rep("n", 32)
 	ok(state, admin, "touch /home/admin/" .. longName, {})
 	local home = ok(state, admin, "ls -l /home/admin", nil)
@@ -763,13 +784,17 @@ do
 	end
 	check("the long name is listed", cut ~= nil)
 	eq("the long-name line is exactly 60 columns", #cut, 60)
-	eq("the long name is cut with a tilde", string.sub(cut, 44), string.rep("n", 16) .. "~")
+	eq("the long name is cut with a tilde", string.sub(cut, 49), string.rep("n", 11) .. "~")
 
-	-- A long owner is cut the same way, in its own column.
+	-- A long owner is cut the same way, in its own column, and so is a long
+	-- group in its own.
 	addUser(state, "administrator", "", "/home/admin", false)
 	ok(state, rootSession, "chown administrator /home/admin/perm", {})
 	local owned = ok(state, rootSession, "ls -l /home/admin/perm", nil)
-	eq("the long owner is cut with a tilde", string.sub(owned[1], 13, 20), "adminis~")
+	eq("the long owner is cut with a tilde", string.sub(owned[1], 13, 18), "admin~")
+	ok(state, rootSession, "chgrp administrator /home/admin/perm", {})
+	local grp = ok(state, rootSession, "ls -l /home/admin/perm", nil)
+	eq("the long group is cut with a tilde", string.sub(grp[1], 20, 25), "admin~")
 
 	-- Plain ls of a single file prints its name.
 	ok(state, admin, "ls /etc/motd", { "motd" })
@@ -2844,13 +2869,13 @@ do
 	okAt(state, admin, "mkdir sub", {}, ENV2)
 
 	okAt(state, admin, "ls -l", {
-		"-rw-r--r--  admin         5  Jul  8 14:32  notes.txt",
-		"drwxr-xr-x  admin         0  Jul  8 15:32  sub",
+		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub",
 	})
 	-- The flags are letters, so every spelling is the same line.
 	local want = {
-		"-rw-r--r--  admin         5  Jul  8 14:32  notes.txt",
-		"drwxr-xr-x  admin         0  Jul  8 15:32  sub/",
+		"-rw-r--r--  admin  admin       5  Jul  8 14:32  notes.txt",
+		"drwxr-xr-x  admin  admin       0  Jul  8 15:32  sub/",
 	}
 	okAt(state, admin, "ls -lF", want)
 	okAt(state, admin, "ls -Fl", want)
@@ -3276,7 +3301,7 @@ do
 	check("the home is still there", home ~= nil)
 	eq("still owned by the name that is gone", home.owner, "bob")
 	eq("and `ls -l` says so", okAt(state, rootSession, "ls -l /home", nil)[2],
-		"drwxr-x---  bob           0  Jul  8 14:32  bob")
+		"drwxr-x---  bob    bob         0  Jul  8 14:32  bob")
 
 	-- With -r it goes, and everything under it.
 	okAt(state, rootSession, "write /home/carl/notes.txt hello", {})
@@ -3326,20 +3351,35 @@ do
 	local rootSession = open(state, "root")
 	local admin = open(state, "admin")
 
-	okAt(state, admin, "id", { "uid=admin flag=user groups=sudo" })
-	okAt(state, admin, "id root", { "uid=root flag=admin groups=-" })
-	okAt(state, rootSession, "id", { "uid=root flag=admin groups=-" })
+	-- The primary group first, then the /etc/group lines that name the account,
+	-- then sudo when /etc/sudoers is what puts it there. A shipped machine has
+	-- admin in the sudo and users lines both.
+	okAt(state, admin, "id", { "uid=admin flag=user groups=admin,sudo,users" })
+	okAt(state, admin, "id root", { "uid=root flag=admin groups=root" })
+	okAt(state, rootSession, "id", { "uid=root flag=admin groups=root" })
 	badAt(state, admin, "id nosuch", "id: nosuch: no such user")
 	badAt(state, admin, "id a b", "id: usage: id [name]")
 
+	-- groups prints the very same list, blank-separated.
+	okAt(state, admin, "groups", { "admin sudo users" })
+	okAt(state, admin, "groups root", { "root" })
+	badAt(state, admin, "groups nosuch", "groups: nosuch: no such user")
+	badAt(state, admin, "groups a b", "groups: usage: groups [name]")
+
+	-- A brand new account is in one group: its own.
 	okAt(state, rootSession, "adduser bob", nil)
-	okAt(state, admin, "id bob", { "uid=bob flag=user groups=-" })
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob" })
+	okAt(state, admin, "groups bob", { "bob" })
 	okAt(state, rootSession, "adduser -a kate", nil)
-	okAt(state, admin, "id kate", { "uid=kate flag=admin groups=-" })
-	-- The groups column is the sudoers file and nothing else.
+	okAt(state, admin, "id kate", { "uid=kate flag=admin groups=kate" })
+	-- sudo is the SUDOERS file, whatever /etc/group says: it is the authority
+	-- and the group mirrors it.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "bob")
-	okAt(state, admin, "id bob", { "uid=bob flag=user groups=sudo" })
-	okAt(state, admin, "id admin", { "uid=admin flag=user groups=-" })
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob,sudo" })
+	okAt(state, admin, "id admin", { "uid=admin flag=user groups=admin,sudo,users" })
+	-- And a line of /etc/group is the other half of it.
+	okAt(state, rootSession, "gpasswd -a bob users", {})
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob,users,sudo" })
 end
 
 -- su: the stack, and what exit does with it.
@@ -3487,7 +3527,7 @@ do
 		CeroSecOS.newFile("admin", 644, "keep me")
 
 	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
-	eq("and moves the number to this build", state.sysv, 4)
+	eq("and moves the number to this build", state.sysv, CeroSecOS.SYSTEM_VERSION)
 	for i = 1, #added do
 		local node = state.fs.children.bin.children[added[i]]
 		check("/bin/" .. added[i] .. " was seeded", node ~= nil)
@@ -3502,7 +3542,7 @@ do
 
 	-- They really run on it.
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, "id", { "uid=root flag=admin groups=-" })
+	okAt(state, rootSession, "id", { "uid=root flag=admin groups=root" })
 	okAt(state, rootSession, "adduser bob", nil)
 
 	-- And the BIOS repair ships them too.
@@ -3513,6 +3553,72 @@ do
 	check("the repair puts adduser back", broken.fs.children.bin.children.adduser ~= nil)
 	check("and su", broken.fs.children.bin.children.su ~= nil)
 	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
+-- A machine from the rung before this one is topped up with the five group
+-- commands and with /etc/group, and nothing else on it is touched.
+do
+	local state = fresh()
+	state.sysv = 4
+	local added = { "chgrp", "gpasswd", "groupadd", "groupdel", "groups" }
+	for i = 1, #added do state.fs.children.bin.children[added[i]] = nil end
+	state.fs.children.etc.children.group = nil
+	state.fs.children.home.children.admin.children["mine.txt"] =
+		CeroSecOS.newFile("admin", 644, "keep me")
+	-- A node from before this rung has no group at all. It stays that way: the
+	-- upgrade tops up the system files, it does not walk the disk.
+	local old = state.fs.children.home.children.admin.children["mine.txt"]
+	old.group = nil
+
+	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
+	eq("and moves the number to this build", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	for i = 1, #added do
+		local node = state.fs.children.bin.children[added[i]]
+		check("/bin/" .. added[i] .. " was seeded", node ~= nil)
+		eq("/bin/" .. added[i] .. " is root's", node.owner, "root")
+		eq("/bin/" .. added[i] .. " is 755", node.mode, 755)
+		eq("/bin/" .. added[i] .. " describes itself", node.data, CeroSecOS.commandDesc(added[i]))
+	end
+	local groupNode = state.fs.children.etc.children.group
+	check("/etc/group was seeded", groupNode ~= nil)
+	eq("/etc/group is root's", groupNode.owner, "root")
+	eq("/etc/group is 644", groupNode.mode, CeroSecOS.GROUP_MODE)
+	eq("/etc/group holds the shipped three", groupNode.data, CeroSecOS.defaultGroup())
+	eq("the player's file was not touched", old.data, "keep me")
+	eq("and still has no group of its own", old.group, nil)
+	eq("which reads as its owner", CeroSecOS.groupOf(old), "admin")
+	eq("it validates", CeroSecOS.validate(state), true)
+	eq("and asked once only", CeroSecOS.upgradeSystem(state), false)
+
+	-- A /etc/group somebody has been keeping is NOT rewritten.
+	local kept = fresh()
+	kept.sysv = 4
+	CeroSecOS.setData(kept, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:admin")
+	CeroSecOS.upgradeSystem(kept)
+	eq("a group file that is there is left alone",
+		kept.fs.children.etc.children.group.data, "crew:admin")
+
+	-- The BIOS repair, on the same terms: a file that still holds a group is
+	-- kept, one that parses to nothing is written back.
+	local broken = fresh()
+	broken.fs.children.bin.children.groupadd = nil
+	CeroSecOS.setData(broken, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:admin")
+	CeroSecOS.restoreSystem(broken)
+	check("the repair puts groupadd back", broken.fs.children.bin.children.groupadd ~= nil)
+	eq("and keeps a group file that still parses",
+		broken.fs.children.etc.children.group.data, "crew:admin")
+
+	local wiped = fresh()
+	CeroSecOS.setData(wiped, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "# nothing but this")
+	CeroSecOS.restoreSystem(wiped)
+	eq("a group file that parses to nothing is written back",
+		wiped.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
+
+	local gone = fresh()
+	gone.fs.children.etc.children.group = nil
+	CeroSecOS.restoreSystem(gone)
+	eq("and a missing one is written back too",
+		gone.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
 end
 
 --
@@ -3595,12 +3701,12 @@ do
 	-- on this machine is -- childNames sorts, and a directory whose order
 	-- depended on the order the world was walked in would not be the same twice.
 	okAt(state, session, "ls -l /dev", {
-		"crw-rw----  root  light0  office              on",
-		"crw-rw----  root  light1  hallway             off",
-		"crw-rw----  root  lock0   exterior         W  locked",
-		"crw-rw----  root  lock1   kitchen-hallway  N  unlocked",
-		"crw-rw----  root  lock2   built            N  padlock",
-		"crw-rw----  root  win0    office           N  locked",
+		"crw-rw----  root  sudo  light0  office            on",
+		"crw-rw----  root  sudo  light1  hallway           off",
+		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+		"crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked",
+		"crw-rw----  root  sudo  lock2   built          N  padlock",
+		"crw-rw----  root  sudo  win0    office         N  locked",
 	}, env)
 
 	-- The short form is names, columnized like any other directory.
@@ -3615,7 +3721,7 @@ do
 	})
 	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
 	eq("the widest device line", line,
-		"crw-rw----  root  win12   kitchen-hallway  N  barricaded")
+		"crw-rw----  root  sudo  win12   kitchen-hall~  N  barricaded")
 	check("and it fits the screen", #line <= CeroSecOS.COLS)
 
 	-- A device is a character device and wears the letter for one.
@@ -3623,7 +3729,7 @@ do
 
 	-- Named straight rather than listed.
 	okAt(state, session, "ls -l /dev/lock1",
-		{ "crw-rw----  root  lock1   kitchen-hallway  N  unlocked" }, env)
+		{ "crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked" }, env)
 	okAt(state, session, "ls /dev/lock1", { "lock1" }, env)
 end
 
@@ -3736,37 +3842,68 @@ do
 	local devices = mockupDevices()
 	local env = devEnv(devices)
 
-	-- 660: root's and the sudo group's. The group triplet is not evaluated yet,
-	-- so today that means root alone.
+	-- 660 with group sudo: root's, and the sudo group's -- which is /etc/sudoers,
+	-- so admin throws the switch with no sudo typed, and bob, who is in no
+	-- group of the machine's but his own, gets nothing at all.
 	local admin = open(state, "admin")
-	badAt(state, admin, "cat /dev/light0", "light0: permission denied", env)
-	badAt(state, admin, "echo off > /dev/light0", "light0: permission denied", env)
-	eq("and nothing reached the world", #devices.writes, 0)
-	-- The listing is the directory's business, not the device's: /dev is 755.
-	okAt(state, admin, "ls -l /dev", nil, env)
+	okAt(state, root, "adduser bob", nil)
+	local bob = open(state, "bob")
 
-	-- Root opens it up, and the new mode is handed to the world to remember --
-	-- the node itself is gone by the end of the command.
+	okAt(state, admin, "cat /dev/light0", { "on" }, env)
+	okAt(state, admin, "echo off > /dev/light0", {}, env)
+	eq("the world was told", devices.writes[#devices.writes], "light0=off")
+	okAt(state, admin, "echo on > /dev/light0", {}, env)
+
+	local reached = #devices.writes
+	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
+	badAt(state, bob, "echo off > /dev/light0", "light0: permission denied", env)
+	eq("and nothing of bob's reached the world", #devices.writes, reached)
+	-- The listing is the directory's business, not the device's: /dev is 755.
+	okAt(state, bob, "ls -l /dev", nil, env)
+
+	-- Two ways into the group, and either is enough. bob is in no line of
+	-- /etc/group at all; naming him in /etc/sudoers puts him in the sudo group,
+	-- because that file is the authority on it and the group mirrors it.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin\nbob")
+	okAt(state, bob, "cat /dev/light0", { "on" }, env)
+	eq("and it is not a line of /etc/group that put him there",
+		string.find(CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH).data, "bob", 1, true), nil)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin")
+	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
+	-- admin's own way in is the shipped /etc/group line, which outlives the
+	-- sudoers file being emptied.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "# nobody")
+	okAt(state, admin, "cat /dev/light0", { "on" }, env)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin")
+
+	-- Root opens it up to everybody, and the new mode is handed to the world to
+	-- remember -- the node itself is gone by the end of the command.
 	okAt(state, root, "chmod 666 /dev/light0", {}, env)
 	eq("the mode was handed over once", #devices.chmods, 1)
 	eq("and what it was", devices.chmods[1], "light0=666")
 
-	okAt(state, admin, "cat /dev/light0", { "on" }, env)
-	okAt(state, admin, "echo off > /dev/light0", {}, env)
-	okAt(state, admin, "cat /dev/light0", { "off" }, env)
+	okAt(state, bob, "cat /dev/light0", { "on" }, env)
+	okAt(state, bob, "echo off > /dev/light0", {}, env)
+	okAt(state, bob, "cat /dev/light0", { "off" }, env)
 	eq("the mode shows in the listing",
 		okAt(state, root, "ls -l /dev/light0", nil, env)[1],
-		"crw-rw-rw-  root  light0  office              off")
+		"crw-rw-rw-  root  sudo  light0  office            off")
 
 	-- A mode nobody moved is not handed over again.
 	local before = #devices.chmods
 	okAt(state, root, "cat /dev/light0", nil, env)
 	eq("no chmod for a read", #devices.chmods, before)
 
-	-- Shut again, and root still walks through it.
+	-- Shut again, and root still walks through it -- and so does nobody else,
+	-- sudo group or not.
 	okAt(state, root, "chmod 000 /dev/light0", {}, env)
 	badAt(state, admin, "cat /dev/light0", "light0: permission denied", env)
+	badAt(state, bob, "cat /dev/light0", "light0: permission denied", env)
 	okAt(state, root, "cat /dev/light0", { "off" }, env)
+
+	-- And a device's group is not given away: it is what makes 660 mean what it
+	-- means, and only the mode of a device outlives the command.
+	badAt(state, root, "chgrp users /dev/light0", "chgrp: /dev/light0: is a device", env)
 end
 
 -- 21f. A device is not a file, and /dev is not a directory anybody writes in.
@@ -3879,6 +4016,327 @@ do
 		{ id = "light1", kind = "light", desc = "hall", side = "", state = "off" },
 	})
 	okAt(state, session, "ls /dev", { "light0  light1" }, devEnv(devices))
+end
+
+--
+-- 22. Groups: /etc/group, the three-digit evaluation, and the five commands.
+--
+
+-- 22a. The parser. Blank lines, comments, duplicates, and everything a line
+-- may not be.
+do
+	local g = CeroSecOS.parseGroupLine("users:admin,bob")
+	eq("the name", g.name, "users")
+	eq("two members", #g.members, 2)
+	eq("in file order", g.members[1], "admin")
+	eq("and the second", g.members[2], "bob")
+	check("and by name", g.set.bob)
+	check("and nobody else", not g.set.kate)
+
+	local empty = CeroSecOS.parseGroupLine("root:")
+	eq("an empty group is a group", empty.name, "root")
+	eq("with nobody in it", #empty.members, 0)
+
+	-- A line that is not one is skipped, silently, the way the other two
+	-- parsers skip one.
+	local BAD = {
+		"", "   ", "# a comment", "\t# indented comment",
+		"nocolon", "two:colons:here", ":nobody", "-bad:admin",
+		"users:", -- fine, but the next ones are not
+		"users:admin,", "users:,admin", "users:admin,,bob", "users:-bad",
+		"users:has space", "has space:admin",
+	}
+	for i = 1, #BAD do
+		if BAD[i] ~= "users:" then
+			eq("not a group line: \"" .. BAD[i] .. "\"", CeroSecOS.parseGroupLine(BAD[i]), nil)
+		end
+	end
+
+	-- A duplicate name keeps its FIRST line, the way a lookup down a file does.
+	local groups, order = CeroSecOS.parseGroup(
+		"# heading\n\ncrew:admin\ncrew:bob\nsomething broken\nmates:")
+	eq("two groups parsed", #order, 2)
+	eq("in file order", order[1], "crew")
+	eq("and the second", order[2], "mates")
+	check("the first crew line won", groups.crew.set.admin)
+	check("and the second was dropped", not groups.crew.set.bob)
+
+	-- What is written is what is read: one place builds a line.
+	eq("a line round-trips", CeroSecOS.groupLine({ name = "crew", members = { "admin", "bob" } }),
+		"crew:admin,bob")
+	eq("an empty one too", CeroSecOS.groupLine({ name = "crew", members = {} }), "crew:")
+end
+
+-- 22b. What a shipped machine has, and what the cache does with it.
+do
+	local state = fresh()
+	local groups, order = CeroSecOS.readGroups(state)
+	eq("three groups ship", #order, 3)
+	eq("the first", order[1], "root")
+	eq("the second", order[2], "sudo")
+	eq("the third", order[3], "users")
+	eq("root's is empty", #groups.root.members, 0)
+	check("admin is in sudo", groups.sudo.set.admin)
+	check("and in users", groups.users.set.admin)
+
+	-- The cache is keyed on the file, so an edit is seen.
+	local same = CeroSecOS.readGroups(state)
+	eq("the same table while the file stands still", same, groups)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:bob")
+	local _, after = CeroSecOS.readGroups(state)
+	eq("and a fresh one when it moves", #after, 1)
+	eq("the new group", after[1], "crew")
+
+	-- A machine with no /etc/group at all has no groups but the primary ones.
+	local gone = fresh()
+	gone.fs.children.etc.children.group = nil
+	local _, none = CeroSecOS.readGroups(gone)
+	eq("no file, no groups", #none, 0)
+	check("but bob is still in bob", CeroSecOS.inGroup(gone, "bob", "bob"))
+end
+
+-- 22c. Who is in what. The primary group, a line in the file, and sudoers.
+do
+	local state = fresh()
+	check("a primary group needs no line", CeroSecOS.inGroup(state, "bob", "bob"))
+	check("a line puts him in", CeroSecOS.inGroup(state, "admin", "users"))
+	check("sudoers puts him in sudo", CeroSecOS.inGroup(state, "admin", "sudo"))
+	check("and nothing puts him anywhere else", not CeroSecOS.inGroup(state, "bob", "users"))
+	check("nor in a group that does not exist", not CeroSecOS.inGroup(state, "bob", "nosuch"))
+	eq("junk is not a membership", CeroSecOS.inGroup(state, nil, "users"), false)
+	eq("nor is junk on the other side", CeroSecOS.inGroup(state, "bob", nil), false)
+
+	-- The sudo mirror, from the sudoers side only.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "bob NOPASSWD")
+	check("a sudoer is in the sudo group", CeroSecOS.inGroup(state, "bob", "sudo"))
+	check("and admin is still in it by its line", CeroSecOS.inGroup(state, "admin", "sudo"))
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "sudo:\nusers:admin")
+	check("with the line gone, sudoers is what is left", CeroSecOS.inGroup(state, "bob", "sudo"))
+	check("and admin is out of it", not CeroSecOS.inGroup(state, "admin", "sudo"))
+
+	-- groupExists: a line, or an account whose primary group needs no line.
+	local fresh2 = fresh()
+	check("a line is a group", CeroSecOS.groupExists(fresh2, "users"))
+	check("an account is a group", CeroSecOS.groupExists(fresh2, "admin"))
+	check("and nothing else is", not CeroSecOS.groupExists(fresh2, "crew"))
+end
+
+-- 22d. The three-digit evaluation, owner / group / other, on a matrix.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "adduser kate", nil)
+	okAt(state, rootSession, "groupadd crew", {})
+	okAt(state, rootSession, "gpasswd -a bob crew", {})
+
+	local file = CeroSecOS.newFile("admin", 640, "shared")
+	file.group = "crew"
+	state.fs.children.home.children.admin.children["notes.txt"] = file
+	okAt(state, rootSession, "chmod 755 /home/admin", {})
+
+	local admin = { user = "admin", cwd = "/" }
+	local bobS = { user = "bob", cwd = "/" }
+	local kateS = { user = "kate", cwd = "/" }
+
+	-- 640: the owner reads and writes, the group reads, everybody else nothing.
+	check("the owner reads", CeroSecOS.can(state, admin, file, "r"))
+	check("and writes", CeroSecOS.can(state, admin, file, "w"))
+	check("a member of the group reads", CeroSecOS.can(state, bobS, file, "r"))
+	check("and does not write", not CeroSecOS.can(state, bobS, file, "w"))
+	check("everybody else reads nothing", not CeroSecOS.can(state, kateS, file, "r"))
+
+	-- The middle digit really is the middle one: move it and only the group
+	-- changes.
+	file.mode = 660
+	check("660 lets the group write", CeroSecOS.can(state, bobS, file, "w"))
+	check("and still shuts everybody else out", not CeroSecOS.can(state, kateS, file, "r"))
+	file.mode = 604
+	check("604 shuts the group out", not CeroSecOS.can(state, bobS, file, "r"))
+	check("and lets everybody else in", CeroSecOS.can(state, kateS, file, "r"))
+	check("the owner is unmoved", CeroSecOS.can(state, admin, file, "w"))
+
+	-- The owner digit wins over the group's, even when the owner is in it.
+	file.mode = 470
+	okAt(state, rootSession, "gpasswd -a admin crew", {})
+	check("the owner is judged as the owner", not CeroSecOS.can(state, admin, file, "w"))
+	check("and the member as the member", CeroSecOS.can(state, bobS, file, "w"))
+
+	-- A primary group counts: bob is a member of group bob.
+	local mine = CeroSecOS.newFile("kate", 604, "hers")
+	mine.group = "bob"
+	check("a primary group is a membership: bob is judged as the group, not as other",
+		CeroSecOS.can(state, bobS, mine, "r") == false)
+	mine.mode = 040
+	check("and the group digit is what he gets", CeroSecOS.can(state, bobS, mine, "r"))
+	check("while kate, who owns it, gets nothing", not CeroSecOS.can(state, kateS, mine, "r"))
+
+	-- Root walks through all three.
+	file.mode = 000
+	check("root reads anything", CeroSecOS.can(state, { user = "root" }, file, "r"))
+
+	-- And it works through the real commands, on the real disk.
+	file.mode = 640
+	file.group = "crew"
+	okAt(state, bobS, "cat /home/admin/notes.txt", { "shared" })
+	badAt(state, kateS, "cat /home/admin/notes.txt",
+		"cat: /home/admin/notes.txt: permission denied")
+	badAt(state, bobS, "write /home/admin/notes.txt x",
+		"write: /home/admin/notes.txt: permission denied")
+	okAt(state, rootSession, "chmod 660 /home/admin/notes.txt", {})
+	okAt(state, bobS, "write /home/admin/notes.txt mine", {})
+	okAt(state, kateS, "ls /home/admin", nil)
+end
+
+-- 22e. chgrp: who may, and what it takes.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+	okAt(state, rootSession, "adduser bob", nil)
+	local bob = open(state, "bob")
+
+	okAt(state, admin, "touch /home/admin/notes.txt", {})
+	eq("a fresh file is in its owner's own group",
+		CeroSecOS.groupOf(state.fs.children.home.children.admin.children["notes.txt"]), "admin")
+
+	-- The owner may give it away, to a group that exists.
+	okAt(state, admin, "chgrp users /home/admin/notes.txt", {})
+	eq("and it moved",
+		CeroSecOS.groupOf(state.fs.children.home.children.admin.children["notes.txt"]), "users")
+	-- An account is a group: its primary one.
+	okAt(state, admin, "chgrp bob /home/admin/notes.txt", {})
+	eq("to an account's own group",
+		CeroSecOS.groupOf(state.fs.children.home.children.admin.children["notes.txt"]), "bob")
+
+	-- A group that is not one is refused where it is typed.
+	badAt(state, admin, "chgrp crew /home/admin/notes.txt", "chgrp: crew: no such group")
+	badAt(state, admin, "chgrp Crew /home/admin/notes.txt", "chgrp: Crew: no such group")
+
+	-- Not the owner and not root is not allowed, and the refusal is about the
+	-- file and not about the group.
+	okAt(state, rootSession, "chmod 777 /home/admin", {})
+	badAt(state, bob, "chgrp bob /home/admin/notes.txt",
+		"chgrp: /home/admin/notes.txt: permission denied")
+	-- Root always may.
+	okAt(state, rootSession, "chgrp users /home/admin/notes.txt", {})
+
+	badAt(state, admin, "chgrp users /home/admin/nosuch", "chgrp: /home/admin/nosuch: no such file")
+	badAt(state, admin, "chgrp users", "chgrp: usage: chgrp <group> <path>")
+	badAt(state, admin, "chgrp a b c", "chgrp: usage: chgrp <group> <path>")
+
+	-- chown does not touch the group, and chgrp does not touch the owner.
+	okAt(state, rootSession, "chown bob /home/admin/notes.txt", {})
+	local node = state.fs.children.home.children.admin.children["notes.txt"]
+	eq("chown moved the owner", node.owner, "bob")
+	eq("and left the group", CeroSecOS.groupOf(node), "users")
+	okAt(state, rootSession, "chgrp root /home/admin/notes.txt", {})
+	eq("chgrp moved the group", CeroSecOS.groupOf(node), "root")
+	eq("and left the owner", node.owner, "bob")
+
+	-- A directory is a node like any other, and a chgrp is a touch.
+	okAt(state, admin, "mkdir /home/admin/sub", {})
+	okAt(state, admin, "chgrp users /home/admin/sub", {})
+	eq("a directory takes a group too",
+		CeroSecOS.groupOf(state.fs.children.home.children.admin.children.sub), "users")
+	eq("and the stamp moved with it",
+		CeroSecOS.mtimeOf(state.fs.children.home.children.admin.children.sub), FIXED)
+end
+
+-- 22f. groupadd, groupdel, gpasswd -- and a dangling group.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+	okAt(state, rootSession, "adduser bob", nil)
+
+	-- Root only, for all three.
+	badAt(state, admin, "groupadd crew", "groupadd: permission denied")
+	badAt(state, admin, "groupdel users", "groupdel: permission denied")
+	badAt(state, admin, "gpasswd -a bob users", "gpasswd: permission denied")
+
+	okAt(state, rootSession, "groupadd crew", {})
+	check("the line is in the file",
+		string.find(CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH).data, "\ncrew:", 1, true) ~= nil)
+	eq("with nobody in it", #CeroSecOS.readGroups(state).crew.members, 0)
+	badAt(state, rootSession, "groupadd crew", "groupadd: crew: already exists")
+	-- An account already has a group of that name.
+	badAt(state, rootSession, "groupadd bob", "groupadd: bob: already exists")
+	badAt(state, rootSession, "groupadd Crew", "groupadd: Crew: invalid name")
+	badAt(state, rootSession, "groupadd 1crew", "groupadd: 1crew: invalid name")
+	badAt(state, rootSession, "groupadd " .. string.rep("c", 17),
+		"groupadd: " .. string.rep("c", 17) .. ": invalid name")
+	badAt(state, rootSession, "groupadd", "groupadd: usage: groupadd <name>")
+
+	-- gpasswd, both ways, and both refusals.
+	okAt(state, rootSession, "gpasswd -a bob crew", {})
+	okAt(state, rootSession, "groups bob", { "bob crew" })
+	badAt(state, rootSession, "gpasswd -a bob crew", "gpasswd: crew: already a member")
+	okAt(state, rootSession, "gpasswd -d bob crew", {})
+	okAt(state, rootSession, "groups bob", { "bob" })
+	badAt(state, rootSession, "gpasswd -d bob crew", "gpasswd: crew: not a member")
+	badAt(state, rootSession, "gpasswd -a nosuch crew", "gpasswd: nosuch: no such user")
+	badAt(state, rootSession, "gpasswd -a bob nosuch", "gpasswd: nosuch: no such group")
+	-- A primary group has no line, so there is nothing to add anybody to.
+	badAt(state, rootSession, "gpasswd -a bob bob", "gpasswd: bob: no such group")
+	badAt(state, rootSession, "gpasswd -x bob crew", "gpasswd: usage: gpasswd -a|-d <user> <group>")
+	badAt(state, rootSession, "gpasswd -a bob", "gpasswd: usage: gpasswd -a|-d <user> <group>")
+
+	-- Every other line of the file is kept exactly as it lies.
+	okAt(state, rootSession, "gpasswd -a bob crew", {})
+	local text = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH).data
+	check("the comment is still there", string.find(text, "# name:member", 1, true) ~= nil)
+	check("and the shipped lines", string.find(text, "\nsudo:admin\n", 1, true) ~= nil)
+
+	-- groupdel: the shipped three are not the machine's to lose.
+	badAt(state, rootSession, "groupdel root", "groupdel: root: cannot remove")
+	badAt(state, rootSession, "groupdel sudo", "groupdel: sudo: cannot remove")
+	badAt(state, rootSession, "groupdel users", "groupdel: users: cannot remove")
+	badAt(state, rootSession, "groupdel nosuch", "groupdel: nosuch: no such group")
+	-- A primary group has no line to take out.
+	badAt(state, rootSession, "groupdel bob", "groupdel: bob: no such group")
+	badAt(state, rootSession, "groupdel", "groupdel: usage: groupdel <name>")
+
+	-- A file keeps a group that has been deleted: the name dangles, and ls -l
+	-- says so rather than telling a tidy lie about who it was shared with.
+	okAt(state, admin, "touch /home/admin/notes.txt", {})
+	okAt(state, admin, "chgrp crew /home/admin/notes.txt", {})
+	okAt(state, rootSession, "groupdel crew", {})
+	local node = state.fs.children.home.children.admin.children["notes.txt"]
+	eq("the file still names it", CeroSecOS.groupOf(node), "crew")
+	eq("and the listing shows it",
+		string.sub(okAt(state, admin, "ls -l /home/admin/notes.txt", nil)[1], 20, 25), "crew  ")
+	-- And nobody is in it any more, so 640 gives bob nothing.
+	node.mode = 640
+	check("a dangling group is nobody's",
+		not CeroSecOS.can(state, { user = "bob" }, node, "r"))
+	check("except the account of that name, if there is one",
+		CeroSecOS.can(state, { user = "crew" }, node, "r"))
+	-- Which is the whole of it: chgrp will not take the name again.
+	badAt(state, admin, "chgrp crew /home/admin/notes.txt", "chgrp: crew: no such group")
+end
+
+-- 22g. A node with no group at all: what every machine saved before this rung
+-- is made of.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local old = CeroSecOS.newFile("admin", 640, "old")
+	old.group = nil
+	state.fs.children.home.children.admin.children["old.txt"] = old
+
+	eq("it reads as its owner's own group", CeroSecOS.groupOf(old), "admin")
+	eq("and the listing says so",
+		string.sub(okAt(state, admin, "ls -l /home/admin/old.txt", nil)[1], 20, 25), "admin ")
+	eq("and validate takes it", CeroSecOS.validate(state), true)
+
+	-- A group that is not a string is not a node.
+	old.group = 7
+	local ok2, reason = CeroSecOS.validate(state)
+	eq("a number is not a group", ok2, false)
+	eq("and it says which node", reason, "/home/admin/old.txt: bad group")
+	old.group = nil
+	eq("and it validates again", CeroSecOS.validate(state), true)
 end
 
 print("os_test: " .. count .. " assertions passed")

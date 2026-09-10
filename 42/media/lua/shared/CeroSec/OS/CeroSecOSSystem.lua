@@ -116,12 +116,26 @@ function CeroSecOS.upgradeSystem(state)
 	end
 
 	local etc = CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH)
-	if type(etc) == "table" and etc.type == "dir" and type(etc.children) == "table"
-			and etc.children.sudoers == nil then
-		local text = CeroSecOS.defaultSudoers()
-		if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
-				and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
-			etc.children.sudoers = CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, text)
+	if type(etc) == "table" and etc.type == "dir" and type(etc.children) == "table" then
+		if etc.children.sudoers == nil then
+			local text = CeroSecOS.defaultSudoers()
+			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
+					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
+				etc.children.sudoers = CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, text)
+				nodes = nodes + 1
+				bytes = bytes + #text
+			end
+		end
+		-- /etc/group, on the same terms: only when there is nothing at all at
+		-- that name. A machine that has been running without one has every node
+		-- on it in a group of its owner's own name, which is what a missing file
+		-- means and not something to rewrite.
+		if etc.children.group == nil then
+			local text = CeroSecOS.defaultGroup()
+			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
+					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
+				etc.children.group = CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, text)
+			end
 		end
 	end
 
@@ -249,8 +263,9 @@ end
 -- Idempotent by construction: running it on a healthy machine rewrites the
 -- executables to the very same contents and leaves everything else alone.
 --
--- A /etc/passwd that still parses is KEPT, hashes and all, and so is a
--- /etc/sudoers that still names somebody. Losing the accounts is not part of
+-- A /etc/passwd that still parses is KEPT, hashes and all, and so are a
+-- /etc/sudoers that still names somebody and a /etc/group that still holds a
+-- group. Losing the accounts is not part of
 -- repairing the commands, and a root password somebody set is not something a
 -- repair may quietly drop.
 function CeroSecOS.restoreSystem(state)
@@ -289,6 +304,21 @@ function CeroSecOS.restoreSystem(state)
 	if not keepSudoers then
 		etc.children.sudoers =
 			CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
+	end
+
+	-- /etc/group, on the same terms again: a file that still holds one group is
+	-- kept exactly as it is -- a group somebody made is not damage -- and one
+	-- that is missing, is not a file, or parses to nothing at all is written
+	-- back to the shipped three.
+	local group = etc.children.group
+	local keepGroup = false
+	if type(group) == "table" and group.type == "file" then
+		local _, order = CeroSecOS.parseGroup(group.data or "")
+		keepGroup = #order > 0
+	end
+	if not keepGroup then
+		etc.children.group =
+			CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.defaultGroup())
 	end
 
 	CeroSecOS.fillBin(CeroSecOS.ensureSystemDir(state, "bin"))

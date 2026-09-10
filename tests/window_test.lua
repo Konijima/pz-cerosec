@@ -1309,12 +1309,12 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
-		"crw-rw----  root  light0  office              on",
-		"crw-rw----  root  light1  hallway             off",
-		"crw-rw----  root  lock0   exterior         W  locked",
-		"crw-rw----  root  lock1   kitchen-hallway  N  unlocked",
-		"crw-rw----  root  lock2   built            N  padlock",
-		"crw-rw----  root  win0    office           N  locked",
+		"crw-rw----  root  sudo  light0  office            on",
+		"crw-rw----  root  sudo  light1  hallway           off",
+		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+		"crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked",
+		"crw-rw----  root  sudo  lock2   built          N  padlock",
+		"crw-rw----  root  sudo  win0    office         N  locked",
 	}
 	for i = 1, #want do
 		check("the glass shows: " .. want[i], bench.painted(want[i]))
@@ -1360,7 +1360,7 @@ do
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("the smashed window shows",
-		bench.painted("crw-rw----  root  win0    office           N  smashed"))
+		bench.painted("crw-rw----  root  sudo  win0    office         N  smashed"))
 	bench.enter("echo lock > /dev/win0")
 	bench.frame()
 	check("and refuses to be locked", bench.painted("win0: smashed"))
@@ -1404,7 +1404,7 @@ do
 
 	check("light0 kept its number", reloaded.painted("light0  office"))
 	check("light1 kept its number", reloaded.painted("light1  hallway"))
-	check("lock1 kept its number", reloaded.painted("lock1   kitchen-hallway"))
+	check("lock1 kept its number", reloaded.painted("lock1   kitchen-hall~"))
 	check("lock2 kept its number", reloaded.painted("lock2   built"))
 	check("win0 kept its number", reloaded.painted("win0    office"))
 	-- The one that is gone leaves a GAP: nothing moved up into lock0.
@@ -1421,7 +1421,7 @@ do
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 	check("the new door took the next number, not the gap",
-		reloaded.painted("crw-rw----  root  lock3   built            W  unlocked"))
+		reloaded.painted("crw-rw----  root  sudo  lock3   built          W  unlocked"))
 	check("and the gap is still a gap", not reloaded.painted("lock0 "))
 
 	--
@@ -1430,11 +1430,11 @@ do
 	reloaded.enter("chmod 666 /dev/light0")
 	reloaded.enter("ls -l /dev/light0")
 	reloaded.frame()
-	check("the mode stuck", reloaded.painted("crw-rw-rw-  root  light0"))
+	check("the mode stuck", reloaded.painted("crw-rw-rw-  root  sudo  light0"))
 	reloaded.enter("exit")
 	reloaded.enter("ls -l /dev/light0")
 	reloaded.frame()
-	check("and it is still there for admin", reloaded.painted("crw-rw-rw-  root  light0"))
+	check("and it is still there for admin", reloaded.painted("crw-rw-rw-  root  sudo  light0"))
 	reloaded.enter("cat /dev/light0")
 	reloaded.frame()
 	check("who may now read it", reloaded.painted("on"))
@@ -1443,6 +1443,61 @@ do
 	eq("/dev is empty between commands",
 		CeroSecOS.countEntries(reloaded.object.os.fs.children.dev), 0)
 	eq("and the state still validates", CeroSecOS.validate(reloaded.object.os), true)
+
+	_G.__world = nil
+end
+
+--
+-- crw-rw----  root  sudo: a device is root's and the sudo group's, and the sudo
+-- group is /etc/sudoers. So the account a shipped machine gives a survivor --
+-- admin, who is in that file -- throws a light switch with no sudo typed and no
+-- password asked, while an ordinary account gets nothing at all.
+--
+-- This is the whole point of the middle digit having been given meaning, and it
+-- is asserted through the real window, on the real world objects, because a
+-- session table built by hand cannot prove that the account at the glass is the
+-- one the permission was worked out for.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.frame()
+	eq("admin is at the glass and is not root", bench.object.console.user, "admin")
+
+	bench.enter("id")
+	bench.frame()
+	check("and the machine says he is in the sudo group",
+		bench.painted("uid=admin flag=user groups=admin,sudo,users"))
+
+	-- The switch is off. One line, no sudo, no password prompt.
+	eq("the switch starts off", kit.light1.activated, false)
+	bench.enter("echo on > /dev/light1")
+	bench.frame()
+	eq("the shell is still a shell", bench.window.mode, "shell")
+	check("nothing was asked for", not bench.painted("[sudo] password for admin: "))
+	check("and nothing was refused", not bench.painted("light1: permission denied"))
+	eq("the light is on", kit.light1.activated, true)
+	eq("and the world was told", kit.light1.syncs, 1)
+
+	-- And an account that is in no group of the machine's gets nothing, on the
+	-- very same switch.
+	bench.enter("su root")
+	bench.enter("")
+	bench.enter("adduser bob")
+	bench.enter("exit")
+	bench.frame()
+	eq("back to admin", bench.object.console.user, "admin")
+	bench.enter("su bob")
+	bench.enter("")
+	bench.frame()
+	eq("bob is at the glass", bench.object.console.user, "bob")
+	bench.enter("echo off > /dev/light1")
+	bench.frame()
+	check("bob is refused", bench.painted("light1: permission denied"))
+	eq("and the switch did not move", kit.light1.activated, true)
 
 	_G.__world = nil
 end
@@ -1495,7 +1550,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the door in the base is a device",
-		bench.painted("crw-rw----  root  lock0   built            N  padlock"))
+		bench.painted("crw-rw----  root  sudo  lock0   built          N  padlock"))
 	check("the far switch is not", not bench.painted("light0"))
 	eq("nor the one upstairs", far ~= upstairs, true)
 
@@ -1504,7 +1559,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a switch exactly at the radius is a device",
-		bench.painted("crw-rw----  root  light0  exterior            off"))
+		bench.painted("crw-rw----  root  sudo  light0  exterior          off"))
 	_G.__world = nil
 end
 
