@@ -6,7 +6,7 @@ GlobalObject system; an existing save has no `gos_cerosec.bin`, which is handled
 a fresh world keeps the runs comparable).
 
 Turn `CeroSec.DEBUG = true` in
-`Contents/mods/CeroSec/42/media/lua/shared/CeroSec/CeroSecDefs.lua` if you want the
+`42/media/lua/shared/CeroSec/CeroSecDefs.lua` if you want the
 toggle and light lines in the console.
 
 ## A — Solo
