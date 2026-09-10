@@ -505,6 +505,86 @@ already standing in that square is walked to that point all the same.
 116. **From across the room.** Steps 49 to 51 must still behave exactly as they
      did: the walk in, the sit, the standing case.
 
+## N — System files
+
+The machine is its filesystem and nothing else now: the commands are files in
+`/bin`, the accounts are lines in `/etc/passwd`, the name is `/etc/hostname`.
+Root can take any of them away, because that is what root is — the protection is
+that root has a password — and the way back is underneath the operating system,
+at the BIOS.
+
+117. **The commands are files.** Log in as `admin` and type `ls -l /bin`: one
+     `-rwxr-xr-x root` line per command, twenty-one of them, sized by the
+     description inside. `cat /bin/ls` prints `list a directory`. `help` is that
+     directory listed, one command a line with its description.
+118. **The accounts are a file, and they are root's.** As `admin`,
+     `cat /etc/passwd` → `cat: /etc/passwd: permission denied`. Log out (`exit`),
+     log in as `root`, `cat /etc/passwd`: two lines,
+     `root:$cs1$…:/root:admin` and `admin:$cs1$…:/home/admin:user`, each wrapped
+     across two rows because a line is longer than sixty columns. No password in
+     clear anywhere in it.
+119. **Taking a command away takes the command away.** As `root`,
+     `rm /bin/ls`, then `ls` → `ls: command not found`. `pwd` still works.
+     `help` no longer lists `ls`.
+120. **Putting it back.** `write /bin/ls "list a directory"` then
+     `chmod 755 /bin/ls`: `ls` works again. An executable is an ordinary file.
+121. **A command nobody may run.** `chmod 644 /bin/ls`, `exit`, log in as
+     `admin`: `ls` → `ls: permission denied`. Log back in as `root`: `ls` works
+     — root walks through the bits here as everywhere. `chmod 755 /bin/ls` to
+     put it back.
+122. **Wiping the machine.** As `root`, first `mkdir /home/admin/work` and
+     `write /home/admin/work/notes.txt "keep me"`. Then `rm -r /bin`. Now `ls`,
+     `cat`, `pwd` are all `command not found`, and `help` says
+     `help: no commands in /bin: the system is damaged.` with
+     `help: switch the computer off and on to repair it.` under it. `exit` still
+     works: those two are the only builtins.
+123. **The BIOS finds nothing.** Close the window and open it again (`exit` at
+     the login prompt is not needed; the window closing is enough). The screen
+     ends on `No operating system found.` and `Restore system? (y/n)`. There is
+     no `login:` prompt: there is nothing to log in to.
+124. **Refusing the repair.** Answer `n`. The screen stays on
+     `No operating system found.` with nothing asked under it. Press Enter: the
+     question comes back. Anything that is not `y` or `n` asks again too.
+125. **`exit` at the BIOS.** Type `exit` at the question, or press Escape: the
+     window closes. A machine that cannot be repaired can still be walked away
+     from.
+126. **Taking the repair.** Open the window again, answer `y`. The screen says
+     `Restoring system ...`, then the motd, then `login:`. Log in as `root`:
+     `ls` works, `help` lists all twenty-one commands again, and
+     `cat /home/admin/work/notes.txt` still says `keep me`. **Nothing under
+     `/home` was touched.**
+127. **A password survives the repair.** Do it again, but before wiping `/bin`
+     run `passwd` and give root a real password. After the restore, root's own
+     password is the one you set — the empty one does **not** get in. A repair
+     puts the commands back; it does not hand the machine to whoever walks up.
+128. **Editing the accounts by hand.** As `root`, `edit /etc/passwd`. Change
+     `admin`'s third field from `/home/admin` to `/` and save with Tab, Escape.
+     `exit`, log in as `admin`, `pwd` → `/`. The prompt says `admin@…:/$`. The
+     parser is the truth. Put it back the same way.
+129. **A line that is not a line.** As `root`, `edit /etc/passwd`, break the
+     `admin` line (delete a `:`), save, `exit`. `admin` can no longer log in at
+     all — the line is skipped, and the machine does not say which half of the
+     login was wrong. `root` still gets in. Repair the line with the editor.
+130. **Losing them all.** As `root`, `write /etc/passwd "rubbish"`, then close
+     and reopen the window: `No operating system found.` again — a machine with
+     no accounts is a machine nobody can use. `y` puts `root` and `admin` back,
+     both open, and leaves `/home` alone.
+131. **The name is a file.** As `root`, `hostname` prints `ksp-<x>-<y>`.
+     `hostname ksp-front` writes it: `hostname` says the new name, and so does
+     `cat /etc/hostname`. As `admin`, `hostname other` →
+     `hostname: permission denied`.
+132. **The name rule.** As `root`, `hostname Upper` → `hostname: Upper: invalid
+     name`, and the same for `hostname -x` and for anything over sixteen
+     characters. One to sixteen of `a-z`, `0-9` and `-`, never starting with a
+     dash.
+133. **The title follows the name.** After a successful `hostname ksp-front`,
+     close the window and open it again: the title bar reads
+     `CeroSec OS · ksp-front`, and so does every prompt. (The title is set when
+     the window opens, so a rename shows on the next open, not under your
+     fingers.)
+134. **The motd is a file too.** As `root`, `edit /etc/motd`, put your own line
+     in it, save. `exit` and log in again: your line is what greets you.
+
 ## What is not in this rung
 
 - Devices, the network, the clock.

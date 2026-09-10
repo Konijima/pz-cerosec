@@ -488,4 +488,116 @@ do
 	eq("and the cursor after what was typed", block.x, promptX + CHAR_W * (#prompt + 2))
 end
 
+--
+-- The BIOS, end to end
+--
+-- Root may wipe the machine he is standing at -- that is what root is, and the
+-- protection is that root has a password. So the way back cannot be a guard on
+-- the command; it has to be underneath the operating system, where a player
+-- who has just destroyed one can still reach it.
+--
+-- The whole round trip: break /bin, log out, open the window again, refuse the
+-- repair, come back to the question, take it, and use the machine.
+--
+
+do
+	local bench = newBench()
+	bench.login("root")
+	eq("root is at a shell", bench.window.mode, "shell")
+
+	-- Something of his own on the disk, to see it survive.
+	bench.enter("mkdir /home/admin/work")
+	bench.enter('write /home/admin/work/notes.txt "keep me"')
+	bench.frame()
+
+	bench.enter("rm -r /bin")
+	bench.frame()
+	-- Still logged in, and the machine is already unusable.
+	bench.enter("ls")
+	bench.frame()
+	check("the commands are gone", bench.painted("ls: command not found"))
+	bench.enter("help")
+	bench.frame()
+	check("help says the system is damaged", bench.painted("the system is damaged"))
+
+	-- exit is a builtin, so a player can always leave a machine he has wiped.
+	bench.enter("exit")
+	bench.frame()
+	eq("exit still works with no /bin", bench.window.mode, "prompt")
+
+	-- Opening the window again: the BIOS looks at the disk first.
+	bench.window:askForScreen()
+	bench.frame()
+	check("the BIOS says there is nothing to boot", bench.painted("No operating system found."))
+	eq("and it asks", bench.window.prompt, "Restore system? (y/n) ")
+	eq("at an ordinary prompt", bench.window.mode, "prompt")
+	eq("with nothing masked", bench.window.mask, false)
+	check("and no login prompt under it", not bench.painted("login: "))
+
+	-- n: the screen stays on the refusal, and nothing is being asked.
+	bench.enter("n")
+	bench.frame()
+	check("the message is still there", bench.painted("No operating system found."))
+	eq("and nothing is asked", bench.window.prompt, "")
+	eq("halted", CeroSec.consoleWaiting(bench.object.console), "halted")
+	eq("but the window still has the keyboard", bench.window.mode, "prompt")
+
+	-- Anything typed at a halted machine brings the question back.
+	bench.enter("")
+	bench.frame()
+	eq("the question comes back", bench.window.prompt, "Restore system? (y/n) ")
+	eq("and the machine is not halted any more", CeroSec.consoleHalted(bench.object.console), false)
+
+	-- Anything that is not an answer asks again rather than guessing.
+	bench.enter("maybe")
+	bench.frame()
+	eq("a non-answer asks again", bench.window.prompt, "Restore system? (y/n) ")
+
+	-- y repairs it, and the machine goes on to its login prompt.
+	bench.enter("y")
+	bench.frame()
+	eq("the machine boots", bench.window.prompt, "login: ")
+	check("and greets whoever is standing there", bench.painted("CeroSec OS 1.0"))
+
+	bench.enter("root")
+	bench.enter("")
+	bench.frame()
+	eq("root is back at a shell", bench.window.mode, "shell")
+	bench.enter("ls /home/admin/work")
+	bench.frame()
+	check("ls works again", bench.painted("notes.txt"))
+
+	-- And what was on the disk is still on it, byte for byte.
+	local state = bench.object:osState()
+	check("the machine validates", state ~= nil)
+	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
+	check("the file in /home survived the repair", node ~= nil)
+	eq("with its contents", node.data, "keep me")
+end
+
+-- A machine wiped and left: the next player to open the window meets the
+-- question, and not somebody else's answer to it.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("rm -r /bin")
+	bench.frame()
+	bench.enter("exit")
+	bench.frame()
+
+	bench.window:askForScreen()
+	bench.frame()
+	bench.enter("n")
+	bench.frame()
+	eq("the first player left it halted", CeroSec.consoleHalted(bench.object.console), true)
+
+	-- The screen belongs to the machine, so a window opened on it now finds the
+	-- refusal and not a fresh question.
+	bench.window:askForScreen()
+	bench.frame()
+	eq("a window opened on it finds the refusal", bench.window.prompt, "")
+	check("with the message on the glass", bench.painted("No operating system found."))
+	eq("and the machine is still halted", CeroSec.consoleHalted(bench.object.console), true)
+end
+
 print("window_test: " .. count .. " checks passed")
