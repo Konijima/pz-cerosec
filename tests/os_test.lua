@@ -2506,4 +2506,537 @@ do
 		CeroSecOS.exec(state, open(state, "root"), "shutdown")), "shutdown")
 end
 
+--
+-- 20. The clock, the columns, the disk and the text tools (rung 2e).
+--
+
+-- Everything below runs on a FIXED clock, handed in the way the server hands
+-- the game's: one number in env.now and nothing else. A test that read a real
+-- clock would be a test that passes today and fails in July.
+local FIXED = CeroSecOS.timeFromParts(1993, 7, 8, 14, 32, 0)
+local ENV = { now = FIXED }
+-- A second moment, an hour later, for telling "was stamped" from "was already
+-- stamped": a mutation that does nothing would still look right against one.
+local LATER = FIXED + 3600
+local ENV2 = { now = LATER }
+
+-- The same shape as ok()/bad() above, with a clock in it.
+local function runAt(state, session, line, env)
+	local execOk, lines, control, data = CeroSecOS.exec(state, session, line, env)
+	for i = 1, #lines do
+		check("`" .. line .. "` line " .. i .. " fits 60 columns", #lines[i] <= CeroSecOS.COLS)
+	end
+	return { ok = execOk, lines = lines, control = control, data = data }
+end
+
+local function okAt(state, session, line, wantLines, env)
+	local r = runAt(state, session, line, env or ENV)
+	eq("`" .. line .. "` ok", r.ok, true)
+	if wantLines ~= nil then
+		eq("`" .. line .. "` line count", #r.lines, #wantLines)
+		for i = 1, #wantLines do eq("`" .. line .. "` line " .. i, r.lines[i], wantLines[i]) end
+	end
+	return r.lines
+end
+
+local function badAt(state, session, line, wantLine, env)
+	local r = runAt(state, session, line, env or ENV)
+	eq("`" .. line .. "` refused", r.ok, false)
+	eq("`" .. line .. "` line count", #r.lines, 1)
+	eq("`" .. line .. "` says", r.lines[1], wantLine)
+end
+
+-- 20a. The arithmetic. A calendar in, the same calendar out.
+do
+	eq("the fixed moment prints", CeroSecOS.formatDate(FIXED), "Thu Jul  8 14:32:00 1993")
+	eq("and in the ls -l column", CeroSecOS.formatStamp(FIXED), "Jul  8 14:32")
+	eq("the ls -l column is 12 wide, always", #CeroSecOS.formatStamp(FIXED), 12)
+	eq("and 12 wide on a two-digit day",
+		#CeroSecOS.formatStamp(CeroSecOS.timeFromParts(1993, 12, 25, 0, 5, 0)), 12)
+	eq("a two-digit day", CeroSecOS.formatStamp(CeroSecOS.timeFromParts(1993, 12, 25, 0, 5, 0)),
+		"Dec 25 00:05")
+
+	-- 0 is a real moment and not a blank: it is what an unstamped node prints.
+	eq("zero is the epoch", CeroSecOS.formatDate(0), "Thu Jan  1 00:00:00 1970")
+	eq("and in the column", CeroSecOS.formatStamp(0), "Jan  1 00:00")
+
+	-- Round trip, on the corners a civil-calendar conversion gets wrong: the
+	-- leap day, the last second of a year, a century that is not a leap year
+	-- and one that is.
+	local corners = {
+		{ 1970, 1, 1, 0, 0, 0 }, { 1993, 7, 8, 14, 32, 0 }, { 1992, 2, 29, 12, 0, 0 },
+		{ 1993, 12, 31, 23, 59, 59 }, { 1900, 3, 1, 0, 0, 0 }, { 2000, 2, 29, 6, 30, 0 },
+		{ 2038, 1, 19, 3, 14, 7 },
+	}
+	for i = 1, #corners do
+		local c = corners[i]
+		local t = CeroSecOS.timeFromParts(c[1], c[2], c[3], c[4], c[5], c[6])
+		local back = CeroSecOS.dateParts(t)
+		eq("round trip " .. i .. " year", back.year, c[1])
+		eq("round trip " .. i .. " month", back.month, c[2])
+		eq("round trip " .. i .. " day", back.day, c[3])
+		eq("round trip " .. i .. " hour", back.hour, c[4])
+		eq("round trip " .. i .. " minute", back.min, c[5])
+		eq("round trip " .. i .. " second", back.sec, c[6])
+	end
+
+	-- The days of the week, against dates nobody has to take on trust.
+	eq("1969-12-31 was a Wednesday",
+		CeroSecOS.formatDate(CeroSecOS.timeFromParts(1969, 12, 31, 0, 0, 0)),
+		"Wed Dec 31 00:00:00 1969")
+	eq("2000-01-01 was a Saturday",
+		CeroSecOS.formatDate(CeroSecOS.timeFromParts(2000, 1, 1, 0, 0, 0)),
+		"Sat Jan  1 00:00:00 2000")
+	eq("2026-09-10 is a Thursday",
+		CeroSecOS.formatDate(CeroSecOS.timeFromParts(2026, 9, 10, 9, 5, 0)),
+		"Thu Sep 10 09:05:00 2026")
+	-- A day is 86400 seconds and the name of the day moves with it, all seven.
+	local start = CeroSecOS.timeFromParts(1993, 7, 4, 0, 0, 0)
+	local wanted = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
+	for i = 1, 7 do
+		eq("day " .. i .. " of the week",
+			string.sub(CeroSecOS.formatDate(start + (i - 1) * 86400), 1, 3), wanted[i])
+	end
+
+	-- What a clock is, and what it is not.
+	eq("a number is a clock", CeroSecOS.clockOf({ now = 5 }), 5)
+	eq("a fraction is cut to the second", CeroSecOS.clockOf({ now = 5.7 }), 5)
+	eq("no env, no clock", CeroSecOS.clockOf(nil), nil)
+	eq("an empty env, no clock", CeroSecOS.clockOf({}), nil)
+	eq("a string is not a clock", CeroSecOS.clockOf({ now = "1993" }), nil)
+	eq("junk is not a clock", CeroSecOS.clockOf("later"), nil)
+	eq("an unstamped node is at zero", CeroSecOS.mtimeOf(CeroSecOS.newFile("root", 644, "")), 0)
+	eq("and so is a nil", CeroSecOS.mtimeOf(nil), 0)
+end
+
+-- 20b. date.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "date", { "Thu Jul  8 14:32:00 1993" })
+	-- No env at all is the machine with no clock, and it says so rather than
+	-- printing the epoch as if it were the hour.
+	local r = runAt(state, admin, "date", nil)
+	eq("no clock refused", r.ok, false)
+	eq("no clock says so", r.lines[1], "date: no clock")
+	local junk = runAt(state, admin, "date", { now = "half past" })
+	eq("a clock that is not one is no clock", junk.lines[1], "date: no clock")
+	badAt(state, admin, "date now", "date: usage: date")
+end
+
+-- 20c. mtime, on every mutation there is.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local home = state.fs.children.home.children.admin
+
+	-- A fresh machine has never been touched: nothing on it carries a stamp.
+	eq("a shipped node has no mtime", home.mtime, nil)
+	eq("which reads as zero", CeroSecOS.mtimeOf(home), 0)
+
+	okAt(state, admin, "touch a.txt", {})
+	eq("touch stamps the file", CeroSecOS.mtimeOf(home.children["a.txt"]), FIXED)
+	eq("and the directory it landed in", CeroSecOS.mtimeOf(home), FIXED)
+
+	okAt(state, admin, "touch a.txt", {}, ENV2)
+	eq("touching it again moves the stamp", CeroSecOS.mtimeOf(home.children["a.txt"]), LATER)
+	eq("but not the directory: the listing did not change",
+		CeroSecOS.mtimeOf(home), FIXED)
+
+	okAt(state, admin, 'write a.txt "hello"', {})
+	eq("a write moves it", CeroSecOS.mtimeOf(home.children["a.txt"]), FIXED)
+	okAt(state, admin, "echo more >> a.txt", {}, ENV2)
+	eq("an append moves it", CeroSecOS.mtimeOf(home.children["a.txt"]), LATER)
+	okAt(state, admin, "echo fresh > b.txt", {})
+	eq("a redirect that creates stamps", CeroSecOS.mtimeOf(home.children["b.txt"]), FIXED)
+
+	okAt(state, admin, "mkdir d", {}, ENV2)
+	eq("mkdir stamps the directory", CeroSecOS.mtimeOf(home.children.d), LATER)
+	eq("and its parent's listing changed", CeroSecOS.mtimeOf(home), LATER)
+
+	okAt(state, admin, "cp a.txt d/c.txt", {})
+	eq("a copy is a new file, stamped now", CeroSecOS.mtimeOf(home.children.d.children["c.txt"]), FIXED)
+	eq("and the directory it landed in", CeroSecOS.mtimeOf(home.children.d), FIXED)
+
+	okAt(state, admin, "chmod 600 a.txt", {}, ENV2)
+	eq("chmod moves it", CeroSecOS.mtimeOf(home.children["a.txt"]), LATER)
+	okAt(state, admin, "chmod 644 a.txt", {})
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "chown root /home/admin/b.txt", {}, ENV2)
+	eq("chown moves it", CeroSecOS.mtimeOf(home.children["b.txt"]), LATER)
+
+	okAt(state, admin, "mv a.txt d/moved.txt", {})
+	eq("mv stamps what moved", CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), FIXED)
+	eq("and the listing it left", CeroSecOS.mtimeOf(home), FIXED)
+	eq("and the listing it arrived in", CeroSecOS.mtimeOf(home.children.d), FIXED)
+
+	okAt(state, admin, "rm d/c.txt", {}, ENV2)
+	eq("rm moves the directory's stamp", CeroSecOS.mtimeOf(home.children.d), LATER)
+
+	-- A machine with no clock mutates exactly as it did before this rung: the
+	-- write happens, nothing is stamped, and nothing already stamped moves.
+	local was = CeroSecOS.mtimeOf(home.children.d.children["moved.txt"])
+	local r = CeroSecOS.exec(state, admin, 'write d/moved.txt "no clock here"', nil)
+	eq("the write still happens", r, true)
+	eq("and leaves the stamp where it was",
+		CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), was)
+	eq("the data did change", home.children.d.children["moved.txt"].data, "no clock here")
+
+	-- A stamp is a write. Somebody who may not write the file may not move it.
+	okAt(state, rootSession, "touch /root/his.txt", {})
+	badAt(state, admin, "touch /root/his.txt", "touch: /root/his.txt: permission denied")
+
+	eq("and all of it still validates", CeroSecOS.validate(state), true)
+end
+
+-- 20d. What the game hands back: nodes with no mtime, and nodes with a bad one.
+do
+	local state = fresh()
+	eq("a machine with no stamps anywhere validates", CeroSecOS.validate(state), true)
+	-- One node stamped, the rest not: exactly what a machine looks like the
+	-- first time somebody types on it after this build lands.
+	state.fs.children.home.children.admin.mtime = FIXED
+	eq("half stamped is still valid", CeroSecOS.validate(state), true)
+
+	local admin = open(state, "admin")
+	local listed = okAt(state, admin, "ls -l /", nil)
+	eq("an unstamped node lists at the epoch",
+		string.find(listed[1], "Jan  1 00:00", 1, true) ~= nil, true)
+
+	local bad1 = fresh()
+	bad1.fs.children.etc.mtime = "yesterday"
+	local vOk, vReason = CeroSecOS.validate(bad1)
+	eq("a stamp that is not a number is refused", vOk, false)
+	eq("and says which node", vReason, "/etc: bad mtime")
+	local bad2 = fresh()
+	bad2.fs.children.etc.mtime = 1.5
+	eq("half a second is refused", CeroSecOS.validate(bad2), false)
+end
+
+-- 20e. ls in columns.
+do
+	-- The packer, on its own, at the corners.
+	eq("nothing packs into nothing", #CeroSecOS.columnize({}, 60), 0)
+	local one = CeroSecOS.columnize({ "solo" }, 60)
+	eq("one name is one line", #one, 1)
+	eq("with no padding after it", one[1], "solo")
+
+	-- Column-major: read DOWN the columns. Six names of 4, so the column is 6
+	-- wide and ten fit -- capped at six, one row.
+	local six = CeroSecOS.columnize({ "aa", "bb", "cc", "dd", "ee", "ff" }, 60)
+	eq("six short names are one row", #six, 1)
+	eq("packed across", six[1], "aa  bb  cc  dd  ee  ff")
+
+	-- Names wide enough that only two columns fit: 20 + 2 = 22, and 62 / 22 is
+	-- two. Five names, so three rows, and the first column holds the first
+	-- three names -- which is what column-major means.
+	local wide = {}
+	for i = 1, 5 do wide[i] = string.rep("x", 19) .. tostring(i) end
+	local packed = CeroSecOS.columnize(wide, 60)
+	eq("five wide names make three rows", #packed, 3)
+	eq("row 1 is name 1 then name 4", packed[1], wide[1] .. "  " .. wide[4])
+	eq("row 2 is name 2 then name 5", packed[2], wide[2] .. "  " .. wide[5])
+	eq("row 3 is name 3 alone, no padding", packed[3], wide[3])
+
+	-- Two names that would need 62 columns get one each.
+	local tight = CeroSecOS.columnize({ string.rep("y", 30), string.rep("z", 30) }, 60)
+	eq("30 + 2 + 30 does not fit 60", #tight, 2)
+	eq("first alone", tight[1], string.rep("y", 30))
+	-- 29 + 2 + 29 does fit.
+	local just = CeroSecOS.columnize({ string.rep("y", 29), string.rep("z", 29) }, 60)
+	eq("but 29 + 2 + 29 does", #just, 1)
+	eq("exactly 60 columns", #just[1], 60)
+
+	-- A name wider than the screen is cut with a "~" and stands alone.
+	local huge = CeroSecOS.columnize({ string.rep("w", 80), "b" }, 60)
+	eq("an over-wide name gets a line to itself", #huge, 2)
+	eq("cut to the screen", huge[1], string.rep("w", 59) .. "~")
+	eq("and it really is 60 wide", #huge[1], 60)
+	eq("the other name follows", huge[2], "b")
+
+	-- And through the command.
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "ls /", { "bin   dev   etc   home  root" })
+	okAt(state, admin, "ls", {})
+	okAt(state, admin, "touch only.txt", {})
+	okAt(state, admin, "ls", { "only.txt" })
+	okAt(state, admin, "mkdir sub", {})
+	okAt(state, admin, "ls", { "only.txt  sub" })
+	-- -F marks the directories and nothing else.
+	okAt(state, admin, "ls -F", { "only.txt  sub/" })
+	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  root/" })
+	-- The mark is part of the name, so it is what the column is measured on.
+	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 33)
+end
+
+-- 20f. ls -l, with a clock and with the flags together.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "touch notes.txt", {})
+	okAt(state, admin, 'write notes.txt "hello"', {})
+	okAt(state, admin, "mkdir sub", {}, ENV2)
+
+	okAt(state, admin, "ls -l", {
+		"-rw-r--r--  admin         5  Jul  8 14:32  notes.txt",
+		"drwxr-xr-x  admin         0  Jul  8 15:32  sub",
+	})
+	-- The flags are letters, so every spelling is the same line.
+	local want = {
+		"-rw-r--r--  admin         5  Jul  8 14:32  notes.txt",
+		"drwxr-xr-x  admin         0  Jul  8 15:32  sub/",
+	}
+	okAt(state, admin, "ls -lF", want)
+	okAt(state, admin, "ls -Fl", want)
+	okAt(state, admin, "ls -l -F", want)
+	okAt(state, admin, "ls -F -l", want)
+	-- One bad letter in a run of good ones is still a bad option, and the
+	-- refusal names the argument as typed.
+	badAt(state, admin, "ls -lz", "ls: -lz: unknown option")
+	badAt(state, admin, "ls -zl", "ls: -zl: unknown option")
+	badAt(state, admin, "ls -l a b", "ls: usage: ls [-lF] [path]")
+end
+
+-- 20g. df, against a state whose numbers are known.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local nodes, bytes = CeroSecOS.usage(state)
+
+	local function pct(used, total) return math.ceil(used * 100 / total) end
+	local lines = okAt(state, admin, "df", nil)
+	eq("df prints three lines", #lines, 3)
+	eq("the header", lines[1], "Filesystem   Size   Used  Avail  Use%")
+	eq("the disk", lines[2],
+		CeroSecOS.padRight("hda", 10) .. "  " .. CeroSecOS.padLeft(tostring(CeroSecOS.DISK_BYTES), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(bytes), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(CeroSecOS.DISK_BYTES - bytes), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(pct(bytes, CeroSecOS.DISK_BYTES)) .. "%", 4))
+	eq("the nodes", lines[3],
+		CeroSecOS.padRight("nodes", 10) .. "  " .. CeroSecOS.padLeft(tostring(CeroSecOS.MAX_NODES), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(nodes), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(CeroSecOS.MAX_NODES - nodes), 5)
+			.. "  " .. CeroSecOS.padLeft(tostring(pct(nodes, CeroSecOS.MAX_NODES)) .. "%", 4))
+
+	-- And the numbers MOVE with the disk, which is the only thing that makes
+	-- them numbers and not decoration.
+	okAt(state, admin, 'write big.txt "' .. string.rep("x", 1000) .. '"', {})
+	local after = okAt(state, admin, "df", nil)
+	local usedBefore = tonumber(string.match(lines[2], "^%a+%s+%d+%s+(%d+)"))
+	local usedAfter = tonumber(string.match(after[2], "^%a+%s+%d+%s+(%d+)"))
+	eq("a thousand bytes written is a thousand bytes used", usedAfter - usedBefore, 1000)
+	local nodesAfter = tonumber(string.match(after[3], "^%a+%s+%d+%s+(%d+)"))
+	eq("and one more node", nodesAfter - nodes, 1)
+
+	-- Rounded up: one byte on the disk is not an empty disk.
+	eq("one byte is 1%", 1, math.ceil(1 * 100 / CeroSecOS.DISK_BYTES))
+	badAt(state, admin, "df -h", "df: usage: df")
+
+	-- The BIOS says the same number the ceiling is.
+	eq("the disk label", CeroSecOS.diskLabel(), "32K")
+	eq("and it is the ceiling", CeroSecOS.DISK_BYTES, CeroSecOS.MAX_TOTAL_BYTES)
+end
+
+-- 20h. The text tools.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local text = "alpha beta\ngamma\nAlpha two\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"
+	okAt(state, admin, 'write a.txt "' .. text .. '"', {})
+
+	-- grep: a plain substring, and the flags.
+	okAt(state, admin, "grep alpha a.txt", { "alpha beta" })
+	okAt(state, admin, "grep -n alpha a.txt", { "1:alpha beta" })
+	okAt(state, admin, "grep -i alpha a.txt", { "alpha beta", "Alpha two" })
+	okAt(state, admin, "grep -in alpha a.txt", { "1:alpha beta", "3:Alpha two" })
+	okAt(state, admin, "grep -ni alpha a.txt", { "1:alpha beta", "3:Alpha two" })
+	-- Nothing found is a refusal, with nothing printed.
+	local miss = runAt(state, admin, "grep zebra a.txt", ENV)
+	eq("no hit is a refusal", miss.ok, false)
+	eq("and says nothing", #miss.lines, 0)
+	-- A pattern is not a pattern: the dot is a dot.
+	okAt(state, admin, 'write dots.txt "a.b\naxb"', {})
+	okAt(state, admin, "grep a.b dots.txt", { "a.b" })
+	-- Two files, so the name goes in front.
+	okAt(state, admin, "cp a.txt b.txt", {})
+	okAt(state, admin, "grep gamma a.txt b.txt", { "a.txt:gamma", "b.txt:gamma" })
+	okAt(state, admin, "grep -n gamma a.txt b.txt", { "a.txt:2:gamma", "b.txt:2:gamma" })
+	badAt(state, admin, "grep", "grep: usage: grep [-i] [-n] <text> <file>...")
+	badAt(state, admin, "grep alpha", "grep: usage: grep [-i] [-n] <text> <file>...")
+	badAt(state, admin, "grep -q alpha a.txt", "grep: -q: unknown option")
+	badAt(state, admin, "grep alpha /nope", "grep: /nope: no such file")
+	badAt(state, admin, "grep alpha /etc", "grep: /etc: is a directory")
+	badAt(state, admin, "grep alpha /etc/passwd", "grep: /etc/passwd: permission denied")
+
+	-- head and tail. Ten lines by default.
+	okAt(state, admin, "head a.txt",
+		{ "alpha beta", "gamma", "Alpha two", "four", "five", "six", "seven", "eight",
+		  "nine", "ten" })
+	okAt(state, admin, "head -n 2 a.txt", { "alpha beta", "gamma" })
+	okAt(state, admin, "head -n 0 a.txt", {})
+	okAt(state, admin, "tail -n 2 a.txt", { "eleven", "twelve" })
+	okAt(state, admin, "tail a.txt",
+		{ "Alpha two", "four", "five", "six", "seven", "eight", "nine", "ten",
+		  "eleven", "twelve" })
+	-- More lines asked for than there are is the whole file, not a refusal.
+	okAt(state, admin, "head -n 99 dots.txt", { "a.b", "axb" })
+	okAt(state, admin, "tail -n 99 dots.txt", { "a.b", "axb" })
+	okAt(state, admin, "touch empty.txt", {})
+	okAt(state, admin, "head empty.txt", {})
+	okAt(state, admin, "tail empty.txt", {})
+	badAt(state, admin, "head", "head: usage: head [-n N] <file>")
+	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N] <file>")
+	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N] <file>")
+	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N] <file>")
+	badAt(state, admin, "head /nope", "head: /nope: no such file")
+	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
+
+	-- wc: lines, words, bytes, name, and a total when there is more than one.
+	okAt(state, admin, "wc dots.txt", { "     2      2      7 dots.txt" })
+	okAt(state, admin, "wc empty.txt", { "     0      0      0 empty.txt" })
+	okAt(state, admin, "wc dots.txt empty.txt", {
+		"     2      2      7 dots.txt",
+		"     0      0      0 empty.txt",
+		"     2      2      7 total",
+	})
+	local counted = okAt(state, admin, "wc a.txt", nil)
+	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
+	badAt(state, admin, "wc", "wc: usage: wc <file>...")
+	badAt(state, admin, "wc /nope", "wc: /nope: no such file")
+end
+
+-- 20i. cp -r.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "mkdir tree", {})
+	okAt(state, admin, "mkdir tree/inner", {})
+	okAt(state, admin, 'write tree/inner/deep.txt "buried"', {})
+	okAt(state, admin, 'write tree/top.txt "surface"', {})
+
+	badAt(state, admin, "cp tree copy", "cp: tree: is a directory")
+	okAt(state, admin, "cp -r tree copy", {}, ENV2)
+	local copy = state.fs.children.home.children.admin.children.copy
+	eq("the tree came over", copy.children.inner.children["deep.txt"].data, "buried")
+	eq("and the file at the top", copy.children["top.txt"].data, "surface")
+	eq("the copy is the caller's", copy.children.inner.owner, "admin")
+	eq("every node of it is stamped now",
+		CeroSecOS.mtimeOf(copy.children.inner.children["deep.txt"]), LATER)
+	eq("the root of the copy too", CeroSecOS.mtimeOf(copy), LATER)
+	-- The original is untouched.
+	eq("and the original still has no stamp on its listing",
+		CeroSecOS.mtimeOf(state.fs.children.home.children.admin.children.tree.children.inner), FIXED)
+
+	-- Never into itself, whichever way the path is spelled.
+	badAt(state, admin, "cp -r tree tree/again", "cp: tree/again: invalid destination")
+	badAt(state, admin, "cp -r tree tree/inner/../x", "cp: tree/inner/../x: invalid destination")
+	badAt(state, admin, "cp -r tree tree", "cp: tree/tree: invalid destination")
+	badAt(state, admin, "cp -r . here", "cp: here: invalid destination")
+	badAt(state, admin, "cp -z tree x", "cp: -z: unknown option")
+	badAt(state, admin, "cp -r tree", "cp: usage: cp [-r] <src> <dst>")
+
+	-- A tree you cannot walk is a tree you cannot copy, and nothing of it is
+	-- written before the refusal.
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "mkdir /home/admin/shut", {})
+	okAt(state, rootSession, 'write /home/admin/shut/secret.txt "his"', {})
+	okAt(state, rootSession, "chmod 700 /home/admin/shut", {})
+	badAt(state, admin, "cp -r shut mine", "cp: shut: permission denied")
+	eq("and nothing was written",
+		state.fs.children.home.children.admin.children.mine, nil)
+
+	-- Into an existing directory, by the source's own name.
+	okAt(state, admin, "mkdir box", {})
+	okAt(state, admin, "cp -r tree box", {})
+	eq("it landed under its name",
+		state.fs.children.home.children.admin.children.box.children.tree.children["top.txt"].data,
+		"surface")
+	eq("the state is still plain and legal", CeroSecOS.validate(state), true)
+end
+
+-- 20j. man, and the one usage line.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-lF] [path]" })
+	okAt(state, admin, "man date", { "date - print the date and time", "usage: date" })
+	badAt(state, admin, "man", "man: usage: man <command>")
+	badAt(state, admin, "man ls date", "man: usage: man <command>")
+	badAt(state, admin, "man nosuchthing", "man: nosuchthing: no manual entry")
+
+	-- The description is the FILE's: rewrite /bin/ls and man says what it says.
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, 'write /bin/ls "shows you things"', {})
+	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-lF] [path]" })
+	-- And a command that is gone has no manual.
+	okAt(state, rootSession, "rm /bin/ls", {})
+	badAt(state, admin, "man ls", "man: ls: no manual entry")
+
+	-- Every usage refusal in the OS prints the string man prints. Nothing here
+	-- is a list written by hand: it is derived from the table, so a command
+	-- added tomorrow is covered the day it is added.
+	local names = CeroSecOS.binNames()
+	local printed = 0
+	for i = 1, #names do
+		local form = CeroSecOS.commandUsage(names[i])
+		-- Six words of nonsense: past the argument count of everything there is.
+		-- A fresh machine and a fresh root session each time, so a command that
+		-- goes through with them changes nothing the next one will see.
+		local clean = fresh()
+		local line = names[i] .. " zz1 zz2 zz3 zz4 zz5 zz6"
+		local _, out = CeroSecOS.exec(clean, open(clean, "root"), line, ENV)
+		-- Not every command HAS a wrong argument count -- echo takes anything --
+		-- but every one that says "usage" says this one.
+		if #out > 0 and string.find(out[1], ": usage: ", 1, true) ~= nil then
+			printed = printed + 1
+			eq(names[i] .. " prints its own usage line", out[1],
+				names[i] .. ": usage: " .. form)
+		end
+	end
+	-- Most of the commands do have one, and if that number ever collapses the
+	-- loop above has stopped exercising anything.
+	check("most commands refused with a usage line (" .. printed .. ")", printed >= 20)
+end
+
+-- 20k. A machine from the last rung is topped up with this one's commands.
+do
+	local state = fresh()
+	-- As rung 2d left it: numbered 2, and without anything this rung adds.
+	state.sysv = 2
+	local added = { "date", "df", "grep", "head", "tail", "wc", "man" }
+	for i = 1, #added do state.fs.children.bin.children[added[i]] = nil end
+	-- Something of the player's, to prove the upgrade is not a restore.
+	state.fs.children.home.children.admin.children["mine.txt"] =
+		CeroSecOS.newFile("admin", 644, "keep me")
+
+	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
+	eq("and moves the number to this build", state.sysv, 3)
+	for i = 1, #added do
+		local node = state.fs.children.bin.children[added[i]]
+		check("/bin/" .. added[i] .. " was seeded", node ~= nil)
+		eq("/bin/" .. added[i] .. " is root's", node.owner, "root")
+		eq("/bin/" .. added[i] .. " is 755", node.mode, 755)
+		eq("/bin/" .. added[i] .. " describes itself", node.data, CeroSecOS.commandDesc(added[i]))
+	end
+	eq("the player's file was not touched",
+		state.fs.children.home.children.admin.children["mine.txt"].data, "keep me")
+	eq("it validates", CeroSecOS.validate(state), true)
+	eq("and asked once only", CeroSecOS.upgradeSystem(state), false)
+
+	-- The new commands really run on it.
+	local admin = open(state, "admin")
+	okAt(state, admin, "date", { "Thu Jul  8 14:32:00 1993" })
+	eq("and df is there", #okAt(state, admin, "df", nil), 3)
+
+	-- The BIOS repair ships them too.
+	local broken = fresh()
+	broken.fs.children.bin.children.date = nil
+	broken.fs.children.bin.children.man = nil
+	CeroSecOS.restoreSystem(broken)
+	check("the repair puts date back", broken.fs.children.bin.children.date ~= nil)
+	check("and man", broken.fs.children.bin.children.man ~= nil)
+	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
 print("os_test: " .. count .. " assertions passed")

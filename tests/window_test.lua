@@ -27,6 +27,25 @@ _G.require = function() end
 _G.__now = 1000
 _G.getTimestampMs = function() return _G.__now end
 _G.ZombRand = function() return 0 end
+
+-- The game's clock. Vanilla's GameTime has two 0-BASED getters -- getMonth()
+-- and getDay() -- which is why every caller in the game's own Lua adds one to
+-- them (media/lua/server/Farming/SPlantGlobalObject.lua, and getDayPlusOne()
+-- exists for exactly that reason). The fake counts the same way, so a server
+-- that forgot to add the one is a server this bench fails: a fake handing over
+-- 1-based numbers would let the wrong arithmetic pass.
+_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
+_G.getGameTime = function()
+	local t = _G.__gameTime
+	if t == nil then return nil end
+	return {
+		getYear = function() return t.year end,
+		getMonth = function() return t.month end,
+		getDay = function() return t.day end,
+		getHour = function() return t.hour end,
+		getMinutes = function() return t.minutes end,
+	}
+end
 _G.getText = function(key) return key end
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
@@ -916,6 +935,52 @@ do
 	check("what was on the disk is still on it", bench.painted("notes.txt"))
 	eq("and the machine is at this build's contents",
 		bench.object:osState().sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
+--
+-- The BIOS tells the truth about the drive, and the clock is the game's.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	-- The number on the BIOS line is the ceiling a write really dies on, and
+	-- not the 20MB that used to be typed into the boot lines by hand.
+	check("the BIOS announces the real drive", bench.painted("Detecting drives ... hda 32K"))
+	check("and never a drive the machine has not got", not bench.painted("20MB"))
+	eq("because the label is the ceiling", CeroSecOS.diskLabel(), "32K")
+
+	-- The whole round trip for the clock: the game's calendar, through the
+	-- server, onto the glass.
+	bench.enter("date")
+	bench.frame()
+	check("date shows the game's calendar", bench.painted("Thu Jul  8 14:32:00 1993"))
+
+	-- And it FOLLOWS the game: a machine whose clock never moved would pass the
+	-- line above and fail this one.
+	_G.__gameTime = { year = 1993, month = 11, day = 24, hour = 6, minutes = 5 }
+	bench.enter("date")
+	bench.frame()
+	check("and moves with it", bench.painted("Sat Dec 25 06:05:00 1993"))
+
+	-- A file written at that minute carries it, on the disk and on the screen.
+	bench.enter("touch gift.txt")
+	bench.enter("ls -l")
+	bench.frame()
+	check("a file it wrote is listed with that minute", bench.painted("Dec 25 06:05  gift.txt"))
+	local node = CeroSecOS.systemNode(bench.object:osState(), "/home/admin/gift.txt")
+	check("and the node really carries it", node ~= nil)
+	eq("to the second", CeroSecOS.mtimeOf(node),
+		CeroSecOS.timeFromParts(1993, 12, 25, 6, 5, 0))
+
+	-- df on the real machine, through the wire.
+	bench.enter("df")
+	bench.frame()
+	check("df names the drive", bench.painted("hda"))
+	check("and its size", bench.painted("32768"))
+
+	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
 end
 
 print("window_test: " .. count .. " checks passed")
