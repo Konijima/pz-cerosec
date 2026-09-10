@@ -515,6 +515,20 @@ this (`ISInventoryPaneContextMenu.lua:933-935`). It unpacks both shapes the even
 hands over: an `InventoryItem`, and a stack of identical ones which arrives as a
 table with an `items` array inside it.
 
+**The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
+**temporary testing aid and has to be set to `false` before the Workshop release.**
+While it is on, every computer — lit or dark, in reach or not — carries a last entry
+on its right-click menu, **Read the CeroSec manual (dev)**, that opens the reader
+there and then with no copy of the book anywhere. It exists so the reader can be
+worked on without first going shopping for the item, and it is a door into a piece
+of documentation a player is supposed to *find*. It is added by
+`CeroSecContextMenu.addDevManual`, always last, and it asks nothing of the computer
+— not its power, not its height, not whether anybody can stand in front of it —
+because it is not really about the computer at all. A book opened that way has no
+item to write a bookmark on, so it keeps its own on the module
+(`CeroSecManualUI.devPage`): session-lived, never saved, and never the same
+bookmark as a copy's. Off, nothing at all is added.
+
 **The item** is `common/media/scripts/items_cerosec.txt`, `CeroSec.Manual`. It is
 `ItemType = base:normal` and **not** `base:literature`, on purpose: a literature item
 that cannot be written on is one the vanilla menu offers to *read*, and vanilla's

@@ -31,6 +31,13 @@ CeroSecManualUI.instances = {}
 -- sits in the same table anything else may put something in.
 CeroSecManualUI.PAGE_KEY = "page"
 
+-- The bookmark of a book that has no copy: the testing door on the computer's
+-- menu (CeroSec.DEV_MANUAL_MENU) opens the manual with no item behind it, and
+-- there is nowhere on an item to write where it was left. So it is written
+-- here, on the module, for as long as the session lasts. It is not saved and it
+-- is not meant to be: a book nobody owns has no shelf to be put back on.
+CeroSecManualUI.devPage = 1
+
 -- Paper and ink. Deliberately not CeroSec.COLORS: that palette is a phosphor
 -- screen and this is a printed book, and a book that glows green would be the
 -- terminal with pages.
@@ -151,11 +158,12 @@ function CeroSecManualUI:new(x, y, playerObj, item)
 	-- Where the book was left. A number off modData is not to be trusted --
 	-- the manual may have been rewritten since it was written there -- so it
 	-- goes through the book's own clamp, which also brings it back to the left
-	-- leaf of its sheet.
-	local page = 1
+	-- leaf of its sheet. With no item there is no modData, and the bookmark is
+	-- the module's own.
+	local page = CeroSecManualUI.devPage
 	if item and item.getModData then
 		local data = item:getModData()
-		if data then page = data[CeroSecManualUI.PAGE_KEY] end
+		page = data and data[CeroSecManualUI.PAGE_KEY]
 	end
 	o.page = CeroSecManualBook.clampPage(o.book, page)
 
@@ -254,7 +262,10 @@ end
 
 function CeroSecManualUI:remember()
 	local item = self.item
-	if not item or not item.getModData then return end
+	if not item or not item.getModData then
+		CeroSecManualUI.devPage = self.page
+		return
+	end
 	local data = item:getModData()
 	if not data then return end
 	data[CeroSecManualUI.PAGE_KEY] = self.page
@@ -312,10 +323,14 @@ end
 -- The book shuts when the player stops being able to hold it: he is dead, or
 -- the item has left his hands. Nothing else -- walking, fighting and driving
 -- are all things a survivor can do with a book open in front of the player.
+--
+-- A book opened with no item behind it -- the testing door on the computer's
+-- menu -- has nothing to leave anybody's hands, so the player is the whole of
+-- the test for it.
 function CeroSecManualUI:stillValid()
 	local playerObj = self.playerObj
 	if not playerObj or playerObj:isDead() then return false end
-	if not self.item then return false end
+	if not self.item then return true end
 	local container = self.item:getContainer()
 	if not container then return false end
 	return true

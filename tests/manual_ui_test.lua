@@ -598,6 +598,140 @@ do
 end
 
 --
+-- The testing door on the computer's menu (CeroSec.DEV_MANUAL_MENU)
+--
+
+do
+	-- The world menu is a client file of ours and it is loaded here with the
+	-- pieces of the game and of the mod it leans on stood in for. Only what
+	-- CeroSecContextMenu actually calls is faked; the sprite names come from
+	-- the real CeroSecDefs, so a menu that stopped recognising a computer is a
+	-- menu this bench notices.
+	local computer = {
+		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end,
+		getSquare = function() return {
+			haveElectricity = function() return true end,
+			hasGridPower = function() return true end,
+			getRoom = function() return {} end,
+		} end,
+	}
+	local off = {
+		getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end,
+		getSquare = computer.getSquare,
+	}
+
+	local picked = computer
+	CeroSecReach = {
+		pickComputer = function() return picked end,
+		height = function() return "mid" end,
+		canStandInFront = function() return true end,
+		walkToFront = function() end,
+		chairInFront = function() return nil end,
+		isSeatedOn = function() return false end,
+	}
+	JoypadState = { players = {} }
+	ISTimedActionQueue = { add = function() end }
+	ISCeroSecToggleAction = { new = function() return {} end }
+	ISCeroSecUseAction = { new = function() return {} end }
+	ISRestAction = { new = function() return {} end }
+	ISWorldObjectContextMenu = {
+		Test = false,
+		addToolTip = function() return { setVisible = function() end } end,
+	}
+	local player = newPlayer()
+	player.getVehicle = function() return nil end
+	_G.getSpecificPlayer = function() return player end
+
+	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecContextMenu.lua"))
+	chunk()
+
+	local function menuOn(target)
+		picked = target
+		local labels = {}
+		local context = { addOption = function(_, label, ...)
+			labels[#labels + 1] = label
+			return {}
+		end }
+		CeroSecContextMenu.OnFillWorldObjectContextMenu(0, context, {}, false)
+		return labels
+	end
+
+	-- On, with the flag: the two options that belong to the machine, and the
+	-- door LAST behind them.
+	CeroSec.DEV_MANUAL_MENU = true
+	local labels = menuOn(computer)
+	eq("a lit computer offers three entries", #labels, 3)
+	eq("the machine's own first", labels[1], "ContextMenu_CeroSec_TurnOff")
+	eq("then its terminal", labels[2], "ContextMenu_CeroSec_Use")
+	eq("and the door last", labels[3], "ContextMenu_CeroSec_DevManual")
+
+	-- Off: no terminal, and the door is still there and still last, because it
+	-- asks nothing of the computer.
+	labels = menuOn(off)
+	eq("a dark computer offers two entries", #labels, 2)
+	eq("no terminal on a dark screen", labels[1], "ContextMenu_CeroSec_TurnOn")
+	eq("the door is still last", labels[2], "ContextMenu_CeroSec_DevManual")
+
+	-- Without the flag: not an entry to be seen, on either machine.
+	CeroSec.DEV_MANUAL_MENU = false
+	labels = menuOn(computer)
+	eq("with the flag off a lit computer is back to two", #labels, 2)
+	for i = 1, #labels do
+		check("and none of them is the door",
+			labels[i] ~= "ContextMenu_CeroSec_DevManual")
+	end
+	labels = menuOn(off)
+	eq("and a dark one back to one", #labels, 1)
+	eq("its own option and nothing else", labels[1], "ContextMenu_CeroSec_TurnOn")
+
+	CeroSec.DEV_MANUAL_MENU = true
+end
+
+--
+-- A book with no copy behind it: the door's own bookmark
+--
+
+do
+	-- The door opens the reader with no item. There is nowhere on an item to
+	-- write where it was left, so the bookmark is the module's -- and it must
+	-- be a DIFFERENT bookmark from any copy's, or turning the pages of a book
+	-- nobody owns would move somebody's real one.
+	CeroSecManualUI.devPage = 1
+
+	local item = newItem()
+	local owned = newWindow(item)
+	owned:onNext()
+	owned:onNext()
+	local ownedPage = owned.page
+	owned:close()
+
+	local dev = CeroSecManualUI:new(0, 0, newPlayer(), nil)
+	eq("a book with no copy opens at the front", dev.page, 1)
+	check("and not where the owned copy was left", ownedPage ~= 1)
+
+	dev:onNext()
+	local devPage = dev.page
+	eq("its bookmark went on the module", CeroSecManualUI.devPage, devPage)
+	eq("and the copy's own is untouched", item.data.page, ownedPage)
+	check("the two bookmarks are not the same", devPage ~= ownedPage)
+
+	-- Opened again, it comes back to its own page.
+	local again = CeroSecManualUI:new(0, 0, newPlayer(), nil)
+	eq("the door reopens where the door left off", again.page, devPage)
+
+	-- And the copy still opens on the copy's page.
+	local reopened = newWindow(item)
+	eq("the owned copy is where it always was", reopened.page, ownedPage)
+
+	-- Nothing to leave anybody's hands, so nothing shuts it but the player.
+	check("a book with no copy stays open", again:stillValid() == true)
+	again.playerObj.isDead = function() return true end
+	check("a dead reader closes it", again:stillValid() == false)
+
+	CeroSecManualUI.devPage = 1
+end
+
+--
 -- The item script: the keys the game will be asked to parse
 --
 

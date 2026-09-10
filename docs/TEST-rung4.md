@@ -43,6 +43,11 @@ still opens — a title leaf and an empty contents — which is itself worth one
 
 ### B — Opening the book
 
+**While `CeroSec.DEV_MANUAL_MENU` is on** you do not need a copy of the book for any
+of section B, C or D's first three steps: right-click any computer and take the last
+entry, **Read the CeroSec manual (dev)**. Do steps 18-22 with a real item, though —
+they are about the bookmark on the item, which the door does not have.
+
 6. **It opens.** Right-click → **Read the manual**. A window appears in the middle of
    the screen, titled with the book's own title. Two cream leaves side by side, a
    darker band down each inner edge where the paper curves into the gutter, page
@@ -134,3 +139,20 @@ vanilla numbers each one was set against.
     him is not promised to be where you left it. That is deliberate — it is a
     bookmark, not machine state — and it is the one place the manual behaves
     differently from the terminal.
+
+## Before release
+
+`CeroSec.DEV_MANUAL_MENU` in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` is a
+testing aid and **must be `false` before anything goes to the Workshop.** It is a
+door straight into a piece of documentation the player is supposed to find, and it
+is on every computer in Knox County.
+
+31. **Turn it off.** Set `CeroSec.DEV_MANUAL_MENU = false`. Right-click a computer
+    that is **on**: "Turn off computer" and "Use computer", and no third entry.
+    Right-click one that is **off**: "Turn on computer" and nothing else. Not a
+    greyed-out entry, not a submenu — nothing.
+32. **The book still works.** With the flag off, spawn a manual and read it from the
+    inventory. Everything in sections B, C and D still holds: the door was a way in,
+    not the way it works.
+33. **The flag is the only thing that changed.** `git diff` on the release commit
+    touches `CeroSecDefs.lua` and nothing else.
