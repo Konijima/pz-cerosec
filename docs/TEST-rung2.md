@@ -355,6 +355,66 @@ starred to the length of what was typed.
     clears to `login:` and nothing of the half-answered chain is left. Logging
     back in gives a shell prompt, not the question.
 
+## J — The keyboard you can hear, and the character typing
+
+84. **A click per key.** Open the terminal and type a word slowly. There is one
+    short click **per keystroke**, clearly audible, and the clicks are not all
+    the same — four samples are picked from at random. Backspace and Delete
+    click too. Hold a key down: a fast, even run, never a smear (nothing plays
+    twice inside 40 ms).
+85. **Enter is different.** Press Enter at the shell: a heavier, longer click
+    than a letter. Same in the editor, where Enter opens a new row.
+86. **Arrows.** Up and Down (history at the shell, the cursor in the editor)
+    click. Left, Right, Home and End do not — the game gives a focused text box
+    no callback for those, so there is nothing to hang a sound on.
+87. **Nobody else hears it, and no zombie comes.** In Host mode, the second
+    player standing at the same computer hears **nothing** while the first types
+    (it is a local sound, like the vanilla map screen's). Type next to a horde
+    behind a wall: nothing turns towards you.
+88. **Volume.** Loud enough to hear over room noise without being startling. It
+    follows the game's own sound sliders.
+
+89. **The typing animation.** Open the terminal standing. Type: the character
+    plays the loot animation — hands out at the keyboard — and **stops** about a
+    second and a half after the last key. Read your screen without typing and he
+    stands still, facing the monitor. Start typing again and the hands come back.
+90. **Low and mid.** On a computer on the floor the animation is the crouched
+    one, on a desk the standing one — the same rule the "Use computer" walk-in
+    uses.
+91. **Seated.** With a chair in front, sit down and open the terminal. Typing
+    plays the animation **from the chair**; if it does not coexist with the
+    seated pose in your build, he simply stays seated facing the screen — say so
+    rather than forcing it.
+92. **He stays busy while the window is up.** With the terminal open, right-click
+    something across the room and queue an action. It does **not** run: the
+    character is at the keyboard, and the queue is sequential. Close the
+    terminal and he is free again. That is intended, not a bug.
+93. **Closing lets go.** Escape (or the close box) and the character drops out of
+    the animation at once, facing the screen, still standing or still seated. He
+    is never left with his hands out.
+94. **Walking away.** Step off the front square: the window closes and the
+    animation goes with it, in the same frame.
+
+## K — Losing the keyboard and getting it back
+
+95. **Refocus turns him back.** Terminal open, standing, no chair. Click on the
+    ground far away (do not walk off the square) or mouse-look elsewhere so the
+    character faces another way. Now click **anywhere on the terminal**: he turns
+    back to the screen, and typing reaches the glass again with the first letter.
+96. **Refocus sits him back down.** Same with a chair in front. Open the terminal
+    seated, click elsewhere to lose the keyboard, press the sit/stand key so he
+    **stands up but stays on the front square** (the window stays open — the rule
+    is the square, not the posture). Click the terminal: he sits back down on the
+    chair and faces the screen. No walking, no shuffling.
+97. **He is not sat down twice.** Repeat 96 but click the terminal several times
+    in a row while he is standing up: exactly one sit. Click it again while he is
+    already seated: nothing happens at all.
+98. **Free while unfocused.** With the terminal open but the keyboard elsewhere,
+    mouse-look around: the character is **not** yanked back to the screen every
+    frame. The facing is only held while the window has the keyboard.
+99. **No chair, no sit.** 96 with the chair removed: clicking the terminal turns
+    him to the screen and nothing else.
+
 ## What is not in this rung
 
 - Devices, the network, the clock.

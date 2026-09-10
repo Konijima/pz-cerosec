@@ -29,8 +29,83 @@ module Base
         }
     }
 
-    /* Typing. Played through IsoGameCharacter.playSoundLocal, so it is heard by
-       the player at the keyboard and nobody else, and it draws no zombies. */
+    /* Typing, one click per keystroke. Four single keys cut out of
+       CeroSecKeyboardFast.ogg (78 to 116 ms) and one heavier one for Enter
+       (155 ms), each normalized to about -3 dBFS so they carry over the room.
+       The terminal picks one of the four at random per keystroke, which is what
+       keeps a held key from sounding like a machine.
+
+       Played through IsoGameCharacter.playSoundLocal, the way the vanilla map
+       screen plays its own interaction sounds (ISMap.lua:210,245;
+       ISWorldMapSymbols.lua:142 and on): heard by the player at the keyboard,
+       no packet per keystroke, and nothing a zombie can walk towards.
+
+       The clip keys are the fields of zombie.audio.GameSoundClip: file, volume,
+       pitch, distanceMin, distanceMax, reverbMaxRange, reverbFactor, priority.
+       distanceMax is short because this is a keyboard, not a machine. */
+    sound CeroSecKey1
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKey1.ogg,
+            distanceMax = 6,
+            volume = 1.0,
+        }
+    }
+
+    sound CeroSecKey2
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKey2.ogg,
+            distanceMax = 6,
+            volume = 1.0,
+        }
+    }
+
+    sound CeroSecKey3
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKey3.ogg,
+            distanceMax = 6,
+            volume = 1.0,
+        }
+    }
+
+    sound CeroSecKey4
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKey4.ogg,
+            distanceMax = 6,
+            volume = 1.0,
+        }
+    }
+
+    sound CeroSecKeyEnter
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKeyEnter.ogg,
+            distanceMax = 6,
+            volume = 1.0,
+        }
+    }
+
+    /* The long run of typing this rung started with. Nothing plays it any more
+       -- it is what the single keys above were cut out of -- and it is kept
+       declared so the file it names is not an orphan. */
     sound CeroSecKeyboardFast
     {
         category = Object,
