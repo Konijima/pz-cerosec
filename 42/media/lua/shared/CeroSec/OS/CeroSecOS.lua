@@ -23,7 +23,8 @@ CeroSecOS.STATE_VERSION = 1
 -- in, once, without touching anything a player put there.
 --
 -- 2: /bin/sudo, /bin/shutdown, /bin/reboot, /bin/restart and /etc/sudoers.
-CeroSecOS.SYSTEM_VERSION = 2
+-- 3: /bin/date, /bin/df, /bin/grep, /bin/head, /bin/tail, /bin/wc, /bin/man.
+CeroSecOS.SYSTEM_VERSION = 3
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -34,7 +35,13 @@ CeroSecOS.MAX_NAME = 32          -- characters in a single path component
 CeroSecOS.MAX_FILE_BYTES = 4096  -- bytes in one file
 CeroSecOS.MAX_DIR_ENTRIES = 64   -- files + dirs directly inside one dir
 CeroSecOS.MAX_NODES = 256        -- nodes on the whole computer, root included
-CeroSecOS.MAX_TOTAL_BYTES = 32768 -- sum of every file's data
+-- The disk. One number, because the machine has one drive: it is what the
+-- BIOS announces at power-on ("hda 32K"), what df divides by, and what the
+-- write path refuses to go past. MAX_TOTAL_BYTES is the name the limits are
+-- read under, DISK_BYTES the name the hardware is read under; they are the
+-- same number by construction and never two numbers that can drift apart.
+CeroSecOS.DISK_BYTES = 32768
+CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
 -- Control the terminal honours travels out of band, as exec's third return
@@ -161,4 +168,159 @@ function CeroSecOS.fit(lines)
 		end
 	end
 	return out
+end
+
+--
+-- The disk, as a label.
+--
+
+-- What the BIOS says it found and what df calls the drive. Whole kilobytes
+-- while the disk is one -- 32768 bytes is "32K" and not "32.0K" -- and whole
+-- megabytes past that, so a bigger drive at a later rung does not print a
+-- five-digit K.
+function CeroSecOS.diskLabel()
+	local bytes = CeroSecOS.DISK_BYTES
+	if bytes >= 1048576 then return tostring(math.floor(bytes / 1048576)) .. "MB" end
+	if bytes >= 1024 then return tostring(math.floor(bytes / 1024)) .. "K" end
+	return tostring(bytes) .. "B"
+end
+
+CeroSecOS.DISK_NAME = "hda"
+
+--
+-- The clock
+--
+-- The engine has no clock of its own and never asks for one: a time is HANDED
+-- to exec, in env.now, by whoever is running the machine. The server passes the
+-- game's calendar (see SCeroSecSystem:clockEnv); a test passes a fixed number;
+-- nobody passing anything at all means the machine has no clock, which `date`
+-- says out loud and which leaves every timestamp at 0.
+--
+-- env.now is ONE number: seconds since 1970-01-01 00:00:00, counted on the
+-- calendar the game is showing. A number is what a node can carry into the save
+-- file, what two mtimes can be compared as, and what a formatted table could
+-- never be without the engine trusting whoever built it.
+--
+-- Everything below is arithmetic on that number. The standard library's own
+-- date and time functions are not used and could not be: the core is pure, and
+-- the whole os library is out of reach under Kahlua.
+--
+
+CeroSecOS.MONTH_NAMES = {
+	"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+}
+-- Indexed 1..7 from Sunday, the way the day-of-week arithmetic below lands.
+CeroSecOS.DAY_NAMES = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
+
+-- Days from 1970-01-01 to y-m-d (proleptic Gregorian, month 1..12, day 1..31).
+-- Hinnant's days_from_civil, with math.floor around every division: the 5.3
+-- integer-division operator is forbidden in the core, and rounding toward zero
+-- is not something to bet on under Kahlua.
+local function daysFromCivil(y, m, d)
+	if m <= 2 then y = y - 1 end
+	local era = math.floor(y / 400)
+	local yoe = y - era * 400
+	local mp = math.fmod(m + 9, 12)
+	local doy = math.floor((153 * mp + 2) / 5) + d - 1
+	local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+	return era * 146097 + doe - 719468
+end
+
+-- The way back.
+local function civilFromDays(z)
+	z = z + 719468
+	local era = math.floor(z / 146097)
+	local doe = z - era * 146097
+	local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524)
+		- math.floor(doe / 146096)) / 365)
+	local y = yoe + era * 400
+	local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+	local mp = math.floor((5 * doy + 2) / 153)
+	local d = doy - math.floor((153 * mp + 2) / 5) + 1
+	local m = mp + 3
+	if mp >= 10 then m = mp - 9 end
+	if m <= 2 then y = y + 1 end
+	return y, m, d
+end
+
+-- A calendar the game hands over -> the one number the engine carries.
+function CeroSecOS.timeFromParts(year, month, day, hour, min, sec)
+	if type(year) ~= "number" or type(month) ~= "number" or type(day) ~= "number" then
+		return nil
+	end
+	hour = tonumber(hour) or 0
+	min = tonumber(min) or 0
+	sec = tonumber(sec) or 0
+	return daysFromCivil(math.floor(year), math.floor(month), math.floor(day)) * 86400
+		+ math.floor(hour) * 3600 + math.floor(min) * 60 + math.floor(sec)
+end
+
+-- The number -> a calendar. Always a table, never nil: a timestamp of 0 is a
+-- real date (1970-01-01) and is what an unstamped node prints as.
+function CeroSecOS.dateParts(t)
+	if type(t) ~= "number" then t = 0 end
+	t = math.floor(t)
+	local days = math.floor(t / 86400)
+	local rest = t - days * 86400
+	local y, m, d = civilFromDays(days)
+	-- 1970-01-01 was a Thursday, which is index 5 of DAY_NAMES.
+	local wday = math.fmod(math.fmod(days + 4, 7) + 7, 7) + 1
+	return {
+		year = y, month = m, day = d,
+		hour = math.floor(rest / 3600),
+		min = math.floor(math.fmod(math.floor(rest / 60), 60)),
+		sec = math.floor(math.fmod(rest, 60)),
+		wday = wday,
+	}
+end
+
+local function two(n)
+	if n < 10 then return "0" .. tostring(n) end
+	return tostring(n)
+end
+
+-- What `date` prints: "Thu Jul  8 14:32:00 1993". The day of the month is
+-- blank-padded to two, the way every Unix date since the seventies has done it.
+function CeroSecOS.formatDate(t)
+	local p = CeroSecOS.dateParts(t)
+	return CeroSecOS.DAY_NAMES[p.wday] .. " " .. CeroSecOS.MONTH_NAMES[p.month]
+		.. " " .. CeroSecOS.padLeft(tostring(p.day), 2)
+		.. " " .. two(p.hour) .. ":" .. two(p.min) .. ":" .. two(p.sec)
+		.. " " .. tostring(p.year)
+end
+
+-- What `ls -l` prints: "Jul  8 14:32", exactly 12 characters wide whatever the
+-- date, because it sits in a fixed column.
+function CeroSecOS.formatStamp(t)
+	local p = CeroSecOS.dateParts(t)
+	return CeroSecOS.MONTH_NAMES[p.month] .. " " .. CeroSecOS.padLeft(tostring(p.day), 2)
+		.. " " .. two(p.hour) .. ":" .. two(p.min)
+end
+
+-- The clock exec was handed, or nil when it was handed none. The ONE place the
+-- engine reads env, so a caller that passes junk is a machine without a clock
+-- and never a machine with a wrong one.
+function CeroSecOS.clockOf(env)
+	if type(env) ~= "table" then return nil end
+	if type(env.now) ~= "number" then return nil end
+	return math.floor(env.now)
+end
+
+-- A node's timestamp. Absent is 0: every node made before this build has none,
+-- and validate accepts them, so nothing anywhere may read node.mtime raw.
+function CeroSecOS.mtimeOf(node)
+	if type(node) ~= "table" or type(node.mtime) ~= "number" then return 0 end
+	return node.mtime
+end
+
+-- Stamp a node and everything under it. What a create costs: a fresh file, a
+-- fresh directory and every node of a `cp -r` all carry the moment the copy was
+-- made, the way cp without -p does.
+function CeroSecOS.stampTree(node, now)
+	if now == nil or type(node) ~= "table" then return end
+	node.mtime = now
+	if node.children == nil then return end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do CeroSecOS.stampTree(node.children[names[i]], now) end
 end

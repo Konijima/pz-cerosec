@@ -340,10 +340,26 @@ CeroSec.CONSOLE_MAX = 100
 CeroSec.BOOT_LINES = {
 	"CeroSec BIOS v1.03 -- (c) 1993 CeroSec Systems",
 	"Memory test: 640K OK",
-	"Detecting drives ... hda 20MB",
+	-- The capacity is NOT written here: it is the engine's ceiling and it is
+	-- appended at power-on by bootLines(). A BIOS that announces a drive the
+	-- machine does not have is a BIOS lying to the player about the one number
+	-- he will run into -- `df` and a full disk say 32K, so this says 32K.
+	"Detecting drives ... hda ",
 	"Booting from hda ...",
 	"",
 }
+
+-- Which of those lines carries the capacity.
+CeroSec.BOOT_DISK_LINE = 3
+
+-- The BIOS as it goes onto a screen: the lines above with the real disk on the
+-- drive line. A copy every time, so nothing ever writes into the template.
+function CeroSec.bootLines()
+	local out = {}
+	for i = 1, #CeroSec.BOOT_LINES do out[i] = CeroSec.BOOT_LINES[i] end
+	out[CeroSec.BOOT_DISK_LINE] = out[CeroSec.BOOT_DISK_LINE] .. CeroSecOS.diskLabel()
+	return out
+end
 
 -- A console at power-on: nothing on the screen, nobody logged in, and the BIOS
 -- still to come.

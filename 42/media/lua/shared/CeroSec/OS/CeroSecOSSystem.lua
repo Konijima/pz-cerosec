@@ -48,7 +48,7 @@ function CeroSecOS.fillBin(bin)
 	end
 	local names = CeroSecOS.binNames()
 	for i = 1, #names do
-		bin.children[names[i]] = CeroSecOS.newFile("root", 755, CeroSecOS.COMMAND_INFO[names[i]])
+		bin.children[names[i]] = CeroSecOS.newFile("root", 755, CeroSecOS.commandDesc(names[i]))
 	end
 	return bin
 end
@@ -103,7 +103,7 @@ function CeroSecOS.upgradeSystem(state)
 		local names = CeroSecOS.binNames()
 		for i = 1, #names do
 			local name = names[i]
-			local info = CeroSecOS.COMMAND_INFO[name]
+			local info = CeroSecOS.commandDesc(name)
 			if bin.children[name] == nil
 					and nodes + 1 <= CeroSecOS.MAX_NODES
 					and bytes + #info <= CeroSecOS.MAX_TOTAL_BYTES
@@ -183,10 +183,10 @@ end
 -- true, or nil plus a reason. Writes through writeFile, so /etc has to be there
 -- and the ceilings apply; the state's own copy of the name is only moved once
 -- the file has actually taken it.
-function CeroSecOS.setHostname(state, name)
+function CeroSecOS.setHostname(state, name, now)
 	if not CeroSecOS.isValidHostname(name) then return nil, "invalid name" end
-	local done, reason =
-		CeroSecOS.writeFile(state, CeroSecOS.rootSession(), CeroSecOS.HOSTNAME_PATH, name, false)
+	local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+		CeroSecOS.HOSTNAME_PATH, name, false, now)
 	if done == nil then return nil, reason end
 	state.hostname = name
 	return true, nil

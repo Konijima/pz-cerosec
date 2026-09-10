@@ -244,6 +244,40 @@ end
 -- /etc/passwd nobody could be.
 --
 
+--
+-- The clock
+--
+-- The engine has none of its own and asks for none: every call into it that can
+-- change the disk is handed one, in env.now, and the number below is where it
+-- comes from. It is the GAME's calendar -- the hour and the day the survivor
+-- standing at the keyboard is living in -- so a file written at four in the
+-- morning is stamped four in the morning, and July 1993 is July 1993.
+--
+-- The calls, verified with javap on zombie.GameTime and used the same way
+-- vanilla Lua uses them (media/lua/server/Farming/SPlantGlobalObject.lua,
+-- media/lua/server/Seasons/season.lua):
+--   getYear()    full year, 1993 on a default sandbox
+--   getMonth()   0..11 -- vanilla adds 1 to it everywhere it is printed
+--   getDay()     0-based day of the month, which is why getDayPlusOne() exists
+--   getHour()    0..23
+--   getMinutes() 0..59
+-- There is no getSeconds(): the game's finest hand is the minute, so the second
+-- is 0 and `date` prints ":00". That is the game's clock and not a rounding of
+-- ours.
+--
+-- A machine running where there is no GameTime -- a test harness, a load order
+-- nobody expected -- is handed an env with no clock in it rather than a wrong
+-- one, and the OS says "no clock".
+function SCeroSecSystem:clockEnv()
+	if getGameTime == nil then return {} end
+	local gt = getGameTime()
+	if gt == nil then return {} end
+	local now = CeroSecOS.timeFromParts(gt:getYear(), gt:getMonth() + 1, gt:getDay() + 1,
+		gt:getHour(), gt:getMinutes(), 0)
+	if now == nil then return {} end
+	return { now = now }
+end
+
 SCeroSecSystem.BIOS_PROMPT = "Restore system? (y/n) "
 
 -- The state, or nil when this machine has nothing to boot. Both halves of the
@@ -505,7 +539,7 @@ end
 function SCeroSecSystem:bootScreen(console, state)
 	if console.booted then return false end
 	console.booted = true
-	CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
+	CeroSec.consolePushAll(console, CeroSec.bootLines())
 	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
 	return true
 end
@@ -714,7 +748,8 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			CeroSec.consolePush(console, asked.text .. text)
 		end
 		local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
-		local _, lines, control, data = CeroSecOS.continue(state, session, asked.cont, text)
+		local _, lines, control, data =
+			CeroSecOS.continue(state, session, asked.cont, text, self:clockEnv())
 		order = control
 		console.user = session.user
 		console.cwd = session.cwd
@@ -757,7 +792,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
 	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 	local prompt = self:promptFor(state, console)
-	local _, lines, control, data = CeroSecOS.exec(state, session, line)
+	local _, lines, control, data = CeroSecOS.exec(state, session, line, self:clockEnv())
 	console.user = session.user
 	console.cwd = session.cwd
 	luaObject:mirrorOS()
@@ -820,7 +855,10 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	console.edit.text = text
 
 	local session = self:editSession(console)
-	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false)
+	-- The editor's save is a write like any other, clock included: a file saved
+	-- out of the editor is stamped the minute it was saved.
+	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false,
+		CeroSecOS.clockOf(self:clockEnv()))
 	if done == nil then
 		console.edit.message = "Cannot save: " .. tostring(reason)
 	else

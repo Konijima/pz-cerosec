@@ -300,7 +300,7 @@ end
 -- exactly as it was rather than half rewritten, and the write goes through the
 -- ordinary filesystem gate like any other, ceilings and printable rule
 -- included. The session is root's because the file is root's and mode 600.
-function CeroSecOS.writePasswd(state, users, order, name, stored)
+function CeroSecOS.writePasswd(state, users, order, name, stored, now)
 	local out = {}
 	for i = 1, #order do
 		local user = users[order[i]]
@@ -313,13 +313,14 @@ function CeroSecOS.writePasswd(state, users, order, name, stored)
 		end
 	end
 	local done, reason =
-		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH, table.concat(out, "\n"))
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH,
+			table.concat(out, "\n"), now)
 	if done == nil then return nil, reason end
 	return true, nil
 end
 
 -- The single place a password is written.
-function CeroSecOS.setPassword(state, name, password, extra)
+function CeroSecOS.setPassword(state, name, password, extra, now)
 	local users, order = CeroSecOS.readUsers(state)
 	local user = users[name]
 	if user == nil then return nil, "no such user" end
@@ -327,7 +328,7 @@ function CeroSecOS.setPassword(state, name, password, extra)
 	if #password > CeroSecOS.MAX_PASSWORD then return nil, "password too long" end
 	if CeroSecOS.hasControlBytes(password) then return nil, "invalid characters" end
 	local stored = CeroSecOS.hashPassword(password, CeroSecOS.newSalt(state, name .. tostring(extra)))
-	return CeroSecOS.writePasswd(state, users, order, name, stored)
+	return CeroSecOS.writePasswd(state, users, order, name, stored, now)
 end
 
 -- The two accounts a machine ships with, as the file has them. Both open: an

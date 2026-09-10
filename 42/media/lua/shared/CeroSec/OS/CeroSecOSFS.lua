@@ -9,6 +9,16 @@
 --   dir  = { type = "dir",  owner = "root",  mode = 750, children = { [name] = node } }
 --   file = { type = "file", owner = "admin", mode = 640, data = "text" }
 --
+-- and each of them may carry an mtime: the clock exec was handed at the moment
+-- the node was last touched (see the clock section of CeroSecOS.lua). Absent is
+-- 0 -- every node saved before this build has none and validate accepts them --
+-- so it is read with CeroSecOS.mtimeOf and never off the field.
+--
+-- The mutators below all take that clock as a last argument, and nil means "no
+-- clock": the mutation happens, nothing is stamped. This machine has ONE
+-- timestamp where Unix has three, so it stands for mtime and for ctime both --
+-- a chmod and a mv move it, where a real one would only have moved the ctime.
+--
 -- Reasons returned here are bare ("no such file"); the shell prefixes them with
 -- the command and the argument as typed.
 --
@@ -21,12 +31,16 @@ local BITS = { r = 4, w = 2, x = 1 }
 -- Node constructors.
 --
 
-function CeroSecOS.newDir(owner, mode)
-	return { type = "dir", owner = owner or "root", mode = mode or 755, children = {} }
+function CeroSecOS.newDir(owner, mode, mtime)
+	local node = { type = "dir", owner = owner or "root", mode = mode or 755, children = {} }
+	if mtime ~= nil then node.mtime = mtime end
+	return node
 end
 
-function CeroSecOS.newFile(owner, mode, data)
-	return { type = "file", owner = owner or "root", mode = mode or 644, data = data or "" }
+function CeroSecOS.newFile(owner, mode, data, mtime)
+	local node = { type = "file", owner = owner or "root", mode = mode or 644, data = data or "" }
+	if mtime ~= nil then node.mtime = mtime end
+	return node
 end
 
 --
@@ -207,7 +221,10 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 end
 
 -- Attach a freshly built node at path. node, reason.
-function CeroSecOS.createNode(state, session, path, node)
+-- The whole attached subtree is stamped with the clock, and so is the directory
+-- it lands in: a directory's mtime is when its listing last changed, which is
+-- what Unix means by it.
+function CeroSecOS.createNode(state, session, path, node, now)
 	local _, parts = CeroSecOS.resolve(session, path)
 	local addNodes, addBytes = CeroSecOS.subtreeUsage(node)
 	if node.type == "file" and #(node.data or "") > CeroSecOS.MAX_FILE_BYTES then
@@ -217,7 +234,9 @@ function CeroSecOS.createNode(state, session, path, node)
 	local parent, name, reason =
 		checkAttach(state, session, parts, addNodes, addBytes, subtreeDepth(node), nil)
 	if parent == nil then return nil, reason end
+	CeroSecOS.stampTree(node, now)
 	parent.children[name] = node
+	if now ~= nil then parent.mtime = now end
 	return node, nil
 end
 
@@ -234,7 +253,7 @@ local function canRemoveTree(state, session, node)
 	return true
 end
 
-function CeroSecOS.removeNode(state, session, path, recursive)
+function CeroSecOS.removeNode(state, session, path, recursive, now)
 	local abs, parts = CeroSecOS.resolve(session, path)
 	if #parts == 0 then return nil, "permission denied" end
 
@@ -251,11 +270,12 @@ function CeroSecOS.removeNode(state, session, path, recursive)
 	if not CeroSecOS.can(state, session, parent, "w") then return nil, "permission denied" end
 
 	parent.children[name] = nil
+	if now ~= nil then parent.mtime = now end
 	return true, nil
 end
 
 -- Replace a file's contents. true, reason.
-function CeroSecOS.setData(state, session, path, data)
+function CeroSecOS.setData(state, session, path, data, now)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, reason end
 	if node.type ~= "file" then return nil, "is a directory" end
@@ -269,12 +289,13 @@ function CeroSecOS.setData(state, session, path, data)
 	end
 
 	node.data = data
+	if now ~= nil then node.mtime = now end
 	return true, nil
 end
 
 -- Detach a node and reattach it elsewhere, without ever leaving it dangling:
 -- the destination is fully checked before the source is unhooked.
-function CeroSecOS.moveNode(state, session, fromPath, toPath)
+function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local fromAbs, fromParts = CeroSecOS.resolve(session, fromPath)
 	local toAbs, toParts = CeroSecOS.resolve(session, toPath)
 	if #fromParts == 0 then return nil, "permission denied" end
@@ -294,6 +315,13 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath)
 
 	fromParent.children[fromName] = nil
 	parent.children[name] = node
+	if now ~= nil then
+		-- The node itself as well as the two listings: one timestamp standing
+		-- in for the ctime a real filesystem would have moved here.
+		node.mtime = now
+		fromParent.mtime = now
+		parent.mtime = now
+	end
 	return true, nil
 end
 
@@ -312,7 +340,7 @@ end
 
 -- Write text to a path, creating the file when it is missing. Used by the
 -- write command and by ">" / ">>" redirection alike.
-function CeroSecOS.writeFile(state, session, path, text, append)
+function CeroSecOS.writeFile(state, session, path, text, append, now)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node ~= nil then
 		if node.type ~= "file" then return nil, "is a directory" end
@@ -321,11 +349,12 @@ function CeroSecOS.writeFile(state, session, path, text, append)
 			local old = node.data or ""
 			if old ~= "" then data = old .. "\n" .. text else data = text end
 		end
-		return CeroSecOS.setData(state, session, path, data)
+		return CeroSecOS.setData(state, session, path, data, now)
 	end
 	if reason ~= "no such file" then return nil, reason end
 	local user = CeroSecOS.userOf(session) or "root"
-	local created, creason = CeroSecOS.createNode(state, session, path, CeroSecOS.newFile(user, 644, text))
+	local created, creason =
+		CeroSecOS.createNode(state, session, path, CeroSecOS.newFile(user, 644, text), now)
 	if created == nil then return nil, creason end
 	return true, nil
 end

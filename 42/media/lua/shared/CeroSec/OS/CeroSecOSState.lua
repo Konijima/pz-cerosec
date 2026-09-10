@@ -73,6 +73,13 @@ local function checkNode(node, where, depth, tally)
 		return false, where .. ": bad mode"
 	end
 	if depth > CeroSecOS.MAX_DEPTH then return false, where .. ": too deep" end
+	-- A timestamp is optional: every node of every machine saved before this
+	-- build has none, and none means 0. One that is there has to be a whole
+	-- number of seconds -- anything else would print as a date nobody can read.
+	if node.mtime ~= nil then
+		if type(node.mtime) ~= "number" then return false, where .. ": bad mtime" end
+		if node.mtime ~= math.floor(node.mtime) then return false, where .. ": bad mtime" end
+	end
 
 	tally.nodes = tally.nodes + 1
 	if tally.nodes > CeroSecOS.MAX_NODES then return false, "too many nodes" end

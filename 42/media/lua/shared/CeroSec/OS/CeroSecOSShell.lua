@@ -1,8 +1,8 @@
 --
 -- CeroSec OS core: the shell.
 --
--- exec(state, session, line) -> ok, lines, control, data. One command line at a
--- time: double quoted strings with backslash escapes, ">" and ">>" redirection,
+-- exec(state, session, line, env) -> ok, lines, control, data. One command line
+-- at a time: double quoted strings with backslash escapes, ">" and ">>" redirection,
 -- no pipes and
 -- no variables yet. control is nil, "clear", "exit", "prompt", "edit",
 -- "shutdown" or "reboot": an order to the terminal travels beside the output,
@@ -14,6 +14,12 @@
 --   cat: notes.txt: no such file
 -- Commands never touch the tree themselves; they call the four mutators in
 -- CeroSecOSFS.lua, which own the permissions and the limits.
+--
+-- env is the world outside the machine, and today it holds one thing: env.now,
+-- the clock (see the clock section of CeroSecOS.lua). It is OPTIONAL -- a call
+-- without one is a machine with no clock, which `date` says out loud and which
+-- leaves every timestamp where it was -- and it is handed down to every command
+-- as a fourth argument, sudo's and a continuation's included.
 --
 
 CeroSecOS = CeroSecOS or {}
@@ -103,8 +109,11 @@ local function fail(cmd, arg, reason)
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end
 
-local function usage(cmd, form)
-	return false, { cmd .. ": usage: " .. form }
+-- The one usage line there is for a command: the string in COMMAND_INFO. `man
+-- ls` prints it and a wrong `ls` prints it, so the two can never drift into
+-- saying different things.
+local function usage(cmd)
+	return false, { cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
 
 local function isOwnerOrRoot(session, node)
@@ -140,8 +149,12 @@ local function permString(node)
 	return s
 end
 
--- ls -l columns: 10 + 2 + 8 + 2 + 31 + 2 + 5 = exactly 60.
-local L_OWNER, L_NAME, L_SIZE = 8, 31, 5
+-- ls -l columns: 10 perm + 2 + 8 owner + 2 + 5 size + 2 + 12 date + 2 + 17 name
+-- = exactly 60. The name is LAST, the way every ls prints it, so it is the one
+-- that gets cut when it is too long and the only one that ever has to be; and
+-- it is not padded, because a trailing run of spaces is not something a screen
+-- should be asked to hold.
+local L_OWNER, L_SIZE, L_NAME = 8, 5, 17
 
 local function longLine(node, name)
 	local size
@@ -152,8 +165,49 @@ local function longLine(node, name)
 	end
 	return permString(node)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", L_OWNER), L_OWNER)
-		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(name, L_NAME), L_NAME)
 		.. "  " .. CeroSecOS.padLeft(tostring(size), L_SIZE)
+		.. "  " .. CeroSecOS.formatStamp(CeroSecOS.mtimeOf(node))
+		.. "  " .. CeroSecOS.truncate(name, L_NAME)
+end
+
+-- Names packed into columns the way ls does on a 60-column screen: laid out
+-- column-major -- read DOWN a column, not across a row, which is what Unix ls
+-- has always done -- two spaces between columns, every column as wide as the
+-- longest name there is. One name too wide for the screen ends up alone on its
+-- line, cut with a "~" like everything else.
+function CeroSecOS.columnize(names, width)
+	local out = {}
+	if #names == 0 then return out end
+
+	local longest = 0
+	for i = 1, #names do
+		if #names[i] > longest then longest = #names[i] end
+	end
+	if longest > width then longest = width end
+
+	local colw = longest + 2
+	local cols = math.floor((width + 2) / colw)
+	if cols < 1 then cols = 1 end
+	if cols > #names then cols = #names end
+	local rows = math.floor((#names + cols - 1) / cols)
+
+	for r = 1, rows do
+		local line = ""
+		for c = 1, cols do
+			local i = (c - 1) * rows + r
+			if i <= #names then
+				local name = CeroSecOS.truncate(names[i], width)
+				-- The last name on a row carries no padding.
+				if i + rows <= #names then
+					line = line .. CeroSecOS.padRight(name, colw)
+				else
+					line = line .. name
+				end
+			end
+		end
+		out[#out + 1] = line
+	end
+	return out
 end
 
 --
@@ -173,32 +227,58 @@ end
 -- will refuse to run. os_test pins the two sets against each other.
 --
 CeroSecOS.COMMAND_INFO = {
-	cat = "print a file",
-	cd = "change the working directory",
-	chmod = "change a file's mode",
-	chown = "change a file's owner",
-	clear = "clear the screen",
-	cp = "copy a file",
-	echo = "print its arguments",
-	edit = "edit a file",
-	exit = "log out",
-	hash = "hash a string the way a password is",
-	help = "list the commands in /bin",
-	hostname = "print or set the machine's name",
-	ls = "list a directory",
-	mkdir = "make a directory",
-	mv = "move or rename a file",
-	passwd = "change a password",
-	pwd = "print the working directory",
-	reboot = "restart the machine",
-	restart = "restart the machine",
-	rm = "remove a file or a directory",
-	shutdown = "switch the machine off",
-	sudo = "run a command as root",
-	touch = "create an empty file",
-	whoami = "print the current user",
-	write = "write a line into a file",
+	cat      = { desc = "print a file", usage = "cat <file>..." },
+	cd       = { desc = "change the working directory", usage = "cd [dir]" },
+	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>" },
+	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
+	clear    = { desc = "clear the screen", usage = "clear" },
+	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
+	date     = { desc = "print the date and time", usage = "date" },
+	df       = { desc = "report disk space", usage = "df" },
+	echo     = { desc = "print its arguments", usage = "echo [text...]" },
+	edit     = { desc = "edit a file", usage = "edit <file>" },
+	exit     = { desc = "log out", usage = "exit" },
+	grep     = { desc = "find a string in files", usage = "grep [-i] [-n] <text> <file>..." },
+	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
+	head     = { desc = "print the first lines of a file", usage = "head [-n N] <file>" },
+	help     = { desc = "list the commands in /bin", usage = "help" },
+	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
+	ls       = { desc = "list a directory", usage = "ls [-lF] [path]" },
+	man      = { desc = "describe a command", usage = "man <command>" },
+	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
+	mv       = { desc = "move or rename a file", usage = "mv <src> <dst>" },
+	passwd   = { desc = "change a password", usage = "passwd [user]" },
+	pwd      = { desc = "print the working directory", usage = "pwd" },
+	reboot   = { desc = "restart the machine", usage = "reboot" },
+	restart  = { desc = "restart the machine", usage = "restart" },
+	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
+	shutdown = { desc = "switch the machine off", usage = "shutdown" },
+	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
+	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] <file>" },
+	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	wc       = { desc = "count lines, words and bytes", usage = "wc <file>..." },
+	whoami   = { desc = "print the current user", usage = "whoami" },
+	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
 }
+
+-- The two halves of an entry, read through a function and never off the table:
+-- an entry is a table now, and a caller reaching into it is a caller that
+-- breaks the day it grows a third field.
+--
+-- The description is what goes INTO /bin/<name> and what help and man print
+-- back out of it; the usage line lives here only, because it is the shell's
+-- grammar and not a fact about the machine's disk.
+function CeroSecOS.commandDesc(name)
+	local info = (CeroSecOS.COMMAND_INFO or {})[name]
+	if type(info) ~= "table" then return nil end
+	return info.desc
+end
+
+function CeroSecOS.commandUsage(name)
+	local info = (CeroSecOS.COMMAND_INFO or {})[name]
+	if type(info) ~= "table" then return nil end
+	return info.usage
+end
 
 -- The two that do not need a file behind them. A machine can be broken from
 -- inside -- root may `rm -r /bin` and that is root's right -- and a player
@@ -209,7 +289,7 @@ CeroSecOS.BUILTINS = { exit = true, help = true }
 -- Column the descriptions line up in, in help. The longest name is "hostname".
 local L_CMD = 9
 
-commands.help = function(state, session, args)
+commands.help = function(state, session, args, env)
 	local bin, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH)
 	if bin == nil and reason ~= "no such file" then
 		return fail("help", CeroSecOS.BIN_PATH, reason)
@@ -237,44 +317,44 @@ commands.help = function(state, session, args)
 	return true, out
 end
 
-commands.pwd = function(state, session, args)
-	if #args > 1 then return usage("pwd", "pwd") end
+commands.pwd = function(state, session, args, env)
+	if #args > 1 then return usage("pwd") end
 	return true, { session.cwd }
 end
 
-commands.whoami = function(state, session, args)
-	if #args > 1 then return usage("whoami", "whoami") end
+commands.whoami = function(state, session, args, env)
+	if #args > 1 then return usage("whoami") end
 	return true, { session.user }
 end
 
 -- The name is /etc/hostname and this reads it. Root may write it; nobody else
 -- may, because the name is on every prompt of every session on the machine.
-commands.hostname = function(state, session, args)
-	if #args > 2 then return usage("hostname", "hostname [name]") end
+commands.hostname = function(state, session, args, env)
+	if #args > 2 then return usage("hostname") end
 	if args[2] == nil then return true, { CeroSecOS.hostname(state) } end
 	if CeroSecOS.userOf(session) ~= "root" then return fail("hostname", nil, "permission denied") end
-	local done, reason = CeroSecOS.setHostname(state, args[2])
+	local done, reason = CeroSecOS.setHostname(state, args[2], CeroSecOS.clockOf(env))
 	if done == nil then return fail("hostname", args[2], reason) end
 	return true, {}
 end
 
-commands.clear = function(state, session, args)
+commands.clear = function(state, session, args, env)
 	return true, {}, "clear"
 end
 
-commands.exit = function(state, session, args)
+commands.exit = function(state, session, args, env)
 	return true, {}, "exit"
 end
 
-commands.echo = function(state, session, args)
+commands.echo = function(state, session, args, env)
 	if #args < 2 then return true, { "" } end
 	local words = {}
 	for i = 2, #args do words[#words + 1] = args[i] end
 	return true, { table.concat(words, " ") }
 end
 
-commands.cd = function(state, session, args)
-	if #args > 2 then return usage("cd", "cd [dir]") end
+commands.cd = function(state, session, args, env)
+	if #args > 2 then return usage("cd") end
 	local target = args[2]
 	if target == nil or target == "" then
 		local user = CeroSecOS.getUser(state, session.user)
@@ -289,18 +369,28 @@ commands.cd = function(state, session, args)
 	return true, {}
 end
 
-commands.ls = function(state, session, args)
-	local long, path = false, nil
+commands.ls = function(state, session, args, env)
+	-- Flags are letters, so "-lF", "-Fl" and "-l -F" are the same line. A bare
+	-- "-" is not a flag and never was: it is a name, and a name is what the
+	-- error about it should be about.
+	local long, classify, path = false, false, nil
 	for i = 2, #args do
 		local a = args[i]
-		if a == "-l" then
-			long = true
-		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("ls", a, "unknown option")
+		if string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if flag == "l" then
+					long = true
+				elseif flag == "F" then
+					classify = true
+				else
+					return fail("ls", a, "unknown option")
+				end
+			end
 		elseif path == nil then
 			path = a
 		else
-			return usage("ls", "ls [-l] [path]")
+			return usage("ls")
 		end
 	end
 
@@ -317,41 +407,59 @@ commands.ls = function(state, session, args)
 	if not CeroSecOS.can(state, session, node, "r") then return fail("ls", shown, "permission denied") end
 
 	local names = CeroSecOS.childNames(node)
-	local out = {}
+	if long then
+		local out = {}
+		for i = 1, #names do
+			local child = node.children[names[i]]
+			local label = names[i]
+			if classify and child.type == "dir" then label = label .. "/" end
+			out[#out + 1] = longLine(child, label)
+		end
+		return true, out
+	end
+
+	local labels = {}
 	for i = 1, #names do
-		if long then
-			out[#out + 1] = longLine(node.children[names[i]], names[i])
-		else
-			out[#out + 1] = CeroSecOS.truncate(names[i], CeroSecOS.COLS)
+		labels[i] = names[i]
+		if classify and node.children[names[i]].type == "dir" then
+			labels[i] = names[i] .. "/"
 		end
 	end
-	return true, out
+	return true, CeroSecOS.columnize(labels, CeroSecOS.COLS)
 end
 
-commands.mkdir = function(state, session, args)
-	if #args ~= 2 then return usage("mkdir", "mkdir <dir>") end
+commands.mkdir = function(state, session, args, env)
+	if #args ~= 2 then return usage("mkdir") end
 	local dir = CeroSecOS.newDir(CeroSecOS.userOf(session), 755)
-	local created, reason = CeroSecOS.createNode(state, session, args[2], dir)
+	local created, reason = CeroSecOS.createNode(state, session, args[2], dir, CeroSecOS.clockOf(env))
 	if created == nil then return fail("mkdir", args[2], reason) end
 	return true, {}
 end
 
-commands.touch = function(state, session, args)
-	if #args ~= 2 then return usage("touch", "touch <file>") end
+commands.touch = function(state, session, args, env)
+	if #args ~= 2 then return usage("touch") end
+	local now = CeroSecOS.clockOf(env)
 	local node, reason = CeroSecOS.getNode(state, session, args[2])
 	if node ~= nil then
 		if node.type ~= "file" then return fail("touch", args[2], "is a directory") end
-		return true, {} -- nothing to stamp: the core has no clock yet
+		-- Moving a timestamp is a write: a file you may not write is a file you
+		-- may not stamp, which is what a real touch says too. On a machine with
+		-- no clock there is nothing to move and the file is left alone.
+		if not CeroSecOS.can(state, session, node, "w") then
+			return fail("touch", args[2], "permission denied")
+		end
+		if now ~= nil then node.mtime = now end
+		return true, {}
 	end
 	if reason ~= "no such file" then return fail("touch", args[2], reason) end
 	local file = CeroSecOS.newFile(CeroSecOS.userOf(session), 644, "")
-	local created, creason = CeroSecOS.createNode(state, session, args[2], file)
+	local created, creason = CeroSecOS.createNode(state, session, args[2], file, now)
 	if created == nil then return fail("touch", args[2], creason) end
 	return true, {}
 end
 
-commands.cat = function(state, session, args)
-	if #args < 2 then return usage("cat", "cat <file>") end
+commands.cat = function(state, session, args, env)
+	if #args < 2 then return usage("cat") end
 	local out, ok = {}, true
 	for i = 2, #args do
 		local p = args[i]
@@ -373,7 +481,7 @@ commands.cat = function(state, session, args)
 	return ok, out
 end
 
-commands.rm = function(state, session, args)
+commands.rm = function(state, session, args, env)
 	local recursive, paths = false, {}
 	for i = 2, #args do
 		local a = args[i]
@@ -385,11 +493,12 @@ commands.rm = function(state, session, args)
 			paths[#paths + 1] = a
 		end
 	end
-	if #paths == 0 then return usage("rm", "rm [-r] <path>") end
+	if #paths == 0 then return usage("rm") end
 
 	local out, ok = {}, true
 	for i = 1, #paths do
-		local done, reason = CeroSecOS.removeNode(state, session, paths[i], recursive)
+		local done, reason =
+			CeroSecOS.removeNode(state, session, paths[i], recursive, CeroSecOS.clockOf(env))
 		if done == nil then
 			ok = false
 			out[#out + 1] = "rm: " .. paths[i] .. ": " .. reason
@@ -398,8 +507,8 @@ commands.rm = function(state, session, args)
 	return ok, out
 end
 
-commands.mv = function(state, session, args)
-	if #args ~= 3 then return usage("mv", "mv <src> <dst>") end
+commands.mv = function(state, session, args, env)
+	if #args ~= 3 then return usage("mv") end
 	local src, dst = args[2], args[3]
 
 	local node, reason = CeroSecOS.getNode(state, session, src)
@@ -413,19 +522,48 @@ commands.mv = function(state, session, args)
 		target = dst .. "/" .. name
 	end
 
-	local done, mreason = CeroSecOS.moveNode(state, session, src, target)
+	local done, mreason = CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
 	if done == nil then return fail("mv", target, mreason) end
 	return true, {}
 end
 
-commands.cp = function(state, session, args)
-	if #args ~= 3 then return usage("cp", "cp <src> <dst>") end
-	local src, dst = args[2], args[3]
+-- Every node of a subtree readable? A copy walks the whole of it, so a
+-- directory you cannot enter is not a directory you can copy -- and the refusal
+-- comes BEFORE anything is written, so a `cp -r` that cannot finish leaves
+-- nothing half copied behind it.
+local function canCopyTree(state, session, node)
+	if not CeroSecOS.can(state, session, node, "r") then return false end
+	if node.type ~= "dir" then return true end
+	if not CeroSecOS.can(state, session, node, "x") then return false end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do
+		if not canCopyTree(state, session, node.children[names[i]]) then return false end
+	end
+	return true
+end
 
-	local node, reason = CeroSecOS.getNode(state, session, src)
+commands.cp = function(state, session, args, env)
+	local recursive, paths = false, {}
+	for i = 2, #args do
+		local a = args[i]
+		-- Only before the first path: "cp -r a -b" has no second flag in it,
+		-- and a name that begins with "-" is refused by isValidName anyway.
+		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				if string.sub(a, c, c) ~= "r" then return fail("cp", a, "unknown option") end
+			end
+			recursive = true
+		else
+			paths[#paths + 1] = a
+		end
+	end
+	if #paths ~= 2 then return usage("cp") end
+	local src, dst = paths[1], paths[2]
+
+	local node, reason, srcAbs = CeroSecOS.getNode(state, session, src)
 	if node == nil then return fail("cp", src, reason) end
-	if node.type ~= "file" then return fail("cp", src, "is a directory") end
-	if not CeroSecOS.can(state, session, node, "r") then return fail("cp", src, "permission denied") end
+	if node.type ~= "file" and not recursive then return fail("cp", src, "is a directory") end
+	if not canCopyTree(state, session, node) then return fail("cp", src, "permission denied") end
 
 	local target = dst
 	local dstNode = CeroSecOS.getNode(state, session, dst)
@@ -435,40 +573,303 @@ commands.cp = function(state, session, args)
 		target = dst .. "/" .. name
 	end
 
+	-- A directory never goes inside itself: the copy would be a child of what
+	-- is being copied. Judged on the RESOLVED paths, so "." and ".." cannot
+	-- walk around it -- the same test mv makes for the same reason.
+	if node.type == "dir" then
+		local targetAbs = CeroSecOS.resolve(session, target)
+		if CeroSecOS.isInside(targetAbs, srcAbs) then
+			return fail("cp", target, "invalid destination")
+		end
+	end
+
+	-- The copy is the caller's, and it is stamped with now: cp without -p makes
+	-- a new file, and a new file is new.
 	local copy = CeroSecOS.copyNode(node, CeroSecOS.userOf(session))
-	local created, creason = CeroSecOS.createNode(state, session, target, copy)
+	local created, creason =
+		CeroSecOS.createNode(state, session, target, copy, CeroSecOS.clockOf(env))
 	if created == nil then return fail("cp", target, creason) end
 	return true, {}
 end
 
-commands.chmod = function(state, session, args)
-	if #args ~= 3 then return usage("chmod", "chmod <mode> <path>") end
+commands.chmod = function(state, session, args, env)
+	if #args ~= 3 then return usage("chmod") end
 	local mode = parseMode(args[2])
 	if mode == nil then return fail("chmod", args[2], "invalid mode") end
 	local node, reason = CeroSecOS.getNode(state, session, args[3])
 	if node == nil then return fail("chmod", args[3], reason) end
 	if not isOwnerOrRoot(session, node) then return fail("chmod", args[3], "permission denied") end
 	node.mode = mode
+	-- One timestamp for the two a real filesystem has: a chmod moves the ctime
+	-- there and moves this one here.
+	local now = CeroSecOS.clockOf(env)
+	if now ~= nil then node.mtime = now end
 	return true, {}
 end
 
-commands.chown = function(state, session, args)
-	if #args ~= 3 then return usage("chown", "chown <user> <path>") end
+commands.chown = function(state, session, args, env)
+	if #args ~= 3 then return usage("chown") end
 	local user = CeroSecOS.getUser(state, args[2])
 	if user == nil then return fail("chown", args[2], "no such user") end
 	local node, reason = CeroSecOS.getNode(state, session, args[3])
 	if node == nil then return fail("chown", args[3], reason) end
 	if not isOwnerOrRoot(session, node) then return fail("chown", args[3], "permission denied") end
 	node.owner = user.name
+	local now = CeroSecOS.clockOf(env)
+	if now ~= nil then node.mtime = now end
 	return true, {}
 end
 
 -- Internal: how the editor saves. The editor UI is not part of the core.
-commands.write = function(state, session, args)
-	if #args ~= 3 then return usage("write", "write <file> <text>") end
-	local done, reason = CeroSecOS.writeFile(state, session, args[2], args[3], false)
+commands.write = function(state, session, args, env)
+	if #args ~= 3 then return usage("write") end
+	local done, reason =
+		CeroSecOS.writeFile(state, session, args[2], args[3], false, CeroSecOS.clockOf(env))
 	if done == nil then return fail("write", args[2], reason) end
 	return true, {}
+end
+
+--
+-- The clock, and the disk
+--
+
+-- date. The machine's clock is the world's: what is on the screen is the hour
+-- and the day the survivor typing is living in. A machine nobody handed a clock
+-- says so rather than inventing one -- a wrong date is worse than no date on a
+-- screen somebody is meant to trust.
+commands.date = function(state, session, args, env)
+	if #args > 1 then return usage("date") end
+	local now = CeroSecOS.clockOf(env)
+	if now == nil then return fail("date", nil, "no clock") end
+	return true, { CeroSecOS.formatDate(now) }
+end
+
+-- df. Two lines, because this machine has two ceilings and either of them is
+-- what a write dies on: the bytes on the disk and the nodes on it. Both are
+-- counted off the tree at the moment it is asked -- there is no counter kept
+-- beside the filesystem that could ever disagree with it.
+local D_NAME, D_NUM, D_PCT = 10, 5, 4
+
+local function dfLine(name, total, used)
+	local avail = total - used
+	if avail < 0 then avail = 0 end
+	-- Rounded UP, the way df has always rounded it: a disk with one byte on it
+	-- does not report 0%.
+	local pct = 0
+	if total > 0 then pct = math.ceil(used * 100 / total) end
+	return CeroSecOS.padRight(CeroSecOS.truncate(name, D_NAME), D_NAME)
+		.. "  " .. CeroSecOS.padLeft(tostring(total), D_NUM)
+		.. "  " .. CeroSecOS.padLeft(tostring(used), D_NUM)
+		.. "  " .. CeroSecOS.padLeft(tostring(avail), D_NUM)
+		.. "  " .. CeroSecOS.padLeft(tostring(pct) .. "%", D_PCT)
+end
+
+commands.df = function(state, session, args, env)
+	if #args > 1 then return usage("df") end
+	local nodes, bytes = CeroSecOS.usage(state)
+	return true, {
+		CeroSecOS.padRight("Filesystem", D_NAME)
+			.. "  " .. CeroSecOS.padLeft("Size", D_NUM)
+			.. "  " .. CeroSecOS.padLeft("Used", D_NUM)
+			.. "  " .. CeroSecOS.padLeft("Avail", D_NUM)
+			.. "  " .. CeroSecOS.padLeft("Use%", D_PCT),
+		dfLine(CeroSecOS.DISK_NAME, CeroSecOS.DISK_BYTES, bytes),
+		dfLine("nodes", CeroSecOS.MAX_NODES, nodes),
+	}
+end
+
+--
+-- Text tools
+--
+
+-- The lines of one file, or nil plus the one-line refusal already worded. Three
+-- commands read files this way, so the three of them refuse in the same words.
+-- The node comes back too, because wc counts bytes and not lines.
+local function fileLines(state, session, cmd, path)
+	local node, reason = CeroSecOS.getNode(state, session, path)
+	if node == nil then return nil, cmd .. ": " .. path .. ": " .. reason end
+	if node.type ~= "file" then return nil, cmd .. ": " .. path .. ": is a directory" end
+	if not CeroSecOS.can(state, session, node, "r") then
+		return nil, cmd .. ": " .. path .. ": permission denied"
+	end
+	return CeroSecOS.splitLines(node.data or ""), nil, node
+end
+
+-- grep. A plain substring and not a pattern: string.find's fourth argument is
+-- what makes "a.b" mean the three characters and not "a, anything, b". There is
+-- no regex on this machine and none is promised.
+commands.grep = function(state, session, args, env)
+	local ignore, numbered, rest = false, false, {}
+	for i = 2, #args do
+		local a = args[i]
+		if #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if flag == "i" then
+					ignore = true
+				elseif flag == "n" then
+					numbered = true
+				else
+					return fail("grep", a, "unknown option")
+				end
+			end
+		else
+			rest[#rest + 1] = a
+		end
+	end
+	if #rest < 2 then return usage("grep") end
+
+	local needle = rest[1]
+	if ignore then needle = string.lower(needle) end
+	-- The file's name goes in front of a hit only when there is more than one
+	-- file to tell apart, which is what grep has always done.
+	local many = #rest > 2
+	local out, found, okAll = {}, false, true
+
+	for i = 2, #rest do
+		local path = rest[i]
+		local lines, refusal = fileLines(state, session, "grep", path)
+		if lines == nil then
+			okAll = false
+			out[#out + 1] = refusal
+		else
+			for n = 1, #lines do
+				local hay = lines[n]
+				if ignore then hay = string.lower(hay) end
+				if string.find(hay, needle, 1, true) ~= nil then
+					found = true
+					local prefix = ""
+					if many then prefix = path .. ":" end
+					if numbered then prefix = prefix .. tostring(n) .. ":" end
+					out[#out + 1] = prefix .. lines[n]
+				end
+			end
+		end
+	end
+
+	-- grep answers "did you find anything". Nothing found is a refusal even
+	-- when every file was read without trouble.
+	if not found then return false, out end
+	return okAll, out
+end
+
+-- -n N, and nothing else. Answers the count and the paths, or nil for a line
+-- that is not one -- which the caller turns into the usage string.
+local function lineCount(args)
+	local n, rest = 10, {}
+	local i = 2
+	while i <= #args do
+		local a = args[i]
+		if a == "-n" then
+			local value = tonumber(args[i + 1] or "")
+			if value == nil or value < 0 or value ~= math.floor(value) then return nil end
+			n = value
+			i = i + 2
+		elseif #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return nil
+		else
+			rest[#rest + 1] = a
+			i = i + 1
+		end
+	end
+	return n, rest
+end
+
+commands.head = function(state, session, args, env)
+	local n, rest = lineCount(args)
+	if n == nil or #rest ~= 1 then return usage("head") end
+	local lines, refusal = fileLines(state, session, "head", rest[1])
+	if lines == nil then return false, { refusal } end
+	local out = {}
+	for i = 1, #lines do
+		if i > n then break end
+		out[#out + 1] = lines[i]
+	end
+	return true, out
+end
+
+commands.tail = function(state, session, args, env)
+	local n, rest = lineCount(args)
+	if n == nil or #rest ~= 1 then return usage("tail") end
+	local lines, refusal = fileLines(state, session, "tail", rest[1])
+	if lines == nil then return false, { refusal } end
+	local first = #lines - n + 1
+	if first < 1 then first = 1 end
+	local out = {}
+	for i = first, #lines do out[#out + 1] = lines[i] end
+	return true, out
+end
+
+-- wc: lines, words, bytes, name. 6 + 1 + 6 + 1 + 6 + 1 = 21 columns of numbers,
+-- so the name has 39 left of the screen.
+local W_NUM, W_NAME = 6, 39
+
+local function wcLine(lines, words, bytes, name)
+	return CeroSecOS.padLeft(tostring(lines), W_NUM)
+		.. " " .. CeroSecOS.padLeft(tostring(words), W_NUM)
+		.. " " .. CeroSecOS.padLeft(tostring(bytes), W_NUM)
+		.. " " .. CeroSecOS.truncate(name, W_NAME)
+end
+
+-- A word is a run of anything that is not a blank. Newlines count as blanks:
+-- the data is one string with newlines in it, not a list of lines.
+local function wordsIn(text)
+	local n = 0
+	for _ in string.gmatch(text, "[^ \t\n]+") do n = n + 1 end
+	return n
+end
+
+commands.wc = function(state, session, args, env)
+	if #args < 2 then return usage("wc") end
+	local out, okAll = {}, true
+	local totalLines, totalWords, totalBytes, counted = 0, 0, 0, 0
+	for i = 2, #args do
+		local path = args[i]
+		local lines, refusal, node = fileLines(state, session, "wc", path)
+		if lines == nil then
+			okAll = false
+			out[#out + 1] = refusal
+		else
+			local data = node.data or ""
+			counted = counted + 1
+			totalLines = totalLines + #lines
+			totalWords = totalWords + wordsIn(data)
+			totalBytes = totalBytes + #data
+			out[#out + 1] = wcLine(#lines, wordsIn(data), #data, path)
+		end
+	end
+	if counted > 1 then
+		out[#out + 1] = wcLine(totalLines, totalWords, totalBytes, "total")
+	end
+	return okAll, out
+end
+
+-- man. The description is the FILE's, exactly like help's: a machine whose /bin
+-- has been cut down has no manual for what is no longer on it, and one whose
+-- /bin/ls somebody rewrote says what that file says. The usage line is the
+-- shell's own, so it is the one a wrong command line prints back.
+commands.man = function(state, session, args, env)
+	if #args ~= 2 then return usage("man") end
+	local name = args[2]
+	local node, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH .. "/" .. name)
+	if node == nil then
+		if reason ~= "no such file" and reason ~= "not a directory" then
+			return fail("man", name, reason)
+		end
+		return fail("man", name, "no manual entry")
+	end
+	if node.type ~= "file" then return fail("man", name, "no manual entry") end
+
+	local out = {}
+	local desc = node.data or ""
+	if desc == "" then
+		out[#out + 1] = name
+	else
+		out[#out + 1] = name .. " - " .. desc
+	end
+	local form = CeroSecOS.commandUsage(name)
+	if form ~= nil then out[#out + 1] = "usage: " .. form end
+	return true, out
 end
 
 --
@@ -484,8 +885,8 @@ end
 -- glass loses his session, and that is not an ordinary account's to take.
 --
 local function powerCommand(name, control)
-	return function(state, session, args)
-		if #args > 1 then return usage(name, name) end
+	return function(state, session, args, env)
+		if #args > 1 then return usage(name) end
 		if CeroSecOS.userOf(session) ~= "root" then return fail(name, nil, "permission denied") end
 		return true, {}, control
 	end
@@ -529,8 +930,8 @@ end
 -- lives in the machine's console and the console is written to the save file,
 -- so anything in clear there would be the one place on the machine that still
 -- handed a password over.
-commands.passwd = function(state, session, args)
-	if #args > 2 then return usage("passwd", "passwd [user]") end
+commands.passwd = function(state, session, args, env)
+	if #args > 2 then return usage("passwd") end
 	local me = CeroSecOS.userOf(session)
 	local name = args[2]
 	if name == nil or name == "" then name = me end
@@ -542,7 +943,7 @@ commands.passwd = function(state, session, args)
 	return ask("Old password: ", true, { cmd = "passwd", step = "old", user = name })
 end
 
-continuations.passwd = function(state, session, cont, line)
+continuations.passwd = function(state, session, cont, line, env)
 	local name = cont.user
 	local user = CeroSecOS.getUser(state, name)
 	if user == nil then return false, { "passwd: no such user" } end
@@ -577,7 +978,8 @@ continuations.passwd = function(state, session, cont, line)
 		if CeroSecOS.hashPassword(line, cont.salt) ~= (cont.want or "") then
 			return false, { "passwd: passwords do not match" }
 		end
-		local done, reason = CeroSecOS.setPassword(state, name, line, session.stamp)
+		local done, reason =
+			CeroSecOS.setPassword(state, name, line, session.stamp, CeroSecOS.clockOf(env))
 		if done == nil then return false, { "passwd: " .. reason } end
 		return true, { "passwd: password updated" }
 	end
@@ -591,8 +993,8 @@ end
 -- what a stored password looks like is something the machine can show you. A
 -- salt of your own makes it reproducible; without one you get a fresh salt and
 -- a line that is different every time, which is the point of a salt.
-commands.hash = function(state, session, args)
-	if #args < 2 or #args > 3 then return usage("hash", "hash <text> [salt]") end
+commands.hash = function(state, session, args, env)
+	if #args < 2 or #args > 3 then return usage("hash") end
 	local salt = args[3]
 	if salt == nil or salt == "" then
 		salt = CeroSecOS.newSalt(state, args[2] .. tostring(session.stamp))
@@ -607,8 +1009,8 @@ end
 -- edit. The editor itself is the terminal's; all the core does is say whether
 -- the file can be opened, hand over its text, and say whether it may be written
 -- back. Saving goes through CeroSecOS.writeFile like every other write.
-commands.edit = function(state, session, args)
-	if #args ~= 2 then return usage("edit", "edit <file>") end
+commands.edit = function(state, session, args, env)
+	if #args ~= 2 then return usage("edit") end
 	local path = args[2]
 	local node, reason, abs = CeroSecOS.getNode(state, session, path)
 	if node ~= nil then
@@ -679,7 +1081,7 @@ end
 -- the shell resolves one -- /bin/<name>, x for the session that runs it -- so
 -- root walks through a mode the caller could not, which is the point, and a
 -- command that is not in /bin is not found for root either.
-local function sudoRun(state, session, args, from)
+local function sudoRun(state, session, args, from, env)
 	local name = args[from]
 	local fn = commands[name]
 	if fn == nil then return false, { name .. ": command not found" } end
@@ -695,28 +1097,28 @@ local function sudoRun(state, session, args, from)
 	local own = {}
 	for i = from, #args do own[#own + 1] = args[i] end
 
-	local ok, lines, control, data = fn(state, sub, own)
+	local ok, lines, control, data = fn(state, sub, own, env)
 	carryAs("root", control, data)
 	return ok, lines, control, data
 end
 
-commands.sudo = function(state, session, args)
+commands.sudo = function(state, session, args, env)
 	-- `sudo sudo ls` is one sudo. Real sudo runs the second one as root and
 	-- ends up in the same place; there is no reason to make a player type his
 	-- password to be asked for it again.
 	local from = 2
 	while args[from] == "sudo" do from = from + 1 end
-	if args[from] == nil then return usage("sudo", "sudo <command> [args]") end
+	if args[from] == nil then return usage("sudo") end
 
 	local me = CeroSecOS.userOf(session)
 	-- Root is already root. No file is consulted: an /etc/sudoers with nobody
 	-- in it must not be able to take sudo away from the one account that could
 	-- put it back.
-	if me == "root" then return sudoRun(state, session, args, from) end
+	if me == "root" then return sudoRun(state, session, args, from, env) end
 
 	local entry = CeroSecOS.sudoer(state, me)
 	if entry == nil then return false, { me .. " is not in the sudoers file." } end
-	if entry.nopasswd then return sudoRun(state, session, args, from) end
+	if entry.nopasswd then return sudoRun(state, session, args, from, env) end
 
 	-- Nothing of the password goes into the token, not even a hash of it: the
 	-- answer is judged against /etc/passwd when it arrives, which is the one
@@ -729,7 +1131,7 @@ commands.sudo = function(state, session, args)
 		{ cmd = "sudo", user = me, args = rest })
 end
 
-continuations.sudo = function(state, session, cont, line)
+continuations.sudo = function(state, session, cont, line, env)
 	local me = CeroSecOS.userOf(session)
 
 	-- Asked again, at the answer: a token names the account it was issued for,
@@ -755,8 +1157,8 @@ continuations.sudo = function(state, session, cont, line)
 	for i = 1, #args do
 		if type(args[i]) ~= "string" then return false, { "sudo: authentication failure" } end
 	end
-	if args[1] == nil then return usage("sudo", "sudo <command> [args]") end
-	return sudoRun(state, session, args, 1)
+	if args[1] == nil then return usage("sudo") end
+	return sudoRun(state, session, args, 1, env)
 end
 
 --
@@ -791,7 +1193,7 @@ end
 -- The one entry point.
 --
 
-function CeroSecOS.exec(state, session, line)
+function CeroSecOS.exec(state, session, line, env)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }
@@ -817,7 +1219,8 @@ function CeroSecOS.exec(state, session, line)
 	-- A bare redirection still creates (or truncates) the file.
 	if #args == 0 then
 		if redirect == nil then return true, {} end
-		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, "", redirect.append)
+		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, "",
+			redirect.append, CeroSecOS.clockOf(env))
 		if done == nil then return false, CeroSecOS.fit({ redirect.path .. ": " .. wreason }) end
 		return true, {}
 	end
@@ -830,7 +1233,7 @@ function CeroSecOS.exec(state, session, line)
 		if refusal ~= nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
 	end
 
-	local ok, lines, control, data = fn(state, session, args)
+	local ok, lines, control, data = fn(state, session, args, env)
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on
@@ -840,7 +1243,8 @@ function CeroSecOS.exec(state, session, line)
 	local redirectable = control ~= "prompt" and control ~= "edit"
 	if ok and redirect ~= nil and redirectable then
 		local text = table.concat(lines, "\n")
-		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, text, redirect.append)
+		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, text,
+			redirect.append, CeroSecOS.clockOf(env))
 		if done == nil then
 			return false, CeroSecOS.fit({ name .. ": " .. redirect.path .. ": " .. wreason })
 		end
@@ -857,7 +1261,7 @@ end
 -- A token that is not one -- a forged console, a chain abandoned and answered
 -- afterwards -- is refused here rather than trusted, and nothing of the state
 -- is touched on the way out.
-function CeroSecOS.continue(state, session, cont, line)
+function CeroSecOS.continue(state, session, cont, line, env)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }
@@ -878,7 +1282,7 @@ function CeroSecOS.continue(state, session, cont, line)
 		run = { user = cont.as, cwd = session.cwd or "/", stamp = session.stamp }
 	end
 
-	local ok, lines, control, data = fn(state, run, cont, line)
+	local ok, lines, control, data = fn(state, run, cont, line, env)
 	if lines == nil then lines = {} end
 	if run ~= session then carryAs(cont.as, control, data) end
 	return ok, CeroSecOS.fit(lines), control, data

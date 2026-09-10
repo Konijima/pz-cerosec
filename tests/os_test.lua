@@ -142,7 +142,7 @@ do
 	-- one-line description in each executable.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
-	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.COMMAND_INFO[binNames[i]] end
+	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
 	local passwd = state.fs.children.etc.children.passwd
 	local sudoers = state.fs.children.etc.children.sudoers
 	local nodes, bytes = CeroSecOS.usage(state)
@@ -178,12 +178,21 @@ do
 		eq("/bin/" .. binNames[i] .. " owner", node.owner, "root")
 		eq("/bin/" .. binNames[i] .. " mode", node.mode, 755)
 		eq("/bin/" .. binNames[i] .. " describes itself",
-			node.data, CeroSecOS.COMMAND_INFO[binNames[i]])
+			node.data, CeroSecOS.commandDesc(binNames[i]))
 		check("/bin/" .. binNames[i] .. " has a command behind it",
 			CeroSecOS.commands[binNames[i]] ~= nil)
 	end
 	local described = 0
-	for _, _ in pairs(CeroSecOS.COMMAND_INFO) do described = described + 1 end
+	for name, _ in pairs(CeroSecOS.COMMAND_INFO) do
+		described = described + 1
+		-- Every command carries both halves, and the usage line begins with the
+		-- name it is the usage of: a usage that names another command is the
+		-- one way this table can lie to a player.
+		check(name .. " has a description", type(CeroSecOS.commandDesc(name)) == "string")
+		local form = CeroSecOS.commandUsage(name)
+		check(name .. " has a usage line", type(form) == "string")
+		eq(name .. "'s usage line names it", string.sub(form, 1, #name), name)
+	end
 	local implemented = 0
 	for _, _ in pairs(CeroSecOS.commands) do implemented = implemented + 1 end
 	eq("every command is in /bin", implemented, described)
@@ -337,7 +346,8 @@ do
 	check("help prints something", #helpLines >= 2)
 	eq("help header", helpLines[1], "CeroSec OS commands:")
 
-	ok(state, admin, "ls /", { "bin", "dev", "etc", "home", "root" })
+	-- Packed into columns: five short names fit one row of a 60-column screen.
+	ok(state, admin, "ls /", { "bin   dev   etc   home  root" })
 	ok(state, admin, "ls", {})
 	ok(state, admin, "mkdir sub", {})
 	ok(state, admin, "ls", { "sub" })
@@ -362,7 +372,7 @@ do
 	ok(state, admin, "cd ~/box", {})
 	eq("cd ~/box is under the home", admin.cwd, "/home/admin/box")
 	ok(state, admin, "cd ~", {})
-	ok(state, admin, "ls ~", { "box", "sub" })
+	ok(state, admin, "ls ~", { "box  sub" })
 	ok(state, admin, 'write ~/tilde.txt "hi"', {})
 	ok(state, admin, "cat ~/tilde.txt", { "hi" })
 	ok(state, admin, "cd /etc", {})
@@ -389,9 +399,9 @@ do
 	ok(state, admin, "cp notes.txt sub", {})        -- into a directory
 	ok(state, admin, "ls sub", { "notes.txt" })
 	ok(state, admin, "mv copy.txt renamed.txt", {})
-	ok(state, admin, "ls", { "notes.txt", "renamed.txt", "sub" })
+	ok(state, admin, "ls", { "notes.txt    renamed.txt  sub" })
 	ok(state, admin, "mv renamed.txt sub", {})      -- into a directory
-	ok(state, admin, "ls sub", { "notes.txt", "renamed.txt" })
+	ok(state, admin, "ls sub", { "notes.txt    renamed.txt" })
 	ok(state, admin, "rm sub/renamed.txt", {})
 	ok(state, admin, "ls sub", { "notes.txt" })
 	ok(state, admin, "rm -r sub", {})
@@ -437,7 +447,7 @@ do
 	bad(state, admin, "frobnicate", "frobnicate: command not found")
 	bad(state, admin, "cat notes.txt", "cat: notes.txt: no such file")
 	bad(state, admin, "cat /etc", "cat: /etc: is a directory")
-	bad(state, admin, "cat", "cat: usage: cat <file>")
+	bad(state, admin, "cat", "cat: usage: cat <file>...")
 	bad(state, admin, "cd /root", "cd: /root: permission denied")
 	bad(state, admin, "cd /nope", "cd: /nope: no such file")
 	bad(state, admin, "cd /etc/motd", "cd: /etc/motd: not a directory")
@@ -446,7 +456,7 @@ do
 	bad(state, admin, "ls /root/x", "ls: /root/x: permission denied")
 	bad(state, admin, "ls /nope", "ls: /nope: no such file")
 	bad(state, admin, "ls -z", "ls: -z: unknown option")
-	bad(state, admin, "ls a b", "ls: usage: ls [-l] [path]")
+	bad(state, admin, "ls a b", "ls: usage: ls [-lF] [path]")
 	bad(state, admin, "mkdir", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir a b", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir /etc/x", "mkdir: /etc/x: permission denied")
@@ -455,7 +465,7 @@ do
 	bad(state, admin, "touch /etc/x", "touch: /etc/x: permission denied")
 	bad(state, admin, "touch /etc", "touch: /etc: is a directory")
 	bad(state, admin, "touch", "touch: usage: touch <file>")
-	bad(state, admin, "rm", "rm: usage: rm [-r] <path>")
+	bad(state, admin, "rm", "rm: usage: rm [-r] <path>...")
 	bad(state, admin, "rm /", "rm: /: permission denied")
 	bad(state, admin, "rm /etc/motd", "rm: /etc/motd: permission denied")
 	bad(state, admin, "rm /nope", "rm: /nope: no such file")
@@ -463,7 +473,7 @@ do
 	bad(state, admin, "mv", "mv: usage: mv <src> <dst>")
 	bad(state, admin, "mv a", "mv: usage: mv <src> <dst>")
 	bad(state, admin, "mv /nope /home/admin/x", "mv: /nope: no such file")
-	bad(state, admin, "cp", "cp: usage: cp <src> <dst>")
+	bad(state, admin, "cp", "cp: usage: cp [-r] <src> <dst>")
 	bad(state, admin, "cp /etc /home/admin/x", "cp: /etc: is a directory")
 	bad(state, admin, "cp /nope /home/admin/x", "cp: /nope: no such file")
 	bad(state, admin, "chmod", "chmod: usage: chmod <mode> <path>")
@@ -565,7 +575,9 @@ do
 	ok(state, admin, "echo fresh > notes.txt", {})
 	ok(state, admin, "cat notes.txt", { "fresh" })
 	ok(state, admin, "ls / > listing.txt", {})
-	ok(state, admin, "cat listing.txt", { "bin", "dev", "etc", "home", "root" })
+	-- What went into the file is what was on the screen: the packed row, not a
+	-- name per line. A redirect stores the OUTPUT and never a second rendering.
+	ok(state, admin, "cat listing.txt", { "bin   dev   etc   home  root" })
 	ok(state, admin, "echo x>tight.txt", {})            -- no spaces around >
 	ok(state, admin, "cat tight.txt", { "x" })
 	ok(state, admin, "> empty.txt", {})                 -- bare redirect creates the file
@@ -702,29 +714,32 @@ do
 	local admin = open(state, "admin")
 	local rootSession = open(state, "root")
 
-	-- 10 perm + 2 + 8 owner + 2 + 31 name + 2 + 5 size = 60.
+	-- 10 perm + 2 + 8 owner + 2 + 5 size + 2 + 12 date + 2 + name = 60 at most.
+	-- Nothing on a fresh machine was ever stamped, so every date is the epoch:
+	-- an unstamped node is mtime 0 and 0 is a real moment, not a blank.
+	local EPOCH = "Jan  1 00:00"
 	local lines = ok(state, admin, "ls -l /", nil)
 	eq("ls -l lists 5 entries", #lines, 5)
 	eq("ls -l bin",
 		lines[1],
-		"drwxr-xr-x" .. "  " .. "root    " .. "  " .. "bin" .. string.rep(" ", 28) .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.binNames()), 5))
+		"drwxr-xr-x" .. "  " .. "root    " .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.binNames()), 5) .. "  " .. EPOCH .. "  bin")
 	eq("ls -l root dir",
 		lines[5],
-		"drwx------" .. "  " .. "root    " .. "  " .. "root" .. string.rep(" ", 27) .. "  " .. "    0")
+		"drwx------" .. "  " .. "root    " .. "  " .. "    0" .. "  " .. EPOCH .. "  root")
 	for i = 1, #lines do
-		eq("ls -l line " .. i .. " is exactly 60 columns", #lines[i], 60)
+		check("ls -l line " .. i .. " fits 60 columns", #lines[i] <= 60)
 	end
 
 	local etc = ok(state, admin, "ls -l /etc", nil)
 	eq("ls -l motd",
 		etc[2],
-		"-rw-r--r--" .. "  " .. "root    " .. "  " .. "motd" .. string.rep(" ", 27) .. "  "
-			.. "   52")
+		"-rw-r--r--" .. "  " .. "root    " .. "  " .. "   52" .. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
 		etc[4],
-		"-r--r-----" .. "  " .. "root    " .. "  " .. "sudoers" .. string.rep(" ", 24) .. "  "
-			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5))
+		"-r--r-----" .. "  " .. "root    " .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
+			.. "  " .. EPOCH .. "  sudoers")
 	eq("ls -l /etc has 4 lines", #etc, 4)
 
 	-- Every permission digit renders.
@@ -737,7 +752,8 @@ do
 	eq("421 renders", string.sub(ok(state, admin, "ls -l /home/admin/perm", nil)[1], 1, 10), "-r---w---x")
 	ok(state, admin, "chmod 644 /home/admin/perm", {})
 
-	-- A name at the 32-character limit is cut to 31 with a "~".
+	-- The name is the LAST column and the only one that is ever cut: 17
+	-- characters, then a "~".
 	local longName = string.rep("n", 32)
 	ok(state, admin, "touch /home/admin/" .. longName, {})
 	local home = ok(state, admin, "ls -l /home/admin", nil)
@@ -746,15 +762,14 @@ do
 		if string.find(home[i], "nnn", 1, true) ~= nil then cut = home[i] end
 	end
 	check("the long name is listed", cut ~= nil)
-	eq("the long-name line is still 60 columns", #cut, 60)
-	eq("the long name is cut with a tilde", string.sub(cut, 23, 53), string.rep("n", 30) .. "~")
+	eq("the long-name line is exactly 60 columns", #cut, 60)
+	eq("the long name is cut with a tilde", string.sub(cut, 44), string.rep("n", 16) .. "~")
 
-	-- A long owner is cut the same way.
+	-- A long owner is cut the same way, in its own column.
 	addUser(state, "administrator", "", "/home/admin", false)
 	ok(state, rootSession, "chown administrator /home/admin/perm", {})
 	local owned = ok(state, rootSession, "ls -l /home/admin/perm", nil)
 	eq("the long owner is cut with a tilde", string.sub(owned[1], 13, 20), "adminis~")
-	eq("the long-owner line is still 60 columns", #owned[1], 60)
 
 	-- Plain ls of a single file prints its name.
 	ok(state, admin, "ls /etc/motd", { "motd" })
@@ -2035,7 +2050,7 @@ do
 	local ls = CeroSecOS.systemNode(state, "/bin/ls")
 	eq("the executable is open again", ls.mode, 755)
 	eq("and root's again", ls.owner, "root")
-	eq("with its description", ls.data, CeroSecOS.COMMAND_INFO.ls)
+	eq("with its description", ls.data, CeroSecOS.commandDesc("ls"))
 	local mine = CeroSecOS.systemNode(state, "/bin/mine")
 	check("a file of his own is still there", mine ~= nil)
 	eq("untouched", mine.data, "not ours")
@@ -2221,7 +2236,7 @@ do
 	bad(state, admin, "ls /", "ls: permission denied")
 	local listed = run(state, admin, "sudo ls /")
 	eq("sudo ls runs", listed.ok, true)
-	eq("and lists", listed.lines[1], "bin")
+	eq("and lists", listed.lines[1], "bin   dev   etc   home  root")
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 
 	-- The two orders come back out of sudo untouched.
@@ -2379,7 +2394,7 @@ do
 		check("/bin/" .. names[i] .. " is there", node ~= nil)
 		eq("/bin/" .. names[i] .. " is root's", node.owner, "root")
 		eq("/bin/" .. names[i] .. " is 755", node.mode, 755)
-		eq("/bin/" .. names[i] .. " describes itself", node.data, CeroSecOS.COMMAND_INFO[names[i]])
+		eq("/bin/" .. names[i] .. " describes itself", node.data, CeroSecOS.commandDesc(names[i]))
 	end
 	check("sudo among them", state.fs.children.bin.children.sudo ~= nil)
 	check("shutdown too", state.fs.children.bin.children.shutdown ~= nil)
