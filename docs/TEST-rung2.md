@@ -786,13 +786,13 @@ away and coming back.
      made **before** this build the same is true the first time you open it: the
      top-up seeds what is missing and touches nothing else.
 177. **id.** Logged in as `admin`: `id` prints `uid=admin flag=user groups=sudo`.
-     `id root` prints `uid=root flag=admin groups=-` — root is not in the sudoers
+     `id root` prints `uid=root flag=admin groups=root` — root is not in the sudoers
      file and does not need to be. `id nosuch` is `id: nosuch: no such user`.
 178. **adduser is root's.** As `admin`: `adduser bob` → `adduser: permission
      denied`. Then `sudo adduser bob`, password when asked: two lines,
      `adduser: bob: created` and `adduser: set a password with passwd bob`.
 179. **What it made.** `ls -l /home` shows `bob` as a directory owned by `bob`,
-     mode `drwxr-x---`, dated now. `id bob` → `uid=bob flag=user groups=-`.
+     mode `drwxr-x---`, dated now. `id bob` → `uid=bob flag=user groups=bob`.
      `ls /home/bob` as `admin` → `permission denied`: a home is the account's own.
 180. **The account really works.** `exit`, then log in as `bob` with an empty
      password. The prompt is `bob@<host>:~$`, `pwd` is `/home/bob`, and `whoami`
