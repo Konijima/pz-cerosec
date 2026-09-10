@@ -1,0 +1,31 @@
+module Base
+{
+    /* Block syntax copied from media/scripts/generated/sounds/objects/sounds_object_light.txt
+       and sounds_object_radio.txt; `file` replaces `event` because these clips are
+       .ogg files shipped in the mod, not FMOD events. The path is resolved by
+       ZomboidFileSystem across the mod folders. */
+
+    sound CeroSecToggle
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecToggle.ogg,
+            distanceMax = 15,
+            volume = 0.8,
+        }
+    }
+
+    sound CeroSecBootStart
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecBootStart.ogg,
+            distanceMax = 15,
+            volume = 0.8,
+        }
+    }
+}
