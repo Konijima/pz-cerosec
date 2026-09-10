@@ -16,10 +16,12 @@ Done:
 - Power: turn a desktop computer on and off from the context menu, with the right
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
-- The OS engine: a filesystem with owners and permissions, a shell
-  (`cat cd chmod chown clear cp echo edit exit hash help hostname ls mkdir mv passwd
-  pwd reboot restart rm shutdown sudo touch whoami write`), an editor, and
-  salted-hashed passwords.
+- The OS engine: a filesystem with owners and permissions and modification times, a
+  shell (`cat cd chmod chown clear cp date df echo edit exit grep hash head help
+  hostname ls man mkdir mv passwd pwd reboot restart rm shutdown sudo tail touch wc
+  whoami write`), an editor, and salted-hashed passwords.
+- The clock: the machine reads the game's calendar, so `date` is the hour the
+  survivor is living in and every file carries the minute it was written.
 - The system files: the commands are files in `/bin`, the accounts are
   `/etc/passwd`, who may `sudo` is `/etc/sudoers`, the machine's name is
   `/etc/hostname` and its greeting is `/etc/motd`. Root can take any of them away,
@@ -59,23 +61,30 @@ Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-l] [path]` | list a directory, or one file |
+| `ls [-lF] [path]` | list a directory in columns; `-l` adds owner, size and date, `-F` marks directories with `/` |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
-| `cat <file>` | print a file |
+| `cat <file>...` | print a file |
 | `edit <file>` | open the file in the editor |
 | `write <file> <text>` | write text to a file (used by the editor's save) |
-| `touch <file>` | create an empty file |
+| `touch <file>` | create an empty file, or move an existing one's date to now |
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename |
-| `cp <src> <dst>` | copy a file |
+| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
 | `chmod <mode> <path>` | set permissions (three octal digits) |
 | `chown <user> <path>` | change the owner |
 | `whoami` | print the logged-in user |
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `hash <text> [salt]` | show what a password would hash to |
+| `grep [-i] [-n] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines); there is no regex on this machine |
+| `head [-n N] <file>` | the first N lines, 10 by default |
+| `tail [-n N] <file>` | the last N lines, 10 by default |
+| `wc <file>...` | lines, words and bytes |
+| `date` | the date and time, from the game's calendar |
+| `df` | how much of the 32K disk and the 256 nodes are used |
+| `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
 | `shutdown` | switch the machine off (root only) |
 | `reboot` / `restart` | switch it off and straight back on (root only) |
@@ -155,8 +164,8 @@ scripts are not, so the whole mod has to sit where it is loaded from.
 ### Architecture
 
 `42/media/lua/shared/CeroSec/OS/` is a pure-Lua OS engine: `CeroSecOS.exec(state,
-session, line)` takes a state and a command line and returns `ok, lines, control,
-data`, and nothing else. It makes no game call, touches no `os`/`io`/`require`, no
+session, line, env)` takes a state, a command line and the world outside the machine,
+and returns `ok, lines, control, data`, and nothing else. It makes no game call, touches no `os`/`io`/`require`, no
 coroutines and no metatables, so it runs the same under a plain `lua5.1` and under
 the game's Kahlua. `lines` is text, one array entry per screen line, at most 60
 characters. `control` is `nil`, `"clear"`, `"exit"`, `"prompt"`, `"edit"`,
@@ -209,6 +218,34 @@ Every command carries the window's own token and every answer carries it back
 singleplayer where there is only one), because the server addresses a connection
 and split screen puts several players on one. The server keeps a watcher list per
 computer and answers every open window with the new screen under its own token.
+
+#### The clock
+
+The engine has no clock and asks for none. `env.now` is one number — seconds since
+1970-01-01 00:00:00, counted on the *game's* calendar — and it is handed in at every
+`exec` and `continue`. `env` is optional: without it the machine has no clock, `date`
+answers `date: no clock`, and nothing is stamped. That is what lets a test pin every
+timestamp to a fixed moment.
+
+The server builds it in `SCeroSecSystem:clockEnv()` from `getGameTime()`:
+`getYear()`, `getMonth() + 1`, `getDay() + 1`, `getHour()`, `getMinutes()` — the
+month and the day are 0-based in `zombie.GameTime`, which is why vanilla adds one to
+them everywhere it prints them and why `getDayPlusOne()` exists. There is no
+`getSeconds()`: the game's finest hand is the minute, so the second is always `:00`.
+
+Every node may carry an `mtime`, that same number. It is absent on every node saved
+before this build and on everything a fresh machine ships with; absent means 0, read
+through `CeroSecOS.mtimeOf` and never off the field, and `validate` accepts a node
+without one. The four mutators (`createNode`, `removeNode`, `setData`, `moveNode`)
+take the clock as a last argument and `nil` means "no clock": the mutation happens,
+nothing is stamped. This machine has one timestamp where Unix has three, so it stands
+for `mtime` and `ctime` both — a `chmod` and an `mv` move it. A create or a remove
+also moves the *parent directory's* stamp, because a directory's date is when its
+listing last changed.
+
+`CeroSecOS.DISK_BYTES` is the one number for the drive: the BIOS announces it
+(`CeroSec.bootLines()` appends `hda 32K`), `df` divides by it, and the write path
+refuses to go past it. There is no second copy of it anywhere to drift.
 
 ### System files, and their formats
 
@@ -307,7 +344,7 @@ only the lines the server answers it with. A filesystem is capped at 256 nodes, 
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
 small.
 
-The state also carries `sysv`, the *contents* it was built with (2 today) as
+The state also carries `sysv`, the *contents* it was built with (3 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at

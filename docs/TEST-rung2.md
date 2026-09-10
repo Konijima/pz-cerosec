@@ -701,7 +701,80 @@ the top-up must not undo it.
      `Old password: ^C` and both are back at the shell prompt — the same screen,
      as everywhere else.
 
+## P — The clock, the columns, the disk and the text tools
+
+**Before you start.** Seven commands are new (`date`, `df`, `grep`, `head`,
+`tail`, `wc`, `man`), `ls` now packs into columns and knows `-F`, and `cp` knows
+`-r`. They are files in `/bin` like everything else: a computer placed fresh has
+them, a BIOS restore puts them back, and a computer from an older save is topped
+up the first time it is opened on this build (the state's `sysv` moved to 3).
+**Worth a look on an existing save:** open an old computer and type `help` —
+the seven should be in the list, with the machine's own files untouched.
+
+160. **The clock is the game's.** Log in and type `date`. It answers in the shape
+     `Thu Jul  8 14:32:00 1993`: the day, month, day-of-month, time and year the
+     game is showing. Check it against the in-game clock — the hour and the
+     minute must match what the HUD says, not the real world's.
+161. **And it moves.** Sleep, or wait for the hour to turn, and type `date`
+     again. The time has moved with the game. A machine that answered the same
+     thing twice across an hour of game time is wrong.
+162. **A file carries the minute it was written.** `touch a.txt`, then `ls -l`.
+     The date column shows the current in-game month, day and time. Wait an hour
+     of game time, `touch a.txt` again, `ls -l`: the date has moved.
+163. **An old file has no date.** On a computer from a save made before this
+     build, `ls -l /etc`: the files that were already there read `Jan  1 00:00`
+     — they were never stamped and nothing invents a date for them. Write to one
+     (`edit /etc/motd`, save) and its date becomes now.
+164. **The BIOS tells the truth about the drive.** Switch a computer off and on
+     and watch the boot lines: `Detecting drives ... hda 32K`. Then type `df`:
+     the `hda` row says `32768` under Size. The two numbers are the same number.
+165. **`df` counts what is really there.** Note the `Used` figures. Write a big
+     file (`edit big.txt`, paste a few hundred characters, save) and run `df`
+     again: bytes used went up by what you wrote and the node count went up by
+     one. Delete it and both come back down.
+166. **`ls` fills the screen.** In a directory with a dozen short names, plain
+     `ls` puts them in columns across the 60-column screen, sorted, reading
+     **down** each column — not one name per line. A directory with one very long
+     name puts it alone on its line, cut with a `~` if it is wider than the
+     screen.
+167. **`ls -F` marks the directories.** `ls -F /` — `bin/`, `dev/`, `etc/`,
+     `home/`, `root/`, with the slash. `ls -lF /` is the long listing with the
+     same slashes. `ls -Fl` and `ls -l -F` are the same thing; `ls -lz` is
+     `ls: -lz: unknown option`.
+168. **`grep` is a string, not a pattern.** Put a few lines in a file, then
+     `grep alpha notes.txt`. `grep -n alpha notes.txt` numbers them,
+     `grep -i ALPHA notes.txt` ignores case, and `grep a.b notes.txt` matches the
+     three characters `a.b` and **not** `axb` — there is no regex on this
+     machine. `grep zebra notes.txt` prints nothing at all.
+169. **Several files name themselves.** `cp notes.txt other.txt`, then
+     `grep alpha notes.txt other.txt`: each hit is prefixed with the file it came
+     from. With `-n` too: `notes.txt:2:...`.
+170. **`head`, `tail` and `wc`.** On a file of a dozen lines: `head` gives the
+     first ten, `head -n 2` the first two, `tail -n 3` the last three. `wc
+     notes.txt` prints lines, words, bytes and the name in columns; `wc a.txt
+     b.txt` adds a `total` row.
+171. **`cp -r` copies a tree.** `mkdir tree`, `mkdir tree/inner`, a file in each,
+     then `cp -r tree copy` and `ls -l copy/inner`. Everything came over, owned
+     by you, dated now. `cp tree copy2` without `-r` is
+     `cp: tree: is a directory`, and `cp -r tree tree/again` is
+     `cp: tree/again: invalid destination` — a directory never goes inside
+     itself.
+172. **`man` and the shell agree.** `man ls` prints what `/bin/ls` says it does
+     and the usage line under it. Now type a wrong command line —
+     `ls a b` — and the refusal prints **that same** usage string. Try it for
+     `cp`, `grep`, `head`, `mkdir`: the two lines always match.
+173. **`man` reads the file.** As `root`, `write /bin/ls "shows you things"`,
+     then `man ls`: it says what the file says. `rm /bin/ls`, then `man ls`:
+     `man: ls: no manual entry`. Switch the machine off and on and answer `y` at
+     the BIOS to put it back.
+174. **A stamp is a write.** As `root`, `touch /root/his.txt`. As `admin`,
+     `touch /root/his.txt` → `permission denied`. A file you may not write is a
+     file whose date you may not move.
+175. **Two players see one clock (Host mode).** Two players at one computer. One
+     types `date`, the other `ls -l` — the same machine, the same minute, on both
+     screens.
+
 ## What is not in this rung
 
-- Devices, the network, the clock.
+- Devices, the network.
 - Any sound beyond the typing click and the rung 1 toggle/boot sounds.
