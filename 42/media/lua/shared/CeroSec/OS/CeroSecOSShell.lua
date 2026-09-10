@@ -563,22 +563,29 @@ end
 -- filter by kind, and a `toggle` that works the opposite out for you.
 --
 --   admin@ksp-04-11:~$ dev
---   light0  office                     on
---   lock0   exterior                W  locked
+--   light0  office              0 2N        on
+--   lock0   exterior            3E 2N    W  locked
 --   admin@ksp-04-11:~$ dev light0
 --   light0: on
 --   admin@ksp-04-11:~$ dev light0 off
 --   light0: off
 --
 -- The columns are `ls -l /dev`'s without the mode, the owner and the group --
--- they read the same on every device -- and the eleven characters that buys go
--- to the description, 13 wide there and 24 here: 8 id + 24 desc + 2 + 1 side +
--- 2 + state, which puts the widest state ("barricaded") on column 47.
-local D_ID, D_DESC, D_SIDE = 8, 24, 1
+-- they read the same on every device -- plus the one column `ls -l` has no room
+-- for and the thing a survivor actually picks a device out by: where it is from
+-- where the machine stands (see SCeroSecDevices.offset). Room ids repeat and an
+-- offset does not.
+--
+-- 8 id + 20 desc + 2 + 10 pos + 2 + 1 side + 2 + state, which puts the widest
+-- state ("barricaded") on column 55. The description is 20 against `ls -l`'s
+-- 13: wider than the listing that has a mode and an owner in front of it, and
+-- narrower than it would be if the offset were not the better name.
+local D_ID, D_DESC, D_POS, D_SIDE = 8, 20, 10, 1
 
 local function devRow(node)
 	return CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", D_ID), D_ID)
 		.. CeroSecOS.padRight(CeroSecOS.truncate(node.desc or "", D_DESC), D_DESC)
+		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.pos or "", D_POS), D_POS)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.side or "", D_SIDE), D_SIDE)
 		.. "  " .. (node.state or "")
 end

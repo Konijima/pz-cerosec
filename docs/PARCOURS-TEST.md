@@ -320,8 +320,13 @@ passé réellement, même quand ça correspond au texte attendu.
      `edit /dev/light0` → les quatre répondent `is a device`.
      `mkdir /dev/mine` et `touch /dev/mine` répondent `/dev: read-only`. [ ]
 97. `dev` seul dans un grand bâtiment → un tableau, une ligne par appareil,
-     `id  description  côté  état`, trié par sorte puis par numéro (`light2`
-     avant `light10`), rien de plus large que l'écran, l'écran défile.
+     `id  description  position  côté  état`, trié par sorte puis par numéro
+     (`light2` avant `light10`), rien de plus large que l'écran, l'écran
+     défile. La colonne position se lit depuis l'ordinateur : `0 0` pour un
+     appareil sur sa propre case, `3E 2N` trois cases à l'est et deux au
+     nord, `+1` / `-1` collé derrière pour un autre étage. Vérifier une
+     lumière à main droite de l'écran (est) et une porte au nord : les
+     lettres correspondent au monde, pas l'inverse.
      `dev light`, `dev lock`, `dev win` → seulement cette sorte. `dev toaster`
      → `dev: toaster: unknown kind`, `dev light99` →
      `dev: light99: no such device`. [ ]

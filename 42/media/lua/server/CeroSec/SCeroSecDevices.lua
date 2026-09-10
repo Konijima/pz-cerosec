@@ -173,6 +173,51 @@ function CeroSecDevices.classify(object)
 end
 
 --
+-- Where it is
+--
+-- Room ids repeat -- a big house has three doors whose description is the same
+-- word -- so the thing that tells two devices apart is where they are, and that
+-- is what this column is: how far east or west of the machine, how far north or
+-- south, and the floor when it is not the machine's own.
+--
+--   3E 2N      three tiles east and two north of the computer
+--   0 2N       due north of it
+--   0 0        its own square
+--   3E 2N +1   one floor up
+--
+-- The axes are the game's own: x grows to the EAST and y grows to the SOUTH
+-- (IsoGridSquare's getX/getY, the same pair every vanilla direction helper
+-- reads), so a device with a smaller y than the machine's is north of it. Both
+-- halves are always printed, a zero as a bare "0", so the column reads as one
+-- shape and never as a sentence.
+--
+-- Pure arithmetic, and deliberately: it is the one part of a device's line that
+-- can be proved without a world under it (tests/window_test.lua).
+function CeroSecDevices.offset(dx, dy, dz)
+	local east = "0"
+	if dx > 0 then
+		east = tostring(dx) .. "E"
+	elseif dx < 0 then
+		east = tostring(-dx) .. "W"
+	end
+
+	local north = "0"
+	if dy > 0 then
+		north = tostring(dy) .. "S"
+	elseif dy < 0 then
+		north = tostring(-dy) .. "N"
+	end
+
+	local out = east .. " " .. north
+	if dz > 0 then
+		out = out .. " +" .. tostring(dz)
+	elseif dz < 0 then
+		out = out .. " " .. tostring(dz)
+	end
+	return out
+end
+
+--
 -- Finding them
 --
 
@@ -335,6 +380,10 @@ local function build(luaObject, state)
 		list[#list + 1] = {
 			id = entry.id, kind = entry.kind, desc = entry.desc,
 			side = entry.side, state = entry.state,
+			-- Where it is, from where the machine is standing. Worked out here
+			-- and not by the engine: the engine has no idea there are tiles.
+			pos = CeroSecDevices.offset(entry.x - luaObject.x, entry.y - luaObject.y,
+				entry.z - luaObject.z),
 			mode = entry.mode or CeroSecOS.DEV_MODE,
 		}
 	end

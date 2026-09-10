@@ -3675,7 +3675,7 @@ local function fakeDevices(entries)
 		for i = 1, #devices.entries do
 			local e = devices.entries[i]
 			out[i] = { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
-				state = e.state, mode = e.mode, dead = e.dead }
+				pos = e.pos, state = e.state, mode = e.mode, dead = e.dead }
 		end
 		return out
 	end
@@ -3704,18 +3704,18 @@ local LOCKING = { lock = "locked", unlock = "unlocked" }
 -- The world of the approved mockup, exactly.
 local function mockupDevices()
 	return fakeDevices({
-		{ id = "light0", kind = "light", desc = "office", side = "", state = "on",
-			becomes = ONOFF },
-		{ id = "light1", kind = "light", desc = "hallway", side = "", state = "off",
-			becomes = ONOFF },
-		{ id = "lock0", kind = "lock", desc = "exterior", side = "W", state = "locked",
-			becomes = LOCKING },
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on", becomes = ONOFF },
+		{ id = "light1", kind = "light", desc = "hallway", side = "", pos = "3E 2N",
+			state = "off", becomes = ONOFF },
+		{ id = "lock0", kind = "lock", desc = "exterior", side = "W", pos = "0 5S",
+			state = "locked", becomes = LOCKING },
 		{ id = "lock1", kind = "lock", desc = "kitchen-hallway", side = "N",
-			state = "unlocked", becomes = LOCKING },
-		{ id = "win0", kind = "win", desc = "office", side = "N", state = "locked",
-			becomes = LOCKING },
-		{ id = "lock2", kind = "lock", desc = "built", side = "N", state = "padlock",
-			becomes = { lock = "padlock", unlock = "unlocked" } },
+			pos = "2W 1N", state = "unlocked", becomes = LOCKING },
+		{ id = "win0", kind = "win", desc = "office", side = "N", pos = "1E 0",
+			state = "locked", becomes = LOCKING },
+		{ id = "lock2", kind = "lock", desc = "built", side = "N", pos = "4E 9S +1",
+			state = "padlock", becomes = { lock = "padlock", unlock = "unlocked" } },
 	})
 end
 
@@ -4062,56 +4062,61 @@ do
 	local session = open(state, "root")
 	local env = devEnv(mockupDevices())
 
-	-- Columns: 8 id + 24 desc + 2 + 1 side + 2 + state. The same columns as
-	-- `ls -l /dev` (21a) without the mode, the owner and the group, and the
-	-- description is 24 here against 13 there.
+	-- Columns: 8 id + 20 desc + 2 + 10 pos + 2 + 1 side + 2 + state. The same
+	-- columns as `ls -l /dev` (21a) without the mode, the owner and the group,
+	-- plus the offset -- which is what tells two doors of one room apart and
+	-- which `ls -l` has no room left for.
 	okAt(state, session, "dev", {
-		"light0  office                       on",
-		"light1  hallway                      off",
-		"lock0   exterior                  W  locked",
-		"lock1   kitchen-hallway           N  unlocked",
-		"lock2   built                     N  padlock",
-		"win0    office                    N  locked",
+		"light0  office                0 0            on",
+		"light1  hallway               3E 2N          off",
+		"lock0   exterior              0 5S        W  locked",
+		"lock1   kitchen-hallway       2W 1N       N  unlocked",
+		"lock2   built                 4E 9S +1    N  padlock",
+		"win0    office                1E 0        N  locked",
 	}, env)
 
 	-- By KIND and then by NUMBER, which is what a listing sorted by name -- every
 	-- other listing on this machine -- cannot do: light2 belongs before light10.
-	-- A description of exactly 24 fits; one longer is cut with a tilde, the way
-	-- everything on this screen is cut.
+	-- A description of exactly 20 fits, and so does the widest offset there is
+	-- ("10E 10N -1", ten); longer is cut with a tilde, the way everything on
+	-- this screen is cut.
 	local wide = fakeDevices({
-		{ id = "light10", kind = "light", desc = "warehouse-loading dock", side = "",
-			state = "off" },
-		{ id = "light2", kind = "light", desc = "office", side = "", state = "on" },
-		{ id = "win12", kind = "win", desc = "kitchen-hallway-pantry-x", side = "N",
-			state = "barricaded" },
+		{ id = "light10", kind = "light", desc = "warehouse-loading", side = "",
+			pos = "12W 30S", state = "off" },
+		{ id = "light2", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on" },
+		{ id = "win12", kind = "win", desc = "kitchen-hallway-pant", side = "N",
+			pos = "10E 10N -1", state = "barricaded" },
 		{ id = "win3", kind = "win", desc = "a description of twenty-six", side = "W",
-			state = "smashed" },
+			pos = "1W 0", state = "smashed" },
 	})
 	local lines = okAt(state, session, "dev", {
-		"light2  office                       on",
-		"light10 warehouse-loading dock       off",
-		"win3    a description of twenty~  W  smashed",
-		"win12   kitchen-hallway-pantry-x  N  barricaded",
+		"light2  office                0 0            on",
+		"light10 warehouse-loading     12W 30S        off",
+		"win3    a description of tw~  1W 0        W  smashed",
+		"win12   kitchen-hallway-pant  10E 10N -1  N  barricaded",
 	}, devEnv(wide))
-	eq("the widest line there is", #lines[4], 47)
+	eq("the widest line there is", #lines[4], 55)
 	check("and it fits the screen", #lines[4] <= CeroSecOS.COLS)
 
 	-- One kind at a time.
 	okAt(state, session, "dev light", {
-		"light0  office                       on",
-		"light1  hallway                      off",
+		"light0  office                0 0            on",
+		"light1  hallway               3E 2N          off",
 	}, env)
 	okAt(state, session, "dev lock", {
-		"lock0   exterior                  W  locked",
-		"lock1   kitchen-hallway           N  unlocked",
-		"lock2   built                     N  padlock",
+		"lock0   exterior              0 5S        W  locked",
+		"lock1   kitchen-hallway       2W 1N       N  unlocked",
+		"lock2   built                 4E 9S +1    N  padlock",
 	}, env)
-	okAt(state, session, "dev win", { "win0    office                    N  locked" }, env)
+	okAt(state, session, "dev win", { "win0    office                1E 0        N  locked" },
+		env)
 
 	-- A kind nothing answers to right now is an empty table, not a refusal: the
 	-- kind is a real one and the building simply has none of it.
 	okAt(state, session, "dev win", {}, devEnv(fakeDevices({
-		{ id = "light0", kind = "light", desc = "office", side = "", state = "on" },
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on" },
 	})))
 
 	-- A machine with no devices at all is the machine of every earlier rung.
@@ -4121,10 +4126,12 @@ do
 	-- A device the machine remembers the number of and cannot reach is not on
 	-- the table, exactly as it is not in `ls /dev` (21d).
 	local withDead = fakeDevices({
-		{ id = "light0", kind = "light", desc = "office", side = "", state = "on" },
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on" },
 		{ id = "lock9", kind = "lock", dead = true },
 	})
-	okAt(state, session, "dev", { "light0  office                       on" }, devEnv(withDead))
+	okAt(state, session, "dev", { "light0  office                0 0            on" },
+		devEnv(withDead))
 	okAt(state, session, "dev lock", {}, devEnv(withDead))
 end
 

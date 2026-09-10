@@ -211,17 +211,21 @@ which is what a computer in a player-built base gets. `dev` is how you work them
 
 ```
 dev
-light0  office                       on
-light1  hallway                      off
-lock0   exterior                  W  locked
-lock1   kitchen-hallway           N  unlocked
-lock2   built                     N  padlock
-win0    office                    N  locked
+light0  office                0 0            on
+light1  hallway               3E 2N          off
+lock0   exterior              0 5S        W  locked
+lock1   kitchen-hallway       2W 1N       N  unlocked
+lock2   built                 4E 9S +1    N  padlock
+win0    office                1E 0        N  locked
 ```
 
 The id you name it by, the rooms it stands between — the map's own raw names,
 `exterior` where one side is the outdoors, `built` for something a player put up
-— which way it faces, and its state. The table runs by kind and then by number,
+— where it is from where the computer stands, which way it faces, and its state.
+The offset is the column that tells two devices apart when the room names do
+not: tiles east or west, tiles north or south, `0 0` for the computer's own
+square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
+and then by number,
 so `light2` comes before `light10`; in a big building `dev light`, `dev lock` and
 `dev win` cut it down to one kind. One id reads that one back, an id and a word
 works it and answers with the state read back afterwards, and `toggle` is
@@ -234,8 +238,8 @@ dev lock2 toggle    -> lock2: unlocked
 ```
 
 Underneath, `dev` is `cat` and a redirect on the node — the same permissions, the
-same words, the same refusals — and `ls -l /dev` is the same table with the mode,
-the owner and the group in front of it:
+same words, the same refusals — and `ls -l /dev` is the same devices with the
+mode, the owner and the group in front of them and no room left for the offset:
 
 ```
 crw-rw----  root  sudo  lock0   exterior       W  locked

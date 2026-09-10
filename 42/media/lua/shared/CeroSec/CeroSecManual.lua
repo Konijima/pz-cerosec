@@ -645,28 +645,31 @@ chapter 10 for what is already decided about where this is going.]],
 
 [[The machine is wired into the building it stands in, and dev is how
 you work it. Type it alone and every light switch, lockable door and
-window it can reach is one line: the id you name it by, what it is
-fixed to, which way it faces, and what it is doing.
+window it can reach is one line.
 
   admin@ksp-04-11:~$ dev
-  light0  office                       on
-  light1  hallway                      off
-  lock0   exterior                  W  locked
-  lock1   kitchen-hallway           N  unlocked
-  lock2   built                     N  padlock
-  win0    office                    N  barricaded
+  light0  office                0 0            on
+  lock0   exterior              0 5S        W  locked
+  lock1   kitchen-hallway       2W 1N       N  unlocked
+  lock2   built                 4E 9S +1    N  padlock
 
-The description is the two rooms a door or a window stands between,
-exterior with the outdoors on one side, or built for what a player
-raised; the letter after it is the way it faces, N or W, and a light
-has none. The list runs by kind and then by number, so light2 comes
-before light10 and each kind stands together.]],
+The id you name it by; the two rooms it stands between, exterior
+where one side is the outdoors, built for what a player raised;
+where it is from where the computer stands -- tiles east or west,
+tiles north or south, 0 0 for its own square, a floor that is not
+this one written +1 or -1 after; the way it faces, N or W, and a
+light has none; and what it is doing. Room names repeat in a big
+house and an offset does not, so that column is what tells one
+kitchen door from another.]],
 
 [[A big building is a long list and the screen simply scrolls. Name a
 kind -- light, lock or win -- and only that kind is listed.
 
   admin@ksp-04-11:~$ dev win
-  win0    office                    N  barricaded
+  win0    office                1E 0        N  locked
+
+The list runs by kind and then by number, so light2 comes before
+light10 and each kind stands together.
 
 One id, and dev reads that one back. An id and a word, and dev does
 it and answers with the state it read afterwards, so you never have
@@ -707,7 +710,8 @@ and echo off > /dev/light0 are one order, refusals included.
   on
   admin@ksp-04-11:~$ echo off > /dev/light0
 
-ls -l /dev is the same table with the plumbing's columns in front:
+ls -l /dev is the same devices with the plumbing's columns in front
+and no room left for the offset:
 
   admin@ksp-04-11:~$ ls -l /dev
   crw-rw----  root  sudo  lock0   exterior       W  locked
@@ -715,9 +719,9 @@ ls -l /dev is the same table with the plumbing's columns in front:
 
 The mode wears a c where an ordinary file wears a dash: a device is
 a character device. Then the owner, always root, and the group,
-always sudo. Nothing under /dev is ever on the disk -- it is built
-fresh at the start of every command and torn down again before the
-prompt comes back, so no save carries a byte of it.]],
+always sudo. Nothing under /dev is ever on the disk: it is built
+fresh at every command and torn down before the prompt comes back,
+so no save carries a byte of it.]],
 
 [[660 and group sudo is not decoration: an account /etc/sudoers names
 reads and works every device with no sudo typed at all, and anybody
@@ -930,9 +934,11 @@ dropped the same way.]],
 the file itself; light answers on and off; lock and win answer lock
 and unlock; toggle, which dev takes and a redirect does not, is
 whichever of a pair the device is not in now. dev alone is the whole
-table, dev light, dev lock and dev win one kind of it. ls -l /dev
-reads exactly like ls -l anywhere else, mode, owner, group, id,
-description, facing and state in place of size and date.
+table, dev light, dev lock and dev win one kind of it; its columns
+are id, description, offset from the computer, facing and state.
+ls -l /dev reads exactly like ls -l anywhere else, mode, owner,
+group, id, description, facing and state in place of size and date,
+and no offset -- the screen is sixty columns wide.
 chmod and cat work on a device the way they work on a file; rm, mv,
 cp and edit do not.]],
 

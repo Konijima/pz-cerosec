@@ -1123,6 +1123,27 @@ end
 -- switches and one player-built door with a padlock.
 --
 
+-- The offset column, on its own. Pure arithmetic on three numbers, so it is
+-- proved without a world at all -- every direction, both floors, and the two
+-- shapes that are easy to get backwards: x grows EAST and y grows SOUTH, so a
+-- smaller y is north.
+do
+	local o = CeroSecDevices.offset
+	eq("the machine's own square", o(0, 0, 0), "0 0")
+	eq("east", o(3, 0, 0), "3E 0")
+	eq("west", o(-3, 0, 0), "3W 0")
+	eq("north is a SMALLER y", o(0, -2, 0), "0 2N")
+	eq("south is a bigger one", o(0, 2, 0), "0 2S")
+	eq("both halves", o(3, -2, 0), "3E 2N")
+	eq("and the other two corners", o(-3, 2, 0), "3W 2S")
+	eq("one floor up", o(3, -2, 1), "3E 2N +1")
+	eq("one floor down", o(3, -2, -1), "3E 2N -1")
+	eq("two floors up, on the same square", o(0, 0, 2), "0 0 +2")
+	eq("and two digits do not change the shape", o(-12, 30, 0), "12W 30S")
+	-- The widest a real one gets, and the column dev keeps for it.
+	eq("the widest offset there is", #o(-10, -10, -1), 10)
+end
+
 -- An ArrayList as the game hands one over: 0-based get, and a size.
 local function javaList(items)
 	return {
@@ -1358,13 +1379,16 @@ do
 	-- discovery: dev's own table, and one order carried out on the world.
 	bench.enter("dev")
 	bench.frame()
+	-- The offsets are the real ones: the computer stands at 10,10,0 and every
+	-- one of these was walked out of the fake world by SCeroSecDevices.
 	local table60 = {
-		"light0  office                       on",
-		"light1  hallway                      on",
-		"lock0   exterior                  W  unlocked",
-		"lock1   kitchen-hallway           N  unlocked",
-		"lock2   built                     N  unlocked",
-		"win0    office                    N  unlocked",
+		"light0  office                1E 0           on",
+		"light1  hallway               3E 1S          on",
+		"lock0   exterior              1E 0        W  unlocked",
+		"lock1   kitchen-hallway       1E 1S       N  unlocked",
+		"lock2   built                 2E 1S       N  unlocked",
+		"win0    office                2E 0        N  unlocked",
+
 	}
 	for i = 1, #table60 do
 		check("dev's table shows: " .. table60[i], bench.painted(table60[i]))

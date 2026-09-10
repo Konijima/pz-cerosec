@@ -16,13 +16,19 @@
 --
 --   dev = { type = "dev", owner = "root", group = "sudo", mode = 660,
 --           id = "light0", kind = "light", desc = "office", side = "N",
---           state = "on" }
+--           pos = "3E 2N", state = "on" }
+--
+-- pos is where the device is from where the MACHINE is standing, worked out by
+-- the caller (SCeroSecDevices.offset) because tiles are the caller's business.
+-- It is what tells two devices apart when their descriptions are the same word,
+-- which in a big house they usually are; `dev` prints it and `ls -l /dev` has
+-- no column left for it.
 --
 -- Where they come from
 --
 -- env.devices, when the caller supplies one, with two functions:
---   list()             -> array of entries, each { id, kind, desc, side, state,
---                         mode, dead }. The IDS ARE THE CALLER'S: it is the
+--   list()             -> array of entries, each { id, kind, desc, side, pos,
+--                         state, mode, dead }. The IDS ARE THE CALLER'S: it is the
 --                         server that discovers the world and that keeps a
 --                         device's number stable across reloads. The core only
 --                         ever renders what it is handed.
@@ -137,10 +143,12 @@ local function nodeFor(entry)
 		kind = entry.kind,
 		desc = "",
 		side = "",
+		pos = "",
 		state = "",
 	}
 	if type(entry.desc) == "string" then node.desc = entry.desc end
 	if type(entry.side) == "string" then node.side = entry.side end
+	if type(entry.pos) == "string" then node.pos = entry.pos end
 	if type(entry.state) == "string" then node.state = entry.state end
 	if entry.dead then
 		node.dead = true
