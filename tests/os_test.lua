@@ -3,7 +3,7 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
+	"CeroSecOS", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 }
 for i = 1, #FILES do
@@ -3513,6 +3513,372 @@ do
 	check("the repair puts adduser back", broken.fs.children.bin.children.adduser ~= nil)
 	check("and su", broken.fs.children.bin.children.su ~= nil)
 	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
+--
+-- 21. /dev
+--
+-- The engine's whole half of the devices: it renders them, it judges what may
+-- be written to one, and it hands the rest to whoever is running the machine.
+-- Nothing here knows there is a world -- env.devices is a fake, and that is the
+-- point: the core must be provable without a game under it.
+--
+
+-- A fake env.devices. An entry may carry `refuse`, the reason its world answers
+-- with, and `becomes`, what the state turns into for a value that is accepted.
+local function fakeDevices(entries)
+	local devices = { entries = entries, writes = {}, chmods = {} }
+	local byId = {}
+	for i = 1, #entries do byId[entries[i].id] = entries[i] end
+
+	devices.list = function()
+		-- A fresh array each call, the way a real discovery hands one over.
+		local out = {}
+		for i = 1, #devices.entries do
+			local e = devices.entries[i]
+			out[i] = { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
+				state = e.state, mode = e.mode, dead = e.dead }
+		end
+		return out
+	end
+
+	devices.write = function(id, value)
+		devices.writes[#devices.writes + 1] = id .. "=" .. value
+		local e = byId[id]
+		if e == nil then return false, "no such device" end
+		if e.refuse ~= nil then return false, e.refuse end
+		if e.becomes ~= nil and e.becomes[value] ~= nil then e.state = e.becomes[value] end
+		return true, nil, e.state
+	end
+
+	devices.chmod = function(id, mode)
+		devices.chmods[#devices.chmods + 1] = id .. "=" .. tostring(mode)
+		local e = byId[id]
+		if e ~= nil then e.mode = mode end
+	end
+
+	return devices
+end
+
+local ONOFF = { on = "on", off = "off" }
+local LOCKING = { lock = "locked", unlock = "unlocked" }
+
+-- The world of the approved mockup, exactly.
+local function mockupDevices()
+	return fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "on",
+			becomes = ONOFF },
+		{ id = "light1", kind = "light", desc = "hallway", side = "", state = "off",
+			becomes = ONOFF },
+		{ id = "lock0", kind = "lock", desc = "exterior", side = "W", state = "locked",
+			becomes = LOCKING },
+		{ id = "lock1", kind = "lock", desc = "kitchen-hallway", side = "N",
+			state = "unlocked", becomes = LOCKING },
+		{ id = "win0", kind = "win", desc = "office", side = "N", state = "locked",
+			becomes = LOCKING },
+		{ id = "lock2", kind = "lock", desc = "built", side = "N", state = "padlock",
+			becomes = { lock = "padlock", unlock = "unlocked" } },
+	})
+end
+
+local function devEnv(devices)
+	return { now = FIXED, devices = devices }
+end
+
+-- 21a. What `ls -l /dev` prints, to the character.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(mockupDevices())
+
+	-- The approved mockup. The listing is by NAME, the way every other listing
+	-- on this machine is -- childNames sorts, and a directory whose order
+	-- depended on the order the world was walked in would not be the same twice.
+	okAt(state, session, "ls -l /dev", {
+		"crw-rw----  root  light0  office              on",
+		"crw-rw----  root  light1  hallway             off",
+		"crw-rw----  root  lock0   exterior         W  locked",
+		"crw-rw----  root  lock1   kitchen-hallway  N  unlocked",
+		"crw-rw----  root  lock2   built            N  padlock",
+		"crw-rw----  root  win0    office           N  locked",
+	}, env)
+
+	-- The short form is names, columnized like any other directory.
+	okAt(state, session, "ls /dev", {
+		"light0  light1  lock0   lock1   lock2   win0",
+	}, env)
+
+	-- The widest state there is still fits the glass.
+	local wide = fakeDevices({
+		{ id = "win12", kind = "win", desc = "kitchen-hallway", side = "N",
+			state = "barricaded" },
+	})
+	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
+	eq("the widest device line", line,
+		"crw-rw----  root  win12   kitchen-hallway  N  barricaded")
+	check("and it fits the screen", #line <= CeroSecOS.COLS)
+
+	-- A device is a character device and wears the letter for one.
+	eq("the type letter", string.sub(line, 1, 1), "c")
+
+	-- Named straight rather than listed.
+	okAt(state, session, "ls -l /dev/lock1",
+		{ "crw-rw----  root  lock1   kitchen-hallway  N  unlocked" }, env)
+	okAt(state, session, "ls /dev/lock1", { "lock1" }, env)
+end
+
+-- 21b. Reading one.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(mockupDevices())
+
+	okAt(state, session, "cat /dev/light0", { "on" }, env)
+	okAt(state, session, "cat /dev/light1", { "off" }, env)
+	okAt(state, session, "cat /dev/lock0", { "locked" }, env)
+	okAt(state, session, "cat /dev/lock1", { "unlocked" }, env)
+	okAt(state, session, "cat /dev/lock2", { "padlock" }, env)
+	okAt(state, session, "cat /dev/win0", { "locked" }, env)
+	-- Several at once, like any other cat.
+	okAt(state, session, "cat /dev/light0 /dev/light1", { "on", "off" }, env)
+	-- And into a file: the state of the world, written to the disk.
+	okAt(state, session, "cat /dev/light0 > /root/seen.txt", {}, env)
+	okAt(state, session, "cat /root/seen.txt", { "on" }, env)
+end
+
+-- 21c. Writing one: the order reaches the world, and the state comes back.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+
+	okAt(state, session, "echo off > /dev/light0", {}, env)
+	eq("the world was told once", #devices.writes, 1)
+	eq("and what it was told", devices.writes[1], "light0=off")
+	okAt(state, session, "cat /dev/light0", { "off" }, env)
+
+	okAt(state, session, "echo unlock > /dev/lock0", {}, env)
+	okAt(state, session, "cat /dev/lock0", { "unlocked" }, env)
+	okAt(state, session, "echo lock > /dev/win0", {}, env)
+	okAt(state, session, "echo unlock > /dev/lock2", {}, env)
+	okAt(state, session, "cat /dev/lock2", { "unlocked" }, env)
+
+	-- ">>" is the same order: a device has no contents to append to.
+	okAt(state, session, "echo on >> /dev/light1", {}, env)
+	okAt(state, session, "cat /dev/light1", { "on" }, env)
+	eq("every write reached the world", #devices.writes, 5)
+
+	-- The blanks around a word are the shell's, not the player's.
+	okAt(state, session, 'echo "  off  " > /dev/light1', {}, env)
+	eq("trimmed on the way out", devices.writes[#devices.writes], "light1=off")
+	okAt(state, session, "cat /dev/light1", { "off" }, env)
+
+	-- Any command's output can be the order, not only echo's.
+	okAt(state, session, "write /root/v.txt lock", {}, env)
+	okAt(state, session, "cat /root/v.txt > /dev/lock1", {}, env)
+	okAt(state, session, "cat /dev/lock1", { "locked" }, env)
+end
+
+-- 21d. Every refusal a device makes, in its own name.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "off",
+			refuse = "no power" },
+		{ id = "light1", kind = "light", desc = "office", side = "", state = "on",
+			becomes = ONOFF },
+		{ id = "win0", kind = "win", desc = "office", side = "N", state = "smashed",
+			refuse = "smashed" },
+		{ id = "win1", kind = "win", desc = "office", side = "W", state = "barricaded",
+			refuse = "barricaded" },
+		{ id = "lock2", kind = "lock", desc = "built", side = "N", state = "unlocked",
+			refuse = "no padlock" },
+		{ id = "lock9", kind = "lock", dead = true },
+	})
+	local env = devEnv(devices)
+
+	badAt(state, session, "echo on > /dev/light0", "light0: no power", env)
+	badAt(state, session, "echo lock > /dev/win0", "win0: smashed", env)
+	badAt(state, session, "echo lock > /dev/win1", "win1: barricaded", env)
+	badAt(state, session, "echo lock > /dev/lock2", "lock2: no padlock", env)
+
+	-- A word the kind has no meaning for never reaches the world at all. The
+	-- four refusals above did reach it -- "no power" is the WORLD's answer --
+	-- so what is counted here is the moves this block adds, which is none.
+	local reached = #devices.writes
+	badAt(state, session, "echo yes > /dev/light1", "light1: invalid value", env)
+	badAt(state, session, "echo lock > /dev/light1", "light1: invalid value", env)
+	badAt(state, session, "echo on > /dev/lock2", "lock2: invalid value", env)
+	badAt(state, session, "echo > /dev/light1", "light1: invalid value", env)
+	eq("nothing of that reached the world", #devices.writes, reached)
+
+	-- A device the machine remembers the number of and cannot reach. It is NOT
+	-- in the listing -- it is not there -- and naming it says which of the two
+	-- kinds of "not there" it is.
+	local shown = okAt(state, session, "ls /dev", nil, env)[1]
+	check("the dead one is not listed", string.find(shown, "lock9", 1, true) == nil)
+	local long = okAt(state, session, "ls -l /dev", nil, env)
+	eq("nor in the long listing", #long, 5)
+	badAt(state, session, "ls /dev/lock9", "ls: /dev/lock9: no such file", env)
+	badAt(state, session, "cat /dev/lock9", "lock9: no such device", env)
+	badAt(state, session, "echo lock > /dev/lock9", "lock9: no such device", env)
+
+	-- A name nobody ever gave out is an ordinary miss.
+	badAt(state, session, "cat /dev/light7", "cat: /dev/light7: no such file", env)
+end
+
+-- 21e. The mode, and that it lasts.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+
+	-- 660: root's and the sudo group's. The group triplet is not evaluated yet,
+	-- so today that means root alone.
+	local admin = open(state, "admin")
+	badAt(state, admin, "cat /dev/light0", "light0: permission denied", env)
+	badAt(state, admin, "echo off > /dev/light0", "light0: permission denied", env)
+	eq("and nothing reached the world", #devices.writes, 0)
+	-- The listing is the directory's business, not the device's: /dev is 755.
+	okAt(state, admin, "ls -l /dev", nil, env)
+
+	-- Root opens it up, and the new mode is handed to the world to remember --
+	-- the node itself is gone by the end of the command.
+	okAt(state, root, "chmod 666 /dev/light0", {}, env)
+	eq("the mode was handed over once", #devices.chmods, 1)
+	eq("and what it was", devices.chmods[1], "light0=666")
+
+	okAt(state, admin, "cat /dev/light0", { "on" }, env)
+	okAt(state, admin, "echo off > /dev/light0", {}, env)
+	okAt(state, admin, "cat /dev/light0", { "off" }, env)
+	eq("the mode shows in the listing",
+		okAt(state, root, "ls -l /dev/light0", nil, env)[1],
+		"crw-rw-rw-  root  light0  office              off")
+
+	-- A mode nobody moved is not handed over again.
+	local before = #devices.chmods
+	okAt(state, root, "cat /dev/light0", nil, env)
+	eq("no chmod for a read", #devices.chmods, before)
+
+	-- Shut again, and root still walks through it.
+	okAt(state, root, "chmod 000 /dev/light0", {}, env)
+	badAt(state, admin, "cat /dev/light0", "light0: permission denied", env)
+	okAt(state, root, "cat /dev/light0", { "off" }, env)
+end
+
+-- 21f. A device is not a file, and /dev is not a directory anybody writes in.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(mockupDevices())
+
+	badAt(state, session, "rm /dev/light0", "rm: /dev/light0: is a device", env)
+	badAt(state, session, "rm -r /dev/light0", "rm: /dev/light0: is a device", env)
+	badAt(state, session, "mv /dev/light0 /root/x", "mv: /dev/light0: is a device", env)
+	badAt(state, session, "cp /dev/light0 /root/x", "cp: /dev/light0: is a device", env)
+	badAt(state, session, "cp -r /dev/light0 /root/x", "cp: /dev/light0: is a device", env)
+	badAt(state, session, "edit /dev/light0", "edit: /dev/light0: is a device", env)
+	badAt(state, session, "chown admin /dev/light0", "chown: /dev/light0: is a device", env)
+	badAt(state, session, "touch /dev/light0", "touch: /dev/light0: is a device", env)
+	badAt(state, session, "write /dev/light0 on", "write: /dev/light0: is a device", env)
+	badAt(state, session, "head /dev/light0", "head: /dev/light0: is a device", env)
+	badAt(state, session, "tail /dev/light0", "tail: /dev/light0: is a device", env)
+	badAt(state, session, "wc /dev/light0", "wc: /dev/light0: is a device", env)
+	badAt(state, session, "grep on /dev/light0", "grep: /dev/light0: is a device", env)
+
+	-- Nothing may be made in /dev, and the refusal names the DIRECTORY: it is
+	-- /dev that is read-only, not the name that was tried.
+	badAt(state, session, "mkdir /dev/mine", "/dev: read-only", env)
+	badAt(state, session, "touch /dev/mine", "/dev: read-only", env)
+	badAt(state, session, "edit /dev/mine", "/dev: read-only", env)
+	badAt(state, session, "echo hi > /dev/mine", "echo: /dev/mine: read-only", env)
+	okAt(state, session, "write /root/x.txt hi", {}, env)
+	badAt(state, session, "cp /root/x.txt /dev/mine", "cp: /dev/mine: read-only", env)
+	badAt(state, session, "mv /root/x.txt /dev/mine", "mv: /dev/mine: read-only", env)
+	check("and nothing landed there",
+		state.fs.children.dev.children.mine == nil)
+end
+
+-- 21g. Nothing of a device is ever on the disk.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(mockupDevices())
+
+	local nodesBefore, bytesBefore = CeroSecOS.usage(state)
+	okAt(state, session, "ls -l /dev", nil, env)
+	okAt(state, session, "cat /dev/light0", nil, env)
+
+	eq("/dev is empty between commands", CeroSecOS.countEntries(state.fs.children.dev), 0)
+	eq("the state still validates", CeroSecOS.validate(state), true)
+	local nodesAfter, bytesAfter = CeroSecOS.usage(state)
+	eq("the disk did not move", bytesAfter, bytesBefore)
+	eq("nor the node count", nodesAfter, nodesBefore)
+
+	-- Not even in the middle of the command: a machine whose df moved because
+	-- somebody walked past a light switch would be a machine whose ceilings
+	-- depend on the weather.
+	local df = okAt(state, session, "df", nil, env)
+	local plain = okAt(state, session, "df", nil, { now = FIXED })
+	eq("df says the same with devices mounted", df[2], plain[2])
+	eq("and the same about the nodes", df[3], plain[3])
+
+	-- A machine with no devices at all is the machine of every earlier rung.
+	okAt(state, session, "ls /dev", {}, { now = FIXED })
+	okAt(state, session, "ls -l /dev", {}, { now = FIXED })
+	badAt(state, session, "cat /dev/light0", "cat: /dev/light0: no such file", { now = FIXED })
+end
+
+-- 21h. A chain that ends in a device: the mount is under continue too.
+do
+	local state = fresh()
+	local session = open(state, "admin")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+
+	local step = { CeroSecOS.exec(state, session, "sudo cat /dev/light0", env) }
+	eq("sudo asks first", step[3], "prompt")
+	local ok2, lines = CeroSecOS.continue(state, session, step[4].cont, "", env)
+	eq("and reads the switch as root", ok2, true)
+	eq("what it read", lines[1], "on")
+
+	-- A redirect under a sudo that does not have to ask goes out at once. One
+	-- that DOES ask never reaches its redirect at all -- exec drops it when the
+	-- command answers "prompt", and continue has no redirect to apply -- which
+	-- is the shell as it has been since rung 2 and not a device's business.
+	local root = open(state, "root")
+	okAt(state, root, "sudo echo off > /dev/light0", {}, env)
+	eq("the world was told", devices.writes[#devices.writes], "light0=off")
+end
+
+-- 21i. A caller that hands over junk is a machine with no devices, never one
+-- with broken ones.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local junk = {
+		{ now = FIXED, devices = "yes" },
+		{ now = FIXED, devices = {} },
+		{ now = FIXED, devices = { list = 4, write = 4 } },
+		{ now = FIXED, devices = { list = function() return "no" end,
+			write = function() return false end } },
+	}
+	for i = 1, #junk do
+		okAt(state, session, "ls /dev", {}, junk[i])
+		eq("and /dev stays empty", CeroSecOS.countEntries(state.fs.children.dev), 0)
+	end
+
+	-- An entry that is not one is dropped; the rest are mounted.
+	local devices = fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "on" },
+		{ id = "-bad", kind = "light", desc = "x", side = "", state = "on" },
+		{ id = "nokind", kind = "toaster", desc = "x", side = "", state = "on" },
+		{ id = "light1", kind = "light", desc = "hall", side = "", state = "off" },
+	})
+	okAt(state, session, "ls /dev", { "light0  light1" }, devEnv(devices))
 end
 
 print("os_test: " .. count .. " assertions passed")

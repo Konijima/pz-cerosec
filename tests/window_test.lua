@@ -49,7 +49,20 @@ end
 _G.getText = function(key) return key end
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
-_G.instanceof = function() return true end
+-- Class-aware, because the device layer tells a light switch from a door with
+-- it. Anything that is not one of the fake world objects below answers true, as
+-- it did before: the only other caller is the client's computer test.
+_G.instanceof = function(object, class)
+	if type(object) == "table" and type(object.__class) == "string" then
+		return object.__class == class
+	end
+	return true
+end
+
+-- The cell, when a bench has laid a world out. nil is a game with no world in
+-- it, which is what every bench that is not about devices runs on.
+_G.__world = nil
+_G.getCell = function() return _G.__world end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
@@ -199,12 +212,14 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
+	"shared/CeroSec/OS/CeroSecOSDev.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
 	"shared/CeroSec/OS/CeroSecOSShell.lua",
 	"shared/CeroSec/OS/CeroSecOSState.lua",
 	"shared/CeroSec/OS/CeroSecOSSystem.lua",
 	"shared/CeroSec/OS/CeroSecOSUsers.lua",
+	"server/CeroSec/SCeroSecDevices.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
 	-- The one under test is loaded from a path the caller may override, so the
@@ -1090,6 +1105,405 @@ do
 	eq("at a prompt, not a shell", bench.window.mode, "prompt")
 	eq("nobody is logged in", bench.object.console.user, nil)
 	check("and the screen was wiped", not bench.painted("adduser: bob: created"))
+end
+
+--
+-- /dev, through the whole machine
+--
+-- os_test proves the engine against a fake env.devices. This proves the other
+-- half: a fake WORLD -- squares, rooms, a building, and the four kinds of thing
+-- that become a device -- walked by the real SCeroSecDevices, numbered into the
+-- real state, mounted by the real engine, and put on the real glass by the real
+-- window. What is asserted is what a player would read.
+--
+-- The world is the mockup's, laid out so that the numbering lands on it: two
+-- rooms plus a kitchen, two map doors (one exterior), one window, two light
+-- switches and one player-built door with a padlock.
+--
+
+-- An ArrayList as the game hands one over: 0-based get, and a size.
+local function javaList(items)
+	return {
+		size = function() return #items end,
+		get = function(_, i) return items[i + 1] end,
+	}
+end
+
+local FakeWorld = {}
+
+function FakeWorld.new()
+	local world = { squares = {}, rooms = {}, roomOrder = {} }
+
+	world.getGridSquare = function(_, x, y, z)
+		return world.squares[x .. "," .. y .. "," .. z]
+	end
+
+	-- A room, and the squares in it. The building is every room there is: a
+	-- square that belongs to a room belongs to the building.
+	world.room = function(name, coords)
+		local room = { name = name, squares = {} }
+		world.rooms[name] = room
+		world.roomOrder[#world.roomOrder + 1] = room
+		room.getName = function() return name end
+		room.getSquares = function() return javaList(room.squares) end
+		for i = 1, #coords do
+			local sq = world.square(coords[i][1], coords[i][2], coords[i][3], room)
+			room.squares[#room.squares + 1] = sq
+		end
+		return room
+	end
+
+	world.building = {
+		getDef = function()
+			local defs = {}
+			for i = 1, #world.roomOrder do
+				local room = world.roomOrder[i]
+				defs[i] = { getIsoRoom = function() return world.loaded ~= false and room or nil end }
+			end
+			return { getRooms = function() return javaList(defs) end }
+		end,
+	}
+
+	-- One square. A square with a room is inside the building; one without is
+	-- the outdoors, which is what makes a door "exterior".
+	world.square = function(x, y, z, room)
+		local key = x .. "," .. y .. "," .. z
+		local sq = world.squares[key]
+		if sq ~= nil then return sq end
+		sq = { objects = {} }
+		sq.getX = function() return x end
+		sq.getY = function() return y end
+		sq.getZ = function() return z end
+		sq.getRoom = function() return room end
+		sq.getBuilding = function() if room ~= nil then return world.building end return nil end
+		sq.getObjects = function() return javaList(sq.objects) end
+		world.squares[key] = sq
+		return sq
+	end
+
+	world.put = function(square, object)
+		object.square = square
+		object.getSquare = function() return object.square end
+		square.objects[#square.objects + 1] = object
+		return object
+	end
+
+	-- Take a device off its square, the way a survivor with a sledgehammer does.
+	world.remove = function(object)
+		local list = object.square.objects
+		for i = 1, #list do
+			if list[i] == object then table.remove(list, i); break end
+		end
+		object.square = nil
+		object.getSquare = function() return nil end
+	end
+
+	return world
+end
+
+-- The four kinds. Each one answers the calls SCeroSecDevices makes on it and
+-- counts the syncs, because "the change reached every watcher" is the half of a
+-- server-side write that a state field cannot show.
+local function fakeLight(on, powered)
+	local o = { __class = "IsoLightSwitch", activated = on, powered = powered, syncs = 0 }
+	o.isActivated = function() return o.activated end
+	o.canSwitchLight = function() return o.powered end
+	o.setActive = function(_, want)
+		-- The real one refuses silently when it cannot be thrown, and syncs
+		-- itself from the server when it can.
+		if not o.powered then return o.activated end
+		o.activated = want
+		o.syncs = o.syncs + 1
+		return o.activated
+	end
+	return o
+end
+
+local function fakeDoor(locked, north, opposite)
+	local o = { __class = "IsoDoor", lockedByKey = locked, north = north,
+		opposite = opposite, syncs = 0 }
+	o.getNorth = function() return o.north end
+	o.getOppositeSquare = function() return o.opposite end
+	o.isLockedByKey = function() return o.lockedByKey end
+	-- The real setter skips its own sync on a server, which is why the sync
+	-- below is a separate call and why this fake does not make one.
+	o.setLockedByKey = function(_, want) o.lockedByKey = want end
+	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
+	return o
+end
+
+local function fakeWindow(locked, north)
+	local o = { __class = "IsoWindow", locked = locked, north = north,
+		smashed = false, barricaded = false, syncs = 0 }
+	o.getNorth = function() return o.north end
+	o.isLocked = function() return o.locked end
+	o.isSmashed = function() return o.smashed end
+	o.isBarricaded = function() return o.barricaded end
+	o.setIsLocked = function(_, want) o.locked = want end
+	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
+	return o
+end
+
+local function fakeThumpable(padlock, north)
+	local o = { __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
+		lockedByKey = false, keyId = 0, north = north, syncs = 0 }
+	o.isDoor = function() return true end
+	o.getNorth = function() return o.north end
+	o.isLockedByPadlock = function() return o.lockedByPadlock end
+	o.canBeLockByPadlock = function() return o.canPadlock end
+	o.isLockedByKey = function() return o.lockedByKey end
+	o.getKeyId = function() return o.keyId end
+	-- The real one syncs itself, padlock or not.
+	o.setLockedByPadlock = function(_, want)
+		if o.lockedByPadlock ~= want then o.syncs = o.syncs + 1 end
+		o.lockedByPadlock = want
+	end
+	o.setLockedByKey = function(_, want) o.lockedByKey = want end
+	o.syncIsoThumpable = function() o.syncs = o.syncs + 1 end
+	return o
+end
+
+-- The mockup's world, around the computer at 10,10,0.
+local function mockupWorld()
+	local world = FakeWorld.new()
+	local office = world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+	local kitchen = world.room("kitchen", { {11,11,0} })
+	local hallway = world.room("hallway", { {12,11,0}, {13,11,0} })
+
+	-- Outside: no room, so a door onto it is the way in.
+	local outside = world.square(11, 9, 0, nil)
+
+	local kit = {}
+	-- lock0: the exterior door, facing west and locked.
+	kit.lock0 = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
+	-- win0: a window in the office, facing north and locked.
+	kit.win0 = world.put(world.squares["12,10,0"], fakeWindow(true, true))
+	-- light0: the office switch, on. light1: the hallway switch, off.
+	kit.light0 = world.put(world.squares["11,10,0"], fakeLight(true, true))
+	kit.light1 = world.put(world.squares["13,11,0"], fakeLight(false, true))
+	-- lock1: between the kitchen and the hallway, facing north, unlocked.
+	kit.lock1 = world.put(world.squares["11,11,0"], fakeDoor(false, true, world.squares["12,11,0"]))
+	-- lock2: the player-built door, padlocked.
+	kit.lock2 = world.put(world.squares["12,11,0"], fakeThumpable(true, true))
+
+	kit.world = world
+	kit.office, kit.kitchen, kit.hallway = office, kitchen, hallway
+	return kit
+end
+
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+	eq("root is at the glass", bench.object.console.user, "root")
+
+	-- The listing, exactly as the mockup approved it -- discovered from the
+	-- world, numbered into the machine's own state, and painted on the glass.
+	bench.enter("ls -l /dev")
+	bench.frame()
+	local want = {
+		"crw-rw----  root  light0  office              on",
+		"crw-rw----  root  light1  hallway             off",
+		"crw-rw----  root  lock0   exterior         W  locked",
+		"crw-rw----  root  lock1   kitchen-hallway  N  unlocked",
+		"crw-rw----  root  lock2   built            N  padlock",
+		"crw-rw----  root  win0    office           N  locked",
+	}
+	for i = 1, #want do
+		check("the glass shows: " .. want[i], bench.painted(want[i]))
+	end
+
+	-- Reading one.
+	bench.enter("cat /dev/light1")
+	bench.frame()
+	check("cat says off", bench.painted("off"))
+
+	-- Throwing a switch reaches the world, and the world says so back.
+	bench.enter("echo on > /dev/light1")
+	bench.frame()
+	eq("the switch moved", kit.light1.activated, true)
+	eq("and it was broadcast", kit.light1.syncs, 1)
+	bench.enter("cat /dev/light1")
+	bench.frame()
+	check("and the machine reads it back", bench.painted("on"))
+
+	-- Unlocking a keyed door: the setter, and the sync that vanilla makes by
+	-- hand because the setter skips its own on a server.
+	bench.enter("echo unlock > /dev/lock0")
+	bench.frame()
+	eq("the door is unlocked", kit.lock0.lockedByKey, false)
+	eq("and it was broadcast", kit.lock0.syncs, 1)
+
+	-- A window, and a padlock.
+	bench.enter("echo unlock > /dev/win0")
+	bench.frame()
+	eq("the window is unlocked", kit.win0.locked, false)
+	eq("and it was broadcast", kit.win0.syncs, 1)
+	bench.enter("echo unlock > /dev/lock2")
+	bench.frame()
+	eq("the padlock is off", kit.lock2.lockedByPadlock, false)
+	eq("and it was broadcast", kit.lock2.syncs, 1)
+	bench.enter("cat /dev/lock2")
+	bench.frame()
+	check("and the machine reads unlocked", bench.painted("unlocked"))
+
+	-- Somebody smashes the window. The next listing says so, and the machine
+	-- refuses to work a lock that is not there any more.
+	kit.win0.smashed = true
+	bench.enter("ls -l /dev/win0")
+	bench.frame()
+	check("the smashed window shows",
+		bench.painted("crw-rw----  root  win0    office           N  smashed"))
+	bench.enter("echo lock > /dev/win0")
+	bench.frame()
+	check("and refuses to be locked", bench.painted("win0: smashed"))
+
+	-- A switch with no power: the world refuses, and nothing moves.
+	kit.light0.powered = false
+	bench.enter("echo off > /dev/light0")
+	bench.frame()
+	check("no power", bench.painted("light0: no power"))
+	eq("and the switch did not move", kit.light0.activated, true)
+	kit.light0.powered = true
+
+	-- A player door with neither padlock nor key.
+	kit.lock2.canPadlock = false
+	kit.lock2.keyId = -1
+	bench.enter("echo lock > /dev/lock2")
+	bench.frame()
+	check("no padlock", bench.painted("lock2: no padlock"))
+
+	--
+	-- The numbers hold across a reload, with one device gone.
+	--
+	local before = {}
+	for key, record in pairs(bench.object.os.devmap) do before[key] = record.id end
+	check("the book has an entry per device", (function()
+		local n = 0
+		for _ in pairs(before) do n = n + 1 end
+		return n == 6
+	end)())
+
+	-- lock0 is torn out, and the machine is reloaded from its saved state.
+	kit.world.remove(kit.lock0)
+	local saved = bench.object.os
+	local reloaded = newBench()
+	reloaded.object.os = saved
+	reloaded.login("admin")
+	reloaded.enter("su root")
+	reloaded.enter("")
+	reloaded.enter("ls -l /dev")
+	reloaded.frame()
+
+	check("light0 kept its number", reloaded.painted("light0  office"))
+	check("light1 kept its number", reloaded.painted("light1  hallway"))
+	check("lock1 kept its number", reloaded.painted("lock1   kitchen-hallway"))
+	check("lock2 kept its number", reloaded.painted("lock2   built"))
+	check("win0 kept its number", reloaded.painted("win0    office"))
+	-- The one that is gone leaves a GAP: nothing moved up into lock0.
+	check("the gone door is not listed", not reloaded.painted("lock0 "))
+	reloaded.enter("cat /dev/lock0")
+	reloaded.frame()
+	check("and it says which kind of not-there it is",
+		reloaded.painted("lock0: no such device"))
+
+	-- And the gap is NOT handed to the next door built: a number spent is spent
+	-- for the life of the machine, or a script that says "echo lock > /dev/lock0"
+	-- one day locks the wrong door the next.
+	kit.world.put(kit.world.squares["10,10,0"], fakeThumpable(false, false))
+	reloaded.enter("ls -l /dev")
+	reloaded.frame()
+	check("the new door took the next number, not the gap",
+		reloaded.painted("crw-rw----  root  lock3   built            W  unlocked"))
+	check("and the gap is still a gap", not reloaded.painted("lock0 "))
+
+	--
+	-- A chmod outlives the command it was typed in.
+	--
+	reloaded.enter("chmod 666 /dev/light0")
+	reloaded.enter("ls -l /dev/light0")
+	reloaded.frame()
+	check("the mode stuck", reloaded.painted("crw-rw-rw-  root  light0"))
+	reloaded.enter("exit")
+	reloaded.enter("ls -l /dev/light0")
+	reloaded.frame()
+	check("and it is still there for admin", reloaded.painted("crw-rw-rw-  root  light0"))
+	reloaded.enter("cat /dev/light0")
+	reloaded.frame()
+	check("who may now read it", reloaded.painted("on"))
+
+	-- Nothing of any of this is on the disk.
+	eq("/dev is empty between commands",
+		CeroSecOS.countEntries(reloaded.object.os.fs.children.dev), 0)
+	eq("and the state still validates", CeroSecOS.validate(reloaded.object.os), true)
+
+	_G.__world = nil
+end
+
+--
+-- Out of reach, and out of a building.
+--
+
+do
+	-- A machine whose chunks are not loaded: the rooms answer with no live room
+	-- at all, so nothing is found and nothing can be acted on. The numbers are
+	-- still in the book -- they are the machine's, not the world's.
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.enter("ls /dev")
+	bench.frame()
+	check("everything is there while the chunks are", bench.painted("light0"))
+
+	kit.world.loaded = false
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("and nothing is when they are not", not bench.painted("light0  office"))
+	bench.enter("echo off > /dev/light0")
+	bench.frame()
+	check("a device out of reach cannot be worked",
+		bench.painted("light0: no such device"))
+	eq("and the switch did not move", kit.light0.activated, true)
+	_G.__world = nil
+end
+
+do
+	-- A player base: no building, no rooms, so the radius rule decides. The
+	-- padlocked door two tiles away is in; a light switch twenty tiles away is
+	-- not, and neither is one a floor up.
+	local world = FakeWorld.new()
+	local near = world.put(world.square(12, 10, 0, nil), fakeThumpable(true, true))
+	local far = world.put(world.square(10 + CeroSecDevices.RADIUS + 1, 10, 0, nil),
+		fakeLight(true, true))
+	local upstairs = world.put(world.square(11, 10, 1, nil), fakeLight(true, true))
+	_G.__world = world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("the door in the base is a device",
+		bench.painted("crw-rw----  root  lock0   built            N  padlock"))
+	check("the far switch is not", not bench.painted("light0"))
+	eq("nor the one upstairs", far ~= upstairs, true)
+
+	-- The edge of the radius is in.
+	world.put(world.square(10 + CeroSecDevices.RADIUS, 10, 0, nil), fakeLight(false, true))
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("a switch exactly at the radius is a device",
+		bench.painted("crw-rw----  root  light0  exterior            off"))
+	_G.__world = nil
 end
 
 print("window_test: " .. count .. " checks passed")
