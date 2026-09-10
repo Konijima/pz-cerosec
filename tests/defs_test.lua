@@ -1,7 +1,7 @@
 -- Unit tests for CeroSecDefs.lua. Run from the repo root:
 --   lua5.1 tests/defs_test.lua
 
-local DEFS = "Contents/mods/CeroSec/42/media/lua/shared/CeroSec/CeroSecDefs.lua"
+local DEFS = "42/media/lua/shared/CeroSec/CeroSecDefs.lua"
 
 local chunk, err = loadfile(DEFS)
 if not chunk then error("cannot load " .. DEFS .. ": " .. tostring(err)) end
