@@ -86,3 +86,77 @@ Host a game from the same install, join with a second machine or a second Steam 
 - `IsoObject.checkLightSourceActive` deactivates a light on an unpowered square, so a
   lit computer that somehow keeps its sprite on a dead square would go dark before our
   one-minute check catches it. That should look right, but confirm it does not flicker.
+
+# CeroSec rung 1b — stand in front, reach it or don't
+
+Same rules as above: fresh game, mod enabled, eyes on the screen. Rung 1b changes
+*how* the toggle is reached, never what it does, so re-run at least steps 3, 5 and
+6 of rung 1 after this section to be sure nothing regressed.
+
+## C — Posture and access
+
+21. **On a desk (the normal case).** Right-click an office computer, "Turn on
+    computer". The character must walk to the square the **screen looks at** — not
+    the nearest free tile — stop on it, turn to the monitor, and only then play the
+    standing loot animation and flip the sprite. Watch the walk: if he ends up
+    beside or behind the desk, the front square is wrong.
+22. **All four facings.** Repeat 21 on computers facing S, E, N and W. The square he
+    stands on is always the one the screen points at: S → the square below (y+1),
+    N → above (y-1), E → to the right (x+1), W → to the left (x-1).
+23. **On the floor (low).** Pick a computer up, drop it on bare floor, right-click →
+    "Turn on computer". Same walk, but the animation must be the **crouched** loot
+    (`Bob_IdleLooting_Low`), not the standing one. The sprite still flips and the
+    glow still appears.
+24. **On two stacked crates (too high).** Stack two crates (place one, place the
+    second on it), put the computer on top. The option must be **greyed out** and the
+    tooltip reads "This computer is too high to reach." / "Cet ordinateur est trop
+    haut pour l'atteindre." Note the crate heights used — the threshold is vanilla's
+    own 64-pixel stacking limit, so a single crate should still be usable and two
+    should not.
+25. **Front square against a wall.** Push a desk against a wall so the computer's
+    screen looks *into* the wall. The option is greyed out with "You cannot stand in
+    front of this computer." / "Impossible de se placer devant cet ordinateur." Going
+    round to the back must not help: the front square is the only way in.
+26. **Front square blocked by furniture.** Put something solid on the front square (a
+    second desk, a fridge). Same greyed option and the same tooltip.
+27. **Front square across a window.** Computer inside, front square outside through a
+    closed window: greyed out. Open the window and it stays greyed — a window is not
+    a place to stand.
+28. **Already standing there.** Stand on the front square, right-click → toggle. No
+    walk at all, straight into the animation.
+29. **Interrupt the walk.** Start the toggle from across the room and press a movement
+    key while he walks. He stops, the computer does **not** toggle, no Lua error.
+30. **Path blocked mid-walk.** Start the toggle, then close a door in the way (or use
+    a spot with no path at all). The walk fails and nothing toggles.
+31. **Walk away during the action.** Start the toggle, and as the animation begins run
+    off the front square. The action drops and the sprite does not change.
+32. **No-power tooltip still there.** With the power out, a reachable computer on a
+    desk still shows "This computer has no power." — the reach checks come first,
+    so a computer that is both unreachable and unpowered shows the reach reason.
+33. **Turn off has the same manners.** A lit computer greys out the same way when it
+    is too high or has no front square, and the walk-and-face happens before it goes
+    dark.
+
+## D — Host (co-op)
+
+34. **Client walks too.** From a second client, everything in section C behaves the
+    same.
+35. **Server refuses a far toggle.** The server now drops a `toggle` from a player
+    who is not adjacent to the computer (1.6 squares on each axis, same level). Nothing
+    in normal play should hit this; what matters is that normal play never hits it —
+    if a legitimate toggle is ever ignored on a host game, this check is the first
+    suspect.
+
+## Rung 1b doubts only the game can settle
+
+- The "too high" threshold is vanilla's placement limit (`currentSurface <= 64`,
+  `ISMoveableSpriteProps.lua:1622`), not a documented reach limit. Two crates may or
+  may not cross it depending on the crate sprites' `Surface` values — step 24 is
+  what tells us.
+- A desk whose tile lacks `IsTable`/`Surface` reads as height 0, so the character
+  would crouch to a desk-height computer. If step 21 plays the low animation, that
+  desk is the reason.
+- `isFacing` accepts the cardinal direction and its two diagonal neighbours, because
+  `faceThisObject` picks the direction from an angle and the character rarely stops
+  dead centre. If a toggle ever cancels itself the instant it starts, that tolerance
+  is too tight.
