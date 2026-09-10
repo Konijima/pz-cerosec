@@ -111,6 +111,35 @@ and whether it may be written back. The core says no more than that; the editor 
 the window's, and its save is `CeroSecOS.writeFile`, the same call `write` and `>` go
 through, so it has no permissions, no limits and no printable rule of its own.
 
+## Passwords
+
+Stored hashed, never in clear: `$cs1$<salt>$<32 hex digits>`, with a fresh six-digit
+salt per account. `CeroSecOS.hashPassword` is the one place a password becomes what is
+stored and `CeroSecOS.checkPassword` the one place one is judged, so swapping the
+construction later is a two-function change; the `$cs1$` tag is in every stored
+string so a later one can be told apart and migrated. `hash <text> [salt]` runs the
+same function on any string, which is how you see what one looks like. A machine
+saved before this rung carries its passwords in clear: `CeroSecOS.migrateUsers` hashes
+them in place, and it runs **before** the validator, which refuses anything that is
+not a `$cs1$` line — the alternative would be throwing away a working filesystem over
+a password field.
+
+Be honest about the strength. It is not bcrypt, not scrypt, not even SHA-2: it is
+8000 rounds of 32-bit add / multiply / rotate over four lanes, written in the
+arithmetic Kahlua has — no bit library, no packing, no integer division. Somebody
+willing to write a cracker will get a password out of a save file. The point is
+narrower and still worth having: reading the save file, or a future `/etc/passwd` on
+the machine itself, does not simply hand the passwords over, and two accounts with
+the same password do not look alike. One hash measures about 10 ms under `lua5.1`
+(`tests/os_test.lua` fails above 25 ms), and a login costs exactly one.
+
+The salt has no clock and no random number generator to draw on — the core is pure
+Lua and runs the same under `lua5.1` and under Kahlua — so it is a counter, the
+machine's own name, and whatever extra the caller passes. The server passes
+`getTimestampMs()` through `session.stamp`; the engine never requires it, and without
+it two machines with the same hostname, restarted, can produce the same salt. That is
+a weaker salt, not a broken one: a salt has to be different, not secret.
+
 ## The editor
 
 `edit <file>` turns the same 60 x 20 glass into nano's shape: an inverted bar naming

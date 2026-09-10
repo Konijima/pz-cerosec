@@ -337,6 +337,19 @@ starred to the length of what was typed.
     and at `New password: ` walk off the square. Come back: the machine is still
     asking `New password: `, because the question belongs to the machine. Answer
     it and it finishes.
+83b. **`hash`, and what a stored password looks like.** `hash hunter2 abcdef`
+    prints one line, `$cs1$abcdef$` followed by 32 hex digits, and prints the
+    **same** line every time. `hash hunter2` (no salt) prints a different line
+    every time — that is the salt doing its job. `hash hunter2 BAD` answers
+    `hash: BAD: invalid salt` (a salt is lower-case letters and digits only).
+    Nothing anywhere on the screen or in the save file holds a password in
+    clear.
+83c. **An old save still logs in.** Take a world saved before this rung (or hand-
+    edit `password` in `gos_cerosec.bin` back to a plain word, if you are set up
+    for that). Load it and log in with the password you had: it works, and from
+    then on the field is a `$cs1$` line. The filesystem is untouched — a
+    password field never costs a machine its disk.
+
 83. **Logging out drops the question.** `passwd` again, and at `New password: `
     have the other player (or yourself, after answering) run `exit`: the screen
     clears to `login:` and nothing of the half-answered chain is left. Logging

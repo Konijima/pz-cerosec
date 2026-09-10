@@ -29,6 +29,12 @@ local function fresh(hostname)
 	return CeroSecOS.newState(hostname or "ksp-front-01")
 end
 
+-- What is stored is a hash, so a password is checked by trying it and never by
+-- reading the field.
+local function holds(state, name, password)
+	return CeroSecOS.checkPassword(CeroSecOS.getUser(state, name), password)
+end
+
 local function open(state, name, password)
 	local session, reason = CeroSecOS.login(state, name, password or "")
 	if session == nil then error("cannot log in as " .. name .. ": " .. tostring(reason), 2) end
@@ -180,7 +186,9 @@ do
 	eq("unknown user gives no session", none, nil)
 	eq("unknown user reason", why, "no such user")
 
-	state.users.root.password = "hunter2"
+	-- Nothing sets a password by writing the field: the stored string is a
+	-- hash, and setPassword is the one thing that makes one.
+	eq("setting a password works", CeroSecOS.setPassword(state, "root", "hunter2"), true)
 	local denied, why2 = CeroSecOS.login(state, "root", "wrong")
 	eq("bad password gives no session", denied, nil)
 	eq("bad password reason", why2, "wrong password")
@@ -921,6 +929,176 @@ do
 end
 
 --
+-- 14b. Passwords are hashed, and nothing anywhere holds one in clear.
+--
+
+do
+	-- The shape of what is stored.
+	local stored = CeroSecOS.hashPassword("hunter2", "abcdef")
+	eq("the tag names the construction", string.sub(stored, 1, 5), "$cs1$")
+	eq("the salt is in it", string.sub(stored, 6, 11), "abcdef")
+	eq("then a separator", string.sub(stored, 12, 12), "$")
+	eq("then 32 hex digits", #string.sub(stored, 13), 32)
+	eq("and they are hex", string.find(string.sub(stored, 13), "[^0-9a-f]"), nil)
+	eq("the whole thing fits a screen line", #stored <= CeroSecOS.COLS, true)
+
+	local salt, hash = CeroSecOS.splitHash(stored)
+	eq("split gives the salt back", salt, "abcdef")
+	eq("split gives the hash back", hash, string.sub(stored, 13))
+
+	-- Deterministic: the same password and the same salt, always the same line.
+	eq("the same twice", CeroSecOS.hashPassword("hunter2", "abcdef"), stored)
+	eq("and a third time", CeroSecOS.hashPassword("hunter2", "abcdef"), stored)
+	eq("an empty password is hashed like any other",
+		#CeroSecOS.hashPassword("", "abcdef"), #stored)
+	check("and is not the same line", CeroSecOS.hashPassword("", "abcdef") ~= stored)
+	eq("what is not a string is the empty password",
+		CeroSecOS.hashPassword(nil, "abcdef"), CeroSecOS.hashPassword("", "abcdef"))
+
+	-- The salt is what makes two accounts with one password look different.
+	check("another salt, another hash",
+		CeroSecOS.hashPassword("hunter2", "abcdeg") ~= stored)
+
+	-- Avalanche: one byte different, and most of the digits move. 32 hex digits
+	-- with nothing in common would differ in about 30 of them.
+	local function moved(a, b)
+		local n = 0
+		for i = 1, #a do
+			if string.sub(a, i, i) ~= string.sub(b, i, i) then n = n + 1 end
+		end
+		return n
+	end
+	local one = string.sub(CeroSecOS.hashPassword("hunter2", "abcdef"), 13)
+	local two = string.sub(CeroSecOS.hashPassword("hunter3", "abcdef"), 13)
+	check("one byte of the password moves most of the digits", moved(one, two) >= 24)
+	local saltA = string.sub(CeroSecOS.hashPassword("hunter2", "abcdef"), 13)
+	local saltB = string.sub(CeroSecOS.hashPassword("hunter2", "abcdff"), 13)
+	check("one byte of the salt moves most of them too", moved(saltA, saltB) >= 24)
+	-- Length alone changes it: "ab" and "abc" do not start from the same place.
+	check("a longer password is a different hash",
+		CeroSecOS.hashPassword("ab", "abcdef") ~= CeroSecOS.hashPassword("abc", "abcdef"))
+
+	-- Salts.
+	eq("a salt is six base 36 digits", #CeroSecOS.newSalt(nil, "x"), CeroSecOS.SALT_DIGITS)
+	eq("and only base 36 digits", string.find(CeroSecOS.newSalt(nil, "y"), "[^0-9a-z]"), nil)
+	local salts = {}
+	for i = 1, 200 do
+		local s = CeroSecOS.newSalt({ hostname = "ksp-1-1" }, "root")
+		check("salt " .. i .. " (" .. s .. ") has not been given out before", salts[s] == nil)
+		salts[s] = true
+	end
+	eq("a valid salt", CeroSecOS.isValidSalt("abc123"), true)
+	eq("upper case is not a salt", CeroSecOS.isValidSalt("ABC"), false)
+	eq("a dollar is not a salt", CeroSecOS.isValidSalt("a$b"), false)
+	eq("an empty salt is not one", CeroSecOS.isValidSalt(""), false)
+	eq("a salt is not a table", CeroSecOS.isValidSalt({}), false)
+
+	-- Anything that is not one of our lines is not a stored password.
+	for _, junk in ipairs({
+		"hunter2", "", "$cs1$$abc", "$cs2$abcdef$" .. string.rep("a", 32),
+		"$cs1$abcdef$" .. string.rep("a", 31), "$cs1$abcdef$" .. string.rep("a", 33),
+		"$cs1$abcdef$" .. string.rep("g", 32), "$cs1$ABCDEF$" .. string.rep("a", 32),
+		"$cs1$abcdef$" .. string.rep("a", 32) .. "\n",
+	}) do
+		eq("not a stored password: " .. string.format("%q", junk),
+			CeroSecOS.splitHash(junk), nil)
+	end
+	eq("nor is a number", CeroSecOS.splitHash(7), nil)
+	eq("nor is nil", CeroSecOS.splitHash(nil), nil)
+end
+
+do
+	-- The budget. A login is one hash, so this is what a login costs. Kahlua is
+	-- several times slower than lua5.1, and the ceiling that matters is about a
+	-- fifth of a second there; 25 ms here leaves room for both.
+	local start = os.clock()
+	local N = 10
+	for i = 1, N do CeroSecOS.hashPassword("hunter2", "abcdef") end
+	local ms = (os.clock() - start) / N * 1000
+	check("a hash costs less than 25 ms under lua5.1 (measured " ..
+		string.format("%.1f", ms) .. " ms at " .. CeroSecOS.HASH_ROUNDS .. " rounds)", ms < 25)
+end
+
+do
+	-- A fresh machine: open accounts, and not a password in clear anywhere.
+	local state = fresh()
+	check("root ships open", CeroSecOS.login(state, "root", "") ~= nil)
+	check("admin ships open", CeroSecOS.login(state, "admin", "") ~= nil)
+	check("root's stored password is a hash",
+		CeroSecOS.splitHash(state.users.root.password) ~= nil)
+	check("and it is not the word", state.users.root.password ~= "")
+	-- Two accounts, the same (empty) password, two different lines.
+	check("two accounts with one password do not look alike",
+		state.users.root.password ~= state.users.admin.password)
+	eq("the state validates", CeroSecOS.validate(state), true)
+
+	-- A password in clear is not a password: the validator refuses it.
+	state.users.admin.password = "hunter2"
+	local vOk, vWhy = CeroSecOS.validate(state)
+	eq("a cleartext password is refused", vOk, false)
+	eq("and says which user", vWhy, "user admin: bad password")
+	state.users.admin.password = "$cs1$abcdef$" .. string.rep("z", 32)
+	eq("nor is a hash with digits that are not hex", CeroSecOS.validate(state), false)
+end
+
+do
+	-- A machine saved before this rung. Its passwords are in clear; migrate
+	-- hashes them in place and the accounts go on working.
+	local old = fresh()
+	old.users.root.password = "toor"
+	old.users.admin.password = ""
+	old.fs.children.etc.children.kept = CeroSecOS.newFile("root", 644, "still here")
+
+	local migrated = CeroSecOS.migrate(old, "ksp-front-01")
+	check("the machine was kept, not replaced",
+		migrated.fs.children.etc.children.kept ~= nil)
+	check("root's password is a hash now",
+		CeroSecOS.splitHash(migrated.users.root.password) ~= nil)
+	check("and so is the empty one",
+		CeroSecOS.splitHash(migrated.users.admin.password) ~= nil)
+	check("root still logs in with what he had",
+		CeroSecOS.login(migrated, "root", "toor") ~= nil)
+	check("and not with anything else", CeroSecOS.login(migrated, "root", "") == nil)
+	check("admin still logs in with nothing",
+		CeroSecOS.login(migrated, "admin", "") ~= nil)
+	eq("and the state validates now", CeroSecOS.validate(migrated), true)
+
+	-- Running it twice does not re-hash what is already hashed.
+	local before = migrated.users.root.password
+	CeroSecOS.migrateUsers(migrated)
+	eq("a hash is left alone", migrated.users.root.password, before)
+
+	-- Nothing to do, and nothing thrown.
+	local empty = {}
+	eq("no users, no complaint", CeroSecOS.migrateUsers(empty), empty)
+	eq("not a state, no complaint", CeroSecOS.migrateUsers("x"), "x")
+end
+
+do
+	-- The hash command: the same function, on a string you choose.
+	local state = fresh()
+	local session = open(state, "admin")
+
+	ok(state, session, "hash hunter2 abcdef", { CeroSecOS.hashPassword("hunter2", "abcdef") })
+	-- Pinned, so a change to the construction is a change to this file.
+	ok(state, session, "hash hunter2 abcdef",
+		{ "$cs1$abcdef$" .. string.sub(CeroSecOS.hashPassword("hunter2", "abcdef"), 13) })
+	ok(state, session, 'hash "" abcdef', { CeroSecOS.hashPassword("", "abcdef") })
+
+	-- Without a salt, a fresh one each time: two runs never agree.
+	local first = ok(state, session, "hash hunter2")[1]
+	local second = ok(state, session, "hash hunter2")[1]
+	check("a fresh salt every time", first ~= second)
+	check("and both are stored passwords", CeroSecOS.splitHash(first) ~= nil)
+	eq("a hash line fits the screen", #first <= CeroSecOS.COLS, true)
+
+	bad(state, session, "hash", "hash: usage: hash <text> [salt]")
+	bad(state, session, "hash a b c", "hash: usage: hash <text> [salt]")
+	bad(state, session, "hash x BAD", "hash: BAD: invalid salt")
+	bad(state, session, 'hash x "a$b"', "hash: a$b: invalid salt")
+end
+
+--
 -- 15. passwd, and the continuation mechanism under it.
 --
 
@@ -969,7 +1147,7 @@ do
 	eq("the chain ends", done.control, nil)
 	eq("and it worked", done.ok, true)
 	says(done, "passwd: password updated")
-	eq("the password is the new one", state.users.admin.password, "hunter2")
+	eq("the password is the new one", holds(state, "admin", "hunter2"), true)
 
 	-- And the machine judges it: the old one no longer opens the account.
 	check("the old password is refused", CeroSecOS.login(state, "admin", "") == nil)
@@ -981,7 +1159,7 @@ do
 	eq("a wrong old password fails", refused.ok, false)
 	eq("and ends the chain", refused.control, nil)
 	says(refused, "passwd: authentication failure")
-	eq("the password is untouched", state.users.admin.password, "hunter2")
+	eq("the password is untouched", holds(state, "admin", "hunter2"), true)
 
 	-- Mismatch: the retype has to be the same string.
 	cont = asks(run(state, session, "passwd"), "Old password: ", true)
@@ -990,14 +1168,14 @@ do
 	local mismatch = answer(state, session, cont, "abd")
 	eq("a mismatch fails", mismatch.ok, false)
 	says(mismatch, "passwd: passwords do not match")
-	eq("the password is untouched", state.users.admin.password, "hunter2")
+	eq("the password is untouched", holds(state, "admin", "hunter2"), true)
 
 	-- An empty new password is a password: the accounts ship that way.
 	cont = asks(run(state, session, "passwd"), "Old password: ", true)
 	cont = asks(answer(state, session, cont, "hunter2"), "New password: ", true)
 	cont = asks(answer(state, session, cont, ""), "Retype new password: ", true)
 	says(answer(state, session, cont, ""), "passwd: password updated")
-	eq("the password is empty again", state.users.admin.password, "")
+	eq("the password is empty again", holds(state, "admin", ""), true)
 
 	-- Somebody else's password is root's business and nobody else's.
 	says(run(state, session, "passwd root"), "passwd: permission denied")
@@ -1015,14 +1193,14 @@ do
 	eq("root changes root", cont.user, "root")
 	cont = asks(answer(state, session, cont, "toor"), "Retype new password: ", true)
 	says(answer(state, session, cont, "toor"), "passwd: password updated")
-	eq("root's password", state.users.root.password, "toor")
+	eq("root's password", holds(state, "root", "toor"), true)
 
 	-- And root sets somebody else's without knowing it.
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	eq("the token names the account", cont.user, "admin")
 	cont = asks(answer(state, session, cont, "letmein"), "Retype new password: ", true)
 	says(answer(state, session, cont, "letmein"), "passwd: password updated")
-	eq("admin's password", state.users.admin.password, "letmein")
+	eq("admin's password", holds(state, "admin", "letmein"), true)
 	says(run(state, session, "passwd nobody"), "passwd: no such user")
 
 	-- A password the machine will not store.
@@ -1032,7 +1210,7 @@ do
 	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
 	cont = asks(answer(state, session, cont, "a\1b"), "Retype new password: ", true)
 	says(answer(state, session, cont, "a\1b"), "passwd: invalid characters")
-	eq("admin's password survived both", state.users.admin.password, "letmein")
+	eq("admin's password survived both", holds(state, "admin", "letmein"), true)
 
 	-- The state a chain leaves behind is still storable.
 	eq("the state still validates", CeroSecOS.validate(state), true)
@@ -1048,13 +1226,13 @@ do
 
 	-- The next thing typed is a command, not an answer: it runs normally.
 	ok(state, session, "mkdir notes", {})
-	eq("the abandoned chain changed no password", state.users.admin.password, "")
+	eq("the abandoned chain changed no password", holds(state, "admin", ""), true)
 
 	-- And the token, answered afterwards, still only asks: nothing was reserved
 	-- for it and nothing is left half-done.
 	local late = answer(state, session, cont, "zzz")
 	eq("a stale token still only asks", late.control, "prompt")
-	eq("the password is still the old one", state.users.admin.password, "")
+	eq("the password is still the old one", holds(state, "admin", ""), true)
 
 	-- A token that is not one is refused, and refused the same way twice.
 	for _, junk in ipairs({ "not a table", 7, {}, { cmd = "frobnicate" }, { cmd = 1 } }) do

@@ -270,7 +270,7 @@ function SCeroSecSystem:editArgs(state, console, playerObj)
 	local edit = console.edit
 	if edit == nil then return nil end
 	local disk = ""
-	local session = { user = console.user, cwd = console.cwd or "/" }
+	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 	local node = CeroSecOS.getNode(state, session, edit.path)
 	if node ~= nil and node.type == "file" then disk = node.data or "" end
 	return {
@@ -431,7 +431,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		else
 			CeroSec.consolePush(console, asked.text .. text)
 		end
-		local session = { user = console.user, cwd = console.cwd or "/" }
+		local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 		local _, lines, control, data = CeroSecOS.continue(state, session, asked.cont, text)
 		console.user = session.user
 		console.cwd = session.cwd
@@ -462,7 +462,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 
 	-- The session the core runs on is derived from the console and written back
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
-	local session = { user = console.user, cwd = console.cwd or "/" }
+	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 	local prompt = CeroSec.consolePrompt(console, state.hostname,
 		self:isAdmin(state, console.user))
 	local _, lines, control, data = CeroSecOS.exec(state, session, line)
@@ -521,7 +521,7 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	end
 	console.edit.text = text
 
-	local session = { user = console.user, cwd = console.cwd or "/" }
+	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false)
 	if done == nil then
 		console.edit.message = "Cannot save: " .. tostring(reason)

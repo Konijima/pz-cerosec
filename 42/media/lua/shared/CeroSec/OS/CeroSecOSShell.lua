@@ -162,8 +162,8 @@ end
 commands.help = function(state, session, args)
 	return true, {
 		"CeroSec OS commands:",
-		" cat cd chmod chown clear cp echo edit exit help hostname",
-		" ls mkdir mv passwd pwd rm touch whoami write",
+		" cat cd chmod chown clear cp echo edit exit hash help",
+		" hostname ls mkdir mv passwd pwd rm touch whoami write",
 		" redirect output with > file or >> file",
 	}
 end
@@ -457,7 +457,7 @@ continuations.passwd = function(state, session, cont, line)
 
 	if cont.step == "retype" then
 		if line ~= (cont.want or "") then return false, { "passwd: passwords do not match" } end
-		local done, reason = CeroSecOS.setPassword(state, name, line)
+		local done, reason = CeroSecOS.setPassword(state, name, line, session.stamp)
 		if done == nil then return false, { "passwd: " .. reason } end
 		return true, { "passwd: password updated" }
 	end
@@ -465,6 +465,23 @@ continuations.passwd = function(state, session, cont, line)
 	-- A token with a step nobody wrote: refuse the way a wrong answer is
 	-- refused, and change nothing.
 	return false, { "passwd: authentication failure" }
+end
+
+-- hash. The same function the passwords go through, on a string you choose, so
+-- what a stored password looks like is something the machine can show you. A
+-- salt of your own makes it reproducible; without one you get a fresh salt and
+-- a line that is different every time, which is the point of a salt.
+commands.hash = function(state, session, args)
+	if #args < 2 or #args > 3 then return usage("hash", "hash <text> [salt]") end
+	local salt = args[3]
+	if salt == nil or salt == "" then
+		salt = CeroSecOS.newSalt(state, args[2] .. tostring(session.stamp))
+	end
+	if not CeroSecOS.isValidSalt(salt) then return fail("hash", salt, "invalid salt") end
+	if CeroSecOS.hasControlBytes(args[2]) then return fail("hash", args[2], "invalid characters") end
+	-- fit() breaks anything wider than the screen across lines, so a long salt
+	-- wraps instead of being cut.
+	return true, { CeroSecOS.hashPassword(args[2], salt) }
 end
 
 -- edit. The editor itself is the terminal's; all the core does is say whether

@@ -159,6 +159,12 @@ function SCeroSecObject:osState()
 		return self.os
 	end
 
+	-- A machine saved before passwords were hashed carries them in clear, and
+	-- the validator refuses those. That is the one repair a state of the current
+	-- version gets, and it happens before the gate rather than after it: the
+	-- alternative is throwing away a working filesystem over a password field.
+	CeroSecOS.migrateUsers(self.os)
+
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then
 		self.osBroken = true

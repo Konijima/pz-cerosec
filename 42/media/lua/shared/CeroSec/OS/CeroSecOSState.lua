@@ -110,7 +110,13 @@ function CeroSecOS.validate(state)
 	for name, user in pairs(state.users) do
 		if type(name) ~= "string" or not CeroSecOS.isValidName(name) then return false, "bad user name" end
 		if user.name ~= name then return false, "user " .. name .. ": name mismatch" end
-		if type(user.password) ~= "string" then return false, "user " .. name .. ": bad password" end
+		-- Never a cleartext password: what is stored is "$cs1$<salt>$<hash>" and
+		-- nothing else. A state saved before this rung is repaired by migrate,
+		-- which runs before this gate; anything still in clear when it gets
+		-- here was forged.
+		if CeroSecOS.splitHash(user.password) == nil then
+			return false, "user " .. name .. ": bad password"
+		end
 		if type(user.home) ~= "string" then return false, "user " .. name .. ": bad home" end
 		if type(user.admin) ~= "boolean" then return false, "user " .. name .. ": bad admin flag" end
 	end
@@ -125,6 +131,10 @@ end
 -- through untouched.
 function CeroSecOS.migrate(state, hostname)
 	if type(state) == "table" and state.v == CeroSecOS.STATE_VERSION then
+		-- Passwords first: a machine saved before this rung carries them in
+		-- clear, and validate refuses those. Repairing before the gate is what
+		-- keeps such a machine's filesystem instead of throwing it away.
+		CeroSecOS.migrateUsers(state)
 		local ok = CeroSecOS.validate(state)
 		if ok then return state end
 	end
