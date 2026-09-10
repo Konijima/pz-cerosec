@@ -1,6 +1,7 @@
 require "CeroSec/CeroSecDefs"
 require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecToggleAction"
+require "CeroSec/ISCeroSecUseAction"
 
 CeroSecContextMenu = {}
 
@@ -16,6 +17,14 @@ end
 function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj, height)
 	CeroSecReach.walkToFront(playerObj, computer, function()
 		ISTimedActionQueue.add(ISCeroSecToggleAction:new(playerObj, computer, height))
+	end)
+end
+
+-- Same walk, same turn, same posture as the toggle: only the last gesture
+-- differs, and the action checks in its isValid that the player made it.
+function CeroSecContextMenu.onUse(worldobjects, computer, playerObj, height)
+	CeroSecReach.walkToFront(playerObj, computer, function()
+		ISTimedActionQueue.add(ISCeroSecUseAction:new(playerObj, computer, height))
 	end)
 end
 
@@ -85,6 +94,28 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 		option.toolTip = ISWorldObjectContextMenu.addToolTip()
 		option.toolTip:setVisible(false)
 		option.toolTip.description = getText(reason)
+	end
+
+	-- Nothing to use on a dark screen: the terminal option only exists once the
+	-- machine is on. Out of reach and no access grey it out exactly as above --
+	-- the same two reasons, in the same order -- because it is the same walk.
+	if not isOn then return end
+
+	local use = context:addOption(getText("ContextMenu_CeroSec_Use"), worldobjects,
+		CeroSecContextMenu.onUse, computer, playerObj, height)
+
+	local useReason
+	if height == "high" then
+		useReason = "Tooltip_CeroSec_TooHigh"
+	elseif not CeroSecReach.canStandInFront(playerObj, computer) then
+		useReason = "Tooltip_CeroSec_NoAccess"
+	end
+
+	if useReason then
+		use.notAvailable = true
+		use.toolTip = ISWorldObjectContextMenu.addToolTip()
+		use.toolTip:setVisible(false)
+		use.toolTip.description = getText(useReason)
 	end
 end
 

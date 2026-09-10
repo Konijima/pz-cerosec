@@ -28,4 +28,18 @@ module Base
             volume = 0.8,
         }
     }
+
+    /* Typing. Played through IsoGameCharacter.playSoundLocal, so it is heard by
+       the player at the keyboard and nobody else, and it draws no zombies. */
+    sound CeroSecKeyboardFast
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecKeyboardFast.ogg,
+            distanceMax = 8,
+            volume = 0.4,
+        }
+    }
 }

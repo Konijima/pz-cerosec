@@ -1,6 +1,8 @@
 require "Map/CGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecIdentity"
 require "CeroSec/CCeroSecObject"
+require "CeroSec/CeroSecTerminal"
 
 CCeroSecSystem = CGlobalObjectSystem:derive("CCeroSecSystem")
 
@@ -33,11 +35,27 @@ end
 
 function CCeroSecSystem:OnLuaObjectUpdated(luaObject)
 	luaObject:syncLight()
+	-- A machine that just went dark has no terminal. The window watches the
+	-- sprite on its own as well; this is the earlier of the two.
+	if not luaObject.on then
+		CeroSecTerminal.closeAt(luaObject.x, luaObject.y, luaObject.z)
+	end
 end
 
+-- Singleplayer: the server answers by broadcast on the global object channel,
+-- because sendServerCommand does nothing when there is no GameServer
+-- (LuaManager.GlobalObject.sendServerCommand). Nothing routed it, so the
+-- terminal has to check the answer is addressed to it.
 function CCeroSecSystem:OnServerCommand(command, args)
-	-- No server->client commands in rung 1; state rides on the object sync.
+	CeroSecTerminal.onServerAnswer(command, args, false)
 end
+
+-- Multiplayer: the server answers this player and no other, so what arrives
+-- here is ours by construction.
+Events.OnServerCommand.Add(function(module, command, args)
+	if module ~= CeroSec.MODULE then return end
+	CeroSecTerminal.onServerAnswer(command, args, true)
+end)
 
 -- Idempotent sweep. Catches the cases no single event covers: objects announced
 -- by receiveNewLuaObjectAt (which does not call OnLuaObjectUpdated), a cell that
