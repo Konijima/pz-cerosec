@@ -136,3 +136,149 @@ function CeroSec.drawnBefore(ax, ay, aIndex, bx, by, bIndex)
 	if a ~= b then return a > b end
 	return (aIndex or 0) > (bIndex or 0)
 end
+
+--
+-- Hostnames
+--
+-- A computer names itself the first time it boots, from the square it stands
+-- on: two machines can never share a square, so two machines can never share a
+-- name. The name is then written into the OS state and travels with it, so
+-- moving the computer does not rename it -- the derivation only ever runs once.
+-- Base 36 keeps a five-digit map coordinate down to four characters, which is
+-- what keeps the whole thing inside HOSTNAME_MAX.
+--
+
+CeroSec.HOSTNAME_MAX = 16
+
+local BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+-- Non-negative integers become digits; a negative coordinate gets an "n" in
+-- front rather than a "-", because a leading "-" is not a valid OS name
+-- (CeroSecOSPath.isValidName).
+local function base36(n)
+	n = math.floor(tonumber(n) or 0)
+	local sign = ""
+	if n < 0 then
+		sign = "n"
+		n = -n
+	end
+	if n == 0 then return sign .. "0" end
+	local out = ""
+	while n > 0 do
+		local digit = n % 36
+		out = string.sub(BASE36, digit + 1, digit + 1) .. out
+		n = math.floor(n / 36)
+	end
+	return sign .. out
+end
+
+function CeroSec.hostnameFor(x, y)
+	return string.sub("ksp-" .. base36(x) .. "-" .. base36(y), 1, CeroSec.HOSTNAME_MAX)
+end
+
+--
+-- The prompt
+--
+-- Built where the session is, i.e. on the server, and sent down with every
+-- answer, so the terminal never has to guess who it is logged in as or where.
+-- Kept short so that a long path still leaves room to type on a 60 column line.
+--
+
+CeroSec.PROMPT_MAX = 30
+
+function CeroSec.prompt(user, hostname, cwd, admin)
+	local head = tostring(user) .. "@" .. tostring(hostname) .. ":"
+	local tail = admin and "# " or "$ "
+	local room = CeroSec.PROMPT_MAX - #head - #tail
+	if room < 1 then room = 1 end
+	cwd = tostring(cwd)
+	-- Too long: keep the tail of the path and mark the cut, as the OS does.
+	if #cwd > room then cwd = "~" .. string.sub(cwd, #cwd - room + 2) end
+	return head .. cwd .. tail
+end
+
+--
+-- Rings
+--
+-- The scrollback and the input history are both "keep the last N", and both are
+-- pure list work, so they live here and are tested headless.
+--
+
+-- Append, dropping from the front once the list is longer than max.
+function CeroSec.ringPush(list, value, max)
+	list[#list + 1] = value
+	while #list > max do table.remove(list, 1) end
+	return list
+end
+
+-- Where a scrollback view starts: 0 is the bottom (the newest rows). Clamped to
+-- what there is to scroll, so a window taller than the scrollback never scrolls.
+function CeroSec.clampScroll(offset, count, rows)
+	local most = count - rows
+	if most < 0 then most = 0 end
+	if offset < 0 then return 0 end
+	if offset > most then return most end
+	return offset
+end
+
+-- Walk the input history. index 0 is the line being typed, 1 the last line
+-- entered, #history the oldest. delta is +1 for "older" (up) and -1 for
+-- "newer" (down). Returns the new index and the text to show.
+function CeroSec.historyPick(history, index, delta)
+	local wanted = index + delta
+	if wanted < 0 then wanted = 0 end
+	if wanted > #history then wanted = #history end
+	if wanted == 0 then return 0, "" end
+	return wanted, history[#history - wanted + 1]
+end
+
+--
+-- The look: "Phosphore vert"
+--
+-- Every colour the terminal draws is named here and nowhere else, as r, g, b in
+-- 0..1 the way every ISUIElement draw call wants them. The hex beside each one
+-- is the value that was approved on the mockups; nothing computes a colour from
+-- another one, so a change here is a change on screen and nothing else.
+--
+
+CeroSec.COLS = 60
+CeroSec.ROWS = 20
+
+CeroSec.COLORS = {
+	screen  = { r = 0.024, g = 0.102, b = 0.047 }, -- #061a0c
+	text    = { r = 0.361, g = 1.000, b = 0.478 }, -- #5cff7a
+	dim     = { r = 0.184, g = 0.604, b = 0.278 }, -- #2f9a47
+	bright  = { r = 0.831, g = 1.000, b = 0.851 }, -- #d4ffd9
+	bezel   = { r = 0.788, g = 0.749, b = 0.655 }, -- #c9bfa7
+	bezelHi = { r = 0.890, g = 0.859, b = 0.776 }, -- #e3dbc6
+	bezelLo = { r = 0.612, g = 0.569, b = 0.475 }, -- #9c9179
+}
+
+-- The inverted bar of the editor (rung 2b): the dim green becomes the
+-- background and the screen colour becomes the text. Named here so that rung
+-- does not invent a second palette.
+CeroSec.COLORS.barBack = CeroSec.COLORS.dim
+CeroSec.COLORS.barText = CeroSec.COLORS.screen
+
+-- Scanlines: a one pixel line every SCANLINE_STEP pixels, so a 20 row screen
+-- costs about a hundred rects and not one per pixel.
+CeroSec.UI_SCANLINES = true
+CeroSec.SCANLINE_STEP = 3
+CeroSec.SCANLINE_ALPHA = 0.22
+
+-- Glow: each line of text is drawn twice, once faint and one pixel off.
+CeroSec.UI_GLOW = true
+CeroSec.GLOW_ALPHA = 0.35
+CeroSec.GLOW_OFFSET = 1
+
+-- The block cursor blinks on this period, in milliseconds of real time.
+CeroSec.CURSOR_BLINK_MS = 500
+
+-- How much the terminal remembers.
+CeroSec.SCROLLBACK_MAX = 200
+CeroSec.HISTORY_MAX = 20
+
+-- Module of the server -> client answers that go to one player, i.e. the module
+-- of sendServerCommand(player, ...). Named here because both sides need the
+-- same string and neither side owns it.
+CeroSec.MODULE = "CeroSec"
