@@ -134,12 +134,16 @@ end
 --   editbuf  { text }               -- the buffer as it stands, no file touched
 --   editsave { text }               -- the buffer, and write it
 --   editexit { }                    -- leave the editor, buffer dropped
+--   interrupt {}                    -- Escape while the machine is in the
+--                                      middle of something: drop the question
+--                                      it asked and go back to the prompt
 --   close    {}
 -- server -> client, every answer carrying the token of the terminal it belongs
 -- to, because a connection is not a window:
 --   opened  { x, y, z, token, hostname, booted, lines, prompt, mode, mask,
---             edit, animate }
---   screen  { x, y, z, token, hostname, booted, lines, prompt, mode, mask, edit }
+--             active, edit, animate }
+--   screen  { x, y, z, token, hostname, booted, lines, prompt, mode, mask,
+--             active, edit }
 --   closed  { x, y, z, token, reason }
 --
 -- There is one answer for everything that happens on a screen, and it is the
@@ -410,11 +414,23 @@ end
 -- The editor's half of a screen. The buffer as the machine holds it, the file
 -- as it stands on the disk (so a window can say whether the two differ without
 -- asking), and whether this window is the one that may type.
+-- The session the editor runs under. Not always the console's: `sudo edit`
+-- opens the buffer as root and must save as root, so who opened it is kept on
+-- the buffer and a save four minutes later is still the write the command was
+-- allowed. A buffer with nobody on it -- one opened before sudo existed -- is
+-- the session's, as it always was.
+function SCeroSecSystem:editSession(console)
+	local user = console.user
+	local edit = console.edit
+	if type(edit) == "table" and type(edit.user) == "string" then user = edit.user end
+	return { user = user, cwd = console.cwd or "/", stamp = getTimestampMs() }
+end
+
 function SCeroSecSystem:editArgs(luaObject, state, console, playerObj)
 	local edit = console.edit
 	if edit == nil or state == nil then return nil end
 	local disk = ""
-	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
+	local session = self:editSession(console)
 	local node = CeroSecOS.getNode(state, session, edit.path)
 	if node ~= nil and node.type == "file" then disk = node.data or "" end
 	return {
@@ -446,6 +462,11 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 		prompt = self:promptFor(state, console, hostname),
 		mode = CeroSec.consoleMode(console),
 		mask = CeroSec.consoleMask(console),
+		-- Whether the machine is in the middle of something, which is what
+		-- Escape needs to know to tell an interrupt from a close. Worked out
+		-- here like the prompt and the mask, so no window has to guess which of
+		-- the machine's questions it is looking at.
+		active = CeroSec.consoleActive(console),
 		edit = self:editArgs(luaObject, state, console, playerObj),
 	}
 end
@@ -461,6 +482,87 @@ function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
 				self:screenArgs(luaObject, state, console, watcher.token, watcher.player))
 		end
 	end
+end
+
+-- The same answer the opener of a freshly switched on machine gets, but to
+-- every window at once: a machine that has just rebooted is a machine every
+-- pair of eyes in front of it watches type itself out again.
+function SCeroSecSystem:pushOpened(luaObject, state, console)
+	if not luaObject.watchers then return end
+	for _, watcher in pairs(luaObject.watchers) do
+		if watcher.player then
+			local args = self:screenArgs(luaObject, state, console, watcher.token, watcher.player)
+			args.animate = true
+			self:reply(watcher.player, "opened", args)
+		end
+	end
+end
+
+-- The first screenful after a power-on: the BIOS lines, and the motd when there
+-- is a system to greet from. Answers whether it did anything -- a machine
+-- already booted is not booted twice, which is what keeps the second player to
+-- open a computer from watching a second boot.
+function SCeroSecSystem:bootScreen(console, state)
+	if console.booted then return false end
+	console.booted = true
+	CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
+	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
+	return true
+end
+
+--
+-- Off, and off and on again
+--
+-- `shutdown` and `reboot` are the physical button typed instead of pressed, so
+-- they go through the very same turnOff/turnOn -- the sprite, the sound, the
+-- console thrown away -- and not through a second, quieter path beside it.
+--
+-- The one difference is the windows. Turning a machine off tells every terminal
+-- open on it that it is over and forgets them, which is right for a machine
+-- somebody switched off at the case and wrong for one that is coming back in
+-- the same breath. So a reboot holds the watchers aside across the two calls
+-- and hands them the new screen itself.
+--
+
+function SCeroSecSystem:reboot(luaObject)
+	local watchers = luaObject.watchers
+	luaObject.watchers = nil
+	luaObject:turnOff()
+	luaObject.watchers = watchers
+
+	if not luaObject:turnOn() then
+		-- The room lost its power between the two. The machine stays dark, and
+		-- the windows are told what the power sweep would have told them.
+		self:evictWatchers(luaObject, "power")
+		return
+	end
+
+	local console = luaObject:consoleState()
+	if not console then
+		self:evictWatchers(luaObject, "power")
+		return
+	end
+	local state = self:biosState(luaObject)
+	self:bootScreen(console, state)
+	-- A machine that went down broken comes back broken, and says so.
+	if state == nil and not self:atBios(console) then self:askBios(console) end
+	self:pushOpened(luaObject, state, console)
+end
+
+-- The two orders that end a screen instead of changing it. Run after the screen
+-- carrying the line that was typed has gone out, so nothing is swallowed by the
+-- machine going down: what follows is either "the window is over" or a whole
+-- new boot.
+function SCeroSecSystem:applyPower(luaObject, control)
+	if control == "shutdown" then
+		luaObject:turnOff()
+		return true
+	end
+	if control == "reboot" then
+		self:reboot(luaObject)
+		return true
+	end
+	return false
 end
 
 -- What the core ordered, beyond the lines it printed. Shared by a command and
@@ -480,6 +582,10 @@ function SCeroSecSystem:applyOrder(console, control, data, playerObj)
 			readonly = data.readonly and true or false,
 			by = idOf(playerObj),
 		}
+		-- Who the command was allowed to open it as. It comes from the core,
+		-- which took it from the session it ran the command on, so it is only
+		-- ever the console's own user or the root a sudo already paid for.
+		if type(data.user) == "string" then console.edit.user = data.user end
 	end
 end
 
@@ -531,12 +637,7 @@ Commands.open = function(self, playerObj, x, y, z, token)
 	-- The BIOS belongs to the power-on, not to the window: the first player to
 	-- open a machine that has just been switched on watches it type itself out,
 	-- and it is then on the screen for whoever opens it next.
-	local animate = not console.booted
-	if animate then
-		console.booted = true
-		CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
-		if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
-	end
+	local animate = self:bootScreen(console, state)
 
 	-- Asked once. A machine already sitting on the question, or on the refusal
 	-- that answered it, is left exactly as the last player left it.
@@ -572,6 +673,11 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		self:replyClosed(playerObj, x, y, z, "broken", token)
 		return
 	end
+
+	-- What the core ordered, if anything did. Declared out here because the
+	-- power orders are carried out after the screen has gone out, and the
+	-- branch that can produce one ends long before that.
+	local order = nil
 
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "login" then
@@ -609,6 +715,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		end
 		local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
 		local _, lines, control, data = CeroSecOS.continue(state, session, asked.cont, text)
+		order = control
 		console.user = session.user
 		console.cwd = session.cwd
 		luaObject:mirrorOS()
@@ -622,6 +729,9 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		end
 	end
 	self:pushScreen(luaObject, state, console)
+	-- `sudo shutdown` and `sudo reboot` end here, on the answer to the password
+	-- question, and end the screen the same way they do at a shell.
+	self:applyPower(luaObject, order)
 end
 
 Commands.exec = function(self, playerObj, x, y, z, token, args)
@@ -663,6 +773,12 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	end
 
 	self:pushScreen(luaObject, state, console)
+
+	-- Last, and never before the push: the line that was typed goes onto every
+	-- glass at the machine first, and the machine goes down after it. A screen
+	-- that ends on "# shutdown" is what a second survivor standing there has to
+	-- be left with.
+	self:applyPower(luaObject, control)
 end
 
 -- The buffer as it stands, with the file untouched. Sent while it is being
@@ -703,7 +819,7 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	end
 	console.edit.text = text
 
-	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
+	local session = self:editSession(console)
 	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false)
 	if done == nil then
 		console.edit.message = "Cannot save: " .. tostring(reason)
@@ -729,6 +845,42 @@ Commands.editexit = function(self, playerObj, x, y, z, token, args)
 		return
 	end
 	console.edit = nil
+	self:pushScreen(luaObject, state, console)
+end
+
+-- Escape, while the machine is in the middle of something: ^C.
+--
+-- What is dropped is the question, never the session -- the shell prompt comes
+-- back, or `login:` when what was half typed was a name. It is a server command
+-- and not a client-side reset because the screen belongs to the machine: every
+-- window standing at it sees the same ^C on the same line.
+Commands.interrupt = function(self, playerObj, x, y, z, token, args)
+	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+
+	local state = luaObject:osState()
+	if not state then
+		self:replyClosed(playerObj, x, y, z, "broken", token)
+		return
+	end
+
+	-- Nothing to interrupt: the window is told what is on the screen and
+	-- decides for itself what to do about it. The client asks the same question
+	-- before it sends this, so reaching here means the two disagreed -- a
+	-- prompt answered by somebody else in between.
+	if not CeroSec.consoleActive(console) then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	-- The line as it stood, with "^C" where the answer would have gone. Taken
+	-- before anything is cleared, or it would be the prompt of the state the
+	-- interrupt leaves behind rather than of the one it interrupted.
+	local head = self:promptFor(state, console, self:hostnameOf(luaObject, state))
+	CeroSec.consolePush(console, head .. "^C")
+	console.prompt = nil
+	console.pending = nil
+
 	self:pushScreen(luaObject, state, console)
 end
 

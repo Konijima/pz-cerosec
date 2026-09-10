@@ -148,6 +148,9 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.mode = "prompt"
 	o.prompt = ""
 	o.mask = false
+	-- Whether the machine is in the middle of something. The machine's word,
+	-- and the only thing Escape looks at to tell an interrupt from a close.
+	o.active = false
 
 	-- The editor. edit is the machine's word about it -- the path, the buffer,
 	-- the file on the disk, and whether this window is the one holding the
@@ -283,6 +286,7 @@ function CeroSecTerminal:showScreen(args, animate)
 	self.busy = false
 	self.screen = args.lines or {}
 	self.prompt = args.prompt or ""
+	self.active = args.active and true or false
 	self.scroll = 0
 
 	if animate and #self.screen > 0 then
@@ -917,7 +921,21 @@ function CeroSecTerminal:onOtherKey(key)
 		if key == Keyboard.KEY_TAB then self:editKey("tab") end
 		return
 	end
-	if key == Keyboard.KEY_ESCAPE then self:close() end
+	if key ~= Keyboard.KEY_ESCAPE then return end
+
+	-- Escape interrupts what the machine is in the middle of, and closes the
+	-- window when it is not in the middle of anything: the ^C of a 1993
+	-- terminal, which never shut anything, and the close of a window that has
+	-- nothing to give up on. Which of the two it is is the machine's word
+	-- (args.active) and never something worked out from the prompt on the
+	-- glass -- the window cannot tell "New password: " from any other question,
+	-- and should not have to.
+	if self.active then
+		self:setBusy()
+		self:send("interrupt", {})
+		return
+	end
+	self:close()
 end
 
 function CeroSecTerminal:viewRows()

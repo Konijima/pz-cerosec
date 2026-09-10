@@ -438,6 +438,28 @@ function CeroSec.consoleHalted(console)
 	return type(console) == "table" and console.halted and true or false
 end
 
+-- Is the machine in the middle of something? This is what Escape asks before it
+-- decides whether it is an interrupt or a close: a question a command put up
+-- (passwd, sudo) and a login name half typed are things to give up on, and
+-- everything else is a window to walk away from.
+--
+-- Three deliberate exclusions. The editor has its own Escape and always has.
+-- The BIOS' question is not a session's and cannot be answered by giving up --
+-- there is nothing behind it to come back to. A halted machine is asking
+-- nothing at all.
+function CeroSec.consoleActive(console)
+	if type(console) ~= "table" then return false end
+	if console.halted then return false end
+	if console.edit ~= nil then return false end
+	if console.prompt ~= nil then
+		local cont = console.prompt.cont
+		if type(cont) == "table" and cont.cmd == "bios" then return false end
+		return true
+	end
+	if console.pending ~= nil then return true end
+	return false
+end
+
 -- The prompt that goes with it. Derived from the console and from nothing else,
 -- so the server never has to remember what it last told a window.
 function CeroSec.consolePrompt(console, hostname, admin, home)
@@ -497,6 +519,11 @@ function CeroSec.repairConsole(console)
 			readonly = edit.readonly and true or false,
 		}
 		if type(edit.by) == "string" then out.edit.by = edit.by end
+		-- Who the buffer was opened as. A save runs under this and not under
+		-- whoever is logged in, so `sudo edit` still writes as root -- and a
+		-- console handed back without it falls back to the session, which is
+		-- what every buffer opened before sudo existed was.
+		if type(edit.user) == "string" then out.edit.user = edit.user end
 		if type(edit.message) == "string" then out.edit.message = edit.message end
 		if type(edit.saves) == "number" and edit.saves >= 0 then
 			out.edit.saves = math.floor(edit.saves)

@@ -249,6 +249,7 @@ local function newBench()
 	object.playSound = function() end
 	object.syncSprite = function() end
 	object:initNew()
+	object.hasPower = function() return true end
 	object.on = true
 	object.console = CeroSec.newConsole()
 	object.consoleChecked = true
@@ -258,32 +259,64 @@ local function newBench()
 	local window = CeroSecTerminal:new(0, 0, player, computer)
 	window:initialise()
 	window:createChildren()
-	window.stillValid = function() return true end
-	-- What the glass shows, and where.
-	window.painted = {}
-	window.rects = {}
-	window.drawText = function(self, text, x, y)
-		self.painted[#self.painted + 1] = { text = text, x = x, y = y }
-	end
-	window.drawRect = function(self, x, y, w, h)
-		self.rects[#self.rects + 1] = { x = x, y = y, w = w, h = h }
-	end
+	local bench = { window = window, object = object, system = system, player = player }
+	-- Every window open on this computer. One to begin with; a second player
+	-- standing at the same glass is bench.addWindow().
+	bench.windows = { window }
 
-	-- The wire. One call in, the server's answers straight back out.
-	CCeroSecSystem = { instance = { sendCommand = function(_, _, command, args)
+	-- The wire. One call in, the server's answers straight back out -- to every
+	-- window there is, because that is what the server does: it answers a
+	-- connection, and each window keeps only what carries its own token.
+	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
 		local replies = {}
 		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a } end
-		system:OnClientCommand(command, player, args)
-		for i = 1, #replies do window:onServerCommand(replies[i][1], replies[i][2]) end
+		system:OnClientCommand(command, sender, args)
+		for i = 1, #replies do
+			for w = 1, #bench.windows do
+				bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
+			end
+		end
 	end } }
 
-	local bench = { window = window, object = object, system = system, player = player }
+	local function watch(w)
+		w.stillValid = function() return true end
+		w.painted = {}
+		w.rects = {}
+		w.drawText = function(self, text, x, y)
+			self.painted[#self.painted + 1] = { text = text, x = x, y = y }
+		end
+		w.drawRect = function(self, x, y, width, height)
+			self.rects[#self.rects + 1] = { x = x, y = y, w = width, h = height }
+		end
+		return w
+	end
+	-- What the glass shows, and where.
+	watch(window)
+
+	-- A second player, at the same computer, with a window of his own. His own
+	-- online id, because the server keys a watcher on it and split screen is
+	-- the one case where two windows share a connection.
+	function bench.addWindow()
+		local other = {}
+		for key, value in pairs(player) do other[key] = value end
+		other.getPlayerNum = function() return 1 end
+		other.getOnlineID = function() return -2 end
+		local w = CeroSecTerminal:new(0, 0, other, computer)
+		w:initialise()
+		w:createChildren()
+		watch(w)
+		bench.windows[#bench.windows + 1] = w
+		return w
+	end
 
 	function bench.frame()
-		window.painted = {}
-		window.rects = {}
-		window:prerender()
-		window:render()
+		for i = 1, #bench.windows do
+			local w = bench.windows[i]
+			w.painted = {}
+			w.rects = {}
+			w:prerender()
+			w:render()
+		end
 	end
 
 	-- Type a line and press Enter, the way the box hands it over.
@@ -598,6 +631,257 @@ do
 	eq("a window opened on it finds the refusal", bench.window.prompt, "")
 	check("with the message on the glass", bench.painted("No operating system found."))
 	eq("and the machine is still halted", CeroSec.consoleHalted(bench.object.console), true)
+end
+
+--
+-- Escape: an interrupt when the machine is in the middle of something, a close
+-- when it is not.
+--
+-- The rule lives in two halves that must agree: the server says whether the
+-- machine is busy (screenArgs.active) and the window decides what Escape does
+-- with that. Neither half is worth testing without the other -- a window that
+-- interrupted the wrong thing and a server that said the wrong thing look the
+-- same from the chair.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.frame()
+	eq("nothing is going on at a shell", bench.window.active, false)
+
+	-- A second pair of eyes at the same glass: the interrupt is the machine's,
+	-- so what it leaves behind is on his screen too and not only on the screen
+	-- of the man who pressed the key.
+	local other = bench.addWindow()
+	other:askForScreen()
+
+	bench.enter("passwd")
+	bench.frame()
+	eq("passwd asks", bench.window.prompt, "Old password: ")
+	eq("and the second window is asked the same thing", other.prompt, "Old password: ")
+	eq("and the machine says it is in the middle of something", bench.window.active, true)
+	eq("the answer is masked", bench.window.mask, true)
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("the window is still open", not bench.window.closing)
+	check("the interrupted line is on the glass", bench.painted("Old password: ^C"))
+	eq("the question is off the machine", bench.object.console.prompt, nil)
+	eq("and the shell is back", bench.window.mode, "shell")
+	check("with its prompt", bench.painted("admin@"))
+	eq("nothing is going on any more", bench.window.active, false)
+	eq("and the session is untouched", bench.object.console.user, "admin")
+	check("the second window saw the ^C too", other.painted ~= nil and (function()
+		for i = 1, #other.painted do
+			local text = other.painted[i].text
+			if type(text) == "string" and string.find(text, "Old password: ^C", 1, true) then
+				return true
+			end
+		end
+		return false
+	end)())
+	eq("and is back at the shell as well", other.mode, "shell")
+
+	-- And the shell still works afterwards: what was dropped was the question.
+	bench.enter("whoami")
+	bench.frame()
+	check("the shell answers", bench.painted("admin"))
+end
+
+-- Idle, Escape closes -- and the machine keeps everything.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.frame()
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	check("Escape at an idle shell closes the window", bench.window.closing)
+	eq("the machine is still on", bench.object.on, true)
+	eq("and still logged in", bench.object.console.user, "admin")
+end
+
+-- Half way through a login: the name goes, the login prompt comes back.
+do
+	local bench = newBench()
+	bench.window:askForScreen()
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	eq("at the login prompt", bench.window.prompt, "login: ")
+	eq("with nothing going on", bench.window.active, false)
+
+	bench.enter("admin")
+	bench.frame()
+	eq("the password is being asked for", bench.window.prompt, "password: ")
+	eq("and that is something to interrupt", bench.window.active, true)
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("the window is still open", not bench.window.closing)
+	check("the interrupted line is on the glass", bench.painted("password: ^C"))
+	eq("and the machine is back at login", bench.window.prompt, "login: ")
+	eq("with no name half typed", bench.object.console.pending, nil)
+	eq("and nobody logged in", bench.object.console.user, nil)
+
+	-- Escape at the bare login prompt is a close, not an interrupt: there is
+	-- nothing behind it to give up on.
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	check("Escape at login closes", bench.window.closing)
+end
+
+-- The BIOS' question is not interruptible: there is nothing behind it.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("rm -r /bin")
+	bench.frame()
+	bench.window:askForScreen()
+	bench.frame()
+	eq("the BIOS is asking", bench.window.prompt, "Restore system? (y/n) ")
+	eq("and that is not something to interrupt", bench.window.active, false)
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	check("Escape closes, as it always has", bench.window.closing)
+	check("and the question is still on the machine",
+		bench.object.console.prompt ~= nil)
+end
+
+-- A sudo question is interruptible like any other.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("sudo cat /etc/passwd")
+	bench.frame()
+	eq("sudo asks", bench.window.prompt, "[sudo] password for admin: ")
+	eq("masked", bench.window.mask, true)
+	eq("and interruptible", bench.window.active, true)
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("the line is on the glass", bench.painted("[sudo] password for admin: ^C"))
+	eq("and the shell is back", bench.window.mode, "shell")
+	-- Nothing of the file leaked on the way past.
+	check("and the accounts were not printed", not bench.painted("$cs1$"))
+end
+
+--
+-- shutdown and reboot, from the chair
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("shutdown")
+	bench.frame()
+	check("admin is refused", bench.painted("shutdown: permission denied"))
+	eq("and the machine is still on", bench.object.on, true)
+	check("and the window is still open", not bench.window.closing)
+end
+
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("shutdown")
+	eq("the machine is off", bench.object.on, false)
+	eq("its screen is gone with it", bench.object.console, nil)
+	check("and the window shut itself", bench.window.closing)
+end
+
+-- reboot, with a second player standing at the same glass.
+do
+	local bench = newBench()
+	bench.login("root")
+	local other = bench.addWindow()
+	other:askForScreen()
+	bench.frame()
+	eq("the second window reads the same screen", other.mode, "shell")
+
+	bench.enter("reboot")
+	bench.frame()
+
+	check("the first window stayed open", not bench.window.closing)
+	check("and so did the second", not other.closing)
+	eq("the machine came back on", bench.object.on, true)
+	eq("with a screen of its own", type(bench.object.console), "table")
+	eq("and nobody logged in on it", bench.object.console.user, nil)
+
+	-- Both of them are watching the BIOS type itself out again, which is the
+	-- one thing that says it really went down and came back.
+	eq("the first window is replaying the boot", bench.window.revealing, true)
+	eq("and so is the second", other.revealing, true)
+
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	check("the BIOS is on the first glass", bench.painted("CeroSec BIOS"))
+	eq("and it ends at a login prompt", bench.window.prompt, "login: ")
+	eq("for the second window too", other.prompt, "login: ")
+	eq("both are at a prompt", bench.window.mode, "prompt")
+	eq("and so is the other", other.mode, "prompt")
+
+	-- And the disk came through it: a reboot is not a repair.
+	bench.enter("root")
+	bench.enter("")
+	bench.frame()
+	eq("root logs back in", bench.window.mode, "shell")
+	bench.enter("ls /bin")
+	bench.frame()
+	check("the machine is the one it was", bench.painted("shutdown"))
+end
+
+-- sudo reboot: the same, from an account that is not root.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("sudo reboot")
+	bench.frame()
+	eq("sudo asks first", bench.window.prompt, "[sudo] password for admin: ")
+	eq("the machine is still on while it asks", bench.object.on, true)
+
+	bench.enter("")
+	bench.frame()
+	eq("and then it goes down and comes back", bench.object.on, true)
+	eq("with nobody logged in", bench.object.console.user, nil)
+	eq("the window stayed and is booting", bench.window.revealing, true)
+	check("and it was not closed", not bench.window.closing)
+end
+
+-- A reboot on a machine that lost its power while it was down.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.object.hasPower = function() return false end
+	bench.enter("reboot")
+	eq("it stays dark", bench.object.on, false)
+	check("and the window is told", bench.window.closing)
+end
+
+-- sudo edit: the buffer is root's, and it saves.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("edit /etc/motd")
+	bench.frame()
+	eq("admin gets it read-only", bench.window.edit.readonly, true)
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+
+	bench.enter("sudo edit /etc/motd")
+	bench.frame()
+	eq("sudo asks first", bench.window.mode, "prompt")
+	bench.enter("")
+	bench.frame()
+	eq("and then the editor is up", bench.window.mode, "edit")
+	eq("writable", bench.window.edit.readonly, false)
+	eq("as root", bench.object.console.edit.user, "root")
+	check("with the file on the bar", bench.painted("/etc/motd"))
+
+	bench.window.entry:setText("welcome to the lab")
+	bench.window.entry:setCursorPos(18)
+	bench.window:onOtherKey(Keyboard.KEY_TAB)
+	bench.frame()
+	check("the save went through", bench.painted("Saved 18 bytes"))
+	local state = bench.object:osState()
+	eq("and the file on the disk is the new one",
+		CeroSecOS.systemNode(state, "/etc/motd").data, "welcome to the lab")
+	eq("still root's", CeroSecOS.systemNode(state, "/etc/motd").owner, "root")
+	eq("and the console is still admin's", bench.object.console.user, "admin")
 end
 
 print("window_test: " .. count .. " checks passed")
