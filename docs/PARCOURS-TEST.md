@@ -319,40 +319,55 @@ passé réellement, même quand ça correspond au texte attendu.
 96. `rm /dev/light0`, `mv /dev/light0 /root/x`, `cp /dev/light0 /root/x`,
      `edit /dev/light0` → les quatre répondent `is a device`.
      `mkdir /dev/mine` et `touch /dev/mine` répondent `/dev: read-only`. [ ]
+97. `dev` seul dans un grand bâtiment → un tableau, une ligne par appareil,
+     `id  description  côté  état`, trié par sorte puis par numéro (`light2`
+     avant `light10`), rien de plus large que l'écran, l'écran défile.
+     `dev light`, `dev lock`, `dev win` → seulement cette sorte. `dev toaster`
+     → `dev: toaster: unknown kind`, `dev light99` →
+     `dev: light99: no such device`. [ ]
+98. `dev light0` → `light0: on`. `dev light0 off` → la pièce s'assombrit dans
+     le monde et la ligne répond `light0: off`. `dev light0 toggle` la
+     rallume. `dev lockN toggle` sur une porte verrouillée l'ouvre, sur une
+     porte cadenassée retire le cadenas (`lockN: unlocked`), et de nouveau
+     remet le cadenas (`lockN: padlock`). Sur une fenêtre cassée ou
+     barricadée : `winN: cannot toggle`, et `dev winN lock` répond toujours
+     `winN: smashed` / `winN: barricaded`. En tant qu'un compte hors du
+     groupe `sudo` : `dev` affiche le tableau, mais `dev light0 off` répond
+     `light0: permission denied`. [ ]
 
 ## I. Manuel
 
-97. Clic droit sur un ordinateur, dernière entrée du menu → "Read the CeroSec
+99. Clic droit sur un ordinateur, dernière entrée du menu → "Read the CeroSec
      manual (dev)" ouvre le lecteur sans copie du livre dans l'inventaire, sur
      un ordinateur allumé ou éteint, à portée ou pas. [ ]
-98. Menu debug → Items list, filtre `CeroSec` → `CeroSec.Manual` présent,
+100. Menu debug → Items list, filtre `CeroSec` → `CeroSec.Manual` présent,
      catégorie affichée Literature, nom "CeroSec OS User's Manual". Faire
      apparaître un exemplaire dans l'inventaire → icône navy avec petit écran
      vert sur la couverture, jamais un point d'interrogation blanc. [ ]
-99. Clic droit sur l'exemplaire dans l'inventaire → "Read the manual"
+101. Clic droit sur l'exemplaire dans l'inventaire → "Read the manual"
      seulement ; pas de "Read" ni "Write" ni "Look at pictures" de la
      vanille. [ ]
-100. Ouvrir le livre → deux feuilles crème côte à côte, numéros de page aux
+102. Ouvrir le livre → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
-101. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
+103. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
      ouvert, aucune animation de lecture, rien en file d'action. [ ]
-102. Page 1 : titre centré `CeroSec OS 1.0 User's Manual`, une règle dessous,
+104. Page 1 : titre centré `CeroSec OS 1.0 User's Manual`, une règle dessous,
      `First Edition, 1993` en dessous encore, en encre plus pâle. Page 2 :
      Contents. [ ]
-103. Table des matières : chaque ligne reprend exactement le titre du chapitre
+105. Table des matières : chaque ligne reprend exactement le titre du chapitre
      tel qu'il apparaît sur sa propre feuille (`1. Your machine`, jamais
      `1.  1. Your machine`), numéro de page aligné à droite. Cliquer sur
      chaque ligne → ouvre au premier feuillet du bon chapitre, et le numéro
      affiché sur la table correspond au numéro écrit au pied de la feuille. [ ]
-104. Flèche droite fait ce que fait `Next >`, flèche gauche ce que fait
+106. Flèche droite fait ce que fait `Next >`, flèche gauche ce que fait
      `< Back`. Au tout début du livre, `< Back` et la flèche gauche ne font
      rien ; à la toute fin, `Next >` et la flèche droite ne font rien. [ ]
-105. Tourner à un endroit au milieu du livre, fermer avec Escape, rouvrir →
+107. Tourner à un endroit au milieu du livre, fermer avec Escape, rouvrir →
      même feuillet exactement. Sauvegarder, quitter, recharger, rouvrir →
      encore le même feuillet (le signet vit sur l'objet, dans sa modData). [ ]
-106. Faire apparaître un second exemplaire, le laisser sur une autre page que
+108. Faire apparaître un second exemplaire, le laisser sur une autre page que
      le premier → chacun garde son propre signet, indépendant de l'autre. [ ]
-107. Vérifier que la version affichée est la même partout : la bannière de
+109. Vérifier que la version affichée est la même partout : la bannière de
      démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture du
      manuel dit `CeroSec OS 1.0 User's Manual`, et le BIOS affiche
      `CeroSec BIOS 1.0` comme un numéro séparé. Aucun de ces trois textes ne
@@ -360,41 +375,41 @@ passé réellement, même quand ça correspond au texte attendu.
 
 ## J. Sons et animation
 
-108. Taper un mot lentement dans le terminal → un clic court par touche, pas
+110. Taper un mot lentement dans le terminal → un clic court par touche, pas
      toujours le même échantillon (quatre au hasard) ; tenir une touche →
      clics réguliers et rapides, jamais deux collés en moins de 40 ms. [ ]
-109. Entrée au shell, puis Entrée dans l'éditeur pour une nouvelle ligne → un
+111. Entrée au shell, puis Entrée dans l'éditeur pour une nouvelle ligne → un
      clic plus lourd et plus long que celui d'une lettre, dans les deux cas. [ ]
-110. Flèches haut et bas (historique au shell, curseur dans l'éditeur)
+112. Flèches haut et bas (historique au shell, curseur dans l'éditeur)
      cliquent ; gauche, droite, Home et End ne cliquent pas. [ ]
-111. Ouvrir le terminal debout, taper → animation de fouille, mains sur le
+113. Ouvrir le terminal debout, taper → animation de fouille, mains sur le
      clavier, arrêt environ une seconde et demie après la dernière touche.
      Lire sans taper → le personnage reste immobile face au moniteur. [ ]
-112. Avec une chaise, assis, taper au clavier → noter si l'animation joue
+114. Avec une chaise, assis, taper au clavier → noter si l'animation joue
      depuis la chaise ou si le personnage reste simplement assis face à
      l'écran sans animation superposée. [ ]
 
 ## K. Mode Héberger
 
-113. Hôte allume un ordinateur → le client voit le sprite passer à l'écran
+115. Hôte allume un ordinateur → le client voit le sprite passer à l'écran
      allumé sans recharger, et voit la lueur apparaître la nuit sans
      s'éloigner et revenir. [ ]
-114. Deux joueurs au même ordinateur, terminal ouvert des deux côtés : le
+116. Deux joueurs au même ordinateur, terminal ouvert des deux côtés : le
      premier tape `ls -l /`, la ligne tapée et sa sortie apparaissent en
      direct sur l'écran de l'autre. [ ]
-115. L'un des deux tape `edit notes.txt` ; l'écran de l'autre montre le même
+117. L'un des deux tape `edit notes.txt` ; l'écran de l'autre montre le même
      éditeur avec `Another user is editing`, ses touches ne font rien, son
      Escape ferme seulement sa fenêtre. [ ]
-116. Un joueur `echo on > /dev/light0` ; l'autre, debout dans la pièce
+118. Un joueur `echo on > /dev/light0` ; l'autre, debout dans la pièce
      concernée, voit la lumière s'allumer sans se reconnecter ni s'éloigner
      et revenir. [ ]
-117. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
+119. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
      l'ouvre à la main. Puis le premier la reverrouille depuis l'ordinateur ;
      le second est refusé en essayant de l'ouvrir. [ ]
-118. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
+120. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
      ouvertes et rejouent le BIOS ensemble jusqu'à `login:`, aucune des deux
      ne se ferme et aucune ne reste sur l'ancien écran. [ ]
-119. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
+121. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
 
@@ -403,44 +418,44 @@ passé réellement, même quand ça correspond au texte attendu.
 Ce sont les points que les programmeurs ont signalés comme réglables seulement
 en observant le jeu réel, pas par un banc de test.
 
-120. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
+122. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
      heures différentes : l'heure et la minute doivent toujours correspondre à
      ce que le jeu affiche, jamais à l'heure réelle de l'ordinateur qui fait
      tourner le jeu. [ ]
-121. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
+123. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
      mur derrière, à l'étape du bord de la case plutôt qu'au centre : vérifier
      que le point de position d'assise (avec une chaise) et le point de départ
      de l'animation (sans chaise) sont bien à l'intérieur du carré devant
      l'écran, jamais décalés vers une case voisine. [ ]
-122. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
+124. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
      seuil de blocage se déclenche vraiment à deux caisses ou déjà à une seule
      selon leurs sprites : ça dépend de la valeur `Surface` de chaque caisse,
      pas d'un nombre fixe dans le mod. [ ]
-123. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
+125. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
      `exterior` correspond au côté réel de la porte, et si un couloir entre
      deux pièces donne bien `<pièce-du-carré-de-la-porte>-<autre-pièce>` dans
      ce sens précis. [ ]
-124. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
+126. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
      elle-même aucune pièce définie (pas de plancher de maison dessous) mais
      qui est dans le rayon de dix cases d'une base : confirmer qu'il apparaît
      tout de même dans `ls -l /dev`. [ ]
-125. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
+127. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
      comptes de profondeur ou plus), vérifier que `console.stack` a gardé
      exactement la même profondeur et la bonne invite, sans qu'un `exit` de
      trop ou de moins soit nécessaire pour ressortir. [ ]
-126. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
+128. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
      l'invite affichée (comme pour `sudo cd`), et que `whoami` répond toujours
      `admin` immédiatement après. [ ]
-127. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
+129. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]
-128. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
+130. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
      revenir : compter exactement une lueur autour de l'écran, jamais deux
      superposées et jamais aucune. [ ]
-129. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
+131. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
      livre vanille de même catégorie (Literature) : noter si elle paraît trop
      grande, trop petite, ou pareille. [ ]
-130. Au premier démarrage d'une partie avec le mod actif, confirmer dans
+132. Au premier démarrage d'une partie avec le mod actif, confirmer dans
      `~/Zomboid/console.txt` qu'aucune erreur de script ne nomme
      `items_cerosec.txt` (le script d'objets chargé depuis `common/`) et que
      la ligne `manual added to 12 distribution lists` apparaît une fois. [ ]

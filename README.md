@@ -17,10 +17,10 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`adduser cat cd chgrp chmod chown clear cp date deluser df echo edit exit
-  gpasswd grep groupadd groupdel groups hash head help hostname id ls man mkdir mv
-  passwd pwd reboot restart rm shutdown su sudo tail touch wc whoami write`), an
-  editor, and salted-hashed passwords.
+  shell (`adduser cat cd chgrp chmod chown clear cp date deluser dev df echo edit
+  exit gpasswd grep groupadd groupdel groups hash head help hostname id ls man
+  mkdir mv passwd pwd reboot restart rm shutdown su sudo tail touch wc whoami
+  write`), an editor, and salted-hashed passwords.
 - Accounts: `adduser` and `deluser` make and unmake them, `su` changes who the
   glass is logged in as without logging out, and `id` says what the machine knows
   about a name.
@@ -37,6 +37,9 @@ Done:
 - The terminal window: the green screen, login, command history, the editor, `^C`
   on Escape, and a server-held console so the screen survives a save, a reload and
   a walk away.
+- Devices: `/dev` holds the light switches, lockable doors and windows the machine
+  can reach, and `dev` is the everyday way to see them all at once, read one, work
+  one or `toggle` it — `cat` and a redirect on the node underneath.
 - The manual: a printed book that spawns where computers do, read by the player in
   a two-page reader with a table of contents, and remembering the page it was left
   on.
@@ -143,6 +146,7 @@ Commands:
 | `wc <file>...` | lines, words and bytes |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
+| `dev [kind\|id [value\|toggle]]` | the devices as a table, one kind of them, one read, or one worked — `dev light0 off`, `dev lock2 toggle` |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
 | `shutdown` | switch the machine off (root only) |
@@ -203,30 +207,42 @@ question back; `exit` or Escape walks away from it.
 The building the computer stands in is wired to it. `/dev` holds one file per
 light switch, lockable door and window it can reach — its own building when its
 square has one, every room of it; ten tiles of its own floor when it has not,
-which is what a computer in a player-built base gets. `ls -l /dev` says what
-each one is and what it is doing:
+which is what a computer in a player-built base gets. `dev` is how you work them:
+
+```
+dev
+light0  office                       on
+light1  hallway                      off
+lock0   exterior                  W  locked
+lock1   kitchen-hallway           N  unlocked
+lock2   built                     N  padlock
+win0    office                    N  locked
+```
+
+The id you name it by, the rooms it stands between — the map's own raw names,
+`exterior` where one side is the outdoors, `built` for something a player put up
+— which way it faces, and its state. The table runs by kind and then by number,
+so `light2` comes before `light10`; in a big building `dev light`, `dev lock` and
+`dev win` cut it down to one kind. One id reads that one back, an id and a word
+works it and answers with the state read back afterwards, and `toggle` is
+whichever of the pair it is not in now:
+
+```
+dev light0          -> light0: on
+dev light0 off      -> light0: off
+dev lock2 toggle    -> lock2: unlocked
+```
+
+Underneath, `dev` is `cat` and a redirect on the node — the same permissions, the
+same words, the same refusals — and `ls -l /dev` is the same table with the mode,
+the owner and the group in front of it:
 
 ```
 crw-rw----  root  sudo  lock0   exterior       W  locked
-crw-rw----  root  sudo  lock1   kitchen-hallw  N  unlocked
-crw-rw----  root  sudo  win0    office         N  locked
 crw-rw----  root  sudo  light0  office            on
-crw-rw----  root  sudo  light1  hallway           off
-crw-rw----  root  sudo  lock2   built          N  padlock
-```
 
-A device has no size and no date, so those two columns are what it *is*: the
-rooms it stands between — the map's own raw names, `exterior` where one side is
-the outdoors, `built` for something a player put up — which way it faces, and its
-state. `cat /dev/light0` prints that state on its own; a redirect is how you
-change it.
-
-```
-cat /dev/lock1
-echo on > /dev/light0
-echo off > /dev/light1
-echo unlock > /dev/lock1
-echo lock > /dev/win0
+cat /dev/light0
+echo off > /dev/light0
 ```
 
 `light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`. Anything
@@ -242,6 +258,11 @@ command's:
 | `lock2: no padlock` | a player-built door with neither padlock nor key on it |
 | `light0: invalid value` | that word means nothing to that kind |
 | `light0: permission denied` | the mode says no |
+| `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
+
+`dev`'s own two are a command's and are signed like one: `dev: <word>: unknown
+kind` (the kinds are `light`, `lock` and `win`) and `dev: <id>: no such device`
+for a name no device of the machine's answers to at all.
 
 A number belongs to a device for the life of the machine. `light0` is the same
 switch tomorrow as it is today, and one that is torn out leaves a **gap** —

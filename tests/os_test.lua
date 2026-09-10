@@ -3621,6 +3621,38 @@ do
 		gone.fs.children.etc.children.group.data, CeroSecOS.defaultGroup())
 end
 
+-- A machine from the rung before this one is topped up with /bin/dev, and
+-- nothing else on it is touched.
+do
+	local state = fresh()
+	state.sysv = 5
+	state.fs.children.bin.children.dev = nil
+	state.fs.children.home.children.admin.children["mine.txt"] =
+		CeroSecOS.newFile("admin", 644, "keep me")
+
+	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
+	eq("and moves the number to this build", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	local node = state.fs.children.bin.children.dev
+	check("/bin/dev was seeded", node ~= nil)
+	eq("/bin/dev is root's", node.owner, "root")
+	eq("/bin/dev is 755", node.mode, 755)
+	eq("/bin/dev describes itself", node.data, CeroSecOS.commandDesc("dev"))
+	eq("the player's file was not touched",
+		state.fs.children.home.children.admin.children["mine.txt"].data, "keep me")
+	eq("it validates", CeroSecOS.validate(state), true)
+	eq("and asked once only", CeroSecOS.upgradeSystem(state), false)
+
+	-- It really runs on it.
+	okAt(state, open(state, "root"), "dev", {}, { now = FIXED })
+
+	-- And the BIOS repair ships it too.
+	local broken = fresh()
+	broken.fs.children.bin.children.dev = nil
+	CeroSecOS.restoreSystem(broken)
+	check("the repair puts dev back", broken.fs.children.bin.children.dev ~= nil)
+	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
 --
 -- 21. /dev
 --
@@ -4016,6 +4048,244 @@ do
 		{ id = "light1", kind = "light", desc = "hall", side = "", state = "off" },
 	})
 	okAt(state, session, "ls /dev", { "light0  light1" }, devEnv(devices))
+end
+
+-- 21j. `dev`: the table, and how it is ordered.
+--
+-- The everyday face of the same nodes. It reads and writes through devRead and
+-- devWrite, exactly as `cat` and a redirect do, so what is proved here is the
+-- table, the filter, the toggle and the grammar of its own refusals -- the
+-- permissions and the world's answers are 21b to 21e's and are not re-proved,
+-- except where they arrive by a different road (21m).
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(mockupDevices())
+
+	-- Columns: 8 id + 24 desc + 2 + 1 side + 2 + state. The same columns as
+	-- `ls -l /dev` (21a) without the mode, the owner and the group, and the
+	-- description is 24 here against 13 there.
+	okAt(state, session, "dev", {
+		"light0  office                       on",
+		"light1  hallway                      off",
+		"lock0   exterior                  W  locked",
+		"lock1   kitchen-hallway           N  unlocked",
+		"lock2   built                     N  padlock",
+		"win0    office                    N  locked",
+	}, env)
+
+	-- By KIND and then by NUMBER, which is what a listing sorted by name -- every
+	-- other listing on this machine -- cannot do: light2 belongs before light10.
+	-- A description of exactly 24 fits; one longer is cut with a tilde, the way
+	-- everything on this screen is cut.
+	local wide = fakeDevices({
+		{ id = "light10", kind = "light", desc = "warehouse-loading dock", side = "",
+			state = "off" },
+		{ id = "light2", kind = "light", desc = "office", side = "", state = "on" },
+		{ id = "win12", kind = "win", desc = "kitchen-hallway-pantry-x", side = "N",
+			state = "barricaded" },
+		{ id = "win3", kind = "win", desc = "a description of twenty-six", side = "W",
+			state = "smashed" },
+	})
+	local lines = okAt(state, session, "dev", {
+		"light2  office                       on",
+		"light10 warehouse-loading dock       off",
+		"win3    a description of twenty~  W  smashed",
+		"win12   kitchen-hallway-pantry-x  N  barricaded",
+	}, devEnv(wide))
+	eq("the widest line there is", #lines[4], 47)
+	check("and it fits the screen", #lines[4] <= CeroSecOS.COLS)
+
+	-- One kind at a time.
+	okAt(state, session, "dev light", {
+		"light0  office                       on",
+		"light1  hallway                      off",
+	}, env)
+	okAt(state, session, "dev lock", {
+		"lock0   exterior                  W  locked",
+		"lock1   kitchen-hallway           N  unlocked",
+		"lock2   built                     N  padlock",
+	}, env)
+	okAt(state, session, "dev win", { "win0    office                    N  locked" }, env)
+
+	-- A kind nothing answers to right now is an empty table, not a refusal: the
+	-- kind is a real one and the building simply has none of it.
+	okAt(state, session, "dev win", {}, devEnv(fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "on" },
+	})))
+
+	-- A machine with no devices at all is the machine of every earlier rung.
+	okAt(state, session, "dev", {}, { now = FIXED })
+	okAt(state, session, "dev light", {}, { now = FIXED })
+
+	-- A device the machine remembers the number of and cannot reach is not on
+	-- the table, exactly as it is not in `ls /dev` (21d).
+	local withDead = fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "on" },
+		{ id = "lock9", kind = "lock", dead = true },
+	})
+	okAt(state, session, "dev", { "light0  office                       on" }, devEnv(withDead))
+	okAt(state, session, "dev lock", {}, devEnv(withDead))
+end
+
+-- 21k. `dev <id>` and `dev <id> <value>`: the same road cat and a redirect take.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+
+	-- Reading one names it, where `cat` prints the bare state and nothing else.
+	okAt(state, session, "dev light0", { "light0: on" }, env)
+	okAt(state, session, "dev lock2", { "lock2: padlock" }, env)
+	okAt(state, session, "cat /dev/light0", { "on" }, env)
+
+	-- Writing one is the redirect's own order, and the answer is the state the
+	-- world was re-read for -- not the word that was typed.
+	okAt(state, session, "dev light0 off", { "light0: off" }, env)
+	eq("the world was told once", #devices.writes, 1)
+	eq("and what it was told", devices.writes[1], "light0=off")
+	okAt(state, session, "cat /dev/light0", { "off" }, env)
+	okAt(state, session, "dev lock1 lock", { "lock1: locked" }, env)
+	okAt(state, session, "dev win0 unlock", { "win0: unlocked" }, env)
+
+	-- A padlock says padlock and not locked, because that is what came back.
+	okAt(state, session, "dev lock2 unlock", { "lock2: unlocked" }, env)
+	okAt(state, session, "dev lock2 lock", { "lock2: padlock" }, env)
+
+	-- toggle: the opposite of what it reads NOW, in the words the kind takes.
+	okAt(state, session, "dev light0 toggle", { "light0: on" }, env)
+	eq("and the world got a word, not \"toggle\"", devices.writes[#devices.writes],
+		"light0=on")
+	okAt(state, session, "dev light0 toggle", { "light0: off" }, env)
+	okAt(state, session, "dev lock1 toggle", { "lock1: unlocked" }, env)
+	eq("the door was unlocked", devices.writes[#devices.writes], "lock1=unlock")
+	okAt(state, session, "dev lock1 toggle", { "lock1: locked" }, env)
+	-- A padlocked door toggles like a locked one: unlock is what takes a padlock
+	-- off, and lock is what puts it back on the door that carries one.
+	okAt(state, session, "dev lock2 toggle", { "lock2: unlocked" }, env)
+	eq("the padlock came off with unlock", devices.writes[#devices.writes], "lock2=unlock")
+	okAt(state, session, "dev lock2 toggle", { "lock2: padlock" }, env)
+	eq("and went back on with lock", devices.writes[#devices.writes], "lock2=lock")
+
+	-- And the same machine, reached the old way, agrees about all of it.
+	okAt(state, session, "cat /dev/lock2", { "padlock" }, env)
+	okAt(state, session, "echo unlock > /dev/lock2", {}, env)
+	okAt(state, session, "dev lock2", { "lock2: unlocked" }, env)
+end
+
+-- 21l. Every refusal dev makes. A device's is the DEVICE's, word for word what
+-- the redirect answers; dev's own two are a command's and are signed like one.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", state = "off",
+			refuse = "no power" },
+		{ id = "light1", kind = "light", desc = "office", side = "", state = "on",
+			becomes = ONOFF },
+		{ id = "win0", kind = "win", desc = "office", side = "N", state = "smashed",
+			refuse = "smashed" },
+		{ id = "win1", kind = "win", desc = "office", side = "W", state = "barricaded",
+			refuse = "barricaded" },
+		{ id = "lock2", kind = "lock", desc = "built", side = "N", state = "unlocked",
+			refuse = "no padlock" },
+		{ id = "lock9", kind = "lock", dead = true },
+	})
+	local env = devEnv(devices)
+
+	-- The world's own answers, identical to 21d's.
+	badAt(state, session, "dev light0 on", "light0: no power", env)
+	badAt(state, session, "dev win0 lock", "win0: smashed", env)
+	badAt(state, session, "dev win1 lock", "win1: barricaded", env)
+	badAt(state, session, "dev lock2 lock", "lock2: no padlock", env)
+
+	-- A word the kind has no meaning for never reaches the world, and neither
+	-- does a toggle of a state that has no opposite: a smashed or a barricaded
+	-- window is in no state a word undoes, so dev says so instead of guessing a
+	-- direction. `dev win0 lock` above is the one that does ask, and the world
+	-- is the one that refuses it.
+	local reached = #devices.writes
+	badAt(state, session, "dev light1 yes", "light1: invalid value", env)
+	badAt(state, session, "dev light1 lock", "light1: invalid value", env)
+	badAt(state, session, "dev win0 toggle", "win0: cannot toggle", env)
+	badAt(state, session, "dev win1 toggle", "win1: cannot toggle", env)
+	eq("nothing of that reached the world", #devices.writes, reached)
+
+	-- A number the machine remembers and cannot reach is the device's own
+	-- refusal; a number nobody ever gave out is dev's, and says so with dev's
+	-- name in front of it -- the same split `cat` makes between "no such
+	-- device" and "no such file".
+	badAt(state, session, "dev lock9", "lock9: no such device", env)
+	badAt(state, session, "dev lock9 lock", "lock9: no such device", env)
+	badAt(state, session, "dev light7", "dev: light7: no such device", env)
+	badAt(state, session, "dev light7 on", "dev: light7: no such device", env)
+	badAt(state, session, "dev light0/x on", "dev: light0/x: no such device", env)
+
+	-- A word with no number on the end of it is a kind, and there are three.
+	badAt(state, session, "dev toaster", "dev: toaster: unknown kind", env)
+	badAt(state, session, "dev lights", "dev: lights: unknown kind", env)
+	badAt(state, session, "dev /dev", "dev: /dev: unknown kind", env)
+	-- ...but with one, it is an id, and a miss there is a miss about a device.
+	badAt(state, session, "dev toaster3", "dev: toaster3: no such device", env)
+
+	-- The usage line, and it is the one man prints (21 lines above use it).
+	local line = "dev: usage: dev [kind|id [value|toggle]]"
+	badAt(state, session, "dev light1 on now", line, env)
+	badAt(state, session, "dev a b c d", line, env)
+	eq("and man says the same thing", okAt(state, session, "man dev", nil, env)[2],
+		"usage: " .. CeroSecOS.commandUsage("dev"))
+
+	-- /dev is not a directory anybody writes in, and dev is not a way in.
+	badAt(state, session, "dev light1 on > /dev/mine", "dev: /dev/mine: read-only", env)
+end
+
+-- 21m. Who may. The node's own 660 and group sudo, reached through dev instead
+-- of through cat -- the same devRead and devWrite, so the same three answers.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+	local admin = open(state, "admin")
+	okAt(state, root, "adduser bob", nil)
+	local bob = open(state, "bob")
+
+	-- root, and admin, who is in /etc/sudoers and so in the group sudo.
+	okAt(state, root, "dev light0", { "light0: on" }, env)
+	okAt(state, admin, "dev light0", { "light0: on" }, env)
+	okAt(state, admin, "dev light0 off", { "light0: off" }, env)
+	okAt(state, admin, "dev light0 toggle", { "light0: on" }, env)
+
+	-- bob, who is in no group of the machine's but his own.
+	local reached = #devices.writes
+	badAt(state, bob, "dev light0", "light0: permission denied", env)
+	badAt(state, bob, "dev light0 off", "light0: permission denied", env)
+	badAt(state, bob, "dev light0 toggle", "light0: permission denied", env)
+	eq("and nothing of bob's reached the world", #devices.writes, reached)
+
+	-- The table is the DIRECTORY's business and /dev is 755, exactly as
+	-- `ls -l /dev` is his to read (21e): what he may not do is touch one.
+	okAt(state, bob, "dev", nil, env)
+	okAt(state, bob, "dev light", nil, env)
+
+	-- Through sudo, since he may not otherwise -- and the chain reads the switch
+	-- on the answer, the mount being under continue too (21h).
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin\nbob")
+	local step = { CeroSecOS.exec(state, bob, "sudo dev light0 off", env) }
+	eq("sudo asks first", step[3], "prompt")
+	local ok2, lines = CeroSecOS.continue(state, bob, step[4].cont, "", env)
+	eq("and works the switch as root", ok2, true)
+	eq("what it said", lines[1], "light0: off")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin")
+
+	-- A mode root opened is a mode dev honours, because it is the same node.
+	okAt(state, root, "chmod 666 /dev/light0", {}, env)
+	okAt(state, bob, "dev light0", { "light0: off" }, env)
+	okAt(state, bob, "dev light0 on", { "light0: on" }, env)
+	okAt(state, root, "chmod 000 /dev/light0", {}, env)
+	badAt(state, admin, "dev light0", "light0: permission denied", env)
+	okAt(state, root, "dev light0", { "light0: on" }, env)
 end
 
 --

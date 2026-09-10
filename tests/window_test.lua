@@ -1354,6 +1354,31 @@ do
 	bench.frame()
 	check("and the machine reads unlocked", bench.painted("unlocked"))
 
+	-- And the everyday face of all of it, end to end through the real
+	-- discovery: dev's own table, and one order carried out on the world.
+	bench.enter("dev")
+	bench.frame()
+	local table60 = {
+		"light0  office                       on",
+		"light1  hallway                      on",
+		"lock0   exterior                  W  unlocked",
+		"lock1   kitchen-hallway           N  unlocked",
+		"lock2   built                     N  unlocked",
+		"win0    office                    N  unlocked",
+	}
+	for i = 1, #table60 do
+		check("dev's table shows: " .. table60[i], bench.painted(table60[i]))
+	end
+	bench.enter("dev light0 off")
+	bench.frame()
+	eq("the switch moved", kit.light0.activated, false)
+	eq("and it was broadcast", kit.light0.syncs, 1)
+	check("and dev said what it read back", bench.painted("light0: off"))
+	bench.enter("dev light0 toggle")
+	bench.frame()
+	eq("the toggle put it back", kit.light0.activated, true)
+	check("and said so", bench.painted("light0: on"))
+
 	-- Somebody smashes the window. The next listing says so, and the machine
 	-- refuses to work a lock that is not there any more.
 	kit.win0.smashed = true
