@@ -585,6 +585,115 @@ at the BIOS.
 134. **The motd is a file too.** As `root`, `edit /etc/motd`, put your own line
      in it, save. `exit` and log in again: your line is what greets you.
 
+## O — shutdown, reboot, sudo, and Escape
+
+**Before you start.** The four new commands are files in `/bin` and the sudoers
+list is a file in `/etc`, and both are written when a machine is *made* or when
+the BIOS repairs one. So do this section on a computer placed fresh, or on one
+you have taken through a BIOS restore (steps 122-126); an older machine in an
+older save has neither `/bin/sudo` nor `/etc/sudoers` and will answer
+`sudo: command not found`.
+
+135. **The new commands are there.** Log in as `admin`, `help`: the list has
+     `reboot`, `restart`, `shutdown` and `sudo` in it, one line each. `ls -l /bin`
+     shows them owner `root`, mode `755`. `cat /bin/sudo` prints
+     `run a command as root`.
+136. **shutdown is root's.** As `admin`: `shutdown` → `shutdown: permission
+     denied`. `reboot` → `reboot: permission denied`. `restart` → `restart:
+     permission denied` (the refusal wears the name you typed, not the name of
+     the order behind it). The machine stays on and the window stays open.
+137. **shutdown.** `exit`, log in as `root`, type `shutdown`. The screen shows
+     the line you typed, the machine goes dark — the sprite goes back to the
+     unlit tile, you hear the toggle sound — and the terminal window closes on
+     its own. Right-click: "Use computer" is gone, "Turn on computer" is back.
+138. **What shutdown did not do.** Turn it on again, open it, log in as `root`:
+     `ls /home/admin` and `cat /etc/passwd` are exactly as they were. A shutdown
+     is a power cut, not a repair.
+139. **reboot.** As `root`, `reboot`. The window **stays open**: the screen goes
+     back to `CeroSec BIOS v1.03`, counts the memory, detects the drive, prints
+     the motd and stops at `login:`. You hear the toggle sound and then the boot
+     sound, and the sprite blinks off and on. Nobody is logged in any more; log
+     in again and `ls /home/admin` still lists what was there.
+140. **restart is reboot.** `restart` does exactly the same thing.
+141. **reboot with a second player watching (Host mode).** Both players stand at
+     the same computer with the terminal open (see section F). One of them, as
+     `root`, types `reboot`. **Both** windows stay open and **both** replay the
+     BIOS from the top and land on `login:` — the screen belongs to the machine,
+     so a reboot is something everybody standing there watches. Neither window
+     closes and neither is left on the old screen.
+142. **reboot with no power.** Cut the power to the room (turn the generator
+     off, or do it in a house off the grid at night) while the machine is on,
+     then `reboot` before the minute sweep notices. The machine goes down and
+     stays down, and the window closes. Turning it on again is refused until
+     there is power.
+143. **sudo, the refusal.** Log in as `admin`. `cat /etc/passwd` →
+     `cat: /etc/passwd: permission denied`. Now `sudo cat /etc/passwd`: the
+     machine asks `[sudo] password for admin: ` and what you type shows as
+     stars. Type something wrong: `sudo: authentication failure`, one line, and
+     you are back at the shell — there is no second try.
+144. **sudo, the right password.** `sudo cat /etc/passwd` again and press Enter
+     on the empty password (the shipped `admin` is open). The file is printed,
+     hashes and all.
+145. **sudo leaves your session alone.** `sudo whoami` → `root`. `whoami` →
+     `admin`. `sudo cd /root`, then `pwd` → still `/home/admin`, and the prompt
+     still says `admin@…:~$`. Nothing of root sticks to the glass.
+146. **Not in the sudoers file.** As `root`, `edit /etc/sudoers`, delete the
+     `admin` line, save with Tab and leave with Escape. `exit`, log in as
+     `admin`, `sudo ls` → `admin is not in the sudoers file.` (Note the wording:
+     it is real sudo's line and it does not begin with `sudo:`.) Put the line
+     back the same way.
+147. **NOPASSWD.** As `root`, `edit /etc/sudoers` and make the line read
+     `admin NOPASSWD`. `exit`, log in as `admin`: `sudo whoami` prints `root`
+     with no question asked. Put it back to plain `admin` afterwards.
+148. **The file is root's.** As `admin`, `cat /etc/sudoers` →
+     `cat: /etc/sudoers: permission denied`. `ls -l /etc` shows it
+     `-r--r-----  root      sudoers`.
+149. **sudo with no command.** `sudo` alone → `sudo: usage: sudo <command>
+     [args]`. `sudo nosuch` → `nosuch: command not found`. `sudo sudo whoami`
+     asks once and prints `root`.
+150. **sudo passwd.** As `admin`, `passwd root` → `passwd: permission denied`.
+     Now `sudo passwd root`: it asks for **your** password first, then
+     `New password:` and `Retype new password:` — root's chain, so it never asks
+     for root's old one. Set it, `exit`, and log in as `root` with the new
+     password; the empty one no longer gets in. The prompt at the glass was
+     `admin@…$` the whole way through.
+151. **sudo edit.** As `admin`, `edit /etc/motd`: the bar says `[read-only]` and
+     Tab says `Cannot save: permission denied`. Escape out. Now
+     `sudo edit /etc/motd`: it asks for your password, then the same file opens
+     **without** `[read-only]`. Change the line, Tab → `Saved N bytes`, Escape.
+     `cat /etc/motd` shows the new text and `ls -l /etc` still shows it owner
+     `root`. The buffer was root's from the moment it opened to the moment it
+     saved.
+152. **sudo shutdown, sudo reboot.** As `admin`, `sudo reboot`: it asks for your
+     password, and then the machine goes down and comes back with the window
+     open, exactly as step 139. Then `sudo shutdown` closes it, exactly as step
+     137.
+153. **Escape interrupts.** Log in as `admin`, type `passwd` and press **Escape**
+     at `Old password:`. The line on the screen reads `Old password: ^C`, the
+     shell prompt is back under it, and **the window is still open**. `whoami`
+     still works and still says `admin`: what was dropped was the question, not
+     the session.
+154. **Escape at a sudo question.** `sudo cat /etc/passwd`, then Escape at
+     `[sudo] password for admin: `. Same thing: `^C`, the prompt back, the
+     window open, and not a line of the accounts file on the screen.
+155. **Escape half way through a login.** `exit`. At `login:` type `admin` and
+     press Enter, then Escape at `password:`. The screen reads `password: ^C`
+     and the machine is back at `login:` with the name forgotten.
+156. **Escape when nothing is going on.** At an idle `login:` prompt, or at an
+     idle shell prompt, Escape closes the window as it always has. Open it again:
+     the session is exactly where you left it.
+157. **Escape in the editor is still the editor's.** `edit notes.txt`, type
+     something, Escape → `Save modified buffer? (y/n)`, not a closed window and
+     not a `^C`.
+158. **Escape at the BIOS still closes.** Wipe the machine (`rm -r /bin` as
+     `root`), reopen the window to get `Restore system? (y/n) `, press Escape:
+     the window closes, as in step 125. There is nothing behind that question to
+     go back to.
+159. **The interrupt is the machine's (Host mode).** Two players at one computer.
+     One types `passwd` and presses Escape. **Both** screens show
+     `Old password: ^C` and both are back at the shell prompt — the same screen,
+     as everywhere else.
+
 ## What is not in this rung
 
 - Devices, the network, the clock.
