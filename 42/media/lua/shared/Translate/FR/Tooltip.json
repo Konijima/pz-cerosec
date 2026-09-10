@@ -1,3 +1,5 @@
 {
-    "Tooltip_CeroSec_NoPower": "Cet ordinateur n'a pas de courant."
+    "Tooltip_CeroSec_NoPower": "Cet ordinateur n'a pas de courant.",
+    "Tooltip_CeroSec_NoAccess": "Impossible de se placer devant cet ordinateur.",
+    "Tooltip_CeroSec_TooHigh": "Cet ordinateur est trop haut pour l'atteindre."
 }

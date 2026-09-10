@@ -1,4 +1,5 @@
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecToggleAction"
 
 CeroSecContextMenu = {}
@@ -9,10 +10,13 @@ local function hasPower(square)
 	return square:haveElectricity() or (square:hasGridPower() and square:getRoom() ~= nil)
 end
 
-function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj)
-	if luautils.walkAdj(playerObj, computer:getSquare()) then
-		ISTimedActionQueue.add(ISCeroSecToggleAction:new(playerObj, computer))
-	end
+-- Walk to the square the screen looks at, then toggle from there. The toggle
+-- action checks in its isValid that the player really made it, so a walk that
+-- fails or gets interrupted changes nothing.
+function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj, height)
+	CeroSecReach.walkToFront(playerObj, computer, function()
+		ISTimedActionQueue.add(ISCeroSecToggleAction:new(playerObj, computer, height))
+	end)
 end
 
 -- The picker hands us what sits under the cursor: on a counter or a desk that
@@ -46,19 +50,30 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	local computer = CeroSecContextMenu.findComputer(worldobjects)
 	if not computer then return end
 
+	local height = CeroSecReach.height(computer)
+
 	-- The sprite is the truth for the menu label: it is what the player sees.
-	if CeroSec.isOnSprite(computer:getSpriteName()) then
-		context:addOption(getText("ContextMenu_CeroSec_TurnOff"), worldobjects,
-			CeroSecContextMenu.onToggle, computer, playerObj)
-	else
-		local option = context:addOption(getText("ContextMenu_CeroSec_TurnOn"), worldobjects,
-			CeroSecContextMenu.onToggle, computer, playerObj)
-		if not hasPower(computer:getSquare()) then
-			option.notAvailable = true
-			option.toolTip = ISWorldObjectContextMenu.addToolTip()
-			option.toolTip:setVisible(false)
-			option.toolTip.description = getText("Tooltip_CeroSec_NoPower")
-		end
+	local isOn = CeroSec.isOnSprite(computer:getSpriteName())
+	local label = isOn and "ContextMenu_CeroSec_TurnOff" or "ContextMenu_CeroSec_TurnOn"
+	local option = context:addOption(getText(label), worldobjects,
+		CeroSecContextMenu.onToggle, computer, playerObj, height)
+
+	-- One reason at a time, cheapest first: out of reach beats no access beats no
+	-- power, because a computer nobody can touch never gets as far as its wiring.
+	local reason
+	if height == "high" then
+		reason = "Tooltip_CeroSec_TooHigh"
+	elseif not CeroSecReach.canStandInFront(playerObj, computer) then
+		reason = "Tooltip_CeroSec_NoAccess"
+	elseif not isOn and not hasPower(computer:getSquare()) then
+		reason = "Tooltip_CeroSec_NoPower"
+	end
+
+	if reason then
+		option.notAvailable = true
+		option.toolTip = ISWorldObjectContextMenu.addToolTip()
+		option.toolTip:setVisible(false)
+		option.toolTip.description = getText(reason)
 	end
 end
 

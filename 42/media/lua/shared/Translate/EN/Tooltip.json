@@ -1,3 +1,5 @@
 {
-    "Tooltip_CeroSec_NoPower": "This computer has no power."
+    "Tooltip_CeroSec_NoPower": "This computer has no power.",
+    "Tooltip_CeroSec_NoAccess": "You cannot stand in front of this computer.",
+    "Tooltip_CeroSec_TooHigh": "This computer is too high to reach."
 }
