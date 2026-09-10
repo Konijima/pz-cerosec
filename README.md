@@ -17,9 +17,12 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`cat cd chmod chown clear cp date df echo edit exit grep hash head help
-  hostname ls man mkdir mv passwd pwd reboot restart rm shutdown sudo tail touch wc
-  whoami write`), an editor, and salted-hashed passwords.
+  shell (`adduser cat cd chmod chown clear cp date deluser df echo edit exit grep
+  hash head help hostname id ls man mkdir mv passwd pwd reboot restart rm shutdown
+  su sudo tail touch wc whoami write`), an editor, and salted-hashed passwords.
+- Accounts: `adduser` and `deluser` make and unmake them, `su` changes who the
+  glass is logged in as without logging out, and `id` says what the machine knows
+  about a name.
 - The clock: the machine reads the game's calendar, so `date` is the hour the
   survivor is living in and every file carries the minute it was written.
 - The system files: the commands are files in `/bin`, the accounts are
@@ -57,6 +60,21 @@ machine, both with an empty password — just press Enter when asked:
 | `admin` | (empty) |
 | `root` | (empty) |
 
+**Accounts.** Every machine ships with those two and root can make more:
+`sudo adduser bob` writes the account, makes `/home/bob` for it and says out loud
+that it has no password yet — set one with `passwd bob` before somebody else does.
+`sudo adduser -a bob` sets the account's `admin` flag; the flag is **informational
+today** and grants nothing at all — what actually gives power is being `root` or
+being named in `/etc/sudoers` — and its one visible effect is the `#` on the
+prompt instead of the `$`. `id bob` says what the machine knows about a name, and
+`sudo deluser bob` takes it away again (`-r` takes his home directory with it;
+without it his files stay, still owned by a name the machine no longer knows).
+
+`su bob` becomes somebody else at the same glass: it asks for **his** password
+(root is asked for nobody's), the prompt changes, and `exit` comes back to who you
+were instead of logging out — up to four deep. Walk away and come back and the
+machine is still where you left it, four users deep if that is where you left it.
+
 Commands:
 
 | command | does |
@@ -75,6 +93,10 @@ Commands:
 | `chmod <mode> <path>` | set permissions (three octal digits) |
 | `chown <user> <path>` | change the owner |
 | `whoami` | print the logged-in user |
+| `id [name]` | `uid=<name> flag=admin\|user groups=sudo\|-` |
+| `su [name]` | become another user (`root` by default); `exit` comes back |
+| `adduser [-a] <name>` | make an account with an empty password (root only); `-a` sets its `admin` flag |
+| `deluser [-r] <name>` | remove an account (root only); `-r` removes its home directory too |
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `hash <text> [salt]` | show what a password would hash to |
@@ -281,6 +303,20 @@ any write invalidates the cache by construction. `passwd` rewrites the whole fil
 through the ordinary `setData`, so the ceilings and the printable rule apply and a
 refusal leaves it byte for byte as it was.
 
+`adduser` **appends** its line and `deluser` drops every line that names the
+account, keeping every other line exactly as it lies — comments and unparseable
+lines included; only `passwd`, which has to touch a line in the middle, rewrites
+the file from what it parsed. Both go through the ordinary `setData`, so a full
+disk refuses an `adduser` the way it refuses a `touch`. The name a machine will
+*make* is narrower than the name it will *parse*: `[a-z][a-z0-9_-]` up to sixteen
+characters, so that it is always a name a prompt, a home directory and an `ls -l`
+owner column can hold — while a machine that has been running a while keeps
+whatever accounts are already in its file. The last field, `admin` or `user`, is
+**informational**: nothing in the core reads it except the prompt, which wears
+`#` for an `admin` account and `$` for a `user` one, and `id`, which prints it.
+Power is being `root` or being in `/etc/sudoers`, and a later rung is what will
+give the flag a meaning.
+
 **`/etc/sudoers`** — who may `sudo`, owner `root`, mode `440`, one name a line with
 an optional ` NOPASSWD` after it. Blank lines and lines whose first non-blank
 character is `#` are comments; anything else that is not a name, or a name and the
@@ -344,12 +380,28 @@ only the lines the server answers it with. A filesystem is capped at 256 nodes, 
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
 small.
 
-The state also carries `sysv`, the *contents* it was built with (3 today) as
+The state also carries `sysv`, the *contents* it was built with (4 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
+
+`console.stack` is the su stack: `{ { user = "admin", cwd = "/home/admin" }, ... }`,
+innermost last, at most `CeroSec.SU_MAX` (4) deep — the same number the core
+enforces as `CeroSecOS.SU_MAX`, named twice because the terminal never loads the
+core and pinned against it by `os_test`. It is machine state like `console.user`
+and `console.cwd`: `su` pushes onto it, `exit` pops, a logout, a `reboot` and a
+`shutdown` drop it, and `repairConsole` keeps it entry by entry — only where an
+entry is still a name and a path, and never deeper than the ceiling, so a forged
+console cannot hand back a stack that takes ten exits to get out of. An empty
+stack is stored as no stack at all. The core sees it on the session
+(`session.stack`), beside `session.login` — the account really at the glass, as
+opposed to the account a command is running as. A borrowed session (sudo's, and a
+chain carrying its authority) is given `login` and a **copy** of the stack: it may
+read who the glass would come back to (`deluser` refuses to remove one of them)
+and anything it pushes or pops dies with the command, which is why `sudo su` moves
+nobody and `sudo exit` is still a logout.
 
 The editor's buffer lives in the console too (`console.edit`), with the account it
 was opened as: `sudo edit /etc/motd` opens the buffer as `root` and saves as `root`,

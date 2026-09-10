@@ -774,6 +774,81 @@ the seven should be in the list, with the machine's own files untouched.
      types `date`, the other `ls -l` — the same machine, the same minute, on both
      screens.
 
+## Q — Accounts: adduser, deluser, id, su
+
+The four commands of rung 3. Everything here is on the machine's own disk, so the
+last step of each one is worth doing twice: once at the glass, once after walking
+away and coming back.
+
+176. **The commands are there.** `help` lists `adduser`, `deluser`, `id` and `su`
+     with the others, `ls /bin` has the four files, and `man su` prints
+     `su - become another user` and `usage: su [name]`. On a computer from a save
+     made **before** this build the same is true the first time you open it: the
+     top-up seeds what is missing and touches nothing else.
+177. **id.** Logged in as `admin`: `id` prints `uid=admin flag=user groups=sudo`.
+     `id root` prints `uid=root flag=admin groups=-` — root is not in the sudoers
+     file and does not need to be. `id nosuch` is `id: nosuch: no such user`.
+178. **adduser is root's.** As `admin`: `adduser bob` → `adduser: permission
+     denied`. Then `sudo adduser bob`, password when asked: two lines,
+     `adduser: bob: created` and `adduser: set a password with passwd bob`.
+179. **What it made.** `ls -l /home` shows `bob` as a directory owned by `bob`,
+     mode `drwxr-x---`, dated now. `id bob` → `uid=bob flag=user groups=-`.
+     `ls /home/bob` as `admin` → `permission denied`: a home is the account's own.
+180. **The account really works.** `exit`, then log in as `bob` with an empty
+     password. The prompt is `bob@<host>:~$`, `pwd` is `/home/bob`, and `whoami`
+     is `bob`. Set a password with `passwd`, log out, log in again with it.
+181. **The name rule.** As root: `adduser Bob` → `adduser: Bob: invalid name`.
+     `adduser 1bob` the same. `adduser -bob` is read as a flag:
+     `adduser: -bob: unknown option`. `adduser admin` →
+     `adduser: admin: already exists`. `adduser bob_2` and `adduser bob-2` are
+     accepted; a name of seventeen characters is not.
+182. **A home that is already there is adopted.** As root: `mkdir /home/carl`,
+     `chmod 700 /home/carl`, `edit /home/carl/notes.txt` and save something. Then
+     `adduser carl`: `ls -l /home` shows the directory now owned by `carl`, still
+     `drwx------`, and `cat /home/carl/notes.txt` is what you wrote. Nothing was
+     remade.
+183. **`-a` sets the flag, and the flag does nothing.** `adduser -a kate`, then
+     `id kate` → `flag=admin`. Log in as `kate`: the prompt ends in `#` and that
+     is the whole of it — `cat /etc/passwd` is still `permission denied`, and
+     `sudo ls` is still `kate is not in the sudoers file.` The flag is
+     informational until a later rung.
+184. **deluser guards.** As root: `deluser root` → `deluser: root: cannot
+     remove`. `deluser nosuch` → `no such user`. As `admin`,
+     `sudo deluser admin` → `deluser: admin: user is logged in` — the account at
+     the glass is not deletable from under itself, even through sudo.
+185. **Without `-r` the files stay.** As root, `deluser bob` →
+     `deluser: bob: removed`. `ls -l /home` still shows `bob`, still owned by
+     `bob` — a name the machine no longer knows, which is the truth about whose
+     files those were. `id bob` → `no such user`, and logging in as `bob` is
+     `login incorrect`.
+186. **With `-r` they go.** `deluser -r carl`, then `ls /home`: no `carl`.
+187. **The sudoers line goes too.** As root, `edit /etc/sudoers`, add a line
+     `dan NOPASSWD`, save. `adduser dan`, `id dan` → `groups=sudo`. Then
+     `deluser dan` and `cat /etc/sudoers`: his line is gone and every other line,
+     comments included, is exactly as it was.
+188. **su asks for the target's password.** As `admin` with a password set on
+     `root`: `su` (no argument) asks `Password:` with stars. A wrong one is
+     `su: authentication failure` and nothing changes. The right one and the
+     prompt becomes `root@<host>:/root#`. `whoami` says `root`.
+189. **su comes back.** `exit`: back to `admin@<host>:~$`, still logged in, and
+     **the screen is not cleared**. `exit` again: now it is a logout — the screen
+     clears and `login:` is back.
+190. **Root is asked for nobody's password.** As `root`: `su admin` switches
+     straight away, no question.
+191. **Four deep and no further.** From root: `su root` four times (each one is
+     free), then a fifth → `su: too many levels`. Four `exit`s bring you back to
+     the first session and the fifth logs out.
+192. **The stack is the machine's.** Two users deep, close the window and walk
+     away. Come back: the prompt is still the innermost user's and `exit` still
+     pops. Now `reboot` instead: the machine comes back at `login:` with no
+     stack at all.
+193. **sudo does not move the glass.** As `admin`, `sudo su root`: nothing
+     happens to the prompt — the same rule as `sudo cd`. And `sudo exit` logs
+     out rather than popping somebody's su.
+194. **Two players (Host mode).** One player `su bob`; the other player's window
+     at the same computer shows `bob`'s prompt too. It is one machine, one
+     session, one glass.
+
 ## What is not in this rung
 
 - Devices, the network.
