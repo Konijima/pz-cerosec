@@ -501,6 +501,13 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	local line = args.line
 	if type(line) ~= "string" then line = "" end
 
+	-- Enter on a line with no command in it prints nothing at all. A real
+	-- terminal leaves the prompt row where it was and draws a new one under it,
+	-- which is the same thing to look at; here the row being typed at is drawn
+	-- by the window and is not part of the screen, so echoing an empty prompt
+	-- would put a second, bare prompt line above it and push the live one down.
+	local blank = string.find(line, "[^ \t]") == nil
+
 	-- The session the core runs on is derived from the console and written back
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
 	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
@@ -514,7 +521,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 		CeroSec.consoleLogout(console)
 	elseif control == "clear" then
 		CeroSec.consoleClear(console)
-	else
+	elseif not blank then
 		CeroSec.consolePush(console, prompt .. line)
 		CeroSec.consolePushAll(console, lines)
 		self:applyOrder(console, control, data, playerObj)
