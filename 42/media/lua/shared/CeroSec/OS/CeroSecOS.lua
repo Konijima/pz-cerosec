@@ -35,6 +35,33 @@ CeroSecOS.MAX_DEPTH = 16         -- path components below /
 CeroSecOS.DEFAULT_HOSTNAME = "cerosec"
 CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
 
+-- The system files. Every one of them is a real file on the machine's own
+-- disk, and every one of them is the truth about what it holds: the parser is
+-- what the OS believes, not a copy kept beside it in the state. So root editing
+-- /etc/passwd with the editor changes who may log in, and rm -r /bin really
+-- does take the commands away.
+CeroSecOS.BIN_PATH = "/bin"
+CeroSecOS.ETC_PATH = "/etc"
+CeroSecOS.PASSWD_PATH = "/etc/passwd"
+CeroSecOS.MOTD_PATH = "/etc/motd"
+CeroSecOS.HOSTNAME_PATH = "/etc/hostname"
+
+-- /etc/passwd holds the hashes, so it is root's and nobody else reads it. The
+-- kernel does not go through the permission bits to parse it (systemNode), the
+-- way a real one does not either.
+CeroSecOS.PASSWD_MODE = 600
+
+-- A machine name is 1..16 characters of [a-z0-9-] and never starts with "-".
+-- The leading digit rule is isValidName's: the name is also written into the
+-- state, where validate tests it as a name, so a hostname that is not one would
+-- make the machine unbootable the moment it was set.
+CeroSecOS.HOSTNAME_MAX = 16
+
+-- Lines of /etc/motd that are put on the screen after a login. A file is up to
+-- 4096 bytes and the console keeps a hundred lines; a motd is a greeting, not a
+-- book.
+CeroSecOS.MOTD_MAX_LINES = 10
+
 -- Every command table lives here; the shell looks up args[1] in it.
 CeroSecOS.commands = CeroSecOS.commands or {}
 

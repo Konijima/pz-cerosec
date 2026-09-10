@@ -8,14 +8,18 @@
 
 CeroSecOS = CeroSecOS or {}
 
--- A fresh machine: the standard skeleton, root and admin, both open.
+-- A fresh machine: the standard skeleton, the commands in /bin, and root and
+-- admin in /etc/passwd, both open. Nothing about the machine lives outside its
+-- own filesystem -- there is no table of users beside /etc/passwd and no list
+-- of commands beside /bin.
 function CeroSecOS.newState(hostname)
-	if type(hostname) ~= "string" or hostname == "" then
+	if not CeroSecOS.isValidHostname(hostname) then
 		hostname = CeroSecOS.DEFAULT_HOSTNAME
 	end
 
 	local root = CeroSecOS.newDir("root", 755)
 	root.children.bin = CeroSecOS.newDir("root", 755)
+	CeroSecOS.fillBin(root.children.bin)
 	root.children.home = CeroSecOS.newDir("root", 755)
 	root.children.home.children.admin = CeroSecOS.newDir("admin", 750)
 	root.children.root = CeroSecOS.newDir("root", 700)
@@ -23,14 +27,12 @@ function CeroSecOS.newState(hostname)
 	root.children.etc = CeroSecOS.newDir("root", 755)
 	root.children.etc.children.hostname = CeroSecOS.newFile("root", 644, hostname)
 	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
+	root.children.etc.children.passwd =
+		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
 
 	return {
 		v = CeroSecOS.STATE_VERSION,
 		hostname = hostname,
-		users = {
-			root = CeroSecOS.newUser("root", "", "/root", true),
-			admin = CeroSecOS.newUser("admin", "", "/home/admin", false),
-		},
 		fs = root,
 		sessions = {},
 	}
@@ -105,25 +107,21 @@ function CeroSecOS.validate(state)
 	if type(state.hostname) ~= "string" or not CeroSecOS.isValidName(state.hostname) then
 		return false, "bad hostname"
 	end
-	if type(state.users) ~= "table" then return false, "bad users" end
-	if type(state.users.root) ~= "table" then return false, "no root user" end
-	for name, user in pairs(state.users) do
-		if type(name) ~= "string" or not CeroSecOS.isValidName(name) then return false, "bad user name" end
-		if user.name ~= name then return false, "user " .. name .. ": name mismatch" end
-		-- Never a cleartext password: what is stored is "$cs1$<salt>$<hash>" and
-		-- nothing else. A state saved before this rung is repaired by migrate,
-		-- which runs before this gate; anything still in clear when it gets
-		-- here was forged.
-		if CeroSecOS.splitHash(user.password) == nil then
-			return false, "user " .. name .. ": bad password"
-		end
-		if type(user.home) ~= "string" then return false, "user " .. name .. ": bad home" end
-		if type(user.admin) ~= "boolean" then return false, "user " .. name .. ": bad admin flag" end
-	end
-
 	if type(state.fs) ~= "table" then return false, "bad fs" end
 	if state.fs.type ~= "dir" then return false, "fs root is not a directory" end
-	return checkNode(state.fs, "", 0, { nodes = 0, bytes = 0 })
+	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0, bytes = 0 })
+	if not fsOk then return false, fsReason end
+
+	-- The accounts are a FILE now, so this is all validate has to say about
+	-- them: that the file is there and that it is root's. What is in it is the
+	-- parser's business and nobody else's -- a passwd full of malformed lines is
+	-- a machine nobody can log in to, which the boot check calls "no operating
+	-- system" and the BIOS repairs. It is not a state the core cannot run on.
+	local passwd = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	if passwd == nil then return false, "no " .. CeroSecOS.PASSWD_PATH end
+	if passwd.type ~= "file" then return false, CeroSecOS.PASSWD_PATH .. ": not a file" end
+	if passwd.owner ~= "root" then return false, CeroSecOS.PASSWD_PATH .. ": not root's" end
+	return true
 end
 
 -- Anything the game hands back becomes a v1 state. Today there is no older
@@ -131,9 +129,10 @@ end
 -- through untouched.
 function CeroSecOS.migrate(state, hostname)
 	if type(state) == "table" and state.v == CeroSecOS.STATE_VERSION then
-		-- Passwords first: a machine saved before this rung carries them in
-		-- clear, and validate refuses those. Repairing before the gate is what
-		-- keeps such a machine's filesystem instead of throwing it away.
+		-- The accounts first: a machine saved before this rung carries them in
+		-- a table on the state, and one saved before that carries their
+		-- passwords in clear. validate refuses both. Repairing before the gate
+		-- is what keeps such a machine's filesystem instead of throwing it away.
 		CeroSecOS.migrateUsers(state)
 		local ok = CeroSecOS.validate(state)
 		if ok then return state end
