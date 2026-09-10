@@ -270,6 +270,10 @@ function CeroSecOS.dateParts(t)
 	local days = math.floor(t / 86400)
 	local rest = t - days * 86400
 	local y, m, d = civilFromDays(days)
+	-- Day of the year, counted the way strftime's %j counts it: 1 on January
+	-- the first. Worked out here because this is where the civil arithmetic
+	-- lives, and it is one subtraction from the days the year began on.
+	local yday = days - daysFromCivil(y, 1, 1) + 1
 	-- 1970-01-01 was a Thursday, which is index 5 of DAY_NAMES.
 	local wday = math.fmod(math.fmod(days + 4, 7) + 7, 7) + 1
 	return {
@@ -278,6 +282,7 @@ function CeroSecOS.dateParts(t)
 		min = math.floor(math.fmod(math.floor(rest / 60), 60)),
 		sec = math.floor(math.fmod(rest, 60)),
 		wday = wday,
+		yday = yday,
 	}
 end
 
@@ -294,6 +299,58 @@ function CeroSecOS.formatDate(t)
 		.. " " .. CeroSecOS.padLeft(tostring(p.day), 2)
 		.. " " .. two(p.hour) .. ":" .. two(p.min) .. ":" .. two(p.sec)
 		.. " " .. tostring(p.year)
+end
+
+local function zeros(n, width)
+	local s = tostring(n)
+	while #s < width do s = "0" .. s end
+	return s
+end
+
+-- What `date +FORMAT` prints: as much of strftime as this machine has.
+--
+-- The codes are the ones somebody writing a script on it will reach for, and
+-- they pad the way Unix pads -- %d is "08" and %e is " 8", which is the whole
+-- difference between them. %s is the number itself, the very number that goes
+-- into a node's mtime, so `date +%s` is how a script gets at the clock the
+-- filesystem is stamped with.
+--
+-- Anything else is copied out exactly as it was typed, "%" and all: a machine
+-- that swallowed the codes it does not have would be a machine whose output
+-- silently lost a column. A "%" at the very end of the format is one of those.
+function CeroSecOS.formatTime(t, format)
+	if type(format) ~= "string" then format = "" end
+	if type(t) ~= "number" then t = 0 end
+	t = math.floor(t)
+	local p = CeroSecOS.dateParts(t)
+	local out, i = "", 1
+	while i <= #format do
+		local c = string.sub(format, i, i)
+		if c ~= "%" then
+			out = out .. c
+			i = i + 1
+		else
+			local code = string.sub(format, i + 1, i + 1)
+			local piece = nil
+			if code == "Y" then piece = tostring(p.year)
+			elseif code == "m" then piece = two(p.month)
+			elseif code == "d" then piece = two(p.day)
+			elseif code == "e" then piece = CeroSecOS.padLeft(tostring(p.day), 2)
+			elseif code == "H" then piece = two(p.hour)
+			elseif code == "M" then piece = two(p.min)
+			elseif code == "S" then piece = two(p.sec)
+			elseif code == "j" then piece = zeros(p.yday, 3)
+			elseif code == "a" then piece = CeroSecOS.DAY_NAMES[p.wday]
+			elseif code == "b" then piece = CeroSecOS.MONTH_NAMES[p.month]
+			elseif code == "s" then piece = tostring(t)
+			elseif code == "%" then piece = "%"
+			end
+			if piece == nil then piece = c .. code end
+			out = out .. piece
+			i = i + 2
+		end
+	end
+	return out
 end
 
 -- What `ls -l` prints: "Jul  8 14:32", exactly 12 characters wide whatever the

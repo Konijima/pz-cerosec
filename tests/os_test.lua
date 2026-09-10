@@ -2625,7 +2625,68 @@ do
 	eq("no clock says so", r.lines[1], "date: no clock")
 	local junk = runAt(state, admin, "date", { now = "half past" })
 	eq("a clock that is not one is no clock", junk.lines[1], "date: no clock")
-	badAt(state, admin, "date now", "date: usage: date")
+	-- An argument that is not a format at all: a date is READ off this machine,
+	-- never set on it, so "date now" is a wrong line and not a clock change.
+	badAt(state, admin, "date now", "date: usage: date [+FORMAT]")
+	badAt(state, admin, "date +%s +%s", "date: usage: date [+FORMAT]")
+end
+
+-- 20b2. date +FORMAT: the pieces, and the number underneath them.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- The one a script is really after: the clock itself, as an integer.
+	okAt(state, admin, "date +%s", { "742141920" })
+	eq("and it is the number the env carried", tostring(FIXED), "742141920")
+
+	-- Every code, one at a time, on Thursday the 8th of July 1993 at 14:32:00.
+	okAt(state, admin, "date +%Y", { "1993" })
+	okAt(state, admin, "date +%m", { "07" })
+	okAt(state, admin, "date +%d", { "08" })
+	-- %d zero-pads and %e blank-pads: that is the whole difference between them.
+	okAt(state, admin, "date +%e", { " 8" })
+	okAt(state, admin, "date +%H", { "14" })
+	okAt(state, admin, "date +%M", { "32" })
+	okAt(state, admin, "date +%S", { "00" })
+	okAt(state, admin, "date +%j", { "189" })
+	okAt(state, admin, "date +%a", { "Thu" })
+	okAt(state, admin, "date +%b", { "Jul" })
+	okAt(state, admin, "date +%%", { "%" })
+
+	-- Together, with the text between them kept exactly as typed.
+	okAt(state, admin, "date \"+%Y-%m-%d %H:%M:%S\"", { "1993-07-08 14:32:00" })
+	okAt(state, admin, "date \"+it is %H:%M on %a\"", { "it is 14:32 on Thu" })
+	okAt(state, admin, "date +", { "" })
+
+	-- A code this machine does not have is copied out as it was typed, "%" and
+	-- all -- including a "%" at the very end of the format, which has no code
+	-- after it at all.
+	okAt(state, admin, "date +%q", { "%q" })
+	okAt(state, admin, "date +%", { "%" })
+	okAt(state, admin, "date +%Y%q%m", { "1993%q07" })
+
+	-- The other end of the year, where the padding is what is being asked
+	-- about: the first of January is day 001 and the 31st of December is 366 in
+	-- a leap year.
+	local newYear = { now = CeroSecOS.timeFromParts(1996, 1, 1, 9, 5, 4) }
+	okAt(state, admin, "date \"+%Y-%m-%d %H:%M:%S %j [%e]\"",
+		{ "1996-01-01 09:05:04 001 [ 1]" }, newYear)
+	local endOfLeap = { now = CeroSecOS.timeFromParts(1996, 12, 31, 23, 59, 59) }
+	okAt(state, admin, "date +%j", { "366" }, endOfLeap)
+	okAt(state, admin, "date +%a", { "Tue" }, endOfLeap)
+
+	-- No clock is no clock, format or not.
+	local r = runAt(state, admin, "date +%s", nil)
+	eq("no clock refused", r.ok, false)
+	eq("and says so", r.lines[1], "date: no clock")
+
+	-- The round trip that makes %s worth having: the number it prints is the
+	-- number the filesystem stamps a file with at that same moment.
+	okAt(state, admin, "touch stamped.txt", {})
+	local node = CeroSecOS.systemNode(state, "/home/admin/stamped.txt")
+	eq("the file carries the clock", tostring(CeroSecOS.mtimeOf(node)),
+		okAt(state, admin, "date +%s", nil)[1])
 end
 
 -- 20c. mtime, on every mutation there is.
@@ -2964,7 +3025,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-lF] [path]" })
-	okAt(state, admin, "man date", { "date - print the date and time", "usage: date" })
+	okAt(state, admin, "man date", { "date - print the date and time", "usage: date [+FORMAT]" })
 	badAt(state, admin, "man", "man: usage: man <command>")
 	badAt(state, admin, "man ls date", "man: usage: man <command>")
 	badAt(state, admin, "man nosuchthing", "man: nosuchthing: no manual entry")

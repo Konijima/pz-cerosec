@@ -104,7 +104,7 @@ Commands:
 | `head [-n N] <file>` | the first N lines, 10 by default |
 | `tail [-n N] <file>` | the last N lines, 10 by default |
 | `wc <file>...` | lines, words and bytes |
-| `date` | the date and time, from the game's calendar |
+| `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
@@ -264,6 +264,15 @@ nothing is stamped. This machine has one timestamp where Unix has three, so it s
 for `mtime` and `ctime` both — a `chmod` and an `mv` move it. A create or a remove
 also moves the *parent directory's* stamp, because a directory's date is when its
 listing last changed.
+
+`date +FORMAT` prints that number's pieces, `CeroSecOS.formatTime`'s way: `%Y %m
+%d %H %M %S %j %a %b %e %s %%`, padded the way Unix pads them (`%d` is `08`, `%e`
+is ` 8`), with anything else — an unknown code, a `%` at the end of the format —
+copied out exactly as it was typed rather than silently swallowed. `%s` is
+`env.now` itself, the very number a node's `mtime` carries, which is what a script
+on the machine does arithmetic on. No clock stays no clock with a format: `date
++%s` on a machine with none answers `date: no clock` rather than handing out a
+zero.
 
 `CeroSecOS.DISK_BYTES` is the one number for the drive: the BIOS announces it
 (`CeroSec.bootLines()` appends `hda 32K`), `df` divides by it, and the write path

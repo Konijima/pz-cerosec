@@ -234,7 +234,7 @@ CeroSecOS.COMMAND_INFO = {
 	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
 	clear    = { desc = "clear the screen", usage = "clear" },
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
-	date     = { desc = "print the date and time", usage = "date" },
+	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
@@ -654,11 +654,23 @@ end
 -- and the day the survivor typing is living in. A machine nobody handed a clock
 -- says so rather than inventing one -- a wrong date is worse than no date on a
 -- screen somebody is meant to trust.
+--
+-- With a +FORMAT it prints the pieces instead, strftime's way -- and %s prints
+-- the clock itself, the number seconds are counted in and the number a file's
+-- mtime carries, which is what a script on this machine has to do arithmetic
+-- on. The codes are CeroSecOS.formatTime's; anything it does not know is copied
+-- out as it was typed.
+--
+-- No clock is no clock, format or not: a machine that answered `date +%s` with
+-- a zero would be a machine handing out a wrong number rather than none.
 commands.date = function(state, session, args, env)
-	if #args > 1 then return usage("date") end
+	if #args > 2 then return usage("date") end
 	local now = CeroSecOS.clockOf(env)
 	if now == nil then return fail("date", nil, "no clock") end
-	return true, { CeroSecOS.formatDate(now) }
+	local form = args[2]
+	if form == nil then return true, { CeroSecOS.formatDate(now) } end
+	if string.sub(form, 1, 1) ~= "+" then return usage("date") end
+	return true, { CeroSecOS.formatTime(now, string.sub(form, 2)) }
 end
 
 -- df. Two lines, because this machine has two ceilings and either of them is
