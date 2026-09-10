@@ -4,6 +4,7 @@ require "Map/SGlobalObject"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSPath"
+require "CeroSec/OS/CeroSecOSDev"
 require "CeroSec/OS/CeroSecOSFS"
 require "CeroSec/OS/CeroSecOSUsers"
 require "CeroSec/OS/CeroSecOSState"
@@ -170,6 +171,13 @@ function SCeroSecObject:osState()
 	-- build is missing the executables that build never had, and topping it up
 	-- is not throwing a working filesystem away.
 	CeroSecOS.upgradeSystem(self.os)
+	-- The devices under /dev are mounted for the length of one command and taken
+	-- away again by CeroSecOS.exec. This is the belt to that pair of braces: a
+	-- command that died in the middle would leave nodes the validator refuses --
+	-- a working machine turned "broken" by a light switch -- so the gate every
+	-- read of the state goes through sweeps them first. On a healthy machine
+	-- there is nothing to sweep and this walks an empty /dev.
+	CeroSecOS.unmountDev(self.os)
 
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then

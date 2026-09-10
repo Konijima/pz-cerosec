@@ -2,6 +2,7 @@ if isClient() then return end
 
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/SCeroSecDevices"
 require "CeroSec/SCeroSecObject"
 
 SCeroSecSystem = SGlobalObjectSystem:derive("SCeroSecSystem")
@@ -276,6 +277,23 @@ function SCeroSecSystem:clockEnv()
 		gt:getHour(), gt:getMinutes(), 0)
 	if now == nil then return {} end
 	return { now = now }
+end
+
+--
+-- The world outside the machine
+--
+-- Everything the engine is handed that is not its own filesystem: the clock,
+-- and the devices under /dev. Built fresh for every line typed, because both
+-- halves are answers about a moment -- what time it is, and what is standing
+-- around the computer right now.
+--
+-- The devices need the state, because a device's NUMBER lives on it
+-- (state.devmap) and has to survive a reload; a call with no state is a call
+-- with no numbers, and the machine simply has no devices.
+function SCeroSecSystem:execEnv(luaObject, state)
+	local env = self:clockEnv()
+	if state ~= nil then env.devices = CeroSecDevices.envFor(luaObject, state) end
+	return env
 end
 
 SCeroSecSystem.BIOS_PROMPT = "Restore system? (y/n) "
@@ -787,7 +805,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		end
 		local session = self:sessionOf(console)
 		local _, lines, control, data =
-			CeroSecOS.continue(state, session, asked.cont, text, self:clockEnv())
+			CeroSecOS.continue(state, session, asked.cont, text, self:execEnv(luaObject, state))
 		order = control
 		self:writeSession(console, session)
 		luaObject:mirrorOS()
@@ -829,7 +847,8 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
 	local session = self:sessionOf(console)
 	local prompt = self:promptFor(state, console)
-	local _, lines, control, data = CeroSecOS.exec(state, session, line, self:clockEnv())
+	local _, lines, control, data =
+		CeroSecOS.exec(state, session, line, self:execEnv(luaObject, state))
 	self:writeSession(console, session)
 	luaObject:mirrorOS()
 
@@ -1031,6 +1050,14 @@ function SCeroSecSystem:checkPower()
 					end
 					luaObject:publishOS()
 				end
+			end
+			-- And the devices, for a machine somebody is standing at. Nothing on
+			-- the glass moves -- a line already printed stays printed, here as on
+			-- any terminal -- but the book of numbers catches up, so a window
+			-- that was smashed or a door that was built while the screen was open
+			-- already has its number by the time `ls /dev` is typed.
+			if luaObject.watchers then
+				CeroSecDevices.refresh(luaObject, luaObject:osState())
 			end
 		end
 	end
