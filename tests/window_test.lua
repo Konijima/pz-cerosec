@@ -432,4 +432,59 @@ do
 	check("a real command still echoes", #bench.object.console.lines > before)
 end
 
+--
+-- The block cursor sits at the end of the prompt
+--
+-- It sat about twelve columns to the right of it in the game, with an empty gap
+-- between the "$" and the block. The row and the column are counted, and
+-- terminal_test.lua pins that; what was wrong is where a column IS on the
+-- glass, which came from a cell width measured once at load time -- see the
+-- font above -- and multiplied by a twenty-one character prompt.
+--
+-- So the grid is measured with the game up, and the cursor is put at the width
+-- of the text in front of it rather than at a count of cells.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.frame()
+
+	local prompt = bench.window.prompt
+	eq("the prompt is the shell's", prompt, "admin@ksp-a-a:~$ ")
+
+	-- The block is the one rect as wide as a character on the input row.
+	local block = nil
+	for i = 1, #bench.window.rects do
+		local rect = bench.window.rects[i]
+		if rect.w <= CHAR_W * 2 and rect.h >= FONT_H then block = rect end
+	end
+	check("there is a block cursor", block ~= nil)
+	local promptX = nil
+	for i = 1, #bench.window.painted do
+		local paint = bench.window.painted[i]
+		if paint.text == prompt then promptX = paint.x end
+	end
+	check("the prompt is painted", promptX ~= nil)
+	eq("the cursor sits right after the prompt", block.x, promptX + CHAR_W * #prompt)
+	eq("and is one character wide", block.w, CHAR_W)
+
+	-- And with something typed, the text starts at the end of the prompt and
+	-- the cursor at the end of the text.
+	bench.window.entry:type("ls")
+	bench.frame()
+	local typedX = nil
+	for i = 1, #bench.window.painted do
+		if bench.window.painted[i].text == "ls" then typedX = bench.window.painted[i].x end
+	end
+	check("what is typed is painted", typedX ~= nil)
+	eq("right after the prompt, no gap", typedX, promptX + CHAR_W * #prompt)
+	block = nil
+	for i = 1, #bench.window.rects do
+		local rect = bench.window.rects[i]
+		if rect.w <= CHAR_W * 2 and rect.h >= FONT_H then block = rect end
+	end
+	eq("and the cursor after what was typed", block.x, promptX + CHAR_W * (#prompt + 2))
+end
+
 print("window_test: " .. count .. " checks passed")

@@ -383,6 +383,14 @@ do
 	eq("empty: cursor row", row, 1)
 	eq("empty: cursor column", col, head)
 
+	-- The same in the words of the screenshot: the prompt that was on the glass,
+	-- nothing typed, and the block on the column right after the "$ ". Column
+	-- here is counted from zero, so that is #prompt.
+	local screenshot = "admin@ksp-4rw-44z:~$ " -- 21 characters
+	local _, sr, sc = CeroSec.inputRows(screenshot, "", 0)
+	eq("the screenshot's prompt: cursor row", sr, 1)
+	eq("the screenshot's prompt: cursor at column #prompt + 1", sc + 1, #screenshot + 1)
+
 	-- A short line stays on one row.
 	rows, row, col = CeroSec.inputRows(P, "ls -l", 5)
 	eq("short: one row", #rows, 1)

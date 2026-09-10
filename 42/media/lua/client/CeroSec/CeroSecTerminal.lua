@@ -23,24 +23,43 @@ CeroSecTerminal = ISCollapsableWindow:derive("CeroSecTerminal")
 -- One window per local player.
 CeroSecTerminal.instances = {}
 
--- Cell of the screen grid. Measured once, the way ISCollapsableWindow measures
--- its own title bar font at load time (ISCollapsableWindow.lua:11-12).
-local CELL_W = getTextManager():MeasureStringX(UIFont.Code, "M")
-local CELL_H = getTextManager():getFontHeight(UIFont.Code)
-local TITLE_H = math.max(16, getTextManager():getFontHeight(UIFont.Small) + 1)
-
 -- Beige around the screen, black margin inside it.
 local BEZEL = 14
 local PAD = 6
 
-local SCREEN_W = CeroSec.COLS * CELL_W
-local SCREEN_H = CeroSec.ROWS * CELL_H
-local GLASS_W = SCREEN_W + PAD * 2
-local GLASS_H = SCREEN_H + PAD * 2
-local HINT_H = CELL_H + 6
+-- Cell of the screen grid, and everything built on it.
+--
+-- NOT measured at load time, the way ISCollapsableWindow measures its own title
+-- bar font (ISCollapsableWindow.lua:11-12). That one only wants a row height;
+-- this is the width of a column of a sixty column grid, and it is asked for
+-- while the mod files are being read. TextManager answers a font request out of
+-- enumToFont[ordinal] and hands back the DEFAULT font -- a proportional one,
+-- whose "M" is its widest glyph -- for any entry not built yet, so a cell
+-- measured then can be half again as wide as the one the text is drawn with.
+-- Twenty-one characters of prompt later, that is a block cursor a dozen columns
+-- to the right of the "$" it should be sitting against.
+--
+-- So it is measured when a window is opened, with the game up, and again
+-- whenever the answer changes -- the UI font size is an option and it moves.
+local CELL_W, CELL_H, TITLE_H
+local SCREEN_W, SCREEN_H, GLASS_W, GLASS_H, HINT_H, WINDOW_W, WINDOW_H
 
-local WINDOW_W = GLASS_W + BEZEL * 2
-local WINDOW_H = TITLE_H + GLASS_H + BEZEL * 2 + HINT_H
+local function measure()
+	local manager = getTextManager()
+	local cellW = manager:MeasureStringX(UIFont.Code, "M")
+	local cellH = manager:getFontHeight(UIFont.Code)
+	if cellW == CELL_W and cellH == CELL_H then return end
+
+	CELL_W, CELL_H = cellW, cellH
+	TITLE_H = math.max(16, manager:getFontHeight(UIFont.Small) + 1)
+	SCREEN_W = CeroSec.COLS * CELL_W
+	SCREEN_H = CeroSec.ROWS * CELL_H
+	GLASS_W = SCREEN_W + PAD * 2
+	GLASS_H = SCREEN_H + PAD * 2
+	HINT_H = CELL_H + 6
+	WINDOW_W = GLASS_W + BEZEL * 2
+	WINDOW_H = TITLE_H + GLASS_H + BEZEL * 2 + HINT_H
+end
 
 -- How long the machine takes to put its first screenful up. The BIOS lines
 -- themselves are the server's (CeroSec.BOOT_LINES, written into the console at
@@ -79,6 +98,7 @@ end
 -- The window for this player, opened on this computer. An open window on
 -- another computer is closed first: one terminal per player.
 function CeroSecTerminal.open(playerObj, computer)
+	measure()
 	local playerNum = playerObj:getPlayerNum()
 	local previous = CeroSecTerminal.instances[playerNum]
 	if previous then previous:close() end
@@ -97,6 +117,9 @@ function CeroSecTerminal.open(playerObj, computer)
 end
 
 function CeroSecTerminal:new(x, y, playerObj, computer)
+	-- open() measured before it chose x and y; a window made any other way
+	-- (a test bench) still gets a measured grid rather than none at all.
+	measure()
 	local o = ISCollapsableWindow.new(self, x, y, WINDOW_W, WINDOW_H)
 	o.playerObj = playerObj
 	o.playerNum = playerObj:getPlayerNum()
@@ -1071,6 +1094,17 @@ function CeroSecTerminal:render()
 	ISCollapsableWindow.render(self)
 end
 
+-- Where a column of a drawn row is on the glass: the width of everything in
+-- front of it, measured on the very text that was painted and in the font it
+-- was painted with. Counting cells instead is only right for as long as the
+-- cell is exactly what the font advances by, and the cell is one measurement
+-- taken at one moment -- which is how the block cursor came to sit a dozen
+-- columns to the right of the end of the prompt.
+function CeroSecTerminal:columnX(x, text, column)
+	if column <= 0 then return x end
+	return x + getTextManager():MeasureStringX(UIFont.Code, string.sub(text, 1, column))
+end
+
 -- The prompt, what has been typed, and the block cursor over it. A line longer
 -- than the glass wraps onto the rows under it, the way a terminal does, and the
 -- cursor follows it there: the rows and the cursor's place on them are worked
@@ -1094,7 +1128,7 @@ function CeroSecTerminal:drawInput(x, y)
 		local ry = y + (i - 1) * CELL_H
 		if i == 1 then
 			self:drawScreenText(string.sub(rows[1], 1, head), x, ry, colors.dim)
-			self:drawScreenText(string.sub(rows[1], head + 1), x + head * CELL_W, ry, colors.text)
+			self:drawScreenText(string.sub(rows[1], head + 1), self:columnX(x, rows[1], head), ry, colors.text)
 		else
 			self:drawScreenText(rows[i], x, ry, colors.text)
 		end
@@ -1107,7 +1141,7 @@ function CeroSecTerminal:drawInput(x, y)
 	-- it sits on that character instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local cx = x + cell * CELL_W
+	local cx = self:columnX(x, rows[row] or "", cell)
 	local cy = y + (row - 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
@@ -1162,7 +1196,7 @@ function CeroSecTerminal:drawEditor(left, top)
 	-- cursor after its last character -- and it sits on that character instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local x = left + cell * CELL_W
+	local x = self:columnX(left, lines[row] or "", cell)
 	local y = top + (row - self.editTopRow + 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
