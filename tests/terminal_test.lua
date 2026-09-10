@@ -381,6 +381,38 @@ for _, junk in ipairs({ { path = "/a" }, { text = "hi" }, { path = 1, text = "hi
 	eq("half a buffer is no buffer", CeroSec.repairConsole({ lines = {}, edit = junk }).edit, nil)
 end
 
+-- The su stack, likewise: it is saved with the machine, so what comes back has
+-- to be a stack and not merely a table -- and never deeper than the ceiling,
+-- because every entry on it is an `exit` somebody has to type to get out.
+do
+	local stacked = CeroSec.repairConsole({
+		lines = {}, user = "bob", cwd = "/home/bob",
+		stack = { { user = "admin", cwd = "/home/admin" }, { user = "root" },
+			{ cwd = "/nobody" }, "x", 7 },
+	})
+	eq("only the entries that are entries survive", #stacked.stack, 2)
+	eq("the first is kept whole", stacked.stack[1].user, "admin")
+	eq("with its directory", stacked.stack[1].cwd, "/home/admin")
+	eq("an entry with no directory stands at the root", stacked.stack[2].cwd, "/")
+	eq("an empty stack is no stack",
+		CeroSec.repairConsole({ lines = {}, stack = {} }).stack, nil)
+	eq("and neither is one that is not a table",
+		CeroSec.repairConsole({ lines = {}, stack = "deep" }).stack, nil)
+
+	local deep = { lines = {}, stack = {} }
+	for i = 1, CeroSec.SU_MAX * 3 do deep.stack[i] = { user = "u" .. i, cwd = "/" } end
+	eq("a forged console cannot make a stack nobody gets out of",
+		#CeroSec.repairConsole(deep).stack, CeroSec.SU_MAX)
+
+	-- And a logout drops it: an account logs out of the machine, not out of its
+	-- own last switch.
+	local live2 = CeroSec.newConsole()
+	live2.user = "bob"
+	live2.stack = { { user = "admin", cwd = "/home/admin" } }
+	CeroSec.consoleLogout(live2)
+	eq("exit forgets who it would have come back to", live2.stack, nil)
+end
+
 --
 -- The input line, wrapped
 --
