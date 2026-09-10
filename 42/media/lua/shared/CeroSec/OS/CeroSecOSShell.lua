@@ -1,9 +1,12 @@
 --
 -- CeroSec OS core: the shell.
 --
--- exec(state, session, line) -> ok, lines. One command line at a time: double
--- quoted strings with backslash escapes, ">" and ">>" redirection, no pipes and
--- no variables yet. Errors read like a 1993 Unix, one line each:
+-- exec(state, session, line) -> ok, lines, control. One command line at a time:
+-- double quoted strings with backslash escapes, ">" and ">>" redirection, no
+-- pipes and
+-- no variables yet. control is nil, "clear" or "exit": an order to the terminal
+-- travels beside the output, never inside it, so no file's contents can ever be
+-- mistaken for one. Errors read like a 1993 Unix, one line each:
 --   cd: /root: permission denied
 --   cat: notes.txt: no such file
 -- Commands never touch the tree themselves; they call the four mutators in
@@ -179,11 +182,11 @@ commands.hostname = function(state, session, args)
 end
 
 commands.clear = function(state, session, args)
-	return true, { CeroSecOS.CLEAR }
+	return true, {}, "clear"
 end
 
 commands.exit = function(state, session, args)
-	return true, { CeroSecOS.EXIT }
+	return true, {}, "exit"
 end
 
 commands.echo = function(state, session, args)
@@ -417,7 +420,7 @@ function CeroSecOS.exec(state, session, line)
 	local fn = commands[name]
 	if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 
-	local ok, lines = fn(state, session, args)
+	local ok, lines, control = fn(state, session, args)
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on
@@ -428,8 +431,8 @@ function CeroSecOS.exec(state, session, line)
 		if done == nil then
 			return false, CeroSecOS.fit({ name .. ": " .. redirect.path .. ": " .. wreason })
 		end
-		return true, {}
+		return true, {}, control
 	end
 
-	return ok, CeroSecOS.fit(lines)
+	return ok, CeroSecOS.fit(lines), control
 end

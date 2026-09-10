@@ -36,10 +36,13 @@ local function open(state, name, password)
 end
 
 -- Runs a line and pins the whole result: the ok flag, the line count, every
--- line, and the 60-column rule the screen depends on.
-local function expect(state, session, line, wantOk, wantLines)
-	local ok, lines = CeroSecOS.exec(state, session, line)
+-- line, the out-of-band control value, and the 60-column rule the screen
+-- depends on. wantControl defaults to nil, so every single call in this file
+-- also asserts that an ordinary command orders the terminal to do nothing.
+local function expect(state, session, line, wantOk, wantLines, wantControl)
+	local ok, lines, control = CeroSecOS.exec(state, session, line)
 	eq("`" .. line .. "` ok", ok, wantOk)
+	eq("`" .. line .. "` control", control, wantControl)
 	local wide = false
 	for i = 1, #lines do
 		if #lines[i] > CeroSecOS.COLS then wide = true end
@@ -55,8 +58,8 @@ local function expect(state, session, line, wantOk, wantLines)
 	return lines
 end
 
-local function ok(state, session, line, wantLines)
-	return expect(state, session, line, true, wantLines)
+local function ok(state, session, line, wantLines, wantControl)
+	return expect(state, session, line, true, wantLines, wantControl)
 end
 
 local function bad(state, session, line, errorLine)
@@ -238,8 +241,8 @@ do
 	ok(state, admin, "pwd", { "/home/admin" })
 	ok(state, admin, "whoami", { "admin" })
 	ok(state, admin, "hostname", { "ksp-front-01" })
-	ok(state, admin, "clear", { CeroSecOS.CLEAR })
-	ok(state, admin, "exit", { CeroSecOS.EXIT })
+	ok(state, admin, "clear", {}, "clear")
+	ok(state, admin, "exit", {}, "exit")
 	ok(state, admin, "echo hello world", { "hello world" })
 	ok(state, admin, "echo", { "" })
 	ok(state, admin, 'echo "a  b"', { "a  b" })
@@ -736,7 +739,134 @@ do
 end
 
 --
--- 12. Determinism: the same input twice gives the same output, byte for byte.
+-- 12. Control travels out of band, and no file can ever look like an order.
+--
+-- The sentinels this core used to put inside the output array ("\1CLEAR",
+-- "\1EXIT") were forgeable: writing those very bytes into a file and running
+-- cat produced a line byte-identical to a genuine exit. Control is now exec's
+-- third return value, and control bytes never reach a file in the first place.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local rootSession = open(state, "root")
+
+	-- No sentinel is left anywhere to compare against.
+	eq("no CLEAR sentinel", CeroSecOS.CLEAR, nil)
+	eq("no EXIT sentinel", CeroSecOS.EXIT, nil)
+
+	-- The two commands that steer the terminal say so beside the output.
+	local lines, control
+	local execOk
+	execOk, lines, control = CeroSecOS.exec(state, admin, "clear")
+	eq("clear succeeds", execOk, true)
+	eq("clear prints nothing", #lines, 0)
+	eq("clear controls the terminal", control, "clear")
+	execOk, lines, control = CeroSecOS.exec(state, admin, "exit")
+	eq("exit succeeds", execOk, true)
+	eq("exit prints nothing", #lines, 0)
+	eq("exit controls the terminal", control, "exit")
+
+	-- Everything else orders nothing.
+	execOk, lines, control = CeroSecOS.exec(state, admin, "pwd")
+	eq("pwd controls nothing", control, nil)
+	execOk, lines, control = CeroSecOS.exec(state, admin, "nosuchcommand")
+	eq("an unknown command controls nothing", control, nil)
+	execOk, lines, control = CeroSecOS.exec(state, admin, "")
+	eq("an empty line controls nothing", control, nil)
+
+	-- hasControlBytes: the rule itself.
+	eq("plain text is clean", CeroSecOS.hasControlBytes("hello"), false)
+	eq("newline is allowed", CeroSecOS.hasControlBytes("a\nb"), false)
+	eq("tab is allowed", CeroSecOS.hasControlBytes("a\tb"), false)
+	eq("empty is clean", CeroSecOS.hasControlBytes(""), false)
+	eq("SOH is refused", CeroSecOS.hasControlBytes(string.char(1)), true)
+	eq("NUL is refused", CeroSecOS.hasControlBytes(string.char(0)), true)
+	eq("ESC is refused", CeroSecOS.hasControlBytes(string.char(27)), true)
+	eq("CR is refused", CeroSecOS.hasControlBytes("a\rb"), true)
+	eq("byte 31 is refused", CeroSecOS.hasControlBytes(string.char(31)), true)
+	eq("byte 32 is fine", CeroSecOS.hasControlBytes(string.char(32)), false)
+	eq("a control byte buried in text is found",
+		CeroSecOS.hasControlBytes("harmless" .. string.char(1) .. "text"), true)
+
+	-- The old attack, replayed: writeFile refuses the bytes outright.
+	local forged = "\1EXIT"
+	local wrote, wreason = CeroSecOS.writeFile(state, rootSession, "/evil.txt", forged)
+	eq("writeFile refuses control bytes", wrote, nil)
+	eq("writeFile reason", wreason, "invalid characters")
+	eq("nothing was created", state.fs.children["evil.txt"], nil)
+
+	-- setData, the other mutator, refuses them too.
+	local set, sreason = CeroSecOS.setData(state, rootSession, "/etc/motd", "\1CLEAR")
+	eq("setData refuses control bytes", set, nil)
+	eq("setData reason", sreason, "invalid characters")
+	eq("the file was left alone", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
+
+	-- createNode refuses a file carrying them, and a whole subtree carrying
+	-- them: a network rung will hand over trees, not just single files.
+	local bad1, breason = CeroSecOS.createNode(state, rootSession, "/planted.txt",
+		CeroSecOS.newFile("root", 644, string.char(27) .. "[2J"))
+	eq("createNode refuses a dirty file", bad1, nil)
+	eq("createNode reason", breason, "invalid characters")
+	local tree = CeroSecOS.newDir("root", 755)
+	tree.children.inner = CeroSecOS.newDir("root", 755)
+	tree.children.inner.children["x.txt"] = CeroSecOS.newFile("root", 644, string.char(7))
+	local bad2, treason = CeroSecOS.createNode(state, rootSession, "/dropped", tree)
+	eq("createNode refuses a dirty subtree", bad2, nil)
+	eq("subtree reason", treason, "invalid characters")
+	eq("nothing was planted", state.fs.children.dropped, nil)
+	eq("subtreeHasControlBytes agrees", CeroSecOS.subtreeHasControlBytes(tree), true)
+	eq("a clean subtree passes", CeroSecOS.subtreeHasControlBytes(state.fs), false)
+
+	-- Through the shell, the refusal reads like every other error.
+	bad(state, admin, 'write dirty.txt "' .. string.char(1) .. '"',
+		"write: dirty.txt: invalid characters")
+	bad(state, admin, 'echo "' .. string.char(1) .. '" > dirty.txt',
+		"echo: dirty.txt: invalid characters")
+	eq("no dirty file exists",
+		state.fs.children.home.children.admin.children["dirty.txt"], nil)
+
+	-- The escape table cannot manufacture one: \1 is a backslash escape that
+	-- yields the character "1", not the byte 1.
+	ok(state, admin, 'echo "\\1"', { "1" })
+	ok(state, admin, 'echo "\\1" > tame.txt', {})
+	ok(state, admin, "cat tame.txt", { "1" })
+	eq("the file holds the digit, not the byte",
+		state.fs.children.home.children.admin.children["tame.txt"].data, "1")
+
+	-- Newline and tab still go in and come back out.
+	ok(state, admin, 'write good.txt "a\\nb\\tc"', {})
+	ok(state, admin, "cat good.txt", { "a", "b\tc" })
+
+	-- So cat can never produce a control, whatever a file holds.
+	local names = CeroSecOS.childNames(state.fs.children.home.children.admin)
+	for i = 1, #names do
+		local _, catLines, catControl = CeroSecOS.exec(state, admin, "cat " .. names[i])
+		eq("cat " .. names[i] .. " controls nothing", catControl, nil)
+		for j = 1, #catLines do
+			check("cat " .. names[i] .. " line " .. j .. " is printable",
+				not CeroSecOS.hasControlBytes(catLines[j]))
+		end
+	end
+
+	-- And a forged modData blob is refused before it can be run.
+	local smuggled = fresh()
+	smuggled.fs.children.etc.children.motd.data = "\1EXIT"
+	local vOk, vReason = CeroSecOS.validate(smuggled)
+	eq("validate rejects smuggled control bytes", vOk, false)
+	eq("validate reason", vReason, "/etc/motd: invalid characters")
+	local smuggledDeep = fresh()
+	smuggledDeep.fs.children.home.children.admin.children["n.txt"] =
+		CeroSecOS.newFile("admin", 644, "ok" .. string.char(0))
+	eq("validate rejects them deep in the tree", CeroSecOS.validate(smuggledDeep), false)
+	local clean = fresh()
+	clean.fs.children.etc.children.motd.data = "a\nb\tc"
+	eq("validate still accepts newline and tab", CeroSecOS.validate(clean), true)
+end
+
+--
+-- 13. Determinism: the same input twice gives the same output, byte for byte.
 --
 
 do
@@ -752,8 +882,8 @@ do
 		local session = open(state, "admin")
 		local out = {}
 		for i = 1, #script do
-			local execOk, lines = CeroSecOS.exec(state, session, script[i])
-			out[#out + 1] = tostring(execOk)
+			local execOk, lines, control = CeroSecOS.exec(state, session, script[i])
+			out[#out + 1] = tostring(execOk) .. "/" .. tostring(control)
 			for j = 1, #lines do out[#out + 1] = lines[j] end
 		end
 		runs[pass] = out
@@ -768,7 +898,7 @@ do
 end
 
 --
--- 13. The state stays plain after a working session.
+-- 14. The state stays plain after a working session.
 --
 
 do

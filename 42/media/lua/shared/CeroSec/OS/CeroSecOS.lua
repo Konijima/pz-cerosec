@@ -28,11 +28,10 @@ CeroSecOS.MAX_NODES = 256        -- nodes on the whole computer, root included
 CeroSecOS.MAX_TOTAL_BYTES = 32768 -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
--- Markers the terminal honours; they travel as ordinary strings in the output
--- array so nothing exotic ever reaches the game.
-CeroSecOS.CLEAR = "\1CLEAR"
-CeroSecOS.EXIT = "\1EXIT"
-
+-- Control the terminal honours travels out of band, as exec's third return
+-- value ("clear" or "exit"), never as a line inside the output array: a line of
+-- text and an order to the terminal must not be the same kind of thing, or a
+-- file's contents can be made to look like an order.
 CeroSecOS.DEFAULT_HOSTNAME = "cerosec"
 CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
 
@@ -62,6 +61,20 @@ function CeroSecOS.padLeft(s, width)
 	return string.rep(" ", width - #s) .. s
 end
 
+-- Text the OS stores must be printable: every byte below 0x20 is refused except
+-- newline and tab. This is what keeps a file's contents from ever being taken
+-- for anything but text on the way to the screen.
+-- Scanned byte by byte on purpose: matching the zero byte in a Lua 5.1 pattern
+-- needs %z, and that is the kind of corner not worth betting on under Kahlua.
+function CeroSecOS.hasControlBytes(text)
+	if type(text) ~= "string" then return false end
+	for i = 1, #text do
+		local b = string.byte(text, i)
+		if b < 32 and b ~= 10 and b ~= 9 then return true end
+	end
+	return false
+end
+
 -- Split a blob of text into display lines. An empty file has no lines at all,
 -- which is what cat on an empty file should print.
 function CeroSecOS.splitLines(text)
@@ -81,27 +94,24 @@ end
 
 -- Last gate before output leaves the core: one array entry is one screen line.
 -- Embedded newlines become separate entries and anything wider than the screen
--- is hard-wrapped. Markers pass through untouched.
+-- is hard-wrapped. Every entry is text and only text; nothing here is ever
+-- inspected for a special value.
 function CeroSecOS.fit(lines)
 	local out = {}
 	for i = 1, #lines do
 		local s = lines[i]
 		if type(s) ~= "string" then s = tostring(s) end
-		if s == CeroSecOS.CLEAR or s == CeroSecOS.EXIT then
-			out[#out + 1] = s
-		else
-			local pieces = CeroSecOS.splitLines(s)
-			if #pieces == 0 then pieces = { "" } end
-			for p = 1, #pieces do
-				local piece = pieces[p]
-				if #piece <= CeroSecOS.COLS then
-					out[#out + 1] = piece
-				else
-					local j = 1
-					while j <= #piece do
-						out[#out + 1] = string.sub(piece, j, j + CeroSecOS.COLS - 1)
-						j = j + CeroSecOS.COLS
-					end
+		local pieces = CeroSecOS.splitLines(s)
+		if #pieces == 0 then pieces = { "" } end
+		for p = 1, #pieces do
+			local piece = pieces[p]
+			if #piece <= CeroSecOS.COLS then
+				out[#out + 1] = piece
+			else
+				local j = 1
+				while j <= #piece do
+					out[#out + 1] = string.sub(piece, j, j + CeroSecOS.COLS - 1)
+					j = j + CeroSecOS.COLS
 				end
 			end
 		end

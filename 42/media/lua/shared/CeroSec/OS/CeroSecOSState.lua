@@ -74,6 +74,9 @@ local function checkNode(node, where, depth, tally)
 	if node.type == "file" then
 		if type(node.data) ~= "string" then return false, where .. ": bad data" end
 		if #node.data > CeroSecOS.MAX_FILE_BYTES then return false, where .. ": file too large" end
+		-- A blob handed back by the game never went through setData, so the
+		-- printable rule is re-checked here rather than assumed.
+		if CeroSecOS.hasControlBytes(node.data) then return false, where .. ": invalid characters" end
 		tally.bytes = tally.bytes + #node.data
 		if tally.bytes > CeroSecOS.MAX_TOTAL_BYTES then return false, "disk full" end
 		return true

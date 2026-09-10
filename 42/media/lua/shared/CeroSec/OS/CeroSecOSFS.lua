@@ -97,6 +97,19 @@ function CeroSecOS.usage(state)
 	return CeroSecOS.subtreeUsage(state.fs)
 end
 
+-- Does any file in this subtree carry a byte that must never be stored? Whole
+-- trees arrive at createNode (a copy today, a network transfer at a later
+-- rung), so the check cannot stop at the node itself.
+function CeroSecOS.subtreeHasControlBytes(node)
+	if node.type == "file" then return CeroSecOS.hasControlBytes(node.data or "") end
+	if node.children == nil then return false end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do
+		if CeroSecOS.subtreeHasControlBytes(node.children[names[i]]) then return true end
+	end
+	return false
+end
+
 -- Deepest path length under a subtree, counting the subtree root as 0.
 local function subtreeDepth(node)
 	if node.type ~= "dir" or node.children == nil then return 0 end
@@ -171,6 +184,7 @@ function CeroSecOS.createNode(state, session, path, node)
 	if node.type == "file" and #(node.data or "") > CeroSecOS.MAX_FILE_BYTES then
 		return nil, "file too large"
 	end
+	if CeroSecOS.subtreeHasControlBytes(node) then return nil, "invalid characters" end
 	local parent, name, reason =
 		checkAttach(state, session, parts, addNodes, addBytes, subtreeDepth(node), nil)
 	if parent == nil then return nil, reason end
@@ -218,6 +232,7 @@ function CeroSecOS.setData(state, session, path, data)
 	if node.type ~= "file" then return nil, "is a directory" end
 	if not CeroSecOS.can(state, session, node, "w") then return nil, "permission denied" end
 	if #data > CeroSecOS.MAX_FILE_BYTES then return nil, "file too large" end
+	if CeroSecOS.hasControlBytes(data) then return nil, "invalid characters" end
 
 	local _, bytes = CeroSecOS.usage(state)
 	if bytes - #(node.data or "") + #data > CeroSecOS.MAX_TOTAL_BYTES then

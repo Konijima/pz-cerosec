@@ -23,4 +23,20 @@ and every state it produces is plain nested tables of strings, numbers and
 booleans — the shape `modData` can serialize. Devices, the network and the clock
 are later rungs; the seams are there, the code is not.
 
+The one entry point is `CeroSecOS.exec(state, session, line)`, which returns
+`ok, lines, control`:
+
+- `lines` is text and only text, one array entry per screen line, each at most 60
+  characters.
+- `control` is `nil`, `"clear"` or `"exit"` — an order to the terminal, beside
+  the output and never inside it.
+
+That split is deliberate. Control used to travel as sentinel strings in `lines`,
+which meant a file whose contents happened to be those bytes produced a `cat`
+line indistinguishable from a genuine `exit`. Text and orders are now different
+kinds of thing, and on top of that the OS refuses to store any byte below `0x20`
+other than newline and tab (`invalid characters`) — checked where the limits are
+checked, and re-checked by `validate` so a forged `modData` cannot smuggle them
+in either.
+
 Why not a symlink in `~/Zomboid/mods`: Build 42's `ScriptManager` relativizes each `media/scripts` file against the mod's canonical (symlink-resolved) path while the files are found through the link; the relative path degenerates into the full absolute path and every script fails with `FileNotFoundException`. Lua and translations are unaffected, scripts are.
