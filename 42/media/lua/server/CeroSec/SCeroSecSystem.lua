@@ -360,7 +360,15 @@ end
 -- The prompt line, in one place. The user's home comes with it so that the
 -- shell can say "~" instead of spelling out /home/admin on a thirty column
 -- prompt -- the home is the account's, not a guess from the name.
+--
+-- The name is OPTIONAL and is worked out here when it is not handed over. It
+-- used not to be: the echo path called this with two arguments, the prompt went
+-- through tostring(nil), and every line echoed into the console read
+-- "root@nil:~# date" while the live prompt and the window title -- the two
+-- callers that did pass a name -- read the machine's own. One accessor, read
+-- here when nobody read it for us, so a caller cannot forget it again.
 function SCeroSecSystem:promptFor(state, console, hostname)
+	if hostname == nil and state ~= nil then hostname = CeroSecOS.hostname(state) end
 	local home = nil
 	local user = CeroSecOS.getUser(state, console.user)
 	if user ~= nil and type(user.home) == "string" then home = user.home end

@@ -983,4 +983,48 @@ do
 	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
 end
 
+--
+-- The machine's name, on the title bar, under the cursor, and in the echo
+--
+-- From a screenshot of the live game: after `hostname office` the title bar and
+-- the prompt being typed at both read "office", while every line echoed into
+-- the console read "root@nil:~# date". One fact read down two paths -- and the
+-- echo path asked for a prompt without handing over the name, so it was built
+-- through tostring(nil). The three of them are asserted together here, because
+-- two of them were right the whole time.
+--
+
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("hostname office")
+	bench.enter("date")
+	bench.frame()
+	check("the echoed line carries the machine's name",
+		bench.painted("root@office:~# date"))
+	check("and no line says nil", not bench.painted("root@nil"))
+	eq("the live prompt has it too", bench.window.prompt, "root@office:~# ")
+
+	-- The title is set on `opened`, so it is the reopen that renames the window
+	-- -- and the lines that were echoed before it keep the name they were echoed
+	-- with, because they are the machine's own screen and not a redraw.
+	bench.window:askForScreen()
+	bench.frame()
+	eq("the title is the name too", bench.window.titleText, "CeroSec OS \194\183 office")
+	check("and the echo survived the reopen", bench.painted("root@office:~# date"))
+
+	-- Off and on: the name is a file on the disk, so it comes back with it.
+	bench.enter("reboot")
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	bench.enter("root")
+	bench.enter("")
+	bench.enter("date")
+	bench.frame()
+	eq("the prompt after a reboot", bench.window.prompt, "root@office:~# ")
+	check("and the echo after it", bench.painted("root@office:~# date"))
+	eq("the file is what says so",
+		CeroSecOS.hostname(bench.object:osState()), "office")
+end
+
 print("window_test: " .. count .. " checks passed")

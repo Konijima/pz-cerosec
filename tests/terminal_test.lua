@@ -256,6 +256,26 @@ local rooted = CeroSec.newConsole()
 rooted.user = "admin"
 eq("no cwd means /", CeroSec.consolePrompt(rooted, "ksp-1-1", false), "admin@ksp-1-1:/$ ")
 
+-- Whatever it is waiting for, what comes back is a string, and the name in it
+-- is the one that was handed over. The shell prompt is echoed into the
+-- machine's own lines as well as drawn under the cursor, and a caller that
+-- passed no name once put "root@nil:~#" on a real screen -- so the server works
+-- the name out for itself now (SCeroSecSystem:promptFor) and this pins the
+-- contract it works to.
+do
+	local asking = CeroSec.newConsole()
+	asking.user = "admin"
+	asking.prompt = { text = "New password: ", mask = true, cont = { cmd = "passwd" } }
+	local shapes = { CeroSec.newConsole(), rooted, live, asking }
+	for i = 1, #shapes do
+		local text = CeroSec.consolePrompt(shapes[i], "ksp-1-1", false)
+		eq("every prompt is a string", type(text), "string")
+		check("and never carries a nil", string.find(text, "nil", 1, true) == nil)
+	end
+	check("the shell prompt carries the name it was given",
+		string.find(CeroSec.consolePrompt(rooted, "office", false), "@office:", 1, true) ~= nil)
+end
+
 --
 -- Repairing what the game hands back
 --
