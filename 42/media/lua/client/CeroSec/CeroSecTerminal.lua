@@ -49,6 +49,13 @@ CeroSecTerminal.BOOT_LINES = {
 }
 CeroSecTerminal.BOOT_MS = 2000
 
+-- How long a command may go unanswered before the terminal stops waiting for
+-- it. Every server path answers -- open, login, exec and every refusal -- so
+-- this is only ever reached when the answer was lost: a Lua error inside the
+-- handler is swallowed by the pcall the game calls it through, and without this
+-- the window would sit on a prompt that never comes back.
+CeroSecTerminal.REPLY_TIMEOUT_MS = 10000
+
 -- Every window stamps its commands with a token and only listens to answers
 -- carrying it back. The player key would not do on its own: a server addresses
 -- a *connection*, and in split screen two local players share one, so both
@@ -114,6 +121,7 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.opened = false
 	o.pendingUser = nil
 	o.busy = false
+	o.busySince = 0
 	o.lastKeySound = 0
 
 	o.title = "CeroSec OS"
@@ -344,7 +352,7 @@ function CeroSecTerminal:onCommandEntered()
 
 	if self.phase == "password" then
 		self:addLines({ "password: " .. string.rep("*", #text) })
-		self.busy = true
+		self:setBusy()
 		self:setPhase("wait")
 		self:send("login", { name = self.pendingUser or "", password = text })
 		return
@@ -355,9 +363,26 @@ function CeroSecTerminal:onCommandEntered()
 		if text ~= "" then
 			CeroSec.ringPush(self.history, text, CeroSec.HISTORY_MAX)
 		end
-		self.busy = true
+		self:setBusy()
 		self:setPhase("wait")
 		self:send("exec", { line = text })
+	end
+end
+
+function CeroSecTerminal:setBusy()
+	self.busy = true
+	self.busySince = getTimestampMs()
+end
+
+-- An answer that never came. Say so and give the line back rather than leave a
+-- dead prompt.
+function CeroSecTerminal:checkTimeout()
+	if not self.busy then return end
+	if getTimestampMs() - self.busySince < CeroSecTerminal.REPLY_TIMEOUT_MS then return end
+	self.busy = false
+	self:addLines({ "cerosec: no answer from the machine" })
+	if self.phase == "wait" then
+		self:setPhase(self.prompt == "password: " and "login" or "shell")
 	end
 end
 
@@ -457,6 +482,7 @@ function CeroSecTerminal:prerender()
 		return
 	end
 	self:updateBoot()
+	self:checkTimeout()
 	self:layoutEntry()
 	ISCollapsableWindow.prerender(self)
 	self:drawMonitor()
