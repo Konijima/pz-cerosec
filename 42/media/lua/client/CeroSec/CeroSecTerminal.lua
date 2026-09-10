@@ -352,10 +352,12 @@ end
 -- so a click on the inventory's filter, on the chat, or on anything else with a
 -- text box takes our keyboard away and nothing gives it back.
 --
--- Our box is one line tall, transparent and sitting on the prompt row, so
--- "click the terminal to type again" used to mean hitting a few invisible
--- pixels. It now means what it says: every mouse press on the window, wherever
--- it lands, hands the keyboard back to the box. Same wiring as the chat, which
+-- Our box is not on the glass at all -- it is parked outside the window, where
+-- the stencil clips everything it paints -- so a click can never land on it and
+-- "click the terminal to type again" cannot mean hitting it. It means what it
+-- says: every mouse press on the window, wherever it lands, hands the keyboard
+-- back to the box, and puts the character back at the keyboard with it
+-- (resettle). Same wiring as the chat, which
 -- routes the presses of every piece of itself into one handler
 -- (ISChat.lua:82-96, 175, 198, 354-355) -- except that ours is a single window
 -- painting its own glass, so one override on the window is the whole surface.
@@ -476,6 +478,10 @@ function CeroSecTerminal:layoutEntry()
 	self.entry:setWidth(SCREEN_W * 3)
 	self.entry:setHeight(CELL_H * CeroSec.EDIT_ROWS)
 end
+
+--
+-- Input
+--
 
 -- One click per key. Four single keys cut out of the old long typing sample,
 -- picked at random so a held key does not sound like a machine, plus a heavier
