@@ -17,12 +17,17 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`adduser cat cd chmod chown clear cp date deluser df echo edit exit grep
-  hash head help hostname id ls man mkdir mv passwd pwd reboot restart rm shutdown
-  su sudo tail touch wc whoami write`), an editor, and salted-hashed passwords.
+  shell (`adduser cat cd chgrp chmod chown clear cp date deluser df echo edit exit
+  gpasswd grep groupadd groupdel groups hash head help hostname id ls man mkdir mv
+  passwd pwd reboot restart rm shutdown su sudo tail touch wc whoami write`), an
+  editor, and salted-hashed passwords.
 - Accounts: `adduser` and `deluser` make and unmake them, `su` changes who the
   glass is logged in as without logging out, and `id` says what the machine knows
   about a name.
+- Groups: `/etc/group`, a group on every file, and all three digits of a mode read
+  — owner, group, everybody else — so two survivors can share a directory. The
+  `sudo` group mirrors `/etc/sudoers`, which is what makes `crw-rw----  root  sudo`
+  on every device mean "whoever may become root may throw that light switch".
 - The clock: the machine reads the game's calendar, so `date` is the hour the
   survivor is living in and every file carries the minute it was written.
 - The system files: the commands are files in `/bin`, the accounts are
@@ -78,11 +83,35 @@ without it his files stay, still owned by a name the machine no longer knows).
 were instead of logging out — up to four deep. Walk away and come back and the
 machine is still where you left it, four users deep if that is where you left it.
 
+**Sharing a file.** A mode is three digits — you, your group, everybody else — and
+the machine reads exactly one of them: the first if you own the file, the second if
+you are in its group, the third otherwise. Root walks through all three. Every
+account is already in a group of its own name, so a fresh file is shared with
+nobody until you say otherwise:
+
+```
+sudo groupadd crew
+sudo gpasswd -a bob crew
+chgrp crew notes.txt
+chmod 660 notes.txt
+```
+
+Now you and `bob` both read and write `notes.txt` and nobody else can open it.
+`groups` and `id` say what you are in; `ls -l` shows the group beside the owner.
+A shipped machine already has `users`, which `admin` is in. Delete a group and
+files still naming it keep the name — `ls -l` shows it dangling, nobody is in it,
+and `chgrp` will not hand that name out again.
+
+`/etc/sudoers` stays the authority on who may `sudo`; the `sudo` group mirrors it,
+so a name in that file is in the group whether a line of `/etc/group` says so or
+not. Joining the group by hand shares the group's files and nothing else — it does
+not give out root.
+
 Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-lF] [path]` | list a directory in columns; `-l` adds owner, size and date, `-F` marks directories with `/` |
+| `ls [-lF] [path]` | list a directory in columns; `-l` adds owner, group, size and date, `-F` marks directories with `/` |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
 | `cat <file>...` | print a file |
@@ -95,8 +124,13 @@ Commands:
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
 | `chmod <mode> <path>` | set permissions (three octal digits) |
 | `chown <user> <path>` | change the owner |
+| `chgrp <group> <path>` | change the group (owner or root; the group must exist) |
 | `whoami` | print the logged-in user |
-| `id [name]` | `uid=<name> flag=admin\|user groups=sudo\|-` |
+| `id [name]` | `uid=<name> flag=admin\|user groups=<its groups, comma-separated>` |
+| `groups [name]` | the same list, blank-separated |
+| `groupadd <name>` | make a group (root only) |
+| `groupdel <name>` | remove one (root only); `root`, `sudo` and `users` cannot go |
+| `gpasswd -a\|-d <user> <group>` | put a name in or out of a group (root only) |
 | `su [name]` | become another user (`root` by default); `exit` comes back |
 | `adduser [-a] <name>` | make an account with an empty password (root only); `-a` sets its `admin` flag |
 | `deluser [-r] <name>` | remove an account (root only); `-r` removes its home directory too |
@@ -173,12 +207,12 @@ which is what a computer in a player-built base gets. `ls -l /dev` says what
 each one is and what it is doing:
 
 ```
-crw-rw----  root  lock0   exterior         W  locked
-crw-rw----  root  lock1   kitchen-hallway  N  unlocked
-crw-rw----  root  win0    office           N  locked
-crw-rw----  root  light0  office              on
-crw-rw----  root  light1  hallway             off
-crw-rw----  root  lock2   built            N  padlock
+crw-rw----  root  sudo  lock0   exterior       W  locked
+crw-rw----  root  sudo  lock1   kitchen-hallw  N  unlocked
+crw-rw----  root  sudo  win0    office         N  locked
+crw-rw----  root  sudo  light0  office            on
+crw-rw----  root  sudo  light1  hallway           off
+crw-rw----  root  sudo  lock2   built          N  padlock
 ```
 
 A device has no size and no date, so those two columns are what it *is*: the
@@ -216,9 +250,14 @@ meant. A device that is out of reach is not listed at all; naming it says `no
 such device`, which is the difference between a switch that is off the grid and a
 path you mistyped.
 
-Devices are `rw` for root, `660`, and root may open one up with `chmod 666
-/dev/light0` — that lasts. Nothing else works on one: `rm`, `mv`, `cp` and `edit`
-all answer `is a device`, and nothing can be created in `/dev` at all.
+Devices are owner `root`, group `sudo`, mode `660` — so root and anybody
+`/etc/sudoers` names read and work them, with no `sudo` typed and no password
+asked, and everybody else gets `light0: permission denied` from the device itself.
+Root may open one up to everybody with `chmod 666 /dev/light0` — that lasts.
+The group does not move: `chgrp` on a device answers `is a device`, because only
+the mode of one outlives the command it was typed in. Nothing else works on one
+either: `rm`, `mv`, `cp` and `edit` all answer `is a device`, and nothing can be
+created in `/dev` at all.
 
 Opening a door is not this. `unlock` takes the lock off; somebody still has to
 walk over and open it.
@@ -356,6 +395,32 @@ month and the day are 0-based in `zombie.GameTime`, which is why vanilla adds on
 them everywhere it prints them and why `getDayPlusOne()` exists. There is no
 `getSeconds()`: the game's finest hand is the minute, so the second is always `:00`.
 
+#### Owners, groups and the mode
+
+A node is `{ type, owner, group, mode, ... }`. `group` is a plain string and it is
+**optional**: every node of every machine saved before `SYSTEM_VERSION` 5 has none,
+`validate` accepts that and refuses a `group` that is not a string, and
+`CeroSecOS.groupOf(node)` reads a missing one as the node's `owner` — nothing
+anywhere reads `node.group` off the field. `newFile` and `newDir` set it to the
+owner's own name, which is that account's primary group, so a fresh file starts
+shared with nobody. `chown` moves the owner and leaves the group; `chgrp` moves the
+group and leaves the owner; `cp` gives the copy the caller's name for both.
+
+`CeroSecOS.can(state, session, node, what)` is the only place a permission is
+decided, and it reads exactly one digit:
+
+1. `root` bypasses everything, before anything else is asked.
+2. `node.owner == session.user` — the **first** digit, and the other two are never
+   consulted for him even if he is also in the group.
+3. `CeroSecOS.inGroup(state, user, CeroSecOS.groupOf(node))` — the **middle** digit.
+4. Otherwise the **last** digit.
+
+`inGroup` is true for three things and no others: the primary group (`user ==
+group`), a line in `/etc/group` naming the user, and — for the group `sudo` alone —
+a line in `/etc/sudoers`. It takes `state` because those two files are the answer,
+and it tolerates a `nil` state (a machine with no files parses to no groups, which
+leaves the primary groups working).
+
 Every node may carry an `mtime`, that same number. It is absent on every node saved
 before this build and on everything a fresh machine ships with; absent means 0, read
 through `CeroSecOS.mtimeOf` and never off the field, and `validate` accepts a node
@@ -385,8 +450,9 @@ The engine knows nothing about Project Zomboid, devices included. A device node
 lives under `/dev` and is not a file:
 
 ```lua
-{ type = "dev", owner = "root", mode = 660, id = "light0",
-  kind = "light", desc = "office", side = "N", state = "on" }
+{ type = "dev", owner = "root", group = "sudo", mode = 660,
+  id = "light0", kind = "light", desc = "office", side = "N",
+  state = "on" }
 ```
 
 It has no `data`, it costs nothing in `CeroSecOS.usage` (so `df` does not move
@@ -479,7 +545,8 @@ its number by the time `ls /dev` is typed.
 A machine is a filesystem and nothing else. What makes it a machine that can be
 *used* is what is in that filesystem, and each of these files is the truth about
 what it holds — there is no table of users beside `/etc/passwd`, no list of commands
-beside `/bin` and no list of sudoers beside `/etc/sudoers`. Root editing one of them
+beside `/bin`, no list of sudoers beside `/etc/sudoers` and no table of groups
+beside `/etc/group`. Root editing one of them
 with the editor changes the machine, and `rm -r /bin` really does take the commands
 away. The way back is the BIOS, not a guard rail on the command: root keeps full
 power, and the protection is that root has a password.
@@ -530,6 +597,38 @@ line. Same one-slot content-keyed cache as the accounts. Root is never looked up
 it: an `/etc/sudoers` with nobody in it must not be able to take `sudo` from the one
 account that can put it back.
 
+**`/etc/group`** — the groups, owner `root`, mode `644`, one a line:
+
+    name:member,member,...
+
+Parsing is as strict and as silent as the other two: a line is skipped when it is
+not exactly one colon, a valid name in front of it, and behind it a possibly empty
+list of valid names separated by commas — so `crew:admin,` and `crew:,admin` are
+both dropped whole rather than half read. Blank lines and lines whose first
+non-blank character is `#` are comments, a name that appears twice keeps its
+**first** line, and the same one-slot cache keyed on the node and its text applies.
+A machine ships with `root:`, `sudo:admin` and `users:admin`.
+
+Every account is additionally in a **primary group of its own name**, with no line
+anywhere: `bob` is in group `bob` whether `/etc/group` mentions him or not, and
+`adduser` writes nothing here. That is what `chgrp bob <path>` takes, and it is
+also why `groupdel bob` and `gpasswd -a bob bob` both answer `no such group` —
+there is no line to remove and none to add anybody to.
+
+`groupadd` appends, `groupdel` drops every line naming the group, and `gpasswd`
+rewrites the first line naming it; every other line is kept exactly as it lies,
+comments included. All three go through the ordinary `setData`. A group name obeys
+`CeroSecOS.isValidUserName` — the two share a namespace, so a group nobody could
+ever have as a primary group would be a trap. `root`, `sudo` and `users`
+(`CeroSecOS.GROUP_KEEP`) cannot be deleted; anything else can, and files still
+carrying the name keep it, dangling, which is what `ls -l` shows.
+
+The `sudo` group is the one place two files meet. `/etc/sudoers` remains the
+authority on who may run a command as root; `CeroSecOS.inGroup(state, user,
+"sudo")` answers true for a name in *either* file, so `id` and `groups` show it and
+the `660` on a device means what its comment always claimed. Membership of the
+group grants no `sudo`: only `/etc/sudoers` does that.
+
 **`/etc/hostname`** — the machine's name: 1 to 16 characters of `[a-z0-9-]`, never
 starting with `-` (the name is written into `state.hostname` too, where `validate`
 tests it with `isValidName`). `hostname <name>` is root only. A file that does not
@@ -549,8 +648,9 @@ to run it under. The refusal (`n`) is the machine's and not the window's: a seco
 player opening a window on a halted machine finds the refusal, not a fresh question.
 
 `CeroSecOS.restoreSystem` makes `/etc` if it is missing or is not a directory,
-creates `/etc/hostname` and `/etc/motd` only if missing, replaces `/etc/passwd` and
-`/etc/sudoers` only if missing, not a file, or parsing to nothing at all, makes
+creates `/etc/hostname` and `/etc/motd` only if missing, replaces `/etc/passwd`,
+`/etc/sudoers` and `/etc/group` only if missing, not a file, or parsing to nothing
+at all, makes
 `/bin` and rewrites every standard executable to owner `root`, mode `755` and its
 description, and rebuilds the filesystem root if the state has no usable one. It
 touches **nothing else** — `/home`, `/root`, `/dev` and anything a player made come
@@ -570,7 +670,12 @@ done in the game goes through the BIOS restore instead. `validate` knows nothing
 about accounts any more: it checks that `/etc/passwd` is there, is a file and is
 root's, and the rest is the parser's business. A machine saved before `/etc/sudoers`
 existed simply has none, and the `sysv` top-up (see "Persistence") writes it on the
-next load rather than making anyone go through the BIOS for it.
+next load rather than making anyone go through the BIOS for it. The same is true of
+`/etc/group`: `SYSTEM_VERSION` 5 seeds it, and the five group commands, into an
+older machine. Nodes saved before that rung carry **no** `group` field at all and
+are left exactly as they are — `CeroSecOS.groupOf` reads a missing one as the
+node's owner, so nothing has to walk the disk. `validate` accepts a missing
+`group` and refuses one that is not a string.
 
 ### Persistence
 

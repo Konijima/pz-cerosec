@@ -10,8 +10,11 @@ Do rung 2's checklist first, or at least its A and B sections: nothing here work
 on a machine you cannot log into. Turn `CeroSec.DEBUG = true` in
 `42/media/lua/shared/CeroSec/CeroSecDefs.lua` for the console lines.
 
-Log in as `admin` (empty password) and `su root` (empty password) — the devices are
-`660` and root's, so everything below is typed as root unless it says otherwise.
+Log in as `admin` (empty password) and `su root` (empty password). The devices are
+`660`, owner `root`, group `sudo` — `admin` is in that group on a shipped machine,
+so most of it works as `admin` too, and the Groups section below is where that is
+deliberately proved. Everything under "Devices" is typed as root unless it says
+otherwise.
 
 ## Devices
 
@@ -277,6 +280,69 @@ vanilla numbers each one was set against.
     him is not promised to be where you left it. That is deliberate — it is a
     bookmark, not machine state — and it is the one place the manual behaves
     differently from the terminal.
+
+## Groups
+
+The engine's half is pinned in `tests/os_test.lua` (section 22) and the device half
+is driven over a fake world in `tests/window_test.lua`. What is left here is what
+only a real machine, a real save and a second player can show.
+
+Do this on a computer in a base, with two accounts that are not `root`.
+
+34. **What ships.** `cat /etc/group` on a fresh machine: the two comment lines, then
+    `root:`, `sudo:admin`, `users:admin`. `ls -l /etc` shows it `-rw-r--r--  root
+    root`, and `id` as `admin` says `uid=admin flag=user groups=admin,sudo,users`.
+35. **A device needs no sudo.** Log in as `admin` and do **not** `su`. `echo on >
+    /dev/light0` — the light comes on in the room, no password is asked, nothing is
+    printed. That is `crw-rw----  root  sudo` doing its job.
+36. **And an ordinary account gets nothing.** `sudo adduser bob`, `passwd bob`, then
+    log out and log in as `bob`. `echo off > /dev/light0` answers
+    `light0: permission denied` and the light **stays on**. `ls -l /dev` still
+    lists everything: the listing is the directory's business, not the device's.
+37. **Sudoers is the way in.** As root, `edit /etc/sudoers`, add a line `bob`, save.
+    As `bob`: `id` now says `groups=bob,sudo`, and `echo off > /dev/light0` works.
+    Take the line out again and it stops working. No reboot in between.
+38. **Sharing a directory, for real.** As `admin`: `sudo groupadd crew`,
+    `sudo gpasswd -a bob crew`, `mkdir /home/admin/shared`,
+    `chgrp crew /home/admin/shared`, `chmod 770 /home/admin/shared`,
+    `chmod 755 /home/admin`. As `bob`: `cd /home/admin/shared`, `write note.txt hi`,
+    `ls -l` — the file is there, owner `bob`, group `bob`. As `admin`: `cat
+    /home/admin/shared/note.txt` prints `hi`.
+39. **And a third account does not get in.** `sudo adduser kate`, log in as `kate`,
+    `ls /home/admin/shared` → `permission denied`. `cd` into it, same.
+40. **The middle digit is the one that moved.** As `admin`,
+    `chmod 700 /home/admin/shared`. As `bob`, `ls` it → `permission denied`. Back to
+    `770` and he is in again. Nothing else was touched.
+41. **A dangling group.** As root, `groupdel crew`. `ls -l /home/admin` still shows
+    `crew` in the group column; `bob` can no longer get in; `chgrp crew
+    /home/admin/shared` answers `chgrp: crew: no such group`. `groupdel root`,
+    `groupdel sudo` and `groupdel users` all answer `cannot remove`.
+42. **It survives a save.** Quit to the main menu and load again. `cat /etc/group`
+    is what you left it, `ls -l /home/admin` still shows the group you set, and
+    `bob` still gets in or does not, exactly as before.
+43. **An older machine is topped up, not rewritten.** Load a save made before this
+    rung. `/etc/group` is there with the shipped three, `/bin` has `chgrp`,
+    `gpasswd`, `groupadd`, `groupdel` and `groups` in it, and **every file that was
+    already on the disk still lists its owner's own name in the group column** —
+    nothing walked the disk to write a field into it.
+    Then the other half of that rule: as root on a current machine,
+    `rm /etc/group`, quit, load. It stays gone — the top-up runs once and root
+    deleting a file is root's right, not damage. `groups admin` now says just
+    `admin sudo` (the primary group, and `sudo` off `/etc/sudoers`), and the BIOS
+    is what puts the file back (next step).
+44. **The BIOS keeps a group file that still parses.** As root, `edit /etc/group`,
+    leave one real line in it, save. `rm -r /bin`, then `reboot`. Answer `y` at
+    `Restore system? (y/n)`: the commands come back and `/etc/group` is still the
+    one line you left. Now `edit /etc/group` down to nothing but a comment and
+    repeat: this time it comes back as the shipped three.
+45. **Two players, one machine.** Player 1 as `admin` and player 2 as `bob`, both at
+    the same computer. Player 1 runs `sudo gpasswd -a bob users`; player 2 types
+    `groups` and sees `bob users` on his own screen without touching anything. One
+    console, one filesystem, no cache anywhere to go stale.
+46. **The listing still fits.** `ls -l /` , `ls -l /etc`, `ls -l /bin` and
+    `ls -l /dev`: no line wraps, nothing is cut but a name, and a long name ends in
+    `~`. `sudo adduser administrator` and `ls -l /home` — the owner column reads
+    `admin~`.
 
 ## Before release
 
