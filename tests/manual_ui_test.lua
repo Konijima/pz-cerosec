@@ -509,6 +509,34 @@ do
 	window:frame()
 	check("the contents rows were laid on the glass", #window.hotRows == 3)
 
+	-- What a row PRINTS. A chapter of this book carries its own number in its
+	-- title, so a row index printed in front of it reads "1.  1. Your machine".
+	-- The row is the title and nothing but the title, and the page number is
+	-- still right-aligned at the outer margin of the row.
+	for c = 1, #window.book.chapters do
+		local title = window.book.chapters[c].title
+		local number = tostring(window.book.chapters[c].page)
+		local row, num = nil, nil
+		for i = 1, #window.painted do
+			local paint = window.painted[i]
+			if paint.text == title then row = paint end
+			if paint.text == number and row ~= nil and paint.y == row.y then num = paint end
+		end
+		check("contents row " .. c .. " prints the raw title, unprefixed", row ~= nil)
+		check("contents row " .. c .. " prints its page number beside it", num ~= nil)
+		check("contents row " .. c .. "'s page number is to the right of the title",
+			num.x > row.x)
+	end
+
+	-- And nothing on the leaf carries a row index in front of a title.
+	for i = 1, #window.painted do
+		local text = window.painted[i].text
+		for c = 1, #window.book.chapters do
+			check("no contents row is indexed: " .. tostring(text),
+				text ~= tostring(c) .. ".  " .. window.book.chapters[c].title)
+		end
+	end
+
 	-- Click the third row and land on the third chapter's first leaf.
 	local row = window.hotRows[3]
 	local handled = window:onMouseDown(row.x + 2, row.y + 2)

@@ -190,8 +190,10 @@ they are about the bookmark on the item, which the door does not have.
    animation, and the queue stays empty. Walk around with the book open — it stays
    open and the character walks. Open a door, chop a tree, get bitten: the book is
    still there. It is paper on the screen, not an action.
-8. **Page 1 is the title leaf.** The book's title centred, a rule under it, the
-   edition line under that in the dimmer ink. Page 2 is **Contents**.
+8. **Page 1 is the title leaf.** The book's title centred -- `CeroSec OS 1.0
+   User's Manual`, the same version the boot banner and `/etc/motd` say -- a rule
+   under it, and `First Edition, 1993` under that in the dimmer ink. Page 2 is
+   **Contents**.
 9. **Nothing is off the paper.** Look along the right margin of every leaf you turn.
    No line of prose runs past the edge of the cream, and no word is cut in half by
    the paper's edge.
@@ -216,7 +218,10 @@ they are about the bookmark on the item, which the door does not have.
 15. **Chapters open a leaf.** Turn through the whole book. Every chapter starts at the
     **top** of a leaf, with its title as the running head, and no chapter begins
     halfway down the page before it.
-16. **Contents.** Press **Contents**. The rows highlight under the cursor. Click the
+16. **Contents.** Press **Contents**. Each row is the chapter's title exactly as
+    the chapter's own leaf is headed -- `1. Your machine`, not `1.  1. Your
+    machine` -- with the page number right-aligned at the outer margin. The rows
+    highlight under the cursor. Click the
     third one: the book opens at the third chapter's **first** leaf, and the running
     head on that leaf is that chapter's title. Do it for every chapter and check the
     printed page number on the row against the number printed at the foot of the leaf

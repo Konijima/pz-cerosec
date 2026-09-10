@@ -51,7 +51,17 @@ CeroSecOS.MAX_DEPTH = 16         -- path components below /
 -- must not be the same kind of thing, or a file's contents can be made to look
 -- like an order.
 CeroSecOS.DEFAULT_HOSTNAME = "cerosec"
-CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
+
+-- The operating system's own version, and the ONLY place it is written down.
+-- Every string in the world that names it -- the greeting the boot ends on and
+-- a login is met with, the manual's own cover -- is built from this one, so a
+-- player never reads two different numbers for the same machine. The BIOS is a
+-- separate component with its own number (CeroSec.BIOS_VERSION), and the mod's
+-- release version in mod.info is a third thing again: neither is this.
+CeroSecOS.VERSION = "1.0"
+
+CeroSecOS.MOTD = "CeroSec OS " .. CeroSecOS.VERSION ..
+	" -- unauthorized access is prohibited."
 
 -- The system files. Every one of them is a real file on the machine's own
 -- disk, and every one of them is the truth about what it holds: the parser is

@@ -45,9 +45,20 @@ local function check(what, cond)
 end
 
 check("CeroSecManual is a table", type(CeroSecManual) == "table")
+
+-- The cover is stamped, not written: the version on it is the engine's own and
+-- there is no second copy of the number anywhere in the book.
+check("the cover is stamped, not typed", type(CeroSecManual.stampVersion) == "function")
+CeroSecManual.stampVersion()
+
 check("has a title", type(CeroSecManual.title) == "string" and CeroSecManual.title ~= "")
 check("has an edition", type(CeroSecManual.edition) == "string" and CeroSecManual.edition ~= "")
 check("has chapters", type(CeroSecManual.chapters) == "table")
+
+check("the version is one string in one place", type(CeroSecOS.VERSION) == "string"
+	and CeroSecOS.VERSION ~= "")
+check("the title names the OS version the engine reports",
+	CeroSecManual.title == "CeroSec OS " .. CeroSecOS.VERSION .. " User's Manual")
 
 local chapters = CeroSecManual.chapters
 
@@ -100,10 +111,28 @@ for ci = 1, #chapters do
 			end
 		end
 
+		-- No page names an OS version of its own. The cover is the only place
+		-- the number appears at all, and it is stamped from CeroSecOS.VERSION;
+		-- a "CeroSec OS 3.2" left in the prose is a second number the player
+		-- reads on the same machine. The letter test in front of "OS" is what
+		-- lets "CeroSec BIOS 1.0" through: the firmware has its own version.
+		for pos in string.gmatch(page, "()OS %d+%.%d+") do
+			local before = pos > 1 and string.sub(page, pos - 1, pos - 1) or ""
+			check(where .. " names no OS version of its own: " ..
+				string.sub(page, pos - 8 < 1 and 1 or pos - 8, pos + 8),
+				string.find(before, "%a") ~= nil)
+		end
+
 		wholeBook[#wholeBook + 1] = page
 	end
 end
 wholeBook = table.concat(wholeBook, "\n")
+
+-- The BIOS line the book prints is the BIOS line the machine prints.
+check("the book quotes the real BIOS line",
+	string.find(wholeBook, CeroSec.BOOT_LINES[1], 1, true) ~= nil)
+check("and the firmware version is one string in one place",
+	type(CeroSec.BIOS_VERSION) == "string" and CeroSec.BIOS_VERSION ~= "")
 
 check("total pages is 45..70 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 70)
 

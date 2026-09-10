@@ -311,6 +311,13 @@ eq("a forged console cannot grow the screen",
 --
 
 check("there are boot lines", #CeroSec.BOOT_LINES > 0)
+-- The firmware announces its own version and nothing else's: the BIOS is not
+-- the operating system, and the two numbers are never the same string.
+check("the BIOS names its own version",
+	string.find(CeroSec.BOOT_LINES[1], CeroSec.BIOS_VERSION, 1, true) ~= nil)
+eq("and it is the whole of the first line",
+	CeroSec.BOOT_LINES[1], "CeroSec BIOS " .. CeroSec.BIOS_VERSION ..
+	" -- (c) 1993 CeroSec Systems")
 for i = 1, #CeroSec.BOOT_LINES do
 	local line = CeroSec.BOOT_LINES[i]
 	check("boot line " .. i .. " is a string", type(line) == "string")

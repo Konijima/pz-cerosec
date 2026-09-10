@@ -622,13 +622,23 @@ only one of them anybody has to touch to write another edition.
 **The text** is `42/media/lua/shared/CeroSec/CeroSecManual.lua`, one global table:
 
     CeroSecManual = {
-      title = "...",
+      title = nil,             -- stamped, see below
       edition = "...",
       chapters = {
         { title = "...", pages = { "plain text\nwith paragraphs", ... } },
         ...
       },
     }
+
+The **title is not written here**. It names the version of the OS the book is
+for, and that number has exactly one home — `CeroSecOS.VERSION` — so the cover is
+built from it by `CeroSecManual.stampVersion()` at the bottom of the same file.
+It cannot be a plain concatenation in the table: the game sorts
+`shared/cerosec/cerosecmanual.lua` ahead of `shared/cerosec/os/cerosecos.lua`
+(the load list is every relative path, lowercased, sorted case-insensitively),
+so the core is not loaded yet when the table is built. `CeroSecManualUI.text()`
+stamps it at the last moment before the layout reads it, and running the stamp
+twice changes nothing.
 
 ASCII only. `\n` is a paragraph break. **An authored page is a page**: the writer
 decides where a page ends and the layout honours it, so pages want to be about 900
@@ -729,6 +739,16 @@ and skipped rather than taking the mod down.
 - A control marker (`clear`, `exit`, `prompt`, `edit`) never travels in the same
   channel as text output.
 - The mod folder is a real directory, never a symlink.
+- **Three version numbers, three homes, and no in-world string carries a
+  fourth.** The operating system's is `CeroSecOS.VERSION` (`shared/CeroSec/OS/
+  CeroSecOS.lua`) and everything a player reads that names it — the greeting the
+  boot ends on and a login is met with (`CeroSecOS.MOTD`, the built-in
+  `/etc/motd`), the manual's cover — is built from it. The firmware's is
+  `CeroSec.BIOS_VERSION` (`shared/CeroSec/CeroSecDefs.lua`), a separate component
+  with a separate number, printed by `CeroSec.BOOT_LINES[1]`. The mod's own
+  release version is `modversion` in `42/mod.info` and never appears in the
+  world at all. `tests/manual_test.lua` refuses a page that names an OS version
+  of its own.
 
 ## Testing
 

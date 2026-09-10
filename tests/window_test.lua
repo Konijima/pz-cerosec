@@ -624,7 +624,9 @@ do
 	bench.enter("y")
 	bench.frame()
 	eq("the machine boots", bench.window.prompt, "login: ")
-	check("and greets whoever is standing there", bench.painted("CeroSec OS 1.0"))
+	-- The greeting, read off the constant it is built from: a version typed
+	-- into a bench is a second place the number lives.
+	check("and greets whoever is standing there", bench.painted(CeroSecOS.MOTD))
 
 	bench.enter("root")
 	bench.enter("")
@@ -843,7 +845,7 @@ do
 
 	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
 	bench.frame()
-	check("the BIOS is on the first glass", bench.painted("CeroSec BIOS"))
+	check("the BIOS is on the first glass", bench.painted(CeroSec.BOOT_LINES[1]))
 	eq("and it ends at a login prompt", bench.window.prompt, "login: ")
 	eq("for the second window too", other.prompt, "login: ")
 	eq("both are at a prompt", bench.window.mode, "prompt")

@@ -617,7 +617,7 @@ the top-up must not undo it.
      `ls /home/admin` and `cat /etc/passwd` are exactly as they were. A shutdown
      is a power cut, not a repair.
 139. **reboot.** As `root`, `reboot`. The window **stays open**: the screen goes
-     back to `CeroSec BIOS v1.03`, counts the memory, detects the drive, prints
+     back to `CeroSec BIOS 1.0`, counts the memory, detects the drive, prints
      the motd and stops at `login:`. You hear the toggle sound and then the boot
      sound, and the sprite blinks off and on. Nobody is logged in any more; log
      in again and `ls /home/admin` still lists what was there.

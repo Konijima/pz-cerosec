@@ -129,6 +129,13 @@ end
 -- because the text is a separate file and a reload of it must not leave every
 -- open book showing the old edition.
 function CeroSecManualUI.text()
+	-- The cover carries the OS' version and the manual file cannot build it at
+	-- load time (the core loads after it), so it is stamped here, at the last
+	-- moment before the layout reads it. A half-written table that has no
+	-- stamp of its own is still an empty book and never an error.
+	if CeroSecManual and CeroSecManual.stampVersion then
+		CeroSecManual.stampVersion()
+	end
 	return CeroSecManual
 end
 
@@ -486,8 +493,10 @@ function CeroSecManualUI:drawContents(page, x, y, width)
 				paper.linkHi.r, paper.linkHi.g, paper.linkHi.b)
 		end
 
-		local label = tostring(entry.index) .. ".  " .. entry.title
-		self:drawText(label, x, ly,
+		-- The title as the chapter carries it, and nothing in front of it: a
+		-- chapter already numbered on its own leaf ("1. Your machine") read
+		-- "1.  1. Your machine" with a row index prefixed to it.
+		self:drawText(entry.title, x, ly,
 			paper.link.r, paper.link.g, paper.link.b, 1, UIFont[CeroSecManualUI.FONT_BODY])
 
 		local number = tostring(entry.page)

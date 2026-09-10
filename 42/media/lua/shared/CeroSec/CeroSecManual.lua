@@ -1,14 +1,21 @@
--- CeroSec OS 3.2 User's Manual, as it sits on the shelf in Knox County.
+-- The CeroSec OS User's Manual, as it sits on the shelf in Knox County.
 --
 -- A page of this book is a page for the in-world reader item: plain text,
 -- ASCII only, no page over 900 characters, shell examples as their own
--- lines starting with two spaces. This file carries no logic of its own; it
+-- lines starting with two spaces. The only logic in this file is the one line
+-- at the bottom that stamps the cover with CeroSecOS.VERSION; the text itself
 -- is read by whatever item hands it to the player and by tests/manual_test.lua,
 -- which checks it against the engine's own commands and error strings.
 
 CeroSecManual = {
-	title = "CeroSec OS 3.2 User's Manual",
-	edition = "Second Edition, 1993",
+	-- The cover names the version of the OS this book is for, and that number
+	-- has one home: CeroSecOS.VERSION. It cannot be read here at load time --
+	-- the game sorts shared/cerosec/cerosecmanual.lua ahead of
+	-- shared/cerosec/os/cerosecos.lua, so the core is not there yet -- so the
+	-- title is stamped on by stampVersion() at the bottom of this file, which
+	-- whoever opens the book calls first. There is no version literal here.
+	title = nil,
+	edition = "First Edition, 1993",
 	chapters = {
 
 		{ title = "1. Your machine", pages = {
@@ -89,7 +96,7 @@ plugged in.]],
 moment anybody first looks at it -- not once per person who looks. Five
 lines of it, typed out over a couple of seconds:
 
-  CeroSec BIOS v1.03 -- (c) 1993 CeroSec Systems
+  CeroSec BIOS 1.0 -- (c) 1993 CeroSec Systems
   Memory test: 640K OK
   Detecting drives ... hda 32K
   Booting from hda ...
@@ -987,3 +994,12 @@ never turn up in ordinary use:
 
 	},
 }
+
+-- The cover, stamped with the version the OS really reports. This file loads
+-- before the core does, so the concatenation cannot sit in the table above; it
+-- is done here, on demand, by whoever is about to hand the book to a reader.
+-- Idempotent, and there is no second place the number is written.
+function CeroSecManual.stampVersion()
+	CeroSecManual.title = "CeroSec OS " .. CeroSecOS.VERSION .. " User's Manual"
+	return CeroSecManual
+end

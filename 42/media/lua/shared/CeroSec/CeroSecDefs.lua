@@ -353,12 +353,18 @@ CeroSec.CONSOLE_MAX = 100
 -- drift, exactly as it does for truncate and padRight.
 CeroSec.SU_MAX = 4
 
+-- The firmware's own version, and the only place it is written down. The BIOS
+-- is a separate component from the operating system, so it carries a separate
+-- number: the two happen to be aligned today, and a new firmware moves this one
+-- alone and never CeroSecOS.VERSION.
+CeroSec.BIOS_VERSION = "1.0"
+
 -- The BIOS. Written by the server into the console the first time somebody
 -- opens a machine that has just been switched on, so that it is on the screen
 -- exactly once per power-on -- and so that the second player to open the same
 -- computer sees the same lines the first one saw, instead of a second boot.
 CeroSec.BOOT_LINES = {
-	"CeroSec BIOS v1.03 -- (c) 1993 CeroSec Systems",
+	"CeroSec BIOS " .. CeroSec.BIOS_VERSION .. " -- (c) 1993 CeroSec Systems",
 	"Memory test: 640K OK",
 	-- The capacity is NOT written here: it is the engine's ceiling and it is
 	-- appended at power-on by bootLines(). A BIOS that announces a drive the
