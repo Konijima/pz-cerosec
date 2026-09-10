@@ -7,11 +7,13 @@ require "CeroSec/CeroSecReach"
 -- The terminal window: a 60 x 20 green screen in a beige monitor, inside a
 -- plain PZ window.
 --
--- It owns no state of the machine. Everything it shows either came from the
--- server (the boot preamble, the answer to a login, the output of a command) or
--- is pure decoration typed here (the BIOS lines, the cursor, the glow). The one
--- thing it decides on its own is when to shut: the moment the computer, the
--- power or the player stops being what the window was opened for.
+-- It owns no state of the machine, and since the console model it owns none of
+-- the screen either: the server hands it the whole screen -- the lines, the
+-- prompt, and what the machine is waiting for -- and the window draws it. What
+-- is left here is decoration (the cursor, the glow, the scanlines), the input
+-- history of this player, and the one thing the window decides on its own: when
+-- to shut, the moment the computer, the power or the player stops being what it
+-- was opened for.
 --
 
 CeroSecTerminal = ISCollapsableWindow:derive("CeroSecTerminal")
@@ -38,15 +40,10 @@ local HINT_H = CELL_H + 6
 local WINDOW_W = GLASS_W + BEZEL * 2
 local WINDOW_H = TITLE_H + GLASS_H + BEZEL * 2 + HINT_H
 
--- The BIOS. Client side and fixed: a round trip to the server to be told that
--- 640K are fine would be a round trip spent on nothing.
-CeroSecTerminal.BOOT_LINES = {
-	"CeroSec BIOS v1.03 -- (c) 1993 CeroSec Systems",
-	"Memory test: 640K OK",
-	"Detecting drives ... hda 20MB",
-	"Booting from hda ...",
-	"",
-}
+-- How long the machine takes to put its first screenful up. The BIOS lines
+-- themselves are the server's (CeroSec.BOOT_LINES, written into the console at
+-- power-on): all that is left here is the pace at which they appear, and only
+-- for the player who opened the machine first.
 CeroSecTerminal.BOOT_MS = 2000
 
 -- How long a command may go unanswered before the terminal stops waiting for
@@ -90,7 +87,7 @@ function CeroSecTerminal.open(playerObj, computer)
 	window:initialise()
 	window:addToUIManager()
 	CeroSecTerminal.instances[playerNum] = window
-	window:boot()
+	window:askForScreen()
 	return window
 end
 
@@ -110,16 +107,19 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.hostname = "cerosec"
 	o.token = newToken(o.playerNum)
 
+	-- The screen, as the server last described it. self.lines is what is drawn:
+	-- the same thing, except while the BIOS is being revealed a line at a time.
 	o.lines = {}
+	o.screen = {}
+	o.revealing = false
+	o.revealStart = 0
+	o.shown = 0
 	o.history = {}
 	o.historyIndex = 0
 	o.scroll = 0
-	o.phase = "boot"
+	o.mode = "login"
 	o.prompt = ""
-	o.bootShown = 0
-	o.bootStart = 0
 	o.opened = false
-	o.pendingUser = nil
 	o.busy = false
 	o.busySince = 0
 	o.lastKeySound = 0
@@ -192,9 +192,11 @@ function CeroSecTerminal:inputY(row)
 	return TITLE_H + BEZEL + PAD + (row or 0) * CELL_H - 2
 end
 
-function CeroSecTerminal:boot()
-	self.bootStart = getTimestampMs()
-	self.bootShown = 0
+-- The first thing a window does: ask the machine what is on its screen. Until
+-- the answer lands there is nothing to show, because the window invents
+-- nothing.
+function CeroSecTerminal:askForScreen()
+	self:setBusy()
 	self:send("open", {})
 end
 
@@ -222,35 +224,43 @@ function CeroSecTerminal:onServerCommand(command, args)
 	elseif command == "opened" then
 		self.opened = true
 		if args.hostname then self.hostname = args.hostname end
-		self.preamble = args.lines
 		-- U+00B7 MIDDLE DOT, in the window font (UIFont.Small), as decided.
 		self:setTitle("CeroSec OS \194\183 " .. self.hostname)
-		self:maybeFinishBoot()
-	elseif command == "login" then
-		self.busy = false
-		self:addLines(args.lines)
-		if args.ok then
-			self.prompt = args.prompt
-			self:setPhase("shell")
-		else
-			self:setPhase("login")
-		end
-	elseif command == "exec" then
-		self.busy = false
-		if args.control == "clear" then
-			self.lines = {}
-			self.scroll = 0
-		else
-			self:addLines(args.lines)
-		end
-		if args.control == "exit" then
-			self:addLines({ "logout" })
-			self:setPhase("login")
-		else
-			if args.prompt then self.prompt = args.prompt end
-			self:setPhase("shell")
-		end
+		self:showScreen(args, args.animate)
+	elseif command == "screen" then
+		self:showScreen(args, false)
 	end
+end
+
+-- One screen, whole, as the server described it. Everything the window shows
+-- comes through here and nowhere else: there is no path by which a line appears
+-- on this screen without being on the machine's.
+--
+-- animate is set on the one 'opened' that finds the machine freshly switched
+-- on: those lines are typed out over BOOT_MS rather than dropped on the glass
+-- at once. It is the only moment the window shows less than it was told.
+function CeroSecTerminal:showScreen(args, animate)
+	self.busy = false
+	self.screen = args.lines or {}
+	self.prompt = args.prompt or ""
+	self.scroll = 0
+
+	if animate and #self.screen > 0 then
+		self.revealing = true
+		self.revealStart = getTimestampMs()
+		self.shown = 0
+		self.lines = {}
+		-- No prompt under a machine that is still counting its memory.
+		self.bootedPrompt = self.prompt
+		self.prompt = ""
+		self:setMode("boot")
+		return
+	end
+
+	self.revealing = false
+	self.shown = #self.screen
+	self.lines = self.screen
+	self:setMode(args.mode)
 end
 
 function CeroSecTerminal:closedByServer(reason)
@@ -262,27 +272,33 @@ end
 -- The screen
 --
 
-function CeroSecTerminal:addLines(lines)
-	if not lines then return end
-	for i = 1, #lines do
-		CeroSec.ringPush(self.lines, tostring(lines[i]), CeroSec.SCROLLBACK_MAX)
-	end
+-- A line the window says on its own account. There is exactly one of those --
+-- the answer that never came -- and it is gone the moment the server describes
+-- the screen again, which is the right lifetime for it.
+function CeroSecTerminal:say(text)
+	-- Never written into self.screen: that table is the server's word.
+	local shown = {}
+	for i = 1, #self.lines do shown[i] = self.lines[i] end
+	CeroSec.ringPush(shown, text, CeroSec.CONSOLE_MAX)
+	self.lines = shown
 	self.scroll = 0
 end
 
--- The keyboard is never given back for the length of a phase: waiting on the
--- server, or on the BIOS, must not hand the next keystroke to the game.
-function CeroSecTerminal:setPhase(phase)
-	self.phase = phase
-	if phase == "login" then
-		self.pendingUser = nil
-		self.prompt = "login: "
-	elseif phase == "password" then
-		self.prompt = "password: "
+-- What the machine is waiting for: "login", "password", "shell", or "boot"
+-- while the BIOS is still typing itself out. The prompt is not set here -- it
+-- comes down with the screen -- so the two can never drift apart.
+function CeroSecTerminal:setMode(mode)
+	mode = mode or "login"
+	-- Only a change empties the input line. Every screen the machine sends
+	-- lands here, including the ones another player standing at the same
+	-- computer caused, and a half-typed command must survive those.
+	local changed = self.mode ~= mode
+	self.mode = mode
+	self.entry:setMasked(mode == "password")
+	if changed then
+		self.entry:setText("")
+		self.historyIndex = 0
 	end
-	self.entry:setMasked(phase == "password")
-	self.entry:setText("")
-	self.historyIndex = 0
 	self:layoutEntry()
 end
 
@@ -389,35 +405,35 @@ function CeroSecTerminal:onTyped()
 	self.playerObj:playSoundLocal("CeroSecKeyboardFast")
 end
 
+-- Enter. Nothing is echoed here: the line goes to the machine, and it comes
+-- back on the screen the machine sends everybody standing at it. That round
+-- trip is what makes the second player see the first one typing.
 function CeroSecTerminal:onCommandEntered()
-	if self.busy or self.phase == "boot" then return end
+	if self.busy or self.revealing then return end
 	local text = self.entry:getInternalText() or ""
 	self.entry:setText("")
 	self.historyIndex = 0
 
-	if self.phase == "login" then
+	if self.mode == "login" then
+		-- An empty name is not a login attempt, it is a bare Enter.
 		if text == "" then return end
-		self.pendingUser = text
-		self:addLines({ "login: " .. text })
-		self:setPhase("password")
-		return
-	end
-
-	if self.phase == "password" then
-		self:addLines({ "password: " .. string.rep("*", #text) })
 		self:setBusy()
-		self:setPhase("wait")
-		self:send("login", { name = self.pendingUser or "", password = text })
+		self:send("login", { text = text })
 		return
 	end
 
-	if self.phase == "shell" then
-		self:addLines({ (self.prompt or "") .. text })
+	if self.mode == "password" then
+		-- An empty password is one: the accounts ship open.
+		self:setBusy()
+		self:send("login", { text = text })
+		return
+	end
+
+	if self.mode == "shell" then
 		if text ~= "" then
 			CeroSec.ringPush(self.history, text, CeroSec.HISTORY_MAX)
 		end
 		self:setBusy()
-		self:setPhase("wait")
 		self:send("exec", { line = text })
 	end
 end
@@ -433,14 +449,11 @@ function CeroSecTerminal:checkTimeout()
 	if not self.busy then return end
 	if getTimestampMs() - self.busySince < CeroSecTerminal.REPLY_TIMEOUT_MS then return end
 	self.busy = false
-	self:addLines({ "cerosec: no answer from the machine" })
-	if self.phase == "wait" then
-		self:setPhase(self.prompt == "password: " and "login" or "shell")
-	end
+	self:say("cerosec: no answer from the machine")
 end
 
 function CeroSecTerminal:onHistory(delta)
-	if self.phase ~= "shell" then return end
+	if self.mode ~= "shell" then return end
 	local index, text = CeroSec.historyPick(self.history, self.historyIndex, delta)
 	self.historyIndex = index
 	self.entry:setText(text)
@@ -512,29 +525,31 @@ end
 -- Drawing
 --
 
-function CeroSecTerminal:maybeFinishBoot()
-	if self.phase ~= "boot" then return end
-	if self.bootShown < #CeroSecTerminal.BOOT_LINES then return end
-	if not self.opened then return end
-	self:addLines(self.preamble)
-	self:setPhase("login")
+-- The BIOS typing itself out. Nothing is invented: the lines being revealed are
+-- the ones the server already put on the console, one at a time, and the moment
+-- the last one is up the window is showing exactly what every other window on
+-- this machine shows.
+function CeroSecTerminal:updateReveal()
+	if not self.revealing then return end
+	local count = #self.screen
+	local elapsed = getTimestampMs() - self.revealStart
+	local want = math.floor(elapsed / (CeroSecTerminal.BOOT_MS / count))
+	if want > count then want = count end
+	while self.shown < want do
+		self.shown = self.shown + 1
+		self.lines[#self.lines + 1] = self.screen[self.shown]
+		self.scroll = 0
+	end
+	if self.shown < count then return end
+
+	self.revealing = false
+	self.lines = self.screen
+	self.prompt = self.bootedPrompt or ""
+	self:setMode("login")
 	-- The login prompt is the first thing anyone types at, so make sure the
 	-- keyboard is here for it: two seconds of BIOS is long enough for a click
 	-- somewhere else to have taken it.
 	self:focusEntry()
-end
-
-function CeroSecTerminal:updateBoot()
-	if self.phase ~= "boot" then return end
-	local count = #CeroSecTerminal.BOOT_LINES
-	local elapsed = getTimestampMs() - self.bootStart
-	local want = math.floor(elapsed / (CeroSecTerminal.BOOT_MS / count))
-	if want > count then want = count end
-	while self.bootShown < want do
-		self.bootShown = self.bootShown + 1
-		self:addLines({ CeroSecTerminal.BOOT_LINES[self.bootShown] })
-	end
-	self:maybeFinishBoot()
 end
 
 function CeroSecTerminal:prerender()
@@ -542,7 +557,7 @@ function CeroSecTerminal:prerender()
 		self:close()
 		return
 	end
-	self:updateBoot()
+	self:updateReveal()
 	self:checkTimeout()
 	self:layoutEntry()
 	ISCollapsableWindow.prerender(self)
@@ -619,7 +634,7 @@ function CeroSecTerminal:drawInput(x, y)
 	self:drawScreenText(prompt, x, y, colors.dim)
 
 	local text = self.entry:getInternalText() or ""
-	if self.phase == "password" then text = string.rep("*", #text) end
+	if self.mode == "password" then text = string.rep("*", #text) end
 	local textX = x + getTextManager():MeasureStringX(UIFont.Code, prompt)
 	self:drawScreenText(text, textX, y, colors.text)
 

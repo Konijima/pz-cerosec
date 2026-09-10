@@ -2,7 +2,6 @@ if isClient() then return end
 
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
-require "CeroSec/CeroSecIdentity"
 require "CeroSec/SCeroSecObject"
 
 SCeroSecSystem = SGlobalObjectSystem:derive("SCeroSecSystem")
@@ -23,14 +22,18 @@ function SCeroSecSystem:initSystem()
 	-- Fields of this system that are saved.
 	self.system:setModDataKeys(nil)
 
-	-- Fields of each GlobalObject that are saved to gos_cerosec.bin. 'os' is a
-	-- nested table; the serializer recurses into those (KahluaTableImpl.save).
-	self.system:setObjectModDataKeys({ 'v', 'on', 'facing', 'os' })
+	-- Fields of each GlobalObject that are saved to gos_cerosec.bin. 'os' and
+	-- 'console' are nested tables; the serializer recurses into those
+	-- (KahluaTableImpl.save). The console is saved so that a screen survives a
+	-- save and a reload the way it survives a player walking away: the machine
+	-- is what remembers, not the session.
+	self.system:setObjectModDataKeys({ 'v', 'on', 'facing', 'os', 'console' })
 
 	-- Fields sent to clients on add/update. Without this the client mirror
 	-- receives an empty table (SGlobalObjectNetwork saves only these keys).
-	-- 'os' is deliberately absent: the client never reads the filesystem, it
-	-- only ever sees the lines the server answers it with.
+	-- 'os' and 'console' are deliberately absent: the client never reads the
+	-- filesystem nor the stored screen, it only ever sees the lines the server
+	-- answers it with.
 	self.system:setObjectSyncKeys({ 'v', 'on', 'facing' })
 end
 
@@ -79,8 +82,14 @@ local function isAdjacent(playerObj, x, y, z)
 		and math.abs(y + 0.5 - playerObj:getY()) <= 1.6
 end
 
--- Who is typing: CeroSec.playerKey, shared with the client (CeroSecIdentity).
-local playerKeyOf = CeroSec.playerKey
+-- Which window a command comes from. The token alone would do inside one
+-- connection, but two clients pick their tokens independently, so the online id
+-- goes in front of it: what is being named here is one window on one machine.
+-- getOnlineID is what vanilla keys per-player server state on
+-- (Fishing.ServerBobberManager, Bobber.lua:26).
+local function watcherKeyOf(playerObj, token)
+	return tostring(playerObj:getOnlineID()) .. "/" .. tostring(token)
+end
 
 --
 -- Answering one player
@@ -116,16 +125,22 @@ end
 -- client -> server, all of them carrying the computer's x, y, z and the
 -- terminal's token:
 --   toggle  {}                      -- rung 1
---   open    {}                      -- boot preamble, and is it on?
---   login   { name, password }
+--   open    {}                      -- give me the screen
+--   login   { text }                -- a user name, or a password: the console
+--                                      knows which of the two it is waiting for
 --   exec    { line }
 --   close   {}
 -- server -> client, every answer carrying the token of the terminal it belongs
 -- to, because a connection is not a window:
---   opened  { x, y, z, token, hostname, lines }
---   login   { x, y, z, token, ok, lines, prompt }
---   exec    { x, y, z, token, ok, lines, control, prompt }
+--   opened  { x, y, z, token, hostname, booted, lines, prompt, mode, animate }
+--   screen  { x, y, z, token, hostname, booted, lines, prompt, mode }
 --   closed  { x, y, z, token, reason }
+--
+-- There is one answer for everything that happens on a screen, and it is the
+-- whole screen. The server owns the console, so the client has nothing to
+-- reconstruct and nothing to guess: it draws the lines it was handed, under the
+-- prompt it was handed. 'opened' is that same payload plus the one thing only
+-- the opener is told: whether the BIOS is still to be played.
 --
 
 local Commands = {}
@@ -160,6 +175,65 @@ function SCeroSecSystem:computerFor(playerObj, x, y, z, token)
 	return luaObject
 end
 
+-- The computer, its filesystem and its screen, or nil after having told the
+-- player why not. Every path into a console goes through here.
+function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
+	-- A window with no usable token is a window nothing can be addressed to:
+	-- every answer is matched on it, so there is nothing to answer here.
+	if token == nil then return nil end
+	local luaObject = self:computerFor(playerObj, x, y, z, token)
+	if not luaObject then return nil end
+
+	local state, reason = luaObject:osState()
+	if not state then
+		self:replyClosed(playerObj, x, y, z, "broken", token)
+		if reason then CeroSec.log("console refused: " .. tostring(reason)) end
+		return nil
+	end
+
+	local console = luaObject:consoleState()
+	if not console then
+		self:replyClosed(playerObj, x, y, z, "off", token)
+		return nil
+	end
+	return luaObject, state, console
+end
+
+-- Whether an account wears the "#" prompt. nil (nobody logged in) is not one.
+function SCeroSecSystem:isAdmin(state, name)
+	if name == nil then return false end
+	local user = CeroSecOS.getUser(state, name)
+	return user ~= nil and user.admin and true or false
+end
+
+-- One screen, as a window has to be told it. The prompt is derived from the
+-- console here and nowhere else, so no two windows can disagree about it.
+function SCeroSecSystem:screenArgs(luaObject, state, console, token)
+	return {
+		x = luaObject.x, y = luaObject.y, z = luaObject.z,
+		token = token,
+		hostname = state.hostname,
+		booted = console.booted and true or false,
+		lines = console.lines,
+		prompt = CeroSec.consolePrompt(console, state.hostname,
+			self:isAdmin(state, console.user)),
+		mode = CeroSec.consoleMode(console),
+	}
+end
+
+-- The screen changed: hand it to every window open on this computer. The
+-- requester is one of them and is answered here like the others, by its own
+-- token -- there is no private half of a screen anybody is standing in front of.
+function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
+	if not luaObject.watchers then return end
+	for key, watcher in pairs(luaObject.watchers) do
+		if watcher.player and key ~= exceptKey then
+			self:reply(watcher.player, "screen",
+				self:screenArgs(luaObject, state, console, watcher.token))
+		end
+	end
+end
+
 Commands.toggle = function(self, playerObj, x, y, z)
 	if not isAdjacent(playerObj, x, y, z) then return end
 
@@ -175,106 +249,104 @@ Commands.toggle = function(self, playerObj, x, y, z)
 end
 
 Commands.open = function(self, playerObj, x, y, z, token)
-	local luaObject = self:computerFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
-	local state, reason = luaObject:osState()
-	if not state then
-		self:replyClosed(playerObj, x, y, z, "broken", token)
-		if reason then CeroSec.log("open refused: " .. tostring(reason)) end
-		return
+	local key = watcherKeyOf(playerObj, token)
+	luaObject:addWatcher(key, playerObj, token)
+
+	-- The BIOS belongs to the power-on, not to the window: the first player to
+	-- open a machine that has just been switched on watches it type itself out,
+	-- and it is then on the screen for whoever opens it next.
+	local animate = not console.booted
+	if animate then
+		console.booted = true
+		CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
+		CeroSec.consolePush(console, CeroSecOS.MOTD)
 	end
 
-	-- A new terminal starts logged out, whatever the last one left behind.
-	luaObject:closeSession(playerKeyOf(playerObj))
-
-	self:reply(playerObj, "opened", {
-		x = x, y = y, z = z, token = token,
-		hostname = state.hostname,
-		lines = CeroSecOS.fit({ CeroSecOS.MOTD }),
-	})
+	local args = self:screenArgs(luaObject, state, console, token)
+	args.animate = animate
+	self:reply(playerObj, "opened", args)
+	-- Somebody else may have been looking at the blank screen when it booted.
+	if animate then self:pushScreen(luaObject, state, console, key) end
 end
 
 Commands.login = function(self, playerObj, x, y, z, token, args)
-	local luaObject = self:computerFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
-	local state = luaObject:osState()
-	if not state then
-		self:replyClosed(playerObj, x, y, z, "broken", token)
-		return
-	end
+	local text = args.text
+	if type(text) ~= "string" then text = "" end
 
-	local name = args.name
-	if type(name) ~= "string" then name = "" end
-	local password = args.password
-	if type(password) ~= "string" then password = "" end
-
-	local session, reason = CeroSecOS.login(state, name, password)
-	if not session then
-		luaObject:closeSession(playerKeyOf(playerObj))
-		self:reply(playerObj, "login", {
-			x = x, y = y, z = z, token = token,
-			ok = false,
+	local mode = CeroSec.consoleMode(console)
+	if mode == "login" then
+		-- The name is echoed and remembered; nothing is judged until the
+		-- password is in, so an unknown name looks exactly like a known one.
+		if text ~= "" then
+			CeroSec.consolePush(console, "login: " .. text)
+			console.pending = text
+		end
+	elseif mode == "password" then
+		local name = console.pending
+		console.pending = nil
+		CeroSec.consolePush(console, CeroSec.maskedLine("password: ", text))
+		local session, reason = CeroSecOS.login(state, name, text)
+		if session then
+			console.user = session.user
+			console.cwd = session.cwd
+			CeroSec.consolePush(console, CeroSecOS.MOTD)
+		else
 			-- One answer for a bad name and for a bad password alike: the
 			-- machine does not say which half was wrong.
-			lines = CeroSecOS.fit({ "login incorrect" }),
-		})
-		CeroSec.log("login refused: " .. tostring(reason))
-		return
+			CeroSec.consolePush(console, "login incorrect")
+			CeroSec.log("login refused: " .. tostring(reason))
+		end
 	end
-
-	luaObject:openSession(playerKeyOf(playerObj),
-		{ session = session, player = playerObj, token = token })
-	local user = CeroSecOS.getUser(state, session.user)
-	self:reply(playerObj, "login", {
-		x = x, y = y, z = z, token = token,
-		ok = true,
-		lines = CeroSecOS.fit({ CeroSecOS.MOTD }),
-		prompt = CeroSec.prompt(session.user, state.hostname, session.cwd, user and user.admin),
-	})
+	-- A window that typed at the wrong prompt gets the screen back and nothing
+	-- else: the console is what decides what it is waiting for.
+	self:pushScreen(luaObject, state, console)
 end
 
 Commands.exec = function(self, playerObj, x, y, z, token, args)
-	local luaObject = self:computerFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
-	local playerKey = playerKeyOf(playerObj)
-	local open = luaObject:sessionFor(playerKey)
-	if not open then
-		self:replyClosed(playerObj, x, y, z, "session", token)
-		return
-	end
-
-	local state = luaObject:osState()
-	if not state then
-		luaObject:closeSession(playerKey)
-		self:replyClosed(playerObj, x, y, z, "broken", token)
+	if CeroSec.consoleMode(console) ~= "shell" then
+		self:pushScreen(luaObject, state, console)
 		return
 	end
 
 	local line = args.line
 	if type(line) ~= "string" then line = "" end
 
-	local ok, lines, control = CeroSecOS.exec(state, open.session, line)
+	-- The session the core runs on is derived from the console and written back
+	-- into it: cd is a move of the machine's cursor, not of anybody's.
+	local session = { user = console.user, cwd = console.cwd or "/" }
+	local prompt = CeroSec.consolePrompt(console, state.hostname,
+		self:isAdmin(state, console.user))
+	local _, lines, control = CeroSecOS.exec(state, session, line)
+	console.user = session.user
+	console.cwd = session.cwd
 	luaObject:mirrorOS()
 
-	if control == "exit" then luaObject:closeSession(playerKey) end
+	if control == "exit" then
+		CeroSec.consoleLogout(console)
+	elseif control == "clear" then
+		CeroSec.consoleClear(console)
+	else
+		CeroSec.consolePush(console, prompt .. line)
+		CeroSec.consolePushAll(console, lines)
+	end
 
-	local user = CeroSecOS.getUser(state, open.session.user)
-	self:reply(playerObj, "exec", {
-		x = x, y = y, z = z, token = token,
-		ok = ok and true or false,
-		lines = lines,
-		control = control,
-		prompt = CeroSec.prompt(open.session.user, state.hostname, open.session.cwd, user and user.admin),
-	})
+	self:pushScreen(luaObject, state, console)
 end
 
-Commands.close = function(self, playerObj, x, y, z)
+Commands.close = function(self, playerObj, x, y, z, token)
+	if token == nil then return end
 	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then return end
-	luaObject:closeSession(playerKeyOf(playerObj))
+	luaObject:removeWatcher(watcherKeyOf(playerObj, token))
 end
 
 -- Nothing a client sends is believed on its word. Coordinates have to be three
@@ -309,34 +381,37 @@ end
 -- Housekeeping
 --
 
--- Tell whoever was typing on this machine that it is over, then forget them.
-function SCeroSecSystem:evictSessions(luaObject, reason)
-	if not luaObject.sessions then return end
-	for _, open in pairs(luaObject.sessions) do
-		if open.player then
-			self:replyClosed(open.player, luaObject.x, luaObject.y, luaObject.z, reason, open.token)
+-- Tell every window open on this machine that it is over, then forget them.
+function SCeroSecSystem:evictWatchers(luaObject, reason)
+	if not luaObject.watchers then return end
+	for _, watcher in pairs(luaObject.watchers) do
+		if watcher.player then
+			self:replyClosed(watcher.player, luaObject.x, luaObject.y, luaObject.z,
+				reason, watcher.token)
 		end
 	end
-	luaObject:dropSessions()
+	luaObject:dropWatchers()
 end
 
--- Computers on a square that lost power shut themselves off, and a session
--- whose player has wandered off, died or left is not a session any more.
+-- Computers on a square that lost power shut themselves off, and a window whose
+-- player has wandered off, died or left is not a window any more. Nothing of
+-- the screen is lost by either: the console belongs to the machine, and only a
+-- machine going dark clears it.
 function SCeroSecSystem:checkPower()
 	for i = 1, self:getLuaObjectCount() do
 		local luaObject = self:getLuaObjectByIndex(i)
 		if luaObject.on and not luaObject:hasPower() then
-			self:evictSessions(luaObject, "power")
+			self:evictWatchers(luaObject, "power")
 			luaObject:turnOff()
-		elseif luaObject.sessions then
-			for key, open in pairs(luaObject.sessions) do
-				local playerObj = open.player
+		elseif luaObject.watchers then
+			for key, watcher in pairs(luaObject.watchers) do
+				local playerObj = watcher.player
 				if not playerObj or playerObj:isDead()
 						or not isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
-					luaObject.sessions[key] = nil
+					luaObject.watchers[key] = nil
 					if playerObj then
 						self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z,
-							"reach", open.token)
+							"reach", watcher.token)
 					end
 					luaObject:publishOS()
 				end

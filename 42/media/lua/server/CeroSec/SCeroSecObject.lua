@@ -20,7 +20,8 @@ function SCeroSecObject:initNew()
 	self.on = false
 	self.facing = "S"
 	-- self.os stays nil until the machine is first used: an untouched computer
-	-- costs nothing in gos_cerosec.bin.
+	-- costs nothing in gos_cerosec.bin. self.console stays nil until the
+	-- machine is switched on: a screen only exists while there is power.
 end
 
 --
@@ -38,6 +39,10 @@ function SCeroSecObject:toModData(isoObject)
 	if not isoObject then return end
 	local modData = isoObject:getModData()
 	if not modData.movableData then modData.movableData = {} end
+	-- The console is deliberately not in here. It is a screen, not a disk: a
+	-- computer that is picked up is a computer that lost its power, and
+	-- resetForPlacement clears it anyway. Mirroring it would only put a hundred
+	-- lines of text in every item that is carried across town.
 	modData.movableData[CeroSec.MOVABLE_DATA_KEY] = {
 		v = self.v,
 		on = self.on,
@@ -70,6 +75,9 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	self.facing = CeroSec.facingOf(spriteName) or "S"
 	self.on = CeroSec.isOnSprite(spriteName)
 	self.os = self:osFromIsoObject(isoObject)
+	-- No console in the mirror, so a machine adopted from its sprite starts
+	-- with a blank screen even when the sprite says it is lit.
+	self.console = nil
 	self:toModData(isoObject)
 end
 
@@ -93,7 +101,8 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
-	self:dropSessions()
+	self.console = nil
+	self:dropWatchers()
 	self:syncSprite()
 	self:toModData(isoObject)
 	self:updateOnClient()
@@ -166,7 +175,7 @@ function SCeroSecObject:mirrorOS()
 	self:toModData(self:getIsoObject())
 end
 
--- Push the mirror out to the clients. Only done when a session ends, not on
+-- Push the mirror out to the clients. Only done when a window closes, not on
 -- every command: in multiplayer the pickup code reads the *client's* copy of
 -- movableData (ISMoveableSpriteProps.lua:1300), so the copy has to be fresh by
 -- the time anybody can walk away with the machine, and a filesystem is up to
@@ -179,34 +188,48 @@ function SCeroSecObject:publishOS()
 end
 
 --
--- Sessions
+-- The console
 --
--- Transient: they live for as long as the player keeps his terminal open and
--- are never written into the state (CeroSecOSUsers.login says as much). Keyed
--- by the connection, not by the character.
+-- One screen per computer, and it is the machine's: what is on it, who is
+-- logged in and where he stands in the filesystem all live here, are saved with
+-- the object, and are the same for everybody who opens a window on it. It is
+-- created when the machine is switched on and destroyed when it goes dark.
 --
 
-function SCeroSecObject:sessionFor(playerKey)
-	if not self.sessions then return nil end
-	return self.sessions[playerKey]
+function SCeroSecObject:consoleState()
+	if not self.on then return nil end
+	if type(self.console) ~= "table" or type(self.console.lines) ~= "table" then
+		-- Never seen, or handed back as something that is not a console.
+		self.console = CeroSec.repairConsole(self.console)
+	end
+	return self.console
 end
 
-function SCeroSecObject:openSession(playerKey, session)
-	if not self.sessions then self.sessions = {} end
-	self.sessions[playerKey] = session
+--
+-- Watchers
+--
+-- Every window open on this computer, so that a change to the screen reaches
+-- all of them and not only the one that caused it. Transient: the player
+-- objects in here are never saved (they are not in the object's modData keys)
+-- and they are pruned on close, on eviction and by the sweep.
+--
+
+function SCeroSecObject:addWatcher(key, playerObj, token)
+	if not self.watchers then self.watchers = {} end
+	self.watchers[key] = { player = playerObj, token = token }
 end
 
-function SCeroSecObject:closeSession(playerKey)
-	if not self.sessions then return end
-	if not self.sessions[playerKey] then return end
-	self.sessions[playerKey] = nil
+function SCeroSecObject:removeWatcher(key)
+	if not self.watchers then return end
+	if not self.watchers[key] then return end
+	self.watchers[key] = nil
 	self:publishOS()
 end
 
--- Every session at once: the machine went off, or lost its power.
-function SCeroSecObject:dropSessions()
-	local had = self.sessions ~= nil
-	self.sessions = nil
+-- Every window at once: the machine went off, or lost its power.
+function SCeroSecObject:dropWatchers()
+	local had = self.watchers ~= nil
+	self.watchers = nil
 	if had then self:publishOS() end
 end
 
@@ -218,6 +241,8 @@ function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
 	self.on = true
+	-- A fresh screen, with the BIOS still to be typed on it.
+	self.console = CeroSec.newConsole()
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	return true
@@ -226,12 +251,13 @@ end
 function SCeroSecObject:turnOff()
 	if not self.on then return false end
 	self.on = false
-	-- Nobody is logged in on a machine that is off, and the terminals that were
-	-- open have to be told, not merely forgotten.
-	if self.luaSystem and self.luaSystem.evictSessions then
-		self.luaSystem:evictSessions(self, "off")
+	-- A dark screen remembers nothing, and the terminals that were open have to
+	-- be told, not merely forgotten.
+	self.console = nil
+	if self.luaSystem and self.luaSystem.evictWatchers then
+		self.luaSystem:evictWatchers(self, "off")
 	else
-		self:dropSessions()
+		self:dropWatchers()
 	end
 	self:apply()
 	self:playSound("CeroSecToggle")

@@ -1,5 +1,6 @@
 -- Unit tests for the pure parts of the terminal: the hostname a computer gives
--- itself, the prompt the server sends down, and the two rings the window keeps.
+-- itself, the console the machine keeps (its lines, its prompt, what it is
+-- waiting for), and the input history the window keeps.
 -- Run from the repo root:
 --   lua5.1 tests/terminal_test.lua
 
@@ -132,6 +133,121 @@ eq("index back to nothing", index, 0)
 index, text = CeroSec.historyPick({}, 0, 1)
 eq("no history, nothing to show", text, "")
 eq("no history, index stays", index, 0)
+
+--
+-- The console
+--
+-- The screen belongs to the machine. Everything below is what the server does
+-- to it between two commands, and it is all pure list and string work.
+--
+
+local console = CeroSec.newConsole()
+eq("a fresh console has not booted", console.booted, false)
+eq("a fresh console is empty", #console.lines, 0)
+eq("a fresh console has nobody on it", console.user, nil)
+eq("a fresh console waits for a name", CeroSec.consoleMode(console), "login")
+eq("and shows the login prompt", CeroSec.consolePrompt(console, "ksp-1-1", false), "login: ")
+
+-- A stored line is text and only text, and never wider than the screen.
+eq("a plain line is kept", CeroSec.consoleLine("ls -l"), "ls -l")
+eq("a control byte is dropped", CeroSec.consoleLine("a\1b\4c"), "abc")
+eq("a newline is dropped", CeroSec.consoleLine("a\nb"), "ab")
+eq("a tab becomes a space", CeroSec.consoleLine("a\tb"), "a b")
+eq("a zero byte is dropped", CeroSec.consoleLine("a\0b"), "ab")
+eq("a line is cut to the screen", #CeroSec.consoleLine(string.rep("x", 200)), CeroSec.COLS)
+eq("something that is not a string still becomes one", CeroSec.consoleLine(42), "42")
+
+-- The ring: the oldest line falls off the top, and only CONSOLE_MAX are kept.
+local ring = CeroSec.newConsole()
+for i = 1, CeroSec.CONSOLE_MAX + 25 do CeroSec.consolePush(ring, "line " .. i) end
+eq("the console keeps its size", #ring.lines, CeroSec.CONSOLE_MAX)
+eq("the console keeps the newest", ring.lines[CeroSec.CONSOLE_MAX],
+	"line " .. (CeroSec.CONSOLE_MAX + 25))
+eq("the console dropped the oldest", ring.lines[1], "line 26")
+
+CeroSec.consolePushAll(ring, { "one", "two" })
+eq("pushAll appends in order", ring.lines[CeroSec.CONSOLE_MAX - 1], "one")
+eq("pushAll appends the last", ring.lines[CeroSec.CONSOLE_MAX], "two")
+CeroSec.consolePushAll(ring, "not a list")
+eq("pushAll ignores what is not a list", ring.lines[CeroSec.CONSOLE_MAX], "two")
+
+CeroSec.consoleClear(ring)
+eq("clear empties the screen", #ring.lines, 0)
+
+-- Logging in and out. The prompt is derived from the console and from nothing
+-- the server has to remember.
+local live = CeroSec.newConsole()
+live.booted = true
+CeroSec.consolePush(live, "login: root")
+live.pending = "root"
+eq("a name pending means a password is wanted", CeroSec.consoleMode(live), "password")
+eq("and the password prompt", CeroSec.consolePrompt(live, "ksp-1-1", true), "password: ")
+eq("the password never reaches a line",
+	CeroSec.maskedLine("password: ", "hunter2"), "password: *******")
+eq("an empty password masks to nothing", CeroSec.maskedLine("password: ", ""), "password: ")
+
+live.pending = nil
+live.user = "root"
+live.cwd = "/root"
+eq("logged in is the shell", CeroSec.consoleMode(live), "shell")
+eq("the shell prompt is the OS one",
+	CeroSec.consolePrompt(live, "ksp-1-1", true), "root@ksp-1-1:/root# ")
+eq("a plain user gets a dollar",
+	CeroSec.consolePrompt(live, "ksp-1-1", false), "root@ksp-1-1:/root$ ")
+
+CeroSec.consoleLogout(live)
+eq("exit forgets the user", live.user, nil)
+eq("exit forgets the directory", live.cwd, nil)
+eq("exit forgets a pending name", live.pending, nil)
+eq("exit clears the screen", #live.lines, 0)
+eq("exit goes back to the login prompt", CeroSec.consoleMode(live), "login")
+eq("and it is still a booted machine", live.booted, true)
+
+-- A console with no cwd is still a console: the prompt falls back to the root.
+local rooted = CeroSec.newConsole()
+rooted.user = "admin"
+eq("no cwd means /", CeroSec.consolePrompt(rooted, "ksp-1-1", false), "admin@ksp-1-1:/$ ")
+
+--
+-- Repairing what the game hands back
+--
+
+eq("nil is a fresh console", CeroSec.repairConsole(nil).booted, false)
+eq("a string is a fresh console", #CeroSec.repairConsole("junk").lines, 0)
+
+local dirty = {
+	booted = 1,
+	user = 12,
+	cwd = "/root",
+	pending = {},
+	lines = { "kept", 7, {}, "also kept", "a\1b", string.rep("y", 90) },
+}
+local clean = CeroSec.repairConsole(dirty)
+eq("a truthy booted becomes true", clean.booted, true)
+eq("a user that is not a string is nobody", clean.user, nil)
+eq("a cwd that is a string is kept", clean.cwd, "/root")
+eq("a pending that is not a string is nothing", clean.pending, nil)
+eq("only the string lines survive", #clean.lines, 4)
+eq("the first survivor", clean.lines[1], "kept")
+eq("the second survivor", clean.lines[2], "also kept")
+eq("survivors are scrubbed", clean.lines[3], "ab")
+eq("survivors are cut to the screen", #clean.lines[4], CeroSec.COLS)
+
+local overflowing = { lines = {} }
+for i = 1, CeroSec.CONSOLE_MAX * 2 do overflowing.lines[i] = "line " .. i end
+eq("a forged console cannot grow the screen",
+	#CeroSec.repairConsole(overflowing).lines, CeroSec.CONSOLE_MAX)
+
+--
+-- The BIOS is the server's, and it fits the screen.
+--
+
+check("there are boot lines", #CeroSec.BOOT_LINES > 0)
+for i = 1, #CeroSec.BOOT_LINES do
+	local line = CeroSec.BOOT_LINES[i]
+	check("boot line " .. i .. " is a string", type(line) == "string")
+	eq("boot line " .. i .. " needs no scrubbing", CeroSec.consoleLine(line), line)
+end
 
 --
 -- The look: the constants the window draws with have to be there and be sane.

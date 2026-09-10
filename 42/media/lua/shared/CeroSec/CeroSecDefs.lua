@@ -258,6 +258,129 @@ function CeroSec.historyPick(history, index, delta)
 end
 
 --
+-- The console
+--
+-- The screen belongs to the machine, not to the player. One console per
+-- computer, living on the server's GlobalObject and saved with it: what is on
+-- it, who is logged in, and where he is. A player who walks away and comes back
+-- is handed the very same screen, and two players standing at the same computer
+-- read the same one -- physical access is the only access there is.
+--
+-- Everything here is pure list and string work, so it lives in the defs and is
+-- tested headless (tests/terminal_test.lua). Nothing below knows the game.
+--
+
+-- Lines kept on a screen. Smaller than the client's own scrollback on purpose:
+-- this one is written to gos_cerosec.bin for every computer in Knox County.
+CeroSec.CONSOLE_MAX = 100
+
+-- The BIOS. Written by the server into the console the first time somebody
+-- opens a machine that has just been switched on, so that it is on the screen
+-- exactly once per power-on -- and so that the second player to open the same
+-- computer sees the same lines the first one saw, instead of a second boot.
+CeroSec.BOOT_LINES = {
+	"CeroSec BIOS v1.03 -- (c) 1993 CeroSec Systems",
+	"Memory test: 640K OK",
+	"Detecting drives ... hda 20MB",
+	"Booting from hda ...",
+	"",
+}
+
+-- A console at power-on: nothing on the screen, nobody logged in, and the BIOS
+-- still to come.
+function CeroSec.newConsole()
+	return { booted = false, lines = {} }
+end
+
+-- One stored screen line. A line is text and only text: every byte below 0x20
+-- is dropped (a tab becomes a space, the way a terminal prints it in a fixed
+-- grid), and nothing is ever wider than the screen. The line a player typed
+-- comes from the client, so this is where it is made safe.
+function CeroSec.consoleLine(text)
+	if type(text) ~= "string" then text = tostring(text) end
+	local out = ""
+	for i = 1, #text do
+		local b = string.byte(text, i)
+		if b == 9 then
+			out = out .. " "
+		elseif b >= 32 then
+			out = out .. string.sub(text, i, i)
+		end
+	end
+	if #out > CeroSec.COLS then out = string.sub(out, 1, CeroSec.COLS) end
+	return out
+end
+
+function CeroSec.consolePush(console, text)
+	CeroSec.ringPush(console.lines, CeroSec.consoleLine(text), CeroSec.CONSOLE_MAX)
+	return console
+end
+
+function CeroSec.consolePushAll(console, lines)
+	if type(lines) ~= "table" then return console end
+	for i = 1, #lines do CeroSec.consolePush(console, lines[i]) end
+	return console
+end
+
+function CeroSec.consoleClear(console)
+	console.lines = {}
+	return console
+end
+
+-- Logged out: the screen goes back to a bare login prompt. Nothing of the
+-- session survives, which is the whole point of typing exit on a machine
+-- anybody else can walk up to.
+function CeroSec.consoleLogout(console)
+	console.user = nil
+	console.cwd = nil
+	console.pending = nil
+	console.lines = {}
+	return console
+end
+
+-- What the console is waiting for: a user name, a password, or a command.
+function CeroSec.consoleMode(console)
+	if type(console) ~= "table" then return "login" end
+	if console.pending ~= nil then return "password" end
+	if console.user == nil then return "login" end
+	return "shell"
+end
+
+-- The prompt that goes with it. Derived from the console and from nothing else,
+-- so the server never has to remember what it last told a window.
+function CeroSec.consolePrompt(console, hostname, admin)
+	local mode = CeroSec.consoleMode(console)
+	if mode == "password" then return "password: " end
+	if mode == "login" then return "login: " end
+	return CeroSec.prompt(console.user, hostname, console.cwd or "/", admin)
+end
+
+-- What a password looks like once it is on the screen. The cleartext never
+-- reaches a stored line.
+function CeroSec.maskedLine(prompt, text)
+	if type(text) ~= "string" then text = "" end
+	return prompt .. string.rep("*", #text)
+end
+
+-- A console handed back by the game, or by a forged modData: keep what is still
+-- shaped like a console and drop the rest. Always returns a console.
+function CeroSec.repairConsole(console)
+	if type(console) ~= "table" then return CeroSec.newConsole() end
+	local out = CeroSec.newConsole()
+	out.booted = console.booted and true or false
+	if type(console.user) == "string" then out.user = console.user end
+	if type(console.cwd) == "string" then out.cwd = console.cwd end
+	if type(console.pending) == "string" then out.pending = console.pending end
+	if type(console.lines) == "table" then
+		local lines = console.lines
+		for i = 1, #lines do
+			if type(lines[i]) == "string" then CeroSec.consolePush(out, lines[i]) end
+		end
+	end
+	return out
+end
+
+--
 -- The look: "Phosphore vert"
 --
 -- Every colour the terminal draws is named here and nowhere else, as r, g, b in
@@ -299,8 +422,10 @@ CeroSec.GLOW_OFFSET = 1
 -- The block cursor blinks on this period, in milliseconds of real time.
 CeroSec.CURSOR_BLINK_MS = 500
 
--- How much the terminal remembers.
-CeroSec.SCROLLBACK_MAX = 200
+-- How much the terminal remembers. The scrollback is not one of these any
+-- more: it is the machine's console (CONSOLE_MAX above), which the window only
+-- renders. The input history is the one thing that stays in the window, because
+-- it is what this player typed and not what the screen shows.
 CeroSec.HISTORY_MAX = 20
 
 -- Module of the server -> client answers that go to one player, i.e. the module
