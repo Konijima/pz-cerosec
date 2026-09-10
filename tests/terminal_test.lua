@@ -145,8 +145,10 @@ local console = CeroSec.newConsole()
 eq("a fresh console has not booted", console.booted, false)
 eq("a fresh console is empty", #console.lines, 0)
 eq("a fresh console has nobody on it", console.user, nil)
-eq("a fresh console waits for a name", CeroSec.consoleMode(console), "login")
+eq("a fresh console waits for a name", CeroSec.consoleWaiting(console), "login")
+eq("which the window is told is a prompt", CeroSec.consoleMode(console), "prompt")
 eq("and shows the login prompt", CeroSec.consolePrompt(console, "ksp-1-1", false), "login: ")
+eq("a name is not masked", CeroSec.consoleMask(console), false)
 
 -- A stored line is text and only text, and never wider than the screen.
 eq("a plain line is kept", CeroSec.consoleLine("ls -l"), "ls -l")
@@ -180,8 +182,10 @@ local live = CeroSec.newConsole()
 live.booted = true
 CeroSec.consolePush(live, "login: root")
 live.pending = "root"
-eq("a name pending means a password is wanted", CeroSec.consoleMode(live), "password")
+eq("a name pending means a password is wanted", CeroSec.consoleWaiting(live), "password")
+eq("still one prompt as far as the window knows", CeroSec.consoleMode(live), "prompt")
 eq("and the password prompt", CeroSec.consolePrompt(live, "ksp-1-1", true), "password: ")
+eq("a password is masked", CeroSec.consoleMask(live), true)
 eq("the password never reaches a line",
 	CeroSec.maskedLine("password: ", "hunter2"), "password: *******")
 eq("an empty password masks to nothing", CeroSec.maskedLine("password: ", ""), "password: ")
@@ -190,6 +194,7 @@ live.pending = nil
 live.user = "root"
 live.cwd = "/root"
 eq("logged in is the shell", CeroSec.consoleMode(live), "shell")
+eq("and the shell is nobody's secret", CeroSec.consoleMask(live), false)
 eq("the shell prompt is the OS one",
 	CeroSec.consolePrompt(live, "ksp-1-1", true), "root@ksp-1-1:/root# ")
 eq("a plain user gets a dollar",
@@ -200,7 +205,7 @@ eq("exit forgets the user", live.user, nil)
 eq("exit forgets the directory", live.cwd, nil)
 eq("exit forgets a pending name", live.pending, nil)
 eq("exit clears the screen", #live.lines, 0)
-eq("exit goes back to the login prompt", CeroSec.consoleMode(live), "login")
+eq("exit goes back to the login prompt", CeroSec.consoleWaiting(live), "login")
 eq("and it is still a booted machine", live.booted, true)
 
 -- A console with no cwd is still a console: the prompt falls back to the root.
@@ -248,6 +253,241 @@ for i = 1, #CeroSec.BOOT_LINES do
 	check("boot line " .. i .. " is a string", type(line) == "string")
 	eq("boot line " .. i .. " needs no scrubbing", CeroSec.consoleLine(line), line)
 end
+
+--
+-- Prompts a command asked for
+--
+-- login, password and passwd's three questions are one path: the console says
+-- what it is waiting for, the window is told "prompt" plus a mask flag, and the
+-- answer comes back through the one client command.
+--
+
+local asked = CeroSec.newConsole()
+asked.booted = true
+asked.user = "admin"
+asked.cwd = "/home/admin"
+asked.prompt = { text = "Old password: ", mask = true, cont = { cmd = "passwd", step = "old" } }
+eq("a command's prompt is a prompt", CeroSec.consoleWaiting(asked), "prompt")
+eq("and the window is told so", CeroSec.consoleMode(asked), "prompt")
+eq("with the command's own line", CeroSec.consolePrompt(asked, "ksp-1-1", false), "Old password: ")
+eq("masked because the command said so", CeroSec.consoleMask(asked), true)
+
+asked.prompt = { text = "Name: ", mask = false, cont = { cmd = "passwd" } }
+eq("an unmasked prompt is not masked", CeroSec.consoleMask(asked), false)
+eq("and shows its line", CeroSec.consolePrompt(asked, "ksp-1-1", false), "Name: ")
+
+-- A prompt outranks a half-typed login, and the editor outranks everything:
+-- there is one thing a machine is waiting for at a time.
+asked.pending = "root"
+eq("a prompt comes first", CeroSec.consoleWaiting(asked), "prompt")
+asked.edit = { path = "/home/admin/a.txt", text = "", readonly = false }
+eq("the editor comes first of all", CeroSec.consoleWaiting(asked), "edit")
+eq("and the window is told edit", CeroSec.consoleMode(asked), "edit")
+eq("an editor has no prompt line", CeroSec.consolePrompt(asked, "ksp-1-1", false), "")
+eq("and nothing to mask", CeroSec.consoleMask(asked), false)
+
+CeroSec.consoleLogout(asked)
+eq("exit forgets the question", asked.prompt, nil)
+eq("exit forgets the buffer", asked.edit, nil)
+eq("exit goes back to the login prompt", CeroSec.consoleWaiting(asked), "login")
+
+-- What the game hands back: a prompt or a buffer survives only whole.
+local kept = CeroSec.repairConsole({
+	lines = {},
+	prompt = { text = "Old password: ", mask = 1, cont = { cmd = "passwd" } },
+	edit = { path = "/a.txt", text = "hi", readonly = 1, by = "42", message = "Saved 2 bytes" },
+})
+eq("a whole prompt is kept", kept.prompt.text, "Old password: ")
+eq("its mask becomes a boolean", kept.prompt.mask, true)
+eq("its token is kept", kept.prompt.cont.cmd, "passwd")
+eq("a whole buffer is kept", kept.edit.path, "/a.txt")
+eq("with its text", kept.edit.text, "hi")
+eq("its read-only flag becomes a boolean", kept.edit.readonly, true)
+eq("its owner is kept", kept.edit.by, "42")
+eq("its message is kept", kept.edit.message, "Saved 2 bytes")
+
+for _, junk in ipairs({
+	{ text = "x", mask = true },                       -- no token
+	{ mask = true, cont = {} },                        -- no text
+	{ text = "x", mask = true, cont = "no" },          -- a token that is not one
+	"a string", 7,
+}) do
+	eq("half a prompt is no prompt", CeroSec.repairConsole({ lines = {}, prompt = junk }).prompt, nil)
+end
+for _, junk in ipairs({ { path = "/a" }, { text = "hi" }, { path = 1, text = "hi" }, "x", 7 }) do
+	eq("half a buffer is no buffer", CeroSec.repairConsole({ lines = {}, edit = junk }).edit, nil)
+end
+
+--
+-- The editor screen
+--
+
+-- The buffer as rows. An empty buffer is one empty row: a cursor has to sit
+-- somewhere, which is what makes this different from the core's splitLines.
+eq("an empty buffer is one row", #CeroSec.editLines(""), 1)
+eq("and that row is empty", CeroSec.editLines("")[1], "")
+eq("one row", #CeroSec.editLines("abc"), 1)
+eq("two rows", #CeroSec.editLines("a\nb"), 2)
+eq("a trailing newline makes an empty last row", #CeroSec.editLines("a\n"), 2)
+eq("and it is empty", CeroSec.editLines("a\n")[2], "")
+eq("a lone newline is two empty rows", #CeroSec.editLines("\n"), 2)
+eq("what is not a string is one empty row", CeroSec.editLines(nil)[1], "")
+
+-- Where an offset is on that grid. The offset is a gap between characters, so
+-- the end of a row and the start of the next are two different offsets.
+local function at(text, offset, wantRow, wantCol)
+	local row, col = CeroSec.editCursor(text, offset)
+	local where = "offset " .. tostring(offset) .. " in " .. string.format("%q", text)
+	eq("row of " .. where, row, wantRow)
+	eq("column of " .. where, col, wantCol)
+end
+
+at("", 0, 1, 0)
+at("abc", 0, 1, 0)
+at("abc", 1, 1, 1)
+at("abc", 3, 1, 3)
+at("ab\ncd", 2, 1, 2)   -- in front of the newline: the end of the first row
+at("ab\ncd", 3, 2, 0)   -- past it: the start of the second
+at("ab\ncd", 5, 2, 2)
+at("a\n\nb", 2, 2, 0)
+at("a\n\nb", 3, 3, 0)
+at("abc", -4, 1, 0)     -- a nonsense offset is clamped, never an error
+at("abc", 99, 1, 3)
+at("abc", nil, 1, 0)
+
+-- The row of every offset in a buffer is the row that offset's character is on.
+do
+	local text = "one\ntwo\n\nfour"
+	local lines = CeroSec.editLines(text)
+	for offset = 0, #text do
+		local row, col = CeroSec.editCursor(text, offset)
+		check("offset " .. offset .. " lands on a row that exists", lines[row] ~= nil)
+		check("offset " .. offset .. " lands inside it", col >= 0 and col <= #lines[row])
+	end
+end
+
+-- Scrolling: the cursor row is always one of the seventeen, and a screen that
+-- need not move does not move.
+local ROWS = CeroSec.EDIT_ROWS
+eq("seventeen rows", ROWS, 17)
+eq("a short file never scrolls", CeroSec.editTop(1, 1, 3, ROWS), 1)
+eq("a short file cannot be scrolled either", CeroSec.editTop(9, 2, 3, ROWS), 1)
+eq("the cursor on the last visible row stays", CeroSec.editTop(1, ROWS, 40, ROWS), 1)
+eq("one row further pushes the screen down", CeroSec.editTop(1, ROWS + 1, 40, ROWS), 2)
+eq("and the cursor is then on the last row",
+	CeroSec.editTop(1, ROWS + 1, 40, ROWS) + ROWS - 1, ROWS + 1)
+eq("walking back up pulls it back", CeroSec.editTop(10, 4, 40, ROWS), 4)
+eq("a top past the end is pulled back", CeroSec.editTop(99, 40, 40, ROWS), 40 - ROWS + 1)
+eq("the last screenful of a 40 row file", CeroSec.editTop(1, 40, 40, ROWS), 40 - ROWS + 1)
+eq("a nonsense top is the first row", CeroSec.editTop(-3, 1, 40, ROWS), 1)
+eq("a nonsense top is the first row", CeroSec.editTop("x", 1, 40, ROWS), 1)
+eq("an empty file has one row", CeroSec.editTop(1, 1, 0, ROWS), 1)
+
+-- The cursor row is visible for every row of a long file, from any starting top.
+do
+	local count = 60
+	for _, start in ipairs({ 1, 5, 20, 44, 99 }) do
+		local top = start
+		for row = 1, count do
+			top = CeroSec.editTop(top, row, count, ROWS)
+			check("row " .. row .. " is at or below the top", row >= top)
+			check("row " .. row .. " is at or above the bottom", row <= top + ROWS - 1)
+			check("the top is a row of the file", top >= 1 and top <= count - ROWS + 1)
+		end
+	end
+end
+
+-- The two bars and the message line.
+local bar = CeroSec.editTitle("/home/admin/notes.txt", "modified")
+eq("the title bar is a full row", #bar, CeroSec.COLS)
+eq("it names the file", string.sub(bar, 1, 28), " EDIT  /home/admin/notes.txt")
+eq("and pins the flag to the right", string.sub(bar, CeroSec.COLS - 10), "[modified] ")
+eq("read-only is pinned the same way",
+	string.sub(CeroSec.editTitle("/a.txt", "read-only"), CeroSec.COLS - 11), "[read-only] ")
+eq("no flag is a bar of the same width", #CeroSec.editTitle("/a.txt", nil), CeroSec.COLS)
+eq("an empty flag is no flag", #CeroSec.editTitle("/a.txt", ""), CeroSec.COLS)
+eq("a very long path is cut, not folded",
+	#CeroSec.editTitle(string.rep("/aaaaaaaa", 20), "modified"), CeroSec.COLS)
+check("and the cut is marked",
+	string.find(CeroSec.editTitle(string.rep("/aaaaaaaa", 20), "modified"), "~", 1, true) ~= nil)
+
+eq("the key bar is a full row", #CeroSec.editKeys(), CeroSec.COLS)
+check("it names Escape", string.find(CeroSec.editKeys(), "Esc exit", 1, true) ~= nil)
+check("it names Tab", string.find(CeroSec.editKeys(), "Tab save", 1, true) ~= nil)
+
+eq("a message is a line", CeroSec.editMessage("Saved 412 bytes"), "Saved 412 bytes")
+eq("no message is an empty line", CeroSec.editMessage(nil), "")
+eq("a message is scrubbed like any other line", CeroSec.editMessage("a\1b"), "ab")
+eq("and cut to the screen", #CeroSec.editMessage(string.rep("x", 90)), CeroSec.COLS)
+
+-- The whole screen: twenty rows, always, whatever the buffer is.
+do
+	local text = ""
+	for i = 1, 40 do text = text .. "line " .. i .. "\n" end
+	local screen = CeroSec.editScreen(text, 1, "/a.txt", "modified", "Saved 412 bytes")
+	eq("twenty rows", #screen, CeroSec.ROWS)
+	eq("row 1 is the title bar", screen[1], CeroSec.editTitle("/a.txt", "modified"))
+	eq("row 2 is the first line of the buffer", screen[2], "line 1")
+	eq("row 18 is the seventeenth", screen[1 + ROWS], "line 17")
+	eq("row 19 is the key bar", screen[19], CeroSec.editKeys())
+	eq("row 20 is the message", screen[20], "Saved 412 bytes")
+
+	local scrolled = CeroSec.editScreen(text, 24, "/a.txt", nil, nil)
+	eq("scrolled: still twenty rows", #scrolled, CeroSec.ROWS)
+	eq("scrolled: the top row of the view", scrolled[2], "line 24")
+	eq("scrolled: the last line of the file", scrolled[2 + 40 - 24], "line 40")
+	eq("scrolled: past the end is an empty row", scrolled[2 + 40 - 24 + 2], "")
+	eq("scrolled: the message row is empty", scrolled[20], "")
+
+	local empty = CeroSec.editScreen("", 1, "/a.txt", nil, nil)
+	eq("an empty buffer is still twenty rows", #empty, CeroSec.ROWS)
+	for i = 2, 18 do eq("and row " .. i .. " is empty", empty[i], "") end
+
+	-- No row of the screen is ever wider than the screen.
+	local wide = CeroSec.editScreen(string.rep("x", 400), 1, string.rep("p", 400), "modified", string.rep("m", 400))
+	for i = 1, #wide do
+		eq("row " .. i .. " fits the screen", #wide[i] <= CeroSec.COLS, true)
+	end
+end
+
+-- What the editor will hold, and what it refuses under the fingers.
+eq("the buffer ceiling is the file ceiling", CeroSec.EDIT_MAX_BYTES, 4096)
+eq("a line is a screen line", CeroSec.EDIT_MAX_LINE, CeroSec.COLS)
+eq("plain text is fine", CeroSec.editRefusal("hello\nworld"), nil)
+eq("an empty buffer is fine", CeroSec.editRefusal(""), nil)
+eq("a tab is text", CeroSec.editRefusal("a\tb"), nil)
+eq("exactly sixty characters fit",
+	CeroSec.editRefusal(string.rep("x", CeroSec.EDIT_MAX_LINE)), nil)
+eq("sixty-one do not",
+	CeroSec.editRefusal(string.rep("x", CeroSec.EDIT_MAX_LINE + 1)),
+	"Line too long: 60 characters")
+eq("and it is the long row that counts, not the first",
+	CeroSec.editRefusal("ok\n" .. string.rep("x", 61)), "Line too long: 60 characters")
+eq("exactly the buffer ceiling fits",
+	CeroSec.editRefusal(string.rep("x\n", CeroSec.EDIT_MAX_BYTES / 2)), nil)
+eq("one byte over does not",
+	CeroSec.editRefusal(string.rep("x\n", CeroSec.EDIT_MAX_BYTES / 2) .. "y"),
+	"Buffer full: 4096 bytes")
+eq("a control byte is not text", CeroSec.editRefusal("a\1b"), "Cannot edit: invalid characters")
+eq("a zero byte is not text", CeroSec.editRefusal("a\0b"), "Cannot edit: invalid characters")
+eq("what is not a string is not text", CeroSec.editRefusal(nil), "Cannot edit: not text")
+
+-- The two keys, and the question one of them asks.
+eq("Escape on a clean buffer leaves", CeroSec.editKeyAction("edit", "escape", false, false), "leave")
+eq("Escape on a modified one asks", CeroSec.editKeyAction("edit", "escape", true, false), "ask")
+eq("Escape on a read-only one leaves, modified or not",
+	CeroSec.editKeyAction("edit", "escape", true, true), "leave")
+eq("Tab saves", CeroSec.editKeyAction("edit", "tab", true, false), "save")
+eq("Tab on a read-only file says so", CeroSec.editKeyAction("edit", "tab", true, true), "readonly")
+eq("nothing else does anything", CeroSec.editKeyAction("edit", "y", true, false), nil)
+
+eq("y saves and leaves", CeroSec.editKeyAction("ask", "y", true, false), "saveleave")
+eq("Y too", CeroSec.editKeyAction("ask", "Y", true, false), "saveleave")
+eq("n leaves", CeroSec.editKeyAction("ask", "n", true, false), "leave")
+eq("N too", CeroSec.editKeyAction("ask", "N", true, false), "leave")
+eq("Escape takes the question back", CeroSec.editKeyAction("ask", "escape", true, false), "cancel")
+eq("anything else asks again", CeroSec.editKeyAction("ask", "q", true, false), "again")
+eq("Tab asks again", CeroSec.editKeyAction("ask", "tab", true, false), "again")
 
 --
 -- The look: the constants the window draws with have to be there and be sane.

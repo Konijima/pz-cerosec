@@ -1,12 +1,14 @@
 --
 -- CeroSec OS core: the shell.
 --
--- exec(state, session, line) -> ok, lines, control. One command line at a time:
--- double quoted strings with backslash escapes, ">" and ">>" redirection, no
--- pipes and
--- no variables yet. control is nil, "clear" or "exit": an order to the terminal
--- travels beside the output, never inside it, so no file's contents can ever be
--- mistaken for one. Errors read like a 1993 Unix, one line each:
+-- exec(state, session, line) -> ok, lines, control, data. One command line at a
+-- time: double quoted strings with backslash escapes, ">" and ">>" redirection,
+-- no pipes and
+-- no variables yet. control is nil, "clear", "exit", "prompt" or "edit": an
+-- order to the terminal travels beside the output, never inside it, so no
+-- file's contents can ever be mistaken for one. data is the payload of the two
+-- orders that carry one ("prompt" and "edit") and nil for the rest.
+-- Errors read like a 1993 Unix, one line each:
 --   cd: /root: permission denied
 --   cat: notes.txt: no such file
 -- Commands never touch the tree themselves; they call the four mutators in
@@ -160,8 +162,8 @@ end
 commands.help = function(state, session, args)
 	return true, {
 		"CeroSec OS commands:",
-		" cat cd chmod chown clear cp echo exit help hostname ls",
-		" mkdir mv pwd rm touch whoami write",
+		" cat cd chmod chown clear cp echo edit exit help hostname",
+		" ls mkdir mv passwd pwd rm touch whoami write",
 		" redirect output with > file or >> file",
 	}
 end
@@ -395,6 +397,113 @@ commands.write = function(state, session, args)
 end
 
 --
+-- Interactive commands.
+--
+-- A command that has to ask something answers with control "prompt" and a
+-- payload: the line to put under the cursor, whether the answer is to be
+-- masked, and an opaque token. The console stores the token beside everything
+-- else it keeps, hands the next line typed to CeroSecOS.continue, and gets back
+-- the very same shape -- so an interactive command is a chain of ordinary
+-- returns and not a coroutine, which Kahlua does not have.
+--
+-- The token is a plain table of strings, because it lives in the machine's
+-- console and the console is serialized into the save file.
+--
+
+CeroSecOS.continuations = CeroSecOS.continuations or {}
+local continuations = CeroSecOS.continuations
+
+local function ask(text, mask, cont)
+	return true, {}, "prompt", { text = text, mask = mask and true or false, cont = cont }
+end
+
+-- passwd. Own password: old, new, retype. root is asked for nobody's old
+-- password, its own included -- that is what being root is -- and is the only
+-- account that may change somebody else's.
+--
+-- Between "New password:" and "Retype new password:" the new password sits in
+-- the token in cleartext, and the token is saved with the machine. That is the
+-- same decision as the stored passwords themselves (CeroSecOSUsers.lua): this
+-- is game data on a 1993 machine, not a credential store.
+commands.passwd = function(state, session, args)
+	if #args > 2 then return usage("passwd", "passwd [user]") end
+	local me = CeroSecOS.userOf(session)
+	local name = args[2]
+	if name == nil or name == "" then name = me end
+	if CeroSecOS.getUser(state, name) == nil then return false, { "passwd: no such user" } end
+	if name ~= me and me ~= "root" then return false, { "passwd: permission denied" } end
+	if me == "root" then
+		return ask("New password: ", true, { cmd = "passwd", step = "new", user = name })
+	end
+	return ask("Old password: ", true, { cmd = "passwd", step = "old", user = name })
+end
+
+continuations.passwd = function(state, session, cont, line)
+	local name = cont.user
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return false, { "passwd: no such user" } end
+
+	if cont.step == "old" then
+		if not CeroSecOS.checkPassword(user, line) then
+			return false, { "passwd: authentication failure" }
+		end
+		return ask("New password: ", true, { cmd = "passwd", step = "new", user = name })
+	end
+
+	if cont.step == "new" then
+		return ask("Retype new password: ", true,
+			{ cmd = "passwd", step = "retype", user = name, want = line })
+	end
+
+	if cont.step == "retype" then
+		if line ~= (cont.want or "") then return false, { "passwd: passwords do not match" } end
+		local done, reason = CeroSecOS.setPassword(state, name, line)
+		if done == nil then return false, { "passwd: " .. reason } end
+		return true, { "passwd: password updated" }
+	end
+
+	-- A token with a step nobody wrote: refuse the way a wrong answer is
+	-- refused, and change nothing.
+	return false, { "passwd: authentication failure" }
+end
+
+-- edit. The editor itself is the terminal's; all the core does is say whether
+-- the file can be opened, hand over its text, and say whether it may be written
+-- back. Saving goes through CeroSecOS.writeFile like every other write.
+commands.edit = function(state, session, args)
+	if #args ~= 2 then return usage("edit", "edit <file>") end
+	local path = args[2]
+	local node, reason, abs = CeroSecOS.getNode(state, session, path)
+	if node ~= nil then
+		if node.type ~= "file" then return fail("edit", path, "is a directory") end
+		if not CeroSecOS.can(state, session, node, "r") then
+			return fail("edit", path, "permission denied")
+		end
+		return true, {}, "edit", {
+			path = abs,
+			text = node.data or "",
+			readonly = not CeroSecOS.can(state, session, node, "w"),
+		}
+	end
+	if reason ~= "no such file" then return fail("edit", path, reason) end
+
+	-- A file that is not there yet opens empty, but only where it could be
+	-- created: nano lets you type into a buffer it can never write, this does
+	-- not, so the only refusal an editor can end on is a full disk.
+	local _, parts = CeroSecOS.resolve(session, path)
+	if #parts == 0 then return fail("edit", path, "is a directory") end
+	if not CeroSecOS.isValidName(parts[#parts]) then return fail("edit", path, "invalid name") end
+	local parentPath = CeroSecOS.parentOf(parts)
+	local parent, preason = CeroSecOS.getNode(state, session, parentPath)
+	if parent == nil then return fail("edit", path, preason) end
+	if parent.type ~= "dir" then return fail("edit", path, "not a directory") end
+	if not CeroSecOS.can(state, session, parent, "w") then
+		return fail("edit", path, "permission denied")
+	end
+	return true, {}, "edit", { path = abs, text = "", readonly = false }
+end
+
+--
 -- The one entry point.
 --
 
@@ -420,12 +529,15 @@ function CeroSecOS.exec(state, session, line)
 	local fn = commands[name]
 	if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 
-	local ok, lines, control = fn(state, session, args)
+	local ok, lines, control, data = fn(state, session, args)
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on
-	-- the screen, as they would on stderr.
-	if ok and redirect ~= nil then
+	-- the screen, as they would on stderr. A command that has not finished --
+	-- one that asks, or one that opens the editor -- has no output to redirect
+	-- yet, so the redirection never applies to it.
+	local redirectable = control ~= "prompt" and control ~= "edit"
+	if ok and redirect ~= nil and redirectable then
 		local text = table.concat(lines, "\n")
 		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, text, redirect.append)
 		if done == nil then
@@ -434,5 +546,29 @@ function CeroSecOS.exec(state, session, line)
 		return true, {}, control
 	end
 
-	return ok, CeroSecOS.fit(lines), control
+	return ok, CeroSecOS.fit(lines), control, data
+end
+
+-- The other half of the entry point: the answer to a prompt exec asked for.
+-- Same shape in, same shape out, so a console feeds a chain of prompts the way
+-- it feeds a chain of commands.
+--
+-- A token that is not one -- a forged console, a chain abandoned and answered
+-- afterwards -- is refused here rather than trusted, and nothing of the state
+-- is touched on the way out.
+function CeroSecOS.continue(state, session, cont, line)
+	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
+	if type(session) ~= "table" or type(session.user) ~= "string" then
+		return false, { "not logged in" }
+	end
+	if type(line) ~= "string" then line = "" end
+	if type(cont) ~= "table" or type(cont.cmd) ~= "string" then
+		return false, CeroSecOS.fit({ "cerosec: nothing to answer" })
+	end
+	local fn = continuations[cont.cmd]
+	if fn == nil then return false, CeroSecOS.fit({ "cerosec: nothing to answer" }) end
+
+	local ok, lines, control, data = fn(state, session, cont, line)
+	if lines == nil then lines = {} end
+	return ok, CeroSecOS.fit(lines), control, data
 end

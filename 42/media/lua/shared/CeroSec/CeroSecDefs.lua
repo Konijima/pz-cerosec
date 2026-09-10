@@ -223,6 +223,25 @@ function CeroSec.prompt(user, hostname, cwd, admin)
 end
 
 --
+-- Strings
+--
+-- The same two helpers the core has (CeroSecOS.truncate, CeroSecOS.padRight),
+-- named again here because the terminal never loads the core. os_test pins the
+-- two pairs against each other so they cannot drift.
+--
+
+function CeroSec.truncate(s, width)
+	if #s <= width then return s end
+	if width <= 1 then return string.sub("~", 1, width) end
+	return string.sub(s, 1, width - 1) .. "~"
+end
+
+function CeroSec.padRight(s, width)
+	if #s >= width then return s end
+	return s .. string.rep(" ", width - #s)
+end
+
+--
 -- Rings
 --
 -- The scrollback and the input history are both "keep the last N", and both are
@@ -334,25 +353,61 @@ function CeroSec.consoleLogout(console)
 	console.user = nil
 	console.cwd = nil
 	console.pending = nil
+	-- A half-answered prompt and an open buffer belong to the session that
+	-- started them: neither survives the logout, and the unsaved buffer is lost
+	-- exactly as it would be on a real machine.
+	console.prompt = nil
+	console.edit = nil
 	console.lines = {}
 	return console
 end
 
--- What the console is waiting for: a user name, a password, or a command.
-function CeroSec.consoleMode(console)
+-- What the console is waiting for, in full: the four things the server has to
+-- tell apart. "login" and "password" are the machine's own two built-in
+-- prompts; "prompt" is one a command asked for (passwd), and they are answered
+-- through one and the same client command.
+function CeroSec.consoleWaiting(console)
 	if type(console) ~= "table" then return "login" end
+	if console.edit ~= nil then return "edit" end
+	if console.prompt ~= nil then return "prompt" end
 	if console.pending ~= nil then return "password" end
 	if console.user == nil then return "login" end
 	return "shell"
 end
 
+-- The same thing as the window has to be told it. A window types at a prompt or
+-- it types a command or it is in the editor; which of the two prompts it is
+-- typing at is the machine's business, and the mask flag is all that shows.
+function CeroSec.consoleMode(console)
+	local waiting = CeroSec.consoleWaiting(console)
+	if waiting == "edit" then return "edit" end
+	if waiting == "shell" then return "shell" end
+	return "prompt"
+end
+
 -- The prompt that goes with it. Derived from the console and from nothing else,
 -- so the server never has to remember what it last told a window.
 function CeroSec.consolePrompt(console, hostname, admin)
-	local mode = CeroSec.consoleMode(console)
-	if mode == "password" then return "password: " end
-	if mode == "login" then return "login: " end
+	local waiting = CeroSec.consoleWaiting(console)
+	if waiting == "edit" then return "" end
+	if waiting == "prompt" then
+		local text = console.prompt.text
+		if type(text) ~= "string" then return "" end
+		return text
+	end
+	if waiting == "password" then return "password: " end
+	if waiting == "login" then return "login: " end
 	return CeroSec.prompt(console.user, hostname, console.cwd or "/", admin)
+end
+
+-- Whether what is being typed at that prompt is to be shown as stars. The
+-- window masks on this flag and on nothing it works out for itself, so a new
+-- prompt that must not be echoed is one field and no client change.
+function CeroSec.consoleMask(console)
+	local waiting = CeroSec.consoleWaiting(console)
+	if waiting == "password" then return true end
+	if waiting == "prompt" then return console.prompt.mask and true or false end
+	return false
 end
 
 -- What a password looks like once it is on the screen. The cleartext never
@@ -371,6 +426,24 @@ function CeroSec.repairConsole(console)
 	if type(console.user) == "string" then out.user = console.user end
 	if type(console.cwd) == "string" then out.cwd = console.cwd end
 	if type(console.pending) == "string" then out.pending = console.pending end
+	-- A half-answered prompt is kept only when all three of its parts are still
+	-- there. The token is the core's and is opaque here; a table is as far as
+	-- this can check it, and CeroSecOS.continue refuses what is not one.
+	local prompt = console.prompt
+	if type(prompt) == "table" and type(prompt.text) == "string" and type(prompt.cont) == "table" then
+		out.prompt = { text = prompt.text, mask = prompt.mask and true or false, cont = prompt.cont }
+	end
+	-- An open buffer, likewise: a path and a text, or nothing at all.
+	local edit = console.edit
+	if type(edit) == "table" and type(edit.path) == "string" and type(edit.text) == "string" then
+		out.edit = {
+			path = edit.path,
+			text = edit.text,
+			readonly = edit.readonly and true or false,
+		}
+		if type(edit.by) == "string" then out.edit.by = edit.by end
+		if type(edit.message) == "string" then out.edit.message = edit.message end
+	end
 	if type(console.lines) == "table" then
 		local lines = console.lines
 		for i = 1, #lines do
@@ -378,6 +451,182 @@ function CeroSec.repairConsole(console)
 		end
 	end
 	return out
+end
+
+--
+-- The editor
+--
+-- edit <file> puts the same 60 x 20 glass into a second shape: an inverted bar
+-- naming the file, seventeen rows of the buffer, an inverted bar of keys, and
+-- one line for what the machine has to say. Everything below is pure list and
+-- string work -- the composition of that screen, where it scrolls to, and where
+-- the cursor is -- so it lives here and is tested headless.
+--
+-- The keys are Escape and Tab and nothing else, because those are the only two
+-- the game hands a text box that has the keyboard (Core.updateKeyboardAux):
+-- Ctrl+O and Ctrl+X, which is what nano would use, never arrive.
+--
+
+-- Seventeen rows of text between the two bars, and one message line under them.
+CeroSec.EDIT_ROWS = 17
+
+-- A line is a screen line: the editor wraps nothing, so it refuses the 61st
+-- character rather than fold it. The buffer ceiling is the file ceiling
+-- (CeroSecOS.MAX_FILE_BYTES); os_test pins the two together.
+CeroSec.EDIT_MAX_LINE = 60
+CeroSec.EDIT_MAX_BYTES = 4096
+
+-- What the vanilla text box lets a player *type* into it before it stops
+-- taking characters: UITextBox2.textEntryMaxLength, 2000 in the constructor,
+-- read by isTextLimit() which gates putCharacter, and with no setter and no
+-- constructor argument. Enter, paste and a file loaded from disk are not gated
+-- by it, so a bigger file still opens, still shows and still saves; it is only
+-- the typing that stops. Named here so the message line can say so.
+CeroSec.EDIT_TYPED_MAX = 2000
+
+-- How often an unsaved buffer is pushed to the machine while it is being
+-- typed, so that the screen stays the machine's and walking away keeps the
+-- work. Only when it has changed, and never more often than this.
+CeroSec.EDIT_SYNC_MS = 5000
+
+-- The buffer as rows. Unlike the core's splitLines, an empty buffer is one
+-- empty line and not none: a cursor has to sit somewhere.
+function CeroSec.editLines(text)
+	local out = {}
+	if type(text) ~= "string" then text = "" end
+	local start = 1
+	while true do
+		local p = string.find(text, "\n", start, true)
+		if p == nil then
+			out[#out + 1] = string.sub(text, start)
+			return out
+		end
+		out[#out + 1] = string.sub(text, start, p - 1)
+		start = p + 1
+	end
+end
+
+-- Where an offset into the buffer is on that grid: the row, 1-based, and the
+-- column, 0-based (0 is in front of the first character). The offset is what
+-- UITextBox2.getCursorPos answers -- an absolute index into the text, which is
+-- what putCharacter, onKeyLeft and onKeyRight all treat it as.
+function CeroSec.editCursor(text, offset)
+	if type(text) ~= "string" then text = "" end
+	if type(offset) ~= "number" then offset = 0 end
+	if offset < 0 then offset = 0 end
+	if offset > #text then offset = #text end
+	-- An offset is a gap, not a character: offset 0 is in front of the first
+	-- character and offset p, where p is the index of a newline, is in front of
+	-- the first character of the next row.
+	local row, start = 1, 1
+	while true do
+		local p = string.find(text, "\n", start, true)
+		if p == nil or offset < p then return row, offset - start + 1 end
+		row = row + 1
+		start = p + 1
+	end
+end
+
+-- The first row shown, so the cursor row is always one of the seventeen. Given
+-- the row it was on, so a screen that need not move does not move.
+function CeroSec.editTop(top, row, count, rows)
+	if type(top) ~= "number" or top < 1 then top = 1 end
+	if count < 1 then count = 1 end
+	local most = count - rows + 1
+	if most < 1 then most = 1 end
+	if top > most then top = most end
+	if row < top then top = row end
+	if row > top + rows - 1 then top = row - rows + 1 end
+	if top > most then top = most end
+	if top < 1 then top = 1 end
+	return top
+end
+
+-- The top bar: what is being edited, and the one thing worth knowing about it.
+-- The flag is "modified", "read-only" or nothing, and it is pinned to the right
+-- so the eye finds it in the same place every time.
+function CeroSec.editTitle(path, flag)
+	local tail = ""
+	if type(flag) == "string" and flag ~= "" then tail = "[" .. flag .. "] " end
+	local room = CeroSec.COLS - #tail
+	if room < 1 then room = 1 end
+	local head = " EDIT  " .. tostring(path)
+	return CeroSec.padRight(CeroSec.truncate(head, room), room) .. tail
+end
+
+-- The bottom bar. Two keys, because there are two keys.
+function CeroSec.editKeys()
+	return CeroSec.padRight(" Esc exit   Tab save ", CeroSec.COLS)
+end
+
+-- The message line: whatever the machine last had to say, cut to the screen and
+-- stripped the way any other stored line is.
+function CeroSec.editMessage(text)
+	if type(text) ~= "string" then return "" end
+	return CeroSec.consoleLine(text)
+end
+
+-- The whole screen, as twenty rows plus what the window has to draw
+-- differently. rows 1 and 19 are the inverted bars, 2..18 the buffer, 20 the
+-- message. A row of the buffer that is not there is drawn empty, the way a
+-- terminal editor leaves the bottom of a short file blank.
+function CeroSec.editScreen(text, top, path, flag, message)
+	local lines = CeroSec.editLines(text)
+	local out = { CeroSec.editTitle(path, flag) }
+	for i = 0, CeroSec.EDIT_ROWS - 1 do
+		local line = lines[top + i]
+		if line == nil then line = "" end
+		out[#out + 1] = CeroSec.truncate(line, CeroSec.COLS)
+	end
+	out[#out + 1] = CeroSec.editKeys()
+	out[#out + 1] = CeroSec.editMessage(message)
+	return out
+end
+
+-- Is this text something the editor may hold? The two ceilings and the
+-- printable rule, in the terminal's own words, so a refusal happens under the
+-- fingers and not four seconds later at the save. Returns nil plus the line to
+-- show when it is not.
+function CeroSec.editRefusal(text)
+	if type(text) ~= "string" then return "Cannot edit: not text" end
+	if #text > CeroSec.EDIT_MAX_BYTES then
+		return "Buffer full: " .. CeroSec.EDIT_MAX_BYTES .. " bytes"
+	end
+	local lines = CeroSec.editLines(text)
+	for i = 1, #lines do
+		if #lines[i] > CeroSec.EDIT_MAX_LINE then
+			return "Line too long: " .. CeroSec.EDIT_MAX_LINE .. " characters"
+		end
+	end
+	for i = 1, #text do
+		local b = string.byte(text, i)
+		if b < 32 and b ~= 10 and b ~= 9 then return "Cannot edit: invalid characters" end
+	end
+	return nil
+end
+
+-- What Escape and Tab do, and what answers the save question. One table, so
+-- the window looks up a key instead of deciding, and the decisions are tested
+-- without a game. state is "edit" or "ask".
+function CeroSec.editKeyAction(state, key, modified, readonly)
+	if state == "ask" then
+		if key == "y" or key == "Y" then
+			if readonly then return "leave" end
+			return "saveleave"
+		end
+		if key == "n" or key == "N" then return "leave" end
+		if key == "escape" then return "cancel" end
+		return "again"
+	end
+	if key == "escape" then
+		if modified and not readonly then return "ask" end
+		return "leave"
+	end
+	if key == "tab" then
+		if readonly then return "readonly" end
+		return "save"
+	end
+	return nil
 end
 
 --

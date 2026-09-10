@@ -920,4 +920,303 @@ do
 	eq("the session is a runtime object", session.cwd, "/home/admin")
 end
 
+--
+-- 15. passwd, and the continuation mechanism under it.
+--
+
+-- exec/continue with the whole four-value shape kept, because that shape is
+-- what the console drives an interactive command with.
+local function run(state, session, line)
+	local execOk, lines, control, data = CeroSecOS.exec(state, session, line)
+	return { ok = execOk, lines = lines, control = control, data = data }
+end
+
+local function answer(state, session, cont, line)
+	local aOk, lines, control, data = CeroSecOS.continue(state, session, cont, line)
+	return { ok = aOk, lines = lines, control = control, data = data }
+end
+
+-- A prompt step: it asks, it says nothing, and it hands back a token that is a
+-- plain table of strings -- the shape the console can save.
+local function asks(step, text, mask)
+	eq("`" .. text .. "` succeeds", step.ok, true)
+	eq("`" .. text .. "` prints nothing", #step.lines, 0)
+	eq("`" .. text .. "` orders a prompt", step.control, "prompt")
+	eq("`" .. text .. "` prompt text", step.data.text, text)
+	eq("`" .. text .. "` mask", step.data.mask, mask)
+	check("`" .. text .. "` carries a token", type(step.data.cont) == "table")
+	eq("`" .. text .. "` token names its command", step.data.cont.cmd, "passwd")
+	return step.data.cont
+end
+
+local function says(step, line)
+	eq("`" .. line .. "` line count", #step.lines, 1)
+	eq("`" .. line .. "`", step.lines[1], line)
+	return step
+end
+
+do
+	local state = fresh()
+	local session = open(state, "admin")
+
+	-- Happy path: old, new, retype.
+	local cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	eq("the token names the account", cont.user, "admin")
+	eq("the first step is the old password", cont.step, "old")
+	cont = asks(answer(state, session, cont, ""), "New password: ", true)
+	cont = asks(answer(state, session, cont, "hunter2"), "Retype new password: ", true)
+	local done = answer(state, session, cont, "hunter2")
+	eq("the chain ends", done.control, nil)
+	eq("and it worked", done.ok, true)
+	says(done, "passwd: password updated")
+	eq("the password is the new one", state.users.admin.password, "hunter2")
+
+	-- And the machine judges it: the old one no longer opens the account.
+	check("the old password is refused", CeroSecOS.login(state, "admin", "") == nil)
+	check("the new password is taken", CeroSecOS.login(state, "admin", "hunter2") ~= nil)
+
+	-- Wrong old password: one line, and nothing changed.
+	cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	local refused = answer(state, session, cont, "wrong")
+	eq("a wrong old password fails", refused.ok, false)
+	eq("and ends the chain", refused.control, nil)
+	says(refused, "passwd: authentication failure")
+	eq("the password is untouched", state.users.admin.password, "hunter2")
+
+	-- Mismatch: the retype has to be the same string.
+	cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, "hunter2"), "New password: ", true)
+	cont = asks(answer(state, session, cont, "abc"), "Retype new password: ", true)
+	local mismatch = answer(state, session, cont, "abd")
+	eq("a mismatch fails", mismatch.ok, false)
+	says(mismatch, "passwd: passwords do not match")
+	eq("the password is untouched", state.users.admin.password, "hunter2")
+
+	-- An empty new password is a password: the accounts ship that way.
+	cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, "hunter2"), "New password: ", true)
+	cont = asks(answer(state, session, cont, ""), "Retype new password: ", true)
+	says(answer(state, session, cont, ""), "passwd: password updated")
+	eq("the password is empty again", state.users.admin.password, "")
+
+	-- Somebody else's password is root's business and nobody else's.
+	says(run(state, session, "passwd root"), "passwd: permission denied")
+	says(run(state, session, "passwd nobody"), "passwd: no such user")
+	eq("no such user fails", run(state, session, "passwd nobody").ok, false)
+	says(run(state, session, "passwd a b"), "passwd: usage: passwd [user]")
+end
+
+do
+	local state = fresh()
+	local session = open(state, "root")
+
+	-- root is asked for nobody's old password, its own included.
+	local cont = asks(run(state, session, "passwd"), "New password: ", true)
+	eq("root changes root", cont.user, "root")
+	cont = asks(answer(state, session, cont, "toor"), "Retype new password: ", true)
+	says(answer(state, session, cont, "toor"), "passwd: password updated")
+	eq("root's password", state.users.root.password, "toor")
+
+	-- And root sets somebody else's without knowing it.
+	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
+	eq("the token names the account", cont.user, "admin")
+	cont = asks(answer(state, session, cont, "letmein"), "Retype new password: ", true)
+	says(answer(state, session, cont, "letmein"), "passwd: password updated")
+	eq("admin's password", state.users.admin.password, "letmein")
+	says(run(state, session, "passwd nobody"), "passwd: no such user")
+
+	-- A password the machine will not store.
+	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
+	cont = asks(answer(state, session, cont, string.rep("x", 33)), "Retype new password: ", true)
+	says(answer(state, session, cont, string.rep("x", 33)), "passwd: password too long")
+	cont = asks(run(state, session, "passwd admin"), "New password: ", true)
+	cont = asks(answer(state, session, cont, "a\1b"), "Retype new password: ", true)
+	says(answer(state, session, cont, "a\1b"), "passwd: invalid characters")
+	eq("admin's password survived both", state.users.admin.password, "letmein")
+
+	-- The state a chain leaves behind is still storable.
+	eq("the state still validates", CeroSecOS.validate(state), true)
+end
+
+do
+	-- An abandoned chain. The console drops the token and runs the next command;
+	-- the token is then a dead thing, and answering it later changes nothing.
+	local state = fresh()
+	local session = open(state, "admin")
+	local cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, ""), "New password: ", true)
+
+	-- The next thing typed is a command, not an answer: it runs normally.
+	ok(state, session, "mkdir notes", {})
+	eq("the abandoned chain changed no password", state.users.admin.password, "")
+
+	-- And the token, answered afterwards, still only asks: nothing was reserved
+	-- for it and nothing is left half-done.
+	local late = answer(state, session, cont, "zzz")
+	eq("a stale token still only asks", late.control, "prompt")
+	eq("the password is still the old one", state.users.admin.password, "")
+
+	-- A token that is not one is refused, and refused the same way twice.
+	for _, junk in ipairs({ "not a table", 7, {}, { cmd = "frobnicate" }, { cmd = 1 } }) do
+		local bogus = answer(state, session, junk, "x")
+		eq("a bogus token fails", bogus.ok, false)
+		eq("a bogus token orders nothing", bogus.control, nil)
+		eq("a bogus token says so", bogus.lines[1], "cerosec: nothing to answer")
+	end
+	local nilCont = answer(state, session, nil, "x")
+	eq("no token at all fails", nilCont.ok, false)
+	eq("no token at all says so", nilCont.lines[1], "cerosec: nothing to answer")
+
+	eq("nothing of it reached the state", CeroSecOS.validate(state), true)
+end
+
+do
+	-- A prompt is not output, so it is never redirected into a file either.
+	local state = fresh()
+	local session = open(state, "admin")
+	local step = run(state, session, "passwd > out.txt")
+	eq("the prompt still comes", step.control, "prompt")
+	eq("and no file was made", CeroSecOS.getNode(state, session, "out.txt"), nil)
+end
+
+--
+-- 16. edit: what the core says about opening a file, and the save path.
+--
+
+do
+	local state = fresh()
+	local session = open(state, "admin")
+
+	ok(state, session, 'write notes.txt "one\ntwo"', {})
+
+	-- An existing file the user owns: its text, and writable.
+	local step = run(state, session, "edit notes.txt")
+	eq("edit succeeds", step.ok, true)
+	eq("edit prints nothing", #step.lines, 0)
+	eq("edit orders the editor", step.control, "edit")
+	eq("edit hands back the absolute path", step.data.path, "/home/admin/notes.txt")
+	eq("edit hands back the text", step.data.text, "one\ntwo")
+	eq("edit says it is writable", step.data.readonly, false)
+
+	-- A file that is not there yet, in a directory that is: an empty buffer.
+	step = run(state, session, "edit fresh.txt")
+	eq("a new file opens", step.control, "edit")
+	eq("a new file is empty", step.data.text, "")
+	eq("a new file is writable", step.data.readonly, false)
+	eq("a new file is not created by opening it",
+		CeroSecOS.getNode(state, session, "fresh.txt"), nil)
+
+	-- A directory that is not there: the same refusal as any other command.
+	bad(state, session, "edit nowhere/a.txt", "edit: nowhere/a.txt: no such file")
+	bad(state, session, "edit /etc/deep/a.txt", "edit: /etc/deep/a.txt: no such file")
+	-- A directory that is there but is not writable by this user.
+	bad(state, session, "edit /etc/new.txt", "edit: /etc/new.txt: permission denied")
+	-- A directory is not a file.
+	bad(state, session, "edit /etc", "edit: /etc: is a directory")
+	bad(state, session, "edit /", "edit: /: is a directory")
+	bad(state, session, "edit notes.txt/x", "edit: notes.txt/x: not a directory")
+	-- A name the machine cannot create is refused at the name, not at the save.
+	bad(state, session, "edit -bad", "edit: -bad: invalid name")
+	bad(state, session, "edit " .. string.rep("a", 33), "edit: " .. string.rep("a", 33) .. ": invalid name")
+	bad(state, session, "edit", "edit: usage: edit <file>")
+	bad(state, session, "edit a b", "edit: usage: edit <file>")
+
+	-- A file the user may not even look at.
+	ok(state, session, "chmod 000 notes.txt", {})
+	bad(state, session, "edit notes.txt", "edit: notes.txt: permission denied")
+	-- Readable but not writable: it opens, marked read-only.
+	ok(state, session, "chmod 400 notes.txt", {})
+	step = run(state, session, "edit notes.txt")
+	eq("a read-only file opens", step.control, "edit")
+	eq("and says so", step.data.readonly, true)
+	eq("with its text", step.data.text, "one\ntwo")
+end
+
+do
+	-- The admin's own directory, seen from root, and root's own from the admin.
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+
+	bad(state, admin, "edit /root/secret.txt", "edit: /root/secret.txt: permission denied")
+	local step = run(state, root, "edit /root/secret.txt")
+	eq("root opens a new file in its own home", step.control, "edit")
+	eq("root is never read-only", step.data.readonly, false)
+
+	-- root reads a file nobody else may: still writable, because root.
+	local write = run(state, admin, 'write /home/admin/p.txt "x"')
+	eq("the admin wrote it", write.ok, true)
+	local chmod = run(state, admin, "chmod 000 /home/admin/p.txt")
+	eq("and shut it", chmod.ok, true)
+	step = run(state, root, "edit /home/admin/p.txt")
+	eq("root opens it anyway", step.control, "edit")
+	eq("and may write it", step.data.readonly, false)
+end
+
+do
+	-- The save path the editor uses is writeFile, the same one the write command
+	-- and ">" go through: permissions, limits and the printable rule, in one
+	-- place. The editor never gets its own.
+	local state = fresh()
+	local session = open(state, "admin")
+	ok(state, session, "touch notes.txt", {})
+
+	local done, reason = CeroSecOS.writeFile(state, session, "notes.txt", "hello\nworld", false)
+	eq("a save works", done, true)
+	eq("with no complaint", reason, nil)
+	eq("and lands in the file", state.fs.children.home.children.admin.children["notes.txt"].data,
+		"hello\nworld")
+
+	-- A file that may not be written.
+	ok(state, session, "chmod 400 notes.txt", {})
+	done, reason = CeroSecOS.writeFile(state, session, "notes.txt", "nope", false)
+	eq("a read-only file refuses", done, nil)
+	eq("and says why", reason, "permission denied")
+	ok(state, session, "chmod 644 notes.txt", {})
+
+	-- The file ceiling.
+	done, reason = CeroSecOS.writeFile(state, session, "notes.txt",
+		string.rep("x", CeroSecOS.MAX_FILE_BYTES), false)
+	eq("exactly the limit fits", done, true)
+	done, reason = CeroSecOS.writeFile(state, session, "notes.txt",
+		string.rep("x", CeroSecOS.MAX_FILE_BYTES + 1), false)
+	eq("one byte over refuses", done, nil)
+	eq("and says why", reason, "file too large")
+	eq("and left the file alone",
+		#state.fs.children.home.children.admin.children["notes.txt"].data,
+		CeroSecOS.MAX_FILE_BYTES)
+
+	-- The printable rule: a byte below 0x20 that is not newline or tab.
+	done, reason = CeroSecOS.writeFile(state, session, "notes.txt", "a\1b", false)
+	eq("a control byte refuses", done, nil)
+	eq("and says why", reason, "invalid characters")
+	done, reason = CeroSecOS.writeFile(state, session, "notes.txt", "a\tb\nc", false)
+	eq("tab and newline are text", done, true)
+
+	-- A directory is not a buffer.
+	done, reason = CeroSecOS.writeFile(state, session, "/etc", "x", false)
+	eq("a directory refuses", done, nil)
+	eq("and says why", reason, "is a directory")
+
+	-- A path in a directory this user may not write.
+	done, reason = CeroSecOS.writeFile(state, session, "/etc/new.txt", "x", false)
+	eq("a closed directory refuses", done, nil)
+	eq("and says why", reason, "permission denied")
+
+	eq("the state still validates", CeroSecOS.validate(state), true)
+end
+
+do
+	-- The client's ceilings and the core's are the same numbers, named twice on
+	-- purpose: the terminal never loads the OS core, so a drift between them
+	-- would be a screen that refuses what the machine accepts, or worse.
+	local defs, derr = loadfile("42/media/lua/shared/CeroSec/CeroSecDefs.lua")
+	if not defs then error("cannot load the defs: " .. tostring(derr)) end
+	defs()
+	eq("the editor's byte ceiling is the file ceiling",
+		CeroSec.EDIT_MAX_BYTES, CeroSecOS.MAX_FILE_BYTES)
+	eq("the editor's line width is the screen width", CeroSec.EDIT_MAX_LINE, CeroSecOS.COLS)
+	eq("the screen is as wide as the core thinks", CeroSec.COLS, CeroSecOS.COLS)
+end
+
 print("os_test: " .. count .. " assertions passed")
