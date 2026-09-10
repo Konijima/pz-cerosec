@@ -1,0 +1,56 @@
+module CeroSec
+{
+    /* The manual. One item, and every key on it verified against the game
+       rather than against a wiki:
+
+       - The block syntax and the key spellings are literature.txt's
+         (media/scripts/generated/items/literature.txt): Base.Book at 1704,
+         Base.Journal at 1777, Base.Notebook at 1817, Base.Book_Computer at
+         1837. Build 42 has no `Type =` any more -- there is not one line of it
+         left in media/scripts/generated/items -- it is `ItemType = base:<kind>`
+         and the kinds are zombie.scripting.objects.ItemType's constants
+         (javap: ALARM_CLOCK .. WEAPON_PART).
+
+       - ItemType is base:normal and NOT base:literature, deliberately. A
+         Literature item that cannot be written on is one the vanilla inventory
+         menu offers to READ (ISInventoryPaneContextMenu.lua:242 sets
+         isAllLiterature for it, :539 calls doLiteratureMenu, :1107 adds the
+         Read option), and vanilla's Read is a timed action: the character sits
+         down and burns hours of game time on it. This book is read by the
+         player, not by the character -- so the item is a plain one and the only
+         thing on its menu is ours.
+
+       - DisplayCategory is a free string that the inventory prints through
+         `getText("IGUI_ItemCat_" .. item:getDisplayCategory())`
+         (ISInventoryPane.lua:2532-2533), and IGUI_ItemCat_Literature is a key
+         the game ships (media/lua/shared/Translate/EN/IG_UI.json:276). So a
+         Normal item still files itself under Literature, which is where a book
+         belongs in the list.
+
+       - Icon = CeroSecManual resolves to media/textures/Item_CeroSecManual.png:
+         Item.DoParam builds `itemName = "Item_" + icon` and asks
+         Texture.trygetTexture for it (javap -c zombie.scripting.objects.Item,
+         the Icon branch at 528-567), and trygetTexture turns a bare name into
+         "media/textures/<name>" and then appends ".png" (javap -v -c
+         zombie.core.textures.Texture, bootstrap methods 7 and 8) before handing
+         it to ZomboidFileSystem, which is what looks through the mod folders.
+
+       - StaticModel and WorldStaticModel are Base.Book's own two, verbatim.
+         Every literature item in the game defines both; without the world one
+         there is no model to drop on the ground.
+
+       DisplayName is here as the fallback; the name a player actually reads
+       comes from Translate/EN/ItemName.json, keyed "CeroSec.Manual" the way
+       vanilla keys "Base.Book_Computer". */
+
+    item Manual
+    {
+        DisplayName = CeroSec OS User's Manual,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.8,
+        Icon = CeroSecManual,
+        StaticModel = Book,
+        WorldStaticModel = BookClosedGround,
+    }
+}
