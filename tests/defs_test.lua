@@ -1,7 +1,9 @@
 -- Unit tests for CeroSecDefs.lua. Run from the repo root:
 --   lua5.1 tests/defs_test.lua
 
-local DEFS = "Contents/mods/CeroSec/42/media/lua/shared/CeroSec/CeroSecDefs.lua"
+-- Left over from before the repo root became the mod folder (commit 149ec89):
+-- the path is relative to the repo root now.
+local DEFS = "42/media/lua/shared/CeroSec/CeroSecDefs.lua"
 
 local chunk, err = loadfile(DEFS)
 if not chunk then error("cannot load " .. DEFS .. ": " .. tostring(err)) end
@@ -87,6 +89,55 @@ for i = 1, 10 do
 	eq("onSpriteFor is nil for " .. tostring(name), CeroSec.onSpriteFor(name), nil)
 	eq("offSpriteFor is nil for " .. tostring(name), CeroSec.offSpriteFor(name), nil)
 end
+
+-- Front square offsets. The facing of a tile is the direction it looks at, and
+-- the names are IsoDirections constants: N (0,-1), S (0,1), E (1,0), W (-1,0).
+local wantedOffset = {
+	S = { 0, 1 },
+	E = { 1, 0 },
+	N = { 0, -1 },
+	W = { -1, 0 },
+}
+for facing, wanted in pairs(wantedOffset) do
+	local dx, dy = CeroSec.frontOffset(facing)
+	eq("frontOffset(" .. facing .. ") dx", dx, wanted[1])
+	eq("frontOffset(" .. facing .. ") dy", dy, wanted[2])
+	-- Same answer whether the computer is lit or dark: the ON sprites carry no
+	-- Facing property, so their facing comes through the OFF/ON mapping.
+	for _, sprite in ipairs({ CeroSec.SPRITES_OFF[facing], CeroSec.SPRITES_ON[facing] }) do
+		local sx, sy = CeroSec.frontOffset(CeroSec.facingOf(sprite))
+		eq("frontOffset via " .. sprite .. " dx", sx, wanted[1])
+		eq("frontOffset via " .. sprite .. " dy", sy, wanted[2])
+	end
+end
+
+-- Exactly four offsets, each one square away and never diagonal.
+local offsetCount = 0
+for facing, offset in pairs(CeroSec.FRONT_OFFSET) do
+	check("offset facing " .. facing .. " is one of S/E/N/W", facings[facing])
+	eq("offset " .. facing .. " is one square away",
+		math.abs(offset[1]) + math.abs(offset[2]), 1)
+	offsetCount = offsetCount + 1
+end
+eq("FRONT_OFFSET covers 4 facings", offsetCount, 4)
+
+-- Opposite facings must point opposite ways.
+for _, pair in ipairs({ { "N", "S" }, { "E", "W" } }) do
+	local ax, ay = CeroSec.frontOffset(pair[1])
+	local bx, by = CeroSec.frontOffset(pair[2])
+	eq("offsets " .. pair[1] .. "/" .. pair[2] .. " cancel on x", ax + bx, 0)
+	eq("offsets " .. pair[1] .. "/" .. pair[2] .. " cancel on y", ay + by, 0)
+end
+
+-- Nothing else has a front square.
+for i = 1, 10 do
+	local dx, dy = CeroSec.frontOffset(CeroSec.facingOf(strangers[i]))
+	eq("frontOffset dx is nil for " .. tostring(strangers[i]), dx, nil)
+	eq("frontOffset dy is nil for " .. tostring(strangers[i]), dy, nil)
+end
+local dx, dy = CeroSec.frontOffset("NE")
+eq("frontOffset(NE) dx is nil", dx, nil)
+eq("frontOffset(NE) dy is nil", dy, nil)
 
 -- State schema v1.
 local state = CeroSec.newState("E")

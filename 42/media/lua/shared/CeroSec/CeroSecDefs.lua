@@ -87,3 +87,26 @@ function CeroSec.spriteFor(facing, on)
 	if on then return CeroSec.SPRITES_ON[facing] end
 	return CeroSec.SPRITES_OFF[facing]
 end
+
+--
+-- Geometry
+--
+-- A tile's Facing property is the direction the object looks at, and the tile
+-- facings are the names of IsoDirections: N is (0,-1), S is (0,+1), E is (+1,0),
+-- W is (-1,0) (zombie/iso/IsoDirections.java enum constants). So the square in
+-- front of the screen is the neighbour in the facing direction: that is where
+-- the player has to stand to look at the monitor.
+CeroSec.FRONT_OFFSET = {
+	N = { 0, -1 },
+	S = { 0, 1 },
+	E = { 1, 0 },
+	W = { -1, 0 },
+}
+
+-- dx, dy of the square in front of a computer with this facing. nil, nil for
+-- anything that is not one of the four facings.
+function CeroSec.frontOffset(facing)
+	local offset = CeroSec.FRONT_OFFSET[facing]
+	if not offset then return nil, nil end
+	return offset[1], offset[2]
+end
