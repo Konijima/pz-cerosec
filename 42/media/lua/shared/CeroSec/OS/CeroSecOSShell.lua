@@ -135,18 +135,18 @@ local function parseMode(s)
 	return tonumber(s)
 end
 
-local function permString(node)
-	local s = "-"
-	if node.type == "dir" then s = "d" end
-	local mode = node.mode or 0
-	local digits = { math.floor(mode / 100) % 10, math.floor(mode / 10) % 10, mode % 10 }
-	for i = 1, 3 do
-		local d = digits[i]
-		if math.floor(d / 4) % 2 == 1 then s = s .. "r" else s = s .. "-" end
-		if math.floor(d / 2) % 2 == 1 then s = s .. "w" else s = s .. "-" end
-		if d % 2 == 1 then s = s .. "x" else s = s .. "-" end
+-- The children of a directory that are worth listing. Everything, except a
+-- device the machine knows the number of and cannot reach: it is mounted so
+-- that `cat /dev/lock0` can say "no such device" about a number a player wrote
+-- down, and it is not on the shelf, because it is not there.
+local function listedNames(node)
+	local names = CeroSecOS.childNames(node)
+	local out = {}
+	for i = 1, #names do
+		local child = node.children[names[i]]
+		if not (type(child) == "table" and child.dead) then out[#out + 1] = names[i] end
 	end
-	return s
+	return out
 end
 
 -- ls -l columns: 10 perm + 2 + 8 owner + 2 + 5 size + 2 + 12 date + 2 + 17 name
@@ -163,7 +163,7 @@ local function longLine(node, name)
 	else
 		size = #(node.data or "")
 	end
-	return permString(node)
+	return CeroSecOS.permString(node)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", L_OWNER), L_OWNER)
 		.. "  " .. CeroSecOS.padLeft(tostring(size), L_SIZE)
 		.. "  " .. CeroSecOS.formatStamp(CeroSecOS.mtimeOf(node))
@@ -418,19 +418,31 @@ commands.ls = function(state, session, args, env)
 
 	if node.type ~= "dir" then
 		local name = baseName(session, path) or shown
-		if long then return true, { longLine(node, name) } end
+		-- A device that is not there is not listed inside /dev either, so
+		-- naming it straight gets the same answer a listing gives.
+		if node.dead then return fail("ls", shown, "no such file") end
+		if long then
+			if CeroSecOS.isDev(node) then return true, { CeroSecOS.devLine(node) } end
+			return true, { longLine(node, name) }
+		end
 		return true, { CeroSecOS.truncate(name, CeroSecOS.COLS) }
 	end
 	if not CeroSecOS.can(state, session, node, "r") then return fail("ls", shown, "permission denied") end
 
-	local names = CeroSecOS.childNames(node)
+	local names = listedNames(node)
 	if long then
 		local out = {}
 		for i = 1, #names do
 			local child = node.children[names[i]]
 			local label = names[i]
 			if classify and child.type == "dir" then label = label .. "/" end
-			out[#out + 1] = longLine(child, label)
+			-- A device has no size and no date; what stands in those columns is
+			-- what it is and what it is doing (CeroSecOS.devLine).
+			if CeroSecOS.isDev(child) then
+				out[#out + 1] = CeroSecOS.devLine(child)
+			else
+				out[#out + 1] = longLine(child, label)
+			end
 		end
 		return true, out
 	end
@@ -445,8 +457,23 @@ commands.ls = function(state, session, args, env)
 	return true, CeroSecOS.columnize(labels, CeroSecOS.COLS)
 end
 
+-- Is this path a name inside /dev? Creating one is refused, and the refusal
+-- names the DIRECTORY rather than the name that was typed: what is read-only is
+-- /dev, and a player who tried once should not have to try a second name to
+-- find that out.
+local function underDev(session, path)
+	local _, parts = CeroSecOS.resolve(session, path)
+	local parentPath = CeroSecOS.parentOf(parts)
+	return parentPath == CeroSecOS.DEV_PATH
+end
+
+local function devReadOnly()
+	return false, { CeroSecOS.DEV_PATH .. ": read-only" }
+end
+
 commands.mkdir = function(state, session, args, env)
 	if #args ~= 2 then return usage("mkdir") end
+	if underDev(session, args[2]) then return devReadOnly() end
 	local dir = CeroSecOS.newDir(CeroSecOS.userOf(session), 755)
 	local created, reason = CeroSecOS.createNode(state, session, args[2], dir, CeroSecOS.clockOf(env))
 	if created == nil then return fail("mkdir", args[2], reason) end
@@ -457,8 +484,9 @@ commands.touch = function(state, session, args, env)
 	if #args ~= 2 then return usage("touch") end
 	local now = CeroSecOS.clockOf(env)
 	local node, reason = CeroSecOS.getNode(state, session, args[2])
+	if node == nil and underDev(session, args[2]) then return devReadOnly() end
 	if node ~= nil then
-		if node.type ~= "file" then return fail("touch", args[2], "is a directory") end
+		if node.type ~= "file" then return fail("touch", args[2], CeroSecOS.notAFile(node)) end
 		-- Moving a timestamp is a write: a file you may not write is a file you
 		-- may not stamp, which is what a real touch says too. On a machine with
 		-- no clock there is nothing to move and the file is left alone.
@@ -484,6 +512,17 @@ commands.cat = function(state, session, args, env)
 		if node == nil then
 			ok = false
 			out[#out + 1] = "cat: " .. p .. ": " .. reason
+		elseif CeroSecOS.isDev(node) then
+			-- A device answers with its state, and refuses in its OWN name:
+			-- what a player is being told about is the light switch, not the
+			-- command he reached it with.
+			local text, refusal = CeroSecOS.devRead(state, session, node)
+			if text == nil then
+				ok = false
+				out[#out + 1] = refusal
+			else
+				out[#out + 1] = text
+			end
 		elseif node.type ~= "file" then
 			ok = false
 			out[#out + 1] = "cat: " .. p .. ": is a directory"
@@ -530,6 +569,10 @@ commands.mv = function(state, session, args, env)
 
 	local node, reason = CeroSecOS.getNode(state, session, src)
 	if node == nil then return fail("mv", src, reason) end
+	-- Said about the SOURCE, before the destination is worked out: what is a
+	-- device is the thing being moved, and mv's other refusals all name the
+	-- target because it is the target they are about.
+	if CeroSecOS.isDev(node) then return fail("mv", src, "is a device") end
 
 	local target = dst
 	local dstNode = CeroSecOS.getNode(state, session, dst)
@@ -579,6 +622,9 @@ commands.cp = function(state, session, args, env)
 
 	local node, reason, srcAbs = CeroSecOS.getNode(state, session, src)
 	if node == nil then return fail("cp", src, reason) end
+	-- A device cannot be copied: what would come out is a file holding the word
+	-- "on", which is a lie about a light switch.
+	if CeroSecOS.isDev(node) then return fail("cp", src, "is a device") end
 	if node.type ~= "file" and not recursive then return fail("cp", src, "is a directory") end
 	if not canCopyTree(state, session, node) then return fail("cp", src, "permission denied") end
 
@@ -630,6 +676,11 @@ commands.chown = function(state, session, args, env)
 	if user == nil then return fail("chown", args[2], "no such user") end
 	local node, reason = CeroSecOS.getNode(state, session, args[3])
 	if node == nil then return fail("chown", args[3], reason) end
+	-- A device is root's, always. Only the MODE of one is remembered across a
+	-- command (see CeroSecOS.mountDev), so an owner given away here would be
+	-- back to root by the next line, and a change that does not last is a
+	-- change not to accept.
+	if CeroSecOS.isDev(node) then return fail("chown", args[3], "is a device") end
 	if not isOwnerOrRoot(session, node) then return fail("chown", args[3], "permission denied") end
 	node.owner = user.name
 	local now = CeroSecOS.clockOf(env)
@@ -717,7 +768,9 @@ end
 local function fileLines(state, session, cmd, path)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, cmd .. ": " .. path .. ": " .. reason end
-	if node.type ~= "file" then return nil, cmd .. ": " .. path .. ": is a directory" end
+	if node.type ~= "file" then
+		return nil, cmd .. ": " .. path .. ": " .. CeroSecOS.notAFile(node)
+	end
 	if not CeroSecOS.can(state, session, node, "r") then
 		return nil, cmd .. ": " .. path .. ": permission denied"
 	end
@@ -1043,7 +1096,7 @@ commands.edit = function(state, session, args, env)
 	local path = args[2]
 	local node, reason, abs = CeroSecOS.getNode(state, session, path)
 	if node ~= nil then
-		if node.type ~= "file" then return fail("edit", path, "is a directory") end
+		if node.type ~= "file" then return fail("edit", path, CeroSecOS.notAFile(node)) end
 		if not CeroSecOS.can(state, session, node, "r") then
 			return fail("edit", path, "permission denied")
 		end
@@ -1064,6 +1117,9 @@ commands.edit = function(state, session, args, env)
 	-- not, so the only refusal an editor can end on is a full disk.
 	local _, parts = CeroSecOS.resolve(session, path)
 	if #parts == 0 then return fail("edit", path, "is a directory") end
+	-- Refused here rather than at the save: nano lets you type into a buffer it
+	-- can never write, this does not, and /dev can never take a file.
+	if underDev(session, path) then return devReadOnly() end
 	if not CeroSecOS.isValidName(parts[#parts]) then return fail("edit", path, "invalid name") end
 	local parentPath = CeroSecOS.parentOf(parts)
 	local parent, preason = CeroSecOS.getNode(state, session, parentPath)
@@ -1444,7 +1500,30 @@ end
 -- The one entry point.
 --
 
+-- A redirect whose target is a device: the text goes to the WORLD and not to
+-- the disk. nil when the target is not one, so the ordinary write follows.
+-- true or false plus the lines, exactly like a command.
+local function redirectToDevice(state, session, path, text, env)
+	local node = CeroSecOS.getNode(state, session, path)
+	if not CeroSecOS.isDev(node) then return nil end
+	local done, refusal = CeroSecOS.devWrite(state, session, node, text, env)
+	if done == nil then return false, CeroSecOS.fit({ refusal }) end
+	return true, {}
+end
+
+local execLine
+
 function CeroSecOS.exec(state, session, line, env)
+	-- The world around the machine becomes files under /dev for the length of
+	-- this one command, and is taken away again before the answer goes back.
+	-- Nothing of it is ever saved: see the head of CeroSecOSDev.lua.
+	CeroSecOS.mountDev(state, env)
+	local ok, lines, control, data = execLine(state, session, line, env)
+	CeroSecOS.unmountDev(state, env)
+	return ok, lines, control, data
+end
+
+execLine = function(state, session, line, env)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }
@@ -1470,6 +1549,8 @@ function CeroSecOS.exec(state, session, line, env)
 	-- A bare redirection still creates (or truncates) the file.
 	if #args == 0 then
 		if redirect == nil then return true, {} end
+		local devOk, devLines = redirectToDevice(state, session, redirect.path, "", env)
+		if devOk ~= nil then return devOk, devLines end
 		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, "",
 			redirect.append, CeroSecOS.clockOf(env))
 		if done == nil then return false, CeroSecOS.fit({ redirect.path .. ": " .. wreason }) end
@@ -1494,6 +1575,10 @@ function CeroSecOS.exec(state, session, line, env)
 	local redirectable = control ~= "prompt" and control ~= "edit"
 	if ok and redirect ~= nil and redirectable then
 		local text = table.concat(lines, "\n")
+		-- ">" and ">>" are the same order to a device: it has no contents to
+		-- append to, only a state to be put into.
+		local devOk, devLines = redirectToDevice(state, session, redirect.path, text, env)
+		if devOk ~= nil then return devOk, devLines, control end
 		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, text,
 			redirect.append, CeroSecOS.clockOf(env))
 		if done == nil then
@@ -1512,7 +1597,19 @@ end
 -- A token that is not one -- a forged console, a chain abandoned and answered
 -- afterwards -- is refused here rather than trusted, and nothing of the state
 -- is touched on the way out.
+local continueLine
+
 function CeroSecOS.continue(state, session, cont, line, env)
+	-- A chain that ends in a command is a command, so /dev is under it too:
+	-- `sudo cat /dev/light0` asks for a password first and reads the switch
+	-- afterwards, on the answer.
+	CeroSecOS.mountDev(state, env)
+	local ok, lines, control, data = continueLine(state, session, cont, line, env)
+	CeroSecOS.unmountDev(state, env)
+	return ok, lines, control, data
+end
+
+continueLine = function(state, session, cont, line, env)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }

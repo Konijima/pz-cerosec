@@ -68,6 +68,34 @@ function CeroSecOS.can(state, session, node, what)
 	return math.floor(digit / bit) % 2 == 1
 end
 
+-- The mode as `ls -l` writes it: the type letter and nine bits. A device is a
+-- character device and wears "c", the way a real /dev entry does.
+function CeroSecOS.permString(node)
+	local s = "-"
+	if node.type == "dir" then
+		s = "d"
+	elseif node.type == "dev" then
+		s = "c"
+	end
+	local mode = node.mode or 0
+	local digits = { math.floor(mode / 100) % 10, math.floor(mode / 10) % 10, mode % 10 }
+	for i = 1, 3 do
+		local d = digits[i]
+		if math.floor(d / 4) % 2 == 1 then s = s .. "r" else s = s .. "-" end
+		if math.floor(d / 2) % 2 == 1 then s = s .. "w" else s = s .. "-" end
+		if d % 2 == 1 then s = s .. "x" else s = s .. "-" end
+	end
+	return s
+end
+
+-- Why a node is not a file, in the words the commands print. Every command that
+-- wanted to read or write text and found something else says it through here,
+-- so a device never comes back as "is a directory".
+function CeroSecOS.notAFile(node)
+	if CeroSecOS.isDev(node) then return "is a device" end
+	return "is a directory"
+end
+
 -- Sorted child names. pairs() order is not defined, and the core must be
 -- deterministic, so nothing ever iterates children for output without this.
 function CeroSecOS.childNames(node)
@@ -90,7 +118,11 @@ function CeroSecOS.countEntries(node)
 end
 
 -- Nodes and data bytes in a subtree, the node itself included.
+-- A device costs nothing: it is not on the disk, it is mounted for the length
+-- of one command, and a machine whose `df` moved because somebody walked past a
+-- light switch would be a machine whose ceilings depend on the weather.
 function CeroSecOS.subtreeUsage(node)
+	if node.type == "dev" then return 0, 0 end
 	local nodes, bytes = 1, 0
 	if node.type == "file" then
 		bytes = #(node.data or "")
@@ -202,6 +234,12 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 	if #parts + addDepth > CeroSecOS.MAX_DEPTH then return nil, nil, "path too deep" end
 
 	local parentPath = CeroSecOS.parentOf(parts)
+	-- /dev is not a directory anybody writes into. Its contents are the world
+	-- around the machine, worked out afresh at every command, so a file put
+	-- there would be gone by the next one -- and root is not told a lie about a
+	-- write that will not last. The commands that create say so in their own
+	-- words; this is the gate under all of them, so cp and mv cannot go round.
+	if parentPath == CeroSecOS.DEV_PATH then return nil, nil, "read-only" end
 	local parent, reason = CeroSecOS.getNode(state, session, parentPath)
 	if parent == nil then return nil, nil, reason end
 	if parent.type ~= "dir" then return nil, nil, "not a directory" end
@@ -259,6 +297,9 @@ function CeroSecOS.removeNode(state, session, path, recursive, now)
 
 	local node, reason = CeroSecOS.getNode(state, session, abs)
 	if node == nil then return nil, reason end
+	-- A device is not the machine's to take away: unplugging a light switch is
+	-- done with a screwdriver, standing in front of it.
+	if CeroSecOS.isDev(node) then return nil, "is a device" end
 	if node.type == "dir" then
 		if not recursive then return nil, "is a directory" end
 		if not canRemoveTree(state, session, node) then return nil, "permission denied" end
@@ -278,7 +319,7 @@ end
 function CeroSecOS.setData(state, session, path, data, now)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, reason end
-	if node.type ~= "file" then return nil, "is a directory" end
+	if node.type ~= "file" then return nil, CeroSecOS.notAFile(node) end
 	if not CeroSecOS.can(state, session, node, "w") then return nil, "permission denied" end
 	if #data > CeroSecOS.MAX_FILE_BYTES then return nil, "file too large" end
 	if CeroSecOS.hasControlBytes(data) then return nil, "invalid characters" end
@@ -302,6 +343,7 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 
 	local node, reason = CeroSecOS.getNode(state, session, fromAbs)
 	if node == nil then return nil, reason end
+	if CeroSecOS.isDev(node) then return nil, "is a device" end
 	if CeroSecOS.isInside(toAbs, fromAbs) then return nil, "invalid destination" end
 
 	local fromParentPath, fromName = CeroSecOS.parentOf(fromParts)
@@ -343,7 +385,11 @@ end
 function CeroSecOS.writeFile(state, session, path, text, append, now)
 	local node, reason = CeroSecOS.getNode(state, session, path)
 	if node ~= nil then
-		if node.type ~= "file" then return nil, "is a directory" end
+		-- A device is not written this way. The redirect path in the shell
+		-- catches one before it ever reaches here, and the editor, `write` and
+		-- everything else that saves text is refused: a device has no contents
+		-- to replace.
+		if node.type ~= "file" then return nil, CeroSecOS.notAFile(node) end
 		local data = text
 		if append then
 			local old = node.data or ""
