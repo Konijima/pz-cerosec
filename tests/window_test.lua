@@ -1027,4 +1027,69 @@ do
 		CeroSecOS.hostname(bench.object:osState()), "office")
 end
 
+--
+-- Accounts, from the chair
+--
+-- `sudo adduser` and `su` are the two of this rung that are not one command and
+-- one answer: sudo asks for a password before it runs anything, su asks for
+-- another and then changes who the machine is logged in as. What is asserted is
+-- the PROMPT on the glass -- the machine's own line under the cursor -- because
+-- a console field can say bob while the screen still shows admin's dollar.
+--
+
+do
+	local bench = newBench()
+	local host = CeroSec.hostnameFor(10, 10)
+	bench.login("admin")
+	eq("admin is at his own prompt", bench.window.prompt, "admin@" .. host .. ":~$ ")
+
+	bench.enter("sudo adduser bob")
+	bench.frame()
+	eq("sudo asks first", bench.window.prompt, "[sudo] password for admin: ")
+	eq("and hides the answer", bench.window.mask, true)
+	bench.enter("")
+	bench.frame()
+	check("the account was made", bench.painted("adduser: bob: created"))
+	check("and the open password is said out loud",
+		bench.painted("adduser: set a password with passwd bob"))
+	check("the machine really has him",
+		CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
+
+	bench.enter("su bob")
+	bench.frame()
+	eq("su asks for a password", bench.window.prompt, "Password: ")
+	eq("masked", bench.window.mask, true)
+	bench.enter("")
+	bench.frame()
+	eq("and the glass is bob's", bench.window.prompt, "bob@" .. host .. ":~$ ")
+	eq("still a shell", bench.window.mode, "shell")
+	bench.enter("whoami")
+	bench.enter("pwd")
+	bench.frame()
+	check("the machine agrees", bench.painted("bob"))
+	check("and stands in his home", bench.painted("/home/bob"))
+	eq("the console is his", bench.object.console.user, "bob")
+	eq("the stack is on the machine, not in the window",
+		type(bench.object.console.stack), "table")
+	eq("with admin one deep under him", #bench.object.console.stack, 1)
+	eq("who is admin", bench.object.console.stack[1].user, "admin")
+
+	-- The first exit pops back, and logs nobody out.
+	bench.enter("exit")
+	bench.frame()
+	eq("back to admin", bench.window.prompt, "admin@" .. host .. ":~$ ")
+	eq("still logged in", bench.window.mode, "shell")
+	eq("the console says so too", bench.object.console.user, "admin")
+	eq("and the stack is gone rather than left empty", bench.object.console.stack, nil)
+	check("the screen kept what was on it", bench.painted("adduser: bob: created"))
+
+	-- The second one is a logout.
+	bench.enter("exit")
+	bench.frame()
+	eq("the login prompt is back", bench.window.prompt, "login: ")
+	eq("at a prompt, not a shell", bench.window.mode, "prompt")
+	eq("nobody is logged in", bench.object.console.user, nil)
+	check("and the screen was wiped", not bench.painted("adduser: bob: created"))
+end
+
 print("window_test: " .. count .. " checks passed")

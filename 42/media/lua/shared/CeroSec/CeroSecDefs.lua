@@ -333,6 +333,12 @@ end
 -- this one is written to gos_cerosec.bin for every computer in Knox County.
 CeroSec.CONSOLE_MAX = 100
 
+-- How deep the su stack a console carries may go. The same number the core
+-- enforces (CeroSecOS.SU_MAX), named again here because the terminal never
+-- loads the core -- os_test pins the two against each other so they cannot
+-- drift, exactly as it does for truncate and padRight.
+CeroSec.SU_MAX = 4
+
 -- The BIOS. Written by the server into the console the first time somebody
 -- opens a machine that has just been switched on, so that it is on the screen
 -- exactly once per power-on -- and so that the second player to open the same
@@ -409,6 +415,9 @@ function CeroSec.consoleLogout(console)
 	console.user = nil
 	console.cwd = nil
 	console.pending = nil
+	-- Who the glass would have come back to through su, with it: an account
+	-- logs out of the machine and not out of its own last switch.
+	console.stack = nil
 	-- A half-answered prompt and an open buffer belong to the session that
 	-- started them: neither survives the logout, and the unsaved buffer is lost
 	-- exactly as it would be on a real machine.
@@ -519,6 +528,24 @@ function CeroSec.repairConsole(console)
 	if type(console.user) == "string" then out.user = console.user end
 	if type(console.cwd) == "string" then out.cwd = console.cwd end
 	if type(console.pending) == "string" then out.pending = console.pending end
+	-- The su stack: machine state like the user and the working directory, and
+	-- saved with them. Kept entry by entry, only where an entry is still a name
+	-- and a path, and never deeper than the ceiling -- a forged console must not
+	-- be able to hand back a stack that takes ten exits to get out of.
+	local stack = console.stack
+	if type(stack) == "table" then
+		local kept = {}
+		for i = 1, #stack do
+			local entry = stack[i]
+			if type(entry) == "table" and type(entry.user) == "string"
+					and #kept < CeroSec.SU_MAX then
+				local cwd = "/"
+				if type(entry.cwd) == "string" then cwd = entry.cwd end
+				kept[#kept + 1] = { user = entry.user, cwd = cwd }
+			end
+		end
+		if #kept > 0 then out.stack = kept end
+	end
 	-- A half-answered prompt is kept only when all three of its parts are still
 	-- there. The token is the core's and is opaque here; a table is as far as
 	-- this can check it, and CeroSecOS.continue refuses what is not one.

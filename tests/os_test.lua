@@ -1662,6 +1662,10 @@ do
 		CeroSec.EDIT_MAX_BYTES, CeroSecOS.MAX_FILE_BYTES)
 	eq("the editor's line width is the screen width", CeroSec.EDIT_MAX_LINE, CeroSecOS.COLS)
 	eq("the screen is as wide as the core thinks", CeroSec.COLS, CeroSecOS.COLS)
+	-- And the depth of the su stack, which the console carries and the core
+	-- enforces: a repair that kept five would be a machine the core cannot get
+	-- out of, and one that kept three would drop a session somebody was in.
+	eq("the su stack is as deep on both sides", CeroSec.SU_MAX, CeroSecOS.SU_MAX)
 end
 
 --
@@ -3011,7 +3015,7 @@ do
 		CeroSecOS.newFile("admin", 644, "keep me")
 
 	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
-	eq("and moves the number to this build", state.sysv, 3)
+	eq("and moves the number to this build", state.sysv, CeroSecOS.SYSTEM_VERSION)
 	for i = 1, #added do
 		local node = state.fs.children.bin.children[added[i]]
 		check("/bin/" .. added[i] .. " was seeded", node ~= nil)
@@ -3036,6 +3040,417 @@ do
 	CeroSecOS.restoreSystem(broken)
 	check("the repair puts date back", broken.fs.children.bin.children.date ~= nil)
 	check("and man", broken.fs.children.bin.children.man ~= nil)
+	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
+--
+-- 25. Accounts: adduser, deluser, id, and su (rung 3).
+--
+
+-- The name rule for an account the machine MAKES. Narrower than a file name on
+-- purpose, and every name it takes is a file name, because a home directory is
+-- made out of it.
+do
+	local good = { "b", "bob", "b0", "bob_1", "bob-1", "abcdefghijklmnop" }
+	for i = 1, #good do
+		check("`" .. good[i] .. "` is a name", CeroSecOS.isValidUserName(good[i]))
+		check("and a file name too", CeroSecOS.isValidName(good[i]))
+	end
+	local bad_ = { "", "Bob", "1bob", "-bob", "_bob", "bo.b", "bo b", "bob!",
+		"abcdefghijklmnopq", "root ", 7, nil }
+	for i = 1, #bad_ do
+		check("`" .. tostring(bad_[i]) .. "` is not one", not CeroSecOS.isValidUserName(bad_[i]))
+	end
+	eq("sixteen characters", CeroSecOS.MAX_USERNAME, 16)
+end
+
+-- adduser: what it writes, and what it refuses.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+
+	-- Root's, and root's alone -- which is what makes `sudo adduser` the way an
+	-- admin does it.
+	badAt(state, admin, "adduser bob", "adduser: permission denied")
+	eq("and nothing was made", CeroSecOS.getUser(state, "bob"), nil)
+
+	badAt(state, rootSession, "adduser", "adduser: usage: adduser [-a] <name>")
+	badAt(state, rootSession, "adduser bob carl", "adduser: usage: adduser [-a] <name>")
+	badAt(state, rootSession, "adduser -x bob", "adduser: -x: unknown option")
+	-- A name that begins with "-" is read as a flag, the way every shell reads
+	-- one, and the refusal is about the flag it looks like.
+	badAt(state, rootSession, "adduser -bob", "adduser: -bob: unknown option")
+	badAt(state, rootSession, "adduser Bob", "adduser: Bob: invalid name")
+	badAt(state, rootSession, "adduser 1bob", "adduser: 1bob: invalid name")
+	badAt(state, rootSession, "adduser admin", "adduser: admin: already exists")
+	badAt(state, rootSession, "adduser root", "adduser: root: already exists")
+
+	okAt(state, rootSession, "adduser bob", {
+		"adduser: bob: created",
+		"adduser: set a password with passwd bob",
+	})
+
+	local bob = CeroSecOS.getUser(state, "bob")
+	check("the account is in the file", bob ~= nil)
+	eq("with its home", bob.home, "/home/bob")
+	eq("and no flag", bob.admin, false)
+	check("its password is stored like every other", CeroSecOS.splitHash(bob.password) ~= nil)
+	check("and it is the empty one", holds(state, "bob", ""))
+	check("which is not any other", not holds(state, "bob", "hunter2"))
+	-- The line was appended: the accounts that were there are untouched.
+	eq("root is still root", CeroSecOS.getUser(state, "root").home, "/root")
+	check("and admin still gets in", holds(state, "admin", ""))
+
+	local home = CeroSecOS.systemNode(state, "/home/bob")
+	check("the home directory is there", home ~= nil)
+	eq("it is a directory", home.type, "dir")
+	eq("it is his", home.owner, "bob")
+	eq("and it is 750", home.mode, CeroSecOS.HOME_MODE)
+	eq("stamped with the clock the command was handed", CeroSecOS.mtimeOf(home), FIXED)
+	eq("the machine still validates", CeroSecOS.validate(state), true)
+
+	-- He can log in, and he lands in his own home.
+	local session = open(state, "bob")
+	eq("logged in as himself", session.user, "bob")
+	eq("in his own home", session.cwd, "/home/bob")
+	okAt(state, session, "pwd", { "/home/bob" })
+	okAt(state, session, "whoami", { "bob" })
+	-- 750: nobody else goes in there.
+	badAt(state, admin, "ls /home/bob", "ls: /home/bob: permission denied")
+
+	-- -a writes the flag, and nothing else changes.
+	okAt(state, rootSession, "adduser -a kate", {
+		"adduser: kate: created",
+		"adduser: set a password with passwd kate",
+	})
+	eq("the flag is on the line", CeroSecOS.getUser(state, "kate").admin, true)
+	eq("and the home is the same shape",
+		CeroSecOS.systemNode(state, "/home/kate").mode, CeroSecOS.HOME_MODE)
+	eq("the machine still validates", CeroSecOS.validate(state), true)
+end
+
+-- An existing directory is adopted, not remade.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "mkdir /home/carl", {})
+	okAt(state, rootSession, "chmod 700 /home/carl", {})
+	okAt(state, rootSession, "write /home/carl/notes.txt \"keep me\"", {})
+
+	okAt(state, rootSession, "adduser carl", {
+		"adduser: carl: created",
+		"adduser: set a password with passwd carl",
+	})
+	local home = CeroSecOS.systemNode(state, "/home/carl")
+	eq("it changed hands", home.owner, "carl")
+	eq("and kept the mode it had", home.mode, 700)
+	eq("and everything in it", home.children["notes.txt"].data, "keep me")
+
+	-- A file at that name is not a home, and the refusal says so.
+	okAt(state, rootSession, "write /home/dave hello", {})
+	badAt(state, rootSession, "adduser dave", "adduser: /home/dave: not a directory")
+	eq("and no account was made", CeroSecOS.getUser(state, "dave"), nil)
+end
+
+-- The account and its home stand or fall together.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "rm -r /home", {})
+
+	badAt(state, rootSession, "adduser eve", "adduser: /home/eve: no such file")
+	eq("the line that was written is taken back out", CeroSecOS.getUser(state, "eve"), nil)
+	check("and the accounts that were there are still there", holds(state, "admin", ""))
+	eq("the machine still validates", CeroSecOS.validate(state), true)
+end
+
+-- sudo adduser: the way somebody who is not root makes an account.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local asked = run(state, admin, "sudo adduser -a bob")
+	eq("sudo asks for admin's password", asked.data.text, "[sudo] password for admin: ")
+	local made = answer(state, admin, asked.data.cont, "")
+	eq("it succeeds", made.ok, true)
+	eq("and says so", made.lines[1], "adduser: bob: created")
+	eq("the account is there", CeroSecOS.getUser(state, "bob").admin, true)
+	eq("the home is his", CeroSecOS.systemNode(state, "/home/bob").owner, "bob")
+	eq("and the console is still admin's", admin.user, "admin")
+end
+
+-- deluser: the guards, the two files, and the home.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "adduser carl", nil)
+
+	badAt(state, admin, "deluser bob", "deluser: permission denied")
+	badAt(state, rootSession, "deluser", "deluser: usage: deluser [-r] <name>")
+	badAt(state, rootSession, "deluser -x bob", "deluser: -x: unknown option")
+	badAt(state, rootSession, "deluser bob carl", "deluser: usage: deluser [-r] <name>")
+	badAt(state, rootSession, "deluser nosuch", "deluser: nosuch: no such user")
+	-- Root is the way back into the machine and is not one of the accounts.
+	badAt(state, rootSession, "deluser root", "deluser: root: cannot remove")
+
+	-- The account at the glass. The session running the command is root's --
+	-- that is what sudo does -- and the guard is about who is logged in.
+	local asRoot = open(state, "root")
+	asRoot.login = "bob"
+	badAt(state, asRoot, "deluser bob", "deluser: bob: user is logged in")
+	-- And a user the glass would come back to through `exit`.
+	asRoot.login = "carl"
+	asRoot.stack = { { user = "bob", cwd = "/home/bob" } }
+	badAt(state, asRoot, "deluser bob", "deluser: bob: user is logged in")
+	check("neither of them was touched", CeroSecOS.getUser(state, "bob") ~= nil)
+
+	-- Without -r the home stays exactly where it is, owned by a name the
+	-- machine no longer knows.
+	okAt(state, rootSession, "deluser bob", { "deluser: bob: removed" })
+	eq("the account is gone", CeroSecOS.getUser(state, "bob"), nil)
+	check("and cannot log in", CeroSecOS.login(state, "bob", "") == nil)
+	local home = CeroSecOS.systemNode(state, "/home/bob")
+	check("the home is still there", home ~= nil)
+	eq("still owned by the name that is gone", home.owner, "bob")
+	eq("and `ls -l` says so", okAt(state, rootSession, "ls -l /home", nil)[2],
+		"drwxr-x---  bob           0  Jul  8 14:32  bob")
+
+	-- With -r it goes, and everything under it.
+	okAt(state, rootSession, "write /home/carl/notes.txt hello", {})
+	okAt(state, rootSession, "deluser -r carl", { "deluser: carl: removed" })
+	eq("the account is gone", CeroSecOS.getUser(state, "carl"), nil)
+	eq("and so is the home", CeroSecOS.systemNode(state, "/home/carl"), nil)
+	eq("the machine still validates", CeroSecOS.validate(state), true)
+end
+
+-- The right to become root goes with the account.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "adduser bob", nil)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH,
+		"# who may\nadmin\nbob NOPASSWD")
+	eq("bob may sudo", CeroSecOS.sudoer(state, "bob").nopasswd, true)
+
+	okAt(state, rootSession, "deluser bob", { "deluser: bob: removed" })
+	eq("and now he is nobody", CeroSecOS.sudoer(state, "bob"), nil)
+	eq("admin kept his line", CeroSecOS.sudoer(state, "admin").name, "admin")
+	eq("and the comment is still in the file",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin")
+
+	-- A machine with no /etc/sudoers at all has nothing to take out of it.
+	okAt(state, rootSession, "adduser dan", nil)
+	okAt(state, rootSession, "rm /etc/sudoers", {})
+	okAt(state, rootSession, "deluser dan", { "deluser: dan: removed" })
+end
+
+-- `sudo deluser` on the account at the glass: the borrowed session knows who
+-- typed the line, so an admin cannot delete himself out from under himself.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+	badAt(state, admin, "sudo deluser admin", "deluser: admin: user is logged in")
+	check("and he is still there", CeroSecOS.getUser(state, "admin") ~= nil)
+	-- Somebody else, though, goes.
+	okAt(state, admin, "sudo adduser bob", nil)
+	okAt(state, admin, "sudo deluser bob", { "deluser: bob: removed" })
+end
+
+-- id.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+
+	okAt(state, admin, "id", { "uid=admin flag=user groups=sudo" })
+	okAt(state, admin, "id root", { "uid=root flag=admin groups=-" })
+	okAt(state, rootSession, "id", { "uid=root flag=admin groups=-" })
+	badAt(state, admin, "id nosuch", "id: nosuch: no such user")
+	badAt(state, admin, "id a b", "id: usage: id [name]")
+
+	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=-" })
+	okAt(state, rootSession, "adduser -a kate", nil)
+	okAt(state, admin, "id kate", { "uid=kate flag=admin groups=-" })
+	-- The groups column is the sudoers file and nothing else.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "bob")
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=sudo" })
+	okAt(state, admin, "id admin", { "uid=admin flag=user groups=-" })
+end
+
+-- su: the stack, and what exit does with it.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "adduser bob", nil)
+
+	badAt(state, rootSession, "su nosuch", "su: nosuch: no such user")
+	badAt(state, rootSession, "su a b", "su: usage: su [name]")
+
+	-- Root is asked for nobody's password.
+	okAt(state, rootSession, "su bob", {})
+	eq("the session is his", rootSession.user, "bob")
+	eq("and stands in his home", rootSession.cwd, "/home/bob")
+	eq("the stack is one deep", #rootSession.stack, 1)
+	eq("and remembers who it was", rootSession.stack[1].user, "root")
+	eq("and where he stood", rootSession.stack[1].cwd, "/root")
+	okAt(state, rootSession, "whoami", { "bob" })
+
+	-- exit pops, and orders the terminal nothing at all: nobody logged out.
+	local popped = runAt(state, rootSession, "exit")
+	eq("exit succeeds", popped.ok, true)
+	eq("it says nothing", #popped.lines, 0)
+	eq("and orders nothing", popped.control, nil)
+	eq("the session is root's again", rootSession.user, "root")
+	eq("standing where he was", rootSession.cwd, "/root")
+	eq("and the stack is empty", #rootSession.stack, 0)
+
+	-- With nothing left on it, exit is a logout again.
+	eq("exit logs out", runAt(state, rootSession, "exit").control, "exit")
+end
+
+-- su from an account that is not root: the question, the token, and the answer.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "adduser bob", nil)
+	CeroSecOS.setPassword(state, "bob", "hunter2", "x", FIXED)
+
+	local asked = run(state, admin, "su bob")
+	eq("it asks", asked.control, "prompt")
+	eq("with su's own line", asked.data.text, "Password: ")
+	eq("masked", asked.data.mask, true)
+	eq("it says nothing while it asks", #asked.lines, 0)
+	eq("the token names its command", asked.data.cont.cmd, "su")
+	eq("and the account being switched to", asked.data.cont.user, "bob")
+	-- Nothing of the password is in the token, not even a hash of one: the
+	-- answer is judged against /etc/passwd when it arrives.
+	eq("no password in the token", asked.data.cont.passwd, nil)
+	eq("no hash of one either", asked.data.cont.want, nil)
+	eq("and no salt to make one with", asked.data.cont.salt, nil)
+
+	says(answer(state, admin, asked.data.cont, "wrong"), "su: authentication failure")
+	eq("and nobody was switched", admin.user, "admin")
+	eq("nor given a stack", admin.stack, nil)
+
+	-- The right one, and the target's own -- not the caller's.
+	says(answer(state, admin, { cmd = "su", user = "bob" }, ""), "su: authentication failure")
+	local switched = answer(state, admin, asked.data.cont, "hunter2")
+	eq("it succeeds", switched.ok, true)
+	eq("silently", #switched.lines, 0)
+	eq("and orders nothing", switched.control, nil)
+	eq("the session is bob's", admin.user, "bob")
+	eq("in bob's home", admin.cwd, "/home/bob")
+	eq("with admin under it", admin.stack[1].user, "admin")
+
+	-- Bare `su` means root.
+	local toRoot = run(state, admin, "su")
+	eq("it asks for a password", toRoot.control, "prompt")
+	eq("root's", toRoot.data.cont.user, "root")
+	answer(state, admin, toRoot.data.cont, "")
+	eq("and he is root now", admin.user, "root")
+	eq("two deep", #admin.stack, 2)
+	-- Out again, one at a time.
+	runAt(state, admin, "exit")
+	eq("back to bob", admin.user, "bob")
+	runAt(state, admin, "exit")
+	eq("back to admin", admin.user, "admin")
+	eq("where he started", admin.cwd, "/home/admin")
+	eq("and out of the machine on the next one", runAt(state, admin, "exit").control, "exit")
+
+	-- An account taken out of the file between the question and the answer.
+	local gone = run(state, admin, "su bob")
+	okAt(state, rootSession, "deluser bob", nil)
+	says(answer(state, admin, gone.data.cont, "hunter2"), "su: authentication failure")
+	eq("and nobody was switched", admin.user, "admin")
+end
+
+-- The stack has a floor and a ceiling.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	eq("four deep", CeroSecOS.SU_MAX, 4)
+	-- Root becoming root: a switch like any other as far as the stack is
+	-- concerned, and the one that can be repeated without a password.
+	for i = 1, CeroSecOS.SU_MAX do
+		okAt(state, rootSession, "su root", {})
+		eq("stack " .. i, #rootSession.stack, i)
+	end
+	badAt(state, rootSession, "su root", "su: too many levels")
+	eq("and it stayed four deep", #rootSession.stack, CeroSecOS.SU_MAX)
+	eq("with nobody switched", rootSession.user, "root")
+
+	-- The same ceiling at the answer, not only at the question: the stack can
+	-- grow while a password is being typed.
+	local admin = open(state, "admin")
+	local asked = run(state, admin, "su root")
+	admin.stack = { { user = "a", cwd = "/" }, { user = "b", cwd = "/" },
+		{ user = "c", cwd = "/" }, { user = "d", cwd = "/" } }
+	says(answer(state, admin, asked.data.cont, ""), "su: too many levels")
+	eq("and nobody was switched", admin.user, "admin")
+end
+
+-- A borrowed session carries a COPY of the stack: `sudo su` moves nobody and
+-- `sudo exit` is a logout, not somebody else's su to unwind.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+
+	answer(state, admin, run(state, admin, "su root").data.cont, "")
+	eq("the console is root's", admin.user, "root")
+	eq("one deep", #admin.stack, 1)
+
+	okAt(state, admin, "sudo su admin", {})
+	eq("sudo su moved nobody", admin.user, "root")
+	eq("and pushed nothing", #admin.stack, 1)
+
+	eq("sudo exit is a logout", runAt(state, admin, "sudo exit").control, "exit")
+	eq("and popped nothing", #admin.stack, 1)
+	-- The console's own exit still pops.
+	eq("exit pops", runAt(state, admin, "exit").control, nil)
+	eq("back to admin", admin.user, "admin")
+end
+
+-- A machine from the last rung is topped up with this rung's four commands.
+do
+	local state = fresh()
+	state.sysv = 3
+	local added = { "adduser", "deluser", "id", "su" }
+	for i = 1, #added do state.fs.children.bin.children[added[i]] = nil end
+	state.fs.children.home.children.admin.children["mine.txt"] =
+		CeroSecOS.newFile("admin", 644, "keep me")
+
+	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
+	eq("and moves the number to this build", state.sysv, 4)
+	for i = 1, #added do
+		local node = state.fs.children.bin.children[added[i]]
+		check("/bin/" .. added[i] .. " was seeded", node ~= nil)
+		eq("/bin/" .. added[i] .. " is root's", node.owner, "root")
+		eq("/bin/" .. added[i] .. " is 755", node.mode, 755)
+		eq("/bin/" .. added[i] .. " describes itself", node.data, CeroSecOS.commandDesc(added[i]))
+	end
+	eq("the player's file was not touched",
+		state.fs.children.home.children.admin.children["mine.txt"].data, "keep me")
+	eq("it validates", CeroSecOS.validate(state), true)
+	eq("and asked once only", CeroSecOS.upgradeSystem(state), false)
+
+	-- They really run on it.
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "id", { "uid=root flag=admin groups=-" })
+	okAt(state, rootSession, "adduser bob", nil)
+
+	-- And the BIOS repair ships them too.
+	local broken = fresh()
+	broken.fs.children.bin.children.adduser = nil
+	broken.fs.children.bin.children.su = nil
+	CeroSecOS.restoreSystem(broken)
+	check("the repair puts adduser back", broken.fs.children.bin.children.adduser ~= nil)
+	check("and su", broken.fs.children.bin.children.su ~= nil)
 	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
 end
 

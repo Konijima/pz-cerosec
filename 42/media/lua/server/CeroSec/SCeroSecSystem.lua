@@ -383,6 +383,33 @@ function SCeroSecSystem:hostnameOf(luaObject, state)
 	return CeroSecOS.hostname(state)
 end
 
+-- The session the core runs a line on, derived from the console -- and written
+-- back into it afterwards, because `cd` is a move of the machine's cursor and
+-- `su` a change of who the machine is logged in as. Both of them are the
+-- machine's state and are saved with it; neither is the window's.
+--
+-- login is the account at the glass, which is what a borrowed session (sudo's)
+-- keeps a note of, and stack is the users `exit` pops back to.
+function SCeroSecSystem:sessionOf(console)
+	return {
+		user = console.user,
+		cwd = console.cwd or "/",
+		stamp = getTimestampMs(),
+		login = console.user,
+		stack = console.stack,
+	}
+end
+
+-- The other half. An empty stack is no stack: what goes into gos_cerosec.bin is
+-- a field or nothing, never an empty table that grows one every logout.
+function SCeroSecSystem:writeSession(console, session)
+	console.user = session.user
+	console.cwd = session.cwd
+	local stack = session.stack
+	if type(stack) ~= "table" or #stack == 0 then stack = nil end
+	console.stack = stack
+end
+
 function SCeroSecSystem:isAdmin(state, name)
 	if name == nil then return false end
 	local user = CeroSecOS.getUser(state, name)
@@ -737,6 +764,9 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		if session then
 			console.user = session.user
 			console.cwd = session.cwd
+			-- A login is a session that has just begun: nobody has su'd yet,
+			-- and a stack left behind by anything is not this one's.
+			console.stack = nil
 			CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
 		else
 			-- One answer for a bad name and for a bad password alike: the
@@ -755,12 +785,11 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		else
 			CeroSec.consolePush(console, asked.text .. text)
 		end
-		local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
+		local session = self:sessionOf(console)
 		local _, lines, control, data =
 			CeroSecOS.continue(state, session, asked.cont, text, self:clockEnv())
 		order = control
-		console.user = session.user
-		console.cwd = session.cwd
+		self:writeSession(console, session)
 		luaObject:mirrorOS()
 		if control == "exit" then
 			CeroSec.consoleLogout(console)
@@ -798,11 +827,10 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 
 	-- The session the core runs on is derived from the console and written back
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
-	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
+	local session = self:sessionOf(console)
 	local prompt = self:promptFor(state, console)
 	local _, lines, control, data = CeroSecOS.exec(state, session, line, self:clockEnv())
-	console.user = session.user
-	console.cwd = session.cwd
+	self:writeSession(console, session)
 	luaObject:mirrorOS()
 
 	if control == "exit" then

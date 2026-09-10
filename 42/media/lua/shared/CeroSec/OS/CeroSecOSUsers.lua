@@ -319,6 +319,66 @@ function CeroSecOS.writePasswd(state, users, order, name, stored, now)
 	return true, nil
 end
 
+-- The rule for a name the machine will MAKE: a lowercase Unix login, at most
+-- MAX_USERNAME long. Deliberately narrower than the parser's, which takes any
+-- valid file name: a machine that has been running a while may hold accounts
+-- this rung would never have created, and refusing to parse them would be
+-- taking somebody's machine away. So this gates adduser and nothing else.
+--
+-- Every name it accepts is also a valid file name, which is what lets
+-- /home/<name> be created for it without a second rule.
+CeroSecOS.MAX_USERNAME = 16
+
+function CeroSecOS.isValidUserName(name)
+	if type(name) ~= "string" then return false end
+	if #name < 1 or #name > CeroSecOS.MAX_USERNAME then return false end
+	if string.find(name, "^[a-z]") == nil then return false end
+	return string.find(name, "[^a-z0-9_%-]") == nil
+end
+
+-- The file, replaced whole, through the ordinary filesystem gate: the ceilings
+-- and the printable rule apply to the machine's own writes exactly as they
+-- apply to a player's, and a refusal leaves /etc/passwd byte for byte as it was.
+local function writePasswdText(state, text, now)
+	local done, reason =
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH, text, now)
+	if done == nil then return nil, reason end
+	return true, nil
+end
+
+-- A new account, appended, with an EMPTY password -- which is not a special
+-- case in storage: what is written is the hash of "", with a salt of its own,
+-- exactly like the accounts a fresh machine ships with.
+--
+-- Appended and not rewritten: the lines already in the file are left as they
+-- lie, comments and unparseable lines included. Only passwd rewrites the file
+-- from what it parsed, and only because it has to touch a line in the middle.
+function CeroSecOS.addUser(state, name, home, admin, extra, now)
+	if CeroSecOS.getUser(state, name) ~= nil then return nil, "already exists" end
+	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	if node == nil or node.type ~= "file" then return nil, "no such file" end
+	local user = CeroSecOS.newUser(name, "", home, admin,
+		CeroSecOS.newSalt(state, name .. tostring(extra)))
+	local text = node.data or ""
+	if text ~= "" then text = text .. "\n" end
+	return writePasswdText(state, text .. CeroSecOS.passwdLine(user), now)
+end
+
+-- Every line that names this account, taken out; every other line kept exactly
+-- as it lies. A name that somehow has two lines loses both -- half an account
+-- is worse than none.
+function CeroSecOS.removeUser(state, name, now)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	if node == nil or node.type ~= "file" then return nil, "no such file" end
+	local lines = CeroSecOS.splitLines(node.data or "")
+	local out = {}
+	for i = 1, #lines do
+		local user = CeroSecOS.parsePasswdLine(lines[i])
+		if user == nil or user.name ~= name then out[#out + 1] = lines[i] end
+	end
+	return writePasswdText(state, table.concat(out, "\n"), now)
+end
+
 -- The single place a password is written.
 function CeroSecOS.setPassword(state, name, password, extra, now)
 	local users, order = CeroSecOS.readUsers(state)
@@ -404,6 +464,61 @@ function CeroSecOS.login(state, name, password)
 	if user == nil then return nil, "no such user" end
 	if not CeroSecOS.checkPassword(user, password) then return nil, "wrong password" end
 	return { user = user.name, cwd = user.home or "/" }, nil
+end
+
+--
+-- Who is at the glass
+--
+-- A session says who a command RUNS as. That is not always who is logged in:
+-- sudo runs on a session of root's while the account at the keyboard is still
+-- the one that typed the line, and a command that has to know which of the two
+-- it is asking about must not have to guess. So a session carries `login`, the
+-- console's own user, and it travels into every borrowed session -- sudo's, and
+-- a chain that carries sudo's authority.
+--
+-- A session without one is its own login, which is what every session the core
+-- makes for itself is.
+function CeroSecOS.loginOf(session)
+	if type(session) ~= "table" then return nil end
+	if type(session.login) == "string" then return session.login end
+	return CeroSecOS.userOf(session)
+end
+
+-- How deep su may go. The console keeps a stack of who it was before each
+-- switch and `exit` pops it, so this is a ceiling on a thing that is saved with
+-- the machine and on the number of exits it takes to get out of it.
+CeroSecOS.SU_MAX = 4
+
+-- A copy of that stack, entry by entry. What a borrowed session is given: it may
+-- READ who the glass would come back to -- deluser refuses to take one of them
+-- away -- and anything it pushes or pops dies with the command.
+function CeroSecOS.copyStack(stack)
+	if type(stack) ~= "table" then return nil end
+	local out = {}
+	for i = 1, #stack do
+		local entry = stack[i]
+		if type(entry) == "table" and type(entry.user) == "string" then
+			local cwd = "/"
+			if type(entry.cwd) == "string" then cwd = entry.cwd end
+			out[#out + 1] = { user = entry.user, cwd = cwd }
+		end
+	end
+	return out
+end
+
+-- Is this account the one at the glass, or one the glass would come back to?
+-- Both count: `exit` pops back to the users under the stack, and popping back
+-- to an account that is no longer in /etc/passwd is a session nobody is in.
+function CeroSecOS.isLoggedIn(session, name)
+	if type(session) ~= "table" or type(name) ~= "string" then return false end
+	if CeroSecOS.loginOf(session) == name then return true end
+	local stack = session.stack
+	if type(stack) ~= "table" then return false end
+	for i = 1, #stack do
+		local entry = stack[i]
+		if type(entry) == "table" and entry.user == name then return true end
+	end
+	return false
 end
 
 --
@@ -500,6 +615,31 @@ function CeroSecOS.sudoer(state, name)
 	if type(name) ~= "string" then return nil end
 	local entries = CeroSecOS.readSudoers(state)
 	return entries[name]
+end
+
+-- Every line that names this account, taken out; every other line kept exactly
+-- as it lies, comments included. A machine with no /etc/sudoers at all has
+-- nothing to take out and says so by succeeding: it is a file that says who
+-- may, and a missing one says nobody.
+function CeroSecOS.removeSudoer(state, name, now)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	if node == nil or node.type ~= "file" then return true, nil end
+	local lines = CeroSecOS.splitLines(node.data or "")
+	local out, dropped = {}, false
+	for i = 1, #lines do
+		local entry = CeroSecOS.parseSudoersLine(lines[i])
+		if entry ~= nil and entry.name == name then
+			dropped = true
+		else
+			out[#out + 1] = lines[i]
+		end
+	end
+	-- Nothing to do is not a write: the file keeps its timestamp.
+	if not dropped then return true, nil end
+	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
+		CeroSecOS.SUDOERS_PATH, table.concat(out, "\n"), now)
+	if done == nil then return nil, reason end
+	return true, nil
 end
 
 -- What a machine ships with: the one non-root account, and it is asked for its

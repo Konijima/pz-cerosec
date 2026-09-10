@@ -227,6 +227,7 @@ end
 -- will refuse to run. os_test pins the two sets against each other.
 --
 CeroSecOS.COMMAND_INFO = {
+	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	cat      = { desc = "print a file", usage = "cat <file>..." },
 	cd       = { desc = "change the working directory", usage = "cd [dir]" },
 	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>" },
@@ -234,6 +235,7 @@ CeroSecOS.COMMAND_INFO = {
 	clear    = { desc = "clear the screen", usage = "clear" },
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
 	date     = { desc = "print the date and time", usage = "date" },
+	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
@@ -243,6 +245,7 @@ CeroSecOS.COMMAND_INFO = {
 	head     = { desc = "print the first lines of a file", usage = "head [-n N] <file>" },
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
+	id       = { desc = "print an account and its groups", usage = "id [name]" },
 	ls       = { desc = "list a directory", usage = "ls [-lF] [path]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
@@ -253,6 +256,7 @@ CeroSecOS.COMMAND_INFO = {
 	restart  = { desc = "restart the machine", usage = "restart" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
 	shutdown = { desc = "switch the machine off", usage = "shutdown" },
+	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
 	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] <file>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
@@ -342,7 +346,20 @@ commands.clear = function(state, session, args, env)
 	return true, {}, "clear"
 end
 
+-- exit. The end of the session -- unless this console got here through su, in
+-- which case it is the end of THAT one: the stack pops, the glass goes back to
+-- who it was and where he stood, and nobody is logged out. Only ever the
+-- console's own session; a borrowed one (`sudo exit`) has a copy of the stack
+-- that dies with the command, and logs out the way it always has.
 commands.exit = function(state, session, args, env)
+	local stack = session.stack
+	if not session.borrowed and type(stack) == "table" and #stack > 0 then
+		local back = stack[#stack]
+		stack[#stack] = nil
+		session.user = back.user
+		session.cwd = back.cwd or "/"
+		return true, {}
+	end
 	return true, {}, "exit"
 end
 
@@ -1063,8 +1080,18 @@ end
 
 -- The temporary session. Fresh each time, so nothing survives one command into
 -- the next.
+-- It is BORROWED: it carries who is really at the glass and a copy of the users
+-- that glass would come back to, so a command can tell "who am I running as"
+-- from "who typed this" -- and it owns neither. Anything it pushes or pops is
+-- the copy's, which is what keeps `sudo su` from moving the console and
+-- `sudo exit` a logout rather than somebody else's su to unwind.
 local function rootSessionFrom(session)
-	return { user = "root", cwd = session.cwd or "/", stamp = session.stamp }
+	return {
+		user = "root", cwd = session.cwd or "/", stamp = session.stamp,
+		login = CeroSecOS.loginOf(session),
+		stack = CeroSecOS.copyStack(session.stack),
+		borrowed = true,
+	}
 end
 
 -- A chain that is running as somebody else keeps running as him: the mark goes
@@ -1159,6 +1186,218 @@ continuations.sudo = function(state, session, cont, line, env)
 	end
 	if args[1] == nil then return usage("sudo") end
 	return sudoRun(state, session, args, 1, env)
+end
+
+--
+-- Accounts
+--
+-- Making and unmaking one is root's, and root's alone: /etc/passwd is root's
+-- file, and an account is a way into the machine. So an admin does it the way
+-- he does everything else that is root's -- `sudo adduser bob` -- and there is
+-- no second rule for who may.
+--
+-- Both commands are ordinary writes to ordinary files: the account is a line in
+-- /etc/passwd, the home is a directory made with createNode, and the ceilings,
+-- the permission bits and the printable rule are the filesystem's exactly as
+-- they are for a player. A full disk refuses an adduser the way it refuses a
+-- touch.
+--
+-- What the "admin" flag on the line MEANS is: nothing, today. No command
+-- consults it; the two things that grant power are being root and being named
+-- in /etc/sudoers. Its one visible effect is the "#" on the prompt. It is
+-- carried, printed by `id` and set by `adduser -a` so that a later rung has
+-- something to give meaning to -- and the README says so rather than letting a
+-- player believe he has just made somebody powerful.
+--
+
+commands.adduser = function(state, session, args, env)
+	if CeroSecOS.userOf(session) ~= "root" then return fail("adduser", nil, "permission denied") end
+
+	local admin, name = false, nil
+	for i = 2, #args do
+		local a = args[i]
+		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				if string.sub(a, c, c) ~= "a" then return fail("adduser", a, "unknown option") end
+			end
+			admin = true
+		elseif name == nil then
+			name = a
+		else
+			return usage("adduser")
+		end
+	end
+	if name == nil or name == "" then return usage("adduser") end
+	if not CeroSecOS.isValidUserName(name) then return fail("adduser", name, "invalid name") end
+	if CeroSecOS.getUser(state, name) ~= nil then return fail("adduser", name, "already exists") end
+
+	local now = CeroSecOS.clockOf(env)
+	local home = CeroSecOS.HOME_PATH .. "/" .. name
+	local node, reason = CeroSecOS.getNode(state, session, home)
+	if node == nil and reason ~= "no such file" then return fail("adduser", home, reason) end
+	if node ~= nil and node.type ~= "dir" then return fail("adduser", home, "not a directory") end
+
+	-- The account first and the home second, so that a refusal on the way --
+	-- a full disk, a /home that is not there any more -- takes the account back
+	-- out and leaves the machine exactly as it was. Half an account is worse
+	-- than none: it is a name in the file with nowhere to stand.
+	local done, wreason = CeroSecOS.addUser(state, name, home, admin, session.stamp, now)
+	if done == nil then return fail("adduser", name, wreason) end
+
+	if node == nil then
+		local made, creason = CeroSecOS.createNode(state, session, home,
+			CeroSecOS.newDir(name, CeroSecOS.HOME_MODE), now)
+		if made == nil then
+			CeroSecOS.removeUser(state, name, now)
+			return fail("adduser", home, creason)
+		end
+	else
+		-- A directory that is already there is ADOPTED, not remade: it changes
+		-- hands and keeps its mode and everything in it. Somebody's files are
+		-- not an obstacle to giving him an account.
+		node.owner = name
+		if now ~= nil then node.mtime = now end
+	end
+
+	-- The password is empty, and an empty password is a way in. Said out loud
+	-- on the line after, because a machine that quietly ships an open account
+	-- is a machine nobody remembers to close.
+	return true, {
+		"adduser: " .. name .. ": created",
+		"adduser: set a password with passwd " .. name,
+	}
+end
+
+commands.deluser = function(state, session, args, env)
+	if CeroSecOS.userOf(session) ~= "root" then return fail("deluser", nil, "permission denied") end
+
+	local removeHome, name = false, nil
+	for i = 2, #args do
+		local a = args[i]
+		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				if string.sub(a, c, c) ~= "r" then return fail("deluser", a, "unknown option") end
+			end
+			removeHome = true
+		elseif name == nil then
+			name = a
+		else
+			return usage("deluser")
+		end
+	end
+	if name == nil or name == "" then return usage("deluser") end
+
+	-- Root is not one of the accounts: it is the way back into the machine, and
+	-- a computer with no root on it is a computer whose BIOS is the only way in.
+	-- Asked before the file is even looked at, so the answer is the same on a
+	-- machine somebody has been editing by hand.
+	if name == "root" then return fail("deluser", name, "cannot remove") end
+
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return fail("deluser", name, "no such user") end
+	-- Not the account at the glass, and not one the glass would come back to
+	-- through `exit`: pulling either out from under a live session leaves
+	-- somebody logged in as nobody.
+	if CeroSecOS.isLoggedIn(session, name) then return fail("deluser", name, "user is logged in") end
+
+	local now = CeroSecOS.clockOf(env)
+
+	-- The home first, while the account still exists to own it. Without -r it
+	-- stays exactly where it is, owned by a name the machine no longer knows --
+	-- which is what `ls -l` will show, and it is the truth rather than a tidy
+	-- lie about whose files those were.
+	if removeHome then
+		local home = user.home
+		local node, reason = CeroSecOS.getNode(state, session, home)
+		if node == nil then
+			if reason ~= "no such file" then return fail("deluser", home, reason) end
+		else
+			local gone, greason = CeroSecOS.removeNode(state, session, home, true, now)
+			if gone == nil then return fail("deluser", home, greason) end
+		end
+	end
+
+	local done, reason = CeroSecOS.removeUser(state, name, now)
+	if done == nil then return fail("deluser", name, reason) end
+	-- And the right to become root with it: a name left in /etc/sudoers is a
+	-- line waiting for whoever is given that name next.
+	local dropped, sreason = CeroSecOS.removeSudoer(state, name, now)
+	if dropped == nil then return fail("deluser", CeroSecOS.SUDOERS_PATH, sreason) end
+
+	return true, { "deluser: " .. name .. ": removed" }
+end
+
+-- id. What the machine knows about an account in one line: the name, the flag
+-- its /etc/passwd line carries, and whether /etc/sudoers names it. Anybody may
+-- ask, about anybody: who may become root is not a secret on a machine where
+-- the answer is a file the kernel reads out loud at every sudo.
+commands.id = function(state, session, args, env)
+	if #args > 2 then return usage("id") end
+	local name = args[2]
+	if name == nil or name == "" then name = CeroSecOS.userOf(session) end
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return fail("id", name, "no such user") end
+	local flag = "user"
+	if user.admin then flag = "admin" end
+	local groups = "-"
+	if CeroSecOS.sudoer(state, user.name) ~= nil then groups = "sudo" end
+	return true, { "uid=" .. user.name .. " flag=" .. flag .. " groups=" .. groups }
+end
+
+--
+-- su
+--
+-- Become somebody else at this glass without logging out. The console keeps a
+-- stack of who it was and where he stood, `exit` pops it, and the stack is the
+-- MACHINE's: it is written into the console and saved with it, so a survivor
+-- who walks away two users deep comes back two users deep.
+--
+-- The password asked for is the TARGET's, the way su has always asked for it,
+-- and it is judged in the one place a password is judged. Nothing of it goes
+-- into the token -- what the token carries is the name being switched to -- and
+-- root is asked for nobody's password, its own included, which is the rule
+-- passwd already runs on.
+--
+
+local function suSwitch(session, user)
+	local stack = session.stack
+	if type(stack) ~= "table" then stack = {} end
+	-- Asked here as well as before the question: the stack could have grown
+	-- while the password was being typed, and a ceiling that is only checked on
+	-- the way in is not a ceiling.
+	if #stack >= CeroSecOS.SU_MAX then return false, { "su: too many levels" } end
+	stack[#stack + 1] = { user = session.user, cwd = session.cwd or "/" }
+	session.stack = stack
+	session.user = user.name
+	session.cwd = user.home or "/"
+	return true, {}
+end
+
+commands.su = function(state, session, args, env)
+	if #args > 2 then return usage("su") end
+	local name = args[2]
+	if name == nil or name == "" then name = "root" end
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return fail("su", name, "no such user") end
+	local stack = session.stack
+	if type(stack) == "table" and #stack >= CeroSecOS.SU_MAX then
+		return false, { "su: too many levels" }
+	end
+	if CeroSecOS.userOf(session) == "root" then return suSwitch(session, user) end
+	return ask("Password: ", true, { cmd = "su", user = name })
+end
+
+continuations.su = function(state, session, cont, line, env)
+	-- The account is looked up again at the answer: one taken out of the file
+	-- between the question and the answer is one nobody becomes.
+	local user = CeroSecOS.getUser(state, cont.user)
+	if user == nil then return false, { "su: authentication failure" } end
+	if CeroSecOS.userOf(session) ~= "root" and not CeroSecOS.checkPassword(user, line) then
+		-- One attempt, exactly as sudo gives one, and for the same reason: this
+		-- machine has a physical lock on it.
+		return false, { "su: authentication failure" }
+	end
+	return suSwitch(session, user)
 end
 
 --
@@ -1279,7 +1518,12 @@ function CeroSecOS.continue(state, session, cont, line, env)
 	-- own session is left exactly as it was, cwd included.
 	local run = session
 	if type(cont.as) == "string" and cont.as ~= session.user then
-		run = { user = cont.as, cwd = session.cwd or "/", stamp = session.stamp }
+		run = {
+			user = cont.as, cwd = session.cwd or "/", stamp = session.stamp,
+			login = CeroSecOS.loginOf(session),
+			stack = CeroSecOS.copyStack(session.stack),
+			borrowed = true,
+		}
 	end
 
 	local ok, lines, control, data = fn(state, run, cont, line, env)

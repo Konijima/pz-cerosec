@@ -22,7 +22,7 @@ function CeroSecOS.newState(hostname)
 	root.children.bin = CeroSecOS.newDir("root", 755)
 	CeroSecOS.fillBin(root.children.bin)
 	root.children.home = CeroSecOS.newDir("root", 755)
-	root.children.home.children.admin = CeroSecOS.newDir("admin", 750)
+	root.children.home.children.admin = CeroSecOS.newDir("admin", CeroSecOS.HOME_MODE)
 	root.children.root = CeroSecOS.newDir("root", 700)
 	root.children.dev = CeroSecOS.newDir("root", 755) -- reserved for the device rung
 	root.children.etc = CeroSecOS.newDir("root", 755)

@@ -24,7 +24,8 @@ CeroSecOS.STATE_VERSION = 1
 --
 -- 2: /bin/sudo, /bin/shutdown, /bin/reboot, /bin/restart and /etc/sudoers.
 -- 3: /bin/date, /bin/df, /bin/grep, /bin/head, /bin/tail, /bin/wc, /bin/man.
-CeroSecOS.SYSTEM_VERSION = 3
+-- 4: /bin/adduser, /bin/deluser, /bin/id, /bin/su.
+CeroSecOS.SYSTEM_VERSION = 4
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -59,6 +60,11 @@ CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
 -- does take the commands away.
 CeroSecOS.BIN_PATH = "/bin"
 CeroSecOS.ETC_PATH = "/etc"
+-- Where an account's home is made. A home is the account's own and nobody
+-- else's: 750, so the owner reads, writes and enters it and everybody else
+-- stays outside it.
+CeroSecOS.HOME_PATH = "/home"
+CeroSecOS.HOME_MODE = 750
 CeroSecOS.PASSWD_PATH = "/etc/passwd"
 CeroSecOS.SUDOERS_PATH = "/etc/sudoers"
 CeroSecOS.MOTD_PATH = "/etc/motd"
