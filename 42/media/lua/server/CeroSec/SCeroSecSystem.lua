@@ -290,6 +290,12 @@ function SCeroSecSystem:editArgs(state, console, playerObj)
 		disk = disk,
 		readonly = edit.readonly and true or false,
 		message = edit.message,
+		-- How many times this buffer has been written. A window that asked to
+		-- save and then leave waits for this to move, and not for the message
+		-- line to read "Saved": a screen pushed by somebody else's keystroke in
+		-- between still carries the message of the *previous* save, and leaving
+		-- on that would drop the buffer that had not been written yet.
+		saves = edit.saves or 0,
 		mine = self:isEditor(console, playerObj) and true or false,
 	}
 end
@@ -536,6 +542,7 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 		console.edit.message = "Cannot save: " .. tostring(reason)
 	else
 		console.edit.message = "Saved " .. #text .. " bytes"
+		console.edit.saves = (console.edit.saves or 0) + 1
 		-- A new file has just come into being writable; say so.
 		console.edit.readonly = false
 		luaObject:mirrorOS()

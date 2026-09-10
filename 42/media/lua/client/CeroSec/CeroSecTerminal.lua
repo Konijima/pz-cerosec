@@ -139,6 +139,8 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.editSynced = nil
 	o.editSyncAt = 0
 	o.editLeaving = false
+	o.editLeaveFrom = 0
+	o.editLeaveMessage = ""
 	o.opened = false
 	o.busy = false
 	o.busySince = 0
@@ -508,14 +510,17 @@ function CeroSecTerminal:applyEdit(edit)
 		return
 	end
 	-- The answer to the save question: y saves and *then* leaves, so leaving
-	-- waits for the machine to say the write happened. An error keeps the
-	-- buffer and puts the reason on the message line, which is what nano does.
+	-- waits for the machine to say the write happened. What is waited on is the
+	-- machine's count of writes to this buffer, not the words on the message
+	-- line: a screen pushed by somebody else's keystroke in between carries the
+	-- message of the *previous* save, and leaving on that would drop a buffer
+	-- that had not been written yet. An error keeps the buffer and puts the
+	-- reason on the message line, which is what nano does.
 	if self.editLeaving then
-		local message = edit.message or ""
-		if string.sub(message, 1, 6) == "Saved " then
+		if (edit.saves or 0) > self.editLeaveFrom then
 			self.editLeaving = false
 			self:send("editexit", {})
-		elseif message ~= "" then
+		elseif (edit.message or "") ~= self.editLeaveMessage then
 			self.editLeaving = false
 		end
 	end
@@ -657,6 +662,8 @@ function CeroSecTerminal:editKey(key)
 		-- The buffer is still what it was before the question went up.
 		self.editAsk = false
 		self.editLeaving = true
+		self.editLeaveFrom = self.edit.saves or 0
+		self.editLeaveMessage = self.edit.message or ""
 		self:sendSave()
 		return
 	end

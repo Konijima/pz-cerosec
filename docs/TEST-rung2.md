@@ -421,10 +421,10 @@ starred to the length of what was typed.
      `admin@ksp-<x>-<y>:~$ `. Not `~ome/admin`, which is what it used to say —
      that was a tail cut wearing the wrong marker.
 101. **Under the home.** `mkdir docs`, `cd docs`: `admin@ksp-<x>-<y>:~/docs$ `.
-102. **Only the home.** `cd /`, `mkdir -` no; instead as `root`:
-     `mkdir /home/adminx`. Log in as `admin`, `cd /home/adminx`: the prompt reads
-     the whole `/home/adminx`, **not** `~x`. A name that merely starts the same is
-     not inside it.
+102. **Only the home.** As `root`, `mkdir /home/adminx` and `chmod 777` it. Log in
+     as `admin` and `cd /home/adminx`: the prompt reads the whole
+     `/home/adminx`, **not** `~x`. A name that merely starts the same is not
+     inside it.
 103. **root at home.** As `root`: `root@ksp-<x>-<y>:~# `. `cd /`:
      `root@ksp-<x>-<y>:/# `.
 104. **A path too long even then.** Make a deep tree (`mkdir /a`, `/a/b`, …,

@@ -466,6 +466,9 @@ function CeroSec.repairConsole(console)
 		}
 		if type(edit.by) == "string" then out.edit.by = edit.by end
 		if type(edit.message) == "string" then out.edit.message = edit.message end
+		if type(edit.saves) == "number" and edit.saves >= 0 then
+			out.edit.saves = math.floor(edit.saves)
+		end
 	end
 	if type(console.lines) == "table" then
 		local lines = console.lines
