@@ -163,6 +163,63 @@ the commands, the accounts and the system files back and touches nothing under
 `/home` or `/root`; `n` leaves it sitting there, and anything typed at it brings the
 question back; `exit` or Escape walks away from it.
 
+The building the computer stands in is wired to it. `/dev` holds one file per
+light switch, lockable door and window it can reach — its own building when its
+square has one, every room of it; ten tiles of its own floor when it has not,
+which is what a computer in a player-built base gets. `ls -l /dev` says what
+each one is and what it is doing:
+
+```
+crw-rw----  root  lock0   exterior         W  locked
+crw-rw----  root  lock1   kitchen-hallway  N  unlocked
+crw-rw----  root  win0    office           N  locked
+crw-rw----  root  light0  office              on
+crw-rw----  root  light1  hallway             off
+crw-rw----  root  lock2   built            N  padlock
+```
+
+A device has no size and no date, so those two columns are what it *is*: the
+rooms it stands between — the map's own raw names, `exterior` where one side is
+the outdoors, `built` for something a player put up — which way it faces, and its
+state. `cat /dev/light0` prints that state on its own; a redirect is how you
+change it.
+
+```
+cat /dev/lock1
+echo on > /dev/light0
+echo off > /dev/light1
+echo unlock > /dev/lock1
+echo lock > /dev/win0
+```
+
+`light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`. Anything
+else is `light0: invalid value`. A device answers in its own name, not the
+command's:
+
+| line | what happened |
+| --- | --- |
+| `light0: no power` | the switch has no electricity, no bulb, or nothing to switch |
+| `lock0: no such device` | it was taken away, or it is in a chunk nobody has loaded |
+| `win0: smashed` | the glass is gone; there is no lock left to turn |
+| `win0: barricaded` | it is boarded up |
+| `lock2: no padlock` | a player-built door with neither padlock nor key on it |
+| `light0: invalid value` | that word means nothing to that kind |
+| `light0: permission denied` | the mode says no |
+
+A number belongs to a device for the life of the machine. `light0` is the same
+switch tomorrow as it is today, and one that is torn out leaves a **gap** —
+nothing moves up into it — so a line you wrote into a file still means what it
+meant. A device that is out of reach is not listed at all; naming it says `no
+such device`, which is the difference between a switch that is off the grid and a
+path you mistyped.
+
+Devices are `rw` for root, `660`, and root may open one up with `chmod 666
+/dev/light0` — that lasts. Nothing else works on one: `rm`, `mv`, `cp` and `edit`
+all answer `is a device`, and nothing can be created in `/dev` at all.
+
+Opening a door is not this. `unlock` takes the lock off; somebody still has to
+walk over and open it.
+
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
 
@@ -277,6 +334,101 @@ zero.
 `CeroSecOS.DISK_BYTES` is the one number for the drive: the BIOS announces it
 (`CeroSec.bootLines()` appends `hda 32K`), `df` divides by it, and the write path
 refuses to go past it. There is no second copy of it anywhere to drift.
+
+#### /dev, and the world outside the machine
+
+The engine knows nothing about Project Zomboid, devices included. A device node
+lives under `/dev` and is not a file:
+
+```lua
+{ type = "dev", owner = "root", mode = 660, id = "light0",
+  kind = "light", desc = "office", side = "N", state = "on" }
+```
+
+It has no `data`, it costs nothing in `CeroSecOS.usage` (so `df` does not move
+because somebody walked past a light switch), and **it is never persisted**.
+`CeroSecOS.mountDev` builds `/dev`'s children from `env.devices.list()` at the
+top of `exec` and `continue`, and `CeroSecOS.unmountDev` takes them away again
+before the answer goes back — so the state the game saves has the same empty
+`/dev` it has had since rung 1, and `validate` never sees a node type it does not
+know. `SCeroSecObject:osState` sweeps once more before the gate, as the belt to
+that pair of braces: a command that died in the middle must not turn a working
+machine into a broken one.
+
+`env.devices`, when the caller supplies one, is three functions:
+
+| call | answers | who owns it |
+| --- | --- | --- |
+| `list()` | array of `{ id, kind, desc, side, state, mode, dead }` | the caller |
+| `write(id, value)` | `ok, reason, state` | the caller |
+| `chmod(id, mode)` | — | the caller, optional |
+
+The **ids are the caller's**, not the engine's: the engine renders what it is
+handed and judges `value` against `CeroSecOS.DEV_VALUES[kind]`, so a word a kind
+has no meaning for never reaches the world. An entry marked `dead` is mounted but
+never listed, which is what makes `cat /dev/lock0` say `no such device` instead of
+`no such file`. `chmod` is how a mode outlives the command it was typed in, since
+the node itself is gone by the end of one.
+
+Device I/O refusals read `<id>: <reason>`; filesystem refusals *about* a device
+node keep the filesystem's grammar (`rm: /dev/light0: is a device`,
+`mkdir` and `touch` under `/dev` answer `/dev: read-only`). The listing is
+alphabetical, like every other listing on this machine.
+
+**Discovery** is `SCeroSecDevices.find(x, y, z)`, run afresh at every command,
+because the answer is only true for the moment it is asked:
+
+- The square's `getBuilding()`, when it has one → `getDef():getRooms()`
+  (an `ArrayList<RoomDef>`, read the way `shared/Util/BuildingHelper.lua` reads
+  it) → `getIsoRoom()` per room — `nil` while its chunks are not loaded — →
+  `getSquares()` → `getObjects()`.
+- No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
+  the same z. A `nil` square is an unloaded chunk and is skipped.
+
+Classification is `instanceof`: `IsoLightSwitch` → `light`, `IsoDoor` → `lock`,
+`IsoWindow` → `win`, `IsoThumpable` with `isDoor()` → `lock` (`built`). A
+player-built window frame is not a device this rung.
+
+**The numbering** is stable for the life of the machine. Candidates are sorted by
+`(kind, x, y, z, side)` and each gets the smallest number its kind has never used;
+the answer is written into the machine's own state at `os.devmap`, keyed by where
+the device is:
+
+```lua
+state.devmap["light:1024:998:0::0"] = { id = "light0", kind = "light", n = 0, mode = 660 }
+```
+
+The trailing `0` is an ordinal that tells two devices of one kind facing the same
+way on one square apart — the object index would have done it and is not stable
+across a reload. An entry is **never removed**: the number is spent, so a device
+that is torn out leaves a gap and nothing is renumbered under a script. The book
+is capped at `CeroSecDevices.MAP_MAX` (128) so a computer carried across the map
+does not grow one entry per light switch in the county.
+
+**The sync calls**, and why these ones. Every one is verified with `javap` against
+`projectzomboid.jar` (42.20.4). The point that matters is *who broadcasts*: our
+writes happen on the server and most of vanilla's happen on a client, so a setter
+that syncs for a player does not necessarily sync for us.
+
+| kind | setter | sync | why |
+| --- | --- | --- | --- |
+| `light` | `IsoLightSwitch:setActive(on)` | none needed | `setActive(Z)` → `setActive(Z,Z,Z)`, which ends on `syncIsoObject(false, activated, null)`; that method's server branch walks `GameServer.udpEngine.connections` |
+| `lock` (map) | `IsoDoor:setLockedByKey(locked)` | `syncIsoObject(false, 0, nil, nil)` | `setLockedByKey(Z,Z)` **skips** its own sync when `GameServer.server` is true; the pair is vanilla's own, `shared/TimedActions/ISLockDoor.lua:52-56` |
+| `win` | `IsoWindow:setIsLocked(locked)` | `syncIsoObject(false, 0, nil, nil)` | `setIsLocked` is a bare field write with no sync at all; `IsoWindow:syncIsoObjectSend` writes `locked` into the packet |
+| `lock` (built, padlock) | `IsoThumpable:setLockedByPadlock(locked)` | none needed | it calls `syncIsoThumpable()` itself, whose server branch is `INetworkPacket.sendToRelative(SyncThumpable, ...)` |
+| `lock` (built, key) | `IsoThumpable:setLockedByKey(locked)` | `syncIsoThumpable()` | same server skip as the map door's |
+
+The power rule for a light is the switch's own: `canSwitchLight()` — a bulb, and
+electricity or a charged battery. A switch with no bulb reads as `no power` too,
+which is what a survivor flicking it would find. `setActive` also *answers* with
+the state it settled on, so the state is read back rather than assumed; the same
+goes for every kind, because "the order went out" and "the world moved" are not
+the same fact.
+
+The one-minute sweep (`CeroSecDevices.refresh`) renumbers for a machine somebody
+is standing at. Nothing already on the glass changes — a printed line stays
+printed, here as on any terminal — but a device that appeared since already has
+its number by the time `ls /dev` is typed.
 
 ### System files, and their formats
 
