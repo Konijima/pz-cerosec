@@ -69,6 +69,16 @@ require "CeroSec/OS/CeroSecOSDev"
 --           setIsLocked is a bare field write with no sync of any kind, and
 --           IsoWindow:syncIsoObjectSend writes `locked` into the packet.
 --
+--   find    IsoObject:setHighlighted(playerNum, on, false), plus
+--   (client) setHighlightColor / setOutlineHighlight / setOutlineHighlightCol
+--           on the same playerNum, which is exactly the four vanilla makes on
+--           hover in media/lua/client/ISUI/ISWorldObjectContextMenu.lua:281-287
+--           (onHighlightWorldItem). javap has all four on zombie.iso.IsoObject
+--           with an int first argument: that int is the LOCAL player (split
+--           screen), so a highlight is drawn for one pair of eyes and nobody
+--           else's -- which is what we want, and why this half is the client's
+--           and travels as a message.
+--
 --   lock    IsoThumpable:setLockedByPadlock(locked)
 --   (built) which calls syncIsoThumpable() itself, and syncIsoThumpable's
 --           server branch is INetworkPacket.sendToRelative(SyncThumpable, ...).
@@ -81,6 +91,30 @@ CeroSecDevices = CeroSecDevices or {}
 
 -- Tiles around the machine, on its own z, when it is not in a building.
 CeroSecDevices.RADIUS = 10
+
+-- Pointing at one
+--
+-- `dev find` has to answer the one question a listing cannot: WHICH of the
+-- thirty-five it is. A light says so itself -- it blinks, and everybody in the
+-- room sees it. A door and a window have nothing to do that with, so the
+-- requesting player's own client draws an outline around it and nobody else's
+-- does.
+--
+-- The blink is a server-side timer, and the timer is Events.OnTick gated on
+-- getTimestampMs(), which is vanilla's own way of getting under a minute on a
+-- server: media/lua/server/Foraging/forageServer.lua:455-460 keeps a
+-- _nextRelevanceMs and returns early until the clock passes it, registered at
+-- line 502 with Events.OnTick.Add. EveryOneMinute, which is what the rest of
+-- this mod runs on, cannot blink anything.
+-- How long a flip lasts. How long the whole blink lasts is NOT here: the engine
+-- hands the seconds over with the request (CeroSecOS.DEV_FIND_SECONDS), so
+-- there is one number for it and it is the one the manual quotes.
+CeroSecDevices.BLINK_MS = 500
+
+-- The lights blinking right now. Never saved: a blink is six seconds long and a
+-- reload is the end of it, which is the right end for a thing whose whole
+-- purpose is to answer a question somebody asked ten seconds ago.
+CeroSecDevices.blinks = {}
 
 -- How many entries os.devmap may hold. A number spent is spent for the life of
 -- the machine, so this is what stops a computer carried across the map from
@@ -470,10 +504,123 @@ local function act(entry, value)
 	return false, "no padlock"
 end
 
+--
+-- The blink
+--
+
+-- Is the object we found still where we found it? Named apart from `alive`
+-- above because a blink outlives the command that started it: the square is
+-- looked at again on every tick, and a light carried away mid-blink is a light
+-- the sweep drops rather than one it keeps calling setActive on.
+local function stillThere(blink)
+	local object = blink.object
+	if object == nil then return false end
+	local square = object:getSquare()
+	if square == nil then return false end
+	return square:getX() == blink.x and square:getY() == blink.y
+		and square:getZ() == blink.z
+end
+
+local function throw(blink, on)
+	if not stillThere(blink) then return false end
+	blink.object:setActive(on)
+	return true
+end
+
+-- Put the switch back where it was found. A blink that ends is a blink that
+-- leaves nothing behind: a survivor who asked which light this was does not
+-- want the room's lighting changed for having asked.
+local function restore(blink)
+	throw(blink, blink.was)
+end
+
+-- Drop a light's blink without restoring it. What a WRITE does: somebody who
+-- has just typed `dev light0 off` means it, and a blink that ended a second
+-- later by putting the light back on would be the machine arguing.
+function CeroSecDevices.dropBlink(id)
+	local kept = {}
+	local blinks = CeroSecDevices.blinks
+	for i = 1, #blinks do
+		if blinks[i].id ~= id then kept[#kept + 1] = blinks[i] end
+	end
+	CeroSecDevices.blinks = kept
+end
+
+-- One tick of every blink there is. Nothing at all when there are none, which
+-- is every tick of every game that is not answering `dev find` right now.
+function CeroSecDevices.tick()
+	local blinks = CeroSecDevices.blinks
+	if #blinks == 0 then return end
+	local now = getTimestampMs()
+
+	local kept = {}
+	for i = 1, #blinks do
+		local blink = blinks[i]
+		if now >= blink.endMs or not stillThere(blink) then
+			restore(blink)
+		else
+			if now >= blink.nextMs then
+				-- now + BLINK_MS and not nextMs + BLINK_MS: a server that was
+				-- busy for two seconds owes nobody four catch-up flips.
+				blink.nextMs = now + CeroSecDevices.BLINK_MS
+				blink.on = not blink.on
+				throw(blink, blink.on)
+			end
+			kept[#kept + 1] = blink
+		end
+	end
+	CeroSecDevices.blinks = kept
+end
+
+-- Start one, or push the end of the one already running out. ok, reason.
+local function blink(entry, seconds)
+	local object = entry.object
+	-- The switch's own rule, the same one a write asks (act, above): a light
+	-- that cannot be thrown cannot be blinked either, and says the same thing
+	-- about it.
+	if not object:canSwitchLight() then return false, "no power" end
+
+	local now = getTimestampMs()
+	local endMs = now + seconds * 1000
+	local blinks = CeroSecDevices.blinks
+	for i = 1, #blinks do
+		if blinks[i].id == entry.id then
+			blinks[i].endMs = endMs
+			return true
+		end
+	end
+
+	blinks[#blinks + 1] = {
+		id = entry.id, object = object,
+		x = entry.x, y = entry.y, z = entry.z,
+		-- What to put back, read now and not assumed from the state string.
+		was = object:isActivated(),
+		on = object:isActivated(),
+		nextMs = now, endMs = endMs,
+	}
+	return true
+end
+
+-- The class the client is to look for on that square. The server already knows
+-- which it is -- it classified the object to make a device of it -- so the
+-- client is told rather than left to guess between a map door and a built one.
+local function classOf(entry)
+	if entry.kind == "win" then return "IsoWindow" end
+	if instanceof(entry.object, "IsoDoor") then return "IsoDoor" end
+	return "IsoThumpable"
+end
+
 -- The env.devices table for one machine. Built once per command: the discovery
 -- is the expensive half and nothing may ask the world twice inside one line and
 -- get two answers.
-function CeroSecDevices.envFor(luaObject, state)
+--
+-- system and playerObj are the road back to ONE pair of eyes, and they are
+-- optional: a call without them is a machine whose doors cannot be highlighted
+-- (the light still blinks, being a thing the world does and not a thing a
+-- screen does). They are handed down from the command being run, because a
+-- highlight belongs to whoever typed the line and to nobody else standing at
+-- the same computer.
+function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 	local list, byId, map = build(luaObject, state)
 
 	return {
@@ -484,6 +631,10 @@ function CeroSecDevices.envFor(luaObject, state)
 		write = function(id, value)
 			local entry = byId[id]
 			if entry == nil or not alive(entry) then return false, "no such device" end
+			-- A write ends any blink that light was in the middle of, and does
+			-- NOT put the old state back: the word just typed is the newer of
+			-- the two intentions.
+			CeroSecDevices.dropBlink(id)
 			local ok, reason, after = act(entry, value)
 			if not ok then return false, reason end
 			-- The list the engine is holding is updated too, so a `cat` in the
@@ -495,6 +646,32 @@ function CeroSecDevices.envFor(luaObject, state)
 				end
 			end
 			return true, nil, after
+		end,
+
+		-- Point at one for `seconds`. A light blinks where everybody can see it;
+		-- a door or a window is outlined on the requesting player's screen and
+		-- on no other, which is what the int first argument of vanilla's
+		-- setHighlighted is for (see the head of this file).
+		find = function(id, seconds)
+			local entry = byId[id]
+			if entry == nil or not alive(entry) then return false, "no such device" end
+
+			if entry.kind == "light" then
+				local ok, reason = blink(entry, seconds)
+				if not ok then return false, reason end
+				return true, nil, "blinking"
+			end
+
+			if system == nil or playerObj == nil then return false, "no such device" end
+			-- The device's own square, not the computer's: what travels with a
+			-- highlight is where to look, and the token of the window that
+			-- asked, which is the only thing a terminal believes.
+			system:reply(playerObj, "highlight", {
+				x = entry.x, y = entry.y, z = entry.z, token = token,
+				class = classOf(entry), sprite = entry.object:getSpriteName(),
+				seconds = seconds,
+			})
+			return true, nil, "highlighted"
 		end,
 
 		-- A chmod on a device node. The node itself is thrown away at the end of
@@ -509,6 +686,12 @@ function CeroSecDevices.envFor(luaObject, state)
 		end,
 	}
 end
+
+-- The blink clock. Vanilla's own way of getting under a minute on a server
+-- (forageServer.lua:502, and the gate inside CeroSecDevices.tick).
+Events.OnTick.Add(function()
+	CeroSecDevices.tick()
+end)
 
 -- The one-minute sweep. Nothing on a screen changes -- a line already printed
 -- is a line already printed -- but the book of numbers is brought up to date,

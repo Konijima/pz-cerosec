@@ -272,7 +272,83 @@ function CeroSecTerminal:onServerCommand(command, args)
 		self:showScreen(args, args.animate)
 	elseif command == "screen" then
 		self:showScreen(args, false)
+	elseif command == "highlight" then
+		self:startHighlight(args)
 	end
+end
+
+--
+-- `dev find` on a door or a window
+--
+-- A light answers "which one am I" by blinking, which the server does and
+-- everybody in the room sees. A door and a window have nothing to do that with,
+-- so the server tells the ONE window that asked where to look, and the outline
+-- is drawn here, for this player and nobody else at the same computer: every
+-- one of vanilla's four highlight calls takes the local player number first
+-- (media/lua/client/ISUI/ISWorldObjectContextMenu.lua:281-287).
+--
+-- The object is found again on this side rather than sent over: a Java handle
+-- does not travel, and the square plus the class plus the sprite name is what
+-- the server had to work with too.
+--
+
+function CeroSecTerminal:objectAt(args)
+	if getCell == nil then return nil end
+	local cell = getCell()
+	if cell == nil then return nil end
+	local square = cell:getGridSquare(args.x, args.y, args.z)
+	if square == nil then return nil end
+	local objects = square:getObjects()
+	if objects == nil then return nil end
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		if instanceof(object, args.class) and object:getSpriteName() == args.sprite then
+			return object
+		end
+	end
+	return nil
+end
+
+function CeroSecTerminal:startHighlight(args)
+	if type(args.class) ~= "string" or type(args.sprite) ~= "string" then return end
+	-- One at a time: a second `dev find` drops the first outline rather than
+	-- leaving it lit until its own clock runs out.
+	self:stopHighlight()
+
+	local object = self:objectAt(args)
+	if object == nil then return end
+
+	local seconds = args.seconds
+	if type(seconds) ~= "number" or seconds <= 0 then seconds = 6 end
+
+	local color = getCore():getObjectHighlitedColor()
+	object:setHighlighted(self.playerNum, true, false)
+	if color ~= nil then
+		object:setHighlightColor(self.playerNum, color)
+		object:setOutlineHighlight(self.playerNum, true)
+		object:setOutlineHighlightCol(self.playerNum, color)
+	end
+	self.highlight = { object = object, until_ = getTimestampMs() + seconds * 1000 }
+end
+
+function CeroSecTerminal:stopHighlight()
+	local lit = self.highlight
+	if lit == nil then return end
+	self.highlight = nil
+	local object = lit.object
+	if object == nil then return end
+	object:setHighlighted(self.playerNum, false, false)
+	object:setOutlineHighlight(self.playerNum, false)
+end
+
+-- Checked every frame, like everything else this window is responsible for: the
+-- outline is this window's to take away, and a window that closed with one lit
+-- takes it away on the way out.
+function CeroSecTerminal:updateHighlight()
+	local lit = self.highlight
+	if lit == nil then return end
+	if getTimestampMs() < lit.until_ then return end
+	self:stopHighlight()
 end
 
 -- One screen, whole, as the server described it. Everything the window shows
@@ -970,6 +1046,7 @@ function CeroSecTerminal:close()
 	if self.opened then self:syncBuffer(true) end
 	-- The character stops being at the keyboard the moment the window does.
 	self:stopTyping()
+	self:stopHighlight()
 	self.wantSit = nil
 	if self.entry then self.entry:unfocus() end
 	if self.opened then self:send("close", {}) end
@@ -1038,6 +1115,7 @@ function CeroSecTerminal:prerender()
 		return
 	end
 	self:updateReveal()
+	self:updateHighlight()
 	self:checkTimeout()
 	self:updateSettle()
 	self:configureEntry()

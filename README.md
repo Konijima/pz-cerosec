@@ -38,8 +38,9 @@ Done:
   on Escape, and a server-held console so the screen survives a save, a reload and
   a walk away.
 - Devices: `/dev` holds the light switches, lockable doors and windows the machine
-  can reach, and `dev` is the everyday way to see them all at once, read one, work
-  one or `toggle` it — `cat` and a redirect on the node underneath.
+  can reach, and `dev` is the everyday way to see them all at once — with each
+  one's offset from the computer, since room names repeat — read one, work one,
+  `toggle` it, or `find` it and watch it blink or light up in the world.
 - The manual: a printed book that spawns where computers do, read by the player in
   a two-page reader with a table of contents, and remembering the page it was left
   on.
@@ -146,7 +147,7 @@ Commands:
 | `wc <file>...` | lines, words and bytes |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
-| `dev [kind\|id [value\|toggle]]` | the devices as a table, one kind of them, one read, or one worked — `dev light0 off`, `dev lock2 toggle` |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev light0 off`, `dev lock2 toggle`; `dev find lock1` makes it show itself for six seconds |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
 | `shutdown` | switch the machine off (root only) |
@@ -235,7 +236,20 @@ whichever of the pair it is not in now:
 dev light0          -> light0: on
 dev light0 off      -> light0: off
 dev lock2 toggle    -> lock2: unlocked
+dev find lock1      -> lock1: highlighted
 ```
+
+`dev find` answers the question a listing cannot: **which** of the thirty-five it
+is. A light blinks for six seconds and goes back exactly as it was found — a
+server-side timer on `Events.OnTick`, gated on `getTimestampMs()` the way
+vanilla's own `forageServer` gets under a minute — and a light with no power
+answers `light0: no power`, the same as a write. A door or a window has nothing
+to blink with, so the server tells the one window that asked where to look and
+that player's client outlines the object with vanilla's `setHighlighted` /
+`setOutlineHighlight`, which take the local player number first: in multiplayer
+only the survivor who typed it sees the outline. It asks for the right it uses —
+a light is switched, so blinking one needs write; a door is only drawn around, so
+reading it is enough.
 
 Underneath, `dev` is `cat` and a redirect on the node — the same permissions, the
 same words, the same refusals — and `ls -l /dev` is the same devices with the

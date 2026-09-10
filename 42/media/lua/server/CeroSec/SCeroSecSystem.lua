@@ -290,9 +290,17 @@ end
 -- The devices need the state, because a device's NUMBER lives on it
 -- (state.devmap) and has to survive a reload; a call with no state is a call
 -- with no numbers, and the machine simply has no devices.
-function SCeroSecSystem:execEnv(luaObject, state)
+--
+-- playerObj and token are who typed the line and at which window, and they
+-- travel because one thing a device can be asked to do -- `dev find` on a door
+-- -- is answered on ONE screen and not on the machine's: see the head of
+-- SCeroSecDevices.lua. A terminal believes nothing that does not carry its own
+-- token back (CeroSecTerminal:isMine), highlights included.
+function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	local env = self:clockEnv()
-	if state ~= nil then env.devices = CeroSecDevices.envFor(luaObject, state) end
+	if state ~= nil then
+		env.devices = CeroSecDevices.envFor(luaObject, state, self, playerObj, token)
+	end
 	return env
 end
 
@@ -805,7 +813,8 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		end
 		local session = self:sessionOf(console)
 		local _, lines, control, data =
-			CeroSecOS.continue(state, session, asked.cont, text, self:execEnv(luaObject, state))
+			CeroSecOS.continue(state, session, asked.cont, text,
+				self:execEnv(luaObject, state, playerObj, token))
 		order = control
 		self:writeSession(console, session)
 		luaObject:mirrorOS()
@@ -848,7 +857,8 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	local session = self:sessionOf(console)
 	local prompt = self:promptFor(state, console)
 	local _, lines, control, data =
-		CeroSecOS.exec(state, session, line, self:execEnv(luaObject, state))
+		CeroSecOS.exec(state, session, line,
+			self:execEnv(luaObject, state, playerObj, token))
 	self:writeSession(console, session)
 	luaObject:mirrorOS()
 

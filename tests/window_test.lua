@@ -98,9 +98,13 @@ _G.getTextManager = function()
 		getFontHeight = function() return FONT_H end,
 	}
 end
+-- getObjectHighlitedColor is the colour vanilla outlines a world object with
+-- (ISWorldObjectContextMenu's onHighlightWorldItem reads the same one off
+-- getCore()); the window asks for it before it lights a door.
 _G.getCore = function()
 	return { getScreenWidth = function() return 1920 end,
-		getScreenHeight = function() return 1080 end }
+		getScreenHeight = function() return 1080 end,
+		getObjectHighlitedColor = function() return { r = 1, g = 1, b = 1 } end }
 end
 
 -- The text box: the two things the window reads out of it (the text and an
@@ -1242,9 +1246,29 @@ local function fakeLight(on, powered)
 	return o
 end
 
+-- Everything the client needs to point at one: the sprite name the server sends
+-- so the object can be found again on the far side, and the four highlight
+-- calls, which take the LOCAL player number first and are recorded so a test can
+-- say whose eyes it was drawn for.
+local spriteN = 0
+local function highlightable(o)
+	spriteN = spriteN + 1
+	o.sprite = "cerosec_fake_" .. spriteN
+	o.highlights = {}
+	o.getSpriteName = function() return o.sprite end
+	o.setHighlighted = function(_, player, on)
+		o.highlights[#o.highlights + 1] = tostring(player) .. "=" .. tostring(on)
+	end
+	o.setHighlightColor = function() end
+	o.setOutlineHighlight = function(_, _, on) o.outline = on end
+	o.setOutlineHighlightCol = function() end
+	return o
+end
+
 local function fakeDoor(locked, north, opposite)
 	local o = { __class = "IsoDoor", lockedByKey = locked, north = north,
 		opposite = opposite, syncs = 0 }
+	highlightable(o)
 	o.getNorth = function() return o.north end
 	o.getOppositeSquare = function() return o.opposite end
 	o.isLockedByKey = function() return o.lockedByKey end
@@ -1258,6 +1282,7 @@ end
 local function fakeWindow(locked, north)
 	local o = { __class = "IsoWindow", locked = locked, north = north,
 		smashed = false, barricaded = false, syncs = 0 }
+	highlightable(o)
 	o.getNorth = function() return o.north end
 	o.isLocked = function() return o.locked end
 	o.isSmashed = function() return o.smashed end
@@ -1270,6 +1295,7 @@ end
 local function fakeThumpable(padlock, north)
 	local o = { __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
 		lockedByKey = false, keyId = 0, north = north, syncs = 0 }
+	highlightable(o)
 	o.isDoor = function() return true end
 	o.getNorth = function() return o.north end
 	o.isLockedByPadlock = function() return o.lockedByPadlock end
@@ -1428,6 +1454,102 @@ do
 	bench.enter("echo lock > /dev/lock2")
 	bench.frame()
 	check("no padlock", bench.painted("lock2: no padlock"))
+
+	--
+	-- dev find: which of the thirty-five is it?
+	--
+	-- A light answers by blinking, which the server does on its own clock and
+	-- everybody in the room sees. The switch is put back exactly as it was
+	-- found: a survivor who asked which light this was did not ask for the
+	-- room's lighting to change.
+	kit.lock2.canPadlock = true
+	kit.lock2.keyId = 0
+	eq("the switch is on to begin with", kit.light0.activated, true)
+	eq("and nothing is blinking", #CeroSecDevices.blinks, 0)
+	bench.enter("dev find light0")
+	bench.frame()
+	check("the machine says what it did", bench.painted("light0: blinking"))
+	eq("one blink is booked", #CeroSecDevices.blinks, 1)
+
+	-- The first tick after the order flips it: the answer is wanted now, not in
+	-- half a second.
+	_G.__now = _G.__now + 16
+	CeroSecDevices.tick()
+	eq("off", kit.light0.activated, false)
+	_G.__now = _G.__now + 100
+	CeroSecDevices.tick()
+	eq("and a tick inside the half second changes nothing", kit.light0.activated, false)
+	_G.__now = _G.__now + CeroSecDevices.BLINK_MS
+	CeroSecDevices.tick()
+	eq("on", kit.light0.activated, true)
+	_G.__now = _G.__now + CeroSecDevices.BLINK_MS
+	CeroSecDevices.tick()
+	eq("off", kit.light0.activated, false)
+
+	-- And when the six seconds are up it stops, on the state it started from.
+	_G.__now = _G.__now + CeroSecOS.DEV_FIND_SECONDS * 1000
+	CeroSecDevices.tick()
+	eq("the blink is over", #CeroSecDevices.blinks, 0)
+	eq("and the switch is where it was found", kit.light0.activated, true)
+
+	-- A write during a blink ends it, and is NOT undone by the restore: the
+	-- word just typed is the newer of the two intentions.
+	bench.enter("dev find light0")
+	bench.frame()
+	eq("blinking again", #CeroSecDevices.blinks, 1)
+	bench.enter("dev light0 off")
+	bench.frame()
+	eq("the write dropped the blink", #CeroSecDevices.blinks, 0)
+	eq("and the light is off", kit.light0.activated, false)
+	_G.__now = _G.__now + CeroSecOS.DEV_FIND_SECONDS * 1000
+	CeroSecDevices.tick()
+	eq("and stays off", kit.light0.activated, false)
+	bench.enter("dev light0 on")
+	bench.frame()
+
+	-- A switch with no power cannot be blinked either, and says the same thing
+	-- about it that a write does.
+	kit.light0.powered = false
+	bench.enter("dev find light0")
+	bench.frame()
+	check("no power", bench.painted("light0: no power"))
+	eq("and nothing was booked", #CeroSecDevices.blinks, 0)
+	kit.light0.powered = true
+
+	-- A door has nothing to blink with. The server tells the ONE window that
+	-- asked where to look, and that window's own client draws the outline --
+	-- for its own player number and nobody else's.
+	eq("nothing is lit yet", kit.lock1.outline, nil)
+	bench.enter("dev find lock1")
+	bench.frame()
+	check("the machine says what it did", bench.painted("lock1: highlighted"))
+	eq("the door is outlined", kit.lock1.outline, true)
+	eq("for this player, once", kit.lock1.highlights[1], "0=true")
+	eq("and the window remembers it has one lit", bench.window.highlight ~= nil, true)
+	-- The object was found again on the far side by its square, its class and
+	-- its sprite -- and nothing else on that square was.
+	eq("and the padlocked door beside it was not", kit.lock2.outline, nil)
+
+	-- It goes out on its own, in the window's own update, six seconds later.
+	_G.__now = _G.__now + CeroSecOS.DEV_FIND_SECONDS * 1000
+	bench.frame()
+	eq("the outline is gone", kit.lock1.outline, false)
+	eq("and the window is holding nothing", bench.window.highlight, nil)
+	eq("it was put out for the same player", kit.lock1.highlights[2], "0=false")
+
+	-- A second find drops the first outline rather than leaving it lit.
+	bench.enter("dev find lock1")
+	bench.frame()
+	bench.enter("dev find win0")
+	bench.frame()
+	eq("the window is lit", kit.win0.outline, true)
+	eq("and the door was put out at once", kit.lock1.outline, false)
+
+	-- Closing the window takes the outline with it.
+	_G.__now = _G.__now + 100
+	bench.window:close()
+	eq("nothing is left lit", kit.win0.outline, false)
+	bench.window.closing = nil
 
 	--
 	-- The numbers hold across a reload, with one device gone.

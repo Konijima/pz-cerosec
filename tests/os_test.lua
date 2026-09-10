@@ -3689,6 +3689,19 @@ local function fakeDevices(entries)
 		return true, nil, e.state
 	end
 
+	-- The optional third call. A fake world points at a device by writing down
+	-- that it was asked to; what a real one does is SCeroSecDevices' business
+	-- and window_test's (a light blinks, a door is outlined on one screen).
+	devices.finds = {}
+	devices.find = function(id, seconds)
+		devices.finds[#devices.finds + 1] = id .. "/" .. tostring(seconds)
+		local e = byId[id]
+		if e == nil then return false, "no such device" end
+		if e.refuse ~= nil then return false, e.refuse end
+		if e.kind == "light" then return true, nil, "blinking" end
+		return true, nil, "highlighted"
+	end
+
 	devices.chmod = function(id, mode)
 		devices.chmods[#devices.chmods + 1] = id .. "=" .. tostring(mode)
 		local e = byId[id]
@@ -4237,7 +4250,7 @@ do
 	badAt(state, session, "dev toaster3", "dev: toaster3: no such device", env)
 
 	-- The usage line, and it is the one man prints (21 lines above use it).
-	local line = "dev: usage: dev [kind|id [value|toggle]]"
+	local line = "dev: usage: dev [kind|id [value|toggle]|find <id>]"
 	badAt(state, session, "dev light1 on now", line, env)
 	badAt(state, session, "dev a b c d", line, env)
 	eq("and man says the same thing", okAt(state, session, "man dev", nil, env)[2],
@@ -4293,6 +4306,78 @@ do
 	okAt(state, root, "chmod 000 /dev/light0", {}, env)
 	badAt(state, admin, "dev light0", "light0: permission denied", env)
 	okAt(state, root, "dev light0", { "light0: on" }, env)
+end
+
+-- 21n. `dev find <id>`: point at one in the world.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+
+	-- The word is the WORLD's: the engine hands the seconds over and prints
+	-- back whatever it was told was done.
+	okAt(state, session, "dev find light0", { "light0: blinking" }, env)
+	eq("the world was asked once", #devices.finds, 1)
+	eq("and for how long", devices.finds[1], "light0/" .. CeroSecOS.DEV_FIND_SECONDS)
+	okAt(state, session, "dev find lock1", { "lock1: highlighted" }, env)
+	okAt(state, session, "dev find win0", { "win0: highlighted" }, env)
+
+	-- Nothing about the device moves: find asks a question, it does not answer
+	-- one with a write.
+	okAt(state, session, "dev light0", { "light0: on" }, env)
+	eq("and no write went out", #devices.writes, 0)
+
+	-- "find" is a word here and not an id, so a machine with no devices at all
+	-- still parses the line and still refuses it about the DEVICE.
+	badAt(state, session, "dev find light9", "dev: light9: no such device", env)
+	badAt(state, session, "dev find", "dev: usage: dev [kind|id [value|toggle]|find <id>]",
+		env)
+	badAt(state, session, "dev find light0 now",
+		"dev: usage: dev [kind|id [value|toggle]|find <id>]", env)
+
+	-- The world's own refusal, in the device's name, exactly as a write's is.
+	local dark = fakeDevices({
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "off", refuse = "no power" },
+		{ id = "lock9", kind = "lock", dead = true },
+	})
+	badAt(state, session, "dev find light0", "light0: no power", devEnv(dark))
+	badAt(state, session, "dev find lock9", "lock9: no such device", devEnv(dark))
+
+	-- A caller with no find() at all is a machine whose devices cannot be
+	-- pointed at, and it says so about the device rather than about the command.
+	local blind = mockupDevices()
+	blind.find = nil
+	badAt(state, session, "dev find light0", "light0: no such device", devEnv(blind))
+end
+
+-- 21o. What find asks for is what it DOES: a light is switched twelve times, so
+-- it takes a write's right; a door is only drawn around, so a read's is enough.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local devices = mockupDevices()
+	local env = devEnv(devices)
+	local admin = open(state, "admin")
+	okAt(state, root, "adduser bob", nil)
+	local bob = open(state, "bob")
+
+	okAt(state, admin, "dev find light0", { "light0: blinking" }, env)
+	badAt(state, bob, "dev find light0", "light0: permission denied", env)
+	badAt(state, bob, "dev find lock1", "lock1: permission denied", env)
+
+	-- 640 for everybody: bob may read it and may not write it. He may point at
+	-- the door and may not blink the light.
+	okAt(state, root, "chmod 644 /dev/light0", {}, env)
+	okAt(state, root, "chmod 644 /dev/lock1", {}, env)
+	okAt(state, bob, "dev lock1", { "lock1: unlocked" }, env)
+	okAt(state, bob, "dev find lock1", { "lock1: highlighted" }, env)
+	badAt(state, bob, "dev find light0", "light0: permission denied", env)
+	badAt(state, bob, "dev light0 off", "light0: permission denied", env)
+	-- ...and with the write digit, he may.
+	okAt(state, root, "chmod 646 /dev/light0", {}, env)
+	okAt(state, bob, "dev find light0", { "light0: blinking" }, env)
 end
 
 --

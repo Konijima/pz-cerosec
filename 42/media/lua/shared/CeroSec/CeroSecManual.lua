@@ -685,10 +685,10 @@ alike, answer lock and unlock. Nothing else is a word these kinds
 know, and typing one is "light0: invalid value" -- the device's own
 name first, the same grammar every refusal of its uses.]],
 
-[[toggle stands in for whichever of the pair is the opposite of what
-the device reads now: a lit switch goes off, a locked door unlocks,
-a padlocked one has its padlock taken off, and an unlocked one is
-locked again -- with a padlock, if that is what the door carries.
+[[toggle stands in for the opposite of what the device reads now: a
+lit switch goes off, a locked door unlocks, a padlocked one has its
+padlock taken off, and an unlocked one is locked again -- with a
+padlock, if that is what the door carries.
 
   admin@ksp-04-11:~$ dev lock2 toggle
   lock2: unlocked
@@ -696,10 +696,16 @@ locked again -- with a padlock, if that is what the door carries.
 A window that is smashed or barricaded is in no state a word undoes,
 and toggle answers "win0: cannot toggle" rather than guess a
 direction; dev win0 lock still asks, and the window refuses in its
-own name. A number the machine remembers and can no longer reach
-answers "lock9: no such device"; a number never handed out at all is
-"dev: light7: no such device", the command's own grammar for a word
-that names nothing.]],
+own name. A number never handed out at all is refused in the
+command's own grammar: "dev: light7: no such device".
+
+dev find <id> answers what no list can: which of the thirty-five
+this one is. A light blinks for six seconds and goes back exactly as
+it was; a door or a window is outlined on the screen of whoever
+asked, and on nobody else's.
+
+  admin@ksp-04-11:~$ dev find lock1
+  lock1: highlighted]],
 
 [[Underneath, every device is a file under /dev, and dev is the short
 way to type what you could type yourself. cat reads one, printing
@@ -872,7 +878,7 @@ itself.
   cp [-r] <src> <dst>
   date [+FORMAT]
   deluser [-r] <name>
-  dev [kind|id [value|toggle]]
+  dev [kind|id [value|toggle]|find <id>]
   df
   echo [text...]
   edit <file>
@@ -934,8 +940,9 @@ dropped the same way.]],
 the file itself; light answers on and off; lock and win answer lock
 and unlock; toggle, which dev takes and a redirect does not, is
 whichever of a pair the device is not in now. dev alone is the whole
-table, dev light, dev lock and dev win one kind of it; its columns
-are id, description, offset from the computer, facing and state.
+table, dev light, dev lock and dev win one kind of it, dev find <id>
+six seconds of the device showing you where it is; its columns are
+id, description, offset from the computer, facing and state.
 ls -l /dev reads exactly like ls -l anywhere else, mode, owner,
 group, id, description, facing and state in place of size and date,
 and no offset -- the screen is sixty columns wide.

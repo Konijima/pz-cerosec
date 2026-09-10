@@ -37,6 +37,14 @@
 --   chmod(id, mode)    -> optional. Called when a chmod moved a node's mode, so
 --                         the caller can remember it; a caller without one is a
 --                         caller whose modes last until the machine reloads.
+--   find(id, seconds)  -> optional. Make the device SHOW itself in the world for
+--                         that long, and answer ok, reason, word -- the word
+--                         being what it did ("blinking", "highlighted"), which
+--                         is the caller's to choose because it is the caller
+--                         that knows what a world can do. A caller without one
+--                         is a machine whose devices cannot be pointed at, and
+--                         `dev find` says "no such device" about every one of
+--                         them, which is the truth from where the engine sits.
 --
 -- An entry marked dead is a device the caller knows about and cannot reach --
 -- it was taken away, or its chunk is not loaded. It is mounted, so that `cat`
@@ -258,6 +266,39 @@ function CeroSecOS.devWrite(state, session, node, value, env)
 	-- switch that was thrown and did not move says so on the next `cat`.
 	if type(after) == "string" then node.state = after end
 	return true, nil
+end
+
+-- How long a device shows itself for. Long enough to walk to a window and look
+-- up, short enough that a survivor who typed it twice is not left with a light
+-- flashing at him.
+CeroSecOS.DEV_FIND_SECONDS = 6
+
+-- Point at one. The word it did it with, or nil plus the line to print.
+--
+-- What it asks for is what it DOES: a light is switched, twelve times, so it
+-- takes the same "w" a write takes; a door or a window is only drawn around, so
+-- reading it is enough. A rule that asked for one right and did the other would
+-- be a light somebody may not switch, switching.
+function CeroSecOS.devFind(state, session, node, env)
+	if node.dead then return refuse(node, "no such device") end
+	local need = "r"
+	if node.kind == "light" then need = "w" end
+	if not CeroSecOS.can(state, session, node, need) then
+		return refuse(node, "permission denied")
+	end
+
+	local devices = CeroSecOS.devicesOf(env)
+	if devices == nil or type(devices.find) ~= "function" then
+		return refuse(node, "no such device")
+	end
+
+	local ok, reason, word = devices.find(node.id, CeroSecOS.DEV_FIND_SECONDS)
+	if not ok then
+		if type(reason) ~= "string" or reason == "" then reason = "no such device" end
+		return refuse(node, reason)
+	end
+	if type(word) ~= "string" or word == "" then word = "found" end
+	return word, nil
 end
 
 --

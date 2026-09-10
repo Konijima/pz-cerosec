@@ -246,7 +246,8 @@ CeroSecOS.COMMAND_INFO = {
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
-	dev      = { desc = "list and work the devices", usage = "dev [kind|id [value|toggle]]" },
+	dev      = { desc = "list and work the devices",
+		usage = "dev [kind|id [value|toggle]|find <id>]" },
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
@@ -569,6 +570,8 @@ end
 --   light0: on
 --   admin@ksp-04-11:~$ dev light0 off
 --   light0: off
+--   admin@ksp-04-11:~$ dev find lock1
+--   lock1: highlighted
 --
 -- The columns are `ls -l /dev`'s without the mode, the owner and the group --
 -- they read the same on every device -- plus the one column `ls -l` has no room
@@ -675,6 +678,18 @@ commands.dev = function(state, session, args, env)
 	if #args == 1 then return devTable(state, session, nil) end
 
 	local word = args[2]
+
+	-- `dev find <id>`: point at one in the world. "find" is a word and not an
+	-- id -- no id has ever been anything but a kind with a number after it --
+	-- so there is nothing here for it to collide with.
+	if word == "find" then
+		if #args ~= 3 then return usage("dev") end
+		local target = devNodeOf(state, session, args[3])
+		if target == nil then return fail("dev", args[3], "no such device") end
+		local how, refusal = CeroSecOS.devFind(state, session, target, env)
+		if how == nil then return false, { refusal } end
+		return true, { target.id .. ": " .. how }
+	end
 	if #args == 2 and not looksLikeId(word) then
 		-- A kind is one of the three the core has words for, and no other.
 		if CeroSecOS.DEV_VALUES[word] == nil then return fail("dev", word, "unknown kind") end
