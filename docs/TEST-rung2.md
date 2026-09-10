@@ -475,6 +475,36 @@ starred to the length of what was typed.
      still there, the first letter typed after the click appears, and the cursor
      is where you left it.
 
+## M — Standing at the machine before sitting down at it
+
+Where the character **stands** is what decides how he sits: vanilla's rest action
+works the side of the chair out of his float position and nothing else
+(`ISRestAction:calculateSitOnFurnitureDirection`). So the approach is never
+skipped and never approximate — a walk to a computer aims at a **point** (the
+seat, or the middle of the front square) and not at a square, and a character
+already standing in that square is walked to that point all the same.
+
+111. **Already on the square, facing away, with a chair.** Walk onto the front
+     square by hand, turn so the character has his back to the screen (walk into
+     the wall behind it), and stand at the **edge** of the tile. Right-click the
+     computer, "Use computer": he **re-centres onto the seat**, turns, and sits
+     **facing the screen** — the same sit as if he had walked in from across the
+     room (step 49). Not sideways, not with his back to it.
+112. **Already on the square, no chair.** Same, with the front square empty: he
+     walks to the **middle** of the square, turns to the screen and plays the
+     loot animation there. The terminal opens.
+113. **Already on the square, toggling.** Same again with "Turn computer off/on":
+     he re-centres and throws the switch. A toggle never sits anybody down and
+     never aims at the seat.
+114. **Already seated.** From the chair, "Use computer" again: he must **not**
+     stand up, shuffle or re-centre (step 52 still holds).
+115. **Stand up and come back.** With the window open, press the sit/stand key,
+     step to the edge of the square, then click the terminal to get the keyboard
+     back. He goes back to the seat point, sits, and ends up **facing the
+     screen** — not sideways.
+116. **From across the room.** Steps 49 to 51 must still behave exactly as they
+     did: the walk in, the sit, the standing case.
+
 ## What is not in this rung
 
 - Devices, the network, the clock.

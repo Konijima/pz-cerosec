@@ -11,9 +11,12 @@ local function hasPower(square)
 	return square:haveElectricity() or (square:hasGridPower() and square:getRoom() ~= nil)
 end
 
--- Walk to the square the screen looks at, then toggle from there. The toggle
--- action checks in its isValid that the player really made it, so a walk that
--- fails or gets interrupted changes nothing.
+-- Walk to the middle of the square the screen looks at, then toggle from there.
+-- The middle and not the square: a player already standing in it is walked to
+-- the point inside it all the same, so the switch is thrown from where the
+-- character can be seen to be standing at the machine (CeroSecReach.walkToFront).
+-- The toggle action checks in its isValid that the player really made it, so a
+-- walk that fails or gets interrupted changes nothing.
 function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj, height)
 	CeroSecReach.walkToFront(playerObj, computer, function()
 		ISTimedActionQueue.add(ISCeroSecToggleAction:new(playerObj, computer, height))
@@ -32,7 +35,11 @@ end
 --
 -- The walk is not vanilla's pathToSitOnFurniture, because that one picks its
 -- own seat and its own square; ours is the front square or nothing, and the use
--- action checks in its isValid that the player made it.
+-- action checks in its isValid that the player made it. What it does borrow
+-- from vanilla is the seat point itself: the walk aims at the place the game
+-- would stand him in to take that chair from the front, because the rest action
+-- picks the side of the chair from where he is standing and nothing else
+-- (CeroSecReach, "Getting there"). That is the true parameter below.
 function CeroSecContextMenu.onUse(worldobjects, computer, playerObj, height)
 	CeroSecReach.walkToFront(playerObj, computer, function()
 		local chair = CeroSecReach.chairInFront(computer)
@@ -40,7 +47,7 @@ function CeroSecContextMenu.onUse(worldobjects, computer, playerObj, height)
 			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
 		end
 		ISTimedActionQueue.add(ISCeroSecUseAction:new(playerObj, computer, height))
-	end)
+	end, true)
 end
 
 -- The picker hands us what sits under the cursor: on a counter or a desk that

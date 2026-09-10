@@ -168,6 +168,21 @@ end
 eq("chairFacingFor of a diagonal is nil", CeroSec.chairFacingFor("NE"), nil)
 eq("chairFacingFor of nothing is nil", CeroSec.chairFacingFor(nil), nil)
 
+-- The middle of a square, which is what a walk to a computer aims at: a square
+-- is named by its north-west corner, and where inside it a character stops is
+-- what decides which side of a chair the game sits him on.
+do
+	local cx, cy = CeroSec.squareCentre(10, 4)
+	eq("centre x", cx, 10.5)
+	eq("centre y", cy, 4.5)
+	local nx, ny = CeroSec.squareCentre(-3, 0)
+	eq("centre x of a negative square", nx, -2.5)
+	eq("centre y of a negative square", ny, 0.5)
+	-- It is inside the square it is the middle of, and of no other.
+	eq("the centre belongs to its own square", math.floor(cx), 10)
+	eq("on both axes", math.floor(cy), 4)
+end
+
 -- State schema v1.
 local state = CeroSec.newState("E")
 eq("state version", state.v, 1)

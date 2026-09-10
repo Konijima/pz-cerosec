@@ -136,6 +136,15 @@ function CeroSec.chairFacingFor(computerFacing)
 	return CeroSec.facingForOffset(-dx, -dy)
 end
 
+-- The middle of a square, in the float coordinates a character stands on. A
+-- square's integer coordinates are its north-west corner: the character walking
+-- onto it can be anywhere inside the unit that follows, and where inside it he
+-- stops decides which seat the game picks for him (see CeroSecReach). So a walk
+-- that means "stand at this computer" aims here and not at the square.
+function CeroSec.squareCentre(x, y)
+	return x + 0.5, y + 0.5
+end
+
 --
 -- Screen geometry
 --

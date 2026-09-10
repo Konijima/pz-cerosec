@@ -159,22 +159,100 @@ function CeroSecReach.standingSquare(playerObj, computer)
 	return playerObj and playerObj:getCurrentSquare()
 end
 
--- Walk to the front square -- that one, not any free neighbour -- and then call
--- onArrived. The callback runs right away because it only queues the follow-up
--- action behind the walk; the action itself checks in its isValid that the
--- player really ended up on the front square, so a path that fails or a walk the
--- player interrupts leaves the computer alone.
-function CeroSecReach.walkToFront(playerObj, computer, onArrived)
+--
+-- Getting there
+--
+-- Where a character STANDS decides how he sits. ISRestAction works the seat out
+-- of his position and nothing else: waitToStart calls
+-- calculateSitOnFurnitureDirection, which asks SeatingManager for the world
+-- position of every (N,S,W,E) x (Front,Left,Right) place around the chair and
+-- takes the NEAREST to the character's float position (ISRestAction.lua:215-233).
+-- A player standing at the edge of the square, or on the wrong side of the
+-- chair, is nearest to a side position and sits down sideways -- facing away
+-- from the screen he asked to use.
+--
+-- So the approach is never skipped and never approximate. The target is a
+-- point, not a square: the very place vanilla would have him stand to take that
+-- chair from the front, or the middle of the front square when there is no
+-- chair. A character already standing in the square is walked to the point
+-- inside it exactly like one coming from across the room.
+--
+
+-- The point vanilla puts a character at to sit on this chair facing the way the
+-- chair faces -- which, for the chair chairInFront hands back, is the screen.
+-- The same call the rest action scores its candidates with
+-- (SeatingManager:getAdjacentPosition, ISRestAction.lua:221), asked for one
+-- candidate instead of twelve: the chair's own direction, from the front. nil
+-- when the game says that place is not usable.
+function CeroSecReach.seatSpot(playerObj, chair)
+	if not playerObj or not chair then return nil end
+	local seating = SeatingManager.getInstance()
+	local facing = seating:getFacingDirection(chair)
+	if not facing then return nil end
+	local position = Vector3f.new()
+	local valid = seating:getAdjacentPosition(playerObj, chair, facing, "Front",
+		"sitonfurniture", "SitOnFurnitureFront", position)
+	if not valid then return nil end
+	return position:x(), position:y(), position:z()
+end
+
+-- Where the player is to end up: the chair's seat point when he is on his way
+-- to sit in it, else the middle of the front square. Never the corner of it he
+-- happened to be standing in.
+--
+-- wantSeat is what tells the two apart. Using the computer takes the chair;
+-- switching it on and off does not, and would be refused by its own action for
+-- standing anywhere but the front square -- so the seat point is only ever
+-- aimed at when it is inside that square, and the middle of it answers for
+-- everything else. That guard is deliberate: the seat point is the game's, and
+-- where the game puts it for a chair against a desk is not something this can
+-- prove without the game.
+function CeroSecReach.approachPoint(playerObj, computer, wantSeat)
+	local front = CeroSecReach.frontSquare(computer)
+	if not front then return nil end
+
+	if wantSeat then
+		local chair = CeroSecReach.chairInFront(computer)
+		if chair ~= nil and not CeroSecReach.isSeatedOn(playerObj, chair) then
+			local x, y, z = CeroSecReach.seatSpot(playerObj, chair)
+			if x ~= nil and math.floor(x) == front:getX() and math.floor(y) == front:getY() then
+				return x, y, z
+			end
+		end
+	end
+
+	local x, y = CeroSec.squareCentre(front:getX(), front:getY())
+	return x, y, front:getZ()
+end
+
+-- Walk to that point -- the front square, not any free neighbour -- and then
+-- call onArrived. The callback runs right away because it only queues the
+-- follow-up action behind the walk; the action itself checks in its isValid
+-- that the player really ended up on the front square, so a path that fails or
+-- a walk the player interrupts leaves the computer alone.
+--
+-- The walk is ISPathFindAction:pathToLocationF and not ISWalkToTimedAction: the
+-- second one paths to a SQUARE (pathToLocation with three integers,
+-- WalkToTimedAction.lua:39) and a character already standing in that square has
+-- arrived by definition -- which is how "already next to the computer" ended in
+-- an off-centre character sitting down sideways.
+function CeroSecReach.walkToFront(playerObj, computer, onArrived, wantSeat)
 	local front = CeroSecReach.frontSquare(computer)
 	if not front then return false end
 	if not CeroSecReach.canStandInFront(playerObj, computer) then return false end
 
-	-- Same three calls luautils.walkAdj makes: drop what the player was doing,
-	-- then walk, unless he is already standing where he needs to be
-	-- (luautils.lua:120-123 and 145-147).
+	-- Dropping what the player was doing first, like luautils.walkAdj
+	-- (luautils.lua:120-123).
 	ISTimedActionQueue.clear(playerObj)
-	if playerObj:getCurrentSquare() ~= front then
-		ISTimedActionQueue.add(ISWalkToTimedAction:new(playerObj, front))
+
+	-- A player already sitting in the chair is where he belongs; walking him to
+	-- the seat point would stand him up to sit down again.
+	local chair = CeroSecReach.chairInFront(computer)
+	if not (chair ~= nil and CeroSecReach.isSeatedOn(playerObj, chair)) then
+		local x, y, z = CeroSecReach.approachPoint(playerObj, computer, wantSeat)
+		if x ~= nil then
+			ISTimedActionQueue.add(ISPathFindAction:pathToLocationF(playerObj, x, y, z))
+		end
 	end
 	onArrived()
 	return true

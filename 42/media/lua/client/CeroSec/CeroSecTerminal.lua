@@ -598,6 +598,14 @@ function CeroSecTerminal:updateSettle()
 	if chair ~= nil then
 		self.wantSit = nil
 		if chair:getSquare() and not CeroSecReach.isSeatedOn(playerObj, chair) then
+			-- To the seat point first, exactly like the way in: the rest action
+			-- reads the character's position to decide which side of the chair
+			-- he is taking, and a character who stood up and stepped half a tile
+			-- would sit back down facing the wrong way (CeroSecReach.seatSpot).
+			local x, y, z = CeroSecReach.approachPoint(playerObj, self.computer)
+			if x ~= nil then
+				ISTimedActionQueue.add(ISPathFindAction:pathToLocationF(playerObj, x, y, z))
+			end
 			-- The same call the context menu makes on the way in, which is the
 			-- one the vanilla menu makes (ISWorldObjectContextMenu.lua:948).
 			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
