@@ -311,36 +311,44 @@ the shell simply is not there until you leave it with Escape.]],
 
 		{ title = "5. Permissions and ownership", pages = {
 
-[[Every file and directory carries an owner and a mode, three digits
-written and shown the way a bigger Unix writes them: one for the owner,
-one for a group this machine does not have yet, one for everybody else.
-Each digit is read, write and execute added up the usual way: 4 to read,
-2 to write, 1 to run it as a command or step into it as a directory.
+[[Every file and directory carries an owner, a group and a mode. The mode
+is three digits, written and shown the way a bigger Unix writes them: one
+for the owner, one for the group, one for everybody else. Each digit is
+read, write and execute added up the usual way: 4 to read, 2 to write, 1
+to run it as a command or step into it as a directory.
 
-  admin@ksp-04-11:~$ chmod 644 notes.txt
+  admin@ksp-04-11:~$ chmod 640 notes.txt
+  admin@ksp-04-11:~$ chgrp users notes.txt
   admin@ksp-04-11:~$ ls -l notes.txt
-  -rw-r--r--  admin      42  ...  notes.txt
+  -rw-r-----  admin  users     412  Jul  8 14:32  notes.txt
 
-chown hands a file to a different owner by name, root only in practice
-since it is root's file most of the time that needs it.]],
+chown hands a file to a different owner by name; chgrp hands it to a
+different group. Both are the owner's to do and root's to do, and both
+answer "permission denied" to anybody else, on the file itself, before
+any digit is looked at.]],
 
-[[Only the first and the last digit are ever read: the machine checks
-whether you own the file, and if you do not, treats you as "everybody
-else" straight away. The middle digit is kept for a later release and
-decides nothing today -- 740 and 700 behave exactly alike, own it and
-you have rwx, anybody else has nothing, whatever the middle digit says.
+[[All three digits are read, and exactly one of them decides. The machine
+asks in order: do you own it? Then the first digit is yours and the other
+two are none of your business. Are you in its group? Then the middle
+digit is yours. Neither? Then the last one is, and that is the whole
+answer.
 
-chmod and chown themselves answer "permission denied" the moment you are
-not the owner and not root, on the file itself before either digit is
-even looked at.]],
+So 640 on a file of admin's in group users means admin reads and writes
+it, anybody in users reads it, and everybody else gets nothing at all --
+not even the knowledge of what is inside it. Root walks through all three
+and is never asked any of the questions.
 
-[[Directories obey the same two digits that matter, but execute on a
-directory means something different than on a file: it is permission to
-step inside it at all, list it or not. An ordinary account's home ships
-at mode 750; root's own, /root, ships tighter, at 700 -- its owner can
-do anything in it, anybody else may not even see what is in it, which is
-why cd /root as admin answers "cd: /root: permission denied" long before
-anything about what is inside it comes up.]],
+Chapter 6 says what a group is and how you join one.]],
+
+[[Directories obey the same three digits, but execute on a directory
+means something different than on a file: it is permission to step inside
+it at all, list it or not. An ordinary account's home ships at mode 750;
+root's own, /root, ships tighter, at 700 -- its owner can do anything in
+it, anybody else may not even see what is in it, which is why cd /root as
+admin answers "cd: /root: permission denied" long before anything about
+what is inside it comes up. A home at 750 is a home its owner's group can
+walk into and read: chgrp on the home itself is how two survivors come to
+share one.]],
 
 [[Where /bin fits in. Every shell command is a real file inside /bin,
 owned by root, mode 755, and its one-line description is the file's
@@ -359,9 +367,10 @@ broke can still tell you what happened and let you leave it standing.
 The system files carry their own fixed modes, set by the BIOS and not
 meant to be argued with: /etc/passwd is 600 (root reads and writes it,
 nobody else so much as looks), /etc/sudoers is 440 (root and whoever it
-names may read it, nobody writes it by hand), and /etc/hostname and
-/etc/motd are 644, world-readable and root-writable, the way a name on
-the door usually is.]],
+names may read it, nobody writes it by hand), and /etc/group,
+/etc/hostname and /etc/motd are 644, world-readable and root-writable,
+the way a name on the door usually is. There is no secret in the group
+file: it says who shares with whom, and anybody may read it.]],
 
 		} },
 
@@ -388,10 +397,13 @@ anywhere on the machine -- at the glass or four deep in an su chain --
 can be removed either, until he logs out.
 
 id prints what the machine knows about any name: its admin flag and
-whether sudo will answer to it.
+every group it is in. groups prints the same list on its own, and both
+answer about anybody, to anybody.
 
   root@ksp-04-11:~# id bob
-  uid=bob flag=user groups=-]],
+  uid=bob flag=user groups=bob
+  root@ksp-04-11:~# groups admin
+  admin sudo users]],
 
 [[su becomes somebody else at the very same glass without logging out --
 root by default, or a name of your choosing, asked for that account's own
@@ -434,6 +446,27 @@ Give your own salt (letters and digits, sixteen characters at most) and
 you get the same line every time; leave it off and a fresh one is picked
 each time, which is the salt doing exactly its job -- two accounts with
 the same password never look alike on the disk.]],
+
+[[A group is how two survivors share a file. Every account is already in
+one of its own name, needing no line; the rest live in /etc/group, one to
+a line, the name and its members:
+
+  root@ksp-04-11:~# cat /etc/group
+  root:
+  sudo:admin
+  users:admin,bob
+
+groupadd makes one, groupdel takes one away, gpasswd -a and -d put a name
+in or out -- all three root's alone -- and root, sudo and users are the
+three the machine keeps. Delete any other and files naming it keep the
+name: ls -l shows it dangling, nobody is in it, and chgrp will not hand
+it out again.
+
+/etc/sudoers stays the authority on who may become root; the sudo group
+mirrors it, so a name in that file is in the group with or without a line
+here. Joining by hand shares files, never root. Every device under /dev
+belongs to root and to sudo -- which is why an account that may sudo
+throws a light switch with no sudo typed.]],
 
 		} },
 
@@ -567,8 +600,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1043  31725    4%
-  nodes         256     47    209   19%]],
+  hda         32768   1265  31503    4%
+  nodes         256     53    203   21%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -597,7 +630,7 @@ because all three read the very same file.]],
 touched today?
 
   admin@ksp-04-11:~$ ls -l notes.txt
-  -rw-r--r--  admin      12  Sep  8 14:05  notes.txt
+  -rw-r--r--  admin  admin     12  Sep  8 14:05  notes.txt
   admin@ksp-04-11:~$ date +%Y-%m-%d
   2026-09-08
 
@@ -617,17 +650,22 @@ built fresh at the start of every command and torn down again before
 the prompt comes back, so no save ever carries a single byte of it.
 
   admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  lock0   exterior         W  locked
-  crw-rw----  root  light0  office              on
+  crw-rw----  root  sudo  lock0   exterior       W  locked
+  crw-rw----  root  sudo  light0  office            on
 
-The mode wears a c where an ordinary file wears a dash, because a
-device is a character device and nothing else. Then the owner,
-always root; the id, the name you type after /dev/; a description --
+The mode wears a c where an ordinary file wears a dash: a device is
+a character device. Then the owner, always root, and the group,
+always sudo; the id, the name you type after /dev/; a description --
 the two rooms a door or window stands between, exterior with the
 outdoors on one side, or built for what a player raised; which way
 it faces, N or W, blank for a light; and last, what it is doing.]],
 
-[[cat reads a device the same way it reads a file, printing back
+[[660 and group sudo is not decoration: an account /etc/sudoers names
+reads and works every device with no sudo typed at all, and anybody
+else gets "permission denied" from the device itself -- chapter 6
+says how that group is kept.
+
+cat reads a device the same way it reads a file, printing back
 exactly its state and nothing more:
 
   admin@ksp-04-11:~$ cat /dev/light0
@@ -681,8 +719,8 @@ directory instead: "/dev: read-only".]],
 light on your way out.
 
   admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  lock0   exterior         W  unlocked
-  crw-rw----  root  light0  office              on
+  crw-rw----  root  sudo  lock0   exterior       W  unlocked
+  crw-rw----  root  sudo  light0  office            on
   admin@ksp-04-11:~$ echo lock > /dev/lock0
   admin@ksp-04-11:~$ echo off > /dev/light0
   admin@ksp-04-11:~$ cat /dev/lock0
@@ -802,6 +840,7 @@ itself.
   adduser [-a] <name>
   cat <file>...
   cd [dir]
+  chgrp <group> <path>
   chmod <mode> <path>
   chown <user> <path>
   clear
@@ -812,7 +851,11 @@ itself.
   echo [text...]
   edit <file>
   exit
+  gpasswd -a|-d <user> <group>
   grep [-i] [-n] <text> <file>...
+  groupadd <name>
+  groupdel <name>
+  groups [name]
   hash <text> [salt]
 ]],
 
@@ -845,8 +888,9 @@ the disk holds 32K across at most 256 files and directories, 64 entries
 in any one directory, sixteen levels below the root. One file holds at
 most 4096 bytes and one line inside it at most 60 characters -- the width
 of the screen itself. A path component is at most 32 characters; an
-account name at most 16, starting with a lower-case letter; a machine's
-own hostname at most 16 as well. su and sudo's borrowed sessions run four
+account name at most 16, starting with a lower-case letter; a group name
+by the very same rule, since every account already owns the group of its
+own name; a machine's own hostname at most 16 as well. su and sudo's borrowed sessions run four
 deep before either refuses a fifth. motd is read to ten lines and no
 further. A salt is at most 16 characters of digits and lower-case
 letters, six by default.]],
@@ -863,7 +907,8 @@ dropped the same way.]],
 [[Device words, for /dev (chapter 10): an id like light0 or lock1 names
 the file itself; light answers on and off; lock and win answer lock
 and unlock. ls -l /dev reads exactly like ls -l anywhere else, mode,
-owner, id, description, facing and state in place of size and date.
+owner, group, id, description, facing and state in place of size and
+date.
 chmod and cat work on a device the way they work on a file; rm, mv,
 cp and edit do not.]],
 
@@ -923,7 +968,11 @@ Accounts and passwords speak for themselves, one line each:
   passwd: passwords do not match
       the new one was typed two different ways
   passwd: password too long
-  passwd: no such user]],
+  passwd: no such user
+
+A command run with the wrong number of arguments answers with its own
+usage line instead of guessing what you meant -- the very line chapter
+13 lists for it.]],
 
 [[  su: authentication failure
   su: too many levels
@@ -938,9 +987,22 @@ Accounts and passwords speak for themselves, one line each:
   deluser: <name>: user is logged in
   deluser: root: cannot remove
   id: <name>: no such user
+  groups: <name>: no such user
   chown: <name>: no such user
 
-A device names itself, never the command that reached it:
+Groups have five of their own, and the last three are gpasswd's:
+
+  chgrp: <name>: no such group
+      no line in /etc/group, and no account of that name
+  groupadd: <name>: already exists
+  groupdel: <name>: cannot remove
+      root, sudo and users are the machine's own
+  gpasswd: <name>: no such group
+  gpasswd: <name>: already a member
+  gpasswd: <name>: not a member
+]],
+
+[[A device names itself, never the command that reached it:
 
   light0: no power
   lock0: no such device
@@ -950,9 +1012,9 @@ A device names itself, never the command that reached it:
   light0: invalid value
       no current or bulb; taken away or unloaded; broken or
       boarded; neither padlock nor key; a word that kind
-      does not answer to]],
+      does not answer to
 
-[[  hostname: <name>: invalid name
+  hostname: <name>: invalid name
   hash: <salt>: invalid salt
       a salt is digits and lower-case letters only
   <cmd>: <flag>: unknown option
@@ -962,11 +1024,7 @@ A device names itself, never the command that reached it:
   man: <name>: no manual entry
       no file of that name in /bin, or not a plain file
   date: no clock
-      no clock at all was handed to this machine, chapter 9
-
-A command run with the wrong number of arguments answers with its own
-usage line instead of guessing what you meant -- the very line chapter
-13 lists for it.]],
+      no clock at all was handed to this machine, chapter 9]],
 
 [[Two you will only ever see with an empty /bin behind them:
 

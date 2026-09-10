@@ -340,19 +340,52 @@ do
 		string.find(wholeBook, "prints its year", 1, true) == nil)
 end
 
--- 3. Only the owner digit and the other-users digit of a mode are ever
--- read; the middle (group) digit decides nothing today.
+-- 3. All three digits of a mode are read, and exactly one of them decides:
+-- the owner's if the account owns the node, the group's if it is in the
+-- node's group, everybody else's otherwise. The book used to say the middle
+-- digit decided nothing; it decides now, and must not still say otherwise.
 do
-	local a = CeroSecOS.newFile("admin", 740)
-	local b = CeroSecOS.newFile("admin", 700)
+	local state = CeroSecOS.newState("ksp-04-11")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:bob")
+	local file = CeroSecOS.newFile("admin", 640)
+	file.group = "crew"
 	local ownerSession = { user = "admin" }
-	local otherSession = { user = "bob" }
-	check("mode 740 and 700 give the owner the same access",
-		CeroSecOS.can(nil, ownerSession, a, "x") == CeroSecOS.can(nil, ownerSession, b, "x"))
-	check("mode 740 and 700 give another user the same access",
-		CeroSecOS.can(nil, otherSession, a, "r") == CeroSecOS.can(nil, otherSession, b, "r"))
-	check("book explains the middle digit is not read",
-		string.find(wholeBook, "middle digit", 1, true) ~= nil)
+	local memberSession = { user = "bob" }
+	local otherSession = { user = "kate" }
+
+	check("the owner is judged by the first digit",
+		CeroSecOS.can(state, ownerSession, file, "w"))
+	check("a member of the group by the middle one",
+		CeroSecOS.can(state, memberSession, file, "r")
+			and not CeroSecOS.can(state, memberSession, file, "w"))
+	check("and everybody else by the last",
+		not CeroSecOS.can(state, otherSession, file, "r"))
+	-- Move only the middle digit: only the member's access moves with it.
+	file.mode = 600
+	check("the middle digit is what the member gets",
+		not CeroSecOS.can(state, memberSession, file, "r"))
+	check("and the owner is unmoved", CeroSecOS.can(state, ownerSession, file, "w"))
+	-- A primary group needs no line in the file at all.
+	file.group = "bob"
+	file.mode = 040
+	check("a primary group is a membership",
+		CeroSecOS.can(state, memberSession, file, "r"))
+	-- A node with no group of its own reads as its owner's name.
+	local old = CeroSecOS.newFile("admin", 640)
+	old.group = nil
+	check("a node with no group reads as its owner", CeroSecOS.groupOf(old) == "admin")
+
+	check("book explains the middle digit is the group's",
+		string.find(wholeBook, "one for the group, one for everybody else", 1, true) ~= nil)
+	check("book says all three digits are read",
+		string.find(wholeBook, "All three digits are read", 1, true) ~= nil)
+	check("book no longer claims the middle digit decides nothing",
+		string.find(wholeBook, "decides nothing", 1, true) == nil and
+		string.find(wholeBook, "kept for a later release", 1, true) == nil)
+	check("book shows the group column of ls -l",
+		string.find(wholeBook, "-rw-r-----  admin  users     412", 1, true) ~= nil)
+	check("book quotes /etc/group's format",
+		string.find(wholeBook, "sudo:admin", 1, true) ~= nil)
 end
 
 -- 4. The BIOS repair rewrites every standard command in /bin unconditionally
