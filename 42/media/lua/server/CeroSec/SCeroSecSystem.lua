@@ -124,16 +124,22 @@ end
 --
 -- client -> server, all of them carrying the computer's x, y, z and the
 -- terminal's token:
---   toggle  {}                      -- rung 1
---   open    {}                      -- give me the screen
---   login   { text }                -- a user name, or a password: the console
---                                      knows which of the two it is waiting for
---   exec    { line }
---   close   {}
+--   toggle   {}                     -- rung 1
+--   open     {}                     -- give me the screen
+--   input    { text }               -- the answer to whatever is being asked:
+--                                      a user name, a password, or the line a
+--                                      command asked for. The console knows
+--                                      which, and the client never has to.
+--   exec     { line }
+--   editbuf  { text }               -- the buffer as it stands, no file touched
+--   editsave { text }               -- the buffer, and write it
+--   editexit { }                    -- leave the editor, buffer dropped
+--   close    {}
 -- server -> client, every answer carrying the token of the terminal it belongs
 -- to, because a connection is not a window:
---   opened  { x, y, z, token, hostname, booted, lines, prompt, mode, animate }
---   screen  { x, y, z, token, hostname, booted, lines, prompt, mode }
+--   opened  { x, y, z, token, hostname, booted, lines, prompt, mode, mask,
+--             edit, animate }
+--   screen  { x, y, z, token, hostname, booted, lines, prompt, mode, mask, edit }
 --   closed  { x, y, z, token, reason }
 --
 -- There is one answer for everything that happens on a screen, and it is the
@@ -141,6 +147,14 @@ end
 -- reconstruct and nothing to guess: it draws the lines it was handed, under the
 -- prompt it was handed. 'opened' is that same payload plus the one thing only
 -- the opener is told: whether the BIOS is still to be played.
+--
+-- mode is "prompt", "shell" or "edit". Which of the machine's questions is
+-- being asked is the machine's business; all that travels is the line to put on
+-- the glass and whether the answer shows as stars.
+--
+-- edit is the editor's own screen, and the only part of an answer that is not
+-- the same for everybody: it carries whether *this* window is the one holding
+-- the keyboard on that buffer.
 --
 
 local Commands = {}
@@ -206,9 +220,72 @@ function SCeroSecSystem:isAdmin(state, name)
 	return user ~= nil and user.admin and true or false
 end
 
+--
+-- The editor
+--
+-- The buffer is the machine's, exactly like the screen: it is opened by a
+-- command, it lives in the console, it is saved with the object, and walking
+-- away and coming back finds it. What is *not* the machine's is the keyboard on
+-- it: one window types, the others watch, because two people typing into one
+-- buffer over a network is a merge and this is a 1993 computer.
+--
+
+-- Who a window belongs to. The token names a window and dies with it, so it
+-- cannot say "the same person came back"; the online id can, and is what
+-- vanilla keys per-player server state on (Bobber.lua:26).
+local function idOf(playerObj)
+	return tostring(playerObj:getOnlineID())
+end
+
+function SCeroSecSystem:hasWatcherWithId(luaObject, id)
+	if not luaObject.watchers then return false end
+	for _, watcher in pairs(luaObject.watchers) do
+		if watcher.player and idOf(watcher.player) == id then return true end
+	end
+	return false
+end
+
+-- Take the keyboard on the open buffer, if it is going. It is going when
+-- nobody holds it, or when the one who did is no longer standing here -- he
+-- walked off, he died, he logged out of the game -- because an editor nobody
+-- can type in is a machine nobody can use.
+function SCeroSecSystem:claimEditor(luaObject, console, playerObj)
+	local edit = console.edit
+	if edit == nil then return false end
+	local id = idOf(playerObj)
+	if edit.by == id then return true end
+	if edit.by ~= nil and self:hasWatcherWithId(luaObject, edit.by) then return false end
+	edit.by = id
+	return true
+end
+
+function SCeroSecSystem:isEditor(console, playerObj)
+	return console.edit ~= nil and console.edit.by == idOf(playerObj)
+end
+
+-- The editor's half of a screen. The buffer as the machine holds it, the file
+-- as it stands on the disk (so a window can say whether the two differ without
+-- asking), and whether this window is the one that may type.
+function SCeroSecSystem:editArgs(state, console, playerObj)
+	local edit = console.edit
+	if edit == nil then return nil end
+	local disk = ""
+	local session = { user = console.user, cwd = console.cwd or "/" }
+	local node = CeroSecOS.getNode(state, session, edit.path)
+	if node ~= nil and node.type == "file" then disk = node.data or "" end
+	return {
+		path = edit.path,
+		text = edit.text or "",
+		disk = disk,
+		readonly = edit.readonly and true or false,
+		message = edit.message,
+		mine = self:isEditor(console, playerObj) and true or false,
+	}
+end
+
 -- One screen, as a window has to be told it. The prompt is derived from the
 -- console here and nowhere else, so no two windows can disagree about it.
-function SCeroSecSystem:screenArgs(luaObject, state, console, token)
+function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 	return {
 		x = luaObject.x, y = luaObject.y, z = luaObject.z,
 		token = token,
@@ -218,6 +295,8 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token)
 		prompt = CeroSec.consolePrompt(console, state.hostname,
 			self:isAdmin(state, console.user)),
 		mode = CeroSec.consoleMode(console),
+		mask = CeroSec.consoleMask(console),
+		edit = self:editArgs(state, console, playerObj),
 	}
 end
 
@@ -229,9 +308,40 @@ function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
 	for key, watcher in pairs(luaObject.watchers) do
 		if watcher.player and key ~= exceptKey then
 			self:reply(watcher.player, "screen",
-				self:screenArgs(luaObject, state, console, watcher.token))
+				self:screenArgs(luaObject, state, console, watcher.token, watcher.player))
 		end
 	end
+end
+
+-- What the core ordered, beyond the lines it printed. Shared by a command and
+-- by the answer to one, so a chain of prompts and a command that starts one are
+-- the same thing to the console.
+function SCeroSecSystem:applyOrder(console, control, data, playerObj)
+	if control == "prompt" and type(data) == "table" then
+		console.prompt = {
+			text = tostring(data.text or ""),
+			mask = data.mask and true or false,
+			cont = data.cont,
+		}
+	elseif control == "edit" and type(data) == "table" then
+		console.edit = {
+			path = tostring(data.path or "/"),
+			text = data.text or "",
+			readonly = data.readonly and true or false,
+			by = idOf(playerObj),
+		}
+	end
+end
+
+-- A buffer a client sent. Nothing is believed on its word: it is text, it fits
+-- the ceilings, and every line fits the screen -- the same three rules the
+-- terminal enforces under the fingers, checked again here because the terminal
+-- is the client. nil plus the line to show when it is not.
+local function bufferOf(text)
+	if type(text) ~= "string" then return nil, "Cannot edit: not text" end
+	local refusal = CeroSec.editRefusal(text)
+	if refusal ~= nil then return nil, refusal end
+	return text, nil
 end
 
 Commands.toggle = function(self, playerObj, x, y, z)
@@ -265,29 +375,37 @@ Commands.open = function(self, playerObj, x, y, z, token)
 		CeroSec.consolePush(console, CeroSecOS.MOTD)
 	end
 
-	local args = self:screenArgs(luaObject, state, console, token)
+	-- An editor left open by somebody who is no longer here changes hands to
+	-- whoever walks up next: a buffer nobody can type in is a dead machine.
+	self:claimEditor(luaObject, console, playerObj)
+
+	local args = self:screenArgs(luaObject, state, console, token, playerObj)
 	args.animate = animate
 	self:reply(playerObj, "opened", args)
 	-- Somebody else may have been looking at the blank screen when it booted.
 	if animate then self:pushScreen(luaObject, state, console, key) end
 end
 
-Commands.login = function(self, playerObj, x, y, z, token, args)
+-- The answer to whatever is being asked. login, password and the line a command
+-- asked for are one path: the console says which of them this is, and a window
+-- that typed at a prompt that has since changed gets the screen back and
+-- nothing else.
+Commands.input = function(self, playerObj, x, y, z, token, args)
 	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	local text = args.text
 	if type(text) ~= "string" then text = "" end
 
-	local mode = CeroSec.consoleMode(console)
-	if mode == "login" then
+	local waiting = CeroSec.consoleWaiting(console)
+	if waiting == "login" then
 		-- The name is echoed and remembered; nothing is judged until the
 		-- password is in, so an unknown name looks exactly like a known one.
 		if text ~= "" then
 			CeroSec.consolePush(console, "login: " .. text)
 			console.pending = text
 		end
-	elseif mode == "password" then
+	elseif waiting == "password" then
 		local name = console.pending
 		console.pending = nil
 		CeroSec.consolePush(console, CeroSec.maskedLine("password: ", text))
@@ -302,9 +420,31 @@ Commands.login = function(self, playerObj, x, y, z, token, args)
 			CeroSec.consolePush(console, "login incorrect")
 			CeroSec.log("login refused: " .. tostring(reason))
 		end
+	elseif waiting == "prompt" then
+		-- The question comes off the console before the answer is judged, so a
+		-- command that ends here leaves nothing behind, and one that asks again
+		-- puts its own question back.
+		local asked = console.prompt
+		console.prompt = nil
+		if asked.mask then
+			CeroSec.consolePush(console, CeroSec.maskedLine(asked.text, text))
+		else
+			CeroSec.consolePush(console, asked.text .. text)
+		end
+		local session = { user = console.user, cwd = console.cwd or "/" }
+		local _, lines, control, data = CeroSecOS.continue(state, session, asked.cont, text)
+		console.user = session.user
+		console.cwd = session.cwd
+		luaObject:mirrorOS()
+		if control == "exit" then
+			CeroSec.consoleLogout(console)
+		elseif control == "clear" then
+			CeroSec.consoleClear(console)
+		else
+			CeroSec.consolePushAll(console, lines)
+			self:applyOrder(console, control, data, playerObj)
+		end
 	end
-	-- A window that typed at the wrong prompt gets the screen back and nothing
-	-- else: the console is what decides what it is waiting for.
 	self:pushScreen(luaObject, state, console)
 end
 
@@ -312,7 +452,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
-	if CeroSec.consoleMode(console) ~= "shell" then
+	if CeroSec.consoleWaiting(console) ~= "shell" then
 		self:pushScreen(luaObject, state, console)
 		return
 	end
@@ -325,7 +465,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	local session = { user = console.user, cwd = console.cwd or "/" }
 	local prompt = CeroSec.consolePrompt(console, state.hostname,
 		self:isAdmin(state, console.user))
-	local _, lines, control = CeroSecOS.exec(state, session, line)
+	local _, lines, control, data = CeroSecOS.exec(state, session, line)
 	console.user = session.user
 	console.cwd = session.cwd
 	luaObject:mirrorOS()
@@ -337,8 +477,75 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	else
 		CeroSec.consolePush(console, prompt .. line)
 		CeroSec.consolePushAll(console, lines)
+		self:applyOrder(console, control, data, playerObj)
 	end
 
+	self:pushScreen(luaObject, state, console)
+end
+
+-- The buffer as it stands, with the file untouched. Sent while it is being
+-- typed so that the machine, and not the window, is what holds the work.
+Commands.editbuf = function(self, playerObj, x, y, z, token, args)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+	if not self:isEditor(console, playerObj) then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	local text, refusal = bufferOf(args.text)
+	if text == nil then
+		console.edit.message = refusal
+	else
+		console.edit.text = text
+	end
+	self:pushScreen(luaObject, state, console)
+end
+
+-- The buffer, and write it. The save is CeroSecOS.writeFile and nothing else,
+-- so the editor has no permissions, no limits and no printable rule of its own:
+-- it gets the one line the filesystem answers with and puts it on the glass.
+Commands.editsave = function(self, playerObj, x, y, z, token, args)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+	if not self:isEditor(console, playerObj) then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	local text, refusal = bufferOf(args.text)
+	if text == nil then
+		console.edit.message = refusal
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+	console.edit.text = text
+
+	local session = { user = console.user, cwd = console.cwd or "/" }
+	local done, reason = CeroSecOS.writeFile(state, session, console.edit.path, text, false)
+	if done == nil then
+		console.edit.message = "Cannot save: " .. tostring(reason)
+	else
+		console.edit.message = "Saved " .. #text .. " bytes"
+		-- A new file has just come into being writable; say so.
+		console.edit.readonly = false
+		luaObject:mirrorOS()
+	end
+	self:pushScreen(luaObject, state, console)
+end
+
+-- Out of the editor and back to the shell. Whatever was not saved is gone, the
+-- way nano's ^X with an answered question leaves it. Closing the window is not
+-- this: a window that shuts leaves the machine in the editor, and the buffer
+-- with it.
+Commands.editexit = function(self, playerObj, x, y, z, token, args)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+	if not self:isEditor(console, playerObj) then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+	console.edit = nil
 	self:pushScreen(luaObject, state, console)
 end
 

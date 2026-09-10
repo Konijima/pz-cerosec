@@ -77,20 +77,73 @@ The window knows nothing about the machine and nothing about the screen: it draw
 the lines it is handed, under the prompt it is handed.
 
     client -> server (global object channel, CGlobalObjectSystem:sendCommand)
-      open   {x,y,z}                    login {x,y,z,text}
-      exec   {x,y,z,line}               close {x,y,z}
+      open     {x,y,z}                  input    {x,y,z,text}
+      exec     {x,y,z,line}             close    {x,y,z}
+      editbuf  {x,y,z,text}             editsave {x,y,z,text}
+      editexit {x,y,z}
     server -> client
-      opened {x,y,z,hostname,booted,lines,prompt,mode,animate}
-      screen {x,y,z,hostname,booted,lines,prompt,mode}
+      opened {x,y,z,hostname,booted,lines,prompt,mode,mask,edit,animate}
+      screen {x,y,z,hostname,booted,lines,prompt,mode,mask,edit}
       closed {x,y,z,reason}
 
-`login` carries one line, and the console says whether that line is a user name or a
-password -- the password is stored masked and the cleartext never reaches a line.
-`mode` is `login`, `password` or `shell`, and the prompt is derived from the console
-in one place, so no two windows can disagree about it. `animate` is set on the one
-`opened` that finds a machine freshly switched on: that window watches the BIOS type
-itself out, once per power-on, and every window opened afterwards finds those lines
-already on the screen.
+`input` carries one line: the answer to whatever the machine is asking. A user name,
+a password, or the line a command asked for -- the console knows which, and the
+window never has to. `mode` is `prompt`, `shell` or `edit`, `mask` says whether what
+is typed shows as stars, and the prompt is derived from the console in one place, so
+no two windows can disagree about it. The password is stored masked and the
+cleartext never reaches a line. `animate` is set on the one `opened` that finds a
+machine freshly switched on: that window watches the BIOS type itself out, once per
+power-on, and every window opened afterwards finds those lines already on the screen.
+
+## A command that has not finished
+
+`exec` returns `ok, lines, control, data`, and `control` grew two values that carry a
+payload. `prompt` means the command is asking something: `data` is the line to put
+under the cursor, whether the answer is masked, and an opaque token. The console
+stores the token, feeds the next line typed to `CeroSecOS.continue(state, session,
+cont, line)`, and gets back the very same shape. That is how `passwd` asks three
+questions without a coroutine, which Kahlua does not have. A token that is not one --
+a forged console, a chain abandoned and answered later -- is refused and changes
+nothing.
+
+`edit` means the terminal is to become an editor: `data` is the path, the file's text
+and whether it may be written back. The core says no more than that; the editor is
+the window's, and its save is `CeroSecOS.writeFile`, the same call `write` and `>` go
+through, so it has no permissions, no limits and no printable rule of its own.
+
+## The editor
+
+`edit <file>` turns the same 60 x 20 glass into nano's shape: an inverted bar naming
+the file, seventeen rows of the buffer, an inverted bar of keys, and a message line.
+Escape is `^X` and Tab is `^O`, because those are the only two keys the game hands a
+text box that has the keyboard (`Core.updateKeyboardAux`) -- Ctrl+letter never
+arrives, and neither do PageUp and PageDown.
+
+The buffer is the machine's, like the screen: it lives in the console, is saved with
+the object, and is pushed back to the machine on every save, on leaving, and every
+five seconds while it differs. Walking away and coming back finds it, `[modified]`
+and all. One window types in it and the others watch, because two people typing into
+one buffer over a network is a merge; the keyboard changes hands only when the one
+holding it is no longer standing at the machine.
+
+The input surface is the vanilla `ISTextEntryBox`, in multiple-line mode, parked
+**off the glass**. It has to keep being rendered -- `UITextBox2.render` is what
+repaginates it and what recomputes the display line its Up and Down keys walk -- and
+there is no way to make it draw nothing, because its caret colour is a hardcoded
+field with no setter. So it is placed outside the window's own stencil rect
+(`ISCollapsableWindow:prerender` sets it, `:render` clears it, and `UIElement.render`
+draws the children between the two) where every pixel it paints is clipped away, and
+the buffer is drawn in the green grid by the window, with its own block cursor at
+`getCursorPos()` -- an absolute index into the text, which is what `putCharacter`,
+`onKeyLeft`, `onKeyRight`, `onKeyBack` and `onKeyDelete` all treat it as.
+
+Two ceilings are the machine's and are checked under the fingers and again on the
+server: 60 characters to a line (the editor wraps nothing) and 4096 bytes to a buffer
+(`CeroSecOS.MAX_FILE_BYTES`). A third is the game's: `UITextBox2.textEntryMaxLength`
+is 2000 in the constructor, has no setter and no constructor argument, and
+`isTextLimit()` gates `putCharacter` with it, so **typing** stops at 2000 characters.
+A bigger file still opens, still shows and still saves; Enter and paste are not gated
+by it either. The message line says so when it happens.
 
 Every one of them re-checks that the computer exists, is on, and has the player
 standing next to it, and the coordinates have to be three numbers before they reach

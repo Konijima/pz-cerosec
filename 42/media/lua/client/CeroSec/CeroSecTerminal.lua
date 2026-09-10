@@ -61,6 +61,11 @@ CeroSecTerminal.REPLY_TIMEOUT_MS = 10000
 -- opening another before an answer lands.
 CeroSecTerminal.tokenCount = 0
 
+-- The value the layout cache holds while the box is parked off the glass for
+-- the editor. It is not a prompt and can never be one, so it can never collide
+-- with the prompt the cache otherwise holds.
+local EDIT_LAYOUT = "\1edit"
+
 local function newToken(playerNum)
 	CeroSecTerminal.tokenCount = CeroSecTerminal.tokenCount + 1
 	return tostring(playerNum) .. "-" .. tostring(getTimestampMs()) ..
@@ -117,8 +122,23 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.history = {}
 	o.historyIndex = 0
 	o.scroll = 0
-	o.mode = "login"
+	o.mode = "prompt"
 	o.prompt = ""
+	o.mask = false
+
+	-- The editor. edit is the machine's word about it -- the path, the buffer,
+	-- the file on the disk, and whether this window is the one holding the
+	-- keyboard on it -- and everything else here belongs to this window alone:
+	-- where the seventeen row view starts, whether the save question is up, and
+	-- the last buffer the box was known to hold something legal in.
+	o.edit = nil
+	o.editTopRow = 1
+	o.editAsk = false
+	o.editPrev = nil
+	o.editMessage = nil
+	o.editSynced = nil
+	o.editSyncAt = 0
+	o.editLeaving = false
 	o.opened = false
 	o.busy = false
 	o.busySince = 0
@@ -260,7 +280,11 @@ function CeroSecTerminal:showScreen(args, animate)
 	self.revealing = false
 	self.shown = #self.screen
 	self.lines = self.screen
+	self.mask = args.mask and true or false
 	self:setMode(args.mode)
+	-- After setMode, never before: a change of mode empties the input line, and
+	-- the buffer is loaded into that same line.
+	self:applyEdit(args.edit)
 end
 
 function CeroSecTerminal:closedByServer(reason)
@@ -284,21 +308,25 @@ function CeroSecTerminal:say(text)
 	self.scroll = 0
 end
 
--- What the machine is waiting for: "login", "password", "shell", or "boot"
--- while the BIOS is still typing itself out. The prompt is not set here -- it
--- comes down with the screen -- so the two can never drift apart.
+-- What the machine is waiting for: "prompt" (a name, a password, or a line a
+-- command asked for -- which of the three is the machine's business), "shell",
+-- "edit", or "boot" while the BIOS is still typing itself out. The prompt line
+-- and the mask flag are not decided here -- they come down with the screen --
+-- so the window and the machine can never drift apart about them.
 function CeroSecTerminal:setMode(mode)
-	mode = mode or "login"
+	mode = mode or "prompt"
 	-- Only a change empties the input line. Every screen the machine sends
 	-- lands here, including the ones another player standing at the same
 	-- computer caused, and a half-typed command must survive those.
 	local changed = self.mode ~= mode
 	self.mode = mode
-	self.entry:setMasked(mode == "password")
+	self.entry:setMasked(self.mask and true or false)
 	if changed then
 		self.entry:setText("")
 		self.historyIndex = 0
+		self.editPrev = nil
 	end
+	self:configureEntry()
 	self:layoutEntry()
 end
 
@@ -375,9 +403,77 @@ function CeroSecTerminal:inputRow()
 	return shown
 end
 
+-- Am I the one typing in the editor?
+function CeroSecTerminal:editing()
+	return self.mode == "edit" and self.edit ~= nil and self.edit.mine and true or false
+end
+
+-- One line or a whole buffer. The box is the only thing in this game that can
+-- take a keystroke, so it is used for both, and the two want it set up
+-- differently: maxLines gates Enter (UITextBox2.onKeyEnter refuses when
+-- lines.size() >= getMaxLines(), and the constructor leaves it at 1), and
+-- multipleLine is what makes Enter insert a newline instead of calling
+-- onCommandEntered.
+function CeroSecTerminal:configureEntry()
+	local editing = self:editing()
+	if self.entryEditing == editing then return end
+	self.entryEditing = editing
+	if editing then
+		self.entry:setMultipleLine(true)
+		self.entry:setMaxLines(CeroSec.EDIT_MAX_BYTES)
+		self.entry:setMaxTextLength(CeroSec.EDIT_MAX_BYTES)
+	else
+		self.entry:setMultipleLine(false)
+		self.entry:setMaxLines(1)
+	end
+	-- The layout cache cannot survive a change of shape.
+	self.laidOut, self.laidOutRow = nil, nil
+end
+
+-- Put the cursor back at an absolute offset into the buffer.
+--
+-- UITextBox2.getCursorPos answers an absolute index -- putCharacter,
+-- onKeyLeft, onKeyRight, onKeyBack and onKeyDelete all substring the text at
+-- it -- but setCursorPos, in multiple-line mode, clamps what it is given
+-- against the length of the *display line* the cursor happens to be on, which
+-- is not the same number. In single line mode it clamps against the whole
+-- text, which is. So the flag is turned off around the one call; both are plain
+-- field writes (setMultipleLine, setCursorPos).
+function CeroSecTerminal:setCursor(offset)
+	self.entry:setMultipleLine(false)
+	self.entry:setCursorPos(offset or 0)
+	self.entry:setMultipleLine(self.entryEditing and true or false)
+end
+
 -- The entry starts where the prompt ends, so the prompt is drawn by us and
 -- never typed over, and it may only hold what still fits on the line.
+--
+-- In the editor it goes off the glass instead. The box has to keep being
+-- *rendered* -- UITextBox2.render is what repaginates it and what recomputes
+-- the display line its Up and Down keys walk -- and there is no way to make it
+-- draw nothing: its caret colour is a hardcoded field with no setter. So it is
+-- put outside the window's own stencil rect, where every pixel it paints is
+-- clipped away. ISCollapsableWindow:prerender sets that rect to
+-- (0, 0, width, height) and :render clears it, and UIElement.render calls the
+-- Lua prerender, then the children, then the Lua render -- so the children are
+-- drawn with the rect in force. UIElement.render only *skips* a child outside
+-- its parent when the parent's renderClippedChildren is false, and that field
+-- is true from the constructor.
 function CeroSecTerminal:layoutEntry()
+	if self:editing() then
+		if self.laidOut == EDIT_LAYOUT then return end
+		self.laidOut, self.laidOutRow = EDIT_LAYOUT, -1
+		self.entry:setX(0)
+		self.entry:setY(WINDOW_H + CELL_H)
+		-- Three screens wide so a 60 column line is never soft-wrapped:
+		-- Paginate() splits the text on "\n" and then on the box's own width,
+		-- and it is those pieces that Up and Down walk.
+		self.entry:setWidth(SCREEN_W * 3)
+		self.entry:setHeight(CELL_H * CeroSec.EDIT_ROWS)
+		self.entry:setMaxTextLength(CeroSec.EDIT_MAX_BYTES)
+		return
+	end
+
 	local prompt = self.prompt or ""
 	local row = self:inputRow()
 	if self.laidOut == prompt and self.laidOutRow == row then return end
@@ -387,6 +483,7 @@ function CeroSecTerminal:layoutEntry()
 	self.entry:setX(self:inputX() + width)
 	self.entry:setY(self:inputY(row))
 	self.entry:setWidth(SCREEN_W - width)
+	self.entry:setHeight(CELL_H + 4)
 	-- 60 columns is the whole line, prompt included.
 	local room = CeroSec.COLS - #prompt
 	if room < 1 then room = 1 end
@@ -414,18 +511,13 @@ function CeroSecTerminal:onCommandEntered()
 	self.entry:setText("")
 	self.historyIndex = 0
 
-	if self.mode == "login" then
-		-- An empty name is not a login attempt, it is a bare Enter.
-		if text == "" then return end
+	if self.mode == "prompt" then
+		-- An empty answer at the very first prompt is a bare Enter and not a
+		-- login attempt; everywhere else it is an answer, because an empty
+		-- password is one -- the accounts ship open.
+		if text == "" and not self.mask and self.prompt == "login: " then return end
 		self:setBusy()
-		self:send("login", { text = text })
-		return
-	end
-
-	if self.mode == "password" then
-		-- An empty password is one: the accounts ship open.
-		self:setBusy()
-		self:send("login", { text = text })
+		self:send("input", { text = text })
 		return
 	end
 
@@ -436,6 +528,223 @@ function CeroSecTerminal:onCommandEntered()
 		self:setBusy()
 		self:send("exec", { line = text })
 	end
+end
+
+--
+-- The editor
+--
+-- The buffer belongs to the machine, like the screen: edit <file> puts it in
+-- the console, and the window is handed it. While this window is the one typing
+-- in it, the text box holds the truth between two syncs, and the machine's copy
+-- is only taken back when this window was not already on this file -- opening
+-- it, or coming back to it after walking away. A screen the machine sends
+-- because somebody else moved must never take the buffer out from under the
+-- fingers.
+--
+
+-- What the machine last said about the buffer.
+function CeroSecTerminal:applyEdit(edit)
+	local was = self.edit
+	self.edit = edit
+	if edit == nil then
+		self.editAsk = false
+		self.editLeaving = false
+		self.editMessage = nil
+		self.editPrev = nil
+		return
+	end
+	if not edit.mine then
+		self.editAsk = false
+		self.editLeaving = false
+		return
+	end
+	if was == nil or not was.mine or was.path ~= edit.path then
+		self:loadBuffer(edit.text or "")
+		return
+	end
+	-- The answer to the save question: y saves and *then* leaves, so leaving
+	-- waits for the machine to say the write happened. An error keeps the
+	-- buffer and puts the reason on the message line, which is what nano does.
+	if self.editLeaving then
+		local message = edit.message or ""
+		if string.sub(message, 1, 6) == "Saved " then
+			self.editLeaving = false
+			self:send("editexit", {})
+		elseif message ~= "" then
+			self.editLeaving = false
+		end
+	end
+end
+
+-- The machine's buffer becomes this window's.
+function CeroSecTerminal:loadBuffer(text)
+	self:configureEntry()
+	self.entry:setText(text)
+	-- SetText leaves the cursor at the start, which is where nano opens a file.
+	self.editPrev = { text = text, pos = 0 }
+	self.editTopRow = 1
+	self.editAsk = false
+	self.editMessage = nil
+	self.editSynced = text
+	self.editSyncAt = getTimestampMs()
+	self.editLeaving = false
+end
+
+-- The buffer this window is showing. While the save question is up the box has
+-- been emptied to catch the answer, so the last accepted text is the buffer.
+function CeroSecTerminal:bufferText()
+	if not self:editing() then
+		if self.edit then return self.edit.text or "" end
+		return ""
+	end
+	if self.editAsk then return self.editPrev and self.editPrev.text or "" end
+	return self.entry:getInternalText() or ""
+end
+
+function CeroSecTerminal:editModified()
+	if not self.edit then return false end
+	return self:bufferText() ~= (self.edit.disk or "")
+end
+
+-- Every frame, while this window is the one typing. Three jobs: catch the
+-- answer to the save question, refuse a keystroke the machine could never
+-- store, and hand the buffer to the machine now and then.
+function CeroSecTerminal:updateEditor()
+	if not self:editing() then return end
+	if self.editAsk then
+		self:pollAnswer()
+		return
+	end
+
+	local text = self.entry:getInternalText() or ""
+	local prev = self.editPrev
+	if prev == nil then
+		self.editPrev = { text = text, pos = self.entry:getCursorPos() or 0 }
+		return
+	end
+
+	if text ~= prev.text then
+		local refusal = CeroSec.editRefusal(text)
+		if refusal ~= nil then
+			-- Refused under the fingers: the character never lands, and the
+			-- cursor goes back where it was before it was typed.
+			self.entry:setText(prev.text)
+			self:setCursor(prev.pos)
+			self.editMessage = refusal
+			return
+		end
+		self.editPrev = { text = text, pos = self.entry:getCursorPos() or 0 }
+		self.editMessage = nil
+	else
+		prev.pos = self.entry:getCursorPos() or 0
+		-- The box stops taking typed characters at UITextBox2.textEntryMaxLength
+		-- (2000, no setter): nothing happens and nothing is said, so say it.
+		if #text >= CeroSec.EDIT_TYPED_MAX and self.editMessage == nil then
+			self.editMessage = "Buffer full: " .. CeroSec.EDIT_TYPED_MAX .. " typed characters"
+		end
+	end
+
+	self:syncBuffer(false)
+end
+
+-- The question under the buffer. y and n are letters, and a focused text box
+-- eats letters -- the game hands it exactly two keys, Escape and Tab
+-- (Core.updateKeyboardAux). So while the question stands the box is emptied,
+-- and whatever lands in it is the answer: one character, read and thrown away.
+function CeroSecTerminal:pollAnswer()
+	local typed = self.entry:getInternalText() or ""
+	if typed == "" then return end
+	self.entry:setText("")
+	self:editKey(string.sub(typed, 1, 1))
+end
+
+function CeroSecTerminal:beginAsk()
+	self.editAsk = true
+	self.editMessage = nil
+	self.entry:setText("")
+end
+
+function CeroSecTerminal:endAsk()
+	self.editAsk = false
+	local prev = self.editPrev
+	if prev then
+		self.entry:setText(prev.text)
+		self:setCursor(prev.pos)
+	end
+end
+
+-- One key, one decision, and the decision itself is CeroSec.editKeyAction --
+-- pure, and tested without a game.
+function CeroSecTerminal:editKey(key)
+	if not self:editing() then return end
+	local readonly = self.edit.readonly and true or false
+	local state = self.editAsk and "ask" or "edit"
+	local action = CeroSec.editKeyAction(state, key, self:editModified(), readonly)
+
+	if action == "again" then
+		if state == "ask" then self.entry:setText("") end
+		return
+	end
+	if action == "cancel" then
+		self:endAsk()
+		return
+	end
+	if action == "ask" then
+		self:beginAsk()
+		return
+	end
+	if action == "leave" then
+		self.editAsk = false
+		self.editLeaving = false
+		self:send("editexit", {})
+		return
+	end
+	if action == "save" then
+		self:sendSave()
+		return
+	end
+	if action == "saveleave" then
+		-- The buffer is still what it was before the question went up.
+		self.editAsk = false
+		self.editLeaving = true
+		self:sendSave()
+		return
+	end
+	if action == "readonly" then
+		self.editMessage = "Cannot save: permission denied"
+	end
+end
+
+function CeroSecTerminal:sendSave()
+	local text = self:bufferText()
+	self.editMessage = nil
+	self.editSynced = text
+	self.editSyncAt = getTimestampMs()
+	self:send("editsave", { text = text })
+end
+
+-- Hand the buffer to the machine, so that the work is the machine's and not
+-- this window's. Only when it has changed, and -- unless the window is on its
+-- way out -- never more often than EDIT_SYNC_MS.
+function CeroSecTerminal:syncBuffer(force)
+	if not self:editing() then return end
+	local text = self:bufferText()
+	if text == self.editSynced then return end
+	local now = getTimestampMs()
+	if not force and now - self.editSyncAt < CeroSec.EDIT_SYNC_MS then return end
+	self.editSynced = text
+	self.editSyncAt = now
+	self:send("editbuf", { text = text })
+end
+
+-- What the bottom row says. The question first, then whatever this window has
+-- to say on its own account, then the machine's word.
+function CeroSecTerminal:editMessageLine()
+	if self.editAsk then return "Save modified buffer? (y/n)" end
+	if self.editMessage then return self.editMessage end
+	if self.edit and not self.edit.mine then return "Another user is editing" end
+	if self.edit then return self.edit.message end
+	return nil
 end
 
 function CeroSecTerminal:setBusy()
@@ -466,6 +775,14 @@ end
 -- both answer false while a box is taking text (GameKeyboard.isKeyDown). So the
 -- scrollback scrolls with the wheel; see the note in docs/TEST-rung2.md.
 function CeroSecTerminal:onOtherKey(key)
+	-- In the editor those two keys are nano's ^X and ^O -- the only two the
+	-- game will let through -- and neither of them closes the window. The
+	-- window shuts on the close box, or by walking away.
+	if self:editing() then
+		if key == Keyboard.KEY_ESCAPE then self:editKey("escape") end
+		if key == Keyboard.KEY_TAB then self:editKey("tab") end
+		return
+	end
 	if key == Keyboard.KEY_ESCAPE then self:close() end
 end
 
@@ -479,6 +796,11 @@ function CeroSecTerminal:scrollBy(rows)
 end
 
 function CeroSecTerminal:onMouseWheel(del)
+	-- In the editor the view follows the cursor and nothing else, the way nano
+	-- does it: a wheel that scrolled it would be pulled straight back on the
+	-- next frame. Swallowed rather than passed on, so the wheel over an editor
+	-- does not scroll whatever is behind the window.
+	if self.mode == "edit" then return true end
 	-- One notch, three rows, the way a terminal scrolls.
 	self:scrollBy(-del * 3)
 	return true
@@ -491,6 +813,10 @@ end
 function CeroSecTerminal:close()
 	if self.closing then return end
 	self.closing = true
+	-- Walking away leaves the machine in the editor with the buffer it has, so
+	-- the last of it goes out now rather than at the next tick that will not
+	-- come. The file is not touched: this is the screen, not a save.
+	if self.opened then self:syncBuffer(true) end
 	if self.entry then self.entry:unfocus() end
 	if self.opened then self:send("close", {}) end
 	if CeroSecTerminal.instances[self.playerNum] == self then
@@ -545,7 +871,7 @@ function CeroSecTerminal:updateReveal()
 	self.revealing = false
 	self.lines = self.screen
 	self.prompt = self.bootedPrompt or ""
-	self:setMode("login")
+	self:setMode("prompt")
 	-- The login prompt is the first thing anyone types at, so make sure the
 	-- keyboard is here for it: two seconds of BIOS is long enough for a click
 	-- somewhere else to have taken it.
@@ -559,6 +885,8 @@ function CeroSecTerminal:prerender()
 	end
 	self:updateReveal()
 	self:checkTimeout()
+	self:configureEntry()
+	self:updateEditor()
 	self:layoutEntry()
 	ISCollapsableWindow.prerender(self)
 	self:drawMonitor()
@@ -599,6 +927,16 @@ function CeroSecTerminal:render()
 	local left = BEZEL + PAD
 	local top = TITLE_H + BEZEL + PAD
 
+	-- The editor takes the whole glass: two inverted bars, seventeen rows of
+	-- the buffer and a line for what the machine has to say. Nothing of the
+	-- shell is on the screen while it is up.
+	if self.mode == "edit" and self.edit then
+		self:drawEditor(left, top)
+		self:drawScanlines()
+		ISCollapsableWindow.render(self)
+		return
+	end
+
 	-- The scrollback, oldest first, with the prompt on the row right after it.
 	local rows = self:viewRows()
 	local last = #self.lines - self.scroll
@@ -634,7 +972,7 @@ function CeroSecTerminal:drawInput(x, y)
 	self:drawScreenText(prompt, x, y, colors.dim)
 
 	local text = self.entry:getInternalText() or ""
-	if self.mode == "password" then text = string.rep("*", #text) end
+	if self.mask then text = string.rep("*", #text) end
 	local textX = x + getTextManager():MeasureStringX(UIFont.Code, prompt)
 	self:drawScreenText(text, textX, y, colors.text)
 
@@ -647,6 +985,71 @@ function CeroSecTerminal:drawInput(x, y)
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
 	self:drawRect(cursorX, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
+end
+
+-- The editor's screen. Every row of it is composed by CeroSec.editScreen,
+-- which is pure and tested headless; what is left here is the paint: two
+-- inverted bars, the text, and the block cursor.
+function CeroSecTerminal:drawEditor(left, top)
+	local colors = CeroSec.COLORS
+	local mine = self:editing()
+	local text = self:bufferText()
+	local lines = CeroSec.editLines(text)
+
+	local row, col = 1, 0
+	if mine then
+		local offset = self.entry:getCursorPos() or 0
+		if self.editAsk then offset = self.editPrev and self.editPrev.pos or 0 end
+		row, col = CeroSec.editCursor(text, offset)
+	end
+	self.editTopRow = CeroSec.editTop(self.editTopRow, row, #lines, CeroSec.EDIT_ROWS)
+
+	local flag = nil
+	if self.edit.readonly then
+		flag = "read-only"
+	elseif self:editModified() then
+		flag = "modified"
+	end
+
+	local screen = CeroSec.editScreen(text, self.editTopRow, self.edit.path, flag,
+		self:editMessageLine())
+
+	self:drawBar(screen[1], left, top)
+	for i = 2, 1 + CeroSec.EDIT_ROWS do
+		self:drawScreenText(screen[i], left, top + (i - 1) * CELL_H, colors.text)
+	end
+	self:drawBar(screen[CeroSec.ROWS - 1], left, top + (CeroSec.ROWS - 2) * CELL_H)
+	self:drawScreenText(screen[CeroSec.ROWS], left, top + (CeroSec.ROWS - 1) * CELL_H, colors.dim)
+
+	if not mine or self.editAsk then return end
+
+	-- The block, and the character under it repainted in the screen's own
+	-- colour: a cursor in the middle of a line must not hide what it is on.
+	-- Column 60 is the one place it lies -- a full line has nowhere to put the
+	-- cursor after its last character -- and it sits on that character instead.
+	local cell = col
+	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
+	local x = left + cell * CELL_W
+	local y = top + (row - self.editTopRow + 1) * CELL_H
+	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
+	local block = lit and colors.text or colors.screen
+	self:drawRect(x, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
+	if lit then
+		local under = string.sub(lines[row] or "", cell + 1, cell + 1)
+		if under ~= "" then
+			self:drawText(under, x, y, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
+		end
+	end
+end
+
+-- An inverted row: the dim green filled in, the screen's own colour written on
+-- it. No halo -- a glow around dark text on a light bar is a smudge.
+function CeroSecTerminal:drawBar(text, x, y)
+	local colors = CeroSec.COLORS
+	self:drawRect(x, y, SCREEN_W, CELL_H, 1,
+		colors.barBack.r, colors.barBack.g, colors.barBack.b)
+	self:drawText(text or "", x, y,
+		colors.barText.r, colors.barText.g, colors.barText.b, 1, UIFont.Code)
 end
 
 -- One line of phosphor: a faint copy one pixel off, then the line itself.
