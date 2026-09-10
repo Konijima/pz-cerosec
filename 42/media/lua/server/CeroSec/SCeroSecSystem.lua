@@ -214,6 +214,17 @@ function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
 end
 
 -- Whether an account wears the "#" prompt. nil (nobody logged in) is not one.
+-- The prompt line, in one place. The user's home comes with it so that the
+-- shell can say "~" instead of spelling out /home/admin on a thirty column
+-- prompt -- the home is the account's, not a guess from the name.
+function SCeroSecSystem:promptFor(state, console)
+	local home = nil
+	local user = CeroSecOS.getUser(state, console.user)
+	if user ~= nil and type(user.home) == "string" then home = user.home end
+	return CeroSec.consolePrompt(console, state.hostname,
+		self:isAdmin(state, console.user), home)
+end
+
 function SCeroSecSystem:isAdmin(state, name)
 	if name == nil then return false end
 	local user = CeroSecOS.getUser(state, name)
@@ -292,8 +303,7 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 		hostname = state.hostname,
 		booted = console.booted and true or false,
 		lines = console.lines,
-		prompt = CeroSec.consolePrompt(console, state.hostname,
-			self:isAdmin(state, console.user)),
+		prompt = self:promptFor(state, console),
 		mode = CeroSec.consoleMode(console),
 		mask = CeroSec.consoleMask(console),
 		edit = self:editArgs(state, console, playerObj),
@@ -463,8 +473,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- The session the core runs on is derived from the console and written back
 	-- into it: cd is a move of the machine's cursor, not of anybody's.
 	local session = { user = console.user, cwd = console.cwd or "/", stamp = getTimestampMs() }
-	local prompt = CeroSec.consolePrompt(console, state.hostname,
-		self:isAdmin(state, console.user))
+	local prompt = self:promptFor(state, console)
 	local _, lines, control, data = CeroSecOS.exec(state, session, line)
 	console.user = session.user
 	console.cwd = session.cwd

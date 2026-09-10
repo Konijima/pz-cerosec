@@ -43,12 +43,29 @@ in either.
 
 `client/CeroSec/CeroSecTerminal.lua` is the green screen: a `ISCollapsableWindow`
 holding a 60 x 20 grid of `UIFont.Code`, a beige bezel, scanlines and a glow, and
-one `ISTextEntryBox` flattened down to nothing visible. The box is there for the
-one thing only it can do: taking the keyboard. `UITextBox2.focus` sets
+one `ISTextEntryBox` parked **off the glass**. The box is there for the one thing
+only it can do: taking the keyboard. `UITextBox2.focus` sets
 `Core.currentTextEntryBox`, and from then on `GameKeyboard.isKeyDown` answers false
-to every game key, so typing `w` types a `w` instead of walking. The line on screen
--- prompt, text, block cursor -- is drawn by the window itself, because the box has
-no way to draw a block cursor or a halo.
+to every game key, so typing `w` types a `w` instead of walking.
+
+Everything on the glass is drawn by the window: the prompt, what has been typed,
+the block cursor, and the wrap. A terminal does not stop at the right edge, so the
+input line is up to 240 characters and wraps onto the rows under it, the cursor
+following — which is exactly what a one-line text box cannot draw. The box stays
+outside the window's own stencil rect, where every pixel it paints is clipped away
+(`ISCollapsableWindow:prerender` sets that rect and `:render` clears it, and
+`UIElement.render` draws the children between the two; it only *skips* a child
+outside its parent when `renderClippedChildren` is false, and that field is true
+from the constructor). It has to keep being rendered, because `UITextBox2.render`
+is what repaginates it and what recomputes the display line its Up and Down keys
+walk, and it cannot be made to draw nothing: its caret colour is a hardcoded field
+with no setter.
+
+The prompt shortens the user's home to `~`, and only the home — `/home/adminx` is
+not inside `/home/admin`. What is still too long is cut at the **front** and marked
+`...`, never with a tilde: a tilde in the middle of a path is what made
+`admin@ksp-4rw-44z:~ome/admin$` look like a broken home shortening, because it was
+a tail cut wearing the wrong marker.
 
 ## The screen belongs to the machine
 
@@ -125,13 +142,13 @@ not a `$cs1$` line — the alternative would be throwing away a working filesyst
 a password field.
 
 Be honest about the strength. It is not bcrypt, not scrypt, not even SHA-2: it is
-8000 rounds of 32-bit add / multiply / rotate over four lanes, written in the
+4000 rounds of 32-bit add / multiply / rotate over four lanes, written in the
 arithmetic Kahlua has — no bit library, no packing, no integer division. Somebody
 willing to write a cracker will get a password out of a save file. The point is
 narrower and still worth having: reading the save file, or a future `/etc/passwd` on
 the machine itself, does not simply hand the passwords over, and two accounts with
-the same password do not look alike. One hash measures about 10 ms under `lua5.1`
-(`tests/os_test.lua` fails above 25 ms), and a login costs exactly one.
+the same password do not look alike. One hash measures about 5 ms under `lua5.1`
+(`tests/os_test.lua` fails above 50 ms), and a login costs exactly one.
 
 The salt has no clock and no random number generator to draw on — the core is pure
 Lua and runs the same under `lua5.1` and under Kahlua — so it is a counter, the

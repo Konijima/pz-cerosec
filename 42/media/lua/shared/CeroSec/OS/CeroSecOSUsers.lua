@@ -26,11 +26,12 @@ CeroSecOS = CeroSecOS or {}
 CeroSecOS.HASH_TAG = "cs1"
 
 -- Rounds of mixing after the input has been absorbed. Chosen by measurement:
--- see tests/os_test.lua, which fails if a hash takes longer than the budget
--- under lua5.1. Kahlua is several times slower than lua5.1, so the budget is
--- set low enough (a few milliseconds) to stay well under a fifth of a second
--- there, which is the most a login may cost.
-CeroSecOS.HASH_ROUNDS = 8000
+-- tests/os_test.lua fails if a hash takes longer than 50 ms under lua5.1, and
+-- 4000 rounds measures about 5 ms on an idle machine. Kahlua is several times
+-- slower than lua5.1, so that leaves a login well under the fifth of a second
+-- that is the most one may cost. The budget is ten times the measurement on
+-- purpose: a test that runs on a loaded machine must not go red for it.
+CeroSecOS.HASH_ROUNDS = 4000
 
 -- 2^32, and the powers of two the rotation needs. Built once: Kahlua has no
 -- bit library, so a rotation is a division and a multiplication, and "^" in

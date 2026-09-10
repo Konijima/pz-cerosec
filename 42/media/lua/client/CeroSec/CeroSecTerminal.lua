@@ -63,10 +63,8 @@ CeroSecTerminal.REPLY_TIMEOUT_MS = 10000
 -- opening another before an answer lands.
 CeroSecTerminal.tokenCount = 0
 
--- The value the layout cache holds while the box is parked off the glass for
--- the editor. It is not a prompt and can never be one, so it can never collide
--- with the prompt the cache otherwise holds.
-local EDIT_LAYOUT = "\1edit"
+-- The layout cache holds this once the box has been put in its one place.
+local PARKED = "parked"
 
 local function newToken(playerNum)
 	CeroSecTerminal.tokenCount = CeroSecTerminal.tokenCount + 1
@@ -177,7 +175,7 @@ function CeroSecTerminal:createChildren()
 	-- every game key, GameKeyboard.java:118), and it hands back Enter, Escape
 	-- and the arrows.
 	local colors = CeroSec.COLORS
-	local entry = ISTextEntryBox:new("", self:inputX(), self:inputY(0), SCREEN_W, CELL_H + 4)
+	local entry = ISTextEntryBox:new("", 0, WINDOW_H + CELL_H, SCREEN_W * 3, CELL_H * 2)
 	entry.font = UIFont.Code
 	entry:initialise()
 	entry:instantiate()
@@ -207,17 +205,6 @@ function CeroSecTerminal:createChildren()
 	-- real keystroke (UITextBox2.ignoreFirstInput sets ignoreFirst, and nothing
 	-- clears it until an input is dropped).
 	self:setEntryActive(true)
-end
-
--- Where the input line starts on screen. The text box draws its text two
--- pixels in when it has no frame (UITextBox2.getInset), so it is placed two
--- pixels out for its text to land on our grid.
-function CeroSecTerminal:inputX()
-	return BEZEL + PAD - 2
-end
-
-function CeroSecTerminal:inputY(row)
-	return TITLE_H + BEZEL + PAD + (row or 0) * CELL_H - 2
 end
 
 -- The first thing a window does: ask the machine what is on its screen. Until
@@ -401,9 +388,15 @@ function CeroSecTerminal:onMouseUp(x, y)
 	return ISCollapsableWindow.onMouseUp(self, x, y)
 end
 
+-- How many rows the line being typed takes. One, until it wraps.
+function CeroSecTerminal:inputHeight()
+	if not self.entryActive or self.mode == "edit" then return 0 end
+	local rows = CeroSec.inputRows(self.prompt or "", self.entry:getInternalText() or "", nil)
+	return #rows
+end
+
 -- Which row the prompt is on: right under the last line printed, the way a
--- terminal fills its screen, and pinned to the last row once the screen is
--- full. The entry box follows it.
+-- terminal fills its screen, and pinned so the whole wrapped line still fits.
 function CeroSecTerminal:inputRow()
 	local rows = self:viewRows()
 	local shown = #self.lines - self.scroll
@@ -434,9 +427,10 @@ function CeroSecTerminal:configureEntry()
 	else
 		self.entry:setMultipleLine(false)
 		self.entry:setMaxLines(1)
+		self.entry:setMaxTextLength(CeroSec.INPUT_MAX)
 	end
 	-- The layout cache cannot survive a change of shape.
-	self.laidOut, self.laidOutRow = nil, nil
+	self.laidOut = nil
 end
 
 -- Put the cursor back at an absolute offset into the buffer.
@@ -454,10 +448,7 @@ function CeroSecTerminal:setCursor(offset)
 	self.entry:setMultipleLine(self.entryEditing and true or false)
 end
 
--- The entry starts where the prompt ends, so the prompt is drawn by us and
--- never typed over, and it may only hold what still fits on the line.
---
--- In the editor it goes off the glass instead. The box has to keep being
+-- The box is parked off the glass, in every mode. It has to keep being
 -- *rendered* -- UITextBox2.render is what repaginates it and what recomputes
 -- the display line its Up and Down keys walk -- and there is no way to make it
 -- draw nothing: its caret colour is a hardcoded field with no setter. So it is
@@ -468,174 +459,20 @@ end
 -- drawn with the rect in force. UIElement.render only *skips* a child outside
 -- its parent when the parent's renderClippedChildren is false, and that field
 -- is true from the constructor.
+--
+-- Three screens wide so a full row is never soft-wrapped by the box's own
+-- pagination: Paginate() splits the text on "\n" and then on the box's width,
+-- and it is those pieces that the editor's Up and Down keys walk.
+--
+-- Everything on the glass -- the prompt, what has been typed, the wrap onto the
+-- next row, the block cursor -- is drawn by the window.
 function CeroSecTerminal:layoutEntry()
-	if self:editing() then
-		if self.laidOut == EDIT_LAYOUT then return end
-		self.laidOut, self.laidOutRow = EDIT_LAYOUT, -1
-		self.entry:setX(0)
-		self.entry:setY(WINDOW_H + CELL_H)
-		-- Three screens wide so a 60 column line is never soft-wrapped:
-		-- Paginate() splits the text on "\n" and then on the box's own width,
-		-- and it is those pieces that Up and Down walk.
-		self.entry:setWidth(SCREEN_W * 3)
-		self.entry:setHeight(CELL_H * CeroSec.EDIT_ROWS)
-		self.entry:setMaxTextLength(CeroSec.EDIT_MAX_BYTES)
-		return
-	end
-
-	local prompt = self.prompt or ""
-	local row = self:inputRow()
-	if self.laidOut == prompt and self.laidOutRow == row then return end
-	self.laidOut, self.laidOutRow = prompt, row
-
-	local width = getTextManager():MeasureStringX(UIFont.Code, prompt)
-	self.entry:setX(self:inputX() + width)
-	self.entry:setY(self:inputY(row))
-	self.entry:setWidth(SCREEN_W - width)
-	self.entry:setHeight(CELL_H + 4)
-	-- 60 columns is the whole line, prompt included.
-	local room = CeroSec.COLS - #prompt
-	if room < 1 then room = 1 end
-	self.entry:setMaxTextLength(room)
-end
-
---
--- Input
---
-
--- One click per key. Four single keys cut out of the old long typing sample,
--- picked at random so a held key does not sound like a machine, plus a heavier
--- one for Enter. Played the way the vanilla map screen plays its own
--- interaction sounds -- character:playSoundLocal (ISMap.lua:210,245) -- so it
--- costs no packet, is heard by the player at the keyboard, and is nothing a
--- zombie can walk towards.
-CeroSecTerminal.KEY_SOUNDS = { "CeroSecKey1", "CeroSecKey2", "CeroSecKey3", "CeroSecKey4" }
-
--- Two clicks closer together than this are one press as far as the ear is
--- concerned; below it they smear instead of ticking. Nothing above it is
--- throttled: a fast typist gets a fast keyboard.
-CeroSecTerminal.KEY_MIN_MS = 40
-
-function CeroSecTerminal:onKeystroke(sound)
-	local now = getTimestampMs()
-	self.lastKeyAt = now
-	if now - self.lastKeySound < CeroSecTerminal.KEY_MIN_MS then return end
-	self.lastKeySound = now
-	if sound == nil then
-		local list = CeroSecTerminal.KEY_SOUNDS
-		sound = list[ZombRand(#list) + 1]
-	end
-	self.playerObj:playSoundLocal(sound)
-end
-
--- Has a key been pressed in the last so many milliseconds? What the typing
--- action asks to decide whether the hands are on the keyboard.
-function CeroSecTerminal:typingRecently(ms)
-	if self.lastKeyAt == 0 then return false end
-	return getTimestampMs() - self.lastKeyAt < ms
-end
-
--- Does this window have the keyboard? Focus in this game is one static field,
--- and the box knows whether it is the one in it.
-function CeroSecTerminal:hasKeyboard()
-	return self.entry ~= nil and self.entry:isFocused() and true or false
-end
-
---
--- The character at the keyboard
---
--- One open-ended timed action holds the typing animation and the facing for as
--- long as the window is open (ISCeroSecTypeAction). The queue is strictly
--- sequential, so that action is at its head and nothing can be queued behind it
--- and expect to run: anything the window wants done -- sitting back down --
--- means getting rid of it first and putting a fresh one in once the queue is
--- free again. That is what updateSettle does, a frame at a time, on what it can
--- see rather than on when a stop is assumed to have landed.
---
-
-function CeroSecTerminal:startTyping(height)
-	self.typeHeight = height or self.typeHeight or "mid"
-end
-
-function CeroSecTerminal:stopTyping()
-	local action = self.typeAction
-	self.typeAction = nil
-	-- Not forceStop: the flag is read by isValid, which the engine asks every
-	-- tick, so the action goes on the engine's own schedule and not on a guess
-	-- about when a stop takes effect.
-	if action then action.cancelled = true end
-end
-
--- Getting the keyboard back puts the character back the way the window found
--- him: in the chair if there is one, and facing the screen. He is never walked
--- -- stepping off the front square closes the window (stillValid) -- so this
--- only ever undoes a stand-up or a look around.
-function CeroSecTerminal:resettle()
-	if self.closing or self.typeHeight == nil then return end
-	if not self:stillValid() then return end
-	local chair = CeroSecReach.chairInFront(self.computer)
-	if chair == nil then return end
-	if CeroSecReach.isSeatedOn(self.playerObj, chair) then return end
-	if self.wantSit ~= nil then return end
-	self.wantSit = chair
-	self:stopTyping()
-end
-
-function CeroSecTerminal:updateSettle()
-	if self.closing or self.typeHeight == nil then return end
-	local playerObj = self.playerObj
-	if not playerObj or playerObj:isDead() then return end
-	-- Never on top of what vanilla is already doing: the sit is a timed action
-	-- of its own, and a second one queued while it runs would sit him down
-	-- twice (ISTimedActionQueue.isPlayerDoingAction, ISTimedActionQueue.lua:268,
-	-- which is empty character actions plus a short list of states).
-	if ISTimedActionQueue.isPlayerDoingAction(playerObj) then return end
-
-	local chair = self.wantSit
-	if chair ~= nil then
-		self.wantSit = nil
-		if chair:getSquare() and not CeroSecReach.isSeatedOn(playerObj, chair) then
-			-- The same call the context menu makes on the way in, which is the
-			-- one the vanilla menu makes (ISWorldObjectContextMenu.lua:948).
-			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
-			return
-		end
-	end
-
-	if self.typeAction == nil then
-		local action = ISCeroSecTypeAction:new(playerObj, self.computer, self.typeHeight, self)
-		self.typeAction = action
-		ISTimedActionQueue.add(action)
-	end
-end
-
--- Enter. Nothing is echoed here: the line goes to the machine, and it comes
--- back on the screen the machine sends everybody standing at it. That round
--- trip is what makes the second player see the first one typing.
-function CeroSecTerminal:onCommandEntered()
-	if self.busy or self.revealing then return end
-	local text = self.entry:getInternalText() or ""
-	self.entry:setText("")
-	self.historyIndex = 0
-	self:onKeystroke("CeroSecKeyEnter")
-
-	if self.mode == "prompt" then
-		-- An empty answer at the very first prompt is a bare Enter and not a
-		-- login attempt; everywhere else it is an answer, because an empty
-		-- password is one -- the accounts ship open.
-		if text == "" and not self.mask and self.prompt == "login: " then return end
-		self:setBusy()
-		self:send("input", { text = text })
-		return
-	end
-
-	if self.mode == "shell" then
-		if text ~= "" then
-			CeroSec.ringPush(self.history, text, CeroSec.HISTORY_MAX)
-		end
-		self:setBusy()
-		self:send("exec", { line = text })
-	end
+	if self.laidOut == PARKED then return end
+	self.laidOut = PARKED
+	self.entry:setX(0)
+	self.entry:setY(WINDOW_H + CELL_H)
+	self.entry:setWidth(SCREEN_W * 3)
+	self.entry:setHeight(CELL_H * CeroSec.EDIT_ROWS)
 end
 
 --
@@ -900,8 +737,7 @@ function CeroSecTerminal:onOtherKey(key)
 end
 
 function CeroSecTerminal:viewRows()
-	if self.entryActive then return CeroSec.ROWS - 1 end
-	return CeroSec.ROWS
+	return CeroSec.ROWS - self:inputHeight()
 end
 
 function CeroSecTerminal:scrollBy(rows)
@@ -1082,26 +918,53 @@ function CeroSecTerminal:render()
 	ISCollapsableWindow.render(self)
 end
 
--- The prompt, what has been typed, and the block cursor over it.
+-- The prompt, what has been typed, and the block cursor over it. A line longer
+-- than the glass wraps onto the rows under it, the way a terminal does, and the
+-- cursor follows it there: the rows and the cursor's place on them are worked
+-- out by CeroSec.inputRows, which is pure and tested headless.
+--
+-- Columns are counted, not measured. The whole 60 x 20 grid is built on
+-- UIFont.Code being fixed width, and the editor draws itself the same way, so
+-- the input line does too -- one MeasureStringX for the prompt would have been
+-- the one place that disagreed.
 function CeroSecTerminal:drawInput(x, y)
 	local colors = CeroSec.COLORS
 	local prompt = self.prompt or ""
-	self:drawScreenText(prompt, x, y, colors.dim)
-
 	local text = self.entry:getInternalText() or ""
 	if self.mask then text = string.rep("*", #text) end
-	local textX = x + getTextManager():MeasureStringX(UIFont.Code, prompt)
-	self:drawScreenText(text, textX, y, colors.text)
 
-	-- Solid block, on for half a second and off for half a second. The cell is
-	-- painted in both halves -- green, then the screen's own colour -- because
-	-- the text box draws a caret of its own in a hardcoded lavender
-	-- (UITextBox2.textEntryCursorColour, no setter) and this is what buries it.
-	local before = string.sub(text, 1, self.entry:getCursorPos() or #text)
-	local cursorX = textX + getTextManager():MeasureStringX(UIFont.Code, before)
+	local rows, row, col = CeroSec.inputRows(prompt, text, self.entry:getCursorPos())
+	local head = #prompt
+	if head > CeroSec.COLS - 1 then head = CeroSec.COLS - 1 end
+
+	for i = 1, #rows do
+		local ry = y + (i - 1) * CELL_H
+		if i == 1 then
+			self:drawScreenText(string.sub(rows[1], 1, head), x, ry, colors.dim)
+			self:drawScreenText(string.sub(rows[1], head + 1), x + head * CELL_W, ry, colors.text)
+		else
+			self:drawScreenText(rows[i], x, ry, colors.text)
+		end
+	end
+
+	-- Solid block, on for half a second and off for half a second, with the
+	-- character under it repainted in the screen's own colour so the cursor
+	-- never hides what it is on. Column 60 is the one place it lies -- a full
+	-- row has nowhere to put the cursor after its last character -- and there
+	-- it sits on that character instead.
+	local cell = col
+	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
+	local cx = x + cell * CELL_W
+	local cy = y + (row - 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
-	self:drawRect(cursorX, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
+	self:drawRect(cx, cy, CELL_W, CELL_H, 1, block.r, block.g, block.b)
+	if lit then
+		local under = string.sub(rows[row] or "", cell + 1, cell + 1)
+		if under ~= "" and under ~= " " then
+			self:drawText(under, cx, cy, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
+		end
+	end
 end
 
 -- The editor's screen. Every row of it is composed by CeroSec.editScreen,

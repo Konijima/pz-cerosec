@@ -211,15 +211,38 @@ end
 
 CeroSec.PROMPT_MAX = 30
 
-function CeroSec.prompt(user, hostname, cwd, admin)
+-- The home directory shortened to "~", the way every shell since 1989 does it.
+-- Only the whole directory or something under it: /home/adminx is not inside
+-- /home/admin and is left alone.
+function CeroSec.shortenPath(cwd, home)
+	cwd = tostring(cwd)
+	if type(home) ~= "string" or home == "" or home == "/" then return cwd end
+	if cwd == home then return "~" end
+	if string.sub(cwd, 1, #home + 1) == home .. "/" then
+		return "~" .. string.sub(cwd, #home + 1)
+	end
+	return cwd
+end
+
+-- What is still too long after that is cut at the FRONT and marked with "...".
+-- Not with "~": a tilde in the middle of a path is what made
+-- "admin@ksp-4rw-44z:~ome/admin$" look like a broken home shortening, because
+-- that is exactly what it looked like -- it was a tail cut wearing the wrong
+-- marker.
+function CeroSec.prompt(user, hostname, cwd, admin, home)
 	local head = tostring(user) .. "@" .. tostring(hostname) .. ":"
 	local tail = admin and "# " or "$ "
 	local room = CeroSec.PROMPT_MAX - #head - #tail
 	if room < 1 then room = 1 end
-	cwd = tostring(cwd)
-	-- Too long: keep the tail of the path and mark the cut, as the OS does.
-	if #cwd > room then cwd = "~" .. string.sub(cwd, #cwd - room + 2) end
-	return head .. cwd .. tail
+	local path = CeroSec.shortenPath(cwd, home)
+	if #path > room then
+		if room <= 3 then
+			path = string.sub("...", 1, room)
+		else
+			path = "..." .. string.sub(path, #path - room + 4)
+		end
+	end
+	return head .. path .. tail
 end
 
 --
@@ -387,7 +410,7 @@ end
 
 -- The prompt that goes with it. Derived from the console and from nothing else,
 -- so the server never has to remember what it last told a window.
-function CeroSec.consolePrompt(console, hostname, admin)
+function CeroSec.consolePrompt(console, hostname, admin, home)
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "edit" then return "" end
 	if waiting == "prompt" then
@@ -397,7 +420,7 @@ function CeroSec.consolePrompt(console, hostname, admin)
 	end
 	if waiting == "password" then return "password: " end
 	if waiting == "login" then return "login: " end
-	return CeroSec.prompt(console.user, hostname, console.cwd or "/", admin)
+	return CeroSec.prompt(console.user, hostname, console.cwd or "/", admin, home)
 end
 
 -- Whether what is being typed at that prompt is to be shown as stars. The
@@ -451,6 +474,65 @@ function CeroSec.repairConsole(console)
 		end
 	end
 	return out
+end
+
+--
+-- The input line
+--
+-- A terminal does not stop taking characters at the right edge of the glass: it
+-- wraps onto the next row and keeps going. So the line the player is typing is
+-- laid out here -- prompt, text, and where the block cursor is -- and the window
+-- draws the rows it is handed.
+--
+-- Like the editor's buffer, the visible line is drawn by the window and not by
+-- the text box, which has no way to wrap one line across rows. The box is off
+-- the glass, taking the keyboard and holding the characters, and getCursorPos
+-- gives the absolute index the cursor sits at.
+--
+
+-- Four rows of sixty. Past that the machine stops taking characters, the way a
+-- real one runs out of line buffer.
+CeroSec.INPUT_ROWS = 4
+CeroSec.INPUT_MAX = 240
+
+-- rows, cursor row (1-based within rows), cursor column (0-based). The prompt
+-- occupies the head of the first row and is never typed over.
+function CeroSec.inputRows(prompt, text, offset)
+	prompt = tostring(prompt or "")
+	text = tostring(text or "")
+	local cols = CeroSec.COLS
+	-- A prompt wider than the screen would leave nowhere to type; it is cut so
+	-- there is always at least one column left.
+	local head = #prompt
+	if head > cols - 1 then
+		head = cols - 1
+		prompt = string.sub(prompt, 1, head)
+	end
+
+	local first = cols - head
+	local rows = { prompt .. string.sub(text, 1, first) }
+	local i = first + 1
+	while i <= #text do
+		rows[#rows + 1] = string.sub(text, i, i + cols - 1)
+		i = i + cols
+	end
+
+	if type(offset) ~= "number" then offset = #text end
+	if offset < 0 then offset = 0 end
+	if offset > #text then offset = #text end
+
+	local row, col
+	if offset < first then
+		row, col = 1, head + offset
+	else
+		local rest = offset - first
+		row = 2 + math.floor(rest / cols)
+		col = rest % cols
+	end
+	-- The cursor can sit one past the last character, which is one row past the
+	-- last row when the text ends exactly on a row boundary.
+	while #rows < row do rows[#rows + 1] = "" end
+	return rows, row, col
 end
 
 --

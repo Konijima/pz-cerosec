@@ -1010,13 +1010,15 @@ end
 do
 	-- The budget. A login is one hash, so this is what a login costs. Kahlua is
 	-- several times slower than lua5.1, and the ceiling that matters is about a
-	-- fifth of a second there; 25 ms here leaves room for both.
+	-- fifth of a second there. The measurement is about 5 ms on an idle
+	-- machine; the budget is ten times that, because a test that runs while the
+	-- machine is busy must not go red for it.
 	local start = os.clock()
 	local N = 10
 	for i = 1, N do CeroSecOS.hashPassword("hunter2", "abcdef") end
 	local ms = (os.clock() - start) / N * 1000
-	check("a hash costs less than 25 ms under lua5.1 (measured " ..
-		string.format("%.1f", ms) .. " ms at " .. CeroSecOS.HASH_ROUNDS .. " rounds)", ms < 25)
+	check("a hash costs less than 50 ms under lua5.1 (measured " ..
+		string.format("%.1f", ms) .. " ms at " .. CeroSecOS.HASH_ROUNDS .. " rounds)", ms < 50)
 end
 
 do

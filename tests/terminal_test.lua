@@ -70,16 +70,48 @@ eq("floored", CeroSec.hostnameFor(10.7, 4.2), CeroSec.hostnameFor(10, 4))
 eq("root prompt", CeroSec.prompt("root", "ksp-1-1", "/root", true), "root@ksp-1-1:/root# ")
 eq("user prompt", CeroSec.prompt("admin", "ksp-1-1", "/home/admin", false), "admin@ksp-1-1:/home/admin$ ")
 
--- A path too long for the line is cut at the front, marked the way the OS marks
--- its own cuts, and the prompt never grows past PROMPT_MAX.
-local long = CeroSec.prompt("admin", "ksp-abcd-ef", "/home/admin/a/b/c/d/e/f/g/h", false)
+-- The home directory is "~", and only the home directory. This is where
+-- "admin@ksp-4rw-44z:~ome/admin$" came from: a tail cut wearing a tilde.
+eq("the home itself", CeroSec.shortenPath("/home/admin", "/home/admin"), "~")
+eq("under the home", CeroSec.shortenPath("/home/admin/docs", "/home/admin"), "~/docs")
+eq("deeper under the home",
+	CeroSec.shortenPath("/home/admin/a/b", "/home/admin"), "~/a/b")
+eq("a name that merely starts the same",
+	CeroSec.shortenPath("/home/adminx", "/home/admin"), "/home/adminx")
+eq("a sibling", CeroSec.shortenPath("/home/other", "/home/admin"), "/home/other")
+eq("root's home", CeroSec.shortenPath("/root", "/root"), "~")
+eq("the root of the disk", CeroSec.shortenPath("/", "/root"), "/")
+eq("no home, no shortening", CeroSec.shortenPath("/home/admin", nil), "/home/admin")
+eq("a home of / shortens nothing", CeroSec.shortenPath("/home/admin", "/"), "/home/admin")
+eq("an empty home shortens nothing", CeroSec.shortenPath("/home/admin", ""), "/home/admin")
+
+-- And the same, through the prompt. These are the exact lines on the glass.
+eq("prompt: the home is a tilde",
+	CeroSec.prompt("admin", "ksp-4rw-44z", "/home/admin", false, "/home/admin"),
+	"admin@ksp-4rw-44z:~$ ")
+eq("prompt: under the home",
+	CeroSec.prompt("admin", "ksp-4rw-44z", "/home/admin/docs", false, "/home/admin"),
+	"admin@ksp-4rw-44z:~/docs$ ")
+eq("prompt: a name that merely starts the same",
+	CeroSec.prompt("admin", "ksp-1-1", "/home/adminx", false, "/home/admin"),
+	"admin@ksp-1-1:/home/adminx$ ")
+eq("prompt: root at home",
+	CeroSec.prompt("root", "ksp-1-1", "/root", true, "/root"), "root@ksp-1-1:~# ")
+eq("prompt: the root of the disk",
+	CeroSec.prompt("root", "ksp-1-1", "/", true, "/root"), "root@ksp-1-1:/# ")
+
+-- A path too long even shortened is cut at the FRONT and marked "...", never
+-- with a tilde: a tilde in the middle of a path is what the bug looked like.
+local long = CeroSec.prompt("admin", "ksp-abcd-ef", "/a/b/c/d/e/f/g/h/i/j/k", false, "/home/admin")
 check("long prompt is capped", #long <= CeroSec.PROMPT_MAX)
-check("long prompt marks the cut", string.find(long, "~", 1, true) ~= nil)
-check("long prompt keeps the tail", string.find(long, "h%$ $") ~= nil)
+check("long prompt marks the cut", string.find(long, "...", 1, true) ~= nil)
+check("long prompt does not fake a home", string.find(long, "~", 1, true) == nil)
+check("long prompt keeps the tail", string.find(long, "k%$ $") ~= nil)
 
 -- Even a hostname that eats the whole line leaves a usable prompt.
 local huge = CeroSec.prompt("administrator", "a-very-long-hostname", "/home", false)
 check("huge prompt still ends in the sigil", string.sub(huge, -2) == "$ ")
+check("huge prompt is still capped", #huge <= CeroSec.PROMPT_MAX + #"administrator@a-very-long-hostname:")
 
 --
 -- The scrollback ring
@@ -316,6 +348,100 @@ for _, junk in ipairs({
 end
 for _, junk in ipairs({ { path = "/a" }, { text = "hi" }, { path = 1, text = "hi" }, "x", 7 }) do
 	eq("half a buffer is no buffer", CeroSec.repairConsole({ lines = {}, edit = junk }).edit, nil)
+end
+
+--
+-- The input line, wrapped
+--
+-- A terminal does not stop at the right edge of the glass: it wraps and keeps
+-- going. Four rows of sixty, prompt included on the first.
+--
+
+eq("four rows", CeroSec.INPUT_ROWS, 4)
+eq("and that is 240 characters", CeroSec.INPUT_MAX, CeroSec.INPUT_ROWS * CeroSec.COLS)
+
+do
+	local P = "admin@ksp-1-1:~$ "        -- 17 characters
+	local head = #P
+	local first = CeroSec.COLS - head    -- 43 characters of text on row 1
+
+	-- Nothing typed: one row, the prompt, cursor right after it.
+	local rows, row, col = CeroSec.inputRows(P, "", 0)
+	eq("empty: one row", #rows, 1)
+	eq("empty: the row is the prompt", rows[1], P)
+	eq("empty: cursor row", row, 1)
+	eq("empty: cursor column", col, head)
+
+	-- A short line stays on one row.
+	rows, row, col = CeroSec.inputRows(P, "ls -l", 5)
+	eq("short: one row", #rows, 1)
+	eq("short: the row", rows[1], P .. "ls -l")
+	eq("short: cursor row", row, 1)
+	eq("short: cursor column", col, head + 5)
+
+	-- Exactly the first row's worth: still one row of text, but the cursor at
+	-- the end has nowhere to sit on it, so it is the start of the next.
+	local exact = string.rep("x", first)
+	rows, row, col = CeroSec.inputRows(P, exact, first)
+	eq("exact: the first row is full", #rows[1], CeroSec.COLS)
+	eq("exact: a second row was made for the cursor", #rows, 2)
+	eq("exact: and it is empty", rows[2], "")
+	eq("exact: cursor row", row, 2)
+	eq("exact: cursor column", col, 0)
+	-- One character back, and the cursor is on the last column of row 1.
+	local _, r1, c1 = CeroSec.inputRows(P, exact, first - 1)
+	eq("one back: cursor row", r1, 1)
+	eq("one back: cursor column", c1, CeroSec.COLS - 1)
+
+	-- One character more: two rows.
+	rows, row, col = CeroSec.inputRows(P, exact .. "y", first + 1)
+	eq("wrapped: two rows", #rows, 2)
+	eq("wrapped: the first is full", #rows[1], CeroSec.COLS)
+	eq("wrapped: the second holds the overflow", rows[2], "y")
+	eq("wrapped: cursor row", row, 2)
+	eq("wrapped: cursor column", col, 1)
+
+	-- The full 240, which is four rows and no more.
+	local full = ""
+	for i = 1, CeroSec.INPUT_MAX do full = full .. string.sub("0123456789", (i % 10) + 1, (i % 10) + 1) end
+	rows = CeroSec.inputRows(P, full, 0)
+	check("240 characters fit in four rows or fewer", #rows <= CeroSec.INPUT_ROWS + 1)
+	for i = 1, #rows do
+		check("row " .. i .. " never exceeds the screen", #rows[i] <= CeroSec.COLS)
+	end
+	-- Put back together, the rows are the prompt and the text and nothing else.
+	eq("nothing is lost and nothing is invented", table.concat(rows, ""), P .. full)
+
+	-- Every offset lands on a row that exists, at a column on the screen, and
+	-- walking the offsets never goes backwards.
+	local text = string.rep("abcdefghij", 12)
+	local lastRow, lastCol = 0, -1
+	for offset = 0, #text do
+		local r, rr, cc = CeroSec.inputRows(P, text, offset)
+		check("offset " .. offset .. " lands on a row that exists", r[rr] ~= nil)
+		check("offset " .. offset .. " lands on the screen", cc >= 0 and cc < CeroSec.COLS)
+		check("offset " .. offset .. " never goes backwards",
+			rr > lastRow or (rr == lastRow and cc > lastCol))
+		lastRow, lastCol = rr, cc
+	end
+
+	-- A nonsense offset is clamped, never an error.
+	local _, r2, c2 = CeroSec.inputRows(P, "abc", -5)
+	eq("a negative offset is the start", r2 .. "," .. c2, "1," .. head)
+	local _, r3, c3 = CeroSec.inputRows(P, "abc", 999)
+	eq("an offset past the end is the end", r3 .. "," .. c3, "1," .. (head + 3))
+	local _, r4, c4 = CeroSec.inputRows(P, "abc", nil)
+	eq("no offset is the end", r4 .. "," .. c4, "1," .. (head + 3))
+
+	-- No prompt at all, and a prompt wider than the glass.
+	rows = CeroSec.inputRows("", "abc", 0)
+	eq("no prompt", rows[1], "abc")
+	rows, row, col = CeroSec.inputRows(string.rep("P", 200), "ab", 0)
+	eq("an absurd prompt is cut", #rows[1], CeroSec.COLS)
+	check("and still leaves a column to type in", col <= CeroSec.COLS - 1)
+	-- What is not a string is still laid out.
+	eq("nil text", CeroSec.inputRows("x> ", nil, 0)[1], "x> ")
+	eq("nil prompt", CeroSec.inputRows(nil, "y", 0)[1], "y")
 end
 
 --

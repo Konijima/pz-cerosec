@@ -415,6 +415,47 @@ starred to the length of what was typed.
 99. **No chair, no sit.** 96 with the chair removed: clicking the terminal turns
     him to the screen and nothing else.
 
+## L — The prompt, and a line longer than the screen
+
+100. **The home is a tilde.** Log in as `admin`: the prompt is
+     `admin@ksp-<x>-<y>:~$ `. Not `~ome/admin`, which is what it used to say —
+     that was a tail cut wearing the wrong marker.
+101. **Under the home.** `mkdir docs`, `cd docs`: `admin@ksp-<x>-<y>:~/docs$ `.
+102. **Only the home.** `cd /`, `mkdir -` no; instead as `root`:
+     `mkdir /home/adminx`. Log in as `admin`, `cd /home/adminx`: the prompt reads
+     the whole `/home/adminx`, **not** `~x`. A name that merely starts the same is
+     not inside it.
+103. **root at home.** As `root`: `root@ksp-<x>-<y>:~# `. `cd /`:
+     `root@ksp-<x>-<y>:/# `.
+104. **A path too long even then.** Make a deep tree (`mkdir /a`, `/a/b`, …,
+     six or seven levels) and `cd` into the bottom. The prompt is cut at the
+     **front** and marked `...`, keeps the last directory readable, and never
+     grows past thirty characters. No tilde anywhere in it.
+
+105. **The line wraps.** At the shell, type 200 characters without pressing
+     Enter (hold a key). The line **wraps** onto the rows under it — four rows of
+     sixty, the prompt eating into the first — and the block cursor walks onto
+     the second, third and fourth rows with it. The scrollback above shrinks by
+     as many rows as the input takes, so nothing is ever pushed off the glass.
+106. **The cursor follows.** With a wrapped line up, press Left and Right: the
+     cursor walks back over the wrap onto the row above and forward again. Home
+     goes to the very start of the typed text (right after the prompt), End to
+     the very end. Backspace at the start of a wrapped row deletes the last
+     character of the row above and the line re-flows.
+107. **The ceiling.** Keep typing past 240 characters: nothing more appears. That
+     is the machine's line buffer, and it is the same 240 whatever the prompt.
+108. **Enter echoes it wrapped.** Press Enter on a 200-character line (make it a
+     `echo` of a long string so it is a real command). The echoed line lands in
+     the scrollback broken at sixty, exactly where it was broken while you typed
+     it, and the input line goes back to one row.
+109. **Nothing shows of the box.** At no point is there a lavender caret, a grey
+     border, a second copy of the text, or anything at all outside the green
+     glass — the input box lives off the screen and only the window paints.
+110. **Click to type still works.** With a wrapped line half-typed, click on the
+     inventory, then click anywhere on the terminal. The half-typed line is
+     still there, the first letter typed after the click appears, and the cursor
+     is where you left it.
+
 ## What is not in this rung
 
 - Devices, the network, the clock.
