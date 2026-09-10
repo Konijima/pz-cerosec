@@ -4,10 +4,11 @@
 -- exec(state, session, line) -> ok, lines, control, data. One command line at a
 -- time: double quoted strings with backslash escapes, ">" and ">>" redirection,
 -- no pipes and
--- no variables yet. control is nil, "clear", "exit", "prompt" or "edit": an
--- order to the terminal travels beside the output, never inside it, so no
--- file's contents can ever be mistaken for one. data is the payload of the two
--- orders that carry one ("prompt" and "edit") and nil for the rest.
+-- no variables yet. control is nil, "clear", "exit", "prompt", "edit",
+-- "shutdown" or "reboot": an order to the terminal travels beside the output,
+-- never inside it, so no file's contents can ever be mistaken for one. data is
+-- the payload of the two orders that carry one ("prompt" and "edit") and nil
+-- for the rest.
 -- Errors read like a 1993 Unix, one line each:
 --   cd: /root: permission denied
 --   cat: notes.txt: no such file
@@ -189,7 +190,11 @@ CeroSecOS.COMMAND_INFO = {
 	mv = "move or rename a file",
 	passwd = "change a password",
 	pwd = "print the working directory",
+	reboot = "restart the machine",
+	restart = "restart the machine",
 	rm = "remove a file or a directory",
+	shutdown = "switch the machine off",
+	sudo = "run a command as root",
 	touch = "create an empty file",
 	whoami = "print the current user",
 	write = "write a line into a file",
@@ -467,6 +472,33 @@ commands.write = function(state, session, args)
 end
 
 --
+-- Power
+--
+-- The two commands that end the screen they are typed on. Neither of them does
+-- anything itself: the core has no machine to switch off, so what comes back is
+-- an order, and the server -- which owns the sprite, the sound, the power and
+-- the windows -- is what carries it out.
+--
+-- Root only. Everything a machine holds is on the disk and survives, so this is
+-- not about losing work; it is that a second survivor standing at the same
+-- glass loses his session, and that is not an ordinary account's to take.
+--
+local function powerCommand(name, control)
+	return function(state, session, args)
+		if #args > 1 then return usage(name, name) end
+		if CeroSecOS.userOf(session) ~= "root" then return fail(name, nil, "permission denied") end
+		return true, {}, control
+	end
+end
+
+commands.shutdown = powerCommand("shutdown", "shutdown")
+commands.reboot = powerCommand("reboot", "reboot")
+-- The same order under the other name it has been called by since the eighties.
+-- Its own executable and its own refusal line, so `restart` never answers as
+-- something the player did not type.
+commands.restart = powerCommand("restart", "reboot")
+
+--
 -- Interactive commands.
 --
 -- A command that has to ask something answers with control "prompt" and a
@@ -588,6 +620,10 @@ commands.edit = function(state, session, args)
 			path = abs,
 			text = node.data or "",
 			readonly = not CeroSecOS.can(state, session, node, "w"),
+			-- Who the buffer was opened by, so that the save four minutes later
+			-- is the write this command was allowed. Under sudo that is root
+			-- and not the account logged in at the glass.
+			user = CeroSecOS.userOf(session),
 		}
 	end
 	if reason ~= "no such file" then return fail("edit", path, reason) end
@@ -605,7 +641,122 @@ commands.edit = function(state, session, args)
 	if not CeroSecOS.can(state, session, parent, "w") then
 		return fail("edit", path, "permission denied")
 	end
-	return true, {}, "edit", { path = abs, text = "", readonly = false }
+	return true, {}, "edit",
+		{ path = abs, text = "", readonly = false, user = CeroSecOS.userOf(session) }
+end
+
+--
+-- sudo
+--
+-- Run one command as root without being root. /etc/sudoers says who may, and
+-- whether he is asked for his own password first (see CeroSecOSUsers.lua).
+--
+-- What "as root" means here is one thing and nothing more: the command runs on
+-- a session of its own, root's, with the caller's working directory. The
+-- console's session is not touched, so `sudo cd /root` moves nothing and the
+-- account logged in at the glass is the same account after the command as
+-- before it. There is no timestamp and no remembered authority: every sudo
+-- that needs a password asks for it.
+--
+
+-- The temporary session. Fresh each time, so nothing survives one command into
+-- the next.
+local function rootSessionFrom(session)
+	return { user = "root", cwd = session.cwd or "/", stamp = session.stamp }
+end
+
+-- A chain that is running as somebody else keeps running as him: the mark goes
+-- onto every token the chain hands on, so `sudo passwd root` is still root's
+-- when it asks for the new password twice. Nothing else ever writes it.
+local function carryAs(as, control, data)
+	if as == nil then return end
+	if control ~= "prompt" then return end
+	if type(data) ~= "table" or type(data.cont) ~= "table" then return end
+	data.cont.as = as
+end
+
+-- Run args[from], args[from + 1], ... as root. The command is resolved the way
+-- the shell resolves one -- /bin/<name>, x for the session that runs it -- so
+-- root walks through a mode the caller could not, which is the point, and a
+-- command that is not in /bin is not found for root either.
+local function sudoRun(state, session, args, from)
+	local name = args[from]
+	local fn = commands[name]
+	if fn == nil then return false, { name .. ": command not found" } end
+
+	local sub = rootSessionFrom(session)
+	if not CeroSecOS.BUILTINS[name] then
+		local refusal = CeroSecOS.whyNotRun(state, sub, name)
+		if refusal ~= nil then return false, { name .. ": " .. refusal } end
+	end
+
+	-- Every command reads args[1] as its own name, so the tail is handed over
+	-- with the name back in front of it.
+	local own = {}
+	for i = from, #args do own[#own + 1] = args[i] end
+
+	local ok, lines, control, data = fn(state, sub, own)
+	carryAs("root", control, data)
+	return ok, lines, control, data
+end
+
+commands.sudo = function(state, session, args)
+	-- `sudo sudo ls` is one sudo. Real sudo runs the second one as root and
+	-- ends up in the same place; there is no reason to make a player type his
+	-- password to be asked for it again.
+	local from = 2
+	while args[from] == "sudo" do from = from + 1 end
+	if args[from] == nil then return usage("sudo", "sudo <command> [args]") end
+
+	local me = CeroSecOS.userOf(session)
+	-- Root is already root. No file is consulted: an /etc/sudoers with nobody
+	-- in it must not be able to take sudo away from the one account that could
+	-- put it back.
+	if me == "root" then return sudoRun(state, session, args, from) end
+
+	local entry = CeroSecOS.sudoer(state, me)
+	if entry == nil then return false, { me .. " is not in the sudoers file." } end
+	if entry.nopasswd then return sudoRun(state, session, args, from) end
+
+	-- Nothing of the password goes into the token, not even a hash of it: the
+	-- answer is judged against /etc/passwd when it arrives, which is the one
+	-- place a password is ever judged. What the token carries is the command
+	-- that was typed and the account it was typed by -- and the token lives in
+	-- the machine's console, which is written to the save file.
+	local rest = {}
+	for i = from, #args do rest[#rest + 1] = args[i] end
+	return ask("[sudo] password for " .. me .. ": ", true,
+		{ cmd = "sudo", user = me, args = rest })
+end
+
+continuations.sudo = function(state, session, cont, line)
+	local me = CeroSecOS.userOf(session)
+
+	-- Asked again, at the answer: a token names the account it was issued for,
+	-- and a chain that survived a logout is not an authorisation for whoever
+	-- logged in next.
+	if type(cont.user) ~= "string" or cont.user ~= me then
+		return false, { "sudo: authentication failure" }
+	end
+	if not CeroSecOS.checkPassword(CeroSecOS.getUser(state, me), line) then
+		-- One attempt. Real sudo gives three; this machine has a physical lock
+		-- on it -- you have to be standing at the keyboard -- and a second
+		-- survivor is watching the same glass.
+		return false, { "sudo: authentication failure" }
+	end
+	-- And the list is read again: a name taken out of /etc/sudoers between the
+	-- question and the answer is a name that may no longer run this.
+	if CeroSecOS.sudoer(state, me) == nil then
+		return false, { me .. " is not in the sudoers file." }
+	end
+
+	local args = cont.args
+	if type(args) ~= "table" then return false, { "sudo: authentication failure" } end
+	for i = 1, #args do
+		if type(args[i]) ~= "string" then return false, { "sudo: authentication failure" } end
+	end
+	if args[1] == nil then return usage("sudo", "sudo <command> [args]") end
+	return sudoRun(state, session, args, 1)
 end
 
 --
@@ -718,7 +869,17 @@ function CeroSecOS.continue(state, session, cont, line)
 	local fn = continuations[cont.cmd]
 	if fn == nil then return false, CeroSecOS.fit({ "cerosec: nothing to answer" }) end
 
-	local ok, lines, control, data = fn(state, session, cont, line)
+	-- A chain started under sudo goes on running as root. The authority belongs
+	-- to the chain and not to the line that answers it, so it travels in the
+	-- token -- written there by sudo and by nothing else -- and the console's
+	-- own session is left exactly as it was, cwd included.
+	local run = session
+	if type(cont.as) == "string" and cont.as ~= session.user then
+		run = { user = cont.as, cwd = session.cwd or "/", stamp = session.stamp }
+	end
+
+	local ok, lines, control, data = fn(state, run, cont, line)
 	if lines == nil then lines = {} end
+	if run ~= session then carryAs(cont.as, control, data) end
 	return ok, CeroSecOS.fit(lines), control, data
 end

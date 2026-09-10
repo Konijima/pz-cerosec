@@ -29,9 +29,10 @@ CeroSecOS.MAX_TOTAL_BYTES = 32768 -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
 -- Control the terminal honours travels out of band, as exec's third return
--- value ("clear" or "exit"), never as a line inside the output array: a line of
--- text and an order to the terminal must not be the same kind of thing, or a
--- file's contents can be made to look like an order.
+-- value ("clear", "exit", "prompt", "edit", "shutdown" or "reboot"), never as a
+-- line inside the output array: a line of text and an order to the terminal
+-- must not be the same kind of thing, or a file's contents can be made to look
+-- like an order.
 CeroSecOS.DEFAULT_HOSTNAME = "cerosec"
 CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
 
@@ -43,6 +44,7 @@ CeroSecOS.MOTD = "CeroSec OS 1.0 -- unauthorized access is prohibited."
 CeroSecOS.BIN_PATH = "/bin"
 CeroSecOS.ETC_PATH = "/etc"
 CeroSecOS.PASSWD_PATH = "/etc/passwd"
+CeroSecOS.SUDOERS_PATH = "/etc/sudoers"
 CeroSecOS.MOTD_PATH = "/etc/motd"
 CeroSecOS.HOSTNAME_PATH = "/etc/hostname"
 
@@ -50,6 +52,12 @@ CeroSecOS.HOSTNAME_PATH = "/etc/hostname"
 -- kernel does not go through the permission bits to parse it (systemNode), the
 -- way a real one does not either.
 CeroSecOS.PASSWD_MODE = 600
+
+-- /etc/sudoers says who may become root, so it is root's and it is read-only
+-- even to him: 440, the mode a real one wears, so that a stray redirect cannot
+-- rewrite the list of people who may run as root. Root may still edit it -- root
+-- walks through the bits everywhere -- but he has to mean it.
+CeroSecOS.SUDOERS_MODE = 440
 
 -- A machine name is 1..16 characters of [a-z0-9-] and never starts with "-".
 -- The leading digit rule is isValidName's: the name is also written into the

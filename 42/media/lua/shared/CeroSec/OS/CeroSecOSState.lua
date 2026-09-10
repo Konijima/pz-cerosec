@@ -8,10 +8,11 @@
 
 CeroSecOS = CeroSecOS or {}
 
--- A fresh machine: the standard skeleton, the commands in /bin, and root and
--- admin in /etc/passwd, both open. Nothing about the machine lives outside its
--- own filesystem -- there is no table of users beside /etc/passwd and no list
--- of commands beside /bin.
+-- A fresh machine: the standard skeleton, the commands in /bin, root and admin
+-- in /etc/passwd, both open, and admin in /etc/sudoers. Nothing about the
+-- machine lives outside its own filesystem -- there is no table of users beside
+-- /etc/passwd, no list of commands beside /bin and no list of sudoers beside
+-- /etc/sudoers.
 function CeroSecOS.newState(hostname)
 	if not CeroSecOS.isValidHostname(hostname) then
 		hostname = CeroSecOS.DEFAULT_HOSTNAME
@@ -29,6 +30,8 @@ function CeroSecOS.newState(hostname)
 	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
 	root.children.etc.children.passwd =
 		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
+	root.children.etc.children.sudoers =
+		CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
 
 	return {
 		v = CeroSecOS.STATE_VERSION,

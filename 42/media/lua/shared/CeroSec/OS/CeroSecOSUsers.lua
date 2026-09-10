@@ -404,3 +404,107 @@ function CeroSecOS.login(state, name, password)
 	if not CeroSecOS.checkPassword(user, password) then return nil, "wrong password" end
 	return { user = user.name, cwd = user.home or "/" }, nil
 end
+
+--
+-- /etc/sudoers
+--
+-- Who may run a command as root without being root. One name a line:
+--
+--     admin
+--     kate NOPASSWD
+--
+-- The file IS the list, exactly as /etc/passwd is the accounts: there is no
+-- table beside it, nothing caches across a change to it, and root editing it
+-- with the editor changes who may sudo. Owner root, mode 440.
+--
+-- Parsing is strict and silent, like the passwd parser. A blank line and a line
+-- whose first non-blank character is "#" are comments. Anything else is a name,
+-- optionally followed by the single word NOPASSWD, and a line that is not that
+-- is skipped -- so a typo takes one name off the list and never puts a wrong
+-- one on it.
+--
+
+local function trim(s)
+	local i, j = 1, #s
+	while i <= j do
+		local c = string.sub(s, i, i)
+		if c ~= " " and c ~= "\t" then break end
+		i = i + 1
+	end
+	while j >= i do
+		local c = string.sub(s, j, j)
+		if c ~= " " and c ~= "\t" then break end
+		j = j - 1
+	end
+	return string.sub(s, i, j)
+end
+
+-- One line -> { name, nopasswd }, or nil.
+function CeroSecOS.parseSudoersLine(line)
+	if type(line) ~= "string" then return nil end
+	local body = trim(line)
+	if body == "" then return nil end
+	if string.sub(body, 1, 1) == "#" then return nil end
+
+	local name = string.match(body, "^([^ \t]+)$")
+	if name ~= nil then
+		if not CeroSecOS.isValidName(name) then return nil end
+		return { name = name, nopasswd = false }
+	end
+
+	local word, flag = string.match(body, "^([^ \t]+)[ \t]+([^ \t]+)$")
+	if word == nil then return nil end
+	if not CeroSecOS.isValidName(word) then return nil end
+	if flag ~= "NOPASSWD" then return nil end
+	return { name = word, nopasswd = true }
+end
+
+-- text -> entries by name, names in the order the file has them. A name that
+-- appears twice keeps its FIRST line, the way a lookup down a file does.
+function CeroSecOS.parseSudoers(text)
+	local entries, order = {}, {}
+	local lines = CeroSecOS.splitLines(text)
+	for i = 1, #lines do
+		local entry = CeroSecOS.parseSudoersLine(lines[i])
+		if entry ~= nil and entries[entry.name] == nil then
+			entries[entry.name] = entry
+			order[#order + 1] = entry.name
+		end
+	end
+	return entries, order
+end
+
+-- The same one-slot, content-keyed cache the passwd parser has: the file is the
+-- truth, and what makes the answer stale is the file changing.
+CeroSecOS.sudoersCache = { node = nil, text = nil, entries = {}, order = {} }
+
+function CeroSecOS.readSudoers(state)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	if node == nil or node.type ~= "file" then return {}, {} end
+	local cache = CeroSecOS.sudoersCache
+	if cache.node ~= node or cache.text ~= node.data then
+		local entries, order = CeroSecOS.parseSudoers(node.data or "")
+		cache.node = node
+		cache.text = node.data
+		cache.entries = entries
+		cache.order = order
+	end
+	return cache.entries, cache.order
+end
+
+-- The entry for one account, or nil when it is not in the file. A machine with
+-- no /etc/sudoers at all is a machine where nobody may sudo, which is the
+-- honest answer for a file that says who may.
+function CeroSecOS.sudoer(state, name)
+	if type(name) ~= "string" then return nil end
+	local entries = CeroSecOS.readSudoers(state)
+	return entries[name]
+end
+
+-- What a machine ships with: the one non-root account, and it is asked for its
+-- password. An open account plus a passwordless sudo would make root free for
+-- whoever walks up, and the accounts ship open.
+function CeroSecOS.defaultSudoers()
+	return "# who may run a command as root, and whether he is asked for his password\n"
+		.. "admin"
+end

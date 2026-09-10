@@ -188,9 +188,10 @@ end
 -- Idempotent by construction: running it on a healthy machine rewrites the
 -- executables to the very same contents and leaves everything else alone.
 --
--- A /etc/passwd that still parses is KEPT, hashes and all. Losing the accounts
--- is not part of repairing the commands, and a root password somebody set is
--- not something a repair may quietly drop.
+-- A /etc/passwd that still parses is KEPT, hashes and all, and so is a
+-- /etc/sudoers that still names somebody. Losing the accounts is not part of
+-- repairing the commands, and a root password somebody set is not something a
+-- repair may quietly drop.
 function CeroSecOS.restoreSystem(state)
 	if type(state) ~= "table" then return nil, "no state" end
 
@@ -212,6 +213,21 @@ function CeroSecOS.restoreSystem(state)
 	if not keep then
 		etc.children.passwd =
 			CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
+	end
+
+	-- /etc/sudoers, on the same terms as the accounts: a file that still names
+	-- somebody is kept exactly as it is -- a name added to it is not damage --
+	-- and one that is missing, is not a file, or parses to nobody at all is
+	-- written back to the shipped list.
+	local sudoers = etc.children.sudoers
+	local keepSudoers = false
+	if type(sudoers) == "table" and sudoers.type == "file" then
+		local _, order = CeroSecOS.parseSudoers(sudoers.data or "")
+		keepSudoers = #order > 0
+	end
+	if not keepSudoers then
+		etc.children.sudoers =
+			CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
 	end
 
 	CeroSecOS.fillBin(CeroSecOS.ensureSystemDir(state, "bin"))

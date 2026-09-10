@@ -137,17 +137,18 @@ do
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 
 	-- The skeleton is nine nodes plus one executable per command plus
-	-- /etc/passwd, and every byte of it is accounted for: the machine's name,
-	-- the motd, the accounts file, and the one-line description in each
-	-- executable.
+	-- /etc/passwd and /etc/sudoers, and every byte of it is accounted for: the
+	-- machine's name, the motd, the accounts file, the sudoers file, and the
+	-- one-line description in each executable.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.COMMAND_INFO[binNames[i]] end
 	local passwd = state.fs.children.etc.children.passwd
+	local sudoers = state.fs.children.etc.children.sudoers
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + #binNames + 1)
+	eq("skeleton node count", nodes, 9 + #binNames + 2)
 	eq("skeleton byte count", bytes,
-		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + binBytes)
+		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	eq("empty hostname falls back", CeroSecOS.newState("").hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -159,6 +160,11 @@ do
 	eq("no users table on the state", state.users, nil)
 	eq("/etc/passwd owner", passwd.owner, "root")
 	eq("/etc/passwd mode", passwd.mode, 600)
+	eq("/etc/sudoers owner", sudoers.owner, "root")
+	eq("/etc/sudoers mode", sudoers.mode, 440)
+	eq("admin ships in the sudoers file", CeroSecOS.sudoer(state, "admin").name, "admin")
+	eq("and is asked for his password", CeroSecOS.sudoer(state, "admin").nopasswd, false)
+	eq("nobody else ships in it", CeroSecOS.sudoer(state, "root"), nil)
 	eq("root user home", CeroSecOS.getUser(state, "root").home, "/root")
 	eq("root user is admin", CeroSecOS.getUser(state, "root").admin, true)
 	eq("admin user home", CeroSecOS.getUser(state, "admin").home, "/home/admin")
@@ -659,8 +665,9 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	-- The skeleton, plus one executable per command, plus /etc/passwd.
-	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 1)
+	-- The skeleton, plus one executable per command, plus /etc/passwd and
+	-- /etc/sudoers.
+	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 2)
 	local made = 0
 	local dir = 0
 	while true do
@@ -714,7 +721,11 @@ do
 		etc[2],
 		"-rw-r--r--" .. "  " .. "root    " .. "  " .. "motd" .. string.rep(" ", 27) .. "  "
 			.. "   52")
-	eq("ls -l /etc has 3 lines", #etc, 3)
+	eq("ls -l sudoers",
+		etc[4],
+		"-r--r-----" .. "  " .. "root    " .. "  " .. "sudoers" .. string.rep(" ", 24) .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5))
+	eq("ls -l /etc has 4 lines", #etc, 4)
 
 	-- Every permission digit renders.
 	ok(state, admin, "touch /home/admin/perm", {})
@@ -2030,6 +2041,295 @@ do
 	eq("a wiped machine boots", CeroSecOS.systemOk(wiped), true)
 	eq("and validates", CeroSecOS.validate(wiped), true)
 	check("and somebody can log in", CeroSecOS.login(wiped, "root", "") ~= nil)
+end
+
+--
+-- 21. shutdown and reboot: an order, and root's alone.
+--
+
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+
+	-- The order goes out of band, with nothing on the screen: the machine
+	-- going dark is what the player sees, and a line of text is not it.
+	ok(state, rootSession, "shutdown", {}, "shutdown")
+	ok(state, rootSession, "reboot", {}, "reboot")
+	eq("restart is reboot under its other name",
+		select(3, CeroSecOS.exec(state, rootSession, "restart")), "reboot")
+
+	-- Root's alone, and each refusal wears the name that was typed.
+	bad(state, admin, "shutdown", "shutdown: permission denied")
+	bad(state, admin, "reboot", "reboot: permission denied")
+	bad(state, admin, "restart", "restart: permission denied")
+
+	-- No arguments, and the usage says the name that was typed too.
+	bad(state, rootSession, "shutdown now", "shutdown: usage: shutdown")
+	bad(state, rootSession, "reboot -f", "reboot: usage: reboot")
+	bad(state, rootSession, "restart now", "restart: usage: restart")
+
+	-- Executables like every other command: taking the file away takes the
+	-- order away, and the machine cannot be talked into going down by a name.
+	ok(state, rootSession, "rm /bin/shutdown", {})
+	bad(state, rootSession, "shutdown", "shutdown: command not found")
+	eq("and reboot is untouched",
+		select(3, CeroSecOS.exec(state, rootSession, "reboot")), "reboot")
+
+	-- Nothing on the disk moved: the core has no machine to switch off.
+	eq("the state still validates", CeroSecOS.validate(state), true)
+end
+
+--
+-- 22. /etc/sudoers: the format and the parser.
+--
+
+do
+	eq("a bare name", CeroSecOS.parseSudoersLine("admin").name, "admin")
+	eq("and it is asked for a password", CeroSecOS.parseSudoersLine("admin").nopasswd, false)
+	eq("NOPASSWD", CeroSecOS.parseSudoersLine("kate NOPASSWD").nopasswd, true)
+	eq("blanks around it are not part of it",
+		CeroSecOS.parseSudoersLine("  \tkate\tNOPASSWD  ").name, "kate")
+
+	eq("a blank line is nothing", CeroSecOS.parseSudoersLine(""), nil)
+	eq("blanks are nothing", CeroSecOS.parseSudoersLine("   "), nil)
+	eq("a comment is nothing", CeroSecOS.parseSudoersLine("# admin"), nil)
+	eq("an indented comment too", CeroSecOS.parseSudoersLine("   # admin"), nil)
+	eq("a name that could not be a name is skipped",
+		CeroSecOS.parseSudoersLine("-admin"), nil)
+	eq("nor can a line with a colon in it",
+		CeroSecOS.parseSudoersLine("admin:x"), nil)
+	eq("a word that is not NOPASSWD is skipped", CeroSecOS.parseSudoersLine("admin ALL"), nil)
+	eq("lower case is not the flag", CeroSecOS.parseSudoersLine("admin nopasswd"), nil)
+	eq("three words are not a line", CeroSecOS.parseSudoersLine("admin NOPASSWD ALL"), nil)
+	eq("not a string", CeroSecOS.parseSudoersLine(nil), nil)
+
+	local entries, order = CeroSecOS.parseSudoers(
+		"# who may\n\nadmin\nkate NOPASSWD\n-admin\nadmin NOPASSWD\n")
+	eq("three lines parsed, two names", #order, 2)
+	eq("in the order the file has them", order[1], "admin")
+	eq("and the second", order[2], "kate")
+	eq("a name that appears twice keeps its first line", entries.admin.nopasswd, false)
+	eq("kate is passwordless", entries.kate.nopasswd, true)
+
+	-- The file is the list: a rewrite is seen at once, and no cache survives it.
+	local state = fresh()
+	eq("admin ships listed", CeroSecOS.sudoer(state, "admin").name, "admin")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "kate NOPASSWD")
+	eq("admin is off the list the moment the file says so",
+		CeroSecOS.sudoer(state, "admin"), nil)
+	eq("and kate is on it", CeroSecOS.sudoer(state, "kate").nopasswd, true)
+
+	-- A machine with no sudoers file at all is a machine where nobody may sudo.
+	local bare = fresh()
+	CeroSecOS.systemNode(bare, CeroSecOS.ETC_PATH).children.sudoers = nil
+	eq("no file, nobody listed", CeroSecOS.sudoer(bare, "admin"), nil)
+
+	-- It is root's, and read-only even to him without meaning it: 440.
+	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	eq("owner", node.owner, "root")
+	eq("mode", node.mode, CeroSecOS.SUDOERS_MODE)
+	local adminSession = open(state, "admin")
+	bad(state, adminSession, "cat /etc/sudoers", "cat: /etc/sudoers: permission denied")
+end
+
+--
+-- 23. sudo: every path, and the exact line each one says.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local rootSession = open(state, "root")
+
+	bad(state, admin, "sudo", "sudo: usage: sudo <command> [args]")
+
+	-- Root is already root, and no file is consulted: an /etc/sudoers with
+	-- nobody in it must not take sudo from the one account that can put it back.
+	ok(state, rootSession, "sudo whoami", { "root" })
+
+	-- Listed with a password: the question, and nothing on the screen with it.
+	local asked = run(state, admin, "sudo whoami")
+	eq("sudo asks", asked.control, "prompt")
+	eq("it says nothing while it asks", #asked.lines, 0)
+	eq("the prompt names the account", asked.data.text, "[sudo] password for admin: ")
+	eq("and is masked", asked.data.mask, true)
+	eq("the token names its command", asked.data.cont.cmd, "sudo")
+	eq("and the account it was issued for", asked.data.cont.user, "admin")
+	-- Nothing of the password is in the token, not even a hash: what is in it is
+	-- the command that was typed.
+	eq("no password material in the token", asked.data.cont.passwd, nil)
+	eq("nor a hash of one", asked.data.cont.want, nil)
+	eq("the command is", asked.data.cont.args[1], "whoami")
+
+	-- The wrong password: one line, one attempt, and back to the shell.
+	says(answer(state, admin, asked.data.cont, "wrong"), "sudo: authentication failure")
+	eq("and the wrong answer is refused", answer(state, admin, asked.data.cont, "wrong").ok, false)
+
+	-- The right one runs it as root.
+	local ran = answer(state, admin, asked.data.cont, "")
+	eq("it succeeds", ran.ok, true)
+	eq("as root", ran.lines[1], "root")
+	eq("and orders nothing", ran.control, nil)
+
+	-- The console's own session is untouched by any of it.
+	eq("still admin", admin.user, "admin")
+	eq("still where he was", admin.cwd, "/home/admin")
+	local moved = run(state, admin, "sudo cd /root")
+	eq("sudo cd succeeds", moved.control, "prompt")
+	answer(state, admin, moved.data.cont, "")
+	eq("and moves nobody", admin.cwd, "/home/admin")
+
+	-- What sudo is for: a file admin cannot read.
+	bad(state, admin, "cat /etc/passwd", "cat: /etc/passwd: permission denied")
+	local catted = answer(state, admin, run(state, admin, "sudo cat /etc/passwd").data.cont, "")
+	eq("sudo cat /etc/passwd succeeds", catted.ok, true)
+	check("and prints the file", string.find(catted.lines[1], "root:$cs1$", 1, true) == 1)
+
+	-- Not in the file. Real sudo's line, and it does not start with "sudo:".
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "# nobody")
+	bad(state, admin, "sudo ls", "admin is not in the sudoers file.")
+
+	-- NOPASSWD runs it there and then.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+	ok(state, admin, "sudo whoami", { "root" })
+	-- Nested sudo is one sudo.
+	ok(state, admin, "sudo sudo sudo whoami", { "root" })
+	bad(state, admin, "sudo sudo", "sudo: usage: sudo <command> [args]")
+
+	-- A command that is not one, and one whose executable is gone: sudo says
+	-- what the shell would say, under the command's own name.
+	bad(state, admin, "sudo nosuch", "nosuch: command not found")
+	ok(state, rootSession, "rm /bin/ls", {})
+	bad(state, admin, "sudo ls", "ls: command not found")
+	CeroSecOS.restoreSystem(state)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+
+	-- Root walks through a mode admin cannot: that is the whole point.
+	ok(state, rootSession, "chmod 700 /bin/ls", {})
+	bad(state, admin, "ls /", "ls: permission denied")
+	local listed = run(state, admin, "sudo ls /")
+	eq("sudo ls runs", listed.ok, true)
+	eq("and lists", listed.lines[1], "bin")
+	ok(state, rootSession, "chmod 755 /bin/ls", {})
+
+	-- The two orders come back out of sudo untouched.
+	eq("sudo shutdown", select(3, CeroSecOS.exec(state, admin, "sudo shutdown")), "shutdown")
+	eq("sudo reboot", select(3, CeroSecOS.exec(state, admin, "sudo reboot")), "reboot")
+end
+
+-- A token is not an authorisation on its own.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	addUser(state, "kate", "", "/home/kate", false)
+	local kate = open(state, "kate")
+
+	local asked = run(state, admin, "sudo whoami")
+	-- Answered by somebody else -- a chain left behind by a session that logged
+	-- out, and a name that is not in the file either.
+	says(answer(state, kate, asked.data.cont, ""), "sudo: authentication failure")
+	-- Taken off the list between the question and the answer.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "# nobody")
+	says(answer(state, admin, asked.data.cont, ""), "admin is not in the sudoers file.")
+	-- A token with a command that is not a table of strings.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin")
+	says(answer(state, admin, { cmd = "sudo", user = "admin", args = "ls" }, ""),
+		"sudo: authentication failure")
+	says(answer(state, admin, { cmd = "sudo", user = "admin", args = { 7 } }, ""),
+		"sudo: authentication failure")
+end
+
+-- sudo + passwd: the whole chain runs as root, and the console does not.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	eq("admin may not touch root's password",
+		run(state, admin, "passwd root").lines[1], "passwd: permission denied")
+
+	local gate = run(state, admin, "sudo passwd root")
+	eq("sudo asks for admin's password first", gate.data.text, "[sudo] password for admin: ")
+	-- Root is asked for nobody's old password, its own included: the chain that
+	-- comes back is root's chain and not admin's.
+	local new = answer(state, admin, gate.data.cont, "")
+	eq("and then passwd asks as root", new.data.text, "New password: ")
+	eq("the token carries the authority the chain was given", new.data.cont.as, "root")
+	local retype = answer(state, admin, new.data.cont, "hunter2")
+	eq("the retype is still root's", retype.data.text, "Retype new password: ")
+	eq("and still carries it", retype.data.cont.as, "root")
+	says(answer(state, admin, retype.data.cont, "hunter2"), "passwd: password updated")
+
+	check("root's password is the one that was typed", holds(state, "root", "hunter2"))
+	check("and the empty one no longer gets in", not holds(state, "root", ""))
+	eq("the console is still admin's", admin.user, "admin")
+	eq("and still where it was", admin.cwd, "/home/admin")
+
+	-- A token that says "as" without a sudo behind it is exactly as strong as
+	-- the one thing that writes it, which is sudo: this is what a forged
+	-- console would carry, and it is a decision made on the server's own state.
+	eq("continue runs a marked chain as the name on it",
+		answer(state, admin, { cmd = "passwd", step = "new", user = "root", as = "root" },
+			"x").control, "prompt")
+end
+
+-- sudo + edit: the buffer is opened as root, so the save is root's.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	local mine = run(state, admin, "edit /etc/motd")
+	eq("admin opens /etc/motd", mine.control, "edit")
+	eq("as himself", mine.data.user, "admin")
+	eq("read-only", mine.data.readonly, true)
+
+	local opened = answer(state, admin, run(state, admin, "sudo edit /etc/motd").data.cont, "")
+	eq("sudo opens the same file", opened.control, "edit")
+	eq("as root", opened.data.user, "root")
+	eq("and writable", opened.data.readonly, false)
+	eq("at the same path", opened.data.path, "/etc/motd")
+
+	-- A file that is not there yet, in a directory admin cannot write.
+	local made = answer(state, admin, run(state, admin, "sudo edit /root/notes.txt").data.cont, "")
+	eq("a new file under /root opens", made.control, "edit")
+	eq("as root", made.data.user, "root")
+	eq("empty", made.data.text, "")
+	bad(state, admin, "edit /root/notes.txt", "edit: /root/notes.txt: permission denied")
+end
+
+-- The repair, and /etc/sudoers.
+do
+	local state = fresh()
+
+	-- A list somebody wrote is kept, exactly as the accounts are.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "kate NOPASSWD")
+	CeroSecOS.restoreSystem(state)
+	eq("a sudoers that still names somebody is kept",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "kate NOPASSWD")
+
+	-- One that names nobody is not a list.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "rubbish line here")
+	CeroSecOS.restoreSystem(state)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	eq("an unparseable one is written back", node.data, CeroSecOS.defaultSudoers())
+	eq("root's", node.owner, "root")
+	eq("440", node.mode, CeroSecOS.SUDOERS_MODE)
+	eq("and admin is on it again", CeroSecOS.sudoer(state, "admin").name, "admin")
+
+	-- A missing one is written back too, and the repair stays idempotent.
+	CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH).children.sudoers = nil
+	CeroSecOS.restoreSystem(state)
+	eq("a missing one comes back",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, CeroSecOS.defaultSudoers())
+	local before = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	CeroSecOS.restoreSystem(state)
+	eq("and a second repair changes nothing",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, before.data)
+
+	-- A machine with no sudoers file still boots: who may sudo is not what
+	-- makes a machine an operating system.
+	CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH).children.sudoers = nil
+	eq("no sudoers, still a system", CeroSecOS.systemOk(state), true)
+	eq("and still valid", CeroSecOS.validate(state), true)
 end
 
 print("os_test: " .. count .. " assertions passed")
