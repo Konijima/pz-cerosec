@@ -276,6 +276,35 @@ do
 	ok(state, admin, "cd", {})
 	eq("bare cd goes home", admin.cwd, "/home/admin")
 
+	--
+	-- The tilde. Expanded by the shell, once, before any command sees its
+	-- arguments -- so it is every command's and not cd's.
+	--
+	ok(state, admin, "cd /etc", {})
+	ok(state, admin, "cd ~", {})
+	-- Which is the cwd the prompt shortens back to "~" (terminal_test.lua).
+	eq("cd ~ goes home", admin.cwd, "/home/admin")
+	ok(state, admin, "mkdir ~/box", {})
+	ok(state, admin, "cd ~/box", {})
+	eq("cd ~/box is under the home", admin.cwd, "/home/admin/box")
+	ok(state, admin, "cd ~", {})
+	ok(state, admin, "ls ~", { "box", "sub" })
+	ok(state, admin, 'write ~/tilde.txt "hi"', {})
+	ok(state, admin, "cat ~/tilde.txt", { "hi" })
+	ok(state, admin, "cd /etc", {})
+	ok(state, admin, "cat ~/tilde.txt", { "hi" })   -- and from anywhere else
+	ok(state, admin, "echo one > ~/tilde.txt", {})
+	ok(state, admin, "cat ~/tilde.txt", { "one" })
+	ok(state, admin, "rm ~/tilde.txt", {})
+	ok(state, admin, "rm -r ~/box", {})
+	ok(state, admin, "cd ~", {})
+
+	-- A tilde that is not the shortcut is a name, and a name may not hold one.
+	bad(state, admin, "cd ~root", "cd: ~root: no such file")
+	bad(state, admin, "cd ~/nope", "cd: /home/admin/nope: no such file")
+	bad(state, admin, "cd a~b", "cd: a~b: no such file")
+	ok(state, admin, "echo a~b", { "a~b" })         -- not a path, not touched
+
 	ok(state, admin, "touch notes.txt", {})
 	ok(state, admin, "cat notes.txt", {})           -- an empty file prints nothing
 	ok(state, admin, "touch notes.txt", {})         -- touching twice is fine
@@ -310,6 +339,11 @@ do
 	local rootSession = open(state, "root")
 	ok(state, rootSession, "cd /root", {})
 	ok(state, rootSession, "pwd", { "/root" })
+	-- The tilde is the account's home, so root's is /root and not /home/root.
+	ok(state, rootSession, "cd /etc", {})
+	ok(state, rootSession, "cd ~", {})
+	ok(state, rootSession, "pwd", { "/root" })
+	ok(state, rootSession, "cat ~/../etc/hostname", { "ksp-front-01" })
 	ok(state, rootSession, 'write /root/secret.txt "classified"', {})
 	ok(state, rootSession, "cat /root/secret.txt", { "classified" })
 	ok(state, rootSession, "chown admin /root/secret.txt", {})

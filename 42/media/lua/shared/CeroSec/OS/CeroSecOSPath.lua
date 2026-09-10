@@ -46,6 +46,22 @@ function CeroSecOS.resolve(session, path)
 	return "/" .. table.concat(parts, "/"), parts
 end
 
+-- "~" and "~/..." -> the home that goes with them. Everything else, including
+-- "~somebody" and a "~" anywhere but at the front, comes back untouched: this
+-- is a one-account shortcut and not a directory of the machine's users, and a
+-- tilde inside a name is a character isValidName refuses anyway, so it ends as
+-- "no such file" rather than as somebody else's home.
+--
+-- Pure, like the rest of this file: the home is handed in. The shell is what
+-- knows whose it is, and expands before a command ever sees the argument --
+-- which is where a real shell does it too.
+function CeroSecOS.expandHome(path, home)
+	if type(path) ~= "string" or type(home) ~= "string" or home == "" then return path end
+	if path == "~" then return home end
+	if string.sub(path, 1, 2) == "~/" then return home .. "/" .. string.sub(path, 3) end
+	return path
+end
+
 -- Absolute path of the directory holding the given components, plus the last
 -- component. Returns nil for "/" itself, which has no parent.
 -- table.concat is called with two arguments only: the four-argument form is not

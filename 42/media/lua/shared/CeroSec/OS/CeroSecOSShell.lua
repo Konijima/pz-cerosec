@@ -552,6 +552,19 @@ function CeroSecOS.exec(state, session, line)
 	local args, redirect, reason = CeroSecOS.parseLine(line)
 	if args == nil then return false, CeroSecOS.fit({ reason }) end
 
+	-- The tilde is the shell's, not the filesystem's: it is expanded here, once,
+	-- before any command is handed its arguments, so `cd ~`, `ls ~`, `cat
+	-- ~/notes.txt` and `echo hi > ~/notes.txt` all work and no command has to
+	-- know about it. args[1] is a command name and is left alone -- there is no
+	-- ~/bin on this machine and a command is not a path.
+	local home = nil
+	local user = CeroSecOS.getUser(state, session.user)
+	if user ~= nil and type(user.home) == "string" then home = user.home end
+	if home ~= nil then
+		for i = 2, #args do args[i] = CeroSecOS.expandHome(args[i], home) end
+		if redirect ~= nil then redirect.path = CeroSecOS.expandHome(redirect.path, home) end
+	end
+
 	-- A bare redirection still creates (or truncates) the file.
 	if #args == 0 then
 		if redirect == nil then return true, {} end
