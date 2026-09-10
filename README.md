@@ -10,7 +10,7 @@ The repo root IS the mod folder, and it lives at `~/Zomboid/mods/CeroSec` (a rea
 
 - `42/` — `mod.info`, `media/lua/{shared,client,server}/CeroSec/`, translations.
 - `common/` — sounds and sound scripts.
-- `tests/` — headless, no game needed: `sh tests/run.sh` runs `defs_test.lua`, `os_test.lua`, `terminal_test.lua` and the Kahlua-compat check (`luac5.1 -p` on every file plus a grep for constructs the game's Lua cannot run).
+- `tests/` — headless, no game needed: `sh tests/run.sh` runs `defs_test.lua`, `os_test.lua`, `terminal_test.lua`, the self-call check (every `self:method()` we write is defined somewhere — Lua resolves a method when it is *called*, so one that was never written, or one an edit took out with the block around it, is not a syntax error: it is a nil call once a frame in `prerender`, and the window is dead) and the Kahlua-compat check (`luac5.1 -p` on every file plus a grep for constructs the game's Lua cannot run).
 - `docs/` — manual test checklists.
 - `workshop/` — `workshop.txt` and `preview.png` for the Steam Workshop uploader; `~/Zomboid/Workshop/CeroSec/` links to them and to this folder.
 

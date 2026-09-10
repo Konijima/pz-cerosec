@@ -477,6 +477,141 @@ function CeroSecTerminal:layoutEntry()
 	self.entry:setHeight(CELL_H * CeroSec.EDIT_ROWS)
 end
 
+-- One click per key. Four single keys cut out of the old long typing sample,
+-- picked at random so a held key does not sound like a machine, plus a heavier
+-- one for Enter. Played the way the vanilla map screen plays its own
+-- interaction sounds -- character:playSoundLocal (ISMap.lua:210,245) -- so it
+-- costs no packet, is heard by the player at the keyboard, and is nothing a
+-- zombie can walk towards.
+CeroSecTerminal.KEY_SOUNDS = { "CeroSecKey1", "CeroSecKey2", "CeroSecKey3", "CeroSecKey4" }
+
+-- Two clicks closer together than this are one press as far as the ear is
+-- concerned; below it they smear instead of ticking. Nothing above it is
+-- throttled: a fast typist gets a fast keyboard.
+CeroSecTerminal.KEY_MIN_MS = 40
+
+function CeroSecTerminal:onKeystroke(sound)
+	local now = getTimestampMs()
+	self.lastKeyAt = now
+	if now - self.lastKeySound < CeroSecTerminal.KEY_MIN_MS then return end
+	self.lastKeySound = now
+	if sound == nil then
+		local list = CeroSecTerminal.KEY_SOUNDS
+		sound = list[ZombRand(#list) + 1]
+	end
+	self.playerObj:playSoundLocal(sound)
+end
+
+-- Has a key been pressed in the last so many milliseconds? What the typing
+-- action asks to decide whether the hands are on the keyboard.
+function CeroSecTerminal:typingRecently(ms)
+	if self.lastKeyAt == 0 then return false end
+	return getTimestampMs() - self.lastKeyAt < ms
+end
+
+-- Does this window have the keyboard? Focus in this game is one static field,
+-- and the box knows whether it is the one in it.
+function CeroSecTerminal:hasKeyboard()
+	return self.entry ~= nil and self.entry:isFocused() and true or false
+end
+
+--
+-- The character at the keyboard
+--
+-- One open-ended timed action holds the typing animation and the facing for as
+-- long as the window is open (ISCeroSecTypeAction). The queue is strictly
+-- sequential, so that action is at its head and nothing can be queued behind it
+-- and expect to run: anything the window wants done -- sitting back down --
+-- means getting rid of it first and putting a fresh one in once the queue is
+-- free again. That is what updateSettle does, a frame at a time, on what it can
+-- see rather than on when a stop is assumed to have landed.
+--
+
+function CeroSecTerminal:startTyping(height)
+	self.typeHeight = height or self.typeHeight or "mid"
+end
+
+function CeroSecTerminal:stopTyping()
+	local action = self.typeAction
+	self.typeAction = nil
+	-- Not forceStop: the flag is read by isValid, which the engine asks every
+	-- tick, so the action goes on the engine's own schedule and not on a guess
+	-- about when a stop takes effect.
+	if action then action.cancelled = true end
+end
+
+-- Getting the keyboard back puts the character back the way the window found
+-- him: in the chair if there is one, and facing the screen. He is never walked
+-- -- stepping off the front square closes the window (stillValid) -- so this
+-- only ever undoes a stand-up or a look around.
+function CeroSecTerminal:resettle()
+	if self.closing or self.typeHeight == nil then return end
+	if not self:stillValid() then return end
+	local chair = CeroSecReach.chairInFront(self.computer)
+	if chair == nil then return end
+	if CeroSecReach.isSeatedOn(self.playerObj, chair) then return end
+	if self.wantSit ~= nil then return end
+	self.wantSit = chair
+	self:stopTyping()
+end
+
+function CeroSecTerminal:updateSettle()
+	if self.closing or self.typeHeight == nil then return end
+	local playerObj = self.playerObj
+	if not playerObj or playerObj:isDead() then return end
+	-- Never on top of what vanilla is already doing: the sit is a timed action
+	-- of its own, and a second one queued while it runs would sit him down
+	-- twice (ISTimedActionQueue.isPlayerDoingAction, ISTimedActionQueue.lua:268,
+	-- which is empty character actions plus a short list of states).
+	if ISTimedActionQueue.isPlayerDoingAction(playerObj) then return end
+
+	local chair = self.wantSit
+	if chair ~= nil then
+		self.wantSit = nil
+		if chair:getSquare() and not CeroSecReach.isSeatedOn(playerObj, chair) then
+			-- The same call the context menu makes on the way in, which is the
+			-- one the vanilla menu makes (ISWorldObjectContextMenu.lua:948).
+			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
+			return
+		end
+	end
+
+	if self.typeAction == nil then
+		local action = ISCeroSecTypeAction:new(playerObj, self.computer, self.typeHeight, self)
+		self.typeAction = action
+		ISTimedActionQueue.add(action)
+	end
+end
+
+-- Enter. Nothing is echoed here: the line goes to the machine, and it comes
+-- back on the screen the machine sends everybody standing at it. That round
+-- trip is what makes the second player see the first one typing.
+function CeroSecTerminal:onCommandEntered()
+	if self.busy or self.revealing then return end
+	local text = self.entry:getInternalText() or ""
+	self.entry:setText("")
+	self.historyIndex = 0
+	self:onKeystroke("CeroSecKeyEnter")
+
+	if self.mode == "prompt" then
+		-- An empty answer at the very first prompt is a bare Enter and not a
+		-- login attempt; everywhere else it is an answer, because an empty
+		-- password is one -- the accounts ship open.
+		if text == "" and not self.mask and self.prompt == "login: " then return end
+		self:setBusy()
+		self:send("input", { text = text })
+		return
+	end
+
+	if self.mode == "shell" then
+		if text ~= "" then
+			CeroSec.ringPush(self.history, text, CeroSec.HISTORY_MAX)
+		end
+		self:setBusy()
+		self:send("exec", { line = text })
+	end
+end
+
 --
 -- The editor
 --
