@@ -7,11 +7,31 @@ local OS_FILES = {
 	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 }
+-- Kept as text too (not just loaded), so the error-message sweep below can
+-- scan the engine's own source for the literal reasons it hands to fail(),
+-- rather than trust a hand-typed list to have kept up with it.
+local osSource = {}
 for i = 1, #OS_FILES do
 	local path = OS_DIR .. OS_FILES[i] .. ".lua"
 	local chunk, err = loadfile(path)
 	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
 	chunk()
+
+	local f = io.open(path, "r")
+	if f == nil then error("cannot read " .. path .. " as text") end
+	osSource[#osSource + 1] = f:read("*a")
+	f:close()
+end
+osSource = table.concat(osSource, "\n")
+
+-- CeroSecDefs.lua too, text and all: it is where consoleLogout, consoleClear
+-- and the boot lines live, and the error-string sweep and the defect-5
+-- regression check both want it.
+local defsPath = "42/media/lua/shared/CeroSec/CeroSecDefs.lua"
+do
+	local dchunk, derr = loadfile(defsPath)
+	if not dchunk then error("cannot load " .. defsPath .. ": " .. tostring(derr)) end
+	dchunk()
 end
 
 local chunk, err = loadfile("42/media/lua/shared/CeroSec/CeroSecManual.lua")
@@ -149,9 +169,37 @@ for i = 1, #FS_REASONS do
 		string.find(errText, FS_REASONS[i], 1, true) ~= nil)
 end
 
--- Command-specific messages that are constant, full lines (no argument
--- baked into the literal), exactly as CeroSecOSShell.lua and
--- SCeroSecSystem.lua produce them.
+-- The bare reasons the shell itself hands to fail(cmd, arg, reason) as a
+-- literal third argument, scanned straight out of the source rather than
+-- hand-copied -- fail() always prefixes these with "<command>: " or
+-- "<command>: <arg>: ", so the bare reason is what the appendix carries.
+-- This is what CeroSecOSFS.lua's own bare reasons (FS_REASONS above) are
+-- NOT: those are returned deeper, as a variable, and reach fail() already
+-- carried in "reason", not as a literal at the call site -- so they still
+-- need the hand list; a command-level literal like "unknown option" or
+-- "invalid mode" does not, and is caught here even if a later change adds
+-- another command that answers it.
+local scannedReasons = {}
+local seenReason = {}
+for reason in osSource:gmatch('fail%(%s*"[%w_]+"%s*,%s*[^,]+,%s*"([^"]*)"%s*%)') do
+	if not seenReason[reason] then
+		seenReason[reason] = true
+		scannedReasons[#scannedReasons + 1] = reason
+	end
+end
+check("scanned at least a dozen fail() reasons out of the engine source",
+	#scannedReasons >= 12)
+for i = 1, #scannedReasons do
+	check("error appendix carries the scanned reason \"" .. scannedReasons[i] .. "\"",
+		string.find(errText, scannedReasons[i], 1, true) ~= nil)
+end
+
+-- Everything else worth listing is built at runtime -- string concatenation
+-- (a command's own name, ".. reason", a user's own name in the sudoers
+-- refusal) or assembled a piece at a time (the parser's three syntax
+-- errors, none of which go through fail() at all) -- so there is no bare
+-- literal in the source for a scan to lift. Hand-kept, and exactly as
+-- CeroSecOSShell.lua and SCeroSecSystem.lua produce them.
 local LITERAL_MESSAGES = {
 	"command not found",
 	"is not in the sudoers file.",
@@ -171,10 +219,26 @@ local LITERAL_MESSAGES = {
 	"help: no commands in " .. CeroSecOS.BIN_PATH .. ": the system is damaged.",
 	"help: switch the computer off and on to repair it.",
 	"cerosec: nothing to answer",
+	"syntax error: bad redirect",
+	"syntax error: unterminated quote",
+	"syntax error: missing redirect target",
 }
 for i = 1, #LITERAL_MESSAGES do
 	check("error appendix carries \"" .. LITERAL_MESSAGES[i] .. "\"",
 		string.find(errText, LITERAL_MESSAGES[i], 1, true) ~= nil)
+end
+
+-- Confirm the three syntax errors really are in the engine source, spelled
+-- exactly as the appendix quotes them -- caught by the scan above only if
+-- they went through fail(), and they do not.
+local SYNTAX_ERRORS = {
+	"syntax error: bad redirect",
+	"syntax error: unterminated quote",
+	"syntax error: missing redirect target",
+}
+for i = 1, #SYNTAX_ERRORS do
+	check("engine source really contains \"" .. SYNTAX_ERRORS[i] .. "\"",
+		string.find(osSource, SYNTAX_ERRORS[i], 1, true) ~= nil)
 end
 
 --
@@ -190,5 +254,123 @@ check("book states the file size ceiling (" .. CeroSecOS.MAX_FILE_BYTES .. ")",
 check("book states the su stack ceiling (" .. CeroSecOS.SU_MAX .. ")",
 	string.find(wholeBook, "four", 1, true) ~= nil or
 	string.find(wholeBook, tostring(CeroSecOS.SU_MAX), 1, true) ~= nil)
+
+--
+-- Eight fact-checked defects, each pinned against the engine so a future
+-- change to the code, not just to the book, is what breaks these.
+--
+
+-- 1. ~ and ~/... expand to the reader's own home everywhere they are typed;
+-- only ~name (no slash) stays literal. The book must say so, and must not
+-- still carry the old, wrong claim that a typed tilde is never expanded.
+do
+	local home = "/home/admin"
+	check("expandHome('~', home) is the home",
+		CeroSecOS.expandHome("~", home) == home)
+	check("expandHome('~/x', home) is inside the home",
+		CeroSecOS.expandHome("~/x", home) == home .. "/x")
+	check("expandHome('~root', home) is untouched",
+		CeroSecOS.expandHome("~root", home) == "~root")
+	check("book shows a tilde expanding (cat ~/)",
+		string.find(wholeBook, "cat ~/", 1, true) ~= nil)
+	check("book no longer claims a typed tilde is never expanded",
+		string.find(wholeBook, "does not go home", 1, true) == nil and
+		string.find(wholeBook, "never expanded", 1, true) == nil)
+end
+
+-- 2. formatStamp always prints month/day/hour/minute, never a year; a node
+-- with no mtime reads as 0 and prints "Jan  1 00:00".
+do
+	check("formatStamp(0) is \"Jan  1 00:00\"",
+		CeroSecOS.formatStamp(0) == "Jan  1 00:00")
+	check("book carries the no-stamp stamp \"Jan  1 00:00\"",
+		string.find(wholeBook, "Jan  1 00:00", 1, true) ~= nil)
+	check("book no longer claims an old file prints its year",
+		string.find(wholeBook, "prints its\nyear", 1, true) == nil and
+		string.find(wholeBook, "prints its year", 1, true) == nil)
+end
+
+-- 3. Only the owner digit and the other-users digit of a mode are ever
+-- read; the middle (group) digit decides nothing today.
+do
+	local a = CeroSecOS.newFile("admin", 740)
+	local b = CeroSecOS.newFile("admin", 700)
+	local ownerSession = { user = "admin" }
+	local otherSession = { user = "bob" }
+	check("mode 740 and 700 give the owner the same access",
+		CeroSecOS.can(nil, ownerSession, a, "x") == CeroSecOS.can(nil, ownerSession, b, "x"))
+	check("mode 740 and 700 give another user the same access",
+		CeroSecOS.can(nil, otherSession, a, "r") == CeroSecOS.can(nil, otherSession, b, "r"))
+	check("book explains the middle digit is not read",
+		string.find(wholeBook, "middle digit", 1, true) ~= nil)
+end
+
+-- 4. The BIOS repair rewrites every standard command in /bin unconditionally
+-- (owner, mode and description), even one already present and chmod'd
+-- away; it does not touch /home or /root, and leaves a still-parseable
+-- /etc/passwd or /etc/sudoers alone.
+do
+	local state = CeroSecOS.newState("ksp-test")
+	state.fs.children.bin.children.ls.mode = 600
+	local marker = CeroSecOS.newFile("admin", 644, "mine")
+	state.fs.children.home.children.admin.children["mine.txt"] = marker
+	CeroSecOS.restoreSystem(state)
+	check("restoreSystem resets a chmod'd standard command back to 755",
+		state.fs.children.bin.children.ls.mode == 755)
+	check("restoreSystem does not touch a player's own file under /home",
+		state.fs.children.home.children.admin.children["mine.txt"] ~= nil)
+	check("book says the repair always rewrites the standard commands",
+		string.find(wholeBook, "always rewrites every standard command", 1, true) ~= nil)
+end
+
+-- 5. clear, exit (logout) and power loss/shutdown all wipe the console;
+-- walking away does not. Both chapters that mention this must agree.
+do
+	local console = { lines = { "one", "two" } }
+	CeroSec.consoleLogout(console)
+	check("consoleLogout empties the console's lines",
+		#console.lines == 0)
+	local n = 0
+	for _ in wholeBook:gmatch("clear, exit and power leaving the machine") do n = n + 1 end
+	check("both chapters name the same three things that wipe the glass (" .. n .. ")",
+		n >= 2)
+end
+
+-- 6. df's real header and two data lines, exactly as the engine prints
+-- them for a fresh machine at env.now = 0.
+do
+	local state = CeroSecOS.newState("ksp-04-11")
+	local session = { user = "admin", cwd = "/home/admin" }
+	local ok, lines = CeroSecOS.exec(state, session, "df", { now = 0 })
+	check("df ran", ok == true)
+	for i = 1, #lines do
+		check("book's df transcript carries the real line \"" .. lines[i] .. "\"",
+			string.find(wholeBook, lines[i], 1, true) ~= nil)
+	end
+end
+
+-- 7. The seven previously-missing error strings are all in the appendix
+-- (also covered above by the scan and the hand list; named again here so
+-- a regression in any one of them fails with its own message).
+do
+	local MISSING_BEFORE = {
+		"unknown option", "invalid mode", "no manual entry", "no clock",
+		"syntax error: bad redirect", "syntax error: unterminated quote",
+		"syntax error: missing redirect target",
+	}
+	for i = 1, #MISSING_BEFORE do
+		check("previously-missing error string now in the appendix: \""
+			.. MISSING_BEFORE[i] .. "\"",
+			string.find(errText, MISSING_BEFORE[i], 1, true) ~= nil)
+	end
+end
+
+-- 8. /root ships at mode 700, not 750.
+do
+	local state = CeroSecOS.newState("ksp-04-11")
+	check("/root ships at mode 700", state.fs.children.root.mode == 700)
+	check("book states /root ships at 700",
+		string.find(wholeBook, "/root, ships tighter, at 700", 1, true) ~= nil)
+end
 
 print(count .. " manual checks passed")

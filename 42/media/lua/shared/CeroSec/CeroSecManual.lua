@@ -125,9 +125,9 @@ standing in its files, and ends in a dollar sign or a pound sign:
 
 A pound sign means the account's admin flag is set -- today that is
 cosmetic, a mark on the glass and nothing more; what actually opens doors
-is being root, or being named where sudo looks (chapter 8). A tilde in the
-path means "your own home directory", used only to shorten the prompt --
-typed at a command, a tilde is just a character, see chapter 4.]],
+is being root, or being named where sudo looks (chapter 8). A tilde in
+the path means "your own home directory" there too, and, unlike many a
+prompt, typing one works exactly the same way -- see chapter 4.]],
 
 [[While the machine has your keyboard, nothing you type reaches anything
 else: your character will not walk, will not swap a weapon, will not open
@@ -164,11 +164,16 @@ top; anything else is measured from where you already are.
   admin@ksp-04-11:/etc$ pwd
   /etc
 
-The tilde on the prompt is only ever shown, never accepted as typed
-input: cd ~ does not go home the way it might elsewhere, and cd ~root
-answers "no such file" like any other unknown name. Nothing on this
-machine expands a tilde you type -- home, alone with no argument, is
-still the plainest way there.]],
+A bare tilde, or a tilde in front of a slash, is your own home wherever
+it appears -- as an argument or as a redirect target -- expanded once,
+before the command ever sees it:
+
+  admin@ksp-04-11:~$ cd ~
+  admin@ksp-04-11:/home/admin$ cat ~/note.txt
+
+Only a tilde with a name stuck straight onto it, like ~root, is left
+exactly as typed, and since no file is named that, it answers
+"no such file" like any other name nobody made.]],
 
 [[cat prints a file straight to the glass, and echo prints back whatever
 you hand it. Wrap text in double quotes when it has a space in it, or
@@ -303,12 +308,11 @@ the shell simply is not there until you leave it with Escape.]],
 
 		{ title = "5. Permissions and ownership", pages = {
 
-[[Every file and directory carries an owner and a mode, and the mode is
-three digits, one for the owner, one for anybody logged in as somebody
-else, and one for nobody in particular -- there is no group of accounts on
-this machine yet, only "you" and "everybody else". Each digit is read,
-write and execute added up the usual way: 4 to read, 2 to write, 1 to run
-it as a command or step into it as a directory.
+[[Every file and directory carries an owner and a mode, three digits
+written and shown the way a bigger Unix writes them: one for the owner,
+one for a group this machine does not have yet, one for everybody else.
+Each digit is read, write and execute added up the usual way: 4 to read,
+2 to write, 1 to run it as a command or step into it as a directory.
 
   admin@ksp-04-11:~$ chmod 644 notes.txt
   admin@ksp-04-11:~$ ls -l notes.txt
@@ -317,16 +321,23 @@ it as a command or step into it as a directory.
 chown hands a file to a different owner by name, root only in practice
 since it is root's file most of the time that needs it.]],
 
-[[Directories obey the same three digits, but execute on a directory means
-something different than on a file: it is permission to step inside it at
-all, list it or not. Home directories ship at mode 750 -- their owner can
-do anything in his own home, anybody else may not even see what is in it,
-which is why cd /root as admin answers "cd: /root: permission denied"
-long before anything about what is inside it comes up.
+[[Only the first and the last digit are ever read: the machine checks
+whether you own the file, and if you do not, treats you as "everybody
+else" straight away. The middle digit is kept for a later release and
+decides nothing today -- 740 and 700 behave exactly alike, own it and
+you have rwx, anybody else has nothing, whatever the middle digit says.
 
 chmod and chown themselves answer "permission denied" the moment you are
 not the owner and not root, on the file itself before either digit is
 even looked at.]],
+
+[[Directories obey the same two digits that matter, but execute on a
+directory means something different than on a file: it is permission to
+step inside it at all, list it or not. An ordinary account's home ships
+at mode 750; root's own, /root, ships tighter, at 700 -- its owner can
+do anything in it, anybody else may not even see what is in it, which is
+why cd /root as admin answers "cd: /root: permission denied" long before
+anything about what is inside it comes up.]],
 
 [[Where /bin fits in. Every shell command is a real file inside /bin,
 owned by root, mode 755, and its one-line description is the file's
@@ -494,18 +505,26 @@ and instead of a login prompt you get:
   No operating system found.
   Restore system? (y/n)
 
-y puts the standard commands and a fresh set of accounts back, and
-touches nothing else -- not /home, not /root, not a file of your own
-sitting in /bin, not an /etc/passwd that still parses even partly. n
-leaves it exactly as broken as it was, and anything typed at it, right
-down to a stray key, only brings the same question back. exit or Escape
-simply walks away from the question without answering it.]],
+y writes every standard command back into /bin, owner root, mode 755,
+its shipped description -- whether that file was missing, damaged, or
+simply chmod'd away, so a repair really does undo a chmod 000 /bin/ls.
+It never touches /home, /root, or a file of your own sitting in /bin
+under a name none of the standard commands use.]],
 
-[[Running the repair twice changes nothing the second time -- it only
-ever fills in what is missing, never overwrites what is already there.
-That is deliberate: it is a way back from a mistake, not a second chance
-at a fight. If root's own account is the one thing gone, the BIOS is the
-only door left; there is no back door around it and none was ever built.
+[[y touches /etc/passwd and /etc/sudoers only when one of them is
+missing, is not a file, or no longer parses to anybody at all; a file
+that still names one account is left exactly as it lies, hashes and
+all. n leaves it exactly as broken as it was, and anything typed at it,
+right down to a stray key, only brings the same question back. exit or
+Escape simply walks away from the question without answering it.]],
+
+[[Running the repair twice changes nothing new the second time: /bin is
+rewritten again to the very same owner, mode and text it already held,
+and a passwd or sudoers that still parses is left alone both times. What
+never comes back on its own is what the repair was never meant to touch
+in the first place. If root's own account is the one thing gone, the
+BIOS is the only door left; there is no back door around it and none was
+ever built.
 
 A machine gets new commands the same way, quietly, the moment it is next
 turned on after CeroSec Systems ships them -- once, and only the ones it
@@ -533,16 +552,20 @@ subtraction one day, not something to type for pleasure.]],
 
 [[Every file remembers the moment it was last changed the same way, one
 number for both content and mode -- a chmod moves it exactly as a rewrite
-does. ls -l shows it formatted; a file older than about six months shows
-its year instead of a time of day, the way any calendar-aware listing
-does when the hour stops being the useful half of the date.
+does. ls -l always shows a month, a day and an hour and minute, never a
+year, no matter how old the file: "Jul  8 14:32". A file that predates
+this rung of the machine, or was made without a clock handed to it, has
+no stamp at all and shows the one date a missing stamp always reads as:
+"Jan  1 00:00".
 
 df says how much of the machine is used, out of a fixed thirty-two
 kilobytes of disk and two hundred fifty-six files and directories total,
-whichever runs out first:
+whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
-  Filesystem  1K-blocks  Used  Available  Use%]],
+  Filesystem   Size   Used  Avail  Use%
+  hda         32768   1043  31725    4%
+  nodes         256     47    209   19%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -611,10 +634,14 @@ edit or not. Walking off the one square in front of it does the same
 thing to your own window without you asking, and does not touch anybody
 else still standing there watching the same glass.
 
-Only power leaving the machine -- shutdown, a reboot, or the building's
-own power failing under it -- ever wipes the screen. Nothing else does,
-on purpose: coming back to a locked login: prompt is meant to feel
-different from coming back to a dead one.]],
+Only clear, exit and power leaving the machine wipe the glass clean --
+clear typed by hand, exit by logging out, and power by shutdown, a
+reboot, or the building's own supply failing under it. Nothing else
+does -- walking off the front square, closing the window, none of that
+touches a single
+line. Whether the screen you come back to is a locked login: or a dead,
+dark one, either way it was one of those three that put it there, never
+simply your having left.]],
 
 [[Peripherals -- a look ahead. CeroSec Systems is building the next rung
 of this machine as this edition goes to press, so what follows says only
@@ -646,16 +673,20 @@ Escape only closes an idle window; mid-question it prints ^C and hands
 the question back to its start instead. Tab saves in the editor, nothing
 else does. A lit computer cannot be picked up -- turn it off first. The
 screen belongs to the machine, not to you: log out before you leave a
-machine you do not want the next person walking in on, because exit is
-the only thing that clears a shell's history off the glass.]],
+machine you do not want the next person walking in on. Walking away does
+not clear it -- only clear, exit and power leaving the machine do (see
+chapter 10) -- so the next person to sit down finds your session exactly
+as you left it unless one of those three already ran.]],
 
 [[sudo loses a redirection the moment it has to ask for your password
 first -- give the account NOPASSWD in /etc/sudoers if a script depends on
-sudo <cmd> > file working every time. ~foo is never expanded: the tilde
-on a prompt is decoration, typed at a command it is one character like
-any other, and cd ~ does not go home by itself -- cd alone does. The BIOS
-repair keeps everything under /home and /root exactly as it found it; it
-only ever replaces what is missing outright.]],
+sudo <cmd> > file working every time. ~ and ~/... expand to your own
+home wherever they are typed, in an argument or a redirect target alike;
+only a name stuck straight onto the tilde, like ~root, is left as typed
+and answers "no such file". The BIOS repair keeps /home and /root exactly
+as it found them, but it always rewrites every standard command in /bin
+back to root, 755 and its shipped description, present or not -- a
+chmod 600 /bin/ls does not survive a repair.]],
 
 [[A machine already running when CeroSec Systems ships new commands
 picks each one up once, quietly, the next time it is turned on -- you
@@ -668,10 +699,11 @@ it twice and you get two different lines for the very same password.]],
 [[chmod 666 works on a file exactly the way it works on anything else --
 useful the day a device file (chapter 10) needs opening up to more than
 its owner, since nothing about /dev makes the mode digits mean anything
-different. A file's date, once past about half a year old, prints its
-year on ls -l instead of a time of day; do not read that as the file
-having no time, only as the clock deciding the year is now the more
-useful half to show you. And ls cuts any name past seventeen characters
+different. ls -l never prints a year, however old a file is -- a stamp
+of "Jan  1 00:00" is not New Year's Day, it is the machine's way of
+saying this file was never handed a clock to begin with, likely because
+it predates this rung of the machine. And ls cuts any name past
+seventeen characters
 short, with a trailing tilde standing in for what got dropped -- the file
 is not renamed, only how it is shown to you.]],
 
@@ -814,6 +846,14 @@ Accounts and passwords speak for themselves, one line each:
 [[  hostname: <name>: invalid name
   hash: <salt>: invalid salt
       a salt is digits and lower-case letters only
+  <cmd>: <flag>: unknown option
+      ls, rm, cp, grep, adduser, deluser: a flag not theirs
+  chmod: <mode>: invalid mode
+      not exactly three octal digits
+  man: <name>: no manual entry
+      no file of that name in /bin, or not a plain file
+  date: no clock
+      no clock at all was handed to this machine, chapter 9
 
 A command run with the wrong number of arguments answers with its own
 usage line instead of guessing what you meant -- the very line chapter
@@ -823,6 +863,16 @@ usage line instead of guessing what you meant -- the very line chapter
 
   help: no commands in /bin: the system is damaged.
   help: switch the computer off and on to repair it.
+
+Three come from the line itself, before any command ever runs, and name
+no command at all:
+
+  syntax error: bad redirect
+      a second > or >> on one line
+  syntax error: unterminated quote
+      a closing double quote never came
+  syntax error: missing redirect target
+      a > or >> with no file named after it
 
 And one that names nothing at all, because it was never one of yours to
 begin with -- an answer arriving for a question the machine is no longer
