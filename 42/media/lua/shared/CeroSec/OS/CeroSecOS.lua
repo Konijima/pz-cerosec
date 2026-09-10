@@ -79,20 +79,30 @@ function CeroSecOS.splitLines(text)
 	end
 end
 
--- Last gate before output leaves the core: hard-wrap anything wider than the
--- screen. Markers pass through untouched.
+-- Last gate before output leaves the core: one array entry is one screen line.
+-- Embedded newlines become separate entries and anything wider than the screen
+-- is hard-wrapped. Markers pass through untouched.
 function CeroSecOS.fit(lines)
 	local out = {}
 	for i = 1, #lines do
 		local s = lines[i]
 		if type(s) ~= "string" then s = tostring(s) end
-		if s == CeroSecOS.CLEAR or s == CeroSecOS.EXIT or #s <= CeroSecOS.COLS then
+		if s == CeroSecOS.CLEAR or s == CeroSecOS.EXIT then
 			out[#out + 1] = s
 		else
-			local j = 1
-			while j <= #s do
-				out[#out + 1] = string.sub(s, j, j + CeroSecOS.COLS - 1)
-				j = j + CeroSecOS.COLS
+			local pieces = CeroSecOS.splitLines(s)
+			if #pieces == 0 then pieces = { "" } end
+			for p = 1, #pieces do
+				local piece = pieces[p]
+				if #piece <= CeroSecOS.COLS then
+					out[#out + 1] = piece
+				else
+					local j = 1
+					while j <= #piece do
+						out[#out + 1] = string.sub(piece, j, j + CeroSecOS.COLS - 1)
+						j = j + CeroSecOS.COLS
+					end
+				end
 			end
 		end
 	end

@@ -188,7 +188,9 @@ end
 
 commands.echo = function(state, session, args)
 	if #args < 2 then return true, { "" } end
-	return true, { table.concat(args, " ", 2, #args) }
+	local words = {}
+	for i = 2, #args do words[#words + 1] = args[i] end
+	return true, { table.concat(words, " ") }
 end
 
 commands.cd = function(state, session, args)

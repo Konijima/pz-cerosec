@@ -48,9 +48,13 @@ end
 
 -- Absolute path of the directory holding the given components, plus the last
 -- component. Returns nil for "/" itself, which has no parent.
+-- table.concat is called with two arguments only: the four-argument form is not
+-- worth betting on under Kahlua.
 function CeroSecOS.parentOf(parts)
 	if #parts == 0 then return nil, nil end
-	return "/" .. table.concat(parts, "/", 1, #parts - 1), parts[#parts]
+	local head = {}
+	for i = 1, #parts - 1 do head[i] = parts[i] end
+	return "/" .. table.concat(head, "/"), parts[#parts]
 end
 
 -- true when child is inside parent (or is parent). Used by mv to refuse moving
