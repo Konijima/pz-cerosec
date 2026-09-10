@@ -80,8 +80,8 @@ end
 -- another computer is closed first: one terminal per player.
 function CeroSecTerminal.open(playerObj, computer)
 	local playerNum = playerObj:getPlayerNum()
-	local existing = CeroSecTerminal.instances[playerNum]
-	if existing then existing:close() end
+	local previous = CeroSecTerminal.instances[playerNum]
+	if previous then previous:close() end
 
 	local square = computer:getSquare()
 	if not square then return nil end
@@ -716,9 +716,12 @@ function CeroSecTerminal:updateEditor()
 
 	if text ~= prev.text then
 		local refusal = CeroSec.editRefusal(text)
-		if refusal ~= nil then
+		if refusal ~= nil and CeroSec.editBadness(text) >= CeroSec.editBadness(prev.text) then
 			-- Refused under the fingers: the character never lands, and the
-			-- cursor goes back where it was before it was typed.
+			-- cursor goes back where it was before it was typed. Only when it
+			-- made things no better, though -- a file the shell wrote can hold
+			-- a row wider than the screen, and an editor that undid the
+			-- backspaces on it would be an editor that could never fix it.
 			self.entry:setText(prev.text)
 			self:setCursor(prev.pos)
 			self.editMessage = refusal
@@ -730,7 +733,9 @@ function CeroSecTerminal:updateEditor()
 			self:onKeystroke("CeroSecKeyEnter")
 		end
 		self.editPrev = { text = text, pos = self.entry:getCursorPos() or 0 }
-		self.editMessage = nil
+		-- Accepted, but say so while it is still over a ceiling: the buffer is
+		-- getting better and is not there yet.
+		self.editMessage = refusal
 	else
 		prev.pos = self.entry:getCursorPos() or 0
 		-- The box stops taking typed characters at UITextBox2.textEntryMaxLength

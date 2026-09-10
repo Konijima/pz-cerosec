@@ -305,6 +305,19 @@ the vanilla text box parked off the glass; everything you see is drawn by the wi
     watching, the first one keeps typing: his own half-typed line is never
     replaced by anything the machine sends back.
 
+73b. **A file the shell made too wide.** As `admin`, `write wide.txt "` + 70
+     `a`s + `"` (or `echo` a 70-character string into it). `edit wide.txt`: it
+     opens, the row is on the glass cut to sixty, and the message line says
+     `Line too long: 60 characters`. Now press **Backspace** ten times: each one
+     **works** — the message stays until the row fits and then goes away, and
+     Tab saves. Typing a character while it is still too long does nothing. An
+     editor that refused the backspaces could never fix the file it opened.
+73c. **The owner walks off while you watch.** Two players, one computer. A runs
+     `edit notes.txt`; B opens his window and sees the editor with `Another user
+     is editing`. A **walks away**. Within a minute (the sweep) B's screen stops
+     saying it and B can type: the keyboard is his. He does not have to close
+     and reopen the window.
+
 ## I — passwd
 
 `passwd` asks its questions on the machine's own prompt line, and nothing typed at
@@ -337,6 +350,12 @@ starred to the length of what was typed.
     and at `New password: ` walk off the square. Come back: the machine is still
     asking `New password: `, because the question belongs to the machine. Answer
     it and it finishes.
+83a. **Nothing in clear, mid-question.** As `admin`, run `passwd`, answer the old
+     password, and at `New password: ` type one and press Enter. **Before**
+     answering the retype, save and quit to the main menu, then reload and open
+     the computer: the machine is still asking `Retype new password: `. Grep
+     `gos_cerosec.bin` for the password you typed — it is not in there. Answer
+     the retype and it completes.
 83b. **`hash`, and what a stored password looks like.** `hash hunter2 abcdef`
     prints one line, `$cs1$abcdef$` followed by 32 hex digits, and prints the
     **same** line every time. `hash hunter2` (no salt) prints a different line

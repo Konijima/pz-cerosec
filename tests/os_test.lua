@@ -1251,6 +1251,77 @@ do
 end
 
 do
+	-- The chain carries the account it is about, so it carries the authority to
+	-- touch it at EVERY step and not only at the first. No client can forge a
+	-- token today -- it never leaves the server -- but a check that lives only
+	-- in the command is a check one refactor away from being no check at all.
+	local state = fresh()
+	local bob = CeroSecOS.newUser("bob", "", "/home/bob", false)
+	state.users.bob = bob
+	local session = open(state, "bob")
+
+	says(run(state, session, "passwd root"), "passwd: permission denied")
+
+	-- The token the command refused to hand out, handed in anyway.
+	local forged = { cmd = "passwd", step = "new", user = "root" }
+	local step = answer(state, session, forged, "pwned")
+	eq("a forged token is refused", step.ok, false)
+	eq("and asks nothing", step.control, nil)
+	says(step, "passwd: permission denied")
+
+	-- Every step of it, not just the first.
+	says(answer(state, session, { cmd = "passwd", step = "old", user = "root" }, ""),
+		"passwd: permission denied")
+	says(answer(state, session, { cmd = "passwd", step = "retype", user = "root",
+		salt = "abcdef", want = CeroSecOS.hashPassword("pwned", "abcdef") }, "pwned"),
+		"passwd: permission denied")
+
+	check("root's password is untouched", holds(state, "root", ""))
+	check("and the forged one never took", not holds(state, "root", "pwned"))
+
+	-- His own is still his own.
+	local cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, ""), "New password: ", true)
+	cont = asks(answer(state, session, cont, "bobs"), "Retype new password: ", true)
+	says(answer(state, session, cont, "bobs"), "passwd: password updated")
+	check("bob changed bob", holds(state, "bob", "bobs"))
+end
+
+do
+	-- Nothing of a password reaches the token. The console it lives in is
+	-- written to the save file, so the one window between the two questions
+	-- must not be the one place on the machine that hands a password over.
+	local state = fresh()
+	local session = open(state, "admin")
+	local cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, ""), "New password: ", true)
+	cont = asks(answer(state, session, cont, "hunter2"), "Retype new password: ", true)
+
+	eq("the token is at the retype", cont.step, "retype")
+	check("it carries a salt", CeroSecOS.isValidSalt(cont.salt))
+	check("and a hash, not a password", CeroSecOS.splitHash(cont.want) ~= nil)
+	for key, value in pairs(cont) do
+		if type(value) == "string" then
+			check("no field of the token is the password (" .. key .. ")", value ~= "hunter2")
+			check("nor holds it (" .. key .. ")",
+				string.find(value, "hunter2", 1, true) == nil)
+		end
+	end
+
+	-- And it still judges the retype the way it always did.
+	says(answer(state, session, cont, "hunter3"), "passwd: passwords do not match")
+	check("so nothing changed", holds(state, "admin", ""))
+	cont = asks(run(state, session, "passwd"), "Old password: ", true)
+	cont = asks(answer(state, session, cont, ""), "New password: ", true)
+	cont = asks(answer(state, session, cont, "hunter2"), "Retype new password: ", true)
+	says(answer(state, session, cont, "hunter2"), "passwd: password updated")
+	check("the password took", holds(state, "admin", "hunter2"))
+
+	-- The whole chain is still something the game can serialize.
+	eq("the state validates", CeroSecOS.validate(state), true)
+end
+
+do
 	-- A prompt is not output, so it is never redirected into a file either.
 	local state = fresh()
 	local session = open(state, "admin")

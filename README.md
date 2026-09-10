@@ -123,6 +123,13 @@ questions without a coroutine, which Kahlua does not have. A token that is not o
 a forged console, a chain abandoned and answered later -- is refused and changes
 nothing.
 
+`passwd` asks its three questions this way, and nothing of a password reaches the
+token: between "New password:" and "Retype new password:" what is carried is the
+**hash** of the answer with its own salt, because the token lives in the machine's
+console and the console is written to the save file. The authority to change an
+account is re-checked at every step of the chain, not only in the command that
+started it.
+
 `edit` means the terminal is to become an editor: `data` is the path, the file's text
 and whether it may be written back. The core says no more than that; the editor is
 the window's, and its save is `CeroSecOS.writeFile`, the same call `write` and `>` go
@@ -169,8 +176,11 @@ The buffer is the machine's, like the screen: it lives in the console, is saved 
 the object, and is pushed back to the machine on every save, on leaving, and every
 five seconds while it differs. Walking away and coming back finds it, `[modified]`
 and all. One window types in it and the others watch, because two people typing into
-one buffer over a network is a merge; the keyboard changes hands only when the one
-holding it is no longer standing at the machine.
+one buffer over a network is a merge. Who is holding it is worked out fresh on every
+screen the server sends — the one who took it if he is still standing there, else the
+first of the watchers — rather than remembered, so a buffer whose owner walked off
+never leaves the player still standing at the machine watching a screen he can
+neither type in nor leave.
 
 The input surface is the vanilla `ISTextEntryBox`, in multiple-line mode, parked
 **off the glass**. It has to keep being rendered -- `UITextBox2.render` is what
@@ -183,9 +193,14 @@ the buffer is drawn in the green grid by the window, with its own block cursor a
 `getCursorPos()` -- an absolute index into the text, which is what `putCharacter`,
 `onKeyLeft`, `onKeyRight`, `onKeyBack` and `onKeyDelete` all treat it as.
 
-Two ceilings are the machine's and are checked under the fingers and again on the
-server: 60 characters to a line (the editor wraps nothing) and 4096 bytes to a buffer
-(`CeroSecOS.MAX_FILE_BYTES`). A third is the game's: `UITextBox2.textEntryMaxLength`
+Two ceilings are checked under the fingers: 60 characters to a line (the editor wraps
+nothing) and 4096 bytes to a buffer (`CeroSecOS.MAX_FILE_BYTES`). A keystroke is
+refused only when it does not make things **better**, which is not a nicety: the
+shell can put a 70-character row in a file (`writeFile` has no width rule — the width
+belongs to the glass, not to the disk), and an editor that undid every keystroke on
+such a buffer would undo the backspaces too and could never repair the file it had
+opened. The server holds the buffer under the filesystem's rules only — printable,
+under the file ceiling — for the same reason. A third is the game's: `UITextBox2.textEntryMaxLength`
 is 2000 in the constructor, has no setter and no constructor argument, and
 `isTextLimit()` gates `putCharacter` with it, so **typing** stops at 2000 characters.
 A bigger file still opens, still shows and still saves; Enter and paste are not gated

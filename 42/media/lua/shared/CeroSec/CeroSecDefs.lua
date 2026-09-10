@@ -232,6 +232,14 @@ end
 function CeroSec.prompt(user, hostname, cwd, admin, home)
 	local head = tostring(user) .. "@" .. tostring(hostname) .. ":"
 	local tail = admin and "# " or "$ "
+	-- A name and a host long enough to eat the whole line take the cut
+	-- themselves, so PROMPT_MAX is a ceiling and not a suggestion. There is no
+	-- useradd yet and a hostname is at most sixteen characters, so nothing
+	-- reaches this today; it is here so that the day something does, the line
+	-- does not quietly grow past the screen.
+	if #head + #tail + 1 > CeroSec.PROMPT_MAX then
+		head = CeroSec.truncate(head, CeroSec.PROMPT_MAX - #tail - 1)
+	end
 	local room = CeroSec.PROMPT_MAX - #head - #tail
 	if room < 1 then room = 1 end
 	local path = CeroSec.shortenPath(cwd, home)
@@ -666,6 +674,33 @@ function CeroSec.editScreen(text, top, path, flag, message)
 	out[#out + 1] = CeroSec.editKeys()
 	out[#out + 1] = CeroSec.editMessage(message)
 	return out
+end
+
+-- How far this text is from being something the editor may hold: bytes over the
+-- ceiling, plus characters over the width on every row that is too wide. Zero
+-- means it is fine.
+--
+-- This exists because "refuse anything that breaks a rule" is a trap. The shell
+-- can put a 70 character line in a file (writeFile has no width rule -- the
+-- width is the screen's, not the filesystem's), and an editor that undoes every
+-- keystroke on such a buffer undoes the BACKSPACES too: the file becomes
+-- impossible to fix from the editor that opened it. So a keystroke is refused
+-- only when it does not make things better, and deleting always does.
+function CeroSec.editBadness(text)
+	if type(text) ~= "string" then return CeroSec.EDIT_MAX_BYTES * 2 end
+	local badness = 0
+	if #text > CeroSec.EDIT_MAX_BYTES then badness = #text - CeroSec.EDIT_MAX_BYTES end
+	local lines = CeroSec.editLines(text)
+	for i = 1, #lines do
+		if #lines[i] > CeroSec.EDIT_MAX_LINE then
+			badness = badness + #lines[i] - CeroSec.EDIT_MAX_LINE
+		end
+	end
+	for i = 1, #text do
+		local b = string.byte(text, i)
+		if b < 32 and b ~= 10 and b ~= 9 then badness = badness + 1 end
+	end
+	return badness
 end
 
 -- Is this text something the editor may hold? The two ceilings and the

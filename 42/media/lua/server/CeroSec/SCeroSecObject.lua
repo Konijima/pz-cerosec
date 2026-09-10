@@ -204,6 +204,17 @@ end
 
 function SCeroSecObject:consoleState()
 	if not self.on then return nil end
+	-- Once per load, whatever shape it came back in. It used to be repaired
+	-- only when it was not a table or its lines were not a table, which is the
+	-- one case a console off the disk never is: everything else the save file
+	-- could carry -- a half-written prompt token, a buffer with no path, a
+	-- forged modData -- went straight through the gate it was written for.
+	-- consoleChecked is not in the saved keys, so it is false again on the next
+	-- load and the repair happens exactly once per machine per session.
+	if not self.consoleChecked then
+		self.consoleChecked = true
+		if self.console ~= nil then self.console = CeroSec.repairConsole(self.console) end
+	end
 	if type(self.console) ~= "table" or type(self.console.lines) ~= "table" then
 		-- Never seen, or handed back as something that is not a console.
 		self.console = CeroSec.repairConsole(self.console)
@@ -247,8 +258,10 @@ function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
 	self.on = true
-	-- A fresh screen, with the BIOS still to be typed on it.
+	-- A fresh screen, with the BIOS still to be typed on it. It was just made
+	-- here, so there is nothing to repair and nothing to check.
 	self.console = CeroSec.newConsole()
+	self.consoleChecked = true
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	return true

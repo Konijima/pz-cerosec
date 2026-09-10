@@ -108,10 +108,21 @@ check("long prompt marks the cut", string.find(long, "...", 1, true) ~= nil)
 check("long prompt does not fake a home", string.find(long, "~", 1, true) == nil)
 check("long prompt keeps the tail", string.find(long, "k%$ $") ~= nil)
 
--- Even a hostname that eats the whole line leaves a usable prompt.
+-- Even a name and a host that eat the whole line leave a usable prompt, and
+-- PROMPT_MAX is a ceiling rather than a suggestion: the head takes the cut.
 local huge = CeroSec.prompt("administrator", "a-very-long-hostname", "/home", false)
 check("huge prompt still ends in the sigil", string.sub(huge, -2) == "$ ")
-check("huge prompt is still capped", #huge <= CeroSec.PROMPT_MAX + #"administrator@a-very-long-hostname:")
+check("huge prompt is capped like any other", #huge <= CeroSec.PROMPT_MAX)
+for _, pair in ipairs({ { "a", "b" }, { string.rep("u", 40), string.rep("h", 40) },
+		{ string.rep("u", 16), string.rep("h", 16) }, { "admin", "ksp-abcd-ef" } }) do
+	for _, admin in ipairs({ true, false }) do
+		local line = CeroSec.prompt(pair[1], pair[2], "/home/admin/deep/deeper", admin, "/root")
+		check("prompt for " .. #pair[1] .. "/" .. #pair[2] .. " is capped",
+			#line <= CeroSec.PROMPT_MAX)
+		check("and still ends in its sigil",
+			string.sub(line, -2) == (admin and "# " or "$ "))
+	end
+end
 
 --
 -- The scrollback ring
@@ -442,6 +453,53 @@ do
 	-- What is not a string is still laid out.
 	eq("nil text", CeroSec.inputRows("x> ", nil, 0)[1], "x> ")
 	eq("nil prompt", CeroSec.inputRows(nil, "y", 0)[1], "y")
+end
+
+-- Getting closer counts, even while it is still refused. A file the shell wrote
+-- can hold a row wider than the screen (writeFile has no width rule -- the
+-- width belongs to the glass, not to the disk), and an editor that undid every
+-- keystroke on such a buffer would undo the backspaces too and could never fix
+-- what it had opened.
+do
+	local wide = string.rep("a", 70)
+	eq("a 70 character row is refused", CeroSec.editRefusal(wide),
+		"Line too long: 60 characters")
+	check("and it is over the line by ten", CeroSec.editBadness(wide) == 10)
+	check("legal text has no badness at all", CeroSec.editBadness("ok\nfine") == 0)
+	check("an empty buffer has none", CeroSec.editBadness("") == 0)
+	check("what is not a string is as bad as it gets",
+		CeroSec.editBadness(nil) > CeroSec.EDIT_MAX_BYTES)
+
+	-- Every backspace strictly helps, all the way down to legal.
+	local text, steps = wide, 0
+	while CeroSec.editRefusal(text) ~= nil do
+		local shorter = string.sub(text, 1, #text - 1)
+		check("a backspace at " .. #text .. " gets closer",
+			CeroSec.editBadness(shorter) < CeroSec.editBadness(text))
+		text, steps = shorter, steps + 1
+		check("and never runs away", steps <= 70)
+	end
+	eq("ten backspaces make it legal", steps, 10)
+	eq("and what is left is a full row", #text, CeroSec.EDIT_MAX_LINE)
+
+	-- Typing more never does.
+	check("the 71st character gets no closer",
+		CeroSec.editBadness(wide .. "b") >= CeroSec.editBadness(wide))
+	-- Two long rows: fixing one of them helps even though the other is still bad.
+	local two = string.rep("a", 70) .. "\n" .. string.rep("b", 70)
+	check("two long rows are worth twenty", CeroSec.editBadness(two) == 20)
+	check("shortening one of them helps",
+		CeroSec.editBadness(string.sub(two, 2)) < CeroSec.editBadness(two))
+
+	-- The byte ceiling behaves the same way.
+	local big = string.rep("x\n", CeroSec.EDIT_MAX_BYTES)
+	check("well over the ceiling", CeroSec.editBadness(big) > 0)
+	check("and deleting still helps",
+		CeroSec.editBadness(string.sub(big, 1, #big - 1)) < CeroSec.editBadness(big))
+
+	-- A control byte is badness of its own, and losing it helps.
+	check("a control byte is bad", CeroSec.editBadness("a\1b") == 1)
+	check("and dropping it fixes it", CeroSec.editBadness("ab") == 0)
 end
 
 --

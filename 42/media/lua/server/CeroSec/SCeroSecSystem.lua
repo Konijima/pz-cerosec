@@ -243,9 +243,14 @@ end
 
 -- Who a window belongs to. The token names a window and dies with it, so it
 -- cannot say "the same person came back"; the online id can, and is what
--- vanilla keys per-player server state on (Bobber.lua:26).
+-- vanilla keys per-player server state on (Bobber.lua:26). The player number
+-- goes with it because split screen is two players on one connection and
+-- nothing here proves the game hands each of them an online id of his own in a
+-- game that never talked to a server -- getLocalPlayerByOnlineID scans the
+-- local players comparing the field, which says the game expects them to
+-- differ, not that they always do.
 local function idOf(playerObj)
-	return tostring(playerObj:getOnlineID())
+	return tostring(playerObj:getOnlineID()) .. ":" .. tostring(playerObj:getPlayerNum())
 end
 
 function SCeroSecSystem:hasWatcherWithId(luaObject, id)
@@ -256,28 +261,44 @@ function SCeroSecSystem:hasWatcherWithId(luaObject, id)
 	return false
 end
 
--- Take the keyboard on the open buffer, if it is going. It is going when
--- nobody holds it, or when the one who did is no longer standing here -- he
--- walked off, he died, he logged out of the game -- because an editor nobody
--- can type in is a machine nobody can use.
-function SCeroSecSystem:claimEditor(luaObject, console, playerObj)
+-- Who is holding the keyboard on the open buffer, worked out fresh every time
+-- rather than remembered. It is the one who took it, unless he is no longer
+-- standing here -- he walked off, he died, he left the game -- and then it is
+-- whoever is, by the first of the watcher keys so that every window agrees on
+-- the same one. An editor nobody can type in is a machine nobody can use, and
+-- deciding this only when a window opens left exactly that: a second player
+-- already standing there, watching a buffer whose owner had gone, with no way
+-- to type in it and no way to leave it.
+--
+-- The answer is written back into the console, so the commands that follow
+-- agree with the screen that was just drawn.
+function SCeroSecSystem:editorOf(luaObject, console)
 	local edit = console.edit
-	if edit == nil then return false end
-	local id = idOf(playerObj)
-	if edit.by == id then return true end
-	if edit.by ~= nil and self:hasWatcherWithId(luaObject, edit.by) then return false end
-	edit.by = id
-	return true
+	if edit == nil then return nil end
+	if edit.by ~= nil and self:hasWatcherWithId(luaObject, edit.by) then return edit.by end
+
+	local best = nil
+	if luaObject.watchers then
+		for key, watcher in pairs(luaObject.watchers) do
+			if watcher.player and (best == nil or key < best.key) then
+				best = { key = key, id = idOf(watcher.player) }
+			end
+		end
+	end
+	if best == nil then return edit.by end
+	edit.by = best.id
+	return edit.by
 end
 
-function SCeroSecSystem:isEditor(console, playerObj)
-	return console.edit ~= nil and console.edit.by == idOf(playerObj)
+function SCeroSecSystem:isEditor(luaObject, console, playerObj)
+	if console.edit == nil then return false end
+	return self:editorOf(luaObject, console) == idOf(playerObj)
 end
 
 -- The editor's half of a screen. The buffer as the machine holds it, the file
 -- as it stands on the disk (so a window can say whether the two differ without
 -- asking), and whether this window is the one that may type.
-function SCeroSecSystem:editArgs(state, console, playerObj)
+function SCeroSecSystem:editArgs(luaObject, state, console, playerObj)
 	local edit = console.edit
 	if edit == nil then return nil end
 	local disk = ""
@@ -296,7 +317,7 @@ function SCeroSecSystem:editArgs(state, console, playerObj)
 		-- between still carries the message of the *previous* save, and leaving
 		-- on that would drop the buffer that had not been written yet.
 		saves = edit.saves or 0,
-		mine = self:isEditor(console, playerObj) and true or false,
+		mine = self:isEditor(luaObject, console, playerObj) and true or false,
 	}
 end
 
@@ -312,7 +333,7 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 		prompt = self:promptFor(state, console),
 		mode = CeroSec.consoleMode(console),
 		mask = CeroSec.consoleMask(console),
-		edit = self:editArgs(state, console, playerObj),
+		edit = self:editArgs(luaObject, state, console, playerObj),
 	}
 end
 
@@ -349,14 +370,22 @@ function SCeroSecSystem:applyOrder(console, control, data, playerObj)
 	end
 end
 
--- A buffer a client sent. Nothing is believed on its word: it is text, it fits
--- the ceilings, and every line fits the screen -- the same three rules the
--- terminal enforces under the fingers, checked again here because the terminal
--- is the client. nil plus the line to show when it is not.
+-- A buffer a client sent. Nothing is believed on its word: it is text, it is
+-- printable, and it fits the file ceiling -- the rules the FILESYSTEM has,
+-- checked again here because the terminal is the client.
+--
+-- The sixty column rule is deliberately not one of them. That one belongs to
+-- the screen and not to the disk: writeFile has never had it, so the shell can
+-- put a wider row in a file, and a server that refused to hold such a buffer
+-- would make the file impossible to open and repair. The editor refuses the
+-- 61st character a player types; it does not refuse the buffer he is fixing.
+-- nil plus the line to show when it is not.
 local function bufferOf(text)
 	if type(text) ~= "string" then return nil, "Cannot edit: not text" end
-	local refusal = CeroSec.editRefusal(text)
-	if refusal ~= nil then return nil, refusal end
+	if #text > CeroSec.EDIT_MAX_BYTES then
+		return nil, "Buffer full: " .. CeroSec.EDIT_MAX_BYTES .. " bytes"
+	end
+	if CeroSecOS.hasControlBytes(text) then return nil, "Cannot edit: invalid characters" end
 	return text, nil
 end
 
@@ -390,10 +419,6 @@ Commands.open = function(self, playerObj, x, y, z, token)
 		CeroSec.consolePushAll(console, CeroSec.BOOT_LINES)
 		CeroSec.consolePush(console, CeroSecOS.MOTD)
 	end
-
-	-- An editor left open by somebody who is no longer here changes hands to
-	-- whoever walks up next: a buffer nobody can type in is a dead machine.
-	self:claimEditor(luaObject, console, playerObj)
 
 	local args = self:screenArgs(luaObject, state, console, token, playerObj)
 	args.animate = animate
@@ -503,7 +528,7 @@ end
 Commands.editbuf = function(self, playerObj, x, y, z, token, args)
 	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
-	if not self:isEditor(console, playerObj) then
+	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
 		return
 	end
@@ -523,7 +548,7 @@ end
 Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
-	if not self:isEditor(console, playerObj) then
+	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
 		return
 	end
@@ -557,7 +582,7 @@ end
 Commands.editexit = function(self, playerObj, x, y, z, token, args)
 	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
-	if not self:isEditor(console, playerObj) then
+	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
 		return
 	end

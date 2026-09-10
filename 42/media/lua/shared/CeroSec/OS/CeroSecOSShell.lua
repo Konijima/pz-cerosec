@@ -421,10 +421,12 @@ end
 -- password, its own included -- that is what being root is -- and is the only
 -- account that may change somebody else's.
 --
--- Between "New password:" and "Retype new password:" the new password sits in
--- the token in cleartext, and the token is saved with the machine. That is the
--- same decision as the stored passwords themselves (CeroSecOSUsers.lua): this
--- is game data on a 1993 machine, not a credential store.
+-- Nothing of a password ever reaches the token: between "New password:" and
+-- "Retype new password:" what is carried is the hash of the answer, with its
+-- own salt, and the retype is judged by hashing it the same way. The token
+-- lives in the machine's console and the console is written to the save file,
+-- so anything in clear there would be the one place on the machine that still
+-- handed a password over.
 commands.passwd = function(state, session, args)
 	if #args > 2 then return usage("passwd", "passwd [user]") end
 	local me = CeroSecOS.userOf(session)
@@ -443,6 +445,13 @@ continuations.passwd = function(state, session, cont, line)
 	local user = CeroSecOS.getUser(state, name)
 	if user == nil then return false, { "passwd: no such user" } end
 
+	-- Asked again, at every step. The token is the server's and no client can
+	-- forge one today, but a chain that carries the account it is about must
+	-- carry the authority to touch it too: a check that lives only in the
+	-- command is a check one refactor away from being no check at all.
+	local me = CeroSecOS.userOf(session)
+	if name ~= me and me ~= "root" then return false, { "passwd: permission denied" } end
+
 	if cont.step == "old" then
 		if not CeroSecOS.checkPassword(user, line) then
 			return false, { "passwd: authentication failure" }
@@ -451,12 +460,21 @@ continuations.passwd = function(state, session, cont, line)
 	end
 
 	if cont.step == "new" then
+		-- The token is stored in the machine's console and the console is
+		-- written to the save file, so what goes in it is the HASH of the new
+		-- password and not the password. Otherwise the one window between this
+		-- question and the next would be the one place on the machine where a
+		-- password sits in clear -- which is the thing the hashing was for.
+		local salt = CeroSecOS.newSalt(state, name .. tostring(session.stamp))
 		return ask("Retype new password: ", true,
-			{ cmd = "passwd", step = "retype", user = name, want = line })
+			{ cmd = "passwd", step = "retype", user = name,
+			  salt = salt, want = CeroSecOS.hashPassword(line, salt) })
 	end
 
 	if cont.step == "retype" then
-		if line ~= (cont.want or "") then return false, { "passwd: passwords do not match" } end
+		if CeroSecOS.hashPassword(line, cont.salt) ~= (cont.want or "") then
+			return false, { "passwd: passwords do not match" }
+		end
 		local done, reason = CeroSecOS.setPassword(state, name, line, session.stamp)
 		if done == nil then return false, { "passwd: " .. reason } end
 		return true, { "passwd: password updated" }
