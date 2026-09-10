@@ -8,6 +8,7 @@ set -e
 
 lua5.1 tests/defs_test.lua
 lua5.1 tests/os_test.lua
+lua5.1 tests/manual_test.lua
 lua5.1 tests/terminal_test.lua
 lua5.1 tests/window_test.lua
 # Not piped: a pipe would hide its exit status from set -e.
