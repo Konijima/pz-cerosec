@@ -588,11 +588,18 @@ at the BIOS.
 ## O — shutdown, reboot, sudo, and Escape
 
 **Before you start.** The four new commands are files in `/bin` and the sudoers
-list is a file in `/etc`, and both are written when a machine is *made* or when
-the BIOS repairs one. So do this section on a computer placed fresh, or on one
-you have taken through a BIOS restore (steps 122-126); an older machine in an
-older save has neither `/bin/sudo` nor `/etc/sudoers` and will answer
-`sudo: command not found`.
+list is a file in `/etc`. A computer placed fresh has them; so does one you have
+taken through a BIOS restore (steps 122-126); and so does a computer from an
+older save, which is topped up the first time it is opened on this build — the
+state carries the contents it was built with (`sysv`), and a machine behind on
+that number gets the standard executables it is missing and an `/etc/sudoers` if
+it has none, once. **Worth a look on an existing save:** open an old computer,
+`help` should list `sudo`, `shutdown`, `reboot` and `restart`, and
+`cat /etc/sudoers` as `root` should print the shipped list. After that the
+top-up is inert: `rm /bin/ls` as `root` still survives a save and a reload --
+save, quit to the menu, load again, and `ls` is still `command not found` until
+you repair the machine from the BIOS. That is what steps 121-122 are about, and
+the top-up must not undo it.
 
 135. **The new commands are there.** Log in as `admin`, `help`: the list has
      `reboot`, `restart`, `shutdown` and `sudo` in it, one line each. `ls -l /bin`

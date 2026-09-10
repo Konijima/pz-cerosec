@@ -69,6 +69,67 @@ function CeroSecOS.ensureSystemDir(state, name)
 end
 
 --
+-- Topping an older machine up
+--
+-- A wave that adds a command adds a file to /bin, and a machine that was saved
+-- before it has neither. That is not damage -- the BIOS is for damage -- and it
+-- is not something to seed on every load either, because root deleting
+-- /bin/ls is root's right and must stay deleted.
+--
+-- So the state carries the contents it was built with (state.sysv), and this
+-- runs once, when that number is behind: it puts in the standard executables
+-- that are MISSING and nothing else, writes /etc/sudoers only when there is
+-- nothing at all at that name, and then moves the number up. At the current
+-- number it does nothing at all, which is what keeps `rm /bin/ls` a deletion
+-- and not a suggestion.
+--
+-- A name in /bin that is taken -- by a file of your own, by a directory -- is
+-- left exactly where it is: this fills gaps, it does not replace.
+--
+-- true when it changed something.
+function CeroSecOS.upgradeSystem(state)
+	if type(state) ~= "table" then return false end
+	local sysv = state.sysv
+	if type(sysv) == "number" and sysv >= CeroSecOS.SYSTEM_VERSION then return false end
+
+	-- The ceilings are the disk's and are not suspended for this: a machine
+	-- filled to the node limit is topped up as far as it goes and no further,
+	-- because the alternative is a state validate then refuses -- a working
+	-- machine made unbootable by an upgrade it never asked for.
+	local nodes, bytes = CeroSecOS.usage(state)
+
+	local bin = CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH)
+	if type(bin) == "table" and bin.type == "dir" and type(bin.children) == "table" then
+		local names = CeroSecOS.binNames()
+		for i = 1, #names do
+			local name = names[i]
+			local info = CeroSecOS.COMMAND_INFO[name]
+			if bin.children[name] == nil
+					and nodes + 1 <= CeroSecOS.MAX_NODES
+					and bytes + #info <= CeroSecOS.MAX_TOTAL_BYTES
+					and CeroSecOS.countEntries(bin) < CeroSecOS.MAX_DIR_ENTRIES then
+				bin.children[name] = CeroSecOS.newFile("root", 755, info)
+				nodes = nodes + 1
+				bytes = bytes + #info
+			end
+		end
+	end
+
+	local etc = CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH)
+	if type(etc) == "table" and etc.type == "dir" and type(etc.children) == "table"
+			and etc.children.sudoers == nil then
+		local text = CeroSecOS.defaultSudoers()
+		if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
+				and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
+			etc.children.sudoers = CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, text)
+		end
+	end
+
+	state.sysv = CeroSecOS.SYSTEM_VERSION
+	return true
+end
+
+--
 -- /etc/hostname
 --
 -- The file is the name. `hostname` reads it, root may write it, and the server
@@ -231,5 +292,9 @@ function CeroSecOS.restoreSystem(state)
 	end
 
 	CeroSecOS.fillBin(CeroSecOS.ensureSystemDir(state, "bin"))
+
+	-- A repaired machine has everything this build ships, so there is nothing
+	-- left for the upgrade to top up.
+	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
 end

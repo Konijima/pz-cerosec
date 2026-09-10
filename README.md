@@ -291,7 +291,8 @@ keeps the **file**. An unknown version, or junk, becomes a brand new machine. Da
 done in the game goes through the BIOS restore instead. `validate` knows nothing
 about accounts any more: it checks that `/etc/passwd` is there, is a file and is
 root's, and the rest is the parser's business. A machine saved before `/etc/sudoers`
-existed simply has none, which reads as "nobody may sudo" until a restore writes one.
+existed simply has none, and the `sysv` top-up (see "Persistence") writes it on the
+next load rather than making anyone go through the BIOS for it.
 
 ### Persistence
 
@@ -305,6 +306,13 @@ is a computer that lost its power), and the client never reads the stored screen
 only the lines the server answers it with. A filesystem is capped at 256 nodes, 64
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
 small.
+
+The state also carries `sysv`, the *contents* it was built with (2 today) as
+opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
+on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
+standard executables that are missing, and `/etc/sudoers` when there is nothing at
+that name — and then moves the number up. At the current number it does nothing at
+all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
 
 The editor's buffer lives in the console too (`console.edit`), with the account it
 was opened as: `sudo edit /etc/motd` opens the buffer as `root` and saves as `root`,

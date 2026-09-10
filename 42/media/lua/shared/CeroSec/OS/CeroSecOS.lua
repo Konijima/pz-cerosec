@@ -16,6 +16,15 @@ CeroSecOS = CeroSecOS or {}
 
 CeroSecOS.STATE_VERSION = 1
 
+-- What the machine's own system files are expected to hold, as opposed to what
+-- shape the state is in. STATE_VERSION is the schema and moving it throws a save
+-- away; this one is the CONTENTS -- which executables are standard, which files
+-- /etc is expected to have -- and moving it tops an older machine up on the way
+-- in, once, without touching anything a player put there.
+--
+-- 2: /bin/sudo, /bin/shutdown, /bin/reboot, /bin/restart and /etc/sudoers.
+CeroSecOS.SYSTEM_VERSION = 2
+
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
 CeroSecOS.COLS = 60

@@ -35,6 +35,7 @@ function CeroSecOS.newState(hostname)
 
 	return {
 		v = CeroSecOS.STATE_VERSION,
+		sysv = CeroSecOS.SYSTEM_VERSION,
 		hostname = hostname,
 		fs = root,
 		sessions = {},
@@ -107,6 +108,11 @@ function CeroSecOS.validate(state)
 	if not ok then return false, reason end
 
 	if state.v ~= CeroSecOS.STATE_VERSION then return false, "bad version" end
+	-- Which contents the machine was built with. A state that has never been
+	-- through upgradeSystem has none, and upgradeSystem runs before this gate on
+	-- every load -- so reaching here without one means a blob nothing brought up
+	-- to date, and that is not something to run on.
+	if type(state.sysv) ~= "number" then return false, "bad system version" end
 	if type(state.hostname) ~= "string" or not CeroSecOS.isValidName(state.hostname) then
 		return false, "bad hostname"
 	end
@@ -137,6 +143,9 @@ function CeroSecOS.migrate(state, hostname)
 		-- passwords in clear. validate refuses both. Repairing before the gate
 		-- is what keeps such a machine's filesystem instead of throwing it away.
 		CeroSecOS.migrateUsers(state)
+		-- And then the contents: a machine saved before this build has neither
+		-- the executables it added nor the files, and neither is damage.
+		CeroSecOS.upgradeSystem(state)
 		local ok = CeroSecOS.validate(state)
 		if ok then return state end
 	end

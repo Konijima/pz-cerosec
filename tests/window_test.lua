@@ -884,4 +884,38 @@ do
 	eq("and the console is still admin's", bench.object.console.user, "admin")
 end
 
+-- A machine saved by an older build, opened for the first time on this one. The
+-- top-up happens on the load path (SCeroSecObject:osState), which is the only
+-- place it can: nothing else is called before the validator gets a look.
+do
+	local bench = newBench()
+	local old = CeroSecOS.newState("ksp-old")
+	old.sysv = nil
+	old.fs.children.bin.children.sudo = nil
+	old.fs.children.bin.children.shutdown = nil
+	old.fs.children.bin.children.reboot = nil
+	old.fs.children.bin.children.restart = nil
+	old.fs.children.etc.children.sudoers = nil
+	old.fs.children.home.children.admin.children =
+		{ ["notes.txt"] = CeroSecOS.newFile("admin", 644, "keep me") }
+	bench.object.os = old
+
+	bench.login("admin")
+	eq("it boots straight to its shell", bench.window.mode, "shell")
+	check("and never meets the BIOS", not bench.painted("No operating system found."))
+
+	bench.enter("sudo whoami")
+	bench.frame()
+	eq("sudo is on it now", bench.window.prompt, "[sudo] password for admin: ")
+	bench.enter("")
+	bench.frame()
+	check("and it runs", bench.painted("root"))
+
+	bench.enter("ls /home/admin")
+	bench.frame()
+	check("what was on the disk is still on it", bench.painted("notes.txt"))
+	eq("and the machine is at this build's contents",
+		bench.object:osState().sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
 print("window_test: " .. count .. " checks passed")

@@ -791,6 +791,15 @@ do
 	wrongVersion.v = 2
 	eq("a v2 state is refused", CeroSecOS.validate(wrongVersion), false)
 
+	local noSysv = fresh()
+	noSysv.sysv = nil
+	local svOk, svReason = CeroSecOS.validate(noSysv)
+	eq("a state with no system version is refused", svOk, false)
+	eq("and says so", svReason, "bad system version")
+	local badSysv = fresh()
+	badSysv.sysv = "2"
+	eq("nor is one that is not a number", CeroSecOS.validate(badSysv), false)
+
 	-- The accounts are a file, so this is what validate has left to say about
 	-- them: it is there, it is a file, and it is root's.
 	local noPasswd = fresh()
@@ -1181,6 +1190,8 @@ end
 -- copied from a save file, because that is the only shape such a save has.
 local function oldState(rootPassword, adminPassword)
 	local state = fresh()
+	-- A save from before the contents were numbered carries no number.
+	state.sysv = nil
 	state.fs.children.etc.children.passwd = nil
 	state.fs.children.bin = CeroSecOS.newDir("root", 755)
 	state.users = {
@@ -2330,6 +2341,154 @@ do
 	CeroSecOS.systemNode(state, CeroSecOS.ETC_PATH).children.sudoers = nil
 	eq("no sudoers, still a system", CeroSecOS.systemOk(state), true)
 	eq("and still valid", CeroSecOS.validate(state), true)
+end
+
+--
+-- 24. upgradeSystem: an older machine topped up, once, and never again.
+--
+
+-- A machine as rung 2c left it: no system version, none of the executables that
+-- wave added, no /etc/sudoers -- and a command its owner deleted on purpose.
+local function rung2cState()
+	local state = fresh()
+	state.sysv = nil
+	local bin = state.fs.children.bin
+	bin.children.sudo = nil
+	bin.children.shutdown = nil
+	bin.children.reboot = nil
+	bin.children.restart = nil
+	bin.children.cat = nil
+	state.fs.children.etc.children.sudoers = nil
+	state.fs.children.home.children.admin.children =
+		{ ["notes.txt"] = CeroSecOS.newFile("admin", 644, "keep me") }
+	return state
+end
+
+do
+	local state = rung2cState()
+	eq("as it stands, the core will not run on it", CeroSecOS.validate(state), false)
+
+	eq("the upgrade says it did something", CeroSecOS.upgradeSystem(state), true)
+	eq("and the machine is at this build's contents", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	eq("it validates now", CeroSecOS.validate(state), true)
+
+	-- Every standard executable is back, this wave's four included.
+	local names = CeroSecOS.binNames()
+	for i = 1, #names do
+		local node = state.fs.children.bin.children[names[i]]
+		check("/bin/" .. names[i] .. " is there", node ~= nil)
+		eq("/bin/" .. names[i] .. " is root's", node.owner, "root")
+		eq("/bin/" .. names[i] .. " is 755", node.mode, 755)
+		eq("/bin/" .. names[i] .. " describes itself", node.data, CeroSecOS.COMMAND_INFO[names[i]])
+	end
+	check("sudo among them", state.fs.children.bin.children.sudo ~= nil)
+	check("shutdown too", state.fs.children.bin.children.shutdown ~= nil)
+	check("reboot too", state.fs.children.bin.children.reboot ~= nil)
+	check("restart too", state.fs.children.bin.children.restart ~= nil)
+	-- A machine behind on its contents is topped up whole: there is no telling
+	-- a command deleted last week from one this build added, so `cat` comes
+	-- back too. It is the LAST time that happens to this machine.
+	check("and cat, which its owner had deleted", state.fs.children.bin.children.cat ~= nil)
+
+	local sudoers = state.fs.children.etc.children.sudoers
+	check("/etc/sudoers was written", sudoers ~= nil)
+	eq("root's", sudoers.owner, "root")
+	eq("440", sudoers.mode, CeroSecOS.SUDOERS_MODE)
+	eq("with the shipped list", sudoers.data, CeroSecOS.defaultSudoers())
+	eq("so admin may sudo again", CeroSecOS.sudoer(state, "admin").name, "admin")
+
+	-- Nothing else was touched.
+	eq("what was in /home is still there",
+		state.fs.children.home.children.admin.children["notes.txt"].data, "keep me")
+	eq("and the accounts are the ones that were on the disk",
+		CeroSecOS.hasUsers(state), true)
+
+	-- Idempotent, and inert from here on.
+	eq("a second pass has nothing to do", CeroSecOS.upgradeSystem(state), false)
+	state.fs.children.bin.children.ls = nil
+	eq("still nothing to do", CeroSecOS.upgradeSystem(state), false)
+	eq("and the deletion stands", state.fs.children.bin.children.ls, nil)
+end
+
+-- At this build's contents, nothing is ever seeded: root's deletions are root's.
+do
+	local state = fresh()
+	eq("a fresh machine is already current", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	local rootSession = open(state, "root")
+	ok(state, rootSession, "rm /bin/ls", {})
+	eq("the upgrade does nothing", CeroSecOS.upgradeSystem(state), false)
+	eq("ls stays deleted", state.fs.children.bin.children.ls, nil)
+	bad(state, rootSession, "ls /", "ls: command not found")
+	-- Through the load path too, which is where it would bite.
+	CeroSecOS.migrate(state, "ksp-front-01")
+	eq("and stays deleted across a load", state.fs.children.bin.children.ls, nil)
+end
+
+-- The upgrade fills gaps; it never replaces what is at a name.
+do
+	local state = rung2cState()
+	state.fs.children.bin.children.sudo = CeroSecOS.newDir("admin", 755)
+	state.fs.children.bin.children.mine = CeroSecOS.newFile("admin", 644, "not ours")
+	state.fs.children.etc.children.sudoers =
+		CeroSecOS.newFile("root", 440, "not a sudoers line at all")
+
+	CeroSecOS.upgradeSystem(state)
+	eq("a directory sitting on the name is left alone",
+		state.fs.children.bin.children.sudo.type, "dir")
+	eq("and it is still its owner's", state.fs.children.bin.children.sudo.owner, "admin")
+	eq("a file of your own in /bin is untouched",
+		state.fs.children.bin.children.mine.data, "not ours")
+	-- A sudoers that is there but says nothing is NOT the upgrade's business:
+	-- filling a gap and repairing a file are two different gestures, and the
+	-- second one is the BIOS'.
+	eq("an unparseable sudoers is left where it is",
+		state.fs.children.etc.children.sudoers.data, "not a sudoers line at all")
+	eq("but the number moved, so it is asked once and once only",
+		state.sysv, CeroSecOS.SYSTEM_VERSION)
+	-- And the BIOS is what puts that one right.
+	CeroSecOS.restoreSystem(state)
+	eq("the repair rewrites it",
+		state.fs.children.etc.children.sudoers.data, CeroSecOS.defaultSudoers())
+	eq("and the executable is an executable again",
+		state.fs.children.bin.children.sudo.type, "file")
+end
+
+-- Nothing to work with, and nothing thrown.
+do
+	eq("no state, no upgrade", CeroSecOS.upgradeSystem(nil), false)
+	eq("junk, no upgrade", CeroSecOS.upgradeSystem("x"), false)
+	local noBin = rung2cState()
+	noBin.fs.children.bin = nil
+	noBin.fs.children.etc = nil
+	eq("a machine with no /bin and no /etc is still numbered",
+		CeroSecOS.upgradeSystem(noBin), true)
+	eq("at this build", noBin.sysv, CeroSecOS.SYSTEM_VERSION)
+	-- It is not bootable, and that is the BIOS' business and not the upgrade's.
+	eq("and the boot check says so", CeroSecOS.systemOk(noBin), false)
+end
+
+-- The repair leaves a machine at this build's contents.
+do
+	local state = rung2cState()
+	CeroSecOS.restoreSystem(state)
+	eq("a repaired machine is current", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	eq("so the upgrade has nothing left to do", CeroSecOS.upgradeSystem(state), false)
+	eq("and it validates", CeroSecOS.validate(state), true)
+end
+
+-- The whole load path, on a machine as rung 2c left it: it boots, and sudo works.
+do
+	local state = CeroSecOS.migrate(rung2cState(), "ksp-front-01")
+	eq("it is the machine that was there, not a new one",
+		state.fs.children.home.children.admin.children["notes.txt"].data, "keep me")
+	eq("it boots", CeroSecOS.systemOk(state), true)
+	local admin = open(state, "admin")
+	ok(state, admin, "sudo whoami", nil, "prompt")
+	local asked = run(state, admin, "sudo whoami")
+	eq("sudo asks for a password on it", asked.data.text, "[sudo] password for admin: ")
+	eq("and runs", answer(state, admin, asked.data.cont, "").lines[1], "root")
+	eq("shutdown is there for root", select(3,
+		CeroSecOS.exec(state, open(state, "root"), "shutdown")), "shutdown")
 end
 
 print("os_test: " .. count .. " assertions passed")

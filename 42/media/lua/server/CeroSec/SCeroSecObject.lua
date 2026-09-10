@@ -165,6 +165,11 @@ function SCeroSecObject:osState()
 	-- version gets, and it happens before the gate rather than after it: the
 	-- alternative is throwing away a working filesystem over a password field.
 	CeroSecOS.migrateUsers(self.os)
+	-- The same two repairs CeroSecOS.migrate does, and for the same reason: they
+	-- happen before the gate rather than after it. A machine saved by an older
+	-- build is missing the executables that build never had, and topping it up
+	-- is not throwing a working filesystem away.
+	CeroSecOS.upgradeSystem(self.os)
 
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then
