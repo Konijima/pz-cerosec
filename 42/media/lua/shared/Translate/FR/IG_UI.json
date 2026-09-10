@@ -1,3 +1,6 @@
 {
-    "IGUI_CeroSec_Hint": "Esc ferme | Haut/Bas historique"
+    "IGUI_CeroSec_Hint": "Esc ferme | Haut/Bas historique",
+    "IGUI_CeroSec_Manual_Prev": "< Retour",
+    "IGUI_CeroSec_Manual_Next": "Suivant >",
+    "IGUI_CeroSec_Manual_Contents": "Sommaire"
 }

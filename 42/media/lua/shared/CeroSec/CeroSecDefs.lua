@@ -13,6 +13,20 @@ function CeroSec.log(message)
 	if CeroSec.DEBUG then print("CeroSec: " .. tostring(message)) end
 end
 
+-- TESTING AID. SET TO false BEFORE THE WORKSHOP RELEASE.
+--
+-- With this on, every computer -- on or off -- carries a last entry on its
+-- right-click menu that opens the manual there and then, with no copy of the
+-- book anywhere. It exists so the reader can be worked on without first going
+-- shopping for the item, and it is a door into a piece of documentation that a
+-- player is supposed to FIND. Off, nothing is added and the only way to the
+-- book is the book.
+--
+-- It is deliberately a plain constant in the shared defs and not a sandbox
+-- option: an option is something a server owner can turn on, and this is not
+-- for them. It is read by CeroSecContextMenu and by nothing else.
+CeroSec.DEV_MANUAL_MENU = true
+
 -- Vanilla desktop computer tiles, tileset appliances_com_01.
 -- OFF tiles carry Facing/IsMoveAble/PickUpWeight; the ON tiles (76-79) do not,
 -- which is why facing is kept in our own state and never read back from the

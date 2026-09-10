@@ -32,6 +32,9 @@ Done:
 - The terminal window: the green screen, login, command history, the editor, `^C`
   on Escape, and a server-held console so the screen survives a save, a reload and
   a walk away.
+- The manual: a printed book that spawns where computers do, read by the player in
+  a two-page reader with a table of contents, and remembering the page it was left
+  on.
 
 Next: `/dev` devices; scripts and cron; networking machines together to automate
 doors, locks and lights.
@@ -223,6 +226,46 @@ walk over and open it.
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
 
+### Finding the manual
+
+**CeroSec OS User's Manual** is a printed book, and it is the documentation for
+everything above — the commands, the files, the accounts, the BIOS — written for
+somebody sitting at one of these machines in 1993.
+
+It is loot. It is not in a crafting recipe and it is not given to you at the start:
+it spawns where a book about a computer would have been sold, shelved or left
+behind. The computer aisle of a **library**, a **bookshop** or a **university
+library**; a **cyber cafe**'s desks and filing cabinets; the magazine rack of an
+**electronics store**; a **university computing desk**; a **control room** counter.
+More rarely, in an **office desk** or on an **office supply shelf**, where somebody
+who bought one put it down. Rarest of all, on a **living room shelf** at home.
+
+Rare, and findable: in the computer section of a library it is roughly the odds of
+a particular computer paperback, so a shelf or two of looking. In a random office
+desk it is the rarity of a business paperback, so it is a surprise. The exact
+weights, and the vanilla items each one was measured against, are in
+`42/media/lua/server/CeroSec/CeroSecManualLoot.lua`.
+
+**Reading it.** Right-click the book in your inventory and choose **Read the
+manual**. It opens as an open book: two pages side by side, a chapter title at the
+head of each leaf, page numbers at the outer corners.
+
+| | |
+| --- | --- |
+| **Next >** / Right arrow | turn the sheet forward |
+| **< Back** / Left arrow | turn it back |
+| **Contents** | the table of contents; click a chapter to jump to it |
+| **Escape** | close the book |
+
+The survivor does not read it — **you** do. There is no reading skill, no time
+spent, no animation and nothing queued: the book is paper on your screen and the
+character goes on doing whatever he was doing. Walk with it open, fight with it
+open, drive with it open.
+
+Where you left off is written on **that copy of the book**, so closing it and
+opening it again puts you back on the same spread, across a save as well. Two
+copies are two bookmarks.
+
 ## For modders and contributors
 
 ### Repository layout
@@ -235,7 +278,8 @@ script fails with `FileNotFoundException`. Lua and translations are unaffected;
 scripts are not, so the whole mod has to sit where it is loaded from.
 
 - `42/` — `mod.info`, `media/lua/{shared,client,server}/CeroSec/`, translations.
-- `common/` — sounds and the sound script (`sounds_cerosec.txt`).
+- `common/` — sounds, textures, and the script files: `sounds_cerosec.txt` and
+  `items_cerosec.txt`.
 - `tests/` — headless, no game needed: `sh tests/run.sh`.
 - `docs/` — manual, in-game test checklists.
 - `workshop/` — `workshop.txt` and `preview.png` for the Steam Workshop uploader.
@@ -570,6 +614,109 @@ four minutes later, while the session at the glass is still `admin`'s. A buffer 
 no account on it — one opened before `sudo` existed — is the session's, as it always
 was.
 
+### The manual
+
+The book is three pieces and a text file, and the text file is deliberately the
+only one of them anybody has to touch to write another edition.
+
+**The text** is `42/media/lua/shared/CeroSec/CeroSecManual.lua`, one global table:
+
+    CeroSecManual = {
+      title = "...",
+      edition = "...",
+      chapters = {
+        { title = "...", pages = { "plain text\nwith paragraphs", ... } },
+        ...
+      },
+    }
+
+ASCII only. `\n` is a paragraph break. **An authored page is a page**: the writer
+decides where a page ends and the layout honours it, so pages want to be about 900
+characters. A line that starts with **two spaces** is an example: it is drawn in the
+terminal's own `UIFont.Code`, on a faint band, and it is never wrapped and never
+trimmed, because a shell line broken across two rows is a shell line the player will
+mistype. Keep those under about 62 columns and they will always fit a leaf.
+
+The manual is read through `CeroSecManualUI.text()` and never cached, so a reload of
+the text file is a reload of every open book. A missing or half-written table is an
+empty book — a title leaf and a contents that lists nothing — and never an error.
+
+**The layout** is `shared/CeroSec/CeroSecManualBook.lua`, and it makes no game call
+at all: `CeroSecManualBook.open(manual, { width, rows, measure })` hands back a flat
+list of leaves, and `measure` is a function the caller supplies. That is what lets
+`tests/manual_ui_test.lua` lay the same book out against a font of a known width. It
+wraps by words, breaks a word wider than the leaf rather than draw it off the paper,
+gives every chapter a leaf of its own, spills an authored page that does not fit onto
+a continuation leaf rather than cut it off, and pads the book to an even number of
+leaves so the reader is never shown half a spread.
+
+**The window** is `client/CeroSec/CeroSecManualUI.lua`, an `ISCollapsableWindow`.
+Vanilla ships no serif — `media/fonts/EN/fonts.txt` maps every readable face to
+zomboidSmall/Medium/Large — so the body is `UIFont.NewMedium`, which is what
+vanilla reads its *own* book in (`SurvivalGuide.lua:3-4,47`), and examples are
+`UIFont.Code`. Left, Right and Escape reach it through `setWantKeyEvents(true)` and
+`isKeyConsumed`, the pattern `ISVehicleAnimalUI` uses. The bookmark is
+`item:getModData().page`, always the **left** leaf of the sheet, and a number read
+back off it goes through `CeroSecManualBook.clampPage` first — a manual rewritten
+between two saves must not open an empty leaf. It is a client-side bookmark and is
+not transmitted: it is where a reader left off, not machine state.
+
+**The menu** is `client/CeroSec/CeroSecManualMenu.lua`, on
+`Events.OnFillInventoryObjectContextMenu` — the event vanilla put there for exactly
+this (`ISInventoryPaneContextMenu.lua:933-935`). It unpacks both shapes the event
+hands over: an `InventoryItem`, and a stack of identical ones which arrives as a
+table with an `items` array inside it.
+
+**The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
+**temporary testing aid and has to be set to `false` before the Workshop release.**
+While it is on, every computer — lit or dark, in reach or not — carries a last entry
+on its right-click menu, **Read the CeroSec manual (dev)**, that opens the reader
+there and then with no copy of the book anywhere. It exists so the reader can be
+worked on without first going shopping for the item, and it is a door into a piece
+of documentation a player is supposed to *find*. It is added by
+`CeroSecContextMenu.addDevManual`, always last, and it asks nothing of the computer
+— not its power, not its height, not whether anybody can stand in front of it —
+because it is not really about the computer at all. A book opened that way has no
+item to write a bookmark on, so it keeps its own on the module
+(`CeroSecManualUI.devPage`): session-lived, never saved, and never the same
+bookmark as a copy's. Off, nothing at all is added.
+
+**The item** is `common/media/scripts/items_cerosec.txt`, `CeroSec.Manual`. It is
+`ItemType = base:normal` and **not** `base:literature`, on purpose: a literature item
+that cannot be written on is one the vanilla menu offers to *read*, and vanilla's
+read is a timed action that sits the character down for hours. It keeps
+`DisplayCategory = Literature`, which is a free string the inventory prints through
+`getText("IGUI_ItemCat_" .. …)`, so it still files itself with the books. `Icon =
+CeroSecManual` resolves to `common/media/textures/Item_CeroSecManual.png`: the game
+builds `"Item_" .. Icon` and looks it up as `media/textures/<that>.png`.
+
+**The loot** is `server/CeroSec/CeroSecManualLoot.lua`. Twelve vanilla lists, each
+weight set against what is already *in* that list, appended in place on
+`Events.OnPreDistributionMerge`:
+
+| list | ours | measured against |
+| --- | --- | --- |
+| `LibraryComputer` | 4 | `Book_Computer` 20/10, `Paperback_Computer` 20/20/10/10 |
+| `UniversityLibraryComputer` | 4 | `Book_Computer` 50/20/20/10/10 |
+| `BookstoreComputer` | 4 | `Book_Computer` 20/10, `Magazine_Tech_New` 20/10 |
+| `CyberCafeFilingCabinet` | 4 | `Book_Computer` 10, `Paperback_Computer` 20 |
+| `CyberCafeDesk` | 3 | `Book_Computer` 4, `Paperback_Computer` 8 |
+| `ControlRoomCounter` | 3 | `Book_Computer` 4, `Paperback_Computer` 8 |
+| `UniversityDesk_Computer` | 4 | `Book_Computer` 50/20, `Magazine_Tech` 50/50/20/20 |
+| `ElectronicStoreMagazines` | 4 | `BookElectrician4` 4, `ElectronicsMag1-5` 8 each |
+| `OfficeDesk` | 1 | `Book_Business` 1, `Paperback_Fiction` 1 |
+| `OfficeShelfSupplies` | 1 | `BusinessCard` 1, `PaperclipBox` 1 |
+| `CrateBooks` | 1 | `Book_Computer` 1, `Paperback_Computer` 1 |
+| `LivingRoomShelf` | 0.1 | `BookElectrician1` 0.1 |
+
+Note the two distribution tables are not the same thing. `Distributions` is the room
+and container map, and it is the one `mergeDistributions` merges
+(`SuburbsDistributions.lua:136-149`); `ProceduralDistributions.list` is the item
+pools, and nothing merges it — the Java side reads it as it stands. So a pool is
+extended by appending to it, in place, which is what this does. Adding a list is a
+line in `CeroSecManualLoot.WEIGHTS`; a list vanilla later renames is logged by name
+and skipped rather than taking the mod down.
+
 ### Design rules
 
 - Vanilla only: no dependencies, no bundled libraries.
@@ -592,6 +739,9 @@ was.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
   an answer on the glass.
+- `manual_ui_test.lua` — the manual: wrapping against a proportional font,
+  pagination, the contents page, turning the leaves, the bookmark on the item, the
+  keys the item script sets, and the twelve loot lists.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.
@@ -600,8 +750,9 @@ was.
 
 What no headless test can reach — the sprite, the context menu, sitting down, the
 glow, what is actually on screen — is covered by the manual checklists in `docs/`:
-`TEST-rung1.md` (turning a computer on and off) and `TEST-rung2.md` (the terminal,
-login and the shell).
+`TEST-rung1.md` (turning a computer on and off), `TEST-rung2.md` (the terminal,
+login and the shell) and `TEST-rung4.md` (the manual: the item, the icon, the
+reader, and finding one in the world).
 
 ## Security note
 

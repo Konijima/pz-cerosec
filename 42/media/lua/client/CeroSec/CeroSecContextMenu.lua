@@ -2,6 +2,7 @@ require "CeroSec/CeroSecDefs"
 require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecToggleAction"
 require "CeroSec/ISCeroSecUseAction"
+require "CeroSec/CeroSecManualUI"
 
 CeroSecContextMenu = {}
 
@@ -121,24 +122,49 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 	-- Nothing to use on a dark screen: the terminal option only exists once the
 	-- machine is on. Out of reach and no access grey it out exactly as above --
 	-- the same two reasons, in the same order -- because it is the same walk.
-	if not isOn then return end
+	if isOn then
+		local use = context:addOption(getText("ContextMenu_CeroSec_Use"), worldobjects,
+			CeroSecContextMenu.onUse, computer, playerObj, height)
 
-	local use = context:addOption(getText("ContextMenu_CeroSec_Use"), worldobjects,
-		CeroSecContextMenu.onUse, computer, playerObj, height)
+		local useReason
+		if height == "high" then
+			useReason = "Tooltip_CeroSec_TooHigh"
+		elseif not CeroSecReach.canStandInFront(playerObj, computer) then
+			useReason = "Tooltip_CeroSec_NoAccess"
+		end
 
-	local useReason
-	if height == "high" then
-		useReason = "Tooltip_CeroSec_TooHigh"
-	elseif not CeroSecReach.canStandInFront(playerObj, computer) then
-		useReason = "Tooltip_CeroSec_NoAccess"
+		if useReason then
+			use.notAvailable = true
+			use.toolTip = ISWorldObjectContextMenu.addToolTip()
+			use.toolTip:setVisible(false)
+			use.toolTip.description = getText(useReason)
+		end
 	end
 
-	if useReason then
-		use.notAvailable = true
-		use.toolTip = ISWorldObjectContextMenu.addToolTip()
-		use.toolTip:setVisible(false)
-		use.toolTip.description = getText(useReason)
-	end
+	CeroSecContextMenu.addDevManual(context, playerObj)
+end
+
+-- The testing door. While CeroSec.DEV_MANUAL_MENU is on, any computer -- lit or
+-- dark, in reach or not -- offers the manual straight off its menu, with no
+-- copy of the book anywhere and no walk to get to it, so the reader can be
+-- worked on without first going shopping for the item.
+--
+-- LAST on the menu, deliberately: it is not part of the machine and it must
+-- never sit between the two options that are. And it asks nothing of the
+-- computer -- not its power, not its height, not whether anybody can stand in
+-- front of it -- because it is not really about the computer at all. The
+-- computer is only the nearest thing to right-click.
+--
+-- Off, this adds nothing and there is not an entry to be seen: the book is
+-- found or it is not read.
+function CeroSecContextMenu.addDevManual(context, playerObj)
+	if not CeroSec.DEV_MANUAL_MENU then return end
+	context:addOption(getText("ContextMenu_CeroSec_DevManual"), playerObj,
+		CeroSecContextMenu.onDevManual)
+end
+
+function CeroSecContextMenu.onDevManual(playerObj)
+	CeroSecManualUI.open(playerObj, nil)
 end
 
 Events.OnFillWorldObjectContextMenu.Add(CeroSecContextMenu.OnFillWorldObjectContextMenu)

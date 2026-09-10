@@ -50,6 +50,9 @@ drawRect              ISUIElement
 drawText              ISUIElement
 removeFromUIManager   ISUIElement
 setVisible            ISUIElement
+getMouseX             ISUIElement
+getMouseY             ISUIElement
+setWantKeyEvents      ISUIElement
 setResizable          ISCollapsableWindow
 setTitle              ISCollapsableWindow
 setActionAnim         ISBaseTimedAction

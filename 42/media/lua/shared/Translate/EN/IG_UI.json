@@ -1,3 +1,6 @@
 {
-    "IGUI_CeroSec_Hint": "Esc closes | Up/Down history"
+    "IGUI_CeroSec_Hint": "Esc closes | Up/Down history",
+    "IGUI_CeroSec_Manual_Prev": "< Back",
+    "IGUI_CeroSec_Manual_Next": "Next >",
+    "IGUI_CeroSec_Manual_Contents": "Contents"
 }
