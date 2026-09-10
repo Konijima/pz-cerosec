@@ -5,7 +5,7 @@
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
 	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
-	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
+	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSDev",
 }
 -- Kept as text too (not just loaded), so the error-message sweep below can
 -- scan the engine's own source for the literal reasons it hands to fail(),
@@ -226,6 +226,27 @@ local LITERAL_MESSAGES = {
 for i = 1, #LITERAL_MESSAGES do
 	check("error appendix carries \"" .. LITERAL_MESSAGES[i] .. "\"",
 		string.find(errText, LITERAL_MESSAGES[i], 1, true) ~= nil)
+end
+
+-- The device errors SCeroSecDevices.lua and CeroSecOSDev.lua produce, which
+-- the scan above cannot see: SCeroSecDevices.lua opens with `if isClient()
+-- then return end` and calls straight into the game engine, so it is never
+-- loaded here at all, and CeroSecOSDev.lua builds its own refusals through
+-- refuse(node, reason) rather than fail(cmd, arg, reason), which the regex
+-- above does not match. Hand-kept, and exactly as those two files produce
+-- them (tests/os_test.lua section 21 and SCeroSecDevices.lua's `act`).
+local DEVICE_MESSAGES = {
+	"no power",
+	"no such device",
+	"smashed",
+	"barricaded",
+	"no padlock",
+	"invalid value",
+	CeroSecOS.DEV_PATH .. ": read-only",
+}
+for i = 1, #DEVICE_MESSAGES do
+	check("error appendix carries the device reason \"" .. DEVICE_MESSAGES[i] .. "\"",
+		string.find(errText, DEVICE_MESSAGES[i], 1, true) ~= nil)
 end
 
 -- Confirm the three syntax errors really are in the engine source, spelled

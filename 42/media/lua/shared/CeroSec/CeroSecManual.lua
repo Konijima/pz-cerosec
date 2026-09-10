@@ -11,7 +11,7 @@ CeroSecManual = {
 	edition = "Second Edition, 1993",
 	chapters = {
 
-		{ title = "About this manual", pages = {
+		{ title = "1. Your machine", pages = {
 
 [[CeroSec Systems, Louisville, Kentucky, has been putting small computers on
 office desks since 1989 and this book since 1991. It is not a tutorial in
@@ -35,10 +35,6 @@ logged in; a pound sign means an account with the admin flag set is logged
 in. Anything this book states as fact was checked against a running
 machine; where CeroSec Systems does not yet know the answer, the book says
 so plainly rather than guess.]],
-
-		} },
-
-		{ title = "1. Your machine", pages = {
 
 [[The machine is a beige box on a desk: a tower and a monitor, wired into the
 building's own power and nothing else. It has no network cable, no modem
@@ -605,7 +601,95 @@ chapter 10 for what is already decided about where this is going.]],
 
 		} },
 
-		{ title = "10. Shutting down, and what is next", pages = {
+		{ title = "10. /dev: the building around you", pages = {
+
+[[Everything the machine is wired into shows up as a file under /dev:
+one entry for every light switch, lockable door and window it can
+reach, and no others. Nothing under /dev is ever on the disk -- it is
+built fresh at the start of every command and torn down again before
+the prompt comes back, so no save ever carries a single byte of it.
+
+  admin@ksp-04-11:~$ ls -l /dev
+  crw-rw----  root  lock0   exterior         W  locked
+  crw-rw----  root  light0  office              on
+
+The mode wears a c where an ordinary file wears a dash, because a
+device is a character device and nothing else. Then the owner,
+always root; the id, the name you type after /dev/; a description --
+the two rooms a door or window stands between, exterior with the
+outdoors on one side, or built for what a player raised; which way
+it faces, N or W, blank for a light; and last, what it is doing.]],
+
+[[cat reads a device the same way it reads a file, printing back
+exactly its state and nothing more:
+
+  admin@ksp-04-11:~$ cat /dev/light0
+  on
+  admin@ksp-04-11:~$ echo off > /dev/light0
+  admin@ksp-04-11:~$ cat /dev/light0
+  off
+
+A redirect is how you act: echo the word the device answers to,
+into it. light takes on and off. lock and win, map door and
+player-built alike, take lock and unlock. Nothing else is a word
+these kinds know, and typing one is "light0: invalid value" -- the
+device's own name first, same grammar every other refusal uses.
+
+  admin@ksp-04-11:~$ echo unlock > /dev/lock1
+  admin@ksp-04-11:~$ echo lock > /dev/win0]],
+
+[[What a machine can reach is the building it stands in, every room of
+it, or, with no building around it -- a player's own base counts as
+none -- ten tiles in every direction on its own floor, walls
+included either way. Nothing outside the loaded world exists: a town
+nobody is standing in is a town no script there can touch.
+
+Every device works out its list fresh, each time a command runs, so a
+switch that came within reach since the last command already has its
+number by the time you type ls /dev again. A number, once handed out,
+belongs to that device for the life of the machine: light0 is the
+same switch tomorrow as today, and one torn out or sledgehammered
+leaves a gap nothing moves up into -- a line depending on light3
+still means what it meant. A machine's book of numbers holds at most
+128; past that, an unreachable device is simply not remembered.]],
+
+[[A device ships rw for root, mode 660, and nothing for anybody else --
+the group digit is not read yet (chapter 5), so today that is root's
+alone; a later rung is expected to open it to a sudo group without
+changing the number. chmod moves that mode and it survives: the node
+itself is thrown away at the end of the command, so chmod writes the
+new number into the machine's own book, not onto a node that will not
+exist a moment later.
+
+  admin@ksp-04-11:~$ su root
+  password:
+  root@ksp-04-11:~# chmod 666 /dev/light0
+
+A device is not a file: rm, mv, cp and edit on one all answer
+"is a device", filesystem grammar and all. /dev itself takes nothing
+new -- mkdir, touch or edit a name under it and the answer names the
+directory instead: "/dev: read-only".]],
+
+[[A worked example: locking the front door and killing the office
+light on your way out.
+
+  admin@ksp-04-11:~$ ls -l /dev
+  crw-rw----  root  lock0   exterior         W  unlocked
+  crw-rw----  root  light0  office              on
+  admin@ksp-04-11:~$ echo lock > /dev/lock0
+  admin@ksp-04-11:~$ echo off > /dev/light0
+  admin@ksp-04-11:~$ cat /dev/lock0
+  locked
+
+A padlock on your own door reads the same way: cat says padlock
+instead of locked, echo unlock takes the padlock off and echo lock
+puts it back on, and a player-built door with neither a padlock nor
+a key on it answers every attempt with "lockN: no padlock" -- there
+is nothing here for the machine to turn.]],
+
+		} },
+
+		{ title = "11. Shutting down, and what is next", pages = {
 
 [[shutdown switches the machine off from the keyboard instead of the
 switch on its case -- root only, since turning off somebody else's work
@@ -643,28 +727,9 @@ line. Whether the screen you come back to is a locked login: or a dead,
 dark one, either way it was one of those three that put it there, never
 simply your having left.]],
 
-[[Peripherals -- a look ahead. CeroSec Systems is building the next rung
-of this machine as this edition goes to press, so what follows says only
-what is already decided and nothing more. A machine's own building, or
-the ten tiles around it where there is no building to bound it, will
-hold a handful of named device files under /dev: light0 for a light
-switch, lock0 for a door lock, win0 for a window latch -- one file per
-device the machine can reach, and no others.]],
-
-[[Reading a device tells you its state: cat /dev/light0 will say whether
-that light is on. Acting on one is echo, redirected the way any write
-already is: echo on > /dev/light0, echo off, echo lock > /dev/lock0,
-echo unlock. Nothing here is decided yet about what a device answers
-when nobody is near enough to act on it, except one rule that is
-settled: a device does nothing at all, in either direction, when no
-survivor is anywhere in the chunk to make it real -- an empty building's
-lights are not a light show for nobody. Scripts, cron and one machine
-talking to another are not decided at all yet, and this chapter will
-grow a great deal once they are.]],
-
 		} },
 
-		{ title = "11. Tricks and quirks", pages = {
+		{ title = "12. Tricks and quirks", pages = {
 
 [[A short list of everything this book has already said once, gathered in
 one place for the day you need it fast rather than in order.
@@ -675,7 +740,7 @@ else does. A lit computer cannot be picked up -- turn it off first. The
 screen belongs to the machine, not to you: log out before you leave a
 machine you do not want the next person walking in on. Walking away does
 not clear it -- only clear, exit and power leaving the machine do (see
-chapter 10) -- so the next person to sit down finds your session exactly
+chapter 11) -- so the next person to sit down finds your session exactly
 as you left it unless one of those three already ran.]],
 
 [[sudo loses a redirection the moment it has to ask for your password
@@ -707,9 +772,21 @@ seventeen characters
 short, with a trailing tilde standing in for what got dropped -- the file
 is not renamed, only how it is shown to you.]],
 
+[[Three more for /dev. sudo loses its redirect the moment it has to ask
+for a password (chapter 7), and a device is no exception: sudo echo
+off > /dev/light0 typed as an ordinary account stops at the password
+prompt and the switch never hears about it -- do it as root, or give
+the account NOPASSWD, if a script needs it to land. A window stays
+lockable exactly as long as it has glass: the moment it is smashed,
+echo lock or unlock both answer "winN: smashed", and cat only ever
+reports smashed after that -- there is no locking a broken window
+back into service. And a device torn out or sledgehammered keeps its
+number for the life of the machine -- ls /dev stops listing it, but
+the id is never handed to the next one that appears.]],
+
 		} },
 
-		{ title = "12. Appendix: commands and limits", pages = {
+		{ title = "13. Appendix: commands and limits", pages = {
 
 [[Quick reference. Every command in /bin, and exactly how it is spelled;
 man <command> prints the very same line back at you at the machine
@@ -776,9 +853,16 @@ lines written to it, oldest dropped first, across a save and a reload.
 Command history at the shell holds the last twenty lines typed, oldest
 dropped the same way.]],
 
+[[Device words, for /dev (chapter 10): an id like light0 or lock1 names
+the file itself; light answers on and off; lock and win answer lock
+and unlock. ls -l /dev reads exactly like ls -l anywhere else, mode,
+owner, id, description, facing and state in place of size and date.
+chmod and cat work on a device the way they work on a file; rm, mv,
+cp and edit do not.]],
+
 		} },
 
-		{ title = "13. Appendix: what the machine says", pages = {
+		{ title = "14. Appendix: what the machine says", pages = {
 
 [[Every command signs its own errors with its own name first, then the
 path or word that failed, then the reason -- always in that order, and
@@ -810,12 +894,18 @@ in two words or three, with what it means directly under it.
       past 4096 bytes for that one file
   invalid characters
       a control byte where only plain text belongs
+  is a device
+      a file command met a device where a file was wanted
 
 <command>: command not found means no file answers that name in /bin.]],
 
 [[A file that is there but not yours to run answers permission denied
 instead, never command not found -- one tells you it is missing, the
 other that it is locked and exactly where.
+
+Making anything under /dev meets a refusal naming the directory
+instead of what you typed: "/dev: read-only" -- mkdir, touch and
+edit all answer this way; only the engine may add a node there.
 
 Accounts and passwords speak for themselves, one line each:
 
@@ -841,7 +931,19 @@ Accounts and passwords speak for themselves, one line each:
   deluser: <name>: user is logged in
   deluser: root: cannot remove
   id: <name>: no such user
-  chown: <name>: no such user]],
+  chown: <name>: no such user
+
+A device names itself, never the command that reached it:
+
+  light0: no power
+  lock0: no such device
+  win0: smashed
+  win0: barricaded
+  lock2: no padlock
+  light0: invalid value
+      no current or bulb; taken away or unloaded; broken or
+      boarded; neither padlock nor key; a word that kind
+      does not answer to]],
 
 [[  hostname: <name>: invalid name
   hash: <salt>: invalid salt
@@ -857,7 +959,7 @@ Accounts and passwords speak for themselves, one line each:
 
 A command run with the wrong number of arguments answers with its own
 usage line instead of guessing what you meant -- the very line chapter
-12 lists for it.]],
+13 lists for it.]],
 
 [[Two you will only ever see with an empty /bin behind them:
 
