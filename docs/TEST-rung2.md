@@ -86,6 +86,16 @@ password prompt.
 
 ## D — Closing
 
+26b. **Click to type again.** With the terminal open and logged in, click somewhere
+    else that takes the keyboard: on the ground (walk a step), then on the inventory
+    or on the crafting search box. Typing no longer reaches the screen — that is the
+    game handing the keyboard to whoever was clicked last, and it is not the bug.
+    Now click **anywhere** on the terminal: the glass, the beige bezel, the title
+    bar, the hint line under the screen. Typing resumes at once, and the **first**
+    letter typed appears — no keystroke is eaten. Repeat for each of those four
+    spots. Escape must still close the window afterwards, and dragging the window by
+    its title bar must still work.
+
 27. **Escape.** Closes the window. The keyboard goes back to the game (walk with WASD
     to be sure).
 28. **The close box.** Same thing.

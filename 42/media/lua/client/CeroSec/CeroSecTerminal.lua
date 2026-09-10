@@ -171,8 +171,14 @@ function CeroSecTerminal:createChildren()
 	-- Focused from the first frame, before the BIOS has finished typing: an
 	-- unfocused window would let the boot sequence be walked away from with
 	-- WASD and would leave Escape to the pause menu.
+	--
+	-- No ignoreFirstInput here. Chat calls it because a key opens the chat and
+	-- that key would otherwise be typed into it (ISChat:focus, ISChat.lua:617-618);
+	-- a terminal is opened by a mouse click at the end of a timed action, so
+	-- there is no key to swallow and the flag would only eat the player's first
+	-- real keystroke (UITextBox2.ignoreFirstInput sets ignoreFirst, and nothing
+	-- clears it until an input is dropped).
 	self:setEntryActive(true)
-	self.entry:ignoreFirstInput()
 end
 
 -- Where the input line starts on screen. The text box draws its text two
@@ -293,6 +299,53 @@ function CeroSecTerminal:setEntryActive(active)
 	else
 		self.entry:unfocus()
 	end
+end
+
+--
+-- Keeping the keyboard
+--
+-- Focus in this game is one static field: UITextBox2.focus sets
+-- Core.currentTextEntryBox to the box, unfocus clears it, and Core.updateKeyboard
+-- hands the keys to whatever is in it. Any other box that is clicked puts
+-- ITSELF in there (UITextBox2.onMouseDown: Core.currentTextEntryBox = this),
+-- so a click on the inventory's filter, on the chat, or on anything else with a
+-- text box takes our keyboard away and nothing gives it back.
+--
+-- Our box is one line tall, transparent and sitting on the prompt row, so
+-- "click the terminal to type again" used to mean hitting a few invisible
+-- pixels. It now means what it says: every mouse press on the window, wherever
+-- it lands, hands the keyboard back to the box. Same wiring as the chat, which
+-- routes the presses of every piece of itself into one handler
+-- (ISChat.lua:82-96, 175, 198, 354-355) -- except that ours is a single window
+-- painting its own glass, so one override on the window is the whole surface.
+--
+
+-- Hand the keyboard back to the input line. Cheap enough to call on every
+-- press: focus() is two field writes.
+function CeroSecTerminal:focusEntry()
+	if self.closing or not self.entry or not self.entryActive then return end
+	-- A dropped-input flag from anywhere would eat the first thing typed after
+	-- the click, which is exactly the keystroke the player means.
+	self.entry.javaObject:setIgnoreFirst(false)
+	if not self.entry:isFocused() then self.entry:focus() end
+end
+
+-- The press also brings the window to the front and starts a drag, so the
+-- parent still gets it (ISCollapsableWindow.lua:270-280). The close button and
+-- the input box are children and consume their own presses: the button closes,
+-- and the box focuses itself (UITextBox2.onMouseDown).
+function CeroSecTerminal:onMouseDown(x, y)
+	self:focusEntry()
+	return ISCollapsableWindow.onMouseDown(self, x, y)
+end
+
+-- And again on the release, the way the chat wires both halves of the click
+-- (ISChat.lua:1019 and ISChat.lua:979): a global OnMouseDown handler firing
+-- between the two must not be able to leave the window looking focused and
+-- deaf.
+function CeroSecTerminal:onMouseUp(x, y)
+	self:focusEntry()
+	return ISCollapsableWindow.onMouseUp(self, x, y)
 end
 
 -- Which row the prompt is on: right under the last line printed, the way a
@@ -465,6 +518,10 @@ function CeroSecTerminal:maybeFinishBoot()
 	if not self.opened then return end
 	self:addLines(self.preamble)
 	self:setPhase("login")
+	-- The login prompt is the first thing anyone types at, so make sure the
+	-- keyboard is here for it: two seconds of BIOS is long enough for a click
+	-- somewhere else to have taken it.
+	self:focusEntry()
 end
 
 function CeroSecTerminal:updateBoot()
