@@ -1,5 +1,6 @@
 {
     "ContextMenu_CeroSec_TurnOn": "Turn on computer",
     "ContextMenu_CeroSec_TurnOff": "Turn off computer",
-    "ContextMenu_CeroSec_Use": "Use computer"
+    "ContextMenu_CeroSec_Use": "Use computer",
+    "ContextMenu_CeroSec_ReadManual": "Read the manual"
 }
