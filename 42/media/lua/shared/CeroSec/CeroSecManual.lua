@@ -600,8 +600,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1265  31503    4%
-  nodes         256     53    203   21%]],
+  hda         32768   1290  31478    4%
+  nodes         256     54    202   22%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -643,11 +643,71 @@ chapter 10 for what is already decided about where this is going.]],
 
 		{ title = "10. /dev: the building around you", pages = {
 
-[[Everything the machine is wired into shows up as a file under /dev:
-one entry for every light switch, lockable door and window it can
-reach, and no others. Nothing under /dev is ever on the disk -- it is
-built fresh at the start of every command and torn down again before
-the prompt comes back, so no save ever carries a single byte of it.
+[[The machine is wired into the building it stands in, and dev is how
+you work it. Type it alone and every light switch, lockable door and
+window it can reach is one line: the id you name it by, what it is
+fixed to, which way it faces, and what it is doing.
+
+  admin@ksp-04-11:~$ dev
+  light0  office                       on
+  light1  hallway                      off
+  lock0   exterior                  W  locked
+  lock1   kitchen-hallway           N  unlocked
+  lock2   built                     N  padlock
+  win0    office                    N  barricaded
+
+The description is the two rooms a door or a window stands between,
+exterior with the outdoors on one side, or built for what a player
+raised; the letter after it is the way it faces, N or W, and a light
+has none. The list runs by kind and then by number, so light2 comes
+before light10 and each kind stands together.]],
+
+[[A big building is a long list and the screen simply scrolls. Name a
+kind -- light, lock or win -- and only that kind is listed.
+
+  admin@ksp-04-11:~$ dev win
+  win0    office                    N  barricaded
+
+One id, and dev reads that one back. An id and a word, and dev does
+it and answers with the state it read afterwards, so you never have
+to ask a second time.
+
+  admin@ksp-04-11:~$ dev light0
+  light0: on
+  admin@ksp-04-11:~$ dev light0 off
+  light0: off
+
+light answers on and off. lock and win, map door and player-built
+alike, answer lock and unlock. Nothing else is a word these kinds
+know, and typing one is "light0: invalid value" -- the device's own
+name first, the same grammar every refusal of its uses.]],
+
+[[toggle stands in for whichever of the pair is the opposite of what
+the device reads now: a lit switch goes off, a locked door unlocks,
+a padlocked one has its padlock taken off, and an unlocked one is
+locked again -- with a padlock, if that is what the door carries.
+
+  admin@ksp-04-11:~$ dev lock2 toggle
+  lock2: unlocked
+
+A window that is smashed or barricaded is in no state a word undoes,
+and toggle answers "win0: cannot toggle" rather than guess a
+direction; dev win0 lock still asks, and the window refuses in its
+own name. A number the machine remembers and can no longer reach
+answers "lock9: no such device"; a number never handed out at all is
+"dev: light7: no such device", the command's own grammar for a word
+that names nothing.]],
+
+[[Underneath, every device is a file under /dev, and dev is the short
+way to type what you could type yourself. cat reads one, printing
+its state and nothing more; a redirect writes one. dev light0 off
+and echo off > /dev/light0 are one order, refusals included.
+
+  admin@ksp-04-11:~$ cat /dev/light0
+  on
+  admin@ksp-04-11:~$ echo off > /dev/light0
+
+ls -l /dev is the same table with the plumbing's columns in front:
 
   admin@ksp-04-11:~$ ls -l /dev
   crw-rw----  root  sudo  lock0   exterior       W  locked
@@ -655,56 +715,17 @@ the prompt comes back, so no save ever carries a single byte of it.
 
 The mode wears a c where an ordinary file wears a dash: a device is
 a character device. Then the owner, always root, and the group,
-always sudo; the id, the name you type after /dev/; a description --
-the two rooms a door or window stands between, exterior with the
-outdoors on one side, or built for what a player raised; which way
-it faces, N or W, blank for a light; and last, what it is doing.]],
+always sudo. Nothing under /dev is ever on the disk -- it is built
+fresh at the start of every command and torn down again before the
+prompt comes back, so no save carries a byte of it.]],
 
 [[660 and group sudo is not decoration: an account /etc/sudoers names
 reads and works every device with no sudo typed at all, and anybody
 else gets "permission denied" from the device itself -- chapter 6
-says how that group is kept.
-
-cat reads a device the same way it reads a file, printing back
-exactly its state and nothing more:
-
-  admin@ksp-04-11:~$ cat /dev/light0
-  on
-  admin@ksp-04-11:~$ echo off > /dev/light0
-  admin@ksp-04-11:~$ cat /dev/light0
-  off
-
-A redirect is how you act: echo the word the device answers to,
-into it. light takes on and off. lock and win, map door and
-player-built alike, take lock and unlock. Nothing else is a word
-these kinds know, and typing one is "light0: invalid value" -- the
-device's own name first, same grammar every other refusal uses.
-
-  admin@ksp-04-11:~$ echo unlock > /dev/lock1
-  admin@ksp-04-11:~$ echo lock > /dev/win0]],
-
-[[What a machine can reach is the building it stands in, every room of
-it, or, with no building around it -- a player's own base counts as
-none -- ten tiles in every direction on its own floor, walls
-included either way. Nothing outside the loaded world exists: a town
-nobody is standing in is a town no script there can touch.
-
-Every device works out its list fresh, each time a command runs, so a
-switch that came within reach since the last command already has its
-number by the time you type ls /dev again. A number, once handed out,
-belongs to that device for the life of the machine: light0 is the
-same switch tomorrow as today, and one torn out or sledgehammered
-leaves a gap nothing moves up into -- a line depending on light3
-still means what it meant. A machine's book of numbers holds at most
-128; past that, an unreachable device is simply not remembered.]],
-
-[[A device ships rw for root, mode 660, and nothing for anybody else --
-the group digit is not read yet (chapter 5), so today that is root's
-alone; a later rung is expected to open it to a sudo group without
-changing the number. chmod moves that mode and it survives: the node
-itself is thrown away at the end of the command, so chmod writes the
-new number into the machine's own book, not onto a node that will not
-exist a moment later.
+says how that group is kept. chmod moves that mode and it survives:
+the node itself is thrown away at the end of the command, so chmod
+writes the new number into the machine's own book, not onto a node
+that will not exist a moment later.
 
   admin@ksp-04-11:~$ su root
   password:
@@ -715,22 +736,20 @@ A device is not a file: rm, mv, cp and edit on one all answer
 new -- mkdir, touch or edit a name under it and the answer names the
 directory instead: "/dev: read-only".]],
 
-[[A worked example: locking the front door and killing the office
-light on your way out.
+[[What a machine can reach is the building it stands in, every room of
+it, or, with no building around it -- a player's own base counts as
+none -- ten tiles in every direction on its own floor, walls
+included either way. Nothing outside the loaded world exists: a town
+nobody is standing in is a town no script there can touch.
 
-  admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  sudo  lock0   exterior       W  unlocked
-  crw-rw----  root  sudo  light0  office            on
-  admin@ksp-04-11:~$ echo lock > /dev/lock0
-  admin@ksp-04-11:~$ echo off > /dev/light0
-  admin@ksp-04-11:~$ cat /dev/lock0
-  locked
-
-A padlock on your own door reads the same way: cat says padlock
-instead of locked, echo unlock takes the padlock off and echo lock
-puts it back on, and a player-built door with neither a padlock nor
-a key on it answers every attempt with "lockN: no padlock" -- there
-is nothing here for the machine to turn.]],
+Every device works out its list fresh, each time a command runs, so a
+switch that came within reach since the last command already has its
+number by the time you type dev again. A number, once handed out,
+belongs to that device for the life of the machine: light0 is the
+same switch tomorrow as today, and one torn out or sledgehammered
+leaves a gap nothing moves up into -- a line depending on light3
+still means what it meant. A machine's book of numbers holds at most
+128; past that, an unreachable device is simply not remembered.]],
 
 		} },
 
@@ -833,7 +852,9 @@ the id is never handed to the next one that appears.]],
 
 		{ title = "13. Appendix: commands and limits", pages = {
 
-[[Quick reference. Every command in /bin, and exactly how it is spelled;
+-- The one page with a "]]" inside it -- dev's usage line ends in two closing
+-- brackets -- so it is the one page written with a level-one long bracket.
+[=[Quick reference. Every command in /bin, and exactly how it is spelled;
 man <command> prints the very same line back at you at the machine
 itself.
 
@@ -847,6 +868,7 @@ itself.
   cp [-r] <src> <dst>
   date [+FORMAT]
   deluser [-r] <name>
+  dev [kind|id [value|toggle]]
   df
   echo [text...]
   edit <file>
@@ -857,7 +879,7 @@ itself.
   groupdel <name>
   groups [name]
   hash <text> [salt]
-]],
+]=],
 
 [[  head [-n N] <file>
   help
@@ -906,9 +928,11 @@ dropped the same way.]],
 
 [[Device words, for /dev (chapter 10): an id like light0 or lock1 names
 the file itself; light answers on and off; lock and win answer lock
-and unlock. ls -l /dev reads exactly like ls -l anywhere else, mode,
-owner, group, id, description, facing and state in place of size and
-date.
+and unlock; toggle, which dev takes and a redirect does not, is
+whichever of a pair the device is not in now. dev alone is the whole
+table, dev light, dev lock and dev win one kind of it. ls -l /dev
+reads exactly like ls -l anywhere else, mode, owner, group, id,
+description, facing and state in place of size and date.
 chmod and cat work on a device the way they work on a file; rm, mv,
 cp and edit do not.]],
 
@@ -1002,7 +1026,8 @@ Groups have five of their own, and the last three are gpasswd's:
   gpasswd: <name>: not a member
 ]],
 
-[[A device names itself, never the command that reached it:
+[[A device names itself, never the command that reached it -- the last
+one below is dev's own, and is signed the way a command signs:
 
   light0: no power
   lock0: no such device
@@ -1010,9 +1035,12 @@ Groups have five of their own, and the last three are gpasswd's:
   win0: barricaded
   lock2: no padlock
   light0: invalid value
+  win0: cannot toggle
+  dev: <word>: unknown kind
       no current or bulb; taken away or unloaded; broken or
       boarded; neither padlock nor key; a word that kind
-      does not answer to
+      does not answer to; no opposite to turn it into; the
+      kinds are light, lock and win
 
   hostname: <name>: invalid name
   hash: <salt>: invalid salt
@@ -1022,11 +1050,12 @@ Groups have five of their own, and the last three are gpasswd's:
   chmod: <mode>: invalid mode
       not exactly three octal digits
   man: <name>: no manual entry
-      no file of that name in /bin, or not a plain file
-  date: no clock
-      no clock at all was handed to this machine, chapter 9]],
+      no file of that name in /bin, or not a plain file]],
 
-[[Two you will only ever see with an empty /bin behind them:
+[[  date: no clock
+      no clock at all was handed to this machine, chapter 9
+
+Two you will only ever see with an empty /bin behind them:
 
   help: no commands in /bin: the system is damaged.
   help: switch the computer off and on to repair it.

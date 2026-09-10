@@ -27,7 +27,8 @@ CeroSecOS.STATE_VERSION = 1
 -- 4: /bin/adduser, /bin/deluser, /bin/id, /bin/su.
 -- 5: /bin/chgrp, /bin/gpasswd, /bin/groupadd, /bin/groupdel, /bin/groups and
 --    /etc/group.
-CeroSecOS.SYSTEM_VERSION = 5
+-- 6: /bin/dev.
+CeroSecOS.SYSTEM_VERSION = 6
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

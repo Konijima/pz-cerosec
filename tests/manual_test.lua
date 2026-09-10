@@ -134,7 +134,13 @@ check("the book quotes the real BIOS line",
 check("and the firmware version is one string in one place",
 	type(CeroSec.BIOS_VERSION) == "string" and CeroSec.BIOS_VERSION ~= "")
 
-check("total pages is 45..70 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 70)
+-- The upper bound is a ceiling on the BOOK, not on any one chapter -- a
+-- chapter is still 2..6 pages, and there are still at most 14 of them, so 84
+-- is the most the shape above can hold at all. Raised from 70 to 80 when the
+-- /dev chapter grew a page for the dev command: the number is there to catch a
+-- book that has quietly doubled, and it must leave room for a rung's worth of
+-- honest growth or it is only a chore to move.
+check("total pages is 45..80 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 80)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,

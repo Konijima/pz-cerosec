@@ -246,6 +246,7 @@ CeroSecOS.COMMAND_INFO = {
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
+	dev      = { desc = "list and work the devices", usage = "dev [kind|id [value|toggle]]" },
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
@@ -549,6 +550,154 @@ commands.cat = function(state, session, args, env)
 		end
 	end
 	return ok, out
+end
+
+--
+-- dev
+--
+-- The everyday face of /dev, and nothing more than that. Every read here goes
+-- through CeroSecOS.devRead and every write through CeroSecOS.devWrite -- the
+-- same two calls `cat /dev/light0` and `echo off > /dev/light0` reach -- so the
+-- permissions, the vocabulary and every refusal are word for word what the
+-- plumbing already answers. What it adds is a table to read at a glance, a
+-- filter by kind, and a `toggle` that works the opposite out for you.
+--
+--   admin@ksp-04-11:~$ dev
+--   light0  office                     on
+--   lock0   exterior                W  locked
+--   admin@ksp-04-11:~$ dev light0
+--   light0: on
+--   admin@ksp-04-11:~$ dev light0 off
+--   light0: off
+--
+-- The columns are `ls -l /dev`'s without the mode, the owner and the group --
+-- they read the same on every device -- and the eleven characters that buys go
+-- to the description, 13 wide there and 24 here: 8 id + 24 desc + 2 + 1 side +
+-- 2 + state, which puts the widest state ("barricaded") on column 47.
+local D_ID, D_DESC, D_SIDE = 8, 24, 1
+
+local function devRow(node)
+	return CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", D_ID), D_ID)
+		.. CeroSecOS.padRight(CeroSecOS.truncate(node.desc or "", D_DESC), D_DESC)
+		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.side or "", D_SIDE), D_SIDE)
+		.. "  " .. (node.state or "")
+end
+
+-- The number on the end of an id, or -1 for an id that carries none. Every id
+-- the world hands out is a kind with a number after it (see the numbering in
+-- SCeroSecDevices.lua); one that is not sorts ahead of them and then by name.
+local function devNumber(id)
+	local digits = string.match(id or "", "%d+$")
+	if digits == nil then return -1 end
+	return tonumber(digits)
+end
+
+-- Kind, then number. NOT by name, which is what every other listing on this
+-- machine sorts by and what would put light10 between light1 and light2.
+local function devBefore(a, b)
+	if a.kind ~= b.kind then return a.kind < b.kind end
+	local na, nb = devNumber(a.id), devNumber(b.id)
+	if na ~= nb then return na < nb end
+	return (a.id or "") < (b.id or "")
+end
+
+-- One word is a kind or it is an id, and the digits on the end are what tell
+-- them apart: an id is a kind with a number after it, and no kind ends in one.
+-- So `dev lock` filters, `dev lock9` names a device, and a word that is neither
+-- is refused in the grammar of whichever one it was trying to be.
+local function looksLikeId(word)
+	return string.find(word, "%d$") ~= nil
+end
+
+-- The node one id names, through the same lookup `cat /dev/<id>` uses. A name
+-- with a slash in it, a name nothing answers to, and anything at that name that
+-- is not a device all come back nil, and the caller says "no such device" about
+-- every one of them: from where the player stands they are the same miss.
+local function devNodeOf(state, session, id)
+	local node = CeroSecOS.getNode(state, session, CeroSecOS.DEV_PATH .. "/" .. id)
+	if not CeroSecOS.isDev(node) then return nil end
+	return node
+end
+
+-- What `toggle` writes, by the state it found. The words are the ones
+-- CeroSecOS.DEV_VALUES already takes, so a toggle is a write whose value was
+-- worked out for you and never a path of its own. A padlocked door toggles like
+-- a locked one: "unlock" is what takes a padlock off, and "lock" is what puts it
+-- back on a door that carries one (SCeroSecDevices.lua's `act`).
+--
+-- Nothing else has an opposite. A window that is smashed or barricaded is not in
+-- a state a word undoes, so `dev win0 toggle` says so instead of guessing a
+-- direction -- and `dev win0 lock` still asks the world, which refuses in its
+-- own name ("win0: smashed").
+local DEV_OPPOSITE = {
+	on = "off",
+	off = "on",
+	locked = "unlock",
+	padlock = "unlock",
+	unlocked = "lock",
+}
+
+-- The table, whole or filtered by kind. A device the machine remembers the
+-- number of and cannot reach is not on it, exactly as `ls /dev` has it.
+local function devTable(state, session, kind)
+	local dir, reason = CeroSecOS.getNode(state, session, CeroSecOS.DEV_PATH)
+	if dir == nil then return fail("dev", CeroSecOS.DEV_PATH, reason) end
+	if dir.type ~= "dir" then return fail("dev", CeroSecOS.DEV_PATH, "not a directory") end
+	if not CeroSecOS.can(state, session, dir, "r") then
+		return fail("dev", CeroSecOS.DEV_PATH, "permission denied")
+	end
+
+	local names = CeroSecOS.childNames(dir)
+	local found = {}
+	for i = 1, #names do
+		local node = dir.children[names[i]]
+		if CeroSecOS.isDev(node) and not node.dead
+				and (kind == nil or node.kind == kind) then
+			found[#found + 1] = node
+		end
+	end
+	table.sort(found, devBefore)
+
+	local out = {}
+	for i = 1, #found do out[i] = devRow(found[i]) end
+	return true, out
+end
+
+commands.dev = function(state, session, args, env)
+	if #args > 3 then return usage("dev") end
+	if #args == 1 then return devTable(state, session, nil) end
+
+	local word = args[2]
+	if #args == 2 and not looksLikeId(word) then
+		-- A kind is one of the three the core has words for, and no other.
+		if CeroSecOS.DEV_VALUES[word] == nil then return fail("dev", word, "unknown kind") end
+		return devTable(state, session, word)
+	end
+
+	local node = devNodeOf(state, session, word)
+	if node == nil then return fail("dev", word, "no such device") end
+
+	if #args == 2 then
+		local text, refusal = CeroSecOS.devRead(state, session, node)
+		if text == nil then return false, { refusal } end
+		return true, { node.id .. ": " .. text }
+	end
+
+	local value = args[3]
+	if value == "toggle" then
+		local text, refusal = CeroSecOS.devRead(state, session, node)
+		if text == nil then return false, { refusal } end
+		value = DEV_OPPOSITE[text]
+		if value == nil then return false, { node.id .. ": cannot toggle" } end
+	end
+
+	local done, refusal = CeroSecOS.devWrite(state, session, node, value, env)
+	if done == nil then return false, { refusal } end
+	-- The state the world was re-read for, off the node devWrite put it on --
+	-- not read again through devRead, because a machine that took the order and
+	-- then refused to say what happened would be worse than one that never took
+	-- it.
+	return true, { node.id .. ": " .. (node.state or "") }
 end
 
 commands.rm = function(state, session, args, env)
