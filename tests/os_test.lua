@@ -1705,12 +1705,19 @@ do
 end
 
 do
-	-- A prompt is not output, so it is never redirected into a file either.
+	-- A prompt is not output, so nothing of the question is ever redirected into
+	-- a file. The file itself is another matter: a shell opens what ">" names
+	-- before the command runs, so it is there and empty while the question
+	-- stands, and what goes into it is whatever the command says when the answer
+	-- comes back (section 42).
 	local state = fresh()
 	local session = open(state, "admin")
 	local step = run(state, session, "passwd > out.txt")
 	eq("the prompt still comes", step.control, "prompt")
-	eq("and no file was made", CeroSecOS.getNode(state, session, "out.txt"), nil)
+	eq("and says nothing", #step.lines, 0)
+	local opened = CeroSecOS.getNode(state, session, "out.txt")
+	check("the target was opened", opened ~= nil)
+	eq("and is empty", opened.data, "")
 end
 
 --
@@ -6907,9 +6914,11 @@ do
 	ok(state, admin, "cat single", { "one" })
 
 	-- The editor cannot open on a stage: a stage has no screen. Neither can a
-	-- command that asks a question -- a stage has nobody in front of it, so a
-	-- question in one would be a pipeline standing there for ever waiting on an
-	-- answer nothing can give.
+	-- question be answered in a stage that READS a pipe: the answer comes back
+	-- through the continuation, which carries the command's own arguments and no
+	-- pipe behind them, so the command would run with nothing on its input. A
+	-- stage with nothing on its input asks like any other command and is answered
+	-- on the console (section 42).
 	ok(state, admin, "edit fruit | cat", { "edit: not a terminal" })
 	expect(state, admin, "cat fruit | sudo cat", false, { "sudo: not a terminal" })
 	expect(state, admin, "echo hi | passwd", false, { "passwd: not a terminal" })
@@ -7434,6 +7443,174 @@ do
 		busy.job.steps > 55 * 100)
 	check("and the polling loop spends a tenth of a tenth of that (" ..
 		forever.job.steps .. ")", forever.job.steps * 10 < busy.job.steps)
+end
+
+--
+-- 42. A question with a redirect behind it
+--
+-- `sudo cat /etc/passwd > copie.txt` is two halves that do not happen at the
+-- same time: the command asks for a password and only runs when the answer
+-- comes back, and the redirect it was typed with has to still be there when it
+-- does. What is pinned here: the file gets the file, ">>" appends, a refused
+-- sudo leaves the empty file a shell's open always leaves, a stage of a
+-- pipeline resumes where it stood, and the paths that never ask -- root,
+-- NOPASSWD -- are untouched.
+--
+
+-- A line typed at the prompt that ASKS something, driven the way the console
+-- drives it: the job is stepped, and every question is answered through
+-- CeroSecOS.jobInput -- the one door an answer goes through on a real machine.
+-- Answers are taken in order; a question past the end of the list is answered
+-- with an empty line.
+local function typed(state, session, line, answers)
+	if session.shvars == nil then session.shvars = {} end
+	local env = { now = 740000000, nowMs = 1000 }
+	local job, refusal = CeroSecOS.promptJob(state, session, line, session.shvars,
+		session.status)
+	if job == nil then error("cannot type `" .. line .. "`: " .. tostring(refusal), 2) end
+	local out, asked = {}, {}
+	local at, passes = 1, 0
+	while not CeroSecOS.jobIsOver(job) and passes < 200 do
+		passes = passes + 1
+		CeroSecOS.jobStep(state, job, env, 100)
+		for i = 1, #job.out do out[#out + 1] = job.out[i] end
+		job.out = {}
+		if job.state == "waiting" and job.ask ~= nil then
+			asked[#asked + 1] = job.ask.text
+			CeroSecOS.jobInput(state, job, (answers or {})[at] or "", env)
+			at = at + 1
+		elseif job.state == "waiting" then
+			break
+		end
+	end
+	for i = 1, #job.out do out[#out + 1] = job.out[i] end
+	job.out = {}
+	session.user, session.cwd, session.stack = job.session.user, job.session.cwd,
+		job.session.stack
+	return { job = job, out = out, asked = asked, status = job.status }
+end
+
+-- What a file holds, read off the disk rather than through cat: the contents
+-- are the point here and a fitted line is not a file.
+local function contents(state, path)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+	if node == nil then return nil end
+	return node.data
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local passwd = contents(state, CeroSecOS.PASSWD_PATH)
+	check("the accounts file is longer than a screen line",
+		#CeroSecOS.splitLines(passwd)[1] > CeroSecOS.COLS)
+
+	-- The whole of it, and not a word of it on the screen.
+	local copy = typed(state, admin, "sudo cat /etc/passwd > copie.txt", { "" })
+	eq("the password was asked for", copy.asked[1], "[sudo] password for admin: ")
+	eq("and only once", #copy.asked, 1)
+	eq("nothing reached the screen", #copy.out, 0)
+	eq("the line succeeded", copy.status, 0)
+	eq("and the file is the file, whole and unfolded",
+		contents(state, "/home/admin/copie.txt"), passwd)
+
+	-- ">>" adds to what is there. The open does not: a file already there is
+	-- opened and left alone, or the append would be a blank line nobody wrote.
+	ok(state, admin, "echo first > log", {})
+	local added = typed(state, admin, "sudo echo second >> log", { "" })
+	eq("the append succeeded", added.status, 0)
+	eq("and added one line", contents(state, "/home/admin/log"), "first\nsecond")
+
+	-- A wrong password writes nothing -- but the file is there and empty, because
+	-- a shell opens what ">" names before the command runs and this one is no
+	-- different.
+	ok(state, admin, "echo old > refused", {})
+	local no = typed(state, admin, "sudo cat /etc/passwd > refused", { "wrong" })
+	eq("the refusal is on the screen", no.out[1], "sudo: authentication failure")
+	eq("and only that", #no.out, 1)
+	eq("the line failed", no.status, 1)
+	eq("the file is still there", contents(state, "/home/admin/refused"), "")
+
+	-- A target that cannot be opened is a command that does not run: the refusal
+	-- comes instead of the question, exactly as a shell refuses the line.
+	local shut = typed(state, admin, "sudo cat /etc/passwd > /root/copie.txt", { "" })
+	eq("nothing was asked", #shut.asked, 0)
+	eq("the refusal names the target", shut.out[1],
+		"sudo: /root/copie.txt: permission denied")
+	eq("the line failed", shut.status, 1)
+	eq("and nothing was made", contents(state, "/root/copie.txt"), nil)
+
+	-- The redirect is the SHELL's half of the line and is opened as whoever typed
+	-- it, which is why that is refused at all: root's own copy of the same line
+	-- writes where root may write.
+	local rootSession = open(state, "root")
+	local asRoot = typed(state, rootSession, "sudo cat /etc/passwd > /root/copie.txt")
+	eq("root is asked for nothing", #asRoot.asked, 0)
+	eq("and it writes", contents(state, "/root/copie.txt"), passwd)
+
+	-- NOPASSWD is the other path that never asks, and it is untouched.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+	local free = typed(state, admin, "sudo cat /etc/passwd > free.txt")
+	eq("nothing was asked", #free.asked, 0)
+	eq("and the file is the file", contents(state, "/home/admin/free.txt"), passwd)
+end
+
+-- A stage of a pipeline asks, and the stage is what resumes.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	local piped = typed(state, admin, "sudo echo hi | cat", { "" })
+	eq("the stage's question reached the console", piped.asked[1],
+		"[sudo] password for admin: ")
+	eq("and the pipeline carried on", piped.out[1], "hi")
+	eq("with nothing else on the screen", #piped.out, 1)
+	eq("the pipeline succeeded", piped.status, 0)
+
+	-- A refusal in a stage goes to the SCREEN and not down the pipe, which is the
+	-- rule a stage's errors have always run on.
+	local wrong = typed(state, admin, "sudo echo hi | cat", { "no" })
+	eq("the refusal is on the screen", wrong.out[1], "sudo: authentication failure")
+	eq("and nothing went down the pipe", #wrong.out, 1)
+
+	-- Whose redirect is whose: the question is the first stage's and the file is
+	-- the last stage's, and neither loses its place.
+	put(state, CeroSecOS.rootSession(), "/root/secret", "alpha\nbeta")
+	bad(state, admin, "cat /root/secret", "cat: /root/secret: permission denied")
+	local first = typed(state, admin, "sudo cat /root/secret | head -n 1 > first.txt", { "" })
+	eq("the question was asked once", #first.asked, 1)
+	eq("nothing reached the screen", #first.out, 0)
+	eq("and the last stage wrote what it read",
+		contents(state, "/home/admin/first.txt"), "alpha")
+
+	-- A stage that reads a pipe is still refused a question: its answer would
+	-- come back to a command with nothing on its input.
+	expect(state, admin, "cat first.txt | sudo cat", false, { "sudo: not a terminal" })
+end
+
+-- A chain of questions carries the redirect the whole way: nothing is written
+-- while it is still asking, and what the last answer says goes to the file.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	local chain = typed(state, admin, "sudo passwd root > done.txt",
+		{ "", "hunter2", "hunter2" })
+	eq("three questions", #chain.asked, 3)
+	eq("the first is sudo's", chain.asked[1], "[sudo] password for admin: ")
+	eq("then the new password", chain.asked[2], "New password: ")
+	eq("and the retype", chain.asked[3], "Retype new password: ")
+	eq("nothing reached the screen", #chain.out, 0)
+	eq("the line it printed is in the file", contents(state, "/home/admin/done.txt"),
+		"passwd: password updated")
+	check("and root's password is the one that was typed", holds(state, "root", "hunter2"))
+
+	-- The refusal in the middle of a chain stays on the screen, and the file that
+	-- was opened for it stays empty.
+	local mismatch = typed(state, admin, "sudo passwd root > out.txt",
+		{ "", "hunter3", "hunter4" })
+	eq("the refusal is on the screen", mismatch.out[1], "passwd: passwords do not match")
+	eq("and the file is empty", contents(state, "/home/admin/out.txt"), "")
 end
 
 print("os_test: " .. count .. " assertions passed")

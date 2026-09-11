@@ -539,11 +539,18 @@ the session that is actually logged in.]],
 nothing of your own login stack: the borrowed root session that sudo
 builds gets its own copy of it, so pushing or popping inside a sudo'd
 command dies with that command, and whoami still answers your own name
-right after. And a redirection on a sudo'd line is only caught if the
-command answers straight away -- ask sudo for a password first, and by
-the time you have answered it the > or >> from the original line is gone
-with it, so the command's output lands back on the glass instead of the
-file you named. Where that matters, set NOPASSWD first.]],
+right after.
+
+And a redirection waits for the answer with the command it was typed on:
+
+  admin@ksp-04-11:~$ sudo cat /etc/passwd > copie.txt
+  [sudo] password for admin:
+  admin@ksp-04-11:~$
+
+The file gets the file, and nothing of it touches the glass. The machine
+opens what > names before the command runs, the way every shell does, so
+a password you get wrong still leaves an empty copie.txt behind -- and >>
+adds to what is already in it either way.]],
 
 		} },
 
@@ -1340,7 +1347,12 @@ whose x died with it. Every shell behaves this way and this one does
 too; the way to keep what came down a pipe is $(...), which does not
 fork: x=$(cat notes | head -n 1).
 
-$? after a pipeline is the LAST stage's status, and nobody else's. And a
+A command that asks something -- sudo, passwd -- may ask from a stage
+that has nothing on its input: sudo cat notes | grep -i knox puts the
+password question up on the glass and carries on with the answer. A stage
+that reads a pipe cannot, and says "not a terminal" instead.]],
+
+[[$? after a pipeline is the LAST stage's status, and nobody else's. And a
 reader that stops reading ends the writer where it stands, so an endless
 loop with a head in front of it is over at once rather than running for
 ever:
@@ -1790,8 +1802,7 @@ script, because they are not a script's to say:
   edit: not a terminal
       the editor needs a screen, and a background job and
       a stage of a pipeline have none -- sudo and passwd
-      answer the same way inside one, having nobody in
-      front of them to ask
+      say it too in a stage that READS a pipe
   sleep: invalid interval
   sleep: no clock
   read: not a name

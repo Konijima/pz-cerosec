@@ -249,6 +249,12 @@ working directory you were in; the session at the glass is untouched, so
 `sudo cd /root` moves nobody and `whoami` still says `admin` afterwards. Put
 `NOPASSWD` after a name in `/etc/sudoers` and that account is never asked.
 
+A redirect on a line that asks waits for the answer with the command:
+`sudo cat /etc/passwd > copie.txt` puts the file in the file and nothing on the
+glass. What `>` names is **opened** where a shell opens it — before the command
+runs — so a password answered wrongly leaves the empty file behind, exactly as a
+real one does, and `>>` adds to what is there.
+
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
 gone, and every terminal open on it closes. `reboot` turns it off and straight back
@@ -577,10 +583,13 @@ died with it, so `echo $x` after it prints nothing. Every shell behaves this way
 `x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
 stage's status, and `|` works inside `$(...)`.
 
-A stage has no screen and nobody in front of it, so `edit` in one is refused as it
-is in a background job, a command that has to *ask* something (`sudo`, `passwd`)
-answers `not a terminal` rather than putting a question up that nothing will answer,
-and a `read` whose input is not a pipe reads end of file.
+A stage has no screen of its own, so `edit` in one is refused as it is in a
+background job, and a `read` whose input is not a pipe reads end of file. A command
+that has to *ask* something (`sudo`, `passwd`) is answered where an answer can reach
+it: `sudo cat notes | grep -i knox` puts the password question up on the glass and
+carries on with the answer, while a stage that *reads* a pipe answers
+`not a terminal` — there, the answer would come back to a command with nothing on
+its input.
 
 A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
 full is back-pressure and not an error: the writer simply does not run again until
@@ -879,7 +888,11 @@ Every wait is a continuation. `read` and a command's own question (`sudo`,
 `passwd`) both leave the job `"waiting"` — the console puts the question up with an
 ordinary prompt token `{ cmd = "job", id = 42 }` and the answer comes back through
 `CeroSecOS.jobInput`. `sleep` leaves it `"sleeping"` against `env.nowMs` and costs
-nothing until it comes round.
+nothing until it comes round. A question with a **redirect** behind it keeps it:
+`job.contRedirect` is what `>` named, opened when the question went up
+(`CeroSecOS.openRedirect`) and handed to `CeroSecOS.continue` with the answer, so the
+write happens beside every other command's — on the lines as the command made them,
+before the screen's own sixty columns are applied to anything.
 
 `SCeroSecJobs.lua` is the scheduler and the only half that knows there is a server.
 Ten passes a second on `Events.OnTick` gated by `getTimestampMs()` — vanilla's own
@@ -919,6 +932,15 @@ full — and reading right to left is where the back-pressure comes from: the re
 runs until it has taken everything there is, and only then does the writer get a
 turn. A stage whose reader has gone is killed with `CeroSecOS.SIGPIPE_STATUS` (141).
 When every stage is over the job's status becomes the **last** stage's.
+
+A stage may **ask**. A command that has to put a question up (`sudo`, `passwd`) in a
+stage with nothing on its input is answered: the question travels out of the stage
+onto the pipeline's own job (`f.asking` remembers which stage asked), the console
+puts it up with the pipeline's ordinary token, and `CeroSecOS.jobInput` hands the
+answer back **down to the stage**, which is where the continuation, the redirect and
+the pipe all belong. A stage that *reads* a pipe is still refused it with
+`not a terminal`: a continuation carries a command's own arguments and no pipe behind
+them, so the answer would run the command with nothing on its input.
 
 `outLine` is the one door output goes through, and it now has three: a capture, a
 pipe, or the screen. `errLine` is the other half — a stage's *refusals* go to the

@@ -1076,13 +1076,18 @@ end
 local function applyControl(job, control, data)
 	if control == nil then return true end
 	if control == "prompt" and type(data) == "table" then
-		-- A stage of a pipeline has nobody in front of it, so a command that has
-		-- to ask something cannot be answered in one: `cat f | sudo cat` would
-		-- otherwise put a question up that nothing will ever answer and leave the
-		-- pipeline standing there. Refused where it was typed, in the name of the
-		-- command that asked -- the same answer `edit` gets, and for the same
-		-- reason.
-		if job.inPipe then
+		-- A stage that READS a pipe cannot be answered. Its question would come
+		-- back through the continuation, and a continuation is one call with a
+		-- command's own arguments in it and no pipe behind it -- so `cat f | sudo
+		-- cat` would ask for a password and then run a `cat` with nothing on its
+		-- input. Refused where it was typed, in the name of the command that
+		-- asked -- the same answer `edit` gets, and for the same reason.
+		--
+		-- A stage with nothing on its input asks like any other command:
+		-- `sudo echo hi | cat` puts the password question up on the console
+		-- (pipeStep carries it out of the stage) and resumes the stage with the
+		-- answer, which is what real sudo does with a pipeline behind it.
+		if job.inPipe and job.stdinBuf ~= nil then
 			flushPartial(job)
 			local who = "sh"
 			if type(data.cont) == "table" and type(data.cont.cmd) == "string" then
@@ -1285,6 +1290,35 @@ local function runSimple(state, job, f, env)
 		job.status = 1
 	end
 	applyControl(job, control, data)
+
+	-- A command that has ASKED something has written nothing yet, so runArgs left
+	-- its redirect alone -- and the redirect must not be forgotten there, or
+	-- `sudo cat /etc/passwd > copie.txt` prints the file on the screen when the
+	-- password comes back. The target is opened here, where a shell opens it, and
+	-- the pending write is carried on the job until the answer arrives
+	-- (CeroSecOS.jobInput). A stage carries its own, which is what puts a
+	-- pipeline's position in it: the answer goes to the stage that asked, and the
+	-- stage writes where that stage was told to.
+	--
+	-- Asked of the job and not of the control, because a question the job was
+	-- refused -- a stage reading a pipe -- is not a question anybody will answer,
+	-- and its redirect is the ordinary one runArgs has already dealt with.
+	if redirect ~= nil and job.cont ~= nil then
+		local openOk, openLines =
+			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
+		if openOk then
+			job.contRedirect = { path = redirect.path, append = redirect.append, who = name }
+		else
+			-- A target that cannot be opened is a command that does not run, the
+			-- way it is on a real shell. The question goes with it: there is
+			-- nothing left for an answer to do.
+			job.cont = nil
+			job.ask = nil
+			job.state = "running"
+			errLines(job, openLines)
+			job.status = 1
+		end
+	end
 	return CeroSecOS.STEP_COST_COMMAND
 end
 
@@ -1424,6 +1458,25 @@ local function stageRunnable(stage, env)
 	return stage.state == "running"
 end
 
+-- The stage a question came out of, and the frame that remembers it. A
+-- pipeline is one job as far as the machine is concerned -- one screen, one
+-- prompt token, one answer -- so the question travels up to the job and the
+-- answer has to find its way back down to the shell that asked it. The
+-- innermost pipeline first: `$(sudo cat f | head -n 1)` inside another one is
+-- answered where it was asked.
+local function askingStage(job)
+	local frames = job.frames
+	if frames == nil then return nil end
+	for i = #frames, 1, -1 do
+		local f = frames[i]
+		if f.k == "pipe" and f.asking ~= nil then
+			local stage = f.stages[f.asking]
+			if stage ~= nil then return f, stage end
+		end
+	end
+	return nil
+end
+
 -- Is there anything for this stage to read?
 local function inputReady(buf)
 	if buf == nil then return true end
@@ -1491,6 +1544,23 @@ local function pipeStep(state, job, f, env)
 			else
 				return stageStep(state, stage, env)
 			end
+		end
+	end
+
+	-- Nothing could step because a stage is standing at a question: the question
+	-- becomes the pipeline's own and the whole job waits on it, exactly as it
+	-- waits when a command that is not in a pipeline asks one. Asked after the
+	-- walk and not before it, so a pipeline still drains and still moves what it
+	-- can while one of its stages holds a question -- and the answer comes back
+	-- through CeroSecOS.jobInput, which hands it to the stage.
+	for i = 1, n do
+		local stage = stages[i]
+		if stage.state == "waiting" and stage.ask ~= nil then
+			f.asking = i
+			job.ask = stage.ask
+			job.state = "waiting"
+			job.cpuSince = nil
+			return 0
 		end
 	end
 
@@ -2032,14 +2102,42 @@ function CeroSecOS.jobInput(state, job, text, env)
 	if type(job) ~= "table" or job.state ~= "waiting" then return false end
 	if type(text) ~= "string" then text = "" end
 
-	if job.cont ~= nil then
-		local cont = job.cont
-		job.cont = nil
+	-- A question a STAGE of a pipeline asked. The answer is the stage's, not the
+	-- pipeline's: the frame remembers which one asked and the stage is fed the
+	-- way any other job is, so its own continuation, its own redirect and its own
+	-- pipe all still belong to it.
+	local frame, stage = askingStage(job)
+	if stage ~= nil then
+		frame.asking = nil
 		job.ask = nil
 		job.state = "running"
-		local ok, lines, control, data = CeroSecOS.continue(state, job.session, cont, text, env)
-		writeLines(job, lines)
-		if ok then job.status = 0 else job.status = 1 end
+		return CeroSecOS.jobInput(state, stage, text, env)
+	end
+
+	if job.cont ~= nil then
+		local cont = job.cont
+		local pending = job.contRedirect
+		job.cont = nil
+		job.contRedirect = nil
+		job.ask = nil
+		job.state = "running"
+		-- The redirect the line was typed with goes back down with the answer: the
+		-- chain is where the command finally runs, and the writing belongs beside
+		-- the writing every other command's redirect goes through.
+		local ok, lines, control, data =
+			CeroSecOS.continue(state, job.session, cont, text, env, pending)
+		-- A chain that is still asking -- `sudo passwd root > out` -- has still
+		-- written nothing, so its redirect waits for the next answer.
+		if pending ~= nil and control == "prompt" then job.contRedirect = pending end
+		if ok then
+			writeLines(job, lines)
+			job.status = 0
+		else
+			-- A refusal is not output, so in a stage it goes to the screen and
+			-- not down the pipe -- the rule every other command already runs on.
+			errLines(job, lines)
+			job.status = 1
+		end
 		applyControl(job, control, data)
 		return true
 	end

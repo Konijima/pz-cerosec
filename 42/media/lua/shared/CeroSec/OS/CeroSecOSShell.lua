@@ -2679,6 +2679,32 @@ function CeroSecOS.writeRedirect(state, session, who, redirect, text, env)
 	return true, {}
 end
 
+-- OPENING what ">" named, with nothing to put in it yet. A shell opens the
+-- target before the command runs -- that is why `cat nosuch > f` leaves an
+-- empty f behind on a real machine -- and this is the one place on this one
+-- where that matters: a command that has to ASK something (sudo) has not
+-- written a byte and will not until the answer comes back, so the file is made
+-- here and written when it does.
+--
+-- A device is not opened. It has no contents to truncate, only a state to be
+-- put into, and putting it into one is what the write itself does.
+-- true plus the lines, or false plus the refusal, exactly like the write.
+function CeroSecOS.openRedirect(state, session, who, redirect, env)
+	local node = CeroSecOS.getNode(state, session, redirect.path)
+	if CeroSecOS.isDev(node) then return true, {} end
+	-- ">>" creates what is not there and truncates nothing, which is the whole
+	-- difference between the two: a file already there is opened and left
+	-- exactly as it is, because appending nothing to it would be a blank line
+	-- the command never wrote.
+	if redirect.append and node ~= nil and node.type == "file" then return true, {} end
+	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, "", false,
+		CeroSecOS.clockOf(env))
+	if done == nil then
+		return false, CeroSecOS.fit({ who .. ": " .. redirect.path .. ": " .. reason })
+	end
+	return true, {}
+end
+
 --
 -- The prompt
 --
@@ -2827,19 +2853,26 @@ end
 -- A token that is not one -- a forged console, a chain abandoned and answered
 -- afterwards -- is refused here rather than trusted, and nothing of the state
 -- is touched on the way out.
+--
+-- redirect is what the line that STARTED the chain was typed with, when it was
+-- typed with one: `sudo cat /etc/passwd > copie.txt` is a redirect the command
+-- had not earned yet when it asked for a password, and it is carried on the job
+-- until the answer comes back (CeroSecOSVM.jobInput). It is a plain table --
+-- path, append, and the name to put in front of a refusal -- exactly like the
+-- one a command is handed.
 local continueLine
 
-function CeroSecOS.continue(state, session, cont, line, env)
+function CeroSecOS.continue(state, session, cont, line, env, redirect)
 	-- A chain that ends in a command is a command, so /dev is under it too:
 	-- `sudo cat /dev/light0` asks for a password first and reads the switch
 	-- afterwards, on the answer.
 	CeroSecOS.mountDev(state, env)
-	local ok, lines, control, data = continueLine(state, session, cont, line, env)
+	local ok, lines, control, data = continueLine(state, session, cont, line, env, redirect)
 	CeroSecOS.unmountDev(state, env)
 	return ok, lines, control, data
 end
 
-continueLine = function(state, session, cont, line, env)
+continueLine = function(state, session, cont, line, env, redirect)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }
@@ -2868,5 +2901,22 @@ continueLine = function(state, session, cont, line, env)
 	local ok, lines, control, data = fn(state, run, cont, line, env)
 	if lines == nil then lines = {} end
 	if run ~= session then carryAs(cont.as, control, data) end
+
+	-- What the chain finally said goes where ">" pointed, on exactly the rule
+	-- runArgs above runs on: the file when the command succeeded, the screen when
+	-- it did not, and nothing at all while it is still asking. Written here, on
+	-- the lines as the command made them -- a redirect is not a screen and a line
+	-- on its way into a file is not folded at sixty columns.
+	--
+	-- Opened as whoever typed it and not as whoever the chain runs as, which is
+	-- the shell's own rule and the reason `sudo cat /etc/passwd > /root/copie`
+	-- is still refused: the redirect is the shell's half of the line.
+	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
+	if ok and redirect ~= nil and redirectable then
+		local wroteOk, wroteLines = CeroSecOS.writeRedirect(state, session,
+			redirect.who or cont.cmd, redirect, table.concat(lines, "\n"), env)
+		return wroteOk, wroteLines, control
+	end
+
 	return ok, CeroSecOS.fit(lines), control, data
 end
