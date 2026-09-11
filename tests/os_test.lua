@@ -3,7 +3,7 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
 	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 	"CeroSecOSVM",
 }
@@ -6321,5 +6321,225 @@ do
 	badAt(state, admin, "shutdown -c", "shutdown: permission denied", env2)
 end
 
+
+--
+-- 38. Completion at the prompt
+--
+-- CeroSecOS.complete is what Tab asks. Every case below is the exact string it
+-- must put in the line and the exact names it must offer, because a completion
+-- that is nearly right is a completion that eats a character of somebody's
+-- filename.
+--
+
+-- One completion, spelled out: the replacement, the names, and where the
+-- replacement goes.
+local function comp(state, session, line, cursor)
+	return CeroSecOS.complete(state, session, line, cursor or #line)
+end
+
+local function completes(state, session, line, want, at)
+	local r = comp(state, session, line)
+	eq('"' .. line .. '" completes to "' .. tostring(want) .. '"', r.replacement, want)
+	if at ~= nil then eq('"' .. line .. '" replaces from ' .. at, r.start, at) end
+	return r
+end
+
+local function offers(state, session, line, want)
+	local r = comp(state, session, line)
+	eq('"' .. line .. '" offers ' .. want, table.concat(r.candidates, " "), want)
+	return r
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+
+	local function put(path, text)
+		local done, reason = CeroSecOS.writeFile(state, admin, path, text or "x", false, FIXED)
+		if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+	end
+	local function dir(path, mode)
+		local done, reason = CeroSecOS.createNode(state, admin, path,
+			CeroSecOS.newDir("admin", mode or 755, FIXED), FIXED)
+		if done == nil then error("cannot mkdir " .. path .. ": " .. tostring(reason), 2) end
+	end
+
+	put("/home/admin/notes.txt")
+	put("/home/admin/note2.txt")
+	put("/home/admin/.profile")
+	dir("/home/admin/work")
+	-- Enterable and unreadable: x without r, which is the one case a listing
+	-- must refuse while a path through it still works.
+	dir("/home/admin/closed", 300)
+	put("/home/admin/closed/inside")
+
+	--
+	-- Command names, in the first word.
+	--
+	completes(state, admin, "l", "ls ", 1)
+	offers(state, admin, "l", "ls")
+	-- Unique, and the space says so: a command name is finished when it is found.
+	completes(state, admin, "who", "whoami ", 1)
+	-- Several: as far as they agree and not a character further.
+	completes(state, admin, "grou", "group", 1)
+	offers(state, admin, "grou", "groupadd groupdel groups")
+	-- And not a character further than they agree: grep shares only the "gr".
+	completes(state, admin, "gr", "gr", 1)
+	offers(state, admin, "gr", "grep groupadd groupdel groups")
+	-- The words the shell IS are candidates too, and they have no file in /bin.
+	offers(state, admin, "whil", "while")
+	offers(state, admin, "cd", "cd")
+	offers(state, admin, "hi", "history")
+	-- help is a file AND a builtin, and is offered once.
+	offers(state, admin, "help", "help")
+	-- Nothing at all: no match, nothing put in the line.
+	completes(state, admin, "zz", nil)
+	-- The first word is a NAME and never a path: there is no PATH here, so a
+	-- directory of the cwd is not a command.
+	completes(state, admin, "wor", nil)
+
+	-- An executable an ordinary account may not run is not offered to him, and
+	-- is offered to root.
+	local lsNode = CeroSecOS.getNode(state, root, "/bin/ls")
+	lsNode.mode = 700
+	lsNode.owner = "root"
+	completes(state, admin, "l", nil)
+	completes(state, root, "l", "ls ", 1)
+	lsNode.mode = 755
+	lsNode.owner = "root"
+
+	--
+	-- Paths, everywhere else.
+	--
+	completes(state, admin, "cat no", "note", 5)
+	offers(state, admin, "cat no", "note2.txt notes.txt")
+	completes(state, admin, "cat notes", "notes.txt ", 5)
+	-- A directory ends in "/" so the next component can be typed straight on.
+	completes(state, admin, "ls wo", "work/", 4)
+	-- Absolute, and through a parent.
+	completes(state, admin, "ls /et", "/etc/", 4)
+	completes(state, admin, "ls work/../not", "work/../note", 4)
+	offers(state, admin, "ls /etc/h", "hostname")
+	-- The directory half comes back exactly as it was typed.
+	completes(state, admin, "cat /etc/mo", "/etc/motd ", 5)
+
+	--
+	-- The tilde: the shell's, expanded for the lookup and left alone in the line.
+	--
+	completes(state, admin, "cat ~", "~/", 5)
+	completes(state, admin, "cat ~/not", "~/note", 5)
+	completes(state, admin, "cat ~/notes", "~/notes.txt ", 5)
+
+	--
+	-- Hidden entries: only when the segment being typed starts with a dot.
+	--
+	offers(state, admin, "ls ", "closed note2.txt notes.txt work")
+	completes(state, admin, "cat .", ".profile ", 5)
+	offers(state, admin, "cat .", ".profile")
+
+	--
+	-- A directory the account may not read answers nothing at all -- not the
+	-- names, and not an error either.
+	--
+	completes(state, admin, "cat closed/", nil)
+	offers(state, admin, "cat closed/", "")
+	-- Root walks through the bits, here as everywhere.
+	completes(state, root, "cat /home/admin/closed/", "/home/admin/closed/inside ")
+	-- And a path through a directory with no x on it is not reachable at all.
+	local shut = CeroSecOS.getNode(state, admin, "/home/admin/work")
+	shut.mode = 600
+	completes(state, admin, "cat work/", nil)
+	shut.mode = 755
+
+	--
+	-- Quoting. A double-quoted word is completed and the quote is closed for a
+	-- unique file, the way ksh closes it; a single-quoted one is text and is
+	-- left alone.
+	--
+	completes(state, admin, "cat \"no", "note", 6)
+	completes(state, admin, "cat \"notes", "notes.txt\" ", 6)
+	completes(state, admin, "cat 'no", nil)
+	completes(state, admin, "cat \"no\" a", nil)
+	-- A word carrying a variable or an escape: what it expands to is the job's
+	-- business, so nothing is offered.
+	completes(state, admin, "cat $x", nil)
+	completes(state, admin, "cat no\\t", nil)
+	completes(state, admin, "echo $((1+no", nil)
+
+	--
+	-- Where a command begins. Word one, and after each separator.
+	--
+	completes(state, admin, "echo a; l", "ls ", 9)
+	completes(state, admin, "echo a && l", "ls ", 11)
+	completes(state, admin, "echo a || l", "ls ", 11)
+	completes(state, admin, "echo a | l", "ls ", 10)
+	completes(state, admin, "echo a & l", "ls ", 10)
+	completes(state, admin, "echo $(l", "ls ", 8)
+	-- sudo runs a command, so the word after it is a command name.
+	completes(state, admin, "sudo l", "ls ", 6)
+	completes(state, admin, "sudo sudo l", "ls ", 11)
+	-- And the word after THAT is a path again.
+	completes(state, admin, "sudo cat no", "note", 10)
+	-- A reserved word that opens a command is followed by one.
+	completes(state, admin, "if l", "ls ", 4)
+	completes(state, admin, "while l", "ls ", 7)
+	-- A redirection is followed by a FILE and never by a command.
+	completes(state, admin, "echo hi > no", "note", 11)
+	completes(state, admin, "echo hi >> no", "note", 12)
+	completes(state, admin, "echo hi > l", nil)
+
+	--
+	-- The caret, not the end of the line: what is to the right of it is not part
+	-- of the word and is not touched.
+	--
+	local r = comp(state, admin, "cat no 2.txt", 6)
+	eq("the word ends at the caret", r.replacement, "note")
+	eq("and the replacement starts at the word", r.start, 5)
+	-- An empty word at the caret is every entry of the cwd.
+	offers(state, admin, "cat ", "closed note2.txt notes.txt work")
+	r = comp(state, admin, "cat ", 4)
+	eq("nothing typed yet, so nothing they agree on", r.replacement, "")
+	eq("and the replacement goes where the word would", r.start, 5)
+
+	--
+	-- A device is a file on this machine, so a device completes like one.
+	--
+	local devices = fakeDevices({
+		{ id = "light0", kind = "light", state = "on" },
+		{ id = "light1", kind = "light", state = "off" },
+		{ id = "lock0", kind = "lock", state = "locked" },
+		{ id = "lock1", kind = "lock", state = "locked", dead = true },
+	})
+	local env = { now = FIXED, devices = devices }
+	CeroSecOS.mountDev(state, env)
+	completes(state, admin, "cat /dev/li", "/dev/light", 5)
+	offers(state, admin, "cat /dev/li", "light0 light1")
+	completes(state, admin, "cat /dev/lock0", "/dev/lock0 ", 5)
+	-- A device the machine knows the number of and cannot reach is not on the
+	-- shelf, exactly as `ls /dev` does not show it.
+	offers(state, admin, "cat /dev/lock", "lock0")
+	CeroSecOS.unmountDev(state, env)
+	completes(state, admin, "cat /dev/li", nil)
+
+	--
+	-- Nothing believed on its word: junk in, an empty answer out, never a crash.
+	--
+	local none = { replacement = nil, candidates = {}, start = 1 }
+	local function empty(what, r)
+		check(what .. ": nothing offered", r.replacement == none.replacement
+			and type(r.candidates) == "table" and #r.candidates == 0
+			and type(r.start) == "number")
+	end
+	empty("no state", CeroSecOS.complete(nil, admin, "l", 1))
+	empty("no session", CeroSecOS.complete(state, nil, "l", 1))
+	empty("no user", CeroSecOS.complete(state, { cwd = "/" }, "l", 1))
+	empty("no line", CeroSecOS.complete(state, admin, nil, 1))
+	-- A cursor past the line, or before it, is clamped rather than believed.
+	eq("a cursor past the end is the end", CeroSecOS.complete(state, admin, "l", 99).replacement,
+		"ls ")
+	eq("and one below the start is the start",
+		CeroSecOS.complete(state, admin, "l", -5).replacement, "")
+end
 
 print("os_test: " .. count .. " assertions passed")

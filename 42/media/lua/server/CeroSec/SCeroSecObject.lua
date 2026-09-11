@@ -11,6 +11,7 @@ require "CeroSec/OS/CeroSecOSState"
 require "CeroSec/OS/CeroSecOSSystem"
 require "CeroSec/OS/CeroSecOSScript"
 require "CeroSec/OS/CeroSecOSShell"
+require "CeroSec/OS/CeroSecOSComplete"
 require "CeroSec/OS/CeroSecOSVM"
 require "CeroSec/SCeroSecJobs"
 

@@ -45,6 +45,7 @@ end })
 local FILES = {
 	"42/media/lua/shared/CeroSec/CeroSecDefs.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOS.lua",
+	"42/media/lua/shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSDev.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSFS.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSPath.lua",

@@ -337,7 +337,10 @@ end
 -- on this machine treats it as special -- `cat .profile` reads it and `edit
 -- .sh_history` opens it, because a name is a name and there is no globbing
 -- here for a dot to hide from.
-local function listedNames(node, all)
+--
+-- Not local: completion lists a directory too (CeroSecOSComplete.lua), and the
+-- rule about what is on the shelf must be written down once.
+function CeroSecOS.listedNames(node, all)
 	local names = CeroSecOS.childNames(node)
 	local out = {}
 	for i = 1, #names do
@@ -754,7 +757,7 @@ commands.ls = function(state, session, args, env)
 		local up = CeroSecOS.getNode(state, session, shown .. "/..")
 		if up ~= nil then entries[#entries + 1] = { name = "..", node = up } end
 	end
-	local names = listedNames(node, hiddenToo)
+	local names = CeroSecOS.listedNames(node, hiddenToo)
 	for i = 1, #names do
 		entries[#entries + 1] = { name = names[i], node = node.children[names[i]] }
 	end
