@@ -280,6 +280,32 @@ local function operands(args)
 	return paths
 end
 
+-- The flag letters a command takes, together or apart -- `-lw` and `-l -w` are
+-- the same line, which is POSIX's rule and every Unix's -- and the operands
+-- behind them. nil plus the word that is not an option when the line carries
+-- one, which the caller words its own refusal about.
+--
+-- Only the words BEFORE the first operand are options. `grep -i x -n` looks for
+-- the string "-n" in a file called "x", which is what a grep with no "--" in it
+-- has always done, and is why the needle is the first operand here and not a
+-- case of its own.
+local function flagsOf(args, letters)
+	local flags, rest = {}, {}
+	for i = 2, #args do
+		local a = args[i]
+		if #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if string.find(letters, flag, 1, true) == nil then return nil, a end
+				flags[flag] = true
+			end
+		else
+			rest[#rest + 1] = a
+		end
+	end
+	return flags, rest
+end
+
 local function isOwnerOrRoot(session, node)
 	local user = CeroSecOS.userOf(session)
 	return user == "root" or node.owner == user
@@ -552,13 +578,14 @@ CeroSecOS.COMMAND_INFO = {
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files",
-		usage = "grep [-i] [-n] <text> [file]..." },
+		usage = "grep [-c] [-i] [-n] [-v] <text> [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
 	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
 	groups   = { desc = "print an account's groups", usage = "groups [name]" },
 	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
 	halt     = { desc = "switch the machine off", usage = "halt" },
-	head     = { desc = "print the first lines of a file", usage = "head [-n N] [file]" },
+	head     = { desc = "print the first lines of a file",
+		usage = "head [-n N|-N] [file]" },
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
@@ -580,16 +607,17 @@ CeroSecOS.COMMAND_INFO = {
 	shutdown = { desc = "switch the machine off",
 		usage = "shutdown [-h|-r] [now|+N] | shutdown -c" },
 	sleep    = { desc = "wait for a number of seconds", usage = "sleep <seconds>" },
-	sort     = { desc = "sort lines", usage = "sort [-r] [-n] [file]..." },
+	sort     = { desc = "sort lines", usage = "sort [-r] [-n] [-u] [file]..." },
 	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
-	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] [file]" },
+	tail     = { desc = "print the last lines of a file",
+		usage = "tail [-n N|-N] [file]" },
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
-	wc       = { desc = "count lines, words and bytes", usage = "wc [file]..." },
+	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
 }
@@ -1415,28 +1443,28 @@ local function fileLines(state, session, cmd, path)
 	return CeroSecOS.splitLines(node.data or ""), nil, node
 end
 
+-- Is this line one of the ones grep was asked for? -v is the whole of the
+-- difference between "holds the string" and "is a line grep prints": the flag
+-- does not change what a hit is, it changes which lines are wanted.
+--
+-- The needle is already lowered by the caller when -i is on, because it is
+-- lowered once for a file and not once for a line.
+local function grepHit(line, needle, ignore, invert)
+	local hay = line
+	if ignore then hay = string.lower(hay) end
+	local held = string.find(hay, needle, 1, true) ~= nil
+	if invert then return not held end
+	return held
+end
+
 -- grep. A plain substring and not a pattern: string.find's fourth argument is
 -- what makes "a.b" mean the three characters and not "a, anything, b". There is
 -- no regex on this machine and none is promised.
 commands.grep = function(state, session, args, env, stdin)
-	local ignore, numbered, rest = false, false, {}
-	for i = 2, #args do
-		local a = args[i]
-		if #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
-			for c = 2, #a do
-				local flag = string.sub(a, c, c)
-				if flag == "i" then
-					ignore = true
-				elseif flag == "n" then
-					numbered = true
-				else
-					return fail("grep", a, "unknown option")
-				end
-			end
-		else
-			rest[#rest + 1] = a
-		end
-	end
+	local flags, rest = flagsOf(args, "cinv")
+	if flags == nil then return fail("grep", rest, "unknown option") end
+	local ignore, numbered = flags.i == true, flags.n == true
+	local counting, invert = flags.c == true, flags.v == true
 	if #rest < 1 then return usage("grep") end
 
 	local needle = rest[1]
@@ -1452,17 +1480,25 @@ commands.grep = function(state, session, args, env, stdin)
 	if input ~= nil then
 		local carry = input.carry
 		if carry.n == nil then carry.n = 0 end
+		if carry.hits == nil then carry.hits = 0 end
 		local out = {}
 		for i = 1, #input.lines do
 			carry.n = carry.n + 1
-			local hay = input.lines[i]
-			if ignore then hay = string.lower(hay) end
-			if string.find(hay, needle, 1, true) ~= nil then
+			if grepHit(input.lines[i], needle, ignore, invert) then
 				carry.found = true
-				local prefix = ""
-				if numbered then prefix = tostring(carry.n) .. ":" end
-				out[#out + 1] = prefix .. input.lines[i]
+				carry.hits = carry.hits + 1
+				if not counting then
+					local prefix = ""
+					if numbered then prefix = tostring(carry.n) .. ":" end
+					out[#out + 1] = prefix .. input.lines[i]
+				end
 			end
+		end
+		-- -c has one line to say and cannot say it before the end of the pipe:
+		-- a count of what has arrived so far is not a count of anything.
+		if counting then
+			if not input.eof then return true, {} end
+			out[1] = tostring(carry.hits)
 		end
 		if not carry.found then return false, out end
 		return true, out
@@ -1470,38 +1506,52 @@ commands.grep = function(state, session, args, env, stdin)
 	if #files == 0 then return usage("grep") end
 	-- The file's name goes in front of a hit only when there is more than one
 	-- file to tell apart, which is what grep has always done.
-	local many = #rest > 2
+	local many = #files > 1
 	local out, found, okAll = {}, false, true
 
-	for i = 2, #rest do
-		local path = rest[i]
+	for i = 1, #files do
+		local path = files[i]
 		local lines, refusal = fileLines(state, session, "grep", path)
 		if lines == nil then
 			okAll = false
 			out[#out + 1] = refusal
 		else
+			local hits = 0
 			for n = 1, #lines do
-				local hay = lines[n]
-				if ignore then hay = string.lower(hay) end
-				if string.find(hay, needle, 1, true) ~= nil then
+				if grepHit(lines[n], needle, ignore, invert) then
 					found = true
-					local prefix = ""
-					if many then prefix = path .. ":" end
-					if numbered then prefix = prefix .. tostring(n) .. ":" end
-					out[#out + 1] = prefix .. lines[n]
+					hits = hits + 1
+					if not counting then
+						local prefix = ""
+						if many then prefix = path .. ":" end
+						if numbered then prefix = prefix .. tostring(n) .. ":" end
+						out[#out + 1] = prefix .. lines[n]
+					end
 				end
+			end
+			-- -c is a line a file, and says nought as readily as it says three:
+			-- the count IS the answer, so an empty one is still an answer. It
+			-- prints instead of the lines, and -n has nothing left to number.
+			if counting then
+				local prefix = ""
+				if many then prefix = path .. ":" end
+				out[#out + 1] = prefix .. tostring(hits)
 			end
 		end
 	end
 
 	-- grep answers "did you find anything". Nothing found is a refusal even
-	-- when every file was read without trouble.
+	-- when every file was read without trouble -- and a -c that counted nothing
+	-- is nothing found, however many zeroes it printed.
 	if not found then return false, out end
 	return okAll, out
 end
 
--- -n N, and nothing else. Answers the count and the paths, or nil for a line
--- that is not one -- which the caller turns into the usage string.
+-- -n N, or the older -N: `head -1` and `tail -5` are how the two of them were
+-- spelled before -n existed, they are still what a pair of hands types, and
+-- every Unix still takes them. Nothing else. Answers the count and the paths, or
+-- nil for a line that is not one -- which the caller turns into the usage
+-- string.
 local function lineCount(args)
 	local n, rest = 10, {}
 	local i = 2
@@ -1512,6 +1562,9 @@ local function lineCount(args)
 			if value == nil or value < 0 or value ~= math.floor(value) then return nil end
 			n = value
 			i = i + 2
+		elseif #rest == 0 and string.match(a, "^%-%d+$") ~= nil then
+			n = tonumber(string.sub(a, 2))
+			i = i + 1
 		elseif #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			return nil
 		else
@@ -1597,21 +1650,38 @@ commands.tail = function(state, session, args, env, stdin)
 	return true, out
 end
 
--- wc: lines, words, bytes, name. 6 + 1 + 6 + 1 + 6 + 1 = 21 columns of numbers,
--- so the name has 39 left of the screen.
-local W_NUM, W_NAME = 6, 39
+-- wc: lines, words, bytes, name -- or whichever of the three -l, -w and -c ask
+-- for, always in that order however the flags were written, which is POSIX's
+-- rule and not a choice. No flag at all is all three, which is the one place the
+-- default is written down.
+--
+-- A number is 6 columns and a space, so three of them is 21 of the screen's 60
+-- and the name has the 39 left; ask for one number and the name has 53. The row
+-- is the same width whatever was asked for, which is what keeps a column of them
+-- a column.
+local W_NUM, W_ROW = 6, 60
+local WC_ORDER = { "l", "w", "c" }
 
--- The three numbers on their own, which is the whole line when what was counted
--- came down a pipe: there is no name to put after them, and wc has never
--- invented one.
-local function wcCounts(lines, words, bytes)
-	return CeroSecOS.padLeft(tostring(lines), W_NUM)
-		.. " " .. CeroSecOS.padLeft(tostring(words), W_NUM)
-		.. " " .. CeroSecOS.padLeft(tostring(bytes), W_NUM)
+-- The numbers on their own, which is the whole line when what was counted came
+-- down a pipe: there is no name to put after them, and wc has never invented
+-- one. Answers the text and HOW MANY numbers are in it, because what is left of
+-- the row for a name is what the caller needs next.
+local function wcCounts(want, counts)
+	local out, shown = "", 0
+	for i = 1, #WC_ORDER do
+		local key = WC_ORDER[i]
+		if want[key] then
+			if shown > 0 then out = out .. " " end
+			out = out .. CeroSecOS.padLeft(tostring(counts[key] or 0), W_NUM)
+			shown = shown + 1
+		end
+	end
+	return out, shown
 end
 
-local function wcLine(lines, words, bytes, name)
-	return wcCounts(lines, words, bytes) .. " " .. CeroSecOS.truncate(name, W_NAME)
+local function wcLine(want, counts, name)
+	local out, shown = wcCounts(want, counts)
+	return out .. " " .. CeroSecOS.truncate(name, W_ROW - 7 * shown)
 end
 
 -- A word is a run of anything that is not a blank. Newlines count as blanks:
@@ -1623,10 +1693,20 @@ local function wordsIn(text)
 end
 
 commands.wc = function(state, session, args, env, stdin)
+	local want, paths = flagsOf(args, "clw")
+	if want == nil then return fail("wc", paths, "unknown option") end
+	-- No flag is every flag. Asked here, once, so that the pipe and the files
+	-- below both count what they were asked for and nothing else.
+	if not (want.l or want.w or want.c) then
+		want.l, want.w, want.c = true, true, true
+	end
+
 	-- With no file, the pipe. Three running totals and nothing else is kept, so
 	-- a pipe that never ends is counted for as long as it runs without wc ever
-	-- holding more than three numbers.
-	local input = stdinOf(stdin, operands(args))
+	-- holding more than three numbers. All three are kept whatever was asked
+	-- for: the numbers cost nothing to carry and the flags only decide what is
+	-- printed at the end of it.
+	local input = stdinOf(stdin, paths)
 	if input ~= nil then
 		local carry = input.carry
 		for i = 1, #input.lines do
@@ -1635,34 +1715,35 @@ commands.wc = function(state, session, args, env, stdin)
 			-- pipe, and the one that would have followed the last line is not:
 			-- it is the same text a file of those lines holds, so `wc f` and
 			-- `cat f | wc` answer with the same three numbers.
-			if (carry.l or 0) > 0 then carry.b = (carry.b or 0) + 1 end
+			if (carry.l or 0) > 0 then carry.c = (carry.c or 0) + 1 end
 			carry.l = (carry.l or 0) + 1
 			carry.w = (carry.w or 0) + wordsIn(line)
-			carry.b = (carry.b or 0) + #line
+			carry.c = (carry.c or 0) + #line
 		end
 		if not input.eof then return true, {} end
-		return true, { wcCounts(carry.l or 0, carry.w or 0, carry.b or 0) }
+		return true, { (wcCounts(want, carry)) }
 	end
-	if #args < 2 then return usage("wc") end
+	if #paths == 0 then return usage("wc") end
 	local out, okAll = {}, true
-	local totalLines, totalWords, totalBytes, counted = 0, 0, 0, 0
-	for i = 2, #args do
-		local path = args[i]
+	local total, counted = { l = 0, w = 0, c = 0 }, 0
+	for i = 1, #paths do
+		local path = paths[i]
 		local lines, refusal, node = fileLines(state, session, "wc", path)
 		if lines == nil then
 			okAll = false
 			out[#out + 1] = refusal
 		else
 			local data = node.data or ""
+			local counts = { l = #lines, w = wordsIn(data), c = #data }
 			counted = counted + 1
-			totalLines = totalLines + #lines
-			totalWords = totalWords + wordsIn(data)
-			totalBytes = totalBytes + #data
-			out[#out + 1] = wcLine(#lines, wordsIn(data), #data, path)
+			total.l = total.l + counts.l
+			total.w = total.w + counts.w
+			total.c = total.c + counts.c
+			out[#out + 1] = wcLine(want, counts, path)
 		end
 	end
 	if counted > 1 then
-		out[#out + 1] = wcLine(totalLines, totalWords, totalBytes, "total")
+		out[#out + 1] = wcLine(want, total, "total")
 	end
 	return okAll, out
 end
@@ -1712,38 +1793,29 @@ local function sortLess(a, b, numeric)
 	return beforeBytes(a, b)
 end
 
--- lines, sorted. The array is the caller's and is sorted in place.
-local function sortLines(lines, reverse, numeric)
+-- lines, sorted. The array is the caller's and is sorted in place -- and with
+-- -u, what comes back is a NEW array with the repeats dropped: on a sorted list
+-- that is the neighbour test uniq makes and not a second rule. What counts as a
+-- repeat is a line the comparison above cannot tell from the one before it, and
+-- that comparison ends in the bytes -- so `sort -nu` keeps both "01" and "1",
+-- which are the same number and are not the same line.
+local function sortLines(lines, reverse, numeric, unique)
 	table.sort(lines, function(a, b)
 		if reverse then return sortLess(b, a, numeric) end
 		return sortLess(a, b, numeric)
 	end)
-	return lines
-end
-
--- The flag letters, together or apart, and the paths behind them. nil plus the
--- word that is not an option when the line carries one.
-local function sortFlags(args, letters)
-	local flags, paths = {}, {}
-	for i = 2, #args do
-		local a = args[i]
-		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
-			for c = 2, #a do
-				local flag = string.sub(a, c, c)
-				if string.find(letters, flag, 1, true) == nil then return nil, a end
-				flags[flag] = true
-			end
-		else
-			paths[#paths + 1] = a
-		end
+	if not unique then return lines end
+	local out = {}
+	for i = 1, #lines do
+		if #out == 0 or lines[i] ~= out[#out] then out[#out + 1] = lines[i] end
 	end
-	return flags, paths
+	return out
 end
 
 commands.sort = function(state, session, args, env, stdin)
-	local flags, paths = sortFlags(args, "rn")
+	local flags, paths = flagsOf(args, "nru")
 	if flags == nil then return fail("sort", paths, "unknown option") end
-	local reverse, numeric = flags.r == true, flags.n == true
+	local reverse, numeric, unique = flags.r == true, flags.n == true, flags.u == true
 
 	-- With no file, the pipe. Nothing can be printed before the end of it: the
 	-- smallest line may still be coming, so what has arrived is kept -- under the
@@ -1763,7 +1835,7 @@ commands.sort = function(state, session, args, env, stdin)
 			return fail("sort", nil, "input too large")
 		end
 		if not input.eof then return true, {} end
-		return true, sortLines(carry.lines or {}, reverse, numeric)
+		return true, sortLines(carry.lines or {}, reverse, numeric, unique)
 	end
 
 	if #paths == 0 then return usage("sort") end
@@ -1778,7 +1850,7 @@ commands.sort = function(state, session, args, env, stdin)
 		end
 	end
 	if not okAll then return false, out end
-	return true, sortLines(all, reverse, numeric)
+	return true, sortLines(all, reverse, numeric, unique)
 end
 
 -- What `uniq -c` puts in front of a line. Seven columns and a space, which is
@@ -1813,7 +1885,7 @@ local function uniqEnd(carry, counting, out)
 end
 
 commands.uniq = function(state, session, args, env, stdin)
-	local flags, paths = sortFlags(args, "c")
+	local flags, paths = flagsOf(args, "c")
 	if flags == nil then return fail("uniq", paths, "unknown option") end
 	local counting = flags.c == true
 

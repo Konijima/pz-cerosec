@@ -742,6 +742,20 @@ en observant le jeu réel, pas par un banc de test.
      Vérifier ensuite que `fg` seul, sans travail en arrière-plan, répond
      `fg: no current job`. Et pendant que le travail de cron de l'étape 168
      tourne, `jobs` ne doit pas le lister alors que `ps` le montre. [ ]
+173. Les drapeaux des outils de texte, sur le fichier `fruits` de l'étape 164
+     (`poire`, `pomme`, `poire`, `figue`). Attendu, à la colonne près :
+     `wc fruits` → `     4      4     23 fruits` ; `wc -l fruits` →
+     `     4 fruits` ; `wc -cl fruits` → `     4     23 fruits` (toujours
+     lignes puis octets, peu importe l'ordre demandé) ; `head -1 fruits` →
+     `poire` ; `tail -2 fruits` → `poire` puis `figue`. Confirmer que le nom du
+     fichier reste bien à droite des nombres et que la ligne ne dépasse pas
+     l'écran. [ ]
+174. Toujours sur `fruits` : `grep -c poire fruits` → `2` ; `grep -v poire
+     fruits` → `pomme` puis `figue` ; `grep -c melon fruits` → `0` et rien
+     d'autre (le zéro est une réponse, pas un silence) ; `sort -u fruits` →
+     `figue`, `poire`, `pomme` sur trois lignes ; `cat fruits | sort -u | wc -l`
+     → `     3`. Puis `wc -q fruits` → `wc: -q: unknown option` et `wc` tout
+     seul → `wc: usage: wc [-clw] [file]...`. [ ]
 
 ## Rapport
 

@@ -59,7 +59,7 @@ Done:
   holds a hundred lines and four kilobytes and the writer stops until the reader
   has drained it; a reader that closes ends the writer with 141, so
   `while true; do echo y; done | head -n 1` is over at once. `cat`, `grep`, `head`,
-  `tail`, `wc` and the two new ones, `sort [-r] [-n]` and `uniq [-c]`, read the
+  `tail`, `wc` and the two new ones, `sort [-r] [-n] [-u]` and `uniq [-c]`, read the
   pipe when they are given no file.
 - cron: a crontab per account under `/var/spool/cron`, Vixie's five fields with
   lists, ranges and steps, `@reboot` and the rest, reached only through `crontab
@@ -176,10 +176,10 @@ Commands:
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `hash <text> [salt]` | show what a password would hash to |
-| `grep [-i] [-n] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines); there is no regex on this machine |
-| `head [-n N] <file>` | the first N lines, 10 by default |
-| `tail [-n N] <file>` | the last N lines, 10 by default |
-| `wc <file>...` | lines, words and bytes |
+| `grep [-c] [-i] [-n] [-v] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines without it, `-c` prints how many instead of which); there is no regex on this machine |
+| `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
+| `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
+| `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds |
@@ -565,8 +565,8 @@ rebooting, picking the computer up or reloading the world leaves it running noth
     admin@ksp-04-11:~$ cat log | sort | uniq -c
 
 Seven commands read the pipe, and only when they were given **no file**: `cat`,
-`grep`, `head`, `tail`, `wc`, and the two this wave added — `sort [-r] [-n]` and
-`uniq [-c]`. A file named on the line always wins. There is no standard input
+`grep`, `head`, `tail`, `wc`, and the two this wave added — `sort [-r] [-n] [-u]`
+and `uniq [-c]`. A file named on the line always wins. There is no standard input
 anywhere else on the machine: there is no keyboard behind a command, so one of those
 seven with neither a file nor a pipe prints its usage line.
 
@@ -590,6 +590,9 @@ reports it — so the flood in front of a `head` ends at once:
 
     admin@ksp-04-11:~$ while true; do echo y; done | head -n 1
     y
+
+`sort -u` drops the repeats on its way out, which is the `uniq` after it saved, and
+`grep -c` and `wc -l` answer a pipe with one number rather than with its lines.
 
 `sort` and `tail` cannot answer before the end of their input, so they keep what
 they have read; that too is bounded by a pipe's own hundred lines and four

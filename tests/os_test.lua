@@ -3141,8 +3141,36 @@ do
 	okAt(state, admin, "cp a.txt b.txt", {})
 	okAt(state, admin, "grep gamma a.txt b.txt", { "a.txt:gamma", "b.txt:gamma" })
 	okAt(state, admin, "grep -n gamma a.txt b.txt", { "a.txt:2:gamma", "b.txt:2:gamma" })
-	badAt(state, admin, "grep", "grep: usage: grep [-i] [-n] <text> [file]...")
-	badAt(state, admin, "grep alpha", "grep: usage: grep [-i] [-n] <text> [file]...")
+
+	-- -v: the lines that do NOT hold the string. The flag does not change what a
+	-- hit is, it changes which lines are wanted.
+	okAt(state, admin, "grep -v a.b dots.txt", { "axb" })
+	okAt(state, admin, "grep -vn a.b dots.txt", { "2:axb" })
+	okAt(state, admin, "grep -v alpha dots.txt", { "a.b", "axb" })
+	-- Nothing left over is nothing found, exactly as nothing matched is.
+	local allmatch = runAt(state, admin, "grep -v a dots.txt", ENV)
+	eq("every line held it, so -v found nothing", allmatch.ok, false)
+	eq("and said nothing", #allmatch.lines, 0)
+
+	-- -c: how many, instead of which. One line a file, and a nought is an answer
+	-- and not a silence.
+	okAt(state, admin, "grep -c alpha a.txt", { "1" })
+	okAt(state, admin, "grep -ci alpha a.txt", { "2" })
+	okAt(state, admin, "grep -cv alpha dots.txt", { "2" })
+	-- -c prints instead of the lines, so -n has nothing left to number.
+	okAt(state, admin, "grep -cn alpha a.txt", { "1" })
+	local nonecount = runAt(state, admin, "grep -c zebra a.txt", ENV)
+	eq("a count of nothing is still a refusal", nonecount.ok, false)
+	eq("and the count is the whole of what it says", nonecount.lines[1], "0")
+	eq("which is one line", #nonecount.lines, 1)
+	-- Two files, so the name goes in front of the count too -- for the file that
+	-- had none as much as for the file that had one.
+	okAt(state, admin, "grep -c gamma a.txt dots.txt", { "a.txt:1", "dots.txt:0" })
+	okAt(state, admin, "grep -c gamma a.txt b.txt", { "a.txt:1", "b.txt:1" })
+
+	badAt(state, admin, "grep", "grep: usage: grep [-c] [-i] [-n] [-v] <text> [file]...")
+	badAt(state, admin, "grep alpha",
+		"grep: usage: grep [-c] [-i] [-n] [-v] <text> [file]...")
 	badAt(state, admin, "grep -q alpha a.txt", "grep: -q: unknown option")
 	badAt(state, admin, "grep alpha /nope", "grep: /nope: no such file")
 	badAt(state, admin, "grep alpha /etc", "grep: /etc: is a directory")
@@ -3155,6 +3183,13 @@ do
 	okAt(state, admin, "head -n 2 a.txt", { "alpha beta", "gamma" })
 	okAt(state, admin, "head -n 0 a.txt", {})
 	okAt(state, admin, "tail -n 2 a.txt", { "eleven", "twelve" })
+	-- The older spelling, which is what a pair of hands types: `head -1`.
+	okAt(state, admin, "head -2 a.txt", { "alpha beta", "gamma" })
+	okAt(state, admin, "head -1 a.txt", { "alpha beta" })
+	okAt(state, admin, "tail -1 a.txt", { "twelve" })
+	okAt(state, admin, "tail -5 a.txt", { "eight", "nine", "ten", "eleven", "twelve" })
+	okAt(state, admin, "head -0 a.txt", {})
+	okAt(state, admin, "head -99 dots.txt", { "a.b", "axb" })
 	okAt(state, admin, "tail a.txt",
 		{ "Alpha two", "four", "five", "six", "seven", "eight", "nine", "ten",
 		  "eleven", "twelve" })
@@ -3164,10 +3199,16 @@ do
 	okAt(state, admin, "touch empty.txt", {})
 	okAt(state, admin, "head empty.txt", {})
 	okAt(state, admin, "tail empty.txt", {})
-	badAt(state, admin, "head", "head: usage: head [-n N] [file]")
-	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N] [file]")
-	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N] [file]")
-	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N] [file]")
+	badAt(state, admin, "head", "head: usage: head [-n N|-N] [file]")
+	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N|-N] [file]")
+	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N|-N] [file]")
+	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N|-N] [file]")
+	-- Digits and nothing else: `-2x` is not a number and is not a flag either.
+	badAt(state, admin, "head -2x a.txt", "head: usage: head [-n N|-N] [file]")
+	badAt(state, admin, "head -l a.txt", "head: usage: head [-n N|-N] [file]")
+	-- An option is an option before the first file and a file after it, which is
+	-- one file too many for head.
+	badAt(state, admin, "head a.txt -2", "head: usage: head [-n N|-N] [file]")
 	badAt(state, admin, "head /nope", "head: /nope: no such file")
 	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
 
@@ -3181,8 +3222,31 @@ do
 	})
 	local counted = okAt(state, admin, "wc a.txt", nil)
 	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
-	badAt(state, admin, "wc", "wc: usage: wc [file]...")
+
+	-- -l, -w and -c: only what was asked for, and always in POSIX's order
+	-- whatever order the flags were written in. The row is the same width, so
+	-- the name has 7 more columns for every number left out.
+	okAt(state, admin, "wc -l a.txt", { "    12 a.txt" })
+	okAt(state, admin, "wc -w a.txt", { "    14 a.txt" })
+	okAt(state, admin, "wc -c dots.txt", { "     7 dots.txt" })
+	okAt(state, admin, "wc -lc dots.txt", { "     2      7 dots.txt" })
+	okAt(state, admin, "wc -cl dots.txt", { "     2      7 dots.txt" })
+	okAt(state, admin, "wc -c -l dots.txt", { "     2      7 dots.txt" })
+	okAt(state, admin, "wc -wc dots.txt", { "     2      7 dots.txt" })
+	okAt(state, admin, "wc -lw dots.txt", { "     2      2 dots.txt" })
+	-- All three, asked for, is what all three are by default.
+	okAt(state, admin, "wc -lwc dots.txt", { "     2      2      7 dots.txt" })
+	okAt(state, admin, "wc -ll dots.txt", { "     2 dots.txt" })
+	-- The total row carries the same columns as the rows above it.
+	okAt(state, admin, "wc -l dots.txt empty.txt",
+		{ "     2 dots.txt", "     0 empty.txt", "     2 total" })
+	okAt(state, admin, "wc -c dots.txt empty.txt",
+		{ "     7 dots.txt", "     0 empty.txt", "     7 total" })
+
+	badAt(state, admin, "wc", "wc: usage: wc [-clw] [file]...")
+	badAt(state, admin, "wc -q dots.txt", "wc: -q: unknown option")
 	badAt(state, admin, "wc /nope", "wc: /nope: no such file")
+	badAt(state, admin, "wc -l /nope", "wc: /nope: no such file")
 end
 
 -- 20i. cp -r.
@@ -6756,11 +6820,35 @@ do
 	ok(state, admin, "cat fruit | head -n 2", { "pear", "apple" })
 	ok(state, admin, "cat fruit | tail -n 1", { "fig" })
 	ok(state, admin, "cat fruit | wc", { "     4      4     19" })
+	-- The flags work on a pipe exactly as they work on a file: there is no name
+	-- to put after the numbers, and wc has never invented one.
+	ok(state, admin, "cat fruit | wc -l", { "     4" })
+	ok(state, admin, "cat fruit | wc -c", { "    19" })
+	ok(state, admin, "cat fruit | wc -lc", { "     4     19" })
+	ok(state, admin, "cat fruit | grep -v pear", { "apple", "fig" })
+	ok(state, admin, "cat fruit | grep -c pear", { "2" })
+	ok(state, admin, "cat fruit | grep -cv pear", { "2" })
+	-- A count of nothing is one line and a refusal, down a pipe as anywhere.
+	ok(state, admin, "cat fruit | grep -c plum || echo no", { "0", "no" })
+	ok(state, admin, "cat fruit | head -1", { "pear" })
+	ok(state, admin, "cat fruit | tail -1", { "fig" })
 	-- Three stages, and the middle one really is in the middle.
 	ok(state, admin, "cat fruit | sort | uniq", { "apple", "fig", "pear" })
 	ok(state, admin, "cat fruit | sort | uniq -c",
 		{ "      1 apple", "      1 fig", "      2 pear" })
 	ok(state, admin, "cat fruit | sort | head -n 1", { "apple" })
+
+	-- -u: the repeats dropped, which on a sorted list is what uniq does after it
+	-- and is one command less in the pipeline.
+	ok(state, admin, "sort -u fruit", { "apple", "fig", "pear" })
+	ok(state, admin, "cat fruit | sort -u", { "apple", "fig", "pear" })
+	ok(state, admin, "sort -ur fruit", { "pear", "fig", "apple" })
+	ok(state, admin, "sort -u fruit | wc -l", { "     3" })
+	-- What counts as a repeat is a line the comparison cannot tell from the one
+	-- before it, and that comparison ends in the bytes: two spellings of the same
+	-- number are two lines.
+	put(state, admin, "/home/admin/dupnums", "01\n1\n1")
+	ok(state, admin, "sort -nu dupnums", { "01", "1" })
 
 	-- sort: bytes by default, numbers with -n, either of them backwards with -r.
 	ok(state, admin, "sort nums", { "100", "20", "3" })
@@ -6782,9 +6870,9 @@ do
 	bad(state, admin, "uniq nope", "uniq: nope: no such file")
 	-- No file and no pipe is no standard input at all, and the usage line is
 	-- what a machine with no terminal input can honestly answer.
-	bad(state, admin, "sort", "sort: usage: sort [-r] [-n] [file]...")
+	bad(state, admin, "sort", "sort: usage: sort [-r] [-n] [-u] [file]...")
 	bad(state, admin, "uniq", "uniq: usage: uniq [-c] [file]")
-	bad(state, admin, "wc", "wc: usage: wc [file]...")
+	bad(state, admin, "wc", "wc: usage: wc [-clw] [file]...")
 
 	-- The status of a pipeline is the LAST stage's.
 	ok(state, admin, "cat fruit | grep pear && echo yes", { "pear", "pear", "yes" })
@@ -6808,6 +6896,7 @@ do
 	-- A pipe inside $(...), which is the shape a script really uses.
 	ok(state, admin, "echo $(cat fruit | sort | head -n 1)", { "apple" })
 	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 19" })
+	ok(state, admin, "x=$(cat fruit | wc -l); echo $x", { "4" })
 
 	-- A redirect on a stage writes the stage's output, once: a command that
 	-- reads a pipe is run again and again, and the file must not be truncated

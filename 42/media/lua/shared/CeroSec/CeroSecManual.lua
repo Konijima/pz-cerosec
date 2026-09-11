@@ -666,16 +666,43 @@ whichever runs out first, one line for each of the two:
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
-search: -i ignores upper and lower case, -n numbers the lines. There is
-no pattern matching here at all, only an exact substring -- a period
-means a period, not "any character".
+search: -i ignores upper and lower case, -n numbers the lines, -v prints
+the lines that do NOT hold the string, and -c prints how many there were
+instead of printing them. There is no pattern matching here at all, only
+an exact substring -- a period means a period, not "any character".
 
   admin@ksp-04-11:~$ grep -n root /etc/passwd
   1:root:$cs1$...:/root:admin
+  admin@ksp-04-11:~$ grep -c root /etc/passwd
+  1
 
 head and tail print the first or last lines of a file, ten by default or
-however many -n asks for; wc counts a file's lines, words and bytes, all
-three, always in that order.]],
+however many -n asks for. -1, -5, the older spelling, mean the same
+thing: head -1 is the first line and tail -5 is the last five.]],
+
+[[wc counts lines, words and bytes, in that order, and prints the name
+after them:
+
+  admin@ksp-04-11:~$ wc notes.txt
+       3      7     42 notes.txt
+
+-l, -w and -c ask for one of the three, or two of them. What you get is
+always in that order, whatever order you asked in:
+
+  admin@ksp-04-11:~$ wc -l notes.txt
+       3 notes.txt
+  admin@ksp-04-11:~$ wc -cl notes.txt
+       3     42 notes.txt
+
+More than one file is a line each and then a total:
+
+  admin@ksp-04-11:~$ wc -l notes.txt other.txt
+       3 notes.txt
+       9 other.txt
+      12 total
+
+`ls /bin | wc -l` is the usual way to count something without a file to
+count it in.]],
 
 [[man <command> prints what the command does and how it is spelled, one
 line each -- for depth beyond that, this book is the depth. help lists
@@ -1280,10 +1307,12 @@ with no file and no pipe prints its usage line instead.]],
 [[sort prints its input in order. Plain sort compares the bytes, which
 puts 100 before 20 and every capital before every small letter; -n reads
 the number at the front of each line and compares that instead; -r turns
-either of them round.
+either of them round; -u prints each line once, which is the uniq after
+it saved.
 
   admin@ksp-04-11:~$ sort -n sizes
   admin@ksp-04-11:~$ cat log | sort -r | head -n 3
+  admin@ksp-04-11:~$ cat names | sort -u
 
 uniq drops a line that is the same as the one before it, and -c puts the
 count in front of what is left. It compares NEIGHBOURS and nothing else,
@@ -1457,7 +1486,7 @@ itself.
   exit
   fg [%<n>|<id>]
   gpasswd -a|-d <user> <group>
-  grep [-i] [-n] <text> [file]...
+  grep [-c] [-i] [-n] [-v] <text> [file]...
   groupadd <name>
   groupdel <name>
   groups [name]
@@ -1465,7 +1494,7 @@ itself.
 ]=],
 
 [[  halt
-  head [-n N] [file]
+  head [-n N|-N] [file]
   help
   hostname [name]
   id [name]
@@ -1486,13 +1515,13 @@ itself.
   sh <file> [args]
   shutdown [-h|-r] [now|+N] | shutdown -c
   sleep <seconds>
-  sort [-r] [-n] [file]...
+  sort [-r] [-n] [-u] [file]...
   su [name]
   sudo <command> [args]
 
 (continued)]],
 
-[[  tail [-n N] [file]
+[[  tail [-n N|-N] [file]
   test <expression>
   [ <expression> ]
   touch <file>
@@ -1500,7 +1529,7 @@ itself.
   false
   uniq [-c] [file]
   wait [id]...
-  wc [file]...
+  wc [-clw] [file]...
   whoami
   write <file> <text>
 
