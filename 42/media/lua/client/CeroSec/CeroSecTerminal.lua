@@ -497,7 +497,9 @@ end
 
 -- How many rows the line being typed takes. One, until it wraps.
 function CeroSecTerminal:inputHeight()
-	if not self.entryActive or self.mode == "edit" then return 0 end
+	-- Nothing is drawn to type at while a script has the machine: the row the
+	-- prompt would be on is the next line of the script's own output.
+	if not self.entryActive or self.mode == "edit" or self.mode == "job" then return 0 end
 	local rows = CeroSec.inputRows(self.prompt or "", self.entry:getInternalText() or "", nil)
 	return #rows
 end
@@ -727,6 +729,9 @@ function CeroSecTerminal:onCommandEntered()
 		self:setBusy()
 		self:send("exec", { line = text })
 	end
+	-- "job" falls through: Enter at a running script is Enter at a machine that
+	-- is not listening, and sending it would only make the server answer with
+	-- the screen it already sent.
 end
 
 --
@@ -1181,7 +1186,11 @@ function CeroSecTerminal:render()
 		row = row + 1
 	end
 
-	if self.entryActive then
+	-- "job": the machine is running a script and there is no prompt to draw.
+	-- What a player types while it runs goes nowhere and is never shown -- the
+	-- moment the script asks something the mode is "prompt" again and the line
+	-- is back, empty, ready for the answer.
+	if self.entryActive and self.mode ~= "job" then
 		self:drawInput(left, top + self:inputRow() * CELL_H)
 	end
 
