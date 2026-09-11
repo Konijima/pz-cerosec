@@ -18,9 +18,9 @@ Done:
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
   shell (`adduser cat cd chgrp chmod chown clear cp date deluser dev df echo edit
-  exit gpasswd grep groupadd groupdel groups hash head help hostname id ls man
-  mkdir mv passwd pwd reboot restart rm shutdown su sudo tail touch wc whoami
-  write`), an editor, and salted-hashed passwords.
+  exit gpasswd grep groupadd groupdel groups hash head help hostname id jobs kill
+  ls man mkdir mv passwd ps pwd reboot restart rm sh shutdown su sudo tail touch
+  wait wc whoami write`), an editor, and salted-hashed passwords.
 - Accounts: `adduser` and `deluser` make and unmake them, `su` changes who the
   glass is logged in as without logging out, and `id` says what the machine knows
   about a name.
@@ -41,12 +41,17 @@ Done:
   can reach, and `dev` is the everyday way to see them all at once — with each
   one's offset from the computer, since room names repeat — read one, work one,
   `toggle` it, or `find` it and watch it blink or light up in the world.
+- Scripts: a real shell language in a file -- variables, `if`, `for`, `while`,
+  `until`, `test`, `&&`, `||`, `$(command)`, `$((arithmetic))`, `read`, `sleep`,
+  background jobs -- run by a step machine on a budget, so an endless loop makes
+  one machine slow at one thing and costs the server nothing. `ps`, `jobs`, `kill`
+  and `wait` to see and stop them; Escape is `^C`.
 - The manual: a printed book that spawns where computers do, read by the player in
   a two-page reader with a table of contents, and remembering the page it was left
   on.
 
-Next: `/dev` devices; scripts and cron; networking machines together to automate
-doors, locks and lights.
+Next: `cron`, `wait` on a device, pipes and `fg`; networking machines together to
+automate doors, locks and lights.
 
 ## For players
 
@@ -304,6 +309,63 @@ walk over and open it.
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
 
+### Writing a script
+
+A script is a text file with commands in it. Write one with `edit`, run it with
+`sh`, or give it `x` and run it by its path:
+
+    admin@ksp-04-11:~$ edit lights.sh
+    admin@ksp-04-11:~$ sh lights.sh
+    admin@ksp-04-11:~$ chmod 755 lights.sh
+    admin@ksp-04-11:~$ ./lights.sh
+
+A bare name is still a command in `/bin` and only there, so a script in your home
+is never found by typing its name alone.
+
+The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
+a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
+`$$`; single and double quotes and backslash; `#` comments; `;`, `&&`, `||` and a
+trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
+`continue`, `exit`, `return`; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
+`=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
+and `$((1 + 2 * 3))` on whole numbers; and `echo [-n]`, `printf`, `read`, `sleep`
+and `shift` as builtins that work even on a machine whose `/bin` has been emptied.
+
+    #!/bin/sh
+    for d in light0 light1 light2; do
+      echo off > /dev/$d
+    done
+    read -p "and the office? (y/n) " a
+    if [ "$a" = y ]; then echo off > /dev/light3; fi
+
+`read` stops the script and asks at the prompt; the next line typed is the answer.
+`sleep 5` waits five seconds of real time and costs the machine nothing while it
+does. While a script has the prompt there is nothing to type at, and Escape is
+`^C`: it kills what is running.
+
+A line ending in `&` runs in the background and gives the prompt straight back:
+
+    admin@ksp-04-11:~$ sh watch.sh &
+    [1] 42
+    admin@ksp-04-11:~$ ps
+      ID S     CPU COMMAND
+      42 R      96 sh watch.sh
+    admin@ksp-04-11:~$ kill %1
+
+`jobs` lists them by slot, `ps` by number with the state (`R` running, `S`
+sleeping, `W` waiting for an answer, `O` held back by the screen) and the steps
+spent, `kill` takes either a number or `%slot`, and `wait` holds the prompt until
+the background jobs are done. Four jobs to a machine.
+
+**A runaway script cannot hurt anybody.** Every job gets a slice of each tenth of a
+second and no more, so `while true; do echo x; done` makes that one machine slow at
+that one thing: the prompt still answers, other screens still draw, and the server
+never waits. Output is held to twenty lines a second, so it trickles instead of
+flooding. A job that spins for five minutes with no wait in it is taken away with
+`killed: cpu limit`. A string that doubles every turn, or a script that runs itself,
+meets a ceiling and stops with a line naming it. Jobs are not saved: switching off,
+rebooting, picking the computer up or reloading the world leaves it running nothing.
+
 ### Finding the manual
 
 **CeroSec OS User's Manual** is a printed book, and it is the documentation for
@@ -370,7 +432,7 @@ and returns `ok, lines, control, data`, and nothing else. It makes no game call,
 coroutines and no metatables, so it runs the same under a plain `lua5.1` and under
 the game's Kahlua. `lines` is text, one array entry per screen line, at most 60
 characters. `control` is `nil`, `"clear"`, `"exit"`, `"prompt"`, `"edit"`,
-`"shutdown"` or `"reboot"` — an order to the terminal, carried beside the output and
+`"job"`, `"shutdown"` or `"reboot"` — an order to the terminal, carried beside the output and
 never inside it, so a file's contents can never be mistaken for one. `"prompt"` and
 `"edit"` carry a payload in `data`: `"prompt"` is how a command like `passwd` or
 `sudo` asks a question without a coroutine (`CeroSecOS.continue` answers it the same
@@ -419,6 +481,79 @@ Every command carries the window's own token and every answer carries it back
 singleplayer where there is only one), because the server addresses a connection
 and split screen puts several players on one. The server keeps a watcher list per
 computer and answers every open window with the new screen under its own token.
+
+#### Scripts: the step machine, the job, the scheduler
+
+The language lives in two files and neither of them knows there is a game.
+
+`CeroSecOSScript.lua` is the parser. `CeroSecOS.parseScript(text)` returns a
+*program*: nested plain tables of strings, numbers and booleans, with no function
+anywhere in it. Parsing happens **once**, before a job exists, so a script with a
+missing `done` never costs a tick — and what comes out is inert. There is no `load`,
+no `loadstring`, no `setfenv` and no metatable; the arithmetic in `$(( ))` is read
+digit by digit by a recursive-descent reader in the VM. Nothing a player types is
+ever evaluated as Lua, and `tests/kahlua-check.sh` greps for it.
+
+`CeroSecOSVM.lua` is the stepper:
+
+    CeroSecOS.jobStep(state, job, env, budget) -> status, stepsSpent
+
+`status` is `"running"`, `"waiting"`, `"sleeping"`, `"done"`, `"killed"` or
+`"error"`. It runs up to `budget` steps and returns; it never loops to the end and
+never waits. A **job** is a plain serializable table — a program, a stack of frames,
+its variables, its pending output, a session of its own — and holds no function at
+all, which is what makes it inspectable by `ps` and impossible to hide anything
+executable inside:
+
+    { id = 42, n = 1, name = "backup.sh", cmd = "sh backup.sh", bg = false,
+      prog = <program>, frames = { {k="block", prog=..., i=3}, ... },
+      vars = { x = "1" }, nvars = 1, args = { "one", "two" },
+      caps = { }, out = { "line" }, partial = "", status = 0, steps = 412,
+      state = "running", blocked = nil, depth = 1, line = 7, debt = 0,
+      cpuSince = 1723..., wakeMs = nil, ask = nil, cont = nil,
+      session = { user = "admin", cwd = "/home/admin", ... } }
+
+A step is a unit of **cost**, not of syntax: one for anything the shell answers
+itself (an assignment, an `echo`, a `test`, a loop iteration boundary), and
+`CeroSecOS.STEP_COST_COMMAND` (32) for a command that goes out to `/bin` — measured
+between 20 and 500 microseconds a call against about 6 for a builtin, so a flat step
+would have been a budget eighty times out on a loop of `ls`. The steps of what
+`$(...)` runs are charged to the job that asked. A pass may overspend by at most one
+command, since a command's price is only known once it has been paid; the overspend
+is carried as a `debt` and taken off the next pass, so the average is exactly the
+budget.
+
+Every wait is a continuation. `read` and a command's own question (`sudo`,
+`passwd`) both leave the job `"waiting"` — the console puts the question up with an
+ordinary prompt token `{ cmd = "job", id = 42 }` and the answer comes back through
+`CeroSecOS.jobInput`. `sleep` leaves it `"sleeping"` against `env.nowMs` and costs
+nothing until it comes round.
+
+`SCeroSecJobs.lua` is the scheduler and the only half that knows there is a server.
+Ten passes a second on `Events.OnTick` gated by `getTimestampMs()` — vanilla's own
+way of getting under a minute (`forageServer.lua:502`) — with
+`CeroSec.STEP_BUDGET_PER_TICK` (200) steps to hand out across every machine that has
+a job, no machine taking more than `CeroSec.STEP_BUDGET_PER_MACHINE` (100), and
+machines served round-robin from one further along each pass. A starved job runs
+slower; nothing is ever refused a turn. Output drains at `CeroSec.JOB_OUT_PER_SEC`
+(20) lines a second **per machine**, and a job whose queue is full simply does not
+run until the screen has taken what it wrote. A job that holds the processor with no
+wait in it for `CeroSec.JOB_CPU_LIMIT_S` (300 s) is killed with `killed: cpu limit`
+— a constant with a comment, not a sandbox option, because a server owner who wants
+a different number should be given a setting rather than asked to edit a file.
+
+`luaObject.jobs` is **runtime state and is deliberately not in the saved keys**: a
+reload forgets jobs, `CeroSec.repairConsole` drops the console's note of a
+foreground one, and a machine that comes back from a save comes back at its prompt.
+Reboot, shutdown, a room that lost its power and a computer picked up all kill
+everything.
+
+The measured cost of a pass, headless under `lua5.1`, is printed by
+`tests/hostile_test.lua` on every run: about 0.6 ms for one machine spinning on
+arithmetic and 1.2 ms for six, against a 60-frames-a-second budget of 16.7. The
+game's Lua is not this one — Kahlua is an interpreter written in Java and is
+expected to be several times slower — which is why the county's budget is a fifth of
+what the measurement alone would allow.
 
 #### The clock
 
@@ -902,7 +1037,12 @@ and skipped rather than taking the mod down.
 - `os_test.lua` — the OS core: filesystem, permissions, users, shell, passwords.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
-  an answer on the glass.
+  an answer on the glass, and a script's output, question and `^C` through it.
+- `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
+  script that runs itself, a doubling string, an output flood, a hundred background
+  jobs and a substitution bomb, each driven through the real scheduler for a
+  thousand passes, asserting a flat cost per pass, a bounded console, bounded
+  memory and the cpu ceiling firing where it should. It prints the numbers.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, the bookmark on the item, the
   keys the item script sets, and the twelve loot lists.

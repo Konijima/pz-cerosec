@@ -600,8 +600,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1290  31478    4%
-  nodes         256     54    202   22%]],
+  hda         32768   1400  31368    5%
+  nodes         256     59    197   24%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -860,7 +860,148 @@ the id is never handed to the next one that appears.]],
 
 		} },
 
-		{ title = "13. Appendix: commands and limits", pages = {
+		{ title = "13. Scripts", pages = {
+
+[[A script is a text file with commands in it, one to a line, and nothing
+else. Write one with the editor, then hand it to the shell:
+
+  admin@ksp-04-11:~$ edit backup.sh
+  admin@ksp-04-11:~$ sh backup.sh
+
+If the file carries x for you, you can run it by its path instead, which is
+what ./ means -- this file, here:
+
+  admin@ksp-04-11:~$ chmod 755 backup.sh
+  admin@ksp-04-11:~$ ./backup.sh
+
+A bare name is still a command in bin and only there, so a script in your
+home is never found by typing its name alone. A first line of #!/bin/sh is
+allowed and ignored; a # anywhere starts a comment that runs to the end of
+the line. Blank lines do nothing. Two commands fit on one line with a
+semicolon between them.]],
+
+[[Words are split on blanks, and quoting works exactly as it does at the
+prompt: double quotes hold a string together and still let a $ through,
+single quotes let nothing through at all, and a backslash takes away the
+meaning of the character after it.
+
+A variable is set with NAME=value and no spaces around the equals sign, and
+read back with $NAME or ${NAME}:
+
+  count=3
+  greeting="hello there"
+  echo $count $greeting
+
+Values are text. A variable that was never set reads as nothing at all, and
+an unquoted one that is empty disappears from the line rather than becoming
+an empty word -- which is why "$x" in quotes is the safer way to pass one to
+a command that expects an argument.]],
+
+[[Arithmetic lives inside $(( )) and works on whole numbers with + - * /
+and %, and parentheses; division throws the remainder away and rounds
+towards zero. Inside the double parentheses a bare name is already the
+variable, so the $ in front of it is optional.
+
+  i=$((i + 1))
+  echo $((7 / 2)) $((-7 / 2)) $((7 % 3))
+
+The output of a command becomes a word with $( ), every newline in it
+folded to a space. One level only: a $( ) inside a $( ) is refused where it
+is typed.
+
+  today=$(date +%Y-%m-%d)
+
+A script is handed the words typed after it. $1 to $9 are those words, $#
+is how many there are, $@ is all of them, and shift throws the first away
+and moves the rest down. Three more are the machine's own: $? is the status
+the last command ended on -- 0 when it worked -- $$ is the number of the
+job the script is running as, which is what ps prints and kill takes, and
+$0 is the script's own name.]],
+
+[[if runs one list of commands and looks at the status it ended on:
+
+  if [ -f notes.txt ]; then
+    echo found it
+  else
+    echo no notes
+  fi
+
+elif adds another question before the else, and both else and elif are
+optional. The thing in brackets is the command test, spelled the way every
+Unix spells it; the spaces inside the brackets are not decoration and it
+will not parse without them. It answers on files -- -f a file, -d a
+directory, -e either, -r -w -x what you may do with it -- on strings -- -z
+empty, -n not empty, = and != -- and on numbers, with -eq -ne -lt -le -gt
+-ge. Join two with -a or -o and turn one round with ! in front of it.]],
+
+[[Loops come in three shapes. for walks a list of words, while runs as long
+as its command keeps succeeding, and until is while turned round:
+
+  for f in one two three; do
+    echo $f
+  done
+
+  i=0
+  while [ $i -lt 3 ]; do
+    echo $i
+    i=$((i + 1))
+  done
+
+break leaves the loop and continue jumps to its next turn; both take a
+number to leave or skip that many loops at once, counted outwards. exit
+ends the whole script, with the status you give it, and return does the
+same thing. Loops and ifs nest sixteen deep and no further.]],
+
+[[Six commands belong to the shell itself and work with no file in bin
+behind them. echo prints its arguments, and echo -n leaves the cursor on
+the same line. printf takes a format with %s, %d and %% in it. shift moves
+the arguments along. read stops the script and asks:
+
+  read -p "name? " who
+  echo "hello $who"
+
+The question appears at the prompt and the next line typed becomes the
+value. read -s hides what is typed, for a password; read -n 1 takes the
+first character and does not wait for Enter. sleep waits a number of
+seconds of real time and costs the machine nothing while it does.
+
+Pressing Escape while a script is running kills it, question and all.]],
+
+[[A line ending in & runs in the background: the prompt comes straight back
+and the script's output arrives on the same screen as it is made.
+
+  admin@ksp-04-11:~$ sh watch.sh &
+  [1] 42
+  admin@ksp-04-11:~$ ps
+    ID S     CPU COMMAND
+    42 R      96 sh watch.sh
+  admin@ksp-04-11:~$ kill %1
+
+[1] is the job's slot and 42 is its number; kill takes either, the slot
+with a % in front of it. jobs lists them by slot, ps by number with the
+state -- R running, S sleeping, W waiting for an answer, O held back by the
+screen -- and the steps it has spent. wait holds the prompt until the
+background jobs are done. Four jobs at once is the ceiling.]],
+
+[[What the machine does to a runaway script, since you will write one. It
+is never allowed to run flat out: the computer gives every job a slice of
+each tenth of a second and no more, so an endless loop makes the machine
+slow at that one thing and nothing else -- the prompt still answers, other
+people's screens still draw, and the server never waits for it.
+
+Output is held to twenty lines a second, so a loop that prints floods
+nothing; it trickles, and the screen keeps its last hundred lines as
+always. A job that spins for five minutes without ever waiting for
+anything is taken away with "killed: cpu limit". A string that doubles
+every turn, or a script that runs itself, meets a ceiling and stops with a
+line naming it.
+
+Jobs are not written to disk. A machine switched off, rebooted, picked up
+or reloaded comes back running nothing.]],
+
+		} },
+
+		{ title = "14. Appendix: commands and limits", pages = {
 
 -- The one page with a "]]" inside it -- dev's usage line ends in two closing
 -- brackets -- so it is the one page written with a level-one long bracket.
@@ -895,20 +1036,25 @@ itself.
   help
   hostname [name]
   id [name]
+  jobs
+  kill <id>|%<n>
   ls [-lF] [path]
   man <command>
   mkdir <dir>
   mv <src> <dst>
   passwd [user]
+  ps
   pwd
   reboot
   restart
   rm [-r] <path>...
+  sh <file> [args]
   shutdown
   su [name]
   sudo <command> [args]
   tail [-n N] <file>
   touch <file>
+  wait [id]...
   wc <file>...
   whoami
   write <file> <text>
@@ -926,6 +1072,17 @@ own name; a machine's own hostname at most 16 as well. su and sudo's borrowed se
 deep before either refuses a fifth. motd is read to ten lines and no
 further. A salt is at most 16 characters of digits and lower-case
 letters, six by default.]],
+
+[[A script has ceilings of its own, and every one of them is a line it
+stops on rather than a number it quietly rounds. Sixty-four variables at
+once, and one word -- the whole of NAME=value, not just the value -- at
+1024 bytes. Sixteen levels of if and loop nesting, and a script that runs
+another with sh goes eight deep before it is refused. Four jobs at once on
+one machine, one of them in front of the prompt. Twenty lines a second
+reach the screen, and a job that has written more waits until they have.
+Five minutes of spinning with no wait in it and the machine takes the job
+away. Jobs are never written to disk: switching off, rebooting, picking the
+computer up or reloading the world leaves it running nothing.]],
 
 [[The editor's own two ceilings are not the same ceiling: the game's
 typing box stops itself at 2000 characters typed in one sitting, and the
@@ -951,7 +1108,7 @@ cp and edit do not.]],
 
 		} },
 
-		{ title = "14. Appendix: what the machine says", pages = {
+		{ title = "15. Appendix: what the machine says", pages = {
 
 [[Every command signs its own errors with its own name first, then the
 path or word that failed, then the reason -- always in that order, and
@@ -1009,7 +1166,7 @@ Accounts and passwords speak for themselves, one line each:
 
 A command run with the wrong number of arguments answers with its own
 usage line instead of guessing what you meant -- the very line chapter
-13 lists for it.]],
+14 lists for it.]],
 
 [[  su: authentication failure
   su: too many levels
@@ -1064,6 +1221,58 @@ one below is dev's own, and is signed the way a command signs:
       not exactly three octal digits
   man: <name>: no manual entry
       no file of that name in /bin, or not a plain file]],
+
+[[A script signs its errors with its own name and the line it was on:
+<script>: line <n>: <reason>. The parser's reasons come first, and a file
+that meets one never runs at all:
+
+  syntax error: unexpected 'fi'
+      a word that closes a construct, where a command
+      should be; also 'done', 'then', 'else', 'elif',
+      'do', '|' and '<'
+  syntax error: missing 'done'
+      the construct was never closed; also 'fi',
+      'then' and 'do'
+  syntax error: bad substitution
+      a $( ) inside a $( ), an unclosed ${ or $(( , or
+      a name between braces that is not one
+  syntax error: not a name
+      for wants a variable name after it
+  too deeply nested
+      past sixteen levels of if and loop]],
+
+[[And the reasons a script stops on while it is running, with the
+machine's own lines about jobs after them -- those are not signed by a
+script, because they are not a script's to say:
+
+  too many variables
+      a sixty-fifth name
+  variable too large
+  word too large
+      past 1024 bytes into one, or built past it
+  ambiguous redirect
+      the name after > became two words, or none
+  divide by zero
+  bad arithmetic
+  edit: not a terminal
+  sleep: invalid interval
+  sleep: no clock
+  read: not a name
+  test: unknown operator
+  test: integer expected
+  test: missing ']'
+  test: argument expected
+  sh: too many jobs
+  kill: <id>: no such job
+  killed
+      Escape, or kill, on the job at the prompt
+  killed: cpu limit
+      five minutes of spinning with no wait in it
+  [1] 42 -- [1] done -- [1] exit 3 -- [1] killed
+      a background job starting, ending, failing, taken away
+
+Running a path that is not yours answers in the file's own name and not
+sh's: "./backup.sh: permission denied".]],
 
 [[  date: no clock
       no clock at all was handed to this machine, chapter 9

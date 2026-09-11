@@ -67,7 +67,10 @@ local chapters = CeroSecManual.chapters
 -- Whole-book shape: chapter count, page counts, unique titles, no empty
 -- page, everything ASCII, nothing over the page cap, example lines fit.
 --
-check("chapter count is 10..14", #chapters >= 10 and #chapters <= 14)
+-- Raised to 15 by rung 5a, which added the Scripts chapter and pushed the two
+-- appendices to 14 and 15. The bounds below moved with it: 15 chapters, 8
+-- pages in any one of them, 90 pages in the book, 1000 characters on a page.
+check("chapter count is 10..15", #chapters >= 10 and #chapters <= 15)
 
 local totalPages = 0
 local seenTitles = {}
@@ -84,8 +87,8 @@ for ci = 1, #chapters do
 
 	check("chapter " .. ci .. " has pages", type(ch.pages) == "table")
 	local n = #ch.pages
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..6 pages",
-		n >= 2 and n <= 6)
+	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..8 pages",
+		n >= 2 and n <= 8)
 	totalPages = totalPages + n
 
 	for pi = 1, n do
@@ -93,7 +96,7 @@ for ci = 1, #chapters do
 		local where = ch.title .. " page " .. pi
 		check(where .. " is a string", type(page) == "string")
 		check(where .. " is not empty", page ~= "" and string.find(page, "%S") ~= nil)
-		check(where .. " is at most 900 characters (" .. #page .. ")", #page <= 900)
+		check(where .. " is at most 1000 characters (" .. #page .. ")", #page <= 1000)
 
 		-- ASCII only: every byte in 0x09..0x7E (tab, and printable range;
 		-- \n is 0x0A, allowed as the paragraph break the spec calls for).
@@ -136,12 +139,12 @@ check("and the firmware version is one string in one place",
 	type(CeroSec.BIOS_VERSION) == "string" and CeroSec.BIOS_VERSION ~= "")
 
 -- The upper bound is a ceiling on the BOOK, not on any one chapter -- a
--- chapter is still 2..6 pages, and there are still at most 14 of them, so 84
--- is the most the shape above can hold at all. Raised from 70 to 80 when the
--- /dev chapter grew a page for the dev command: the number is there to catch a
+-- chapter is 2..8 pages and there are at most 15 of them, so 120 is the most
+-- the shape above can hold at all. Raised from 80 to 90 when the Scripts
+-- chapter arrived: the number is there to catch a
 -- book that has quietly doubled, and it must leave room for a rung's worth of
 -- honest growth or it is only a chore to move.
-check("total pages is 45..80 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 80)
+check("total pages is 45..90 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 90)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,

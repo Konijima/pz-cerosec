@@ -432,52 +432,126 @@ passé réellement, même quand ça correspond au texte attendu.
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
 
-## L. Les doutes ouverts
+## L. Scripts
+
+Écrire les scripts avec `edit`, jamais en collant du texte : c'est l'éditeur de
+la machine qui est testé en même temps. Un script tapé sur une machine reste
+dessus.
+
+124. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
+     enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
+     sont bien là, dans l'ordre. [ ]
+
+         i=0
+         while [ $i -lt 3 ]; do
+           echo tour $i
+           i=$((i + 1))
+         done
+
+125. `sh compte.sh` → `tour 0`, `tour 1`, `tour 2` apparaissent l'un après
+     l'autre, l'invite ne revient qu'à la fin, et pendant ce temps rien de ce
+     qu'on tape n'apparaît à l'écran. [ ]
+126. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
+     compte.sh` puis `./compte.sh` → `./compte.sh: permission denied`, alors
+     que `sh compte.sh` marche toujours. [ ]
+127. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
+     nom nu reste une commande de `/bin` et rien d'autre. [ ]
+128. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
+     `sh bonjour.sh` affiche `nom? ` à l'invite, ce qui est tapé s'y ajoute
+     normalement, et après Entrée la machine répond `salut <ce qui a été
+     tapé>`. La ligne `nom? <réponse>` reste à l'écran. [ ]
+129. Relancer `sh bonjour.sh` et appuyer sur **Échap** à la question → `^C`
+     s'affiche, puis `killed`, l'invite revient, et la fenêtre du terminal ne
+     se ferme pas. [ ]
+130. `edit boucle.sh` avec une seule ligne : `while true; do echo x; done`.
+     `sh boucle.sh` → les `x` arrivent en filet régulier (une vingtaine par
+     seconde au plus), jamais d'un coup, et l'écran ne garde que ses cent
+     dernières lignes. Pendant ce temps, marcher autour de l'ordinateur et
+     ouvrir une porte : le jeu ne saccade pas. [ ]
+131. Pendant que `boucle.sh` tourne, **Échap** → `^C` puis `killed`, l'invite
+     revient immédiatement. [ ]
+132. `sh boucle.sh &` → la machine répond `[1] 42` (ou un autre numéro) et
+     l'invite revient tout de suite. Les `x` continuent d'arriver par-dessus
+     ce qu'on tape. `ps` → une ligne avec l'id, l'état `R` ou `O` et un nombre
+     de pas qui **monte** à chaque appel. `jobs` → `[1] running`. [ ]
+133. `kill %1` → `[1] killed` s'affiche, `ps` ne montre plus rien. Relancer
+     `kill %1` → `kill: %1: no such job`. [ ]
+134. Lancer quatre fois `sh boucle.sh &`, puis une cinquième →
+     `sh: too many jobs`, et `jobs` en montre toujours exactement quatre. Les
+     tuer une par une avec `kill %1` … `kill %4`. [ ]
+135. `edit dur.sh` avec `while true; do x=1; done` (aucune sortie), puis
+     `sh dur.sh &`. Laisser tourner **cinq minutes de temps réel** en jouant
+     normalement à côté. Au bout des cinq minutes, la machine affiche
+     `[1] killed: cpu limit` toute seule. Vérifier avec `ps` avant et après.
+     Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
+136. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
+     pièce) → après le BIOS et la reconnexion, `ps` est vide : un redémarrage
+     ne laisse aucun travail en cours. Même chose après avoir sauvegardé et
+     rechargé la partie. [ ]
+
+## M. Les doutes ouverts
 
 Ce sont les points que les programmeurs ont signalés comme réglables seulement
 en observant le jeu réel, pas par un banc de test.
 
-124. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
+137. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
      heures différentes : l'heure et la minute doivent toujours correspondre à
      ce que le jeu affiche, jamais à l'heure réelle de l'ordinateur qui fait
      tourner le jeu. [ ]
-125. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
+138. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
      mur derrière, à l'étape du bord de la case plutôt qu'au centre : vérifier
      que le point de position d'assise (avec une chaise) et le point de départ
      de l'animation (sans chaise) sont bien à l'intérieur du carré devant
      l'écran, jamais décalés vers une case voisine. [ ]
-126. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
+139. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
      seuil de blocage se déclenche vraiment à deux caisses ou déjà à une seule
      selon leurs sprites : ça dépend de la valeur `Surface` de chaque caisse,
      pas d'un nombre fixe dans le mod. [ ]
-127. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
+140. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
      `exterior` correspond au côté réel de la porte, et si un couloir entre
      deux pièces donne bien `<pièce-du-carré-de-la-porte>-<autre-pièce>` dans
      ce sens précis. [ ]
-128. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
+141. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
      elle-même aucune pièce définie (pas de plancher de maison dessous) mais
      qui est dans le rayon de dix cases d'une base : confirmer qu'il apparaît
      tout de même dans `ls -l /dev`. [ ]
-129. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
+142. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
      comptes de profondeur ou plus), vérifier que `console.stack` a gardé
      exactement la même profondeur et la bonne invite, sans qu'un `exit` de
      trop ou de moins soit nécessaire pour ressortir. [ ]
-130. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
+143. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
      l'invite affichée (comme pour `sudo cd`), et que `whoami` répond toujours
      `admin` immédiatement après. [ ]
-131. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
+144. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]
-132. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
+145. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
      revenir : compter exactement une lueur autour de l'écran, jamais deux
      superposées et jamais aucune. [ ]
-133. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
+146. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
      livre vanille de même catégorie (Literature) : noter si elle paraît trop
      grande, trop petite, ou pareille. [ ]
-134. Au premier démarrage d'une partie avec le mod actif, confirmer dans
+147. Au premier démarrage d'une partie avec le mod actif, confirmer dans
      `~/Zomboid/console.txt` qu'aucune erreur de script ne nomme
      `items_cerosec.txt` (le script d'objets chargé depuis `common/`) et que
      la ligne `manual added to 12 distribution lists` apparaît une fois. [ ]
+
+148. À l'étape 130, chronométrer une vingtaine de lignes `x` : confirmer qu'il
+     en arrive bien une vingtaine par seconde et pas deux fois plus ni deux
+     fois moins. Le débit est réglé côté serveur
+     (`CeroSec.JOB_OUT_PER_SEC`) et dépend de la cadence réelle de
+     `Events.OnTick`, qui n'a jamais été mesurée en jeu. [ ]
+149. À l'étape 130, faire tourner la boucle sur **quatre ordinateurs à la
+     fois** (quatre machines allumées, un script sur chacune) et jouer à côté
+     pendant une minute : noter la moindre saccade. Le Lua du jeu (Kahlua) est
+     une machine virtuelle Java et n'a jamais été comparée à `lua5.1`, sur
+     lequel tous les chiffres du banc ont été pris ; si ça saccade, les deux
+     budgets (`CeroSec.STEP_BUDGET_PER_TICK`, `STEP_BUDGET_PER_MACHINE`) sont
+     à baisser. [ ]
+150. À l'étape 128, vérifier avec `read -n 1 -p "y/n? " a` que la machine prend
+     bien le premier caractère tapé **après Entrée** : la fenêtre n'envoie
+     rien avant Entrée, donc `-n 1` prend le premier caractère de la ligne et
+     non la première touche pressée. Noter si ça surprend en jeu. [ ]
 
 ## Rapport
 
