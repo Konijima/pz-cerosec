@@ -3,6 +3,7 @@ if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/SCeroSecDevices"
+require "CeroSec/SCeroSecJobs"
 require "CeroSec/SCeroSecObject"
 
 SCeroSecSystem = SGlobalObjectSystem:derive("SCeroSecSystem")
@@ -301,6 +302,13 @@ function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	if state ~= nil then
 		env.devices = CeroSecDevices.envFor(luaObject, state, self, playerObj, token)
 	end
+	-- The wall clock, which is not the game's: `sleep 5` is five seconds of the
+	-- player's life and not five of Knox County's, because it is the machine
+	-- waiting and not the world turning.
+	env.nowMs = getTimestampMs()
+	-- The machine's jobs, so that ps, jobs and kill read the very tables the
+	-- scheduler steps -- there is no second copy of a job anywhere.
+	if luaObject ~= nil and luaObject.jobs ~= nil then env.jobs = luaObject.jobs.list end
 	return env
 end
 
@@ -684,6 +692,22 @@ function SCeroSecSystem:applyOrder(console, control, data, playerObj)
 	end
 end
 
+-- The order that makes a job. Kept here rather than in applyOrder because a
+-- job belongs to the MACHINE and not to the console: applyOrder is handed a
+-- screen, this one is handed the computer the script will run on.
+--
+-- A machine with no room says so on the screen and the line is over; there is
+-- no queue, because a queue is a promise this machine cannot keep across a
+-- reload.
+function SCeroSecSystem:startJob(luaObject, console, data)
+	if type(data) ~= "table" or type(data.prog) ~= "table" then return nil end
+	local job, reason = CeroSecJobs.start(self, luaObject, console, data, data.bg and true or false)
+	if job == nil then
+		CeroSec.consolePush(console, "sh: " .. tostring(reason))
+	end
+	return job
+end
+
 -- A buffer a client sent. Nothing is believed on its word: it is text, it is
 -- printable, and it fits the file ceiling -- the rules the FILESYSTEM has,
 -- checked again here because the terminal is the client.
@@ -811,6 +835,21 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		else
 			CeroSec.consolePush(console, asked.text .. text)
 		end
+		-- A question a running job put up: the answer goes to the job and not
+		-- through the core's own continuations. Which of the two it is is the
+		-- token's business, exactly as it is for sudo and passwd.
+		local job = nil
+		if type(asked.cont) == "table" and asked.cont.cmd == "job" then
+			job = CeroSecJobs.foreground(luaObject, console)
+			if job == nil or job.id ~= asked.cont.id then job = nil end
+		end
+		if job ~= nil then
+			CeroSecOS.jobInput(state, job, text,
+				self:execEnv(luaObject, state, playerObj, token))
+			self:pushScreen(luaObject, state, console)
+			return
+		end
+
 		local session = self:sessionOf(console)
 		local _, lines, control, data =
 			CeroSecOS.continue(state, session, asked.cont, text,
@@ -824,7 +863,11 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			CeroSec.consoleClear(console)
 		else
 			CeroSec.consolePushAll(console, lines)
-			self:applyOrder(console, control, data, playerObj)
+			if control == "job" then
+				self:startJob(luaObject, console, data)
+			else
+				self:applyOrder(console, control, data, playerObj)
+			end
 		end
 	end
 	self:pushScreen(luaObject, state, console)
@@ -869,7 +912,11 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	elseif not blank then
 		CeroSec.consolePush(console, prompt .. line)
 		CeroSec.consolePushAll(console, lines)
-		self:applyOrder(console, control, data, playerObj)
+		if control == "job" then
+			self:startJob(luaObject, console, data)
+		else
+			self:applyOrder(console, control, data, playerObj)
+		end
 	end
 
 	self:pushScreen(luaObject, state, console)
@@ -981,6 +1028,12 @@ Commands.interrupt = function(self, playerObj, x, y, z, token, args)
 	-- interrupt leaves behind rather than of the one it interrupted.
 	local head = self:promptFor(state, console, self:hostnameOf(luaObject, state))
 	CeroSec.consolePush(console, head .. "^C")
+	-- The foreground job goes with it: Escape at a running script is the ^C of
+	-- a 1993 terminal and kills what is running, question and all. The
+	-- scheduler is what says "killed" on the next pass, so the two lines come
+	-- out in the order they happened.
+	local job = CeroSecJobs.foreground(luaObject, console)
+	if job ~= nil then CeroSecOS.killJob(job, nil) end
 	console.prompt = nil
 	console.pending = nil
 

@@ -9,7 +9,10 @@ require "CeroSec/OS/CeroSecOSFS"
 require "CeroSec/OS/CeroSecOSUsers"
 require "CeroSec/OS/CeroSecOSState"
 require "CeroSec/OS/CeroSecOSSystem"
+require "CeroSec/OS/CeroSecOSScript"
 require "CeroSec/OS/CeroSecOSShell"
+require "CeroSec/OS/CeroSecOSVM"
+require "CeroSec/SCeroSecJobs"
 
 SCeroSecObject = SGlobalObject:derive("SCeroSecObject")
 
@@ -104,6 +107,7 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
 	self.console = nil
+	CeroSecJobs.killAll(self)
 	self:dropWatchers()
 	self:syncSprite()
 	self:toModData(isoObject)
@@ -309,6 +313,10 @@ end
 function SCeroSecObject:turnOff()
 	if not self.on then return false end
 	self.on = false
+	-- Everything that was running is gone with the power, which is what a
+	-- switch at the back of the case does. reboot goes through here too, so a
+	-- machine that comes back comes back running nothing.
+	CeroSecJobs.killAll(self)
 	-- A dark screen remembers nothing, and the terminals that were open have to
 	-- be told, not merely forgotten.
 	self.console = nil
