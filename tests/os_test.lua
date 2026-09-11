@@ -5179,6 +5179,8 @@ local function runScript(state, session, text, args, answers, options)
 	script(state, "/home/admin/bench.sh", text)
 	local jobs = {}
 	local env = { now = 740000000, nowMs = 1000, jobs = jobs }
+	-- A world around the machine, for a script that reads or works a device.
+	if options.devices ~= nil then env.devices = options.devices end
 	-- The order `sh` hands back, asked for directly. It used to be asked for by
 	-- typing `sh bench.sh`, and cannot be any more: the prompt is a job itself
 	-- now, so `sh` inside it runs ONE LEVEL DEEPER in the same job rather than
@@ -5200,6 +5202,10 @@ local function runScript(state, session, text, args, answers, options)
 	while not CeroSecOS.jobIsOver(job) and passes < (options.passes or 400) do
 		passes = passes + 1
 		env.nowMs = env.nowMs + (options.stepMs or 100)
+		-- What the WORLD does while the script runs: a door somebody opened, a
+		-- light that went out. Called before the pass, with the pass number, so a
+		-- bench can move the world under a script that is watching it.
+		if options.between ~= nil then options.between(passes, job) end
 		CeroSecOS.jobStep(state, job, env, options.budget or 100)
 		for i = 1, #job.out do out[#out + 1] = job.out[i] end
 		job.out = {}
@@ -7248,6 +7254,88 @@ do
 
 	-- Mail with nothing in it is not a delivery at all.
 	eq("no lines, no mail", CeroSecOS.mailAppend(state, "admin", "ksp", nil, {}, FIXED), false)
+end
+
+--
+-- 41. Waiting on a device, which is a loop and not a command (rung 5b)
+--
+-- Unix has no "wait until this file says something", and neither does this
+-- machine: what it has is a loop with a `sleep` in it, which is how every Unix
+-- script has waited for anything since there were scripts.
+--
+--   while [ "$(cat /dev/door0)" = closed ]; do sleep 5; done
+--
+-- So what has to be TRUE is not that a command exists -- it is that this costs
+-- almost nothing. A sleep is free: the job is off the processor entirely and the
+-- runaway clock is stopped while it waits. What one turn of the loop costs is one
+-- test, one substitution and one sleep, and nothing at all happens in between.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local C = CeroSecOS.STEP_COST_COMMAND
+	local devices = fakeDevices({
+		{ id = "door0", kind = "door", desc = "front", state = "closed",
+			becomes = { open = "open", close = "closed" } },
+	})
+
+	local watching = "while [ \"$(cat /dev/door0)\" = closed ]; do sleep 5; done\n"
+		.. "echo the door is $(cat /dev/door0)\n"
+
+	-- The door opens on the tenth pass. The clock moves a second a pass, so the
+	-- script has slept through nine seconds of it by then -- two turns of a
+	-- five-second loop.
+	local run = runScript(state, admin, watching, nil, nil, {
+		devices = devices, stepMs = 1000, passes = 40,
+		between = function(pass)
+			if pass == 10 then devices.entries[1].state = "open" end
+		end,
+	})
+	eq("the script waited and then went on", run.job.state, "done")
+	eq("and says what it found", run.out[#run.out], "the door is open")
+
+	-- What it cost. One turn is the substitution's `cat` (a command, so
+	-- STEP_COST_COMMAND), the `[` that judges it, the loop boundary and the
+	-- `sleep` -- and the wait itself is free, however long it is.
+	local turn = C + 3
+	-- Three conditions were evaluated (two that held, one that did not), two
+	-- bodies ran, and the last line is one more command's worth of substitution
+	-- plus its echo.
+	eq("and it cost what a handful of turns costs", run.job.steps,
+		3 * (C + 1) + 2 * 2 + C + 1)
+	check("which is under forty steps a turn (" .. turn .. ")", turn < 40)
+
+	-- And the same loop with the door never opening: it waits for ever and costs
+	-- the machine a turn every five seconds, which is what makes this idiom the
+	-- answer rather than a busy loop.
+	devices.entries[1].state = "closed"
+	local forever = runScript(state, admin, watching, nil, nil, {
+		devices = devices, stepMs = 1000, passes = 60,
+	})
+	eq("it is still waiting after a minute of it", forever.job.state, "sleeping")
+	-- The proof that a wait is FREE: a sleeping job is off the processor, so the
+	-- runaway clock is not running on it and it can wait for days.
+	eq("and it is not on the processor at all", forever.job.cpuSince, nil)
+	eq("nor has it been killed for spending it",
+		CeroSecOS.jobOverCpu(forever.job, 740000000 * 1000, 300), false)
+	-- Twelve turns in sixty seconds, and no more: the sleep is what bounds it.
+	check("and cost twelve turns of it, not sixty (" .. forever.job.steps .. ")",
+		forever.job.steps <= 13 * (C + 1) + 13)
+	-- A busy version of the same loop -- no sleep in it -- is what the manual
+	-- tells a player not to write, and it is the flood the budget already holds
+	-- back: many times the steps for the same minute of waiting.
+	local busy = runScript(state, admin,
+		"while [ \"$(cat /dev/door0)\" = closed ]; do :; done\n", nil, nil, {
+		devices = devices, stepMs = 1000, passes = 60, budget = 100,
+	})
+	-- It spends every step the machine will give it, every pass, for as long as
+	-- it runs -- the budget is the only thing holding it back -- while the one
+	-- with a sleep in it asks for nothing at all in between.
+	check("a busy loop spends the whole budget (" .. busy.job.steps .. " in 60 passes)",
+		busy.job.steps > 55 * 100)
+	check("and the polling loop spends a tenth of a tenth of that (" ..
+		forever.job.steps .. ")", forever.job.steps * 10 < busy.job.steps)
 end
 
 print("os_test: " .. count .. " assertions passed")

@@ -644,6 +644,20 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	elseif control == "edit" then
 		system:applyOrder(console, control, controlData, playerObj)
 		system:pushScreen(luaObject, state, console)
+	elseif control == "fg" and type(controlData) == "table" then
+		-- `fg`: the console's attention moves to a job it already has. Only the
+		-- machine can do it -- the engine has no console -- and it is two things
+		-- and nothing more: the job stops being a background job, so what it
+		-- writes is no longer announced with a slot and its end says nothing, and
+		-- the prompt belongs to it, which is what makes Escape its ^C.
+		for i = 1, #book.list do
+			local job = book.list[i]
+			if job.id == controlData.id and not CeroSecOS.jobIsOver(job) then
+				job.bg = false
+				console.job = job.id
+				system:pushScreen(luaObject, state, console)
+			end
+		end
 	elseif control == "schedule" then
 		CeroSecJobs.schedule(luaObject, controlData)
 	elseif control == "cancel" then

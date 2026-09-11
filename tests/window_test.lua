@@ -3111,4 +3111,129 @@ do
 	_G.__world = nil
 end
 
+--
+-- fg: the other half of "&" (rung 5b)
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	-- Nothing to bring forward yet.
+	bench.enter("fg")
+	bench.frame()
+	check("fg with no jobs says so", bench.painted("fg: no current job"))
+	bench.enter("fg %9")
+	bench.frame()
+	check("and a slot nobody holds says so too", bench.painted("fg: %9: no such job"))
+
+	-- A background job, announced with its slot and its id.
+	bench.script("/home/admin/slow.sh", "sleep 30\necho finished\n")
+	bench.enter("sh slow.sh &")
+	bench.tick(2)
+	bench.frame()
+	check("the job was announced with its slot", bench.painted("[1] "))
+	eq("and the prompt is free", bench.object.console.job, nil)
+	bench.enter("jobs")
+	bench.frame()
+	check("jobs lists it", bench.painted("sh slow.sh"))
+
+	-- fg brings it forward: sh prints the command line, and the prompt is the
+	-- job's now.
+	bench.enter("fg %1")
+	bench.tick(2)
+	bench.frame()
+	check("fg prints the command it brought forward", bench.painted("sh slow.sh &"))
+	local job = CeroSecJobs.book(bench.object).list[1]
+	check("there is still one job", job ~= nil)
+	eq("the prompt belongs to it now", bench.object.console.job, job.id)
+	eq("and it is no longer a background job", job.bg, false)
+
+	-- Escape is its ^C, exactly as it is for a script started in the foreground.
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("Escape killed it", bench.heard("^C"))
+	eq("and the machine is running nothing", #CeroSecJobs.book(bench.object).list, 0)
+	eq("the prompt is back", bench.object.console.job, nil)
+	check("and it never said 'finished'", not bench.heard("finished"))
+end
+
+-- A job brought forward and left to finish says nothing at the end of it: "[1]
+-- done" is a message to a shell that was not waiting, and this one was.
+do
+	local bench = newBench()
+	bench.login("admin")
+	-- A few seconds of sleep in front of it, so it is still there to be brought
+	-- forward: a job of one echo is over before the line that started it is, and
+	-- typing a line is a second of the wall clock by itself.
+	bench.script("/home/admin/quick.sh", "sleep 4\necho working\n")
+	bench.enter("sh quick.sh &")
+	bench.tick(1)
+	bench.frame()
+	local job = CeroSecJobs.book(bench.object).list[1]
+	check("it is running", job ~= nil and not CeroSecOS.jobIsOver(job))
+	bench.enter("fg")
+	bench.frame()
+	check("it was brought forward", bench.object.console.job == job.id)
+	bench.tick(60)
+	bench.frame()
+	check("what it printed is on the glass", bench.heard("working"))
+	check("and nothing was said about a slot ending", not bench.heard("[1] done"))
+	eq("the prompt came back", bench.object.console.job, nil)
+end
+
+-- fg by id, the way kill takes one, and a job that has already finished is not
+-- one to bring forward.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/slow.sh", "sleep 30\n")
+	bench.enter("sh slow.sh &")
+	bench.tick(2)
+	local job = CeroSecJobs.book(bench.object).list[1]
+	bench.enter("fg " .. job.id)
+	bench.tick(1)
+	bench.frame()
+	eq("an id names a job too", bench.object.console.job, job.id)
+	-- And the prompt is the job's now, so there is nothing to type at: Escape is
+	-- the way out of a foreground job, exactly as it is for a script started in
+	-- front of you.
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.tick(2)
+	bench.frame()
+	eq("Escape took it away", #CeroSecJobs.book(bench.object).list, 0)
+	bench.enter("fg " .. job.id)
+	bench.frame()
+	check("and a job that is gone is no job at all",
+		bench.painted("fg: " .. job.id .. ": no such job"))
+end
+
+-- A cron job is nobody's to bring forward: the shell did not start it.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * sleep 30", false, 100)
+	bench.minute()
+	bench.minute()
+	local list = CeroSecJobs.book(bench.object).list
+	local cron = nil
+	for i = 1, #list do if list[i].mailTo ~= nil then cron = list[i] end end
+	check("cron started one", cron ~= nil)
+	bench.enter("jobs")
+	bench.frame()
+	check("jobs does not list it", not bench.painted("sleep 30"))
+	bench.enter("fg")
+	bench.frame()
+	check("and fg will not have it", bench.painted("fg: no current job"))
+	bench.enter("fg " .. cron.id)
+	bench.frame()
+	check("not even by its id", bench.painted("fg: " .. cron.id .. ": no such job"))
+	-- ps shows it, because ps shows what the MACHINE is running.
+	bench.enter("ps")
+	bench.frame()
+	check("ps does show it", bench.painted("sleep 30"))
+end
+
 print("window_test: " .. count .. " checks passed")

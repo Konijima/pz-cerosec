@@ -1280,6 +1280,7 @@ itself.
   echo [text...]
   edit <file>
   exit
+  fg [%<n>|<id>]
   gpasswd -a|-d <user> <group>
   grep [-i] [-n] <text> [file]...
   groupadd <name>

@@ -2105,6 +2105,61 @@ commands.jobs = function(state, session, args, env)
 	return true, out
 end
 
+-- fg: the other half of "&".
+--
+-- POSIX job control, as much of it as a machine with no ^Z has: `fg` brings a
+-- background job to the front, which means two things and nothing more -- what it
+-- writes goes on the screen as it is written, and Escape is its ^C. There is no
+-- `bg`, because there are no STOPPED jobs here to start again: nothing suspends a
+-- job on this machine, so the only direction a job can be moved in is forwards.
+--
+-- With no argument it is the job that was started LAST, which is what every shell
+-- means by "the current job". `%1` names a slot the way `jobs` prints one and
+-- `kill` takes one; a bare number is an id, for the same reason kill takes one.
+--
+-- What comes back is the command line, printed the way sh prints it when it
+-- brings a job forward, and an ORDER: only the machine can move the console's
+-- attention from one job to another, so the engine says which job and the
+-- scheduler does it.
+commands.fg = function(state, session, args, env)
+	if #args > 2 then return false, { "fg: usage: " .. CeroSecOS.commandUsage("fg") } end
+	local jobs = CeroSecOS.jobsOf(env)
+
+	local target = nil
+	if args[2] == nil then
+		for i = 1, #jobs do
+			local job = jobs[i]
+			-- The shell's own job is not one of them, and neither is a cron job:
+			-- nobody started that one, so nobody may pull it forward.
+			if not job.interactive and job.mailTo == nil and not CeroSecOS.jobIsOver(job) then
+				if target == nil or job.id > target.id then target = job end
+			end
+		end
+		if target == nil then return false, { "fg: no current job" } end
+	else
+		local want = args[2]
+		local bySlot = false
+		if string.sub(want, 1, 1) == "%" then
+			want = string.sub(want, 2)
+			bySlot = true
+		end
+		local n = tonumber(want)
+		if n == nil then return false, { "fg: " .. args[2] .. ": no such job" } end
+		for i = 1, #jobs do
+			local job = jobs[i]
+			local matches = false
+			if bySlot then matches = job.n == n else matches = job.id == n end
+			if matches and not job.interactive and job.mailTo == nil
+					and not CeroSecOS.jobIsOver(job) then
+				target = job
+			end
+		end
+		if target == nil then return false, { "fg: " .. args[2] .. ": no such job" } end
+	end
+
+	return true, { target.cmd or "" }, "fg", { id = target.id }
+end
+
 -- kill: a request, not a deed. The scheduler is what takes a job off the
 -- machine, because it is what has to tell the screen about it -- so this sets
 -- the flag and answers, and the job is gone by the next pass.

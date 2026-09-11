@@ -529,7 +529,7 @@ CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	cat      = { desc = "print a file", usage = "cat [file]..." },
-	-- The four words the SHELL is, and so the four with no file in /bin: a
+	-- The five words the SHELL is, and so the five with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either
 	-- (see CeroSecOS.isShellWord, and the note above CeroSecOS.BUILTINS).
 	cd       = { desc = "change the working directory", usage = "cd [dir]", shell = true },
@@ -547,6 +547,8 @@ CeroSecOS.COMMAND_INFO = {
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
 	exit     = { desc = "log out", usage = "exit", shell = true },
+	fg       = { desc = "bring a background job to the front",
+		usage = "fg [%<n>|<id>]", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files",
@@ -648,12 +650,12 @@ CeroSecOS.NO_SHELL_WORDS = { exit = true, help = true }
 --
 --   * the reserved words -- if then elif else fi for while until do done --
 --     which are grammar and were never commands at all;
---   * the shell's own words -- cd, exit, jobs, wait, and read, shift, break,
+--   * the shell's own words -- cd, exit, fg, jobs, wait, and read, shift, break,
 --     continue, history -- which change the shell itself or own what it
 --     started, and could not be a separate program if they tried: a program
 --     cannot move the shell that ran it, and cannot be handed its job table
 --     either. None of them is a file, and /bin never had any business holding
---     one -- the four that carry a COMMAND_INFO entry are marked `shell` there;
+--     one -- the five that carry a COMMAND_INFO entry are marked `shell` there;
 --     the rest are the engine's builtins and were never in that table at all;
 --   * everything else, which is a FILE in /bin.
 --
@@ -677,7 +679,7 @@ CeroSecOS.BUILTIN_FILES = {
 -- The words that are the shell's own, for `help` to list under the table of
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
-CeroSecOS.HELP_BUILTINS = "cd exit jobs wait read shift break continue history"
+CeroSecOS.HELP_BUILTINS = "cd exit fg jobs wait read shift break continue history"
 
 -- Column the descriptions line up in, in help. The longest name is "hostname".
 local L_CMD = 9
