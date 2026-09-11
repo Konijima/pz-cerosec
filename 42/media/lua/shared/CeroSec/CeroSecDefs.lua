@@ -660,6 +660,38 @@ function CeroSec.inputRows(prompt, text, offset)
 	return rows, row, col
 end
 
+-- Where the block cursor is on a drawn row, and what character it covers.
+--
+-- The two halves of the blink have to agree on one column: the block that is
+-- painted and the character repainted under it are the same cell, so both are
+-- worked out here, once, and the window uses the one answer for both halves.
+--
+-- x is the width of everything in front of the cursor -- the prompt and the
+-- text up to the cursor, measured on the very string that was painted -- and
+-- not a count of cells, because a cell is one measurement taken at one moment.
+-- `measure` is the font's answer for a string: the window hands it
+-- MeasureStringX on UIFont.Code and the bench hands it a fixed width.
+--
+-- cursorIndex is an index into `text`: 0 in front of the first character,
+-- #text right after the last one, where the cursor covers nothing and the
+-- glyph comes back nil. Out of range is clamped, never an error -- a box that
+-- answers one past the end must not push the block a column past the line.
+function CeroSec.cursorSpan(prompt, text, cursorIndex, measure)
+	prompt = tostring(prompt or "")
+	text = tostring(text or "")
+	if type(cursorIndex) ~= "number" then cursorIndex = #text end
+	if cursorIndex < 0 then cursorIndex = 0 end
+	if cursorIndex > #text then cursorIndex = #text end
+
+	local front = prompt .. string.sub(text, 1, cursorIndex)
+	local x = 0
+	if front ~= "" and measure then x = measure(front) or 0 end
+
+	local under = string.sub(text, cursorIndex + 1, cursorIndex + 1)
+	if under == "" then under = nil end
+	return x, under
+end
+
 --
 -- The editor
 --

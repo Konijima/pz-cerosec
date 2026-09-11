@@ -560,6 +560,106 @@ do
 end
 
 --
+-- Both halves of the blink are the same cursor
+--
+-- On the glass the block jumped a column between one half of the blink and the
+-- other: lit, it sat a column right of the last character typed, with a gap;
+-- dark, a column left of it, with that character drawn inverted under it. One
+-- cursor, two columns. So the column is asserted in both halves here, on the
+-- same frame's worth of paint, and the column past the end of the text -- the
+-- gap that was on the glass -- is asserted empty.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+	local prompt = bench.window.prompt
+
+	-- The block is the one rect a character wide on the input row.
+	local function blockOf(window)
+		local found = nil
+		for i = 1, #window.rects do
+			local rect = window.rects[i]
+			if rect.w <= CHAR_W * 2 and rect.h >= FONT_H then found = rect end
+		end
+		return found
+	end
+	-- What was painted at a given x, if anything, ignoring the glow copy that
+	-- drawScreenText lays down at an offset.
+	local function paintedAt(window, x)
+		local out = {}
+		for i = 1, #window.painted do
+			local paint = window.painted[i]
+			if paint.x == x then out[#out + 1] = paint.text end
+		end
+		return out
+	end
+	-- Render one frame in each half of the blink, and answer what each half
+	-- painted. The clock is the window's only blink input.
+	local function bothPhases()
+		local phases = {}
+		for _ = 1, 2 do
+			local lit = math.floor(_G.__now / CeroSec.CURSOR_BLINK_MS) % 2 == 0
+			bench.frame()
+			phases[lit and "lit" or "dark"] = {
+				block = blockOf(bench.window),
+				painted = paintedAt(bench.window, blockOf(bench.window) and blockOf(bench.window).x or -1),
+			}
+			_G.__now = _G.__now + CeroSec.CURSOR_BLINK_MS
+		end
+		return phases
+	end
+
+	-- Nothing typed: both halves put the block right after the prompt.
+	local phase = bothPhases()
+	check("the lit half draws a block", phase.lit.block ~= nil)
+	check("the dark half draws one too", phase.dark.block ~= nil)
+	eq("and both at the same column", phase.lit.block.x, phase.dark.block.x)
+
+	-- One character typed: the block is right after it, in both halves, with
+	-- nothing in the column past it and no character painted under it.
+	bench.window.entry:type("a")
+	local promptX = nil
+	bench.frame()
+	for i = 1, #bench.window.painted do
+		if bench.window.painted[i].text == prompt then promptX = bench.window.painted[i].x end
+	end
+	check("the prompt is painted", promptX ~= nil)
+	local endX = promptX + CHAR_W * (#prompt + 1)
+	phase = bothPhases()
+	eq("one char: the lit block is right after it", phase.lit.block.x, endX)
+	eq("one char: the dark block is at the same column", phase.dark.block.x, endX)
+	eq("one char: nothing is painted under the lit block", #phase.lit.painted, 0)
+	eq("one char: nor under the dark one", #phase.dark.painted, 0)
+	-- The gap: the column one past the end of the text is empty in both halves.
+	for name, half in pairs(phase) do
+		check(name .. ": no block a column past the text",
+			half.block.x ~= endX + CHAR_W)
+		eq(name .. ": and nothing painted there", #paintedAt(bench.window, endX + CHAR_W), 0)
+	end
+
+	-- Two characters, and the same again: no gap after the b.
+	bench.window.entry:type("b")
+	phase = bothPhases()
+	eq("ab: the lit block is right after the b", phase.lit.block.x, endX + CHAR_W)
+	eq("ab: and the dark one with it", phase.dark.block.x, endX + CHAR_W)
+
+	-- The cursor walked back into the middle of what was typed: now it covers
+	-- the b, in both halves -- inverted under the lit block, and still there,
+	-- not eaten, while the block is dark.
+	bench.window.entry:setCursorPos(1)
+	phase = bothPhases()
+	eq("mid: the lit block is on the b", phase.lit.block.x, endX)
+	eq("mid: and so is the dark one", phase.dark.block.x, endX)
+	local function covers(list, glyph)
+		for i = 1, #list do if list[i] == glyph then return true end end
+		return false
+	end
+	check("mid: the lit half paints the b under its block", covers(phase.lit.painted, "b"))
+	check("mid: and the dark half paints it too", covers(phase.dark.painted, "b"))
+end
+
+--
 -- The BIOS, end to end
 --
 -- Root may wipe the machine he is standing at -- that is what root is, and the
