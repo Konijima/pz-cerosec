@@ -1198,6 +1198,14 @@ function CeroSecTerminal:render()
 	ISCollapsableWindow.render(self)
 end
 
+-- The font's answer for a string, and the one place it is asked: the columns
+-- of a drawn row and the block cursor on it are placed by the same measurement
+-- of the same font, or they disagree by a character.
+local function measureText(text)
+	if text == "" then return 0 end
+	return getTextManager():MeasureStringX(UIFont.Code, text)
+end
+
 -- Where a column of a drawn row is on the glass: the width of everything in
 -- front of it, measured on the very text that was painted and in the font it
 -- was painted with. Counting cells instead is only right for as long as the
@@ -1206,7 +1214,7 @@ end
 -- columns to the right of the end of the prompt.
 function CeroSecTerminal:columnX(x, text, column)
 	if column <= 0 then return x end
-	return x + getTextManager():MeasureStringX(UIFont.Code, string.sub(text, 1, column))
+	return x + measureText(string.sub(text, 1, column))
 end
 
 -- The prompt, what has been typed, and the block cursor over it. A line longer
@@ -1238,23 +1246,33 @@ function CeroSecTerminal:drawInput(x, y)
 		end
 	end
 
-	-- Solid block, on for half a second and off for half a second, with the
-	-- character under it repainted in the screen's own colour so the cursor
-	-- never hides what it is on. Column 60 is the one place it lies -- a full
-	-- row has nowhere to put the cursor after its last character -- and there
-	-- it sits on that character instead.
+	-- Solid block, on for half a second and off for half a second, and both
+	-- halves at the same column: CeroSec.cursorSpan answers where the block is
+	-- and which character it covers, and the two halves differ only in the
+	-- colours. Lit, the block is the text colour and the character it covers is
+	-- repainted in the screen's own colour, so the cursor never hides what it
+	-- is on; dark, the block is the screen's colour and the character goes back
+	-- to the colour of its row. At the end of the line there is no character to
+	-- cover and none is drawn. Column 60 is the one place it lies -- a full row
+	-- has nowhere to put the cursor after its last character -- and there it
+	-- sits on that character instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local cx = self:columnX(x, rows[row] or "", cell)
+	local line = rows[row] or ""
+	local ahead, typed, index = "", line, cell
+	if row == 1 and cell >= head then
+		ahead, typed, index = string.sub(line, 1, head), string.sub(line, head + 1), cell - head
+	end
+	local span, under = CeroSec.cursorSpan(ahead, typed, index, measureText)
+	local cx = x + span
 	local cy = y + (row - 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
 	self:drawRect(cx, cy, CELL_W, CELL_H, 1, block.r, block.g, block.b)
-	if lit then
-		local under = string.sub(rows[row] or "", cell + 1, cell + 1)
-		if under ~= "" and under ~= " " then
-			self:drawText(under, cx, cy, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
-		end
+	if under and under ~= " " then
+		local ink = colors.screen
+		if not lit then ink = (ahead == "" and row == 1) and colors.dim or colors.text end
+		self:drawText(under, cx, cy, ink.r, ink.g, ink.b, 1, UIFont.Code)
 	end
 end
 
@@ -1294,22 +1312,24 @@ function CeroSecTerminal:drawEditor(left, top)
 
 	if not mine or self.editAsk then return end
 
-	-- The block, and the character under it repainted in the screen's own
-	-- colour: a cursor in the middle of a line must not hide what it is on.
-	-- Column 60 is the one place it lies -- a full line has nowhere to put the
-	-- cursor after its last character -- and it sits on that character instead.
+	-- The block, at the same column in both halves of the blink, and the
+	-- character it covers repainted over it: in the screen's own colour while
+	-- the block is lit, in the text's while it is dark, so a cursor in the
+	-- middle of a line neither hides what it is on nor eats it for half a
+	-- second. Column 60 is the one place it lies -- a full line has nowhere to
+	-- put the cursor after its last character -- and it sits on that character
+	-- instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local x = self:columnX(left, lines[row] or "", cell)
+	local span, under = CeroSec.cursorSpan("", lines[row] or "", cell, measureText)
+	local x = left + span
 	local y = top + (row - self.editTopRow + 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
 	self:drawRect(x, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
-	if lit then
-		local under = string.sub(lines[row] or "", cell + 1, cell + 1)
-		if under ~= "" then
-			self:drawText(under, x, y, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
-		end
+	if under then
+		local ink = lit and colors.screen or colors.text
+		self:drawText(under, x, y, ink.r, ink.g, ink.b, 1, UIFont.Code)
 	end
 end
 
