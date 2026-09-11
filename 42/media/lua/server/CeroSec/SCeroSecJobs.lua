@@ -256,7 +256,10 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 			job.spawnLine = nil
 			local made = CeroSecJobs.start(system, luaObject, console, order, true)
 			if made == nil then
-				CeroSec.consolePush(console, "sh: too many jobs")
+				-- Said by the job that asked, so it drains at the same rate its
+				-- own output does: a loop full of refusals is as quiet as a
+				-- loop full of echoes.
+				CeroSecOS.jobSay(job, "sh: too many jobs")
 				job.status = 1
 			end
 			changed = true

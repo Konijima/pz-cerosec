@@ -1846,6 +1846,21 @@ function CeroSecOS.splitBackground(line)
 	return string.sub(line, 1, last - 1), true
 end
 
+-- Output, into whatever ">" named: a device if the target is one, a file
+-- otherwise. Used by a command's own redirect and by a script's builtins, so
+-- `echo hi > f` writes the same way whoever ran the echo.
+-- true plus the lines, or false plus the refusal.
+function CeroSecOS.writeRedirect(state, session, who, redirect, text, env)
+	local devOk, devLines = redirectToDevice(state, session, redirect.path, text, env)
+	if devOk ~= nil then return devOk, devLines end
+	local done, reason = CeroSecOS.writeFile(state, session, redirect.path, text,
+		redirect.append, CeroSecOS.clockOf(env))
+	if done == nil then
+		return false, CeroSecOS.fit({ who .. ": " .. redirect.path .. ": " .. reason })
+	end
+	return true, {}
+end
+
 local execLine
 
 function CeroSecOS.exec(state, session, line, env)
@@ -1937,17 +1952,11 @@ function CeroSecOS.runArgs(state, session, args, redirect, env)
 	-- printed nothing yet, and its output goes to the screen as it is made.
 	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
 	if ok and redirect ~= nil and redirectable then
-		local text = table.concat(lines, "\n")
 		-- ">" and ">>" are the same order to a device: it has no contents to
 		-- append to, only a state to be put into.
-		local devOk, devLines = redirectToDevice(state, session, redirect.path, text, env)
-		if devOk ~= nil then return devOk, devLines, control end
-		local done, wreason = CeroSecOS.writeFile(state, session, redirect.path, text,
-			redirect.append, CeroSecOS.clockOf(env))
-		if done == nil then
-			return false, CeroSecOS.fit({ name .. ": " .. redirect.path .. ": " .. wreason })
-		end
-		return true, {}, control
+		local wroteOk, wroteLines =
+			CeroSecOS.writeRedirect(state, session, name, redirect, table.concat(lines, "\n"), env)
+		return wroteOk, wroteLines, control
 	end
 
 	return ok, CeroSecOS.fit(lines), control, data

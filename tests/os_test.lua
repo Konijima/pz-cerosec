@@ -3,8 +3,9 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
-	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
+	"CeroSecOS", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
+	"CeroSecOSVM",
 }
 for i = 1, #FILES do
 	local path = DIR .. FILES[i] .. ".lua"
@@ -1742,12 +1743,17 @@ do
 	ok(state, rootSession, "chmod 755 /bin/telnet", {})
 	bad(state, admin, "telnet", "telnet: command not found")
 
-	-- A copy of an executable somewhere else is a file and nothing more:
-	-- commands are found in /bin only.
+	-- A copy of an executable somewhere else is not a second `ls`: a BARE name
+	-- is /bin/<name> and nothing else, and a name with a slash in it is a
+	-- script (rung 5a) -- so ./ls is the text of that file, handed to the
+	-- machine as a program, and not the command it was copied from.
 	ok(state, admin, "cp /bin/ls /home/admin/ls", {})
 	ok(state, admin, "chmod 755 /home/admin/ls", {})
 	ok(state, admin, "cd /home/admin", {})
-	bad(state, admin, "./ls", "./ls: command not found")
+	ok(state, admin, "./ls", {}, "job")
+	-- Without x on it, it is not runnable at all.
+	ok(state, admin, "chmod 644 /home/admin/ls", {})
+	bad(state, admin, "./ls", "./ls: permission denied")
 
 	eq("the state still validates", CeroSecOS.validate(state), true)
 end
@@ -4700,5 +4706,631 @@ do
 	old.group = nil
 	eq("and it validates again", CeroSecOS.validate(state), true)
 end
+
+
+--
+-- 23. Scripts: the parser (rung 5a)
+--
+-- A script never becomes a job until it parses, so this is the gate every
+-- mistake in a file meets, and every line below is the exact string a player
+-- reads.
+--
+
+local function parses(text)
+	local prog, reason, line = CeroSecOS.parseScript(text)
+	if prog == nil then
+		error("FAIL: `" .. string.gsub(text, "\n", " | ") .. "` should parse: line "
+			.. tostring(line) .. ": " .. tostring(reason), 2)
+	end
+	count = count + 1
+	return prog
+end
+
+local function refuses(text, wantReason, wantLine)
+	local prog, reason, line = CeroSecOS.parseScript(text)
+	count = count + 1
+	if prog ~= nil then
+		error("FAIL: `" .. string.gsub(text, "\n", " | ") .. "` should not parse", 2)
+	end
+	eq("`" .. string.gsub(text, "\n", " | ") .. "` reason", reason, wantReason)
+	if wantLine ~= nil then
+		eq("`" .. string.gsub(text, "\n", " | ") .. "` line", line, wantLine)
+	end
+end
+
+do
+	-- Every construct there is.
+	parses("echo hi")
+	parses("echo hi; echo there")
+	parses("echo hi\necho there\n")
+	parses("#!/bin/sh\n# a comment\necho hi # and another\n")
+	parses("x=1")
+	parses("x=1 y=2 echo $x")
+	parses("if true; then echo a; fi")
+	parses("if true; then echo a; else echo b; fi")
+	parses("if true; then a; elif false; then b; elif true; then c; else d; fi")
+	parses("for i in a b c; do echo $i; done")
+	parses("for i; do echo $i; done")
+	parses("while true; do break; done")
+	parses("until false; do break; done")
+	parses("echo a && echo b || echo c")
+	parses("sh x.sh &")
+	parses("sh a.sh & sh b.sh & echo both")
+	parses("echo $x ${x} $1 $9 $# $@ $? $$")
+	parses("echo $(ls /bin)")
+	parses("echo $((1 + 2 * (3 - 1) / 2 % 3))")
+	parses("echo 'single' \"double $x\" bare\\ space")
+	parses("echo hi > out.txt")
+	parses("echo hi >> out.txt")
+	parses("for i in a b; do done")
+	parses("")
+
+	-- And every way of getting one wrong.
+	refuses("fi", "syntax error: unexpected 'fi'", 1)
+	refuses("done", "syntax error: unexpected 'done'", 1)
+	refuses("then echo a", "syntax error: unexpected 'then'", 1)
+	refuses("else", "syntax error: unexpected 'else'", 1)
+	refuses("elif true; then a; fi", "syntax error: unexpected 'elif'", 1)
+	refuses("do echo a; done", "syntax error: unexpected 'do'", 1)
+	refuses("if true; then echo a", "syntax error: missing 'fi'", 1)
+	-- `then` never came, and what turned up where a command should be is `fi`:
+	-- the parser names what it found, which is the half a reader can see.
+	refuses("if true; echo a; fi", "syntax error: unexpected 'fi'", 1)
+	refuses("if true\necho a", "syntax error: missing 'then'", 2)
+	refuses("while true; do echo a", "syntax error: missing 'done'", 1)
+	refuses("until true; do echo a", "syntax error: missing 'done'", 1)
+	refuses("for i in a; do echo a", "syntax error: missing 'done'", 1)
+	refuses("for i in a; echo a; done", "syntax error: missing 'do'", 1)
+	refuses("for 9bad in a; do x; done", "syntax error: not a name", 1)
+	refuses("echo 'open", "syntax error: unterminated quote", 1)
+	refuses("echo \"open", "syntax error: unterminated quote", 1)
+	refuses("echo $(echo $(echo x))", "syntax error: bad substitution", 1)
+	refuses("echo $(echo x", "syntax error: bad substitution", 1)
+	refuses("echo ${x", "syntax error: bad substitution", 1)
+	refuses("echo ${not a name}", "syntax error: bad substitution", 1)
+	refuses("echo $((1 + 2)", "syntax error: bad substitution", 1)
+	refuses("cat a | grep b", "syntax error: unexpected '|'", 1)
+	refuses("cat < a", "syntax error: unexpected '<'", 1)
+	refuses("echo a >", "syntax error: missing redirect target", 1)
+	refuses("echo a > b > c", "syntax error: bad redirect", 1)
+	refuses("echo a && ", "syntax error: unexpected end of file", 1)
+
+	-- The line a mistake is on is the line it was typed on.
+	refuses("echo one\necho two\nfi", "syntax error: unexpected 'fi'", 3)
+	refuses("echo one\n\n\nwhile true; do x", "syntax error: missing 'done'", 4)
+
+	-- Nesting has a floor under it, and the parser is where a script meets it.
+	refuses(string.rep("if true; then ", CeroSecOS.MAX_NEST + 4) .. "echo x"
+		.. string.rep(" fi", CeroSecOS.MAX_NEST + 4), "too deeply nested", 1)
+	parses(string.rep("if true; then ", 8) .. "echo x" .. string.rep("; fi", 8))
+end
+
+--
+-- 24. Scripts: running one
+--
+
+-- A script on the disk, owned by admin and runnable by him.
+local function script(state, path, text)
+	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(), path, text)
+	if done == nil then
+		done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(), path, text, false, 100)
+	end
+	if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+	node.owner = "admin"
+	node.mode = 755
+	return node
+end
+
+-- Run a script to the end (or until it asks something), with a fake machine
+-- around it: an env with a clock and a job book, answers fed to every question
+-- from `answers`, and a hard ceiling on the passes so a bench can never hang.
+local JOB_ID = 42
+
+local function runScript(state, session, text, args, answers, options)
+	options = options or {}
+	script(state, "/home/admin/bench.sh", text)
+	local jobs = {}
+	local env = { now = 740000000, nowMs = 1000, jobs = jobs }
+	local line = "sh /home/admin/bench.sh"
+	for i = 1, #(args or {}) do line = line .. " " .. args[i] end
+	local ok, lines, control, data = CeroSecOS.exec(state, session, line, env)
+	if control ~= "job" then
+		return { started = false, ok = ok, lines = lines }
+	end
+	local job = CeroSecOS.newJob({ id = JOB_ID, prog = data.prog, args = data.args,
+		name = data.name, cmd = data.cmd, session = session, bg = options.bg })
+	jobs[1] = job
+	local out, asked = {}, {}
+	local answerAt = 1
+	local passes = 0
+	while not CeroSecOS.jobIsOver(job) and passes < (options.passes or 400) do
+		passes = passes + 1
+		env.nowMs = env.nowMs + (options.stepMs or 100)
+		CeroSecOS.jobStep(state, job, env, options.budget or 100)
+		for i = 1, #job.out do out[#out + 1] = job.out[i] end
+		job.out = {}
+		if job.state == "waiting" and job.ask ~= nil then
+			asked[#asked + 1] = job.ask.text
+			CeroSecOS.jobInput(state, job, (answers or {})[answerAt] or "", env)
+			answerAt = answerAt + 1
+		elseif job.state == "waiting" then
+			break
+		end
+		if job.spawn ~= nil then job.spawn = nil end
+	end
+	for i = 1, #job.out do out[#out + 1] = job.out[i] end
+	job.out = {}
+	return { started = true, job = job, out = out, asked = asked, passes = passes }
+end
+
+local function prints(state, session, text, wantLines, what)
+	local run = runScript(state, session, text)
+	check((what or text) .. ": it started", run.started)
+	eq((what or text) .. ": line count", #run.out, #wantLines)
+	for i = 1, #wantLines do
+		eq((what or text) .. ": line " .. i, run.out[i], wantLines[i])
+	end
+	return run
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- Words and quoting.
+	prints(state, admin, "echo hello world", { "hello world" })
+	prints(state, admin, "echo 'a  b' \"c  d\"", { "a  b c  d" })
+	prints(state, admin, "x='one two'\necho $x\necho \"$x\"",
+		{ "one two", "one two" })
+	prints(state, admin, "echo a\\ b", { "a b" })
+	prints(state, admin, "echo -n one\necho two", { "onetwo" })
+	prints(state, admin, "printf '%s/%d/%%\\n' hi 7", { "hi/7/%" })
+
+	-- Variables and arithmetic.
+	prints(state, admin, "x=3\ny=$((x * 2 + 1))\necho ${y}", { "7" })
+	prints(state, admin, "echo $((7 / 2)) $((-7 / 2)) $((7 % 3)) $((2 * (3 + 4)))",
+		{ "3 -3 1 14" })
+	prints(state, admin, "echo $((nothing + 1))", { "1" })
+	prints(state, admin, "echo [$empty]", { "[]" })
+	-- An unquoted expansion that is empty produces no word at all.
+	prints(state, admin, "echo a $empty b", { "a b" })
+	-- And an unquoted one with blanks in it produces several.
+	prints(state, admin, "x='a b c'\nfor w in $x; do echo [$w]; done",
+		{ "[a]", "[b]", "[c]" })
+
+	-- The script's own arguments.
+	local run = runScript(state, admin, 'echo "$# [$1] [$2] [$@]"\nshift\necho "$# [$1]"',
+		{ "one", "two" })
+	eq("$# and $1 and $@", run.out[1], "2 [one] [two] [one two]")
+	eq("shift moves them along", run.out[2], "1 [two]")
+
+	-- $$ is the job's own id, and $? the last status.
+	run = runScript(state, admin, "echo $$\nfalse\necho $?\ntrue\necho $?")
+	eq("$$ is the job id", run.out[1], tostring(JOB_ID))
+	eq("false is 1", run.out[2], "1")
+	eq("true is 0", run.out[3], "0")
+
+	-- Command substitution, with newlines folded to spaces.
+	prints(state, admin, "echo one two > /home/admin/two.txt\necho [$(cat /home/admin/two.txt)]",
+		{ "[one two]" })
+	prints(state, admin, 'printf "a\\nb\\n" > /home/admin/ab.txt\necho [$(cat /home/admin/ab.txt)]',
+		{ "[a b]" })
+
+	-- Exit codes travel out of a command and into $?.
+	prints(state, admin, "cat /nope\necho $?",
+		{ "cat: /nope: no such file", "1" })
+end
+
+--
+-- 25. Scripts: control flow
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	prints(state, admin, "if true; then echo yes; else echo no; fi", { "yes" })
+	prints(state, admin, "if false; then echo yes; else echo no; fi", { "no" })
+	prints(state, admin, "if false; then a; elif true; then echo second; else c; fi",
+		{ "second" })
+	prints(state, admin, "if false; then echo a; fi\necho after", { "after" })
+
+	prints(state, admin, "for i in 1 2 3; do echo $i; done", { "1", "2", "3" })
+	prints(state, admin, "i=0\nwhile [ $i -lt 3 ]; do echo $i; i=$((i+1)); done",
+		{ "0", "1", "2" })
+	prints(state, admin, "i=0\nuntil [ $i -ge 2 ]; do echo $i; i=$((i+1)); done",
+		{ "0", "1" })
+
+	-- Nested loops, and break/continue by depth.
+	prints(state, admin,
+		"for a in 1 2; do for b in x y; do echo $a$b; done; done",
+		{ "1x", "1y", "2x", "2y" })
+	prints(state, admin,
+		"for a in 1 2; do for b in x y; do break; done; echo $a; done",
+		{ "1", "2" })
+	prints(state, admin,
+		"for a in 1 2 3; do for b in x y; do break 2; done; echo $a; done",
+		{})
+	prints(state, admin,
+		"for a in 1 2 3; do if [ $a = 2 ]; then continue; fi; echo $a; done",
+		{ "1", "3" })
+	prints(state, admin,
+		"for a in 1 2; do for b in x y; do continue 2; done; echo never; done",
+		{})
+	-- A break with no loop around it does nothing at all, the way a shell's does.
+	prints(state, admin, "break\necho after", { "after" })
+
+	-- && and || read left to right.
+	prints(state, admin, "true && echo a", { "a" })
+	prints(state, admin, "false && echo a", {})
+	prints(state, admin, "false || echo b", { "b" })
+	prints(state, admin, "false && echo a || echo b", { "b" })
+	prints(state, admin, "true || echo a && echo b", { "b" })
+
+	-- exit ends the script where it stands, with the status it names.
+	local run = runScript(state, admin, "echo one\nexit 3\necho two")
+	eq("exit stops the script", #run.out, 1)
+	eq("with its own status", run.job.status, 3)
+	eq("and it is done and not broken", run.job.state, "done")
+	-- return is the same door.
+	run = runScript(state, admin, "echo one\nreturn 0\necho two")
+	eq("return stops it too", #run.out, 1)
+end
+
+--
+-- 26. Scripts: test, and its other name
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	script(state, "/home/admin/file.txt", "contents")
+
+	local function truth(expr, want)
+		local run = runScript(state, admin, "if " .. expr .. "; then echo Y; else echo N; fi")
+		eq("`" .. expr .. "`", run.out[1], want and "Y" or "N")
+	end
+
+	truth("true", true)
+	truth("false", false)
+	truth("[ -f /home/admin/file.txt ]", true)
+	truth("[ -f /home/admin ]", false)
+	truth("[ -d /home/admin ]", true)
+	truth("[ -e /home/admin/file.txt ]", true)
+	truth("[ -e /nope ]", false)
+	truth("[ -r /home/admin/file.txt ]", true)
+	truth("[ -w /home/admin/file.txt ]", true)
+	truth("[ -x /bin/ls ]", true)
+	truth("[ -x /home/admin/file.txt ]", true)
+	truth("[ -z '' ]", true)
+	truth("[ -z x ]", false)
+	truth("[ -n x ]", true)
+	truth("[ a = a ]", true)
+	truth("[ a = b ]", false)
+	truth("[ a != b ]", true)
+	truth("[ 2 -eq 2 ]", true)
+	truth("[ 2 -ne 3 ]", true)
+	truth("[ 2 -lt 3 ]", true)
+	truth("[ 3 -le 3 ]", true)
+	truth("[ 4 -gt 3 ]", true)
+	truth("[ 3 -ge 4 ]", false)
+	truth("[ ! 3 -ge 4 ]", true)
+	truth("[ 1 -eq 1 -a 2 -eq 2 ]", true)
+	truth("[ 1 -eq 1 -a 2 -eq 3 ]", false)
+	truth("[ 1 -eq 9 -o 2 -eq 2 ]", true)
+	truth("[ x ]", true)
+	truth("[ ]", false)
+	truth("test a = a", true)
+
+	-- A malformed test says so and is neither true nor false.
+	local run = runScript(state, admin, "[ a -zz b ]\necho $?")
+	eq("an unknown operator says so", run.out[1], "test: unknown operator")
+	eq("and the status is 2", run.out[2], "2")
+	run = runScript(state, admin, "[ 1 -eq x ]\necho $?")
+	eq("and a number that is not one says that", run.out[1], "test: integer expected")
+	-- The bracket wants its other half.
+	run = runScript(state, admin, "[ a = a\necho never")
+	eq("a [ with no ] stops the script", run.job.state, "error")
+	eq("and says where", run.out[1], "bench.sh: line 1: test: missing ']'")
+end
+
+--
+-- 27. Scripts: read and sleep, the two continuations
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	local run = runScript(state, admin, 'read -p "name? " who\necho "hello $who"',
+		nil, { "bob" })
+	eq("the question was asked", run.asked[1], "name? ")
+	eq("and the answer used", run.out[1], "hello bob")
+
+	-- -n 1 takes the first character and nothing else.
+	run = runScript(state, admin, 'read -n 1 -p "y/n? " a\necho [$a]', nil, { "yes" })
+	eq("-n 1 takes one character", run.out[1], "[y]")
+
+	-- -s is the mask flag, and it is the console that hides it.
+	script(state, "/home/admin/secret.sh", 'read -s -p "pw: " p\necho [$p]')
+	local jobs = {}
+	local env = { now = 100, nowMs = 1000, jobs = jobs }
+	local _, _, control, data =
+		CeroSecOS.exec(state, admin, "sh /home/admin/secret.sh", env)
+	local job = CeroSecOS.newJob({ id = 1, prog = data.prog, args = {}, name = data.name,
+		cmd = data.cmd, session = admin })
+	jobs[1] = job
+	CeroSecOS.jobStep(state, job, env, 100)
+	eq("a read leaves the job waiting", job.state, "waiting")
+	eq("with the question on it", job.ask.text, "pw: ")
+	eq("and the mask flag set", job.ask.mask, true)
+	eq("and it cost nothing to wait", CeroSecOS.jobStep(state, job, env, 100), "waiting")
+
+	-- sleep is the other one: a wake-up time, and no steps until it comes.
+	script(state, "/home/admin/nap.sh", "echo before\nsleep 2\necho after")
+	local _, _, c2, d2 = CeroSecOS.exec(state, admin, "sh /home/admin/nap.sh", env)
+	local nap = CeroSecOS.newJob({ id = 2, prog = d2.prog, args = {}, name = d2.name,
+		cmd = d2.cmd, session = admin })
+	jobs[1] = nap
+	env.nowMs = 10000
+	CeroSecOS.jobStep(state, nap, env, 100)
+	eq("it slept", nap.state, "sleeping")
+	eq("until two seconds from now", nap.wakeMs, 12000)
+	local before = nap.steps
+	env.nowMs = 11000
+	local status, cost = CeroSecOS.jobStep(state, nap, env, 100)
+	eq("a pass while it sleeps is still asleep", status, "sleeping")
+	eq("and costs nothing", cost, 0)
+	eq("and spends no steps", nap.steps, before)
+	env.nowMs = 12000
+	CeroSecOS.jobStep(state, nap, env, 100)
+	eq("and then it wakes and finishes", nap.state, "done")
+	eq("having printed both lines", nap.out[2], "after")
+
+	-- A machine with no clock cannot sleep, and says so rather than hanging.
+	script(state, "/home/admin/nap.sh", "sleep 1")
+	local _, _, c3, d3 = CeroSecOS.exec(state, admin, "sh /home/admin/nap.sh", { jobs = {} })
+	local dry = CeroSecOS.newJob({ id = 3, prog = d3.prog, args = {}, name = d3.name,
+		cmd = d3.cmd, session = admin })
+	CeroSecOS.jobStep(state, dry, { jobs = {} }, 100)
+	eq("no clock, no sleep", dry.state, "error")
+	eq("and it says so", dry.out[1], "nap.sh: line 1: sleep: no clock")
+
+	-- A background job has nobody in front of it: read is end of file.
+	local bg = runScript(state, admin, 'read x\necho [$x] $?', nil, nil, { bg = true })
+	eq("a background read reads nothing", bg.out[1], "[] 1")
+end
+
+--
+-- 28. Scripts: what may be run, and by whom
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local rootSession = open(state, "root")
+
+	-- A line that starts a job: it succeeds, prints nothing, and orders the
+	-- machine to run a program.
+	local function startsJob(line)
+		local r = runAt(state, admin, line, { now = 740000000, nowMs = 1000, jobs = {} })
+		eq("`" .. line .. "` ok", r.ok, true)
+		eq("`" .. line .. "` prints nothing yet", #r.lines, 0)
+		eq("`" .. line .. "` orders a job", r.control, "job")
+		check("`" .. line .. "` hands over a program", type(r.data.prog) == "table")
+		return r
+	end
+
+	script(state, "/home/admin/go.sh", "echo ran")
+	startsJob("sh /home/admin/go.sh")
+	startsJob("/home/admin/go.sh")
+	okAt(state, admin, "cd /home/admin", {})
+	startsJob("./go.sh")
+	-- The name the script calls itself in an error is its last component, not
+	-- the path that was typed.
+	eq("a script names itself", startsJob("./go.sh").data.name, "go.sh")
+
+	-- x is what a path needs; sh only needs to be able to READ it.
+	okAt(state, admin, "chmod 644 /home/admin/go.sh", {})
+	badAt(state, admin, "./go.sh", "./go.sh: permission denied")
+	startsJob("sh /home/admin/go.sh")
+	okAt(state, admin, "chmod 755 /home/admin/go.sh", {})
+
+	-- And a file nobody may read is a file nobody may run either.
+	okAt(state, admin, "chmod 700 /home/admin/go.sh", {})
+	okAt(state, rootSession, "chown root /home/admin/go.sh", {})
+	badAt(state, admin, "./go.sh", "./go.sh: permission denied")
+	badAt(state, admin, "sh /home/admin/go.sh", "sh: /home/admin/go.sh: permission denied")
+
+	badAt(state, admin, "sh /nope.sh", "sh: /nope.sh: no such file")
+	badAt(state, admin, "sh /home", "sh: /home: is a directory")
+	badAt(state, admin, "/home/admin", "/home/admin: is a directory")
+	badAt(state, admin, "sh", "sh: usage: sh <file> [args]")
+
+	-- A script that will not parse never becomes a job, and the refusal names
+	-- the file and the line.
+	script(state, "/home/admin/bad.sh", "echo one\nfi\n")
+	badAt(state, admin, "sh /home/admin/bad.sh", "bad.sh: line 2: syntax error: unexpected 'fi'")
+end
+
+--
+-- 29. Scripts: what a program costs, in steps
+--
+-- The exact count for a fixed script. A step is a unit of COST: one for
+-- anything the shell answers itself, CeroSecOS.STEP_COST_COMMAND for a command
+-- that goes out to /bin. This is the number the whole budget rests on, so it is
+-- pinned here rather than left to be noticed.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local C = CeroSecOS.STEP_COST_COMMAND
+
+	local function costs(text, want, what)
+		local run = runScript(state, admin, text)
+		eq((what or text) .. ": steps", run.job.steps, want)
+	end
+
+	-- One builtin.
+	costs("echo hi", 1)
+	-- Three of them.
+	costs("echo a\necho b\necho c", 3)
+	-- An assignment is one, and so is a test.
+	costs("x=1", 1)
+	costs("[ 1 = 1 ]", 1)
+	-- An `if` costs its condition and its branch, and nothing for being an if.
+	costs("if true; then echo a; fi", 2)
+	costs("if false; then echo a; else echo b; fi", 2)
+	-- A for loop: one step per iteration boundary plus the body.
+	costs("for i in a b c; do echo $i; done", 6)
+	-- A while loop: the condition every time round, plus the boundary, plus
+	-- the body. Three turns and a fourth condition that ends it.
+	costs("i=0\nwhile [ $i -lt 3 ]; do echo $i; i=$((i+1)); done", 1 + 4 + 3 + 6)
+	-- A command out of /bin is worth thirty-two.
+	costs("pwd", C)
+	costs("pwd\npwd", 2 * C)
+	costs("echo a\npwd\necho b", 2 + C)
+	-- And $(...) is charged the steps of what it runs, to the job that asked.
+	costs("x=$(pwd)", C + 1)
+	costs("x=$(echo hi)", 2)
+end
+
+--
+-- 30. Scripts: the ceilings
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- Sixty-four variables, and the sixty-fifth is refused.
+	local many = {}
+	for i = 1, CeroSecOS.MAX_VARS + 1 do many[#many + 1] = "v" .. i .. "=" .. i end
+	local run = runScript(state, admin, table.concat(many, "\n"))
+	eq("the sixty-fifth variable stops the script", run.job.state, "error")
+	eq("and says which ceiling", run.out[1],
+		"bench.sh: line " .. (CeroSecOS.MAX_VARS + 1) .. ": too many variables")
+	eq("with the status a fatal error carries", run.job.status, 2)
+
+	-- A kilobyte is the ceiling on the WORD, "x=" and all: the word is built
+	-- before anything is stored, so that is the ceiling an assignment meets.
+	run = runScript(state, admin, "x=" .. string.rep("a", CeroSecOS.MAX_VAR_BYTES - 2))
+	eq("a kilobyte of word fits", run.job.state, "done")
+	run = runScript(state, admin, "x=" .. string.rep("a", CeroSecOS.MAX_VAR_BYTES + 1))
+	eq("and one byte more does not", run.out[1], "bench.sh: line 1: word too large")
+
+	-- A read that answers with more than a variable may hold is refused at the
+	-- variable and not at the word.
+	run = runScript(state, admin, "read x\necho done", nil,
+		{ string.rep("b", CeroSecOS.MAX_VAR_BYTES + 1) })
+	eq("a long answer is refused", run.out[1], "bench.sh: line 1: variable too large")
+
+	-- A script that runs itself stops eight levels down.
+	script(state, "/home/admin/self.sh", "sh /home/admin/self.sh")
+	local jobs = {}
+	local env = { now = 100, nowMs = 1000, jobs = jobs }
+	local _, _, control, data = CeroSecOS.exec(state, admin, "sh /home/admin/self.sh", env)
+	local job = CeroSecOS.newJob({ id = 1, prog = data.prog, args = {}, name = data.name,
+		cmd = data.cmd, session = admin })
+	jobs[1] = job
+	for _ = 1, 20 do
+		if CeroSecOS.jobIsOver(job) then break end
+		CeroSecOS.jobStep(state, job, env, 100)
+	end
+	eq("a script that runs itself stops", job.state, "error")
+	eq("and says why", job.out[1], "self.sh: line 1: too deeply nested")
+	eq("having gone exactly as deep as it may", job.depth, CeroSecOS.SCRIPT_DEPTH_MAX)
+
+	-- Output: a job that has filled its queue stops until it is drained, and
+	-- never grows past it.
+	script(state, "/home/admin/flood.sh", "while true; do echo x; done")
+	local _, _, c2, d2 = CeroSecOS.exec(state, admin, "sh /home/admin/flood.sh", env)
+	local flood = CeroSecOS.newJob({ id = 2, prog = d2.prog, args = {}, name = d2.name,
+		cmd = d2.cmd, session = admin })
+	jobs[1] = flood
+	for _ = 1, 20 do CeroSecOS.jobStep(state, flood, env, 100) end
+	eq("the queue stops at its ceiling", #flood.out, CeroSecOS.JOB_OUT_MAX)
+	eq("and the job is held, not killed", flood.state, "running")
+	eq("and says what it is waiting for", flood.blocked, "output")
+	local held = flood.steps
+	CeroSecOS.jobStep(state, flood, env, 100)
+	eq("a pass while it is held costs nothing", flood.steps, held)
+	flood.out = {}
+	CeroSecOS.jobStep(state, flood, env, 100)
+	check("and it runs again once the screen has taken them", flood.steps > held)
+
+	-- Every line a job writes is a screen line: sixty columns, no wider.
+	script(state, "/home/admin/wide.sh", "echo " .. string.rep("w", 200))
+	local _, _, c3, d3 = CeroSecOS.exec(state, admin, "sh /home/admin/wide.sh", env)
+	local wide = CeroSecOS.newJob({ id = 3, prog = d3.prog, args = {}, name = d3.name,
+		cmd = d3.cmd, session = admin })
+	jobs[1] = wide
+	CeroSecOS.jobStep(state, wide, env, 100)
+	check("a wide line is broken to the screen's width", #wide.out > 1)
+	for i = 1, #wide.out do
+		check("line " .. i .. " fits sixty columns", #wide.out[i] <= CeroSecOS.COLS)
+	end
+end
+
+--
+-- 31. Scripts: ps, jobs, kill and the four-job ceiling
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	script(state, "/home/admin/go.sh", "echo ran")
+
+	local jobs = {}
+	local env = { now = 740000000, nowMs = 1000, jobs = jobs }
+
+	-- Nothing running: ps is a header and no rows.
+	local ok, lines = CeroSecOS.exec(state, admin, "ps", env)
+	eq("ps on an idle machine", #lines, 1)
+	eq("is its header", lines[1], "  ID S     CPU COMMAND")
+	ok, lines = CeroSecOS.exec(state, admin, "jobs", env)
+	eq("and jobs is empty", #lines, 0)
+
+	-- One job, seen by both.
+	local _, _, _, data = CeroSecOS.exec(state, admin, "sh /home/admin/go.sh", env)
+	local job = CeroSecOS.newJob({ id = 42, prog = data.prog, args = {}, name = data.name,
+		cmd = data.cmd, session = admin })
+	job.n = 1
+	jobs[1] = job
+	ok, lines = CeroSecOS.exec(state, admin, "ps", env)
+	eq("ps has a row for it", #lines, 2)
+	eq("with its id, its state and its command", lines[2],
+		"  42 R       0 sh /home/admin/go.sh")
+	ok, lines = CeroSecOS.exec(state, admin, "jobs", env)
+	eq("jobs names its slot", lines[1], "[1] running  sh /home/admin/go.sh")
+
+	-- kill asks; the scheduler does the deed.
+	ok, lines = CeroSecOS.exec(state, admin, "kill 42", env)
+	eq("kill by id is taken", ok, true)
+	eq("and asks for it", job.killReq, "user")
+	job.killReq = nil
+	ok, lines = CeroSecOS.exec(state, admin, "kill %1", env)
+	eq("kill by slot too", ok, true)
+	eq("and asks for it", job.killReq, "user")
+	ok, lines = CeroSecOS.exec(state, admin, "kill 99", env)
+	eq("a job that is not there", lines[1], "kill: 99: no such job")
+	ok, lines = CeroSecOS.exec(state, admin, "kill", env)
+	eq("and kill with nothing to kill says how", lines[1], "kill: usage: kill <id>|%<n>")
+
+	-- Four jobs is the ceiling, and it is the ENGINE that refuses the fifth.
+	for i = 2, CeroSecOS.MAX_JOBS do
+		jobs[i] = CeroSecOS.newJob({ id = 42 + i, prog = data.prog, args = {},
+			name = "go.sh", cmd = "sh go.sh", session = admin })
+	end
+	eq("four jobs", #jobs, CeroSecOS.MAX_JOBS)
+	badAt(state, admin, "sh /home/admin/go.sh", "sh: too many jobs", env)
+	-- A job that is over does not count against it.
+	jobs[1].state = "done"
+	local r = CeroSecOS.exec(state, admin, "sh /home/admin/go.sh", env)
+	eq("a finished job leaves room for another", r, true)
+end
+
 
 print("os_test: " .. count .. " assertions passed")

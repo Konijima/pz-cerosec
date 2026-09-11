@@ -357,17 +357,25 @@ CeroSec.CONSOLE_MAX = 100
 --
 -- One pass is worth STEP_BUDGET_PER_TICK steps, shared round-robin across every
 -- machine with a job on it, and no one machine takes more than
--- STEP_BUDGET_PER_MACHINE of them. At ten passes a second that is two thousand
--- simple commands a second for the whole county and two hundred for any one
--- computer -- enough that a script feels immediate, small enough that four
--- hundred of them could not add up to a frame.
+-- STEP_BUDGET_PER_MACHINE of them. A builtin costs one step and a command in
+-- /bin costs CeroSecOS.STEP_COST_COMMAND of them, so a step is worth about six
+-- microseconds of Lua whatever a script is made of -- which is what makes these
+-- two numbers milliseconds and not guesses.
 --
--- Nothing here was measured in the game: it is a design, and the bench that
--- holds it up (tests/hostile_test.lua) measures the cost of a pass headless and
--- pins it. A number moved after a real server has been watched is a number
--- moved with a measurement beside it.
-CeroSec.STEP_BUDGET_PER_TICK = 2000
-CeroSec.STEP_BUDGET_PER_MACHINE = 200
+-- At ten passes a second: a thousand builtins a second for any one computer,
+-- two thousand for the whole county, and sixty commands out of /bin. A pass
+-- costs about one and a quarter milliseconds of Lua at its very busiest --
+-- every machine spinning on arithmetic -- against a sixty-frames-a-second
+-- budget of sixteen. Measured headless under lua5.1 by tests/hostile_test.lua,
+-- which prints the numbers every run and fails if a pass goes past its ceiling.
+--
+-- Nothing here was measured in the GAME, and the game's Lua is not this one:
+-- Kahlua is an interpreter written in Java and is expected to be several times
+-- slower than lua5.1, which is why the county's budget is a fifth of what the
+-- measurement alone would allow. A number moved after a real server has been
+-- watched is a number moved with a measurement beside it.
+CeroSec.STEP_BUDGET_PER_TICK = 200
+CeroSec.STEP_BUDGET_PER_MACHINE = 100
 
 -- How often the scheduler runs, in milliseconds. Ten passes a second, on
 -- Events.OnTick gated by getTimestampMs -- vanilla's own way of getting under a

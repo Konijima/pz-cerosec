@@ -4,8 +4,9 @@
 
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
-	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSShell",
+	"CeroSecOS", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSDev",
+	"CeroSecOSVM",
 }
 -- Kept as text too (not just loaded), so the error-message sweep below can
 -- scan the engine's own source for the literal reasons it hands to fail(),

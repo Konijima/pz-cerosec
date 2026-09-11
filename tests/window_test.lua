@@ -219,11 +219,14 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSDev.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
+	"shared/CeroSec/OS/CeroSecOSScript.lua",
 	"shared/CeroSec/OS/CeroSecOSShell.lua",
 	"shared/CeroSec/OS/CeroSecOSState.lua",
 	"shared/CeroSec/OS/CeroSecOSSystem.lua",
 	"shared/CeroSec/OS/CeroSecOSUsers.lua",
+	"shared/CeroSec/OS/CeroSecOSVM.lua",
 	"server/CeroSec/SCeroSecDevices.lua",
+	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
 	-- The one under test is loaded from a path the caller may override, so the
@@ -264,6 +267,10 @@ end
 --
 
 local function newBench()
+	-- The scheduler's list of machines is a module-level one, like the game's:
+	-- a bench that left a job running would otherwise have it stepped by the
+	-- next bench's ticks. One bench, one county.
+	CeroSecJobs.machines = {}
 	local player = {
 		getPlayerNum = function() return 0 end,
 		getOnlineID = function() return -1 end,
@@ -345,6 +352,36 @@ local function newBench()
 		watch(w)
 		bench.windows[#bench.windows + 1] = w
 		return w
+	end
+
+	-- The scheduler's own clock, driven by hand. One call is one pass of
+	-- CeroSecJobs.tick with the wall clock moved on by a pass's worth of
+	-- milliseconds, and every screen the pass produced delivered to every
+	-- window -- which is exactly what the server does on Events.OnTick.
+	function bench.tick(times, stepMs)
+		for _ = 1, (times or 1) do
+			_G.__now = _G.__now + (stepMs or CeroSec.JOB_PASS_MS)
+			local replies = {}
+			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a } end
+			CeroSecJobs.tick()
+			for i = 1, #replies do
+				for w = 1, #bench.windows do
+					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
+				end
+			end
+		end
+		bench.frame()
+	end
+
+	-- Put a script on the disk, the way the editor would, and make it runnable.
+	function bench.script(path, text)
+		local state = object:osState()
+		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+		local done, reason = CeroSecOS.writeFile(state, session, path, text, false, 100)
+		if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+		local node = CeroSecOS.getNode(state, session, path)
+		node.mode = 755
+		return node
 	end
 
 	function bench.frame()
@@ -1732,6 +1769,186 @@ do
 	check("a switch exactly at the radius is a device",
 		bench.painted("crw-rw----  root  sudo  light0  exterior          off"))
 	_G.__world = nil
+end
+
+--
+-- Scripts, through the glass (rung 5a)
+--
+-- The engine is bench-tested in os_test and the scheduler in hostile_test.
+-- What is here is the round trip: a line typed at a window, a job made on the
+-- server, output arriving over several passes, a question answered at the
+-- prompt, and Escape.
+--
+
+-- A script printing lines, drop by drop.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/hello.sh", "echo one\necho two\necho three\n")
+
+	bench.enter("sh hello.sh")
+	bench.frame()
+	eq("the machine is running a job", CeroSec.consoleWaiting(bench.object.console), "job")
+	eq("and the window knows it", bench.window.mode, "job")
+	check("the line that started it is on the glass", bench.painted("sh hello.sh"))
+	-- The echoed line has a prompt in it, of course; what must not be there is
+	-- a LIVE one under it, waiting to be typed at.
+	eq("there is no prompt to type at", bench.window.prompt, "")
+	eq("and no row is given to one", bench.window:inputHeight(), 0)
+
+	bench.tick(1)
+	check("the first line arrives", bench.painted("one"))
+	check("and the second", bench.painted("two"))
+	check("and the third", bench.painted("three"))
+
+	-- A pass or two more and the job is reaped: the prompt comes back.
+	bench.tick(2)
+	eq("the prompt is back", bench.window.mode, "shell")
+	eq("and the machine agrees", CeroSec.consoleWaiting(bench.object.console), "shell")
+	eq("with the status the script ended on", bench.object.console.status, 0)
+	check("the shell prompt is on the glass again", bench.painted("admin@ksp"))
+end
+
+-- A script that prints as fast as it can is a trickle and not a flood: the
+-- machine puts at most CeroSec.JOB_OUT_PER_SEC lines on the screen a second,
+-- however many the job has made.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/flood.sh", "while true; do echo x; done\n")
+
+	local before = #bench.object.console.lines
+	bench.enter("sh flood.sh")
+	-- Ten passes is one second of wall clock.
+	bench.tick(10)
+	local made = #bench.object.console.lines - before
+	check("a second of flooding put at most twenty lines on the screen (" .. made .. ")",
+		made <= CeroSec.JOB_OUT_PER_SEC + 1)
+	check("and it did put some there", made > 0)
+	eq("the screen never holds more than its hundred lines",
+		#bench.object.console.lines <= CeroSec.CONSOLE_MAX, true)
+
+	local job = CeroSecJobs.foreground(bench.object, bench.object.console)
+	check("the job is still alive and simply slow", job ~= nil)
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.tick(1)
+end
+
+-- read -p, answered at the window.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/ask.sh", 'read -p "name? " who\necho "hello $who"\n')
+
+	bench.enter("sh ask.sh")
+	bench.tick(1)
+	eq("the script's question is the console's prompt", bench.window.mode, "prompt")
+	eq("and it is the question the script asked", bench.window.prompt, "name? ")
+	check("Escape would interrupt it", bench.window.active)
+
+	bench.enter("bob")
+	bench.tick(2)
+	check("the answer was echoed with its question", bench.painted("name? bob"))
+	check("and the script used it", bench.painted("hello bob"))
+	bench.tick(2)
+	eq("the prompt is back", bench.window.mode, "shell")
+end
+
+-- Escape kills a running loop, with ^C on the screen.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/spin.sh", "while true; do x=1; done\n")
+
+	bench.enter("sh spin.sh")
+	bench.tick(3)
+	eq("it is still running", bench.window.mode, "job")
+	local job = CeroSecJobs.foreground(bench.object, bench.object.console)
+	check("and it has spent steps doing it", job ~= nil and job.steps > 0)
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("^C is on the glass", bench.painted("^C"))
+	bench.tick(1)
+	check("and the machine says it killed it", bench.painted("killed"))
+	eq("the prompt is back", bench.window.mode, "shell")
+	eq("and the machine is running nothing", #CeroSecJobs.book(bench.object).list, 0)
+	check("the window did not close", not bench.window.closing)
+end
+
+-- A background job: [1] on the way in, [1] done on the way out.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/bg.sh", "echo working\n")
+
+	bench.enter("sh bg.sh &")
+	bench.frame()
+	eq("the prompt is not taken by a background job", bench.window.mode, "shell")
+	check("the machine announced it", bench.painted("[1] 42"))
+
+	bench.tick(3)
+	check("its output came to the same screen", bench.painted("working"))
+	check("and its end is announced", bench.painted("[1] done"))
+end
+
+-- ps, jobs and kill, from the prompt, on a job that is running.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/spin.sh", "while true; do x=1; done\n")
+
+	bench.enter("sh spin.sh &")
+	bench.tick(2)
+	bench.enter("ps")
+	bench.frame()
+	check("ps has a header", bench.painted("  ID S     CPU COMMAND"))
+	check("and the job in it", bench.painted("sh spin.sh"))
+
+	bench.enter("jobs")
+	bench.frame()
+	check("jobs names the slot", bench.painted("[1] running"))
+
+	bench.enter("kill %1")
+	bench.tick(2)
+	check("the machine says it killed it", bench.painted("[1] killed"))
+	eq("and it is gone", #CeroSecJobs.book(bench.object).list, 0)
+
+	bench.enter("kill %1")
+	bench.frame()
+	check("killing it again finds nothing", bench.painted("kill: %1: no such job"))
+end
+
+-- Four jobs is the ceiling, and the fifth is refused where it was typed.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/spin.sh", "while true; do x=1; done\n")
+	for _ = 1, 4 do
+		bench.enter("sh spin.sh &")
+	end
+	bench.frame()
+	eq("four jobs", #CeroSecJobs.book(bench.object).list, 4)
+	bench.enter("sh spin.sh &")
+	bench.frame()
+	check("the fifth is refused", bench.painted("sh: too many jobs"))
+	eq("and there are still four", #CeroSecJobs.book(bench.object).list, 4)
+end
+
+-- Reboot kills everything that was running.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/spin.sh", "while true; do x=1; done\n")
+	bench.enter("sh spin.sh &")
+	bench.tick(1)
+	eq("a job is running", #CeroSecJobs.book(bench.object).list, 1)
+
+	bench.enter("sudo reboot")
+	bench.enter("")
+	bench.frame()
+	check("the machine has no job book left", bench.object.jobs == nil)
+	eq("and no machine is left in the scheduler", #CeroSecJobs.machines, 0)
 end
 
 print("window_test: " .. count .. " checks passed")

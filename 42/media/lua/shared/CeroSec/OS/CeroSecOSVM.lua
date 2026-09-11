@@ -74,6 +74,22 @@ CeroSecOS.SCRIPT_DEPTH_MAX = 8
 -- what it already wrote.
 CeroSecOS.JOB_OUT_MAX = 40
 
+-- What a command that leaves the shell costs, in steps.
+--
+-- A step is a unit of COST and not of syntax. A builtin -- an assignment, an
+-- echo, a test -- is a few microseconds of table work and is worth one; a
+-- command in /bin walks the filesystem, builds columns and formats lines, and
+-- was measured between twenty and five hundred microseconds a call (tests/
+-- hostile_test.lua carries the numbers). Charging both the same would mean a
+-- budget that is honest about a loop of arithmetic and eighty times out on a
+-- loop of `ls`, and the budget is the whole protection.
+--
+-- Thirty-two is that ratio, rounded to the middle of the measured range rather
+-- than to its worst case: `ls -l` on a full /bin is the dearest command there
+-- is and is still undercharged by half, which is why the county budget is set
+-- where it is and not by this number alone.
+CeroSecOS.STEP_COST_COMMAND = 32
+
 -- Lines one $(...) may capture. Its output never reaches a screen, so nothing
 -- else bounds it.
 CeroSecOS.CAPTURE_MAX = 100
@@ -834,7 +850,7 @@ local function runSimple(state, job, f, env)
 				string.sub(values[i], eq + 1))
 			if reason ~= nil then
 				jobError(job, reason)
-				return
+				return 1
 			end
 		end
 	end
@@ -848,7 +864,7 @@ local function runSimple(state, job, f, env)
 		local count = f.ex.counts[#f.ex.words] or 0
 		if count ~= 1 then
 			jobError(job, "ambiguous redirect")
-			return
+			return 1
 		end
 		redirect = { path = args[#args], append = node.redirect.append }
 		args[#args] = nil
@@ -859,28 +875,45 @@ local function runSimple(state, job, f, env)
 			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env)
 			writeLines(job, lines)
 			if ok then job.status = 0 else job.status = 1 end
-			return
+			return CeroSecOS.STEP_COST_COMMAND
 		end
 		job.status = 0
-		return
+		return 1
 	end
 
 	local name = args[1]
 	local builtin = builtins[name]
 	if builtin ~= nil then
+		-- A builtin writes to the job's own output, so a redirect on one is a
+		-- capture: its lines are caught the way $(...) catches them and then
+		-- written through the very same door a command's redirect goes through.
+		if redirect ~= nil then job.caps[#job.caps + 1] = {} end
 		local status, fatal = builtin(job, args, state, env)
+		if redirect ~= nil then
+			flushPartial(job)
+			local buf = job.caps[#job.caps]
+			job.caps[#job.caps] = nil
+			local ok, lines = CeroSecOS.writeRedirect(state, job.session, name, redirect,
+				table.concat(buf, "\n"), env)
+			writeLines(job, lines)
+			if not ok then
+				job.status = 1
+				return 1
+			end
+		end
 		if status == nil then
 			if fatal ~= nil then jobError(job, fatal) end
-			return
+			return 1
 		end
 		job.status = status
-		return
+		return 1
 	end
 
 	local ok, lines, control, data = CeroSecOS.runArgs(state, job.session, args, redirect, env)
 	writeLines(job, lines)
 	if ok then job.status = 0 else job.status = 1 end
 	applyControl(job, control, data)
+	return CeroSecOS.STEP_COST_COMMAND
 end
 
 --
@@ -1090,10 +1123,10 @@ local function stepOnce(state, job, env)
 			if f.phase == "assign" then f.phase = "expand" else f.phase = "run" end
 			return 0
 		end
-		-- One simple command: one step, whatever it turns out to be.
+		-- One simple command. One step when the shell answers it itself, and
+		-- what a command in /bin costs when it does not.
 		popFrame(job)
-		runSimple(state, job, f, env)
-		return 1
+		return runSimple(state, job, f, env)
 	end
 
 	jobError(job, "syntax error")
@@ -1191,6 +1224,25 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	if type(budget) ~= "number" or budget < 1 then budget = 1 end
 	if job.cpuSince == nil then job.cpuSince = now end
 
+	-- The debt.
+	--
+	-- A step is only counted once it has been taken, and a command out of /bin
+	-- costs thirty-two of them -- so a job that starts one with three steps left
+	-- in its budget overspends by twenty-nine. That cannot be helped without
+	-- knowing a command's price before running it, and it must not be allowed to
+	-- add up: what is overspent is carried, and the next pass is that much
+	-- shorter. Over any run of passes the average is exactly the budget, and the
+	-- most one pass can go over is one command.
+	local owed = job.debt or 0
+	if owed > 0 then
+		if owed >= budget then
+			job.debt = owed - budget
+			return job.state, 0
+		end
+		budget = budget - owed
+		job.debt = 0
+	end
+
 	-- The devices under /dev exist for the length of this pass, exactly as they
 	-- exist for the length of one command at the prompt.
 	CeroSecOS.mountDev(state, env)
@@ -1216,12 +1268,22 @@ function CeroSecOS.jobStep(state, job, env, budget)
 		if job.sig ~= nil then handleSignal(job) end
 	end
 	job.steps = job.steps + used
+	if used > budget then job.debt = (job.debt or 0) + used - budget end
 
 	if job.state == "waiting" or job.state == "sleeping" then job.cpuSince = nil end
 	if job.state == "done" or job.state == "error" then flushPartial(job) end
 
 	CeroSecOS.unmountDev(state, env)
 	return job.state, used
+end
+
+-- A line the MACHINE has to say about a job -- "too many jobs" when the job
+-- asked for one it cannot have. It goes in the job's own output queue and not
+-- straight onto the screen, so it drains at the same twenty lines a second as
+-- everything else and a loop full of refusals is as quiet as a loop full of
+-- echoes.
+function CeroSecOS.jobSay(job, line)
+	outLine(job, line)
 end
 
 -- Has this job been on the processor without a break for longer than it may
