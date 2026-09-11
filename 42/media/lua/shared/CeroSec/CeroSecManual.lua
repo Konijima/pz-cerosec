@@ -1759,6 +1759,10 @@ script, because they are not a script's to say:
   divide by zero
   bad arithmetic
   edit: not a terminal
+      the editor needs a screen, and a background job and
+      a stage of a pipeline have none -- sudo and passwd
+      answer the same way inside one, having nobody in
+      front of them to ask
   sleep: invalid interval
   sleep: no clock
   read: not a name

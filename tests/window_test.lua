@@ -3236,4 +3236,54 @@ do
 	check("ps does show it", bench.painted("sleep 30"))
 end
 
+-- A crontab line whose command will not parse, and one belonging to an account
+-- that is not on the machine any more. Neither is run; both are answered where a
+-- real cron answers them.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * if true", false, 100)
+	-- A crontab for somebody who is not in /etc/passwd: Vixie calls it an orphan
+	-- and does not run it, and neither does this.
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/ghost",
+		"* * * * * echo boo", false, 100)
+	bench.minute()
+	bench.minute()
+
+	-- The one that parses as a line but not as shell: sh says what is wrong with
+	-- it, in the mail, because that is where a cron job's output goes.
+	local mail = bench.fileText("/var/mail/admin")
+	check("the mail carries sh's own refusal", mail ~= nil and
+		string.find(mail, "sh: line 1: syntax error: missing 'then'", 1, true) ~= nil)
+	local log = bench.fileText("/var/log/cron")
+	check("the log says the orphan was not run",
+		string.find(log, "(ghost) ORPHAN (no passwd entry)", 1, true) ~= nil)
+	check("and nothing of either reached the glass", not bench.painted("boo"))
+	eq("the ghost got no mail", bench.fileText("/var/mail/ghost"), nil)
+end
+
+-- A line written into the spool BY HAND, as root, with a field that is not one:
+-- crontab(1) would have refused it, so the daemon is what finds it -- the good
+-- lines around it still run and the bad one is logged.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo good\n60 * * * * echo bad", false, 100)
+	bench.minute()
+	bench.minute()
+	local log = bench.fileText("/var/log/cron")
+	check("the bad line is named, with its line and its field",
+		string.find(log, "\"/var/spool/cron/admin\":2: bad minute", 1, true) ~= nil)
+	check("and the good one ran", string.find(log, "CMD (echo good)", 1, true) ~= nil)
+	local mail = bench.fileText("/var/mail/admin")
+	check("with its output in the mail", mail ~= nil and
+		string.find(mail, "good", 1, true) ~= nil)
+	check("and nothing of the bad one", mail ~= nil and
+		string.find(mail, "bad", 1, true) == nil)
+end
+
 print("window_test: " .. count .. " checks passed")

@@ -577,6 +577,11 @@ died with it, so `echo $x` after it prints nothing. Every shell behaves this way
 `x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
 stage's status, and `|` works inside `$(...)`.
 
+A stage has no screen and nobody in front of it, so `edit` in one is refused as it
+is in a background job, a command that has to *ask* something (`sudo`, `passwd`)
+answers `not a terminal` rather than putting a question up that nothing will answer,
+and a `read` whose input is not a pipe reads end of file.
+
 A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
 full is back-pressure and not an error: the writer simply does not run again until
 the reader has drained it, exactly as a job that has filled the screen does not.

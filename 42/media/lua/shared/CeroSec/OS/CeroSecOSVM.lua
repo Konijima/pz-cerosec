@@ -970,10 +970,11 @@ builtins.read = function(job, args, state, env)
 		return job.status
 	end
 
-	-- A background job has nobody in front of it. It reads end of file, the
-	-- way a real one reading a closed input does, and says so with its status
-	-- rather than hanging forever where nobody can see it.
-	if job.bg then
+	-- A background job has nobody in front of it, and neither has a stage of a
+	-- pipeline whose standard input is not a pipe (`read x | cat`). Both read end
+	-- of file, the way a real one reading a closed input does, and say so with
+	-- their status rather than hanging forever where nobody can see it.
+	if job.bg or job.inPipe then
 		local reason = setVar(job, name, "")
 		if reason ~= nil then return nil, reason end
 		return 1
@@ -1067,6 +1068,22 @@ end
 local function applyControl(job, control, data)
 	if control == nil then return true end
 	if control == "prompt" and type(data) == "table" then
+		-- A stage of a pipeline has nobody in front of it, so a command that has
+		-- to ask something cannot be answered in one: `cat f | sudo cat` would
+		-- otherwise put a question up that nothing will ever answer and leave the
+		-- pipeline standing there. Refused where it was typed, in the name of the
+		-- command that asked -- the same answer `edit` gets, and for the same
+		-- reason.
+		if job.inPipe then
+			flushPartial(job)
+			local who = "sh"
+			if type(data.cont) == "table" and type(data.cont.cmd) == "string" then
+				who = data.cont.cmd
+			end
+			errLine(job, who .. ": not a terminal")
+			job.status = 1
+			return true
+		end
 		flushPartial(job)
 		job.cont = data.cont
 		job.ask = { text = tostring(data.text or ""), mask = data.mask and true or false,

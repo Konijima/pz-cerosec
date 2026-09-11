@@ -6817,8 +6817,17 @@ do
 	ok(state, admin, "echo one | cat > single", {})
 	ok(state, admin, "cat single", { "one" })
 
-	-- The editor cannot open on a stage: a stage has no screen.
+	-- The editor cannot open on a stage: a stage has no screen. Neither can a
+	-- command that asks a question -- a stage has nobody in front of it, so a
+	-- question in one would be a pipeline standing there for ever waiting on an
+	-- answer nothing can give.
 	ok(state, admin, "edit fruit | cat", { "edit: not a terminal" })
+	expect(state, admin, "cat fruit | sudo cat", false, { "sudo: not a terminal" })
+	expect(state, admin, "echo hi | passwd", false, { "passwd: not a terminal" })
+	-- And a `read` with no pipe on its input reads end of file, the way a
+	-- background job's does: `read x | cat` answers 1 and waits for nobody.
+	ok(state, admin, "read x | cat", {})
+	ok(state, admin, "echo $?", { "0" })
 end
 
 --
