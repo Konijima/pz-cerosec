@@ -432,11 +432,15 @@ passé réellement, même quand ça correspond au texte attendu.
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
 
-## L. Scripts
+## L. Scripts, et l'invite qui parle la même langue
 
 Écrire les scripts avec `edit`, jamais en collant du texte : c'est l'éditeur de
 la machine qui est testé en même temps. Un script tapé sur une machine reste
 dessus.
+
+Les étapes 137 à 145 ne passent par aucun fichier : elles se tapent à l'invite,
+parce que l'invite **est** le langage de script depuis le palier 5a.1. C'est la
+capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
 
 124. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
      enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
@@ -489,66 +493,123 @@ dessus.
      ne laisse aucun travail en cours. Même chose après avoir sauvegardé et
      rechargé la partie. [ ]
 
+137. `while true; do echo tick; sleep 1; done &` tapé **directement à
+     l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
+     l'invite tout de suite, puis `tick` arrive une fois par seconde.
+     **Jamais** `while: command not found`. `jobs` → `[1] sleeping` suivi de la
+     ligne telle qu'elle a été tapée. `kill %1` → `[1] killed`. [ ]
+138. Toujours à l'invite : `echo a && echo b`, `false || echo c`,
+     `for i in 1 2 3; do echo $i; done`, `echo $((7 * 6))`,
+     `echo $(whoami)`, `echo 'un   deux'` → chacun répond comme dans un
+     script. `while true; do echo x` (sans `done`) →
+     `sh: syntax error: missing 'done'` et **rien** ne tourne. [ ]
+139. `x=5` puis `echo $x` → `5`. Fermer la fenêtre, s'éloigner, revenir,
+     rouvrir → `echo $x` répond encore `5`. `exit` puis se reconnecter →
+     `echo [$x]` répond `[]` : une déconnexion emporte les variables. Vérifier
+     aussi que `cd /etc` à l'invite déplace bien l'invite (`pwd`), alors que
+     `cd /etc` **dans** un script ne la déplace pas. [ ]
+140. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
+     il n'y a aucune invite en dessous, et **Échap** rend l'invite avec `^C`.
+     Pendant ce temps, marcher et ouvrir une porte : le jeu ne saccade pas. [ ]
+141. `history` → la liste numérotée de tout ce qui a été tapé depuis le début,
+     la plus récente en bas. **Flèche haut** et **flèche bas** à l'invite
+     remontent et redescendent la même liste. Fermer la fenêtre, revenir,
+     rouvrir, **flèche haut** → la dernière ligne tapée **avant** de partir est
+     là. `!!` rejoue la dernière, `!3` rejoue la troisième, et c'est la ligne
+     **développée** qui s'affiche. `!999` → `sh: !999: event not found`.
+     `history -c` puis `history` → vide. [ ]
+142. `passwd`, répondre aux trois questions, puis `history` → la commande
+     `passwd` y est, les **mots de passe tapés n'y sont pas**. `ls -A` dans le
+     home → `.sh_history` apparaît, `ls` tout court ne le montre pas,
+     `ls -l .sh_history` → mode `-rw-------`. Se connecter comme un autre
+     compte et `cat /home/admin/.sh_history` → `permission denied`. [ ]
+143. `edit .profile`, écrire `echo bonjour`, `saluer=ok` et `cd /etc`.
+     Se déconnecter (`exit`) et se reconnecter → `bonjour` s'affiche après le
+     motd, l'invite est sur `/etc`, et `echo $saluer` répond `ok`. Vérifier que
+     `.profile` n'est **pas** dans `history`. Puis remplacer son contenu par
+     `while true; do echo z; done`, se reconnecter → l'invite est occupée,
+     **Échap** la rend, et `edit .profile` permet de réparer le fichier : la
+     machine n'est jamais bloquée. [ ]
+144. En `root` : `shutdown -r +2` → `The system is going down for reboot in 2
+     minutes!` s'affiche sur **tous** les écrans ouverts sur la machine.
+     `shutdown -h +5` → `shutdown: already scheduled`. Attendre une minute →
+     `... in 1 minute!`. `shutdown -c` → `shutdown: cancelled`, et la machine
+     reste allumée passé le délai. Refaire `shutdown -r +1`, laisser filer →
+     `The system is going down for reboot NOW!` puis le BIOS et `login:`.
+     Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
+     compte à rebours est oublié et la machine reste allumée (c'est voulu et
+     c'est écrit dans le manuel). `halt` en `root` → la machine s'éteint. [ ]
+145. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
+     puis les noms pointés, puis le reste ; `ls -A` → les mêmes sans `.` ni
+     `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
+     `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
+     `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
+     alors que `sudo echo hi` marche encore ; `if true; then history; fi`
+     marche toujours (la grammaire n'est pas un fichier). Enfin
+     `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: command not found`,
+     `exit` fonctionne encore, et éteindre puis rallumer la machine la répare
+     par le BIOS. [ ]
+
 ## M. Les doutes ouverts
 
 Ce sont les points que les programmeurs ont signalés comme réglables seulement
 en observant le jeu réel, pas par un banc de test.
 
-137. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
+146. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
      heures différentes : l'heure et la minute doivent toujours correspondre à
      ce que le jeu affiche, jamais à l'heure réelle de l'ordinateur qui fait
      tourner le jeu. [ ]
-138. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
+147. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
      mur derrière, à l'étape du bord de la case plutôt qu'au centre : vérifier
      que le point de position d'assise (avec une chaise) et le point de départ
      de l'animation (sans chaise) sont bien à l'intérieur du carré devant
      l'écran, jamais décalés vers une case voisine. [ ]
-139. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
+148. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
      seuil de blocage se déclenche vraiment à deux caisses ou déjà à une seule
      selon leurs sprites : ça dépend de la valeur `Surface` de chaque caisse,
      pas d'un nombre fixe dans le mod. [ ]
-140. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
+149. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
      `exterior` correspond au côté réel de la porte, et si un couloir entre
      deux pièces donne bien `<pièce-du-carré-de-la-porte>-<autre-pièce>` dans
      ce sens précis. [ ]
-141. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
+150. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
      elle-même aucune pièce définie (pas de plancher de maison dessous) mais
      qui est dans le rayon de dix cases d'une base : confirmer qu'il apparaît
      tout de même dans `ls -l /dev`. [ ]
-142. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
+151. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
      comptes de profondeur ou plus), vérifier que `console.stack` a gardé
      exactement la même profondeur et la bonne invite, sans qu'un `exit` de
      trop ou de moins soit nécessaire pour ressortir. [ ]
-143. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
+152. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
      l'invite affichée (comme pour `sudo cd`), et que `whoami` répond toujours
      `admin` immédiatement après. [ ]
-144. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
+153. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]
-145. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
+154. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
      revenir : compter exactement une lueur autour de l'écran, jamais deux
      superposées et jamais aucune. [ ]
-146. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
+155. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
      livre vanille de même catégorie (Literature) : noter si elle paraît trop
      grande, trop petite, ou pareille. [ ]
-147. Au premier démarrage d'une partie avec le mod actif, confirmer dans
+156. Au premier démarrage d'une partie avec le mod actif, confirmer dans
      `~/Zomboid/console.txt` qu'aucune erreur de script ne nomme
      `items_cerosec.txt` (le script d'objets chargé depuis `common/`) et que
      la ligne `manual added to 12 distribution lists` apparaît une fois. [ ]
 
-148. À l'étape 130, chronométrer une vingtaine de lignes `x` : confirmer qu'il
+157. À l'étape 130, chronométrer une vingtaine de lignes `x` : confirmer qu'il
      en arrive bien une vingtaine par seconde et pas deux fois plus ni deux
      fois moins. Le débit est réglé côté serveur
      (`CeroSec.JOB_OUT_PER_SEC`) et dépend de la cadence réelle de
      `Events.OnTick`, qui n'a jamais été mesurée en jeu. [ ]
-149. À l'étape 130, faire tourner la boucle sur **quatre ordinateurs à la
+158. À l'étape 130, faire tourner la boucle sur **quatre ordinateurs à la
      fois** (quatre machines allumées, un script sur chacune) et jouer à côté
      pendant une minute : noter la moindre saccade. Le Lua du jeu (Kahlua) est
      une machine virtuelle Java et n'a jamais été comparée à `lua5.1`, sur
      lequel tous les chiffres du banc ont été pris ; si ça saccade, les deux
      budgets (`CeroSec.STEP_BUDGET_PER_TICK`, `STEP_BUDGET_PER_MACHINE`) sont
      à baisser. [ ]
-150. À l'étape 128, vérifier avec `read -n 1 -p "y/n? " a` que la machine prend
+159. À l'étape 128, vérifier avec `read -n 1 -p "y/n? " a` que la machine prend
      bien le premier caractère tapé **après Entrée** : la fenêtre n'envoie
      rien avant Entrée, donc `-n 1` prend le premier caractère de la ligne et
      non la première touche pressée. Noter si ça surprend en jeu. [ ]

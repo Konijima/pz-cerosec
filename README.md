@@ -17,10 +17,16 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`adduser cat cd chgrp chmod chown clear cp date deluser dev df echo edit
-  exit gpasswd grep groupadd groupdel groups hash head help hostname id jobs kill
-  ls man mkdir mv passwd ps pwd reboot restart rm sh shutdown su sudo tail touch
-  wait wc whoami write`), an editor, and salted-hashed passwords.
+  shell (`[ adduser cat cd chgrp chmod chown clear cp date deluser dev df echo
+  edit exit false gpasswd grep groupadd groupdel groups halt hash head help
+  hostname id jobs kill ls man mkdir mv passwd printf ps pwd reboot restart rm sh
+  shutdown sleep su sudo tail test touch true wait wc whoami write`), an editor,
+  and salted-hashed passwords.
+- One shell, at the prompt and in a file alike: every typed line is parsed by the
+  script engine and runs as a job, so `&&`, `if`, `for`, `while`, `$(...)`, `$((...))`
+  and a trailing `&` all work where you type them. Variables and `$?` persist with
+  the console, `~/.sh_history` remembers what was typed, `~/.profile` runs at login,
+  and `shutdown -r +5` warns everybody standing at the machine first.
 - Accounts: `adduser` and `deluser` make and unmake them, `su` changes who the
   glass is logged in as without logging out, and `id` says what the machine knows
   about a name.
@@ -120,7 +126,7 @@ Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-lF] [path]` | list a directory in columns; `-l` adds owner, group, size and date, `-F` marks directories with `/` |
+| `ls [-laAF] [path]` | list a directory in columns; `-l` adds owner, group, size and date, `-F` marks directories with `/`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
 | `cat <file>...` | print a file |
@@ -131,7 +137,7 @@ Commands:
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
-| `chmod <mode> <path>` | set permissions (three octal digits) |
+| `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
 | `chgrp <group> <path>` | change the group (owner or root; the group must exist) |
 | `whoami` | print the logged-in user |
@@ -155,8 +161,16 @@ Commands:
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev light0 off`, `dev lock2 toggle`; `dev find lock1` makes it show itself for six seconds |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
-| `shutdown` | switch the machine off (root only) |
+| `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
+| `shutdown -c` | call a pending one off |
+| `halt` | `shutdown -h now` under its older name (root only) |
 | `reboot` / `restart` | switch it off and straight back on (root only) |
+| `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
+| `!!` / `!<n>` | run the last line again, or line `<n>` |
+| `sleep <seconds>` | wait, costing the machine nothing while it does |
+| `printf <format> [arg...]` | `%s`, `%d`, `%%`, `\n` and `\t` |
+| `test <expr>` / `[ <expr> ]` | the file and string tests, as in any `sh` |
+| `true` / `false` | a status and nothing else |
 | `echo <text>` | print text |
 | `clear` | clear the screen |
 | `exit` | log out |
@@ -165,9 +179,24 @@ Commands:
 The commands are files: `/bin/<name>`, owner `root`, mode `755`, and the file's
 contents are the one-line description `help` prints. `cat /bin/ls` prints
 `list a directory`, `rm /bin/ls` really does take `ls` away, and `chmod 644 /bin/ls`
-puts it out of everybody's reach but root's. Only `exit` and `help` run without a
-file behind them, so that a player who has just wiped the machine he is standing at
-can still ask what happened and walk away from it.
+puts it out of everybody's reach but root's. That holds for the small ones the
+engine runs without leaving the house too — `echo`, `printf`, `test`, `[`, `true`,
+`false` and `sleep` are resolved through `/bin/<name>` first and then executed
+inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
+`chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
+`/bin/sh` is the shell itself: delete it and every line typed answers
+`sh: command not found`, and the BIOS repair brings it back.
+
+Three kinds of word are **not** files, and could not be. The reserved words
+(`if then elif else fi for while until do done`) are grammar. The state builtins
+(`cd read shift break continue history`) change the shell itself, which no separate
+program could do. And `exit` and `help` have no file on purpose, so that a player
+who has just wiped the machine he is standing at can still ask what happened and
+walk away from it. `help` prints the `/bin` table first and those words under it.
+
+A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
+`.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
+special — there is no globbing here for one to hide from.
 
 `edit` turns the screen into a small editor: Tab saves, Esc leaves — and asks
 `Save modified buffer? (y/n)` first when there is something unsaved. Those two are
@@ -196,6 +225,30 @@ gone, and every terminal open on it closes. `reboot` turns it off and straight b
 on, and the windows stay: everybody standing there watches the BIOS count the
 memory again and lands back at `login:`. What is on the disk survives both — this
 is a power cycle, not a repair.
+
+`shutdown` also takes a time. `-h` halts, `-r` reboots, neither halts; `now` and no
+time at all are the same thing. `+N` is N minutes away, and the machine broadcasts
+to every screen in front of it when the order is given, again one minute before, and
+once more as it goes:
+
+```
+root@ksp-04-11:~# shutdown -r +5
+The system is going down for reboot in 5 minutes!
+...
+The system is going down for reboot in 1 minute!
+...
+The system is going down for reboot NOW!
+```
+
+`shutdown -c` prints `shutdown: cancelled`. One pending order per machine: a second
+is `shutdown: already scheduled` rather than a quiet replacement, because nobody
+should be told two different times. `halt` is `shutdown -h now`.
+
+The timer is the scheduler's pass and lives on the machine, not in the window: close
+the window, walk away, come back, and it is still counting. It is **not** persisted
+— the power going out, the computer being picked up, or a reload all forget it, and
+the machine stays up. That is deliberate and it is in the manual: this machine has
+no process table on its disk.
 
 **Escape** interrupts what the machine is in the middle of, and closes the window
 when it is not in the middle of anything. At a `passwd` or `sudo` question, or with
@@ -309,7 +362,68 @@ walk over and open it.
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
 
-### Writing a script
+### The prompt, and a script
+
+**The prompt is the script language.** There is no second, simpler shell for typed
+lines: every line goes through the same parser a file does and runs as a foreground
+job on the console's own environment. So this works where you type it:
+
+```
+admin@ksp-04-11:~$ while true; do echo tick; sleep 1; done &
+[1] 43
+admin@ksp-04-11:~$ jobs
+[1] sleeping while true; do echo tick; sleep 1; done &
+admin@ksp-04-11:~$ kill %1
+[1] killed
+```
+
+Multi-line constructs go on one line, all of it. There is no continuation prompt:
+a line with an unfinished construct answers `sh: syntax error: missing 'done'` and
+nothing runs. A refusal the shell itself makes carries no line number — a typed line
+is line one of nothing — but past the first level it is inside a file again
+(`sh backup.sh`) and that file's name and line come back.
+
+Variables and `$?` belong to the machine: `x=5` on one line and `echo $x` on the
+next are the same environment, and walking away and coming back finds it. Logging
+out takes them, as it takes the rest of the session. `cd` at the prompt moves the
+console; `cd` inside a script moves the script.
+
+`ps` shows the shell you are typing into, the way every Unix `ps` does; `jobs` does
+not, because the shell is not one of the things the shell started. That is also why
+the first background job is `[1] 43` and not `[1] 42` — the shell itself took 42 —
+and the four-job ceiling is still four *scripts*.
+
+Two costs worth knowing. Double quotes expand, so `"$x"` is the variable and `'$x'`
+is two characters. And one word is 1024 bytes (the script engine's ceiling); the
+typing line only takes 240 characters, so nothing typed reaches it and the editor is
+what fills a file to its own 4096.
+
+**History.** Every typed line is appended to `~/.sh_history` — the POSIX/ksh name —
+owner-only at mode 600, in the account's own home. `history` prints the last 60 with
+numbers, `history -c` empties it, `!!` re-runs the last line and `!5` line five (the
+expanded line is what is echoed, run and remembered). Up and Down in the window walk
+that file, not a list the window kept, so a survivor who comes back tomorrow presses
+Up and finds what he typed today. Answers to prompts are never in it.
+
+The file holds 1000 entries and 16 KB, whichever comes first, oldest dropped. Those
+16 KB are exempt from the 32 KB disk quota — a shell's memory of itself must not be
+the thing that fills the drive — so `df` does not move because somebody typed, while
+`ls -l` still tells the truth about the size. The exemption is paid for in
+`CeroSecOS.validate`: an exempt file has a hard ceiling of its own and the exempt
+bytes on a whole machine have one too. Two honest deviations from a bigger shell:
+the numbers `history` prints are positions in the file as it stands, so they shift
+once the oldest drop off; and `!` is only an event when it is the whole line, there
+being no quoting rule for it here.
+
+**`~/.profile`** runs at login, after the motd and before the first prompt, if the
+file exists and the account may read it. It runs as the shell's own job, which is
+the point: a variable it sets is set at the prompt and a `cd` it does is where you
+are standing. Its errors read like a script's (`.profile: line 2: ...`) and it
+respects every budget. The quirk that comes with that, named in the manual: a
+`.profile` with an endless loop in it leaves the account at a busy prompt with
+nothing to type at. It is not a locked machine — Escape is the `^C` — and then edit
+the file. The BIOS repair never touches homes, so restoring a machine never removes
+one.
 
 A script is a text file with commands in it. Write one with `edit`, run it with
 `sh`, or give it `x` and run it by its path:
@@ -338,6 +452,8 @@ and `shift` as builtins that work even on a machine whose `/bin` has been emptie
     read -p "and the office? (y/n) " a
     if [ "$a" = y ]; then echo off > /dev/light3; fi
 
+Every one of those works at the prompt too, being the same shell.
+
 `read` stops the script and asks at the prompt; the next line typed is the answer.
 `sleep 5` waits five seconds of real time and costs the machine nothing while it
 does. While a script has the prompt there is nothing to type at, and Escape is
@@ -361,7 +477,8 @@ the background jobs are done. Four jobs to a machine.
 second and no more, so `while true; do echo x; done` makes that one machine slow at
 that one thing: the prompt still answers, other screens still draw, and the server
 never waits. Output is held to twenty lines a second, so it trickles instead of
-flooding. A job that spins for five minutes with no wait in it is taken away with
+flooding — for a typed line as much as for a script's, which is why a long `help`
+scrolls out rather than appearing whole. A job that spins for five minutes with no wait in it is taken away with
 `killed: cpu limit`. A string that doubles every turn, or a script that runs itself,
 meets a ceiling and stops with a line naming it. Jobs are not saved: switching off,
 rebooting, picking the computer up or reloading the world leaves it running nothing.
@@ -426,21 +543,39 @@ scripts are not, so the whole mod has to sit where it is loaded from.
 
 ### Architecture
 
-`42/media/lua/shared/CeroSec/OS/` is a pure-Lua OS engine: `CeroSecOS.exec(state,
-session, line, env)` takes a state, a command line and the world outside the machine,
-and returns `ok, lines, control, data`, and nothing else. It makes no game call, touches no `os`/`io`/`require`, no
-coroutines and no metatables, so it runs the same under a plain `lua5.1` and under
-the game's Kahlua. `lines` is text, one array entry per screen line, at most 60
-characters. `control` is `nil`, `"clear"`, `"exit"`, `"prompt"`, `"edit"`,
-`"job"`, `"shutdown"` or `"reboot"` — an order to the terminal, carried beside the output and
-never inside it, so a file's contents can never be mistaken for one. `"prompt"` and
-`"edit"` carry a payload in `data`: `"prompt"` is how a command like `passwd` or
-`sudo` asks a question without a coroutine (`CeroSecOS.continue` answers it the same
-way `exec` answers a command line); `"edit"` hands the terminal a path, the file's
-text, whether it may be written back, and the account it was opened as.
-`"shutdown"` and `"reboot"` carry nothing: the engine has no machine to switch off,
-so it says what should happen and the server — which owns the sprite, the sound, the
-power and the windows — is what does it.
+`42/media/lua/shared/CeroSec/OS/` is a pure-Lua OS engine. It makes no game call,
+touches no `os`/`io`/`require`, no coroutines and no metatables, so it runs the same
+under a plain `lua5.1` and under the game's Kahlua.
+
+There is **one** door in, and it is the script engine:
+
+```
+CeroSecOS.promptJob(state, session, line, vars, status, name) -> job, refusal
+CeroSecOS.jobStep(state, job, env, budget)                    -> status, spent
+```
+
+A typed line is parsed by `CeroSecOS.parseScript` and becomes a job; the caller
+steps it. There used to be a second, simpler path for one-command lines
+(`CeroSecOS.exec` over `CeroSecOS.parseLine`, with `splitBackground` for a trailing
+`&`) and all three are **gone** — that second parser is the bug this rung fixed, and
+it must not come back. A command already split into words still has its own entry
+point, `CeroSecOS.runArgs(state, session, args, redirect, env)`, which is the door
+both a job and `sudo` reach a command through.
+
+`lines` is text, one array entry per screen line, at most 60 characters. `control`
+is `nil`, `"clear"`, `"exit"`, `"prompt"`, `"edit"`, `"job"`, `"shutdown"`,
+`"reboot"`, `"schedule"` or `"cancel"` — an order to whoever runs the machine,
+carried beside the output and never inside it, so a file's contents can never be
+mistaken for one. `"prompt"`, `"edit"` and `"schedule"` carry a payload in `data`:
+`"prompt"` is how a command like `passwd` or `sudo` asks a question without a
+coroutine (`CeroSecOS.continue` answers it); `"edit"` hands the terminal a path, the
+file's text, whether it may be written back, and the account it was opened as;
+`"schedule"` is `shutdown +N` handing over the moment and the kind. The rest carry
+nothing: the engine has no machine to switch off, so it says what should happen and
+the server — which owns the sprite, the sound, the power and the windows — does it.
+
+A control from inside a job **ends** the job, the way a real shell's `exec` does: a
+line that has ordered the machine off has nothing left to say.
 
 A command that has to ask something answers `"prompt"` with an opaque continuation
 token, and the console hands the next line typed to `CeroSecOS.continue`. Nothing of
@@ -454,7 +589,11 @@ chain while the console's own session stays `admin`'s.
 On top of the engine sits a server-authoritative `SGlobalObject` system
 (`SCeroSecObject`, `SCeroSecSystem`) that holds each computer's OS state and, while
 it is on, a console:
-`{ booted, user, cwd, pending, lines, prompt, edit, halted }`. There is one console
+`{ booted, user, cwd, pending, lines, prompt, edit, halted, shvars, status, job }`.
+`shvars` is the shell's own variables and `status` its `$?` — the prompt is an
+environment, not a series of unrelated commands, and both are machine state saved
+with the console and sanitised by `CeroSec.repairConsole` on the way back in
+(`MAX_VARS`, `MAX_VAR_BYTES`, exactly a job's ceilings). There is one console
 per computer, not one per player — that is what makes walking away and coming back
 find the same screen, and two players at one computer share it. The client mirror
 (`CCeroSecObject`, `CCeroSecSystem`) never holds the filesystem or the screen; it
@@ -465,16 +604,32 @@ and the terminal window (`CeroSecTerminal.lua`, an `ISCollapsableWindow`) are al
 client-side. The window talks to the server over the global object channel:
 
     client -> server: open, exec, close, input, interrupt,
-                      editbuf, editsave, editexit
-    server -> client: opened, screen, closed
+                      editbuf, editsave, editexit, histtail
+    server -> client: opened, screen, closed, history
 
 A screen is sent whole: the lines, the prompt, the mode (`prompt`, `shell` or
 `edit`), whether the answer is masked, whether the machine is in the middle of
-something (`active`), and the editor's own screen. The window draws what it is
+something (`active`), the editor's own screen, and `user` — who is logged in, as one
+short string. The window's Up/Down history is the account's own `~/.sh_history`, sent
+in its own `history` reply when a window opens and whenever `user` changes under it
+(a login, an `exit`, an `su`); a hundred lines on every screen would be a hundred
+lines on the wire every time anybody typed. The window draws what it is
 handed and works nothing out for itself — which is why Escape can be an interrupt
 without the window ever having to tell `New password:` from any other question.
-`interrupt` is that Escape: it clears the pending question on the machine, so every
-window standing at it sees the same `^C` on the same line.
+`interrupt` is that Escape: it clears the pending question on the machine and kills
+the foreground job, so every window standing at it sees the same `^C` on the same
+line.
+
+`Commands.exec` echoes the line, appends it to the history, and then runs
+`CeroSecJobs.runMachine` **in the player's own hand** — one scheduler pass, right
+there — rather than leaving the line to the next tick. Two orders need a player:
+`edit` has to know whose keyboard is on the buffer, and `dev find` answers on one
+screen rather than on the machine's. So an ordinary `ls` still answers in the same
+round trip it always did; a line that does not finish in that pass becomes a running
+job like any other. `Commands.input` and `Commands.interrupt` serve a pass the same
+way, which is what makes `sudo reboot` end on its password and the prompt come back
+from a `^C` without waiting a tick. `SCeroSecSystem:runProfile` is the same call
+again, on the text of `~/.profile`.
 
 Every command carries the window's own token and every answer carries it back
 (`sendServerCommand` reaches one connection, or the global object broadcast in
@@ -864,12 +1019,34 @@ only the lines the server answers it with. A filesystem is capped at 256 nodes, 
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
 small.
 
-The state also carries `sysv`, the *contents* it was built with (4 today) as
+The state also carries `sysv`, the *contents* it was built with (8 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
+`SYSTEM_VERSION` 8 seeds `/bin/halt` and the six the engine runs itself but still
+looks up first — `/bin/sleep`, `/bin/printf`, `/bin/test`, `/bin/[`, `/bin/true`,
+`/bin/false` (`/bin/echo` was already there). `/bin/[` is the one filename on this
+machine that is punctuation, which is why the disk has
+`CeroSecOS.isValidFileName` beside `isValidName`: it allows exactly that one extra
+name and nothing else, and an account or a group is still `isValidName`'s.
+
+`~/.sh_history` is the one file exempt from the 32 KB disk quota. The exemption is a
+flag on the node (`nq`) set by `CeroSecOS.historyAppend` and by nothing else;
+`CeroSecOS.subtreeUsage` skips its bytes, so `df` does not move because somebody
+typed, and `CeroSecOS.validate` is where the exemption is paid for — an exempt file
+is capped at `CeroSecOS.HISTORY_BYTES` (16 KB) and the exempt bytes of a whole
+machine at `CeroSecOS.MAX_EXEMPT_BYTES`, so a forged blob cannot hand back a hundred
+of them and call it a disk. `cp` of one is an ordinary copy and meets the ordinary
+4096-byte ceiling. Homes are never touched by `restoreSystem`, so the BIOS repair
+never takes a history or a `~/.profile` away.
+
+The pending `shutdown` (`luaObject.shutdown`) is **not** among the saved keys and is
+not meant to be: it is an order given to a running machine, driven by
+`CeroSecJobs.checkShutdown` on each scheduler pass, and a reload forgets it. The
+machine stays up and the README, the manual and `docs/PARCOURS-TEST.md` all say so
+rather than letting a player discover it by the machine not going down.
 
 `console.stack` is the su stack: `{ { user = "admin", cwd = "/home/admin" }, ... }`,
 innermost last, at most `CeroSec.SU_MAX` (4) deep — the same number the core
