@@ -705,14 +705,15 @@ chapter 10 for what is already decided about where this is going.]],
 		{ title = "10. /dev: the building around you", pages = {
 
 [[The machine is wired into the building it stands in, and dev is how
-you work it. Type it alone and every light switch, lockable door and
-window it can reach is one line.
+you work it. Type it alone and every door, light switch and window
+it can reach is one line.
 
   admin@ksp-04-11:~$ dev
+  door0   exterior              0 5S        W  locked
+  door1   kitchen-hallway       2W 1N       N  closed
   light0  office                0 0            on
   lock0   exterior              0 5S        W  locked
-  lock1   kitchen-hallway       2W 1N       N  unlocked
-  lock2   built                 4E 9S +1    N  padlock
+  lock1   built                 4E 9S +1    N  padlock
 
 The id you name it by; the two rooms it stands between, exterior
 where one side is the outdoors, built for what a player raised;
@@ -723,8 +724,50 @@ light has none; and what it is doing. Room names repeat in a big
 house and an offset does not, so that column is what tells one
 kitchen door from another.]],
 
+[[door0 and lock0 up there are one door twice over: the thing that
+opens, and the key that holds it shut.
+
+doorN is every door the machine can reach, a map's or a player's,
+inside the building or out. It reads open, closed or locked --
+locked being shut and held -- and it takes open and close.
+
+  admin@ksp-04-11:~$ dev door1 open
+  door1: open
+
+It swings with nobody's hand on it: no survivor walks over, nothing
+is animated, the door is simply open and everybody on the server
+sees it that way.
+
+lockN is the one that is choosy, and the honest sentence about it is
+this: a key stops a survivor who is outside a building and stops
+nobody who is inside it. So a lock is fitted only where it bites --
+a door with the outdoors on one side, and a door a player built --
+and an interior door has no lockN at all. A key turned on one of
+those by hand changes neither what doorN reads nor what it does.]],
+
+[[A computer is not a key either. A locked door answers with the word
+and stays shut; the way through is its lock, first.
+
+  admin@ksp-04-11:~$ dev door0 open
+  door0: locked
+  admin@ksp-04-11:~$ dev lock0 unlock
+  lock0: unlocked
+  admin@ksp-04-11:~$ dev door0 open
+  door0: open
+
+barricaded is planks, and no machine takes those off. blocked is the
+doorway itself -- a tree, a car across it, or somebody standing in
+it.
+
+A padlock is none of those. A padlock on a player's door holds what
+is behind the door and not the door, so a padlocked door still opens
+-- which is what a survivor clicking it finds too. And a garage door
+or a double door is several pieces making one opening: the machine
+will not move one piece and leave the rest, so those carry a lockN
+and no doorN.]],
+
 [[A big building is a long list and the screen simply scrolls. Name a
-kind -- light, lock or win -- and only that kind is listed.
+kind -- door, light, lock or win -- and only that kind is listed.
 
   admin@ksp-04-11:~$ dev win
   win0    office                1E 0        N  locked
@@ -742,31 +785,33 @@ to ask a second time.
   light0: off
 
 light answers on and off. lock and win, map door and player-built
-alike, answer lock and unlock. Nothing else is a word these kinds
-know, and typing one is "light0: invalid value" -- the device's own
-name first, the same grammar every refusal of its uses.]],
+alike, answer lock and unlock. door answers open and close. Nothing
+else is a word these kinds know, and no kind has heard of another's:
+typing one is "light0: invalid value" -- the device's own name
+first, the same grammar every refusal of its uses.]],
 
 [[toggle stands in for the opposite of what the device reads now: a
-lit switch goes off, a locked door unlocks, a padlocked one has its
-padlock taken off, and an unlocked one is locked again -- with a
-padlock, if that is what the door carries.
+lit switch goes off, a shut door opens and an open one shuts, a
+locked lock unlocks, and a padlocked one has its padlock taken off.
 
-  admin@ksp-04-11:~$ dev lock2 toggle
-  lock2: unlocked
+  admin@ksp-04-11:~$ dev lock1 toggle
+  lock1: unlocked
 
-A window that is smashed or barricaded is in no state a word undoes,
-and toggle answers "win0: cannot toggle" rather than guess a
-direction; dev win0 lock still asks, and the window refuses in its
-own name. A number never handed out at all is refused in the
-command's own grammar: "dev: light7: no such device".
+A locked door has an opposite too, so toggle asks for it and the
+world answers "door0: locked" -- telling you which device to turn. A
+window that is smashed or barricaded is in no state a word undoes,
+and toggle answers "win0: cannot toggle" rather than guess; dev win0
+lock still asks, and the window refuses in its own name. A number
+never handed out is the command's own refusal:
+"dev: light7: no such device".
 
 dev find <id> answers what no list can: which of the thirty-five
 this one is. A light blinks for six seconds and goes back exactly as
 it was; a door or a window is outlined on the screen of whoever
 asked, and on nobody else's.
 
-  admin@ksp-04-11:~$ dev find lock1
-  lock1: highlighted]],
+  admin@ksp-04-11:~$ dev find door1
+  door1: highlighted]],
 
 [[Underneath, every device is a file under /dev, and dev is the short
 way to type what you could type yourself. cat reads one, printing
@@ -781,8 +826,9 @@ ls -l /dev is the same devices with the plumbing's columns in front
 and no room left for the offset:
 
   admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  sudo  lock0   exterior       W  locked
+  crw-rw----  root  sudo  door0   exterior       W  locked
   crw-rw----  root  sudo  light0  office            on
+  crw-rw----  root  sudo  lock0   exterior       W  locked
 
 The mode wears a c where an ordinary file wears a dash: a device is
 a character device. Then the owner, always root, and the group,
@@ -1322,11 +1368,12 @@ Command history is not the window's at all any more: it is
 ~/.sh_history on the machine's own disk, a thousand lines and sixteen
 kilobytes, exempt from the 32K and capped on its own (chapter 14).]],
 
-[[Device words, for /dev (chapter 10): an id like light0 or lock1 names
+[[Device words, for /dev (chapter 10): an id like light0 or door1 names
 the file itself; light answers on and off; lock and win answer lock
-and unlock; toggle, which dev takes and a redirect does not, is
-whichever of a pair the device is not in now. dev alone is the whole
-table, dev light, dev lock and dev win one kind of it, dev find <id>
+and unlock; door answers open and close; toggle, which dev takes and
+a redirect does not, is whichever of a pair the device is not in now.
+dev alone is the whole table, dev door, dev light, dev lock and
+dev win one kind of it, dev find <id>
 six seconds of the device showing you where it is; its columns are
 id, description, offset from the computer, facing and state.
 ls -l /dev reads exactly like ls -l anywhere else, mode, owner,
@@ -1432,14 +1479,18 @@ one below is dev's own, and is signed the way a command signs:
   lock0: no such device
   win0: smashed
   win0: barricaded
-  lock2: no padlock
+  lock1: no padlock
+  door0: locked
+  door0: barricaded
+  door0: blocked
   light0: invalid value
   win0: cannot toggle
   dev: <word>: unknown kind
-      no current or bulb; taken away or unloaded; broken or
-      boarded; neither padlock nor key; a word that kind
-      does not answer to; no opposite to turn it into; the
-      kinds are light, lock and win
+      no current or bulb; gone or unloaded; broken; boarded;
+      neither padlock nor key; held by a key; planks on it;
+      a tree, a car or a body in it; a word that
+      kind does not know; no opposite; the kinds are door,
+      light, lock and win
 
   hostname: <name>: invalid name
   hash: <salt>: invalid salt

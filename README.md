@@ -43,10 +43,12 @@ Done:
 - The terminal window: the green screen, login, command history, the editor, `^C`
   on Escape, and a server-held console so the screen survives a save, a reload and
   a walk away.
-- Devices: `/dev` holds the light switches, lockable doors and windows the machine
+- Devices: `/dev` holds the doors, light switches and windows the machine
   can reach, and `dev` is the everyday way to see them all at once — with each
   one's offset from the computer, since room names repeat — read one, work one,
-  `toggle` it, or `find` it and watch it blink or light up in the world.
+  `toggle` it, or `find` it and watch it blink or light up in the world. A door
+  opens and closes with nobody's hand on it; a lock is only fitted where a lock
+  can actually stop somebody, which in this game is the outside of a building.
 - Scripts: a real shell language in a file -- variables, `if`, `for`, `while`,
   `until`, `test`, `&&`, `||`, `$(command)`, `$((arithmetic))`, `read`, `sleep`,
   background jobs -- run by a step machine on a budget, so an endless loop makes
@@ -158,7 +160,7 @@ Commands:
 | `wc <file>...` | lines, words and bytes |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
-| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev light0 off`, `dev lock2 toggle`; `dev find lock1` makes it show itself for six seconds |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
 | `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
@@ -270,19 +272,27 @@ the commands, the accounts and the system files back and touches nothing under
 question back; `exit` or Escape walks away from it.
 
 The building the computer stands in is wired to it. `/dev` holds one file per
-light switch, lockable door and window it can reach — its own building when its
+door, light switch and window it can reach — its own building when its
 square has one, every room of it; ten tiles of its own floor when it has not,
 which is what a computer in a player-built base gets. `dev` is how you work them:
 
 ```
 dev
+door0   exterior              0 5S        W  locked
+door1   kitchen-hallway       2W 1N       N  closed
+door2   built                 4E 9S +1    N  closed
 light0  office                0 0            on
 light1  hallway               3E 2N          off
 lock0   exterior              0 5S        W  locked
-lock1   kitchen-hallway       2W 1N       N  unlocked
-lock2   built                 4E 9S +1    N  padlock
+lock1   built                 4E 9S +1    N  padlock
 win0    office                1E 0        N  locked
 ```
+
+`door0` and `lock0` are one door twice over: the thing that opens, and the key
+that holds it shut. Only a door the lock can actually stop somebody at gets that
+second row — in this game a key stops a survivor who is *outside* a building and
+nobody who is inside, so exterior doors and player-built doors have a `lockN` and
+interior doors do not.
 
 The id you name it by, the rooms it stands between — the map's own raw names,
 `exterior` where one side is the outdoors, `built` for something a player put up
@@ -291,17 +301,24 @@ The offset is the column that tells two devices apart when the room names do
 not: tiles east or west, tiles north or south, `0 0` for the computer's own
 square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
 and then by number,
-so `light2` comes before `light10`; in a big building `dev light`, `dev lock` and
-`dev win` cut it down to one kind. One id reads that one back, an id and a word
+so `light2` comes before `light10`; in a big building `dev door`, `dev light`,
+`dev lock` and `dev win` cut it down to one kind. One id reads that one back, an id and a word
 works it and answers with the state read back afterwards, and `toggle` is
 whichever of the pair it is not in now:
 
 ```
 dev light0          -> light0: on
 dev light0 off      -> light0: off
-dev lock2 toggle    -> lock2: unlocked
-dev find lock1      -> lock1: highlighted
+dev door1 open      -> door1: open
+dev door0 open      -> door0: locked
+dev lock1 toggle    -> lock1: unlocked
+dev find door1      -> door1: highlighted
 ```
+
+A door opens with nobody's hand on it: no survivor walks over, nothing is
+animated, and everybody on the server sees it swing. The computer is not a key,
+though — a locked door answers `door0: locked` and stays shut until its `lockN`
+is unlocked.
 
 `dev find` answers the question a listing cannot: **which** of the thirty-five it
 is. A light blinks for six seconds and goes back exactly as it was found — a
@@ -320,15 +337,17 @@ same words, the same refusals — and `ls -l /dev` is the same devices with the
 mode, the owner and the group in front of them and no room left for the offset:
 
 ```
-crw-rw----  root  sudo  lock0   exterior       W  locked
+crw-rw----  root  sudo  door0   exterior       W  locked
 crw-rw----  root  sudo  light0  office            on
+crw-rw----  root  sudo  lock0   exterior       W  locked
 
 cat /dev/light0
 echo off > /dev/light0
 ```
 
-`light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`. Anything
-else is `light0: invalid value`. A device answers in its own name, not the
+`light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`; `door`
+takes `open` and `close`. No kind has heard of another's words, so anything else
+is `light0: invalid value`. A device answers in its own name, not the
 command's:
 
 | line | what happened |
@@ -337,7 +356,10 @@ command's:
 | `lock0: no such device` | it was taken away, or it is in a chunk nobody has loaded |
 | `win0: smashed` | the glass is gone; there is no lock left to turn |
 | `win0: barricaded` | it is boarded up |
-| `lock2: no padlock` | a player-built door with neither padlock nor key on it |
+| `lock1: no padlock` | a player-built door with neither padlock nor key on it |
+| `door0: locked` | held by a key the machine has not got: `unlock` its `lockN` first |
+| `door0: barricaded` | planks on it, and no machine takes those off |
+| `door0: blocked` | the doorway is not clear: a tree, a vehicle, a solid tile, or somebody standing in it |
 | `light0: invalid value` | that word means nothing to that kind |
 | `light0: permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
@@ -825,13 +847,14 @@ know. `SCeroSecObject:osState` sweeps once more before the gate, as the belt to
 that pair of braces: a command that died in the middle must not turn a working
 machine into a broken one.
 
-`env.devices`, when the caller supplies one, is three functions:
+`env.devices`, when the caller supplies one, is these functions:
 
 | call | answers | who owns it |
 | --- | --- | --- |
 | `list()` | array of `{ id, kind, desc, side, state, mode, dead }` | the caller |
 | `write(id, value)` | `ok, reason, state` | the caller |
 | `chmod(id, mode)` | — | the caller, optional |
+| `find(id, seconds)` | `ok, reason, word` | the caller, optional |
 
 The **ids are the caller's**, not the engine's: the engine renders what it is
 handed and judges `value` against `CeroSecOS.DEV_VALUES[kind]`, so a word a kind
@@ -855,9 +878,49 @@ because the answer is only true for the moment it is asked:
 - No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
   the same z. A `nil` square is an unloaded chunk and is skipped.
 
-Classification is `instanceof`: `IsoLightSwitch` → `light`, `IsoDoor` → `lock`,
-`IsoWindow` → `win`, `IsoThumpable` with `isDoor()` → `lock` (`built`). A
-player-built window frame is not a device this rung.
+Classification is `instanceof`, and it answers a **list**, because one object can
+be two devices: `IsoLightSwitch` → `light`, `IsoWindow` → `win`, `IsoDoor` →
+`door` *and* `lock` when the lock bites, `IsoThumpable` with `isDoor()` → `door`
+and `lock` (`built`). A player-built window frame is not a device this rung.
+
+**Where a lock bites**, which is the rule that decides whether a door gets a
+`lock` row at all:
+
+- `IsoDoor` → yes when `isExterior()` is true, **or** when the door's two sides
+  have a room on exactly one of them. `IsoDoor.couldBeOpen(chr)` reads, in order:
+  animal → false, `isBarricaded()` → false, then `canBeOpenFromInside(chr)`
+  → **true and returns**, before the `isLockedByKey` / `haveThisKeyId` branch is
+  ever reached. `canBeOpenFromInside` is: `chr` is an `IsoPlayer`, `isOutside()`
+  is false, `chr`'s room is the door's square's room or its opposite square's
+  room, and the door has no `forceLocked` property. So from inside a building a
+  locked map door always opens, and a lock on an interior door was a device that
+  lied.
+- `IsoThumpable` with `isDoor()` → always, unchanged. Its gate is different:
+  `ToggleDoorActual` and `couldBeOpen` both test `isLockedByKey()` against
+  `chr:getCurrentSquare():has(IsoFlagType.exterior)` — the square the survivor
+  stands on, not which side of a building it is — and a base door is reachable
+  from an exterior square by construction.
+- **A padlock does not hold a door.** Neither `IsoThumpable.ToggleDoorActual` nor
+  its `couldBeOpen` reads `lockedByPadlock` at all; the only reader is
+  `isLockedToCharacter`, whose callers are the container ones
+  (`server/ISObjectClickHandler.lua:283`, `client/ISUI/ISInventoryPage.lua`) plus
+  the pick-up refusal in `shared/Moveables/ISMoveableSpriteProps.lua:1222`. So
+  `padlock` is a `lock` state and never a `door` one, and a padlocked base door
+  still opens from the computer — exactly as it does for a survivor clicking it.
+
+**Which doors are not `door` devices.** A leaf of a double or a garage door:
+`IsoDoor.getDoubleDoorIndex(object) ~= -1` or
+`IsoDoor.getGarageDoorIndex(object) ~= -1`, both public statics and both vanilla
+Lua's own way of asking (`server/BuildingObjects/ISBuildUtil.lua:556`,
+`ISDoubleDoor.lua:315`). `ToggleDoorSilent` moves the one object it is called on
+while vanilla's own toggle walks every leaf through `forEachDoorObject`, so a
+machine that opened one would leave the rest shut. Those keep their `lock`.
+
+**A door's states** are `open`, `closed` and `locked`, and `locked` implies
+closed — three words, not four, because a survivor who reads `locked` has been
+told both things. Its values are `open` and `close`. Its refusals are
+`doorN: locked` (the computer is not a key; `unlock` the lock beside it first),
+`doorN: barricaded`, `doorN: blocked` and `doorN: no such device`.
 
 **The numbering** is stable for the life of the machine. Candidates are sorted by
 `(kind, x, y, z, side)` and each gets the smallest number its kind has never used;
@@ -887,6 +950,33 @@ that syncs for a player does not necessarily sync for us.
 | `win` | `IsoWindow:setIsLocked(locked)` | `syncIsoObject(false, 0, nil, nil)` | `setIsLocked` is a bare field write with no sync at all; `IsoWindow:syncIsoObjectSend` writes `locked` into the packet |
 | `lock` (built, padlock) | `IsoThumpable:setLockedByPadlock(locked)` | none needed | it calls `syncIsoThumpable()` itself, whose server branch is `INetworkPacket.sendToRelative(SyncThumpable, ...)` |
 | `lock` (built, key) | `IsoThumpable:setLockedByKey(locked)` | `syncIsoThumpable()` | same server skip as the map door's |
+| `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap — **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
+
+Because `ToggleDoorSilent` **toggles**, a door already in the state it was asked
+for is left alone and nothing is broadcast: two `dev door0 open` in a row are one
+open door. And because it returns doing nothing on a barricaded door, the
+`barricaded` refusal is ours and comes *before* the call — otherwise the order
+would be swallowed and the machine would report the state it already had.
+
+`doorN: blocked` is two facts. The first is the game's own:
+`isObstructed()` → the static `IsoDoor.isDoorObstructed(IsoObject)`, true when the
+door's square `isSolid()` or `isSolidTrans()`, has an `IsoObjectType.tree`, or a
+vehicle in the chunk `isIntersectingSquareWithShadow` of it — exactly the test
+`couldBeOpen` makes, so a door it refuses is a door nobody could open by hand.
+The second **is ours and is marked as such in the source**: vanilla has no rule
+about a body in a doorway (`ISOpenCloseDoor:complete` calls `ToggleDoor` and
+nothing checks first), so we ask `getMovingObjects():size() > 0` on the door's own
+square and its opposite — vanilla's own way of asking whether anything stands on
+a square (`server/BuildingObjects/ISHutch.lua:103`,
+`server/Camping/BuildingObjects/campingCampfire.lua:63`, four more) — because a
+door swung by a machine is the one door nobody has a hand on.
+
+**Migration.** A `devmap` entry made for an interior map door's `lock` device
+before this rung is keyed `lock:x:y:z:side:n` and nothing classifies to that key
+any more. It therefore behaves exactly as a device torn out of the world does:
+the number stays spent for the life of the machine, the entry stays mounted so
+`cat /dev/lock4` answers `lock4: no such device` rather than `no such file`, and
+it is **not listed**. Nothing is renumbered and no gap is ever reused.
 
 The power rule for a light is the switch's own: `canSwitchLight()` — a bulb, and
 electricity or a charged battery. A switch with no bulb reads as `no power` too,

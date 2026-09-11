@@ -274,9 +274,11 @@ passé réellement, même quand ça correspond au texte attendu.
 
 83. Maison avec une pièce nommée et éclairée, ordinateur alimenté dedans,
     `root` (ou `admin`, membre du groupe `sudo`), `ls -l /dev` → une ligne par
-    interrupteur, porte verrouillable et fenêtre de **tout le bâtiment**, pas
+    porte, interrupteur et fenêtre de **tout le bâtiment**, pas
     seulement la pièce de l'ordinateur ; colonnes `c` + mode, `root`, l'id, la
-    description, le côté, l'état, rien de plus large que l'écran. [ ]
+    description, le côté, l'état, rien de plus large que l'écran. Chaque porte
+    extérieure paraît **deux fois** : `doorN` (ce qui ouvre) et `lockN` (la
+    clé). Les portes intérieures n'ont que leur `doorN`. [ ]
 84. Les descriptions sont les ids bruts de la carte (`kitchen`, `livingroom`),
     jamais un nom habillé. Une porte donnant sur l'extérieur lit `exterior` ;
     entre deux pièces, `<pièce>-<pièce>`, avec la première moitié qui est la
@@ -287,9 +289,14 @@ passé réellement, même quand ça correspond au texte attendu.
 86. Interrupteur sans ampoule, ou courant coupé sur la maison :
      `echo on > /dev/light0` → `light0: no power`, l'interrupteur ne bouge
      pas, `cat` dit toujours `off`. [ ]
-87. Porte intérieure verrouillée : `cat /dev/lockN` → `locked`.
-     `echo unlock > /dev/lockN`, ouvrir à la main sans clé, sans message de
-     porte verrouillée. `echo lock > /dev/lockN`, essayer encore → refusé. [ ]
+87. Porte **extérieure** verrouillée (la seule sorte où la serrure mord) :
+     `cat /dev/lockN` → `locked`. Sortir de la maison, essayer d'entrer sans
+     clé → refusé par le jeu. `echo unlock > /dev/lockN`, réessayer de
+     l'extérieur → elle ouvre, sans message de porte verrouillée.
+     `echo lock > /dev/lockN`, essayer encore de l'extérieur → refusé de
+     nouveau. Puis, de l'**intérieur**, la même porte verrouillée s'ouvre
+     quand même à la main : c'est la règle du jeu, et c'est pour ça qu'une
+     porte intérieure n'a pas de `lockN` du tout. [ ]
 88. Fenêtre : `cat /dev/win0` → `locked` ou `unlocked`. `echo unlock`, ouvrir
      à la main ; `echo lock` bloque de nouveau. [ ]
 89. Casser une fenêtre à la main → `ls -l /dev` dit `smashed` pour elle,
@@ -302,9 +309,13 @@ passé réellement, même quand ça correspond au texte attendu.
      plancher est couvert. La porte du joueur lit `built` dans la colonne
      description, avec le côté qu'elle regarde. [ ]
 92. Cadenasser la porte du joueur → `cat /dev/lockN` dit `padlock`.
-     `echo unlock`, passer à travers ; `echo lock`, refusé de nouveau. Une
+     `echo unlock > /dev/lockN` → le cadenas tombe dans l'inventaire comme si
+     on l'avait retiré à la main ; `echo lock > /dev/lockN` le remet. Une
      porte du joueur sans cadenas ni clé répond `lockN: no padlock` aux deux
-     mots. [ ]
+     mots. Attention : un cadenas ne retient pas la **porte** dans ce jeu, il
+     retient ce qu'il y a derrière (le contenant, et la porte contre le
+     ramassage). Donc `dev doorN open` sur une porte cadenassée l'ouvre, et
+     un survivant qui clique dessus l'ouvre aussi. [ ]
 93. Ordinateur dans une maison éloignée, se connecter, s'éloigner jusqu'à ce
      que ses chunks se déchargent → `ls -l /dev` ne liste plus rien,
      `echo on > /dev/light0` répond `light0: no such device`. Revenir → les
@@ -327,8 +338,8 @@ passé réellement, même quand ça correspond au texte attendu.
      nord, `+1` / `-1` collé derrière pour un autre étage. Vérifier une
      lumière à main droite de l'écran (est) et une porte au nord : les
      lettres correspondent au monde, pas l'inverse.
-     `dev light`, `dev lock`, `dev win` → seulement cette sorte. `dev toaster`
-     → `dev: toaster: unknown kind`, `dev light99` →
+     `dev door`, `dev light`, `dev lock`, `dev win` → seulement cette sorte.
+     `dev toaster` → `dev: toaster: unknown kind`, `dev light99` →
      `dev: light99: no such device`. [ ]
 98. `dev light0` → `light0: on`. `dev light0 off` → la pièce s'assombrit dans
      le monde et la ligne répond `light0: off`. `dev light0 toggle` la
@@ -353,6 +364,47 @@ passé réellement, même quand ça correspond au texte attendu.
      immédiatement. En mode Hôte avec un deuxième joueur (écran partagé) :
      seul celui qui a tapé la commande voit le contour, alors que le
      clignotement d'une lumière se voit des deux. [ ]
+
+Les cinq étapes suivantes portent des lettres et non des numéros neufs : les
+numéros 101 et suivants sont déjà cités ailleurs dans ce document (section M) et
+dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
+
+100a. Porte **intérieure** d'une maison, ordinateur dans la même maison :
+     `dev` la montre en `doorN` avec l'état `closed` et **aucun** `lockN` pour
+     elle. Se placer de façon à voir la porte depuis l'écran, taper
+     `dev doorN open` → la ligne répond `doorN: open` et la porte s'ouvre dans
+     le monde **sans que personne ne bouge** : aucun survivant ne marche
+     jusqu'à elle, aucune animation, aucun son de porte. `dev doorN close` la
+     referme. `dev doorN toggle` fait l'aller-retour. Retaper
+     `dev doorN open` sur une porte déjà ouverte → `doorN: open`, et rien ne
+     bouge une deuxième fois. [ ]
+100b. Porte **extérieure** verrouillée (étape 87) : `dev` la montre deux fois,
+     `doorN` à l'état `locked` et `lockN` à `locked`. `dev doorN open` →
+     `doorN: locked`, la porte ne bouge pas : l'ordinateur n'est pas une clé.
+     `dev doorN toggle` répond exactement la même chose. Puis
+     `dev lockN unlock` → `lockN: unlocked`, et `dev doorN open` → la porte
+     s'ouvre. La refermer et reverrouiller avec `dev lockN lock` :
+     `cat /dev/doorN` dit de nouveau `locked`. [ ]
+100c. Se tenir **dans l'embrasure** de la porte intérieure de l'étape 100a
+     (sur la case de la porte ou sur celle d'en face), puis `dev doorN close`
+     → `doorN: blocked`, la porte ne bouge pas. S'écarter d'une case et
+     refaire la commande → elle ferme. Même essai avec un zombi immobile dans
+     l'embrasure. Si un véhicule peut être garé en travers d'une porte de
+     garage extérieure, `dev doorN open` doit répondre `blocked` aussi (c'est
+     le test du jeu lui-même, pas le nôtre). [ ]
+100d. Barricader la porte intérieure (planches, marteau, clous) →
+     `dev doorN open` répond `doorN: barricaded`, et la porte ne bouge pas
+     d'un poil. `dev doorN toggle` dit la même chose. Retirer les planches →
+     `dev doorN open` fonctionne de nouveau. Important : confirmer qu'une
+     porte barricadée ne s'ouvre **jamais à moitié** ou en silence. [ ]
+100e. Base construite par le joueur, porte posée soi-même avec un cadenas
+     dessus : `dev` la montre en `doorN` (`built`, `closed`) **et** en `lockN`
+     (`built`, `padlock`). `dev doorN open` → `doorN: open`, la porte s'ouvre
+     malgré le cadenas, même résultat qu'un clic à la main : le cadenas ne
+     tenant pas la porte. Poser plutôt une **clé** sur la porte (`lockN` à
+     `locked`) : `dev doorN open` → `doorN: locked`. Enfin, une porte de
+     garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
+     `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
 
 ## I. Manuel
 

@@ -288,12 +288,22 @@ local DEVICE_MESSAGES = {
 	"smashed",
 	"barricaded",
 	"no padlock",
+	"blocked",
 	"invalid value",
 	CeroSecOS.DEV_PATH .. ": read-only",
 }
 for i = 1, #DEVICE_MESSAGES do
 	check("error appendix carries the device reason \"" .. DEVICE_MESSAGES[i] .. "\"",
 		string.find(errText, DEVICE_MESSAGES[i], 1, true) ~= nil)
+end
+
+-- A door's three refusals, whole lines: "locked" and "barricaded" are words
+-- other kinds use too, so the bare sweep above cannot tell whether the appendix
+-- says them about a DOOR.
+local DOOR_LINES = { "door0: locked", "door0: barricaded", "door0: blocked" }
+for i = 1, #DOOR_LINES do
+	check("error appendix carries \"" .. DOOR_LINES[i] .. "\"",
+		string.find(errText, DOOR_LINES[i], 1, true) ~= nil)
 end
 
 -- Confirm the three syntax errors really are in the engine source, spelled
