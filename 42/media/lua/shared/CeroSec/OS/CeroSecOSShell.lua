@@ -874,6 +874,7 @@ end
 -- filter by kind, and a `toggle` that works the opposite out for you.
 --
 --   admin@ksp-04-11:~$ dev
+--   door0   exterior            3E 2N    W  locked
 --   light0  office              0 2N        on
 --   lock0   exterior            3E 2N    W  locked
 --   admin@ksp-04-11:~$ dev light0
@@ -949,12 +950,18 @@ end
 -- a state a word undoes, so `dev win0 toggle` says so instead of guessing a
 -- direction -- and `dev win0 lock` still asks the world, which refuses in its
 -- own name ("win0: smashed").
+--
+-- By KIND and then by state, because one word means two things: "locked" is a
+-- lock's state, which "unlock" undoes, and it is also a door's, which "open"
+-- undoes -- and a door has no idea what the word "unlock" is. A locked door
+-- toggles to "open" rather than refusing, so the machine goes and asks and the
+-- world answers "door3: locked" in its own name, which tells a survivor which
+-- device to go and turn.
 local DEV_OPPOSITE = {
-	on = "off",
-	off = "on",
-	locked = "unlock",
-	padlock = "unlock",
-	unlocked = "lock",
+	light = { on = "off", off = "on" },
+	lock  = { locked = "unlock", padlock = "unlock", unlocked = "lock" },
+	win   = { locked = "unlock", unlocked = "lock" },
+	door  = { open = "close", closed = "open", locked = "open" },
 }
 
 -- The table, whole or filtered by kind. A device the machine remembers the
@@ -1001,7 +1008,7 @@ commands.dev = function(state, session, args, env)
 		return true, { target.id .. ": " .. how }
 	end
 	if #args == 2 and not looksLikeId(word) then
-		-- A kind is one of the three the core has words for, and no other.
+		-- A kind is one the core has words for, and no other.
 		if CeroSecOS.DEV_VALUES[word] == nil then return fail("dev", word, "unknown kind") end
 		return devTable(state, session, word)
 	end
@@ -1019,7 +1026,9 @@ commands.dev = function(state, session, args, env)
 	if value == "toggle" then
 		local text, refusal = CeroSecOS.devRead(state, session, node)
 		if text == nil then return false, { refusal } end
-		value = DEV_OPPOSITE[text]
+		local opposites = DEV_OPPOSITE[node.kind]
+		value = nil
+		if opposites ~= nil then value = opposites[text] end
 		if value == nil then return false, { node.id .. ": cannot toggle" } end
 	end
 

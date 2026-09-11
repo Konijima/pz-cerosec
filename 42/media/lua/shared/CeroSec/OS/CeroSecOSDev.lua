@@ -8,6 +8,12 @@
 --   cat /dev/light0            -> on
 --   echo off > /dev/light0
 --   echo unlock > /dev/lock1
+--   echo open > /dev/door3
+--
+-- A door is two devices when the lock on it means anything: doorN is what opens
+-- and closes it, lockN is the key. Which doors get a lockN is the world's
+-- business and is decided in SCeroSecDevices.lua; the core only ever sees the
+-- kinds it has words for.
 --
 -- A device node is NOT a file. It has no data, it is never written to the disk,
 -- and the core never touches the world itself: what it holds is a description
@@ -95,6 +101,7 @@ CeroSecOS.DEV_VALUES = {
 	light = { on = true, off = true },
 	lock  = { lock = true, unlock = true },
 	win   = { lock = true, unlock = true },
+	door  = { open = true, close = true },
 }
 
 -- How many nodes /dev may hold. The same ceiling every other directory has:

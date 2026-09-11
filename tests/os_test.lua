@@ -4552,6 +4552,156 @@ do
 	okAt(state, bob, "dev find light0", { "light0: blinking" }, env)
 end
 
+
+-- 21p. The `door` kind, on the engine's side of the line.
+--
+-- The mockup above (21a) predates doors and is left exactly as it was approved;
+-- the door rows live here. Everything the engine knows about a door is: three
+-- state words, two value words, a toggle table of its own, and the refusals its
+-- world hands back. WHICH doors are devices and which of them also carry a lock
+-- is the server's business and is proved in tests/window_test.lua against a
+-- world -- the core cannot know, and must not guess.
+local DOORING = { open = "open", close = "closed" }
+
+local function doorDevices()
+	return fakeDevices({
+		{ id = "door0", kind = "door", desc = "exterior", side = "W",
+			pos = "0 5S", state = "locked", becomes = DOORING },
+		{ id = "door1", kind = "door", desc = "kitchen-hallway", side = "N",
+			pos = "2W 1N", state = "closed", becomes = DOORING },
+		{ id = "door2", kind = "door", desc = "built", side = "N",
+			pos = "4E 9S +1", state = "open", becomes = DOORING },
+		-- The lock beside door0: one door in the world, two devices here.
+		{ id = "lock0", kind = "lock", desc = "exterior", side = "W",
+			pos = "0 5S", state = "locked", becomes = LOCKING },
+	})
+end
+
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local env = devEnv(doorDevices())
+
+	-- `ls -l /dev`, to the character. The columns did not move: "barricaded" is
+	-- still the widest state there is and an id of eight still holds door127.
+	okAt(state, session, "ls -l /dev", {
+		"crw-rw----  root  sudo  door0   exterior       W  locked",
+		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
+		"crw-rw----  root  sudo  door2   built          N  open",
+		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+	}, env)
+	okAt(state, session, "ls /dev", { "door0  door1  door2  lock0" }, env)
+
+	local wide = fakeDevices({
+		{ id = "door127", kind = "door", desc = "kitchen-hallway", side = "N",
+			state = "barricaded" },
+	})
+	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
+	eq("the widest door line", line,
+		"crw-rw----  root  sudo  door127 kitchen-hall~  N  barricaded")
+	check("and it fits the screen", #line <= CeroSecOS.COLS)
+
+	-- `dev`, whole and by kind. door sorts before light, lock and win, being a
+	-- kind like any other and sorted like one.
+	okAt(state, session, "dev", {
+		"door0   exterior              0 5S        W  locked",
+		"door1   kitchen-hallway       2W 1N       N  closed",
+		"door2   built                 4E 9S +1    N  open",
+		"lock0   exterior              0 5S        W  locked",
+	}, env)
+	okAt(state, session, "dev door", {
+		"door0   exterior              0 5S        W  locked",
+		"door1   kitchen-hallway       2W 1N       N  closed",
+		"door2   built                 4E 9S +1    N  open",
+	}, env)
+
+	-- Reading one, through cat and through dev: the same node either way.
+	okAt(state, session, "cat /dev/door0", { "locked" }, env)
+	okAt(state, session, "cat /dev/door1", { "closed" }, env)
+	okAt(state, session, "cat /dev/door2", { "open" }, env)
+	okAt(state, session, "dev door1", { "door1: closed" }, env)
+end
+
+do
+	-- Writing one. The two words, both roads, and the state that comes back
+	-- from the world rather than from the order.
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = doorDevices()
+	local env = devEnv(devices)
+
+	okAt(state, session, "dev door1 open", { "door1: open" }, env)
+	eq("the order reached the world", devices.writes[1], "door1=open")
+	okAt(state, session, "cat /dev/door1", { "open" }, env)
+	okAt(state, session, "dev door1 close", { "door1: closed" }, env)
+	okAt(state, session, "echo open > /dev/door1", {}, env)
+	okAt(state, session, "cat /dev/door1", { "open" }, env)
+	okAt(state, session, "echo close > /dev/door1", {}, env)
+	okAt(state, session, "cat /dev/door1", { "closed" }, env)
+
+	-- toggle. A door's opposites are its OWN: "locked" is undone by "open" here
+	-- and by "unlock" on a lock, and neither kind has ever heard of the other's
+	-- word.
+	okAt(state, session, "dev door1 toggle", { "door1: open" }, env)
+	okAt(state, session, "dev door1 toggle", { "door1: closed" }, env)
+	okAt(state, session, "dev door2 toggle", { "door2: closed" }, env)
+	local reached = #devices.writes
+	okAt(state, session, "dev door0 toggle", nil, env)
+	eq("a locked door toggles by asking to be opened",
+		devices.writes[reached + 1], "door0=open")
+
+	-- And a word the other kind knows is no word at all here.
+	badAt(state, session, "dev door1 unlock", "door1: invalid value", env)
+	badAt(state, session, "dev door1 lock", "door1: invalid value", env)
+	badAt(state, session, "dev door1 on", "door1: invalid value", env)
+	badAt(state, session, "echo unlock > /dev/door1", "door1: invalid value", env)
+	badAt(state, session, "dev lock0 open", "lock0: invalid value", env)
+end
+
+do
+	-- Every refusal a door's world makes, in the door's own name, and the two
+	-- that are the command's.
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = fakeDevices({
+		{ id = "door0", kind = "door", desc = "exterior", side = "W",
+			state = "locked", refuse = "locked" },
+		{ id = "door1", kind = "door", desc = "office-hall", side = "N",
+			state = "closed", refuse = "barricaded" },
+		{ id = "door2", kind = "door", desc = "built", side = "N",
+			state = "closed", refuse = "blocked" },
+		{ id = "door9", kind = "door", dead = true },
+	})
+	local env = devEnv(devices)
+
+	badAt(state, session, "dev door0 open", "door0: locked", env)
+	badAt(state, session, "dev door0 toggle", "door0: locked", env)
+	badAt(state, session, "echo open > /dev/door0", "door0: locked", env)
+	badAt(state, session, "dev door1 open", "door1: barricaded", env)
+	badAt(state, session, "dev door2 close", "door2: blocked", env)
+
+	-- A number the machine remembers and cannot reach: mounted, never listed,
+	-- and "no such device" rather than "no such file".
+	badAt(state, session, "cat /dev/door9", "door9: no such device", env)
+	badAt(state, session, "dev door9 open", "door9: no such device", env)
+	badAt(state, session, "dev find door9", "door9: no such device", env)
+	okAt(state, session, "dev door", {
+		"door0   exterior                          W  locked",
+		"door1   office-hall                       N  closed",
+		"door2   built                             N  closed",
+	}, env)
+
+	-- A number never handed out is the COMMAND's refusal, being a name nothing
+	-- answers to rather than a device with something to say.
+	badAt(state, session, "dev door7", "dev: door7: no such device", env)
+	badAt(state, session, "dev door7 open", "dev: door7: no such device", env)
+
+	-- A door is only drawn around, so pointing at one takes a read's right, and
+	-- the word is the world's -- including when the world refuses.
+	badAt(state, session, "dev find door1", "door1: barricaded", env)
+	okAt(state, session, "dev find door1", { "door1: highlighted" }, devEnv(doorDevices()))
+end
+
 --
 -- 22. Groups: /etc/group, the three-digit evaluation, and the five commands.
 --

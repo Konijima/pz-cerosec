@@ -59,6 +59,25 @@ _G.instanceof = function(object, class)
 	return true
 end
 
+-- The two statics the device layer asks about a door before it will call
+-- ToggleDoorSilent on it: is this one leaf of a double door, or of a garage
+-- door? Vanilla answers -1 for an object with no such property on it
+-- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556), and so does this.
+_G.IsoDoor = {
+	getDoubleDoorIndex = function(object)
+		if type(object) == "table" and type(object.doubleDoor) == "number" then
+			return object.doubleDoor
+		end
+		return -1
+	end,
+	getGarageDoorIndex = function(object)
+		if type(object) == "table" and type(object.garageDoor) == "number" then
+			return object.garageDoor
+		end
+		return -1
+	end,
+}
+
 -- The cell, when a bench has laid a world out. nil is a game with no world in
 -- it, which is what every bench that is not about devices runs on.
 _G.__world = nil
@@ -1427,13 +1446,16 @@ function FakeWorld.new()
 		local key = x .. "," .. y .. "," .. z
 		local sq = world.squares[key]
 		if sq ~= nil then return sq end
-		sq = { objects = {} }
+		sq = { objects = {}, bodies = {} }
 		sq.getX = function() return x end
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
 		sq.getRoom = function() return room end
 		sq.getBuilding = function() if room ~= nil then return world.building end return nil end
 		sq.getObjects = function() return javaList(sq.objects) end
+		-- Whoever is standing on it. Vanilla's own way of asking, and the half
+		-- of "blocked" that is ours rather than the game's.
+		sq.getMovingObjects = function() return javaList(sq.bodies) end
 		world.squares[key] = sq
 		return sq
 	end
@@ -1495,12 +1517,37 @@ local function highlightable(o)
 	return o
 end
 
-local function fakeDoor(locked, north, opposite)
+-- The door half both classes share: what opens, what refuses, and the toggle
+-- that moves it. ToggleDoorSilent is written the way the bytecode is -- it does
+-- NOTHING at all on a barricaded door and it syncs nothing ever -- so a machine
+-- that forgot either fact is a machine this bench fails.
+local function openable(o)
+	o.open = false
+	o.barricaded = false
+	o.obstructed = false
+	o.silentToggles = 0
+	o.IsOpen = function() return o.open end
+	o.isBarricaded = function() return o.barricaded end
+	o.isObstructed = function() return o.obstructed end
+	o.ToggleDoorSilent = function()
+		o.silentToggles = o.silentToggles + 1
+		if o.barricaded then return end
+		o.open = not o.open
+	end
+	return o
+end
+
+local function fakeDoor(locked, north, opposite, exterior)
 	local o = { __class = "IsoDoor", lockedByKey = locked, north = north,
-		opposite = opposite, syncs = 0 }
+		opposite = opposite, exterior = exterior == true, syncs = 0 }
 	highlightable(o)
+	openable(o)
 	o.getNorth = function() return o.north end
 	o.getOppositeSquare = function() return o.opposite end
+	-- The game's own flag-and-building test. The bench sets it by hand and the
+	-- room test beside it is what SCeroSecDevices works out for itself, so both
+	-- halves of doorLocks are reachable here.
+	o.isExterior = function() return o.exterior end
 	o.isLockedByKey = function() return o.lockedByKey end
 	-- The real setter skips its own sync on a server, which is why the sync
 	-- below is a separate call and why this fake does not make one.
@@ -1522,12 +1569,15 @@ local function fakeWindow(locked, north)
 	return o
 end
 
-local function fakeThumpable(padlock, north)
+local function fakeThumpable(padlock, north, opposite)
 	local o = { __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
-		lockedByKey = false, keyId = 0, north = north, syncs = 0 }
+		lockedByKey = false, keyId = 0, north = north, opposite = opposite, syncs = 0 }
 	highlightable(o)
+	openable(o)
 	o.isDoor = function() return true end
 	o.getNorth = function() return o.north end
+	o.getOppositeSquare = function() return o.opposite end
+	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
 	o.isLockedByPadlock = function() return o.lockedByPadlock end
 	o.canBeLockByPadlock = function() return o.canPadlock end
 	o.isLockedByKey = function() return o.lockedByKey end
@@ -1553,17 +1603,22 @@ local function mockupWorld()
 	local outside = world.square(11, 9, 0, nil)
 
 	local kit = {}
-	-- lock0: the exterior door, facing west and locked.
-	kit.lock0 = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
+	-- door0 AND lock0: the front door, facing west, locked, with the outdoors
+	-- on one side of it. One object, two devices -- the thing that opens and the
+	-- key -- and that is the whole point of this rung.
+	kit.front = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
 	-- win0: a window in the office, facing north and locked.
 	kit.win0 = world.put(world.squares["12,10,0"], fakeWindow(true, true))
 	-- light0: the office switch, on. light1: the hallway switch, off.
 	kit.light0 = world.put(world.squares["11,10,0"], fakeLight(true, true))
 	kit.light1 = world.put(world.squares["13,11,0"], fakeLight(false, true))
-	-- lock1: between the kitchen and the hallway, facing north, unlocked.
-	kit.lock1 = world.put(world.squares["11,11,0"], fakeDoor(false, true, world.squares["12,11,0"]))
-	-- lock2: the player-built door, padlocked.
-	kit.lock2 = world.put(world.squares["12,11,0"], fakeThumpable(true, true))
+	-- door1 and NOTHING else: between the kitchen and the hallway, so a room on
+	-- both sides and a lock that could not stop anybody. It opens; it has no key.
+	kit.inner = world.put(world.squares["11,11,0"], fakeDoor(false, true, world.squares["12,11,0"]))
+	-- door2 and lock1: the player-built door, padlocked. The padlock locks what
+	-- is behind it and not the door, so the door still reads closed.
+	kit.built = world.put(world.squares["12,11,0"],
+		fakeThumpable(true, true, world.square(12, 12, 0, nil)))
 
 	kit.world = world
 	kit.office, kit.kitchen, kit.hallway = office, kitchen, hallway
@@ -1586,13 +1641,18 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
+		"crw-rw----  root  sudo  door0   exterior       W  locked",
+		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
+		"crw-rw----  root  sudo  door2   built          N  closed",
 		"crw-rw----  root  sudo  light0  office            on",
 		"crw-rw----  root  sudo  light1  hallway           off",
 		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked",
-		"crw-rw----  root  sudo  lock2   built          N  padlock",
+		"crw-rw----  root  sudo  lock1   built          N  padlock",
 		"crw-rw----  root  sudo  win0    office         N  locked",
 	}
+	-- The interior door is a door and NOT a lock: a key on it stops nobody, so
+	-- there is no lock device for it to lie through.
+	check("no lock device for the interior door", not bench.painted("kitchen-hall~  N  unlocked"))
 	for i = 1, #want do
 		check("the glass shows: " .. want[i], bench.painted(want[i]))
 	end
@@ -1615,19 +1675,19 @@ do
 	-- hand because the setter skips its own on a server.
 	bench.enter("echo unlock > /dev/lock0")
 	bench.frame()
-	eq("the door is unlocked", kit.lock0.lockedByKey, false)
-	eq("and it was broadcast", kit.lock0.syncs, 1)
+	eq("the door is unlocked", kit.front.lockedByKey, false)
+	eq("and it was broadcast", kit.front.syncs, 1)
 
 	-- A window, and a padlock.
 	bench.enter("echo unlock > /dev/win0")
 	bench.frame()
 	eq("the window is unlocked", kit.win0.locked, false)
 	eq("and it was broadcast", kit.win0.syncs, 1)
-	bench.enter("echo unlock > /dev/lock2")
+	bench.enter("echo unlock > /dev/lock1")
 	bench.frame()
-	eq("the padlock is off", kit.lock2.lockedByPadlock, false)
-	eq("and it was broadcast", kit.lock2.syncs, 1)
-	bench.enter("cat /dev/lock2")
+	eq("the padlock is off", kit.built.lockedByPadlock, false)
+	eq("and it was broadcast", kit.built.syncs, 1)
+	bench.enter("cat /dev/lock1")
 	bench.frame()
 	check("and the machine reads unlocked", bench.painted("unlocked"))
 
@@ -1638,13 +1698,14 @@ do
 	-- The offsets are the real ones: the computer stands at 10,10,0 and every
 	-- one of these was walked out of the fake world by SCeroSecDevices.
 	local table60 = {
+		"door0   exterior              1E 0        W  closed",
+		"door1   kitchen-hallway       1E 1S       N  closed",
+		"door2   built                 2E 1S       N  closed",
 		"light0  office                1E 0           on",
 		"light1  hallway               3E 1S          on",
 		"lock0   exterior              1E 0        W  unlocked",
-		"lock1   kitchen-hallway       1E 1S       N  unlocked",
-		"lock2   built                 2E 1S       N  unlocked",
+		"lock1   built                 2E 1S       N  unlocked",
 		"win0    office                2E 0        N  unlocked",
-
 	}
 	for i = 1, #table60 do
 		check("dev's table shows: " .. table60[i], bench.painted(table60[i]))
@@ -1658,6 +1719,161 @@ do
 	bench.frame()
 	eq("the toggle put it back", kit.light0.activated, true)
 	check("and said so", bench.painted("light0: on"))
+
+	--
+	-- Doors: the thing that opens, beside the key that holds it
+	--
+	-- door0 and lock0 are ONE object. The front door was unlocked a few lines
+	-- up, so it opens -- silently, through ToggleDoorSilent, with no character
+	-- anywhere in the call -- and the open flag is broadcast by hand because
+	-- Silent syncs nothing.
+	eq("the front door starts shut", kit.front.open, false)
+	bench.enter("dev door0 open")
+	bench.frame()
+	check("and the machine says what it read back", bench.painted("door0: open"))
+	eq("the door is open in the world", kit.front.open, true)
+	eq("through the silent toggle, once", kit.front.silentToggles, 1)
+	eq("and it was broadcast", kit.front.syncs, 2)
+
+	-- Asked for what it already is: nothing is toggled and nothing is sent. A
+	-- toggle called twice is a shut door, which is not what was asked for.
+	bench.enter("dev door0 open")
+	bench.frame()
+	check("still open", bench.painted("door0: open"))
+	eq("no second toggle", kit.front.silentToggles, 1)
+	eq("and no second broadcast", kit.front.syncs, 2)
+
+	bench.enter("dev door0 toggle")
+	bench.frame()
+	check("toggle shut it", bench.painted("door0: closed"))
+	eq("shut in the world", kit.front.open, false)
+	eq("and that one moved it", kit.front.silentToggles, 2)
+
+	-- The key is the OTHER device, and a computer is not a key. Lock the front
+	-- door through lock0: door0 then READS locked and refuses to open, and the
+	-- way past it is unlock, not a harder shove.
+	bench.enter("dev lock0 lock")
+	bench.frame()
+	check("the lock says so", bench.painted("lock0: locked"))
+	bench.enter("dev door0")
+	bench.frame()
+	check("and the door reads locked", bench.painted("door0: locked"))
+	bench.enter("dev door0 open")
+	bench.frame()
+	check("and refuses to open", bench.painted("door0: locked"))
+	eq("nothing was toggled", kit.front.silentToggles, 2)
+	bench.enter("dev door0 toggle")
+	bench.frame()
+	check("toggle is refused in the same words", bench.painted("door0: locked"))
+	-- Closing a locked door is not refused: a key is what you need to come IN.
+	bench.enter("dev door0 close")
+	bench.frame()
+	check("closing a shut locked door is no refusal", bench.painted("door0: locked"))
+	bench.enter("dev lock0 unlock")
+	bench.enter("dev door0 open")
+	bench.frame()
+	check("unlock first, then open", bench.painted("door0: open"))
+	bench.enter("dev door0 close")
+	bench.frame()
+
+	-- The interior door: a room on both sides, so the lock could stop nobody
+	-- and there is no lock device for it at all. A key turned on it by hand
+	-- changes neither what it reads nor what it does.
+	bench.enter("dev lock1")
+	bench.frame()
+	check("the built door is what lock1 is", bench.painted("lock1: unlocked"))
+	kit.inner.lockedByKey = true
+	bench.enter("dev door1")
+	bench.frame()
+	check("a key on an interior door changes nothing", bench.painted("door1: closed"))
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("and it opens anyway", bench.painted("door1: open"))
+	eq("really open", kit.inner.open, true)
+	eq("and broadcast", kit.inner.syncs, 1)
+	bench.enter("dev door1 close")
+	bench.frame()
+	kit.inner.lockedByKey = false
+
+	-- Barricaded: ToggleDoorSilent returns without doing anything at all on a
+	-- barricaded door, so the refusal has to be the machine's and has to come
+	-- before the call, or the order would be swallowed in silence.
+	local toggles = kit.inner.silentToggles
+	kit.inner.barricaded = true
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("barricaded", bench.painted("door1: barricaded"))
+	eq("and nothing was even attempted", kit.inner.silentToggles, toggles)
+	bench.enter("dev door1 toggle")
+	bench.frame()
+	check("toggle says the same", bench.painted("door1: barricaded"))
+	kit.inner.barricaded = false
+
+	-- Blocked, both halves of it: the game's own obstruction test, and somebody
+	-- standing in the doorway.
+	kit.inner.obstructed = true
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("blocked by the doorway itself", bench.painted("door1: blocked"))
+	eq("and nothing moved", kit.inner.silentToggles, toggles)
+	kit.inner.obstructed = false
+
+	local doorway = kit.world.squares["12,11,0"]
+	doorway.bodies[1] = { __class = "IsoPlayer" }
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("blocked by whoever is standing in it", bench.painted("door1: blocked"))
+	-- The far side counts as much as the near one: this body is on door1's
+	-- OPPOSITE square, and on door2's own.
+	bench.enter("dev door2 open")
+	bench.frame()
+	check("the door on that square too", bench.painted("door2: blocked"))
+	doorway.bodies[1] = nil
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("and once he moves it opens", bench.painted("door1: open"))
+	bench.enter("dev door1 close")
+	bench.frame()
+
+	-- The player-built door: the padlock locks what is behind it and not the
+	-- door, so a padlocked base door still opens, exactly as it does for a
+	-- survivor clicking it.
+	bench.enter("dev lock1 lock")
+	bench.frame()
+	check("the padlock is back on", bench.painted("lock1: padlock"))
+	bench.enter("dev door2")
+	bench.frame()
+	check("and the door still reads closed", bench.painted("door2: closed"))
+	bench.enter("dev door2 open")
+	bench.frame()
+	check("and opens", bench.painted("door2: open"))
+	eq("really open", kit.built.open, true)
+	bench.enter("dev door2 close")
+	bench.frame()
+
+	-- A key on a built door is what the lock there means, and it stops the
+	-- machine the way an exterior map door's does.
+	kit.built.lockedByKey = true
+	bench.enter("dev door2 open")
+	bench.frame()
+	check("a keyed built door is locked", bench.painted("door2: locked"))
+	kit.built.lockedByKey = false
+
+	-- Only words a door knows, and only the kinds the machine has.
+	bench.enter("dev door0 unlock")
+	bench.frame()
+	check("a lock's word is not a door's", bench.painted("door0: invalid value"))
+	bench.enter("dev door")
+	bench.frame()
+	check("door is a kind", bench.painted("door0   exterior"))
+	bench.enter("dev door9")
+	bench.frame()
+	check("and a number never handed out is the command's refusal",
+		bench.painted("dev: door9: no such device"))
+
+	-- Put the padlock back where the rest of this bench expects it.
+	bench.enter("dev lock1 unlock")
+	bench.frame()
 
 	-- Somebody smashes the window. The next listing says so, and the machine
 	-- refuses to work a lock that is not there any more.
@@ -1679,11 +1895,11 @@ do
 	kit.light0.powered = true
 
 	-- A player door with neither padlock nor key.
-	kit.lock2.canPadlock = false
-	kit.lock2.keyId = -1
-	bench.enter("echo lock > /dev/lock2")
+	kit.built.canPadlock = false
+	kit.built.keyId = -1
+	bench.enter("echo lock > /dev/lock1")
 	bench.frame()
-	check("no padlock", bench.painted("lock2: no padlock"))
+	check("no padlock", bench.painted("lock1: no padlock"))
 
 	--
 	-- dev find: which of the thirty-five is it?
@@ -1692,8 +1908,8 @@ do
 	-- everybody in the room sees. The switch is put back exactly as it was
 	-- found: a survivor who asked which light this was did not ask for the
 	-- room's lighting to change.
-	kit.lock2.canPadlock = true
-	kit.lock2.keyId = 0
+	kit.built.canPadlock = true
+	kit.built.keyId = 0
 	eq("the switch is on to begin with", kit.light0.activated, true)
 	eq("and nothing is blinking", #CeroSecDevices.blinks, 0)
 	bench.enter("dev find light0")
@@ -1749,31 +1965,31 @@ do
 	-- A door has nothing to blink with. The server tells the ONE window that
 	-- asked where to look, and that window's own client draws the outline --
 	-- for its own player number and nobody else's.
-	eq("nothing is lit yet", kit.lock1.outline, nil)
-	bench.enter("dev find lock1")
+	eq("nothing is lit yet", kit.inner.outline, nil)
+	bench.enter("dev find door1")
 	bench.frame()
-	check("the machine says what it did", bench.painted("lock1: highlighted"))
-	eq("the door is outlined", kit.lock1.outline, true)
-	eq("for this player, once", kit.lock1.highlights[1], "0=true")
+	check("the machine says what it did", bench.painted("door1: highlighted"))
+	eq("the door is outlined", kit.inner.outline, true)
+	eq("for this player, once", kit.inner.highlights[1], "0=true")
 	eq("and the window remembers it has one lit", bench.window.highlight ~= nil, true)
 	-- The object was found again on the far side by its square, its class and
 	-- its sprite -- and nothing else on that square was.
-	eq("and the padlocked door beside it was not", kit.lock2.outline, nil)
+	eq("and the padlocked door beside it was not", kit.built.outline, nil)
 
 	-- It goes out on its own, in the window's own update, six seconds later.
 	_G.__now = _G.__now + CeroSecOS.DEV_FIND_SECONDS * 1000
 	bench.frame()
-	eq("the outline is gone", kit.lock1.outline, false)
+	eq("the outline is gone", kit.inner.outline, false)
 	eq("and the window is holding nothing", bench.window.highlight, nil)
-	eq("it was put out for the same player", kit.lock1.highlights[2], "0=false")
+	eq("it was put out for the same player", kit.inner.highlights[2], "0=false")
 
 	-- A second find drops the first outline rather than leaving it lit.
-	bench.enter("dev find lock1")
+	bench.enter("dev find door1")
 	bench.frame()
 	bench.enter("dev find win0")
 	bench.frame()
 	eq("the window is lit", kit.win0.outline, true)
-	eq("and the door was put out at once", kit.lock1.outline, false)
+	eq("and the door was put out at once", kit.inner.outline, false)
 
 	-- Closing the window takes the outline with it.
 	_G.__now = _G.__now + 100
@@ -1789,11 +2005,13 @@ do
 	check("the book has an entry per device", (function()
 		local n = 0
 		for _ in pairs(before) do n = n + 1 end
-		return n == 6
+		-- Eight, not six: the front door and the built one are each two.
+		return n == 8
 	end)())
 
-	-- lock0 is torn out, and the machine is reloaded from its saved state.
-	kit.world.remove(kit.lock0)
+	-- The front door is torn out -- door0 AND lock0 with it, one object being
+	-- both -- and the machine is reloaded from its saved state.
+	kit.world.remove(kit.front)
 	local saved = bench.object.os
 	local reloaded = newBench()
 	reloaded.object.os = saved
@@ -1805,25 +2023,35 @@ do
 
 	check("light0 kept its number", reloaded.painted("light0  office"))
 	check("light1 kept its number", reloaded.painted("light1  hallway"))
-	check("lock1 kept its number", reloaded.painted("lock1   kitchen-hall~"))
-	check("lock2 kept its number", reloaded.painted("lock2   built"))
+	check("door1 kept its number", reloaded.painted("door1   kitchen-hall~"))
+	check("door2 kept its number", reloaded.painted("door2   built"))
+	check("lock1 kept its number", reloaded.painted("lock1   built"))
 	check("win0 kept its number", reloaded.painted("win0    office"))
-	-- The one that is gone leaves a GAP: nothing moved up into lock0.
-	check("the gone door is not listed", not reloaded.painted("lock0 "))
-	reloaded.enter("cat /dev/lock0")
+	-- The one that is gone leaves TWO gaps: nothing moved up into either.
+	check("the gone door is not listed", not reloaded.painted("door0 "))
+	check("nor its lock", not reloaded.painted("lock0 "))
+	reloaded.enter("cat /dev/door0")
 	reloaded.frame()
 	check("and it says which kind of not-there it is",
-		reloaded.painted("lock0: no such device"))
+		reloaded.painted("door0: no such device"))
+	reloaded.enter("cat /dev/lock0")
+	reloaded.frame()
+	check("the lock too", reloaded.painted("lock0: no such device"))
 
-	-- And the gap is NOT handed to the next door built: a number spent is spent
-	-- for the life of the machine, or a script that says "echo lock > /dev/lock0"
-	-- one day locks the wrong door the next.
-	kit.world.put(kit.world.squares["10,10,0"], fakeThumpable(false, false))
+	-- And the gaps are NOT handed to the next door built: a number spent is
+	-- spent for the life of the machine, or a script that says
+	-- "echo open > /dev/door0" one day opens the wrong door the next. The new
+	-- door is two devices and takes the next free number of EACH kind.
+	kit.world.put(kit.world.squares["10,10,0"],
+		fakeThumpable(false, false, kit.world.square(9, 10, 0, nil)))
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 	check("the new door took the next number, not the gap",
-		reloaded.painted("crw-rw----  root  sudo  lock3   built          W  unlocked"))
-	check("and the gap is still a gap", not reloaded.painted("lock0 "))
+		reloaded.painted("crw-rw----  root  sudo  door3   built          W  closed"))
+	check("and so did its lock",
+		reloaded.painted("crw-rw----  root  sudo  lock2   built          W  unlocked"))
+	check("and the gaps are still gaps", not reloaded.painted("door0 "))
+	check("both of them", not reloaded.painted("lock0 "))
 
 	--
 	-- A chmod outlives the command it was typed in.
@@ -1961,6 +2189,70 @@ do
 	bench.frame()
 	check("a switch exactly at the radius is a device",
 		bench.painted("crw-rw----  root  sudo  light0  exterior          off"))
+	_G.__world = nil
+end
+
+do
+	-- A garage door, and a double door: several objects making one opening.
+	-- ToggleDoorSilent moves the object it is called on and nothing else, while
+	-- vanilla's own toggle walks every leaf of the thing, so a leaf is NOT a
+	-- `door` device -- a machine that opened one would leave the other half
+	-- shut. It is still a `lock` one, setLockedByKey being per-object in vanilla
+	-- too.
+	local world = FakeWorld.new()
+	world.room("garage", { {10,10,0}, {11,10,0} })
+	local outside = world.square(11, 9, 0, nil)
+	local leaf = world.put(world.squares["11,10,0"], fakeDoor(true, false, outside))
+	leaf.garageDoor = 0
+	_G.__world = world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("a garage door leaf is a lock",
+		bench.painted("crw-rw----  root  sudo  lock0   exterior       W  locked"))
+	check("and is not a door", not bench.painted("door0"))
+
+	-- A double door reads exactly the same way.
+	leaf.garageDoor = nil
+	leaf.doubleDoor = 1
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("a double door leaf is no door either", not bench.painted("door0"))
+	check("and still locks", bench.painted("lock0   exterior"))
+
+	-- So there is nothing there to open, and the refusal is the command's.
+	bench.enter("dev door0 open")
+	bench.frame()
+	check("nothing to open", bench.painted("dev: door0: no such device"))
+	_G.__world = nil
+end
+
+do
+	-- The exterior rule has two halves and the game's own is the first. This
+	-- door has a room on BOTH sides, so the room test says no -- and
+	-- isExterior() says yes, because that is what the tile flags and the
+	-- building on the far side say. A device is made where the LOCK bites, and
+	-- the game is the authority on where that is.
+	local world = FakeWorld.new()
+	local porch = world.room("porch", { {10,10,0}, {11,10,0} })
+	local far = world.square(11, 9, 0, porch)
+	world.put(world.squares["11,10,0"], fakeDoor(true, false, far, true))
+	_G.__world = world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("the game's own exterior flag makes the lock",
+		bench.painted("crw-rw----  root  sudo  lock0   porch          W  locked"))
+	check("and the door is there beside it",
+		bench.painted("crw-rw----  root  sudo  door0   porch          W  locked"))
 	_G.__world = nil
 end
 

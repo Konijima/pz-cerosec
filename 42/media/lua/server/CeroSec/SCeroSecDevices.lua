@@ -86,6 +86,58 @@ require "CeroSec/OS/CeroSecOSDev"
 --           setLockedByKey, which skips its sync on the server like the map
 --           door's, so syncIsoThumpable() is called by hand after it.
 --
+--   door    IsoDoor:ToggleDoorSilent() / IsoThumpable:ToggleDoorSilent(), then
+--           syncIsoObject(false, 0, nil, nil)
+--           Silent is the whole point: ToggleDoor(character) needs a character,
+--           plays a sound at him and walks every leaf of a double door through
+--           forEachDoorObject. A machine has no character, so the call that
+--           moves one door and nothing else is the right one -- and it is the
+--           call vanilla's own Lua makes when a script opens a door with nobody
+--           holding it (media/lua/client/Tutorial/Steps.lua:1288 and :1795,
+--           Tutorial1.lua:331).
+--           Its bytecode is: isBarricaded -> return (so a barricaded door is
+--           refused HERE, by us, or the order would be swallowed in silence),
+--           InvalidateSpecialObjectPaths, the LOS caches, setRecalcLightTime,
+--           then setOpen(!isOpen()) and the sprite swap. No sync of any kind,
+--           so the broadcast is ours -- and it is syncIsoObject and not
+--           syncIsoThumpable even for a player door: SyncThumpablePacket
+--           carries lockedByCode, lockedByPadlock and keyId and NOTHING else,
+--           while both classes' syncIsoObjectSend writes the open flag
+--           (IsoDoor: isOpen(); IsoThumpable: the open field).
+--
+-- The lock, and the one place it means anything
+--
+-- A keyed door only stops a survivor who is on the wrong side of it, which is
+-- why `lock` devices are no longer made for every door:
+--
+--   IsoDoor.couldBeOpen(chr) reads, in order: an animal is false, isBarricaded
+--   is false, and then canBeOpenFromInside(chr) returns TRUE AND RETURNS --
+--   before the isLockedByKey / haveThisKeyId branch is ever reached.
+--   canBeOpenFromInside is: chr is an IsoPlayer, chr.isOutside() is false, and
+--   chr's room is the door's own square's room or its opposite square's room,
+--   and the door has no "forceLocked" property.
+--
+-- So from inside, a locked map door always opens; the lock is a fact about the
+-- OUTSIDE of a building. A door with a room on both sides has no outside, and a
+-- lock on it is a device that lies.
+--
+-- A player-built door is the same shape with a different test: IsoThumpable's
+-- ToggleDoorActual and couldBeOpen both gate isLockedByKey on
+-- chr.getCurrentSquare().has(IsoFlagType.exterior) -- the square the survivor is
+-- standing on, not which side of a building it is. A base door is reachable from
+-- an exterior square by construction, so every player-built door stays a `lock`
+-- device exactly as it was.
+--
+-- And the padlock, which was the open question: a padlock does NOT stop a door
+-- from being opened, from either side. IsoThumpable.ToggleDoorActual has no
+-- lockedByPadlock branch at all and neither has couldBeOpen; the only reader is
+-- isLockedToCharacter, which answers true for a padlock with no key in the
+-- inventory and no side test whatever -- and its callers are the CONTAINER ones
+-- (media/lua/server/ISObjectClickHandler.lua:283, client/ISUI/ISInventoryPage.lua)
+-- plus the pick-up refusal in shared/Moveables/ISMoveableSpriteProps.lua:1222.
+-- A padlock locks what is inside the door, not the door. That is why `padlock`
+-- is a `lock` state and never a `door` one.
+--
 
 CeroSecDevices = CeroSecDevices or {}
 
@@ -134,8 +186,10 @@ end
 --
 -- Classifying one object
 --
--- nil when it is not a device. The state strings are the machine's whole
--- vocabulary and are written here, once.
+-- nil when it is not a device, otherwise the LIST of devices it is -- one
+-- object can be two, because an exterior door is both the thing that opens and
+-- the thing that locks, and a survivor works those with different words. The
+-- state strings are the machine's whole vocabulary and are written here, once.
 --
 
 local function doorDesc(door)
@@ -162,45 +216,99 @@ local function thumpState(thump)
 	return "unlocked"
 end
 
+-- Does this map door's lock stop anybody? Its own isExterior() first -- the
+-- square carries the exterior flag and the far side is a building with a def,
+-- or the other way round -- and then the rooms, because a door whose two sides
+-- have a room on exactly one of them is a way out of the building whatever the
+-- tile flags say. The room test is the same reading doorDesc makes, so a device
+-- whose description says "exterior" is always one the lock means something on.
+local function doorLocks(door)
+	if door:isExterior() then return true end
+	local here = roomName(door:getSquare())
+	local there = roomName(door:getOppositeSquare())
+	if here == nil and there == nil then return false end
+	return here == nil or there == nil
+end
+
+-- One leaf of a double or a garage door. ToggleDoorSilent moves ONE object, and
+-- vanilla's own toggle walks every leaf of the thing (forEachDoorObject, inside
+-- ToggleDoorActual), so a machine that called Silent on one half would leave the
+-- other half shut. Those are not `door` devices -- they are still `lock` ones,
+-- because setLockedByKey is per-object in vanilla too.
+--
+-- `IsoDoor.getGarageDoorIndex(object) ~= -1` is vanilla's own way of asking
+-- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556, and :315 of
+-- ISDoubleDoor.lua for the double-door one). Both are public statics and both
+-- answer -1 for an object with no DOUBLE_DOOR / GARAGE_DOOR property on it.
+local function isManyDoors(object)
+	if IsoDoor == nil then return false end
+	return IsoDoor.getDoubleDoorIndex(object) ~= -1
+		or IsoDoor.getGarageDoorIndex(object) ~= -1
+end
+
+-- open, closed, or locked -- three words and not four, because locked implies
+-- closed and a survivor reading "locked" has been told both things. `locks` is
+-- whether this door is one the lock means anything on (doorLocks, above): an
+-- interior door with a key in it still opens from either side, so it reads
+-- "closed" and opens.
+--
+-- IsOpen() is the one name both classes answer to (IsoDoor's forwards to its
+-- isOpen(), IsoThumpable's reads its open field).
+local function doorState(object, locks)
+	if object:IsOpen() then return "open" end
+	if locks and object:isLockedByKey() then return "locked" end
+	return "closed"
+end
+
 function CeroSecDevices.classify(object)
 	if object == nil then return nil end
 
 	if instanceof(object, "IsoLightSwitch") then
-		return {
+		return { {
 			kind = "light", side = "",
 			desc = roomName(object:getSquare()) or "exterior",
 			state = object:isActivated() and "on" or "off",
-		}
+		} }
 	end
 
 	if instanceof(object, "IsoDoor") then
-		return {
-			kind = "lock",
-			side = object:getNorth() and "N" or "W",
-			desc = doorDesc(object),
-			state = object:isLockedByKey() and "locked" or "unlocked",
-		}
+		local side = object:getNorth() and "N" or "W"
+		local desc = doorDesc(object)
+		local locks = doorLocks(object)
+		local out = {}
+		if not isManyDoors(object) then
+			out[#out + 1] = { kind = "door", side = side, desc = desc,
+				locks = locks, state = doorState(object, locks) }
+		end
+		if locks then
+			out[#out + 1] = { kind = "lock", side = side, desc = desc,
+				state = object:isLockedByKey() and "locked" or "unlocked" }
+		end
+		return out
 	end
 
 	if instanceof(object, "IsoWindow") then
-		return {
+		return { {
 			kind = "win",
 			side = object:getNorth() and "N" or "W",
 			desc = roomName(object:getSquare()) or "exterior",
 			state = windowState(object),
-		}
+		} }
 	end
 
 	-- Player-built. A base has no building and no rooms, so there is no room id
 	-- to name it with and "built" is the truth about it. Only doors: a
 	-- player-built window frame has no lock this rung.
 	if instanceof(object, "IsoThumpable") and object:isDoor() then
-		return {
-			kind = "lock",
-			side = object:getNorth() and "N" or "W",
-			desc = "built",
-			state = thumpState(object),
-		}
+		local side = object:getNorth() and "N" or "W"
+		local out = {}
+		if not isManyDoors(object) then
+			out[#out + 1] = { kind = "door", side = side, desc = "built",
+				locks = true, state = doorState(object, true) }
+		end
+		out[#out + 1] = { kind = "lock", side = side, desc = "built",
+			state = thumpState(object) }
+		return out
 	end
 
 	return nil
@@ -262,14 +370,19 @@ local function scanSquare(square, found, seen)
 	local x, y, z = square:getX(), square:getY(), square:getZ()
 	for i = 0, objects:size() - 1 do
 		local object = objects:get(i)
-		local entry = CeroSecDevices.classify(object)
-		if entry ~= nil then
+		-- A list, because one object can be two devices: an exterior door is
+		-- what opens AND what locks.
+		local entries = CeroSecDevices.classify(object) or {}
+		for k = 1, #entries do
+			local entry = entries[k]
 			entry.x, entry.y, entry.z = x, y, z
 			entry.object = object
 			-- Where it is, as a string, and that is the key its number hangs
 			-- on. Two devices of one kind facing the same way on one square are
 			-- told apart by an ordinal -- the object index would have done it
-			-- too, and it is not stable across a reload.
+			-- too, and it is not stable across a reload. The kind is in the key,
+			-- so door3 and lock1 on the same door hang on two keys and neither
+			-- number moves when the other kind's numbering changes.
 			local base = entry.kind .. ":" .. x .. ":" .. y .. ":" .. z .. ":" .. entry.side
 			local n = 0
 			while seen[base .. ":" .. n] do n = n + 1 end
@@ -453,6 +566,38 @@ local function alive(entry)
 	return square:getX() == entry.x and square:getY() == entry.y and square:getZ() == entry.z
 end
 
+-- Is the doorway itself in the way? Two halves, and they are not the same kind
+-- of fact.
+--
+-- The first is the game's own: IsoDoor.isObstructed() -> the static
+-- isDoorObstructed(IsoObject), which answers true when the door's square is
+-- isSolid() or isSolidTrans(), when it has an IsoObjectType.tree on it, or when
+-- a vehicle in the chunk isIntersectingSquareWithShadow of it. It is exactly the
+-- test couldBeOpen makes before it will let a survivor through, so a door it
+-- refuses is a door nobody could open by hand either. IsoThumpable has the same
+-- method, forwarding to the same static.
+--
+-- The second is OURS, and is marked as such because vanilla makes no such rule:
+-- ISOpenCloseDoor:complete calls ToggleDoor(character) and nothing anywhere asks
+-- whether somebody is standing in the doorway first. `getMovingObjects():size()`
+-- is the game's own way of asking whether anything is standing on a square
+-- (media/lua/server/BuildingObjects/ISHutch.lua:103,
+-- server/Camping/BuildingObjects/campingCampfire.lua:63 and four more), it is
+-- just never asked about a door. We ask it, because a door swung by a machine is
+-- the one door nobody has a hand on.
+local function standingOn(square)
+	if square == nil then return false end
+	local bodies = square:getMovingObjects()
+	if bodies == nil then return false end
+	return bodies:size() > 0
+end
+
+local function blocked(object)
+	if object:isObstructed() then return true end
+	if standingOn(object:getSquare()) then return true end
+	return standingOn(object:getOppositeSquare())
+end
+
 -- The world action, per kind. ok, reason, state.
 local function act(entry, value)
 	local object = entry.object
@@ -470,6 +615,32 @@ local function act(entry, value)
 		local now = object:isActivated() and "on" or "off"
 		if (now == "on") ~= want then return false, "no power" end
 		return true, nil, now
+	end
+
+	if entry.kind == "door" then
+		local want = value == "open"
+		-- Barricaded first, and by us: ToggleDoorSilent's first two
+		-- instructions are isBarricaded and return, so a machine that did not
+		-- check would swallow the order and report the state it already had.
+		if object:isBarricaded() then return false, "barricaded" end
+		-- The computer is not a key. A locked door is only locked at all when
+		-- the lock means something on it (entry.locks), and the way past it is
+		-- `unlock` on the lock device beside it.
+		if want and entry.locks and object:isLockedByKey() then
+			return false, "locked"
+		end
+		if blocked(object) then return false, "blocked" end
+		-- Silent TOGGLES, so a door already where it is asked to be is left
+		-- alone and nothing is broadcast: two `dev door0 open` in a row are one
+		-- open door, not an open one and a shut one.
+		if object:IsOpen() ~= want then
+			object:ToggleDoorSilent()
+			-- ToggleDoorSilent syncs nothing. syncIsoObject's server branch
+			-- walks GameServer.udpEngine.connections, and both classes'
+			-- syncIsoObjectSend writes the open flag.
+			object:syncIsoObject(false, 0, nil, nil)
+		end
+		return true, nil, doorState(object, entry.locks)
 	end
 
 	if entry.kind == "win" then
