@@ -617,6 +617,24 @@ en observant le jeu réel, pas par un banc de test.
      rien avant Entrée, donc `-n 1` prend le premier caractère de la ligne et
      non la première touche pressée. Noter si ça surprend en jeu. [ ]
 
+160. Au shell, avec `note2.txt` et `notes.txt` dans le dossier, taper `cat no`
+     puis appuyer sur Tab : la ligne doit devenir `cat note` et le curseur bloc
+     se poser juste après le `e`. Confirmer surtout que la touche Tab arrive
+     bien à la fenêtre en jeu -- le jeu ne donne qu'Échap et Tab à une boîte de
+     texte focalisée, et ça n'a jamais été vérifié avec un vrai clavier. [ ]
+161. À l'étape 160, appuyer sur Tab une deuxième fois : les deux noms doivent
+     s'afficher en colonnes sur l'écran, et l'invite avec `cat note` se
+     redessiner juste en dessous. Noter ce qui arrive à cette liste quand on
+     appuie ensuite sur Entrée : elle est dessinée par la fenêtre et non par la
+     machine, donc elle disparaît au prochain écran envoyé par le serveur -- un
+     vrai ksh l'aurait gardée dans le défilement. Dire si ça surprend en jeu. [ ]
+162. Deux joueurs devant le même ordinateur : le premier tape `cat no` et fait
+     Tab deux fois, le second regarde son propre écran. Confirmer qu'aucune
+     ligne de complétion n'apparaît chez le second et que son invite reste
+     intacte -- la complétion est adressée à une seule fenêtre. Puis, sur un
+     dossier où le compte a `x` sans `r` (`chmod 300 secret`), vérifier que Tab
+     n'offre rien du tout et n'affiche aucune erreur. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

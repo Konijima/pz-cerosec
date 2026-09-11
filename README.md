@@ -404,6 +404,26 @@ is two characters. And one word is 1024 bytes (the script engine's ceiling); the
 typing line only takes 240 characters, so nothing typed reaches it and the editor is
 what fills a file to its own 4096.
 
+**Tab completes.** In the first word of a line it offers command names — the files
+in `/bin` the account may run, plus the words the shell itself is (the reserved words
+and the builtins, which have no file at all). Anywhere else it offers paths: relative
+to the cwd, absolute, or under `~`. One match is filled in whole with a trailing
+space, or a trailing `/` when it is a directory; several fill in the longest prefix
+they share and stop, and a second Tab on the same word lists them in columns the way
+`ls` does, with the prompt line drawn again underneath — ksh's answer, and the reason
+the round trip carries the names back and not just the replacement.
+
+Completion goes through the machine like everything else: the window sends
+`complete { line, cursor }` and the server answers `completed { line, at, start,
+replacement, cursor, candidates }`. It is the one client command that changes nothing
+— no echo, no history, no job, and no screen pushed to anybody — and the one answer
+addressed to a single window, because a half-typed word is on nobody else's glass.
+Permissions are the filesystem's, not a filter over the answer: a directory is listed
+only if the account may read it, so completion can never name a file `ls` would not
+show. Hidden entries appear only once the dot is typed, devices under `/dev` complete
+like any other file, and nothing completes at a question, at a password, while a job
+holds the prompt, or in the editor — where Tab is still save.
+
 **History.** Every typed line is appended to `~/.sh_history` — the POSIX/ksh name —
 owner-only at mode 600, in the account's own home. `history` prints the last 60 with
 numbers, `history -c` empties it, `!!` re-runs the last line and `!5` line five (the
@@ -567,6 +587,11 @@ steps it. There used to be a second, simpler path for one-command lines
 it must not come back. A command already split into words still has its own entry
 point, `CeroSecOS.runArgs(state, session, args, redirect, env)`, which is the door
 both a job and `sudo` reach a command through.
+
+`CeroSecOSComplete.lua` is the only other way in, and it is a read:
+`CeroSecOS.complete(state, session, line, cursor)` answers
+`{ replacement, candidates, start }` for the word at the cursor. It moves nothing,
+creates nothing and stamps nothing — it is what Tab asks.
 
 `lines` is text, one array entry per screen line, at most 60 characters. `control`
 is `nil`, `"clear"`, `"exit"`, `"prompt"`, `"edit"`, `"job"`, `"shutdown"`,

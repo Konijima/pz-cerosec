@@ -896,8 +896,8 @@ simply your having left.]],
 one place for the day you need it fast rather than in order.
 
 Escape only closes an idle window; mid-question it prints ^C and hands
-the question back to its start instead. Tab saves in the editor, nothing
-else does. A lit computer cannot be picked up -- turn it off first. The
+the question back to its start instead. Tab saves in the editor and
+completes a word at the prompt, and is the only key that does either. A lit computer cannot be picked up -- turn it off first. The
 screen belongs to the machine, not to you: log out before you leave a
 machine you do not want the next person walking in on. Walking away does
 not clear it -- only clear, exit and power leaving the machine do (see
@@ -1134,6 +1134,25 @@ Output reaches the glass at twenty lines a second, whoever wrote it. A
 long listing scrolls out rather than appearing whole. That is the same
 rule that keeps a runaway script from drowning the screen, and CeroSec
 Systems saw no reason to have two.]],
+
+[[Tab completes what you are typing. In the first word of a line it offers
+commands -- the files in /bin you may run, and the words the shell itself
+is; anywhere else it offers names on the disk, relative to where you
+stand, absolute, or under ~. One match is filled in whole, with a space
+after a file and a slash after a directory so the next name can be typed
+straight on. Several fill in as far as they agree and stop.
+
+  admin@ksp-04-11:~$ cat note
+  note2.txt  notes.txt
+  admin@ksp-04-11:~$ cat note
+
+Press Tab again on the same word and the names are listed in columns, the
+way ls lists them, with your line drawn again underneath -- which is what
+happened above. A name beginning with a dot stays hidden until you type
+the dot, and a directory you may not read offers nothing: completion never
+names a file ls would not show you. Devices in /dev complete like any
+file. Nothing completes at a question, at a password, while a script holds
+the prompt, or in the editor, where Tab is still save.]],
 
 [[Everything you type is written down, in ~/.sh_history, one line per
 line, oldest first. It is yours: mode 600, in your own home, and nobody
