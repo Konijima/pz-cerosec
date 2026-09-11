@@ -76,9 +76,23 @@ _G.ISTimedActionQueue = { isPlayerDoingAction = function() return false end, add
 _G.ISCeroSecTypeAction = { new = function() return {} end }
 _G.ISRestAction = { new = function() return {} end }
 
--- The font. Every character is CHAR_W wide, and MeasureStringX answers on the
--- string it is given -- which is what the game does with the monospaced
--- UIFont.Code (media/fonts/codeMedium.fnt: one xadvance for all 218 glyphs).
+-- The font. UIFont.Code is monospaced -- media/fonts/EN/fonts.txt maps Code to
+-- zomboidCode.fnt, and all 613 of its glyphs declare xadvance=8 -- so the pen
+-- moves CHAR_W per character and nothing here is proportional.
+--
+-- MeasureStringX does NOT answer that, and this bench used to pretend it did.
+-- It hands the string to AngelCodeFont.getWidth(String), which is
+-- getWidth(s, 0, len - 1, false), and that false makes the LAST character of
+-- the string count as its glyph's ink `width` while every other counts as its
+-- `xadvance`. Only the pen that draws (render()) moves by xadvance throughout.
+-- So the answer is short -- or long -- by (xadvance - ink) of whatever
+-- character the string ends on, and that is a different number per character:
+-- in zomboidCode.fnt `a` is width=7, `b` is width=8, `l` is width=6, the space
+-- is width=2, and `M` is width=9 -- a pixel WIDER than the cell it is drawn in.
+-- INK below is those real numbers, and this fake answers the way the game does.
+-- A bench that returned CHAR_W * #s could not see a cursor placed on
+-- MeasureStringX go wrong, which is how the first fix passed and the glass
+-- stayed crooked.
 --
 -- __cellMeasure is the game's answer to a *load time* measurement, when the
 -- font asked for is not built yet and TextManager hands back the default,
@@ -88,12 +102,15 @@ _G.ISRestAction = { new = function() return {} end }
 -- block cursor in the screenshot.
 local CHAR_W = 8
 local FONT_H = 12
+local INK = { M = 9, a = 7, b = 8, l = 6, s = 7, [" "] = 2 }
 _G.__cellMeasure = 12
 _G.getTextManager = function()
 	return {
 		MeasureStringX = function(_, _, s)
-			if s == "M" and _G.__cellMeasure then return _G.__cellMeasure end
-			return CHAR_W * #s
+			if s == nil or s == "" then return 0 end
+			if _G.__cellMeasure then return _G.__cellMeasure * #s end
+			local last = string.sub(s, -1)
+			return CHAR_W * (#s - 1) + (INK[last] or CHAR_W - 1)
 		end,
 		getFontHeight = function() return FONT_H end,
 	}

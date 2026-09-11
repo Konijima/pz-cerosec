@@ -538,26 +538,31 @@ do
 	local W = 8
 	local function measure(s) return W * #s end
 
-	-- Nothing typed: the block sits right after the prompt, on nothing.
-	local x, under = CeroSec.cursorSpan(P, "", 0, measure)
+	-- Nothing typed: the block sits right after the prompt, on nothing, and is
+	-- one cell wide -- the advance of the space it would be sitting on.
+	local x, under, width = CeroSec.cursorSpan(P, "", 0, measure)
 	eq("empty: the block is at the end of the prompt", x, W * #P)
 	eq("empty: and covers nothing", under, nil)
+	eq("empty: and is one cell wide", width, W)
 
 	-- One character, cursor after it: no gap, and still nothing under it.
-	x, under = CeroSec.cursorSpan(P, "a", 1, measure)
+	x, under, width = CeroSec.cursorSpan(P, "a", 1, measure)
 	eq("one char: the block is right after it, no gap", x, W * (#P + 1))
 	eq("one char: and covers nothing", under, nil)
+	eq("one char: and is one cell wide", width, W)
 
 	-- Two, and the same at the end.
-	x, under = CeroSec.cursorSpan(P, "ab", 2, measure)
+	x, under, width = CeroSec.cursorSpan(P, "ab", 2, measure)
 	eq("ab: the block is right after the b", x, W * (#P + 2))
 	eq("ab: and covers nothing", under, nil)
+	eq("ab: and is one cell wide", width, W)
 
 	-- In the middle of what was typed, the block covers the character AT that
 	-- index -- the one the next typed character would push right.
-	x, under = CeroSec.cursorSpan(P, "ab", 1, measure)
+	x, under, width = CeroSec.cursorSpan(P, "ab", 1, measure)
 	eq("mid: the block is on the b", x, W * (#P + 1))
 	eq("mid: and covers the b", under, "b")
+	eq("mid: and is as wide as the b", width, W)
 	x, under = CeroSec.cursorSpan(P, "ab", 0, measure)
 	eq("start: the block is on the a", x, W * #P)
 	eq("start: and covers the a", under, "a")
@@ -587,15 +592,32 @@ do
 	-- is nothing in front of the cursor.
 	eq("nil prompt and nil text", CeroSec.cursorSpan(nil, nil, 0, measure), 0)
 	eq("nothing in front is measured as nothing", CeroSec.cursorSpan("", "ab", 0, nil), 0)
+	local _, _, noWidth = CeroSec.cursorSpan("", "ab", 0, nil)
+	eq("and no font is no width either", noWidth, nil)
 
 	-- The measurement is of the whole string in front of the cursor, in one
 	-- call, and not a count of cells: a font that answers 1 for "M" and 100 for
-	-- "MM" is still placed on what it answers.
-	local seen = nil
-	local bent = function(s) seen = s; return #s * #s end
-	x = CeroSec.cursorSpan("ab", "cd", 1, bent)
-	eq("the font is asked about the text in front of the cursor", seen, "abc")
+	-- "MM" is still placed on what it answers. And the width of the block is a
+	-- SECOND question, asked about the one character under it, so that a
+	-- proportional face -- or a monospaced one asked the wrong way -- cannot
+	-- hand back a block wider than the glyph it covers.
+	local seen = {}
+	local bent = function(s) seen[#seen + 1] = s; return #s * #s end
+	x, under, width = CeroSec.cursorSpan("ab", "cd", 1, bent)
+	eq("the font is asked about the text in front of the cursor", seen[1], "abc")
 	eq("and its answer is the x", x, 9)
+	eq("the block covers the d", under, "d")
+	eq("and the font is asked about that character alone", seen[2], "d")
+	eq("and its answer is the block width", width, 1)
+	eq("nothing else is asked", #seen, 2)
+
+	-- At the end of a line there is no character to ask about, so the block is
+	-- the width of a space -- never a cell width taken somewhere else.
+	seen = {}
+	_, under, width = CeroSec.cursorSpan("", "ab", 2, bent)
+	eq("at the end: nothing is covered", under, nil)
+	eq("at the end: the font is asked about a space", seen[2], " ")
+	eq("at the end: and that is the block width", width, 1)
 end
 
 -- Getting closer counts, even while it is still refused. A file the shell wrote
