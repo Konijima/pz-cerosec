@@ -70,7 +70,14 @@ local chapters = CeroSecManual.chapters
 -- Raised to 15 by rung 5a, which added the Scripts chapter and pushed the two
 -- appendices to 14 and 15. The bounds below moved with it: 15 chapters, 8
 -- pages in any one of them, 90 pages in the book, 1000 characters on a page.
-check("chapter count is 10..15", #chapters >= 10 and #chapters <= 15)
+--
+-- Raised again to 16 by rung 5a.1, which made the prompt the script language
+-- and so owed the book a chapter on the shell you type at -- the history file,
+-- ~/.profile and the ceilings the prompt now shares with a script -- pushing
+-- the appendices to 15 and 16. The page ceiling went to 100 with it: the wave
+-- also added pages to four existing chapters (hidden files, chmod in letters,
+-- what lives in /bin, and the shutdown timer).
+check("chapter count is 10..16", #chapters >= 10 and #chapters <= 16)
 
 local totalPages = 0
 local seenTitles = {}
@@ -139,12 +146,12 @@ check("and the firmware version is one string in one place",
 	type(CeroSec.BIOS_VERSION) == "string" and CeroSec.BIOS_VERSION ~= "")
 
 -- The upper bound is a ceiling on the BOOK, not on any one chapter -- a
--- chapter is 2..8 pages and there are at most 15 of them, so 120 is the most
+-- chapter is 2..8 pages and there are at most 16 of them, so 128 is the most
 -- the shape above can hold at all. Raised from 80 to 90 when the Scripts
--- chapter arrived: the number is there to catch a
--- book that has quietly doubled, and it must leave room for a rung's worth of
--- honest growth or it is only a chore to move.
-check("total pages is 45..90 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 90)
+-- chapter arrived and from 90 to 100 by rung 5a.1: the number is there to
+-- catch a book that has quietly doubled, and it must leave room for a rung's
+-- worth of honest growth or it is only a chore to move.
+check("total pages is 45..100 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 100)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,
@@ -434,7 +441,10 @@ end
 do
 	local state = CeroSecOS.newState("ksp-04-11")
 	local session = { user = "admin", cwd = "/home/admin" }
-	local ok, lines = CeroSecOS.exec(state, session, "df", { now = 0 })
+	-- Straight at the command rather than through the prompt: there is no
+	-- single-line entry point any more (the prompt is the script engine, rung
+	-- 5a.1) and what this bench wants is df's own lines.
+	local ok, lines = CeroSecOS.runArgs(state, session, { "df" }, nil, { now = 0 })
 	check("df ran", ok == true)
 	for i = 1, #lines do
 		check("book's df transcript carries the real line \"" .. lines[i] .. "\"",

@@ -232,6 +232,26 @@ you may not touch, and "no such file" on a path that leads nowhere --
 whichever it is, the machine names the exact path that failed, never a
 general complaint.]],
 
+[[A name that begins with a dot is hidden. ls walks straight past it and
+so does ls -l; nothing else on the machine treats it as different in any
+way -- cat .profile reads it, edit .sh_history opens it, rm takes it away.
+It is the listing that is polite, not the file that is special.
+
+Two flags show them. ls -a is everything, including the two entries every
+directory has -- "." for itself and ".." for the one above it. ls -A is
+everything except those two, which is usually what you wanted.
+
+  admin@ksp-04-11:~$ ls
+  notes.txt
+  admin@ksp-04-11:~$ ls -A
+  .profile  .sh_history  notes.txt
+  admin@ksp-04-11:~$ ls -a
+  .         ..           .profile
+  .sh_history            notes.txt
+
+They combine with the others: -la, -lA and -aF all read as you would
+hope.]],
+
 		} },
 
 		{ title = "4. The editor", pages = {
@@ -371,6 +391,24 @@ names may read it, nobody writes it by hand), and /etc/group,
 /etc/hostname and /etc/motd are 644, world-readable and root-writable,
 the way a name on the door usually is. There is no secret in the group
 file: it says who shares with whom, and anybody may read it.]],
+
+[[chmod also takes the mode in letters, which is what you will actually
+type. A clause is who -- u for the owner, g for the group, o for
+everybody else, a for all three -- then + to add, - to take away, or = to
+set exactly, then any of r, w and x. Commas separate clauses and they are
+applied left to right, to the mode the file is wearing NOW, which is the
+whole difference between chmod u+x and chmod 744.
+
+  admin@ksp-04-11:~$ chmod u+x backup.sh
+  admin@ksp-04-11:~$ chmod go-w notes.txt
+  admin@ksp-04-11:~$ chmod a=r readme
+  admin@ksp-04-11:~$ chmod ug+rw,o-rwx private
+
+Leave the who out and it means all three, so +x is a=x. Saying the same
+letter twice changes nothing -- they are a set, not a sum. a= with nothing
+after it is how you say 000 in letters. u+ and u- are not clauses at all
+and answer "invalid mode", as does anything that is neither three octal
+digits nor this.]],
 
 		} },
 
@@ -565,6 +603,23 @@ A machine gets new commands the same way, quietly, the moment it is next
 turned on after CeroSec Systems ships them -- once, and only the ones it
 was actually missing.]],
 
+[[What is in /bin and what is not. Nearly every word you type is a file
+there, and that is the machine's honesty about itself: rm /bin/sleep does
+take sleep away, and chmod 600 /bin/echo does put echo out of an ordinary
+account's reach. True even of the small ones the shell runs without
+leaving the house -- echo, printf, test, [, true, false and sleep are
+looked up in /bin first and then run inside the shell for speed.
+
+Two kinds of word are not files and could not be. The grammar itself --
+if, then, elif, else, fi, for, while, until, do, done -- was never a
+command. Nor are the words that change the shell: cd, read, shift, break,
+continue and history. exit and help have no file either, on purpose, so
+that somebody in front of a machine he has just wiped can still ask what
+happened and still walk away.
+
+/bin/sh is the shell itself. Delete it and every line you type answers
+"sh: command not found" -- and the BIOS brings it back.]],
+
 		} },
 
 		{ title = "9. The clock, and other small tools", pages = {
@@ -599,8 +654,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1400  31368    5%
-  nodes         256     59    197   24%]],
+  hda         32768   1568  31200    5%
+  nodes         256     66    190   26%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -783,6 +838,32 @@ reboot exactly as before one.
 
   root@ksp-04-11:~# reboot
   (the screen clears, the BIOS plays, login: returns)]],
+
+[[shutdown takes a time, and with one it warns everybody standing at the
+machine first. -h halts and -r reboots; with neither it halts. now, or no
+time at all, is at once. +N is N minutes from now, and the machine says so
+on every screen in front of it the moment you ask, again one minute
+before, and once more as it goes.
+
+  root@ksp-04-11:~# shutdown -r +5
+  The system is going down for reboot in 5 minutes!
+  (four minutes later)
+  The system is going down for reboot in 1 minute!
+  (and then)
+  The system is going down for reboot NOW!
+
+shutdown -c calls it off and prints "shutdown: cancelled". One pending
+order per machine: a second answers "shutdown: already scheduled" rather
+than quietly replacing the first, because nobody should be told two
+different times. halt is shutdown -h now under the older name.]],
+
+[[The timer is the machine's and not your window's: close the window, walk
+away, come back, and it is still counting. It is not on the disk, though,
+and that is worth knowing -- the building losing power, the computer being
+picked up, or the world being saved and loaded again all forget it, and
+the machine simply stays up. A shutdown you meant is one you may have to
+ask for twice after a reload. CeroSec Systems would rather say so than
+have you find out by the machine not going down.]],
 
 [[Closing the window yourself, with Escape or its close box, costs the
 machine nothing at all: the screen is the machine's, and it is exactly
@@ -1000,7 +1081,101 @@ or reloaded comes back running nothing.]],
 
 		} },
 
-		{ title = "14. Appendix: commands and limits", pages = {
+		{ title = "14. The shell you type at", pages = {
+
+[[The prompt speaks the language of chapter 13. Every one of them: &&, ||,
+and ; between commands, if, for, while and until, $(command), $((2+3)),
+single quotes, double quotes, variables, and & to put the line in the
+background. There is not a smaller shell at the prompt and a bigger one
+inside files -- there is one shell, and a line is a one-line script.
+
+  admin@ksp:~$ while true; do echo tick; sleep 1; done &
+  [1] 43
+  admin@ksp:~$ jobs
+  [1] sleeping while true; do echo tick; sleep 1; done &
+  admin@ksp:~$ kill %1
+  [1] killed
+
+Multi-line constructs go on one line, all of it. There is no continuation
+prompt on this machine: a line with an unfinished if or loop in it answers
+"sh: syntax error: missing 'done'" and nothing runs.]],
+
+[[Because a line is a script, the ceilings of chapter 13 are the prompt's
+too. A loop you type with no end to it does not lock the machine: it
+trickles at twenty lines a second like any other job, and five minutes of
+spinning with no wait in it and the machine takes it away. While it runs
+there is no prompt under it -- the line belongs to the job -- and Escape is
+the ^C that ends it.
+
+ps shows the shell you are typing into, because it is a job like the rest;
+jobs does not, because the shell is not one of the things the shell
+started. That is also why the first thing you put in the background is
+[1] 43 and not [1] 42: the shell itself took 42.
+
+Variables you set stay set, across lines and across walking away: they
+belong to the machine, like the screen and the working directory. Logging
+out takes them, the way it takes everything else of the session.]],
+
+[[Two small differences from what a smaller shell would have done, both
+worth knowing once. Double quotes expand what is inside them, so "$x" is
+the variable and '$x' is the two characters -- if you want a literal
+dollar sign, use single quotes. And a word is at most 1024 bytes; the
+typing line only takes 240 characters anyway, so the only thing that ever
+fills a file to its own 4096 is the editor.
+
+Output reaches the glass at twenty lines a second, whoever wrote it. A
+long listing scrolls out rather than appearing whole. That is the same
+rule that keeps a runaway script from drowning the screen, and CeroSec
+Systems saw no reason to have two.]],
+
+[[Everything you type is written down, in ~/.sh_history, one line per
+line, oldest first. It is yours: mode 600, in your own home, and nobody
+else can read it. Answers to questions are not in it -- a password you
+typed at "New password:" was never a command.
+
+  admin@ksp-04-11:~$ history
+      1  ls -l
+      2  cd /etc
+      3  history
+
+history prints the last sixty with their numbers; history -c empties the
+file. !! runs the last line again and !5 runs line five, and what the
+machine echoes back is the line it expanded to, not the !. Up and Down at
+the prompt walk the same file, so a survivor who comes back tomorrow
+presses Up and finds what he typed today.]],
+
+[[The history holds a thousand lines and sixteen kilobytes, whichever
+comes first, and the oldest go over the side. Those sixteen kilobytes do
+not count against the machine's 32K disk -- a shell's memory of itself
+should not be the thing that fills the drive -- so df will not move
+because you typed. ls -l still tells you how big the file really is.
+
+Two honest notes. The numbers history prints are positions in the file as
+it stands, so they shift once the oldest lines start dropping off; a
+bigger machine counts them from the start of the session and never reuses
+one. And ! is only read as an event when it is the whole line: there is no
+quoting rule for it here, so an exclamation mark in the middle of a line
+is an exclamation mark.]],
+
+[[~/.profile runs at login, after the greeting and before the first
+prompt, if the file is there and you may read it. It runs as the shell's
+own job, which is exactly the point: a variable it sets is set at the
+prompt, and a cd it does is where you are standing.
+
+  admin@ksp-04-11:~$ cat .profile
+  greeting=hello
+  cd /var/log
+
+Its mistakes read like a script's -- ".profile: line 2: ..." -- and it
+respects every ceiling a script does. Which brings the quirk: a .profile
+with an endless loop in it leaves you at a busy prompt with nothing to
+type at. It is not a locked machine. Press Escape, which is the ^C, and
+then edit the file. CeroSec Systems mentions it because somebody will
+write that loop, and would rather he knew the way out before he did.]],
+
+		} },
+
+		{ title = "15. Appendix: commands and limits", pages = {
 
 -- The one page with a "]]" inside it -- dev's usage line ends in two closing
 -- brackets -- so it is the one page written with a level-one long bracket.
@@ -1031,34 +1206,55 @@ itself.
   hash <text> [salt]
 ]=],
 
-[[  head [-n N] <file>
+[[  halt
+  head [-n N] <file>
   help
   hostname [name]
   id [name]
   jobs
   kill <id>|%<n>
-  ls [-lF] [path]
+  ls [-laAF] [path]
   man <command>
   mkdir <dir>
   mv <src> <dst>
   passwd [user]
+  printf <format> [arg...]
   ps
   pwd
   reboot
   restart
   rm [-r] <path>...
   sh <file> [args]
-  shutdown
+  shutdown [-h|-r] [now|+N] | shutdown -c
+  sleep <seconds>
   su [name]
   sudo <command> [args]
-  tail [-n N] <file>
+
+(continued)]],
+
+[[  tail [-n N] <file>
+  test <expression>
+  [ <expression> ]
   touch <file>
+  true
+  false
   wait [id]...
   wc <file>...
   whoami
   write <file> <text>
 
-exit and help alone run with no file behind them in /bin at all.]],
+And the words that are not files in /bin at all, because they are the
+shell itself (chapter 8). The grammar:
+
+  if then elif else fi for while until do done
+
+The ones that change the shell, and so could never be a separate
+program:
+
+  cd read shift break continue history exit
+
+help prints those two lists under the table above. exit and help are the
+two the machine keeps working when /bin is gone.]],
 
 [[Limits, all of them fixed by the machine and none of them a setting:
 the disk holds 32K across at most 256 files and directories, 64 entries
@@ -1077,7 +1273,7 @@ stops on rather than a number it quietly rounds. Sixty-four variables at
 once, and one word -- the whole of NAME=value, not just the value -- at
 1024 bytes. Sixteen levels of if and loop nesting, and a script that runs
 another with sh goes eight deep before it is refused. Four jobs at once on
-one machine, one of them in front of the prompt. Twenty lines a second
+one machine, and the shell you are typing into is not one of the four. Twenty lines a second
 reach the screen, and a job that has written more waits until they have.
 Five minutes of spinning with no wait in it and the machine takes the job
 away. Jobs are never written to disk: switching off, rebooting, picking the
@@ -1089,8 +1285,9 @@ machine's own file limit is the same 4096 bytes as any other file --
 whichever is hit first is the one that answers. The screen itself is
 sixty columns by twenty rows, and its history holds the last hundred
 lines written to it, oldest dropped first, across a save and a reload.
-Command history at the shell holds the last twenty lines typed, oldest
-dropped the same way.]],
+Command history is not the window's at all any more: it is
+~/.sh_history on the machine's own disk, a thousand lines and sixteen
+kilobytes, exempt from the 32K and capped on its own (chapter 14).]],
 
 [[Device words, for /dev (chapter 10): an id like light0 or lock1 names
 the file itself; light answers on and off; lock and win answer lock
@@ -1107,7 +1304,7 @@ cp and edit do not.]],
 
 		} },
 
-		{ title = "15. Appendix: what the machine says", pages = {
+		{ title = "16. Appendix: what the machine says", pages = {
 
 [[Every command signs its own errors with its own name first, then the
 path or word that failed, then the reason -- always in that order, and
@@ -1217,24 +1414,33 @@ one below is dev's own, and is signed the way a command signs:
   <cmd>: <flag>: unknown option
       ls, rm, cp, grep, adduser, deluser: a flag not theirs
   chmod: <mode>: invalid mode
-      not exactly three octal digits
+      neither three octal digits nor a clause in letters
   man: <name>: no manual entry
       no file of that name in /bin, or not a plain file]],
 
-[[A script signs its errors with its own name and the line it was on:
-<script>: line <n>: <reason>. The parser's reasons come first, and a file
-that meets one never runs at all:
+[[shutdown's own four, three about the timer (chapter 11):
+
+  shutdown: already scheduled
+      one pending order per machine, never two times
+  shutdown: no shutdown scheduled
+      -c with nothing to call off
+  shutdown: cancelled
+      not an error: what -c prints when it worked
+  shutdown: no clock
+      a +N with no clock to count it from
+
+A script signs its errors with its own name and its line: <script>: line
+<n>: <reason>. The parser's come first, and a file that meets one never
+runs:
 
   syntax error: unexpected 'fi'
-      a word that closes a construct, where a command
-      should be; also 'done', 'then', 'else', 'elif',
-      'do', '|' and '<'
+      a closing word where a command should be; also
+      'done', 'then', 'else', 'elif', 'do', '|', '<'
   syntax error: missing 'done'
-      the construct was never closed; also 'fi',
-      'then' and 'do'
+      never closed; also 'fi', 'then' and 'do'
   syntax error: bad substitution
-      a $( ) inside a $( ), an unclosed ${ or $(( , or
-      a name between braces that is not one
+      a $( ) in a $( ), an unclosed ${ or $(( , or a
+      name between braces that is not one
   syntax error: not a name
       for wants a variable name after it
   too deeply nested
@@ -1264,26 +1470,26 @@ script, because they are not a script's to say:
   sh: too many jobs
   kill: <id>: no such job
   killed
-      Escape, or kill, on the job at the prompt
   killed: cpu limit
-      five minutes of spinning with no wait in it
+      Escape or kill; then five minutes of spinning
   [1] 42 -- [1] done -- [1] exit 3 -- [1] killed
-      a background job starting, ending, failing, taken away
+      a job starting, ending, failing, taken away
 
-Running a path that is not yours answers in the file's own name and not
-sh's: "./backup.sh: permission denied".]],
+Running a path that is not yours answers in the file's own name:
+"./backup.sh: permission denied".]],
 
 [[  date: no clock
       no clock at all was handed to this machine, chapter 9
 
-Two you will only ever see with an empty /bin behind them:
+A line you TYPED has no line number -- it is line one of nothing -- so the
+shell's refusals wear its name and no number. Past the first level it is
+in a file again (sh backup.sh) and that file's name and line come back.
 
-  help: no commands in /bin: the system is damaged.
-  help: switch the computer off and on to repair it.
-
-Three come from the line itself, before any command ever runs, and name
-no command at all:
-
+  sh: <reason>
+      any reason above, on a line you typed
+  sh: !<n>: event not found
+      !5 or !! naming nothing in ~/.sh_history, chapter 14
+  history: usage: history [-c]
   syntax error: bad redirect
       a second > or >> on one line
   syntax error: unterminated quote
@@ -1291,10 +1497,13 @@ no command at all:
   syntax error: missing redirect target
       a > or >> with no file named after it
 
-And one that names nothing at all, because it was never one of yours to
-begin with -- an answer arriving for a question the machine is no longer
-asking, which only ever happens to a stray or forged line and should
-never turn up in ordinary use:
+Two only ever seen with an empty /bin behind them:
+
+  help: no commands in /bin: the system is damaged.
+  help: switch the computer off and on to repair it.
+
+And one that names nothing, because it was never yours -- an answer for a
+question the machine no longer asks:
 
   cerosec: nothing to answer]],
 
