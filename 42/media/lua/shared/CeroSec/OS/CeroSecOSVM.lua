@@ -98,10 +98,6 @@ CeroSecOS.JOB_OUT_MAX = 40
 -- where it is and not by this number alone.
 CeroSecOS.STEP_COST_COMMAND = 32
 
--- Lines one $(...) may capture. Its output never reaches a screen, so nothing
--- else bounds it.
-CeroSecOS.CAPTURE_MAX = 100
-
 -- What one pipe may hold between two stages. A pipe on a real machine is a
 -- buffer in the kernel and is bounded there too -- 4096 bytes on the Unix these
 -- machines are from -- and what happens when it is full is not an error, it is
@@ -111,8 +107,9 @@ CeroSecOS.CAPTURE_MAX = 100
 -- as a job that has filled the screen does not run again until it has drained.
 --
 -- Lines as well as bytes, because this machine counts output in lines
--- everywhere else and a hundred of them is what the screen limiter and a
--- capture are already bounded by.
+-- everywhere else and a hundred of them is what the screen limiter is already
+-- bounded by. A capture is NOT: what it hands back is a word, so bytes are the
+-- only ceiling it has (see outLine).
 CeroSecOS.PIPE_LINES = 100
 CeroSecOS.PIPE_BYTES = 4096
 
@@ -209,16 +206,22 @@ end
 local function outLine(job, text)
 	local caps = job.caps
 	if capturing(job) then
+		-- One ceiling, and it is the WORD's: what a capture hands back is
+		-- substituted into the line being built, so bytes are the only thing that
+		-- can be too many of. There was a hundred-LINE cap here as well, and the
+		-- two did not agree with each other -- a capture past the bytes REFUSES
+		-- with "word too large", a capture past the lines was silently cut short
+		-- and handed back as if it were whole, which is the one answer a shell
+		-- must never give. So `x=$(cat 150-short-lines)` is whole while it fits a
+		-- word, and says so when it does not.
 		local buf = caps[#caps]
-		if #buf < CeroSecOS.CAPTURE_MAX then
-			if captureBytes(job, text) > CeroSecOS.MAX_VAR_BYTES then
-				captureTooLarge(job)
-				return
-			end
-			if #buf > 0 then buf.bytes = (buf.bytes or 0) + 1 end
-			buf.bytes = (buf.bytes or 0) + #text
-			buf[#buf + 1] = text
+		if captureBytes(job, text) > CeroSecOS.MAX_VAR_BYTES then
+			captureTooLarge(job)
+			return
 		end
+		if #buf > 0 then buf.bytes = (buf.bytes or 0) + 1 end
+		buf.bytes = (buf.bytes or 0) + #text
+		buf[#buf + 1] = text
 		return
 	end
 	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:

@@ -1087,6 +1087,7 @@ is typed.
 
   today=$(date +%Y-%m-%d)
 
+
 A script is handed the words typed after it. $1 to $9 are those words, $#
 is how many there are, $@ is all of them, and shift throws the first away
 and moves the rest down. Three more are the machine's own: $? is the status
@@ -1580,7 +1581,9 @@ letters, six by default.]],
 [[A script has ceilings of its own, and every one of them is a line it
 stops on rather than a number it quietly rounds. Sixty-four variables at
 once, and one word -- the whole of NAME=value, not just the value -- at
-1024 bytes. Sixteen levels of if and loop nesting, and a script that runs
+1024 bytes. What $( ) catches is that word too, however many lines it
+caught: whole under the ceiling, "word too large" over it, never quietly
+shortened. Sixteen levels of if and loop nesting, and a script that runs
 another with sh goes eight deep before it is refused. Four jobs at once on
 one machine, and the shell you are typing into is not one of the four. Twenty lines a second
 reach the screen, and a job that has written more waits until they have.

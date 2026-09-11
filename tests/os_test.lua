@@ -5426,6 +5426,39 @@ do
 	local pair = runScript(state, admin, "y=$(printf '%s\\n%s' one two)\necho done")
 	eq("a two-line capture is joined by one space", pair.job.vars.y, "one two")
 
+	-- A capture is bounded by the BYTES and by nothing else. There was a
+	-- hundred-line ceiling here as well and the two did not agree: a capture past
+	-- the bytes refuses with "word too large", a capture past the lines was cut
+	-- short in silence and handed back as though it were whole -- so 150 short
+	-- lines came back as a hundred of them and no script could tell. One rule now,
+	-- and it is the word's.
+	local rows = {}
+	for i = 1, 150 do rows[#rows + 1] = "r" .. i end
+	put(state, admin, "/home/admin/rows", table.concat(rows, "\n"))
+	check("150 short lines still fit a word",
+		#table.concat(rows, " ") <= CeroSecOS.MAX_VAR_BYTES - 2)
+	local lots = runScript(state, admin, "y=$(cat /home/admin/rows)\necho done")
+	eq("a 150-line capture comes back whole", lots.job.vars.y, table.concat(rows, " "))
+	eq("and the script ran on", lots.out[1], "done")
+
+	-- And 150 lines that do NOT fit a word are refused, which is the answer a
+	-- capture that is too big has always given.
+	local wide = {}
+	for i = 1, 150 do wide[#wide + 1] = string.rep("w", 10) end
+	put(state, admin, "/home/admin/wide", table.concat(wide, "\n"))
+	local over150 = runScript(state, admin, "y=$(cat /home/admin/wide)\necho done")
+	eq("a capture past the kilobyte is refused", over150.out[1],
+		"bench.sh: line 1: word too large")
+	eq("the script stopped there", over150.job.state, "error")
+	eq("and nothing was held", over150.job.vars.y, nil)
+	-- Not the LINE COUNT: the capture is dropped before the error is raised, so
+	-- the rest of the lines the one command had already handed over go on to the
+	-- screen behind it. That is the error path as it stands and was so before this
+	-- ceiling changed -- it is reached by any capture that passes the kilobyte in
+	-- the middle of a command's output -- and it is not what this bench is about.
+	check("the line after it never ran",
+		over150.out[#over150.out] ~= "done")
+
 	-- Variables and arithmetic.
 	prints(state, admin, "x=3\ny=$((x * 2 + 1))\necho ${y}", { "7" })
 	prints(state, admin, "echo $((7 / 2)) $((-7 / 2)) $((7 % 3)) $((2 * (3 + 4)))",
