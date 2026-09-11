@@ -345,6 +345,16 @@ do
 	ok(state, admin, 'echo "a \\"q\\" b"', { 'a "q" b' })
 	ok(state, admin, 'echo "a\\nb"', { "a", "b" })
 	ok(state, admin, "cat /etc/motd", { CeroSecOS.MOTD })
+	-- An empty or missing motd greets nobody: the built-in line only seeds a
+	-- fresh disk, it never speaks for a file root emptied on purpose.
+	do
+		local quiet = CeroSecOS.newState("quiet")
+		eq("motd lines from the shipped file", #CeroSecOS.motdLines(quiet), 1)
+		CeroSecOS.systemNode(quiet, "/etc/motd").data = ""
+		eq("empty motd prints nothing", #CeroSecOS.motdLines(quiet), 0)
+		quiet.fs.children.etc.children.motd = nil
+		eq("missing motd prints nothing", #CeroSecOS.motdLines(quiet), 0)
+	end
 	ok(state, admin, "cat /etc/hostname", { "ksp-front-01" })
 
 	local helpLines = ok(state, admin, "help", nil)
