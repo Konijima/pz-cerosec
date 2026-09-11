@@ -449,6 +449,40 @@ do
 end
 
 --
+-- 6d. The same flood written into a $(...) instead of onto a screen.
+--
+-- The wrap above deliberately does not reach a capture -- folding one would push
+-- spaces into the middle of the captured value -- so for as long as that was the
+-- whole story, this was the newline-less flood one door along: thirty-three
+-- kilobytes held, nothing on the screen, no limiter touched. What bounds it here
+-- is the capture's own ceiling, in BYTES, counting what is held as well as what
+-- has been caught, and a capture that passes it fails its command the way any
+-- oversized word does.
+--
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/cap.sh", "y=$(while true; do printf %s x; done)\n")
+	local job = typeLine(system, machine, state, console, "sh cap.sh")
+	local worstHeld = 0
+	drive(machine, PASSES, nil, function()
+		local held = #(job.partial or "")
+		if held > worstHeld then worstHeld = held end
+		check("a captured flood never holds more than a word (" .. held .. ")",
+			held <= CeroSecOS.MAX_VAR_BYTES)
+	end)
+	eq("the capture was stopped", job.state, "error")
+	eq("with the word's own reason", console.lines[#console.lines],
+		"cap.sh: line 1: word too large")
+	eq("and nothing of it is still held", job.partial, "")
+	check("it never became a variable", job.vars.y == nil)
+	check("and it was stopped early, not left to the cpu ceiling (" .. job.steps ..
+		" steps)", job.steps < 50000)
+	report[#report + 1] = string.format("  %-22s held at most %d bytes, %d steps",
+		"captured flood", worstHeld, job.steps)
+end
+
+--
 -- 7. A hundred background jobs, asked for as fast as a loop can ask.
 --
 

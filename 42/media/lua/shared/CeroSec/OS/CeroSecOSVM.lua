@@ -129,17 +129,57 @@ end
 --
 
 -- Is what this job writes being caught by a $(...) instead of going to the
--- screen? The one test, asked in the two places that must agree about it.
+-- screen? The one test, asked in the three places that must agree about it.
 local function capturing(job)
 	local caps = job.caps
 	return caps ~= nil and #caps > 0
+end
+
+-- Stopping the job is what a capture does when it catches too much, and the
+-- error is raised from inside the writing. Declared here, written below with
+-- the rest of the job's ending.
+local jobError
+
+-- How big the open capture has become: the value it would hand back if it
+-- closed now, which is its lines joined by one separator, plus whatever is held
+-- part way through a line. Kept as a running total on the buffer rather than
+-- measured, because it is asked on every write a captured job makes.
+local function captureBytes(job, extra)
+	local buf = job.caps[#job.caps]
+	local bytes = buf.bytes or 0
+	if #buf > 0 then bytes = bytes + 1 end
+	return bytes + #(extra or "")
+end
+
+-- A $(...) that caught more than a word may hold. The ceiling is the WORD's
+-- own: what a capture hands back is substituted into the line being built and
+-- can never become anything else, so it meets MAX_VAR_BYTES one way or the
+-- other -- and it has to meet it here, at the write, because a capture whose
+-- program never ends never reaches the substitution to be measured there.
+--
+-- The captures are dropped BEFORE the error is raised. outLine sends a line to
+-- the innermost open capture, so an error about a capture, raised while that
+-- capture is still open, would go into it: a job that died in silence with a
+-- blank screen.
+local function captureTooLarge(job)
+	job.caps = {}
+	job.partial = ""
+	jobError(job, "word too large")
 end
 
 local function outLine(job, text)
 	local caps = job.caps
 	if capturing(job) then
 		local buf = caps[#caps]
-		if #buf < CeroSecOS.CAPTURE_MAX then buf[#buf + 1] = text end
+		if #buf < CeroSecOS.CAPTURE_MAX then
+			if captureBytes(job, text) > CeroSecOS.MAX_VAR_BYTES then
+				captureTooLarge(job)
+				return
+			end
+			if #buf > 0 then buf.bytes = (buf.bytes or 0) + 1 end
+			buf.bytes = (buf.bytes or 0) + #text
+			buf[#buf + 1] = text
+		end
 		return
 	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
@@ -164,9 +204,17 @@ end
 -- Only on the way to the screen. Inside a $(...) the text is not going to a
 -- screen and must not be folded as if it were: the capture joins its lines with
 -- a space, so a wrap there would push spaces into the middle of the captured
--- value. A capture is bounded by its own ceilings instead.
+-- value. What bounds it there is the capture's byte ceiling, measured on what
+-- is held as well as on what has been caught -- the same flood written into a
+-- substitution instead of onto a screen must meet a ceiling of its own, or it
+-- is the same unbounded string one door along.
 local function wrapPartial(job)
-	if capturing(job) then return end
+	if capturing(job) then
+		if captureBytes(job, job.partial) > CeroSecOS.MAX_VAR_BYTES then
+			captureTooLarge(job)
+		end
+		return
+	end
 	while #job.partial >= CeroSecOS.COLS do
 		outLine(job, string.sub(job.partial, 1, CeroSecOS.COLS))
 		job.partial = string.sub(job.partial, CeroSecOS.COLS + 1)
@@ -278,7 +326,7 @@ end
 
 -- A script that went wrong: the file, the line, the reason. The job stops
 -- where it stands, with status 2, the way a shell stops on a fatal error.
-local function jobError(job, reason)
+function jobError(job, reason)
 	flushPartial(job)
 	outLine(job, CeroSecOS.scriptError(job.name, reason, job.line))
 	job.status = 2

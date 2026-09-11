@@ -4922,6 +4922,44 @@ do
 	local caught = runScript(state, admin, "x=$(printf %s " .. wide .. ")\necho done")
 	eq("a 130-character capture is byte-exact", caught.job.vars.x, wide)
 
+	-- What a capture may hold, in bytes. A captured value is substituted into
+	-- the line being built and can never become anything but a word, so the
+	-- ceiling is the word's own and so is the message. A thousand bytes fit and
+	-- come back exactly as they went in.
+	local thousand = string.rep("y", 1000)
+	local big = runScript(state, admin, "x=$(printf %s " .. thousand .. ")\necho done")
+	eq("a 1000-byte capture is byte-exact", big.job.vars.x, thousand)
+	eq("and its length is what was written", #(big.job.vars.x or ""), 1000)
+	-- And a capture whose program never ends is stopped at that ceiling rather
+	-- than growing for as long as the cpu ceiling allows. It is stopped AT THE
+	-- WRITE: this program never reaches the substitution where a word is
+	-- measured, because the loop inside it never finishes.
+	local over = runScript(state, admin,
+		"y=$(while true; do printf %s " .. string.rep("z", 100) .. "; done)\necho done")
+	eq("a capture that never ends is stopped", over.job.state, "error")
+	eq("with the word's own reason, on the screen", over.out[1],
+		"bench.sh: line 1: word too large")
+	eq("and nothing of it is held", over.job.partial, "")
+	eq("and the line after it never ran", #over.out, 1)
+
+	-- A capture that DOES end is still measured where it always was: as part of
+	-- the word it is substituted into, with the `y=` counted in it, so an
+	-- assignment takes 1022 bytes of capture and not 1024. The ceiling at the
+	-- write is a second door on the same room and must not have moved this one
+	-- -- it is only ever reached by a capture that never arrives here at all.
+	eq("1022 bytes of capture into an assignment still fits",
+		#(runScript(state, admin, "y=$(printf %s " .. string.rep("c", 1022) ..
+			")\necho done").job.vars.y or ""), 1022)
+	eq("and 1023 is still the word's own refusal",
+		runScript(state, admin, "y=$(printf %s " .. string.rep("c", 1023) ..
+			")\necho done").out[1], "bench.sh: line 1: word too large")
+
+	-- Two lines, to prove the separator is counted: what a capture hands back is
+	-- its lines joined by one space, and that space is a byte of the value like
+	-- any other.
+	local pair = runScript(state, admin, "y=$(printf '%s\\n%s' one two)\necho done")
+	eq("a two-line capture is joined by one space", pair.job.vars.y, "one two")
+
 	-- Variables and arithmetic.
 	prints(state, admin, "x=3\ny=$((x * 2 + 1))\necho ${y}", { "7" })
 	prints(state, admin, "echo $((7 / 2)) $((-7 / 2)) $((7 % 3)) $((2 * (3 + 4)))",

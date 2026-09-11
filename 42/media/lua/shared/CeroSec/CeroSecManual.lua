@@ -1248,7 +1248,7 @@ script, because they are not a script's to say:
       a sixty-fifth name
   variable too large
   word too large
-      past 1024 bytes into one, or built past it
+      past 1024 bytes: written, built, or caught
   ambiguous redirect
       the name after > became two words, or none
   divide by zero
