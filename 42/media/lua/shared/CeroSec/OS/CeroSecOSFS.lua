@@ -167,6 +167,25 @@ function CeroSecOS.usage(state)
 	return CeroSecOS.subtreeUsage(state.fs)
 end
 
+-- The bytes the disk quota does NOT count: the flagged files (~/.sh_history).
+-- Asked at the write that makes one, because the exemption has to be bounded
+-- where it is granted and not only where the state is validated -- a file that
+-- carries the flag keeps it across a rename, so an account that moves its
+-- history aside and lets a new one grow could otherwise stack them up until
+-- validate refused the machine on the next load.
+function CeroSecOS.exemptUsage(node)
+	if type(node) ~= "table" or node.type == "dev" then return 0 end
+	if node.type == "file" then
+		if node.nq then return #(node.data or "") end
+		return 0
+	end
+	if node.children == nil then return 0 end
+	local bytes = 0
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do bytes = bytes + CeroSecOS.exemptUsage(node.children[names[i]]) end
+	return bytes
+end
+
 -- Does any file in this subtree carry a byte that must never be stored? Whole
 -- trees arrive at createNode (a copy today, a network transfer at a later
 -- rung), so the check cannot stop at the node itself.

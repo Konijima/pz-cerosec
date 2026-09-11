@@ -126,6 +126,18 @@ function CeroSecOS.historyAppend(state, session, line, now)
 	if node.type ~= "file" then return false end
 	if not CeroSecOS.can(state, session, node, "w") then return false end
 
+	-- The exemption has a machine-wide ceiling and this is where it is paid.
+	-- What the other exempt files already hold plus what this one is about to
+	-- hold has to fit, or the line is dropped: an account that moves its
+	-- history aside and lets a new one grow must not be able to stack up
+	-- exemptions until the state itself is refused on the next load.
+	local others = CeroSecOS.exemptUsage(state.fs)
+	if node.nq then others = others - #(node.data or "") end
+	-- What this one may GROW to, not what it holds now: the ceiling has to be
+	-- one nothing can creep past a line at a time. Four histories' worth, which
+	-- is what MAX_EXEMPT_BYTES is (four times HISTORY_BYTES).
+	if others + CeroSecOS.HISTORY_BYTES > CeroSecOS.MAX_EXEMPT_BYTES then return false end
+
 	local lines = CeroSecOS.splitLines(node.data or "")
 	lines[#lines + 1] = line
 	historyPut(node, lines)

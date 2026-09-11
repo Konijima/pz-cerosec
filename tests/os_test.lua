@@ -1818,6 +1818,12 @@ do
 	-- enforces: a repair that kept five would be a machine the core cannot get
 	-- out of, and one that kept three would drop a session somebody was in.
 	eq("the su stack is as deep on both sides", CeroSec.SU_MAX, CeroSecOS.SU_MAX)
+	-- And the tail of the history the window walks with Up and Down. The window
+	-- holds a COPY of what the server sends, so a copy shorter than the tail
+	-- would throw lines away and one longer would keep lines the machine has
+	-- forgotten.
+	eq("the history tail is the same length on both sides",
+		CeroSec.HISTORY_MAX, CeroSecOS.HISTORY_TAIL)
 end
 
 --
@@ -5772,6 +5778,50 @@ do
 	eq("and goes in his own home", #CeroSecOS.historyLines(state, bobs), 1)
 	badAt(state, bobs, "cat /home/admin/" .. CeroSecOS.HISTORY_NAME,
 		"cat: /home/admin/" .. CeroSecOS.HISTORY_NAME .. ": permission denied", env)
+end
+
+-- 34a. The quota exemption is bounded where it is GRANTED
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- The exemption is bounded at the WRITE and not only at validate. The flag
+	-- travels with a rename, so an account that moves its history aside and lets
+	-- a new one grow could otherwise stack exemptions up until the machine would
+	-- not boot. Four histories' worth is the ceiling, and the fifth is refused.
+	-- Fill one to its own ceiling, move it aside, fill the next. Eight times,
+	-- which is twice what the machine may hold.
+	local function fill()
+		local grew = false
+		for _ = 1, 1200 do
+			if CeroSecOS.historyAppend(state, admin, "echo padding line here", FIXED) then
+				grew = true
+			end
+		end
+		return grew
+	end
+	check("the first history fills", fill())
+	local grown, refused = 1, 0
+	for i = 1, 8 do
+		local moved = CeroSecOS.moveNode(state, admin,
+			"/home/admin/" .. CeroSecOS.HISTORY_NAME, "/home/admin/old" .. i, nil)
+		check("moving a history aside is an ordinary rename", moved == true)
+		if fill() then grown = grown + 1 else refused = refused + 1 end
+	end
+	-- The proof it was the CEILING that stopped it and not the bench running out
+	-- of turns: some of the nine grew and some were refused.
+	check("more than one history was filled (" .. grown .. ")", grown > 1)
+	check("and the rest were refused (" .. refused .. ")", refused > 0)
+	check("the exempt bytes stayed inside their ceiling (" ..
+		CeroSecOS.exemptUsage(state.fs) .. " of " .. CeroSecOS.MAX_EXEMPT_BYTES .. ")",
+		CeroSecOS.exemptUsage(state.fs) <= CeroSecOS.MAX_EXEMPT_BYTES)
+	check("and got close enough to it to prove it was reached (" ..
+		CeroSecOS.exemptUsage(state.fs) .. ")",
+		CeroSecOS.exemptUsage(state.fs) > CeroSecOS.MAX_EXEMPT_BYTES - CeroSecOS.HISTORY_BYTES)
+	check("and the machine still boots after all of that",
+		CeroSecOS.validate(state) == true)
+	eq("the ceiling is four histories", CeroSecOS.MAX_EXEMPT_BYTES,
+		4 * CeroSecOS.HISTORY_BYTES)
+
 end
 
 --

@@ -1037,8 +1037,11 @@ flag on the node (`nq`) set by `CeroSecOS.historyAppend` and by nothing else;
 `CeroSecOS.subtreeUsage` skips its bytes, so `df` does not move because somebody
 typed, and `CeroSecOS.validate` is where the exemption is paid for — an exempt file
 is capped at `CeroSecOS.HISTORY_BYTES` (16 KB) and the exempt bytes of a whole
-machine at `CeroSecOS.MAX_EXEMPT_BYTES`, so a forged blob cannot hand back a hundred
-of them and call it a disk. `cp` of one is an ordinary copy and meets the ordinary
+machine at `CeroSecOS.MAX_EXEMPT_BYTES` (four histories' worth). That second
+ceiling is also enforced at the **write**, in `historyAppend`, and not only at
+validate: the flag travels with a rename, so an account that moved its history
+aside and let a new one grow could otherwise stack exemptions up until the state
+itself was refused on the next load and the machine would not boot. `cp` of one is an ordinary copy and meets the ordinary
 4096-byte ceiling. Homes are never touched by `restoreSystem`, so the BIOS repair
 never takes a history or a `~/.profile` away.
 

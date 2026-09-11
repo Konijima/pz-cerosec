@@ -259,6 +259,9 @@ end
 -- What "y" at the BIOS prompt does. It puts the system files back and touches
 -- nothing else: /home, /root, /dev and anything a player made are not the
 -- BIOS's business, and a machine repaired here keeps every file that was on it.
+-- The homes explicitly included: an account's ~/.sh_history and its ~/.profile
+-- are its own work, and a repair that swept them away would be a repair that
+-- cost the player the thing he would least expect to lose.
 --
 -- Idempotent by construction: running it on a healthy machine rewrites the
 -- executables to the very same contents and leaves everything else alone.
