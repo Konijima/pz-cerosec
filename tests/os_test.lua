@@ -5406,4 +5406,58 @@ do
 end
 
 
+
+--
+-- 32. chmod, in letters
+--
+-- The grammar chmod has had since the seventies, applied to the mode the file
+-- already wears: the arithmetic is what a player should not have to do.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "write notes.txt hello", {})
+	local node = state.fs.children.home.children.admin.children["notes.txt"]
+
+	-- The three digits are taken apart and put back together, so a letter
+	-- already there is not added to itself.
+	eq("a fresh file is 644", node.mode, 644)
+	ok(state, admin, "chmod u+x notes.txt", {})
+	eq("u+x lights the owner's x alone", node.mode, 744)
+	ok(state, admin, "chmod u+x notes.txt", {})
+	eq("and saying it twice changes nothing", node.mode, 744)
+	ok(state, admin, "chmod go-r notes.txt", {})
+	eq("go-r puts both out", node.mode, 700)
+	ok(state, admin, "chmod a=r notes.txt", {})
+	eq("a=r is the whole mode, replaced", node.mode, 444)
+	ok(state, admin, "chmod ug+rw,o-rwx notes.txt", {})
+	eq("two clauses, left to right", node.mode, 660)
+	ok(state, admin, "chmod +x notes.txt", {})
+	eq("no target letter is all three", node.mode, 771)
+	ok(state, admin, "chmod a= notes.txt", {})
+	eq("and = with nothing after it is the way to say 000", node.mode, 0)
+
+	-- The grammar, judged before the path: a typo in the mode is what the
+	-- player got wrong.
+	bad(state, admin, "chmod u+ notes.txt", "chmod: u+: invalid mode")
+	bad(state, admin, "chmod u+q notes.txt", "chmod: u+q: invalid mode")
+	bad(state, admin, "chmod rwx notes.txt", "chmod: rwx: invalid mode")
+	bad(state, admin, "chmod zz+x /nowhere", "chmod: zz+x: invalid mode")
+	bad(state, admin, "chmod u+x,,g+x notes.txt", "chmod: u+x,,g+x: invalid mode")
+
+	-- The engine's own arithmetic, asked without a shell around it.
+	eq("applyModeSpec on 000", CeroSecOS.applyModeSpec(0, "a+rwx"), 777)
+	eq("applyModeSpec on 777", CeroSecOS.applyModeSpec(777, "go-w"), 755)
+	eq("applyModeSpec keeps the set a set", CeroSecOS.applyModeSpec(0, "u+rr"), 400)
+	eq("applyModeSpec refuses an empty spec", CeroSecOS.applyModeSpec(644, ""), nil)
+	eq("applyModeSpec refuses a bad mode", CeroSecOS.applyModeSpec(999, "u+x"), nil)
+
+	-- Ownership is the same rule it has always been.
+	local rootSession = CeroSecOS.rootSession()
+	ok(state, rootSession, "chmod 644 /etc/motd", {})
+	bad(state, admin, "chmod u+x /etc/motd", "chmod: /etc/motd: permission denied")
+end
+
+
 print("os_test: " .. count .. " assertions passed")

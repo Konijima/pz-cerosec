@@ -135,6 +135,116 @@ local function parseMode(s)
 	return tonumber(s)
 end
 
+--
+-- Symbolic modes
+--
+-- The other half of chmod's grammar, and the half a person actually types:
+-- `u+x` rather than working out that 640 has to become 740. One clause is
+-- [ugoa]* then one of + - =, then the letters rwx; clauses are separated by
+-- commas and applied left to right to the mode the file ALREADY wears, which
+-- is what makes `chmod u+x` different from `chmod 744`.
+--
+-- No target letter means all three, the way chmod has read a bare `+x` since
+-- the seventies. The letters are a SET and not a sum -- `u+rr` is r and not
+-- eight -- so each digit is taken apart into its three bits and put back
+-- together, and nothing here adds an octal digit to itself.
+--
+-- `=` with no letter after it is the one clause that may be empty: `a=` takes
+-- everything away, which is the only way to say 000 in this grammar. `u+` and
+-- `u-` are not clauses and are an invalid mode.
+--
+
+-- One octal digit -> its three bits.
+local function digitBits(d)
+	local r = d >= 4
+	if r then d = d - 4 end
+	local w = d >= 2
+	if w then d = d - 2 end
+	return r, w, d >= 1
+end
+
+local function bitsDigit(r, w, x)
+	local d = 0
+	if r then d = d + 4 end
+	if w then d = d + 2 end
+	if x then d = d + 1 end
+	return d
+end
+
+-- One clause, applied to the three digits in place. false when it is not one.
+local function applyClause(bits, clause)
+	local i, n = 1, #clause
+	local who = { false, false, false }
+	local named = false
+	while i <= n do
+		local c = string.sub(clause, i, i)
+		if c == "u" then who[1] = true
+		elseif c == "g" then who[2] = true
+		elseif c == "o" then who[3] = true
+		elseif c == "a" then who[1], who[2], who[3] = true, true, true
+		else break end
+		named = true
+		i = i + 1
+	end
+	if not named then who[1], who[2], who[3] = true, true, true end
+
+	local op = string.sub(clause, i, i)
+	if op ~= "+" and op ~= "-" and op ~= "=" then return false end
+	i = i + 1
+
+	local r, w, x = false, false, false
+	local letters = false
+	while i <= n do
+		local c = string.sub(clause, i, i)
+		if c == "r" then r = true
+		elseif c == "w" then w = true
+		elseif c == "x" then x = true
+		else return false end
+		letters = true
+		i = i + 1
+	end
+	if not letters and op ~= "=" then return false end
+
+	for k = 1, 3 do
+		if who[k] then
+			local hr, hw, hx = digitBits(bits[k])
+			if op == "=" then
+				bits[k] = bitsDigit(r, w, x)
+			elseif op == "+" then
+				bits[k] = bitsDigit(hr or r, hw or w, hx or x)
+			else
+				bits[k] = bitsDigit(hr and not r, hw and not w, hx and not x)
+			end
+		end
+	end
+	return true
+end
+
+-- mode, or nil when the spec is not one. The mode that comes back is in the
+-- same three-octal-digit form every mode on this machine is written in.
+function CeroSecOS.applyModeSpec(mode, spec)
+	if type(mode) ~= "number" or type(spec) ~= "string" or spec == "" then return nil end
+	if mode < 0 or mode > 777 then return nil end
+	local bits = {
+		math.floor(mode / 100),
+		math.floor(math.fmod(math.floor(mode / 10), 10)),
+		math.floor(math.fmod(mode, 10)),
+	}
+	for k = 1, 3 do
+		if bits[k] > 7 then return nil end
+	end
+	local from = 1
+	while true do
+		local p = string.find(spec, ",", from, true)
+		local clause = nil
+		if p == nil then clause = string.sub(spec, from) else clause = string.sub(spec, from, p - 1) end
+		if not applyClause(bits, clause) then return nil end
+		if p == nil then break end
+		from = p + 1
+	end
+	return bits[1] * 100 + bits[2] * 10 + bits[3]
+end
+
 -- The children of a directory that are worth listing. Everything, except a
 -- device the machine knows the number of and cannot reach: it is mounted so
 -- that `cat /dev/lock0` can say "no such device" about a number a player wrote
@@ -845,13 +955,24 @@ commands.cp = function(state, session, args, env)
 	return true, {}
 end
 
+-- chmod. An octal mode, or a symbolic one applied to the mode the file already
+-- wears. Which of the two it is is decided BEFORE the path is looked at, so
+-- `chmod zzz nosuchfile` still answers about the mode: a typo in the mode is
+-- the thing the player got wrong and is what he should be told about.
 commands.chmod = function(state, session, args, env)
 	if #args ~= 3 then return usage("chmod") end
 	local mode = parseMode(args[2])
-	if mode == nil then return fail("chmod", args[2], "invalid mode") end
+	-- Tried against 000 only to judge the grammar; the real mode is the file's
+	-- and is not known until the node is in hand.
+	local symbolic = mode == nil and CeroSecOS.applyModeSpec(0, args[2]) ~= nil
+	if mode == nil and not symbolic then return fail("chmod", args[2], "invalid mode") end
 	local node, reason = CeroSecOS.getNode(state, session, args[3])
 	if node == nil then return fail("chmod", args[3], reason) end
 	if not isOwnerOrRoot(session, node) then return fail("chmod", args[3], "permission denied") end
+	if symbolic then
+		mode = CeroSecOS.applyModeSpec(node.mode, args[2])
+		if mode == nil then return fail("chmod", args[2], "invalid mode") end
+	end
 	node.mode = mode
 	-- One timestamp for the two a real filesystem has: a chmod moves the ctime
 	-- there and moves this one here.
