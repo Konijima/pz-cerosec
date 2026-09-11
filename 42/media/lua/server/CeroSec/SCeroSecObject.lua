@@ -175,8 +175,9 @@ function SCeroSecObject:osState()
 	-- build is missing the executables that build never had, and topping it up
 	-- is not throwing a working filesystem away.
 	CeroSecOS.upgradeSystem(self.os)
-	-- The devices under /dev are mounted for the length of one command and taken
-	-- away again by CeroSecOS.exec. This is the belt to that pair of braces: a
+	-- The devices under /dev are mounted for the length of one scheduler pass and
+	-- taken away again by CeroSecOS.jobStep. This is the belt to that pair of
+	-- braces: a
 	-- command that died in the middle would leave nodes the validator refuses --
 	-- a working machine turned "broken" by a light switch -- so the gate every
 	-- read of the state goes through sweeps them first. On a healthy machine
