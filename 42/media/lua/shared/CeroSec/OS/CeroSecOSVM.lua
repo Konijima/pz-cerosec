@@ -128,9 +128,16 @@ end
 -- and what keeps its output off the glass.
 --
 
+-- Is what this job writes being caught by a $(...) instead of going to the
+-- screen? The one test, asked in the two places that must agree about it.
+local function capturing(job)
+	local caps = job.caps
+	return caps ~= nil and #caps > 0
+end
+
 local function outLine(job, text)
 	local caps = job.caps
-	if caps ~= nil and #caps > 0 then
+	if capturing(job) then
 		local buf = caps[#caps]
 		if #buf < CeroSecOS.CAPTURE_MAX then buf[#buf + 1] = text end
 		return
@@ -139,6 +146,31 @@ local function outLine(job, text)
 	-- columns and carries no control byte, exactly like a command's.
 	local fitted = CeroSecOS.fit({ text })
 	for i = 1, #fitted do job.out[#job.out + 1] = fitted[i] end
+end
+
+-- The row a job is part way through, wrapped the way a screen sixty columns
+-- wide wraps: the moment the held text fills a row, that row is finished and
+-- goes out as a line. `echo -n` still leaves the cursor where it was, because a
+-- prompt shorter than a row is what it always was.
+--
+-- This is also the only ceiling on job.partial, and it is the reason there is
+-- one. The flood limiter counts LINES in job.out, so text with no newline in it
+-- ever -- `while true; do printf %s x; done` -- reached no limiter at all: it
+-- grew the held string a byte a turn, kilobyte after kilobyte, said nothing on
+-- the screen, and was ended only by the five-minute cpu ceiling. Wrapping puts
+-- it back on the same twenty-lines-a-second leash as every other flood and
+-- bounds what is held to one row.
+--
+-- Only on the way to the screen. Inside a $(...) the text is not going to a
+-- screen and must not be folded as if it were: the capture joins its lines with
+-- a space, so a wrap there would push spaces into the middle of the captured
+-- value. A capture is bounded by its own ceilings instead.
+local function wrapPartial(job)
+	if capturing(job) then return end
+	while #job.partial >= CeroSecOS.COLS do
+		outLine(job, string.sub(job.partial, 1, CeroSecOS.COLS))
+		job.partial = string.sub(job.partial, CeroSecOS.COLS + 1)
+	end
 end
 
 -- Text with newlines in it, the way printf and echo write. Everything up to
@@ -150,6 +182,7 @@ local function writeText(job, text)
 		local p = string.find(text, "\n", start, true)
 		if p == nil then
 			job.partial = (job.partial or "") .. string.sub(text, start)
+			wrapPartial(job)
 			return
 		end
 		outLine(job, (job.partial or "") .. string.sub(text, start, p - 1))

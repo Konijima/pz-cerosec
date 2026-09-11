@@ -5,10 +5,10 @@
 -- only question that matters to somebody running a server: CAN A PLAYER'S
 -- SCRIPT HURT ANYBODY ELSE? So every program in here is written to be as
 -- expensive as four lines of shell can be -- an endless loop, a script that
--- runs itself, a string that doubles every turn, a flood of output, a hundred
--- background jobs asked for at once, a substitution inside a loop -- and each
--- one is driven through the REAL scheduler for a thousand passes while the
--- cost of a pass is watched.
+-- runs itself, a string that doubles every turn, a flood of output, a flood with
+-- no newline anywhere in it, a hundred background jobs asked for at once, a
+-- substitution inside a loop -- and each one is driven through the REAL
+-- scheduler for a thousand passes while the cost of a pass is watched.
 --
 -- What is asserted, for every one of them:
 --
@@ -16,6 +16,7 @@
 --   * the cost of a pass is FLAT: the thousandth is no dearer than the tenth,
 --   * the console never holds more than its hundred lines,
 --   * the memory the whole state occupies stops growing,
+--   * what a job holds part way through a row never passes one row,
 --   * a job that spins with no wait in it is killed by the cpu ceiling, and
 --     one that is merely slow is not,
 --   * a pass costs less than WALL_MS_PER_PASS milliseconds of real time under
@@ -163,7 +164,9 @@ end
 --
 local PASSES = 1000
 
-local function drive(machine, passes, stepMs)
+-- watch, when given, is called after every pass: what a case wants to assert
+-- about the machine DURING the run and not only at the end of it.
+local function drive(machine, passes, stepMs, watch)
 	local perPass = {}
 	local worst = 0
 	local clockStart = os.clock()
@@ -175,6 +178,7 @@ local function drive(machine, passes, stepMs)
 		if tickSteps > worst then worst = tickSteps end
 		check("the console never holds more than its hundred lines",
 			#machine.console.lines <= CeroSec.CONSOLE_MAX)
+		if watch ~= nil then watch() end
 	end
 	local seconds = os.clock() - clockStart
 	return { perPass = perPass, worst = worst,
@@ -324,7 +328,128 @@ do
 end
 
 --
--- 6. A hundred background jobs, asked for as fast as a loop can ask.
+-- 6. A flood with no newline in it, which is the same flood wearing a hat.
+--
+-- `printf %s x` and `echo -n x` write a character and never finish a line, and
+-- the limiter above counts LINES: only a finished one reaches job.out, so for as
+-- long as what a job held was unbounded, this wrote nothing to the screen, met
+-- no limiter of any kind, and grew the held string a byte a turn -- thirty-three
+-- kilobytes in the thousand passes below -- until the five minute cpu ceiling
+-- happened to end it. The screen's own wrap, applied to what is held, is what
+-- puts it back on the same leash: a row's worth of held text IS a finished line.
+--
+-- So what is asserted is the bound, every pass, for both ways of writing it.
+--
+
+local ROW = string.rep("x", CeroSecOS.COLS)
+
+do
+	local programs = {
+		{ "printf, a byte a turn", "while true; do printf %s x; done\n" },
+		{ "echo -n, a byte a turn", "while true; do echo -n x; done\n" },
+		{ "echo -n, a row a turn", "while true; do echo -n " .. ROW .. "; done\n" },
+	}
+	for i = 1, #programs do
+		local what, program = programs[i][1], programs[i][2]
+		local machine, state, console = newMachine()
+		put(state, "/home/admin/nonl.sh", program)
+		local job = typeLine(system, machine, state, console, "sh nonl.sh")
+		local worstHeld = 0
+		local result = drive(machine, PASSES, nil, function()
+			local held = #(job.partial or "")
+			if held > worstHeld then worstHeld = held end
+			check(what .. ": what the job holds never passes one row (" .. held .. ")",
+				held <= CeroSecOS.COLS)
+		end)
+		flat(what, result)
+		timely(what, result)
+		check(what .. ": the job is alive and merely slow", not CeroSecOS.jobIsOver(job))
+		check(what .. ": its output queue is bounded (" .. #job.out .. ")",
+			#job.out <= CeroSecOS.JOB_OUT_MAX + 4)
+		eq(what .. ": the screen holds its hundred lines and no more",
+			#console.lines, CeroSec.CONSOLE_MAX)
+		-- And it reaches the screen at all, which is the other half of the bug:
+		-- the old behaviour was thirty-three kilobytes held and a blank screen.
+		check(what .. ": what it wrote reached the screen", #console.lines > 0)
+		note(what, result, " (held at most " .. worstHeld .. " bytes)")
+	end
+end
+
+--
+-- 6b. The same flood, left long enough to meet the cpu ceiling, and the two
+-- honest halves of what the wrap does about it.
+--
+-- A job WAITING on the screen is not spending the processor, so the runaway
+-- clock starts again when it runs again and a job held back by the limiter is
+-- never killed by the cpu ceiling however long it lives. That is what a row a
+-- turn gets: blocked on output on all but the first of a thousand passes, a
+-- thousand seconds of game clock, alive.
+--
+-- A byte a turn does NOT get it, and the bench says so rather than pretending.
+-- Sixty turns of the loop buy one line, so it produces about one and a half
+-- lines a pass against a drain of twenty a second and never backs the queue up
+-- far enough to be held at all. It is a compute loop that happens to print, the
+-- cpu ceiling is the right thing to end it, and case 2 is where that is proved.
+-- What the wrap owes here is the BOUND, and the bound holds either way.
+--
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/row.sh", "while true; do echo -n " .. ROW .. "; done\n")
+	local job = typeLine(system, machine, state, console, "sh row.sh")
+	local blockedPasses = 0
+	local result = drive(machine, PASSES, 1000, function()
+		if job.blocked == "output" then blockedPasses = blockedPasses + 1 end
+		check("a row a turn: what the job holds never passes one row",
+			#(job.partial or "") <= CeroSecOS.COLS)
+	end)
+	flat("newline-less trickle", result)
+	check("it was held back by the screen on nearly every pass (" .. blockedPasses ..
+		" of " .. PASSES .. ")", blockedPasses > PASSES - 10)
+	check("so a thousand seconds later it is alive and not killed",
+		not CeroSecOS.jobIsOver(job))
+	eq("nothing was killed", job.killReason, nil)
+	note("newline-less trickle", result, " (blocked " .. blockedPasses .. " passes)")
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/byte.sh", "while true; do printf %s x; done\n")
+	local job = typeLine(system, machine, state, console, "sh byte.sh")
+	drive(machine, PASSES, 1000, function()
+		check("a byte a turn: what the job holds never passes one row",
+			#(job.partial or "") <= CeroSecOS.COLS)
+	end)
+	-- The bound held for the whole run; the cpu ceiling ended it, as it should.
+	eq("a byte a turn is ended by the cpu ceiling, not by a heap", job.state, "killed")
+	eq("and it says why", job.killReason, "cpu limit")
+	eq("what it held went with it", job.partial, "")
+end
+
+--
+-- 6c. Memory, for this flood on its own: a byte a turn for a thousand passes
+-- used to be a string that grew every one of them.
+--
+
+do
+	collectgarbage("collect")
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/nonl.sh", "while true; do printf %s x; done\n")
+	typeLine(system, machine, state, console, "sh nonl.sh")
+	drive(machine, 100)
+	collectgarbage("collect")
+	local early = collectgarbage("count")
+	drive(machine, 900)
+	collectgarbage("collect")
+	local late = collectgarbage("count")
+	check("a newline-less flood stops growing (" .. string.format("%.0f", early) ..
+		"K after 100 passes, " .. string.format("%.0f", late) .. "K after 1000)",
+		late - early < 50)
+	local _ = console
+end
+
+--
+-- 7. A hundred background jobs, asked for as fast as a loop can ask.
 --
 
 do
@@ -353,7 +478,7 @@ do
 end
 
 --
--- 7. A substitution bomb: a command run inside a loop, its output captured
+-- 8. A substitution bomb: a command run inside a loop, its output captured
 -- every turn. The steps of what it runs are charged to the job that asked, so
 -- this is expensive per turn and flat per pass, which is the whole point.
 --
@@ -373,7 +498,7 @@ do
 end
 
 --
--- 8. Four of the worst of them at once, on four machines, sharing one budget.
+-- 9. Four of the worst of them at once, on four machines, sharing one budget.
 -- What is being watched here is the ceiling on the WHOLE county: no pass may
 -- spend more than CeroSec.STEP_BUDGET_PER_TICK however many machines there are.
 --
@@ -432,7 +557,7 @@ do
 end
 
 --
--- 9. Memory. Everything above ran; what is left behind must be a few hundred
+-- 10. Memory. Everything above ran; what is left behind must be a few hundred
 -- kilobytes of Lua and not a heap that grew with every pass.
 --
 

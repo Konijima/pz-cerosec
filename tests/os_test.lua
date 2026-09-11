@@ -4897,6 +4897,31 @@ do
 	prints(state, admin, "echo -n one\necho two", { "onetwo" })
 	prints(state, admin, "printf '%s/%d/%%\\n' hi 7", { "hi/7/%" })
 
+	-- What is held with no newline after it is held for one row and no longer.
+	-- A screen sixty columns wide wraps when the cursor reaches its edge, so a
+	-- hundred and thirty characters written in one go are two finished lines and
+	-- ten characters still being typed. `echo -n one` above is the other half of
+	-- the same rule: a prompt shorter than a row is still held.
+	local wide = string.rep("x", 130)
+	local held = runScript(state, admin, "printf %s " .. wide .. "\necho done",
+		nil, nil, { passes = 1, budget = 1 })
+	eq("130 characters with no newline: two rows went out", #held.out, 2)
+	eq("130 characters with no newline: the first row is full", held.out[1], string.rep("x", 60))
+	eq("130 characters with no newline: so is the second", held.out[2], string.rep("x", 60))
+	eq("130 characters with no newline: ten are still held", held.job.partial, string.rep("x", 10))
+	check("and the job is still running", not CeroSecOS.jobIsOver(held.job))
+	-- Run to the end and the ten reach the screen, in front of the next line.
+	prints(state, admin, "printf %s " .. wide .. "\necho done",
+		{ string.rep("x", 60), string.rep("x", 60), string.rep("x", 10) .. "done" },
+		"130 characters with no newline, to the end")
+
+	-- A capture is not a screen, and the wrap must not reach it. A $(...) joins
+	-- the lines it caught with a space, so folding one at sixty columns would
+	-- push a space into the middle of the value -- the substitution would come
+	-- back two characters longer than what was written into it.
+	local caught = runScript(state, admin, "x=$(printf %s " .. wide .. ")\necho done")
+	eq("a 130-character capture is byte-exact", caught.job.vars.x, wide)
+
 	-- Variables and arithmetic.
 	prints(state, admin, "x=3\ny=$((x * 2 + 1))\necho ${y}", { "7" })
 	prints(state, admin, "echo $((7 / 2)) $((-7 / 2)) $((7 % 3)) $((2 * (3 + 4)))",
