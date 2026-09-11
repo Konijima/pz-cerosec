@@ -90,7 +90,17 @@ local generation = 0
 
 local function measure()
 	local manager = getTextManager()
-	local cellW = manager:MeasureStringX(UIFont.Code, "M")
+	-- The ADVANCE of one monospaced cell, not the ink of one glyph.
+	-- MeasureStringX counts the last character of a string as its glyph's ink
+	-- `width` and every other as its `xadvance`, while the pen that draws only
+	-- ever moves by `xadvance` -- and in zomboidCode.fnt "M" is width=9
+	-- xadvance=8, a pixel WIDER in ink than the cell it is drawn in. So
+	-- MeasureStringX("M") is a cell a pixel too wide and a leaf LEAF_COLS pixels
+	-- too wide; the subtraction below is the advance exactly, whatever the ink of
+	-- the glyph happens to be. Same reasoning, same shape and the same lesson as
+	-- CeroSecTerminal's CELL_W -- see the long note there.
+	local cellW = manager:MeasureStringX(UIFont.Code, "MM") -
+		manager:MeasureStringX(UIFont.Code, "M")
 	local bodyH = manager:getFontHeight(UIFont[CeroSecManualUI.FONT_BODY])
 	if cellW == CELL_W and bodyH == BODY_H then return end
 
@@ -117,6 +127,14 @@ end
 -- What the text is measured with while a leaf is being laid out. The body font
 -- is the one that wraps; the monospaced lines are never wrapped, so they never
 -- reach here.
+--
+-- MeasureStringX itself, ink of the last glyph and all, and deliberately: this
+-- places nothing. It answers "does this line fit the leaf", and the error is the
+-- side bearing of whatever character the line happens to end on -- a pixel or
+-- two, always in the direction of fitting slightly more than would fit, against
+-- a leaf with twenty pixels of margin. Where an answer PLACES something -- the
+-- cell the monospaced grid is built on, above -- the advance is what is asked
+-- for, because a pixel per column is a column by the end of a row.
 local function textWidth(text)
 	return getTextManager():MeasureStringX(UIFont[CeroSecManualUI.FONT_BODY], text)
 end

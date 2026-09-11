@@ -36,7 +36,22 @@ _G.Keyboard = { KEY_ESCAPE = 1, KEY_LEFT = 203, KEY_RIGHT = 205, KEY_HOME = 199 
 -- purpose -- a narrower "i" than "M" -- because a wrapper measured against a
 -- fixed width is a wrapper that has never been asked the question it exists to
 -- answer, and the real UIFont.NewMedium is proportional.
+-- And MeasureStringX does not answer the advance. It hands the string to
+-- AngelCodeFont.getWidth(s, 0, len - 1, false), and that false makes the LAST
+-- character count as its glyph's ink `width` while every other counts as its
+-- `xadvance`; only the pen that draws moves by xadvance throughout. In
+-- zomboidCode.fnt "M" is width=9 xadvance=8 -- a pixel WIDER in ink than the
+-- cell it is drawn in -- so the answer for a lone "M" is a pixel too big for a
+-- cell. CODE_INK is that, modelled the way tests/window_test.lua models it: a
+-- bench whose font returned CODE_W * #s could not see a grid built on the ink go
+-- wrong, and this one did not, for exactly that reason.
 local CODE_W = 8
+local CODE_INK = { M = 9 }
+local function codeWidth(s)
+	if s == nil or s == "" then return 0 end
+	local last = string.sub(s, -1)
+	return CODE_W * (#s - 1) + (CODE_INK[last] or CODE_W - 1)
+end
 local NARROW = { i = 3, l = 3, t = 4, j = 3, f = 4, r = 4, [" "] = 4 }
 local WIDE = { m = 11, w = 11, M = 12, W = 12 }
 local function bodyWidth(s)
@@ -50,7 +65,7 @@ end
 _G.getTextManager = function()
 	return {
 		MeasureStringX = function(_, font, s)
-			if font == "Code" then return CODE_W * #s end
+			if font == "Code" then return codeWidth(s) end
 			return bodyWidth(s)
 		end,
 		getFontHeight = function(_, font)
@@ -459,6 +474,29 @@ do
 				bodyWidth(paint.text) <= leafText)
 		end
 	end
+
+	-- The leaf is built on the ADVANCE of a monospaced cell and not on the ink of
+	-- a glyph. Proved on the window's own width, without the bench having to know
+	-- the paddings: the ink of "M" is a pixel wider than its cell, so a grid taken
+	-- as MeasureStringX("M") is a pixel per column too wide -- and moving the ink
+	-- alone must move nothing at all.
+	check("the bench's own Code font is honest about it",
+		codeWidth("M") ~= CODE_W and codeWidth("MM") - codeWidth("M") == CODE_W)
+	local honest = newWindow(newItem()).width
+	CODE_INK.M = CODE_W + 5
+	local fatter = newWindow(newItem()).width
+	CODE_INK.M = 9
+	eq("a fatter M does not widen the leaf", fatter, honest)
+
+	-- And it really is LEAF_COLS of them across each of the two leaves: a cell
+	-- one pixel wider is a book two columns' worth wider.
+	CODE_W = CODE_W + 1
+	local wider = newWindow(newItem()).width
+	CODE_W = CODE_W - 1
+	eq("a cell a pixel wider is a leaf LEAF_COLS pixels wider, twice over",
+		wider - honest, 2 * CeroSecManualUI.LEAF_COLS)
+	eq("and the layout comes back to what it was",
+		newWindow(newItem()).width, honest)
 
 	-- Turning the leaves.
 	window:onNext()

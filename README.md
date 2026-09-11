@@ -1533,7 +1533,17 @@ leaves so the reader is never shown half a spread.
 Vanilla ships no serif — `media/fonts/EN/fonts.txt` maps every readable face to
 zomboidSmall/Medium/Large — so the body is `UIFont.NewMedium`, which is what
 vanilla reads its *own* book in (`SurvivalGuide.lua:3-4,47`), and examples are
-`UIFont.Code`. Left, Right and Escape reach it through `setWantKeyEvents(true)` and
+`UIFont.Code`. The leaf is **64 monospaced columns** wide and that cell is measured
+the way the terminal measures its own — `MeasureStringX("MM") - MeasureStringX("M")`,
+the advance and not the ink of a glyph, because `MeasureStringX` counts the last
+character of a string as its ink `width` and `M` in `zomboidCode.fnt` is a pixel
+wider in ink (9) than the cell it is drawn in (8). It was the ink until the debts
+wave, which is 64 pixels of leaf per side that the text never filled. Everything
+else the reader measures is *centring and wrapping* — a title, an edition, a page
+number, whether a body line fits the leaf — and is left on `MeasureStringX`
+deliberately: nothing there places a column, and the error is the side bearing of one
+glyph against a leaf with a twenty-pixel margin. Left, Right and Escape reach it
+through `setWantKeyEvents(true)` and
 `isKeyConsumed`, the pattern `ISVehicleAnimalUI` uses. The bookmark is
 `item:getModData().page`, always the **left** leaf of the sheet, and a number read
 back off it goes through `CeroSecManualBook.clampPage` first — a manual rewritten
