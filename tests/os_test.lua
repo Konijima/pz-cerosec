@@ -6084,13 +6084,69 @@ do
 		eq("no /bin/" .. words[i], state.fs.children.bin.children[words[i]], nil)
 		eq("and no usage line for it", CeroSecOS.commandUsage(words[i]), nil)
 	end
+
+	-- And the four the shell IS that still carry a manual entry. `cd` cannot be
+	-- a file -- a program cannot move the shell that ran it -- and neither can
+	-- exit, jobs or wait, which are the shell's own or own what it started. They
+	-- keep their description and their usage line and have no executable.
+	local shellWords = { "cd", "exit", "jobs", "wait" }
+	for i = 1, #shellWords do
+		local word = shellWords[i]
+		eq("no /bin/" .. word, state.fs.children.bin.children[word], nil)
+		eq(word .. " is a word of the shell", CeroSecOS.isShellWord(word), true)
+		eq("and not in the list /bin is filled from", (function()
+			local names = CeroSecOS.binNames()
+			for k = 1, #names do
+				if names[k] == word then return true end
+			end
+			return false
+		end)(), false)
+		check(word .. " keeps its description", type(CeroSecOS.commandDesc(word)) == "string")
+		check("and its usage line", type(CeroSecOS.commandUsage(word)) == "string")
+		eq("and it runs with no file behind it", CeroSecOS.BUILTINS[word], true)
+	end
+	eq("ls is not one of them", CeroSecOS.isShellWord("ls"), false)
+	-- A machine with no SHELL is a different question from a machine with no
+	-- file: /bin/sh deleted leaves nothing to parse a line with, and the console
+	-- lets exactly two words through anyway. A word of the shell is no use
+	-- without the shell, so that set is not this one.
+	eq("with no /bin/sh, exit is still answered", CeroSecOS.NO_SHELL_WORDS.exit, true)
+	eq("and help", CeroSecOS.NO_SHELL_WORDS.help, true)
+	eq("but not cd", CeroSecOS.NO_SHELL_WORDS.cd, nil)
+	eq("nor jobs", CeroSecOS.NO_SHELL_WORDS.jobs, nil)
+	eq("nor is pwd, which real Unix ships as a file too", CeroSecOS.isShellWord("pwd"), false)
+	check("/bin/pwd is there", state.fs.children.bin.children.pwd ~= nil)
+	check("/bin/su too", state.fs.children.bin.children.su ~= nil)
+
 	okAt(state, root, "rm -r /bin", {}, env)
 	-- `history` and not `true` as the condition: /bin/true is gone with the rest
 	-- of /bin, and that is the point of the section above.
 	okAt(state, admin, "if history; then history; fi", {}, env)
 	okAt(state, admin, "for i in a; do history; done", {}, env)
 	badAt(state, admin, "true", "true: command not found", env)
+	-- cd on a machine with no /bin at all: it is the shell, and the shell is
+	-- still standing.
+	okAt(state, admin, "cd /etc", {}, env)
+	eq("and it moved", admin.cwd, "/etc")
+	okAt(state, admin, "cd", {}, env)
+	eq("back home", admin.cwd, "/home/admin")
 	CeroSecOS.restoreSystem(state)
+	-- The repair puts back what a machine ships with, and these were never it.
+	for i = 1, #shellWords do
+		eq("the repair does not make /bin/" .. shellWords[i],
+			state.fs.children.bin.children[shellWords[i]], nil)
+	end
+	okAt(state, admin, "cd /etc", {}, env)
+	okAt(state, admin, "cd", {}, env)
+	-- And the manual entry for one, which is the shell's and not a file's: man
+	-- itself is a file, so this is asked of a repaired machine.
+	local manCd = okAt(state, admin, "man cd", nil, env)
+	eq("man cd answers", manCd[1], "cd - " .. CeroSecOS.commandDesc("cd"))
+	eq("with its usage line", manCd[2], "usage: " .. CeroSecOS.commandUsage("cd"))
+	eq("and says there is no file", manCd[3],
+		"a word of the shell itself: no file in " .. CeroSecOS.BIN_PATH)
+	okAt(state, admin, "man wait", nil, env)
+	badAt(state, admin, "man telnet", "man: telnet: no manual entry", env)
 	-- A word with no Lua behind it is not a command, which is the other half of
 	-- the same rule.
 	okAt(state, root, 'write /bin/telnet "not yet"', {}, env)
@@ -6106,6 +6162,106 @@ do
 		string.find(whole, CeroSecOS.HELP_BUILTINS, 1, true) ~= nil)
 	check("under a heading that says they have no file",
 		string.find(whole, "shell words (no file in " .. CeroSecOS.BIN_PATH .. "):", 1, true) ~= nil)
+	check("and the block names cd", string.find(whole, "cd", 1, true) ~= nil)
+	-- The listing ABOVE that heading is /bin itself, so a shell word is never a
+	-- line of it -- it is named in the block below and nowhere else.
+	local heading = nil
+	for k = 1, #helpLines do
+		if string.find(helpLines[k], "shell words", 1, true) ~= nil then heading = k end
+	end
+	check("the block has a heading", heading ~= nil)
+	for i = 1, #shellWords do
+		eq("no line of the table of files describes " .. shellWords[i], (function()
+			for k = 1, heading - 1 do
+				if string.sub(helpLines[k], 1, 1 + #shellWords[i]) == " " .. shellWords[i] then
+					return true
+				end
+			end
+			return false
+		end)(), false)
+	end
+end
+
+--
+-- 36a. What is in /bin, pinned by hand
+--
+-- The list of files a machine ships with is a decision, not whatever the
+-- description table happens to hold: written out here so that adding a name to
+-- COMMAND_INFO cannot quietly put an executable on every machine, and so that
+-- the four words the shell IS can never come back as files.
+--
+
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	local WANT = "[ adduser cat chgrp chmod chown clear cp date deluser dev df"
+		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
+		.. " help hostname id kill ls man mkdir mv passwd printf ps pwd reboot"
+		.. " restart rm sh shutdown sleep su sudo tail test touch true wc whoami write"
+
+	eq("/bin holds exactly these",
+		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
+	eq("and that is the list it is filled from",
+		table.concat(CeroSecOS.binNames(), " "), WANT)
+
+	-- The same answer through the command a player would type.
+	local shown = {}
+	local lines = okAt(state, root, "ls /bin", nil, env)
+	for i = 1, #lines do
+		for word in string.gmatch(lines[i], "%S+") do shown[#shown + 1] = word end
+	end
+	table.sort(shown)
+	eq("ls /bin shows exactly them", table.concat(shown, " "), WANT)
+end
+
+--
+-- 36b. An older machine loses the files that were never commands
+--
+
+do
+	local stale = { "cd", "exit", "jobs", "wait" }
+
+	-- A machine as SYSTEM_VERSION 7 left it: the four executables that version
+	-- seeded, in the shape it seeded them in.
+	local state = fresh()
+	for i = 1, #stale do
+		state.fs.children.bin.children[stale[i]] =
+			CeroSecOS.newFile("root", 755, CeroSecOS.commandDesc(stale[i]))
+	end
+	state.sysv = 7
+	eq("the upgrade has something to do", CeroSecOS.upgradeSystem(state), true)
+	for i = 1, #stale do
+		eq("/bin/" .. stale[i] .. " is gone", state.fs.children.bin.children[stale[i]], nil)
+	end
+	eq("and the machine is at this build", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	eq("and it still boots", CeroSecOS.validate(state), true)
+	eq("and the boot check is happy with it", CeroSecOS.systemOk(state), true)
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	okAt(state, admin, "cd /etc", {}, env)
+	eq("cd still moves, with nothing in /bin to run", admin.cwd, "/etc")
+
+	-- Anything but the shape that was shipped is a player's own file and is left
+	-- exactly where it is: a deletion nobody asked for is not a migration.
+	local kept = fresh()
+	local bin = kept.fs.children.bin.children
+	bin.cd = CeroSecOS.newFile("admin", 755, CeroSecOS.commandDesc("cd"))
+	bin.exit = CeroSecOS.newFile("root", 755, "a note of my own")
+	bin.jobs = CeroSecOS.newFile("root", 644, CeroSecOS.commandDesc("jobs"))
+	bin.wait = CeroSecOS.newDir("root", 755)
+	kept.sysv = 7
+	CeroSecOS.upgradeSystem(kept)
+	check("a file of another owner is left alone", bin.cd ~= nil)
+	check("one with contents of its own is left alone", bin.exit ~= nil)
+	check("one with another mode is left alone", bin.jobs ~= nil)
+	check("and a directory is left alone", bin.wait ~= nil)
+	-- And the stray file changes nothing about the word: it is the shell's, and
+	-- nothing looks the file up.
+	local keptAdmin = open(kept, "admin")
+	okAt(kept, keptAdmin, "chmod 000 /bin/cd", {}, env)
+	okAt(kept, keptAdmin, "cd /etc", {}, env)
+	eq("cd is not gated on a file it does not use", keptAdmin.cwd, "/etc")
 end
 
 --

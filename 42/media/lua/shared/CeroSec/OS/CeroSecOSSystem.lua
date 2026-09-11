@@ -30,9 +30,18 @@ CeroSecOS = CeroSecOS or {}
 -- Every command in one deterministic order, from the descriptions rather than
 -- from the command table: a command with no description does not get a file,
 -- which is what keeps `help` from ever having a blank line in it.
+--
+-- Minus the words that are the shell itself. `cd` cannot be a file in Unix and
+-- must not be one here: a program cannot move the shell that ran it, so there is
+-- nothing an executable of that name could have contained. Same for exit, and
+-- for jobs and wait, which own what the shell started. They keep their
+-- description and their usage line -- `help` lists them under the table of
+-- files and `man` prints them -- and they have no executable.
 function CeroSecOS.binNames()
 	local names = {}
-	for name, _ in pairs(CeroSecOS.COMMAND_INFO or {}) do names[#names + 1] = name end
+	for name, _ in pairs(CeroSecOS.COMMAND_INFO or {}) do
+		if not CeroSecOS.isShellWord(name) then names[#names + 1] = name end
+	end
 	table.sort(names)
 	return names
 end
@@ -100,6 +109,27 @@ function CeroSecOS.upgradeSystem(state)
 
 	local bin = CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH)
 	if type(bin) == "table" and bin.type == "dir" and type(bin.children) == "table" then
+		-- The other direction, and the only thing here that takes anything away:
+		-- earlier versions shipped an executable for words that are the shell
+		-- itself (cd, exit, jobs, wait), and a machine saved before this one has
+		-- files that never had anything behind them. They go -- but only where
+		-- they are exactly what was shipped: owner root, mode 755, and the very
+		-- description that was seeded. Anything else at that name is a player's
+		-- own work and is left where it is; nothing here is allowed to be a
+		-- deletion somebody did not ask for.
+		local info = CeroSecOS.COMMAND_INFO or {}
+		for name, entry in pairs(info) do
+			if entry.shell == true then
+				local node = bin.children[name]
+				if type(node) == "table" and node.type == "file" and node.owner == "root"
+						and node.mode == 755 and node.data == CeroSecOS.commandDesc(name) then
+					bin.children[name] = nil
+					nodes = nodes - 1
+					bytes = bytes - #(node.data or "")
+				end
+			end
+		end
+
 		local names = CeroSecOS.binNames()
 		for i = 1, #names do
 			local name = names[i]

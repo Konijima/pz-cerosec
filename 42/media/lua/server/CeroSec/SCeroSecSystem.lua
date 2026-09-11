@@ -986,7 +986,7 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- happened and one to walk away.
 	local shRefusal = CeroSecOS.whyNotRun(state, session, "sh")
 	local bare = string.match(line, "^%s*(%S+)%s*$")
-	if shRefusal ~= nil and not (bare ~= nil and CeroSecOS.BUILTINS[bare]) then
+	if shRefusal ~= nil and not (bare ~= nil and CeroSecOS.NO_SHELL_WORDS[bare]) then
 		CeroSec.consolePush(console, "sh: " .. shRefusal)
 		console.status = 1
 		self:pushScreen(luaObject, state, console)

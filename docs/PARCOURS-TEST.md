@@ -545,7 +545,10 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
      `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
      alors que `sudo echo hi` marche encore ; `if true; then history; fi`
-     marche toujours (la grammaire n'est pas un fichier). Enfin
+     marche toujours (la grammaire n'est pas un fichier) ; `ls /bin` ne montre
+     ni `cd` ni `exit` ni `jobs` ni `wait` -- ce sont des mots du shell, pas des
+     fichiers -- et `cd /etc` marche quand meme, `man cd` repond, et `help` les
+     nomme sous la table. Enfin
      `sudo rm /bin/sh` → **toute** ligne tapée répond `sh: command not found`,
      `exit` fonctionne encore, et éteindre puis rallumer la machine la répare
      par le BIOS. [ ]

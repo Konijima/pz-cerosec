@@ -187,12 +187,18 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 `/bin/sh` is the shell itself: delete it and every line typed answers
 `sh: command not found`, and the BIOS repair brings it back.
 
-Three kinds of word are **not** files, and could not be. The reserved words
-(`if then elif else fi for while until do done`) are grammar. The state builtins
-(`cd read shift break continue history`) change the shell itself, which no separate
-program could do. And `exit` and `help` have no file on purpose, so that a player
-who has just wiped the machine he is standing at can still ask what happened and
-walk away from it. `help` prints the `/bin` table first and those words under it.
+Two kinds of word are **not** files, and could not be. The reserved words
+(`if then elif else fi for while until do done`) are grammar. The shell's own words
+(`cd exit jobs wait read shift break continue history`) change the shell itself or
+own what it started, which no separate program could do — `cd` cannot be a file in
+Unix and is not one here. The four of them that carry a description and a usage line
+(`cd`, `exit`, `jobs`, `wait`) keep both, so `help` lists them and `man cd` answers;
+what they do not have is an executable to find, to delete or to `chmod`. `help` is
+the one command with a file that is run without it, so that a player who has just
+wiped the machine he is standing at can still ask what happened — and `exit`, being a
+shell word, is how he walks away. `help` prints the `/bin` table first and those
+words under it. Real Unix ships `/bin/pwd`, `/bin/su`, `/bin/kill` and `/bin/echo`,
+and so does this machine.
 
 A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
 `.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
@@ -885,7 +891,15 @@ one-line description. The shell resolves `args[1]` as `/bin/<name>` and nothing 
 (no `PATH`, no `./thing`): nothing there, no `/bin` at all, `/bin` a file, a
 directory called `/bin/ls`, or a file with no Lua command behind it are all
 `<name>: command not found`; a file without `x` for this user, or a `/bin` he cannot
-read, is `<name>: permission denied`. `exit` and `help` are the only builtins.
+read, is `<name>: permission denied`. The words with no file are the shell's own —
+`cd`, `exit`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames` never
+seeds one) and the engine's `read`, `shift`, `break`, `continue`, `history` — plus
+`help`, which has a file and is run without it; `CeroSecOS.BUILTINS` is that set and
+is derived from the table, not listed beside it. `SYSTEM_VERSION` 8 **deletes** a
+stale `/bin/cd`, `/bin/exit`, `/bin/jobs` or `/bin/wait` left by an earlier version,
+and only where the file is exactly what was shipped (owner `root`, mode `755`, the
+seeded description); anything else at that name is a player's own file and stays.
+`restoreSystem` never recreates them.
 
 **`/etc/passwd`** — the accounts, owner `root`, mode `600`, one a line:
 
@@ -1027,7 +1041,9 @@ that name — and then moves the number up. At the current number it does nothin
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
 `SYSTEM_VERSION` 8 seeds `/bin/halt` and the six the engine runs itself but still
 looks up first — `/bin/sleep`, `/bin/printf`, `/bin/test`, `/bin/[`, `/bin/true`,
-`/bin/false` (`/bin/echo` was already there). `/bin/[` is the one filename on this
+`/bin/false` (`/bin/echo` was already there) — and is the one version that takes
+something away: `/bin/cd`, `/bin/exit`, `/bin/jobs` and `/bin/wait`, seeded by every
+version up to 7 and never anything but a file with nothing behind it. `/bin/[` is the one filename on this
 machine that is punctuation, which is why the disk has
 `CeroSecOS.isValidFileName` beside `isValidName`: it allows exactly that one extra
 name and nothing else, and an account or a group is still `isValidName`'s.

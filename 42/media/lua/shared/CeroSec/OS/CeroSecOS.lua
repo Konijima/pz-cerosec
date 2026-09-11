@@ -31,7 +31,12 @@ CeroSecOS.STATE_VERSION = 1
 -- 7: /bin/sh, /bin/ps, /bin/jobs, /bin/kill, /bin/wait.
 -- 8: /bin/halt, and the six the shell runs itself but still looks up first --
 --    /bin/echo was already there, /bin/sleep, /bin/printf, /bin/test, /bin/[,
---    /bin/true and /bin/false were not.
+--    /bin/true and /bin/false were not. And the one version that TAKES
+--    something away: /bin/cd, /bin/exit, /bin/jobs and /bin/wait, which every
+--    version up to 7 seeded and which never had anything behind them -- a
+--    program cannot move the shell that ran it. They are deleted where they are
+--    exactly what was shipped (root, 755, the seeded description) and left alone
+--    anywhere else.
 CeroSecOS.SYSTEM_VERSION = 8
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every

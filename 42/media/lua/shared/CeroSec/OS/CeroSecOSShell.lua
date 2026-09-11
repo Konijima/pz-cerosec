@@ -436,11 +436,19 @@ end
 -- here gets no executable, and one with no Lua behind it is a file the shell
 -- will refuse to run. os_test pins the two sets against each other.
 --
+-- One exception, and it is the only one: an entry marked `shell = true` is a
+-- word the shell IS, and a word the shell is has no file. It still has its
+-- description and its usage line here, because `help` lists it and `man` prints
+-- it -- what it does not have is an executable to find, to delete or to chmod.
+--
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	cat      = { desc = "print a file", usage = "cat <file>..." },
-	cd       = { desc = "change the working directory", usage = "cd [dir]" },
+	-- The four words the SHELL is, and so the four with no file in /bin: a
+	-- program cannot move the shell that ran it, and cannot own its jobs either
+	-- (see CeroSecOS.isShellWord, and the note above CeroSecOS.BUILTINS).
+	cd       = { desc = "change the working directory", usage = "cd [dir]", shell = true },
 	chgrp    = { desc = "change a file's group", usage = "chgrp <group> <path>" },
 	chmod    = { desc = "change a file's mode", usage = "chmod <mode> <path>" },
 	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
@@ -453,7 +461,7 @@ CeroSecOS.COMMAND_INFO = {
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
-	exit     = { desc = "log out", usage = "exit" },
+	exit     = { desc = "log out", usage = "exit", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files", usage = "grep [-i] [-n] <text> <file>..." },
@@ -466,7 +474,7 @@ CeroSecOS.COMMAND_INFO = {
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
-	jobs     = { desc = "list the machine's jobs", usage = "jobs" },
+	jobs     = { desc = "list the machine's jobs", usage = "jobs", shell = true },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
 	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
@@ -489,7 +497,7 @@ CeroSecOS.COMMAND_INFO = {
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
-	wait     = { desc = "wait for the background jobs", usage = "wait [id]..." },
+	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc <file>..." },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
@@ -514,11 +522,35 @@ function CeroSecOS.commandUsage(name)
 	return info.usage
 end
 
--- The two that do not need a file behind them. A machine can be broken from
+-- Is this word the shell itself? A word that is has no file in /bin, so nothing
+-- looks one up for it and nothing seeds one -- `cd` cannot be a file, in Unix or
+-- here: a program cannot move the shell that ran it.
+function CeroSecOS.isShellWord(name)
+	local info = (CeroSecOS.COMMAND_INFO or {})[name]
+	if type(info) ~= "table" then return false end
+	return info.shell == true
+end
+
+-- The commands that run with no file behind them. Two kinds, and they are not
+-- the same kind: the shell's own words have no file to look up at all, and
+-- `help` has one and is run without it anyway. A machine can be broken from
 -- inside -- root may `rm -r /bin` and that is root's right -- and a player
 -- standing in front of a broken one must still be able to ask what happened and
 -- to walk away from it. Everything else is an executable or it is nothing.
-CeroSecOS.BUILTINS = { exit = true, help = true }
+--
+-- Derived from the table above rather than listed beside it: a word marked
+-- `shell` there is one here by construction, and the two cannot drift apart.
+CeroSecOS.BUILTINS = { help = true }
+for name, info in pairs(CeroSecOS.COMMAND_INFO) do
+	if info.shell == true then CeroSecOS.BUILTINS[name] = true end
+end
+
+-- And the two a machine with no SHELL still answers, which is a different
+-- question: /bin/sh deleted is a machine with nothing to parse a line with, and
+-- the console lets exactly these two through anyway -- one to ask what happened,
+-- one to walk away. A word of the shell is no use without the shell, so this is
+-- deliberately not the set above.
+CeroSecOS.NO_SHELL_WORDS = { exit = true, help = true }
 
 -- What lives in the shell and what lives in /bin.
 --
@@ -527,9 +559,13 @@ CeroSecOS.BUILTINS = { exit = true, help = true }
 --
 --   * the reserved words -- if then elif else fi for while until do done --
 --     which are grammar and were never commands at all;
---   * the state builtins -- cd, read, shift, break, continue, history -- which
---     change the shell itself and could not be a separate program if they
---     tried, because a program cannot move the shell that ran it;
+--   * the shell's own words -- cd, exit, jobs, wait, and read, shift, break,
+--     continue, history -- which change the shell itself or own what it
+--     started, and could not be a separate program if they tried: a program
+--     cannot move the shell that ran it, and cannot be handed its job table
+--     either. None of them is a file, and /bin never had any business holding
+--     one -- the four that carry a COMMAND_INFO entry are marked `shell` there;
+--     the rest are the engine's builtins and were never in that table at all;
 --   * everything else, which is a FILE in /bin.
 --
 -- The third kind includes the ones a shell runs for speed without leaving the
@@ -537,11 +573,13 @@ CeroSecOS.BUILTINS = { exit = true, help = true }
 -- engine and are still resolved through /bin/<name> first, exactly as `ls` is.
 -- So `rm /bin/sleep` really does take sleep away, and `chmod 600 /bin/echo`
 -- really does put echo out of an ordinary account's reach -- which is the whole
--- doctrine of this machine: the files are the truth about what it can do.
+-- doctrine of this machine: the files are the truth about what it can do. Real
+-- Unix ships /bin/pwd, /bin/su, /bin/kill and /bin/echo, and so does this one.
 --
--- BUILTINS above is the other half of the same idea and is deliberately short:
--- exit and help are the two a player needs on a machine whose /bin has been
--- destroyed, one to ask what happened and one to walk away.
+-- BUILTINS above is the other half of the same idea: the shell's own words,
+-- which have no file, plus help -- the one command a player needs answered on a
+-- machine whose /bin has been destroyed, so that he can ask what happened; exit
+-- being a shell word is what lets him walk away from it.
 CeroSecOS.BUILTIN_FILES = {
 	echo = true, printf = true, sleep = true, test = true,
 	["["] = true, ["true"] = true, ["false"] = true,
@@ -550,7 +588,7 @@ CeroSecOS.BUILTIN_FILES = {
 -- The words that are the shell's own, for `help` to list under the table of
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
-CeroSecOS.HELP_BUILTINS = "cd read shift break continue history exit"
+CeroSecOS.HELP_BUILTINS = "cd exit jobs wait read shift break continue history"
 
 -- Column the descriptions line up in, in help. The longest name is "hostname".
 local L_CMD = 9
@@ -1425,6 +1463,15 @@ end
 commands.man = function(state, session, args, env)
 	if #args ~= 2 then return usage("man") end
 	local name = args[2]
+	-- A word the shell itself is has no file to read the entry out of, and its
+	-- entry is the shell's own: `man cd` answers on a machine where /bin is
+	-- nothing but a memory, because cd is still there.
+	if CeroSecOS.isShellWord(name) then
+		local out = { name .. " - " .. CeroSecOS.commandDesc(name) }
+		out[#out + 1] = "usage: " .. CeroSecOS.commandUsage(name)
+		out[#out + 1] = "a word of the shell itself: no file in " .. CeroSecOS.BIN_PATH
+		return true, out
+	end
 	local node, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH .. "/" .. name)
 	if node == nil then
 		if reason ~= "no such file" and reason ~= "not a directory" then

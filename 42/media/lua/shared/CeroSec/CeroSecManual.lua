@@ -610,15 +610,22 @@ account's reach. True even of the small ones the shell runs without
 leaving the house -- echo, printf, test, [, true, false and sleep are
 looked up in /bin first and then run inside the shell for speed.
 
-Two kinds of word are not files and could not be. The grammar itself --
-if, then, elif, else, fi, for, while, until, do, done -- was never a
-command. Nor are the words that change the shell: cd, read, shift, break,
-continue and history. exit and help have no file either, on purpose, so
-that somebody in front of a machine he has just wiped can still ask what
-happened and still walk away.
-
 /bin/sh is the shell itself. Delete it and every line you type answers
 "sh: command not found" -- and the BIOS brings it back.]],
+
+[[Two kinds of word are not files and could not be. The grammar itself --
+if, then, elif, else, fi, for, while, until, do, done -- was never a
+command. Nor are the shell's own words: cd, exit, jobs, wait, read,
+shift, break, continue and history. No program can move the shell that
+ran it, or be handed the jobs it started, so there is nothing an
+executable of those names could ever have held. Look for /bin/cd and
+there is none; man cd answers all the same, because a word of the shell
+has its entry from the shell.
+
+help is the one command that does have a file and is run without looking
+for it, so that somebody in front of a machine he has just wiped can ask
+what happened -- and exit, being a word of the shell, is how he walks
+away.]],
 
 		} },
 
@@ -654,8 +661,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1568  31200    5%
-  nodes         256     66    190   26%]],
+  hda         32768   1482  31286    5%
+  nodes         256     62    194   25%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1184,7 +1191,9 @@ write that loop, and would rather he knew the way out before he did.]],
 
 -- The one page with a "]]" inside it -- dev's usage line ends in two closing
 -- brackets -- so it is the one page written with a level-one long bracket.
-[=[Quick reference. Every command in /bin, and exactly how it is spelled;
+[=[Quick reference. Every command the machine has and exactly how it is
+spelled -- the files in /bin, and the handful of words that are the shell
+itself and have no file (they are named again at the end of this list);
 man <command> prints the very same line back at you at the machine
 itself.
 
@@ -1253,13 +1262,13 @@ shell itself (chapter 8). The grammar:
 
   if then elif else fi for while until do done
 
-The ones that change the shell, and so could never be a separate
-program:
+The ones that change the shell or own what it started, and so could never
+be a separate program:
 
-  cd read shift break continue history exit
+  cd exit jobs wait read shift break continue history
 
-help prints those two lists under the table above. exit and help are the
-two the machine keeps working when /bin is gone.]],
+help prints those two lists under the table above. Those words and help
+are what the machine keeps working when /bin is gone.]],
 
 [[Limits, all of them fixed by the machine and none of them a setting:
 the disk holds 32K across at most 256 files and directories, 64 entries
