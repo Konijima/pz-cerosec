@@ -3,7 +3,7 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
 	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 	"CeroSecOSVM",
 }
@@ -209,12 +209,28 @@ do
 	eq("fs root owner", state.fs.owner, "root")
 
 	local names = CeroSecOS.childNames(state.fs)
-	eq("root has 5 entries", #names, 5)
+	eq("root has 6 entries", #names, 6)
 	eq("root entry 1", names[1], "bin")
 	eq("root entry 2", names[2], "dev")
 	eq("root entry 3", names[3], "etc")
 	eq("root entry 4", names[4], "home")
 	eq("root entry 5", names[5], "root")
+	eq("root entry 6", names[6], "var")
+
+	-- /var and the three under it: the crontab spool, root's and 700, and the
+	-- two ordinary directories the log and the mail hang in.
+	local var = state.fs.children.var
+	eq("/var owner", var.owner, "root")
+	eq("/var mode", var.mode, 755)
+	eq("/var/spool/cron is root's", var.children.spool.children.cron.owner, "root")
+	eq("and nobody else's", var.children.spool.children.cron.mode,
+		CeroSecOS.CRON_DIR_MODE)
+	eq("/var/spool mode", var.children.spool.mode, 755)
+	eq("/var/log mode", var.children.log.mode, 755)
+	eq("/var/mail mode", var.children.mail.mode, 755)
+	eq("nothing is in the spool yet", CeroSecOS.countEntries(var.children.spool.children.cron), 0)
+	eq("no log yet", CeroSecOS.countEntries(var.children.log), 0)
+	eq("no mail yet", CeroSecOS.countEntries(var.children.mail), 0)
 
 	eq("/home/admin exists", state.fs.children.home.children.admin.type, "dir")
 	eq("/home/admin owner", state.fs.children.home.children.admin.owner, "admin")
@@ -225,11 +241,12 @@ do
 	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 
-	-- The skeleton is nine nodes plus one executable per command plus
-	-- /etc/passwd, /etc/sudoers and /etc/group, and every byte of it is
-	-- accounted for: the machine's name, the motd, the accounts file, the
-	-- sudoers file, the groups file, and the one-line description in each
-	-- executable.
+	-- The skeleton is nine nodes plus the five of the /var tree, plus one
+	-- executable per command plus /etc/passwd, /etc/sudoers and /etc/group, and
+	-- every byte of it is accounted for: the machine's name, the motd, the
+	-- accounts file, the sudoers file, the groups file, and the one-line
+	-- description in each executable. The /var tree is five directories and no
+	-- bytes at all: what goes in it is written when something asks for it.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
@@ -237,7 +254,7 @@ do
 	local sudoers = state.fs.children.etc.children.sudoers
 	local group = state.fs.children.etc.children.group
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + #binNames + 3)
+	eq("skeleton node count", nodes, 9 + 5 + #binNames + 3)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
 			+ #group.data + binBytes)
@@ -451,7 +468,7 @@ do
 	eq("help header", helpLines[1], "CeroSec OS commands:")
 
 	-- Packed into columns: five short names fit one row of a 60-column screen.
-	ok(state, admin, "ls /", { "bin   dev   etc   home  root" })
+	ok(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
 	ok(state, admin, "ls", {})
 	ok(state, admin, "mkdir sub", {})
 	ok(state, admin, "ls", { "sub" })
@@ -688,7 +705,7 @@ do
 	ok(state, admin, "ls / > listing.txt", {})
 	-- What went into the file is what was on the screen: the packed row, not a
 	-- name per line. A redirect stores the OUTPUT and never a second rendering.
-	ok(state, admin, "cat listing.txt", { "bin   dev   etc   home  root" })
+	ok(state, admin, "cat listing.txt", { "bin   dev   etc   home  root  var" })
 	ok(state, admin, "echo x>tight.txt", {})            -- no spaces around >
 	ok(state, admin, "cat tight.txt", { "x" })
 	ok(state, admin, "> empty.txt", {})                 -- bare redirect creates the file
@@ -805,9 +822,9 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	-- The skeleton, plus one executable per command, plus /etc/passwd and
-	-- /etc/sudoers.
-	eq("starting node count", nodes, 9 + #CeroSecOS.binNames() + 3)
+	-- The skeleton, the /var tree, plus one executable per command, plus
+	-- /etc/passwd and /etc/sudoers.
+	eq("starting node count", nodes, 9 + 5 + #CeroSecOS.binNames() + 3)
 	local made = 0
 	local dir = 0
 	while true do
@@ -849,7 +866,7 @@ do
 	-- is still the owner's own name.
 	local EPOCH = "Jan  1 00:00"
 	local lines = ok(state, admin, "ls -l /", nil)
-	eq("ls -l lists 5 entries", #lines, 5)
+	eq("ls -l lists 6 entries", #lines, 6)
 	eq("ls -l bin",
 		lines[1],
 		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  "
@@ -2437,7 +2454,7 @@ do
 	bad(state, admin, "ls /", "ls: permission denied")
 	local listed = run(state, admin, "sudo ls /")
 	eq("sudo ls runs", listed.ok, true)
-	eq("and lists", listed.lines[1], "bin   dev   etc   home  root")
+	eq("and lists", listed.lines[1], "bin   dev   etc   home  root  var")
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 
 	-- The two orders come back out of sudo untouched.
@@ -3019,7 +3036,7 @@ do
 	-- And through the command.
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "ls /", { "bin   dev   etc   home  root" })
+	okAt(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
 	okAt(state, admin, "ls", {})
 	okAt(state, admin, "touch only.txt", {})
 	okAt(state, admin, "ls", { "only.txt" })
@@ -3027,9 +3044,9 @@ do
 	okAt(state, admin, "ls", { "only.txt  sub" })
 	-- -F marks the directories and nothing else.
 	okAt(state, admin, "ls -F", { "only.txt  sub/" })
-	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  root/" })
+	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  root/  var/" })
 	-- The mark is part of the name, so it is what the column is measured on.
-	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 33)
+	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 39)
 end
 
 -- 20f. ls -l, with a clock and with the flags together.
@@ -6143,10 +6160,10 @@ do
 		CeroSecOS.exemptUsage(state) <= CeroSecOS.MAX_EXEMPT_BYTES)
 	check("and got close enough to prove it was reached (" ..
 		CeroSecOS.exemptUsage(state) .. ")",
-		CeroSecOS.exemptUsage(state) > CeroSecOS.MAX_EXEMPT_BYTES - CeroSecOS.HISTORY_BYTES)
+		CeroSecOS.exemptUsage(state) > CeroSecOS.HISTORY_EXEMPT_BYTES - CeroSecOS.HISTORY_BYTES)
 	check("and the machine still boots after all of that",
 		CeroSecOS.validate(state) == true)
-	eq("the ceiling is four histories", CeroSecOS.MAX_EXEMPT_BYTES,
+	eq("the histories' own ceiling is four of them", CeroSecOS.HISTORY_EXEMPT_BYTES,
 		4 * CeroSecOS.HISTORY_BYTES)
 end
 
@@ -6359,9 +6376,9 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ adduser cat chgrp chmod chown clear cp date deluser dev df"
+	local WANT = "[ adduser cat chgrp chmod chown clear cp crontab date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
-		.. " help hostname id kill ls man mkdir mv passwd printf ps pwd reboot"
+		.. " help hostname id kill ls mail man mkdir mv passwd printf ps pwd reboot"
 		.. " restart rm sh shutdown sleep sort su sudo tail test touch true uniq"
 		.. " wc whoami write"
 
@@ -6890,6 +6907,347 @@ do
 		nil, nil, { passes = 2000 })
 	eq("wc counts a flood it will never hold", counted.out[#counted.out],
 		"   200    200   1489")
+end
+
+--
+-- 40. cron: what a crontab means (rung 5b)
+--
+-- The format, field for field, and Vixie's own refusals: a machine that took a
+-- line he would have refused, or refused one he would have taken, is a machine
+-- whose crontab(5) is a lie.
+--
+
+do
+	-- Every form a field may wear.
+	local function entry(line)
+		local e, reason = CeroSecOS.parseCronLine(line)
+		check("`" .. line .. "` parses (" .. tostring(reason) .. ")", e ~= nil)
+		return e or {}
+	end
+	local function refused(line, want)
+		local e, reason = CeroSecOS.parseCronLine(line)
+		eq("`" .. line .. "` is refused", e, nil)
+		eq("`" .. line .. "` says", reason, want)
+	end
+	local function members(set)
+		local out = {}
+		for k in pairs(set or {}) do out[#out + 1] = k end
+		table.sort(out)
+		return table.concat(out, ",")
+	end
+
+	eq("a star is every minute there is", members(entry("* * * * * x").min),
+		"0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28," ..
+		"29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54," ..
+		"55,56,57,58,59")
+	eq("one number is one minute", members(entry("5 * * * * x").min), "5")
+	eq("a list is its members", members(entry("0,15,30,45 * * * * x").min), "0,15,30,45")
+	eq("a range is every one of it", members(entry("10-13 * * * * x").min), "10,11,12,13")
+	eq("a step over a star", members(entry("*/15 * * * * x").min), "0,15,30,45")
+	eq("a step over a range", members(entry("10-20/5 * * * * x").min), "10,15,20")
+	eq("and the two mixed", members(entry("0,30-32,*/20 * * * * x").min), "0,20,30,31,32,40")
+	eq("the hour field", members(entry("0 0,12 * * * x").hour), "0,12")
+	eq("the day of the month", members(entry("0 0 1,15 * * x").dom), "1,15")
+	eq("the month", members(entry("0 0 * 1-3 * x").month), "1,2,3")
+	eq("the day of the week", members(entry("0 0 * * 1-5 x").dow), "1,2,3,4,5")
+	-- Seven is Sunday and so is zero: one line matches the same day either way.
+	eq("seven is Sunday and so is nought", members(entry("0 0 * * 7 x").dow), "0,7")
+	-- The command is the rest of the line, whole: it is shell and not a word list.
+	eq("the command is the rest of the line", entry("0 4 * * * echo a; echo b").cmd,
+		"echo a; echo b")
+	eq("and the blanks in front of it are not part of it",
+		entry("0   4   *   *   *     echo hi").cmd, "echo hi")
+	-- Which fields were a bare star, because that is what the day rule turns on.
+	eq("a star is remembered as one", entry("0 4 * * * x").domStar, true)
+	eq("and a number is not", entry("0 4 1 * * x").domStar, false)
+
+	-- A step only follows a star or a range. Vixie reads it nowhere else, so
+	-- `5/10` is not a minute -- it is a mistake in the minute field.
+	refused("5/10 * * * * x", "bad minute")
+	refused("*/0 * * * * x", "bad minute")
+	refused("20-10 * * * * x", "bad minute")
+	refused("60 * * * * x", "bad minute")
+	refused("-1 * * * * x", "bad minute")
+	refused("* 24 * * * x", "bad hour")
+	refused("* * 0 * * x", "bad day-of-month")
+	refused("* * 32 * * x", "bad day-of-month")
+	refused("* * * 0 * x", "bad month")
+	refused("* * * 13 * x", "bad month")
+	refused("* * * * 8 x", "bad day-of-week")
+	-- Names are not accepted, and the field they are in is what says so.
+	refused("* * * jan * x", "bad month")
+	refused("* * * * mon x", "bad day-of-week")
+	-- Too few fields: the field that was never there is the one that is named.
+	refused("* * * *", "bad day-of-week")
+	refused("* *", "bad day-of-month")
+	-- Five fields and nothing after them is a line with no command on it.
+	refused("* * * * *", "bad command")
+	refused("@reboot", "bad command")
+	-- A shorthand that is not one, and one with the wrong case: Vixie compares
+	-- them letter for letter.
+	refused("@nope echo x", "bad time specifier")
+	refused("@Daily echo x", "bad time specifier")
+	refused("@ echo x", "bad time specifier")
+
+	-- Comments and blank lines are not lines at all: no entry, and no refusal.
+	local function nothing(line)
+		local e, reason = CeroSecOS.parseCronLine(line)
+		eq("`" .. line .. "` is no entry", e, nil)
+		eq("`" .. line .. "` is no refusal either", reason, nil)
+	end
+	nothing("")
+	nothing("   ")
+	nothing("# every day at four")
+	nothing("   # indented")
+
+	-- The shorthands, and what each of them is the long way round.
+	eq("@hourly is on the hour", members(entry("@hourly x").min), "0")
+	eq("and every hour", entry("@hourly x").hour[13], true)
+	eq("@daily is midnight", members(entry("@daily x").hour), "0")
+	eq("@midnight is the same thing", members(entry("@midnight x").hour), "0")
+	eq("@weekly is Sunday", members(entry("@weekly x").dow), "0")
+	eq("@monthly is the first", members(entry("@monthly x").dom), "1")
+	eq("@yearly is the first of January", members(entry("@yearly x").month), "1")
+	eq("@annually is the same thing", members(entry("@annually x").month), "1")
+	eq("@reboot is not a time at all", entry("@reboot echo up").reboot, true)
+	eq("and carries its command", entry("@reboot echo up").cmd, "echo up")
+end
+
+--
+-- 40a. cron: when a line is due
+--
+
+do
+	-- Thursday the 8th of July 1993, at 14:32 -- the machine's fixed moment.
+	local parts = CeroSecOS.dateParts(FIXED)
+	eq("the fixed moment is a Thursday", CeroSecOS.DAY_NAMES[parts.wday], "Thu")
+	local function due(line, at)
+		local e, reason = CeroSecOS.parseCronLine(line)
+		check("`" .. line .. "` parses (" .. tostring(reason) .. ")", e ~= nil)
+		return CeroSecOS.cronDue(e, CeroSecOS.dateParts(at or FIXED))
+	end
+
+	eq("every minute", due("* * * * * x"), true)
+	eq("this minute", due("32 14 * * * x"), true)
+	eq("the minute before", due("31 14 * * * x"), false)
+	eq("the hour before", due("32 13 * * * x"), false)
+	eq("a step that lands on it", due("*/16 * * * * x"), true)
+	eq("a step that does not", due("*/15 * * * * x"), false)
+	eq("this month", due("32 14 * 7 * x"), true)
+	eq("next month", due("32 14 * 8 * x"), false)
+	eq("this day of the month", due("32 14 8 * * x"), true)
+	eq("another one", due("32 14 9 * * x"), false)
+	eq("this day of the week", due("32 14 * * 4 x"), true)
+	eq("another one", due("32 14 * * 5 x"), false)
+
+	-- The rule nobody expects and every cron has: with BOTH day fields
+	-- restricted, either one matching is enough.
+	eq("the day of the month matches and the weekday does not",
+		due("32 14 8 * 5 x"), true)
+	eq("the weekday matches and the day of the month does not",
+		due("32 14 9 * 4 x"), true)
+	eq("and neither", due("32 14 9 * 5 x"), false)
+	-- With one of them a star it is the other that decides, and not both.
+	eq("a star day of the month leaves it to the weekday",
+		due("32 14 * * 5 x"), false)
+
+	-- @reboot is never due at a minute: it is due when the machine comes up, and
+	-- the scheduler asks that question another way.
+	eq("@reboot is due at no minute at all", due("@reboot x"), false)
+
+	-- Midnight, and the day rolling over.
+	local midnight = CeroSecOS.timeFromParts(1993, 7, 9, 0, 0, 0)
+	eq("@daily at midnight", due("@daily x", midnight), true)
+	eq("and the day is the ninth now", due("0 0 9 * * x", midnight), true)
+	eq("@hourly at midnight too", due("@hourly x", midnight), true)
+	eq("the first of the month", due("@monthly x",
+		CeroSecOS.timeFromParts(1993, 8, 1, 0, 0, 0)), true)
+	eq("the first of the year", due("@yearly x",
+		CeroSecOS.timeFromParts(1994, 1, 1, 0, 0, 0)), true)
+	-- Nothing is due on a table that is not one.
+	eq("junk is never due", CeroSecOS.cronDue(nil, parts), false)
+	eq("nor is a real entry at no time at all",
+		CeroSecOS.cronDue(CeroSecOS.parseCronLine("* * * * * x"), nil), false)
+end
+
+--
+-- 40b. cron: a whole crontab, and what crontab(1) says about a bad one
+--
+
+do
+	local entries, errors = CeroSecOS.parseCrontab(
+		"# the header\n\n* * * * * echo one\n0 4 * * * echo two\n")
+	eq("two entries", #entries, 2)
+	eq("no refusals", #errors, 0)
+	eq("and each knows the line it was on", entries[1].line, 3)
+	eq("the second too", entries[2].line, 4)
+
+	-- A file with one bad line in it: the good ones are still entries, and the
+	-- bad one is a refusal with its own line number.
+	local some, why = CeroSecOS.parseCrontab("* * * * * echo one\n60 * * * * x\n@nope y")
+	eq("the good line is an entry", #some, 1)
+	eq("and the two bad ones are refusals", #why, 2)
+	eq("the first names its line", why[1].line, 2)
+	eq("and its reason", why[1].reason, "bad minute")
+	eq("the second as well", why[2].line, 3)
+	eq("and its reason", why[2].reason, "bad time specifier")
+
+	-- What crontab(1) prints: the file, the line, the field. Vixie's shape
+	-- exactly, quotes and all.
+	eq("the refusal reads the way crontab prints it",
+		CeroSecOS.checkCrontab("/var/spool/cron/admin", "* * * * * ok\n60 * * * * x"),
+		"\"/var/spool/cron/admin\":2: bad minute")
+	eq("and a file that is one is not refused at all",
+		CeroSecOS.checkCrontab("/var/spool/cron/admin", "* * * * * ok"), nil)
+	eq("an empty one is a file too",
+		CeroSecOS.checkCrontab("/var/spool/cron/admin", ""), nil)
+	eq("and so is a file of nothing but comments",
+		CeroSecOS.checkCrontab("/var/spool/cron/admin", "# nothing\n\n# doing"), nil)
+
+	-- Thirty-two lines, and the thirty-third.
+	local full = string.rep("* * * * * x\n", CeroSecOS.CRON_MAX_LINES)
+	eq("thirty-two entries is a crontab", CeroSecOS.checkCrontab("/f", full), nil)
+	eq("and thirty-three is not",
+		CeroSecOS.checkCrontab("/f", full .. "* * * * * x"),
+		"\"/f\":33: too many entries")
+end
+
+--
+-- 40c. crontab and mail, at the prompt
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local spool = CeroSecOS.cronPath("admin")
+
+	-- Nothing yet, and Vixie's line for it.
+	badAt(state, admin, "crontab -l", "no crontab for admin")
+	badAt(state, admin, "crontab -r", "no crontab for admin")
+	badAt(state, admin, "crontab", "crontab: usage: crontab -e|-l|-r")
+	badAt(state, admin, "crontab -x", "crontab: usage: crontab -e|-l|-r")
+	badAt(state, admin, "crontab -l -r", "crontab: usage: crontab -e|-l|-r")
+
+	-- -e makes the file and opens the editor on it AS ROOT, which is the whole
+	-- of the privilege this command has: the spool is 700 and root's, and an
+	-- account that could write it could write anybody's.
+	local r = runAt(state, admin, "crontab -e")
+	eq("crontab -e opens the editor", r.control, "edit")
+	eq("on the account's own file in the spool", r.data.path, spool)
+	eq("as root", r.data.user, "root")
+	eq("and says what is being edited", r.data.crontab, true)
+	eq("with nothing in it yet", r.data.text, "")
+	local node = CeroSecOS.systemNode(state, spool)
+	check("the file is there now", node ~= nil and node.type == "file")
+	eq("root's", node.owner, "root")
+	eq("and nobody else's", node.mode, CeroSecOS.CRONTAB_MODE)
+
+	-- An empty crontab is no crontab: quitting the editor without typing leaves
+	-- the account exactly as it was.
+	badAt(state, admin, "crontab -l", "no crontab for admin")
+
+	-- The save, the way the editor does it -- as root, on that path.
+	put(state, CeroSecOS.rootSession(), spool, "* * * * * echo tick\n0 4 * * * echo four")
+	okAt(state, admin, "crontab -l", { "* * * * * echo tick", "0 4 * * * echo four" })
+	-- And the file itself is still out of reach of the account it belongs to:
+	-- crontab is the only way in.
+	badAt(state, admin, "cat " .. spool, "cat: " .. spool .. ": permission denied")
+	badAt(state, admin, "ls " .. CeroSecOS.CRON_PATH,
+		"ls: " .. CeroSecOS.CRON_PATH .. ": permission denied")
+	badAt(state, admin, "edit " .. spool, "edit: " .. spool .. ": permission denied")
+
+	-- -e on a crontab that is there hands the editor what is in it.
+	local again = runAt(state, admin, "crontab -e")
+	eq("the editor opens on what is there", again.data.text,
+		"* * * * * echo tick\n0 4 * * * echo four")
+
+	-- -r takes it away, and there is nothing to take away twice.
+	okAt(state, admin, "crontab -r", {})
+	eq("the file is gone", CeroSecOS.systemNode(state, spool), nil)
+	badAt(state, admin, "crontab -r", "no crontab for admin")
+
+	-- Another account's crontab is its own: a second one gets its own file.
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob", "")
+	runAt(state, bob, "crontab -e")
+	check("bob has a file of his own",
+		CeroSecOS.systemNode(state, CeroSecOS.cronPath("bob")) ~= nil)
+	eq("and it is not admin's", CeroSecOS.systemNode(state, spool), nil)
+
+	-- mail: nothing, then something, then nothing again -- reading is what
+	-- empties it.
+	okAt(state, admin, "mail", { "No mail for admin" })
+	badAt(state, admin, "mail -f", "mail: usage: mail")
+	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo hi", { "hi" }, FIXED)
+	okAt(state, admin, "mail", {
+		"From cron  Thu Jul  8 14:32:00 1993",
+		"Subject: Cron <admin@ksp-front-01> echo hi",
+		"",
+		"hi",
+	})
+	okAt(state, admin, "mail", { "No mail for admin" })
+	-- The mailbox is the account's own, 600, and nobody else's to read.
+	local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin"))
+	eq("the mailbox belongs to the account", box.owner, "admin")
+	eq("and nobody else reads it", box.mode, CeroSecOS.MAIL_MODE)
+	badAt(state, bob, "cat " .. CeroSecOS.mailPath("admin"),
+		"cat: " .. CeroSecOS.mailPath("admin") .. ": permission denied")
+end
+
+--
+-- 40d. The log, the mailbox, and the two ceilings on them
+--
+
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local _, before = CeroSecOS.usage(state)
+
+	-- A hundred lines of log and no more, oldest dropped -- the rule the history
+	-- file already runs on.
+	for i = 1, 250 do CeroSecOS.cronLog(state, "(admin) CMD (echo " .. i .. ")", FIXED) end
+	local log = CeroSecOS.systemNode(state, CeroSecOS.CRON_LOG_PATH)
+	check("the log is there", log ~= nil)
+	eq("root's", log.owner, "root")
+	eq("and root's to read", log.mode, CeroSecOS.CRON_LOG_MODE)
+	local lines = CeroSecOS.splitLines(log.data)
+	eq("a hundred lines at most", #lines, CeroSecOS.CRON_LOG_LINES)
+	check("and four kilobytes at most (" .. #log.data .. ")",
+		#log.data <= CeroSecOS.CRON_LOG_BYTES)
+	eq("the newest is the last thing said", lines[#lines],
+		CeroSecOS.formatStamp(FIXED) .. " (admin) CMD (echo 250)")
+	-- It is exempt from the disk quota by its PATH, so `df` did not move.
+	local _, after = CeroSecOS.usage(state)
+	eq("the disk did not move", after, before)
+	-- An ordinary account cannot read it at all.
+	local admin = open(state, "admin")
+	badAt(state, admin, "cat " .. CeroSecOS.CRON_LOG_PATH,
+		"cat: " .. CeroSecOS.CRON_LOG_PATH .. ": permission denied")
+	okAt(state, root, "cat " .. CeroSecOS.CRON_LOG_PATH, nil)
+
+	-- The mailbox, the same way: bounded, exempt, and the oldest dropped.
+	for i = 1, 300 do
+		CeroSecOS.mailAppend(state, "admin", "ksp", nil, { "line " .. i }, FIXED)
+	end
+	local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin"))
+	local mailLines = CeroSecOS.splitLines(box.data)
+	eq("a hundred lines at most", #mailLines, CeroSecOS.MAIL_LINES)
+	check("and four kilobytes at most (" .. #box.data .. ")",
+		#box.data <= CeroSecOS.MAIL_BYTES)
+	eq("the newest is the last thing said", mailLines[#mailLines], "line 300")
+	local _, still = CeroSecOS.usage(state)
+	eq("and the disk still did not move", still, before)
+	check("the machine boots with both of them there", CeroSecOS.validate(state) == true)
+
+	-- Renamed, a mailbox is an ordinary file from that moment on: the exemption
+	-- is the PATH's and rides on nothing carried by the node.
+	okAt(state, root, "mv " .. CeroSecOS.mailPath("admin") .. " /root/kept", nil)
+	local _, moved = CeroSecOS.usage(state)
+	check("what was exempt costs the disk the moment it is moved (" ..
+		moved .. " of " .. still .. ")", moved > still)
+
+	-- Mail with nothing in it is not a delivery at all.
+	eq("no lines, no mail", CeroSecOS.mailAppend(state, "admin", "ksp", nil, {}, FIXED), false)
 end
 
 print("os_test: " .. count .. " assertions passed")

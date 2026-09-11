@@ -46,6 +46,7 @@ local FILES = {
 	"42/media/lua/shared/CeroSec/CeroSecDefs.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOS.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSComplete.lua",
+	"42/media/lua/shared/CeroSec/OS/CeroSecOSCron.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSDev.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSFS.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSPath.lua",
@@ -842,6 +843,121 @@ do
 	eq("it said why, once", #console.lines, 1)
 	eq("and that is the line", console.lines[1], "sort: input too large")
 	note("pipe into sort", result, " (input too large)")
+end
+
+--
+-- 15. Thirty-two cron lines, all due every minute, on six machines (rung 5b)
+--
+-- The shape cron adds to the list: a player who fills his crontab and waits. Six
+-- machines, thirty-two lines each, every one of them due every single minute --
+-- a hundred and ninety-two jobs asked for a minute, on a county whose ceiling is
+-- four jobs a machine.
+--
+-- What has to be true: the cost of a pass is FLAT -- the thousandth minute is no
+-- dearer than the tenth -- the four-job ceiling holds, the log and the mailboxes
+-- stay inside their own ceilings, and the disk does not move, because every byte
+-- of what cron writes about itself is exempt and bounded.
+--
+
+do
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	-- The game clock, which is cron's clock: it moves a minute at a time, and
+	-- the sweep is what a real server does on Events.EveryOneMinute.
+	local minute = 0
+	local system2 = {}
+	function system2:execEnv(luaObject, state)
+		return { now = 740000000 + minute * 60, nowMs = _G.__now }
+	end
+	function system2:clockEnv() return { now = 740000000 + minute * 60 } end
+	function system2:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function system2:writeSession() end
+	function system2:pushScreen() end
+	function system2:applyPower() end
+
+	local machines, states = {}, {}
+	local lines = {}
+	for i = 1, CeroSecOS.CRON_MAX_LINES do lines[i] = "* * * * * echo line" .. i end
+	local crontab = table.concat(lines, "\n")
+	for m = 1, 6 do
+		local state = CeroSecOS.newState("ksp")
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("admin"), crontab, false, 100)
+		if done == nil then error("cannot write the crontab: " .. tostring(reason)) end
+		machines[m], states[m] = machine, state
+	end
+
+	local _, diskBefore = CeroSecOS.usage(states[1])
+	local perMinute = {}
+	local worst = 0
+	local clockStart = os.clock()
+	-- A hundred minutes, and ten passes of the scheduler inside each of them:
+	-- that is a second of game time per minute, which is more scheduler than a
+	-- real machine gets between two minutes and so a harder bench.
+	for _ = 1, 100 do
+		minute = minute + 1
+		local spent = 0
+		for m = 1, 6 do CeroSecJobs.cronPass(system2, machines[m], 740000000 + minute * 60) end
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			CeroSecJobs.system = system2
+			CeroSecJobs.pass(_G.__now)
+			spent = spent + tickSteps
+			if tickSteps > worst then worst = tickSteps end
+		end
+		perMinute[#perMinute + 1] = spent
+		for m = 1, 6 do
+			check("no machine ever holds more than four jobs (" ..
+				#CeroSecJobs.book(machines[m]).list .. ")",
+				CeroSecOS.liveJobs(CeroSecJobs.book(machines[m]).list) <= CeroSecOS.MAX_JOBS)
+			check("and nothing of it reaches the screen",
+				#machines[m].console.lines == 0)
+		end
+	end
+	local msPerMinute = (os.clock() - clockStart) * 1000 / 100
+
+	check("no pass spent more than the county's budget (" .. worst .. ")",
+		worst <= CeroSec.STEP_BUDGET_PER_TICK + CeroSecOS.STEP_COST_COMMAND)
+	-- Flat: the last ten minutes cost no more than the first ten did.
+	local early, late = 0, 0
+	for i = 1, 10 do early = early + perMinute[i] end
+	for i = 91, 100 do late = late + perMinute[i] end
+	check("the cost of a minute does not climb (first 10: " .. early ..
+		", last 10: " .. late .. ")", late <= early + CeroSec.STEP_BUDGET_PER_TICK)
+
+	-- The log and the mailbox are bounded, and the disk is where it was: every
+	-- byte cron wrote about itself is exempt by its path and capped at the write.
+	for m = 1, 6 do
+		local log = CeroSecOS.systemNode(states[m], CeroSecOS.CRON_LOG_PATH)
+		check("the log is there", log ~= nil)
+		check("a hundred lines at most (" .. #CeroSecOS.splitLines(log.data) .. ")",
+			#CeroSecOS.splitLines(log.data) <= CeroSecOS.CRON_LOG_LINES)
+		check("and four kilobytes at most (" .. #log.data .. ")",
+			#log.data <= CeroSecOS.CRON_LOG_BYTES)
+		local box = CeroSecOS.systemNode(states[m], CeroSecOS.mailPath("admin"))
+		check("the mailbox is there", box ~= nil)
+		check("a hundred lines at most (" .. #CeroSecOS.splitLines(box.data) .. ")",
+			#CeroSecOS.splitLines(box.data) <= CeroSecOS.MAIL_LINES)
+		check("and four kilobytes at most (" .. #box.data .. ")",
+			#box.data <= CeroSecOS.MAIL_BYTES)
+		check("the machine still boots with both of them on it",
+			CeroSecOS.validate(states[m]) == true)
+	end
+	local _, diskAfter = CeroSecOS.usage(states[1])
+	eq("and the disk did not move", diskAfter, diskBefore)
+
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
+		"192 cron jobs/minute", worst, msPerMinute)
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

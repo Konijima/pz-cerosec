@@ -162,36 +162,54 @@ end
 --
 -- What the disk quota does not count
 --
--- A shell's own memory does not fill the drive, so an account's ~/.sh_history
--- is exempt from the 32K -- `df` must not move because somebody typed. The
--- exemption is decided by the PATH and by nothing carried on the node: exactly
--- <home>/.sh_history for an account /etc/passwd names, plus root's own, and
--- owned by that account. So a history that is renamed is an ordinary file from
--- the moment it is renamed -- it counts, immediately -- and one renamed back is
--- exempt again. There is no flag to ride a rename and no way to stack the
--- exemption up by moving histories aside.
+-- What the MACHINE writes about itself does not fill the drive. Three kinds of
+-- file are exempt from the 32K, and all three are things a machine writes
+-- without anybody asking it to:
 --
--- Two ceilings bound what the exemption can cost: HISTORY_BYTES for any one of
--- them, and MAX_EXEMPT_BYTES (four of those) for the whole machine. Bytes past
--- either are not exempt -- they are counted against the disk like any others,
--- which is a full disk and never a machine that will not boot.
+--   * an account's own ~/.sh_history -- `df` must not move because somebody
+--     typed;
+--   * an account's own mailbox under /var/mail -- a cron job at four in the
+--     morning must not cost the player his disk;
+--   * /var/log/cron -- a machine that stopped logging because the log filled
+--     the disk would go quiet exactly when something is wrong.
+--
+-- The exemption is decided by the PATH and by nothing carried on the node:
+-- exactly <home>/.sh_history for an account /etc/passwd names, plus root's own,
+-- exactly /var/mail/<name> for one, exactly /var/log/cron -- and owned by that
+-- account. So a history that is renamed is an ordinary file from the moment it is
+-- renamed -- it counts, immediately -- and one renamed back is exempt again.
+-- There is no flag to ride a rename and no way to stack the exemption up by
+-- moving files aside.
+--
+-- Two ceilings bound what the exemption can cost: one of its own for any single
+-- file, and MAX_EXEMPT_BYTES for the whole machine. Bytes past either are not
+-- exempt -- they are counted against the disk like any others, which is a full
+-- disk and never a machine that will not boot.
 --
 
--- The exempt paths, each mapped to the account it belongs to.
+-- The exempt paths, each mapped to the account it belongs to, the most it may be
+-- granted, and WHICH of the three it is: the kind is what lets the history's own
+-- ceiling be asked about histories alone (see CeroSecOS.historyAppend), so a
+-- full mailbox is not what stops a shell remembering what was typed.
 function CeroSecOS.exemptPaths(state)
 	local paths = {}
+	local function rule(path, owner, max, kind)
+		paths[path] = { owner = owner, max = max, kind = kind }
+	end
 	local users, order = CeroSecOS.readUsers(state)
 	for i = 1, #order do
 		local user = users[order[i]]
 		-- Through resolve, so a home written "/home/admin/" in the file names
 		-- the same path the walk below builds.
 		local abs = CeroSecOS.resolve(nil, user.home .. "/" .. CeroSecOS.HISTORY_NAME)
-		paths[abs] = user.name
+		rule(abs, user.name, CeroSecOS.HISTORY_BYTES, "history")
+		rule(CeroSecOS.mailPath(user.name), user.name, CeroSecOS.MAIL_BYTES, "mail")
 	end
 	-- Root's own, whatever /etc/passwd says: a machine whose passwd has been
 	-- edited into nonsense still has a root history at the place root's history
 	-- has always been, and it must not start costing him his disk for it.
-	paths["/root/" .. CeroSecOS.HISTORY_NAME] = "root"
+	rule("/root/" .. CeroSecOS.HISTORY_NAME, "root", CeroSecOS.HISTORY_BYTES, "history")
+	rule(CeroSecOS.CRON_LOG_PATH, "root", CeroSecOS.CRON_LOG_BYTES, "log")
 	return paths
 end
 
@@ -205,11 +223,18 @@ local function walkUsage(node, path, exempt, budget, ignore)
 	if node == ignore then return 1, 0, 0 end
 	if node.type == "file" then
 		local size = #(node.data or "")
-		if exempt[path] ~= node.owner then return 1, size, 0 end
+		local rule = exempt[path]
+		if rule == nil or rule.owner ~= node.owner then return 1, size, 0 end
 		local grant = size
-		if grant > CeroSecOS.HISTORY_BYTES then grant = CeroSecOS.HISTORY_BYTES end
+		if grant > rule.max then grant = rule.max end
 		if grant > budget.left then grant = budget.left end
 		budget.left = budget.left - grant
+		-- Counted towards the answer only when it is the kind being asked about.
+		-- The BUDGET is spent either way: the machine-wide ceiling is one ceiling
+		-- and not one per kind.
+		if budget.kind ~= nil and rule.kind ~= budget.kind then
+			return 1, size - grant, 0
+		end
 		return 1, size - grant, grant
 	end
 	local nodes, bytes, exempted = 1, 0, 0
@@ -228,10 +253,10 @@ local function walkUsage(node, path, exempt, budget, ignore)
 	return nodes, bytes, exempted
 end
 
-local function walkState(state, ignore)
+local function walkState(state, ignore, kind)
 	if type(state) ~= "table" or type(state.fs) ~= "table" then return 0, 0, 0 end
 	return walkUsage(state.fs, "", CeroSecOS.exemptPaths(state),
-		{ left = CeroSecOS.MAX_EXEMPT_BYTES }, ignore)
+		{ left = CeroSecOS.MAX_EXEMPT_BYTES, kind = kind }, ignore)
 end
 
 -- Whole-computer usage: nodes, and the bytes the quota counts.
@@ -246,9 +271,10 @@ function CeroSecOS.exemptUsage(state)
 	return exempted
 end
 
--- The same, with one node left out: what everybody ELSE's history holds.
-function CeroSecOS.exemptOthers(state, node)
-	local _, _, exempted = walkState(state, node)
+-- The same, with one node left out, and optionally counting one kind of exempt
+-- file only: what everybody ELSE's history holds.
+function CeroSecOS.exemptOthers(state, node, kind)
+	local _, _, exempted = walkState(state, node, kind)
 	return exempted
 end
 

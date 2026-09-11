@@ -147,7 +147,7 @@ Nothing you had typed toward that answer is kept.]],
 
 [[A fresh machine's files look like this from the root:
 
-  bin  dev  etc  home  root
+  bin  dev  etc  home  root  var
 
 bin holds the commands themselves (chapter 6), etc holds the files that
 make the machine what it is (chapter 9), home holds one directory per
@@ -661,8 +661,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1511  31257    5%
-  nodes         256     64    192   25%]],
+  hda         32768   1569  31199    5%
+  nodes         256     71    185   28%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1272,6 +1272,7 @@ itself.
   chown <user> <path>
   clear
   cp [-r] <src> <dst>
+  crontab -e|-l|-r
   date [+FORMAT]
   deluser [-r] <name>
   dev [kind|id [value|toggle]|find <id>]
@@ -1295,6 +1296,7 @@ itself.
   jobs
   kill <id>|%<n>
   ls [-laAF] [path]
+  mail
   man <command>
   mkdir <dir>
   mv <src> <dst>

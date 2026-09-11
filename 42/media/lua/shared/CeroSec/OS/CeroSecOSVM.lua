@@ -2095,8 +2095,8 @@ commands.jobs = function(state, session, args, env)
 		-- Not the shell you are typing into: `jobs` lists what the shell
 		-- STARTED, the way it has since job control was invented. `ps` is the
 		-- one that shows everything the machine is running, the prompt's own
-		-- job included.
-		if not job.interactive then
+		-- job included -- and a cron job, which the shell did not start either.
+		if not job.interactive and job.mailTo == nil then
 			out[#out + 1] = "[" .. tostring(job.n or i) .. "] "
 				.. CeroSecOS.padRight(CeroSecOS.jobWord(job), 8)
 				.. " " .. CeroSecOS.truncate(job.cmd or "", 45)

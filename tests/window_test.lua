@@ -253,6 +253,7 @@ local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
+	"shared/CeroSec/OS/CeroSecOSCron.lua",
 	"shared/CeroSec/OS/CeroSecOSDev.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
@@ -337,6 +338,10 @@ local function newBench()
 	object.consoleChecked = true
 	system.getLuaObjectAt = function() return object end
 	system.getIsoObjectAt = function() return nil end
+	-- The sweep Events.EveryOneMinute walks: the power check and cron's own pass
+	-- ask the system for every machine there is, and on this bench there is one.
+	system.getLuaObjectCount = function() return 1 end
+	system.getLuaObjectByIndex = function() return object end
 
 	local window = CeroSecTerminal:new(0, 0, player, computer)
 	window:initialise()
@@ -424,6 +429,47 @@ local function newBench()
 			end
 		end
 		bench.frame()
+	end
+
+	-- The game's minute hand: what Events.EveryOneMinute does on a real server,
+	-- which is the power sweep and cron's pass over every machine whose chunk is
+	-- loaded. The game clock moves a minute first, because that is what the event
+	-- means -- a bench that fired the pass without moving it would be a bench
+	-- cron correctly ignores.
+	function bench.minute(times)
+		for _ = 1, (times or 1) do
+			local clock = _G.__gameTime
+			clock.minutes = clock.minutes + 1
+			if clock.minutes >= 60 then
+				clock.minutes = 0
+				clock.hour = clock.hour + 1
+				if clock.hour >= 24 then
+					clock.hour = 0
+					clock.day = clock.day + 1
+				end
+			end
+			local replies = {}
+			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
+			system:checkPower()
+			system:checkCron()
+			for i = 1, #replies do
+				for w = 1, #bench.windows do
+					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
+				end
+			end
+		end
+		-- And the passes a job needs to actually run: cron makes a job, the
+		-- scheduler is what steps it.
+		bench.tick(4)
+	end
+
+	-- What is in one of the machine's own files, read the way the kernel reads
+	-- /etc/passwd -- by absolute path, with no session: the two cron writes are
+	-- root's and 600, which is the point of them.
+	function bench.fileText(path)
+		local node = CeroSecOS.systemNode(bench.object:osState(), path)
+		if type(node) ~= "table" or node.type ~= "file" then return nil end
+		return node.data or ""
 	end
 
 	-- Put a script on the disk, the way the editor would, and make it runnable.
@@ -2866,6 +2912,203 @@ do
 	local session = { user = "admin", cwd = "/home/admin" }
 	local node = CeroSecOS.getNode(bench.object:osState(), session, "/home/admin/notes.txt")
 	check("Tab wrote the file", node ~= nil and node.data == "ca")
+end
+
+--
+-- cron, end to end (rung 5b)
+--
+-- The one thing none of the other benches can prove: a machine with nobody
+-- standing at it does something at the minute it was told to, and what it says
+-- about it is where cron says it -- the account's mail and the log, never the
+-- glass.
+--
+
+-- crontab -e through the editor, refused and then installed.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("crontab -l")
+	bench.frame()
+	check("no crontab yet, and Vixie's line for it", bench.painted("no crontab for admin"))
+
+	bench.enter("crontab -e")
+	bench.frame()
+	eq("the editor is on the glass", bench.window.mode, "edit")
+	check("on the account's own file in the spool",
+		bench.painted("/var/spool/cron/admin"))
+	eq("and it is empty", bench.window:bufferText(), "")
+
+	-- A line that is not one: refused, whole, with the file, the line and the
+	-- field -- and nothing is installed.
+	bench.window.entry:type("60 * * * * echo hi")
+	bench.tab()
+	bench.frame()
+	check("a bad minute is refused where it was typed",
+		bench.painted("\"/var/spool/cron/admin\":1: bad minute"))
+	eq("and nothing was written", bench.fileText("/var/spool/cron/admin"), "")
+
+	-- The same line with a minute that is one.
+	bench.window.entry:setText("30 * * * * echo hi")
+	bench.window.entry:setCursorPos(18)
+	bench.tab()
+	bench.frame()
+	check("a crontab that parses is installed", bench.painted("Saved 18 bytes"))
+	eq("and is on the disk", bench.fileText("/var/spool/cron/admin"), "30 * * * * echo hi")
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.enter("crontab -l")
+	bench.frame()
+	check("crontab -l reads it back", bench.painted("30 * * * * echo hi"))
+	-- And the file is still out of the account's reach: crontab is the way in.
+	bench.enter("cat /var/spool/cron/admin")
+	bench.frame()
+	check("the spool is nobody's to read", bench.painted("permission denied"))
+
+	bench.enter("crontab -r")
+	bench.enter("crontab -l")
+	bench.frame()
+	check("and -r takes it away", bench.painted("no crontab for admin"))
+end
+
+-- A line that comes due: it runs at the next minute, once, and what it printed
+-- is in the mail and not on the glass.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo tick", false, 100)
+	bench.enter("clear")
+	bench.frame()
+
+	-- The minute the machine came into view is not a minute it was there for.
+	bench.minute()
+	eq("nothing ran for the minute it arrived in", bench.fileText("/var/mail/admin"), nil)
+
+	bench.minute()
+	local mail = bench.fileText("/var/mail/admin")
+	check("the next minute ran it", mail ~= nil)
+	check("and what it printed is in the mail", string.find(mail, "tick", 1, true) ~= nil)
+	check("with the subject cron writes", string.find(mail, "Subject: Cron <admin@", 1, true) ~= nil)
+	check("nothing of it reached the glass", not bench.painted("tick"))
+	check("and no job was announced on it", not bench.painted("[1]"))
+	-- The log has the line, and it is root's.
+	local log = bench.fileText("/var/log/cron")
+	check("the log says what ran", string.find(log, "(admin) CMD (echo tick)", 1, true) ~= nil)
+	eq("one line in it", #CeroSecOS.splitLines(log), 1)
+
+	-- Once per minute, and not twice: the same minute again runs nothing.
+	bench.minute(1)
+	eq("the next minute ran it once more", #CeroSecOS.splitLines(bench.fileText("/var/log/cron")), 2)
+	local before = bench.fileText("/var/log/cron")
+	local replies = {}
+	bench.system.reply = function() end
+	bench.system:checkCron()
+	bench.system:checkCron()
+	eq("and a second pass inside the same minute runs nothing",
+		bench.fileText("/var/log/cron"), before)
+
+	-- mail shows it and empties it: reading your mail is what marks it read.
+	bench.enter("mail")
+	bench.frame()
+	check("mail puts it on the glass", bench.painted("tick"))
+	bench.enter("mail")
+	bench.frame()
+	check("and there is none left", bench.painted("No mail for admin"))
+end
+
+-- A missed minute is a minute that is gone: nothing is caught up.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo tick", false, 100)
+	bench.minute()
+	-- The chunk was not loaded for ten minutes: the game clock moved and nobody
+	-- swept. Exactly one minute is run when the sweep comes back, and it is THIS
+	-- one -- not the ten that went by.
+	_G.__gameTime.minutes = _G.__gameTime.minutes + 10
+	bench.minute()
+	eq("one minute ran, not eleven",
+		#CeroSecOS.splitLines(bench.fileText("/var/log/cron")), 1)
+end
+
+-- The four-job ceiling is the machine's, and cron does not get to lift it: a
+-- line that cannot start is skipped, and the log says so in cron's own words.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo tick", false, 100)
+	-- Four jobs of the player's own, which is every slot the machine has. A
+	-- `sleep` is the cheapest way to hold one: it spends nothing at all while it
+	-- waits, and it is still a job.
+	for _ = 1, CeroSecOS.MAX_JOBS do bench.enter("sleep 900 &") end
+	bench.tick(2)
+	eq("the machine is full", CeroSecOS.liveJobs(CeroSecJobs.book(bench.object).list),
+		CeroSecOS.MAX_JOBS)
+
+	bench.minute()
+	bench.minute()
+	local log = bench.fileText("/var/log/cron")
+	check("cron could not start it", string.find(log, "(CRON) error (can't fork)", 1, true) ~= nil)
+	check("and nothing was mailed", bench.fileText("/var/mail/admin") == nil)
+	check("nor said on the glass", not bench.painted("can't fork"))
+end
+
+-- @reboot, at power-on.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"@reboot echo up", false, 100)
+	-- No minute is ever due for it.
+	bench.minute(3)
+	eq("a minute is not a boot", bench.fileText("/var/mail/admin"), nil)
+
+	-- The switch at the back of the case, off and on again.
+	bench.object:turnOff()
+	bench.object:turnOn()
+	bench.tick(4)
+	local mail = bench.fileText("/var/mail/admin")
+	check("@reboot ran when the machine came up", mail ~= nil)
+	check("and what it printed is in the mail",
+		mail ~= nil and string.find(mail, "up", 1, true) ~= nil)
+	local log = bench.fileText("/var/log/cron")
+	check("the log has it once", #CeroSecOS.splitLines(log) == 1)
+end
+
+-- A cron line that works the building: the light is on at the next minute, and
+-- nobody typed anything.
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	-- The office switch, off to begin with.
+	kit.light0.activated = false
+	-- admin is in the sudoers file, so he is in the group `sudo`, so 660 on a
+	-- device is his to write -- no sudo typed, exactly as at the prompt.
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo on > /dev/light0", false, 100)
+	bench.minute()
+	eq("the switch has not moved yet", kit.light0.activated, false)
+
+	bench.minute()
+	eq("the light came on at the next minute", kit.light0.activated, true)
+	eq("and the world was told", kit.light0.syncs >= 1, true)
+	check("nothing was said on the glass", not bench.painted("light0"))
+	local log = bench.fileText("/var/log/cron")
+	check("the log says what ran",
+		string.find(log, "(admin) CMD (echo on > /dev/light0)", 1, true) ~= nil)
+	-- A device write prints nothing, so there is nothing to mail.
+	eq("and there was nothing to mail", bench.fileText("/var/mail/admin"), nil)
+	_G.__world = nil
 end
 
 print("window_test: " .. count .. " checks passed")

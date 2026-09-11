@@ -731,6 +731,11 @@ function SCeroSecSystem:applyOrder(console, control, data, playerObj)
 		-- which took it from the session it ran the command on, so it is only
 		-- ever the console's own user or the root a sudo already paid for.
 		if type(data.user) == "string" then console.edit.user = data.user end
+		-- And whether what is being edited is a CRONTAB, because a crontab is
+		-- judged before it is installed: crontab(1) refuses a file with a bad
+		-- line in it rather than leaving the daemon to find out at four in the
+		-- morning.
+		if data.crontab then console.edit.crontab = true end
 	end
 end
 
@@ -1165,6 +1170,20 @@ Commands.editsave = function(self, playerObj, x, y, z, token, args)
 	end
 	console.edit.text = text
 
+	-- A crontab is judged before it is installed, and refused whole: one bad line
+	-- and nothing is written, which is what crontab(1) does with the file it was
+	-- given. The refusal is Vixie's own -- the file, the line, the field -- worn
+	-- under the editor's own "Cannot save:", because that is the sentence this
+	-- screen has always answered a refused save with.
+	if console.edit.crontab then
+		local refusal = CeroSecOS.checkCrontab(console.edit.path, text)
+		if refusal ~= nil then
+			console.edit.message = "Cannot save: " .. refusal
+			self:pushScreen(luaObject, state, console)
+			return
+		end
+	end
+
 	local session = self:editSession(console)
 	-- The editor's save is a write like any other, clock included: a file saved
 	-- out of the editor is stamped the minute it was saved.
@@ -1335,10 +1354,29 @@ function SCeroSecSystem:checkPower()
 	end
 end
 
+-- cron's own minute hand.
+--
+-- Every machine whose chunk is loaded, once a game minute: the same sweep the
+-- power check walks, because the two ask the same question of the same list and a
+-- second walk would only be a second chance to disagree about it. A machine
+-- nobody has loaded is a machine cron is not running on, which is what makes a
+-- missed minute a minute that is simply gone (see CeroSecJobs.cronPass).
+function SCeroSecSystem:checkCron()
+	local now = CeroSecOS.clockOf(self:clockEnv())
+	if now == nil then return end
+	for i = 1, self:getLuaObjectCount() do
+		local luaObject = self:getLuaObjectByIndex(i)
+		if luaObject.on then CeroSecJobs.cronPass(self, luaObject, now) end
+	end
+end
+
 SGlobalObjectSystem.RegisterSystemClass(SCeroSecSystem)
 
 Events.EveryOneMinute.Add(function()
-	if SCeroSecSystem.instance then SCeroSecSystem.instance:checkPower() end
+	if SCeroSecSystem.instance then
+		SCeroSecSystem.instance:checkPower()
+		SCeroSecSystem.instance:checkCron()
+	end
 end)
 
 -- Chunk loading does not fire OnObjectAdded, so register the computer sprites

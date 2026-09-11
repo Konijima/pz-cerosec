@@ -2,6 +2,7 @@ if isClient() then return end
 
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
+require "CeroSec/OS/CeroSecOSCron"
 require "CeroSec/OS/CeroSecOSScript"
 require "CeroSec/OS/CeroSecOSVM"
 
@@ -106,7 +107,14 @@ local function enrol(system, luaObject, console, job, bg)
 	register(luaObject)
 	CeroSecJobs.system = system
 
-	if job.interactive then
+	if job.mailTo ~= nil then
+		-- A cron job is the MACHINE's and not the shell's: it holds no slot,
+		-- because `[1]` is what the shell started and the shell started nothing;
+		-- it says nothing on the screen, because nobody is standing there; and
+		-- the prompt is not waiting on it. `ps` shows it, `jobs` does not, and
+		-- `kill <id>` takes it away like anything else.
+		job.n = nil
+	elseif job.interactive then
 		-- The prompt belongs to it until it is over, exactly as it does for a
 		-- foreground script: that is what makes Escape a ^C on a typed loop.
 		console.job = job.id
@@ -162,6 +170,11 @@ function CeroSecJobs.killAll(luaObject)
 	local had = luaObject.jobs ~= nil or luaObject.shutdown ~= nil
 	luaObject.jobs = nil
 	luaObject.shutdown = nil
+	-- NOT the minute cron last looked at. This is called every pass on a machine
+	-- that has finished what it was running, and forgetting the minute there
+	-- would make every job that ended cost cron the minute after it -- the note
+	-- belongs to the machine being UP and is dropped by turnOff, which is the
+	-- only thing that makes a machine stop being up.
 	forget(luaObject)
 	return had
 end
@@ -217,6 +230,161 @@ function CeroSecJobs.checkShutdown(system, luaObject, now)
 		pending.warned = true
 		broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 1))
 	end
+end
+
+--
+-- cron
+--
+-- The daemon, which is not a process: there is no room on a machine this size
+-- for one, and there is no need for one either -- a pass once a game minute over
+-- every machine whose chunk is loaded is exactly what crond does with its own
+-- sleep. What a crontab MEANS is the core's (CeroSecOSCron.lua); what is here is
+-- the clock, the job-making and the four-job ceiling, because only the machine
+-- knows how many jobs it already has.
+--
+-- The minute it last looked at is RUNTIME state, like the jobs themselves. So a
+-- machine that has only just come into view -- a chunk loading, a server coming
+-- up, a computer switched on -- looks at the minute it arrived in, runs nothing
+-- for it, and starts firing from the next one. Nothing is ever run late and
+-- nothing is ever run twice: real cron does not go back for a minute it slept
+-- through either, which is the whole reason anacron was written, and there is no
+-- anacron here.
+--
+
+-- What a line of the log says about a job, in the shape a real cron's syslog
+-- line says it: who it was, and what ran.
+local function cronSay(state, user, text, now)
+	CeroSecOS.cronLog(state, "(" .. tostring(user) .. ") " .. text, now)
+end
+
+-- One due line, started as a background job of that account. The 4-job ceiling
+-- is the machine's and is not lifted for cron: a line that cannot start is
+-- SKIPPED and said so in the log, the way a cron that cannot fork says it.
+local function cronFire(system, luaObject, console, state, user, home, entry, now)
+	local book = CeroSecJobs.book(luaObject)
+	if liveCount(book) >= CeroSecOS.MAX_JOBS then
+		cronSay(state, "CRON", "error (can't fork)", now)
+		return nil
+	end
+
+	cronSay(state, user, "CMD (" .. entry.cmd .. ")", now)
+
+	local prog, reason, where = CeroSecOS.parseScript(entry.cmd)
+	if prog == nil then
+		-- A command that will not parse never becomes a job, exactly as `sh` on
+		-- a broken file does not -- and what sh would have said goes to the
+		-- account's mail, because that is where a cron job's output goes.
+		CeroSecOS.mailAppend(state, user, CeroSecOS.hostname(state), entry.cmd,
+			{ CeroSecOS.scriptError("sh", reason, where) }, now)
+		return nil
+	end
+
+	local job = CeroSecOS.newJob({
+		prog = prog,
+		name = "cron",
+		cmd = entry.cmd,
+		bg = true,
+		session = { user = user, cwd = home or "/", stamp = 1 },
+	})
+	-- Where what it prints goes. Set before it is enrolled, because that is what
+	-- tells the book this is not the shell's job.
+	job.mailTo = user
+	return enrol(system, luaObject, console, job, false)
+end
+
+-- One pass of the daemon over one machine. now is the GAME clock, in seconds:
+-- cron keeps the world's time and not the wall clock, because "every day at
+-- four" means four in Knox County.
+function CeroSecJobs.cronPass(system, luaObject, now)
+	if type(now) ~= "number" then return 0 end
+	if not luaObject.on then return 0 end
+	local state = luaObject:osState()
+	local console = luaObject:consoleState()
+	if state == nil or console == nil then return 0 end
+
+	local minute = math.floor(now / 60)
+	if luaObject.cron == nil then luaObject.cron = {} end
+	local last = luaObject.cron.minute
+	luaObject.cron.minute = minute
+	-- The minute it arrived in is not a minute it was there for.
+	if last == nil then return 0 end
+	if minute <= last then return 0 end
+
+	local dir = CeroSecOS.systemNode(state, CeroSecOS.CRON_PATH)
+	if type(dir) ~= "table" or dir.type ~= "dir" then return 0 end
+	local names = CeroSecOS.childNames(dir)
+	local parts = CeroSecOS.dateParts(now)
+	local fired = 0
+
+	for i = 1, #names do
+		local user = names[i]
+		local node = dir.children[user]
+		if type(node) == "table" and node.type == "file" then
+			local account = CeroSecOS.getUser(state, user)
+			if account == nil then
+				-- A crontab for an account that is not on the machine any more.
+				-- Vixie's word for it, and his behaviour: it is not run.
+				cronSay(state, user, "ORPHAN (no passwd entry)", now)
+			else
+				local entries, errors = CeroSecOS.parseCrontab(node.data or "")
+				for k = 1, #errors do
+					-- A line nobody could have installed through crontab(1),
+					-- which means one written by hand as root. The good lines
+					-- still run; this one is said once a minute it would have
+					-- been due in, which is what a log is for.
+					cronSay(state, user, "ERROR (" ..
+						CeroSecOS.cronError(CeroSecOS.cronPath(user), errors[k].line,
+							errors[k].reason) .. ")", now)
+				end
+				for k = 1, #entries do
+					if CeroSecOS.cronDue(entries[k], parts) then
+						if cronFire(system, luaObject, console, state, user,
+								account.home, entries[k], now) ~= nil then
+							fired = fired + 1
+						end
+					end
+				end
+			end
+		end
+	end
+	if fired > 0 then luaObject:mirrorOS() end
+	return fired
+end
+
+-- @reboot, which is the one line that is not a time. Run when the machine comes
+-- up -- the switch at the back of the case, or a `reboot` -- and never caught up
+-- afterwards: a machine that was off at four in the morning did not reboot at
+-- four in the morning.
+function CeroSecJobs.atBoot(system, luaObject)
+	if system == nil then system = CeroSecJobs.system end
+	if system == nil then return 0 end
+	if not luaObject.on then return 0 end
+	local state = luaObject:osState()
+	local console = luaObject:consoleState()
+	if state == nil or console == nil then return 0 end
+
+	local now = CeroSecOS.clockOf(system:clockEnv())
+	local dir = CeroSecOS.systemNode(state, CeroSecOS.CRON_PATH)
+	if type(dir) ~= "table" or dir.type ~= "dir" then return 0 end
+	local names = CeroSecOS.childNames(dir)
+	local fired = 0
+	for i = 1, #names do
+		local node = dir.children[names[i]]
+		local account = CeroSecOS.getUser(state, names[i])
+		if type(node) == "table" and node.type == "file" and account ~= nil then
+			local entries = CeroSecOS.parseCrontab(node.data or "")
+			for k = 1, #entries do
+				if entries[k].reboot then
+					if cronFire(system, luaObject, console, state, names[i],
+							account.home, entries[k], now) ~= nil then
+						fired = fired + 1
+					end
+				end
+			end
+		end
+	end
+	if fired > 0 then luaObject:mirrorOS() end
+	return fired
 end
 
 function CeroSecJobs.foreground(luaObject, console)
@@ -380,6 +548,25 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	local room = outRoom(book, now)
 	for i = 1, #book.list do
 		local job = book.list[i]
+		-- Except a cron job's, which never reaches a screen at all: it is mailed
+		-- to the account that asked for it, the way cron has answered since V7.
+		-- There is no rate to keep to -- a disk is not a network -- and the
+		-- mailbox is bounded where it is written.
+		if job.mailTo ~= nil then
+			if #job.out > 0 then
+				local cmd = nil
+				-- The header goes on the first delivery only: one message per
+				-- job, however many passes it took to write it.
+				if not job.mailed then
+					cmd = job.cmd
+					job.mailed = true
+				end
+				CeroSecOS.mailAppend(state, job.mailTo, CeroSecOS.hostname(state), cmd,
+					job.out, CeroSecOS.clockOf(env))
+				job.out = {}
+				changed = true
+			end
+		else
 		local kept = {}
 		for k = 1, #job.out do
 			if room > 0 then
@@ -392,6 +579,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			end
 		end
 		job.out = kept
+		end
 	end
 
 	-- The question a foreground job is asking, put up as an ordinary console
@@ -411,7 +599,10 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	for i = 1, #book.list do
 		local job = book.list[i]
 		if CeroSecOS.jobIsOver(job) and #job.out == 0 then
-			local line = endLine(job)
+			-- A cron job says nothing when it ends either: "[1] done" is a
+			-- message to whoever started it, and nobody started this one.
+			local line = nil
+			if job.mailTo == nil then line = endLine(job) end
 			if line ~= nil then
 				CeroSec.consolePush(console, line)
 				book.winCount = book.winCount + 1

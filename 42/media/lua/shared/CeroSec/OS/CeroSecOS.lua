@@ -37,7 +37,9 @@ CeroSecOS.STATE_VERSION = 1
 --    program cannot move the shell that ran it. They are deleted where they are
 --    exactly what was shipped (root, 755, the seeded description) and left alone
 --    anywhere else.
--- 9: /bin/sort and /bin/uniq, the two commands a pipeline is built to reach.
+-- 9: /bin/sort and /bin/uniq, the two commands a pipeline is built to reach;
+--    /bin/crontab and /bin/mail, and the /var tree the two of them live on --
+--    /var/spool/cron, /var/log and /var/mail.
 CeroSecOS.SYSTEM_VERSION = 9
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
@@ -58,13 +60,13 @@ CeroSecOS.DISK_BYTES = 32768
 CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
--- The exempt bytes on a whole machine. One file per account is exempt from the
--- disk quota -- its own ~/.sh_history, by the path it hangs at (see the
--- exemption section of CeroSecOSFS.lua) -- and this is what the exemption may
--- cost in total, four accounts' worth. It is what the usage count hands out and
--- no more: bytes past it are counted against the disk like anybody's, so a
--- machine with a dozen accounts on it has a full disk and not a hidden one.
-CeroSecOS.MAX_EXEMPT_BYTES = 65536
+-- What the disk quota does not count is bounded twice over -- once per file and
+-- once for the whole machine -- and both of those numbers are sums of the three
+-- ceilings involved (the history, a mailbox, the cron log). They are written
+-- where all three are already written down, beside the history file's own, in
+-- CeroSecOSShell.lua: CeroSecOS.MAX_EXEMPT_BYTES and
+-- CeroSecOS.HISTORY_EXEMPT_BYTES. Nothing here, so there is no second copy of a
+-- number this file cannot see.
 
 -- Control the terminal honours travels out of band, as exec's third return
 -- value ("clear", "exit", "prompt", "edit", "shutdown" or "reboot"), never as a

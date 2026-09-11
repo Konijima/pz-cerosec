@@ -57,6 +57,28 @@ CeroSecOS.HISTORY_SHOW = 60
 -- What a window is handed when it opens, to walk with Up and Down.
 CeroSecOS.HISTORY_TAIL = 100
 
+-- The exempt bytes on a whole machine. A handful of files are exempt from the
+-- disk quota, each by the path it hangs at (see the exemption section of
+-- CeroSecOSFS.lua): an account's own ~/.sh_history, an account's own mailbox
+-- under /var/mail, and the one /var/log/cron. This is what the exemption may
+-- cost in total -- four accounts' worth of each, and the log -- and it is what
+-- the usage count hands out and no more: bytes past it are counted against the
+-- disk like anybody's, so a machine with a dozen accounts on it has a full disk
+-- and not a hidden one.
+--
+-- Written here rather than beside the other limits because this is the one file
+-- that can see all three ceilings it is the sum of, and a sum written anywhere
+-- else would be a second copy of three numbers.
+CeroSecOS.MAX_EXEMPT_ACCOUNTS = 4
+CeroSecOS.MAX_EXEMPT_BYTES = CeroSecOS.MAX_EXEMPT_ACCOUNTS
+	* (CeroSecOS.HISTORY_BYTES + CeroSecOS.MAIL_BYTES) + CeroSecOS.CRON_LOG_BYTES
+
+-- And what the HISTORIES alone may cost: four of them, which is the number the
+-- append path pays at every line (see CeroSecOS.historyAppend). A kind of its
+-- own rather than a share of the total, so that a machine full of mail is not a
+-- machine that has stopped remembering what was typed at it.
+CeroSecOS.HISTORY_EXEMPT_BYTES = CeroSecOS.MAX_EXEMPT_ACCOUNTS * CeroSecOS.HISTORY_BYTES
+
 -- The path, or nil for an account with no home on its /etc/passwd line.
 function CeroSecOS.historyPath(state, name)
 	local user = CeroSecOS.getUser(state, name)
@@ -129,11 +151,13 @@ function CeroSecOS.historyAppend(state, session, line, now)
 	-- What the other histories already hold plus what this one is about to hold
 	-- has to fit, or the line is dropped: a machine with accounts enough would
 	-- otherwise write history no `df` on it ever mentions.
-	local others = CeroSecOS.exemptOthers(state, node)
+	-- Histories alone: what a mailbox or the cron log holds is exempt too and is
+	-- bounded by its own ceiling, and a full mailbox must not be what stops a
+	-- shell remembering what was typed.
+	local others = CeroSecOS.exemptOthers(state, node, "history")
 	-- What this one may GROW to, not what it holds now: the ceiling has to be
-	-- one nothing can creep past a line at a time. Four histories' worth, which
-	-- is what MAX_EXEMPT_BYTES is (four times HISTORY_BYTES).
-	if others + CeroSecOS.HISTORY_BYTES > CeroSecOS.MAX_EXEMPT_BYTES then return false end
+	-- one nothing can creep past a line at a time. Four histories' worth.
+	if others + CeroSecOS.HISTORY_BYTES > CeroSecOS.HISTORY_EXEMPT_BYTES then return false end
 
 	local lines = CeroSecOS.splitLines(node.data or "")
 	lines[#lines + 1] = line
@@ -514,6 +538,7 @@ CeroSecOS.COMMAND_INFO = {
 	chown    = { desc = "change a file's owner", usage = "chown <user> <path>" },
 	clear    = { desc = "clear the screen", usage = "clear" },
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
+	crontab  = { desc = "list, edit or drop your crontab", usage = "crontab -e|-l|-r" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
 	dev      = { desc = "list and work the devices",
@@ -538,6 +563,7 @@ CeroSecOS.COMMAND_INFO = {
 	jobs     = { desc = "list the machine's jobs", usage = "jobs", shell = true },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
 	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
+	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
 	mv       = { desc = "move or rename a file", usage = "mv <src> <dst>" },

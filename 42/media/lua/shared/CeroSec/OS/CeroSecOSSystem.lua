@@ -169,6 +169,10 @@ function CeroSecOS.upgradeSystem(state)
 		end
 	end
 
+	-- /var, for a machine saved before there was a cron on it. Made only where
+	-- it is missing, like everything else here.
+	CeroSecOS.ensureVar(state)
+
 	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
 end
@@ -355,6 +359,10 @@ function CeroSecOS.restoreSystem(state)
 	end
 
 	CeroSecOS.fillBin(CeroSecOS.ensureSystemDir(state, "bin"))
+	-- And /var, which is the machine's own tree exactly as /bin and /etc are. The
+	-- crontabs, the log and the mail in it are left where they are: a repair puts
+	-- the directories back, it does not throw away what a player asked for.
+	CeroSecOS.ensureVar(state)
 
 	-- A repaired machine has everything this build ships, so there is nothing
 	-- left for the upgrade to top up.

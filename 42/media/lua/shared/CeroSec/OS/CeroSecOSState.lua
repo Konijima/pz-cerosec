@@ -36,13 +36,19 @@ function CeroSecOS.newState(hostname)
 	root.children.etc.children.sudoers =
 		CeroSecOS.newFile("root", CeroSecOS.SUDOERS_MODE, CeroSecOS.defaultSudoers())
 
-	return {
+	local state = {
 		v = CeroSecOS.STATE_VERSION,
 		sysv = CeroSecOS.SYSTEM_VERSION,
 		hostname = hostname,
 		fs = root,
 		sessions = {},
 	}
+	-- /var and the three under it: the crontab spool, the log and the mail. Made
+	-- through the one function that knows their modes, so a fresh machine, an
+	-- older one being topped up and a machine the BIOS has repaired all have the
+	-- same tree.
+	CeroSecOS.ensureVar(state)
+	return state
 end
 
 --

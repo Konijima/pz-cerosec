@@ -309,6 +309,9 @@ function SCeroSecObject:turnOn()
 	self.consoleChecked = true
 	self:apply()
 	self:playSound("CeroSecBootStart")
+	-- @reboot, which is the one crontab line that is not a time: the machine has
+	-- just come up, so it is due now and never again until it comes up again.
+	CeroSecJobs.atBoot(self.luaSystem, self)
 	return true
 end
 
@@ -319,6 +322,10 @@ function SCeroSecObject:turnOff()
 	-- switch at the back of the case does. reboot goes through here too, so a
 	-- machine that comes back comes back running nothing.
 	CeroSecJobs.killAll(self)
+	-- And the minute cron last looked at goes with them: a machine that comes
+	-- back is a machine that has only just come into view, so it runs nothing for
+	-- the minute it arrived in and nothing at all for the minutes it was dark.
+	self.cron = nil
 	-- A dark screen remembers nothing, and the terminals that were open have to
 	-- be told, not merely forgotten.
 	self.console = nil

@@ -4,7 +4,7 @@
 
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
-	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSFS", "CeroSecOSPath",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSFS", "CeroSecOSPath",
 	"CeroSecOSScript", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSDev",
 	"CeroSecOSVM",
