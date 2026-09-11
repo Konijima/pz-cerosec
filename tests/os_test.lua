@@ -1007,17 +1007,37 @@ do
 	eq("a cycle is refused", cyOk, false)
 	check("the reason names the cycle", string.find(cyReason, "cycle", 1, true) ~= nil)
 
+	-- The ceiling validate holds a file to is the biggest one can BE, which is a
+	-- history's own -- not the 4096 the write path stops at. A file of 4097 is
+	-- exactly what a renamed ~/.sh_history is, and refusing it here would cost a
+	-- player his machine for a `mv` the machine itself allowed.
+	local bigFile = fresh()
+	bigFile.fs.children.etc.children.motd.data = string.rep("x", 4097)
+	eq("a file bigger than a write could make it still validates",
+		CeroSecOS.validate(bigFile), true)
+
 	local oversize = fresh()
-	oversize.fs.children.etc.children.motd.data = string.rep("x", 4097)
+	oversize.fs.children.etc.children.motd.data = string.rep("x", CeroSecOS.HISTORY_BYTES + 1)
 	local ovOk, ovReason = CeroSecOS.validate(oversize)
 	eq("an oversize file is refused", ovOk, false)
 	check("the reason names the size", string.find(ovReason, "file too large", 1, true) ~= nil)
 
+	-- Over the disk quota is a state a machine can be IN and never a state it
+	-- cannot be loaded from: the refusal belongs to the write path.
 	local overTotal = fresh()
 	for i = 1, 9 do
 		overTotal.fs.children[ "big" .. i ] = CeroSecOS.newFile("root", 644, string.rep("x", 4096))
 	end
-	eq("an oversize disk is refused", CeroSecOS.validate(overTotal), false)
+	eq("an oversize disk still validates", CeroSecOS.validate(overTotal), true)
+	local overUsed = select(2, CeroSecOS.usage(overTotal))
+	check("and it really is over the disk (" .. overUsed .. ")",
+		overUsed > CeroSecOS.MAX_TOTAL_BYTES)
+	-- And every further write on it is refused until room is made.
+	eq("a write on a full disk is refused",
+		select(2, CeroSecOS.setData(overTotal, CeroSecOS.rootSession(),
+			"/etc/motd", CeroSecOS.MOTD .. "!", nil)), "disk full")
+	eq("a shorter line over a longer one is room being MADE, and goes in",
+		CeroSecOS.setData(overTotal, CeroSecOS.rootSession(), "/etc/motd", "x", nil), true)
 
 	local badNode = fresh()
 	badNode.fs.children.etc.children.motd.type = "socket"
@@ -5760,10 +5780,17 @@ do
 	check("the history does not count against the disk (" .. bytes .. ")",
 		bytes < CeroSecOS.DISK_BYTES)
 	eq("the state validates with it there", CeroSecOS.validate(state), true)
-	-- The exemption is paid for: a file that carries the flag and is bigger
-	-- than the history ceiling is not a state this machine will boot.
+	eq("and the exempt bytes are the history's own",
+		CeroSecOS.exemptUsage(state), #node.data)
+	-- Nothing hides in between the two counts: every byte on the disk is either
+	-- counted against the quota or granted the exemption.
+	local everyByte = select(2, CeroSecOS.subtreeUsage(state.fs))
+	eq("counted plus exempt is every byte on the disk",
+		bytes + CeroSecOS.exemptUsage(state), everyByte)
+	-- A file past a history's own ceiling is not a state this machine will boot,
+	-- wherever it hangs: that ceiling is the biggest a file can be.
 	node.data = string.rep("x", CeroSecOS.HISTORY_BYTES + 1)
-	eq("a flagged file past its own ceiling is refused", CeroSecOS.validate(state), false)
+	eq("a file past the history ceiling is refused", CeroSecOS.validate(state), false)
 	node.data = ""
 
 	-- Nobody else may read it, so nobody else's history is in it.
@@ -5782,46 +5809,195 @@ end
 
 -- 34a. The quota exemption is bounded where it is GRANTED
 do
+	--
+	-- The exemption is decided by the PATH the file hangs at and by nothing
+	-- carried on the node. So a renamed history is an ordinary file from the
+	-- moment it is renamed -- it costs the disk at once -- and the old way of
+	-- hiding bytes (move the history aside, let a new one grow, and the flag
+	-- rode the rename) is gone.
+	--
 	local state = fresh()
 	local admin = open(state, "admin")
-	-- The exemption is bounded at the WRITE and not only at validate. The flag
-	-- travels with a rename, so an account that moves its history aside and lets
-	-- a new one grow could otherwise stack exemptions up until the machine would
-	-- not boot. Four histories' worth is the ceiling, and the fifth is refused.
-	-- Fill one to its own ceiling, move it aside, fill the next. Eight times,
-	-- which is twice what the machine may hold.
-	local function fill()
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	local hist = "/home/admin/" .. CeroSecOS.HISTORY_NAME
+	local loot = "/home/admin/loot.txt"
+
+	-- df's used column, read off the real command.
+	local function dfUsed()
+		local lines = okAt(state, admin, "df", nil, env)
+		local used = string.match(lines[2], "^%S+%s+%d+%s+(%d+)%s+%d+%s+%d+%%$")
+		check("df's used column is a number (" .. tostring(lines[2]) .. ")", used ~= nil)
+		return tonumber(used)
+	end
+
+	-- A history of about nine hundred bytes, written by the one thing that
+	-- writes one.
+	local node = nil
+	local n = 0
+	while node == nil or #node.data < 900 do
+		n = n + 1
+		CeroSecOS.historyAppend(state, admin, "echo padding line " .. n, FIXED)
+		node = state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME]
+	end
+	local size = #node.data
+	check("a history of about nine hundred bytes (" .. size .. ")", size >= 900)
+	local usedWithHistory = dfUsed()
+	eq("the disk does not count it", CeroSecOS.exemptUsage(state), size)
+	eq("and df agrees with the count", usedWithHistory,
+		select(2, CeroSecOS.usage(state)))
+
+	-- The payload: rename it, and the disk moves by the whole of it.
+	okAt(state, admin, "mv " .. hist .. " " .. loot, {}, env)
+	eq("renaming it costs the disk every byte of it", dfUsed() - usedWithHistory, size)
+	eq("and nothing on the machine is exempt any more", CeroSecOS.exemptUsage(state), 0)
+
+	-- And a write to it is counted like anybody's, where before the flag rode
+	-- the rename and up to 64K could hide behind it.
+	local usedRenamed = dfUsed()
+	okAt(state, admin, "echo more >> " .. loot, {}, env)
+	eq("a line appended to it is counted", dfUsed() - usedRenamed, #"\nmore")
+
+	-- Renamed back, it is exempt again: the rule is the path and nothing else.
+	okAt(state, admin, "mv " .. loot .. " " .. hist, {}, env)
+	eq("renamed back, it is exempt again", CeroSecOS.exemptUsage(state), size + #"\nmore")
+	eq("and the disk is back where it was", dfUsed(), usedWithHistory)
+
+	-- The owner is half the rule: the same path, somebody else's file, is an
+	-- ordinary file.
+	local histNode = state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME]
+	histNode.owner = "root"
+	eq("somebody else's file at that path is not exempt", CeroSecOS.exemptUsage(state), 0)
+	histNode.owner = "admin"
+
+	-- A leftover flag from an older save buys nothing.
+	okAt(state, admin, "echo hi > /home/admin/flagged", {}, env)
+	local flagged = state.fs.children.home.children.admin.children.flagged
+	flagged.nq = true
+	eq("a node carrying the old flag is counted like any other",
+		select(2, CeroSecOS.usage(state)) , usedWithHistory + #flagged.data)
+	flagged.nq = nil
+	okAt(state, admin, "rm /home/admin/flagged", {}, env)
+end
+
+-- 34b. Over the quota is a machine that refuses writes, not a machine that is
+-- thrown away
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	local rootSession = CeroSecOS.rootSession()
+	local hist = "/home/admin/" .. CeroSecOS.HISTORY_NAME
+	local loot = "/home/admin/loot.txt"
+
+	-- The disk filled to within a few kilobytes of its ceiling, and then a
+	-- history of three renamed on top of it: the rename is allowed -- nothing is
+	-- ever deleted to make room -- and the machine is over quota.
+	local HIST = 3000
+	for i = 1, 7 do
+		local made = CeroSecOS.createNode(state, rootSession, "/big" .. i,
+			CeroSecOS.newFile("root", 644, string.rep("x", CeroSecOS.MAX_FILE_BYTES)), nil)
+		check("/big" .. i .. " went on the disk", made ~= nil)
+	end
+	local node = nil
+	while node == nil or #node.data < HIST do
+		CeroSecOS.historyAppend(state, admin, "echo padding line for the history", FIXED)
+		node = state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME]
+	end
+	local was = select(2, CeroSecOS.usage(state))
+	check("the disk is not over its ceiling yet (" .. was .. ")",
+		was <= CeroSecOS.MAX_TOTAL_BYTES)
+	okAt(state, admin, "mv " .. hist .. " " .. loot, {}, env)
+	local over = select(2, CeroSecOS.usage(state))
+	check("the rename put it over (" .. over .. " of " .. CeroSecOS.MAX_TOTAL_BYTES .. ")",
+		over > CeroSecOS.MAX_TOTAL_BYTES)
+	eq("nothing was deleted to make room",
+		state.fs.children.home.children.admin.children["loot.txt"] ~= nil, true)
+
+	-- Over quota is a runtime refusal and not corruption: the machine boots.
+	eq("the state still validates", CeroSecOS.validate(state), true)
+	eq("and migrate hands the same machine back", CeroSecOS.migrate(state, "ksp-front-01"), state)
+
+	-- And every further write says so until room is made.
+	badAt(state, admin, "echo more >> " .. loot, "echo: " .. loot .. ": disk full", env)
+	badAt(state, admin, "touch /home/admin/another",
+		"touch: /home/admin/another: disk full", env)
+	okAt(state, admin, "rm " .. loot, {}, env)
+	okAt(state, admin, "touch /home/admin/another", {}, env)
+end
+
+-- 34c. Every account's own history, and four of them on a machine
+do
+	local state = fresh()
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	local rootSession = CeroSecOS.rootSession()
+
+	-- A home somewhere else entirely: the exemption reads /etc/passwd and not
+	-- /home.
+	addUser(state, "x", "", "/home/x")
+	check("x has a home", CeroSecOS.createNode(state, rootSession, "/home/x",
+		CeroSecOS.newDir("x", CeroSecOS.HOME_MODE), nil) ~= nil)
+	local xs = open(state, "x")
+	eq("x's history goes in", CeroSecOS.historyAppend(state, xs, "id", FIXED), true)
+	eq("and it is exempt where his passwd line says his home is",
+		CeroSecOS.exemptUsage(state), #"id")
+
+	-- And root's own, which is exempt whatever /etc/passwd has been edited into.
+	eq("root's history goes in", CeroSecOS.historyAppend(state, rootSession, "ls", FIXED), true)
+	eq("and is exempt too", CeroSecOS.exemptUsage(state), #"id" + #"ls")
+	local passwd = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH)
+	local kept = passwd.data
+	passwd.data = "nonsense"
+	eq("root's history is exempt with no passwd line at all",
+		CeroSecOS.exemptUsage(state), #"ls")
+	passwd.data = kept
+
+	-- Four histories' worth on a whole machine, and the fifth account writes
+	-- nothing: the ceiling is the same one it always was, and it is what the
+	-- usage count hands out.
+	local sessions = { xs }
+	local names = { "a", "b", "c", "d", "e" }
+	for i = 1, #names do
+		addUser(state, names[i], "", "/home/" .. names[i])
+		check(names[i] .. " has a home", CeroSecOS.createNode(state, rootSession,
+			"/home/" .. names[i], CeroSecOS.newDir(names[i], CeroSecOS.HOME_MODE), nil) ~= nil)
+		sessions[#sessions + 1] = open(state, names[i])
+	end
+	local grown, refused = 0, 0
+	for i = 1, #sessions do
 		local grew = false
 		for _ = 1, 1200 do
-			if CeroSecOS.historyAppend(state, admin, "echo padding line here", FIXED) then
+			if CeroSecOS.historyAppend(state, sessions[i], "echo padding line here", FIXED) then
 				grew = true
 			end
 		end
-		return grew
+		if grew then grown = grown + 1 else refused = refused + 1 end
 	end
-	check("the first history fills", fill())
-	local grown, refused = 1, 0
-	for i = 1, 8 do
-		local moved = CeroSecOS.moveNode(state, admin,
-			"/home/admin/" .. CeroSecOS.HISTORY_NAME, "/home/admin/old" .. i, nil)
-		check("moving a history aside is an ordinary rename", moved == true)
-		if fill() then grown = grown + 1 else refused = refused + 1 end
-	end
-	-- The proof it was the CEILING that stopped it and not the bench running out
-	-- of turns: some of the nine grew and some were refused.
-	check("more than one history was filled (" .. grown .. ")", grown > 1)
+	check("some accounts filled a history (" .. grown .. ")", grown > 1)
 	check("and the rest were refused (" .. refused .. ")", refused > 0)
 	check("the exempt bytes stayed inside their ceiling (" ..
-		CeroSecOS.exemptUsage(state.fs) .. " of " .. CeroSecOS.MAX_EXEMPT_BYTES .. ")",
-		CeroSecOS.exemptUsage(state.fs) <= CeroSecOS.MAX_EXEMPT_BYTES)
-	check("and got close enough to it to prove it was reached (" ..
-		CeroSecOS.exemptUsage(state.fs) .. ")",
-		CeroSecOS.exemptUsage(state.fs) > CeroSecOS.MAX_EXEMPT_BYTES - CeroSecOS.HISTORY_BYTES)
+		CeroSecOS.exemptUsage(state) .. " of " .. CeroSecOS.MAX_EXEMPT_BYTES .. ")",
+		CeroSecOS.exemptUsage(state) <= CeroSecOS.MAX_EXEMPT_BYTES)
+	check("and got close enough to prove it was reached (" ..
+		CeroSecOS.exemptUsage(state) .. ")",
+		CeroSecOS.exemptUsage(state) > CeroSecOS.MAX_EXEMPT_BYTES - CeroSecOS.HISTORY_BYTES)
 	check("and the machine still boots after all of that",
 		CeroSecOS.validate(state) == true)
 	eq("the ceiling is four histories", CeroSecOS.MAX_EXEMPT_BYTES,
 		4 * CeroSecOS.HISTORY_BYTES)
+end
 
+-- 34d. The old flag is taken off on the way in
+do
+	local state = fresh()
+	local hist = CeroSecOS.newFile("admin", CeroSecOS.HISTORY_MODE, "echo hi")
+	hist.nq = true
+	state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME] = hist
+	state.fs.children.etc.children.motd.nq = true
+	local back = CeroSecOS.migrate(state, "ksp-front-01")
+	eq("the machine came back", back, state)
+	eq("the flag is off the history", hist.nq, nil)
+	eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
+	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
 end
 
 --

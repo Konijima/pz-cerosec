@@ -41,8 +41,10 @@ local commands = CeroSecOS.commands
 -- because a 32K disk with a thousand lines of history on it would be a disk
 -- with no room for anything a player wrote. The file is exempt from the disk
 -- quota for the same reason -- a shell's own memory must not be what fills the
--- drive -- and pays for the exemption with a hard 16K ceiling of its own that
--- validate enforces on the way back in.
+-- drive -- and the exemption belongs to the PATH and not to the file: exactly
+-- <home>/.sh_history, owned by that account (see CeroSecOS.exemptPaths). Rename
+-- one and it counts against the 32K from that moment on; rename it back and it
+-- is exempt again.
 --
 CeroSecOS.HISTORY_NAME = ".sh_history"
 CeroSecOS.HISTORY_MODE = 600
@@ -100,9 +102,6 @@ local function historyPut(node, lines)
 	-- refused, because the alternative is a history that silently stops.
 	if #text > CeroSecOS.HISTORY_BYTES then text = string.sub(text, 1, CeroSecOS.HISTORY_BYTES) end
 	node.data = text
-	-- What tells the filesystem this one does not count against the disk. Set
-	-- here and nowhere else; validate refuses it on anything over the ceiling.
-	node.nq = true
 end
 
 -- One line onto the end of the account's history. Quiet on every refusal: a
@@ -127,12 +126,10 @@ function CeroSecOS.historyAppend(state, session, line, now)
 	if not CeroSecOS.can(state, session, node, "w") then return false end
 
 	-- The exemption has a machine-wide ceiling and this is where it is paid.
-	-- What the other exempt files already hold plus what this one is about to
-	-- hold has to fit, or the line is dropped: an account that moves its
-	-- history aside and lets a new one grow must not be able to stack up
-	-- exemptions until the state itself is refused on the next load.
-	local others = CeroSecOS.exemptUsage(state.fs)
-	if node.nq then others = others - #(node.data or "") end
+	-- What the other histories already hold plus what this one is about to hold
+	-- has to fit, or the line is dropped: a machine with accounts enough would
+	-- otherwise write history no `df` on it ever mentions.
+	local others = CeroSecOS.exemptOthers(state, node)
 	-- What this one may GROW to, not what it holds now: the ceiling has to be
 	-- one nothing can creep past a line at a time. Four histories' worth, which
 	-- is what MAX_EXEMPT_BYTES is (four times HISTORY_BYTES).
@@ -154,7 +151,6 @@ function CeroSecOS.historyClear(state, session, now)
 	if node == nil or node.type ~= "file" then return true end
 	if not CeroSecOS.can(state, session, node, "w") then return false end
 	node.data = ""
-	node.nq = true
 	if now ~= nil then node.mtime = now end
 	return true
 end

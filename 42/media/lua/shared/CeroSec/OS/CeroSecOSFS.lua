@@ -136,7 +136,10 @@ function CeroSecOS.countEntries(node)
 	return n
 end
 
--- Nodes and data bytes in a subtree, the node itself included.
+-- Nodes and data bytes in a subtree, the node itself included. Every byte of
+-- it: this is what a subtree COSTS, asked of a node that is about to be
+-- attached, and a node about to be attached is not yet anywhere -- so the
+-- quota's exemption, which is a question about a PATH, cannot be asked here.
 -- A device costs nothing: it is not on the disk, it is mounted for the length
 -- of one command, and a machine whose `df` moved because somebody walked past a
 -- light switch would be a machine whose ceilings depend on the weather.
@@ -144,12 +147,7 @@ function CeroSecOS.subtreeUsage(node)
 	if node.type == "dev" then return 0, 0 end
 	local nodes, bytes = 1, 0
 	if node.type == "file" then
-		-- A shell's own memory does not fill the drive. ~/.sh_history carries
-		-- the exemption as a flag set by the one function that writes it
-		-- (CeroSecOS.historyAppend), and pays for it with a ceiling of its own
-		-- that validate enforces -- so `df` never moves because somebody typed,
-		-- and `ls -l` still tells the truth about how big the file is.
-		if not node.nq then bytes = #(node.data or "") end
+		bytes = #(node.data or "")
 	elseif node.children ~= nil then
 		local names = CeroSecOS.childNames(node)
 		for i = 1, #names do
@@ -161,29 +159,97 @@ function CeroSecOS.subtreeUsage(node)
 	return nodes, bytes
 end
 
--- Whole-computer usage.
-function CeroSecOS.usage(state)
-	if state == nil or state.fs == nil then return 0, 0 end
-	return CeroSecOS.subtreeUsage(state.fs)
+--
+-- What the disk quota does not count
+--
+-- A shell's own memory does not fill the drive, so an account's ~/.sh_history
+-- is exempt from the 32K -- `df` must not move because somebody typed. The
+-- exemption is decided by the PATH and by nothing carried on the node: exactly
+-- <home>/.sh_history for an account /etc/passwd names, plus root's own, and
+-- owned by that account. So a history that is renamed is an ordinary file from
+-- the moment it is renamed -- it counts, immediately -- and one renamed back is
+-- exempt again. There is no flag to ride a rename and no way to stack the
+-- exemption up by moving histories aside.
+--
+-- Two ceilings bound what the exemption can cost: HISTORY_BYTES for any one of
+-- them, and MAX_EXEMPT_BYTES (four of those) for the whole machine. Bytes past
+-- either are not exempt -- they are counted against the disk like any others,
+-- which is a full disk and never a machine that will not boot.
+--
+
+-- The exempt paths, each mapped to the account it belongs to.
+function CeroSecOS.exemptPaths(state)
+	local paths = {}
+	local users, order = CeroSecOS.readUsers(state)
+	for i = 1, #order do
+		local user = users[order[i]]
+		-- Through resolve, so a home written "/home/admin/" in the file names
+		-- the same path the walk below builds.
+		local abs = CeroSecOS.resolve(nil, user.home .. "/" .. CeroSecOS.HISTORY_NAME)
+		paths[abs] = user.name
+	end
+	-- Root's own, whatever /etc/passwd says: a machine whose passwd has been
+	-- edited into nonsense still has a root history at the place root's history
+	-- has always been, and it must not start costing him his disk for it.
+	paths["/root/" .. CeroSecOS.HISTORY_NAME] = "root"
+	return paths
 end
 
--- The bytes the disk quota does NOT count: the flagged files (~/.sh_history).
--- Asked at the write that makes one, because the exemption has to be bounded
--- where it is granted and not only where the state is validated -- a file that
--- carries the flag keeps it across a rename, so an account that moves its
--- history aside and lets a new one grow could otherwise stack them up until
--- validate refused the machine on the next load.
-function CeroSecOS.exemptUsage(node)
-	if type(node) ~= "table" or node.type == "dev" then return 0 end
+-- The disk, walked once: nodes, the bytes the quota counts, the bytes it does
+-- not. path is the absolute path of node ("" at the root, so a child of it
+-- reads "/bin"), budget what is left of the machine-wide exemption, and ignore
+-- a node left out of the walk altogether -- what the OTHER histories hold is
+-- what historyAppend has to ask before it grows this one.
+local function walkUsage(node, path, exempt, budget, ignore)
+	if type(node) ~= "table" or node.type == "dev" then return 0, 0, 0 end
+	if node == ignore then return 1, 0, 0 end
 	if node.type == "file" then
-		if node.nq then return #(node.data or "") end
-		return 0
+		local size = #(node.data or "")
+		if exempt[path] ~= node.owner then return 1, size, 0 end
+		local grant = size
+		if grant > CeroSecOS.HISTORY_BYTES then grant = CeroSecOS.HISTORY_BYTES end
+		if grant > budget.left then grant = budget.left end
+		budget.left = budget.left - grant
+		return 1, size - grant, grant
 	end
-	if node.children == nil then return 0 end
-	local bytes = 0
-	local names = CeroSecOS.childNames(node)
-	for i = 1, #names do bytes = bytes + CeroSecOS.exemptUsage(node.children[names[i]]) end
-	return bytes
+	local nodes, bytes, exempted = 1, 0, 0
+	if node.children ~= nil then
+		local names = CeroSecOS.childNames(node)
+		for i = 1, #names do
+			-- Sorted, so which history gets the last of the machine's exemption
+			-- is the same answer every time it is asked.
+			local n, b, e =
+				walkUsage(node.children[names[i]], path .. "/" .. names[i], exempt, budget, ignore)
+			nodes = nodes + n
+			bytes = bytes + b
+			exempted = exempted + e
+		end
+	end
+	return nodes, bytes, exempted
+end
+
+local function walkState(state, ignore)
+	if type(state) ~= "table" or type(state.fs) ~= "table" then return 0, 0, 0 end
+	return walkUsage(state.fs, "", CeroSecOS.exemptPaths(state),
+		{ left = CeroSecOS.MAX_EXEMPT_BYTES }, ignore)
+end
+
+-- Whole-computer usage: nodes, and the bytes the quota counts.
+function CeroSecOS.usage(state)
+	local nodes, bytes = walkState(state, nil)
+	return nodes, bytes
+end
+
+-- The bytes the quota does NOT count, on the whole machine.
+function CeroSecOS.exemptUsage(state)
+	local _, _, exempted = walkState(state, nil)
+	return exempted
+end
+
+-- The same, with one node left out: what everybody ELSE's history holds.
+function CeroSecOS.exemptOthers(state, node)
+	local _, _, exempted = walkState(state, node)
+	return exempted
 end
 
 -- Does any file in this subtree carry a byte that must never be stored? Whole
@@ -367,12 +433,24 @@ function CeroSecOS.setData(state, session, path, data, now)
 	if #data > CeroSecOS.MAX_FILE_BYTES then return nil, "file too large" end
 	if CeroSecOS.hasControlBytes(data) then return nil, "invalid characters" end
 
-	local _, bytes = CeroSecOS.usage(state)
-	if bytes - #(node.data or "") + #data > CeroSecOS.MAX_TOTAL_BYTES then
+	-- What the write costs is asked of the disk itself, before and after, rather
+	-- than worked out by arithmetic on this one file: whether its bytes count at
+	-- all is a question about where it hangs (see the exemption above), and a
+	-- subtraction here would be a second answer to it.
+	--
+	-- A write is refused when it takes the disk PAST the ceiling. One that is
+	-- already past it -- a history renamed into an ordinary file is bytes that
+	-- were exempt a moment ago -- still lets a shorter line be written over a
+	-- longer one, because that is room being made and not room being taken.
+	local _, before = CeroSecOS.usage(state)
+	local old = node.data
+	node.data = data
+	local _, after = CeroSecOS.usage(state)
+	if after > CeroSecOS.MAX_TOTAL_BYTES and after > before then
+		node.data = old
 		return nil, "disk full"
 	end
 
-	node.data = data
 	if now ~= nil then node.mtime = now end
 	return true, nil
 end

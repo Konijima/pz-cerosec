@@ -52,13 +52,12 @@ CeroSecOS.DISK_BYTES = 32768
 CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
--- The exempt bytes on a whole machine. One file is exempt from the disk quota
--- -- an account's own ~/.sh_history (see the history section of
--- CeroSecOSShell.lua) -- and this is what the exemption may cost in total,
--- four accounts' worth. It is checked by validate and by nothing else: the one
--- function that writes such a file writes exactly one of them per account, so
--- the only way to reach this ceiling is a blob the game handed back that
--- nothing on this machine wrote.
+-- The exempt bytes on a whole machine. One file per account is exempt from the
+-- disk quota -- its own ~/.sh_history, by the path it hangs at (see the
+-- exemption section of CeroSecOSFS.lua) -- and this is what the exemption may
+-- cost in total, four accounts' worth. It is what the usage count hands out and
+-- no more: bytes past it are counted against the disk like anybody's, so a
+-- machine with a dozen accounts on it has a full disk and not a hidden one.
 CeroSecOS.MAX_EXEMPT_BYTES = 65536
 
 -- Control the terminal honours travels out of band, as exec's third return

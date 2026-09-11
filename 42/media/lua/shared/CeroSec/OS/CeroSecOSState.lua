@@ -96,25 +96,22 @@ local function checkNode(node, where, depth, tally)
 
 	if node.type == "file" then
 		if type(node.data) ~= "string" then return false, where .. ": bad data" end
-		-- The one file that does not count against the disk (~/.sh_history, see
-		-- CeroSecOSFS.subtreeUsage). The exemption is paid for HERE: an exempt
-		-- file has a ceiling of its own, and the exempt bytes on a whole machine
-		-- have one too, so a forged blob cannot hand back a hundred of them and
-		-- call it a disk.
-		if node.nq ~= nil and node.nq ~= true then return false, where .. ": bad nq" end
-		local cap = CeroSecOS.MAX_FILE_BYTES
-		if node.nq then cap = CeroSecOS.HISTORY_BYTES end
-		if #node.data > cap then return false, where .. ": file too large" end
-		if node.nq then
-			tally.exempt = tally.exempt + #node.data
-			if tally.exempt > CeroSecOS.MAX_EXEMPT_BYTES then return false, "disk full" end
-			return true
-		end
+		-- The biggest a file on this machine can be, which is NOT the 4096 the
+		-- write path stops at: an account's ~/.sh_history is exempt from the disk
+		-- quota and grows to HISTORY_BYTES, and a history that is renamed keeps
+		-- its bytes -- an ordinary file, bigger than any write could have made
+		-- it. Refusing that here would cost the player his whole machine for a
+		-- `mv` the machine itself allowed.
+		if #node.data > CeroSecOS.HISTORY_BYTES then return false, where .. ": file too large" end
 		-- A blob handed back by the game never went through setData, so the
 		-- printable rule is re-checked here rather than assumed.
 		if CeroSecOS.hasControlBytes(node.data) then return false, where .. ": invalid characters" end
-		tally.bytes = tally.bytes + #node.data
-		if tally.bytes > CeroSecOS.MAX_TOTAL_BYTES then return false, "disk full" end
+		-- And nothing here about the 32K. Being over the disk quota is a state a
+		-- machine can be IN -- rename a full history and it is over at once --
+		-- and the answer to it is that every further write says "disk full"
+		-- until room is made, not that the save file is corrupt and the machine
+		-- is thrown away. The quota lives on the write path; validate only asks
+		-- whether the core can run on this at all.
 		return true
 	end
 
@@ -148,7 +145,7 @@ function CeroSecOS.validate(state)
 	end
 	if type(state.fs) ~= "table" then return false, "bad fs" end
 	if state.fs.type ~= "dir" then return false, "fs root is not a directory" end
-	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0, bytes = 0, exempt = 0 })
+	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0 })
 	if not fsOk then return false, fsReason end
 
 	-- The accounts are a FILE now, so this is all validate has to say about
@@ -163,6 +160,18 @@ function CeroSecOS.validate(state)
 	return true
 end
 
+-- The quota exemption used to be a flag on the node (`nq`), written by the one
+-- function that appended to a history and read by the usage count. It is a PATH
+-- now (CeroSecOS.exemptPaths) and nothing reads the field any more, so a machine
+-- saved while it existed carries a field that means nothing: taken off here, on
+-- the way in, rather than left to sit in the save file forever.
+local function dropQuotaFlags(node)
+	if type(node) ~= "table" then return end
+	node.nq = nil
+	if type(node.children) ~= "table" then return end
+	for _, child in pairs(node.children) do dropQuotaFlags(child) end
+end
+
 -- Anything the game hands back becomes a v1 state. Today there is no older
 -- schema, so nil and junk alike become a fresh machine; a v1 state passes
 -- through untouched.
@@ -173,6 +182,7 @@ function CeroSecOS.migrate(state, hostname)
 		-- passwords in clear. validate refuses both. Repairing before the gate
 		-- is what keeps such a machine's filesystem instead of throwing it away.
 		CeroSecOS.migrateUsers(state)
+		dropQuotaFlags(state.fs)
 		-- And then the contents: a machine saved before this build has neither
 		-- the executables it added nor the files, and neither is damage.
 		CeroSecOS.upgradeSystem(state)

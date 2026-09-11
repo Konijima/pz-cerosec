@@ -408,9 +408,9 @@ Up and finds what he typed today. Answers to prompts are never in it.
 The file holds 1000 entries and 16 KB, whichever comes first, oldest dropped. Those
 16 KB are exempt from the 32 KB disk quota — a shell's memory of itself must not be
 the thing that fills the drive — so `df` does not move because somebody typed, while
-`ls -l` still tells the truth about the size. The exemption is paid for in
-`CeroSecOS.validate`: an exempt file has a hard ceiling of its own and the exempt
-bytes on a whole machine have one too. Two honest deviations from a bigger shell:
+`ls -l` still tells the truth about the size. The exemption belongs to the **path**
+and not to the file: `mv ~/.sh_history loot.txt` and every byte of it counts from
+that moment on, `mv` it back and it is exempt again. Two honest deviations from a bigger shell:
 the numbers `history` prints are positions in the file as it stands, so they shift
 once the oldest drop off; and `!` is only an event when it is the whole line, there
 being no quoting rule for it here.
@@ -1032,18 +1032,31 @@ machine that is punctuation, which is why the disk has
 `CeroSecOS.isValidFileName` beside `isValidName`: it allows exactly that one extra
 name and nothing else, and an account or a group is still `isValidName`'s.
 
-`~/.sh_history` is the one file exempt from the 32 KB disk quota. The exemption is a
-flag on the node (`nq`) set by `CeroSecOS.historyAppend` and by nothing else;
-`CeroSecOS.subtreeUsage` skips its bytes, so `df` does not move because somebody
-typed, and `CeroSecOS.validate` is where the exemption is paid for — an exempt file
-is capped at `CeroSecOS.HISTORY_BYTES` (16 KB) and the exempt bytes of a whole
-machine at `CeroSecOS.MAX_EXEMPT_BYTES` (four histories' worth). That second
-ceiling is also enforced at the **write**, in `historyAppend`, and not only at
-validate: the flag travels with a rename, so an account that moved its history
-aside and let a new one grow could otherwise stack exemptions up until the state
-itself was refused on the next load and the machine would not boot. `cp` of one is an ordinary copy and meets the ordinary
-4096-byte ceiling. Homes are never touched by `restoreSystem`, so the BIOS repair
-never takes a history or a `~/.profile` away.
+`~/.sh_history` is the one file exempt from the 32 KB disk quota, and the exemption
+is decided by the **path** at the moment the disk is counted — never by anything
+carried on the node. `CeroSecOS.exemptPaths` builds it from `/etc/passwd`: exactly
+`<home>/.sh_history` for each account it names, plus `/root/.sh_history`, and owned by
+that account. `CeroSecOS.usage` sums everything else; `CeroSecOS.exemptUsage` sums
+only those paths, capped at `CeroSecOS.HISTORY_BYTES` (16 KB) per file and
+`CeroSecOS.MAX_EXEMPT_BYTES` (four of those) per machine, with anything past either
+counted against the disk like anybody's bytes. So `df` does not move because
+somebody typed, and a **renamed** history is an ordinary file from the moment it is
+renamed: it counts at once, and renaming it back makes it exempt again. There was a
+flag (`nq`) before rung 5a.1 and it rode the rename, which let up to 64 KB hide from
+`df`; `CeroSecOS.migrate` strips the field off every node on the way in. The
+machine-wide ceiling is also paid at the **write**, in `historyAppend`, so a machine
+with accounts enough cannot write history no `df` on it mentions. `cp` of a history
+is an ordinary copy and meets the ordinary 4096-byte ceiling.
+
+Being **over** the quota is a state a machine can be in: renaming a full history puts
+it there, nothing is ever deleted to make room, and every further write answers `disk
+full` until room is made (a shorter line written over a longer one still goes in —
+that is room being made). `CeroSecOS.validate` says nothing about the 32 KB for that
+reason: over quota is a runtime refusal, not a corrupt save to be thrown away. The
+one ceiling it does hold a file to is `HISTORY_BYTES`, the biggest a file can *be* —
+bigger than the 4096 a write may produce, because a renamed history is exactly that.
+Homes are never touched by `restoreSystem`, so the BIOS repair never takes a history
+or a `~/.profile` away.
 
 The pending `shutdown` (`luaObject.shutdown`) is **not** among the saved keys and is
 not meant to be: it is an order given to a running machine, driven by

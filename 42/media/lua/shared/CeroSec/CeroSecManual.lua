@@ -1150,6 +1150,11 @@ not count against the machine's 32K disk -- a shell's memory of itself
 should not be the thing that fills the drive -- so df will not move
 because you typed. ls -l still tells you how big the file really is.
 
+What is free is that file, at that name, in your own home. Rename it and
+it is an ordinary file: df moves by every byte of it at once, and move it
+back and it is free again. Four accounts' worth is all one machine keeps
+free.
+
 Two honest notes. The numbers history prints are positions in the file as
 it stands, so they shift once the oldest lines start dropping off; a
 bigger machine counts them from the start of the session and never reuses
