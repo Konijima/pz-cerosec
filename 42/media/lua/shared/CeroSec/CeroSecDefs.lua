@@ -731,6 +731,54 @@ function CeroSec.inputRows(prompt, text, offset)
 	return rows, row, col
 end
 
+-- Where the block cursor is on a drawn row, and what character it covers.
+--
+-- The two halves of the blink have to agree on one column: the block that is
+-- painted and the character repainted under it are the same cell, so both are
+-- worked out here, once, and the window uses the one answer for both halves.
+--
+-- x is how far the pen has moved over everything in front of the cursor -- the
+-- prompt and the text up to the cursor, over the very string that was painted
+-- -- and not a count of cells, because a cell is one measurement taken at one
+-- moment.
+--
+-- `measure` is the pen's ADVANCE over a string, which is not the same thing as
+-- the font's answer for it: MeasureStringX counts the last glyph of a string by
+-- its ink and not by its advance, so it is short by a character-dependent
+-- pixel or three and is never handed in here directly. The window hands in a
+-- helper built out of it (`advance` in CeroSecTerminal.lua, and the comment on
+-- CELL_W there for the whole of it); the bench hands in a fixed width per
+-- character, which is what a monospaced advance is.
+--
+-- The third answer is the WIDTH of the block: the advance of the character it
+-- covers, or of a space where there is none to cover. It is asked for here so
+-- that the block and the glyph repainted on it are the one cell -- a block
+-- drawn at some cell width measured elsewhere overlaps the glyph beside it the
+-- moment the two disagree. nil when there is no `measure` to ask.
+--
+-- cursorIndex is an index into `text`: 0 in front of the first character,
+-- #text right after the last one, where the cursor covers nothing and the
+-- glyph comes back nil. Out of range is clamped, never an error -- a box that
+-- answers one past the end must not push the block a column past the line.
+function CeroSec.cursorSpan(prompt, text, cursorIndex, measure)
+	prompt = tostring(prompt or "")
+	text = tostring(text or "")
+	if type(cursorIndex) ~= "number" then cursorIndex = #text end
+	if cursorIndex < 0 then cursorIndex = 0 end
+	if cursorIndex > #text then cursorIndex = #text end
+
+	local front = prompt .. string.sub(text, 1, cursorIndex)
+	local x = 0
+	if front ~= "" and measure then x = measure(front) or 0 end
+
+	local under = string.sub(text, cursorIndex + 1, cursorIndex + 1)
+	if under == "" then under = nil end
+
+	local width = nil
+	if measure then width = measure(under or " ") end
+	return x, under, width
+end
+
 --
 -- The editor
 --

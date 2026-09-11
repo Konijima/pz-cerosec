@@ -530,9 +530,8 @@ else that will not parse the same way is skipped. /etc/hostname holds the
 machine's own name, one to sixteen lower-case letters, digits and dashes,
 never starting with a dash -- change it with hostname <name>, root only,
 and every prompt and window title on the machine picks it up at once.
-/etc/motd holds what greets a login, ten lines at most; empty or missing,
-the machine falls back to its own built-in greeting rather than say
-nothing at all.]],
+/etc/motd holds what greets a login, ten lines at most. Empty it, or
+remove it, and the machine greets nobody: silence is a valid choice.]],
 
 [[A machine can break: /bin emptied, or every last account gone from
 /etc/passwd. The BIOS notices before it puts anything else on the glass,

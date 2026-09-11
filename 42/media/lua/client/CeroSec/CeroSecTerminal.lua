@@ -41,13 +41,39 @@ local PAD = 6
 --
 -- So it is measured when a window is opened, with the game up, and again
 -- whenever the answer changes -- the UI font size is an option and it moves.
+--
+-- And it is NOT MeasureStringX("M"). MeasureStringX hands the string to
+-- AngelCodeFont.getWidth(String), which is getWidth(s, 0, len - 1, FALSE), and
+-- that last argument is what decides how the LAST character of the string
+-- counts: false means the last one contributes its glyph's ink `width` and
+-- every other one its `xadvance`. The pen that DRAWS the string (render()) only
+-- ever moves by `xadvance`. The two disagree by (xadvance - width) of whatever
+-- character the string happens to end on, and in media/fonts/zomboidCode.fnt
+-- -- Courier New, what UIFont.Code maps to in media/fonts/EN/fonts.txt --
+-- "M" is `width=9 xadvance=8`: the widest glyph of the face, one pixel WIDER
+-- than the cell it is drawn in. So a cell taken as MeasureStringX("M") is a
+-- pixel too wide, the block cursor overlaps the glyph to its right, and sixty
+-- of them are sixty pixels of grid that the text never fills.
+--
+-- The advance of a string is recovered from the same call by putting a known
+-- character behind it and subtracting that character's ink: measure(s .. "M")
+-- is advance(s) + ink("M"), so advance(s) = measure(s .. "M") - measure("M").
+-- Exact, because zomboidCode.fnt declares no kerning pair at all (and
+-- getWidth adds kerning to both sides of the subtraction anyway). CELL_W is
+-- that for one "M"; `advance` below is that for any string.
 local CELL_W, CELL_H, TITLE_H
 local SCREEN_W, SCREEN_H, GLASS_W, GLASS_H, HINT_H, WINDOW_W, WINDOW_H
 
+-- MeasureStringX's answer for a lone "M": the INK of the glyph, not the cell.
+-- Only ever the subtrahend above.
+local M_INK
+
 local function measure()
 	local manager = getTextManager()
-	local cellW = manager:MeasureStringX(UIFont.Code, "M")
+	local mInk = manager:MeasureStringX(UIFont.Code, "M")
+	local cellW = manager:MeasureStringX(UIFont.Code, "MM") - mInk
 	local cellH = manager:getFontHeight(UIFont.Code)
+	M_INK = mInk
 	if cellW == CELL_W and cellH == CELL_H then return end
 
 	CELL_W, CELL_H = cellW, cellH
@@ -1207,6 +1233,19 @@ function CeroSecTerminal:render()
 	ISCollapsableWindow.render(self)
 end
 
+-- How far the pen moves over a string: what drawText advances by, and so where
+-- the character AFTER that string is painted. The one place the font is asked,
+-- so the columns of a drawn row and the block cursor on it are placed by the
+-- same answer or they disagree by a character.
+--
+-- Not MeasureStringX itself -- that answers the ink of the last glyph in place
+-- of its advance; see CELL_W at the top of the file for why, and for why this
+-- subtraction is exact.
+local function advance(text)
+	if text == nil or text == "" then return 0 end
+	return getTextManager():MeasureStringX(UIFont.Code, text .. "M") - M_INK
+end
+
 -- Where a column of a drawn row is on the glass: the width of everything in
 -- front of it, measured on the very text that was painted and in the font it
 -- was painted with. Counting cells instead is only right for as long as the
@@ -1215,7 +1254,7 @@ end
 -- columns to the right of the end of the prompt.
 function CeroSecTerminal:columnX(x, text, column)
 	if column <= 0 then return x end
-	return x + getTextManager():MeasureStringX(UIFont.Code, string.sub(text, 1, column))
+	return x + advance(string.sub(text, 1, column))
 end
 
 -- The prompt, what has been typed, and the block cursor over it. A line longer
@@ -1223,10 +1262,10 @@ end
 -- cursor follows it there: the rows and the cursor's place on them are worked
 -- out by CeroSec.inputRows, which is pure and tested headless.
 --
--- Columns are counted, not measured. The whole 60 x 20 grid is built on
--- UIFont.Code being fixed width, and the editor draws itself the same way, so
--- the input line does too -- one MeasureStringX for the prompt would have been
--- the one place that disagreed.
+-- Which column a character is in is counted; where that column IS on the glass
+-- is the pen's advance over the text in front of it, asked of the font on the
+-- very string that was painted. Counting cells instead is only right for as
+-- long as the cell is exactly what the font advances by.
 function CeroSecTerminal:drawInput(x, y)
 	local colors = CeroSec.COLORS
 	local prompt = self.prompt or ""
@@ -1247,23 +1286,42 @@ function CeroSecTerminal:drawInput(x, y)
 		end
 	end
 
-	-- Solid block, on for half a second and off for half a second, with the
-	-- character under it repainted in the screen's own colour so the cursor
-	-- never hides what it is on. Column 60 is the one place it lies -- a full
-	-- row has nowhere to put the cursor after its last character -- and there
-	-- it sits on that character instead.
+	-- Solid block, on for half a second and off for half a second, and both
+	-- halves at the same column: CeroSec.cursorSpan answers where the block is
+	-- and which character it covers, and the two halves differ only in the
+	-- colours. Lit, the block is the text colour and the character it covers is
+	-- repainted in the screen's own colour, so the cursor never hides what it
+	-- is on; dark, the block is the screen's colour and the character goes back
+	-- to the colour of its row. At the end of the line there is no character to
+	-- cover and none is drawn. Column 60 is the one place it lies -- a full row
+	-- has nowhere to put the cursor after its last character -- and there it
+	-- sits on that character instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local cx = self:columnX(x, rows[row] or "", cell)
+	local line = rows[row] or ""
+	local ahead, typed, index = "", line, cell
+	if row == 1 and cell >= head then
+		ahead, typed, index = string.sub(line, 1, head), string.sub(line, head + 1), cell - head
+	end
+	local span, under, width = CeroSec.cursorSpan(ahead, typed, index, advance)
+	local cx = x + span
 	local cy = y + (row - 1) * CELL_H
+	-- The block is the advance of the character it covers -- the cell, on a
+	-- monospaced face -- and never CELL_W measured elsewhere.
+	local cw = width or CELL_W
+	if CeroSec.DEBUG then
+		CeroSec.log("cursor: index " .. tostring(index) .. "/" .. tostring(#typed) ..
+			" row " .. tostring(row) .. " col " .. tostring(cell) ..
+			" x " .. tostring(cx) .. " block " .. tostring(cw) ..
+			" cell " .. tostring(CELL_W) .. " under " .. tostring(under))
+	end
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
-	self:drawRect(cx, cy, CELL_W, CELL_H, 1, block.r, block.g, block.b)
-	if lit then
-		local under = string.sub(rows[row] or "", cell + 1, cell + 1)
-		if under ~= "" and under ~= " " then
-			self:drawText(under, cx, cy, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
-		end
+	self:drawRect(cx, cy, cw, CELL_H, 1, block.r, block.g, block.b)
+	if under and under ~= " " then
+		local ink = colors.screen
+		if not lit then ink = (ahead == "" and row == 1) and colors.dim or colors.text end
+		self:drawText(under, cx, cy, ink.r, ink.g, ink.b, 1, UIFont.Code)
 	end
 end
 
@@ -1303,22 +1361,24 @@ function CeroSecTerminal:drawEditor(left, top)
 
 	if not mine or self.editAsk then return end
 
-	-- The block, and the character under it repainted in the screen's own
-	-- colour: a cursor in the middle of a line must not hide what it is on.
-	-- Column 60 is the one place it lies -- a full line has nowhere to put the
-	-- cursor after its last character -- and it sits on that character instead.
+	-- The block, at the same column in both halves of the blink, and the
+	-- character it covers repainted over it: in the screen's own colour while
+	-- the block is lit, in the text's while it is dark, so a cursor in the
+	-- middle of a line neither hides what it is on nor eats it for half a
+	-- second. Column 60 is the one place it lies -- a full line has nowhere to
+	-- put the cursor after its last character -- and it sits on that character
+	-- instead.
 	local cell = col
 	if cell > CeroSec.COLS - 1 then cell = CeroSec.COLS - 1 end
-	local x = self:columnX(left, lines[row] or "", cell)
+	local span, under, width = CeroSec.cursorSpan("", lines[row] or "", cell, advance)
+	local x = left + span
 	local y = top + (row - self.editTopRow + 1) * CELL_H
 	local lit = math.floor(getTimestampMs() / CeroSec.CURSOR_BLINK_MS) % 2 == 0
 	local block = lit and colors.text or colors.screen
-	self:drawRect(x, y, CELL_W, CELL_H, 1, block.r, block.g, block.b)
-	if lit then
-		local under = string.sub(lines[row] or "", cell + 1, cell + 1)
-		if under ~= "" then
-			self:drawText(under, x, y, colors.screen.r, colors.screen.g, colors.screen.b, 1, UIFont.Code)
-		end
+	self:drawRect(x, y, width or CELL_W, CELL_H, 1, block.r, block.g, block.b)
+	if under then
+		local ink = lit and colors.screen or colors.text
+		self:drawText(under, x, y, ink.r, ink.g, ink.b, 1, UIFont.Code)
 	end
 end
 

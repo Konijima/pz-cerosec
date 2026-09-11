@@ -210,13 +210,13 @@ end
 -- /etc/motd
 --
 
--- What is put on the screen after a login. The file, capped at MOTD_MAX_LINES,
--- or the built-in line when there is no readable file -- a machine with no motd
--- still greets whoever gets in.
+-- What is put on the screen after a login: the file, capped at MOTD_MAX_LINES.
+-- A missing or empty file greets nobody -- root emptied it on purpose, and a
+-- silent machine is a valid choice (the built-in line only seeds a new disk).
 function CeroSecOS.motdLines(state)
 	local node = CeroSecOS.systemNode(state, CeroSecOS.MOTD_PATH)
 	if node == nil or node.type ~= "file" or (node.data or "") == "" then
-		return { CeroSecOS.MOTD }
+		return {}
 	end
 	local lines = CeroSecOS.splitLines(node.data)
 	local out = {}

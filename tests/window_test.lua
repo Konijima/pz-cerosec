@@ -76,9 +76,23 @@ _G.ISTimedActionQueue = { isPlayerDoingAction = function() return false end, add
 _G.ISCeroSecTypeAction = { new = function() return {} end }
 _G.ISRestAction = { new = function() return {} end }
 
--- The font. Every character is CHAR_W wide, and MeasureStringX answers on the
--- string it is given -- which is what the game does with the monospaced
--- UIFont.Code (media/fonts/codeMedium.fnt: one xadvance for all 218 glyphs).
+-- The font. UIFont.Code is monospaced -- media/fonts/EN/fonts.txt maps Code to
+-- zomboidCode.fnt, and all 613 of its glyphs declare xadvance=8 -- so the pen
+-- moves CHAR_W per character and nothing here is proportional.
+--
+-- MeasureStringX does NOT answer that, and this bench used to pretend it did.
+-- It hands the string to AngelCodeFont.getWidth(String), which is
+-- getWidth(s, 0, len - 1, false), and that false makes the LAST character of
+-- the string count as its glyph's ink `width` while every other counts as its
+-- `xadvance`. Only the pen that draws (render()) moves by xadvance throughout.
+-- So the answer is short -- or long -- by (xadvance - ink) of whatever
+-- character the string ends on, and that is a different number per character:
+-- in zomboidCode.fnt `a` is width=7, `b` is width=8, `l` is width=6, the space
+-- is width=2, and `M` is width=9 -- a pixel WIDER than the cell it is drawn in.
+-- INK below is those real numbers, and this fake answers the way the game does.
+-- A bench that returned CHAR_W * #s could not see a cursor placed on
+-- MeasureStringX go wrong, which is how the first fix passed and the glass
+-- stayed crooked.
 --
 -- __cellMeasure is the game's answer to a *load time* measurement, when the
 -- font asked for is not built yet and TextManager hands back the default,
@@ -88,12 +102,15 @@ _G.ISRestAction = { new = function() return {} end }
 -- block cursor in the screenshot.
 local CHAR_W = 8
 local FONT_H = 12
+local INK = { M = 9, a = 7, b = 8, l = 6, s = 7, [" "] = 2 }
 _G.__cellMeasure = 12
 _G.getTextManager = function()
 	return {
 		MeasureStringX = function(_, _, s)
-			if s == "M" and _G.__cellMeasure then return _G.__cellMeasure end
-			return CHAR_W * #s
+			if s == nil or s == "" then return 0 end
+			if _G.__cellMeasure then return _G.__cellMeasure * #s end
+			local last = string.sub(s, -1)
+			return CHAR_W * (#s - 1) + (INK[last] or CHAR_W - 1)
 		end,
 		getFontHeight = function() return FONT_H end,
 	}
@@ -594,6 +611,106 @@ do
 		if rect.w <= CHAR_W * 2 and rect.h >= FONT_H then block = rect end
 	end
 	eq("and the cursor after what was typed", block.x, promptX + CHAR_W * (#prompt + 2))
+end
+
+--
+-- Both halves of the blink are the same cursor
+--
+-- On the glass the block jumped a column between one half of the blink and the
+-- other: lit, it sat a column right of the last character typed, with a gap;
+-- dark, a column left of it, with that character drawn inverted under it. One
+-- cursor, two columns. So the column is asserted in both halves here, on the
+-- same frame's worth of paint, and the column past the end of the text -- the
+-- gap that was on the glass -- is asserted empty.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+	local prompt = bench.window.prompt
+
+	-- The block is the one rect a character wide on the input row.
+	local function blockOf(window)
+		local found = nil
+		for i = 1, #window.rects do
+			local rect = window.rects[i]
+			if rect.w <= CHAR_W * 2 and rect.h >= FONT_H then found = rect end
+		end
+		return found
+	end
+	-- What was painted at a given x, if anything, ignoring the glow copy that
+	-- drawScreenText lays down at an offset.
+	local function paintedAt(window, x)
+		local out = {}
+		for i = 1, #window.painted do
+			local paint = window.painted[i]
+			if paint.x == x then out[#out + 1] = paint.text end
+		end
+		return out
+	end
+	-- Render one frame in each half of the blink, and answer what each half
+	-- painted. The clock is the window's only blink input.
+	local function bothPhases()
+		local phases = {}
+		for _ = 1, 2 do
+			local lit = math.floor(_G.__now / CeroSec.CURSOR_BLINK_MS) % 2 == 0
+			bench.frame()
+			phases[lit and "lit" or "dark"] = {
+				block = blockOf(bench.window),
+				painted = paintedAt(bench.window, blockOf(bench.window) and blockOf(bench.window).x or -1),
+			}
+			_G.__now = _G.__now + CeroSec.CURSOR_BLINK_MS
+		end
+		return phases
+	end
+
+	-- Nothing typed: both halves put the block right after the prompt.
+	local phase = bothPhases()
+	check("the lit half draws a block", phase.lit.block ~= nil)
+	check("the dark half draws one too", phase.dark.block ~= nil)
+	eq("and both at the same column", phase.lit.block.x, phase.dark.block.x)
+
+	-- One character typed: the block is right after it, in both halves, with
+	-- nothing in the column past it and no character painted under it.
+	bench.window.entry:type("a")
+	local promptX = nil
+	bench.frame()
+	for i = 1, #bench.window.painted do
+		if bench.window.painted[i].text == prompt then promptX = bench.window.painted[i].x end
+	end
+	check("the prompt is painted", promptX ~= nil)
+	local endX = promptX + CHAR_W * (#prompt + 1)
+	phase = bothPhases()
+	eq("one char: the lit block is right after it", phase.lit.block.x, endX)
+	eq("one char: the dark block is at the same column", phase.dark.block.x, endX)
+	eq("one char: nothing is painted under the lit block", #phase.lit.painted, 0)
+	eq("one char: nor under the dark one", #phase.dark.painted, 0)
+	-- The gap: the column one past the end of the text is empty in both halves.
+	for name, half in pairs(phase) do
+		check(name .. ": no block a column past the text",
+			half.block.x ~= endX + CHAR_W)
+		eq(name .. ": and nothing painted there", #paintedAt(bench.window, endX + CHAR_W), 0)
+	end
+
+	-- Two characters, and the same again: no gap after the b.
+	bench.window.entry:type("b")
+	phase = bothPhases()
+	eq("ab: the lit block is right after the b", phase.lit.block.x, endX + CHAR_W)
+	eq("ab: and the dark one with it", phase.dark.block.x, endX + CHAR_W)
+
+	-- The cursor walked back into the middle of what was typed: now it covers
+	-- the b, in both halves -- inverted under the lit block, and still there,
+	-- not eaten, while the block is dark.
+	bench.window.entry:setCursorPos(1)
+	phase = bothPhases()
+	eq("mid: the lit block is on the b", phase.lit.block.x, endX)
+	eq("mid: and so is the dark one", phase.dark.block.x, endX)
+	local function covers(list, glyph)
+		for i = 1, #list do if list[i] == glyph then return true end end
+		return false
+	end
+	check("mid: the lit half paints the b under its block", covers(phase.lit.painted, "b"))
+	check("mid: and the dark half paints it too", covers(phase.dark.painted, "b"))
 end
 
 --

@@ -522,6 +522,104 @@ do
 	eq("nil prompt", CeroSec.inputRows(nil, "y", 0)[1], "y")
 end
 
+--
+-- Where the block cursor is, and what is under it
+--
+-- The block was a column right of the end of what was typed in one half of the
+-- blink and a column left of it in the other, with the last character drawn
+-- inverted under it: two halves of one cursor working out two different
+-- columns. There is one answer now and both halves take it.
+--
+
+do
+	local P = "root@blacknet:~# "          -- 17 characters
+	-- A proportional font would answer differently for "i" and "M"; the glass
+	-- is monospaced, and the measurement is of the string that was painted.
+	local W = 8
+	local function measure(s) return W * #s end
+
+	-- Nothing typed: the block sits right after the prompt, on nothing, and is
+	-- one cell wide -- the advance of the space it would be sitting on.
+	local x, under, width = CeroSec.cursorSpan(P, "", 0, measure)
+	eq("empty: the block is at the end of the prompt", x, W * #P)
+	eq("empty: and covers nothing", under, nil)
+	eq("empty: and is one cell wide", width, W)
+
+	-- One character, cursor after it: no gap, and still nothing under it.
+	x, under, width = CeroSec.cursorSpan(P, "a", 1, measure)
+	eq("one char: the block is right after it, no gap", x, W * (#P + 1))
+	eq("one char: and covers nothing", under, nil)
+	eq("one char: and is one cell wide", width, W)
+
+	-- Two, and the same at the end.
+	x, under, width = CeroSec.cursorSpan(P, "ab", 2, measure)
+	eq("ab: the block is right after the b", x, W * (#P + 2))
+	eq("ab: and covers nothing", under, nil)
+	eq("ab: and is one cell wide", width, W)
+
+	-- In the middle of what was typed, the block covers the character AT that
+	-- index -- the one the next typed character would push right.
+	x, under, width = CeroSec.cursorSpan(P, "ab", 1, measure)
+	eq("mid: the block is on the b", x, W * (#P + 1))
+	eq("mid: and covers the b", under, "b")
+	eq("mid: and is as wide as the b", width, W)
+	x, under = CeroSec.cursorSpan(P, "ab", 0, measure)
+	eq("start: the block is on the a", x, W * #P)
+	eq("start: and covers the a", under, "a")
+
+	-- No prompt is a prompt of nothing, and a space under the cursor is a
+	-- character like any other.
+	x, under = CeroSec.cursorSpan("", "a b", 1, measure)
+	eq("no prompt: the block is one character in", x, W)
+	eq("no prompt: and covers the space", under, " ")
+
+	-- What is out of range is clamped: a box that answers one past the end of
+	-- the text must not put the block a column past the end of the line, which
+	-- is the gap that was on the glass.
+	x, under = CeroSec.cursorSpan(P, "a", 2, measure)
+	eq("past the end: still right after the a", x, W * (#P + 1))
+	eq("past the end: and covers nothing", under, nil)
+	x, under = CeroSec.cursorSpan(P, "a", 999, measure)
+	eq("far past the end: still right after the a", x, W * (#P + 1))
+	x, under = CeroSec.cursorSpan(P, "a", -3, measure)
+	eq("before the start: at the end of the prompt", x, W * #P)
+	eq("before the start: covering the a", under, "a")
+	x, under = CeroSec.cursorSpan(P, "abc", nil, measure)
+	eq("no index at all is the end", x, W * (#P + 3))
+	eq("no index at all covers nothing", under, nil)
+
+	-- What is not a string is still placed, and nothing is measured when there
+	-- is nothing in front of the cursor.
+	eq("nil prompt and nil text", CeroSec.cursorSpan(nil, nil, 0, measure), 0)
+	eq("nothing in front is measured as nothing", CeroSec.cursorSpan("", "ab", 0, nil), 0)
+	local _, _, noWidth = CeroSec.cursorSpan("", "ab", 0, nil)
+	eq("and no font is no width either", noWidth, nil)
+
+	-- The measurement is of the whole string in front of the cursor, in one
+	-- call, and not a count of cells: a font that answers 1 for "M" and 100 for
+	-- "MM" is still placed on what it answers. And the width of the block is a
+	-- SECOND question, asked about the one character under it, so that a
+	-- proportional face -- or a monospaced one asked the wrong way -- cannot
+	-- hand back a block wider than the glyph it covers.
+	local seen = {}
+	local bent = function(s) seen[#seen + 1] = s; return #s * #s end
+	x, under, width = CeroSec.cursorSpan("ab", "cd", 1, bent)
+	eq("the font is asked about the text in front of the cursor", seen[1], "abc")
+	eq("and its answer is the x", x, 9)
+	eq("the block covers the d", under, "d")
+	eq("and the font is asked about that character alone", seen[2], "d")
+	eq("and its answer is the block width", width, 1)
+	eq("nothing else is asked", #seen, 2)
+
+	-- At the end of a line there is no character to ask about, so the block is
+	-- the width of a space -- never a cell width taken somewhere else.
+	seen = {}
+	_, under, width = CeroSec.cursorSpan("", "ab", 2, bent)
+	eq("at the end: nothing is covered", under, nil)
+	eq("at the end: the font is asked about a space", seen[2], " ")
+	eq("at the end: and that is the block width", width, 1)
+end
+
 -- Getting closer counts, even while it is still refused. A file the shell wrote
 -- can hold a row wider than the screen (writeFile has no width rule -- the
 -- width belongs to the glass, not to the disk), and an editor that undid every
