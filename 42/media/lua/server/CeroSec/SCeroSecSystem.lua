@@ -133,6 +133,7 @@ end
 --                                      command asked for. The console knows
 --                                      which, and the client never has to.
 --   exec     { line }
+--   histtail {}                     -- the history of whoever is logged in now
 --   editbuf  { text }               -- the buffer as it stands, no file touched
 --   editsave { text }               -- the buffer, and write it
 --   editexit { }                    -- leave the editor, buffer dropped
@@ -147,6 +148,7 @@ end
 --   screen  { x, y, z, token, hostname, booted, lines, prompt, mode, mask,
 --             active, edit }
 --   closed  { x, y, z, token, reason }
+--   history { x, y, z, token, lines }
 --
 -- There is one answer for everything that happens on a screen, and it is the
 -- whole screen. The server owns the console, so the client has nothing to
@@ -309,10 +311,19 @@ function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	-- The machine's jobs, so that ps, jobs and kill read the very tables the
 	-- scheduler steps -- there is no second copy of a job anywhere.
 	if luaObject ~= nil and luaObject.jobs ~= nil then env.jobs = luaObject.jobs.list end
+	-- The order the machine is already under, so that a second `shutdown +5` is
+	-- refused and `shutdown -c` knows there is something to cancel. Read, never
+	-- written: the scheduler owns the timer, and a command only asks about it.
+	if luaObject ~= nil then env.shutdown = luaObject.shutdown end
 	return env
 end
 
 SCeroSecSystem.BIOS_PROMPT = "Restore system? (y/n) "
+
+-- The file sh reads at login, under the name it has had since the seventh
+-- edition. It is an ordinary file in an ordinary home: the BIOS repair does not
+-- touch homes, so restoring a machine never takes one away.
+SCeroSecSystem.PROFILE_NAME = ".profile"
 
 -- The state, or nil when this machine has nothing to boot. Both halves of the
 -- test in one place: a state the validator refuses (osState is nil) and a state
@@ -571,7 +582,26 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 		-- the machine's questions it is looking at.
 		active = CeroSec.consoleActive(console),
 		edit = self:editArgs(luaObject, state, console, playerObj),
+		-- Who is logged in, as one short string. The window carries the Up/Down
+		-- history of that account and nothing else, so this is how it knows the
+		-- history it holds is no longer the right one -- after a login, an exit
+		-- or an su -- and asks for the one that is. Sending the history itself
+		-- with every screen would put a hundred lines on the wire every time
+		-- anybody typed anything.
+		user = console.user,
 	}
+end
+
+-- The account's own history, to one window. Its own reply rather than a field
+-- on the screen: it is a hundred lines, it is the same hundred until somebody
+-- types, and it is nobody's business but the account whose lines they are.
+function SCeroSecSystem:sendHistory(luaObject, state, console, playerObj, token)
+	local lines = {}
+	if state ~= nil and console.user ~= nil then
+		lines = CeroSecOS.historyTail(state, self:sessionOf(console), CeroSecOS.HISTORY_TAIL)
+	end
+	self:reply(playerObj, "history", { x = luaObject.x, y = luaObject.y, z = luaObject.z,
+		token = token, lines = lines })
 end
 
 -- The screen changed: hand it to every window open on this computer. The
@@ -765,6 +795,7 @@ Commands.open = function(self, playerObj, x, y, z, token)
 	local args = self:screenArgs(luaObject, state, console, token, playerObj)
 	args.animate = animate
 	self:reply(playerObj, "opened", args)
+	self:sendHistory(luaObject, state, console, playerObj, token)
 	-- Somebody else may have been looking at the blank screen when it booted.
 	if animate then self:pushScreen(luaObject, state, console, key) end
 end
@@ -798,6 +829,8 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 	-- branch that can produce one ends long before that.
 	local order = nil
 
+	local profile = false
+
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "login" then
 		-- The name is echoed and remembered; nothing is judged until the
@@ -817,7 +850,15 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- A login is a session that has just begun: nobody has su'd yet,
 			-- and a stack left behind by anything is not this one's.
 			console.stack = nil
+			-- A login is a fresh shell: nothing the last account set at this
+			-- glass is still set, exactly as nothing of his session is.
+			console.shvars = {}
+			console.status = nil
 			CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
+			-- ~/.profile, after the greeting and before the first prompt, the
+			-- way sh has run it since the seventh edition. It runs as the
+			-- SHELL's own job, so what it sets is still set at the prompt.
+			profile = true
 		else
 			-- One answer for a bad name and for a bad password alike: the
 			-- machine does not say which half was wrong.
@@ -846,7 +887,12 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		if job ~= nil then
 			CeroSecOS.jobInput(state, job, text,
 				self:execEnv(luaObject, state, playerObj, token))
-			self:pushScreen(luaObject, state, console)
+			-- A pass right here, in the hand of whoever answered: the answer may
+			-- have finished the line, and the orders a finished line can give --
+			-- the editor above all -- need to know whose keyboard is on the
+			-- machine. `sudo reboot` ends here, on the password.
+			CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
+				getTimestampMs(), playerObj, token, true)
 			return
 		end
 
@@ -871,9 +917,25 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		end
 	end
 	self:pushScreen(luaObject, state, console)
+	-- A window's history belongs to the account, so a login is where it is
+	-- handed over. Before the profile runs: the lines are his either way, and
+	-- the profile is not something he typed.
+	if profile then
+		self:sendHistory(luaObject, state, console, playerObj, token)
+		self:runProfile(luaObject, console, playerObj, token)
+	end
 	-- `sudo shutdown` and `sudo reboot` end here, on the answer to the password
 	-- question, and end the screen the same way they do at a shell.
 	self:applyPower(luaObject, order)
+end
+
+-- A window asking for the history of whoever is logged in now. Asked for by
+-- the window when the account at the glass changes under it, which is the only
+-- time its copy can be the wrong account's.
+Commands.histtail = function(self, playerObj, x, y, z, token)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+	self:sendHistory(luaObject, state, console, playerObj, token)
 end
 
 Commands.exec = function(self, playerObj, x, y, z, token, args)
@@ -893,39 +955,117 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- which is the same thing to look at; here the row being typed at is drawn
 	-- by the window and is not part of the screen, so echoing an empty prompt
 	-- would put a second, bare prompt line above it and push the live one down.
-	local blank = string.find(line, "[^ \t]") == nil
-
-	-- The session the core runs on is derived from the console and written back
-	-- into it: cd is a move of the machine's cursor, not of anybody's.
-	local session = self:sessionOf(console)
-	local prompt = self:promptFor(state, console)
-	local _, lines, control, data =
-		CeroSecOS.exec(state, session, line,
-			self:execEnv(luaObject, state, playerObj, token))
-	self:writeSession(console, session)
-	luaObject:mirrorOS()
-
-	if control == "exit" then
-		CeroSec.consoleLogout(console)
-	elseif control == "clear" then
-		CeroSec.consoleClear(console)
-	elseif not blank then
-		CeroSec.consolePush(console, prompt .. line)
-		CeroSec.consolePushAll(console, lines)
-		if control == "job" then
-			self:startJob(luaObject, console, data)
-		else
-			self:applyOrder(console, control, data, playerObj)
-		end
+	if string.find(line, "[^ \t]") == nil then
+		self:pushScreen(luaObject, state, console)
+		return
 	end
 
-	self:pushScreen(luaObject, state, console)
+	-- History expansion, before anything else looks at the line: `!5` and `!!`
+	-- are replaced by what they name and the REPLACEMENT is what is echoed,
+	-- run and remembered, exactly as csh has done it since 1978.
+	local session = self:sessionOf(console)
+	local expanded, refusal = CeroSecOS.historyExpand(state, session, line)
+	if expanded == nil then
+		CeroSec.consolePush(console, self:promptFor(state, console) .. line)
+		CeroSec.consolePush(console, refusal)
+		console.status = 1
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+	line = expanded
 
-	-- Last, and never before the push: the line that was typed goes onto every
-	-- glass at the machine first, and the machine goes down after it. A screen
-	-- that ends on "# shutdown" is what a second survivor standing there has to
-	-- be left with.
-	self:applyPower(luaObject, control)
+	CeroSec.consolePush(console, self:promptFor(state, console) .. line)
+	-- Remembered for this account, on the disk, before it is judged: a line
+	-- that will not parse is still a line he typed and still one he will want
+	-- to press Up on to fix.
+	CeroSecOS.historyAppend(state, session, line, CeroSecOS.clockOf(self:clockEnv()))
+
+	-- The shell is a file like everything else. A machine whose /bin/sh has
+	-- been deleted has no shell to parse a line with, and says so -- the two
+	-- words that still work are the two that always do, one to ask what
+	-- happened and one to walk away.
+	local shRefusal = CeroSecOS.whyNotRun(state, session, "sh")
+	local bare = string.match(line, "^%s*(%S+)%s*$")
+	if shRefusal ~= nil and not (bare ~= nil and CeroSecOS.BUILTINS[bare]) then
+		CeroSec.consolePush(console, "sh: " .. shRefusal)
+		console.status = 1
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	self:startPrompt(luaObject, console, line, playerObj, token)
+end
+
+-- The typed line, as a job, and the first pass of it run here and now.
+--
+-- Run HERE rather than left to the next tick for one reason that matters: the
+-- orders a command can give -- opening the editor above all -- need to know
+-- whose keyboard is on the machine, and the scheduler has no player. So the
+-- line a player types gets its first pass in his own hand, which is also what
+-- makes an ordinary `ls` answer in the same round trip it always did; a line
+-- that does not finish in that pass becomes a running job like any other and
+-- the scheduler takes it from there.
+--
+-- Shared with the login path, which runs ~/.profile exactly this way.
+function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, name)
+	local state = luaObject:osState()
+	if state == nil then return nil end
+	local job, refusal = CeroSecJobs.startPrompt(self, luaObject, console, line, name)
+	if job == nil then
+		CeroSec.consolePush(console, tostring(refusal))
+		console.status = 2
+		self:pushScreen(luaObject, state, console)
+		return nil
+	end
+	-- Passes, in his own hand, while the line is still asking the MACHINE for
+	-- something only a pass can give it: a job, because it ended in "&". The
+	-- pass that makes one is not the pass the line finishes in, and a prompt
+	-- held for a tick after `sh spin.sh &` would swallow the next thing typed.
+	--
+	-- Bounded by the job slots there are: every answer costs one and the
+	-- refusal after the last is final, so this cannot run away.
+	local turns = 0
+	while true do
+		job.spawned = nil
+		CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
+			getTimestampMs(), playerObj, token, true)
+		turns = turns + 1
+		if job.spawned == nil or CeroSecOS.jobIsOver(job) or turns > CeroSecOS.MAX_JOBS then
+			break
+		end
+	end
+	return job
+end
+
+-- ~/.profile, run at login.
+--
+-- It is an ordinary foreground job on the shell's own environment, which is the
+-- whole point: `cd /var` and `x=5` in a profile are still in force at the first
+-- prompt, because there is no second shell for them to be in force in. It
+-- respects the budgets and the ceilings like anything else, and its errors
+-- print the way a script's do -- ".profile: line 2: ...".
+--
+-- The quirk that comes with all of that, and it is named in the manual: a
+-- .profile with an endless loop in it leaves the account at a busy prompt.
+-- Escape is a ^C there like anywhere else, so the way out is to press it and
+-- then edit the file; the machine is not bricked and never was.
+--
+-- Only when the file is there and the account may read it. A missing one is
+-- the ordinary case and says nothing at all.
+function SCeroSecSystem:runProfile(luaObject, console, playerObj, token)
+	local state = luaObject:osState()
+	if state == nil then return end
+	local session = self:sessionOf(console)
+	local user = CeroSecOS.getUser(state, session.user)
+	if user == nil or type(user.home) ~= "string" or user.home == "" then return end
+	local path = user.home .. "/" .. SCeroSecSystem.PROFILE_NAME
+
+	local node = CeroSecOS.getNode(state, session, path)
+	if node == nil or node.type ~= "file" then return end
+	if not CeroSecOS.can(state, session, node, "r") then return end
+	if (node.data or "") == "" then return end
+
+	self:startPrompt(luaObject, console, node.data, playerObj, token, SCeroSecSystem.PROFILE_NAME)
 end
 
 -- The buffer as it stands, with the file untouched. Sent while it is being
@@ -1037,7 +1177,17 @@ Commands.interrupt = function(self, playerObj, x, y, z, token, args)
 	console.prompt = nil
 	console.pending = nil
 
-	self:pushScreen(luaObject, state, console)
+	if job == nil then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+	-- A pass right here rather than on the next tick, so the prompt comes back
+	-- in the same round trip the key went out in. It is the scheduler's own
+	-- pass -- it reaps the job, says "killed" if there is anything to say, and
+	-- pushes the screen -- and every line it produces lands after the "^C"
+	-- pushed above, which is the order they happened in.
+	CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
+		getTimestampMs(), playerObj, token, true)
 end
 
 Commands.close = function(self, playerObj, x, y, z, token)

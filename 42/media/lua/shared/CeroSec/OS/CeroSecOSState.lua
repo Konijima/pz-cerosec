@@ -96,7 +96,20 @@ local function checkNode(node, where, depth, tally)
 
 	if node.type == "file" then
 		if type(node.data) ~= "string" then return false, where .. ": bad data" end
-		if #node.data > CeroSecOS.MAX_FILE_BYTES then return false, where .. ": file too large" end
+		-- The one file that does not count against the disk (~/.sh_history, see
+		-- CeroSecOSFS.subtreeUsage). The exemption is paid for HERE: an exempt
+		-- file has a ceiling of its own, and the exempt bytes on a whole machine
+		-- have one too, so a forged blob cannot hand back a hundred of them and
+		-- call it a disk.
+		if node.nq ~= nil and node.nq ~= true then return false, where .. ": bad nq" end
+		local cap = CeroSecOS.MAX_FILE_BYTES
+		if node.nq then cap = CeroSecOS.HISTORY_BYTES end
+		if #node.data > cap then return false, where .. ": file too large" end
+		if node.nq then
+			tally.exempt = tally.exempt + #node.data
+			if tally.exempt > CeroSecOS.MAX_EXEMPT_BYTES then return false, "disk full" end
+			return true
+		end
 		-- A blob handed back by the game never went through setData, so the
 		-- printable rule is re-checked here rather than assumed.
 		if CeroSecOS.hasControlBytes(node.data) then return false, where .. ": invalid characters" end
@@ -111,7 +124,7 @@ local function checkNode(node, where, depth, tally)
 	if #names > CeroSecOS.MAX_DIR_ENTRIES then return false, where .. ": directory full" end
 	for i = 1, #names do
 		local name = names[i]
-		if not CeroSecOS.isValidName(name) then return false, where .. "/" .. name .. ": invalid name" end
+		if not CeroSecOS.isValidFileName(name) then return false, where .. "/" .. name .. ": invalid name" end
 		local ok, reason = checkNode(node.children[name], where .. "/" .. name, depth + 1, tally)
 		if not ok then return false, reason end
 	end
@@ -135,7 +148,7 @@ function CeroSecOS.validate(state)
 	end
 	if type(state.fs) ~= "table" then return false, "bad fs" end
 	if state.fs.type ~= "dir" then return false, "fs root is not a directory" end
-	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0, bytes = 0 })
+	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0, bytes = 0, exempt = 0 })
 	if not fsOk then return false, fsReason end
 
 	-- The accounts are a FILE now, so this is all validate has to say about

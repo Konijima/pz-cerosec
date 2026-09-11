@@ -115,6 +115,17 @@ function CeroSecOS.jobsOf(env)
 	return env.jobs
 end
 
+-- How many of them are still running. The prompt's own job is NOT one of them:
+-- it is the shell, not a job the shell started, so `jobs` does not list it and
+-- the four-job ceiling is still four SCRIPTS and not three plus the prompt.
+function CeroSecOS.liveJobs(jobs)
+	local live = 0
+	for i = 1, #jobs do
+		if not jobs[i].interactive and not CeroSecOS.jobIsOver(jobs[i]) then live = live + 1 end
+	end
+	return live
+end
+
 local function trim(s)
 	return (string.gsub(string.gsub(s, "^[ \t\n]+", ""), "[ \t\n]+$", ""))
 end
@@ -278,13 +289,26 @@ end
 -- The job
 --
 
--- opts: prog, args (args[1] is $1), name, cmd, session, id, bg.
+-- opts: prog, args (args[1] is $1), name, cmd, session, id, bg, vars, status.
+--
+-- vars, when given, is taken BY REFERENCE and is the caller's to keep: it is
+-- how the prompt has an environment that outlives one line. A script is never
+-- handed one -- its variables are its own and die with it, the way a child
+-- shell's do.
 function CeroSecOS.newJob(opts)
 	local args = {}
 	if type(opts.args) == "table" then
 		for i = 1, #opts.args do args[i] = tostring(opts.args[i]) end
 	end
 	local session = opts.session or CeroSecOS.rootSession()
+	local vars, nvars = opts.vars, 0
+	if type(vars) ~= "table" then
+		vars = {}
+	else
+		for _, _ in pairs(vars) do nvars = nvars + 1 end
+	end
+	local status = 0
+	if type(opts.status) == "number" then status = math.floor(opts.status) end
 	return {
 		id = opts.id or 1,
 		-- What `ps` prints, and what the script calls itself in an error.
@@ -293,8 +317,8 @@ function CeroSecOS.newJob(opts)
 		bg = opts.bg and true or false,
 		prog = opts.prog,
 		args = args,
-		vars = {},
-		nvars = 0,
+		vars = vars,
+		nvars = nvars,
 		-- A session of the job's OWN. `cd` inside a script moves the script and
 		-- not the console it was started from, the way a real shell's child
 		-- cannot move its parent.
@@ -309,7 +333,7 @@ function CeroSecOS.newJob(opts)
 		caps = {},
 		out = {},
 		partial = "",
-		status = 0,
+		status = status,
 		steps = 0,
 		state = "running",
 		depth = 1,
@@ -328,7 +352,17 @@ end
 -- where it stands, with status 2, the way a shell stops on a fatal error.
 function jobError(job, reason)
 	flushPartial(job)
-	outLine(job, CeroSecOS.scriptError(job.name, reason, job.line))
+	-- A typed line has no line number worth printing: it is line one of
+	-- nothing, and "sh: line 1:" in front of every refusal would be a number
+	-- that never says anything. A file -- a script, or ~/.profile -- has lines,
+	-- and so does a script the typed line went on to run: past the first level
+	-- the job is inside a file again (`sh spin.sh` at the prompt), and that
+	-- file's name and line are what a player has to be told.
+	if job.promptLine ~= nil and job.depth == 1 then
+		outLine(job, "sh: " .. reason)
+	else
+		outLine(job, CeroSecOS.scriptError(job.name, reason, job.line))
+	end
 	job.status = 2
 	finish(job, "error")
 end
@@ -704,9 +738,12 @@ builtins.echo = function(job, args)
 end
 
 -- printf, with the three conversions worth having on a machine this size.
-builtins.printf = function(job, args)
+-- The formatting, apart from the writing: the builtin below writes it into the
+-- job and `sudo printf` returns it as lines, and there is ONE implementation of
+-- the conversions.
+function CeroSecOS.printfText(args)
 	local format = args[2]
-	if format == nil then return 1 end
+	if format == nil then return nil end
 	local out, i, a = "", 1, 3
 	while i <= #format do
 		local c = string.sub(format, i, i)
@@ -738,7 +775,39 @@ builtins.printf = function(job, args)
 			i = i + 1
 		end
 	end
-	writeText(job, out)
+	return out
+end
+
+builtins.printf = function(job, args)
+	local text = CeroSecOS.printfText(args)
+	if text == nil then return 1 end
+	writeText(job, text)
+	return 0
+end
+
+-- history. The shell's own memory, so the shell is what prints it: there is no
+-- /bin/history and there could not be one -- a separate program could not
+-- clear the history of the shell that ran it.
+--
+-- The numbers are the entry's position in the file as it stands. A real shell
+-- counts them from the first line of the session and never reuses one; this
+-- one renumbers when the oldest are dropped, which is what a machine that
+-- keeps its history on the disk and nowhere else can honestly say.
+builtins.history = function(job, args, state, env)
+	if args[2] == "-c" and #args == 2 then
+		CeroSecOS.historyClear(state, job.session, CeroSecOS.clockOf(env))
+		return 0
+	end
+	if #args > 1 then
+		writeText(job, "history: usage: history [-c]\n")
+		return 1
+	end
+	local lines = CeroSecOS.historyLines(state, job.session)
+	local from = #lines - CeroSecOS.HISTORY_SHOW + 1
+	if from < 1 then from = 1 end
+	for i = from, #lines do
+		writeText(job, CeroSecOS.padLeft(tostring(i), 5) .. "  " .. lines[i] .. "\n")
+	end
 	return 0
 end
 
@@ -834,14 +903,28 @@ builtins.sleep = function(job, args, state, env)
 	return 0
 end
 
-builtins.test = function(job, args, state)
+-- The expression, judged. Shared by the builtin below and by /bin's own door
+-- into it (`sudo test -f /root/notes`), so there is one evaluator and one set
+-- of refusals.
+-- true/false, or nil plus the line to print and whether it is FATAL. A bracket
+-- with no other half is a mistake in the script and stops it; an expression
+-- that cannot be judged is a status of two and the script goes on. The two
+-- answers were already different before this evaluator was shared, and the
+-- difference is the third return rather than two call sites that each remember.
+function CeroSecOS.evalTest(state, session, args)
 	local hi = #args
 	if args[1] == "[" then
-		if args[hi] ~= "]" then return nil, "test: missing ']'" end
+		if args[hi] ~= "]" then return nil, "test: missing ']'", true end
 		hi = hi - 1
 	end
-	local v, err = testExpr(state, job.session, args, 2, hi)
+	local v, err = testExpr(state, session, args, 2, hi)
+	return v, err, false
+end
+
+builtins.test = function(job, args, state)
+	local v, err, fatal = CeroSecOS.evalTest(state, job.session, args)
 	if v == nil then
+		if fatal then return nil, err end
 		flushPartial(job)
 		outLine(job, err)
 		return 2
@@ -905,16 +988,28 @@ local function applyControl(job, control, data)
 		if CeroSecOS.jobRun(job, data.prog, data.args, data.name) then job.status = 0 end
 		return true
 	end
-	if control == "edit" then
+	-- The editor opens on a SCREEN, and a script has none: a job running in the
+	-- background has nobody in front of it and a buffer nobody can see is a
+	-- machine stuck. The prompt's own job does have one, and is the one job the
+	-- order goes through.
+	if control == "edit" and not job.interactive then
 		flushPartial(job)
 		outLine(job, "edit: not a terminal")
 		job.status = 1
 		return true
 	end
-	-- clear, shutdown, reboot and exit are the machine's, and the scheduler is
-	-- what carries them out -- after the job's own output has reached the
-	-- screen, exactly as a command typed at the prompt does.
+	-- clear, edit, shutdown, reboot and exit are the machine's, and whoever is
+	-- running the machine is what carries them out -- after the job's own output
+	-- has reached the screen, so nothing a player typed is swallowed by the
+	-- machine going down.
+	--
+	-- The job ENDS here, the way a real shell's exec does: a line that has
+	-- ordered the machine off has nothing left to say, and the rest of `shutdown;
+	-- echo bye` is not something to run on a machine that is going dark.
 	job.control = control
+	job.controlData = data
+	flushPartial(job)
+	job.sig = { k = "exit", n = job.status }
 	return true
 end
 
@@ -962,8 +1057,28 @@ local function runSimple(state, job, f, env)
 		return 1
 	end
 
+	CeroSecOS.expandTilde(state, job.session, args, redirect)
+
 	local name = args[1]
 	local builtin = builtins[name]
+	-- `exit` at a prompt is not `exit` in a script. In a file it ends the
+	-- script, which is the builtin above; at the glass it logs the account out
+	-- or pops an `su`, which is /bin/exit's job and always has been. One word,
+	-- two meanings, and the shell knows which house it is standing in.
+	if builtin ~= nil and job.interactive and name == "exit" then builtin = nil end
+	-- The builtins that are also files in /bin are looked up there FIRST. The
+	-- speed of running one inside the engine is an implementation detail; which
+	-- commands a machine has is not, and it is written on the disk. So
+	-- `rm /bin/sleep` takes sleep away and `chmod 600 /bin/echo` puts echo out
+	-- of reach, exactly as they do for `ls`.
+	if builtin ~= nil and CeroSecOS.BUILTIN_FILES[name] then
+		local refusal = CeroSecOS.whyNotRun(state, job.session, name)
+		if refusal ~= nil then
+			writeLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
+			job.status = 1
+			return 1
+		end
+	end
 	if builtin ~= nil then
 		-- A builtin writes to the job's own output, so a redirect on one is a
 		-- capture: its lines are caught the way $(...) catches them and then
@@ -1334,6 +1449,11 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	-- cannot be reasoned away is cheaper than the argument that it cannot run
 	-- away.
 	local turns, maxTurns = 0, budget * 8 + 1000
+	-- A signal left behind by something that ran OUTSIDE the loop -- the answer
+	-- to a question, which goes through jobInput -- is dealt with before a step
+	-- is taken, or `sudo shutdown` would run one more command after the machine
+	-- had been ordered off.
+	if job.sig ~= nil then handleSignal(job) end
 	while used < budget and job.state == "running" and turns < maxTurns do
 		turns = turns + 1
 		if job.spawn ~= nil then break end
@@ -1515,11 +1635,9 @@ end
 -- script that will not parse never becomes a job.
 function CeroSecOS.startScript(state, session, who, path, args, line, env, needX)
 	local jobs = CeroSecOS.jobsOf(env)
-	local live = 0
-	for i = 1, #jobs do
-		if not CeroSecOS.jobIsOver(jobs[i]) then live = live + 1 end
+	if CeroSecOS.liveJobs(jobs) >= CeroSecOS.MAX_JOBS then
+		return false, { who .. ": too many jobs" }
 	end
-	if live >= CeroSecOS.MAX_JOBS then return false, { who .. ": too many jobs" } end
 
 	local text, refusal = CeroSecOS.readScript(state, session, who, path, needX)
 	if text == nil then return false, { refusal } end
@@ -1580,9 +1698,15 @@ commands.jobs = function(state, session, args, env)
 	local out = {}
 	for i = 1, #jobs do
 		local job = jobs[i]
-		out[#out + 1] = "[" .. tostring(job.n or i) .. "] "
-			.. CeroSecOS.padRight(CeroSecOS.jobWord(job), 8)
-			.. " " .. CeroSecOS.truncate(job.cmd or "", 45)
+		-- Not the shell you are typing into: `jobs` lists what the shell
+		-- STARTED, the way it has since job control was invented. `ps` is the
+		-- one that shows everything the machine is running, the prompt's own
+		-- job included.
+		if not job.interactive then
+			out[#out + 1] = "[" .. tostring(job.n or i) .. "] "
+				.. CeroSecOS.padRight(CeroSecOS.jobWord(job), 8)
+				.. " " .. CeroSecOS.truncate(job.cmd or "", 45)
+		end
 	end
 	return true, out
 end
@@ -1613,15 +1737,59 @@ commands.kill = function(state, session, args, env)
 	return false, { "kill: " .. args[2] .. ": no such job" }
 end
 
+--
+-- /bin's own doors into the six the shell runs itself
+--
+-- The shell reaches these through builtins[] and never comes here, because a
+-- word typed at a prompt or written in a file goes through runSimple. This is
+-- the OTHER door every command has -- `sudo <name>` -- and it exists so that
+-- /bin/printf and /bin/test are not two files with nothing behind them.
+--
+-- Nothing is implemented twice: printf formats through CeroSecOS.printfText and
+-- test judges through CeroSecOS.evalTest, the very calls the builtins make.
+-- `sleep` cannot be answered at all without a job to put to sleep, so it asks
+-- for one -- the same one-line job `wait` asks for, below.
+--
+
+commands["true"] = function(state, session, args, env)
+	return true, {}
+end
+
+commands["false"] = function(state, session, args, env)
+	return false, {}
+end
+
+commands.printf = function(state, session, args, env)
+	local text = CeroSecOS.printfText(args)
+	if text == nil then return false, {} end
+	return true, CeroSecOS.splitLines(text)
+end
+
+local function testCommand(state, session, args, env)
+	local v, err = CeroSecOS.evalTest(state, session, args)
+	if v == nil then return false, { err } end
+	return v, {}
+end
+
+commands.test = testCommand
+commands["["] = testCommand
+
+commands.sleep = function(state, session, args, env)
+	local words = { { { t = "lit", s = "sleep", q = true, bare = true } } }
+	for i = 2, #args do
+		words[#words + 1] = { { t = "lit", s = args[i], q = true, bare = false } }
+	end
+	local prog = { { k = "cmd", line = 1, words = words } }
+	return CeroSecOS.jobOrder("sleep", prog, {}, table.concat(args, " "))
+end
+
 -- wait, typed at the prompt: a job of one line, so that the prompt is busy
 -- while it waits and Escape kills the waiting and not the jobs waited on.
 commands.wait = function(state, session, args, env)
 	local jobs = CeroSecOS.jobsOf(env)
-	local live = 0
-	for i = 1, #jobs do
-		if not CeroSecOS.jobIsOver(jobs[i]) then live = live + 1 end
+	if CeroSecOS.liveJobs(jobs) >= CeroSecOS.MAX_JOBS then
+		return false, { "wait: too many jobs" }
 	end
-	if live >= CeroSecOS.MAX_JOBS then return false, { "wait: too many jobs" } end
 
 	local words = { { { t = "lit", s = "wait", q = true, bare = true } } }
 	for i = 2, #args do

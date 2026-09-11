@@ -29,7 +29,10 @@ CeroSecOS.STATE_VERSION = 1
 --    /etc/group.
 -- 6: /bin/dev.
 -- 7: /bin/sh, /bin/ps, /bin/jobs, /bin/kill, /bin/wait.
-CeroSecOS.SYSTEM_VERSION = 7
+-- 8: /bin/halt, and the six the shell runs itself but still looks up first --
+--    /bin/echo was already there, /bin/sleep, /bin/printf, /bin/test, /bin/[,
+--    /bin/true and /bin/false were not.
+CeroSecOS.SYSTEM_VERSION = 8
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -48,6 +51,15 @@ CeroSecOS.MAX_NODES = 256        -- nodes on the whole computer, root included
 CeroSecOS.DISK_BYTES = 32768
 CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
+
+-- The exempt bytes on a whole machine. One file is exempt from the disk quota
+-- -- an account's own ~/.sh_history (see the history section of
+-- CeroSecOSShell.lua) -- and this is what the exemption may cost in total,
+-- four accounts' worth. It is checked by validate and by nothing else: the one
+-- function that writes such a file writes exactly one of them per account, so
+-- the only way to reach this ceiling is a blob the game handed back that
+-- nothing on this machine wrote.
+CeroSecOS.MAX_EXEMPT_BYTES = 65536
 
 -- Control the terminal honours travels out of band, as exec's third return
 -- value ("clear", "exit", "prompt", "edit", "shutdown" or "reboot"), never as a

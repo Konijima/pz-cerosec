@@ -412,7 +412,16 @@ local function newBench()
 	end
 
 	-- Type a line and press Enter, the way the box hands it over.
+	--
+	-- The wall clock moves a second first, and it has to. Every line is a JOB
+	-- now, and what a job writes reaches the screen at CeroSec.JOB_OUT_PER_SEC
+	-- lines a second, per machine -- so a bench that typed fifty lines inside
+	-- the same millisecond would run out of that second's room and watch the
+	-- rest of its output sit in the queue. A player types slower than that; a
+	-- bench that did not move the clock would be asserting against a machine
+	-- nobody is sitting at.
 	function bench.enter(line)
+		_G.__now = _G.__now + 1000
 		window.entry:setText(line or "")
 		window.entry:setCursorPos(#(line or ""))
 		window:onCommandEntered()
@@ -737,10 +746,12 @@ do
 
 	bench.enter("rm -r /bin")
 	bench.frame()
-	-- Still logged in, and the machine is already unusable.
+	-- Still logged in, and the machine is already unusable. The SHELL is a file
+	-- in /bin like everything else, so what is missing now is not `ls`: it is
+	-- the thing that would have read the line `ls` was on.
 	bench.enter("ls")
 	bench.frame()
-	check("the commands are gone", bench.painted("ls: command not found"))
+	check("the shell itself is gone", bench.painted("sh: command not found"))
 	bench.enter("help")
 	bench.frame()
 	check("help says the system is damaged", bench.painted("the system is damaged"))
@@ -1903,27 +1914,43 @@ do
 	bench.login("admin")
 	bench.script("/home/admin/hello.sh", "echo one\necho two\necho three\n")
 
+	-- The line a player types gets its first pass in his own hand (see
+	-- SCeroSecSystem:startPrompt), so a script this short is over before the
+	-- answer goes back -- exactly as `ls` has always been. A LINE is a job now;
+	-- it is not a job the player has to wait for.
 	bench.enter("sh hello.sh")
 	bench.frame()
-	eq("the machine is running a job", CeroSec.consoleWaiting(bench.object.console), "job")
-	eq("and the window knows it", bench.window.mode, "job")
 	check("the line that started it is on the glass", bench.painted("sh hello.sh"))
-	-- The echoed line has a prompt in it, of course; what must not be there is
-	-- a LIVE one under it, waiting to be typed at.
-	eq("there is no prompt to type at", bench.window.prompt, "")
-	eq("and no row is given to one", bench.window:inputHeight(), 0)
-
-	bench.tick(1)
 	check("the first line arrives", bench.painted("one"))
 	check("and the second", bench.painted("two"))
 	check("and the third", bench.painted("three"))
-
-	-- A pass or two more and the job is reaped: the prompt comes back.
-	bench.tick(2)
 	eq("the prompt is back", bench.window.mode, "shell")
 	eq("and the machine agrees", CeroSec.consoleWaiting(bench.object.console), "shell")
 	eq("with the status the script ended on", bench.object.console.status, 0)
 	check("the shell prompt is on the glass again", bench.painted("admin@ksp"))
+end
+
+-- A script that does NOT finish in that first pass is a job, and the window is
+-- told there is nothing to type at.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/slow.sh", "i=0\nwhile true; do i=$((i+1)); done\n")
+
+	bench.enter("sh slow.sh")
+	bench.frame()
+	eq("the machine is running a job", CeroSec.consoleWaiting(bench.object.console), "job")
+	eq("and the window knows it", bench.window.mode, "job")
+	-- The echoed line has a prompt in it, of course; what must not be there is
+	-- a LIVE one under it, waiting to be typed at.
+	eq("there is no prompt to type at", bench.window.prompt, "")
+	eq("and no row is given to one", bench.window:inputHeight(), 0)
+	check("and Escape would interrupt it", bench.window.active)
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	eq("which brings the prompt straight back", bench.window.mode, "shell")
+	check("with the ^C on the glass", bench.painted("^C"))
 end
 
 -- A script that prints as fast as it can is a trickle and not a flood: the
@@ -1934,8 +1961,11 @@ do
 	bench.login("admin")
 	bench.script("/home/admin/flood.sh", "while true; do echo x; done\n")
 
-	local before = #bench.object.console.lines
 	bench.enter("sh flood.sh")
+	-- Counted from AFTER the pass the typed line got in the player's own hand:
+	-- that pass is in the second the key was pressed in, and what is being
+	-- measured here is one whole second of a job flooding on its own.
+	local before = #bench.object.console.lines
 	-- Ten passes is one second of wall clock.
 	bench.tick(10)
 	local made = #bench.object.console.lines - before
@@ -2002,7 +2032,10 @@ do
 	bench.enter("sh bg.sh &")
 	bench.frame()
 	eq("the prompt is not taken by a background job", bench.window.mode, "shell")
-	check("the machine announced it", bench.painted("[1] 42"))
+	-- Slot one, id forty-THREE: the shell that read the line is a job too now
+	-- and took forty-two, the way a real shell holds a pid of its own and its
+	-- children get later ones.
+	check("the machine announced it", bench.painted("[1] 43"))
 
 	bench.tick(3)
 	check("its output came to the same screen", bench.painted("working"))

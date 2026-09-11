@@ -19,6 +19,17 @@ function CeroSecOS.isValidName(name)
 	return true
 end
 
+-- The same rule, for a name on the DISK. One exception, and it is Unix's own:
+-- the test command has been two files since the seventies, `test` and `[`, and
+-- a machine that could not hold /bin/[ would be a machine where `[ -f f ]` is
+-- a builtin with no file behind it while every other command has one. Nothing
+-- else punctuational is allowed in, and an account or a group is still
+-- isValidName's -- there is no user called "[".
+function CeroSecOS.isValidFileName(name)
+	if name == "[" then return true end
+	return CeroSecOS.isValidName(name)
+end
+
 -- path -> absolute path string, array of its components.
 -- An empty or nil path means the session's cwd. Trailing slashes, doubled
 -- slashes and "." are dropped; ".." pops, and popping past "/" stays at "/".

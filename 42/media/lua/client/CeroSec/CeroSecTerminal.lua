@@ -168,8 +168,12 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.revealing = false
 	o.revealStart = 0
 	o.shown = 0
+	-- What Up and Down walk: the account's own ~/.sh_history, as the machine
+	-- last handed it over. The window keeps no history of its own.
 	o.history = {}
 	o.historyIndex = 0
+	o.historyUser = nil
+	o.screenUser = nil
 	o.scroll = 0
 	o.mode = "prompt"
 	o.prompt = ""
@@ -300,6 +304,14 @@ function CeroSecTerminal:onServerCommand(command, args)
 		self:showScreen(args, false)
 	elseif command == "highlight" then
 		self:startHighlight(args)
+	elseif command == "history" then
+		-- The account's own lines, as the machine holds them (~/.sh_history).
+		-- Up and Down walk THESE: the window remembers nothing of its own any
+		-- more, so a survivor who walks away, comes back and presses Up gets
+		-- what he typed yesterday.
+		self.history = args.lines or {}
+		self.historyIndex = 0
+		self.historyUser = self.screenUser
 	end
 end
 
@@ -406,6 +418,17 @@ function CeroSecTerminal:showScreen(args, animate)
 	self.revealing = false
 	self.shown = #self.screen
 	self.lines = self.screen
+	-- Whose history the window is holding. The machine says who is logged in
+	-- with every screen; when that is no longer who the history belongs to --
+	-- a login, an exit, an su -- the window asks for the right one. One short
+	-- string on the wire instead of a hundred lines.
+	self.screenUser = args.user
+	if self.opened and self.screenUser ~= self.historyUser then
+		self.historyUser = self.screenUser
+		self.history = {}
+		self.historyIndex = 0
+		self:send("histtail", {})
+	end
 	self.mask = args.mask and true or false
 	self:setMode(args.mode)
 	-- After setMode, never before: a change of mode empties the input line, and
@@ -749,6 +772,9 @@ function CeroSecTerminal:onCommandEntered()
 	end
 
 	if self.mode == "shell" then
+		-- Kept here too, so Up works on the line just typed without waiting for
+		-- the machine to hand the file back. The file is still the truth: the
+		-- next screen that changes account replaces the lot.
 		if text ~= "" then
 			CeroSec.ringPush(self.history, text, CeroSec.HISTORY_MAX)
 		end

@@ -87,26 +87,60 @@ local function freeSlot(book)
 end
 
 local function liveCount(book)
-	local live = 0
-	for i = 1, #book.list do
-		if not CeroSecOS.jobIsOver(book.list[i]) then live = live + 1 end
-	end
-	return live
+	return CeroSecOS.liveJobs(book.list)
 end
 
 -- Make a job from the order the engine handed back. nil plus a reason when the
 -- machine has no room for it.
+-- Put a job on the machine and start scheduling it. The two makers below hand
+-- the job over ready-made; everything from here down is the book-keeping every
+-- job needs whoever built it.
+local function enrol(system, luaObject, console, job, bg)
+	local book = CeroSecJobs.book(luaObject)
+	book.seq = book.seq + 1
+	job.id = CeroSecJobs.FIRST_ID + book.seq - 1
+	-- The prompt's own job holds no slot: `[1]` is what the shell STARTED, and
+	-- the shell is not one of the things it started.
+	if not job.interactive then job.n = freeSlot(book) end
+	book.list[#book.list + 1] = job
+	register(luaObject)
+	CeroSecJobs.system = system
+
+	if job.interactive then
+		-- The prompt belongs to it until it is over, exactly as it does for a
+		-- foreground script: that is what makes Escape a ^C on a typed loop.
+		console.job = job.id
+	elseif bg then
+		CeroSec.consolePush(console, "[" .. job.n .. "] " .. job.id)
+	else
+		console.job = job.id
+	end
+	return job
+end
+
+-- The line a player typed, as the machine's foreground job. The console's own
+-- variables and its $? go in by reference, so `x=5` on one line and `echo $x`
+-- on the next are the same environment -- and walking away and coming back
+-- finds it, because the console is machine state and is saved with the object.
+--
+-- job, or nil plus the one line to print.
+-- name is what the job calls itself in an error and what `ps` shows; it is
+-- "sh" for a typed line and the file's own name for ~/.profile, which is run
+-- exactly this way.
+function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
+	local state = luaObject:osState()
+	if state == nil then return nil, "no filesystem" end
+	if type(console.shvars) ~= "table" then console.shvars = {} end
+	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
+		console.shvars, console.status, name)
+	if job == nil then return nil, refusal end
+	return enrol(system, luaObject, console, job, false)
+end
+
 function CeroSecJobs.start(system, luaObject, console, data, bg)
 	local book = CeroSecJobs.book(luaObject)
 	if liveCount(book) >= CeroSecOS.MAX_JOBS then return nil, "too many jobs" end
-	-- The one system there is, kept where the tick can reach it. Written here
-	-- rather than at load time: the tick has nothing to do until a job exists,
-	-- and a job cannot exist without somebody having made one.
-	CeroSecJobs.system = system
-
-	book.seq = book.seq + 1
 	local job = CeroSecOS.newJob({
-		id = CeroSecJobs.FIRST_ID + book.seq - 1,
 		prog = data.prog,
 		args = data.args,
 		name = data.name,
@@ -114,29 +148,75 @@ function CeroSecJobs.start(system, luaObject, console, data, bg)
 		bg = bg,
 		session = system:sessionOf(console),
 	})
-	job.n = freeSlot(book)
-	book.list[#book.list + 1] = job
-	register(luaObject)
-
-	if bg then
-		CeroSec.consolePush(console, "[" .. job.n .. "] " .. job.id)
-	else
-		-- The prompt belongs to the job now: the console says so, which is what
-		-- makes Escape a ^C and what keeps a second window from typing a
-		-- command over the top of a running script.
-		console.job = job.id
-	end
-	return job
+	return enrol(system, luaObject, console, job, bg)
 end
 
 -- Every job on this machine, gone. Reboot, shutdown, a room that lost its
 -- power, a computer picked up: all four are the machine stopping, and a
 -- machine that has stopped is running nothing.
 function CeroSecJobs.killAll(luaObject)
-	if luaObject.jobs == nil then return false end
+	-- A pending shutdown goes with them. It is an order given to a machine that
+	-- is running, and a machine that has stopped is not running it any more:
+	-- `shutdown -r +5` does not survive the power going out, and the README and
+	-- the manual say so.
+	local had = luaObject.jobs ~= nil or luaObject.shutdown ~= nil
 	luaObject.jobs = nil
+	luaObject.shutdown = nil
 	forget(luaObject)
-	return true
+	return had
+end
+
+--
+-- The pending shutdown
+--
+-- `shutdown -r +5` is an order with a clock on it, and the clock is this pass:
+-- there is no timer anywhere else on the machine. It is RUNTIME state -- it is
+-- not among the object's saved keys -- so a server restart forgets it and the
+-- machine simply stays up, which is the honest answer for a machine with no
+-- process table on its disk.
+--
+-- It survives a window closing, because it belongs to the machine and not to
+-- anybody standing at it, and it does not survive the power going out or the
+-- computer being picked up, because neither of those is a machine any more.
+--
+
+function CeroSecJobs.schedule(luaObject, data)
+	if type(data) ~= "table" or type(data.at) ~= "number" then return nil end
+	luaObject.shutdown = { at = data.at, kind = data.kind or "shutdown", warned = false }
+	register(luaObject)
+	return luaObject.shutdown
+end
+
+-- One line onto the machine's screen, and out to every window standing at it.
+-- A broadcast is not a reply: it reaches everybody or it is not a broadcast.
+local function broadcast(system, luaObject, line)
+	local console = luaObject:consoleState()
+	if console == nil then return end
+	CeroSec.consolePush(console, line)
+	system:pushScreen(luaObject, luaObject:osState(), console)
+end
+
+-- The warning a minute out, and then the deed. Run for every machine that has
+-- one, on every pass, before any job is stepped: a machine with a shutdown
+-- pending and nothing running must still go down at the minute it was told to.
+function CeroSecJobs.checkShutdown(system, luaObject, now)
+	local pending = luaObject.shutdown
+	if pending == nil then return end
+	if not luaObject.on then
+		luaObject.shutdown = nil
+		return
+	end
+	local left = pending.at - now
+	if left <= 0 then
+		luaObject.shutdown = nil
+		broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 0))
+		system:applyPower(luaObject, pending.kind)
+		return
+	end
+	if not pending.warned and left <= 60000 then
+		pending.warned = true
+		broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 1))
+	end
 end
 
 function CeroSecJobs.foreground(luaObject, console)
@@ -184,8 +264,22 @@ local function outRoom(book, now)
 	return room
 end
 
+-- One pass over one machine, and the one place a job's output, its questions,
+-- its end and its orders reach the screen.
+--
+-- playerObj and token are who typed the line this pass is serving and at which
+-- window, and both are nil on an ordinary tick: the scheduler has no player.
+-- Two things need them. `edit` has to know whose keyboard is on the buffer, and
+-- `dev find` is answered on ONE screen rather than on the machine's (see the
+-- head of SCeroSecDevices.lua) -- so both can only ever come out of a pass the
+-- server runs in somebody's hand, which is what Commands.exec runs.
+--
+-- force makes the screen go out whether or not this pass changed anything: the
+-- line a player typed was pushed before the pass and has to reach the glass
+-- even when the command printed nothing at all.
+--
 -- Returns the steps it spent.
-function CeroSecJobs.runMachine(system, luaObject, budget, now)
+function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token, force)
 	local book = luaObject.jobs
 	if book == nil or #book.list == 0 then
 		CeroSecJobs.killAll(luaObject)
@@ -202,7 +296,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 		return 0
 	end
 
-	local env = system:execEnv(luaObject, state, nil, nil)
+	local env = system:execEnv(luaObject, state, playerObj, token)
 	env.nowMs = now
 	env.jobs = book.list
 
@@ -240,9 +334,15 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 				used = used + cost
 			end
 		end
+		-- The prompt's job runs ON the console's session and not on a copy of
+		-- it: `cd` typed at the glass moves the machine's cursor, and `su`
+		-- changes who the machine is logged in as. Written back every pass,
+		-- because the job may move it at any step and the screen that goes out
+		-- below has to agree with it.
+		if job.interactive then system:writeSession(console, job.session) end
 	end
 
-	local changed = false
+	local changed = force and true or false
 
 	-- A statement with "&" behind it, asked for by a job that is already
 	-- running. One per pass and per job, so a loop full of them makes four jobs
@@ -250,10 +350,20 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 	for i = 1, #book.list do
 		local job = book.list[i]
 		if job.spawn ~= nil then
+			-- What `jobs` and `ps` call it. A line typed at the prompt is
+			-- called by the line that was typed; a statement inside a file is
+			-- called by the file and the line it is on.
+			local cmd = job.name .. ":" .. tostring(job.spawnLine or 1) .. " &"
+			if job.promptLine ~= nil then cmd = job.promptLine end
 			local order = { name = job.name, prog = { job.spawn }, args = job.args,
-				cmd = job.name .. ":" .. tostring(job.spawnLine or 1) .. " &" }
+				cmd = cmd }
 			job.spawn = nil
 			job.spawnLine = nil
+			-- What tells the caller this pass answered an "&". A line typed at
+			-- the prompt is served pass by pass in the player's own hand
+			-- (SCeroSecSystem:startPrompt) and the pass that MAKES a job is
+			-- never the pass the line finishes in, so it has to know.
+			job.spawned = true
 			local made = CeroSecJobs.start(system, luaObject, console, order, true)
 			if made == nil then
 				-- Said by the job that asked, so it drains at the same rate its
@@ -297,7 +407,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 	-- Reaping. A job is only taken off the machine once the last of its output
 	-- has reached the screen, or the last thing it said would be lost.
 	local kept = {}
-	local control = nil
+	local control, controlData = nil, nil
 	for i = 1, #book.list do
 		local job = book.list[i]
 		if CeroSecOS.jobIsOver(job) and #job.out == 0 then
@@ -316,24 +426,37 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now)
 					console.prompt = nil
 				end
 			end
-			if job.control ~= nil then control = job.control end
+			if job.control ~= nil then
+				control = job.control
+				controlData = job.controlData
+			end
 			changed = true
 		else
 			kept[#kept + 1] = job
 		end
 	end
 	book.list = kept
-	if #book.list == 0 then forget(luaObject) end
+	if #book.list == 0 and luaObject.shutdown == nil then forget(luaObject) end
 
 	if changed then
 		luaObject:mirrorOS()
 		system:pushScreen(luaObject, state, console)
 	end
-	-- Last, and never before the screen has gone out: a script that ended on
+	-- Last, and never before the screen has gone out: a line that ended on
 	-- `reboot` is a screen every survivor at the machine watches go down.
 	if control == "clear" then
 		CeroSec.consoleClear(console)
 		system:pushScreen(luaObject, state, console)
+	elseif control == "exit" then
+		CeroSec.consoleLogout(console)
+		system:pushScreen(luaObject, state, console)
+	elseif control == "edit" then
+		system:applyOrder(console, control, controlData, playerObj)
+		system:pushScreen(luaObject, state, console)
+	elseif control == "schedule" then
+		CeroSecJobs.schedule(luaObject, controlData)
+	elseif control == "cancel" then
+		luaObject.shutdown = nil
 	elseif control ~= nil then
 		system:applyPower(luaObject, control)
 	end
@@ -359,11 +482,22 @@ function CeroSecJobs.pass(now)
 	local order = {}
 	for i = 1, n do order[i] = machines[(start + i - 1) % n + 1] end
 
+	-- The clocks first, and all of them: a shutdown is not something a machine
+	-- at the wrong end of a busy county may be late for, and it costs no steps.
+	for i = 1, n do CeroSecJobs.checkShutdown(system, order[i], now) end
+
 	for i = 1, n do
-		if total <= 0 then return end
-		local share = CeroSec.STEP_BUDGET_PER_MACHINE
-		if share > total then share = total end
-		total = total - CeroSecJobs.runMachine(system, order[i], share, now)
+		local machine = order[i]
+		if machine.jobs ~= nil and #machine.jobs.list > 0 then
+			if total <= 0 then return end
+			local share = CeroSec.STEP_BUDGET_PER_MACHINE
+			if share > total then share = total end
+			total = total - CeroSecJobs.runMachine(system, machine, share, now)
+		elseif machine.shutdown == nil then
+			-- Nothing running and nothing pending: it is not a machine the
+			-- scheduler has anything to do with any more.
+			forget(machine)
+		end
 	end
 end
 

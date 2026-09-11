@@ -28,76 +28,151 @@ CeroSecOS.commands = CeroSecOS.commands or {}
 local commands = CeroSecOS.commands
 
 --
--- Line parsing.
+-- The history file
 --
+-- Every line an account types is appended to ~/.sh_history -- the name ksh
+-- gave it and POSIX kept -- and the file is the ONLY history there is: the
+-- window walks it with Up and Down, `history` prints it, `!5` and `!!` run out
+-- of it, and a survivor who walks away and comes back finds what he typed
+-- yesterday. It is the account's and nobody else's: mode 600, in his own home.
+--
+-- Two ceilings, and they are both this machine's rather than Unix's. A real
+-- one caps the history by lines alone; this one caps it by lines AND by bytes,
+-- because a 32K disk with a thousand lines of history on it would be a disk
+-- with no room for anything a player wrote. The file is exempt from the disk
+-- quota for the same reason -- a shell's own memory must not be what fills the
+-- drive -- and pays for the exemption with a hard 16K ceiling of its own that
+-- validate enforces on the way back in.
+--
+CeroSecOS.HISTORY_NAME = ".sh_history"
+CeroSecOS.HISTORY_MODE = 600
+-- Entries kept. Dropped from the front, the way every shell drops them.
+CeroSecOS.HISTORY_MAX = 1000
+-- Bytes the file may hold, quota or no quota.
+CeroSecOS.HISTORY_BYTES = 16384
+-- What `history` prints with no argument: a screenful of screenfuls.
+CeroSecOS.HISTORY_SHOW = 60
+-- What a window is handed when it opens, to walk with Up and Down.
+CeroSecOS.HISTORY_TAIL = 100
 
--- args, redirect, reason. redirect is { path = "notes.txt", append = false }.
-function CeroSecOS.parseLine(line)
-	local args, redirect, pending = {}, nil, nil
-	local i, n = 1, #line
+-- The path, or nil for an account with no home on its /etc/passwd line.
+function CeroSecOS.historyPath(state, name)
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil or type(user.home) ~= "string" or user.home == "" then return nil end
+	return user.home .. "/" .. CeroSecOS.HISTORY_NAME
+end
 
-	while i <= n do
-		local c = string.sub(line, i, i)
-		if c == " " or c == "\t" then
-			i = i + 1
-		elseif c == ">" then
-			if pending ~= nil or redirect ~= nil then
-				return nil, nil, "syntax error: bad redirect"
-			end
-			i = i + 1
-			pending = "w"
-			if string.sub(line, i, i) == ">" then
-				pending = "a"
-				i = i + 1
-			end
-		else
-			-- One token: bare characters, plus any number of quoted runs.
-			local buf = ""
-			while i <= n do
-				local ch = string.sub(line, i, i)
-				if ch == " " or ch == "\t" or ch == ">" then
-					break
-				elseif ch == "\"" then
-					i = i + 1
-					local closed = false
-					while i <= n do
-						local q = string.sub(line, i, i)
-						if q == "\\" then
-							local nx = string.sub(line, i + 1, i + 1)
-							if nx == "" then return nil, nil, "syntax error: unterminated quote" end
-							if nx == "n" then buf = buf .. "\n"
-							elseif nx == "t" then buf = buf .. "\t"
-							else buf = buf .. nx end
-							i = i + 2
-						elseif q == "\"" then
-							closed = true
-							i = i + 1
-							break
-						else
-							buf = buf .. q
-							i = i + 1
-						end
-					end
-					if not closed then return nil, nil, "syntax error: unterminated quote" end
-				else
-					buf = buf .. ch
-					i = i + 1
-				end
-			end
-			if pending ~= nil then
-				redirect = { path = buf, append = (pending == "a") }
-				pending = nil
-			else
-				args[#args + 1] = buf
-			end
-		end
+-- The entries, oldest first. Read through the session's own permissions like
+-- any other file, so an account cannot read another's -- and an account with
+-- no history yet has an empty one rather than an error.
+function CeroSecOS.historyLines(state, session)
+	local path = CeroSecOS.historyPath(state, CeroSecOS.userOf(session))
+	if path == nil then return {} end
+	local node = CeroSecOS.getNode(state, session, path)
+	if node == nil or node.type ~= "file" then return {} end
+	if not CeroSecOS.can(state, session, node, "r") then return {} end
+	return CeroSecOS.splitLines(node.data or "")
+end
+
+-- The last n of them, for the window to walk.
+function CeroSecOS.historyTail(state, session, n)
+	local lines = CeroSecOS.historyLines(state, session)
+	local out = {}
+	local from = #lines - (n or CeroSecOS.HISTORY_TAIL) + 1
+	if from < 1 then from = 1 end
+	for i = from, #lines do out[#out + 1] = lines[i] end
+	return out
+end
+
+-- Put the entries back, trimmed to both ceilings. The write does NOT go
+-- through writeFile: that one counts the bytes against the disk and refuses
+-- anything over the 4096 a file may hold, and this file is exempt from both by
+-- construction. Everything else a write owes -- the printable rule, the owner,
+-- the mode, the permission to write at all -- is still paid, above.
+local function historyPut(node, lines)
+	while #lines > CeroSecOS.HISTORY_MAX do table.remove(lines, 1) end
+	local text = table.concat(lines, "\n")
+	while #text > CeroSecOS.HISTORY_BYTES and #lines > 1 do
+		table.remove(lines, 1)
+		text = table.concat(lines, "\n")
 	end
+	-- One line of its own, longer than the whole file may be: cut rather than
+	-- refused, because the alternative is a history that silently stops.
+	if #text > CeroSecOS.HISTORY_BYTES then text = string.sub(text, 1, CeroSecOS.HISTORY_BYTES) end
+	node.data = text
+	-- What tells the filesystem this one does not count against the disk. Set
+	-- here and nowhere else; validate refuses it on anything over the ceiling.
+	node.nq = true
+end
 
-	if pending ~= nil then return nil, nil, "syntax error: missing redirect target" end
-	if redirect ~= nil and redirect.path == "" then
-		return nil, nil, "syntax error: missing redirect target"
+-- One line onto the end of the account's history. Quiet on every refusal: a
+-- history that cannot be written is not a reason to refuse the command the
+-- player typed.
+function CeroSecOS.historyAppend(state, session, line, now)
+	if type(line) ~= "string" or line == "" then return false end
+	if CeroSecOS.hasControlBytes(line) then return false end
+	local name = CeroSecOS.userOf(session)
+	local path = CeroSecOS.historyPath(state, name)
+	if path == nil then return false end
+
+	local node, reason = CeroSecOS.getNode(state, session, path)
+	if node == nil then
+		if reason ~= "no such file" then return false end
+		local made = CeroSecOS.createNode(state, session, path,
+			CeroSecOS.newFile(name, CeroSecOS.HISTORY_MODE, ""), now)
+		if made == nil then return false end
+		node = made
 	end
-	return args, redirect, nil
+	if node.type ~= "file" then return false end
+	if not CeroSecOS.can(state, session, node, "w") then return false end
+
+	local lines = CeroSecOS.splitLines(node.data or "")
+	lines[#lines + 1] = line
+	historyPut(node, lines)
+	if now ~= nil then node.mtime = now end
+	return true
+end
+
+-- history -c. The file is emptied, not deleted: an account that has cleared
+-- its history still has one, and the next line typed goes into it.
+function CeroSecOS.historyClear(state, session, now)
+	local path = CeroSecOS.historyPath(state, CeroSecOS.userOf(session))
+	if path == nil then return false end
+	local node = CeroSecOS.getNode(state, session, path)
+	if node == nil or node.type ~= "file" then return true end
+	if not CeroSecOS.can(state, session, node, "w") then return false end
+	node.data = ""
+	node.nq = true
+	if now ~= nil then node.mtime = now end
+	return true
+end
+
+-- History expansion: `!!` is the last line and `!5` is the fifth, run as
+-- though it had been typed again -- csh's, and every shell's since.
+--
+-- One deviation, and it is deliberate: only a line that is NOTHING BUT the
+-- event is expanded. There is no globbing on this machine and no quoting rule
+-- for "!" either, so expanding one in the middle of a line would make every
+-- exclamation mark a player types a trap.
+--
+-- line, or nil plus the refusal. A line with no event in it comes straight
+-- back, which is what every line is.
+function CeroSecOS.historyExpand(state, session, line)
+	if type(line) ~= "string" then return line end
+	local word = string.match(line, "^[ \t]*(![^ \t]*)[ \t]*$")
+	if word == nil then return line end
+
+	local lines = CeroSecOS.historyLines(state, session)
+	local want = nil
+	if word == "!!" then
+		want = #lines
+	else
+		want = tonumber(string.match(word, "^!(%d+)$") or "")
+	end
+	if want == nil or want < 1 or want > #lines then
+		return nil, "sh: " .. word .. ": event not found"
+	end
+	return lines[want]
 end
 
 --
@@ -249,12 +324,20 @@ end
 -- device the machine knows the number of and cannot reach: it is mounted so
 -- that `cat /dev/lock0` can say "no such device" about a number a player wrote
 -- down, and it is not on the shelf, because it is not there.
-local function listedNames(node)
+-- A name that begins with a dot is HIDDEN, the way it has been since the
+-- third edition of Unix: `ls` walks past it and `ls -a` does not. Nothing else
+-- on this machine treats it as special -- `cat .profile` reads it and `edit
+-- .sh_history` opens it, because a name is a name and there is no globbing
+-- here for a dot to hide from.
+local function listedNames(node, all)
 	local names = CeroSecOS.childNames(node)
 	local out = {}
 	for i = 1, #names do
 		local child = node.children[names[i]]
-		if not (type(child) == "table" and child.dead) then out[#out + 1] = names[i] end
+		local hidden = string.sub(names[i], 1, 1) == "."
+		if not (type(child) == "table" and child.dead) and (all or not hidden) then
+			out[#out + 1] = names[i]
+		end
 	end
 	return out
 end
@@ -346,6 +429,7 @@ end
 -- will refuse to run. os_test pins the two sets against each other.
 --
 CeroSecOS.COMMAND_INFO = {
+	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	cat      = { desc = "print a file", usage = "cat <file>..." },
 	cd       = { desc = "change the working directory", usage = "cd [dir]" },
@@ -362,19 +446,21 @@ CeroSecOS.COMMAND_INFO = {
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
 	exit     = { desc = "log out", usage = "exit" },
+	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files", usage = "grep [-i] [-n] <text> <file>..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
 	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
 	groups   = { desc = "print an account's groups", usage = "groups [name]" },
 	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
+	halt     = { desc = "switch the machine off", usage = "halt" },
 	head     = { desc = "print the first lines of a file", usage = "head [-n N] <file>" },
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
 	jobs     = { desc = "list the machine's jobs", usage = "jobs" },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
-	ls       = { desc = "list a directory", usage = "ls [-lF] [path]" },
+	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
 	mv       = { desc = "move or rename a file", usage = "mv <src> <dst>" },
@@ -382,14 +468,19 @@ CeroSecOS.COMMAND_INFO = {
 	pwd      = { desc = "print the working directory", usage = "pwd" },
 	reboot   = { desc = "restart the machine", usage = "reboot" },
 	restart  = { desc = "restart the machine", usage = "restart" },
+	printf   = { desc = "print a formatted string", usage = "printf <format> [arg...]" },
 	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
 	sh       = { desc = "run a script", usage = "sh <file> [args]" },
-	shutdown = { desc = "switch the machine off", usage = "shutdown" },
+	shutdown = { desc = "switch the machine off",
+		usage = "shutdown [-h|-r] [now|+N] | shutdown -c" },
+	sleep    = { desc = "wait for a number of seconds", usage = "sleep <seconds>" },
 	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
 	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] <file>" },
+	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]..." },
 	wc       = { desc = "count lines, words and bytes", usage = "wc <file>..." },
 	whoami   = { desc = "print the current user", usage = "whoami" },
@@ -421,6 +512,38 @@ end
 -- to walk away from it. Everything else is an executable or it is nothing.
 CeroSecOS.BUILTINS = { exit = true, help = true }
 
+-- What lives in the shell and what lives in /bin.
+--
+-- Unix has always had three kinds of word at a prompt, and this machine has
+-- the same three:
+--
+--   * the reserved words -- if then elif else fi for while until do done --
+--     which are grammar and were never commands at all;
+--   * the state builtins -- cd, read, shift, break, continue, history -- which
+--     change the shell itself and could not be a separate program if they
+--     tried, because a program cannot move the shell that ran it;
+--   * everything else, which is a FILE in /bin.
+--
+-- The third kind includes the ones a shell runs for speed without leaving the
+-- house: echo, printf, test, [, true, false and sleep are executed inside the
+-- engine and are still resolved through /bin/<name> first, exactly as `ls` is.
+-- So `rm /bin/sleep` really does take sleep away, and `chmod 600 /bin/echo`
+-- really does put echo out of an ordinary account's reach -- which is the whole
+-- doctrine of this machine: the files are the truth about what it can do.
+--
+-- BUILTINS above is the other half of the same idea and is deliberately short:
+-- exit and help are the two a player needs on a machine whose /bin has been
+-- destroyed, one to ask what happened and one to walk away.
+CeroSecOS.BUILTIN_FILES = {
+	echo = true, printf = true, sleep = true, test = true,
+	["["] = true, ["true"] = true, ["false"] = true,
+}
+
+-- The words that are the shell's own, for `help` to list under the table of
+-- files. Reserved words first, then the builtins that change the shell.
+CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
+CeroSecOS.HELP_BUILTINS = "cd read shift break continue history exit"
+
 -- Column the descriptions line up in, in help. The longest name is "hostname".
 local L_CMD = 9
 
@@ -449,6 +572,12 @@ commands.help = function(state, session, args, env)
 		end
 	end
 	out[#out + 1] = " redirect output with > file or >> file"
+	-- The words that are not files and never were. Kept apart from the table
+	-- above, and after it, because the table IS /bin: a name in the block below
+	-- has no executable to find, to delete or to chmod.
+	out[#out + 1] = "shell words (no file in " .. CeroSecOS.BIN_PATH .. "):"
+	out[#out + 1] = " " .. CeroSecOS.HELP_RESERVED
+	out[#out + 1] = " " .. CeroSecOS.HELP_BUILTINS
 	return true, out
 end
 
@@ -522,6 +651,10 @@ commands.ls = function(state, session, args, env)
 	-- "-" is not a flag and never was: it is a name, and a name is what the
 	-- error about it should be about.
 	local long, classify, path = false, false, nil
+	-- -a is everything, the two directory entries included; -A is everything
+	-- except those two. The later of the two wins, which is how a real ls reads
+	-- a line that carries both.
+	local dots, hiddenToo = false, false
 	for i = 2, #args do
 		local a = args[i]
 		if string.sub(a, 1, 1) == "-" and a ~= "-" then
@@ -531,6 +664,10 @@ commands.ls = function(state, session, args, env)
 					long = true
 				elseif flag == "F" then
 					classify = true
+				elseif flag == "a" then
+					dots, hiddenToo = true, true
+				elseif flag == "A" then
+					dots, hiddenToo = false, true
 				else
 					return fail("ls", a, "unknown option")
 				end
@@ -560,13 +697,28 @@ commands.ls = function(state, session, args, env)
 	end
 	if not CeroSecOS.can(state, session, node, "r") then return fail("ls", shown, "permission denied") end
 
-	local names = listedNames(node)
-	if long then
-		local out = {}
-		for i = 1, #names do
-			local child = node.children[names[i]]
-			local label = names[i]
-			if classify and child.type == "dir" then label = label .. "/" end
+	-- One array of what is being listed, so the long form and the columns are
+	-- looking at the same thing. "." and ".." are not children of anything --
+	-- they are the directory itself and the one above it -- so they are put in
+	-- here rather than found by walking, and they sort first because "." is
+	-- ahead of every letter in the character order childNames sorts by.
+	local entries = {}
+	if dots then
+		entries[#entries + 1] = { name = ".", node = node }
+		local up = CeroSecOS.getNode(state, session, shown .. "/..")
+		if up ~= nil then entries[#entries + 1] = { name = "..", node = up } end
+	end
+	local names = listedNames(node, hiddenToo)
+	for i = 1, #names do
+		entries[#entries + 1] = { name = names[i], node = node.children[names[i]] }
+	end
+
+	local out = {}
+	for i = 1, #entries do
+		local child = entries[i].node
+		local label = entries[i].name
+		if classify and child.type == "dir" then label = label .. "/" end
+		if long then
 			-- A device has no size and no date; what stands in those columns is
 			-- what it is and what it is doing (CeroSecOS.devLine).
 			if CeroSecOS.isDev(child) then
@@ -574,18 +726,12 @@ commands.ls = function(state, session, args, env)
 			else
 				out[#out + 1] = longLine(child, label)
 			end
-		end
-		return true, out
-	end
-
-	local labels = {}
-	for i = 1, #names do
-		labels[i] = names[i]
-		if classify and node.children[names[i]].type == "dir" then
-			labels[i] = names[i] .. "/"
+		else
+			out[#out + 1] = label
 		end
 	end
-	return true, CeroSecOS.columnize(labels, CeroSecOS.COLS)
+	if long then return true, out end
+	return true, CeroSecOS.columnize(out, CeroSecOS.COLS)
 end
 
 -- Is this path a name inside /dev? Creating one is refused, and the refusal
@@ -1312,8 +1458,82 @@ local function powerCommand(name, control)
 	end
 end
 
-commands.shutdown = powerCommand("shutdown", "shutdown")
+-- What every Unix has broadcast to every terminal on the machine since the
+-- seventies, word for word. The two shapes that are not a plural are the two
+-- Unix has always had: one minute, and now.
+function CeroSecOS.shutdownLine(control, minutes)
+	local word = "halt"
+	if control == "reboot" then word = "reboot" end
+	local head = "The system is going down for " .. word .. " "
+	if type(minutes) ~= "number" or minutes <= 0 then return head .. "NOW!" end
+	if minutes == 1 then return head .. "in 1 minute!" end
+	return head .. "in " .. tostring(math.floor(minutes)) .. " minutes!"
+end
+
+-- How long a "+N" may be. A day is longer than anybody sits at one of these
+-- and short enough that the arithmetic cannot run off the end of a number.
+CeroSecOS.SHUTDOWN_MAX_MINUTES = 1440
+
+-- shutdown [-h|-r] [now|+N], and shutdown -c.
+--
+-- `-h` halts and `-r` reboots, exactly as they do on a real one; with neither,
+-- the machine halts. `now` and no time at all are the same thing. `+N` puts
+-- the order N minutes out, broadcasts it to every screen standing at the
+-- machine, and broadcasts again a minute before -- and the timer is the
+-- SCHEDULER's, because the core has no clock of its own and no machine to
+-- switch off.
+--
+-- One pending order per machine: a second is refused rather than quietly
+-- replacing the first, so nobody is told the machine is going down at two
+-- different times.
+commands.shutdown = function(state, session, args, env)
+	local control, i = "shutdown", 2
+
+	if args[2] == "-c" then
+		if #args > 2 then return usage("shutdown") end
+		if CeroSecOS.userOf(session) ~= "root" then
+			return fail("shutdown", nil, "permission denied")
+		end
+		if type(env) ~= "table" or type(env.shutdown) ~= "table" then
+			return fail("shutdown", nil, "no shutdown scheduled")
+		end
+		return true, { "shutdown: cancelled" }, "cancel"
+	end
+
+	if args[2] == "-h" then
+		i = 3
+	elseif args[2] == "-r" then
+		control = "reboot"
+		i = 3
+	end
+	if #args > i then return usage("shutdown") end
+	if CeroSecOS.userOf(session) ~= "root" then
+		return fail("shutdown", nil, "permission denied")
+	end
+
+	local when = args[i]
+	if when == nil or when == "now" then return true, {}, control end
+	local minutes = string.match(when, "^%+(%d+)$")
+	if minutes == nil then return usage("shutdown") end
+	minutes = tonumber(minutes)
+	if minutes < 1 or minutes > CeroSecOS.SHUTDOWN_MAX_MINUTES then
+		return usage("shutdown")
+	end
+
+	if type(env) == "table" and type(env.shutdown) == "table" then
+		return fail("shutdown", nil, "already scheduled")
+	end
+	local nowMs = CeroSecOS.nowMsOf(env)
+	if nowMs == nil then return fail("shutdown", nil, "no clock") end
+
+	return true, { CeroSecOS.shutdownLine(control, minutes) }, "schedule",
+		{ at = nowMs + minutes * 60000, kind = control }
+end
+
 commands.reboot = powerCommand("reboot", "reboot")
+-- halt, the other name shutdown has had since the seventies: `shutdown -h now`
+-- with nothing to type in front of it.
+commands.halt = powerCommand("halt", "shutdown")
 -- The same order under the other name it has been called by since the eighties.
 -- Its own executable and its own refusal line, so `restart` never answers as
 -- something the player did not type.
@@ -1937,36 +2157,6 @@ local function redirectToDevice(state, session, path, text, env)
 	return true, {}
 end
 
--- A trailing "&", outside quotes: the line runs in the background. Everything
--- a background line can be is a job (a script), and everything else finishes
--- before the ampersand could have meant anything -- so this strips it and says
--- so, and the caller applies it to the job if a job came of the line.
---
--- Written here rather than in the script parser because the prompt is not a
--- script: one line, one command, and the language of chapter 15 lives inside a
--- file. `&&` is not an ampersand at the end of a line and is left alone.
-function CeroSecOS.splitBackground(line)
-	local i, n = 1, #line
-	local quote, last = nil, nil
-	while i <= n do
-		local c = string.sub(line, i, i)
-		if quote ~= nil then
-			if c == quote then quote = nil
-			elseif c == "\\" and quote == "\"" then i = i + 1 end
-		elseif c == "'" or c == "\"" then
-			quote = c
-		elseif c == "\\" then
-			i = i + 1
-		elseif c ~= " " and c ~= "\t" then
-			last = i
-		end
-		i = i + 1
-	end
-	if last == nil or string.sub(line, last, last) ~= "&" then return line, false end
-	if last > 1 and string.sub(line, last - 1, last - 1) == "&" then return line, false end
-	return string.sub(line, 1, last - 1), true
-end
-
 -- Output, into whatever ">" named: a device if the target is one, a file
 -- otherwise. Used by a command's own redirect and by a script's builtins, so
 -- `echo hi > f` writes the same way whoever ran the echo.
@@ -1982,52 +2172,92 @@ function CeroSecOS.writeRedirect(state, session, who, redirect, text, env)
 	return true, {}
 end
 
-local execLine
-
-function CeroSecOS.exec(state, session, line, env)
-	-- The world around the machine becomes files under /dev for the length of
-	-- this one command, and is taken away again before the answer goes back.
-	-- Nothing of it is ever saved: see the head of CeroSecOSDev.lua.
-	CeroSecOS.mountDev(state, env)
-	local ok, lines, control, data = execLine(state, session, line, env)
-	CeroSecOS.unmountDev(state, env)
-	return ok, lines, control, data
-end
-
-execLine = function(state, session, line, env)
-	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
+--
+-- The prompt
+--
+-- Every line a player types is parsed by CeroSecOS.parseScript and run as a
+-- foreground JOB, on the console's own environment. There is no second,
+-- simpler parser beside the script language and there never will be again:
+-- `while true; do echo tick; sleep 1; done &` at the prompt is the same
+-- grammar it is inside a file, because it IS the same grammar. The engine has
+-- one shell.
+--
+-- What comes back is a job, not an answer. The steps it costs, the output it
+-- trickles, the questions it asks and the ceiling it dies on are the
+-- scheduler's, exactly as a script's are -- so a typed infinite loop trickles
+-- and dies the way one written into a file does, and cannot lag a server.
+--
+-- job, or nil plus the one line to print.
+--
+-- vars is the console's own variable table and is taken BY REFERENCE: `x=5`
+-- then `echo $x` on the next line is the same table, which is what makes the
+-- prompt an environment and not a series of unrelated commands. status is the
+-- $? the prompt came back with.
+-- name, when given, is a FILE being run on the shell's environment -- the
+-- login profile -- rather than a line somebody typed. It changes two things
+-- and nothing else: what a parse error and a run-time error call themselves,
+-- and what `ps` shows.
+function CeroSecOS.promptJob(state, session, line, vars, status, name)
+	if type(state) ~= "table" or state.fs == nil then return nil, "no filesystem" end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
-		return false, { "not logged in" }
+		return nil, "not logged in"
 	end
-	if type(line) ~= "string" then return false, { "syntax error" } end
+	if type(line) ~= "string" then return nil, "sh: syntax error" end
 
-	local bare, bg = CeroSecOS.splitBackground(line)
-	local args, redirect, reason = CeroSecOS.parseLine(bare)
-	if args == nil then return false, CeroSecOS.fit({ reason }) end
+	local prog, reason, where = CeroSecOS.parseScript(line)
+	-- No line number for a typed line: it is line one of nothing, and
+	-- "sh: line 1:" in front of every typo would be a number that never says
+	-- anything. A file has lines and is named after itself, like any script.
+	if prog == nil then
+		if name ~= nil then return nil, CeroSecOS.scriptError(name, reason, where) end
+		return nil, "sh: " .. reason
+	end
 
-	local ok, lines, control, data = CeroSecOS.runArgs(state, session, args, redirect, env)
-	-- A line that ended in "&" and produced a job says so in the order, and the
-	-- machine is what decides what to do about it.
-	if bg and control == "job" and type(data) == "table" then data.bg = true end
-	return ok, lines, control, data
+	local cmd = line
+	if name ~= nil then cmd = name end
+	local job = CeroSecOS.newJob({
+		prog = prog, name = name or "sh", cmd = cmd, session = session,
+		vars = vars, status = status,
+	})
+	-- What makes it the PROMPT's job rather than a script's: `cd` moves the
+	-- console, `exit` logs out instead of ending the script, `edit` may open on
+	-- the glass, and it holds no job slot of its own.
+	job.interactive = true
+	-- The line as it was typed, and the mark that says it WAS typed: a job with
+	-- one names itself "sh" and prints no line number, because a prompt line is
+	-- line one of nothing. ~/.profile has neither.
+	if name == nil then job.promptLine = line end
+	return job
 end
+
 
 -- One command, already split into words. The shell's own entry point above
 -- calls it, and so does a script: the two must run a command the same way or
 -- `ls` in a file is not the `ls` at the prompt.
-function CeroSecOS.runArgs(state, session, args, redirect, env)
-	-- The tilde is the shell's, not the filesystem's: it is expanded here, once,
-	-- before any command is handed its arguments, so `cd ~`, `ls ~`, `cat
-	-- ~/notes.txt` and `echo hi > ~/notes.txt` all work and no command has to
-	-- know about it. args[1] is a command name and is left alone -- there is no
-	-- ~/bin on this machine and a command is not a path.
-	local home = nil
+-- The tilde is the shell's, not the filesystem's: it is expanded once, before
+-- any command is handed its arguments, so `cd ~`, `ls ~`, `cat ~/notes.txt`
+-- and `echo hi > ~/notes.txt` all work and no command has to know about it.
+-- args[1] is a command name and is left alone -- there is no ~/bin on this
+-- machine and a command is not a path.
+--
+-- Called on BOTH doors a command line goes through: the one below, and the
+-- walker's own for the builtins it runs without leaving the house
+-- (CeroSecOSVM.runSimple). A builtin that did not get the expansion was a
+-- builtin for which `~` was four characters of filename.
+--
+-- Idempotent: a path that has already been expanded no longer starts with a
+-- tilde, so running it twice is running it once.
+function CeroSecOS.expandTilde(state, session, args, redirect)
 	local user = CeroSecOS.getUser(state, session.user)
-	if user ~= nil and type(user.home) == "string" then home = user.home end
-	if home ~= nil then
-		for i = 2, #args do args[i] = CeroSecOS.expandHome(args[i], home) end
-		if redirect ~= nil then redirect.path = CeroSecOS.expandHome(redirect.path, home) end
+	if user == nil or type(user.home) ~= "string" then return end
+	for i = 2, #args do args[i] = CeroSecOS.expandHome(args[i], user.home) end
+	if redirect ~= nil then
+		redirect.path = CeroSecOS.expandHome(redirect.path, user.home)
 	end
+end
+
+function CeroSecOS.runArgs(state, session, args, redirect, env)
+	CeroSecOS.expandTilde(state, session, args, redirect)
 
 	-- A bare redirection still creates (or truncates) the file.
 	if #args == 0 then

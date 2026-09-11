@@ -71,10 +71,98 @@ local function stored(state, name)
 	return user.password
 end
 
+-- A file put on the disk with its exact contents, through the filesystem
+-- rather than through the prompt. Used wherever the CONTENTS are the point and
+-- the shell's quoting is in the way -- a stored hash carries "$" and a passwd
+-- file carries newlines, and the prompt speaks the script language now, where
+-- both of those mean something inside double quotes.
+local function put(state, session, path, text)
+	local done, reason = CeroSecOS.writeFile(state, session, path, text, false, nil)
+	if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+end
+
 local function open(state, name, password)
 	local session, reason = CeroSecOS.login(state, name, password or "")
 	if session == nil then error("cannot log in as " .. name .. ": " .. tostring(reason), 2) end
 	return session
+end
+
+--
+-- The prompt, driven the way the server drives it.
+--
+-- Every line typed at this machine is parsed by CeroSecOS.parseScript and run
+-- as a foreground job on the session it was typed at -- there is no second,
+-- simpler shell any more. So this is what a bench has to do to type a line: make
+-- the job, step it until it stops, and drain what it wrote.
+--
+-- The stepping loop is the SCHEDULER's work on a real machine (SCeroSecJobs.lua,
+-- and tests/window_test.lua drives the real one end to end). What is NOT
+-- re-implemented here is any of the meaning: the parse, the session, the
+-- expansion, the commands and the ceilings are all the engine's.
+--
+-- Answers the four things the old single-line entry point answered -- ok, the
+-- lines, the out-of-band control and its payload -- so every expectation in
+-- this file still reads as it did.
+local function exec(state, session, line, env)
+	env = env or {}
+	if type(session) == "table" and session.shvars == nil then session.shvars = {} end
+	local vars = nil
+	if type(session) == "table" then vars = session.shvars end
+	local job, refusal = CeroSecOS.promptJob(state, session, line, vars,
+		type(session) == "table" and session.status or nil)
+	if job == nil then return false, CeroSecOS.fit({ refusal }) end
+
+	-- The machine's job book, if the caller keeps one: the prompt's own job is
+	-- on it while it runs, exactly as it is on a real machine, which is what
+	-- `ps` sees and `jobs` deliberately does not.
+	local book = env.jobs
+	if book ~= nil then book[#book + 1] = job end
+
+	local out = {}
+	local turns = 0
+	while not CeroSecOS.jobIsOver(job) and turns < 500 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, job, env, 1000)
+		-- What the scheduler does between passes: take what the job wrote off
+		-- its hands, so a command with more than forty lines in it is not
+		-- blocked on a screen this bench does not have.
+		for k = 1, #job.out do out[#out + 1] = job.out[k] end
+		job.out = {}
+		if job.state == "waiting" or job.state == "sleeping" then break end
+		if job.spawn ~= nil then break end
+	end
+	for k = 1, #job.out do out[#out + 1] = job.out[k] end
+	job.out = {}
+
+	if book ~= nil then
+		for i = #book, 1, -1 do
+			if book[i] == job then table.remove(book, i) end
+		end
+	end
+
+	-- `cd` and `su` move the console on a real machine (SCeroSecSystem:
+	-- writeSession); here they move the session the bench is holding.
+	if type(session) == "table" then
+		session.user = job.session.user
+		session.cwd = job.session.cwd
+		session.stack = job.session.stack
+		session.status = job.status
+	end
+
+	local control, data = job.control, job.controlData
+	-- A job that stopped on a question is a command that asked one: the console
+	-- cannot tell a script's `read` from passwd's, and neither can this.
+	if control == nil and job.state == "waiting" and job.ask ~= nil then
+		control = "prompt"
+		data = { text = job.ask.text, mask = job.ask.mask, cont = job.cont }
+	end
+	-- A line that ended in "&" is an order to the MACHINE to make a job of it,
+	-- which is what the spawn is.
+	if control == nil and job.spawn ~= nil then
+		control = "job"
+		data = { prog = { job.spawn }, args = job.args, name = job.name, cmd = line, bg = true }
+	end
+	return job.status == 0, CeroSecOS.fit(out), control, data, job
 end
 
 -- Runs a line and pins the whole result: the ok flag, the line count, every
@@ -82,7 +170,7 @@ end
 -- depends on. wantControl defaults to nil, so every single call in this file
 -- also asserts that an ordinary command orders the terminal to do nothing.
 local function expect(state, session, line, wantOk, wantLines, wantControl)
-	local ok, lines, control = CeroSecOS.exec(state, session, line)
+	local ok, lines, control = exec(state, session, line)
 	eq("`" .. line .. "` ok", ok, wantOk)
 	eq("`" .. line .. "` control", control, wantControl)
 	local wide = false
@@ -289,7 +377,7 @@ do
 	eq("login does not touch state.sessions", #state.sessions, 0)
 
 	-- exec without a session refuses rather than assuming anything.
-	local execOk, lines = CeroSecOS.exec(state, nil, "pwd")
+	local execOk, lines = exec(state, nil, "pwd")
 	eq("exec without a session fails", execOk, false)
 	eq("exec without a session says so", lines[1], "not logged in")
 end
@@ -472,7 +560,7 @@ do
 	bad(state, admin, "ls /root/x", "ls: /root/x: permission denied")
 	bad(state, admin, "ls /nope", "ls: /nope: no such file")
 	bad(state, admin, "ls -z", "ls: -z: unknown option")
-	bad(state, admin, "ls a b", "ls: usage: ls [-lF] [path]")
+	bad(state, admin, "ls a b", "ls: usage: ls [-laAF] [path]")
 	bad(state, admin, "mkdir", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir a b", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir /etc/x", "mkdir: /etc/x: permission denied")
@@ -507,11 +595,18 @@ do
 	bad(state, admin, "hostname x", "hostname: permission denied")
 	bad(state, admin, "hostname a b", "hostname: usage: hostname [name]")
 
-	-- Syntax.
-	bad(state, admin, 'echo "abc', "syntax error: unterminated quote")
-	bad(state, admin, 'echo "abc\\', "syntax error: unterminated quote")
-	bad(state, admin, "echo >", "syntax error: missing redirect target")
-	bad(state, admin, "echo a > b > c", "syntax error: bad redirect")
+	-- Syntax. A prompt line that will not parse never becomes a job, and the
+	-- refusal is the SHELL's -- "sh: ..." -- because the shell is what could
+	-- not read it. There is no line number: a typed line is line one of nothing.
+	bad(state, admin, 'echo "abc', "sh: syntax error: unterminated quote")
+	bad(state, admin, 'echo "abc\\', "sh: syntax error: unterminated quote")
+	bad(state, admin, "echo >", "sh: syntax error: missing redirect target")
+	bad(state, admin, "echo a > b > c", "sh: syntax error: bad redirect")
+	-- The whole grammar of chapter 15 is the prompt's now, so its refusals are
+	-- the prompt's too.
+	bad(state, admin, "while true; do echo x", "sh: syntax error: missing 'done'")
+	bad(state, admin, "if true", "sh: syntax error: missing 'then'")
+	bad(state, admin, "done", "sh: syntax error: unexpected 'done'")
 
 	-- Existing target, and a directory into itself.
 	ok(state, admin, "mkdir /home/admin/d1", {})
@@ -619,19 +714,32 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 
-	-- 4096 bytes is the ceiling for one file.
-	ok(state, admin, 'write big.txt "' .. string.rep("x", 4096) .. '"', {})
+	-- 4096 bytes is the ceiling for one file. Not reachable from the prompt any
+	-- more and deliberately so: a WORD is 1024 bytes (CeroSecOS.MAX_VAR_BYTES,
+	-- the script engine's own ceiling, which the prompt now shares), and a
+	-- window takes 240 characters on a line anyway -- so the only thing that
+	-- ever fills a file to 4096 is the editor, and this is the door it writes
+	-- through.
+	local bigOk = CeroSecOS.writeFile(state, admin, "big.txt", string.rep("x", 4096), false, nil)
+	eq("4096 bytes is a file", bigOk, true)
 	eq("4096-byte file stored", #state.fs.children.home.children.admin.children["big.txt"].data, 4096)
-	bad(state, admin, 'write big.txt "' .. string.rep("x", 4097) .. '"', "write: big.txt: file too large")
+	local tooBig, whyTooBig =
+		CeroSecOS.writeFile(state, admin, "big.txt", string.rep("x", 4097), false, nil)
+	eq("4097 is not", tooBig, nil)
+	eq("and says which ceiling", whyTooBig, "file too large")
 	eq("refused write left the file alone",
 		#state.fs.children.home.children.admin.children["big.txt"].data, 4096)
-	bad(state, admin, 'write huge.txt "' .. string.rep("x", 4097) .. '"', "write: huge.txt: file too large")
+	local tooBig2 = CeroSecOS.writeFile(state, admin, "huge.txt", string.rep("x", 4097), false, nil)
+	eq("and a refused create makes nothing", tooBig2, nil)
 	eq("refused create made nothing", state.fs.children.home.children.admin.children["huge.txt"], nil)
 	ok(state, admin, "rm big.txt", {})
 
+	-- The word ceiling, which is what the prompt meets first.
+	bad(state, admin, 'write w.txt "' .. string.rep("x", 1025) .. '"', "sh: word too large")
+
 	-- 64 entries per directory.
 	for i = 1, 64 do
-		local execOk = CeroSecOS.exec(state, admin, "touch f" .. i)
+		local execOk = exec(state, admin, "touch f" .. i)
 		if not execOk then error("touch f" .. i .. " failed") end
 	end
 	eq("directory holds 64", CeroSecOS.countEntries(state.fs.children.home.children.admin), 64)
@@ -653,7 +761,7 @@ do
 	local path = ""
 	for i = 1, 16 do
 		path = path .. "/" .. letters[i]
-		local execOk, lines = CeroSecOS.exec(state, rootSession, "mkdir " .. path)
+		local execOk, lines = exec(state, rootSession, "mkdir " .. path)
 		if not execOk then error("mkdir " .. path .. " failed: " .. tostring(lines[1])) end
 	end
 	eq("16 levels are allowed", CeroSecOS.validate(state), true)
@@ -671,15 +779,19 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local _, used = CeroSecOS.usage(state)
+	-- Written through the filesystem and not through the prompt: a 4096-byte
+	-- block is four times what one WORD may be (CeroSecOS.MAX_VAR_BYTES), and
+	-- filling a disk is what the editor does.
 	local block = string.rep("y", 4096)
 	for i = 1, 7 do
-		local execOk = CeroSecOS.exec(state, rootSession, 'write /b' .. i .. ' "' .. block .. '"')
-		if not execOk then error("write /b" .. i .. " failed") end
+		local wrote = CeroSecOS.writeFile(state, rootSession, "/b" .. i, block, false, nil)
+		if not wrote then error("write /b" .. i .. " failed") end
 	end
 	local _, now = CeroSecOS.usage(state)
 	eq("seven blocks written", now, used + 7 * 4096)
 	local room = 32768 - now
-	ok(state, rootSession, 'write /last "' .. string.rep("z", room) .. '"', {})
+	eq("and the last of the room too",
+		CeroSecOS.writeFile(state, rootSession, "/last", string.rep("z", room), false, nil), true)
 	local _, full = CeroSecOS.usage(state)
 	eq("disk exactly full", full, 32768)
 	ok(state, rootSession, "touch /nothing", {})            -- an empty file costs no bytes
@@ -700,12 +812,12 @@ do
 	local dir = 0
 	while true do
 		dir = dir + 1
-		if not CeroSecOS.exec(state, rootSession, "mkdir /p" .. dir) then break end
+		if not exec(state, rootSession, "mkdir /p" .. dir) then break end
 		made = made + 1
 		local full = false
 		for i = 1, 64 do
 			if nodes + made >= 256 then full = true break end
-			if not CeroSecOS.exec(state, rootSession, "touch /p" .. dir .. "/f" .. i) then break end
+			if not exec(state, rootSession, "touch /p" .. dir .. "/f" .. i) then break end
 			made = made + 1
 		end
 		if full then break end
@@ -958,21 +1070,21 @@ do
 	-- The two commands that steer the terminal say so beside the output.
 	local lines, control
 	local execOk
-	execOk, lines, control = CeroSecOS.exec(state, admin, "clear")
+	execOk, lines, control = exec(state, admin, "clear")
 	eq("clear succeeds", execOk, true)
 	eq("clear prints nothing", #lines, 0)
 	eq("clear controls the terminal", control, "clear")
-	execOk, lines, control = CeroSecOS.exec(state, admin, "exit")
+	execOk, lines, control = exec(state, admin, "exit")
 	eq("exit succeeds", execOk, true)
 	eq("exit prints nothing", #lines, 0)
 	eq("exit controls the terminal", control, "exit")
 
 	-- Everything else orders nothing.
-	execOk, lines, control = CeroSecOS.exec(state, admin, "pwd")
+	execOk, lines, control = exec(state, admin, "pwd")
 	eq("pwd controls nothing", control, nil)
-	execOk, lines, control = CeroSecOS.exec(state, admin, "nosuchcommand")
+	execOk, lines, control = exec(state, admin, "nosuchcommand")
 	eq("an unknown command controls nothing", control, nil)
-	execOk, lines, control = CeroSecOS.exec(state, admin, "")
+	execOk, lines, control = exec(state, admin, "")
 	eq("an empty line controls nothing", control, nil)
 
 	-- hasControlBytes: the rule itself.
@@ -1041,7 +1153,7 @@ do
 	-- So cat can never produce a control, whatever a file holds.
 	local names = CeroSecOS.childNames(state.fs.children.home.children.admin)
 	for i = 1, #names do
-		local _, catLines, catControl = CeroSecOS.exec(state, admin, "cat " .. names[i])
+		local _, catLines, catControl = exec(state, admin, "cat " .. names[i])
 		eq("cat " .. names[i] .. " controls nothing", catControl, nil)
 		for j = 1, #catLines do
 			check("cat " .. names[i] .. " line " .. j .. " is printable",
@@ -1081,7 +1193,7 @@ do
 		local session = open(state, "admin")
 		local out = {}
 		for i = 1, #script do
-			local execOk, lines, control = CeroSecOS.exec(state, session, script[i])
+			local execOk, lines, control = exec(state, session, script[i])
 			out[#out + 1] = tostring(execOk) .. "/" .. tostring(control)
 			for j = 1, #lines do out[#out + 1] = lines[j] end
 		end
@@ -1109,7 +1221,7 @@ do
 		"echo log > a/log.txt", "echo more >> a/log.txt", "rm a/b/c.txt",
 	}
 	for i = 1, #script do
-		local execOk, lines = CeroSecOS.exec(state, session, script[i])
+		local execOk, lines = exec(state, session, script[i])
 		if not execOk then error(script[i] .. ": " .. tostring(lines[1])) end
 	end
 	local vOk, vReason = CeroSecOS.validate(state)
@@ -1328,7 +1440,11 @@ do
 	bad(state, session, "hash", "hash: usage: hash <text> [salt]")
 	bad(state, session, "hash a b c", "hash: usage: hash <text> [salt]")
 	bad(state, session, "hash x BAD", "hash: BAD: invalid salt")
-	bad(state, session, 'hash x "a$b"', "hash: a$b: invalid salt")
+	-- Single quotes, because the prompt speaks the script language now: inside
+	-- DOUBLE quotes "$b" is a variable and expands to nothing, which would make
+	-- this line `hash x a` and a perfectly good salt.
+	bad(state, session, "hash x 'a$b'", "hash: a$b: invalid salt")
+	ok(state, session, 'hash x "a$b"', nil)
 end
 
 --
@@ -1338,7 +1454,7 @@ end
 -- exec/continue with the whole four-value shape kept, because that shape is
 -- what the console drives an interactive command with.
 local function run(state, session, line)
-	local execOk, lines, control, data = CeroSecOS.exec(state, session, line)
+	local execOk, lines, control, data = exec(state, session, line)
 	return { ok = execOk, lines = lines, control = control, data = data }
 end
 
@@ -1760,7 +1876,11 @@ do
 	ok(state, admin, "cp /bin/ls /home/admin/ls", {})
 	ok(state, admin, "chmod 755 /home/admin/ls", {})
 	ok(state, admin, "cd /home/admin", {})
-	ok(state, admin, "./ls", {}, "job")
+	-- The prompt is a job now, so `./ls` does not ask the machine for a second
+	-- one: it runs one level deeper inside the prompt's own, the way a shell's
+	-- child would. What runs is the TEXT of the copied file -- "list a
+	-- directory" -- whose first word is not a command.
+	bad(state, admin, "./ls", "list: command not found")
 	-- Without x on it, it is not runnable at all.
 	ok(state, admin, "chmod 644 /home/admin/ls", {})
 	bad(state, admin, "./ls", "./ls: permission denied")
@@ -1875,9 +1995,9 @@ do
 	ok(state, rootSession, "mkdir /home/bob", {})
 
 	local hashOf = CeroSecOS.hashPassword("secret", "abcdef")
-	ok(state, rootSession,
-		'write /etc/passwd "' .. CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
-		.. "\\n" .. "bob:" .. hashOf .. ':/home/bob:admin"', {})
+	put(state, rootSession, "/etc/passwd",
+		CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
+		.. "\n" .. "bob:" .. hashOf .. ":/home/bob:admin")
 
 	eq("admin is gone from the machine", CeroSecOS.getUser(state, "admin"), nil)
 	eq("and cannot log in", CeroSecOS.login(state, "admin", ""), nil)
@@ -1887,9 +2007,9 @@ do
 	eq("with the powers the file gave him", CeroSecOS.getUser(state, "bob").admin, true)
 
 	-- Re-homing an account by hand moves where cd with no argument goes.
-	ok(state, rootSession,
-		'write /etc/passwd "' .. CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
-		.. "\\n" .. "bob:" .. hashOf .. ':/:user"', {})
+	put(state, rootSession, "/etc/passwd",
+		CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
+		.. "\n" .. "bob:" .. hashOf .. ":/:user")
 	local moved = CeroSecOS.login(state, "bob", "secret")
 	eq("the new home takes effect at once", moved.cwd, "/")
 	eq("and so does the new flag", CeroSecOS.getUser(state, "bob").admin, false)
@@ -2128,24 +2248,34 @@ do
 	ok(state, rootSession, "shutdown", {}, "shutdown")
 	ok(state, rootSession, "reboot", {}, "reboot")
 	eq("restart is reboot under its other name",
-		select(3, CeroSecOS.exec(state, rootSession, "restart")), "reboot")
+		select(3, exec(state, rootSession, "restart")), "reboot")
 
 	-- Root's alone, and each refusal wears the name that was typed.
 	bad(state, admin, "shutdown", "shutdown: permission denied")
 	bad(state, admin, "reboot", "reboot: permission denied")
 	bad(state, admin, "restart", "restart: permission denied")
 
-	-- No arguments, and the usage says the name that was typed too.
-	bad(state, rootSession, "shutdown now", "shutdown: usage: shutdown")
+	-- `now` is what "no time at all" means, so the two lines are one order.
+	ok(state, rootSession, "shutdown now", {}, "shutdown")
+	ok(state, rootSession, "shutdown -h now", {}, "shutdown")
+	ok(state, rootSession, "shutdown -r now", {}, "reboot")
+	ok(state, rootSession, "halt", {}, "shutdown")
+	-- Nothing else is a time, and the usage says the name that was typed.
+	bad(state, rootSession, "shutdown soon",
+		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c")
+	bad(state, rootSession, "shutdown -h now extra",
+		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c")
 	bad(state, rootSession, "reboot -f", "reboot: usage: reboot")
 	bad(state, rootSession, "restart now", "restart: usage: restart")
+	bad(state, rootSession, "halt now", "halt: usage: halt")
+	bad(state, admin, "halt", "halt: permission denied")
 
 	-- Executables like every other command: taking the file away takes the
 	-- order away, and the machine cannot be talked into going down by a name.
 	ok(state, rootSession, "rm /bin/shutdown", {})
 	bad(state, rootSession, "shutdown", "shutdown: command not found")
 	eq("and reboot is untouched",
-		select(3, CeroSecOS.exec(state, rootSession, "reboot")), "reboot")
+		select(3, exec(state, rootSession, "reboot")), "reboot")
 
 	-- Nothing on the disk moved: the core has no machine to switch off.
 	eq("the state still validates", CeroSecOS.validate(state), true)
@@ -2285,8 +2415,8 @@ do
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 
 	-- The two orders come back out of sudo untouched.
-	eq("sudo shutdown", select(3, CeroSecOS.exec(state, admin, "sudo shutdown")), "shutdown")
-	eq("sudo reboot", select(3, CeroSecOS.exec(state, admin, "sudo reboot")), "reboot")
+	eq("sudo shutdown", select(3, exec(state, admin, "sudo shutdown")), "shutdown")
+	eq("sudo reboot", select(3, exec(state, admin, "sudo reboot")), "reboot")
 end
 
 -- A token is not an authorisation on its own.
@@ -2548,7 +2678,7 @@ do
 	eq("sudo asks for a password on it", asked.data.text, "[sudo] password for admin: ")
 	eq("and runs", answer(state, admin, asked.data.cont, "").lines[1], "root")
 	eq("shutdown is there for root", select(3,
-		CeroSecOS.exec(state, open(state, "root"), "shutdown")), "shutdown")
+		exec(state, open(state, "root"), "shutdown")), "shutdown")
 end
 
 --
@@ -2567,7 +2697,7 @@ local ENV2 = { now = LATER }
 
 -- The same shape as ok()/bad() above, with a clock in it.
 local function runAt(state, session, line, env)
-	local execOk, lines, control, data = CeroSecOS.exec(state, session, line, env)
+	local execOk, lines, control, data = exec(state, session, line, env)
 	for i = 1, #lines do
 		check("`" .. line .. "` line " .. i .. " fits 60 columns", #lines[i] <= CeroSecOS.COLS)
 	end
@@ -2782,7 +2912,7 @@ do
 	-- A machine with no clock mutates exactly as it did before this rung: the
 	-- write happens, nothing is stamped, and nothing already stamped moves.
 	local was = CeroSecOS.mtimeOf(home.children.d.children["moved.txt"])
-	local r = CeroSecOS.exec(state, admin, 'write d/moved.txt "no clock here"', nil)
+	local r = exec(state, admin, 'write d/moved.txt "no clock here"', nil)
 	eq("the write still happens", r, true)
 	eq("and leaves the stamp where it was",
 		CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), was)
@@ -2901,7 +3031,7 @@ do
 	-- refusal names the argument as typed.
 	badAt(state, admin, "ls -lz", "ls: -lz: unknown option")
 	badAt(state, admin, "ls -zl", "ls: -zl: unknown option")
-	badAt(state, admin, "ls -l a b", "ls: usage: ls [-lF] [path]")
+	badAt(state, admin, "ls -l a b", "ls: usage: ls [-laAF] [path]")
 end
 
 -- 20g. df, against a state whose numbers are known.
@@ -3065,7 +3195,7 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-lF] [path]" })
+	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-laAF] [path]" })
 	okAt(state, admin, "man date", { "date - print the date and time", "usage: date [+FORMAT]" })
 	badAt(state, admin, "man", "man: usage: man <command>")
 	badAt(state, admin, "man ls date", "man: usage: man <command>")
@@ -3074,7 +3204,7 @@ do
 	-- The description is the FILE's: rewrite /bin/ls and man says what it says.
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, 'write /bin/ls "shows you things"', {})
-	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-lF] [path]" })
+	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-laAF] [path]" })
 	-- And a command that is gone has no manual.
 	okAt(state, rootSession, "rm /bin/ls", {})
 	badAt(state, admin, "man ls", "man: ls: no manual entry")
@@ -3091,7 +3221,7 @@ do
 		-- goes through with them changes nothing the next one will see.
 		local clean = fresh()
 		local line = names[i] .. " zz1 zz2 zz3 zz4 zz5 zz6"
-		local _, out = CeroSecOS.exec(clean, open(clean, "root"), line, ENV)
+		local _, out = exec(clean, open(clean, "root"), line, ENV)
 		-- Not every command HAS a wrong argument count -- echo takes anything --
 		-- but every one that says "usage" says this one.
 		if #out > 0 and string.find(out[1], ": usage: ", 1, true) ~= nil then
@@ -4037,7 +4167,7 @@ do
 	local devices = mockupDevices()
 	local env = devEnv(devices)
 
-	local step = { CeroSecOS.exec(state, session, "sudo cat /dev/light0", env) }
+	local step = { exec(state, session, "sudo cat /dev/light0", env) }
 	eq("sudo asks first", step[3], "prompt")
 	local ok2, lines = CeroSecOS.continue(state, session, step[4].cont, "", env)
 	eq("and reads the switch as root", ok2, true)
@@ -4308,7 +4438,7 @@ do
 	-- Through sudo, since he may not otherwise -- and the chain reads the switch
 	-- on the answer, the mount being under continue too (21h).
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin\nbob")
-	local step = { CeroSecOS.exec(state, bob, "sudo dev light0 off", env) }
+	local step = { exec(state, bob, "sudo dev light0 off", env) }
 	eq("sudo asks first", step[3], "prompt")
 	local ok2, lines = CeroSecOS.continue(state, bob, step[4].cont, "", env)
 	eq("and works the switch as root", ok2, true)
@@ -4842,11 +4972,17 @@ local function runScript(state, session, text, args, answers, options)
 	script(state, "/home/admin/bench.sh", text)
 	local jobs = {}
 	local env = { now = 740000000, nowMs = 1000, jobs = jobs }
+	-- The order `sh` hands back, asked for directly. It used to be asked for by
+	-- typing `sh bench.sh`, and cannot be any more: the prompt is a job itself
+	-- now, so `sh` inside it runs ONE LEVEL DEEPER in the same job rather than
+	-- asking the machine for a second one (CeroSecOSVM.applyControl). What is
+	-- wanted here is a script's own job, so this is the call that makes one.
 	local line = "sh /home/admin/bench.sh"
 	for i = 1, #(args or {}) do line = line .. " " .. args[i] end
-	local ok, lines, control, data = CeroSecOS.exec(state, session, line, env)
+	local ok, lines, control, data = CeroSecOS.startScript(state, session, "sh",
+		"/home/admin/bench.sh", args or {}, line, env, false)
 	if control ~= "job" then
-		return { started = false, ok = ok, lines = lines }
+		return { started = false, ok = ok, lines = CeroSecOS.fit(lines) }
 	end
 	local job = CeroSecOS.newJob({ id = JOB_ID, prog = data.prog, args = data.args,
 		name = data.name, cmd = data.cmd, session = session, bg = options.bg })
@@ -5130,7 +5266,7 @@ do
 	local jobs = {}
 	local env = { now = 100, nowMs = 1000, jobs = jobs }
 	local _, _, control, data =
-		CeroSecOS.exec(state, admin, "sh /home/admin/secret.sh", env)
+		CeroSecOS.startScript(state, admin, "sh", "/home/admin/secret.sh", {}, "sh /home/admin/secret.sh", env, false)
 	local job = CeroSecOS.newJob({ id = 1, prog = data.prog, args = {}, name = data.name,
 		cmd = data.cmd, session = admin })
 	jobs[1] = job
@@ -5142,7 +5278,7 @@ do
 
 	-- sleep is the other one: a wake-up time, and no steps until it comes.
 	script(state, "/home/admin/nap.sh", "echo before\nsleep 2\necho after")
-	local _, _, c2, d2 = CeroSecOS.exec(state, admin, "sh /home/admin/nap.sh", env)
+	local _, _, c2, d2 = CeroSecOS.startScript(state, admin, "sh", "/home/admin/nap.sh", {}, "sh /home/admin/nap.sh", env, false)
 	local nap = CeroSecOS.newJob({ id = 2, prog = d2.prog, args = {}, name = d2.name,
 		cmd = d2.cmd, session = admin })
 	jobs[1] = nap
@@ -5163,7 +5299,7 @@ do
 
 	-- A machine with no clock cannot sleep, and says so rather than hanging.
 	script(state, "/home/admin/nap.sh", "sleep 1")
-	local _, _, c3, d3 = CeroSecOS.exec(state, admin, "sh /home/admin/nap.sh", { jobs = {} })
+	local _, _, c3, d3 = CeroSecOS.startScript(state, admin, "sh", "/home/admin/nap.sh", {}, "sh /home/admin/nap.sh", { jobs = {} }, false)
 	local dry = CeroSecOS.newJob({ id = 3, prog = d3.prog, args = {}, name = d3.name,
 		cmd = d3.cmd, session = admin })
 	CeroSecOS.jobStep(state, dry, { jobs = {} }, 100)
@@ -5184,30 +5320,36 @@ do
 	local admin = open(state, "admin")
 	local rootSession = open(state, "root")
 
-	-- A line that starts a job: it succeeds, prints nothing, and orders the
-	-- machine to run a program.
-	local function startsJob(line)
+	-- A line that runs a script. It does NOT ask the machine for a second job
+	-- any more: the prompt is a job itself, so `sh go.sh` runs one level deeper
+	-- inside it, the way a shell's child would -- which is what keeps a script
+	-- that runs itself meeting the depth ceiling in eight lines instead of
+	-- filling the machine's four job slots in four.
+	local function runsScript(line)
 		local r = runAt(state, admin, line, { now = 740000000, nowMs = 1000, jobs = {} })
 		eq("`" .. line .. "` ok", r.ok, true)
-		eq("`" .. line .. "` prints nothing yet", #r.lines, 0)
-		eq("`" .. line .. "` orders a job", r.control, "job")
-		check("`" .. line .. "` hands over a program", type(r.data.prog) == "table")
+		eq("`" .. line .. "` orders nothing of the machine", r.control, nil)
+		eq("`" .. line .. "` line count", #r.lines, 1)
+		eq("`" .. line .. "` ran it", r.lines[1], "ran")
 		return r
 	end
 
 	script(state, "/home/admin/go.sh", "echo ran")
-	startsJob("sh /home/admin/go.sh")
-	startsJob("/home/admin/go.sh")
+	runsScript("sh /home/admin/go.sh")
+	runsScript("/home/admin/go.sh")
 	okAt(state, admin, "cd /home/admin", {})
-	startsJob("./go.sh")
+	runsScript("./go.sh")
 	-- The name the script calls itself in an error is its last component, not
-	-- the path that was typed.
-	eq("a script names itself", startsJob("./go.sh").data.name, "go.sh")
+	-- the path that was typed. Asked of the order `sh` hands back, which is
+	-- what a machine with a job slot to spare would have made a job of.
+	eq("a script names itself",
+		select(4, CeroSecOS.startScript(state, admin, "sh", "./go.sh", {}, "./go.sh",
+			{ jobs = {} }, true)).name, "go.sh")
 
 	-- x is what a path needs; sh only needs to be able to READ it.
 	okAt(state, admin, "chmod 644 /home/admin/go.sh", {})
 	badAt(state, admin, "./go.sh", "./go.sh: permission denied")
-	startsJob("sh /home/admin/go.sh")
+	runsScript("sh /home/admin/go.sh")
 	okAt(state, admin, "chmod 755 /home/admin/go.sh", {})
 
 	-- And a file nobody may read is a file nobody may run either.
@@ -5304,7 +5446,7 @@ do
 	script(state, "/home/admin/self.sh", "sh /home/admin/self.sh")
 	local jobs = {}
 	local env = { now = 100, nowMs = 1000, jobs = jobs }
-	local _, _, control, data = CeroSecOS.exec(state, admin, "sh /home/admin/self.sh", env)
+	local _, _, control, data = CeroSecOS.startScript(state, admin, "sh", "/home/admin/self.sh", {}, "sh /home/admin/self.sh", env, false)
 	local job = CeroSecOS.newJob({ id = 1, prog = data.prog, args = {}, name = data.name,
 		cmd = data.cmd, session = admin })
 	jobs[1] = job
@@ -5319,7 +5461,7 @@ do
 	-- Output: a job that has filled its queue stops until it is drained, and
 	-- never grows past it.
 	script(state, "/home/admin/flood.sh", "while true; do echo x; done")
-	local _, _, c2, d2 = CeroSecOS.exec(state, admin, "sh /home/admin/flood.sh", env)
+	local _, _, c2, d2 = CeroSecOS.startScript(state, admin, "sh", "/home/admin/flood.sh", {}, "sh /home/admin/flood.sh", env, false)
 	local flood = CeroSecOS.newJob({ id = 2, prog = d2.prog, args = {}, name = d2.name,
 		cmd = d2.cmd, session = admin })
 	jobs[1] = flood
@@ -5336,7 +5478,7 @@ do
 
 	-- Every line a job writes is a screen line: sixty columns, no wider.
 	script(state, "/home/admin/wide.sh", "echo " .. string.rep("w", 200))
-	local _, _, c3, d3 = CeroSecOS.exec(state, admin, "sh /home/admin/wide.sh", env)
+	local _, _, c3, d3 = CeroSecOS.startScript(state, admin, "sh", "/home/admin/wide.sh", {}, "sh /home/admin/wide.sh", env, false)
 	local wide = CeroSecOS.newJob({ id = 3, prog = d3.prog, args = {}, name = d3.name,
 		cmd = d3.cmd, session = admin })
 	jobs[1] = wide
@@ -5359,37 +5501,42 @@ do
 	local jobs = {}
 	local env = { now = 740000000, nowMs = 1000, jobs = jobs }
 
-	-- Nothing running: ps is a header and no rows.
-	local ok, lines = CeroSecOS.exec(state, admin, "ps", env)
-	eq("ps on an idle machine", #lines, 1)
+	-- Nothing running but the shell -- and the shell IS something running now,
+	-- because the line being typed is a job. `ps` shows it, the way every Unix
+	-- ps shows the shell you typed into; `jobs` does not, because the shell is
+	-- not one of the things the shell started.
+	local ok, lines = exec(state, admin, "ps", env)
+	eq("ps on an idle machine", #lines, 2)
 	eq("is its header", lines[1], "  ID S     CPU COMMAND")
-	ok, lines = CeroSecOS.exec(state, admin, "jobs", env)
+	eq("and the shell you are typing into", lines[2], "   1 R       0 ps")
+	ok, lines = exec(state, admin, "jobs", env)
 	eq("and jobs is empty", #lines, 0)
 
 	-- One job, seen by both.
-	local _, _, _, data = CeroSecOS.exec(state, admin, "sh /home/admin/go.sh", env)
+	local _, _, _, data = CeroSecOS.startScript(state, admin, "sh", "/home/admin/go.sh", {}, "sh /home/admin/go.sh", env, false)
 	local job = CeroSecOS.newJob({ id = 42, prog = data.prog, args = {}, name = data.name,
 		cmd = data.cmd, session = admin })
 	job.n = 1
 	jobs[1] = job
-	ok, lines = CeroSecOS.exec(state, admin, "ps", env)
-	eq("ps has a row for it", #lines, 2)
+	ok, lines = exec(state, admin, "ps", env)
+	eq("ps has a row for it, and one for the shell", #lines, 3)
 	eq("with its id, its state and its command", lines[2],
 		"  42 R       0 sh /home/admin/go.sh")
-	ok, lines = CeroSecOS.exec(state, admin, "jobs", env)
+	eq("and the shell under it", lines[3], "   1 R       0 ps")
+	ok, lines = exec(state, admin, "jobs", env)
 	eq("jobs names its slot", lines[1], "[1] running  sh /home/admin/go.sh")
 
 	-- kill asks; the scheduler does the deed.
-	ok, lines = CeroSecOS.exec(state, admin, "kill 42", env)
+	ok, lines = exec(state, admin, "kill 42", env)
 	eq("kill by id is taken", ok, true)
 	eq("and asks for it", job.killReq, "user")
 	job.killReq = nil
-	ok, lines = CeroSecOS.exec(state, admin, "kill %1", env)
+	ok, lines = exec(state, admin, "kill %1", env)
 	eq("kill by slot too", ok, true)
 	eq("and asks for it", job.killReq, "user")
-	ok, lines = CeroSecOS.exec(state, admin, "kill 99", env)
+	ok, lines = exec(state, admin, "kill 99", env)
 	eq("a job that is not there", lines[1], "kill: 99: no such job")
-	ok, lines = CeroSecOS.exec(state, admin, "kill", env)
+	ok, lines = exec(state, admin, "kill", env)
 	eq("and kill with nothing to kill says how", lines[1], "kill: usage: kill <id>|%<n>")
 
 	-- Four jobs is the ceiling, and it is the ENGINE that refuses the fifth.
@@ -5401,7 +5548,7 @@ do
 	badAt(state, admin, "sh /home/admin/go.sh", "sh: too many jobs", env)
 	-- A job that is over does not count against it.
 	jobs[1].state = "done"
-	local r = CeroSecOS.exec(state, admin, "sh /home/admin/go.sh", env)
+	local r = CeroSecOS.startScript(state, admin, "sh", "/home/admin/go.sh", {}, "sh /home/admin/go.sh", env, false)
 	eq("a finished job leaves room for another", r, true)
 end
 

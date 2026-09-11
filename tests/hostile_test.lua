@@ -113,6 +113,14 @@ end
 function system:sessionOf(console)
 	return { user = console.user or "admin", cwd = console.cwd or "/home/admin", stamp = 1 }
 end
+-- The console is the machine's, so a `cd` or an `su` inside the prompt's own
+-- job is written back into it -- the real server's SCeroSecSystem:writeSession,
+-- which this bench owes the scheduler now that the prompt is a job.
+function system:writeSession(console, session)
+	console.user = session.user
+	console.cwd = session.cwd
+	console.stack = session.stack
+end
 function system:pushScreen() pushes = pushes + 1 end
 function system:applyPower(luaObject, control) powered = control end
 
@@ -138,18 +146,23 @@ local function put(state, path, text)
 	node.mode = 755
 end
 
--- Type a line at the machine, the way the server's Commands.exec does.
+-- Type a line at the machine, the way the server's Commands.exec does: the line
+-- becomes a foreground job on the console's own environment, and the scheduler
+-- takes it from there. There is no shorter path any more -- the prompt IS the
+-- script engine -- which is exactly what this bench has to beat on.
 local function typeLine(system_, machine, state, console, line)
-	local env = { now = 740000000, nowMs = _G.__now }
-	if machine.jobs ~= nil then env.jobs = machine.jobs.list end
-	local session = system_:sessionOf(console)
-	local _, lines, control, data = CeroSecOS.exec(state, session, line, env)
-	for i = 1, #lines do CeroSec.consolePush(console, lines[i]) end
-	if control == "job" then
-		local job, reason = CeroSecJobs.start(system_, machine, console, data,
-			data.bg and true or false)
-		if job == nil then CeroSec.consolePush(console, "sh: " .. tostring(reason)) end
-		return job
+	local job, refusal = CeroSecJobs.startPrompt(system_, machine, console, line)
+	if job == nil then CeroSec.consolePush(console, tostring(refusal)) end
+	return job
+end
+
+-- The job a script left running on this machine: the first one that is not the
+-- shell.
+local function scriptJob(machine)
+	local book = machine.jobs
+	if book == nil then return nil end
+	for i = 1, #book.list do
+		if not book.list[i].interactive then return book.list[i] end
 	end
 	return nil
 end
@@ -499,11 +512,18 @@ do
 		CeroSecJobs.tick()
 		local n = #CeroSecJobs.book(machine).list
 		if n > worstJobs then worstJobs = n end
-		check("never more jobs than the machine allows (" .. n .. ")", n <= CeroSecOS.MAX_JOBS)
+		-- The book holds the shell as well as what the shell started: the line
+		-- typed at the prompt is a job too. So the ceiling on the book is the
+		-- four slots plus the one shell, and CeroSecOS.liveJobs is what the
+		-- ceiling itself is counted with.
+		check("never more jobs than the machine allows (" .. n .. ")",
+			n <= CeroSecOS.MAX_JOBS + 1)
+		check("and never more SLOTS than it allows",
+			CeroSecOS.liveJobs(CeroSecJobs.book(machine).list) <= CeroSecOS.MAX_JOBS)
 		check("the console never holds more than its hundred lines",
 			#machine.console.lines <= CeroSec.CONSOLE_MAX)
 	end
-	eq("the machine filled its four slots", worstJobs, CeroSecOS.MAX_JOBS)
+	eq("the machine filled its four slots", worstJobs, CeroSecOS.MAX_JOBS + 1)
 	local refused = false
 	for i = 1, #console.lines do
 		if console.lines[i] == "sh: too many jobs" then refused = true end

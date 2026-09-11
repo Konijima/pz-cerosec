@@ -144,7 +144,12 @@ function CeroSecOS.subtreeUsage(node)
 	if node.type == "dev" then return 0, 0 end
 	local nodes, bytes = 1, 0
 	if node.type == "file" then
-		bytes = #(node.data or "")
+		-- A shell's own memory does not fill the drive. ~/.sh_history carries
+		-- the exemption as a flag set by the one function that writes it
+		-- (CeroSecOS.historyAppend), and pays for it with a ceiling of its own
+		-- that validate enforces -- so `df` never moves because somebody typed,
+		-- and `ls -l` still tells the truth about how big the file is.
+		if not node.nq then bytes = #(node.data or "") end
 	elseif node.children ~= nil then
 		local names = CeroSecOS.childNames(node)
 		for i = 1, #names do
@@ -249,7 +254,7 @@ end
 local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, fromParent)
 	if #parts == 0 then return nil, nil, "file exists" end
 	local name = parts[#parts]
-	if not CeroSecOS.isValidName(name) then return nil, nil, "invalid name" end
+	if not CeroSecOS.isValidFileName(name) then return nil, nil, "invalid name" end
 	if #parts + addDepth > CeroSecOS.MAX_DEPTH then return nil, nil, "path too deep" end
 
 	local parentPath = CeroSecOS.parentOf(parts)

@@ -488,6 +488,9 @@ function CeroSec.consoleLogout(console)
 	-- memory of whose prompt it is.
 	console.job = nil
 	console.status = nil
+	-- The shell's variables go with the session that set them. Somebody else
+	-- walking up to a logged-out machine gets a shell, not the last one's.
+	console.shvars = nil
 	-- Who the glass would have come back to through su, with it: an account
 	-- logs out of the machine and not out of its own last switch.
 	console.stack = nil
@@ -613,6 +616,29 @@ function CeroSec.repairConsole(console)
 	if type(console.user) == "string" then out.user = console.user end
 	if type(console.cwd) == "string" then out.cwd = console.cwd end
 	if type(console.pending) == "string" then out.pending = console.pending end
+	-- The shell's own variables, which are the machine's like everything else on
+	-- the console: `x=5` typed at the glass is still set after a reload, because
+	-- the prompt is an environment and not a series of unrelated commands. Kept
+	-- entry by entry and bounded exactly as a job's are (CeroSecOS.MAX_VARS,
+	-- MAX_VAR_BYTES), because a forged console must not be able to hand back a
+	-- thousand of them.
+	local shvars = console.shvars
+	if type(shvars) == "table" then
+		local kept, n = {}, 0
+		for name, value in pairs(shvars) do
+			if type(name) == "string" and type(value) == "string"
+					and CeroSecOS.isVarName(name)
+					and #value <= CeroSecOS.MAX_VAR_BYTES
+					and not CeroSecOS.hasControlBytes(value)
+					and n < CeroSecOS.MAX_VARS then
+				kept[name] = value
+				n = n + 1
+			end
+		end
+		if n > 0 then out.shvars = kept end
+	end
+	-- $?, as the prompt last came back with it.
+	if type(console.status) == "number" then out.status = math.floor(console.status) end
 	-- The su stack: machine state like the user and the working directory, and
 	-- saved with them. Kept entry by entry, only where an entry is still a name
 	-- and a path, and never deeper than the ceiling -- a forged console must not
@@ -1024,11 +1050,14 @@ CeroSec.GLOW_OFFSET = 1
 -- The block cursor blinks on this period, in milliseconds of real time.
 CeroSec.CURSOR_BLINK_MS = 500
 
--- How much the terminal remembers. The scrollback is not one of these any
--- more: it is the machine's console (CONSOLE_MAX above), which the window only
--- renders. The input history is the one thing that stays in the window, because
--- it is what this player typed and not what the screen shows.
-CeroSec.HISTORY_MAX = 20
+-- How much the terminal remembers. Nothing, in the end: the scrollback is the
+-- machine's console (CONSOLE_MAX above) and the input history is the account's
+-- own ~/.sh_history on the machine's disk, which the server hands over when a
+-- window opens and whenever the account at the glass changes. This is the size
+-- of the window's copy of that tail -- the same number the server sends
+-- (CeroSecOS.HISTORY_TAIL), because the copy is the tail and not a second
+-- history beside it.
+CeroSec.HISTORY_MAX = 100
 
 -- Module of the server -> client answers that go to one player, i.e. the module
 -- of sendServerCommand(player, ...). Named here because both sides need the
