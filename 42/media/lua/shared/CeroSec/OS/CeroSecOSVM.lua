@@ -64,6 +64,14 @@ CeroSecOS.MAX_VAR_BYTES = 1024
 -- run time and the parser never saw it.
 CeroSecOS.MAX_FRAMES = 64
 
+-- How long a run of turns that spend NO step has to be before jobStep starts
+-- reading where the job stands to see whether it is getting anywhere (the guard
+-- at the end of the loop there). Free work between commands is ordinary and a
+-- short run of it is every pass; a run longer than this is a pass that is not
+-- getting anywhere, and reading it costs several free turns, which is why it is
+-- not read on every one of them.
+CeroSecOS.FREE_TURNS_BEFORE_READING = 32
+
 -- How deep `sh` may call `sh`. A script that runs itself is the shortest
 -- program there is that never ends, and this is where it stops.
 CeroSecOS.SCRIPT_DEPTH_MAX = 8
@@ -1399,6 +1407,23 @@ local function stageStep(state, stage, env)
 	return used
 end
 
+-- Can this stage take a step at all, this instant?
+--
+-- Asked BEFORE the walk below picks a stage, because picking one that cannot
+-- step is how a sleeping pipeline used to spin: stageStep answers nought for a
+-- stage that is asleep, the walk returned that nought as the turn's cost, and
+-- the turn had moved nothing -- so the next turn did the same, for as many
+-- turns as the pass allowed. A stage with time left on its clock is not a stage
+-- to step; it is a stage to WAIT for, which is the tail of pipeStep's job.
+local function stageRunnable(stage, env)
+	if CeroSecOS.jobIsOver(stage) then return false end
+	if stage.state == "sleeping" then
+		local now = CeroSecOS.nowMsOf(env)
+		return now == nil or now >= (stage.wakeMs or 0)
+	end
+	return stage.state == "running"
+end
+
 -- Is there anything for this stage to read?
 local function inputReady(buf)
 	if buf == nil then return true end
@@ -1450,7 +1475,12 @@ local function pipeStep(state, job, f, env)
 				sigpipe(stage)
 				return 0
 			end
-			if stage.blocked == "input" then
+			if not stageRunnable(stage, env) then
+				-- Asleep with time left on its clock, or waiting on something
+				-- that is not this turn's business. Nothing to step here; the
+				-- walk goes on to the left and, if nothing there can step
+				-- either, the tail below parks the whole pipeline.
+			elseif stage.blocked == "input" then
 				if inputReady(stage.stdinBuf) then
 					return stageStep(state, stage, env)
 				end
@@ -1464,10 +1494,15 @@ local function pipeStep(state, job, f, env)
 		end
 	end
 
-	-- Nothing could run. Either the pipeline is asleep -- `sleep 5 | cat` is a
-	-- pipeline that costs nothing for five seconds, exactly as a bare `sleep`
-	-- does -- or every stage that could write is waiting on one that is waiting
-	-- on it, which is a pipeline with nothing left to do but be killed.
+	-- Nothing could step, so the pipeline takes a state of its own -- which is
+	-- the whole point of the walk having refused to step a stage that cannot
+	-- step. Either the pipeline is ASLEEP -- `sleep 5 | cat` costs nothing for
+	-- five seconds, exactly as a bare `sleep` does, and the pipeline's wake is
+	-- the earliest of its stages' -- or every stage is waiting on a pipe, and
+	-- the pipeline is BLOCKED: the scheduler is told so and skips it for the
+	-- rest of the pass at no cost at all. Neither is a reason to kill anything:
+	-- the writer of a pipe nobody reads is stopped by SIGPIPE above, when its
+	-- reader goes, and not by a turn that found nothing to do.
 	local wake = nil
 	for i = 1, n do
 		local stage = stages[i]
@@ -1792,6 +1827,56 @@ handleSignal = function(job)
 	end
 end
 
+-- Where the job IS, in as few characters as reading it costs.
+--
+-- Two turns that answer the same thing here, with no step spent between them,
+-- are two turns that did nothing -- and a third would do nothing either, so the
+-- pass ends. What it reads is everything a turn can move without spending a
+-- step: the job's state and what it is blocked on, how deep the frame stack is
+-- and where the top frame stands (the program counter), and -- because a
+-- pipeline's turn moves its stages and not the job -- what every stage of a
+-- pipe frame is doing. Built only on a turn that spent nothing, which on an
+-- ordinary pass is a handful of turns at most, so the normal path pays nothing
+-- for it.
+-- Where one shell stands: how deep its frames go and what the frame on top of
+-- them is busy with. The program counter, for a job or for one stage of a
+-- pipeline -- which is a job.
+local function frameKey(job)
+	local frames = job.frames
+	local n = #frames
+	local f = frames[n]
+	if f == nil then return n .. " -" end
+	local key = n .. " " .. tostring(f.k) .. " " .. tostring(f.phase) .. " " ..
+		tostring(f.i) .. " " .. tostring(f.node)
+	-- A word being expanded is a turn's worth of progress that costs no step, so
+	-- where the expansion has got to is part of where the shell stands.
+	if f.ex ~= nil then
+		key = key .. " " .. tostring(f.ex.wi) .. " " .. tostring(f.ex.pi) ..
+			" " .. #f.ex.fields .. " " .. #f.ex.buf
+	end
+	if f.exA ~= nil then
+		key = key .. " " .. tostring(f.exA.wi) .. " " .. tostring(f.exA.pi) ..
+			" " .. #f.exA.fields .. " " .. #f.exA.buf
+	end
+	return key
+end
+
+local function progressKey(job)
+	local key = tostring(job.state) .. " " .. tostring(job.blocked) ..
+		" " .. #job.out .. " " .. #(job.partial or "") .. " " .. frameKey(job)
+	local frames = job.frames
+	local f = frames[#frames]
+	if f ~= nil and f.stages ~= nil then
+		for i = 1, #f.stages do
+			local stage = f.stages[i]
+			key = key .. " |" .. tostring(stage.state) .. " " .. tostring(stage.blocked) ..
+				" " .. tostring(stage.steps) .. " " .. #f.pipes[i].lines ..
+				" " .. tostring(f.pipes[i].eof) .. " " .. frameKey(stage)
+		end
+	end
+	return key
+end
+
 --
 -- The one entry point the scheduler uses.
 --
@@ -1853,6 +1938,21 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	-- cannot be reasoned away is cheaper than the argument that it cannot run
 	-- away.
 	local turns, maxTurns = 0, budget * 8 + 1000
+	-- What the job looked like after the last turn that spent nothing. Two of
+	-- those in a row with the same answer is a turn that moved nothing at all,
+	-- and the pass ends there rather than doing it again until maxTurns -- which
+	-- is what `sleep 300 | cat` did, nineteen thousand times a pass. maxTurns
+	-- stays as the last resort behind this, and says so when it is reached.
+	--
+	-- Not on the first free turn, and not on the thirtieth: free work between
+	-- commands is ORDINARY -- pushing a frame, popping a finished block,
+	-- expanding a word -- and reading where the job stands costs several of those
+	-- turns. So the reading starts only once the run of them is longer than any
+	-- one command's worth, which is a run an ordinary pass does not have and a
+	-- spin has for ever. Measured: with the reading on every free turn, a pass of
+	-- `while true; do x=1; done` cost a quarter more than it had; with this, it
+	-- costs what it costed.
+	local zeroRun, zeroKey = 0, nil
 	-- A signal left behind by something that ran OUTSIDE the loop -- the answer
 	-- to a question, which goes through jobInput -- is dealt with before a step
 	-- is taken, or `sudo shutdown` would run one more command after the machine
@@ -1869,11 +1969,32 @@ function CeroSecOS.jobStep(state, job, env, budget)
 			break
 		end
 		job.blocked = nil
+		local spent = used
 		used = used + stepOnce(state, job, env)
 		if job.sig ~= nil then handleSignal(job) end
 		-- A pipeline with nothing it can do this instant -- every stage waiting
 		-- on a pipe -- is not something to spin on for the rest of the budget.
 		if job.blocked == "input" then break end
+		if used == spent then
+			zeroRun = zeroRun + 1
+			if zeroRun > CeroSecOS.FREE_TURNS_BEFORE_READING then
+				local key = progressKey(job)
+				if key == zeroKey then break end
+				zeroKey = key
+			end
+		else
+			zeroRun, zeroKey = 0, nil
+		end
+	end
+	if turns >= maxTurns then
+		-- The belt held where the braces should have. Nothing is broken by it --
+		-- the pass ends, which is what it is for -- but a job that reaches it is
+		-- a job whose turns move nothing that progressKey can see, and that is
+		-- worth knowing about.
+		if CeroSec ~= nil and CeroSec.log ~= nil then
+			CeroSec.log("jobStep: maxTurns reached on job " .. tostring(job.id) ..
+				" (" .. tostring(job.cmd) .. ")")
+		end
 	end
 	job.steps = job.steps + used
 	if used > budget then job.debt = (job.debt or 0) + used - budget end

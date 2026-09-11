@@ -108,9 +108,13 @@ end
 
 local pushes = 0
 local powered = nil
+-- The devices the bench's machines have. nil for every case but one -- a machine
+-- with no devices at all, which is what most of these programs run on -- and a
+-- door for the one case that polls one (section 14b).
+local benchDevices = nil
 local system = {}
 function system:execEnv(luaObject, state)
-	return { now = 740000000, nowMs = _G.__now }
+	return { now = 740000000, nowMs = _G.__now, devices = benchDevices }
 end
 function system:sessionOf(console)
 	return { user = console.user or "admin", cwd = console.cwd or "/home/admin", stamp = 1 }
@@ -843,6 +847,223 @@ do
 	eq("it said why, once", #console.lines, 1)
 	eq("and that is the line", console.lines[1], "sort: input too large")
 	note("pipe into sort", result, " (input too large)")
+end
+
+--
+-- 14b. A pipeline that is ASLEEP (rung 5b)
+--
+-- The shape that is not a flood and hurt the server anyway. `sleep 300` on its
+-- own costs a thousandth of a millisecond a pass: the scheduler looks at the
+-- wake-up time and goes away. `sleep 300 | cat` cost THREE MILLISECONDS a pass
+-- for the whole five minutes -- a thousand times a bare sleep, and more than any
+-- flood in this file -- because the turn that found nothing to do in a pipeline
+-- was not a turn that parked it: the walk stepped the sleeping stage, the stage
+-- answered nought, and the pass did that again some nineteen thousand times
+-- until the runaway belt stopped it.
+--
+-- So what is asserted here is the opposite of everything above: not that a
+-- program which spends is bounded, but that a program which spends NOTHING costs
+-- nothing. Five sleeping pipelines, including the polling idiom the manual
+-- teaches (`cat /dev/door0; sleep 5` in a loop, with something on the other side
+-- of a pipe), and every one of them must be as cheap as a bare sleep -- and must
+-- still wake up and finish, which is the other half of the bargain.
+--
+
+-- What a pass may cost while the job on the machine is asleep. A bare sleep
+-- costs a thousandth of a millisecond; this is fifty times that, which is room
+-- for the measurement on a loaded bench machine and no room at all for a spin.
+local WALL_MS_ASLEEP = 0.05
+
+-- Drive a machine whose job spends its time asleep, and watch two things pass by
+-- pass: the steps the job has spent do not move while it is sleeping the SAME
+-- sleep -- a job asleep spends nothing, and a number that climbs is the spin
+-- coming back -- and the real time a pass costs stays under the ceiling above.
+--
+-- The same sleep is what the wake-up time says it is: the polling loop below
+-- wakes, works and lies down again inside one pass, and the steps it spent
+-- working are its own and not a spin.
+local function asleepDrive(what, machine, job, passes, stepMs)
+	local was, wake, steps = nil, nil, nil
+	local result = drive(machine, passes, stepMs, function()
+		if was == "sleeping" and job.state == "sleeping" and job.wakeMs == wake then
+			check(what .. ": a sleeping job spends no steps (" .. job.steps ..
+				" after " .. steps .. ")", job.steps == steps)
+		end
+		was, wake, steps = job.state, job.wakeMs, job.steps
+	end)
+	check(what .. ": a pass costs under " .. WALL_MS_ASLEEP ..
+		" ms of real time while asleep (" .. string.format("%.4f", result.msPerPass) ..
+		")", result.msPerPass < WALL_MS_ASLEEP)
+	flat(what, result)
+	return result
+end
+
+-- The clock, taken past a sleep, and the machine driven until whatever was
+-- waiting on it has finished. Asleep must not mean stuck.
+local function wakeUp(machine, ms, passes)
+	_G.__now = _G.__now + ms
+	return drive(machine, passes or 40)
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/sleepcat.sh", "sleep 300 | cat\necho awake\n")
+	local job = typeLine(system, machine, state, console, "sh sleepcat.sh")
+
+	local result = asleepDrive("sleep | cat", machine, job, PASSES)
+	timely("sleep 300 | cat", result)
+	eq("it is still asleep after a hundred seconds", job.state, "sleeping")
+	eq("and has said nothing", #console.lines, 0)
+	check("having spent a handful of steps and no more (" .. job.steps .. ")",
+		job.steps < 100)
+
+	wakeUp(machine, 300000)
+	eq("past the sleep, the pipeline is over", CeroSecOS.jobIsOver(job), true)
+	eq("the line after it ran", #console.lines, 1)
+	eq("and that is the line", console.lines[1], "awake")
+	note("sleep 300 | cat", result, " (asleep)")
+end
+
+do
+	local machine, state, console = newMachine()
+	-- `read` in a pipe reads the pipe, and the pipe it is given closes when the
+	-- sleep on the other end of it finishes: two seconds asleep, then end of
+	-- file, which is a read that answers nothing and fails.
+	put(state, "/home/admin/sleepread.sh", "sleep 2 | read x\necho done [$x]\n")
+	local job = typeLine(system, machine, state, console, "sh sleepread.sh")
+
+	local result = asleepDrive("sleep | read", machine, job, PASSES)
+	timely("sleep 2 | read x", result)
+	eq("two seconds of sleep were enough to finish it", CeroSecOS.jobIsOver(job), true)
+	eq("the line after it ran", #console.lines, 1)
+	eq("and the read read nothing", console.lines[1], "done []")
+	note("sleep 2 | read x", result, " (asleep)")
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/sleepsleep.sh", "sleep 300 | sleep 300\necho awake\n")
+	local job = typeLine(system, machine, state, console, "sh sleepsleep.sh")
+
+	local result = asleepDrive("sleep | sleep", machine, job, PASSES)
+	timely("sleep 300 | sleep 300", result)
+	eq("both stages are asleep, so the pipeline is", job.state, "sleeping")
+
+	wakeUp(machine, 300000)
+	eq("past the sleep, the pipeline is over", CeroSecOS.jobIsOver(job), true)
+	eq("and the line after it ran", console.lines[1], "awake")
+	note("sleep 300 | sleep 300", result, " (asleep)")
+end
+
+do
+	local machine, state, console = newMachine()
+	-- Three stages, the middle one asleep. The stage on the left has written
+	-- everything it will write and gone; the one on the right is waiting on
+	-- input that will not come for five minutes -- so the pipeline as a whole is
+	-- the middle stage's sleep, and nothing else.
+	put(state, "/home/admin/sleepmid.sh", "echo y | sleep 300 | cat\necho awake\n")
+	local job = typeLine(system, machine, state, console, "sh sleepmid.sh")
+
+	local result = asleepDrive("sleeping middle", machine, job, PASSES)
+	timely("3 stages, middle asleep", result)
+	eq("the pipeline is asleep", job.state, "sleeping")
+	eq("and nothing has reached the screen", #console.lines, 0)
+
+	wakeUp(machine, 300000)
+	eq("past the sleep, the pipeline is over", CeroSecOS.jobIsOver(job), true)
+	-- `sleep` does not pass its input on -- nothing does unless it was written to
+	-- do it -- so the "y" the first stage wrote dies in the first pipe and the
+	-- last stage reads end of file.
+	eq("the line after it ran, and only it", #console.lines, 1)
+	eq("and that is the line", console.lines[1], "awake")
+	note("3 stages, middle asleep", result, " (asleep)")
+end
+
+do
+	-- The polling idiom the manual teaches, with a pipe behind it: watch a door,
+	-- wait five seconds, go round. Fifty passes of sleep for every pass of work,
+	-- for as long as the player leaves it running -- which is a program that must
+	-- cost very nearly nothing, piped or not.
+	local door = { entries = { { id = "door0", kind = "door", desc = "exterior",
+		side = "W", pos = "0 5S", state = "closed" } } }
+	door.list = function()
+		local e = door.entries[1]
+		return { { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
+			pos = e.pos, state = e.state } }
+	end
+	door.write = function() return false, "no" end
+	benchDevices = door
+
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/poll.sh",
+		"while true; do cat /dev/door0; sleep 5; done | cat\n")
+	local job = typeLine(system, machine, state, console, "sh poll.sh")
+
+	local result = asleepDrive("door poll, piped", machine, job, PASSES)
+	timely("door poll, piped", result)
+	check("it is alive after a hundred seconds", not CeroSecOS.jobIsOver(job))
+	-- A hundred seconds is twenty turns of a five-second loop, so the reader on
+	-- the other side of the pipe has had twenty words out of it and no more.
+	check("and has read the door about twenty times (" .. #console.lines .. ")",
+		#console.lines >= 18 and #console.lines <= 22)
+	eq("the last word it read is the door's", console.lines[#console.lines], "closed")
+	note("door poll, piped", result, " (polling)")
+	benchDevices = nil
+end
+
+--
+-- 14c. What a pass that spends nothing costs, counted in Lua calls
+--
+-- The number above is real time, which is the thing that hurts a server but is
+-- also the thing a loaded bench machine is worst at measuring. This is the same
+-- assertion counted instead of timed: every call into the engine's stepper that
+-- comes back having spent NO STEP is counted, in Lua calls, with debug.sethook
+-- -- which lives here in the bench and never anywhere near the engine, because
+-- an engine that instruments itself is an engine that pays for it in the game.
+--
+-- Twenty calls is the ceiling: a job asleep, or one whose pass could not begin,
+-- is a table lookup, a clock and a return. Anything more is work being done on
+-- behalf of a job that is not doing any.
+--
+
+local ZERO_CALLS = 20
+
+do
+	local calls, worstZero, zeroPasses, what = 0, 0, 0, "?"
+	local instrumented = CeroSecOS.jobStep
+	local hook = function() calls = calls + 1 end
+	CeroSecOS.jobStep = function(state, job, env, budget)
+		calls = 0
+		debug.sethook(hook, "c")
+		local status, used = instrumented(state, job, env, budget)
+		debug.sethook()
+		if used == 0 then
+			zeroPasses = zeroPasses + 1
+			if calls > worstZero then worstZero = calls end
+			check(what .. ": a pass that spent no step costs at most " .. ZERO_CALLS ..
+				" Lua calls (" .. calls .. ")", calls <= ZERO_CALLS)
+		end
+		return status, used
+	end
+
+	local cases = {
+		{ "sleep", "sleep 300\n" },
+		{ "sleep | cat", "sleep 300 | cat\n" },
+		{ "sleep | sleep", "sleep 300 | sleep 300\n" },
+		{ "sleeping middle", "echo y | sleep 300 | cat\n" },
+	}
+	for i = 1, #cases do
+		what = cases[i][1]
+		local machine, state, console = newMachine()
+		put(state, "/home/admin/zero.sh", cases[i][2])
+		typeLine(system, machine, state, console, "sh zero.sh")
+		drive(machine, 200)
+	end
+
+	CeroSecOS.jobStep = instrumented
+	check("and there were such passes to count (" .. zeroPasses .. ")", zeroPasses > 700)
+	report[#report + 1] = string.format("  %-22s worst %4d Lua calls over %d passes",
+		"a pass spending 0 steps", worstZero, zeroPasses)
 end
 
 --
