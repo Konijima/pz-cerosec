@@ -233,6 +233,7 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
+	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSDev.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
@@ -483,6 +484,20 @@ local function newBench()
 		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
 		bench.frame()
 		return fresh
+	end
+
+	-- Put a line in the box with the caret at the end, WITHOUT pressing Enter:
+	-- what a player has half typed when he reaches for Tab.
+	function bench.typed(line, cursor)
+		window.entry:setText(line or "")
+		window.entry:setCursorPos(cursor or #(line or ""))
+	end
+
+	-- Tab, the way the game delivers it: one of the two keys a focused text box
+	-- is handed, straight into onOtherKey.
+	function bench.tab()
+		_G.__now = _G.__now + 100
+		window:onOtherKey(Keyboard.KEY_TAB)
 	end
 
 	-- Type a line at a window that is not the first one.
@@ -2422,6 +2437,153 @@ do
 	bench.enter("halt")
 	bench.frame()
 	eq("the machine is off", bench.object.on, false)
+end
+
+--
+-- Tab: completion, end to end
+--
+-- The engine's half is pinned in os_test. This is the other half: the key the
+-- game delivers, the round trip, and what is in the box and on the glass
+-- afterwards. A completion that is right in the engine and puts the word in the
+-- wrong place in the line is a completion nobody can use.
+--
+
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	-- Two files whose names share a prefix, and one that does not.
+	bench.enter("write notes.txt hi")
+	bench.enter("write note2.txt hi")
+	bench.enter("mkdir work")
+	bench.frame()
+
+	-- One Tab, several names: as far as they agree, and the caret after it.
+	bench.typed("cat no")
+	bench.tab()
+	bench.frame()
+	eq("the word is completed as far as the names agree",
+		bench.window.entry:getInternalText(), "cat note")
+	eq("and the caret is after it", bench.window.entry:getCursorPos(), 8)
+	eq("the window remembers the two names", #bench.window.tabNames, 2)
+	-- Nothing of it reached the machine's screen: Tab is not a command.
+	check("the machine echoed nothing", not bench.heard("cat note"))
+
+	-- The second Tab, on the same word: the names, in columns, like ls.
+	bench.tab()
+	bench.frame()
+	check("the second Tab lists the names", bench.painted("note2.txt"))
+	check("both of them", bench.painted("notes.txt"))
+	check("in one row, the way ls packs them", bench.painted("note2.txt  notes.txt"))
+	-- And the prompt line is under the listing, with the word still in it.
+	check("the prompt is re-drawn under the listing", bench.painted("cat note"))
+	-- The listing is the WINDOW\'s line and never the machine\'s.
+	check("the machine put no listing on its screen",
+		not bench.heard("note2.txt  notes.txt"))
+	eq("and the box is untouched by the listing",
+		bench.window.entry:getInternalText(), "cat note")
+
+	-- One more character and it is unique: the whole name, and a space.
+	bench.typed("cat notes")
+	bench.tab()
+	bench.frame()
+	eq("a unique file completes whole, with a space",
+		bench.window.entry:getInternalText(), "cat notes.txt ")
+	eq("and the caret is past the space", bench.window.entry:getCursorPos(), 14)
+
+	-- A unique directory ends in a slash instead.
+	bench.typed("cd wo")
+	bench.tab()
+	bench.frame()
+	eq("a unique directory completes with a slash",
+		bench.window.entry:getInternalText(), "cd work/")
+
+	-- The first word is a command name.
+	bench.typed("who")
+	bench.tab()
+	bench.frame()
+	eq("the first word completes to a command",
+		bench.window.entry:getInternalText(), "whoami ")
+
+	-- What is to the right of the caret is kept.
+	bench.typed("cat no > out.txt", 6)
+	bench.tab()
+	bench.frame()
+	eq("the rest of the line is kept",
+		bench.window.entry:getInternalText(), "cat note > out.txt")
+	eq("and the caret sits where the word ends", bench.window.entry:getCursorPos(), 8)
+
+	-- Nothing matches: the line is left exactly as it was typed.
+	bench.typed("cat zzz")
+	bench.tab()
+	bench.frame()
+	eq("nothing matched, nothing changed",
+		bench.window.entry:getInternalText(), "cat zzz")
+
+	-- And the line still runs, so nothing the completion did broke it.
+	bench.typed("")
+	bench.enter("cat notes.txt")
+	bench.frame()
+	check("the completed name is a real file", bench.painted("hi"))
+end
+
+-- Where Tab is NOT completion: a question, a running job, and the editor.
+do
+	local bench = newBench()
+
+	-- At the login prompt: nothing goes over the wire and nothing changes.
+	bench.window:askForScreen()
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	eq("the machine is asking for a name", bench.window.mode, "prompt")
+	bench.typed("ad")
+	bench.tab()
+	bench.frame()
+	eq("Tab at a question types nothing", bench.window.entry:getInternalText(), "ad")
+	eq("and the window is not left waiting on an answer", bench.window.busy, false)
+
+	bench.enter("admin")
+	bench.enter("")
+	bench.frame()
+	eq("logged in", bench.window.mode, "shell")
+
+	-- While a job holds the prompt there is no line to complete.
+	bench.enter("sleep 3")
+	bench.frame()
+	eq("a job has the prompt", bench.window.mode, "job")
+	bench.typed("ca")
+	bench.tab()
+	bench.frame()
+	eq("Tab at a running job types nothing", bench.window.entry:getInternalText(), "ca")
+	eq("and does not leave the window waiting", bench.window.busy, false)
+
+	-- The job finishes and the prompt comes back; Tab completes again.
+	_G.__now = _G.__now + 4000
+	bench.tick(2)
+	eq("the prompt is back", bench.window.mode, "shell")
+	bench.typed("who")
+	bench.tab()
+	bench.frame()
+	eq("and Tab completes at it", bench.window.entry:getInternalText(), "whoami ")
+end
+
+-- In the editor Tab is still nano\'s save, and completes nothing.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("edit notes.txt")
+	bench.frame()
+	eq("in the editor", bench.window.mode, "edit")
+
+	bench.window.entry:type("ca")
+	bench.tab()
+	bench.frame()
+	eq("the buffer is what was typed and nothing was completed",
+		bench.window:bufferText(), "ca")
+	-- Tab saved it, which is what Tab has always done in here.
+	local session = { user = "admin", cwd = "/home/admin" }
+	local node = CeroSecOS.getNode(bench.object:osState(), session, "/home/admin/notes.txt")
+	check("Tab wrote the file", node ~= nil and node.data == "ca")
 end
 
 print("window_test: " .. count .. " checks passed")

@@ -133,6 +133,8 @@ end
 --                                      command asked for. The console knows
 --                                      which, and the client never has to.
 --   exec     { line }
+--   complete { line, cursor }       -- Tab: what the word at the cursor may
+--                                      become. Changes nothing on the machine.
 --   histtail {}                     -- the history of whoever is logged in now
 --   editbuf  { text }               -- the buffer as it stands, no file touched
 --   editsave { text }               -- the buffer, and write it
@@ -149,6 +151,16 @@ end
 --             active, edit }
 --   closed  { x, y, z, token, reason }
 --   history { x, y, z, token, lines }
+--   completed { x, y, z, token, line, at, start, replacement, cursor,
+--             candidates }
+--
+-- 'completed' is the one answer that is not a screen, and it is addressed to
+-- ONE window: the word a player is halfway through typing is his own and is on
+-- nobody else's glass. line and at are the line and the cursor it was worked
+-- out against, so a window that has typed on in the meantime can drop it;
+-- start..at is what replacement takes the place of, cursor is where the caret
+-- lands, and candidates is every name that matched -- sorted, for the listing a
+-- second Tab prints.
 --
 -- There is one answer for everything that happens on a screen, and it is the
 -- whole screen. The server owns the console, so the client has nothing to
@@ -994,6 +1006,53 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	end
 
 	self:startPrompt(luaObject, console, line, playerObj, token)
+end
+
+-- Tab at the prompt. The window asks, the machine answers, and the answer is
+-- one word: this is the only client command that changes nothing at all -- no
+-- line is echoed, no history is written, no job is made, and the screen is not
+-- pushed to anybody. A player pressing Tab is a player who has typed nothing
+-- yet.
+--
+-- Which word, and what it may become, is the engine's (CeroSecOSComplete.lua),
+-- so the server does exactly two things around it: it mounts /dev, because a
+-- device is a file on this machine and `cat /dev/li` must find it; and it sends
+-- back the line it answered ABOUT, so a window that has typed on since can tell
+-- the answer is no longer about what it is holding.
+Commands.complete = function(self, playerObj, x, y, z, token, args)
+	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not luaObject then return end
+
+	-- Nothing is completed at a question, in the editor, or while a job holds
+	-- the prompt: there is no command line being typed to complete. The screen
+	-- goes back so the window stops waiting on an answer it will not get.
+	if CeroSec.consoleWaiting(console) ~= "shell" then
+		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	local line = args.line
+	if type(line) ~= "string" then line = "" end
+	if #line > CeroSec.INPUT_MAX then line = string.sub(line, 1, CeroSec.INPUT_MAX) end
+	local at = args.cursor
+	if type(at) ~= "number" then at = #line end
+	at = math.floor(at)
+	if at < 0 then at = 0 end
+	if at > #line then at = #line end
+
+	local env = self:execEnv(luaObject, state, playerObj, token)
+	CeroSecOS.mountDev(state, env)
+	local done = CeroSecOS.complete(state, self:sessionOf(console), line, at)
+	CeroSecOS.unmountDev(state, env)
+
+	local cursor = at
+	if done.replacement ~= nil then cursor = done.start - 1 + #done.replacement end
+	self:reply(playerObj, "completed", {
+		x = luaObject.x, y = luaObject.y, z = luaObject.z, token = token,
+		line = line, at = at,
+		start = done.start, replacement = done.replacement, cursor = cursor,
+		candidates = done.candidates,
+	})
 end
 
 -- The typed line, as a job, and the first pass of it run here and now.

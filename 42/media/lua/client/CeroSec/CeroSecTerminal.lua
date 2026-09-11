@@ -2,6 +2,9 @@ require "ISUI/ISCollapsableWindow"
 require "ISUI/ISTextEntryBox"
 require "TimedActions/ISTimedActionQueue"
 require "CeroSec/CeroSecDefs"
+-- For CeroSecOS.columnize: the listing a second Tab prints is packed exactly the
+-- way `ls` packs a directory, by the engine's own columniser and not a copy.
+require "CeroSec/OS/CeroSecOSShell"
 require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecTypeAction"
 
@@ -173,6 +176,12 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.history = {}
 	o.historyIndex = 0
 	o.historyUser = nil
+	-- What the last Tab made of the line, so a second Tab on the same word
+	-- knows it is the second: the line and the cursor the machine's answer left
+	-- behind, and the names it said matched.
+	o.tabLine = nil
+	o.tabCursor = nil
+	o.tabNames = nil
 	o.screenUser = nil
 	o.scroll = 0
 	o.mode = "prompt"
@@ -304,6 +313,8 @@ function CeroSecTerminal:onServerCommand(command, args)
 		self:showScreen(args, false)
 	elseif command == "highlight" then
 		self:startHighlight(args)
+	elseif command == "completed" then
+		self:onCompleted(args)
 	elseif command == "history" then
 		-- The account's own lines, as the machine holds them (~/.sh_history).
 		-- Up and Down walk THESE: the window remembers nothing of its own any
@@ -445,9 +456,10 @@ end
 -- The screen
 --
 
--- A line the window says on its own account. There is exactly one of those --
--- the answer that never came -- and it is gone the moment the server describes
--- the screen again, which is the right lifetime for it.
+-- A line the window says on its own account. There are two of those -- the
+-- answer that never came, and the listing a second Tab prints -- and both are
+-- gone the moment the server describes the screen again, which is the right
+-- lifetime for either: neither is something the machine put on its screen.
 function CeroSecTerminal:say(text)
 	-- Never written into self.screen: that table is the server's word.
 	local shown = {}
@@ -474,6 +486,7 @@ function CeroSecTerminal:setMode(mode)
 		self.entry:setText("")
 		self.historyIndex = 0
 		self.editPrev = nil
+		self.tabLine, self.tabCursor, self.tabNames = nil, nil, nil
 	end
 	self:configureEntry()
 	self:layoutEntry()
@@ -759,6 +772,7 @@ function CeroSecTerminal:onCommandEntered()
 	local text = self.entry:getInternalText() or ""
 	self.entry:setText("")
 	self.historyIndex = 0
+	self.tabLine, self.tabCursor, self.tabNames = nil, nil, nil
 	self:onKeystroke("CeroSecKeyEnter")
 
 	if self.mode == "prompt" then
@@ -1039,7 +1053,89 @@ function CeroSecTerminal:onHistory(delta)
 	self.entry:setText(text)
 end
 
--- Escape and nothing else: the game hands a focused text box exactly two keys,
+--
+-- Tab: completion
+--
+-- Tab is one of exactly two keys the game hands a focused text box, and in the
+-- shell it is free -- the editor's Tab is nano's ^O and is not touched. What the
+-- word may become is the machine's word and never this window's: the line and
+-- the cursor go over, the answer comes back, and nothing is guessed here.
+--
+-- Two presses, the way ksh has answered since the eighties. The first completes
+-- as far as the names agree; the second, on the same word and with several names
+-- to choose from, prints them in columns. The prompt row is drawn under the
+-- screen in this window, so a listing pushed onto the screen leaves the prompt
+-- and the half-typed line right below it -- which is the third row ksh draws.
+--
+
+function CeroSecTerminal:onTab()
+	-- Only at a shell prompt: a question, a password, a running job and the
+	-- editor have no command line being typed at them. Busy is the answer that
+	-- has not come back yet, and revealing is a machine still counting memory.
+	if self.mode ~= "shell" then return end
+	if self.busy or self.revealing then return end
+
+	local text = self.entry:getInternalText() or ""
+	local cursor = self.entry:getCursorPos() or 0
+	if cursor < 0 then cursor = 0 end
+	if cursor > #text then cursor = #text end
+
+	-- The second press: the same word, still several names. Answered here from
+	-- what the machine already said, so a listing costs no round trip.
+	if self.tabLine == text and self.tabCursor == cursor
+			and self.tabNames ~= nil and #self.tabNames > 1 then
+		self:listCompletions(self.tabNames)
+		return
+	end
+
+	self.tabLine, self.tabCursor, self.tabNames = nil, nil, nil
+	self:onKeystroke()
+	self:setBusy()
+	self:send("complete", { line = text, cursor = cursor })
+end
+
+-- What the machine made of the word. Applied only when the box still holds the
+-- line the answer is about: a player who kept typing while it was in the air
+-- must not have an older word put back under his fingers.
+function CeroSecTerminal:onCompleted(args)
+	self.busy = false
+	if self.mode ~= "shell" then return end
+
+	local text = self.entry:getInternalText() or ""
+	local at = args.at
+	if args.line ~= text or type(at) ~= "number" or at ~= self.entry:getCursorPos() then
+		return
+	end
+
+	if type(args.replacement) == "string" and type(args.start) == "number" then
+		-- The word to the left of the cursor is replaced and the rest of the
+		-- line is kept, exactly as an insertion at the caret would leave it.
+		local head = string.sub(text, 1, args.start - 1)
+		local tail = string.sub(text, at + 1)
+		local whole = head .. args.replacement .. tail
+		-- setText does not go through the box's own length ceiling, so the one
+		-- thing that could carry a line past it is checked here.
+		if #whole <= CeroSec.INPUT_MAX then
+			self.entry:setText(whole)
+			self:setCursor(args.cursor)
+		end
+	end
+
+	self.tabLine = self.entry:getInternalText() or ""
+	self.tabCursor = self.entry:getCursorPos() or 0
+	self.tabNames = args.candidates
+	if type(self.tabNames) ~= "table" then self.tabNames = {} end
+end
+
+-- The names, in columns, the way `ls` packs them on a sixty column screen --
+-- the engine's own columniser, so a listing is laid out exactly as a directory
+-- listing is.
+function CeroSecTerminal:listCompletions(names)
+	local lines = CeroSecOS.columnize(names, CeroSec.COLS)
+	for i = 1, #lines do self:say(lines[i]) end
+end
+
+-- Escape and Tab: the game hands a focused text box exactly two keys,
 -- Escape (1) and Tab (15), and dispatches every other key to a method of its
 -- own (Core.updateKeyboardAux in the shipped build). PageUp and PageDown never
 -- arrive, and cannot be polled for either -- isKeyPressed and isShiftKeyDown
@@ -1052,6 +1148,13 @@ function CeroSecTerminal:onOtherKey(key)
 	if self:editing() then
 		if key == Keyboard.KEY_ESCAPE then self:editKey("escape") end
 		if key == Keyboard.KEY_TAB then self:editKey("tab") end
+		return
+	end
+	-- Outside the editor Tab is completion, and only at a shell prompt: onTab
+	-- is what decides that, so there is one place that knows when a word may be
+	-- completed.
+	if key == Keyboard.KEY_TAB then
+		self:onTab()
 		return
 	end
 	if key ~= Keyboard.KEY_ESCAPE then return end
