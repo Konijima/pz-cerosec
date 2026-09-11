@@ -262,6 +262,8 @@ CeroSecOS.COMMAND_INFO = {
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
+	jobs     = { desc = "list the machine's jobs", usage = "jobs" },
+	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
 	ls       = { desc = "list a directory", usage = "ls [-lF] [path]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
@@ -270,12 +272,15 @@ CeroSecOS.COMMAND_INFO = {
 	pwd      = { desc = "print the working directory", usage = "pwd" },
 	reboot   = { desc = "restart the machine", usage = "reboot" },
 	restart  = { desc = "restart the machine", usage = "restart" },
+	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
+	sh       = { desc = "run a script", usage = "sh <file> [args]" },
 	shutdown = { desc = "switch the machine off", usage = "shutdown" },
 	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
 	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] <file>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	wait     = { desc = "wait for the background jobs", usage = "wait [id]..." },
 	wc       = { desc = "count lines, words and bytes", usage = "wc <file>..." },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
@@ -1390,10 +1395,22 @@ end
 -- command that is not in /bin is not found for root either.
 local function sudoRun(state, session, args, from, env)
 	local name = args[from]
+	local sub = rootSessionFrom(session)
+
+	-- A path is a script here too, so `sudo ./setup` is the same thing as
+	-- `./setup` with root's own permissions on the file.
+	if string.find(name, "/", 1, true) ~= nil then
+		local rest = {}
+		for i = from + 1, #args do rest[#rest + 1] = args[i] end
+		local own = {}
+		for i = from, #args do own[#own + 1] = args[i] end
+		return CeroSecOS.startScript(state, sub, name, name, rest,
+			table.concat(own, " "), env, true)
+	end
+
 	local fn = commands[name]
 	if fn == nil then return false, { name .. ": command not found" } end
 
-	local sub = rootSessionFrom(session)
 	if not CeroSecOS.BUILTINS[name] then
 		local refusal = CeroSecOS.whyNotRun(state, sub, name)
 		if refusal ~= nil then return false, { name .. ": " .. refusal } end
@@ -1799,6 +1816,36 @@ local function redirectToDevice(state, session, path, text, env)
 	return true, {}
 end
 
+-- A trailing "&", outside quotes: the line runs in the background. Everything
+-- a background line can be is a job (a script), and everything else finishes
+-- before the ampersand could have meant anything -- so this strips it and says
+-- so, and the caller applies it to the job if a job came of the line.
+--
+-- Written here rather than in the script parser because the prompt is not a
+-- script: one line, one command, and the language of chapter 15 lives inside a
+-- file. `&&` is not an ampersand at the end of a line and is left alone.
+function CeroSecOS.splitBackground(line)
+	local i, n = 1, #line
+	local quote, last = nil, nil
+	while i <= n do
+		local c = string.sub(line, i, i)
+		if quote ~= nil then
+			if c == quote then quote = nil
+			elseif c == "\\" and quote == "\"" then i = i + 1 end
+		elseif c == "'" or c == "\"" then
+			quote = c
+		elseif c == "\\" then
+			i = i + 1
+		elseif c ~= " " and c ~= "\t" then
+			last = i
+		end
+		i = i + 1
+	end
+	if last == nil or string.sub(line, last, last) ~= "&" then return line, false end
+	if last > 1 and string.sub(line, last - 1, last - 1) == "&" then return line, false end
+	return string.sub(line, 1, last - 1), true
+end
+
 local execLine
 
 function CeroSecOS.exec(state, session, line, env)
@@ -1818,9 +1865,21 @@ execLine = function(state, session, line, env)
 	end
 	if type(line) ~= "string" then return false, { "syntax error" } end
 
-	local args, redirect, reason = CeroSecOS.parseLine(line)
+	local bare, bg = CeroSecOS.splitBackground(line)
+	local args, redirect, reason = CeroSecOS.parseLine(bare)
 	if args == nil then return false, CeroSecOS.fit({ reason }) end
 
+	local ok, lines, control, data = CeroSecOS.runArgs(state, session, args, redirect, env)
+	-- A line that ended in "&" and produced a job says so in the order, and the
+	-- machine is what decides what to do about it.
+	if bg and control == "job" and type(data) == "table" then data.bg = true end
+	return ok, lines, control, data
+end
+
+-- One command, already split into words. The shell's own entry point above
+-- calls it, and so does a script: the two must run a command the same way or
+-- `ls` in a file is not the `ls` at the prompt.
+function CeroSecOS.runArgs(state, session, args, redirect, env)
 	-- The tilde is the shell's, not the filesystem's: it is expanded here, once,
 	-- before any command is handed its arguments, so `cd ~`, `ls ~`, `cat
 	-- ~/notes.txt` and `echo hi > ~/notes.txt` all work and no command has to
@@ -1846,6 +1905,20 @@ execLine = function(state, session, line, env)
 	end
 
 	local name = args[1]
+
+	-- A name with a slash in it is a PATH and never a command in /bin: ./backup
+	-- and /home/admin/backup are the file itself, run because it carries x for
+	-- whoever typed it. There is still no PATH on this machine -- a bare name
+	-- is /bin/<name> and nothing else -- which is why this is the only door a
+	-- file outside /bin has.
+	if string.find(name, "/", 1, true) ~= nil then
+		local rest = {}
+		for i = 2, #args do rest[#rest + 1] = args[i] end
+		local ok, lines, control, data = CeroSecOS.startScript(state, session, name, name,
+			rest, table.concat(args, " "), env, true)
+		return ok, CeroSecOS.fit(lines), control, data
+	end
+
 	local fn = commands[name]
 	if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 	if not CeroSecOS.BUILTINS[name] then
@@ -1860,7 +1933,9 @@ execLine = function(state, session, line, env)
 	-- the screen, as they would on stderr. A command that has not finished --
 	-- one that asks, or one that opens the editor -- has no output to redirect
 	-- yet, so the redirection never applies to it.
-	local redirectable = control ~= "prompt" and control ~= "edit"
+	-- "job" joins them: a script that has just been handed to the machine has
+	-- printed nothing yet, and its output goes to the screen as it is made.
+	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
 	if ok and redirect ~= nil and redirectable then
 		local text = table.concat(lines, "\n")
 		-- ">" and ">>" are the same order to a device: it has no contents to

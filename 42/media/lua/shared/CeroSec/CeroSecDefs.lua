@@ -347,6 +347,46 @@ end
 -- this one is written to gos_cerosec.bin for every computer in Knox County.
 CeroSec.CONSOLE_MAX = 100
 
+--
+-- The scheduler's numbers
+--
+-- What a running script may cost the server. They are here, beside the console
+-- and away from the engine, because they are about THIS GAME and not about the
+-- language: the engine is handed a budget and honours it, and these four
+-- numbers are what a Project Zomboid server can afford to hand it.
+--
+-- One pass is worth STEP_BUDGET_PER_TICK steps, shared round-robin across every
+-- machine with a job on it, and no one machine takes more than
+-- STEP_BUDGET_PER_MACHINE of them. At ten passes a second that is two thousand
+-- simple commands a second for the whole county and two hundred for any one
+-- computer -- enough that a script feels immediate, small enough that four
+-- hundred of them could not add up to a frame.
+--
+-- Nothing here was measured in the game: it is a design, and the bench that
+-- holds it up (tests/hostile_test.lua) measures the cost of a pass headless and
+-- pins it. A number moved after a real server has been watched is a number
+-- moved with a measurement beside it.
+CeroSec.STEP_BUDGET_PER_TICK = 2000
+CeroSec.STEP_BUDGET_PER_MACHINE = 200
+
+-- How often the scheduler runs, in milliseconds. Ten passes a second, on
+-- Events.OnTick gated by getTimestampMs -- vanilla's own way of getting under a
+-- minute on a server.
+CeroSec.JOB_PASS_MS = 100
+
+-- Lines one machine may put on its screen in a second. Beyond it a job is
+-- paused until the window comes round, so `while true; do echo x; done` is a
+-- slow trickle and never a flood -- neither of the network nor of the hundred
+-- lines the screen keeps.
+CeroSec.JOB_OUT_PER_SEC = 20
+
+-- How long a job may hold the processor with no wait in it before the machine
+-- takes it away, in seconds of wall clock. A sandbox option would be the
+-- natural home for this one day; today it is a constant, on purpose -- a server
+-- owner who wants a different number should be given a setting and not asked to
+-- edit a file.
+CeroSec.JOB_CPU_LIMIT_S = 300
+
 -- How deep the su stack a console carries may go. The same number the core
 -- enforces (CeroSecOS.SU_MAX), named again here because the terminal never
 -- loads the core -- os_test pins the two against each other so they cannot
@@ -435,6 +475,11 @@ function CeroSec.consoleLogout(console)
 	console.user = nil
 	console.cwd = nil
 	console.pending = nil
+	-- The note of a foreground job. The job itself is the scheduler's and is
+	-- killed with the machine, never by a logout -- this is only the console's
+	-- memory of whose prompt it is.
+	console.job = nil
+	console.status = nil
 	-- Who the glass would have come back to through su, with it: an account
 	-- logs out of the machine and not out of its own last switch.
 	console.stack = nil
@@ -459,6 +504,10 @@ function CeroSec.consoleWaiting(console)
 	if console.halted then return "halted" end
 	if console.edit ~= nil then return "edit" end
 	if console.prompt ~= nil then return "prompt" end
+	-- A foreground job holds the prompt. It comes after "prompt" on purpose: a
+	-- script that has asked something is a question first and a running job
+	-- second, and the window has to draw the question.
+	if console.job ~= nil then return "job" end
 	if console.pending ~= nil then return "password" end
 	if console.user == nil then return "login" end
 	return "shell"
@@ -471,6 +520,9 @@ function CeroSec.consoleMode(console)
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "edit" then return "edit" end
 	if waiting == "shell" then return "shell" end
+	-- "job": the machine is busy with a script. The window draws no input line
+	-- at all -- there is nothing to type at -- and Escape is a ^C.
+	if waiting == "job" then return "job" end
 	-- "halted" included: the window keeps the keyboard, because pressing a key
 	-- at a halted machine is what brings the BIOS' question back.
 	return "prompt"
@@ -501,6 +553,8 @@ function CeroSec.consoleActive(console)
 		if type(cont) == "table" and cont.cmd == "bios" then return false end
 		return true
 	end
+	-- A running script is the plainest thing there is to interrupt.
+	if console.job ~= nil then return true end
 	if console.pending ~= nil then return true end
 	return false
 end
@@ -511,6 +565,9 @@ function CeroSec.consolePrompt(console, hostname, admin, home)
 	local waiting = CeroSec.consoleWaiting(console)
 	if waiting == "edit" then return "" end
 	if waiting == "halted" then return "" end
+	-- Nothing under a running script: the line a player would type at is the
+	-- job's, and the job is not listening.
+	if waiting == "job" then return "" end
 	if waiting == "prompt" then
 		local text = console.prompt.text
 		if type(text) ~= "string" then return "" end
@@ -569,8 +626,14 @@ function CeroSec.repairConsole(console)
 	-- A half-answered prompt is kept only when all three of its parts are still
 	-- there. The token is the core's and is opaque here; a table is as far as
 	-- this can check it, and CeroSecOS.continue refuses what is not one.
+	--
+	-- A question a JOB asked is the one exception, and it is dropped: jobs are
+	-- runtime state and a reload has none, so a token naming one names nothing.
+	-- This is also where console.job goes: it is not copied at all, so a
+	-- machine that comes back from a save comes back at its prompt.
 	local prompt = console.prompt
-	if type(prompt) == "table" and type(prompt.text) == "string" and type(prompt.cont) == "table" then
+	if type(prompt) == "table" and type(prompt.text) == "string" and type(prompt.cont) == "table"
+			and prompt.cont.cmd ~= "job" then
 		out.prompt = { text = prompt.text, mask = prompt.mask and true or false, cont = prompt.cont }
 	end
 	-- An open buffer, likewise: a path and a text, or nothing at all.
