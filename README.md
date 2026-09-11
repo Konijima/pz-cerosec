@@ -17,11 +17,11 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`[ adduser cat cd chgrp chmod chown clear cp date deluser dev df echo
-  edit exit false gpasswd grep groupadd groupdel groups halt hash head help
-  hostname id jobs kill ls man mkdir mv passwd printf ps pwd reboot restart rm sh
-  shutdown sleep su sudo tail test touch true wait wc whoami write`), an editor,
-  and salted-hashed passwords.
+  shell (`[ adduser cat cd chgrp chmod chown clear cp crontab date deluser dev df
+  echo edit exit false fg gpasswd grep groupadd groupdel groups halt hash head
+  help hostname id jobs kill ls mail man mkdir mv passwd printf ps pwd reboot
+  restart rm sh shutdown sleep sort su sudo tail test touch true uniq wait wc
+  whoami write`), an editor, and salted-hashed passwords.
 - One shell, at the prompt and in a file alike: every typed line is parsed by the
   script engine and runs as a job, so `&&`, `if`, `for`, `while`, `$(...)`, `$((...))`
   and a trailing `&` all work where you type them. Variables and `$?` persist with
@@ -54,12 +54,34 @@ Done:
   background jobs -- run by a step machine on a budget, so an endless loop makes
   one machine slow at one thing and costs the server nothing. `ps`, `jobs`, `kill`
   and `wait` to see and stop them; Escape is `^C`.
+- Pipes: `a | b | c`, with every stage a subshell of its own -- so `echo hi | read
+  x` sets nothing outside it, exactly as it sets nothing on any other Unix. A pipe
+  holds a hundred lines and four kilobytes and the writer stops until the reader
+  has drained it; a reader that closes ends the writer with 141, so
+  `while true; do echo y; done | head -n 1` is over at once. `cat`, `grep`, `head`,
+  `tail`, `wc` and the two new ones, `sort [-r] [-n]` and `uniq [-c]`, read the
+  pipe when they are given no file.
+- cron: a crontab per account under `/var/spool/cron`, Vixie's five fields with
+  lists, ranges and steps, `@reboot` and the rest, reached only through `crontab
+  -e|-l|-r` -- and refused where he refuses it, `"/var/spool/cron/admin":1: bad
+  minute`. A pass on the game's own minute hand runs what is due as a background
+  job of that account, under the four-job ceiling like everything else. Nothing is
+  run late and nothing twice: a minute the machine was dark or unloaded for is a
+  minute that is gone. What a job prints goes to `/var/mail/<user>` and never to a
+  screen nobody is at; `mail` shows it and empties it; `/var/log/cron` says what
+  ran. Both files are bounded and cost no disk.
+- Job control, as much of it as a machine with no `^Z` has: `fg [%n|id]` brings a
+  background job to the front, where its output goes on the glass and Escape is its
+  `^C`. There is no `bg`, because nothing here suspends a job.
+- Waiting on a device is a loop and not a command, the way it has always been in
+  Unix: `while [ "$(cat /dev/door0)" = closed ]; do sleep 5; done`. A sleeping job
+  is off the processor entirely, so that costs one turn every five seconds and can
+  wait for days.
 - The manual: a printed book that spawns where computers do, read by the player in
   a two-page reader with a table of contents, and remembering the page it was left
   on.
 
-Next: `cron`, `wait` on a device, pipes and `fg`; networking machines together to
-automate doors, locks and lights.
+Next: networking machines together to automate doors, locks and lights.
 
 ## For players
 
@@ -191,10 +213,10 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 
 Two kinds of word are **not** files, and could not be. The reserved words
 (`if then elif else fi for while until do done`) are grammar. The shell's own words
-(`cd exit jobs wait read shift break continue history`) change the shell itself or
-own what it started, which no separate program could do — `cd` cannot be a file in
-Unix and is not one here. The four of them that carry a description and a usage line
-(`cd`, `exit`, `jobs`, `wait`) keep both, so `help` lists them and `man cd` answers;
+(`cd exit fg jobs wait read shift break continue history`) change the shell itself
+or own what it started, which no separate program could do — `cd` cannot be a file in
+Unix and is not one here. The five of them that carry a description and a usage line
+(`cd`, `exit`, `fg`, `jobs`, `wait`) keep both, so `help` lists them and `man cd` answers;
 what they do not have is an executable to find, to delete or to `chmod`. `help` is
 the one command with a file that is run without it, so that a player who has just
 wiped the machine he is standing at can still ask what happened — and `exit`, being a
@@ -531,6 +553,120 @@ scrolls out rather than appearing whole. A job that spins for five minutes with 
 meets a ceiling and stops with a line naming it. Jobs are not saved: switching off,
 rebooting, picking the computer up or reloading the world leaves it running nothing.
 
+### Pipes, cron and job control
+
+**A pipe joins two commands.** `a | b` runs both at once: what `a` prints is what
+`b` reads.
+
+    admin@ksp-04-11:~$ cat /etc/group | grep sudo
+    sudo:admin
+    admin@ksp-04-11:~$ ls /bin | wc
+        55     55    323
+    admin@ksp-04-11:~$ cat log | sort | uniq -c
+
+Seven commands read the pipe, and only when they were given **no file**: `cat`,
+`grep`, `head`, `tail`, `wc`, and the two this wave added — `sort [-r] [-n]` and
+`uniq [-c]`. A file named on the line always wins. There is no standard input
+anywhere else on the machine: there is no keyboard behind a command, so one of those
+seven with neither a file nor a pipe prints its usage line.
+
+Every stage is a **subshell** — its own variables, its own working directory — so
+what a stage changes is gone when the pipeline is over. That is the quirk everybody
+meets once: `echo hi | read x` really does read the pipe, in the subshell whose `x`
+died with it, so `echo $x` after it prints nothing. Every shell behaves this way;
+`x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
+stage's status, and `|` works inside `$(...)`.
+
+A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
+full is back-pressure and not an error: the writer simply does not run again until
+the reader has drained it, exactly as a job that has filled the screen does not.
+A reader that stops reading kills the writer with **141** — `SIGPIPE`, as `sh`
+reports it — so the flood in front of a `head` ends at once:
+
+    admin@ksp-04-11:~$ while true; do echo y; done | head -n 1
+    y
+
+`sort` and `tail` cannot answer before the end of their input, so they keep what
+they have read; that too is bounded by a pipe's own hundred lines and four
+kilobytes, and past it they stop with `input too large` and close the pipe. `wc` and
+`uniq` keep nothing and will count a pipe that never ends for as long as it runs. A
+pipeline may be eight commands long.
+
+**cron** is the machine doing something with nobody standing at it. Each account has
+a crontab — five fields and a command — and once a game minute the machine runs the
+lines that are due.
+
+    admin@ksp-04-11:~$ crontab -e
+    0 4 * * * echo off > /dev/light0
+    */15 * * * * cat /dev/door0 >> log
+    @reboot echo the machine is up
+
+It is Vixie's cron: `*`, lists, ranges and steps (`*/15`, `8-17`), minutes 0-59,
+hours 0-23, days 1-31, months 1-12, weekdays 0-6 from Sunday (and 7), the
+shorthands `@reboot @hourly @daily @midnight @weekly @monthly @yearly`, and his rule
+for the two day fields: with both of them restricted, **either** matching is enough.
+Names for months and weekdays are not accepted — write the numbers. 32 lines to a
+crontab.
+
+The file is `/var/spool/cron/<user>`, root's and `600`, in a directory that is
+root's and `700`: `crontab -l`, `crontab -e` and `crontab -r` are the only way in,
+which is what keeps one account from writing a line that runs as another. A file
+that will not parse is refused whole when you save it, where Vixie refuses it and in
+his words:
+
+    Cannot save: "/var/spool/cron/admin":1: bad minute
+
+**What cron will not do.** It does not catch up: a machine that was switched off at
+four in the morning, or whose part of the world nobody was near, does not run four
+o'clock's line when it comes back. A minute cron slept through is a minute that is
+gone — real cron does not go back for one either, which is what `anacron` was
+written for, and there is no `anacron` here. And it does not get more than its
+share: a machine runs four jobs at once and no more, cron's included, so a line that
+comes due with the machine full is **skipped** and the log says so in cron's own
+words, `(CRON) error (can't fork)`.
+
+What a cron job **prints** never reaches the screen — there is nobody at the screen
+at four in the morning. It is mailed to the account, with the `From` and `Subject`
+lines a mailbox has always carried, and `mail` shows it and empties it:
+
+    admin@ksp-04-11:~$ mail
+    From cron  Thu Jul  8 04:00:00 1993
+    Subject: Cron <admin@ksp-04-11> echo tick
+    tick
+
+`/var/log/cron` (root's, `640`) says what ran, and what could not. Both it and the
+mailboxes are bounded by lines and by bytes and are exempt from the 32 KB by their
+path, the same way `~/.sh_history` is — a machine must not fill its own disk with
+what it said about itself while nobody was looking.
+
+**Waiting on a device** is a loop, not a command. Unix has never had a "wait until
+this happens", and this machine does not invent one:
+
+    while [ "$(cat /dev/door0)" = closed ]; do
+        sleep 5
+    done
+    echo on > /dev/light0
+
+A sleeping job is off the processor entirely — it is not spending its five minutes
+and it can wait for days — so that asks the machine for one turn every five seconds
+and nothing in between. The same loop without the `sleep` is the one thing not to
+write: it takes every step the machine will give it and gets nothing done any
+sooner. `sleep` takes whole seconds, as it does everywhere.
+
+**`fg`** brings a background job back to the front:
+
+    admin@ksp-04-11:~$ sh watch.sh &
+    [1] 43
+    admin@ksp-04-11:~$ fg %1
+    sh watch.sh &
+
+`fg %1` names the slot `jobs` prints, `fg 43` the id `ps` prints, and `fg` on its
+own is the job started last. What it changes is where the output goes and who
+Escape belongs to. There is no `bg` and nothing to use it for: nothing on this
+machine suspends a job, so the only direction one can be moved in is forwards. A
+cron job is not one of these — the shell did not start it, `jobs` does not list it
+and `fg` will not have it, though `ps` shows it.
+
 ### Finding the manual
 
 **CeroSec OS User's Manual** is a printed book, and it is the documentation for
@@ -755,6 +891,60 @@ reload forgets jobs, `CeroSec.repairConsole` drops the console's note of a
 foreground one, and a machine that comes back from a save comes back at its prompt.
 Reboot, shutdown, a room that lost its power and a computer picked up all kill
 everything.
+
+#### Pipelines: a shell per stage
+
+A pipeline is one job with several shells inside it. `pushNode` turns a `pipe` node
+into a frame holding an array of **stages** — each one a job table of its own, built
+by `newJob` with a copy of the pipeline's variables and session, which is exactly
+what a subshell is — and an array of buffers, one per stage:
+
+    { k = "pipe", stages = { <job>, <job> },
+      pipes = { { lines = {}, bytes = 0, eof = false, closed = false }, ... } }
+
+`pipeStep` is one turn of it. It drains the last stage's buffer into the job that
+owns the pipeline (so a pipeline inside `$(...)` is caught by the capture like
+anything else), marks `eof` behind a stage that has finished and `closed` in front of
+one, and then steps the **rightmost stage that can run**. A stage that cannot is one
+waiting for a line that is not there (`blocked = "input"`) or one whose buffer is
+full — and reading right to left is where the back-pressure comes from: the reader
+runs until it has taken everything there is, and only then does the writer get a
+turn. A stage whose reader has gone is killed with `CeroSecOS.SIGPIPE_STATUS` (141).
+When every stage is over the job's status becomes the **last** stage's.
+
+`outLine` is the one door output goes through, and it now has three: a capture, a
+pipe, or the screen. `errLine` is the other half — a stage's *refusals* go to the
+screen and not down the pipe, which is the rule `>` already had ("output goes to the
+file only when the command succeeded").
+
+A command that reads a pipe is handed a reader as a fifth argument
+(`fn(state, session, args, env, stdin)`), and is **run again** until its input is
+exhausted: `stdin.want` says it is reading the pipe, `stdin.carry` is a scratch table
+that survives between calls (what `sort` has sorted so far, what `wc` has counted),
+and `stdin.done` closes the pipe behind it, which is how `head -n 1` ends a flood.
+`job.again` is what keeps its frame on the stack for the next turn.
+
+#### cron: a pass on the minute hand
+
+`CeroSecOSCron.lua` knows what a crontab *means* and nothing about the game:
+`parseCronLine`, `parseCrontab`, `checkCrontab` (the refusal crontab(1) prints),
+`cronDue(entry, parts)` against `CeroSecOS.dateParts`, and the two bounded writes —
+`cronLog` and `mailAppend`. `commands.crontab` and `commands.mail` live there too.
+
+`CeroSecJobs.cronPass(system, luaObject, now)` is the daemon, and there is no process
+for it: `SCeroSecSystem:checkCron()` walks every machine whose chunk is loaded on
+`Events.EveryOneMinute` — the same sweep the power check uses, because the two ask the
+same question of the same list. `luaObject.cron.minute` is the minute it last looked
+at and is **runtime state**, dropped by `turnOff` and not by `killAll`: a machine
+that has only just come into view runs nothing for the minute it arrived in, and a
+minute nobody swept is a minute that is gone. `CeroSecJobs.atBoot` is `@reboot`,
+called from `SCeroSecObject:turnOn`.
+
+A due line becomes an ordinary background job with `job.mailTo` set, which is what
+tells `enrol` this is not the shell's: no slot, nothing on the screen, nothing said
+when it ends, and `jobs` does not list it (`ps` does). Its output is delivered by
+`runMachine` to `/var/mail/<user>` instead of the console, with the `From` and
+`Subject` header written once per job.
 
 The measured cost of a pass, headless under `lua5.1`, is printed by
 `tests/hostile_test.lua` on every run: about 0.6 ms for one machine spinning on
@@ -1006,14 +1196,39 @@ one-line description. The shell resolves `args[1]` as `/bin/<name>` and nothing 
 directory called `/bin/ls`, or a file with no Lua command behind it are all
 `<name>: command not found`; a file without `x` for this user, or a `/bin` he cannot
 read, is `<name>: permission denied`. The words with no file are the shell's own —
-`cd`, `exit`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames` never
-seeds one) and the engine's `read`, `shift`, `break`, `continue`, `history` — plus
+`cd`, `exit`, `fg`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames`
+never seeds one) and the engine's `read`, `shift`, `break`, `continue`, `history` — plus
 `help`, which has a file and is run without it; `CeroSecOS.BUILTINS` is that set and
 is derived from the table, not listed beside it. `SYSTEM_VERSION` 8 **deletes** a
 stale `/bin/cd`, `/bin/exit`, `/bin/jobs` or `/bin/wait` left by an earlier version,
 and only where the file is exactly what was shipped (owner `root`, mode `755`, the
 seeded description); anything else at that name is a player's own file and stays.
 `restoreSystem` never recreates them.
+
+**`/var`** — what the machine writes about itself. Four directories, made by
+`CeroSecOS.ensureVar` for a fresh machine, for an older one being topped up and for
+the BIOS repair alike, and never put back behind a root who deleted them:
+
+- `/var/spool/cron` (`root`, **700**) holds one crontab per account, named after it,
+  each `root` and `600`. Nobody reads or writes his own directly: `crontab` is the
+  only way in, which is real Unix's setuid-root `crontab(1)` and the reason a line
+  can be trusted to run as the account it belongs to. `crontab -e` opens the editor
+  with `user = "root"` and `crontab = true` on the order, and that second flag is
+  what makes `Commands.editsave` judge the buffer with `CeroSecOS.checkCrontab` and
+  refuse it whole.
+- `/var/log/cron` (`root`, `640`) is where a real one would call syslog. Bounded to
+  `CRON_LOG_LINES` (100) and `CRON_LOG_BYTES` (4096), oldest dropped.
+- `/var/mail/<user>` (the account's own, `600`) is a cron job's output. Bounded to
+  `MAIL_LINES` (100) and `MAIL_BYTES` (4096), oldest dropped, with the mbox `From`
+  line and cron's own `Subject` written once per job. `mail` prints it and empties it.
+
+The log and the mailboxes are **exempt from the 32 KB disk quota**, by their path and
+by nothing carried on the node, exactly as `~/.sh_history` is:
+`CeroSecOS.exemptPaths` maps each exempt path to its owner, its own ceiling and its
+*kind*, and the kind is what lets the history's four-file ceiling be asked about
+histories alone. Rename one and it costs the disk from that moment on.
+`CeroSecOS.MAX_EXEMPT_BYTES` is the machine-wide total and is written as the sum of
+the three ceilings it is made of.
 
 **`/etc/passwd`** — the accounts, owner `root`, mode `600`, one a line:
 
@@ -1147,13 +1362,14 @@ only the lines the server answers it with. A filesystem is capped at 256 nodes, 
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
 small.
 
-The state also carries `sysv`, the *contents* it was built with (8 today) as
+The state also carries `sysv`, the *contents* it was built with (9 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
-`SYSTEM_VERSION` 8 seeds `/bin/halt` and the six the engine runs itself but still
+`SYSTEM_VERSION` 9 seeds `/bin/sort`, `/bin/uniq`, `/bin/crontab` and `/bin/mail`,
+and the `/var` tree the last two live on. `SYSTEM_VERSION` 8 seeds `/bin/halt` and the six the engine runs itself but still
 looks up first — `/bin/sleep`, `/bin/printf`, `/bin/test`, `/bin/[`, `/bin/true`,
 `/bin/false` (`/bin/echo` was already there) — and is the one version that takes
 something away: `/bin/cd`, `/bin/exit`, `/bin/jobs` and `/bin/wait`, seeded by every

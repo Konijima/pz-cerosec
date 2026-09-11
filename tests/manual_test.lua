@@ -97,11 +97,11 @@ for ci = 1, #chapters do
 
 	check("chapter " .. ci .. " has pages", type(ch.pages) == "table")
 	local n = #ch.pages
-	-- Raised from 8 to 10 by rung 5b: the error appendix owes the player the
-	-- pipeline's refusals and cron's, and a chapter that is a LIST is the one
-	-- kind that grows by the page rather than by the paragraph.
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..10 pages",
-		n >= 2 and n <= 10)
+	-- Raised from 8 to 11 by rung 5b: the error appendix owes the player the
+	-- pipeline's refusals, cron's and fg's, and a chapter that is a LIST is the
+	-- one kind that grows by the page rather than by the paragraph.
+	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..11 pages",
+		n >= 2 and n <= 11)
 	totalPages = totalPages + n
 
 	for pi = 1, n do

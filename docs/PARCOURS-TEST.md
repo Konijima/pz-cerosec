@@ -692,6 +692,57 @@ en observant le jeu réel, pas par un banc de test.
      dossier où le compte a `x` sans `r` (`chmod 300 secret`), vérifier que Tab
      n'offre rien du tout et n'affiche aucune erreur. [ ]
 
+## L. Tubes, cron et `fg` (palier 5b)
+
+163. Au shell : `ls /bin | wc` puis `ls /bin | grep sort`. La première ligne doit
+     donner trois nombres (lignes, mots, octets) sans nom de fichier derrière,
+     la seconde le seul mot `sort`. Confirmer surtout que rien de l'étage de
+     gauche n'apparaît à l'écran : ce qui traverse le tube n'est pas affiché. [ ]
+164. Écrire un fichier avec `edit fruits` contenant `poire`, `pomme`, `poire`,
+     `figue` (une par ligne), puis taper `cat fruits | sort | uniq -c`. Attendu,
+     dans cet ordre : `      1 figue`, `      1 pomme`, `      2 poire`. Le
+     compte est cadré sur sept colonnes. [ ]
+165. `while true; do echo y; done | head -n 1` : une seule ligne `y` doit
+     apparaître, l'invite doit revenir tout de suite, et `ps` juste après ne
+     doit montrer que le shell. C'est le SIGPIPE : le lecteur ferme, l'écrivain
+     meurt. Noter le temps que ça prend vraiment en jeu (ça doit être
+     instantané). [ ]
+166. `echo bonjour | read x` puis `echo $x` : la deuxième ligne doit être vide.
+     Chaque étage d'un tube est un sous-shell, donc la variable meurt avec lui.
+     Puis `x=$(echo bonjour)` et `echo $x` → `bonjour`. Dire si le premier
+     résultat surprend. [ ]
+167. `crontab -l` → `no crontab for admin`. Puis `crontab -e`, écrire
+     `60 * * * * echo test` et sauver avec Tab : l'écran doit répondre
+     `Cannot save: "/var/spool/cron/admin":1: bad minute` et **rien** ne doit
+     être installé (Échap, puis `crontab -l` doit encore dire `no crontab`). [ ]
+168. `crontab -e`, écrire `* * * * * echo tic`, sauver, Échap. Attendre deux
+     minutes de jeu (l'horloge du jeu, pas la vraie), puis `mail` : on doit voir
+     la ligne `From cron`, une ligne `Subject: Cron <admin@...> echo tic` et
+     `tic`. Refaire `mail` → `No mail for admin`. Confirmer surtout qu'aucun
+     `tic` n'est jamais apparu tout seul à l'écran entre-temps. [ ]
+169. À l'étape 168, `sudo cat /var/log/cron` doit montrer une ligne par minute
+     écoulée, de la forme `Jul  8 04:01 (admin) CMD (echo tic)`, et jamais plus
+     d'une par minute. Puis `cat /var/log/cron` sans sudo → `permission denied`.
+     Enfin `df` : le disque ne doit pas avoir bougé à cause du journal ni du
+     courrier. [ ]
+170. Toujours avec `* * * * * echo tic` installé : éteindre l'ordinateur
+     (menu contextuel), attendre cinq minutes de jeu, rallumer. Le courrier ne
+     doit PAS contenir cinq nouveaux `tic` : une minute que cron a dormie est
+     une minute perdue, et rien n'est rattrapé. Noter aussi qu'une ligne
+     `@reboot echo debout` installée avant l'extinction, elle, doit produire un
+     courrier au rallumage. [ ]
+171. Une ligne qui travaille le bâtiment : `crontab -e` avec
+     `* * * * * echo on > /dev/light0` (prendre l'id d'une vraie lumière vu par
+     `dev`), sauver, sortir de la fenêtre du terminal et s'éloigner de deux
+     carrés en regardant l'ampoule. À la minute suivante la lumière doit
+     s'allumer sans que personne n'ait tapé quoi que ce soit. [ ]
+172. `sh watch.sh &` (n'importe quel script qui dort et écrit), puis `jobs`,
+     puis `fg %1` : la ligne de commande doit se réafficher, l'invite doit
+     devenir occupée, et Échap doit tuer le travail (`^C` puis `killed`).
+     Vérifier ensuite que `fg` seul, sans travail en arrière-plan, répond
+     `fg: no current job`. Et pendant que le travail de cron de l'étape 168
+     tourne, `jobs` ne doit pas le lister alors que `ps` le montre. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

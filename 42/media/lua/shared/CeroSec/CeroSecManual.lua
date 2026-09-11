@@ -1254,7 +1254,182 @@ write that loop, and would rather he knew the way out before he did.]],
 
 		} },
 
-		{ title = "15. Appendix: commands and limits", pages = {
+		{ title = "15. Pipes, and things that run themselves", pages = {
+
+[[A pipe joins two commands: what the one on the left prints is what the
+one on the right reads. That is the whole of it, and it is the oldest
+idea in Unix.
+
+  admin@ksp-04-11:~$ cat /etc/group | grep sudo
+  sudo:admin
+  admin@ksp-04-11:~$ ls /bin | wc
+      55     55    323
+
+Three or more join the same way, left to right, and the last one's
+output is what reaches the screen:
+
+  admin@ksp-04-11:~$ cat log | sort | uniq -c
+
+The commands that read a pipe are the ones that read files: cat, grep,
+head, tail, wc, sort and uniq. Each of them reads the pipe only when it
+was given NO file to read -- a file named on the line wins, the way it
+does everywhere. There is no standard input anywhere else on this
+machine: there is no keyboard behind a command, so one of those seven
+with no file and no pipe prints its usage line instead.]],
+
+[[sort prints its input in order. Plain sort compares the bytes, which
+puts 100 before 20 and every capital before every small letter; -n reads
+the number at the front of each line and compares that instead; -r turns
+either of them round.
+
+  admin@ksp-04-11:~$ sort -n sizes
+  admin@ksp-04-11:~$ cat log | sort -r | head -n 3
+
+uniq drops a line that is the same as the one before it, and -c puts the
+count in front of what is left. It compares NEIGHBOURS and nothing else,
+which is why it is nearly always the command after sort:
+
+  admin@ksp-04-11:~$ cat names | sort | uniq -c
+        1 bob
+        3 kate
+
+Neither of them sorts a pipe that never ends: both have to see all of
+their input before they can answer, so what they hold while they wait is
+bounded -- a hundred lines and four kilobytes, which is what a pipe
+itself holds -- and past it they stop and say "input too large".]],
+
+[[Every stage of a pipeline is a SUBSHELL: a shell of its own, with a
+copy of the variables and its own working directory. So anything a stage
+changes is gone when the pipeline is over, and the one that catches
+everybody is read:
+
+  admin@ksp-04-11:~$ echo hello | read x
+  admin@ksp-04-11:~$ echo $x
+
+That prints nothing. read really did read the pipe -- in the subshell,
+whose x died with it. Every shell behaves this way and this one does
+too; the way to keep what came down a pipe is $(...), which does not
+fork: x=$(cat notes | head -n 1).
+
+$? after a pipeline is the LAST stage's status, and nobody else's. And a
+reader that stops reading ends the writer where it stands, so an endless
+loop with a head in front of it is over at once rather than running for
+ever:
+
+  admin@ksp-04-11:~$ while true; do echo y; done | head -n 1
+  y
+
+A pipeline may be up to eight commands long, and works inside $( ) like
+anything else.]],
+
+[[cron is the machine doing something with nobody standing at it. Each
+account has a crontab -- a list of times and commands -- and once a
+minute the machine looks at every line of it and runs the ones that are
+due.
+
+A line is five fields and then a command: minute, hour, day of the
+month, month, day of the week. A field is a star, a number, a list, a
+range, or a range with a step:
+
+  0 4 * * *      four in the morning, every day
+  */15 * * * *   every fifteen minutes
+  0 8-17 * * 1-5 hourly, eight to five, Monday to Friday
+  30 2 1 * *     half past two, the first of the month
+
+Minutes are 0-59, hours 0-23, days 1-31, months 1-12, weekdays 0-6 from
+Sunday (7 is Sunday too). Names are not accepted -- write the numbers. A
+line beginning with # is a comment.
+
+There are shorthands for the usual ones: @hourly, @daily, @midnight,
+@weekly, @monthly, @yearly, and @reboot, which runs when the machine is
+switched on and at no other time.]],
+
+[[crontab is how you reach yours. crontab -l prints it, crontab -e opens
+it in the editor, crontab -r takes it away. The file itself is under
+/var/spool/cron and is out of everybody's reach: crontab is the only way
+in, which is what keeps one account from writing a line that runs as
+another. A line that will not parse is refused when you save it, whole,
+naming the line and the field:
+
+  "/var/spool/cron/admin":1: bad minute
+
+What a cron job PRINTS does not go on the screen -- there is nobody at
+the screen at four in the morning. It is mailed to the account, and mail
+shows it and empties it:
+
+  admin@ksp-04-11:~$ mail
+  From cron  Thu Jul  8 04:00:00 1993
+  Subject: Cron <admin@ksp-04-11> echo tick
+  tick
+
+What ran is written to /var/log/cron, which is root's to read. Both of
+those are bounded and neither costs you disk.]],
+
+[[Two things cron will not do, and both of them are what a real one will
+not do either.
+
+It does not catch up. A machine that was switched off at four in the
+morning, or one whose part of the world nobody was near, does not run
+four o'clock's line when it comes back. A minute cron slept through is a
+minute that is gone. @reboot is the one that runs on the way up, and it
+runs then and not for the minutes that went by.
+
+And it does not get more than its share. A machine runs four jobs at
+once and no more, cron's included: a line that comes due with the
+machine full is SKIPPED, not queued, and the log says so --
+
+  (CRON) error (can't fork)
+
+A crontab holds at most 32 lines. Root may put a file into the spool by
+hand, and a bad line in one is not run: it is logged, once a minute it
+would have been due in, and the good lines around it still run.]],
+
+[[Waiting for a door to open is not a command -- it is a loop. Unix has
+never had a "wait until this happens", and the way it has always been
+written is a poll with a sleep in it:
+
+  while [ "$(cat /dev/door0)" = closed ]; do
+      sleep 5
+  done
+  echo somebody opened the front door > /dev/light0
+
+That costs the machine almost nothing. A sleeping job is off the
+processor entirely -- it is not spending its five minutes, and it can
+wait for days -- so what this asks of the machine is one turn every five
+seconds and nothing at all in between.
+
+The same loop without the sleep is the one thing not to write. It asks
+for every step the machine will give it, for as long as it runs, and
+gets nothing done any sooner. sleep takes whole seconds, as it does
+everywhere: sleep 5, not sleep 0.5.
+
+Started with an & behind it, or from a crontab, this is how a machine
+watches a building while nobody is watching it.]],
+
+[[A job started with an & runs behind the prompt, and fg brings one back
+to the front:
+
+  admin@ksp-04-11:~$ sh watch.sh &
+  [1] 43
+  admin@ksp-04-11:~$ jobs
+  [1] running  sh watch.sh &
+  admin@ksp-04-11:~$ fg %1
+  sh watch.sh &
+
+fg %1 names the slot jobs prints; fg 43 names the id; fg on its own is
+the one started last. What it changes is where the job's output goes and
+who Escape belongs to: a job in front of you writes on the glass as it
+writes, and Escape is its ^C.
+
+There is no bg, and there is nothing to use it for: nothing on this
+machine suspends a job, so the only direction one can be moved in is
+forwards. A cron job is not one of these at all -- the shell did not
+start it, jobs does not list it, and fg will not have it. ps shows it,
+because ps shows what the machine is running.]],
+
+		} },
+
+		{ title = "16. Appendix: commands and limits", pages = {
 
 -- The one page with a "]]" inside it -- dev's usage line ends in two closing
 -- brackets -- so it is the one page written with a level-one long bracket.
@@ -1391,7 +1566,7 @@ cp and edit do not.]],
 
 		} },
 
-		{ title = "16. Appendix: what the machine says", pages = {
+		{ title = "17. Appendix: what the machine says", pages = {
 
 [[Every command signs its own errors with its own name first, then the
 path or word that failed, then the reason -- always in that order, and
@@ -1449,7 +1624,7 @@ Accounts and passwords speak for themselves, one line each:
 
 A command run with the wrong number of arguments answers with its own
 usage line instead of guessing what you meant -- the very line chapter
-14 lists for it.]],
+16 lists for it.]],
 
 [[  su: authentication failure
   su: too many levels
@@ -1520,6 +1695,16 @@ one below is dev's own, and is signed the way a command signs:
   shutdown: no clock
       a +N with no clock to count it from
 
+crontab and mail have four between them, and cron's own refusals are
+below (chapter 15):
+
+  no crontab for <name>
+      -l or -r with nothing in the spool for you
+  No mail for <name>
+      an empty mailbox; not an error
+  mail: <path>: permission denied
+  crontab: <path>: disk full
+
 A script signs its errors with its own name and its line: <script>: line
 <n>: <reason>.]],
 
@@ -1541,6 +1726,20 @@ script that will not parse is never even made into a job:
       past sixteen levels of if and loop
   too many stages
       more than eight commands in one pipeline]],
+
+[[A crontab is judged when it is saved, and refused whole. The refusal
+names the file, the line and the field that went wrong:
+
+  "/var/spool/cron/admin":1: bad minute
+      also bad hour, bad day-of-month, bad month and
+      bad day-of-week -- a field that will not read, or
+      one that was never there
+  "/var/spool/cron/admin":1: bad command
+      five fields and nothing after them
+  "/var/spool/cron/admin":1: bad time specifier
+      an @word that is not one of the seven
+  "/var/spool/cron/admin":33: too many entries
+      a crontab holds 32 lines]],
 
 [[And the reasons a script stops on while it is running, with the
 machine's own lines about jobs after them -- those are not signed by a
@@ -1573,6 +1772,10 @@ are not a script's to say:
 
   sh: too many jobs
   kill: <id>: no such job
+  fg: no current job
+      nothing is running behind the prompt
+  fg: %<n>: no such job
+      no job in that slot, or none by that id
   killed
   killed: cpu limit
       Escape or kill; then five minutes of spinning
