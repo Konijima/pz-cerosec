@@ -199,6 +199,63 @@ local function usage(cmd)
 	return false, { cmd .. ": usage: " .. (CeroSecOS.commandUsage(cmd) or cmd) }
 end
 
+--
+-- Standard input
+--
+-- A pipeline hands the command on the right of the "|" a reader (see the pipe
+-- section of CeroSecOSVM.lua). Nothing else on this machine does: there is no
+-- keyboard behind a command, so a command with no file named and no pipe on its
+-- left has no standard input at all and prints its usage line, which is the only
+-- honest answer a machine with no terminal input can give.
+--
+-- The six commands that read it -- cat, grep, head, tail, wc, sort and uniq --
+-- all ask for it the same way, HERE, so the rule is written once: a file named
+-- on the line wins, the way it does on every Unix, and only a line with no file
+-- on it reads the pipe.
+--
+-- What comes back is the reader, with `want` already set on it: the pipeline
+-- reads that to know this command is going to keep reading, and calls it again
+-- on whatever the stage to its left has written by then. `carry` is the
+-- command's own scratch table, kept between one call and the next, which is what
+-- lets `wc` count a pipe it will never see the end of in one pass.
+local function stdinOf(stdin, paths)
+	if #paths > 0 then return nil end
+	if type(stdin) ~= "table" then return nil end
+	stdin.want = true
+	return stdin
+end
+
+-- What a command that cannot answer before it has seen ALL of its input may
+-- hold while it waits for the end of it. `sort` cannot print a line until it
+-- knows there is no smaller one coming, and `tail` cannot know which lines were
+-- the last ones -- so both of them keep what they have read, and what they keep
+-- has to have a ceiling or a pipe with no end to it is an unbounded string with
+-- a command in front of it.
+--
+-- A pipe's own ceiling is the one they get: a hundred lines and four kilobytes.
+-- Past it the command gives up and says so, which is the same answer this
+-- machine gives a word, a variable and a file that outgrow theirs. Every other
+-- reader -- cat, grep, head, wc, uniq -- keeps nothing at all and has no ceiling
+-- to meet: they answer a line at a time, which is why `yes | wc -l` counts for
+-- ever on this machine exactly as it does on a real one.
+local function holdLine(carry, line)
+	if carry.lines == nil then
+		carry.lines = {}
+		carry.bytes = 0
+	end
+	carry.lines[#carry.lines + 1] = line
+	carry.bytes = carry.bytes + #line + 1
+	return #carry.lines <= CeroSecOS.PIPE_LINES and carry.bytes <= CeroSecOS.PIPE_BYTES
+end
+
+-- The paths on a command line, with args[1] -- the command's own name -- left
+-- where it is.
+local function operands(args)
+	local paths = {}
+	for i = 2, #args do paths[#paths + 1] = args[i] end
+	return paths
+end
+
 local function isOwnerOrRoot(session, node)
 	local user = CeroSecOS.userOf(session)
 	return user == "root" or node.owner == user
@@ -447,7 +504,7 @@ end
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
-	cat      = { desc = "print a file", usage = "cat <file>..." },
+	cat      = { desc = "print a file", usage = "cat [file]..." },
 	-- The four words the SHELL is, and so the four with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either
 	-- (see CeroSecOS.isShellWord, and the note above CeroSecOS.BUILTINS).
@@ -467,13 +524,14 @@ CeroSecOS.COMMAND_INFO = {
 	exit     = { desc = "log out", usage = "exit", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
-	grep     = { desc = "find a string in files", usage = "grep [-i] [-n] <text> <file>..." },
+	grep     = { desc = "find a string in files",
+		usage = "grep [-i] [-n] <text> [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
 	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
 	groups   = { desc = "print an account's groups", usage = "groups [name]" },
 	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
 	halt     = { desc = "switch the machine off", usage = "halt" },
-	head     = { desc = "print the first lines of a file", usage = "head [-n N] <file>" },
+	head     = { desc = "print the first lines of a file", usage = "head [-n N] [file]" },
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
@@ -494,14 +552,16 @@ CeroSecOS.COMMAND_INFO = {
 	shutdown = { desc = "switch the machine off",
 		usage = "shutdown [-h|-r] [now|+N] | shutdown -c" },
 	sleep    = { desc = "wait for a number of seconds", usage = "sleep <seconds>" },
+	sort     = { desc = "sort lines", usage = "sort [-r] [-n] [file]..." },
 	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
-	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] <file>" },
+	tail     = { desc = "print the last lines of a file", usage = "tail [-n N] [file]" },
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
-	wc       = { desc = "count lines, words and bytes", usage = "wc <file>..." },
+	wc       = { desc = "count lines, words and bytes", usage = "wc [file]..." },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
 }
@@ -829,7 +889,15 @@ commands.touch = function(state, session, args, env)
 	return true, {}
 end
 
-commands.cat = function(state, session, args, env)
+commands.cat = function(state, session, args, env, stdin)
+	-- With no file, the pipe: `grep on /dev/null | cat` is cat copying its
+	-- standard input, which is the whole of what cat has ever done.
+	local input = stdinOf(stdin, operands(args))
+	if input ~= nil then
+		local out = {}
+		for i = 1, #input.lines do out[#out + 1] = input.lines[i] end
+		return true, out
+	end
 	if #args < 2 then return usage("cat") end
 	local out, ok = {}, true
 	for i = 2, #args do
@@ -1322,7 +1390,7 @@ end
 -- grep. A plain substring and not a pattern: string.find's fourth argument is
 -- what makes "a.b" mean the three characters and not "a, anything, b". There is
 -- no regex on this machine and none is promised.
-commands.grep = function(state, session, args, env)
+commands.grep = function(state, session, args, env, stdin)
 	local ignore, numbered, rest = false, false, {}
 	for i = 2, #args do
 		local a = args[i]
@@ -1341,10 +1409,37 @@ commands.grep = function(state, session, args, env)
 			rest[#rest + 1] = a
 		end
 	end
-	if #rest < 2 then return usage("grep") end
+	if #rest < 1 then return usage("grep") end
 
 	local needle = rest[1]
 	if ignore then needle = string.lower(needle) end
+
+	-- With a string and no file, the pipe. The line numbers are the PIPE's --
+	-- counted from the first line that came down it, not restarted every time
+	-- grep is called -- and whether anything was found is carried the same way,
+	-- so `... | grep x` answers 0 for a hit that came down in an earlier turn.
+	local files = {}
+	for i = 2, #rest do files[#files + 1] = rest[i] end
+	local input = stdinOf(stdin, files)
+	if input ~= nil then
+		local carry = input.carry
+		if carry.n == nil then carry.n = 0 end
+		local out = {}
+		for i = 1, #input.lines do
+			carry.n = carry.n + 1
+			local hay = input.lines[i]
+			if ignore then hay = string.lower(hay) end
+			if string.find(hay, needle, 1, true) ~= nil then
+				carry.found = true
+				local prefix = ""
+				if numbered then prefix = tostring(carry.n) .. ":" end
+				out[#out + 1] = prefix .. input.lines[i]
+			end
+		end
+		if not carry.found then return false, out end
+		return true, out
+	end
+	if #files == 0 then return usage("grep") end
 	-- The file's name goes in front of a hit only when there is more than one
 	-- file to tell apart, which is what grep has always done.
 	local many = #rest > 2
@@ -1399,9 +1494,29 @@ local function lineCount(args)
 	return n, rest
 end
 
-commands.head = function(state, session, args, env)
+commands.head = function(state, session, args, env, stdin)
 	local n, rest = lineCount(args)
-	if n == nil or #rest ~= 1 then return usage("head") end
+	if n == nil then return usage("head") end
+
+	-- With no file, the pipe -- and head is the one command that CLOSES it. Once
+	-- it has the lines it was asked for it will read no more, and a pipe with
+	-- nobody reading it kills whatever is writing into it: that is how
+	-- `yes | head -1` ends on a real machine, and it is how it ends here.
+	local input = stdinOf(stdin, rest)
+	if input ~= nil then
+		local carry = input.carry
+		if carry.n == nil then carry.n = 0 end
+		local out = {}
+		for i = 1, #input.lines do
+			if carry.n >= n then break end
+			carry.n = carry.n + 1
+			out[#out + 1] = input.lines[i]
+		end
+		if carry.n >= n then input.done = true end
+		return true, out
+	end
+
+	if #rest ~= 1 then return usage("head") end
 	local lines, refusal = fileLines(state, session, "head", rest[1])
 	if lines == nil then return false, { refusal } end
 	local out = {}
@@ -1412,9 +1527,39 @@ commands.head = function(state, session, args, env)
 	return true, out
 end
 
-commands.tail = function(state, session, args, env)
+commands.tail = function(state, session, args, env, stdin)
 	local n, rest = lineCount(args)
-	if n == nil or #rest ~= 1 then return usage("tail") end
+	if n == nil then return usage("tail") end
+
+	-- With no file, the pipe. Which lines were the last ones is not known until
+	-- the pipe closes, so what is kept is the last n of what has come down it so
+	-- far -- and nothing is printed until the end of it.
+	local input = stdinOf(stdin, rest)
+	if input ~= nil then
+		local carry = input.carry
+		if carry.keep == nil then carry.keep = {} end
+		for i = 1, #input.lines do
+			carry.keep[#carry.keep + 1] = input.lines[i]
+			carry.bytes = (carry.bytes or 0) + #input.lines[i] + 1
+			-- Only the last n are ever kept, so a pipe with no end to it costs
+			-- tail nothing more than the lines it was asked for.
+			while #carry.keep > n do
+				carry.bytes = carry.bytes - #carry.keep[1] - 1
+				table.remove(carry.keep, 1)
+			end
+			if #carry.keep > CeroSecOS.PIPE_LINES or carry.bytes > CeroSecOS.PIPE_BYTES then
+				carry.over = true
+			end
+		end
+		if carry.over then
+			input.done = true
+			return fail("tail", nil, "input too large")
+		end
+		if not input.eof then return true, {} end
+		return true, carry.keep
+	end
+
+	if #rest ~= 1 then return usage("tail") end
 	local lines, refusal = fileLines(state, session, "tail", rest[1])
 	if lines == nil then return false, { refusal } end
 	local first = #lines - n + 1
@@ -1428,11 +1573,17 @@ end
 -- so the name has 39 left of the screen.
 local W_NUM, W_NAME = 6, 39
 
-local function wcLine(lines, words, bytes, name)
+-- The three numbers on their own, which is the whole line when what was counted
+-- came down a pipe: there is no name to put after them, and wc has never
+-- invented one.
+local function wcCounts(lines, words, bytes)
 	return CeroSecOS.padLeft(tostring(lines), W_NUM)
 		.. " " .. CeroSecOS.padLeft(tostring(words), W_NUM)
 		.. " " .. CeroSecOS.padLeft(tostring(bytes), W_NUM)
-		.. " " .. CeroSecOS.truncate(name, W_NAME)
+end
+
+local function wcLine(lines, words, bytes, name)
+	return wcCounts(lines, words, bytes) .. " " .. CeroSecOS.truncate(name, W_NAME)
 end
 
 -- A word is a run of anything that is not a blank. Newlines count as blanks:
@@ -1443,7 +1594,27 @@ local function wordsIn(text)
 	return n
 end
 
-commands.wc = function(state, session, args, env)
+commands.wc = function(state, session, args, env, stdin)
+	-- With no file, the pipe. Three running totals and nothing else is kept, so
+	-- a pipe that never ends is counted for as long as it runs without wc ever
+	-- holding more than three numbers.
+	local input = stdinOf(stdin, operands(args))
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			local line = input.lines[i]
+			-- The newlines BETWEEN the lines are bytes of what came down the
+			-- pipe, and the one that would have followed the last line is not:
+			-- it is the same text a file of those lines holds, so `wc f` and
+			-- `cat f | wc` answer with the same three numbers.
+			if (carry.l or 0) > 0 then carry.b = (carry.b or 0) + 1 end
+			carry.l = (carry.l or 0) + 1
+			carry.w = (carry.w or 0) + wordsIn(line)
+			carry.b = (carry.b or 0) + #line
+		end
+		if not input.eof then return true, {} end
+		return true, { wcCounts(carry.l or 0, carry.w or 0, carry.b or 0) }
+	end
 	if #args < 2 then return usage("wc") end
 	local out, okAll = {}, true
 	local totalLines, totalWords, totalBytes, counted = 0, 0, 0, 0
@@ -1466,6 +1637,175 @@ commands.wc = function(state, session, args, env)
 		out[#out + 1] = wcLine(totalLines, totalWords, totalBytes, "total")
 	end
 	return okAll, out
+end
+
+--
+-- sort and uniq
+--
+-- The two commands a pipeline is usually built to reach. Both of them take a
+-- file as well, exactly as they do on a real machine: `sort names` and
+-- `sort < names` are the same answer, and this machine has no "<" yet.
+--
+
+-- Byte order, worked out here rather than left to "<". Lua's own comparison on
+-- strings is the C library's strcoll, which answers by the LOCALE -- and under
+-- the game's Kahlua it is Java's, which compares by code unit. Neither is a
+-- promise worth making about what `sort` prints, so the bytes are compared here,
+-- which is what sort in the C locale does and what a 1993 machine did.
+local function beforeBytes(a, b)
+	local n = #a
+	if #b < n then n = #b end
+	for i = 1, n do
+		local x, y = string.byte(a, i), string.byte(b, i)
+		if x ~= y then return x < y end
+	end
+	return #a < #b
+end
+
+-- The number at the front of a line, the way sort -n reads one: blanks, an
+-- optional sign, digits. A line with no number at the front of it is zero, which
+-- is what every sort has done with one.
+local function leadingNumber(line)
+	local digits = string.match(line, "^[ \t]*([%-+]?%d+)")
+	if digits == nil then return 0 end
+	return tonumber(digits) or 0
+end
+
+-- Is a before b? The one comparison sort makes, asked in one place so that -r
+-- is that comparison the other way round and not a second rule.
+local function sortLess(a, b, numeric)
+	if numeric then
+		local x, y = leadingNumber(a), leadingNumber(b)
+		-- Equal numbers fall back to the bytes, so two lines that sort the same
+		-- numerically still come out in one order and not in whichever one the
+		-- sort happened to leave them in.
+		if x ~= y then return x < y end
+	end
+	return beforeBytes(a, b)
+end
+
+-- lines, sorted. The array is the caller's and is sorted in place.
+local function sortLines(lines, reverse, numeric)
+	table.sort(lines, function(a, b)
+		if reverse then return sortLess(b, a, numeric) end
+		return sortLess(a, b, numeric)
+	end)
+	return lines
+end
+
+-- The flag letters, together or apart, and the paths behind them. nil plus the
+-- word that is not an option when the line carries one.
+local function sortFlags(args, letters)
+	local flags, paths = {}, {}
+	for i = 2, #args do
+		local a = args[i]
+		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if string.find(letters, flag, 1, true) == nil then return nil, a end
+				flags[flag] = true
+			end
+		else
+			paths[#paths + 1] = a
+		end
+	end
+	return flags, paths
+end
+
+commands.sort = function(state, session, args, env, stdin)
+	local flags, paths = sortFlags(args, "rn")
+	if flags == nil then return fail("sort", paths, "unknown option") end
+	local reverse, numeric = flags.r == true, flags.n == true
+
+	-- With no file, the pipe. Nothing can be printed before the end of it: the
+	-- smallest line may still be coming, so what has arrived is kept -- under the
+	-- ceiling a pipe itself has -- until the pipe closes.
+	local input = stdinOf(stdin, paths)
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			if not holdLine(carry, input.lines[i]) then carry.over = true end
+		end
+		if carry.over then
+			-- It has given up, so it will read no more: the pipe closes, which
+			-- is what stops whatever is writing into it. A `sort` that went on
+			-- reading a flood it has already refused would be a refusal that
+			-- costs the machine exactly as much as no refusal at all.
+			input.done = true
+			return fail("sort", nil, "input too large")
+		end
+		if not input.eof then return true, {} end
+		return true, sortLines(carry.lines or {}, reverse, numeric)
+	end
+
+	if #paths == 0 then return usage("sort") end
+	local all, out, okAll = {}, {}, true
+	for i = 1, #paths do
+		local lines, why = fileLines(state, session, "sort", paths[i])
+		if lines == nil then
+			okAll = false
+			out[#out + 1] = why
+		else
+			for k = 1, #lines do all[#all + 1] = lines[k] end
+		end
+	end
+	if not okAll then return false, out end
+	return true, sortLines(all, reverse, numeric)
+end
+
+-- What `uniq -c` puts in front of a line. Seven columns and a space, which is
+-- the width uniq has counted in for as long as it has had a -c.
+local function uniqLine(count, line, counting)
+	if not counting then return line end
+	return CeroSecOS.padLeft(tostring(count), 7) .. " " .. line
+end
+
+-- One line into uniq's running state, and whatever that finishes. ADJACENT
+-- lines only: uniq has never sorted anything, which is why it is the command
+-- after `sort` and not instead of it.
+local function uniqStep(carry, line, counting, out)
+	if carry.prev == nil then
+		carry.prev = line
+		carry.count = 1
+		return
+	end
+	if carry.prev == line then
+		carry.count = carry.count + 1
+		return
+	end
+	out[#out + 1] = uniqLine(carry.count, carry.prev, counting)
+	carry.prev = line
+	carry.count = 1
+end
+
+local function uniqEnd(carry, counting, out)
+	if carry.prev == nil then return end
+	out[#out + 1] = uniqLine(carry.count, carry.prev, counting)
+	carry.prev = nil
+end
+
+commands.uniq = function(state, session, args, env, stdin)
+	local flags, paths = sortFlags(args, "c")
+	if flags == nil then return fail("uniq", paths, "unknown option") end
+	local counting = flags.c == true
+
+	-- With no file, the pipe. One line and one count is all uniq ever holds, so
+	-- there is no ceiling for it to meet.
+	local input = stdinOf(stdin, paths)
+	if input ~= nil then
+		local carry, out = input.carry, {}
+		for i = 1, #input.lines do uniqStep(carry, input.lines[i], counting, out) end
+		if input.eof then uniqEnd(carry, counting, out) end
+		return true, out
+	end
+
+	if #paths ~= 1 then return usage("uniq") end
+	local lines, why = fileLines(state, session, "uniq", paths[1])
+	if lines == nil then return false, { why } end
+	local carry, out = {}, {}
+	for i = 1, #lines do uniqStep(carry, lines[i], counting, out) end
+	uniqEnd(carry, counting, out)
+	return true, out
 end
 
 -- man. The description is the FILE's, exactly like help's: a machine whose /bin
@@ -2323,7 +2663,7 @@ function CeroSecOS.expandTilde(state, session, args, redirect)
 	end
 end
 
-function CeroSecOS.runArgs(state, session, args, redirect, env)
+function CeroSecOS.runArgs(state, session, args, redirect, env, stdin)
 	CeroSecOS.expandTilde(state, session, args, redirect)
 
 	-- A bare redirection still creates (or truncates) the file.
@@ -2359,7 +2699,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env)
 		if refusal ~= nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
 	end
 
-	local ok, lines, control, data = fn(state, session, args, env)
+	local ok, lines, control, data = fn(state, session, args, env, stdin)
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

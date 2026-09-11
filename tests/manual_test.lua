@@ -78,7 +78,9 @@ local chapters = CeroSecManual.chapters
 -- the appendices to 15 and 16. The page ceiling went to 100 with it: the wave
 -- also added pages to four existing chapters (hidden files, chmod in letters,
 -- what lives in /bin, and the shutdown timer).
-check("chapter count is 10..16", #chapters >= 10 and #chapters <= 16)
+-- Raised to 17 by rung 5b, which owes the book a chapter on pipes and cron and
+-- pushes the two appendices to 16 and 17.
+check("chapter count is 10..17", #chapters >= 10 and #chapters <= 17)
 
 local totalPages = 0
 local seenTitles = {}
@@ -95,8 +97,11 @@ for ci = 1, #chapters do
 
 	check("chapter " .. ci .. " has pages", type(ch.pages) == "table")
 	local n = #ch.pages
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..8 pages",
-		n >= 2 and n <= 8)
+	-- Raised from 8 to 10 by rung 5b: the error appendix owes the player the
+	-- pipeline's refusals and cron's, and a chapter that is a LIST is the one
+	-- kind that grows by the page rather than by the paragraph.
+	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..10 pages",
+		n >= 2 and n <= 10)
 	totalPages = totalPages + n
 
 	for pi = 1, n do
@@ -152,7 +157,9 @@ check("and the firmware version is one string in one place",
 -- chapter arrived and from 90 to 100 by rung 5a.1: the number is there to
 -- catch a book that has quietly doubled, and it must leave room for a rung's
 -- worth of honest growth or it is only a chore to move.
-check("total pages is 45..100 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 100)
+-- Raised from 100 to 118 by rung 5b, which added a chapter (pipes and cron)
+-- and pages to the two appendices.
+check("total pages is 45..118 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 118)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,
@@ -269,6 +276,9 @@ local LITERAL_MESSAGES = {
 	"syntax error: bad redirect",
 	"syntax error: unterminated quote",
 	"syntax error: missing redirect target",
+	-- rung 5b: the pipeline's own two, neither of which goes through fail()
+	"too many stages",
+	"input too large",
 }
 for i = 1, #LITERAL_MESSAGES do
 	check("error appendix carries \"" .. LITERAL_MESSAGES[i] .. "\"",

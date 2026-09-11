@@ -766,6 +766,84 @@ do
 		"history flood", #lines, #node.data, seconds * 1000)
 end
 
+--
+-- 14. A flood into a pipe (rung 5b)
+--
+-- The shape a pipeline adds to the list of ways to hurt a server: an endless
+-- writer with something small in front of it. Three of them.
+--
+--   `head -n 1` reads its one line and closes the pipe, which kills the writer
+--   with 141 -- so the whole thing is over in one pass and costs almost nothing.
+--
+--   `cat`, which never closes anything, is the flood with a pipe in the middle
+--   of it: bounded by back-pressure at a hundred lines, then by the screen
+--   limiter, exactly as the flood with no pipe in it is.
+--
+--   `sort`, which cannot answer before the end of its input, meets the ceiling
+--   on what a stage may hold and gives up -- and closes the pipe on the way
+--   out, so the writer stops too.
+--
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/pipehead.sh", "while true; do echo y; done | head -n 1\n")
+	local job = typeLine(system, machine, state, console, "sh pipehead.sh")
+
+	local result = drive(machine, PASSES)
+	flat("pipe into head", result)
+	timely("pipe into head", result)
+	eq("the pipeline is over", CeroSecOS.jobIsOver(job), true)
+	eq("and the machine is running nothing", #CeroSecJobs.book(machine).list, 0)
+	eq("one line reached the screen", #console.lines, 1)
+	eq("and it is the line head read", console.lines[1], "y")
+	check("having cost the machine almost nothing (" .. job.steps .. ")", job.steps < 300)
+	note("pipe into head", result, " (SIGPIPE)")
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/pipecat.sh", "while true; do echo y; done | cat\n")
+	local job = typeLine(system, machine, state, console, "sh pipecat.sh")
+
+	local result = drive(machine, PASSES, nil, function()
+		-- The pipe itself never grows past what a pipe holds, however long the
+		-- writer runs: this is the back-pressure, watched during the run and not
+		-- only at the end of it.
+		local frame = nil
+		for i = 1, #job.frames do
+			if job.frames[i].k == "pipe" then frame = job.frames[i] end
+		end
+		if frame ~= nil then
+			for i = 1, #frame.pipes do
+				local buf = frame.pipes[i]
+				check("a pipe never holds more than a pipe holds (" .. #buf.lines .. ")",
+					#buf.lines <= CeroSecOS.PIPE_LINES + CeroSecOS.JOB_OUT_MAX)
+				check("nor more bytes than one holds (" .. buf.bytes .. ")",
+					buf.bytes <= CeroSecOS.PIPE_BYTES * 2)
+			end
+		end
+	end)
+	flat("pipe into cat", result)
+	timely("pipe into cat", result)
+	check("the pipeline is alive and merely slow", not CeroSecOS.jobIsOver(job))
+	eq("the screen holds its hundred lines and no more", #console.lines, CeroSec.CONSOLE_MAX)
+	note("pipe into cat", result, " (trickling)")
+end
+
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/pipesort.sh", "while true; do echo y; done | sort\n")
+	local job = typeLine(system, machine, state, console, "sh pipesort.sh")
+
+	local result = drive(machine, PASSES)
+	flat("pipe into sort", result)
+	timely("pipe into sort", result)
+	eq("the pipeline is over", CeroSecOS.jobIsOver(job), true)
+	eq("it said why, once", #console.lines, 1)
+	eq("and that is the line", console.lines[1], "sort: input too large")
+	note("pipe into sort", result, " (input too large)")
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

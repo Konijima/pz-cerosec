@@ -661,8 +661,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1482  31286    5%
-  nodes         256     62    194   25%]],
+  hda         32768   1511  31257    5%
+  nodes         256     64    192   25%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1265,7 +1265,7 @@ man <command> prints the very same line back at you at the machine
 itself.
 
   adduser [-a] <name>
-  cat <file>...
+  cat [file]...
   cd [dir]
   chgrp <group> <path>
   chmod <mode> <path>
@@ -1280,7 +1280,7 @@ itself.
   edit <file>
   exit
   gpasswd -a|-d <user> <group>
-  grep [-i] [-n] <text> <file>...
+  grep [-i] [-n] <text> [file]...
   groupadd <name>
   groupdel <name>
   groups [name]
@@ -1288,7 +1288,7 @@ itself.
 ]=],
 
 [[  halt
-  head [-n N] <file>
+  head [-n N] [file]
   help
   hostname [name]
   id [name]
@@ -1308,19 +1308,21 @@ itself.
   sh <file> [args]
   shutdown [-h|-r] [now|+N] | shutdown -c
   sleep <seconds>
+  sort [-r] [-n] [file]...
   su [name]
   sudo <command> [args]
 
 (continued)]],
 
-[[  tail [-n N] <file>
+[[  tail [-n N] [file]
   test <expression>
   [ <expression> ]
   touch <file>
   true
   false
+  uniq [-c] [file]
   wait [id]...
-  wc <file>...
+  wc [file]...
   whoami
   write <file> <text>
 
@@ -1332,7 +1334,7 @@ shell itself (chapter 8). The grammar:
 The ones that change the shell or own what it started, and so could never
 be a separate program:
 
-  cd exit jobs wait read shift break continue history
+  cd exit fg jobs wait read shift break continue history
 
 help prints those two lists under the table above. Those words and help
 are what the machine keeps working when /bin is gone.]],
@@ -1516,12 +1518,15 @@ one below is dev's own, and is signed the way a command signs:
       a +N with no clock to count it from
 
 A script signs its errors with its own name and its line: <script>: line
-<n>: <reason>. The parser's come first, and a file that meets one never
-runs:
+<n>: <reason>.]],
+
+[[The parser's come first, and a file that meets one never runs -- a
+script that will not parse is never even made into a job:
 
   syntax error: unexpected 'fi'
       a closing word where a command should be; also
-      'done', 'then', 'else', 'elif', 'do', '|', '<'
+      'done', 'then', 'else', 'elif', 'do', '<', and a
+      '|' with no command on the left of it
   syntax error: missing 'done'
       never closed; also 'fi', 'then' and 'do'
   syntax error: bad substitution
@@ -1530,7 +1535,9 @@ runs:
   syntax error: not a name
       for wants a variable name after it
   too deeply nested
-      past sixteen levels of if and loop]],
+      past sixteen levels of if and loop
+  too many stages
+      more than eight commands in one pipeline]],
 
 [[And the reasons a script stops on while it is running, with the
 machine's own lines about jobs after them -- those are not signed by a
@@ -1543,6 +1550,10 @@ script, because they are not a script's to say:
       past 1024 bytes: written, built, or caught
   ambiguous redirect
       the name after > became two words, or none
+  sort: input too large
+      sort and tail cannot answer before the end of their
+      input, so they keep it -- a hundred lines and four
+      kilobytes of it, which is what a pipe itself holds
   divide by zero
   bad arithmetic
   edit: not a terminal
@@ -1552,7 +1563,11 @@ script, because they are not a script's to say:
   test: unknown operator
   test: integer expected
   test: missing ']'
-  test: argument expected
+  test: argument expected]],
+
+[[The machine's own lines about jobs, which no script signs, because they
+are not a script's to say:
+
   sh: too many jobs
   kill: <id>: no such job
   killed

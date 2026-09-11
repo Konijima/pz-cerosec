@@ -551,7 +551,7 @@ do
 	bad(state, admin, "frobnicate", "frobnicate: command not found")
 	bad(state, admin, "cat notes.txt", "cat: notes.txt: no such file")
 	bad(state, admin, "cat /etc", "cat: /etc: is a directory")
-	bad(state, admin, "cat", "cat: usage: cat <file>...")
+	bad(state, admin, "cat", "cat: usage: cat [file]...")
 	bad(state, admin, "cd /root", "cd: /root: permission denied")
 	bad(state, admin, "cd /nope", "cd: /nope: no such file")
 	bad(state, admin, "cd /etc/motd", "cd: /etc/motd: not a directory")
@@ -3124,8 +3124,8 @@ do
 	okAt(state, admin, "cp a.txt b.txt", {})
 	okAt(state, admin, "grep gamma a.txt b.txt", { "a.txt:gamma", "b.txt:gamma" })
 	okAt(state, admin, "grep -n gamma a.txt b.txt", { "a.txt:2:gamma", "b.txt:2:gamma" })
-	badAt(state, admin, "grep", "grep: usage: grep [-i] [-n] <text> <file>...")
-	badAt(state, admin, "grep alpha", "grep: usage: grep [-i] [-n] <text> <file>...")
+	badAt(state, admin, "grep", "grep: usage: grep [-i] [-n] <text> [file]...")
+	badAt(state, admin, "grep alpha", "grep: usage: grep [-i] [-n] <text> [file]...")
 	badAt(state, admin, "grep -q alpha a.txt", "grep: -q: unknown option")
 	badAt(state, admin, "grep alpha /nope", "grep: /nope: no such file")
 	badAt(state, admin, "grep alpha /etc", "grep: /etc: is a directory")
@@ -3147,10 +3147,10 @@ do
 	okAt(state, admin, "touch empty.txt", {})
 	okAt(state, admin, "head empty.txt", {})
 	okAt(state, admin, "tail empty.txt", {})
-	badAt(state, admin, "head", "head: usage: head [-n N] <file>")
-	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N] <file>")
-	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N] <file>")
-	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N] <file>")
+	badAt(state, admin, "head", "head: usage: head [-n N] [file]")
+	badAt(state, admin, "head -n a.txt", "head: usage: head [-n N] [file]")
+	badAt(state, admin, "head -n -3 a.txt", "head: usage: head [-n N] [file]")
+	badAt(state, admin, "tail a.txt b.txt", "tail: usage: tail [-n N] [file]")
 	badAt(state, admin, "head /nope", "head: /nope: no such file")
 	badAt(state, admin, "tail /etc", "tail: /etc: is a directory")
 
@@ -3164,7 +3164,7 @@ do
 	})
 	local counted = okAt(state, admin, "wc a.txt", nil)
 	eq("wc counts a.txt", counted[1], "    12     14     " .. #text .. " a.txt")
-	badAt(state, admin, "wc", "wc: usage: wc <file>...")
+	badAt(state, admin, "wc", "wc: usage: wc [file]...")
 	badAt(state, admin, "wc /nope", "wc: /nope: no such file")
 end
 
@@ -5078,6 +5078,14 @@ do
 	parses("echo 'single' \"double $x\" bare\\ space")
 	parses("echo hi > out.txt")
 	parses("echo hi >> out.txt")
+	parses("cat a | grep b")
+	parses("cat a | grep b | sort | uniq -c")
+	parses("cat a | sort > out.txt")
+	parses("echo $(cat a | sort)")
+	parses("cat a | grep b && echo found")
+	parses("cat a |\n\tgrep b")
+	parses("cat a | grep b &")
+	parses(string.rep("cat a | ", CeroSecOS.MAX_STAGES - 1) .. "cat b")
 	parses("for i in a b; do done")
 	parses("")
 
@@ -5105,7 +5113,13 @@ do
 	refuses("echo ${x", "syntax error: bad substitution", 1)
 	refuses("echo ${not a name}", "syntax error: bad substitution", 1)
 	refuses("echo $((1 + 2)", "syntax error: bad substitution", 1)
-	refuses("cat a | grep b", "syntax error: unexpected '|'", 1)
+	-- A pipeline parses now (rung 5b). What does not is a "|" with nothing on
+	-- one side of it, and a pipeline longer than the machine will run.
+	refuses("| grep b", "syntax error: unexpected '|'", 1)
+	refuses("cat a |", "syntax error: unexpected end of file", 1)
+	refuses("cat a | | grep b", "syntax error: unexpected '|'", 1)
+	refuses(string.rep("cat a | ", CeroSecOS.MAX_STAGES) .. "cat b",
+		"too many stages", 1)
 	refuses("cat < a", "syntax error: unexpected '<'", 1)
 	refuses("echo a >", "syntax error: missing redirect target", 1)
 	refuses("echo a > b > c", "syntax error: bad redirect", 1)
@@ -6348,7 +6362,8 @@ do
 	local WANT = "[ adduser cat chgrp chmod chown clear cp date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
 		.. " help hostname id kill ls man mkdir mv passwd printf ps pwd reboot"
-		.. " restart rm sh shutdown sleep su sudo tail test touch true wc whoami write"
+		.. " restart rm sh shutdown sleep sort su sudo tail test touch true uniq"
+		.. " wc whoami write"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -6690,6 +6705,191 @@ do
 		"ls ")
 	eq("and one below the start is the start",
 		CeroSecOS.complete(state, admin, "l", -5).replacement, "")
+end
+
+--
+-- 39. Pipelines (rung 5b)
+--
+-- `a | b` is one job with two shells in it. What is pinned here: the lines
+-- really travel, every stage is a SUBSHELL (so a `read` or a `cd` in one is
+-- gone with it), the status of a pipeline is its last stage's, a reader that
+-- closes kills the writer with 141, and the two new commands print exactly
+-- what they print.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local C = CeroSecOS.STEP_COST_COMMAND
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+	put(state, admin, "/home/admin/nums", "3\n20\n100")
+
+	-- The lines travel, and nothing of the pipe reaches the screen but the last
+	-- stage's output.
+	ok(state, admin, "echo hi | cat", { "hi" })
+	ok(state, admin, "cat fruit | cat", { "pear", "apple", "pear", "fig" })
+	ok(state, admin, "cat fruit | grep pear", { "pear", "pear" })
+	ok(state, admin, "cat fruit | grep -n pear", { "1:pear", "3:pear" })
+	ok(state, admin, "cat fruit | head -n 2", { "pear", "apple" })
+	ok(state, admin, "cat fruit | tail -n 1", { "fig" })
+	ok(state, admin, "cat fruit | wc", { "     4      4     19" })
+	-- Three stages, and the middle one really is in the middle.
+	ok(state, admin, "cat fruit | sort | uniq", { "apple", "fig", "pear" })
+	ok(state, admin, "cat fruit | sort | uniq -c",
+		{ "      1 apple", "      1 fig", "      2 pear" })
+	ok(state, admin, "cat fruit | sort | head -n 1", { "apple" })
+
+	-- sort: bytes by default, numbers with -n, either of them backwards with -r.
+	ok(state, admin, "sort nums", { "100", "20", "3" })
+	ok(state, admin, "sort -n nums", { "3", "20", "100" })
+	ok(state, admin, "sort -nr nums", { "100", "20", "3" })
+	ok(state, admin, "sort -r nums", { "3", "20", "100" })
+	ok(state, admin, "cat nums | sort -n", { "3", "20", "100" })
+	-- A line with no number at the front of it is a zero, and ties fall back to
+	-- the bytes so the answer is the same answer every time.
+	put(state, admin, "/home/admin/mixed", "b\n2\na\n1")
+	ok(state, admin, "sort -n mixed", { "a", "b", "1", "2" })
+	-- uniq drops the line it has just seen and nothing else: it does not sort.
+	ok(state, admin, "uniq fruit", { "pear", "apple", "pear", "fig" })
+	ok(state, admin, "uniq -c fruit",
+		{ "      1 pear", "      1 apple", "      1 pear", "      1 fig" })
+	bad(state, admin, "sort -q nums", "sort: -q: unknown option")
+	bad(state, admin, "uniq -q fruit", "uniq: -q: unknown option")
+	bad(state, admin, "sort nope", "sort: nope: no such file")
+	bad(state, admin, "uniq nope", "uniq: nope: no such file")
+	-- No file and no pipe is no standard input at all, and the usage line is
+	-- what a machine with no terminal input can honestly answer.
+	bad(state, admin, "sort", "sort: usage: sort [-r] [-n] [file]...")
+	bad(state, admin, "uniq", "uniq: usage: uniq [-c] [file]")
+	bad(state, admin, "wc", "wc: usage: wc [file]...")
+
+	-- The status of a pipeline is the LAST stage's.
+	ok(state, admin, "cat fruit | grep pear && echo yes", { "pear", "pear", "yes" })
+	ok(state, admin, "cat fruit | grep plum || echo no", { "no" })
+	ok(state, admin, "cat nope | wc", { "cat: nope: no such file", "     0      0      0" })
+	ok(state, admin, "echo $?", { "0" })
+	-- A stage's REFUSAL is not output: it goes to the screen and not down the
+	-- pipe, exactly as it stays on the screen when output is redirected.
+	ok(state, admin, "ls /nope | wc",
+		{ "ls: /nope: no such file", "     0      0      0" })
+
+	-- Every stage is a subshell. `read` in one really does read the pipe -- it
+	-- answers 0, which is a line read and not end of file -- and the variable it
+	-- set is gone the moment the pipeline is over.
+	ok(state, admin, "x=here; echo there | read x; echo $x", { "here" })
+	ok(state, admin, "echo there | read x; echo $?", { "0" })
+	ok(state, admin, "printf '' | read x; echo $?", { "1" })
+	ok(state, admin, "cd /tmp | echo x", { "x" })
+	ok(state, admin, "pwd", { "/home/admin" })
+
+	-- A pipe inside $(...), which is the shape a script really uses.
+	ok(state, admin, "echo $(cat fruit | sort | head -n 1)", { "apple" })
+	ok(state, admin, "x=$(cat fruit | wc); echo $x", { "4 4 19" })
+
+	-- A redirect on a stage writes the stage's output, once: a command that
+	-- reads a pipe is run again and again, and the file must not be truncated
+	-- every time it is.
+	ok(state, admin, "cat fruit | sort > sorted", {})
+	ok(state, admin, "cat sorted", { "apple", "fig", "pear", "pear" })
+	ok(state, admin, "echo one | cat > single", {})
+	ok(state, admin, "cat single", { "one" })
+
+	-- The editor cannot open on a stage: a stage has no screen.
+	ok(state, admin, "edit fruit | cat", { "edit: not a terminal" })
+end
+
+--
+-- 39a. A reader that closes kills the writer: SIGPIPE, and 141
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- The flood every player writes by accident, with a `head` in front of it.
+	-- It ENDS, and it ends because head closed the pipe.
+	local run = runScript(state, admin, "while true; do echo y; done | head -n 1\n")
+	eq("a flood into head ends", run.job.state, "done")
+	eq("with the one line head asked for", #run.out, 1)
+	eq("which is the line", run.out[1], "y")
+	-- And in a handful of steps, not in a hundred thousand.
+	check("having cost very little (" .. run.job.steps .. ")", run.job.steps < 200)
+
+	-- The status is head's, because a pipeline's status is its last stage's --
+	-- the writer's 141 is the writer's own.
+	local status = runScript(state, admin,
+		"while true; do echo y; done | head -n 1\necho done=$?\n")
+	eq("the pipeline's status is the reader's", status.out[2], "done=0")
+
+	-- The 141 itself, on the stage that was killed. Asked of the engine, because
+	-- nothing prints it: a writer killed by a pipe closing is the ordinary end
+	-- of `yes | head`, not something a player has to read about.
+	eq("SIGPIPE is 128 plus 13", CeroSecOS.SIGPIPE_STATUS, 141)
+	local job = CeroSecOS.newJob({
+		prog = CeroSecOS.parseScript("while true; do echo y; done | head -n 1"),
+		session = admin, id = 7,
+	})
+	local env = { now = FIXED, nowMs = 1000, jobs = { job } }
+	local frame, said = nil, {}
+	-- A step at a time, so the frame is still there to look at: a pipeline this
+	-- short is over inside one pass of a hundred.
+	for _ = 1, 400 do
+		CeroSecOS.jobStep(state, job, env, 1)
+		for i = 1, #job.frames do
+			if job.frames[i].k == "pipe" then frame = job.frames[i] end
+		end
+		for i = 1, #job.out do said[#said + 1] = job.out[i] end
+		job.out = {}
+		if CeroSecOS.jobIsOver(job) then break end
+	end
+	check("the pipeline had a frame of its own", frame ~= nil)
+	eq("two stages", #frame.stages, 2)
+	eq("the writer was killed", frame.stages[1].state, "killed")
+	eq("with 141", frame.stages[1].status, CeroSecOS.SIGPIPE_STATUS)
+	-- And nothing was said about it: the one line is head's output.
+	eq("one line on the screen", #said, 1)
+	eq("and it is the line head read", said[1], "y")
+end
+
+--
+-- 39b. What a pipeline costs, and what it holds
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local C = CeroSecOS.STEP_COST_COMMAND
+	put(state, admin, "/home/admin/fruit", "pear\napple\npear\nfig")
+
+	-- Every stage is charged to the job that asked for the pipeline, and a
+	-- command that reads a pipe is charged every time it runs: cat once, and
+	-- the reader once for the lines and once more for the end of them.
+	local run = runScript(state, admin, "cat fruit | wc\n")
+	eq("a two-stage pipeline is charged to the one job", run.job.steps, 4 * C)
+	-- A builtin on the left of a pipe is still a builtin.
+	local cheap = runScript(state, admin, "echo hi | cat\n")
+	eq("and a builtin in a stage still costs one", cheap.job.steps, 1 + 3 * C)
+
+	-- The pipe itself is bounded: a hundred lines and four kilobytes, which is
+	-- the number the back-pressure is applied at.
+	eq("a pipe holds a hundred lines", CeroSecOS.PIPE_LINES, 100)
+	eq("and four kilobytes", CeroSecOS.PIPE_BYTES, 4096)
+
+	-- sort and tail cannot answer before the end of their input, so they keep
+	-- it -- and what they keep meets the pipe's own ceiling rather than growing.
+	local flood = runScript(state, admin,
+		"i=0\nwhile [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done | sort\n",
+		nil, nil, { passes = 2000 })
+	eq("sort gives up on more than a pipe may hold", flood.job.state, "done")
+	eq("saying so in one line", flood.out[#flood.out], "sort: input too large")
+
+	-- wc keeps three numbers and nothing else, so the same flood is counted
+	-- through to the end of it.
+	local counted = runScript(state, admin,
+		"i=0\nwhile [ $i -lt 200 ]; do echo line$i; i=$((i+1)); done | wc\n",
+		nil, nil, { passes = 2000 })
+	eq("wc counts a flood it will never hold", counted.out[#counted.out],
+		"   200    200   1489")
 end
 
 print("os_test: " .. count .. " assertions passed")

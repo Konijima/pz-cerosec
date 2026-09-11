@@ -37,7 +37,8 @@ CeroSecOS.STATE_VERSION = 1
 --    program cannot move the shell that ran it. They are deleted where they are
 --    exactly what was shipped (root, 755, the seeded description) and left alone
 --    anywhere else.
-CeroSecOS.SYSTEM_VERSION = 8
+-- 9: /bin/sort and /bin/uniq, the two commands a pipeline is built to reach.
+CeroSecOS.SYSTEM_VERSION = 9
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

@@ -94,6 +94,26 @@ CeroSecOS.STEP_COST_COMMAND = 32
 -- else bounds it.
 CeroSecOS.CAPTURE_MAX = 100
 
+-- What one pipe may hold between two stages. A pipe on a real machine is a
+-- buffer in the kernel and is bounded there too -- 4096 bytes on the Unix these
+-- machines are from -- and what happens when it is full is not an error, it is
+-- BACK-PRESSURE: the writer stops until the reader has taken something out. So
+-- there is no "pipe full" message here and there is none on a real one either;
+-- the stage on the left simply does not run again until there is room, exactly
+-- as a job that has filled the screen does not run again until it has drained.
+--
+-- Lines as well as bytes, because this machine counts output in lines
+-- everywhere else and a hundred of them is what the screen limiter and a
+-- capture are already bounded by.
+CeroSecOS.PIPE_LINES = 100
+CeroSecOS.PIPE_BYTES = 4096
+
+-- A stage that writes into a pipe nobody is reading any more is killed, and a
+-- shell reports a signal as 128 plus its number. SIGPIPE is 13, so `yes | head
+-- -1` leaves the writer at 141 -- which is how sh has reported it since job
+-- control, and why a flood into `head` ends instead of running forever.
+CeroSecOS.SIGPIPE_STATUS = 141
+
 --
 -- Small helpers
 --
@@ -193,10 +213,34 @@ local function outLine(job, text)
 		end
 		return
 	end
+	-- A stage of a pipeline writes into the pipe, and a pipe is not a screen:
+	-- the line goes over whole, uncut and unwrapped, because the thing reading
+	-- it is another command and not a person. The ceiling on how much may sit
+	-- there is not here either -- it is back-pressure, asked before the stage is
+	-- stepped at all (see pipeStep), the way the screen limiter is.
+	if job.pipe ~= nil then
+		local buf = job.pipe
+		buf.lines[#buf.lines + 1] = text
+		buf.bytes = buf.bytes + #text + 1
+		return
+	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
 	-- columns and carries no control byte, exactly like a command's.
 	local fitted = CeroSecOS.fit({ text })
 	for i = 1, #fitted do job.out[#job.out + 1] = fitted[i] end
+end
+
+-- A line about what went WRONG, which is not output. A pipeline is the one
+-- place the difference shows: a stage's error belongs on the screen and not
+-- down the pipe, exactly as `ls /nope > f` puts the refusal on the screen and
+-- not in the file -- this machine has no second channel, so the rule is the
+-- same one, written once, in both places.
+local function errLine(job, text)
+	if job.errTo ~= nil then
+		outLine(job.errTo, text)
+		return
+	end
+	outLine(job, text)
 end
 
 -- The row a job is part way through, wrapped the way a screen sixty columns
@@ -223,6 +267,20 @@ local function wrapPartial(job)
 	if capturing(job) then
 		if captureBytes(job, job.partial) > CeroSecOS.MAX_VAR_BYTES then
 			captureTooLarge(job)
+		end
+		return
+	end
+	-- Into a pipe, the same reasoning and a different ceiling. A pipe is not
+	-- sixty columns wide, so text with no newline in it is not folded at the
+	-- screen's width -- but it cannot be held for ever either, or `while true;
+	-- do printf x; done | cat` is the unbounded string again with a pipe in
+	-- front of it. A pipe's own buffer is what bounds it: once a row's worth of
+	-- bytes is held with no newline, that much goes down the pipe, which is
+	-- exactly what a full kernel buffer does to a writer that never ends a line.
+	if job.pipe ~= nil then
+		while #job.partial >= CeroSecOS.PIPE_BYTES do
+			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
+			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
 		end
 		return
 	end
@@ -261,6 +319,15 @@ local function writeLines(job, lines)
 	if type(lines) ~= "table" then return end
 	if #lines > 0 then flushPartial(job) end
 	for i = 1, #lines do outLine(job, lines[i]) end
+end
+
+-- The same, for the lines of a command that FAILED: they go where an error
+-- goes. Outside a pipeline that is the very same place, which is why every
+-- other caller can keep using writeLines.
+local function errLines(job, lines)
+	if type(lines) ~= "table" then return end
+	if #lines > 0 then flushPartial(job) end
+	for i = 1, #lines do errLine(job, lines[i]) end
 end
 
 --
@@ -359,9 +426,9 @@ function jobError(job, reason)
 	-- the job is inside a file again (`sh spin.sh` at the prompt), and that
 	-- file's name and line are what a player has to be told.
 	if job.promptLine ~= nil and job.depth == 1 then
-		outLine(job, "sh: " .. reason)
+		errLine(job, "sh: " .. reason)
 	else
-		outLine(job, CeroSecOS.scriptError(job.name, reason, job.line))
+		errLine(job, CeroSecOS.scriptError(job.name, reason, job.line))
 	end
 	job.status = 2
 	finish(job, "error")
@@ -876,6 +943,33 @@ builtins.read = function(job, args, state, env)
 	end
 	if name == nil or not CeroSecOS.isVarName(name) then return nil, "read: not a name" end
 
+	-- A stage of a pipeline reads the PIPE, because that is what its standard
+	-- input is. It is also a subshell, and its variables die with it -- which is
+	-- why `echo hi | read x` leaves x empty in the shell that typed it, on this
+	-- machine exactly as on every other one with a pipeline in it.
+	if job.stdinBuf ~= nil then
+		local buf = job.stdinBuf
+		if #buf.lines > 0 then
+			local line = table.remove(buf.lines, 1)
+			buf.bytes = buf.bytes - #line - 1
+			if buf.bytes < 0 then buf.bytes = 0 end
+			local reason = setVar(job, name, line)
+			if reason ~= nil then return nil, reason end
+			return 0
+		end
+		if buf.eof then
+			local reason = setVar(job, name, "")
+			if reason ~= nil then return nil, reason end
+			return 1
+		end
+		-- Nothing in the pipe yet: the stage stops where it stands and the one
+		-- to its left is what runs next. The command has not run, so the frame
+		-- stays and the read is asked again when there is a line.
+		job.again = true
+		job.blocked = "input"
+		return job.status
+	end
+
 	-- A background job has nobody in front of it. It reads end of file, the
 	-- way a real one reading a closed input does, and says so with its status
 	-- rather than hanging forever where nobody can see it.
@@ -994,7 +1088,7 @@ local function applyControl(job, control, data)
 	-- order goes through.
 	if control == "edit" and not job.interactive then
 		flushPartial(job)
-		outLine(job, "edit: not a terminal")
+		errLine(job, "edit: not a terminal")
 		job.status = 1
 		return true
 	end
@@ -1031,7 +1125,12 @@ local function runSimple(state, job, f, env)
 		end
 	end
 
-	local args = f.ex.out
+	-- A COPY of what the words expanded to, because a command that reads a pipe
+	-- is run more than once off the same frame: the redirect's target is taken
+	-- off the end below, and a second call must find the line as it was written
+	-- and not as the first call left it.
+	local args = {}
+	for i = 1, #f.ex.out do args[i] = f.ex.out[i] end
 	local redirect = nil
 	if node.redirect ~= nil then
 		-- The redirect's target is the last word of the expansion, and it has
@@ -1049,7 +1148,7 @@ local function runSimple(state, job, f, env)
 	if #args == 0 then
 		if redirect ~= nil then
 			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env)
-			writeLines(job, lines)
+			errLines(job, lines)
 			if ok then job.status = 0 else job.status = 1 end
 			return CeroSecOS.STEP_COST_COMMAND
 		end
@@ -1074,7 +1173,7 @@ local function runSimple(state, job, f, env)
 	if builtin ~= nil and CeroSecOS.BUILTIN_FILES[name] then
 		local refusal = CeroSecOS.whyNotRun(state, job.session, name)
 		if refusal ~= nil then
-			writeLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
+			errLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
 			job.status = 1
 			return 1
 		end
@@ -1091,7 +1190,7 @@ local function runSimple(state, job, f, env)
 			job.caps[#job.caps] = nil
 			local ok, lines = CeroSecOS.writeRedirect(state, job.session, name, redirect,
 				table.concat(buf, "\n"), env)
-			writeLines(job, lines)
+			errLines(job, lines)
 			if not ok then
 				job.status = 1
 				return 1
@@ -1105,11 +1204,270 @@ local function runSimple(state, job, f, env)
 		return 1
 	end
 
-	local ok, lines, control, data = CeroSecOS.runArgs(state, job.session, args, redirect, env)
-	writeLines(job, lines)
-	if ok then job.status = 0 else job.status = 1 end
+	-- The standard input this command has, which on this machine is a pipe and
+	-- nothing else: there is no keyboard behind a command, so a stage with no
+	-- pipe on its left is a command with no standard input at all.
+	--
+	-- The reader is handed the frame's own carry, so a command that has to see
+	-- all of its input before it can answer -- sort, wc -- keeps what it has
+	-- read between one call and the next. `want` is the command saying it IS
+	-- reading the pipe (it was given no file), and `done` is it saying it will
+	-- read no more, which is what closes the pipe on the stage behind it.
+	local stdin = nil
+	if job.stdinBuf ~= nil then
+		if f.rd == nil then f.rd = { carry = {} } end
+		stdin = { lines = job.stdinBuf.lines, eof = job.stdinBuf.eof,
+			carry = f.rd.carry, want = false, done = false }
+	end
+
+	-- A command that reads a pipe is run more than once, and a redirect on one
+	-- must not truncate the file it has already written to. So the redirect is
+	-- not handed to the command at all where there is a pipe: it is carried out
+	-- below, through the very same door -- the first write replaces, every one
+	-- after it appends, and a call that produced nothing writes nothing.
+	local ok, lines, control, data =
+		CeroSecOS.runArgs(state, job.session, args, stdin == nil and redirect or nil,
+			env, stdin)
+	if stdin ~= nil and stdin.want then
+		f.rd.want = true
+		-- Everything that was in the pipe has been read: a command is handed
+		-- the whole of what is there and takes all of it.
+		job.stdinBuf.lines = {}
+		job.stdinBuf.bytes = 0
+		if stdin.done then job.stdinBuf.closed = true end
+		-- Not finished until its input is: the same command runs again next
+		-- turn, on whatever the stage to its left has written by then.
+		if not stdin.done and not job.stdinBuf.eof then job.again = true end
+	end
+	if stdin ~= nil and redirect ~= nil and ok then
+		local wrote = f.rd ~= nil and f.rd.wrote == true
+		if #lines > 0 or not wrote then
+			local target = { path = redirect.path, append = redirect.append or wrote }
+			local wroteOk, wroteLines = CeroSecOS.writeRedirect(state, job.session, name,
+				target, table.concat(lines, "\n"), env)
+			if f.rd ~= nil then f.rd.wrote = true end
+			lines = wroteLines
+			ok = wroteOk
+		else
+			lines = {}
+		end
+	end
+	if ok then
+		writeLines(job, lines)
+		job.status = 0
+	else
+		errLines(job, lines)
+		job.status = 1
+	end
 	applyControl(job, control, data)
 	return CeroSecOS.STEP_COST_COMMAND
+end
+
+--
+-- Pipelines
+--
+-- `a | b | c` is ONE job with three shells inside it. Each stage is a job table
+-- of its own -- its own frames, its own variables, its own status -- which is
+-- what a subshell is, and what makes `echo hi | read x` leave x alone in the
+-- shell that typed it.
+--
+-- They do not run one after another. A pipeline whose stages ran in turn would
+-- have to hold the whole of one stage's output before the next one started, and
+-- `yes | head -1` would never end. So the stages run TOGETHER, a step at a
+-- time, and the rule for whose step it is has two halves:
+--
+--   * the RIGHTMOST stage that can run, runs. A stage that can run is one that
+--     is not waiting for a line that is not there yet and is not writing into
+--     a pipe that is already full.
+--   * a stage whose reader has finished is killed, with 141 -- SIGPIPE, as sh
+--     reports it. That is what ends the flood in `yes | head -1`: head reads
+--     its one line, closes its input, and the writer dies where it stands.
+--
+-- Reading right to left is what makes the back-pressure fall out: the last
+-- stage runs until it has read everything there is, and only then does the one
+-- to its left get a turn to write more.
+--
+-- Nothing here is concurrent in the sense of two things happening at once --
+-- there is one step machine and it takes one step -- and nothing here is a
+-- coroutine, which Kahlua does not have. It is a stack of frames with a table
+-- of shells hanging off one of them.
+--
+
+local stepOnce, handleSignal
+
+-- One pipe. lines is what is in it, eof says the stage on the left has
+-- finished, closed says the stage on the right will read no more.
+local function newPipe()
+	return { lines = {}, bytes = 0, eof = false, closed = false }
+end
+
+local function pipeFull(buf)
+	return #buf.lines >= CeroSecOS.PIPE_LINES or buf.bytes >= CeroSecOS.PIPE_BYTES
+end
+
+-- One stage: a shell of its own, on a copy of everything the pipeline's own
+-- shell holds. The copy is the point -- it is what a subshell is -- and it is
+-- why a `cd`, an assignment or a `read` inside a stage is gone the moment the
+-- pipeline is over.
+local function newStage(job, node, out, into)
+	local stage = CeroSecOS.newJob({
+		prog = { node }, args = job.args, name = job.name, cmd = job.cmd,
+		session = job.session, status = job.status,
+	})
+	local vars, nvars = {}, 0
+	for k, v in pairs(job.vars) do
+		vars[k] = v
+		nvars = nvars + 1
+	end
+	stage.vars = vars
+	stage.nvars = nvars
+	stage.pipe = out
+	stage.stdinBuf = into
+	-- The same process as far as anything a script can ask is concerned: $$ is
+	-- the shell's own number and a subshell does not get a new one, and how deep
+	-- the scripts are nested is the pipeline's depth and not one more.
+	stage.id = job.id
+	stage.depth = job.depth
+	stage.line = node.line or job.line
+	stage.promptLine = job.promptLine
+	-- No screen and no keyboard: a stage is not what a person is standing in
+	-- front of, so `edit` is refused in one and a `read` with no pipe on its
+	-- input reads end of file, exactly as a background job's does.
+	stage.inPipe = true
+	-- Where what goes wrong goes. Not into the pipe: an error is not output.
+	stage.errTo = job
+	return stage
+end
+
+-- What the last stage wrote, onto whatever is running the pipeline: the screen,
+-- or the capture an enclosing $(...) has open. The one place a pipeline's output
+-- leaves it.
+local function drainTail(job, buf)
+	local lines = buf.lines
+	if #lines == 0 then return end
+	buf.lines = {}
+	buf.bytes = 0
+	for i = 1, #lines do outLine(job, lines[i]) end
+end
+
+-- A stage whose reader has gone. sh reports a signal as 128 plus its number and
+-- SIGPIPE is 13; nothing is printed, because a writer killed by a pipe closing
+-- is the ordinary end of `yes | head -1` and not a fault anybody has to read
+-- about.
+local function sigpipe(stage)
+	stage.partial = ""
+	stage.status = CeroSecOS.SIGPIPE_STATUS
+	finish(stage, "killed")
+end
+
+-- One step of one stage. The stage is an ordinary job and the walker below is
+-- the ordinary walker; what is not ordinary is who calls it -- the frame and not
+-- the scheduler -- so the pass's own work (the clock, the devices, the debt) is
+-- the pipeline's and is not done a second time here.
+local function stageStep(state, stage, env)
+	if CeroSecOS.jobIsOver(stage) then return 0 end
+	if stage.state == "sleeping" then
+		local now = CeroSecOS.nowMsOf(env)
+		if now == nil or now >= (stage.wakeMs or 0) then
+			stage.state = "running"
+			stage.wakeMs = nil
+		else
+			return 0
+		end
+	end
+	if stage.state ~= "running" then return 0 end
+	stage.blocked = nil
+	local used = stepOnce(state, stage, env)
+	if stage.sig ~= nil then handleSignal(stage) end
+	return used
+end
+
+-- Is there anything for this stage to read?
+local function inputReady(buf)
+	if buf == nil then return true end
+	return #buf.lines > 0 or buf.eof
+end
+
+-- One turn of a pipeline. Answers what the turn cost, the way every other frame
+-- does.
+local function pipeStep(state, job, f, env)
+	local stages, pipes = f.stages, f.pipes
+	local n = #stages
+
+	-- What the last stage has written goes out first, so the pipeline's output
+	-- reaches the screen at the same rate everything else does.
+	drainTail(job, pipes[n])
+
+	-- The book-keeping the whole rule below reads: a stage that is over has
+	-- written everything it will write, and will read nothing more.
+	local over = 0
+	for i = 1, n do
+		local stage = stages[i]
+		if CeroSecOS.jobIsOver(stage) then
+			over = over + 1
+			pipes[i].eof = true
+			if i > 1 then pipes[i - 1].closed = true end
+			-- An order the machine has to carry out -- shutdown, clear -- given
+			-- inside a stage is still an order: it travels up to the job the
+			-- machine is holding, because a stage is not something the machine
+			-- knows about.
+			if stage.control ~= nil and job.control == nil then
+				job.control = stage.control
+				job.controlData = stage.controlData
+			end
+		end
+	end
+
+	if over == n then
+		-- The status of a pipeline is the status of its LAST stage, which is
+		-- what every shell has answered since pipelines existed.
+		job.status = stages[n].status
+		popFrame(job)
+		return 0
+	end
+
+	for i = n, 1, -1 do
+		local stage = stages[i]
+		if not CeroSecOS.jobIsOver(stage) then
+			if i < n and pipes[i].closed then
+				sigpipe(stage)
+				return 0
+			end
+			if stage.blocked == "input" then
+				if inputReady(stage.stdinBuf) then
+					return stageStep(state, stage, env)
+				end
+			elseif i < n and pipeFull(pipes[i]) then
+				-- Its reader has not taken what is there yet. Nothing to do
+				-- here; the stage to the left is no help either, so the loop
+				-- walks on and finds the one that is.
+			else
+				return stageStep(state, stage, env)
+			end
+		end
+	end
+
+	-- Nothing could run. Either the pipeline is asleep -- `sleep 5 | cat` is a
+	-- pipeline that costs nothing for five seconds, exactly as a bare `sleep`
+	-- does -- or every stage that could write is waiting on one that is waiting
+	-- on it, which is a pipeline with nothing left to do but be killed.
+	local wake = nil
+	for i = 1, n do
+		local stage = stages[i]
+		if stage.state == "sleeping" and type(stage.wakeMs) == "number" then
+			if wake == nil or stage.wakeMs < wake then wake = stage.wakeMs end
+		end
+	end
+	if wake ~= nil then
+		job.wakeMs = wake
+		job.state = "sleeping"
+		return 0
+	end
+	-- Waiting on a pipe is not spending the processor, so the runaway clock
+	-- stops, exactly as it stops for a job held back by the screen.
+	job.blocked = "input"
+	job.cpuSince = nil
+	return 0
 end
 
 --
@@ -1133,6 +1491,15 @@ local function pushNode(job, node)
 	if node.k == "list" then
 		return pushFrame(job, { k = "list", node = node, line = node.line, i = 1, phase = "run" })
 	end
+	if node.k == "pipe" then
+		local pipes, stages = {}, {}
+		for i = 1, #node.stages do pipes[i] = newPipe() end
+		for i = 1, #node.stages do
+			stages[i] = newStage(job, node.stages[i], pipes[i], pipes[i - 1])
+		end
+		return pushFrame(job, { k = "pipe", node = node, line = node.line,
+			stages = stages, pipes = pipes })
+	end
 	if node.k == "if" then
 		return pushFrame(job, { k = "if", node = node, line = node.line, ci = 1, phase = "cond" })
 	end
@@ -1149,7 +1516,7 @@ end
 
 -- One turn of the machine. Returns how many steps it cost -- 0 for the frame
 -- work between commands, 1 for a command or a loop iteration.
-local function stepOnce(state, job, env)
+stepOnce = function(state, job, env)
 	local frames = job.frames
 	local f = frames[#frames]
 	if f == nil then
@@ -1319,10 +1686,30 @@ local function stepOnce(state, job, env)
 			if f.phase == "assign" then f.phase = "expand" else f.phase = "run" end
 			return 0
 		end
+		-- A command that is reading a pipe with nothing in it yet has not run
+		-- and costs nothing: the stage stops where it stands, its frame stays
+		-- where it is, and the stage to its left is what runs next.
+		if f.rd ~= nil and f.rd.want and job.stdinBuf ~= nil
+				and not inputReady(job.stdinBuf) then
+			job.blocked = "input"
+			return 0
+		end
 		-- One simple command. One step when the shell answers it itself, and
 		-- what a command in /bin costs when it does not.
+		--
+		-- A command that is still reading its input is not finished with it and
+		-- has to run again: its frame goes back exactly as it was, carry and all,
+		-- which is what lets `sort` read a pipe a line at a time and still be
+		-- one command.
 		popFrame(job)
-		return runSimple(state, job, f, env)
+		job.again = nil
+		local cost = runSimple(state, job, f, env)
+		if job.again ~= nil and job.state == "running" then pushFrame(job, f) end
+		job.again = nil
+		return cost
+	end
+	if f.k == "pipe" then
+		return pipeStep(state, job, f, env)
 	end
 
 	jobError(job, "syntax error")
@@ -1331,7 +1718,7 @@ end
 
 -- break, continue and exit, carried out by unwinding frames. Never by an
 -- error: a signal is an ordinary part of a shell and not a fault.
-local function handleSignal(job)
+handleSignal = function(job)
 	local sig = job.sig
 	job.sig = nil
 
@@ -1467,6 +1854,9 @@ function CeroSecOS.jobStep(state, job, env, budget)
 		job.blocked = nil
 		used = used + stepOnce(state, job, env)
 		if job.sig ~= nil then handleSignal(job) end
+		-- A pipeline with nothing it can do this instant -- every stage waiting
+		-- on a pipe -- is not something to spin on for the rest of the budget.
+		if job.blocked == "input" then break end
 	end
 	job.steps = job.steps + used
 	if used > budget then job.debt = (job.debt or 0) + used - budget end
@@ -1581,11 +1971,15 @@ local STATE_LETTER = {
 
 function CeroSecOS.jobLetter(job)
 	if job.blocked == "output" then return "O" end
+	-- A pipeline waiting on a pipe is asleep in the kernel, and that is the
+	-- letter every ps has printed for it: S.
+	if job.blocked == "input" then return "S" end
 	return STATE_LETTER[job.state] or "R"
 end
 
 function CeroSecOS.jobWord(job)
 	if job.state == "running" and job.blocked == "output" then return "output" end
+	if job.state == "running" and job.blocked == "input" then return "sleeping" end
 	return job.state
 end
 

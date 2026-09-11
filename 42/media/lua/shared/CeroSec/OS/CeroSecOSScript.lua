@@ -18,7 +18,8 @@
 --
 --   program   := statement (( ";" | newline ) statement)*
 --   statement := andor [ "&" ]
---   andor     := piece (( "&&" | "||" ) piece)*
+--   andor     := pipeline (( "&&" | "||" ) pipeline)*
+--   pipeline  := piece ( "|" piece )*
 --   piece     := if | for | while | until | simple
 --   if        := "if" program "then" program
 --                ("elif" program "then" program)* [ "else" program ] "fi"
@@ -56,6 +57,12 @@ CeroSecOS = CeroSecOS or {}
 -- anything a person writes at a terminal and shallow enough that the walker's
 -- own frame stack cannot run away.
 CeroSecOS.MAX_NEST = 16
+
+-- Stages in one pipeline. A pipeline runs every stage of it at once, so each one
+-- is a shell of its own with its own frames and its own variables; eight is more
+-- than any line anybody writes and few enough that the widest pipeline a 4096
+-- byte file can hold cannot ask the machine for two thousand of them.
+CeroSecOS.MAX_STAGES = 8
 
 -- The words that are only words in command position. `echo done` prints
 -- "done"; `done` on its own is the end of a loop, or a mistake.
@@ -232,10 +239,8 @@ local function tokenize(text, depth)
 				tokens[#tokens + 1] = { t = "op", v = "||", line = line }
 				i = i + 2
 			else
-				-- A pipe is not on this machine yet, and a script that asks for
-				-- one is told so where it typed it rather than left to wonder
-				-- why its output went nowhere.
-				return nil, "syntax error: unexpected '|'", line
+				tokens[#tokens + 1] = { t = "op", v = "|", line = line }
+				i = i + 1
 			end
 		elseif c == ">" then
 			local append = false
@@ -579,8 +584,35 @@ local function parsePiece(P, depth)
 	return parseSimple(P)
 end
 
-local function parseAndOr(P, depth)
+-- A pipeline: one or more pieces with "|" between them. It binds tighter than
+-- "&&" and "||", the way every shell binds it, so `a | b && c` is the pipeline
+-- and then c.
+local function parsePipeline(P, depth)
 	local first, reason, where = parsePiece(P, depth)
+	if first == nil then return nil, reason, where end
+
+	local stages = { first }
+	while true do
+		local t = peek(P)
+		if not (t.t == "op" and t.v == "|") then break end
+		P.i = P.i + 1
+		-- A newline after "|" is a line that is not finished, exactly as it is
+		-- after "&&": the pipeline goes on.
+		skipNewlines(P)
+		local next_, nreason, nwhere = parsePiece(P, depth)
+		if next_ == nil then return nil, nreason, nwhere end
+		if #stages >= CeroSecOS.MAX_STAGES then
+			return nil, "too many stages", t.line
+		end
+		stages[#stages + 1] = next_
+	end
+
+	if #stages == 1 then return first end
+	return { k = "pipe", line = first.line, stages = stages }
+end
+
+local function parseAndOr(P, depth)
+	local first, reason, where = parsePipeline(P, depth)
 	if first == nil then return nil, reason, where end
 
 	local items, ops = { first }, {}
@@ -589,7 +621,7 @@ local function parseAndOr(P, depth)
 		if t.t == "op" and (t.v == "&&" or t.v == "||") then
 			P.i = P.i + 1
 			skipNewlines(P)
-			local next_, nreason, nwhere = parsePiece(P, depth)
+			local next_, nreason, nwhere = parsePipeline(P, depth)
 			if next_ == nil then return nil, nreason, nwhere end
 			ops[#items] = t.v
 			items[#items + 1] = next_
