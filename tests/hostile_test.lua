@@ -640,6 +640,131 @@ do
 	local _ = before
 end
 
+--
+-- 11. A loop typed at the PROMPT (rung 5a.1)
+--
+-- The prompt is the script engine now, so the worst thing a player can type is
+-- the worst thing he could write into a file -- and it has to be just as
+-- harmless. No file at all here: this is the line going straight into the shell.
+--
+
+do
+	local machine, state, console = newMachine()
+	local job = typeLine(system, machine, state, console, "while true; do echo tick; done")
+	check("the line became a job", job ~= nil)
+
+	local result = drive(machine, PASSES)
+	flat("typed endless loop", result)
+	timely("typed endless loop", result)
+	check("it is still running after a thousand passes", not CeroSecOS.jobIsOver(job))
+	-- Fewer steps than the silent loop above spends, and that is the trickle
+	-- working: a job with forty lines waiting is held back until the screen has
+	-- taken them, which is CeroSec.JOB_OUT_PER_SEC a second.
+	check("having spent steps and been held back (" .. job.steps .. ")",
+		job.steps > 1000 and job.steps < 50000)
+	eq("and the prompt is still the job's", console.job, job.id)
+	note("typed endless loop", result)
+end
+
+-- The same line, left long enough to meet the cpu ceiling. A typed loop dies
+-- exactly the way a script's does.
+do
+	local machine, state, console = newMachine()
+	local job = typeLine(system, machine, state, console, "while true; do x=1; done")
+
+	local result = drive(machine, PASSES, 1000)
+	flat("typed cpu ceiling", result)
+	eq("the typed loop was killed", job.state, "killed")
+	eq("and it says why", job.killReason, "cpu limit")
+	eq("the prompt came back", console.job, nil)
+	eq("and the machine is running nothing", #CeroSecJobs.book(machine).list, 0)
+	note("typed cpu ceiling", result, " (killed)")
+end
+
+--
+-- 12. A ~/.profile that never ends
+--
+-- It runs at login, on the shell's own environment, so it is the prompt's own
+-- job -- which means the ceilings that hold a typed loop hold this too, and the
+-- account is left at a busy prompt rather than at a locked machine.
+--
+
+do
+	local machine, state, console = newMachine()
+	local text = "while true; do echo hello; done\n"
+	local wrote = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+		"/home/admin/.profile", text, false, 100)
+	if wrote == nil then error("cannot write .profile") end
+	-- Run the way SCeroSecSystem:runProfile runs it: the file's text as the
+	-- program, named after the file.
+	local session = system:sessionOf(console)
+	console.shvars = {}
+	local job = CeroSecOS.promptJob(state, session, text, console.shvars, nil, ".profile")
+	job.id = 42
+	machine.jobs = { seq = 1, list = { job }, winMs = 0, winCount = 0 }
+	console.job = 42
+	CeroSecJobs.machines = { machine }
+	CeroSecJobs.system = system
+
+	local result = drive(machine, PASSES)
+	flat("endless profile", result)
+	timely("endless profile", result)
+	check("the account is at a busy prompt and not at a dead machine",
+		not CeroSecOS.jobIsOver(job))
+	eq("which Escape is the way out of", console.job, 42)
+	check("and it never flooded", #console.lines <= CeroSec.CONSOLE_MAX)
+	-- The way out, exactly as Commands.interrupt takes it.
+	CeroSecOS.killJob(job, nil)
+	-- Enough passes for the last of what it wrote to reach the screen: a job is
+	-- only taken off the machine once it has, or the last thing it said would be
+	-- lost. Forty lines at CeroSec.JOB_OUT_PER_SEC a second is two seconds.
+	drive(machine, 40)
+	eq("the prompt comes back", console.job, nil)
+	note("endless profile", result)
+end
+
+--
+-- 13. A history flood
+--
+-- Five thousand lines typed. ~/.sh_history keeps a thousand of them and never
+-- goes past sixteen kilobytes, and the disk it does not count against still has
+-- room on it.
+--
+
+do
+	local machine, state, console = newMachine()
+	local session = system:sessionOf(console)
+	local _, before = CeroSecOS.usage(state)
+
+	local clockStart = os.clock()
+	for i = 1, 5000 do
+		CeroSecOS.historyAppend(state, session, "echo line " .. i, 100)
+	end
+	local seconds = os.clock() - clockStart
+
+	local node = CeroSecOS.getNode(state, session, "/home/admin/" .. CeroSecOS.HISTORY_NAME)
+	check("the file is there", node ~= nil)
+	local lines = CeroSecOS.splitLines(node.data)
+	check("a thousand entries at most (" .. #lines .. ")", #lines <= CeroSecOS.HISTORY_MAX)
+	check("and sixteen kilobytes at most (" .. #node.data .. ")",
+		#node.data <= CeroSecOS.HISTORY_BYTES)
+	eq("the newest is the last thing typed", lines[#lines], "echo line 5000")
+	eq("and its mode never moved", node.mode, CeroSecOS.HISTORY_MODE)
+
+	-- It is exempt from the quota, so the disk is where it was.
+	local _, after = CeroSecOS.usage(state)
+	eq("the disk did not move", after, before)
+	check("and the machine still boots with it there (" .. #node.data .. " bytes)",
+		CeroSecOS.validate(state) == true)
+	-- The disk still has its room: a file may still be written beside it.
+	local room = CeroSecOS.writeFile(state, session, "/home/admin/notes.txt",
+		string.rep("n", 4096), false, 100)
+	eq("with room to spare", room, true)
+
+	report[#report + 1] = string.format("  %-22s %d entries, %d bytes, %.0f ms for 5000",
+		"history flood", #lines, #node.data, seconds * 1000)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

@@ -5606,5 +5606,338 @@ do
 	bad(state, admin, "chmod u+x /etc/motd", "chmod: /etc/motd: permission denied")
 end
 
+--
+-- 33. The prompt IS the script language
+--
+-- Everything typed goes through CeroSecOS.parseScript and runs as a job on the
+-- console's own environment. The bug this section exists for: `while true; do
+-- echo tick; sleep 1; done &` at the prompt answered `while: command not
+-- found`, because the line went through a second, simpler parser that knew one
+-- command and nothing else.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	-- The word that started it all.
+	local r = runAt(state, admin, "while true; do echo tick; break; done", env)
+	eq("`while` is a word the prompt knows", r.ok, true)
+	eq("and the loop ran", r.lines[1], "tick")
+
+	-- The whole grammar, at the prompt.
+	okAt(state, admin, "true && echo yes", { "yes" }, env)
+	okAt(state, admin, "false || echo no", { "no" }, env)
+	okAt(state, admin, "echo a; echo b", { "a", "b" }, env)
+	okAt(state, admin, "if true; then echo t; else echo f; fi", { "t" }, env)
+	okAt(state, admin, "for i in 1 2 3; do echo $i; done", { "1", "2", "3" }, env)
+	okAt(state, admin, "until true; do echo never; done", {}, env)
+	okAt(state, admin, "echo $((2 + 3))", { "5" }, env)
+	okAt(state, admin, "echo $(echo inner)", { "inner" }, env)
+	okAt(state, admin, "echo 'one   two'", { "one   two" }, env)
+
+	-- The environment is the console's and outlives the line.
+	okAt(state, admin, "x=5", {}, env)
+	okAt(state, admin, "echo $x", { "5" }, env)
+	okAt(state, admin, 'y="$x$x"', {}, env)
+	okAt(state, admin, "echo $y", { "55" }, env)
+
+	-- $? persists too.
+	eq("`false` is a status and not a line",
+		select(1, exec(state, admin, "false", env)), false)
+	okAt(state, admin, "echo $?", { "1" }, env)
+	okAt(state, admin, "true", {}, env)
+	okAt(state, admin, "echo $?", { "0" }, env)
+
+	-- `cd` moves the CONSOLE. The job runs on the session it was typed at, not
+	-- on a copy of it, which is the one thing that separates the prompt's job
+	-- from a script's.
+	okAt(state, admin, "cd /etc", {}, env)
+	eq("the prompt moved", admin.cwd, "/etc")
+	okAt(state, admin, "pwd", { "/etc" }, env)
+	okAt(state, admin, "cd", {}, env)
+	eq("and back home with no argument", admin.cwd, "/home/admin")
+
+	-- A line that ends in "&" is an order to the machine, not a command.
+	script(state, "/home/admin/go.sh", "echo ran")
+	r = runAt(state, admin, "sh /home/admin/go.sh &", env)
+	eq("an ampersand asks for a job", r.control, "job")
+	eq("and says it is a background one", r.data.bg, true)
+
+	-- The shell's own words still work, and still answer as themselves.
+	okAt(state, admin, "echo -n one", { "one" }, env)
+	okAt(state, admin, "printf '%s-%d\n' hi 7", { "hi-7" }, env)
+	okAt(state, admin, "test 1 = 1", {}, env)
+	okAt(state, admin, "[ 1 = 1 ]", {}, env)
+
+	-- `exit` at the prompt is /bin/exit's meaning and not the builtin's: it
+	-- ends the SESSION, and the job is only how it got there.
+	r = runAt(state, admin, "exit", env)
+	eq("exit at the prompt logs out", r.control, "exit")
+	-- And inside an su it pops instead.
+	local bob = addUser(state, "bob", "", "/home/bob")
+	local root = open(state, "root")
+	okAt(state, root, "mkdir /home/bob", {}, env)
+	okAt(state, root, "su bob", {}, env)
+	eq("root became bob", root.user, "bob")
+	r = runAt(state, root, "exit", env)
+	eq("and exit pops the stack instead of logging out", r.control, nil)
+	eq("back to root", root.user, "root")
+	check("and bob was a real account", bob ~= nil)
+
+	-- A typed loop that never ends is a job the machine keeps stepping: it
+	-- costs steps, it does not finish, and nothing here hangs.
+	local job = select(5, exec(state, admin, "while true; do x=1; done", env))
+	check("a typed endless loop is still running", not CeroSecOS.jobIsOver(job))
+	check("having spent steps doing it", job.steps > 0)
+end
+
+--
+-- 34. ~/.sh_history
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	okAt(state, admin, "history", {}, env)
+	eq("a fresh account has no history file",
+		state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME], nil)
+
+	eq("appending makes one", CeroSecOS.historyAppend(state, admin, "ls -l", FIXED), true)
+	CeroSecOS.historyAppend(state, admin, "echo two", FIXED)
+	local node = state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME]
+	check("the file is there", node ~= nil)
+	eq("owned by the account", node.owner, "admin")
+	eq("and readable by nobody else", node.mode, CeroSecOS.HISTORY_MODE)
+	eq("holding both lines", node.data, "ls -l\necho two")
+
+	-- history prints the last HISTORY_SHOW with numbers, bash's way.
+	okAt(state, admin, "history", { "    1  ls -l", "    2  echo two" }, env)
+	okAt(state, admin, "history -c", {}, env)
+	okAt(state, admin, "history", {}, env)
+	eq("the file is emptied, not deleted", node.data, "")
+	badAt(state, admin, "history x", "history: usage: history [-c]", env)
+
+	-- !n and !!, csh's history expansion. Only a line that is nothing but the
+	-- event: there is no quoting rule for "!" on this machine.
+	CeroSecOS.historyAppend(state, admin, "pwd", FIXED)
+	CeroSecOS.historyAppend(state, admin, "whoami", FIXED)
+	eq("!1 is the first", CeroSecOS.historyExpand(state, admin, "!1"), "pwd")
+	eq("!2 is the second", CeroSecOS.historyExpand(state, admin, "!2"), "whoami")
+	eq("!! is the last", CeroSecOS.historyExpand(state, admin, "!!"), "whoami")
+	eq("a line with an event and nothing else only",
+		CeroSecOS.historyExpand(state, admin, "echo !1"), "echo !1")
+	eq("an event nothing answers to",
+		select(2, CeroSecOS.historyExpand(state, admin, "!9")), "sh: !9: event not found")
+	eq("and a bang that is not a number either",
+		select(2, CeroSecOS.historyExpand(state, admin, "!x")), "sh: !x: event not found")
+
+	-- The tail the window is handed.
+	local tail = CeroSecOS.historyTail(state, admin, 1)
+	eq("the tail is the last of them", #tail, 1)
+	eq("newest", tail[1], "whoami")
+
+	-- Both ceilings. A thousand entries, and sixteen kilobytes.
+	for i = 1, 1200 do CeroSecOS.historyAppend(state, admin, "echo " .. i, FIXED) end
+	local lines = CeroSecOS.splitLines(node.data)
+	eq("a thousand entries and no more", #lines, CeroSecOS.HISTORY_MAX)
+	check("and never past sixteen kilobytes (" .. #node.data .. ")",
+		#node.data <= CeroSecOS.HISTORY_BYTES)
+	eq("the oldest went first", lines[#lines], "echo 1200")
+
+	-- Exempt from the disk quota, and the state still validates with 16K of it
+	-- on a 32K disk.
+	local _, bytes = CeroSecOS.usage(state)
+	check("the history does not count against the disk (" .. bytes .. ")",
+		bytes < CeroSecOS.DISK_BYTES)
+	eq("the state validates with it there", CeroSecOS.validate(state), true)
+	-- The exemption is paid for: a file that carries the flag and is bigger
+	-- than the history ceiling is not a state this machine will boot.
+	node.data = string.rep("x", CeroSecOS.HISTORY_BYTES + 1)
+	eq("a flagged file past its own ceiling is refused", CeroSecOS.validate(state), false)
+	node.data = ""
+
+	-- Nobody else may read it, so nobody else's history is in it.
+	local bob = addUser(state, "bob", "", "/home/bob")
+	check("bob exists", bob ~= nil)
+	local rootSession = CeroSecOS.rootSession()
+	eq("bob has a home", CeroSecOS.createNode(state, rootSession, "/home/bob",
+		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), nil) ~= nil, true)
+	local bobs = open(state, "bob")
+	eq("bob's own history starts empty", #CeroSecOS.historyLines(state, bobs), 0)
+	CeroSecOS.historyAppend(state, bobs, "id", FIXED)
+	eq("and goes in his own home", #CeroSecOS.historyLines(state, bobs), 1)
+	badAt(state, bobs, "cat /home/admin/" .. CeroSecOS.HISTORY_NAME,
+		"cat: /home/admin/" .. CeroSecOS.HISTORY_NAME .. ": permission denied", env)
+end
+
+--
+-- 35. Names that begin with a dot
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	okAt(state, admin, "echo hi > .profile", {}, env)
+	okAt(state, admin, "echo bye > plain", {}, env)
+
+	okAt(state, admin, "ls", { "plain" }, env)
+	okAt(state, admin, "ls -A", { ".profile  plain" }, env)
+	okAt(state, admin, "ls -a", { ".         ..        .profile  plain" }, env)
+	-- -F marks the directories, the two entries included.
+	okAt(state, admin, "ls -aF", { "./        ../       .profile  plain" }, env)
+	-- The later of -a and -A wins, the way a real ls reads the pair.
+	okAt(state, admin, "ls -aA", { ".profile  plain" }, env)
+	okAt(state, admin, "ls -Aa", { ".         ..        .profile  plain" }, env)
+
+	-- Long form: the same rule, and "." and ".." are the directory and the one
+	-- above it.
+	local long = okAt(state, admin, "ls -l", nil, env)
+	eq("the long form hides it too", #long, 1)
+	long = okAt(state, admin, "ls -la", nil, env)
+	eq("and shows four rows with -a", #long, 4)
+	check("the first row is this directory", string.find(long[1], "  %.$") ~= nil)
+	check("the second is the one above it", string.find(long[2], "  %.%.$") ~= nil)
+	check("and the dotted file is there", string.find(long[3], "%.profile$") ~= nil)
+	long = okAt(state, admin, "ls -lA", nil, env)
+	eq("and two rows with -A", #long, 2)
+
+	-- Nothing else changed: a dotted name is a name.
+	okAt(state, admin, "cat .profile", { "hi" }, env)
+	okAt(state, admin, "cp .profile .copy", {}, env)
+	okAt(state, admin, "rm .copy", {}, env)
+	badAt(state, admin, "ls -z", "ls: -z: unknown option", env)
+end
+
+--
+-- 36. What lives in the shell and what lives in /bin
+--
+-- The six the shell runs itself are still FILES: resolved through /bin/<name>
+-- before the engine runs them, so the disk is the truth about what a machine
+-- can do. The reserved words and the state builtins are not, and could not be.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	-- Every one of them has an executable.
+	local names = { "echo", "printf", "test", "[", "true", "false", "sleep", "sh", "halt" }
+	for i = 1, #names do
+		local node = state.fs.children.bin.children[names[i]]
+		check("/bin/" .. names[i] .. " is there", node ~= nil and node.type == "file")
+	end
+
+	-- Delete one and the command is gone with it.
+	okAt(state, admin, "echo works", { "works" }, env)
+	okAt(state, root, "rm /bin/echo", {}, env)
+	badAt(state, admin, "echo works", "echo: command not found", env)
+
+	-- Shut one and it is out of an ordinary account's reach, and still root's.
+	okAt(state, root, "chmod 600 /bin/printf", {}, env)
+	badAt(state, admin, "printf hi", "printf: permission denied", env)
+	okAt(state, root, "printf hi", { "hi" }, env)
+
+	okAt(state, root, "rm /bin/[", {}, env)
+	badAt(state, admin, "[ 1 = 1 ]", "[: command not found", env)
+	okAt(state, admin, "test 1 = 1", {}, env)
+
+	-- The reserved words and the state builtins have no file and need none:
+	-- there is nothing in /bin to delete, and the words still work on a machine
+	-- whose /bin has been emptied.
+	local words = { "if", "then", "elif", "else", "fi", "for", "while", "until",
+		"do", "done", "read", "shift", "break", "continue", "history" }
+	for i = 1, #words do
+		eq("no /bin/" .. words[i], state.fs.children.bin.children[words[i]], nil)
+		eq("and no usage line for it", CeroSecOS.commandUsage(words[i]), nil)
+	end
+	okAt(state, root, "rm -r /bin", {}, env)
+	-- `history` and not `true` as the condition: /bin/true is gone with the rest
+	-- of /bin, and that is the point of the section above.
+	okAt(state, admin, "if history; then history; fi", {}, env)
+	okAt(state, admin, "for i in a; do history; done", {}, env)
+	badAt(state, admin, "true", "true: command not found", env)
+	CeroSecOS.restoreSystem(state)
+	-- A word with no Lua behind it is not a command, which is the other half of
+	-- the same rule.
+	okAt(state, root, 'write /bin/telnet "not yet"', {}, env)
+	okAt(state, root, "chmod 755 /bin/telnet", {}, env)
+	badAt(state, admin, "telnet", "telnet: command not found", env)
+
+	-- help lists the files, and then the words that are not files.
+	local helpLines = okAt(state, admin, "help", nil, env)
+	local whole = table.concat(helpLines, "\n")
+	check("help names the shell's own words",
+		string.find(whole, CeroSecOS.HELP_RESERVED, 1, true) ~= nil)
+	check("and its state builtins",
+		string.find(whole, CeroSecOS.HELP_BUILTINS, 1, true) ~= nil)
+	check("under a heading that says they have no file",
+		string.find(whole, "shell words (no file in " .. CeroSecOS.BIN_PATH .. "):", 1, true) ~= nil)
+end
+
+--
+-- 37. shutdown, with a clock on it
+--
+
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 100000, jobs = {} }
+
+	-- The wording is Unix's, to the exclamation mark.
+	eq("five minutes", CeroSecOS.shutdownLine("reboot", 5),
+		"The system is going down for reboot in 5 minutes!")
+	eq("one minute is not a plural", CeroSecOS.shutdownLine("reboot", 1),
+		"The system is going down for reboot in 1 minute!")
+	eq("now is NOW", CeroSecOS.shutdownLine("reboot", 0),
+		"The system is going down for reboot NOW!")
+	eq("and a halt says halt", CeroSecOS.shutdownLine("shutdown", 5),
+		"The system is going down for halt in 5 minutes!")
+
+	-- Scheduling: the broadcast is the command's own output, so it reaches every
+	-- screen at the machine the way any other line does.
+	local r = runAt(state, root, "shutdown -r +5", env)
+	eq("it is taken", r.ok, true)
+	eq("the order is to schedule", r.control, "schedule")
+	eq("five minutes out, in wall-clock milliseconds", r.data.at, 100000 + 5 * 60000)
+	eq("as a reboot", r.data.kind, "reboot")
+	eq("and it says so on the screen", r.lines[1],
+		"The system is going down for reboot in 5 minutes!")
+
+	-- One at a time.
+	local pending = { at = r.data.at, kind = "reboot" }
+	local env2 = { now = FIXED, nowMs = 100000, jobs = {}, shutdown = pending }
+	badAt(state, root, "shutdown -h +1", "shutdown: already scheduled", env2)
+
+	-- Cancelling.
+	r = runAt(state, root, "shutdown -c", env2)
+	eq("cancelling is taken", r.ok, true)
+	eq("and ordered", r.control, "cancel")
+	eq("with the one line Unix prints", r.lines[1], "shutdown: cancelled")
+	badAt(state, root, "shutdown -c", "shutdown: no shutdown scheduled", env)
+
+	-- What is not a time.
+	badAt(state, root, "shutdown +0",
+		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+	badAt(state, root, "shutdown +9999",
+		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+	badAt(state, root, "shutdown -x",
+		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+	-- A machine with no clock cannot be given a time.
+	badAt(state, root, "shutdown -r +5", "shutdown: no clock", { now = FIXED, jobs = {} })
+
+	-- Root's, all of it.
+	badAt(state, admin, "shutdown -r +5", "shutdown: permission denied", env)
+	badAt(state, admin, "shutdown -c", "shutdown: permission denied", env2)
+end
+
 
 print("os_test: " .. count .. " assertions passed")

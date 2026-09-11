@@ -329,9 +329,25 @@ local function newBench()
 	-- The wire. One call in, the server's answers straight back out -- to every
 	-- window there is, because that is what the server does: it answers a
 	-- connection, and each window keeps only what carries its own token.
+	-- Every line the server ever put on a screen, in order. The glass only ever
+	-- shows the LAST screen, and some lines are the last thing a machine says
+	-- before it goes down and wipes the console -- a reboot's own broadcast is
+	-- one. This is where those are looked for.
+	bench.said = {}
+	local function record(a)
+		if type(a) ~= "table" or type(a.lines) ~= "table" then return end
+		for i = 1, #a.lines do bench.said[#bench.said + 1] = a.lines[i] end
+	end
+	function bench.heard(needle)
+		for i = 1, #bench.said do
+			if string.find(bench.said[i], needle, 1, true) then return true end
+		end
+		return false
+	end
+
 	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
 		local replies = {}
-		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a } end
+		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 		system:OnClientCommand(command, sender, args)
 		for i = 1, #replies do
 			for w = 1, #bench.windows do
@@ -379,7 +395,7 @@ local function newBench()
 		for _ = 1, (times or 1) do
 			_G.__now = _G.__now + (stepMs or CeroSec.JOB_PASS_MS)
 			local replies = {}
-			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a } end
+			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 			CeroSecJobs.tick()
 			for i = 1, #replies do
 				for w = 1, #bench.windows do
@@ -450,6 +466,40 @@ local function newBench()
 		bench.enter(name)
 		bench.enter(password or "")
 		bench.frame()
+	end
+
+	-- A window closed and opened again, on the same machine. Everything the
+	-- machine holds -- the screen, the session, the shell's variables, the
+	-- history -- has to be there when it comes back; everything the WINDOW held
+	-- is gone, because this is a different window.
+	function bench.reopen()
+		local w = bench.windows[#bench.windows]
+		w:close()
+		for i = #bench.windows, 1, -1 do
+			if bench.windows[i] == w then table.remove(bench.windows, i) end
+		end
+		local fresh = bench.addWindow()
+		fresh:askForScreen()
+		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+		bench.frame()
+		return fresh
+	end
+
+	-- Type a line at a window that is not the first one.
+	function bench.enterOn(w, line)
+		_G.__now = _G.__now + 1000
+		w.entry:setText(line or "")
+		w.entry:setCursorPos(#(line or ""))
+		w:onCommandEntered()
+	end
+
+	-- Every line of text painted on one window's glass this frame.
+	function bench.paintedOn(w, needle)
+		for i = 1, #w.painted do
+			local text = w.painted[i].text
+			if type(text) == "string" and string.find(text, needle, 1, true) then return true end
+		end
+		return false
 	end
 
 	return bench
@@ -2099,6 +2149,279 @@ do
 	bench.frame()
 	check("the machine has no job book left", bench.object.jobs == nil)
 	eq("and no machine is left in the scheduler", #CeroSecJobs.machines, 0)
+end
+
+--
+-- The prompt IS the shell (rung 5a.1)
+--
+-- os_test drives the engine and hostile_test the scheduler. What is here is the
+-- round trip Mathieu's screenshot was of: a loop typed at the glass.
+--
+
+-- The line from the screenshot.
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	bench.enter("while true; do echo tick; sleep 1; done &")
+	bench.frame()
+	check("the loop is not an unknown command", not bench.painted("while: command not found"))
+	eq("the prompt came straight back", bench.window.mode, "shell")
+	check("and the machine announced a job", bench.painted("[1] "))
+
+	bench.enter("jobs")
+	bench.frame()
+	-- "sleeping" and not "running": the loop is between two ticks, waiting on
+	-- its own `sleep 1`, which is what `jobs` is supposed to say about it.
+	check("jobs names the slot", bench.painted("[1] sleeping"))
+	check("and carries the line that was typed",
+		bench.painted("while true; do echo tick; sleep 1; done"))
+
+	bench.tick(12)
+	check("it ticks", bench.painted("tick"))
+
+	bench.enter("kill %1")
+	bench.tick(2)
+	check("and kill stops it", bench.painted("[1] killed"))
+	eq("with nothing left running", #CeroSecJobs.book(bench.object).list, 0)
+end
+
+-- The shell's variables are the machine's: they outlive the window.
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	bench.enter("x=5")
+	bench.enter("echo $x")
+	bench.frame()
+	check("a variable set at the prompt reads back", bench.painted("5"))
+
+	local w = bench.reopen()
+	bench.enterOn(w, "echo [$x]")
+	bench.frame()
+	check("and survives the window closing", bench.paintedOn(w, "[5]"))
+	eq("the machine holds it", bench.object.console.shvars.x, "5")
+
+	-- A logout takes them, the way it takes the session.
+	bench.enterOn(w, "exit")
+	bench.frame()
+	eq("nobody is logged in", bench.object.console.user, nil)
+	eq("and the variables are gone", bench.object.console.shvars, nil)
+end
+
+-- Up and Down walk ~/.sh_history, which the machine keeps.
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	bench.enter("pwd")
+	bench.enter("whoami")
+	bench.frame()
+
+	local state = bench.object:osState()
+	local session = bench.system:sessionOf(bench.object.console)
+	local lines = CeroSecOS.historyLines(state, session)
+	eq("the machine wrote both lines down", #lines, 2)
+	eq("oldest first", lines[1], "pwd")
+	eq("newest last", lines[2], "whoami")
+
+	-- A brand new window, handed the account's own history when it opened.
+	local w = bench.reopen()
+	eq("the new window was handed the history", #w.history, 2)
+	w:onHistory(1)
+	eq("Up is the last line typed", w.entry:getInternalText(), "whoami")
+	w:onHistory(1)
+	eq("again is the one before it", w.entry:getInternalText(), "pwd")
+	w:onHistory(-1)
+	eq("and Down comes back", w.entry:getInternalText(), "whoami")
+
+	-- history, !! and !n at the glass.
+	bench.enterOn(w, "history")
+	bench.frame()
+	check("history numbers them", bench.paintedOn(w, "    1  pwd"))
+	bench.enterOn(w, "!1")
+	bench.frame()
+	check("an event is echoed as what it expanded to", bench.paintedOn(w, "$ pwd"))
+	check("and it ran", bench.paintedOn(w, "/home/admin"))
+	bench.enterOn(w, "!99")
+	bench.frame()
+	check("an event nothing answers to says so", bench.paintedOn(w, "sh: !99: event not found"))
+
+	bench.enterOn(w, "history -c")
+	bench.enterOn(w, "history")
+	bench.frame()
+	eq("and clearing empties the file",
+		#CeroSecOS.historyLines(state, bench.system:sessionOf(bench.object.console)), 1)
+end
+
+-- A password is not history.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("passwd")
+	bench.enter("")
+	bench.enter("hunter2")
+	bench.enter("hunter2")
+	bench.frame()
+	local state = bench.object:osState()
+	local lines = CeroSecOS.historyLines(state, bench.system:sessionOf(bench.object.console))
+	for i = 1, #lines do
+		check("nothing answered at a prompt is in the history", lines[i] ~= "hunter2")
+	end
+	check("the command itself is", (function()
+		for i = 1, #lines do
+			if lines[i] == "passwd" then return true end
+		end
+		return false
+	end)())
+end
+
+-- ~/.profile, at login.
+do
+	local bench = newBench()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	local done, reason = CeroSecOS.writeFile(state, session, "/home/admin/.profile",
+		"echo welcome home\ngreeting=hello\ncd /etc\n", false, 100)
+	if done == nil then error("cannot write .profile: " .. tostring(reason)) end
+
+	bench.login("admin")
+	bench.frame()
+	check("the profile ran after the motd", bench.painted("welcome home"))
+	eq("what it set is set at the prompt", bench.object.console.shvars.greeting, "hello")
+	eq("and where it went is where the prompt is", bench.object.console.cwd, "/etc")
+	bench.enter("echo $greeting")
+	bench.frame()
+	check("readable from the prompt", bench.painted("hello"))
+	eq("the prompt is a prompt", bench.window.mode, "shell")
+	-- Not history: nobody typed it.
+	local lines = CeroSecOS.historyLines(state, bench.system:sessionOf(bench.object.console))
+	for i = 1, #lines do
+		check("the profile is not in the history", lines[i] ~= "cd /etc")
+	end
+end
+
+-- A profile that will not parse says so the way a script does, and the account
+-- is still logged in.
+do
+	local bench = newBench()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	CeroSecOS.writeFile(state, session, "/home/admin/.profile", "echo one\nfi\n", false, 100)
+
+	bench.login("admin")
+	bench.frame()
+	check("it names the file and the line",
+		bench.painted(".profile: line 2: syntax error: unexpected 'fi'"))
+	eq("and the account is at a prompt", bench.window.mode, "shell")
+end
+
+-- A profile that loops forever leaves a busy prompt, and Escape is the way out.
+-- Documented as the quirk it is (chapter on the profile).
+do
+	local bench = newBench()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	CeroSecOS.writeFile(state, session, "/home/admin/.profile",
+		"while true; do x=1; done\n", false, 100)
+
+	bench.login("admin")
+	bench.frame()
+	eq("the machine is busy with it", CeroSec.consoleWaiting(bench.object.console), "job")
+	eq("and there is nothing to type at", bench.window.prompt, "")
+	check("but Escape is armed", bench.window.active)
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	eq("which gives the account its prompt", bench.window.mode, "shell")
+	check("with the ^C on the glass", bench.painted("^C"))
+end
+
+-- A profile nobody may read is a profile that does not run.
+do
+	local bench = newBench()
+	local state = bench.object:osState()
+	local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	CeroSecOS.writeFile(state, session, "/home/admin/.profile", "echo secret\n", false, 100)
+	CeroSecOS.getNode(state, session, "/home/admin/.profile").mode = 0
+	CeroSecOS.getNode(state, session, "/home/admin/.profile").owner = "root"
+
+	bench.login("admin")
+	bench.frame()
+	check("it did not run", not bench.painted("secret"))
+	eq("and the account is at a prompt", bench.window.mode, "shell")
+end
+
+-- shutdown -r +1: the broadcast, the warning, and the reboot.
+do
+	local bench = newBench()
+	bench.login("root")
+	local other = bench.addWindow()
+	other:askForScreen()
+
+	bench.enter("shutdown -r +1")
+	bench.frame()
+	check("the machine tells everybody at it",
+		bench.painted("The system is going down for reboot in 1 minute!"))
+	check("the second pair of eyes too",
+		bench.paintedOn(other, "The system is going down for reboot in 1 minute!"))
+	check("and it is pending", bench.object.shutdown ~= nil)
+	eq("the machine is still up", bench.object.on, true)
+	-- A second one is refused rather than replacing the first.
+	bench.enter("shutdown -h +5")
+	bench.frame()
+	check("only one at a time", bench.painted("shutdown: already scheduled"))
+
+	-- Nothing happens until the minute is up.
+	bench.tick(5)
+	eq("still up", bench.object.on, true)
+
+	-- And then it goes down and comes back.
+	_G.__now = _G.__now + 61000
+	bench.tick(1)
+	-- Said, not painted: the line goes out to every window and the machine wipes
+	-- its console in the same breath, so the glass has already been redrawn by
+	-- the fresh boot before this bench renders.
+	check("it says NOW", bench.heard("The system is going down for reboot NOW!"))
+	eq("and the machine came back", bench.object.on, true)
+	eq("with nobody logged in", bench.object.console.user, nil)
+	eq("and nothing pending", bench.object.shutdown, nil)
+end
+
+-- shutdown -c, and a warning a minute out on a longer one.
+do
+	local bench = newBench()
+	bench.login("root")
+
+	bench.enter("shutdown -h +2")
+	bench.frame()
+	check("two minutes out", bench.painted("The system is going down for halt in 2 minutes!"))
+
+	-- A minute passes: the warning, and still up.
+	_G.__now = _G.__now + 61000
+	bench.tick(1)
+	check("the minute warning", bench.painted("The system is going down for halt in 1 minute!"))
+	eq("still up", bench.object.on, true)
+
+	bench.enter("shutdown -c")
+	bench.frame()
+	check("cancelled", bench.painted("shutdown: cancelled"))
+	eq("and nothing is pending", bench.object.shutdown, nil)
+
+	-- The minute it would have gone down on comes and goes.
+	_G.__now = _G.__now + 120000
+	bench.tick(2)
+	eq("the machine is still up", bench.object.on, true)
+	eq("and the scheduler has let it go", #CeroSecJobs.machines, 0)
+end
+
+-- halt is shutdown -h now under the name it has had since the seventies.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("halt")
+	bench.frame()
+	eq("the machine is off", bench.object.on, false)
 end
 
 print("window_test: " .. count .. " checks passed")
