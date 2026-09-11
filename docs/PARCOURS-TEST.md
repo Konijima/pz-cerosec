@@ -385,13 +385,18 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      `dev lockN unlock` → `lockN: unlocked`, et `dev doorN open` → la porte
      s'ouvre. La refermer et reverrouiller avec `dev lockN lock` :
      `cat /dev/doorN` dit de nouveau `locked`. [ ]
-100c. Se tenir **dans l'embrasure** de la porte intérieure de l'étape 100a
-     (sur la case de la porte ou sur celle d'en face), puis `dev doorN close`
-     → `doorN: blocked`, la porte ne bouge pas. S'écarter d'une case et
-     refaire la commande → elle ferme. Même essai avec un zombi immobile dans
-     l'embrasure. Si un véhicule peut être garé en travers d'une porte de
-     garage extérieure, `dev doorN open` doit répondre `blocked` aussi (c'est
-     le test du jeu lui-même, pas le nôtre). [ ]
+100c. Bloquer l'embrasure avec quelque chose que **le jeu lui-même** refuse :
+     garer un véhicule en travers d'une porte extérieure, ou faire pousser /
+     apparaître un arbre sur la case de la porte (mode debug). Vérifier
+     d'abord à la main qu'un survivant ne peut pas ouvrir cette porte, puis
+     `dev doorN open` → `doorN: blocked`, la porte ne bouge pas ;
+     `dev doorN toggle` dit la même chose. Déplacer le véhicule ou l'arbre →
+     `dev doorN open` fonctionne de nouveau. **Contre-épreuve à ne pas
+     oublier :** se tenir soi-même dans l'embrasure (sur la case de la porte
+     ou sur celle d'en face) et taper `dev doorN close` → la porte doit
+     **fermer normalement**, sans `blocked`. Une porte traverse un survivant
+     dans ce jeu ; la machine ne doit pas inventer un refus que le jeu ne fait
+     pas. Même contre-épreuve avec un zombi immobile dans l'embrasure. [ ]
 100d. Barricader la porte intérieure (planches, marteau, clous) →
      `dev doorN open` répond `doorN: barricaded`, et la porte ne bouge pas
      d'un poil. `dev doorN toggle` dit la même chose. Retirer les planches →

@@ -566,36 +566,22 @@ local function alive(entry)
 	return square:getX() == entry.x and square:getY() == entry.y and square:getZ() == entry.z
 end
 
--- Is the doorway itself in the way? Two halves, and they are not the same kind
--- of fact.
+-- Is the doorway itself in the way? The game's own test and nothing of ours:
+-- IsoDoor.isObstructed() -> the static isDoorObstructed(IsoObject), which
+-- answers true when the door's square is isSolid() or isSolidTrans(), when it
+-- has an IsoObjectType.tree on it, or when a vehicle in the chunk
+-- isIntersectingSquareWithShadow of it. IsoThumpable has the same method,
+-- forwarding to the same static.
 --
--- The first is the game's own: IsoDoor.isObstructed() -> the static
--- isDoorObstructed(IsoObject), which answers true when the door's square is
--- isSolid() or isSolidTrans(), when it has an IsoObjectType.tree on it, or when
--- a vehicle in the chunk isIntersectingSquareWithShadow of it. It is exactly the
--- test couldBeOpen makes before it will let a survivor through, so a door it
--- refuses is a door nobody could open by hand either. IsoThumpable has the same
--- method, forwarding to the same static.
---
--- The second is OURS, and is marked as such because vanilla makes no such rule:
--- ISOpenCloseDoor:complete calls ToggleDoor(character) and nothing anywhere asks
--- whether somebody is standing in the doorway first. `getMovingObjects():size()`
--- is the game's own way of asking whether anything is standing on a square
--- (media/lua/server/BuildingObjects/ISHutch.lua:103,
--- server/Camping/BuildingObjects/campingCampfire.lua:63 and four more), it is
--- just never asked about a door. We ask it, because a door swung by a machine is
--- the one door nobody has a hand on.
-local function standingOn(square)
-	if square == nil then return false end
-	local bodies = square:getMovingObjects()
-	if bodies == nil then return false end
-	return bodies:size() > 0
-end
-
+-- It is exactly the test couldBeOpen makes at offset 108 before it will let a
+-- survivor through, so a door the machine refuses is a door nobody could open by
+-- hand either -- which is the whole rule here. A survivor STANDING in the
+-- doorway is not one of these: vanilla lets a door swing through him
+-- (ISOpenCloseDoor:complete calls ToggleDoor and checks nothing first), so the
+-- machine does too. A refusal the game does not make is a refusal we would have
+-- invented.
 local function blocked(object)
-	if object:isObstructed() then return true end
-	if standingOn(object:getSquare()) then return true end
-	return standingOn(object:getOppositeSquare())
+	return object:isObstructed()
 end
 
 -- The world action, per kind. ok, reason, state.

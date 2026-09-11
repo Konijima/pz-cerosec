@@ -756,8 +756,10 @@ and stays shut; the way through is its lock, first.
   door0: open
 
 barricaded is planks, and no machine takes those off. blocked is the
-doorway itself -- a tree, a car across it, or somebody standing in
-it.
+doorway itself -- a solid tile, a tree, a car parked across it --
+and it is the game's own test, so it is a door nobody could open by
+hand either. Somebody merely standing in the doorway is not that: a
+door swings through a survivor in this game, and it does here too.
 
 A padlock is none of those. A padlock on a player's door holds what
 is behind the door and not the door, so a padlocked door still opens
@@ -1488,9 +1490,9 @@ one below is dev's own, and is signed the way a command signs:
   dev: <word>: unknown kind
       no current or bulb; gone or unloaded; broken; boarded;
       neither padlock nor key; held by a key; planks on it;
-      a tree, a car or a body in it; a word that
-      kind does not know; no opposite; the kinds are door,
-      light, lock and win
+      a wall, a tree or a car in it; a word that kind does
+      not know; no opposite; the kinds are door, light,
+      lock and win
 
   hostname: <name>: invalid name
   hash: <salt>: invalid salt

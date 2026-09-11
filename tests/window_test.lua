@@ -1446,16 +1446,13 @@ function FakeWorld.new()
 		local key = x .. "," .. y .. "," .. z
 		local sq = world.squares[key]
 		if sq ~= nil then return sq end
-		sq = { objects = {}, bodies = {} }
+		sq = { objects = {} }
 		sq.getX = function() return x end
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
 		sq.getRoom = function() return room end
 		sq.getBuilding = function() if room ~= nil then return world.building end return nil end
 		sq.getObjects = function() return javaList(sq.objects) end
-		-- Whoever is standing on it. Vanilla's own way of asking, and the half
-		-- of "blocked" that is ours rather than the game's.
-		sq.getMovingObjects = function() return javaList(sq.bodies) end
 		world.squares[key] = sq
 		return sq
 	end
@@ -1569,14 +1566,16 @@ local function fakeWindow(locked, north)
 	return o
 end
 
-local function fakeThumpable(padlock, north, opposite)
+-- No getOppositeSquare on this one, deliberately: the exterior rule is a map
+-- door's business and a built door never has it asked. A fake that answers a
+-- call nothing makes is a fake that claims a call we make.
+local function fakeThumpable(padlock, north)
 	local o = { __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
-		lockedByKey = false, keyId = 0, north = north, opposite = opposite, syncs = 0 }
+		lockedByKey = false, keyId = 0, north = north, syncs = 0 }
 	highlightable(o)
 	openable(o)
 	o.isDoor = function() return true end
 	o.getNorth = function() return o.north end
-	o.getOppositeSquare = function() return o.opposite end
 	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
 	o.isLockedByPadlock = function() return o.lockedByPadlock end
 	o.canBeLockByPadlock = function() return o.canPadlock end
@@ -1617,8 +1616,7 @@ local function mockupWorld()
 	kit.inner = world.put(world.squares["11,11,0"], fakeDoor(false, true, world.squares["12,11,0"]))
 	-- door2 and lock1: the player-built door, padlocked. The padlock locks what
 	-- is behind it and not the door, so the door still reads closed.
-	kit.built = world.put(world.squares["12,11,0"],
-		fakeThumpable(true, true, world.square(12, 12, 0, nil)))
+	kit.built = world.put(world.squares["12,11,0"], fakeThumpable(true, true))
 
 	kit.world = world
 	kit.office, kit.kitchen, kit.hallway = office, kitchen, hallway
@@ -1809,29 +1807,22 @@ do
 	check("toggle says the same", bench.painted("door1: barricaded"))
 	kit.inner.barricaded = false
 
-	-- Blocked, both halves of it: the game's own obstruction test, and somebody
-	-- standing in the doorway.
+	-- Blocked: the game's own obstruction test and nothing else -- a solid tile,
+	-- a tree, a vehicle across it. A survivor standing in the doorway is NOT
+	-- one: vanilla lets a door swing through him, so the machine does too, and a
+	-- refusal the game does not make is one we would have invented.
 	kit.inner.obstructed = true
 	bench.enter("dev door1 open")
 	bench.frame()
 	check("blocked by the doorway itself", bench.painted("door1: blocked"))
 	eq("and nothing moved", kit.inner.silentToggles, toggles)
+	bench.enter("dev door1 toggle")
+	bench.frame()
+	check("toggle says the same", bench.painted("door1: blocked"))
 	kit.inner.obstructed = false
-
-	local doorway = kit.world.squares["12,11,0"]
-	doorway.bodies[1] = { __class = "IsoPlayer" }
 	bench.enter("dev door1 open")
 	bench.frame()
-	check("blocked by whoever is standing in it", bench.painted("door1: blocked"))
-	-- The far side counts as much as the near one: this body is on door1's
-	-- OPPOSITE square, and on door2's own.
-	bench.enter("dev door2 open")
-	bench.frame()
-	check("the door on that square too", bench.painted("door2: blocked"))
-	doorway.bodies[1] = nil
-	bench.enter("dev door1 open")
-	bench.frame()
-	check("and once he moves it opens", bench.painted("door1: open"))
+	check("and once the doorway is clear it opens", bench.painted("door1: open"))
 	bench.enter("dev door1 close")
 	bench.frame()
 
@@ -2042,8 +2033,7 @@ do
 	-- spent for the life of the machine, or a script that says
 	-- "echo open > /dev/door0" one day opens the wrong door the next. The new
 	-- door is two devices and takes the next free number of EACH kind.
-	kit.world.put(kit.world.squares["10,10,0"],
-		fakeThumpable(false, false, kit.world.square(9, 10, 0, nil)))
+	kit.world.put(kit.world.squares["10,10,0"], fakeThumpable(false, false))
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 	check("the new door took the next number, not the gap",

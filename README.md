@@ -359,7 +359,7 @@ command's:
 | `lock1: no padlock` | a player-built door with neither padlock nor key on it |
 | `door0: locked` | held by a key the machine has not got: `unlock` its `lockN` first |
 | `door0: barricaded` | planks on it, and no machine takes those off |
-| `door0: blocked` | the doorway is not clear: a tree, a vehicle, a solid tile, or somebody standing in it |
+| `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it — the game's own test, so a survivor could not open it by hand either |
 | `light0: invalid value` | that word means nothing to that kind |
 | `light0: permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
@@ -958,18 +958,17 @@ open door. And because it returns doing nothing on a barricaded door, the
 `barricaded` refusal is ours and comes *before* the call — otherwise the order
 would be swallowed and the machine would report the state it already had.
 
-`doorN: blocked` is two facts. The first is the game's own:
-`isObstructed()` → the static `IsoDoor.isDoorObstructed(IsoObject)`, true when the
-door's square `isSolid()` or `isSolidTrans()`, has an `IsoObjectType.tree`, or a
-vehicle in the chunk `isIntersectingSquareWithShadow` of it — exactly the test
-`couldBeOpen` makes, so a door it refuses is a door nobody could open by hand.
-The second **is ours and is marked as such in the source**: vanilla has no rule
-about a body in a doorway (`ISOpenCloseDoor:complete` calls `ToggleDoor` and
-nothing checks first), so we ask `getMovingObjects():size() > 0` on the door's own
-square and its opposite — vanilla's own way of asking whether anything stands on
-a square (`server/BuildingObjects/ISHutch.lua:103`,
-`server/Camping/BuildingObjects/campingCampfire.lua:63`, four more) — because a
-door swung by a machine is the one door nobody has a hand on.
+`doorN: blocked` is the game's own test and nothing of ours: `isObstructed()` →
+the static `IsoDoor.isDoorObstructed(IsoObject)`, true when the door's square
+`isSolid()` or `isSolidTrans()`, has an `IsoObjectType.tree`, or a vehicle in the
+chunk `isIntersectingSquareWithShadow` of it. It is exactly the test
+`couldBeOpen` makes at offset 108 before it will let a survivor through, so a door
+the machine refuses is a door nobody could open by hand either.
+
+A survivor **standing** in the doorway is not one of these. Vanilla lets a door
+swing through him — `ISOpenCloseDoor:complete` calls `ToggleDoor` and checks
+nothing first — so the machine does too. A refusal the game does not make is a
+refusal we would have invented.
 
 **Migration.** A `devmap` entry made for an interior map door's `lock` device
 before this rung is keyed `lock:x:y:z:side:n` and nothing classifies to that key
