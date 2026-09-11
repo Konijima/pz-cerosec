@@ -3755,26 +3755,72 @@ do
 	eq("and nobody was switched", admin.user, "admin")
 end
 
--- A borrowed session carries a COPY of the stack: `sudo su` moves nobody and
--- `sudo exit` is a logout, not somebody else's su to unwind.
+-- `su` under sudo acts on the CONSOLE, because a shell of somebody else's at
+-- this glass is the whole of what su is for. `exit` under sudo is not a command
+-- at all. The rest of a borrowed session is untouched: `sudo cd` still moves
+-- nobody.
 do
 	local state = fresh()
 	local admin = open(state, "admin")
+	addUser(state, "bob", "", "/home/bob", false)
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
 
-	answer(state, admin, run(state, admin, "su root").data.cont, "")
-	eq("the console is root's", admin.user, "root")
+	-- Root is asked for nobody's password, so the switch happens on the line that
+	-- asked for it.
+	okAt(state, admin, "sudo su bob", {})
+	eq("the console is bob's", admin.user, "bob")
+	eq("standing in his home", admin.cwd, "/home/bob")
 	eq("one deep", #admin.stack, 1)
-
-	okAt(state, admin, "sudo su admin", {})
-	eq("sudo su moved nobody", admin.user, "root")
-	eq("and pushed nothing", #admin.stack, 1)
-
-	eq("sudo exit is a logout", runAt(state, admin, "sudo exit").control, "exit")
-	eq("and popped nothing", #admin.stack, 1)
-	-- The console's own exit still pops.
+	okAt(state, admin, "whoami", { "bob" })
+	-- And exit pops it, the way it pops any su.
 	eq("exit pops", runAt(state, admin, "exit").control, nil)
 	eq("back to admin", admin.user, "admin")
+	eq("and the stack is empty", #admin.stack, 0)
+
+	-- `sudo su` with no name is root's, as su on its own has always been.
+	okAt(state, admin, "sudo su", {})
+	eq("the console is root's", admin.user, "root")
+	eq("exit pops", runAt(state, admin, "exit").control, nil)
+	eq("back to admin", admin.user, "admin")
+
+	-- The ceiling is the console's, and is the same four it always was.
+	for i = 1, CeroSecOS.SU_MAX do
+		okAt(state, admin, "sudo su root", {})
+		eq("stack " .. i, #admin.stack, i)
+	end
+	badAt(state, admin, "sudo su root", "su: too many levels")
+	eq("and it stayed four deep", #admin.stack, CeroSecOS.SU_MAX)
+
+	-- `sudo exit` is not a command: a shell word has no file in /bin for sudo to
+	-- look up, and real sudo says so in its own name.
+	badAt(state, admin, "sudo exit", "sudo: exit: command not found")
+	eq("and popped nothing", #admin.stack, CeroSecOS.SU_MAX)
+	eq("with nobody switched", admin.user, "root")
+	-- The console's own exit still pops.
+	eq("exit pops", runAt(state, admin, "exit").control, nil)
+
+	-- `sudo cd` moves nobody: cd only ever moves the session that is logged in,
+	-- and sudo's is a copy of it.
+	local where = admin.cwd
+	okAt(state, admin, "sudo cd /", {})
+	eq("sudo cd moved nobody", admin.cwd, where)
+end
+
+-- The same, through the password: the authority travels in the token and the
+-- glass it belongs to is still the glass the switch lands on.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	addUser(state, "bob", "", "/home/bob", false)
+
+	local asked = run(state, admin, "sudo su bob")
+	eq("sudo asks first", asked.data.text, "[sudo] password for admin: ")
+	local switched = answer(state, admin, asked.data.cont, "")
+	eq("it succeeds", switched.ok, true)
+	eq("and says nothing", #switched.lines, 0)
+	eq("the console is bob's", admin.user, "bob")
+	eq("one deep", #admin.stack, 1)
+	eq("and the glass it came back to is admin's", admin.stack[1].user, "admin")
 end
 
 -- A machine from the last rung is topped up with this rung's four commands.

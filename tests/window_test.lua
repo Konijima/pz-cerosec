@@ -1409,6 +1409,52 @@ do
 end
 
 --
+-- `sudo su` is the other way to become somebody, and it lands on the same
+-- glass: what is asserted here is the PROMPT again, because the whole of what
+-- sudo used to do to a console was nothing at all.
+--
+
+do
+	local bench = newBench()
+	local host = CeroSec.hostnameFor(10, 10)
+	bench.login("admin")
+	CeroSecOS.setData(bench.object:osState(), CeroSecOS.rootSession(),
+		CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
+	bench.enter("sudo adduser bob")
+	bench.frame()
+	check("bob is on the machine", bench.painted("adduser: bob: created"))
+
+	bench.enter("sudo su bob")
+	bench.frame()
+	eq("the glass is bob's", bench.window.prompt, "bob@" .. host .. ":~$ ")
+	eq("the console says so too", bench.object.console.user, "bob")
+	eq("with admin one deep under him", #bench.object.console.stack, 1)
+
+	bench.enter("exit")
+	bench.frame()
+	eq("and exit gives the glass back", bench.window.prompt, "admin@" .. host .. ":~$ ")
+	eq("still logged in", bench.window.mode, "shell")
+
+	-- `sudo su` with no name is root's, and root wears the hash.
+	bench.enter("sudo su")
+	bench.frame()
+	eq("the glass is root's", bench.window.prompt, "root@" .. host .. ":~# ")
+	eq("standing in root's own home", bench.object.console.cwd, "/root")
+
+	-- And `exit` under sudo is not a command, so it logs nobody out: the shell
+	-- word has no file in /bin for sudo to look up.
+	bench.enter("sudo exit")
+	bench.frame()
+	check("sudo says what it could not find",
+		bench.painted("sudo: exit: command not found"))
+	eq("and the glass is still root's", bench.window.prompt, "root@" .. host .. ":~# ")
+
+	bench.enter("exit")
+	bench.frame()
+	eq("the console's own exit pops", bench.window.prompt, "admin@" .. host .. ":~$ ")
+end
+
+--
 -- /dev, through the whole machine
 --
 -- os_test proves the engine against a fake env.devices. This proves the other

@@ -535,11 +535,18 @@ The command runs with root's own power, but not root's own place in the
 files: sudo cd /root moves nobody anywhere, because cd only ever moves
 the session that is actually logged in.]],
 
-[[Two quirks worth carrying in your head. sudo su and sudo exit touch
-nothing of your own login stack: the borrowed root session that sudo
-builds gets its own copy of it, so pushing or popping inside a sudo'd
-command dies with that command, and whoami still answers your own name
-right after.
+[[Two things worth carrying in your head. sudo su becomes somebody at
+this glass without knowing his password, because the su underneath it is
+root's and root is asked for nobody's:
+
+  admin@ksp-04-11:~$ sudo su bob
+  bob@ksp-04-11:~$ exit
+  admin@ksp-04-11:~$
+
+sudo su on its own is root, and exit comes back the same way. sudo exit
+is not the other half of that: it answers "sudo: exit: command not
+found", exit being a word of the shell with no program by that name for
+sudo to find.
 
 And a redirection waits for the answer with the command it was typed on:
 

@@ -2256,6 +2256,13 @@ local function sudoRun(state, session, args, from, env)
 			table.concat(own, " "), env, true)
 	end
 
+	-- `exit` is not a program and could not be one: it ends the SESSION that ran
+	-- it, and there is no /bin/exit for sudo to find. Real sudo says exactly this
+	-- about it, in its own name, because the name it looked up is the one it could
+	-- not find. (`cd` is the same kind of word and this machine has answered
+	-- `sudo cd` quietly since sudo arrived -- see the note in the manual.)
+	if name == "exit" then return false, { "sudo: exit: command not found" } end
+
 	local fn = commands[name]
 	if fn == nil then return false, { name .. ": command not found" } end
 
@@ -2268,6 +2275,16 @@ local function sudoRun(state, session, args, from, env)
 	-- with the name back in front of it.
 	local own = {}
 	for i = from, #args do own[#own + 1] = args[i] end
+
+	-- Which session is the real one at the glass. `su` is the one command that
+	-- needs it: `sudo su bob` is a shell of bob's at this computer, the way it is
+	-- on a real machine, so it pushes on the CONSOLE's stack and not on the copy
+	-- that dies with this command. Given here and not in rootSessionFrom, because
+	-- a sudo'd SCRIPT is a shell of its own: `su` inside one moves that shell and
+	-- not the glass, exactly as it does inside a script nobody sudo'd.
+	-- session.real when there is one: a chain of sudos resolves to the one
+	-- session none of them borrowed.
+	sub.real = session.real or session
 
 	local ok, lines, control, data = fn(state, sub, own, env)
 	carryAs("root", control, data)
@@ -2580,6 +2597,15 @@ end
 -- passwd already runs on.
 --
 
+-- The session `su` acts on. Its own, normally -- and under `sudo` the CONSOLE's,
+-- because `sudo su bob` is a shell of bob's at this glass and not a switch inside
+-- a borrowed session that is about to end. sudoRun is what hands the link over,
+-- and only to a command it runs itself.
+local function suTarget(session)
+	if session.borrowed and type(session.real) == "table" then return session.real end
+	return session
+end
+
 local function suSwitch(session, user)
 	local stack = session.stack
 	if type(stack) ~= "table" then stack = {} end
@@ -2600,11 +2626,12 @@ commands.su = function(state, session, args, env)
 	if name == nil or name == "" then name = "root" end
 	local user = CeroSecOS.getUser(state, name)
 	if user == nil then return fail("su", name, "no such user") end
-	local stack = session.stack
+	local target = suTarget(session)
+	local stack = target.stack
 	if type(stack) == "table" and #stack >= CeroSecOS.SU_MAX then
 		return false, { "su: too many levels" }
 	end
-	if CeroSecOS.userOf(session) == "root" then return suSwitch(session, user) end
+	if CeroSecOS.userOf(session) == "root" then return suSwitch(target, user) end
 	return ask("Password: ", true, { cmd = "su", user = name })
 end
 
@@ -2618,7 +2645,7 @@ continuations.su = function(state, session, cont, line, env)
 		-- machine has a physical lock on it.
 		return false, { "su: authentication failure" }
 	end
-	return suSwitch(session, user)
+	return suSwitch(suTarget(session), user)
 end
 
 --
@@ -2895,6 +2922,10 @@ continueLine = function(state, session, cont, line, env, redirect)
 			login = CeroSecOS.loginOf(session),
 			stack = CeroSecOS.copyStack(session.stack),
 			borrowed = true,
+			-- Which session is the real one at the glass, for the one command
+			-- that acts on it: `sudo su bob` answered a password first is still
+			-- bob at this computer (see suTarget).
+			real = session.real or session,
 		}
 	end
 

@@ -640,9 +640,11 @@ en observant le jeu réel, pas par un banc de test.
      comptes de profondeur ou plus), vérifier que `console.stack` a gardé
      exactement la même profondeur et la bonne invite, sans qu'un `exit` de
      trop ou de moins soit nécessaire pour ressortir. [ ]
-152. `sudo su bob` en tant que `admin` : confirmer que rien ne change à
-     l'invite affichée (comme pour `sudo cd`), et que `whoami` répond toujours
-     `admin` immédiatement après. [ ]
+152. `sudo su bob` en tant que `admin` : l'invite devient celle de `bob` sans
+     qu'aucun mot de passe de `bob` soit demandé, `whoami` répond `bob`, et
+     `exit` ramène à `admin`. `sudo su` tout court donne `root` et son `#`.
+     `sudo exit` répond `sudo: exit: command not found` et ne déconnecte
+     personne ; `sudo cd /` ne déplace toujours rien. [ ]
 153. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]

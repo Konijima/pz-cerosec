@@ -845,6 +845,11 @@ away and coming back.
 193. **sudo does not move the glass.** As `admin`, `sudo su root`: nothing
      happens to the prompt — the same rule as `sudo cd`. And `sudo exit` logs
      out rather than popping somebody's su.
+     *(No longer true as of the debts wave: `sudo su` now moves the console —
+     `sudo su bob` is bob at this glass and `exit` pops back — and `sudo exit`
+     answers `sudo: exit: command not found`. `sudo cd` is unchanged. This step
+     stands as the rung read at the time; the live walkthrough is
+     `docs/PARCOURS-TEST.md` step 152.)*
 194. **Two players (Host mode).** One player `su bob`; the other player's window
      at the same computer shows `bob`'s prompt too. It is one machine, one
      session, one glass.

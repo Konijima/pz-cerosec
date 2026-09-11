@@ -121,6 +121,8 @@ without it his files stay, still owned by a name the machine no longer knows).
 (root is asked for nobody's), the prompt changes, and `exit` comes back to who you
 were instead of logging out — up to four deep. Walk away and come back and the
 machine is still where you left it, four users deep if that is where you left it.
+`sudo su bob` is the same switch without knowing his password (`sudo su` is root's),
+because root is asked for nobody's.
 
 **Sharing a file.** A mode is three digits — you, your group, everybody else — and
 the machine reads exactly one of them: the first if you own the file, the second if
@@ -1453,8 +1455,23 @@ stack is stored as no stack at all. The core sees it on the session
 opposed to the account a command is running as. A borrowed session (sudo's, and a
 chain carrying its authority) is given `login` and a **copy** of the stack: it may
 read who the glass would come back to (`deluser` refuses to remove one of them)
-and anything it pushes or pops dies with the command, which is why `sudo su` moves
-nobody and `sudo exit` is still a logout.
+and anything it pushes or pops dies with the command — which is what keeps
+`sudo cd /root` from moving anybody.
+
+`su` is the exception, and deliberately: `sudo su bob` is a shell of bob's **at this
+glass**, the way it is on a real machine, so it pushes on the console's own stack and
+`exit` pops it. What makes that possible without giving a borrowed session the
+console's is `session.real`, the link `sudoRun` hands to a command it runs *itself* —
+not to a sudo'd script, whose `su` moves that script's shell and not the glass, and
+not through `rootSessionFrom`, so nothing else can reach it. `su` is the only command
+that reads it (`suTarget`), the ceiling is still the console's four, and root is
+asked for nobody's password: `sudo su` is root, `sudo su bob` is bob.
+
+`sudo exit`, on the other hand, is `sudo: exit: command not found`. `exit` is a shell
+word with no file in `/bin`, so there is nothing for sudo to look up and nothing for
+it to run — which is what real sudo says about one, in its own name. (`cd` is the
+same kind of word and real sudo answers it the same way; this machine has answered
+`sudo cd` quietly since sudo arrived, the manual says so, and that is left alone.)
 
 The editor's buffer lives in the console too (`console.edit`), with the account it
 was opened as: `sudo edit /etc/motd` opens the buffer as `root` and saves as `root`,
