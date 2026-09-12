@@ -19,8 +19,10 @@
 --
 -- The reader (CeroSecManualUI), the loot tables (CeroSecManualLoot) and the
 -- inventory menu (CeroSecManualMenu) all resolve a volume by id and nothing
--- else. `CeroSec.Manual`, the item the first book shipped as, is still defined
--- because it is in saves, and it opens volume one -- the volume it became.
+-- else. `CeroSec.Manual`, the single-volume item the first book shipped as, was
+-- REMOVED on the inventory wave: it was a second copy of volume one under
+-- another name, and a set of three with a fourth item that opens the first of
+-- them is a set nobody can read a table of contents for.
 
 CeroSecManual = CeroSecManual or {}
 CeroSecManual.volumes = CeroSecManual.volumes or {}

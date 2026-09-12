@@ -165,9 +165,27 @@ _G.Events = setmetatable({}, { __index = function(t, key)
 	rawset(t, key, event)
 	return event
 end })
-_G.ISTimedActionQueue = { isPlayerDoingAction = function() return false end, add = function() end }
-_G.ISCeroSecTypeAction = { new = function() return {} end }
-_G.ISRestAction = { new = function() return {} end }
+-- The action queue, recording. Everything the mod queues lands in __queued, in
+-- order, so a bench can say WHERE a walk was aimed and not merely that one
+-- happened. clear() empties the list the way it empties the queue.
+_G.__queued = {}
+_G.ISTimedActionQueue = {
+	isPlayerDoingAction = function() return false end,
+	add = function(action) _G.__queued[#_G.__queued + 1] = action; return action end,
+	clear = function() _G.__queued = {} end,
+}
+_G.ISCeroSecTypeAction = { new = function(_, character, object, height, window)
+	return { __what = "type", character = character, object = object,
+		height = height, window = window }
+end }
+_G.ISRestAction = { new = function(_, character, chair) return { __what = "rest",
+	character = character, chair = chair } end }
+-- The walk to a float point, built the way vanilla builds it: the goal is a
+-- table tagged 'LocationF' and the three coordinates (ISPathFindAction.lua:122,
+-- media/lua/client/Vehicles/TimedActions/ISPathFindAction.lua on 42.20.4).
+_G.ISPathFindAction = { pathToLocationF = function(_, character, x, y, z)
+	return { __what = "walk", character = character, goal = { "LocationF", x, y, z } }
+end }
 
 -- The font. UIFont.Code is monospaced -- media/fonts/EN/fonts.txt maps Code to
 -- zomboidCode.fnt, and all 613 of its glyphs declare xadvance=8 -- so the pen
@@ -315,6 +333,17 @@ CeroSecReach = {
 	-- The desk the computer stands on, as the context menu reads it and as the
 	-- reopen after a reboot reads it again: a table, which is "mid".
 	height = function() return "mid" end,
+	-- Where a player using this computer on his feet belongs, and whether he is
+	-- already standing there. "Already there" by default, which is the world every
+	-- bench written before the stand point was written in: resettle with no chair
+	-- then has nothing to do, exactly as it had nothing to do before. The drift
+	-- benches set __drifted for themselves and put it back.
+	standPoint = function()
+		local x, y = CeroSec.standPoint(9, 10, "S")
+		return x, y, 0
+	end,
+	atStandPoint = function() return not CeroSecReach.__drifted end,
+	approachPoint = function() return CeroSecReach.standPoint() end,
 	frontSquare = function() return { getX = function() return 9 end,
 		getY = function() return 10 end, getZ = function() return 0 end } end,
 	chairInFront = function() return nil end,
@@ -495,6 +524,9 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The telephone directory's generator: pure Lua, and the server's own
+	-- enumeration (CeroSecNet.directory) names it.
+	"shared/CeroSec/CeroSecPhonebook.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -4668,18 +4700,60 @@ local function fakeZone(z)
 		getHeight = function() return z.h end,
 	}
 end
+-- THE MAP'S BUILDINGS, for the one caller that asks about a building it has no
+-- machine in: the telephone directory, which has to know whether a named zone is
+-- a tenancy INSIDE something (CeroSecNet.directory). A list of
+-- { x, y, w, h } and getBuildingAt answers the first whose box holds the tile,
+-- which is the walk zombie.iso.IsoMetaGrid.getBuildingAt(int, int) does (javap:
+-- it walks `buildings` and compares x, y, getW(), getH()). x2 is EXCLUSIVE, the
+-- way net.buildingAt below says it is.
+_G.__buildings = {}
+local function fakeBuildingDef(b)
+	return {
+		getX = function() return b.x end,
+		getY = function() return b.y end,
+		getX2 = function() return b.x + b.w end,
+		getY2 = function() return b.y + b.h end,
+	}
+end
 _G.getWorld = function()
 	return { getMetaGrid = function()
-		return { getZonesAt = function(_, x, y, _z)
-			local hits = {}
-			for i = 1, #_G.__zones do
-				local z = _G.__zones[i]
-				if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
-					hits[#hits + 1] = fakeZone(z)
+		return {
+			getZonesAt = function(_, x, y, _z)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local z = _G.__zones[i]
+					if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
+						hits[#hits + 1] = fakeZone(z)
+					end
 				end
-			end
-			return javaList(hits)
-		end }
+				return javaList(hits)
+			end,
+			-- getZonesIntersecting(x, y, z, w, h): every zone whose rectangle overlaps
+			-- the one asked for. Zone.intersects(x,y,z,w,h) in the jar is exactly this
+			-- test on the four edges (javap, and z == Integer.MAX_VALUE is its
+			-- any-level case; nothing here has a zone off the ground floor).
+			getZonesIntersecting = function(_, x, y, _z, w, h)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local zone = _G.__zones[i]
+					if x + w > zone.x and x < zone.x + zone.w
+							and y + h > zone.y and y < zone.y + zone.h then
+						hits[#hits + 1] = fakeZone(zone)
+					end
+				end
+				return javaList(hits)
+			end,
+			getBuildingAt = function(_, x, y)
+				for i = 1, #_G.__buildings do
+					local b = _G.__buildings[i]
+					if x >= b.x and x < b.x + b.w and y >= b.y and y < b.y + b.h then
+						return fakeBuildingDef(b)
+					end
+				end
+				return nil
+			end,
+		}
 	end }
 end
 
@@ -6547,6 +6621,183 @@ do
 	_G.__zones = {}
 end
 
+--
+-- THE TELEPHONE DIRECTORY (the phone book wave)
+--
+-- Base.Phonebook is the yellow pages of the region it was found in, and the whole
+-- of what this bench is about is that the BOOK and the LINE cannot disagree: a
+-- computer put in a shop must answer on the number the book printed for that shop,
+-- and the book must hold the shops of ONE exchange and nothing else.
+--
+-- The fake map grows two things for it: getZonesIntersecting, which is how a whole
+-- region is swept, and getBuildingAt, which is how a named zone is told from a
+-- named REGION -- the spawner tags a suburb "StreetPoor" and a farm "Farm" the way
+-- it tags a shop "CoffeeShop", and neither of the first two is a business with a
+-- telephone.
+--
+do
+	local net = newNet()
+	local R = CeroSecOS.PHONE_REGION
+
+	-- A mall in region 0,0 with three shops in it, two of them one chain; a house
+	-- with nothing named on it; a suburb-sized zone that is nobody's tenancy; and a
+	-- zone exactly the mall's own size, which is the mall under another name.
+	local mall = net.buildingAt(200, 300, 60, 40, 30)
+	local house = net.buildingAt(500, 500, 10, 10, 3)
+	-- And a second mall a region away, whose shop must not turn up in this book.
+	local farMall = net.buildingAt(R + 200, 300, 60, 40, 30)
+	-- And a building that straddles the boundary between the two regions, with a
+	-- shop in it whose CORNER is on this side of it.
+	local border = net.buildingAt(R - 24, 600, 100, 60, 30)
+	_G.__buildings = {
+		{ x = 200, y = 300, w = 60, h = 40 },
+		{ x = 500, y = 500, w = 10, h = 10 },
+		{ x = R + 200, y = 300, w = 60, h = 40 },
+		{ x = R - 24, y = 600, w = 100, h = 60 },
+	}
+	_G.__zones = {
+		{ name = "CoffeeShop", x = 210, y = 310, w = 17, h = 11 },
+		{ name = "Bakery", x = 240, y = 310, w = 12, h = 10 },
+		-- The same chain's second shop: one name, its own outline, its own number.
+		{ name = "CoffeeShop", x = 230, y = 320, w = 17, h = 11 },
+		-- A suburb. Its middle (300,300) is on no building at all, so no footprint
+		-- can be bigger than it and it is not a tenancy.
+		{ name = "StreetPoor", x = 100, y = 100, w = 400, h = 400 },
+		-- The mall by another name: exactly its footprint, which loses on the same
+		-- strictly-smaller test premisesOf runs.
+		{ name = "Mall", x = 200, y = 300, w = 60, h = 40 },
+		-- A zone of the wrong type, and one nobody named.
+		{ name = "Nav", type = "Nav", x = 205, y = 305, w = 6, h = 6 },
+		{ name = "", x = 206, y = 306, w = 6, h = 6 },
+		-- Another region's shop, on another exchange.
+		{ name = "Pharmacist", x = R + 210, y = 310, w = 17, h = 11 },
+		-- A shop that reaches OVER the boundary. It is listed once, in the book of
+		-- the region its corner is in -- which is the region its number belongs to,
+		-- because the corner is what the exchange is derived from. A sweep of the
+		-- next region finds it intersecting and must not print it.
+		{ name = "BorderShop", x = R - 10, y = 610, w = 20, h = 10 },
+	}
+
+	-- Ask the server the way the client asks it: one command, no square, and the
+	-- answer goes to the player who asked.
+	local function ask(rx, ry)
+		local got = nil
+		net.system.reply = function(_, who, cmd, args)
+			if cmd == "listings" then got = args; got.who = who end
+		end
+		net.system:OnClientCommand("phonebook", net.player,
+			{ rx = rx, ry = ry, token = "look" })
+		return got
+	end
+
+	local book = ask(0, 0)
+	check("the server answers a look-up", book ~= nil)
+	eq("to the survivor who asked and nobody else", book.who, net.player)
+	eq("carrying the token back", book.token, "look")
+	eq("for the region asked for", book.rx .. "," .. book.ry, "0,0")
+	eq("under the exchange of that region", book.exchange,
+		CeroSecOS.phoneExchange(0, 0))
+	check("and nothing was cut", book.capped == false)
+
+	local names = {}
+	local byNumber = {}
+	for i = 1, #book.entries do
+		names[#names + 1] = book.entries[i].name
+		byNumber[book.entries[i].number] = book.entries[i].name
+	end
+	table.sort(names)
+	eq("four business listings and no more", #book.entries, 4)
+	eq("the shops of the mall, camel case taken out",
+		table.concat(names, "|"), "Bakery|Border Shop|Coffee Shop|Coffee Shop")
+
+	-- A CHAIN is two listings with one name and two numbers, each on its own line.
+	local chain = {}
+	for i = 1, #book.entries do
+		if book.entries[i].name == "Coffee Shop" then chain[#chain + 1] = book.entries[i].number end
+	end
+	eq("the chain is listed twice", #chain, 2)
+	check("on two different numbers", chain[1] ~= chain[2])
+
+	-- WHAT IS NOT IN IT. The suburb, the mall under its own name, the wrong type,
+	-- the unnamed zone -- and the HOUSE, which has a line and no name to print.
+	for _, absent in ipairs({ "Street Poor", "Mall", "Nav", "Pharmacist" }) do
+		check(absent .. " is not a business listing",
+			string.find("|" .. table.concat(names, "|") .. "|",
+				"|" .. absent .. "|", 1, true) == nil)
+	end
+
+	-- THE BOOK AND THE LINE. A computer in the coffee shop the map drew at 210,310
+	-- must read the book's own number off its BIOS. This is the assertion the whole
+	-- wave rests on: derive the number any other way and it goes red.
+	local shop = net.machine(212, 312, 0, mall)
+	shop:turnOn()
+	local tel = telOf(shop)
+	check("a machine in the coffee shop has a line", tel ~= nil)
+	eq("and the book printed that very number for Coffee Shop", byNumber[tel], "Coffee Shop")
+	eq("which is the premises the record names", CeroSecOS.premisesName(shop:osState()),
+		"CoffeeShop")
+	eq("on the book's own exchange", tonumber(string.sub(tel, 1, 3)), book.exchange)
+
+	-- A RESIDENCE is not listed, and it is not listed because it has no name and
+	-- not because it has no line: the house answers on one.
+	local home = net.machine(505, 505, 0, house)
+	home:turnOn()
+	local homeTel = telOf(home)
+	check("the house has a line of its own", homeTel ~= nil)
+	eq("and no listing anywhere in the book", byNumber[homeTel], nil)
+
+	-- ANOTHER REGION IS ANOTHER BOOK. The pharmacy is in region 1,0 and the two
+	-- books share nothing -- not a listing and not an exchange.
+	local far = ask(1, 0)
+	eq("the next region's book has its own listing and only its own", #far.entries, 1)
+	eq("which is the pharmacy and not the shop over the line",
+		far.entries[1].name, "Pharmacist")
+	check("on another exchange", far.exchange ~= book.exchange)
+	local pharmacy = net.machine(R + 212, 312, 0, farMall)
+	pharmacy:turnOn()
+	eq("and the machine in it answers on the number that book printed",
+		far.entries[1].number, telOf(pharmacy))
+
+	-- And the machine in the shop over the line is on the number THIS book printed,
+	-- which is the corner rule read off the BIOS.
+	local straddler = net.machine(R - 5, 615, 0, border)
+	straddler:turnOn()
+	eq("the shop over the line answers on the number its own book printed",
+		byNumber[telOf(straddler)], "Border Shop")
+
+	-- A region with nothing in it is an empty book and not a broken one.
+	local empty = ask(7, 7)
+	eq("a region with no premises in it lists nothing", #empty.entries, 0)
+	check("and says so without being cut", empty.capped == false)
+
+	-- THE CAP. A region with more premises than a book holds is cut, and the answer
+	-- SAYS it was cut rather than looking like a smaller county.
+	local many = {}
+	-- Laid out in rows INSIDE the region, because a zone whose corner falls past the
+	-- region's far edge is in the next region's book by the corner rule above -- and
+	-- a row of 405 zones three tiles apart would have run out of region long before
+	-- it ran out of shops.
+	_G.__buildings = { { x = 2 * R, y = 0, w = R, h = R } }
+	for i = 1, CeroSecPhonebook.MAX_ENTRIES + 5 do
+		many[i] = { name = "Shop" .. i,
+			x = 2 * R + math.fmod(i, 30) * 3, y = math.floor(i / 30) * 3,
+			w = 2, h = 2 }
+	end
+	_G.__zones = many
+	local full = ask(2, 0)
+	eq("the book holds its cap and not one more", #full.entries,
+		CeroSecPhonebook.MAX_ENTRIES)
+	check("and the answer says it was cut", full.capped == true)
+	-- Which is what the last line of the last leaf prints.
+	local volume = CeroSecPhonebook.volume(full.exchange, full.entries, full.capped)
+	local last = volume.chapters[1].pages[#volume.chapters[1].pages]
+	check("the printed book says so on its last line",
+		string.find(last, "This directory is full", 1, true) ~= nil)
+
+	_G.__zones = {}
+	_G.__buildings = {}
+end
+
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- two commands over there that name the number it came from.
@@ -7941,15 +8192,30 @@ local function newInventory()
 	local inv = { items = {}, nextID = 100 }
 	function inv:add(fullType, data)
 		self.nextID = self.nextID + 1
+		-- The NAME is modelled the way the engine really holds it: one field, which
+		-- getName and getDisplayName both just read (javap -c
+		-- zombie.inventory.InventoryItem -- getDisplayName is a single getfield on
+		-- `name`), starting at the item's ordinary name and replaced wholesale by
+		-- setName. So a disk with no label is a disk whose name is the generic one and
+		-- NOT a disk with no name -- which is exactly the case that would let a bench
+		-- pass while the server read the generic name as a label.
 		local item = {
 			id = self.nextID,
 			type = fullType,
 			data = data or {},
+			name = "3.5 inch Floppy Disk",
+			customName = false,
+			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
 			hasModData = function(self) return true end,
 			getModData = function(self) return self.data end,
 			getContainer = function(self) return inv end,
+			getName = function(self) return self.name end,
+			setName = function(self, s) self.name = s end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, b) self.customName = b end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -8124,6 +8390,127 @@ do
 	check("the note is readable on the other machine",
 		other.painted("the pumps are at the depot"))
 	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	--
+	-- The sticker, through the slot and back out
+	--
+	-- The label is written on the ITEM (its custom name) and read at the slot; the
+	-- machine keeps it on the disk record and prints it on `mount` and `df`; the
+	-- eject puts it back on the shell.
+	--
+	-- Which has to be ASSERTED and not assumed, because the item does not survive the
+	-- round trip: an insert removes it and an eject makes a NEW one with AddItem, so
+	-- a label that was not deliberately carried across would be gone.
+	--
+	local labelled = otherInv:add("CeroSec.FloppyGreen")
+	labelled:setName("PAYROLL 93")
+	labelled:setCustomName(true)
+
+	-- The other machine's drive still has the red disk in it; out it comes first.
+	other.send("ejectfloppy")
+	eq("the drive is free", other.object:hasDisk(), false)
+
+	other.send("insertfloppy", { item = labelled:getID() })
+	eq("the labelled disk went in", other.object:hasDisk(), true)
+	eq("and the machine wrote the sticker on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- And the two commands a survivor asks "which disk is this" with say so.
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("mount names the disk by what is written on it",
+		other.painted("/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)"))
+	other.enter("df")
+	other.frame()
+	check("and df wears it too", other.painted("(PAYROLL 93)"))
+
+	-- Out again: a NEW item, and the handwriting is on it.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local back = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyGreen" then
+			back = otherInv.items[i]
+		end
+	end
+	check("the green disk is back", back ~= nil)
+	check("and it really is a new item, not the one that went in", back ~= labelled)
+	eq("wearing the label", back:getName(), "PAYROLL 93")
+	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
+
+	-- Back in, and the label is still the label: it lives on the disk and survives
+	-- as many trips through the slot as the survivor makes.
+	other.send("insertfloppy", { item = back:getID() })
+	eq("the label survived the round trip",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- A disk with NO label: no sticker on the record, and no empty brackets on the
+	-- two lines. The generic item name is not a label, and reading it as one would
+	-- put "3.5 inch Floppy Disk" in the mount listing of every machine in Kentucky.
+	other.send("ejectfloppy")
+	local plain = otherInv:add("CeroSec.FloppyBlue")
+	eq("its name is the ordinary one", plain:getName(), "3.5 inch Floppy Disk")
+	eq("and it is not a custom name", plain:isCustomName(), false)
+	other.send("insertfloppy", { item = plain:getID() })
+	eq("an unlabelled disk carries no sticker",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("and mount prints the bare line",
+		other.painted("/dev/fd0 on /mnt type ufs (rw)"))
+	check("with the generic name nowhere near it",
+		not other.painted("3.5 inch Floppy Disk"))
+
+	-- Erased: a name the survivor took the flag off. The slot CLEARS the record
+	-- rather than leaving the last label on it, or a disk somebody erased would come
+	-- out of the drive still labelled.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local erased = otherInv:add("CeroSec.FloppyRed")
+	erased:setName("OLD")
+	erased:setCustomName(true)
+	other.send("insertfloppy", { item = erased:getID() })
+	eq("labelled first", CeroSecOS.floppyOf(other.object:osState()).label, "OLD")
+	other.send("ejectfloppy")
+	local again = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyRed" then
+			again = otherInv.items[i]
+		end
+	end
+	again:setCustomName(false)
+	other.send("insertfloppy", { item = again:getID() })
+	eq("and the erase reaches the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+
+	-- A label a CLIENT could never have typed. The slot holds what arrives to
+	-- CeroSecOS.labelOk, which is tighter than the gate: the two commands that print
+	-- it are lines on a screen, and a forged name with a newline in it would put a
+	-- second line in the mount listing.
+	other.send("ejectfloppy")
+	local forged = otherInv:add("CeroSec.FloppyYellow")
+	forged:setName("two\nlines")
+	forged:setCustomName(true)
+	other.send("insertfloppy", { item = forged:getID() })
+	eq("a forged label is not written on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	eq("and the disk went in all the same", other.object:hasDisk(), true)
+	other.send("ejectfloppy")
+	local over = otherInv:add("CeroSec.FloppyYellow")
+	over:setName(string.rep("L", CeroSecOS.LABEL_MAX + 1))
+	over:setCustomName(true)
+	other.send("insertfloppy", { item = over:getID() })
+	eq("nor is one over the ceiling",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.send("ejectfloppy")
 
 	-- And the first machine has nothing left of it.
 	eq("the first machine's drive is empty", bench.object:hasDisk(), false)
@@ -9965,6 +10352,331 @@ do
 	end
 	eq("and the refusal is logged as an error", level, CeroSec.LOG_ERROR)
 	CeroSec.logRing = {}
+end
+
+--
+-- Standing at the keyboard
+--
+-- The screenshot: a player using a computer with no chair stood in the MIDDLE of
+-- the front square, a visible step short of the desk, typing at the air. Where
+-- he is walked to is the whole of the fix, so these benches run the REAL reach
+-- module -- not the stub the rest of this file uses -- against a world built by
+-- hand, and read the coordinates out of the walk it queues.
+--
+
+do
+	local stub = CeroSecReach
+
+	-- The world. Squares by coordinate, each with the objects a bench puts on it.
+	local squares = {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	local function square(x, y, z, objects)
+		local sq = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getObjects = function() return javaList(objects or {}) end,
+			canReachTo = function() return true end,
+		}
+		squares[key(x, y, z)] = sq
+		return sq
+	end
+	_G.__world = { getGridSquare = function(_, x, y, z) return squares[key(x, y, z)] end }
+	-- The two vanilla calls canStandInFront leans on, both answering yes: what
+	-- these benches are about is the POINT, and a blocked square is its own bench
+	-- in the rung 2 manual.
+	_G.AdjacentFreeTileFinder = { privTrySquare = function() return true end }
+	_G.IsoFlagType = { bed = "bed" }
+	-- The seat point, as the game hands it over: a Vector3f the call fills in.
+	-- __seat is where this fake world puts it; nil is the game refusing the place.
+	_G.__seat = nil
+	_G.Vector3f = { new = function()
+		local v = { vx = 0, vy = 0, vz = 0 }
+		v.x = function(s) return s.vx end
+		v.y = function(s) return s.vy end
+		v.z = function(s) return s.vz end
+		return v
+	end }
+	_G.SeatingManager = { getInstance = function() return {
+		getTilePositionCount = function() return 1 end,
+		getFacingDirection = function(_, object) return object.__facing end,
+		getAdjacentPosition = function(_, _, _, _, _, _, _, position)
+			if _G.__seat == nil then return false end
+			position.vx, position.vy, position.vz = _G.__seat[1], _G.__seat[2], _G.__seat[3]
+			return true
+		end,
+	} end }
+
+	local path = "42/media/lua/client/CeroSec/CeroSecReach.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+
+	-- A computer at 10,10 facing the given way, and its front square. The chair,
+	-- when a bench wants one, stands on the front square and looks back at the
+	-- screen (CeroSec.chairFacingFor).
+	local function world(facing, withChair)
+		squares = {}
+		local chair = nil
+		local dx, dy = CeroSec.frontOffset(facing)
+		local computer = {
+			getSpriteName = function() return CeroSec.SPRITES_ON[facing] end,
+		}
+		local front
+		if withChair then
+			chair = {
+				__facing = CeroSec.chairFacingFor(facing),
+				getSprite = function() return { getProperties = function() return {
+					has = function(_, name) return name == IsoFlagType.bed end,
+				} end } end,
+			}
+			front = square(10 + dx, 10 + dy, 0, { chair })
+			chair.getSquare = function() return front end
+		else
+			front = square(10 + dx, 10 + dy, 0, {})
+		end
+		local home = square(10, 10, 0, { computer })
+		computer.getSquare = function() return home end
+		return computer, front, chair
+	end
+
+	-- A player at a float position, standing.
+	local function stander(x, y)
+		return {
+			getX = function() return x end,
+			getY = function() return y end,
+			getCurrentSquare = function() return squares[key(math.floor(x), math.floor(y), 0)] end,
+			isSittingOnFurniture = function() return false end,
+			getSitOnFurnitureObject = function() return nil end,
+		}
+	end
+
+	local function walkGoal()
+		for i = #_G.__queued, 1, -1 do
+			local action = _G.__queued[i]
+			if action.goal then return action.goal[2], action.goal[3], action.goal[4] end
+		end
+		return nil
+	end
+
+	-- The stand point of each facing, through the module rather than through the
+	-- arithmetic: the square it reads is the FRONT square, and the axis it shifts
+	-- on is the facing's.
+	local WANT = {
+		S = { 10.5, 11.2 },
+		N = { 10.5, 9.8 },
+		E = { 11.2, 10.5 },
+		W = { 9.8, 10.5 },
+	}
+	for _, facing in ipairs(CeroSec.FACINGS) do
+		local computer = world(facing, false)
+		local x, y, z = CeroSecReach.standPoint(computer)
+		eq("stand point x, facing " .. facing, x, WANT[facing][1])
+		eq("stand point y, facing " .. facing, y, WANT[facing][2])
+		eq("stand point z, facing " .. facing, z, 0)
+	end
+
+	-- No square under the computer, no stand point -- and no error.
+	do
+		local computer = world("S", false)
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		eq("no square, no stand point", CeroSecReach.standPoint(computer), nil)
+		computer.getSquare = function() return home end
+	end
+
+	-- The walk, standing: a player across the room is aimed at the stand point
+	-- and not at the middle of the square.
+	do
+		local computer, front = world("S", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		local arrived = false
+		check("walkToFront runs", CeroSecReach.walkToFront(player, computer,
+			function() arrived = true end, true))
+		check("and the follow-up is queued", arrived)
+		local x, y, z = walkGoal()
+		eq("standing: walked to the stand point x", x, 10.5)
+		eq("standing: walked to the stand point y", y, 11.2)
+		eq("standing: same level", z, front:getZ())
+		check("standing: not the middle of the square", y ~= 11.5)
+	end
+
+	-- The walk, standing, from INSIDE the front square and at its middle -- the
+	-- player the screenshot shows. The walk is still queued: a tenth of a tile is
+	-- a walk, and skipping it is what left him short of the desk.
+	do
+		local computer = world("S", false)
+		local player = stander(10.5, 11.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		check("already on the square: still a walk", x ~= nil)
+		eq("already on the square: to the stand point x", x, 10.5)
+		eq("already on the square: to the stand point y", y, 11.2)
+	end
+
+	-- With a chair there, nothing changes: the seat point is the game's answer and
+	-- the sit places the character itself.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("a chair: walked to the seat point x", x, 10.42)
+		eq("a chair: walked to the seat point y", y, 11.61)
+	end
+
+	-- A seat point the game refuses, or one outside the front square, falls back
+	-- to the stand point -- never to a point on somebody else's tile.
+	do
+		local computer = world("S", true)
+		_G.__seat = nil
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("no seat point: the stand point x", x, 10.5)
+		eq("no seat point: the stand point y", y, 11.2)
+
+		_G.__seat = { 10.5, 12.5, 0 }
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		x, y = walkGoal()
+		eq("a seat point off the square: the stand point x", x, 10.5)
+		eq("a seat point off the square: the stand point y", y, 11.2)
+	end
+
+	-- The toggle asks for no seat, so a chair standing there is not aimed at: the
+	-- switch is thrown from the stand point.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end)
+		local x, y = walkGoal()
+		eq("the toggle walks to the stand point x", x, 10.5)
+		eq("the toggle walks to the stand point y", y, 11.2)
+	end
+
+	-- East and west shift on x and not on y. This is the mutation guard: a module
+	-- that shifted the wrong axis gives 10.5, 10.2 here and 10.5 is the x of it.
+	do
+		local computer = world("E", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("E: the shift is on x", x, 11.2)
+		eq("E: y is the middle", y, 10.5)
+	end
+
+	-- Already at the keyboard, asked as the window asks it.
+	do
+		local computer = world("S", false)
+		check("at the stand point", CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		check("a hair off it is still at it",
+			CeroSecReach.atStandPoint(stander(10.53, 11.17), computer))
+		check("the middle of the square is not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.5), computer))
+		check("no player, not at it", not CeroSecReach.atStandPoint(nil, computer))
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		check("no stand point, not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		computer.getSquare = function() return home end
+	end
+
+	_G.__world = nil
+	_G.__seat = nil
+	CeroSecReach = stub
+end
+
+--
+-- Drifting off the keyboard
+--
+-- Getting the keyboard back is also getting the character back to it. With no
+-- chair to sit on that means the stand point, and only when he has really left
+-- it: a click that changed nothing must queue nothing, or every press on the
+-- window would cancel the typing action and start another.
+--
+
+do
+	local bench = newBench()
+	bench.frame()
+	-- The character is at the keyboard, which is what the use action leaves behind
+	-- (ISCeroSecUseAction -> CeroSecTerminal.sitDown -> startTyping), and the box
+	-- has the keys.
+	bench.window:startTyping("mid")
+	bench.window:setEntryActive(true)
+
+	-- Standing where he belongs: a click hands the keyboard back and nothing else.
+	_G.__queued = {}
+	CeroSecReach.__drifted = false
+	bench.window:onMouseDown(0, 0)
+	bench.window:updateSettle()
+	local walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("at the keyboard: no walk queued", walks, 0)
+	eq("and the typing action is untouched", bench.window.wantStand, nil)
+
+	-- Shoved half a tile off it: the same click walks him back, and the typing
+	-- action goes in behind the walk.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("drifted: the window owes him a step", bench.window.wantStand, true)
+	eq("and the typing action was let go of", bench.window.typeAction, nil)
+
+	_G.__queued = {}
+	bench.window:updateSettle()
+	eq("the debt is paid once", bench.window.wantStand, nil)
+	local walk, typed = nil, nil
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walk = _G.__queued[i] end
+		if _G.__queued[i].__what == "type" then typed = i end
+	end
+	check("a walk was queued", walk ~= nil)
+	local sx, sy = CeroSec.standPoint(9, 10, "S")
+	eq("aimed at the stand point x", walk.goal[2], sx)
+	eq("aimed at the stand point y", walk.goal[3], sy)
+	check("and the typing action behind it", typed ~= nil and typed > 1)
+
+	-- A second click while the step is still owed queues nothing more.
+	bench.window:onMouseDown(0, 0)
+	bench.window:onMouseDown(0, 0)
+	eq("one debt, not three", bench.window.wantStand, true)
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("and one walk", walks, 1)
+
+	-- Back at the keyboard by the time the queue is free: nothing is walked.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	CeroSecReach.__drifted = false
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("arrived on his own: no walk", walks, 0)
+
+	-- Closing the window drops the debt with everything else.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("owed again", bench.window.wantStand, true)
+	bench.window:close()
+	eq("closed: nothing owed", bench.window.wantStand, nil)
+	CeroSecReach.__drifted = false
 end
 
 

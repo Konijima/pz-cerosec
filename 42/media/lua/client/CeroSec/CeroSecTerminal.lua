@@ -235,10 +235,12 @@ function CeroSecTerminal:new(x, y, playerObj, computer, token)
 	o.lastKeySound = 0
 	o.lastKeyAt = 0
 	-- The character at the keyboard: the open-ended typing action, the height
-	-- it plays the loot animation at, and a chair he owes a sit to.
+	-- it plays the loot animation at, a chair he owes a sit to, and -- when there
+	-- is no chair -- a step back to the stand point he owes the keyboard.
 	o.typeAction = nil
 	o.typeHeight = nil
 	o.wantSit = nil
+	o.wantStand = nil
 
 	o.title = "CeroSec OS"
 	o.resizable = false
@@ -771,14 +773,28 @@ function CeroSecTerminal:stopTyping()
 end
 
 -- Getting the keyboard back puts the character back the way the window found
--- him: in the chair if there is one, and facing the screen. He is never walked
--- -- stepping off the front square closes the window (stillValid) -- so this
--- only ever undoes a stand-up or a look around.
+-- him: in the chair if there is one, at the keyboard if there is not, and facing
+-- the screen. He is never walked off the front square -- stepping off it closes
+-- the window (stillValid) -- so this only ever undoes a stand-up, a look around,
+-- or a drift of a few tenths of a tile inside the square.
 function CeroSecTerminal:resettle()
 	if self.closing or self.typeHeight == nil then return end
 	if not self:stillValid() then return end
 	local chair = CeroSecReach.chairInFront(self.computer)
-	if chair == nil then return end
+	if chair == nil then
+		-- Nothing to sit on: the character is on his feet, and where he belongs
+		-- on his feet is the stand point, against the desk (CeroSecReach). A
+		-- shove, a step back from a zombie or a walk cut short inside the square
+		-- leaves him short of it, and this is what walks the tenth of a tile
+		-- back. Only when he has really drifted: a click on the window that
+		-- changed nothing must queue nothing, or every press would restart the
+		-- typing action.
+		if self.wantStand then return end
+		if CeroSecReach.atStandPoint(self.playerObj, self.computer) then return end
+		self.wantStand = true
+		self:stopTyping()
+		return
+	end
 	if CeroSecReach.isSeatedOn(self.playerObj, chair) then return end
 	if self.wantSit ~= nil then return end
 	self.wantSit = chair
@@ -811,6 +827,19 @@ function CeroSecTerminal:updateSettle()
 			-- one the vanilla menu makes (ISWorldObjectContextMenu.lua:948).
 			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
 			return
+		end
+	end
+
+	-- The same walk, for a character with no chair to take: to the stand point,
+	-- and then the typing action goes back in behind it (below). The walk is the
+	-- whole of it -- the turn is the typing action's own waitToStart.
+	if self.wantStand then
+		self.wantStand = nil
+		if not CeroSecReach.atStandPoint(playerObj, self.computer) then
+			local x, y, z = CeroSecReach.approachPoint(playerObj, self.computer)
+			if x ~= nil then
+				ISTimedActionQueue.add(ISPathFindAction:pathToLocationF(playerObj, x, y, z))
+			end
 		end
 	end
 
@@ -1269,6 +1298,7 @@ function CeroSecTerminal:close()
 	self:stopTyping()
 	self:stopHighlight()
 	self.wantSit = nil
+	self.wantStand = nil
 	if self.entry then self.entry:unfocus() end
 	if self.opened then self:send("close", {}) end
 	if CeroSecTerminal.instances[self.playerNum] == self then

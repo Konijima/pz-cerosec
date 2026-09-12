@@ -52,8 +52,20 @@ passé réellement, même quand ça correspond au texte attendu.
    ordinateur." Passer par l'arrière ne débloque rien. [ ]
 6. Carré devant traversé par une fenêtre fermée → grisé. Ouvrir la fenêtre →
    reste grisé, une fenêtre n'est pas un endroit où se tenir. [ ]
-7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → pas
-   de marche du tout, directement l'animation. [ ]
+7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → il
+   fait un pas dans le carré pour se coller au meuble, puis l'animation. [ ]
+7a. **Debout au clavier.** Ordinateur sur un bureau, AUCUNE chaise devant, "Use
+   computer" depuis l'autre bout de la pièce → au bout de la marche le
+   personnage est collé au bureau, pas au milieu du carré : les mains tombent
+   sur le clavier et non dans le vide. Refaire sur les quatre orientations (S,
+   E, N, O) → toujours contre le meuble, et toujours centré sur l'autre axe,
+   jamais de travers dans un coin du carré. [ ]
+7b. **La dérive.** Terminal ouvert debout, se faire pousser par un zombi (ou
+   faire un pas dans le carré avec les touches de déplacement) sans quitter le
+   carré → cliquer sur la fenêtre : le personnage revient au clavier, se
+   retourne vers l'écran, et l'animation de frappe reprend. Cliquer trois fois
+   de suite alors qu'il est déjà au clavier → aucun pas, aucun saccade, la
+   frappe n'est pas coupée. [ ]
 8. Lancer la bascule depuis l'autre bout de la pièce, puis appuyer sur une
    touche de déplacement pendant la marche → le personnage s'arrête,
    l'ordinateur NE bascule PAS, aucune erreur dans `console.txt`. [ ]
@@ -483,11 +495,13 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      ouvre son propre volume, sans copie du livre dans l'inventaire, sur un
      ordinateur allumé ou éteint, à portée ou pas. L'entrée parente elle-même
      n'ouvre rien quand on passe dessus. [ ]
-102. Menu debug → Items list, filtre `CeroSec` → quatre objets :
-     `CeroSec.ManualUser`, `CeroSec.ManualAdmin`, `CeroSec.ManualProgrammer` et
-     `CeroSec.Manual`. Catégorie affichée Literature pour les quatre, noms
+102. Menu debug → Items list, filtre `CeroSec` → TROIS livres :
+     `CeroSec.ManualUser`, `CeroSec.ManualAdmin` et `CeroSec.ManualProgrammer`.
+     `CeroSec.Manual` n'existe plus du tout : l'ancien livre unique était une
+     deuxième copie du volume 1 sous un autre nom et il a été retiré du script.
+     Catégorie affichée Literature pour les trois, noms
      "CeroSec OS User's Guide", "... System Administrator's Guide",
-     "... Programmer's Guide", "CeroSec OS User's Manual". Faire apparaître les
+     "... Programmer's Guide". Faire apparaître les
      trois volumes dans l'inventaire → trois icônes DIFFÉRENTES : le même livre
      à petit écran vert, relié bleu marqué 1, vert marqué 2, rouge marqué 3.
      Jamais un point d'interrogation blanc, et le chiffre reste lisible à la
@@ -496,12 +510,18 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      "Read the System Administrator's Guide" / "Read the Programmer's Guide",
      une seule option et la bonne ; pas de "Read" ni "Write" ni "Look at
      pictures" de la vanille. Sélectionner les trois ensemble → trois options,
-     dans l'ordre 1, 2, 3. Et `CeroSec.Manual`, le livre d'avant le coffret :
-     "Read the manual", qui ouvre le **volume 1** -- le volume qu'il est devenu.
-     L'ancien livre unique n'existe plus comme texte : vérifier que sa
-     couverture dit bien `CeroSec OS 1.0 User's Guide` et que sa table des
-     matières est celle du volume 1 (`1. Your first day`), et non celle de
-     l'ancien livre (`1. Your machine`). [ ]
+     dans l'ordre 1, 2, 3. Aucune option "Read the manual" nulle part : l'objet
+     qui la portait n'existe plus. Vérifier que la couverture du volume 1 dit
+     bien `CeroSec OS 1.0 User's Guide` et que sa table des matières est celle
+     du volume 1 (`1. Your first day`), et non celle de l'ancien livre
+     (`1. Your machine`). [ ]
+103a. Double-clic sur un volume dans l'inventaire → le livre s'ouvre, exactement
+     comme par l'option "Read the ..." : le bon volume, sa propre couverture, et
+     le signet de CET exemplaire. Aucune animation de lecture, rien en file
+     d'action. Double-clic sur un livre de la vanille (`Base.Book`) → le
+     comportement vanilla habituel, PAS notre lecteur. Double-clic sur une arme
+     → elle s'équipe comme avant ; sur un sac → il s'équipe comme avant. C'est
+     ce qui prouve que l'enveloppe rend la main à la fonction d'origine. [ ]
 104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
@@ -536,8 +556,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      chargement `the manual set added in 36 places` (douze listes fois trois
      volumes). Menu debug → Spawn rate checker, liste `LibraryComputer` :
      `CeroSec.ManualUser` à 4, `CeroSec.ManualAdmin` à 2,
-     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et `CeroSec.Manual`
-     ABSENT de la liste. Liste `UniversityDesk_Computer` :
+     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et aucune ligne
+     `CeroSec.Manual`. Liste `UniversityDesk_Computer` :
      `CeroSec.ManualProgrammer` remonte à 2. [ ]
 114. Vérifier que la version affichée est la même partout : la bannière de
      démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture de chacun
@@ -1050,6 +1070,43 @@ coques.
      la copie du client qui est en cause et non la machine : le menu montrait la
      fente encore pleine alors que la disquette était dans les mains du
      survivant. [ ]
+199c. **Plusieurs disquettes : le sous-menu.** Se faire apparaître UNE disquette de
+     chaque couleur (`FloppyBlue`, `FloppyYellow`, `FloppyRed`, `FloppyGreen`),
+     fente vide, clic droit sur l'ordinateur → **Insert floppy** est maintenant un
+     SOUS-MENU de quatre lignes, dans l'ordre bleu, jaune, rouge, vert, chacune
+     lisant `3.5" Floppy Disk (bleue)` etc. L'entrée parente elle-même n'insère
+     rien quand on passe dessus. Cliquer la ligne **verte** → c'est la disquette
+     VERTE qui quitte l'inventaire, pas la bleue : c'est tout le point de ce
+     sous-menu. L'éjecter. Garder ensuite DEUX disquettes bleues sur soi → deux
+     lignes quand même, et non une. Avec une seule disquette sur soi → pas de
+     sous-menu du tout, l'entrée directe d'avant. [ ]
+199d. **Le sous-menu quand c'est refusé.** Trois disquettes sur soi et une dans la
+     fente → **Insert floppy** est UNE seule ligne grisée avec l'infobulle *Eject
+     the floppy first*, et AUCUN sous-menu : il n'y a rien à choisir. Pareil hors
+     de portée (derrière un comptoir) : une ligne grisée avec
+     *Tooltip_CeroSec_NoAccess*. [ ]
+199e. **Écrire sur l'étiquette.** Sans rien pour écrire sur soi, clic droit sur une
+     disquette dans l'inventaire → **aucune** entrée d'étiquette. Prendre un stylo
+     (`Base.Pen`) ou un crayon, reclic droit → **Étiqueter la disquette**. Cliquer
+     → une boîte de texte vide s'ouvre. Taper `PAYROLL 93`, OK → le nom de la
+     disquette dans l'inventaire devient **PAYROLL 93**. Reclic droit → deux
+     entrées maintenant : **Changer l'étiquette** (la boîte s'ouvre déjà remplie)
+     et **Effacer l'étiquette**. Essayer une étiquette de plus de 24 caractères,
+     puis une avec un `/` ou un `_` → refusée, un message rouge le dit, et le nom
+     ne change pas. Annuler la boîte → rien ne change. **Effacer l'étiquette** →
+     le nom revient à `3.5" Floppy Disk`. Poser le stylo par terre → les entrées
+     disparaissent du menu. [ ]
+199f. **L'étiquette, la machine et l'aller-retour.** Étiqueter une disquette
+     `PAYROLL 93`, l'insérer : le sous-menu la nommait bien `PAYROLL 93 (verte)`.
+     `newfs /dev/fd0`, `mount /dev/fd0 /mnt`, puis `mount` sans rien → la ligne de
+     la disquette est `/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)`, et celle de
+     `hda` n'a RIEN entre parenthèses au bout. `df` → la ligne `fd0` porte
+     `(PAYROLL 93)` au bout, la ligne `fd0 nodes` ne le répète pas, et les colonnes
+     de chiffres n'ont pas bougé. `umount /mnt`, éjecter → la disquette revient
+     dans l'inventaire **en portant toujours le nom PAYROLL 93** (c'est un nouvel
+     objet : sans report explicite l'écriture serait perdue). La réinsérer →
+     `mount` la renomme pareil. Avec une disquette NON étiquetée : la ligne `mount`
+     est nue, sans parenthèses vides, et ne dit jamais `3.5" Floppy Disk`. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
      Insert et Eject sont toujours proposés — une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
@@ -1220,6 +1277,51 @@ celui de West Point) avec deux boutiques différentes.
      `Phone line:` (le central est calculé au moment où la machine revoit son
      carré). Une machine dont on regarde l'écran sans l'allumer doit aussi
      l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
+215e. **L'annuaire : le trouver et le lire.** Ramasser un `Phonebook` (table
+     d'entrée, comptoir de magasin, tiroir de bureau — l'objet vanilla) et faire
+     un clic droit dessus dans le sac : sous l'option vanilla **Lire** (qui doit
+     toujours être là) il y a **Chercher un numéro**. Cliquer : une fenêtre de
+     livre s'ouvre, comme le manuel, titrée `Knox County Telephone Directory`.
+     Le premier feuillet est la page de titre, le deuxième la table des matières
+     avec une seule ligne `Exchange NNN`, et ensuite la préface (deux lignes) puis
+     les inscriptions, une par ligne, `Nom ..... NNN-NNNN`, en police fixe et
+     alignées. Vérifier **au passage** que le nom de l'objet dans le sac a changé
+     et porte le central : `Phonebook (central NNN)`. Les flèches gauche/droite
+     tournent les feuillets, Échap ferme. Rouvrir : il s'ouvre à la page où on
+     l'a laissé. [ ]
+215f. **Un annuaire = un central, et il ne bouge pas.** Noter les trois chiffres
+     du central du livre et les comparer avec les trois premiers du
+     `Phone line:` d'un ordinateur du même coin de la carte : **les mêmes**.
+     Puis partir à plus de 1024 tuiles (une autre ville) avec ce même livre et
+     rouvrir : **même** central, **mêmes** inscriptions, et le nom de l'objet n'a
+     pas changé une deuxième fois — c'est l'annuaire de là où on l'a trouvé.
+     Ramasser un **deuxième** `Phonebook` sur place et l'ouvrir : central
+     **différent**, inscriptions différentes. [ ]
+215g. **Un numéro de l'annuaire sonne vraiment.** Dans une boutique nommée par la
+     carte (une boutique de mall, un restaurant), poser un ordinateur, l'allumer
+     et lire son `Phone line: NNN-NNNN (NomDeLaZone)`. Rouvrir l'annuaire de
+     cette région : la boutique doit y être, sous son nom **séparé en mots**
+     (`CoffeeShop` → `Coffee Shop`), avec **exactement** ce numéro. Depuis un
+     autre ordinateur d'un autre local : `cu <ce numéro>` → environ quatre
+     secondes, puis `CONNECT 2400` et le `login:` d'en face. Puis éteindre
+     l'ordinateur de la boutique et rappeler le **même** numéro de l'annuaire :
+     **rien pendant quinze secondes**, puis `NO CARRIER` (chronométrer). Faire de
+     même sur une inscription derrière laquelle personne n'a jamais rien posé :
+     `NO CARRIER` après quinze secondes aussi — l'inscription est bonne, le local
+     est vide. [ ]
+215h. **Ce qui n'est pas dedans.** Dans une **maison** ordinaire, poser un
+     ordinateur, l'allumer, noter son numéro : il n'est **nulle part** dans
+     l'annuaire de la région (aucune ligne ne porte ces sept chiffres) — les
+     pages blanches demanderaient un nom de famille que la carte ne donne pas.
+     Parcourir ensuite tout l'annuaire feuillet par feuillet : **aucune**
+     coordonnée de carte n'y apparaît, et aucun nom de zone de région (`Farm`,
+     `StreetPoor`, `University`) — seulement des commerces. Si la dernière ligne
+     du dernier feuillet dit que l'annuaire est plein, c'est le plafond de 400 :
+     le noter dans le rapport. [ ]
+215i. **Multijoueur.** Deux joueurs, chacun son `Phonebook`, ouverts en même
+     temps dans deux régions différentes : chacun voit **son** central et ses
+     propres inscriptions, et la fenêtre de l'un ne change pas quand l'autre
+     ouvre la sienne. [ ]
 
 ## T. La radio (palier 6c)
 

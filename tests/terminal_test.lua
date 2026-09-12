@@ -839,6 +839,86 @@ eq("anything else asks again", CeroSec.editKeyAction("ask", "q", true, false), "
 eq("Tab asks again", CeroSec.editKeyAction("ask", "tab", true, false), "again")
 
 --
+-- The stand point
+--
+-- Where a player using a computer on his feet is put: on the front square, a
+-- little way into it from the edge it shares with the computer, centred on the
+-- other axis. The four facings, in exact coordinates, for a computer at 10,10 --
+-- so the front square is the neighbour in the facing direction.
+--
+
+-- A computer facing S: the front square is 10,11 and the player stands in its
+-- NORTH part, 0.20 from the shared edge at y = 11.
+local sx, sy = CeroSec.standPoint(10, 11, "S")
+eq("S: centred on x", sx, 10.5)
+eq("S: 0.20 into the square from the north edge", sy, 11.2)
+
+-- Facing N: front square 10,9, player in its SOUTH part, 0.20 from y = 10.
+local nx, ny = CeroSec.standPoint(10, 9, "N")
+eq("N: centred on x", nx, 10.5)
+eq("N: 0.20 from the south edge", ny, 9.8)
+
+-- Facing E: front square 11,10, player in its WEST part, 0.20 from x = 11.
+local ex, ey = CeroSec.standPoint(11, 10, "E")
+eq("E: 0.20 from the west edge", ex, 11.2)
+eq("E: centred on y", ey, 10.5)
+
+-- Facing W: front square 9,10, player in its EAST part, 0.20 from x = 10.
+local wx, wy = CeroSec.standPoint(9, 10, "W")
+eq("W: 0.20 from the east edge", wx, 9.8)
+eq("W: centred on y", wy, 10.5)
+
+-- The point is inside the front square and nowhere near its middle: a stand
+-- point that ignored the inset would be the middle, which is the step away from
+-- the desk this exists to close. Asserted as a DISTANCE so the assertion has
+-- nothing to say about which way the shift went -- that is the four cases above.
+for _, facing in ipairs(CeroSec.FACINGS) do
+	local dx, dy = CeroSec.frontOffset(facing)
+	local fx, fy = 10 + dx, 10 + dy
+	local px, py = CeroSec.standPoint(fx, fy, facing)
+	check(facing .. ": inside the front square",
+		px > fx and px < fx + 1 and py > fy and py < fy + 1)
+	local cx, cy = CeroSec.squareCentre(fx, fy)
+	local moved = math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy))
+	check(facing .. ": moved off the middle by the inset",
+		math.abs(moved - CeroSec.STAND_INSET) < 1e-9)
+	-- And it moved TOWARD the computer, which is the axis half: the point is
+	-- nearer the computer's own middle than the middle of the square is.
+	local ccx, ccy = CeroSec.squareCentre(10, 10)
+	local near = (px - ccx) * (px - ccx) + (py - ccy) * (py - ccy)
+	local far = (cx - ccx) * (cx - ccx) + (cy - ccy) * (cy - ccy)
+	check(facing .. ": nearer the computer than the middle is", near < far)
+end
+
+-- Not a facing, no point. The reach module never asks with one -- frontSquare is
+-- already nil without a facing -- but a nil is better than a coordinate made up
+-- out of a nil offset.
+eq("no facing, no x", CeroSec.standPoint(10, 11, "NE"), nil)
+check("no facing, no y", select(2, CeroSec.standPoint(10, 11, nil)) == nil)
+
+-- The inset is a tuned number, but not any number: it has to leave the point
+-- inside the square and off the middle.
+check("the inset is a real fraction of a tile",
+	CeroSec.STAND_INSET > 0 and CeroSec.STAND_INSET < 0.5)
+check("near enough is tighter than the inset itself",
+	CeroSec.STAND_NEAR > 0 and CeroSec.STAND_NEAR < CeroSec.STAND_INSET)
+
+-- "Already there", the squared-distance test the walk back is skipped on.
+check("at the point itself", CeroSec.atPoint(10.5, 11.2, 10.5, 11.2, CeroSec.STAND_NEAR))
+check("a hair off is still there",
+	CeroSec.atPoint(10.53, 11.24, 10.5, 11.2, CeroSec.STAND_NEAR))
+check("the middle of the square is NOT there",
+	not CeroSec.atPoint(10.5, 11.5, 10.5, 11.2, CeroSec.STAND_NEAR))
+check("the tolerance is a radius, not a box",
+	not CeroSec.atPoint(10.58, 11.28, 10.5, 11.2, CeroSec.STAND_NEAR))
+-- Past the tolerance on one axis alone. Not exactly AT it: a tenth of a tile is
+-- not a number a float holds, and the edge of the circle is not a case anything
+-- depends on -- being clearly outside it is.
+check("past the tolerance is not there",
+	not CeroSec.atPoint(10.61, 11.2, 10.5, 11.2, CeroSec.STAND_NEAR))
+check("a nil position is never there", not CeroSec.atPoint(nil, 11.2, 10.5, 11.2, 0.1))
+
+--
 -- The look: the constants the window draws with have to be there and be sane.
 --
 

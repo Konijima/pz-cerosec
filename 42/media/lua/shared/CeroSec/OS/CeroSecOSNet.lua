@@ -446,6 +446,43 @@ function CeroSecOS.phoneOf(state)
 	return CeroSecOS.phoneText(net.ex, CeroSecOS.phoneKey(net.b1, net.b2))
 end
 
+-- The line a ZONE is the premises of, read off the zone's own outline instead of
+-- off a machine's record: the exchange of its corner and the four digits of its
+-- premises key, which is the same composition phoneOf above makes and the same
+-- one CeroSecNet.lineOf makes one level up. nil for anything that is not an
+-- outline.
+--
+-- It exists for ONE caller and for one reason: the telephone directory
+-- (CeroSecPhonebook) lists premises nobody has ever put a computer in, so there
+-- is no record to read and the number has to come out of the map. Written HERE,
+-- beside the two halves it is made of, because a book that derived a number its
+-- own way would be a book that disagreed with the machine standing in the shop --
+-- and a directory whose numbers do not ring is worse than no directory.
+function CeroSecOS.phoneOfZone(zx, zy, zw, zh)
+	local b1, b2 = CeroSecOS.premisesKey(zx, zy, zw, zh)
+	if b1 == nil then return nil end
+	return CeroSecOS.phoneText(CeroSecOS.phoneExchange(zx, zy), CeroSecOS.phoneKey(b1, b2))
+end
+
+-- Which central office's region a coordinate falls in, as the two cell numbers.
+-- The book is stamped with these and asks the server for them, because a region
+-- is what an exchange IS (see the note over phoneExchange) and two bytes of a
+-- hash cannot be turned back into one.
+function CeroSecOS.phoneRegionOf(x, y)
+	if type(x) ~= "number" or type(y) ~= "number" then return nil end
+	return math.floor(math.floor(x) / CeroSecOS.PHONE_REGION),
+		math.floor(math.floor(y) / CeroSecOS.PHONE_REGION)
+end
+
+-- And the exchange of a whole region, which is every premises in it: the corner
+-- of the region asked of phoneExchange, which is the same answer for every tile
+-- of it by that function's own arithmetic.
+function CeroSecOS.phoneExchangeOfRegion(rx, ry)
+	if type(rx) ~= "number" or type(ry) ~= "number" then return nil end
+	return CeroSecOS.phoneExchange(math.floor(rx) * CeroSecOS.PHONE_REGION,
+		math.floor(ry) * CeroSecOS.PHONE_REGION)
+end
+
 -- What the PREMISES is called, when the map named it and the name is one a screen
 -- can carry: the zone a shop in a mall is tagged with. nil for a machine whose
 -- premises is the building it stands in, which is every machine in a house.

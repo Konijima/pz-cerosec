@@ -2,7 +2,6 @@
     "ContextMenu_CeroSec_TurnOn": "Turn on computer",
     "ContextMenu_CeroSec_TurnOff": "Turn off computer",
     "ContextMenu_CeroSec_Use": "Use computer",
-    "ContextMenu_CeroSec_ReadManual": "Read the manual",
     "ContextMenu_CeroSec_ReadUser": "Read the User's Guide",
     "ContextMenu_CeroSec_ReadAdmin": "Read the System Administrator's Guide",
     "ContextMenu_CeroSec_ReadProgrammer": "Read the Programmer's Guide",
@@ -10,7 +9,11 @@
     "ContextMenu_CeroSec_DevDebug": "Debug window",
     "ContextMenu_CeroSec_InsertFloppy": "Insert floppy",
     "ContextMenu_CeroSec_EjectFloppy": "Eject floppy",
+    "ContextMenu_CeroSec_LabelFloppy": "Label floppy",
+    "ContextMenu_CeroSec_RelabelFloppy": "Change the floppy's label",
+    "ContextMenu_CeroSec_EraseLabel": "Erase the floppy's label",
     "ContextMenu_CeroSec_Install": "Install %1",
     "ContextMenu_CeroSec_Remove": "Remove %1",
-    "ContextMenu_CeroSec_Modules": "CeroSec hardware"
+    "ContextMenu_CeroSec_Modules": "CeroSec hardware",
+    "ContextMenu_CeroSec_LookUpNumbers": "Look up numbers"
 }
