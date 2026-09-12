@@ -660,8 +660,13 @@ do
 	-- assertion above it did not: what catches a leak is `late - early`, which is
 	-- growth over nine hundred passes and is unaffected by how much source was
 	-- read at the top of the file. This one catches a heap that has doubled.
-	check("and the whole bench holds well under 1152K (" ..
-		string.format("%.0f", late) .. "K)", late < 1152)
+	--
+	-- 1280K since fidelity A, and it moved for the same reason a third time: seven
+	-- commands went into CeroSecOSShell.lua -- more, find, tee, cut, tr, uptime and
+	-- w -- and the source of them is in the heap before a machine exists. Measured
+	-- at 1153K, which is what 1152 was catching.
+	check("and the whole bench holds well under 1280K (" ..
+		string.format("%.0f", late) .. "K)", late < 1280)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
@@ -2399,6 +2404,130 @@ do
 	check(string.format("a county with no sensor in it costs %.4f ms a second", idle),
 		idle < 0.01)
 	_G.__world = nil
+end
+
+--
+-- 22. The pager waiting, and find on a full disk (fidelity A)
+--
+-- Two new commands whose cost a hostile player would reach for: one that WAITS
+-- for a keypress and one that walks the whole tree.
+--
+
+-- 22a. A `more` standing at its prompt costs NOTHING.
+--
+-- The one thing a pager must never do is spin. A job waiting on an answer is off
+-- the processor -- the scheduler's own rule for `read` and for sudo's password --
+-- and this is the bench that says `more` is on the same side of it: a thousand
+-- passes with the question up, and not one step spent.
+do
+	local machine, state, console = newMachine()
+	local body = {}
+	for i = 1, 200 do body[#body + 1] = "line " .. i end
+	put(state, "/home/admin/long", table.concat(body, "\n"))
+
+	typeLine(system, machine, state, console, "more /home/admin/long")
+	-- The first pass prints the screenful and puts the question up.
+	local opening = drive(machine, 1, CeroSec.JOB_PASS_MS)
+	local fg = nil
+	for i = 1, #machine.jobs.list do
+		if machine.jobs.list[i].interactive then fg = machine.jobs.list[i] end
+	end
+	check("the pager is still on the machine", fg ~= nil)
+	eq("and it is waiting", fg.state, "waiting")
+	check("with more's own prompt up",
+		console.prompt ~= nil and string.find(console.prompt.text, "--More--", 1, true) ~= nil)
+
+	local waiting = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	local spent = 0
+	for i = 1, #waiting.perPass do spent = spent + waiting.perPass[i] end
+	eq("a thousand passes at the --More-- prompt cost nothing at all", spent, 0)
+	eq("and the job is where it was", fg.state, "waiting")
+	flat("more waiting", waiting)
+	timely("more waiting", waiting)
+	note("more at its prompt", waiting, " (0 steps over " .. PASSES .. " passes)")
+
+	-- And it is still answerable: the wait was a wait and not a death.
+	local answered = console.prompt
+	console.prompt = nil
+	CeroSecOS.jobInput(state, fg, "q", system:execEnv(machine, state))
+	check("the token was the job's", answered.cont.cmd == "job")
+	drive(machine, 5, CeroSec.JOB_PASS_MS)
+	eq("q ended it", CeroSecOS.jobIsOver(fg), true)
+end
+
+-- 22b. find over a tree with every node on the disk in it.
+--
+-- MAX_NODES is 512, so this is the widest walk a machine can be asked for, and
+-- it is ONE command: the budget has to cover it in one pass, or a `find /` would
+-- be a command that never finishes.
+do
+	local machine, state, console = newMachine()
+	-- A tree as deep as a path may go and as wide as the nodes allow: 15 levels
+	-- with a handful of files at each, until the disk says no.
+	local root = CeroSecOS.rootSession()
+	local made = 0
+	local path = "/home/admin"
+	for depth = 1, CeroSecOS.MAX_DEPTH - 3 do
+		path = path .. "/d"
+		if CeroSecOS.createNode(state, root, path, CeroSecOS.newDir("admin", 755), 100) == nil then
+			break
+		end
+		made = made + 1
+		for f = 1, 30 do
+			local file = path .. "/f" .. f .. ".txt"
+			if CeroSecOS.writeFile(state, root, file, "x", false, 100) == nil then break end
+			made = made + 1
+		end
+	end
+	local nodes = CeroSecOS.usage(state)
+	check("the disk really is nearly full of nodes (" .. nodes .. " of "
+		.. CeroSecOS.MAX_NODES .. ")", nodes > CeroSecOS.MAX_NODES / 2)
+	check("and the tree is most of them (" .. made .. ")", made > 200)
+
+	-- Counted down a pipe and not into a file: five hundred paths is more text
+	-- than a file on this machine may hold (4096 bytes), and what this bench is
+	-- about is the COST of the walk rather than where its answer went.
+	--
+	-- /home and not /: a walk that meets a directory it may not read comes back
+	-- UNSUCCESSFUL, and an unsuccessful command's lines are a refusal on this
+	-- machine -- they go to the screen and never down a pipe, which is the rule
+	-- `cat good bad | wc -l` already runs on. So `find / | wc -l` as an ordinary
+	-- account counts nothing and prints everything, and the tree this bench built
+	-- is under /home anyway.
+	typeLine(system, machine, state, console, "find /home | wc -l")
+	local walk = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("find over the disk", walk)
+	timely("find over the disk", walk)
+	local counted = nil
+	for i = 1, #console.lines do
+		local n = string.match(console.lines[i], "^%s*(%d+)%s*$")
+		if n ~= nil then counted = tonumber(n) end
+	end
+	check("the walk counted what it walked (" .. tostring(counted) .. ")",
+		counted ~= nil and counted > 200)
+	-- Every node it may read, and it is ONE command: a walk that needed two passes
+	-- would be a `find /` that a player could never finish.
+	note("find over the disk", walk, " (" .. nodes .. " nodes, " .. tostring(counted) .. " found)")
+
+	-- The same walk with no test on it at all, which is the most output one
+	-- command on this machine can produce: it trickles at the screen's own rate
+	-- and does not blow the console.
+	local machine2, state2, console2 = newMachine()
+	for depth = 1, 8 do
+		local p = "/home/admin"
+		for k = 1, depth do p = p .. "/d" end
+		CeroSecOS.createNode(state2, root, p, CeroSecOS.newDir("admin", 755), 100)
+		for f = 1, 20 do
+			CeroSecOS.writeFile(state2, root, p .. "/f" .. f, "x", false, 100)
+		end
+	end
+	typeLine(system, machine2, state2, console2, "find /home")
+	local flood = drive(machine2, PASSES, CeroSec.JOB_PASS_MS)
+	flat("find at the glass", flood)
+	timely("find at the glass", flood)
+	check("the console still holds only its hundred lines",
+		#console2.lines <= CeroSec.CONSOLE_MAX)
+	note("find at the glass", flood)
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

@@ -518,6 +518,12 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	end
 	if force then touch(forConsole or own) end
 
+	-- The load averages, moved on. Once a pass and no oftener than every five
+	-- seconds (CeroSecOS.loadSample decides), on the run queue this very book is:
+	-- what `uptime` and `w` print. Before execEnv, so the numbers a command reads
+	-- this pass are this pass's.
+	CeroSecOS.loadSample(book, now)
+
 	local env = system:execEnv(luaObject, state, playerObj, token)
 	env.nowMs = now
 	env.jobs = book.list

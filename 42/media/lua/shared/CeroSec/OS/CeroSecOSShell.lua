@@ -267,6 +267,17 @@ local function shTty(sh)
 	return sh.tty ~= false
 end
 
+-- And whether there is a pair of HANDS behind the command, which is the other
+-- question and the one a pager has to ask: a `&` job and a crontab line write to
+-- a glass and will never have a key pressed at them, while a stage of a pipeline
+-- somebody just typed will (see jobHasKeyboard in CeroSecOSVM.lua, which is where
+-- the answer is worked out). Same rule as above: false only when the shell said
+-- so, so a bench calling straight in is a person standing at the keyboard.
+local function shKeys(sh)
+	if type(sh) ~= "table" then return true end
+	return sh.keys ~= false
+end
+
 -- The one usage line there is for a command: the string in COMMAND_INFO. `man
 -- ls` prints it and a wrong `ls` prints it, so the two can never drift into
 -- saying different things.
@@ -644,6 +655,11 @@ CeroSecOS.COMMAND_INFO = {
 	clear    = { desc = "clear the screen", usage = "clear" },
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
 	crontab  = { desc = "list, edit or drop your crontab", usage = "crontab -e|-l|-r" },
+	-- The two forms cut(1) has and they are exclusive: -c cuts characters out of a
+	-- line and -f cuts fields out of a record, and a line carrying both is a line
+	-- that cannot be carried out.
+	cut      = { desc = "cut out selected parts of each line",
+		usage = "cut -c <list> | -d <delim> -f <list> [file]..." },
 	-- The operand is "telno" and not "<number>": it is cu(1)'s own name for it,
 	-- and a usage line is the one place a command speaks the manual's language.
 	cu       = { desc = "call another machine on the phone", usage = "cu telno" },
@@ -657,6 +673,10 @@ CeroSecOS.COMMAND_INFO = {
 	fg       = { desc = "bring a background job to the front",
 		usage = "fg [%<n>|<id>]", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
+	-- POSIX's own subset: the two tests a survivor needs and the action that is
+	-- implied when he gives none. No -o, no parentheses, no -exec.
+	find     = { desc = "walk a tree and print what is in it",
+		usage = "find <path>... [-name <glob>] [-type f|d]" },
 	grep     = { desc = "find a string in files",
 		usage = "grep [-c] [-i] [-n] [-v] <text> [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
@@ -686,6 +706,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- is what a tool that makes one is called.
 	mkpasswd = { desc = "hash a string the way a password is",
 		usage = "mkpasswd <text> [salt]" },
+	more     = { desc = "show a file a screenful at a time", usage = "more [file]..." },
 	-- The floppy drive's three. `mount` with nothing after it is the listing, which
 	-- is why the whole of its operand half is optional.
 	mount    = { desc = "list the filesystems, or mount one",
@@ -715,14 +736,21 @@ CeroSecOS.COMMAND_INFO = {
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
 	tail     = { desc = "print the last lines of a file",
 		usage = "tail [-n N|-N] [file]" },
+	tee      = { desc = "copy the input to the screen and to files",
+		usage = "tee [-a] <file>..." },
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	-- Ranges only. The character classes are POSIX.2's and a survivor types a-z,
+	-- so they are what is here -- and the manual says which is missing.
+	tr       = { desc = "translate or delete characters",
+		usage = "tr [-d] <set1> [<set2>]" },
 	-- A word the shell IS, like cd: `type` has to know the shell's own words and
 	-- the PATH it looks a name up on, and neither of those is anything a file in
 	-- /bin could be handed.
 	type     = { desc = "say what a word is", usage = "type <name>", shell = true },
 	umount   = { desc = "unmount a filesystem", usage = "umount <dir>" },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
+	uptime   = { desc = "show how long the machine has been up", usage = "uptime" },
 	-- The three account commands, under the names System V gave them in 1989 and
 	-- Solaris 2 shipped in 1992. The operand is "login" because that is what
 	-- useradd(1M), userdel(1M) and usermod(1M) call it, and a usage line is the
@@ -736,6 +764,7 @@ CeroSecOS.COMMAND_INFO = {
 	usermod  = { desc = "set an account's supplementary groups",
 		usage = "usermod -G group[,group...] login" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
+	w        = { desc = "show who is logged in and what they are doing", usage = "w" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
 	which    = { desc = "find a command on PATH", usage = "which <name>" },
@@ -2197,6 +2226,782 @@ commands.uniq = function(state, session, args, env, stdin)
 	return true, out
 end
 
+--
+-- cut, tr, tee: the three POSIX.2 filters this machine was missing
+--
+
+-- A list like "1,3-5" -> the positions it names, as a set plus the highest one.
+-- POSIX.2's own grammar for -c and -f: numbers and ranges, separated by commas,
+-- and a range with no number after the "-" runs to the end of the line ("3-").
+-- nil for a list that is not one, which the caller words its own refusal about.
+local function cutList(text)
+	if type(text) ~= "string" or text == "" then return nil end
+	local want, high, toEnd = {}, 0, nil
+	local start = 1
+	while true do
+		local p = string.find(text, ",", start, true)
+		local piece
+		if p == nil then piece = string.sub(text, start) else piece = string.sub(text, start, p - 1) end
+		if piece == "" then return nil end
+		local lo, hi = string.match(piece, "^(%d+)%-(%d*)$")
+		if lo == nil then
+			local one = string.match(piece, "^(%d+)$")
+			if one == nil then
+				-- "-5" is "from the first to the fifth", which is the one shape
+				-- with nothing in front of the hyphen.
+				local upto = string.match(piece, "^%-(%d+)$")
+				if upto == nil then return nil end
+				lo, hi = "1", upto
+			else
+				lo, hi = one, one
+			end
+		end
+		lo = tonumber(lo)
+		if lo < 1 then return nil end
+		if hi == "" then
+			-- To the end of the line. Remembered as a floor rather than a set,
+			-- because a line's length is not known here.
+			if toEnd == nil or lo < toEnd then toEnd = lo end
+		else
+			hi = tonumber(hi)
+			if hi < lo then return nil end
+			for i = lo, hi do
+				want[i] = true
+				if i > high then high = i end
+			end
+		end
+		if p == nil then break end
+		start = p + 1
+	end
+	return want, high, toEnd
+end
+
+local function cutWanted(want, toEnd, i)
+	if want[i] then return true end
+	return toEnd ~= nil and i >= toEnd
+end
+
+-- One line through cut. Characters or fields, and the two are one function
+-- because the selection is the same selection.
+--
+-- A line with no delimiter in it comes through WHOLE under -f, which is what
+-- POSIX says and what cut has always done: the line is not a record, so there is
+-- nothing to take a field out of. (There is no -s here to ask for the other
+-- answer, and the manual names that.)
+local function cutLine(line, want, toEnd, delim)
+	if delim == nil then
+		local out = ""
+		for i = 1, #line do
+			if cutWanted(want, toEnd, i) then out = out .. string.sub(line, i, i) end
+		end
+		return out
+	end
+	if string.find(line, delim, 1, true) == nil then return line end
+	local fields = {}
+	local start = 1
+	while true do
+		local p = string.find(line, delim, start, true)
+		if p == nil then
+			fields[#fields + 1] = string.sub(line, start)
+			break
+		end
+		fields[#fields + 1] = string.sub(line, start, p - 1)
+		start = p + #delim
+	end
+	local out, shown = "", 0
+	for i = 1, #fields do
+		if cutWanted(want, toEnd, i) then
+			if shown > 0 then out = out .. delim end
+			out = out .. fields[i]
+			shown = shown + 1
+		end
+	end
+	return out
+end
+
+-- cut -c <list>, or cut -d <delim> -f <list>. The default delimiter is a TAB,
+-- which is cut(1)'s own default and the reason -d exists at all.
+commands.cut = function(state, session, args, env, stdin)
+	local mode, list, delim = nil, nil, "\t"
+	local paths = {}
+	local i = 2
+	while i <= #args do
+		local a = args[i]
+		if a == "-c" or a == "-f" then
+			if #paths > 0 then return usage("cut") end
+			mode = string.sub(a, 2, 2)
+			list = args[i + 1]
+			if list == nil then return usage("cut") end
+			i = i + 2
+		elseif a == "-d" then
+			if #paths > 0 then return usage("cut") end
+			local d = args[i + 1]
+			if d == nil or #d ~= 1 then return usage("cut") end
+			delim = d
+			i = i + 2
+		elseif #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return fail("cut", a, "unknown option")
+		else
+			paths[#paths + 1] = a
+			i = i + 1
+		end
+	end
+	if mode == nil then return usage("cut") end
+	local want, _, toEnd = cutList(list)
+	if want == nil then return fail("cut", list, "invalid list") end
+	-- -c cuts CHARACTERS and has no delimiter to be given one for: a line with
+	-- both flags on it is a line that cannot be carried out, and cut(1) says so
+	-- rather than picking one.
+	local d = nil
+	if mode == "f" then d = delim end
+
+	local input = stdinOf(stdin, paths)
+	if input ~= nil then
+		local out = {}
+		for k = 1, #input.lines do out[#out + 1] = cutLine(input.lines[k], want, toEnd, d) end
+		return true, out
+	end
+	if #paths == 0 then return usage("cut") end
+	local out, okAll = {}, true
+	for k = 1, #paths do
+		local lines, why = fileLines(state, session, "cut", paths[k])
+		if lines == nil then
+			okAll = false
+			out[#out + 1] = why
+		else
+			for j = 1, #lines do out[#out + 1] = cutLine(lines[j], want, toEnd, d) end
+		end
+	end
+	return okAll, out
+end
+
+-- One of tr's two sets, expanded: "a-z" is the twenty-six letters, and every
+-- other character stands for itself. No classes -- [:alpha:] is POSIX.2 and this
+-- machine has the ranges, which is what a survivor types -- and the manual says
+-- so. nil for a set that is not one.
+local function trSet(text)
+	if type(text) ~= "string" or text == "" then return nil end
+	local out = {}
+	local i = 1
+	while i <= #text do
+		local c = string.sub(text, i, i)
+		if string.sub(text, i + 1, i + 1) == "-" and i + 2 <= #text then
+			local last = string.sub(text, i + 2, i + 2)
+			local a, b = string.byte(c), string.byte(last)
+			if b < a then return nil end
+			for n = a, b do out[#out + 1] = string.char(n) end
+			i = i + 3
+		else
+			out[#out + 1] = c
+			i = i + 1
+		end
+	end
+	return out
+end
+
+-- The translation, as a table from one character to another. tr's own rule when
+-- set2 is shorter: the LAST character of set2 stands in for the rest of set1,
+-- which is what lets `tr a-z x` write a line of x's.
+local function trMap(set1, set2)
+	local map = {}
+	for i = 1, #set1 do
+		local to = set2[i]
+		if to == nil then to = set2[#set2] end
+		map[set1[i]] = to
+	end
+	return map
+end
+
+local function trLine(line, map, drop)
+	local out = ""
+	for i = 1, #line do
+		local c = string.sub(line, i, i)
+		if drop then
+			if map[c] == nil then out = out .. c end
+		else
+			out = out .. (map[c] or c)
+		end
+	end
+	return out
+end
+
+-- tr [-d] <set1> [<set2>]. It reads its standard input and nothing else, which
+-- is tr(1)'s own shape: there is no file operand on any tr, and on this machine
+-- that means a pipe on its left.
+commands.tr = function(state, session, args, env, stdin)
+	local flags, rest = flagsOf(args, "d")
+	if flags == nil then return fail("tr", rest, "unknown option") end
+	local drop = flags.d == true
+	if drop then
+		if #rest ~= 1 then return usage("tr") end
+	elseif #rest ~= 2 then
+		return usage("tr")
+	end
+
+	local set1 = trSet(rest[1])
+	if set1 == nil then return fail("tr", rest[1], "invalid set") end
+	local map = {}
+	if drop then
+		for i = 1, #set1 do map[set1[i]] = true end
+	else
+		local set2 = trSet(rest[2])
+		if set2 == nil then return fail("tr", rest[2], "invalid set") end
+		map = trMap(set1, set2)
+	end
+
+	-- No file, ever: what tr reads is its standard input. A tr with no pipe on
+	-- its left is a tr with nothing to read, and the usage line is the honest
+	-- answer -- the same one every other reader on this machine gives.
+	if type(stdin) ~= "table" then return usage("tr") end
+	stdin.want = true
+	local out = {}
+	for i = 1, #stdin.lines do out[#out + 1] = trLine(stdin.lines[i], map, drop) end
+	return true, out
+end
+
+-- tee [-a] <file...>: the input, onto the screen AND into every file named. The
+-- first call replaces what is in a file and every call after it appends, which is
+-- what one open file looks like from here: tee is called once per turn of the
+-- pipe and the file is not held open between them. -a appends from the first
+-- call, which is what -a has always meant.
+commands.tee = function(state, session, args, env, stdin)
+	local flags, paths = flagsOf(args, "a")
+	if flags == nil then return fail("tee", paths, "unknown option") end
+	if #paths < 1 then return usage("tee") end
+	-- tee is a filter and its input is the pipe: `tee f` with nothing on its left
+	-- has nothing to copy.
+	if type(stdin) ~= "table" then return usage("tee") end
+	stdin.want = true
+
+	local carry = stdin.carry
+	if carry.wrote == nil then carry.wrote = {} end
+	local text = table.concat(stdin.lines, "\n")
+	local out, okAll = {}, true
+	for i = 1, #paths do
+		local path = paths[i]
+		-- The FIRST turn opens the file -- replaced, or added to with -a, exactly as
+		-- ">" and ">>" do -- and every turn after it appends, because tee is called
+		-- once per turn of the pipe and no file is held open between them. The
+		-- separating newline is writeFile's and not this command's: it puts one in
+		-- when what is already there is not empty, which is the only place that
+		-- decision can be made correctly.
+		local first = carry.wrote[path] ~= true
+		-- The first turn of a pipe is very often an EMPTY one -- the rightmost
+		-- stage runs before the one on its left has written anything -- and that
+		-- turn is what OPENS the file: replaced and left empty, exactly as ">"
+		-- leaves an empty file behind for a command that printed nothing.
+		--
+		-- With -a there is nothing to open: the file is added to, and adding
+		-- nothing has to add nothing. (So `tee -a f` on a pipe that never carried
+		-- a line leaves a missing f missing, where a real one would make it. One
+		-- empty file, and the alternative was a stray newline in every -a.)
+		local opening = first and flags.a ~= true
+		if opening or text ~= "" then
+			local done, reason = CeroSecOS.writeFile(state, session, path, text,
+				not first or flags.a == true, CeroSecOS.clockOf(env))
+			if done == nil then
+				okAll = false
+				out[#out + 1] = "tee: " .. path .. ": " .. reason
+			else
+				carry.wrote[path] = true
+			end
+		end
+	end
+	if not okAll then
+		-- A file it could not write is a refusal, and the copy still goes on: that
+		-- is what tee does with one bad file out of three.
+		stdin.done = true
+		return false, out
+	end
+	for i = 1, #stdin.lines do out[#out + 1] = stdin.lines[i] end
+	return true, out
+end
+
+--
+-- find
+--
+-- Depth-first, one path a line, and the path printed is the one that was TYPED
+-- with the names walked into it -- `find . -name "*.txt"` answers "./notes.txt",
+-- exactly as it does on a real machine, because what find prints is the path it
+-- arrived by and not a name it looked up afterwards.
+--
+-- -print is implied when no action is given, which is what POSIX says in so many
+-- words. It is accepted anyway, because a survivor who has used find will type
+-- it, and a find that refused it would be a find that argued.
+--
+-- The tests are AND-ed, which is the only way this one combines them: there is
+-- no -o, no -a, no parentheses and no -exec. What is here is what a survivor
+-- needs to find a file on a disk with five hundred nodes on it, and the manual
+-- says exactly that.
+--
+-- One consequence worth knowing, and it is the MACHINE's rule rather than find's:
+-- a walk that met a directory it may not read comes back UNSUCCESSFUL, and an
+-- unsuccessful command's lines are a refusal here -- they go to the screen and
+-- never down a pipe. So `find / | wc -l` as an ordinary account prints the paths
+-- and counts nothing, exactly as `cat good bad | wc -l` does. A real find has a
+-- second channel for that and this machine has never had one.
+--
+
+-- One name against a shell glob. "*" is any run, "?" is one character, "[...]"
+-- is one of a set with ranges and a leading "!" or "^" to negate it. The same
+-- three sh has had since the sixth edition -- and the only three, because there
+-- is no globbing at this prompt and a fourth would be one the shell could not
+-- spell.
+--
+-- Walked rather than turned into a Lua pattern: a name carrying "%" or "-" would
+-- have to be escaped into one, and an escaper is a second place for the grammar
+-- to live.
+function CeroSecOS.globMatch(name, pattern)
+	if type(name) ~= "string" or type(pattern) ~= "string" then return false end
+	-- ni, pi: where the walk stands. star, back: the last "*" met and what it had
+	-- swallowed, so a mismatch after one goes back and lets it swallow one more.
+	-- That is what makes this linear rather than a recursion, and it is bounded by
+	-- the two lengths.
+	local ni, pi = 1, 1
+	local star, back = nil, nil
+	while ni <= #name do
+		local p = string.sub(pattern, pi, pi)
+		if p == "*" then
+			star = pi
+			back = ni
+			pi = pi + 1
+		elseif p == "?" then
+			ni = ni + 1
+			pi = pi + 1
+		elseif p == "[" then
+			-- The set, up to the closing bracket. A "[" with no "]" behind it is
+			-- not a set and stands for itself, which is what sh does with one.
+			local close = string.find(pattern, "]", pi + 2, true)
+			if close == nil then
+				if p ~= string.sub(name, ni, ni) then
+					if star == nil then return false end
+					pi = star + 1
+					back = back + 1
+					ni = back
+				else
+					ni = ni + 1
+					pi = pi + 1
+				end
+			else
+				local body = string.sub(pattern, pi + 1, close - 1)
+				local negate = false
+				if string.sub(body, 1, 1) == "!" or string.sub(body, 1, 1) == "^" then
+					negate = true
+					body = string.sub(body, 2)
+				end
+				local c = string.sub(name, ni, ni)
+				local held = false
+				local k = 1
+				while k <= #body do
+					local from = string.sub(body, k, k)
+					if string.sub(body, k + 1, k + 1) == "-" and k + 2 <= #body then
+						local to = string.sub(body, k + 2, k + 2)
+						if string.byte(c) >= string.byte(from)
+								and string.byte(c) <= string.byte(to) then
+							held = true
+						end
+						k = k + 3
+					else
+						if c == from then held = true end
+						k = k + 1
+					end
+				end
+				if held == negate then
+					if star == nil then return false end
+					pi = star + 1
+					back = back + 1
+					ni = back
+				else
+					ni = ni + 1
+					pi = close + 1
+				end
+			end
+		elseif p ~= "" and p == string.sub(name, ni, ni) then
+			ni = ni + 1
+			pi = pi + 1
+		elseif star ~= nil then
+			pi = star + 1
+			back = back + 1
+			ni = back
+		else
+			return false
+		end
+	end
+	-- What is left of the pattern may only be stars.
+	while string.sub(pattern, pi, pi) == "*" do pi = pi + 1 end
+	return pi > #pattern
+end
+
+-- The last component of a path as it was typed, for -name to judge. The path
+-- itself for a path with no slash in it, which is what -name judges about ".".
+local function lastComponent(path)
+	local out = path
+	while true do
+		local p = string.find(out, "/", 1, true)
+		if p == nil then break end
+		out = string.sub(out, p + 1)
+	end
+	if out == "" then return path end
+	return out
+end
+
+commands.find = function(state, session, args, env)
+	local name, kind = nil, nil
+	local paths = {}
+	local i = 2
+	while i <= #args do
+		local a = args[i]
+		if a == "-name" then
+			name = args[i + 1]
+			if name == nil then return usage("find") end
+			i = i + 2
+		elseif a == "-type" then
+			kind = args[i + 1]
+			if kind ~= "f" and kind ~= "d" then return usage("find") end
+			i = i + 2
+		elseif a == "-print" then
+			-- Accepted and does nothing: it is what find does anyway when no
+			-- action is named, which is POSIX's own wording.
+			i = i + 1
+		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return fail("find", a, "unknown option")
+		else
+			paths[#paths + 1] = a
+			i = i + 1
+		end
+	end
+	if #paths == 0 then return usage("find") end
+
+	local out, okAll = {}, true
+
+	-- Does this node answer the tests? Both are AND-ed and either may be absent.
+	local function wanted(path, node)
+		if kind == "f" and node.type ~= "file" then return false end
+		if kind == "d" and node.type ~= "dir" then return false end
+		if name ~= nil and not CeroSecOS.globMatch(lastComponent(path), name) then return false end
+		return true
+	end
+
+	-- The walk. Depth-first and PRE-order -- the directory before what is in it,
+	-- which is find's own order and the reason `find /etc` starts with "/etc".
+	--
+	-- A directory the account may not read is named and not entered, and find
+	-- says so about it the way it always has: the tree it could not read is a
+	-- refusal, and the rest of the walk goes on. Bounded by the disk: there are
+	-- MAX_NODES nodes on a machine and each is visited once.
+	local function walk(path, node)
+		if wanted(path, node) then out[#out + 1] = path end
+		if node.type ~= "dir" then return end
+		if not CeroSecOS.can(state, session, node, "r") then
+			okAll = false
+			out[#out + 1] = "find: " .. path .. ": permission denied"
+			return
+		end
+		local names = CeroSecOS.listedNames(node, true)
+		local prefix = path
+		if string.sub(prefix, -1) ~= "/" then prefix = prefix .. "/" end
+		for k = 1, #names do
+			walk(prefix .. names[k], node.children[names[k]])
+		end
+	end
+
+	for k = 1, #paths do
+		local path = paths[k]
+		-- A link NAMED on the line is not followed: find walks the tree it was
+		-- given, and a link is a leaf of it -- which is find's own default (there
+		-- is no -follow here) and what keeps a loop of links from being a walk
+		-- with no end.
+		local node, reason = CeroSecOS.getNode(state, session, path, true)
+		if node == nil then
+			okAll = false
+			out[#out + 1] = "find: " .. path .. ": " .. reason
+		elseif node.dead then
+			okAll = false
+			out[#out + 1] = "find: " .. path .. ": no such file"
+		else
+			walk(path, node)
+		end
+	end
+	return okAll, out
+end
+
+--
+-- uptime and w
+--
+-- The two lines a survivor types to find out whether a machine is busy and who
+-- is on it. Both are 4.4BSD's, and `w` is the one that opens with the other's
+-- whole line, which is why they live together.
+--
+--   admin@ksp-04-11:~$ uptime
+--    3:14PM  up 2 days,  4:03,  2 users,  load averages: 0.12, 0.08, 0.05
+--
+-- Every piece of that is uptime(1)'s: the leading space, the twelve-hour clock
+-- with no space in front of the AM, the two spaces before "up", the plural on
+-- "days" and not on "day", the two-column hour of the h:mm, the count of users,
+-- and the three averages to two decimals.
+--
+-- ONE cut, and it is the sixty columns': BSD writes "load averages: 0.12, 0.08,
+-- 0.05" and this writes "load 0.12 0.08 0.05". BSD's own words and commas are
+-- nine columns of sixty, and the line would not fit the screen with them -- which
+-- is the very cut `ruptime` already took here, and for the same reason (see
+-- CeroSecOS.ruptimeLine, which cut three averages to one). The widest line this
+-- can produce -- a machine up three-digit days with five sessions on it and every
+-- job runnable -- is exactly sixty characters, and os_test pins that.
+--
+
+-- The clock as uptime and w print it: "3:14PM", twelve-hour, no leading zero on
+-- the hour, and the hour of midnight is 12. Written here because two commands
+-- print it and nothing else on this machine does -- `ls -l` and `last` print a
+-- 24-hour stamp, which is the other format and stays where it is.
+function CeroSecOS.clockText(now)
+	local p = CeroSecOS.dateParts(now)
+	local hour = p.hour
+	local half = "AM"
+	if hour >= 12 then half = "PM" end
+	hour = math.fmod(hour, 12)
+	if hour == 0 then hour = 12 end
+	return tostring(hour) .. ":" .. CeroSecOS.twoDigits(p.min) .. half
+end
+
+-- How long the machine has been up, in uptime(1)'s own words: the days when
+-- there are any, then the hours and minutes as "h:mm" -- or, under an hour,
+-- "N mins", which is what BSD prints rather than "0:07".
+function CeroSecOS.upText(seconds)
+	if type(seconds) ~= "number" or seconds < 0 then seconds = 0 end
+	seconds = math.floor(seconds)
+	local mins = math.floor(seconds / 60)
+	local days = math.floor(mins / 1440)
+	mins = mins - days * 1440
+	local hrs = math.floor(mins / 60)
+	mins = mins - hrs * 60
+	local out = ""
+	if days > 0 then
+		out = " " .. tostring(days) .. " day"
+		if days > 1 then out = out .. "s" end
+		out = out .. ","
+	end
+	-- uptime(1)'s own three shapes, in its own order: "h:mm" when there are both,
+	-- "N hrs" when the minutes are nought, and "N mins" when there is no hour.
+	if hrs > 0 and mins > 0 then
+		return out .. " " .. CeroSecOS.padLeft(tostring(hrs), 2) .. ":"
+			.. CeroSecOS.twoDigits(mins) .. ","
+	end
+	if hrs > 0 then
+		if hrs == 1 then return out .. " 1 hr," end
+		return out .. " " .. tostring(hrs) .. " hrs,"
+	end
+	if mins == 1 then return out .. " 1 min," end
+	return out .. " " .. tostring(mins) .. " mins,"
+end
+
+--
+-- The load average
+--
+-- What a load average has counted since the first one: how many jobs are able to
+-- run. This machine's run queue is its job book, and CeroSecOS.liveJobs is what
+-- counts it -- the same number `ruptime` broadcasts about a machine on the wire.
+--
+-- Three windows, because uptime(1) prints three: one minute, five and fifteen.
+-- They are kept on the job BOOK -- runtime state like the jobs themselves, never
+-- saved -- and moved by CeroSecOS.loadSample, which the scheduler calls once a
+-- pass. A machine nobody has stepped yet has three zeros, which is the truth
+-- about it.
+--
+-- The decay is NOT exp(): a first-order filter with the same time constant,
+--
+--     load <- load * W/(W+dt) + n * dt/(W+dt)
+--
+-- which needs one division and no library at all. Kahlua's math is a subset and
+-- math.exp is not something to bet a number a player reads on; the shape is the
+-- same -- a sample W seconds old has about a third of its weight left -- and it
+-- is deterministic, which matters more here than the last decimal of a curve.
+--
+-- Sampled no oftener than every five seconds, which is the interval every Unix
+-- has sampled its run queue at, so the cost is one division per window per five
+-- seconds whatever the pass rate is.
+CeroSecOS.LOAD_WINDOWS = { 60, 300, 900 }
+CeroSecOS.LOAD_SAMPLE_MS = 5000
+
+-- Move the three averages on, if it is time to. book is the machine's job book
+-- (the table that holds `list`), nowMs the wall clock. true when it sampled.
+function CeroSecOS.loadSample(book, nowMs)
+	if type(book) ~= "table" or type(nowMs) ~= "number" then return false end
+	if type(book.load) ~= "table" then book.load = { 0, 0, 0 } end
+	local last = book.loadMs
+	if type(last) ~= "number" then
+		-- The first sample is the first sample: the averages start AT the run
+		-- queue rather than climbing to it from zero, which is what a machine
+		-- that has just been switched on with four jobs on it really looks like.
+		book.loadMs = nowMs
+		local n = CeroSecOS.liveJobs(book.list or {})
+		book.load = { n, n, n }
+		return true
+	end
+	local dt = nowMs - last
+	if dt < CeroSecOS.LOAD_SAMPLE_MS then return false end
+	-- A clock that went backwards -- a reload, a server restart -- is a sample
+	-- interval nobody can use: start again rather than divide by a negative.
+	if dt < 0 then
+		book.loadMs = nowMs
+		return false
+	end
+	book.loadMs = nowMs
+	local secs = dt / 1000
+	local n = CeroSecOS.liveJobs(book.list or {})
+	for i = 1, #CeroSecOS.LOAD_WINDOWS do
+		local w = CeroSecOS.LOAD_WINDOWS[i]
+		local keep = w / (w + secs)
+		book.load[i] = (book.load[i] or 0) * keep + n * (1 - keep)
+	end
+	return true
+end
+
+-- The three averages as the caller handed them over, each a number. A caller
+-- with none is a machine nobody has stepped, which is three zeros.
+local function loadOf(env)
+	local out = { 0, 0, 0 }
+	if type(env) ~= "table" or type(env.load) ~= "table" then return out end
+	for i = 1, 3 do
+		if type(env.load[i]) == "number" and env.load[i] >= 0 then out[i] = env.load[i] end
+	end
+	return out
+end
+
+-- A load average, to two decimals, without string.format's rounding: the number
+-- is small and the arithmetic is the machine's own everywhere else.
+local function loadText(n)
+	local hundredths = math.floor(n * 100 + 0.5)
+	local whole = math.floor(hundredths / 100)
+	local rest = hundredths - whole * 100
+	return tostring(whole) .. "." .. CeroSecOS.twoDigits(rest)
+end
+
+-- The sessions on this machine, as `who` reads them: the same door, so `w` and
+-- `who` can never disagree about who is logged in.
+local function liveSessions(env)
+	if type(env) ~= "table" or type(env.net) ~= "table" then return {} end
+	if type(env.net.sessions) ~= "function" then return {} end
+	local list = env.net.sessions()
+	if type(list) ~= "table" then return {} end
+	local out = {}
+	for i = 1, #list do
+		local one = list[i]
+		if type(one) == "table" and type(one.user) == "string" then out[#out + 1] = one end
+	end
+	table.sort(out, function(a, b) return tostring(a.line) < tostring(b.line) end)
+	return out
+end
+
+-- The whole of uptime's line, which is also w's first line. One function,
+-- because two copies of a format are two formats.
+function CeroSecOS.uptimeLine(env)
+	local now = CeroSecOS.clockOf(env)
+	local clock = "??:??"
+	if now ~= nil then clock = CeroSecOS.clockText(now) end
+	local users = #liveSessions(env)
+	local word = " user,"
+	if users ~= 1 then word = " users," end
+	local up = 0
+	if type(env) == "table" and type(env.up) == "number" and env.up > 0 then up = env.up end
+	local load = loadOf(env)
+	return " " .. clock .. "  up" .. CeroSecOS.upText(up)
+		.. "  " .. tostring(users) .. word
+		.. "  load " .. loadText(load[1]) .. " " .. loadText(load[2])
+		.. " " .. loadText(load[3])
+end
+
+commands.uptime = function(state, session, args, env)
+	if #args > 1 then return usage("uptime") end
+	return true, { CeroSecOS.uptimeLine(env) }
+end
+
+--
+-- w
+--
+-- uptime's line, then a row for every session: who, on which line, where he came
+-- from, when he logged in, how long he has been idle, and what he is running.
+--
+--    3:14PM  up 2 days,  4:03,  2 users,  load averages: 0.12, 0.08, 0.05
+--   USER     TTY      FROM        LOGIN@ IDLE  WHAT
+--   admin    console  -            2:32PM 00:03 ls -l /etc
+--   kate     ttyp0    gate         3:01PM 00:00 -
+--
+-- Two cuts from BSD's own row, and both are the sixty columns':
+--
+--   * LOGIN@ is the CLOCK and never the weekday. BSD prints "Wed10AM" for a
+--     session older than a day; seven columns of sixty spent on a weekday is a
+--     column the WHAT cannot have, and the login day is what `last` is for.
+--   * IDLE is hh:mm, the shape every other span on this screen wears
+--     (CeroSecOS.spanText), rather than BSD's four different ones.
+--
+-- And one thing that is not a cut. A real w measures idle from the last
+-- KEYSTROKE, off the tty's own mtime. This machine has no keystroke clock: what
+-- it knows is when a session last handed the shell a line (env.net's `busy`), and
+-- that is what the column says. A session the machine has no such stamp for --
+-- one that came back from a save file, where activity is runtime like a job --
+-- shows the time since it LOGGED IN, which is the honest floor: he has been idle
+-- at least that long.
+local W_USER, W_TTY, W_FROM, W_AT, W_IDLE = 8, 8, 10, 7, 5
+local W_WHAT = CeroSecOS.COLS
+	- (W_USER + 1 + W_TTY + 1 + W_FROM + 1 + W_AT + 1 + W_IDLE + 1)
+
+-- What that session is running: the line the survivor typed, when the machine is
+-- still busy with it, and "-" when it is standing at a prompt. Asked of the job
+-- book, which is the only place the answer is.
+local function whatOf(env, line)
+	local jobs = CeroSecOS.jobsOf(env)
+	for i = 1, #jobs do
+		local job = jobs[i]
+		-- The PROMPT's own job and nobody else's: a `&` in the background and a
+		-- crontab line are the machine's work and not what this session is doing,
+		-- which is the rule `jobs` and `ps` already tell apart.
+		local mine = job.pty
+		if mine == nil then mine = CeroSecOS.CONSOLE_LINE end
+		if job.interactive and not job.bg and job.mailTo == nil and mine == line
+				and not CeroSecOS.jobIsOver(job) then
+			return job.promptLine or job.cmd or "-"
+		end
+	end
+	return "-"
+end
+
+function CeroSecOS.wLine(row, now, what)
+	local at = "     --"
+	if now ~= nil and type(row.at) == "number" and row.at > 0 then
+		at = CeroSecOS.padLeft(CeroSecOS.clockText(row.at), W_AT)
+	end
+	local since = row.busy
+	if type(since) ~= "number" or since <= 0 then since = row.at end
+	local idle = "  -  "
+	if now ~= nil and type(since) == "number" and since > 0 and now >= since then
+		idle = CeroSecOS.padRight(CeroSecOS.spanText(now - since), W_IDLE)
+	end
+	local from = row.host
+	if type(from) ~= "string" or from == "" then from = "-" end
+	return CeroSecOS.padRight(CeroSecOS.truncate(row.user, W_USER), W_USER) .. " "
+		.. CeroSecOS.padRight(CeroSecOS.truncate(row.line or CeroSecOS.CONSOLE_LINE, W_TTY), W_TTY)
+		.. " " .. CeroSecOS.padRight(CeroSecOS.truncate(from, W_FROM), W_FROM)
+		.. " " .. at .. " " .. idle .. " " .. CeroSecOS.truncate(what, W_WHAT)
+end
+
+commands.w = function(state, session, args, env)
+	if #args > 1 then return usage("w") end
+	local now = CeroSecOS.clockOf(env)
+	local out = { CeroSecOS.uptimeLine(env) }
+	out[#out + 1] = CeroSecOS.padRight("USER", W_USER) .. " "
+		.. CeroSecOS.padRight("TTY", W_TTY) .. " "
+		.. CeroSecOS.padRight("FROM", W_FROM) .. " "
+		.. CeroSecOS.padLeft("LOGIN@", W_AT) .. " "
+		.. CeroSecOS.padRight("IDLE", W_IDLE) .. " WHAT"
+	local rows = liveSessions(env)
+	for i = 1, #rows do
+		local row = rows[i]
+		local line = row.line or CeroSecOS.CONSOLE_LINE
+		out[#out + 1] = CeroSecOS.wLine(row, now, whatOf(env, line))
+	end
+	return true, out
+end
+
 -- man. The description is the FILE's, exactly like help's: a machine whose /bin
 -- has been cut down has no manual for what is no longer on it, and one whose
 -- /bin/ls somebody rewrote says what that file says. The usage line is the
@@ -2447,6 +3252,171 @@ commands.mkpasswd = function(state, session, args, env)
 	-- fit() breaks anything wider than the screen across lines, so a long salt
 	-- wraps instead of being cut.
 	return true, { CeroSecOS.hashPassword(args[2], salt) }
+end
+
+--
+-- more
+--
+-- The pager. A screen twenty rows deep cannot show a file of forty lines, and
+-- until this build the only answer was `head -20` and arithmetic. more(1) fills
+-- the screen, puts up its own prompt, and waits:
+--
+--   admin@ksp-04-11:~$ more /etc/motd
+--   ... nineteen lines ...
+--   --More--(47%)
+--
+-- Space is the next screenful, Return is one more line, and q gives up. The
+-- percentage is how far through the text the screenful just shown ends, which is
+-- what more(1) prints and what makes the prompt worth reading.
+--
+-- ONE DEVIATION, and it is the console's rather than the pager's: this machine
+-- reads a LINE and not a keystroke -- there is one input box and Enter is what
+-- sends it -- so Space is a space and then Enter, and q is a q and then Enter. A
+-- bare Enter is the next line, which is exactly right. It is the same shape
+-- `read -n 1` already has here, and the manual says so for both.
+--
+-- WHERE IT PAGES AND WHERE IT DOES NOT
+--
+-- more(1) asks whether its output is a terminal and, when it is not, copies its
+-- input through with no paging at all -- which is what makes `ls | more | wc -l`
+-- answer a number instead of hanging. This one does the same, on the shell's own
+-- answer to that question (the `tty` half of what a command is handed).
+--
+-- The other case is a screen with NOBODY in front of it: a `&` in the background,
+-- a crontab line. There the output goes to a glass but no key will ever be
+-- pressed, so the pager refuses in its own name -- `more: not a terminal`, which
+-- is the very line su, passwd, sudo and edit already give for the same reason.
+-- That refusal comes out of the prompt machinery and not out of this command; the
+-- `keys` half of what the shell knows is what tells the two cases apart.
+--
+
+-- How many lines one screenful is: the screen, less the row the --More-- prompt
+-- stands on. Exactly more(1)'s arithmetic.
+CeroSecOS.MORE_ROWS = CeroSecOS.ROWS - 1
+
+-- The prompt, with the percentage more(1) puts in it: how much of the text has
+-- been shown, rounded the way more rounds it -- down, so a screenful that ends
+-- one line short of the end never says 100%.
+function CeroSecOS.moreLine(shown, total)
+	if type(total) ~= "number" or total < 1 then return "--More--" end
+	local pct = math.floor(shown * 100 / total)
+	if pct > 99 then pct = 99 end
+	return "--More--(" .. tostring(pct) .. "%)"
+end
+
+-- The screenful that starts at `from`, and the prompt under it. Or, at the end of
+-- the text, the last lines and no prompt at all -- a pager that asked a question
+-- after the last line would be a pager you had to dismiss.
+local function moreStep(lines, from, count)
+	local out = {}
+	local last = from + count - 1
+	if last > #lines then last = #lines end
+	for i = from, last do out[#out + 1] = lines[i] end
+	if last >= #lines then return out, nil end
+	return out, CeroSecOS.moreLine(last, #lines)
+end
+
+-- What the token carries: where the pager stands, and the text it is standing in.
+-- The text and not the file name, because the file may be gone -- or may never
+-- have been a file at all: a pipe's contents exist nowhere else by the time the
+-- question is up. Bounded by the pipe's own ceiling, which is what the reader
+-- below pays.
+local function moreAsk(lines, from)
+	local shown, prompt = moreStep(lines, from, CeroSecOS.MORE_ROWS)
+	if prompt == nil then return true, shown end
+	local held = {}
+	for i = from + #shown, #lines do held[#held + 1] = lines[i] end
+	return true, shown, "prompt",
+		{ text = prompt, mask = false,
+		  cont = { cmd = "more", rest = held, total = #lines, seen = from + #shown - 1 } }
+end
+
+commands.more = function(state, session, args, env, stdin, sh)
+	local paths = operands(args)
+
+	-- The lines, from the files or from the pipe. A pipe is read to its END
+	-- first: a pager cannot say what per cent of a text a screenful is until it
+	-- knows how long the text is, and it cannot page what has not arrived. Which
+	-- is what `sort` and `tail` already do, under the very same ceiling -- a
+	-- hundred lines and four kilobytes -- and it is the ceiling the token has to
+	-- meet too, because what is not shown yet is carried in it.
+	local lines = nil
+	local input = stdinOf(stdin, paths)
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			if not holdLine(carry, input.lines[i]) then carry.over = true end
+		end
+		if carry.over then
+			input.done = true
+			return fail("more", nil, "input too large")
+		end
+		if not input.eof then return true, {} end
+		-- It will read no more, and it says so: that is what lets the question it
+		-- is about to ask be answered at all. A stage that still had its pipe open
+		-- could not be resumed -- a continuation has no pipe behind it -- and the
+		-- prompt machinery refuses one that has (see applyControl).
+		input.done = true
+		lines = carry.lines or {}
+	else
+		if #paths == 0 then return usage("more") end
+		lines = {}
+		local okAll = true
+		local out = {}
+		for i = 1, #paths do
+			local got, why = fileLines(state, session, "more", paths[i])
+			if got == nil then
+				okAll = false
+				out[#out + 1] = why
+			else
+				-- Every file named, one after another, which is what more(1) does
+				-- with several -- minus the "::::::::" banner it puts between them,
+				-- because that banner is two rows of twenty and the manual says so.
+				for j = 1, #got do lines[#lines + 1] = got[j] end
+			end
+		end
+		if not okAll then return false, out end
+	end
+
+	-- Not a screen: copy through, with no paging and no question. more(1)'s own
+	-- answer, and what keeps `ls | more | wc -l` a number.
+	if not shTty(sh) then return true, lines end
+	-- A screen with nobody in front of it. Refused here rather than after the
+	-- first screenful: the prompt machinery would refuse the question anyway (see
+	-- applyControl), and a pager that printed nineteen lines onto the glass of a
+	-- machine nobody is standing at before saying so would have paged nothing.
+	if not shKeys(sh) then return fail("more", nil, "not a terminal") end
+	return moreAsk(lines, 1)
+end
+
+-- The answer. One character decides, which is the key more(1) reads: a space is
+-- the next screenful, an empty line is the next line, and q gives up. Anything
+-- else is a screenful, because that is what more does with a key it has no
+-- meaning for.
+continuations.more = function(state, session, cont, line, env)
+	local rest = cont.rest
+	if type(rest) ~= "table" then return false, { "more: nothing to answer" } end
+	for i = 1, #rest do
+		if type(rest[i]) ~= "string" then return false, { "more: nothing to answer" } end
+	end
+	local total = tonumber(cont.total) or #rest
+	local seen = tonumber(cont.seen) or 0
+
+	local key = string.sub(tostring(line), 1, 1)
+	-- q, and Q: the one key that is not "more, please".
+	if key == "q" or key == "Q" then return true, {} end
+	local count = CeroSecOS.MORE_ROWS
+	if key == "" then count = 1 end
+
+	local shown, prompt = moreStep(rest, 1, count)
+	if prompt == nil then return true, shown end
+	local held = {}
+	for i = #shown + 1, #rest do held[#held + 1] = rest[i] end
+	-- The percentage is of the WHOLE text and not of what is left, so it climbs
+	-- once from nought to a hundred over the length of the file.
+	return true, shown, "prompt",
+		{ text = CeroSecOS.moreLine(seen + #shown, total), mask = false,
+		  cont = { cmd = "more", rest = held, total = total, seen = seen + #shown } }
 end
 
 -- edit. The editor itself is the terminal's; all the core does is say whether

@@ -79,6 +79,11 @@ CeroSecOS.SYSTEM_VERSION = 16
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
 CeroSecOS.COLS = 60
+-- And how many rows it has, which only the PAGER needs: `more` fills a screenful
+-- and then asks. Named here beside the width, and named twice in the mod on
+-- purpose -- CeroSec.ROWS is the terminal's, which never loads this file -- with
+-- os_test pinning the two against each other, exactly as it pins the width.
+CeroSecOS.ROWS = 20
 
 -- Limits, enforced in one place each (see CeroSecOSFS.lua).
 CeroSecOS.MAX_NAME = 32          -- characters in a single path component

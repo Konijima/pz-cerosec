@@ -924,12 +924,39 @@ end
 -- who(1), rwho(1) and ruptime(1)'s user count are all read out of it.
 --
 
+-- When that session last handed the shell a line, on the GAME's clock -- the one
+-- `who` and `last` print, so `w` can subtract it from the machine's own now.
+--
+-- console.busyAt is the wall clock, in milliseconds, and is the only stamp a
+-- session has (SCeroSecSystem:startPrompt writes it). So the age is measured in
+-- wall-clock seconds and then taken off the game clock the session logged in on:
+-- one clock's SPAN moved onto the other's scale, which is the only honest way to
+-- join two clocks (see the lesson about subtracting one from the other). nil for
+-- a session that has done nothing since the server came up, which is what the
+-- login time is the floor for.
+local function busyOf(console)
+	if type(console) ~= "table" then return nil end
+	if type(console.busyAt) ~= "number" then return nil end
+	if type(console.loginAt) ~= "number" or console.loginAt <= 0 then return nil end
+	local nowMs = getTimestampMs()
+	local age = math.floor((nowMs - console.busyAt) / 1000)
+	if age < 0 then age = 0 end
+	local gt = getGameTime and getGameTime()
+	if gt == nil then return nil end
+	local now = CeroSecOS.timeFromParts(gt:getYear(), gt:getMonth() + 1, gt:getDay() + 1,
+		gt:getHour(), gt:getMinutes(), 0)
+	if now == nil then return nil end
+	local at = now - age
+	if at < console.loginAt then return nil end
+	return at
+end
+
 function CeroSecNet.sessions(luaObject)
 	local out = {}
 	local console = luaObject.console
 	if type(console) == "table" and type(console.user) == "string" then
 		out[#out + 1] = { user = console.user, line = CeroSecOS.CONSOLE_LINE,
-			at = console.loginAt or 0 }
+			at = console.loginAt or 0, busy = busyOf(console) }
 	end
 	local ptys = CeroSecOS.ptyList(luaObject.ptys)
 	for i = 1, #ptys do
@@ -937,7 +964,7 @@ function CeroSecNet.sessions(luaObject)
 		local screen = pty.console
 		if type(screen) == "table" and type(screen.user) == "string" then
 			out[#out + 1] = { user = screen.user, line = pty.line,
-				at = screen.loginAt or 0, host = pty.fromHost }
+				at = screen.loginAt or 0, host = pty.fromHost, busy = busyOf(screen) }
 		end
 	end
 	return out

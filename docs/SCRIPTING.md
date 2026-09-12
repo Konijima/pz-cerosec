@@ -164,11 +164,15 @@ rebooting, picking the computer up or reloading the world leaves it running noth
         55     55    323
     admin@ksp-04-11:~$ cat log | sort | uniq -c
 
-Seven commands read the pipe, and only when they were given **no file**: `cat`,
-`grep`, `head`, `tail`, `wc`, and the two this wave added — `sort [-r] [-n] [-u]`
-and `uniq [-c]`. A file named on the line always wins. There is no standard input
-anywhere else on the machine: there is no keyboard behind a command, so one of those
-seven with neither a file nor a pipe prints its usage line.
+Nine commands read the pipe, and only when they were given **no file**: `cat`,
+`grep`, `head`, `tail`, `wc`, `sort [-r] [-n] [-u]`, `uniq [-c]`, and the two
+fidelity A added — `cut` and `more`. A file named on the line always wins. There is
+no standard input anywhere else on the machine: there is no keyboard behind a
+command, so one of those nine with neither a file nor a pipe prints its usage line.
+
+Two more read the pipe and **only** the pipe, because the real tools take no file
+operand either: `tr [-d] <set1> [<set2>]` and `tee [-a] <file>...`. Both want
+something on their left, and a `tr` typed on its own prints its usage line.
 
 Every stage is a **subshell** — its own variables, its own working directory — so
 what a stage changes is gone when the pipeline is over. That is the quirk everybody
@@ -185,6 +189,13 @@ carries on with the answer, while a stage that *reads* a pipe answers
 `not a terminal` — there, the answer would come back to a command with nothing on
 its input.
 
+**Unless it has finished reading.** `ls -l | more` is the case that needs the
+exception and is why there is one: the pager reads its input to the end, says so
+(the reader's own `done` flag, which closes the pipe behind it), and only then puts
+its first `--More--` up. A continuation has no pipe behind it, and a stage that has
+closed its input has no pipe left to miss — so the refusal above asks whether the
+stage's pipe is still open, and not merely whether it had one.
+
 A pipe holds **a hundred lines and four kilobytes**, and what happens when it is
 full is back-pressure and not an error: the writer simply does not run again until
 the reader has drained it, exactly as a job that has filled the screen does not.
@@ -197,9 +208,11 @@ reports it — so the flood in front of a `head` ends at once:
 `sort -u` drops the repeats on its way out, which is the `uniq` after it saved, and
 `grep -c` and `wc -l` answer a pipe with one number rather than with its lines.
 
-`sort` and `tail` cannot answer before the end of their input, so they keep what
-they have read; that too is bounded by a pipe's own hundred lines and four
-kilobytes, and past it they stop with `input too large` and close the pipe. `wc` and
+`sort`, `tail` and `more` cannot answer before the end of their input, so they keep
+what they have read; that too is bounded by a pipe's own hundred lines and four
+kilobytes, and past it they stop with `input too large` and close the pipe. For
+`more` the ceiling is paid twice over: what it has not shown yet is carried in the
+token the console holds while the question is up. `wc` and
 `uniq` keep nothing and will count a pipe that never ends for as long as it runs. A
 pipeline may be eight commands long.
 

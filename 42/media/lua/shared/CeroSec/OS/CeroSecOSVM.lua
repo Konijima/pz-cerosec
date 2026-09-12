@@ -1192,6 +1192,34 @@ local function jobHasTerminal(job)
 	return true
 end
 
+-- And the question a COMMAND asks, which is not quite the same one: is there a
+-- pair of hands that could press a key for this command?
+--
+-- The difference is the pipe. A stage of a pipeline has no terminal of its own --
+-- what it writes goes to the stage on its right -- but the pipeline it is part of
+-- may very well be the line somebody just typed, and its question travels up to
+-- that pipeline (pipeStep carries it, jobInput hands the answer back down). So
+-- `ls -l | more` has a keyboard behind it and `* * * * * ls -l | more` has not,
+-- and a test that stopped at `job.inPipe` could not tell them apart.
+--
+-- The walk up `errTo` is what asks the pipeline: a stage keeps a link to the job
+-- the machine is holding, because that is where its errors go, and that job is
+-- the one with the keyboard. Bounded by how deep pipelines nest.
+--
+-- What is asked of the job at the top is exactly what jobHasTerminal asks: it is
+-- the prompt's own job, not a `&`, and nothing is catching its output.
+local function jobHasKeyboard(job)
+	if not toScreen(job) then return false end
+	local owner = job
+	local hops = 0
+	while owner.errTo ~= nil and hops < CeroSecOS.MAX_FRAMES do
+		owner = owner.errTo
+		hops = hops + 1
+	end
+	if owner.bg then return false end
+	return owner.interactive == true
+end
+
 -- The order every control the core can hand back is dealt with. A script is
 -- not a screen: an editor cannot open on it, so `edit` is refused where it was
 -- typed rather than half-opened somewhere nobody is looking.
@@ -1261,7 +1289,13 @@ local function applyControl(job, control, data, env)
 		-- waiting for an answer that could never come: four of those and the
 		-- machine had no job slot left for anything, ever. The same answer `read`
 		-- gives one, which is end of file and a status to say so.
-		if (job.inPipe and job.stdinBuf ~= nil) or job.bg then
+		-- ...unless the stage has said it will read NO MORE. `job.stdinBuf.closed`
+		-- is the stage's own word for that, set by runSimple out of the reader's
+		-- `done` flag, and it is the whole of what the refusal above was about: a
+		-- continuation has no pipe behind it, and a stage that has finished reading
+		-- has no pipe left to miss. `ls -l | more` is what needs it -- the pager
+		-- reads its input to the end and only then puts its first question up.
+		if (job.inPipe and job.stdinBuf ~= nil and not job.stdinBuf.closed) or job.bg then
 			flushPartial(job)
 			local who = "sh"
 			if type(data.cont) == "table" and type(data.cont.cmd) == "string" then
@@ -1581,7 +1615,8 @@ local function runSimple(state, job, f, env)
 	-- up, and whether what it writes is going to a screen. A redirect is the third
 	-- thing that takes the screen away and is the shell's own half of the line, so
 	-- it is answered here rather than inside toScreen.
-	local sh = { path = CeroSecOS.pathValue(job.vars), tty = redirect == nil and toScreen(job) }
+	local sh = { path = CeroSecOS.pathValue(job.vars), tty = redirect == nil and toScreen(job),
+		keys = jobHasKeyboard(job) }
 	local ok, lines, control, data =
 		CeroSecOS.runArgs(state, job.session, args, stdin == nil and redirect or nil,
 			env, stdin, sh)

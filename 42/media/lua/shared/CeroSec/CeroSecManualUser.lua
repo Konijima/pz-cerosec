@@ -984,14 +984,122 @@ That is what you use when you want a command to do its work and say
 nothing about it.
 
 The honest note. The commands that can read a pipe are the ones that read
-files: cat, grep, head, tail, wc, sort and uniq. A file named on the line
-always wins, so cat note.txt | sort sorts note.txt and cat note.txt |
-grep -n e searches it. Give one of those seven no file and no pipe, and it
-prints its usage line instead, because there is no keyboard behind a
-command on this machine.
+files: cat, grep, head, tail, wc, sort, uniq, cut and more. A file named on
+the line always wins, so cat note.txt | sort sorts note.txt and cat
+note.txt | grep -n e searches it. Give one of those no file and no pipe,
+and it prints its usage line instead, because there is no keyboard behind a
+command on this machine. tr and tee are the other way round: neither takes
+a file at all, so both want a pipe on the left.
 
 Classic mistake. Expecting a pipe to save something. It does not. Use a
 greater-than sign for that.]],
+
+[[A file too long for the screen.
+
+The glass is twenty rows. A file of forty lines cat'd at it scrolls the
+first twenty away. more shows you one screenful and waits.
+
+  admin@ksp-04-11:~$ more /etc/motd
+  ...nineteen lines...
+  --More--(47%)
+
+At that prompt: Space for the next screenful, Return for one more line, q
+to give up. The number is how far through the file you are.
+
+One thing to know, and it is this machine and not more. A real one reads
+the KEY you press; this one has a typing line and Enter sends it, so Space
+is a space and then Enter. A bare Enter is one more line.
+
+more takes a pipe, as the LAST command of one: ls -l /bin | more is how
+you read a long listing. Put anything after it and it stops paging and
+just passes the lines on.
+
+Classic mistake. more in the middle of a pipe and then wondering why it
+did not stop. It cannot: the thing reading it is a command, not you.]],
+
+[[Finding a file when you have forgotten where it is.
+
+find walks a whole tree and prints what is in it, one path a line, the
+directory before the things inside it.
+
+  admin@ksp-04-11:~$ find .
+  .
+  ./note.txt
+  ./notes
+  ./notes/tuesday.txt
+
+That is the whole of it on its own. The two things you will actually type
+are a name to match and a kind to keep:
+
+  admin@ksp-04-11:~$ find / -name "*.txt"
+  admin@ksp-04-11:~$ find /home -type d
+
+-name takes the same star, question mark and brackets the card at the back
+lists, and it matches the last part of the path only. -type f keeps files
+and -type d keeps directories. Give both and both must be true.
+
+Quote the star. There is no globbing at this prompt, so find gets it
+either way -- but quoting it is the habit every other Unix needs and it
+costs nothing here.
+
+Classic mistake. find with no path. It does not guess at the directory you
+are in; name it, even if that is just a dot.]],
+
+[[Three filters worth knowing.
+
+cut takes pieces out of every line. Characters, with -c:
+
+  admin@ksp-04-11:~$ cut -c 1-8 /etc/passwd
+
+or fields, with a separator and -f:
+
+  admin@ksp-04-11:~$ cut -d : -f 1 /etc/passwd
+  root
+  admin
+
+A list is 1, or 1,4, or 3-5, or 2- for "the second one to the end". A line
+with no separator in it comes through whole, untouched.
+
+tr changes characters, one for one, and reads a pipe only:
+
+  admin@ksp-04-11:~$ cat note.txt | tr a-z A-Z
+  HELLO
+
+Give it -d and one set and it deletes those characters instead. Ranges
+like a-z work; the [:alpha:] spellings a bigger Unix has do not.
+
+tee is a T-piece: it copies the pipe onto the glass AND into the files you
+name, so you can watch something and keep it. -a adds instead of replacing.
+
+  admin@ksp-04-11:~$ ls /bin | tee list | wc -l
+
+Classic mistake. cut -d with a separator longer than one character. It
+takes exactly one, which is what cut has always taken.]],
+
+[[Is this machine busy, and who else is on it.
+
+  admin@ksp-04-11:~$ uptime
+   3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05
+
+The clock, how long since it was switched on, how many are logged in, and
+the load: how many jobs could run, averaged over the last minute, five
+minutes and fifteen. Nought is idle; near four means every job slot is
+busy and your own command is queueing.
+
+w is that line and then a row for each session:
+
+  admin@ksp-04-11:~$ w
+   3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05
+  USER     TTY      FROM        LOGIN@ IDLE  WHAT
+  admin    console  -           2:32PM 00:03 w
+  kate     ttyp0    gate        3:01PM 00:00 -
+
+FROM is where a session came in from, and a dash is the keyboard in front of
+you. WHAT is what it is running. IDLE is the time since it last typed.
+
+Classic mistake. Reading a load of 0.00 as "nothing is wrong" on a frozen
+screen. The load counts JOBS, and a window waiting for a machine that is
+switched off has no job at all.]],
 
 		} },
 
@@ -1369,8 +1477,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2340  63196    4%
-  nodes         512     90    422   18%
+  hda         65536   2596  62940    4%
+  nodes         512     97    415   19%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1456,7 +1564,8 @@ Reading a file without opening it.
   wc [-clw] [file]...
   grep [-c] [-i] [-n] [-v] <text> [file]...
   sort [-r] [-n] [-u] [file]...
-  uniq [-c] [file]]==],
+  uniq [-c] [file]
+  more [file]...]==],
 
 [[Permissions and ownership.
 
@@ -1488,7 +1597,22 @@ Second names, and where commands come from.
 
   ln -s <target> <name>
   which <name>
-  type <name>]],
+  type <name>
+
+Finding things, and cutting them up.
+
+  find <path>... [-name <glob>] [-type f|d]
+  cut -c <list> | -d <delim> -f <list> [file]...
+  tr [-d] <set1> [<set2>]
+  tee [-a] <file>...
+
+A glob for -name: * is any run of characters, ? is exactly one, and
+[abc] or [a-z] is one of a set -- put ! first to mean "none of these".
+
+Is the machine busy, and who is on it.
+
+  uptime
+  w]],
 
 [[Switching the machine off. Both want root.
 
@@ -1611,9 +1735,20 @@ Pipes, from chapter 7.
   too many stages
       more than eight commands in one pipeline
   input too large
-      sort and uniq must see all of their input before
-      they can answer, and it went past a hundred lines
-      or four kilobytes]],
+      sort, uniq and more must see all of their input
+      before they can answer, and it went past a hundred
+      lines or four kilobytes
+
+The three new filters, from chapter 7.
+
+  cut: <list>: invalid list
+      a -c or -f list that is not numbers, commas and
+      ranges
+  tr: <set>: invalid set
+      a range whose second letter comes before its first
+  more: not a terminal
+      a pager with nobody in front of it: a job running
+      with an "&" behind it, or a crontab line]],
 
 [[Logging in, and your account.
 

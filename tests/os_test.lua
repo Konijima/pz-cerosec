@@ -2012,6 +2012,12 @@ do
 		CeroSec.EDIT_MAX_BYTES, CeroSecOS.MAX_FILE_BYTES)
 	eq("the editor's line width is the screen width", CeroSec.EDIT_MAX_LINE, CeroSecOS.COLS)
 	eq("the screen is as wide as the core thinks", CeroSec.COLS, CeroSecOS.COLS)
+	-- And as tall. The core learned the height when it got a PAGER: `more` fills a
+	-- screenful, and a core that thought the glass was twenty-four rows deep would
+	-- page four lines off the top of it every time.
+	eq("and as tall", CeroSec.ROWS, CeroSecOS.ROWS)
+	eq("a screenful is the screen less the prompt's own row",
+		CeroSecOS.MORE_ROWS, CeroSec.ROWS - 1)
 	-- And the depth of the su stack, which the console carries and the core
 	-- enforces: a repair that kept five would be a machine the core cannot get
 	-- out of, and one that kept three would drop a session somebody was in.
@@ -7249,14 +7255,14 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ arp call cat chgrp chmod chown clear cp crontab cu date dev df"
-		.. " echo edit false grep groupadd groupdel groups halt head"
-		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd mount mv newfs"
-		.. " passwd ping"
+	local WANT = "[ arp call cat chgrp chmod chown clear cp crontab cu cut date dev df"
+		.. " echo edit false find grep groupadd groupdel groups halt head"
+		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
+		.. " mv newfs passwd ping"
 		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail test touch true umount uniq useradd userdel usermod"
-		.. " wc which who whoami"
+		.. " sleep sort su sudo tail tee test touch tr true umount uniq uptime"
+		.. " useradd userdel usermod w wc which who whoami"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -11924,6 +11930,441 @@ do
 	eq("last prints it in the host column",
 		string.find(CeroSecOS.lastLine(recs[1], nil), "KD4AXR", 1, true) ~= nil,
 		true)
+end
+
+--
+-- 49. The seven POSIX.2 and 4.4BSD tools this machine was missing (fidelity A)
+--
+-- more, find, tee, cut, tr, uptime and w. Every format below is pinned against
+-- the real tool's, character for character: a change to one of them has to break
+-- a line here, which is the only thing that keeps "copied from the real manual"
+-- true a year from now.
+--
+
+-- 49a. cut: the two forms, the list grammar, and the line with no delimiter.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/rows", "one,two,three\nplain line\nalpha,beta")
+	put(state, admin, "/home/admin/wide", "abcdefgh")
+
+	okAt(state, admin, "cut -c 1 wide", { "a" })
+	okAt(state, admin, "cut -c 1,3 wide", { "ac" })
+	okAt(state, admin, "cut -c 2-4 wide", { "bcd" })
+	-- "2-" is "from the second to the end", and "-3" is "up to the third": both
+	-- are cut(1)'s own, and both are a range with one half missing.
+	okAt(state, admin, "cut -c 6- wide", { "fgh" })
+	okAt(state, admin, "cut -c -3 wide", { "abc" })
+	okAt(state, admin, "cut -c 1,7-8 wide", { "agh" })
+	-- A position past the end of the line is nothing, not a blank: cut takes
+	-- what is there.
+	okAt(state, admin, "cut -c 20 wide", { "" })
+
+	-- -f with a delimiter of its own. The delimiter comes back BETWEEN the
+	-- fields that were kept, which is what cut does and why `cut -d, -f1,3`
+	-- answers "one,three" and not "onethree".
+	okAt(state, admin, "cut -d , -f 1 rows", { "one", "plain line", "alpha" })
+	okAt(state, admin, "cut -d , -f 1,3 rows", { "one,three", "plain line", "alpha" })
+	okAt(state, admin, "cut -d , -f 2- rows", { "two,three", "plain line", "beta" })
+	-- The line with NO delimiter in it comes through whole. POSIX says so: the
+	-- line is not a record, so there is no field in it to take.
+	okAt(state, admin, "cut -d , -f 2 rows", { "two", "plain line", "beta" })
+	-- The default delimiter is a TAB, which is cut(1)'s own and the reason -d is
+	-- a flag at all.
+	put(state, admin, "/home/admin/tabs", "a\tb\tc")
+	okAt(state, admin, "cut -f 2 tabs", { "b" })
+
+	badAt(state, admin, "cut -c x wide", "cut: x: invalid list")
+	badAt(state, admin, "cut -c 5-2 wide", "cut: 5-2: invalid list")
+	badAt(state, admin, "cut -c 0 wide", "cut: 0: invalid list")
+	badAt(state, admin, "cut -c 1,, wide", "cut: 1,,: invalid list")
+	badAt(state, admin, "cut wide", "cut: usage: cut -c <list> | -d <delim> -f <list> [file]...")
+	badAt(state, admin, "cut -c 1", "cut: usage: cut -c <list> | -d <delim> -f <list> [file]...")
+	-- A delimiter is exactly one character, which is what every cut has taken.
+	badAt(state, admin, "cut -d ,, -f 1 rows",
+		"cut: usage: cut -c <list> | -d <delim> -f <list> [file]...")
+	badAt(state, admin, "cut -q 1 wide", "cut: -q: unknown option")
+	badAt(state, admin, "cut -c 1 nosuch", "cut: nosuch: no such file")
+
+	-- And down a pipe, which is what cut is usually on the right of.
+	okAt(state, admin, "cat rows | cut -d , -f 1", { "one", "plain line", "alpha" })
+end
+
+-- 49b. tr: the ranges, the short second set, and -d.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/t", "Hello, World")
+
+	okAt(state, admin, "cat t | tr a-z A-Z", { "HELLO, WORLD" })
+	okAt(state, admin, "cat t | tr A-Z a-z", { "hello, world" })
+	okAt(state, admin, "cat t | tr lo 01", { "He001, W1r0d" })
+	-- The LAST character of set2 stands in for the rest of set1, which is tr's
+	-- own rule and what makes `tr a-z x` a line of x's.
+	okAt(state, admin, "cat t | tr a-z x", { "Hxxxx, Wxxxx" })
+	okAt(state, admin, "cat t | tr -d lo", { "He, Wrd" })
+	okAt(state, admin, "cat t | tr -d a-z", { "H, W" })
+
+	badAt(state, admin, "cat t | tr z-a b", "tr: z-a: invalid set")
+	badAt(state, admin, "cat t | tr a-z z-a", "tr: z-a: invalid set")
+	-- tr reads its standard input and nothing else: there is no file operand on
+	-- any tr, so one with no pipe on its left has nothing to read.
+	badAt(state, admin, "tr a-z A-Z", "tr: usage: tr [-d] <set1> [<set2>]")
+	badAt(state, admin, "cat t | tr a-z", "tr: usage: tr [-d] <set1> [<set2>]")
+	badAt(state, admin, "cat t | tr -d a b", "tr: usage: tr [-d] <set1> [<set2>]")
+	badAt(state, admin, "cat t | tr -x a b", "tr: -x: unknown option")
+end
+
+-- 49c. tee: the screen AND the files, and the first turn is what truncates.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/src", "one\ntwo\nthree")
+	put(state, admin, "/home/admin/old", "was here")
+
+	okAt(state, admin, "cat src | tee copy", { "one", "two", "three" })
+	eq("and the file holds exactly what went past",
+		state.fs.children.home.children.admin.children.copy.data, "one\ntwo\nthree")
+	-- Two files at once, which is the whole point of a T-piece.
+	okAt(state, admin, "cat src | tee a b", { "one", "two", "three" })
+	eq("both of them", state.fs.children.home.children.admin.children.a.data, "one\ntwo\nthree")
+	eq("byte for byte", state.fs.children.home.children.admin.children.b.data, "one\ntwo\nthree")
+	-- Without -a the file is REPLACED, exactly as ">" replaces.
+	okAt(state, admin, "cat src | tee old", nil)
+	eq("what was there is gone",
+		state.fs.children.home.children.admin.children.old.data, "one\ntwo\nthree")
+	-- With -a it is added to, exactly as ">>" adds.
+	okAt(state, admin, "cat src | tee -a old", nil)
+	eq("and the second copy is behind the first",
+		state.fs.children.home.children.admin.children.old.data,
+		"one\ntwo\nthree\none\ntwo\nthree")
+	-- It is a filter and it passes the lines ON, which is what makes a tee in the
+	-- middle of a pipeline worth writing.
+	okAt(state, admin, "cat src | tee kept | wc -l", { "     3" })
+	eq("and still wrote the file", state.fs.children.home.children.admin.children.kept.data,
+		"one\ntwo\nthree")
+
+	badAt(state, admin, "tee f", "tee: usage: tee [-a] <file>...")
+	badAt(state, admin, "cat src | tee", "tee: usage: tee [-a] <file>...")
+	badAt(state, admin, "cat src | tee -x f", "tee: -x: unknown option")
+	badAt(state, admin, "cat src | tee /etc/motd", "tee: /etc/motd: permission denied")
+end
+
+-- 49d. find: the order, the two tests, and the glob.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "mkdir tree", {})
+	okAt(state, admin, "mkdir tree/inner", {})
+	put(state, admin, "/home/admin/tree/top.txt", "a")
+	put(state, admin, "/home/admin/tree/inner/deep.txt", "b")
+	put(state, admin, "/home/admin/tree/inner/deep.log", "c")
+
+	-- Depth-first and PRE-order: the directory before what is in it, which is
+	-- find's own order and the reason `find tree` starts with "tree".
+	okAt(state, admin, "find tree", {
+		"tree", "tree/inner", "tree/inner/deep.log", "tree/inner/deep.txt", "tree/top.txt",
+	})
+	-- The path printed is the one that was TYPED, with the names walked into it.
+	okAt(state, admin, "find /home/admin/tree -type d",
+		{ "/home/admin/tree", "/home/admin/tree/inner" })
+	okAt(state, admin, "find tree -type f",
+		{ "tree/inner/deep.log", "tree/inner/deep.txt", "tree/top.txt" })
+	-- -name matches the LAST component, which is what find has always matched.
+	okAt(state, admin, "find tree -name '*.txt'",
+		{ "tree/inner/deep.txt", "tree/top.txt" })
+	okAt(state, admin, "find tree -name 'deep.*'",
+		{ "tree/inner/deep.log", "tree/inner/deep.txt" })
+	okAt(state, admin, "find tree -name inner", { "tree/inner" })
+	-- Both tests, AND-ed.
+	okAt(state, admin, "find tree -name '*.txt' -type f",
+		{ "tree/inner/deep.txt", "tree/top.txt" })
+	okAt(state, admin, "find tree -name '*.txt' -type d", {})
+	-- -print is implied, and accepted, which is POSIX's own wording.
+	okAt(state, admin, "find tree -type d -print", { "tree", "tree/inner" })
+	-- More than one path, each walked in turn.
+	okAt(state, admin, "find tree/top.txt tree/inner/deep.log",
+		{ "tree/top.txt", "tree/inner/deep.log" })
+
+	badAt(state, admin, "find", "find: usage: find <path>... [-name <glob>] [-type f|d]")
+	badAt(state, admin, "find tree -type x",
+		"find: usage: find <path>... [-name <glob>] [-type f|d]")
+	badAt(state, admin, "find tree -name",
+		"find: usage: find <path>... [-name <glob>] [-type f|d]")
+	badAt(state, admin, "find tree -depth 2", "find: -depth: unknown option")
+	badAt(state, admin, "find nosuch", "find: nosuch: no such file")
+
+	-- A directory it may not read is NAMED and not entered, and the walk goes on.
+	local shut = okAt(state, open(state, "root"), "find /home /root", nil)
+	local saidRoot = false
+	for i = 1, #shut do
+		if shut[i] == "/root" then saidRoot = true end
+	end
+	check("root walks into /root", saidRoot)
+	local refused = expect(state, admin, "find /root", false, nil)
+	eq("and an ordinary account is refused, by name", refused[1], "/root")
+	eq("with the reason on the line after", refused[2], "find: /root: permission denied")
+
+	-- A link is a LEAF: find walks the tree it was given and does not follow one,
+	-- which is find's own default and what keeps a loop of links finite.
+	okAt(state, admin, "ln -s tree/inner shortcut", {})
+	okAt(state, admin, "find shortcut", { "shortcut" })
+end
+
+-- 49e. The glob -name matches on, on its own.
+do
+	local M = CeroSecOS.globMatch
+	check("a plain name is itself", M("notes", "notes"))
+	check("and nothing else", not M("notes", "note"))
+	check("* is any run", M("notes.txt", "*.txt"))
+	check("including none at all", M(".txt", "*.txt"))
+	check("* on its own is everything", M("anything", "*"))
+	check("and matches the empty name", M("", "*"))
+	check("two stars are one", M("a-b-c", "a*b*c"))
+	check("? is exactly one", M("note", "not?"))
+	check("and never none", not M("not", "not?"))
+	check("a set holds one of its members", M("a.c", "?.[ch]"))
+	check("a range in a set", M("file7", "file[0-9]"))
+	check("and not outside it", not M("filex", "file[0-9]"))
+	check("a negated set", M("filex", "file[!0-9]"))
+	check("with a caret too", M("filex", "file[^0-9]"))
+	check("and it really excludes", not M("file7", "file[!0-9]"))
+	-- The three backtracking cases a naive matcher gets wrong.
+	check("a star that has to give a character back", M("aaa", "*a"))
+	check("a star before a longer tail", M("abcbcd", "*bcd"))
+	check("and one that cannot be satisfied", not M("abc", "*d"))
+	-- A "[" with nothing closing it is not a set and stands for itself, which is
+	-- what sh does with one.
+	check("an unclosed bracket is a literal", M("a[b", "a[b"))
+	check("nothing matches junk", not M(nil, "*"))
+	check("nor is junk a pattern", not M("a", nil))
+end
+
+-- 49f. uptime and w: the 4.4BSD lines, pinned.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- Three o'clock in the afternoon, a machine up two days and four hours, two
+	-- sessions on it, and the load the task's own example carries.
+	local AT = CeroSecOS.timeFromParts(1993, 7, 8, 15, 14, 0)
+	local env = {
+		now = AT, nowMs = 90000000, jobs = {},
+		up = 2 * 86400 + 4 * 3600 + 3 * 60,
+		load = { 0.12, 0.08, 0.05 },
+		net = { sessions = function()
+			return {
+				{ user = "admin", line = "console", at = AT - 42 * 60, busy = AT - 3 * 60 },
+				{ user = "kate", line = "ttyp0", at = AT - 13 * 60, host = "gate" },
+			}
+		end },
+	}
+
+	okAt(state, admin, "uptime",
+		{ " 3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05" }, env)
+	badAt(state, admin, "uptime -a", "uptime: usage: uptime", env)
+
+	-- Every piece of that line on its own, so a change to one of them says which.
+	eq("the clock is twelve-hour with no space before the half",
+		CeroSecOS.clockText(AT), "3:14PM")
+	eq("midnight is twelve and not nought",
+		CeroSecOS.clockText(CeroSecOS.timeFromParts(1993, 7, 8, 0, 5, 0)), "12:05AM")
+	eq("and noon is twelve too",
+		CeroSecOS.clockText(CeroSecOS.timeFromParts(1993, 7, 8, 12, 0, 0)), "12:00PM")
+	eq("one minute up", CeroSecOS.upText(60), " 1 min,")
+	eq("two minutes up", CeroSecOS.upText(120), " 2 mins,")
+	eq("under a minute is nought minutes and says so", CeroSecOS.upText(5), " 0 mins,")
+	-- uptime(1)'s three shapes for the time, in its own order: h:mm when there
+	-- are both, "N hrs" on the hour, "N mins" under one.
+	eq("an exact hour is hrs and not h:mm", CeroSecOS.upText(3600), " 1 hr,")
+	eq("and two of them are plural", CeroSecOS.upText(2 * 3600), " 2 hrs,")
+	eq("an hour and minutes is h:mm", CeroSecOS.upText(3600 + 5 * 60), "  1:05,")
+	eq("and the hour is two columns", CeroSecOS.upText(11 * 3600 + 5 * 60), " 11:05,")
+	eq("one day is singular", CeroSecOS.upText(86400 + 60), " 1 day, 1 min,")
+	eq("two are not", CeroSecOS.upText(2 * 86400 + 60), " 2 days, 1 min,")
+	eq("and the days keep their own comma",
+		CeroSecOS.upText(2 * 86400 + 4 * 3600 + 3 * 60), " 2 days,  4:03,")
+
+	-- One session is "1 user," and not "1 users,".
+	local one = {
+		now = AT, nowMs = 90000000, jobs = {}, up = 90, load = { 0, 0, 0 },
+		net = { sessions = function()
+			return { { user = "admin", line = "console", at = AT } }
+		end },
+	}
+	okAt(state, admin, "uptime",
+		{ " 3:14PM  up 1 min,  1 user,  load 0.00 0.00 0.00" }, one)
+	-- And a machine nobody has told anything: no clock, nothing up, nobody on it.
+	local bare = exec(state, admin, "uptime", { jobs = {} })
+	eq("a machine with no clock says so rather than inventing one",
+		select(2, exec(state, admin, "uptime", { jobs = {} }))[1],
+		" ??:??  up 0 mins,  0 users,  load 0.00 0.00 0.00")
+	check("and it fits the screen", bare ~= nil)
+
+	-- The widest line this can make is exactly the screen: a machine up
+	-- three-digit days with every session on it and every job runnable.
+	local worst = {
+		now = CeroSecOS.timeFromParts(1993, 7, 8, 12, 59, 0), nowMs = 1, jobs = {},
+		up = 365 * 86400 + 23 * 3600 + 59 * 60, load = { 4, 4, 4 },
+		net = { sessions = function()
+			local rows = {}
+			for i = 1, CeroSecOS.PTY_MAX + 1 do
+				rows[i] = { user = "admin", line = "ttyp" .. i, at = 1 }
+			end
+			return rows
+		end },
+	}
+	local wide = select(2, exec(state, admin, "uptime", worst))
+	eq("the worst uptime line is one line", #wide, 1)
+	eq("and it fits the sixty columns exactly", #wide[1] <= CeroSecOS.COLS, true)
+
+	-- w: uptime's line, the header, and a row a session.
+	local rows = okAt(state, admin, "w", nil, env)
+	eq("w opens with uptime's own line", rows[1],
+		" 3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05")
+	eq("then 4.4BSD's header", rows[2], "USER     TTY      FROM        LOGIN@ IDLE  WHAT")
+	-- The console: no host, so a dash, and the line that is running in WHAT.
+	eq("the console's row", rows[3], "admin    console  -           2:32PM 00:03 w")
+	-- A session in from the wire wears the machine it came from, and has nothing
+	-- running: a dash.
+	-- kate has no activity stamp, so her IDLE is measured from her LOGIN -- the
+	-- honest floor, and the thirteen minutes she has been on the machine.
+	eq("and a pty's", rows[4], "kate     ttyp0    gate        3:01PM 00:13 -")
+	eq("four lines and no more", #rows, 4)
+	for i = 1, #rows do
+		eq("w line " .. i .. " fits the screen", #rows[i] <= CeroSecOS.COLS, true)
+	end
+	badAt(state, admin, "w x", "w: usage: w", env)
+
+	-- A session the machine has no activity stamp for -- one that came back from a
+	-- save file -- is idle since it LOGGED IN, which is the honest floor.
+	local cold = {
+		now = AT, nowMs = 1, jobs = {}, up = 60, load = { 0, 0, 0 },
+		net = { sessions = function()
+			return { { user = "admin", line = "console", at = AT - 90 * 60 } }
+		end },
+	}
+	local coldRows = okAt(state, admin, "w", nil, cold)
+	-- And WHAT is "w", because `w` is what that session is running: a real one
+	-- names itself in its own listing too.
+	eq("idle from the login when there is no keystroke to measure from",
+		coldRows[3], "admin    console  -           1:44PM 01:30 w")
+end
+
+-- 49g. more: the screenful, the prompt, the three keys, and where it does NOT page.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local body = {}
+	for i = 1, 45 do body[#body + 1] = "line " .. i end
+	put(state, admin, "/home/admin/big", table.concat(body, "\n"))
+
+	-- A screenful is the screen less the row the prompt stands on, which is
+	-- more(1)'s own arithmetic.
+	eq("nineteen rows to a screenful", CeroSecOS.MORE_ROWS, CeroSecOS.ROWS - 1)
+
+	local first = run(state, admin, "more big")
+	eq("it asks", first.control, "prompt")
+	eq("nineteen lines and no more", #first.lines, CeroSecOS.MORE_ROWS)
+	eq("the first of them", first.lines[1], "line 1")
+	eq("and the last", first.lines[CeroSecOS.MORE_ROWS], "line 19")
+	eq("the prompt is more(1)'s own, per cent and all", first.data.text, "--More--(42%)")
+	eq("and nothing is masked", first.data.mask, false)
+
+	-- Space: the next screenful. The per cent is of the WHOLE file, so it climbs
+	-- once from nought to the end.
+	local second = answer(state, admin, first.data.cont, " ")
+	eq("another nineteen", #second.lines, CeroSecOS.MORE_ROWS)
+	eq("carrying on where it stopped", second.lines[1], "line 20")
+	eq("and the per cent has climbed", second.data.text, "--More--(84%)")
+
+	-- Return: exactly one more line.
+	local third = answer(state, admin, second.data.cont, "")
+	eq("one line", #third.lines, 1)
+	eq("the next one", third.lines[1], "line 39")
+	eq("and it still asks", third.data.text, "--More--(86%)")
+
+	-- q: it stops, with nothing more printed and nothing wrong.
+	local quit = answer(state, admin, third.data.cont, "q")
+	eq("q prints nothing", #quit.lines, 0)
+	eq("asks nothing", quit.control, nil)
+	eq("and is not a failure", quit.ok, true)
+
+	-- A key more has no meaning for is a screenful, which is what more does
+	-- with one.
+	local other = answer(state, admin, first.data.cont, "z")
+	eq("an unknown key is a screenful", #other.lines, CeroSecOS.MORE_ROWS)
+
+	-- A file that fits asks nothing at all: a pager that put a question up after
+	-- the last line would be a pager you had to dismiss.
+	put(state, admin, "/home/admin/short", "one\ntwo")
+	okAt(state, admin, "more short", { "one", "two" })
+	badAt(state, admin, "more nosuch", "more: nosuch: no such file")
+	badAt(state, admin, "more", "more: usage: more [file]...")
+
+	-- Two files run together, which is what more does with several -- minus the
+	-- banner between them, because that banner is two rows of twenty.
+	put(state, admin, "/home/admin/two", "three")
+	okAt(state, admin, "more short two", { "one", "two", "three" })
+
+	-- NOT a screen: copy through with no paging at all, which is more(1)'s own
+	-- answer and what keeps a pager composable.
+	okAt(state, admin, "more big > out", {})
+	eq("everything went into the file",
+		#CeroSecOS.splitLines(state.fs.children.home.children.admin.children.out.data), 45)
+	okAt(state, admin, "echo hi | more | wc -l", { "     1" })
+	okAt(state, admin, "x=$(more short); echo $x", { "one two" })
+end
+
+-- 49h. more in a pipe, which is where a survivor really types it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local body = {}
+	for i = 1, 30 do body[#body + 1] = "row " .. i end
+	put(state, admin, "/home/admin/rows", table.concat(body, "\n"))
+
+	-- Driven as the MACHINE drives it, and it has to be: a pipeline's question is
+	-- the pipeline's, the continuation lives on the stage that asked, and the
+	-- answer goes back through CeroSecOS.jobInput. A bench that called
+	-- CeroSecOS.continue with what `exec` handed back would be answering a token
+	-- that is not there -- which is the whole difference between a command that
+	-- asks and a stage that does.
+	local job = CeroSecOS.promptJob(state, admin, "cat rows | more", {}, nil)
+	check("the pipeline became a job", job ~= nil)
+	local env = { now = FIXED, nowMs = 1, jobs = { job } }
+	local prompts, lines = {}, {}
+	local keys = { " ", nil }
+	local given = 0
+	for turn = 1, 200 do
+		CeroSecOS.jobStep(state, job, env, 1000)
+		for i = 1, #job.out do lines[#lines + 1] = job.out[i] end
+		job.out = {}
+		if CeroSecOS.jobIsOver(job) then break end
+		if job.state == "waiting" and job.ask ~= nil then
+			prompts[#prompts + 1] = job.ask.text
+			given = given + 1
+			if keys[given] == nil then break end
+			check("the answer was taken", CeroSecOS.jobInput(state, job, keys[given], env))
+		elseif job.state == "waiting" or job.state == "sleeping" then
+			break
+		end
+	end
+	eq("the last stage of a pipeline pages, and asks once", #prompts, 1)
+	eq("and it knew how long the whole thing was", prompts[1], "--More--(63%)")
+	eq("every row came out, and no row twice", #lines, 30)
+	eq("the first", lines[1], "row 1")
+	eq("the nineteenth is the last of the screenful", lines[19], "row 19")
+	eq("the twentieth is the first of the next", lines[20], "row 20")
+	eq("and the last is the last", lines[30], "row 30")
+	eq("the pipeline is over", CeroSecOS.jobIsOver(job), true)
+
+	-- A pipe longer than a pager may hold. The ceiling is the pipe's own, which
+	-- is what sort and tail already meet, and it is the ceiling the token has to
+	-- meet too -- what is not shown yet is carried in it.
+	local flood = {}
+	for i = 1, CeroSecOS.PIPE_LINES + 5 do flood[#flood + 1] = "x" end
+	put(state, admin, "/home/admin/flood", table.concat(flood, "\n"))
+	badAt(state, admin, "cat flood | more", "more: input too large")
 end
 
 print("os_test: " .. count .. " assertions passed")

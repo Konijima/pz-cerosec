@@ -394,6 +394,19 @@ function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	-- The machine's jobs, so that ps, jobs and kill read the very tables the
 	-- scheduler steps -- there is no second copy of a job anywhere.
 	if luaObject ~= nil and luaObject.jobs ~= nil then env.jobs = luaObject.jobs.list end
+	-- How long it has been up, in seconds, and its three load averages: what
+	-- `uptime` and `w` print. Both are RUNTIME like the jobs -- a server that came
+	-- back up counts from the restart, which is what `ruptime` already says about
+	-- a machine on the wire (see upOf in SCeroSecNet.lua, the same number) -- and
+	-- the averages are moved by CeroSecJobs' own pass (CeroSecOS.loadSample).
+	if luaObject ~= nil and type(luaObject.upMs) == "number" then
+		local up = math.floor((env.nowMs - luaObject.upMs) / 1000)
+		if up < 0 then up = 0 end
+		env.up = up
+	end
+	if luaObject ~= nil and luaObject.jobs ~= nil and type(luaObject.jobs.load) == "table" then
+		env.load = luaObject.jobs.load
+	end
 	-- The order the machine is already under, so that a second `shutdown +5` is
 	-- refused and `shutdown -c` knows there is something to cancel. Read, never
 	-- written: the scheduler owns the timer, and a command only asks about it.
@@ -1522,6 +1535,12 @@ end
 function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, name)
 	local state = luaObject:osState()
 	if state == nil then return nil end
+	-- When this session last did something, which is what `w` prints in its IDLE
+	-- column. Deliberately NOT one of the fields CeroSec.repairConsole keeps, so it
+	-- is gone on the next load: like a job, activity is runtime, and a session that
+	-- came back from a save file shows the time since it LOGGED IN -- the honest
+	-- floor, because it has been idle at least that long.
+	console.busyAt = getTimestampMs()
 	local job, refusal = CeroSecJobs.startPrompt(self, luaObject, console, line, name)
 	if job == nil then
 		CeroSec.consolePush(console, tostring(refusal))

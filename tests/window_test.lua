@@ -5679,7 +5679,12 @@ do
 	local function marks()
 		local out, console = {}, net.here:consoleState()
 		for key, value in pairs(console) do
-			if key ~= "lines" and key ~= "status" then out[key] = tostring(value) end
+			-- busyAt is not session state: it is WHEN this session last typed
+			-- something, which a typed line is supposed to move (it is what `w`
+			-- prints in its IDLE column), and it is dropped on the next load.
+			if key ~= "lines" and key ~= "status" and key ~= "busyAt" then
+				out[key] = tostring(value)
+			end
 		end
 		return out, #console.lines
 	end
@@ -9301,6 +9306,99 @@ do
 	end
 	eq("and the refusal is logged as an error", level, CeroSec.LOG_ERROR)
 	CeroSec.logRing = {}
+end
+
+
+--
+-- The pager, driven the way a player drives it (fidelity A)
+--
+-- `more` asks a question, and a question on this machine is a console PROMPT: the
+-- window draws it, the player types at it, and the answer goes back through the
+-- same door a password goes through. Every other bench for `more` calls the
+-- engine; this one presses the keys.
+--
+-- Which is the bench that matters, because the pager's three keys are a shape
+-- nothing else on the machine has: Space and Return and q, read off a line rather
+-- than off a keystroke, at a prompt the window has to be told to draw.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	local body = {}
+	for i = 1, 45 do body[#body + 1] = "row " .. i end
+	bench.script("/home/admin/long", table.concat(body, "\n"))
+
+	bench.enter("more long")
+	bench.frame()
+	-- The prompt is on the glass, in more(1)'s own words, and the window is in
+	-- the mode that draws one.
+	eq("more's question reached the window", bench.window.prompt, "--More--(42%)")
+	eq("the window is at a prompt", bench.window.mode, "prompt")
+	eq("and nothing is masked about it", bench.window.mask, false)
+	eq("the machine holds the question", bench.object.console.prompt.text, "--More--(42%)")
+	check("the first screenful is painted", bench.painted("row 1"))
+	check("all nineteen rows of it", bench.painted("row 19"))
+	check("and not the twentieth", not bench.painted("row 20"))
+
+	-- Space, then Enter: the next screenful. Which is the console's own shape and
+	-- not more's -- there is one input line here and Enter is what sends it -- and
+	-- it is the same shape `read -n 1` already has.
+	bench.enter(" ")
+	bench.frame()
+	check("the next screenful came", bench.painted("row 20"))
+	eq("and it asks again, further on", bench.window.prompt, "--More--(84%)")
+
+	-- A bare Enter: exactly one more line.
+	bench.enter("")
+	bench.frame()
+	check("one line further", bench.painted("row 39"))
+	eq("and the per cent moved by one line's worth", bench.window.prompt, "--More--(86%)")
+
+	-- q: the pager stops, the question comes off the machine, and the shell is
+	-- back with its own prompt.
+	bench.enter("q")
+	bench.frame()
+	eq("q took the question off the machine", bench.object.console.prompt, nil)
+	eq("and the window is at the shell again", bench.window.mode, "shell")
+	check("with the shell's prompt on the glass", bench.painted("admin@"))
+	check("and nothing past where it stopped", not bench.painted("row 40"))
+
+	-- Escape at a --More-- is a ^C like anywhere else: the pager is a job and
+	-- Escape is this machine's interrupt.
+	bench.enter("more long")
+	bench.frame()
+	eq("it asks again", bench.window.prompt, "--More--(42%)")
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("the window is still open", not bench.window.closing)
+	check("the interrupted prompt is on the glass", bench.painted("--More--(42%)^C"))
+	eq("the question is off the machine", bench.object.console.prompt, nil)
+	eq("and the shell is back", bench.window.mode, "shell")
+
+	-- And down a pipe, which is how a survivor reads a long listing. The question
+	-- belongs to the PIPELINE and the answer has to find its way back to the stage
+	-- that asked it, which is the one thing about `more` the console cannot see.
+	bench.enter("cat long | more")
+	-- A pipeline takes a pass or two: the stage on the right runs before the one
+	-- on its left has written anything, which is what makes the back-pressure fall
+	-- out, and the pager only asks once its input has ended.
+	bench.tick(3)
+	eq("the last stage of a pipeline asks too", bench.window.prompt, "--More--(42%)")
+	check("and its screenful is on the glass", bench.painted("row 1"))
+	bench.enter("q")
+	bench.frame()
+	eq("and q ends the pipeline", bench.object.console.prompt, nil)
+	eq("the shell is back", bench.window.mode, "shell")
+
+	-- A file that fits asks nothing at all: no prompt, no mode change, straight
+	-- back to the shell.
+	bench.script("/home/admin/short", "one\ntwo")
+	bench.enter("more short")
+	bench.frame()
+	eq("a short file asks nothing", bench.object.console.prompt, nil)
+	eq("and the window never left the shell", bench.window.mode, "shell")
+	check("both lines are on the glass", bench.painted("one") and bench.painted("two"))
 end
 
 
