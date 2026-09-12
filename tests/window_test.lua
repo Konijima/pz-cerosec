@@ -3818,6 +3818,38 @@ do
 			1, true) ~= nil)
 end
 
+-- rlogin -l, and a .rhosts that names the account coming in.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	-- bob exists over there, with a home and a .rhosts of his own naming the
+	-- account that will be asking.
+	local far = net.gate:osState()
+	CeroSecOS.addUser(far, "bob", "/home/bob", false, 1, 100)
+	CeroSecOS.createNode(far, CeroSecOS.rootSession(), "/home/bob",
+		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), 100)
+	net.put(net.gate, "/home/bob/.rhosts", net.host(net.here) .. " admin", 600, "bob")
+	net.login("admin")
+	net.enter("rlogin gate -l bob")
+	net.tick(3)
+	check("admin is let in as bob with no password",
+		net.glass("bob@" .. net.host(net.gate)))
+	eq("and the session is his", net.gate.ptys.ttyp0.console.user, "bob")
+	net.enter("whoami")
+	net.tick(2)
+	check("whoami says so", net.glass("bob"))
+	net.enter("exit")
+	net.tick(3)
+
+	-- And a line naming somebody else is not a line about admin.
+	net.put(net.gate, "/home/bob/.rhosts", net.host(net.here) .. " kate", 600, "bob")
+	net.enter("rlogin gate -l bob")
+	net.tick(3)
+	check("a line naming another account asks for a password", net.glass("login:"))
+	net.escape()
+	net.tick(3)
+end
+
 -- /etc/hosts.equiv is the machine's own half of the same question.
 do
 	local net = newNet()

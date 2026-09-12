@@ -354,9 +354,14 @@ end
 --     gate admin
 --
 -- The bare host trusts THE SAME NAME on it: a line "gate" in /etc/hosts.equiv
--- lets gate's admin in as admin and nobody in as anybody else. A host and an
--- account name that account, whoever he is coming in as -- which is the one
--- direction of trust the two-word form has ever meant.
+-- lets gate's admin in as admin and nobody in as anybody else.
+--
+-- A host and an account names the account COMING IN, not the one being come in
+-- as, which is ruserok(3)'s own reading of the second field: a line
+-- "gate admin" in bob's ~/.rhosts lets gate's admin become bob, because the file
+-- is bob's and saying so is bob's to say. That is the one direction of trust the
+-- two-word form has ever meant, and reading it the other way round would make
+-- every .rhosts a line about somebody who is already the owner.
 --
 -- What is deliberately NOT here: "+" and "-", and netgroups. A bare plus in
 -- hosts.equiv trusts every machine in the world, which was a hole in 1993 and
@@ -398,7 +403,7 @@ local function equivAllows(entries, fromHost, fromUser, asUser)
 		if entry.host == fromHost then
 			if entry.user == nil then
 				if fromUser == asUser then return true end
-			elseif entry.user == asUser and fromUser == asUser then
+			elseif entry.user == fromUser then
 				return true
 			end
 		end
@@ -1250,8 +1255,11 @@ commands.rlogin = function(state, session, args, env)
 
 	local host, addr = reach(state, session, env, "rlogin", words[1])
 	if host == nil then return false, addr end
+	-- Who is asking, as against who is being asked for: the trust files name the
+	-- account COMING IN, and that is the account that typed the line and not the
+	-- one -l asked to become.
 	return true, { }, "rlogin", { host = host, addr = addr, user = want,
-		hops = hopsOf(session) + 1 }
+		from = CeroSecOS.userOf(session), hops = hopsOf(session) + 1 }
 end
 
 commands.rsh = function(state, session, args, env)
@@ -1269,7 +1277,8 @@ commands.rsh = function(state, session, args, env)
 	local line = {}
 	for i = 2, #words do line[#line + 1] = words[i] end
 	return true, { }, "rsh", { host = host, addr = addr, user = want,
-		cmd = table.concat(line, " "), hops = hopsOf(session) + 1 }
+		from = CeroSecOS.userOf(session), cmd = table.concat(line, " "),
+		hops = hopsOf(session) + 1 }
 end
 
 --

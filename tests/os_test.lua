@@ -7886,6 +7886,16 @@ do
 	node.owner = "bob"
 	node.mode = 600
 	check("bob's own .rhosts at 600 is read", CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	-- The second field names the account COMING IN, which is ruserok's reading of
+	-- it: bob's own file saying "gate admin" is bob letting gate's admin be him.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), path, "gate admin", FIXED)
+	check("a line naming another account lets THAT account in as bob",
+		CeroSecOS.rhostsOk(state, "bob", "gate", "admin"))
+	check("and not whoever happens to be asking",
+		not CeroSecOS.rhostsOk(state, "bob", "gate", "kate"))
+	check("nor bob himself, whom the line does not name",
+		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), path, "gate bob", FIXED)
 	node.owner = "admin"
 	check("one owned by somebody else is ignored",
 		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))

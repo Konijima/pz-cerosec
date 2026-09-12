@@ -1613,7 +1613,9 @@ either is enough.
 
 A bare host name trusts the SAME account on it: with "gate" in gate's
 own list, ksp-a-a's admin gets in as admin with no password, and nobody
-gets in as anybody else. A host and an account name that account.
+gets in as anybody else. A host and an account names the account COMING
+IN: "ksp-a-a admin" in bob's own .rhosts lets ksp-a-a's admin be bob,
+because the file is bob's and that is bob's to say.
 
 ~/.rhosts is your own half, in your own home, and it is checked the way
 rlogind checks it: it has to be YOUR file and nobody but you may write

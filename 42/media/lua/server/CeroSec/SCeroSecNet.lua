@@ -644,7 +644,7 @@ function CeroSecNet.dial(system, luaObject, console, data)
 	local pty, object, far, fromHost = connect(system, luaObject, console, "rlogin", data)
 	if pty == nil then return nil, object end
 	local account = CeroSecOS.getUser(far, data.user)
-	if account ~= nil and CeroSecOS.trusts(far, data.user, fromHost, data.user) then
+	if account ~= nil and CeroSecOS.trusts(far, data.user, fromHost, data.from) then
 		CeroSecNet.logIn(system, object, far, pty, account,
 			CeroSecOS.clockOf(system:clockEnv()))
 		pty.trusted = true
@@ -669,7 +669,7 @@ function CeroSecNet.remoteCommand(system, luaObject, console, data)
 	-- Judged before a line is taken: a caller it will not trust is not a caller
 	-- it should spend a pty on.
 	local account = CeroSecOS.getUser(far, data.user)
-	if account == nil or not CeroSecOS.trusts(far, data.user, fromHost, data.user) then
+	if account == nil or not CeroSecOS.trusts(far, data.user, fromHost, data.from) then
 		return nil, CeroSecOS.netRefusal("rsh", data.host, "denied")
 	end
 

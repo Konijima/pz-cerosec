@@ -816,6 +816,12 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `exit`. Refaire `rlogin gate` → **aucun mot de passe demandé**, l'invite
      `admin@gate:~$` arrive directement. Puis `chmod 666 .rhosts` et ressortir :
      le `rlogin` suivant redemande `login:` sans dire pourquoi. Remettre 600. [ ]
+183b. Le deuxième champ nomme le compte **qui arrive**, pas celui qu'on devient.
+     Dans la session sur `gate` : `sudo adduser bob`, puis
+     `sudo edit /home/bob/.rhosts` avec `<nom de la machine locale> admin`,
+     `sudo chown bob /home/bob/.rhosts`, `sudo chmod 600 /home/bob/.rhosts`,
+     `exit`. Puis `rlogin gate -l bob` → aucun mot de passe, et `whoami` là-bas
+     répond `bob`. [ ]
 184. `rsh gate hostname` depuis l'invite locale → le nom de l'autre machine
      s'affiche et l'invite locale revient, sans `Connection closed.`. Puis
      retirer la confiance (`rlogin gate`, `rm .rhosts`, `exit`) et refaire

@@ -490,7 +490,10 @@ does a `shutdown` typed inside it.
 **A password every time is what the trust files are for**, and either of the two
 is enough. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
 each: a bare host name trusts **the same account** on it and nobody in as
-anybody else, and a host and an account name that account. `~/.rhosts` is the
+anybody else, and a host and an account names the account *coming in* --
+`here admin` in bob's own `~/.rhosts` lets `here`'s admin be bob, which is
+`ruserok(3)`'s reading of that second field and is what `rlogin gate -l bob` is
+for. `~/.rhosts` is the
 account's own half, and it is checked the way `rlogind` checks it -- it has to be
 **your** file and nobody but you may write it, so one owned by somebody else or
 one at mode `664` is ignored without a word. `root` is never trusted by
