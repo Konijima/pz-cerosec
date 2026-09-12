@@ -1,0 +1,63 @@
+module CeroSec
+{
+    /* The disk as it lies on the ground. One mesh, four textures -- the same
+       shell in four colours, which is what the four items are.
+
+       The block syntax is vanilla's own, checked against
+       media/scripts/generated/models_items.txt rather than against the mod this
+       mesh came from: Build 42's model block is `mesh`, `texture`, `scale` and
+       an optional `attachment`, exactly as Build 41's was (Base.Disk at 2401 is
+       mesh + texture + scale and nothing else, and it is the vanilla item
+       closest to this one -- a flat thing you drop on a desk). So the three
+       lines below are a shape the game still reads.
+
+       They are declared in module CeroSec and not in module Base because the
+       items that name them are: ScriptManager.resolveModelScript (javap -c) is
+       handed the ITEM's module and asks that module first, then walks the rest,
+       so a model beside its item is the one that answers and no other mod's
+       "Floppy" can ever be picked up instead. Every name here carries the mod's
+       prefix for the same reason.
+
+       mesh = WorldItems/CeroSecFloppy is media/models_X/WorldItems/
+       CeroSecFloppy.FBX; texture = WorldItems/CeroSecFloppy_Blue is
+       media/textures/WorldItems/CeroSecFloppy_Blue.png. Both are resolved by
+       ZomboidFileSystem across the mod folders, which is what lets them ship
+       here.
+
+       The mesh and the four textures are the Computer v2 mod's own work
+       (Konijima, PZ-Computer-Mod, branch v2-dev), carried over with their scale
+       -- 0.01, which says the FBX was exported in centimetres. That scale is
+       the one thing on this page nobody has seen with his eyes in Build 42: it
+       was right in Build 41 and the loader has not changed, but a disk on the
+       floor is worth one look before this is called finished. The icons are
+       not in that doubt -- they are 32x32 sprites the inventory draws
+       directly. */
+
+    model CeroSecFloppyBlue
+    {
+        mesh = WorldItems/CeroSecFloppy,
+        texture = WorldItems/CeroSecFloppy_Blue,
+        scale = 0.01,
+    }
+
+    model CeroSecFloppyYellow
+    {
+        mesh = WorldItems/CeroSecFloppy,
+        texture = WorldItems/CeroSecFloppy_Yellow,
+        scale = 0.01,
+    }
+
+    model CeroSecFloppyRed
+    {
+        mesh = WorldItems/CeroSecFloppy,
+        texture = WorldItems/CeroSecFloppy_Red,
+        scale = 0.01,
+    }
+
+    model CeroSecFloppyGreen
+    {
+        mesh = WorldItems/CeroSecFloppy,
+        texture = WorldItems/CeroSecFloppy_Green,
+        scale = 0.01,
+    }
+}

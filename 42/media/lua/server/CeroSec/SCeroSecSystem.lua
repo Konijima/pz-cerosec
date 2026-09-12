@@ -37,7 +37,12 @@ function SCeroSecSystem:initSystem()
 	-- 'os' and 'console' are deliberately absent: the client never reads the
 	-- filesystem nor the stored screen, it only ever sees the lines the server
 	-- answers it with.
-	self.system:setObjectSyncKeys({ 'v', 'on', 'facing' })
+	-- 'disk' is a derived boolean and not part of the state: whether there is a
+	-- disk in the slot, so the right-click menu can offer Insert or Eject before
+	-- it sends anything. It is deliberately NOT in the saved keys above -- what is
+	-- in the drive is state.floppy's to say, and the flag is worked out again on
+	-- every load (SCeroSecObject:syncDisk).
+	self.system:setObjectSyncKeys({ 'v', 'on', 'facing', 'disk' })
 end
 
 function SCeroSecSystem:newLuaObject(globalObject)
@@ -128,6 +133,11 @@ end
 -- client -> server, all of them carrying the computer's x, y, z and the
 -- terminal's token:
 --   toggle   {}                     -- rung 1
+--   insertfloppy { item }           -- the id of a floppy in the sender's own
+--                                      inventory; the server reads the item
+--                                      itself and believes nothing about what
+--                                      is written on it
+--   ejectfloppy  {}                 -- give the disk back
 --   open     {}                     -- give me the screen
 --   input    { text }               -- the answer to whatever is being asked:
 --                                      a user name, a password, or the line a
@@ -903,6 +913,100 @@ Commands.toggle = function(self, playerObj, x, y, z)
 		if not luaObject then return end
 	end
 	luaObject:toggle()
+end
+
+--
+-- The floppy drive
+--
+-- The slot is mechanical: a disk goes in and comes out of a computer that is
+-- switched off exactly as it does out of one that is lit, which is why these two
+-- do not go through computerFor -- that one is about a terminal, and it answers
+-- "off" by telling the window to shut. What they ask for is the two things any
+-- interaction asks for: the machine is there, and the player is standing at it.
+--
+-- Nothing a client sends about the DISK is believed. What travels is the id of an
+-- item in the sender's own inventory; the server looks that item up itself, reads
+-- its modData itself, and refuses one that is not a disk this mod declares or
+-- whose contents will not pass the engine's own gate. So a forged packet can
+-- insert nothing that a machine could not already be running on.
+--
+-- The computer a drive command names, with no terminal and no power required.
+-- nil, silently: the client's own menu greys out every case this can refuse, so
+-- reaching here with a refusal means a packet nobody typed.
+function SCeroSecSystem:driveFor(playerObj, x, y, z)
+	if not isAdjacent(playerObj, x, y, z) then return nil end
+	local luaObject = self:getLuaObjectAt(x, y, z)
+	if not luaObject then
+		local isoObject = self:getIsoObjectAt(x, y, z)
+		if not isoObject then return nil end
+		self:loadIsoObject(isoObject)
+		luaObject = self:getLuaObjectAt(x, y, z)
+	end
+	return luaObject
+end
+
+Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
+	local luaObject = self:driveFor(playerObj, x, y, z)
+	if not luaObject then return end
+	if luaObject:hasDisk() then return end
+	if type(args) ~= "table" or type(args.item) ~= "number" then return end
+
+	-- His own inventory and nobody else's, by the id he sent: the same lookup
+	-- vanilla's own server commands make (ClientCommands.lua:377, :1181), in the
+	-- recursive form, because a survivor keeps his disks in a bag like everything
+	-- else.
+	local item = playerObj:getInventory():getItemWithIDRecursiv(math.floor(args.item))
+	if not item then return end
+	if not CeroSec.isFloppyType(item:getFullType()) then return end
+
+	-- What is written on it, copied out of the item into a plain table of our own
+	-- and put through the engine's gate before it is anywhere near the machine.
+	-- A disk that fails is left in his hands rather than eaten by the drive.
+	local disk = CeroSecOS.newFloppy()
+	if item:hasModData() then
+		local read, reason = CeroSecOS.diskFromData(item:getModData())
+		if read == nil then
+			CeroSec.log("refused a disk at " .. x .. "," .. y .. "," .. z .. ": "
+				.. tostring(reason))
+			return
+		end
+		disk = read
+	end
+
+	local done = luaObject:insertDisk(disk, item:getFullType())
+	if not done then return end
+
+	-- Out of the container it was really in, which is the bag and not the pockets
+	-- when that is where he was keeping it.
+	local from = item:getContainer() or playerObj:getInventory()
+	from:Remove(item)
+	if isServer() then sendRemoveItemFromContainer(from, item) end
+end
+
+Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
+	local luaObject = self:driveFor(playerObj, x, y, z)
+	if not luaObject then return end
+
+	local disk, fullType = luaObject:ejectDisk()
+	if not disk then return end
+
+	-- Into his hands, in the shell it went in as. The modData is written before
+	-- the item is announced to the clients, or what they would be handed is a
+	-- blank disk with the right colour on it.
+	local inv = playerObj:getInventory()
+	local item = inv:AddItem(fullType)
+	if not item then
+		-- Nowhere to put it. Rather than destroy the disk, put it back in the
+		-- drive: the survivor is carrying too much, which is a thing he can fix.
+		luaObject:insertDisk(disk, fullType)
+		return
+	end
+	local data = item:getModData()
+	local copy = CeroSecOS.diskToData(disk)
+	if copy ~= nil then
+		for k, v in pairs(copy) do data[k] = v end
+	end
+	if isServer() then sendAddItemToContainer(inv, item) end
 end
 
 Commands.open = function(self, playerObj, x, y, z, token)

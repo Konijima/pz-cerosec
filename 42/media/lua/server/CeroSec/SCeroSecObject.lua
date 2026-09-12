@@ -28,6 +28,10 @@ function SCeroSecObject:initNew()
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
 	self.facing = "S"
+	-- self.disk stays nil until a disk goes in the slot. It is DERIVED from the
+	-- OS state and is not saved: what is in the drive is state.floppy's to say,
+	-- and a second copy of that in gos_cerosec.bin is a second copy that can be
+	-- wrong.
 	-- self.os stays nil until the machine is first used: an untouched computer
 	-- costs nothing in gos_cerosec.bin. self.console stays nil until the
 	-- machine is switched on: a screen only exists while there is power.
@@ -84,6 +88,7 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	self.facing = CeroSec.facingOf(spriteName) or "S"
 	self.on = CeroSec.isOnSprite(spriteName)
 	self.os = self:osFromIsoObject(isoObject)
+	self:syncDisk()
 	-- No console in the mirror, so a machine adopted from its sprite starts
 	-- with a blank screen even when the sprite says it is lit.
 	self.console = nil
@@ -97,6 +102,9 @@ end
 -- CCeroSecSystem:newLuaObjectAt tolerates the repeat.
 function SCeroSecObject:stateToIsoObject(isoObject)
 	self:syncSprite()
+	-- Derived, so it is worked out again on every chunk load rather than read off
+	-- a field the save file might disagree with.
+	self:syncDisk()
 	self:toModData(isoObject)
 	self.luaSystem:newLuaObjectOnClient(self)
 end
@@ -110,6 +118,9 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
+	-- The disk that was in the slot travelled with the machine, inside the OS
+	-- state. A computer put down on the other side of town still has it.
+	self:syncDisk()
 	-- A computer being picked up is a computer that lost its power: every session
 	-- on it and every session it had open ends, and the glass at the far end of
 	-- each is told.
@@ -120,6 +131,77 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self:syncSprite()
 	self:toModData(isoObject)
 	self:updateOnClient()
+end
+
+--
+-- The drive
+--
+-- What is IN the drive is state.floppy's to say and lives in the OS state, so it
+-- rides in movableData with the filesystem and travels with the machine when
+-- somebody picks it up: a computer carried across town still has the disk in its
+-- slot, exactly as a real one would. There is deliberately no "eject it to the
+-- floor first" -- a disk in a drive is in the drive.
+--
+-- self.disk is the one bit of that the CLIENT is told, because the right-click
+-- menu has to know whether to offer Insert or Eject before anything is sent. It
+-- is a boolean and nothing more: what is written on the disk is nobody's business
+-- but the machine's.
+--
+
+-- Is there a disk in the slot? Read off the OS state raw rather than through
+-- osState(), because the menu asks this about machines that are off and about
+-- machines whose disk the validator has refused, and neither is a reason to
+-- pretend the slot is empty.
+function SCeroSecObject:hasDisk()
+	return type(self.os) == "table" and type(self.os.floppy) == "table"
+end
+
+-- Bring the flag the client sees in line with the state.
+function SCeroSecObject:syncDisk()
+	local had = self.disk
+	self.disk = self:hasDisk() or nil
+	if had ~= self.disk then self:updateOnClient() end
+end
+
+-- Put a disk in. true, or nil plus the reason.
+--
+-- disk is a plain table the caller has already lifted out of the item's modData
+-- and validated (CeroSecOS.validateDisk); fullType is the shell it came in, kept
+-- on the machine so the survivor gets HIS disk back and not a blue one.
+function SCeroSecObject:insertDisk(disk, fullType)
+	local state = self:osState()
+	if state == nil then return nil, "broken" end
+	if state.floppy ~= nil then return nil, "occupied" end
+	state.floppy = disk
+	state.fdtype = fullType
+	self:mirrorOS()
+	self:publishOS()
+	self:syncDisk()
+	self:playSound("CeroSecInsertDisc")
+	return true
+end
+
+-- Take it out. The disk and the shell it goes back into, or nil plus the reason.
+--
+-- The mount goes with it, and nothing is lost by that: every write on this
+-- machine is finished by the time the command that made it answered -- there is
+-- no buffer between a file and the state it lives in -- so an unmount is
+-- bookkeeping and never a flush. That is why ejecting a mounted disk is allowed
+-- at all: on a machine with write-behind it would be how you lose a file.
+function SCeroSecObject:ejectDisk()
+	local state = self:osState()
+	if state == nil then return nil, "broken" end
+	local disk = state.floppy
+	if disk == nil then return nil, "empty" end
+	CeroSecOS.unmountAll(state)
+	state.floppy = nil
+	local fullType = CeroSec.floppyTypeOr(state.fdtype)
+	state.fdtype = nil
+	self:mirrorOS()
+	self:publishOS()
+	self:syncDisk()
+	self:playSound("CeroSecEjectDisc")
+	return disk, fullType
 end
 
 --
@@ -342,6 +424,11 @@ function SCeroSecObject:turnOff()
 			nil, CeroSecOS.clockOf(self.luaSystem:clockEnv()))
 	end
 	CeroSecNet.closeSessions(self.luaSystem, self)
+	-- And every mount, which is what a reboot does on any machine: a mount is a
+	-- thing in memory and the power has just gone. The DISK stays in the slot --
+	-- that is a thing in the world -- so the way back is one `mount` after the
+	-- machine comes up.
+	if state ~= nil then CeroSecOS.unmountAll(state) end
 	self.on = false
 	-- Everything that was running is gone with the power, which is what a
 	-- switch at the back of the case does. reboot goes through here too, so a

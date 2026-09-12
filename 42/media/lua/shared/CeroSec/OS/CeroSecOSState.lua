@@ -196,34 +196,10 @@ function CeroSecOS.validate(state)
 		checkNode(state.fs, "", 0, { nodes = 0, max = CeroSecOS.MAX_NODES })
 	if not fsOk then return false, fsReason end
 
-	-- The disk in the drive, when there is one. It is not part of state.fs and is
-	-- never counted against the machine's quota (see CeroSecOSDisk.lua), so it is
-	-- walked here on its own, against its own node ceiling: a disk forged past what
-	-- a floppy holds is a disk the write path would never have made and is not
-	-- something to run on.
-	--
-	-- An UNFORMATTED disk is a disk with no filesystem on it and is the normal state
-	-- of a new one out of the box, so a missing tree is not a fault. The mount table
-	-- is not validated here at all: a mount naming a drive with nothing in it is
-	-- repaired on the way in (CeroSecOS.checkMounts), the way a light switch left on
-	-- /dev is swept, because it is a thing the core can run on perfectly well and
-	-- simply must not be left believing.
-	local disk = state.floppy
-	if disk ~= nil then
-		if type(disk) ~= "table" then return false, "floppy: not a disk" end
-		if disk.v ~= CeroSecOS.FLOPPY_VERSION then return false, "floppy: bad version" end
-		if disk.label ~= nil then
-			if type(disk.label) ~= "string" then return false, "floppy: bad label" end
-			if #disk.label > CeroSecOS.LABEL_MAX then return false, "floppy: bad label" end
-		end
-		if disk.fs ~= nil then
-			if type(disk.fs) ~= "table" or disk.fs.type ~= "dir" then
-				return false, "floppy: root is not a directory"
-			end
-			local dOk, dReason =
-				checkNode(disk.fs, "", 0, { nodes = 0, max = CeroSecOS.FLOPPY_NODES })
-			if not dOk then return false, "floppy" .. dReason end
-		end
+	-- The disk in the drive, when there is one.
+	if state.floppy ~= nil then
+		local dOk, dReason = CeroSecOS.validateDisk(state.floppy)
+		if not dOk then return false, dReason end
 	end
 
 	-- The accounts are a FILE now, so this is all validate has to say about
@@ -235,6 +211,48 @@ function CeroSecOS.validate(state)
 	if passwd == nil then return false, "no " .. CeroSecOS.PASSWD_PATH end
 	if passwd.type ~= "file" then return false, CeroSecOS.PASSWD_PATH .. ": not a file" end
 	if passwd.owner ~= "root" then return false, CeroSecOS.PASSWD_PATH .. ": not root's" end
+	return true
+end
+
+-- One disk, on its own.
+--
+-- It is not part of state.fs and is never counted against the machine's quota
+-- (see CeroSecOSDisk.lua), so it is walked on its own here, against its OWN node
+-- ceiling: a disk forged past what a floppy holds is a disk the write path would
+-- never have made and is not something to run on.
+--
+-- An UNFORMATTED disk is a disk with no filesystem on it -- the normal state of a
+-- new one out of the box -- so a missing tree is not a fault.
+--
+-- Asked twice: by validate below, of the disk that is in the drive, and by the
+-- INSERT, of the disk that is about to go in (SCeroSecSystem). Those are the same
+-- question and this is the one place it is answered, so a disk a machine would
+-- refuse to boot with is a disk no slot will take.
+--
+-- ok, reason.
+function CeroSecOS.validateDisk(disk)
+	if type(disk) ~= "table" then return false, "floppy: not a disk" end
+	local ok, reason = checkPlain(disk, {}, "floppy")
+	if not ok then return false, reason end
+	if disk.v ~= CeroSecOS.FLOPPY_VERSION then return false, "floppy: bad version" end
+	if disk.label ~= nil then
+		if type(disk.label) ~= "string" then return false, "floppy: bad label" end
+		if #disk.label > CeroSecOS.LABEL_MAX then return false, "floppy: bad label" end
+		if CeroSecOS.hasControlBytes(disk.label) then return false, "floppy: bad label" end
+	end
+	if disk.fs == nil then return true end
+	if type(disk.fs) ~= "table" or disk.fs.type ~= "dir" then
+		return false, "floppy: root is not a directory"
+	end
+	local dOk, dReason =
+		checkNode(disk.fs, "", 0, { nodes = 0, max = CeroSecOS.FLOPPY_NODES })
+	if not dOk then return false, "floppy" .. dReason end
+	-- And the bytes, which checkNode does not ask about for the machine's own drive
+	-- (being over the quota is a state a machine can be IN). A floppy is different:
+	-- nothing on this machine can put a disk over its ceiling, so a disk that is
+	-- over one did not come from here.
+	local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
+	if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end
 	return true
 end
 

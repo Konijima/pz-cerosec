@@ -2,6 +2,7 @@ require "CeroSec/CeroSecDefs"
 require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecToggleAction"
 require "CeroSec/ISCeroSecUseAction"
+require "CeroSec/ISCeroSecDiskAction"
 require "CeroSec/CeroSecManualUI"
 
 CeroSecContextMenu = {}
@@ -49,6 +50,104 @@ function CeroSecContextMenu.onUse(worldobjects, computer, playerObj, height)
 		end
 		ISTimedActionQueue.add(ISCeroSecUseAction:new(playerObj, computer, height))
 	end, true)
+end
+
+
+--
+-- The floppy drive
+--
+-- The slot is mechanical and the two options are offered whether the machine is
+-- lit or not: a disk goes into a dark computer and comes out of one, which is how
+-- a survivor carries his notes out of a building whose power went weeks ago.
+--
+-- What is IN the drive is the machine's to know, and the client is told exactly
+-- one bit of it -- luaObject.disk, a boolean off the synced keys
+-- (SCeroSecSystem:initSystem). Everything else about the disk stays on the
+-- server, and every refusal these entries grey out is re-asked there.
+--
+
+-- The first disk the player is carrying, bag included, or nil. The four colours
+-- in the order a box of them came in, so a survivor with one of each reaches for
+-- the same one every time rather than for whichever the hash landed on.
+function CeroSecContextMenu.floppyOn(playerObj)
+	local inv = playerObj:getInventory()
+	if not inv then return nil end
+	for i = 1, #CeroSec.FLOPPY_TYPES do
+		local item = inv:getFirstTypeRecurse(CeroSec.FLOPPY_TYPES[i])
+		if item then return item end
+	end
+	return nil
+end
+
+function CeroSecContextMenu.onInsertFloppy(worldobjects, computer, playerObj, height, item)
+	CeroSecReach.walkToFront(playerObj, computer, function()
+		ISTimedActionQueue.add(ISCeroSecDiskAction:new(playerObj, computer, height, item))
+	end)
+end
+
+function CeroSecContextMenu.onEjectFloppy(worldobjects, computer, playerObj, height)
+	CeroSecReach.walkToFront(playerObj, computer, function()
+		ISTimedActionQueue.add(ISCeroSecDiskAction:new(playerObj, computer, height, nil))
+	end)
+end
+
+-- The one refusal on this menu that is not the machine's and not Unix's: it is
+-- the game's UI saying no to a gesture. "Eject the floppy first." -- because
+-- there is one slot, and because a survivor who has just been told the drive is
+-- occupied should be told what to do about it in the same breath.
+function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj, height)
+	local luaObject = nil
+	if CCeroSecSystem ~= nil and CCeroSecSystem.instance ~= nil then
+		local square = computer:getSquare()
+		if square then
+			luaObject = CCeroSecSystem.instance:getLuaObjectAt(
+				square:getX(), square:getY(), square:getZ())
+		end
+	end
+	-- No mirror yet means a computer the client has not been told about. Saying
+	-- nothing is the only honest answer: a menu built on a guess about what is in
+	-- the drive is a menu that offers to eject nothing.
+	if not luaObject then return end
+	local inDrive = luaObject.disk == true
+
+	-- Out of reach greys both entries for the same reason the two above are
+	-- greyed, and in the same order: it is the same walk.
+	local reason
+	if height == "high" then
+		reason = "Tooltip_CeroSec_TooHigh"
+	elseif not CeroSecReach.canStandInFront(playerObj, computer) then
+		reason = "Tooltip_CeroSec_NoAccess"
+	end
+
+	local function grey(option, key)
+		if not key then return end
+		option.notAvailable = true
+		option.toolTip = ISWorldObjectContextMenu.addToolTip()
+		option.toolTip:setVisible(false)
+		option.toolTip.description = getText(key)
+	end
+
+	-- Nothing to insert is not an entry at all: a player with no disk on him has
+	-- no business reading about a drive.
+	local item = CeroSecContextMenu.floppyOn(playerObj)
+	if item then
+		local insert = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"),
+			worldobjects, CeroSecContextMenu.onInsertFloppy, computer, playerObj, height, item)
+		-- A full drive beats being out of reach, deliberately: it is the reason a
+		-- player can act on standing where he is.
+		if inDrive then
+			grey(insert, "Tooltip_CeroSec_DriveFull")
+		else
+			grey(insert, reason)
+		end
+	end
+
+	-- And nothing to eject is not an entry either.
+	if inDrive then
+		local eject = context:addOption(getText("ContextMenu_CeroSec_EjectFloppy"),
+			worldobjects, CeroSecContextMenu.onEjectFloppy, computer, playerObj, height)
+		grey(eject, reason)
+	end
 end
 
 -- The picker hands us what sits under the cursor: on a counter or a desk that
@@ -140,6 +239,8 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 			use.toolTip.description = getText(useReason)
 		end
 	end
+
+	CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj, height)
 
 	CeroSecContextMenu.addDevManual(context, playerObj)
 end

@@ -66,6 +66,49 @@ end
 CeroSec.MOVABLE_DATA_KEY = "cerosec"
 CeroSec.STATE_VERSION = 1
 
+--
+-- The floppy disks
+--
+-- Four items, and the four are the same disk in four colours of shell: the
+-- engine cares about none of that, and the list is here because two sides of the
+-- mod have to agree on it -- the client offers the menu for an item the player
+-- is carrying, and the server takes one out of his inventory and puts one back.
+--
+-- Which colour went in is remembered on the machine (state.fdtype), so the
+-- survivor gets HIS disk back and not a blue one. The shell is the item; what is
+-- written on the disk is its modData, and that is the engine's (see
+-- CeroSecOSDisk.lua).
+--
+-- The order is the order a box of them came in and is what the tests walk; the
+-- set beside it is what an inventory item is judged against, because a name is
+-- checked once per right-click and a linear scan of a list is a scan nobody
+-- needs to pay for.
+CeroSec.FLOPPY_TYPES = {
+	"CeroSec.FloppyBlue",
+	"CeroSec.FloppyYellow",
+	"CeroSec.FloppyRed",
+	"CeroSec.FloppyGreen",
+}
+
+local floppyTypes = {}
+for i = 1, #CeroSec.FLOPPY_TYPES do floppyTypes[CeroSec.FLOPPY_TYPES[i]] = true end
+
+-- Is that full type one of ours? A name and nothing else: an item is a floppy
+-- because of what it IS and never because of what is written in its modData --
+-- a blank disk is a floppy, and so is one somebody has forged the contents of.
+function CeroSec.isFloppyType(fullType)
+	return type(fullType) == "string" and floppyTypes[fullType] == true
+end
+
+-- The type to hand back when a disk comes out of the drive. The one the machine
+-- remembers, when it remembers one that is still an item this mod declares;
+-- the first of the four otherwise, because a disk that came off an older save or
+-- out of a forged state is still a disk and must not be eaten by the drive.
+function CeroSec.floppyTypeOr(fullType)
+	if CeroSec.isFloppyType(fullType) then return fullType end
+	return CeroSec.FLOPPY_TYPES[1]
+end
+
 -- Fresh state. Left open for later rungs (os, hostname).
 function CeroSec.newState(facing)
 	return { v = CeroSec.STATE_VERSION, on = false, facing = facing or "S" }

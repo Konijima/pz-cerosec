@@ -983,6 +983,9 @@ do
 			haveElectricity = function() return true end,
 			hasGridPower = function() return true end,
 			getRoom = function() return {} end,
+			getX = function() return 10 end,
+			getY = function() return 20 end,
+			getZ = function() return 0 end,
 		} end,
 	}
 	local off = {
@@ -1011,6 +1014,27 @@ do
 	local player = newPlayer()
 	player.getVehicle = function() return nil end
 	_G.getSpecificPlayer = function() return player end
+
+	-- The floppy drive's two entries lean on two things the menu cannot invent:
+	-- what the player is carrying, and the one bit the server syncs about the
+	-- drive. Both are stood in for here and both are MOVED by the checks below,
+	-- which is what makes them checks and not decoration.
+	local carried = nil
+	local mirror = { disk = nil }
+	player.getInventory = function()
+		return {
+			getFirstTypeRecurse = function(_, fullType)
+				if carried ~= nil and carried.type == fullType then return carried end
+				return nil
+			end,
+		}
+	end
+	_G.CCeroSecSystem = { instance = {
+		getLuaObjectAt = function(_, x, y, z)
+			if x ~= 10 or y ~= 20 or z ~= 0 then return nil end
+			return mirror
+		end,
+	} }
 
 	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecContextMenu.lua"))
 	chunk()
@@ -1076,6 +1100,139 @@ do
 	-- submenu and fires a callback fires it on the way past.
 	eq("the door's own entry has no callback of its own",
 		menu.options[3].callback, nil)
+
+
+--
+-- The floppy drive on the computer's menu
+--
+-- Four states and they are the four a player is ever in: no disk anywhere, a
+-- disk in his pocket, a disk in the drive, and one of each. What is checked is
+-- which entries appear, in which order, and which of them is greyed out with
+-- which reason -- because the greying IS the answer to "why can I not do this",
+-- and an entry that is simply missing answers nothing.
+--
+
+do
+	local menu = fullMenuOn(computer)
+	local before = #menu.labels
+
+	-- 1. Nothing anywhere: not an entry to be seen. A player with no disk on him
+	-- and a machine with none in it has no business reading about a drive.
+	carried, mirror.disk = nil, nil
+	local labels = menuOn(computer)
+	for i = 1, #labels do
+		check("with no disk anywhere there is no Insert", labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
+		check("and no Eject", labels[i] ~= "ContextMenu_CeroSec_EjectFloppy")
+	end
+
+	-- 2. A disk in his pocket, an empty drive: Insert, and it works.
+	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	mirror.disk = nil
+	menu = fullMenuOn(computer)
+	local insert = nil
+	for i = 1, #menu.options do
+		if menu.labels[i] == "ContextMenu_CeroSec_InsertFloppy" then insert = menu.options[i] end
+	end
+	check("a disk in the pocket offers Insert", insert ~= nil)
+	eq("which is the insert action", insert.callback, CeroSecContextMenu.onInsertFloppy)
+	eq("and it is not greyed out", insert.notAvailable, nil)
+	for i = 1, #menu.labels do
+		check("and there is nothing to eject", menu.labels[i] ~= "ContextMenu_CeroSec_EjectFloppy")
+	end
+
+	-- 3. A disk in the drive and none in his pocket: Eject, and nothing else.
+	carried = nil
+	mirror.disk = true
+	menu = fullMenuOn(computer)
+	local eject = nil
+	for i = 1, #menu.options do
+		if menu.labels[i] == "ContextMenu_CeroSec_EjectFloppy" then eject = menu.options[i] end
+	end
+	check("a disk in the drive offers Eject", eject ~= nil)
+	eq("which is the eject action", eject.callback, CeroSecContextMenu.onEjectFloppy)
+	eq("and it is not greyed out", eject.notAvailable, nil)
+	for i = 1, #menu.labels do
+		check("and nothing to insert", menu.labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
+	end
+
+	-- 4. One of each. Both entries, Insert greyed with the sentence that says what
+	-- to do about it -- and that sentence is the game's UI talking, not Unix: a
+	-- refusal a survivor can act on standing where he is.
+	carried = { type = CeroSec.FLOPPY_TYPES[3] }
+	mirror.disk = true
+	menu = fullMenuOn(computer)
+	insert, eject = nil, nil
+	for i = 1, #menu.options do
+		if menu.labels[i] == "ContextMenu_CeroSec_InsertFloppy" then insert = menu.options[i] end
+		if menu.labels[i] == "ContextMenu_CeroSec_EjectFloppy" then eject = menu.options[i] end
+	end
+	check("both entries are there", insert ~= nil and eject ~= nil)
+	eq("the full drive greys the insert", insert.notAvailable, true)
+	eq("with the one sentence that says what to do", insert.toolTip.description,
+		"Tooltip_CeroSec_DriveFull")
+	eq("and the eject is offered", eject.notAvailable, nil)
+
+	-- Out of reach greys both, for the same reason the machine's own two options
+	-- are greyed and with the same string.
+	local reach = CeroSecReach.canStandInFront
+	CeroSecReach.canStandInFront = function() return false end
+	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	mirror.disk = nil
+	menu = fullMenuOn(computer)
+	insert = nil
+	for i = 1, #menu.options do
+		if menu.labels[i] == "ContextMenu_CeroSec_InsertFloppy" then insert = menu.options[i] end
+	end
+	check("out of reach still offers the entry", insert ~= nil)
+	eq("greyed", insert.notAvailable, true)
+	eq("with the walk's own reason", insert.toolTip.description, "Tooltip_CeroSec_NoAccess")
+	CeroSecReach.canStandInFront = reach
+
+	-- The slot is mechanical: a dark machine takes a disk and gives one back.
+	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	mirror.disk = true
+	labels = menuOn(off)
+	local sawInsert, sawEject = false, false
+	for i = 1, #labels do
+		if labels[i] == "ContextMenu_CeroSec_InsertFloppy" then sawInsert = true end
+		if labels[i] == "ContextMenu_CeroSec_EjectFloppy" then sawEject = true end
+	end
+	check("a dark machine still offers Insert", sawInsert)
+	check("and still offers Eject", sawEject)
+
+	-- A computer the client has no mirror for says nothing at all: a menu built on
+	-- a guess about what is in the drive is a menu that offers to eject nothing.
+	local get = CCeroSecSystem.instance.getLuaObjectAt
+	CCeroSecSystem.instance.getLuaObjectAt = function() return nil end
+	labels = menuOn(computer)
+	for i = 1, #labels do
+		check("no mirror, no Insert", labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
+		check("no mirror, no Eject", labels[i] ~= "ContextMenu_CeroSec_EjectFloppy")
+	end
+	CCeroSecSystem.instance.getLuaObjectAt = get
+
+	-- Every label the drive can print is a key the mod ships a string for, in both
+	-- languages: a label nobody translated comes out on the menu as the key.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/ContextMenu.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		for _, key in ipairs({ "ContextMenu_CeroSec_InsertFloppy",
+				"ContextMenu_CeroSec_EjectFloppy" }) do
+			check(lang .. " ContextMenu.json defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+		end
+	end
+	local handle = assert(io.open("42/media/lua/shared/Translate/EN/Tooltip.json", "r"))
+	local strings = handle:read("*a")
+	handle:close()
+	check("EN Tooltip.json defines the drive's own refusal",
+		string.find(strings, '"Tooltip_CeroSec_DriveFull"', 1, true) ~= nil)
+
+	carried, mirror.disk = nil, nil
+	eq("and the menu is back where it started", #menuOn(computer), before)
+end
 
 	-- Kept for the volume block below, which builds this same menu on this same
 	-- lit computer against a shelf of three.
@@ -1346,7 +1503,8 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	eq("five blocks: the module and the four books", opens, 5)
+	-- The module, the four books, and the four disks.
+	eq("nine blocks: the module, the four books and the four disks", opens, 9)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -1581,6 +1739,268 @@ do
 	end
 
 	SandboxVars = nil
+end
+
+
+--
+-- The floppy disks: four items, four icons, four models, and the files behind
+-- every one of them.
+--
+-- Same reading as the books above and for the same reason -- a key missing from
+-- the third disk must not be answered by the first disk's copy of it -- plus the
+-- two things a disk has that a book does not: a model block of its own in
+-- models_cerosec.txt, and the mesh and texture files that block names.
+--
+
+do
+	local path = "common/media/scripts/items_cerosec.txt"
+	local handle = io.open(path, "r")
+	check("the item script is where the mod says it is", handle ~= nil)
+	local text = handle:read("*a")
+	handle:close()
+	local code = string.gsub(text, "/%*.-%*/", "")
+
+	local blocks = {}
+	for name, body in string.gmatch(code, "item%s+([A-Za-z]+)%s*(%b{})") do
+		blocks[name] = body
+	end
+
+	local mpath = "common/media/scripts/models_cerosec.txt"
+	local mhandle = io.open(mpath, "r")
+	check("the model script is where the items point", mhandle ~= nil)
+	local mtext = mhandle:read("*a")
+	mhandle:close()
+	local mcode = string.gsub(mtext, "/%*.-%*/", "")
+	check("the models are declared in the items' own module, so that "
+		.. "ScriptManager.resolveModelScript finds them first",
+		string.find(mcode, "module CeroSec", 1, true) ~= nil)
+	local models = {}
+	for name, body in string.gmatch(mcode, "model%s+([A-Za-z_]+)%s*(%b{})") do
+		models[name] = body
+	end
+
+	-- One disk in four colours of shell: the same name, the same weight, the same
+	-- everything except the icon and the model. A colour whose weight drifted
+	-- would be a colour a player can tell apart in the pack, which is the one
+	-- thing these four must NOT be.
+	local COLOURS = { "Blue", "Yellow", "Red", "Green" }
+	local NAME = "3.5 inch Floppy Disk"
+	local seenIcon = {}
+	for c = 1, #COLOURS do
+		local item = "Floppy" .. COLOURS[c]
+		local body = blocks[item]
+		check("the script declares item " .. item, body ~= nil)
+
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		for _, key in ipairs({ "DisplayName", "DisplayCategory", "ItemType",
+				"Weight", "Icon", "WorldStaticModel" }) do
+			check(item .. " sets " .. key, keys[key] ~= nil)
+		end
+		-- A disk is carried, never read: nothing vanilla may hang a menu on it.
+		eq(item .. " is a plain item", keys.ItemType, "base:normal")
+		eq(item .. " is filed under Electronics", keys.DisplayCategory, "Electronics")
+		eq(item .. " carries the fallback name in words, since a double quote in a "
+			.. "script value is not a thing to bet on", keys.DisplayName, NAME)
+		eq(item .. " weighs what the other three weigh", keys.Weight, "0.1")
+		-- No StaticModel: a disk is not held up in front of the character the way
+		-- a book is, and a model in the hand that nobody asked for is a model to
+		-- be wrong about.
+		eq(item .. " has nothing in the hand", keys.StaticModel, nil)
+
+		eq(item .. " carries its own shell on the icon", keys.Icon,
+			"CeroSecFloppy" .. COLOURS[c])
+		eq(item .. "'s model is its icon's own name", keys.WorldStaticModel, keys.Icon)
+		check(item .. " does not share another disk's icon", seenIcon[keys.Icon] == nil)
+		seenIcon[keys.Icon] = true
+
+		-- Icon = Foo is media/textures/Item_Foo.png.
+		local png = io.open("common/media/textures/Item_" .. keys.Icon .. ".png", "r")
+		check(item .. "'s icon is a file the mod ships", png ~= nil)
+		if png then png:close() end
+
+		-- And the model block, with the mesh and the texture it names really on
+		-- disk. A WorldStaticModel pointing at nothing is a disk that vanishes
+		-- when it is dropped, and nothing is logged about it.
+		local mbody = models[keys.WorldStaticModel]
+		check("model " .. tostring(keys.WorldStaticModel) .. " is declared", mbody ~= nil)
+		local mkeys = {}
+		for key, value in string.gmatch(mbody or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			mkeys[key] = value
+		end
+		eq(item .. "'s model uses the one mesh", mkeys.mesh, "WorldItems/CeroSecFloppy")
+		eq(item .. "'s model uses its own texture", mkeys.texture,
+			"WorldItems/CeroSecFloppy_" .. COLOURS[c])
+		check(item .. "'s model carries the scale the mesh was exported at",
+			mkeys.scale ~= nil)
+
+		local tex = io.open("common/media/textures/" .. mkeys.texture .. ".png", "r")
+		check(item .. "'s world texture is a file the mod ships", tex ~= nil)
+		if tex then tex:close() end
+	end
+
+	-- The mesh, once: four models, one FBX.
+	local fbx = io.open("common/media/models_X/WorldItems/CeroSecFloppy.FBX", "r")
+	check("the mesh is a file the mod ships", fbx ~= nil)
+	if fbx then fbx:close() end
+
+	-- Every line inside a model block ends in a comma, exactly as the item script
+	-- is held to it: the one syntax slip that costs a whole script file.
+	for line in string.gmatch(mcode, "[^\n]+") do
+		local body = string.match(line, "^%s*([A-Za-z][^\n]-)%s*$")
+		if body and string.find(body, "=", 1, true) then
+			check("this model line ends in a comma: " .. body,
+				string.sub(body, -1) == ",")
+		end
+	end
+
+	-- The names the engine knows a disk by are the names the script declares.
+	-- This is the pair that goes wrong silently: a typo in either half is an eject
+	-- that hands back nothing, or an insert nothing will take.
+	for i = 1, #CeroSec.FLOPPY_TYPES do
+		local fullType = CeroSec.FLOPPY_TYPES[i]
+		local item = string.match(fullType, "^CeroSec%.([A-Za-z]+)$")
+		check(fullType .. " is a name the script really declares",
+			item ~= nil and blocks[item] ~= nil)
+		check(fullType .. " is one the engine answers to", CeroSec.isFloppyType(fullType))
+	end
+	eq("four of them and no more", #CeroSec.FLOPPY_TYPES, 4)
+	check("and a name nobody declared is not one",
+		not CeroSec.isFloppyType("CeroSec.FloppyPurple"))
+
+	-- The two sounds the drive plays are declared, or the drive is silent and
+	-- nothing says so in the log.
+	local spath = "common/media/scripts/sounds_cerosec.txt"
+	local shandle = io.open(spath, "r")
+	check("the sound script is where the mod says it is", shandle ~= nil)
+	local stext = shandle:read("*a")
+	shandle:close()
+	for _, sound in ipairs({ "CeroSecInsertDisc", "CeroSecEjectDisc" }) do
+		check("the script declares " .. sound,
+			string.find(stext, "sound " .. sound, 1, true) ~= nil)
+		local ogg = io.open("common/media/sound/" .. sound .. ".ogg", "r")
+		check(sound .. " is a file the mod ships", ogg ~= nil)
+		if ogg then ogg:close() end
+	end
+end
+
+
+--
+-- The disks' own loot table
+--
+-- A different table from the manual's on purpose: a book about a computer lives
+-- with the books and a disk lives with the computers. What is checked is that
+-- the two do not quietly become one -- the same list, the same weight -- and
+-- that every disk found in the world is BLANK, which is the whole reason `newfs`
+-- is the first command the drive's chapter teaches.
+--
+
+do
+	ProceduralDistributions = { list = {} }
+	SandboxVars = nil
+	local KEYS = {}
+	for key in pairs(CeroSecFloppyLootKeys or {}) do KEYS[#KEYS + 1] = key end
+
+	local chunk = assert(loadfile(LUA .. "server/CeroSec/CeroSecFloppyLoot.lua"))
+	chunk()
+
+	eq("the file hooked the first distribution event too",
+		#Events.OnPreDistributionMerge.handlers, 2)
+
+	KEYS = {}
+	for key in pairs(CeroSecFloppyLoot.WEIGHTS) do KEYS[#KEYS + 1] = key end
+	table.sort(KEYS)
+	eq("eleven shelves hold disks", #KEYS, 11)
+	for i = 1, #KEYS do
+		ProceduralDistributions.list[KEYS[i]] = { rolls = 4, items = { "Something", 10 } }
+	end
+
+	local added = CeroSecFloppyLoot.add()
+	eq("every list named was found and filled by every colour",
+		added, #KEYS * #CeroSec.FLOPPY_TYPES)
+
+	for i = 1, #KEYS do
+		local key = KEYS[i]
+		local items = ProceduralDistributions.list[key].items
+		eq(key .. " kept what was already in it", items[1], "Something")
+		eq(key .. " still has an even number of entries", #items % 2, 0)
+		eq(key .. " grew by one name and one weight per colour",
+			#items, 2 + 2 * #CeroSec.FLOPPY_TYPES)
+		-- The four colours in the order a box came in, each a quarter of the box.
+		for c = 1, #CeroSec.FLOPPY_TYPES do
+			local at = 2 + (c - 1) * 2 + 1
+			eq(key .. " has " .. CeroSec.FLOPPY_TYPES[c] .. " in place " .. c,
+				items[at], CeroSec.FLOPPY_TYPES[c])
+			eq(key .. " gave it a quarter of the box",
+				items[at + 1], CeroSecFloppyLoot.WEIGHTS[key] * 0.25)
+		end
+		-- And no book on a disk's shelf that did not already have one: the two
+		-- tables share three lists and nothing else.
+		for n = 1, #items, 2 do
+			check(key .. " spawns no volume of the manual",
+				string.find(tostring(items[n]), "CeroSec.Manual", 1, true) == nil)
+		end
+	end
+
+	-- A quarter of every one of those numbers is exact in a double.
+	for i = 1, #KEYS do
+		local w = CeroSecFloppyLoot.WEIGHTS[KEYS[i]] * 0.25
+		eq(KEYS[i] .. "'s quarter is exact", w * 4, CeroSecFloppyLoot.WEIGHTS[KEYS[i]])
+	end
+
+	-- The two tables are not the same table. Three shelves hold both -- a cyber
+	-- cafe had books and disks on the same desk -- and the rest are each other's
+	-- business.
+	local shared = 0
+	for key in pairs(CeroSecFloppyLoot.WEIGHTS) do
+		if CeroSecManualLoot.WEIGHTS[key] ~= nil then shared = shared + 1 end
+	end
+	check("the two tables overlap without being the same (" .. shared .. ")",
+		shared > 0 and shared < #KEYS)
+
+	-- Fired twice -- a Lua reload does that -- and nothing doubles.
+	local lengths = {}
+	for i = 1, #KEYS do
+		lengths[i] = #ProceduralDistributions.list[KEYS[i]].items
+	end
+	CeroSecFloppyLoot.added = false
+	eq("a second pass adds nothing", CeroSecFloppyLoot.add(), 0)
+	for i = 1, #KEYS do
+		eq(KEYS[i] .. " was not doubled",
+			#ProceduralDistributions.list[KEYS[i]].items, lengths[i])
+	end
+
+	-- A list vanilla renamed is a list that is skipped, not a crash.
+	CeroSecFloppyLoot.added = false
+	ProceduralDistributions.list[KEYS[1]] = nil
+	eq("a missing list is skipped quietly", CeroSecFloppyLoot.add(), 0)
+
+	-- The same sandbox option the manual reads, read the same way.
+	SandboxVars = nil
+	eq("with no sandbox group at all the multiplier is one",
+		CeroSecFloppyLoot.abundance(), 1)
+	SandboxVars = { CeroSec = {} }
+	eq("with a group but no option it is still one", CeroSecFloppyLoot.abundance(), 1)
+	for _, bad in ipairs({ 0, -1, "lots", true }) do
+		SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = bad
+		eq("a LootAbundance of " .. tostring(bad) .. " is not an abundance",
+			CeroSecFloppyLoot.abundance(), 1)
+	end
+	SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = 2
+	eq("a number is the number", CeroSecFloppyLoot.abundance(), 2)
+
+	-- And it reaches the weights: a multiplier read and then not used would
+	-- leave every assertion above green.
+	ProceduralDistributions.list = { OfficeDesk = { rolls = 4, items = {} } }
+	CeroSecFloppyLoot.added = false
+	CeroSecFloppyLoot.add()
+	local items = ProceduralDistributions.list.OfficeDesk.items
+	for c = 1, #CeroSec.FLOPPY_TYPES do
+		eq("colour " .. c .. "'s weight was doubled with the shelves",
+			items[c * 2], CeroSecFloppyLoot.WEIGHTS.OfficeDesk * 0.25 * 2)
+	end
 end
 
 print("manual_ui_test: " .. count .. " checks passed")

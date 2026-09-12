@@ -117,4 +117,38 @@ module Base
             volume = 0.4,
         }
     }
+
+    /* The drive taking a disk, and giving it back. Both clips shipped with this
+       mod from the start (common/media/sound) and neither had a block until
+       there was a slot to play them at.
+
+       distanceMax is 15, the machine's own -- the same as the power switch, and
+       for the same reason: a drive is a mechanism in a case and it is heard
+       across a room, not across a street. Played by the server through
+       SCeroSecObject:playSound, so everybody standing at the computer hears it
+       and not only the survivor who pushed the disk in. */
+    sound CeroSecInsertDisc
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecInsertDisc.ogg,
+            distanceMax = 15,
+            volume = 0.8,
+        }
+    }
+
+    sound CeroSecEjectDisc
+    {
+        category = Object,
+        is3D = true,
+        clip
+        {
+            file = media/sound/CeroSecEjectDisc.ogg,
+            distanceMax = 15,
+            volume = 0.8,
+        }
+    }
 }
+

@@ -163,6 +163,68 @@ function CeroSecOS.floppyRoot(state)
 end
 
 --
+-- Across the boundary between the machine and the item
+--
+-- What is written on a disk lives in the ITEM's modData while the disk is in
+-- somebody's pocket, and in state.floppy while it is in the drive. Those are the
+-- same table by shape and they are never the same table by identity: the copy
+-- below is what crosses, in both directions.
+--
+-- It is a copy and not a handover for two reasons, and the first one is enough.
+-- An item's modData is a KahluaTable the game owns, and the engine's own gate
+-- (CeroSecOS.validate) will run on whatever goes into the machine's state on
+-- every single command from then on -- so what goes in has to be a plain Lua
+-- table this engine made, and not a thing the game hands over with rules of its
+-- own. The second is that a copy cannot be aliased: an eject that handed the
+-- machine's own table to an item would leave two owners of one disk.
+--
+-- Anything that is not a string, a number, a boolean or a table is a thing no
+-- disk of ours ever carried, and finding one is a refusal and not a value to
+-- drop quietly: the disk is somebody's work and a copy with pieces missing is
+-- worse than no copy.
+--
+-- The depth is bounded because the walk is recursive and the thing being walked
+-- came off a save file. Two past MAX_DEPTH, which is what a path on this machine
+-- can be, plus the disk's own wrapper and its root directory: a tree that is
+-- deeper than the filesystem can address is one no command here could have made.
+CeroSecOS.DISK_COPY_DEPTH = CeroSecOS.MAX_DEPTH + 2
+
+local function copyPlain(value, depth)
+	local t = type(value)
+	if t == "string" or t == "number" or t == "boolean" then return value end
+	if t ~= "table" then return nil, "not storable" end
+	if depth <= 0 then return nil, "too deep" end
+	local out = {}
+	for k, v in pairs(value) do
+		local kt = type(k)
+		if kt ~= "string" and kt ~= "number" then return nil, "bad key" end
+		local copied, reason = copyPlain(v, depth - 1)
+		if copied == nil then return nil, reason end
+		out[k] = copied
+	end
+	return out
+end
+
+-- A plain, private, validated disk, or nil plus the reason. Asked of an item's
+-- modData on the way IN, so a forged or damaged disk is refused at the slot
+-- rather than three commands later by a gate that then calls the whole machine
+-- broken.
+function CeroSecOS.diskFromData(data)
+	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
+	if disk == nil then return nil, "floppy: " .. tostring(reason) end
+	local ok, why = CeroSecOS.validateDisk(disk)
+	if not ok then return nil, why end
+	return disk
+end
+
+-- The other way: a plain, private copy to write into an item's modData. The disk
+-- it is made from is one the machine has been running on, so there is nothing
+-- left to validate about it -- what this is for is the copy.
+function CeroSecOS.diskToData(disk)
+	return copyPlain(disk, CeroSecOS.DISK_COPY_DEPTH)
+end
+
+--
 -- The mount table
 --
 

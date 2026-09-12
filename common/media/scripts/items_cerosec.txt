@@ -95,4 +95,76 @@ module CeroSec
         StaticModel = Book,
         WorldStaticModel = BookClosedGround,
     }
+
+    /* The floppy disks. Four of them, and the four are the same disk in four
+       colours of shell -- which is how a box of them was sold in 1993 and why
+       they all carry the same DisplayName: a survivor tells them apart by
+       colour and by the label he writes on the state inside (`newfs`, and the
+       drive's own listing), never by the name in his inventory.
+
+       Weight is 0.1, set against the vanilla items it sits between rather than
+       against a feeling: Base.Paperclip is 0.01, Base.BusinessCard 0.05,
+       Base.Disc_Retail 0.3 and Base.Notebook 0.5. A 3.5-inch disk is a shell of
+       stiff plastic around a sheet of mylar -- twenty grammes -- which is
+       heavier than a card and lighter than a CD in its case.
+
+       DisplayCategory is Electronics, an IGUI_ItemCat_ key the game ships
+       (media/lua/shared/Translate/EN/IG_UI.json), for the same reason the
+       manual files itself under Literature: the category is a free string the
+       inventory prints through getText, and an unknown one prints the key.
+
+       ItemType is base:normal and there is deliberately nothing else on these
+       items -- no Tags, no MediaCategory. What a disk IS lives in its modData
+       and is the OS's business; the item is the thing that carries it.
+
+       Icon = CeroSecFloppyBlue resolves to
+       media/textures/Item_CeroSecFloppyBlue.png, and WorldStaticModel =
+       CeroSecFloppyBlue to the model block in models_cerosec.txt. Both names
+       carry the mod's own prefix so that a world with the old Computer mod
+       installed beside this one has nothing to collide over.
+
+       The name a player reads comes from Translate/EN/ItemName.json, keyed
+       "CeroSec.FloppyBlue"; the DisplayName here is the fallback, and it is
+       spelled out in words because a double quote in a script value is not
+       something to bet on. */
+    item FloppyBlue
+    {
+        DisplayName = 3.5 inch Floppy Disk,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.1,
+        Icon = CeroSecFloppyBlue,
+        WorldStaticModel = CeroSecFloppyBlue,
+    }
+
+    item FloppyYellow
+    {
+        DisplayName = 3.5 inch Floppy Disk,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.1,
+        Icon = CeroSecFloppyYellow,
+        WorldStaticModel = CeroSecFloppyYellow,
+    }
+
+    item FloppyRed
+    {
+        DisplayName = 3.5 inch Floppy Disk,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.1,
+        Icon = CeroSecFloppyRed,
+        WorldStaticModel = CeroSecFloppyRed,
+    }
+
+    item FloppyGreen
+    {
+        DisplayName = 3.5 inch Floppy Disk,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.1,
+        Icon = CeroSecFloppyGreen,
+        WorldStaticModel = CeroSecFloppyGreen,
+    }
 }
+
