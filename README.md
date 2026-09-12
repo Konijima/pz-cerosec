@@ -885,7 +885,17 @@ nothing: the engine has no machine to switch off, so it says what should happen 
 the server — which owns the sprite, the sound, the power and the windows — does it.
 
 A control from inside a job **ends** the job, the way a real shell's `exec` does: a
-line that has ordered the machine off has nothing left to say.
+line that has ordered the machine off has nothing left to say. All of it, script or
+no script: a `shutdown` written two files deep is still the machine going dark.
+
+`exit` is the one word with a foot on both sides of that. Typed at the top level of
+an interactive shell it is the `"exit"` control — the logout, or the pop of an `su`.
+Written in a file, in a `$(...)` or in a stage of a pipeline it is not a control at
+all: it ends that script, that substitution, that stage, with the status it was
+given, and the shell it was started from goes on with `$?` set — which is POSIX, and
+which is what keeps a usage-and-exit script from throwing the player off the machine.
+`~/.profile` is deliberately on the interactive side of the line, because it runs AS
+the login shell: `exit` in a profile logs out, exactly as it does in bash.
 
 A command that has to ask something answers `"prompt"` with an opaque continuation
 token, and the console hands the next line typed to `CeroSecOS.continue`. Nothing of

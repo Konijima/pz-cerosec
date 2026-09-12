@@ -1126,8 +1126,12 @@ as its command keeps succeeding, and until is while turned round:
 
 break leaves the loop and continue jumps to its next turn; both take a
 number to leave or skip that many loops at once, counted outwards. exit
-ends the whole script, with the status you give it, and return does the
-same thing. Loops and ifs nest sixteen deep and no further.]],
+ends the script it is written in, with the status you give it, and
+return does the same thing. A script that ran another one is not ended
+with it: it carries on at its next line, with $? set to what the inner
+one gave. Typed at the prompt, where no script is running, exit is the
+other exit -- it logs you out. Loops and ifs nest sixteen deep and no
+further.]],
 
 [[Six commands belong to the shell itself and work with no file in bin
 behind them. echo prints its arguments, and echo -n leaves the cursor on
@@ -1288,7 +1292,9 @@ prompt, and a cd it does is where you are standing.
   cd /var/log
 
 Its mistakes read like a script's -- ".profile: line 2: ..." -- and it
-respects every ceiling a script does. Which brings the quirk: a .profile
+respects every ceiling a script does. One thing in it is not a script's:
+an exit logs you straight back out, because the profile IS your login
+shell and not a file it ran. Which brings the quirk: a .profile
 with an endless loop in it leaves you at a busy prompt with nothing to
 type at. It is not a locked machine. Press Escape, which is the ^C, and
 then edit the file. CeroSec Systems mentions it because somebody will

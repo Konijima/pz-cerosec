@@ -1166,11 +1166,42 @@ local function applyControl(job, control, data, env)
 	--
 	-- The job ENDS here, the way a real shell's exec does: a line that has
 	-- ordered the machine off has nothing left to say, and the rest of `shutdown;
-	-- echo bye` is not something to run on a machine that is going dark.
+	-- echo bye` is not something to run on a machine that is going dark. The
+	-- WHOLE job, script or no script: `shutdown` two files deep is still the
+	-- machine going dark, and unwinding to the file it was written in would
+	-- leave the outer one running on a machine that is off. That is what `all`
+	-- says, and it is the one exit that does not stop at a script's edge.
 	job.control = control
 	job.controlData = data
 	flushPartial(job)
-	job.sig = { k = "exit", n = job.status }
+	job.sig = { k = "exit", n = job.status, all = true }
+	return true
+end
+
+-- Is this `exit` the one that leaves the MACHINE, or the one that leaves a
+-- script? Only the word typed at the glass is the first kind, and "at the glass"
+-- is three things at once, every one of which has to hold:
+--
+--   * the prompt's own job (`job.interactive`) -- a background job, a cron line
+--     and a stage of a pipeline have nobody standing in front of them;
+--   * the TOP level of it: `./lights.sh` is the prompt's own job one level
+--     deeper (CeroSecOS.jobRun), and an `exit 1` inside a file is the file
+--     ending with status 1 and the prompt coming back -- which is POSIX, and
+--     is the whole reason a usage-and-exit script does not throw a player off
+--     the machine;
+--   * outside every $(...): a substitution is a subshell, and a subshell's
+--     `exit` ends the subshell.
+--
+-- ~/.profile is deliberately on the other side of this line: it runs AS the
+-- login shell, at depth one, so its `exit` logs out -- which is what bash does
+-- with a profile and what the manual says here.
+local function exitLeavesTheMachine(job)
+	if not job.interactive then return false end
+	if job.inPipe then return false end
+	if job.depth > 1 then return false end
+	for i = 1, #job.frames do
+		if job.frames[i].k == "capture" then return false end
+	end
 	return true
 end
 
@@ -1258,11 +1289,13 @@ local function runSimple(state, job, f, env)
 
 	local name = args[1]
 	local builtin = builtins[name]
-	-- `exit` at a prompt is not `exit` in a script. In a file it ends the
-	-- script, which is the builtin above; at the glass it logs the account out
-	-- or pops an `su`, which is /bin/exit's job and always has been. One word,
-	-- two meanings, and the shell knows which house it is standing in.
-	if builtin ~= nil and job.interactive and name == "exit" then builtin = nil end
+	-- `exit` at a prompt is not `exit` in a script. In a file, in a $(...) or in
+	-- a stage it ends that and nothing else, which is the builtin above; at the
+	-- glass it logs the account out or pops an `su`, which is the shell word's
+	-- job and always has been. One word, two meanings, and the shell knows which
+	-- house it is standing in -- which is a question of DEPTH and not only of
+	-- whose job it is.
+	if builtin ~= nil and name == "exit" and exitLeavesTheMachine(job) then builtin = nil end
 	-- The builtins that are also files in /bin are looked up there FIRST. The
 	-- speed of running one inside the engine is an implementation detail; which
 	-- commands a machine has is not, and it is written on the disk. So
@@ -1913,17 +1946,29 @@ handleSignal = function(job)
 	job.sig = nil
 
 	if sig.k == "exit" then
-		-- Inside $(...) it ends the substitution and nothing else, the way a
-		-- subshell's exit does.
-		local capAt = nil
-		for i = #job.frames, 1, -1 do
-			if job.frames[i].k == "capture" then
-				capAt = i
-				break
+		-- `exit` ends the INNERMOST thing there is to end, which is POSIX: the
+		-- script it is written in, or the subshell it is written in, whichever
+		-- is nearer. A $(...) is a capture frame and a script is a frame with
+		-- the caller's arguments hanging off it (CeroSecOS.jobRun) -- so `sh
+		-- b.sh` with an `exit 3` in it ends b, hands a.sh a $? of 3, and a.sh
+		-- goes on with its next line. Only an `exit` with nothing of either
+		-- kind around it is the end of the job.
+		--
+		-- `all` is the one exception and it is not really an exit at all: it is
+		-- an order to the machine (shutdown, clear, a logout) travelling out
+		-- through this door, and those end everything.
+		local at = nil
+		if not sig.all then
+			for i = #job.frames, 1, -1 do
+				local f = job.frames[i]
+				if f.k == "capture" or f.oldArgs ~= nil then
+					at = i
+					break
+				end
 			end
 		end
-		if capAt ~= nil then
-			while #job.frames >= capAt do popFrame(job) end
+		if at ~= nil then
+			while #job.frames >= at do popFrame(job) end
 			job.status = sig.n
 			return
 		end

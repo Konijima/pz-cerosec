@@ -4170,4 +4170,96 @@ do
 		net.gate.jobs == nil or #net.gate.jobs.list, 0)
 end
 
+--
+-- The script that threw a player off the machine
+--
+-- Typed at the glass, as root, with the file exactly as it was written: a usage
+-- check, an `exit 1`, and a loop over the lights. The bug was that the usage
+-- line arrived and then the console logged out to `login:` -- because `exit`
+-- inside a file was being judged as `exit` typed at the prompt. What is asserted
+-- here is what is PAINTED: the usage line, a prompt back, and root still at it.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+	eq("root is at the glass", bench.object.console.user, "root")
+
+	bench.script("/home/admin/lights.sh", table.concat({
+		"#!/bin/sh",
+		'if [ "$1" != on -a "$1" != off ]; then',
+		'  echo "usage: lights.sh on|off"',
+		"  exit 1",
+		"fi",
+		"for l in $(ls /dev | grep light); do",
+		"  dev $l $1",
+		"done",
+	}, "\n"))
+	bench.enter("cd /home/admin")
+	bench.frame()
+
+	-- The BOTTOM of the glass, which is where a logout shows. The login prompt
+	-- this session began at is still up in the scrollback and always will be, so
+	-- "is there a `login:` anywhere" is not the question -- what the machine is
+	-- asking for NOW is.
+	local function bottom()
+		local painted = bench.glass()
+		for i = #painted, 1, -1 do
+			local text = painted[i]
+			if type(text) == "string" and text ~= "" then return text end
+		end
+		return ""
+	end
+
+	-- No argument: the usage line, and nothing else.
+	bench.enter("./lights.sh")
+	bench.frame()
+	check("the usage line is on the glass", bench.painted("usage: lights.sh on|off"))
+	-- The prompt is back and it is root's, which is the whole bug: a logout
+	-- would have left `login:` at the bottom of the glass and no prompt at all.
+	eq("the bottom of the glass is root's prompt again",
+		string.sub(bottom(), 1, 5), "root@")
+	check("and not a login prompt", string.find(bottom(), "login:", 1, true) == nil)
+	eq("the session is still root's", bench.object.console.user, "root")
+	eq("the window is still at a shell", bench.window.mode, "shell")
+	eq("and $? is the status the script gave", bench.object.console.status, 1)
+
+	-- Nothing was touched on the way out: the lights are as the world made them.
+	eq("the office light is still on", kit.light0.activated, true)
+	eq("and the hallway light still off", kit.light1.activated, false)
+
+	-- And the same file with its argument does the job it was written for. More
+	-- than one pass this time: the loop is a job like any other and the player's
+	-- own pass is only the first of them.
+	--
+	-- `ls /dev | grep light` catches more than the two lights, and that is this
+	-- machine and not this bench: `ls` writes in columns down a pipe as well as
+	-- at the glass, so a line with `light0` on it carries whatever else shares
+	-- its row. The loop therefore says "invalid value" at a door and a window on
+	-- its way past -- which is why the script's status below is the last `dev`'s
+	-- and not a zero. What matters here is that the lights moved and the console
+	-- is still standing.
+	bench.enter("./lights.sh off")
+	bench.tick(8)
+	eq("the office light went off", kit.light0.activated, false)
+	eq("the hallway light stayed off", kit.light1.activated, false)
+	check("and dev said what it read back", bench.painted("light0: off"))
+	eq("the bottom of the glass is a prompt", string.sub(bottom(), 1, 5), "root@")
+	eq("root is still standing there", bench.object.console.user, "root")
+
+	bench.enter("./lights.sh on")
+	bench.tick(8)
+	eq("on turns them on", kit.light0.activated, true)
+	eq("both of them", kit.light1.activated, true)
+	eq("root is still there", bench.object.console.user, "root")
+	eq("and still at a shell", bench.window.mode, "shell")
+
+	_G.__world = nil
+end
+
 print("window_test: " .. count .. " checks passed")

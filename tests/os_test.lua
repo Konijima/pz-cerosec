@@ -5747,6 +5747,170 @@ do
 end
 
 --
+-- 28a. `exit` in a script is not `exit` at the glass
+--
+-- The bug: a script that ends itself threw the player off the machine. `exit 1`
+-- in a usage-and-exit script -- the oldest shape there is in /bin -- came back
+-- as the console's own logout, because the word was judged by WHOSE job it was
+-- (the prompt's) and not by how deep in it the word stood. A script run from the
+-- prompt is the prompt's own job one level deeper, so every `exit` in every file
+-- anybody ran at the glass was a logout.
+--
+-- POSIX: `exit [n]` ends the innermost script -- or subshell, or pipeline stage
+-- -- with status n, and only the word typed at the top level of an interactive
+-- shell ends the session. ~/.profile is the one file on the other side of that
+-- line, because it runs AS the login shell: bash exits the login shell there and
+-- so does this machine, and the manual says so.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local rootSession = open(state, "root")
+	local ENVJ = { now = 740000000, nowMs = 1000, jobs = {} }
+
+	-- ok, the lines, the control and the job's own status, for a line that is
+	-- about the status and the control above all.
+	local function ran(session, line)
+		local execOk, lines, control, data, job = exec(state, session, line, ENVJ)
+		return { ok = execOk, lines = lines, control = control, status = job.status,
+			state = job.state, job = job }
+	end
+
+	-- 1. The script Mathieu wrote, in the shape every usage message has: a
+	-- refusal, a status, and a prompt to come back to.
+	script(state, "/home/admin/usage.sh",
+		'if [ "$1" != on ]; then\n  echo "usage: usage.sh on"\n  exit 1\nfi\necho did $1\n')
+	okAt(state, admin, "cd /home/admin", {})
+	local r = ran(admin, "./usage.sh")
+	eq("the script printed its usage", r.lines[1], "usage: usage.sh on")
+	eq("and nothing after the exit", #r.lines, 1)
+	eq("the console is ordered to do NOTHING", r.control, nil)
+	eq("the script ended with the status it gave", r.status, 1)
+	eq("and the session is intact", admin.user, "admin")
+	okAt(state, admin, "echo $?", { "1" })
+	-- And the same file with its argument: past the exit, to the end.
+	r = ran(admin, "./usage.sh on")
+	eq("with the argument it runs through", r.lines[1], "did on")
+	eq("orders nothing", r.control, nil)
+	eq("and succeeds", r.status, 0)
+
+	-- `sh file` is the same door as `./file`, and `return` is the same word as
+	-- `exit`: this machine has no functions to return from.
+	script(state, "/home/admin/ret.sh", "echo r\nreturn 2\necho never\n")
+	r = ran(admin, "sh /home/admin/ret.sh")
+	eq("sh file: the script ends", r.lines[1], "r")
+	eq("and nothing after it", #r.lines, 1)
+	eq("no logout", r.control, nil)
+	eq("return carries its status too", r.status, 2)
+
+	-- An exit inside a loop inside a script leaves the loop AND the script,
+	-- which is what makes it different from break.
+	script(state, "/home/admin/loop.sh",
+		"for f in a b c; do\n  echo $f\n  exit 7\ndone\necho never\n")
+	r = ran(admin, "./loop.sh")
+	eq("one turn of the loop", #r.lines, 1)
+	eq("the first one", r.lines[1], "a")
+	eq("orders nothing", r.control, nil)
+	eq("with the status", r.status, 7)
+
+	-- 2. Inside $(...) it is a subshell's exit: the substitution ends, the line
+	-- it is part of goes on, and $? is what the subshell gave.
+	r = ran(admin, "echo cap=[$(echo one; exit 4)] $?")
+	eq("the substitution ended where the exit was", r.lines[1], "cap=[one] 4")
+	eq("and the console was ordered nothing", r.control, nil)
+	-- Including a $(...) written in a file: a script with one in it carries on.
+	script(state, "/home/admin/cap.sh",
+		"x=$(echo one; exit 4)\necho got=[$x]\necho still here\n")
+	r = ran(admin, "./cap.sh")
+	eq("the script has both lines", #r.lines, 2)
+	eq("the substitution's value", r.lines[1], "got=[one]")
+	eq("and the script ran on", r.lines[2], "still here")
+	eq("orders nothing", r.control, nil)
+
+	-- 3. Inside a pipeline stage it ends the STAGE. The status of a pipeline is
+	-- its last stage's, which is the one thing `exit` in one can be seen by.
+	r = ran(admin, "echo hi | exit 5")
+	eq("the pipeline took the stage's status", r.status, 5)
+	eq("and nobody was logged out", r.control, nil)
+	r = ran(admin, "exit 5 | cat")
+	eq("a stage that exits writes nothing", #r.lines, 0)
+	eq("the pipeline is its last stage's status", r.status, 0)
+	eq("and still nobody was logged out", r.control, nil)
+	-- A whole script as a stage: its exit is the stage's, and the pipeline's
+	-- status is the reader's.
+	script(state, "/home/admin/p.sh", "echo fromp\nexit 9\necho never\n")
+	r = ran(admin, "sh /home/admin/p.sh | cat")
+	eq("what the script wrote came down the pipe", r.lines[1], "fromp")
+	eq("and nothing after its exit", #r.lines, 1)
+	eq("orders nothing", r.control, nil)
+
+	-- 4. Nested scripts: the INNERMOST one ends. b.sh exits 3; a.sh is handed a
+	-- $? of 3 and runs its next line.
+	script(state, "/home/admin/b.sh", "echo inb\nexit 3\necho neverb\n")
+	script(state, "/home/admin/a.sh",
+		"echo ina\nsh /home/admin/b.sh\necho after=$?\necho enda\n")
+	r = ran(admin, "sh /home/admin/a.sh")
+	eq("a.sh ran", r.lines[1], "ina")
+	eq("b.sh ran", r.lines[2], "inb")
+	eq("nothing of b.sh past its exit", r.lines[3], "after=3")
+	eq("and a.sh carried on to its own end", r.lines[4], "enda")
+	eq("four lines and no more", #r.lines, 4)
+	eq("orders nothing", r.control, nil)
+	eq("a.sh's own status is its last line's", r.status, 0)
+
+	-- 5. And the word at the glass, which is the whole reason for the other
+	-- meaning: it is still the logout, and it still pops an `su` first.
+	r = ran(admin, "exit")
+	eq("exit at the prompt is the machine's", r.control, "exit")
+	-- Root becoming root is the one su that needs no password, which is what
+	-- lets a bench put a stack under a console in one line.
+	okAt(state, rootSession, "su root", {})
+	eq("the stack is one deep", #rootSession.stack, 1)
+	r = ran(rootSession, "exit")
+	eq("and exit pops it rather than logging out", r.control, nil)
+	eq("with the stack back to nothing", #rootSession.stack, 0)
+
+	-- 6. ~/.profile is the one file whose exit IS the logout: it runs as the
+	-- login shell, at the top level of it, the way bash's does.
+	local function profile(text)
+		local job = CeroSecOS.promptJob(state, admin, text, admin.shvars, admin.status,
+			".profile")
+		if job == nil then error("the profile would not parse", 2) end
+		local out = {}
+		local turns = 0
+		while not CeroSecOS.jobIsOver(job) and turns < 200 do
+			turns = turns + 1
+			CeroSecOS.jobStep(state, job, ENVJ, 1000)
+			for k = 1, #job.out do out[#out + 1] = job.out[k] end
+			job.out = {}
+			if job.state == "waiting" or job.state == "sleeping" then break end
+		end
+		return { lines = out, control = job.control, status = job.status }
+	end
+	local p = profile("echo in profile\nexit\necho never")
+	eq("the profile ran", p.lines[1], "in profile")
+	eq("and stopped at the exit", #p.lines, 1)
+	eq("and logged the account out, as bash does", p.control, "exit")
+
+	-- 7. The one exit that is NOT a script's: an order to the machine. A
+	-- `shutdown` two files deep is the machine going dark, and unwinding it to
+	-- the file it was written in would leave the outer script running on a
+	-- machine that is off.
+	script(state, "/root/down.sh", "echo going\nshutdown\necho never\n")
+	script(state, "/root/outer.sh", "sh /root/down.sh\necho afterdown\n")
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/root/down.sh")
+	node.owner = "root"
+	node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/root/outer.sh")
+	node.owner = "root"
+	r = ran(rootSession, "sh /root/outer.sh")
+	eq("the inner script ran", r.lines[1], "going")
+	eq("and nothing else did", #r.lines, 1)
+	eq("the machine was ordered off", r.control, "shutdown")
+	eq("and the whole job is over", r.state, "done")
+end
+
+--
 -- 29. Scripts: what a program costs, in steps
 --
 -- The exact count for a fixed script. A step is a unit of COST: one for

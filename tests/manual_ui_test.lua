@@ -314,6 +314,196 @@ do
 end
 
 --
+-- Reflowing: the writer's hard wrapping is not the leaf's
+--
+-- The manual is typed into a file by hand and its paragraphs are wrapped at the
+-- writer's column. Page 87 of the printed book showed what honouring every one
+-- of those newlines looked like: a full row, then a row carrying the single word
+-- that had fallen off the end of the writer's line, then prose again. So a
+-- single newline inside a page is a space, a blank line is the paragraph break,
+-- and an example line keeps its own row.
+--
+-- The paragraph below is the one from that screenshot, wrapped short on purpose
+-- so the bench's own leaf makes orphans out of it the same way.
+--
+
+local HARD =
+	"Press Tab again on the same word and the\n" ..
+	"names are listed in columns, the way ls\n" ..
+	"lists them, and the line you were typing\n" ..
+	"is printed again underneath.\n" ..
+	"\n" ..
+	"A command is a file under /bin.\n" ..
+	"  ls -l /bin\n" ..
+	"  ls -l /etc\n" ..
+	"That is the whole of the rule."
+
+local PARAGRAPH = "Press Tab again on the same word and the names are listed " ..
+	"in columns, the way ls lists them, and the line you were typing is " ..
+	"printed again underneath."
+
+-- The words of a text, in order, whatever it was broken on. What must survive
+-- every join and every wrap.
+local function words(text)
+	local out = {}
+	for word in string.gmatch(text, "%S+") do out[#out + 1] = word end
+	return table.concat(out, " ")
+end
+
+do
+	local lines = {}
+	for line in (CeroSecManualUI.reflow(HARD) .. "\n"):gmatch("([^\n]*)\n") do
+		lines[#lines + 1] = line
+	end
+
+	eq("six lines out of nine, the joined ones gone", #lines, 6)
+	eq("the hard-wrapped paragraph came back as one piece", lines[1], PARAGRAPH)
+	check("and the join left one space, not two",
+		string.find(lines[1], "  ", 1, true) == nil)
+	eq("the blank line is still the paragraph break", lines[2], "")
+	eq("the prose before the example is its own line", lines[3],
+		"A command is a file under /bin.")
+	eq("the first example line is exactly as typed", lines[4], "  ls -l /bin")
+	eq("and the second, never joined to the first", lines[5], "  ls -l /etc")
+	eq("the prose after the example starts again", lines[6],
+		"That is the whole of the rule.")
+	eq("and not a word of it was lost", words(table.concat(lines, " ")), words(HARD))
+
+	-- A line typed with a trailing space, or indented by one -- one space is not
+	-- two, so it is prose and not an example -- joins with a single space all
+	-- the same.
+	eq("stray spaces around a join are collapsed",
+		CeroSecManualUI.reflow("foo   \n bar"), "foo bar")
+	-- A run of blank lines is the writer's spacing and it survives.
+	eq("two blank lines stay two", CeroSecManualUI.reflow("a\n\n\nb"), "a\n\n\nb")
+	-- Nothing to reflow is nothing at all, and an absent page is not a crash.
+	eq("an empty page reflows to an empty page", CeroSecManualUI.reflow(""), "")
+	eq("a page that is not a string comes back as it was",
+		CeroSecManualUI.reflow(nil), nil)
+end
+
+--
+-- The same page laid out: full rows, no orphans, the example block intact
+--
+
+do
+	local width = 300
+	local opts = { width = width, rows = 40, measure = bodyWidth }
+	local manual = { title = "T", edition = "",
+		chapters = { { title = "C", pages = { HARD } } } }
+	local book = CeroSecManualBook.open(CeroSecManualUI.reflowed(manual), opts)
+	local page = book.pages[book.chapters[1].page]
+	local lines = page.lines
+
+	check("the paragraph still needed more than one row", #lines > 4)
+
+	-- The widest word in the paragraph: a greedy wrap can leave a row short by
+	-- at most that much, so a row shorter than the leaf less that word is a row
+	-- something else ended.
+	local widest = 0
+	for word in string.gmatch(PARAGRAPH, "%S+") do
+		if bodyWidth(word) > widest then widest = bodyWidth(word) end
+	end
+
+	for i = 1, #lines - 1 do
+		local line, below = lines[i], lines[i + 1]
+		if not line.code and not below.code and line.text ~= "" and below.text ~= "" then
+			check("row " .. i .. " is full: \"" .. line.text .. "\"",
+				bodyWidth(line.text) > width - widest)
+			-- And full in the only sense that settles it: the row below's first
+			-- word genuinely would not have fitted on this one.
+			local first = string.match(below.text, "^%S+")
+			check("row " .. i .. " could not have taken \"" .. tostring(first) .. "\"",
+				bodyWidth(line.text .. " " .. first) > width)
+		end
+	end
+
+	-- The order the page was written in, on the page: prose, the break, prose,
+	-- the two example lines side by side, prose.
+	local seen = {}
+	for i = 1, #lines do
+		seen[#seen + 1] = (lines[i].code and "code:" or "text:") .. lines[i].text
+	end
+	local blank, code1, code2, after = nil, nil, nil, nil
+	for i = 1, #seen do
+		if seen[i] == "text:" then blank = blank or i end
+		if seen[i] == "code:  ls -l /bin" then code1 = i end
+		if seen[i] == "code:  ls -l /etc" then code2 = i end
+		if seen[i] == "text:That is the whole of the rule." then after = i end
+	end
+	check("the paragraph break is on the page", blank ~= nil)
+	check("both example lines are on the page", code1 ~= nil and code2 ~= nil)
+	eq("and they are one block, in order", code2, code1 + 1)
+	check("the break comes before them", blank < code1)
+	check("the prose after them comes after", after == code2 + 1)
+	eq("the example lines are drawn monospaced", lines[code1].code, true)
+
+	-- And the paragraph itself is still every word it was, in order, across
+	-- however many rows it took.
+	local rows = {}
+	for i = 1, blank - 1 do rows[#rows + 1] = lines[i].text end
+	eq("the paragraph is word for word what was written",
+		words(table.concat(rows, " ")), words(PARAGRAPH))
+end
+
+--
+-- And through the reader itself: the orphan rows are gone from the glass
+--
+
+do
+	-- The block above proves the pair; this one proves the reader WIRED it. A
+	-- window lays the manual out as it stands, so with the reflow not called
+	-- from :layout() the orphan rows would still be painted and every assertion
+	-- above would still be green.
+	local real = CeroSecManual
+
+	-- What was painted on the chapter's own leaf, by font. A book of one
+	-- chapter of one page, so the running head (FONT_HEAD) and the page number
+	-- (FONT_FOOT) are the only other things on the sheet.
+	local function paintedIn(page, font)
+		CeroSecManual = { title = "T", edition = "",
+			chapters = { { title = "C", pages = { page } } } }
+		local window = newWindow(newItem())
+		window:goToPage(window.book.chapters[1].page)
+		window:frame()
+		local out = {}
+		for i = 1, #window.painted do
+			local paint = window.painted[i]
+			if paint.font == font then out[#out + 1] = paint.text end
+		end
+		return out
+	end
+
+	-- One paragraph and nothing else, so every consecutive pair of painted rows
+	-- is a pair inside the same paragraph -- and a short row is an orphan and
+	-- not the end of something.
+	local hardParagraph =
+		"Press Tab again on the same word and the\n" ..
+		"names are listed in columns, the way ls\n" ..
+		"lists them, and the line you were typing\n" ..
+		"is printed again underneath."
+	local prose = paintedIn(hardParagraph, CeroSecManualUI.FONT_BODY)
+	local leafText = CeroSecManualUI.LEAF_COLS * CODE_W
+	check("the prose was painted on more than one row", #prose > 1)
+	check("and on fewer rows than the writer typed", #prose < 4)
+	for i = 1, #prose - 1 do
+		local first = string.match(prose[i + 1], "^%S+")
+		check("painted row " .. i .. " is not an orphan-maker: \"" .. prose[i] .. "\"",
+			bodyWidth(prose[i] .. " " .. first) > leafText)
+	end
+	eq("and the paragraph on the glass is word for word what was written",
+		words(table.concat(prose, " ")), words(PARAGRAPH))
+
+	-- The example lines reached the glass monospaced and untouched.
+	local code = paintedIn(HARD, CeroSecManualUI.FONT_CODE)
+	eq("two example lines were painted monospaced", #code, 2)
+	eq("the first as typed", code[1], "  ls -l /bin")
+	eq("the second as typed", code[2], "  ls -l /etc")
+
+	CeroSecManual = real
+end
+
+--
 -- A paragraph break that falls exactly at the foot of a leaf
 --
 
