@@ -988,7 +988,7 @@ do
 
 	-- Something of his own on the disk, to see it survive.
 	bench.enter("mkdir /home/admin/work")
-	bench.enter('write /home/admin/work/notes.txt "keep me"')
+	bench.enter('echo "keep me" > /home/admin/work/notes.txt')
 	bench.frame()
 
 	bench.enter("rm -r /bin")
@@ -1346,7 +1346,6 @@ do
 	old.fs.children.bin.children.sudo = nil
 	old.fs.children.bin.children.shutdown = nil
 	old.fs.children.bin.children.reboot = nil
-	old.fs.children.bin.children.restart = nil
 	old.fs.children.etc.children.sudoers = nil
 	old.fs.children.home.children.admin.children =
 		{ ["notes.txt"] = CeroSecOS.newFile("admin", 644, "keep me") }
@@ -3683,8 +3682,8 @@ do
 	bench.login("admin")
 
 	-- Two files whose names share a prefix, and one that does not.
-	bench.enter("write notes.txt hi")
-	bench.enter("write note2.txt hi")
+	bench.enter("echo hi > notes.txt")
+	bench.enter("echo hi > note2.txt")
 	bench.enter("mkdir work")
 	bench.frame()
 
@@ -6727,7 +6726,7 @@ do
 	net.login("admin")
 	say(net, "su root")
 	say(net, "")
-	say(net, "write /etc/callsign W4ZZZ")
+	say(net, "echo W4ZZZ > /etc/callsign")
 	net.tick(3)
 	eq("root wrote a new callsign", callOf(net.here), "W4ZZZ")
 	say(net, "call " .. callOf(net.far))

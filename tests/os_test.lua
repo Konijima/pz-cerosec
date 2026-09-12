@@ -524,7 +524,7 @@ do
 	eq("cd ~/box is under the home", admin.cwd, "/home/admin/box")
 	ok(state, admin, "cd ~", {})
 	ok(state, admin, "ls ~", { "box  sub" })
-	ok(state, admin, 'write ~/tilde.txt "hi"', {})
+	ok(state, admin, 'echo "hi" > ~/tilde.txt', {})
 	ok(state, admin, "cat ~/tilde.txt", { "hi" })
 	ok(state, admin, "cd /etc", {})
 	ok(state, admin, "cat ~/tilde.txt", { "hi" })   -- and from anywhere else
@@ -543,7 +543,7 @@ do
 	ok(state, admin, "touch notes.txt", {})
 	ok(state, admin, "cat notes.txt", {})           -- an empty file prints nothing
 	ok(state, admin, "touch notes.txt", {})         -- touching twice is fine
-	ok(state, admin, 'write notes.txt "one\\ntwo"', {})
+	ok(state, admin, 'echo "one\\ntwo" > notes.txt', {})
 	ok(state, admin, "cat notes.txt", { "one", "two" })
 	ok(state, admin, "cp notes.txt copy.txt", {})
 	ok(state, admin, "cat copy.txt", { "one", "two" })
@@ -579,7 +579,7 @@ do
 	ok(state, rootSession, "cd ~", {})
 	ok(state, rootSession, "pwd", { "/root" })
 	ok(state, rootSession, "cat ~/../etc/hostname", { "ksp-front-01" })
-	ok(state, rootSession, 'write /root/secret.txt "classified"', {})
+	ok(state, rootSession, 'echo "classified" > /root/secret.txt', {})
 	ok(state, rootSession, "cat /root/secret.txt", { "classified" })
 	ok(state, rootSession, "chown admin /root/secret.txt", {})
 	eq("chown took", state.fs.children.root.children["secret.txt"].owner, "admin")
@@ -593,7 +593,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local rootSession = open(state, "root")
-	ok(state, rootSession, 'write /root/secret.txt "classified"', {})
+	ok(state, rootSession, 'echo "classified" > /root/secret.txt', {})
 
 	bad(state, admin, "frobnicate", "frobnicate: command not found")
 	bad(state, admin, "cat notes.txt", "cat: notes.txt: no such file")
@@ -635,8 +635,7 @@ do
 	bad(state, admin, "chown", "chown: usage: chown <user> <path>")
 	bad(state, admin, "chown nobody /etc/motd", "chown: nobody: no such user")
 	bad(state, admin, "chown admin /etc/motd", "chown: /etc/motd: permission denied")
-	bad(state, admin, "write /etc/x", "write: usage: write <file> <text>")
-	bad(state, admin, 'write /etc/x "hi"', "write: /etc/x: permission denied")
+	bad(state, admin, 'echo "hi" > /etc/x', "echo: /etc/x: permission denied")
 	bad(state, admin, "pwd x", "pwd: usage: pwd")
 	bad(state, admin, "whoami x", "whoami: usage: whoami")
 	bad(state, admin, "hostname x", "hostname: permission denied")
@@ -683,29 +682,29 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 
-	ok(state, admin, 'write keep.txt "new"', {})
-	ok(state, admin, 'write gone.txt "old"', {})
+	ok(state, admin, 'echo "new" > keep.txt', {})
+	ok(state, admin, 'echo "old" > gone.txt', {})
 	ok(state, admin, "mv keep.txt gone.txt", {})
 	ok(state, admin, "cat gone.txt", { "new" })
 	ok(state, admin, "ls", { "gone.txt" })
 
 	-- The destination's own mode decides nothing. 400 is a file its owner may
 	-- not write, and the name is still his to point somewhere else.
-	ok(state, admin, 'write src.txt "moved"', {})
+	ok(state, admin, 'echo "moved" > src.txt', {})
 	ok(state, admin, "chmod 400 gone.txt", {})
 	ok(state, admin, "mv src.txt gone.txt", {})
 	ok(state, admin, "cat gone.txt", { "moved" })
 
 	-- The directory's mode decides everything. /etc is root's at 755, so a name
 	-- in it is not admin's to write over.
-	ok(state, admin, 'write mine.txt "x"', {})
+	ok(state, admin, 'echo "x" > mine.txt', {})
 	bad(state, admin, "mv mine.txt /etc/motd", "mv: /etc/motd: permission denied")
 	ok(state, admin, "cat mine.txt", { "x" })
 
 	-- A directory destination is still moved INTO, and the collision that then
 	-- happens inside it is judged like any other.
 	ok(state, admin, "mkdir box", {})
-	ok(state, admin, 'write box/mine.txt "older"', {})
+	ok(state, admin, 'echo "older" > box/mine.txt', {})
 	ok(state, admin, "mv mine.txt box", {})
 	ok(state, admin, "cat box/mine.txt", { "x" })
 
@@ -734,8 +733,8 @@ do
 	-- The bytes the destination held are freed BY the replacement: the disk after
 	-- it holds the source's bytes where the destination's used to be.
 	local _, before = CeroSecOS.usage(state)
-	ok(state, admin, 'write short.txt "ab"', {})
-	ok(state, admin, 'write long.txt "' .. string.rep("y", 200) .. '"', {})
+	ok(state, admin, 'echo "ab" > short.txt', {})
+	ok(state, admin, 'echo "' .. string.rep("y", 200) .. '" > long.txt', {})
 	local _, both = CeroSecOS.usage(state)
 	eq("two files on the disk", both, before + 202)
 	ok(state, admin, "mv short.txt long.txt", {})
@@ -775,7 +774,7 @@ do
 	ok(state, admin, "rm /home/admin/box/thing", {})
 
 	-- Owner may chmod, a stranger may not; root always may.
-	ok(state, rootSession, 'write /root/note.txt "x"', {})
+	ok(state, rootSession, 'echo "x" > /root/note.txt', {})
 	ok(state, rootSession, "chmod 701 /root", {})        -- open the door, not the file
 	bad(state, admin, "chmod 777 /root/note.txt", "chmod: /root/note.txt: permission denied")
 	ok(state, rootSession, "chown admin /root/note.txt", {})
@@ -862,7 +861,7 @@ do
 	ok(state, admin, "rm big.txt", {})
 
 	-- The word ceiling, which is what the prompt meets first.
-	bad(state, admin, 'write w.txt "' .. string.rep("x", 1025) .. '"', "sh: word too large")
+	bad(state, admin, 'echo "' .. string.rep("x", 1025) .. '" > w.txt', "sh: word too large")
 
 	-- The entries one directory holds, whatever the ceiling is set to: read off
 	-- the engine rather than typed here, so the wave that moved it from 64 to 96
@@ -939,8 +938,8 @@ do
 	local _, full = CeroSecOS.usage(state)
 	eq("disk exactly full", full, CeroSecOS.DISK_BYTES)
 	ok(state, rootSession, "touch /nothing", {})            -- an empty file costs no bytes
-	bad(state, rootSession, 'write /nothing "x"', "write: /nothing: disk full")
-	bad(state, rootSession, 'write /brand "x"', "write: /brand: disk full")
+	bad(state, rootSession, 'echo "x" > /nothing', "echo: /nothing: disk full")
+	bad(state, rootSession, 'echo "x" > /brand', "echo: /brand: disk full")
 	bad(state, rootSession, "cp /b1 /copy", "cp: /copy: disk full")
 end
 
@@ -1092,7 +1091,7 @@ do
 	eq("wrap keeps the text", wrapped[1] .. wrapped[2] .. wrapped[3], string.rep("w", 130))
 
 	-- And a long stored line wraps on cat too.
-	ok(state, rootSession, 'write /home/admin/wide.txt "' .. string.rep("q", 61) .. '"', {})
+	ok(state, rootSession, 'echo "' .. string.rep("q", 61) .. '" > /home/admin/wide.txt', {})
 	local catted = ok(state, admin, "cat /home/admin/wide.txt", nil)
 	eq("cat wraps at 60", #catted, 2)
 	eq("cat wrap piece 1", #catted[1], 60)
@@ -1319,8 +1318,6 @@ do
 	eq("a clean subtree passes", CeroSecOS.subtreeHasControlBytes(state.fs), false)
 
 	-- Through the shell, the refusal reads like every other error.
-	bad(state, admin, 'write dirty.txt "' .. string.char(1) .. '"',
-		"write: dirty.txt: invalid characters")
 	bad(state, admin, 'echo "' .. string.char(1) .. '" > dirty.txt',
 		"echo: dirty.txt: invalid characters")
 	eq("no dirty file exists",
@@ -1335,7 +1332,7 @@ do
 		state.fs.children.home.children.admin.children["tame.txt"].data, "1")
 
 	-- Newline and tab still go in and come back out.
-	ok(state, admin, 'write good.txt "a\\nb\\tc"', {})
+	ok(state, admin, 'echo "a\\nb\\tc" > good.txt', {})
 	ok(state, admin, "cat good.txt", { "a", "b\tc" })
 
 	-- So cat can never produce a control, whatever a file holds.
@@ -1404,7 +1401,7 @@ do
 	local state = fresh()
 	local session = open(state, "admin")
 	local script = {
-		"mkdir a", "mkdir a/b", "touch a/b/c.txt", 'write a/b/c.txt "hello"',
+		"mkdir a", "mkdir a/b", "touch a/b/c.txt", 'echo "hello" > a/b/c.txt',
 		"cp a/b/c.txt a/d.txt", "mv a/d.txt a/e.txt", "chmod 600 a/e.txt",
 		"echo log > a/log.txt", "echo more >> a/log.txt", "rm a/b/c.txt",
 	}
@@ -1885,7 +1882,7 @@ do
 	local state = fresh()
 	local session = open(state, "admin")
 
-	ok(state, session, 'write notes.txt "one\ntwo"', {})
+	ok(state, session, 'echo "one\ntwo" > notes.txt', {})
 
 	-- An existing file the user owns: its text, and writable.
 	local step = run(state, session, "edit notes.txt")
@@ -1942,7 +1939,7 @@ do
 	eq("root is never read-only", step.data.readonly, false)
 
 	-- root reads a file nobody else may: still writable, because root.
-	local write = run(state, admin, 'write /home/admin/p.txt "x"')
+	local write = run(state, admin, 'echo "x" > /home/admin/p.txt')
 	eq("the admin wrote it", write.ok, true)
 	local chmod = run(state, admin, "chmod 000 /home/admin/p.txt")
 	eq("and shut it", chmod.ok, true)
@@ -2044,7 +2041,7 @@ do
 	ok(state, admin, "pwd", { "/home/admin" })
 
 	-- Put it back by hand: an executable is an ordinary file, so root can.
-	ok(state, rootSession, 'write /bin/ls "list a directory"', {})
+	ok(state, rootSession, 'echo "list a directory" > /bin/ls', {})
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 	ok(state, admin, "ls /etc/motd", { "motd" })
 
@@ -2083,7 +2080,7 @@ do
 	ok(state, rootSession, "chmod 755 /bin", {})
 
 	-- A file in /bin with no command behind it is not a command either.
-	ok(state, rootSession, 'write /bin/telnet "not yet"', {})
+	ok(state, rootSession, 'echo "not yet" > /bin/telnet', {})
 	ok(state, rootSession, "chmod 755 /bin/telnet", {})
 	bad(state, admin, "telnet", "telnet: command not found")
 
@@ -2112,7 +2109,7 @@ do
 	-- either. Root reads it, writes it, deletes it, and will not RUN it.
 	local state = fresh()
 	local rootSession = open(state, "root")
-	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+	ok(state, rootSession, 'echo "echo hello" > /root/go.sh', {})
 	ok(state, rootSession, "cd /root", {})
 	ok(state, rootSession, "chmod 755 /root/go.sh", {})
 	ok(state, rootSession, "./go.sh", { "hello" })
@@ -2122,7 +2119,7 @@ do
 	bad(state, rootSession, "./go.sh", "./go.sh: permission denied")
 	-- Root still reads it and still writes it: only x is gated.
 	ok(state, rootSession, "cat /root/go.sh", { "echo hello" })
-	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+	ok(state, rootSession, 'echo "echo hello" > /root/go.sh', {})
 
 	-- Any ONE of the three x bits is enough. None of these three modes gives
 	-- root a bit of its own -- root is the owner here, and 010 and 001 leave
@@ -2367,12 +2364,12 @@ do
 	eq("and none of them landed", CeroSecOS.hostname(state), "ksp-back-02")
 
 	-- Written by hand: the file is what the machine answers with.
-	ok(state, rootSession, 'write /etc/hostname "byhand"', {})
+	ok(state, rootSession, 'echo "byhand" > /etc/hostname', {})
 	ok(state, admin, "hostname", { "byhand" })
 
 	-- A file that does not hold a name falls back to the state's copy rather
 	-- than leaving the machine nameless.
-	ok(state, rootSession, 'write /etc/hostname "NOT A NAME"', {})
+	ok(state, rootSession, 'echo "NOT A NAME" > /etc/hostname', {})
 	eq("nonsense in the file falls back", CeroSecOS.hostname(state), "ksp-back-02")
 	ok(state, rootSession, "rm /etc/hostname", {})
 	eq("no file at all falls back too", CeroSecOS.hostname(state), "ksp-back-02")
@@ -2398,7 +2395,7 @@ do
 
 	-- A machine somebody lived on, and then wiped.
 	ok(state, rootSession, "mkdir /home/admin/work", {})
-	ok(state, rootSession, 'write /home/admin/work/notes.txt "keep me"', {})
+	ok(state, rootSession, 'echo "keep me" > /home/admin/work/notes.txt', {})
 	ok(state, rootSession, "hostname ksp-mine", {})
 	eq("the root password is changed", CeroSecOS.setPassword(state, "root", "hunter2"), true)
 	ok(state, rootSession, "rm -r /bin", {})
@@ -2462,7 +2459,7 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	ok(state, rootSession, "chmod 000 /bin/ls", {})
-	ok(state, rootSession, 'write /bin/mine "not ours"', {})
+	ok(state, rootSession, 'echo "not ours" > /bin/mine', {})
 	ok(state, rootSession, "chown admin /bin/ls", {})
 
 	CeroSecOS.restoreSystem(state)
@@ -2501,13 +2498,13 @@ do
 	-- going dark is what the player sees, and a line of text is not it.
 	ok(state, rootSession, "shutdown", {}, "shutdown")
 	ok(state, rootSession, "reboot", {}, "reboot")
-	eq("restart is reboot under its other name",
-		select(3, exec(state, rootSession, "restart")), "reboot")
+	-- And `restart`, which was here until SYSTEM_VERSION 16, is gone: no Unix ever
+	-- had one, and the two real spellings are the two lines above.
+	bad(state, rootSession, "restart", "restart: command not found")
 
 	-- Root's alone, and each refusal wears the name that was typed.
 	bad(state, admin, "shutdown", "shutdown: permission denied")
 	bad(state, admin, "reboot", "reboot: permission denied")
-	bad(state, admin, "restart", "restart: permission denied")
 
 	-- `now` is what "no time at all" means, so the two lines are one order.
 	ok(state, rootSession, "shutdown now", {}, "shutdown")
@@ -2520,7 +2517,6 @@ do
 	bad(state, rootSession, "shutdown -h now extra",
 		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c")
 	bad(state, rootSession, "reboot -f", "reboot: usage: reboot")
-	bad(state, rootSession, "restart now", "restart: usage: restart")
 	bad(state, rootSession, "halt now", "halt: usage: halt")
 	bad(state, admin, "halt", "halt: permission denied")
 
@@ -2810,7 +2806,6 @@ local function rung2cState()
 	bin.children.sudo = nil
 	bin.children.shutdown = nil
 	bin.children.reboot = nil
-	bin.children.restart = nil
 	bin.children.cat = nil
 	state.fs.children.etc.children.sudoers = nil
 	state.fs.children.home.children.admin.children =
@@ -2838,7 +2833,6 @@ do
 	check("sudo among them", state.fs.children.bin.children.sudo ~= nil)
 	check("shutdown too", state.fs.children.bin.children.shutdown ~= nil)
 	check("reboot too", state.fs.children.bin.children.reboot ~= nil)
-	check("restart too", state.fs.children.bin.children.restart ~= nil)
 	-- A machine behind on its contents is topped up whole: there is no telling
 	-- a command deleted last week from one this build added, so `cat` comes
 	-- back too. It is the LAST time that happens to this machine.
@@ -3143,7 +3137,7 @@ do
 	eq("but not the directory: the listing did not change",
 		CeroSecOS.mtimeOf(home), FIXED)
 
-	okAt(state, admin, 'write a.txt "hello"', {})
+	okAt(state, admin, 'echo "hello" > a.txt', {})
 	eq("a write moves it", CeroSecOS.mtimeOf(home.children["a.txt"]), FIXED)
 	okAt(state, admin, "echo more >> a.txt", {}, ENV2)
 	eq("an append moves it", CeroSecOS.mtimeOf(home.children["a.txt"]), LATER)
@@ -3176,7 +3170,7 @@ do
 	-- A machine with no clock mutates exactly as it did before this rung: the
 	-- write happens, nothing is stamped, and nothing already stamped moves.
 	local was = CeroSecOS.mtimeOf(home.children.d.children["moved.txt"])
-	local r = exec(state, admin, 'write d/moved.txt "no clock here"', nil)
+	local r = exec(state, admin, 'echo "no clock here" > d/moved.txt', nil)
 	eq("the write still happens", r, true)
 	eq("and leaves the stamp where it was",
 		CeroSecOS.mtimeOf(home.children.d.children["moved.txt"]), was)
@@ -3275,7 +3269,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	okAt(state, admin, "touch notes.txt", {})
-	okAt(state, admin, 'write notes.txt "hello"', {})
+	okAt(state, admin, 'echo "hello" > notes.txt', {})
 	okAt(state, admin, "mkdir sub", {}, ENV2)
 
 	okAt(state, admin, "ls -l", {
@@ -3321,7 +3315,7 @@ do
 
 	-- And the numbers MOVE with the disk, which is the only thing that makes
 	-- them numbers and not decoration.
-	okAt(state, admin, 'write big.txt "' .. string.rep("x", 1000) .. '"', {})
+	okAt(state, admin, 'echo "' .. string.rep("x", 1000) .. '" > big.txt', {})
 	local after = okAt(state, admin, "df", nil)
 	local usedBefore = tonumber(string.match(lines[2], "^%a+%s+%d+%s+(%d+)"))
 	local usedAfter = tonumber(string.match(after[2], "^%a+%s+%d+%s+(%d+)"))
@@ -3347,7 +3341,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local text = "alpha beta\ngamma\nAlpha two\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"
-	okAt(state, admin, 'write a.txt "' .. text .. '"', {})
+	okAt(state, admin, 'echo "' .. text .. '" > a.txt', {})
 
 	-- grep: a plain substring, and the flags.
 	okAt(state, admin, "grep alpha a.txt", { "alpha beta" })
@@ -3360,7 +3354,7 @@ do
 	eq("no hit is a refusal", miss.ok, false)
 	eq("and says nothing", #miss.lines, 0)
 	-- A pattern is not a pattern: the dot is a dot.
-	okAt(state, admin, 'write dots.txt "a.b\naxb"', {})
+	okAt(state, admin, 'echo "a.b\naxb" > dots.txt', {})
 	okAt(state, admin, "grep a.b dots.txt", { "a.b" })
 	-- Two files, so the name goes in front.
 	okAt(state, admin, "cp a.txt b.txt", {})
@@ -3480,8 +3474,8 @@ do
 	local admin = open(state, "admin")
 	okAt(state, admin, "mkdir tree", {})
 	okAt(state, admin, "mkdir tree/inner", {})
-	okAt(state, admin, 'write tree/inner/deep.txt "buried"', {})
-	okAt(state, admin, 'write tree/top.txt "surface"', {})
+	okAt(state, admin, 'echo "buried" > tree/inner/deep.txt', {})
+	okAt(state, admin, 'echo "surface" > tree/top.txt', {})
 
 	badAt(state, admin, "cp tree copy", "cp: tree: is a directory")
 	okAt(state, admin, "cp -r tree copy", {}, ENV2)
@@ -3508,7 +3502,7 @@ do
 	-- written before the refusal.
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, "mkdir /home/admin/shut", {})
-	okAt(state, rootSession, 'write /home/admin/shut/secret.txt "his"', {})
+	okAt(state, rootSession, 'echo "his" > /home/admin/shut/secret.txt', {})
 	okAt(state, rootSession, "chmod 700 /home/admin/shut", {})
 	badAt(state, admin, "cp -r shut mine", "cp: shut: permission denied")
 	eq("and nothing was written",
@@ -3535,7 +3529,7 @@ do
 
 	-- The description is the FILE's: rewrite /bin/ls and man says what it says.
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, 'write /bin/ls "shows you things"', {})
+	okAt(state, rootSession, 'echo "shows you things" > /bin/ls', {})
 	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-1laACF] [path]" })
 	-- And a command that is gone has no manual.
 	okAt(state, rootSession, "rm /bin/ls", {})
@@ -3720,7 +3714,7 @@ do
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, "mkdir /home/carl", {})
 	okAt(state, rootSession, "chmod 700 /home/carl", {})
-	okAt(state, rootSession, "write /home/carl/notes.txt \"keep me\"", {})
+	okAt(state, rootSession, "echo \"keep me\" > /home/carl/notes.txt", {})
 
 	okAt(state, rootSession, "useradd carl", {
 		"useradd: carl: created",
@@ -3732,7 +3726,7 @@ do
 	eq("and everything in it", home.children["notes.txt"].data, "keep me")
 
 	-- A file at that name is not a home, and the refusal says so.
-	okAt(state, rootSession, "write /home/dave hello", {})
+	okAt(state, rootSession, "echo hello > /home/dave", {})
 	badAt(state, rootSession, "useradd dave", "useradd: /home/dave: not a directory")
 	eq("and no account was made", CeroSecOS.getUser(state, "dave"), nil)
 end
@@ -3802,7 +3796,7 @@ do
 		"drwxr-x---  bob    bob         0  Jul  8 14:32  bob")
 
 	-- With -r it goes, and everything under it.
-	okAt(state, rootSession, "write /home/carl/notes.txt hello", {})
+	okAt(state, rootSession, "echo hello > /home/carl/notes.txt", {})
 	okAt(state, rootSession, "userdel -r carl", { "userdel: carl: removed" })
 	eq("the account is gone", CeroSecOS.getUser(state, "carl"), nil)
 	eq("and so is the home", CeroSecOS.systemNode(state, "/home/carl"), nil)
@@ -4386,7 +4380,7 @@ do
 	okAt(state, session, "cat /dev/light1", { "off" }, env)
 
 	-- Any command's output can be the order, not only echo's.
-	okAt(state, session, "write /root/v.txt lock", {}, env)
+	okAt(state, session, "echo lock > /root/v.txt", {}, env)
 	okAt(state, session, "cat /root/v.txt > /dev/lock1", {}, env)
 	okAt(state, session, "cat /dev/lock1", { "locked" }, env)
 end
@@ -4526,7 +4520,6 @@ do
 	badAt(state, session, "edit /dev/light0", "edit: /dev/light0: is a device", env)
 	badAt(state, session, "chown admin /dev/light0", "chown: /dev/light0: is a device", env)
 	badAt(state, session, "touch /dev/light0", "touch: /dev/light0: is a device", env)
-	badAt(state, session, "write /dev/light0 on", "write: /dev/light0: is a device", env)
 	badAt(state, session, "head /dev/light0", "head: /dev/light0: is a device", env)
 	badAt(state, session, "tail /dev/light0", "tail: /dev/light0: is a device", env)
 	badAt(state, session, "wc /dev/light0", "wc: /dev/light0: is a device", env)
@@ -4538,7 +4531,7 @@ do
 	badAt(state, session, "touch /dev/mine", "/dev: read-only", env)
 	badAt(state, session, "edit /dev/mine", "/dev: read-only", env)
 	badAt(state, session, "echo hi > /dev/mine", "echo: /dev/mine: read-only", env)
-	okAt(state, session, "write /root/x.txt hi", {}, env)
+	okAt(state, session, "echo hi > /root/x.txt", {}, env)
 	badAt(state, session, "cp /root/x.txt /dev/mine", "cp: /dev/mine: read-only", env)
 	badAt(state, session, "mv /root/x.txt /dev/mine", "mv: /dev/mine: read-only", env)
 	check("and nothing landed there",
@@ -5500,10 +5493,10 @@ do
 	okAt(state, bobS, "cat /home/admin/notes.txt", { "shared" })
 	badAt(state, kateS, "cat /home/admin/notes.txt",
 		"cat: /home/admin/notes.txt: permission denied")
-	badAt(state, bobS, "write /home/admin/notes.txt x",
-		"write: /home/admin/notes.txt: permission denied")
+	badAt(state, bobS, "echo x > /home/admin/notes.txt",
+		"echo: /home/admin/notes.txt: permission denied")
 	okAt(state, rootSession, "chmod 660 /home/admin/notes.txt", {})
-	okAt(state, bobS, "write /home/admin/notes.txt mine", {})
+	okAt(state, bobS, "echo mine > /home/admin/notes.txt", {})
 	okAt(state, kateS, "ls /home/admin", nil)
 end
 
@@ -6636,7 +6629,7 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	ok(state, admin, "write notes.txt hello", {})
+	ok(state, admin, "echo hello > notes.txt", {})
 	local node = state.fs.children.home.children.admin.children["notes.txt"]
 
 	-- The three digits are taken apart and put back together, so a letter
@@ -7210,7 +7203,7 @@ do
 	badAt(state, admin, "man telnet", "man: telnet: no manual entry", env)
 	-- A word with no Lua behind it is not a command, which is the other half of
 	-- the same rule.
-	okAt(state, root, 'write /bin/telnet "not yet"', {}, env)
+	okAt(state, root, 'echo "not yet" > /bin/telnet', {}, env)
 	okAt(state, root, "chmod 755 /bin/telnet", {}, env)
 	badAt(state, admin, "telnet", "telnet: command not found", env)
 
@@ -7260,10 +7253,10 @@ do
 		.. " echo edit false grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd mount mv newfs"
 		.. " passwd ping"
-		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"
+		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
 		.. " sleep sort su sudo tail test touch true umount uniq useradd userdel usermod"
-		.. " wc which who whoami write"
+		.. " wc which who whoami"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -9341,7 +9334,7 @@ do
 	admin.shvars = CeroSecOS.loginVars("/home/admin")
 
 	ok(state, admin, "mkdir /home/admin/bin", {})
-	ok(state, admin, 'write /home/admin/bin/hello "echo hello from bin"', {})
+	ok(state, admin, 'echo "echo hello from bin" > /home/admin/bin/hello', {})
 	ok(state, admin, "chmod 755 /home/admin/bin/hello", {})
 
 	-- Not on the PATH yet: a file with x on it is not a command until a
@@ -9369,7 +9362,7 @@ do
 		okAt(state, admin, "which ls")[1], "/bin/ls")
 	-- With x on it, the one in front wins -- and it is a script, so its text is
 	-- what runs and the real ls is shadowed.
-	ok(state, admin, 'write /home/admin/bin/ls "echo mine"', {})
+	ok(state, admin, 'echo "echo mine" > /home/admin/bin/ls', {})
 	ok(state, admin, "chmod 755 /home/admin/bin/ls", {})
 	ok(state, admin, "ls /etc/motd", { "mine" })
 	ok(state, admin, "which ls", { "/home/admin/bin/ls" })
@@ -9510,15 +9503,28 @@ end
 --
 -- A link is a node holding a PATH. getNode follows one and nothing else in the
 -- engine does, so what is tested here is that every command inherited the right
--- behaviour: the ones that act on the FILE follow, and the four that act on the
--- LINK -- ls -l, rm, mv, readlink -- do not.
+-- behaviour: the ones that act on the FILE follow, and the three that act on the
+-- LINK -- ls -l, rm, mv -- do not.
 --
+-- What a link POINTS AT is the arrow `ls -l` draws and nothing else: readlink(1)
+-- is a 1997 command, four years late for this machine, and was retired at
+-- SYSTEM_VERSION 16. So every question of the form "what does this point at" is
+-- asked here the way a survivor asks it.
+--
+
+-- The target off the arrow, or nil for a name that has none. Through `ls -l`,
+-- which is the whole point: the answer has to be legible ON THE SCREEN.
+local function pointsAt(state, session, path)
+	local ok_, lines = exec(state, session, "ls -l " .. path)
+	if not ok_ or #lines ~= 1 then return nil end
+	return string.match(lines[1], " %-> (.+)$")
+end
 
 do
 	local state = fresh()
 	local admin = open(state, "admin")
 
-	ok(state, admin, 'write notes.txt "hello there"', {})
+	ok(state, admin, 'echo "hello there" > notes.txt', {})
 	ok(state, admin, "ln -s notes.txt link", {})
 
 	-- The node itself: a path, as typed, and 777 that means nothing.
@@ -9531,11 +9537,13 @@ do
 
 	-- Reading through it is reading the file.
 	ok(state, admin, "cat link", { "hello there" })
-	ok(state, admin, "readlink link", { "notes.txt" })
-	-- A name that is not a link is not an error and is not an answer either.
-	local silent = expect(state, admin, "readlink notes.txt", false, {})
-	eq("readlink says nothing about a file", #silent, 0)
-	badAt(state, admin, "readlink nosuch", "readlink: nosuch: no such file")
+	eq("and the arrow says what it points at", pointsAt(state, admin, "link"), "notes.txt")
+	-- A name that is not a link has no arrow, which is the honest answer: there is
+	-- nothing to point at.
+	eq("a file has no arrow", pointsAt(state, admin, "notes.txt"), nil)
+	badAt(state, admin, "ls -l nosuch", "ls: nosuch: no such file")
+	-- And the name that used to answer this is not on the machine at all.
+	badAt(state, admin, "readlink link", "readlink: command not found")
 
 	-- What ls says about one.
 	local long = okAt(state, admin, "ls -l link")
@@ -9551,7 +9559,7 @@ do
 	ok(state, admin, "ls link", { "link" })
 
 	-- Writing through it writes the file, and the link is untouched.
-	ok(state, admin, 'write link "written through"', {})
+	ok(state, admin, 'echo "written through" > link', {})
 	ok(state, admin, "cat notes.txt", { "written through" })
 	eq("the link is still a link",
 		CeroSecOS.getNode(state, admin, "/home/admin/link", true).type, "link")
@@ -9564,7 +9572,7 @@ do
 
 	-- Moving one moves the LINK.
 	ok(state, admin, "mv link moved", {})
-	ok(state, admin, "readlink moved", { "notes.txt" })
+	eq("and the arrow moved with it", pointsAt(state, admin, "moved"), "notes.txt")
 	check("and nothing happened to the file",
 		CeroSecOS.getNode(state, admin, "/home/admin/notes.txt") ~= nil)
 
@@ -9580,7 +9588,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	ok(state, admin, "mkdir papers", {})
-	ok(state, admin, 'write papers/one.txt "first"', {})
+	ok(state, admin, 'echo "first" > papers/one.txt', {})
 	ok(state, admin, "ln -s papers p", {})
 
 	ok(state, admin, "cat p/one.txt", { "first" })
@@ -9596,7 +9604,7 @@ do
 	ok(state, admin, "cd ..", {})
 	ok(state, admin, "pwd", { "/home/admin" })
 	-- And a write through it lands in the real directory.
-	ok(state, admin, 'write p/two.txt "second"', {})
+	ok(state, admin, 'echo "second" > p/two.txt', {})
 	ok(state, admin, "ls papers", { "one.txt  two.txt" })
 end
 
@@ -9609,7 +9617,8 @@ do
 	-- somebody meant to make, and it says so the moment it is used.
 	badAt(state, admin, "cat dangle", "cat: dangle: no such file")
 	badAt(state, admin, "cd dangle", "cd: dangle: no such file")
-	ok(state, admin, "readlink dangle", { "nowhere" })
+	eq("and the arrow still says where it was aimed",
+		pointsAt(state, admin, "dangle"), "nowhere")
 	local shown = okAt(state, admin, "ls -l dangle")
 	eq("ls -l still describes it", shown[1],
 		"lrwxrwxrwx  admin  admin   dangle -> nowhere")
@@ -9624,7 +9633,7 @@ do
 	ok(state, admin, "ln -s self self", {})
 	badAt(state, admin, "cat self", "cat: self: too many levels of symbolic links")
 	-- ...and the LINKS are still readable, which is what lets somebody fix it.
-	ok(state, admin, "readlink a", { "b" })
+	eq("the arrow is still legible", pointsAt(state, admin, "a"), "b")
 	ok(state, admin, "rm a", {})
 	badAt(state, admin, "cat b", "cat: b: no such file")
 
@@ -9633,7 +9642,7 @@ do
 	-- Exactly the ceiling's worth of links, so the last one is the last hop that
 	-- is allowed and the one hung in front of it is one too many.
 	for i = 1, CeroSecOS.MAX_LINK_HOPS do names[i] = "h" .. i end
-	ok(state, admin, 'write end.txt "the end"', {})
+	ok(state, admin, 'echo "the end" > end.txt', {})
 	ok(state, admin, "ln -s end.txt " .. names[1], {})
 	for i = 2, #names do
 		ok(state, admin, "ln -s " .. names[i - 1] .. " " .. names[i], {})
@@ -9658,7 +9667,8 @@ do
 	ok(state, root, "ln -s /root/secret.txt /home/bob/peek", {})
 	local seen = CeroSecOS.getNode(state, bob, "/home/bob/peek", true)
 	eq("bob can see the link itself", seen.type, "link")
-	ok(state, bob, "readlink /home/bob/peek", { "/root/secret.txt" })
+	eq("and he can read the arrow", pointsAt(state, bob, "/home/bob/peek"),
+		"/root/secret.txt")
 	-- ...and it buys him nothing at all: /root is 700.
 	badAt(state, bob, "cat /home/bob/peek", "cat: /home/bob/peek: permission denied")
 	ok(state, root, "cat /home/bob/peek", { "the code is 1234" })
@@ -9712,7 +9722,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	ok(state, admin, "mkdir tree", {})
-	ok(state, admin, 'write tree/real.txt "body"', {})
+	ok(state, admin, 'echo "body" > tree/real.txt', {})
 	ok(state, admin, "ln -s real.txt tree/also", {})
 
 	local before, bytesBefore = CeroSecOS.usage(state)
@@ -9747,13 +9757,13 @@ do
 	-- name too -- which isValidName refuses, the way it refuses one everywhere.
 	badAt(state, admin, "ln -s x -bad", "ln: -bad: invalid name")
 	badAt(state, admin, "ln -z x y", "ln: -z: unknown option")
-	ok(state, admin, 'write taken.txt "x"', {})
+	ok(state, admin, 'echo "x" > taken.txt', {})
 	badAt(state, admin, "ln -s x taken.txt", "ln: taken.txt: file exists")
 	-- A directory as the second argument puts the link inside it, under the
 	-- target's own last name.
 	ok(state, admin, "mkdir here", {})
 	ok(state, admin, "ln -s /bin/ls here", {})
-	ok(state, admin, "readlink here/ls", { "/bin/ls" })
+	eq("and the arrow names the target", pointsAt(state, admin, "here/ls"), "/bin/ls")
 	-- /dev takes nothing, links included.
 	badAt(state, admin, "ln -s /bin/ls /dev/ls", CeroSecOS.DEV_PATH .. ": read-only")
 	-- And a line with no -s in it is not a line this machine can carry out.
@@ -9799,7 +9809,6 @@ do
 	ok(state, admin, "ls -l /dev/null", { "crw-rw-rw-  root  root  null" })
 	badAt(state, admin, "rm /dev/null", "rm: /dev/null: is a device")
 	badAt(state, root, "rm /dev/null", "rm: /dev/null: is a device")
-	badAt(state, admin, "write /dev/null hi", "write: /dev/null: is a device")
 	badAt(state, admin, "cp /dev/null copy", "cp: /dev/null: is a device")
 	badAt(state, admin, "mv /dev/null moved", "mv: /dev/null: is a device")
 	-- And nothing can be made beside it: /dev takes nothing.
@@ -9877,8 +9886,8 @@ do
 	-- and there is no fourth digit anywhere on this machine to carry it.
 	eq("the mode reads as it is written", CeroSecOS.permString(tmp), "drwxrwxrwx")
 
-	ok(state, admin, 'write /var/tmp/mine.txt "admin here"', {})
-	ok(state, bob, 'write /var/tmp/bobs.txt "bob here"', {})
+	ok(state, admin, 'echo "admin here" > /var/tmp/mine.txt', {})
+	ok(state, bob, 'echo "bob here" > /var/tmp/bobs.txt', {})
 	-- Everybody may read what is there, which is what a scratch directory is.
 	ok(state, bob, "cat /var/tmp/mine.txt", { "admin here" })
 
@@ -9909,7 +9918,7 @@ do
 	-- A directory of somebody's own in there is his, and the rule is about the
 	-- NODE's owner and not about what is under it.
 	ok(state, admin, "mkdir /var/tmp/work", {})
-	ok(state, admin, 'write /var/tmp/work/a.txt "x"', {})
+	ok(state, admin, 'echo "x" > /var/tmp/work/a.txt', {})
 	badAt(state, bob, "rm -r /var/tmp/work", "rm: /var/tmp/work: permission denied")
 	ok(state, admin, "rm -r /var/tmp/work", {})
 
@@ -9917,7 +9926,7 @@ do
 	-- is a directory he may delete from, which is what 777 means everywhere else.
 	ok(state, root, "mkdir /shared", {})
 	ok(state, root, "chmod 777 /shared", {})
-	ok(state, admin, 'write /shared/mine.txt "admin here"', {})
+	ok(state, admin, 'echo "admin here" > /shared/mine.txt', {})
 	ok(state, bob, "rm /shared/mine.txt", {})
 	eq("only the one directory is sticky", CeroSecOS.isSticky("/shared"), false)
 	eq("and it is the one", CeroSecOS.isSticky(CeroSecOS.TMP_PATH), true)

@@ -667,9 +667,10 @@ take.
   root@ksp-04-11:~# shutdown
 
 shutdown switches the machine off: the screen goes, the glow goes, every
-window open on it closes. reboot, and its exact twin restart, switch it
-off and straight back on, and everybody watching sees the firmware count
-the memory out loud again and lands at a fresh login: prompt.
+window open on it closes. reboot switches it off and straight back on, and
+everybody watching sees the firmware count the memory out loud again and
+lands at a fresh login: prompt. shutdown -r now says the same thing the
+long way.
 
 halt is the older name for shutdown -h now and does the same thing.
 
@@ -1769,7 +1770,6 @@ Groups, and who may read what.
   shutdown [-h|-r] [now|+N] | shutdown -c
   halt
   reboot
-  restart
 
 The building.
 

@@ -77,13 +77,11 @@ Commands:
 | `pwd` | print the working directory |
 | `cat <file>...` | print a file |
 | `edit <file>` | open the file in the editor |
-| `write <file> <text>` | write text to a file (used by the editor's save) |
 | `touch <file>` | create an empty file, or move an existing one's date to now |
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
 | `ln -s <target> <name>` | make a symbolic link; there are no hard links here |
-| `readlink <name>` | print what a link points at, and nothing at all for anything else |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
 | `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
@@ -118,7 +116,7 @@ Commands:
 | `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
 | `shutdown -c` | call a pending one off |
 | `halt` | `shutdown -h now` under its older name (root only) |
-| `reboot` / `restart` | switch it off and straight back on (root only) |
+| `reboot` | switch it off and straight back on (root only); `shutdown -r now` is the long way |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
@@ -181,11 +179,11 @@ special — there is no globbing here for one to hide from.
 **Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
 was typed. Everything that acts on a *file* follows it — `cat`, `cp`, `chmod`, a
 redirect — and the permissions are the target's, so a link to something you may not
-read buys you nothing. The four that act on the *link* do not — `-l` and `-F` are the two flags that ask
+read buys you nothing. The three that act on the *link* do not — `-l` and `-F` are the two flags that ask
 `ls` about the link itself, which is POSIX's rule for both: `ls -l` draws it
-(`lrwxrwxrwx  admin  admin   log -> /var/log/cron`), `ls -F` marks it `@`, `rm`
-takes the link away and leaves the file, `mv` moves the link, and `readlink` prints
-what it holds. A link to a name that is not there is allowed and answers
+(`lrwxrwxrwx  admin  admin   log -> /var/log/cron`) and that arrow is **where you
+read what a link points at**, `ls -F` marks it `@`, `rm` takes the link away and
+leaves the file, and `mv` moves the link. A link to a name that is not there is allowed and answers
 `no such file` on use; a loop of them answers
 `too many levels of symbolic links` after eight hops. There are **no hard links**:
 two names for one node would be one table under two keys, and the game copies the
@@ -213,6 +211,10 @@ box stops accepting new keystrokes at 2000 characters typed in one sitting, thou
 bigger file still opens and still saves.
 
 `passwd` asks for the old password (skipped for root), the new one, and a retype.
+Putting text in a file is `echo text > file` — a redirection, the way it has
+always been; there is no command that writes a file for you, and `write(1)` on a
+real Unix is what puts a line on somebody else's terminal.
+
 `mkpasswd` runs the same hashing the passwords use on any text you give it, so you
 can see what a password would look like stored. It is not a Unix command: no 1993
 system shipped one, and the manual's *What is not Unix here* page says so.

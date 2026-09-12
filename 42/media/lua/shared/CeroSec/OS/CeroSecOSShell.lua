@@ -695,11 +695,9 @@ CeroSecOS.COMMAND_INFO = {
 	passwd   = { desc = "change a password", usage = "passwd [user]" },
 	pwd      = { desc = "print the working directory", usage = "pwd" },
 	reboot   = { desc = "restart the machine", usage = "reboot" },
-	restart  = { desc = "restart the machine", usage = "restart" },
 	ping     = { desc = "see whether a machine answers", usage = "ping <host|address>" },
 	printf   = { desc = "print a formatted string", usage = "printf <format> [arg...]" },
 	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
-	readlink = { desc = "print what a link points at", usage = "readlink <name>" },
 	rcp      = { desc = "copy a file to or from another machine",
 		usage = "rcp <src> <dst>, one is <host|address>:<path>" },
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },
@@ -743,7 +741,6 @@ CeroSecOS.COMMAND_INFO = {
 	which    = { desc = "find a command on PATH", usage = "which <name>" },
 	who      = { desc = "list who is logged in here", usage = "who [am i]" },
 	whoami   = { desc = "print the current user", usage = "whoami" },
-	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
 }
 
 --
@@ -762,12 +759,21 @@ CeroSecOS.COMMAND_INFO = {
 --
 --   useradd, userdel, usermod  the System V names, 1989
 --   mkpasswd                   the old `hash`, renamed
+--   echo ... > file            the old `write`. The real write(1) MESSAGES another
+--                              account; putting text in a file has always been a
+--                              redirection, and this machine has had one all along
+--   ln -s, and `ls -l`         the old `readlink`, which is 1997 -- a decade late.
+--                              What a link points at is in the arrow `ls -l` draws
+--   reboot, shutdown -r        the old `restart`, which was invented here
 --
 CeroSecOS.RETIRED_BIN = {
 	adduser  = "add an account",
 	deluser  = "remove an account",
 	gpasswd  = "add or drop a group member",
 	hash     = "hash a string the way a password is",
+	readlink = "print what a link points at",
+	restart  = "restart the machine",
+	write    = "write a line into a file",
 }
 
 -- The two halves of an entry, read through a function and never off the table:
@@ -1545,17 +1551,11 @@ commands.ln = function(state, session, args, env)
 	return true, {}
 end
 
--- readlink: what the link holds, as it was typed. Nothing at all for a name that
--- is not a link, and unsuccessful with it -- the same silence `which` keeps about
--- a command it cannot find, and for the same reason: it is a question, and the
--- answer to "what does this point at" for a file is not a sentence.
-commands.readlink = function(state, session, args, env)
-	if #args ~= 2 then return usage("readlink") end
-	local node, reason = CeroSecOS.getNode(state, session, args[2], true)
-	if node == nil then return fail("readlink", args[2], reason) end
-	if not CeroSecOS.isLink(node) then return false, {} end
-	return true, { node.target or "" }
-end
+-- What a link points at is `ls -l`'s arrow and nothing else here. readlink(1) is
+-- a 1997 command -- GNU shellutils wrote it, four years after this machine --
+-- and a 1993 survivor read the arrow: `ls -l notes` prints
+-- "lrwxrwxrwx  admin  admin  notes -> /root/real.txt". So there is no command of
+-- that name (see CeroSecOS.RETIRED_BIN), and linkLine above is where the answer is.
 
 -- chmod. An octal mode, or a symbolic one applied to the mode the file already
 -- wears. Which of the two it is is decided BEFORE the path is looked at, so
@@ -1628,14 +1628,13 @@ commands.chgrp = function(state, session, args, env)
 	return true, {}
 end
 
--- Internal: how the editor saves. The editor UI is not part of the core.
-commands.write = function(state, session, args, env)
-	if #args ~= 3 then return usage("write") end
-	local done, reason =
-		CeroSecOS.writeFile(state, session, args[2], args[3], false, CeroSecOS.clockOf(env))
-	if done == nil then return fail("write", args[2], reason) end
-	return true, {}
-end
+-- Putting text in a file is `echo text > file`, which is a REDIRECTION and is the
+-- shell's own half of a line -- see CeroSecOS.writeRedirect, which every ">" on
+-- this machine goes through, the editor's save included (CeroSecOS.writeFile under
+-- it). There was a `write <file> <text>` command here until SYSTEM_VERSION 16 and
+-- it was a double mistake: nothing in Unix has ever written a file that way, and
+-- write(1) is the command that puts a line on ANOTHER ACCOUNT's terminal. Keeping
+-- the name for the wrong job would have been worse than not having it.
 
 --
 -- The clock, and the disk
@@ -2331,10 +2330,9 @@ commands.reboot = powerCommand("reboot", "reboot")
 -- halt, the other name shutdown has had since the seventies: `shutdown -h now`
 -- with nothing to type in front of it.
 commands.halt = powerCommand("halt", "shutdown")
--- The same order under the other name it has been called by since the eighties.
--- Its own executable and its own refusal line, so `restart` never answers as
--- something the player did not type.
-commands.restart = powerCommand("restart", "reboot")
+-- And there is no `restart`. It was here until SYSTEM_VERSION 16 and it was
+-- invented: no Unix has ever had one. The two spellings a 1993 machine had are
+-- `reboot` and `shutdown -r now`, and both are above.
 
 --
 -- Interactive commands.

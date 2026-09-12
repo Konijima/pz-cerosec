@@ -1005,17 +1005,18 @@ of another file, and everything that opens it follows the sign.
 Try it.
 
   admin@ksp-04-11:~$ ln -s note.txt shortcut
-  admin@ksp-04-11:~$ readlink shortcut
-  note.txt
   admin@ksp-04-11:~$ cat shortcut
   hello
 
 ln -s makes one: the real file first, the new short name second. Always
-include the -s. readlink says what a link points at without following it.
+include the -s.
 
-Two flags ask about the link itself rather than the file. ls -l draws the
-arrow and starts the line with an l; ls -F marks it with an at-sign:
+Two flags ask about the link itself rather than the file, which is how you
+see where it points. ls -l draws the arrow and starts the line with an l;
+ls -F marks it with an at-sign:
 
+  admin@ksp-04-11:~$ ls -l shortcut
+  lrwxrwxrwx  admin  admin   shortcut -> note.txt
   admin@ksp-04-11:~$ ls -F
   note.txt   notes/     shortcut@
 
@@ -1249,9 +1250,9 @@ with it, and every window open on the machine closes. What was on the
 drive survives untouched. What was on the glass, and anything unsaved in
 the editor, does not.
 
-reboot, and its exact twin restart, switch it off and straight back on:
-everybody watching sees the firmware count its memory out loud again and
-lands at a fresh login:.
+reboot switches it off and straight back on: everybody watching sees the
+firmware count its memory out loud again and lands at a fresh login:.
+shutdown -r now is the longer way of saying the same thing.
 
 As admin you get "shutdown: permission denied", which is not a fault. The
 switch on the case works for everybody, and is what you should use.]],
@@ -1368,8 +1369,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2410  63126    4%
-  nodes         512     93    419   19%
+  hda         65536   2340  63196    4%
+  nodes         512     90    422   18%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1447,7 +1448,6 @@ Making, copying, destroying.
   rm [-r] <path>...
   echo [text...]
   edit <file>
-  write <file> <text>
 
 Reading a file without opening it.
 
@@ -1487,7 +1487,6 @@ The clock, and waiting.
 Second names, and where commands come from.
 
   ln -s <target> <name>
-  readlink <name>
   which <name>
   type <name>]],
 
@@ -1495,7 +1494,6 @@ Second names, and where commands come from.
 
   shutdown [-h|-r] [now|+N] | shutdown -c
   reboot
-  restart
 
 The numbers, all in one place.
 

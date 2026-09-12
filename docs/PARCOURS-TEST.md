@@ -234,7 +234,7 @@ passé réellement, même quand ça correspond au texte attendu.
 70. `admin` : `sudo groupadd crew`, `sudo gpasswd -a bob crew`,
     `mkdir /home/admin/shared`, `chgrp crew /home/admin/shared`,
     `chmod 770 /home/admin/shared`, `chmod 755 /home/admin`. `bob` :
-    `cd /home/admin/shared`, `write note.txt hi`, `ls -l` → le fichier est là,
+    `cd /home/admin/shared`, `echo hi > note.txt`, `ls -l` → le fichier est là,
     propriété de `bob`, groupe `bob`. `admin` : `cat shared/note.txt` → `hi`. [ ]
 71. `sudo useradd kate`, se reconnecter en `kate`, `ls /home/admin/shared` →
     `permission denied` (troisième compte, pas membre). [ ]
@@ -260,7 +260,7 @@ passé réellement, même quand ça correspond au texte attendu.
     refusée) ; même refus pour un nom commençant par un tiret ou dépassant
     seize caractères. [ ]
 78. `root`, `rm /bin/ls` → `ls: command not found`, `help` ne liste plus `ls`.
-    `write /bin/ls "list a directory"`, `chmod 755 /bin/ls` → `ls` refonctionne. [ ]
+    `echo "list a directory" > /bin/ls`, `chmod 755 /bin/ls` → `ls` refonctionne. [ ]
 79. `root`, garder un fichier sous `/home/admin` puis `rm -r /bin` → `help`
     répond `help: no commands in /bin: the system is damaged.` puis
     `help: switch the computer off and on to repair it.` ; `exit` fonctionne
@@ -988,9 +988,11 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 196. Les liens. `echo bonjour > notes.txt`, `ln -s notes.txt lien`, puis
      `cat lien` → `bonjour` ; `ls -l` → une ligne
      `lrwxrwxrwx  admin  admin   lien -> notes.txt` ; `ls -F` → `lien@` ;
-     `readlink lien` → `notes.txt`. Puis `rm lien` → `notes.txt` est toujours
+     La flèche de `ls -l` est **la** façon de voir la cible : il n'y a pas de
+     `readlink` sur cette machine (`readlink lien` →
+     `readlink: command not found`). Puis `rm lien` → `notes.txt` est toujours
      là (`cat notes.txt`). Refaire le lien, `mv lien deplace`,
-     `readlink deplace` → toujours `notes.txt`. `ln -s rien casse` puis
+     `ls -l deplace` → la flèche pointe toujours sur `notes.txt`. `ln -s rien casse` puis
      `cat casse` → `casse: no such file`, mais `ls -l casse` montre encore la
      flèche. `ln -s a b` et `ln -s b a` puis `cat a` →
      `too many levels of symbolic links`. Enfin `ln notes.txt dur` (sans `-s`)

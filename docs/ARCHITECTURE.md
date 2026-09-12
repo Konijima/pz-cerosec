@@ -398,7 +398,9 @@ waves really did add exactly what it says; read it as history, not as a claim th
 directory a disk is mounted on: `/mnt`, root's at 755 and shipped empty. The device
 it is mounted *from* is not seeded and never could be — `/dev/fd0` exists for the
 length of one command and only while there is a disk in the slot.
-`SYSTEM_VERSION` 11 seeds `/bin/which`, `/bin/ln` and `/bin/readlink` — `type` is a
+`SYSTEM_VERSION` 11 seeds `/bin/which`, `/bin/ln` and `/bin/readlink` (that last
+one **deleted again** at 16: readlink(1) is 1997, and the arrow `ls -l` draws is
+where a 1993 survivor reads a link) — `type` is a
 word the shell *is* and has no file — plus the two places the filesystem grew:
 `/dev/null`, which is the one device written to the disk and the one the `/dev` sweep
 leaves alone, and `/var/tmp`. `validate` accepts a device on a saved disk only when
@@ -704,7 +706,13 @@ version 8 ran on: `/bin/adduser`, `/bin/deluser`, `/bin/gpasswd` and `/bin/hash`
 `755`, the seeded description — because anything else at that name is a player's own
 work. It seeds `/bin/useradd`, `/bin/userdel`, `/bin/usermod` and `/bin/mkpasswd` in
 their place, and the `wheel` pair: the group itself, empty, and the `%wheel` line in
-`/etc/sudoers` (`CeroSecOS.ensureWheel`). Those two are the only **lines** any top-up
+`/etc/sudoers` (`CeroSecOS.ensureWheel`). It also deletes `/bin/readlink`,
+`/bin/restart` and `/bin/write`: readlink(1) is 1997; `restart` was invented here
+and the real spellings are `reboot` and `shutdown -r now`; and `write <file> <text>`
+was a double mistake — nothing in Unix writes a file that way (it is `echo text >
+file`, a redirection, and the shell has had one all along) and write(1) is the
+command that puts a line on another account's terminal. Those two wheel lines are
+the only **lines** any top-up
 has ever added to a file a player may have edited, and each is added once, only where
 its own line is missing, and never to a file that parses to nobody at all — that one
 is the BIOS' business, and a line added there would make the repair keep it for ever.

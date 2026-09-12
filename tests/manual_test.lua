@@ -908,7 +908,7 @@ do
 		"su", "sudo", "exit", "useradd", "userdel", "passwd", "id", "groups", "mkpasswd",
 		"groupadd", "groupdel", "usermod", "chmod", "chown", "chgrp",
 		"hostname", "df", "ps", "jobs", "kill", "fg",
-		"shutdown", "halt", "reboot", "restart",
+		"shutdown", "halt", "reboot",
 		"dev", "crontab", "mail",
 		"ifconfig", "ping", "ruptime", "rwho", "who", "last", "rlogin", "rsh", "rcp",
 	}
@@ -923,8 +923,8 @@ do
 	-- again is a card that has stopped being a second volume.
 	local NOT_VOLUME_TWO = {
 		"ls", "cat", "cd", "pwd", "mkdir", "touch", "cp", "mv", "rm", "echo",
-		"edit", "write", "head", "tail", "wc", "grep", "sort", "uniq",
-		"date", "sleep", "ln", "readlink", "which", "type", "man", "whoami",
+		"edit", "head", "tail", "wc", "grep", "sort", "uniq",
+		"date", "sleep", "ln", "which", "type", "man", "whoami",
 		"printf", "test", "true", "false", "wait", "sh", "clear", "help",
 	}
 	for i = 1, #NOT_VOLUME_TWO do
