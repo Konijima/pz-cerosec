@@ -1,5 +1,11 @@
 {
     "Tooltip_CeroSec_NoPower": "Cet ordinateur n'a pas de courant.",
     "Tooltip_CeroSec_NoAccess": "Impossible de se placer devant cet ordinateur.",
-    "Tooltip_CeroSec_TooHigh": "Cet ordinateur est trop haut pour l'atteindre."
+    "Tooltip_CeroSec_TooHigh": "Cet ordinateur est trop haut pour l'atteindre.",
+    "Tooltip_CeroSec_NeedScrewdriver": "Il vous faut un tournevis.",
+    "Tooltip_CeroSec_NeedSkill": "Électricité %1 requise.",
+    "Tooltip_CeroSec_NoFixture": "Ce module ne va pas ici.",
+    "Tooltip_CeroSec_NoLock": "Cette porte n'a pas de serrure à câbler.",
+    "Tooltip_CeroSec_ManyDoors": "Un ordinateur ne peut pas actionner une porte double ou de garage.",
+    "Tooltip_CeroSec_Fitted": "Il y en a déjà un."
 }

@@ -9,5 +9,8 @@
     "ContextMenu_CeroSec_Dev": "CeroSec (dev)",
     "ContextMenu_CeroSec_DevDebug": "Fenêtre de débogage",
     "ContextMenu_CeroSec_InsertFloppy": "Insérer une disquette",
-    "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette"
+    "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette",
+    "ContextMenu_CeroSec_Install": "Installer %1",
+    "ContextMenu_CeroSec_Remove": "Retirer %1",
+    "ContextMenu_CeroSec_Modules": "Matériel CeroSec"
 }

@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecModules"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSDev"
 require "CeroSec/SCeroSecSensors"
@@ -16,9 +17,22 @@ require "CeroSec/SCeroSecRadio"
 --
 -- What a machine can reach
 --
--- Its own building when its square has one -- every room of it -- and a radius
--- of ten tiles on the same z when it has not, which is what a computer standing
--- in a player-built base gets: a base has no building and no rooms.
+-- Nothing it is not WIRED to, which is rung 4f's whole change: a light switch is
+-- in /dev because somebody screwed a relay to it, a door because somebody fitted
+-- an operator, a strike or a magnetic contact, a window because somebody fitted
+-- a contact. The four modules, what each one buys and where they are kept are in
+-- CeroSecModules.lua (shared, because the right-click menu asks the same
+-- questions); the gate itself is `fittedOn` and `has` in classify, below.
+--
+-- The sandbox option CeroSec.HardwareRequired turns it off, and off is the world
+-- exactly as it was before this rung -- every door, window, lock and light of the
+-- building, with the same numbers -- which is why `fitted == nil` reads as "yes"
+-- everywhere rather than as a second code path.
+--
+-- And of what it is wired to: its own building when its square has one -- every
+-- room of it -- and a radius of ten tiles on the same z when it has not, which
+-- is what a computer standing in a player-built base gets: a base has no
+-- building and no rooms.
 --
 -- Nothing outside the loaded world exists. The game only keeps the chunks
 -- around the players (13x13 of 8 tiles) and there is no unload event, so a
@@ -186,13 +200,14 @@ CeroSecDevices.blinks = {}
 CeroSecDevices.MAP_MAX = 128
 
 -- The room a square is in, by its raw id ("kitchen", "office"), or nil.
+--
+-- Both of these moved to CeroSecModules (shared) at rung 4f and are forwarded
+-- here so that every call site below reads as it always did. They moved because
+-- the right-click menu asks the same two questions -- is this a door a lock
+-- means anything on? -- and a client cannot load a server file, and a rule
+-- written on both sides is a rule that drifts.
 local function roomName(square)
-	if square == nil then return nil end
-	local room = square:getRoom()
-	if room == nil then return nil end
-	local name = room:getName()
-	if type(name) ~= "string" or name == "" then return nil end
-	return name
+	return CeroSecModules.roomName(square)
 end
 
 --
@@ -213,11 +228,27 @@ local function doorDesc(door)
 	return here .. "-" .. there
 end
 
+-- open, smashed, barricaded, locked or unlocked -- and the ORDER is the door's,
+-- read the same way for the same reason (doorState, below).
+--
+-- Broken and boarded first: either of them is what a survivor needs to be told,
+-- and neither is something a latch has anything to say about. A smashed window
+-- has no sash left to be open and a boarded one cannot move, so neither of them
+-- is ever the sash's business either.
+--
+-- Then OPEN, ahead of the latch, exactly as a door puts `open` ahead of
+-- `locked`: a window a survivor has pushed up is open whatever its latch says,
+-- and the word that matters is the one about the hole in the wall. So `locked`
+-- and `unlocked` both mean shut, the way a door's `locked` means closed -- five
+-- words and not eight, because nobody needs to be told "open and unlocked".
+--
+-- IsOpen() is the call, the same name a door answers to
+-- (docs/notes/modules-proofs.md, 4), and it is what a magnetic contact on a
+-- window is FOR: the contact senses the sash, and now the device says so.
 local function windowState(win)
-	-- Broken and boarded first: either of them is what a survivor needs to be
-	-- told, and neither is something a lock has anything to say about.
 	if win:isSmashed() then return "smashed" end
 	if win:isBarricaded() then return "barricaded" end
+	if win:IsOpen() then return "open" end
 	if win:isLocked() then return "locked" end
 	return "unlocked"
 end
@@ -235,11 +266,7 @@ end
 -- tile flags say. The room test is the same reading doorDesc makes, so a device
 -- whose description says "exterior" is always one the lock means something on.
 local function doorLocks(door)
-	if door:isExterior() then return true end
-	local here = roomName(door:getSquare())
-	local there = roomName(door:getOppositeSquare())
-	if here == nil and there == nil then return false end
-	return here == nil or there == nil
+	return CeroSecModules.doorLocks(door)
 end
 
 -- One leaf of a double or a garage door. ToggleDoorSilent moves ONE object, and
@@ -252,10 +279,10 @@ end
 -- (media/lua/server/BuildingObjects/ISBuildUtil.lua:556, and :315 of
 -- ISDoubleDoor.lua for the double-door one). Both are public statics and both
 -- answer -1 for an object with no DOUBLE_DOOR / GARAGE_DOOR property on it.
+-- Moved to CeroSecModules with the two above and for the same reason: an
+-- operator is refused on a leaf of a garage door at the menu, by this test.
 local function isManyDoors(object)
-	if IsoDoor == nil then return false end
-	return IsoDoor.getDoubleDoorIndex(object) ~= -1
-		or IsoDoor.getGarageDoorIndex(object) ~= -1
+	return CeroSecModules.isManyDoors(object)
 end
 
 -- open, closed, or locked -- three words and not four, because locked implies
@@ -272,10 +299,33 @@ local function doorState(object, locks)
 	return "closed"
 end
 
+-- The hardware, when the sandbox option asks for any (CeroSecModules.required).
+-- A table of four booleans, empty when nothing is fitted, and nil -- meaning "do
+-- not ask" -- when the option is off, which is the whole of how the old world is
+-- kept: every branch below reads `fitted == nil` as "yes, of course".
+--
+-- Asked INSIDE each branch and never at the top of classify, because classify is
+-- asked about every object on every square of the building at every command --
+-- the walls, the floors, the furniture -- and only one in fifty of them is a
+-- thing a module goes on. Two Java calls apiece for the other forty-nine is a
+-- cost paid over and over for nothing.
+local function fittedOn(object)
+	if not CeroSecModules.required() then return nil end
+	return CeroSecModules.installedOn(object)
+end
+
+local function has(fitted, id)
+	return fitted == nil or fitted[id] == true
+end
+
 function CeroSecDevices.classify(object)
 	if object == nil then return nil end
 
 	if instanceof(object, "IsoLightSwitch") then
+		-- No relay, no light. Not a light switch that refuses: a light switch the
+		-- machine has never heard of, which is what an unwired one is.
+		local fitted = fittedOn(object)
+		if not has(fitted, "relay") then return nil end
 		return { {
 			kind = "light", side = "",
 			desc = roomName(object:getSquare()) or "exterior",
@@ -284,15 +334,21 @@ function CeroSecDevices.classify(object)
 	end
 
 	if instanceof(object, "IsoDoor") then
+		local fitted = fittedOn(object)
 		local side = object:getNorth() and "N" or "W"
 		local desc = doorDesc(object)
 		local locks = doorLocks(object)
 		local out = {}
-		if not isManyDoors(object) then
+		-- The operator is what MOVES a door and the contact is what sees it, so a
+		-- door with only a contact on it is the same doorN with the same words
+		-- and no way to carry them out (`ro`): it reads open, closed or locked,
+		-- and every write to it is "operation not supported".
+		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
+		if (moves or sees) and not isManyDoors(object) then
 			out[#out + 1] = { kind = "door", side = side, desc = desc,
-				locks = locks, state = doorState(object, locks) }
+				locks = locks, state = doorState(object, locks), ro = not moves }
 		end
-		if locks then
+		if locks and has(fitted, "strike") then
 			out[#out + 1] = { kind = "lock", side = side, desc = desc,
 				state = object:isLockedByKey() and "locked" or "unlocked" }
 		end
@@ -300,11 +356,19 @@ function CeroSecDevices.classify(object)
 	end
 
 	if instanceof(object, "IsoWindow") then
+		local fitted = fittedOn(object)
+		-- A contact and nothing else, ever: the only call in the game that moves a
+		-- sash is IsoWindow.ToggleWindow(IsoGameCharacter) and it wants a survivor
+		-- standing at it (docs/notes/modules-proofs.md, 4). So a wired window is a
+		-- window the machine can look at, and the lock a machine used to be able
+		-- to throw from across the building is one more thing that needed a hand.
+		if not has(fitted, "contact") then return nil end
 		return { {
 			kind = "win",
 			side = object:getNorth() and "N" or "W",
 			desc = roomName(object:getSquare()) or "exterior",
 			state = windowState(object),
+			ro = fitted ~= nil,
 		} }
 	end
 
@@ -312,14 +376,18 @@ function CeroSecDevices.classify(object)
 	-- to name it with and "built" is the truth about it. Only doors: a
 	-- player-built window frame has no lock this rung.
 	if instanceof(object, "IsoThumpable") and object:isDoor() then
+		local fitted = fittedOn(object)
 		local side = object:getNorth() and "N" or "W"
 		local out = {}
-		if not isManyDoors(object) then
+		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
+		if (moves or sees) and not isManyDoors(object) then
 			out[#out + 1] = { kind = "door", side = side, desc = "built",
-				locks = true, state = doorState(object, true) }
+				locks = true, state = doorState(object, true), ro = not moves }
 		end
-		out[#out + 1] = { kind = "lock", side = side, desc = "built",
-			state = thumpState(object) }
+		if has(fitted, "strike") then
+			out[#out + 1] = { kind = "lock", side = side, desc = "built",
+				state = thumpState(object) }
+		end
 		return out
 	end
 
@@ -562,9 +630,11 @@ function CeroSecDevices.number(state, found)
 				used[entry.kind .. ":" .. n] = true
 				-- The mode a kind is born at, which is not the same for every kind:
 				-- a sensor cannot be written to and wears 440 for saying so
-				-- (CeroSecOS.DEV_MODES).
+				-- (CeroSecOS.DEV_MODES) -- and neither can a device with nothing
+				-- behind it to write with, which is what `ro` is.
 				record = { id = entry.kind .. tostring(n), kind = entry.kind, n = n,
-					mode = CeroSecOS.devModeFor(entry.kind) }
+					ro = entry.ro == true,
+					mode = CeroSecOS.devModeFor(entry.kind, entry.ro) }
 				map[entry.key] = record
 				entries = entries + 1
 			else
@@ -572,6 +642,22 @@ function CeroSecDevices.number(state, found)
 			end
 		end
 		if record ~= nil then
+			-- The hardware behind a device can change under it: somebody fits an
+			-- operator to a door that had only a contact on it, or takes one off.
+			-- The NUMBER does not move for that -- it hangs on where the device is
+			-- and which kind it is, and neither of those moved -- but the mode goes
+			-- back to what a device of that shape is born at. A chmod does not
+			-- survive the hardware, and must not: the other way round is a door
+			-- with an operator on it that nobody may write to, because it was
+			-- read-only the first time it was seen.
+			--
+			-- Both sides are read as booleans, so a record written before this rung
+			-- -- which carries no `ro` at all -- is a read-write one and not a
+			-- changed one, and no chmod is thrown away by a reload.
+			if (record.ro == true) ~= (entry.ro == true) then
+				record.ro = entry.ro == true
+				record.mode = CeroSecOS.devModeFor(entry.kind, entry.ro)
+			end
 			entry.id = record.id
 			if type(record.mode) == "number" then entry.mode = record.mode end
 			live[#live + 1] = entry
@@ -614,11 +700,14 @@ local function build(luaObject, state)
 		list[#list + 1] = {
 			id = entry.id, kind = entry.kind, desc = entry.desc,
 			side = entry.side, state = entry.state,
+			-- Whether anything is wired behind it. The engine mounts a node that
+			-- says so and refuses every write to it in its own name.
+			ro = entry.ro,
 			-- Where it is, from where the machine is standing. Worked out here
 			-- and not by the engine: the engine has no idea there are tiles.
 			pos = CeroSecDevices.offset(entry.x - luaObject.x, entry.y - luaObject.y,
 				entry.z - luaObject.z),
-			mode = entry.mode or CeroSecOS.devModeFor(entry.kind),
+			mode = entry.mode or CeroSecOS.devModeFor(entry.kind, entry.ro),
 		}
 	end
 
@@ -632,8 +721,8 @@ local function build(luaObject, state)
 			if #list >= CeroSecOS.DEV_MAX then break end
 			seen[record.id] = true
 			list[#list + 1] = {
-				id = record.id, kind = record.kind, dead = true,
-				mode = record.mode or CeroSecOS.devModeFor(record.kind),
+				id = record.id, kind = record.kind, dead = true, ro = record.ro,
+				mode = record.mode or CeroSecOS.devModeFor(record.kind, record.ro),
 			}
 		end
 	end
@@ -700,6 +789,14 @@ local function act(entry, value)
 	-- own name rather than falling through to the lock branch below and asking an
 	-- aerial about its padlock.
 	if entry.kind == CeroSecRadio.KIND then return false, "invalid value" end
+
+	-- And the third belt, for the devices this rung made: a door with a magnetic
+	-- contact on it and no operator, or a window, which has no actuator in the
+	-- game at all. The engine refuses these a layer up -- by the mode, and then by
+	-- the node's own `ro` -- so nothing should arrive here. If one ever does, it
+	-- says the same thing the engine says rather than quietly working the door
+	-- with hardware nobody fitted.
+	if entry.ro then return false, "operation not supported" end
 
 	if entry.kind == "light" then
 		local want = value == "on"

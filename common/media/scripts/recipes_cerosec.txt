@@ -1,0 +1,148 @@
+module CeroSec
+{
+    /* The four hardware modules, made at a workbench.
+
+       Every key and every spelling here is copied from the vanilla electrical
+       recipes rather than from a wiki:
+       media/scripts/generated/recipes/recipes_electrical.txt (the improvised
+       flashlight at :100 and the improvised lantern at :128) and
+       recipes_traps.txt (:3, the remote controller, which is the electrical
+       recipe that makes a SENSOR part and is the nearest thing in the game to
+       these four).
+
+       - timedAction = MakingElectrical is the animation vanilla gives every
+         electrical recipe there is; category = Electrical is the tab they are
+         filed under; Tags = AnySurfaceCraft is what lets the job be done on any
+         table rather than only at a named workbench. All three are on every
+         recipe in both files above.
+
+       - The tools are asked for by TAG and kept: `tags[base:screwdriver]` and
+         `tags[base:pliers]`, which is how vanilla asks for them, so any
+         screwdriver in the game answers -- and mode:keep means the job does not
+         eat them. `flags[MayDegradeVeryLight]` on the pliers is vanilla's own
+         wear on the same tool in the same job.
+
+       - The inputs are vanilla items and every one of them was checked to exist
+         in B42 before it was written down (docs/notes/modules-proofs.md, 8):
+         Base.ElectronicsScrap, Base.ElectricWire, Base.Screws,
+         Base.SmallSheetMetal, Base.ScrapMetal, Base.EngineParts. There is no
+         Base.Electronics, no Base.Magnet and no Base.CopperWire in this build,
+         which is why none of them is here.
+
+       - SkillRequired is the same level the module asks for to be INSTALLED
+         (CeroSecModules.LIST: contact 1, relay 1, strike 2, operator 3). A
+         survivor who can fit one can build one.
+
+       - AutoLearnAll at that same level, which is the decision this rung took
+         and a deliberate departure from vanilla's own electrical recipes: those
+         set AutoLearnAny several levels ABOVE what they require (the remote
+         controller needs Electricity 2 and teaches itself at 8). These four are
+         the mod's own hardware and there is no magazine in Knox County that
+         would ever have printed them, so an electrician learns them by being an
+         electrician. `All` rather than `Any` so that a second skill added here
+         later would tighten the gate and not widen it.
+
+       - xpAward is set against the vanilla recipes above, which pay 10 for a
+         flashlight and 6 to 14 for a remote controller. */
+
+    craftRecipe MakeCeroSecMagneticContact
+    {
+        timedAction = MakingElectrical,
+        time = 60,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:1,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:1,
+        xpAward = Electricity:5,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.MagneticContact,
+        }
+    }
+
+    craftRecipe MakeCeroSecRelay
+    {
+        timedAction = MakingElectrical,
+        time = 80,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:1,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:1,
+        xpAward = Electricity:8,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 2 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+        }
+        outputs
+        {
+            item 1 CeroSec.Relay,
+        }
+    }
+
+    craftRecipe MakeCeroSecElectricStrike
+    {
+        timedAction = MakingElectrical,
+        time = 120,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:2,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:2,
+        xpAward = Electricity:10,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 2 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+            item 1 [Base.SmallSheetMetal],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.ElectricStrike,
+        }
+    }
+
+    /* The one with a motor in it, which is the one part of this a survivor
+       cannot wind himself: Base.EngineParts is what the game already calls a
+       box of motor and gearing, and it is what a garage door opener was made of
+       in 1993 too. */
+    craftRecipe MakeCeroSecDoorOperator
+    {
+        timedAction = MakingElectrical,
+        time = 200,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:3,
+        xpAward = Electricity:14,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 1 [Base.EngineParts],
+            item 2 [Base.ElectronicsScrap],
+            item 2 [Base.ElectricWire],
+            item 1 [Base.ScrapMetal],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.DoorOperator,
+        }
+    }
+}

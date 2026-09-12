@@ -731,14 +731,14 @@ who first. It takes two seconds and it lists everybody.]],
 
 [[This is the chapter that makes the machine worth having.
 
-The building it stands in is wired to it. Under /dev there is one file for
-every door, light switch and window the machine can reach, and writing a
-word into one of them works the thing itself.
+The building it stands in is wired to it, and wired is the word: under
+/dev there is one file for every door, light switch and window somebody
+has screwed a module to, and writing a word into one of them works the
+thing itself. The modules are the next two pages.
 
 The reach is the BUILDING. If the computer's square belongs to a building
 the map knows, it gets every room of it, upstairs and down. If it does not
--- which is what a computer in a base you built is -- it gets ten tiles of
-its own floor in every direction. Sixty four devices at the outside.
+it gets ten tiles of its own floor every way. Sixty four at the outside.
 
   root@ksp-04-11:~# dev
   door0   exterior              0 5S        W  locked
@@ -749,6 +749,52 @@ its own floor in every direction. Sixty four devices at the outside.
   lock0   exterior              0 5S        W  locked
   lock1   built                 4E 9S +1    N  padlock
   win0    office                1E 0        N  locked]],
+
+[[The four modules, and what each one buys.
+
+Nothing in that table is there because it is a door, but because somebody
+went up to it with a screwdriver and a box:
+
+  magnetic contact  the machine can SEE a door or a window
+  relay             it can throw a light switch
+  electric strike   it can work a door's lock
+  door operator     it can open and shut a door
+
+A door with only a contact on it is a doorN you can read and cannot move.
+An operator opens it; a strike adds the lockN beside it.
+
+A window takes a contact and nothing else, ever: nothing in this game
+opens a sash with nobody standing at it. And a contact is what a window
+wants. A winN reads smashed, barricaded, open, locked or unlocked, in that
+order -- the glass, then the sash, then the catch -- so open beats locked
+the way a door's does, and unlocked means shut.
+
+If your server turned the option Hardware modules required OFF, forget all
+this: every door, window, lock and light is under /dev, fitted or not.]],
+
+[[Fitting one, and taking it off.
+
+Right-click the door, the window or the light switch ITSELF -- not the
+computer -- and take CeroSec hardware. You need the box in your bag, a
+screwdriver, and the trade: a contact or a relay at Electricity 1, a
+strike at 2, an operator at 3. It takes a few seconds and pays a little
+Electricity for the work.
+
+Remove gives the box back whole. The device goes with it and its NUMBER
+does not: screw another contact to that door next week and it is the
+same doorN a script wrote down last week.
+
+Two entries are greyed out, and both are about the fixture:
+
+  a strike on an interior door
+      a key there stops nobody: the lock would lie
+  an operator on a garage or double door
+      a machine moves one leaf, the rest stay shut
+
+A device with nothing to write with has no w in its mode at all,
+cr--r-----: everybody but root is stopped by the mode, and root, who
+walks past every mode, by the device -- door1: operation not supported.
+A window wears that always.]],
 
 [[Reading that table.
 
@@ -879,20 +925,19 @@ whole office, and that lasts:
 Only the MODE of a device outlives the command it was typed in. chgrp on
 one answers is a device, and so do rm, mv, cp and edit.]],
 
-[[Every refusal a device makes, and each of them is a fact about the
-building rather than about your typing. A device answers in its OWN name,
-never the command's.
+[[Every refusal a device makes, and each is a fact about the building and
+not about your typing. A device answers in its OWN name.
 
   light0: no power
-      no current, no bulb, or nothing there to switch
+      no current, no bulb, or nothing to switch
   lock0: no such device
-      taken away, or in a part of the world nobody is near
+      taken away, or where nobody is standing
   win0: smashed
       the glass is gone, so there is no lock to turn
   win0: barricaded
       boarded up
   lock1: no padlock
-      a built door with neither padlock nor key on it
+      a built door with neither padlock nor key
   door0: locked
       held by a key: unlock its lockN first
   door0: barricaded
@@ -904,7 +949,9 @@ never the command's.
   light0: permission denied
       the mode says no
   win0: cannot toggle
-      smashed or barricaded: no opposite to turn it into
+      smashed or barricaded: no opposite to turn into
+  door1: operation not supported
+      a contact and no operator: nothing to move it
 
 dev's own two are signed the way a command signs, and the appendix has
 both.]],
@@ -1851,17 +1898,19 @@ command's, so none of these carries dev: in front of it.
   light0: permission denied
   win0: cannot toggle
   sensor0: invalid value
+  door0: operation not supported
 
 No current or bulb; gone, or nobody near it; the glass broken; boarded up;
-neither padlock nor key; held by a key; planks on it; a wall, a tree or a
-car in the way; a word that kind does not know; the mode; no opposite for
-toggle to turn it into; and a sensor, which takes no word at all.
+neither padlock nor key; held by a key; planks on it; something in the
+way; a word that kind does not know; the mode; no opposite to toggle
+into; a sensor, which takes no word; and a device with no hardware behind
+it to carry one out.
 
 dev's own two are signed the way a command signs, because they are a
 command's:
 
   dev: <word>: unknown kind
-      the kinds are:
+      the kinds are
       door, floppy, light, lock, radio, sensor and win
   dev: <id>: no such device
   /dev: read-only

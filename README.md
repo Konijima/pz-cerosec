@@ -20,8 +20,9 @@ Build 42.20.4. From scratch, vanilla Lua only, no dependencies.
 Done: the OS engine (filesystem, permissions, accounts, groups, a real shell
 language with pipes and job control), cron, the manual as a three-volume in-game
 documentation set, floppy disks with their own filesystem, the device network
-under `/dev` (doors, switches, motion sensors), and three links out to the rest of
-the county — coax to the other machines in a building, the telephone, and radio.
+under `/dev` (doors, switches, motion sensors) and the four hardware modules a
+survivor has to fit before a computer reaches any of it, and three links out to
+the rest of the county — coax to the other machines in a building, the telephone, and radio.
 See "Documentation" below for where each of those is written up.
 
 What's next: two testing aids in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` are
@@ -50,7 +51,10 @@ is loaded from. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#repository-layou
 1. Right-click a desktop computer and choose **Turn on computer** (needs power).
 2. Right-click again for **Use computer** to sit down and open the terminal.
 3. At `login:`, use `admin` or `root`, both with an empty password — press Enter.
-4. `dev` lists what the machine can reach; `help` lists the commands.
+4. `dev` lists what the machine can reach; `help` lists the commands. A door,
+   window or light is only on that list once somebody has screwed a CeroSec
+   module to it — right-click the fixture itself, **CeroSec hardware** — unless
+   the sandbox option `CeroSec.HardwareRequired` is turned off.
 5. Click the window's close button, or type `exit`, to walk away — the screen
    keeps running and is exactly as you left it next time.
 

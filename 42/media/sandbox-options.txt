@@ -1,0 +1,30 @@
+VERSION = 1,
+
+/* The mod's own sandbox options.
+ *
+ * Build 42 reads this file itself: zombie.sandbox.CustomSandboxOptions.init()
+ * walks every installed mod and looks for
+ *   <mod>/<version dir>/media/sandbox-options.txt
+ *   <mod>/common/media/sandbox-options.txt
+ * taking whichever exists, and hands each option to SandboxOptions through
+ * newCustomOption. The version dir for this mod is 42, so this file is at
+ * 42/media/sandbox-options.txt -- beside 42/media/lua, not at the mod root.
+ * The bytecode is quoted in docs/notes/modules-proofs.md.
+ *
+ * The names a player reads are in 42/media/lua/shared/Translate/EN/Sandbox.json,
+ * keyed "Sandbox_" plus what `translation` says here.
+ */
+
+/* Does a door, a window or a light have to be WIRED before a computer can see
+ * it? On, which is the mod's own answer: a machine reaches what somebody fitted
+ * a module to and nothing else. Off is the world as it was before this option
+ * existed -- every door, window, lock and light of the building in /dev, wired
+ * or not -- and it is there for a server that was already running that way.
+ */
+option CeroSec.HardwareRequired
+{
+    type = boolean,
+    default = true,
+    page = CeroSec,
+    translation = CeroSec_HardwareRequired,
+}

@@ -181,6 +181,10 @@ end }
 local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
+	-- The four hardware modules name the four items they are made of, and the
+	-- item script below is checked against that list rather than against four
+	-- names typed again here.
+	"shared/CeroSec/CeroSecModules.lua",
 	"shared/CeroSec/CeroSecManualBook.lua",
 	"client/CeroSec/CeroSecManualUI.lua",
 	"client/CeroSec/CeroSecManualMenu.lua",
@@ -1556,8 +1560,9 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the four books, and the four disks.
-	eq("nine blocks: the module, the four books and the four disks", opens, 9)
+	-- The module, the four books, the four disks and the four hardware modules.
+	eq("thirteen blocks: the module, the four books, the four disks and the "
+		.. "four hardware modules", opens, 13)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -1818,6 +1823,62 @@ do
 		blocks[name] = body
 	end
 
+	-- The four hardware modules (rung 4f). Checked here beside the disks and not
+	-- with the books, because they are the same shape as a disk: an item with an
+	-- icon of its own and a world model, and no StaticModel -- a module is
+	-- carried in a bag and dropped on the ground, never held in a hand.
+	--
+	-- The world models are VANILLA names and the icons are ours: this mod ships
+	-- no mesh for these four, and a WorldStaticModel nothing answers to is an
+	-- item that lies on the floor as nothing at all.
+	local MODULES = {
+		{ item = "MagneticContact", icon = "CeroSecMagneticContact",
+			name = "Magnetic Contact", model = "MotionSensor" },
+		{ item = "Relay", icon = "CeroSecRelay",
+			name = "Relay Module", model = "ElectronicsScrap" },
+		{ item = "ElectricStrike", icon = "CeroSecElectricStrike",
+			name = "Electric Strike", model = "ScrapMetal" },
+		{ item = "DoorOperator", icon = "CeroSecDoorOperator",
+			name = "Door Operator", model = "ScrapMetal" },
+	}
+	for m = 1, #MODULES do
+		local want = MODULES[m]
+		local body = blocks[want.item]
+		check("the script declares item " .. want.item, body ~= nil)
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		for _, key in ipairs({ "DisplayName", "DisplayCategory", "ItemType",
+				"Weight", "Icon", "WorldStaticModel" }) do
+			check(want.item .. " sets " .. key, keys[key] ~= nil)
+		end
+		eq(want.item .. "'s fallback name", keys.DisplayName, want.name)
+		eq(want.item .. " files itself under Electronics", keys.DisplayCategory,
+			"Electronics")
+		eq(want.item .. " is a plain item", keys.ItemType, "base:normal")
+		eq(want.item .. "'s icon", keys.Icon, want.icon)
+		eq(want.item .. "'s world model is the vanilla one it borrows",
+			keys.WorldStaticModel, want.model)
+		check(want.item .. " has no hand model, being a thing in a bag",
+			keys.StaticModel == nil)
+		-- The icon file the name resolves to, which is what Item.DoParam asks
+		-- Texture.trygetTexture for.
+		local icon = io.open("common/media/textures/Item_" .. want.icon .. ".png", "r")
+		check("and the icon file is there: Item_" .. want.icon .. ".png", icon ~= nil)
+		if icon ~= nil then icon:close() end
+	end
+
+	-- The four ids the mod's Lua works in, against the four items the script
+	-- declares: one list, two files, and a name that drifted on one side would be
+	-- a menu entry that fits nothing.
+	for m = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[m]
+		local name = string.sub(module.item, #"CeroSec." + 1)
+		check("the script declares the item " .. module.id .. " is made of: "
+			.. module.item, blocks[name] ~= nil)
+	end
+
 	local mpath = "common/media/scripts/models_cerosec.txt"
 	local mhandle = io.open(mpath, "r")
 	check("the model script is where the items point", mhandle ~= nil)
@@ -2054,6 +2115,211 @@ do
 		eq("colour " .. c .. "'s weight was doubled with the shelves",
 			items[c * 2], CeroSecFloppyLoot.WEIGHTS.OfficeDesk * 0.25 * 2)
 	end
+end
+
+--
+-- The hardware modules' own shelves
+--
+-- The third distribution table (the manual's, the disks' and now this one), and
+-- what it has to be is a table that is NOT either of those: nobody kept a door
+-- operator on an office desk and nobody kept a floppy disk in a garage's tool
+-- cabinet. What is asserted here is the shape the other two are asserted on --
+-- every list found, every module in it once, the weights exact, a second pass
+-- that adds nothing, a renamed list skipped quietly and the sandbox multiplier
+-- reaching the numbers -- plus the one thing only this table can be wrong about:
+-- four modules that are not worth the same.
+--
+do
+	local chunk = assert(loadfile(LUA .. "server/CeroSec/CeroSecModuleLoot.lua"))
+	chunk()
+
+	local KEYS = {}
+	for key in pairs(CeroSecModuleLoot.WEIGHTS) do KEYS[#KEYS + 1] = key end
+	table.sort(KEYS)
+	eq("nine shelves hold hardware", #KEYS, 9)
+
+	ProceduralDistributions.list = {}
+	for i = 1, #KEYS do
+		ProceduralDistributions.list[KEYS[i]] = { rolls = 4, items = { "Something", 10 } }
+	end
+
+	SandboxVars = nil
+	CeroSecModuleLoot.added = false
+	local added = CeroSecModuleLoot.add()
+	eq("every list named was found and filled by every module",
+		added, #KEYS * #CeroSecModules.LIST)
+
+	for i = 1, #KEYS do
+		local key = KEYS[i]
+		local items = ProceduralDistributions.list[key].items
+		eq(key .. " kept what was already in it", items[1], "Something")
+		eq(key .. " still has an even number of entries", #items % 2, 0)
+		eq(key .. " grew by one name and one weight per module",
+			#items, 2 + 2 * #CeroSecModules.LIST)
+		for m = 1, #CeroSecModules.LIST do
+			local module = CeroSecModules.LIST[m]
+			local at = 2 + (m - 1) * 2 + 1
+			eq(key .. " has " .. module.item .. " in place " .. m, items[at], module.item)
+			eq(key .. " gave it its own share of the box", items[at + 1],
+				CeroSecModuleLoot.WEIGHTS[key] * CeroSecModuleLoot.SHARES[module.id])
+		end
+		-- Neither of the other two tables' items is on these shelves.
+		for n = 1, #items, 2 do
+			check(key .. " spawns no volume of the manual",
+				string.find(tostring(items[n]), "CeroSec.Manual", 1, true) == nil)
+			check(key .. " spawns no floppy disk",
+				string.find(tostring(items[n]), "CeroSec.Floppy", 1, true) == nil)
+		end
+	end
+
+	-- The four are NOT worth the same, which is the whole difference between this
+	-- table and the disks': a contact is eight times an operator, in every list.
+	for i = 1, #KEYS do
+		local base = CeroSecModuleLoot.WEIGHTS[KEYS[i]]
+		local contact = CeroSecModuleLoot.weightFor(KEYS[i], "contact", 1)
+		local operator = CeroSecModuleLoot.weightFor(KEYS[i], "operator", 1)
+		check(KEYS[i] .. ": a contact is commoner than an operator", contact > operator)
+		eq(KEYS[i] .. ": eight times as common", contact, operator * 8)
+		-- And every share of every base is exact in a double, which is what
+		-- powers of two are for: the number read back is the number written.
+		for id, share in pairs(CeroSecModuleLoot.SHARES) do
+			local w = CeroSecModuleLoot.weightFor(KEYS[i], id, 1)
+			eq(KEYS[i] .. "'s share for " .. id .. " is exact", w / share, base)
+		end
+	end
+
+	-- A module nobody declared has no weight at all, and neither has a list
+	-- nobody named: weightFor answers nil rather than a number made up of nils.
+	eq("no weight for a module that does not exist",
+		CeroSecModuleLoot.weightFor(KEYS[1], "toaster", 1), nil)
+	eq("no weight for a list that does not exist",
+		CeroSecModuleLoot.weightFor("NoSuchShelf", "relay", 1), nil)
+
+	-- This table is its own: it shares no shelf at all with the disks', which
+	-- is the point of it -- a computer's desk and an electrician's van are not
+	-- the same room.
+	local shared = 0
+	for key in pairs(CeroSecModuleLoot.WEIGHTS) do
+		if CeroSecFloppyLoot.WEIGHTS[key] ~= nil then shared = shared + 1 end
+	end
+	eq("no shelf holds both a disk and a door operator", shared, 0)
+
+	-- Fired twice -- a Lua reload does that -- and nothing doubles.
+	local lengths = {}
+	for i = 1, #KEYS do
+		lengths[i] = #ProceduralDistributions.list[KEYS[i]].items
+	end
+	CeroSecModuleLoot.added = false
+	eq("a second pass adds nothing", CeroSecModuleLoot.add(), 0)
+	for i = 1, #KEYS do
+		eq(KEYS[i] .. " was not doubled",
+			#ProceduralDistributions.list[KEYS[i]].items, lengths[i])
+	end
+
+	-- A list vanilla renamed is a list that is skipped, not a crash.
+	CeroSecModuleLoot.added = false
+	ProceduralDistributions.list[KEYS[1]] = nil
+	eq("a missing list is skipped quietly", CeroSecModuleLoot.add(), 0)
+
+	-- The same sandbox option the manual and the disks read, read the same way.
+	SandboxVars = nil
+	eq("with no sandbox group at all the multiplier is one",
+		CeroSecModuleLoot.abundance(), 1)
+	SandboxVars = { CeroSec = {} }
+	eq("with a group but no option it is still one", CeroSecModuleLoot.abundance(), 1)
+	for _, bad in ipairs({ 0, -1, "lots", true }) do
+		SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = bad
+		eq("a LootAbundance of " .. tostring(bad) .. " is not an abundance",
+			CeroSecModuleLoot.abundance(), 1)
+	end
+	SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = 2
+	eq("a number is the number", CeroSecModuleLoot.abundance(), 2)
+
+	-- And it reaches the weights: a multiplier read and then not used would leave
+	-- every assertion above green.
+	ProceduralDistributions.list = { ElectricianTools = { rolls = 3, items = {} } }
+	CeroSecModuleLoot.added = false
+	CeroSecModuleLoot.add()
+	local items = ProceduralDistributions.list.ElectricianTools.items
+	for m = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[m]
+		eq(module.id .. "'s weight was doubled with the shelves", items[m * 2],
+			CeroSecModuleLoot.WEIGHTS.ElectricianTools
+				* CeroSecModuleLoot.SHARES[module.id] * 2)
+	end
+	SandboxVars = nil
+end
+
+--
+-- The recipe script: the keys the game will be asked to parse, and the two
+-- numbers it shares with the Lua
+--
+-- A recipe that asked for a level the install does not is a survivor who can
+-- build a module he cannot fit, or the other way round, and neither of those is
+-- a thing anybody would notice until they had it in their hands. The level and
+-- the item name are written in two files and they are checked against each other
+-- here.
+--
+do
+	local path = "common/media/scripts/recipes_cerosec.txt"
+	local handle = io.open(path, "r")
+	check("the recipe script is where the mod says it is", handle ~= nil)
+	local text = handle:read("*a")
+	handle:close()
+	local code = string.gsub(text, "/%*.-%*/", "")
+
+	local opens, closes = 0, 0
+	for _ in string.gmatch(code, "{") do opens = opens + 1 end
+	for _ in string.gmatch(code, "}") do closes = closes + 1 end
+	eq("braces balance", opens, closes)
+	check("it declares the mod's own module",
+		string.find(code, "module CeroSec", 1, true) ~= nil)
+
+	-- One block per module, keyed by what it makes.
+	local recipes = {}
+	for name, body in string.gmatch(code, "craftRecipe%s+([A-Za-z]+)%s*(%b{})") do
+		local made = string.match(body, "outputs%s*{%s*item%s+1%s+([%w%.]+)")
+		check("craftRecipe " .. name .. " makes something", made ~= nil)
+		recipes[made or name] = body
+	end
+
+	for m = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[m]
+		local body = recipes[module.item]
+		check("a recipe makes " .. module.item, body ~= nil)
+		body = body or ""
+
+		-- The keys every vanilla electrical recipe sets
+		-- (media/scripts/generated/recipes/recipes_electrical.txt).
+		for _, key in ipairs({ "timedAction", "time", "NeedToBeLearn",
+				"SkillRequired", "Tags", "category", "AutoLearnAll", "xpAward" }) do
+			check(module.item .. "'s recipe sets " .. key,
+				string.find(body, key .. " =", 1, true) ~= nil)
+		end
+		check(module.item .. " is made with vanilla's electrical action",
+			string.find(body, "timedAction = MakingElectrical", 1, true) ~= nil)
+		check(module.item .. " is filed under Electrical",
+			string.find(body, "category = Electrical", 1, true) ~= nil)
+
+		-- The two numbers that are also in CeroSecModules.LIST. Read out of the
+		-- file rather than compared as text, so that a level changed on one side
+		-- and not the other fails HERE and not in somebody's inventory.
+		local needs = tonumber(string.match(body, "SkillRequired = Electricity:(%d+)"))
+		eq(module.item .. " is built at the level it is fitted at", needs, module.skill)
+		local learns = tonumber(string.match(body, "AutoLearnAll = Electricity:(%d+)"))
+		eq(module.item .. " is learned at that same level", learns, module.skill)
+
+		-- A screwdriver, kept: it is the same tool the install asks for, and a
+		-- recipe that ate it would leave a survivor unable to fit what he just
+		-- made.
+		check(module.item .. "'s recipe asks for a screwdriver and keeps it",
+			string.find(body, "tags[base:screwdriver] mode:keep", 1, true) ~= nil)
+	end
+
+	-- Four recipes, no more: a fifth would be a module nothing else knows about.
+	local made = 0
+	for _ in pairs(recipes) do made = made + 1 end
+	eq("one recipe per module and not one more", made, #CeroSecModules.LIST)
 end
 
 print("manual_ui_test: " .. count .. " checks passed")

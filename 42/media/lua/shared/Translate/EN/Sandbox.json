@@ -1,0 +1,5 @@
+{
+    "Sandbox_CeroSec": "CeroSec",
+    "Sandbox_CeroSec_HardwareRequired": "Hardware modules required",
+    "Sandbox_CeroSec_HardwareRequired_tooltip": "On: a computer only reaches a door, window, lock or light that somebody has fitted a CeroSec module to -- a magnetic contact, a relay, an electric strike or a door operator, installed with a screwdriver and the Electricity skill. Off: every door, window, lock and light of the building is in /dev, wired or not, the way it was before this option existed."
+}
