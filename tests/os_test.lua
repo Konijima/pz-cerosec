@@ -9896,7 +9896,8 @@ do
 	local over = { v = 1, fs = many }
 	eq("the boot gate runs on a disk past its node ceiling",
 		CeroSecOS.validateDisk(over), true)
-	eq("and the slot takes it back", CeroSecOS.diskFromData(over) ~= nil, true)
+	eq("and the slot, which walks it on every command after, does not",
+		CeroSecOS.diskFromData(over), nil)
 	local fat = CeroSecOS.newDir("root", 755)
 	fat.children["big"] = CeroSecOS.newFile("root", 644,
 		string.rep("x", CeroSecOS.FLOPPY_BYTES))
@@ -9904,7 +9905,12 @@ do
 	local heavy = { v = 1, fs = fat }
 	eq("the boot gate runs on a disk past its byte ceiling",
 		CeroSecOS.validateDisk(heavy), true)
-	eq("and the slot takes that back too", CeroSecOS.diskFromData(heavy) ~= nil, true)
+	eq("and the slot does not take that either", CeroSecOS.diskFromData(heavy), nil)
+	-- Which leaves the trap, and it is closed at the other end: a disk the slot
+	-- would not take never leaves the drive, so there is no disk a machine can hand
+	-- the player that no machine will accept. Its ejectDisk is the server's, and
+	-- window_test drives it; what is asserted here is the gate the two agree on.
+	eq("the drive would keep it", CeroSecOS.validateDisk(heavy, true), false)
 	-- Which is the whole round trip: a machine that ejects one can be handed it.
 	do
 		-- As root: the disk was forged, and its root directory is root's at 755
@@ -10362,6 +10368,84 @@ do
 	check("and still under its own ceiling", #node.data <= CeroSecOS.HISTORY_BYTES)
 	eq("and still costs the drive nothing but its node",
 		select(2, CeroSecOS.usage(other)), before)
+end
+
+
+-- 47q. The round trip over the deepest disk the write path will make
+--
+-- The copy that crosses the item boundary is a recursive walk with a depth budget
+-- on it, and that budget counts TABLE levels while a filesystem is counted in
+-- PATH components -- a node and the `children` table under it are two levels for
+-- one directory. Counted in components, the budget was seven directories where
+-- the write path allows fifteen: a disk deeper than that could be made, mounted,
+-- read and written, and then could not be copied back out of the drive.
+--
+-- What made that a disaster rather than a refusal is that the write onto the item
+-- cleared the item's three keys BEFORE it knew the copy had worked. So the eject
+-- emptied the machine's drive, emptied the item, and said nothing.
+--
+-- So: as deep a disk as the machine will make, all the way out and back in. The
+-- depth is taken from the machine (`mkdir` until it refuses) and never typed,
+-- because the number that matters is what the WRITE PATH allows and not what
+-- anybody believes it allows.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("DEEP")
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+
+	local path, above, deep = "/mnt", "/mnt", 0
+	while true do
+		local next = path .. "/s" .. (deep + 1)
+		local r = runAt(state, admin, "mkdir " .. next, ENV)
+		if not r.ok then break end
+		above, path, deep = path, next, deep + 1
+	end
+	check("the machine made a deep tree on the disk (" .. deep .. ")", deep >= 8)
+	-- The file goes one level ABOVE the deepest directory: the deepest one is
+	-- already at the machine's own MAX_DEPTH, and a name inside it would be one
+	-- past what a path here can address. The COPY still has to carry both.
+	local bottom = above .. "/f.txt"
+	okAt(state, admin, "echo the bottom > " .. bottom, {})
+	okAt(state, admin, "cat " .. bottom, { "the bottom" })
+
+	-- Out, as an eject does it, and the copy has to carry the whole of it.
+	local carried = CeroSecOS.diskToData(state.floppy)
+	check("the disk copies out of the drive at that depth", carried ~= nil)
+	-- And onto the item, the way the eject writes it -- onto a modData that already
+	-- held a disk, which is the case that lost everything.
+	local item = { v = 1, fs = CeroSecOS.newDir("root", 755), label = "OLD" }
+	eq("and onto an item that was carrying another one",
+		CeroSecOS.writeDiskTo(item, state.floppy), true)
+	eq("the old label is gone", item.label, "DEEP")
+	check("and the new tree is there", item.fs.children.s1 ~= nil)
+
+	-- A write that CANNOT be made leaves the item exactly as it was, which is the
+	-- ordering the disaster was made of: cleared first, a failed copy left the item
+	-- blank and the machine's own copy already dropped.
+	local keep = { v = 1, fs = CeroSecOS.newDir("root", 755), label = "KEEP" }
+	local held = keep.fs
+	eq("a copy that cannot be made writes nothing",
+		CeroSecOS.writeDiskTo(keep, { v = 1, fs = print }), false)
+	eq("the item still has its version", keep.v, 1)
+	eq("its label", keep.label, "KEEP")
+	eq("and the very filesystem it was carrying", keep.fs, held)
+
+	-- Back into a machine, and everything is still on it.
+	local other = fresh("ksp-front-02")
+	local them = open(other, "admin")
+	local back = CeroSecOS.diskFromData(carried)
+	check("the slot takes the deep disk", back ~= nil)
+	other.floppy = back
+	okAt(other, them, "mount /dev/fd0 /mnt", {})
+	okAt(other, them, "cat " .. bottom, { "the bottom" })
+
+	-- The budget is derived from the two things it is made of and never typed: a
+	-- node and its children are two table levels for one path component.
+	eq("the copy's budget is the walk's and not the path's",
+		CeroSecOS.DISK_COPY_DEPTH, 3 + 2 * CeroSecOS.MAX_DEPTH)
 end
 
 print("os_test: " .. count .. " assertions passed")

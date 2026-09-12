@@ -1004,7 +1004,16 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		luaObject:insertDisk(disk, fullType)
 		return
 	end
-	CeroSecOS.writeDiskTo(item:getModData(), disk)
+	-- And if the disk cannot be written onto the item after all, it goes back in
+	-- the drive with the shell it came in, exactly as it does when there is nowhere
+	-- to put it: the one thing an eject may never do is leave the disk nowhere.
+	if not CeroSecOS.writeDiskTo(item:getModData(), disk) then
+		inv:Remove(item)
+		if isServer() then sendRemoveItemFromContainer(inv, item) end
+		luaObject:insertDisk(disk, fullType)
+		CeroSec.log("the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
+		return
+	end
 	if isServer() then sendAddItemToContainer(inv, item) end
 end
 

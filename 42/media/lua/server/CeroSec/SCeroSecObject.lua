@@ -197,6 +197,18 @@ function SCeroSecObject:ejectDisk()
 	if state == nil then return nil, "broken" end
 	local disk = state.floppy
 	if disk == nil then return nil, "empty" end
+	-- A disk no slot would take does not leave the drive, and this is the only
+	-- place that can be said while the player can still do something about it: out
+	-- in his hands it is a disk nobody in the world will accept and nothing on any
+	-- screen says why; in the machine it is a disk `df` explains and one `rm`
+	-- fixes. Nothing the write path can do makes one -- a disk is held to its
+	-- ceilings at every write -- so this is the belt under that and not the rule.
+	local fits, why = CeroSecOS.validateDisk(disk, true)
+	if not fits then
+		CeroSec.log("the drive at " .. self.x .. "," .. self.y .. "," .. self.z
+			.. " kept the disk: " .. tostring(why))
+		return nil, why
+	end
 	CeroSecOS.unmountAll(state)
 	state.floppy = nil
 	local fullType = CeroSec.floppyTypeOr(state.fdtype)

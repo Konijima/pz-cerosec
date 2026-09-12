@@ -328,6 +328,28 @@ function CeroSecOS.exemptOthers(state, node, kind)
 	return exempted
 end
 
+-- The path of the first file in this subtree that is bigger than a file may be, or
+-- nil. Asked of a DISK and of nothing else: a node on the machine's own drive may
+-- reach HISTORY_BYTES, because a history is exempt from the quota and grows past
+-- what a write may put in one file -- and that exemption is the hard drive's, so
+-- nothing on a disk has it and MAX_FILE_BYTES is the whole of what a file there
+-- may be.
+function CeroSecOS.tooBigOn(node, where)
+	where = where or ""
+	if type(node) ~= "table" then return nil end
+	if node.type == "file" then
+		if #(node.data or "") > CeroSecOS.MAX_FILE_BYTES then return where end
+		return nil
+	end
+	if node.children == nil then return nil end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do
+		local found = CeroSecOS.tooBigOn(node.children[names[i]], where .. "/" .. names[i])
+		if found ~= nil then return found end
+	end
+	return nil
+end
+
 -- Does any file in this subtree carry a byte that must never be stored? Whole
 -- trees arrive at createNode (a copy today, a network transfer at a later
 -- rung), so the check cannot stop at the node itself.

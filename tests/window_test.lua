@@ -5765,32 +5765,17 @@ do
 	eq("a packet with no item in it inserts nothing", bench.object:hasDisk(), false)
 
 	-- A disk whose contents will not pass the engine's own gate: refused at the
-	-- slot, and left in his hands rather than eaten.
-	--
-	-- Over a FLOPPY's ceiling is deliberately not that: the slot takes back
-	-- anything the machine would boot on, or a computer could hand out a disk no
-	-- computer will accept (see CeroSecOS.validateDisk). What is refused is a disk
-	-- outside the envelope every filesystem here lives in -- this one has a file
-	-- bigger than any file on this machine may be.
-	local roomy = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
+	-- slot, and left in his hands rather than eaten. What arrives there is a table
+	-- off a save file or off a client, and it is walked on every command from then
+	-- on, so the ceilings are asked here.
+	local forged = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
 		owner = "root", mode = 755, children = {
 			big = { type = "file", owner = "root", mode = 644,
 				data = string.rep("x", CeroSecOS.FLOPPY_BYTES + 1) },
 		} } })
-	bench.send("insertfloppy", { item = roomy:getID() })
-	eq("a disk over the floppy's own ceiling still goes in",
-		bench.object:hasDisk(), true)
-	bench.send("ejectfloppy")
-	eq("and comes back out", bench.object:hasDisk(), false)
-
-	local forged = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
-		owner = "root", mode = 755, children = {
-			big = { type = "file", owner = "root", mode = 644,
-				data = string.rep("x", CeroSecOS.HISTORY_BYTES + 1) },
-		} } })
 	bench.send("insertfloppy", { item = forged:getID() })
 	eq("a forged disk is refused", bench.object:hasDisk(), false)
-	eq("and stays in his hands", #inv.items, 3)
+	eq("and stays in his hands", #inv.items, 2)
 	-- A disk of a version this machine does not know.
 	local future = inv:add("CeroSec.FloppyBlue", { v = 99 })
 	bench.send("insertfloppy", { item = future:getID() })
@@ -5812,6 +5797,73 @@ do
 	bench.player.getX = away
 	bench.send("insertfloppy", { item = good:getID() })
 	eq("and the same player standing at it does", bench.object:hasDisk(), true)
+end
+
+
+--
+-- The drive keeps a disk no slot would take
+--
+-- A machine that runs on a disk has to be able to hand it out, or the player is
+-- left holding one nobody will accept with nothing on any screen to say why. So
+-- the refusal is made where he can still do something: an over-ceiling disk does
+-- not leave the drive. Nothing the write path can do makes one -- this is the belt
+-- under that -- and what it catches is a state with a way out of it: the disk is
+-- still in the machine, `df` says what is wrong, and one `rm` fixes it.
+--
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	bench.login("root")
+
+	-- Forged past the disk's own byte ceiling, straight onto the machine, which is
+	-- the one way such a disk can exist at all.
+	local fs = CeroSecOS.newDir("root", 755)
+	fs.children.a = CeroSecOS.newFile("root", 644, string.rep("x", CeroSecOS.MAX_FILE_BYTES))
+	fs.children.b = CeroSecOS.newFile("root", 644, string.rep("x", CeroSecOS.MAX_FILE_BYTES))
+	local state = bench.object:osState()
+	state.floppy = { v = CeroSecOS.FLOPPY_VERSION, fs = fs }
+	state.fdtype = "CeroSec.FloppyRed"
+	bench.object:syncDisk()
+
+	-- The machine runs on it perfectly well.
+	eq("the machine still boots", CeroSecOS.validate(state), true)
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("ls /mnt")
+	bench.frame()
+	check("and reads it", bench.painted("a"))
+	bench.enter("df")
+	bench.frame()
+	check("df says what is wrong with it", bench.painted("fd0"))
+	bench.enter("echo x > /mnt/c")
+	bench.frame()
+	check("and every write says so", bench.painted("disk full"))
+
+	-- But it does not come out.
+	bench.sounds = {}
+	bench.send("ejectfloppy")
+	eq("the drive kept it", bench.object:hasDisk(), true)
+	eq("and handed him nothing", #inv.items, 0)
+	check("and said nothing it did not do", not bench.heardSound("CeroSecEjectDisc"))
+
+	-- One rm is the way out, and then it comes out and goes back in.
+	bench.enter("rm /mnt/b")
+	bench.frame()
+	bench.send("ejectfloppy")
+	eq("now it comes out", bench.object:hasDisk(), false)
+	eq("into his hands", #inv.items, 1)
+	eq("in the shell it was in", inv.items[1]:getFullType(), "CeroSec.FloppyRed")
+	-- And every slot in the world takes it, which is the invariant the whole of
+	-- this is for: a disk a machine hands out is a disk a machine accepts.
+	local other = newBench()
+	local otherInv = wireDrive(other)
+	other.login("admin")
+	local moved = otherInv:add(inv.items[1]:getFullType(), inv.items[1]:getModData())
+	other.send("insertfloppy", { item = moved:getID() })
+	eq("the next machine took it", other.object:hasDisk(), true)
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("ls /mnt")
+	other.frame()
+	check("with the file still on it", other.painted("a"))
 end
 
 print("window_test: " .. count .. " checks passed")

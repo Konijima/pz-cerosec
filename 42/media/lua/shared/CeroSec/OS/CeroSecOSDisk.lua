@@ -184,10 +184,17 @@ end
 -- worse than no copy.
 --
 -- The depth is bounded because the walk is recursive and the thing being walked
--- came off a save file. Two past MAX_DEPTH, which is what a path on this machine
--- can be, plus the disk's own wrapper and its root directory: a tree that is
--- deeper than the filesystem can address is one no command here could have made.
-CeroSecOS.DISK_COPY_DEPTH = CeroSecOS.MAX_DEPTH + 2
+-- came off a save file. What it counts is TABLE levels, and one level of
+-- filesystem costs two of those -- the node, and the `children` table hanging
+-- under it -- so a budget counted in path components is half the budget the walk
+-- needs. Counted in components, this bound was seven directories deep where the
+-- write path allows fifteen, and a disk deeper than that could be written, read
+-- and mounted and then could not be copied back out of the drive.
+--
+-- Derived, and never eyeballed again: the disk's own wrapper, its root node and
+-- that node's children table, and then two more for every level a path on this
+-- machine may go down.
+CeroSecOS.DISK_COPY_DEPTH = 3 + 2 * CeroSecOS.MAX_DEPTH
 
 local function copyPlain(value, depth)
 	local t = type(value)
@@ -212,10 +219,12 @@ end
 function CeroSecOS.diskFromData(data)
 	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
-	-- The same gate the boot runs, and deliberately not a stricter one: see
-	-- CeroSecOS.validateDisk for why a slot that refused what a machine will run on
-	-- would be a machine handing out disks nobody can put back.
-	local ok, why = CeroSecOS.validateDisk(disk)
+	-- Bounded: this is the SLOT, and what arrives here is a table off a save file
+	-- or off a client, walked on every command from then on. The disk a machine
+	-- hands out is held to the same bound before it leaves the drive, so there is
+	-- no disk this refuses that a machine could have given him (see
+	-- CeroSecOS.validateDisk).
+	local ok, why = CeroSecOS.validateDisk(disk, true)
 	if not ok then return nil, why end
 	return disk
 end
@@ -236,11 +245,16 @@ CeroSecOS.DISK_KEYS = { "v", "fs", "label" }
 
 -- Write one onto an item's modData, in place. The table is the game's; what is
 -- put in it is a private copy of ours (see CeroSecOS.diskToData).
+--
+-- The copy is made BEFORE anything is cleared, and nothing is cleared at all if it
+-- cannot be made. Cleared first, a copy that failed left the item holding no disk
+-- and the machine already holding none -- everything on it gone, on the one
+-- gesture the whole drive exists for, with nothing said about it.
 function CeroSecOS.writeDiskTo(data, disk)
 	if type(data) ~= "table" then return false end
-	for i = 1, #CeroSecOS.DISK_KEYS do data[CeroSecOS.DISK_KEYS[i]] = nil end
 	local copy = CeroSecOS.diskToData(disk)
 	if copy == nil then return false end
+	for i = 1, #CeroSecOS.DISK_KEYS do data[CeroSecOS.DISK_KEYS[i]] = nil end
 	for i = 1, #CeroSecOS.DISK_KEYS do
 		local key = CeroSecOS.DISK_KEYS[i]
 		data[key] = copy[key]
