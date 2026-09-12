@@ -1598,6 +1598,128 @@ do
 end
 
 --
+-- FOUR TELEPHONES RINGING (rung 6b)
+--
+-- A dial is a WAIT now: the modem goes off-hook and there is nothing on the glass
+-- until the far end answers or S7 runs out, and S7 is fifteen seconds. So four
+-- machines of the county can be in the middle of a dial at once, for fifteen
+-- seconds each, and a ring that spun the scheduler would be the cheapest attack in
+-- this file -- fifteen seconds of a machine's whole budget for one typed line, from
+-- four machines, for as long as somebody keeps typing it.
+--
+-- It must cost NOTHING, and nothing is what is asserted: not a step spent by any
+-- machine on any pass for as long as the four of them are ringing. The mechanism is
+-- the VM's own sleep (jobStep answers "sleeping" and spends nought before it ever
+-- reaches the walker), which is the same mechanism the sleeping pipelines above are
+-- proved on -- this is that proof again with a telephone in front of it.
+--
+-- A world where NOBODY answers, so every one of the four rings out the full S7 and
+-- the bench never reaches a link layer it has not got: the continuation of an
+-- unanswered dial prints a word and gives no order, so nothing here ever asks
+-- CeroSecNet for a dial.
+--
+
+do
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	local ringSystem = {}
+	function ringSystem:execEnv(luaObject, state)
+		return { now = 740000000, nowMs = _G.__now,
+			net = { phone = function() return CeroSecOS.MODEM.noCarrier end } }
+	end
+	function ringSystem:clockEnv() return { now = 740000000 } end
+	function ringSystem:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function ringSystem:writeSession() end
+	function ringSystem:pushScreen() end
+	function ringSystem:applyPower() end
+
+	local RINGERS = 4
+	local machines, consoles, lifted = {}, {}, {}
+	for m = 1, RINGERS do
+		local state = CeroSecOS.newState("ksp")
+		-- A machine with a line of its own: the record carries the exchange, or the
+		-- engine refuses the dial before it ever lifts the receiver.
+		CeroSecOS.setNetRecord(state, 4, 17, m, 555)
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = 80 + m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		machines[m], consoles[m] = machine, console
+		local job = CeroSecJobs.startPrompt(ringSystem, machine, console,
+			"cu 555-01" .. string.sub("00" .. tostring(m), -2))
+		if job == nil then error("the dial was refused before it rang") end
+	end
+
+	-- One pass to lift the four receivers: startPrompt puts the line on the book and
+	-- the scheduler is what runs it, which is where the wait is asked for.
+	_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+	CeroSecJobs.system = ringSystem
+	CeroSecJobs.pass(_G.__now)
+
+	-- Every machine is asleep on its modem, and none of them has said anything.
+	for m = 1, RINGERS do
+		local job = CeroSecJobs.book(machines[m]).list[1]
+		eq("machine " .. m .. " is asleep on the ring", job.state, "sleeping")
+		eq("and has said nothing", #consoles[m].lines, 0)
+		lifted[m] = job.steps
+	end
+
+	-- Fourteen seconds of passes, which is inside S7: all four still ringing, and
+	-- not one step spent by anybody. Read off the same wrapper every other bench in
+	-- this file counts with.
+	local RINGING = 140
+	local worst, spentAny = 0, 0
+	local clockStart = os.clock()
+	for _ = 1, RINGING do
+		_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+		tickSteps = 0
+		CeroSecJobs.system = ringSystem
+		CeroSecJobs.pass(_G.__now)
+		if tickSteps > worst then worst = tickSteps end
+		spentAny = spentAny + tickSteps
+	end
+	local msPerPass = (os.clock() - clockStart) * 1000 / RINGING
+	eq("no pass over four ringing telephones spends a single step", worst, 0)
+	eq("nor do all of them together", spentAny, 0)
+	check("and a pass costs under " .. WALL_MS_ASLEEP .. " ms of real time (" ..
+		string.format("%.4f", msPerPass) .. ")", msPerPass < WALL_MS_ASLEEP)
+	for m = 1, RINGERS do
+		local job = CeroSecJobs.book(machines[m]).list[1]
+		eq("machine " .. m .. " is still ringing after fourteen seconds",
+			job.state, "sleeping")
+		eq("having spent nothing since it lay down", job.steps, lifted[m])
+		eq("and still said nothing", #consoles[m].lines, 0)
+	end
+
+	-- And the ring ENDS. Past S7 the modem gives up, in its own word, and the job
+	-- is over -- because a bench that proved a dial costs nothing would otherwise
+	-- be just as green on a dial that hangs for ever.
+	for _ = 1, 40 do
+		_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+		CeroSecJobs.system = ringSystem
+		CeroSecJobs.pass(_G.__now)
+	end
+	for m = 1, RINGERS do
+		local book = CeroSecJobs.book(machines[m])
+		eq("machine " .. m .. "'s dial is over past S7", #book.list, 0)
+		local said = false
+		for i = 1, #consoles[m].lines do
+			if string.find(consoles[m].lines[i], CeroSecOS.MODEM.noCarrier, 1, true) then
+				said = true
+			end
+		end
+		check("and the modem gave up in its own word", said)
+	end
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.4f ms/pass",
+		RINGERS .. " ringing dials", worst, msPerPass)
+end
+
+--
 -- A radio link left open, with a loop running down it (rung 6c)
 --
 -- The same worst case one link down. A radio session is a pty like any other, so

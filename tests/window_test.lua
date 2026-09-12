@@ -5746,6 +5746,26 @@ do
 	eq("and there is no file to read it out of", ok, false)
 	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
 
+	-- AN OLDER SAVE. Every machine written before the line belonged to the modem
+	-- carries three numbers and no exchange, and such a machine has NO telephone at
+	-- all -- there is no region on its disk to work one out from. It gets one the
+	-- next time the server sees which building it is standing in, which is the next
+	-- time it is switched on or a window opens on it, and nothing is migrated
+	-- anywhere else.
+	local old = net.gate:osState()
+	local was = CeroSecOS.netRecord(old)
+	CeroSecOS.setNetRecord(old, was.b1, was.b2, was.n)
+	net.gate:mirrorOS()
+	eq("a record with no exchange in it has no line", telOf(net.gate), nil)
+	eq("but it still has an address", CeroSecOS.address(old),
+		CeroSecOS.addressText(was.b1, was.b2, was.n))
+	net.gate:turnOff()
+	net.gate:turnOn()
+	eq("switching it on gives it the line it should have had",
+		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, was.n)))
+	eq("and the number it had before the record was spoilt",
+		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 2)))
+
 	-- A computer in a base somebody built is in no building, so there is nothing
 	-- to derive either a wire or a telephone from.
 	local loose = net.machine(80, 80, 0, nil)
