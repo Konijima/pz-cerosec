@@ -103,6 +103,38 @@ file. `roomName`, `doorLocks` and `isManyDoors` moved there from
 `SCeroSecDevices.lua` for that reason and are forwarded back under their old
 names, so every call site there reads as it did.
 
+**Where the recipes come from: a magazine, the vanilla way.** The four
+`craftRecipe` blocks in `common/media/scripts/recipes_cerosec.txt` are
+`NeedToBeLearn` and they are taught by `CeroSec.WiringGuide`, the *CeroSec Field
+Wiring Guide* — a `base:literature` item whose `LearnedRecipes` names all four.
+B42 has no `TeachedRecipes` left anywhere in `media/scripts`; `LearnedRecipes` is
+the key (`items/literature.txt:5307-5320`, `Base.ElectronicsMag1`). Reading is
+**entirely engine-side and the mod ships no Lua for it**:
+`IsoGameCharacter.ReadLiterature(Literature)` walks `getLearnedRecipes()`, skips
+what `getKnownRecipes()` already holds and calls `learnRecipe(String)` on the
+rest (`javap -c`, offsets 24–81). The Lua side only *offers* the option
+(`ISInventoryPaneContextMenu.lua:1081` spots the item, `:1107` adds Read) and
+runs the timed action — `ISReadABook:perform()` at `:194` learns nothing, it
+closes the book.
+
+`SkillRequired` stays at the level that *fits* the module, and `AutoLearnAll`
+sits **six levels above it** (7, 7, 8, 9). That is vanilla's shape for a
+magazine-taught recipe and not a departure from it: vanilla does **not** drop the
+auto-learn key when a magazine teaches a recipe, it spreads the two apart.
+`MakeImprovisedFlashlight` is `SkillRequired 1` / `AutoLearnAny 3`
+(`recipes/recipes_electrical.txt:101-109`, taught by `Base.ElectronicsMag5`) and
+`MakeRemoteControllerV1` — the vanilla electrical recipe these four are nearest
+to — is `2` / `8` (`recipes/recipes_traps.txt:3-11`, taught by
+`Base.ElectronicsMag1`). Six is that recipe's own gap. So the skill still gates
+the craft, the book is how a survivor actually comes by the recipe, and a master
+electrician gets there alone in the end.
+
+The guide's loot is the vanilla electronics-magazine family's own, shelf for
+shelf and number for number (`CeroSecGuideLoot.lua`): `ElectronicStoreMagazines`
+8; `BookstoreMisc`, `BookstoreBlueCollar`, `ToolStoreBooks` and `ElectricianTools`
+2; `MagazineRackMixed`, `PostOfficeMagazines`, `CrateMagazines` and
+`LibraryMagazines` 1.
+
 **Where a module lives:** the object's own modData, under the mod's name —
 `object:getModData().cerosec = { strike = true, contact = true }` — written
 server-side and broadcast with `transmitModData()`, whose server branch is

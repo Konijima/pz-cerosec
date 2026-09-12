@@ -2,12 +2,14 @@
 #
 # Run from the repo root:  python3 tools/make-module-icons.py
 #
-# The four hardware module icons, 32x32, drawn rather than rendered.
+# The four hardware module icons and the book that teaches them, 32x32, drawn
+# rather than rendered.
 #
 #   Item_CeroSecMagneticContact.png   a reed switch and its magnet, on a frame
 #   Item_CeroSecRelay.png             an ice-cube relay, socket pins down
 #   Item_CeroSecElectricStrike.png    a strike plate, keeper cut out of it
 #   Item_CeroSecDoorOperator.png      a motor, its arm folded against it
+#   Item_CeroSecWiringGuide.png       the magazine the four recipes come out of
 #
 # The language is the one the mod's other icons already speak: a transparent
 # ground, one dark outline all the way round (the manual's 10,12,22), flat fills
@@ -15,9 +17,11 @@
 # anywhere -- Item_CeroSecManual.png is eleven colours and every pixel of it is
 # one of them. Nothing here is drawn in more than six.
 #
-# The green is the OS' own screen green out of the manual icon (92,255,122), and
-# it is used for exactly one thing on exactly one icon: the relay's lamp. A
-# survivor holding two small grey boxes tells them apart by that lamp.
+# The green is the OS' own screen green out of the manual icon (92,255,122). On
+# the four boxes it is used for exactly one thing on exactly one icon -- the
+# relay's lamp -- because a survivor holding two small grey boxes tells them
+# apart by that lamp. On the Wiring Guide it is the whole cover: the book is
+# CeroSec Systems' own printing and it is printed in the colour of their screen.
 #
 # Mathieu may well replace all four by hand; this file is what makes them
 # reproducible in the meantime, and every colour is named once at the top so a
@@ -193,10 +197,44 @@ def door_operator():
     i.save("DoorOperator")
 
 
+def wiring_guide():
+    """The magazine the four recipes come out of, lying flat and seen square on:
+    a dark cover, the masthead band across the top in the screen green, the
+    house C under it, and the sliver of pages down the right edge that is the
+    only thing telling a reader this is a magazine and not a box.
+
+    The C is the hero and it is drawn big -- seven pixels by eleven. At 32
+    pixels a mark small enough to be tasteful is a mark nobody can see, and this
+    icon has to be told apart from four grey boxes in one inventory row."""
+    i = Icon()
+    # The pages first, so the cover is laid down on top of them and their edge
+    # shows only where it sticks out: right and bottom, the way a magazine on a
+    # table does.
+    i.box(9, 5, 26, 30, CREAM)
+    # The cover over them.
+    i.box(6, 2, 24, 28, CASE)
+    # The masthead: the title band, in the screen green, with the ink rule under
+    # it that every CeroSec Systems cover has.
+    i.rect(7, 3, 23, 6, GREEN)
+    i.hline(7, 23, 7, INK)
+    # The house C, dead centre of what is left of the cover.
+    i.rect(11, 11, 12, 23, GREEN)
+    i.rect(13, 11, 18, 12, GREEN)
+    i.rect(13, 22, 18, 23, GREEN)
+    # Two lines of cover text under it, dim: print, not screen.
+    i.hline(8, 21, 25, CASE_HI)
+    i.hline(8, 16, 27, CASE_HI)
+    # And the shade down the inside of the spine, which is the left edge here.
+    i.vline(7, 8, 27, CASE_HI)
+    i.vline(23, 8, 27, STEEL_LO)
+    i.save("WiringGuide")
+
+
 magnetic_contact()
 relay()
 electric_strike()
 door_operator()
+wiring_guide()
 
 
 # The contact sheet, on demand: the four icons at 1x over 4x on a checkerboard,
@@ -206,7 +244,8 @@ if "--sheet" in sys.argv:
     import os
     zoom, pad = 4, 10
     cell = SIZE * zoom
-    names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator"]
+    names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator",
+             "WiringGuide"]
     ims = [Image.open(OUT % n).convert("RGBA") for n in names]
     w = pad + len(ims) * (cell + pad)
     h = pad + SIZE + pad + cell + pad
