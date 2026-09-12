@@ -5862,9 +5862,9 @@ do
 	check("the BIOS names the premises",
 		net.glass("Phone line: " .. telOf(net.here) .. " (CoffeeShop)"))
 	eq("which is on the record and not worked out twice",
-		CeroSecOS.premisesOf(net.here:osState()), "CoffeeShop")
+		CeroSecOS.premisesName(net.here:osState()), "CoffeeShop")
 	eq("a machine on the mall floor has no premises name",
-		CeroSecOS.premisesOf(hall:osState()), nil)
+		CeroSecOS.premisesName(hall:osState()), nil)
 	_G.__zones = {}
 end
 
@@ -5895,7 +5895,7 @@ do
 	house:turnOff()
 	house:turnOn()
 	check("a zone smaller than the building is a premises", telOf(house) ~= alone)
-	eq("and it is named", CeroSecOS.premisesOf(house:osState()), "Shop")
+	eq("and it is named", CeroSecOS.premisesName(house:osState()), "Shop")
 
 	-- The SMALLEST of the ones that qualify: a shop inside a shop is the shop the
 	-- survivor is standing in.
@@ -5906,7 +5906,7 @@ do
 	house:turnOff()
 	house:turnOn()
 	eq("the smallest qualifying zone wins",
-		CeroSecOS.premisesOf(house:osState()), "Kiosk")
+		CeroSecOS.premisesName(house:osState()), "Kiosk")
 
 	-- A CONTROL first, because the two refusals below would be green on a zone that
 	-- simply misses the machine's square: the same outline with the right type and a
@@ -5915,7 +5915,7 @@ do
 	house:turnOff()
 	house:turnOn()
 	check("a zone of that outline does reach the machine", telOf(house) ~= alone)
-	eq("and it is the one named", CeroSecOS.premisesOf(house:osState()), "Control")
+	eq("and it is the one named", CeroSecOS.premisesName(house:osState()), "Control")
 
 	-- A zone of the WRONG TYPE is not a premises whatever its size: the rule is
 	-- ZombiesType, which is the kind a shop is tagged with.

@@ -11301,13 +11301,13 @@ do
 
 	-- A machine whose premises is the building it stands in has no name.
 	CeroSecOS.setNetRecord(state, b1, b2, 1, ex)
-	eq("a premises with no name has none", CeroSecOS.premisesOf(state), nil)
+	eq("a premises with no name has none", CeroSecOS.premisesName(state), nil)
 	eq("and the BIOS line is the number alone", CeroSecOS.phoneLine(state),
 		CeroSecOS.phoneOf(state))
 
 	-- A shop the map named carries it, and the firmware says which line it is.
 	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "CoffeeShop")
-	eq("a named premises carries its name", CeroSecOS.premisesOf(state), "CoffeeShop")
+	eq("a named premises carries its name", CeroSecOS.premisesName(state), "CoffeeShop")
 	eq("and the BIOS line says which line it is", CeroSecOS.phoneLine(state),
 		CeroSecOS.phoneOf(state) .. " (CoffeeShop)")
 	check("which fits the screen",
@@ -11324,7 +11324,7 @@ do
 	-- A name that is not one is dropped when the record is written, and the record
 	-- is still written: a premises is its two bytes and the name is a word.
 	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "bad\1name")
-	eq("a name with control bytes in it is dropped", CeroSecOS.premisesOf(state), nil)
+	eq("a name with control bytes in it is dropped", CeroSecOS.premisesName(state), nil)
 	check("and the machine still has its line", CeroSecOS.phoneOf(state) ~= nil)
 	-- One found in a SAVE is a forged record, which is the rule every other field
 	-- of it already runs on.

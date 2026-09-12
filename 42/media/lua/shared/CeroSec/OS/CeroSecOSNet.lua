@@ -450,11 +450,14 @@ end
 -- can carry: the zone a shop in a mall is tagged with. nil for a machine whose
 -- premises is the building it stands in, which is every machine in a house.
 --
+-- The NAME and nothing else -- which premises a machine is on is the server's
+-- question (CeroSecNet.premisesOf) and was answered before this record was written.
+--
 -- It is a label and nothing else -- no link reads it, nothing is keyed by it, and
 -- two shops with one name are still two premises because the KEY is the outline and
 -- not the word. Announced by the firmware beside the number, because a survivor in
 -- a mall with thirty lines in it needs to know which one he is sitting at.
-function CeroSecOS.premisesOf(state)
+function CeroSecOS.premisesName(state)
 	local net = CeroSecOS.netRecord(state)
 	if net == nil then return nil end
 	return net.pz
@@ -469,7 +472,7 @@ end
 function CeroSecOS.phoneLine(state)
 	local tel = CeroSecOS.phoneOf(state)
 	if tel == nil then return nil end
-	local name = CeroSecOS.premisesOf(state)
+	local name = CeroSecOS.premisesName(state)
 	if name == nil then return tel end
 	local long = tel .. " (" .. name .. ")"
 	if #CeroSec.BOOT_PHONE + #long > CeroSecOS.COLS then return tel end
