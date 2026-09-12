@@ -1,0 +1,1707 @@
+-- CeroSec OS, Volume 2: the System Administrator's Guide.
+--
+-- The second of the three books CeroSec Systems shipped with a machine in 1993.
+-- Volume 1 taught the screen, the prompt, the disk and the small tools, for
+-- somebody who had never sat at one. This one is for whoever is made responsible
+-- for a machine OTHER PEOPLE use: root and sudo, the accounts, the groups, the
+-- files that ARE the machine, the firmware's repair, the building on the other
+-- end of /dev, the work the machine does with nobody standing at it, and the
+-- other computers down the coax. Volume 3 is scripts, jobs and pipes.
+--
+-- The shape of a page is the reader's, not this file's: plain ASCII, "\n\n"
+-- between paragraphs (a single "\n" is a soft break the reader reflows), a line
+-- beginning with two spaces is a screen and is kept monospace and so must fit
+-- the machine's own sixty columns, and no page runs past a thousand characters.
+-- tests/manual_test.lua checks every one of those, and checks the transcripts
+-- and the reference card against the engine itself.
+--
+-- Every transcript in here was taken off a running engine under lua5.1 -- the
+-- prompt driven the way tests/os_test.lua drives it, with a fake world handed in
+-- as env.devices and env.net where the engine alone could not answer. Where a
+-- real line is wider than the glass the machine wraps it, and a wrapped line is
+-- too wide to PRINT in a sixty-column book: those few are described in prose and
+-- shown in their schematic form instead of being cut down and called a screen.
+--
+-- The cover is NOT written here. The reader stamps it from the engine's own
+-- version number once the core is loaded; nothing in this file may name a
+-- version, and nothing in this file may touch CeroSecOS at load time -- the
+-- game loads shared/cerosec/ ahead of shared/cerosec/os/.
+
+-- Both lines are written defensively so this file does not care whether the
+-- legacy book or Volume 1 has loaded yet. The one load order that WOULD break
+-- it is the legacy CeroSecManual.lua landing after this file, since it assigns a
+-- fresh table rather than adding to one; the game sorts cerosecmanual.lua ahead
+-- of cerosecmanualadmin.lua, so it does not today.
+CeroSecManual = CeroSecManual or {}
+CeroSecManual.volumes = CeroSecManual.volumes or {}
+
+CeroSecManual.volumes[2] = {
+	id = "admin",
+	title = nil,
+	name = "System Administrator's Guide",
+	edition = "First Edition, 1993",
+	chapters = {
+
+		{ title = "1. The administrator's chair", pages = {
+
+[[This is the second of three books, and it is the one for whoever the
+office has made responsible for the machine.
+
+Volume 1 was written for a person with one account and his own files in
+it. This one is written for the person who made that account. It assumes
+you have read Volume 1, or have sat at one of these long enough not to
+need it: the prompt, the editor, ls and cat and chmod are taken as known
+from here on, and where this book needs one of them it uses it without
+stopping to explain.
+
+What is in it is everything a machine does for other people. The two
+powers, root and sudo. The accounts and the groups. The handful of files
+that ARE the machine, so that editing one changes it. The firmware, and
+what it can put back. The building the machine is wired to. The work it
+does at four in the morning. And the other computers down the wire.
+
+Volume 3, the Programmer's Guide, is scripts, jobs and pipes. Where this
+book needs a line of shell it writes one and points you there.]],
+
+[[There are two accounts on a fresh machine and they are not the same kind
+of thing.
+
+admin is an account. It owns its home, it may read what it is allowed to
+read, and when it is refused something the machine tells it so.
+
+root is not an account so much as the absence of one. Every permission
+check on this machine begins by asking whether the caller is root, and
+stops there if it is. Root reads a file at mode 600 that belongs to
+somebody else. Root writes /etc/passwd. Root deletes /bin. There is no
+mode, no owner and no group anywhere on the disk that means anything at
+all to root.
+
+That is the whole of it, and it is why the rest of this chapter is about
+not being root any longer than you have to. A machine cannot protect you
+from root, because protecting things from root is not what it is for.
+
+  root@ksp-04-11:~# whoami
+  root
+  root@ksp-04-11:~# rm -r /bin
+
+Two lines, and the second one is a machine that will not boot.]],
+
+[[Do not work as root.
+
+Log in as admin. Do the administrator's work with sudo, one command at a
+time, and let the machine put the word root in front of every line where
+it really matters. A root prompt left open on a desk is a machine anybody
+walking past owns, and a typo typed at a root prompt is a typo with
+nothing between it and the disk.
+
+You can tell the two apart without reading the name, which is the point
+of the last character of the prompt:
+
+  admin@ksp-04-11:~$ su
+  Password:
+  root@ksp-04-11:~# whoami
+  root
+  root@ksp-04-11:~# exit
+  admin@ksp-04-11:~$ whoami
+  admin
+
+A dollar sign is an ordinary account. A pound sign is an account whose
+line in /etc/passwd carries the admin flag, and root's does. Chapter 2 is
+where we are honest about what that flag does and does not grant.
+
+Note what exit did there. It did not log anybody out.]],
+
+[[su, and the stack behind it.
+
+su becomes somebody else at this glass. With no name it means root. It
+asks for the TARGET's password, which is what su has always asked for,
+and root is asked for nobody's.
+
+What makes it more than a convenience is that the machine remembers who
+it was. Every su pushes the account you were, and where you were
+standing, onto a stack; exit pops one off; only an exit with nothing left
+on the stack logs the glass out. The stack belongs to the MACHINE and not
+to the window, so walk away three deep and come back three deep, tomorrow
+or next week.
+
+  root@ksp-04-11:~# su bob
+  bob@ksp-04-11:~$ su kate
+  Password:
+  kate@ksp-04-11:~$ exit
+  bob@ksp-04-11:~$ exit
+  root@ksp-04-11:~#
+
+It stacks four deep, and a fifth is refused:
+
+  root@ksp-04-11:~# su root
+  su: too many levels
+
+One wrong password is the end of it. There is no second try, because
+somebody had to be standing at the keyboard to type the first.]],
+
+[[sudo, and the file that says who may.
+
+sudo runs ONE command as root and then it is over. It asks for YOUR OWN
+password, not root's, which is the whole idea: you are proving you are you
+and not that you know the machine's most valuable secret.
+
+  admin@ksp-04-11:~$ sudo whoami
+  [sudo] password for admin:
+  root
+  admin@ksp-04-11:~$ whoami
+  admin
+
+Who may is /etc/sudoers, one name a line, and a fresh machine has admin on
+it. Anybody else gets one line and it names him:
+
+  bob@ksp-04-11:~$ sudo whoami
+  bob is not in the sudoers file.
+
+One wrong answer is sudo: authentication failure, and there is no second
+try. Put the single word NOPASSWD after a name in that file and the
+account is never asked at all, which is convenient and is also a password
+you have decided not to have. Chapter 10 has our advice.]],
+
+[[Three things sudo does not do, each of which somebody writes to us
+about.
+
+It does not move you. The command runs as root in the directory you were
+standing in, and the session at the glass is untouched: sudo cd /root
+moves nobody and prints nothing, and whoami afterwards still says admin.
+
+It cannot run a word the shell itself is. cd, exit, fg, jobs and wait have
+no file in /bin for sudo to find, so:
+
+  admin@ksp-04-11:~$ sudo exit
+  [sudo] password for admin:
+  sudo: exit: command not found
+
+which is what a real sudo says about one.
+
+And it does not give out a root prompt -- except where you ask for one
+on purpose. sudo su is a root shell at this glass, on the same stack exit
+pops; sudo su bob is bob's shell without knowing bob's password.
+
+Classic mistake. Typing sudo su first thing in the morning and working
+there all day. You now have every hazard of being root and none of the
+protection sudo was bought for. Type sudo in front of the six lines that
+need it instead.]],
+
+		} },
+
+		{ title = "2. Accounts", pages = {
+
+[[An account is a line in a file, and the file is /etc/passwd.
+
+There is no separate list of users anywhere on this machine. What is in
+that file is what accounts exist. Root editing it with the editor changes
+who may log in; root deleting it is a machine nobody can log in to at all,
+which the firmware treats as a machine with no operating system.
+
+It is root's, and it is mode 600, so admin cannot even read it. Look at it
+with sudo:
+
+  admin@ksp-04-11:~$ sudo cat /etc/passwd
+
+Four fields, separated by colons, one account a line:
+
+  name:$cs1$<salt>$<32 hex digits>:home:admin|user
+
+A real line is wider than the sixty columns of the glass and the machine
+wraps it across two rows. That is not damage and the file has one line per
+account however it looks. Do not "tidy" a wrapped line in the editor.]],
+
+[[The four fields, in order.
+
+The name. Lower-case letter first, then lower-case letters, digits,
+underscores and hyphens, up to sixteen characters. That is the name the
+machine will MAKE; a machine that has been running a while may have been
+given stranger ones by hand, and it keeps them.
+
+The password, and it is not the password. $cs1$ names the scheme, then a
+salt, then thirty-two hex digits which are what your password turns into.
+It does not turn back. Nobody at CeroSec Systems and nothing on this
+machine can tell you what a password was -- only whether one you typed is
+the same. The salt is why two accounts with the same password do not look
+alike on the disk. You can watch the machinery work:
+
+  admin@ksp-04-11:~$ hash knox 42f7pl
+  $cs1$42f7pl$b36c5193655e2d64e38523e242fb7fa8
+
+Give hash no salt and it makes a fresh one, so the line is different every
+time you ask. That is the salt doing its job, not the machine being
+unreliable.]],
+
+[[An EMPTY second field is an account with no password, and an account
+with no password is a way in. Press Enter at password: and you are it.
+Both shipped accounts start that way. Chapter 10 says what to do about it
+and this is the page that says why.
+
+The home. An absolute path, and it is where the account lands at login and
+what a bare cd goes to. Nothing checks that it exists; an account whose
+home has been deleted logs in and stands at the root of the disk.
+
+The flag, which is the last field and is either admin or user. Here is the
+honest answer about it, because the word invites a wrong guess: today the
+flag grants NOTHING. No command on this machine consults it. Its one
+visible effect is the pound sign on the prompt instead of the dollar sign.
+Power is being root, or being named in /etc/sudoers, and nothing else. A
+later release may give the flag a meaning; this one does not, and we would
+rather write that down than let you hand somebody a mark you believed was
+a key.]],
+
+[[Making one. adduser is root's, and it does three things: writes the
+line, makes the home, and says out loud that the account is open.
+
+Try it.
+
+  root@ksp-04-11:~# adduser bob
+  adduser: bob: created
+  adduser: set a password with passwd bob
+
+Do the second line now, not later. Between those two commands bob is an
+account anybody in the office can log in to by pressing Enter.
+
+  root@ksp-04-11:~# passwd bob
+  New password:
+  Retype new password:
+  passwd: password updated
+
+adduser -a sets the admin flag, which means the pound sign and nothing
+more. A name it will not make it says so about:
+
+  root@ksp-04-11:~# adduser bob
+  adduser: bob: already exists
+  root@ksp-04-11:~# adduser Kate
+  adduser: Kate: invalid name
+
+A home directory that is already there is ADOPTED rather than remade: it
+changes hands and keeps everything in it. Somebody's files are not an
+obstacle to giving him an account.]],
+
+[[Unmaking one, and this is where care is owed.
+
+  root@ksp-04-11:~# deluser kate
+  deluser: kate: removed
+
+That takes the line out of /etc/passwd, and takes the name out of
+/etc/sudoers with it -- a name left in that file is a line waiting for
+whoever is given the name next. It does NOT touch the home directory. His
+files stay exactly where they were, owned by a name the machine no longer
+knows, and ls -l shows it. That is the truth rather than a tidy lie about
+whose files those were.
+
+  root@ksp-04-11:~# deluser -r kate
+
+-r takes the home with it. There is no wastebasket.
+
+Two refusals, and both are the machine looking after you:
+
+  root@ksp-04-11:~# deluser root
+  deluser: root: cannot remove
+  root@ksp-04-11:~# deluser admin
+  deluser: admin: user is logged in
+
+Root is the way back into the machine, so it is not one of the accounts.
+And no account is pulled out from under a live session, including one the
+glass would come back to through exit.]],
+
+[[Asking about an account, which anybody may do about anybody.
+
+  admin@ksp-04-11:~$ id
+  uid=admin flag=user groups=admin,sudo,users
+  admin@ksp-04-11:~$ id bob
+  uid=bob flag=user groups=bob
+  admin@ksp-04-11:~$ groups bob
+  bob
+
+id is the whole of what the machine knows: the name, the flag from the
+last field, and every group. groups is the same list with blanks instead
+of commas. Neither is a secret: who may become root is a file the machine
+reads out loud at every sudo, and there is nothing to be gained by making
+it hard to look at.
+
+passwd with no name changes your own and asks for the old one first. Root
+is asked for nobody's old password -- its own included -- and root is the
+only account that may change somebody else's.
+
+Classic mistake. Running adduser, being interrupted, and coming back
+tomorrow. The account has been sitting there with no password all night,
+and the machine told you so at the time, in the second line it printed.
+Read the second line.]],
+
+		} },
+
+		{ title = "3. Groups, and sharing a file", pages = {
+
+[[A group is how two accounts come to share one file, and it is another
+file: /etc/group, root's, mode 644, one group a line.
+
+  admin@ksp-04-11:~$ cat /etc/group
+  # name:member,member,... -- one group a line
+  # every account is also in a group of its own name
+  root:
+  sudo:admin
+  users:admin
+
+A name, a colon, and the members separated by commas. Blank lines and
+lines beginning with # are comments. Everybody may read it, which is why
+it is 644 and why id can answer about anybody.
+
+A machine ships with three. root: has nobody in it. sudo is the group the
+devices in chapter 6 belong to. users is the ordinary one, and admin is in
+it.
+
+Both comment lines at the top are the machine's own, and the second is the
+rule the rest of this chapter turns on.]],
+
+[[Every account is in a group of its own name, and there is no line
+anywhere that says so.
+
+bob is in group bob whether /etc/group mentions him or not. That is his
+PRIMARY group, adduser writes nothing for it, and it is what a fresh file
+of his is shared with -- which is to say, nobody.
+
+The consequence catches everybody once. A primary group is not a
+membership somebody granted, so it is not one anybody can grant or take
+away:
+
+  root@ksp-04-11:~# groupdel bob
+  groupdel: bob: no such group
+  root@ksp-04-11:~# gpasswd -a bob bob
+  gpasswd: bob: no such group
+
+Neither is an error about bob. Both mean "there is no LINE for that, and
+there never will be".
+
+It is also what makes chgrp bob something worth typing: handing a file to
+bob's primary group hands it to bob and to nobody else.]],
+
+[[Three commands, all root's.
+
+Try it, and watch the file change under it.
+
+  root@ksp-04-11:~# groupadd crew
+  root@ksp-04-11:~# gpasswd -a bob crew
+  root@ksp-04-11:~# gpasswd -a admin crew
+  root@ksp-04-11:~# cat /etc/group
+  # name:member,member,... -- one group a line
+  # every account is also in a group of its own name
+  root:
+  sudo:admin
+  users:admin
+  crew:bob,admin
+  root@ksp-04-11:~# groups bob
+  bob crew
+
+groupadd appends a line. gpasswd -a puts a name in it and gpasswd -d
+takes one out. Every other line of the file is kept exactly as it lies,
+comments and all. A group name obeys the same rule an account name does,
+because the two share a namespace: a group nobody could ever have as a
+primary group would be a trap.
+
+  root@ksp-04-11:~# groupadd crew
+  groupadd: crew: already exists
+  root@ksp-04-11:~# groupdel users
+  groupdel: users: cannot remove
+
+root, sudo and users are the machine's own and cannot go.]],
+
+[[The three digits, for real this time.
+
+A mode is three octal digits and the machine reads exactly ONE of them:
+the first if you own the file, the second if you are in its group, the
+third otherwise. Root is judged by none of them. An owner is judged by the
+first digit and the other two are never consulted for him, even when he is
+in the group as well.
+
+So a shared folder is two commands and a recipe worth copying:
+
+  admin@ksp-04-11:~$ mkdir shared
+  admin@ksp-04-11:~$ chgrp crew shared
+  admin@ksp-04-11:~$ chmod 770 shared
+  admin@ksp-04-11:~$ ls -l
+  drwxrwx---  admin  crew        0  Jun 27 13:12  shared
+
+770 is: I may read, write and step in; so may anybody in crew; and
+everybody else may do nothing at all. The third digit matters most, since
+7 there would have let the whole office in.
+
+Files inside it want the same treatment -- 660, since a file needs no x --
+and chgrp only takes a group that exists:
+
+  admin@ksp-04-11:~$ chgrp nosuch shared
+  chgrp: nosuch: no such group]],
+
+[[Two loose ends.
+
+A group can be deleted while files still name it. Nothing walks the disk
+to tidy up, so the name stays on the file, dangling: nobody is in it, so
+the middle digit now grants nothing, and the machine will not hand the
+name out again.
+
+  root@ksp-04-11:~# groupdel crew
+  root@ksp-04-11:~# ls -l /home/admin
+  drwxrwx---  admin  crew        1  Jun 27 13:12  shared
+  root@ksp-04-11:~# chgrp crew /home/admin/shared
+  chgrp: crew: no such group
+
+That is recoverable -- groupadd crew and the line is back.
+
+The other is the group called sudo, which is the one place two files meet.
+/etc/sudoers stays the authority on who may run a command as root, and the
+sudo group MIRRORS it: a name in that file is in the group whether
+/etc/group says so or not. It is the group the devices belong to.
+
+Classic mistake. Putting somebody in the sudo group by hand and believing
+you have given him root. You have given him the devices and the group's
+files. Only a line in /etc/sudoers gives out root.]],
+
+		} },
+
+		{ title = "4. The system files", pages = {
+
+[[A machine is a filesystem and nothing else.
+
+There is no table of accounts beside /etc/passwd, no list of commands
+beside /bin, no list of groups beside /etc/group. Each of those files IS
+the thing. Root editing one with the editor changes the machine, and root
+deleting one breaks it as far as the file mattered.
+
+  root@ksp-04-11:~# ls -l /
+  drwxr-xr-x  root   root       66  Jan  1 00:00  bin
+  drwxr-xr-x  root   root        1  Jan  1 00:00  dev
+  drwxr-xr-x  root   root        7  Jan  1 00:00  etc
+  drwxr-xr-x  root   root        1  Jan  1 00:00  home
+  drwx------  root   root        0  Jan  1 00:00  root
+  drwxr-xr-x  root   root        4  Jan  1 00:00  var
+
+bin is the commands, etc is the machine's own answers about itself, var is
+what it writes about itself, dev is the building, home is everybody's
+files, and /root is root's own at mode 700.
+
+There is no guard rail on any of it. The way back is the firmware, and the
+protection is that root has a password.]],
+
+[[/bin is not a list of commands. It is the commands.
+
+One file per command, owner root, mode 755, and the contents of the file
+are the one line help prints about it:
+
+  root@ksp-04-11:~# ls -l /bin/ls
+  -rwxr-xr-x  root   root       16  Jan  1 00:00  ls
+  root@ksp-04-11:~# cat /bin/ls
+  list a directory
+
+So this is not a demonstration. It is a machine losing a command:
+
+  root@ksp-04-11:~# rm /bin/ls
+  root@ksp-04-11:~# ls
+  ls: command not found
+
+And a mode is enough on its own. chmod 600 /bin/ls leaves the file there
+and every account but root gets ls: permission denied instead. One tells
+you the command is missing; the other that it is locked, and where.
+
+An empty /bin is a machine with no operating system as far as the firmware
+is concerned, and help knows it: asked on a machine with nothing in /bin
+it says the system is damaged and tells you to switch the computer off and
+on. That is the repair, and it is the next chapter.]],
+
+[[What the firmware's repair does to /bin, since it belongs here as much
+as there: it rewrites every standard command, every time, without asking
+-- back to owner root, mode 755 and its shipped description. Missing,
+damaged and merely chmod'd out of reach all come back the same.
+
+  root@ksp-04-11:~# chmod 600 /bin/ls
+  root@ksp-04-11:~# ls -l /bin/ls
+  -rwxr-xr-x  root   root       16  Jan  1 00:00  ls
+
+That is after the repair, and it is a feature: a machine cannot be locked
+shut by a mode.
+
+A file of your own in /bin is left where it is. And there is a quieter
+top-up that is not the repair at all. Every machine carries the number of
+the system it was built with, and one loaded on a newer release has the
+commands it is missing written in once and the number moved up. A machine
+already at the current number gets nothing at all, which is what keeps
+root's rm /bin/ls a deletion rather than a suggestion.]],
+
+[[/etc, file by file.
+
+  root@ksp-04-11:~# ls -1 /etc
+  group
+  hostname
+  hosts
+  hosts.equiv
+  motd
+  passwd
+  sudoers
+
+Seven files, and that is the whole machine's own account of itself. Add ls
+-l to see the modes: every one of them is 644 except passwd, which is 600,
+and sudoers, which is 440 -- root may not write that one without meaning
+to, which is a small brake worth having on the file that hands out root.
+
+passwd is chapter 2, group is chapter 3, hosts and hosts.equiv chapter 8.
+
+/etc/hostname is the machine's name: one to sixteen characters of
+lower-case letters, digits and hyphens.
+
+  root@ksp-04-11:~# hostname gate-02
+  root@gate-02:~# hostname
+  gate-02
+
+Root only, and the name is in the prompt of every screen at the machine
+the moment it changes. Give it a name you can shout across an office.]],
+
+[[/etc/motd is what greets a login, after the firmware's lines and before
+the first prompt. Ten lines at most. Put the machine's own name, the room
+it stands in, and whatever the office needs to read every morning.
+
+An EMPTY /etc/motd is a silent login. Not a broken one -- a file with
+nothing in it falls back on the greeting the machine ships with, and one
+holding a single blank line is how you have no greeting at all.
+
+/var is what the machine writes about itself, and there are four
+directories in it:
+
+  root@ksp-04-11:~# ls -l /var
+  drwxr-xr-x  root   root        0  Jan  1 00:00  log
+  drwxr-xr-x  root   root        0  Jan  1 00:00  mail
+  drwxr-xr-x  root   root        1  Jan  1 00:00  spool
+  drwxrwxrwx  root   root        0  Jan  1 00:00  tmp
+
+/var/log/cron and /var/log/wtmp are the two logs, chapters 7 and 8.
+/var/mail holds one mailbox per account. /var/spool/cron holds the
+crontabs, at mode 700 so that nobody reaches his own by hand.]],
+
+[[/var/tmp is the one directory anybody may write in, and it wears a rule of
+its own to make that safe. Everywhere else, a directory you may write in
+is one you may delete from. Here, only the owner of a file -- or root --
+may remove it or rename it out again.
+
+  bob@ksp-04-11:~$ ls -l /var/tmp
+  -rw-r--r--  admin  admin       4  Jun 27 13:12  mine.txt
+  bob@ksp-04-11:~$ cat /var/tmp/mine.txt
+  mine
+  bob@ksp-04-11:~$ rm /var/tmp/mine.txt
+  rm: /var/tmp/mine.txt: permission denied
+
+Bob may read it, may write his own beside it, and may not take it away.
+The rule belongs to the PLACE: a copy of it elsewhere is an ordinary file.
+
+/dev is the building, and it is chapter 6. Nothing may be created there:
+mkdir, touch and edit under it all answer /dev: read-only.
+
+Classic mistake. Editing one of these files while logged in as root and
+saving a line that will not parse. A line that will not parse is SKIPPED,
+in silence, by every one of these files. Read your file back with cat
+after you save it.]],
+
+		} },
+
+		{ title = "5. The firmware, and repairing a machine", pages = {
+
+[[Before the operating system there is the firmware, and it has its own
+version number that has nothing to do with the system's. It is what prints
+the four lines Volume 1 chapter 1 describes, and it is what looks at the
+disk before it hands over.
+
+If what it finds is not a working system, it says so and offers to mend
+it:
+
+  No operating system found.
+  Restore system? (y/n)
+
+It means one of a very few things, and each takes root and some
+determination. /bin is missing, or is not a directory, or is empty.
+/etc/passwd is missing, or is not a file, or parses to no accounts at all.
+Or the disk itself no longer makes sense.
+
+y repairs it. n leaves it exactly as broken as it was, and the refusal
+belongs to the MACHINE and not to your window: the next person to open a
+screen on it finds the refusal and not a fresh question. Anything else
+brings the question back. Escape walks away without answering and the
+machine will ask again.
+
+Say y. The next page is why there is nothing to weigh.]],
+
+[[What a repair rewrites, without asking and every time: every standard
+command in /bin, back to owner root, mode 755 and its shipped one-line
+description.
+
+What it puts back only when it is missing or names nobody at all:
+/etc/passwd, /etc/sudoers and /etc/group. A passwd file that still names
+one account is left as it lies, hashes and all -- no password is reset by a
+repair. /etc/hostname and /etc/motd are made if absent and never touched.
+
+What it never touches: /home and /root. Not the files, not a history, not
+a .profile, not a thing.
+
+Try it, on a machine you have just broken on purpose.
+
+  root@ksp-04-11:~# rm -r /bin
+  root@ksp-04-11:~# ls
+  ls: command not found
+
+Switch the machine off and on, answer y, and:
+
+  root@ksp-04-11:~# cat /home/admin/notes.txt
+  knox
+
+Running it twice changes not one byte. It is not a disk doctor: if
+something else is wrong the machine comes back to the same question,
+because what it mends is the system files.]],
+
+[[Switching a machine off, in words instead of by hand.
+
+Both commands are root's. Not because work would be lost -- everything is
+on the disk and survives -- but because a second survivor standing at the
+same glass loses his session, and that is not an ordinary account's to
+take.
+
+  admin@ksp-04-11:~$ shutdown
+  shutdown: permission denied
+  root@ksp-04-11:~# shutdown
+
+shutdown switches the machine off: the screen goes, the glow goes, every
+window open on it closes. reboot, and its exact twin restart, switch it
+off and straight back on, and everybody watching sees the firmware count
+the memory out loud again and lands at a fresh login: prompt.
+
+halt is the older name for shutdown -h now and does the same thing.
+
+None of the three is a repair. The disk comes through untouched, which is
+why "switch it off and on again" mends a machine whose /bin is empty: what
+mends it is the firmware's question on the way back up, not the power.]],
+
+[[shutdown also takes a time, which is how you clear a machine other people
+are working at.
+
+-h halts and -r reboots; with neither, it halts. now, and no time at all,
+are the same thing. +N is N minutes from now, up to a day.
+
+  root@ksp-04-11:~# shutdown -r +5
+  The system is going down for reboot in 5 minutes!
+
+Every screen standing at the machine gets that line, gets it again one
+minute before, and once more as the machine goes:
+
+  The system is going down for reboot in 1 minute!
+  The system is going down for reboot NOW!
+
+One pending order per machine. A second is refused rather than quietly
+replacing the first, because nobody should be told two different times:
+
+  root@ksp-04-11:~# shutdown -r +5
+  shutdown: already scheduled
+  root@ksp-04-11:~# shutdown -c
+  shutdown: cancelled
+
+-c with nothing pending says shutdown: no shutdown scheduled.]],
+
+[[Two honest limits on that timer, and one on the machine.
+
+The timer lives on the MACHINE and not in your window: close the window,
+walk away, come back, and it is still counting down. But it is not written
+to the disk. The power going out, the computer being carried off, or the
+world being loaded again all forget a pending shutdown and the machine
+stays up. This computer keeps no list of running work on its disk, and we
+would rather write that here than have you find it out.
+
+The power going out is the other way a machine stops, and it is not
+gentle: the screen clears, anything unsaved in the editor is gone, and the
+disk is as it was.
+
+And a computer that is picked up keeps its disk and loses its screen: its
+files, accounts and crontabs travel with it, and what was running does
+not.
+
+Classic mistake. Typing shutdown at the end of the day on a machine
+somebody else is logged into, having read this far and not chapter 8. Type
+who first. It takes two seconds and it lists everybody.]],
+
+		} },
+
+		{ title = "6. The building, through /dev", pages = {
+
+[[This is the chapter that makes the machine worth having.
+
+The building it stands in is wired to it. Under /dev there is one file for
+every door, light switch and window the machine can reach, and writing a
+word into one of them works the thing itself.
+
+The reach is the BUILDING. If the computer's square belongs to a building
+the map knows, it gets every room of it, upstairs and down. If it does not
+-- which is what a computer in a base you built is -- it gets ten tiles of
+its own floor in every direction. Sixty four devices at the outside.
+
+  root@ksp-04-11:~# dev
+  door0   exterior              0 5S        W  locked
+  door1   kitchen-hallway       2W 1N       N  closed
+  door2   built                 4E 9S +1    N  closed
+  light0  office                0 0            on
+  light1  hallway               3E 2N          off
+  lock0   exterior              0 5S        W  locked
+  lock1   built                 4E 9S +1    N  padlock
+  win0    office                1E 0        N  locked]],
+
+[[Reading that table.
+
+The id is what you name the thing by. There are four kinds -- door, light,
+lock and win -- and the number after the kind is the machine's own, handed
+out once and kept.
+
+Then the rooms it stands between, in the map's own raw words: exterior
+where one side is the outdoors, built for something a player put up.
+
+Then where it is from where the computer stands: tiles east or west, tiles
+north or south, 0 0 for the computer's own square, and +1 or -1 for a
+floor that is not this one. That column is how you tell two devices apart
+when the room names do not.
+
+Then which way it faces, and then its state.
+
+The table runs by kind and then by number, so light2 comes before light10.
+In a big building one kind at a time is easier to read:
+
+  root@ksp-04-11:~# dev light
+  light0  office                0 0            on
+  light1  hallway               3E 2N          off]],
+
+[[Working one. An id on its own reads it back; an id and a word works it
+and then reads back what it became.
+
+Try it.
+
+  root@ksp-04-11:~# dev light0
+  light0: on
+  root@ksp-04-11:~# dev light0 off
+  light0: off
+  root@ksp-04-11:~# dev light1 toggle
+  light1: on
+  root@ksp-04-11:~# dev door1 open
+  door1: open
+
+toggle is whichever of the pair it is not in now. Each kind knows two
+words and no others: light takes on and off; lock and win take lock and
+unlock; door takes open and close. A word from the wrong kind is refused
+before it ever reaches the building.
+
+And when you cannot tell which of thirty-five lights is the one in the
+listing, ask it to show itself:
+
+  root@ksp-04-11:~# dev find light0
+  light0: blinking
+  root@ksp-04-11:~# dev find door1
+  door1: highlighted
+
+A light blinks for six seconds and goes back exactly as it was found. A
+door has nothing to blink with, so it is outlined on your screen instead.]],
+
+[[Doors and keys, honestly.
+
+door0 and lock0 in that first listing are one door twice over: the thing
+that opens, and the key holding it shut. Only a door a lock can really
+stop somebody at gets the second row, because a key stops somebody who is
+OUTSIDE a building and nobody inside. So exterior doors and built doors
+have a lockN and interior doors do not.
+
+The computer is not a key. A locked door stays shut:
+
+  root@ksp-04-11:~# dev door0 open
+  door0: locked
+  root@ksp-04-11:~# dev lock0 unlock
+  lock0: unlocked
+  root@ksp-04-11:~# dev door0 open
+  door0: open
+
+A padlock is the other way round. It does not hold a door against a hand;
+it protects what is BEHIND the door from anybody without its key, which on
+a player-built door is the whole point. Taking one off is dev lock1 unlock
+and putting it back is dev lock1 lock.
+
+And unlocking is not opening. unlock takes the key off; somebody still has
+to walk over and open the door -- or the machine does, on the next line.]],
+
+[[Underneath, dev is cat and a redirect. Same permissions, same words,
+same refusals:
+
+  root@ksp-04-11:~# cat /dev/light0
+  off
+  root@ksp-04-11:~# echo on > /dev/light0
+
+which is what makes a device something a crontab line or a script can
+write to, and chapter 7 depends on it.
+
+ls -l shows them as files, with no room left for the offset column:
+
+  root@ksp-04-11:~# ls -l /dev
+  crw-rw----  root  sudo  door0   exterior       W  locked
+  crw-rw----  root  sudo  light0  office            on
+  crw-rw-rw-  root  root  null
+
+Owner root, group sudo, mode 660. So root and anybody /etc/sudoers names
+read them and work them with no sudo typed and no password asked, and
+everybody else is refused by the device itself. Root may open one to the
+whole office, and that lasts:
+
+  root@ksp-04-11:~# chmod 666 /dev/light0
+
+Only the MODE of a device outlives the command it was typed in. chgrp on
+one answers is a device, and so do rm, mv, cp and edit.]],
+
+[[Every refusal a device makes, and each of them is a fact about the
+building rather than about your typing. A device answers in its OWN name,
+never the command's.
+
+  light0: no power
+      no current, no bulb, or nothing there to switch
+  lock0: no such device
+      taken away, or in a part of the world nobody is near
+  win0: smashed
+      the glass is gone, so there is no lock to turn
+  win0: barricaded
+      boarded up
+  lock1: no padlock
+      a built door with neither padlock nor key on it
+  door0: locked
+      held by a key: unlock its lockN first
+  door0: barricaded
+      planks on it, and no machine takes those off
+  door0: blocked
+      the doorway is not clear: a wall, a tree, a car
+  light0: invalid value
+      that word means nothing to that kind
+  light0: permission denied
+      the mode says no
+  win0: cannot toggle
+      smashed or barricaded: no opposite to turn it into
+
+dev's own two are signed the way a command signs, and the appendix has
+both.]],
+
+[[Two rules about numbers, and one about the world, and then we are done.
+
+A number belongs to a device for the life of the machine. light0 is the
+same switch tomorrow as today. One torn out leaves a GAP -- nothing moves
+up into it -- so a line you wrote into a crontab last week still means
+what it meant. A device out of reach is not listed at all, and naming it
+answers no such device: the difference between a switch that is gone and a
+path you mistyped.
+
+And the one to design around: nobody near, nothing acts. The parts of the
+world nobody stands in are not loaded, and a door in one of them is a door
+the machine cannot find. A minute later, with somebody in the room, the
+same line works. That is what a building is.
+
+Classic mistake. Reading the table, seeing light0 at 0 0, and assuming 0 0
+means "the first one". It means the computer's own square. The switch in
+the room with the machine in it, which is the one you will want at four in
+the morning, is the one whose offset is two zeroes.]],
+
+		} },
+
+		{ title = "7. Work the machine does alone", pages = {
+
+[[cron is the machine doing something with nobody standing at it, and on
+this computer that means the lights and the doors of chapter 6.
+
+Each account has a crontab. Once a minute the machine looks at every one
+of them and runs the lines that are due. There are exactly three ways in
+and no fourth:
+
+  admin@ksp-04-11:~$ crontab -l
+  no crontab for admin
+  admin@ksp-04-11:~$ crontab -e
+  admin@ksp-04-11:~$ crontab -r
+
+-l prints yours, -e opens it in the editor, -r throws it away. You cannot
+reach the file itself, and that is deliberate:
+
+  admin@ksp-04-11:~$ ls -l /var/spool/cron
+  ls: /var/spool/cron: permission denied
+
+The directory is root's at mode 700 and each crontab in it is root's at
+600. crontab is the one command on the machine that reaches a file its
+caller may not, and it spends that privilege on exactly one path -- which
+is what makes a line in your crontab a line that runs as YOU and not as
+somebody who wrote it into your file.]],
+
+[[A line is five fields and then a command:
+
+  0 4 * * * echo off > /dev/light0
+  */15 * * * * cat /dev/door0 >> log
+  @reboot echo the machine is up
+
+The fields, in order: minute 0 to 59, hour 0 to 23, day of month 1 to 31,
+month 1 to 12, and day of week 0 to 6 from Sunday, with 7 allowed for
+Sunday as well. A star is every value. Lists, ranges and steps all work:
+8-17 is office hours, */15 is every quarter of an hour, 1-5 is Monday to
+Friday.
+
+Write the NUMBERS. Names for months and weekdays are not accepted here.
+
+The seven shorthands save the commonest lines: @reboot, @hourly, @daily,
+@midnight, @weekly, @monthly and @yearly. @reboot is the only one that is
+not a time at all -- it runs once, when the machine comes up.
+
+And the rule nobody expects, which this machine keeps because every cron
+has kept it: when BOTH day fields are restricted, EITHER matching is
+enough. 0 0 1 * 1 is the first of the month and also every Monday.
+
+Thirty-two lines to a crontab.]],
+
+[[The whole crontab is judged when you save it, and refused whole. The
+refusal names the file, the line and the field, in the words cron has
+always used:
+
+  Cannot save: "/var/spool/cron/admin":1: bad minute
+
+Try getting each of them on purpose; it is five minutes well spent.
+
+  "/var/spool/cron/admin":1: bad hour
+  "/var/spool/cron/admin":1: bad day-of-month
+  "/var/spool/cron/admin":1: bad month
+  "/var/spool/cron/admin":1: bad day-of-week
+  "/var/spool/cron/admin":1: bad command
+      five fields and nothing after them
+  "/var/spool/cron/admin":1: bad time specifier
+      an @word that is not one of the seven
+  "/var/spool/cron/admin":33: too many entries
+
+Note the line number. It is the line in the FILE, so a good crontab with
+one bad line in it is refused and nothing of it is installed -- the one
+you had before is still there and still running. Fix the line and save
+again.
+
+Blank lines and lines beginning with # are neither entries nor errors.]],
+
+[[Where the output goes, and it is not the screen. There is nobody at the
+screen at four in the morning.
+
+It is mailed to the account, with the two lines a mailbox has always
+carried in front of it, and mail shows it and empties it:
+
+  admin@ksp-04-11:~$ mail
+  From cron  Sun Jun 27 13:12:00 1993
+  Subject: Cron <admin@ksp-04-11> echo tick
+
+  tick
+  admin@ksp-04-11:~$ mail
+  No mail for admin
+
+The second time is not a fault: reading the mail IS emptying the mailbox,
+which is what mail has always done. A hundred lines and four kilobytes to
+a mailbox, oldest dropped.
+
+What RAN, and what could not, is /var/log/cron, root's at 640:
+
+  root@ksp-04-11:~# cat /var/log/cron
+  Jun 27 13:12 (admin) CMD (echo tick)
+  Jun 27 13:12 (CRON) error (can't fork)
+
+That second line is the machine full: four jobs at once is all it has, and
+a line that comes due with no slot free is skipped and logged.]],
+
+[[Three things cron will not do, and each of them has cost somebody a
+night's work.
+
+It does not catch up. A machine that was switched off at four in the
+morning, or standing in a part of the world nobody was near, does not run
+four o'clock's line when it comes back. A minute cron slept through is a
+minute that is gone. No cron has ever gone back for one.
+
+It has no terminal, and the machine holds it to that. A cron line cannot
+put a question up on a glass a survivor might be standing at, so five
+commands refuse from cron and each says why:
+
+  rlogin: not a terminal
+  su: not a terminal
+  passwd: not a terminal
+  sudo: not a terminal
+  edit: not a terminal
+
+clear runs and clears nothing. rsh is the one that works without a
+terminal, which is why a crontab calls rsh and never rlogin.
+
+And it does not inherit your PATH. Every cron line starts at /bin and only
+/bin, whatever your shell has. It is the oldest trap in cron, and the fix
+is to write the whole path to anything not in /bin.]],
+
+[[Putting it together: locking up at night.
+
+Write this with crontab -e, as admin, on a machine whose devices you have
+read out of chapter 6:
+
+  0 22 * * * echo lock > /dev/lock0
+  0 22 * * * echo off > /dev/light0
+  0 22 * * * echo off > /dev/light1
+  0 6 * * 1-5 echo on > /dev/light0
+
+Ten at night the front door locks and the lights go out; six in the
+morning, weekdays only, the office light comes back on. Four lines, no
+survivor walking anywhere, and everybody on the wire sees the door swing.
+
+Then check it in the morning, because a crontab you have not read back is
+a hope:
+
+  admin@ksp-04-11:~$ crontab -l
+  admin@ksp-04-11:~$ mail
+
+The first says what is installed. The second says what happened.
+
+Classic mistake. Writing a line that reads a device and expecting cron to
+wait for something to change. Cron runs a line at a time; waiting for a
+door is a loop, and loops are Volume 3.]],
+
+		} },
+
+		{ title = "8. The other machines in the building", pages = {
+
+[[Every computer in a building the map knows is on one length of coax with
+the others in that building, and it has an address it did not choose.
+
+  admin@ksp-04-11:~$ ifconfig
+  eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>
+        inet 10.4.17.3 netmask 0xffffff00
+  lo0: flags=8<LOOPBACK>
+        inet 127.0.0.1 netmask 0xff000000
+
+Four numbers: ten, then two that come from where the building stands, then
+which computer of that building this is. Nothing sets it. The address is a
+fact about the card the way the name is a fact about the machine, and
+there is no argument to ifconfig that changes either. The firmware
+announces it between the drive and the login, so you can read a machine's
+address without logging in at all.
+
+A computer in a base YOU built is in no building the map knows, so it has
+no wire and says so plainly -- eth0 with flags and no address under it.
+Nothing on this chapter's list will do anything on such a machine, and
+that is not a fault to hunt.]],
+
+[[Names live in /etc/hosts, root's and 644, and the machine writes its own
+line into it exactly once and never again. So the first job on a new
+machine is to write the others down:
+
+  admin@ksp-04-11:~$ cat /etc/hosts
+  # address  host  [alias...]
+  127.0.0.1 localhost
+  10.4.17.4 office pump
+  10.4.17.9 gate
+
+An address, a name, and as many aliases as you like. A name not in that
+file does not exist as far as this machine is concerned.
+
+Then find out what is up, which is two commands:
+
+  admin@ksp-04-11:~$ ruptime
+  ksp-04-11 up  02:32,  1 user,  load 0.00
+  office    up  2+22:35,  2 users,  load 1.25
+  admin@ksp-04-11:~$ rwho
+  admin    ksp-04-11:console Jun 27 13:12
+  admin    office:ttyp0     Jun 27 13:10
+  kate     office:console   Jun 27 12:12
+
+ruptime is the machines that are switched on; rwho is who is on them. A
+machine that is off is not listed at all -- there is no daemon here
+keeping the last thing it said -- and that is where these two differ from
+the ones you may know.]],
+
+[[ping is how you tell a machine that is off from a machine you cannot
+reach at all. Three packets, a second apart, and then the summary:
+
+  admin@ksp-04-11:~$ ping office
+  PING office (10.4.17.4): 56 data bytes
+  64 bytes from 10.4.17.4: icmp_seq=0 ttl=255 time=0.4 ms
+  64 bytes from 10.4.17.4: icmp_seq=1 ttl=255 time=0.4 ms
+  64 bytes from 10.4.17.4: icmp_seq=2 ttl=255 time=0.4 ms
+
+  --- office ping statistics ---
+  3 packets transmitted, 3 packets received, 0% packet loss
+
+A machine that does not answer prints no line at all for the packet that
+never came back, and the summary is where you read it:
+
+  admin@ksp-04-11:~$ ping gate
+  PING gate (10.4.17.9): 56 data bytes
+
+  --- gate ping statistics ---
+
+with 0 packets received and 100% packet loss under it. Whether a packet
+arrives is asked fresh for each of the three, so a machine switched off
+halfway through loses the rest and the percentage says so.
+
+A name it cannot look up it refuses before it sends a packet at all.]],
+
+[[Three commands reach the other machine, and an administrator should know
+which of them wants what.
+
+rlogin is a whole session over there, on this glass. It asks the far
+machine's own login: and password:, and from then on every line you type
+is that machine's -- its files, its /dev, its accounts, its crontabs. exit
+ends it and Connection closed. comes back. It needs a terminal to hand
+over, so nothing automatic can use it.
+
+rsh runs ONE command over there and never asks for a password: either the
+far machine trusts this one or you get
+rsh: gate: Permission denied. It needs no terminal, which is the whole
+reason a crontab calls rsh.
+
+rcp copies one file across, one end written host:path. It needs the same
+trust, lands as the account you are, and is judged by the far machine's
+permissions and its own disk. The wire runs at about a kilobyte a second.
+
+  admin@ksp-04-11:~$ rcp log office:/home/admin/log
+
+It prints nothing when it works, as a copy should.]],
+
+[[Trust is what saves a password every time, and either of two files is
+enough. This is the part to get right.
+
+/etc/hosts.equiv is the MACHINE's, root's and 644, one line each. A bare
+host name trusts the same account on that machine and nobody in as
+anybody else. A host and an account names the account coming IN.
+
+~/.rhosts is the ACCOUNT's own half, in his home, and it is checked the way
+it always has been: it has to be HIS file and nobody but him may write it.
+One owned by somebody else, or one at 664, is ignored without a word -- a
+trust file somebody else can edit is one somebody else wrote. Mode 600.
+
+Two rules for the wall. root is never trusted through /etc/hosts.equiv,
+only through /root/.rhosts. And a bare + in either file, which elsewhere
+means "everybody", does not parse here: it trusts nobody.
+
+  root@ksp-04-11:~# chmod 600 /root/.rhosts
+  root@ksp-04-11:~# ls -l /root/.rhosts
+
+Check that mode after you edit it. A file the machine ignores looks exactly
+like one it honours.]],
+
+[[Who is here, and who has been. who is this machine only, and it is the
+command to type before a shutdown:
+
+  admin@ksp-04-11:~$ who
+  admin    console  Jun 27 13:12
+  kate     ttyp0    Jun 27 13:07  (office)
+
+The console is the survivor at the keyboard. ttyp0 to ttyp3 are sessions
+that came in over the wire, with the machine they came from in brackets.
+who am i prints just the line you asked it on.
+
+last reads /var/log/wtmp, newest first, and it is the machine's memory of
+who was here:
+
+  admin@ksp-04-11:~$ last
+  admin    console             Jun 27 13:12  still logged in
+  kate     ttyp0    office     Jun 27 13:07  still logged in
+  admin    console             Jun 27 11:12 - 11:17  (00:05)
+
+  wtmp begins Jun 27 11:12
+
+Two hundred lines deep with the oldest dropped, root's and 644, so
+everybody may read it and only root may change it. wtmp begins is a real
+answer on this machine, not a formality: that line is where the memory
+runs out.]],
+
+[[The limits, the refusals, and what is coming.
+
+Four sessions may come in at once, on ttyp0 to ttyp3; the fifth is turned
+away. A chain of rlogins goes two machines deep and the third is turned
+away in the same words. A session costs the FAR machine.
+
+  admin@ksp-04-11:~$ rlogin nowhere
+  rlogin: nowhere: unknown host
+  admin@ksp-04-11:~$ rlogin gate
+  rlogin: gate: Host is down
+  admin@ksp-04-11:~$ rcp log gate:/tmp/log
+  rcp: gate: No route to host
+  admin@ksp-04-11:~$ rlogin office
+  rlogin: connect: Connection refused
+
+Four troubles: a name in no hosts file, a machine with no power, no wire
+between here and there, and a machine with nothing left to accept with.
+
+CeroSec Systems intends to put the telephone and the radio behind these
+same commands. That will be a new kind of LINK and not a new command to
+learn. No dates in a manual.
+
+Classic mistake. Trusting a machine in /etc/hosts.equiv and forgetting
+that whoever gets root on THAT machine has yours too.]],
+
+		} },
+
+		{ title = "9. Keeping the machine healthy", pages = {
+
+[[Four numbers tell you everything about a machine's health, and the first
+of them is the disk.
+
+  admin@ksp-04-11:~$ df
+  Filesystem   Size   Used  Avail  Use%
+  hda         32768   2075  30693    7%
+  nodes         256     86    170   34%
+
+Thirty-two kilobytes and two hundred and fifty-six files and directories,
+whichever runs out first, and a fresh machine has already spent a third of
+the second one on /bin. Type df before you let anybody start keeping notes
+on a machine, and again once a week.
+
+Full is a state a machine can sit in. Nothing is ever deleted to make
+room; every write answers disk full until somebody makes room. Writing a
+shorter line over a longer one IS making room, which is the cheapest fix
+there is.
+
+  admin@ksp-04-11:~$ wc -c .sh_history
+      32 .sh_history
+
+One file is capped at 4096 bytes, one directory at 96 entries, and no path
+goes more than sixteen levels below the root.]],
+
+[[What is running, which is the second number. ps is the machine's jobs
+with the processor time each has spent:
+
+  admin@ksp-04-11:~$ ps
+    ID S     CPU COMMAND
+    43 S      35 sh watch.sh
+     1 R       0 ps
+
+The state is one letter: R running, S sleeping, W waiting for an answer,
+O held back by the screen. ps shows the shell you are typing into, the way
+every ps has; jobs does not, because the shell is not one of the things
+the shell started.
+
+Four jobs to a machine, cron's included. A fifth is refused, and the job
+that is refused might be the crontab line you were counting on -- which is
+why chapter 7 has that (CRON) error (can't fork) line in it.
+
+kill takes a number from ps or a slot from jobs. fg brings a background
+job to the front. Neither is much use until you have read Volume 3, which
+is the book for what a job IS; what an administrator needs from this page
+is that four is the ceiling and ps is where you look.]],
+
+[[A runaway cannot hurt anybody, and it is worth knowing why so that you
+do not go hunting a fault that is not there.
+
+Every job gets a slice of each tenth of a second and no more. A loop
+someone left running makes that ONE machine slow at that ONE thing: the
+prompt still answers, the other screens still draw, and the server never
+waits. Output is held to twenty lines a second, which is why a long
+listing trickles down the glass instead of appearing whole -- that is the
+machine being polite, not the machine being ill.
+
+A job that spins for five minutes with nothing to wait for is taken away:
+
+  killed: cpu limit
+
+And no job survives the power. Switching off, rebooting, picking the
+computer up or the world being loaded again all leave the machine running
+nothing at all. A machine you come back to is a machine at its prompt.
+
+So the honest answer to "the machine is slow" is ps, and the honest fix is
+kill. There is nothing else to tune.]],
+
+[[What the machine remembers about a person, and what it costs.
+
+Every line typed goes into that account's own ~/.sh_history, mode 600, in
+his home. history prints the last sixty of them with numbers:
+
+  admin@ksp-04-11:~$ history
+      1  df
+      2  dev light0 off
+      3  crontab -l
+      4  who
+
+A thousand lines and sixteen kilobytes, oldest dropped. Those sixteen
+kilobytes are EXEMPT from the thirty-two on the disk -- a shell's memory
+of itself must not be the thing that fills the drive.
+
+The exemption belongs to the PATH and not to the file, and you can watch
+it move:
+
+  admin@ksp-04-11:~$ mv .sh_history loot.txt
+  admin@ksp-04-11:~$ df
+  Filesystem   Size   Used  Avail  Use%
+  hda         32768   2107  30661    7%
+
+Thirty-two bytes appeared out of nowhere. Move it back and they go again.
+/var/log/cron, /var/log/wtmp and the mailboxes are exempt the same way and
+for the same reason.]],
+
+[[One more file in a home, and it is the one that strands people.
+
+~/.profile is a list of lines the machine types for the account at login,
+after the greeting and before the first prompt. It is where PATH is widened
+and where an office's habits live. It is not a file the login runs on the
+side -- it IS the login session, which is what makes a cd in it the place
+you are standing.
+
+That is also the trap. A .profile with an endless loop in it leaves the
+account at a busy prompt with nothing to type at, and one with exit in it
+logs the account straight back out, for ever.
+
+The machine is not broken and the account is not lost. Escape is the
+interrupt, and root can edit anybody's .profile, which is the way back
+from the second one. Note that the firmware's repair never touches a home,
+so restoring a machine will not clear one of these.
+
+Classic mistake. Fixing a stranded account by deleting it with deluser -r.
+You have deleted his files to remove one line. sudo edit its .profile.]],
+
+		} },
+
+		{ title = "10. The security checklist", pages = {
+
+[[Everything in this chapter is one page of doing and it should take
+fifteen minutes on a machine you have just been handed. Do it in order.
+
+One. Give both shipped accounts a password, root first.
+
+  admin@ksp-04-11:~$ sudo passwd root
+  [sudo] password for admin:
+  New password:
+  Retype new password:
+  passwd: password updated
+  admin@ksp-04-11:~$ passwd
+  Old password:
+  New password:
+  Retype new password:
+  passwd: password updated
+
+Root first, because until root has a password every account on the machine
+has root: su and Enter is all it takes.
+
+Write both on paper and keep the paper where the computer is not. Nobody
+can recover a password for you and nothing on the machine can tell you
+what one was. That is by design and it is the same design that keeps a
+stranger from reading them out of /etc/passwd.]],
+
+[[Two. Read /etc/sudoers and make it as short as it can be.
+
+  admin@ksp-04-11:~$ sudo cat /etc/sudoers
+  [sudo] password for admin:
+  admin
+
+Past the comment line it ships with: one name, and it is the account the
+office actually uses. Every extra name
+is another password that is as good as root's. NOPASSWD is a name that
+never has to prove it is itself, which means a screen left logged in is
+root left logged in: keep it for a machine nobody walks past, and never on
+the machine by the door.
+
+Three. Read the trust files, and read the MODE of every one of them.
+
+  admin@ksp-04-11:~$ cat /etc/hosts.equiv
+  admin@ksp-04-11:~$ ls -l /root/.rhosts
+
+Empty is the right answer for most machines. A .rhosts at mode 664 is
+being ignored, which is safe but is not what its owner thinks; one at 600
+naming a machine is a real door. Every machine you trust is a machine
+whose root is now your root.]],
+
+[[Four. Read who has been here, and get in the habit.
+
+  admin@ksp-04-11:~$ who
+  admin    console  Jun 27 13:12
+  admin@ksp-04-11:~$ last
+
+who is now. last is the machine's own memory, newest first, and it is the
+one place a session somebody had at three in the morning shows up. Two
+hundred lines of it and then wtmp begins.
+
+Be clear about the limit of that, because it matters. /var/log/wtmp is
+root's file. An ordinary account cannot change a line of it, cannot delete
+it and cannot stop it being written -- so last is a real record against
+anybody who is not root. Somebody who IS root on the machine can erase
+it, and the same is true of /var/log/cron. Nothing on this computer
+protects anything from root. That is not a gap in this machine; it is what
+root means, and it is the reason the first page of this chapter is about
+root's password rather than about a log.]],
+
+[[Five. Set the modes on the building, and then close up.
+
+  root@ksp-04-11:~# ls -l /dev
+
+Devices ship at 660, owner root and group sudo: the names in /etc/sudoers
+and nobody else. If you widened one to 666 for an afternoon, put it back.
+A light is nothing; a lock is the front door.
+
+Six. Log out, every time. exit at the end of a session, and a shutdown
+when you leave for the night -- after who.
+
+  admin@ksp-04-11:~$ who
+  admin@ksp-04-11:~$ exit
+
+What a stranger at your keyboard can then do: try names at login: and be
+told only login incorrect, which never says which half was wrong; read
+/etc/group and /etc/hosts, public on purpose; and read last, and see
+himself in it.
+
+What he cannot do: read /etc/passwd or /etc/sudoers, touch a device, or
+take his own line out of the log.
+
+Classic mistake. Doing all six and leaving the screen logged in as root
+while you go to look at something. Every page here is undone by that one
+habit, and it is the only one on the list that is free.]],
+
+		} },
+
+		{ title = "11. Quick reference card", pages = {
+
+[==[Every command this volume uses, with its exact shape. Square brackets are
+optional parts; never type the brackets. Angle brackets are something you
+must supply. Volume 1 has the reading and writing commands; Volume 3 has
+the shell's own.
+
+Being somebody else.
+
+  su [name]
+  sudo <command> [args]
+  exit
+
+Accounts.
+
+  adduser [-a] <name>
+  deluser [-r] <name>
+  passwd [user]
+  id [name]
+  groups [name]
+  hash <text> [salt]
+
+Groups, and who may read what.
+
+  groupadd <name>
+  groupdel <name>
+  gpasswd -a|-d <user> <group>
+  chmod <mode> <path>
+  chown <user> <path>
+  chgrp <group> <path>]==],
+
+[==[The machine itself.
+
+  hostname [name]
+  df
+  ps
+  jobs
+  kill <id>|%<n>
+  fg [%<n>|<id>]
+  shutdown [-h|-r] [now|+N] | shutdown -c
+  halt
+  reboot
+  restart
+
+The building.
+
+  dev [kind|id [value|toggle]|find <id>]
+
+Work with nobody standing there.
+
+  crontab -e|-l|-r
+  mail
+
+The wire.
+
+  ifconfig [-a|<interface>]
+  ping <host|address>
+  ruptime
+  rwho
+  who [am i]
+  last [name]
+  rlogin <host> [-l user]
+  rsh <host> [-l user] <command>...
+  rcp <src> <dst>, one of them <host>:<path>]==],
+
+[[The numbers an administrator runs into, all in one place.
+
+Accounts: a name is 16 characters, and a password 32. The machine's own
+name is 16 characters too. su stacks 4 deep.
+
+The system files, and the modes they ship at: /etc/passwd is 600,
+/etc/sudoers 440 and /etc/group 644. /etc/motd holds 10 lines. A crontab
+holds 32 lines, and both it and the directory it sits in are root's.
+
+The building: 64 devices at most, at mode 660, and dev find shows one for
+6 seconds.
+
+Work: 4 jobs to a machine, cron's included, and a job that spins 5
+minutes with nothing to wait for is taken away.
+
+The wire: 4 sessions in at once, on ttyp0 to ttyp3, and a chain of
+rlogins 2 machines deep.
+
+The logs: /var/log/wtmp holds 200 lines, /var/log/cron 100, and a mailbox
+100 -- oldest dropped in every case, and all three exempt from the disk's
+32768 bytes by their path.
+
+Classic mistake. Typing the square brackets. They mark a part you may
+leave out; they are not part of the command.]],
+
+		} },
+
+		{ title = "12. Appendix: what the machine says", pages = {
+
+[[Every refusal is one line and it is built the same way every time:
+<command>: <what failed>: <why>. Volume 1's appendix has the ones a user
+meets. Below are the ones that belong to this book.
+
+Being somebody else, and the accounts.
+
+  su: authentication failure
+      one wrong answer; there is no second try
+  su: too many levels
+      a fifth su, past the four the machine allows
+  sudo: authentication failure
+      the same, and for the same reason
+  <name> is not in the sudoers file.
+      not in the file at all; sudo will not ask twice
+  passwd: authentication failure
+  passwd: passwords do not match
+  passwd: password too long
+  passwd: no such user
+  adduser: <name>: already exists
+  deluser: <name>: user is logged in
+  deluser: root: cannot remove
+  chown: <name>: no such user
+  hash: <salt>: invalid salt
+      a salt is digits and lower-case letters only]],
+
+[[The groups, and the machine's name.
+
+  chgrp: <name>: no such group
+      no line in /etc/group, and no account of that name
+  groupadd: <name>: already exists
+  groupdel: <name>: cannot remove
+      root, sudo and users are the machine's own
+  gpasswd: <name>: no such group
+  gpasswd: <name>: already a member
+  gpasswd: <name>: not a member
+  hostname: <name>: invalid name
+
+Switching it off. The first three are the timer's and the fourth is a
+machine with no clock to count from.
+
+  shutdown: already scheduled
+      one pending order per machine, never two times
+  shutdown: no shutdown scheduled
+      -c with nothing to call off
+  shutdown: cancelled
+      not an error: what -c prints when it worked
+  shutdown: no clock
+
+A machine that has lost its commands says two lines and they are the only
+two help ever prints on its own behalf:
+
+  help: no commands in /bin: the system is damaged.
+  help: switch the computer off and on to repair it.]],
+
+[[The devices, chapter 6. A device answers in its own name, never in the
+command's, so none of these carries dev: in front of it.
+
+  light0: no power
+  lock0: no such device
+  win0: smashed
+  win0: barricaded
+  lock1: no padlock
+  door0: locked
+  door0: barricaded
+  door0: blocked
+  light0: invalid value
+  light0: permission denied
+  win0: cannot toggle
+
+No current or bulb; gone, or nobody near it; the glass broken; boarded up;
+neither padlock nor key; held by a key; planks on it; a wall, a tree or a
+car in the way; a word that kind does not know; the mode; and no opposite
+for toggle to turn it into.
+
+dev's own two are signed the way a command signs, because they are a
+command's:
+
+  dev: <word>: unknown kind
+      the kinds are door, light, lock and win
+  dev: <id>: no such device
+  /dev: read-only
+      nothing may be created under /dev at all]],
+
+[[cron and mail, chapter 7. A crontab is judged when it is saved and
+refused whole, and the refusal names the file, the line and the field:
+
+  "/var/spool/cron/admin":1: bad minute
+      also bad hour, bad month, bad day-of-month and
+      bad day-of-week: a field that will not read, or
+      one that was never there
+  "/var/spool/cron/admin":1: bad command
+      five fields and nothing after them
+  "/var/spool/cron/admin":1: bad time specifier
+      an @word that is not one of the seven
+  "/var/spool/cron/admin":33: too many entries
+
+  no crontab for <name>
+      -l or -r with nothing in the spool for you
+  No mail for <name>
+      an empty mailbox, which is not an error
+  mail: <path>: permission denied
+  crontab: <path>: disk full
+
+And what the log says about a minute the machine had no room for:
+
+  (CRON) error (can't fork)]],
+
+[[The wire, chapter 8. rlogin, rsh and rcp sign their own, and the words
+are the ones a real one prints for the same trouble.
+
+  rlogin: gate: unknown host
+      no line of /etc/hosts carries that name
+  rlogin: gate: Host is down
+      on the wire, and switched off
+  rlogin: gate: No route to host
+      no wire between here and there: another building,
+      or a base somebody built
+  rlogin: connect: Connection refused
+      no line free -- four are in -- or the chain of
+      rlogins is already two machines deep
+  rsh: gate: Permission denied
+      it does not trust this machine: /etc/hosts.equiv
+      and ~/.rhosts are the fix
+  Connection closed.
+      the session is over; you are at your own prompt
+  ifconfig: interface eth9 does not exist
+  ping: unknown host gate
+      refused before a packet is sent, with the name
+      behind the reason rather than in front of it
+
+who, last, ruptime and rwho refuse nothing at all: an empty screen is
+their answer when there is nothing to say.]],
+
+[[The five that want somebody at the glass, and the machine tells them so
+wherever there is nobody -- a crontab line, a background job, a stage of a
+pipeline:
+
+  rlogin: not a terminal
+  su: not a terminal
+  passwd: not a terminal
+  sudo: not a terminal
+  edit: not a terminal
+
+A password question is only ever put up for the job holding the prompt.
+From cron it would wait for an answer that could never come.
+
+And the machine's own lines about work, which no command signs because
+they are not a command's to say:
+
+  killed: cpu limit
+      five minutes of spinning with nothing to wait for
+  sh: too many jobs
+  kill: <id>: no such job
+  fg: no current job
+  fg: %<n>: no such job
+
+Classic mistake. Reading the first word and the last word of a refusal and
+skipping the middle one. The middle piece is the only part that tells you
+WHICH file, account, group or device the machine is complaining about, and
+it is the only part you can act on.]],
+
+		} },
+
+	},
+}

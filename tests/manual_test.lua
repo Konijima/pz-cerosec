@@ -853,4 +853,284 @@ do
 	end
 end
 
+--
+-- Volume 2, the System Administrator's Guide, has the same three rules as
+-- Volume 1 -- a card that is nothing but usage lines, typed words the machine
+-- knows, numbers taken off the engine -- plus the two a book about running a
+-- machine for other people owes: the DEVICE and NETWORK refusals as whole
+-- lines, and cron's refusal in the shape cron locates it with.
+--
+do
+	local vol = volumeById["admin"]
+	check("Volume 2 is the System Administrator's Guide",
+		vol ~= nil and vol.name == "System Administrator's Guide")
+
+	--
+	-- 1. The reference card is nothing but exact usage lines.
+	--
+	local card = nil
+	for ci = 1, #vol.chapters do
+		if string.find(vol.chapters[ci].title, "Quick reference", 1, true) ~= nil then
+			card = vol.chapters[ci]
+		end
+	end
+	check("Volume 2 has a quick-reference card", card ~= nil)
+
+	local carded, entries = {}, 0
+	for pi = 1, #card.pages do
+		for line in (card.pages[pi] .. "\n"):gmatch("([^\n]*)\n") do
+			if string.sub(line, 1, 2) == "  " then
+				local body = string.sub(line, 3)
+				local name = string.match(body, "^(%S+)")
+				check('Volume 2 card line names a command: "' .. body .. '"',
+					name ~= nil and CeroSecOS.COMMAND_INFO[name] ~= nil)
+				check('Volume 2 card line is ' .. name .. "'s exact usage line: \""
+					.. body .. '"', body == CeroSecOS.commandUsage(name))
+				carded[name] = true
+				entries = entries + 1
+			end
+		end
+	end
+	check("Volume 2's card carries at least 30 commands (" .. entries .. ")", entries >= 30)
+
+	-- Everything this volume is FOR is on it. A card that has quietly lost the
+	-- devices, or cron, or the wire, still passes every check above.
+	local IS_VOLUME_TWO = {
+		"su", "sudo", "exit", "adduser", "deluser", "passwd", "id", "groups", "hash",
+		"groupadd", "groupdel", "gpasswd", "chmod", "chown", "chgrp",
+		"hostname", "df", "ps", "jobs", "kill", "fg",
+		"shutdown", "halt", "reboot", "restart",
+		"dev", "crontab", "mail",
+		"ifconfig", "ping", "ruptime", "rwho", "who", "last", "rlogin", "rsh", "rcp",
+	}
+	for i = 1, #IS_VOLUME_TWO do
+		check("Volume 2's card carries " .. IS_VOLUME_TWO[i],
+			carded[IS_VOLUME_TWO[i]] == true)
+	end
+
+	-- And the commands that are somebody else's book are not on it. Reading,
+	-- writing and moving files is Volume 1's chapter 3; the shell's own words and
+	-- the script tools are Volume 3. A card that hands an administrator `grep`
+	-- again is a card that has stopped being a second volume.
+	local NOT_VOLUME_TWO = {
+		"ls", "cat", "cd", "pwd", "mkdir", "touch", "cp", "mv", "rm", "echo",
+		"edit", "write", "head", "tail", "wc", "grep", "sort", "uniq",
+		"date", "sleep", "ln", "readlink", "which", "type", "man", "whoami",
+		"printf", "test", "true", "false", "wait", "sh", "clear", "help",
+	}
+	for i = 1, #NOT_VOLUME_TWO do
+		check("Volume 2's card leaves " .. NOT_VOLUME_TWO[i] .. " to another volume",
+			carded[NOT_VOLUME_TWO[i]] == nil)
+	end
+
+	--
+	-- 2. Every screen line that shows somebody typing shows a real word.
+	--
+	-- Volume 2 needs no list of words it introduces on purpose: every line it
+	-- shows being typed is a command the machine has.
+	local shown = 0
+	for ci = 1, #vol.chapters do
+		local ch = vol.chapters[ci]
+		for pi = 1, #ch.pages do
+			for line in (ch.pages[pi] .. "\n"):gmatch("([^\n]*)\n") do
+				if string.sub(line, 1, 2) == "  " then
+					local word = string.match(line, "^  %S+@%S-[%$#] (%S+)")
+					if word ~= nil then
+						shown = shown + 1
+						local known = CeroSecOS.COMMAND_INFO[word] ~= nil
+							or CeroSecOS.SHELL_BUILTINS[word] == true
+							or CeroSecOS.RESERVED[word] == true
+							or string.find(word, "^[%a_][%w_]*=") ~= nil
+							or string.find(word, "^!") ~= nil
+						check(ch.title .. ' page ' .. pi ..
+							' types a word the machine knows: "' .. word .. '"', known)
+					end
+				end
+			end
+		end
+	end
+	check("Volume 2 shows at least 40 typed lines (" .. shown .. ")", shown >= 40)
+
+	--
+	-- 3. The ceilings an administrator runs into are the engine's, each as a
+	-- PHRASE built from the constant rather than as a bare number: "4" on its own
+	-- is a substring of half the numbers on the machine.
+	--
+	local flat = string.gsub(vol.wholeText, "%s+", " ")
+	local function states(what, phrase)
+		check("Volume 2 states " .. what .. ': "' .. phrase .. '"',
+			string.find(flat, phrase, 1, true) ~= nil)
+	end
+
+	states("a name's and a password's length",
+		"a name is " .. CeroSecOS.MAX_USERNAME .. " characters, and a password "
+		.. CeroSecOS.MAX_PASSWORD)
+	states("the hostname's length",
+		"name is " .. CeroSecOS.HOSTNAME_MAX .. " characters too")
+	states("how deep su stacks", "su stacks " .. CeroSecOS.SU_MAX .. " deep")
+	states("the modes the system files ship at",
+		"/etc/passwd is " .. CeroSecOS.PASSWD_MODE .. ", /etc/sudoers "
+		.. CeroSecOS.SUDOERS_MODE .. " and /etc/group " .. CeroSecOS.GROUP_MODE)
+	states("the motd's ceiling",
+		"/etc/motd holds " .. CeroSecOS.MOTD_MAX_LINES .. " lines")
+	states("a crontab's ceiling",
+		"A crontab holds " .. CeroSecOS.CRON_MAX_LINES .. " lines")
+	states("the devices", CeroSecOS.DEV_MAX .. " devices at most, at mode "
+		.. CeroSecOS.DEV_MODE .. ", and dev find shows one for "
+		.. CeroSecOS.DEV_FIND_SECONDS .. " seconds")
+	states("the job ceiling", CeroSecOS.MAX_JOBS .. " jobs to a machine")
+	states("the cpu limit",
+		(CeroSec.JOB_CPU_LIMIT_S / 60) .. " minutes with nothing to wait for")
+	states("how many sessions may come in",
+		CeroSecOS.PTY_MAX .. " sessions in at once, on "
+		.. CeroSecOS.ptyLine(0) .. " to " .. CeroSecOS.ptyLine(CeroSecOS.PTY_MAX - 1))
+	states("how deep a chain of rlogins goes",
+		"rlogins " .. CeroSecOS.HOP_MAX .. " machines deep")
+	states("the logs' ceilings",
+		"/var/log/wtmp holds " .. CeroSecOS.WTMP_LINES .. " lines, /var/log/cron "
+		.. CeroSecOS.CRON_LOG_LINES .. ", and a mailbox " .. CeroSecOS.MAIL_LINES)
+	states("what the exempt logs are exempt from",
+		"disk's " .. CeroSecOS.DISK_BYTES .. " bytes")
+
+	--
+	-- 4. Volume 2's own error appendix carries the device and the network
+	-- refusals as WHOLE LINES.
+	--
+	-- The bare-word sweep at the top of this file cannot tell whether an appendix
+	-- says "barricaded" about a window or about a door, or whether "Host is down"
+	-- was signed by rlogin at all. This volume is the book those lines belong to,
+	-- so it is held to the whole line.
+	--
+	local vErr = chapterTextMatching(vol.chapters, unpack(ERR_TITLES))
+	check("Volume 2 has an error appendix", vErr ~= nil)
+
+	local DEVICE_LINES = {
+		"light0: no power", "lock0: no such device", "win0: smashed",
+		"win0: barricaded", "lock1: no padlock", "door0: locked",
+		"door0: barricaded", "door0: blocked", "light0: invalid value",
+		"light0: permission denied", "win0: cannot toggle",
+		"dev: <word>: unknown kind", "dev: <id>: no such device",
+		CeroSecOS.DEV_PATH .. ": read-only",
+	}
+	for i = 1, #DEVICE_LINES do
+		check("Volume 2's appendix carries the whole line \"" .. DEVICE_LINES[i] .. "\"",
+			string.find(vErr, DEVICE_LINES[i], 1, true) ~= nil)
+	end
+
+	-- The kinds, derived from the table the engine judges a value against rather
+	-- than hand-listed: a fifth kind is a book that has gone stale.
+	do
+		local kinds = {}
+		for kind in pairs(CeroSecOS.DEV_VALUES) do kinds[#kinds + 1] = kind end
+		table.sort(kinds)
+		check("more than two kinds of device to list", #kinds >= 3)
+		local sentence = table.concat(kinds, ", ", 1, #kinds - 1)
+			.. " and " .. kinds[#kinds]
+		check("Volume 2 names every kind of device: \"" .. sentence .. "\"",
+			string.find(vErr, sentence, 1, true) ~= nil)
+	end
+
+	-- The network's five, each composed by the engine's own netRefusal so that a
+	-- change to a word fails here rather than going stale on the page.
+	local NET_LINES = {
+		CeroSecOS.netRefusal("rlogin", "gate", "unknown"),
+		CeroSecOS.netRefusal("rlogin", "gate", "down"),
+		CeroSecOS.netRefusal("rlogin", "gate", "unreach"),
+		CeroSecOS.netRefusal("rlogin", "gate", "refused"),
+		CeroSecOS.netRefusal("rsh", "gate", "denied"),
+	}
+	for i = 1, #NET_LINES do
+		check("Volume 2's appendix carries the whole line \"" .. NET_LINES[i] .. "\"",
+			string.find(vErr, NET_LINES[i], 1, true) ~= nil)
+	end
+	local NET_OTHER = {
+		"Connection closed.",
+		"ifconfig: interface eth9 does not exist",
+		"ping: unknown host gate",
+	}
+	for i = 1, #NET_OTHER do
+		check("Volume 2's appendix carries \"" .. NET_OTHER[i] .. "\"",
+			string.find(vErr, NET_OTHER[i], 1, true) ~= nil)
+	end
+
+	-- The five that want somebody at the glass, whole lines and all: a crontab
+	-- line, a background job and a pipeline stage all meet them, and an
+	-- administrator who does not know the list writes a crontab that cannot run.
+	local NO_TTY = { "rlogin", "su", "passwd", "sudo", "edit" }
+	for i = 1, #NO_TTY do
+		check("Volume 2's appendix carries \"" .. NO_TTY[i] .. ": not a terminal\"",
+			string.find(vErr, NO_TTY[i] .. ": not a terminal", 1, true) ~= nil)
+	end
+
+	--
+	-- 5. cron's refusal is located the way cron locates it: the file in quotes,
+	-- the line, and the field. Composed by the engine's own cronError, and the
+	-- field names read off CRON_FIELDS rather than typed.
+	--
+	do
+		local path = CeroSecOS.cronPath("admin")
+		check("Volume 2's appendix carries cron's locator format",
+			string.find(vErr, CeroSecOS.cronError(path, 1, "bad minute"), 1, true) ~= nil)
+		for i = 1, #CeroSecOS.CRON_FIELDS do
+			local reason = "bad " .. CeroSecOS.CRON_FIELDS[i].name
+			check("Volume 2's appendix names cron's reason \"" .. reason .. "\"",
+				string.find(vErr, reason, 1, true) ~= nil)
+		end
+		check("Volume 2's appendix carries cron's two other refusals",
+			string.find(vErr, CeroSecOS.cronError(path, 1, "bad command"), 1, true) ~= nil
+			and string.find(vErr,
+				CeroSecOS.cronError(path, 1, "bad time specifier"), 1, true) ~= nil)
+		-- The line a crontab one entry too long is refused on.
+		check("Volume 2's appendix carries the too-many-entries line",
+			string.find(vErr, CeroSecOS.cronError(path,
+				CeroSecOS.CRON_MAX_LINES + 1, "too many entries"), 1, true) ~= nil)
+		check("Volume 2's appendix carries cron's and mail's empty answers",
+			string.find(vErr, "no crontab for <name>", 1, true) ~= nil
+			and string.find(vErr, "No mail for <name>", 1, true) ~= nil)
+		check("Volume 2's appendix carries the log's own line about a full machine",
+			string.find(vErr, "(CRON) error (can't fork)", 1, true) ~= nil)
+	end
+
+	--
+	-- 6. Every chapter carries its "Classic mistake" box, as Volume 1's do.
+	--
+	for ci = 1, #vol.chapters do
+		local ch = vol.chapters[ci]
+		local has = false
+		for pi = 1, #ch.pages do
+			if string.find(ch.pages[pi], "Classic mistake", 1, true) ~= nil then has = true end
+		end
+		check("Volume 2: " .. ch.title .. " has a Classic mistake box", has)
+	end
+
+	--
+	-- 7. Three facts this volume is the only book that states, each pinned to the
+	-- engine so that a change to the CODE is what breaks the page.
+	--
+	do
+		-- The su stack really is four deep and exit really pops it.
+		local state = CeroSecOS.newState("ksp-04-11")
+		local root = CeroSecOS.login(state, "root", "")
+		check("the bench got a root session", root ~= nil)
+		check("Volume 2 says exit pops the stack rather than logging out",
+			string.find(flat, "It did not log anybody out", 1, true) ~= nil)
+
+		-- /etc/sudoers really ships naming admin, which is what chapter 10's
+		-- checklist tells the reader to read.
+		local sudoers = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+		check("/etc/sudoers ships naming admin",
+			sudoers ~= nil and string.find(sudoers.data or "", "\nadmin", 1, true) ~= nil)
+		check("and ships at the mode the book states",
+			sudoers.mode == CeroSecOS.SUDOERS_MODE)
+
+		-- /var/spool/cron really is root's at 700, which is the whole reason
+		-- chapter 7 says crontab is the only way in.
+		local spool = CeroSecOS.getNode(state, root, CeroSecOS.CRON_PATH)
+		check("/var/spool/cron is root's", spool ~= nil and spool.owner == "root")
+		check("and ships at the mode the book states", spool.mode == CeroSecOS.CRON_DIR_MODE)
+		check("Volume 2 says so", string.find(flat,
+			"The directory is root's at mode " .. CeroSecOS.CRON_DIR_MODE, 1, true) ~= nil)
+	end
+end
+
 print(count .. " manual checks passed")
