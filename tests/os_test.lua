@@ -10129,6 +10129,51 @@ do
 	-- label box is built from.
 	eq("the label ceiling is twenty-four characters", CeroSecOS.LABEL_MAX, 24)
 
+	-- CeroSecOS.labelOk: what a survivor may write on the sticker. This is the ONE
+	-- place the charset and the ceiling live -- the inventory's label box asks this
+	-- very function (CeroSecFloppyMenu.onLabelClick), so a box that let him type a
+	-- label his own drive would then refuse is impossible by construction.
+	eq("the empty string is not a label", CeroSecOS.labelOk(""), false)
+	eq("nor is a label of spaces", CeroSecOS.labelOk("   "), false)
+	eq("nor is a number", CeroSecOS.labelOk(7), false)
+	eq("nor is nil", CeroSecOS.labelOk(nil), false)
+	eq("nor is a table", CeroSecOS.labelOk({}), false)
+	eq("the ceiling is accepted",
+		CeroSecOS.labelOk(string.rep("z", CeroSecOS.LABEL_MAX)), true)
+	eq("one character over is not",
+		CeroSecOS.labelOk(string.rep("z", CeroSecOS.LABEL_MAX + 1)), false)
+	for _, good in ipairs({ "A", "a", "0", "MY DISK", "my-disk", "disk.1",
+			"A-b.C 9", "9", "-", "." }) do
+		eq("`" .. good .. "` is a label", CeroSecOS.labelOk(good), true)
+	end
+	for _, bad in ipairs({ "slash/es", "semi;colon", "quo\"te", "back\\slash",
+			"under_score", "bra[cket", "per%cent", "star*", "amper&sand", "pipe|d",
+			"dollar$", "hash#", "at@", "plus+", "eq=", "tilde~", "accent\195\169" }) do
+		eq("`" .. bad .. "` is not", CeroSecOS.labelOk(bad), false)
+	end
+	-- Anchored at BOTH ends. An unanchored pattern is satisfied by one acceptable
+	-- character anywhere in the string, so a label is asked with its bad character at
+	-- the front, in the middle and at the end.
+	eq("a bad character at the front", CeroSecOS.labelOk("/ok"), false)
+	eq("in the middle", CeroSecOS.labelOk("o/k"), false)
+	eq("and at the end", CeroSecOS.labelOk("ok/"), false)
+	-- A control byte, which the slot's own gate refuses too: a label with a newline
+	-- in it would put a second line in the mount listing.
+	eq("a newline is not a character a label carries",
+		CeroSecOS.labelOk("two\nlines"), false)
+	eq("nor is a tab", CeroSecOS.labelOk("two\tcolumns"), false)
+
+	-- And a label labelOk accepts is a label the SLOT accepts. The two rules are not
+	-- the same rule -- the gate is looser, it has forged states to survive -- but
+	-- every label a survivor can write has to get through it, or he would write one
+	-- and then find his disk would not go in.
+	for _, good in ipairs({ "A", "MY DISK", "a-b.c 1",
+			string.rep("q", CeroSecOS.LABEL_MAX) }) do
+		eq("the slot takes `" .. good .. "`",
+			CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = good }, true),
+			true)
+	end
+
 	-- labelOfDev is asked by device, so the hard disk can never wear the sticker
 	-- of whatever is in the slot.
 	state.floppy.label = "MINE"

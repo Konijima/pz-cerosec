@@ -845,6 +845,37 @@ well as a lit one — a drive is a spring and a lever, not a circuit — and one
 fits at a time, which is what *Eject the floppy first* on a greyed-out Insert
 means.
 
+Carrying **more than one disk**, Insert floppy becomes a submenu with a line per
+disk, so you pick the one that goes in rather than finding out afterwards. Each line
+reads the disk's label if it has one and its shell colour in brackets — *PAYROLL 93
+(green)*, or *3.5" Floppy Disk (blue)* for one nobody has written on. While the
+drive is full or you cannot reach the machine there is nothing to choose between, so
+the entry goes back to a single greyed line with the reason on it.
+
+### Writing on the label
+
+Four disks in a bag look identical, so do what anybody with four disks did: write on
+the sticker. Right-click a disk in your inventory, with **something to write with**
+somewhere on you — a pen, a pencil, a red, blue or green pen, or anything else the
+game counts as a writing implement — and choose **Label floppy**. Up to 24
+characters: letters, digits, spaces, dashes and dots. Nothing else, because the
+label is printed on the machine's own screen.
+
+The label becomes the disk's name in your inventory, so you can tell your disks apart
+without inserting them, and it stays on the disk through the drive and out the other
+side. **Change the floppy's label** rewrites it and **Erase the floppy's label**
+takes it off; both need the same pen in hand. A label is written on the disk and not
+on the machine, so it travels across town with it.
+
+And the machine reads it. `mount` and `df` name the disk in the drive by what is
+written on it:
+
+```
+admin@ksp-04-11:~$ mount
+/dev/hda on / type ufs (rw)
+/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)
+```
+
 A disk out of a box is **blank**: there is no filesystem on it and nothing can be
 written to it until you put one there.
 
@@ -876,7 +907,7 @@ admin@ksp-04-11:~$ df
 Filesystem   Size   Used  Avail  Use%
 hda         65536   2155  63381    4%
 nodes         512     90    422   18%
-fd0          4096      5   4091    1%
+fd0          4096      5   4091    1%  (PAYROLL 93)
 fd0 nodes      32      2     30    7%
 ```
 

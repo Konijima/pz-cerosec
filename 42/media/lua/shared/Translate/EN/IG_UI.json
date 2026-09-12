@@ -1,5 +1,11 @@
 {
     "IGUI_CeroSec_Hint": "Esc closes | Up/Down history",
+    "IGUI_CeroSec_LabelFloppy": "Write on the label (up to %1 characters)",
+    "IGUI_CeroSec_LabelBad": "A label is up to %1 letters, digits, spaces, dashes and dots.",
+    "IGUI_CeroSec_ColourBlue": "blue",
+    "IGUI_CeroSec_ColourYellow": "yellow",
+    "IGUI_CeroSec_ColourRed": "red",
+    "IGUI_CeroSec_ColourGreen": "green",
     "IGUI_CeroSec_Manual_Prev": "< Back",
     "IGUI_CeroSec_Manual_Next": "Next >",
     "IGUI_CeroSec_Manual_Contents": "Contents",

@@ -9,6 +9,9 @@
     "ContextMenu_CeroSec_DevDebug": "Fenêtre de débogage",
     "ContextMenu_CeroSec_InsertFloppy": "Insérer une disquette",
     "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette",
+    "ContextMenu_CeroSec_LabelFloppy": "Étiqueter la disquette",
+    "ContextMenu_CeroSec_RelabelFloppy": "Changer l'étiquette de la disquette",
+    "ContextMenu_CeroSec_EraseLabel": "Effacer l'étiquette de la disquette",
     "ContextMenu_CeroSec_Install": "Installer %1",
     "ContextMenu_CeroSec_Remove": "Retirer %1",
     "ContextMenu_CeroSec_Modules": "Matériel CeroSec"

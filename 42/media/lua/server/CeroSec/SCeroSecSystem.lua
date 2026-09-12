@@ -996,6 +996,30 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 		disk = read
 	end
 
+	-- The sticker, read off the ITEM and not off its modData, and written over
+	-- whatever the modData said.
+	--
+	-- The item is where the label really lives (CeroSecFloppyMenu): setName plus
+	-- setCustomName plus syncItemFields is what writes it, and syncItemFields is the
+	-- engine's own sync -- there is no per-item modData transmit on InventoryItem in
+	-- 42.20.4 to match it (javap zombie.inventory.InventoryItem: hasModData,
+	-- getModData, copyModData, and nothing that sends one). So the name is the one
+	-- reading of the label that is true on both sides of a multiplayer game, and a
+	-- modData label that disagrees with it is a stale copy and not a second opinion.
+	--
+	-- No custom name is NO sticker, and that is why this clears rather than merely
+	-- overwrites: a disk somebody erased the label from must come out of the drive
+	-- with it still erased.
+	--
+	-- Held to CeroSecOS.labelOk on the way in, which is tighter than the slot's own
+	-- gate: this is a client's string and the two commands that print it are lines
+	-- on a screen.
+	disk.label = nil
+	if item:isCustomName() then
+		local written = item:getName()
+		if CeroSecOS.labelOk(written) then disk.label = written end
+	end
+
 	local done = luaObject:insertDisk(disk, item:getFullType())
 	if not done then return end
 
@@ -1044,6 +1068,22 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		CeroSec.log(CeroSec.LOG_ERROR,
 			"the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
 		return
+	end
+
+	-- And the sticker back onto the shell. This is not belt-and-braces: an insert
+	-- DESTROYS the item and an eject makes a NEW one (inv:AddItem above), so without
+	-- these three calls a disk labelled BACKUP would come out of the drive called
+	-- "3.5 inch Floppy Disk" and the survivor's own handwriting would be gone. The
+	-- three calls are vanilla's Rename Bag's, in its order
+	-- (ISInventoryPaneContextMenu.lua:2753-2755).
+	--
+	-- writeDiskTo above has already put the label in the item's modData -- `label` is
+	-- one of the three keys a disk owns there (CeroSecOS.DISK_KEYS) -- so the record
+	-- and the name come out of the drive saying the same thing.
+	if CeroSecOS.labelOk(disk.label) then
+		item:setName(disk.label)
+		item:setCustomName(true)
+		item:syncItemFields()
 	end
 
 	-- And only now does it come out. If it somehow does not, the item goes with it:

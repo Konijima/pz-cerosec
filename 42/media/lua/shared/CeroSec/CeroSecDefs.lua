@@ -161,6 +161,23 @@ CeroSec.FLOPPY_TYPES = {
 local floppyTypes = {}
 for i = 1, #CeroSec.FLOPPY_TYPES do floppyTypes[CeroSec.FLOPPY_TYPES[i]] = true end
 
+-- The shell's colour, as a word, keyed by full type. The four disks share one
+-- item NAME on purpose -- they are the same disk in four colours -- so on a menu
+-- that offers a choice between them the colour is the only thing that tells them
+-- apart, and it is the thing a survivor looking in his bag can see.
+CeroSec.FLOPPY_COLOURS = {
+	["CeroSec.FloppyBlue"] = "IGUI_CeroSec_ColourBlue",
+	["CeroSec.FloppyYellow"] = "IGUI_CeroSec_ColourYellow",
+	["CeroSec.FloppyRed"] = "IGUI_CeroSec_ColourRed",
+	["CeroSec.FloppyGreen"] = "IGUI_CeroSec_ColourGreen",
+}
+
+-- That colour's translation key, or nil for anything that is not one of the four.
+function CeroSec.floppyColourKey(fullType)
+	if type(fullType) ~= "string" then return nil end
+	return CeroSec.FLOPPY_COLOURS[fullType]
+end
+
 -- Is that full type one of ours? A name and nothing else: an item is a floppy
 -- because of what it IS and never because of what is written in its modData --
 -- a blank disk is a floppy, and so is one somebody has forged the contents of.

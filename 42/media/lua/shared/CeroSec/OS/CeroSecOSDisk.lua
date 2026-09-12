@@ -148,6 +148,31 @@ CeroSecOS.FLOPPY_VERSION = 1
 -- ceiling accepts every label that was ever written under the old one.
 CeroSecOS.LABEL_MAX = 24
 
+-- What may be written on the sticker: letters, digits, space, dash and dot. What
+-- a pen writes on a label, and nothing a printed line can be surprised by -- the
+-- label goes straight into the mount listing and into df, so a character that is
+-- invisible on that screen or that moves a column is a character that makes those
+-- two commands lie about which disk is in the drive.
+--
+-- The pattern is anchored at both ends, which is the whole of it: an unanchored
+-- one is satisfied by any one acceptable character anywhere in the string.
+CeroSecOS.LABEL_PATTERN = "^[A-Za-z0-9 %-%.]+$"
+
+-- Is that a sticker somebody may write? The ceiling is LABEL_MAX and not a number
+-- of its own -- a box that let a survivor type a label his own drive would then
+-- refuse at the slot is a box that eats his work.
+--
+-- The empty string is NOT one: nothing written is nothing to write, and taking a
+-- label off is its own gesture with its own name on the menu. Nor is a label of
+-- spaces, which prints as brackets around nothing and reads as a bug.
+function CeroSecOS.labelOk(s)
+	if type(s) ~= "string" then return false end
+	if #s > CeroSecOS.LABEL_MAX then return false end
+	if string.find(s, CeroSecOS.LABEL_PATTERN) == nil then return false end
+	-- At least one character that is not a space.
+	return string.find(s, "[^ ]") ~= nil
+end
+
 -- A blank, unformatted disk: no filesystem at all. What a new one out of the box
 -- is, and what `newfs` is for.
 function CeroSecOS.newFloppy(label)

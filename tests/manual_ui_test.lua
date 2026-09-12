@@ -157,9 +157,18 @@ ContextMenu.__index = ContextMenu
 function ContextMenu.new()
 	return setmetatable({ labels = {}, options = {}, subs = {} }, ContextMenu)
 end
-function ContextMenu:addOption(label, target, callback, arg, arg2)
-	local option = { label = label, target = target,
-		callback = callback, arg = arg, arg2 = arg2 }
+--
+-- EVERY argument is kept, and the COUNT of them with it. addOption's tail is what
+-- an option actually carries -- the drive's entries put the computer, the player,
+-- the height and the DISK in it -- so a fake that remembered only the first two
+-- could not tell a submenu entry that inserts the yellow disk from one that
+-- inserts the blue. arg and arg2 stay beside args because the blocks below read
+-- them by those names.
+function ContextMenu:addOption(label, target, callback, ...)
+	local n = select("#", ...)
+	local args = { ... }
+	local option = { label = label, target = target, callback = callback,
+		args = args, argCount = n, arg = args[1], arg2 = args[2] }
 	self.labels[#self.labels + 1] = label
 	self.options[#self.options + 1] = option
 	return option
@@ -1174,13 +1183,49 @@ do
 	-- what the player is carrying, and the one bit the server syncs about the
 	-- drive. Both are stood in for here and both are MOVED by the checks below,
 	-- which is what makes them checks and not decoration.
-	local carried = nil
+	-- A LIST of disks and not one, because the whole of the insert submenu is what
+	-- happens when a survivor is carrying more than one. Both lookups are served
+	-- off the same list: getFirstTypeRecurse, which the old single entry used, and
+	-- getAllTypeRecurse, which the submenu uses (javap zombie.inventory.ItemContainer
+	-- -- it hands back an ArrayList, so the fake answers size() and get() from zero
+	-- the way a Java list does, and never a Lua array from one).
+	-- One disk in a pocket. getName answers the way the engine's does -- the custom
+	-- name when there is one written on it, the ordinary item name otherwise (javap
+	-- -c zombie.inventory.InventoryItem: getDisplayName is a single getfield on the
+	-- same `name` field setName writes) -- because the submenu's entry text is built
+	-- from exactly that, and a fake that answered nil for an unlabelled disk would
+	-- hide a menu of empty lines.
+	local GENERIC = "3.5 inch Floppy Disk"
+	local function newDisk(fullType, label)
+		return {
+			__class = "InventoryItem",
+			type = fullType,
+			getFullType = function(self) return self.type end,
+			getName = function(self) return label or GENERIC end,
+			isCustomName = function() return label ~= nil end,
+		}
+	end
+
+	local carried = {}
 	local mirror = { disk = nil }
+	local function javaList(t)
+		return { size = function() return #t end,
+			get = function(_, i) return t[i + 1] end }
+	end
 	player.getInventory = function()
 		return {
 			getFirstTypeRecurse = function(_, fullType)
-				if carried ~= nil and carried.type == fullType then return carried end
+				for i = 1, #carried do
+					if carried[i].type == fullType then return carried[i] end
+				end
 				return nil
+			end,
+			getAllTypeRecurse = function(_, fullType)
+				local hits = {}
+				for i = 1, #carried do
+					if carried[i].type == fullType then hits[#hits + 1] = carried[i] end
+				end
+				return javaList(hits)
 			end,
 		}
 	end
@@ -1301,7 +1346,7 @@ do
 
 	-- 1. Nothing anywhere: not an entry to be seen. A player with no disk on him
 	-- and a machine with none in it has no business reading about a drive.
-	carried, mirror.disk = nil, nil
+	carried, mirror.disk = {}, nil
 	local labels = menuOn(computer)
 	for i = 1, #labels do
 		check("with no disk anywhere there is no Insert", labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
@@ -1309,7 +1354,7 @@ do
 	end
 
 	-- 2. A disk in his pocket, an empty drive: Insert, and it works.
-	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1]) }
 	mirror.disk = nil
 	menu = fullMenuOn(computer)
 	local insert = nil
@@ -1324,7 +1369,7 @@ do
 	end
 
 	-- 3. A disk in the drive and none in his pocket: Eject, and nothing else.
-	carried = nil
+	carried = {}
 	mirror.disk = true
 	menu = fullMenuOn(computer)
 	local eject = nil
@@ -1342,7 +1387,7 @@ do
 	-- absence -- the update that tells a client the disk came out cannot carry a
 	-- nil (SCeroSecObject:syncDisk) -- and a menu that read the flag as "there is
 	-- something there" would be the eject bug all over again, one layer up.
-	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1]) }
 	mirror.disk = false
 	menu = fullMenuOn(computer)
 	insert, eject = nil, nil
@@ -1357,7 +1402,7 @@ do
 	-- 4. One of each. Both entries, Insert greyed with the sentence that says what
 	-- to do about it -- and that sentence is the game's UI talking, not Unix: a
 	-- refusal a survivor can act on standing where he is.
-	carried = { type = CeroSec.FLOPPY_TYPES[3] }
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[3]) }
 	mirror.disk = true
 	menu = fullMenuOn(computer)
 	insert, eject = nil, nil
@@ -1375,7 +1420,7 @@ do
 	-- are greyed and with the same string.
 	local reach = CeroSecReach.canStandInFront
 	CeroSecReach.canStandInFront = function() return false end
-	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1]) }
 	mirror.disk = nil
 	menu = fullMenuOn(computer)
 	insert = nil
@@ -1388,7 +1433,7 @@ do
 	CeroSecReach.canStandInFront = reach
 
 	-- The slot is mechanical: a dark machine takes a disk and gives one back.
-	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1]) }
 	mirror.disk = true
 	labels = menuOn(off)
 	local sawInsert, sawEject = false, false
@@ -1410,6 +1455,147 @@ do
 	end
 	CCeroSecSystem.instance.getLuaObjectAt = get
 
+	--
+	-- More than one disk: the insert becomes a submenu
+	--
+	-- A drive has one slot. A survivor with four disks and one entry that silently
+	-- took whichever colour came first is the complaint this answers, so from two
+	-- disks up the entry is a parent with a line per disk behind it.
+	--
+
+	-- The parent option and the submenu hung off it, or nil.
+	local function insertSub(m)
+		for i = 1, #m.options do
+			if m.labels[i] == "ContextMenu_CeroSec_InsertFloppy" then
+				for j = 1, #m.subs do
+					if m.subs[j].option == m.options[i] then
+						return m.options[i], m.subs[j].menu
+					end
+				end
+				return m.options[i], nil
+			end
+		end
+		return nil, nil
+	end
+
+	-- ONE disk is still the direct entry it always was: no submenu, and the option
+	-- itself carries the disk.
+	local only = newDisk(CeroSec.FLOPPY_TYPES[2])
+	carried = { only }
+	mirror.disk = nil
+	menu = fullMenuOn(computer)
+	local parent, sub = insertSub(menu)
+	check("one disk still offers Insert", parent ~= nil)
+	check("with no submenu behind it", sub == nil)
+	eq("and the option itself inserts it", parent.callback,
+		CeroSecContextMenu.onInsertFloppy)
+	eq("carrying that one disk", parent.args[4], only)
+	eq("with the four arguments the action takes", parent.argCount, 4)
+
+	-- THREE disks: one parent, three entries, each carrying its OWN disk. An entry
+	-- that carried the wrong one would be a menu that inserts a disk the survivor
+	-- did not pick, which is the bug with a menu in front of it.
+	local blue = newDisk(CeroSec.FLOPPY_TYPES[1])
+	local red = newDisk(CeroSec.FLOPPY_TYPES[3])
+	local green = newDisk(CeroSec.FLOPPY_TYPES[4], "PAYROLL")
+	carried = { blue, red, green }
+	mirror.disk = nil
+	menu = fullMenuOn(computer)
+	parent, sub = insertSub(menu)
+	check("three disks offer Insert", parent ~= nil)
+	check("as a submenu", sub ~= nil)
+	eq("hung off that very option", sub.hungOff, parent)
+	eq("the parent itself does nothing", parent.callback, nil)
+	eq("and is not greyed", parent.notAvailable, nil)
+	eq("three entries, one per disk", #sub.options, 3)
+	-- The order is the order the four colours come in, which is stable from one
+	-- right-click to the next: blue, yellow, red, green. Two of the three carried
+	-- here are out of that order on purpose.
+	local want = { blue, red, green }
+	for d = 1, 3 do
+		eq("entry " .. d .. " inserts a disk", sub.options[d].callback,
+			CeroSecContextMenu.onInsertFloppy)
+		eq("entry " .. d .. " carries its own disk", sub.options[d].args[4], want[d])
+		eq("entry " .. d .. " names the same computer", sub.options[d].args[1], computer)
+	end
+
+	-- What the entries READ. The label first when there is one, and the colour
+	-- always -- four unlabelled disks with no colour on them would be four
+	-- identical lines, which is the menu this replaces.
+	eq("an unlabelled disk reads as its item name and its colour",
+		sub.labels[1], "3.5 inch Floppy Disk (IGUI_CeroSec_ColourBlue)")
+	eq("the red one says red", sub.labels[2],
+		"3.5 inch Floppy Disk (IGUI_CeroSec_ColourRed)")
+	eq("and a labelled disk puts the handwriting first",
+		sub.labels[3], "PAYROLL (IGUI_CeroSec_ColourGreen)")
+
+	-- Two disks of the SAME colour: still two entries. A survivor keeps three blue
+	-- disks as readily as one of each, and a lookup that asked for the first of each
+	-- type would offer him one.
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1], "A"), newDisk(CeroSec.FLOPPY_TYPES[1], "B") }
+	menu = fullMenuOn(computer)
+	parent, sub = insertSub(menu)
+	eq("two disks of one colour are two entries", #sub.options, 2)
+	eq("the first is the first", sub.labels[1], "A (IGUI_CeroSec_ColourBlue)")
+	eq("and the second the second", sub.labels[2], "B (IGUI_CeroSec_ColourBlue)")
+
+	-- A full drive with three disks on him: ONE greyed line carrying the reason, and
+	-- no submenu at all. A greyed parent over a list of disks invites a pick and then
+	-- refuses it; the line he needs to read is the reason.
+	carried = { blue, red, green }
+	mirror.disk = true
+	menu = fullMenuOn(computer)
+	parent, sub = insertSub(menu)
+	check("the entry is still there", parent ~= nil)
+	check("with nothing to choose between", sub == nil)
+	eq("greyed", parent.notAvailable, true)
+	eq("with the drive's own reason", parent.toolTip.description,
+		"Tooltip_CeroSec_DriveFull")
+	eq("and nothing on it to fire", parent.callback, nil)
+
+	-- Out of reach, same shape and the walk's own reason.
+	local reach2 = CeroSecReach.canStandInFront
+	CeroSecReach.canStandInFront = function() return false end
+	mirror.disk = nil
+	menu = fullMenuOn(computer)
+	parent, sub = insertSub(menu)
+	check("out of reach keeps the entry", parent ~= nil)
+	check("and drops the submenu", sub == nil)
+	eq("greyed with the walk's reason", parent.toolTip.description,
+		"Tooltip_CeroSec_NoAccess")
+	CeroSecReach.canStandInFront = reach2
+
+	-- floppiesOn itself: the order, and every copy.
+	carried = { green, blue, red }
+	local all = CeroSecContextMenu.floppiesOn(player)
+	eq("every disk he carries", #all, 3)
+	eq("blue first", all[1], blue)
+	eq("then red", all[2], red)
+	eq("then green", all[3], green)
+	carried = {}
+	eq("and nothing when he carries none", #CeroSecContextMenu.floppiesOn(player), 0)
+
+	-- diskEntry on something that is not one of the four: the name alone, with no
+	-- empty brackets after it.
+	eq("a disk of no colour reads as its name alone",
+		CeroSecContextMenu.diskEntry(newDisk("Base.Hammer", "X")), "X")
+
+	-- The four colour words are keys the mod ships strings for, in both languages.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/IG_UI.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		for t = 1, #CeroSec.FLOPPY_TYPES do
+			local key = CeroSec.floppyColourKey(CeroSec.FLOPPY_TYPES[t])
+			check(lang .. " IG_UI.json defines " .. tostring(key),
+				key ~= nil and string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+		end
+	end
+
+	carried = {}
+	mirror.disk = nil
+
 	-- Every label the drive can print is a key the mod ships a string for, in both
 	-- languages: a label nobody translated comes out on the menu as the key.
 	for _, lang in ipairs({ "EN", "FR" }) do
@@ -1429,7 +1615,7 @@ do
 	check("EN Tooltip.json defines the drive's own refusal",
 		string.find(strings, '"Tooltip_CeroSec_DriveFull"', 1, true) ~= nil)
 
-	carried, mirror.disk = nil, nil
+	carried, mirror.disk = {}, nil
 	eq("and the menu is back where it started", #menuOn(computer), before)
 end
 
@@ -2464,6 +2650,285 @@ do
 	local made = 0
 	for _ in pairs(recipes) do made = made + 1 end
 	eq("one recipe per module and not one more", made, #CeroSecModules.LIST)
+end
+
+--
+-- Writing on a floppy: the inventory menu, the box, and the two writes
+--
+-- CeroSecFloppyMenu is loaded here rather than with the files at the top, because
+-- it needs ISTextBox, ItemTag and a HaloTextHelper stood in for, and those are
+-- this block's business and nobody else's.
+--
+
+do
+	-- The game's own enum, faked as six distinct values. DISTINCT on purpose: the
+	-- write test walks six tags and asks the inventory about each, and six copies of
+	-- one value would let a check pass while five of the six were never asked.
+	_G.ItemTag = { WRITE = "t.WRITE", BLUE_PEN = "t.BLUE_PEN", PEN = "t.PEN",
+		PENCIL = "t.PENCIL", RED_PEN = "t.RED_PEN", GREEN_PEN = "t.GREEN_PEN" }
+
+	local halos = {}
+	_G.HaloTextHelper = { addBadText = function(who, text)
+		halos[#halos + 1] = { who = who, text = text }
+	end }
+
+	_G.getItemNameFromFullType = function(fullType)
+		return "name-of:" .. fullType
+	end
+
+	-- ISTextBox, faked down to what the pattern touches: the constructor's
+	-- arguments, initialise, addToUIManager, and the entry the OK button reads
+	-- through button.parent.entry (ISTextBox.lua:134 dispatches
+	-- onclick(target, button, param1, param2, ...)).
+	local boxes = {}
+	local TextBox = {}
+	TextBox.__index = TextBox
+	_G.ISTextBox = { new = function(_, x, y, w, h, text, entryText, target, onclick,
+			player, param1, param2)
+		local box = setmetatable({ x = x, y = y, width = w, height = h,
+			text = text, entryText = entryText, target = target, onclick = onclick,
+			player = player, param1 = param1, param2 = param2,
+			initialised = 0, added = 0 }, TextBox)
+		box.entry = { text = entryText, getText = function(self) return self.text end }
+		boxes[#boxes + 1] = box
+		return box
+	end }
+	function TextBox:initialise() self.initialised = self.initialised + 1 end
+	function TextBox:addToUIManager() self.added = self.added + 1 end
+	-- Press a button on it, the way ISTextBox does.
+	function TextBox:press(internal, typed)
+		if typed ~= nil then self.entry.text = typed end
+		self.onclick(self.target, { internal = internal, parent = self }, self.param1,
+			self.param2)
+	end
+
+	local tags = {}
+	local player = newPlayer()
+	player.getInventory = function()
+		return { containsTagRecurse = function(_, tag) return tags[tag] == true end }
+	end
+	_G.getSpecificPlayer = function() return player end
+
+	-- The gate, spied on. CeroSecOS.labelOk is the one place the charset and the
+	-- ceiling live and it is benched against the REAL core in os_test.lua; the core is
+	-- not loaded here, and a copy of its rule typed into this file would be a bench
+	-- whose reference is itself. So what stands in for it here records what it was
+	-- asked and answers what the block tells it to -- which is what lets the checks
+	-- below be about the MENU obeying the gate rather than about the rule.
+	local asked = {}
+	local verdict = true
+	CeroSecOS.labelOk = function(v)
+		asked[#asked + 1] = v
+		return verdict
+	end
+
+	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecFloppyMenu.lua"))
+	chunk()
+
+	-- A disk that answers the name API the way the engine does.
+	local GENERIC = "3.5 inch Floppy Disk"
+	local function newFloppy(fullType)
+		local data = {}
+		return {
+			__class = "InventoryItem",
+			type = fullType or CeroSec.FLOPPY_TYPES[1],
+			name = GENERIC, customName = false, synced = 0, data = data,
+			getFullType = function(self) return self.type end,
+			getName = function(self) return self.name end,
+			setName = function(self, v) self.name = v end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, v) self.customName = v end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
+			getModData = function(self) return self.data end,
+		}
+	end
+
+	local function fill(items)
+		local context = ContextMenu.new()
+		CeroSecFloppyMenu.OnFillInventoryObjectContextMenu(0, context, items)
+		return context
+	end
+
+	--
+	-- Something to write with
+	--
+	local disk = newFloppy()
+	tags = {}
+	eq("no pen, no entry at all", #fill({ disk }).labels, 0)
+	eq("and canWrite says so", CeroSecFloppyMenu.canWrite(player), false)
+
+	-- Each of the six tags on its own is enough. One at a time, because a test that
+	-- put all six on the survivor would pass with five of them never consulted.
+	local SIX = { "t.WRITE", "t.BLUE_PEN", "t.PEN", "t.PENCIL", "t.RED_PEN",
+		"t.GREEN_PEN" }
+	eq("six tags, the six vanilla asks about", #CeroSecFloppyMenu.writeTags(), 6)
+	for i = 1, #SIX do
+		tags = { [SIX[i]] = true }
+		eq(SIX[i] .. " alone is enough to write", CeroSecFloppyMenu.canWrite(player), true)
+		eq("and it puts the entry on the menu", #fill({ disk }).labels, 1)
+	end
+	-- A tag that is not one of the six is not a pen.
+	tags = { ["t.SCREWDRIVER"] = true }
+	eq("a tag that is not one of the six writes nothing",
+		CeroSecFloppyMenu.canWrite(player), false)
+
+	tags = { ["t.PEN"] = true }
+
+	--
+	-- The entries
+	--
+	eq("nothing on a menu with no disk in the selection", #fill({}).labels, 0)
+	local other = newFloppy("Base.Hammer")
+	eq("and nothing for an item that is not a disk", #fill({ other }).labels, 0)
+
+	local menu = fill({ other, disk })
+	eq("an unlabelled disk offers one entry", #menu.labels, 1)
+	eq("named for writing on it", menu.labels[1], "ContextMenu_CeroSec_LabelFloppy")
+	eq("carrying the disk", menu.options[1].target, disk)
+	eq("and the box is what it opens", menu.options[1].callback,
+		CeroSecFloppyMenu.onLabel)
+	eq("with the player behind it", menu.options[1].arg, player)
+
+	-- A stack of identical disks arrives as one table with an items array inside it,
+	-- which is the shape a naive loop walks straight past.
+	local stack = { items = { disk, newFloppy() } }
+	local stacked = fill({ stack })
+	eq("a stack of disks is still one entry", #stacked.labels, 1)
+	eq("and the pen lands on the first of it", stacked.options[1].target, disk)
+
+	--
+	-- Writing, through the box
+	--
+	boxes = {}
+	CeroSecFloppyMenu.onLabel(disk, player)
+	eq("one box opened", #boxes, 1)
+	local box = boxes[1]
+	eq("initialised once", box.initialised, 1)
+	eq("and put on the screen once", box.added, 1)
+	eq("with a nil target, so the handler's first argument is that nil",
+		box.target, nil)
+	eq("the handler is ours", box.onclick, CeroSecFloppyMenu.onLabelClick)
+	eq("the player object is the first thing after the button", box.param1, player)
+	eq("and the disk the second", box.param2, disk)
+	eq("the box opens empty on an unlabelled disk", box.entryText, "")
+
+	-- Cancel writes nothing.
+	box:press("CANCEL", "IGNORED")
+	eq("cancel leaves the name alone", disk.name, GENERIC)
+	eq("and does not make it custom", disk.customName, false)
+	eq("and writes nothing on the record", disk.data.label, nil)
+
+	-- OK writes it: the name, the flag, the sync, and the disk's own field.
+	box = boxes[1]
+	box:press("OK", "BACKUP 93")
+	eq("the name is the label", disk.name, "BACKUP 93")
+	eq("and it is a custom name, or the game would not save it", disk.customName, true)
+	eq("synced once, the way Rename Bag syncs", disk.synced, 1)
+	eq("and the record carries it too", disk.data.label, "BACKUP 93")
+
+	-- Now the menu says something different: change it, or take it off.
+	menu = fill({ disk })
+	eq("a labelled disk offers two entries", #menu.labels, 2)
+	eq("change it first", menu.labels[1], "ContextMenu_CeroSec_RelabelFloppy")
+	eq("then take it off", menu.labels[2], "ContextMenu_CeroSec_EraseLabel")
+	eq("the first opens the same box", menu.options[1].callback,
+		CeroSecFloppyMenu.onLabel)
+	eq("the second erases", menu.options[2].callback, CeroSecFloppyMenu.onErase)
+	eq("and labelOn reads it back", CeroSecFloppyMenu.labelOn(disk), "BACKUP 93")
+
+	-- Relabelling opens the box with what is already written in it, so a survivor
+	-- fixing a typo does not retype the line.
+	boxes = {}
+	CeroSecFloppyMenu.onLabel(disk, player)
+	eq("the box opens on what is written there", boxes[1].entryText, "BACKUP 93")
+	boxes[1]:press("OK", "WORK")
+	eq("and a relabel replaces it", disk.name, "WORK")
+	eq("on the record too", disk.data.label, "WORK")
+
+	--
+	-- The menu OBEYS the gate, and the gate is the OS core's
+	--
+	-- CeroSecOS.labelOk is the one place the charset and the ceiling live, and it is
+	-- benched against the real core in os_test.lua -- the core is not loaded here and
+	-- a copy of its rule typed into this file would be a bench whose reference is
+	-- itself. What is asserted HERE is the other half: that the box asks the gate,
+	-- asks it about exactly what was typed, and does nothing at all when it says no.
+	CeroSecFloppyMenu.writeLabel(disk, "WORK")
+
+	verdict = false
+	boxes, halos, asked = {}, {}, {}
+	CeroSecFloppyMenu.onLabel(disk, player)
+	boxes[1]:press("OK", "whatever was typed")
+	eq("the gate was asked", #asked, 1)
+	eq("about exactly what was typed", asked[1], "whatever was typed")
+	eq("a refusal writes no name", disk.name, "WORK")
+	eq("and nothing on the record", disk.data.label, "WORK")
+	eq("and the survivor is told", #halos, 1)
+	eq("to his face", halos[1].who, player)
+	eq("in the mod's own words", halos[1].text, "IGUI_CeroSec_LabelBad")
+
+	-- An empty entry never reaches the gate at all: it is a survivor who changed his
+	-- mind, and it gets no telling-off. A box that erased on an empty OK would erase a
+	-- label somebody opened in order to READ it.
+	boxes, halos, asked = {}, {}, {}
+	CeroSecFloppyMenu.onLabel(disk, player)
+	boxes[1]:press("OK", "")
+	eq("an empty entry is not even asked about", #asked, 0)
+	eq("says nothing", #halos, 0)
+	eq("and changes nothing", disk.name, "WORK")
+
+	verdict = true
+	boxes, halos, asked = {}, {}, {}
+	CeroSecFloppyMenu.onLabel(disk, player)
+	boxes[1]:press("OK", "PAYROLL 93")
+	eq("a label the gate accepts is written", disk.name, "PAYROLL 93")
+	eq("on the record too", disk.data.label, "PAYROLL 93")
+	eq("with nothing said about it", #halos, 0)
+
+	--
+	-- Taking it off
+	--
+	CeroSecFloppyMenu.writeLabel(disk, "GONE")
+	local synced = disk.synced
+	CeroSecFloppyMenu.eraseLabel(disk)
+	eq("the name goes back to the item's own, looked up by full type",
+		disk.name, "name-of:" .. disk.type)
+	eq("it is not a custom name any more", disk.customName, false)
+	eq("synced again, so the erase reaches the other side", disk.synced, synced + 1)
+	eq("and the record's label is gone", disk.data.label, nil)
+	eq("so labelOn reads nothing", CeroSecFloppyMenu.labelOn(disk), nil)
+	eq("and the menu is back to one entry", #fill({ disk }).labels, 1)
+
+	-- onErase is the menu's own door onto that.
+	CeroSecFloppyMenu.writeLabel(disk, "AGAIN")
+	CeroSecFloppyMenu.onErase(disk, player)
+	eq("the menu's erase erases", CeroSecFloppyMenu.labelOn(disk), nil)
+
+	-- labelOn never reads an ordinary name as a label: every disk in the game has
+	-- one, and reading it would put "3.5 inch Floppy Disk" in the mount listing of
+	-- every machine in Kentucky.
+	local fresh = newFloppy()
+	eq("an unlabelled disk has no label", CeroSecFloppyMenu.labelOn(fresh), nil)
+	fresh.name = "SNEAKY"
+	eq("a name without the custom flag is still no label",
+		CeroSecFloppyMenu.labelOn(fresh), nil)
+
+	-- Every key this menu can print is one the mod ships a string for, in both
+	-- languages.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		for _, pair in ipairs({ { "ContextMenu.json", "ContextMenu_CeroSec_LabelFloppy" },
+				{ "ContextMenu.json", "ContextMenu_CeroSec_RelabelFloppy" },
+				{ "ContextMenu.json", "ContextMenu_CeroSec_EraseLabel" },
+				{ "IG_UI.json", "IGUI_CeroSec_LabelFloppy" },
+				{ "IG_UI.json", "IGUI_CeroSec_LabelBad" } }) do
+			local handle = assert(io.open(
+				"42/media/lua/shared/Translate/" .. lang .. "/" .. pair[1], "r"))
+			local strings = handle:read("*a")
+			handle:close()
+			check(lang .. "/" .. pair[1] .. " defines " .. pair[2],
+				string.find(strings, '"' .. pair[2] .. '"', 1, true) ~= nil)
+		end
+	end
 end
 
 print("manual_ui_test: " .. count .. " checks passed")

@@ -7073,15 +7073,30 @@ local function newInventory()
 	local inv = { items = {}, nextID = 100 }
 	function inv:add(fullType, data)
 		self.nextID = self.nextID + 1
+		-- The NAME is modelled the way the engine really holds it: one field, which
+		-- getName and getDisplayName both just read (javap -c
+		-- zombie.inventory.InventoryItem -- getDisplayName is a single getfield on
+		-- `name`), starting at the item's ordinary name and replaced wholesale by
+		-- setName. So a disk with no label is a disk whose name is the generic one and
+		-- NOT a disk with no name -- which is exactly the case that would let a bench
+		-- pass while the server read the generic name as a label.
 		local item = {
 			id = self.nextID,
 			type = fullType,
 			data = data or {},
+			name = "3.5 inch Floppy Disk",
+			customName = false,
+			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
 			hasModData = function(self) return true end,
 			getModData = function(self) return self.data end,
 			getContainer = function(self) return inv end,
+			getName = function(self) return self.name end,
+			setName = function(self, s) self.name = s end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, b) self.customName = b end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -7256,6 +7271,127 @@ do
 	check("the note is readable on the other machine",
 		other.painted("the pumps are at the depot"))
 	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	--
+	-- The sticker, through the slot and back out
+	--
+	-- The label is written on the ITEM (its custom name) and read at the slot; the
+	-- machine keeps it on the disk record and prints it on `mount` and `df`; the
+	-- eject puts it back on the shell.
+	--
+	-- Which has to be ASSERTED and not assumed, because the item does not survive the
+	-- round trip: an insert removes it and an eject makes a NEW one with AddItem, so
+	-- a label that was not deliberately carried across would be gone.
+	--
+	local labelled = otherInv:add("CeroSec.FloppyGreen")
+	labelled:setName("PAYROLL 93")
+	labelled:setCustomName(true)
+
+	-- The other machine's drive still has the red disk in it; out it comes first.
+	other.send("ejectfloppy")
+	eq("the drive is free", other.object:hasDisk(), false)
+
+	other.send("insertfloppy", { item = labelled:getID() })
+	eq("the labelled disk went in", other.object:hasDisk(), true)
+	eq("and the machine wrote the sticker on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- And the two commands a survivor asks "which disk is this" with say so.
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("mount names the disk by what is written on it",
+		other.painted("/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)"))
+	other.enter("df")
+	other.frame()
+	check("and df wears it too", other.painted("(PAYROLL 93)"))
+
+	-- Out again: a NEW item, and the handwriting is on it.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local back = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyGreen" then
+			back = otherInv.items[i]
+		end
+	end
+	check("the green disk is back", back ~= nil)
+	check("and it really is a new item, not the one that went in", back ~= labelled)
+	eq("wearing the label", back:getName(), "PAYROLL 93")
+	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
+
+	-- Back in, and the label is still the label: it lives on the disk and survives
+	-- as many trips through the slot as the survivor makes.
+	other.send("insertfloppy", { item = back:getID() })
+	eq("the label survived the round trip",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- A disk with NO label: no sticker on the record, and no empty brackets on the
+	-- two lines. The generic item name is not a label, and reading it as one would
+	-- put "3.5 inch Floppy Disk" in the mount listing of every machine in Kentucky.
+	other.send("ejectfloppy")
+	local plain = otherInv:add("CeroSec.FloppyBlue")
+	eq("its name is the ordinary one", plain:getName(), "3.5 inch Floppy Disk")
+	eq("and it is not a custom name", plain:isCustomName(), false)
+	other.send("insertfloppy", { item = plain:getID() })
+	eq("an unlabelled disk carries no sticker",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("and mount prints the bare line",
+		other.painted("/dev/fd0 on /mnt type ufs (rw)"))
+	check("with the generic name nowhere near it",
+		not other.painted("3.5 inch Floppy Disk"))
+
+	-- Erased: a name the survivor took the flag off. The slot CLEARS the record
+	-- rather than leaving the last label on it, or a disk somebody erased would come
+	-- out of the drive still labelled.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local erased = otherInv:add("CeroSec.FloppyRed")
+	erased:setName("OLD")
+	erased:setCustomName(true)
+	other.send("insertfloppy", { item = erased:getID() })
+	eq("labelled first", CeroSecOS.floppyOf(other.object:osState()).label, "OLD")
+	other.send("ejectfloppy")
+	local again = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyRed" then
+			again = otherInv.items[i]
+		end
+	end
+	again:setCustomName(false)
+	other.send("insertfloppy", { item = again:getID() })
+	eq("and the erase reaches the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+
+	-- A label a CLIENT could never have typed. The slot holds what arrives to
+	-- CeroSecOS.labelOk, which is tighter than the gate: the two commands that print
+	-- it are lines on a screen, and a forged name with a newline in it would put a
+	-- second line in the mount listing.
+	other.send("ejectfloppy")
+	local forged = otherInv:add("CeroSec.FloppyYellow")
+	forged:setName("two\nlines")
+	forged:setCustomName(true)
+	other.send("insertfloppy", { item = forged:getID() })
+	eq("a forged label is not written on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	eq("and the disk went in all the same", other.object:hasDisk(), true)
+	other.send("ejectfloppy")
+	local over = otherInv:add("CeroSec.FloppyYellow")
+	over:setName(string.rep("L", CeroSecOS.LABEL_MAX + 1))
+	over:setCustomName(true)
+	other.send("insertfloppy", { item = over:getID() })
+	eq("nor is one over the ceiling",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.send("ejectfloppy")
 
 	-- And the first machine has nothing left of it.
 	eq("the first machine's drive is empty", bench.object:hasDisk(), false)

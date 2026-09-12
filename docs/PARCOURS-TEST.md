@@ -1042,6 +1042,43 @@ coques.
      la copie du client qui est en cause et non la machine : le menu montrait la
      fente encore pleine alors que la disquette était dans les mains du
      survivant. [ ]
+199c. **Plusieurs disquettes : le sous-menu.** Se faire apparaître UNE disquette de
+     chaque couleur (`FloppyBlue`, `FloppyYellow`, `FloppyRed`, `FloppyGreen`),
+     fente vide, clic droit sur l'ordinateur → **Insert floppy** est maintenant un
+     SOUS-MENU de quatre lignes, dans l'ordre bleu, jaune, rouge, vert, chacune
+     lisant `3.5" Floppy Disk (bleue)` etc. L'entrée parente elle-même n'insère
+     rien quand on passe dessus. Cliquer la ligne **verte** → c'est la disquette
+     VERTE qui quitte l'inventaire, pas la bleue : c'est tout le point de ce
+     sous-menu. L'éjecter. Garder ensuite DEUX disquettes bleues sur soi → deux
+     lignes quand même, et non une. Avec une seule disquette sur soi → pas de
+     sous-menu du tout, l'entrée directe d'avant. [ ]
+199d. **Le sous-menu quand c'est refusé.** Trois disquettes sur soi et une dans la
+     fente → **Insert floppy** est UNE seule ligne grisée avec l'infobulle *Eject
+     the floppy first*, et AUCUN sous-menu : il n'y a rien à choisir. Pareil hors
+     de portée (derrière un comptoir) : une ligne grisée avec
+     *Tooltip_CeroSec_NoAccess*. [ ]
+199e. **Écrire sur l'étiquette.** Sans rien pour écrire sur soi, clic droit sur une
+     disquette dans l'inventaire → **aucune** entrée d'étiquette. Prendre un stylo
+     (`Base.Pen`) ou un crayon, reclic droit → **Étiqueter la disquette**. Cliquer
+     → une boîte de texte vide s'ouvre. Taper `PAYROLL 93`, OK → le nom de la
+     disquette dans l'inventaire devient **PAYROLL 93**. Reclic droit → deux
+     entrées maintenant : **Changer l'étiquette** (la boîte s'ouvre déjà remplie)
+     et **Effacer l'étiquette**. Essayer une étiquette de plus de 24 caractères,
+     puis une avec un `/` ou un `_` → refusée, un message rouge le dit, et le nom
+     ne change pas. Annuler la boîte → rien ne change. **Effacer l'étiquette** →
+     le nom revient à `3.5" Floppy Disk`. Poser le stylo par terre → les entrées
+     disparaissent du menu. [ ]
+199f. **L'étiquette, la machine et l'aller-retour.** Étiqueter une disquette
+     `PAYROLL 93`, l'insérer : le sous-menu la nommait bien `PAYROLL 93 (verte)`.
+     `newfs /dev/fd0`, `mount /dev/fd0 /mnt`, puis `mount` sans rien → la ligne de
+     la disquette est `/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)`, et celle de
+     `hda` n'a RIEN entre parenthèses au bout. `df` → la ligne `fd0` porte
+     `(PAYROLL 93)` au bout, la ligne `fd0 nodes` ne le répète pas, et les colonnes
+     de chiffres n'ont pas bougé. `umount /mnt`, éjecter → la disquette revient
+     dans l'inventaire **en portant toujours le nom PAYROLL 93** (c'est un nouvel
+     objet : sans report explicite l'écriture serait perdue). La réinsérer →
+     `mount` la renomme pareil. Avec une disquette NON étiquetée : la ligne `mount`
+     est nue, sans parenthèses vides, et ne dit jamais `3.5" Floppy Disk`. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
      Insert et Eject sont toujours proposés — une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
