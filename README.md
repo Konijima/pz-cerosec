@@ -19,10 +19,14 @@ under `/dev` (doors, switches, motion sensors), and three links out to the rest 
 the county — coax to the other machines in a building, the telephone, and radio.
 See "Documentation" below for where each of those is written up.
 
-What's next: `CeroSec.DEV_MANUAL_MENU` (`42/media/lua/shared/CeroSec/CeroSecDefs.lua`)
-is still `true`. It is a testing aid that puts a manual reader on every computer's
-right-click menu regardless of whether anyone has found a book, and it **has to be
-set to `false` before the Workshop release**.
+What's next: two testing aids in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` are
+still `true`, and **both have to be set to `false` before the Workshop release**.
+`CeroSec.DEV_MANUAL_MENU` puts a manual reader on every computer's right-click menu
+regardless of whether anyone has found a book. `CeroSec.DEV_DEBUG_MENU` puts the
+debug window there — every computer the server holds, the selected machine's
+filesystem, its `/dev`, the wire, the scheduler and the mod's own log — and once it
+is `false` that window is offered only in the game's own debug mode. See
+[docs/DEBUG.md](docs/DEBUG.md).
 
 ## Install (local play)
 
@@ -97,6 +101,9 @@ Three lessons this codebase paid for and does not intend to relearn:
   identities, their rules and rates, and the sessions they carry.
 - [docs/SCRIPTING.md](docs/SCRIPTING.md) — the shell language, pipes, cron, job
   control, and the step machine and scheduler underneath.
+- [docs/DEBUG.md](docs/DEBUG.md) — the debug window: the two dev flags and the
+  release gating to come, the six tabs, the protocol, what it costs the server,
+  and the three things it can change.
 - [docs/TESTING.md](docs/TESTING.md) — `sh tests/run.sh`, what each suite proves,
   and the manual checklists for what no headless test can reach.
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — the wave process, repository

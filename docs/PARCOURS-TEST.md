@@ -16,8 +16,10 @@ apparaissent une fois, rien d'autre n'est touché. Régler
 `CeroSec.DEBUG = true` dans `42/media/lua/shared/CeroSec/CeroSecDefs.lua` pour voir
 les lignes de console pendant les tests.
 
-L'option **Read the CeroSec manual (dev)** est déjà présente sur tous les
-ordinateurs (`CeroSec.DEV_MANUAL_MENU = true`). Un ordinateur de bureau
+Le sous-menu **CeroSec (dev)** est déjà présent sur tous les ordinateurs : il
+tient les trois volumes du manuel (`CeroSec.DEV_MANUAL_MENU = true`) et la
+**fenêtre de débogage** (`CeroSec.DEV_DEBUG_MENU = true`, voir la section W et
+[DEBUG.md](DEBUG.md)). Un ordinateur de bureau
 (`Desktop`) se trouve dans les bureaux et dans les maisons ; le menu debug peut
 aussi en faire apparaître un, ou fournir un Computer en objet à placer. Pour une
 chaise, tirer n'importe quelle chaise de bureau devant l'écran, dos au moniteur.
@@ -1289,6 +1291,135 @@ rechargement du morceau, jamais avant. La règle est dans
      dessus se ferme en disant que le courant est parti), pas pendant l'absence.
      Le contrôle du même geste : rester devant la machine et couper le générateur
      sur place → elle s'éteint toute seule dans la minute qui suit. [ ]
+
+## W. La fenêtre de débogage (palier debug)
+
+La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
+Elle ne change que trois choses : allumer, éteindre, et où le personnage se
+trouve. Tout le reste est en lecture. Détails et protocole dans
+[DEBUG.md](DEBUG.md).
+
+Pour cette section : deux ordinateurs allumés dans le même bâtiment, un troisième
+dans un bâtiment loin (le même décor que la section N), et au moins une porte et
+un interrupteur dans la pièce.
+
+227. **La porte.** Clic droit sur un ordinateur → dernière entrée du menu,
+     **CeroSec (dev)**, et dedans les trois volumes du manuel puis **Fenêtre de
+     débogage** en dernier. Attendu : le sous-menu ne s'appelle plus « Read the
+     CeroSec manual (dev) », il porte le nom du mod, et l'entrée debug est bien
+     la dernière des quatre. [ ]
+228. **Ouvrir.** Cliquer **Fenêtre de débogage** → une fenêtre s'ouvre au centre
+     de l'écran, avec une barre de titre « CeroSec débogage », six onglets
+     (Machines, Files, Devices, Network, Scheduler, Log) et une rangée de boutons
+     en bas. Attendu : elle ressemble aux fenêtres de debug du jeu (mêmes
+     couleurs, même police, mêmes en-têtes de colonnes), et pas au terminal vert.
+     [ ]
+229. **L'onglet Machines.** Attendu : une ligne par ordinateur que le serveur
+     tient, y compris celui du bâtiment loin, avec sa position, son orientation,
+     on/off, si son morceau de carte est chargé, son nom, son adresse, son numéro
+     de téléphone, son indicatif, ses jobs et le nombre de fenêtres ouvertes
+     dessus. La machine devant laquelle on est est déjà sélectionnée. [ ]
+230. **Sous la liste.** Attendu : le détail de la machine sélectionnée sur
+     plusieurs lignes — son sprite, la version de son état, `sysv`, si le système
+     passe, et sa console (qui est connecté, dans quel répertoire, combien de
+     lignes à l'écran). Ouvrir le terminal dessus, taper `ls`, revenir à la
+     fenêtre : le nombre de lignes a bougé dans les deux secondes. [ ]
+231. **Sélectionner une autre machine.** Cliquer la ligne de l'ordinateur du
+     bâtiment loin. Attendu : la liste garde ses lignes et la ligne cliquée reste
+     surlignée, le détail dessous devient celui de cette machine, et les onglets
+     Files et Devices se vident puis se remplissent avec ceux de la nouvelle
+     machine — jamais le disque de l'ancienne sous le nom de la nouvelle. [ ]
+232. **La machine dont le quartier n'est pas chargé.** Sa colonne **chunk** dit
+     `away` et sa colonne **wire** dit `-` et pas `no` : personne n'est là pour
+     répondre sur le courant. Attendu : elle est quand même **allumée** (`on`), et
+     son nom et son adresse sont là, parce que le serveur tient son disque quoi
+     que fasse le streamer. [ ]
+233. **Éteindre à distance.** Machine loin sélectionnée, cliquer **Éteindre**.
+     Attendu : sa colonne on/off passe à `off` dans les deux secondes. Rallumer
+     avec **Allumer** : elle ne se rallume **que** si son morceau de carte est
+     chargé (le courant se demande à un carré), sinon rien ne bouge — et c'est la
+     bonne réponse. [ ]
+234. **S'y téléporter.** Machine loin sélectionnée, cliquer **S'y téléporter** →
+     le personnage se retrouve au milieu du carré de cette machine (pas sur le
+     coin), le quartier se charge, et la colonne **chunk** de cette ligne passe à
+     `here` au rafraîchissement suivant. [ ]
+235. **Ouvrir le terminal.** Sur une machine allumée dont le quartier est chargé
+     et à côté de laquelle on se trouve, cliquer **Ouvrir le terminal** → le
+     terminal s'ouvre comme si on avait utilisé l'ordinateur par devant, sans la
+     marche et sans la chaise. Sur une machine loin : rien ne s'ouvre (avec
+     `CeroSec.DEBUG = true`, une ligne le dit dans la console). [ ]
+236. **L'onglet Files.** Attendu : l'arbre du disque de la machine sélectionnée,
+     `/` en première ligne, puis `/bin`, `/etc`, `/home`… en profondeur, avec le
+     mode écrit comme `ls -l` l'écrit, le propriétaire, la taille et la date.
+     Sous la liste : le compte de nœuds et d'octets contre les plafonds. Comparer
+     avec `ls -l /etc` tapé dans le terminal de la même machine : mêmes modes,
+     mêmes propriétaires, mêmes tailles. [ ]
+237. **Vider l'état.** `CeroSec.DEBUG` n'a rien à voir ici. Cliquer **Vider
+     l'état** → la console du jeu (`console.txt`) reçoit le contenu de l'état de
+     la machine, une ligne par clé, et une dernière ligne qui dit où ça a été
+     coupé. Attendu : c'est borné (pas plus de 401 lignes), et rien n'apparaît
+     dans la fenêtre. [ ]
+238. **L'onglet Devices.** Attendu : une ligne par entrée de `/dev` de la machine
+     sélectionnée, avec le même nom et le même état que `ls -l /dev` dans son
+     terminal, plus ce que le terminal ne montre pas : le carré absolu de l'objet,
+     la « poignée » qu'un `dev find` enverrait (le nom de sprite d'une porte, le
+     type d'objet d'un détecteur posé par terre, **rien** pour un interrupteur —
+     un interrupteur clignote au lieu d'être entouré), et si l'objet est encore
+     là. Sous la liste : le carnet de numéros et un enregistrement par détecteur.
+     [ ]
+239. **Un périphérique qui s'en va.** Ramasser le détecteur posé par terre.
+     Attendu : au rafraîchissement suivant sa ligne dit que l'objet est parti
+     (`gone`) et son numéro reste dépensé — c'est la différence entre un
+     périphérique hors de portée et un chemin mal tapé. [ ]
+240. **L'onglet Network.** Attendu : une ligne `eth` par bâtiment avec ses
+     machines et leurs adresses, une ligne `tel` par bâtiment avec libre/occupé,
+     une ligne `tel exchange` avec l'état du central et du réseau, une ligne
+     `radio` par machine qui a un indicatif, et rien de plus s'il n'y a aucune
+     session ouverte. [ ]
+241. **Une session qui monte.** `rlogin` depuis une machine du bâtiment vers
+     l'autre du même bâtiment, se connecter. Attendu : une ligne `pty ttyp0`
+     apparaît avec d'où elle vient, par quel lien, combien de sauts et son âge, et
+     des lignes `evt` disent ce que le fil a été demandé et ce qu'il a répondu.
+     Taper `exit` : la ligne `pty` disparaît et une ligne `evt close` apparaît.
+     [ ]
+242. **Un refus qui laisse une trace.** `rlogin` vers l'adresse de la machine du
+     bâtiment **loin** (pas de câble entre deux bâtiments) → le terminal dit son
+     refus, et dans l'onglet Network une ligne `evt eth <adresse> unreach`
+     apparaît. Attendu : c'est la seule trace qui existe de ce refus, puisque
+     aucune session n'a été créée et que l'écran finira par défiler. En revanche
+     `rlogin nimportequoi` (un nom que rien ne résout) **ne** fait **pas** de
+     ligne `evt` : ce refus est celui du résolveur et n'atteint jamais le fil. [ ]
+243. **L'onglet Scheduler.** Lancer `sleep 60 &` sur la machine sélectionnée.
+     Attendu : une ligne apparaît avec la machine, l'id que le shell a annoncé,
+     le slot `[1]`, le nom, l'état, les pas, le temps processeur et la dette —
+     l'état étant le mot que `jobs` imprime pour le même job. Sous la liste : les
+     constantes de budget de `CeroSecDefs` et l'horloge du planificateur. [ ]
+244. **Le crontab.** `crontab -e` avec `* * * * * date` sur la machine
+     sélectionnée. Attendu : sous la liste, une ligne par ligne de crontab avec
+     `DUE NOW` ou `waiting` et la commande. Écrire une ligne impossible à la main
+     en root (`60 * * * * echo non` dans `/var/spool/cron/admin`) : une ligne
+     `BAD (bad minute)` apparaît, avec le numéro de ligne. [ ]
+245. **L'onglet Log.** Attendu : les lignes que le mod a écrites sur lui-même,
+     la plus récente en bas, avec leur niveau. Les boutons **All**, **Warnings**
+     et **Errors** filtrent, et les trois boutons ne sont là que sur cet onglet.
+     Attendu aussi : il y a des lignes **même avec `CeroSec.DEBUG = false`** —
+     l'impression dans la console est conditionnée par ce réglage, l'anneau non.
+     [ ]
+246. **Deux fenêtres, une seule.** Ouvrir la fenêtre, puis la rouvrir par le menu
+     d'un autre ordinateur → la première se ferme, il n'y en a jamais deux. [ ]
+247. **Redimensionner.** Tirer le coin de la fenêtre → la liste et les colonnes
+     suivent le bord, les boutons restent sous la liste, et le bloc de détail
+     reste lisible en bas. [ ]
+248. **Fermer, et le rafraîchissement qui s'arrête.** Mettre
+     `CeroSec.DEBUG = true`, ouvrir la fenêtre, la fermer par sa croix, et
+     regarder la console pendant une minute. Attendu : plus rien de la fenêtre —
+     elle ne demande plus rien au serveur. (C'est la fuite que
+     `tests/debug_ui_test.lua` garde, mais elle se voit aussi comme ça.) [ ]
+249. **Le drapeau.** Mettre `CeroSec.DEV_DEBUG_MENU = false` et
+     `CeroSec.DEV_MANUAL_MENU = false`, recharger la partie. Attendu : plus de
+     sous-menu **CeroSec (dev)** du tout sur le menu d'un ordinateur. Relancer le
+     jeu avec `-debug` : le sous-menu revient avec **Fenêtre de débogage** dedans
+     et **rien** d'autre — le manuel se trouve ou ne se lit pas. [ ]
 
 ## Rapport
 
