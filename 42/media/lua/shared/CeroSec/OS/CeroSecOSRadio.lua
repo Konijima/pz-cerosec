@@ -71,9 +71,15 @@ CeroSecOS.CALLSIGN_MODE = 644
 -- on the end of a call to tell two of its own boxes apart. This machine has one
 -- TNC and therefore one station, which is SSID 0, and SSID 0 is written with
 -- nothing after the call at all.
+-- Written with explicit [A-Z] ranges and not with %u. The class is right in
+-- ordinary Lua and this engine has never used one: everything else in it reads
+-- %a, %d and %w, and a capital-letter class that a locale or Kahlua's own class
+-- table might read differently is not something to put in the middle of the one
+-- rule that decides whether a station may transmit.
 function CeroSecOS.isCallsign(text)
 	if type(text) ~= "string" then return false end
-	return string.match(text, "^[KNW]%u?%d%u%u%u?$") ~= nil
+	return string.match(text,
+		"^[KNW][A-Z]?%d[A-Z][A-Z][A-Z]?$") ~= nil
 end
 
 -- The call district, which is not a hash and must not be one: the digit in a
@@ -87,8 +93,14 @@ CeroSecOS.CALL_DISTRICT = "4"
 -- ran: W first, then K, and N when those ran out.
 CeroSecOS.CALL_PREFIXES = { "W", "K", "N" }
 
+-- The alphabet as a string, indexed rather than computed: string.char is not used
+-- anywhere else in this engine, and a table lookup cannot be wrong about which
+-- byte a letter is.
+CeroSecOS.CALL_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 local function letterAt(n)
-	return string.char(65 + math.fmod(math.floor(n), 26))
+	local i = math.fmod(math.floor(n), 26) + 1
+	return string.sub(CeroSecOS.CALL_LETTERS, i, i)
 end
 
 -- The callsign a station is BORN with: derived from the building the computer
