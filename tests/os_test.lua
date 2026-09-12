@@ -10640,6 +10640,35 @@ do
 		eq("a state deeper than any path on it is refused", dOk, false)
 		check("and says so rather than falling down: " .. tostring(dWhy),
 			string.find(tostring(dWhy), "too deep", 1, true) ~= nil)
+
+		-- And the belt is far enough out that it can never be the thing that
+		-- refuses a real machine, which is the only way this check can be worse
+		-- than the crash it replaced: osState's refusal is sticky, so a false
+		-- refusal here is a bricked computer. The deepest state there is, measured
+		-- rather than argued: a disk in the drive, its tree as deep as the write
+		-- path allows, a file at the bottom of it.
+		local deepest = fresh()
+		deepest.floppy = CeroSecOS.newFloppy("DEEP")
+		deepest.floppy.fs = CeroSecOS.newDir("root", 755)
+		local bottom = deepest.floppy.fs
+		for i = 1, CeroSecOS.MAX_DEPTH - 1 do
+			local down = CeroSecOS.newDir("root", 755)
+			bottom.children["d" .. i] = down
+			bottom = down
+		end
+		bottom.children.f = CeroSecOS.newFile("root", 644, "x")
+		eq("the deepest machine this engine can produce still boots",
+			CeroSecOS.validate(deepest), true)
+		-- The same tree on the machine's own drive, which is one level shallower.
+		local onDrive = fresh()
+		local at2 = onDrive.fs
+		for i = 1, CeroSecOS.MAX_DEPTH - 1 do
+			local down = CeroSecOS.newDir("root", 755)
+			at2.children["d" .. i] = down
+			at2 = down
+		end
+		at2.children.f = CeroSecOS.newFile("root", 644, "x")
+		eq("and so does the deepest filesystem", CeroSecOS.validate(onDrive), true)
 	end
 
 	-- None of it is paid for before it is refused: the field rules are asked of the

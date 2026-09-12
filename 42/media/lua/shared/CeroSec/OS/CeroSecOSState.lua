@@ -75,10 +75,19 @@ end
 -- outside is refused before it gets here (CeroSecOS.diskShape) -- but a gate whose
 -- job is to say whether a blob can be run on has to survive the blob.
 --
--- The bound is the copy's, for the copy's reason (see CeroSecOS.DISK_COPY_DEPTH):
--- two table levels for every level a path on this machine may go down, and three
--- in front for the state, its filesystem and that node's children.
-local PLAIN_DEPTH = 3 + 2 * CeroSecOS.MAX_DEPTH
+-- The bound is deliberately FAR above anything a state can legally be, and that is
+-- the whole of how it is chosen. What this walk is for is stopping a runaway; what
+-- enforces the filesystem's own depth is checkNode, one gate along, which says
+-- "too deep" about the node that is too deep instead of about the twentieth table
+-- inside it. A belt that can fire on a legal machine is not a belt -- it is a
+-- bricked computer, because osState's refusal is sticky.
+--
+-- Measured, the deepest legal state there is -- a disk mounted on a machine, its
+-- tree as deep as the write path allows, a file at the bottom of it -- reaches 35:
+-- the state, the disk, its root, then two table levels for every level down (the
+-- node and its children), then the leaf's own field. Four times MAX_DEPTH is
+-- sixty-four, which is most of the way to twice that and nowhere near a stack.
+local PLAIN_DEPTH = 4 * CeroSecOS.MAX_DEPTH
 
 local function checkPlain(value, seen, where, depth)
 	local t = type(value)
