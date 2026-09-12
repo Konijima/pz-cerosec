@@ -346,11 +346,38 @@ end
 -- the server had to work with too.
 --
 
-function CeroSecTerminal:objectAt(args)
+-- A dropped sensor is not on the square's object list -- a world item lives on
+-- getWorldObjects() (media/lua/client/ISUI/ISWorldObjectContextMenu.lua:2957 reads
+-- it exactly so) -- and it has no sprite name to be told apart by, being drawn
+-- from a model. So it is found by the item it IS, which is what the server sent.
+--
+-- The FIRST of its type on that tile. Two identical heads on one square is the
+-- one case where the outline may land on the other one; they are both sensors,
+-- both in the same place, and a player who dropped two on one tile is looking at
+-- the right square either way.
+function CeroSecTerminal:itemAt(args)
+	local square = self:squareAt(args)
+	if square == nil then return nil end
+	local objects = square:getWorldObjects()
+	if objects == nil then return nil end
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		local item = object:getItem()
+		if item ~= nil and item:getFullType() == args.item then return object end
+	end
+	return nil
+end
+
+function CeroSecTerminal:squareAt(args)
 	if getCell == nil then return nil end
 	local cell = getCell()
 	if cell == nil then return nil end
-	local square = cell:getGridSquare(args.x, args.y, args.z)
+	return cell:getGridSquare(args.x, args.y, args.z)
+end
+
+function CeroSecTerminal:objectAt(args)
+	if args.class == "IsoWorldInventoryObject" then return self:itemAt(args) end
+	local square = self:squareAt(args)
 	if square == nil then return nil end
 	local objects = square:getObjects()
 	if objects == nil then return nil end
@@ -364,7 +391,13 @@ function CeroSecTerminal:objectAt(args)
 end
 
 function CeroSecTerminal:startHighlight(args)
-	if type(args.class) ~= "string" or type(args.sprite) ~= "string" then return end
+	-- Both are always sent and one of them is always blank: a fixture carries a
+	-- sprite and a dropped item carries a type. What must be a string is the pair,
+	-- so a message missing either is a message this window does nothing with.
+	if type(args.class) ~= "string" or type(args.sprite) ~= "string"
+			or type(args.item) ~= "string" then
+		return
+	end
 	-- One at a time: a second `dev find` drops the first outline rather than
 	-- leaving it lit until its own clock runs out.
 	self:stopHighlight()

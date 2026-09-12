@@ -52,9 +52,29 @@ _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
 -- Class-aware, because the device layer tells a light switch from a door with
 -- it. Anything that is not one of the fake world objects below answers true, as
 -- it did before: the only other caller is the client's computer test.
+--
+-- And hierarchy-aware where the game has one, because the sensor asks about a
+-- SUPERCLASS: `instanceof(body, "IsoGameCharacter")` has to be true of a zombie
+-- and of a survivor and false of a car, which is the game's own shape --
+-- IsoZombie extends IsoGameCharacter extends IsoMovingObject, IsoPlayer the same
+-- way, and BaseVehicle extends IsoMovingObject and stops there (all javap'd). A
+-- fake that answered only on the exact name would let a sensor which skipped the
+-- invisible test on zombies pass.
+local PARENT = {
+	IsoZombie = "IsoGameCharacter",
+	IsoPlayer = "IsoGameCharacter",
+	IsoGameCharacter = "IsoMovingObject",
+	BaseVehicle = "IsoMovingObject",
+	HandWeapon = "InventoryItem",
+}
 _G.instanceof = function(object, class)
 	if type(object) == "table" and type(object.__class) == "string" then
-		return object.__class == class
+		local name = object.__class
+		while name ~= nil do
+			if name == class then return true end
+			name = PARENT[name]
+		end
+		return false
 	end
 	return true
 end
@@ -264,6 +284,7 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSSystem.lua",
 	"shared/CeroSec/OS/CeroSecOSUsers.lua",
 	"shared/CeroSec/OS/CeroSecOSVM.lua",
+	"server/CeroSec/SCeroSecSensors.lua",
 	"server/CeroSec/SCeroSecDevices.lua",
 	"server/CeroSec/SCeroSecNet.lua",
 	"server/CeroSec/SCeroSecJobs.lua",
@@ -1540,15 +1561,60 @@ function FakeWorld.new()
 		local key = x .. "," .. y .. "," .. z
 		local sq = world.squares[key]
 		if sq ~= nil then return sq end
-		sq = { objects = {} }
+		-- Three lists and not one, because the game keeps three: the fixtures
+		-- (getObjects), the items lying on the floor (getWorldObjects) and the
+		-- bodies standing on it (getMovingObjects). A fake that put a dropped
+		-- sensor on getObjects would let a discovery that walked the wrong list
+		-- pass.
+		sq = { objects = {}, items = {}, bodies = {} }
 		sq.getX = function() return x end
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
 		sq.getRoom = function() return room end
 		sq.getBuilding = function() if room ~= nil then return world.building end return nil end
 		sq.getObjects = function() return javaList(sq.objects) end
+		sq.getWorldObjects = function() return javaList(sq.items) end
+		sq.getMovingObjects = function() return javaList(sq.bodies) end
 		world.squares[key] = sq
 		return sq
+	end
+
+	-- Drop an item on a square, the way a survivor does.
+	world.drop = function(square, object)
+		object.square = square
+		object.getSquare = function() return object.square end
+		square.items[#square.items + 1] = object
+		return object
+	end
+
+	-- Pick one up again: gone from the world, and the number it had stays spent.
+	world.pickUp = function(object)
+		local list = object.square.items
+		for i = 1, #list do
+			if list[i] == object then table.remove(list, i); break end
+		end
+		object.square = nil
+		object.getSquare = function() return nil end
+	end
+
+	-- Put a body on a square, at a position inside it. The position is a FLOAT and
+	-- the square is only where it is filed: a sensor that read the square's own
+	-- integer x and y instead of the body's own could not tell a survivor who
+	-- crossed a tile from one who stood still in the middle of it, and every one
+	-- of the assertions below about standing still would pass on nothing.
+	--
+	-- square nil takes the body out of the world altogether.
+	world.stand = function(object, square, fx, fy)
+		if object.square ~= nil then
+			local list = object.square.bodies
+			for i = 1, #list do
+				if list[i] == object then table.remove(list, i); break end
+			end
+		end
+		object.square = square
+		if square ~= nil then square.bodies[#square.bodies + 1] = object end
+		if fx ~= nil then object.fx, object.fy = fx, fy end
+		return object
 	end
 
 	world.put = function(square, object)
@@ -1682,6 +1748,72 @@ local function fakeThumpable(padlock, north)
 	end
 	o.setLockedByKey = function(_, want) o.lockedByKey = want end
 	o.syncIsoThumpable = function() o.syncs = o.syncs + 1 end
+	return o
+end
+
+-- A motion sensor lying on the floor: an IsoWorldInventoryObject holding a
+-- HandWeapon that answers a SensorRange. Those are the three calls the discovery
+-- makes and the three the game has --
+-- IsoGridSquare.getWorldObjects -> IsoWorldInventoryObject.getItem ->
+-- HandWeapon.getSensorRange, all javap'd -- and the ranges below are the game's
+-- own numbers (media/scripts/generated/items/weapon.txt: PipeBombSensorV1 :838
+-- SensorRange = 3, V2 :869 = 4, V3 :900 = 6).
+--
+-- getSpriteName is deliberately NOT written on it: a world item has no sprite to
+-- be found again by, and a server that sent one for a sensor would be calling a
+-- method that answers nothing on the real thing.
+local function fakeSensor(range, fullType)
+	local item = { __class = "HandWeapon", range = range, fullType = fullType }
+	item.getSensorRange = function() return item.range end
+	item.getFullType = function() return item.fullType end
+
+	local o = { __class = "IsoWorldInventoryObject", item = item, highlights = {} }
+	o.getItem = function() return o.item end
+	-- The four vanilla makes on hover, the same four a door and a window get, and
+	-- recorded the same way so a test can say whose eyes it was drawn for. Written
+	-- out here rather than through highlightable() because that one also writes a
+	-- getSpriteName, and this object must not have one.
+	o.setHighlighted = function(_, player, on)
+		o.highlights[#o.highlights + 1] = tostring(player) .. "=" .. tostring(on)
+	end
+	o.setHighlightColor = function() end
+	o.setOutlineHighlight = function(_, _, on) o.outline = on end
+	o.setOutlineHighlightCol = function() end
+	return o
+end
+
+local SENSORS = {
+	V1 = { "Base.PipeBombSensorV1", 3 },
+	V2 = { "Base.PipeBombSensorV2", 4 },
+	V3 = { "Base.PipeBombSensorV3", 6 },
+}
+
+local function sensorV(grade)
+	local spec = SENSORS[grade]
+	return fakeSensor(spec[2], spec[1])
+end
+
+-- An ordinary dropped item, so that "any world item is a sensor" cannot pass:
+-- a hammer is an InventoryItem and not a HandWeapon with a range on it.
+local function fakeJunk()
+	local item = { __class = "InventoryItem" }
+	item.getFullType = function() return "Base.Hammer" end
+	local o = { __class = "IsoWorldInventoryObject", item = item }
+	o.getItem = function() return o.item end
+	return o
+end
+
+-- A body in the field: a survivor, a zombie, or a car. All three are
+-- IsoMovingObjects in the game (BaseVehicle extends IsoMovingObject, javap), and
+-- only a character can be invisible -- which is exactly the shape of the game's
+-- own filter, IsoTrap.updateVictimsInSensorRange offset 103.
+local function fakeBody(class, invisible)
+	local o = { __class = class, fx = 0, fy = 0, invisible = invisible == true }
+	o.getX = function() return o.fx end
+	o.getY = function() return o.fy end
+	if class ~= "BaseVehicle" then
+		o.isInvisible = function() return o.invisible end
+	end
 	return o
 end
 
@@ -2340,6 +2472,419 @@ do
 		bench.painted("crw-rw----  root  sudo  lock0   porch          W  locked"))
 	check("and the door is there beside it",
 		bench.painted("crw-rw----  root  sudo  door0   porch          W  locked"))
+	_G.__world = nil
+end
+
+--
+-- Motion sensors (rung 4d)
+--
+-- A sensor is an item on the floor and nothing of ours in the world, so the whole
+-- of it is proved against the fake world: three heads dropped in two rooms, and
+-- bodies that walk, stand still, enter, leave, sit behind a wall, drive, and go
+-- invisible.
+--
+-- The one thing a bench cannot fake is the CADENCE, so it drives it: the game's
+-- Events.OnTick handler is CeroSecSensors.tick and the clock it reads is
+-- getTimestampMs, which is _G.__now here. Every sample below is a tick with the
+-- clock moved by hand, which is exactly the sequence the server takes.
+--
+
+-- The world the sensor cases run in.
+--
+--   office  a 4x4 room, x 10..13 and y 10..13, the computer at its corner
+--   store   ONE square at 14,10 -- next door to the office and NOT in it, which
+--           is the wall: the two squares touch and a PIR does not see through it
+--
+--   sensor0  V1, range 3, at 11,10 in the office
+--   sensor1  V3, range 6, at 13,10 in the office
+--   sensor2  V2, range 4, at 14,10 in the store
+--   and a hammer at 12,10, which is a dropped item and not a device
+local function sensorWorld()
+	local world = FakeWorld.new()
+	local coords = {}
+	for x = 10, 13 do
+		for y = 10, 13 do coords[#coords + 1] = { x, y, 0 } end
+	end
+	world.room("office", coords)
+	world.room("store", { {14,10,0} })
+
+	local kit = { world = world }
+	kit.v1 = world.drop(world.squares["11,10,0"], sensorV("V1"))
+	kit.v3 = world.drop(world.squares["13,10,0"], sensorV("V3"))
+	kit.v2 = world.drop(world.squares["14,10,0"], sensorV("V2"))
+	kit.junk = world.drop(world.squares["12,10,0"], fakeJunk())
+	return kit
+end
+
+-- A bench with the sampling book emptied. The book is module-level, like the
+-- scheduler's list of machines, so one section must not inherit another's
+-- contacts.
+local function sensorBench()
+	CeroSecSensors.book = {}
+	CeroSecSensors.lastSampleMs = 0
+	CeroSecSensors.lastScanMs = 0
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	return bench
+end
+
+-- One second of the server's own clock: the tick handler, with the wall clock
+-- moved first. Everything about the timeline below is built out of this.
+local function second(bench, seconds)
+	for _ = 1, (seconds or 1) do
+		_G.__now = _G.__now + 1000
+		CeroSecSensors.tick(bench.system)
+	end
+end
+
+do
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	-- The listing. Three heads, two rooms, no side -- a PIR is not fixed to a
+	-- wall the way a window is -- and 440: cr--r-----, because a sensor is read
+	-- and never written and its mode says so before anybody tries.
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("sensor0 is the V1 in the office",
+		bench.painted("cr--r-----  root  sudo  sensor0 office            clear"))
+	check("sensor1 is the V3 beside it",
+		bench.painted("cr--r-----  root  sudo  sensor1 office            clear"))
+	check("sensor2 is the V2 in the store",
+		bench.painted("cr--r-----  root  sudo  sensor2 store             clear"))
+	check("and the hammer on the floor is not a device", not bench.painted("sensor3"))
+
+	-- The table, with the offset column that tells two heads in one room apart.
+	bench.enter("dev sensor")
+	bench.frame()
+	check("the table gives sensor0 its place",
+		bench.painted("sensor0 office                1E 0           clear"))
+	check("and sensor1 its own",
+		bench.painted("sensor1 office                3E 0           clear"))
+	check("and sensor2 in the next room",
+		bench.painted("sensor2 store                 4E 0           clear"))
+
+	-- Read one. Nothing has moved and nothing ever has, so it is clear.
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a sensor in a still room reads clear", bench.painted("clear"))
+
+	--
+	-- The timeline
+	--
+
+	-- A zombie in the middle of the office, one tile from sensor0. The FIRST
+	-- sample only sets the baseline: a sensor that has just been powered has
+	-- nothing to compare against, and it says nothing rather than firing.
+	local z = fakeBody("IsoZombie")
+	kit.world.stand(z, kit.world.squares["12,10,0"], 12.5, 10.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("the first sample is a warm-up and not a contact", bench.painted("clear"))
+
+	-- He takes a step. The picture is not the picture it was, so the contact
+	-- closes.
+	kit.world.stand(z, kit.world.squares["12,11,0"], 12.5, 11.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a body that moved closes the contact", bench.painted("motion"))
+
+	-- And then he stops. The contact is held for SENSOR_HOLD_S whatever happens
+	-- next, so four seconds of a perfectly still room still read motion.
+	second(bench, 4)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("the hold outlasts the movement that started it", bench.painted("motion"))
+
+	-- Six seconds after the last step, with the zombie still standing in the
+	-- field: clear. That is the quirk, and it is the PIR's and not a bug.
+	second(bench, 3)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a body standing still in the field reads clear", bench.painted("clear"))
+
+	-- The other head saw the same step, being a bigger sensor in the same room.
+	bench.enter("cat /dev/sensor1")
+	bench.frame()
+	check("and so did the V3 beside it", bench.painted("clear"))
+
+	_G.__world = nil
+end
+
+do
+	-- The wall. sensor1 is at 13,10 with a range of SIX, and the store square at
+	-- 14,10 is ONE tile away from it -- well inside that range and on the other
+	-- side of a wall. A survivor shuffling about in the store must not reach it,
+	-- and must reach the head standing in the store with him.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	local chr = fakeBody("IsoPlayer")
+	kit.world.stand(chr, kit.world.squares["14,10,0"], 14.5, 10.5)
+	second(bench)
+	kit.world.stand(chr, kit.world.squares["14,10,0"], 14.2, 10.8)
+	second(bench)
+
+	bench.enter("cat /dev/sensor1")
+	bench.frame()
+	check("a PIR does not see through a wall one tile away", bench.painted("clear"))
+	bench.enter("cat /dev/sensor2")
+	bench.frame()
+	check("the head in that room does see him", bench.painted("motion"))
+	_G.__world = nil
+end
+
+do
+	-- The range, and the SHAPE of it. The game's own sensor measures a squared
+	-- euclidean distance from the centre of its own tile
+	-- (IsoTrap.updateVictimsInSensorRange: DistanceToSquared(mo.getX(), mo.getY(),
+	-- getX() + 0.5f, getY() + 0.5f) <= range * range), so a body two tiles east
+	-- and three south of a range-3 head is 3.6 tiles away and is NOT seen -- while
+	-- a sensor that counted tiles the square way would have called that 3 and
+	-- fired. It is on sensor0's square list, so what refuses it is the distance
+	-- and not the box the squares were gathered in.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	local chr = fakeBody("IsoPlayer")
+	kit.world.stand(chr, kit.world.squares["13,13,0"], 13.5, 13.5)
+	second(bench)
+	kit.world.stand(chr, kit.world.squares["13,13,0"], 13.1, 13.9)
+	second(bench)
+
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("3.6 tiles is past a range of 3, corner or not", bench.painted("clear"))
+	-- The same body, three tiles due south of the range-6 head: inside it.
+	bench.enter("cat /dev/sensor1")
+	bench.frame()
+	check("and inside a range of 6", bench.painted("motion"))
+	_G.__world = nil
+end
+
+do
+	-- Coming in and going out, which a signature catches without following
+	-- anybody: an entry that was not there, and an entry that is missing.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("an empty room is clear", bench.painted("clear"))
+
+	local chr = fakeBody("IsoPlayer")
+	kit.world.stand(chr, kit.world.squares["11,10,0"], 11.5, 10.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("somebody walking in closes it", bench.painted("motion"))
+
+	second(bench, 6)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("and it opens again while he stands there", bench.painted("clear"))
+
+	kit.world.stand(chr, nil)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("him leaving closes it again", bench.painted("motion"))
+	_G.__world = nil
+end
+
+do
+	-- A car is warm. The game's own sensor casts to IsoGameCharacter and skips
+	-- only an INVISIBLE one, so a BaseVehicle -- which extends IsoMovingObject and
+	-- not IsoGameCharacter -- falls straight through to the distance test and sets
+	-- the thing off. An invisible survivor does not, which is the other half of
+	-- the same branch.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	local car = fakeBody("BaseVehicle")
+	kit.world.stand(car, kit.world.squares["11,11,0"], 11.5, 11.5)
+	second(bench)
+	kit.world.stand(car, kit.world.squares["11,12,0"], 11.5, 12.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a car crossing the field sets it off", bench.painted("motion"))
+
+	second(bench, 6)
+	local ghost = fakeBody("IsoPlayer", true)
+	kit.world.stand(ghost, kit.world.squares["11,10,0"], 11.5, 10.5)
+	second(bench)
+	kit.world.stand(ghost, kit.world.squares["12,10,0"], 12.5, 10.5)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("an invisible survivor does not", bench.painted("clear"))
+	_G.__world = nil
+end
+
+do
+	-- Nothing may be written to one, and the machine says so in the sensor's own
+	-- name. The word never reaches the world at all: the kind has no vocabulary,
+	-- so the refusal is the engine's.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	bench.enter("echo on > /dev/sensor0")
+	bench.frame()
+	check("a sensor cannot be told anything", bench.painted("sensor0: invalid value"))
+	bench.enter("dev sensor0 motion")
+	bench.frame()
+	check("nor through dev", bench.painted("sensor0: invalid value"))
+	bench.enter("dev sensor0 clear")
+	bench.frame()
+	check("nor with the word it reads", bench.painted("sensor0: invalid value"))
+	-- And there is no opposite of a fact, so there is nothing to toggle.
+	bench.enter("dev sensor0 toggle")
+	bench.frame()
+	check("and there is nothing to toggle", bench.painted("sensor0: cannot toggle"))
+
+	-- root reads it, and so does a member of sudo at 440. Nobody else.
+	bench.enter("exit")
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("admin is in sudo and reads it", bench.painted("clear"))
+	_G.__world = nil
+end
+
+do
+	-- Picked up. The head is gone from the world, so the number is spent and
+	-- naming it answers about the DEVICE and not about the path.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("it is there to begin with", bench.painted("clear"))
+
+	kit.world.pickUp(kit.v1)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("a sensor picked up is no such device",
+		bench.painted("sensor0: no such device"))
+	bench.enter("dev sensor")
+	bench.frame()
+	-- The row and not the id: the refusal printed a second ago has the id in it
+	-- and is still in the scrollback, so a needle of "sensor0" would find the
+	-- machine's own words about it being gone.
+	check("and it is off the table", not bench.painted("sensor0 office"))
+	check("while the other two are still on it", bench.painted("sensor1 office"))
+
+	-- A fresh head dropped on the same tile takes sensor0 BACK, and that is the
+	-- numbering doing what it has always done rather than a special case: a number
+	-- hangs on where the device is (state.devmap is keyed by the place), so
+	-- swapping a V1 for a V3 on the same shelf leaves every script that named
+	-- sensor0 pointing at the sensor on that shelf. A head dropped somewhere else
+	-- is somewhere else and gets the next number never used.
+	kit.world.drop(kit.world.squares["11,10,0"], sensorV("V3"))
+	bench.enter("dev sensor")
+	bench.frame()
+	check("a new head on the same tile is sensor0 again", bench.painted("sensor0 office"))
+	kit.world.drop(kit.world.squares["12,11,0"], sensorV("V1"))
+	bench.enter("dev sensor")
+	bench.frame()
+	check("and one on a new tile takes the next number", bench.painted("sensor3 office"))
+	_G.__world = nil
+end
+
+do
+	-- `dev find` on one. A head has nothing to blink with, so the requesting
+	-- player's own screen outlines it -- and the client finds it again on the
+	-- OTHER list, by the item it is, because a dropped item has no sprite name.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+
+	bench.enter("dev find sensor0")
+	bench.frame()
+	check("a sensor is pointed at with an outline",
+		bench.painted("sensor0: highlighted"))
+	eq("and it was drawn for the player who typed it", kit.v1.highlights[1], "0=true")
+	check("with the outline on", kit.v1.outline == true)
+	-- The other two were not touched: a find lights ONE thing.
+	eq("and for nobody else's sensor", #kit.v3.highlights, 0)
+	_G.__world = nil
+end
+
+do
+	-- No building: a sensor dropped in a base. There is no room to name it with,
+	-- so it reads `built` the way a player-built door does, and the field is the
+	-- range and nothing else -- there are no walls out there to be seen through.
+	local world = FakeWorld.new()
+	for x = 8, 16 do
+		for y = 8, 16 do world.square(x, y, 0, nil) end
+	end
+	local head = world.drop(world.squares["12,10,0"], sensorV("V1"))
+	_G.__world = world
+	local bench = sensorBench()
+
+	bench.enter("dev sensor")
+	bench.frame()
+	check("a head in a base reads built", bench.painted("sensor0 built"))
+
+	-- Two tiles from it and no room between them: seen.
+	local chr = fakeBody("IsoPlayer")
+	world.stand(chr, world.squares["14,10,0"], 14.5, 10.5)
+	second(bench)
+	world.stand(chr, world.squares["14,10,0"], 14.5, 10.9)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("and sees two tiles out with nothing in the way", bench.painted("motion"))
+
+	second(bench, 6)
+	-- Four tiles from a range of three: not seen, and the head is not even
+	-- looking at that square.
+	world.stand(chr, world.squares["16,10,0"], 16.5, 10.5)
+	second(bench)
+	world.stand(chr, world.squares["16,10,0"], 16.5, 10.9)
+	second(bench)
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("and not four tiles out", bench.painted("clear"))
+	eq("the head itself is the V1 the world holds", head.item.getSensorRange(), 3)
+	_G.__world = nil
+end
+
+do
+	-- The computer off is the sensor unwired. The sampling walk asks the system
+	-- for its machines and skips every one that is not on, so a county of dark
+	-- computers costs a pass that touches nothing at all.
+	local kit = sensorWorld()
+	_G.__world = kit.world
+	local bench = sensorBench()
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+
+	CeroSecSensors.book = {}
+	bench.object.on = false
+	second(bench, 61)
+	local held = 0
+	for _ in pairs(CeroSecSensors.book) do held = held + 1 end
+	eq("a machine that is off samples nothing", held, 0)
+
+	-- On again, and the next scan finds them.
+	bench.object.on = true
+	second(bench, 61)
+	held = 0
+	for _ in pairs(CeroSecSensors.book) do held = held + 1 end
+	eq("and one that is on finds all three", held, 3)
 	_G.__world = nil
 end
 

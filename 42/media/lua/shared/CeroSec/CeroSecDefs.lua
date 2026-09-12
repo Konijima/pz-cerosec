@@ -395,6 +395,19 @@ CeroSec.JOB_OUT_PER_SEC = 20
 -- edit a file.
 CeroSec.JOB_CPU_LIMIT_S = 300
 
+-- How long a motion sensor holds its contact closed after the last movement it
+-- saw, in seconds of wall clock. Five, and it is the mod's own number and not
+-- the game's: a PIR head of 1993 is a relay with an RC network across it, and
+-- what it sells is a contact that STAYS closed a few seconds after the room goes
+-- still, so a machine polling it every five seconds cannot miss somebody walking
+-- through. Two consequences, both in the manual: a body that stops moving reads
+-- `clear` five seconds later, and a `cat` a minute after the fact reads `clear`
+-- too -- a sensor says what is happening, never what happened.
+--
+-- Named here rather than in the server file because the manual quotes it and the
+-- manual is shared.
+CeroSec.SENSOR_HOLD_S = 5
+
 -- How deep the su stack a console carries may go. The same number the core
 -- enforces (CeroSecOS.SU_MAX), named again here because the terminal never
 -- loads the core -- os_test pins the two against each other so they cannot

@@ -9,6 +9,12 @@
 --   echo off > /dev/light0
 --   echo unlock > /dev/lock1
 --   echo open > /dev/door3
+--   cat /dev/sensor0           -> motion
+--
+-- One kind is read and never written: a motion sensor dropped on the floor is a
+-- sensorN whose whole vocabulary is nothing (DEV_VALUES.sensor is empty), so
+-- every word written to it is "sensor0: invalid value". It wears 440 for saying
+-- so (DEV_MODES).
 --
 -- A door is two devices when the lock on it means anything: doorN is what opens
 -- and closes it, lockN is the key. Which doors get a lockN is the world's
@@ -100,12 +106,40 @@ CeroSecOS.DEV_GROUP = "sudo"
 -- What may be written to each kind, and nothing else. The vocabulary is the
 -- CORE's and not the world's: a value that is not one of these never reaches
 -- the caller at all, which is what "light0: invalid value" is.
+-- An EMPTY table is a kind with no words at all, which is what a sensor is: it
+-- is mounted, it is listed, it is read, and every word written to it is
+-- "sensor0: invalid value" -- there is nothing a survivor could tell a motion
+-- sensor that a motion sensor would do. The kind has to be HERE and not merely
+-- absent, because a kind the core has no entry for is an entry nodeFor drops on
+-- the floor: absent means "not a device", empty means "read-only".
 CeroSecOS.DEV_VALUES = {
-	light = { on = true, off = true },
-	lock  = { lock = true, unlock = true },
-	win   = { lock = true, unlock = true },
-	door  = { open = true, close = true },
+	light  = { on = true, off = true },
+	lock   = { lock = true, unlock = true },
+	win    = { lock = true, unlock = true },
+	door   = { open = true, close = true },
+	sensor = {},
 }
+
+-- The mode a kind is born at, where DEV_MODE is not it. A sensor is read-only by
+-- nature and wears it: 440, cr--r-----, root and the sudo group may read it and
+-- nobody may write it -- not even root, who is refused by the vocabulary a line
+-- later rather than by the mode. A device whose middle digit carried a `w` would
+-- be a machine promising a write that cannot happen.
+--
+-- The mode is still a chmod's to move like any other (`chmod 444 /dev/sensor0`
+-- opens the reading to the whole office), and it still outlives the command it
+-- was typed in; this is only where it STARTS.
+CeroSecOS.DEV_MODES = {
+	sensor = 440,
+}
+
+-- What a kind's node is mounted at when nobody has chmodded it. The one place
+-- DEV_MODES is read, so a kind with no entry is DEV_MODE and never nil.
+function CeroSecOS.devModeFor(kind)
+	local mode = CeroSecOS.DEV_MODES[kind]
+	if type(mode) ~= "number" then return CeroSecOS.DEV_MODE end
+	return mode
+end
 
 --
 -- /dev/null
@@ -205,7 +239,7 @@ local function nodeFor(entry)
 
 	local mode = entry.mode
 	if type(mode) ~= "number" or mode < 0 or mode > 777 or mode ~= math.floor(mode) then
-		mode = CeroSecOS.DEV_MODE
+		mode = CeroSecOS.devModeFor(entry.kind)
 	end
 
 	local node = {

@@ -3,6 +3,7 @@ if isClient() then return end
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSDev"
+require "CeroSec/SCeroSecSensors"
 
 --
 -- The world, as devices.
@@ -104,6 +105,16 @@ require "CeroSec/OS/CeroSecOSDev"
 --           carries lockedByCode, lockedByPadlock and keyId and NOTHING else,
 --           while both classes' syncIsoObjectSend writes the open flag
 --           (IsoDoor: isOpen(); IsoThumpable: the open field).
+--
+--   sensor  nothing at all. A motion sensor is a device that is only ever READ,
+--           and what it reads is not a question asked of the item lying on the
+--           floor -- there is nothing on a dropped item to ask -- but what the
+--           sampling book says its contact is doing. The item, its range, the
+--           field of view and the once-a-second sample are all in
+--           SCeroSecSensors.lua, which is where the javap for them is too.
+--           Here it is one more kind in the discovery, read through
+--           IsoGridSquare:getWorldObjects() instead of getObjects() because a
+--           dropped item is not on the square's object list.
 --
 -- The lock, and the one place it means anything
 --
@@ -363,11 +374,41 @@ end
 -- Finding them
 --
 
+-- The sensors lying on one square. Not classify's business: a dropped item is not
+-- on the square's object list at all -- it is an IsoWorldInventoryObject on
+-- getWorldObjects() -- so it is walked here, beside the other list and not inside
+-- it. Everything about what makes one a sensor is in SCeroSecSensors.lua.
+local function scanWorldItems(square, found, seen, x, y, z)
+	local sensors = CeroSecSensors.onSquare(square)
+	for i = 1, #sensors do
+		local sensor = sensors[i]
+		local entry = {
+			kind = "sensor", side = "",
+			-- A dropped head is the player's own doing wherever it lies, so the
+			-- room names it where there is one and "built" does where there is
+			-- not -- the same word a player-built door wears.
+			desc = roomName(square) or "built",
+			x = x, y = y, z = z, object = sensor.object,
+			range = sensor.range,
+			-- Which of the heads on this tile it is. Carried because the sampling
+			-- book is keyed by it too, and both have to mean the same thing.
+			n = i - 1,
+		}
+		local base = "sensor:" .. x .. ":" .. y .. ":" .. z .. ":"
+		local n = 0
+		while seen[base .. ":" .. n] do n = n + 1 end
+		entry.key = base .. ":" .. n
+		seen[entry.key] = true
+		found[#found + 1] = entry
+	end
+end
+
 local function scanSquare(square, found, seen)
 	if square == nil then return end
+	local x, y, z = square:getX(), square:getY(), square:getZ()
+	scanWorldItems(square, found, seen, x, y, z)
 	local objects = square:getObjects()
 	if objects == nil then return end
-	local x, y, z = square:getX(), square:getY(), square:getZ()
 	for i = 0, objects:size() - 1 do
 		local object = objects:get(i)
 		-- A list, because one object can be two devices: an exterior door is
@@ -491,8 +532,11 @@ function CeroSecDevices.number(state, found)
 				local n = 0
 				while used[entry.kind .. ":" .. n] do n = n + 1 end
 				used[entry.kind .. ":" .. n] = true
+				-- The mode a kind is born at, which is not the same for every kind:
+				-- a sensor cannot be written to and wears 440 for saying so
+				-- (CeroSecOS.DEV_MODES).
 				record = { id = entry.kind .. tostring(n), kind = entry.kind, n = n,
-					mode = CeroSecOS.DEV_MODE }
+					mode = CeroSecOS.devModeFor(entry.kind) }
 				map[entry.key] = record
 				entries = entries + 1
 			else
@@ -516,7 +560,22 @@ end
 -- One machine's devices, discovered now. Everything below closes over this one
 -- table, so list() and write() cannot disagree about what is there.
 local function build(luaObject, state)
-	local live = CeroSecDevices.number(state, CeroSecDevices.find(luaObject.x, luaObject.y, luaObject.z))
+	local found = CeroSecDevices.find(luaObject.x, luaObject.y, luaObject.z)
+
+	-- A sensor's state is not read off the object: there is nothing on a dropped
+	-- item to read. It is what the sampling book says the contact is doing right
+	-- now, and asking for it is also what puts a head just dropped on the floor
+	-- into that book (see the head of SCeroSecSensors.lua).
+	local now = getTimestampMs()
+	CeroSecSensors.registerFound(found, now)
+
+	local live = CeroSecDevices.number(state, found)
+	for i = 1, #live do
+		local entry = live[i]
+		if entry.kind == "sensor" then
+			entry.state = CeroSecSensors.stateAt(entry.x, entry.y, entry.z, entry.n, now)
+		end
+	end
 
 	local byId, seen = {}, {}
 	local list = {}
@@ -531,7 +590,7 @@ local function build(luaObject, state)
 			-- and not by the engine: the engine has no idea there are tiles.
 			pos = CeroSecDevices.offset(entry.x - luaObject.x, entry.y - luaObject.y,
 				entry.z - luaObject.z),
-			mode = entry.mode or CeroSecOS.DEV_MODE,
+			mode = entry.mode or CeroSecOS.devModeFor(entry.kind),
 		}
 	end
 
@@ -546,7 +605,7 @@ local function build(luaObject, state)
 			seen[record.id] = true
 			list[#list + 1] = {
 				id = record.id, kind = record.kind, dead = true,
-				mode = record.mode or CeroSecOS.DEV_MODE,
+				mode = record.mode or CeroSecOS.devModeFor(record.kind),
 			}
 		end
 	end
@@ -587,6 +646,13 @@ end
 -- The world action, per kind. ok, reason, state.
 local function act(entry, value)
 	local object = entry.object
+
+	-- Nothing is ever written to a sensor: the engine has no word for the kind
+	-- (CeroSecOS.DEV_VALUES.sensor is empty) so a write is refused a layer up and
+	-- never arrives here. This is the belt: a device that reached the world with
+	-- no action for it must refuse in its own name and not fall through to the
+	-- lock branch below, which would ask a dropped pipe bomb about its padlock.
+	if entry.kind == "sensor" then return false, "invalid value" end
 
 	if entry.kind == "light" then
 		local want = value == "on"
@@ -762,6 +828,11 @@ end
 -- which it is -- it classified the object to make a device of it -- so the
 -- client is told rather than left to guess between a map door and a built one.
 local function classOf(entry)
+	-- A dropped sensor is not on the square's object list at all, so the client
+	-- is told to look at the OTHER list -- and the thing that tells one head from
+	-- another there is the item's full type and not a sprite name (a world item is
+	-- drawn from a model). See CeroSecTerminal:objectAt.
+	if entry.kind == "sensor" then return "IsoWorldInventoryObject" end
 	if entry.kind == "win" then return "IsoWindow" end
 	if instanceof(entry.object, "IsoDoor") then return "IsoDoor" end
 	return "IsoThumpable"
@@ -823,9 +894,21 @@ function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 			-- The device's own square, not the computer's: what travels with a
 			-- highlight is where to look, and the token of the window that
 			-- asked, which is the only thing a terminal believes.
+			-- A fixture is found again on the far side by what it LOOKS like and a
+			-- dropped item by what it IS: getSpriteName on a world item answers a
+			-- model's name or nothing at all, so a sensor travels on the item's
+			-- full type instead and the client uses whichever its class calls for.
+			-- Only one of the two is ever asked of an object, because getItem is a
+			-- question a light switch has no answer to.
+			local sprite, item = "", ""
+			if entry.kind == "sensor" then
+				item = CeroSecSensors.typeOf(entry.object)
+			else
+				sprite = entry.object:getSpriteName()
+			end
 			system:reply(playerObj, "highlight", {
 				x = entry.x, y = entry.y, z = entry.z, token = token,
-				class = classOf(entry), sprite = entry.object:getSpriteName(),
+				class = classOf(entry), sprite = sprite, item = item,
 				seconds = seconds,
 			})
 			return true, nil, "highlighted"

@@ -748,9 +748,9 @@ its own floor in every direction. Sixty four devices at the outside.
 
 [[Reading that table.
 
-The id is what you name the thing by. There are four kinds -- door, light,
-lock and win -- and the number after the kind is the machine's own, handed
-out once and kept.
+The id is what you name the thing by. There are five kinds -- door, light,
+lock, sensor and win -- and the number after the kind is the machine's own,
+handed out once and kept.
 
 Then the rooms it stands between, in the map's own raw words: exterior
 where one side is the outdoors, built for something a player put up.
@@ -1607,17 +1607,18 @@ command's, so none of these carries dev: in front of it.
   light0: invalid value
   light0: permission denied
   win0: cannot toggle
+  sensor0: invalid value
 
 No current or bulb; gone, or nobody near it; the glass broken; boarded up;
 neither padlock nor key; held by a key; planks on it; a wall, a tree or a
-car in the way; a word that kind does not know; the mode; and no opposite
-for toggle to turn it into.
+car in the way; a word that kind does not know; the mode; no opposite for
+toggle to turn it into; and a sensor, which takes no word at all.
 
 dev's own two are signed the way a command signs, because they are a
 command's:
 
   dev: <word>: unknown kind
-      the kinds are door, light, lock and win
+      the kinds are door, light, lock, sensor and win
   dev: <id>: no such device
   /dev: read-only
       nothing may be created under /dev at all]],
