@@ -648,7 +648,7 @@ function CeroSecOS.ruptimeLine(host, up, users, load)
 	while #n < 3 do n = "0" .. n end
 	local whole = string.sub(n, 1, #n - 2)
 	local cents = string.sub(n, #n - 1)
-	return CeroSecOS.padRight(host, CeroSecOS.L_WHO_HOST) .. " up  "
+	return CeroSecOS.padRight(host, CeroSecOS.L_WHO_HOST) .. "up  "
 		.. CeroSecOS.spanText(up) .. ",  " .. tostring(math.floor(users or 0))
 		.. word .. "  load " .. whole .. "." .. cents
 end

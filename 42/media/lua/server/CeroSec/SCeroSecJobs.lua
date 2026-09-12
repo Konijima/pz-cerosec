@@ -53,7 +53,7 @@ CeroSecJobs.FIRST_ID = 42
 
 function CeroSecJobs.book(luaObject)
 	if luaObject.jobs == nil then
-		luaObject.jobs = { seq = 0, list = {}, winMs = 0, winCount = 0 }
+		luaObject.jobs = { seq = 0, list = {}, winMs = 0, winCount = 0, outCursor = 0 }
 	end
 	return luaObject.jobs
 end
@@ -591,9 +591,26 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	-- The output, at the rate the screen and the network can take it. The rate is
 	-- the MACHINE's and is shared by every screen on it: four sessions trickling
 	-- at once cost the server what one does.
+	--
+	-- Shared round-robin, one job further along every pass. Sharing it from the
+	-- front of the list instead is how a fourth job never drains AT ALL while the
+	-- first three keep refilling -- and a job whose output cannot drain is a job
+	-- that never runs again, so that is not a slow job but a stopped one. The
+	-- machines are served the same way and for the same reason
+	-- (CeroSecJobs.pass). It took four inbound rlogins to make it visible;
+	-- tests/hostile_test.lua has them.
 	local room = outRoom(book, now)
-	for i = 1, #book.list do
-		local job = book.list[i]
+	local count = #book.list
+	-- Moved on only when there was room to hand out, and that matters: a machine
+	-- gets its twenty lines in the FIRST pass of each second and nothing in the
+	-- nine after it, so a cursor that moved every pass would move ten places a
+	-- second -- two, modulo four jobs -- and two of four jobs would never lead the
+	-- rotation at all. Moved on per draining pass, each of them leads in turn.
+	if room > 0 then
+		book.outCursor = math.fmod((book.outCursor or 0) + 1, count)
+	end
+	for k = 1, count do
+		local job = book.list[math.fmod(book.outCursor + k - 1, count) + 1]
 		-- Except a cron job's, which never reaches a screen at all: it is mailed
 		-- to the account that asked for it, the way cron has answered since V7.
 		-- There is no rate to keep to -- a disk is not a network -- and the
@@ -612,11 +629,17 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				job.out = {}
 				touch(own)
 			end
+		elseif screenOf(job) == nil then
+			-- The session this job was writing to has gone. There is nowhere for
+			-- the lines to go, so they go -- a job whose output nothing can ever
+			-- drain is a job that is never reaped, and a machine that kept one
+			-- would keep a job slot spent on a terminal nobody is at.
+			job.out = {}
 		else
 			local screen = screenOf(job)
 			local kept = {}
 			for k = 1, #job.out do
-				if room > 0 and screen ~= nil then
+				if room > 0 then
 					CeroSec.consolePush(screen, job.out[k])
 					room = room - 1
 					book.winCount = book.winCount + 1

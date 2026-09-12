@@ -7716,4 +7716,479 @@ do
 	eq("and the file is empty", contents(state, "/home/admin/out.txt"), "")
 end
 
+--
+-- 41. The network (rung 6a)
+--
+-- The engine's half, which is everything about the wire that does not know there
+-- is a game: the four files, the arithmetic that turns a building into an
+-- address, the shape of every line the five listing commands print, the trust
+-- rules, and the pty table a session lives in. Whether two machines can hear each
+-- other is the server's and is proved in tests/window_test.lua.
+--
+
+-- The address. Two bytes out of where the building stands, and the same answer
+-- every time it is asked.
+do
+	local b1, b2 = CeroSecOS.buildingKey(400, 700)
+	check("a building has a key", b1 ~= nil and b2 ~= nil)
+	check("and both halves are bytes", b1 >= 0 and b1 <= 255 and b2 >= 0 and b2 <= 255)
+	local c1, c2 = CeroSecOS.buildingKey(400, 700)
+	check("asked twice it is the same key", c1 == b1 and c2 == b2)
+	local d1, d2 = CeroSecOS.buildingKey(401, 700)
+	check("the building next door is a different one", d1 ~= b1 or d2 ~= b2)
+	-- A negative coordinate is a coordinate: the map has none, and a hash that
+	-- answered nil for one would be a hash with a hole in it.
+	local n1, n2 = CeroSecOS.buildingKey(-40, -70)
+	check("and so is a negative one", n1 ~= nil and n1 >= 0 and n2 >= 0)
+	eq("junk is no key", CeroSecOS.buildingKey("x", 1), nil)
+
+	eq("an address reads the way it is written",
+		CeroSecOS.addressText(4, 17, 2), "10.4.17.2")
+	eq("and three numbers are needed for one", CeroSecOS.addressText(4, 17), nil)
+
+	check("a dotted quad is one", CeroSecOS.isAddress("10.4.17.2"))
+	check("and so is the loopback", CeroSecOS.isAddress("127.0.0.1"))
+	check("256 is not a byte", not CeroSecOS.isAddress("10.4.17.256"))
+	check("three numbers are not an address", not CeroSecOS.isAddress("10.4.17"))
+	-- A leading zero is octal in every resolver ever written, so it is not a quad
+	-- here either -- reading it as ten would be disagreeing with the file.
+	check("a leading zero is not a quad", not CeroSecOS.isAddress("10.4.017.2"))
+	check("a single zero is", CeroSecOS.isAddress("10.0.0.1"))
+	check("and a name is not", not CeroSecOS.isAddress("gate"))
+end
+
+-- The record on the state, and the accessor that will not read half of one.
+do
+	local state = fresh()
+	eq("a fresh machine has no address", CeroSecOS.address(state), nil)
+	check("and no record", CeroSecOS.netRecord(state) == nil)
+	check("one is written", CeroSecOS.setNetRecord(state, 4, 17, 2) ~= nil)
+	eq("and read back", CeroSecOS.address(state), "10.4.17.2")
+
+	-- Everything a forged save could carry in that field is a machine with NO
+	-- address and never a machine with half of one.
+	local forgeries = {
+		{}, { b1 = 4 }, { b1 = 4, b2 = 17 }, { b1 = 4, b2 = 17, n = 0 },
+		{ b1 = 4, b2 = 17, n = 255 }, { b1 = 4, b2 = 17, n = 1.5 },
+		{ b1 = -1, b2 = 17, n = 2 }, { b1 = 256, b2 = 17, n = 2 },
+		{ b1 = "4", b2 = 17, n = 2 },
+	}
+	for i = 1, #forgeries do
+		state.net = forgeries[i]
+		eq("forgery " .. i .. " is no address", CeroSecOS.address(state), nil)
+	end
+	state.net = "nonsense"
+	eq("nor is a string", CeroSecOS.address(state), nil)
+	-- And a state carrying one still validates: the field is read through the
+	-- accessor and never off the table.
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	check("a machine with an address validates", CeroSecOS.validate(state))
+end
+
+-- /etc/hosts, which is the only resolver there is.
+do
+	local order, byName, byAddr = CeroSecOS.parseHosts(
+		"# a comment\n" ..
+		"127.0.0.1 localhost\n" ..
+		"10.4.17.3 gate pump\n" ..
+		"10.4.17.4 office   # trailing comment\n" ..
+		"\n" ..
+		"nonsense here\n" ..
+		"10.4.17.5\n" ..
+		"10.4.17.6 NotAName\n" ..
+		"10.4.17.3 second")
+	eq("four lines parsed", #order, 4)
+	eq("a name resolves", byName.gate.addr, "10.4.17.3")
+	eq("an alias resolves to the same line", byName.pump.addr, "10.4.17.3")
+	eq("a trailing comment is cut off", byName.office.addr, "10.4.17.4")
+	check("a line with no name is skipped", byName["10.4.17.5"] == nil)
+	check("a name no hostname could be is skipped", byName.NotAName == nil)
+	-- An address that appears twice keeps its FIRST line, the way a lookup down a
+	-- file does -- and so does a name.
+	eq("the first line for an address wins", byAddr["10.4.17.3"].names[1], "gate")
+	eq("and the second name is still a name", byName.second.addr, "10.4.17.3")
+
+	local state = fresh()
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"10.4.17.3 gate", FIXED)
+	local addr, name = CeroSecOS.resolveHost(state, "gate")
+	eq("a name is resolved out of the file", addr, "10.4.17.3")
+	eq("and the name comes back as it was typed", name, "gate")
+	eq("a name nothing carries is nothing", CeroSecOS.resolveHost(state, "pump"), nil)
+	-- An address typed straight out needs no line at all, which is what makes
+	-- ping usable on a machine whose /etc/hosts somebody emptied.
+	local raw, rawName = CeroSecOS.resolveHost(state, "10.9.9.9")
+	eq("an address resolves to itself", raw, "10.9.9.9")
+	eq("and is its own name", rawName, "10.9.9.9")
+	eq("an address in the file answers with the file's name",
+		select(2, CeroSecOS.resolveHost(state, "10.4.17.3")), "gate")
+end
+
+-- The machine's own line, written exactly once.
+do
+	local state = fresh("ksp-04-11")
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	check("the line is written", CeroSecOS.writeOwnHost(state, FIXED))
+	local hosts = CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH).data
+	check("and it names the machine",
+		string.find(hosts, "10.4.17.2 ksp-04-11", 1, true) ~= nil)
+	check("asked again it writes nothing", not CeroSecOS.writeOwnHost(state, FIXED))
+	eq("and the file is byte for byte what it was",
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH).data, hosts)
+	-- A file the player has emptied stays emptied: the machine writes its line
+	-- once and the file is his from then on. Here it writes one because the name
+	-- is not in it -- which is the only case it ever writes at all.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH, "", FIXED)
+	check("a name that is gone can be written again", CeroSecOS.writeOwnHost(state, FIXED))
+end
+
+-- Trust: /etc/hosts.equiv, ~/.rhosts, and the two file tests rlogind makes.
+do
+	eq("a blank line is nothing", CeroSecOS.parseEquivLine(""), nil)
+	eq("and a comment", CeroSecOS.parseEquivLine("# gate"), nil)
+	eq("a bare host is a host", CeroSecOS.parseEquivLine("gate").host, "gate")
+	check("with no account on it", CeroSecOS.parseEquivLine("gate").user == nil)
+	eq("a host and an account", CeroSecOS.parseEquivLine("gate admin").user, "admin")
+	-- A plus trusts the whole world, which was a hole in 1993 and is one now: it
+	-- does not parse, so it trusts nobody rather than everybody.
+	eq("a bare plus is not a line", CeroSecOS.parseEquivLine("+"), nil)
+	eq("nor is a plus and a name", CeroSecOS.parseEquivLine("+ admin"), nil)
+	eq("nor three words", CeroSecOS.parseEquivLine("gate admin extra"), nil)
+
+	local state = fresh()
+	addUser(state, "bob")
+	CeroSecOS.createNode(state, CeroSecOS.rootSession(), "/home/bob",
+		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), FIXED)
+
+	-- Nothing trusted on a shipped machine.
+	check("a shipped machine trusts nobody",
+		not CeroSecOS.trusts(state, "admin", "gate", "admin"))
+
+	-- The machine-wide half.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, "gate", FIXED)
+	check("a bare host trusts the same account on it",
+		CeroSecOS.equivOk(state, "gate", "admin", "admin"))
+	check("and nobody in as anybody else",
+		not CeroSecOS.equivOk(state, "gate", "bob", "admin"))
+	check("nor a host nobody named", not CeroSecOS.equivOk(state, "pump", "admin", "admin"))
+	-- ruserok's own rule, and the most important line in it.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
+		"gate\ngate root", FIXED)
+	check("hosts.equiv never lets root in",
+		not CeroSecOS.equivOk(state, "gate", "root", "root"))
+
+	-- The account's own half, and the two facts about the FILE that decide
+	-- whether a byte of it is read at all.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, "", FIXED)
+	local path = "/home/bob/.rhosts"
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), path, "gate bob", false, FIXED)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+	node.owner = "bob"
+	node.mode = 600
+	check("bob's own .rhosts at 600 is read", CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.owner = "admin"
+	check("one owned by somebody else is ignored",
+		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.owner = "root"
+	check("root's is read, because root owns everything anyway",
+		CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.owner = "bob"
+	node.mode = 620
+	check("one the group may write is ignored",
+		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.mode = 602
+	check("and one the world may write",
+		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.mode = 644
+	check("644 is readable by all and writable by none but bob",
+		CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.mode = 666
+	check("666 is not", not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	node.mode = 600
+	-- root IS trusted by his own .rhosts, which is the other half of the rule.
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/root/.rhosts", "gate root",
+		false, FIXED)
+	local rootFile = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/root/.rhosts")
+	rootFile.owner = "root"
+	rootFile.mode = 600
+	check("root's own .rhosts does let root in",
+		CeroSecOS.trusts(state, "root", "gate", "root"))
+
+	-- The write bit of one digit, which is the whole of the mode test.
+	check("6 is writable", CeroSecOS.digitWritable(6))
+	check("7 is writable", CeroSecOS.digitWritable(7))
+	check("2 is writable", CeroSecOS.digitWritable(2))
+	check("4 is not", not CeroSecOS.digitWritable(4))
+	check("5 is not", not CeroSecOS.digitWritable(5))
+	check("0 is not", not CeroSecOS.digitWritable(0))
+end
+
+-- /var/log/wtmp: the records, and both ceilings.
+do
+	eq("a record parses", CeroSecOS.parseWtmpLine("in admin ttyp0 gate 741186720").user,
+		"admin")
+	eq("and its host", CeroSecOS.parseWtmpLine("in admin ttyp0 gate 741186720").host, "gate")
+	eq("a dash is no host at all",
+		CeroSecOS.parseWtmpLine("in admin console - 741186720").host, nil)
+	eq("a kind that is neither is nothing",
+		CeroSecOS.parseWtmpLine("sideways admin console - 741186720"), nil)
+	eq("nor is a missing field", CeroSecOS.parseWtmpLine("in admin console -"), nil)
+	eq("nor a time that is not one",
+		CeroSecOS.parseWtmpLine("in admin console - later"), nil)
+
+	local state = fresh()
+	check("a record is appended", CeroSecOS.wtmpAppend(state, "in", "admin",
+		CeroSecOS.CONSOLE_LINE, nil, FIXED))
+	local node = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+	eq("the file is root's", node.owner, "root")
+	eq("and 644", node.mode, CeroSecOS.WTMP_MODE)
+	eq("with the record in it", node.data, "in admin console - " .. FIXED)
+	check("and a logout behind it", CeroSecOS.wtmpAppend(state, "out", "admin",
+		CeroSecOS.CONSOLE_LINE, nil, FIXED + 60))
+	eq("two lines now", #CeroSecOS.parseWtmp(node.data), 2)
+	-- Bounded by lines: the oldest go, which is why "wtmp begins" is a real
+	-- answer on this machine.
+	for i = 1, CeroSecOS.WTMP_LINES + 20 do
+		CeroSecOS.wtmpAppend(state, "in", "admin", "ttyp0", "gate", FIXED + i)
+	end
+	eq("the file is bounded by lines",
+		#CeroSecOS.splitLines(node.data), CeroSecOS.WTMP_LINES)
+	check("and by bytes", #node.data <= CeroSecOS.WTMP_BYTES)
+	-- And it costs the 32K disk nothing, by its path, exactly as the cron log
+	-- does: a machine must not fill its own drive with what it said about itself.
+	local exempt = CeroSecOS.exemptPaths(state)
+	check("wtmp is exempt by its path", exempt[CeroSecOS.WTMP_PATH] ~= nil)
+	eq("and the exemption is root's", exempt[CeroSecOS.WTMP_PATH].owner, "root")
+end
+
+-- The shape of every line the listing commands print. Pinned to the character,
+-- because a column that moves is a column somebody's eye has to hunt for.
+do
+	eq("who, at the keyboard",
+		CeroSecOS.whoLine("admin", "console", FIXED),
+		"admin    console  Jul  8 14:32")
+	eq("who, from the wire",
+		CeroSecOS.whoLine("bob", "ttyp0", FIXED, "ksp-a-a"),
+		"bob      ttyp0    Jul  8 14:32  (ksp-a-a)")
+	eq("and it fits the screen", #CeroSecOS.whoLine("sixteencharname", "ttyp0",
+		FIXED, "sixteencharhost") <= 60, true)
+
+	eq("last, still logged in",
+		CeroSecOS.lastLine({ user = "admin", line = "console", at = FIXED }),
+		"admin    console             Jul  8 14:32  still logged in")
+	eq("last, with a logout behind it",
+		CeroSecOS.lastLine({ user = "bob", line = "ttyp0", host = "ksp-a-a", at = FIXED },
+			FIXED + 8 * 60),
+		"bob      ttyp0    ksp-a-a    Jul  8 14:32 - 14:40  (00:08)")
+
+	eq("ruptime, one user", CeroSecOS.ruptimeLine("gate", 3 * 86400 + 2 * 3600 + 15 * 60,
+		1, 0.02), "gate      up  3+02:15,  1 user,  load 0.02")
+	eq("ruptime, two", CeroSecOS.ruptimeLine("ksp-a-a", 41 * 60, 2, 0),
+		"ksp-a-a   up  00:41,  2 users,  load 0.00")
+	eq("and a load of one job", CeroSecOS.ruptimeLine("gate", 60, 1, 1),
+		"gate      up  00:01,  1 user,  load 1.00")
+
+	eq("rwho", CeroSecOS.rwhoLine("admin", "gate", "console", FIXED),
+		"admin    gate:console     Jul  8 14:32")
+
+	eq("a span under a day", CeroSecOS.spanText(41 * 60), "00:41")
+	eq("a span over one", CeroSecOS.spanText(3 * 86400 + 2 * 3600 + 15 * 60), "3+02:15")
+	eq("a span of nothing", CeroSecOS.spanText(0), "00:00")
+	eq("and a negative one is nothing", CeroSecOS.spanText(-5), "00:00")
+end
+
+-- The ptys, and the fifth caller.
+do
+	local state = fresh()
+	local ptys = {}
+	eq("no lines are taken", CeroSecOS.ptyCount(ptys), 0)
+	for i = 1, CeroSecOS.PTY_MAX do
+		local pty, reason = CeroSecOS.remoteOpen(state, ptys, { fromHost = "gate", hops = 1 })
+		check("line " .. i .. " opened", pty ~= nil and reason == nil)
+		eq("and it is the lowest free one", pty.line, CeroSecOS.ptyLine(i - 1))
+	end
+	local fifth, reason = CeroSecOS.remoteOpen(state, ptys, { fromHost = "gate", hops = 1 })
+	eq("the fifth is refused", fifth, nil)
+	eq("in the words a full listener answers with", reason, "refused")
+	eq("four are taken", CeroSecOS.ptyCount(ptys), CeroSecOS.PTY_MAX)
+
+	-- A line that is given back is the next one handed out.
+	CeroSecOS.remoteClose(state, ptys, CeroSecOS.ptyLine(1), nil, nil)
+	eq("three are taken", CeroSecOS.ptyCount(ptys), CeroSecOS.PTY_MAX - 1)
+	local again = CeroSecOS.remoteOpen(state, ptys, { fromHost = "gate", hops = 1 })
+	eq("and the freed line is what comes back", again.line, CeroSecOS.ptyLine(1))
+
+	-- A keystroke can never reach a session that is over.
+	eq("a line that is gone is nothing",
+		CeroSecOS.remoteLine(ptys, "ttyp9"), nil)
+	check("and one that is not is the pty",
+		CeroSecOS.remoteLine(ptys, CeroSecOS.ptyLine(0)) ~= nil)
+
+	-- Closing with an account on it writes the logout; closing an empty one does
+	-- not, because a caller who gave up at the password was never logged in.
+	CeroSecOS.remoteClose(state, ptys, CeroSecOS.ptyLine(0), "admin", FIXED)
+	local wtmp = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+	check("the logout is recorded",
+		string.find(wtmp.data, "out admin ttyp0 gate", 1, true) ~= nil)
+	local before = wtmp.data
+	CeroSecOS.remoteClose(state, ptys, CeroSecOS.ptyLine(2), nil, FIXED)
+	eq("a session nobody got into leaves no record", wtmp.data, before)
+	eq("a line nobody has is nothing to close",
+		CeroSecOS.remoteClose(state, ptys, "ttyp9", "admin", FIXED), nil)
+end
+
+-- ifconfig, ping, who, last and the r-commands, through the shell.
+do
+	local state = fresh()
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	local admin = open(state, "admin")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"127.0.0.1 localhost\n10.4.17.2 ksp-front-01\n10.4.17.3 gate", FIXED)
+
+	-- A machine with no link layer at all: nothing is reachable, nothing is
+	-- listed, and no command invents a word about it.
+	local lines = okAt(state, admin, "ifconfig", nil, ENV)
+	eq("eth0 is up", lines[1], "eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>")
+	eq("with the address", lines[2], "      inet 10.4.17.2 netmask 0xffffff00")
+	eq("lo0 under it", lines[3], "lo0: flags=8<LOOPBACK>")
+	eq("with its own", lines[4], "      inet 127.0.0.1 netmask 0xff000000")
+	eq("and that is all there is", #lines, 4)
+	okAt(state, admin, "ruptime", {}, ENV)
+	okAt(state, admin, "rwho", {}, ENV)
+	badAt(state, admin, "ping pump", "ping: unknown host pump", ENV)
+	badAt(state, admin, "rlogin pump", "rlogin: pump: unknown host", ENV)
+	badAt(state, admin, "rlogin gate", "rlogin: gate: No route to host", ENV)
+	badAt(state, admin, "rsh gate date", "rsh: gate: No route to host", ENV)
+
+	-- The loopback is always reachable, whatever the link layer says.
+	local ping = okAt(state, admin, "ping localhost", nil, ENV)
+	eq("ping names what it pings", ping[1], "PING localhost (127.0.0.1): 56 data bytes")
+	eq("and the first packet answers", ping[2],
+		"64 bytes from 127.0.0.1: icmp_seq=0 ttl=255 time=0.4 ms")
+
+	-- last, on a machine with a record on it.
+	CeroSecOS.wtmpAppend(state, "in", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED)
+	CeroSecOS.wtmpAppend(state, "out", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED + 480)
+	CeroSecOS.wtmpAppend(state, "in", "bob", "ttyp0", "gate", FIXED + 600)
+	local last = okAt(state, admin, "last", nil, ENV)
+	eq("the newest is first", last[1],
+		"bob      ttyp0    gate       Jul  8 14:42  still logged in")
+	eq("and the closed one behind it", last[2],
+		"admin    console             Jul  8 14:32 - 14:40  (00:08)")
+	eq("with the file's own beginning", last[4], "wtmp begins Jul  8 14:32")
+	-- A name narrows it, and a name nothing carries is an empty answer and not a
+	-- refusal: an account that has never logged in is not a mistake.
+	local mine = okAt(state, admin, "last bob", nil, ENV)
+	eq("one account only", #mine, 3)
+	eq("and it is his", string.sub(mine[1], 1, 3), "bob")
+	local none = okAt(state, admin, "last nobody", nil, ENV)
+	eq("a name with no logins answers only the beginning", #none, 2)
+
+	-- who, with no link layer, is nobody: the sessions are the server's answer.
+	okAt(state, admin, "who", {}, ENV)
+
+	-- And every one of them refuses the wrong argument count with its own line.
+	badAt(state, admin, "ifconfig a b", "ifconfig: usage: " ..
+		CeroSecOS.commandUsage("ifconfig"), ENV)
+	badAt(state, admin, "ping", "ping: usage: " .. CeroSecOS.commandUsage("ping"), ENV)
+	badAt(state, admin, "who x", "who: usage: " .. CeroSecOS.commandUsage("who"), ENV)
+	badAt(state, admin, "rcp one", "rcp: usage: " .. CeroSecOS.commandUsage("rcp"), ENV)
+	badAt(state, admin, "rcp a b", "rcp: usage: " .. CeroSecOS.commandUsage("rcp"), ENV)
+	badAt(state, admin, "rcp gate:a gate:b", "rcp: usage: " ..
+		CeroSecOS.commandUsage("rcp"), ENV)
+end
+
+-- The hop ceiling is the session's own, and it is paid before a name is looked up.
+do
+	local state = fresh()
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"10.4.17.3 gate", FIXED)
+	local deep = open(state, "admin")
+	deep.hops = CeroSecOS.HOP_MAX
+	badAt(state, deep, "rlogin gate", "rlogin: connect: Connection refused", ENV)
+	badAt(state, deep, "rsh gate date", "rsh: connect: Connection refused", ENV)
+	-- Even a name the file has never heard of: a chain that may not grow is a
+	-- chain that has nothing to resolve.
+	badAt(state, deep, "rlogin pump", "rlogin: connect: Connection refused", ENV)
+end
+
+-- host:path, the way rcp itself tells a machine from a file.
+do
+	eq("a plain path is local", CeroSecOS.splitRemote("notes.txt"), nil)
+	eq("and so is one with a slash in front of the colon",
+		CeroSecOS.splitRemote("./a:b"), nil)
+	eq("a host and a path is remote", CeroSecOS.splitRemote("gate:/tmp/a"), "gate")
+	eq("with the path behind it",
+		select(2, CeroSecOS.splitRemote("gate:/tmp/a")), "/tmp/a")
+	eq("an address is a host too", CeroSecOS.splitRemote("10.4.17.3:/tmp/a"), "10.4.17.3")
+	eq("something that is neither is not remote",
+		CeroSecOS.splitRemote("NotAHost:/tmp/a"), nil)
+end
+
+-- The refusals, in the words strerror has for the errno a real one would get.
+do
+	eq("a machine that is off", CeroSecOS.netRefusal("rlogin", "gate", "down"),
+		"rlogin: gate: Host is down")
+	eq("a machine with no wire to it", CeroSecOS.netRefusal("rlogin", "gate", "unreach"),
+		"rlogin: gate: No route to host")
+	eq("a listener with nothing to accept with",
+		CeroSecOS.netRefusal("rlogin", "gate", "refused"),
+		"rlogin: connect: Connection refused")
+	eq("and one that will not trust this machine",
+		CeroSecOS.netRefusal("rsh", "gate", "denied"), "rsh: gate: Permission denied")
+end
+
+-- /etc/hosts and /etc/hosts.equiv are made where they are missing, and never put
+-- back behind a root who deleted them.
+do
+	local state = fresh()
+	local node = CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH)
+	eq("/etc/hosts ships with the machine", node.type, "file")
+	eq("root's", node.owner, "root")
+	eq("and 644", node.mode, CeroSecOS.HOSTS_MODE)
+	local equiv = CeroSecOS.systemNode(state, CeroSecOS.EQUIV_PATH)
+	eq("/etc/hosts.equiv too", equiv.type, "file")
+	eq("and it trusts nobody", #CeroSecOS.parseEquiv(equiv.data), 0)
+
+	-- Deleted, and the BIOS repair puts them back: they are system files.
+	CeroSecOS.removeNode(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH, false, FIXED)
+	CeroSecOS.removeNode(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, false, FIXED)
+	eq("deleted", CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH), nil)
+	CeroSecOS.restoreSystem(state)
+	check("the repair puts /etc/hosts back",
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH) ~= nil)
+	check("and /etc/hosts.equiv", CeroSecOS.systemNode(state, CeroSecOS.EQUIV_PATH) ~= nil)
+
+	-- A file the player has written is left exactly as it lies.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"10.1.1.1 mine", FIXED)
+	CeroSecOS.restoreSystem(state)
+	eq("a file with a line in it is kept",
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH).data, "10.1.1.1 mine")
+end
+
+-- An older machine is topped up on the way in, once.
+do
+	local old = fresh()
+	CeroSecOS.removeNode(old, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH, false, FIXED)
+	CeroSecOS.removeNode(old, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, false, FIXED)
+	for _, name in ipairs({ "ifconfig", "ping", "rlogin", "rsh", "rcp", "ruptime",
+			"rwho", "who", "last" }) do
+		CeroSecOS.removeNode(old, CeroSecOS.rootSession(), "/bin/" .. name, false, FIXED)
+	end
+	old.sysv = 9
+	check("the upgrade has something to do", CeroSecOS.upgradeSystem(old))
+	eq("and the number has moved", old.sysv, CeroSecOS.SYSTEM_VERSION)
+	check("/bin/rlogin is back",
+		CeroSecOS.systemNode(old, "/bin/rlogin") ~= nil)
+	check("/etc/hosts is back", CeroSecOS.systemNode(old, CeroSecOS.HOSTS_PATH) ~= nil)
+	check("asked again it does nothing at all", not CeroSecOS.upgradeSystem(old))
+	-- And root's deletion stays a deletion at the current number.
+	CeroSecOS.removeNode(old, CeroSecOS.rootSession(), "/bin/ping", false, FIXED)
+	CeroSecOS.upgradeSystem(old)
+	eq("rm /bin/ping is a deletion and not a suggestion",
+		CeroSecOS.systemNode(old, "/bin/ping"), nil)
+end
+
 print("os_test: " .. count .. " assertions passed")

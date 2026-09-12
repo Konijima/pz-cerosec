@@ -4037,4 +4037,32 @@ do
 	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
 end
 
+-- Whose budget a remote session spends, through the real scheduler.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	net.enter("while true; do echo deep; done &")
+	net.tick(4)
+	check("the loop is a job on the far machine",
+		net.gate.jobs ~= nil and #net.gate.jobs.list > 0)
+	-- The near machine has the shell that typed `rlogin` and nothing else, and
+	-- that one is over: what is running is over there.
+	check("and the machine at the keyboard is running nothing",
+		net.here.jobs == nil or #net.here.jobs.list == 0)
+	net.tick(10)
+	check("it is still running over there", #net.gate.jobs.list > 0)
+	check("and still nothing over here",
+		net.here.jobs == nil or #net.here.jobs.list == 0)
+	-- And closing the session takes it away: a shell whose terminal has gone has
+	-- nothing left to write to.
+	net.escape()
+	net.tick(4)
+	eq("closing the session took the job with it",
+		net.gate.jobs == nil or #net.gate.jobs.list, 0)
+end
+
 print("window_test: " .. count .. " checks passed")

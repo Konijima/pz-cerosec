@@ -1183,6 +1183,99 @@ do
 		"192 cron jobs/minute", worst, msPerMinute)
 end
 
+--
+-- 20. A loop left running down an rlogin (rung 6a)
+--
+-- The whole promise of a remote session is whose budget it spends. A survivor
+-- who rlogins into the machine across the room and leaves a loop running there
+-- has made THAT machine slow at THAT one thing: the four job slots it fills are
+-- its own, the twenty lines a second are its own, and the computer he is
+-- standing at is at an idle prompt with nothing running on it at all.
+--
+-- The session's screen is bounded like any other -- it IS a console, the same
+-- table the machine's own screen is -- and the glass it is showing on belongs to
+-- a machine the scheduler never touches.
+--
+
+-- A pty on a machine, with a screen of its own, exactly as CeroSecNet.dial makes
+-- one. The server half is not loaded here; what is being measured is the
+-- SCHEDULER, and a pty is a table with a console on it.
+local function attach(far, farState, here, n)
+	if far.ptys == nil then far.ptys = {} end
+	local pty = CeroSecOS.remoteOpen(farState, far.ptys,
+		{ fromHost = "ksp-here", hops = 1, at = 740000000 })
+	check("line " .. (n or 1) .. " opened", pty ~= nil)
+	local screen = CeroSec.newConsole()
+	screen.booted = true
+	screen.line = pty.line
+	screen.hops = 1
+	screen.user = "admin"
+	screen.cwd = "/home/admin"
+	screen.watchAt = { x = here.x, y = here.y, z = here.z }
+	pty.console = screen
+	pty.from = { x = here.x, y = here.y, z = here.z }
+	return pty
+end
+
+do
+	local here = newMachine()
+	here.x = 9
+	local far, farState = newMachine()
+	local pty = attach(far, farState, here)
+
+	typeLine(system, far, farState, pty.console, "while true; do echo deep; done")
+	local result = drive(far, PASSES, nil, function()
+		check("the session's screen never holds more than its hundred lines",
+			#pty.console.lines <= CeroSec.CONSOLE_MAX)
+		check("and the machine at the glass is running nothing",
+			here.jobs == nil or #here.jobs.list == 0)
+	end)
+	flat("a loop down an rlogin", result)
+	check("the loop is still going", #far.jobs.list > 0)
+	check("it wrote on the session's screen", #pty.console.lines > 0)
+	eq("and not a line on the machine's own", #far.console.lines, 0)
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass",
+		"rlogin loop", result.worst, result.msPerPass)
+end
+
+-- Four of them at once, which is every job slot the machine has. The machine is
+-- as slow as it was with one and no slower: the budget is the MACHINE's and is
+-- shared, exactly as it is for four loops somebody typed at the keyboard.
+do
+	local here = newMachine()
+	here.x = 9
+	local far, farState = newMachine()
+	local ptys = {}
+	for i = 1, CeroSecOS.PTY_MAX do
+		ptys[i] = attach(far, farState, here, i)
+		typeLine(system, far, farState, ptys[i].console, "while true; do echo x; done")
+	end
+	eq("four sessions are in", CeroSecOS.ptyCount(far.ptys), CeroSecOS.PTY_MAX)
+	eq("and the machine is full", #far.jobs.list, CeroSecOS.MAX_JOBS)
+
+	local result = drive(far, PASSES, nil, function()
+		for i = 1, #ptys do
+			check("session " .. i .. "'s screen is bounded",
+				#ptys[i].console.lines <= CeroSec.CONSOLE_MAX)
+		end
+		check("the machine at the glass is still running nothing",
+			here.jobs == nil or #here.jobs.list == 0)
+	end)
+	flat("four inbound loops", result)
+	-- A fifth caller is refused, which is what keeps that number four.
+	local fifth, reason = CeroSecOS.remoteOpen(farState, far.ptys, { fromHost = "x", hops = 1 })
+	eq("the fifth caller is refused", fifth, nil)
+	eq("in a listener's own words", reason, "refused")
+	-- And every one of the four really wrote, so none of them was starved out.
+	for i = 1, #ptys do
+		check("session " .. i .. " got its turn", #ptys[i].console.lines > 0)
+	end
+	local _, bytes = CeroSecOS.usage(farState)
+	check("and the far machine's disk did not move (" .. bytes .. ")", bytes < 4000)
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass",
+		"4 inbound loops", result.worst, result.msPerPass)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..
