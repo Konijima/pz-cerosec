@@ -10006,8 +10006,10 @@ do
 	local under = select(2, CeroSecOS.usage(state))
 
 	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	-- The sticker is on the disk's line and nowhere near the machine's own: this
+	-- disk was made with newFloppy("WORK") above.
 	okAt(state, admin, "mount",
-		{ "/dev/hda on / type ufs (rw)", "/dev/fd0 on /mnt type ufs (rw)" })
+		{ "/dev/hda on / type ufs (rw)", "/dev/fd0 on /mnt type ufs (rw) (WORK)" })
 	okAt(state, admin, "cat /dev/fd0", { "mounted" })
 
 	-- The file underneath is out of sight and still on the hard disk, which is
@@ -10042,6 +10044,103 @@ do
 	okAt(state, at, "ls /mnt", { "hidden.txt" })
 	okAt(state, at, "cat /mnt/hidden.txt", { "under" })
 	okAt(state, at, "cat /dev/fd0", { "ready" })
+end
+
+-- 47d-bis. The sticker on the disk, on `mount` and on `df`.
+--
+-- The label is a string on the disk RECORD and nothing else -- it travels with
+-- the disk between machines because it is part of what is written on it -- and
+-- two commands print it: the mount listing and df. Both are asked with a label
+-- and without one, because "shows the label" and "does not invent one" are two
+-- different pieces of code and only one of them is obvious.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+
+	-- No label: the line is the bare mount(8) line, with no empty brackets on the
+	-- end. A disk nobody has named is not a disk named "".
+	okAt(state, admin, "mount",
+		{ "/dev/hda on / type ufs (rw)", "/dev/fd0 on /mnt type ufs (rw)" })
+	local plain = okAt(state, admin, "df", nil)
+	eq("df's disk row carries no brackets either",
+		string.find(plain[4], "(", 1, true), nil)
+
+	-- And with one. Written straight onto the record the way an insert writes it.
+	state.floppy.label = "BACKUP"
+	okAt(state, admin, "mount",
+		{ "/dev/hda on / type ufs (rw)", "/dev/fd0 on /mnt type ufs (rw) (BACKUP)" })
+	local lines = okAt(state, admin, "df", nil)
+	eq("df has a header and four rows", #lines, 5)
+	check("the disk's bytes row wears the sticker",
+		string.find(lines[4], "(BACKUP)", 1, true) ~= nil)
+	-- The COLUMNS are untouched by it: the label is appended after Use% and the
+	-- Filesystem column still holds the device, not a label truncated into it.
+	eq("the device is still what the first column says",
+		string.match(lines[4], "^(%S+)"), "fd0")
+	eq("and the number columns still read",
+		tonumber(string.match(lines[4], "^%S+%s+(%d+)")), CeroSecOS.FLOPPY_BYTES)
+	-- Said ONCE. The two rows are two ceilings of one disk; a sticker on both
+	-- would read as two disks in one drive.
+	check("the nodes row does not repeat it",
+		string.find(lines[5], "BACKUP", 1, true) == nil)
+	-- And never on the machine's own disk, which has no sticker to read.
+	check("hda's row is clean", string.find(lines[2], "BACKUP", 1, true) == nil)
+
+	-- Unmounted, the disk is still in the slot and still labelled -- df reports
+	-- what is MOUNTED, so its rows go, and the sticker goes with them rather than
+	-- being printed against the hard disk.
+	okAt(state, admin, "umount /mnt", {})
+	local off = okAt(state, admin, "df", nil)
+	eq("df is back to the machine alone", #off, 3)
+	check("with no sticker anywhere on it",
+		string.find(off[2] .. off[3], "BACKUP", 1, true) == nil)
+	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)" })
+
+	-- The label is a field of the disk and the gate holds it to the one ceiling
+	-- the inventory's box is built from. At the ceiling it passes; one over and
+	-- the disk is refused at the slot, which is what makes the two numbers one.
+	local at = string.rep("L", CeroSecOS.LABEL_MAX)
+	eq("a label of exactly LABEL_MAX is a disk that may be inserted",
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = at }, true), true)
+	eq("one character over is refused",
+		CeroSecOS.validateDisk({ v = CeroSecOS.FLOPPY_VERSION, label = at .. "L" }, true),
+		false)
+
+	-- mountLine is asked directly with the three shapes a label comes in, because
+	-- labelOfDev above never hands it an empty string and a guard nothing exercises
+	-- is a guard that could be deleted without a bench noticing.
+	eq("no label, no brackets",
+		CeroSecOS.mountLine("fd0", "/mnt", "ufs", nil),
+		"/dev/fd0 on /mnt type ufs (rw)")
+	eq("an empty label is no label either",
+		CeroSecOS.mountLine("fd0", "/mnt", "ufs", ""),
+		"/dev/fd0 on /mnt type ufs (rw)")
+	eq("and a label is bracketed after the options",
+		CeroSecOS.mountLine("fd0", "/mnt", "ufs", "HOME"),
+		"/dev/fd0 on /mnt type ufs (rw) (HOME)")
+
+	-- The ceiling, as a NUMBER and once. Every other check derives its label from
+	-- the constant -- which is how a ceiling should be read -- and that means
+	-- nothing else would notice the constant itself moving. Twenty-four is the
+	-- promise made to the player in docs/PLAYERS.md and the number the inventory's
+	-- label box is built from.
+	eq("the label ceiling is twenty-four characters", CeroSecOS.LABEL_MAX, 24)
+
+	-- labelOfDev is asked by device, so the hard disk can never wear the sticker
+	-- of whatever is in the slot.
+	state.floppy.label = "MINE"
+	eq("the drive's own label", CeroSecOS.labelOfDev(state, CeroSecOS.FD_NAME), "MINE")
+	eq("and the hard disk has none",
+		CeroSecOS.labelOfDev(state, CeroSecOS.DISK_NAME), nil)
+	state.floppy.label = ""
+	eq("an empty sticker is no sticker",
+		CeroSecOS.labelOfDev(state, CeroSecOS.FD_NAME), nil)
+	state.floppy = nil
+	eq("and an empty drive has nothing to read",
+		CeroSecOS.labelOfDev(state, CeroSecOS.FD_NAME), nil)
 end
 
 -- 47e. The two disks never share a ceiling.

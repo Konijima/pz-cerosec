@@ -135,12 +135,18 @@ CeroSecOS.FS_TYPE = "ufs"
 -- own fact.
 CeroSecOS.FLOPPY_VERSION = 1
 
--- How long a volume label may be. Eleven bytes, which is what a DOS volume label
--- held in 1993 and what the sticker on the front of a 3.5-inch disk had room for.
--- Nothing reads a label but the drive's own listing today; it is here because a
--- disk with no name on it is a disk nobody can tell from the other three in the
--- drawer.
-CeroSecOS.LABEL_MAX = 11
+-- How long a volume label may be, and the ONE place that number lives: the
+-- inventory's label box derives its own ceiling from this, so a label a survivor
+-- can type is a label the slot will accept. A longer one than this is refused by
+-- the gate (CeroSecOS.validateDisk) and a disk carrying it could not be inserted
+-- at all, which is why the two must never be two numbers.
+--
+-- Twenty-four characters -- the sticker across the front of a 3.5-inch disk, and
+-- what a survivor writing on one with a pen has room for. It was ELEVEN when
+-- nothing but `ls -l /dev` read a label, after the DOS volume label of the day;
+-- the sticker is what it is for now that a player writes it, and raising a
+-- ceiling accepts every label that was ever written under the old one.
+CeroSecOS.LABEL_MAX = 24
 
 -- A blank, unformatted disk: no filesystem at all. What a new one out of the box
 -- is, and what `newfs` is for.
@@ -514,6 +520,21 @@ function CeroSecOS.fdMount(state)
 	return nil
 end
 
+-- The sticker on the disk in a named drive, or nil. Asked by DEVICE and not
+-- simply read off the floppy, because the mount table names devices and the
+-- machine's own hard disk has no sticker to read: a line printed for hda must
+-- never wear the label of the disk that happens to be in the slot.
+--
+-- An empty string is no label, the same as no field at all. A sticker with
+-- nothing written on it is a sticker nobody put on.
+function CeroSecOS.labelOfDev(state, dev)
+	if dev ~= CeroSecOS.FD_NAME then return nil end
+	local disk = CeroSecOS.floppyOf(state)
+	if type(disk) ~= "table" then return nil end
+	if type(disk.label) ~= "string" or disk.label == "" then return nil end
+	return disk.label
+end
+
 -- The drive's node, or nil when there is no disk in it.
 --
 -- Its mode is the MACHINE's and not the disk's -- the drive is bolted to the case
@@ -629,19 +650,34 @@ end
 --
 CeroSecOS.MOUNT_RW = "(rw)"
 
-function CeroSecOS.mountLine(dev, dir, kind)
-	return CeroSecOS.DEV_PATH .. "/" .. dev .. " on " .. dir
+-- The label goes at the END of the line and in its own brackets, after the mount
+-- options and not inside them: `(rw)` is what the filesystem is mounted AS and
+-- the sticker is what is written on the thing it is mounted FROM, and a reader
+-- who has to tell one from the other on a screen this narrow needs them apart.
+-- No label is no brackets at all -- not an empty pair, which would read as a
+-- disk whose label is the empty string rather than one nobody has named.
+function CeroSecOS.mountLine(dev, dir, kind, label)
+	local line = CeroSecOS.DEV_PATH .. "/" .. dev .. " on " .. dir
 		.. " type " .. (kind or CeroSecOS.FS_TYPE) .. " " .. CeroSecOS.MOUNT_RW
+	if type(label) == "string" and label ~= "" then
+		line = line .. " (" .. label .. ")"
+	end
+	return line
 end
 
 local function mountList(state)
-	local out = { CeroSecOS.mountLine(CeroSecOS.DISK_NAME, "/", CeroSecOS.FS_TYPE) }
+	-- The root filesystem, and never a label on it: the machine's own disk is
+	-- bolted in and has no sticker (CeroSecOS.labelOfDev answers for that, and it
+	-- is asked below for every line so the rule is in ONE place).
+	local out = { CeroSecOS.mountLine(CeroSecOS.DISK_NAME, "/", CeroSecOS.FS_TYPE,
+		CeroSecOS.labelOfDev(state, CeroSecOS.DISK_NAME)) }
 	local mounts = CeroSecOS.mountTable(state)
 	if mounts ~= nil then
 		for i = 1, #mounts do
 			local m = mounts[i]
 			if type(m) == "table" then
-				out[#out + 1] = CeroSecOS.mountLine(m.dev, m.dir, m.type)
+				out[#out + 1] = CeroSecOS.mountLine(m.dev, m.dir, m.type,
+					CeroSecOS.labelOfDev(state, m.dev))
 			end
 		end
 	end
