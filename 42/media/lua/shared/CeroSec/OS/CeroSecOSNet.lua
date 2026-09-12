@@ -523,6 +523,8 @@ function CeroSecOS.wtmpAppend(state, kind, user, line, host, now)
 	if kind ~= "in" and kind ~= "out" then return false end
 	if type(user) ~= "string" or type(line) ~= "string" then return false end
 	if type(now) ~= "number" then return false end
+	-- Not onto a mounted disk: see CeroSecOS.onOwnDrive.
+	if not CeroSecOS.onOwnDrive(state, CeroSecOS.WTMP_PATH) then return false end
 	local node = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
 	if node == nil then
 		local made = CeroSecOS.createNode(state, CeroSecOS.rootSession(),

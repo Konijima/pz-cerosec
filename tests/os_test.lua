@@ -9693,6 +9693,13 @@ do
 	badAt(state, admin, "mount /dev/fd0 /etc/motd", "mount: /etc/motd: not a directory")
 	badAt(state, admin, "mount /dev/fd0 /nowhere", "mount: /nowhere: no such file")
 	badAt(state, admin, "mount /dev/fd0 /", "mount: /: Device busy")
+	-- /dev is the one other place a mount cannot be undone from: the device file
+	-- umount reads to find out which drive it is unmounting lives there, so a disk
+	-- mounted over it covers the only handle on itself.
+	badAt(state, admin, "mount /dev/fd0 /dev", "mount: /dev: Device busy")
+	okAt(state, admin, "ln -s /dev /home/admin/d", {})
+	badAt(state, admin, "mount /dev/fd0 /home/admin/d",
+		"mount: /home/admin/d: Device busy")
 	badAt(state, admin, "mount /dev/null /mnt", "mount: /dev/null: not a floppy drive")
 	badAt(state, admin, "newfs /dev/null", "newfs: /dev/null: not a floppy drive")
 	badAt(state, admin, "mount /dev/fd0", "mount: usage: mount [<device> <dir>]")
@@ -9869,35 +9876,59 @@ do
 	eq("a root that is not a directory",
 		CeroSecOS.validateDisk({ v = 1, fs = CeroSecOS.newFile("root", 644, "x") }), false)
 
-	-- Past the disk's own ceilings, which the BOOT GATE deliberately does not ask
-	-- about and the SLOT does.
+	-- Past the disk's own ceilings, which NEITHER the boot gate nor the slot asks
+	-- about -- and they are the same gate, which is the point of this block.
 	--
-	-- Being over a quota is a state a filesystem can be IN -- that is already the
-	-- rule for the machine's own drive -- and the answer to it is that the next
-	-- write says "disk full" until room is made. A boot gate that refused would
-	-- cost the player his whole computer for a disk he could fix with one `rm`:
-	-- osState's refusal is sticky and the firmware repair does not reach into the
-	-- drive. The slot asks, because a disk arriving from an item did not have to
-	-- come from a machine like this one.
+	-- Being over a quota is a state a filesystem can be IN: that is already the
+	-- rule for the machine's own drive, and the answer to it is that the next write
+	-- says "disk full" until room is made. A gate that refused would cost the
+	-- player his whole computer for a disk he could fix with one `rm` -- osState's
+	-- refusal is sticky and the firmware repair does not reach into the drive.
+	--
+	-- And the SLOT may not be stricter than the boot gate, which is the half that
+	-- is easy to get wrong: a machine that runs on a disk can hand it out, so a
+	-- slot that refused what the boot gate accepts is a machine handing the player
+	-- a disk no machine in the world will take back.
 	local many = CeroSecOS.newDir("root", 755)
 	for i = 1, CeroSecOS.FLOPPY_NODES do
 		many.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
+	local over = { v = 1, fs = many }
 	eq("the boot gate runs on a disk past its node ceiling",
-		CeroSecOS.validateDisk({ v = 1, fs = many }), true)
-	eq("and the slot will not take it",
-		CeroSecOS.validateDisk({ v = 1, fs = many }, true), false)
-	eq("in a sentence with its separator in it",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = many }, true)),
-		"floppy: too many nodes")
+		CeroSecOS.validateDisk(over), true)
+	eq("and the slot takes it back", CeroSecOS.diskFromData(over) ~= nil, true)
 	local fat = CeroSecOS.newDir("root", 755)
 	fat.children["big"] = CeroSecOS.newFile("root", 644,
 		string.rep("x", CeroSecOS.FLOPPY_BYTES))
 	fat.children["more"] = CeroSecOS.newFile("root", 644, "x")
+	local heavy = { v = 1, fs = fat }
 	eq("the boot gate runs on a disk past its byte ceiling",
-		CeroSecOS.validateDisk({ v = 1, fs = fat }), true)
-	eq("and the slot will not take that either",
-		CeroSecOS.validateDisk({ v = 1, fs = fat }, true), false)
+		CeroSecOS.validateDisk(heavy), true)
+	eq("and the slot takes that back too", CeroSecOS.diskFromData(heavy) ~= nil, true)
+	-- Which is the whole round trip: a machine that ejects one can be handed it.
+	do
+		-- As root: the disk was forged, and its root directory is root's at 755
+		-- the way a disk formatted by root would be.
+		local machine = fresh()
+		local who = open(machine, "root")
+		machine.floppy = heavy
+		okAt(machine, who, "mount /dev/fd0 /mnt", {})
+		-- Over its ceiling, and it says so rather than pretending.
+		badAt(machine, who, "echo x > /mnt/y", "echo: /mnt/y: disk full")
+		-- And one `rm` is the way out, which is the reason the gate lets it boot.
+		okAt(machine, who, "rm /mnt/big", {})
+		okAt(machine, who, "echo x > /mnt/y", {})
+		okAt(machine, who, "umount /mnt", {})
+	end
+	-- The separator is in the sentence when a disk IS refused.
+	local named = CeroSecOS.newDir("root", 755)
+	for i = 1, 12 do
+		local sub = CeroSecOS.newDir("root", 755)
+		for j = 1, 90 do sub.children["f" .. j] = CeroSecOS.newFile("root", 644, "") end
+		named.children["d" .. i] = sub
+	end
+	eq("in a sentence with its separator in it",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = named })), "floppy: too many nodes")
 	-- The boot gate still bounds what a walk costs, at the machine's own ceiling:
 	-- a save file is a thing somebody can write.
 	local huge = CeroSecOS.newDir("root", 755)
@@ -9921,8 +9952,14 @@ do
 	eq("a tree deeper than the filesystem can address is not a disk",
 		CeroSecOS.diskFromData(deep), nil)
 	-- And a disk the gate refuses does not come through the copy either.
-	eq("a disk past its ceilings is refused at the slot",
-		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
+	local forged = CeroSecOS.newDir("root", 755)
+	for i = 1, 12 do
+		local sub = CeroSecOS.newDir("root", 755)
+		for j = 1, 90 do sub.children["f" .. j] = CeroSecOS.newFile("root", 644, "") end
+		forged.children["d" .. i] = sub
+	end
+	eq("a disk past what ANY filesystem here may hold is refused at the slot",
+		CeroSecOS.diskFromData({ v = 1, fs = forged }), nil)
 end
 
 -- 47m. A mount naming a drive with nothing in it is swept on the way in.
@@ -10122,6 +10159,15 @@ do
 	-- A rename INSIDE the disk, spelled through the link, is an ordinary rename.
 	okAt(state, admin, "mv /home/admin/gate/notes.txt /home/admin/gate/other.txt", {})
 	okAt(state, admin, "ls /mnt", { "other.txt" })
+
+	-- And cp's own guard against copying a directory into itself, which is the
+	-- last rule in the engine that was asked of the typed path.
+	okAt(state, admin, "mkdir /home/admin/tree", {})
+	okAt(state, admin, "ln -s /home/admin/tree /home/admin/same", {})
+	badAt(state, admin, "cp -r /home/admin/tree /home/admin/tree/in",
+		"cp: /home/admin/tree/in: invalid destination")
+	badAt(state, admin, "cp -r /home/admin/tree /home/admin/same/in",
+		"cp: /home/admin/same/in: invalid destination")
 end
 
 do
@@ -10277,6 +10323,30 @@ do
 	local kept = CeroSecOS.historyLines(state, admin)
 	check("there is a history there at all", #kept > 0)
 	eq("ending on the last line typed", kept[#kept], "echo a line of ordinary length 400")
+
+	-- The machine's OWN records -- the cron log, a mailbox, /var/log/wtmp -- are not
+	-- written onto a mounted disk at all. They are found by a walk that does not
+	-- cross a mount and written straight onto the node, and both of those are the
+	-- hard disk's rules: under a mount the create would land where the find can
+	-- never see it again, and the write would put bytes on a disk that never counted
+	-- them. So the machine stops keeping them until the disk is out, and leaves
+	-- nothing half-done on it.
+	do
+		local logged = fresh()
+		local su = open(logged, "root")
+		logged.floppy = CeroSecOS.newFloppy()
+		okAt(logged, su, "newfs /dev/fd0", nil)
+		okAt(logged, su, "mount /dev/fd0 /var/log", {})
+		eq("wtmp is not written onto the disk",
+			CeroSecOS.wtmpAppend(logged, "in", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED),
+			false)
+		eq("and nothing was left on it",
+			select(1, CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(logged))), 1)
+		okAt(logged, su, "umount /var/log", {})
+		eq("with the disk out, the machine keeps its records again",
+			CeroSecOS.wtmpAppend(logged, "in", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED),
+			true)
+	end
 
 	-- The hard disk's own history is untouched by any of this: sixteen kilobytes,
 	-- and exempt.

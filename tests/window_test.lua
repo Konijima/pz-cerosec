@@ -5766,14 +5766,31 @@ do
 
 	-- A disk whose contents will not pass the engine's own gate: refused at the
 	-- slot, and left in his hands rather than eaten.
-	local forged = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
+	--
+	-- Over a FLOPPY's ceiling is deliberately not that: the slot takes back
+	-- anything the machine would boot on, or a computer could hand out a disk no
+	-- computer will accept (see CeroSecOS.validateDisk). What is refused is a disk
+	-- outside the envelope every filesystem here lives in -- this one has a file
+	-- bigger than any file on this machine may be.
+	local roomy = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
 		owner = "root", mode = 755, children = {
 			big = { type = "file", owner = "root", mode = 644,
 				data = string.rep("x", CeroSecOS.FLOPPY_BYTES + 1) },
 		} } })
+	bench.send("insertfloppy", { item = roomy:getID() })
+	eq("a disk over the floppy's own ceiling still goes in",
+		bench.object:hasDisk(), true)
+	bench.send("ejectfloppy")
+	eq("and comes back out", bench.object:hasDisk(), false)
+
+	local forged = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
+		owner = "root", mode = 755, children = {
+			big = { type = "file", owner = "root", mode = 644,
+				data = string.rep("x", CeroSecOS.HISTORY_BYTES + 1) },
+		} } })
 	bench.send("insertfloppy", { item = forged:getID() })
 	eq("a forged disk is refused", bench.object:hasDisk(), false)
-	eq("and stays in his hands", #inv.items, 2)
+	eq("and stays in his hands", #inv.items, 3)
 	-- A disk of a version this machine does not know.
 	local future = inv:add("CeroSec.FloppyBlue", { v = 99 })
 	bench.send("insertfloppy", { item = future:getID() })
@@ -5781,6 +5798,7 @@ do
 
 	-- Ejecting an empty drive gives him nothing.
 	local had = #inv.items
+	bench.sounds = {}
 	bench.send("ejectfloppy")
 	eq("an empty drive hands nothing back", #inv.items, had)
 	check("and says nothing about it", not bench.heardSound("CeroSecEjectDisc"))

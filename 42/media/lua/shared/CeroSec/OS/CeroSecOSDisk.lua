@@ -212,10 +212,10 @@ end
 function CeroSecOS.diskFromData(data)
 	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
-	-- Bounded, because this is the SLOT: a disk arriving from an item did not
-	-- necessarily come from a machine like this one, and nothing the write path can
-	-- do puts one past its own ceilings.
-	local ok, why = CeroSecOS.validateDisk(disk, true)
+	-- The same gate the boot runs, and deliberately not a stricter one: see
+	-- CeroSecOS.validateDisk for why a slot that refused what a machine will run on
+	-- would be a machine handing out disks nobody can put back.
+	local ok, why = CeroSecOS.validateDisk(disk)
 	if not ok then return nil, why end
 	return disk
 end
@@ -427,6 +427,25 @@ function CeroSecOS.fsUsage(state, fs)
 	return CeroSecOS.subtreeUsage(fs.root)
 end
 
+-- Is this one of the machine's own files still ON the machine's own drive?
+--
+-- The three files below -- the cron log, a mailbox, /var/log/wtmp -- are found
+-- with systemNode, which does not cross a mount, and written straight onto the
+-- node, because they are exempt from the disk quota by their path. Both of those
+-- are the HARD DISK's rules. Mount a disk over /var and they stop being true: the
+-- create would cross onto the floppy where the find can never see it again, and
+-- the write would put bytes on a disk that never counted them.
+--
+-- So the machine does not write them there at all. It is a stated limitation and
+-- not a silent one: a disk mounted over /var is a machine that stops keeping its
+-- own records until it is unmounted, and nothing about it is left half-done.
+function CeroSecOS.onOwnDrive(state, path)
+	local phys = select(4, CeroSecOS.getNode(state, CeroSecOS.rootSession(), path))
+	if phys == nil then phys = CeroSecOS.physicalOf(state, CeroSecOS.rootSession(), path) end
+	if phys == nil then return true end
+	return CeroSecOS.fsFor(state, phys).at == "/"
+end
+
 --
 -- The device file
 --
@@ -607,6 +626,13 @@ commands.mount = function(state, session, args, env)
 	if dirNode.type ~= "dir" then return fail("mount", dir, "not a directory") end
 	if dirPhys == nil then dirPhys = dirAbs end
 	if dirPhys == "/" then return fail("mount", dir, "Device busy") end
+	-- And not over /dev, which is the one place a mount cannot be undone from: the
+	-- device file `umount` reads to find out which drive it is unmounting lives
+	-- there, so a disk mounted over it covers the only handle on itself and the way
+	-- back is a power cycle. Root keeps every other rope on this machine -- mounting
+	-- over /bin is root's business and the firmware says how to get out of it --
+	-- but a door that locks from the inside with the key behind it is not a rope.
+	if dirPhys == CeroSecOS.DEV_PATH then return fail("mount", dir, "Device busy") end
 	-- Already something there, or this very drive already mounted somewhere else.
 	if CeroSecOS.mountAt(state, dirPhys) ~= nil then
 		return fail("mount", dir, "Device busy")

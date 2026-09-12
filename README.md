@@ -1702,14 +1702,29 @@ disk is refused there rather than three commands later by a gate that then calls
 whole machine broken. An item always *has* a modData table, so nothing written in it
 means a blank disk and not a refusal.
 
-That gate is asked two different questions, which is what its `bounded` argument is
-for. The **slot** asks the ceilings, because a disk arriving from an item did not
-have to come from a machine like this one. The **boot gate** does not, for exactly
-the reason it does not ask them of the machine's own drive: being over a quota is a
-state a filesystem can be *in*, and the answer to it is that the next write says
-`disk full` until room is made. A boot gate that refused would cost the player his
-whole computer for a disk he could have fixed with one `rm` — `osState`'s refusal is
-sticky and the firmware repair deliberately does not reach into the drive.
+That gate asks one question and the slot may not ask a stricter one. What it asks
+is whether the core can run on the disk at all — its shape — and **not** whether the
+disk is over its own ceilings, for exactly the reason the machine's own drive is not
+asked either: being over a quota is a state a filesystem can be *in*, and the answer
+is that the next write says `disk full` until room is made. A gate that refused would
+cost the player his whole computer for a disk he could have fixed with one `rm`,
+because `osState`'s refusal is sticky and the firmware repair deliberately does not
+reach into the drive. And a machine that runs on a disk can hand it out — an eject
+asks nothing — so a *slot* stricter than the boot gate would be a machine handing
+the player a disk that no machine in the world will take back. What bounds a disk
+instead is the envelope every node here lives in: plain tables, valid names, a mode,
+a depth, `MAX_DIR_ENTRIES` to a directory, `HISTORY_BYTES` to a file, `MAX_NODES` in
+all — the same envelope `state.fs` is held to, so a forged disk can do nothing a
+forged filesystem could not already do.
+
+Two things stay on the hard drive whatever is mounted. A `~/.sh_history` is exempt
+from the quota because the exemption is the *drive's* — it exists so `df` on `hda`
+does not move because somebody typed — so a history on a mounted disk is an ordinary
+file there, written through `setData` and bounded by the disk. And the machine's own
+records — the cron log, a mailbox, `/var/log/wtmp` — are found by a walk that does
+not cross a mount and written straight onto the node, so under a mount over `/var`
+the machine stops keeping them until the disk is out rather than leaving them
+somewhere it can never read them again (`CeroSecOS.onOwnDrive`).
 
 **Logical and physical paths.** `getNode` crosses a mount on the path it really
 took, with every symbolic link already followed, and hands back the path that was

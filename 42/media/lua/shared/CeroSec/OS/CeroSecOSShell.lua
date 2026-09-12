@@ -1421,11 +1421,15 @@ commands.cp = function(state, session, args, env)
 	end
 
 	-- A directory never goes inside itself: the copy would be a child of what
-	-- is being copied. Judged on the RESOLVED paths, so "." and ".." cannot
-	-- walk around it -- the same test mv makes for the same reason.
+	-- is being copied. Judged on the paths the WALK takes and not on the ones that
+	-- were typed -- so neither "." and ".." nor a symbolic link can spell a way
+	-- around it. The same test mv makes, for the same reason and with the same
+	-- two paths (see CeroSecOS.moveNode).
 	if node.type == "dir" then
-		local targetAbs = CeroSecOS.resolve(session, target)
-		if CeroSecOS.isInside(targetAbs, srcAbs) then
+		local srcPhys = select(4, CeroSecOS.getNode(state, session, src)) or srcAbs
+		local targetPhys = CeroSecOS.physicalOf(state, session, target)
+			or CeroSecOS.resolve(session, target)
+		if CeroSecOS.isInside(targetPhys, srcPhys) then
 			return fail("cp", target, "invalid destination")
 		end
 	end

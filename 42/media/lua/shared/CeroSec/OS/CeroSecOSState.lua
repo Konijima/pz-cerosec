@@ -224,28 +224,35 @@ end
 -- An UNFORMATTED disk is a disk with no filesystem on it -- the normal state of a
 -- new one out of the box -- so a missing tree is not a fault.
 --
--- Asked in two places and NOT with the same question, which is the whole of what
--- `bounded` is for:
+-- Asked in two places -- by validate below, of the disk in the drive, and by the
+-- SLOT (CeroSecOS.diskFromData), of the disk about to go in -- and it is ONE
+-- question, deliberately.
 --
---   * the BOOT GATE (validate, below) asks whether the core can run on this disk
---     at all -- its shape. It does not ask whether the disk is over its own
---     ceilings, for exactly the reason it does not ask it of the machine's own
---     drive: being over a quota is a state a filesystem can be IN, and the answer
---     to it is that the next write says "disk full" until room is made. A gate
---     that refused would cost the player his whole COMPUTER -- osState's refusal
---     is sticky, and the firmware repair does not reach into the drive -- for a
---     disk he could have fixed with one `rm`.
---   * the SLOT (CeroSecOS.diskFromData) asks `bounded`, because a disk arriving
---     from an item's modData did not necessarily come from a machine like this
---     one. Nothing the write path can do puts a disk past its ceilings, so one
---     that is past them arrived from somewhere nobody can name.
+-- What it asks is whether the core can run on this disk at all: its shape. It does
+-- not ask whether the disk is over its own ceilings, for exactly the reason the
+-- machine's own drive is not asked either -- being over a quota is a state a
+-- filesystem can be IN, and the answer to it is that the next write says "disk
+-- full" until somebody makes room. A gate that refused would cost the player his
+-- whole COMPUTER for a disk he could have fixed with one `rm`: osState's refusal
+-- is sticky, and the firmware repair deliberately does not reach into the drive.
 --
--- The boot gate still bounds the node count, at the machine's own ceiling rather
--- than the floppy's: a walk has to end, and a save file is a thing somebody can
--- write.
+-- And the SLOT may not be stricter than the boot gate, which is the harder half of
+-- the same rule. A machine that will run on a disk is a machine that can HAND ONE
+-- OUT -- an eject asks nothing -- so a slot that refused what the boot gate
+-- accepts would be a machine handing the player a disk that no machine in the
+-- world will take back, with nothing on the screen to say why. That is the trap
+-- the two-question version of this walked straight into, and every disk written by
+-- a build with a hole in its write path is one.
+--
+-- What bounds it instead is the envelope every node on this machine is inside:
+-- plain tables, valid names, a mode, a depth, MAX_DIR_ENTRIES to a directory,
+-- HISTORY_BYTES to a file, MAX_NODES in all. That is the same envelope state.fs is
+-- held to, so every recursive walk over a disk is bounded exactly as it already is
+-- over the hard drive -- and a forged disk can do nothing a forged filesystem
+-- could not already do.
 --
 -- ok, reason.
-function CeroSecOS.validateDisk(disk, bounded)
+function CeroSecOS.validateDisk(disk)
 	if type(disk) ~= "table" then return false, "floppy: not a disk" end
 	local ok, reason = checkPlain(disk, {}, "floppy")
 	if not ok then return false, reason end
@@ -259,9 +266,8 @@ function CeroSecOS.validateDisk(disk, bounded)
 	if type(disk.fs) ~= "table" or disk.fs.type ~= "dir" then
 		return false, "floppy: root is not a directory"
 	end
-	local max = CeroSecOS.MAX_NODES
-	if bounded then max = CeroSecOS.FLOPPY_NODES end
-	local dOk, dReason = checkNode(disk.fs, "", 0, { nodes = 0, max = max })
+	local dOk, dReason =
+		checkNode(disk.fs, "", 0, { nodes = 0, max = CeroSecOS.MAX_NODES })
 	if not dOk then
 		-- checkNode's reasons are "<path>: <why>", and the path is relative to the
 		-- disk's own root, so the word "floppy" goes straight in front of it. Two of
@@ -270,10 +276,6 @@ function CeroSecOS.validateDisk(disk, bounded)
 		local head = string.sub(dReason, 1, 1)
 		if head ~= ":" and head ~= "/" then dReason = ": " .. dReason end
 		return false, "floppy" .. dReason
-	end
-	if bounded then
-		local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
-		if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end
 	end
 	return true
 end

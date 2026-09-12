@@ -362,6 +362,8 @@ end
 -- caller says nothing about it: a line of log that cannot be written is not a
 -- reason to break what was being logged.
 local function ownFile(state, path, mode, owner)
+	-- Not onto a mounted disk: see CeroSecOS.onOwnDrive.
+	if not CeroSecOS.onOwnDrive(state, path) then return nil end
 	local node = CeroSecOS.systemNode(state, path)
 	if type(node) == "table" then
 		if node.type ~= "file" then return nil end
