@@ -5233,6 +5233,56 @@ do
 	okAt(state, root, "cat /dev/door1", { "open" }, env)
 end
 
+-- 21s. A MALL. /dev is the one directory the 96-entry rule does not hold for,
+-- and this is the pair of facts that says so: two hundred devices mount and list,
+-- and /tmp still refuses the ninety-seventh file in the same breath.
+--
+-- Two hundred and not 256, so the assertion is about the exemption and not about
+-- the ceiling being touched: a /dev of exactly DEV_MAX would go green on an engine
+-- that had quietly clamped the mount to 96 and then to the ceiling again.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local entries = {}
+	for i = 1, 200 do
+		entries[i] = { id = "light" .. (i - 1), kind = "light", desc = "mall",
+			side = "", state = "on" }
+	end
+	local env = devEnv(fakeDevices(entries))
+
+	CeroSecOS.mountDev(state, env)
+	local dir = state.fs.children.dev
+	-- The 200 lights plus the machine's own null device.
+	eq("two hundred devices mount in one /dev", CeroSecOS.countEntries(dir), 201)
+	check("which is well past one directory's ceiling",
+		CeroSecOS.countEntries(dir) > CeroSecOS.MAX_DIR_ENTRIES)
+	CeroSecOS.unmountDev(state, env)
+	-- And nothing of them is left behind, so the state gate never sees the mall:
+	-- the 96-entry rule and the node quota are both asked of a /dev with the null
+	-- device in it and nothing else (21g says the same thing about one device).
+	eq("swept off again", CeroSecOS.countEntries(dir), 1)
+	eq("and the machine runs on what is left", CeroSecOS.validate(state), true)
+
+	-- And it LISTS: `dev light` is the everyday face of those nodes, and a
+	-- listing that stopped at 96 would be a mall a survivor can only half reach.
+	local shown = okAt(state, session, "dev light", nil, env)
+	eq("all two hundred are listed", #shown, 200)
+	eq("the first", string.sub(shown[1], 1, 6), "light0")
+	-- light10 before light2: by kind and then by NUMBER, over two hundred of them.
+	eq("in the table's own order", string.sub(shown[200], 1, 8), "light199")
+
+	-- The rule itself has not moved anywhere else. An ordinary directory takes 96
+	-- and refuses the ninety-seventh, which is the ceiling /dev is exempt FROM.
+	okAt(state, session, "mkdir /root/mall", {}, env)
+	for i = 1, CeroSecOS.MAX_DIR_ENTRIES do
+		okAt(state, session, "touch /root/mall/f" .. i, {}, env)
+	end
+	eq("an ordinary directory holds one directory's worth",
+		CeroSecOS.countEntries(state.fs.children.root.children.mall),
+		CeroSecOS.MAX_DIR_ENTRIES)
+	badAt(state, session, "touch /root/mall/last", "touch: /root/mall/last: directory full", env)
+end
+
 --
 -- 22. Groups: /etc/group, the three-digit evaluation, and the five commands.
 --
@@ -11252,12 +11302,12 @@ end
 --
 
 do
-	-- The number comes off the building's KEY, which is what a machine carries on
-	-- its own disk -- so it is answerable for a computer whose chunk nobody has
-	-- loaded, and asking twice is asking the same question.
+	-- THE SUBSCRIBER DIGITS come off the PREMISES KEY, which is what a machine
+	-- carries on its own disk -- so they are answerable for a computer whose chunk
+	-- nobody has loaded, and asking twice is asking the same question.
 	local b1, b2 = CeroSecOS.buildingKey(400, 700)
 	local n = CeroSecOS.phoneKey(b1, b2)
-	check("a building key has a number behind it", n ~= nil)
+	check("a premises key has a number behind it", n ~= nil)
 	eq("asked twice it is the same number", CeroSecOS.phoneKey(b1, b2), n)
 	check("and it is one of the ten thousand there are",
 		n >= 0 and n < CeroSecOS.PHONE_NUMBERS)
@@ -11265,45 +11315,187 @@ do
 	eq("nor is half a key", CeroSecOS.phoneKey(4), nil)
 	eq("nor a byte that is not one", CeroSecOS.phoneKey(256, 0), nil)
 
+	-- ONE LINE PER PREMISES. Every computer of one premises is on one line, so the
+	-- machine at the next desk answers the same number -- which is what a house is,
+	-- and what a shop is.
+	eq("the machine at the next desk is on the same line",
+		CeroSecOS.phoneKey(b1, b2), n)
+
 	-- Two buildings a square apart have keys near each other, and their numbers
 	-- must NOT be: a county where next door is 555-0418 is a county whose
-	-- telephone numbers look made up. That is what the extra step is for.
+	-- telephone numbers look made up. That is what the scatter is for.
 	local e1, e2 = CeroSecOS.buildingKey(401, 700)
 	local far = CeroSecOS.phoneKey(e1, e2)
 	check("the building next door has a number nowhere near it (" .. n .. ", " ..
 		far .. ")", math.abs(far - n) > 100)
 
+	-- A PREMISES INSIDE A BUILDING -- a shop in a mall -- has two bytes of its own,
+	-- hashed out of its outline. The corner alone is not enough: a zone often starts
+	-- on the building's own corner, and a shop that shared the mall's key would be
+	-- the very thing the rule is there to stop.
+	local z1, z2 = CeroSecOS.premisesKey(12858, 1329, 17, 11)
+	check("a zone has a premises key", z1 ~= nil)
+	eq("asked twice it is the same one", select(2, CeroSecOS.premisesKey(12858, 1329, 17, 11)), z2)
+	check("and both bytes are bytes", z1 >= 0 and z1 < 256 and z2 >= 0 and z2 < 256)
+	eq("junk is no key", CeroSecOS.premisesKey("x", 1329, 17, 11), nil)
+	eq("nor is a size that is not one", CeroSecOS.premisesKey(12858, 1329, 17), nil)
+	-- The building whose corner it shares is a DIFFERENT premises.
+	local c1, c2 = CeroSecOS.buildingKey(12858, 1329)
+	check("a zone on the building's own corner is not the building",
+		z1 ~= c1 or z2 ~= c2)
+	-- And two zones on one corner with different outlines are two premises, which
+	-- is the mall-wide zone and the shop inside it.
+	local w1, w2 = CeroSecOS.premisesKey(12858, 1329, 120, 90)
+	check("two zones on one corner are two premises", z1 ~= w1 or z2 ~= w2)
+	-- Their NUMBERS differ too, which is the fact that matters: two shops in a mall
+	-- are two telephone lines.
+	check("and two lines", CeroSecOS.phoneKey(z1, z2) ~= CeroSecOS.phoneKey(w1, w2))
+	check("neither of them the mall's own",
+		CeroSecOS.phoneKey(z1, z2) ~= CeroSecOS.phoneKey(c1, c2))
+
+	-- THE EXCHANGE is a fact about the TOWN: the region the premises corner falls
+	-- in, so every subscriber of one town is on one central office.
+	local ex = CeroSecOS.phoneExchange(400, 700)
+	check("a corner has an exchange", ex ~= nil)
+	check("and it could be a central office code (" .. tostring(ex) .. ")",
+		ex >= CeroSecOS.PHONE_EXCHANGE_MIN and ex <= CeroSecOS.PHONE_EXCHANGE_MAX)
+	eq("junk has none", CeroSecOS.phoneExchange("x", 700), nil)
+	-- Every corner of one region is one office, edge included.
+	local R = CeroSecOS.PHONE_REGION
+	eq("the far corner of the same region is the same office",
+		CeroSecOS.phoneExchange(R - 1, R - 1), CeroSecOS.phoneExchange(0, 0))
+	check("and one tile over the edge is another one",
+		CeroSecOS.phoneExchange(R, 0) ~= CeroSecOS.phoneExchange(0, 0))
+	-- A tile apart across a region boundary is a DIFFERENT town, and the two
+	-- offices must not be consecutive either.
+	check("whose code is nowhere near it",
+		math.abs(CeroSecOS.phoneExchange(R, 0) - CeroSecOS.phoneExchange(0, 0)) > 1)
+
 	-- Written one way, and only one.
-	eq("four digits behind the exchange", CeroSecOS.phoneText(417), "555-0417")
-	eq("and the first number of all is padded", CeroSecOS.phoneText(0), "555-0000")
-	eq("the last one is not", CeroSecOS.phoneText(9999), "555-9999")
-	eq("there is no ten thousandth", CeroSecOS.phoneText(10000), nil)
-	eq("nor a negative one", CeroSecOS.phoneText(-1), nil)
-	eq("nor one made of a string", CeroSecOS.phoneText("417"), nil)
+	eq("seven digits", CeroSecOS.phoneText(555, 417), "555-0417")
+	eq("and the first number of all is padded", CeroSecOS.phoneText(555, 0), "555-0000")
+	eq("the last one is not", CeroSecOS.phoneText(999, 9999), "999-9999")
+	eq("the first office there is", CeroSecOS.phoneText(200, 1), "200-0001")
+	eq("there is no ten thousandth", CeroSecOS.phoneText(555, 10000), nil)
+	eq("nor a negative one", CeroSecOS.phoneText(555, -1), nil)
+	eq("no office under two hundred", CeroSecOS.phoneText(199, 1), nil)
+	eq("nor one over nine hundred and ninety nine", CeroSecOS.phoneText(1000, 1), nil)
+	eq("nor one made of a string", CeroSecOS.phoneText("555", 417), nil)
 
 	check("a number is a number", CeroSecOS.isPhoneNumber("555-0417"))
-	check("three digits are not", not CeroSecOS.isPhoneNumber("555-417"))
+	check("and so is another town's", CeroSecOS.isPhoneNumber("263-1940"))
+	check("three digits behind the hyphen are not",
+		not CeroSecOS.isPhoneNumber("555-417"))
 	check("five are not", not CeroSecOS.isPhoneNumber("555-04170"))
-	check("another exchange is not", not CeroSecOS.isPhoneNumber("556-0417"))
+	check("an office code beginning with 1 is not",
+		not CeroSecOS.isPhoneNumber("155-0417"))
+	check("nor one beginning with 0", not CeroSecOS.isPhoneNumber("055-0417"))
+	check("nor two digits of one", not CeroSecOS.isPhoneNumber("55-0417"))
 	check("an address is not", not CeroSecOS.isPhoneNumber("10.4.17.2"))
 	check("and neither is a name", not CeroSecOS.isPhoneNumber("gate"))
 
 	-- The machine's own line comes off the same record the address does, so the
-	-- two can never disagree about whether the computer is in a building at all.
+	-- two can never disagree about whether the computer is on a premises at all.
 	local state = fresh()
 	eq("a machine with no record has no line", CeroSecOS.phoneOf(state), nil)
-	check("a record is written", CeroSecOS.setNetRecord(state, b1, b2, 3) ~= nil)
-	eq("and the line is the building's", CeroSecOS.phoneOf(state),
-		CeroSecOS.phoneText(n))
-	-- Two machines of one building share it, which is what one line per building
-	-- means: the number is the LINE's and the last byte of the address is not in it.
+	-- A RECORD WITH NO EXCHANGE IN IT is every machine of every save written
+	-- before the line belonged to the premises: it has an address and no telephone,
+	-- and it stays that way until the server sees its square again.
+	check("a record with three numbers is written",
+		CeroSecOS.setNetRecord(state, b1, b2, 3) ~= nil)
+	eq("it has an address", CeroSecOS.address(state), CeroSecOS.addressText(b1, b2, 3))
+	eq("and no line at all", CeroSecOS.phoneOf(state), nil)
+	-- And then it has one, and it is the premises's.
+	check("the exchange is written into it",
+		CeroSecOS.setNetRecord(state, b1, b2, 3, ex) ~= nil)
+	eq("and the line is the premises's", CeroSecOS.phoneOf(state),
+		CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2)))
+	-- The other machine on the premises is on the same line, which is what one line
+	-- per premises means: the last byte of the address is not in the number.
 	local other = fresh()
-	CeroSecOS.setNetRecord(other, b1, b2, 9)
-	eq("the other machine in the room answers the same number",
+	CeroSecOS.setNetRecord(other, b1, b2, 9, ex)
+	eq("the machine at the next desk answers the same number",
 		CeroSecOS.phoneOf(other), CeroSecOS.phoneOf(state))
-	-- And it is nowhere on the disk: the number belongs to the wall.
+	-- And a machine in the shop next door is on another line.
+	local shop = fresh()
+	CeroSecOS.setNetRecord(shop, z1, z2, 1, ex)
+	check("the shop next door is on another line",
+		CeroSecOS.phoneOf(shop) ~= CeroSecOS.phoneOf(state))
+	-- An exchange that is not one is a forged save and not a machine with half a
+	-- record: the whole record goes, address included.
+	eq("an office code nobody could have written is refused",
+		CeroSecOS.setNetRecord(other, b1, b2, 9, 42), nil)
+	other.net = { b1 = b1, b2 = b2, n = 9, ex = 42 }
+	eq("and one found in a save is no record at all",
+		CeroSecOS.netRecord(other), nil)
+	-- And it is nowhere on the disk: the number belongs to the line.
 	eq("there is no file holding it",
 		CeroSecOS.systemNode(state, "/etc/phone"), nil)
+end
+
+-- WHAT THE PREMISES IS CALLED, which is a label on the record and nothing else:
+-- no link reads it, nothing is keyed by it, and the firmware is the only thing
+-- that prints it.
+do
+	local b1, b2 = CeroSecOS.premisesKey(12858, 1329, 17, 11)
+	local ex = CeroSecOS.phoneExchange(12858, 1329)
+	local state = fresh()
+
+	-- A machine whose premises is the building it stands in has no name.
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex)
+	eq("a premises with no name has none", CeroSecOS.premisesName(state), nil)
+	eq("and the BIOS line is the number alone", CeroSecOS.phoneLine(state),
+		CeroSecOS.phoneOf(state))
+
+	-- A shop the map named carries it, and the firmware says which line it is.
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "CoffeeShop")
+	eq("a named premises carries its name", CeroSecOS.premisesName(state), "CoffeeShop")
+	eq("and the BIOS line says which line it is", CeroSecOS.phoneLine(state),
+		CeroSecOS.phoneOf(state) .. " (CoffeeShop)")
+	check("which fits the screen",
+		#CeroSec.BOOT_PHONE + #CeroSecOS.phoneLine(state) <= CeroSecOS.COLS)
+
+	-- A name too long for the line is DROPPED and not cut in half: the number is
+	-- the half a survivor has to write down, and the machine still has its line.
+	local long = string.rep("a", CeroSecOS.COLS - 4)
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, long)
+	eq("a name that will not fit is left off the BIOS line",
+		CeroSecOS.phoneLine(state), CeroSecOS.phoneOf(state))
+	check("the line itself is untouched", CeroSecOS.phoneOf(state) ~= nil)
+
+	-- A name that is not one is dropped when the record is written, and the record
+	-- is still written: a premises is its two bytes and the name is a word.
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "bad\1name")
+	eq("a name with control bytes in it is dropped", CeroSecOS.premisesName(state), nil)
+	check("and the machine still has its line", CeroSecOS.phoneOf(state) ~= nil)
+	-- One found in a SAVE is a forged record, which is the rule every other field
+	-- of it already runs on.
+	state.net = { b1 = b1, b2 = b2, n = 1, ex = ex, pz = 42 }
+	eq("a name that is not a string is no record at all",
+		CeroSecOS.netRecord(state), nil)
+end
+
+-- How long a dial takes, and the one setting behind it: the modem's S7 register.
+do
+	eq("S7 is fifteen seconds", CeroSecOS.MODEM_S7, 15)
+	eq("and that is what a call with nobody at the far end costs",
+		CeroSecOS.RING_TIMEOUT_MS, CeroSecOS.MODEM_S7 * 1000)
+	eq("an answered call is the handshake", CeroSecOS.ringMs(nil),
+		CeroSecOS.RING_ANSWER_MS)
+	eq("a busy line is the busy tone", CeroSecOS.ringMs(CeroSecOS.MODEM.busy),
+		CeroSecOS.RING_BUSY_MS)
+	eq("and nobody answering is S7", CeroSecOS.ringMs(CeroSecOS.MODEM.noCarrier),
+		CeroSecOS.RING_TIMEOUT_MS)
+	-- The two that are not a ring at all: there is nothing to wait through when the
+	-- receiver says so the instant it is lifted.
+	eq("no dial tone is heard at once",
+		CeroSecOS.ringMs(CeroSecOS.MODEM.noDialtone), 0)
+	eq("and a machine with no line never lifted one",
+		CeroSecOS.ringMs(CeroSecOS.CU_NO_LINE), 0)
+	check("the handshake is shorter than giving up",
+		CeroSecOS.RING_ANSWER_MS < CeroSecOS.RING_TIMEOUT_MS)
+	check("and a busy tone is the shortest of the three",
+		CeroSecOS.RING_BUSY_MS < CeroSecOS.RING_ANSWER_MS)
 end
 
 -- The words. Four are the modem's and two are cu's, and the modem's are in
@@ -11348,8 +11540,16 @@ do
 	eq("cu on a machine with no line fails", ok, false)
 	eq("in its own words", lines[1], "cu: no phone line")
 
-	-- Now it has one, and what is refused is the shape of the number.
+	-- A record with no exchange in it is still a machine with no telephone: the
+	-- address is the coax's and the line is the modem's, and an older save has only
+	-- the first of the two.
 	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	local oldSave, oldLines = CeroSecOS.runArgs(state, admin, { "cu", "555-0417" }, nil, env)
+	eq("a record with no exchange has no line either", oldSave, false)
+	eq("and cu says the same thing about it", oldLines[1], "cu: no phone line")
+
+	-- Now it has one, and what is refused is the shape of the number.
+	CeroSecOS.setNetRecord(state, 4, 17, 2, 555)
 	local shapes = { "5550417", "555-417", "gate", "10.4.17.2", "555-04170" }
 	for i = 1, #shapes do
 		local o, l = CeroSecOS.runArgs(state, admin, { "cu", shapes[i] }, nil, env)

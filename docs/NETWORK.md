@@ -1,6 +1,6 @@
 # CeroSec — Network
 
-Three links, one command surface: coax inside a building, the phone across the
+Three links, one command surface: coax inside a premises, the phone across the
 county, and radio to whatever is in earshot. Identities and their derivations,
 each link's own rules and rates, the pty a remote session lives on, and where
 every result string a player reads actually comes from.
@@ -10,16 +10,59 @@ player uses them, [PROTOCOL.md](PROTOCOL.md) for whose screen a remote order
 writes to and the terminal rule for `rlogin`/`rsh`, [SECURITY.md](SECURITY.md) for
 the security angle on trust files.
 
-## Ethernet, and the machines of a building
+## Ethernet, and the machines of a premises
 
-Every computer in a **map building** is on one length of coax with the others,
-and it has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two
-bytes come from where the building stands and the last is which computer of it
-this is. The BIOS announces it between the drive and the login, `ifconfig`
-prints it any time, and nothing sets it -- the address is a fact about the card
-the way the hostname is a fact about the machine. A computer in a base **you**
-built is in no building the map knows about, so it has no wire at all and says
-so: `eth0: flags=2<BROADCAST>` with no address under it.
+Every computer on a **premises** is on one length of coax with the others, and it
+has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two bytes
+come from where the premises is and the last is which computer of it this is.
+
+**A premises is not a building.** A house is one building and one premises; a
+shopping mall is one building and thirty shops, and each shop is its own -- its own
+segment and its own telephone line. Which it is comes out of the map data and is
+decided in one place (`CeroSecNet.premisesOf`):
+
+> the premises is the named `ZombiesType` zone containing the machine's square
+> whose area (`w*h`) is strictly smaller than the building's own footprint
+> (`(x2-x)*(y2-y)` of its `BuildingDef`); the **smallest** such zone when several
+> qualify; and otherwise the building itself.
+
+Map designers tag the shops inside a mall with small named `ZombiesType` zones --
+`CoffeeShop`, 17 by 11, at 12858,1329 -- because that is how the spawner is told
+what kind of dead belongs in a shop, and it is the only place the shipped map data
+gives a shop an outline of its own (a `RoomDef`'s name is a **loot type**,
+`clothsstore`, and says nothing about tenancy). The area test is the whole of what
+tells a tenancy from a region: the named zones a *house* sits in are the other kind
+-- a suburb, a district, a whole town -- all of them bigger than the house. A zone
+exactly the building's size is the building under another name and loses on the
+same test. So on the map that ships, almost every machine is where it was and only
+a mall changes.
+
+The two bytes come from `CeroSecOS.buildingKey(bx, by)` for a building, unchanged,
+so **existing saves keep their addresses**; and from
+`CeroSecOS.premisesKey(zx, zy, zw, zh)` for a zone, which is the same arithmetic
+over four numbers -- the corner hashed as a building corner is, the size hashed the
+same way, and the two added. The size has to be in it: a zone's corner is very
+often the building's own, and a key made of the corner alone would *be* the
+building's.
+
+Every engine call this needs is `javap`'d on `projectzomboid.jar` 42.20.4:
+`IsoWorld.getMetaGrid()`, `IsoMetaGrid.getZonesAt(int,int,int)` (an
+`ArrayList<zombie.iso.zones.Zone>`), `Zone.getName/getType/getX/getY/getWidth/getHeight`
+(plain `getfield` on `name`, `type`, `x`, `y`, `w`, `h`) and
+`BuildingDef.getX/getY/getX2/getY2`. The getters and not the public fields, which
+is what the game's own Lua does (`shared/Traps/TrapSystem.lua:12-17`).
+
+**Migration.** A net record written before this wave carries the *building* bytes
+and no exchange. It is rebuilt when the machine's square is loaded -- the two
+moments `CeroSecNet.identify` is called, switching on and opening a window -- and
+until then such a machine has an address and **no telephone at all**: an empty
+BIOS phone line and `cu: no phone line`.
+
+The BIOS announces the address between the drive and the login, `ifconfig` prints
+it any time, and nothing sets it -- the address is a fact about the card the way
+the hostname is a fact about the machine. A computer in a base **you** built is on
+no premises the map knows about, so it has no wire at all and says so:
+`eth0: flags=2<BROADCAST>` with no address under it.
 
 Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
 machine's own line and the machine never writes in it again, so the first thing
@@ -36,8 +79,11 @@ server on this rung, so the two halves of the wire do not meet on their own:
 `ping` and `rlogin` want a name `/etc/hosts` carries, and until there was an
 `arp` nothing on the disk joined the two -- `ruptime` showed `office` and
 `ping office` said `unknown host`. `arp -a` is the cache: every other machine of
-the building that is switched on, in `arp(8)`'s own shape, with a `?` for an
-address no line of `/etc/hosts` names yet.
+the premises that is switched on, in `arp(8)`'s own shape, with a `?` for an
+address no line of `/etc/hosts` names yet. The wire is the premises's, so the
+shop next door is not on it: `ping bakery` from the coffee shop is
+`100% packet loss` and `rlogin bakery` is `No route to host`, and the telephone is
+what reaches it.
 
 ```
 admin@ksp-04-11:~$ arp -a
@@ -48,13 +94,13 @@ root@ksp-04-11:~# echo "10.4.17.4 office" >> /etc/hosts
 
 `arp <host>` is one entry, by name or by address, and
 `<host> (<addr>) -- no entry` -- arp's own line, unsigned -- for a machine it
-resolved and has no card for: switched off, or in another building. A name
+resolved and has no card for: switched off, or on another premises. A name
 nothing resolves is `arp: <host>: unknown host`. The machine itself is in no
 cache of its own, exactly as no kernel ARPs for its own address.
 
 The Ethernet address is **derived** from the network address (`8:0:20` is Sun's
 OUI, which is what a county office's boxes were, and the three low bytes come
-from `b1`, `b2` and `n` through the same multiply-add modulo 2^16 the building
+from `b1`, `b2` and `n` through the same multiply-add modulo 2^16 the premises
 key uses). It is stored nowhere, so the same machine answers the same card for
 ever, and the three forms of `arp(8)` that CHANGE a line -- `-d`, `-s`, `-f` --
 are not here rather than here and lying.
@@ -70,7 +116,7 @@ names: they are reports the machines broadcast about themselves.
 | `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
 | `arp -a \| arp <host\|address>` | the cards on the wire, address by address |
 | `ping <host\|address>` | three packets a second apart, and the statistics |
-| `ruptime` | the machines of this building that are switched on |
+| `ruptime` | the machines of this premises that are switched on |
 | `rwho` | who is logged in on them |
 | `who [am i]` | who is logged in *here*, with where each came from |
 | `last [name]` | the logins in `/var/log/wtmp`, newest first |
@@ -117,8 +163,8 @@ NAME is matched the only way this rung can match one: through the trusting
 machine's own `/etc/hosts`, against the address the session arrived from. It is
 never matched against the name the caller announces. That name is the caller's
 own `/etc/hostname`, a `644` file its own root may write to anything, so a
-machine that trusted one would let anybody with root on any computer in the
-building type `hostname gate` and walk in through a line somebody wrote about
+machine that trusted one would let anybody with root on any computer on the
+premises type `hostname gate` and walk in through a line somebody wrote about
 gate -- which is why `ruptime`'s names are reports and not credentials, and why
 a caller with no address at all (a telephone call, a radio link) is trusted by
 neither file. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
@@ -173,17 +219,49 @@ rather than the formality it is on a real one.
 
 ## The telephone
 
-The coax reaches one building. The telephone reaches the county.
+The coax reaches one premises. The telephone reaches the county.
 
-A building the map knows has **one line** in it, and the number belongs to the
-line and not to a machine: every computer in that building answers on it, one
-call at a time. It is `555-NNNN` -- the exchange fiction has used since the Bell
-System set it aside -- and the four digits are derived from where the building
-stands, exactly as the address is, so nobody can type a new one. The firmware
-announces it under the card, and that BIOS screen is the **only** place it is
-written: there is no `/etc/phone`, because the number belongs to the wall and not
-to the disk in the case. A computer in a base you built is in no building, so it
-has no line: `cu: no phone line`.
+A premises has **one line**, and the number belongs to the line and not to a
+machine: every computer on that premises answers on it, one call at a time. So a
+house is one number and a mall is thirty -- which is the fix for the two things one
+line per *building* got wrong: thirty businesses shared one number, and only the
+lowest-numbered computer of the whole mall could ever be rung.
+
+The number is seven digits, `NNN-NNNN`, which is what a call inside one area code
+was dialled as in 1993:
+
+- the **exchange** is the first three and it is a fact about the *town*: the
+  `CeroSecOS.PHONE_REGION`-tile map region the premises corner falls in, hashed, so
+  every subscriber around here shares it and the next town is on another switch.
+  200 to 999, because a central-office code could not begin with 0 or 1 in the
+  North American plan of 1993. A region and not the game's own 300-tile cell: a
+  cell is smaller than Rosewood and every town would be three exchanges.
+- the **four digits** are the premises, derived from the same two bytes the
+  address's middle is made of, so nobody can type a new one.
+
+The exchange is the one thing that cannot be derived from the record -- a region is
+a coordinate and the record has none -- so the record carries it as a field
+(`ex`), written when the machine learns where it is standing. The record also
+carries what the premises is *called* (`pz`), and that is a label only: no link
+reads it and nothing is keyed by it.
+
+The firmware announces the number under the card, and that BIOS screen is the
+**only** place it is written -- there is no `/etc/phone` -- with the premises name
+behind it when the map gave it one and the line fits the screen:
+
+```
+Phone line: 555-0417 (CoffeeShop)
+```
+
+A computer in a base you built is on no premises the map knows, so it has no line:
+`cu: no phone line`. Neither has a machine off an older save until its square is
+loaded again.
+
+**A party line**, which is what a rural exchange really sold in 1993, and there are
+two ways onto one: several machines of one premises (a house has one line and one
+modem set to answer), and two premises that hashed onto one number -- ten thousand
+subscriber numbers to a region. Either way the **lowest address answers**, every
+time, and the line is busy for all of them while it is up.
 
 | command | does |
 | --- | --- |
@@ -202,6 +280,52 @@ answered, `BUSY` when the line is in use at either end, `NO DIALTONE` when there
 is no exchange, and `NO CARRIER` when nobody answered or the line went away
 under a call that was up. `Connected.` and `Disconnected.` are `cu(1)`'s own two
 lines.
+
+### The ring
+
+A dial is a **wait**, and nothing is on the screen while it lasts: the modem goes
+off-hook, dials, and the far end rings. Which of the three outcomes it will be is
+asked of the link layer the moment the receiver is lifted (`env.net.phone`, which
+is `CeroSecNet.ringAnswer`), and then the machine holds the line for as long as
+that outcome takes (`CeroSecOS.ringMs`):
+
+| outcome | wall clock | why that number |
+| --- | --- | --- |
+| `CONNECT 2400` | 4 s | what a 2400-baud handshake took: off-hook, the tones, the answer tone, agreeing a speed |
+| `BUSY` | 2 s | the exchange returns busy tone as soon as it has looked the number up, and the modem needs two of them to know a tone from an answer |
+| `NO CARRIER` | 15 s | the modem's **S7 register**, which is how long a Hayes-compatible modem waits for a carrier after dialling before it hangs up. The factory default was 30 or 50 depending on the model; this modem has `S7=15`, and that is a **setting**, declared here and in the manual so it is a fact about this modem and not a number invented here (`CeroSecOS.MODEM_S7`) |
+| `NO DIALTONE` | none | what the receiver tells you the instant it is lifted |
+| `cu: no phone line` | none | the machine never lifted one |
+
+Wall-clock seconds, like every other delay on either link (`PHONE_LINES_PER_S` is
+a wall-clock rate and `rcp`'s wait is wall-clock milliseconds): a call is a thing
+happening in a room and not in game hours.
+
+**The wait costs nothing.** It is the VM's ordinary sleep -- `applyControl`'s
+`"sleep"` with a `cont` on it -- so `jobStep` answers `sleeping` and spends no step
+before it ever reaches the walker. `hostile_test` drives four machines ringing at
+once for a hundred and forty passes and asserts not one step spent by anybody, and
+that the ring still ends.
+
+**Both ends are busy for the length of the ring.** There is no pty yet, so that
+half is read off the **job** that is dialling (`CeroSecNet.ringOf`, walked by
+`lineBusy`) -- which is the same doctrine the busy rule already ran on one step
+along: the thing that is waiting *is* the record of the ring, and a job that has
+gone -- Escape, `kill`, the cpu ceiling, the machine going dark -- has hung up by
+the same act. Nothing is counted anywhere, so nothing can leak.
+
+**Escape aborts a dial**, and the word is the modem's own: `NO CARRIER`, which is
+what a Hayes modem prints when the DTE puts the receiver down before a carrier
+came up. The word is written into the ring record by `cu` itself, so `killJob` says
+the line it was handed and the VM never learns what a modem is.
+
+The world is asked **again at the door** when the ring is over: four seconds is
+time enough for the far machine to be switched off, and what a caller gets then is
+`NO CARRIER` rather than a session on a computer that has gone.
+
+A dial with no terminal behind it is refused **before** the ring and not after it
+(`applyControl`, on the `dial` field of the wait): a crontab line must not hold a
+telephone line open for fifteen seconds to be told `cu: not a terminal`.
 
 From `login:` on it is `rlogin`'s session -- the far machine's files, its
 accounts, one of its same four `ttyp` lines, its jobs, and it counts as a hop of
@@ -227,8 +351,8 @@ history. (The other tilde escapes are not here: `~!` is a second shell and
 `^C` for whatever is running over there, and the end of an idle session.
 
 `rsh` and `rcp` do **not** dial. They are network commands -- `rcmd(3)`, a
-socket, a route -- and a call is not a route: `rsh shed date` on a machine in
-another building is `No route to host` whether or not you could have called it.
+socket, a route -- and a call is not a route: `rsh shed date` on a machine on
+another premises is `No route to host` whether or not you could have called it.
 Copying a file by telephone was `uucp`'s job, and `uucp` is not on this disk.
 
 **The exchange is the county's grid.** A telephone exchange is a building full of
@@ -236,7 +360,8 @@ switches on the mains, so the day the sandbox's power cutoff arrives there is no
 dial tone anywhere, for good -- and a call that was up when it happened comes
 back as `NO CARRIER`. That is the real difference between the two links: the coax
 is two machines and a wire and goes on working with a generator at each end,
-while a call needs a third building that is still working. Whether the grid is
+while a call needs a third building that is still working. A grid that dies under
+a ring takes the ring with it: the door asks again when the wait is over. Whether the grid is
 alive is asked the way the game's own Lua asks it (`ISButtonPrompt.lua:520`).
 A server that wants it otherwise sets one option:
 
@@ -248,7 +373,7 @@ A server that wants it otherwise sets one option:
 
 ## The radio
 
-The coax reaches one building, the telephone reaches the county, and the radio
+The coax reaches one premises, the telephone reaches the county, and the radio
 reaches whatever is in earshot of an aerial -- with no wire and no exchange, which
 makes it the **only link that outlives the county's power**.
 
@@ -280,7 +405,7 @@ admin@ksp-04-11:~$ cat /etc/callsign
 KD4AXR
 ```
 
-Root's and `644`, seeded with one derived from the building key and the machine's
+Root's and `644`, seeded with one derived from the premises key and the machine's
 own number -- `K`/`N`/`W`, an optional second letter, the fourth call district's
 digit (Kentucky), and three letters, which is what a United States amateur held in
 1993 -- and announced by the firmware under the modem, the way a TNC printed its
@@ -348,7 +473,7 @@ server that doubled them would be a server where the manual's arithmetic is wron
 
 The engine's half is `shared/CeroSec/OS/CeroSecOSNet.lua` and it knows nothing
 about the game: the four files (`/etc/hosts`, `/etc/hosts.equiv`, `~/.rhosts`,
-`/var/log/wtmp`), the arithmetic that turns a building's corner into two bytes of
+`/var/log/wtmp`), the arithmetic that turns a premises's corner into two bytes of
 an address, the shape of every line the five listing commands print, the trust
 rules, and the pty table a session lives in. Two functions carry the whole of the
 name question and nothing else calls the resolver behind their backs:
@@ -380,7 +505,7 @@ about "a new kind of link and not a new command" came to:
 
 | kind | the answer | the rule |
 | --- | --- | --- |
-| Ethernet | `reachable(system, from, addr)` | the same map building, both machines on |
+| Ethernet | `reachable(system, from, addr)` | the same premises, both machines on |
 | telephone | `reachablePhone(system, from, tel)` | both have a line, both on, the exchange alive, the line free at each end |
 | radio | `reachableRadio(system, from, call)` | both machines on, a two-way set in reach of each and both switched on and powered, the same channel, inside the smaller transmit range, both sets free, and both chunks loaded |
 
@@ -388,14 +513,17 @@ Three answers, no new command learnt and no engine file touched by the second an
 third except to add one of their own. What a new kind owes, and the telephone and
 the radio are the two worked examples:
 
-- **an identity**, derived and not stored twice. The number comes off the
-  building key already on the machine's disk (`CeroSecOS.phoneKey` of
+- **an identity**, derived and not stored twice. The four subscriber digits come
+  off the premises key already on the machine's disk (`CeroSecOS.phoneKey` of
   `netRecord`'s `b1`/`b2`, one more multiply-add modulo 2^16 so that adjacent
-  buildings are not adjacent numbers), so it is answerable for a machine whose
-  chunk nobody has loaded, needs no new field in the save and no migration, and
-  cannot disagree with the address about whether the computer is in a building.
-  Collisions are documented rather than fixed: two buildings on one number are
-  two buildings on one line, and nothing here routes.
+  premises are not adjacent numbers), so they are answerable for a machine whose
+  chunk nobody has loaded and cannot disagree with the address about whether the
+  computer is on a premises at all. The exchange is the one half that could not be
+  derived -- a region is a coordinate and the record has none -- so it is a field
+  (`ex`), which is what makes this the one identity on the rung that needed a
+  migration. Collisions are documented rather than fixed: two premises on one
+  number are two premises on one line, which is a party line, and nothing here
+  routes.
 - **its own refusals**, in the voice of the hardware that would have said them:
   strerror's words for a socket, a Hayes modem's result codes for a call.
 - **a marked pty**. `pty.phone` is the whole of what makes a session a call --
@@ -433,7 +561,7 @@ is the first link that is a THING STANDING ON A TILE:
   over at all (`IsoWaveSignal.addToWorld` -> `RegisterDevice`).
 - **a device, not a second discovery.** The TNC is one entry appended to
   `CeroSecDevices.find`, with its own reach (`CeroSecRadio.REACH`) because a TNC
-  has a foot of cable and the ordinary walk covers a whole building. Its
+  has a foot of cable and the ordinary walk covers a whole premises. Its
   vocabulary is empty and its mode is therefore `440`, not `660`: the sensor's
   rule -- a `w` bit must not promise a write that cannot happen -- applied twice.
 - **a failure the other links do not have.** No aerial, an unloaded chunk, a

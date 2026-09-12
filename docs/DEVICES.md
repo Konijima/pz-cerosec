@@ -262,8 +262,25 @@ The trailing `0` is an ordinal that tells two devices of one kind facing the sam
 way on one square apart — the object index would have done it and is not stable
 across a reload. An entry is **never removed**: the number is spent, so a device
 that is torn out leaves a gap and nothing is renumbered under a script. The book
-is capped at `CeroSecDevices.MAP_MAX` (128) so a computer carried across the map
-does not grow one entry per light switch in the county.
+is capped at `CeroSecDevices.MAP_MAX` (512) so a computer carried across the map
+does not grow one entry per light switch in the county. Twice `CeroSecOS.DEV_MAX`
+on purpose: the book has to hold the building the machine stands in *and* the one
+it stood in before, or a computer carried back into a mall it has already numbered
+gives every light a second number.
+
+**The two ceilings.** `CeroSecOS.DEV_MAX` (256) is how many nodes `/dev` may hold
+at once, and it is the only ceiling `/dev` answers to: the 96-entry directory rule
+(`CeroSecOS.MAX_DIR_ENTRIES`) guards the *write* path, and the write path refuses
+`/dev` as read-only one gate earlier — nothing but the mount can put an entry
+there, and the mount is held to `DEV_MAX`. It was 64, and 64 was a computer in one
+store of a shopping mall that could not see half the mall: a mall is **one**
+building as far as `BuildingDef` is concerned, so every store's lights, doors and
+windows are on that one machine's `/dev`, and the map ships buildings with several
+hundred. A device a survivor cannot see through `dev` is a device he cannot reach
+at all. The cost is paid per command (the mount is built afresh at the top of each
+one and swept off before the answer) and never in the save file: a device node
+costs the disk quota nothing (`CeroSecOS.subtreeUsage`) and the state gate refuses
+any device of the world on a saved disk.
 
 **The sync calls**, and why these ones. Every one is verified with `javap` against
 `projectzomboid.jar` (42.20.4). The point that matters is *who broadcasts*: our

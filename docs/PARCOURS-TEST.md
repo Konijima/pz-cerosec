@@ -1102,16 +1102,28 @@ passait dans un seul bâtiment. Les deux doivent avoir du courant. Dans ce qui
 suit, `ici` est la machine devant laquelle on est assis et `là-bas` celle de
 l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
 
+Depuis cette vague, la ligne appartient au **local** (« premises ») et non au
+bâtiment : une maison est un local, un centre commercial en est trente. Les pas
+215b et 215c sont là pour ça, et ils demandent un mall (le mall de Louisville ou
+celui de West Point) avec deux boutiques différentes.
+
 210. **Le numéro.** Allumer les deux et regarder le BIOS de chacun : sous la
      ligne `Ethernet: eth0 10.x.y.z` il doit y avoir une ligne
-     `Phone line: 555-NNNN`. Les deux machines d'un **même** bâtiment (celles de
-     la section N) doivent afficher le **même** numéro ; celle de l'autre
-     bâtiment un numéro différent. Vérifier ensuite qu'il n'est écrit nulle part
-     sur le disque : `cat /etc/phone` → `no such file`, et `ifconfig` ne le
-     montre pas (ce n'est pas une interface tant qu'on n'a pas appelé). Éteindre
-     et rallumer : le même numéro revient. [ ]
-211. **L'appel.** Depuis `ici` : `cu 555-NNNN` (le numéro de `là-bas`) →
-     `CONNECT 2400`, puis `Connected.`, puis le `login:` de l'autre machine.
+     `Phone line: NNN-NNNN` — **sept** chiffres, et le premier des trois premiers
+     n'est jamais 0 ni 1. Les deux machines d'un **même** local (celles de la
+     section N, dans une maison) doivent afficher le **même** numéro ; celle de
+     l'autre bâtiment un numéro différent. Si les deux bâtiments sont dans la même
+     région de la carte (moins de 1024 tuiles d'écart), les **trois premiers**
+     chiffres doivent être les mêmes des deux côtés : c'est le central de la
+     ville. Vérifier ensuite qu'il n'est écrit nulle part sur le disque :
+     `cat /etc/phone` → `no such file`, et `ifconfig` ne le montre pas (ce n'est
+     pas une interface tant qu'on n'a pas appelé). Éteindre et rallumer : le même
+     numéro revient. [ ]
+211. **L'appel, et la sonnerie.** Depuis `ici` : `cu 555-NNNN` (le numéro de
+     `là-bas`). **Rien ne s'affiche pendant environ quatre secondes** — c'est le
+     modem qui compose et le poste d'en face qui sonne ; compter, ça doit se
+     sentir — puis `CONNECT 2400`, puis `Connected.`, puis le `login:` de l'autre
+     machine.
      S'y connecter (`admin`, Entrée) : l'invite devient `admin@<là-bas>`,
      `hostname` répond le nom de l'autre machine et `pwd` son `/home/admin`.
      Vérifier que le mot de passe est demandé **même** si `/etc/hosts.equiv` de
@@ -1127,14 +1139,25 @@ l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
      doivent arriver **par petits paquets** (quatre par seconde), visiblement
      plus lentement que la même commande tapée sur sa propre machine. Rien ne
      doit manquer à la fin. [ ]
-213. **Une ligne par bâtiment.** Pendant un appel ouvert entre `ici` et `là-bas`,
-     aller à la **deuxième** machine du bâtiment de `ici` (celle de la section N)
-     et taper `cu 555-NNNN` → `BUSY`. Depuis cette même machine, appeler le
-     numéro de son **propre** bâtiment → `BUSY` aussi. Raccrocher (`~.`), puis
-     depuis `ici` appeler le numéro de sa propre machine → `BUSY` (une ligne
+213. **Une ligne par local.** Pendant un appel ouvert entre `ici` et `là-bas`,
+     aller à la **deuxième** machine du local de `ici` (celle de la section N) et
+     taper `cu 555-NNNN` → `BUSY` après environ **deux** secondes (la tonalité
+     d'occupation est plus courte que la sonnerie). Depuis cette même machine,
+     appeler le numéro de son **propre** local → `BUSY` aussi. Raccrocher (`~.`),
+     puis depuis `ici` appeler le numéro de sa propre machine → `BUSY` (une ligne
      qu'on utilise soi-même). Enfin, éteindre toutes les machines de `là-bas` et
-     appeler son numéro → `NO CARRIER`, comme pour un numéro que personne n'a
-     (`cu 555-0000`, si aucun bâtiment ne l'a). [ ]
+     appeler son numéro : **rien pendant quinze secondes**, puis `NO CARRIER` —
+     c'est le registre S7 du modem, chronométrer. Même chose pour un numéro que
+     personne n'a. [ ]
+213b. **Les deux bouts sont occupés pendant que ça sonne.** Éteindre `là-bas`,
+     puis depuis `ici` appeler son numéro : pendant les quinze secondes de
+     sonnerie, aller à la deuxième machine du local de `ici` et appeler le numéro
+     de `ici` → `BUSY`. Revenir et attendre le `NO CARRIER`. [ ]
+213c. **Échap raccroche.** Relancer le même appel vers une machine éteinte et
+     appuyer sur Échap au bout de deux ou trois secondes : la ligne doit dire
+     `NO CARRIER` tout de suite et l'invite locale revenir. Refaire `cu` vers un
+     numéro qui répond juste après : l'appel doit passer (la ligne a bien été
+     rendue). [ ]
 214. **Le central est sur le réseau électrique.** Régler le bac à sable pour que
      le courant soit déjà coupé (`ElecShutModifier` à 0 jour), donner du courant
      aux deux ordinateurs par générateur, puis `cu 555-NNNN` → `NO DIALTONE` :
@@ -1153,6 +1176,34 @@ l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
      (`who` là-bas ne montre que la console). Finir par `crontab -r`. Enfin, sur
      une machine d'une base construite (aucun bâtiment) : `cu 555-NNNN` →
      `cu: no phone line`, et son BIOS n'affiche aucune ligne `Phone line:`. [ ]
+215b. **Une boutique de mall est un local.** Dans un centre commercial, poser un
+     ordinateur dans **une** boutique et un autre dans une **autre** boutique du
+     même bâtiment, les allumer, et comparer les BIOS : deux numéros de téléphone
+     **différents**, deux adresses `10.x.y.z` dont les deux octets du milieu
+     diffèrent, et sur chacun une ligne `Phone line: NNN-NNNN (NomDeLaZone)` — le
+     nom de la boutique entre parenthèses. Depuis l'une, écrire l'adresse de
+     l'autre dans `/etc/hosts` puis `ping <nom>` → 100 % de perte et
+     `rlogin <nom>` → `No route to host` : ce n'est pas le même câble. Puis
+     `cu` vers son numéro → l'appel passe. Poser un troisième ordinateur dans le
+     **couloir** du mall (hors de toute boutique) : troisième numéro, troisième
+     segment, et **aucun** nom entre parenthèses. Enfin, sur cette machine du
+     couloir, `dev | wc -l` : le mall entier est **un** bâtiment pour `/dev`, donc
+     la liste peut passer 96 entrées (le plafond est 256) et elle doit tenir
+     jusqu'au bout — `dev light`, `dev door`, `dev win` kind par kind pour la
+     lire. [ ]
+215c. **Une maison reste un seul local.** Dans une maison ordinaire (pas un mall),
+     poser deux ordinateurs dans deux pièces différentes, les allumer : **même**
+     numéro de téléphone, **même** segment, et aucun nom entre parenthèses — les
+     zones nommées qui couvrent une maison sont plus grandes qu'elle, donc elles
+     ne comptent pas. Vérifier au passage qu'un appel vers ce numéro sonne sur la
+     machine à l'adresse la plus basse (`who` là-bas), et que pendant ce temps
+     l'autre machine de la maison ne peut pas appeler (`BUSY`). [ ]
+215d. **Une sauvegarde d'avant cette vague.** Sur un monde créé avec une version
+     précédente du mod, où un ordinateur avait déjà été allumé : le rallumer. Le
+     BIOS doit afficher l'adresse `Ethernet:` comme avant **et** une ligne
+     `Phone line:` (le central est calculé au moment où la machine revoit son
+     carré). Une machine dont on regarde l'écran sans l'allumer doit aussi
+     l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
 
 ## T. La radio (palier 6c)
 

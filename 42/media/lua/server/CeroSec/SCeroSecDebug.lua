@@ -246,6 +246,10 @@ end
 --     public int getX();  getY();  getX2();  getY2();  getArea();
 --     -- the corner and the far corner of the footprint, which is where the
 --     -- building IS on the map and does not move (see CeroSecNet.buildingOf).
+--     -- x2 is EXCLUSIVE: getW() is `getfield x2; getfield x; isub` with no
+--     -- iconst_1, so the width is x2 - x and not x2 - x + 1. getArea() is not
+--     -- the box at all -- it walks `rooms` and sums RoomDef.getArea() -- which
+--     -- is why the size printed here is derived and the area is asked for.
 --   zombie.iso.areas.IsoRoom
 --     public java.lang.String getName();
 --     public zombie.iso.RoomDef getRoomDef();
@@ -290,7 +294,7 @@ function CeroSecDebug.premises(luaObject)
 		local x1, y1, x2, y2 = def:getX(), def:getY(), def:getX2(), def:getY2()
 		out[#out + 1] = "building: " .. cell(x1) .. "," .. cell(y1) ..
 			" to " .. cell(x2) .. "," .. cell(y2) ..
-			"  " .. cell((x2 - x1) + 1) .. "x" .. cell((y2 - y1) + 1) ..
+			"  " .. cell(x2 - x1) .. "x" .. cell(y2 - y1) ..
 			"  area " .. cell(def:getArea()) ..
 			"  rooms " .. cell(def:getRoomsNumber())
 	end
