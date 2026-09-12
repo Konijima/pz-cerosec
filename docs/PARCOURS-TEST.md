@@ -759,6 +759,100 @@ en observant le jeu réel, pas par un banc de test.
      → `     3`. Puis `wc -q fruits` → `wc: -q: unknown option` et `wc` tout
      seul → `wc: usage: wc [-clw] [file]...`. [ ]
 
+## N. Le réseau (palier 6a)
+
+Il faut **deux ordinateurs dans le même bâtiment de la carte** -- pas dans une
+base construite : une base n'a pas de bâtiment, donc pas de fil, et c'est le
+sujet de l'étape 186. Un bureau de Knox County en a souvent deux ; sinon, le mode
+debug permet d'en placer un deuxième dans la même pièce. Les deux doivent avoir du
+courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
+`gate` l'autre -- remplacer par les vrais noms que `hostname` donne.
+
+175. Allumer les deux ordinateurs, ouvrir le terminal du premier et regarder le
+     BIOS : entre `Detecting drives ... hda 32K` et `Booting from hda ...` il doit
+     y avoir une ligne `Ethernet: eth0 10.x.y.1`. Puis se connecter et taper
+     `ifconfig` : `eth0` avec cette même adresse et un masque `0xffffff00`, et
+     `lo0` avec `127.0.0.1` sous elle. Enfin `cat /etc/hosts` : deux lignes, la
+     boucle locale et la machine elle-même, avec l'adresse que le BIOS a
+     annoncée. [ ]
+176. Ouvrir le terminal du **deuxième** ordinateur et faire la même chose. Les
+     trois premiers nombres de l'adresse doivent être identiques à ceux du
+     premier (même bâtiment) et le dernier doit être différent (`.2` au lieu de
+     `.1`). Noter les deux adresses. [ ]
+177. Revenir au premier. `ruptime` → une ligne par machine allumée du bâtiment,
+     la sienne comprise, de la forme
+     `gate      up  00:04,  1 user,  load 0.00`. Puis `rwho` → une ligne par
+     personne connectée, `admin    gate:console  Jul  8 14:32`. Éteindre le
+     deuxième ordinateur, refaire `ruptime` : il ne doit plus être listé du
+     tout (pas de ligne `down`). Le rallumer. [ ]
+178. Nommer l'autre machine : `sudo edit /etc/hosts`, ajouter une ligne
+     `<adresse du deuxième> gate`, sauver. Puis `ping gate` : la ligne
+     `PING gate (10.x.y.2): 56 data bytes`, trois réponses `64 bytes from ...
+     icmp_seq=0/1/2 ttl=255 time=0.4 ms` espacées d'une seconde chacune (les
+     compter : elles arrivent l'une après l'autre, pas d'un coup), une ligne
+     vide, `--- gate ping statistics ---`,
+     `3 packets transmitted, 3 packets received, 0% packet loss` et le
+     `round-trip`. [ ]
+179. `ping pump` (un nom qui n'est dans aucune ligne) → `ping: unknown host
+     pump`, tout de suite et sans attendre. Éteindre le deuxième ordinateur,
+     `ping gate` → aucune réponse pendant trois secondes puis
+     `3 packets transmitted, 0 packets received, 100% packet loss`, sans ligne
+     `round-trip`. Le rallumer. [ ]
+180. `rlogin gate` → `login:` apparaît **sur cet écran**, l'invite devient celle
+     de l'autre machine. Se connecter (`admin`, mot de passe vide) : le motd de
+     l'autre machine, puis une invite `admin@gate:~$`. Taper `hostname` → le nom
+     de l'autre machine. Taper `pwd`, `ls /`, `dev` : tout doit parler de
+     l'autre machine, et `dev` doit lister SES périphériques. [ ]
+181. Toujours dans la session : `who` → deux lignes s'il y a quelqu'un au clavier
+     de `gate`, et la ligne de la session doit être `ttyp0` avec `(ici)` entre
+     parenthèses au bout. Puis `last` → la même session, `still logged in`.
+     Enfin `exit` → `Connection closed.` et l'invite locale revient, avec tout ce
+     qui s'est passé encore visible au-dessus. [ ]
+182. Vérifier les deux historiques : sur la machine locale, `history` contient
+     `rlogin gate` et **pas** `hostname` ni `pwd`. Refaire `rlogin gate`, se
+     connecter, et `history` là-bas contient `hostname` et `pwd`. [ ]
+183. La confiance. Dans la session sur `gate` : `edit .rhosts`, écrire
+     `<nom de la machine locale> admin`, sauver, puis `chmod 600 .rhosts` et
+     `exit`. Refaire `rlogin gate` → **aucun mot de passe demandé**, l'invite
+     `admin@gate:~$` arrive directement. Puis `chmod 666 .rhosts` et ressortir :
+     le `rlogin` suivant redemande `login:` sans dire pourquoi. Remettre 600. [ ]
+184. `rsh gate hostname` depuis l'invite locale → le nom de l'autre machine
+     s'affiche et l'invite locale revient, sans `Connection closed.`. Puis
+     retirer la confiance (`rlogin gate`, `rm .rhosts`, `exit`) et refaire
+     `rsh gate hostname` → `rsh: gate: Permission denied`, sans aucune question.
+     Remettre le `.rhosts`. [ ]
+185. `echo bonjour > notes.txt` puis
+     `rcp notes.txt gate:/home/admin/venu.txt` → la commande prend une seconde
+     ou deux et ne dit rien du tout. Vérifier avec `rsh gate cat
+     /home/admin/venu.txt` → `bonjour`. Puis dans l'autre sens :
+     `rcp gate:/home/admin/venu.txt retour.txt` et `cat retour.txt`. Enfin
+     `rcp notes.txt gate:/etc/passwd` → `permission denied` (les droits sont ceux
+     de l'autre machine, pas d'un privilège). [ ]
+186. Les limites. `rlogin ici` (soi-même par son propre nom, ou `localhost`)
+     fonctionne et ouvre une deuxième session sur la même machine : `who` doit
+     alors montrer la console et un `ttyp`. Depuis cette session, `rlogin gate`
+     fonctionne encore (deux sauts), et depuis celle-là un troisième `rlogin`
+     répond `rlogin: connect: Connection refused`. Ressortir avec `exit` jusqu'à
+     l'invite locale. [ ]
+187. Échap. Dans une session `rlogin gate` à l'invite : appuyer sur Échap →
+     `Connection closed.` et l'invite locale, **la fenêtre ne se ferme pas**.
+     Refaire `rlogin gate`, lancer `while true; do echo x; done` et appuyer sur
+     Échap → `^C` et `killed`, la session reste ouverte. Un deuxième Échap ferme
+     alors la session, et un troisième ferme la fenêtre. [ ]
+188. Ce qui coupe une session. `rlogin gate`, puis : (a) `sudo halt` dans la
+     session → l'autre machine s'éteint et l'écran revient à l'invite locale avec
+     `Connection closed.` ; rallumer, refaire, puis (b) faire éteindre l'autre
+     ordinateur par le menu contextuel pendant la session ; puis (c) ramasser
+     l'autre ordinateur ; puis (d) couper le courant de la pièce. Chacune des
+     quatre doit rendre l'invite locale et jamais laisser la fenêtre coincée sur
+     un écran mort. [ ]
+189. Une machine dans une **base construite** (aucun bâtiment de la carte) :
+     `ifconfig` doit montrer `eth0: flags=2<BROADCAST>` sans ligne `inet`, le
+     BIOS ne doit annoncer aucune ligne `Ethernet:`, `ruptime` ne doit rien
+     lister, et `rlogin` sur n'importe quel nom doit répondre
+     `No route to host`. Même chose depuis un ordinateur d'un AUTRE bâtiment de
+     la carte vers celui de ce parcours : `No route to host`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

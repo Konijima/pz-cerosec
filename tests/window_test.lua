@@ -4037,6 +4037,27 @@ do
 	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
 end
 
+-- The loopback: a second session on the machine one is sitting at. It needs no
+-- wire and no building, which is what a loopback is for.
+do
+	local net = newNet()
+	net.login("admin")
+	net.enter("rlogin localhost")
+	net.tick(2)
+	check("the machine asks who is there", net.glass("login:"))
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	eq("a line is taken on the machine itself", CeroSecOS.ptyCount(net.here.ptys), 1)
+	net.enter("who")
+	net.tick(2)
+	check("who shows the keyboard", net.glass("console"))
+	check("and the session beside it", net.glass("ttyp0"))
+	net.enter("exit")
+	net.tick(3)
+	eq("and it closes like any other", CeroSecOS.ptyCount(net.here.ptys), 0)
+end
+
 -- Whose budget a remote session spends, through the real scheduler.
 do
 	local net = newNet()

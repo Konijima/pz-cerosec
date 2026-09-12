@@ -19,9 +19,10 @@ Done:
 - The OS engine: a filesystem with owners and permissions and modification times, a
   shell (`[ adduser cat cd chgrp chmod chown clear cp crontab date deluser dev df
   echo edit exit false fg gpasswd grep groupadd groupdel groups halt hash head
-  help hostname id jobs kill ls mail man mkdir mv passwd printf ps pwd reboot
-  restart rm sh shutdown sleep sort su sudo tail test touch true uniq wait wc
-  whoami write`), an editor, and salted-hashed passwords.
+  help hostname id ifconfig jobs kill last ls mail man mkdir mv passwd ping printf
+  ps pwd rcp reboot restart rlogin rm rsh ruptime rwho sh shutdown sleep sort su
+  sudo tail test touch true uniq wait wc who whoami write`), an editor, and
+  salted-hashed passwords.
 - One shell, at the prompt and in a file alike: every typed line is parsed by the
   script engine and runs as a job, so `&&`, `if`, `for`, `while`, `$(...)`, `$((...))`
   and a trailing `&` all work where you type them. Variables and `$?` persist with
@@ -80,8 +81,18 @@ Done:
 - The manual: a printed book that spawns where computers do, read by the player in
   a two-page reader with a table of contents, and remembering the page it was left
   on.
+- The network: the computers of one map building are on a length of coax, each
+  with an address of its own derived from where the building stands, and
+  `/etc/hosts` is the player's own file and the only resolver there is. `ping`,
+  `ruptime`, `rwho`, `who`, `last` and `ifconfig` say what is out there and who
+  is on it; `rlogin` puts another machine's shell on this glass, `rsh` runs one
+  line over there, `rcp` moves one file, and `/etc/hosts.equiv` and `~/.rhosts`
+  are what let a password be skipped -- with rlogind's own rule that a `.rhosts`
+  anybody but its owner may write is ignored without a word. Four sessions may
+  come in at once, on `ttyp0` to `ttyp3`, and every one of them spends the FAR
+  machine's four job slots and its twenty lines a second.
 
-Next: networking machines together to automate doors, locks and lights.
+Next: the telephone line and the radio, which add links and not commands.
 
 ## For players
 
@@ -419,6 +430,90 @@ walk over and open it.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
+
+### The other computers in the building
+
+Every computer in a **map building** is on one length of coax with the others,
+and it has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two
+bytes come from where the building stands and the last is which computer of it
+this is. The BIOS announces it between the drive and the login, `ifconfig`
+prints it any time, and nothing sets it -- the address is a fact about the card
+the way the hostname is a fact about the machine. A computer in a base **you**
+built is in no building the map knows about, so it has no wire at all and says
+so: `eth0: flags=2<BROADCAST>` with no address under it.
+
+Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
+machine's own line and the machine never writes in it again, so the first thing
+to do with a new one is write the others down:
+
+```
+10.4.17.3 gate
+10.4.17.4 office pump
+```
+
+| command | does |
+| --- | --- |
+| `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
+| `ping <host\|address>` | three packets a second apart, and the statistics |
+| `ruptime` | the machines of this building that are switched on |
+| `rwho` | who is logged in on them |
+| `who [am i]` | who is logged in *here*, with where each came from |
+| `last [name]` | the logins in `/var/log/wtmp`, newest first |
+| `rlogin <host> [-l user]` | a shell on another machine, on this screen |
+| `rsh <host> [-l user] <command>...` | one command over there |
+| `rcp <src> <dst>` | one file across, one end of it `<host>:<path>` |
+
+`ruptime` and `rwho` are the rwho package's, cut where sixty columns forced a
+cut: one load average instead of three, and no `down` row for a machine that is
+off -- a real one keeps the last report it heard in `/var/spool/rwho` and there
+is no spool here, so a dark machine is a machine nothing on the wire has ever
+heard of. The load is how many jobs the machine has that can run, which is what
+a load average has counted since the first one; nothing here averages anything,
+so it is this instant's.
+
+**`rlogin` is a shell over there on this glass.** It asks `login:` and
+`password:` through the far machine's own accounts, and from then on every line
+typed is that machine's: its files, its `/dev`, its accounts, its jobs, its
+budget. The screen is one unbroken stream -- your own prompt, the `rlogin` you
+typed, the far machine's work, and then your own prompt again with all of it
+still above -- because a real terminal never had a second screen to put anything
+on. Your history keeps the `rlogin` line and nothing you typed over there; the
+far machine's history keeps that, in its own home. The editor travels: `edit`
+down an `rlogin` opens the far machine's file and Tab saves it over there.
+
+`exit` ends it, and so does Escape at an idle prompt; either way the line
+`Connection closed.` comes back. Escape while something is running over there is
+that job's `^C` and not the end of the session. Switching either machine off,
+the power going out and either computer being picked up all end it too, and so
+does a `shutdown` typed inside it.
+
+**A password every time is what the trust files are for**, and either of the two
+is enough. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
+each: a bare host name trusts **the same account** on it and nobody in as
+anybody else, and a host and an account name that account. `~/.rhosts` is the
+account's own half, and it is checked the way `rlogind` checks it -- it has to be
+**your** file and nobody but you may write it, so one owned by somebody else or
+one at mode `664` is ignored without a word. `root` is never trusted by
+`/etc/hosts.equiv`, only by `/root/.rhosts`.
+
+`rsh` never asks for a password, because `rshd` does not: trust or
+`rsh: gate: Permission denied`. What it prints reaches the glass and not a pipe
+-- there is no `rsh gate date > file` on this machine, and `rcp` is how something
+comes back. `rcp` needs the same trust, lands the file as the account you are,
+and is judged by the far machine's own permissions, its 4096-byte file ceiling
+and its own 32K disk. It is not quick: the wire runs at about a kilobyte a
+second.
+
+The limits, because each is something a player meets. Four sessions may come in
+at once and the fifth is `rlogin: connect: Connection refused`. A chain of
+`rlogin`s goes two machines deep and the third is refused in the same words. And
+a session costs the **far** machine: a loop left running on `gate` slows `gate`
+down and leaves your own machine at an idle prompt.
+
+`/var/log/wtmp` is what `last` reads: root's, `644`, two hundred lines deep with
+the oldest dropped, and exempt from the 32 KB disk quota by its path exactly as
+`/var/log/cron` is. That is why `wtmp begins` is a real answer on this machine
+rather than the formality it is on a real one.
 
 ### The prompt, and a script
 
@@ -1404,6 +1499,11 @@ on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — th
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
+`SYSTEM_VERSION` 10 seeds the nine the network added -- `/bin/ifconfig`,
+`/bin/ping`, `/bin/rlogin`, `/bin/rsh`, `/bin/rcp`, `/bin/ruptime`, `/bin/rwho`,
+`/bin/who` and `/bin/last` -- plus `/etc/hosts` and `/etc/hosts.equiv`, and
+nothing else: the machine's own line in `/etc/hosts` needs an address, which is a
+fact about the building and is only known once the server has looked.
 `SYSTEM_VERSION` 9 seeds `/bin/sort`, `/bin/uniq`, `/bin/crontab` and `/bin/mail`,
 and the `/var` tree the last two live on. `SYSTEM_VERSION` 8 seeds `/bin/halt` and the six the engine runs itself but still
 looks up first — `/bin/sleep`, `/bin/printf`, `/bin/test`, `/bin/[`, `/bin/true`,
@@ -1606,6 +1706,92 @@ extended by appending to it, in place, which is what this does. Adding a list is
 line in `CeroSecManualLoot.WEIGHTS`; a list vanilla later renames is logged by name
 and skipped rather than taking the mod down.
 
+### The network, underneath
+
+The engine's half is `shared/CeroSec/OS/CeroSecOSNet.lua` and it knows nothing
+about the game: the four files (`/etc/hosts`, `/etc/hosts.equiv`, `~/.rhosts`,
+`/var/log/wtmp`), the arithmetic that turns a building's corner into two bytes of
+an address, the shape of every line the five listing commands print, the trust
+rules, and the pty table a session lives in. `rlogin`, `rsh` and `rcp` decide
+everything that can be decided from here -- the name, whether the wire reaches,
+how deep the chain already is -- and then end in an order to the server
+(`"rlogin"`, `"rsh"`), exactly as `shutdown` does.
+
+`env.net` is the link layer, handed in beside `env.devices` and built fresh for
+every line typed, because both are answers about a moment:
+
+| call | answers |
+| --- | --- |
+| `reach(addr)` | `ok`, and which of strerror's words to wear when not |
+| `peers()` | every machine of this wire that is up: host, addr, up, users, load, who |
+| `sessions()` | who is logged in on *this* machine, console and ptys |
+| `copy(spec)` | `rcp`'s own copy, judged by both disks |
+
+`server/CeroSec/SCeroSecNet.lua` is the other half and the only one that knows
+there is a world. The Ethernet rule for this rung is the whole of `reachable()`:
+the same map building, both machines on. A later rung adds a second answer there
+and changes no command and no engine file.
+
+**Why a machine answers with its chunk unloaded.** The rung rests on it, so it is
+written down beside the code that uses it. `zombie.globalObjects.SGlobalObjects`
+reads `gos_cerosec.bin` whole at server start and `SGlobalObjectSystem:
+initLuaObjects` builds one Lua object per global object, so
+`getLuaObjectCount()` is every computer in Knox County that has ever been
+switched on and not every computer in memory; `SGlobalObject:getIsoObject()`
+answers `nil` for one whose chunk is not loaded, which is why every call on it in
+`SCeroSecObject` is guarded. So a machine's disk, its power flag and the record
+of its address are readable whatever the streamer is doing. Three things need
+the chunk -- the power check, `/dev`, and working out which building a computer
+stands in -- and the third is done once, when the machine is switched on, with
+the answer written into the machine's own state (`CeroSecOS.netRecord`, three
+numbers, saved). `tests/window_test.lua` has a machine whose `getSquare()` and
+`getIsoObject()` both answer `nil` and which still answers `ruptime`, a `ping`,
+an `rlogin` and a write to its disk.
+
+**The address** is assigned once and never moved: the lowest number nobody in the
+same building has, exactly as a device number is the lowest its kind has never
+used. A computer carried into another building is renumbered the next time it is
+switched on or a window opens on it -- the two bytes it carries no longer match
+where it stands -- and one carried out of every building keeps what it had,
+because a machine with no address at all is not something to invent. The
+machine's own line in `/etc/hosts` is written the first time it learns an
+address and never again.
+
+**A session is a pty on the far machine carrying a `console`** -- the same table a
+machine's own screen is, so the login prompt, the shell, the editor, Escape, `$?`
+and the `su` stack all work on it unchanged. It carries three fields a machine's
+own console has not got: `watchAt` (which machine's windows are looking at it),
+`line` (the pty's name, what `who` prints and what tags every job it starts) and
+`hops`. The console that dialled carries `remote`, naming the machine and the
+line. Neither is saved: a pty is runtime state like a job, so a machine that
+comes back from a reload comes back at its own prompt with nothing open.
+
+The lines are **one glass**. A pty's console starts with a copy of what was on
+the dialling screen and hands it back when the session ends, which is why a
+survivor sees one unbroken stream and why the local scrollback is still there
+afterwards.
+
+So the scheduler stopped being a machine with one console. A job is tagged with
+the line it was started from (`job.pty`), writes to that screen, and is killed
+when the session ends; one pass can finish four lines at once and each order goes
+to the screen its job was writing to. Output is drained **round-robin across the
+jobs, one further along every draining pass** -- a machine gets its twenty lines
+in the first pass of each second and nothing in the nine after it, so draining
+from the front of the list handed all twenty to the same job for ever, and a job
+whose output cannot drain is a job that never runs again. A job whose screen has
+gone has its output thrown away, or it would never be reaped and its slot would
+never come back.
+
+Every command that types at the machine resolves the chain through one door,
+`SCeroSecSystem:targetFor`, which is also where a session whose far end has gone
+is torn down and the glass handed back.
+
+`ping` and `rcp` wait, so the VM grew the one thing it could not say: a command
+that wants to be **woken later** rather than answered. `control = "sleep"` with
+`{ ms, cont }` leaves the job `"sleeping"` against `env.nowMs` exactly as `sleep
+1` does, and the continuation is called with an empty line when it comes round.
+The waiting costs the machine nothing.
+
 ### Design rules
 
 - Vanilla only: no dependencies, no bundled libraries.
@@ -1638,6 +1824,9 @@ and skipped rather than taking the mod down.
 - `terminal_test.lua` — the pure parts of the terminal: hostname, console, history.
 - `window_test.lua` — the window wired to the machine end to end: type a line, get
   an answer on the glass, and a script's output, question and `^C` through it.
+- `window_test.lua` also holds the network bench: three real machines on one real
+  system, two in a building and one down the road, one of them with its square
+  and its `IsoObject` taken away after it was switched on.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a

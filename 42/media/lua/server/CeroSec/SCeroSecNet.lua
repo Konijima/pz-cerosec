@@ -164,6 +164,15 @@ end
 --   "down"    it is on this wire and it is switched off
 --   "unreach" there is no wire between here and there at all
 function CeroSecNet.reachable(system, from, addr)
+	-- The loopback reaches this machine and nothing else, whatever building it is
+	-- in and whether it has a wire at all -- which is what a loopback is. The
+	-- engine already answers a ping on it; this is the other half, so that
+	-- `rlogin localhost` opens a second session on the machine one is sitting at
+	-- rather than being refused by a link layer that was looking for a cable.
+	if addr == CeroSecOS.LOOPBACK_ADDR then
+		if not from.on then return nil, "down" end
+		return from
+	end
 	local mine = recordOf(from)
 	if mine == nil then return nil, "unreach" end
 	local found = CeroSecNet.at(system, addr)
