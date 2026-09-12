@@ -163,7 +163,7 @@ Commands:
 
 | command | does |
 | --- | --- |
-| `ls [-laAF] [path]` | list a directory in columns; `-l` adds owner, group, size and date, `-F` marks directories with `/`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
+| `ls [-1laACF] [path]` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
 | `cd [dir]` | change directory (home if no argument) |
 | `pwd` | print the working directory |
 | `cat <file>...` | print a file |
@@ -173,6 +173,8 @@ Commands:
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename |
+| `ln -s <target> <name>` | make a symbolic link; there are no hard links here |
+| `readlink <name>` | print what a link points at, and nothing at all for anything else |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
 | `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
@@ -196,6 +198,8 @@ Commands:
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds |
+| `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
+| `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
 | `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
@@ -224,6 +228,24 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 `/bin/sh` is the shell itself: delete it and every line typed answers
 `sh: command not found`, and the BIOS repair brings it back.
 
+Which directories a bare name is looked for in is `PATH`, an ordinary shell
+variable. A login sets it to `/bin` and sets `HOME` beside it; a `.profile` widens
+it (`PATH=$PATH:$HOME/bin`); a script and every line `cron` runs start at `/bin`
+again and never inherit the shell's, which is the oldest trap in `cron` and is why a
+crontab line spells the whole path. The walk is POSIX's: left to right, the first
+file with `x` on it for whoever typed it wins, and something in the way without `x`
+does not stop the search — found everywhere and runnable nowhere is
+`permission denied`, found nowhere at all is `command not found`. A file found in
+`/bin` is the machine's own executable and the engine is behind it; a file found
+anywhere else is run as a **script**, so `~/bin` is where an account's own commands
+go and a name there shadows one in `/bin` when `PATH` says so. A symlink in `/bin`
+is a name for somebody's file, not one of the machine's, so
+`ln -s ~/tools/hello /bin/hello` hands everybody with `r+x` on the target a command
+called `hello`. A word with a `/` in it is a path and is never looked up.
+`PATH` may name eight directories and a ninth is refused where it is set: every
+command on the machine walks that string, so its length is a price everybody pays
+(see "Design rules").
+
 Two kinds of word are **not** files, and could not be. The reserved words
 (`if then elif else fi for while until do done`) are grammar. The shell's own words
 (`cd exit fg jobs wait read shift break continue history`) change the shell itself
@@ -240,6 +262,32 @@ and so does this machine.
 A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
 `.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
 special — there is no globbing here for one to hide from.
+
+**Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
+was typed. Everything that acts on a *file* follows it — `cat`, `cp`, `chmod`, a
+redirect — and the permissions are the target's, so a link to something you may not
+read buys you nothing. The four that act on the *link* do not: `ls -l` draws it
+(`lrwxrwxrwx  admin  admin   log -> /var/log/cron`), `ls -F` marks it `@`, `rm`
+takes the link away and leaves the file, `mv` moves the link, and `readlink` prints
+what it holds. A link to a name that is not there is allowed and answers
+`no such file` on use; a loop of them answers
+`too many levels of symbolic links` after eight hops. There are **no hard links**:
+two names for one node would be one table under two keys, and the game copies the
+state by recursion (`copyTable` on pickup, and the save file), so the second name
+would become a second file the first time somebody picked the computer up.
+
+**`/dev/null`** reads as nothing at all and swallows anything written to it, so
+`sh nightly.sh > /dev/null` throws output away. It is a device — `rm`, `mv`, `cp`
+and `edit` all answer `is a device` — it is mode `666`, and it costs the disk
+nothing however much goes into it. Only *output* goes there: this machine has no
+`2>`, and errors always reach the glass.
+
+**`/var/tmp`** is the one directory anybody may write in (`drwxrwxrwx`) and the one
+where only the owner of a file, or root, may delete it or rename it out again.
+Everywhere else a directory you may write is a directory you may delete from; real
+machines carry that exception as a fourth mode digit (`1777`) and every mode here is
+three digits, so the rule is the **place's** — decided by the path, exactly as the
+quota exemptions are.
 
 `edit` turns the screen into a small editor: Tab saves, Esc leaves — and asks
 `Save modified buffer? (y/n)` first when there is something unsaved. Those two are
@@ -1358,11 +1406,12 @@ away. The way back is the BIOS, not a guard rail on the command: root keeps full
 power, and the protection is that root has a password.
 
 **`/bin`** — one file per shell command, owner `root`, mode `755`, contents the
-one-line description. The shell resolves `args[1]` as `/bin/<name>` and nothing else
-(no `PATH`, no `./thing`): nothing there, no `/bin` at all, `/bin` a file, a
-directory called `/bin/ls`, or a file with no Lua command behind it are all
+one-line description. It is the first and, unless somebody widens `PATH`, the only
+directory a bare name is looked for in: nothing there, no `/bin` at all, `/bin` a
+file, a directory called `/bin/ls`, or a file with no Lua command behind it are all
 `<name>: command not found`; a file without `x` for this user, or a `/bin` he cannot
-read, is `<name>: permission denied`. The words with no file are the shell's own —
+read, is `<name>: permission denied`. A **link** at a name in `/bin` is not one of
+the machine's executables — what runs is the file it points at, as a script. The words with no file are the shell's own —
 `cd`, `exit`, `fg`, `jobs`, `wait` (marked `shell` in `COMMAND_INFO`, so `binNames`
 never seeds one) and the engine's `read`, `shift`, `break`, `continue`, `history` — plus
 `help`, which has a file and is run without it; `CeroSecOS.BUILTINS` is that set and
@@ -1525,16 +1574,25 @@ what vanilla pickup and placement copy — so a computer carried across town kee
 files, and only `v`, `on`, `facing` are sent to clients on add or update. The console
 is deliberately excluded from both: it is a screen, not a disk (a computer picked up
 is a computer that lost its power), and the client never reads the stored screen,
-only the lines the server answers it with. A filesystem is capped at 256 nodes, 64
+only the lines the server answers it with. A filesystem is capped at 256 nodes, 96
 entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
-small.
+small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceiling of
+64, which is a `/bin` with no room to put a deleted command back into. `/dev` keeps
+its own 64 — how many commands ship is no reason to mount more of the world.)
 
-The state also carries `sysv`, the *contents* it was built with (9 today) as
+The state also carries `sysv`, the *contents* it was built with (11 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
+`SYSTEM_VERSION` 11 seeds `/bin/which`, `/bin/ln` and `/bin/readlink` — `type` is a
+word the shell *is* and has no file — plus the two places the filesystem grew:
+`/dev/null`, which is the one device written to the disk and the one the `/dev` sweep
+leaves alone, and `/var/tmp`. `validate` accepts a device on a saved disk only when
+it is that hole, and counts it against no ceiling, because a device costs the quota
+nothing everywhere else and a gate that counted it would refuse a machine the quota
+had just let fill up.
 `SYSTEM_VERSION` 10 seeds the nine the network added -- `/bin/ifconfig`,
 `/bin/ping`, `/bin/rlogin`, `/bin/rsh`, `/bin/rcp`, `/bin/ruptime`, `/bin/rwho`,
 `/bin/who` and `/bin/last` -- plus `/etc/hosts` and `/etc/hosts.equiv`, and
@@ -1842,6 +1900,47 @@ that wants to be **woken later** rather than answered. `control = "sleep"` with
 `{ ms, cont }` leaves the job `"sleeping"` against `env.nowMs` exactly as `sleep
 1` does, and the continuation is called with an empty line when it comes round.
 The waiting costs the machine nothing.
+
+### The shell that looks a name up, and the links it walks
+
+Three pieces of plumbing came with `PATH`, links and `ls`, and each is in exactly
+one place.
+
+**What the shell knows.** A command is handed one thing more than its arguments: a
+small table of what the *shell* knows about the line — `path`, the `PATH` to look a
+bare name up on, and `tty`, whether what it writes is going to a screen at all.
+Neither is a fact about the filesystem, so neither is looked up by whoever needs it;
+`CeroSecOSVM.runSimple` builds it, `runArgs` passes it down, and `sudo` and a
+continuation forward the one they were given. `tty` is false for the three doors
+output already goes through other than the glass — a `$( )` capture, a pipe, `cron`'s
+mailbox — plus a redirect, and the **last** stage of a pipeline inherits the answer
+from whatever is running the pipeline (its pipe is drained onto that). `ls` is the
+one command that reads it today, and it reads it exactly as every `ls` reads
+`isatty`.
+
+**What the walk costs.** `CeroSecOS.lookupPath` walks `PATH` left to right and
+answers where it found the name, why it did not, **how many directories it looked
+in**, and whether what answered was a link. The count is charged in steps by
+`runSimple`, one per directory past the first, because a long `PATH` makes every
+command on the machine dearer and a budget that could not see that would not be a
+budget: measured, a kilobyte of `PATH` was a command twenty times dearer than
+`STEP_COST_COMMAND` believes it is. Two ceilings follow — `MAX_PATH_DIRS` (8),
+refused at the assignment with `too many PATH entries`, and the same number as a
+belt on the walk itself, so a value off a save file nobody can explain is slow for
+nobody. `tests/hostile_test.lua` drives the worst legal `PATH` and a forged
+340-field one.
+
+**Where a link is followed.** `CeroSecOS.getNode` and nowhere else, which is why no
+command had to learn about links: a link in the middle of a path is the directory it
+names, a link at the end of one is the file it names, and the absolute path that
+comes back is still the **logical** one, so `cd` through a link prints where you
+typed. A fourth argument leaves the last component alone — the difference between
+`stat` and `lstat` — and the four commands that act on the link ask for it.
+`MAX_LINK_HOPS` (8) is counted per resolution and `MAX_DEPTH` bounds what is left to
+walk once a target is hung on the front, so no path through there fails to end.
+`CeroSecOS.systemNode`, the kernel's own read, does **not** follow one: a link where
+`/etc/passwd` should be reads as no passwd at all, which the boot check calls a
+machine with no operating system and the BIOS repairs.
 
 ### Design rules
 

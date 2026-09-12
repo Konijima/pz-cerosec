@@ -859,6 +859,51 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `No route to host`. Même chose depuis un ordinateur d'un AUTRE bâtiment de
      la carte vers celui de ce parcours : `No route to host`. [ ]
 
+## O. PATH, liens, `/dev/null` et `/var/tmp` (palier 6b)
+
+190. `PATH`. À l'invite : `echo $PATH` → `/bin`. Puis `echo $HOME` →
+     `/home/admin`. `type ls` → `ls is /bin/ls`, `type cd` →
+     `cd is a shell builtin`, `type if` → `if is a shell keyword`,
+     `which ls` → `/bin/ls`, et `which frobnicate` → **aucune ligne** (et rien
+     d'autre non plus). [ ]
+191. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
+     `echo salut`, sauver, `chmod 755 bin/hello`. Puis `hello` →
+     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` et `hello` →
+     `salut`. `which hello` → `/home/admin/bin/hello`. Enfin mettre la même
+     ligne `PATH=$PATH:$HOME/bin` dans `edit .profile`, `exit`, se reconnecter,
+     et `hello` doit marcher dès la première invite. [ ]
+192. Le piège de cron. Toujours avec `~/bin` dans le `PATH` de l'invite :
+     `crontab -e` et écrire `* * * * * hello`, sauver. Attendre une minute (une
+     minute de jeu ; accélérer le temps aide), puis `mail` → le courrier dit
+     `hello: command not found`. Remplacer la ligne par
+     `* * * * * /home/admin/bin/hello` → le courrier suivant dit `salut`.
+     Terminer par `crontab -r`. [ ]
+193. Les liens. `echo bonjour > notes.txt`, `ln -s notes.txt lien`, puis
+     `cat lien` → `bonjour` ; `ls -l` → une ligne
+     `lrwxrwxrwx  admin  admin   lien -> notes.txt` ; `ls -F` → `lien@` ;
+     `readlink lien` → `notes.txt`. Puis `rm lien` → `notes.txt` est toujours
+     là (`cat notes.txt`). Refaire le lien, `mv lien deplace`,
+     `readlink deplace` → toujours `notes.txt`. `ln -s rien casse` puis
+     `cat casse` → `casse: no such file`, mais `ls -l casse` montre encore la
+     flèche. `ln -s a b` et `ln -s b a` puis `cat a` →
+     `too many levels of symbolic links`. Enfin `ln notes.txt dur` (sans `-s`)
+     → la ligne d'usage `ln: usage: ln -s <target> <name>`. [ ]
+194. `/dev/null`. `cat /dev/null` → **rien du tout** (pas même une ligne vide).
+     `echo bruit > /dev/null` → rien, et `cat /dev/null` toujours rien.
+     `df` avant et après doit donner exactement les mêmes nombres.
+     `ls -l /dev` → une ligne `crw-rw-rw-  root  root  null` parmi les
+     appareils, et `dev` (la commande) ne la montre pas. `rm /dev/null` →
+     `rm: /dev/null: is a device`. [ ]
+195. `/var/tmp` et `ls` dans un tube. `ls -l /var` → `tmp` est en
+     `drwxrwxrwx`. `echo a moi > /var/tmp/mien.txt`, puis
+     `sudo adduser bob`, `su bob` (mot de passe vide : Entrée), et depuis bob :
+     `rm /var/tmp/mien.txt` → `permission denied`, alors que
+     `echo a bob > /var/tmp/bob.txt` marche et que `rm /var/tmp/bob.txt` marche
+     aussi. `exit` pour revenir. Ensuite, avec des lumières dans le bâtiment :
+     `ls /dev` à l'écran affiche des colonnes, tandis que
+     `for l in $(ls /dev | grep light); do dev $l off; done` doit éteindre
+     chaque lumière et ne rien dire d'autre (aucun `invalid value`). [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

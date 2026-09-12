@@ -1130,6 +1130,17 @@ do
 		minute = minute + 1
 		local spent = 0
 		for m = 1, 6 do CeroSecJobs.cronPass(system2, machines[m], 740000000 + minute * 60) end
+		-- What cron hands a line: its own environment, and not the shell's. The
+		-- default PATH and the account's home, which is what Vixie's cron puts in
+		-- one -- and the reason a line that worked at a prompt because ~/bin was on
+		-- the PATH there does not work here.
+		if minute == 2 then
+			local fired = CeroSecJobs.book(machines[1]).list[1]
+			check("cron fired something", fired ~= nil)
+			eq("with the default PATH", fired.vars.PATH, CeroSecOS.DEFAULT_PATH)
+			eq("and the account's HOME", fired.vars.HOME, "/home/admin")
+			eq("and nothing else at all", fired.nvars, 2)
+		end
 		for _ = 1, 10 do
 			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
 			tickSteps = 0

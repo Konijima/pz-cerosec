@@ -252,6 +252,45 @@ everything except those two, which is usually what you wanted.
 They combine with the others: -la, -lA and -aF all read as you would
 hope.]],
 
+[[A link is a second name for a file that lives somewhere else. ln -s makes
+one, readlink says what it points at, and everything else just works
+through it -- cat reads the file, a redirect writes it, chmod changes it:
+
+  admin@ksp-04-11:~$ ln -s /var/log/cron log
+  admin@ksp-04-11:~$ readlink log
+  /var/log/cron
+  admin@ksp-04-11:~$ ls -l log
+  lrwxrwxrwx  admin  admin   log -> /var/log/cron
+
+ls -l draws the arrow, ls -F marks it with an at-sign, and the l in front
+of the mode says it is one. rm takes the LINK away and leaves the file; mv
+moves the link. What a link may do is what the FILE allows: one pointing
+at something you may not read buys you nothing.
+
+A link to a name that is not there is allowed -- the machine says "no such
+file" the moment you use it -- and one pointing at itself says "too many
+levels of symbolic links" after eight hops rather than hanging. There are
+no hard links: ln without -s prints its usage line.]],
+
+[[Two places are not like the rest of the disk.
+
+/dev/null is a hole. It reads as nothing at all and it swallows anything
+written to it, which is how a script throws output away:
+
+  admin@ksp-04-11:~$ sh nightly.sh > /dev/null
+  admin@ksp-04-11:~$ cat /dev/null
+  admin@ksp-04-11:~$
+
+Only OUTPUT goes there; this machine has no 2> and errors always reach the
+glass. It is a device, so rm, mv, cp and edit will not have it, and
+nothing you write to it costs you a byte of the disk.
+
+/var/tmp is the one directory anybody may write in -- ls -l shows
+drwxrwxrwx -- and the one where only the owner of a file may delete it or
+rename it out again. Everywhere else on the machine, a directory you may
+write is a directory you may delete from; that place is the exception, and
+it is the place for scratch work two accounts share.]],
+
 		} },
 
 		{ title = "4. The editor", pages = {
@@ -894,7 +933,10 @@ that will not exist a moment later.
 A device is not a file: rm, mv, cp and edit on one all answer
 "is a device", filesystem grammar and all. /dev itself takes nothing
 new -- mkdir, touch or edit a name under it and the answer names the
-directory instead: "/dev: read-only".]],
+directory instead: "/dev: read-only".
+
+One node in there is no part of the building: /dev/null, the hole a
+script throws output into (chapter 3). dev never lists it; ls does.]],
 
 [[What a machine can reach is the building it stands in, every room of
 it, or, with no building around it -- a player's own base counts as
@@ -1299,6 +1341,47 @@ with an endless loop in it leaves you at a busy prompt with nothing to
 type at. It is not a locked machine. Press Escape, which is the ^C, and
 then edit the file. CeroSec Systems mentions it because somebody will
 write that loop, and would rather he knew the way out before he did.]],
+
+[[A command you type is a FILE, and PATH says which directories are looked
+in for it, left to right. It starts as /bin, where the commands live, and
+it is an ordinary variable -- so a .profile is where you widen it:
+
+  admin@ksp-04-11:~$ cat .profile
+  PATH=$PATH:$HOME/bin
+  admin@ksp-04-11:~$ which hello
+  /home/admin/bin/hello
+  admin@ksp-04-11:~$ type hello
+  hello is /home/admin/bin/hello
+
+The first file with x on it for you wins; one in the way without x does not
+stop the search. A file found outside /bin is run as a script, so ~/bin is
+where your own commands go, and a name there comes first if PATH says so.
+which prints where a name would be found and prints nothing at all when it
+would not; type also knows the words that are the shell itself, and says
+"cd is a shell builtin" or "if is a shell keyword" about them.
+
+Eight directories is the most PATH may name -- every command walks it --
+and a ninth is refused where you set it.]],
+
+[[Two things PATH does not do. A word with a / in it is a path and is never
+looked up: ./backup.sh is that file. And a SCRIPT does not inherit yours --
+it starts at /bin, and so does every line cron runs:
+
+  30 4 * * * nightly.sh          -- not found at four
+  30 4 * * * /home/admin/bin/nightly.sh
+
+That is the oldest trap in cron and the fix is the same as it has always
+been: write the whole path in a crontab line, or set PATH at the top of
+the script yourself.
+
+One more thing the shell decides for you: ls prints columns when a person
+is reading and one name per line when anything else is -- down a pipe, into
+a $( ), into a file. That is what makes
+
+  for l in $(ls /dev | grep light); do dev $l off; done
+
+pick out the lights and nothing else. ls -1 and ls -C ask for one or the
+other outright.]],
 
 		} },
 
@@ -1859,7 +1942,9 @@ most 4096 bytes and one line inside it at most 60 characters -- the width
 of the screen itself. A path component is at most 32 characters; an
 account name at most 16, starting with a lower-case letter; a group name
 by the very same rule, since every account already owns the group of its
-own name; a machine's own hostname at most 16 as well. su and sudo's borrowed sessions run four
+own name; a machine's own hostname at most 16 as well. PATH names at most
+eight directories, and a symbolic link holds a path of at most 528
+characters and is followed through at most eight hops. su and sudo's borrowed sessions run four
 deep before either refuses a fifth. motd is read to ten lines and no
 further. A salt is at most 16 characters of digits and lower-case
 letters, six by default.]],
@@ -2167,6 +2252,28 @@ question the machine no longer asks:
 
   cerosec: nothing to answer]],
 
+
+[[The refusals that came with links, with PATH, and with the two places
+that are not like the rest of the disk.
+
+  too many levels of symbolic links
+      a link points at itself, or at another that points
+      back: eight hops and the machine stops, chapter 3
+  is a link
+      a command that wanted a file was handed the link
+      itself rather than what it points at
+  too many PATH entries
+      PATH may name eight directories and no more
+  type: <name>: not found
+      no file of that name on the PATH, and it is not a
+      word the shell itself has
+
+Two that are the ordinary "permission denied" wearing a reason worth
+knowing. In /var/tmp, a file that is not yours refuses to be deleted or
+renamed however open the directory looks -- and a mv names the DESTINATION
+in its refusal, the way its other refusals do, not the file it could not
+take. And a command found on the PATH without x on it for you is the same
+line a command in /bin has always given.]],
 
 [[The network's refusals, for chapter 16. rlogin, rsh and rcp sign theirs
 with their own name, and the words are the ones a real one prints for the

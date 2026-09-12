@@ -105,8 +105,10 @@ for ci = 1, #chapters do
 	-- one kind that grows by the page rather than by the paragraph.
 	-- Raised from 11 to 13 by rung 6a, for the same reason again: the network's
 	-- own refusals are two more pages of that list.
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..13 pages",
-		n >= 2 and n <= 13)
+	-- And from 13 to 14 by rung 6b: links, PATH and the two places that are not
+	-- like the rest of the disk owe that list one page more.
+	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..14 pages",
+		n >= 2 and n <= 14)
 	totalPages = totalPages + n
 
 	for pi = 1, n do
@@ -166,7 +168,10 @@ check("and the firmware version is one string in one place",
 -- and pages to the two appendices.
 -- Raised from 118 to 132 by rung 6a: ten pages of network and a page each on the
 -- two appendices.
-check("total pages is 45..132 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 132)
+-- Raised from 132 to 140 by rung 6b: two pages on links and the two new places in
+-- the filesystem, two on PATH and what ls does off the glass, one on the refusals
+-- all of that added, and room left for the next wave to be honest in.
+check("total pages is 45..140 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 140)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,
