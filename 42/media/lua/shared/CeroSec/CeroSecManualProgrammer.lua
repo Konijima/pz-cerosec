@@ -1100,16 +1100,19 @@ back". The machine answers with two numbers and gets on with it.
 
 The number in brackets is the slot -- the machine holds four at once and
 this is the first -- and 43 is the job's own number, which is what $$
-holds inside it. The line under it is the script printing, on the same
-screen you are typing on, as it prints.
+holds inside it. The line under it is the script printing, as it prints.
 
-Two commands list what is running. jobs lists what your shell started, by
-slot:
+Two commands list what is running. jobs lists the background jobs, by slot:
 
   admin@ksp-04-11:~$ jobs
   [1] sleeping ./tick.sh &
 
-ps lists everything the MACHINE is running, by number, with what state it
+Read that carefully: the jobs belong to the MACHINE and not to your shell.
+Four is a computer's ceiling, not a session's. Walk away and they keep
+running, and whoever sits down next sees them in his own jobs and may fg or
+kill them. A bigger Unix shows you only what your own shell started.]],
+
+[[ps lists everything the MACHINE is running, by number, with what state it
 is in and how much it has spent:
 
   admin@ksp-04-11:~$ ps
@@ -1117,8 +1120,15 @@ is in and how much it has spent:
     43 S      36 ./tick.sh &
     45 R       0 ps
 
-ps shows the shell you typed into, because that is a job too. jobs does
-not, because the shell is not something the shell started.]],
+R is running, S sleeping, W waiting for an answer from somebody or from
+another machine, O held back by the screen, and Z finished and not yet
+reaped. The CPU column is the steps the job has spent, and it is the one
+number a runaway script is recognised by: it climbs, fast, and nothing else
+on the listing does.
+
+ps shows the shell you typed into, because that is a job too, and it shows
+the cron lines. jobs shows neither: one is not a background job and the
+other is nobody's to bring forward.]],
 
 [[Stopping one, and waiting for one.
 

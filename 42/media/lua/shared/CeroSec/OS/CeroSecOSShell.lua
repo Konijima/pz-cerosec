@@ -690,7 +690,11 @@ CeroSecOS.COMMAND_INFO = {
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
 	ifconfig = { desc = "show the network interfaces",
 		usage = "ifconfig [-a|<interface>]" },
-	jobs     = { desc = "list the machine's jobs", usage = "jobs", shell = true },
+	-- The jobs on THIS MACHINE and not "the shell's": four is the ceiling a
+	-- machine has, they are shared between every session on it, and `jobs` lists
+	-- every one of them whoever started it (see the head of commands.jobs).
+	jobs     = { desc = "list the background jobs on this machine",
+		usage = "jobs", shell = true },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
 	last     = { desc = "list the logins on this machine", usage = "last [name]" },
 	-- Symbolic only, and the usage line says so: see the note above
@@ -718,7 +722,7 @@ CeroSecOS.COMMAND_INFO = {
 	reboot   = { desc = "restart the machine", usage = "reboot" },
 	ping     = { desc = "see whether a machine answers", usage = "ping <host|address>" },
 	printf   = { desc = "print a formatted string", usage = "printf <format> [arg...]" },
-	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
+	ps       = { desc = "list every job on this machine, and its cpu", usage = "ps" },
 	rcp      = { desc = "copy a file to or from another machine",
 		usage = "rcp <src> <dst>, one is <host|address>:<path>" },
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },

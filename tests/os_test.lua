@@ -11941,6 +11941,68 @@ end
 -- true a year from now.
 --
 
+-- 49z. The jobs belong to the MACHINE, and `help` and `man` say so.
+--
+-- This machine has one job book per computer: four is a computer's ceiling, the
+-- book is the machine's, and `jobs` lists every background job on it whoever
+-- started it. A real sh lists only what that shell started. The model is kept --
+-- it is what makes a survivor able to `fg` what the last one left running -- and
+-- what this pins is that the WORDS a player reads say so.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	eq("man jobs says whose the jobs are", CeroSecOS.commandDesc("jobs"),
+		"list the background jobs on this machine")
+	eq("and ps says it is the wider one", CeroSecOS.commandDesc("ps"),
+		"list every job on this machine, and its cpu")
+	check("neither of them calls them the shell's",
+		string.find(CeroSecOS.commandDesc("jobs"), "shell", 1, true) == nil
+		and string.find(CeroSecOS.commandDesc("ps"), "shell", 1, true) == nil)
+
+	-- And the words a player reads really are those: `help` prints the /bin file's
+	-- contents, `man` prints the same string, and a word the shell IS has no file
+	-- to read it out of -- which `jobs` is, so `man jobs` answers off the table.
+	local lines = okAt(state, admin, "man jobs", {
+		"jobs - list the background jobs on this machine",
+		"usage: jobs",
+		"a word of the shell itself: no file in " .. CeroSecOS.BIN_PATH,
+	})
+	check("and it fits the screen", #lines[1] <= CeroSecOS.COLS)
+	-- ps is a FILE, so its line comes off the disk: the same string, because
+	-- fillBin writes the description into it.
+	eq("and /bin/ps holds its own description",
+		state.fs.children.bin.children.ps.data,
+		"list every job on this machine, and its cpu")
+	okAt(state, admin, "man ps",
+		{ "ps - list every job on this machine, and its cpu", "usage: ps" })
+
+	-- The behaviour is unchanged, and this is what says so: a job one session
+	-- started is on the OTHER session's `jobs`.
+	local env = { now = FIXED, nowMs = 1, jobs = {} }
+	local bob = addUser(state, "bob", "", "/home/bob")
+	local bobS = open(state, "bob")
+	local job = CeroSecOS.promptJob(state, admin, "sleep 30 &", {}, nil)
+	check("admin asked for a background job", job ~= nil)
+	env.jobs = { job }
+	CeroSecOS.jobStep(state, job, env, 1000)
+	-- The order the prompt hands back is what the MACHINE carries out; the bench
+	-- stands one in the book by hand, which is what the scheduler does with it.
+	local spawned = CeroSecOS.newJob({
+		prog = { { k = "cmd", line = 1, words = { { { t = "lit", s = "sleep", q = true,
+			bare = true } }, { { t = "lit", s = "30", q = true, bare = false } } } } },
+		session = { user = "admin", cwd = "/home/admin" }, cmd = "sleep 30 &",
+	})
+	spawned.n = 1
+	env.jobs = { spawned }
+	local seen = okAt(state, bobS, "jobs", nil, env)
+	eq("bob sees the job admin started", #seen, 1)
+	check("by its slot and its line",
+		string.find(seen[1], "[1]", 1, true) == 1
+		and string.find(seen[1], "sleep 30 &", 1, true) ~= nil)
+	local _ = bob
+end
+
 -- 49a. cut: the two forms, the list grammar, and the line with no delimiter.
 do
 	local state = fresh()

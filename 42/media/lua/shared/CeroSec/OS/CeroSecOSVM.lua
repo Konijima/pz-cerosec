@@ -2816,10 +2816,22 @@ commands.jobs = function(state, session, args, env)
 	local out = {}
 	for i = 1, #jobs do
 		local job = jobs[i]
-		-- Not the shell you are typing into: `jobs` lists what the shell
-		-- STARTED, the way it has since job control was invented. `ps` is the
-		-- one that shows everything the machine is running, the prompt's own
-		-- job included -- and a cron job, which the shell did not start either.
+		-- Not the shell you are typing into, and not a cron line -- but every
+		-- OTHER background job on the machine, whichever session asked for it.
+		--
+		-- That is this machine's model and it is worth saying plainly: a job
+		-- belongs to the MACHINE and not to the shell that typed it. Four is the
+		-- ceiling a machine has, not a ceiling a session has; the book is the
+		-- machine's (luaObject.jobs); a survivor who walks away leaves his jobs
+		-- running, and the next survivor to sit down sees them in `jobs` and may
+		-- `fg` and `kill` them. A real sh lists only what that shell started,
+		-- because on a real Unix a job is a process group the shell owns; here
+		-- there is one book per computer and no shell owns anything.
+		--
+		-- So the description in COMMAND_INFO says "the background jobs on this
+		-- machine", `help` and `man jobs` print that, and the manual says it
+		-- outright. `ps` is still the wider one: it shows the prompt's own job
+		-- and the cron lines too.
 		if not job.interactive and job.mailTo == nil then
 			out[#out + 1] = "[" .. tostring(job.n or i) .. "] "
 				.. CeroSecOS.padRight(CeroSecOS.jobWord(job), 8)

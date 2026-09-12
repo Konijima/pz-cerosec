@@ -35,9 +35,19 @@ out takes them, as it takes the rest of the session. `cd` at the prompt moves th
 console; `cd` inside a script moves the script.
 
 `ps` shows the shell you are typing into, the way every Unix `ps` does; `jobs` does
-not, because the shell is not one of the things the shell started. That is also why
-the first background job is `[1] 43` and not `[1] 42` — the shell itself took 42 —
-and the four-job ceiling is still four *scripts*.
+not, because a shell is not a background job. That is also why the first background
+job is `[1] 43` and not `[1] 42` — the shell itself took 42 — and the four-job
+ceiling is still four *scripts*.
+
+**The jobs belong to the MACHINE, not to the shell.** This is the one place the
+model differs from a real `sh` and it is deliberate: there is one job book per
+computer (`luaObject.jobs`), four is a *computer's* ceiling rather than a session's,
+and `jobs` lists every background job on the machine whoever started it. Walk away
+and they keep running; the next survivor to sit down sees them, and may `fg` and
+`kill` them. On a real Unix a job is a process group the shell owns and `jobs` shows
+you only your own. `help`, `man jobs` and Volume 3 all say so in those words — the
+description is *"list the background jobs on this machine"* — because a model that
+differs has to be readable off the machine itself.
 
 Two costs worth knowing. Double quotes expand, so `"$x"` is the variable and `'$x'`
 is two characters. And one word is 1024 bytes (the script engine's ceiling); the
@@ -141,7 +151,8 @@ A line ending in `&` runs in the background and gives the prompt straight back:
 `jobs` lists them by slot, `ps` by number with the state (`R` running, `S`
 sleeping, `W` waiting for an answer, `O` held back by the screen) and the steps
 spent, `kill` takes either a number or `%slot`, and `wait` holds the prompt until
-the background jobs are done. Four jobs to a machine.
+the background jobs are done. Four jobs to a machine — a *machine*, which is why
+`jobs` is the machine's listing and not the shell's.
 
 **A runaway script cannot hurt anybody.** Every job gets a slice of each tenth of a
 second and no more, so `while true; do echo x; done` makes that one machine slow at
@@ -299,8 +310,8 @@ sooner. `sleep` takes whole seconds, as it does everywhere.
 own is the job started last. What it changes is where the output goes and who
 Escape belongs to. There is no `bg` and nothing to use it for: nothing on this
 machine suspends a job, so the only direction one can be moved in is forwards. A
-cron job is not one of these — the shell did not start it, `jobs` does not list it
-and `fg` will not have it, though `ps` shows it.
+cron job is not one of these — nobody at a keyboard asked for it, `jobs` does not
+list it and `fg` will not have it, though `ps` shows it.
 
 ## The shell that looks a name up, and the links it walks
 
