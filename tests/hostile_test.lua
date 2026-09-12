@@ -59,7 +59,16 @@ local FILES = {
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSVM.lua",
 	"42/media/lua/server/CeroSec/SCeroSecNet.lua",
 	"42/media/lua/server/CeroSec/SCeroSecJobs.lua",
+	"42/media/lua/server/CeroSec/SCeroSecSensors.lua",
 }
+-- What the sensor pass asks of the game, and nothing else: a cell to look squares
+-- up in, and a class test. Both nil-safe, so every bench in this file that is not
+-- about sensors runs in a world with none.
+_G.__world = nil
+_G.getCell = function() return _G.__world end
+_G.instanceof = function(object, class)
+	return type(object) == "table" and object.__class == class
+end
 for i = 1, #FILES do
 	local chunk, err = loadfile(FILES[i])
 	if not chunk then error("cannot load " .. FILES[i] .. ": " .. tostring(err)) end
@@ -1758,6 +1767,151 @@ do
 	local said = table.concat(bench.hereConsole.lines, "\n")
 	check("and went on with the status of a killed command: " .. said,
 		string.find(said, "after 130", 1, true) ~= nil)
+end
+
+--
+-- 20. Motion sensors (rung 4d)
+--
+-- The one thing in this mod that costs something every second whether anybody is
+-- typing or not. Every other program in this file is a player's; this one is the
+-- SERVER's, and the question is the same: what does the worst county cost?
+--
+-- The worst county: six computers, all on, eight motion sensors each, forty
+-- squares in every field and a body standing on half of them -- and every body
+-- moving every second, so no sample is ever cheap and no contact is ever open.
+-- Forty-eight sensors is more than a shopping mall would hold and a hundred and
+-- ninety-two bodies is a horde.
+--
+-- Driven for a thousand seconds, which is the whole of a sixteen-minute siege.
+-- What must be true is what is true of every other pass in this file: FLAT -- the
+-- thousandth second is no dearer than the tenth -- and cheap in real time.
+--
+do
+	local SENSORS, FIELD, BODIES, SECONDS = 48, 40, 20, 1000
+
+	-- A world of squares, each with its bodies on it. Nothing else: the sample
+	-- pass looks up a square and asks it for its moving objects, and those are the
+	-- only two calls it makes.
+	local world = { squares = {} }
+	world.getGridSquare = function(_, x, y, z)
+		return world.squares[x .. "," .. y .. "," .. z]
+	end
+	local function squareAt(x, y, z)
+		local key = x .. "," .. y .. "," .. z
+		local sq = world.squares[key]
+		if sq ~= nil then return sq end
+		sq = { bodies = {} }
+		sq.getMovingObjects = function()
+			return { size = function() return #sq.bodies end,
+				get = function(_, i) return sq.bodies[i + 1] end }
+		end
+		world.squares[key] = sq
+		return sq
+	end
+
+	local bodies = {}
+	CeroSecSensors.book = {}
+	for s = 1, SENSORS do
+		-- Every sensor in its own patch of the map, so no two share a square and
+		-- the cost is the whole forty-eight times forty and not a cache hit.
+		local ox, oy = s * 100, s * 100
+		local record = { x = ox, y = oy, z = 0, range = 6, field = {} }
+		for i = 1, FIELD do
+			local x, y = ox + (i % 8), oy + math.floor(i / 8)
+			record.field[i] = { x, y, 0 }
+			local square = squareAt(x, y, 0)
+			if i <= BODIES then
+				-- Half of them warm, and every one of them inside the range so the
+				-- distance test never gets to refuse anybody: the expensive path is
+				-- the one where every body counts.
+				local body = { __class = "IsoZombie", fx = x + 0.5, fy = y + 0.5,
+					bx = x, by = y, step = 0 }
+				body.getX = function() return body.fx end
+				body.getY = function() return body.fy end
+				body.isInvisible = function() return false end
+				square.bodies[#square.bodies + 1] = body
+				bodies[#bodies + 1] = body
+			end
+		end
+		CeroSecSensors.book["h" .. s] = record
+	end
+	eq("forty-eight heads in the book", SENSORS, 48)
+	eq("and a horde in front of them", #bodies, SENSORS * BODIES)
+
+	-- One second: every body shuffles inside its own tile, and then the pass. Inside
+	-- the tile, because a body that walked off across the map would leave the field
+	-- and the bench would end up measuring an empty room.
+	local function pass()
+		for i = 1, #bodies do
+			local b = bodies[i]
+			b.step = (b.step + 1) % 4
+			b.fx = b.bx + 0.2 + b.step * 0.2
+			b.fy = b.by + 0.8 - b.step * 0.2
+		end
+		_G.__now = _G.__now + CeroSecSensors.SAMPLE_MS
+		CeroSecSensors.samplePass(_G.__now)
+	end
+
+	_G.__world = world
+	-- Warm, so the first hundred is not paying for the first signature of every
+	-- head -- which is the one that has nothing to compare against.
+	for _ = 1, 20 do pass() end
+
+	local function timed(n)
+		local at = os.clock()
+		for _ = 1, n do pass() end
+		return (os.clock() - at) * 1000 / n
+	end
+
+	local first = timed(100)
+	for _ = 1, SECONDS - 200 do pass() end
+	local last = timed(100)
+
+	-- Flat. The same rule every program above is held to: a cost that climbs is a
+	-- server that dies at hour three, and the book here is a table that could
+	-- quietly grow a signature per body per second if a sample kept anything.
+	check(string.format("the sensor pass is flat (%.3f ms then %.3f ms)", first, last),
+		last <= first * 2 + 0.5)
+
+	-- And cheap. Once a SECOND and not once a tick, so what this is a fraction of
+	-- is a whole second and not a frame: the measured number on an ordinary
+	-- machine is about five milliseconds, half a percent of it, for a county
+	-- nobody will ever build. Twenty is the ceiling and it is generous on purpose,
+	-- the way WALL_MS_PER_PASS is: this is a floor under "the server is not being
+	-- hurt" and a bench box under load must not turn it red.
+	check(string.format("and costs %.3f ms a second for 48 heads and 960 bodies", last),
+		last < 20)
+
+	-- The contacts are all closed, which is the other half of the bargain: a pass
+	-- that was cheap because it saw nothing would prove nothing.
+	local closed = 0
+	for _, record in pairs(CeroSecSensors.book) do
+		if record.holdUntil ~= nil and _G.__now < record.holdUntil then closed = closed + 1 end
+	end
+	eq("every head saw the horde it was standing in", closed, SENSORS)
+
+	-- Nothing grew. A sample keeps ONE string per head and the horde is not
+	-- remembered body by body.
+	local held = 0
+	for _ in pairs(CeroSecSensors.book) do held = held + 1 end
+	eq("and the book is still forty-eight rows", held, SENSORS)
+
+	report[#report + 1] = string.format(
+		"  %-22s worst %4d squares/s, %6.3f ms/s (48 heads, 960 bodies)",
+		"sensor sampling", SENSORS * FIELD, last)
+
+	-- And the empty county, which is what almost every server is: no head in the
+	-- book, and a pass that touches nothing at all.
+	CeroSecSensors.book = {}
+	local at = os.clock()
+	for _ = 1, SECONDS do
+		_G.__now = _G.__now + CeroSecSensors.SAMPLE_MS
+		CeroSecSensors.samplePass(_G.__now)
+	end
+	local idle = (os.clock() - at) * 1000 / SECONDS
+	check(string.format("a county with no sensor in it costs %.4f ms a second", idle),
+		idle < 0.01)
+	_G.__world = nil
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

@@ -4975,6 +4975,117 @@ do
 end
 
 --
+-- 21q. The `sensor` kind: the one device that is only ever READ.
+--
+-- Where the world's sensors come from, what a field of view is and when a contact
+-- closes is the server's business and is proved in tests/window_test.lua against
+-- a world. The engine's whole half is this: a kind with NO vocabulary at all, a
+-- mode of 440 to say so, and a write that never reaches the caller.
+--
+-- Empty and not absent is the thing that matters here. A kind CeroSecOS.DEV_VALUES
+-- has no entry for is an entry nodeFor throws away -- so a sensor mounted through
+-- an absent kind would be no device at all, and one mounted through a kind with a
+-- word in it would be a machine promising something it cannot do.
+local function sensorDevices()
+	return fakeDevices({
+		{ id = "sensor0", kind = "sensor", desc = "office", side = "",
+			pos = "1E 0", state = "clear", mode = 440 },
+		{ id = "sensor1", kind = "sensor", desc = "store", side = "",
+			pos = "4E 2S", state = "motion", mode = 440 },
+		{ id = "light0", kind = "light", desc = "office", side = "", pos = "0 0",
+			state = "on", becomes = ONOFF },
+	})
+end
+
+do
+	-- The mode a kind is born at, which is the one thing the world asks the engine
+	-- rather than the other way round.
+	eq("a sensor is born read-only", CeroSecOS.devModeFor("sensor"), 440)
+	eq("and every other kind at 660", CeroSecOS.devModeFor("light"), CeroSecOS.DEV_MODE)
+	eq("a kind nobody has heard of too", CeroSecOS.devModeFor("toaster"),
+		CeroSecOS.DEV_MODE)
+
+	local state = fresh()
+	local session = open(state, "root")
+	local devices = sensorDevices()
+	local env = devEnv(devices)
+
+	-- cr--r-----: read for root and for sudo, write for nobody at all. No side
+	-- column -- a head lying on a floor does not face a way -- so the state sits
+	-- where a window's does with two blanks in front of it.
+	okAt(state, session, "ls -l /dev", {
+		"crw-rw----  root  sudo  light0  office            on",
+		"crw-rw-rw-  root  root  null",
+		"cr--r-----  root  sudo  sensor0 office            clear",
+		"cr--r-----  root  sudo  sensor1 store             motion",
+	}, env)
+
+	-- Reading one, both ways round, and both words.
+	okAt(state, session, "cat /dev/sensor0", { "clear" }, env)
+	okAt(state, session, "cat /dev/sensor1", { "motion" }, env)
+	okAt(state, session, "dev sensor0", { "sensor0: clear" }, env)
+	okAt(state, session, "dev sensor1", { "sensor1: motion" }, env)
+
+	-- The kind filters, which it can only do because the kind is in DEV_VALUES.
+	okAt(state, session, "dev sensor", {
+		"sensor0 office                1E 0           clear",
+		"sensor1 store                 4E 2S          motion",
+	}, env)
+
+	-- And every word there is refused, in the sensor's own name. Root included:
+	-- the mode is not what stops this, the vocabulary is.
+	local WORDS = { "on", "off", "open", "close", "lock", "unlock", "motion",
+		"clear", "yes", "1", "" }
+	for i = 1, #WORDS do
+		badAt(state, session, "echo " .. WORDS[i] .. " > /dev/sensor0",
+			"sensor0: invalid value", env)
+		if WORDS[i] ~= "" then
+			badAt(state, session, "dev sensor0 " .. WORDS[i],
+				"sensor0: invalid value", env)
+		end
+	end
+
+	-- The assertion the rest of it rests on: the WORLD was never asked. A refusal
+	-- that happened after the caller had been told to do something would be a
+	-- sensor that could be changed by somebody who typed the right word.
+	eq("nothing was ever written to a sensor's world", #devices.writes, 0)
+
+	-- Nothing to toggle: there is no opposite of a fact.
+	badAt(state, session, "dev sensor0 toggle", "sensor0: cannot toggle", env)
+
+	-- Pointing at one takes a READ's right, which is all a sensor has to give.
+	okAt(state, session, "dev find sensor0", { "sensor0: highlighted" }, env)
+
+	-- 440 keeps everybody else out, and a chmod moves it and is remembered.
+	local admin = open(state, "admin")
+	okAt(state, admin, "cat /dev/sensor0", { "clear" }, env)
+	okAt(state, session, "adduser bob", nil)
+	local bob = open(state, "bob")
+	badAt(state, bob, "cat /dev/sensor0", "sensor0: permission denied", env)
+	okAt(state, session, "chmod 444 /dev/sensor0", {}, env)
+	eq("the chmod went back to the caller", devices.chmods[1], "sensor0=444")
+	okAt(state, bob, "cat /dev/sensor0", { "clear" }, env)
+	-- Opening the READ to everybody opened no write, and the two refusals are not
+	-- the same one: the mode is judged BEFORE the vocabulary, so a stranger with
+	-- no `w` is told he may not and root is told there is nothing to say. Both are
+	-- true and the order is the one every other device already runs on.
+	badAt(state, bob, "echo motion > /dev/sensor0", "sensor0: permission denied", env)
+	okAt(state, session, "chmod 446 /dev/sensor0", {}, env)
+	badAt(state, bob, "echo motion > /dev/sensor0", "sensor0: invalid value", env)
+	eq("and a w on the mode still wrote nothing to the world", #devices.writes, 0)
+	okAt(state, session, "chmod 444 /dev/sensor0", {}, env)
+
+	-- A head picked up: mounted so the number can be spoken about, never listed.
+	local gone = fakeDevices({
+		{ id = "sensor0", kind = "sensor", dead = true, mode = 440 },
+	})
+	badAt(state, session, "cat /dev/sensor0", "sensor0: no such device", devEnv(gone))
+	badAt(state, session, "dev find sensor0", "sensor0: no such device", devEnv(gone))
+	badAt(state, session, "echo x > /dev/sensor0", "sensor0: no such device", devEnv(gone))
+	okAt(state, session, "dev sensor", {}, devEnv(gone))
+end
+
+--
 -- 22. Groups: /etc/group, the three-digit evaluation, and the five commands.
 --
 
