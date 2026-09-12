@@ -287,6 +287,12 @@ end
 -- A table of four booleans, empty when nothing is fitted, and nil -- meaning "do
 -- not ask" -- when the option is off, which is the whole of how the old world is
 -- kept: every branch below reads `fitted == nil` as "yes, of course".
+--
+-- Asked INSIDE each branch and never at the top of classify, because classify is
+-- asked about every object on every square of the building at every command --
+-- the walls, the floors, the furniture -- and only one in fifty of them is a
+-- thing a module goes on. Two Java calls apiece for the other forty-nine is a
+-- cost paid over and over for nothing.
 local function fittedOn(object)
 	if not CeroSecModules.required() then return nil end
 	return CeroSecModules.installedOn(object)
@@ -299,11 +305,10 @@ end
 function CeroSecDevices.classify(object)
 	if object == nil then return nil end
 
-	local fitted = fittedOn(object)
-
 	if instanceof(object, "IsoLightSwitch") then
 		-- No relay, no light. Not a light switch that refuses: a light switch the
 		-- machine has never heard of, which is what an unwired one is.
+		local fitted = fittedOn(object)
 		if not has(fitted, "relay") then return nil end
 		return { {
 			kind = "light", side = "",
@@ -313,6 +318,7 @@ function CeroSecDevices.classify(object)
 	end
 
 	if instanceof(object, "IsoDoor") then
+		local fitted = fittedOn(object)
 		local side = object:getNorth() and "N" or "W"
 		local desc = doorDesc(object)
 		local locks = doorLocks(object)
@@ -334,6 +340,7 @@ function CeroSecDevices.classify(object)
 	end
 
 	if instanceof(object, "IsoWindow") then
+		local fitted = fittedOn(object)
 		-- A contact and nothing else, ever: the only call in the game that moves a
 		-- sash is IsoWindow.ToggleWindow(IsoGameCharacter) and it wants a survivor
 		-- standing at it (docs/notes/modules-proofs.md, 4). So a wired window is a
@@ -353,6 +360,7 @@ function CeroSecDevices.classify(object)
 	-- to name it with and "built" is the truth about it. Only doors: a
 	-- player-built window frame has no lock this rung.
 	if instanceof(object, "IsoThumpable") and object:isDoor() then
+		local fitted = fittedOn(object)
 		local side = object:getNorth() and "N" or "W"
 		local out = {}
 		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
