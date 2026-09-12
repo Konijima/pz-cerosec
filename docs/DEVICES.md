@@ -34,7 +34,7 @@ machine into a broken one.
 
 | call | answers | who owns it |
 | --- | --- | --- |
-| `list()` | array of `{ id, kind, desc, side, state, mode, dead }` | the caller |
+| `list()` | array of `{ id, kind, desc, side, state, mode, dead, ro }` | the caller |
 | `write(id, value)` | `ok, reason, state` | the caller |
 | `chmod(id, mode)` | — | the caller, optional |
 | `find(id, seconds)` | `ok, reason, word` | the caller, optional |
@@ -74,6 +74,86 @@ Classification is `instanceof`, and it answers a **list**, because one object ca
 be two devices: `IsoLightSwitch` → `light`, `IsoWindow` → `win`, `IsoDoor` →
 `door` *and* `lock` when the lock bites, `IsoThumpable` with `isDoor()` → `door`
 and `lock` (`built`). A player-built window frame is not a device this rung.
+
+And it answers **nothing at all** for a fixture nobody has wired, which is the
+hardware-module gate below.
+
+## The hardware modules
+
+`SandboxVars.CeroSec.HardwareRequired`, declared in
+`42/media/sandbox-options.txt` and **true by default**: a fixture is only a
+device when a module is installed on it. Read through
+`CeroSecModules.required()`, which **fails closed** — anything that is not the
+literal `false`, a group nobody declared included, means the hardware is
+required. A sandbox file that failed to load is then a world with an empty
+`/dev`, which a player sees at once; the other way round is a world that quietly
+went back to magic and looks exactly like a working one.
+
+| module | item | fits | gives | skill |
+| --- | --- | --- | --- | --- |
+| `contact` | `CeroSec.MagneticContact` | door, window | that `door`/`win`, **read-only** | 1 |
+| `relay` | `CeroSec.Relay` | light switch | `light` | 1 |
+| `strike` | `CeroSec.ElectricStrike` | a door `doorLocks` says yes to | `lock` | 2 |
+| `operator` | `CeroSec.DoorOperator` | door, not a garage or double leaf | `door`, read-write | 3 |
+
+The table, the levels, the fit rules and the modData read/write are
+`shared/CeroSec/CeroSecModules.lua` — **shared**, because the right-click menu
+asks the same questions the discovery does and a client cannot load a server
+file. `roomName`, `doorLocks` and `isManyDoors` moved there from
+`SCeroSecDevices.lua` for that reason and are forwarded back under their old
+names, so every call site there reads as it did.
+
+**Where a module lives:** the object's own modData, under the mod's name —
+`object:getModData().cerosec = { strike = true, contact = true }` — written
+server-side and broadcast with `transmitModData()`, whose server branch is
+`GameServer.sendObjectModData` and which calls `flagForHotSave()` on the way out.
+`IsoObject` saves modData with the chunk under flag bit `0x4`, and `IsoThumpable`
+keeps and saves a modData field of its **own**; both are quoted at the bytecode in
+[notes/modules-proofs.md](notes/modules-proofs.md). The last module off takes the
+table with it, because `IsoObject.save` only skips a modData table that is empty
+altogether.
+
+**Read-only without a kind.** A door with a contact and no operator is a `door`
+like any other — same vocabulary — with nothing behind it to carry a write out.
+That travels as `ro` on the entry, and it means two things: the node is born
+`CeroSecOS.DEV_MODE_RO` (440), so everybody but root is refused by the mode; and
+`CeroSecOS.devWrite` refuses `ro` **before the vocabulary**, because what word was
+typed cannot matter to a device that can carry none of them out. The text is
+`operation not supported` — `write(2)`'s `EOPNOTSUPP`, in the lower case every
+other reason here is written in. `SCeroSecDevices.act` keeps the same refusal as a
+belt for a caller that reaches the world layer directly.
+
+A **window is always `ro`** when the option is on: the only call in the game that
+moves a sash is `IsoWindow.ToggleWindow(IsoGameCharacter)`, which wants a
+character, so there is no window actuator to build. With the option off the `win`
+device locks and unlocks exactly as it always did.
+
+**Hardware changing under a live device** moves its mode and never its number:
+the key a number hangs on is `kind:x:y:z:side:n` and neither the kind nor the
+place moved. `CeroSecDevices.number` compares the record's `ro` with the entry's
+as booleans — so a devmap written before this rung is not a change — and on a
+real change puts the mode back to what a device of that shape is born at. A
+`chmod` does not survive the hardware, deliberately: the alternative is a door
+with an operator on it that nobody may write to.
+
+**Install and uninstall** are `installmodule` and `uninstallmodule` in
+`SCeroSecSystem.lua`, naming the fixture by its square plus its index in that
+square's object list — the shape vanilla's own client commands use
+(`ISWorldObjectContextMenu.lua:3076`). The server looks the object up itself and
+re-asks the fit, the level, the module and the screwdriver, plus the one thing the
+menu cannot ask: whether the player is standing there. The item leaves the bag
+before the module goes on and is back in it before the module comes off, which is
+the floppy drive's rule about duplication. The client half is
+`CeroSecModuleMenu.lua` (a listener of its own on
+`Events.OnFillWorldObjectContextMenu`, absent altogether when the option is off)
+and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
+animation, `150 - perk * 3`-style duration, `addXp` at the end).
+
+**`dev` and `ls -l` say nothing about which module gave a device**, and that is
+deliberate: both listings are full-width already — `ls -l /dev` puts the widest
+state on column 60 — and a survivor who wants to know goes and looks at the door.
+What the listing does show is the consequence: `cr--r-----` on a door is a door
+with a contact and no operator.
 
 A **motion sensor** is not on that list at all, because a dropped item is not on
 `getObjects()`: `scanWorldItems` walks `getWorldObjects()` beside it
@@ -130,8 +210,9 @@ state.devmap["light:1024:998:0::0"] = { id = "light0", kind = "light", n = 0, mo
 ```
 
 A new kind's starting mode is `CeroSecOS.DEV_MODES[kind]` through
-`CeroSecOS.devModeFor`, which is `CeroSecOS.DEV_MODE` (660) for everything except
-`sensor` (440). It is only where a mode *starts*: a `chmod` moves it and the book
+`CeroSecOS.devModeFor(kind, ro)`, which is `CeroSecOS.DEV_MODE` (660) for
+everything except `sensor` (440) — and `CeroSecOS.DEV_MODE_RO` (440) for any
+entry marked `ro`, whatever its kind, which is the hardware-module gate above. It is only where a mode *starts*: a `chmod` moves it and the book
 above is what makes that outlive the command.
 
 The trailing `0` is an ordinal that tells two devices of one kind facing the same

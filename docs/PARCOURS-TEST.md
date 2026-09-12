@@ -1290,6 +1290,100 @@ rechargement du morceau, jamais avant. La règle est dans
      Le contrôle du même geste : rester devant la machine et couper le générateur
      sur place → elle s'éteint toute seule dans la minute qui suit. [ ]
 
+## W. Les modules matériels (palier 4f)
+
+Depuis ce palier, une porte, une fenêtre ou un interrupteur n'est un
+périphérique que si **quelqu'un y a vissé un module**. L'option de bac à sable
+`CeroSec.HardwareRequired` (page « CeroSec » de l'écran des options, **activée
+par défaut**) commande tout : désactivée, c'est exactement le monde d'avant. Les
+quatre modules sont le contact magnétique (voit une porte ou une fenêtre), le
+relais (actionne un interrupteur), la gâche électrique (la serrure) et
+l'opérateur de porte (ouvre et ferme). Règles et preuves :
+[DEVICES.md](DEVICES.md#the-hardware-modules).
+
+227. **Un bâtiment tout neuf ne répond à rien.** Nouvelle partie avec l'option
+     **activée** (la valeur par défaut : ne rien toucher dans le bac à sable).
+     Ordinateur alimenté dans une maison avec des portes, des fenêtres et des
+     interrupteurs. En `root` : `ls -l /dev` → **rien du monde**, seulement
+     `null` et `fd0` s'il y a une disquette. `dev` → tableau vide. `dev light0`
+     → `dev: light0: no such device`. C'est le changement de ce palier ; si des
+     portes apparaissent encore, l'option n'est pas lue. [ ]
+228. **Le menu, et ce qu'il refuse.** Clic droit sur un **interrupteur**, sans
+     rien dans le sac → aucune entrée « Matériel CeroSec » (on ne parle pas de
+     matériel qu'on n'a pas). Se donner un `CeroSec.Relay` : l'entrée apparaît,
+     « Installer Module relais ». Sans tournevis → grisée, infobulle « Il vous
+     faut un tournevis. ». Avec le tournevis mais Électricité 0 → grisée,
+     « Électricité 1 requise. ». Même essai en visant une **porte** avec le
+     relais en poche → « Ce module ne va pas ici. ». [ ]
+229. **Poser le relais.** Électricité 1, tournevis et relais en main, clic droit
+     sur l'interrupteur → Installer. Attendu : le personnage **marche jusqu'à
+     l'interrupteur**, joue l'animation de fouille quelques secondes, le relais
+     **quitte le sac**, le tournevis reste, et un petit gain d'XP Électricité
+     apparaît. Puis sur l'ordinateur : `dev` → l'interrupteur est là,
+     `echo off > /dev/light0` éteint bien la pièce. [ ]
+230. **Le contact seul : on regarde, on ne touche pas.** Poser un
+     `CeroSec.MagneticContact` sur une porte **extérieure**. `ls -l /dev` → la
+     ligne de cette porte porte `cr--r-----` (pas de `w`). En `admin` :
+     `echo open > /dev/doorN` → `doorN: permission denied`. Faire `su root`
+     puis le même ordre → `doorN: operation not supported`. Dans les deux cas
+     la porte **ne bouge pas** dans le monde. `cat /dev/doorN` répond
+     `closed`, `open` ou `locked` selon ce qu'on lui fait à la main : ouvrir la
+     porte au clic et relire → la lecture suit. [ ]
+231. **L'opérateur sur la même porte.** Poser un `CeroSec.DoorOperator`
+     (Électricité 3) sur cette porte. Attendu : **même numéro** qu'à l'étape
+     230 — `doorN` n'a pas changé — mais `ls -l /dev` montre maintenant
+     `crw-rw----`, et `echo open > /dev/doorN` ouvre la porte pour de bon. Si la
+     porte est verrouillée, elle répond `doorN: locked` : c'est la serrure, pas
+     le module. [ ]
+232. **La gâche, et les deux portes qui la refusent.** Sur une porte
+     **intérieure** (une pièce de chaque côté), clic droit avec la gâche →
+     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur une porte
+     de **garage** ou une porte double, avec l'opérateur → grisée, « Un
+     ordinateur ne peut pas actionner une porte double ou de garage. ». Sur la
+     porte extérieure de l'étape 230 → la gâche se pose, et `lockN` apparaît à
+     côté de `doorN` : `echo unlock > /dev/lockN` déverrouille, essayer d'entrer
+     depuis dehors le confirme. [ ]
+233. **La fenêtre ne prend qu'un contact.** Clic droit sur une fenêtre avec la
+     gâche ou l'opérateur en poche → « Ce module ne va pas ici. ». Avec le
+     contact → il se pose, `winN` apparaît. `cat /dev/winN` lit son état ;
+     `echo unlock > /dev/winN` en `root` → `winN: operation not supported`, et
+     le loquet ne bouge pas. C'est une limite du jeu, pas un oubli : rien dans
+     le moteur n'ouvre un châssis sans un survivant devant. [ ]
+234. **Retirer rend le module entier.** Clic droit sur l'interrupteur de l'étape
+     229 → « Retirer Module relais ». Attendu : le relais **revient dans le
+     sac** (un seul, pas deux), l'interrupteur disparaît de `dev`, et
+     `dev light0` répond `light0: no such device`. Le reposer : c'est **le même
+     `light0`** qu'avant. Sur une porte qui porte contact **et** gâche, retirer
+     le contact ne touche pas à la gâche : `lockN` répond toujours. [ ]
+235. **Fabriquer les quatre.** Avec Électricité 1 : le contact magnétique et le
+     module relais sont dans l'onglet **Électrique** de l'établi, **déjà
+     appris** (aucun magazine à lire). À 2 la gâche apparaît, à 3 l'opérateur.
+     Vérifier qu'un tournevis est demandé et **rendu** (il est toujours là après
+     la fabrication), et que l'opérateur mange bien une boîte de pièces de
+     moteur. [ ]
+236. **Le butin.** Dans une camionnette d'électricien, une boutique
+     d'électronique, une caisse d'entrepôt, une quincaillerie ou un garage : on
+     trouve des contacts assez souvent, des relais moins, des gâches encore
+     moins et un opérateur rarement. Aucun module sur un bureau de bureau ni
+     dans une bibliothèque — ce ne sont pas les mêmes étagères que les
+     disquettes. [ ]
+237. **L'option désactivée, c'est le monde d'avant.** Nouvelle partie, bac à
+     sable, page CeroSec, décocher « Modules matériels obligatoires ». Attendu :
+     dans un bâtiment où **rien n'est posé**, `ls -l /dev` liste toutes les
+     portes, fenêtres, serrures et lumières comme aux étapes 83 à 90, `echo
+     unlock > /dev/win0` fonctionne de nouveau, et le clic droit sur une porte
+     **n'offre aucune entrée** « Matériel CeroSec » (poser un module n'y
+     servirait à rien). [ ]
+238. **Ça survit à la sauvegarde et au déchargement.** Option activée, deux ou
+     trois modules posés. Quitter la partie, revenir : `dev` montre exactement
+     les mêmes périphériques avec les mêmes numéros. Puis s'éloigner assez pour
+     décharger le quartier et revenir (section V) : au retour, les modules sont
+     toujours là. [ ]
+239. **En multijoueur (si testé).** Hôte + client : le client pose un module,
+     l'hôte voit le périphérique apparaître dans `dev` sur sa propre machine
+     sans recharger, et inversement. Le client qui n'est **pas** à côté de la
+     porte ne peut rien poser dessus. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
