@@ -1529,9 +1529,10 @@ Here is the door alarm, whole, and it is nine lines.
 That ran. Somebody opened that door while the loop was asleep between two
 glances, and the loop noticed on the next one.
 
-Note the absolute path in log. This job is behind the prompt and has no
-HOME, exactly as chapter 9 warned, so $HOME/watch.log would have written
-to /watch.log and been refused.]],
+Note the absolute path in log. $HOME/watch.log works as well -- a job
+behind the prompt starts with a copy of your own variables, and a cron line
+gets HOME -- but a path written out in full is one less thing to be wrong
+about a script that runs while nobody is watching.]],
 
 [[Reaching another machine from a script.
 
