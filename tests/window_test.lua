@@ -1751,22 +1751,15 @@ local function fakeThumpable(padlock, north)
 	return o
 end
 
--- A motion sensor lying on the floor: an IsoWorldInventoryObject holding a
--- HandWeapon that answers a SensorRange. Those are the three calls the discovery
--- makes and the three the game has --
+-- A dropped item: an IsoWorldInventoryObject holding an InventoryItem. That is the
+-- path the discovery walks and the path the game has --
 -- IsoGridSquare.getWorldObjects -> IsoWorldInventoryObject.getItem ->
--- HandWeapon.getSensorRange, all javap'd -- and the ranges below are the game's
--- own numbers (media/scripts/generated/items/weapon.txt: PipeBombSensorV1 :838
--- SensorRange = 3, V2 :869 = 4, V3 :900 = 6).
+-- InventoryItem.getFullType, all javap'd.
 --
 -- getSpriteName is deliberately NOT written on it: a world item has no sprite to
 -- be found again by, and a server that sent one for a sensor would be calling a
 -- method that answers nothing on the real thing.
-local function fakeSensor(range, fullType)
-	local item = { __class = "HandWeapon", range = range, fullType = fullType }
-	item.getSensorRange = function() return item.range end
-	item.getFullType = function() return item.fullType end
-
+local function fakeDropped(item)
 	local o = { __class = "IsoWorldInventoryObject", item = item, highlights = {} }
 	o.getItem = function() return o.item end
 	-- The four vanilla makes on hover, the same four a door and a window get, and
@@ -1782,25 +1775,32 @@ local function fakeSensor(range, fullType)
 	return o
 end
 
-local SENSORS = {
-	V1 = { "Base.PipeBombSensorV1", 3 },
-	V2 = { "Base.PipeBombSensorV2", 4 },
-	V3 = { "Base.PipeBombSensorV3", 6 },
-}
-
-local function sensorV(grade)
-	local spec = SENSORS[grade]
-	return fakeSensor(spec[2], spec[1])
+-- The one item that is a device: the bare module, which carries no SensorRange of
+-- its own -- it is a component, and CeroSec.SENSOR_RANGE is what the mod says its
+-- reach is (media/scripts/generated/items/normal.txt:4539).
+local function fakeSensor()
+	local item = { __class = "InventoryItem" }
+	item.getFullType = function() return "Base.MotionSensor" end
+	return fakeDropped(item)
 end
 
--- An ordinary dropped item, so that "any world item is a sensor" cannot pass:
--- a hammer is an InventoryItem and not a HandWeapon with a range on it.
+-- A TRAP HEAD, which must never be a device: a bomb with a motion sensor taped to
+-- it. A HandWeapon answering a positive SensorRange, which is what the fifteen
+-- *SensorV1/V2/V3 items are (weapon.txt: PipeBombSensorV1 :838 = 3, V2 :869 = 4,
+-- V3 :900 = 6) -- so a bench that let one through would be a machine calling a
+-- pipe bomb a sensor.
+local function fakeTrapHead(range, fullType)
+	local item = { __class = "HandWeapon", range = range, fullType = fullType }
+	item.getSensorRange = function() return item.range end
+	item.getFullType = function() return item.fullType end
+	return fakeDropped(item)
+end
+
+-- An ordinary dropped item, so that "any world item is a sensor" cannot pass.
 local function fakeJunk()
 	local item = { __class = "InventoryItem" }
 	item.getFullType = function() return "Base.Hammer" end
-	local o = { __class = "IsoWorldInventoryObject", item = item }
-	o.getItem = function() return o.item end
-	return o
+	return fakeDropped(item)
 end
 
 -- A body in the field: a survivor, a zombie, or a car. All three are
@@ -2495,10 +2495,13 @@ end
 --   store   ONE square at 14,10 -- next door to the office and NOT in it, which
 --           is the wall: the two squares touch and a PIR does not see through it
 --
---   sensor0  V1, range 3, at 11,10 in the office
---   sensor1  V3, range 6, at 13,10 in the office
---   sensor2  V2, range 4, at 14,10 in the store
---   and a hammer at 12,10, which is a dropped item and not a device
+--   sensor0  at 11,10 in the office
+--   sensor1  at 13,10 in the office
+--   sensor2  at 14,10 in the store
+--
+-- Every head has the same reach, CeroSec.SENSOR_RANGE, because there is one item
+-- and it has one. Also on the floor: a hammer, and a PIPE BOMB WITH A SENSOR ON
+-- IT -- neither of them is a device, and the second is the one that matters.
 local function sensorWorld()
 	local world = FakeWorld.new()
 	local coords = {}
@@ -2509,10 +2512,16 @@ local function sensorWorld()
 	world.room("store", { {14,10,0} })
 
 	local kit = { world = world }
-	kit.v1 = world.drop(world.squares["11,10,0"], sensorV("V1"))
-	kit.v3 = world.drop(world.squares["13,10,0"], sensorV("V3"))
-	kit.v2 = world.drop(world.squares["14,10,0"], sensorV("V2"))
+	kit.head0 = world.drop(world.squares["11,10,0"], fakeSensor())
+	kit.head1 = world.drop(world.squares["13,10,0"], fakeSensor())
+	kit.head2 = world.drop(world.squares["14,10,0"], fakeSensor())
 	kit.junk = world.drop(world.squares["12,10,0"], fakeJunk())
+	-- A pipe bomb with a V1 sensor taped to it, lying in the same room as the
+	-- heads. It is NOT a device and never will be: a thing that explodes when it
+	-- detects movement is a mine, and a machine that called it sensor3 would be
+	-- offering a survivor a security system that kills him.
+	kit.bomb = world.drop(world.squares["12,12,0"],
+		fakeTrapHead(3, "Base.PipeBombSensorV1"))
 	return kit
 end
 
@@ -2549,13 +2558,15 @@ do
 	-- and never written and its mode says so before anybody tries.
 	bench.enter("ls -l /dev")
 	bench.frame()
-	check("sensor0 is the V1 in the office",
+	check("sensor0 is the head in the office",
 		bench.painted("cr--r-----  root  sudo  sensor0 office            clear"))
-	check("sensor1 is the V3 beside it",
+	check("sensor1 is the one beside it",
 		bench.painted("cr--r-----  root  sudo  sensor1 office            clear"))
-	check("sensor2 is the V2 in the store",
+	check("sensor2 is the one in the store",
 		bench.painted("cr--r-----  root  sudo  sensor2 store             clear"))
-	check("and the hammer on the floor is not a device", not bench.painted("sensor3"))
+	-- Three heads and no fourth: the hammer is not a device and NEITHER IS THE
+	-- PIPE BOMB, which is the one refusal this whole rung turns on.
+	check("a hammer on the floor is not a device", not bench.painted("sensor3"))
 
 	-- The table, with the offset column that tells two heads in one room apart.
 	bench.enter("dev sensor")
@@ -2608,19 +2619,57 @@ do
 	bench.frame()
 	check("a body standing still in the field reads clear", bench.painted("clear"))
 
-	-- The other head saw the same step, being a bigger sensor in the same room.
+	-- The other head in the same room saw the same step, and has opened again too.
 	bench.enter("cat /dev/sensor1")
 	bench.frame()
-	check("and so did the V3 beside it", bench.painted("clear"))
+	check("and so has the head beside it", bench.painted("clear"))
 
 	_G.__world = nil
 end
 
 do
-	-- The wall. sensor1 is at 13,10 with a range of SIX, and the store square at
-	-- 14,10 is ONE tile away from it -- well inside that range and on the other
-	-- side of a wall. A survivor shuffling about in the store must not reach it,
-	-- and must reach the head standing in the store with him.
+	-- A trap head is NEVER a device, and it is the only refusal here that is about
+	-- what a machine should not offer rather than about what the world holds.
+	--
+	-- Every grade of every one of the five: each is a HandWeapon with a positive
+	-- SensorRange, which is a bomb with a motion sensor taped to it. A room floored
+	-- with them grows no sensorN at all -- and then ONE bare module in the same room
+	-- grows sensor0, so what refuses them is the refusal and not an empty world.
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {13,10,0} })
+	local TRAPS = { "PipeBomb", "Aerosolbomb", "NoiseTrap", "SmokeBomb", "FlameTrap" }
+	local RANGES = { 3, 4, 6 }
+	for t = 1, #TRAPS do
+		for g = 1, 3 do
+			world.drop(world.squares["1" .. g .. ",10,0"],
+				fakeTrapHead(RANGES[g], "Base." .. TRAPS[t] .. "SensorV" .. g))
+		end
+	end
+	_G.__world = world
+	local bench = sensorBench()
+
+	bench.enter("dev sensor")
+	bench.frame()
+	check("fifteen trap heads on the floor are no device at all",
+		not bench.painted("sensor0"))
+	bench.enter("cat /dev/sensor0")
+	bench.frame()
+	check("and naming one is a path nothing answers to",
+		bench.painted("cat: /dev/sensor0: no such file"))
+
+	-- The same room, one bare module in it.
+	world.drop(world.squares["10,10,0"], fakeSensor())
+	bench.enter("dev sensor")
+	bench.frame()
+	check("while the module beside them is sensor0", bench.painted("sensor0 office"))
+	_G.__world = nil
+end
+
+do
+	-- The wall. sensor1 is at 13,10 and the store square at 14,10 is ONE tile away
+	-- from it -- well inside its reach and on the other side of a wall. A survivor
+	-- shuffling about in the store must not reach it, and must reach the head
+	-- standing in the store with him.
 	local kit = sensorWorld()
 	_G.__world = kit.world
 	local bench = sensorBench()
@@ -2645,10 +2694,10 @@ do
 	-- euclidean distance from the centre of its own tile
 	-- (IsoTrap.updateVictimsInSensorRange: DistanceToSquared(mo.getX(), mo.getY(),
 	-- getX() + 0.5f, getY() + 0.5f) <= range * range), so a body two tiles east
-	-- and three south of a range-3 head is 3.6 tiles away and is NOT seen -- while
-	-- a sensor that counted tiles the square way would have called that 3 and
-	-- fired. It is on sensor0's square list, so what refuses it is the distance
-	-- and not the box the squares were gathered in.
+	-- and three south of a head is 3.6 tiles away and is NOT seen at a reach of
+	-- three -- while a sensor that counted tiles the square way would have called
+	-- that 3 and fired. It is on sensor0's square list, so what refuses it is the
+	-- distance and not the box the squares were gathered in.
 	local kit = sensorWorld()
 	_G.__world = kit.world
 	local bench = sensorBench()
@@ -2661,11 +2710,12 @@ do
 
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
-	check("3.6 tiles is past a range of 3, corner or not", bench.painted("clear"))
-	-- The same body, three tiles due south of the range-6 head: inside it.
+	check("3.6 tiles is past a reach of 3, corner or not", bench.painted("clear"))
+	-- The same body, three tiles due south of the other head: exactly on its reach,
+	-- and <= is what the game writes, so it is seen.
 	bench.enter("cat /dev/sensor1")
 	bench.frame()
-	check("and inside a range of 6", bench.painted("motion"))
+	check("and three tiles due south is inside it", bench.painted("motion"))
 	_G.__world = nil
 end
 
@@ -2773,7 +2823,7 @@ do
 	bench.frame()
 	check("it is there to begin with", bench.painted("clear"))
 
-	kit.world.pickUp(kit.v1)
+	kit.world.pickUp(kit.head0)
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
 	check("a sensor picked up is no such device",
@@ -2792,11 +2842,11 @@ do
 	-- swapping a V1 for a V3 on the same shelf leaves every script that named
 	-- sensor0 pointing at the sensor on that shelf. A head dropped somewhere else
 	-- is somewhere else and gets the next number never used.
-	kit.world.drop(kit.world.squares["11,10,0"], sensorV("V3"))
+	kit.world.drop(kit.world.squares["11,10,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
 	check("a new head on the same tile is sensor0 again", bench.painted("sensor0 office"))
-	kit.world.drop(kit.world.squares["12,11,0"], sensorV("V1"))
+	kit.world.drop(kit.world.squares["12,11,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
 	check("and one on a new tile takes the next number", bench.painted("sensor3 office"))
@@ -2815,10 +2865,10 @@ do
 	bench.frame()
 	check("a sensor is pointed at with an outline",
 		bench.painted("sensor0: highlighted"))
-	eq("and it was drawn for the player who typed it", kit.v1.highlights[1], "0=true")
-	check("with the outline on", kit.v1.outline == true)
+	eq("and it was drawn for the player who typed it", kit.head0.highlights[1], "0=true")
+	check("with the outline on", kit.head0.outline == true)
 	-- The other two were not touched: a find lights ONE thing.
-	eq("and for nobody else's sensor", #kit.v3.highlights, 0)
+	eq("and for nobody else's sensor", #kit.head1.highlights, 0)
 	_G.__world = nil
 end
 
@@ -2830,7 +2880,7 @@ do
 	for x = 8, 16 do
 		for y = 8, 16 do world.square(x, y, 0, nil) end
 	end
-	local head = world.drop(world.squares["12,10,0"], sensorV("V1"))
+	local head = world.drop(world.squares["12,10,0"], fakeSensor())
 	_G.__world = world
 	local bench = sensorBench()
 
@@ -2849,8 +2899,8 @@ do
 	check("and sees two tiles out with nothing in the way", bench.painted("motion"))
 
 	second(bench, 6)
-	-- Four tiles from a range of three: not seen, and the head is not even
-	-- looking at that square.
+	-- Four tiles from a reach of three: not seen, and the head is not even looking
+	-- at that square.
 	world.stand(chr, world.squares["16,10,0"], 16.5, 10.5)
 	second(bench)
 	world.stand(chr, world.squares["16,10,0"], 16.5, 10.9)
@@ -2858,7 +2908,10 @@ do
 	bench.enter("cat /dev/sensor0")
 	bench.frame()
 	check("and not four tiles out", bench.painted("clear"))
-	eq("the head itself is the V1 the world holds", head.item.getSensorRange(), 3)
+	-- The item it is, and the reach the mod gives it -- the module carries no
+	-- SensorRange of its own, which is why the number is the mod's and cited.
+	eq("the head is the bare module", head.item.getFullType(), CeroSecSensors.ITEM)
+	eq("and its reach is the module's own", CeroSec.SENSOR_RANGE, 3)
 	_G.__world = nil
 end
 

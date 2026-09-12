@@ -408,6 +408,24 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 -- manual is shared.
 CeroSec.SENSOR_HOLD_S = 5
 
+-- How far a motion sensor sees, in tiles, measured the way the game measures it
+-- (see the head of SCeroSecSensors.lua: squared euclidean from the centre of the
+-- head's own tile, one floor).
+--
+-- Three, and it is the game's own number for this module rather than ours. The
+-- device is the bare Base.MotionSensor (media/scripts/generated/items/normal.txt
+-- :4539), which carries no SensorRange of its own -- it is a component. What the
+-- game says the component is WORTH is in the recipes: one Base.MotionSensor plus
+-- two Base.ElectronicsScrap makes a V1 sensor
+-- (media/scripts/generated/recipes/recipes_traps.txt:153-181), and every V1 in
+-- the game is SensorRange = 3 -- all five of them, without exception
+-- (media/scripts/generated/items/weapon.txt:306, 487, 662, 838, 1027). The extra
+-- scrap is what buys a V2 or a V3, so three is the reach the module brings by
+-- itself and the smallest the game ever grants a motion sensor.
+--
+-- Named here rather than in the server file because the manual quotes it.
+CeroSec.SENSOR_RANGE = 3
+
 -- How deep the su stack a console carries may go. The same number the core
 -- enforces (CeroSecOS.SU_MAX), named again here because the terminal never
 -- loads the core -- os_test pins the two against each other so they cannot

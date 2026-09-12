@@ -50,12 +50,13 @@ Done:
   `toggle` it, or `find` it and watch it blink or light up in the world. A door
   opens and closes with nobody's hand on it; a lock is only fitted where a lock
   can actually stop somebody, which in this game is the outside of a building.
-- Motion sensors: drop one of the game's own sensor bombs on the floor and it
+- Motion sensors: drop a vanilla **Motion Sensor** module on the floor and it
   becomes a `sensorN` that reads `motion` or `clear`. It is the item and nothing
-  of ours: its range is the game's `SensorRange`, it watches its own room and not
-  through walls, the contact holds five seconds after the last movement, and a
-  body that stops moving reads `clear` again — because it detects movement and
-  not bodies. Read-only, mode `440`.
+  of ours: it watches its own room out to three tiles and not through walls, the
+  contact holds five seconds after the last movement, and a body that stops moving
+  reads `clear` again — because it detects movement and not bodies. Read-only,
+  mode `440`. A sensor taped to a **bomb** is never a device: a mine that fires
+  when it detects motion is not a sensor.
 - Scripts: a real shell language in a file -- variables, `if`, `for`, `while`,
   `until`, `test`, `&&`, `||`, `$(command)`, `$((arithmetic))`, `read`, `sleep`,
   background jobs -- run by a step machine on a budget, so an endless loop makes
@@ -490,12 +491,13 @@ created in `/dev` at all.
 Opening a door is not this. `unlock` takes the lock off; somebody still has to
 walk over and open it.
 
-**Motion sensors** are the one device you supply yourself. Drop one of the game's
-own sensor bombs on the floor of a room the machine can reach — a
-`PipeBombSensorV1`, an `AerosolbombSensorV2`, any of the fifteen — and it becomes
-a `sensorN`. *Dropped*, not placed: lying on the boards, unarmed. Pick it up and
-the device is gone, and the number it had stays reserved, so a name you wrote into
-a script answers `sensor0: no such device` rather than pretending.
+**Motion sensors** are the one device you supply yourself. The part is a vanilla
+**Motion Sensor** (`Base.MotionSensor`) — the electronics module, out of a house
+alarm or off an electronics shelf, the same one the game's own sensor recipes eat.
+*Drop* one on the floor of a room the machine can reach and it becomes a
+`sensorN`. Pick it up and the device is gone, and the number it had stays
+reserved, so a name you wrote into a script answers `sensor0: no such device`
+rather than pretending.
 
 ```
 dev sensor
@@ -507,13 +509,18 @@ echo motion > /dev/sensor0
 sensor0: invalid value
 ```
 
-What it watches is **its own room, out to its range**: three tiles for a V1, four
-for a V2, five or six for a V3, straight off the game's own `SensorRange`. It
-never sees through a wall, so a head in the hall tells you nothing about the
-kitchen; where there is no room at all — a base, a yard — it watches its range in
-every direction and its description reads `built`. A survivor, a zombie, an animal
-and a **car** all set it off, which is what the game's own sensors trigger on; an
-invisible character does not.
+What it watches is **its own room, out to three tiles**. It never sees through a
+wall, so a head in the hall tells you nothing about the kitchen; where there is no
+room at all — a base, a yard — it watches three tiles in every direction and its
+description reads `built`. A survivor, a zombie, an animal and a **car** all set it
+off, which is what the game's own sensors trigger on; an invisible character does
+not.
+
+One thing the machine will **not** do: wire up a bomb. The fifteen
+`*SensorV1/V2/V3` items — pipe bomb, aerosol bomb, flame trap, smoke bomb, noise
+trap, each with a motion sensor taped to it — are never devices, whatever they are
+called. A mine that goes off when it detects movement is not a motion sensor, and
+a security system built out of five of them is a security system that kills you.
 
 And it is a **movement** detector, not a proximity fuse. The contact closes the
 moment the picture in front of it changes — somebody moved, walked in, or walked
@@ -1366,7 +1373,7 @@ A **motion sensor** is not on that list at all, because a dropped item is not on
 `getObjects()`: `scanWorldItems` walks `getWorldObjects()` beside it
 (`ArrayList<IsoWorldInventoryObject>`, the list vanilla's own
 `ISBuildUtil.lua:315` and `ISWorldObjectContextMenu.lua:2957` read) and asks each
-item what its range is. See **Motion sensors, underneath** below.
+item what it is. See **Motion sensors, underneath** below.
 
 **Where a lock bites**, which is the rule that decides whether a door gets a
 `lock` row at all:
@@ -1482,25 +1489,51 @@ its number by the time `ls /dev` is typed.
 **Motion sensors, underneath** (`SCeroSecSensors.lua`). Nothing of ours goes into
 the world: the device *is* the item lying on the floor.
 
-- **Which items.** Any dropped item with a positive `SensorRange`, asked of the
-  item and never matched against a list of names — `getWorldObjects()` →
-  `IsoWorldInventoryObject:getItem()` → `instanceof(item, "HandWeapon")` →
-  `item:getSensorRange()`, all four `javap`'d. That is the fifteen
-  `{PipeBomb,Aerosolbomb,NoiseTrap,SmokeBomb,FlameTrap}SensorV{1,2,3}` items
-  (`media/scripts/generated/items/weapon.txt`: V1 = 3, V2 = 4, V3 = 5 or 6) and
-  anything another mod ships with the same field. `sensorRange` lives on
-  `HandWeapon` and is copied there from the script by
-  `zombie.scripting.objects.Item.InstanceItem(String, boolean)` (bytecode offsets
-  2016–2019), so every instance of one answers its script's number. `Base.MotionSensor`
-  itself is *not* a device: it is the crafting component and carries no range, and
-  a range for it would have to be invented. A **placed** sensor bomb is not one
-  either — `CanBePlaced` with a `PlacedSprite` makes an armed `IsoTrap` of it.
+- **Which item.** Exactly one: `Base.MotionSensor`
+  (`media/scripts/generated/items/normal.txt:4539-4548`), an Electronics-category
+  module with a `WorldStaticModel` so it can be dropped and set down. It is named
+  in one place, `CeroSecSensors.ITEM`, because the module carries no field that
+  tells it apart from a fuse — a component has no `SensorRange`. The path is
+  `getWorldObjects()` → `IsoWorldInventoryObject:getItem()` →
+  `InventoryItem:getFullType()`, all `javap`'d. It is a findable part, not a boss
+  drop: it is in the loot tables (`server/Items/ProceduralDistributions.lua:20424`,
+  `:20535`, `:43661`; `Distributions.lua:20956`) and a screwdriver on a `HomeAlarm`
+  yields one (`recipes/recipes_electrical.txt:60-81`, `DismantleMiscElectronics`).
+- **Its reach is `CeroSec.SENSOR_RANGE` (3), and that number is the game's.** One
+  `Base.MotionSensor` plus two `ElectronicsScrap` is what the game itself calls a
+  V1 sensor (`recipes/recipes_traps.txt:153-181`), and every V1 in the game is
+  `SensorRange = 3` — all five of them, without exception
+  (`items/weapon.txt:306, 487, 662, 838, 1027`). The extra scrap is what buys a V2
+  or a V3, so three is the reach the module brings by itself and the smallest the
+  game ever grants a motion sensor.
+- **Trap heads are never devices**, and they are excluded *before* the item is
+  named so the refusal cannot be argued around — not by a vanilla trap, not by a
+  modded one, and not by one somebody named `Base.MotionSensor`. The test is the
+  game's own field and not a list of the fifteen names:
+  `instanceof(item, "HandWeapon") and item:getSensorRange() > 0`. `sensorRange`
+  lives on `HandWeapon` and on no other `InventoryItem`, and is copied there from
+  the script by `zombie.scripting.objects.Item.InstanceItem(String, boolean)`
+  (bytecode offsets 2016–2019), so a positive one means a weapon that senses —
+  which is a mine. The fifteen are
+  `{PipeBomb,Aerosolbomb,NoiseTrap,SmokeBomb,FlameTrap}SensorV{1,2,3}` (V1 = 3,
+  V2 = 4, V3 = 5 or 6). *Why:* the whole point of one is that it goes off when a
+  body comes near, and a security system a survivor wires to five pipe bombs is a
+  security system that kills him.
+- **Dropped and placed are two different objects**, which is the difference the
+  exclusion is about. A dropped item is an inert `IsoWorldInventoryObject` on
+  `getWorldObjects()`; a **placed** trap is an armed `IsoTrap` on `getObjects()`,
+  made through `server/Traps/BuildingObjects/TrapBO.lua` and
+  `IsoTrap.new(item, cell, square)`. So a dropped pipe bomb is not live — and it is
+  one right-click from being, which is exactly why the machine will not call it a
+  sensor.
 - **The field of view and the cadence are `IsoTrap.updateVictimsInSensorRange`'s**,
   arithmetic included: `SENSOR_TIMER` is `new OnceEvery(1.0f)` so the sample is
   once a second; `mo:getZi() == square:getZ()` so one floor only;
   `DistanceToSquared(mo:getX(), mo:getY(), getX() + 0.5, getY() + 0.5) <= range *
   range` — **squared euclidean from the centre of the head's own tile**, not a
-  Chebyshev box; and an `IsoGameCharacter` that `isInvisible()` is skipped while a
+  Chebyshev box, so a body two tiles east and three south of a head is 3.6 tiles
+  away and is not seen where a tile count would have said 3 and fired; and an
+  `IsoGameCharacter` that `isInvisible()` is skipped while a
   `BaseVehicle`, which extends `IsoMovingObject` and is not a character, is not.
   A car is warm.
 - **The one test not mirrored** is `LosUtil.lineClear`. No vanilla Lua touches
@@ -1531,12 +1564,15 @@ the world: the device *is* the item lying on the floor.
   A command typed at the glass registers too (`build`), so a head dropped ten
   seconds ago is warm before the next `cat` rather than at the top of the minute.
   A head no live machine has asked about for two scans is forgotten. Ceilings:
-  `FIELD_MAX` (169, which is the 13×13 box of the widest vanilla range) and
+  `FIELD_MAX` (49, the 7×7 box of a reach of three — a ceiling, so a reach somebody
+  widens cannot make a pass cost four thousand squares without this moving too) and
   `SENSOR_MAX` (100).
 - **What it costs.** `hostile_test` section 20 drives the worst county there is —
   six machines, eight heads each, forty squares a field, nine hundred and sixty
-  bodies, every one of them moving every second — for a thousand seconds: **1920
-  squares and about 4.9 ms per second**, flat, with every contact closed. Half a
+  bodies, every one of them moving every second, each body on one of the twenty
+  squares nearest its head so that every one of them counts — for a thousand
+  seconds: **1920 squares and about 5 ms per second**, flat, with every contact
+  closed. Half a
   percent of one second. An empty county costs under a hundredth of a
   millisecond, because the pass over an empty book does nothing at all.
 

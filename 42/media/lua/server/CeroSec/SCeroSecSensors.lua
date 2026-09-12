@@ -11,24 +11,30 @@ require "CeroSec/CeroSecDefs"
 -- the world: the device IS the item lying there, and picking it up takes the
 -- device away.
 --
--- Which items
+-- Which item
 --
--- Any dropped item that carries a SensorRange. That is the game's own field and
--- it is what makes an item a motion sensor rather than a pipe:
+-- One, and it is the one the game named after the job: Base.MotionSensor, an
+-- Electronics-category module with a WorldStaticModel so it can be dropped and
+-- set down (media/scripts/generated/items/normal.txt:4539-4548). Its reach is
+-- CeroSec.SENSOR_RANGE, and the citation for that number is in CeroSecDefs.lua
+-- beside it: the module plus two ElectronicsScrap is what the game itself calls a
+-- V1 sensor, and every V1 in the game is SensorRange = 3.
 --
---   media/scripts/generated/items/weapon.txt
---     PipeBombSensorV1     :838   SensorRange = 3
---     PipeBombSensorV2     :869   SensorRange = 4
---     PipeBombSensorV3     :900   SensorRange = 6
---     AerosolbombSensorV1  :306   3      V2 :338   4      V3 :370   6
---     NoiseTrapSensorV1    :662   3      V2 :691   4      V3 :720   6
---     SmokeBombSensorV1    :1027  3      V2 :1060  4      V3 :1093  5
---     FlameTrapSensorV1    :487   3      V2 :517   4      V3 :547   5
+-- And the fifteen *SensorV1/V2/V3 items are NOT devices, deliberately. They are
+-- TRAP HEADS -- a pipe bomb, an aerosol bomb, a flame trap, a smoke bomb, a noise
+-- trap, each with a motion sensor taped to it -- and the whole point of one is
+-- that it goes off when a body comes near. A thing that explodes when it detects
+-- movement is a mine, not a sensor, and a security system a survivor wires to
+-- five pipe bombs is a security system that kills him. They are excluded FIRST,
+-- before the item is even named, so the refusal cannot be argued around.
 --
--- Fifteen items, five traps in three grades each, and the grade is what the
--- range is. NO LIST OF NAMES IS WRITTEN HERE: the range is asked of the item, so
--- a sixteenth sensor somebody else's mod ships is a sensor here too and a change
--- to a vanilla number is a change here without a line of ours moving.
+-- What is dropped and what is placed are two different objects, which is worth
+-- writing down because it is the difference the exclusion is about. A dropped
+-- item is an inert IsoWorldInventoryObject on getWorldObjects(); a trap that has
+-- been PLACED is an armed IsoTrap on getObjects(), made through
+-- media/lua/server/Traps/BuildingObjects/TrapBO.lua and IsoTrap.new(item, cell,
+-- square). So a dropped pipe bomb is not live -- and it is one right-click from
+-- being, which is exactly why the machine will not call it a sensor.
 --
 -- The reading path, proved:
 --   IsoGridSquare.getWorldObjects() -> ArrayList<IsoWorldInventoryObject>
@@ -36,21 +42,18 @@ require "CeroSec/CeroSecDefs"
 --      media/lua/server/BuildingObjects/ISBuildUtil.lua:315,
 --      media/lua/client/ISUI/ISWorldObjectContextMenu.lua:2957)
 --   IsoWorldInventoryObject.getItem() -> InventoryItem   (javap)
---   HandWeapon.getSensorRange() -> int                   (javap)
---     and it is the SCRIPT's number on every instance:
---     zombie.scripting.objects.Item.InstanceItem(String, boolean) ends on
---     `getfield sensorRange / invokevirtual HandWeapon.setSensorRange` (javap
---     -c, offsets 2016-2019). So a sensor taken out of a crate answers the same
---     range as one crafted this morning.
+--   InventoryItem.getFullType() -> String                (javap)
+--   HandWeapon.getSensorRange() -> int                   (javap), which is the
+--     SCRIPT's number on every instance: zombie.scripting.objects.Item
+--     .InstanceItem(String, boolean) ends on `getfield sensorRange /
+--     invokevirtual HandWeapon.setSensorRange` (javap -c, offsets 2016-2019).
+--     Read here only to REFUSE a trap head, and it is the honest test for one:
+--     sensorRange lives on HandWeapon and on no other InventoryItem, so an item
+--     that answers a positive one is a trap with a sensor on it.
 --   instanceof(item, "HandWeapon") is how the class is asked, which is the
 --     idiom vanilla uses on inventory items
 --     (media/lua/server/BuildingObjects/ISBuildUtil.lua:111 --
 --      instanceof(item, "InventoryContainer")).
---
--- A sensor that is PLACED rather than dropped is a different thing and is not
--- ours: CanBePlaced with a PlacedSprite makes an IsoTrap of it, armed, and an
--- armed pipe bomb is not a security device. Dropped, it is inert, and inert is
--- what a PIR head is.
 --
 -- What the field of view is
 --
@@ -149,12 +152,12 @@ CeroSecSensors.SCAN_MS = 60000
 -- the same tenth it rounded to a second ago has not moved.
 CeroSecSensors.STEP = 10
 
--- How many squares one sensor's field may hold. The widest vanilla range is 6
--- (PipeBombSensorV3), whose bounding box is 13x13, so 169 is the number the
--- game's own data asks for and not a number of ours -- it is written down so a
--- modded sensor with a range of forty cannot make one pass cost four thousand
--- squares.
-CeroSecSensors.FIELD_MAX = 169
+-- How many squares one sensor's field may hold. Every head has the same reach, so
+-- this is CeroSec.SENSOR_RANGE's own bounding box -- 7x7 at a range of three --
+-- and it is written down rather than worked out afresh because it is a CEILING:
+-- the field is capped whatever the range is, so a reach somebody widens cannot
+-- make one pass cost four thousand squares without this number moving too.
+CeroSecSensors.FIELD_MAX = 49
 
 -- How many sensors are sampled at all. Six machines with eight sensors each is
 -- what the hostile bench drives; a hundred is well past anything a building
@@ -164,7 +167,7 @@ CeroSecSensors.SENSOR_MAX = 100
 -- The sensors being sampled: key -> record. Never saved (see above).
 --
 --   record = { x, y, z,          where the head is
---              range,            its SensorRange, off the item
+--              range,            how far it sees (CeroSec.SENSOR_RANGE)
 --              field = { {x,y,z}, ... },   the squares it watches
 --              sig,              the signature of the last sample
 --              holdUntil,        ms until the contact opens again
@@ -189,19 +192,33 @@ end
 -- The item
 --
 
--- The SensorRange of one dropped object, or nil when it is not a sensor at all.
--- Everything here is a question asked of the game and no list of names of ours.
+-- The one item a machine will call a sensor. Written down because it has to be:
+-- the module carries no field that tells it apart from a fuse or a battery, so
+-- what identifies it is its name, and this is the one place that name appears.
+CeroSecSensors.ITEM = "Base.MotionSensor"
+
+-- Is this item a trap head -- a bomb with a motion sensor taped to it? The test
+-- is the game's own field and not a list of the fifteen names: sensorRange lives
+-- on HandWeapon and on no other InventoryItem, so a positive one is a weapon that
+-- senses, which is a mine.
+--
+-- Asked BEFORE the name, so that nothing which explodes can ever become a device
+-- -- not a vanilla trap, not a modded one, and not one somebody named
+-- Base.MotionSensor.
+local function isTrapHead(item)
+	if not instanceof(item, "HandWeapon") then return false end
+	local range = item:getSensorRange()
+	return type(range) == "number" and range > 0
+end
+
+-- How far one dropped object sees, or nil when it is not a sensor at all.
 function CeroSecSensors.rangeOf(object)
 	if object == nil then return nil end
 	local item = object:getItem()
 	if item == nil then return nil end
-	-- sensorRange lives on HandWeapon and on no other InventoryItem, so the class
-	-- is asked before the method is called: an item that is not one would answer
-	-- nothing to it.
-	if not instanceof(item, "HandWeapon") then return nil end
-	local range = item:getSensorRange()
-	if type(range) ~= "number" or range <= 0 then return nil end
-	return math.floor(range)
+	if isTrapHead(item) then return nil end
+	if item:getFullType() ~= CeroSecSensors.ITEM then return nil end
+	return CeroSec.SENSOR_RANGE
 end
 
 -- Every sensor lying on one square, in the order the game lists them. A list and
@@ -221,8 +238,9 @@ function CeroSecSensors.onSquare(square)
 	return out
 end
 
--- The full type of the item a sensor is ("Base.PipeBombSensorV1"), which is what
--- travels to a client that has to find the same object again.
+-- The full type of the item a sensor is, which is what travels to a client that
+-- has to find the same object again. Always CeroSecSensors.ITEM today and asked of
+-- the item anyway, because what the client must look for is what is THERE.
 function CeroSecSensors.typeOf(object)
 	if object == nil then return "" end
 	local item = object:getItem()

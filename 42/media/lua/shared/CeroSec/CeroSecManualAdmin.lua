@@ -826,9 +826,9 @@ to walk over and open the door -- or the machine does, on the next line.]],
 
 [[Motion sensors, the one device you supply yourself.
 
-Drop one on the floor of a room this machine can reach -- a sensor bomb,
-V1, V2 or V3 -- and it becomes a sensorN. DROPPED, not placed: lying on
-the boards, unarmed. Pick it up and the device is gone.
+The part is a Motion Sensor: the module, out of a house alarm or off a
+shelf. DROP one on the floor of a room this machine can reach and it
+becomes a sensorN. Pick it up and the device is gone.
 
   root@ksp-04-11:~# dev sensor
   sensor0 office                1E 0           clear
@@ -836,16 +836,17 @@ the boards, unarmed. Pick it up and the device is gone.
   root@ksp-04-11:~# cat /dev/sensor0
   clear
 
-It watches its own room out to its range -- three tiles for a V1, four for
-a V2, five or six for a V3 -- and never through a wall, so a head in the
-hall tells you nothing about the kitchen. Where there is no room at all it
-watches its range every way and reads built.
+It watches its own room out to THREE TILES, never through a wall, so a head
+in the hall tells you nothing about the kitchen. Where there is no room at
+all it watches three tiles every way and reads built.
 
 Movement closes it for five seconds; then it opens. So a zombie that walks
 in and STOPS reads clear five seconds later. It is movement it sees and not
 bodies, which is why a script polls one.
 
-Mode 440, cr--r-----, and nothing may be written to it.]],
+Mode 440, cr--r-----, and nothing may be written to it.
+
+A sensor taped to a BOMB is not one of these, whatever the shape of it.]],
 
 [[Underneath, dev is cat and a redirect. Same permissions, same words,
 same refusals:

@@ -1815,9 +1815,25 @@ do
 		-- Every sensor in its own patch of the map, so no two share a square and
 		-- the cost is the whole forty-eight times forty and not a cache hit.
 		local ox, oy = s * 100, s * 100
-		local record = { x = ox, y = oy, z = 0, range = 6, field = {} }
+		local record = { x = ox, y = oy, z = 0, range = CeroSec.SENSOR_RANGE,
+			field = {} }
+		-- The squares of the field, NEAREST FIRST. Nearest first because the bodies
+		-- go on the first twenty of them, and a body outside the reach is a body the
+		-- distance test throws away cheaply -- which would make this bench measure
+		-- an empty room and call it a horde.
+		local box = {}
+		local r = CeroSecSensors.FIELD_MAX
+		for dx = -8, 8 do
+			for dy = -8, 8 do box[#box + 1] = { dx, dy, dx * dx + dy * dy } end
+		end
+		table.sort(box, function(a, b)
+			if a[3] ~= b[3] then return a[3] < b[3] end
+			if a[1] ~= b[1] then return a[1] < b[1] end
+			return a[2] < b[2]
+		end)
+		eq("the field is no wider than the ceiling allows", FIELD <= r, true)
 		for i = 1, FIELD do
-			local x, y = ox + (i % 8), oy + math.floor(i / 8)
+			local x, y = ox + box[i][1], oy + box[i][2]
 			record.field[i] = { x, y, 0 }
 			local square = squareAt(x, y, 0)
 			if i <= BODIES then
@@ -1840,7 +1856,8 @@ do
 
 	-- One second: every body shuffles inside its own tile, and then the pass. Inside
 	-- the tile, because a body that walked off across the map would leave the field
-	-- and the bench would end up measuring an empty room.
+	-- and the bench would end up measuring an empty room. It also keeps every one of
+	-- them inside the reach, which the nearest-first ordering above put them within.
 	local function pass()
 		for i = 1, #bodies do
 			local b = bodies[i]

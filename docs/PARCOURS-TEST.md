@@ -410,22 +410,36 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      `locked`) : `dev doorN open` → `doorN: locked`. Enfin, une porte de
      garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
      `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
-100f. **Détecteur de mouvement, le posé.** Se fabriquer (ou se donner en debug)
-     un des quinze objets à capteur — `PipeBombSensorV1` fait l'affaire — et le
-     **laisser tomber par terre** (pas « placer » : posé, c'est un piège armé,
-     et ce n'est pas la même chose) dans la pièce nommée où se trouve
-     l'ordinateur. `dev sensor` → une ligne `sensorN`, description = le nom brut
-     de la pièce, colonne côté **vide**, position juste, état `clear`.
-     `ls -l /dev` sur cette ligne → `cr--r-----` et non `crw-rw----` : mode
-     `440`. Lâcher un marteau à côté → il n'apparaît **pas**. [ ]
+100f. **Détecteur de mouvement, le posé.** Trouver un **Motion Sensor**
+     (`Base.MotionSensor`) — le module électronique : il se ramasse dans le
+     butin d'électronique, se démonte d'une `HomeAlarm`
+     (`recipes_electrical.txt:78`), ou se donne en debug — et le **laisser
+     tomber par terre** dans la pièce nommée où se trouve l'ordinateur.
+     `dev sensor` → une ligne `sensorN`, description = le nom brut de la pièce,
+     colonne côté **vide**, position juste, état `clear`. `ls -l /dev` sur cette
+     ligne → `cr--r-----` et non `crw-rw----` : mode `440`. Lâcher un marteau à
+     côté → il n'apparaît **pas**. [ ]
+100f'. **Et la bombe n'en est pas un.** Fabriquer (ou se donner) un
+     `PipeBombSensorV1` — une bombe artisanale avec un détecteur dessus — et le
+     laisser tomber dans la même pièce. `dev sensor` ne gagne **aucune** ligne,
+     et `cat /dev/sensor<numéro suivant>` répond `no such file`. Refaire avec un
+     `AerosolbombSensorV2`, un `FlameTrapSensorV3`, un `NoiseTrapSensorV1` et un
+     `SmokeBombSensorV2` : aucun des quinze ne devient un device. C'est voulu :
+     une mine qui explose quand elle détecte du mouvement n'est pas un
+     détecteur, et une machine qui la câblerait offrirait au survivant un
+     système de sécurité qui le tue. Vérifier aussi qu'un de ces pièges
+     **placé** (posé, donc armé) n'apparaît pas davantage. [ ]
 100g. **Marcher devant.** Rester immobile 10 secondes, `cat /dev/sensorN` →
      `clear`. Puis traverser la pièce devant le capteur et taper tout de suite
-     `cat /dev/sensorN` → `motion`. Refaire avec un V3 (portée 6) et un V1
-     (portée 3) dans la même pièce : le V1 ne doit pas voir un mouvement à cinq
-     cases de lui, le V3 oui. Passer dans la pièce **d'à côté**, mur entre les
-     deux, à une seule case du capteur → il reste `clear` : un PIR ne voit pas à
-     travers un mur. Faire entrer une **voiture** dans le champ → `motion` (le
-     capteur du jeu lui-même déclenche sur un véhicule). [ ]
+     `cat /dev/sensorN` → `motion`. La portée est de **trois cases** : bouger à
+     deux cases du capteur → `motion` ; bouger à cinq cases (même pièce, grande
+     salle) → il reste `clear`. Et la portée est un **cercle** et non un carré :
+     bouger deux cases à l'est ET trois au sud du capteur (3,6 cases à vol
+     d'oiseau) → `clear`, alors qu'un compteur de cases aurait dit trois.
+     Passer dans la pièce **d'à côté**, mur entre les deux, à une seule case du
+     capteur → il reste `clear` : un PIR ne voit pas à travers un mur. Faire
+     entrer une **voiture** dans le champ → `motion` (le capteur du jeu lui-même
+     déclenche sur un véhicule). [ ]
 100h. **Le maintien de cinq secondes, et le zombi immobile.** Bouger devant le
      capteur puis s'arrêter net et compter : `cat` à 2 s → `motion`, `cat` à 4 s
      → `motion`, `cat` à 6 s → `clear`. Attirer un zombi dans le champ et le
