@@ -10910,4 +10910,259 @@ do
 	eq("and it is still cu's order", uc, "cu")
 end
 
+
+--
+-- 43. The radio: the callsign, the frequency, the TNC's words and `call`
+-- (rung 6c)
+--
+-- Everything about the radio that does not know there is a world: the shape of a
+-- callsign, where one comes from, the file it lives in, how a frequency is
+-- written, and what `call` decides before it asks anybody whether they can hear
+-- it. The aerials, the ranges and the announcement are in tests/window_test.lua,
+-- which has a world to put them in.
+--
+
+do
+	-- The shape. A 1993 United States amateur callsign: K, N or W, an optional
+	-- second letter, ONE digit, and two or three letters.
+	local GOOD = { "K4ABC", "KD4AXR", "N4AB", "KD4AB", "W4ZZZ", "N0ABC" }
+	for i = 1, #GOOD do
+		check(GOOD[i] .. " is a callsign", CeroSecOS.isCallsign(GOOD[i]))
+	end
+	local BAD = {
+		"kd4axr",      -- a callsign is sent and written in capitals
+		"KD44AXR",     -- two digits is no district
+		"4KDAXR",      -- the district is in the middle
+		"AD4AXR",      -- A is not one of the three prefixes
+		"K4A",         -- a one-letter suffix was special-event only
+		"KD4AXRS",     -- and a four-letter one is nothing at all
+        "KD4AXR-1",    -- an SSID: this machine is one station, which is SSID 0
+		"K4ABC ",
+		"",
+	}
+	for i = 1, #BAD do
+		check("\"" .. BAD[i] .. "\" is not a callsign",
+			not CeroSecOS.isCallsign(BAD[i]))
+	end
+	check("and neither is a number", not CeroSecOS.isCallsign(4))
+	check("nor nothing at all", not CeroSecOS.isCallsign(nil))
+
+	-- The derivation: deterministic, in the fourth district, one per machine.
+	local a = CeroSecOS.callsignFor(4, 17, 3)
+	check("a derived callsign is one", CeroSecOS.isCallsign(a))
+	eq("and it is the same one every time", CeroSecOS.callsignFor(4, 17, 3), a)
+	eq("Knox County is in the fourth district", string.sub(a, -4, -4), "4")
+	eq("six characters, always", #a, 6)
+	check("the next machine of the building is another station",
+		CeroSecOS.callsignFor(4, 17, 4) ~= a)
+	check("and so is the same machine number in another building",
+		CeroSecOS.callsignFor(5, 17, 3) ~= a)
+	-- The multipliers are not the telephone's, so a station's call is not a
+	-- rearrangement of its number.
+	do
+		local seen, collisions = {}, 0
+		for n = 1, 254 do
+			local call = CeroSecOS.callsignFor(4, 17, n)
+			check("every machine of a building gets a callsign",
+				CeroSecOS.isCallsign(call))
+			if seen[call] then collisions = collisions + 1 end
+			seen[call] = true
+		end
+		check("and the 254 of one building barely collide (" .. collisions .. ")",
+			collisions <= 2)
+	end
+	check("nothing is derived from a machine with no number",
+		CeroSecOS.callsignFor(4, 17, 0) == nil)
+	check("nor from one past the broadcast address",
+		CeroSecOS.callsignFor(4, 17, 255) == nil)
+	check("nor from a key that is not one", CeroSecOS.callsignFor(4, 300, 3) == nil)
+	check("nor from nothing", CeroSecOS.callsignFor(nil, nil, nil) == nil)
+end
+
+-- The file, and what the machine reads out of it.
+do
+	local state = fresh()
+	eq("a machine with no record has no callsign to derive",
+		CeroSecOS.defaultCallsign(state), nil)
+	eq("and no file to read one out of", CeroSecOS.callsignOf(state), nil)
+	check("so nothing was seeded", CeroSecOS.ensureCallsign(state) == false)
+
+	-- Given a record, which is what the server writes when it works out which
+	-- building the computer is standing in.
+	CeroSecOS.setNetRecord(state, 4, 17, 3)
+	local want = CeroSecOS.callsignFor(4, 17, 3)
+	eq("the record is what a callsign is derived from",
+		CeroSecOS.defaultCallsign(state), want)
+	check("and the file is seeded once", CeroSecOS.ensureCallsign(state) == true)
+	eq("the machine reads it back", CeroSecOS.callsignOf(state), want)
+	check("and it is not seeded twice", CeroSecOS.ensureCallsign(state) == false)
+
+	local node = CeroSecOS.systemNode(state, CeroSecOS.CALLSIGN_PATH)
+	eq("root's file", node.owner, "root")
+	eq("at 644, so everybody may read it and only root may write it",
+		node.mode, CeroSecOS.CALLSIGN_MODE)
+
+	-- It is the PLAYER's file from then on. A word root wrote is the callsign,
+	-- and anything after it on the line is ignored the way a note would be.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH,
+		"W4ZZZ (Bob's set)\nnonsense", 100)
+	eq("the first word is the callsign", CeroSecOS.callsignOf(state), "W4ZZZ")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH,
+		"   KD4AXR   ", 100)
+	eq("and the blanks around it are not part of it",
+		CeroSecOS.callsignOf(state), "KD4AXR")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH,
+		"not-a-call", 100)
+	eq("a file holding something no station could be called is no callsign",
+		CeroSecOS.callsignOf(state), nil)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH,
+		"", 100)
+	eq("and neither is an empty one", CeroSecOS.callsignOf(state), nil)
+end
+
+-- The frequency, as a station writes it: three decimals, always.
+do
+	eq("two metres", CeroSecOS.radioFreqText(144390), "144.390")
+	eq("the bottom of the FM band", CeroSecOS.radioFreqText(88000), "88.000")
+	eq("the top of it", CeroSecOS.radioFreqText(108000), "108.000")
+	eq("the lowest channel a radio in this game has",
+		CeroSecOS.radioFreqText(10000), "10.000")
+	eq("and the highest", CeroSecOS.radioFreqText(500000), "500.000")
+	eq("a single kilohertz keeps its two leading zeroes",
+		CeroSecOS.radioFreqText(144001), "144.001")
+	eq("and ten keeps one", CeroSecOS.radioFreqText(144010), "144.010")
+	eq("zero is zero", CeroSecOS.radioFreqText(0), "0.000")
+	eq("nothing is nothing", CeroSecOS.radioFreqText(nil), nil)
+	eq("and so is a negative channel", CeroSecOS.radioFreqText(-1), nil)
+
+	-- What `cat /dev/radio0` reads: the frequency and one of three words.
+	eq("on", CeroSecOS.radioStateText(144390, true, true), "144.390 on")
+	eq("off", CeroSecOS.radioStateText(144390, false, true), "144.390 off")
+	eq("no power beats off, because it is the reason",
+		CeroSecOS.radioStateText(144390, false, false), "144.390 no power")
+	eq("and a set switched on with nothing behind it says the same",
+		CeroSecOS.radioStateText(144390, true, false), "144.390 no power")
+end
+
+-- The node the world hands over, rendered.
+do
+	eq("the radio is a kind the core has words for -- none",
+		next(CeroSecOS.DEV_VALUES.radio), nil)
+	eq("read-only by nature, like the sensor",
+		CeroSecOS.devModeFor("radio"), 440)
+	local node = { type = "dev", owner = "root", group = "sudo", mode = 440,
+		id = "radio0", kind = "radio", desc = "ham", side = "",
+		pos = "2E 1N", state = "144.390 on" }
+	local line = CeroSecOS.devLine(node)
+	check("ls -l shows a character device nobody may write",
+		string.find(line, "^cr%-%-r%-%-%-%-%-") ~= nil)
+	check("named", string.find(line, "radio0", 1, true) ~= nil)
+	check("for what it is", string.find(line, "ham", 1, true) ~= nil)
+	check("with its frequency and its state",
+		string.find(line, "144.390 on", 1, true) ~= nil)
+	check("and it fits the screen", #line <= CeroSecOS.COLS)
+end
+
+-- The TNC's own words, and the two lines the machine says in its own name.
+do
+	eq("a connect names the station", CeroSecOS.TNC.connected .. "KD4AXR",
+		"*** CONNECTED to KD4AXR")
+	eq("a disconnect names nobody", CeroSecOS.TNC.disconnected, "*** DISCONNECTED")
+	eq("silence has a name", CeroSecOS.TNC.retry, "*** retry count exceeded")
+	eq("and so has a station that will not take a second link",
+		CeroSecOS.TNC.busy, "*** BUSY")
+	eq("the line the county reads carries no name on the end of it",
+		CeroSecOS.TNC.onAir, "*** CONNECTED")
+	eq("no radio", CeroSecOS.CALL_NO_RADIO, "call: no radio")
+	eq("no licence", CeroSecOS.CALL_NO_CALLSIGN, "call: no callsign")
+	eq("and the air runs at 1200 baud", CeroSecOS.RADIO_BAUD, 1200)
+end
+
+-- `call`, up to the point where the world has to be asked.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	-- No licence: refused before anything is transmitted, and in the machine's own
+	-- name rather than the TNC's, because a TNC that has no MYCALL will not key the
+	-- transmitter either.
+	local none, nl = CeroSecOS.runArgs(state, admin, { "call", "KD4AXR" }, nil, env)
+	eq("a station with no callsign cannot call", none, false)
+	eq("and says so itself", nl[1], CeroSecOS.CALL_NO_CALLSIGN)
+
+	CeroSecOS.setNetRecord(state, 4, 17, 3)
+	CeroSecOS.ensureCallsign(state)
+	local mine = CeroSecOS.callsignOf(state)
+
+	local ran, out, control, data =
+		CeroSecOS.runArgs(state, admin, { "call", "KD4AXR" }, nil, env)
+	eq("a call is an order to whoever is running the machine", ran, true)
+	eq("and it prints nothing itself", #out, 0)
+	eq("the order is call's", control, "call")
+	eq("carrying the callsign", data.call, "KD4AXR")
+	eq("the account that typed it", data.user, "admin")
+	eq("who is asking", data.from, "admin")
+	eq("and one hop further out than the session it came from", data.hops, 1)
+
+	-- The shape is judged here and never by the world.
+	local bad, bl = CeroSecOS.runArgs(state, admin, { "call", "kd4axr" }, nil, env)
+	eq("a callsign in lower case is a usage error", bad, false)
+	eq("and the usage line is the one the manual carries", bl[1],
+		"call: usage: " .. CeroSecOS.commandUsage("call"))
+	local num = CeroSecOS.runArgs(state, admin, { "call", "555-0417" }, nil, env)
+	eq("a telephone number is not a callsign", num, false)
+	local bare = CeroSecOS.runArgs(state, admin, { "call" }, nil, env)
+	eq("and nothing at all is not either", bare, false)
+	local two = CeroSecOS.runArgs(state, admin, { "call", "KD4AXR", "KE4QWZ" }, nil, env)
+	eq("nor two of them", two, false)
+
+	-- Calling oneself: the TNC would hear its own connect request, which is
+	-- silence as far as AX.25 is concerned.
+	local self_, sl = CeroSecOS.runArgs(state, admin, { "call", mine }, nil, env)
+	eq("a station cannot connect to itself", self_, false)
+	eq("and what it gets is silence", sl[1], CeroSecOS.TNC.retry)
+
+	-- The hop ceiling, which a link pays exactly as an rlogin and a call do -- and
+	-- what it gets is the TNC's word, because on the air the TNC does the talking.
+	local deep = open(state, "admin")
+	deep.hops = CeroSecOS.HOP_MAX
+	local d, dl = CeroSecOS.runArgs(state, deep, { "call", "KD4AXR" }, nil, env)
+	eq("a chain at the ceiling cannot call", d, false)
+	eq("and the TNC will not take it", dl[1], CeroSecOS.TNC.busy)
+	deep.hops = CeroSecOS.HOP_MAX - 1
+	local u, _, uc = CeroSecOS.runArgs(state, deep, { "call", "KD4AXR" }, nil, env)
+	eq("one hop short of it calls", u, true)
+	eq("and it is still call's order", uc, "call")
+end
+
+-- wtmp's host column carries all three origins now, and that is the bug this
+-- rung found: a callsign is CAPITALS and the column used to accept a hostname or
+-- a dash, so every radio session's record was refused in silence and `last` had
+-- nothing to read.
+do
+	check("a hostname is an origin", CeroSecOS.isWtmpOrigin("gate"))
+	check("so is a telephone number", CeroSecOS.isWtmpOrigin("555-0417"))
+	check("and so is a callsign", CeroSecOS.isWtmpOrigin("KD4AXR"))
+	check("a word that is none of the three is not",
+		not CeroSecOS.isWtmpOrigin("Not A Host"))
+	check("and neither is nothing", not CeroSecOS.isWtmpOrigin(nil))
+
+	local state = fresh()
+	local now = 741186720
+	check("a login off the air is recorded",
+		CeroSecOS.wtmpAppend(state, "in", "admin", "ttyp0", "KD4AXR", now))
+	local text = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH).data
+	check("with the callsign in the host column",
+		string.find(text, "KD4AXR", 1, true) ~= nil)
+	local recs = CeroSecOS.parseWtmp(text)
+	eq("and it reads back", #recs, 1)
+	eq("naming the station that called", recs[#recs].host, "KD4AXR")
+	check("the logout too",
+		CeroSecOS.wtmpAppend(state, "out", "admin", "ttyp0", "KD4AXR", now + 60))
+	eq("last prints it in the host column",
+		string.find(CeroSecOS.lastLine(recs[1], nil), "KD4AXR", 1, true) ~= nil,
+		true)
+end
+
 print("os_test: " .. count .. " assertions passed")

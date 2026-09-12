@@ -5663,6 +5663,671 @@ do
 end
 
 --
+-- 41. The radio (rung 6c)
+--
+-- The two buildings of the section above, with aerials in them. What makes this
+-- section about the RADIO and not about the telephone is that every bench in it
+-- runs with the county's exchange irrelevant and the radios themselves are what
+-- decide: a frequency, a transmit range, a switch and a battery.
+--
+-- The world is a FakeWorld, laid out beside the machines rather than under them:
+-- CeroSecRadio asks getCell() for the squares around a computer, which is a
+-- different question from the one the machines' own getSquare answers (that one
+-- is the building, and the address comes off it). So a bench can give a machine
+-- an aerial, take it away, switch it off or move it out of the room without
+-- touching anything the link layer of the rung before this one reads.
+--
+-- And the AIR is faked too: getZomboidRadio hands back one method, and every
+-- transmission the mod makes lands in a list. That is the only way to prove the
+-- announcement at all -- what is asserted about it is what the mod passed to the
+-- game, argument by argument, against the proof at the head of SCeroSecRadio.lua.
+--
+
+-- One radio, answering the six calls CeroSecRadio.read makes on its DeviceData
+-- and nothing else. The defaults are a ham set on two metres: HamRadio1's own
+-- TransmitRange of 7500 and IsPortable false
+-- (media/scripts/generated/items/radio.txt:203-225).
+local function fakeRadio(opts)
+	opts = opts or {}
+	local o = { __class = "IsoRadio" }
+	local data = {}
+	data.getIsTwoWay = function() return opts.twoWay ~= false end
+	data.getIsPortable = function() return opts.portable == true end
+	data.getChannel = function() return opts.channel or 144390 end
+	data.getTransmitRange = function() return opts.range or 7500 end
+	data.getIsTurnedOn = function() return opts.on ~= false end
+	data.getPower = function() return opts.power or 1 end
+	o.data = opts
+	o.getDeviceData = function() return data end
+	o.getSpriteName = function() return "cerosec_fake_ham" end
+	return o
+end
+
+-- Everything the mod put on the air since the list was last emptied.
+local function newAir()
+	local air = {}
+	_G.getZomboidRadio = function()
+		return {
+			SendTransmission = function(_, x, y, channel, line, guid, codes,
+					r, g, b, range, tv)
+				air[#air + 1] = { x = x, y = y, channel = channel, line = line,
+					guid = guid, codes = codes, r = r, g = g, b = b,
+					range = range, tv = tv }
+			end,
+		}
+	end
+	return air
+end
+
+local function heardOnAir(air, needle)
+	for i = 1, #air do
+		if type(air[i].line) == "string"
+				and string.find(air[i].line, needle, 1, true) then
+			return air[i]
+		end
+	end
+	return nil
+end
+
+-- A net with a world under it. The aerials go in by hand, per bench.
+local function newRadioNet()
+	local net = newNet()
+	net.world = FakeWorld.new()
+	_G.__world = net.world
+	net.air = newAir()
+	-- The set on a machine's own square, which is the commonest case and the one
+	-- a survivor builds himself: a ham radio on the desk the computer is on.
+	function net.aerial(object, opts, dx, dy)
+		local x = object.x + (dx or 0)
+		local y = object.y + (dy or 0)
+		local square = net.world.square(x, y, object.z, opts and opts.room or nil)
+		return net.world.put(square, fakeRadio(opts))
+	end
+	-- The machine's own square, with nothing on it. A bench needs this whenever it
+	-- puts the set somewhere ELSE, because a machine whose own square the streamer
+	-- has not brought in has no TNC at all -- which is the chunk rule, and is a
+	-- bench of its own below.
+	function net.ground(object)
+		return net.world.square(object.x, object.y, object.z, nil)
+	end
+	return net
+end
+
+local function callOf(object)
+	return CeroSecOS.callsignOf(object:osState())
+end
+
+-- Wait for the window to finish TYPING what it was given. A terminal reveals a
+-- screenful a character at a time and refuses a line while it is doing it
+-- (CeroSecTerminal:onCommandEntered returns on self.revealing), so a bench that
+-- asks a machine two things in a row after a four-line answer has the second one
+-- silently dropped. It cost an hour: the far machine had simply never been told.
+local function settle(net)
+	for _ = 1, 200 do
+		if not net.window.revealing and net.window.mode ~= "job" then return end
+		net.tick(1)
+	end
+end
+
+-- A line typed once the machine is ready for one. Both halves matter and both
+-- were learnt the hard way here: a window mid-REVEAL drops the line, and so does
+-- one whose screen still says a job is running -- and a radio link releases two
+-- lines a second, so a four-line answer keeps the far machine "busy" for two
+-- whole seconds of wall clock. A bench that typed at it in the meantime asserted
+-- against a machine that had never been told.
+local function say(net, line)
+	settle(net)
+	net.enter(line)
+end
+
+--
+-- The callsign: a file, derived, per machine, and announced by the firmware.
+--
+
+do
+	local net = newRadioNet()
+	local here, gate, far = callOf(net.here), callOf(net.gate), callOf(net.far)
+	check("the machine has a callsign", CeroSecOS.isCallsign(here))
+	check("so has the one beside it", CeroSecOS.isCallsign(gate))
+	check("and the shed down the road", CeroSecOS.isCallsign(far))
+	-- Per MACHINE and not per building, which is what makes it a STATION: the
+	-- telephone number is the building's and two computers in one office share it.
+	check("the two machines in the office are two stations", here ~= gate)
+	eq("and they do share the one telephone line", telOf(net.here), telOf(net.gate))
+	check("the shed is a third station", far ~= here and far ~= gate)
+	-- Kentucky is the fourth call district, and that digit is a fact about the map.
+	eq("every station is in the fourth district", string.sub(here, -4, -4), "4")
+
+	-- It is a FILE, at the mode a root-owned file everybody may read wears.
+	local node = CeroSecOS.systemNode(net.here:osState(), CeroSecOS.CALLSIGN_PATH)
+	check("/etc/callsign is a file", node ~= nil and node.type == "file")
+	eq("root's", node.owner, "root")
+	eq("at 644", node.mode, CeroSecOS.CALLSIGN_MODE)
+
+	-- The firmware announces it, under the modem.
+	net.login("admin")
+	check("the BIOS announces the callsign", net.glass("Callsign: " .. here))
+	check("under the telephone", net.glass("Phone line: " .. telOf(net.here)))
+	say(net, "cat /etc/callsign")
+	net.tick(3)
+	check("and it is readable by an ordinary account", net.glass(here))
+
+	-- A machine in no building has no record, so there is nothing to derive from
+	-- and no licence -- the same shape as its missing address and missing number.
+	local loose = net.machine(80, 80, 0, nil)
+	loose:turnOn()
+	eq("a machine in no building has no callsign", callOf(loose), nil)
+	_G.__world = nil
+end
+
+-- Root may change it, and that is the whole security lesson: the callsign is
+-- what a station SAYS it is.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	say(net, "su root")
+	say(net, "")
+	say(net, "write /etc/callsign W4ZZZ")
+	net.tick(3)
+	eq("root wrote a new callsign", callOf(net.here), "W4ZZZ")
+	say(net, "call " .. callOf(net.far))
+	net.tick(3)
+	check("the link is up", net.glass(CeroSecOS.TNC.connected .. callOf(net.far)))
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	say(net, "who")
+	net.tick(3)
+	check("and the far machine records the name it was given", net.glass("(W4ZZZ)"))
+
+	-- A callsign nothing could be called is no callsign at all: the machine
+	-- refuses to transmit rather than announcing rubbish.
+	local other = net.machine(14, 10, 0, net.office)
+	other:turnOn()
+	net.aerial(other, nil, 0, 0)
+	local st = other:osState()
+	CeroSecOS.setData(st, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH, "not-a-call", 100)
+	eq("a file that is not a callsign is no callsign", callOf(other), nil)
+	typeAt(net, other, "call " .. callOf(net.far))
+	check("and call says so in its own name",
+		ownSaid(other, CeroSecOS.CALL_NO_CALLSIGN))
+	_G.__world = nil
+end
+
+--
+-- The firmware's three lines about hardware. Here and not in defs_test.lua
+-- because bootLines asks the core for the size of the drive, and defs_test does
+-- not load the core.
+--
+-- The firmware's three lines about hardware, in the order it finds them in: the
+-- card in a slot, the modem behind it, the TNC on the serial port.
+do
+	local plain = CeroSec.bootLines(nil, nil, nil)
+	for i = 1, #plain do
+		check("a machine with no links announces none (" .. plain[i] .. ")",
+			string.find(plain[i], "Ethernet:", 1, true) == nil
+			and string.find(plain[i], "Phone line:", 1, true) == nil
+			and string.find(plain[i], "Callsign:", 1, true) == nil)
+	end
+
+	local full = CeroSec.bootLines("10.4.17.3", "555-0417", "KD4AXR")
+	local at = {}
+	for i = 1, #full do
+		if string.find(full[i], "Detecting drives", 1, true) then at.disk = i end
+		if full[i] == "Ethernet: eth0 10.4.17.3" then at.card = i end
+		if full[i] == "Phone line: 555-0417" then at.phone = i end
+		if full[i] == "Callsign: KD4AXR" then at.call = i end
+		if string.find(full[i], "Booting", 1, true) then at.boot = i end
+	end
+	check("the card is announced", at.card ~= nil)
+	check("the modem too", at.phone ~= nil)
+	check("and the TNC", at.call ~= nil)
+	check("the card comes after the drive", at.card > at.disk)
+	check("the modem under the card", at.phone == at.card + 1)
+	check("the TNC under the modem", at.call == at.phone + 1)
+	check("and all three before the machine boots", at.boot > at.call)
+	check("nothing was written into the template",
+		CeroSec.BOOT_LINES[CeroSec.BOOT_DISK_LINE] == "Detecting drives ... hda ")
+
+	-- A callsign with no telephone number is nothing this mod can be today -- the
+	-- two come off one record -- and the line still lands in the right place
+	-- rather than over the top of "Booting from hda".
+	local odd = CeroSec.bootLines("10.4.17.3", nil, "KD4AXR")
+	local oat = {}
+	for i = 1, #odd do
+		if odd[i] == "Ethernet: eth0 10.4.17.3" then oat.card = i end
+		if odd[i] == "Callsign: KD4AXR" then oat.call = i end
+		if string.find(odd[i], "Booting", 1, true) then oat.boot = i end
+	end
+	check("a callsign with no number still goes under the card",
+		oat.call == oat.card + 1)
+	check("and still before the boot", oat.boot > oat.call)
+end
+
+--
+-- /dev/radio0: the TNC as a device.
+--
+
+do
+	local net = newRadioNet()
+	local set = net.aerial(net.here, { channel = 144390 })
+	net.login("admin")
+	say(net, "dev radio")
+	net.tick(3)
+	check("the TNC is a device", net.glass("radio0"))
+	check("named for what it is", net.glass("ham"))
+	check("with its frequency and its state", net.glass("144.390 on"))
+	say(net, "cat /dev/radio0")
+	net.tick(3)
+	check("and cat reads the same two facts", net.glass("144.390 on"))
+
+	-- Read-only: the knob is on the set (proof 7), so the node carries no `w` for
+	-- anybody and the refusal an ordinary account gets is the MODE's. The sensor
+	-- wears the same 440 for the same reason.
+	say(net, "echo 145.010 > /dev/radio0")
+	net.tick(3)
+	check("nothing may be written to an aerial",
+		net.glass("radio0: permission denied"))
+	say(net, "ls -l /dev/radio0")
+	net.tick(3)
+	check("and the mode says so", net.glass("cr--r-----"))
+	-- Root is past the mode and is refused by the VOCABULARY instead, which is
+	-- where the real answer is: there is no word a machine could write to an
+	-- aerial.
+	say(net, "su root")
+	say(net, "")
+	say(net, "echo 145.010 > /dev/radio0")
+	net.tick(3)
+	check("and not even root has a word for one",
+		net.glass("radio0: invalid value"))
+	say(net, "exit")
+	net.tick(2)
+
+	-- The set itself, read through the device: switched off, and with nothing
+	-- behind it.
+	set.data.on = false
+	say(net, "cat /dev/radio0")
+	net.tick(3)
+	check("a set switched off says so", net.glass("144.390 off"))
+	set.data.on = true
+	set.data.power = 0
+	say(net, "cat /dev/radio0")
+	net.tick(3)
+	check("and one with a flat battery says that", net.glass("144.390 no power"))
+
+	-- Carried away. The NUMBER is spent for the life of the machine, so the name
+	-- is still mounted and still answers -- "no such device" and not "no such
+	-- file", which is the difference between a set that is gone and a path
+	-- somebody mistyped.
+	net.world.remove(set)
+	say(net, "clear")
+	say(net, "dev radio")
+	net.tick(3)
+	check("a set that has gone is not listed", not net.glass("144.390"))
+	say(net, "cat /dev/radio0")
+	net.tick(3)
+	check("but the number it had still answers",
+		net.glass("radio0: no such device"))
+	_G.__world = nil
+end
+
+-- What is NOT a TNC: a receive-only set, and one out of reach.
+do
+	local net = newRadioNet()
+	net.aerial(net.here, { twoWay = false })
+	net.login("admin")
+	say(net, "dev radio")
+	net.tick(3)
+	check("a radio that cannot transmit is no TNC", not net.glass("radio0"))
+	say(net, "cat /dev/radio0")
+	net.tick(3)
+	check("and nothing was ever mounted at that name",
+		net.glass("cat: /dev/radio0: no such file"))
+	_G.__world = nil
+
+	local other = newRadioNet()
+	other.ground(other.here)
+	-- Two tiles away, and the machine is in no room the world knows: a base gets
+	-- one tile and no more.
+	other.aerial(other.here, nil, 2, 0)
+	other.login("admin")
+	say(other, "dev radio")
+	other.tick(3)
+	check("a set across the room is not wired to the machine",
+		not other.glass("radio0"))
+	-- One tile away is the desk beside it.
+	other.aerial(other.here, nil, 1, 0)
+	say(other, "dev radio")
+	other.tick(3)
+	check("and one on the next tile is", other.glass("radio0"))
+	_G.__world = nil
+end
+
+-- In a building the map knows, the reach is the ROOM: a set anywhere in the
+-- office is on the office's cable.
+do
+	local net = newRadioNet()
+	local room = net.world.room("office", { { 10, 10, 0 }, { 16, 10, 0 } })
+	net.world.put(net.world.square(16, 10, 0, room), fakeRadio({}))
+	net.login("admin")
+	say(net, "dev radio")
+	net.tick(3)
+	check("a set six tiles away but in the same room is the TNC",
+		net.glass("radio0"))
+	local _ = room
+	_G.__world = nil
+end
+
+--
+-- A link, end to end.
+--
+
+do
+	local net = newRadioNet()
+	local mine = net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	local myCall, theirCall = callOf(net.here), callOf(net.far)
+
+	say(net, "call " .. theirCall)
+	net.tick(2)
+	check("the TNC answers first",
+		net.glass(CeroSecOS.TNC.connected .. theirCall))
+	check("and the far machine asks who is there", net.glass("login:"))
+	-- No trust file is asked over the air, and this one would have been enough on
+	-- the coax.
+	net.put(net.far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	local shed = net.host(net.far)
+	check("the prompt is the far machine's", net.glass("admin@" .. shed))
+	eq("a line is taken over there", CeroSecOS.ptyCount(net.far.ptys), 1)
+
+	-- What the far machine knows about the caller is what he said he was called.
+	say(net, "who")
+	net.tick(3)
+	check("who names the pty", net.glass("ttyp0"))
+	check("and the callsign that called", net.glass("(" .. myCall .. ")"))
+	net.forget()
+	say(net, "last")
+	net.tick(3)
+	check("last has it too", net.heard(myCall))
+	check("and wtmp is where it read it",
+		string.find(net.text(net.far, "/var/log/wtmp"), myCall, 1, true) ~= nil)
+
+	-- The air. One transmission for the connect, from the CALLER's set, on the
+	-- caller's frequency, with the caller's range -- and interactCodes a STRING,
+	-- which is the one argument a server drops a transmission for being nil
+	-- (proof 5).
+	local on = heardOnAir(net.air, CeroSecOS.TNC.onAir)
+	check("the connect went out over the air", on ~= nil)
+	eq("naming the station called and the station calling", on.line,
+		theirCall .. " de " .. myCall .. " " .. CeroSecOS.TNC.onAir)
+	eq("from the transmitting set's own tile", on.x, net.here.x)
+	eq("and its own y", on.y, net.here.y)
+	eq("on the frequency the link was made on", on.channel, 144390)
+	eq("with the set's own transmit range", on.range, 7500)
+	eq("not a television", on.tv, false)
+	eq("and interactCodes a string, never nil", type(on.codes), "string")
+	local _ = mine
+
+	settle(net)
+	net.forget()
+	say(net, "exit")
+	net.tick(3)
+	check("the link says it is over in the TNC's own word",
+		net.heard(CeroSecOS.TNC.disconnected))
+	check("and not in rlogin's", not net.heard("Connection closed."))
+	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
+	check("and the county heard that too",
+		heardOnAir(net.air, CeroSecOS.TNC.disconnected) ~= nil)
+	_G.__world = nil
+end
+
+-- ~. hangs up a radio link exactly as it hangs up a call: one program holds the
+-- far end, so there is one escape.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	say(net, "call " .. callOf(net.far))
+	net.tick(2)
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	check("the link is up", net.glass("admin@" .. net.host(net.far)))
+	net.forget()
+	say(net, "~.")
+	net.tick(3)
+	check("~. hangs up", net.heard(CeroSecOS.TNC.disconnected))
+	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
+	check("and the glass is this machine's again",
+		net.glass("admin@" .. net.host(net.here)))
+	_G.__world = nil
+end
+
+--
+-- The refusals, one rule at a time. Every one of them is the TNC's own line,
+-- except the two the machine can see without transmitting.
+--
+
+do
+	local net = newRadioNet()
+	net.login("admin")
+	local theirCall = callOf(net.far)
+
+	-- No aerial at all: the machine can see that for itself.
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("a machine with no set says so in its own name",
+		net.glass(CeroSecOS.CALL_NO_RADIO))
+	check("having never transmitted", #net.air == 0)
+	check("and opened no line over there", net.far.ptys == nil)
+
+	local mine = net.aerial(net.here)
+	local theirs = net.aerial(net.far)
+
+	-- This machine's own set switched off: a TNC cannot tell, so it transmits
+	-- into a dead radio and the retries run out.
+	mine.data.on = false
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("a set of one's own that is off is silence, not a diagnosis",
+		net.glass(CeroSecOS.TNC.retry))
+	mine.data.on = true
+
+	-- The far set switched off.
+	theirs.data.on = false
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("a far set that is off is the same silence", net.glass(CeroSecOS.TNC.retry))
+	theirs.data.on = true
+
+	-- The far set with no power.
+	theirs.data.power = 0
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("and so is a flat battery over there", net.glass(CeroSecOS.TNC.retry))
+	theirs.data.power = 1
+
+	-- Two frequencies are two conversations.
+	theirs.data.channel = 145010
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("the wrong frequency is silence too", net.glass(CeroSecOS.TNC.retry))
+	theirs.data.channel = 144390
+
+	-- Out of range: the SMALLER of the two ranges decides, so one narrow set is
+	-- enough to break a link two wide ones would have carried.
+	theirs.data.range = 10
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("out of range is silence", net.glass(CeroSecOS.TNC.retry))
+	theirs.data.range = 7500
+
+	-- A callsign nobody answers to.
+	say(net, "call W4ZZZ")
+	net.tick(3)
+	check("a station the county has not got is the same line",
+		net.glass(CeroSecOS.TNC.retry))
+
+	-- A machine switched off cannot answer.
+	net.far:turnOff()
+	say(net, "call " .. theirCall)
+	net.tick(3)
+	check("nor can a computer that is switched off", net.glass(CeroSecOS.TNC.retry))
+	_G.__world = nil
+end
+
+-- Calling oneself, and the shape of the word.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.login("admin")
+	say(net, "call " .. callOf(net.here))
+	net.tick(3)
+	check("a station cannot connect to itself", net.glass(CeroSecOS.TNC.retry))
+	say(net, "call kd4axr")
+	net.tick(3)
+	check("a callsign in lower case is not one", net.glass("call: usage: call CALLSIGN"))
+	say(net, "call")
+	net.tick(3)
+	check("and neither is nothing at all", net.glass("call: usage: call CALLSIGN"))
+	say(net, "call 555-0142")
+	net.tick(3)
+	check("nor a telephone number", net.glass("call: usage: call CALLSIGN"))
+	_G.__world = nil
+end
+
+-- THE UNLOADED CHUNK, which is the one thing the radio is worse at than the
+-- telephone: a radio is a tile, and a tile the streamer has not brought in does
+-- not exist. The far machine's DISK is still here -- it answers ruptime and it
+-- answers cu -- and its aerial is not.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.login("admin")
+	-- No square in the world at the shed at all, which is exactly what an
+	-- unloaded chunk answers.
+	say(net, "call " .. callOf(net.far))
+	net.tick(3)
+	check("a station whose chunk is not loaded cannot be raised",
+		net.glass(CeroSecOS.TNC.retry))
+	-- And the same machine over the telephone, in the same breath: the disk is
+	-- here and the link that does not need a tile still reaches it.
+	say(net, "cu " .. telOf(net.far))
+	net.tick(2)
+	check("while the telephone reaches it perfectly well", net.glass("CONNECT 2400"))
+	_G.__world = nil
+end
+
+-- ONE LINK PER RADIO, both ends. Two machines in one room share a set, so the
+-- second one is not getting on the air.
+do
+	local net = newRadioNet()
+	local room = net.world.room("office", { { 10, 10, 0 }, { 12, 10, 0 } })
+	net.world.put(net.world.square(10, 10, 0, room), fakeRadio({}))
+	net.aerial(net.far)
+	net.login("admin")
+	say(net, "call " .. callOf(net.far))
+	net.tick(2)
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	check("the first machine has the air", net.glass("admin@" .. net.host(net.far)))
+	-- The other computer in the room, on the same aerial.
+	typeAt(net, net.gate, "call " .. callOf(net.far))
+	check("and the one beside it is told the set is busy",
+		ownSaid(net.gate, CeroSecOS.TNC.busy))
+	local _ = room
+	_G.__world = nil
+end
+
+-- A link that goes away underneath a session: somebody switches the far set off
+-- while somebody else is typing at it. The next keystroke is what finds out, and
+-- what it reads is not the same line as a hangup.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	local theirs = net.aerial(net.far)
+	net.login("admin")
+	say(net, "call " .. callOf(net.far))
+	net.tick(2)
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	check("the link is up", net.glass("admin@" .. net.host(net.far)))
+	net.forget()
+	theirs.data.on = false
+	say(net, "hostname")
+	net.tick(3)
+	check("the keystroke finds the link gone", net.heard(CeroSecOS.TNC.retry))
+	check("and not a hangup", not net.heard(CeroSecOS.TNC.disconnected))
+	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
+	check("and the glass is this machine's again",
+		net.glass("admin@" .. net.host(net.here)))
+	_G.__world = nil
+end
+
+-- call wants a terminal, exactly as rlogin and cu do: a crontab line that
+-- called would be a session nobody could ever type at.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	net.crontab(net.here, "admin", "* * * * * call " .. callOf(net.far))
+	net.minute(2)
+	eq("a crontab call opens no line on the far machine",
+		CeroSecOS.ptyCount(net.far.ptys), 0)
+	local mail = net.text(net.here, "/var/mail/admin")
+	check("and the mail says why", mail ~= nil and
+		string.find(mail, "call: not a terminal", 1, true) ~= nil)
+	check("having never transmitted either", #net.air == 0)
+	say(net, "call " .. callOf(net.far) .. " &")
+	net.tick(4)
+	check("a backgrounded call says it has no terminal either",
+		net.heard("call: not a terminal"))
+	_G.__world = nil
+end
+
+-- 1200 baud: half what a telephone call carries, and the far machine as fast as
+-- it ever was.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	say(net, "call " .. callOf(net.far))
+	net.tick(2)
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	local pty = CeroSecOS.ptyList(net.far.ptys)[1]
+	check("the session is a radio link", pty ~= nil and type(pty.radio) == "table")
+	eq("and it came from this station", pty.radio.call, callOf(net.here))
+	check("and not down a telephone line", pty.phone == nil)
+
+	local before = #pty.console.lines
+	say(net, "for i in 1 2 3 4 5 6 7 8 9 10; do echo $i; done")
+	net.tick(9)
+	local after = #pty.console.lines - before
+	-- Four and not two, and written out rather than read off the constant: these
+	-- passes straddle a second, so two of the air's seconds may land. Ten lines at
+	-- the machine's own twenty a second would all be here at once, and four a
+	-- second is what the TELEPHONE carries.
+	check("a second on the air carries about two lines (" .. after .. ")",
+		after >= 1 and after <= 4)
+	net.tick(60)
+	check("and the whole of it arrives in the end", net.glass("10"))
+	_G.__world = nil
+end
+
+--
 -- The script that threw a player off the machine
 --
 -- Typed at the glass, as root, with the file exactly as it was written: a usage

@@ -222,4 +222,38 @@ check("same square and index orders neither way", not CeroSec.drawnBefore(10, 10
 check("a missing index reads as zero", CeroSec.drawnBefore(10, 10, 1, 10, 10, nil))
 check("two missing indexes order neither way", not CeroSec.drawnBefore(10, 10, nil, 10, 10, nil))
 
+
+--
+-- The three links, as speeds and as boot lines (rung 6c)
+--
+-- The two trickles are DERIVED and the arithmetic is written out here rather
+-- than read off the constants: a bench whose reference is its own source proves
+-- nothing (references/"Un banc dont la référence est sa source").
+--
+--   telephone  2400 baud, asynchronous: ten bits to the byte with the start and
+--              stop bits, so 240 bytes a second. A line is 60 columns plus CR
+--              and LF: 62 bytes. 240 / 62 = 3.87, ROUNDED UP to 4.
+--   radio      1200 baud, AX.25 over HDLC: synchronous, with no start or stop
+--              bits to pay for, so 150 bytes a second. 150 / 62 = 2.42, ROUNDED
+--              DOWN to 2.
+--
+-- The two round in different directions and that is worth naming rather than
+-- papering over. The telephone's 4 was set at rung 6b and the manual quotes it;
+-- the air's number is the floor, which is the honest reading of "the most a line
+-- can carry" -- 2.42 lines a second means two whole lines and part of a third --
+-- and it is also exactly half the telephone's, which is what half the baud rate
+-- ought to buy. Rounding the air UP like the telephone would have made 1200 baud
+-- three quarters the speed of 2400.
+check("the screen is sixty columns wide", CeroSec.COLS == 60)
+check("a telephone call carries four lines a second, rounded up",
+	CeroSec.PHONE_LINES_PER_S == math.ceil((2400 / 10) / (60 + 2)))
+check("and the air carries two, rounded down",
+	CeroSec.RADIO_LINES_PER_S == math.floor((1200 / 8) / (60 + 2)))
+check("which is half the telephone's, as half the baud rate should be",
+	CeroSec.RADIO_LINES_PER_S * 2 == CeroSec.PHONE_LINES_PER_S)
+check("which is slower than the telephone",
+	CeroSec.RADIO_LINES_PER_S < CeroSec.PHONE_LINES_PER_S)
+check("and both are slower than the machine's own screen",
+	CeroSec.PHONE_LINES_PER_S < CeroSec.JOB_OUT_PER_SEC)
+
 print("defs_test: " .. count .. " assertions passed")

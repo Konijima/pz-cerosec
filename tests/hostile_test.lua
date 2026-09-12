@@ -1596,6 +1596,158 @@ do
 end
 
 --
+-- A radio link left open, with a loop running down it (rung 6c)
+--
+-- The same worst case one link down. A radio session is a pty like any other, so
+-- the machine's ceilings hold it, and the air's own 1200 baud is HALF the
+-- telephone's -- which must not be a way to make the machine work harder either:
+-- what the air cannot carry is KEPT, and a job holding lines is a job that is not
+-- run.
+--
+
+do
+	local here = newMachine()
+	here.x = 7
+	local far, farState = newMachine()
+	local pty = attach(far, farState, here)
+	-- What makes it a radio link and not a call: no number and no line, a
+	-- CALLSIGN, and the set it was made on.
+	pty.radio = { call = "KD4AXR", to = "KE4QWZ", key = "radio:7:0:0::0" }
+	pty.fromHost = "KD4AXR"
+
+	typeLine(system, far, farState, pty.console, "while true; do echo deep; done")
+	local worstSecond = 0
+	local result = drive(far, PASSES, nil, function()
+		local room = CeroSec.RADIO_LINES_PER_S - (pty.outCount or 0)
+		if (pty.outCount or 0) > worstSecond then worstSecond = pty.outCount end
+		check("no second of the link carried more than the air can (" ..
+			tostring(pty.outCount) .. ")", room >= 0)
+		check("the link's screen never holds more than its hundred lines",
+			#pty.console.lines <= CeroSec.CONSOLE_MAX)
+		check("and the machine at the glass is running nothing",
+			here.jobs == nil or #here.jobs.list == 0)
+	end)
+	flat("a loop down a radio link", result)
+	timely("a loop down a radio link", result)
+	check("the loop is still going", #far.jobs.list > 0)
+	check("it wrote on the link's screen", #pty.console.lines > 0)
+	eq("and not a line on the machine's own", #far.console.lines, 0)
+	-- Two written out and not read off CeroSec.RADIO_LINES_PER_S, for the reason
+	-- the telephone's four is written out: a bound taken from the constant it is
+	-- there to hold would move with it and prove nothing.
+	eq("a second on the air is two lines and never twenty", worstSecond, 2)
+	check("which is half what a telephone call carries",
+		worstSecond * 2 == CeroSec.PHONE_LINES_PER_S)
+	check("the job's held output is bounded (" .. #far.jobs.list[1].out .. ")",
+		#far.jobs.list[1].out <= CeroSecOS.JOB_OUT_MAX)
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass",
+		"a loop down a link", result.worst, result.msPerPass)
+end
+
+--
+-- Thirty-two crontab lines that all try to CALL (rung 6c)
+--
+-- The county's worst radio abuse: every machine's crontab full of `call`, every
+-- minute, for a hundred minutes. Nothing may be opened and -- the assertion this
+-- bench exists for -- NOTHING MAY BE TRANSMITTED: a crontab that could key a
+-- transmitter would put two callsigns over the county every minute from a machine
+-- nobody was standing at, which is worse than the session it would have opened.
+-- The refusal is in the engine, before the order is ever given (CeroSecOSVM), so
+-- the count below is of transmissions the mod made and it must be zero.
+--
+
+do
+	local air = 0
+	local before = _G.getZomboidRadio
+	_G.getZomboidRadio = function()
+		return { SendTransmission = function() air = air + 1 end }
+	end
+
+	local system5 = { }
+	function system5:clockEnv() return { now = 740000000 } end
+	function system5:execEnv(object, state) return { now = 740000000, nowMs = _G.__now } end
+	function system5:pushScreen() end
+	function system5:reply() end
+	function system5:getLuaObjectAt() return nil end
+	function system5:getLuaObjectCount() return 0 end
+	function system5:getLuaObjectByIndex() return nil end
+	function system5:startPrompt(object, console, line)
+		return CeroSecJobs.start(system5, object, console, line, nil, nil)
+	end
+
+	-- The crontab ceiling, which is what "a crontab full of them" means.
+	local LINES = 32
+	local lines = {}
+	for i = 1, LINES do lines[i] = "* * * * * call KE4QWZ" end
+	local crontab = table.concat(lines, "\n")
+
+	local machines, states = {}, {}
+	for m = 1, 6 do
+		local machine, state = newMachine()
+		machine.x = 100 + m
+		CeroSecOS.setNetRecord(state, 4, 17, m)
+		CeroSecOS.ensureCallsign(state)
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("admin"), crontab, false, 100)
+		if done == nil then error("cannot write the crontab: " .. tostring(reason)) end
+		machines[m], states[m] = machine, state
+	end
+	check("every machine of this county has a callsign",
+		CeroSecOS.callsignOf(states[1]) ~= nil)
+
+	local perMinute, worst = {}, 0
+	local clockStart = os.clock()
+	local minute2 = 0
+	for _ = 1, 100 do
+		minute2 = minute2 + 1
+		local spent = 0
+		for m = 1, 6 do CeroSecJobs.cronPass(system5, machines[m], 740000000 + minute2 * 60) end
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			CeroSecJobs.system = system5
+			CeroSecJobs.pass(_G.__now)
+			spent = spent + tickSteps
+			if tickSteps > worst then worst = tickSteps end
+		end
+		perMinute[#perMinute + 1] = spent
+		for m = 1, 6 do
+			check("no machine ever holds more than four jobs",
+				CeroSecOS.liveJobs(CeroSecJobs.book(machines[m]).list) <= CeroSecOS.MAX_JOBS)
+			check("not one link was opened", machines[m].ptys == nil)
+			check("and the machine's own glass is untouched",
+				#machines[m].console.lines == 0)
+			check("nor pointed at anything", machines[m].console.remote == nil)
+		end
+		eq("and not one byte went over the air", air, 0)
+	end
+	local msPerMinute = (os.clock() - clockStart) * 1000 / 100
+
+	check("no pass spent more than the county's budget (" .. worst .. ")",
+		worst <= CeroSec.STEP_BUDGET_PER_TICK + CeroSecOS.STEP_COST_COMMAND)
+	local early, late = 0, 0
+	for i = 2, 11 do early = early + perMinute[i] end
+	for i = 91, 100 do late = late + perMinute[i] end
+	eq("the first minute is before cron has fired", perMinute[1], 0)
+	check("and the second one already has work in it", perMinute[2] > 0)
+	check("the cost of a minute does not climb (minutes 2-11: " .. early ..
+		", last 10: " .. late .. ")", late <= early + CeroSec.STEP_BUDGET_PER_TICK)
+
+	for m = 1, 6 do
+		local box = CeroSecOS.systemNode(states[m], CeroSecOS.mailPath("admin"))
+		check("the mailbox is there", box ~= nil)
+		check("and it is call that is talking",
+			string.find(box.data, "call: not a terminal", 1, true) ~= nil)
+		check("the machine still boots with it on it",
+			CeroSecOS.validate(states[m]) == true)
+	end
+
+	_G.getZomboidRadio = before
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
+		LINES .. " cron call dials", worst, msPerMinute)
+end
+
+--
 -- 21. The longest PATH there can be (rung 6b)
 --
 -- Every command a shell runs is a walk along PATH, so the length of that string

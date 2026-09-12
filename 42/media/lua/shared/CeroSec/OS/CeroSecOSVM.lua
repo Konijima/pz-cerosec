@@ -1287,7 +1287,14 @@ local function applyControl(job, control, data, env)
 	-- crontab that could dial out would land a logged-in session on the physical
 	-- screen of a machine nobody was standing at, whichever kind of link it used
 	-- to get there.
-	if (control == "rlogin" or control == "cu") and not jobHasTerminal(job) then
+	--
+	-- And `call` is the third of the three, for the third time for the one reason:
+	-- a session on the far machine on THIS glass. On the air it would be worse than
+	-- either -- a crontab that called out would also key a transmitter and put two
+	-- callsigns over the county every time it ran, on a machine nobody was standing
+	-- at. Refused here, before the order is given, so nothing is transmitted at all.
+	if (control == "rlogin" or control == "cu" or control == "call")
+			and not jobHasTerminal(job) then
 		flushPartial(job)
 		errLine(job, control .. ": not a terminal")
 		job.status = 1

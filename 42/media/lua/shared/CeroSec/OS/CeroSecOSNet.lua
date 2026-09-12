@@ -590,6 +590,26 @@ end
 -- /var/log/wtmp
 --
 
+-- Is that word something a session could have come FROM? One of the three
+-- origins this machine has, and no fourth: a hostname off the coax, a telephone
+-- number, or a callsign off the air. Written as one function because it is one
+-- question, asked in one place, and because the day a fourth link is built the
+-- thing that has to change is here and not inside a parser.
+--
+-- isCallsign lives in CeroSecOSRadio.lua, which the game loads after this file;
+-- it is called at run time and never at load time, so the order does not matter
+-- -- but a machine with the radio half missing must still read its own wtmp, so
+-- the call is guarded rather than assumed.
+function CeroSecOS.isWtmpOrigin(word)
+	if type(word) ~= "string" then return false end
+	if CeroSecOS.isValidHostname(word) then return true end
+	if CeroSecOS.isPhoneNumber(word) then return true end
+	if type(CeroSecOS.isCallsign) == "function" and CeroSecOS.isCallsign(word) then
+		return true
+	end
+	return false
+end
+
 -- One line -> { kind, user, line, host, at }, or nil. Strict and silent, like
 -- every other parser on this machine.
 function CeroSecOS.parseWtmpLine(text)
@@ -600,7 +620,15 @@ function CeroSecOS.parseWtmpLine(text)
 	if kind ~= "in" and kind ~= "out" then return nil end
 	if not CeroSecOS.isValidName(user) then return nil end
 	if not CeroSecOS.isValidName(line) then return nil end
-	if host ~= "-" and not CeroSecOS.isValidHostname(host) then return nil end
+	-- The host column is the ORIGIN, and there are three kinds of it now: a
+	-- machine on the coax is named by its hostname, a caller down the telephone by
+	-- the number he can be rung back on, and a station on the air by its callsign.
+	-- All three go through here, so all three have to be spelt out -- a callsign is
+	-- CAPITALS and isValidHostname is lower case only, so the rule that used to be
+	-- "a hostname or a dash" silently refused every radio session's record and left
+	-- `last` with nothing to read. Found by tests/window_test.lua and not by
+	-- reading: wtmpAppend answers false and nobody was listening.
+	if host ~= "-" and not CeroSecOS.isWtmpOrigin(host) then return nil end
 	local when = tonumber(at)
 	if when == nil then return nil end
 	if host == "-" then host = nil end
