@@ -46,7 +46,7 @@ The suites, in the order they run:
   fake caller that would happily have carried the write out, so the refusal is
   proved to be the engine's and not the server's.
 - `manual_test.lua` — the documentation set against the engine it describes: the
-  shape of every volume (8..13 chapters, 3..9 pages each, 50..76 pages, plain ASCII,
+  shape of every volume (8..13 chapters, 3..14 pages each, 50..84 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every
   `COMMAND_INFO` usage line and every error string the machine can print carried
   somewhere in the **union** of the three, each volume's own rules (a card that is
@@ -54,11 +54,23 @@ The suites, in the order they run:
   ceiling quoted as a phrase built from the engine's own constant), and eight facts
   pinned against the code so a change to the CODE is what breaks a page. There is no
   fourth book behind the set, and a shelf that is not three volumes fails here.
+  Since fidelity A it also holds the **deviations** rule, which is the project's own
+  "invent nothing" written as a bench: `CeroSecOS.DEVIATIONS` is the list of things
+  on this machine that no 1993 Unix had and that are kept anyway, and Volume 1's
+  *What is not Unix here* page has to name every one of them — plus every name
+  `CeroSecOS.RETIRED_BIN` deletes whose replacement is not itself a command the book
+  teaches by name. It is checked in both directions: an entry that is not marked
+  `gone` has to be a command the engine really has, and one that is marked `gone`
+  has to be a command it really has not.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a
   thousand passes, asserting a flat cost per pass, a bounded console, bounded
-  memory and the cpu ceiling firing where it should. It prints the numbers.
+  memory and the cpu ceiling firing where it should. It prints the numbers. Since
+  fidelity A it also holds the two new commands a hostile player would reach for: a
+  `more` standing at its `--More--` prompt for a thousand passes, which must cost
+  **nought** steps (a pager that spun would be one), and a `find` over a disk filled
+  to its node ceiling, which must be one command and not two.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, opening each of three volumes
   off a fake shelf and opening blank paper for an id nothing answers to, a bookmark

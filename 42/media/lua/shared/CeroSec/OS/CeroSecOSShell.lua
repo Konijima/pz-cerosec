@@ -2352,13 +2352,23 @@ end
 -- POSIX says and what cut has always done: the line is not a record, so there is
 -- nothing to take a field out of. (There is no -s here to ask for the other
 -- answer, and the manual names that.)
+-- Built in a TABLE and joined once, not grown a character at a time. A line here
+-- may be four kilobytes -- a whole file on one line -- and `out = out .. c` four
+-- thousand times is four thousand new strings and eight megabytes copied: measured
+-- at 4.2 ms for one `cut -c 1-4096`, which is the whole of a pass's wall-clock
+-- budget spent by one command, and a loop around it would have been a way to make
+-- a server slow. The join is linear and the same call costs a fraction of a
+-- millisecond.
 local function cutLine(line, want, toEnd, delim)
 	if delim == nil then
-		local out = ""
+		local out, n = {}, 0
 		for i = 1, #line do
-			if cutWanted(want, toEnd, i) then out = out .. string.sub(line, i, i) end
+			if cutWanted(want, toEnd, i) then
+				n = n + 1
+				out[n] = string.sub(line, i, i)
+			end
 		end
-		return out
+		return table.concat(out)
 	end
 	if string.find(line, delim, 1, true) == nil then return line end
 	local fields = {}
@@ -2476,17 +2486,24 @@ local function trMap(set1, set2)
 	return map
 end
 
+-- A table and one join, for the reason cutLine above has one: a four-kilobyte line
+-- translated a character at a time is quadratic, and this is the other command that
+-- walks every byte of one.
 local function trLine(line, map, drop)
-	local out = ""
+	local out, n = {}, 0
 	for i = 1, #line do
 		local c = string.sub(line, i, i)
 		if drop then
-			if map[c] == nil then out = out .. c end
+			if map[c] == nil then
+				n = n + 1
+				out[n] = c
+			end
 		else
-			out = out .. (map[c] or c)
+			n = n + 1
+			out[n] = map[c] or c
 		end
 	end
-	return out
+	return table.concat(out)
 end
 
 -- tr [-d] <set1> [<set2>]. It reads its standard input and nothing else, which
@@ -4424,7 +4441,13 @@ function CeroSecOS.expandTilde(state, session, args, redirect)
 end
 
 function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
-	local path, tty = shPath(sh), shTty(sh)
+	-- All THREE of them, because the table handed to the command below is built
+	-- fresh here and anything not read out of the caller's is a fact the command
+	-- never learns. `keys` was dropped here when it was added, which made `more`'s
+	-- "not a terminal" dead code: the pager paged onto the glass of a machine
+	-- nobody was standing at, and it took a mutation check to notice -- no bench
+	-- could tell, because every bench reaches a command through this door.
+	local path, tty, keys = shPath(sh), shTty(sh), shKeys(sh)
 	CeroSecOS.expandTilde(state, session, args, redirect)
 
 	-- A bare redirection still creates (or truncates) the file.
@@ -4485,7 +4508,7 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	end
 
 	local ok, lines, control, data = fn(state, session, args, env, stdin,
-		{ path = path, tty = tty })
+		{ path = path, tty = tty, keys = keys })
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

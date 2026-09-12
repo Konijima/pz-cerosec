@@ -2530,6 +2530,38 @@ do
 	note("find at the glass", flood)
 end
 
+-- 22c. The per-character filters, on the widest line a file can hold.
+--
+-- `cut -c` and `tr` walk every byte of every line, and a line on this machine may
+-- be a whole file: four kilobytes on one row. Both of them built their answer with
+-- `out = out .. c`, which is a new string per character -- measured at 4.2 ms for
+-- one `cut -c 1-4096`, the whole of a pass's wall-clock budget spent by ONE
+-- command, and a loop around it was a way to make a server slow. They build a
+-- table and join it once now, and this is the bench that says so: a loop that does
+-- nothing but that, for a thousand passes.
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/wide", string.rep("abcdefgh", 512))
+	put(state, "/home/admin/grind.sh",
+		"while true; do cut -c 1-4096 /home/admin/wide > /dev/null; done\n")
+
+	typeLine(system, machine, state, console, "sh /home/admin/grind.sh")
+	local ground = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("cut over a maximal line", ground)
+	timely("cut over a maximal line", ground)
+	note("cut, 4096 cols in a loop", ground)
+
+	local machine2, state2, console2 = newMachine()
+	put(state2, "/home/admin/wide", string.rep("abcdefgh", 512))
+	put(state2, "/home/admin/grind.sh",
+		"while true; do cat /home/admin/wide | tr a-z A-Z > /dev/null; done\n")
+	typeLine(system, machine2, state2, console2, "sh /home/admin/grind.sh")
+	local translated = drive(machine2, PASSES, CeroSec.JOB_PASS_MS)
+	flat("tr over a maximal line", translated)
+	timely("tr over a maximal line", translated)
+	note("tr, 4096 cols in a loop", translated)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

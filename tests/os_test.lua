@@ -12003,6 +12003,178 @@ do
 	local _ = bob
 end
 
+-- 49x. Tab and `man` on the seven new commands, by the usual route.
+--
+-- Neither of them is wired per command and neither may ever be: completion lists
+-- the executables in /bin the account may run (CeroSecOS.complete), and `man`
+-- prints the description out of the /bin FILE. So a command that has a
+-- COMMAND_INFO entry and a file has both by construction -- and this is the bench
+-- that says the seven really got them, which is the only way to tell the wiring
+-- from the claim.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local NEW = { "cut", "find", "more", "tee", "tr", "uptime", "w" }
+
+	for i = 1, #NEW do
+		local name = NEW[i]
+		-- The file, with the description in it: what `help` lists and `man` reads.
+		local node = state.fs.children.bin.children[name]
+		check("/bin/" .. name .. " is there", node ~= nil and node.type == "file")
+		eq("and holds its own description", node.data, CeroSecOS.commandDesc(name))
+		-- man, off that file and not off the table: `man` on this machine reads the
+		-- disk, so a rewritten /bin/more says what the rewrite says.
+		okAt(state, admin, "man " .. name, {
+			name .. " - " .. CeroSecOS.commandDesc(name),
+			"usage: " .. CeroSecOS.commandUsage(name),
+		})
+		-- Tab: the name is offered, and a prefix that only it answers to completes
+		-- the whole way with a space behind it.
+		local all = CeroSecOS.complete(state, admin, string.sub(name, 1, 1), 1)
+		local offered = false
+		for k = 1, #all.candidates do
+			if all.candidates[k] == name then offered = true end
+		end
+		check("Tab offers " .. name, offered)
+	end
+
+	-- Two that are unique on their first letters, completed whole.
+	local one = CeroSecOS.complete(state, admin, "upt", 3)
+	eq("Tab finishes uptime", one.replacement, "uptime ")
+	one = CeroSecOS.complete(state, admin, "fin", 3)
+	eq("and find", one.replacement, "find ")
+	-- And `t` is now three commands, so Tab answers with what they share and lists
+	-- them -- which is ksh's answer and the one the window prints on a second Tab.
+	local many = CeroSecOS.complete(state, admin, "te", 2)
+	eq("two commands begin with te", #many.candidates, 2)
+	eq("and Tab offers the prefix they share", many.replacement, "te")
+
+	-- The names that are GONE are not offered either, because there is no file: the
+	-- one list completion walks is the directory itself.
+	local retired = CeroSecOS.complete(state, admin, "read", 4)
+	for k = 1, #retired.candidates do
+		check("Tab does not offer readlink", retired.candidates[k] ~= "readlink")
+	end
+	badAt(state, admin, "man readlink", "man: readlink: no manual entry")
+	badAt(state, admin, "man hash", "man: hash: no manual entry")
+end
+
+-- 49y. The wheel pair, the passwd flag, and the names the top-up took away.
+--
+-- Three things the mutation check found nothing watching: that `usermod -G` keeps
+-- the /etc/passwd flag in step with the group, that a `%group` line and a name in
+-- /etc/sudoers are read FIRST-MATCH-WINS down the file, and that a machine off an
+-- older save file really loses the four /bin files this build retired.
+--
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+
+	-- 1. The flag on the line is written from the membership, in both directions.
+	okAt(state, rootSession, "useradd bob", nil)
+	eq("a new account is nobody's administrator", CeroSecOS.getUser(state, "bob").admin, false)
+	okAt(state, rootSession, "usermod -G wheel bob", {})
+	eq("putting him in wheel writes the flag", CeroSecOS.getUser(state, "bob").admin, true)
+	okAt(state, admin, "id bob", { "uid=bob flag=admin groups=bob,wheel,sudo" })
+	-- And out again. A `-G` that left the flag behind would leave a "#" on the
+	-- prompt of an account that may no longer sudo.
+	okAt(state, rootSession, "usermod -G users bob", {})
+	eq("taking him out clears it", CeroSecOS.getUser(state, "bob").admin, false)
+	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob,users" })
+	check("and he may not sudo any more", CeroSecOS.sudoer(state, "bob") == nil)
+	-- A list that does not move the membership does not rewrite the file either.
+	local before = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH).data
+	okAt(state, rootSession, "usermod -G users bob", {})
+	eq("and a change that changes nothing writes nothing",
+		CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH).data, before)
+
+	-- 2. /etc/sudoers is read down the file and the FIRST line that matches wins,
+	-- which is this file's rule everywhere else. `kate NOPASSWD` above `%wheel` is
+	-- kate not being asked; the same two lines the other way round is kate asked
+	-- like the rest of the group.
+	okAt(state, rootSession, "useradd -G wheel kate", nil)
+	put(state, rootSession, CeroSecOS.SUDOERS_PATH, "kate NOPASSWD\n%wheel")
+	local entry = CeroSecOS.sudoer(state, "kate")
+	check("kate is in the file", entry ~= nil)
+	eq("by her own line, which is above the group's", entry.nopasswd, true)
+	put(state, rootSession, CeroSecOS.SUDOERS_PATH, "%wheel\nkate NOPASSWD")
+	eq("and the other way round the group's line is the one that answers",
+		CeroSecOS.sudoer(state, "kate").nopasswd, false)
+	-- A group line grants nobody who is not in the group.
+	put(state, rootSession, CeroSecOS.SUDOERS_PATH, "%wheel")
+	check("wheel is what grants it", CeroSecOS.sudoer(state, "kate") ~= nil)
+	check("and bob, who is not in wheel, is not granted",
+		CeroSecOS.sudoer(state, "bob") == nil)
+	-- A "%" in front of a name that is not a group name at all is not a line.
+	put(state, rootSession, CeroSecOS.SUDOERS_PATH, "%Wheel\n%")
+	check("a bad group line is skipped like any other bad line",
+		CeroSecOS.sudoer(state, "kate") == nil)
+end
+
+-- 3. The four names this build retired really go, and the rule they go by.
+do
+	-- A machine as the version before this one left it: the four old executables
+	-- in /bin, exactly as they were shipped, and the number behind.
+	local state = fresh()
+	state.sysv = CeroSecOS.SYSTEM_VERSION - 1
+	local bin = state.fs.children.bin
+	local retired = {}
+	for name, desc in pairs(CeroSecOS.RETIRED_BIN) do
+		bin.children[name] = CeroSecOS.newFile("root", 755, desc)
+		retired[#retired + 1] = name
+	end
+	table.sort(retired)
+	check("there are names to retire (" .. #retired .. ")", #retired >= 4)
+	-- One of them is a player's own work at that name: a file he wrote himself.
+	-- Nothing here is allowed to be a deletion somebody did not ask for.
+	bin.children.hash = CeroSecOS.newFile("admin", 755, "mine, not yours")
+	-- And one is the shipped file with a mode somebody changed, which is still the
+	-- shipped file and is still not ours to judge: a chmod is not a rewrite, so it
+	-- STAYS, exactly as the shell-word deletion at version 8 left one.
+	bin.children.restart = CeroSecOS.newFile("root", 700, CeroSecOS.RETIRED_BIN.restart)
+
+	eq("the top-up has something to do", CeroSecOS.upgradeSystem(state), true)
+
+	for i = 1, #retired do
+		local name = retired[i]
+		if name ~= "hash" and name ~= "restart" then
+			eq("/bin/" .. name .. " is gone", bin.children[name], nil)
+		end
+	end
+	eq("a file of the player's own at a retired name is left alone",
+		bin.children.hash.data, "mine, not yours")
+	eq("and so is the shipped one somebody chmod'd", bin.children.restart.mode, 700)
+
+	-- And the shell agrees: a name with no file is a name that is not found.
+	local admin = open(state, "admin")
+	local ENV2 = { now = 0, nowMs = 1, jobs = {} }
+	local GONE = { "adduser", "deluser", "gpasswd", "readlink", "write" }
+	for i = 1, #GONE do
+		badAt(state, admin, GONE[i] .. " x", GONE[i] .. ": command not found", ENV2)
+	end
+	-- The two the bench left standing on purpose are still FILES -- and still not
+	-- commands, because the engine has nothing behind them: which is the honest
+	-- answer for a file in /bin with no command behind it and has been since
+	-- version 8.
+	badAt(state, admin, "hash x", "hash: command not found", ENV2)
+	-- The chmod'd one is 700 and root's, so an ordinary account does not get as far
+	-- as finding out there is nothing behind it: a file it may not run is a file it
+	-- may not run, which is the answer `chmod 600 /bin/ls` has always given.
+	badAt(state, admin, "restart", "restart: permission denied", ENV2)
+	badAt(state, open(state, "root"), "restart", "restart: command not found", ENV2)
+
+	-- The new names are there in their place.
+	local NEW = { "useradd", "userdel", "usermod", "mkpasswd" }
+	for i = 1, #NEW do
+		check("/bin/" .. NEW[i] .. " was seeded", bin.children[NEW[i]] ~= nil)
+		eq("and describes itself", bin.children[NEW[i]].data,
+			CeroSecOS.commandDesc(NEW[i]))
+	end
+	eq("and the machine validates", CeroSecOS.validate(state), true)
+	eq("asked once and once only", CeroSecOS.upgradeSystem(state), false)
+end
+
 -- 49a. cut: the two forms, the list grammar, and the line with no delimiter.
 do
 	local state = fresh()
@@ -12297,6 +12469,97 @@ do
 	end
 	badAt(state, admin, "w x", "w: usage: w", env)
 
+	-- WHAT is the PROMPT's own job and nothing else. A `&` in the background and a
+	-- crontab line are the machine's work and not what that session is doing, which
+	-- is the rule `jobs` and `ps` already tell apart -- and a `w` that named a
+	-- background job in the WHAT column would say a survivor is busy when he is
+	-- standing at his prompt.
+	do
+		local function job(cmd, opts)
+			local one = CeroSecOS.newJob({
+				prog = {}, session = { user = "admin", cwd = "/home/admin" }, cmd = cmd,
+				bg = opts.bg,
+			})
+			one.mailTo = opts.mailTo
+			return one
+		end
+		-- Three jobs that are NOT this session's work, in front of the `w` the bench
+		-- is about to type: a `&` in the background, a crontab line, and the job the
+		-- MACHINE made for a `sleep` -- which is the one that matters, because it is
+		-- neither of the other two and is still not what a survivor is doing.
+		local busy = {
+			now = AT, nowMs = 1, up = 60, load = { 0, 0, 0 },
+			jobs = {
+				job("sleep 300 &", { bg = true }),
+				job("/home/admin/nightly.sh", { mailTo = "admin" }),
+				job("sleep 5", {}),
+			},
+			net = { sessions = function()
+				return { { user = "admin", line = "console", at = AT - 60, busy = AT - 60 } }
+			end },
+		}
+		-- `exec` puts the prompt's own job on the book after those three, exactly as
+		-- the machine does, so the walk has to pick the LAST kind and not the first.
+		local rows = okAt(state, admin, "w", nil, busy)
+		eq("WHAT is the line this session typed and none of the machine's own work",
+			rows[3], "admin    console  -           3:13PM 00:01 w")
+	end
+
+	-- The load averages' own arithmetic, which every bench above hands in ready
+	-- made. This is the one that exercises CeroSecOS.loadSample: what the scheduler
+	-- calls once a pass, on the job book that IS the run queue.
+	do
+		local book = { list = {} }
+		-- The first sample starts AT the run queue and does not climb to it from
+		-- nought: a machine switched on with four jobs on it really is loaded, and an
+		-- average that began at zero would say it was idle for a minute.
+		for i = 1, 3 do
+			book.list[i] = CeroSecOS.newJob({ prog = {}, cmd = "job " .. i })
+		end
+		eq("the first sample is taken", CeroSecOS.loadSample(book, 100000), true)
+		eq("and it starts at the run queue", book.load[1], 3)
+		eq("on all three windows", book.load[3], 3)
+		-- Sampled no oftener than every five seconds, which is the interval every
+		-- Unix has sampled its run queue at.
+		eq("a second sample inside the interval is not taken",
+			CeroSecOS.loadSample(book, 100000 + CeroSecOS.LOAD_SAMPLE_MS - 1), false)
+		eq("and it moved nothing", book.load[1], 3)
+
+		-- The machine goes idle. The one-minute average falls fast and the
+		-- fifteen-minute one barely moves, which is the whole point of three windows.
+		for i = 1, #book.list do CeroSecOS.killJob(book.list[i], nil) end
+		local at = 100000
+		for _ = 1, 12 do
+			at = at + CeroSecOS.LOAD_SAMPLE_MS
+			CeroSecOS.loadSample(book, at)
+		end
+		check("a minute idle takes most of the one-minute average (" ..
+			string.format("%.3f", book.load[1]) .. ")", book.load[1] < 1.5)
+		check("and leaves the fifteen-minute one nearly where it was (" ..
+			string.format("%.3f", book.load[3]) .. ")", book.load[3] > 2.5)
+		check("the short window really is the faster of the two",
+			book.load[1] < book.load[2] and book.load[2] < book.load[3])
+		-- It decays to nothing and never below it, given enough of the window it is
+		-- an average over: two thousand samples is a couple of hours, which is many
+		-- times the fifteen minutes the slowest of the three is named for.
+		for _ = 1, 2000 do
+			at = at + CeroSecOS.LOAD_SAMPLE_MS
+			CeroSecOS.loadSample(book, at)
+		end
+		check("and it ends at nothing rather than below it (" ..
+			string.format("%.4f", book.load[3]) .. ")",
+			book.load[3] >= 0 and book.load[3] < 0.01)
+
+		-- A clock that went backwards -- a reload, a server restart -- is a sample
+		-- interval nobody can use: it starts again rather than dividing by a
+		-- negative.
+		local before = book.load[1]
+		eq("a backwards clock takes no sample", CeroSecOS.loadSample(book, 1), false)
+		eq("and moved nothing", book.load[1], before)
+		eq("junk takes none either", CeroSecOS.loadSample(nil, 1), false)
+		eq("nor does a clock that is not one", CeroSecOS.loadSample(book, "soon"), false)
+	end
+
 	-- A session the machine has no activity stamp for -- one that came back from a
 	-- save file -- is idle since it LOGGED IN, which is the honest floor.
 	local cold = {
@@ -12367,6 +12630,31 @@ do
 	-- banner between them, because that banner is two rows of twenty.
 	put(state, admin, "/home/admin/two", "three")
 	okAt(state, admin, "more short two", { "one", "two", "three" })
+
+	-- A screen with NOBODY in front of it -- a `&` job, a crontab line -- is the
+	-- other case, and it is not the same one: the output goes to a glass and no key
+	-- will ever be pressed at it. Refused before a single line is printed, because
+	-- a pager that put nineteen rows onto that glass and then said so would have
+	-- paged nothing.
+	--
+	-- Handed straight to runArgs with the `keys` half of what the shell knows set
+	-- false, which is what CeroSecOSVM.jobHasKeyboard answers for such a job. This
+	-- bench exists because a mutation check found the refusal UNREACHABLE: runArgs
+	-- built the table it hands a command out of `path` and `tty` alone and dropped
+	-- `keys` on the floor, so `more` never saw it and no bench could tell.
+	do
+		local bgOk, bgLines = CeroSecOS.runArgs(state, admin, { "more", "big" }, nil, ENV,
+			nil, { path = CeroSecOS.DEFAULT_PATH, tty = true, keys = false })
+		eq("a pager with nobody at the keyboard is refused", bgOk, false)
+		eq("in its own name", bgLines[1], "more: not a terminal")
+		eq("and nothing at all was printed first", #bgLines, 1)
+		-- And with a keyboard it pages, off the very same door: what changed is the
+		-- one flag.
+		local fgOk, _, fgControl = CeroSecOS.runArgs(state, admin, { "more", "big" }, nil,
+			ENV, nil, { path = CeroSecOS.DEFAULT_PATH, tty = true, keys = true })
+		eq("and with one it pages", fgOk, true)
+		eq("which is a question", fgControl, "prompt")
+	end
 
 	-- NOT a screen: copy through with no paging at all, which is more(1)'s own
 	-- answer and what keeps a pager composable.
