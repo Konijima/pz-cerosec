@@ -16,6 +16,7 @@ and never a link, [TESTING.md](TESTING.md) for what the suite proves, and
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
+| 5a | **Photograph the save shape this build writes**, and commit it — see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
 | 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=1100,2400 "file://$PWD/workshop/preview-page.html"` |
@@ -28,6 +29,37 @@ and never a link, [TESTING.md](TESTING.md) for what the suite proves, and
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | Make the GitHub repository public | `gh repo edit Konijima/pz-cerosec --visibility public` |
 | 17 | Flip the Workshop item to public | Steam item page, **Change visibility** |
+
+## Step 5a: every release captures a fixture
+
+`sh tools/capture-fixture.sh` builds a whole machine with the code as it stands —
+two accounts, a home with files and a script, a cron line, a net record with its
+exchange, the device-number book, a disk in the drive with a label on it — and writes
+it out as a Lua table literal to `tests/fixtures/state-v<N>.lua`, where `<N>` is read
+out of `CeroSecOS.STATE_VERSION` rather than passed in. **Commit the file.**
+
+It is a photograph, and the point of it is that the *next* release has a real save from
+*this* one to walk. `tests/migrate_test.lua` reads every fixture in that directory,
+walks it up to whatever the code is then, and holds the result to the invariants — the
+accounts still log in, the files are byte for byte, the script still runs, the disk
+still mounts. It refuses to pass without a fixture for the shape one behind the current
+`STATE_VERSION`, which is the save an update actually meets on somebody's disk.
+
+Three rules:
+
+- **Capture BEFORE bumping `STATE_VERSION`.** The number the file is named for is the
+  shape inside it; capture after the bump and the shape the update will really meet is
+  the one nobody photographed.
+- **Never edit a fixture by hand**, and never to make a bench pass. It is what a build
+  really wrote; editing it is the one thing that makes it worthless. If the bench goes
+  red, the chain is wrong, not the photograph.
+- **To capture a shape the current code cannot write any more**, give the tool a
+  commit: `sh tools/capture-fixture.sh <commit>` checks that build's engine out into a
+  temporary tree and captures from there. Nothing is checked out over the working tree.
+
+The compatibility contract the chain is held to — which of the five version numbers
+moves for which kind of change, and why an item block is never deleted — is in
+[CONTRIBUTING.md](CONTRIBUTING.md#the-compatibility-contract).
 
 ## Three things that bite
 

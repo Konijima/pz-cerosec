@@ -451,7 +451,8 @@ small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceilin
 its own 64 — how many commands ship is no reason to mount more of the world.)
 
 The state also carries `sysv`, the *contents* it was built with (`CeroSecOS.SYSTEM_VERSION`
-is 16 today) as opposed to `v`, the schema. A wave that adds a command adds a file to
+is 17 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 2 today — see
+[Migration](#migration) below). A wave that adds a command adds a file to
 `/bin`, so on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up —
 the standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
@@ -562,6 +563,118 @@ four minutes later, while the session at the glass is still `admin`'s. A buffer 
 no account on it — one opened before `sudo` existed — is the session's, as it always
 was.
 
+
+## Migration
+
+**A mod update never costs a player what he built**, and until this wave that was not
+true of the one number that mattered. `CeroSecOS.STATE_VERSION` is the *shape* of the
+state, and a version that was not the current one became a **fresh machine**:
+`SCeroSecObject:osState` replaced `self.os` wholesale, and `CeroSecOS.migrate` handed
+back a new state for anything that was not exactly v1 — the filesystem, the accounts,
+the disk in the drive, gone. Which is why the number had never been moved in the mod's
+life: the first bump would have wiped every computer in every save on the next load,
+so nothing that lived in the shape could ever be changed at all.
+
+### The chain
+
+`CeroSecOS.MIGRATIONS[n]` takes a state at `n - 1` and leaves it at `n`.
+`CeroSecOS.migrate` walks every step from the version on the disk up to this build's,
+moving `state.v` **as each one lands** — so a state that dies half way through (a step
+that errors, a server killed under it) comes back at the version it really reached and
+walks the rest on the next load. Then `upgradeSystem` tops the *contents* up, which is
+the other number and is not part of the chain.
+
+It is called from **one place**: `SCeroSecObject:osState`. Everything that hands the
+object a state writes `self.os` and then asks there — a chunk coming back
+(`stateToIsoObject`), a machine adopted from its sprite (`stateFromIsoObject`), a
+computer put down out of somebody's hands (`resetForPlacement`, both through
+`osFromIsoObject`) — so the chain runs on every road in and on none of them twice: at
+the current version the loop has no steps to walk.
+
+`migrate` deliberately does **not** validate. A state of a version it can *read* is
+kept even when the gate then refuses it, because the way back from a filesystem the
+core cannot run on is the BIOS (`restoreOS`), which keeps `/home`. Handing back a fresh
+machine there was the function throwing away the very thing it exists to save, and it
+was invisible because the only states that ever reached it were junk.
+
+`STATE_VERSION` is **2**, and step 2 is the accounts file and the quota flags — two
+repairs that ran on *every read of the state* because no number could say they had
+already been done. `nq` was swept off every node of every machine for the rest of the
+save's life.
+
+A step is handed a table and nothing else. Most machines in a save have no chunk
+loaded, so a step that asked the world could not run for them; the top-ups that
+genuinely need it live where the square is answerable and are called from there — the
+address, the telephone exchange and the premises name in `CeroSecNet.identify`, the
+devices under `/dev` in the scheduler. The mount sweep (`checkMounts`) and the `/dev`
+sweep (`unmountDev`) are **not** migrations and stay on the road in beside the chain:
+what makes a mount stale is the disk coming out, which happens while the machine is
+running.
+
+### Newer than the code
+
+A state a **later** build wrote is refused and **not touched**: `migrate` answers `nil`
+plus `"newer"`, a runtime flag (`osNewer`, never written back) makes the refusal
+sticky, and the firmware's own line goes on the screen —
+`System newer than firmware: update the mod.` — instead of the BIOS' question. `y`
+would mean this build writing its own shape over a save its own author could still
+open, which is the one unrecoverable mistake there is. `restoreOS` refuses it too.
+Nothing is reset, and the switch at the back of the case still works: `turnOff` has
+never needed a state.
+
+A state with **no** version, or one below the oldest step there is, becomes a fresh
+machine. That is what a pre-release save is — nothing shipped that wrote one — and it
+is the one case where something is lost.
+
+### The other three shapes
+
+The machine is not the only save file the mod writes, and each of the other three has a
+number and a chain of its own:
+
+| shape | number | chain | walked in |
+| --- | --- | --- | --- |
+| a floppy's `modData` (`v`, `fs`, `label`) | `CeroSecOS.FLOPPY_VERSION` | `CeroSecOS.DISK_MIGRATIONS` | `diskFromData` at the slot, and `migrate` for one riding inside the state |
+| a door's modules (`modData.cerosec`) | `CeroSecModules.VERSION` | `CeroSecModules.MIGRATIONS` | `installedOn` |
+| the phone book stamp (`modData.cerosec`) | `CeroSecPhonebook.VERSION` | `CeroSecPhonebook.MIGRATIONS` | `regionOn` |
+
+A disk is walked on **both** roads in, because one that was in the drive when the game
+was saved rides inside the state and never passes the slot again. A disk a later build
+wrote makes the whole machine unreadable, with the same answer and for the same reason
+— and it is asked *before* a single step writes anything, so "not touched" means it.
+An unreadable disk is never handed back blank: a machine that formatted a floppy it
+could not read would be a machine that wipes somebody's work to make it fit.
+
+An absent number is the **oldest** shape and not version zero — the ids on a door
+written before this wave are the ids version 1 has — and the stamp is a thing the next
+write adds. That matters for the modules in particular: a read happens on a client, and
+a client writing into a door's `modData` writes into nothing anybody else will ever
+see.
+
+`CeroSecOS.DISK_LEGACY_KEYS` is what stops the closed-key rule and the chain
+contradicting each other. `diskFieldsOk` refuses any key a disk does not own, and it
+runs at the slot *before a byte is copied* — so a step that renamed a key could never
+have seen the old name. The old name goes on that list and the step takes it off. A
+migration is the one thing allowed to rename or drop a key.
+
+### Proving it
+
+`tests/fixtures/state-v<N>.lua` is a **photograph**: bytes a real build produced,
+committed to git by `tools/capture-fixture.sh`. Every other bench in the suite builds
+its machine with today's code, which is exactly what this one must not do — a fixture
+built by the builder under test changes shape the moment the builder does, so the chain
+would always be walking a state the previous release never wrote. With a commit
+argument the tool checks that build's engine out into a temporary tree and captures
+from there, which is the only honest way to get a fixture of a shape the current code
+cannot write any more.
+
+`tests/migrate_test.lua` walks every fixture and asks the invariants: the gate takes
+the machine, the accounts still log in with the passwords they *had* (tried, not read —
+what is stored is a hash), the files are byte for byte, the script still **runs**, the
+cron line still parses, `light0` is still the same light switch, the hostname and the
+callsign are the machine's own, and the disk still **mounts** and reads through the
+mount. Twice is once, compared byte for byte with the version wound **back** first:
+calling `migrate` again as it stands runs nothing, so that bench would prove the guard
+and say nothing about the steps.
 
 ## The manual reader
 

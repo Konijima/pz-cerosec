@@ -148,7 +148,9 @@ is selected, because those are facts about a window.
 
    Clicking a row selects that machine, which is the machine the Files, Devices
    and Scheduler tabs are about. Under the list is that machine's own detail: its
-   sprite, its state version, its `sysv`, whether the system passes
+   sprite, its own object version (`obj v`), the **shape its state is in** (`os v`,
+   `CeroSecOS.STATE_VERSION` — what the migration chain walked it up to) beside its
+   `sysv` (the contents `upgradeSystem` topped it up to), whether the system passes
    `CeroSecOS.systemOk`, and its console — who is logged in, where, what it is
    waiting for, how many lines are on it, and whether the glass is showing a
    session on another machine.

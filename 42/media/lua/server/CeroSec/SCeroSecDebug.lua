@@ -257,7 +257,10 @@ function CeroSecDebug.machineDetail(system, luaObject)
 	local out = {}
 	out[#out + 1] = "at " .. pos(luaObject.x, luaObject.y, luaObject.z) ..
 		"  facing " .. cell(luaObject.facing) ..
-		"  state v" .. cell(luaObject.v) ..
+		-- The OBJECT's own schema (CeroSec.STATE_VERSION), which is not the disk's: the
+		-- shape the filesystem is in is CeroSecOS.STATE_VERSION and is printed beside
+		-- sysv below, where the state it belongs to is.
+		"  obj v" .. cell(luaObject.v) ..
 		"  sprite " .. cell(CeroSec.spriteFor(luaObject.facing, luaObject.on))
 	out[#out + 1] = "power " .. (luaObject.on and "on" or "off") ..
 		"  chunk " .. (luaObject:isLoaded() and "loaded" or "away") ..
@@ -271,8 +274,15 @@ function CeroSecDebug.machineDetail(system, luaObject)
 			"  tel " .. cell(CeroSecNet.lineOf(luaObject)) ..
 			"  call " .. cell(CeroSecOS.callsignOf(state))
 		local ok, why = CeroSecOS.systemOk(state)
+		-- The two numbers a save carries, side by side, because they are the two
+		-- questions an update raises and neither was readable anywhere in the game: `os
+		-- v` is the SHAPE the migration chain walked this machine up to
+		-- (CeroSecOS.STATE_VERSION), `sysv` is the CONTENTS upgradeSystem topped it up
+		-- to (CeroSecOS.SYSTEM_VERSION). A machine off an older save shows both at this
+		-- build's numbers, and that is how the in-game checklist constates a migration
+		-- instead of asserting one (docs/PARCOURS-TEST.md, section Z).
 		out[#out + 1] = "system " .. (ok and "ok" or ("NOT OK: " .. cell(why))) ..
-			"  sysv " .. cell(state.sysv)
+			"  os v" .. cell(state.v) .. "  sysv " .. cell(state.sysv)
 	end
 	if type(console) ~= "table" then
 		out[#out + 1] = "console: none (the machine is off)"

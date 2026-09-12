@@ -1979,6 +1979,36 @@ un interrupteur dans la pièce.
      crochet. `kill %1` marche. `man jobs` dit
      `list the background jobs on this machine`. [ ]
 
+## Z. La sauvegarde d'avant la mise à jour (migrations)
+
+C'est la seule étape du parcours qui demande **deux** versions du mod : la suite
+headless prouve la chaîne sur des photos de sauvegardes
+(`tests/fixtures/state-v<N>.lua`, voir [ARCHITECTURE.md](ARCHITECTURE.md#migration)),
+mais ce qu'elle ne peut pas prouver, c'est que le jeu redonne bien à la machine la
+table qu'il avait écrite.
+
+277. **Une machine d'avant la mise à jour garde tout.** Avec la version
+     **précédente** du mod : allumer un ordinateur, se connecter en `admin`,
+     `mkdir travail`, `echo "garde-moi" > travail/notes.txt`, ajouter un compte
+     (`sudo useradd sam` puis `sudo passwd sam`, mot de passe `letmein`), mettre
+     une disquette dans le lecteur et écrire une étiquette dessus. Quitter la
+     partie proprement (**Enregistrer et quitter**, pas Alt-F4 : la table de
+     l'objet part sur un enregistrement). Installer cette version-ci, recharger
+     la **même** sauvegarde, revenir devant la même machine, l'allumer :
+     - le BIOS compte sa mémoire et l'écran finit sur `login:` — **pas** sur
+       `No operating system found.` ;
+     - `admin` se connecte avec son mot de passe, `cat travail/notes.txt` dit
+       `garde-moi` ;
+     - `sam` se connecte avec `letmein` ;
+     - dans la fenêtre de débogage (section X), la ligne de détail de cette
+       machine montre `os v` au **nouveau** numéro de forme et `sysv` au numéro
+       de contenu de cette version : rien dans le jeu normal ne les dit, et
+       c'est là qu'on les constate au lieu de les supposer ;
+     - `mount /dev/fd0 /mnt` monte la disquette et `df` montre l'étiquette
+       écrite avant la mise à jour ;
+     - les modules vissés sur une porte avant la mise à jour répondent encore :
+       `dev` les liste et `echo open > /dev/door0` marche. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
