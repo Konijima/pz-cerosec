@@ -1186,24 +1186,32 @@ do
 end
 
 -- The cursor stays on the machine it was on, and not on the row number it was on.
+--
+-- THREE machines and a new order that puts the clicked one in the MIDDLE, because
+-- ISScrollingListBox:clear() leaves the selection at 1: a bench whose answer was 1
+-- would be a bench that passes for a window that keeps nothing at all.
 do
 	local bench = newBench()
 	local window = bench.window
+	local three = machineRows()
+	three[3] = { c = { "12,10,0", "W", "on", "here", "yes", "gate", "10.4.17.2",
+		"555-0143", "-", "0", "0" }, x = 12, y = 10, z = 0, used = true }
 	CeroSecDebugUI.onServerAnswer("debug",
-		snapshot(window.token, "machines", machineRows()))
-	bench.list():clickRow(2)
-	eq("the second machine is selected", window.cx, 60)
+		snapshot(window.token, "machines", three))
+	bench.list():clickRow(3)
+	eq("the third machine is selected", window.cx, 12)
+	eq("and the cursor is on its row", bench.list().selected, 3)
 
-	-- The same two machines, the other way round, which is what a county answers
-	-- the moment one of them is adopted or dropped.
-	local rows = machineRows()
-	local swap = { rows[2], rows[1] }
-	CeroSecDebugUI.onServerAnswer("debug", snapshot(window.token, "machines", swap))
-	eq("both are still listed", #bench.list().items, 2)
+	-- The same three, in the order a county answers them the moment a machine is
+	-- adopted or dropped above one of them.
+	local order = { three[1], three[3], three[2] }
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", order))
+	eq("all three are still listed", #bench.list().items, 3)
 	eq("and the cursor followed the MACHINE, not the row number",
-		bench.list().selected, 1)
+		bench.list().selected, 2)
 	eq("which is the machine that was clicked",
-		bench.list().items[bench.list().selected].item.x, 60)
+		bench.list().items[bench.list().selected].item.x, 12)
 end
 
 --
