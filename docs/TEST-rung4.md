@@ -141,15 +141,20 @@ it, the icon as the game draws it, the window as the eye sees it, and the book a
 actually turns up in the world.
 
 `tests/manual_ui_test.lua` already covers the wrapping, the pagination, the
-navigation, the bookmark on the item and the twelve loot lists. It covers all of that
-against a **fake** font and a **fake** distribution table. Everything below is the
-part where the real game gets a say. Turn `CeroSec.DEBUG = true` in
-`42/media/lua/shared/CeroSec/CeroSecDefs.lua` for the console lines.
+navigation, the bookmark on each copy and each volume, the dev submenu, the four item
+blocks and the twelve loot lists times three volumes. It covers all of that against a
+**fake** font, a **fake** shelf of volumes and a **fake** distribution table.
+Everything below is the part where the real game gets a say. Turn
+`CeroSec.DEBUG = true` in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` for the
+console lines.
 
-**The text is a separate file.** `42/media/lua/shared/CeroSec/CeroSecManual.lua`
-holds the chapters and is written apart from the reader. If it is missing the book
-still opens — a title leaf and an empty contents — which is itself worth one look
-(step 6).
+**The text is three separate files.** `CeroSecManualUser.lua`, `CeroSecManualAdmin.lua`
+and `CeroSecManualProgrammer.lua` in `42/media/lua/shared/CeroSec/` hold the chapters
+of the three volumes and are written apart from the reader; each assigns itself into
+`CeroSecManual.volumes`. If one is missing the others still open, and if all three are
+missing the reader falls back to the single book `CeroSecManual` was before the set. A
+volume with no chapters still opens — a title leaf and an empty contents — which is
+itself worth one look (step 9).
 
 ## Manual
 
@@ -159,69 +164,92 @@ still opens — a title leaf and an empty contents — which is itself worth one
    (`~/Zomboid/console.txt`) has no `FileNotFoundException` and no script parse error
    naming `items_cerosec.txt`. A single bad key takes the **whole file** down, so a
    silent load is the whole of this check.
-2. **It is in the item list.** Open the debug menu (or the admin panel) → **Items
-   list**. Filter on `CeroSec`. `CeroSec.Manual` is there, its display category reads
-   **Literature**, and its name reads **CeroSec OS User's Manual** — the name from
-   `Translate/EN/ItemName.json`, not the `DisplayName` fallback and not the raw
-   `Manual`.
-3. **Spawn one.** Spawn it into the character's inventory. Weight 0.8, and the icon is
-   the navy book with the little green screen on its cover — **not** the white
-   question mark. A question mark means the texture did not resolve: check that the
-   file is `common/media/textures/Item_CeroSecManual.png` exactly, since the game
-   builds the name as `"Item_" .. Icon` and looks it up as
-   `media/textures/<that>.png`.
-4. **Drop it.** Drop the manual on the floor. There is a closed book model on the
+2. **All four are in the item list.** Open the debug menu (or the admin panel) →
+   **Items list**. Filter on `CeroSec`. `CeroSec.ManualUser`, `CeroSec.ManualAdmin`,
+   `CeroSec.ManualProgrammer` and `CeroSec.Manual` are all there, every display
+   category reads **Literature**, and the names read **CeroSec OS User's Guide**,
+   **CeroSec OS System Administrator's Guide**, **CeroSec OS Programmer's Guide** and
+   **CeroSec OS User's Manual** — the names from `Translate/EN/ItemName.json`, not
+   the `DisplayName` fallback and not the raw `ManualUser`.
+3. **Spawn all three volumes.** Spawn one of each into the character's inventory.
+   Weight 0.8 each, and three **different** icons: the same book with the little green
+   screen on its cover, bound blue and marked 1, green and marked 2, red and marked 3
+   — and **not** the white question mark. A question mark means the texture did not
+   resolve: check that the file is `common/media/textures/Item_CeroSecManualUser.png`
+   exactly, since the game builds the name as `"Item_" .. Icon` and looks it up as
+   `media/textures/<that>.png`. Look at the three side by side in the inventory: the
+   number on each spine is readable at the size the inventory actually draws it.
+4. **Drop one.** Drop a volume on the floor. There is a closed book model on the
    ground, it can be picked up again, and nothing is logged. (`WorldStaticModel`.)
-5. **No vanilla read option.** Right-click the manual in the inventory. There is
-   **"Read the manual"** and there is **no** vanilla "Read", no "Write", and no
-   "Look at pictures". That is what `ItemType = base:normal` buys: a Literature item
-   would offer vanilla's own read, which sits the character down for hours.
+5. **No vanilla read option.** Right-click each volume in the inventory. There is
+   **"Read the User's Guide"** / **"Read the System Administrator's Guide"** /
+   **"Read the Programmer's Guide"**, one option and the right one, and there is
+   **no** vanilla "Read", no "Write", and no "Look at pictures". That is what
+   `ItemType = base:normal` buys: a Literature item would offer vanilla's own read,
+   which sits the character down for hours.
+6. **All three at once.** Select all three volumes together and right-click. Three
+   options, one per volume, in the order 1, 2, 3 — not one option, and not the same
+   option three times.
+7. **The old book still opens.** Spawn `CeroSec.Manual`, the single book that
+   shipped before the set. Right-click → **"Read the manual"**, and it opens the
+   **User's Guide**. It is still an item on purpose — it is in saves — and it is no
+   longer loot, which step 29 is where you check.
 
 ### B — Opening the book
 
 **While `CeroSec.DEV_MANUAL_MENU` is on** you do not need a copy of the book for any
-of section B, C or D's first three steps: right-click any computer and take the last
-entry, **Read the CeroSec manual (dev)**. Do steps 18-22 with a real item, though —
-they are about the bookmark on the item, which the door does not have.
+of section B, C or D's first three steps: right-click any computer, take the last
+entry, **Read the CeroSec manual (dev)**, and choose a volume from the submenu behind
+it. Do steps 22-27 with a real item, though — they are about the bookmark on the
+item, which the door does not have.
 
-6. **It opens.** Right-click → **Read the manual**. A window appears in the middle of
-   the screen, titled with the book's own title. Two cream leaves side by side, a
-   darker band down each inner edge where the paper curves into the gutter, page
-   numbers at the outer foot of each leaf, and three buttons under the book: **< Back**,
-   **Contents**, **Next >**.
-7. **The character does nothing.** The survivor does not sit, does not play an
+8. **The door is a submenu of three.** Hover the last entry. Behind it: **User's
+   Guide**, **System Administrator's Guide**, **Programmer's Guide**, in that order,
+   and each one opens its own volume — check the cover of each. The parent entry
+   itself opens nothing when you pass over it.
+
+9. **It opens.** Right-click → **Read the User's Guide**. A window appears in the
+   middle of the screen, titled with that volume's own title. Two cream leaves side by
+   side, a darker band down each inner edge where the paper curves into the gutter,
+   page numbers at the outer foot of each leaf, and three buttons under the book:
+   **< Back**, **Contents**, **Next >**.
+10. **The character does nothing.** The survivor does not sit, does not play an
    animation, and the queue stays empty. Walk around with the book open — it stays
    open and the character walks. Open a door, chop a tree, get bitten: the book is
    still there. It is paper on the screen, not an action.
-8. **Page 1 is the title leaf.** The book's title centred -- `CeroSec OS 1.0
-   User's Manual`, the same version the boot banner and `/etc/motd` say -- a rule
-   under it, and `First Edition, 1993` under that in the dimmer ink. Page 2 is
-   **Contents**.
-9. **Nothing is off the paper.** Look along the right margin of every leaf you turn.
+11. **Page 1 is the title leaf.** The volume's title centred -- `CeroSec OS 1.0
+   User's Guide`, the same version the boot banner and `/etc/motd` say, and the
+   volume's own name after it -- a rule under it, and `First Edition, 1993` under that
+   in the dimmer ink. Page 2 is **Contents**. Open the other two and check their
+   covers say `System Administrator's Guide` and `Programmer's Guide`, with the same
+   version number.
+12. **A volume's contents is its own.** Page 2 of each volume lists that volume's
+   chapters and **no** chapter belonging to either of the others.
+13. **Nothing is off the paper.** Look along the right margin of every leaf you turn.
    No line of prose runs past the edge of the cream, and no word is cut in half by
    the paper's edge.
-10. **Example lines look like the terminal.** A line that starts with two spaces is
+14. **Example lines look like the terminal.** A line that starts with two spaces is
     drawn in the terminal's monospaced font, dark green, on a faint band, and it is
     **not** wrapped. Compare one against the same command typed at a real CeroSec
     screen: same face, same column spacing.
-11. **Font size.** Options → the UI font size, up one notch and back. With the book
+15. **Font size.** Options → the UI font size, up one notch and back. With the book
     open the leaves re-lay themselves, the reader stays on the page he was on, and
     still nothing runs past the margin.
 
 ### C — Turning the leaves
 
-12. **Buttons.** **Next >** turns one sheet: both leaves change, and the page numbers
+16. **Buttons.** **Next >** turns one sheet: both leaves change, and the page numbers
     go up by two. **< Back** turns one back.
-13. **Keys.** Right arrow does what **Next >** does; Left does what **< Back** does.
+17. **Keys.** Right arrow does what **Next >** does; Left does what **< Back** does.
     They work with the mouse anywhere, including outside the window.
-14. **The ends.** At the front, **< Back** and Left do nothing at all — no flicker, no
+18. **The ends.** At the front, **< Back** and Left do nothing at all — no flicker, no
     blank spread. At the back, **Next >** and Right do nothing. The last spread is
     never half a sheet: if the book ran out on a left leaf, the right one is blank
     paper.
-15. **Chapters open a leaf.** Turn through the whole book. Every chapter starts at the
+19. **Chapters open a leaf.** Turn through the whole book. Every chapter starts at the
     **top** of a leaf, with its title as the running head, and no chapter begins
     halfway down the page before it.
-16. **Contents.** Press **Contents**. Each row is the chapter's title exactly as
+20. **Contents.** Press **Contents**. Each row is the chapter's title exactly as
     the chapter's own leaf is headed -- `1. Your machine`, not `1.  1. Your
     machine` -- with the page number right-aligned at the outer margin. The rows
     highlight under the cursor. Click the
@@ -229,21 +257,26 @@ they are about the bookmark on the item, which the door does not have.
     head on that leaf is that chapter's title. Do it for every chapter and check the
     printed page number on the row against the number printed at the foot of the leaf
     it lands on — those are two different pieces of arithmetic and they have to agree.
-17. **Escape closes.** Press Escape. The book shuts, and the key does **not** also
+21. **Escape closes.** Press Escape. The book shuts, and the key does **not** also
     open the game's own menu behind it.
 
 ### D — Page memory
 
-18. **It reopens where it was left.** Turn to some spread in the middle. Close the
+22. **It reopens where it was left.** Turn to some spread in the middle. Close the
     book with Escape. Right-click → Read the manual: the same two leaves.
-19. **Across a save.** Same again, then save and quit to the main menu, and load. The
+23. **Across a save.** Same again, then save and quit to the main menu, and load. The
     book still opens on the same spread — the bookmark rides on the item's modData,
     which is saved with the item.
-20. **One bookmark per copy.** Spawn a second manual. Leave the first on chapter four
-    and the second at the front. Each one opens where **it** was left.
-21. **Two windows, one player.** With the book open, right-click the **other** copy
+24. **One bookmark per copy.** Spawn a second User's Guide. Leave the first on chapter
+    four and the second at the front. Each one opens where **it** was left.
+25. **One bookmark per volume.** Turn the User's Guide to the middle and close it.
+    Open the Programmer's Guide: it opens at **its** front, not at the User's Guide's
+    spread. Turn it somewhere else, close it, and reopen the User's Guide — still
+    where you left it. Do the same through the dev door, with no copies in the
+    inventory at all: the door keeps a bookmark per volume too, for the session.
+26. **Two windows, one player.** With a volume open, right-click **another** volume
     and read it. The first window closes; there is one book open at a time.
-22. **The book leaves your hands.** With the book open, drop it on the floor. The
+27. **The book leaves your hands.** With the book open, drop it on the floor. The
     window shuts by itself.
 
 ### E — Finding one in the world
@@ -251,31 +284,42 @@ they are about the bookmark on the item, which the door does not have.
 The weights are in `42/media/lua/server/CeroSec/CeroSecManualLoot.lua`, with the
 vanilla numbers each one was set against.
 
-23. **The lists were found.** With `CeroSec.DEBUG = true`, the console says
-    `manual added to 12 distribution lists` once, on load. Anything less than 12 names
-    a list vanilla has renamed — the missing one is logged by name right above it.
-24. **It is really in the pool.** Debug menu → **Spawn rate checker** (LootZed), pick
-    `LibraryComputer`. `CeroSec.Manual` is in the list at weight 4, sitting beside
-    `Book_Computer` at 20 and 10.
-25. **Find one in an office.** New game, walk into an office building, and loot every
-    desk in it. This is the rarest placing on purpose (weight 1 against a pool of
-    about seventy, four rolls a desk) so it will take a building or two — the point of
-    the step is that it happens at all, and that the one you find reads and turns
-    exactly like the one you spawned.
-26. **Find one where it belongs.** Go to the library, the bookshop or a cyber cafe and
+28. **The lists were found.** With `CeroSec.DEBUG = true`, the console says
+    `the manual set added in 36 places` once, on load — twelve lists times three
+    volumes. Anything less than 36 names a list vanilla has renamed — the missing one
+    is logged by name right above it, once for the list and not once per volume.
+29. **All three are really in the pool, and the old one is not.** Debug menu → **Spawn
+    rate checker** (LootZed), pick `LibraryComputer`. `CeroSec.ManualUser` is in the
+    list at weight 4, sitting beside `Book_Computer` at 20 and 10;
+    `CeroSec.ManualAdmin` at 2 and `CeroSec.ManualProgrammer` at 1, in that order.
+    `CeroSec.Manual` is **not in the list at all** — it is still an item, it is no
+    longer loot.
+30. **Volume three is raised where the programmers were.** Same checker, pick
+    `UniversityDesk_Computer`: `CeroSec.ManualProgrammer` is at **2**, the same as
+    `CeroSec.ManualAdmin`, not at 1. Same again for `UniversityLibraryComputer`,
+    `BookstoreComputer` and `ElectronicStoreMagazines`.
+31. **Find one in an office.** New game, walk into an office building, and loot every
+    desk in it. This is the rarest placing on purpose (the User's Guide at weight 1
+    against a pool of about seventy, four rolls a desk) so it will take a building or
+    two — the point of the step is that it happens at all, and that the one you find
+    reads and turns exactly like the one you spawned.
+32. **Find one where it belongs.** Go to the library, the bookshop or a cyber cafe and
     loot the computer shelves. This should take a handful of containers, not a
     building. If it takes as long as the office desks did, the weight did not take.
-27. **Not everywhere.** Loot a kitchen, a wardrobe and a garage. No manuals. It is a
-    computer book; it belongs with the computers.
+    The one you turn up is most often the **User's Guide**: that is the set working as
+    printed, not a bug.
+33. **Not everywhere.** Loot a kitchen, a wardrobe and a garage. No manuals of any
+    volume. It is a computer book; it belongs with the computers.
 
 ### F — Multiplayer
 
-28. **It spawns on a server.** The distribution file is a server file. On a hosted
+34. **It spawns on a server.** The distribution file is a server file. On a hosted
     game, loot a library computer shelf as a client and the manual turns up.
-29. **Two players, two books.** Two clients each with a copy, each on a different
-    spread. Neither one's turning moves the other's book — the window is a client
-    window and the bookmark is on the item each of them is holding.
-30. **The bookmark is local.** A bookmark written on a client is not sent to the
+35. **Two players, two books.** Two clients each with a copy — different volumes, or
+    two copies of one — each on a different spread. Neither one's turning moves the
+    other's book: the window is a client window and the bookmark is on the item each
+    of them is holding.
+36. **The bookmark is local.** A bookmark written on a client is not sent to the
     server. Hand the book to another player: he gets a book, and where it opens for
     him is not promised to be where you left it. That is deliberate — it is a
     bookmark, not machine state — and it is the one place the manual behaves
@@ -351,12 +395,12 @@ testing aid and **must be `false` before anything goes to the Workshop.** It is 
 door straight into a piece of documentation the player is supposed to find, and it
 is on every computer in Knox County.
 
-31. **Turn it off.** Set `CeroSec.DEV_MANUAL_MENU = false`. Right-click a computer
+37. **Turn it off.** Set `CeroSec.DEV_MANUAL_MENU = false`. Right-click a computer
     that is **on**: "Turn off computer" and "Use computer", and no third entry.
     Right-click one that is **off**: "Turn on computer" and nothing else. Not a
     greyed-out entry, not a submenu — nothing.
-32. **The book still works.** With the flag off, spawn a manual and read it from the
-    inventory. Everything in sections B, C and D still holds: the door was a way in,
-    not the way it works.
-33. **The flag is the only thing that changed.** `git diff` on the release commit
+38. **The books still work.** With the flag off, spawn all three volumes and read
+    each from the inventory. Everything in sections B, C and D still holds: the door
+    was a way in, not the way it works.
+39. **The flag is the only thing that changed.** `git diff` on the release commit
     touches `CeroSecDefs.lua` and nothing else.

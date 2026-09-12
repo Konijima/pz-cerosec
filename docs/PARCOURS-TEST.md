@@ -414,78 +414,106 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
 ## I. Manuel
 
 101. Clic droit sur un ordinateur, dernière entrée du menu → "Read the CeroSec
-     manual (dev)" ouvre le lecteur sans copie du livre dans l'inventaire, sur
-     un ordinateur allumé ou éteint, à portée ou pas. [ ]
-102. Menu debug → Items list, filtre `CeroSec` → `CeroSec.Manual` présent,
-     catégorie affichée Literature, nom "CeroSec OS User's Manual". Faire
-     apparaître un exemplaire dans l'inventaire → icône navy avec petit écran
-     vert sur la couverture, jamais un point d'interrogation blanc. [ ]
-103. Clic droit sur l'exemplaire dans l'inventaire → "Read the manual"
-     seulement ; pas de "Read" ni "Write" ni "Look at pictures" de la
-     vanille. [ ]
-104. Ouvrir le livre → deux feuilles crème côte à côte, numéros de page aux
+     manual (dev)" est un SOUS-MENU de trois entrées : "User's Guide", "System
+     Administrator's Guide", "Programmer's Guide", dans cet ordre. Chacune
+     ouvre son propre volume, sans copie du livre dans l'inventaire, sur un
+     ordinateur allumé ou éteint, à portée ou pas. L'entrée parente elle-même
+     n'ouvre rien quand on passe dessus. [ ]
+102. Menu debug → Items list, filtre `CeroSec` → quatre objets :
+     `CeroSec.ManualUser`, `CeroSec.ManualAdmin`, `CeroSec.ManualProgrammer` et
+     `CeroSec.Manual`. Catégorie affichée Literature pour les quatre, noms
+     "CeroSec OS User's Guide", "... System Administrator's Guide",
+     "... Programmer's Guide", "CeroSec OS User's Manual". Faire apparaître les
+     trois volumes dans l'inventaire → trois icônes DIFFÉRENTES : le même livre
+     à petit écran vert, relié bleu marqué 1, vert marqué 2, rouge marqué 3.
+     Jamais un point d'interrogation blanc, et le chiffre reste lisible à la
+     taille où l'inventaire les dessine. [ ]
+103. Clic droit sur chaque volume dans l'inventaire → "Read the User's Guide" /
+     "Read the System Administrator's Guide" / "Read the Programmer's Guide",
+     une seule option et la bonne ; pas de "Read" ni "Write" ni "Look at
+     pictures" de la vanille. Sélectionner les trois ensemble → trois options,
+     dans l'ordre 1, 2, 3. Et `CeroSec.Manual`, le livre d'avant le coffret :
+     "Read the manual", qui ouvre le volume 1. [ ]
+104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
      ouvert, aucune animation de lecture, rien en file d'action. [ ]
-106. Page 1 : titre centré `CeroSec OS 1.0 User's Manual`, une règle dessous,
-     `First Edition, 1993` en dessous encore, en encre plus pâle. Page 2 :
-     Contents. [ ]
-107. Table des matières : chaque ligne reprend exactement le titre du chapitre
+106. Page 1 de chaque volume : titre centré `CeroSec OS 1.0 User's Guide`
+     (puis `... System Administrator's Guide`, `... Programmer's Guide`), une
+     règle dessous, `First Edition, 1993` en dessous encore, en encre plus
+     pâle. Page 2 : Contents. [ ]
+107. Page 2 de chaque volume ne liste QUE ses propres chapitres : aucun
+     chapitre d'un des deux autres volumes n'y apparaît. [ ]
+108. Table des matières : chaque ligne reprend exactement le titre du chapitre
      tel qu'il apparaît sur sa propre feuille (`1. Your machine`, jamais
      `1.  1. Your machine`), numéro de page aligné à droite. Cliquer sur
      chaque ligne → ouvre au premier feuillet du bon chapitre, et le numéro
      affiché sur la table correspond au numéro écrit au pied de la feuille. [ ]
-108. Flèche droite fait ce que fait `Next >`, flèche gauche ce que fait
+109. Flèche droite fait ce que fait `Next >`, flèche gauche ce que fait
      `< Back`. Au tout début du livre, `< Back` et la flèche gauche ne font
      rien ; à la toute fin, `Next >` et la flèche droite ne font rien. [ ]
-109. Tourner à un endroit au milieu du livre, fermer avec Escape, rouvrir →
+110. Tourner à un endroit au milieu du livre, fermer avec Escape, rouvrir →
      même feuillet exactement. Sauvegarder, quitter, recharger, rouvrir →
      encore le même feuillet (le signet vit sur l'objet, dans sa modData). [ ]
-110. Faire apparaître un second exemplaire, le laisser sur une autre page que
-     le premier → chacun garde son propre signet, indépendant de l'autre. [ ]
-111. Vérifier que la version affichée est la même partout : la bannière de
-     démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture du
-     manuel dit `CeroSec OS 1.0 User's Manual`, et le BIOS affiche
-     `CeroSec BIOS 1.0` comme un numéro séparé. Aucun de ces trois textes ne
+111. Faire apparaître un second exemplaire du MÊME volume, le laisser sur une
+     autre page que le premier → chacun garde son propre signet, indépendant de
+     l'autre. [ ]
+112. Deux volumes, deux signets : tourner le User's Guide au milieu, le fermer,
+     ouvrir le Programmer's Guide → il s'ouvre à SON début, pas sur la page de
+     l'autre. Le tourner ailleurs, le fermer, rouvrir le User's Guide → il est
+     resté où il était. Refaire la même chose par la porte dev, sans aucun
+     exemplaire dans l'inventaire : la porte garde aussi un signet par volume,
+     le temps de la session. [ ]
+113. Butin. Avec `CeroSec.DEBUG = true`, la console dit une seule fois au
+     chargement `the manual set added in 36 places` (douze listes fois trois
+     volumes). Menu debug → Spawn rate checker, liste `LibraryComputer` :
+     `CeroSec.ManualUser` à 4, `CeroSec.ManualAdmin` à 2,
+     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et `CeroSec.Manual`
+     ABSENT de la liste. Liste `UniversityDesk_Computer` :
+     `CeroSec.ManualProgrammer` remonte à 2. [ ]
+114. Vérifier que la version affichée est la même partout : la bannière de
+     démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture de chacun
+     des trois volumes dit `CeroSec OS 1.0` suivi de son propre nom, et le BIOS
+     affiche `CeroSec BIOS 1.0` comme un numéro séparé. Aucun de ces textes ne
      doit afficher un quatrième numéro de version. [ ]
 
 ## J. Sons et animation
 
-112. Taper un mot lentement dans le terminal → un clic court par touche, pas
+115. Taper un mot lentement dans le terminal → un clic court par touche, pas
      toujours le même échantillon (quatre au hasard) ; tenir une touche →
      clics réguliers et rapides, jamais deux collés en moins de 40 ms. [ ]
-113. Entrée au shell, puis Entrée dans l'éditeur pour une nouvelle ligne → un
+116. Entrée au shell, puis Entrée dans l'éditeur pour une nouvelle ligne → un
      clic plus lourd et plus long que celui d'une lettre, dans les deux cas. [ ]
-114. Flèches haut et bas (historique au shell, curseur dans l'éditeur)
+117. Flèches haut et bas (historique au shell, curseur dans l'éditeur)
      cliquent ; gauche, droite, Home et End ne cliquent pas. [ ]
-115. Ouvrir le terminal debout, taper → animation de fouille, mains sur le
+118. Ouvrir le terminal debout, taper → animation de fouille, mains sur le
      clavier, arrêt environ une seconde et demie après la dernière touche.
      Lire sans taper → le personnage reste immobile face au moniteur. [ ]
-116. Avec une chaise, assis, taper au clavier → noter si l'animation joue
+119. Avec une chaise, assis, taper au clavier → noter si l'animation joue
      depuis la chaise ou si le personnage reste simplement assis face à
      l'écran sans animation superposée. [ ]
 
 ## K. Mode Héberger
 
-117. Hôte allume un ordinateur → le client voit le sprite passer à l'écran
+120. Hôte allume un ordinateur → le client voit le sprite passer à l'écran
      allumé sans recharger, et voit la lueur apparaître la nuit sans
      s'éloigner et revenir. [ ]
-118. Deux joueurs au même ordinateur, terminal ouvert des deux côtés : le
+121. Deux joueurs au même ordinateur, terminal ouvert des deux côtés : le
      premier tape `ls -l /`, la ligne tapée et sa sortie apparaissent en
      direct sur l'écran de l'autre. [ ]
-119. L'un des deux tape `edit notes.txt` ; l'écran de l'autre montre le même
+122. L'un des deux tape `edit notes.txt` ; l'écran de l'autre montre le même
      éditeur avec `Another user is editing`, ses touches ne font rien, son
      Escape ferme seulement sa fenêtre. [ ]
-120. Un joueur `echo on > /dev/light0` ; l'autre, debout dans la pièce
+123. Un joueur `echo on > /dev/light0` ; l'autre, debout dans la pièce
      concernée, voit la lumière s'allumer sans se reconnecter ni s'éloigner
      et revenir. [ ]
-121. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
+124. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
      l'ouvre à la main. Puis le premier la reverrouille depuis l'ordinateur ;
      le second est refusé en essayant de l'ouvrir. [ ]
-122. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
+125. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
      ouvertes et rejouent le BIOS ensemble jusqu'à `login:`, aucune des deux
      ne se ferme et aucune ne reste sur l'ancien écran. [ ]
-123. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
+126. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
 
@@ -495,11 +523,11 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
 la machine qui est testé en même temps. Un script tapé sur une machine reste
 dessus.
 
-Les étapes 137 à 145 ne passent par aucun fichier : elles se tapent à l'invite,
+Les étapes 140 à 148 ne passent par aucun fichier : elles se tapent à l'invite,
 parce que l'invite **est** le langage de script depuis le palier 5a.1. C'est la
 capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
 
-124. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
+127. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
      enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
      sont bien là, dans l'ordre. [ ]
 
@@ -509,85 +537,85 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
            i=$((i + 1))
          done
 
-125. `sh compte.sh` → `tour 0`, `tour 1`, `tour 2` apparaissent l'un après
+128. `sh compte.sh` → `tour 0`, `tour 1`, `tour 2` apparaissent l'un après
      l'autre, l'invite ne revient qu'à la fin, et pendant ce temps rien de ce
      qu'on tape n'apparaît à l'écran. [ ]
-126. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
+129. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
      compte.sh` puis `./compte.sh` → `./compte.sh: permission denied`, alors
      que `sh compte.sh` marche toujours. [ ]
-127. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
+130. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
      nom nu reste une commande de `/bin` et rien d'autre. [ ]
-128. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
+131. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
      `sh bonjour.sh` affiche `nom? ` à l'invite, ce qui est tapé s'y ajoute
      normalement, et après Entrée la machine répond `salut <ce qui a été
      tapé>`. La ligne `nom? <réponse>` reste à l'écran. [ ]
-129. Relancer `sh bonjour.sh` et appuyer sur **Échap** à la question → `^C`
+132. Relancer `sh bonjour.sh` et appuyer sur **Échap** à la question → `^C`
      s'affiche, puis `killed`, l'invite revient, et la fenêtre du terminal ne
      se ferme pas. [ ]
-130. `edit boucle.sh` avec une seule ligne : `while true; do echo x; done`.
+133. `edit boucle.sh` avec une seule ligne : `while true; do echo x; done`.
      `sh boucle.sh` → les `x` arrivent en filet régulier (une vingtaine par
      seconde au plus), jamais d'un coup, et l'écran ne garde que ses cent
      dernières lignes. Pendant ce temps, marcher autour de l'ordinateur et
      ouvrir une porte : le jeu ne saccade pas. [ ]
-131. Pendant que `boucle.sh` tourne, **Échap** → `^C` puis `killed`, l'invite
+134. Pendant que `boucle.sh` tourne, **Échap** → `^C` puis `killed`, l'invite
      revient immédiatement. [ ]
-132. `sh boucle.sh &` → la machine répond `[1] 42` (ou un autre numéro) et
+135. `sh boucle.sh &` → la machine répond `[1] 42` (ou un autre numéro) et
      l'invite revient tout de suite. Les `x` continuent d'arriver par-dessus
      ce qu'on tape. `ps` → une ligne avec l'id, l'état `R` ou `O` et un nombre
      de pas qui **monte** à chaque appel. `jobs` → `[1] running`. [ ]
-133. `kill %1` → `[1] killed` s'affiche, `ps` ne montre plus rien. Relancer
+136. `kill %1` → `[1] killed` s'affiche, `ps` ne montre plus rien. Relancer
      `kill %1` → `kill: %1: no such job`. [ ]
-134. Lancer quatre fois `sh boucle.sh &`, puis une cinquième →
+137. Lancer quatre fois `sh boucle.sh &`, puis une cinquième →
      `sh: too many jobs`, et `jobs` en montre toujours exactement quatre. Les
      tuer une par une avec `kill %1` … `kill %4`. [ ]
-135. `edit dur.sh` avec `while true; do x=1; done` (aucune sortie), puis
+138. `edit dur.sh` avec `while true; do x=1; done` (aucune sortie), puis
      `sh dur.sh &`. Laisser tourner **cinq minutes de temps réel** en jouant
      normalement à côté. Au bout des cinq minutes, la machine affiche
      `[1] killed: cpu limit` toute seule. Vérifier avec `ps` avant et après.
      Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
-136. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
+139. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
      pièce) → après le BIOS et la reconnexion, `ps` est vide : un redémarrage
      ne laisse aucun travail en cours. Même chose après avoir sauvegardé et
      rechargé la partie. [ ]
 
-137. `while true; do echo tick; sleep 1; done &` tapé **directement à
+140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
      l'invite tout de suite, puis `tick` arrive une fois par seconde.
      **Jamais** `while: command not found`. `jobs` → `[1] sleeping` suivi de la
      ligne telle qu'elle a été tapée. `kill %1` → `[1] killed`. [ ]
-138. Toujours à l'invite : `echo a && echo b`, `false || echo c`,
+141. Toujours à l'invite : `echo a && echo b`, `false || echo c`,
      `for i in 1 2 3; do echo $i; done`, `echo $((7 * 6))`,
      `echo $(whoami)`, `echo 'un   deux'` → chacun répond comme dans un
      script. `while true; do echo x` (sans `done`) →
      `sh: syntax error: missing 'done'` et **rien** ne tourne. [ ]
-139. `x=5` puis `echo $x` → `5`. Fermer la fenêtre, s'éloigner, revenir,
+142. `x=5` puis `echo $x` → `5`. Fermer la fenêtre, s'éloigner, revenir,
      rouvrir → `echo $x` répond encore `5`. `exit` puis se reconnecter →
      `echo [$x]` répond `[]` : une déconnexion emporte les variables. Vérifier
      aussi que `cd /etc` à l'invite déplace bien l'invite (`pwd`), alors que
      `cd /etc` **dans** un script ne la déplace pas. [ ]
-140. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
+143. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
      il n'y a aucune invite en dessous, et **Échap** rend l'invite avec `^C`.
      Pendant ce temps, marcher et ouvrir une porte : le jeu ne saccade pas. [ ]
-141. `history` → la liste numérotée de tout ce qui a été tapé depuis le début,
+144. `history` → la liste numérotée de tout ce qui a été tapé depuis le début,
      la plus récente en bas. **Flèche haut** et **flèche bas** à l'invite
      remontent et redescendent la même liste. Fermer la fenêtre, revenir,
      rouvrir, **flèche haut** → la dernière ligne tapée **avant** de partir est
      là. `!!` rejoue la dernière, `!3` rejoue la troisième, et c'est la ligne
      **développée** qui s'affiche. `!999` → `sh: !999: event not found`.
      `history -c` puis `history` → vide. [ ]
-142. `passwd`, répondre aux trois questions, puis `history` → la commande
+145. `passwd`, répondre aux trois questions, puis `history` → la commande
      `passwd` y est, les **mots de passe tapés n'y sont pas**. `ls -A` dans le
      home → `.sh_history` apparaît, `ls` tout court ne le montre pas,
      `ls -l .sh_history` → mode `-rw-------`. Se connecter comme un autre
      compte et `cat /home/admin/.sh_history` → `permission denied`. [ ]
-143. `edit .profile`, écrire `echo bonjour`, `saluer=ok` et `cd /etc`.
+146. `edit .profile`, écrire `echo bonjour`, `saluer=ok` et `cd /etc`.
      Se déconnecter (`exit`) et se reconnecter → `bonjour` s'affiche après le
      motd, l'invite est sur `/etc`, et `echo $saluer` répond `ok`. Vérifier que
      `.profile` n'est **pas** dans `history`. Puis remplacer son contenu par
      `while true; do echo z; done`, se reconnecter → l'invite est occupée,
      **Échap** la rend, et `edit .profile` permet de réparer le fichier : la
      machine n'est jamais bloquée. [ ]
-144. En `root` : `shutdown -r +2` → `The system is going down for reboot in 2
+147. En `root` : `shutdown -r +2` → `The system is going down for reboot in 2
      minutes!` s'affiche sur **tous** les écrans ouverts sur la machine.
      `shutdown -h +5` → `shutdown: already scheduled`. Attendre une minute →
      `... in 1 minute!`. `shutdown -c` → `shutdown: cancelled`, et la machine
@@ -596,7 +624,7 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
      compte à rebours est oublié et la machine reste allumée (c'est voulu et
      c'est écrit dans le manuel). `halt` en `root` → la machine s'éteint. [ ]
-145. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
+148. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
      puis les noms pointés, puis le reste ; `ls -A` → les mêmes sans `.` ni
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
      `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
@@ -615,79 +643,79 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
 Ce sont les points que les programmeurs ont signalés comme réglables seulement
 en observant le jeu réel, pas par un banc de test.
 
-146. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
+149. Comparer `date` à l'horloge du HUD au même instant, plusieurs fois à des
      heures différentes : l'heure et la minute doivent toujours correspondre à
      ce que le jeu affiche, jamais à l'heure réelle de l'ordinateur qui fait
      tourner le jeu. [ ]
-147. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
+150. Reprendre l'étape 1 en se tenant déjà sur le carré devant l'écran, dos au
      mur derrière, à l'étape du bord de la case plutôt qu'au centre : vérifier
      que le point de position d'assise (avec une chaise) et le point de départ
      de l'animation (sans chaise) sont bien à l'intérieur du carré devant
      l'écran, jamais décalés vers une case voisine. [ ]
-148. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
+151. À l'étape 4, noter les hauteurs exactes des deux caisses empilées et si le
      seuil de blocage se déclenche vraiment à deux caisses ou déjà à une seule
      selon leurs sprites : ça dépend de la valeur `Surface` de chaque caisse,
      pas d'un nombre fixe dans le mod. [ ]
-149. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
+152. À l'étape 84, vérifier sur une vraie porte extérieure quel côté du mot
      `exterior` correspond au côté réel de la porte, et si un couloir entre
      deux pièces donne bien `<pièce-du-carré-de-la-porte>-<autre-pièce>` dans
      ce sens précis. [ ]
-150. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
+153. À l'étape 90, tester un interrupteur de lumière posé sur une case qui n'a
      elle-même aucune pièce définie (pas de plancher de maison dessous) mais
      qui est dans le rayon de dix cases d'une base : confirmer qu'il apparaît
      tout de même dans `ls -l /dev`. [ ]
-151. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
+154. Après une sauvegarde et un rechargement en pleine chaîne `su` (deux
      comptes de profondeur ou plus), vérifier que `console.stack` a gardé
      exactement la même profondeur et la bonne invite, sans qu'un `exit` de
      trop ou de moins soit nécessaire pour ressortir. [ ]
-152. `sudo su bob` en tant que `admin` : l'invite devient celle de `bob` sans
+155. `sudo su bob` en tant que `admin` : l'invite devient celle de `bob` sans
      qu'aucun mot de passe de `bob` soit demandé, `whoami` répond `bob`, et
      `exit` ramène à `admin`. `sudo su` tout court donne `root` et son `#`.
      `sudo exit` répond `sudo: exit: command not found` et ne déconnecte
      personne ; `sudo cd /` ne déplace toujours rien. [ ]
-153. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
+156. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]
-154. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
+157. S'éloigner d'un ordinateur allumé jusqu'à décharger son chunk, puis
      revenir : compter exactement une lueur autour de l'écran, jamais deux
      superposées et jamais aucune. [ ]
-155. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
+158. Comparer la taille de l'icône du manuel dans l'inventaire à celle d'un
      livre vanille de même catégorie (Literature) : noter si elle paraît trop
      grande, trop petite, ou pareille. [ ]
-156. Au premier démarrage d'une partie avec le mod actif, confirmer dans
+159. Au premier démarrage d'une partie avec le mod actif, confirmer dans
      `~/Zomboid/console.txt` qu'aucune erreur de script ne nomme
      `items_cerosec.txt` (le script d'objets chargé depuis `common/`) et que
      la ligne `manual added to 12 distribution lists` apparaît une fois. [ ]
 
-157. À l'étape 130, chronométrer une vingtaine de lignes `x` : confirmer qu'il
+160. À l'étape 133, chronométrer une vingtaine de lignes `x` : confirmer qu'il
      en arrive bien une vingtaine par seconde et pas deux fois plus ni deux
      fois moins. Le débit est réglé côté serveur
      (`CeroSec.JOB_OUT_PER_SEC`) et dépend de la cadence réelle de
      `Events.OnTick`, qui n'a jamais été mesurée en jeu. [ ]
-158. À l'étape 130, faire tourner la boucle sur **quatre ordinateurs à la
+161. À l'étape 133, faire tourner la boucle sur **quatre ordinateurs à la
      fois** (quatre machines allumées, un script sur chacune) et jouer à côté
      pendant une minute : noter la moindre saccade. Le Lua du jeu (Kahlua) est
      une machine virtuelle Java et n'a jamais été comparée à `lua5.1`, sur
      lequel tous les chiffres du banc ont été pris ; si ça saccade, les deux
      budgets (`CeroSec.STEP_BUDGET_PER_TICK`, `STEP_BUDGET_PER_MACHINE`) sont
      à baisser. [ ]
-159. À l'étape 128, vérifier avec `read -n 1 -p "y/n? " a` que la machine prend
+162. À l'étape 131, vérifier avec `read -n 1 -p "y/n? " a` que la machine prend
      bien le premier caractère tapé **après Entrée** : la fenêtre n'envoie
      rien avant Entrée, donc `-n 1` prend le premier caractère de la ligne et
      non la première touche pressée. Noter si ça surprend en jeu. [ ]
 
-160. Au shell, avec `note2.txt` et `notes.txt` dans le dossier, taper `cat no`
+163. Au shell, avec `note2.txt` et `notes.txt` dans le dossier, taper `cat no`
      puis appuyer sur Tab : la ligne doit devenir `cat note` et le curseur bloc
      se poser juste après le `e`. Confirmer surtout que la touche Tab arrive
      bien à la fenêtre en jeu -- le jeu ne donne qu'Échap et Tab à une boîte de
      texte focalisée, et ça n'a jamais été vérifié avec un vrai clavier. [ ]
-161. À l'étape 160, appuyer sur Tab une deuxième fois : les deux noms doivent
+164. À l'étape 163, appuyer sur Tab une deuxième fois : les deux noms doivent
      s'afficher en colonnes sur l'écran, et l'invite avec `cat note` se
      redessiner juste en dessous. Noter ce qui arrive à cette liste quand on
      appuie ensuite sur Entrée : elle est dessinée par la fenêtre et non par la
      machine, donc elle disparaît au prochain écran envoyé par le serveur -- un
      vrai ksh l'aurait gardée dans le défilement. Dire si ça surprend en jeu. [ ]
-162. Deux joueurs devant le même ordinateur : le premier tape `cat no` et fait
+165. Deux joueurs devant le même ordinateur : le premier tape `cat no` et fait
      Tab deux fois, le second regarde son propre écran. Confirmer qu'aucune
      ligne de complétion n'apparaît chez le second et que son invite reste
      intacte -- la complétion est adressée à une seule fenêtre. Puis, sur un
@@ -696,55 +724,55 @@ en observant le jeu réel, pas par un banc de test.
 
 ## L. Tubes, cron et `fg` (palier 5b)
 
-163. Au shell : `ls /bin | wc` puis `ls /bin | grep sort`. La première ligne doit
+166. Au shell : `ls /bin | wc` puis `ls /bin | grep sort`. La première ligne doit
      donner trois nombres (lignes, mots, octets) sans nom de fichier derrière,
      la seconde le seul mot `sort`. Confirmer surtout que rien de l'étage de
      gauche n'apparaît à l'écran : ce qui traverse le tube n'est pas affiché. [ ]
-164. Écrire un fichier avec `edit fruits` contenant `poire`, `pomme`, `poire`,
+167. Écrire un fichier avec `edit fruits` contenant `poire`, `pomme`, `poire`,
      `figue` (une par ligne), puis taper `cat fruits | sort | uniq -c`. Attendu,
      dans cet ordre : `      1 figue`, `      1 pomme`, `      2 poire`. Le
      compte est cadré sur sept colonnes. [ ]
-165. `while true; do echo y; done | head -n 1` : une seule ligne `y` doit
+168. `while true; do echo y; done | head -n 1` : une seule ligne `y` doit
      apparaître, l'invite doit revenir tout de suite, et `ps` juste après ne
      doit montrer que le shell. C'est le SIGPIPE : le lecteur ferme, l'écrivain
      meurt. Noter le temps que ça prend vraiment en jeu (ça doit être
      instantané). [ ]
-166. `echo bonjour | read x` puis `echo $x` : la deuxième ligne doit être vide.
+169. `echo bonjour | read x` puis `echo $x` : la deuxième ligne doit être vide.
      Chaque étage d'un tube est un sous-shell, donc la variable meurt avec lui.
      Puis `x=$(echo bonjour)` et `echo $x` → `bonjour`. Dire si le premier
      résultat surprend. [ ]
-167. `crontab -l` → `no crontab for admin`. Puis `crontab -e`, écrire
+170. `crontab -l` → `no crontab for admin`. Puis `crontab -e`, écrire
      `60 * * * * echo test` et sauver avec Tab : l'écran doit répondre
      `Cannot save: "/var/spool/cron/admin":1: bad minute` et **rien** ne doit
      être installé (Échap, puis `crontab -l` doit encore dire `no crontab`). [ ]
-168. `crontab -e`, écrire `* * * * * echo tic`, sauver, Échap. Attendre deux
+171. `crontab -e`, écrire `* * * * * echo tic`, sauver, Échap. Attendre deux
      minutes de jeu (l'horloge du jeu, pas la vraie), puis `mail` : on doit voir
      la ligne `From cron`, une ligne `Subject: Cron <admin@...> echo tic` et
      `tic`. Refaire `mail` → `No mail for admin`. Confirmer surtout qu'aucun
      `tic` n'est jamais apparu tout seul à l'écran entre-temps. [ ]
-169. À l'étape 168, `sudo cat /var/log/cron` doit montrer une ligne par minute
+172. À l'étape 171, `sudo cat /var/log/cron` doit montrer une ligne par minute
      écoulée, de la forme `Jul  8 04:01 (admin) CMD (echo tic)`, et jamais plus
      d'une par minute. Puis `cat /var/log/cron` sans sudo → `permission denied`.
      Enfin `df` : le disque ne doit pas avoir bougé à cause du journal ni du
      courrier. [ ]
-170. Toujours avec `* * * * * echo tic` installé : éteindre l'ordinateur
+173. Toujours avec `* * * * * echo tic` installé : éteindre l'ordinateur
      (menu contextuel), attendre cinq minutes de jeu, rallumer. Le courrier ne
      doit PAS contenir cinq nouveaux `tic` : une minute que cron a dormie est
      une minute perdue, et rien n'est rattrapé. Noter aussi qu'une ligne
      `@reboot echo debout` installée avant l'extinction, elle, doit produire un
      courrier au rallumage. [ ]
-171. Une ligne qui travaille le bâtiment : `crontab -e` avec
+174. Une ligne qui travaille le bâtiment : `crontab -e` avec
      `* * * * * echo on > /dev/light0` (prendre l'id d'une vraie lumière vu par
      `dev`), sauver, sortir de la fenêtre du terminal et s'éloigner de deux
      carrés en regardant l'ampoule. À la minute suivante la lumière doit
      s'allumer sans que personne n'ait tapé quoi que ce soit. [ ]
-172. `sh watch.sh &` (n'importe quel script qui dort et écrit), puis `jobs`,
+175. `sh watch.sh &` (n'importe quel script qui dort et écrit), puis `jobs`,
      puis `fg %1` : la ligne de commande doit se réafficher, l'invite doit
      devenir occupée, et Échap doit tuer le travail (`^C` puis `killed`).
      Vérifier ensuite que `fg` seul, sans travail en arrière-plan, répond
-     `fg: no current job`. Et pendant que le travail de cron de l'étape 168
+     `fg: no current job`. Et pendant que le travail de cron de l'étape 171
      tourne, `jobs` ne doit pas le lister alors que `ps` le montre. [ ]
-173. Les drapeaux des outils de texte, sur le fichier `fruits` de l'étape 164
+176. Les drapeaux des outils de texte, sur le fichier `fruits` de l'étape 167
      (`poire`, `pomme`, `poire`, `figue`). Attendu, à la colonne près :
      `wc fruits` → `     4      4     23 fruits` ; `wc -l fruits` →
      `     4 fruits` ; `wc -cl fruits` → `     4     23 fruits` (toujours
@@ -752,7 +780,7 @@ en observant le jeu réel, pas par un banc de test.
      `poire` ; `tail -2 fruits` → `poire` puis `figue`. Confirmer que le nom du
      fichier reste bien à droite des nombres et que la ligne ne dépasse pas
      l'écran. [ ]
-174. Toujours sur `fruits` : `grep -c poire fruits` → `2` ; `grep -v poire
+177. Toujours sur `fruits` : `grep -c poire fruits` → `2` ; `grep -v poire
      fruits` → `pomme` puis `figue` ; `grep -c melon fruits` → `0` et rien
      d'autre (le zéro est une réponse, pas un silence) ; `sort -u fruits` →
      `figue`, `poire`, `pomme` sur trois lignes ; `cat fruits | sort -u | wc -l`
@@ -763,29 +791,29 @@ en observant le jeu réel, pas par un banc de test.
 
 Il faut **deux ordinateurs dans le même bâtiment de la carte** -- pas dans une
 base construite : une base n'a pas de bâtiment, donc pas de fil, et c'est le
-sujet de l'étape 186. Un bureau de Knox County en a souvent deux ; sinon, le mode
+sujet de l'étape 189. Un bureau de Knox County en a souvent deux ; sinon, le mode
 debug permet d'en placer un deuxième dans la même pièce. Les deux doivent avoir du
 courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 `gate` l'autre -- remplacer par les vrais noms que `hostname` donne.
 
-175. Allumer les deux ordinateurs, ouvrir le terminal du premier et regarder le
+178. Allumer les deux ordinateurs, ouvrir le terminal du premier et regarder le
      BIOS : entre `Detecting drives ... hda 32K` et `Booting from hda ...` il doit
      y avoir une ligne `Ethernet: eth0 10.x.y.1`. Puis se connecter et taper
      `ifconfig` : `eth0` avec cette même adresse et un masque `0xffffff00`, et
      `lo0` avec `127.0.0.1` sous elle. Enfin `cat /etc/hosts` : deux lignes, la
      boucle locale et la machine elle-même, avec l'adresse que le BIOS a
      annoncée. [ ]
-176. Ouvrir le terminal du **deuxième** ordinateur et faire la même chose. Les
+179. Ouvrir le terminal du **deuxième** ordinateur et faire la même chose. Les
      trois premiers nombres de l'adresse doivent être identiques à ceux du
      premier (même bâtiment) et le dernier doit être différent (`.2` au lieu de
      `.1`). Noter les deux adresses. [ ]
-177. Revenir au premier. `ruptime` → une ligne par machine allumée du bâtiment,
+180. Revenir au premier. `ruptime` → une ligne par machine allumée du bâtiment,
      la sienne comprise, de la forme
      `gate      up  00:04,  1 user,  load 0.00`. Puis `rwho` → une ligne par
      personne connectée, `admin    gate:console  Jul  8 14:32`. Éteindre le
      deuxième ordinateur, refaire `ruptime` : il ne doit plus être listé du
      tout (pas de ligne `down`). Le rallumer. [ ]
-178. Nommer l'autre machine : `sudo edit /etc/hosts`, ajouter une ligne
+181. Nommer l'autre machine : `sudo edit /etc/hosts`, ajouter une ligne
      `<adresse du deuxième> gate`, sauver. Puis `ping gate` : la ligne
      `PING gate (10.x.y.2): 56 data bytes`, trois réponses `64 bytes from ...
      icmp_seq=0/1/2 ttl=255 time=0.4 ms` espacées d'une seconde chacune (les
@@ -793,25 +821,25 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      vide, `--- gate ping statistics ---`,
      `3 packets transmitted, 3 packets received, 0% packet loss` et le
      `round-trip`. [ ]
-179. `ping pump` (un nom qui n'est dans aucune ligne) → `ping: unknown host
+182. `ping pump` (un nom qui n'est dans aucune ligne) → `ping: unknown host
      pump`, tout de suite et sans attendre. Éteindre le deuxième ordinateur,
      `ping gate` → aucune réponse pendant trois secondes puis
      `3 packets transmitted, 0 packets received, 100% packet loss`, sans ligne
      `round-trip`. Le rallumer. [ ]
-180. `rlogin gate` → `login:` apparaît **sur cet écran**, l'invite devient celle
+183. `rlogin gate` → `login:` apparaît **sur cet écran**, l'invite devient celle
      de l'autre machine. Se connecter (`admin`, mot de passe vide) : le motd de
      l'autre machine, puis une invite `admin@gate:~$`. Taper `hostname` → le nom
      de l'autre machine. Taper `pwd`, `ls /`, `dev` : tout doit parler de
      l'autre machine, et `dev` doit lister SES périphériques. [ ]
-181. Toujours dans la session : `who` → deux lignes s'il y a quelqu'un au clavier
+184. Toujours dans la session : `who` → deux lignes s'il y a quelqu'un au clavier
      de `gate`, et la ligne de la session doit être `ttyp0` avec `(ici)` entre
      parenthèses au bout. Puis `last` → la même session, `still logged in`.
      Enfin `exit` → `Connection closed.` et l'invite locale revient, avec tout ce
      qui s'est passé encore visible au-dessus. [ ]
-182. Vérifier les deux historiques : sur la machine locale, `history` contient
+185. Vérifier les deux historiques : sur la machine locale, `history` contient
      `rlogin gate` et **pas** `hostname` ni `pwd`. Refaire `rlogin gate`, se
      connecter, et `history` là-bas contient `hostname` et `pwd`. [ ]
-183. La confiance. Dans la session sur `gate` : `edit .rhosts`, écrire
+186. La confiance. Dans la session sur `gate` : `edit .rhosts`, écrire
      `<nom de la machine locale> admin`, sauver, puis `chmod 600 .rhosts` et
      `exit`. Refaire `rlogin gate` → **aucun mot de passe demandé**, l'invite
      `admin@gate:~$` arrive directement. Puis `chmod 666 .rhosts` et ressortir :
@@ -822,37 +850,37 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `sudo chown bob /home/bob/.rhosts`, `sudo chmod 600 /home/bob/.rhosts`,
      `exit`. Puis `rlogin gate -l bob` → aucun mot de passe, et `whoami` là-bas
      répond `bob`. [ ]
-184. `rsh gate hostname` depuis l'invite locale → le nom de l'autre machine
+187. `rsh gate hostname` depuis l'invite locale → le nom de l'autre machine
      s'affiche et l'invite locale revient, sans `Connection closed.`. Puis
      retirer la confiance (`rlogin gate`, `rm .rhosts`, `exit`) et refaire
      `rsh gate hostname` → `rsh: gate: Permission denied`, sans aucune question.
      Remettre le `.rhosts`. [ ]
-185. `echo bonjour > notes.txt` puis
+188. `echo bonjour > notes.txt` puis
      `rcp notes.txt gate:/home/admin/venu.txt` → la commande prend une seconde
      ou deux et ne dit rien du tout. Vérifier avec `rsh gate cat
      /home/admin/venu.txt` → `bonjour`. Puis dans l'autre sens :
      `rcp gate:/home/admin/venu.txt retour.txt` et `cat retour.txt`. Enfin
      `rcp notes.txt gate:/etc/passwd` → `permission denied` (les droits sont ceux
      de l'autre machine, pas d'un privilège). [ ]
-186. Les limites. `rlogin ici` (soi-même par son propre nom, ou `localhost`)
+189. Les limites. `rlogin ici` (soi-même par son propre nom, ou `localhost`)
      fonctionne et ouvre une deuxième session sur la même machine : `who` doit
      alors montrer la console et un `ttyp`. Depuis cette session, `rlogin gate`
      fonctionne encore (deux sauts), et depuis celle-là un troisième `rlogin`
      répond `rlogin: connect: Connection refused`. Ressortir avec `exit` jusqu'à
      l'invite locale. [ ]
-187. Échap. Dans une session `rlogin gate` à l'invite : appuyer sur Échap →
+190. Échap. Dans une session `rlogin gate` à l'invite : appuyer sur Échap →
      `Connection closed.` et l'invite locale, **la fenêtre ne se ferme pas**.
      Refaire `rlogin gate`, lancer `while true; do echo x; done` et appuyer sur
      Échap → `^C` et `killed`, la session reste ouverte. Un deuxième Échap ferme
      alors la session, et un troisième ferme la fenêtre. [ ]
-188. Ce qui coupe une session. `rlogin gate`, puis : (a) `sudo halt` dans la
+191. Ce qui coupe une session. `rlogin gate`, puis : (a) `sudo halt` dans la
      session → l'autre machine s'éteint et l'écran revient à l'invite locale avec
      `Connection closed.` ; rallumer, refaire, puis (b) faire éteindre l'autre
      ordinateur par le menu contextuel pendant la session ; puis (c) ramasser
      l'autre ordinateur ; puis (d) couper le courant de la pièce. Chacune des
      quatre doit rendre l'invite locale et jamais laisser la fenêtre coincée sur
      un écran mort. [ ]
-189. Une machine dans une **base construite** (aucun bâtiment de la carte) :
+192. Une machine dans une **base construite** (aucun bâtiment de la carte) :
      `ifconfig` doit montrer `eth0: flags=2<BROADCAST>` sans ligne `inet`, le
      BIOS ne doit annoncer aucune ligne `Ethernet:`, `ruptime` ne doit rien
      lister, et `rlogin` sur n'importe quel nom doit répondre
@@ -861,24 +889,24 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 
 ## O. PATH, liens, `/dev/null` et `/var/tmp` (palier 6b)
 
-190. `PATH`. À l'invite : `echo $PATH` → `/bin`. Puis `echo $HOME` →
+193. `PATH`. À l'invite : `echo $PATH` → `/bin`. Puis `echo $HOME` →
      `/home/admin`. `type ls` → `ls is /bin/ls`, `type cd` →
      `cd is a shell builtin`, `type if` → `if is a shell keyword`,
      `which ls` → `/bin/ls`, et `which frobnicate` → **aucune ligne** (et rien
      d'autre non plus). [ ]
-191. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
+194. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
      `echo salut`, sauver, `chmod 755 bin/hello`. Puis `hello` →
      `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` et `hello` →
      `salut`. `which hello` → `/home/admin/bin/hello`. Enfin mettre la même
      ligne `PATH=$PATH:$HOME/bin` dans `edit .profile`, `exit`, se reconnecter,
      et `hello` doit marcher dès la première invite. [ ]
-192. Le piège de cron. Toujours avec `~/bin` dans le `PATH` de l'invite :
+195. Le piège de cron. Toujours avec `~/bin` dans le `PATH` de l'invite :
      `crontab -e` et écrire `* * * * * hello`, sauver. Attendre une minute (une
      minute de jeu ; accélérer le temps aide), puis `mail` → le courrier dit
      `hello: command not found`. Remplacer la ligne par
      `* * * * * /home/admin/bin/hello` → le courrier suivant dit `salut`.
      Terminer par `crontab -r`. [ ]
-193. Les liens. `echo bonjour > notes.txt`, `ln -s notes.txt lien`, puis
+196. Les liens. `echo bonjour > notes.txt`, `ln -s notes.txt lien`, puis
      `cat lien` → `bonjour` ; `ls -l` → une ligne
      `lrwxrwxrwx  admin  admin   lien -> notes.txt` ; `ls -F` → `lien@` ;
      `readlink lien` → `notes.txt`. Puis `rm lien` → `notes.txt` est toujours
@@ -888,13 +916,13 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      flèche. `ln -s a b` et `ln -s b a` puis `cat a` →
      `too many levels of symbolic links`. Enfin `ln notes.txt dur` (sans `-s`)
      → la ligne d'usage `ln: usage: ln -s <target> <name>`. [ ]
-194. `/dev/null`. `cat /dev/null` → **rien du tout** (pas même une ligne vide).
+197. `/dev/null`. `cat /dev/null` → **rien du tout** (pas même une ligne vide).
      `echo bruit > /dev/null` → rien, et `cat /dev/null` toujours rien.
      `df` avant et après doit donner exactement les mêmes nombres.
      `ls -l /dev` → une ligne `crw-rw-rw-  root  root  null` parmi les
      appareils, et `dev` (la commande) ne la montre pas. `rm /dev/null` →
      `rm: /dev/null: is a device`. [ ]
-195. `/var/tmp` et `ls` dans un tube. `ls -l /var` → `tmp` est en
+198. `/var/tmp` et `ls` dans un tube. `ls -l /var` → `tmp` est en
      `drwxrwxrwx`. `echo a moi > /var/tmp/mien.txt`, puis
      `sudo adduser bob`, `su bob` (mot de passe vide : Entrée), et depuis bob :
      `rm /var/tmp/mien.txt` → `permission denied`, alors que

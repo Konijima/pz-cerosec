@@ -78,9 +78,9 @@ Done:
   Unix: `while [ "$(cat /dev/door0)" = closed ]; do sleep 5; done`. A sleeping job
   is off the processor entirely, so that costs one turn every five seconds and can
   wait for days.
-- The manual: a printed book that spawns where computers do, read by the player in
-  a two-page reader with a table of contents, and remembering the page it was left
-  on.
+- The manual: a three-volume documentation set that spawns where computers do,
+  read by the player in a two-page reader with a table of contents, each volume
+  remembering the page the copy in his hands was left on.
 - The network: the computers of one map building are on a length of coax, each
   with an address of its own derived from where the building stands, and
   `/etc/hosts` is the player's own file and the only resolver there is. `ping`,
@@ -862,27 +862,41 @@ and `fg` will not have it, though `ps` shows it.
 
 ### Finding the manual
 
-**CeroSec OS User's Manual** is a printed book, and it is the documentation for
-everything above — the commands, the files, the accounts, the BIOS — written for
-somebody sitting at one of these machines in 1993.
+CeroSec Systems shipped a **documentation set**, three volumes of it, and it is the
+documentation for everything above — the commands, the files, the accounts, the
+BIOS — written for somebody sitting at one of these machines in 1993.
 
-It is loot. It is not in a crafting recipe and it is not given to you at the start:
-it spawns where a book about a computer would have been sold, shelved or left
-behind. The computer aisle of a **library**, a **bookshop** or a **university
+| | |
+| --- | --- |
+| **CeroSec OS User's Guide** | the blue one, marked 1. Turning the machine on, logging in, the shell, the editor, your own files. What came in the box. |
+| **CeroSec OS System Administrator's Guide** | the green one, marked 2. Accounts, groups, permissions, the system files, the devices, the network. What the office's own machine-minder got. |
+| **CeroSec OS Programmer's Guide** | the red one, marked 3. Scripts, cron, jobs and pipes. What the one person writing anything for the machine got. |
+
+They are loot. They are not in a crafting recipe and they are not given to you at
+the start: they spawn where a book about a computer would have been sold, shelved or
+left behind. The computer aisle of a **library**, a **bookshop** or a **university
 library**; a **cyber cafe**'s desks and filing cabinets; the magazine rack of an
 **electronics store**; a **university computing desk**; a **control room** counter.
 More rarely, in an **office desk** or on an **office supply shelf**, where somebody
 who bought one put it down. Rarest of all, on a **living room shelf** at home.
 
-Rare, and findable: in the computer section of a library it is roughly the odds of
-a particular computer paperback, so a shelf or two of looking. In a random office
-desk it is the rarity of a business paperback, so it is a surprise. The exact
-weights, and the vanilla items each one was measured against, are in
+CeroSec Systems printed far fewer of the later volumes than of the first, and that
+is what you will feel looking for them: the **User's Guide** at the rate above, the
+**System Administrator's Guide** at half of it, and the **Programmer's Guide** at a
+quarter — except at a university, a bookshop's computer aisle or an electronics
+store, where it comes back up to a half, because that is where the people writing
+anything for these machines were buying their books.
+
+Rare, and findable: in the computer section of a library the User's Guide is roughly
+the odds of a particular computer paperback, so a shelf or two of looking. In a
+random office desk it is the rarity of a business paperback, so it is a surprise. The
+exact weights, and the vanilla items each one was measured against, are in
 `42/media/lua/server/CeroSec/CeroSecManualLoot.lua`.
 
-**Reading it.** Right-click the book in your inventory and choose **Read the
-manual**. It opens as an open book: two pages side by side, a chapter title at the
-head of each leaf, page numbers at the outer corners.
+**Reading one.** Right-click the book in your inventory and choose **Read the User's
+Guide** — or the Administrator's, or the Programmer's, whichever you are holding. It
+opens as an open book: its own cover, its own contents, two pages side by side, a
+chapter title at the head of each leaf, page numbers at the outer corners.
 
 | | |
 | --- | --- |
@@ -898,7 +912,8 @@ open, drive with it open.
 
 Where you left off is written on **that copy of the book**, so closing it and
 opening it again puts you back on the same spread, across a save as well. Two
-copies are two bookmarks.
+copies are two bookmarks, and so are two volumes: your place in the Programmer's
+Guide is not your place in the User's Guide.
 
 ## For modders and contributors
 
@@ -916,6 +931,8 @@ scripts are not, so the whole mod has to sit where it is loaded from.
   `items_cerosec.txt`.
 - `tests/` — headless, no game needed: `sh tests/run.sh`.
 - `docs/` — manual, in-game test checklists.
+- `tools/` — the one build script there is: `make-volume-icons.py`, which derives
+  the three volume icons from the shipped one.
 - `workshop/` — `workshop.txt` and `preview.png` for the Steam Workshop uploader.
 
 ### Architecture
@@ -1680,29 +1697,51 @@ was.
 
 ### The manual
 
-The book is three pieces and a text file, and the text file is deliberately the
-only one of them anybody has to touch to write another edition.
+The set is three pieces and three text files, and the text files are deliberately
+the only ones of them anybody has to touch to write another edition.
 
-**The text** is `42/media/lua/shared/CeroSec/CeroSecManual.lua`, one global table:
+**The text** is three volumes, one file each, each assigning itself into one table
+they share:
 
-    CeroSecManual = {
+| file | id | name |
+| --- | --- | --- |
+| `shared/CeroSec/CeroSecManualUser.lua` | `user` | User's Guide |
+| `shared/CeroSec/CeroSecManualAdmin.lua` | `admin` | System Administrator's Guide |
+| `shared/CeroSec/CeroSecManualProgrammer.lua` | `programmer` | Programmer's Guide |
+
+    CeroSecManual.volumes = CeroSecManual.volumes or {}
+    CeroSecManual.volumes[1] = {
+      id = "user",             -- opened by this, never shown
       title = nil,             -- stamped, see below
-      edition = "...",
+      name = "User's Guide",   -- what the cover says
+      edition = "First Edition, 1993",
       chapters = {
-        { title = "...", pages = { "plain text\nwith paragraphs", ... } },
+        { title = "...", pages = { "a page of plain text", ... } },
         ...
       },
     }
 
-The **title is not written here**. It names the version of the OS the book is
-for, and that number has exactly one home — `CeroSecOS.VERSION` — so the cover is
-built from it by `CeroSecManual.stampVersion()` at the bottom of the same file.
-It cannot be a plain concatenation in the table: the game sorts
-`shared/cerosec/cerosecmanual.lua` ahead of `shared/cerosec/os/cerosecos.lua`
-(the load list is every relative path, lowercased, sorted case-insensitively),
-so the core is not loaded yet when the table is built. `CeroSecManualUI.text()`
-stamps it at the last moment before the layout reads it, and running the stamp
-twice changes nothing.
+The `or {}` on the first line is the whole of why they can be three files and still
+one shelf: the game loads them in whatever order it loads them in, and none of the
+three may assume it is first.
+
+The **title is not written here**. It names the version of the OS the set is for,
+and that number has exactly one home — `CeroSecOS.VERSION` — so the cover is built
+from it: `"CeroSec OS " .. CeroSecOS.VERSION .. " " .. name`. It cannot be a plain
+concatenation in the table: the game sorts `shared/cerosec/cerosecmanualuser.lua`
+ahead of `shared/cerosec/os/cerosecos.lua` (the load list is every relative path,
+lowercased, sorted case-insensitively), so the core is not loaded yet when the table
+is built. `CeroSecManualBook.stamp()` stamps it at the last moment before the layout
+reads it, `CeroSecManualUI.text(volumeId)` is what calls it, and running the stamp
+twice changes nothing. A volume that could not be stamped — the core genuinely not
+there — shows its `name` on the cover rather than the word "Manual".
+
+`CeroSecManualBook.shelf()` is the volumes as they stand and
+`CeroSecManualBook.volume(id)` is one of them, stamped; a nil id is the first
+volume. **Until all three files exist** the shelf is empty and everything falls back
+to the single book `CeroSecManual` was before the set — its own `title`,
+`edition` and `chapters`, stamped by `CeroSecManual.stampVersion()` — so a set
+half-written is still a set that opens.
 
 ASCII only. `\n` is a paragraph break. **An authored page is a page**: the writer
 decides where a page ends and the layout honours it, so pages want to be about 900
@@ -1711,9 +1750,10 @@ terminal's own `UIFont.Code`, on a faint band, and it is never wrapped and never
 trimmed, because a shell line broken across two rows is a shell line the player will
 mistype. Keep those under about 62 columns and they will always fit a leaf.
 
-The manual is read through `CeroSecManualUI.text()` and never cached, so a reload of
-the text file is a reload of every open book. A missing or half-written table is an
-empty book — a title leaf and a contents that lists nothing — and never an error.
+The manual is read through `CeroSecManualUI.text(volumeId)` and never cached, so a
+reload of a text file is a reload of every open book. A missing or half-written
+table is an empty book — a title leaf and a contents that lists nothing — and never
+an error.
 
 **The layout** is `shared/CeroSec/CeroSecManualBook.lua`, and it makes no game call
 at all: `CeroSecManualBook.open(manual, { width, rows, measure })` hands back a flat
@@ -1743,40 +1783,77 @@ through `setWantKeyEvents(true)` and
 `item:getModData().page`, always the **left** leaf of the sheet, and a number read
 back off it goes through `CeroSecManualBook.clampPage` first — a manual rewritten
 between two saves must not open an empty leaf. It is a client-side bookmark and is
-not transmitted: it is where a reader left off, not machine state.
+not transmitted: it is where a reader left off, not machine state. One copy is one
+volume, so a bookmark per copy is already a bookmark per volume.
+
+A window is opened on one volume — `CeroSecManualUI.open(playerObj, volumeId, item)`
+— and lays that volume out and nothing else: its cover, its contents, its chapters.
+The player stays the first argument because the window belongs to him: it is his
+instance a second opening closes, and it is his death that shuts it. `window.bookId`
+is what the reader really ended up with, which is not always what was asked for: an
+id nothing on the shelf answers to falls back to the legacy book and is filed under
+that.
 
 **The menu** is `client/CeroSec/CeroSecManualMenu.lua`, on
 `Events.OnFillInventoryObjectContextMenu` — the event vanilla put there for exactly
 this (`ISInventoryPaneContextMenu.lua:933-935`). It unpacks both shapes the event
 hands over: an `InventoryItem`, and a stack of identical ones which arrives as a
-table with an `items` array inside it.
+table with an `items` array inside it. `CeroSecManualMenu.BOOKS` maps each item to
+its volume and its own label, and each volume in the selection gets its own option:
+a menu offering "Read the manual" three times over would be a menu nobody could
+use. It is an ordered list and not a map keyed by item, because `pairs()` would
+shuffle the entries from one right-click to the next.
 
 **The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
 **temporary testing aid and has to be set to `false` before the Workshop release.**
 While it is on, every computer — lit or dark, in reach or not — carries a last entry
-on its right-click menu, **Read the CeroSec manual (dev)**, that opens the reader
-there and then with no copy of the book anywhere. It exists so the reader can be
-worked on without first going shopping for the item, and it is a door into a piece
-of documentation a player is supposed to *find*. It is added by
-`CeroSecContextMenu.addDevManual`, always last, and it asks nothing of the computer
-— not its power, not its height, not whether anybody can stand in front of it —
-because it is not really about the computer at all. A book opened that way has no
-item to write a bookmark on, so it keeps its own on the module
-(`CeroSecManualUI.devPage`): session-lived, never saved, and never the same
-bookmark as a copy's. Off, nothing at all is added.
+on its right-click menu, **Read the CeroSec manual (dev)**, and behind it a submenu
+of one entry per volume, each opening the reader there and then with no copy of the
+book anywhere. It exists so the reader can be worked on without first going shopping
+for three items, and it is a door into a piece of documentation a player is supposed
+to *find*. It is added by `CeroSecContextMenu.addDevManual`, always last, built the
+way every vanilla submenu is (`getNew`, `addSubMenu`, then fill it —
+`ISWorldObjectContextMenu.lua:1167-1169`), and it asks nothing of the computer — not
+its power, not its height, not whether anybody can stand in front of it — because it
+is not really about the computer at all. A book opened that way has no item to write
+a bookmark on, so it keeps its own on the module, keyed by volume
+(`CeroSecManualUI.devPages`): session-lived, never saved, and never the same
+bookmark as a copy's. With no shelf standing up the submenu holds the one entry that
+opens the legacy book. Off, nothing at all is added.
 
-**The item** is `common/media/scripts/items_cerosec.txt`, `CeroSec.Manual`. It is
-`ItemType = base:normal` and **not** `base:literature`, on purpose: a literature item
-that cannot be written on is one the vanilla menu offers to *read*, and vanilla's
-read is a timed action that sits the character down for hours. It keeps
-`DisplayCategory = Literature`, which is a free string the inventory prints through
-`getText("IGUI_ItemCat_" .. …)`, so it still files itself with the books. `Icon =
-CeroSecManual` resolves to `common/media/textures/Item_CeroSecManual.png`: the game
-builds `"Item_" .. Icon` and looks it up as `media/textures/<that>.png`.
+**The items** are `common/media/scripts/items_cerosec.txt`: `CeroSec.ManualUser`,
+`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`, and `CeroSec.Manual`, the
+single book that shipped before the set. All four are `ItemType = base:normal` and
+**not** `base:literature`, on purpose: a literature item that cannot be written on is
+one the vanilla menu offers to *read*, and vanilla's read is a timed action that sits
+the character down for hours. They keep `DisplayCategory = Literature`, which is a
+free string the inventory prints through `getText("IGUI_ItemCat_" .. …)`, so they
+still file themselves with the books. `Icon = CeroSecManualUser` resolves to
+`common/media/textures/Item_CeroSecManualUser.png`: the game builds `"Item_" .. Icon`
+and looks it up as `media/textures/<that>.png`.
 
-**The loot** is `server/CeroSec/CeroSecManualLoot.lua`. Twelve vanilla lists, each
-weight set against what is already *in* that list, appended in place on
-`Events.OnPreDistributionMerge`:
+`CeroSec.Manual` stays **defined** and is no longer **loot**. An item script that
+stops naming an item leaves every copy of it in every save as a missing item, so it
+is still there; read, it opens volume one, which is the volume it became.
+
+The three icons are made from the shipped one by `tools/make-volume-icons.py` —
+same 32×32 book, three bindings. The navy is channel-swapped rather than picked again by
+eye (blue as it was, G and B swapped for green, R and B swapped for red), which keeps
+the three covers at the same value and the same contrast against the cream page block
+and the green screen, neither of which is touched; the two title bars under the screen
+come out and a 3×5 numeral in the bars' own cream takes their place.
+
+**The loot** is `server/CeroSec/CeroSecManualLoot.lua`. Twelve vanilla lists times
+three volumes, each weight set against what is already *in* that list, appended in
+place on `Events.OnPreDistributionMerge`. The table below is **volume one's**, and
+volumes two and three are a `share` of it — a half and a quarter — rather than two
+more tables of twelve numbers: the share is the decision, and twelve numbers copied
+and halved by hand is twelve chances to mistype one. Volume three is `raised` back to
+a half in `UniversityLibraryComputer`, `UniversityDesk_Computer`, `BookstoreComputer`
+and `ElectronicStoreMagazines`, because a programmer's manual is rare everywhere
+except where the programmers were. The shares are halves and quarters on purpose and
+not a taste: `0.1 * 0.25` is exactly `0.025` in a double, so none of the thirty-six
+weights is a float that nearly is what it says it is.
 
 | list | ours | measured against |
 | --- | --- | --- |
@@ -1799,7 +1876,18 @@ and container map, and it is the one `mergeDistributions` merges
 pools, and nothing merges it — the Java side reads it as it stands. So a pool is
 extended by appending to it, in place, which is what this does. Adding a list is a
 line in `CeroSecManualLoot.WEIGHTS`; a list vanilla later renames is logged by name
-and skipped rather than taking the mod down.
+— once for the list, not once per volume standing in front of it — and skipped
+rather than taking the mod down.
+
+`CeroSecManualLoot.abundance()` is the hook for a sandbox option: every weight
+multiplied by `SandboxVars.CeroSec.LootAbundance` if a sandbox option file ever
+declares one, so a server that wants the set common or all but absent moves one
+number instead of thirty-six. Nothing declares it yet. It is read the way vanilla
+reads its own grouped options — `SandboxVars.Map and (SandboxVars.Map.AllowWorldMap
+== true)`, `ISWorldMap.lua:1493` — because `SandboxVars` is a plain table and a group
+nobody declared is simply not in it; and a value that is not a positive number is
+ignored rather than argued with, since a nil, a string, a zero or a negative would
+each quietly take every book out of the world.
 
 ### The network, underneath
 
@@ -1984,8 +2072,11 @@ machine with no operating system and the BIOS repairs.
   thousand passes, asserting a flat cost per pass, a bounded console, bounded
   memory and the cpu ceiling firing where it should. It prints the numbers.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
-  pagination, the contents page, turning the leaves, the bookmark on the item, the
-  keys the item script sets, and the twelve loot lists.
+  pagination, the contents page, turning the leaves, opening each of three volumes
+  off a fake shelf and falling back to the legacy book when there is none, a bookmark
+  per copy and per volume, the dev submenu, the keys all four item blocks set and the
+  icons they name, and the twelve loot lists times three volumes with the sandbox
+  multiplier.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.
