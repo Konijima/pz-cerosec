@@ -6142,10 +6142,14 @@ do
 	local house = net.buildingAt(500, 500, 10, 10, 3)
 	-- And a second mall a region away, whose shop must not turn up in this book.
 	local farMall = net.buildingAt(R + 200, 300, 60, 40, 30)
+	-- And a building that straddles the boundary between the two regions, with a
+	-- shop in it whose CORNER is on this side of it.
+	local border = net.buildingAt(R - 24, 600, 100, 60, 30)
 	_G.__buildings = {
 		{ x = 200, y = 300, w = 60, h = 40 },
 		{ x = 500, y = 500, w = 10, h = 10 },
 		{ x = R + 200, y = 300, w = 60, h = 40 },
+		{ x = R - 24, y = 600, w = 100, h = 60 },
 	}
 	_G.__zones = {
 		{ name = "CoffeeShop", x = 210, y = 310, w = 17, h = 11 },
@@ -6163,6 +6167,11 @@ do
 		{ name = "", x = 206, y = 306, w = 6, h = 6 },
 		-- Another region's shop, on another exchange.
 		{ name = "Pharmacist", x = R + 210, y = 310, w = 17, h = 11 },
+		-- A shop that reaches OVER the boundary. It is listed once, in the book of
+		-- the region its corner is in -- which is the region its number belongs to,
+		-- because the corner is what the exchange is derived from. A sweep of the
+		-- next region finds it intersecting and must not print it.
+		{ name = "BorderShop", x = R - 10, y = 610, w = 20, h = 10 },
 	}
 
 	-- Ask the server the way the client asks it: one command, no square, and the
@@ -6193,9 +6202,9 @@ do
 		byNumber[book.entries[i].number] = book.entries[i].name
 	end
 	table.sort(names)
-	eq("three business listings and no more", #book.entries, 3)
+	eq("four business listings and no more", #book.entries, 4)
 	eq("the shops of the mall, camel case taken out",
-		table.concat(names, "|"), "Bakery|Coffee Shop|Coffee Shop")
+		table.concat(names, "|"), "Bakery|Border Shop|Coffee Shop|Coffee Shop")
 
 	-- A CHAIN is two listings with one name and two numbers, each on its own line.
 	local chain = {}
@@ -6236,13 +6245,21 @@ do
 	-- ANOTHER REGION IS ANOTHER BOOK. The pharmacy is in region 1,0 and the two
 	-- books share nothing -- not a listing and not an exchange.
 	local far = ask(1, 0)
-	eq("the next region's book has its own listing", #far.entries, 1)
-	eq("which is the pharmacy", far.entries[1].name, "Pharmacist")
+	eq("the next region's book has its own listing and only its own", #far.entries, 1)
+	eq("which is the pharmacy and not the shop over the line",
+		far.entries[1].name, "Pharmacist")
 	check("on another exchange", far.exchange ~= book.exchange)
 	local pharmacy = net.machine(R + 212, 312, 0, farMall)
 	pharmacy:turnOn()
 	eq("and the machine in it answers on the number that book printed",
 		far.entries[1].number, telOf(pharmacy))
+
+	-- And the machine in the shop over the line is on the number THIS book printed,
+	-- which is the corner rule read off the BIOS.
+	local straddler = net.machine(R - 5, 615, 0, border)
+	straddler:turnOn()
+	eq("the shop over the line answers on the number its own book printed",
+		byNumber[telOf(straddler)], "Border Shop")
 
 	-- A region with nothing in it is an empty book and not a broken one.
 	local empty = ask(7, 7)

@@ -1094,8 +1094,9 @@ do
 	sent = {}
 	CeroSecManualMenu.onLookUp(book, reader)
 	local rx, ry = CeroSecPhonebook.regionOn(book.data)
+	check("the copy is stamped at all", rx ~= nil and ry ~= nil)
 	eq("the copy is stamped with the reader's region",
-		rx .. "," .. ry, "0,0")
+		tostring(rx) .. "," .. tostring(ry), "0,0")
 	local exchange = CeroSecOS.phoneExchangeOfRegion(0, 0)
 	eq("and its name carries the exchange", book:getName(),
 		"IGUI_CeroSec_Phonebook_Named")
