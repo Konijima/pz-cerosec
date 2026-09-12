@@ -118,7 +118,7 @@ passé réellement, même quand ça correspond au texte attendu.
     de lignes → les deux premières, puis les trois dernières. [ ]
 35. `date` → forme `Thu Jul  8 14:32:00 1993` ; comparer l'heure et la minute
     avec le HUD du jeu au même instant. [ ]
-36. `df` → deux lignes, `hda` (taille 32768) et `nodes` (256) ; écrire un gros
+36. `df` → deux lignes, `hda` (taille 65536) et `nodes` (512) ; écrire un gros
     fichier fait bouger les octets utilisés vers le haut, l'effacer les fait
     redescendre. [ ]
 37. `man ls` → le même texte que `cat /bin/ls`, suivi de la ligne d'usage ;
@@ -850,7 +850,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 `gate` l'autre -- remplacer par les vrais noms que `hostname` donne.
 
 178. Allumer les deux ordinateurs, ouvrir le terminal du premier et regarder le
-     BIOS : entre `Detecting drives ... hda 32K` et `Booting from hda ...` il doit
+     BIOS : entre `Detecting drives ... hda 64K` et `Booting from hda ...` il doit
      y avoir une ligne `Ethernet: eth0 10.x.y.1`. Puis se connecter et taper
      `ifconfig` : `eth0` avec cette même adresse et un masque `0xffffff00`, et
      `lo0` avec `127.0.0.1` sous elle. Enfin `cat /etc/hosts` : deux lignes, la
@@ -997,6 +997,77 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `ls /dev` à l'écran affiche des colonnes, tandis que
      `for l in $(ls /dev | grep light); do dev $l off; done` doit éteindre
      chaque lumière et ne rien dire d'autre (aucun `invalid value`). [ ]
+
+## R. La disquette (palier 4e)
+
+Il faut une disquette : elle se trouve dans les bureaux, les cybercafés, les
+magasins d'électronique et les caisses d'informatique — ou, en mode debug, par le
+menu d'apparition d'objets, sous `CeroSec.FloppyBlue`, `FloppyYellow`,
+`FloppyRed` ou `FloppyGreen`. Les quatre sont la même disquette dans quatre
+coques.
+
+199. **L'objet et la fente.** Prendre une disquette dans l'inventaire, clic droit
+     sur l'ordinateur → l'entrée **Insert floppy** est là. Sans disquette sur
+     soi et avec une fente vide, ni Insert ni Eject n'apparaissent. Cliquer
+     Insert → le personnage marche devant la machine, se tourne, joue
+     l'animation de fouille, et on entend le lecteur prendre la disquette. La
+     disquette a quitté l'inventaire ; le menu offre maintenant **Eject
+     floppy**. Avec une deuxième disquette sur soi, **Insert floppy** est grisé
+     et l'infobulle dit *Eject the floppy first.* [ ]
+200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
+     Insert et Eject sont toujours proposés — une fente est mécanique.
+     Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
+     [ ]
+201. **`/dev/fd0`.** Machine allumée, disquette dedans, se connecter et taper
+     `ls /dev` → `fd0` apparaît à côté de `null`. `ls -l /dev` → une ligne
+     `crw-rw----  root  sudo  fd0` avec, tout à droite, `blank` pour une
+     disquette neuve. `cat /dev/fd0` → `blank`. `echo on > /dev/fd0` →
+     `fd0: invalid value`. `rm /dev/fd0` → `rm: /dev/fd0: is a device`. Éjecter
+     la disquette puis `ls /dev` → `fd0` a disparu, et `newfs /dev/fd0` →
+     `newfs: /dev/fd0: no such file`. [ ]
+202. **`newfs` et `mount`.** Disquette remise. `mount /dev/fd0 /mnt` →
+     `mount: /dev/fd0 on /mnt: Incorrect super block` (elle est vierge).
+     `newfs /dev/fd0` → `/dev/fd0: 4096 bytes, 32 inodes`, et `cat /dev/fd0` →
+     `ready`. `mount /dev/fd0 /mnt` → rien du tout (c'est la réussite).
+     `mount` sans rien → deux lignes : `/dev/hda on / type ufs (rw)` et
+     `/dev/fd0 on /mnt type ufs (rw)`. `cat /dev/fd0` → `mounted`. [ ]
+203. **La greffe.** `echo les pompes sont au dépôt > /mnt/notes.txt`,
+     `cat /mnt/notes.txt`, `ls /mnt`, `mkdir /mnt/sous`,
+     `cp /mnt/notes.txt /mnt/sous/copie.txt`, `cd /mnt` puis `pwd` → `/mnt`, et
+     `edit /mnt/notes.txt` s'ouvre et enregistre. Tout marche sans qu'aucune
+     commande n'ait à savoir qu'il y a une disquette. `df` → quatre lignes :
+     `hda`, `nodes`, `fd0` (taille 4096) et `fd0 nodes` (32). Écrire sur la
+     disquette ne fait pas bouger la ligne `hda`. [ ]
+204. **Les plafonds sont ceux de la disquette.** Dans l'éditeur, remplir un
+     fichier de `/mnt` jusqu'à ce qu'il soit gros (ou répéter
+     `echo ... >> /mnt/gros.txt`) jusqu'à `disk full` — puis vérifier que
+     `echo ok > /home/admin/ok.txt` passe toujours : la machine, elle, n'est pas
+     pleine. `mv /home/admin/ok.txt /mnt` → `mv: /mnt/ok.txt: cross-device
+     link` ; `cp` puis `rm` marchent. [ ]
+205. **`umount`, et qui est dedans.** `cd /mnt` puis `umount /mnt` →
+     `umount: /mnt: Device busy`. `cd` (retour maison) puis `umount /mnt` → rien,
+     et `ls /mnt` est vide. `umount /mnt` une seconde fois →
+     `umount: /mnt: not mounted`. Remonter, puis `newfs /dev/fd0` →
+     `newfs: /dev/fd0: Device busy`. [ ]
+206. **La disquette traverse la ville.** Disquette montée avec le fichier
+     dessus : l'éjecter par le menu **sans démonter** → le lecteur rend la
+     disquette, de la même couleur que celle qui est entrée, et `mount` ne liste
+     plus que `hda`. Porter la disquette jusqu'à un **autre** ordinateur,
+     l'insérer, `cat /dev/fd0` → `ready` (pas `blank`), `mount /dev/fd0 /mnt`,
+     `cat /mnt/notes.txt` → la note est là, entière. Vérifier aussi les droits :
+     un fichier écrit par `bob` là-bas est encore à `bob` (`ls -l /mnt`), et
+     `root` le lit partout. [ ]
+207. **Reprendre la machine avec la disquette dedans.** Disquette insérée et
+     montée, ramasser l'ordinateur (clic droit → Pick up / prendre le meuble),
+     le reposer ailleurs, le rallumer et se connecter : `ls /dev` → `fd0` est
+     toujours là, rien n'est monté (`mount` ne liste que `hda`), et un seul
+     `mount /dev/fd0 /mnt` retrouve les fichiers. [ ]
+208. **Les droits sur le lecteur.** `sudo adduser bob`, `su bob`, puis
+     `newfs /dev/fd0` → `newfs: /dev/fd0: permission denied`, pareil pour
+     `mount` et `cat /dev/fd0`. `exit`, puis `sudo chmod 666 /dev/fd0` et
+     redevenir `bob` : `mount /dev/fd0 /mnt` passe. Le mode reste au **lecteur** :
+     éjecter, remettre une autre disquette, `ls -l /dev` montre toujours
+     `crw-rw-rw-`. [ ]
 
 ## Rapport
 

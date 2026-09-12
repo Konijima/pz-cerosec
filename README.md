@@ -19,9 +19,10 @@ Done:
 - The OS engine: a filesystem with owners and permissions and modification times, a
   shell (`[ adduser cat cd chgrp chmod chown clear cp crontab date deluser dev df
   echo edit exit false fg gpasswd grep groupadd groupdel groups halt hash head
-  help hostname id ifconfig jobs kill last ls mail man mkdir mv passwd ping printf
+  help hostname id ifconfig jobs kill last ls mail man mkdir mount mv newfs passwd
+  ping printf
   ps pwd rcp reboot restart rlogin rm rsh ruptime rwho sh shutdown sleep sort su
-  sudo tail test touch true uniq wait wc who whoami write`), an editor, and
+  sudo tail test touch true umount uniq wait wc who whoami write`), an editor, and
   salted-hashed passwords.
 - One shell, at the prompt and in a file alike: every typed line is parsed by the
   script engine and runs as a job, so `&&`, `if`, `for`, `while`, `$(...)`, `$((...))`
@@ -86,6 +87,17 @@ Done:
   is off the processor entirely, so that costs one turn every four seconds and can
   wait for days. Four and not ten: a sensor's contact is held five seconds, so a
   longer sleep can step straight over somebody crossing the room.
+- Floppy disks: a 3.5-inch disk in four colours, found where the computers are.
+  Right-click the machine to put one in the slot on the front of the case and to
+  take it out again — lit or dark, because a drive is a spring and a lever. What
+  is on it lives in the ITEM, so a disk carried across town is the same disk, with
+  the same files owned by the same accounts. `newfs /dev/fd0` formats it,
+  `mount /dev/fd0 /mnt` grafts it at `/mnt` and every command works through it,
+  `umount /mnt` takes it off — and `mount` with nothing after it says what is
+  mounted. 4096 bytes and 32 files, its own ceilings and never the machine's: a
+  full disk is a `df` that has not moved on `hda`. Ejecting a mounted disk
+  unmounts it first and loses nothing, because every write here is finished by the
+  time the command that made it came back.
 - The manual: a three-volume documentation set that spawns where computers do,
   read by the player in a two-page reader with a table of contents, each volume
   remembering the page the copy in his hands was left on.
@@ -205,6 +217,10 @@ Commands:
 | `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 64K disk and the 512 nodes are used — and a `fd0` row of its own while a floppy is mounted |
+| `newfs <device>` | put a filesystem on the disk in the drive, emptying it: `newfs /dev/fd0` prints `/dev/fd0: 4096 bytes, 32 inodes` |
+| `mount` | what is mounted, one line each: `/dev/hda on / type ufs (rw)` |
+| `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
+| `umount <dir>` | take it off again — refused with `Device busy` while any session's working directory is inside it |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
 | `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
@@ -638,7 +654,7 @@ a session costs the **far** machine: a loop left running on `gate` slows `gate`
 down and leaves your own machine at an idle prompt.
 
 `/var/log/wtmp` is what `last` reads: root's, `644`, two hundred lines deep with
-the oldest dropped, and exempt from the 32 KB disk quota by its path exactly as
+the oldest dropped, and exempt from the 64 KB disk quota by its path exactly as
 `/var/log/cron` is. That is why `wtmp begins` is a real answer on this machine
 rather than the formality it is on a real one.
 
@@ -710,7 +726,7 @@ that file, not a list the window kept, so a survivor who comes back tomorrow pre
 Up and finds what he typed today. Answers to prompts are never in it.
 
 The file holds 1000 entries and 16 KB, whichever comes first, oldest dropped. Those
-16 KB are exempt from the 32 KB disk quota — a shell's memory of itself must not be
+16 KB are exempt from the 64 KB disk quota — a shell's memory of itself must not be
 the thing that fills the drive — so `df` does not move because somebody typed, while
 `ls -l` still tells the truth about the size. The exemption belongs to the **path**
 and not to the file: `mv ~/.sh_history loot.txt` and every byte of it counts from
@@ -891,7 +907,7 @@ lines a mailbox has always carried, and `mail` shows it and empties it:
     tick
 
 `/var/log/cron` (root's, `640`) says what ran, and what could not. Both it and the
-mailboxes are bounded by lines and by bytes and are exempt from the 32 KB by their
+mailboxes are bounded by lines and by bytes and are exempt from the 64 KB by their
 path, the same way `~/.sh_history` is — a machine must not fill its own disk with
 what it said about itself while nobody was looking.
 
@@ -922,6 +938,69 @@ Escape belongs to. There is no `bg` and nothing to use it for: nothing on this
 machine suspends a job, so the only direction one can be moved in is forwards. A
 cron job is not one of these — the shell did not start it, `jobs` does not list it
 and `fg` will not have it, though `ps` shows it.
+
+### The floppy drive
+
+There is a slot on the front of the case, and a 3.5-inch disk goes into it. That is
+how anything gets off one machine and onto another: write your notes, put them on a
+disk, walk the disk across town.
+
+Right-click the computer and the menu offers **Insert floppy** while you are
+carrying one and **Eject floppy** once one is in. Both work on a dark machine as
+well as a lit one — a drive is a spring and a lever, not a circuit — and one disk
+fits at a time, which is what *Eject the floppy first* on a greyed-out Insert
+means.
+
+A disk out of a box is **blank**: there is no filesystem on it and nothing can be
+written to it until you put one there.
+
+```
+admin@ksp-04-11:~$ cat /dev/fd0
+blank
+admin@ksp-04-11:~$ newfs /dev/fd0
+/dev/fd0: 4096 bytes, 32 inodes
+admin@ksp-04-11:~$ mount /dev/fd0 /mnt
+admin@ksp-04-11:~$ cp notes.txt /mnt
+admin@ksp-04-11:~$ ls /mnt
+notes.txt
+admin@ksp-04-11:~$ umount /mnt
+```
+
+`/dev/fd0` is the drive and exists only while there is a disk in it. `newfs`
+formats — which empties, every time, on every machine there has ever been — and
+`mount` grafts the disk onto `/mnt`, an empty directory the machine ships for
+exactly this. From then on `/mnt` **is** the disk and every command you know works
+through it; whatever was in `/mnt` before is covered, not deleted, and comes back
+when you `umount`.
+
+A disk holds **4096 bytes and 32 files**, which is one file as big as a file here
+gets or a dozen short notes, and those are its own ceilings: fill the disk and `df`
+has not moved on `hda`, fill the machine and the disk is still yours to write to.
+
+```
+admin@ksp-04-11:~$ df
+Filesystem   Size   Used  Avail  Use%
+hda         65536   2155  63381    4%
+nodes         512     90    422   18%
+fd0          4096      5   4091    1%
+fd0 nodes      32      2     30    7%
+```
+
+What travels with the disk is everything on it — the names, the contents, who owns
+each file and what its mode is — so a file that was yours on one machine is yours
+on the next, because an account is a name and the name goes with the file.
+
+Three things to know. `umount` refuses while anybody's working directory is inside
+the mount (`umount: /mnt: Device busy`); `cd` out and try again. Ejecting a mounted
+disk unmounts it first and loses nothing, because every write here is finished by
+the time the command that made it came back. And `mv` will not carry a file between
+the two disks (`cross-device link`) — use `cp` and then `rm`, which are two commands
+because they are two things that can go wrong separately.
+
+Who may format and who may mount is the mode on `/dev/fd0` and nothing else: it is
+`root`'s, group `sudo`, at `660`, so `newfs` (which writes a super block) wants the
+`w` bit and `mount` (which reads one) wants the `r` bit. `chmod 666 /dev/fd0` really
+does hand the drive to the whole office.
 
 ### Finding the manual
 
@@ -990,8 +1069,8 @@ script fails with `FileNotFoundException`. Lua and translations are unaffected;
 scripts are not, so the whole mod has to sit where it is loaded from.
 
 - `42/` — `mod.info`, `media/lua/{shared,client,server}/CeroSec/`, translations.
-- `common/` — sounds, textures, and the script files: `sounds_cerosec.txt` and
-  `items_cerosec.txt`.
+- `common/` — sounds, textures, models, and the script files: `sounds_cerosec.txt`,
+  `items_cerosec.txt` and `models_cerosec.txt`.
 - `tests/` — headless, no game needed: `sh tests/run.sh`.
 - `docs/` — manual, in-game test checklists.
 - `tools/` — the one build script there is: `make-volume-icons.py`, which derives
@@ -1576,6 +1655,54 @@ the world: the device *is* the item lying on the floor.
   percent of one second. An empty county costs under a hundredth of a
   millisecond, because the pass over an empty book does nothing at all.
 
+#### The floppy drive, and the second filesystem
+
+The disk is an **item**, and what is written on it lives in the item's modData and
+not in the computer: `{ v = 1, fs = <directory node>, label = "WORK" }`, the same
+shape `state.floppy` has while the disk is in the drive, because it *is*
+`state.floppy` while the disk is in the drive. Three pieces, and they are
+deliberately three (`CeroSecOSDisk.lua`):
+
+- **The disk.** `state.floppy`, or nothing at all when the slot is empty. A missing
+  `fs` is an unformatted disk, which is what a new one out of a box is.
+- **The device.** `/dev/fd0` is mounted on `/dev` for the length of one command,
+  exactly as a light switch is, and only while there is a disk in the slot — so a
+  saved machine never carries one. Its kind has an **empty** vocabulary, like a
+  motion sensor's: there is no word to write to a raw disk, and every one tried is
+  `fd0: invalid value`. Its `660` is still read twice over — `newfs` wants `w`,
+  `mount` wants `r` — so the mode on that node is the whole of who may format and
+  who may mount, and there is no second list of names anywhere. A `chmod` on it is
+  the **drive's** and outlives the disk (`state.fdmode`).
+- **The mount.** `state.mounts` is what `mount` with no arguments prints and what
+  `CeroSecOS.getNode` crosses: a directory that is a mount point resolves to the
+  root of the mounted disk and not to the directory on the hard drive underneath
+  it. The crossing is done in `getNode` and nowhere else — the same place a
+  symbolic link is followed, and for the same reason: not one command in the engine
+  had to learn there is a floppy. A mount does not survive the power going off,
+  which is what a reboot does anywhere; the disk stays in the slot, because that is
+  a thing in the world.
+
+The two filesystems never share a ceiling, and that falls out of the **shape**
+rather than out of a rule: the disk lives beside `state.fs` and not inside it, so
+the quota walk (`CeroSecOS.usage`) physically cannot see it. What picks the ceiling
+for a write is the path — `CeroSecOS.fsFor` answers which filesystem an absolute
+path is on, and `checkAttach` and `setData` ask it — which is why a full floppy is a
+`df` that has not moved on `hda`.
+
+Across the boundary, a disk is **copied** and never handed over
+(`CeroSecOS.diskFromData` / `diskToData`). An item's modData is a `KahluaTable` the
+game owns, and the engine's own gate runs on whatever goes into the machine's state
+on every command from then on — so what goes in has to be a plain Lua table this
+engine made. The same gate `validate` uses (`CeroSecOS.validateDisk`) runs at the
+**slot**, so a forged or damaged disk is refused there rather than three commands
+later by a gate that then calls the whole machine broken. An item always *has* a
+modData table, so nothing written in it means a blank disk and not a refusal.
+
+`mv` does not cross the two disks. `rename(2)` answers `EXDEV` and so does this,
+in that error's own words; real `mv` falls back on a copy and this one deliberately
+does not, because a half-finished copy behind the word "mv" is a lost file. The
+manual sends the player to `cp` and `rm`.
+
 ### System files, and their formats
 
 A machine is a filesystem and nothing else. What makes it a machine that can be
@@ -1620,7 +1747,7 @@ the BIOS repair alike, and never put back behind a root who deleted them:
   `MAIL_LINES` (100) and `MAIL_BYTES` (4096), oldest dropped, with the mbox `From`
   line and cron's own `Subject` written once per job. `mail` prints it and empties it.
 
-The log and the mailboxes are **exempt from the 32 KB disk quota**, by their path and
+The log and the mailboxes are **exempt from the 64 KB disk quota**, by their path and
 by nothing carried on the node, exactly as `~/.sh_history` is:
 `CeroSecOS.exemptPaths` maps each exempt path to its owner, its own ceiling and its
 *kind*, and the kind is what lets the history's four-file ceiling be asked about
@@ -1753,7 +1880,7 @@ The GlobalObject saves `v`, `on`, `facing`, `os` and `console` to `gos_cerosec.b
 `os` and `console` are nested tables the save serializer recurses into. Only `v`,
 `on`, `facing` and `os` are mirrored into the `IsoObject`'s `movableData`, which is
 what vanilla pickup and placement copy — so a computer carried across town keeps its
-files, and only `v`, `on`, `facing` are sent to clients on add or update. The console
+files **and the disk in its drive**, and only `v`, `on`, `facing` are sent to clients on add or update. The console
 is deliberately excluded from both: it is a screen, not a disk (a computer picked up
 is a computer that lost its power), and the client never reads the stored screen,
 only the lines the server answers it with. A filesystem is capped at 512 nodes, 96
@@ -1762,12 +1889,16 @@ small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceilin
 64, which is a `/bin` with no room to put a deleted command back into. `/dev` keeps
 its own 64 — how many commands ship is no reason to mount more of the world.)
 
-The state also carries `sysv`, the *contents* it was built with (11 today) as
+The state also carries `sysv`, the *contents* it was built with (12 today) as
 opposed to `v`, the schema. A wave that adds a command adds a file to `/bin`, so
 on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up — the
 standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion.
+`SYSTEM_VERSION` 12 seeds `/bin/mount`, `/bin/umount` and `/bin/newfs`, and the one
+directory a disk is mounted on: `/mnt`, root's at 755 and shipped empty. The device
+it is mounted *from* is not seeded and never could be — `/dev/fd0` exists for the
+length of one command and only while there is a disk in the slot.
 `SYSTEM_VERSION` 11 seeds `/bin/which`, `/bin/ln` and `/bin/readlink` — `type` is a
 word the shell *is* and has no file — plus the two places the filesystem grew:
 `/dev/null`, which is the one device written to the disk and the one the `/dev` sweep
@@ -1790,7 +1921,7 @@ machine that is punctuation, which is why the disk has
 `CeroSecOS.isValidFileName` beside `isValidName`: it allows exactly that one extra
 name and nothing else, and an account or a group is still `isValidName`'s.
 
-`~/.sh_history` is the one file exempt from the 32 KB disk quota, and the exemption
+`~/.sh_history` is the one file exempt from the 64 KB disk quota, and the exemption
 is decided by the **path** at the moment the disk is counted — never by anything
 carried on the node. `CeroSecOS.exemptPaths` builds it from `/etc/passwd`: exactly
 `<home>/.sh_history` for each account it names, plus `/root/.sh_history`, and owned by
@@ -1809,7 +1940,7 @@ is an ordinary copy and meets the ordinary 4096-byte ceiling.
 Being **over** the quota is a state a machine can be in: renaming a full history puts
 it there, nothing is ever deleted to make room, and every further write answers `disk
 full` until room is made (a shorter line written over a longer one still goes in —
-that is room being made). `CeroSecOS.validate` says nothing about the 32 KB for that
+that is room being made). `CeroSecOS.validate` says nothing about the 64 KB for that
 reason: over quota is a runtime refusal, not a corrupt save to be thrown away. The
 one ceiling it does hold a file to is `HISTORY_BYTES`, the biggest a file can *be* —
 bigger than the 4096 a write may produce, because a renamed history is exactly that.
