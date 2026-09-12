@@ -9408,4 +9408,584 @@ do
 	eq("the first of them", out[1], "bin")
 end
 
+
+--
+-- 47. The floppy drive, and the second filesystem (rung 4e)
+--
+-- The whole of it, in the order a survivor meets it: an empty slot, a blank disk
+-- in it, newfs, mount, the disk as a place to put files, and back out again.
+--
+
+-- 47a. An empty slot is an empty slot.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	eq("a fresh machine has nothing in the drive", CeroSecOS.floppyOf(state), nil)
+	eq("and nothing mounted", CeroSecOS.mountTable(state), nil)
+	okAt(state, admin, "ls /dev", { "null" })
+	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)" })
+	-- /mnt is there, empty, and root's.
+	okAt(state, admin, "ls /mnt", {})
+	local mnt = CeroSecOS.systemNode(state, CeroSecOS.MNT_PATH)
+	eq("/mnt is root's", mnt.owner, "root")
+	eq("at 755", mnt.mode, CeroSecOS.MNT_MODE)
+
+	-- Every command that wants the drive says the same thing about a slot with
+	-- nothing in it, in the filesystem's own grammar: there is no such file.
+	badAt(state, admin, "newfs /dev/fd0", "newfs: /dev/fd0: no such file")
+	badAt(state, admin, "mount /dev/fd0 /mnt", "mount: /dev/fd0: no such file")
+	badAt(state, admin, "cat /dev/fd0", "cat: /dev/fd0: no such file")
+	badAt(state, admin, "umount /mnt", "umount: /mnt: not mounted")
+	-- df is one disk's worth of rows.
+	eq("df has a header and two rows", #okAt(state, admin, "df", nil), 3)
+end
+
+-- 47b. A blank disk in the slot: the drive appears, and it is a device.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("WORK")
+
+	okAt(state, admin, "ls /dev", { "fd0   null" })
+	-- The drive's own line: root's, the sudo group's, 660, with the sticker in
+	-- the column a device keeps for what it is fixed to and what is in it last.
+	okAt(state, admin, "ls -l /dev",
+		{ "crw-rw----  root  sudo  fd0     WORK              blank",
+			"crw-rw-rw-  root  root  null" })
+	okAt(state, admin, "cat /dev/fd0", { "blank" })
+	-- There is no word a survivor can write to a raw disk, so every one of them
+	-- is the device's own refusal.
+	badAt(state, admin, "echo on > /dev/fd0", "fd0: invalid value")
+	badAt(state, admin, "echo format > /dev/fd0", "fd0: invalid value")
+	-- And it is a device, so the filesystem refuses to treat it as anything else.
+	badAt(state, admin, "rm /dev/fd0", "rm: /dev/fd0: is a device")
+	badAt(state, admin, "cp /dev/fd0 /home/admin/x", "cp: /dev/fd0: is a device")
+	badAt(state, admin, "touch /dev/other", "/dev: read-only")
+
+	-- Unformatted: mount has no super block to read, and says it in mount(8)'s own
+	-- shape, about the pair.
+	badAt(state, admin, "mount /dev/fd0 /mnt",
+		"mount: /dev/fd0 on /mnt: Incorrect super block")
+	eq("and nothing was mounted", CeroSecOS.mountTable(state), nil)
+
+	-- A device is worth nothing on the disk, drive included: df has not moved.
+	local nodes, bytes = CeroSecOS.usage(state)
+	local bare = fresh()
+	local bareNodes, bareBytes = CeroSecOS.usage(bare)
+	eq("the drive costs the machine no node", nodes, bareNodes)
+	eq("and no byte", bytes, bareBytes)
+end
+
+-- 47c. newfs, and what it prints.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+
+	okAt(state, admin, "newfs /dev/fd0", { "/dev/fd0: 4096 bytes, 32 inodes" })
+	-- Built from the constants and not typed: a drive that grew would move the
+	-- line the machine prints, and this is what says so.
+	okAt(state, admin, "newfs /dev/fd0",
+		{ "/dev/fd0: " .. CeroSecOS.FLOPPY_BYTES .. " bytes, "
+			.. CeroSecOS.FLOPPY_NODES .. " inodes" })
+	okAt(state, admin, "cat /dev/fd0", { "ready" })
+
+	-- The root directory is whoever formatted it, at 755. Not root's, because the
+	-- sudo group may format and a disk nobody in it can write is a disk nobody
+	-- can use.
+	local root = CeroSecOS.floppyRoot(state)
+	eq("the root of the disk belongs to whoever formatted it", root.owner, "admin")
+	eq("at 755", root.mode, 755)
+	eq("and it is empty", CeroSecOS.countEntries(root), 0)
+
+	-- And it really empties: a second newfs is a format and not a suggestion.
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "echo keep > /mnt/notes.txt", {})
+	okAt(state, admin, "cat /mnt/notes.txt", { "keep" })
+	badAt(state, admin, "newfs /dev/fd0", "newfs: /dev/fd0: Device busy")
+	okAt(state, admin, "umount /mnt", {})
+	okAt(state, admin, "newfs /dev/fd0", { "/dev/fd0: 4096 bytes, 32 inodes" })
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "ls /mnt", {})
+end
+
+-- 47d. The graft: /mnt IS the disk, and every command works through it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("WORK")
+	okAt(state, admin, "newfs /dev/fd0", nil)
+
+	-- Something in /mnt before the mount, to prove it is COVERED and not emptied.
+	-- Written by root, because /mnt is root's at 755: the place is the machine's
+	-- and a survivor keeping files in it would have to be root to do it.
+	local rootBefore = open(state, "root")
+	okAt(state, rootBefore, "echo under > /mnt/hidden.txt", {})
+	okAt(state, admin, "cat /mnt/hidden.txt", { "under" })
+	local under = select(2, CeroSecOS.usage(state))
+
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "mount",
+		{ "/dev/hda on / type ufs (rw)", "/dev/fd0 on /mnt type ufs (rw)" })
+	okAt(state, admin, "cat /dev/fd0", { "mounted" })
+
+	-- The file underneath is out of sight and still on the hard disk, which is
+	-- what a mount point has meant since there were two filesystems.
+	okAt(state, admin, "ls /mnt", {})
+	badAt(state, admin, "cat /mnt/hidden.txt", "cat: /mnt/hidden.txt: no such file")
+	eq("and it is still costing the hard disk what it costs",
+		select(2, CeroSecOS.usage(state)), under)
+
+	-- Every command, through the graft, with nothing told about a floppy.
+	okAt(state, admin, "echo hello > /mnt/notes.txt", {})
+	okAt(state, admin, "cat /mnt/notes.txt", { "hello" })
+	okAt(state, admin, "mkdir /mnt/sub", {})
+	okAt(state, admin, "cp /mnt/notes.txt /mnt/sub/copy.txt", {})
+	okAt(state, admin, "ls /mnt", { "notes.txt  sub" })
+	okAt(state, admin, "cat /mnt/sub/copy.txt", { "hello" })
+	okAt(state, admin, "grep hello /mnt/notes.txt", { "hello" })
+	okAt(state, admin, "wc -l /mnt/notes.txt", { "     1 /mnt/notes.txt" })
+	okAt(state, admin, "mv /mnt/notes.txt /mnt/renamed.txt", {})
+	okAt(state, admin, "ls /mnt", { "renamed.txt  sub" })
+	okAt(state, admin, "rm -r /mnt/sub", {})
+	okAt(state, admin, "cd /mnt", {})
+
+	-- And every one of those landed on the DISK and not on the machine.
+	eq("the hard disk has not moved a byte", select(2, CeroSecOS.usage(state)), under)
+	local disk = CeroSecOS.floppyRoot(state)
+	check("the file is on the disk", disk.children["renamed.txt"] ~= nil)
+
+	-- Out again, and the covered file is back.
+	local at = open(state, "admin")
+	okAt(state, at, "umount /mnt", {})
+	okAt(state, at, "ls /mnt", { "hidden.txt" })
+	okAt(state, at, "cat /mnt/hidden.txt", { "under" })
+	okAt(state, at, "cat /dev/fd0", { "ready" })
+end
+
+-- 47e. The two disks never share a ceiling.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+
+	local before = select(2, CeroSecOS.usage(state))
+	local rootSession = CeroSecOS.rootSession()
+
+	-- Fill the floppy: one maximal file is the whole of it, which is the ratio
+	-- the drive was sized at.
+	local block = string.rep("y", CeroSecOS.FLOPPY_BYTES)
+	eq("one maximal file fills the disk",
+		CeroSecOS.writeFile(state, rootSession, "/mnt/big", block, false, nil), true)
+	-- Every write of a BYTE is refused. An empty file and a directory cost the
+	-- disk no byte and still go in, which is the same answer the machine's own
+	-- drive gives when it is full: the two ceilings are two ceilings.
+	badAt(state, admin, "echo x > /mnt/more", "echo: /mnt/more: disk full")
+	badAt(state, admin, "cp /mnt/big /mnt/copy", "cp: /mnt/copy: disk full")
+	okAt(state, admin, "touch /mnt/empty", {})
+	okAt(state, admin, "rm /mnt/empty", {})
+
+	-- And the machine has not noticed: df on hda is where it was, and a write to
+	-- the hard disk still goes in.
+	eq("a full floppy did not fill the machine",
+		select(2, CeroSecOS.usage(state)), before)
+	okAt(state, admin, "echo fine > /home/admin/ok.txt", {})
+
+	-- df says both, and the floppy's rows are the floppy's.
+	local lines = okAt(state, admin, "df", nil)
+	eq("df has a header and four rows", #lines, 5)
+	eq("the drive first", string.match(lines[2], "^(%S+)"), "hda")
+	eq("its nodes", string.match(lines[3], "^(%S+)"), "nodes")
+	eq("then the disk", string.match(lines[4], "^(%S+)"), "fd0")
+	eq("and the disk's nodes", string.match(lines[5], "^(%S+)%s+(%S+)"), "fd0")
+	eq("the disk's size is the disk's",
+		tonumber(string.match(lines[4], "^%S+%s+(%d+)")), CeroSecOS.FLOPPY_BYTES)
+	eq("and it is full",
+		tonumber(string.match(lines[4], "^%S+%s+%d+%s+(%d+)")), CeroSecOS.FLOPPY_BYTES)
+	eq("the disk's node ceiling is the disk's",
+		tonumber(string.match(lines[5], "^%S+%s+%S+%s+(%d+)")), CeroSecOS.FLOPPY_NODES)
+
+	-- The other way round: a machine filled to its own ceiling still writes to
+	-- the disk in the drive.
+	okAt(state, admin, "rm /mnt/big", {})
+	local used = select(2, CeroSecOS.usage(state))
+	local blocks = math.floor((CeroSecOS.MAX_TOTAL_BYTES - used) / CeroSecOS.MAX_FILE_BYTES)
+	local pad = string.rep("z", CeroSecOS.MAX_FILE_BYTES)
+	for i = 1, blocks do
+		CeroSecOS.writeFile(state, rootSession, "/b" .. i, pad, false, nil)
+	end
+	local room = CeroSecOS.MAX_TOTAL_BYTES - select(2, CeroSecOS.usage(state))
+	CeroSecOS.writeFile(state, rootSession, "/last", string.rep("z", room), false, nil)
+	eq("the machine is exactly full",
+		select(2, CeroSecOS.usage(state)), CeroSecOS.MAX_TOTAL_BYTES)
+	badAt(state, admin, "echo x > /home/admin/no.txt",
+		"echo: /home/admin/no.txt: disk full")
+	okAt(state, admin, "echo yes > /mnt/still.txt", {})
+	okAt(state, admin, "cat /mnt/still.txt", { "yes" })
+end
+
+-- 47f. The node ceiling is the disk's too.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+
+	-- The root of the disk is one of them, so there is room for one fewer.
+	for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
+		okAt(state, admin, "touch /mnt/f" .. i, {})
+	end
+	eq("the disk is at its node ceiling",
+		select(1, CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(state))),
+		CeroSecOS.FLOPPY_NODES)
+	badAt(state, admin, "touch /mnt/one-more", "touch: /mnt/one-more: disk full")
+	-- And the machine, which has hundreds left, is untouched by it.
+	okAt(state, admin, "touch /home/admin/plenty", {})
+end
+
+-- 47g. umount, and who is standing in it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "mkdir /mnt/sub", {})
+
+	-- The session that typed it, at the mount point itself and below it.
+	okAt(state, admin, "cd /mnt", {})
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy")
+	okAt(state, admin, "cd /mnt/sub", {})
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy")
+	-- A path that means the mount point without being spelled like it.
+	okAt(state, admin, "cd /mnt/sub/..", {})
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy")
+	okAt(state, admin, "cd /", {})
+	okAt(state, admin, "umount /mnt", {})
+
+	-- And somebody ELSE standing in it, which is the case only the machine can
+	-- see: the sessions come from the caller, the same list `who` prints.
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	local env = { now = FIXED, net = {
+		sessions = function()
+			return { { user = "bob", line = "ttyp0", cwd = "/mnt/sub" } }
+		end,
+	} }
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy", env)
+	-- Somebody standing somewhere else is not somebody standing in it.
+	env.net.sessions = function()
+		return { { user = "bob", line = "ttyp0", cwd = "/home/admin" } }
+	end
+	okAt(state, admin, "umount /mnt", {}, env)
+end
+
+-- 47h. mount's own refusals, and umount's.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+
+	badAt(state, admin, "mount /dev/fd0 /etc/motd", "mount: /etc/motd: not a directory")
+	badAt(state, admin, "mount /dev/fd0 /nowhere", "mount: /nowhere: no such file")
+	badAt(state, admin, "mount /dev/fd0 /", "mount: /: Device busy")
+	badAt(state, admin, "mount /dev/null /mnt", "mount: /dev/null: not a floppy drive")
+	badAt(state, admin, "newfs /dev/null", "newfs: /dev/null: not a floppy drive")
+	badAt(state, admin, "mount /dev/fd0", "mount: usage: mount [<device> <dir>]")
+	badAt(state, admin, "umount", "umount: usage: umount <dir>")
+	badAt(state, admin, "newfs", "newfs: usage: newfs <device>")
+
+	-- Mounted twice, in two ways: the place is taken, and so is the drive.
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	badAt(state, admin, "mount /dev/fd0 /mnt", "mount: /mnt: Device busy")
+	okAt(state, admin, "mkdir /home/admin/elsewhere", {})
+	badAt(state, admin, "mount /dev/fd0 /home/admin/elsewhere",
+		"mount: /dev/fd0: Device busy")
+	-- And any directory will do, not only /mnt: the mount table is keyed by the
+	-- place and the machine ships exactly one place to be polite about it.
+	okAt(state, admin, "umount /mnt", {})
+	okAt(state, admin, "mount /dev/fd0 /home/admin/elsewhere", {})
+	okAt(state, admin, "echo here > /home/admin/elsewhere/x", {})
+	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)",
+		"/dev/fd0 on /home/admin/elsewhere type ufs (rw)" })
+	okAt(state, admin, "umount /home/admin/elsewhere", {})
+	badAt(state, admin, "umount /home/admin/elsewhere",
+		"umount: /home/admin/elsewhere: not mounted")
+end
+
+-- 47i. A rename never crosses two disks.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "echo mine > /home/admin/notes.txt", {})
+
+	badAt(state, admin, "mv /home/admin/notes.txt /mnt",
+		"mv: /mnt/notes.txt: cross-device link")
+	badAt(state, admin, "mv /home/admin/notes.txt /mnt/notes.txt",
+		"mv: /mnt/notes.txt: cross-device link")
+	-- Nothing was moved and nothing was half-moved.
+	okAt(state, admin, "cat /home/admin/notes.txt", { "mine" })
+	okAt(state, admin, "ls /mnt", {})
+
+	-- The way across is the two commands the manual names.
+	okAt(state, admin, "cp /home/admin/notes.txt /mnt", {})
+	okAt(state, admin, "rm /home/admin/notes.txt", {})
+	okAt(state, admin, "cat /mnt/notes.txt", { "mine" })
+	-- And back.
+	badAt(state, admin, "mv /mnt/notes.txt /home/admin/back.txt",
+		"mv: /home/admin/back.txt: cross-device link")
+	-- A rename INSIDE one disk is an ordinary rename, on either of them.
+	okAt(state, admin, "mv /mnt/notes.txt /mnt/other.txt", {})
+	okAt(state, admin, "cat /mnt/other.txt", { "mine" })
+end
+
+-- 47j. Who may format and who may mount is the mode on the drive.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	addUser(state, "bob", "", "/home/bob", false)
+	CeroSecOS.createNode(state, rootSession, "/home/bob",
+		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), nil)
+	local bob = open(state, "bob")
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+
+	-- bob is in no group the device names, so both bits are shut to him.
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+	badAt(state, bob, "mount /dev/fd0 /mnt", "mount: /dev/fd0: permission denied")
+	badAt(state, bob, "cat /dev/fd0", "fd0: permission denied")
+	-- admin is named in /etc/sudoers, which IS membership of the sudo group.
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	badAt(state, bob, "umount /mnt", "umount: /mnt: permission denied")
+	okAt(state, admin, "umount /mnt", {})
+
+	-- And the mode really is the whole of the rule: open it and bob may format.
+	okAt(state, rootSession, "chmod 666 /dev/fd0", {})
+	okAt(state, bob, "newfs /dev/fd0", nil)
+	okAt(state, bob, "mount /dev/fd0 /mnt", {})
+	okAt(state, bob, "umount /mnt", {})
+	-- Half of it: readable is mountable, and not formattable.
+	okAt(state, rootSession, "chmod 664 /dev/fd0", {})
+	okAt(state, bob, "mount /dev/fd0 /mnt", {})
+	okAt(state, bob, "umount /mnt", {})
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+
+	-- The mode is the DRIVE's and outlives the disk that was in it: it is
+	-- remembered on the machine between commands, not on the disk.
+	eq("the chmod was remembered by the machine", state.fdmode, 664)
+	state.floppy = CeroSecOS.newFloppy("OTHER")
+	okAt(state, bob, "cat /dev/fd0", { "blank" })
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+	-- And an empty slot forgets nothing either: the drive is bolted to the case.
+	state.floppy = nil
+	okAt(state, rootSession, "ls /dev", { "null" })
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, rootSession, "ls -l /dev", nil)
+	eq("the drive is still wearing the mode it was given", state.fdmode, 664)
+	badAt(state, bob, "newfs /dev/fd0", "newfs: /dev/fd0: permission denied")
+end
+
+-- 47k. A disk carried to another machine keeps everything, owners included.
+do
+	local a = fresh("ksp-04-11")
+	local rootA = open(a, "root")
+	addUser(a, "bob", "", "/home/bob", false)
+	local admin = open(a, "admin")
+	a.floppy = CeroSecOS.newFloppy("BOB")
+	okAt(a, admin, "newfs /dev/fd0", nil)
+	okAt(a, admin, "mount /dev/fd0 /mnt", {})
+	-- A file of bob's on it, that only bob and root may read.
+	CeroSecOS.createNode(a, rootA, "/mnt/secret.txt",
+		CeroSecOS.newFile("bob", 600, "bob's notes"), nil)
+	local LINE = "-rw-------  bob    bob        11  Jan  1 00:00  secret.txt"
+	okAt(a, admin, "ls -l /mnt", { LINE })
+	badAt(a, admin, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: permission denied")
+
+	-- Out of the drive: the disk becomes a plain table, the way it does on its
+	-- way into an item's modData, and back again on the other machine.
+	okAt(a, admin, "umount /mnt", {})
+	local carried = CeroSecOS.diskToData(a.floppy)
+	a.floppy = nil
+	check("it really left the first machine", CeroSecOS.floppyOf(a) == nil)
+
+	local b = fresh("ksp-front-02")
+	local rootB = open(b, "root")
+	addUser(b, "bob", "", "/home/bob", false)
+	local adminB = open(b, "admin")
+	local disk, why = CeroSecOS.diskFromData(carried)
+	check("the second machine takes the disk: " .. tostring(why), disk ~= nil)
+	b.floppy = disk
+
+	okAt(b, adminB, "mount /dev/fd0 /mnt", {})
+	okAt(b, adminB, "cat /dev/fd0", { "mounted" })
+	okAt(b, adminB, "ls /mnt", { "secret.txt" })
+	-- Same name, same mode, same owner -- and the same account, because an
+	-- account is a NAME and the name went with the file.
+	okAt(b, adminB, "ls -l /mnt", { LINE })
+	badAt(b, adminB, "cat /mnt/secret.txt", "cat: /mnt/secret.txt: permission denied")
+	local bobB = open(b, "bob")
+	okAt(b, bobB, "cat /mnt/secret.txt", { "bob's notes" })
+	-- Root reads all of it, here as anywhere.
+	okAt(b, rootB, "cat /mnt/secret.txt", { "bob's notes" })
+
+	-- The copy is a copy: writing on the second machine cannot reach the first.
+	eq("the first machine's drive is still empty", CeroSecOS.floppyOf(a), nil)
+	okAt(b, rootB, "echo added > /mnt/new.txt", {})
+	eq("and what was carried is not the table the machine is running on",
+		carried.fs.children["new.txt"], nil)
+end
+
+-- 47l. The gate on what goes into the drive, and on what a state may hold.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	eq("a fresh machine validates", CeroSecOS.validate(state), true)
+
+	-- A blank disk in the slot is a machine that still boots.
+	state.floppy = CeroSecOS.newFloppy("WORK")
+	eq("a blank disk validates", CeroSecOS.validate(state), true)
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	eq("a formatted one does too", CeroSecOS.validate(state), true)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	eq("and a mounted one", CeroSecOS.validate(state), true)
+
+	-- What is refused, one reason each.
+	eq("a disk that is not a table", CeroSecOS.validateDisk("floppy"), false)
+	eq("a disk of an unknown version", CeroSecOS.validateDisk({ v = 99 }), false)
+	eq("a label longer than a sticker",
+		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX + 1) }),
+		false)
+	eq("a label of exactly a sticker is fine",
+		CeroSecOS.validateDisk({ v = 1, label = string.rep("x", CeroSecOS.LABEL_MAX) }),
+		true)
+	eq("a root that is not a directory",
+		CeroSecOS.validateDisk({ v = 1, fs = CeroSecOS.newFile("root", 644, "x") }), false)
+
+	-- Past the disk's own node ceiling: a disk the write path could never have
+	-- made, so it did not come from here.
+	local many = CeroSecOS.newDir("root", 755)
+	for i = 1, CeroSecOS.FLOPPY_NODES do
+		many.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
+	end
+	eq("a disk past its node ceiling is refused",
+		CeroSecOS.validateDisk({ v = 1, fs = many }), false)
+	-- And past its byte ceiling, which is a thing validate does NOT ask about the
+	-- machine's own drive: being over quota is a state a machine can be in, and a
+	-- floppy cannot get into it.
+	local fat = CeroSecOS.newDir("root", 755)
+	fat.children["big"] = CeroSecOS.newFile("root", 644,
+		string.rep("x", CeroSecOS.FLOPPY_BYTES))
+	fat.children["more"] = CeroSecOS.newFile("root", 644, "x")
+	eq("a disk past its byte ceiling is refused",
+		CeroSecOS.validateDisk({ v = 1, fs = fat }), false)
+
+	-- The copy refuses what it cannot carry, rather than dropping it quietly.
+	eq("a function on a disk is not a disk",
+		CeroSecOS.diskFromData({ v = 1, fs = print }), nil)
+	local deep = { v = 1 }
+	local at = deep
+	for i = 1, CeroSecOS.DISK_COPY_DEPTH + 2 do
+		at.down = {}
+		at = at.down
+	end
+	eq("a tree deeper than the filesystem can address is not a disk",
+		CeroSecOS.diskFromData(deep), nil)
+	-- And a disk the gate refuses does not come through the copy either.
+	eq("a disk past its ceilings is refused at the slot",
+		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
+end
+
+-- 47m. A mount naming a drive with nothing in it is swept on the way in.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "echo x > /mnt/f.txt", {})
+
+	-- A disk taken out by a hand that never reached the eject path.
+	state.floppy = nil
+	eq("the mount is still written down", #state.mounts, 1)
+	-- The walk does not cross it -- the directory underneath shows through -- so
+	-- nothing anybody types can reach a disk that is not there.
+	okAt(state, admin, "ls /mnt", {})
+	eq("and the sweep takes it away", CeroSecOS.checkMounts(state), true)
+	eq("leaving nothing mounted", CeroSecOS.mountTable(state), nil)
+	eq("and nothing left to sweep", CeroSecOS.checkMounts(state), false)
+	-- migrate runs it, which is what makes a saved state safe to run on.
+	state.mounts = { { dev = "fd0", dir = "/mnt", type = "ufs" } }
+	eq("migrate hands the same machine back", CeroSecOS.migrate(state, "ksp-front-01"), state)
+	eq("with the mount swept off it", CeroSecOS.mountTable(state), nil)
+end
+
+-- 47n. An older machine gains the room and the drive, and loses nothing.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo mine > /home/admin/notes.txt", {})
+	-- A machine saved before the drive existed: no /mnt, and the three
+	-- executables that came with it missing.
+	state.fs.children.mnt = nil
+	state.fs.children.bin.children.mount = nil
+	state.fs.children.bin.children.umount = nil
+	state.fs.children.bin.children.newfs = nil
+	state.sysv = 11
+
+	eq("the upgrade changed something", CeroSecOS.upgradeSystem(state), true)
+	eq("the system version moved", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	local mnt = CeroSecOS.systemNode(state, CeroSecOS.MNT_PATH)
+	check("/mnt is back", mnt ~= nil and mnt.type == "dir")
+	eq("root's", mnt.owner, "root")
+	eq("at 755", mnt.mode, CeroSecOS.MNT_MODE)
+	eq("and empty", CeroSecOS.countEntries(mnt), 0)
+	for _, name in ipairs({ "mount", "umount", "newfs" }) do
+		local node = state.fs.children.bin.children[name]
+		check("/bin/" .. name .. " is back", node ~= nil and node.type == "file")
+		eq("with its description", node.data, CeroSecOS.commandDesc(name))
+	end
+	okAt(state, admin, "cat /home/admin/notes.txt", { "mine" })
+	eq("a second pass does nothing", CeroSecOS.upgradeSystem(state), false)
+
+	-- And root deleting /mnt is root's right and stays done.
+	okAt(state, open(state, "root"), "rm -r /mnt", {})
+	eq("the upgrade has nothing left to say", CeroSecOS.upgradeSystem(state), false)
+	eq("/mnt stays deleted", CeroSecOS.systemNode(state, CeroSecOS.MNT_PATH), nil)
+	-- The firmware is the way back, and it puts the place back without reaching
+	-- into the drive: what is IN it is a thing in the world.
+	state.floppy = CeroSecOS.newFloppy("KEEP")
+	CeroSecOS.restoreSystem(state)
+	local back = CeroSecOS.systemNode(state, CeroSecOS.MNT_PATH)
+	check("the firmware puts /mnt back", back ~= nil and back.type == "dir")
+	check("and does not reach into the drive", CeroSecOS.floppyOf(state) ~= nil)
+	eq("the label is still on the sticker", state.floppy.label, "KEEP")
+	okAt(state, admin, "cat /home/admin/notes.txt", { "mine" })
+end
+
+-- 47o. The commands are files, like every other command on this machine.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	for _, name in ipairs({ "mount", "umount", "newfs" }) do
+		local node = state.fs.children.bin.children[name]
+		check("/bin/" .. name .. " ships", node ~= nil)
+		eq("root's", node.owner, "root")
+		eq("at 755", node.mode, 755)
+		eq("holding its own description", node.data, CeroSecOS.commandDesc(name))
+	end
+	-- So rm really takes one away.
+	okAt(state, open(state, "root"), "rm /bin/newfs", {})
+	badAt(state, admin, "newfs /dev/fd0", "newfs: command not found")
+	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)" })
+end
+
 print("os_test: " .. count .. " assertions passed")

@@ -119,8 +119,12 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
 	-- The disk that was in the slot travelled with the machine, inside the OS
-	-- state. A computer put down on the other side of town still has it.
+	-- state. A computer put down on the other side of town still has it -- and
+	-- nothing is mounted any more, for the reason the power switch has: it was
+	-- carried, so it lost its power on the way. One `mount` is the way back.
 	self:syncDisk()
+	local placed = self:osState()
+	if placed ~= nil then CeroSecOS.unmountAll(placed) end
 	-- A computer being picked up is a computer that lost its power: every session
 	-- on it and every session it had open ends, and the glass at the far end of
 	-- each is told.

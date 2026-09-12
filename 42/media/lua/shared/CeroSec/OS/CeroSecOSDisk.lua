@@ -224,6 +224,35 @@ function CeroSecOS.diskToData(disk)
 	return copyPlain(disk, CeroSecOS.DISK_COPY_DEPTH)
 end
 
+-- The three keys a disk owns inside an item's modData. Everything else in there
+-- belongs to the game or to another mod and is not ours to touch -- and these
+-- three are ours to CLEAR as well as to write, because a disk that was formatted
+-- and then blanked has no filesystem any more and an `fs` left behind from the
+-- last time would be a blank disk that still remembers.
+CeroSecOS.DISK_KEYS = { "v", "fs", "label" }
+
+-- Write one onto an item's modData, in place. The table is the game's; what is
+-- put in it is a private copy of ours (see CeroSecOS.diskToData).
+function CeroSecOS.writeDiskTo(data, disk)
+	if type(data) ~= "table" then return false end
+	for i = 1, #CeroSecOS.DISK_KEYS do data[CeroSecOS.DISK_KEYS[i]] = nil end
+	local copy = CeroSecOS.diskToData(disk)
+	if copy == nil then return false end
+	for i = 1, #CeroSecOS.DISK_KEYS do
+		local key = CeroSecOS.DISK_KEYS[i]
+		data[key] = copy[key]
+	end
+	return true
+end
+
+-- Is there a disk written on this modData at all? An item in this game always
+-- HAS a modData table -- empty, or full of another mod's business -- so what says
+-- a disk has been written on is the one key a disk always carries. Nothing there
+-- is a blank disk out of a box and not a refusal.
+function CeroSecOS.dataHasDisk(data)
+	return type(data) == "table" and data.v ~= nil
+end
+
 --
 -- The mount table
 --

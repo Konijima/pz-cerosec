@@ -5481,4 +5481,319 @@ do
 		string.find(mail, "fg: no current job", 1, true) ~= nil)
 end
 
+
+--
+-- The floppy drive, all the way round (rung 4e)
+--
+-- The one thing neither os_test nor the item-script bench can prove: a disk that
+-- goes from a survivor's pocket into a machine, gets written on, comes back out
+-- as an item, and is read on a DIFFERENT computer. Every piece of that is green
+-- on its own; what is asserted here is the round trip.
+--
+-- The inventory is faked to exactly what the server touches -- an id, a full
+-- type, a modData table and a container -- because that is the whole of the game
+-- API this path uses, and a fake with more in it would be a fake asserting
+-- against itself.
+--
+
+local function newInventory()
+	local inv = { items = {}, nextID = 100 }
+	function inv:add(fullType, data)
+		self.nextID = self.nextID + 1
+		local item = {
+			id = self.nextID,
+			type = fullType,
+			data = data or {},
+			getID = function(self) return self.id end,
+			getFullType = function(self) return self.type end,
+			hasModData = function(self) return true end,
+			getModData = function(self) return self.data end,
+			getContainer = function(self) return inv end,
+		}
+		self.items[#self.items + 1] = item
+		return item
+	end
+	function inv:AddItem(fullType) return self:add(fullType, {}) end
+	function inv:Remove(item)
+		for i = #self.items, 1, -1 do
+			if self.items[i] == item then table.remove(self.items, i) end
+		end
+	end
+	function inv:getItemWithIDRecursiv(id)
+		for i = 1, #self.items do
+			if self.items[i].id == id then return self.items[i] end
+		end
+		return nil
+	end
+	function inv:getFirstTypeRecurse(fullType)
+		for i = 1, #self.items do
+			if self.items[i].type == fullType then return self.items[i] end
+		end
+		return nil
+	end
+	return inv
+end
+
+-- Give a bench an inventory and a record of what the drive was heard to do.
+local function wireDrive(bench)
+	local inv = newInventory()
+	bench.player.getInventory = function() return inv end
+	bench.inv = inv
+	bench.sounds = {}
+	bench.object.playSound = function(_, name) bench.sounds[#bench.sounds + 1] = name end
+	function bench.heardSound(name)
+		for i = 1, #bench.sounds do
+			if bench.sounds[i] == name then return true end
+		end
+		return false
+	end
+	function bench.send(command, args)
+		args = args or {}
+		args.x, args.y, args.z = 10, 10, 0
+		CCeroSecSystem.instance:sendCommand(bench.player, command, args)
+		bench.frame()
+	end
+	return inv
+end
+
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	bench.login("admin")
+
+	-- Nothing in the slot: no device, and the machine says so in the ordinary way.
+	bench.enter("ls /dev")
+	bench.frame()
+	check("a machine with an empty slot has no drive file", not bench.painted("fd0"))
+	bench.enter("newfs /dev/fd0")
+	bench.frame()
+	check("and newfs says so", bench.painted("newfs: /dev/fd0: no such file"))
+
+	-- A blank disk out of an office drawer.
+	local disk = inv:add("CeroSec.FloppyRed")
+	eq("he is carrying one", #inv.items, 1)
+	bench.send("insertfloppy", { item = disk:getID() })
+
+	eq("the disk left his hands", #inv.items, 0)
+	check("and the drive was heard to take it", bench.heardSound("CeroSecInsertDisc"))
+	eq("the machine knows there is one in it", bench.object:hasDisk(), true)
+	eq("and the client is told the one bit it needs", bench.object.disk, true)
+
+	-- And now there is a drive to talk to.
+	bench.enter("ls /dev")
+	bench.frame()
+	check("the drive file is there", bench.painted("fd0"))
+	bench.enter("cat /dev/fd0")
+	bench.frame()
+	check("and it is blank", bench.painted("blank"))
+
+	-- Format, mount, write.
+	bench.enter("newfs /dev/fd0")
+	bench.frame()
+	check("newfs printed its summary", bench.painted("/dev/fd0: 4096 bytes, 32 inodes"))
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("echo the pumps are at the depot > /mnt/notes.txt")
+	bench.enter("cat /mnt/notes.txt")
+	bench.frame()
+	check("the file is on the disk", bench.painted("the pumps are at the depot"))
+	bench.enter("df")
+	bench.frame()
+	check("df names the disk", bench.painted("fd0"))
+	bench.enter("umount /mnt")
+	bench.frame()
+	-- Asserted on the machine and not on the glass: every line the survivor typed
+	-- is still on the screen above him, echoes and all, so "notes.txt is not
+	-- painted" is a question the console cannot answer honestly.
+	local unmounted = bench.object:osState()
+	eq("nothing is mounted", CeroSecOS.mountTable(unmounted), nil)
+	eq("and /mnt is the empty directory it ships as",
+		CeroSecOS.countEntries(CeroSecOS.systemNode(unmounted, CeroSecOS.MNT_PATH)), 0)
+
+	-- Out it comes, in the shell it went in as, with everything on it.
+	bench.send("ejectfloppy")
+	eq("the disk is back in his hands", #inv.items, 1)
+	eq("in the colour it went in as", inv.items[1]:getFullType(), "CeroSec.FloppyRed")
+	check("and the drive was heard to give it back", bench.heardSound("CeroSecEjectDisc"))
+	eq("the slot is empty", bench.object:hasDisk(), false)
+	eq("and the client is told", bench.object.disk, nil)
+	local carried = inv.items[1]:getModData()
+	eq("the item carries the disk's own version", carried.v, CeroSecOS.FLOPPY_VERSION)
+	check("and its filesystem", type(carried.fs) == "table")
+	check("with the file on it", carried.fs.children["notes.txt"] ~= nil)
+
+	eq("and there is no drive file to find any more",
+		CeroSecOS.systemNode(bench.object:osState(), CeroSecOS.FD_PATH), nil)
+
+	-- One at a time. A second disk in his pocket goes nowhere while the first is
+	-- in the drive.
+	bench.send("insertfloppy", { item = inv.items[1]:getID() })
+	eq("the first went back in", bench.object:hasDisk(), true)
+	local second = inv:add("CeroSec.FloppyBlue")
+	bench.send("insertfloppy", { item = second:getID() })
+	eq("the second stayed in his hands", #inv.items, 1)
+	eq("and it is the one he still has", inv.items[1]:getFullType(), "CeroSec.FloppyBlue")
+
+	-- Ejecting a MOUNTED disk unmounts it first and loses nothing: every write is
+	-- finished by the time the command that made it answered.
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("echo and the keys are under the mat >> /mnt/notes.txt")
+	bench.frame()
+	bench.send("ejectfloppy")
+	eq("it came out", bench.object:hasDisk(), false)
+	local state = bench.object:osState()
+	eq("with nothing left mounted", CeroSecOS.mountTable(state), nil)
+	eq("and /mnt is a plain empty directory again",
+		CeroSecOS.countEntries(CeroSecOS.systemNode(state, CeroSecOS.MNT_PATH)), 0)
+	local red = nil
+	for i = 1, #inv.items do
+		if inv.items[i]:getFullType() == "CeroSec.FloppyRed" then red = inv.items[i] end
+	end
+	check("the red disk is back", red ~= nil)
+	local lines = red:getModData().fs.children["notes.txt"].data
+	check("with BOTH lines on it", string.find(lines, "under the mat", 1, true) ~= nil
+		and string.find(lines, "at the depot", 1, true) ~= nil)
+
+	--
+	-- The other machine.
+	--
+	local other = newBench()
+	local otherInv = wireDrive(other)
+	other.login("admin")
+	-- The very same item, carried across town: the same table the first machine
+	-- handed back, put into the second machine's world.
+	local moved = otherInv:add(red:getFullType(), red:getModData())
+	other.send("insertfloppy", { item = moved:getID() })
+	eq("the second machine took it", other.object:hasDisk(), true)
+
+	other.enter("cat /dev/fd0")
+	other.frame()
+	check("and it is a formatted disk, not a blank one", other.painted("ready"))
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("cat /mnt/notes.txt")
+	other.frame()
+	check("the note is readable on the other machine",
+		other.painted("the pumps are at the depot"))
+	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	-- And the first machine has nothing left of it.
+	eq("the first machine's drive is empty", bench.object:hasDisk(), false)
+	eq("and nothing was left behind in its /mnt",
+		CeroSecOS.countEntries(
+			CeroSecOS.systemNode(bench.object:osState(), CeroSecOS.MNT_PATH)), 0)
+end
+
+--
+-- A computer picked up with a disk in it
+--
+-- The disk stays in the drive, because that is what a disk in a drive does. It
+-- rides in movableData with the filesystem, which is what vanilla's own pickup
+-- and placement copy (ISMoveableSpriteProps.lua:1300 and :2270).
+--
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	bench.login("admin")
+
+	-- A fake IsoObject, with the one thing the mirror needs: a modData table that
+	-- survives between calls, the way the game's does.
+	local modData = {}
+	local iso = {
+		getModData = function() return modData end,
+		hasModData = function() return true end,
+		transmitModData = function() end,
+		getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end,
+		setSpriteFromName = function() end,
+		transmitUpdatedSpriteToClients = function() end,
+	}
+	bench.object.getIsoObject = function() return iso end
+
+	local disk = inv:add("CeroSec.FloppyGreen")
+	bench.send("insertfloppy", { item = disk:getID() })
+	bench.enter("newfs /dev/fd0")
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("echo generator fuel: four cans > /mnt/log.txt")
+	bench.frame()
+
+	-- What vanilla copies into the item when the computer is picked up.
+	bench.object:toModData(iso)
+	local mirror = modData.movableData[CeroSec.MOVABLE_DATA_KEY]
+	check("the mirror carries the machine's own state", type(mirror.os) == "table")
+	check("with the disk still in its drive", type(mirror.os.floppy) == "table")
+	check("and the file on the disk",
+		mirror.os.floppy.fs.children["log.txt"] ~= nil)
+	eq("and the shell it goes back into", mirror.os.fdtype, "CeroSec.FloppyGreen")
+
+	-- Put down again. The power went with the pickup, so nothing is mounted any
+	-- more -- which is what a reboot does on any machine -- and the disk is still
+	-- in the slot.
+	bench.object:resetForPlacement(iso)
+	eq("the machine came back off", bench.object.on, false)
+	local state = bench.object:osState()
+	check("the disk is still in the drive", CeroSecOS.floppyOf(state) ~= nil)
+	eq("nothing is mounted any more", CeroSecOS.mountTable(state), nil)
+	eq("and the client is still told there is a disk in it", bench.object.disk, true)
+
+	-- Switched back on, one `mount` is the whole of the way back.
+	bench.object.on = true
+	bench.object.console = CeroSec.newConsole()
+	bench.object.consoleChecked = true
+	bench.login("admin")
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("cat /mnt/log.txt")
+	bench.frame()
+	check("and the note is still there", bench.painted("generator fuel: four cans"))
+end
+
+--
+-- Nothing a client sends about a disk is believed
+--
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	bench.login("admin")
+
+	-- An id that names nothing.
+	bench.send("insertfloppy", { item = 999 })
+	eq("an id that names nothing inserts nothing", bench.object:hasDisk(), false)
+	-- An id that names something that is not a disk.
+	local book = inv:add("CeroSec.ManualUser")
+	bench.send("insertfloppy", { item = book:getID() })
+	eq("a book is not a disk", bench.object:hasDisk(), false)
+	eq("and it is still in his hands", #inv.items, 1)
+	-- No id at all.
+	bench.send("insertfloppy", {})
+	eq("a packet with no item in it inserts nothing", bench.object:hasDisk(), false)
+
+	-- A disk whose contents will not pass the engine's own gate: refused at the
+	-- slot, and left in his hands rather than eaten.
+	local forged = inv:add("CeroSec.FloppyBlue", { v = 1, fs = { type = "dir",
+		owner = "root", mode = 755, children = {
+			big = { type = "file", owner = "root", mode = 644,
+				data = string.rep("x", CeroSecOS.FLOPPY_BYTES + 1) },
+		} } })
+	bench.send("insertfloppy", { item = forged:getID() })
+	eq("a forged disk is refused", bench.object:hasDisk(), false)
+	eq("and stays in his hands", #inv.items, 2)
+	-- A disk of a version this machine does not know.
+	local future = inv:add("CeroSec.FloppyBlue", { v = 99 })
+	bench.send("insertfloppy", { item = future:getID() })
+	eq("so is one from a version nobody here knows", bench.object:hasDisk(), false)
+
+	-- Ejecting an empty drive gives him nothing.
+	local had = #inv.items
+	bench.send("ejectfloppy")
+	eq("an empty drive hands nothing back", #inv.items, had)
+	check("and says nothing about it", not bench.heardSound("CeroSecEjectDisc"))
+
+	-- A player who is not standing at the machine gets nothing either.
+	local away = bench.player.getX
+	bench.player.getX = function() return 40.5 end
+	local good = inv:add("CeroSec.FloppyBlue")
+	bench.send("insertfloppy", { item = good:getID() })
+	eq("a player across the room inserts nothing", bench.object:hasDisk(), false)
+	bench.player.getX = away
+	bench.send("insertfloppy", { item = good:getID() })
+	eq("and the same player standing at it does", bench.object:hasDisk(), true)
+end
+
 print("window_test: " .. count .. " checks passed")

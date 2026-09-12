@@ -962,8 +962,11 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 	-- What is written on it, copied out of the item into a plain table of our own
 	-- and put through the engine's gate before it is anywhere near the machine.
 	-- A disk that fails is left in his hands rather than eaten by the drive.
+	-- A blank disk out of a box by default: every item in this game has a modData
+	-- table, empty or full of somebody else's business, and nothing written in it
+	-- is a disk nobody has ever formatted rather than a disk to refuse.
 	local disk = CeroSecOS.newFloppy()
-	if item:hasModData() then
+	if item:hasModData() and CeroSecOS.dataHasDisk(item:getModData()) then
 		local read, reason = CeroSecOS.diskFromData(item:getModData())
 		if read == nil then
 			CeroSec.log("refused a disk at " .. x .. "," .. y .. "," .. z .. ": "
@@ -1001,11 +1004,7 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		luaObject:insertDisk(disk, fullType)
 		return
 	end
-	local data = item:getModData()
-	local copy = CeroSecOS.diskToData(disk)
-	if copy ~= nil then
-		for k, v in pairs(copy) do data[k] = v end
-	end
+	CeroSecOS.writeDiskTo(item:getModData(), disk)
 	if isServer() then sendAddItemToContainer(inv, item) end
 end
 
