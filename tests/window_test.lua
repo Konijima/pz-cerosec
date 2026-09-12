@@ -1519,6 +1519,27 @@ do
 	eq("and the tile with it", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
 end
 
+-- Switched on by hand while it was dark, and switched off again. The order that
+-- was given was a reboot, but a hand at the case has overtaken it: the machine
+-- stays off, and nothing comes back three seconds later.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
+	bench.frame()
+	bench.object:toggle()
+	eq("switched on by hand", bench.object.on, true)
+	bench.object:toggle()
+	eq("and off again", bench.object.on, false)
+	eq("the dark interval went with it", bench.object.rebooting, nil)
+
+	waitOutTheDark(bench)
+	eq("it stays off", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("and no window came back", #bench.windows, 1)
+end
+
 -- A machine whose chunk went away while it was dark: it comes up, because power
 -- and jobs are the machine's own business, but nothing is opened on a tile the
 -- client cannot see.

@@ -188,6 +188,13 @@ function CeroSecJobs.killAll(luaObject)
 	local had = luaObject.jobs ~= nil or luaObject.shutdown ~= nil
 	luaObject.jobs = nil
 	luaObject.shutdown = nil
+	-- And a dark interval, for the same reason one notch further along: this is
+	-- only ever reached from turnOff, and a machine that has just been switched off
+	-- is not a machine somebody rebooted. The order matters and is the reboot's own
+	-- (SCeroSecSystem:reboot schedules AFTER the turnOff); what this catches is the
+	-- machine switched on by hand while it was dark and then switched off again,
+	-- which must stay off.
+	luaObject.rebooting = nil
 	-- NOT the minute cron last looked at. This is called every pass on a machine
 	-- that has finished what it was running, and forgetting the minute there
 	-- would make every job that ended cost cron the minute after it -- the note
