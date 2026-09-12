@@ -657,26 +657,26 @@ because what it mends is the system files.]],
 
 [[Switching a machine off, in words instead of by hand.
 
-Both commands are root's. Not because work would be lost -- everything is
-on the disk and survives -- but because a second survivor standing at the
-same glass loses his session, and that is not an ordinary account's to
-take.
+Both are root's: a second survivor standing at the same glass loses his
+session, and that is not an ordinary account's to take. Nothing is lost
+either way -- it is all on the disk.
 
   admin@ksp-04-11:~$ shutdown
   shutdown: permission denied
   root@ksp-04-11:~# shutdown
 
 shutdown switches the machine off: the screen goes, the glow goes, every
-window open on it closes. reboot switches it off and straight back on, and
-everybody watching sees the firmware count the memory out loud again and
-lands at a fresh login: prompt. shutdown -r now says the same thing the
-long way.
+window open on it closes. halt is its older name, and is shutdown -h now.
 
-halt is the older name for shutdown -h now and does the same thing.
+reboot is a power CYCLE, and shutdown -r now says it the long way: off the
+same way, dark about three seconds, then on again by itself. Stay at the
+keyboard and your window comes back where it was; step away while it is
+dark and it comes up without you. A room that loses its power in those
+seconds leaves the machine off, as an outage leaves any machine off.
 
-None of the three is a repair. The disk comes through untouched, which is
-why "switch it off and on again" mends a machine whose /bin is empty: what
-mends it is the firmware's question on the way back up, not the power.]],
+Neither is a repair: the disk comes through untouched. What mends a
+machine whose /bin is empty is the firmware's question on the way back up,
+not the power.]],
 
 [[shutdown also takes a time, which is how you clear a machine other people
 are working at.

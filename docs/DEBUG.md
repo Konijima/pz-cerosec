@@ -60,12 +60,49 @@ because the survivor asking about a computer is standing at one.
 ## The window
 
 `42/media/lua/client/CeroSec/CeroSecDebugUI.lua`. An `ISCollapsableWindow` with an
-`ISTabPanel` in it and an `ISScrollingListBox` per tab with columns on it — which
-is `ISEntitiesDebugWindow`'s own shape
+`ISTabPanel` in it, an `ISPanel` per tab as the tab's view, and an
+`ISScrollingListBox` with columns inside each view — which is
+`ISEntitiesDebugWindow`'s own shape
 (`media/lua/client/DebugUIs/DebugMenu/Entity/ISEntitiesDebugWindow.lua:46-62`)
 down to the ten pixels of border spacing. The list box's own palette and
 `UIFont.Small`, and nothing of the mod's: it is a tool and it sits among vanilla's
 tools, not among the phosphor screens.
+
+### The layout, and why the list is not the view
+
+A list box with columns draws its header row **above its own top edge**, at
+`0 - self.itemheight` (`ISScrollingListBox.lua:553-562`), and `ISTabPanel:addView`
+puts a view at `self.tabHeight` (`:493`). So a list that IS the view has nowhere to
+draw its headers but on the tab strip — which is what shipped: `ess`, `tel`,
+`call`, `jobs`, `eyes` showing through between the tab labels.
+
+So each tab's view is an `ISPanel` at the top of the tab panel and the **list sits
+one header row down inside it**, which is what vanilla's own column list does
+(`ISItemsListTable.lua:76` puts the list at `BUTTON_HGT` and `:79` sets its
+`itemheight` to the same number; the extra pixel here is the list's own top border,
+`:486-491`).
+
+Every number comes out of one `layout()`, and `applyLayout()` is what both
+`createChildren` and `onResize` call — because two copies of this arithmetic that
+disagreed is how it went wrong. The bands, top to bottom: title bar, tab strip,
+header row, rows, button row, detail block. `tests/debug_ui_test.lua` asserts in
+pixels that none of them reaches into the next, before and after a resize.
+
+### The columns
+
+Measured, never a table of constants. Each column is as wide as the **wider of its
+own header and the widest cell of the rows on the glass**, plus the ten pixels the
+list box itself draws header names at and a gap before the next rule; nothing is
+narrower than four characters; and the last column absorbs what is left. When the
+natural widths do not fit, every column gives up the same fraction of what it has
+above the floor and the cells that no longer fit are cut with the mod's own `~` —
+cut, and never drawn over the neighbour, which is what `call` on top of `jobs` was.
+
+Widths are measured with the **advance** of a string and not with
+`MeasureStringX` alone, through the same `"M"` sentinel the terminal uses
+(`CeroSecTerminal.lua:1416-1419`, and the note at `:48-66` for why the subtraction
+is exact): `MeasureStringX` answers the last glyph's ink where the pen moves by its
+advance.
 
 Resizable, one instance at a time (a second opening closes the first), and it
 **remembers nothing** between sessions — not its position, not the tab that was in
@@ -84,14 +121,30 @@ is selected, because those are facts about a window.
 
 ## The tabs
 
-1. **Machines** — every machine the server holds, loaded chunk or not, which is
-   every computer in Knox County that has ever been switched on (see the head of
-   `SCeroSecNet.lua`). Position, facing, on/off, whether its chunk is in, whether
-   it has a wire, hostname, address, telephone number, callsign, live jobs and
-   open windows. A machine whose chunk is away reads `-` under **wire** and not
+1. **Machines** — every machine the server holds, loaded chunk or not. Columns:
+   `x,y,z`, `facing`, `power`, `chunk`, `wire`, `host`, `address`, `tel`, `call`,
+   `jobs`, `windows` — plain words, because a header nobody can read is a column
+   nobody can read. A machine whose chunk is away reads `-` under **wire** and not
    `no`: `hasPower` is asked of a SQUARE, and no square means there was nobody to
    ask — the distinction a sweep once got wrong and switched off every computer
    behind a walking survivor.
+
+   **The filter, and what "every machine the server holds" really means.** It is
+   not "every computer that has ever been switched on": the engine makes a global
+   object for every valid iso object of every square a chunk brings in
+   (`SGlobalObjectSystem:loadIsoObject`,
+   `media/lua/server/Map/SGlobalObjectSystem.lua:133-146`), so a save an hour old
+   holds a machine for **every computer sprite the survivor has walked past** —
+   forty-four of them, dark, with nothing in any column but their position. So the
+   list shows the **used** ones by default: switched on, or carrying a disk of
+   their own (`self.os` stays nil until a machine is first used). The server puts
+   the flag on the row (`SCeroSecDebug.isUsed`), the button under the list toggles
+   **Show all machines / Show used only**, and the line under the list says
+   `showing N of M` and which way the filter is set. The toggle spends no round
+   trip: the rows are already in hand.
+
+   Clicking a row keeps the cursor on **that machine** across every refresh, by its
+   coordinates and never by its row number.
 
    Clicking a row selects that machine, which is the machine the Files, Devices
    and Scheduler tabs are about. Under the list is that machine's own detail: its
@@ -233,7 +286,9 @@ connection is not a window (see [PROTOCOL.md](PROTOCOL.md)).
 
     client -> server: debug     { x, y, z, token, tab }
                       debugact  { x, y, z, token, act }
-    server -> client: debug     { x, y, z, token, tab, rows, info }
+    server -> client: debug     { x, y, z, token, tab, rows, info,
+                                  canTurnOn, canTurnOff, on, loaded, reason }
+                      debug     { x, y, z, token, error }        -- a refusal
 
 `x, y, z` is the machine **selected in the window** and not a computer the player
 is standing at — it may be on the far side of the map with its chunk unloaded.
@@ -250,10 +305,21 @@ else is answered with nothing. `act` is `on`, `off` or `dump`; the first two are
 the object's own `turnOn`/`turnOff`, which are the very calls
 `SCeroSecObject:toggle` makes for the context menu.
 
-`rows` is an array of `{ c = { "cell", ... }, x, y, z }` — plain strings, every
-cell truncated to 64 characters with the same `~` the terminal truncates with,
-and the coordinates only on the Machines tab, where they are what makes a row
-selectable. `info` is an array of strings for the block under the list.
+`rows` is an array of `{ c = { "cell", ... }, x, y, z, used }` — plain strings,
+every cell truncated to 64 characters with the same `~` the terminal truncates
+with, and the coordinates only on the Machines tab, where they are what makes a row
+selectable; `used` only there too, for the filter. `info` is an array of strings for
+the block under the list.
+
+`canTurnOn`, `canTurnOff`, `on`, `loaded` and `reason` are about the **selected**
+machine and ride on every tab's snapshot, because the buttons under the list are the
+same six on every tab. They are built by `CeroSecDebug.selection` off the very
+readings the act itself goes through, so a button greyed in the window is a button
+whose act the server would refuse — and the day the rule moves, the window moves
+with it.
+
+An answer with an **`error`** on it and no `tab` is a refusal: the window puts it on
+the first line of the block under the list and leaves its lists alone.
 
 **Everything is bounded and says so**: 200 machines, 512 file rows, 128 devices,
 128 jobs, 64 rows a network section, 16 zones, 50 wire events, 64 characters a
@@ -284,6 +350,18 @@ Everything else is a read. The three are the two power buttons and the teleport:
 - **Turn on** / **Turn off** go through `Commands.debugact`, which calls the
   object's own `turnOn`/`turnOff`. Same path, same sprite, same sound, same
   eviction of any window standing at it.
+
+  **Every refusal comes back.** `turnOn` refuses a machine whose chunk is away —
+  the wire is asked of a SQUARE and there is nobody to ask — and `debugact` used to
+  drop that boolean and answer nothing at all, so the window drew the same `off` two
+  seconds later: a button that could not work looked exactly like a button that had.
+  Now the refusal goes back on the `debug` answer with an `error` on it, and the
+  window prints it. A refusal a player cannot read is a refusal that looks like a bug
+  in the mod.
+
+  A press the window already knows cannot work is not sent at all — it prints the
+  same sentence itself — and nothing is greyed on an answer that has not arrived
+  yet: an unknown is asked, and the reason comes back with the refusal.
 - **Teleport to it** is the client's own and is vanilla's own debug pair, copied
   from the one place vanilla teleports off a list row
   (`ISSpawnPointsEditor:onPointDoubleClick`,
@@ -297,8 +375,14 @@ Everything else is a read. The three are the two power buttons and the teleport:
   needs the computer's `IsoObject`, so a machine whose chunk is away has nothing to
   open a window on — and the server would refuse the window anyway, every command a
   terminal sends being checked for adjacency. So it is a shortcut past the walk and
-  the chair and past nothing else; a machine out of reach says so in the log rather
-  than opening a window that would shut itself.
+  the chair and past nothing else.
+
+  Its three conditions are the client's own, because all three are facts about this
+  client: the screen is in the world, the machine is **on** (the server's `on`), and
+  the player is **standing at it** — the server's own arithmetic, copied from the
+  adjacency every terminal command goes through (`SCeroSecSystem`'s `isAdjacent`,
+  which is vanilla's `luautils.lua:138-140`). Whichever of the three is missing is
+  what the reason line says, and the button is greyed until none is.
 
 **Dump state** writes nothing: it prints.
 
@@ -308,8 +392,24 @@ Everything else is a read. The three are the two power buttons and the teleport:
 real machines on one real system, one of them with its chunk away, the caps held
 against a disk that is over them, the devices snapshot equal to what
 `CeroSecDevices.find` answers, the wire's ring, and the log ring's two hundred
-lines. `tests/debug_ui_test.lua` holds the window, against a fake tab panel, list
-box and button, and an `Events` register whose `Remove` really removes.
+lines. Section 52 adds the rework's half of it: the three refusals of
+`turnOnRefusal` in the server's own words, the `used` flag on a computer nobody has
+ever touched, the selection fields on every tab's snapshot, and a refusal driven
+through the real `OnClientCommand` door and read off the reply.
+
+`tests/debug_ui_test.lua` holds the window, against a fake tab panel, panel, list
+box and button, and an `Events` register whose `Remove` really removes. Its blocks
+10 to 13 are the rework's: the bands of the layout in pixels before and after a
+resize, the columns (no two overlapping, every cell inside its own, a long cell cut
+rather than drawn over its neighbour), the filter and the `showing N of M` line, the
+cursor staying on its machine through a reordered county, and the greying and the
+reason line for every button.
+
+The whole of it is mutation-checked: a view put at `y = 0`, a list with no headroom
+for its header row, cells drawn at their natural width, the filter off by default,
+a selection kept by index, `debugact` swallowing the refusal the way it used to, and
+a `turnOnRefusal` that blames the wiring for a chunk nobody can ask — each one turns
+a bench red.
 
 The in-game half — what is actually on the glass, whether the columns line up,
 whether the buttons do what they say — is

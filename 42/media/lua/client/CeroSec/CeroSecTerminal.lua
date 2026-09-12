@@ -126,7 +126,12 @@ end
 
 -- The window for this player, opened on this computer. An open window on
 -- another computer is closed first: one terminal per player.
-function CeroSecTerminal.open(playerObj, computer)
+--
+-- `token` is the one case where the window does not pick its own: a machine
+-- coming back from a reboot is asked for by the SERVER, which minted the token
+-- and has the watcher already, so the box is built around a screen that is
+-- already on its way instead of asking for one (CeroSecTerminal.reopen).
+function CeroSecTerminal.open(playerObj, computer, token)
 	measure()
 	local playerNum = playerObj:getPlayerNum()
 	local previous = CeroSecTerminal.instances[playerNum]
@@ -137,15 +142,26 @@ function CeroSecTerminal.open(playerObj, computer)
 
 	local x = (getCore():getScreenWidth() - WINDOW_W) / 2
 	local y = (getCore():getScreenHeight() - WINDOW_H) / 2
-	local window = CeroSecTerminal:new(x, y, playerObj, computer)
+	local window = CeroSecTerminal:new(x, y, playerObj, computer, token)
 	window:initialise()
 	window:addToUIManager()
 	CeroSecTerminal.instances[playerNum] = window
-	window:askForScreen()
+	if token == nil then window:askForScreen() end
 	return window
 end
 
-function CeroSecTerminal:new(x, y, playerObj, computer)
+-- Sitting down at the machine: the window, and the character kept at the
+-- keyboard for as long as it is open. The end of the walk
+-- (ISCeroSecUseAction:perform) is one caller and the reopen after a reboot is
+-- the other, so the two cannot drift apart -- a reopened window is the same
+-- window with the same character at it, and there is no second window class.
+function CeroSecTerminal.sitDown(playerObj, computer, height, token)
+	local window = CeroSecTerminal.open(playerObj, computer, token)
+	if window then window:startTyping(height) end
+	return window
+end
+
+function CeroSecTerminal:new(x, y, playerObj, computer, token)
 	-- open() measured before it chose x and y; a window made any other way
 	-- (a test bench) still gets a measured grid rather than none at all.
 	measure()
@@ -162,7 +178,9 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.fx, o.fy, o.fz = nil, nil, nil
 	if front then o.fx, o.fy, o.fz = front:getX(), front:getY(), front:getZ() end
 	o.hostname = "cerosec"
-	o.token = newToken(o.playerNum)
+	-- The server's token when it is the server that asked for this window, and
+	-- one of our own otherwise.
+	o.token = token or newToken(o.playerNum)
 
 	-- The screen, as the server last described it. self.lines is what is drawn:
 	-- the same thing, except while the BIOS is being revealed a line at a time.
@@ -217,10 +235,12 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	o.lastKeySound = 0
 	o.lastKeyAt = 0
 	-- The character at the keyboard: the open-ended typing action, the height
-	-- it plays the loot animation at, and a chair he owes a sit to.
+	-- it plays the loot animation at, a chair he owes a sit to, and -- when there
+	-- is no chair -- a step back to the stand point he owes the keyboard.
 	o.typeAction = nil
 	o.typeHeight = nil
 	o.wantSit = nil
+	o.wantStand = nil
 
 	o.title = "CeroSec OS"
 	o.resizable = false
@@ -753,14 +773,28 @@ function CeroSecTerminal:stopTyping()
 end
 
 -- Getting the keyboard back puts the character back the way the window found
--- him: in the chair if there is one, and facing the screen. He is never walked
--- -- stepping off the front square closes the window (stillValid) -- so this
--- only ever undoes a stand-up or a look around.
+-- him: in the chair if there is one, at the keyboard if there is not, and facing
+-- the screen. He is never walked off the front square -- stepping off it closes
+-- the window (stillValid) -- so this only ever undoes a stand-up, a look around,
+-- or a drift of a few tenths of a tile inside the square.
 function CeroSecTerminal:resettle()
 	if self.closing or self.typeHeight == nil then return end
 	if not self:stillValid() then return end
 	local chair = CeroSecReach.chairInFront(self.computer)
-	if chair == nil then return end
+	if chair == nil then
+		-- Nothing to sit on: the character is on his feet, and where he belongs
+		-- on his feet is the stand point, against the desk (CeroSecReach). A
+		-- shove, a step back from a zombie or a walk cut short inside the square
+		-- leaves him short of it, and this is what walks the tenth of a tile
+		-- back. Only when he has really drifted: a click on the window that
+		-- changed nothing must queue nothing, or every press would restart the
+		-- typing action.
+		if self.wantStand then return end
+		if CeroSecReach.atStandPoint(self.playerObj, self.computer) then return end
+		self.wantStand = true
+		self:stopTyping()
+		return
+	end
 	if CeroSecReach.isSeatedOn(self.playerObj, chair) then return end
 	if self.wantSit ~= nil then return end
 	self.wantSit = chair
@@ -793,6 +827,19 @@ function CeroSecTerminal:updateSettle()
 			-- one the vanilla menu makes (ISWorldObjectContextMenu.lua:948).
 			ISTimedActionQueue.add(ISRestAction:new(playerObj, chair, true))
 			return
+		end
+	end
+
+	-- The same walk, for a character with no chair to take: to the stand point,
+	-- and then the typing action goes back in behind it (below). The walk is the
+	-- whole of it -- the turn is the typing action's own waitToStart.
+	if self.wantStand then
+		self.wantStand = nil
+		if not CeroSecReach.atStandPoint(playerObj, self.computer) then
+			local x, y, z = CeroSecReach.approachPoint(playerObj, self.computer)
+			if x ~= nil then
+				ISTimedActionQueue.add(ISPathFindAction:pathToLocationF(playerObj, x, y, z))
+			end
 		end
 	end
 
@@ -1251,6 +1298,7 @@ function CeroSecTerminal:close()
 	self:stopTyping()
 	self:stopHighlight()
 	self.wantSit = nil
+	self.wantStand = nil
 	if self.entry then self.entry:unfocus() end
 	if self.opened then self:send("close", {}) end
 	if CeroSecTerminal.instances[self.playerNum] == self then
@@ -1596,9 +1644,67 @@ end
 -- token and nothing else.
 function CeroSecTerminal.onServerAnswer(command, args)
 	if not args then return end
+	-- The one answer that is not for a window: it is the request for one. It
+	-- carries no window's token because the window it names has not been made
+	-- yet, so it never goes round the loop below.
+	if command == "reopened" then
+		CeroSecTerminal.reopen(args)
+		return
+	end
 	for _, window in pairs(CeroSecTerminal.instances) do
 		window:onServerCommand(command, args)
 	end
+end
+
+-- The computer at these coordinates, found on this side. A Java handle does not
+-- travel, so the square is asked for here the way `dev find` asks for one
+-- (objectAt), and the sprite is what says which object on the tile it is.
+local function computerAt(x, y, z)
+	if getCell == nil then return nil end
+	local cell = getCell()
+	if cell == nil then return nil end
+	local square = cell:getGridSquare(x, y, z)
+	if square == nil then return nil end
+	local objects = square:getObjects()
+	if objects == nil then return nil end
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		if CeroSec.isComputerSprite(object:getSpriteName()) then return object end
+	end
+	return nil
+end
+
+-- A machine this player was sitting at has finished rebooting. The server kept
+-- his place across the dark interval, minted the token and added the watcher, so
+-- nothing is asked for and nothing is invented: the window is built around the
+-- screen that arrived with the message, and the `opened` handler does the rest
+-- of it exactly as it does for a window that asked.
+--
+-- The height is worked out here rather than sent, the same way the context menu
+-- works it out (CeroSecReach.height): it is a fact about the desk the computer
+-- stands on, which the client can see and which did not change while the machine
+-- was dark.
+function CeroSecTerminal.reopen(args)
+	if type(args.player) ~= "number" or args.token == nil then return end
+	local playerObj = getSpecificPlayer(args.player)
+	if not playerObj or playerObj:isDead() then return end
+	local computer = computerAt(args.x, args.y, args.z)
+	if computer == nil then return end
+	-- The player has to be able to be there. Asked again on this side because
+	-- this is the side that knows where he is standing THIS frame, and because a
+	-- window that opened onto a square he is not on would shut itself the next
+	-- one (stillValid).
+	local front = CeroSecReach.frontSquare(computer)
+	if front == nil then return end
+	local square = CeroSecReach.standingSquare(playerObj, computer)
+	if square == nil or square:getX() ~= front:getX() or square:getY() ~= front:getY()
+			or square:getZ() ~= front:getZ() then
+		return
+	end
+	local window = CeroSecTerminal.sitDown(playerObj, computer,
+		CeroSecReach.height(computer), args.token)
+	if window == nil then return end
+	window:onServerCommand("opened", args)
 end
 
 -- Shut whatever terminal is open on this computer, wherever the news came from.

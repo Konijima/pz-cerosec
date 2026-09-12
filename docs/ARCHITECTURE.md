@@ -51,6 +51,52 @@ The context menu, the reach checks and the terminal window are all client-side;
 the wire between them and the server — the message list, the screen shape and
 who a token addresses — is [PROTOCOL.md](PROTOCOL.md).
 
+## Standing at a computer
+
+`CeroSecReach.lua` answers where the player has to be: the **front square** is the
+neighbour the screen looks at (`CeroSec.frontOffset`), and every action of the mod
+refuses to run anywhere else. Reaching is that square plus a height —
+`CeroSecReach.height` reads the surface the computer stands on and calls it `low`
+(the floor, a crouched animation), `mid` (a desk) or `high` (out of reach, the
+option greyed out).
+
+Inside that square the mod aims at a **point**, not at the tile, because a tile is
+a metre wide and the game reads the character's float position for everything that
+follows. Two points:
+
+* the **seat point** when there is a chair in front of the screen — the place the
+  game itself would stand him in to take that chair from the front
+  (`SeatingManager:getAdjacentPosition`, the very call `ISRestAction` scores its
+  twelve candidates with). The seat the character ends up in is chosen by nothing
+  but where he stands, so a walk to the middle of the square used to end in a
+  character sitting down sideways at a screen he had asked to read.
+* the **stand point** when there is not: `CeroSec.standPoint`, which is
+  `CeroSec.STAND_INSET` of a tile off the middle of the front square, toward the
+  computer, and centred on the other axis. A computer facing south has its front
+  square to the south and the player stands in the north part of it; the other
+  three facings are derived from `FRONT_OFFSET` and cannot disagree with it. The
+  middle of the square is a visible step short of the desk — the character typed
+  at the air — and the inset is what closes it.
+
+The walk is `ISPathFindAction:pathToLocationF`, which takes floats and is what
+vanilla itself uses to put a character at a point inside a tile
+(`ISCampingMenu.lua:476` and `:505`, 0.2 or 0.8 into the adjacent tile, toward the
+campfire). It is never skipped for a player who is already on the square: paths to
+a SQUARE are satisfied by a character standing anywhere in it, which is how
+"already next to the computer" produced both bugs. `CeroSecTerminal:resettle` is
+the same rule while the window is open — a click that hands the keyboard back also
+puts the character back, on the chair if there is one and on the stand point if
+there is not, and only when he is more than `CeroSec.STAND_NEAR` from it. The
+turn itself is never walked: it is `ISCeroSecTypeAction:waitToStart`.
+
+What the inset can promise is where the pathfinder aims, and therefore which seat
+the game picks and where the character comes to rest. What it cannot promise is
+contact with the desk sprite: a character is a 0.24-wide moving object
+(`IsoMovingObject.width`, javap'd) and that width only ever separates him from
+other characters, while a solid table blocks its own square and nothing inside
+ours — so the number is a look, not a collision. It is **tuned by eye in game**,
+and it is one constant.
+
 ## The chunk that goes away
 
 A computer keeps the state it had while its chunk is not loaded. It stays on, it keeps
@@ -74,7 +120,27 @@ the chunk arriving: **the power check happens on the next load**, at the first m
 there is a room to ask, so a machine whose generator ran dry while you were away is
 lit until you walk back in and dark by the time you can see it. Coming back also
 re-applies the sprite and announces the object to the client, which is what puts the
-screen's glow back (`newLuaObjectOnClient` → `CCeroSecObject:syncLight`).
+screen's glow back (`newLuaObjectOnClient` → `CCeroSecSystem:newLuaObjectAt` →
+`CCeroSecObject:syncLight`).
+
+**The glow is the cell's, not ours.** The light is one `IsoLightSource` on the cell's
+lamppost stack (`getCell():addLamppost`), and the engine takes it off that stack
+whenever the square leaves the loaded window: `LightingJNI.checkLights` walks
+`IsoCell.getLamppostPositions()` and removes any source whose `isInBounds()` is false —
+inside some player's `IsoChunkMap` world tiles — or whose recorded `chunk` is not the
+chunk now covering its square (`javap -c`: `checkLights` offsets 78-123,
+`IsoLightSource.isInBounds`). It tells nobody, and the handle `addLamppost` returned
+goes on existing. So `CCeroSecObject:hasLight()` asks the CELL — `getLightSourceAt` at
+our square, identical to our handle — and never `self.light` on its own: reading "I have
+a handle" as "there is a light" is what left a teleport across the county with a lit
+sprite and no glow, for ever, since `addLight` then refused to ask for another. There is
+no sweep: `syncLight` is called from the four events that can change the answer — the
+announce (a chunk arriving, and the first time a client hears of a machine at all), the
+update, the removal packet, and `OnObjectAboutToBeRemoved` for a pickup — and on the
+announce the state is read off the sprite the chunk brought (`onFromSprite`), because
+Java copies the announced fields into our table only *after* `newLuaObjectAt` returns
+and never calls `OnLuaObjectUpdated` on that path (`javap -c CGlobalObjectSystem`:
+`OnLuaObjectUpdated` is named only inside `receiveUpdateLuaObjectAt`).
 
 This is vanilla's own habit with a global object it cannot see:
 `SCampfireSystem.lua:157-159` skips a campfire whose square is gone — *"if campfire is
@@ -98,7 +164,12 @@ leave it on, the session alive and cron firing every minute; `dev light0 on` ans
 `light0: no such device`; the chunk comes back with a wire and it is still on with its
 sprite and its glow put back; the chunk comes back to a dark room and it goes off at
 that first check, not a minute later; and the control — a machine the sweep **can**
-see loses its power and goes off on the next minute.
+see loses its power and goes off on the next minute. The glow has its own bench in the
+same section, with the real `CCeroSecSystem` and `CCeroSecObject` on a fake cell that
+keeps a lamppost stack and drops it with the chunk the way `checkLights` does: one light
+while the machine is lit, none while the chunk is away, exactly one again when it comes
+back however many times the square is announced, none for a machine switched off out of
+view, and the light following the object through a pickup and a placement.
 
 ## The clock
 
@@ -606,6 +677,22 @@ a menu offering "Read the manual" three times over would be a menu nobody could
 use. It is an ordered list and not a map keyed by item, because `pairs()` would
 shuffle the entries from one right-click to the next.
 
+**A double-click** on a volume opens it too. Vanilla routes the gesture through
+`ISInventoryPane:onMouseDoubleClick` (`ISInventoryPane.lua:1141`) into
+`:doContextualDblClick(item)` (`:1199`), a ladder of elseifs over what the item is;
+at `:1102-1103` a Literature item goes to `ISInventoryPaneContextMenu.readItem`,
+which queues vanilla's hours-long `ISReadABook`. Our volumes are
+`ItemType = base:normal` on purpose and never reach that rung, so
+`CeroSecManualMenu.hookDoubleClick` **wraps** `doContextualDblClick`: our three books
+go to `CeroSecManualMenu.onRead` — the context menu's own handler, so the two doors
+cannot drift — and everything else is handed to the original untouched. The wrap is
+idempotent, or a second one would make `vanillaDblClick` point at the wrapper and any
+other item would recurse until the stack gave out.
+
+**The floppies' own inventory menu** is `client/CeroSec/CeroSecFloppyMenu.lua`, on
+the same event: *Label floppy*, and *change*/*erase* once there is writing on a disk.
+See [DEVICES.md](DEVICES.md) for where the label lives and what prints it.
+
 **The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
 **temporary testing aid and has to be set to `false` before the Workshop release.**
 While it is on, every computer — lit or dark, in reach or not — carries a last entry
@@ -625,8 +712,8 @@ the submenu is empty, with a line in the log saying which volume file did not lo
 Off, nothing at all is added.
 
 **The items** are `common/media/scripts/items_cerosec.txt`: `CeroSec.ManualUser`,
-`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`, and `CeroSec.Manual`, the
-single book that shipped before the set. All four are `ItemType = base:normal` and
+`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`. All three are
+`ItemType = base:normal` and
 **not** `base:literature`, on purpose: a literature item that cannot be written on is
 one the vanilla menu offers to *read*, and vanilla's read is a timed action that sits
 the character down for hours. They keep `DisplayCategory = Literature`, which is a
@@ -635,9 +722,12 @@ still file themselves with the books. `Icon = CeroSecManualUser` resolves to
 `common/media/textures/Item_CeroSecManualUser.png`: the game builds `"Item_" .. Icon`
 and looks it up as `media/textures/<that>.png`.
 
-`CeroSec.Manual` stays **defined** and is no longer **loot**. An item script that
-stops naming an item leaves every copy of it in every save as a missing item, so it
-is still there; read, it opens volume one, which is the volume it became.
+`CeroSec.Manual`, the single book that shipped before the set, is **gone** —
+removed on the inventory wave. It was defined but not loot, and read it opened
+volume one: two items with one content, which on an inventory menu is a fourth
+"Read the manual" nobody can tell from the first. A save that still holds a copy
+loses it, which is what dropping an item script entry costs and is acceptable
+before release.
 
 The three icons are made from the shipped one by `tools/make-volume-icons.py` —
 same 32×32 book, three bindings. The navy is channel-swapped rather than picked again by

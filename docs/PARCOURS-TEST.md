@@ -52,8 +52,20 @@ passé réellement, même quand ça correspond au texte attendu.
    ordinateur." Passer par l'arrière ne débloque rien. [ ]
 6. Carré devant traversé par une fenêtre fermée → grisé. Ouvrir la fenêtre →
    reste grisé, une fenêtre n'est pas un endroit où se tenir. [ ]
-7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → pas
-   de marche du tout, directement l'animation. [ ]
+7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → il
+   fait un pas dans le carré pour se coller au meuble, puis l'animation. [ ]
+7a. **Debout au clavier.** Ordinateur sur un bureau, AUCUNE chaise devant, "Use
+   computer" depuis l'autre bout de la pièce → au bout de la marche le
+   personnage est collé au bureau, pas au milieu du carré : les mains tombent
+   sur le clavier et non dans le vide. Refaire sur les quatre orientations (S,
+   E, N, O) → toujours contre le meuble, et toujours centré sur l'autre axe,
+   jamais de travers dans un coin du carré. [ ]
+7b. **La dérive.** Terminal ouvert debout, se faire pousser par un zombi (ou
+   faire un pas dans le carré avec les touches de déplacement) sans quitter le
+   carré → cliquer sur la fenêtre : le personnage revient au clavier, se
+   retourne vers l'écran, et l'animation de frappe reprend. Cliquer trois fois
+   de suite alors qu'il est déjà au clavier → aucun pas, aucun saccade, la
+   frappe n'est pas coupée. [ ]
 8. Lancer la bascule depuis l'autre bout de la pièce, puis appuyer sur une
    touche de déplacement pendant la marche → le personnage s'arrête,
    l'ordinateur NE bascule PAS, aucune erreur dans `console.txt`. [ ]
@@ -101,9 +113,18 @@ passé réellement, même quand ça correspond au texte attendu.
     (sprite éteint, son de bascule), la fenêtre se ferme d'elle-même. [ ]
 26. Rallumer, ouvrir, `root`, `ls /home/admin` et `cat /etc/passwd` → exactement
     comme avant l'arrêt (un arrêt est une coupure, pas une réparation). [ ]
-27. `root`, `reboot` → la fenêtre reste ouverte, l'écran rejoue
-    `CeroSec BIOS 1.0`, compte la mémoire, détecte le disque, affiche le motd,
-    s'arrête à `login:`. [ ]
+27. `root`, `reboot` → l'ordinateur s'éteint pour de vrai : sprite éteint, lueur
+    de l'écran disparue, la fenêtre se ferme. Environ trois secondes plus tard la
+    machine se rallume toute seule et la fenêtre se rouvre à la même place, sans
+    remarcher jusqu'à la machine : elle rejoue `CeroSec BIOS 1.0`, compte la
+    mémoire, détecte le disque, affiche le motd, s'arrête à `login:`. [ ]
+27b. Refaire `reboot` et **s'éloigner du bureau** pendant le noir → la machine
+    revient allumée toute seule, mais aucune fenêtre ne s'ouvre : revenir et
+    l'utiliser à la main comme n'importe quel écran allumé. [ ]
+27c. Refaire `reboot` et **couper le courant de la pièce** pendant les trois
+    secondes de noir → la machine reste éteinte, comme une vraie après une panne.
+    Remettre le courant : elle ne revient pas d'elle-même, c'est la main sur
+    l'interrupteur qui la rallume. [ ]
 
 ## C. Shell de base
 
@@ -494,11 +515,13 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      ouvre son propre volume, sans copie du livre dans l'inventaire, sur un
      ordinateur allumé ou éteint, à portée ou pas. L'entrée parente elle-même
      n'ouvre rien quand on passe dessus. [ ]
-102. Menu debug → Items list, filtre `CeroSec` → quatre objets :
-     `CeroSec.ManualUser`, `CeroSec.ManualAdmin`, `CeroSec.ManualProgrammer` et
-     `CeroSec.Manual`. Catégorie affichée Literature pour les quatre, noms
+102. Menu debug → Items list, filtre `CeroSec` → TROIS livres :
+     `CeroSec.ManualUser`, `CeroSec.ManualAdmin` et `CeroSec.ManualProgrammer`.
+     `CeroSec.Manual` n'existe plus du tout : l'ancien livre unique était une
+     deuxième copie du volume 1 sous un autre nom et il a été retiré du script.
+     Catégorie affichée Literature pour les trois, noms
      "CeroSec OS User's Guide", "... System Administrator's Guide",
-     "... Programmer's Guide", "CeroSec OS User's Manual". Faire apparaître les
+     "... Programmer's Guide". Faire apparaître les
      trois volumes dans l'inventaire → trois icônes DIFFÉRENTES : le même livre
      à petit écran vert, relié bleu marqué 1, vert marqué 2, rouge marqué 3.
      Jamais un point d'interrogation blanc, et le chiffre reste lisible à la
@@ -507,12 +530,18 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      "Read the System Administrator's Guide" / "Read the Programmer's Guide",
      une seule option et la bonne ; pas de "Read" ni "Write" ni "Look at
      pictures" de la vanille. Sélectionner les trois ensemble → trois options,
-     dans l'ordre 1, 2, 3. Et `CeroSec.Manual`, le livre d'avant le coffret :
-     "Read the manual", qui ouvre le **volume 1** -- le volume qu'il est devenu.
-     L'ancien livre unique n'existe plus comme texte : vérifier que sa
-     couverture dit bien `CeroSec OS 1.0 User's Guide` et que sa table des
-     matières est celle du volume 1 (`1. Your first day`), et non celle de
-     l'ancien livre (`1. Your machine`). [ ]
+     dans l'ordre 1, 2, 3. Aucune option "Read the manual" nulle part : l'objet
+     qui la portait n'existe plus. Vérifier que la couverture du volume 1 dit
+     bien `CeroSec OS 1.0 User's Guide` et que sa table des matières est celle
+     du volume 1 (`1. Your first day`), et non celle de l'ancien livre
+     (`1. Your machine`). [ ]
+103a. Double-clic sur un volume dans l'inventaire → le livre s'ouvre, exactement
+     comme par l'option "Read the ..." : le bon volume, sa propre couverture, et
+     le signet de CET exemplaire. Aucune animation de lecture, rien en file
+     d'action. Double-clic sur un livre de la vanille (`Base.Book`) → le
+     comportement vanilla habituel, PAS notre lecteur. Double-clic sur une arme
+     → elle s'équipe comme avant ; sur un sac → il s'équipe comme avant. C'est
+     ce qui prouve que l'enveloppe rend la main à la fonction d'origine. [ ]
 104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
@@ -547,8 +576,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      chargement `the manual set added in 36 places` (douze listes fois trois
      volumes). Menu debug → Spawn rate checker, liste `LibraryComputer` :
      `CeroSec.ManualUser` à 4, `CeroSec.ManualAdmin` à 2,
-     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et `CeroSec.Manual`
-     ABSENT de la liste. Liste `UniversityDesk_Computer` :
+     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et aucune ligne
+     `CeroSec.Manual`. Liste `UniversityDesk_Computer` :
      `CeroSec.ManualProgrammer` remonte à 2. [ ]
 114. Vérifier que la version affichée est la même partout : la bannière de
      démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture de chacun
@@ -589,9 +618,12 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
 124. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
      l'ouvre à la main. Puis le premier la reverrouille depuis l'ordinateur ;
      le second est refusé en essayant de l'ouvrir. [ ]
-125. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
-     ouvertes et rejouent le BIOS ensemble jusqu'à `login:`, aucune des deux
-     ne se ferme et aucune ne reste sur l'ancien écran. [ ]
+125. L'un des deux tape `reboot` en `root` : les deux fenêtres se ferment et le
+     sprite s'éteint pour les deux joueurs. Trois secondes plus tard la machine
+     se rallume et **les deux** fenêtres se rouvrent, chacune chez son joueur, et
+     rejouent le BIOS ensemble jusqu'à `login:`. Aucune ne reste sur l'ancien
+     écran. Si l'un des deux s'éloigne pendant le noir, seul celui qui est resté
+     retrouve sa fenêtre. [ ]
 126. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
@@ -659,9 +691,9 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `[1] killed: cpu limit` toute seule. Vérifier avec `ps` avant et après.
      Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
 139. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
-     pièce) → après le BIOS et la reconnexion, `ps` est vide : un redémarrage
-     ne laisse aucun travail en cours. Même chose après avoir sauvegardé et
-     rechargé la partie. [ ]
+     pièce) → après le noir, le BIOS et la reconnexion, `ps` est vide : un
+     redémarrage ne laisse aucun travail en cours. Même chose après avoir
+     sauvegardé et rechargé la partie. [ ]
 
 140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
@@ -705,7 +737,11 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `shutdown -h +5` → `shutdown: already scheduled`. Attendre une minute →
      `... in 1 minute!`. `shutdown -c` → `shutdown: cancelled`, et la machine
      reste allumée passé le délai. Refaire `shutdown -r +1`, laisser filer →
-     `The system is going down for reboot NOW!` puis le BIOS et `login:`.
+     `The system is going down for reboot NOW!`, la machine s'éteint et la
+     fenêtre se ferme, puis trois secondes de noir, puis le BIOS et `login:`
+     dans une fenêtre rouverte toute seule — un `reboot` programmé est le même
+     `reboot`. `halt` se comporte comme avant : la machine s'éteint et rien ne
+     revient.
      Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
      compte à rebours est oublié et la machine reste allumée (c'est voulu et
      c'est écrit dans le manuel). `halt` en `root` → la machine s'éteint. [ ]
@@ -1056,6 +1092,43 @@ coques.
      la copie du client qui est en cause et non la machine : le menu montrait la
      fente encore pleine alors que la disquette était dans les mains du
      survivant. [ ]
+199c. **Plusieurs disquettes : le sous-menu.** Se faire apparaître UNE disquette de
+     chaque couleur (`FloppyBlue`, `FloppyYellow`, `FloppyRed`, `FloppyGreen`),
+     fente vide, clic droit sur l'ordinateur → **Insert floppy** est maintenant un
+     SOUS-MENU de quatre lignes, dans l'ordre bleu, jaune, rouge, vert, chacune
+     lisant `3.5" Floppy Disk (bleue)` etc. L'entrée parente elle-même n'insère
+     rien quand on passe dessus. Cliquer la ligne **verte** → c'est la disquette
+     VERTE qui quitte l'inventaire, pas la bleue : c'est tout le point de ce
+     sous-menu. L'éjecter. Garder ensuite DEUX disquettes bleues sur soi → deux
+     lignes quand même, et non une. Avec une seule disquette sur soi → pas de
+     sous-menu du tout, l'entrée directe d'avant. [ ]
+199d. **Le sous-menu quand c'est refusé.** Trois disquettes sur soi et une dans la
+     fente → **Insert floppy** est UNE seule ligne grisée avec l'infobulle *Eject
+     the floppy first*, et AUCUN sous-menu : il n'y a rien à choisir. Pareil hors
+     de portée (derrière un comptoir) : une ligne grisée avec
+     *Tooltip_CeroSec_NoAccess*. [ ]
+199e. **Écrire sur l'étiquette.** Sans rien pour écrire sur soi, clic droit sur une
+     disquette dans l'inventaire → **aucune** entrée d'étiquette. Prendre un stylo
+     (`Base.Pen`) ou un crayon, reclic droit → **Étiqueter la disquette**. Cliquer
+     → une boîte de texte vide s'ouvre. Taper `PAYROLL 93`, OK → le nom de la
+     disquette dans l'inventaire devient **PAYROLL 93**. Reclic droit → deux
+     entrées maintenant : **Changer l'étiquette** (la boîte s'ouvre déjà remplie)
+     et **Effacer l'étiquette**. Essayer une étiquette de plus de 24 caractères,
+     puis une avec un `/` ou un `_` → refusée, un message rouge le dit, et le nom
+     ne change pas. Annuler la boîte → rien ne change. **Effacer l'étiquette** →
+     le nom revient à `3.5" Floppy Disk`. Poser le stylo par terre → les entrées
+     disparaissent du menu. [ ]
+199f. **L'étiquette, la machine et l'aller-retour.** Étiqueter une disquette
+     `PAYROLL 93`, l'insérer : le sous-menu la nommait bien `PAYROLL 93 (verte)`.
+     `newfs /dev/fd0`, `mount /dev/fd0 /mnt`, puis `mount` sans rien → la ligne de
+     la disquette est `/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)`, et celle de
+     `hda` n'a RIEN entre parenthèses au bout. `df` → la ligne `fd0` porte
+     `(PAYROLL 93)` au bout, la ligne `fd0 nodes` ne le répète pas, et les colonnes
+     de chiffres n'ont pas bougé. `umount /mnt`, éjecter → la disquette revient
+     dans l'inventaire **en portant toujours le nom PAYROLL 93** (c'est un nouvel
+     objet : sans report explicite l'écriture serait perdue). La réinsérer →
+     `mount` la renomme pareil. Avec une disquette NON étiquetée : la ligne `mount`
+     est nue, sans parenthèses vides, et ne dit jamais `3.5" Floppy Disk`. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
      Insert et Eject sont toujours proposés — une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
@@ -1226,6 +1299,51 @@ celui de West Point) avec deux boutiques différentes.
      `Phone line:` (le central est calculé au moment où la machine revoit son
      carré). Une machine dont on regarde l'écran sans l'allumer doit aussi
      l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
+215e. **L'annuaire : le trouver et le lire.** Ramasser un `Phonebook` (table
+     d'entrée, comptoir de magasin, tiroir de bureau — l'objet vanilla) et faire
+     un clic droit dessus dans le sac : sous l'option vanilla **Lire** (qui doit
+     toujours être là) il y a **Chercher un numéro**. Cliquer : une fenêtre de
+     livre s'ouvre, comme le manuel, titrée `Knox County Telephone Directory`.
+     Le premier feuillet est la page de titre, le deuxième la table des matières
+     avec une seule ligne `Exchange NNN`, et ensuite la préface (deux lignes) puis
+     les inscriptions, une par ligne, `Nom ..... NNN-NNNN`, en police fixe et
+     alignées. Vérifier **au passage** que le nom de l'objet dans le sac a changé
+     et porte le central : `Phonebook (central NNN)`. Les flèches gauche/droite
+     tournent les feuillets, Échap ferme. Rouvrir : il s'ouvre à la page où on
+     l'a laissé. [ ]
+215f. **Un annuaire = un central, et il ne bouge pas.** Noter les trois chiffres
+     du central du livre et les comparer avec les trois premiers du
+     `Phone line:` d'un ordinateur du même coin de la carte : **les mêmes**.
+     Puis partir à plus de 1024 tuiles (une autre ville) avec ce même livre et
+     rouvrir : **même** central, **mêmes** inscriptions, et le nom de l'objet n'a
+     pas changé une deuxième fois — c'est l'annuaire de là où on l'a trouvé.
+     Ramasser un **deuxième** `Phonebook` sur place et l'ouvrir : central
+     **différent**, inscriptions différentes. [ ]
+215g. **Un numéro de l'annuaire sonne vraiment.** Dans une boutique nommée par la
+     carte (une boutique de mall, un restaurant), poser un ordinateur, l'allumer
+     et lire son `Phone line: NNN-NNNN (NomDeLaZone)`. Rouvrir l'annuaire de
+     cette région : la boutique doit y être, sous son nom **séparé en mots**
+     (`CoffeeShop` → `Coffee Shop`), avec **exactement** ce numéro. Depuis un
+     autre ordinateur d'un autre local : `cu <ce numéro>` → environ quatre
+     secondes, puis `CONNECT 2400` et le `login:` d'en face. Puis éteindre
+     l'ordinateur de la boutique et rappeler le **même** numéro de l'annuaire :
+     **rien pendant quinze secondes**, puis `NO CARRIER` (chronométrer). Faire de
+     même sur une inscription derrière laquelle personne n'a jamais rien posé :
+     `NO CARRIER` après quinze secondes aussi — l'inscription est bonne, le local
+     est vide. [ ]
+215h. **Ce qui n'est pas dedans.** Dans une **maison** ordinaire, poser un
+     ordinateur, l'allumer, noter son numéro : il n'est **nulle part** dans
+     l'annuaire de la région (aucune ligne ne porte ces sept chiffres) — les
+     pages blanches demanderaient un nom de famille que la carte ne donne pas.
+     Parcourir ensuite tout l'annuaire feuillet par feuillet : **aucune**
+     coordonnée de carte n'y apparaît, et aucun nom de zone de région (`Farm`,
+     `StreetPoor`, `University`) — seulement des commerces. Si la dernière ligne
+     du dernier feuillet dit que l'annuaire est plein, c'est le plafond de 400 :
+     le noter dans le rapport. [ ]
+215i. **Multijoueur.** Deux joueurs, chacun son `Phonebook`, ouverts en même
+     temps dans deux régions différentes : chacun voit **son** central et ses
+     propres inscriptions, et la fenêtre de l'un ne change pas quand l'autre
+     ouvre la sienne. [ ]
 
 ## T. La radio (palier 6c)
 
@@ -1369,6 +1487,19 @@ rechargement du morceau, jamais avant. La règle est dans
      machine du même bâtiment par `rlogin` ne liste rien et `echo on >
      /dev/light0` répond `light0: no such device` : c'est le monde qui manque, pas
      la machine. [ ]
+225b. **La lueur revient d'un aller-retour très loin.** Un ordinateur allumé, se
+     placer devant pour voir la lueur bleutée sur le mur, puis se téléporter très
+     loin (ou traverser la carte) assez pour que le quartier se décharge, et
+     revenir tout de suite. Attendu : la lueur est là **dès que le morceau de
+     carte arrive**, sans rien toucher, sans attendre une minute et sans passer
+     par l'interrupteur — une seule lueur, jamais deux. Refaire l'aller-retour
+     trois ou quatre fois de suite : c'est toujours une. C'était le bogue
+     rapporté (« je me téléporte très loin et je reviens, la lumière n'est plus
+     là alors que l'ordinateur est allumé ») : le moteur retire la lueur avec le
+     morceau de carte et ne le dit à personne. Le contrôle du même geste :
+     éteindre la machine pendant l'absence (par `rlogin` depuis une autre du même
+     bâtiment, ou un `halt` au crontab) → au retour, sprite éteint et **aucune**
+     lueur. [ ]
 226. **Le générateur mort pendant l'absence.** Un ordinateur allumé dans un
      bâtiment alimenté par un générateur, réseau coupé (`ElecShutModifier` passé,
      ou bâtiment hors réseau). Vider le générateur d'essence ou l'éteindre, puis
@@ -1525,11 +1656,37 @@ un interrupteur dans la pièce.
      en bas. Attendu : elle ressemble aux fenêtres de debug du jeu (mêmes
      couleurs, même police, mêmes en-têtes de colonnes), et pas au terminal vert.
      [ ]
-242. **L'onglet Machines.** Attendu : une ligne par ordinateur que le serveur
-     tient, y compris celui du bâtiment loin, avec sa position, son orientation,
-     on/off, si son morceau de carte est chargé, son nom, son adresse, son numéro
-     de téléphone, son indicatif, ses jobs et le nombre de fenêtres ouvertes
-     dessus. La machine devant laquelle on est est déjà sélectionnée. [ ]
+241b. **Rien de dessiné deux fois sur la même ligne.** C'est le défaut du
+     2026-09-12 : la rangée d'onglets et les en-têtes de colonnes étaient sur la
+     MÊME ligne (on lisait « ess », « tel », « call », « jobs », « eyes » entre les
+     noms d'onglets). Attendu, de haut en bas et sans chevauchement : la barre de
+     titre, la rangée d'onglets, la rangée grise des en-têtes de colonnes, les
+     lignes, la rangée de boutons, puis le bloc de détail. Passer sur chacun des
+     six onglets : la même chose partout. [ ]
+241c. **Les colonnes.** Attendu : chaque colonne est assez large pour son
+     en-tête ET pour la plus longue cellule affichée, aucune cellule n'empiète sur
+     la colonne d'à côté, les traits verticaux tombent entre les colonnes et pas au
+     milieu d'un mot, et la dernière colonne va jusqu'au bord droit. Sélectionner
+     une machine avec un nom d'hôte long et regarder l'onglet Files (les chemins
+     sont les cellules les plus longues) : une cellule trop longue est **coupée**
+     avec un `~`, jamais dessinée par-dessus la suivante. [ ]
+242. **L'onglet Machines.** Attendu : une ligne par ordinateur **utilisé** que le
+     serveur tient, y compris celui du bâtiment loin, avec ses colonnes nommées en
+     mots clairs — `x,y,z`, `facing`, `power`, `chunk`, `wire`, `host`, `address`,
+     `tel`, `call`, `jobs`, `windows`. La machine devant laquelle on est est déjà
+     sélectionnée. [ ]
+242b. **Le filtre, et le compte.** Sous la liste, une ligne `showing N of M` avec
+     le mode (`used only`). Le bouton **Voir toutes les machines** montre tout :
+     attendu, beaucoup plus de lignes — une par sprite d'ordinateur que le streamer
+     a chargé depuis le début de la partie, éteinte, avec des colonnes vides (c'est
+     ce que Mathieu a vu : 44 lignes pour 6 machines qui comptent) — et `N` monte
+     jusqu'à `M`. Le bouton devient **Voir les utilisées** et revient en arrière. Le
+     filtre ne change rien à la sélection ni aux autres onglets, et il ne demande
+     rien au serveur (aucun délai). [ ]
+242c. **La sélection tient.** Machine sélectionnée, attendre trois
+     rafraîchissements (six secondes) sans toucher à rien. Attendu : la ligne
+     surlignée est toujours la MÊME machine, même si une autre est apparue ou a
+     disparu au-dessus d'elle dans la liste. [ ]
 243. **Sous la liste.** Attendu : le détail de la machine sélectionnée sur
      plusieurs lignes — son sprite, la version de son état, `sysv`, si le système
      passe, et sa console (qui est connecté, dans quel répertoire, combien de
@@ -1556,10 +1713,28 @@ un interrupteur dans la pièce.
      son nom et son adresse sont là, parce que le serveur tient son disque quoi
      que fasse le streamer. [ ]
 246. **Éteindre à distance.** Machine loin sélectionnée, cliquer **Éteindre**.
-     Attendu : sa colonne on/off passe à `off` dans les deux secondes. Rallumer
-     avec **Allumer** : elle ne se rallume **que** si son morceau de carte est
-     chargé (le courant se demande à un carré), sinon rien ne bouge — et c'est la
-     bonne réponse. [ ]
+     Attendu : sa colonne `power` passe à `off` dans les deux secondes — éteindre ne
+     demande rien au monde, le serveur tient l'état. [ ]
+246b. **Rallumer une machine dont le quartier n'est pas chargé, et savoir
+     pourquoi.** C'est l'autre moitié du défaut du 2026-09-12 : le bouton
+     **Allumer** était cliquable, on cliquait, et il ne se passait **rien du tout**.
+     Machine loin (colonne `chunk` = `away`) sélectionnée. Attendu : le bouton
+     **Allumer** est **grisé**, et la PREMIÈRE ligne du bloc sous la liste dit
+     pourquoi — « cannot turn on: its chunk is away, so there is nobody to ask about
+     the wire -- teleport to it first ». Cliquer dessus quand même : rien ne part sur
+     le fil et la ligne reste. [ ]
+246c. **Rallumer une machine qu'on peut rallumer.** Se téléporter à la machine
+     loin (étape 247), attendre que la colonne `chunk` passe à `here` et que `wire`
+     dise `yes`. Attendu : **Allumer** n'est plus grisé, la ligne de raison est
+     vide, et le clic allume la machine (colonne `power` → `on` dans les deux
+     secondes, l'écran s'allume dans le monde). Puis **Allumer** se grise et
+     **Éteindre** s'active. [ ]
+246d. **Un refus que le serveur envoie quand même.** Couper le courant de la pièce
+     (générateur à l'arrêt / interrupteur du réseau) SANS rafraîchir, puis cliquer
+     **Allumer** dans les deux secondes qui suivent — le bouton était encore
+     activé. Attendu : le refus revient du serveur et s'affiche sur la première
+     ligne (« cannot turn on: there is no wire at its square »), jamais un clic
+     muet. [ ]
 247. **S'y téléporter.** Machine loin sélectionnée, cliquer **S'y téléporter** →
      le personnage se retrouve au milieu du carré de cette machine (pas sur le
      coin), le quartier se charge, et la colonne **chunk** de cette ligne passe à
@@ -1567,8 +1742,13 @@ un interrupteur dans la pièce.
 248. **Ouvrir le terminal.** Sur une machine allumée dont le quartier est chargé
      et à côté de laquelle on se trouve, cliquer **Ouvrir le terminal** → le
      terminal s'ouvre comme si on avait utilisé l'ordinateur par devant, sans la
-     marche et sans la chaise. Sur une machine loin : rien ne s'ouvre (avec
-     `CeroSec.DEBUG = true`, une ligne le dit dans la console). [ ]
+     marche et sans la chaise. [ ]
+248b. **Les trois raisons de ne pas l'ouvrir.** Attendu : le bouton est grisé et la
+     première ligne sous la liste dit laquelle des trois manque — « cannot open the
+     terminal: its chunk is away, there is no screen in the world » (machine loin),
+     « ... it is off » (machine éteinte devant laquelle on est), « ... the player is
+     not standing at it » (machine allumée et chargée, mais on s'est éloigné de trois
+     carrés). Faire les trois. Cliquer quand même : rien ne s'ouvre. [ ]
 249. **L'onglet Files.** Attendu : l'arbre du disque de la machine sélectionnée,
      `/` en première ligne, puis `/bin`, `/etc`, `/home`… en profondeur, avec le
      mode écrit comme `ls -l` l'écrit, le propriétaire, la taille et la date.
@@ -1628,9 +1808,11 @@ un interrupteur dans la pièce.
      [ ]
 259. **Deux fenêtres, une seule.** Ouvrir la fenêtre, puis la rouvrir par le menu
      d'un autre ordinateur → la première se ferme, il n'y en a jamais deux. [ ]
-260. **Redimensionner.** Tirer le coin de la fenêtre → la liste et les colonnes
-     suivent le bord, les boutons restent sous la liste, et le bloc de détail
-     reste lisible en bas. [ ]
+260. **Redimensionner.** Tirer le coin de la fenêtre, en grand PUIS en petit → la
+     liste et les colonnes suivent le bord, la dernière colonne va toujours jusqu'au
+     bord droit, les boutons restent sous la liste, le bloc de détail reste lisible
+     en bas, et surtout : les en-têtes de colonnes ne remontent JAMAIS sur la rangée
+     d'onglets, à aucune taille. Vérifier sur deux onglets différents. [ ]
 261. **Fermer, et le rafraîchissement qui s'arrête.** Mettre
      `CeroSec.DEBUG = true`, ouvrir la fenêtre, la fermer par sa croix, et
      regarder la console pendant une minute. Attendu : plus rien de la fenêtre —

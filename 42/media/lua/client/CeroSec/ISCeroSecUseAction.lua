@@ -55,12 +55,16 @@ function ISCeroSecUseAction:stop()
 end
 
 function ISCeroSecUseAction:perform()
-	local window = CeroSecTerminal.open(self.character, self.object)
 	-- The height is this action's, so it is handed over here rather than worked
 	-- out again: the window then keeps a character typing at the keyboard for as
 	-- long as it is open (ISCeroSecTypeAction, queued by the window itself once
 	-- this action has left the queue).
-	if window then window:startTyping(self.height) end
+	--
+	-- The two calls that make that happen are CeroSecTerminal.sitDown, and not
+	-- written out here, because the end of a reboot's dark interval has to make
+	-- exactly the same window with exactly the same character at it
+	-- (CeroSecTerminal.reopen).
+	CeroSecTerminal.sitDown(self.character, self.object, self.height)
 	ISBaseTimedAction.perform(self)
 end
 

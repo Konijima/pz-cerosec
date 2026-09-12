@@ -141,18 +141,51 @@ _G.IsoDoor = {
 -- it, which is what every bench that is not about devices runs on.
 _G.__world = nil
 _G.getCell = function() return _G.__world end
+-- The local players, by player number. Vanilla's own way of turning the number
+-- an answer carries into the survivor it belongs to, and the only way the client
+-- has of doing it: getSpecificPlayer is what the context menu uses
+-- (CeroSecContextMenu.addEntries) and what the reopen after a reboot uses, since
+-- the window it is asked to make has nobody to ask yet. Filled in by newBench.
+_G.__players = {}
+_G.getSpecificPlayer = function(num) return _G.__players[num] end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
 _G.MapObjects = { OnNewWithSprite = function() end, OnLoadWithSprite = function() end }
+-- The handlers are KEPT, so that a bench can fire one. The mod hangs two things
+-- on an event and nothing else can reach them: the client drops a computer's glow
+-- from Events.OnObjectAboutToBeRemoved, which is what a pickup fires, and a fake
+-- that threw the function away could only ever bench the other half.
 _G.Events = setmetatable({}, { __index = function(t, key)
-	local event = { Add = function() end }
+	local event = { handlers = {} }
+	event.Add = function(fn) event.handlers[#event.handlers + 1] = fn end
+	event.trigger = function(...)
+		for i = 1, #event.handlers do event.handlers[i](...) end
+	end
 	rawset(t, key, event)
 	return event
 end })
-_G.ISTimedActionQueue = { isPlayerDoingAction = function() return false end, add = function() end }
-_G.ISCeroSecTypeAction = { new = function() return {} end }
-_G.ISRestAction = { new = function() return {} end }
+-- The action queue, recording. Everything the mod queues lands in __queued, in
+-- order, so a bench can say WHERE a walk was aimed and not merely that one
+-- happened. clear() empties the list the way it empties the queue.
+_G.__queued = {}
+_G.ISTimedActionQueue = {
+	isPlayerDoingAction = function() return false end,
+	add = function(action) _G.__queued[#_G.__queued + 1] = action; return action end,
+	clear = function() _G.__queued = {} end,
+}
+_G.ISCeroSecTypeAction = { new = function(_, character, object, height, window)
+	return { __what = "type", character = character, object = object,
+		height = height, window = window }
+end }
+_G.ISRestAction = { new = function(_, character, chair) return { __what = "rest",
+	character = character, chair = chair } end }
+-- The walk to a float point, built the way vanilla builds it: the goal is a
+-- table tagged 'LocationF' and the three coordinates (ISPathFindAction.lua:122,
+-- media/lua/client/Vehicles/TimedActions/ISPathFindAction.lua on 42.20.4).
+_G.ISPathFindAction = { pathToLocationF = function(_, character, x, y, z)
+	return { __what = "walk", character = character, goal = { "LocationF", x, y, z } }
+end }
 
 -- The font. UIFont.Code is monospaced -- media/fonts/EN/fonts.txt maps Code to
 -- zomboidCode.fnt, and all 613 of its glyphs declare xadvance=8 -- so the pen
@@ -243,6 +276,14 @@ function Box:type(s)
 end
 ISTextEntryBox = { new = function(_, _, _, _, _, _) return Box.new() end }
 
+-- An ArrayList as the game hands one over: 0-based get, and a size.
+local function javaList(items)
+	return {
+		size = function() return #items end,
+		get = function(_, i) return items[i + 1] end,
+	}
+end
+
 local function derive(base, name)
 	local o = {}
 	for key, value in pairs(base) do o[key] = value end
@@ -269,7 +310,17 @@ function ISCollapsableWindow.render() end
 function ISCollapsableWindow.onMouseDown() end
 function ISCollapsableWindow.onMouseUp() end
 function ISCollapsableWindow.initialise() end
-function ISCollapsableWindow.addToUIManager() end
+-- The game's own order, and not a no-op: addToUIManager instantiates an element
+-- that has not been instantiated yet, and instantiate() is what calls
+-- createChildren (ISUIElement.lua:1365-1371 and :993-1007). The windows this
+-- bench builds by hand call createChildren themselves; a window the CLIENT builds
+-- -- CeroSecTerminal.open, which is the path a reopen after a reboot goes through
+-- -- has only this, exactly as in the game.
+function ISCollapsableWindow.addToUIManager(self)
+	if self.instantiated then return end
+	self.instantiated = true
+	self:createChildren()
+end
 function ISCollapsableWindow.removeFromUIManager() end
 function ISCollapsableWindow.addChild(self, child) self.children[#self.children + 1] = child end
 function ISCollapsableWindow.setResizable() end
@@ -279,6 +330,20 @@ function ISCollapsableWindow.drawRect() end
 function ISCollapsableWindow.drawText() end
 
 CeroSecReach = {
+	-- The desk the computer stands on, as the context menu reads it and as the
+	-- reopen after a reboot reads it again: a table, which is "mid".
+	height = function() return "mid" end,
+	-- Where a player using this computer on his feet belongs, and whether he is
+	-- already standing there. "Already there" by default, which is the world every
+	-- bench written before the stand point was written in: resettle with no chair
+	-- then has nothing to do, exactly as it had nothing to do before. The drift
+	-- benches set __drifted for themselves and put it back.
+	standPoint = function()
+		local x, y = CeroSec.standPoint(9, 10, "S")
+		return x, y, 0
+	end,
+	atStandPoint = function() return not CeroSecReach.__drifted end,
+	approachPoint = function() return CeroSecReach.standPoint() end,
 	frontSquare = function() return { getX = function() return 9 end,
 		getY = function() return 10 end, getZ = function() return 0 end } end,
 	chairInFront = function() return nil end,
@@ -336,6 +401,122 @@ SGlobalObjectSystem.loadIsoObject = function(self, isoObject)
 end
 
 --
+-- The CLIENT's half of the same pair, which is where a glow lives. Both base
+-- classes are vanilla's, copied rather than approximated for the same reason the
+-- two above are: the whole subject of the glow section at the bottom is what
+-- happens INSIDE newLuaObjectAt when a chunk comes back, and the Lua that calls
+-- it is Java's (media/lua/client/Map/CGlobalObject.lua and
+-- CGlobalObjectSystem.lua on 42.20.4).
+--
+CGlobalObject = { derive = function(self, name) return derive(self, name) end }
+-- A GlobalObject IS its modData table -- Java makes the table, Lua puts a
+-- metatable on that very one -- so a bench's fake GlobalObject hands one over the
+-- same way, and a field the client sets is a field the "packet" wrote.
+CGlobalObject.new = function(self, luaSystem, globalObject)
+	local o = globalObject:getModData()
+	setmetatable(o, self)
+	self.__index = self
+	o.luaSystem = luaSystem
+	o.globalObject = globalObject
+	o.x = globalObject:getX()
+	o.y = globalObject:getY()
+	o.z = globalObject:getZ()
+	return o
+end
+CGlobalObject.getIsoObject = function(self)
+	if not self.luaSystem then return nil end
+	return self.luaSystem:getIsoObjectAt(self.x, self.y, self.z)
+end
+CGlobalObject.getSquare = function(self)
+	return getCell():getGridSquare(self.x, self.y, self.z)
+end
+CGlobalObject.fromModData = function(self, modData)
+	for k, v in pairs(modData) do self[k] = v end
+end
+CGlobalObject.updateFromIsoObject = function(self)
+	local isoObject = self:getIsoObject()
+	if isoObject then self:fromModData(isoObject:getModData()) end
+end
+
+CGlobalObjectSystem = { derive = function(self, name) return derive(self, name) end }
+CGlobalObjectSystem.RegisterSystemClass = function() end
+CGlobalObjectSystem.new = function(self, name)
+	local o = setmetatable({}, self)
+	o.systemName = name
+	-- The Java mirror: the three calls the mod and the base class make on it. A
+	-- GlobalObject is keyed by its square, which is how the real lookup works
+	-- (GlobalObjectLookup), so announcing the same square twice finds the first
+	-- one -- the repeat the client has to survive.
+	local objects, order = {}, {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	o.system = {
+		getObjectAt = function(_, x, y, z) return objects[key(x, y, z)] end,
+		getObjectCount = function() return #order end,
+		getObjectByIndex = function(_, i) return order[i + 1] end,
+		newObject = function(_, x, y, z)
+			if objects[key(x, y, z)] then error("newObject: already one there", 2) end
+			local modData = {}
+			local globalObject = {
+				getX = function() return x end,
+				getY = function() return y end,
+				getZ = function() return z end,
+				getModData = function() return modData end,
+			}
+			objects[key(x, y, z)] = globalObject
+			order[#order + 1] = globalObject
+			return globalObject
+		end,
+		removeObject = function(_, globalObject)
+			objects[key(globalObject:getX(), globalObject:getY(), globalObject:getZ())] = nil
+			for i = 1, #order do
+				if order[i] == globalObject then table.remove(order, i) break end
+			end
+		end,
+	}
+	o:initSystem()
+	return o
+end
+CGlobalObjectSystem.initSystem = function() end
+CGlobalObjectSystem.newLuaObjectAt = function(self, x, y, z)
+	return self:newLuaObject(self.system:newObject(x, y, z))
+end
+CGlobalObjectSystem.getLuaObjectAt = function(self, x, y, z)
+	local globalObject = self.system:getObjectAt(x, y, z)
+	if globalObject then globalObject:getModData():updateFromIsoObject() end
+	return globalObject and globalObject:getModData() or nil
+end
+CGlobalObjectSystem.getLuaObjectOnSquare = function(self, square)
+	if not square then return nil end
+	return self:getLuaObjectAt(square:getX(), square:getY(), square:getZ())
+end
+CGlobalObjectSystem.removeLuaObject = function(self, luaObject)
+	if not luaObject or (luaObject.luaSystem ~= self) then return end
+	self.system:removeObject(luaObject.globalObject)
+end
+CGlobalObjectSystem.removeLuaObjectAt = function(self, x, y, z)
+	self:removeLuaObject(self:getLuaObjectAt(x, y, z))
+end
+CGlobalObjectSystem.getIsoObjectOnSquare = function(self, square)
+	if not square then return nil end
+	for i = 1, square:getObjects():size() do
+		local isoObject = square:getObjects():get(i - 1)
+		if self:isValidIsoObject(isoObject) then return isoObject end
+	end
+	return nil
+end
+CGlobalObjectSystem.getIsoObjectAt = function(self, x, y, z)
+	local cell = getCell()
+	if not cell then return nil end
+	return self:getIsoObjectOnSquare(cell:getGridSquare(x, y, z))
+end
+CGlobalObjectSystem.getLuaObjectCount = function(self)
+	return self.system:getObjectCount()
+end
+CGlobalObjectSystem.getLuaObjectByIndex = function(self, index)
+	return self.system:getObjectByIndex(index - 1):getModData()
+end
+
+--
 -- The mod, loaded the way the game loads it.
 --
 
@@ -343,6 +524,9 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The telephone directory's generator: pure Lua, and the server's own
+	-- enumeration (CeroSecNet.directory) names it.
+	"shared/CeroSec/CeroSecPhonebook.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -366,6 +550,12 @@ local FILES = {
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
+	-- The client's mirror and the glow on it. Loaded for real, and not stubbed like
+	-- the CCeroSecSystem the window benches talk to: the light is the one thing in
+	-- this mod that only the client has, so a stub in its place is a bench that
+	-- cannot see a glow at all.
+	"client/CeroSec/CCeroSecObject.lua",
+	"client/CeroSec/CCeroSecSystem.lua",
 	-- The one under test is loaded from a path the caller may override, so the
 	-- same bench can be pointed at an older window and made to fail.
 	nil,
@@ -386,6 +576,15 @@ end
 -- The game is up now, and the font it hands out for UIFont.Code is the right
 -- one. Anything measured before this line was measured against the wrong one.
 _G.__cellMeasure = nil
+
+-- The real client classes, put aside: newBench below replaces the global
+-- CCeroSecSystem with the stub every window bench sends its commands through, so
+-- the glow section at the bottom would otherwise have nothing left to run.
+local CClientSystem = CCeroSecSystem
+-- And the handler the client hangs on a pickup, caught while the global still
+-- names the real class (the mod's own closure reads that global, so the bench puts
+-- the real one back for the moment it fires).
+local OnObjectAboutToBeRemoved = Events.OnObjectAboutToBeRemoved
 
 local count = 0
 local function check(what, cond)
@@ -408,6 +607,11 @@ local function newBench()
 	-- a bench that left a job running would otherwise have it stepped by the
 	-- next bench's ticks. One bench, one county.
 	CeroSecJobs.machines = {}
+	-- And the client's registry of open windows, for the same reason: a window
+	-- the game itself made -- which is what a reopen after a reboot is -- lives in
+	-- there, and a bench must not inherit the last bench's.
+	CeroSecTerminal.instances = {}
+	_G.__players = {}
 	local player = {
 		getPlayerNum = function() return 0 end,
 		getOnlineID = function() return -1 end,
@@ -441,10 +645,13 @@ local function newBench()
 	system.getLuaObjectCount = function() return 1 end
 	system.getLuaObjectByIndex = function() return object end
 
+	_G.__players[0] = player
+
 	local window = CeroSecTerminal:new(0, 0, player, computer)
 	window:initialise()
 	window:createChildren()
-	local bench = { window = window, object = object, system = system, player = player }
+	local bench = { window = window, object = object, system = system, player = player,
+		computer = computer }
 
 	-- The CLIENT's copy of this machine, and the one mechanism the game has for
 	-- keeping it in step with the server's. The server writes the sync keys it
@@ -476,6 +683,11 @@ local function newBench()
 	-- before it goes down and wipes the console -- a reboot's own broadcast is
 	-- one. This is where those are looked for.
 	bench.said = {}
+	-- Why a window was told to shut, in the order the reasons went out. The reason
+	-- is the server's word and the client only logs it, so it is caught on the
+	-- wire: "off" is a machine somebody switched off, "reboot" is one that is
+	-- coming back, and the client tells them apart by nothing else.
+	bench.closed = {}
 	local function record(a)
 		if type(a) ~= "table" or type(a.lines) ~= "table" then return end
 		for i = 1, #a.lines do bench.said[#bench.said + 1] = a.lines[i] end
@@ -487,15 +699,17 @@ local function newBench()
 		return false
 	end
 
+	-- Every answer the server produced, to whoever it is for. Written once, below,
+	-- because the three ways a bench makes the server speak -- a line typed, a
+	-- scheduler pass, the minute hand -- all deliver the same way, and one of the
+	-- answers makes a window instead of reaching one.
+	local deliver
+
 	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
 		local replies = {}
 		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 		system:OnClientCommand(command, sender, args)
-		for i = 1, #replies do
-			for w = 1, #bench.windows do
-				bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-			end
-		end
+		deliver(replies)
 	end } }
 
 	local function watch(w)
@@ -513,6 +727,42 @@ local function newBench()
 	-- What the glass shows, and where.
 	watch(window)
 
+	-- The client's own door for an answer that is not addressed to any window,
+	-- because the window it names does not exist yet: a machine that has finished
+	-- rebooting asks for one (CeroSecTerminal.onServerAnswer -> reopen), which
+	-- builds it through CeroSecTerminal.open exactly as the end of the walk does.
+	-- It lands in the client's registry and not in this bench's list, so it is
+	-- adopted from there -- a real window, made by the real path.
+	local function adopt()
+		for _, w in pairs(CeroSecTerminal.instances) do
+			local known = false
+			for i = 1, #bench.windows do
+				if bench.windows[i] == w then known = true end
+			end
+			if not known then
+				watch(w)
+				bench.windows[#bench.windows + 1] = w
+			end
+		end
+	end
+
+	function deliver(replies)
+		for i = 1, #replies do
+			local command, args = replies[i][1], replies[i][2]
+			if command == "closed" then
+				bench.closed[#bench.closed + 1] = args.reason
+			end
+			if command == "reopened" then
+				CeroSecTerminal.onServerAnswer(command, args)
+				adopt()
+			else
+				for w = 1, #bench.windows do
+					bench.windows[w]:onServerCommand(command, args)
+				end
+			end
+		end
+	end
+
 	-- A second player, at the same computer, with a window of his own. His own
 	-- online id, because the server keys a watcher on it and split screen is
 	-- the one case where two windows share a connection.
@@ -521,6 +771,7 @@ local function newBench()
 		for key, value in pairs(player) do other[key] = value end
 		other.getPlayerNum = function() return 1 end
 		other.getOnlineID = function() return -2 end
+		_G.__players[1] = other
 		local w = CeroSecTerminal:new(0, 0, other, computer)
 		w:initialise()
 		w:createChildren()
@@ -539,11 +790,7 @@ local function newBench()
 			local replies = {}
 			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 			CeroSecJobs.tick()
-			for i = 1, #replies do
-				for w = 1, #bench.windows do
-					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-				end
-			end
+			deliver(replies)
 		end
 		bench.frame()
 	end
@@ -569,11 +816,7 @@ local function newBench()
 			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 			system:checkPower()
 			system:checkCron()
-			for i = 1, #replies do
-				for w = 1, #bench.windows do
-					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-				end
-			end
+			deliver(replies)
 		end
 		-- And the passes a job needs to actually run: cron makes a job, the
 		-- scheduler is what steps it.
@@ -1236,9 +1479,132 @@ do
 	check("and the window shut itself", bench.window.closing)
 end
 
--- reboot, with a second player standing at the same glass.
+--
+-- reboot: the machine goes dark, and the window comes back
+--
+-- Mathieu, in the game: "reboot should also turn the screen off, and the
+-- terminal UI should open again once it booted." It used to be turnOff and
+-- turnOn in the same breath, which left the sprite lit and the boot typing
+-- itself out inside a window that had never shut -- a machine that never went
+-- down. So what is asserted here is the physical machine as much as the glass:
+-- the unlit tile, the client's copy the glow is drawn from, the three dark
+-- seconds, and then a NEW window with a token of its own.
+
+-- The machine as the WORLD has it: the tile's own object with the sprite on it,
+-- the square it stands on, and the cell that answers for that square. newBench
+-- stubs all three out, because most of this file is about the glass -- but a
+-- reboot is a machine going physically off and physically back, so the sprite is
+-- half of what is being asserted, and the client cannot find the computer to put
+-- a window back on without the cell.
+local function embody(bench)
+	local kit = { loaded = true }
+	-- __class, because the device layer asks what an object on a square IS before
+	-- it makes a /dev entry of it (CeroSecDevices.classify), and the plain
+	-- IsoObject a vanilla computer tile is is none of the things it looks for.
+	local iso = { __class = "IsoObject", sprite = CeroSec.SPRITES_ON["S"], modData = {} }
+	iso.getSpriteName = function() return iso.sprite end
+	iso.setSpriteFromName = function(_, name) iso.sprite = name end
+	iso.transmitUpdatedSpriteToClients = function() end
+	iso.hasModData = function() return true end
+	iso.getModData = function() return iso.modData end
+	iso.transmitModData = function() end
+	local square = {
+		getX = function() return 10 end,
+		getY = function() return 10 end,
+		getZ = function() return 0 end,
+		getRoom = function() return nil end,
+		getBuilding = function() return nil end,
+		getObjects = function() return javaList({ iso }) end,
+		-- The other two lists a square answers with, and the socket. Empty and
+		-- live: the computer's own tile is the only thing in this cell, so /dev on
+		-- this machine is the door-and-light-less room it really is.
+		getWorldObjects = function() return javaList({}) end,
+		getMovingObjects = function() return javaList({}) end,
+		haveElectricity = function() return true end,
+		hasGridPower = function() return false end,
+	}
+	iso.getSquare = function() return kit.loaded and square or nil end
+	kit.iso = iso
+	-- The stubs off: the real syncSprite, with a real iso object to put a sprite
+	-- on and a real square under it.
+	bench.object.syncSprite = nil
+	bench.object.getIsoObject = function() return kit.loaded and iso or nil end
+	bench.object.getSquare = function() return kit.loaded and square or nil end
+	-- And the cell the CLIENT looks the computer up in, which is a different
+	-- question from the machine's own square: the reopen is handed coordinates and
+	-- has to find the tile itself, because a Java handle does not travel.
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		if not kit.loaded then return nil end
+		if x == 10 and y == 10 and z == 0 then return square end
+		return nil
+	end }
+	return kit
+end
+
+-- The dark interval, counted the way the server counts it: the scheduler's own
+-- pass on the wall clock, like a pending `shutdown +N`.
+local function waitOutTheDark(bench)
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(1)
+end
+
 do
 	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	eq("the tile starts lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+
+	bench.enter("reboot")
+	bench.frame()
+
+	-- Off, physically. The sprite is what somebody in the room sees; the client's
+	-- copy of `on` is what the screen's glow is drawn from
+	-- (CCeroSecObject:syncLight), and it is the only server-side proof of a glow
+	-- there is.
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is the unlit sprite", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("the client was told, so the glow is gone", bench.client.on, false)
+	eq("and there is no screen to read", bench.object.console, nil)
+	check("the window shut", bench.window.closing)
+	eq("and it was told this machine is coming back",
+		bench.closed[#bench.closed], "reboot")
+	eq("nobody is watching a dark machine", bench.object.watchers, nil)
+
+	-- And it stays dark. Three seconds of a 1993 desktop, and nothing in them.
+	bench.tick(10)
+	eq("a second in it is still off", bench.object.on, false)
+	eq("with nothing reopened", #bench.windows, 1)
+
+	waitOutTheDark(bench)
+	eq("then it comes back on", bench.object.on, true)
+	eq("the tile is lit again", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("the client was told, so the glow is back", bench.client.on, true)
+	eq("and a window came with it", #bench.windows, 2)
+
+	local back = bench.windows[2]
+	check("a window of its own, on a fresh token", back.token ~= bench.window.token)
+	eq("at the same machine", back.cx, 10)
+	eq("and the character is at the keyboard again", back.typeHeight ~= nil, true)
+	eq("it is watching the BIOS type itself out", back.revealing, true)
+
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	check("the BIOS is on the new glass", bench.paintedOn(back, CeroSec.BOOT_LINES[1]))
+	eq("and it ends at a login prompt", back.prompt, "login: ")
+	eq("with nobody logged in", bench.object.console.user, nil)
+
+	-- And the disk came through it: a reboot is not a repair.
+	bench.enterOn(back, "root")
+	bench.enterOn(back, "")
+	bench.enterOn(back, "ls /bin")
+	bench.frame()
+	check("the machine is the one it was", bench.paintedOn(back, "shutdown"))
+end
+
+-- Two pairs of eyes at the same glass: both windows go, and both come back.
+do
+	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("root")
 	local other = bench.addWindow()
 	other:askForScreen()
@@ -1247,39 +1613,142 @@ do
 
 	bench.enter("reboot")
 	bench.frame()
+	check("the first window shut", bench.window.closing)
+	check("and so did the second", other.closing)
+	eq("both were told the same word", bench.closed[#bench.closed], "reboot")
+	eq("the tile is unlit for both of them", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
 
-	check("the first window stayed open", not bench.window.closing)
-	check("and so did the second", not other.closing)
-	eq("the machine came back on", bench.object.on, true)
-	eq("with a screen of its own", type(bench.object.console), "table")
-	eq("and nobody logged in on it", bench.object.console.user, nil)
+	waitOutTheDark(bench)
+	eq("and two windows came back", #bench.windows, 4)
+	local first, second = bench.windows[3], bench.windows[4]
+	check("each on its own token", first.token ~= second.token)
+	eq("one for each survivor", first.playerNum ~= second.playerNum, true)
+	eq("both replaying the boot", first.revealing and second.revealing, true)
+end
 
-	-- Both of them are watching the BIOS type itself out again, which is the
-	-- one thing that says it really went down and came back.
-	eq("the first window is replaying the boot", bench.window.revealing, true)
-	eq("and so is the second", other.revealing, true)
+-- A second survivor standing at the same desk who never opened a terminal. The
+-- window comes back for the WATCHERS and not for whoever happens to be standing
+-- there: he was not looking at a screen before the reboot and he is not handed one
+-- after it.
+do
+	local bench = newBench()
+	embody(bench)
+	bench.login("root")
+	-- A window of his own, never opened on the machine: the server has never heard
+	-- of him, which is exactly what a bystander is.
+	bench.addWindow()
 
-	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.enter("reboot")
 	bench.frame()
-	check("the BIOS is on the first glass", bench.painted(CeroSec.BOOT_LINES[1]))
-	eq("and it ends at a login prompt", bench.window.prompt, "login: ")
-	eq("for the second window too", other.prompt, "login: ")
-	eq("both are at a prompt", bench.window.mode, "prompt")
-	eq("and so is the other", other.mode, "prompt")
+	waitOutTheDark(bench)
+	eq("the machine came back", bench.object.on, true)
+	eq("one window came back, not two", #bench.windows, 3)
+	eq("and the one that did is the one that was open",
+		bench.windows[3].playerNum, bench.window.playerNum)
+end
 
-	-- And the disk came through it: a reboot is not a repair.
-	bench.enter("root")
-	bench.enter("")
+-- A survivor who walked away from the desk while the screen was dark.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
 	bench.frame()
-	eq("root logs back in", bench.window.mode, "shell")
-	bench.enter("ls /bin")
+	check("his window shut with the machine", bench.window.closing)
+
+	-- Ten squares away by the time it comes up. Nothing opens under him: he walks
+	-- back and uses the computer by hand, like anybody arriving at a lit screen.
+	bench.player.getX = function() return 20.5 end
+
+	waitOutTheDark(bench)
+	eq("the machine came back up", bench.object.on, true)
+	eq("the tile is lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("but no window did", #bench.windows, 1)
+	eq("and nobody is watching it", bench.object.watchers, nil)
+end
+
+-- The power went while the machine was down, which is the one thing a real
+-- machine cannot come back from on its own.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
 	bench.frame()
-	check("the machine is the one it was", bench.painted("shutdown"))
+	bench.object.hasPower = function() return false end
+
+	waitOutTheDark(bench)
+	eq("it stays dark", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("no window came back", #bench.windows, 1)
+	eq("and nothing is pending any more", bench.object.rebooting, nil)
+
+	-- And a hand at the switch is what brings it back, once there is a wire again.
+	bench.object.hasPower = function() return true end
+	bench.object:toggle()
+	eq("switched on by hand", bench.object.on, true)
+	eq("and the tile with it", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+end
+
+-- Switched on by hand while it was dark, and switched off again. The order that
+-- was given was a reboot, but a hand at the case has overtaken it: the machine
+-- stays off, and nothing comes back three seconds later.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
+	bench.frame()
+	bench.object:toggle()
+	eq("switched on by hand", bench.object.on, true)
+	bench.object:toggle()
+	eq("and off again", bench.object.on, false)
+	eq("the dark interval went with it", bench.object.rebooting, nil)
+
+	waitOutTheDark(bench)
+	eq("it stays off", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("and no window came back", #bench.windows, 1)
+end
+
+-- A machine whose chunk went away while it was dark: it comes up, because power
+-- and jobs are the machine's own business, but nothing is opened on a tile the
+-- client cannot see.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
+	bench.frame()
+	kit.loaded = false
+
+	waitOutTheDark(bench)
+	eq("no window on a machine out of the world", #bench.windows, 1)
+	eq("and nobody is watching it", bench.object.watchers, nil)
+end
+
+-- halt is the other order, and it is unchanged: off, and no coming back.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("halt")
+	bench.frame()
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("the window was told it is over, not that it is coming back",
+		bench.closed[#bench.closed], "off")
+	eq("nothing is pending", bench.object.rebooting, nil)
+
+	waitOutTheDark(bench)
+	eq("and it is still off three seconds later", bench.object.on, false)
+	eq("with no window back", #bench.windows, 1)
 end
 
 -- sudo reboot: the same, from an account that is not root.
 do
 	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("admin")
 	bench.enter("sudo reboot")
 	bench.frame()
@@ -1288,21 +1757,20 @@ do
 
 	bench.enter("")
 	bench.frame()
-	eq("and then it goes down and comes back", bench.object.on, true)
+	eq("and then it goes dark", bench.object.on, false)
+	eq("tile and all", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("with the window shut", bench.window.closing)
+
+	waitOutTheDark(bench)
+	eq("and comes back", bench.object.on, true)
 	eq("with nobody logged in", bench.object.console.user, nil)
-	eq("the window stayed and is booting", bench.window.revealing, true)
-	check("and it was not closed", not bench.window.closing)
+	eq("and his window back", #bench.windows, 2)
 end
 
--- A reboot on a machine that lost its power while it was down.
-do
-	local bench = newBench()
-	bench.login("root")
-	bench.object.hasPower = function() return false end
-	bench.enter("reboot")
-	eq("it stays dark", bench.object.on, false)
-	check("and the window is told", bench.window.closing)
-end
+-- The world this section laid out is its own. Every bench above it runs on a game
+-- with no cell at all, and so does every bench below.
+_G.__world = nil
+
 
 -- sudo edit: the buffer is root's, and it saves.
 do
@@ -1605,14 +2073,6 @@ do
 	eq("and two digits do not change the shape", o(-12, 30, 0), "12W 30S")
 	-- The widest a real one gets, and the column dev keeps for it.
 	eq("the widest offset there is", #o(-10, -10, -1), 10)
-end
-
--- An ArrayList as the game hands one over: 0-based get, and a size.
-local function javaList(items)
-	return {
-		size = function() return #items end,
-		get = function(_, i) return items[i + 1] end,
-	}
 end
 
 local FakeWorld = {}
@@ -3387,7 +3847,16 @@ do
 	bench.enter("")
 	bench.frame()
 	check("the machine has no job book left", bench.object.jobs == nil)
-	eq("and no machine is left in the scheduler", #CeroSecJobs.machines, 0)
+	-- The one thing the scheduler still holds it for is the dark interval: a
+	-- machine that is coming back is counted on the same pass a pending shutdown
+	-- is (CeroSecJobs.checkReboot).
+	eq("the machine is in the scheduler for the dark alone", #CeroSecJobs.machines, 1)
+	eq("and that is all it is there for", bench.object.jobs, nil)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(2)
+	eq("it came back running nothing", bench.object.on, true)
+	eq("and the scheduler has let it go", #CeroSecJobs.machines, 0)
 end
 
 --
@@ -3599,6 +4068,7 @@ end
 -- shutdown -r +1: the broadcast, the warning, and the reboot.
 do
 	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("root")
 	local other = bench.addWindow()
 	other:askForScreen()
@@ -3620,16 +4090,25 @@ do
 	bench.tick(5)
 	eq("still up", bench.object.on, true)
 
-	-- And then it goes down and comes back.
+	-- And then it goes down: the timer's reboot is the typed one's reboot, dark
+	-- interval and all.
 	_G.__now = _G.__now + 61000
 	bench.tick(1)
 	-- Said, not painted: the line goes out to every window and the machine wipes
-	-- its console in the same breath, so the glass has already been redrawn by
-	-- the fresh boot before this bench renders.
+	-- its console in the same breath, so there is no glass left to paint it on.
 	check("it says NOW", bench.heard("The system is going down for reboot NOW!"))
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("both windows shut", bench.window.closing and other.closing)
+	eq("and both were told why", bench.closed[#bench.closed], "reboot")
+	eq("nothing is pending any more", bench.object.shutdown, nil)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(1)
 	eq("and the machine came back", bench.object.on, true)
 	eq("with nobody logged in", bench.object.console.user, nil)
-	eq("and nothing pending", bench.object.shutdown, nil)
+	eq("and two windows back at it", #bench.windows, 4)
+	_G.__world = nil
 end
 
 -- shutdown -c, and a warning a minute out on a longer one.
@@ -4220,18 +4699,60 @@ local function fakeZone(z)
 		getHeight = function() return z.h end,
 	}
 end
+-- THE MAP'S BUILDINGS, for the one caller that asks about a building it has no
+-- machine in: the telephone directory, which has to know whether a named zone is
+-- a tenancy INSIDE something (CeroSecNet.directory). A list of
+-- { x, y, w, h } and getBuildingAt answers the first whose box holds the tile,
+-- which is the walk zombie.iso.IsoMetaGrid.getBuildingAt(int, int) does (javap:
+-- it walks `buildings` and compares x, y, getW(), getH()). x2 is EXCLUSIVE, the
+-- way net.buildingAt below says it is.
+_G.__buildings = {}
+local function fakeBuildingDef(b)
+	return {
+		getX = function() return b.x end,
+		getY = function() return b.y end,
+		getX2 = function() return b.x + b.w end,
+		getY2 = function() return b.y + b.h end,
+	}
+end
 _G.getWorld = function()
 	return { getMetaGrid = function()
-		return { getZonesAt = function(_, x, y, _z)
-			local hits = {}
-			for i = 1, #_G.__zones do
-				local z = _G.__zones[i]
-				if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
-					hits[#hits + 1] = fakeZone(z)
+		return {
+			getZonesAt = function(_, x, y, _z)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local z = _G.__zones[i]
+					if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
+						hits[#hits + 1] = fakeZone(z)
+					end
 				end
-			end
-			return javaList(hits)
-		end }
+				return javaList(hits)
+			end,
+			-- getZonesIntersecting(x, y, z, w, h): every zone whose rectangle overlaps
+			-- the one asked for. Zone.intersects(x,y,z,w,h) in the jar is exactly this
+			-- test on the four edges (javap, and z == Integer.MAX_VALUE is its
+			-- any-level case; nothing here has a zone off the ground floor).
+			getZonesIntersecting = function(_, x, y, _z, w, h)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local zone = _G.__zones[i]
+					if x + w > zone.x and x < zone.x + zone.w
+							and y + h > zone.y and y < zone.y + zone.h then
+						hits[#hits + 1] = fakeZone(zone)
+					end
+				end
+				return javaList(hits)
+			end,
+			getBuildingAt = function(_, x, y)
+				for i = 1, #_G.__buildings do
+					local b = _G.__buildings[i]
+					if x >= b.x and x < b.x + b.w and y >= b.y and y < b.y + b.h then
+						return fakeBuildingDef(b)
+					end
+				end
+				return nil
+			end,
+		}
 	end }
 end
 
@@ -4346,6 +4867,9 @@ local function newNet()
 	end
 	local window = newWindow()
 	net.window = window
+	-- The player himself, for the benches that drive a command straight into
+	-- OnClientCommand instead of through a terminal window.
+	net.player = player
 
 	net.said = {}
 	local function record(a)
@@ -5595,6 +6119,34 @@ do
 	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
 end
 
+-- And rebooting it from inside the session closes it the same way. A reboot is
+-- the far machine going down, whatever it does three seconds later: the words the
+-- remote end reads are the words it has always read, and the window that comes
+-- back at the end of a dark interval is a LOCAL one -- there is nobody standing
+-- at the machine on the other end of the wire.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	net.forget()
+	net.enter("sudo reboot")
+	net.enter("")
+	net.tick(4)
+	eq("the far machine is dark", net.gate.on, false)
+	check("and the session said so, in the same words", net.heard("Connection closed."))
+	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
+	eq("no session is left on it", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	net.tick(1)
+	eq("the far machine came back up", net.gate.on, true)
+	eq("with nobody logged in", net.gate.console.user, nil)
+	eq("and nobody watching it", net.gate.watchers, nil)
+end
+
 -- The editor travels: the buffer belongs to the session, so it is the far
 -- machine's file that opens and the far machine's disk that is written.
 do
@@ -6071,6 +6623,183 @@ do
 	house:turnOn()
 	eq("nor is a zone nobody named", telOf(house), alone)
 	_G.__zones = {}
+end
+
+--
+-- THE TELEPHONE DIRECTORY (the phone book wave)
+--
+-- Base.Phonebook is the yellow pages of the region it was found in, and the whole
+-- of what this bench is about is that the BOOK and the LINE cannot disagree: a
+-- computer put in a shop must answer on the number the book printed for that shop,
+-- and the book must hold the shops of ONE exchange and nothing else.
+--
+-- The fake map grows two things for it: getZonesIntersecting, which is how a whole
+-- region is swept, and getBuildingAt, which is how a named zone is told from a
+-- named REGION -- the spawner tags a suburb "StreetPoor" and a farm "Farm" the way
+-- it tags a shop "CoffeeShop", and neither of the first two is a business with a
+-- telephone.
+--
+do
+	local net = newNet()
+	local R = CeroSecOS.PHONE_REGION
+
+	-- A mall in region 0,0 with three shops in it, two of them one chain; a house
+	-- with nothing named on it; a suburb-sized zone that is nobody's tenancy; and a
+	-- zone exactly the mall's own size, which is the mall under another name.
+	local mall = net.buildingAt(200, 300, 60, 40, 30)
+	local house = net.buildingAt(500, 500, 10, 10, 3)
+	-- And a second mall a region away, whose shop must not turn up in this book.
+	local farMall = net.buildingAt(R + 200, 300, 60, 40, 30)
+	-- And a building that straddles the boundary between the two regions, with a
+	-- shop in it whose CORNER is on this side of it.
+	local border = net.buildingAt(R - 24, 600, 100, 60, 30)
+	_G.__buildings = {
+		{ x = 200, y = 300, w = 60, h = 40 },
+		{ x = 500, y = 500, w = 10, h = 10 },
+		{ x = R + 200, y = 300, w = 60, h = 40 },
+		{ x = R - 24, y = 600, w = 100, h = 60 },
+	}
+	_G.__zones = {
+		{ name = "CoffeeShop", x = 210, y = 310, w = 17, h = 11 },
+		{ name = "Bakery", x = 240, y = 310, w = 12, h = 10 },
+		-- The same chain's second shop: one name, its own outline, its own number.
+		{ name = "CoffeeShop", x = 230, y = 320, w = 17, h = 11 },
+		-- A suburb. Its middle (300,300) is on no building at all, so no footprint
+		-- can be bigger than it and it is not a tenancy.
+		{ name = "StreetPoor", x = 100, y = 100, w = 400, h = 400 },
+		-- The mall by another name: exactly its footprint, which loses on the same
+		-- strictly-smaller test premisesOf runs.
+		{ name = "Mall", x = 200, y = 300, w = 60, h = 40 },
+		-- A zone of the wrong type, and one nobody named.
+		{ name = "Nav", type = "Nav", x = 205, y = 305, w = 6, h = 6 },
+		{ name = "", x = 206, y = 306, w = 6, h = 6 },
+		-- Another region's shop, on another exchange.
+		{ name = "Pharmacist", x = R + 210, y = 310, w = 17, h = 11 },
+		-- A shop that reaches OVER the boundary. It is listed once, in the book of
+		-- the region its corner is in -- which is the region its number belongs to,
+		-- because the corner is what the exchange is derived from. A sweep of the
+		-- next region finds it intersecting and must not print it.
+		{ name = "BorderShop", x = R - 10, y = 610, w = 20, h = 10 },
+	}
+
+	-- Ask the server the way the client asks it: one command, no square, and the
+	-- answer goes to the player who asked.
+	local function ask(rx, ry)
+		local got = nil
+		net.system.reply = function(_, who, cmd, args)
+			if cmd == "listings" then got = args; got.who = who end
+		end
+		net.system:OnClientCommand("phonebook", net.player,
+			{ rx = rx, ry = ry, token = "look" })
+		return got
+	end
+
+	local book = ask(0, 0)
+	check("the server answers a look-up", book ~= nil)
+	eq("to the survivor who asked and nobody else", book.who, net.player)
+	eq("carrying the token back", book.token, "look")
+	eq("for the region asked for", book.rx .. "," .. book.ry, "0,0")
+	eq("under the exchange of that region", book.exchange,
+		CeroSecOS.phoneExchange(0, 0))
+	check("and nothing was cut", book.capped == false)
+
+	local names = {}
+	local byNumber = {}
+	for i = 1, #book.entries do
+		names[#names + 1] = book.entries[i].name
+		byNumber[book.entries[i].number] = book.entries[i].name
+	end
+	table.sort(names)
+	eq("four business listings and no more", #book.entries, 4)
+	eq("the shops of the mall, camel case taken out",
+		table.concat(names, "|"), "Bakery|Border Shop|Coffee Shop|Coffee Shop")
+
+	-- A CHAIN is two listings with one name and two numbers, each on its own line.
+	local chain = {}
+	for i = 1, #book.entries do
+		if book.entries[i].name == "Coffee Shop" then chain[#chain + 1] = book.entries[i].number end
+	end
+	eq("the chain is listed twice", #chain, 2)
+	check("on two different numbers", chain[1] ~= chain[2])
+
+	-- WHAT IS NOT IN IT. The suburb, the mall under its own name, the wrong type,
+	-- the unnamed zone -- and the HOUSE, which has a line and no name to print.
+	for _, absent in ipairs({ "Street Poor", "Mall", "Nav", "Pharmacist" }) do
+		check(absent .. " is not a business listing",
+			string.find("|" .. table.concat(names, "|") .. "|",
+				"|" .. absent .. "|", 1, true) == nil)
+	end
+
+	-- THE BOOK AND THE LINE. A computer in the coffee shop the map drew at 210,310
+	-- must read the book's own number off its BIOS. This is the assertion the whole
+	-- wave rests on: derive the number any other way and it goes red.
+	local shop = net.machine(212, 312, 0, mall)
+	shop:turnOn()
+	local tel = telOf(shop)
+	check("a machine in the coffee shop has a line", tel ~= nil)
+	eq("and the book printed that very number for Coffee Shop", byNumber[tel], "Coffee Shop")
+	eq("which is the premises the record names", CeroSecOS.premisesName(shop:osState()),
+		"CoffeeShop")
+	eq("on the book's own exchange", tonumber(string.sub(tel, 1, 3)), book.exchange)
+
+	-- A RESIDENCE is not listed, and it is not listed because it has no name and
+	-- not because it has no line: the house answers on one.
+	local home = net.machine(505, 505, 0, house)
+	home:turnOn()
+	local homeTel = telOf(home)
+	check("the house has a line of its own", homeTel ~= nil)
+	eq("and no listing anywhere in the book", byNumber[homeTel], nil)
+
+	-- ANOTHER REGION IS ANOTHER BOOK. The pharmacy is in region 1,0 and the two
+	-- books share nothing -- not a listing and not an exchange.
+	local far = ask(1, 0)
+	eq("the next region's book has its own listing and only its own", #far.entries, 1)
+	eq("which is the pharmacy and not the shop over the line",
+		far.entries[1].name, "Pharmacist")
+	check("on another exchange", far.exchange ~= book.exchange)
+	local pharmacy = net.machine(R + 212, 312, 0, farMall)
+	pharmacy:turnOn()
+	eq("and the machine in it answers on the number that book printed",
+		far.entries[1].number, telOf(pharmacy))
+
+	-- And the machine in the shop over the line is on the number THIS book printed,
+	-- which is the corner rule read off the BIOS.
+	local straddler = net.machine(R - 5, 615, 0, border)
+	straddler:turnOn()
+	eq("the shop over the line answers on the number its own book printed",
+		byNumber[telOf(straddler)], "Border Shop")
+
+	-- A region with nothing in it is an empty book and not a broken one.
+	local empty = ask(7, 7)
+	eq("a region with no premises in it lists nothing", #empty.entries, 0)
+	check("and says so without being cut", empty.capped == false)
+
+	-- THE CAP. A region with more premises than a book holds is cut, and the answer
+	-- SAYS it was cut rather than looking like a smaller county.
+	local many = {}
+	-- Laid out in rows INSIDE the region, because a zone whose corner falls past the
+	-- region's far edge is in the next region's book by the corner rule above -- and
+	-- a row of 405 zones three tiles apart would have run out of region long before
+	-- it ran out of shops.
+	_G.__buildings = { { x = 2 * R, y = 0, w = R, h = R } }
+	for i = 1, CeroSecPhonebook.MAX_ENTRIES + 5 do
+		many[i] = { name = "Shop" .. i,
+			x = 2 * R + math.fmod(i, 30) * 3, y = math.floor(i / 30) * 3,
+			w = 2, h = 2 }
+	end
+	_G.__zones = many
+	local full = ask(2, 0)
+	eq("the book holds its cap and not one more", #full.entries,
+		CeroSecPhonebook.MAX_ENTRIES)
+	check("and the answer says it was cut", full.capped == true)
+	-- Which is what the last line of the last leaf prints.
+	local volume = CeroSecPhonebook.volume(full.exchange, full.entries, full.capped)
+	local last = volume.chapters[1].pages[#volume.chapters[1].pages]
+	check("the printed book says so on its last line",
+		string.find(last, "This directory is full", 1, true) ~= nil)
+
+	_G.__zones = {}
+	_G.__buildings = {}
 end
 
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
@@ -7467,15 +8196,30 @@ local function newInventory()
 	local inv = { items = {}, nextID = 100 }
 	function inv:add(fullType, data)
 		self.nextID = self.nextID + 1
+		-- The NAME is modelled the way the engine really holds it: one field, which
+		-- getName and getDisplayName both just read (javap -c
+		-- zombie.inventory.InventoryItem -- getDisplayName is a single getfield on
+		-- `name`), starting at the item's ordinary name and replaced wholesale by
+		-- setName. So a disk with no label is a disk whose name is the generic one and
+		-- NOT a disk with no name -- which is exactly the case that would let a bench
+		-- pass while the server read the generic name as a label.
 		local item = {
 			id = self.nextID,
 			type = fullType,
 			data = data or {},
+			name = "3.5 inch Floppy Disk",
+			customName = false,
+			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
 			hasModData = function(self) return true end,
 			getModData = function(self) return self.data end,
 			getContainer = function(self) return inv end,
+			getName = function(self) return self.name end,
+			setName = function(self, s) self.name = s end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, b) self.customName = b end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -7650,6 +8394,127 @@ do
 	check("the note is readable on the other machine",
 		other.painted("the pumps are at the depot"))
 	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	--
+	-- The sticker, through the slot and back out
+	--
+	-- The label is written on the ITEM (its custom name) and read at the slot; the
+	-- machine keeps it on the disk record and prints it on `mount` and `df`; the
+	-- eject puts it back on the shell.
+	--
+	-- Which has to be ASSERTED and not assumed, because the item does not survive the
+	-- round trip: an insert removes it and an eject makes a NEW one with AddItem, so
+	-- a label that was not deliberately carried across would be gone.
+	--
+	local labelled = otherInv:add("CeroSec.FloppyGreen")
+	labelled:setName("PAYROLL 93")
+	labelled:setCustomName(true)
+
+	-- The other machine's drive still has the red disk in it; out it comes first.
+	other.send("ejectfloppy")
+	eq("the drive is free", other.object:hasDisk(), false)
+
+	other.send("insertfloppy", { item = labelled:getID() })
+	eq("the labelled disk went in", other.object:hasDisk(), true)
+	eq("and the machine wrote the sticker on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- And the two commands a survivor asks "which disk is this" with say so.
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("mount names the disk by what is written on it",
+		other.painted("/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)"))
+	other.enter("df")
+	other.frame()
+	check("and df wears it too", other.painted("(PAYROLL 93)"))
+
+	-- Out again: a NEW item, and the handwriting is on it.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local back = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyGreen" then
+			back = otherInv.items[i]
+		end
+	end
+	check("the green disk is back", back ~= nil)
+	check("and it really is a new item, not the one that went in", back ~= labelled)
+	eq("wearing the label", back:getName(), "PAYROLL 93")
+	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
+
+	-- Back in, and the label is still the label: it lives on the disk and survives
+	-- as many trips through the slot as the survivor makes.
+	other.send("insertfloppy", { item = back:getID() })
+	eq("the label survived the round trip",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- A disk with NO label: no sticker on the record, and no empty brackets on the
+	-- two lines. The generic item name is not a label, and reading it as one would
+	-- put "3.5 inch Floppy Disk" in the mount listing of every machine in Kentucky.
+	other.send("ejectfloppy")
+	local plain = otherInv:add("CeroSec.FloppyBlue")
+	eq("its name is the ordinary one", plain:getName(), "3.5 inch Floppy Disk")
+	eq("and it is not a custom name", plain:isCustomName(), false)
+	other.send("insertfloppy", { item = plain:getID() })
+	eq("an unlabelled disk carries no sticker",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("and mount prints the bare line",
+		other.painted("/dev/fd0 on /mnt type ufs (rw)"))
+	check("with the generic name nowhere near it",
+		not other.painted("3.5 inch Floppy Disk"))
+
+	-- Erased: a name the survivor took the flag off. The slot CLEARS the record
+	-- rather than leaving the last label on it, or a disk somebody erased would come
+	-- out of the drive still labelled.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local erased = otherInv:add("CeroSec.FloppyRed")
+	erased:setName("OLD")
+	erased:setCustomName(true)
+	other.send("insertfloppy", { item = erased:getID() })
+	eq("labelled first", CeroSecOS.floppyOf(other.object:osState()).label, "OLD")
+	other.send("ejectfloppy")
+	local again = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyRed" then
+			again = otherInv.items[i]
+		end
+	end
+	again:setCustomName(false)
+	other.send("insertfloppy", { item = again:getID() })
+	eq("and the erase reaches the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+
+	-- A label a CLIENT could never have typed. The slot holds what arrives to
+	-- CeroSecOS.labelOk, which is tighter than the gate: the two commands that print
+	-- it are lines on a screen, and a forged name with a newline in it would put a
+	-- second line in the mount listing.
+	other.send("ejectfloppy")
+	local forged = otherInv:add("CeroSec.FloppyYellow")
+	forged:setName("two\nlines")
+	forged:setCustomName(true)
+	other.send("insertfloppy", { item = forged:getID() })
+	eq("a forged label is not written on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	eq("and the disk went in all the same", other.object:hasDisk(), true)
+	other.send("ejectfloppy")
+	local over = otherInv:add("CeroSec.FloppyYellow")
+	over:setName(string.rep("L", CeroSecOS.LABEL_MAX + 1))
+	over:setCustomName(true)
+	other.send("insertfloppy", { item = over:getID() })
+	eq("nor is one over the ceiling",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.send("ejectfloppy")
 
 	-- And the first machine has nothing left of it.
 	eq("the first machine's drive is empty", bench.object:hasDisk(), false)
@@ -7955,7 +8820,11 @@ do
 		-- The tile's own object, which is what a chunk brings back with it. Its
 		-- sprite starts OFF because that is what is on the tile before anybody has
 		-- switched the machine on.
-		local iso = { sprite = CeroSec.SPRITES_OFF["S"], modData = {} }
+		-- Named, because it is on a square the device scan walks now, and a plain
+		-- IsoObject is not a light switch, a door or a window: the classifier asks
+		-- instanceof about each object it finds (SCeroSecDevices.classify) and the
+		-- fake that answers "yes" to everything would fit a relay to a computer.
+		local iso = { __class = "IsoObject", sprite = CeroSec.SPRITES_OFF["S"], modData = {} }
 		iso.getSpriteName = function() return iso.sprite end
 		iso.setSpriteFromName = function(_, name)
 			iso.sprite = name
@@ -7967,18 +8836,54 @@ do
 		iso.transmitModData = function() end
 		iso.getSquare = function() return chunk.loaded and here or nil end
 		chunk.iso = iso
+		-- On its tile, which is the only place the CLIENT can find it: the client
+		-- has no GlobalObject of its own to read a sprite off, it walks the square's
+		-- objects (CGlobalObjectSystem:getIsoObjectOnSquare).
+		here.objects[#here.objects + 1] = iso
 
 		-- The cell, which is a different question from the machine's own square:
 		-- /dev and the sensor scan are discovered through getCell
 		-- (CeroSecDevices.find), so a chunk that is away has to be away from that
 		-- too. Nothing else in the county is in this cell, which is all the two
 		-- benches that read /dev need.
-		_G.__world = { getGridSquare = function(_, gx, gy, gz)
+		local cell = { getGridSquare = function(_, gx, gy, gz)
 			if not chunk.loaded or gz ~= 0 then return nil end
 			if gx == x and gy == y then return here end
 			if gx == x + 1 and gy == y then return beside end
 			return nil
 		end }
+
+		-- And the cell's lampposts, which is what the glow IS. addLamppost pushes an
+		-- IsoLightSource onto IsoCell.lamppostPositions and hands it back;
+		-- removeLamppost takes one off. strays counts a removal aimed at a source the
+		-- stack has not got: the game would shrug that off (removeLamppost only sets
+		-- the source's life to 0), so it is counted here rather than thrown, and
+		-- asserted at zero -- a mod that keeps aiming at lights the engine already
+		-- took is a mod that thinks it has one.
+		chunk.lampposts = {}
+		chunk.strays = 0
+		cell.getLightSourceAt = function(_, gx, gy, gz)
+			for i = 1, #chunk.lampposts do
+				local light = chunk.lampposts[i]
+				if light.x == gx and light.y == gy and light.z == gz then return light end
+			end
+			return nil
+		end
+		cell.addLamppost = function(_, gx, gy, gz, r, g, b, radius)
+			local light = { x = gx, y = gy, z = gz, r = r, g = g, b = b, radius = radius }
+			chunk.lampposts[#chunk.lampposts + 1] = light
+			return light
+		end
+		cell.removeLamppost = function(_, light)
+			for i = 1, #chunk.lampposts do
+				if chunk.lampposts[i] == light then
+					table.remove(chunk.lampposts, i)
+					return
+				end
+			end
+			chunk.strays = chunk.strays + 1
+		end
+		_G.__world = cell
 
 		-- The client's end of a chunk coming back: stateToIsoObject announces the
 		-- object, which is what puts the screen's glow back on
@@ -8013,6 +8918,15 @@ do
 		-- LoadComputer -> loadIsoObject (the foot of SCeroSecSystem.lua).
 		function chunk.away()
 			chunk.loaded = false
+			-- What the engine does when the window of loaded chunks moves off a
+			-- square, and does without a word to anybody: LightingJNI.checkLights
+			-- walks IsoCell.getLamppostPositions() every pass and removes any source
+			-- whose isInBounds() is false -- "inside some player's IsoChunkMap world
+			-- tiles" -- or whose recorded chunk is not the chunk now covering its
+			-- square (javap -c LightingJNI.checkLights, offsets 78-123, and
+			-- IsoLightSource.isInBounds). The mod keeps its handle and loses the
+			-- light, which is the whole bug this section is about.
+			chunk.lampposts = {}
 		end
 		function chunk.back(powered)
 			chunk.powered = powered ~= false
@@ -8313,6 +9227,142 @@ do
 			net.glass("admin@" .. net.host(old)))
 		net.enter("exit")
 		net.tick(3)
+	end
+
+	-- 42b. THE GLOW THAT DID NOT COME BACK
+	--
+	-- "When I teleport very far and come back, the computer light is not there even
+	-- though the computer is on." The sprite was right and the glow was gone, and it
+	-- never came back -- not on the next chunk load, not ever.
+	--
+	-- Two faults, one behind the other, and both are about who OWNS the light.
+	--
+	-- The engine takes it. LightingJNI.checkLights walks
+	-- IsoCell.getLamppostPositions() and removes any source whose isInBounds() is
+	-- false -- "inside some player's IsoChunkMap world tiles" -- or whose recorded
+	-- chunk is not the chunk now covering its square (javap -c on 42.20.4:
+	-- checkLights offsets 78-123, IsoLightSource.isInBounds). Nothing is said to
+	-- anybody. The mod kept the handle addLamppost had given it and read "I have a
+	-- handle" as "there is a light", so addLight did nothing for ever after.
+	--
+	-- And nothing asked. The announce is the only call the client gets when a chunk
+	-- comes back (the server's stateToIsoObject ends in newLuaObjectOnClient), and
+	-- Java's receiveNewLuaObjectAt calls the Lua newLuaObjectAt and no other method:
+	-- OnLuaObjectUpdated is named only inside receiveUpdateLuaObjectAt (javap -c
+	-- CGlobalObjectSystem). A minute sweep used to paper over it, and could not: the
+	-- sweep called the same syncLight that believed the same handle.
+	--
+	-- So the whole client half runs here for real -- CCeroSecObject and
+	-- CCeroSecSystem, not the stub the window benches send commands through -- with
+	-- Java's two receive methods written out in the order Java does them.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		local client = CClientSystem:new()
+
+		-- The synced keys, and only those: the server writes the ones it has and the
+		-- client rawsets the ones it receives (TableNetworkUtils.saveSome and the copy
+		-- loop in both receive methods).
+		local function sync(mirror, source)
+			local keys = net.system.system.syncKeys
+			for i = 1, #keys do
+				local value = source[keys[i]]
+				if value ~= nil then mirror[keys[i]] = value end
+			end
+		end
+		-- receiveNewLuaObjectAt: newLuaObjectAt FIRST, the copy after it. The order is
+		-- the point -- a client that read its own `on` inside newLuaObjectAt would be
+		-- reading the state from before the packet, which is why the glow is decided
+		-- off the sprite the chunk brought with it.
+		local function announce(source)
+			local mirror = client:newLuaObjectAt(source.x, source.y, source.z)
+			sync(mirror, source)
+			return mirror
+		end
+		net.system.newLuaObjectOnClient = function(_, o)
+			if o == far then chunk.told = chunk.told + 1 end
+			announce(o)
+		end
+		-- receiveUpdateLuaObjectAt: the copy first, OnLuaObjectUpdated after.
+		far.updateOnClient = function(self)
+			local mirror = client:getLuaObjectAt(self.x, self.y, self.z)
+			if not mirror then return end
+			sync(mirror, self)
+			client:OnLuaObjectUpdated(mirror)
+		end
+
+		local function glows() return #chunk.lampposts end
+
+		eq("the machine is on", far.on, true)
+		eq("and nothing is lit before the client has been told of it", glows(), 0)
+
+		-- The chunk arrives, which is the announce (MapObjects.OnLoadWithSprite ->
+		-- loadIsoObject -> stateToIsoObject).
+		chunk.back(true)
+		local mirror = client:getLuaObjectAt(20, 10, 0)
+		eq("the chunk arrives and the screen glows", glows(), 1)
+		eq("on the machine's own square", chunk.lampposts[1].x, 20)
+		eq("one square wide", chunk.lampposts[1].radius, CeroSec.LIGHT_RADIUS)
+		eq("and bluish-white, so it reads as a monitor", chunk.lampposts[1].b, CeroSec.LIGHT_B)
+
+		-- Ten miles away. The engine drops the light and says nothing.
+		chunk.away()
+		eq("the survivor leaves the county and the light goes with the chunk", glows(), 0)
+		check("while the client is still holding the handle it was given",
+			mirror.light ~= nil)
+
+		-- He comes home. THIS is the report.
+		chunk.back(true)
+		eq("he comes home to a lit screen and the glow is back", glows(), 1)
+
+		-- And the same square is announced more than once per visit, which is the
+		-- repeat newLuaObjectAt exists to tolerate.
+		net.system:loadIsoObject(chunk.iso)
+		net.system:loadIsoObject(chunk.iso)
+		eq("announced three times over, and there is exactly one light", glows(), 1)
+		eq("and nothing was ever aimed at a light the engine had already taken",
+			chunk.strays, 0)
+
+		-- Switched off while nobody could see it: there was no tile to put the dark
+		-- sprite on, and there is no light to come back to.
+		chunk.away()
+		net.forget()
+		far:turnOff()
+		eq("the crontab -- or the wire -- switched it off out of view", far.on, false)
+		chunk.back(true)
+		eq("the dark sprite is on the tile", chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
+		eq("and a dark machine comes home with no glow", glows(), 0)
+		eq("with nothing aimed at a light either", chunk.strays, 0)
+
+		-- Switched on with the chunk in, which is the other receive method.
+		far:turnOn()
+		eq("it goes back on", far.on, true)
+		eq("and the update lights it where it stands", glows(), 1)
+
+		-- Picked up. The client drops the glow the moment the object leaves its
+		-- square -- Events.OnObjectAboutToBeRemoved, which is the earlier of the two
+		-- ways it hears -- and the server's removal packet lands on
+		-- removeLuaObjectAt right after. Both go through removeLight.
+		local stub = CCeroSecSystem
+		CCeroSecSystem = CClientSystem
+		CCeroSecSystem.instance = client
+		OnObjectAboutToBeRemoved.trigger(chunk.iso)
+		CCeroSecSystem.instance = nil
+		CCeroSecSystem = stub
+		eq("picking the computer up takes its glow with it", glows(), 0)
+		client:removeLuaObjectAt(20, 10, 0)
+		eq("the client has no machine on that square any more",
+			client:getLuaObjectAt(20, 10, 0), nil)
+		eq("and the removal packet found nothing left to take", chunk.strays, 0)
+
+		-- Put down again, lit. A machine the client has never heard of arrives by the
+		-- same announce -- a placement and the first chunk of a session are one path
+		-- -- so the glow comes with the state.
+		local placed = announce(far)
+		eq("the computer put back down is lit again", glows(), 1)
+		eq("and the client knows it is on", placed.on, true)
+		check("on a mirror that is not the one that was taken away", placed ~= mirror)
 	end
 
 	_G.__world = nil
@@ -9308,6 +10358,487 @@ do
 	CeroSec.logRing = {}
 end
 
+--
+-- Standing at the keyboard
+--
+-- The screenshot: a player using a computer with no chair stood in the MIDDLE of
+-- the front square, a visible step short of the desk, typing at the air. Where
+-- he is walked to is the whole of the fix, so these benches run the REAL reach
+-- module -- not the stub the rest of this file uses -- against a world built by
+-- hand, and read the coordinates out of the walk it queues.
+--
+
+do
+	local stub = CeroSecReach
+
+	-- The world. Squares by coordinate, each with the objects a bench puts on it.
+	local squares = {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	local function square(x, y, z, objects)
+		local sq = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getObjects = function() return javaList(objects or {}) end,
+			canReachTo = function() return true end,
+		}
+		squares[key(x, y, z)] = sq
+		return sq
+	end
+	_G.__world = { getGridSquare = function(_, x, y, z) return squares[key(x, y, z)] end }
+	-- The two vanilla calls canStandInFront leans on, both answering yes: what
+	-- these benches are about is the POINT, and a blocked square is its own bench
+	-- in the rung 2 manual.
+	_G.AdjacentFreeTileFinder = { privTrySquare = function() return true end }
+	_G.IsoFlagType = { bed = "bed" }
+	-- The seat point, as the game hands it over: a Vector3f the call fills in.
+	-- __seat is where this fake world puts it; nil is the game refusing the place.
+	_G.__seat = nil
+	_G.Vector3f = { new = function()
+		local v = { vx = 0, vy = 0, vz = 0 }
+		v.x = function(s) return s.vx end
+		v.y = function(s) return s.vy end
+		v.z = function(s) return s.vz end
+		return v
+	end }
+	_G.SeatingManager = { getInstance = function() return {
+		getTilePositionCount = function() return 1 end,
+		getFacingDirection = function(_, object) return object.__facing end,
+		getAdjacentPosition = function(_, _, _, _, _, _, _, position)
+			if _G.__seat == nil then return false end
+			position.vx, position.vy, position.vz = _G.__seat[1], _G.__seat[2], _G.__seat[3]
+			return true
+		end,
+	} end }
+
+	local path = "42/media/lua/client/CeroSec/CeroSecReach.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+
+	-- A computer at 10,10 facing the given way, and its front square. The chair,
+	-- when a bench wants one, stands on the front square and looks back at the
+	-- screen (CeroSec.chairFacingFor).
+	local function world(facing, withChair)
+		squares = {}
+		local chair = nil
+		local dx, dy = CeroSec.frontOffset(facing)
+		local computer = {
+			getSpriteName = function() return CeroSec.SPRITES_ON[facing] end,
+		}
+		local front
+		if withChair then
+			chair = {
+				__facing = CeroSec.chairFacingFor(facing),
+				getSprite = function() return { getProperties = function() return {
+					has = function(_, name) return name == IsoFlagType.bed end,
+				} end } end,
+			}
+			front = square(10 + dx, 10 + dy, 0, { chair })
+			chair.getSquare = function() return front end
+		else
+			front = square(10 + dx, 10 + dy, 0, {})
+		end
+		local home = square(10, 10, 0, { computer })
+		computer.getSquare = function() return home end
+		return computer, front, chair
+	end
+
+	-- A player at a float position, standing.
+	local function stander(x, y)
+		return {
+			getX = function() return x end,
+			getY = function() return y end,
+			getCurrentSquare = function() return squares[key(math.floor(x), math.floor(y), 0)] end,
+			isSittingOnFurniture = function() return false end,
+			getSitOnFurnitureObject = function() return nil end,
+		}
+	end
+
+	local function walkGoal()
+		for i = #_G.__queued, 1, -1 do
+			local action = _G.__queued[i]
+			if action.goal then return action.goal[2], action.goal[3], action.goal[4] end
+		end
+		return nil
+	end
+
+	-- The stand point of each facing, through the module rather than through the
+	-- arithmetic: the square it reads is the FRONT square, and the axis it shifts
+	-- on is the facing's.
+	local WANT = {
+		S = { 10.5, 11.2 },
+		N = { 10.5, 9.8 },
+		E = { 11.2, 10.5 },
+		W = { 9.8, 10.5 },
+	}
+	for _, facing in ipairs(CeroSec.FACINGS) do
+		local computer = world(facing, false)
+		local x, y, z = CeroSecReach.standPoint(computer)
+		eq("stand point x, facing " .. facing, x, WANT[facing][1])
+		eq("stand point y, facing " .. facing, y, WANT[facing][2])
+		eq("stand point z, facing " .. facing, z, 0)
+	end
+
+	-- No square under the computer, no stand point -- and no error.
+	do
+		local computer = world("S", false)
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		eq("no square, no stand point", CeroSecReach.standPoint(computer), nil)
+		computer.getSquare = function() return home end
+	end
+
+	-- The walk, standing: a player across the room is aimed at the stand point
+	-- and not at the middle of the square.
+	do
+		local computer, front = world("S", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		local arrived = false
+		check("walkToFront runs", CeroSecReach.walkToFront(player, computer,
+			function() arrived = true end, true))
+		check("and the follow-up is queued", arrived)
+		local x, y, z = walkGoal()
+		eq("standing: walked to the stand point x", x, 10.5)
+		eq("standing: walked to the stand point y", y, 11.2)
+		eq("standing: same level", z, front:getZ())
+		check("standing: not the middle of the square", y ~= 11.5)
+	end
+
+	-- The walk, standing, from INSIDE the front square and at its middle -- the
+	-- player the screenshot shows. The walk is still queued: a tenth of a tile is
+	-- a walk, and skipping it is what left him short of the desk.
+	do
+		local computer = world("S", false)
+		local player = stander(10.5, 11.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		check("already on the square: still a walk", x ~= nil)
+		eq("already on the square: to the stand point x", x, 10.5)
+		eq("already on the square: to the stand point y", y, 11.2)
+	end
+
+	-- With a chair there, nothing changes: the seat point is the game's answer and
+	-- the sit places the character itself.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("a chair: walked to the seat point x", x, 10.42)
+		eq("a chair: walked to the seat point y", y, 11.61)
+	end
+
+	-- A seat point the game refuses, or one outside the front square, falls back
+	-- to the stand point -- never to a point on somebody else's tile.
+	do
+		local computer = world("S", true)
+		_G.__seat = nil
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("no seat point: the stand point x", x, 10.5)
+		eq("no seat point: the stand point y", y, 11.2)
+
+		_G.__seat = { 10.5, 12.5, 0 }
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		x, y = walkGoal()
+		eq("a seat point off the square: the stand point x", x, 10.5)
+		eq("a seat point off the square: the stand point y", y, 11.2)
+	end
+
+	-- The toggle asks for no seat, so a chair standing there is not aimed at: the
+	-- switch is thrown from the stand point.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end)
+		local x, y = walkGoal()
+		eq("the toggle walks to the stand point x", x, 10.5)
+		eq("the toggle walks to the stand point y", y, 11.2)
+	end
+
+	-- East and west shift on x and not on y. This is the mutation guard: a module
+	-- that shifted the wrong axis gives 10.5, 10.2 here and 10.5 is the x of it.
+	do
+		local computer = world("E", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("E: the shift is on x", x, 11.2)
+		eq("E: y is the middle", y, 10.5)
+	end
+
+	-- Already at the keyboard, asked as the window asks it.
+	do
+		local computer = world("S", false)
+		check("at the stand point", CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		check("a hair off it is still at it",
+			CeroSecReach.atStandPoint(stander(10.53, 11.17), computer))
+		check("the middle of the square is not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.5), computer))
+		check("no player, not at it", not CeroSecReach.atStandPoint(nil, computer))
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		check("no stand point, not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		computer.getSquare = function() return home end
+	end
+
+	_G.__world = nil
+	_G.__seat = nil
+	CeroSecReach = stub
+end
+
+--
+-- Drifting off the keyboard
+--
+-- Getting the keyboard back is also getting the character back to it. With no
+-- chair to sit on that means the stand point, and only when he has really left
+-- it: a click that changed nothing must queue nothing, or every press on the
+-- window would cancel the typing action and start another.
+--
+
+do
+	local bench = newBench()
+	bench.frame()
+	-- The character is at the keyboard, which is what the use action leaves behind
+	-- (ISCeroSecUseAction -> CeroSecTerminal.sitDown -> startTyping), and the box
+	-- has the keys.
+	bench.window:startTyping("mid")
+	bench.window:setEntryActive(true)
+
+	-- Standing where he belongs: a click hands the keyboard back and nothing else.
+	_G.__queued = {}
+	CeroSecReach.__drifted = false
+	bench.window:onMouseDown(0, 0)
+	bench.window:updateSettle()
+	local walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("at the keyboard: no walk queued", walks, 0)
+	eq("and the typing action is untouched", bench.window.wantStand, nil)
+
+	-- Shoved half a tile off it: the same click walks him back, and the typing
+	-- action goes in behind the walk.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("drifted: the window owes him a step", bench.window.wantStand, true)
+	eq("and the typing action was let go of", bench.window.typeAction, nil)
+
+	_G.__queued = {}
+	bench.window:updateSettle()
+	eq("the debt is paid once", bench.window.wantStand, nil)
+	local walk, typed = nil, nil
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walk = _G.__queued[i] end
+		if _G.__queued[i].__what == "type" then typed = i end
+	end
+	check("a walk was queued", walk ~= nil)
+	local sx, sy = CeroSec.standPoint(9, 10, "S")
+	eq("aimed at the stand point x", walk.goal[2], sx)
+	eq("aimed at the stand point y", walk.goal[3], sy)
+	check("and the typing action behind it", typed ~= nil and typed > 1)
+
+	-- A second click while the step is still owed queues nothing more.
+	bench.window:onMouseDown(0, 0)
+	bench.window:onMouseDown(0, 0)
+	eq("one debt, not three", bench.window.wantStand, true)
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("and one walk", walks, 1)
+
+	-- Back at the keyboard by the time the queue is free: nothing is walked.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	CeroSecReach.__drifted = false
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("arrived on his own: no walk", walks, 0)
+
+	-- Closing the window drops the debt with everything else.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("owed again", bench.window.wantStand, true)
+	bench.window:close()
+	eq("closed: nothing owed", bench.window.wantStand, nil)
+	CeroSecReach.__drifted = false
+end
+
+
+--
+-- 52. What the window may do, and why it may not (the debug rework)
+--
+-- The window greys a button and prints a reason, and neither answer is its own:
+-- both are built here, by the same readings the act itself goes through. The defect
+-- this block exists for: "Turn on" was offered on a machine whose chunk was away,
+-- the press went out on the wire, turnOn refused for want of a square to ask about
+-- the wire, and NOTHING came back -- a button that could not work looked exactly
+-- like a button that had.
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- The machine in the shed is on and its chunk is away, which is the state
+	-- Mathieu's row was in but the other way round: switch it off first.
+	local away = net.far
+	eq("the far machine has no chunk", away:isLoaded(), false)
+	eq("switching it off works even so", away:turnOff(), true)
+
+	local why = CeroSecDebug.turnOnRefusal(away)
+	check("a machine whose chunk is away cannot be switched on", why ~= nil)
+	check("and the reason names the chunk and not the wiring",
+		string.find(why, "chunk is away", 1, true) ~= nil)
+	check("and it says what to do about it",
+		string.find(why, "teleport", 1, true) ~= nil)
+	eq("turning it OFF is refused because it is already off",
+		CeroSecDebug.turnOffRefusal(away), "it is already off")
+
+	-- The same machine with its chunk in and a wire: no refusal at all. The chunk
+	-- coming in is an IsoObject with modData on it, because switching a machine on
+	-- mirrors its state into the tile (SCeroSecObject:toModData).
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	eq("with the chunk in and a wire there is nothing to refuse",
+		CeroSecDebug.turnOnRefusal(away), nil)
+	-- And with the chunk in and no wire, the OTHER sentence -- which is the
+	-- distinction a sweep once got wrong.
+	away.hasPower = function() return false end
+	eq("a loaded machine with no wire says the wire",
+		CeroSecDebug.turnOnRefusal(away), "there is no wire at its square")
+	away.hasPower = function() return true end
+	eq("and it really does come on", away:turnOn(), true)
+	eq("after which it cannot come on again", CeroSecDebug.turnOnRefusal(away),
+		"it is already on")
+	eq("and turning it off is what is left", CeroSecDebug.turnOffRefusal(away), nil)
+
+	-- Nothing selected is a refusal too, and never an error.
+	check("nothing selected cannot be switched on",
+		CeroSecDebug.turnOnRefusal(nil) ~= nil)
+
+	-- Every snapshot carries those answers, whatever tab it is for: the buttons
+	-- under the list are the same six on every tab.
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for i = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[i], net.here)
+		eq(tabs[i] .. " says whether the machine can come on", snap.canTurnOn, false)
+		eq("and whether it can go off", snap.canTurnOff, true)
+		eq("and whether it is on", snap.on, true)
+		-- This bench's machines have no IsoObject at all, which is a county nobody
+		-- is standing in: loaded is the honest answer and the window greys the
+		-- terminal on it.
+		eq("and whether its chunk is in", snap.loaded, false)
+		eq("with the reason it cannot come on", snap.reason, "it is already on")
+	end
+end
+
+-- Which machines are worth a row: the flag the window's "used only" filter reads.
+do
+	local net = newNet()
+	-- A computer sprite a chunk brought in and nobody ever touched, which is what
+	-- forty-four of Mathieu's rows were. The system makes one for every valid iso
+	-- object of every loaded square, so this is not a rare case at all.
+	local idle = net.machine(300, 220, 0, net.shed)
+	eq("it is off", idle.on, false)
+	eq("and it has no disk of its own", idle.os, nil)
+	eq("so it has never been used", CeroSecDebug.isUsed(idle), false)
+	eq("while a machine that is on has been", CeroSecDebug.isUsed(net.here), true)
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	local idleRow, liveRow = nil, nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "300,220,0" then idleRow = snap.rows[i] end
+		if snap.rows[i].c[1] == "10,10,0" then liveRow = snap.rows[i] end
+	end
+	check("the untouched one is still on the list", idleRow ~= nil)
+	eq("and its row says it has never been used", idleRow.used, false)
+	eq("while the live one's says it has", liveRow.used, true)
+
+	-- And a machine switched off after being used stays used: it has a disk.
+	net.here:turnOff()
+	eq("a machine that has been used stays used once it is off",
+		CeroSecDebug.isUsed(net.here), true)
+end
+
+-- The refusal on the WIRE, through the real command door.
+do
+	local net = newNet()
+	local away = net.far
+	away:turnOff()
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("the server answered the press", #answers, 1)
+	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
+	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")
+	check("with the refusal on it",
+		string.find(tostring(answers[1].args.error), "cannot turn on", 1, true) ~= nil)
+	check("and the reason in it",
+		string.find(tostring(answers[1].args.error), "chunk is away", 1, true) ~= nil)
+	eq("and no tab, so no list is emptied by it", answers[1].args.tab, nil)
+	eq("the machine is still off", away.on, false)
+
+	-- A press that CAN work answers nothing at all: the snapshot two seconds later
+	-- is what says it happened, and a window that had to read a receipt would be a
+	-- window that showed one.
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("nothing is answered when it worked", #answers, 0)
+	eq("and the machine came on", away.on, true)
+
+	-- Turning off a machine that is already off is refused in the same words.
+	away:turnOff()
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "off" })
+	eq("the press was answered", #answers, 1)
+	check("with the refusal",
+		string.find(tostring(answers[1].args.error), "already off", 1, true) ~= nil)
+
+	-- And a machine nothing answers to -- which is what 0,0,0 is -- says that.
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "on" })
+	eq("a triple nothing is at is answered too", #answers, 1)
+	check("with what is wrong with it",
+		string.find(tostring(answers[1].args.error), "no machine at", 1, true) ~= nil)
+end
 
 --
 -- The pager, driven the way a player drives it (fidelity A)

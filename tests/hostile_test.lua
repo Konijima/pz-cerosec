@@ -20,7 +20,9 @@
 --   * a job that spins with no wait in it is killed by the cpu ceiling, and
 --     one that is merely slow is not,
 --   * a pass costs less than WALL_MS_PER_PASS milliseconds of real time under
---     lua5.1 on an ordinary machine.
+--     lua5.1 on an ordinary machine -- every millisecond ceiling in here being
+--     scaled to the speed this box actually has, measured in this process right
+--     before the first timed section (see CALIB_REF_MS).
 --
 -- The scheduler here is the real SCeroSecJobs.lua. What is faked is the game
 -- around it: the clock, the events, and a computer with a console on it --
@@ -232,19 +234,95 @@ local function flat(what, result)
 		result.worst <= CeroSec.STEP_BUDGET_PER_MACHINE + CeroSecOS.STEP_COST_COMMAND)
 end
 
+--
+-- The box's own speed, measured here, in this process, before anything is timed.
+--
+-- Every millisecond ceiling below used to be a bare number, and a bare number
+-- says as much about who else is on the box as it does about the engine: on a
+-- bench machine that is also running the game and a few agents (load average 5
+-- to 9) the ceilings went red two runs in three at 4.1 to 5.5 ms, on the
+-- untouched base as much as on a branch that changed no engine file. A red that
+-- says nothing about the code is noise, and noise is worse than no ceiling at
+-- all -- so the ceilings stay, and what moves is the yardstick.
+--
+-- CALIBWORK is a fixed pure-Lua workload -- arithmetic and table writes, no
+-- allocation that grows, nothing of the engine in it -- sized to take a few tens
+-- of milliseconds. It is run three times and the CHEAPEST run is kept, because
+-- the cheapest is the one that got the most of the cpu. Divided by the value
+-- below it gives a scale factor: 1 on an idle box, 2 on a box that is half
+-- taken, and every ceiling is multiplied by max(1, scale). An idle box therefore
+-- keeps exactly the strict number it always had; a loaded box gets an allowance
+-- in proportion to how slow IT is, not a free pass -- and past 3x the bench
+-- refuses to pretend it measured anything.
+--
+-- CALIB_REF_MS is the idle value, measured on this box (Blackstar, lua5.1,
+-- 12 threads) on 2026-09-12: min-of-3 run three times in a row from the shell,
+-- giving 23.24, 23.74 and 24.12 ms, and 23.0 taken as the floor under those.
+-- Honest caveat: the box was NOT idle while that was measured -- the game and
+-- other agents were on it, load average 4.5 -- so the true idle figure is a
+-- little lower than 23 and this reference is a little high, which makes the
+-- scale it derives a little low, i.e. the ceilings a little stricter than
+-- intended rather than looser. Re-measure it on a genuinely quiet box and it
+-- should only come down.
+local CALIB_REF_MS = 23.0
+local CALIB_MAX_SCALE = 3
+local CALIB_N = 500000
+
+local function calibWork()
+	local t = {}
+	local acc = 1
+	for i = 1, CALIB_N do
+		acc = (acc * 1103515245 + 12345) % 2147483648
+		t[(i % 256) + 1] = acc + i * 0.5
+	end
+	return acc + t[1]
+end
+
+local function calibrate()
+	calibWork()
+	local best = nil
+	for _ = 1, 3 do
+		local at = os.clock()
+		calibWork()
+		local ms = (os.clock() - at) * 1000
+		if best == nil or ms < best then best = ms end
+	end
+	return best
+end
+
+local CALIB_MS = calibrate()
+local CALIB_SCALE = CALIB_MS / CALIB_REF_MS
+if CALIB_SCALE < 1 then CALIB_SCALE = 1 end
+if CALIB_SCALE > CALIB_MAX_SCALE then
+	error(string.format(
+		"FAIL: box too loaded to measure: rerun idle (calibration %.2f ms against a " ..
+		"reference of %.2f ms is a scale of %.2fx, past the %dx cap)",
+		CALIB_MS, CALIB_REF_MS, CALIB_SCALE, CALIB_MAX_SCALE), 0)
+end
+
+-- A ceiling in milliseconds, as this box may be held to it.
+local function ceiling(ms)
+	return ms * CALIB_SCALE
+end
+
 -- What a pass may cost in real time. Generous on purpose: this is a floor
 -- under "the server is not being hurt", not a performance target, and a bench
 -- machine under load must not turn it red. A pass is a tenth of a second of
 -- game time, so anything under a millisecond is three orders of magnitude of
--- room.
+-- room. Scaled by the calibration above, like every ms ceiling in this file.
 local WALL_MS_PER_PASS = 4.0
 
 local function timely(what, result)
-	check(what .. ": a pass costs under " .. WALL_MS_PER_PASS .. " ms of real time (" ..
-		string.format("%.3f", result.msPerPass) .. ")", result.msPerPass < WALL_MS_PER_PASS)
+	local limit = ceiling(WALL_MS_PER_PASS)
+	check(what .. ": a pass costs under " .. string.format("%.3f", limit) ..
+		" ms of real time (" .. string.format("%.3f", result.msPerPass) .. ")",
+		result.msPerPass < limit)
 end
 
 local report = {}
+report[#report + 1] = string.format(
+	"  %-22s %6.2f ms raw (ref %.2f), scale %.2fx on every ms ceiling",
+	"calibration", CALIB_MS, CALIB_REF_MS, CALIB_SCALE)
 local function note(what, result, extra)
 	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass%s",
 		what, result.worst, result.msPerPass, extra or "")
@@ -624,8 +702,10 @@ do
 		if served[m] > high then high = served[m] end
 	end
 	check("and fairly (" .. low .. " .. " .. high .. ")", high <= low * 2)
-	check("a pass over six busy machines costs under " .. WALL_MS_PER_PASS .. " ms (" ..
-		string.format("%.3f", msPerPass) .. ")", msPerPass < WALL_MS_PER_PASS)
+	local sixCeiling = ceiling(WALL_MS_PER_PASS)
+	check("a pass over six busy machines costs under " ..
+		string.format("%.3f", sixCeiling) .. " ms (" ..
+		string.format("%.3f", msPerPass) .. ")", msPerPass < sixCeiling)
 	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass",
 		"six machines", worst, msPerPass)
 end
@@ -665,6 +745,11 @@ do
 	-- commands went into CeroSecOSShell.lua -- more, find, tee, cut, tr, uptime and
 	-- w -- and the source of them is in the heap before a machine exists. Measured
 	-- at 1153K, which is what 1152 was catching.
+	--
+	-- Measured at 1171K once fidelity A met main: the phone lines, the reboot and
+	-- the reworked debug window are more source read at the top of the file too.
+	-- 1280 still holds it with room, and it still catches a heap that has doubled,
+	-- so the number did not move a fourth time.
 	check("and the whole bench holds well under 1280K (" ..
 		string.format("%.0f", late) .. "K)", late < 1280)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
@@ -917,9 +1002,10 @@ local function asleepDrive(what, machine, job, passes, stepMs)
 		end
 		was, wake, steps = job.state, job.wakeMs, job.steps
 	end)
-	check(what .. ": a pass costs under " .. WALL_MS_ASLEEP ..
+	local limit = ceiling(WALL_MS_ASLEEP)
+	check(what .. ": a pass costs under " .. string.format("%.4f", limit) ..
 		" ms of real time while asleep (" .. string.format("%.4f", result.msPerPass) ..
-		")", result.msPerPass < WALL_MS_ASLEEP)
+		")", result.msPerPass < limit)
 	flat(what, result)
 	return result
 end
@@ -1695,8 +1781,9 @@ do
 	-- WALL_MS_ASLEEP is what ONE machine asleep may cost a pass, and a pass here
 	-- walks four of them. The steps above are the assertion that matters; this is
 	-- the belt that says the walk itself did not become the cost.
-	local asleepCeiling = WALL_MS_ASLEEP * RINGERS
-	check("and a pass costs under " .. asleepCeiling .. " ms of real time (" ..
+	local asleepCeiling = ceiling(WALL_MS_ASLEEP * RINGERS)
+	check("and a pass costs under " .. string.format("%.4f", asleepCeiling) ..
+		" ms of real time (" ..
 		string.format("%.4f", msPerPass) .. ")", msPerPass < asleepCeiling)
 	for m = 1, RINGERS do
 		local job = CeroSecJobs.book(machines[m]).list[1]
@@ -2370,9 +2457,11 @@ do
 	-- machine is about five milliseconds, half a percent of it, for a county
 	-- nobody will ever build. Twenty is the ceiling and it is generous on purpose,
 	-- the way WALL_MS_PER_PASS is: this is a floor under "the server is not being
-	-- hurt" and a bench box under load must not turn it red.
-	check(string.format("and costs %.3f ms a second for 48 heads and 960 bodies", last),
-		last < 20)
+	-- hurt" and a bench box under load must not turn it red -- and it is scaled by
+	-- the calibration, like every other ms ceiling here.
+	local sensorCeiling = ceiling(20)
+	check(string.format("and costs %.3f ms a second for 48 heads and 960 bodies (under %.3f)",
+		last, sensorCeiling), last < sensorCeiling)
 
 	-- The contacts are all closed, which is the other half of the bargain: a pass
 	-- that was cheap because it saw nothing would prove nothing.
@@ -2401,8 +2490,9 @@ do
 		CeroSecSensors.samplePass(_G.__now)
 	end
 	local idle = (os.clock() - at) * 1000 / SECONDS
-	check(string.format("a county with no sensor in it costs %.4f ms a second", idle),
-		idle < 0.01)
+	local idleCeiling = ceiling(0.01)
+	check(string.format("a county with no sensor in it costs %.4f ms a second (under %.4f)",
+		idle, idleCeiling), idle < idleCeiling)
 	_G.__world = nil
 end
 
