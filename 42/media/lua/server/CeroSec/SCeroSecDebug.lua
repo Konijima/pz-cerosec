@@ -47,6 +47,11 @@ CeroSecDebug.JOB_MAX = 128
 -- nobody is reading on a list box anyway.
 CeroSecDebug.NET_MAX = 64
 
+-- Zones reported for the selected machine's square. Sixteen: a square in Louisville
+-- can be inside a town zone, a district zone, a story zone and a handful of loot
+-- zones at once, and sixteen is more than any square in the shipped map has.
+CeroSecDebug.ZONE_MAX = 16
+
 -- Characters in one cell. A hostname is validated and short; a path is not
 -- (CeroSecOS.MAX_DEPTH components of CeroSecOS.MAX_NAME), and neither is a cron
 -- line. Truncated with the same "~" the terminal truncates with, so a cell that
@@ -210,6 +215,133 @@ function CeroSecDebug.machineDetail(system, luaObject)
 		"  ptys " .. cell(CeroSecOS.ptyCount(luaObject.ptys)) ..
 		"  windows " .. cell(CeroSecDebug.watcherCount(luaObject)) ..
 		"  shutdown " .. cell(luaObject.shutdown ~= nil)
+
+	local premises = CeroSecDebug.premises(luaObject)
+	for i = 1, #premises do out[#out + 1] = premises[i] end
+	return out
+end
+
+--
+-- Where the machine STANDS
+--
+-- The building's footprint, the room, and every zone the square is inside. Three
+-- facts about a place and not about a computer, and they are here because the
+-- telephone wave's rules are about to be written against them: a survivor standing
+-- at a computer in a mall has to be able to see that the named zone he is in is
+-- SMALLER than the building around it, and no command of the machine's says so.
+--
+-- All of it is asked of the WORLD, so a machine whose chunk is away has none of it
+-- and says so -- the same rule /dev and the power check wear, and for the same
+-- reason: there is nobody to ask.
+--
+-- The calls, verified with javap against projectzomboid.jar (42.20.4) and used the
+-- way vanilla's own Lua uses them:
+--
+--   zombie.iso.IsoGridSquare
+--     public zombie.iso.areas.IsoBuilding getBuilding();
+--     public zombie.iso.areas.IsoRoom getRoom();
+--   zombie.iso.areas.IsoBuilding
+--     public zombie.iso.BuildingDef getDef();
+--   zombie.iso.BuildingDef
+--     public int getX();  getY();  getX2();  getY2();  getArea();
+--     -- the corner and the far corner of the footprint, which is where the
+--     -- building IS on the map and does not move (see CeroSecNet.buildingOf).
+--   zombie.iso.areas.IsoRoom
+--     public java.lang.String getName();
+--     public zombie.iso.RoomDef getRoomDef();
+--   zombie.iso.RoomDef
+--     public java.lang.String getName();
+--   zombie.iso.IsoWorld
+--     public zombie.iso.IsoMetaGrid getMetaGrid();
+--   zombie.iso.IsoMetaGrid
+--     public java.util.ArrayList<zombie.iso.zones.Zone> getZonesAt(int, int, int);
+--     -- an ArrayList, walked 0..size()-1, exactly as vanilla walks it in
+--     -- media/lua/client/ISUI/AdminPanel/LootZed/SpawnRateChecker.lua:70-72.
+--   zombie.iso.zones.Zone
+--     public java.lang.String getName();  getType();
+--     public int getX();  getY();  getZ();  getWidth();  getHeight();
+--     public float getTotalArea();
+--     -- the same seven things the class also carries as public fields
+--     -- (name, type, x, y, z, w, h), read through the getters because those are
+--     -- what vanilla's own Lua reads.
+--
+-- Both areas are reported and that is deliberate: w x h is the BOUNDING BOX, and
+-- getTotalArea is the area the game actually computes -- for a polygon or a
+-- polyline zone they are different numbers, and telling them apart is the whole
+-- point of looking at a mall.
+function CeroSecDebug.premises(luaObject)
+	local out = {}
+	local square = luaObject:getSquare()
+	if square == nil then
+		out[#out + 1] = "premises: no square (the chunk is away)"
+		return out
+	end
+
+	-- The building. Its footprint and not its IsoBuilding id: the id is handed out
+	-- by a counter at load time and is a different number next session, while the
+	-- def's corners are where the building stands (the note on
+	-- CeroSecNet.buildingOf).
+	local building = square:getBuilding()
+	local def = nil
+	if building ~= nil then def = building:getDef() end
+	if def == nil then
+		out[#out + 1] = "building: outdoors (no map building)"
+	else
+		local x1, y1, x2, y2 = def:getX(), def:getY(), def:getX2(), def:getY2()
+		out[#out + 1] = "building: " .. cell(x1) .. "," .. cell(y1) ..
+			" to " .. cell(x2) .. "," .. cell(y2) ..
+			"  " .. cell((x2 - x1) + 1) .. "x" .. cell((y2 - y1) + 1) ..
+			"  area " .. cell(def:getArea()) ..
+			"  rooms " .. cell(def:getRoomsNumber())
+	end
+
+	-- The room. Its def's name, which is the name the map was drawn with; the
+	-- IsoRoom's own getName answers the same string and is asked only when there is
+	-- no def to ask.
+	local room = square:getRoom()
+	if room == nil then
+		out[#out + 1] = "room: none"
+	else
+		local roomDef = room:getRoomDef()
+		local name = nil
+		if roomDef ~= nil then name = roomDef:getName() else name = room:getName() end
+		out[#out + 1] = "room: " .. cell(name)
+	end
+
+	-- The zones. A square can be inside several at once -- a town, a district, a
+	-- story, a loot zone -- and which of them is the SMALLEST is the question the
+	-- telephone wave is going to ask.
+	if getWorld == nil then return out end
+	local world = getWorld()
+	if world == nil then return out end
+	local grid = world:getMetaGrid()
+	if grid == nil then return out end
+	local zones = grid:getZonesAt(luaObject.x, luaObject.y, luaObject.z)
+	if zones == nil then
+		out[#out + 1] = "zones: none"
+		return out
+	end
+	local total = zones:size()
+	if total == 0 then
+		out[#out + 1] = "zones: none"
+		return out
+	end
+	out[#out + 1] = "zones: " .. cell(total) ..
+		(total > CeroSecDebug.ZONE_MAX and
+			(" (showing " .. CeroSecDebug.ZONE_MAX .. ")") or "")
+	for i = 0, total - 1 do
+		if i >= CeroSecDebug.ZONE_MAX then break end
+		local zone = zones:get(i)
+		if zone ~= nil then
+			local w, h = zone:getWidth(), zone:getHeight()
+			out[#out + 1] = "  zone " .. cell(zone:getType()) ..
+				" name " .. cell(zone:getName()) ..
+				"  " .. cell(zone:getX()) .. "," .. cell(zone:getY()) ..
+				" " .. cell(w) .. "x" .. cell(h) ..
+				"  box " .. cell(w * h) ..
+				"  area " .. cell(zone:getTotalArea())
+		end
+	end
 	return out
 end
 

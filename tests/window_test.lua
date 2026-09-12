@@ -4095,8 +4095,21 @@ local function newNet()
 	-- A building is two numbers and nothing else as far as the wire is
 	-- concerned: the corner of its BuildingDef, which is where it stands on the
 	-- map and does not move.
-	local function buildingAt(bx, by)
-		local def = { getX = function() return bx end, getY = function() return by end }
+	-- A building is two numbers as far as the WIRE is concerned -- the corner of
+	-- its BuildingDef -- and the debug window asks it for four more: the far
+	-- corner, the area and the room count, which is what the premises block
+	-- reports (SCeroSecDebug.premises). All six are javap'd on
+	-- zombie.iso.BuildingDef.
+	local function buildingAt(bx, by, w, h, rooms)
+		w, h, rooms = w or 10, h or 10, rooms or 3
+		local def = {
+			getX = function() return bx end,
+			getY = function() return by end,
+			getX2 = function() return bx + w - 1 end,
+			getY2 = function() return by + h - 1 end,
+			getArea = function() return w * h end,
+			getRoomsNumber = function() return rooms end,
+		}
 		return { getDef = function() return def end }
 	end
 
@@ -8154,6 +8167,135 @@ do
 		if string.find(said[i], "os.fs", 1, true) then named = true end
 	end
 	check("the filesystem is in it", named)
+end
+
+--
+-- Where the machine stands: the building's footprint, the room, and the zones
+--
+-- Three facts about a PLACE and not about a computer, and the telephone wave's
+-- rules are going to be written against them: a survivor at a computer in a mall
+-- has to be able to see that the named zone he is in is SMALLER than the building
+-- around it.
+--
+-- The bench asks for the premises of the SECOND machine while the first is right
+-- there in front of it, because "the list comes from the square asked" is the one
+-- thing a block of this kind gets wrong quietly: a premises block that always
+-- answered for the first machine would read perfectly right on a bench with one.
+--
+do
+	local net = newNet()
+
+	-- A metagrid: which zones a square is inside, per square. Two on the office's
+	-- square, one on the shed's, and none on a third -- so a snapshot that answered
+	-- the same list for every machine, or one zone for a square with two, fails.
+	--
+	-- getZonesAt answers an ArrayList, walked 0..size()-1 exactly as vanilla walks
+	-- it (SpawnRateChecker.lua:70-72), and a Zone answers the seven getters the
+	-- premises block reads. The two zones on the office's square are deliberately a
+	-- different SHAPE: one rectangle, whose total area is its box, and one whose
+	-- total area is smaller than its box -- which is what a polygon zone is, and
+	-- what makes reporting both numbers worth doing.
+	local function zone(kind, name, x, y, w, h, area)
+		return {
+			getType = function() return kind end,
+			getName = function() return name end,
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return 0 end,
+			getWidth = function() return w end,
+			getHeight = function() return h end,
+			getTotalArea = function() return area or (w * h) end,
+		}
+	end
+	local zonesBySquare = {
+		["10,10,0"] = { zone("TownZone", "Muldraugh", 0, 0, 300, 300),
+			zone("LootZone", "Mall", 8, 8, 20, 20, 240) },
+		["60,60,0"] = { zone("Forest", nil, 50, 50, 40, 40) },
+	}
+	local asked = {}
+	_G.getWorld = function()
+		return {
+			getMetaGrid = function()
+				return {
+					getZonesAt = function(_, x, y, z)
+						local key = x .. "," .. y .. "," .. z
+						asked[#asked + 1] = key
+						local list = zonesBySquare[key]
+						if list == nil then return javaList({}) end
+						return javaList(list)
+					end,
+				}
+			end,
+		}
+	end
+
+	-- A room on the office's square, through its RoomDef the way vanilla reads one
+	-- (ISInventoryPage.lua:1418). The shed's square has none.
+	local function roomNamed(name)
+		return {
+			getName = function() return "wrong: the def is what is asked" end,
+			getRoomDef = function() return { getName = function() return name end } end,
+		}
+	end
+	local function withRoom(object, room)
+		local square = object:getSquare()
+		local old = square.getRoom
+		square.getRoom = function() return room end
+		return old
+	end
+	withRoom(net.here, roomNamed("office"))
+
+	-- The office's own machine.
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	check("the building's footprint is reported", infoHas(snap, "building: 400,700 to"))
+	check("with its size", infoHas(snap, "10x10"))
+	check("and its area and room count", infoHas(snap, "area 100  rooms 3"))
+	check("the room is the one the def names", infoHas(snap, "room: office"))
+	check("both zones are counted", infoHas(snap, "zones: 2"))
+	check("the town zone is there with its box",
+		infoHas(snap, "zone TownZone name Muldraugh  0,0 300x300  box 90000"))
+	-- The whole point of reporting two numbers: a zone whose real area is smaller
+	-- than its bounding box is the named zone inside the building.
+	check("and the mall zone, whose area is smaller than its box",
+		infoHas(snap, "zone LootZone name Mall  8,8 20x20  box 400  area 240"))
+
+	-- The SECOND machine, in the other building, with the first one still on the
+	-- list above it: a different footprint, no room, and one zone with no name.
+	snap = CeroSecDebug.snapshotOf(net.system, "machines", net.far)
+	check("the other building's footprint is the one reported",
+		infoHas(snap, "building: 900,120 to"))
+	check("and not the first machine's", not infoHas(snap, "building: 400,700 to"))
+	check("a square with no room says so", infoHas(snap, "room: none"))
+	check("one zone, not two", infoHas(snap, "zones: 1"))
+	check("a zone with no name says so rather than inventing one",
+		infoHas(snap, "zone Forest name -  50,50 40x40"))
+	check("and the first machine's zones are nowhere on it",
+		not infoHas(snap, "Muldraugh"))
+	-- The grid was asked about the square of the machine that was SELECTED.
+	eq("the last square the grid was asked about is the selected machine's",
+		asked[#asked], "60,60,0")
+
+	-- A square with nothing on it at all: no building, no room, no zone. Every
+	-- answer is a "none" and none of them is an error.
+	local outdoors = net.machine(500, 500, 0, nil)
+	outdoors:turnOn()
+	snap = CeroSecDebug.snapshotOf(net.system, "machines", outdoors)
+	check("a machine in no map building says outdoors",
+		infoHas(snap, "building: outdoors"))
+	check("with no room", infoHas(snap, "room: none"))
+	check("and no zones", infoHas(snap, "zones: none"))
+
+	-- And a machine whose chunk is away has no square to ask any of it of, which is
+	-- the same rule /dev and the power check wear.
+	local away = net.machine(700, 700, 0, net.office)
+	away:turnOn()
+	away.getSquare = function() return nil end
+	snap = CeroSecDebug.snapshotOf(net.system, "machines", away)
+	check("a machine out of the world claims nothing about where it stands",
+		infoHas(snap, "premises: no square (the chunk is away)"))
+	check("and says nothing about a building", not infoHas(snap, "building:"))
+
+	_G.getWorld = nil
 end
 
 -- The log ring: two hundred lines, and the two hundred and first drops the

@@ -100,6 +100,50 @@ is selected, because those are facts about a window.
    waiting for, how many lines are on it, and whether the glass is showing a
    session on another machine.
 
+   And then **where it stands**, which is three facts about a PLACE and not about
+   a computer:
+
+   - the building's footprint off its `BuildingDef` — the corner, the far corner,
+     the size, the area and the room count — or `outdoors` for a machine in no map
+     building, which is what a player-built base is. The def's corners and not the
+     `IsoBuilding`'s id, for the reason `CeroSecNet.buildingOf` gives: the id is
+     handed out by a counter at load time and is a different number next session.
+   - the room, by its `RoomDef`'s name (the name the map was drawn with; the
+     `IsoRoom`'s own `getName` is asked only when there is no def), or `none`.
+   - every zone the square is inside, one line each, capped at 16: type, name (or
+     `-`), position, `w x h`, the bounding box `w*h`, and `getTotalArea()`.
+
+   Both areas, deliberately. `w x h` is the bounding box; `getTotalArea()` is what
+   the game actually computes, and for a polygon or a polyline zone the two are
+   different numbers. Telling them apart is the whole point of standing in a mall
+   and asking which named zone is smaller than the building around it — which is
+   what the telephone wave's rules are going to be written against.
+
+   All of it is asked of the WORLD, so a machine whose chunk is away answers
+   `premises: no square (the chunk is away)` and claims nothing else — the same
+   rule `/dev` and the power check wear, and for the same reason: there is nobody
+   to ask.
+
+   The calls, all javap'd on projectzomboid.jar (42.20.4) and used the way
+   vanilla's own Lua uses them:
+
+       zombie.iso.IsoGridSquare    getBuilding() -> IsoBuilding, getRoom() -> IsoRoom
+       zombie.iso.areas.IsoBuilding getDef() -> BuildingDef
+       zombie.iso.BuildingDef       getX() getY() getX2() getY2() getArea()
+                                    getRoomsNumber()   (all int)
+       zombie.iso.areas.IsoRoom     getName() -> String, getRoomDef() -> RoomDef
+       zombie.iso.RoomDef           getName() -> String
+       zombie.iso.IsoWorld          getMetaGrid() -> IsoMetaGrid
+       zombie.iso.IsoMetaGrid       getZonesAt(int, int, int) -> ArrayList<Zone>
+       zombie.iso.zones.Zone        getName() getType() -> String
+                                    getX() getY() getZ() getWidth() getHeight() -> int
+                                    getTotalArea() -> float
+
+   `getZonesAt` answers an `ArrayList`, walked `0..size()-1` exactly as vanilla
+   walks it in `media/lua/client/ISUI/AdminPanel/LootZed/SpawnRateChecker.lua:70-72`.
+   `Zone` also carries the same seven as public fields (`name, type, x, y, z, w,
+   h`); the getters are read because those are what vanilla's own Lua reads.
+
 2. **Files** — the selected machine's tree, depth first, in the order `ls` prints
    each directory: path, type, mode as `ls -l` writes it, owner, size, mtime, and
    for a directory the nodes under it. Capped at 512 rows. Under it, the disk's own
@@ -212,7 +256,8 @@ and the coordinates only on the Machines tab, where they are what makes a row
 selectable. `info` is an array of strings for the block under the list.
 
 **Everything is bounded and says so**: 200 machines, 512 file rows, 128 devices,
-128 jobs, 64 rows a network section, 50 wire events, 64 characters a cell. A
+128 jobs, 64 rows a network section, 16 zones, 50 wire events, 64 characters a
+cell. A
 truncated list reports its own cap in `info`, so a list that was cut says so on
 the glass instead of quietly being the whole truth.
 
@@ -228,7 +273,9 @@ that answer `nil` for anything that is not what they are looking for.
 
 The three tabs that are about ONE machine ask `osState` of that one machine, which
 is one disk. The Devices tab additionally walks the selected machine's building,
-which is what `ls /dev` costs and is paid once per refresh.
+which is what `ls /dev` costs and is paid once per refresh. The premises block is
+one square, one `BuildingDef` and one `getZonesAt` — all three for the selected
+machine only, and none of them for the two hundred rows above it.
 
 ## The three things it can change
 

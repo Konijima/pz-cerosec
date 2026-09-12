@@ -1324,6 +1324,16 @@ un interrupteur dans la pièce.
      passe, et sa console (qui est connecté, dans quel répertoire, combien de
      lignes à l'écran). Ouvrir le terminal dessus, taper `ls`, revenir à la
      fenêtre : le nombre de lignes a bougé dans les deux secondes. [ ]
+230b. **Où la machine se trouve.** Toujours sous la liste, après la console :
+     l'empreinte du bâtiment (coin, coin opposé, taille, superficie, nombre de
+     pièces) ou `outdoors` pour une machine dans une base construite, le nom de la
+     pièce, et une ligne par zone dans laquelle le carré se trouve — son type, son
+     nom, sa position, `w x h`, sa boîte (`w*h`) et sa superficie réelle. Faire
+     l'essai **dans un centre commercial** : attendu, la zone nommée du magasin est
+     plus petite que le bâtiment autour d'elle, et pour une zone de forme
+     irrégulière la superficie réelle est plus petite que sa boîte. Sur une machine
+     dont le morceau de carte n'est pas chargé : `premises: no square (the chunk is
+     away)` et rien d'autre — personne n'est là pour répondre. [ ]
 231. **Sélectionner une autre machine.** Cliquer la ligne de l'ordinateur du
      bâtiment loin. Attendu : la liste garde ses lignes et la ligne cliquée reste
      surlignée, le détail dessous devient celui de cette machine, et les onglets
