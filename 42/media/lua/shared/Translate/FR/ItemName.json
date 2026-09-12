@@ -2,5 +2,9 @@
     "CeroSec.Manual": "Manuel de l'utilisateur CeroSec OS",
     "CeroSec.ManualUser": "Guide de l'utilisateur CeroSec OS",
     "CeroSec.ManualAdmin": "Guide de l'administrateur système CeroSec OS",
-    "CeroSec.ManualProgrammer": "Guide du programmeur CeroSec OS"
+    "CeroSec.ManualProgrammer": "Guide du programmeur CeroSec OS",
+    "CeroSec.MagneticContact": "Contact magnétique",
+    "CeroSec.Relay": "Module relais",
+    "CeroSec.ElectricStrike": "Gâche électrique",
+    "CeroSec.DoorOperator": "Opérateur de porte"
 }

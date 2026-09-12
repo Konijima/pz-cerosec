@@ -166,5 +166,73 @@ module CeroSec
         Icon = CeroSecFloppyGreen,
         WorldStaticModel = CeroSecFloppyGreen,
     }
-}
 
+    /* The hardware modules, rung 4f.
+
+       Four boxes a survivor screws to a door, a window or a light switch so
+       that a computer can reach it (CeroSecModules.lua, and the manual's
+       chapter on /dev). 1993 vocabulary and nothing invented: an electric
+       strike, a door operator, a magnetic contact and a relay are what the
+       trade called these four things then and what it calls them now.
+
+       Same keys as the disks above and for the same reasons -- ItemType is
+       base:normal, DisplayCategory is the Electronics the game already ships a
+       name for, the DisplayName here is the fallback and Translate/EN's
+       ItemName.json is what a player reads.
+
+       WorldStaticModel names a VANILLA model in every case, the way the manual
+       items name Book and BookClosedGround: this mod ships no mesh for these
+       and a made-up name is an item that drops on the floor as nothing at all.
+       MotionSensor for the contact (it is a sensor in a box), ElectronicsScrap
+       for the relay (a board), ScrapMetal for the strike and the operator (a
+       lump of metal is what either looks like lying on a road).
+
+       The weights are set against the vanilla items they sit between rather
+       than against a feeling: Base.ElectronicsScrap is 0.1,
+       Base.MotionSensor 0.3, Base.SmallSheetMetal 0.5, Base.Doorknob 1.0,
+       Base.HomeAlarm 1.0 and Base.SheetMetal 2.0. So: a contact is two reed
+       switches in plastic, a relay is a board in a case, a strike is a door
+       fitting the size of a knob, and an operator is a motor and an arm -- the
+       heaviest thing in this mod and the only one a survivor thinks twice
+       about carrying. */
+
+    item MagneticContact
+    {
+        DisplayName = Magnetic Contact,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.2,
+        Icon = CeroSecMagneticContact,
+        WorldStaticModel = MotionSensor,
+    }
+
+    item Relay
+    {
+        DisplayName = Relay Module,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.3,
+        Icon = CeroSecRelay,
+        WorldStaticModel = ElectronicsScrap,
+    }
+
+    item ElectricStrike
+    {
+        DisplayName = Electric Strike,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 1.0,
+        Icon = CeroSecElectricStrike,
+        WorldStaticModel = ScrapMetal,
+    }
+
+    item DoorOperator
+    {
+        DisplayName = Door Operator,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 2.0,
+        Icon = CeroSecDoorOperator,
+        WorldStaticModel = ScrapMetal,
+    }
+}

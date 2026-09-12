@@ -8062,4 +8062,189 @@ do
 	kit = nil
 end
 
+--
+-- Fitting a module, and taking it off
+--
+-- The server's half of the right-click menu: two commands that name a FIXTURE --
+-- the square it stands on and its index in that square's object list, the way
+-- vanilla's own client commands name a world object -- and that believe nothing
+-- else the client sent.
+--
+-- Everything the menu greys out is asked again here, and one thing the menu
+-- cannot ask is asked only here: whether the survivor is actually standing next
+-- to the thing. Each refusal is proved by what did NOT happen -- the module is
+-- not on the door, the item is still in his bag -- because these commands answer
+-- nothing: a refusal here is a packet nobody typed.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	-- The game's own perk table. Only ever handed straight back to
+	-- getPerkLevel, so what it holds does not matter and that it is the SAME
+	-- value on both sides does.
+	_G.Perks = { Electricity = "Electricity" }
+
+	local bench = newBench()
+	local inv = newInventory()
+	local level = 0
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function(_, perk)
+		if perk ~= Perks.Electricity then return 0 end
+		return level
+	end
+	bench.login("admin")
+
+	-- One packet, the way a client sends it.
+	local function send(command, sx, sy, index, id)
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = sx, y = sy, z = 0, index = index, module = id })
+		bench.frame()
+	end
+
+	local function carrying(fullType)
+		return inv:getFirstTypeRecurse(fullType) ~= nil
+	end
+	local function fittedOn(object, id)
+		return CeroSecModules.installedOn(object)[id] == true
+	end
+
+	-- The office light switch is the second object on the door's own square, so
+	-- the index is what tells the two apart and a bench that always sent 0 would
+	-- prove nothing about it.
+	local SQ = { 11, 10 }
+	local DOOR, LIGHT = 0, 1
+
+	-- Nothing at all: no module in the bag.
+	level = 5
+	send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+	eq("no relay in the bag, no relay on the wall", fittedOn(kit.light0, "relay"), false)
+
+	-- The module, and no screwdriver.
+	inv:add("CeroSec.Relay")
+	send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+	eq("a module and no tool fits nothing", fittedOn(kit.light0, "relay"), false)
+	check("and the module is still his", carrying("CeroSec.Relay"))
+
+	-- The tool, and not the trade.
+	inv:add("Base.Screwdriver")
+	level = 0
+	send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+	eq("a relay wants one level of Electricity", fittedOn(kit.light0, "relay"), false)
+	check("and the module is still his", carrying("CeroSec.Relay"))
+
+	-- The wrong fixture, with everything else in hand: a relay is a light
+	-- switch's module and the door on the same square is not a light switch.
+	level = 5
+	send("installmodule", SQ[1], SQ[2], DOOR, "relay")
+	eq("a relay does not go on a door", fittedOn(kit.front, "relay"), false)
+	check("and the module is still his", carrying("CeroSec.Relay"))
+
+	-- And now, with the three of them.
+	level = 1
+	send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+	eq("the relay is on the switch", fittedOn(kit.light0, "relay"), true)
+	check("the module left his bag", not carrying("CeroSec.Relay"))
+	check("the screwdriver did not", carrying("Base.Screwdriver"))
+	eq("and every other player was told", kit.light0.transmits, 1)
+
+	-- The machine can see it now, end to end.
+	bench.enter("dev")
+	bench.frame()
+	check("and the switch is a device", bench.painted("light0  office"))
+
+	-- A second one buys nothing and eats nothing.
+	inv:add("CeroSec.Relay")
+	send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+	check("a second relay is not fitted twice", carrying("CeroSec.Relay"))
+	eq("and nothing was broadcast for it", kit.light0.transmits, 1)
+	inv:Remove(inv:getFirstTypeRecurse("CeroSec.Relay"))
+
+	-- The lock rule, which is the discovery's own and is asked at the menu and
+	-- again here: the door between the kitchen and the hallway has a room on
+	-- both sides, so a key on it stops nobody and a strike on it would be a box
+	-- that does nothing.
+	level = 5
+	inv:add("CeroSec.ElectricStrike")
+	send("installmodule", 11, 11, 0, "strike")
+	eq("no strike on a door whose lock means nothing", fittedOn(kit.inner, "strike"), false)
+	check("and the strike is still his", carrying("CeroSec.ElectricStrike"))
+	-- The front door is the way out of the building, and that one takes it.
+	send("installmodule", SQ[1], SQ[2], DOOR, "strike")
+	eq("the strike is on the front door", fittedOn(kit.front, "strike"), true)
+	check("and it left his bag", not carrying("CeroSec.ElectricStrike"))
+
+	-- The operator is the level-three job, and the level is asked for the
+	-- MODULE and not for the mod.
+	inv:add("CeroSec.DoorOperator")
+	level = 2
+	send("installmodule", 11, 11, 0, "operator")
+	eq("two levels is not enough for an operator", fittedOn(kit.inner, "operator"), false)
+	level = 3
+	send("installmodule", 11, 11, 0, "operator")
+	eq("three is", fittedOn(kit.inner, "operator"), true)
+	bench.enter("echo open > /dev/door0")
+	bench.frame()
+	eq("and the door it is on opens from the machine", kit.inner.open, true)
+
+	-- Standing there is the one thing the menu cannot ask, so it is asked here
+	-- and nowhere else. The window is two squares away.
+	inv:add("CeroSec.MagneticContact")
+	level = 5
+	send("installmodule", 12, 10, 0, "contact")
+	eq("a fixture out of reach takes nothing", fittedOn(kit.win0, "contact"), false)
+	check("and the contact is still his", carrying("CeroSec.MagneticContact"))
+
+	-- An object that is not there, and a square that is not in the world.
+	send("installmodule", SQ[1], SQ[2], 9, "contact")
+	check("an index off the end of the list does nothing",
+		carrying("CeroSec.MagneticContact"))
+	send("installmodule", 400, 400, 0, "contact")
+	check("nor does a chunk the streamer never brought in",
+		carrying("CeroSec.MagneticContact"))
+	-- And a module nobody declared.
+	send("installmodule", SQ[1], SQ[2], DOOR, "toaster")
+	check("nor a module nobody has ever heard of",
+		carrying("CeroSec.MagneticContact"))
+
+	-- Taking one off: the item comes back whole, the device goes, and the object
+	-- keeps the modules that are still on it.
+	local before = kit.light0.transmits
+	send("uninstallmodule", SQ[1], SQ[2], LIGHT, "relay")
+	eq("the relay is off the switch", fittedOn(kit.light0, "relay"), false)
+	check("and back in his bag", carrying("CeroSec.Relay"))
+	eq("and everybody was told", kit.light0.transmits, before + 1)
+	bench.enter("dev light0")
+	bench.frame()
+	check("the machine cannot reach the switch any more",
+		bench.painted("light0: no such device"))
+	-- The last module off takes the table with it: an empty one would ride in
+	-- the save file for the rest of the world's life, because IsoObject.save
+	-- only skips modData that is empty ALTOGETHER.
+	eq("and nothing of ours is left on the object",
+		kit.light0:getModData()[CeroSecModules.DATA_KEY], nil)
+
+	-- Taking one off asks for the trade and the tool, like fitting one.
+	level = 0
+	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	eq("no trade, no removal", fittedOn(kit.front, "strike"), true)
+	level = 5
+	inv:Remove(inv:getFirstTypeRecurse("Base.Screwdriver"))
+	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	eq("no tool, no removal", fittedOn(kit.front, "strike"), true)
+	inv:add("Base.Screwdriver")
+	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	eq("with both, the strike comes off", fittedOn(kit.front, "strike"), false)
+	check("and it is his again", carrying("CeroSec.ElectricStrike"))
+	-- One module off a fixture that carries two leaves the other one alone.
+	fit(kit.front, "contact")
+	fit(kit.front, "strike")
+	send("uninstallmodule", SQ[1], SQ[2], DOOR, "contact")
+	eq("the contact came off", fittedOn(kit.front, "contact"), false)
+	eq("and the strike beside it did not", fittedOn(kit.front, "strike"), true)
+
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+end
+
 print("window_test: " .. count .. " checks passed")

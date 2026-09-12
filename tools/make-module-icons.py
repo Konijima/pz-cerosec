@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+#
+# Run from the repo root:  python3 tools/make-module-icons.py
+#
+# The four hardware module icons, 32x32, drawn rather than rendered.
+#
+#   Item_CeroSecMagneticContact.png   a reed switch and its magnet, on a frame
+#   Item_CeroSecRelay.png             an ice-cube relay, socket pins down
+#   Item_CeroSecElectricStrike.png    a strike plate, keeper cut out of it
+#   Item_CeroSecDoorOperator.png      a motor, its arm folded against it
+#
+# The language is the one the mod's other icons already speak: a transparent
+# ground, one dark outline all the way round (the manual's 10,12,22), flat fills
+# with a single highlight above and a single shade below, and no anti-aliasing
+# anywhere -- Item_CeroSecManual.png is eleven colours and every pixel of it is
+# one of them. Nothing here is drawn in more than six.
+#
+# The green is the OS' own screen green out of the manual icon (92,255,122), and
+# it is used for exactly one thing on exactly one icon: the relay's lamp. A
+# survivor holding two small grey boxes tells them apart by that lamp.
+#
+# Mathieu may well replace all four by hand; this file is what makes them
+# reproducible in the meantime, and every colour is named once at the top so a
+# repaint is one line.
+
+from PIL import Image
+
+OUT = "common/media/textures/Item_CeroSec%s.png"
+SIZE = 32
+
+CLEAR = (0, 0, 0, 0)
+INK = (10, 12, 22, 255)          # the outline, the manual icon's own
+STEEL = (150, 155, 165, 255)     # galvanised metal
+STEEL_HI = (205, 210, 220, 255)
+STEEL_LO = (95, 100, 112, 255)
+CASE = (58, 66, 86, 255)         # the dark plastic of a relay case
+CASE_HI = (92, 104, 132, 255)
+BRASS = (176, 124, 60, 255)      # wire, and screw heads
+CREAM = (196, 191, 167, 255)     # a label
+GREEN = (92, 255, 122, 255)      # the OS' screen green: the relay's lamp
+
+
+class Icon:
+    def __init__(self):
+        self.px = [[CLEAR] * SIZE for _ in range(SIZE)]
+
+    def dot(self, x, y, c):
+        if 0 <= x < SIZE and 0 <= y < SIZE:
+            self.px[y][x] = c
+
+    def rect(self, x0, y0, x1, y1, c):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                self.dot(x, y, c)
+
+    # A filled box with the ink border drawn round the outside of the fill.
+    def box(self, x0, y0, x1, y1, fill, border=INK):
+        self.rect(x0, y0, x1, y1, border)
+        self.rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill)
+
+    def hline(self, x0, x1, y, c):
+        self.rect(x0, y, x1, y, c)
+
+    def vline(self, x, y0, y1, c):
+        self.rect(x, y0, x, y1, c)
+
+    def save(self, name):
+        im = Image.new("RGBA", (SIZE, SIZE), CLEAR)
+        for y in range(SIZE):
+            for x in range(SIZE):
+                im.putpixel((x, y), self.px[y][x])
+        path = OUT % name
+        im.save(path)
+        print("wrote", path)
+
+
+def magnetic_contact():
+    """Two blocks and the gap between them: the switch, wired, and the magnet
+    that shuts it. The gap is the whole point of the thing, so it is two pixels
+    wide and dead centre."""
+    i = Icon()
+    # The switch half: taller, wired, on the left.
+    i.box(6, 8, 14, 25, STEEL)
+    i.rect(7, 9, 13, 11, STEEL_HI)
+    i.rect(7, 23, 13, 24, STEEL_LO)
+    # The magnet half: the same box, shorter, no wires.
+    i.box(17, 10, 25, 23, STEEL)
+    i.rect(18, 11, 24, 12, STEEL_HI)
+    i.rect(18, 21, 24, 22, STEEL_LO)
+    # The two wires out of the switch, into the frame.
+    i.hline(2, 5, 13, BRASS)
+    i.hline(2, 5, 17, BRASS)
+    i.dot(1, 13, INK)
+    i.dot(1, 17, INK)
+    # The mounting screw in each half.
+    i.dot(10, 14, INK)
+    i.dot(10, 20, INK)
+    i.dot(21, 16, INK)
+    i.save("MagneticContact")
+
+
+def relay():
+    """An ice-cube relay: a dark case with a clear window, a lamp, and the four
+    socket pins it stands on."""
+    i = Icon()
+    i.box(8, 5, 23, 24, CASE)
+    # The window down the middle of the case, with the coil behind it.
+    i.rect(11, 8, 20, 17, CASE_HI)
+    i.rect(13, 10, 18, 15, STEEL_LO)
+    i.vline(14, 10, 15, STEEL)
+    i.vline(17, 10, 15, STEEL)
+    # The lamp, top right, and its socket.
+    i.rect(19, 6, 21, 7, GREEN)
+    i.dot(18, 6, INK)
+    i.dot(18, 7, INK)
+    # The label across the bottom of the case.
+    i.rect(10, 19, 21, 21, CREAM)
+    i.hline(11, 20, 20, CASE)
+    # Four pins under it.
+    for x in (10, 14, 18, 22):
+        i.vline(x, 25, 28, STEEL)
+        i.dot(x, 29, INK)
+        i.vline(x - 1, 25, 28, INK)
+        i.vline(x + 1, 25, 28, INK)
+    i.hline(8, 23, 25, INK)
+    i.save("Relay")
+
+
+def electric_strike():
+    """A strike plate seen flat: the long faceplate, the keeper cut out of it,
+    and the two screws that hold it in the jamb."""
+    i = Icon()
+    i.box(9, 2, 22, 29, STEEL)
+    i.vline(10, 3, 28, STEEL_HI)
+    i.vline(21, 3, 28, STEEL_LO)
+    # The cut-out: the hole the latch drops into. Ink, because a hole in a
+    # 32-pixel plate is a hole only if it is the darkest thing on it.
+    i.box(12, 11, 19, 20, INK, INK)
+    i.rect(13, 12, 18, 19, CLEAR)
+    # The keeper, hinged on the left of the cut-out.
+    i.rect(13, 12, 14, 19, STEEL_LO)
+    i.vline(15, 12, 19, STEEL)
+    # Two screws, one at each end.
+    for y in (6, 25):
+        i.rect(14, y - 1, 17, y + 1, BRASS)
+        i.dot(13, y, INK)
+        i.dot(18, y, INK)
+        i.hline(15, 16, y, INK)
+    # The wire out of the back of it, touching the plate it leaves.
+    i.hline(22, 27, 16, BRASS)
+    i.dot(28, 16, INK)
+    i.save("ElectricStrike")
+
+
+def door_operator():
+    """A motor with its arm folded against the case: the heaviest thing in the
+    mod, and it should look it. A wide body, a barrel on the end of it, and the
+    arm across the front."""
+    i = Icon()
+    # The body.
+    i.box(3, 9, 21, 22, STEEL)
+    i.rect(4, 10, 20, 12, STEEL_HI)
+    i.rect(4, 20, 20, 21, STEEL_LO)
+    # The cooling ribs.
+    for x in (7, 10, 13, 16):
+        i.vline(x, 13, 19, STEEL_LO)
+    # The barrel on the right: the gearbox the arm comes out of.
+    i.box(21, 6, 28, 25, CASE)
+    i.rect(22, 7, 27, 9, CASE_HI)
+    i.rect(23, 14, 26, 17, STEEL)
+    i.rect(24, 15, 25, 16, INK)
+    # The arm, folded down across the bottom of the body rather than floating
+    # under it: at 32 pixels a bar with a gap over it is a second object.
+    i.rect(6, 22, 24, 24, STEEL)
+    i.hline(6, 24, 22, INK)
+    i.hline(6, 24, 25, INK)
+    i.dot(5, 23, INK)
+    i.dot(5, 24, INK)
+    i.dot(25, 23, INK)
+    i.dot(25, 24, INK)
+    i.rect(7, 23, 9, 23, STEEL_HI)
+    # The power lead.
+    i.hline(1, 2, 15, BRASS)
+    i.dot(0, 15, INK)
+    i.save("DoorOperator")
+
+
+magnetic_contact()
+relay()
+electric_strike()
+door_operator()

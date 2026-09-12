@@ -2,6 +2,7 @@ if isClient() then return end
 
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDevices"
 require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
@@ -138,6 +139,13 @@ end
 --                                      itself and believes nothing about what
 --                                      is written on it
 --   ejectfloppy  {}                 -- give the disk back
+--   installmodule   { module, index } -- screw a hardware module to the door,
+--   uninstallmodule { module, index }    window or light switch at that index
+--                                        on that square, or take it off again.
+--                                        The x, y, z of these two are the
+--                                        FIXTURE's square and not a computer's:
+--                                        they are the only commands here that
+--                                        are not about a machine at all.
 --   open     {}                     -- give me the screen
 --   input    { text }               -- the answer to whatever is being asked:
 --                                      a user name, a password, or the line a
@@ -1044,6 +1052,123 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		return
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
+end
+
+--
+-- The hardware modules
+--
+-- Two commands, and they are about a DOOR and not about a computer: the object
+-- is named by the square it stands on and its index in that square's object
+-- list, which is how vanilla's own client commands name one
+-- (ISWorldObjectContextMenu.lua:3076 sends x, y, z and
+-- isoObject:getObjectIndex()).
+--
+-- Nothing a client sends is believed. The server looks the object up itself,
+-- asks the same three questions the menu asked -- does this module fit this
+-- fixture, does this survivor know enough, is he carrying the module and a
+-- screwdriver -- and asks the fourth the menu cannot: is he standing there. A
+-- forged packet wires nothing a survivor could not have wired by hand.
+--
+-- Silently, like the drive commands above: the client's own menu greys out every
+-- case this can refuse, so a refusal here is a packet nobody typed.
+--
+-- The item goes out of his hands BEFORE the module goes on the door, and comes
+-- back into them BEFORE it comes off. Same rule the floppy drive runs on
+-- (Commands.ejectfloppy): a survivor holding the module that is also on the door
+-- is a duplication, which is the one failure worse than the gesture not
+-- happening.
+
+-- The fixture a module command names, or nil for every way a client could be
+-- wrong about it: not standing there, a chunk that is not loaded, an index off
+-- the end of the list, and an object no module of ours goes on.
+function SCeroSecSystem:fixtureFor(playerObj, x, y, z, index)
+	if not isAdjacent(playerObj, x, y, z) then return nil end
+	if getCell == nil then return nil end
+	local cell = getCell()
+	if cell == nil then return nil end
+	local square = cell:getGridSquare(x, y, z)
+	if square == nil then return nil end
+	local objects = square:getObjects()
+	if objects == nil then return nil end
+	if index < 0 or index >= objects:size() then return nil end
+	local object = objects:get(index)
+	if not CeroSecModules.isFittable(object) then return nil end
+	return object
+end
+
+-- What both commands ask before either does anything: the module exists, it
+-- fits, the survivor knows the trade and has the tool. Answers the module and
+-- the object, or nil.
+function SCeroSecSystem:moduleJob(playerObj, x, y, z, args)
+	if type(args) ~= "table" then return nil end
+	if type(args.module) ~= "string" or type(args.index) ~= "number" then return nil end
+	local module = CeroSecModules.byId(args.module)
+	if module == nil then return nil end
+
+	local object = self:fixtureFor(playerObj, x, y, z, math.floor(args.index))
+	if object == nil then return nil end
+	if not CeroSecModules.fitsOn(object, module.id) then return nil end
+
+	-- What he knows. Perks.Electricity is the game's own table and the level is
+	-- the module's (CeroSecModules.LIST).
+	if playerObj:getPerkLevel(Perks.Electricity) < module.skill then return nil end
+
+	local inv = playerObj:getInventory()
+	if inv == nil then return nil end
+	-- The tool, in his bag like anything else. It is never consumed and never
+	-- degraded here: vanilla degrades a screwdriver through a recipe's own
+	-- flags[MayDegrade...] and there is no such thing on a timed action.
+	if inv:getFirstTypeRecurse(CeroSecModules.TOOL) == nil then return nil end
+
+	return module, object, inv
+end
+
+Commands.installmodule = function(self, playerObj, x, y, z, token, args)
+	local module, object, inv = self:moduleJob(playerObj, x, y, z, args)
+	if module == nil then return end
+
+	-- One of each, and no more: a second contact on the same door buys nothing
+	-- and would eat the item for it.
+	local fitted = CeroSecModules.installedOn(object)
+	if fitted[module.id] then return end
+
+	local item = inv:getFirstTypeRecurse(module.item)
+	if item == nil then return end
+
+	local from = item:getContainer() or inv
+	from:Remove(item)
+	if isServer() then sendRemoveItemFromContainer(from, item) end
+
+	if not CeroSecModules.setOn(object, module.id, true) then
+		-- The object would not take it. Give the module back rather than eat it:
+		-- nothing happened to the door and nothing should have happened to him.
+		local back = inv:AddItem(module.item)
+		if back ~= nil and isServer() then sendAddItemToContainer(inv, back) end
+		CeroSec.log("the module would not go onto the fixture at " .. x .. "," .. y .. "," .. z)
+		return
+	end
+	CeroSec.log(module.id .. " fitted at " .. x .. "," .. y .. "," .. z)
+end
+
+Commands.uninstallmodule = function(self, playerObj, x, y, z, token, args)
+	local module, object, inv = self:moduleJob(playerObj, x, y, z, args)
+	if module == nil then return end
+
+	local fitted = CeroSecModules.installedOn(object)
+	if not fitted[module.id] then return end
+
+	-- Into his hands first, whole: a module that comes off is a module, not a
+	-- pile of scrap, so it is the item it went on as.
+	local item = inv:AddItem(module.item)
+	if item == nil then return end
+
+	if not CeroSecModules.setOn(object, module.id, false) then
+		inv:Remove(item)
+		if isServer() then sendRemoveItemFromContainer(inv, item) end
+		return
+	end
+	if isServer() then sendAddItemToContainer(inv, item) end
+	CeroSec.log(module.id .. " taken off at " .. x .. "," .. y .. "," .. z)
 end
 
 Commands.open = function(self, playerObj, x, y, z, token)

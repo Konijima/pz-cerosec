@@ -8,5 +8,8 @@
     "ContextMenu_CeroSec_ReadProgrammer": "Lire le guide du programmeur",
     "ContextMenu_CeroSec_DevManual": "Lire le manuel CeroSec (dev)",
     "ContextMenu_CeroSec_InsertFloppy": "Insérer une disquette",
-    "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette"
+    "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette",
+    "ContextMenu_CeroSec_Install": "Installer %1",
+    "ContextMenu_CeroSec_Remove": "Retirer %1",
+    "ContextMenu_CeroSec_Modules": "Matériel CeroSec"
 }

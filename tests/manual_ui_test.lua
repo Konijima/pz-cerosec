@@ -181,6 +181,10 @@ end }
 local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
+	-- The four hardware modules name the four items they are made of, and the
+	-- item script below is checked against that list rather than against four
+	-- names typed again here.
+	"shared/CeroSec/CeroSecModules.lua",
 	"shared/CeroSec/CeroSecManualBook.lua",
 	"client/CeroSec/CeroSecManualUI.lua",
 	"client/CeroSec/CeroSecManualMenu.lua",
@@ -1503,8 +1507,9 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the four books, and the four disks.
-	eq("nine blocks: the module, the four books and the four disks", opens, 9)
+	-- The module, the four books, the four disks and the four hardware modules.
+	eq("thirteen blocks: the module, the four books, the four disks and the "
+		.. "four hardware modules", opens, 13)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -1763,6 +1768,62 @@ do
 	local blocks = {}
 	for name, body in string.gmatch(code, "item%s+([A-Za-z]+)%s*(%b{})") do
 		blocks[name] = body
+	end
+
+	-- The four hardware modules (rung 4f). Checked here beside the disks and not
+	-- with the books, because they are the same shape as a disk: an item with an
+	-- icon of its own and a world model, and no StaticModel -- a module is
+	-- carried in a bag and dropped on the ground, never held in a hand.
+	--
+	-- The world models are VANILLA names and the icons are ours: this mod ships
+	-- no mesh for these four, and a WorldStaticModel nothing answers to is an
+	-- item that lies on the floor as nothing at all.
+	local MODULES = {
+		{ item = "MagneticContact", icon = "CeroSecMagneticContact",
+			name = "Magnetic Contact", model = "MotionSensor" },
+		{ item = "Relay", icon = "CeroSecRelay",
+			name = "Relay Module", model = "ElectronicsScrap" },
+		{ item = "ElectricStrike", icon = "CeroSecElectricStrike",
+			name = "Electric Strike", model = "ScrapMetal" },
+		{ item = "DoorOperator", icon = "CeroSecDoorOperator",
+			name = "Door Operator", model = "ScrapMetal" },
+	}
+	for m = 1, #MODULES do
+		local want = MODULES[m]
+		local body = blocks[want.item]
+		check("the script declares item " .. want.item, body ~= nil)
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		for _, key in ipairs({ "DisplayName", "DisplayCategory", "ItemType",
+				"Weight", "Icon", "WorldStaticModel" }) do
+			check(want.item .. " sets " .. key, keys[key] ~= nil)
+		end
+		eq(want.item .. "'s fallback name", keys.DisplayName, want.name)
+		eq(want.item .. " files itself under Electronics", keys.DisplayCategory,
+			"Electronics")
+		eq(want.item .. " is a plain item", keys.ItemType, "base:normal")
+		eq(want.item .. "'s icon", keys.Icon, want.icon)
+		eq(want.item .. "'s world model is the vanilla one it borrows",
+			keys.WorldStaticModel, want.model)
+		check(want.item .. " has no hand model, being a thing in a bag",
+			keys.StaticModel == nil)
+		-- The icon file the name resolves to, which is what Item.DoParam asks
+		-- Texture.trygetTexture for.
+		local icon = io.open("common/media/textures/Item_" .. want.icon .. ".png", "r")
+		check("and the icon file is there: Item_" .. want.icon .. ".png", icon ~= nil)
+		if icon ~= nil then icon:close() end
+	end
+
+	-- The four ids the mod's Lua works in, against the four items the script
+	-- declares: one list, two files, and a name that drifted on one side would be
+	-- a menu entry that fits nothing.
+	for m = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[m]
+		local name = string.sub(module.item, #"CeroSec." + 1)
+		check("the script declares the item " .. module.id .. " is made of: "
+			.. module.item, blocks[name] ~= nil)
 	end
 
 	local mpath = "common/media/scripts/models_cerosec.txt"

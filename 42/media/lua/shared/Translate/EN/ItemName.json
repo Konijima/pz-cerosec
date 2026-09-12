@@ -6,5 +6,9 @@
     "CeroSec.FloppyBlue": "3.5\" Floppy Disk",
     "CeroSec.FloppyYellow": "3.5\" Floppy Disk",
     "CeroSec.FloppyRed": "3.5\" Floppy Disk",
-    "CeroSec.FloppyGreen": "3.5\" Floppy Disk"
+    "CeroSec.FloppyGreen": "3.5\" Floppy Disk",
+    "CeroSec.MagneticContact": "Magnetic Contact",
+    "CeroSec.Relay": "Relay Module",
+    "CeroSec.ElectricStrike": "Electric Strike",
+    "CeroSec.DoorOperator": "Door Operator"
 }

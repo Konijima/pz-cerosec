@@ -157,7 +157,7 @@ function CeroSecModules.installedOn(object)
 	if object == nil then return out end
 	if type(object.hasModData) ~= "function" or not object:hasModData() then return out end
 	local data = object:getModData()
-	if type(data) ~= "table" then return out end
+	if data == nil then return out end
 	local fitted = data[CeroSecModules.DATA_KEY]
 	if type(fitted) ~= "table" then return out end
 	for i = 1, #CeroSecModules.LIST do
@@ -169,6 +169,42 @@ end
 
 function CeroSecModules.installedIn(fitted, id)
 	return type(fitted) == "table" and fitted[id] == true
+end
+
+--
+-- Screwing one on, and taking it off
+--
+-- The server's, and only the server's: what reaches a client is the object's
+-- modData through transmitModData, which has a server branch of its own
+-- (GameServer.sendObjectModData -- the proofs, 2) and marks the chunk to be
+-- written out on the way past (flagForHotSave).
+--
+-- The last module off takes the table with it rather than leaving an empty one
+-- behind. IsoObject.save skips a modData table that isEmpty() and this one would
+-- not be empty -- it would hold one empty table -- so a door somebody wired and
+-- unwired would carry a few bytes for the rest of the save otherwise.
+function CeroSecModules.setOn(object, id, on)
+	if object == nil or CeroSecModules.byId(id) == nil then return false end
+	local data = object:getModData()
+	if data == nil then return false end
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if type(fitted) ~= "table" then
+		if not on then return true end
+		fitted = {}
+		data[CeroSecModules.DATA_KEY] = fitted
+	end
+	if on then
+		fitted[id] = true
+	else
+		fitted[id] = nil
+		local left = false
+		for i = 1, #CeroSecModules.LIST do
+			if fitted[CeroSecModules.LIST[i].id] == true then left = true end
+		end
+		if not left then data[CeroSecModules.DATA_KEY] = nil end
+	end
+	object:transmitModData()
+	return true
 end
 
 --
