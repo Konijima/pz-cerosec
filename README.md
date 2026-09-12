@@ -17,7 +17,7 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`[ adduser cat cd chgrp chmod chown clear cp crontab date deluser dev df
+  shell (`[ adduser cat cd chgrp chmod chown clear cp crontab cu date deluser dev df
   echo edit exit false fg gpasswd grep groupadd groupdel groups halt hash head
   help hostname id ifconfig jobs kill last ls mail man mkdir mount mv newfs passwd
   ping printf
@@ -111,8 +111,16 @@ Done:
   anybody but its owner may write is ignored without a word. Four sessions may
   come in at once, on `ttyp0` to `ttyp3`, and every one of them spends the FAR
   machine's four job slots and its twenty lines a second.
+- The telephone: a building the map knows has one line and one number of its own,
+  `555-NNNN`, derived from where the building stands and announced by the firmware
+  under the card. `cu 555-0417` dials it and lands a session on the far machine's
+  own `login:` however far away it is -- one call at a time to a building, a
+  password every time (a trust file names machines and a call carries none), four
+  lines a second because the line is 2400 baud, and `~.` or `exit` to hang up. The
+  exchange runs on the county's power: when the grid goes, so does the dial tone,
+  for good.
 
-Next: the telephone line and the radio, which add links and not commands.
+Next: the radio, which adds a link and not a command.
 
 ## For players
 
@@ -657,6 +665,81 @@ down and leaves your own machine at an idle prompt.
 the oldest dropped, and exempt from the 64 KB disk quota by its path exactly as
 `/var/log/cron` is. That is why `wtmp begins` is a real answer on this machine
 rather than the formality it is on a real one.
+
+### The telephone
+
+The coax reaches one building. The telephone reaches the county.
+
+A building the map knows has **one line** in it, and the number belongs to the
+line and not to a machine: every computer in that building answers on it, one
+call at a time. It is `555-NNNN` -- the exchange fiction has used since the Bell
+System set it aside -- and the four digits are derived from where the building
+stands, exactly as the address is, so nobody can type a new one. The firmware
+announces it under the card, and that BIOS screen is the **only** place it is
+written: there is no `/etc/phone`, because the number belongs to the wall and not
+to the disk in the case. A computer in a base you built is in no building, so it
+has no line: `cu: no phone line`.
+
+| command | does |
+| --- | --- |
+| `cu telno` | call another machine: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ cu 555-0102
+CONNECT 2400
+Connected.
+login:
+```
+
+Four words in capitals are the **modem** talking and not a command, and they are
+a Hayes-compatible modem's own result codes: `CONNECT 2400` when the far end
+answered, `BUSY` when the line is in use at either end, `NO DIALTONE` when there
+is no exchange, and `NO CARRIER` when nobody answered or the line went away
+under a call that was up. `Connected.` and `Disconnected.` are `cu(1)`'s own two
+lines.
+
+From `login:` on it is `rlogin`'s session -- the far machine's files, its
+accounts, one of its same four `ttyp` lines, its jobs, and it counts as a hop of
+the same two-deep chain -- with two differences:
+
+- **A password every time.** `/etc/hosts.equiv` and `~/.rhosts` are lists of
+  *machines*, and a call carries no machine, only a number: `ruserok(3)` has
+  never had an answer for one. So no trust file is asked, however trusted your
+  computer is on its own coax.
+- **It is slow.** The line is 2400 baud, which on a sixty-column screen is four
+  lines a second (`CeroSec.PHONE_LINES_PER_S`) underneath the machine's own
+  twenty. Nothing is dropped: a `cat` down a call arrives in handfuls.
+
+Over there, `who` and `last` name the **number** the call came from -- `(555-0417)`
+in the host column -- and that is what goes into `/var/log/wtmp`. It is the honest
+thing to record: a number is what a stranger has instead of a name.
+
+`exit` over there ends it, and `~.` typed alone on a line at the far machine's
+prompt ends it from this end -- `cu`'s own tilde escape, read by the near end and
+never sent down the line, so it is a command on neither machine and in neither
+history. (The other tilde escapes are not here: `~!` is a second shell and
+`~%put` is a file transfer.) Escape still works the way it does down an `rlogin`:
+`^C` for whatever is running over there, and the end of an idle session.
+
+`rsh` and `rcp` do **not** dial. They are network commands -- `rcmd(3)`, a
+socket, a route -- and a call is not a route: `rsh shed date` on a machine in
+another building is `No route to host` whether or not you could have called it.
+Copying a file by telephone was `uucp`'s job, and `uucp` is not on this disk.
+
+**The exchange is the county's grid.** A telephone exchange is a building full of
+switches on the mains, so the day the sandbox's power cutoff arrives there is no
+dial tone anywhere, for good -- and a call that was up when it happened comes
+back as `NO CARRIER`. That is the real difference between the two links: the coax
+is two machines and a wire and goes on working with a generator at each end,
+while a call needs a third building that is still working. Whether the grid is
+alive is asked the way the game's own Lua asks it (`ISButtonPrompt.lua:520`).
+A server that wants it otherwise sets one option:
+
+| `SandboxVars.CeroSec.PhoneService` | the exchange |
+| --- | --- |
+| `grid` (default, and what anything unset means) | lives as long as the county's power |
+| `never` | there is no telephone service at all, from day one |
+| `always` | on its own generator; it outlives the grid |
 
 ### The prompt, and a script
 
@@ -2295,9 +2378,56 @@ every line typed, because both are answers about a moment:
 | `copy(spec)` | `rcp`'s own copy, judged by both disks |
 
 `server/CeroSec/SCeroSecNet.lua` is the other half and the only one that knows
-there is a world. The Ethernet rule for this rung is the whole of `reachable()`:
-the same map building, both machines on. A later rung adds a second answer there
-and changes no command and no engine file.
+there is a world, and it now holds **two link kinds**, which is what the promise
+about "a new kind of link and not a new command" came to:
+
+| kind | the answer | the rule |
+| --- | --- | --- |
+| Ethernet | `reachable(system, from, addr)` | the same map building, both machines on |
+| telephone | `reachablePhone(system, from, tel)` | both have a line, both on, the exchange alive, the line free at each end |
+
+A third one (the radio) is a third answer beside them and touches no command and
+no engine file. What a new kind owes, and the telephone is the worked example:
+
+- **an identity**, derived and not stored twice. The number comes off the
+  building key already on the machine's disk (`CeroSecOS.phoneKey` of
+  `netRecord`'s `b1`/`b2`, one more multiply-add modulo 2^16 so that adjacent
+  buildings are not adjacent numbers), so it is answerable for a machine whose
+  chunk nobody has loaded, needs no new field in the save and no migration, and
+  cannot disagree with the address about whether the computer is in a building.
+  Collisions are documented rather than fixed: two buildings on one number are
+  two buildings on one line, and nothing here routes.
+- **its own refusals**, in the voice of the hardware that would have said them:
+  strerror's words for a socket, a Hayes modem's result codes for a call.
+- **a marked pty**. `pty.phone` is the whole of what makes a session a call --
+  the busy rule, the trickle and the two endings are all read off it -- so
+  everything that already knows what a pty is goes on working unchanged.
+- **busy derived, never counted.** `CeroSecNet.lineBusy` walks the county's pty
+  tables, because a call's two ends are both on the pty; a counter beside them is
+  a second truth that leaks the first time a machine is picked up mid-call.
+- **a teardown reason.** `tearDown(system, object, line, why)`: `"carrier"` when
+  the link went (power at either end, a machine picked up, the exchange dying
+  mid-call, noticed in `farOf`, where every keystroke on a session already goes)
+  and nothing when somebody hung up. A wire says one line whatever ended it.
+- **its own rate, if it is slower than the machine.** `CeroSecNet.callRoom` keeps
+  a one-second window on the pty and `SCeroSecJobs` drains under both ceilings;
+  what the line cannot carry is kept, never dropped.
+- **a sandbox option, read the guarded way.** `SandboxVars.CeroSec.PhoneService`,
+  and `CeroSecNet.gridAlive()` asks the game the way the game's own Lua does --
+  `getSandboxOptions():getElecShutModifier()` against
+  `getGameTime():getWorldAgeHours()` (`ISButtonPrompt.lua:520`), where `-1` is
+  the power already gone and `2147483647` is the power that never goes
+  (`zombie.SandboxOptions.randomElectricityShut`, javap'd). A game it cannot ask
+  at all answers "alive": a mod that could not read the option must not take the
+  telephone out of every server it cannot interrogate.
+
+`cu` is the engine-side worked example of the same split: it decides the shape of
+a number, whether this machine has a line at all and the hop ceiling, and ends in
+a `"cu"` order. It is refused where `rlogin` is when no job has a terminal, in its
+own name (`CeroSecOSVM`), and `~.` is a shape the engine recognises
+(`CeroSecOS.isCuEscape`) and the server acts on in `Commands.exec` -- a tilde
+escape is read by the near end and never sent down the line, so the far shell
+never sees it and neither history has it.
 
 **Why a machine answers with its chunk unloaded.** The rung rests on it, so it is
 written down beside the code that uses it. `zombie.globalObjects.SGlobalObjects`
@@ -2434,9 +2564,12 @@ machine with no operating system and the BIOS repairs.
   an answer on the glass, and a script's output, question and `^C` through it.
 - `window_test.lua` also holds the network bench: three real machines on one real
   system, two in a building and one down the road, one of them with its square
-  and its `IsoObject` taken away after it was switched on.
+  and its `IsoObject` taken away after it was switched on. The telephone section
+  uses the same two buildings four hundred squares apart -- where not one
+  r-command reaches and `cu` does -- with a fake `getSandboxOptions` and a world
+  age, so the grid can be killed under a call that is up.
 - `manual_test.lua` — the documentation set against the engine it describes: the
-  shape of every volume (8..12 chapters, 3..8 pages each, 50..70 pages, plain ASCII,
+  shape of every volume (8..13 chapters, 3..9 pages each, 50..76 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every
   `COMMAND_INFO` usage line and every error string the machine can print carried
   somewhere in the **union** of the three, each volume's own rules (a card that is

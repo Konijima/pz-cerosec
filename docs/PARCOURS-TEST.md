@@ -1074,6 +1074,66 @@ coques.
      éjecter, remettre une autre disquette, `ls -l /dev` montre toujours
      `crw-rw-rw-`. [ ]
 
+## S. Le téléphone (palier 6b)
+
+Il faut **deux ordinateurs dans deux bâtiments différents de la carte**, aussi
+loin l'un de l'autre qu'on veut : c'est le contraire de la section N, où tout se
+passait dans un seul bâtiment. Les deux doivent avoir du courant. Dans ce qui
+suit, `ici` est la machine devant laquelle on est assis et `là-bas` celle de
+l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
+
+210. **Le numéro.** Allumer les deux et regarder le BIOS de chacun : sous la
+     ligne `Ethernet: eth0 10.x.y.z` il doit y avoir une ligne
+     `Phone line: 555-NNNN`. Les deux machines d'un **même** bâtiment (celles de
+     la section N) doivent afficher le **même** numéro ; celle de l'autre
+     bâtiment un numéro différent. Vérifier ensuite qu'il n'est écrit nulle part
+     sur le disque : `cat /etc/phone` → `no such file`, et `ifconfig` ne le
+     montre pas (ce n'est pas une interface tant qu'on n'a pas appelé). Éteindre
+     et rallumer : le même numéro revient. [ ]
+211. **L'appel.** Depuis `ici` : `cu 555-NNNN` (le numéro de `là-bas`) →
+     `CONNECT 2400`, puis `Connected.`, puis le `login:` de l'autre machine.
+     S'y connecter (`admin`, Entrée) : l'invite devient `admin@<là-bas>`,
+     `hostname` répond le nom de l'autre machine et `pwd` son `/home/admin`.
+     Vérifier que le mot de passe est demandé **même** si `/etc/hosts.equiv` de
+     `là-bas` contient le nom de `ici` (l'écrire, refaire l'appel : il demande
+     quand même). Puis là-bas : `who` → une ligne `ttyp0` avec `(555-MMMM)`, le
+     numéro de `ici`, et `last` → la même chose. Ressortir avec `exit` →
+     `Disconnected.` (et **pas** `Connection closed.`). [ ]
+212. **`~.` et la lenteur.** Rappeler, se connecter, puis taper `~.` seul sur la
+     ligne → `Disconnected.` et l'écran revient à l'invite locale. Vérifier que
+     ce n'était une commande nulle part : là-bas (par un nouvel appel)
+     `grep '~' /home/admin/.sh_history` ne doit rien trouver, et ici non plus.
+     Rappeler et lancer `cat /etc/hosts` puis `ls /bin` là-bas : les lignes
+     doivent arriver **par petits paquets** (quatre par seconde), visiblement
+     plus lentement que la même commande tapée sur sa propre machine. Rien ne
+     doit manquer à la fin. [ ]
+213. **Une ligne par bâtiment.** Pendant un appel ouvert entre `ici` et `là-bas`,
+     aller à la **deuxième** machine du bâtiment de `ici` (celle de la section N)
+     et taper `cu 555-NNNN` → `BUSY`. Depuis cette même machine, appeler le
+     numéro de son **propre** bâtiment → `BUSY` aussi. Raccrocher (`~.`), puis
+     depuis `ici` appeler le numéro de sa propre machine → `BUSY` (une ligne
+     qu'on utilise soi-même). Enfin, éteindre toutes les machines de `là-bas` et
+     appeler son numéro → `NO CARRIER`, comme pour un numéro que personne n'a
+     (`cu 555-0000`, si aucun bâtiment ne l'a). [ ]
+214. **Le central est sur le réseau électrique.** Régler le bac à sable pour que
+     le courant soit déjà coupé (`ElecShutModifier` à 0 jour), donner du courant
+     aux deux ordinateurs par générateur, puis `cu 555-NNNN` → `NO DIALTONE` :
+     les deux machines tournent, le central non. Sur une partie où le courant
+     tient encore, ouvrir un appel et faire couper le réseau (ou avancer jusqu'au
+     jour de la coupure) : à la première touche tapée, l'appel doit tomber avec
+     `NO CARRIER` et rendre l'invite locale. Vérifier aussi qu'un appel ouvert
+     meurt de la même façon quand on éteint la machine d'en face, quand on la
+     ramasse, ou quand on coupe le courant de sa pièce. [ ]
+215. **Ce qui ne téléphone pas.** Depuis `ici`, avec le nom de `là-bas` écrit
+     dans `/etc/hosts` : `rsh <nom> hostname` et `rcp notes.txt <nom>:/tmp/n` →
+     `No route to host` dans les deux cas (ce sont des commandes de réseau, pas
+     le téléphone), et `ping <nom>` → 100 % de perte. Puis `crontab -e` avec
+     `* * * * * cu 555-NNNN`, attendre une minute : `mail` doit dire
+     `cu: not a terminal` et **aucune** session ne doit s'être ouverte là-bas
+     (`who` là-bas ne montre que la console). Finir par `crontab -r`. Enfin, sur
+     une machine d'une base construite (aucun bâtiment) : `cu 555-NNNN` →
+     `cu: no phone line`, et son BIOS n'affiche aucune ligne `Phone line:`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

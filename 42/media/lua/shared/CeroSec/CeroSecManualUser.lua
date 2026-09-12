@@ -124,9 +124,12 @@ system. Line two says the memory answered. Line three says it found the
 drive, which it calls hda, and that the drive holds 64K. Line four says
 it is loading the operating system off that drive.
 
-Then a greeting line naming this system, and then the machine asks who
-you are. If your machine is on a wire it prints one line more, about the
-wire; Volume 3 is the book for that.]],
+A machine in a building prints two lines more under the drive: the network
+card with its address, and Phone line: 555-0417, the building's phone.
+Neither is yours to change, and that screen is the only place the number
+is written. Volume 2 has both.
+
+Then a greeting naming this system, and then it asks who you are.]],
 
 [[Saying who you are.
 
