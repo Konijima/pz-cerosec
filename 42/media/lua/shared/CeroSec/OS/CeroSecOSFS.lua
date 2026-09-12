@@ -341,55 +341,88 @@ CeroSecOS.NODE_FIELDS = {
 }
 CeroSecOS.NODE_OWN_FIELD = { dir = "children", file = "data", link = "target" }
 
--- The path of the first node under here carrying something no node of its kind
--- carries, or nil. Asked of a DISK and of nothing else: the machine's own drive is
--- built only by this engine, and a gate that refused a field there would be a gate
--- that can brick a computer over a stale key an older build wrote.
+-- The furthest from the epoch a timestamp on a disk may be. Bounded for the reason
+-- an owner is: a number nothing checks, in a field that only ever comes out as a
+-- date, is a date that lies -- 1e300 prints as a perfectly ordinary March the
+-- first. A thousand billion seconds is the year 33658, which is further than a
+-- clock reading the game's calendar will ever get.
+CeroSecOS.MAX_STAMP = 1000000000000
+
+-- What is WRONG with the shape of this disk's tree, or nil: the path of the first
+-- node at fault, and why.
 --
--- Owners and groups are bounded here too. checkNode asks only that they are
--- strings, which is all the machine's own drive needs -- nothing there can set one
--- that is not an account -- and on a disk an unbounded string in a field nothing
--- prints is the same hiding place by another name.
-function CeroSecOS.junkUnder(node, where)
+-- One walk for four rules, because it is asked of the table the game handed over,
+-- before a byte of it is copied -- so it is the only thing standing between a
+-- crafted modData and the engine, and everything it costs is paid on every
+-- right-click:
+--
+--   * DEPTH. Bounded here because nothing else on this path bounds it any more.
+--     The copy used to run first and refuse a deep tree; asking this of the raw
+--     table put an unbounded recursion in front of it, and a twenty-thousand-deep
+--     chain -- or a table pointing at itself, which is infinitely deep -- was a
+--     stack overflow out of the command handler rather than a refusal.
+--   * a DEVICE, which is a hiding place with a type on it (see the note below).
+--   * a node's FIELDS, which is the same hiding place without one.
+--   * how many entries a directory holds, counted before the names are gathered
+--     and sorted: MAX_DIR_ENTRIES is what refuses four hundred thousand children
+--     in one comparison, and gathering them first was nine seconds of it.
+--
+-- The order is the order of what it costs: the cheap tests on this node, then the
+-- count, then the walk.
+function CeroSecOS.diskShape(node, where, depth)
 	where = where or ""
-	if type(node) ~= "table" then return where end
+	depth = depth or 0
+	if type(node) ~= "table" then return where, "not a node" end
+	if depth > CeroSecOS.MAX_DEPTH then return where, "path too deep" end
+	-- A disk has no business carrying a device: `newfs` never makes one, a device
+	-- describes the world around a MACHINE, and the boot gate lets the `null` kind
+	-- through only because its walk is shared with the machine's own drive -- where
+	-- a device costs the quota nothing on purpose, being built afresh at the top of
+	-- every command and swept off before the answer. On a disk that exemption is a
+	-- hole: nothing sweeps, the nodes are saved, and three thousand of them weigh
+	-- nothing, count nothing, fill no directory `df` can see, and cost the boot gate
+	-- forty milliseconds on every command the machine runs from then on.
+	if node.type == "dev" then return where, "bad type" end
+
 	local own = CeroSecOS.NODE_OWN_FIELD[node.type]
 	for key in pairs(node) do
-		if not CeroSecOS.NODE_FIELDS[key] and key ~= own then return where end
+		if not CeroSecOS.NODE_FIELDS[key] and key ~= own then return where, "unknown field" end
 	end
-	if type(node.owner) == "string" and #node.owner > CeroSecOS.MAX_NAME then return where end
-	if node.group ~= nil and type(node.group) == "string"
-			and #node.group > CeroSecOS.MAX_NAME then
-		return where
+	-- Owners and groups are bounded here too. checkNode asks only that they are
+	-- strings, which is all the machine's own drive needs -- nothing there can set
+	-- one that is not an account -- and on a disk an unbounded string in a field
+	-- nothing prints is the same hiding place by another name.
+	if type(node.owner) == "string" and #node.owner > CeroSecOS.MAX_NAME then
+		return where, "invalid name"
 	end
-	if own ~= "children" or node.children == nil then return nil end
+	if type(node.group) == "string" and #node.group > CeroSecOS.MAX_NAME then
+		return where, "invalid name"
+	end
+	if type(node.mtime) == "number" then
+		if node.mtime < 0 or node.mtime > CeroSecOS.MAX_STAMP then
+			return where, "bad mtime"
+		end
+	end
+
+	if own ~= "children" or type(node.children) ~= "table" then return nil end
+	-- Counted with pairs and stopped at the first one past the ceiling, because
+	-- CeroSecOS.childNames gathers every name and sorts it -- which is the right
+	-- thing to do to a directory that is allowed to exist and the wrong thing to do
+	-- to one with four hundred thousand names in it.
+	local n = 0
+	for _ in pairs(node.children) do
+		n = n + 1
+		if n > CeroSecOS.MAX_DIR_ENTRIES then return where, "directory full" end
+	end
+	-- And sorted from here down, so which fault is reported is the same answer
+	-- every time it is asked.
 	local names = CeroSecOS.childNames(node)
 	for i = 1, #names do
-		local found = CeroSecOS.junkUnder(node.children[names[i]], where .. "/" .. names[i])
-		if found ~= nil then return found end
+		local at, why = CeroSecOS.diskShape(node.children[names[i]],
+			where .. "/" .. names[i], depth + 1)
+		if at ~= nil then return at, why end
 	end
 	return nil
-end
-
--- Is there a device anywhere in this subtree? Asked of a DISK and of nothing else.
---
--- A disk has no business carrying one: `newfs` never makes one, a device describes
--- the world around a MACHINE, and the boot gate lets the `null` kind through only
--- because its walk is shared with the machine's own drive -- where a device costs
--- the quota nothing on purpose, being built afresh at the top of every command and
--- swept off before the answer. On a disk that exemption is a hole: nothing sweeps,
--- the nodes are saved, and three thousand of them weigh nothing, count nothing,
--- fill no directory `df` can see, and cost the boot gate forty milliseconds on
--- every command the machine runs from then on.
-function CeroSecOS.hasDevUnder(node)
-	if type(node) ~= "table" then return false end
-	if node.type == "dev" then return true end
-	if node.children == nil then return false end
-	local names = CeroSecOS.childNames(node)
-	for i = 1, #names do
-		if CeroSecOS.hasDevUnder(node.children[names[i]]) then return true end
-	end
-	return false
 end
 
 -- The path of the first file in this subtree that is bigger than a file may be, or

@@ -10487,8 +10487,8 @@ do
 	-- kind through only because its walk is shared with the machine's own drive.
 	local devs = CeroSecOS.newDir("root", 755)
 	devs.children.null = CeroSecOS.newNull()
-	eq("a device on a disk is a refusal",
-		select(2, CeroSecOS.validateDisk({ v = 1, fs = devs }, true)), "floppy: bad type")
+	eq("a device on a disk is a refusal, and it is named",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = devs }, true)), "floppy/null: bad type")
 	eq("at the slot", CeroSecOS.diskFromData({ v = 1, fs = devs }), nil)
 	-- However deep it is buried, and however little the ceilings can see of it.
 	local deep = CeroSecOS.newDir("root", 755)
@@ -10542,11 +10542,54 @@ do
 	lk.children = { y = CeroSecOS.newFile("root", 644, "") }
 	asLink.children.l = lk
 	eq("under a link node too", CeroSecOS.diskFromData({ v = 1, fs = asLink }), nil)
-	-- And an owner nothing prints is a hiding place by another name.
+	-- And an owner nothing prints is a hiding place by another name -- as is a
+	-- timestamp nothing checks, in a field that only ever comes out as a date.
 	local longOwner = CeroSecOS.newDir("root", 755)
 	longOwner.owner = string.rep("a", CeroSecOS.MAX_NAME + 1)
 	eq("an owner longer than a name may be",
-		CeroSecOS.diskFromData({ v = 1, fs = longOwner }), nil)
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = longOwner }, true)),
+		"floppy: invalid name")
+	local longGroup = CeroSecOS.newDir("root", 755)
+	longGroup.group = string.rep("a", CeroSecOS.MAX_NAME + 1)
+	eq("a group likewise", CeroSecOS.diskFromData({ v = 1, fs = longGroup }), nil)
+	for _, when in ipairs({ -1, CeroSecOS.MAX_STAMP + 1, 1e300 }) do
+		local stamped = CeroSecOS.newDir("root", 755)
+		stamped.children.f = CeroSecOS.newFile("root", 644, "")
+		stamped.children.f.mtime = when
+		eq("a timestamp that is not a moment (" .. tostring(when) .. ")",
+			select(2, CeroSecOS.validateDisk({ v = 1, fs = stamped }, true)),
+			"floppy/f: bad mtime")
+	end
+
+	-- The walk that asks all of this runs on the table the GAME handed over, before
+	-- a byte of it is copied -- so it is the only thing between a crafted modData
+	-- and the engine, and it has to end. It was the copy that bounded the depth,
+	-- and putting this in front of the copy took that bound away: a deep chain, or
+	-- a table pointing at itself, was a stack overflow out of the command handler
+	-- rather than a refusal.
+	local chain = CeroSecOS.newDir("root", 755)
+	local at = chain
+	for _ = 1, CeroSecOS.MAX_DEPTH * 4 do
+		local down = CeroSecOS.newDir("root", 755)
+		at.children.d = down
+		at = down
+	end
+	eq("a chain deeper than a path can be is refused and not fallen down",
+		CeroSecOS.diskFromData({ v = 1, fs = chain }), nil)
+	local loop = CeroSecOS.newDir("root", 755)
+	loop.children.self = loop
+	eq("and a tree that contains itself, which is infinitely deep",
+		CeroSecOS.diskFromData({ v = 1, fs = loop }), nil)
+	-- And the breadth is refused before the names are gathered: the ceiling that
+	-- says no is one comparison, and collecting and sorting four hundred thousand
+	-- names to reach it was nine seconds of the server's own thread.
+	local crowd = CeroSecOS.newDir("root", 755)
+	for i = 1, CeroSecOS.MAX_DIR_ENTRIES + 4 do
+		crowd.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
+	end
+	eq("a directory with more in it than one may hold",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = crowd }, true)),
+		"floppy: directory full")
 
 	-- None of it is paid for before it is refused: the field rules are asked of the
 	-- table the game handed over, and the copy that walks every byte of a disk comes

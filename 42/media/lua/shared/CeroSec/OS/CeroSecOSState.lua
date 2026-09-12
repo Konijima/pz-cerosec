@@ -276,16 +276,13 @@ end
 --     time: a floppy off a shelf has no filesystem, the gate answered "nothing to
 --     check" and took whatever else was written on it, and then one `newfs` gave it
 --     a filesystem and the disk could never come out again.
---   * no device, which is the same hiding place with a type on it (see
---     CeroSecOS.hasDevUnder). Asked before the field rule, because a device IS a
---     node with fields no other node has and the field rule would catch it while
---     saying the less true of the two things about it.
---   * the fields of every node, which is where the other half of the first rule was
---     hiding: checkNode reads the fields it knows for a node's own kind and ignores
---     every other key, and subtreeUsage weighs `data` and `target` and descends
---     only into a directory's children -- so junk on a node, and a whole tree hung
---     under a FILE node, were unvalidated, unweighed and uncounted (see
---     CeroSecOS.junkUnder).
+--   * the SHAPE of its tree -- how deep it goes, how wide one directory is, and
+--     what every node on it is made of (CeroSecOS.diskShape). That last is where
+--     the other half of the first rule was hiding: checkNode reads the fields it
+--     knows for a node's own kind and ignores every other key, and subtreeUsage
+--     weighs `data` and `target` and descends only into a directory's children --
+--     so junk on a node, and a whole tree hung under a FILE node, were
+--     unvalidated, unweighed and uncounted.
 --
 -- ok, reason.
 function CeroSecOS.diskFieldsOk(disk)
@@ -298,9 +295,8 @@ function CeroSecOS.diskFieldsOk(disk)
 		if not known then return false, "floppy: unknown field" end
 	end
 	if type(disk.fs) ~= "table" then return true end
-	if CeroSecOS.hasDevUnder(disk.fs) then return false, "floppy: bad type" end
-	local junk = CeroSecOS.junkUnder(disk.fs)
-	if junk ~= nil then return false, "floppy" .. junk .. ": unknown field" end
+	local at, why = CeroSecOS.diskShape(disk.fs)
+	if at ~= nil then return false, "floppy" .. at .. ": " .. why end
 	return true
 end
 
