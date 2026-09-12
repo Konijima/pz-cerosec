@@ -2152,9 +2152,12 @@ do
 	reloaded.frame()
 	check("who may now read it", reloaded.painted("on"))
 
-	-- Nothing of any of this is on the disk.
-	eq("/dev is empty between commands",
-		CeroSecOS.countEntries(reloaded.object.os.fs.children.dev), 0)
+	-- Nothing of any of this is on the disk: what is left in /dev between commands
+	-- is the machine's own null device and nothing of the world.
+	eq("/dev holds only the hole between commands",
+		CeroSecOS.countEntries(reloaded.object.os.fs.children.dev), 1)
+	eq("and that is what it is",
+		CeroSecOS.isNull(reloaded.object.os.fs.children.dev.children.null), true)
 	eq("and the state still validates", CeroSecOS.validate(reloaded.object.os), true)
 
 	_G.__world = nil

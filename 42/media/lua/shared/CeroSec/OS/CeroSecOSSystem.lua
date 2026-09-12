@@ -175,6 +175,8 @@ function CeroSecOS.upgradeSystem(state)
 	-- And the two network files, on the same terms: a machine saved before there
 	-- was a wire in it has neither, and neither is damage.
 	CeroSecOS.ensureNet(state)
+	-- And /dev/null, for a machine saved before there was a hole in its disk.
+	CeroSecOS.ensureDev(state)
 
 	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
@@ -370,6 +372,10 @@ function CeroSecOS.restoreSystem(state)
 	-- made where they are missing, and one that is there is left exactly as it
 	-- lies -- a name a survivor wrote down is not damage.
 	CeroSecOS.ensureNet(state)
+	-- And /dev, with the hole in the disk in it. The world's devices are not the
+	-- BIOS's business -- they are not on the disk at all -- so this puts back
+	-- exactly one node.
+	CeroSecOS.ensureDev(state)
 
 	-- A repaired machine has everything this build ships, so there is nothing
 	-- left for the upgrade to top up.

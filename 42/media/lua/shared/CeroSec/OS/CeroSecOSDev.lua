@@ -61,10 +61,13 @@
 --
 -- Between exec and exec, never. mountDev builds the children at the top of
 -- every exec and continue, unmountDev takes them away again before the answer
--- goes back, so the state the game saves has an empty /dev in it exactly as it
--- has since rung 1. Nothing about a device is persisted by the filesystem: the
+-- goes back, so the state the game saves holds no device of the WORLD, exactly as
+-- it has since rung 1. Nothing about one is persisted by the filesystem: the
 -- numbers and the modes live in the caller's own book (state.devmap, kept by
 -- the server) and everything else is discovered afresh every time.
+--
+-- One exception, and it is not part of the world at all: /dev/null is on the disk
+-- (see below). It is seeded, it is saved, and the sweep leaves it alone.
 --
 -- Errors
 --
@@ -103,6 +106,57 @@ CeroSecOS.DEV_VALUES = {
 	win   = { lock = true, unlock = true },
 	door  = { open = true, close = true },
 }
+
+--
+-- /dev/null
+--
+-- The one device that is not part of the world and the one that is written to the
+-- DISK: it is there whether anybody is standing in the building or not, it reads
+-- empty, and it swallows whatever is written to it. So it is seeded like any other
+-- system file (CeroSecOS.ensureDev), it survives a save, and the sweep that takes
+-- the world's devices off /dev leaves it exactly where it is.
+--
+-- It is a device and not an empty file, because that is what it is on a real
+-- machine and because the difference shows: `rm /dev/null` is "is a device",
+-- `ls -l` wears "c", and nothing can put contents into it.
+--
+-- 666, the mode a real one wears: everybody may read it and everybody may write
+-- to it, which is the whole point of it -- `cmd > /dev/null` is what a script
+-- writes when it wants an answer and not the noise.
+CeroSecOS.NULL_NAME = "null"
+CeroSecOS.NULL_MODE = 666
+CeroSecOS.NULL_PATH = CeroSecOS.DEV_PATH .. "/" .. CeroSecOS.NULL_NAME
+
+function CeroSecOS.newNull()
+	return {
+		type = "dev", owner = "root", group = "root", mode = CeroSecOS.NULL_MODE,
+		id = CeroSecOS.NULL_NAME, kind = CeroSecOS.NULL_NAME,
+		desc = "", side = "", pos = "", state = "",
+	}
+end
+
+-- Is this node the machine's own null device? Asked by the sweep, which must not
+-- take it away, and by validate, which accepts no other device on a saved disk.
+function CeroSecOS.isNull(node)
+	return type(node) == "table" and node.type == "dev"
+		and node.kind == CeroSecOS.NULL_NAME
+end
+
+-- /dev, with the null device in it. Made where either is missing and left exactly
+-- as it lies where they are not -- root deleting /dev is root's right and stays
+-- done, the way it does for /bin.
+function CeroSecOS.ensureDev(state)
+	local dir = CeroSecOS.ensureSystemDir(state, "dev")
+	if dir == nil then return nil end
+	-- Only where the name is free: anything else at it is somebody's own work and
+	-- is not ours to replace, which is the rule every other thing seeded here runs
+	-- on.
+	if dir.children[CeroSecOS.NULL_NAME] == nil
+			and CeroSecOS.countEntries(dir) < CeroSecOS.DEV_MAX then
+		dir.children[CeroSecOS.NULL_NAME] = CeroSecOS.newNull()
+	end
+	return dir
+end
 
 -- How many nodes /dev may hold: a machine in the middle of a shopping mall is
 -- not a machine with four hundred entries in one listing.
@@ -187,7 +241,9 @@ function CeroSecOS.unmountDev(state, env)
 	local names = CeroSecOS.childNames(dir)
 	for i = 1, #names do
 		local node = dir.children[names[i]]
-		if CeroSecOS.isDev(node) then
+		-- Every device except the machine's own: /dev/null is on the disk and is
+		-- not something the world hands over, so the sweep is not about it.
+		if CeroSecOS.isDev(node) and not CeroSecOS.isNull(node) then
 			if devices ~= nil and type(devices.chmod) == "function"
 					and node.mode ~= node.mounted then
 				devices.chmod(node.id, node.mode)
@@ -242,6 +298,8 @@ function CeroSecOS.devRead(state, session, node)
 	if not CeroSecOS.can(state, session, node, "r") then
 		return refuse(node, "permission denied")
 	end
+	-- The null device has no state and never will: what it reads is nothing at
+	-- all, which is not the same as an empty LINE (see commands.cat).
 	return node.state or "", nil
 end
 
@@ -261,6 +319,12 @@ function CeroSecOS.devWrite(state, session, node, value, env)
 	if not CeroSecOS.can(state, session, node, "w") then
 		return refuse(node, "permission denied")
 	end
+
+	-- The null device takes anything and does nothing with it. Answered before the
+	-- vocabulary and before the world is asked, because there is no world behind
+	-- it: it is a hole in the disk, and a machine with no devices around it still
+	-- has one.
+	if CeroSecOS.isNull(node) then return true, nil end
 
 	local word = trim(value)
 	local allowed = CeroSecOS.DEV_VALUES[node.kind]
@@ -332,11 +396,16 @@ end
 local V_OWNER, V_GROUP, V_ID, V_DESC, V_SIDE = 4, 4, 8, 13, 1
 
 function CeroSecOS.devLine(node)
-	return CeroSecOS.permString(node)
+	local head = CeroSecOS.permString(node)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", V_OWNER), V_OWNER)
 		.. "  " .. CeroSecOS.padRight(
 			CeroSecOS.truncate(CeroSecOS.groupOf(node), V_GROUP), V_GROUP)
-		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", V_ID), V_ID)
+		.. "  "
+	-- The hole in the disk has no description, no place in the building and no
+	-- state, so its line ends at its name rather than carrying three columns of
+	-- blanks: a listing does not pad what it has nothing to say about.
+	if CeroSecOS.isNull(node) then return head .. CeroSecOS.NULL_NAME end
+	return head .. CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", V_ID), V_ID)
 		.. CeroSecOS.padRight(CeroSecOS.truncate(node.desc or "", V_DESC), V_DESC)
 		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.side or "", V_SIDE), V_SIDE)
 		.. "  " .. (node.state or "")

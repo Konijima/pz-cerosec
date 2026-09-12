@@ -47,6 +47,15 @@ CeroSecOS.CRON_PATH = "/var/spool/cron"
 CeroSecOS.LOG_PATH = "/var/log"
 CeroSecOS.CRON_LOG_PATH = "/var/log/cron"
 CeroSecOS.MAIL_PATH = "/var/mail"
+-- The one directory on the machine anybody may write in, and the reason it can be
+-- one: only the account that owns a file there may take it away (see
+-- CeroSecOS.isSticky). Real ones wear a fourth mode digit for that -- 1777 -- and
+-- the modes here are three digits everywhere, on the disk and in `ls -l` and in
+-- chmod's grammar alike, so the RULE is the path's and not the node's. That is
+-- how the quota exemptions already work, and the manual says so where it says
+-- 777.
+CeroSecOS.TMP_PATH = "/var/tmp"
+CeroSecOS.TMP_MODE = 777
 
 -- The spool is 700 and root's: a crontab is a list of things that will run as
 -- somebody, so nobody reads anybody else's and nobody writes his own except
@@ -103,6 +112,9 @@ function CeroSecOS.ensureVar(state)
 	end
 	under("log", 755)
 	under("mail", 755)
+	-- The scratch directory. Written to by everybody, emptied by nobody but the
+	-- owner of what is in it.
+	under("tmp", CeroSecOS.TMP_MODE)
 	return var
 end
 

@@ -1059,7 +1059,12 @@ commands.cat = function(state, session, args, env, stdin)
 				ok = false
 				out[#out + 1] = refusal
 			else
-				out[#out + 1] = text
+				-- Through splitLines like a file's contents, which is what makes
+				-- `cat /dev/null` print NOTHING rather than one empty line: a
+				-- device that reads empty has no lines in it, the same way an empty
+				-- file has none.
+				local said = CeroSecOS.splitLines(text)
+				for j = 1, #said do out[#out + 1] = said[j] end
 			end
 		elseif node.type ~= "file" then
 			ok = false
@@ -1190,7 +1195,11 @@ local function devTable(state, session, kind)
 	local found = {}
 	for i = 1, #names do
 		local node = dir.children[names[i]]
-		if CeroSecOS.isDev(node) and not node.dead
+		-- The world's devices, which is what this command is about: /dev/null is a
+		-- hole in the disk and has no description, no place in the building and no
+		-- state to show, so it is not a row here. `ls /dev` lists it, because it
+		-- really is a file in that directory.
+		if CeroSecOS.isDev(node) and not node.dead and not CeroSecOS.isNull(node)
 				and (kind == nil or node.kind == kind) then
 			found[#found + 1] = node
 		end

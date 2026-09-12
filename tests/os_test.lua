@@ -228,6 +228,12 @@ do
 	eq("/var/spool mode", var.children.spool.mode, 755)
 	eq("/var/log mode", var.children.log.mode, 755)
 	eq("/var/mail mode", var.children.mail.mode, 755)
+	-- The scratch directory: anybody may write in it, and only the owner of a
+	-- file in it may take that file away (the rule is the path's, not a mode
+	-- digit -- see CeroSecOS.isSticky).
+	eq("/var/tmp is root's", var.children.tmp.owner, "root")
+	eq("/var/tmp mode", var.children.tmp.mode, CeroSecOS.TMP_MODE)
+	eq("and it is empty", CeroSecOS.countEntries(var.children.tmp), 0)
 	eq("nothing is in the spool yet", CeroSecOS.countEntries(var.children.spool.children.cron), 0)
 	eq("no log yet", CeroSecOS.countEntries(var.children.log), 0)
 	eq("no mail yet", CeroSecOS.countEntries(var.children.mail), 0)
@@ -236,7 +242,15 @@ do
 	eq("/home/admin owner", state.fs.children.home.children.admin.owner, "admin")
 	eq("/home/admin mode", state.fs.children.home.children.admin.mode, 750)
 	eq("/root mode", state.fs.children.root.mode, 700)
-	eq("/dev is empty", CeroSecOS.countEntries(state.fs.children.dev), 0)
+	-- /dev holds exactly one node on the disk: the hole. Every other device is
+	-- the world's and is mounted for the length of a command.
+	eq("/dev holds one node", CeroSecOS.countEntries(state.fs.children.dev), 1)
+	local null = state.fs.children.dev.children.null
+	eq("and it is the null device", CeroSecOS.isNull(null), true)
+	eq("owned by root", null.owner, "root")
+	eq("readable and writable by everybody", null.mode, 666)
+	eq("with nothing in it", null.state, "")
+	eq("and it costs the disk nothing", select(2, CeroSecOS.subtreeUsage(null)), 0)
 	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01")
 	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
@@ -245,8 +259,10 @@ do
 	-- executable per command plus /etc/passwd, /etc/sudoers and /etc/group, and
 	-- every byte of it is accounted for: the machine's name, the motd, the
 	-- accounts file, the sudoers file, the groups file, the two network files,
-	-- and the one-line description in each executable. The /var tree is five directories and no
-	-- bytes at all: what goes in it is written when something asks for it.
+	-- and the one-line description in each executable. The /var tree is six
+	-- directories and no bytes at all: what goes in it is written when something
+	-- asks for it. /dev/null is a DEVICE and costs neither a node nor a byte --
+	-- it is a hole, not a file.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
@@ -256,7 +272,7 @@ do
 	local hosts = state.fs.children.etc.children.hosts
 	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + 5 + #binNames + 5)
+	eq("skeleton node count", nodes, 9 + 6 + #binNames + 5)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
@@ -831,8 +847,9 @@ do
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
 	-- The skeleton, the /var tree, plus one executable per command, plus
-	-- /etc/passwd, /etc/sudoers, /etc/group and the two network files.
-	eq("starting node count", nodes, 9 + 5 + #CeroSecOS.binNames() + 5)
+	-- /etc/passwd, /etc/sudoers, /etc/group and the two network files. /dev/null
+	-- is a device and is not a node the disk counts.
+	eq("starting node count", nodes, 9 + 6 + #CeroSecOS.binNames() + 5)
 	local made = 0
 	local dir = 0
 	while true do
@@ -4077,12 +4094,15 @@ do
 		"crw-rw----  root  sudo  lock0   exterior       W  locked",
 		"crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked",
 		"crw-rw----  root  sudo  lock2   built          N  padlock",
+		-- The hole in the disk, which is the one device on it: no description, no
+		-- place in the building, no state, so the line ends at the name.
+		"crw-rw-rw-  root  root  null",
 		"crw-rw----  root  sudo  win0    office         N  locked",
 	}, env)
 
 	-- The short form is names, columnized like any other directory.
 	okAt(state, session, "ls /dev", {
-		"light0  light1  lock0   lock1   lock2   win0",
+		"light0  light1  lock0   lock1   lock2   null    win0",
 	}, env)
 
 	-- The widest state there is still fits the glass.
@@ -4090,7 +4110,9 @@ do
 		{ id = "win12", kind = "win", desc = "kitchen-hallway", side = "N",
 			state = "barricaded" },
 	})
-	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
+	-- The second line: "null" sorts before "win12" and the widest WORLD device is
+	-- what this is about.
+	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[2]
 	eq("the widest device line", line,
 		"crw-rw----  root  sudo  win12   kitchen-hall~  N  barricaded")
 	check("and it fits the screen", #line <= CeroSecOS.COLS)
@@ -4197,7 +4219,8 @@ do
 	local shown = okAt(state, session, "ls /dev", nil, env)[1]
 	check("the dead one is not listed", string.find(shown, "lock9", 1, true) == nil)
 	local long = okAt(state, session, "ls -l /dev", nil, env)
-	eq("nor in the long listing", #long, 5)
+	-- The four that are there, plus the machine's own hole in the disk.
+	eq("nor in the long listing", #long, 5 + 1)
 	badAt(state, session, "ls /dev/lock9", "ls: /dev/lock9: no such file", env)
 	badAt(state, session, "cat /dev/lock9", "lock9: no such device", env)
 	badAt(state, session, "echo lock > /dev/lock9", "lock9: no such device", env)
@@ -4320,7 +4343,12 @@ do
 	okAt(state, session, "ls -l /dev", nil, env)
 	okAt(state, session, "cat /dev/light0", nil, env)
 
-	eq("/dev is empty between commands", CeroSecOS.countEntries(state.fs.children.dev), 0)
+	-- Nothing of the WORLD is left on it: what is there between commands is the
+	-- machine's own null device and nothing else.
+	eq("/dev holds only the hole between commands",
+		CeroSecOS.countEntries(state.fs.children.dev), 1)
+	eq("and that is what it is",
+		CeroSecOS.isNull(state.fs.children.dev.children.null), true)
 	eq("the state still validates", CeroSecOS.validate(state), true)
 	local nodesAfter, bytesAfter = CeroSecOS.usage(state)
 	eq("the disk did not move", bytesAfter, bytesBefore)
@@ -4334,9 +4362,11 @@ do
 	eq("df says the same with devices mounted", df[2], plain[2])
 	eq("and the same about the nodes", df[3], plain[3])
 
-	-- A machine with no devices at all is the machine of every earlier rung.
-	okAt(state, session, "ls /dev", {}, { now = FIXED })
-	okAt(state, session, "ls -l /dev", {}, { now = FIXED })
+	-- A machine with nothing around it still has the hole in its disk, and
+	-- nothing else: that is the machine of every earlier rung plus one node.
+	okAt(state, session, "ls /dev", { "null" }, { now = FIXED })
+	okAt(state, session, "ls -l /dev", { "crw-rw-rw-  root  root  null" },
+		{ now = FIXED })
 	badAt(state, session, "cat /dev/light0", "cat: /dev/light0: no such file", { now = FIXED })
 end
 
@@ -4375,8 +4405,9 @@ do
 			write = function() return false end } },
 	}
 	for i = 1, #junk do
-		okAt(state, session, "ls /dev", {}, junk[i])
-		eq("and /dev stays empty", CeroSecOS.countEntries(state.fs.children.dev), 0)
+		okAt(state, session, "ls /dev", { "null" }, junk[i])
+		eq("and nothing of the world reaches /dev",
+			CeroSecOS.countEntries(state.fs.children.dev), 1)
 	end
 
 	-- An entry that is not one is dropped; the rest are mounted.
@@ -4386,7 +4417,7 @@ do
 		{ id = "nokind", kind = "toaster", desc = "x", side = "", state = "on" },
 		{ id = "light1", kind = "light", desc = "hall", side = "", state = "off" },
 	})
-	okAt(state, session, "ls /dev", { "light0  light1" }, devEnv(devices))
+	okAt(state, session, "ls /dev", { "light0  light1  null" }, devEnv(devices))
 end
 
 -- 21j. `dev`: the table, and how it is ordered.
@@ -4743,13 +4774,15 @@ do
 		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
 		"crw-rw----  root  sudo  door2   built          N  open",
 		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+		"crw-rw-rw-  root  root  null",
 	}, env)
-	okAt(state, session, "ls /dev", { "door0  door1  door2  lock0" }, env)
+	okAt(state, session, "ls /dev", { "door0  door1  door2  lock0  null" }, env)
 
 	local wide = fakeDevices({
 		{ id = "door127", kind = "door", desc = "kitchen-hallway", side = "N",
 			state = "barricaded" },
 	})
+	-- The first line: "door127" sorts before "null".
 	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
 	eq("the widest door line", line,
 		"crw-rw----  root  sudo  door127 kitchen-hall~  N  barricaded")
@@ -8891,6 +8924,164 @@ do
 	check("nor one longer than a path can be", CeroSecOS.validate(state) == false)
 	empty.target = nil
 	check("nor one with no target at all", CeroSecOS.validate(state) == false)
+end
+
+--
+-- 45. /dev/null and /var/tmp (rung 6b)
+--
+-- Two places the filesystem grew. Neither is a command: one is a hole in the
+-- disk, the other is a directory whose rule is the PLACE's and not a mode digit.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+
+	-- It reads nothing at all, which is not the same as one empty line.
+	ok(state, admin, "cat /dev/null", {})
+	-- It swallows what is written to it, and stays empty.
+	ok(state, admin, "echo hello > /dev/null", {})
+	ok(state, admin, "cat /dev/null", {})
+	ok(state, admin, "echo again >> /dev/null", {})
+	ok(state, admin, "cat /dev/null", {})
+	-- A capture of it is the empty word, which is what makes it useful in a test.
+	ok(state, admin, "x=$(cat /dev/null)", {})
+	ok(state, admin, "echo [$x]", { "[]" })
+
+	-- It is a DEVICE, so it wears "c" and none of the file commands will have it.
+	ok(state, admin, "ls -l /dev/null", { "crw-rw-rw-  root  root  null" })
+	badAt(state, admin, "rm /dev/null", "rm: /dev/null: is a device")
+	badAt(state, root, "rm /dev/null", "rm: /dev/null: is a device")
+	badAt(state, admin, "write /dev/null hi", "write: /dev/null: is a device")
+	badAt(state, admin, "cp /dev/null copy", "cp: /dev/null: is a device")
+	badAt(state, admin, "mv /dev/null moved", "mv: /dev/null: is a device")
+	-- And nothing can be made beside it: /dev takes nothing.
+	badAt(state, admin, "touch /dev/mine", CeroSecOS.DEV_PATH .. ": read-only")
+
+	-- Everybody may write to it, which is the whole point of 666.
+	local bob = addUser(state, "bob", "", "/home/bob")
+	local bobSession = open(state, "bob")
+	ok(state, bobSession, "echo noise > /dev/null", {})
+	ok(state, bobSession, "cat /dev/null", {})
+
+	-- It costs the disk nothing, however much is written to it.
+	local nodes, bytes = CeroSecOS.usage(state)
+	ok(state, admin, "echo " .. string.rep("x", 100) .. " > /dev/null", {})
+	local nodesAfter, bytesAfter = CeroSecOS.usage(state)
+	eq("the disk did not move", bytesAfter, bytes)
+	eq("nor the node count", nodesAfter, nodes)
+	check("and the machine still boots", CeroSecOS.validate(state) == true)
+
+	-- It is not one of the world's devices, so `dev` does not list it and does
+	-- not know the word.
+	ok(state, root, "dev", {})
+	badAt(state, root, "dev null", "dev: null: unknown kind")
+end
+
+-- The repair and the upgrade both put it back, and neither replaces what is
+-- already at that name.
+do
+	local state = fresh()
+	state.fs.children.dev.children.null = nil
+	state.sysv = 10
+	check("the upgrade has something to do", CeroSecOS.upgradeSystem(state))
+	check("and the hole is back", CeroSecOS.isNull(state.fs.children.dev.children.null))
+	-- A machine at the current number is left alone: root's deletion stays done.
+	state.fs.children.dev.children.null = nil
+	check("asked again it does nothing", not CeroSecOS.upgradeSystem(state))
+	eq("so the deletion stands", state.fs.children.dev.children.null, nil)
+	-- The BIOS is what puts it back then.
+	CeroSecOS.restoreSystem(state)
+	check("the repair puts it back", CeroSecOS.isNull(state.fs.children.dev.children.null))
+
+	-- A file somebody made at that name is not ours to replace.
+	local mine = CeroSecOS.newFile("root", 644, "mine")
+	state.fs.children.dev.children.null = mine
+	CeroSecOS.restoreSystem(state)
+	eq("what was there is left exactly as it was",
+		state.fs.children.dev.children.null, mine)
+end
+
+-- A device on a saved disk is a state nothing runs on -- except the hole.
+do
+	local state = fresh()
+	check("the hole validates", CeroSecOS.validate(state) == true)
+	state.fs.children.dev.children.light0 = {
+		type = "dev", owner = "root", group = "sudo", mode = 660,
+		id = "light0", kind = "light", desc = "", side = "", pos = "", state = "on",
+	}
+	check("a light switch on the disk does not", CeroSecOS.validate(state) == false)
+	state.fs.children.dev.children.light0 = nil
+	check("and with it gone the machine boots again", CeroSecOS.validate(state) == true)
+end
+
+-- /var/tmp: anybody writes, only the owner takes away.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob")
+
+	local tmp = CeroSecOS.systemNode(state, CeroSecOS.TMP_PATH)
+	eq("it is root's", tmp.owner, "root")
+	eq("and open to everybody", tmp.mode, 777)
+	-- Three digits, so `ls -l` shows a plain one: the sticky rule is the PLACE's
+	-- and there is no fourth digit anywhere on this machine to carry it.
+	eq("the mode reads as it is written", CeroSecOS.permString(tmp), "drwxrwxrwx")
+
+	ok(state, admin, 'write /var/tmp/mine.txt "admin here"', {})
+	ok(state, bob, 'write /var/tmp/bobs.txt "bob here"', {})
+	-- Everybody may read what is there, which is what a scratch directory is.
+	ok(state, bob, "cat /var/tmp/mine.txt", { "admin here" })
+
+	-- And nobody may take away what is not his.
+	badAt(state, bob, "rm /var/tmp/mine.txt", "rm: /var/tmp/mine.txt: permission denied")
+	badAt(state, admin, "rm /var/tmp/bobs.txt", "rm: /var/tmp/bobs.txt: permission denied")
+	-- Nor rename it out from under him, which is the same thing done sideways.
+	badAt(state, bob, "mv /var/tmp/mine.txt /home/bob/taken",
+		"mv: /home/bob/taken: permission denied")
+	badAt(state, bob, "mv /var/tmp/mine.txt /var/tmp/taken",
+		"mv: /var/tmp/taken: permission denied")
+	check("and it is all still there",
+		CeroSecOS.systemNode(state, "/var/tmp/mine.txt") ~= nil)
+
+	-- His own, he may.
+	ok(state, bob, "mv /var/tmp/bobs.txt /var/tmp/bobs2.txt", {})
+	ok(state, bob, "rm /var/tmp/bobs2.txt", {})
+	-- Root may anything.
+	ok(state, root, "rm /var/tmp/mine.txt", {})
+	eq("the directory is empty again", CeroSecOS.countEntries(tmp), 0)
+
+	-- A directory of somebody's own in there is his, and the rule is about the
+	-- NODE's owner and not about what is under it.
+	ok(state, admin, "mkdir /var/tmp/work", {})
+	ok(state, admin, 'write /var/tmp/work/a.txt "x"', {})
+	badAt(state, bob, "rm -r /var/tmp/work", "rm: /var/tmp/work: permission denied")
+	ok(state, admin, "rm -r /var/tmp/work", {})
+
+	-- Nowhere else on the machine works this way: a directory somebody may write
+	-- is a directory he may delete from, which is what 777 means everywhere else.
+	ok(state, root, "mkdir /shared", {})
+	ok(state, root, "chmod 777 /shared", {})
+	ok(state, admin, 'write /shared/mine.txt "admin here"', {})
+	ok(state, bob, "rm /shared/mine.txt", {})
+	eq("only the one directory is sticky", CeroSecOS.isSticky("/shared"), false)
+	eq("and it is the one", CeroSecOS.isSticky(CeroSecOS.TMP_PATH), true)
+end
+
+-- An older machine is topped up with /var/tmp too.
+do
+	local state = fresh()
+	CeroSecOS.removeNode(state, CeroSecOS.rootSession(), CeroSecOS.TMP_PATH, true, nil)
+	eq("it is gone", CeroSecOS.systemNode(state, CeroSecOS.TMP_PATH), nil)
+	state.sysv = 10
+	check("the upgrade has something to do", CeroSecOS.upgradeSystem(state))
+	local tmp = CeroSecOS.systemNode(state, CeroSecOS.TMP_PATH)
+	check("and it is back", tmp ~= nil)
+	eq("at the mode it ships at", tmp.mode, CeroSecOS.TMP_MODE)
+	eq("and the number has moved", state.sysv, CeroSecOS.SYSTEM_VERSION)
 end
 
 print("os_test: " .. count .. " assertions passed")

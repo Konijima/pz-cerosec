@@ -514,6 +514,36 @@ local function canRemoveTree(state, session, node)
 	return true
 end
 
+--
+-- The sticky directory
+--
+-- /var/tmp is 777: everybody may make a file in it, which is what a scratch
+-- directory is for. On a machine where writing a directory were the whole of the
+-- question, it would also mean everybody may delete everybody else's work -- so
+-- the one thing it does NOT mean is that, and this is where it is refused.
+--
+-- Only the owner of a node in it, and root, may take that node away or rename it
+-- out. The rule is the DIRECTORY's and is decided by the path, exactly as the
+-- quota exemptions are: a real machine carries it as a fourth mode digit (1777)
+-- and every mode on this one is three digits, in `ls -l`, in chmod's grammar and
+-- on the disk, so there is nowhere to put a bit that only one directory would
+-- ever wear. What follows from that is written down where it can be read: `ls -l`
+-- shows a plain drwxrwxrwx, and the manual says the rule is the place's.
+--
+-- true when this parent path protects what is in it.
+function CeroSecOS.isSticky(parentPath)
+	return parentPath == CeroSecOS.TMP_PATH
+end
+
+-- May this session take that node out of that directory? Asked by a removal and
+-- by a move, because a rename out of a sticky directory is a removal from it.
+local function stickyOk(state, session, parentPath, node)
+	if not CeroSecOS.isSticky(parentPath) then return true end
+	local user = CeroSecOS.userOf(session)
+	if user == "root" then return true end
+	return node.owner == user
+end
+
 function CeroSecOS.removeNode(state, session, path, recursive, now)
 	local abs, parts = CeroSecOS.resolve(session, path)
 	if #parts == 0 then return nil, "permission denied" end
@@ -535,6 +565,7 @@ function CeroSecOS.removeNode(state, session, path, recursive, now)
 	local parent, preason = CeroSecOS.getNode(state, session, parentPath)
 	if parent == nil then return nil, preason end
 	if not CeroSecOS.can(state, session, parent, "w") then return nil, "permission denied" end
+	if not stickyOk(state, session, parentPath, node) then return nil, "permission denied" end
 
 	parent.children[name] = nil
 	if now ~= nil then parent.mtime = now end
@@ -591,6 +622,10 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local fromParent, freason = CeroSecOS.getNode(state, session, fromParentPath)
 	if fromParent == nil then return nil, freason end
 	if not CeroSecOS.can(state, session, fromParent, "w") then return nil, "permission denied" end
+	-- Moving a file OUT of a sticky directory is taking it away from it, so it is
+	-- the same question a removal asks. Moving one IN is not: making a name in a
+	-- directory you may write is what 777 means.
+	if not stickyOk(state, session, fromParentPath, node) then return nil, "permission denied" end
 
 	local parent, name, areason =
 		checkAttach(state, session, toParts, 0, 0, subtreeDepth(node), fromParent)

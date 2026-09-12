@@ -25,7 +25,7 @@ function CeroSecOS.newState(hostname)
 	root.children.home = CeroSecOS.newDir("root", 755)
 	root.children.home.children.admin = CeroSecOS.newDir("admin", CeroSecOS.HOME_MODE)
 	root.children.root = CeroSecOS.newDir("root", 700)
-	root.children.dev = CeroSecOS.newDir("root", 755) -- reserved for the device rung
+	root.children.dev = CeroSecOS.newDir("root", 755)
 	root.children.etc = CeroSecOS.newDir("root", 755)
 	root.children.etc.children.hostname = CeroSecOS.newFile("root", 644, hostname)
 	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
@@ -48,6 +48,8 @@ function CeroSecOS.newState(hostname)
 	-- older one being topped up and a machine the BIOS has repaired all have the
 	-- same tree.
 	CeroSecOS.ensureVar(state)
+	-- And /dev/null, the one device that is on the disk rather than in the world.
+	CeroSecOS.ensureDev(state)
 	-- And /etc/hosts and /etc/hosts.equiv. The machine's own line in the first is
 	-- not written here: an address is a fact about which building the computer
 	-- stands in, and nothing in the engine has ever seen a building.
@@ -99,6 +101,17 @@ local function checkNode(node, where, depth, tally)
 	if node.mtime ~= nil then
 		if type(node.mtime) ~= "number" then return false, where .. ": bad mtime" end
 		if node.mtime ~= math.floor(node.mtime) then return false, where .. ": bad mtime" end
+	end
+
+	-- The machine's own null device, and no other device: the world's are mounted
+	-- for the length of one command and swept off again (CeroSecOS.unmountDev), so
+	-- a light switch on a saved disk is a state nothing here can be asked to run
+	-- on. It is NOT counted: a device costs the disk nothing anywhere else either
+	-- (CeroSecOS.subtreeUsage), and a gate that counted it differently from the
+	-- quota would refuse a machine the quota had just let fill up.
+	if node.type == "dev" then
+		if not CeroSecOS.isNull(node) then return false, where .. ": bad type" end
+		return true
 	end
 
 	tally.nodes = tally.nodes + 1

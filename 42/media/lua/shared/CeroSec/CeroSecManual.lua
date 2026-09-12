@@ -676,7 +676,7 @@ whichever runs out first, one line for each of the two:
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
   hda         32768   2075  30693    7%
-  nodes         256     85    171   34%]],
+  nodes         256     86    170   34%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
