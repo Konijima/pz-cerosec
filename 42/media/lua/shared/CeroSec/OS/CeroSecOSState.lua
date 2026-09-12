@@ -89,7 +89,24 @@ end
 -- sixty-four, which is most of the way to twice that and nowhere near a stack.
 local PLAIN_DEPTH = 4 * CeroSecOS.MAX_DEPTH
 
-local function checkPlain(value, seen, where, depth)
+-- And how many tables it may look at, which is a different bound from the depth
+-- and is needed for a reason that is not obvious.
+--
+-- `seen` is popped on the way back out, which is what makes it a test for a CYCLE
+-- rather than for a shared subtree -- two names for one table are not a loop, and
+-- calling them one would be a false refusal. The price is that a shared table is
+-- walked once per PATH to it, so twenty tables each pointing twice at the next are
+-- a million paths: twenty-three tables took sixty-eight seconds here, and validate
+-- runs on every read of the state. The depth bound does not help, because the
+-- shape is shallow; only counting the walk does.
+--
+-- Eight times what the two disks can hold between them. A state at every ceiling
+-- with a full floppy in the drive visits 576 tables, measured, so this is seven
+-- times clear of the largest legal thing there is -- chosen the way PLAIN_DEPTH
+-- is, to be nowhere near anything real rather than to be exactly right.
+local PLAIN_VISITS = 8 * (CeroSecOS.MAX_NODES + CeroSecOS.FLOPPY_NODES)
+
+local function checkPlain(value, seen, where, depth, budget)
 	local t = type(value)
 	if t == "string" or t == "number" or t == "boolean" then return true end
 	if t ~= "table" then return false, where .. ": " .. t .. " is not storable" end
@@ -97,11 +114,15 @@ local function checkPlain(value, seen, where, depth)
 	if seen[value] then return false, where .. ": cycle" end
 	depth = depth or 0
 	if depth > PLAIN_DEPTH then return false, where .. ": too deep" end
+	budget = budget or { left = PLAIN_VISITS }
+	budget.left = budget.left - 1
+	if budget.left < 0 then return false, where .. ": too many tables" end
 	seen[value] = true
 	for k, v in pairs(value) do
 		local kt = type(k)
 		if kt ~= "string" and kt ~= "number" then return false, where .. ": key of type " .. kt end
-		local ok, reason = checkPlain(v, seen, where .. "." .. tostring(k), depth + 1)
+		local ok, reason =
+			checkPlain(v, seen, where .. "." .. tostring(k), depth + 1, budget)
 		if not ok then return false, reason end
 	end
 	seen[value] = nil

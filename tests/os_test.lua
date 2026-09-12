@@ -10669,6 +10669,55 @@ do
 		end
 		at2.children.f = CeroSecOS.newFile("root", 644, "x")
 		eq("and so does the deepest filesystem", CeroSecOS.validate(onDrive), true)
+
+		-- And a bound on how much it LOOKS AT, which is a different bound from the
+		-- depth and is needed for a reason the depth cannot see. The plainness walk
+		-- pops what it has seen on the way back out -- which is what makes it a test
+		-- for a cycle rather than for a shared subtree, two names for one table
+		-- being no kind of loop -- and the price is that a shared table is walked
+		-- once per PATH to it. Twenty tables each pointing twice at the next are a
+		-- million paths and a shape three levels deep: sixty-eight seconds, on a
+		-- gate that runs on every read of the state.
+		local shared = fresh()
+		local leaf = {}
+		local up = leaf
+		for _ = 1, 24 do up = { a = up, b = up } end
+		shared.junk = up
+		local sOk, sWhy = CeroSecOS.validate(shared)
+		eq("a shallow state with a million paths through it is refused", sOk, false)
+		check("for what it is, and not for a depth it does not have: " .. tostring(sWhy),
+			string.find(tostring(sWhy), "too many tables", 1, true) ~= nil)
+
+		-- And this belt too is far from anything legal. The largest state there is
+		-- -- every node the machine may hold, and a floppy full of them in the drive
+		-- -- and it still boots.
+		local biggest = fresh()
+		local su = CeroSecOS.rootSession()
+		local made = select(1, CeroSecOS.usage(biggest))
+		local nth = 0
+		while made < CeroSecOS.MAX_NODES do
+			nth = nth + 1
+			if CeroSecOS.createNode(biggest, su, "/p" .. nth,
+					CeroSecOS.newDir("root", 755), nil) == nil then break end
+			made = made + 1
+			for i = 1, CeroSecOS.MAX_DIR_ENTRIES - 1 do
+				if made >= CeroSecOS.MAX_NODES then break end
+				if CeroSecOS.createNode(biggest, su, "/p" .. nth .. "/f" .. i,
+						CeroSecOS.newFile("root", 644, "x"), nil) == nil then break end
+				made = made + 1
+			end
+		end
+		eq("the bench really filled the machine",
+			select(1, CeroSecOS.usage(biggest)), CeroSecOS.MAX_NODES)
+		biggest.floppy = CeroSecOS.newFloppy("FULL")
+		biggest.floppy.fs = CeroSecOS.newDir("root", 755)
+		for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
+			biggest.floppy.fs.children["f" .. i] = CeroSecOS.newFile("root", 644, "x")
+		end
+		eq("and the largest machine there is still boots",
+			CeroSecOS.validate(biggest), true)
+		eq("with the disk still ejectable",
+			CeroSecOS.validateDisk(biggest.floppy, true), true)
 	end
 
 	-- None of it is paid for before it is refused: the field rules are asked of the
