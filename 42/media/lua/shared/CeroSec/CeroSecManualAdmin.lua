@@ -62,22 +62,24 @@ does at four in the morning. And the other computers down the wire.
 Volume 3, the Programmer's Guide, is scripts, jobs and pipes. Where this
 book needs a line of shell it writes one and points you there.]],
 
-[[There are two accounts on a fresh machine and they are not the same kind
-of thing.
+[[There are two accounts on a fresh machine, and not the same kind of
+thing.
 
-admin is an account. It owns its home, it may read what it is allowed to
-read, and when it is refused something the machine tells it so.
+admin is an account. It owns its home, it reads what it is allowed to
+read, and when it is refused the machine says so.
 
 root is not an account so much as the absence of one. Every permission
-check on this machine begins by asking whether the caller is root, and
-stops there if it is. Root reads a file at mode 600 that belongs to
-somebody else. Root writes /etc/passwd. Root deletes /bin. There is no
-mode, no owner and no group anywhere on the disk that means anything at
-all to root.
+check begins by asking whether the caller is root, and nearly always
+stops there. Root reads a file at mode 600 it does not own. Root writes
+/etc/passwd. Root deletes /bin. Root walks into any directory at all.
 
-That is the whole of it, and it is why the rest of this chapter is about
-not being root any longer than you have to. A machine cannot protect you
-from root, because protecting things from root is not what it is for.
+A mode says one thing to root, and it is the x bit: a file with no x bit
+anywhere is one NOBODY may run, root included -- real Unix is the same.
+So chmod 600 /bin/ls takes ls away from root too. Root can chmod it back,
+and that is the difference.
+
+The rest of this chapter is about not being root longer than you have to.
+A machine cannot protect you from root; that is not what it is for.
 
   root@ksp-04-11:~# whoami
   root
@@ -484,8 +486,8 @@ protection is that root has a password.]],
 
 [[/bin is not a list of commands. It is the commands.
 
-One file per command, owner root, mode 755, and the contents of the file
-are the one line help prints about it:
+One file per command, owner root, mode 755, whose contents are the one
+line help prints about it:
 
   root@ksp-04-11:~# ls -l /bin/ls
   -rwxr-xr-x  root   root       16  Jan  1 00:00  ls
@@ -499,13 +501,15 @@ So this is not a demonstration. It is a machine losing a command:
   ls: command not found
 
 And a mode is enough on its own. chmod 600 /bin/ls leaves the file there
-and every account but root gets ls: permission denied instead. One tells
-you the command is missing; the other that it is locked, and where.
+and every account, root included, gets ls: permission denied instead: a
+file with no x bit anywhere is one nobody may run, and the repair below
+is the way back. One says the command is missing; the other that it is
+locked.
 
 An empty /bin is a machine with no operating system as far as the firmware
 is concerned, and help knows it: asked on a machine with nothing in /bin
-it says the system is damaged and tells you to switch the computer off and
-on. That is the repair, and it is the next chapter.]],
+it says the system is damaged and to switch the computer off and on.
+That is the repair, and it is the next chapter.]],
 
 [[What the firmware's repair does to /bin, since it belongs here as much
 as there: it rewrites every standard command, every time, without asking

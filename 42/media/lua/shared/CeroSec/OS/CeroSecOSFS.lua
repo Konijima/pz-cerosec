@@ -87,7 +87,13 @@ end
 -- owner's if the account owns it, else the group's if the account is in the
 -- node's group, else everybody else's. Membership is CeroSecOS.inGroup's
 -- question -- a primary group, a line in /etc/group, or /etc/sudoers for the
--- group "sudo" -- and root bypasses everything before any of it is asked.
+-- group "sudo" -- and root bypasses everything before any of it is asked, with
+-- the one exception a real machine keeps: x on something that is not a
+-- directory. Root reads and writes whatever it likes and walks into any
+-- directory, but a file NOBODY may execute is a file root may not execute
+-- either -- at least one of the three x bits has to be set. That is 4.4BSD's
+-- vaccess() and POSIX's "appropriate privileges", and it is why chmod 600
+-- /bin/ls takes ls away from root too.
 --
 
 function CeroSecOS.userOf(session)
@@ -98,8 +104,14 @@ end
 function CeroSecOS.can(state, session, node, what)
 	local user = CeroSecOS.userOf(session)
 	if user == nil then return false end
-	if user == "root" then return true end
 	local mode = node.mode or 0
+	if user == "root" then
+		if what ~= "x" or node.type == "dir" then return true end
+		local owner = math.floor(mode / 100) % 10
+		local group = math.floor(mode / 10) % 10
+		local other = mode % 10
+		return owner % 2 == 1 or group % 2 == 1 or other % 2 == 1
+	end
 	local digit
 	if node.owner == user then
 		digit = math.floor(mode / 100) % 10
