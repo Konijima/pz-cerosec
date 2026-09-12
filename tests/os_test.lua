@@ -9927,6 +9927,56 @@ do
 	eq("with the mount swept off it", CeroSecOS.mountTable(state), nil)
 end
 
+-- 47m2. A mount point is not a name to take away.
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "touch /mnt/f", {})
+
+	-- Taking the mount point away would leave the mount written down against a
+	-- place that is not there any more, and every path to the disk answering "no
+	-- such file" while the disk is still in the drive. EBUSY, which is what rmdir
+	-- has always answered about a mount point.
+	badAt(state, rootSession, "rm -r /mnt", "rm: /mnt: Device busy")
+	badAt(state, rootSession, "mv /mnt /moved", "mv: /moved: Device busy")
+	-- And the same deletion one level up, which is the same deletion.
+	okAt(state, admin, "umount /mnt", {})
+	okAt(state, rootSession, "mkdir /home/admin/here", {})
+	okAt(state, admin, "mount /dev/fd0 /home/admin/here", {})
+	badAt(state, rootSession, "rm -r /home/admin", "rm: /home/admin: Device busy")
+	badAt(state, rootSession, "mv /home/admin /moved", "mv: /moved: Device busy")
+	badAt(state, rootSession, "rm -r /home/admin/here",
+		"rm: /home/admin/here: Device busy")
+	-- Writing OVER one is the same unhooking from the other end, and the mutator
+	-- refuses it. `mv` cannot ask for it -- a destination that is a directory takes
+	-- the source INSIDE it, which through a mount point is an ordinary
+	-- cross-device move -- so the rule is asked of moveNode directly.
+	okAt(state, rootSession, "mkdir /spare", {})
+	badAt(state, rootSession, "mv /spare /home/admin/here",
+		"mv: /home/admin/here/spare: cross-device link")
+	eq("and the mount point itself cannot be written over",
+		select(2, CeroSecOS.moveNode(state, CeroSecOS.rootSession(),
+			"/spare", "/home/admin/here", nil)), "Device busy")
+
+	-- Unmounted, every one of them is an ordinary directory again.
+	okAt(state, admin, "umount /home/admin/here", {})
+	okAt(state, rootSession, "rm -r /home/admin/here", {})
+	okAt(state, rootSession, "rm -r /mnt", {})
+	eq("and the mount table is empty", CeroSecOS.mountTable(state), nil)
+
+	-- Inside the disk, a rename is an ordinary rename: the rule is about the
+	-- mount POINT and not about the filesystem behind it.
+	CeroSecOS.ensureMnt(state)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "mv /mnt/f /mnt/g", {})
+	okAt(state, admin, "ls /mnt", { "g" })
+	okAt(state, admin, "rm /mnt/g", {})
+end
+
 -- 47n. An older machine gains the room and the drive, and loses nothing.
 do
 	local state = fresh()

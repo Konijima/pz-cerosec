@@ -1044,12 +1044,17 @@ coques.
      `echo ok > /home/admin/ok.txt` passe toujours : la machine, elle, n'est pas
      pleine. `mv /home/admin/ok.txt /mnt` → `mv: /mnt/ok.txt: cross-device
      link` ; `cp` puis `rm` marchent. [ ]
-205. **`umount`, et qui est dedans.** `cd /mnt` puis `umount /mnt` →
+205. **Le point de montage n'est pas un nom à effacer.** Disquette montée sur
+     `/mnt` : `sudo rm -r /mnt` → `rm: /mnt: Device busy`, et
+     `sudo mv /mnt /ailleurs` → `mv: /ailleurs: Device busy`. Après `umount`,
+     les deux passent (remettre `/mnt` avec `sudo mkdir /mnt` ensuite, ou
+     rallumer la machine : le micrologiciel le repose). [ ]
+206. **`umount`, et qui est dedans.** `cd /mnt` puis `umount /mnt` →
      `umount: /mnt: Device busy`. `cd` (retour maison) puis `umount /mnt` → rien,
      et `ls /mnt` est vide. `umount /mnt` une seconde fois →
      `umount: /mnt: not mounted`. Remonter, puis `newfs /dev/fd0` →
      `newfs: /dev/fd0: Device busy`. [ ]
-206. **La disquette traverse la ville.** Disquette montée avec le fichier
+207. **La disquette traverse la ville.** Disquette montée avec le fichier
      dessus : l'éjecter par le menu **sans démonter** → le lecteur rend la
      disquette, de la même couleur que celle qui est entrée, et `mount` ne liste
      plus que `hda`. Porter la disquette jusqu'à un **autre** ordinateur,
@@ -1057,12 +1062,12 @@ coques.
      `cat /mnt/notes.txt` → la note est là, entière. Vérifier aussi les droits :
      un fichier écrit par `bob` là-bas est encore à `bob` (`ls -l /mnt`), et
      `root` le lit partout. [ ]
-207. **Reprendre la machine avec la disquette dedans.** Disquette insérée et
+208. **Reprendre la machine avec la disquette dedans.** Disquette insérée et
      montée, ramasser l'ordinateur (clic droit → Pick up / prendre le meuble),
      le reposer ailleurs, le rallumer et se connecter : `ls /dev` → `fd0` est
      toujours là, rien n'est monté (`mount` ne liste que `hda`), et un seul
      `mount /dev/fd0 /mnt` retrouve les fichiers. [ ]
-208. **Les droits sur le lecteur.** `sudo adduser bob`, `su bob`, puis
+209. **Les droits sur le lecteur.** `sudo adduser bob`, `su bob`, puis
      `newfs /dev/fd0` → `newfs: /dev/fd0: permission denied`, pareil pour
      `mount` et `cat /dev/fd0`. `exit`, puis `sudo chmod 666 /dev/fd0` et
      redevenir `bob` : `mount /dev/fd0 /mnt` passe. Le mode reste au **lecteur** :

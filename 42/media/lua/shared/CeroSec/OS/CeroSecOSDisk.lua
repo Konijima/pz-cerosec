@@ -325,6 +325,30 @@ function CeroSecOS.dropMount(state, dir)
 	return true
 end
 
+-- The first mount at or UNDER a path, or nil.
+--
+-- What stands in the way of taking a mount point away. `rm -r /mnt` on a mounted
+-- disk would otherwise unhook the directory the mount is written against and
+-- leave a mount nothing can walk to -- the disk is still in the drive, still
+-- written down as mounted, and every path to it answers "no such file". The
+-- question is asked about the whole SUBTREE, because `rm -r /home/admin` is the
+-- same deletion when the mount is one level further down.
+--
+-- Unix answers EBUSY to an rmdir of a mount point and so does this, in the words
+-- mount and umount already refuse in.
+function CeroSecOS.mountUnder(state, abs)
+	local mounts = CeroSecOS.mountTable(state)
+	if mounts == nil or type(abs) ~= "string" then return nil end
+	for i = 1, #mounts do
+		local m = mounts[i]
+		if type(m) == "table" and type(m.dir) == "string"
+				and CeroSecOS.isInside(m.dir, abs) then
+			return m
+		end
+	end
+	return nil
+end
+
 -- Everything unmounted. What the power going off does, and what an eject does to
 -- the one mount the ejected disk was under.
 function CeroSecOS.unmountAll(state)

@@ -1654,7 +1654,9 @@ Pipes, from chapter 7.
   umount: /mnt: Device busy
       a session's working directory is inside it
   mv: /mnt/notes.txt: cross-device link
-      mv cannot cross two disks; use cp and rm]],
+      mv cannot cross two disks; use cp and rm
+  rm: /mnt: Device busy
+      something is mounted there; umount it first]],
 
 [[The editor, whose messages sit on its own bottom line rather than at a
 prompt.

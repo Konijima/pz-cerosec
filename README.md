@@ -991,7 +991,10 @@ each file and what its mode is — so a file that was yours on one machine is yo
 on the next, because an account is a name and the name goes with the file.
 
 Three things to know. `umount` refuses while anybody's working directory is inside
-the mount (`umount: /mnt: Device busy`); `cd` out and try again. Ejecting a mounted
+the mount (`umount: /mnt: Device busy`); `cd` out and try again. So does `rm -r` or
+`mv` on the mount point itself, or on any directory with a mount under it —
+unhooking the place a mount is written against would leave the disk in the drive
+and no path to it. Ejecting a mounted
 disk unmounts it first and loses nothing, because every write here is finished by
 the time the command that made it came back. And `mv` will not carry a file between
 the two disks (`cross-device link`) — use `cp` and then `rm`, which are two commands

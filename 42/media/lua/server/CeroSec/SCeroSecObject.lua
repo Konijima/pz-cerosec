@@ -277,6 +277,11 @@ function SCeroSecObject:osState()
 	-- read of the state goes through sweeps them first. On a healthy machine
 	-- there is nothing to sweep and this walks an empty /dev.
 	CeroSecOS.unmountDev(self.os)
+	-- And the same belt under the mount table: a mount naming a drive with nothing
+	-- in it is a mount nothing can walk through, and it is dropped rather than left
+	-- to answer "no such file" about every path under it for ever. On a healthy
+	-- machine this walks a table of one or of none.
+	CeroSecOS.checkMounts(self.os)
 
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then

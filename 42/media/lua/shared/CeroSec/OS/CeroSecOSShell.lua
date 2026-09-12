@@ -1341,18 +1341,6 @@ commands.mv = function(state, session, args, env)
 		target = dst .. "/" .. name
 	end
 
-	-- A rename is one filesystem's operation and cannot reach across two, which is
-	-- what rename(2) answers EXDEV to -- "Cross-device link", in the words the
-	-- system has used for it since there were two devices. The way across is `cp`
-	-- and then `rm`: two acts, because they can fail separately, and a machine that
-	-- hid a half-finished copy behind the word "mv" would be a machine that lost a
-	-- file while saying it had moved one. The manual says so.
-	local srcAbs = CeroSecOS.resolve(session, src)
-	local dstAbs = CeroSecOS.resolve(session, target)
-	if CeroSecOS.fsFor(state, srcAbs).at ~= CeroSecOS.fsFor(state, dstAbs).at then
-		return fail("mv", target, "cross-device link")
-	end
-
 	local done, mreason = CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
 	if done == nil then return fail("mv", target, mreason) end
 	return true, {}

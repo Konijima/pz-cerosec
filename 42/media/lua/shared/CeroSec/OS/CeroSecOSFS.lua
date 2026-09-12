@@ -603,6 +603,10 @@ function CeroSecOS.removeNode(state, session, path, recursive, now)
 	-- A device is not the machine's to take away: unplugging a light switch is
 	-- done with a screwdriver, standing in front of it.
 	if CeroSecOS.isDev(node) then return nil, "is a device" end
+	-- And neither is a directory something is mounted on, nor one with a mount
+	-- somewhere under it: taking it away would leave a mount written down against
+	-- a place that is not there any more (see CeroSecOS.mountUnder).
+	if CeroSecOS.mountUnder(state, abs) ~= nil then return nil, "Device busy" end
 	if node.type == "dir" then
 		if not recursive then return nil, "is a directory" end
 		if not canRemoveTree(state, session, node) then return nil, "permission denied" end
@@ -687,6 +691,24 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local node, reason = CeroSecOS.getNode(state, session, fromAbs, true)
 	if node == nil then return nil, reason end
 	if CeroSecOS.isDev(node) then return nil, "is a device" end
+	-- A mount point is not a name to move, and neither is a directory with a mount
+	-- under it; nor is a name that would be WRITTEN OVER one, which is the same
+	-- unhooking done from the other end.
+	if CeroSecOS.mountUnder(state, fromAbs) ~= nil then return nil, "Device busy" end
+	if CeroSecOS.mountUnder(state, toAbs) ~= nil then return nil, "Device busy" end
+	-- A rename is ONE filesystem's operation and cannot reach across two, which is
+	-- what rename(2) answers EXDEV to -- "Cross-device link", in the words the
+	-- system has used for it since there were two devices. The way across is `cp`
+	-- and then `rm`: two acts, because they can fail separately, and a machine that
+	-- hid a half-finished copy behind the word "mv" would be a machine that lost a
+	-- file while saying it had moved one. The manual says so.
+	--
+	-- Judged here and not in `mv`, so that the order of the refusals is the order
+	-- the mutator checks them in: a mount point named as the source is Device busy
+	-- and not a cross-device link, which is the truer of the two sentences about it.
+	if CeroSecOS.fsFor(state, fromAbs).at ~= CeroSecOS.fsFor(state, toAbs).at then
+		return nil, "cross-device link"
+	end
 	if CeroSecOS.isInside(toAbs, fromAbs) then return nil, "invalid destination" end
 
 	local fromParentPath, fromName = CeroSecOS.parentOf(fromParts)
