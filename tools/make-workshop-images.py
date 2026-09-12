@@ -70,21 +70,19 @@ ICON_PX = 64              # drawn at ~28x28
 BANNER_WIDTH_PX = 1000    # widest Steam shows an [img] before scaling it down
 PREVIEW_MAX_BYTES = 1024000
 
-# The square the preview is cut from the poster. The poster is 4:3, so a
-# full-height square is 0.75 of its width; this box is that square centred,
-# which lands on the CRT. Move it left or right (keep the width at 0.75) to
-# recentre on the screen if the art puts the CRT off centre.
-PREVIEW_CROP = (0.125, 0.0, 0.875, 1.0)
+# The preview and the in-game poster are the WHOLE poster, letterboxed into
+# the square: the logo runs the full width of the art, so any square cut off
+# the middle beheads it. The bars take the colour of the art's own edge.
+# (Set PREVIEW_CROP to a fractional box to cut instead, e.g. (0.125,0,0.875,1).)
+PREVIEW_CROP = None
 
 # The square the icon is cut from. The logo sits at the left of the banner, so
 # that is the source; set ICON_SOURCE to "poster" to take it off the poster
 # instead. The box is squared off around its centre before the resize.
 ICON_SOURCE = "banner"
-ICON_CROP = (0.015, 0.06, 0.20, 0.70)
+ICON_CROP = (0.018, 0.09, 0.115, 0.50)   # the C mark, top left of the banner
 
-# The square the in-game poster is cut from. Same 4:3 arithmetic as the
-# preview: the whole height, centred.
-POSTER_CROP = (0.125, 0.0, 0.875, 1.0)
+POSTER_CROP = PREVIEW_CROP
 
 
 def to_pixels(box, size):
@@ -116,6 +114,37 @@ def square_out(src, box, px, dest):
     return cut
 
 
+def edge_colour(src):
+    """The average colour of the outermost pixels: what the bars are painted."""
+    w, h = src.size
+    px = src.convert("RGB").load()
+    total = [0, 0, 0]
+    n = 0
+    for x in range(w):
+        for y in (0, h - 1):
+            for i in range(3):
+                total[i] += px[x, y][i]
+            n += 1
+    return tuple(t // n for t in total)
+
+
+def letterboxed(src, px, dest):
+    """Fit the whole image into a px square on bars of its own edge colour."""
+    scale = min(px / src.width, px / src.height)
+    size = (max(1, round(src.width * scale)), max(1, round(src.height * scale)))
+    fitted = src.convert("RGB").resize(size, Image.LANCZOS)
+    out = Image.new("RGB", (px, px), edge_colour(src))
+    out.paste(fitted, ((px - size[0]) // 2, (px - size[1]) // 2))
+    out.save(dest, "PNG", optimize=True)
+    return out
+
+
+def square_or_box(src, box, px, dest):
+    if box is None:
+        return letterboxed(src, px, dest)
+    return square_out(src, box, px, dest)
+
+
 def main():
     missing = [p for p in (SRC_POSTER, SRC_BANNER) if not p.is_file()]
     if missing:
@@ -130,7 +159,7 @@ def main():
     print("poster source %dx%d, banner source %dx%d"
           % (poster.width, poster.height, banner.width, banner.height))
 
-    square_out(poster, PREVIEW_CROP, PREVIEW_PX, OUT_PREVIEW)
+    square_or_box(poster, PREVIEW_CROP, PREVIEW_PX, OUT_PREVIEW)
     size = OUT_PREVIEW.stat().st_size
     print("%s %dx%d, %d bytes" % (OUT_PREVIEW, PREVIEW_PX, PREVIEW_PX, size))
     if size > PREVIEW_MAX_BYTES:
@@ -140,7 +169,7 @@ def main():
               % PREVIEW_MAX_BYTES, file=sys.stderr)
         return 1
 
-    square_out(poster, POSTER_CROP, POSTER_PX, OUT_POSTER)
+    square_or_box(poster, POSTER_CROP, POSTER_PX, OUT_POSTER)
     print("%s %dx%d" % (OUT_POSTER, POSTER_PX, POSTER_PX))
 
     icon_src = banner if ICON_SOURCE == "banner" else poster
