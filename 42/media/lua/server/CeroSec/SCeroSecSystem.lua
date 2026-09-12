@@ -1775,17 +1775,53 @@ Commands.debug = function(self, playerObj, x, y, z, token, args)
 	self:reply(playerObj, "debug", snapshot)
 end
 
+-- A refusal, back to the window that asked, on the very `debug` answer a snapshot
+-- comes on -- with an `error` on it and no tab, so the window puts it on the first
+-- line of the block under the list and leaves the lists it has alone.
+--
+-- There was no such thing until now, and that was the defect: `debugact` called
+-- turnOn, turnOn refuses a machine whose chunk is away -- the wire is asked of a
+-- SQUARE and there is nobody to ask -- the boolean was dropped here, nothing was
+-- answered, and the window drew the same `off` two seconds later. A button that
+-- cannot work looked exactly like a button that had. A refusal a player cannot read
+-- is a refusal that looks like a bug in the mod.
+local function refuseAct(system, playerObj, token, x, y, z, why)
+	system:reply(playerObj, "debug",
+		{ token = token, error = why, x = x, y = y, z = z })
+end
+
 Commands.debugact = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
 	if not CeroSec.debugAllowed() then return end
 	if type(args) ~= "table" or type(args.act) ~= "string" then return end
 	local luaObject = self:getLuaObjectAt(x, y, z)
-	if not luaObject then return end
+	if not luaObject then
+		refuseAct(self, playerObj, token, x, y, z, "no machine at " ..
+			tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
+		return
+	end
 
 	if args.act == "on" then
-		if not luaObject.on then luaObject:turnOn() end
+		-- Asked before it is done, and the SAME question the window greys the button
+		-- with (CeroSecDebug.turnOnRefusal): one rule, one place, one wording.
+		local why = CeroSecDebug.turnOnRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn on: " .. why)
+		elseif not luaObject:turnOn() then
+			-- Nothing above found a reason and the object refused anyway, which can
+			-- only be a rule that has moved since this was written. Said plainly
+			-- rather than swallowed: a silence here is how the last one hid.
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOn refused and did not say why")
+		end
 	elseif args.act == "off" then
-		if luaObject.on then luaObject:turnOff() end
+		local why = CeroSecDebug.turnOffRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn off: " .. why)
+		elseif not luaObject:turnOff() then
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOff refused and did not say why")
+		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)
 	end

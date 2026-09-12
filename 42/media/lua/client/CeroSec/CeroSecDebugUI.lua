@@ -1,5 +1,6 @@
 require "ISUI/ISCollapsableWindow"
 require "ISUI/ISTabPanel"
+require "ISUI/ISPanel"
 require "ISUI/ISScrollingListBox"
 require "ISUI/ISButton"
 require "CeroSec/CeroSecDefs"
@@ -55,10 +56,24 @@ CeroSecDebugUI.FONT = "Small"
 -- it (UI_BORDER_SPACING, ISEntitiesDebugWindow.lua:6).
 local BORDER = 10
 
--- Rows of info under the list. Seven, which is what the Machines tab's own
--- detail block needs; a tab with less to say leaves the rest blank rather than
--- moving the list under the reader's cursor.
-local INFO_ROWS = 7
+-- Inside a column: the pad the LIST BOX ITSELF draws its header name at
+-- (ISScrollingListBox.lua:560, `v.size + 10`), so a cell and the header over it
+-- start on the same pixel; and the air left on the right before the next
+-- column's rule, so two columns of text never touch.
+local PAD = 10
+local GAP = 6
+
+-- The narrowest a column is ever drawn, in characters of the cell font. Four is
+-- "here", "away", "jobs" and every other short word these lists hold, so a
+-- column squeezed to the floor still says something.
+local MIN_CELLS = 4
+
+-- Rows of info under the list. Nine: the two the WINDOW writes -- why a button
+-- cannot be pressed, and how much of the list is showing -- and then seven of the
+-- server's own, which is what the Machines tab's detail block needs. A tab with
+-- less to say leaves the rest blank rather than moving the list under the
+-- reader's cursor.
+local INFO_ROWS = 9
 
 --
 -- The tabs
@@ -68,16 +83,24 @@ local INFO_ROWS = 7
 -- client's own ring buffer (CeroSec.logRing), which in singleplayer is every line
 -- the mod wrote and on a dedicated client is the client's own -- see docs/DEBUG.md.
 --
--- A column is a name and a width in characters, which is turned into a pixel
--- offset once the font has been measured. Characters and not pixels, because the
--- cells are text of a known length and the UI font size is an option that moves.
+-- A column is a name and a NOMINAL width in characters. The nominal width is only
+-- what the WINDOW is first opened at -- wide enough for the widest tab and no
+-- wider. What a column is actually drawn at is measured, off its own header and
+-- off the widest cell of the rows the server sent (fitColumns below): a cell is
+-- text of a length nobody chose, and a column of a fixed number of characters is
+-- a column that either wastes half the window or hands the next one's space away.
+--
+-- The names are PLAIN WORDS. "ess", "tel", "call", "jobs", "eyes" showing through
+-- a tab strip is what a reader was handed, and half of them did not say what was
+-- under them even when they were in the right place: "at" is x,y,z, "face" is
+-- which way it is turned, and "eyes" was the number of windows open on it.
 --
 CeroSecDebugUI.TABS = {
 	{
 		name = "Machines", tab = "machines",
-		columns = { { "at", 11 }, { "face", 5 }, { "power", 5 }, { "chunk", 6 },
+		columns = { { "x,y,z", 11 }, { "facing", 6 }, { "power", 5 }, { "chunk", 6 },
 			{ "wire", 5 }, { "host", 14 }, { "address", 14 }, { "tel", 10 },
-			{ "call", 8 }, { "jobs", 5 }, { "eyes", 5 } },
+			{ "call", 8 }, { "jobs", 5 }, { "windows", 7 } },
 	},
 	{
 		name = "Files", tab = "files",
@@ -121,30 +144,87 @@ CeroSecDebugUI.LEVELS = {
 -- back.
 local CELL_W, FONT_H, WINDOW_W, WINDOW_H
 
+-- MeasureStringX's answer for a lone "M": the INK of that glyph and not its cell.
+-- Only ever the subtrahend in advance() below, and the same one the terminal
+-- keeps for the same reason (CeroSecTerminal.lua:70-72).
+local M_INK, WIDE_W
+
 local function measure()
 	local manager = getTextManager()
+	local font = UIFont[CeroSecDebugUI.FONT]
+	-- Set before the early return, and not after it: a font that has not moved
+	-- still has to leave this behind, or the first cell measured after a second
+	-- window opens is measured against nil.
+	M_INK = manager:MeasureStringX(font, "M")
 	-- The ADVANCE of one cell and not the ink of one glyph: MeasureStringX counts
 	-- the last character of a string as its glyph's ink width, so the difference
 	-- between two and one is the advance exactly. The lesson is
 	-- CeroSecTerminal's; the arithmetic is the same.
-	local cellW = manager:MeasureStringX(UIFont[CeroSecDebugUI.FONT], "nn") -
-		manager:MeasureStringX(UIFont[CeroSecDebugUI.FONT], "n")
+	local cellW = manager:MeasureStringX(font, "nn") - manager:MeasureStringX(font, "n")
 	if cellW < 1 then cellW = 1 end
-	local fontH = manager:getFontHeight(UIFont[CeroSecDebugUI.FONT])
+	-- The advance of the widest glyph of the face, which is what tells a cell
+	-- that CANNOT overflow its column from one that has to be measured: a string
+	-- of n characters is at most n of these wide.
+	WIDE_W = manager:MeasureStringX(font, "MM") - M_INK
+	if WIDE_W < cellW then WIDE_W = cellW end
+	local fontH = manager:getFontHeight(font)
 	if cellW == CELL_W and fontH == FONT_H then return end
 
 	CELL_W, FONT_H = cellW, fontH
-	-- Wide enough for the widest tab's columns, and no wider: the Log tab's
-	-- eighty-character line is what sets it.
+	-- Wide enough for the widest tab's NOMINAL columns, and no wider. The pad and
+	-- the gap of every column are IN it: they are room a column needs and not room
+	-- it has, and a window sized as though they were free is a window that opens
+	-- with its longest cells already cut.
 	local widest = 0
 	for i = 1, #CeroSecDebugUI.TABS do
-		local total = 0
 		local columns = CeroSecDebugUI.TABS[i].columns
-		for k = 1, #columns do total = total + columns[k][2] end
+		local total = #columns * (PAD + GAP)
+		for k = 1, #columns do total = total + columns[k][2] * CELL_W end
 		if total > widest then widest = total end
 	end
-	WINDOW_W = widest * CELL_W + BORDER * 4
+	WINDOW_W = widest + BORDER * 4
 	WINDOW_H = (FONT_H + 6) * 20 + (FONT_H + 2) * INFO_ROWS + BORDER * 6
+end
+
+-- How far the pen moves over a string: what drawText advances by, and so where
+-- the character AFTER it would be painted. The one measurement a column and the
+-- cell in it are both worked out from, or the two disagree by a character.
+--
+-- Not MeasureStringX itself -- that answers the INK of the last glyph in place of
+-- its advance -- and the subtraction that recovers the advance from it is the
+-- terminal's own (CeroSecTerminal.lua:1416-1419, and the long note at :48-66 for
+-- why it is exact).
+local function advance(text)
+	if text == nil or text == "" then return 0 end
+	return getTextManager():MeasureStringX(UIFont[CeroSecDebugUI.FONT], text .. "M") - M_INK
+end
+
+-- A cell cut to the room its column has, with the "~" the rest of the mod cuts
+-- with (CeroSec.truncate). By PIXELS and not by characters, because what
+-- overflows a column is ink and UIFont.Small is proportional.
+--
+-- A cell that does not fit is CUT and is never simply drawn: a cell drawn at its
+-- natural width is a cell drawn over its neighbour's, which is what the reader
+-- was looking at when "call" was on top of "jobs".
+--
+-- The first line is the one that runs on almost every cell: a string of n
+-- characters cannot be wider than n of the widest glyph, so a short cell in a
+-- roomy column is never measured at all.
+local function fitText(text, room)
+	if room <= 0 then return "" end
+	if #text * WIDE_W <= room then return text end
+	local full = advance(text)
+	if full <= room then return text end
+	-- Where the cut lands if the face were fixed width, and then down from there:
+	-- the estimate is one or two characters out on a proportional font and the
+	-- walk that follows only ever shortens, so the answer never overflows.
+	local cut = math.floor(#text * room / full)
+	if cut >= #text then cut = #text - 1 end
+	while cut > 0 and advance(string.sub(text, 1, cut) .. "~") > room do
+		cut = cut - 1
+	end
+	if cut <= 0 then return "" end
+	return string.sub(text, 1, cut) .. "~"
 end
 
 --
@@ -189,44 +269,125 @@ function CeroSecDebugUI:new(x, y, playerObj, cx, cy, cz)
 	-- at once instead of an empty list waiting for a round trip.
 	o.snapshots = {}
 	o.logLevel = nil
+	-- Used only, to begin with. A save an hour old holds a machine for every
+	-- computer SPRITE a chunk has ever brought in -- forty-four of them, dark, with
+	-- nothing in any column but their position -- and the six the mod is doing
+	-- something with are somewhere in the middle of that. See passes().
+	o.usedOnly = true
 	o.lastMs = 0
 	o:setResizable(true)
 	o:setTitle(getText("IGUI_CeroSec_Debug_Title"))
 	return o
 end
 
+--
+-- The layout
+--
+-- ONE function, and every number anything in this window is placed by comes out
+-- of it -- because two of them disagreed. createChildren worked the panel out one
+-- way and onResize another, and neither of them left room for the thing that is
+-- not drawn where it is put: a list box with columns draws its header row ABOVE
+-- its own top edge, at `0 - self.itemheight` (ISScrollingListBox.lua:553-562). So
+-- a list laid straight into a tab view -- which ISTabPanel:addView puts at
+-- `self.tabHeight`, :493 -- draws its headers ON the tab strip. That is what was
+-- on the glass: "ess", "tel", "call", "jobs", "eyes" showing between the tab
+-- labels.
+--
+-- The arithmetic is vanilla's, from the two windows that have these two shapes:
+--
+--   * the window round a tab panel -- title bar, then the panel inside the
+--     border, and every view as tall as the panel less its tab strip:
+--     ISEntitiesDebugWindow.lua:33-52, and its onResize at :67-78, which is the
+--     same three lines again.
+--   * the room for a header row -- the list one item-height down inside its
+--     parent, which is exactly what vanilla's own column list does:
+--     ISItemsListTable.lua:76 puts the list at BUTTON_HGT and :79 sets its
+--     itemheight to the same number.
+--
+-- So each tab's view is an ISPanel at the top of the tab panel (y = tabHeight,
+-- addView's own doing) and the LIST sits a header row down inside it. Nothing is
+-- drawn twice on one row, and the one pixel over the item height is the list's own
+-- top border, which it paints because drawBorder is set (:486-491).
+--
+function CeroSecDebugUI:layout()
+	local out = {}
+	out.th = self:titleBarHeight()
+	out.rh = self:resizeWidgetHeight()
+	out.buttonH = FONT_H + 8
+	out.infoH = (FONT_H + 2) * INFO_ROWS
+	out.panelX = BORDER
+	out.panelY = out.th + BORDER
+	out.panelW = self:getWidth() - BORDER * 2
+	out.panelH = self:getHeight() - out.th - out.rh - out.buttonH - out.infoH -
+		BORDER * 4
+	-- The tab strip's height and the header row's are the panel's and the list's
+	-- own answers, never a second copy of them: the strip is measured off the font
+	-- (ISTabPanel.lua:642) and the header row is one item of the list.
+	out.tabH = self.panel ~= nil and self.panel.tabHeight or 0
+	out.viewH = out.panelH - out.tabH
+	out.headerH = FONT_H + 2 * 2 + 1
+	if self.lists ~= nil and self.lists[1] ~= nil then
+		out.headerH = self.lists[1].itemheight + 1
+	end
+	out.listH = out.viewH - out.headerH - 1
+	out.buttonsY = out.panelY + out.panelH + BORDER
+	out.infoY = self:getHeight() - out.rh - BORDER - out.infoH
+	return out
+end
+
+-- Put everything where layout() says. Called once when the window is built and
+-- again on every drag of its corner, so there is one arrangement and not two.
+function CeroSecDebugUI:applyLayout()
+	if self.panel == nil then return end
+	local L = self:layout()
+	self.panel:setWidth(L.panelW)
+	self.panel:setHeight(L.panelH)
+	for i = 1, #self.lists do
+		local view = self.views[i]
+		view:setWidth(L.panelW)
+		view:setHeight(L.viewH)
+		local list = self.lists[i]
+		list:setY(L.headerH)
+		list:setWidth(L.panelW)
+		list:setHeight(L.listH)
+		self:fitColumns(i)
+	end
+	for i = 1, #self.buttons do
+		self.buttons[i].button:setY(L.buttonsY)
+	end
+	self.numbers = L
+end
+
 function CeroSecDebugUI:createChildren()
 	ISCollapsableWindow.createChildren(self)
 
-	local th = self:titleBarHeight()
-	local rh = self:resizeWidgetHeight()
-	self.th, self.rh = th, rh
+	local L = self:layout()
 
-	local buttonH = FONT_H + 8
-	local infoH = (FONT_H + 2) * INFO_ROWS
-	local panelH = self:getHeight() - th - rh - buttonH - infoH - BORDER * 4
-
-	self.panel = ISTabPanel:new(BORDER, th + BORDER, self:getWidth() - BORDER * 2, panelH)
+	self.panel = ISTabPanel:new(L.panelX, L.panelY, L.panelW, L.panelH)
 	self.panel:initialise()
 	self.panel.equalTabWidth = false
 	self:addChild(self.panel)
 
+	self.views = {}
 	self.lists = {}
 	for i = 1, #CeroSecDebugUI.TABS do
 		local spec = CeroSecDebugUI.TABS[i]
-		local list = ISScrollingListBox:new(0, 0, self.panel:getWidth(),
-			panelH - self.panel.tabHeight)
+		-- The view, which is what the tab panel positions, and the list INSIDE it a
+		-- header row down: see the note on layout() above for why the list cannot be
+		-- the view itself.
+		local view = ISPanel:new(0, 0, L.panelW, L.viewH)
+		view:initialise()
+		view:noBackground()
+		local list = ISScrollingListBox:new(0, L.headerH, L.panelW, L.listH)
 		list:initialise()
 		list:instantiate()
 		list:setFont(CeroSecDebugUI.FONT, 2)
-		-- The column headers and the rules between them are the list box's own
-		-- (ISScrollingListBox:prerender, the `#self.columns > 0` block): it draws
-		-- them one row ABOVE the first item, which is why the list is pushed down
-		-- by one row height below.
-		local at = 0
+		-- The column headers and the rules between them are the list box's own; the
+		-- offsets they are drawn at are rewritten from the rows on every fill
+		-- (fitColumns), so an empty list still has its columns and a full one has
+		-- them where its widest cell needs them.
 		for k = 1, #spec.columns do
-			list:addColumn(spec.columns[k][1], at)
-			at = at + spec.columns[k][2] * CELL_W
+			list:addColumn(spec.columns[k][1], 0)
 		end
 		list.drawBorder = true
 		-- One cell per column, drawn at the column's own offset. Assigned rather
@@ -235,8 +396,10 @@ function CeroSecDebugUI:createChildren()
 		list.doDrawItem = CeroSecDebugUI.drawRow
 		list:setOnMouseDownFunction(self, CeroSecDebugUI.onRowClicked)
 		list.debugTab = spec
+		view:addChild(list)
+		self.views[i] = view
 		self.lists[i] = list
-		self.panel:addView(spec.name, list)
+		self.panel:addView(spec.name, view)
 	end
 
 	--
@@ -244,43 +407,59 @@ function CeroSecDebugUI:createChildren()
 	--
 	-- One row under the list. Refresh first because it is the one that is used
 	-- most; the three that CHANGE something in the middle, named as plainly as
-	-- possible; and the log filters last, shown only on the tab they mean
-	-- anything on.
+	-- possible; and then the two sets that belong to ONE tab each -- the machine
+	-- filter and the log levels -- which share the same stretch of the row,
+	-- because they are never both there.
 	--
-	local y = th + BORDER + panelH + BORDER
 	self.buttons = {}
 	local at = BORDER
-	local function button(label, fn, onLog)
-		local w = getTextManager():MeasureStringX(UIFont[CeroSecDebugUI.FONT], label) + 20
-		local made = ISButton:new(at, y, w, buttonH, label, self, fn)
+	-- onTab is the NAME of the tab a button belongs to, or nil for a button that is
+	-- on every tab.
+	local function button(label, fn, onTab)
+		local w = advance(label) + 20
+		local made = ISButton:new(at, L.buttonsY, w, L.buttonH, label, self, fn)
 		made:initialise()
 		made:instantiate()
 		made:setFont(UIFont[CeroSecDebugUI.FONT])
 		self:addChild(made)
-		self.buttons[#self.buttons + 1] = { button = made, onLog = onLog }
+		self.buttons[#self.buttons + 1] = { button = made, onTab = onTab }
 		at = at + w + 6
 		return made
 	end
 
-	button(getText("IGUI_CeroSec_Debug_Refresh"), CeroSecDebugUI.onRefresh, false)
+	button(getText("IGUI_CeroSec_Debug_Refresh"), CeroSecDebugUI.onRefresh, nil)
 	self.onButton = button(getText("IGUI_CeroSec_Debug_TurnOn"),
-		CeroSecDebugUI.onTurnOn, false)
+		CeroSecDebugUI.onTurnOn, nil)
 	self.offButton = button(getText("IGUI_CeroSec_Debug_TurnOff"),
-		CeroSecDebugUI.onTurnOff, false)
+		CeroSecDebugUI.onTurnOff, nil)
 	self.gotoButton = button(getText("IGUI_CeroSec_Debug_Teleport"),
-		CeroSecDebugUI.onTeleport, false)
+		CeroSecDebugUI.onTeleport, nil)
 	self.termButton = button(getText("IGUI_CeroSec_Debug_Terminal"),
-		CeroSecDebugUI.onTerminal, false)
+		CeroSecDebugUI.onTerminal, nil)
 	self.dumpButton = button(getText("IGUI_CeroSec_Debug_Dump"),
-		CeroSecDebugUI.onDump, false)
+		CeroSecDebugUI.onDump, nil)
 
+	-- The filter, on the Machines tab and nowhere else. It is made with the WIDER
+	-- of the two words it wears and then given the one it is showing: a button that
+	-- changed width when it was pressed would move the row under the cursor.
+	local tabStart = at
+	local showAll = getText("IGUI_CeroSec_Debug_ShowAll")
+	local showUsed = getText("IGUI_CeroSec_Debug_ShowUsed")
+	local wider = showAll
+	if advance(showUsed) > advance(showAll) then wider = showUsed end
+	self.filterButton = button(wider, CeroSecDebugUI.onFilter, "Machines")
+	self.filterButton:setTitle(self.usedOnly and showAll or showUsed)
+
+	at = tabStart
 	self.levelButtons = {}
 	for i = 1, #CeroSecDebugUI.LEVELS do
 		local spec = CeroSecDebugUI.LEVELS[i]
-		local made = button(spec.label, CeroSecDebugUI.onLevel, true)
+		local made = button(spec.label, CeroSecDebugUI.onLevel, "Log")
 		made.debugLevel = spec.level
 		self.levelButtons[i] = made
 	end
+
+	self:applyLayout()
 end
 
 --
@@ -344,7 +523,31 @@ end
 function CeroSecDebugUI:onServerCommand(command, args)
 	if command ~= "debug" then return end
 	if not self:isMine(args) then return end
+
+	-- A REFUSAL, which is not a snapshot: the server was asked to switch a machine
+	-- on or off and would not. It goes on the first line of the block under the
+	-- list and the lists themselves are left alone.
+	--
+	-- It used to go nowhere at all. `Commands.debugact` called turnOn, which
+	-- refuses a machine whose chunk is away -- the wire is asked of a SQUARE and
+	-- there is nobody to ask -- dropped the boolean, and answered nothing; the
+	-- window drew the same `off` two seconds later. A button that cannot work
+	-- looked exactly like a button that had worked.
+	if type(args.error) == "string" then
+		self.refusal = args.error
+		return
+	end
+
 	if type(args.tab) ~= "string" then return end
+	-- What the server says the SELECTED machine can be asked to do, which is what
+	-- the buttons are greyed by and what the reason line says. Kept only when the
+	-- answer is about the machine that is selected NOW: a snapshot still in flight
+	-- from the machine before it would grey the wrong button.
+	if args.x == self.cx and args.y == self.cy and args.z == self.cz then
+		self.selection = { on = args.on, loaded = args.loaded,
+			canTurnOn = args.canTurnOn, canTurnOff = args.canTurnOff,
+			reason = args.reason }
+	end
 	self.snapshots[args.tab] = args
 	self:fill(args.tab)
 end
@@ -362,6 +565,35 @@ end
 -- Filling a list
 --
 
+-- Which rows a list shows.
+--
+-- Only the Machines tab filters, and only on the one fact that tells a computer
+-- the mod is DOING something with from a sprite the streamer walked past: the
+-- server's own `used` flag -- it has been switched on at least once, or it has a
+-- disk of its own (SCeroSecDebug.isUsed). The server holds a machine for every
+-- computer sprite any chunk has ever brought in, so a save an hour old answers
+-- forty-four rows of `off away` with nothing in any other column, and the six that
+-- matter are somewhere in the middle of them.
+function CeroSecDebugUI:passes(index, row)
+	if CeroSecDebugUI.TABS[index].tab ~= "machines" then return true end
+	if not self.usedOnly then return true end
+	return row.used == true
+end
+
+-- What a row IS, for keeping the cursor on it across a refresh: a machine row is
+-- named by its coordinates -- which is also what its first cell says -- and every
+-- other row by its first cell. Never by its INDEX: two seconds later a machine may
+-- have moved up the list, and a reader whose cursor jumped to somebody else's row
+-- every two seconds would be a reader who cannot read.
+local function rowKey(row)
+	if type(row) ~= "table" then return nil end
+	if type(row.x) == "number" then
+		return tostring(row.x) .. "," .. tostring(row.y) .. "," .. tostring(row.z)
+	end
+	if type(row.c) == "table" then return tostring(row.c[1]) end
+	return nil
+end
+
 -- Put a snapshot's rows into the list of the tab it belongs to. Never into the
 -- list that happens to be in front: an answer for the Files tab that arrived
 -- after the reader moved to Devices belongs in the Files list and nowhere else.
@@ -375,49 +607,130 @@ function CeroSecDebugUI:fill(tab)
 	local list = self.lists[index]
 	if list == nil or snapshot == nil then return end
 
-	-- The selection is kept across a refresh by WHAT it was and not by where it
-	-- was: two seconds later a machine may have moved up the list, and a reader
-	-- whose cursor jumped to somebody else's row every two seconds would be a
-	-- reader who cannot read.
 	local wanted = nil
 	if type(list.selected) == "number" and list.selected >= 1
 			and list.selected <= #list.items then
 		local held = list.items[list.selected]
-		if type(held) == "table" and type(held.item) == "table" then
-			wanted = held.item.c[1]
-		end
+		if type(held) == "table" then wanted = rowKey(held.item) end
 	end
 
 	list:clear()
 	local rows = snapshot.rows or {}
+	-- The rows the list is SHOWING, kept beside it: the columns are measured off
+	-- them, on every fill and again on every drag of the window's corner.
+	list.debugRows = {}
 	for i = 1, #rows do
 		local row = rows[i]
-		if type(row) == "table" and type(row.c) == "table" then
+		if type(row) == "table" and type(row.c) == "table" and self:passes(index, row) then
+			list.debugRows[#list.debugRows + 1] = row
 			list:addItem(tostring(row.c[1]), row)
 		end
 	end
+	list.debugShown = #list.debugRows
+	list.debugTotal = #rows
+	self:fitColumns(index)
 	if wanted ~= nil then
 		for i = 1, #list.items do
-			if list.items[i].item.c[1] == wanted then list.selected = i end
+			if rowKey(list.items[i].item) == wanted then list.selected = i end
 		end
 	end
 	return list
 end
 
+--
+-- The columns
+--
+-- Measured, and not a table of constants: a cell is text of a length nobody chose.
+-- Each column is as wide as the WIDER of its own header and the widest cell in the
+-- rows on the glass, plus the pad the list box draws its header name at and a gap
+-- before the next column's rule; nothing is narrower than MIN_CELLS characters;
+-- and the last column takes whatever is left, so the table fills the window
+-- instead of stopping in the middle of it.
+--
+-- When the natural widths do not fit -- eleven columns of long paths in an
+-- eight-hundred-pixel window -- every column gives up the same FRACTION of what it
+-- has above the minimum. Nothing is ever left overlapping: the cells that no longer
+-- fit are cut (fitText), because a cell drawn at its natural width is a cell drawn
+-- over its neighbour's, which is what "call" on top of "jobs" was.
+--
+-- The offsets are written back onto the list box's own columns, because the header
+-- row and the rules between them are its to draw (ISScrollingListBox.lua:553-562)
+-- and they have to stand over the cells.
+function CeroSecDebugUI:fitColumns(index)
+	local list = self.lists[index]
+	local spec = CeroSecDebugUI.TABS[index]
+	if list == nil or spec == nil then return end
+	local rows = list.debugRows or {}
+	local count = #spec.columns
+	local minW = PAD + advance(string.rep("n", MIN_CELLS)) + GAP
+
+	local widths = {}
+	local total = 0
+	for k = 1, count do
+		local w = advance(spec.columns[k][1])
+		for r = 1, #rows do
+			local cells = rows[r].c
+			local text = cells ~= nil and cells[k] or nil
+			if text ~= nil then
+				local at = advance(tostring(text))
+				if at > w then w = at end
+			end
+		end
+		w = PAD + w + GAP
+		if w < minW then w = minW end
+		widths[k] = w
+		total = total + w
+	end
+
+	local room = list:getWidth()
+	if total > room then
+		local slack = total - minW * count
+		local spare = room - minW * count
+		if spare < 0 then spare = 0 end
+		total = 0
+		for k = 1, count do
+			local w = minW
+			if slack > 0 then
+				w = minW + math.floor((widths[k] - minW) * spare / slack)
+			end
+			widths[k] = w
+			total = total + w
+		end
+	end
+	if total < room then widths[count] = widths[count] + (room - total) end
+
+	local at = 0
+	list.colX = {}
+	list.colW = {}
+	for k = 1, count do
+		list.colX[k] = at
+		list.colW[k] = widths[k]
+		if list.columns[k] ~= nil then list.columns[k].size = at end
+		at = at + widths[k]
+	end
+end
+
 -- The Log tab, which comes from nowhere: CeroSec.logRing is this Lua state's own
 -- record of what the mod said. Newest LAST, so it reads down the way it happened.
 function CeroSecDebugUI:fillLog()
-	local list = self.lists[#CeroSecDebugUI.TABS]
+	local index = #CeroSecDebugUI.TABS
+	local list = self.lists[index]
 	if list == nil then return end
 	list:clear()
+	list.debugRows = {}
 	local ring = CeroSec.logRing or {}
 	for i = 1, #ring do
 		local line = ring[i]
 		if type(line) == "table" and
 				(self.logLevel == nil or line.level == self.logLevel) then
-			list:addItem(tostring(line.level), { c = { line.level, line.text } })
+			local row = { c = { line.level, line.text } }
+			list.debugRows[#list.debugRows + 1] = row
+			list:addItem(tostring(line.level), row)
 		end
 	end
+	list.debugShown = #list.debugRows
+	list.debugTotal = #ring
+	self:fitColumns(index)
 end
 
 --
@@ -428,6 +741,10 @@ end
 -- cells are drawn at the column offsets instead of the whole text at 15. The
 -- selection, the mouse-over and the row border are vanilla's own calls, so a row
 -- of this window highlights exactly like a row of any other.
+--
+-- The offsets and widths are the ones fitColumns measured -- the same numbers the
+-- list box draws its header row and its rules at -- and every cell is cut to its
+-- own column's room, so nothing is ever painted past the rule on its right.
 --
 function CeroSecDebugUI.drawRow(self, y, item, alt)
 	local height = item.height or self.itemheight
@@ -445,17 +762,16 @@ function CeroSecDebugUI.drawRow(self, y, item, alt)
 	end
 
 	local padY = self.itemPadY or 0
-	local spec = self.debugTab
 	local cells = item.item ~= nil and item.item.c or nil
-	if cells ~= nil and spec ~= nil then
-		local at = 0
-		for i = 1, #spec.columns do
+	local colX, colW = self.colX, self.colW
+	if cells ~= nil and colX ~= nil then
+		for i = 1, #colX do
 			local text = cells[i]
 			if text ~= nil and text ~= "" then
-				self:drawText(tostring(text), at + 4, y + padY,
+				self:drawText(fitText(tostring(text), colW[i] - PAD - GAP),
+					colX[i] + PAD, y + padY,
 					color.r, color.g, color.b, color.a, self.font)
 			end
-			at = at + spec.columns[i][2] * CELL_W
 		end
 	end
 	return y + height
@@ -482,6 +798,10 @@ function CeroSecDebugUI:onRowClicked(item)
 	-- the county and not about the selection, and a reader who clicked a row must
 	-- not watch the list he clicked in empty itself under his cursor.
 	self.snapshots = {}
+	-- And what the server said about the machine that was selected, refusal
+	-- included: both were answers about a different computer.
+	self.selection = nil
+	self.refusal = nil
 	for i = 1, #self.lists do
 		local spec = CeroSecDebugUI.TABS[i]
 		if spec.tab ~= nil and spec.tab ~= "machines" then self.lists[i]:clear() end
@@ -492,6 +812,10 @@ end
 --
 -- The buttons
 --
+-- Every one of them is greyed when its act CANNOT happen, and the line under the
+-- list says why -- in the server's own words for the two that go to the server,
+-- because it is the server that refuses (see reasonLine).
+--
 
 function CeroSecDebugUI:onRefresh()
 	self:refresh()
@@ -499,12 +823,29 @@ end
 
 function CeroSecDebugUI:onTurnOn()
 	if not self:hasMachine() then return end
+	-- What the server last said about this machine, which is what the button is
+	-- greyed by. A press it already knows cannot work says why instead of going
+	-- out on the wire to be refused -- and nothing is assumed while the server has
+	-- not answered yet: an unknown is asked, and the answer comes back as a
+	-- refusal with a reason on it.
+	local sel = self.selection
+	if sel ~= nil and sel.canTurnOn == false then
+		self.refusal = "cannot turn on: " .. tostring(sel.reason)
+		return
+	end
+	self.refusal = nil
 	self:send("debugact", { act = "on" })
 	self:refresh()
 end
 
 function CeroSecDebugUI:onTurnOff()
 	if not self:hasMachine() then return end
+	local sel = self.selection
+	if sel ~= nil and sel.canTurnOff == false then
+		self.refusal = "cannot turn off: it is already off"
+		return
+	end
+	self.refusal = nil
 	self:send("debugact", { act = "off" })
 	self:refresh()
 end
@@ -549,13 +890,67 @@ end
 -- would shut itself.
 function CeroSecDebugUI:onTerminal()
 	if not self:hasMachine() then return end
-	local computer = self:computerObject()
-	if computer == nil then
-		CeroSec.log(CeroSec.LOG_WARN, "debug: no computer in the world at " ..
+	local why = self:terminalWhy()
+	if why ~= nil then
+		self.refusal = "cannot open the terminal: " .. why
+		CeroSec.log(CeroSec.LOG_WARN, "debug: " .. self.refusal .. " at " ..
 			tostring(self.cx) .. "," .. tostring(self.cy) .. "," .. tostring(self.cz))
 		return
 	end
-	CeroSecTerminal.open(self.playerObj, computer)
+	self.refusal = nil
+	CeroSecTerminal.open(self.playerObj, self:computerObject())
+end
+
+-- Why the terminal cannot be opened on the selected machine, or nil when it can.
+--
+-- All three answers are the CLIENT's, and that is right: the screen has to be in
+-- the world to open a window on, and where the player is standing is a fact about
+-- this client. The adjacency is the server's own arithmetic, copied from the check
+-- every command a terminal sends goes through (SCeroSecSystem's isAdjacent, which
+-- is vanilla's luautils.lua:138-140 -- half a square of centre offset and 1.6 of
+-- slack on each axis), so a window this opens is a window the server will answer.
+--
+--   zombie.iso.IsoMovingObject   public float getX(); getY();
+--                                public IsoGridSquare getCurrentSquare();
+--   zombie.iso.IsoGridSquare     public int getZ();
+--
+function CeroSecDebugUI:terminalWhy()
+	if self:computerObject() == nil then
+		return "its chunk is away, there is no screen in the world"
+	end
+	local sel = self.selection
+	if sel ~= nil and sel.on ~= true then return "it is off" end
+	local player = self.playerObj
+	if player == nil then return "there is no player" end
+	local square = player:getCurrentSquare()
+	if square == nil or square:getZ() ~= self.cz then
+		return "the player is on another floor"
+	end
+	if math.abs(self.cx + 0.5 - player:getX()) > 1.6
+			or math.abs(self.cy + 0.5 - player:getY()) > 1.6 then
+		return "the player is not standing at it"
+	end
+	return nil
+end
+
+-- Why the selected machine cannot be asked to do a thing, for the first line of
+-- the block under the list. nil when there is nothing to say.
+--
+-- The server's own refusal comes first, because it is the one that answers a
+-- button somebody has just pressed; then the reason it is greyed at all.
+function CeroSecDebugUI:reasonLine()
+	if self.refusal ~= nil then return self.refusal end
+	if not self:hasMachine() then
+		return "nothing selected: click a row on the Machines tab"
+	end
+	local sel = self.selection
+	if sel == nil then return nil end
+	if sel.canTurnOn == false and sel.on ~= true then
+		return "cannot turn on: " .. tostring(sel.reason)
+	end
+	local why = self:terminalWhy()
+	if why ~= nil then return "cannot open the terminal: " .. why end
+	return nil
 end
 
 -- The computer tile on the selected square, or nil when its chunk is not in.
@@ -572,6 +967,17 @@ function CeroSecDebugUI:computerObject()
 		if CeroSec.isComputerSprite(object:getSpriteName()) then return object end
 	end
 	return nil
+end
+
+-- used only / all, on the Machines tab. The list is refilled from the snapshot
+-- that is already in hand, so the answer is on the glass at once and no round trip
+-- is spent on a question about rows the window already has.
+function CeroSecDebugUI:onFilter()
+	self.usedOnly = not self.usedOnly
+	self.filterButton:setTitle(self.usedOnly and
+		getText("IGUI_CeroSec_Debug_ShowAll") or
+		getText("IGUI_CeroSec_Debug_ShowUsed"))
+	self:fill("machines")
 end
 
 -- A level button. `self` is the window and the button is the one that was
@@ -645,22 +1051,28 @@ function CeroSecDebugUI:prerender()
 	ISCollapsableWindow.prerender(self)
 	if self.closing then return end
 
-	-- The three level buttons belong to the Log tab and are not there on any
-	-- other; everything else is always there. And the five that act on a machine
-	-- are greyed with nothing selected. Worked out every frame rather than when
+	-- The buttons that belong to ONE tab are there on that tab and on no other;
+	-- everything else is always there. Worked out every frame rather than when
 	-- something changes: whether a button means anything is a fact about the
 	-- window right now, and a window that remembered it would be a window that
 	-- forgets.
-	local onLog = self:activeSpec().tab == nil
+	local front = self:activeSpec().name
 	for i = 1, #self.buttons do
 		local entry = self.buttons[i]
-		if entry.onLog then entry.button:setVisible(onLog) end
+		if entry.onTab ~= nil then entry.button:setVisible(entry.onTab == front) end
 	end
+
+	-- And every button is usable only when its act can happen. The two power
+	-- buttons take the SERVER's answer, carried on every snapshot: it is the server
+	-- that refuses, and a window that worked the rule out for itself would grey the
+	-- wrong button the day the rule moved. Nothing is greyed on an answer that has
+	-- not arrived -- an unknown is asked, and the refusal comes back with its reason.
 	local machine = self:hasMachine()
-	self.onButton:setEnable(machine)
-	self.offButton:setEnable(machine)
+	local sel = self.selection
+	self.onButton:setEnable(machine and (sel == nil or sel.canTurnOn ~= false))
+	self.offButton:setEnable(machine and (sel == nil or sel.canTurnOff ~= false))
 	self.gotoButton:setEnable(machine)
-	self.termButton:setEnable(machine)
+	self.termButton:setEnable(machine and self:terminalWhy() == nil)
 	self.dumpButton:setEnable(machine)
 end
 
@@ -669,44 +1081,47 @@ function CeroSecDebugUI:render()
 	if self.closing then return end
 
 	local spec = self:activeSpec()
-	local lines = nil
+	local list = self.lists[self:activeIndex()]
+
+	-- The block under the list, in three parts and always in this order: why a
+	-- button cannot be pressed, how much of the list is on the glass, and then the
+	-- server's own words. The first two are the WINDOW's and are the two things a
+	-- reader was missing -- a button that did nothing said nothing, and a list
+	-- showing six of forty-four said it was the county.
+	local lines = {}
+	lines[1] = self:reasonLine() or ""
+	local mode = ""
+	if spec.tab == "machines" then
+		mode = self.usedOnly and "   used only" or "   all machines"
+	end
+	lines[2] = "showing " .. tostring(list ~= nil and list.debugShown or 0) ..
+		" of " .. tostring(list ~= nil and list.debugTotal or 0) .. mode
 	if spec.tab == nil then
-		lines = { "log: " .. tostring(#(CeroSec.logRing or {})) .. " lines of " ..
+		lines[3] = "log: " .. tostring(#(CeroSec.logRing or {})) .. " lines of " ..
 			tostring(CeroSec.LOG_MAX) .. "   showing " ..
-			(self.logLevel == nil and "all levels" or tostring(self.logLevel)) }
+			(self.logLevel == nil and "all levels" or tostring(self.logLevel))
 	else
 		local snapshot = self.snapshots[spec.tab]
-		lines = snapshot ~= nil and snapshot.info or { "asking the server ..." }
+		local info = snapshot ~= nil and snapshot.info or { "asking the server ..." }
+		for i = 1, #info do lines[#lines + 1] = info[i] end
 	end
 
-	local y = self:getHeight() - self.rh - BORDER - (FONT_H + 2) * INFO_ROWS
+	local L = self.numbers or self:layout()
 	for i = 1, INFO_ROWS do
 		local text = lines[i]
 		if text ~= nil then
-			self:drawText(tostring(text), BORDER, y + (i - 1) * (FONT_H + 2),
+			self:drawText(tostring(text), BORDER, L.infoY + (i - 1) * (FONT_H + 2),
 				0.8, 0.8, 0.8, 1, UIFont[CeroSecDebugUI.FONT])
 		end
 	end
 end
 
 -- The window follows its own edges when the player drags them, exactly as
--- ISEntitiesDebugWindow does (:66-77): the panel and every view in it are told
--- the new size, because a view laid out once is a view that stops at the old
--- corner.
+-- ISEntitiesDebugWindow does (:67-78) -- and through the SAME arithmetic the
+-- window was built with, because two copies of it is how the header row ended up
+-- on the tab strip. Every view, every list, every column and every button moves;
+-- a view laid out once is a view that stops at the old corner.
 function CeroSecDebugUI:onResize()
 	ISCollapsableWindow.onResize(self)
-	if self.panel == nil then return end
-	local buttonH = FONT_H + 8
-	local infoH = (FONT_H + 2) * INFO_ROWS
-	local panelH = self:getHeight() - self.th - self.rh - buttonH - infoH - BORDER * 4
-	self.panel:setWidth(self:getWidth() - BORDER * 2)
-	self.panel:setHeight(panelH)
-	for i = 1, #self.lists do
-		self.lists[i]:setWidth(self.panel:getWidth())
-		self.lists[i]:setHeight(panelH - self.panel.tabHeight)
-	end
-	local y = self.th + BORDER + panelH + BORDER
-	for i = 1, #self.buttons do
-		self.buttons[i].button:setY(y)
-	end
+	self:applyLayout()
 end

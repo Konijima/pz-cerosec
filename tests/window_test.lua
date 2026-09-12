@@ -4303,6 +4303,9 @@ local function newNet()
 	end
 	local window = newWindow()
 	net.window = window
+	-- The player himself, for the benches that drive a command straight into
+	-- OnClientCommand instead of through a terminal window.
+	net.player = player
 
 	net.said = {}
 	local function record(a)
@@ -8912,5 +8915,161 @@ do
 	CeroSec.logRing = {}
 end
 
+
+--
+-- 52. What the window may do, and why it may not (the debug rework)
+--
+-- The window greys a button and prints a reason, and neither answer is its own:
+-- both are built here, by the same readings the act itself goes through. The defect
+-- this block exists for: "Turn on" was offered on a machine whose chunk was away,
+-- the press went out on the wire, turnOn refused for want of a square to ask about
+-- the wire, and NOTHING came back -- a button that could not work looked exactly
+-- like a button that had.
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- The machine in the shed is on and its chunk is away, which is the state
+	-- Mathieu's row was in but the other way round: switch it off first.
+	local away = net.far
+	eq("the far machine has no chunk", away:isLoaded(), false)
+	eq("switching it off works even so", away:turnOff(), true)
+
+	local why = CeroSecDebug.turnOnRefusal(away)
+	check("a machine whose chunk is away cannot be switched on", why ~= nil)
+	check("and the reason names the chunk and not the wiring",
+		string.find(why, "chunk is away", 1, true) ~= nil)
+	check("and it says what to do about it",
+		string.find(why, "teleport", 1, true) ~= nil)
+	eq("turning it OFF is refused because it is already off",
+		CeroSecDebug.turnOffRefusal(away), "it is already off")
+
+	-- The same machine with its chunk in and a wire: no refusal at all. The chunk
+	-- coming in is an IsoObject with modData on it, because switching a machine on
+	-- mirrors its state into the tile (SCeroSecObject:toModData).
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	eq("with the chunk in and a wire there is nothing to refuse",
+		CeroSecDebug.turnOnRefusal(away), nil)
+	-- And with the chunk in and no wire, the OTHER sentence -- which is the
+	-- distinction a sweep once got wrong.
+	away.hasPower = function() return false end
+	eq("a loaded machine with no wire says the wire",
+		CeroSecDebug.turnOnRefusal(away), "there is no wire at its square")
+	away.hasPower = function() return true end
+	eq("and it really does come on", away:turnOn(), true)
+	eq("after which it cannot come on again", CeroSecDebug.turnOnRefusal(away),
+		"it is already on")
+	eq("and turning it off is what is left", CeroSecDebug.turnOffRefusal(away), nil)
+
+	-- Nothing selected is a refusal too, and never an error.
+	check("nothing selected cannot be switched on",
+		CeroSecDebug.turnOnRefusal(nil) ~= nil)
+
+	-- Every snapshot carries those answers, whatever tab it is for: the buttons
+	-- under the list are the same six on every tab.
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for i = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[i], net.here)
+		eq(tabs[i] .. " says whether the machine can come on", snap.canTurnOn, false)
+		eq("and whether it can go off", snap.canTurnOff, true)
+		eq("and whether it is on", snap.on, true)
+		-- This bench's machines have no IsoObject at all, which is a county nobody
+		-- is standing in: loaded is the honest answer and the window greys the
+		-- terminal on it.
+		eq("and whether its chunk is in", snap.loaded, false)
+		eq("with the reason it cannot come on", snap.reason, "it is already on")
+	end
+end
+
+-- Which machines are worth a row: the flag the window's "used only" filter reads.
+do
+	local net = newNet()
+	-- A computer sprite a chunk brought in and nobody ever touched, which is what
+	-- forty-four of Mathieu's rows were. The system makes one for every valid iso
+	-- object of every loaded square, so this is not a rare case at all.
+	local idle = net.machine(300, 220, 0, net.shed)
+	eq("it is off", idle.on, false)
+	eq("and it has no disk of its own", idle.os, nil)
+	eq("so it has never been used", CeroSecDebug.isUsed(idle), false)
+	eq("while a machine that is on has been", CeroSecDebug.isUsed(net.here), true)
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	local idleRow, liveRow = nil, nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "300,220,0" then idleRow = snap.rows[i] end
+		if snap.rows[i].c[1] == "10,10,0" then liveRow = snap.rows[i] end
+	end
+	check("the untouched one is still on the list", idleRow ~= nil)
+	eq("and its row says it has never been used", idleRow.used, false)
+	eq("while the live one's says it has", liveRow.used, true)
+
+	-- And a machine switched off after being used stays used: it has a disk.
+	net.here:turnOff()
+	eq("a machine that has been used stays used once it is off",
+		CeroSecDebug.isUsed(net.here), true)
+end
+
+-- The refusal on the WIRE, through the real command door.
+do
+	local net = newNet()
+	local away = net.far
+	away:turnOff()
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("the server answered the press", #answers, 1)
+	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
+	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")
+	check("with the refusal on it",
+		string.find(tostring(answers[1].args.error), "cannot turn on", 1, true) ~= nil)
+	check("and the reason in it",
+		string.find(tostring(answers[1].args.error), "chunk is away", 1, true) ~= nil)
+	eq("and no tab, so no list is emptied by it", answers[1].args.tab, nil)
+	eq("the machine is still off", away.on, false)
+
+	-- A press that CAN work answers nothing at all: the snapshot two seconds later
+	-- is what says it happened, and a window that had to read a receipt would be a
+	-- window that showed one.
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("nothing is answered when it worked", #answers, 0)
+	eq("and the machine came on", away.on, true)
+
+	-- Turning off a machine that is already off is refused in the same words.
+	away:turnOff()
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "off" })
+	eq("the press was answered", #answers, 1)
+	check("with the refusal",
+		string.find(tostring(answers[1].args.error), "already off", 1, true) ~= nil)
+
+	-- And a machine nothing answers to -- which is what 0,0,0 is -- says that.
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "on" })
+	eq("a triple nothing is at is answered too", #answers, 1)
+	check("with what is wrong with it",
+		string.find(tostring(answers[1].args.error), "no machine at", 1, true) ~= nil)
+end
 
 print("window_test: " .. count .. " checks passed")
