@@ -1,5 +1,11 @@
 {
     "IGUI_CeroSec_Hint": "Esc ferme | Haut/Bas historique",
+    "IGUI_CeroSec_LabelFloppy": "Écrire sur l'étiquette (%1 caractères au plus)",
+    "IGUI_CeroSec_LabelBad": "Une étiquette accepte %1 caractères au plus : lettres, chiffres, espaces, tirets et points.",
+    "IGUI_CeroSec_ColourBlue": "bleue",
+    "IGUI_CeroSec_ColourYellow": "jaune",
+    "IGUI_CeroSec_ColourRed": "rouge",
+    "IGUI_CeroSec_ColourGreen": "verte",
     "IGUI_CeroSec_Manual_Prev": "< Retour",
     "IGUI_CeroSec_Manual_Next": "Suivant >",
     "IGUI_CeroSec_Manual_Contents": "Sommaire",
@@ -9,5 +15,8 @@
     "IGUI_CeroSec_Debug_TurnOff": "Éteindre",
     "IGUI_CeroSec_Debug_Teleport": "S'y téléporter",
     "IGUI_CeroSec_Debug_Terminal": "Ouvrir le terminal",
-    "IGUI_CeroSec_Debug_Dump": "Vider l'état"
+    "IGUI_CeroSec_Debug_Dump": "Vider l'état",
+    "IGUI_CeroSec_Phonebook_Named": "%1 (central %2)",
+    "IGUI_CeroSec_Debug_ShowAll": "Voir toutes les machines",
+    "IGUI_CeroSec_Debug_ShowUsed": "Voir les utilisées"
 }

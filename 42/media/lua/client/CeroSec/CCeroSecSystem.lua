@@ -3,6 +3,7 @@ require "CeroSec/CeroSecDefs"
 require "CeroSec/CCeroSecObject"
 require "CeroSec/CeroSecTerminal"
 require "CeroSec/CeroSecDebugUI"
+require "CeroSec/CeroSecPhonebookUI"
 
 CCeroSecSystem = CGlobalObjectSystem:derive("CCeroSecSystem")
 
@@ -48,6 +49,7 @@ end
 function CCeroSecSystem:OnServerCommand(command, args)
 	CeroSecTerminal.onServerAnswer(command, args)
 	CeroSecDebugUI.onServerAnswer(command, args)
+	CeroSecPhonebookUI.onServerAnswer(command, args)
 end
 
 -- Multiplayer: the server answers one connection. That is not one window --
@@ -57,6 +59,7 @@ Events.OnServerCommand.Add(function(module, command, args)
 	if module ~= CeroSec.MODULE then return end
 	CeroSecTerminal.onServerAnswer(command, args)
 	CeroSecDebugUI.onServerAnswer(command, args)
+	CeroSecPhonebookUI.onServerAnswer(command, args)
 end)
 
 -- Idempotent sweep. Catches the cases no single event covers: objects announced

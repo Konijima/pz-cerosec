@@ -252,13 +252,30 @@ function CeroSecManualUI.reflowed(manual)
 		edition = manual.edition, chapters = chapters }
 end
 
+-- The book a window is reading, and the id its bookmark is filed under: a
+-- volume off the shelf, or a DOCUMENT handed in whole.
+--
+-- A document is a book that is not on the shelf because it is not the same book
+-- twice: the telephone directory is generated from the county as it stands and
+-- one copy of it is the listings of one region (CeroSecPhonebook). It is the
+-- same SHAPE a volume is -- title, edition, chapters of pages -- so the whole
+-- of what the reader does differently with one is not go and look for it, and
+-- everything after this line treats the two alike.
+function CeroSecManualUI:source()
+	if type(self.document) == "table" then
+		return self.document, self.document.id or CeroSecManualBook.NO_VOLUME
+	end
+	return CeroSecManualUI.text(self.volumeId)
+end
+
 -- Open a volume. `volumeId` is one of the ids on the shelf, or nil for "the
--- manual" with nothing said about which, which is the first volume.
+-- manual" with nothing said about which, which is the first volume. `document`
+-- is a book handed in instead of looked up, and it wins over the id.
 --
 -- The player stays the first argument and not the volume: the window belongs
 -- to him, it is his instance that a second opening closes, and he is what
 -- closes it when he dies.
-function CeroSecManualUI.open(playerObj, volumeId, item)
+function CeroSecManualUI.open(playerObj, volumeId, item, document)
 	measure()
 	local playerNum = playerObj:getPlayerNum()
 	local previous = CeroSecManualUI.instances[playerNum]
@@ -266,20 +283,21 @@ function CeroSecManualUI.open(playerObj, volumeId, item)
 
 	local x = (getCore():getScreenWidth() - WINDOW_W) / 2
 	local y = (getCore():getScreenHeight() - WINDOW_H) / 2
-	local window = CeroSecManualUI:new(x, y, playerObj, volumeId, item)
+	local window = CeroSecManualUI:new(x, y, playerObj, volumeId, item, document)
 	window:initialise()
 	window:addToUIManager()
 	CeroSecManualUI.instances[playerNum] = window
 	return window
 end
 
-function CeroSecManualUI:new(x, y, playerObj, volumeId, item)
+function CeroSecManualUI:new(x, y, playerObj, volumeId, item, document)
 	measure()
 	local o = ISCollapsableWindow.new(self, x, y, WINDOW_W, WINDOW_H)
 	o.playerObj = playerObj
 	o.playerNum = playerObj:getPlayerNum()
 	o.volumeId = volumeId
 	o.item = item
+	o.document = document
 
 	o:layout()
 	-- Where the book was left. A number off modData is not to be trusted --
@@ -309,7 +327,7 @@ end
 -- Lay the text out against the geometry as it stands. Called when the window
 -- is made and again whenever the measured layout has moved under it.
 function CeroSecManualUI:layout()
-	local text, bookId = CeroSecManualUI.text(self.volumeId)
+	local text, bookId = self:source()
 	-- What the reader really ended up with. The bookmark of a book with no copy
 	-- is filed under this, and it is never nil: a bookmark table cannot be keyed
 	-- by nothing, and a reader opened on "the manual" is reading volume one.

@@ -400,6 +400,9 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The telephone directory's generator: pure Lua, and the server's own
+	-- enumeration (CeroSecNet.directory) names it.
+	"shared/CeroSec/CeroSecPhonebook.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -4558,18 +4561,60 @@ local function fakeZone(z)
 		getHeight = function() return z.h end,
 	}
 end
+-- THE MAP'S BUILDINGS, for the one caller that asks about a building it has no
+-- machine in: the telephone directory, which has to know whether a named zone is
+-- a tenancy INSIDE something (CeroSecNet.directory). A list of
+-- { x, y, w, h } and getBuildingAt answers the first whose box holds the tile,
+-- which is the walk zombie.iso.IsoMetaGrid.getBuildingAt(int, int) does (javap:
+-- it walks `buildings` and compares x, y, getW(), getH()). x2 is EXCLUSIVE, the
+-- way net.buildingAt below says it is.
+_G.__buildings = {}
+local function fakeBuildingDef(b)
+	return {
+		getX = function() return b.x end,
+		getY = function() return b.y end,
+		getX2 = function() return b.x + b.w end,
+		getY2 = function() return b.y + b.h end,
+	}
+end
 _G.getWorld = function()
 	return { getMetaGrid = function()
-		return { getZonesAt = function(_, x, y, _z)
-			local hits = {}
-			for i = 1, #_G.__zones do
-				local z = _G.__zones[i]
-				if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
-					hits[#hits + 1] = fakeZone(z)
+		return {
+			getZonesAt = function(_, x, y, _z)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local z = _G.__zones[i]
+					if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
+						hits[#hits + 1] = fakeZone(z)
+					end
 				end
-			end
-			return javaList(hits)
-		end }
+				return javaList(hits)
+			end,
+			-- getZonesIntersecting(x, y, z, w, h): every zone whose rectangle overlaps
+			-- the one asked for. Zone.intersects(x,y,z,w,h) in the jar is exactly this
+			-- test on the four edges (javap, and z == Integer.MAX_VALUE is its
+			-- any-level case; nothing here has a zone off the ground floor).
+			getZonesIntersecting = function(_, x, y, _z, w, h)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local zone = _G.__zones[i]
+					if x + w > zone.x and x < zone.x + zone.w
+							and y + h > zone.y and y < zone.y + zone.h then
+						hits[#hits + 1] = fakeZone(zone)
+					end
+				end
+				return javaList(hits)
+			end,
+			getBuildingAt = function(_, x, y)
+				for i = 1, #_G.__buildings do
+					local b = _G.__buildings[i]
+					if x >= b.x and x < b.x + b.w and y >= b.y and y < b.y + b.h then
+						return fakeBuildingDef(b)
+					end
+				end
+				return nil
+			end,
+		}
 	end }
 end
 
@@ -4684,6 +4729,9 @@ local function newNet()
 	end
 	local window = newWindow()
 	net.window = window
+	-- The player himself, for the benches that drive a command straight into
+	-- OnClientCommand instead of through a terminal window.
+	net.player = player
 
 	net.said = {}
 	local function record(a)
@@ -6434,6 +6482,183 @@ do
 	_G.__zones = {}
 end
 
+--
+-- THE TELEPHONE DIRECTORY (the phone book wave)
+--
+-- Base.Phonebook is the yellow pages of the region it was found in, and the whole
+-- of what this bench is about is that the BOOK and the LINE cannot disagree: a
+-- computer put in a shop must answer on the number the book printed for that shop,
+-- and the book must hold the shops of ONE exchange and nothing else.
+--
+-- The fake map grows two things for it: getZonesIntersecting, which is how a whole
+-- region is swept, and getBuildingAt, which is how a named zone is told from a
+-- named REGION -- the spawner tags a suburb "StreetPoor" and a farm "Farm" the way
+-- it tags a shop "CoffeeShop", and neither of the first two is a business with a
+-- telephone.
+--
+do
+	local net = newNet()
+	local R = CeroSecOS.PHONE_REGION
+
+	-- A mall in region 0,0 with three shops in it, two of them one chain; a house
+	-- with nothing named on it; a suburb-sized zone that is nobody's tenancy; and a
+	-- zone exactly the mall's own size, which is the mall under another name.
+	local mall = net.buildingAt(200, 300, 60, 40, 30)
+	local house = net.buildingAt(500, 500, 10, 10, 3)
+	-- And a second mall a region away, whose shop must not turn up in this book.
+	local farMall = net.buildingAt(R + 200, 300, 60, 40, 30)
+	-- And a building that straddles the boundary between the two regions, with a
+	-- shop in it whose CORNER is on this side of it.
+	local border = net.buildingAt(R - 24, 600, 100, 60, 30)
+	_G.__buildings = {
+		{ x = 200, y = 300, w = 60, h = 40 },
+		{ x = 500, y = 500, w = 10, h = 10 },
+		{ x = R + 200, y = 300, w = 60, h = 40 },
+		{ x = R - 24, y = 600, w = 100, h = 60 },
+	}
+	_G.__zones = {
+		{ name = "CoffeeShop", x = 210, y = 310, w = 17, h = 11 },
+		{ name = "Bakery", x = 240, y = 310, w = 12, h = 10 },
+		-- The same chain's second shop: one name, its own outline, its own number.
+		{ name = "CoffeeShop", x = 230, y = 320, w = 17, h = 11 },
+		-- A suburb. Its middle (300,300) is on no building at all, so no footprint
+		-- can be bigger than it and it is not a tenancy.
+		{ name = "StreetPoor", x = 100, y = 100, w = 400, h = 400 },
+		-- The mall by another name: exactly its footprint, which loses on the same
+		-- strictly-smaller test premisesOf runs.
+		{ name = "Mall", x = 200, y = 300, w = 60, h = 40 },
+		-- A zone of the wrong type, and one nobody named.
+		{ name = "Nav", type = "Nav", x = 205, y = 305, w = 6, h = 6 },
+		{ name = "", x = 206, y = 306, w = 6, h = 6 },
+		-- Another region's shop, on another exchange.
+		{ name = "Pharmacist", x = R + 210, y = 310, w = 17, h = 11 },
+		-- A shop that reaches OVER the boundary. It is listed once, in the book of
+		-- the region its corner is in -- which is the region its number belongs to,
+		-- because the corner is what the exchange is derived from. A sweep of the
+		-- next region finds it intersecting and must not print it.
+		{ name = "BorderShop", x = R - 10, y = 610, w = 20, h = 10 },
+	}
+
+	-- Ask the server the way the client asks it: one command, no square, and the
+	-- answer goes to the player who asked.
+	local function ask(rx, ry)
+		local got = nil
+		net.system.reply = function(_, who, cmd, args)
+			if cmd == "listings" then got = args; got.who = who end
+		end
+		net.system:OnClientCommand("phonebook", net.player,
+			{ rx = rx, ry = ry, token = "look" })
+		return got
+	end
+
+	local book = ask(0, 0)
+	check("the server answers a look-up", book ~= nil)
+	eq("to the survivor who asked and nobody else", book.who, net.player)
+	eq("carrying the token back", book.token, "look")
+	eq("for the region asked for", book.rx .. "," .. book.ry, "0,0")
+	eq("under the exchange of that region", book.exchange,
+		CeroSecOS.phoneExchange(0, 0))
+	check("and nothing was cut", book.capped == false)
+
+	local names = {}
+	local byNumber = {}
+	for i = 1, #book.entries do
+		names[#names + 1] = book.entries[i].name
+		byNumber[book.entries[i].number] = book.entries[i].name
+	end
+	table.sort(names)
+	eq("four business listings and no more", #book.entries, 4)
+	eq("the shops of the mall, camel case taken out",
+		table.concat(names, "|"), "Bakery|Border Shop|Coffee Shop|Coffee Shop")
+
+	-- A CHAIN is two listings with one name and two numbers, each on its own line.
+	local chain = {}
+	for i = 1, #book.entries do
+		if book.entries[i].name == "Coffee Shop" then chain[#chain + 1] = book.entries[i].number end
+	end
+	eq("the chain is listed twice", #chain, 2)
+	check("on two different numbers", chain[1] ~= chain[2])
+
+	-- WHAT IS NOT IN IT. The suburb, the mall under its own name, the wrong type,
+	-- the unnamed zone -- and the HOUSE, which has a line and no name to print.
+	for _, absent in ipairs({ "Street Poor", "Mall", "Nav", "Pharmacist" }) do
+		check(absent .. " is not a business listing",
+			string.find("|" .. table.concat(names, "|") .. "|",
+				"|" .. absent .. "|", 1, true) == nil)
+	end
+
+	-- THE BOOK AND THE LINE. A computer in the coffee shop the map drew at 210,310
+	-- must read the book's own number off its BIOS. This is the assertion the whole
+	-- wave rests on: derive the number any other way and it goes red.
+	local shop = net.machine(212, 312, 0, mall)
+	shop:turnOn()
+	local tel = telOf(shop)
+	check("a machine in the coffee shop has a line", tel ~= nil)
+	eq("and the book printed that very number for Coffee Shop", byNumber[tel], "Coffee Shop")
+	eq("which is the premises the record names", CeroSecOS.premisesName(shop:osState()),
+		"CoffeeShop")
+	eq("on the book's own exchange", tonumber(string.sub(tel, 1, 3)), book.exchange)
+
+	-- A RESIDENCE is not listed, and it is not listed because it has no name and
+	-- not because it has no line: the house answers on one.
+	local home = net.machine(505, 505, 0, house)
+	home:turnOn()
+	local homeTel = telOf(home)
+	check("the house has a line of its own", homeTel ~= nil)
+	eq("and no listing anywhere in the book", byNumber[homeTel], nil)
+
+	-- ANOTHER REGION IS ANOTHER BOOK. The pharmacy is in region 1,0 and the two
+	-- books share nothing -- not a listing and not an exchange.
+	local far = ask(1, 0)
+	eq("the next region's book has its own listing and only its own", #far.entries, 1)
+	eq("which is the pharmacy and not the shop over the line",
+		far.entries[1].name, "Pharmacist")
+	check("on another exchange", far.exchange ~= book.exchange)
+	local pharmacy = net.machine(R + 212, 312, 0, farMall)
+	pharmacy:turnOn()
+	eq("and the machine in it answers on the number that book printed",
+		far.entries[1].number, telOf(pharmacy))
+
+	-- And the machine in the shop over the line is on the number THIS book printed,
+	-- which is the corner rule read off the BIOS.
+	local straddler = net.machine(R - 5, 615, 0, border)
+	straddler:turnOn()
+	eq("the shop over the line answers on the number its own book printed",
+		byNumber[telOf(straddler)], "Border Shop")
+
+	-- A region with nothing in it is an empty book and not a broken one.
+	local empty = ask(7, 7)
+	eq("a region with no premises in it lists nothing", #empty.entries, 0)
+	check("and says so without being cut", empty.capped == false)
+
+	-- THE CAP. A region with more premises than a book holds is cut, and the answer
+	-- SAYS it was cut rather than looking like a smaller county.
+	local many = {}
+	-- Laid out in rows INSIDE the region, because a zone whose corner falls past the
+	-- region's far edge is in the next region's book by the corner rule above -- and
+	-- a row of 405 zones three tiles apart would have run out of region long before
+	-- it ran out of shops.
+	_G.__buildings = { { x = 2 * R, y = 0, w = R, h = R } }
+	for i = 1, CeroSecPhonebook.MAX_ENTRIES + 5 do
+		many[i] = { name = "Shop" .. i,
+			x = 2 * R + math.fmod(i, 30) * 3, y = math.floor(i / 30) * 3,
+			w = 2, h = 2 }
+	end
+	_G.__zones = many
+	local full = ask(2, 0)
+	eq("the book holds its cap and not one more", #full.entries,
+		CeroSecPhonebook.MAX_ENTRIES)
+	check("and the answer says it was cut", full.capped == true)
+	-- Which is what the last line of the last leaf prints.
+	local volume = CeroSecPhonebook.volume(full.exchange, full.entries, full.capped)
+	local last = volume.chapters[1].pages[#volume.chapters[1].pages]
+	check("the printed book says so on its last line",
+		string.find(last, "This directory is full", 1, true) ~= nil)
+
+	_G.__zones = {}
+	_G.__buildings = {}
+end
+
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- two commands over there that name the number it came from.
@@ -7828,15 +8053,30 @@ local function newInventory()
 	local inv = { items = {}, nextID = 100 }
 	function inv:add(fullType, data)
 		self.nextID = self.nextID + 1
+		-- The NAME is modelled the way the engine really holds it: one field, which
+		-- getName and getDisplayName both just read (javap -c
+		-- zombie.inventory.InventoryItem -- getDisplayName is a single getfield on
+		-- `name`), starting at the item's ordinary name and replaced wholesale by
+		-- setName. So a disk with no label is a disk whose name is the generic one and
+		-- NOT a disk with no name -- which is exactly the case that would let a bench
+		-- pass while the server read the generic name as a label.
 		local item = {
 			id = self.nextID,
 			type = fullType,
 			data = data or {},
+			name = "3.5 inch Floppy Disk",
+			customName = false,
+			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
 			hasModData = function(self) return true end,
 			getModData = function(self) return self.data end,
 			getContainer = function(self) return inv end,
+			getName = function(self) return self.name end,
+			setName = function(self, s) self.name = s end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, b) self.customName = b end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -8011,6 +8251,127 @@ do
 	check("the note is readable on the other machine",
 		other.painted("the pumps are at the depot"))
 	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	--
+	-- The sticker, through the slot and back out
+	--
+	-- The label is written on the ITEM (its custom name) and read at the slot; the
+	-- machine keeps it on the disk record and prints it on `mount` and `df`; the
+	-- eject puts it back on the shell.
+	--
+	-- Which has to be ASSERTED and not assumed, because the item does not survive the
+	-- round trip: an insert removes it and an eject makes a NEW one with AddItem, so
+	-- a label that was not deliberately carried across would be gone.
+	--
+	local labelled = otherInv:add("CeroSec.FloppyGreen")
+	labelled:setName("PAYROLL 93")
+	labelled:setCustomName(true)
+
+	-- The other machine's drive still has the red disk in it; out it comes first.
+	other.send("ejectfloppy")
+	eq("the drive is free", other.object:hasDisk(), false)
+
+	other.send("insertfloppy", { item = labelled:getID() })
+	eq("the labelled disk went in", other.object:hasDisk(), true)
+	eq("and the machine wrote the sticker on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- And the two commands a survivor asks "which disk is this" with say so.
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("mount names the disk by what is written on it",
+		other.painted("/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)"))
+	other.enter("df")
+	other.frame()
+	check("and df wears it too", other.painted("(PAYROLL 93)"))
+
+	-- Out again: a NEW item, and the handwriting is on it.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local back = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyGreen" then
+			back = otherInv.items[i]
+		end
+	end
+	check("the green disk is back", back ~= nil)
+	check("and it really is a new item, not the one that went in", back ~= labelled)
+	eq("wearing the label", back:getName(), "PAYROLL 93")
+	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
+
+	-- Back in, and the label is still the label: it lives on the disk and survives
+	-- as many trips through the slot as the survivor makes.
+	other.send("insertfloppy", { item = back:getID() })
+	eq("the label survived the round trip",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- A disk with NO label: no sticker on the record, and no empty brackets on the
+	-- two lines. The generic item name is not a label, and reading it as one would
+	-- put "3.5 inch Floppy Disk" in the mount listing of every machine in Kentucky.
+	other.send("ejectfloppy")
+	local plain = otherInv:add("CeroSec.FloppyBlue")
+	eq("its name is the ordinary one", plain:getName(), "3.5 inch Floppy Disk")
+	eq("and it is not a custom name", plain:isCustomName(), false)
+	other.send("insertfloppy", { item = plain:getID() })
+	eq("an unlabelled disk carries no sticker",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("and mount prints the bare line",
+		other.painted("/dev/fd0 on /mnt type ufs (rw)"))
+	check("with the generic name nowhere near it",
+		not other.painted("3.5 inch Floppy Disk"))
+
+	-- Erased: a name the survivor took the flag off. The slot CLEARS the record
+	-- rather than leaving the last label on it, or a disk somebody erased would come
+	-- out of the drive still labelled.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local erased = otherInv:add("CeroSec.FloppyRed")
+	erased:setName("OLD")
+	erased:setCustomName(true)
+	other.send("insertfloppy", { item = erased:getID() })
+	eq("labelled first", CeroSecOS.floppyOf(other.object:osState()).label, "OLD")
+	other.send("ejectfloppy")
+	local again = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyRed" then
+			again = otherInv.items[i]
+		end
+	end
+	again:setCustomName(false)
+	other.send("insertfloppy", { item = again:getID() })
+	eq("and the erase reaches the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+
+	-- A label a CLIENT could never have typed. The slot holds what arrives to
+	-- CeroSecOS.labelOk, which is tighter than the gate: the two commands that print
+	-- it are lines on a screen, and a forged name with a newline in it would put a
+	-- second line in the mount listing.
+	other.send("ejectfloppy")
+	local forged = otherInv:add("CeroSec.FloppyYellow")
+	forged:setName("two\nlines")
+	forged:setCustomName(true)
+	other.send("insertfloppy", { item = forged:getID() })
+	eq("a forged label is not written on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	eq("and the disk went in all the same", other.object:hasDisk(), true)
+	other.send("ejectfloppy")
+	local over = otherInv:add("CeroSec.FloppyYellow")
+	over:setName(string.rep("L", CeroSecOS.LABEL_MAX + 1))
+	over:setCustomName(true)
+	other.send("insertfloppy", { item = over:getID() })
+	eq("nor is one over the ceiling",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.send("ejectfloppy")
 
 	-- And the first machine has nothing left of it.
 	eq("the first machine's drive is empty", bench.object:hasDisk(), false)
@@ -9994,5 +10355,161 @@ do
 	CeroSecReach.__drifted = false
 end
 
+
+--
+-- 52. What the window may do, and why it may not (the debug rework)
+--
+-- The window greys a button and prints a reason, and neither answer is its own:
+-- both are built here, by the same readings the act itself goes through. The defect
+-- this block exists for: "Turn on" was offered on a machine whose chunk was away,
+-- the press went out on the wire, turnOn refused for want of a square to ask about
+-- the wire, and NOTHING came back -- a button that could not work looked exactly
+-- like a button that had.
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- The machine in the shed is on and its chunk is away, which is the state
+	-- Mathieu's row was in but the other way round: switch it off first.
+	local away = net.far
+	eq("the far machine has no chunk", away:isLoaded(), false)
+	eq("switching it off works even so", away:turnOff(), true)
+
+	local why = CeroSecDebug.turnOnRefusal(away)
+	check("a machine whose chunk is away cannot be switched on", why ~= nil)
+	check("and the reason names the chunk and not the wiring",
+		string.find(why, "chunk is away", 1, true) ~= nil)
+	check("and it says what to do about it",
+		string.find(why, "teleport", 1, true) ~= nil)
+	eq("turning it OFF is refused because it is already off",
+		CeroSecDebug.turnOffRefusal(away), "it is already off")
+
+	-- The same machine with its chunk in and a wire: no refusal at all. The chunk
+	-- coming in is an IsoObject with modData on it, because switching a machine on
+	-- mirrors its state into the tile (SCeroSecObject:toModData).
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	eq("with the chunk in and a wire there is nothing to refuse",
+		CeroSecDebug.turnOnRefusal(away), nil)
+	-- And with the chunk in and no wire, the OTHER sentence -- which is the
+	-- distinction a sweep once got wrong.
+	away.hasPower = function() return false end
+	eq("a loaded machine with no wire says the wire",
+		CeroSecDebug.turnOnRefusal(away), "there is no wire at its square")
+	away.hasPower = function() return true end
+	eq("and it really does come on", away:turnOn(), true)
+	eq("after which it cannot come on again", CeroSecDebug.turnOnRefusal(away),
+		"it is already on")
+	eq("and turning it off is what is left", CeroSecDebug.turnOffRefusal(away), nil)
+
+	-- Nothing selected is a refusal too, and never an error.
+	check("nothing selected cannot be switched on",
+		CeroSecDebug.turnOnRefusal(nil) ~= nil)
+
+	-- Every snapshot carries those answers, whatever tab it is for: the buttons
+	-- under the list are the same six on every tab.
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for i = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[i], net.here)
+		eq(tabs[i] .. " says whether the machine can come on", snap.canTurnOn, false)
+		eq("and whether it can go off", snap.canTurnOff, true)
+		eq("and whether it is on", snap.on, true)
+		-- This bench's machines have no IsoObject at all, which is a county nobody
+		-- is standing in: loaded is the honest answer and the window greys the
+		-- terminal on it.
+		eq("and whether its chunk is in", snap.loaded, false)
+		eq("with the reason it cannot come on", snap.reason, "it is already on")
+	end
+end
+
+-- Which machines are worth a row: the flag the window's "used only" filter reads.
+do
+	local net = newNet()
+	-- A computer sprite a chunk brought in and nobody ever touched, which is what
+	-- forty-four of Mathieu's rows were. The system makes one for every valid iso
+	-- object of every loaded square, so this is not a rare case at all.
+	local idle = net.machine(300, 220, 0, net.shed)
+	eq("it is off", idle.on, false)
+	eq("and it has no disk of its own", idle.os, nil)
+	eq("so it has never been used", CeroSecDebug.isUsed(idle), false)
+	eq("while a machine that is on has been", CeroSecDebug.isUsed(net.here), true)
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	local idleRow, liveRow = nil, nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "300,220,0" then idleRow = snap.rows[i] end
+		if snap.rows[i].c[1] == "10,10,0" then liveRow = snap.rows[i] end
+	end
+	check("the untouched one is still on the list", idleRow ~= nil)
+	eq("and its row says it has never been used", idleRow.used, false)
+	eq("while the live one's says it has", liveRow.used, true)
+
+	-- And a machine switched off after being used stays used: it has a disk.
+	net.here:turnOff()
+	eq("a machine that has been used stays used once it is off",
+		CeroSecDebug.isUsed(net.here), true)
+end
+
+-- The refusal on the WIRE, through the real command door.
+do
+	local net = newNet()
+	local away = net.far
+	away:turnOff()
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("the server answered the press", #answers, 1)
+	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
+	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")
+	check("with the refusal on it",
+		string.find(tostring(answers[1].args.error), "cannot turn on", 1, true) ~= nil)
+	check("and the reason in it",
+		string.find(tostring(answers[1].args.error), "chunk is away", 1, true) ~= nil)
+	eq("and no tab, so no list is emptied by it", answers[1].args.tab, nil)
+	eq("the machine is still off", away.on, false)
+
+	-- A press that CAN work answers nothing at all: the snapshot two seconds later
+	-- is what says it happened, and a window that had to read a receipt would be a
+	-- window that showed one.
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("nothing is answered when it worked", #answers, 0)
+	eq("and the machine came on", away.on, true)
+
+	-- Turning off a machine that is already off is refused in the same words.
+	away:turnOff()
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "off" })
+	eq("the press was answered", #answers, 1)
+	check("with the refusal",
+		string.find(tostring(answers[1].args.error), "already off", 1, true) ~= nil)
+
+	-- And a machine nothing answers to -- which is what 0,0,0 is -- says that.
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "on" })
+	eq("a triple nothing is at is answered too", #answers, 1)
+	check("with what is wrong with it",
+		string.find(tostring(answers[1].args.error), "no machine at", 1, true) ~= nil)
+end
 
 print("window_test: " .. count .. " checks passed")

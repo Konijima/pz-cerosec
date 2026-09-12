@@ -81,6 +81,47 @@ function CeroSecContextMenu.floppyOn(playerObj)
 	return nil
 end
 
+-- EVERY disk he is carrying, bag included, in the same order: the four colours as
+-- a box of them came in, and within one colour whatever order the container hands
+-- them over in. A stable order matters more than which order it is -- a list that
+-- reshuffled between two right-clicks would be a menu where the disk under the
+-- cursor is not the disk that goes in.
+--
+-- getAllTypeRecurse and not getFirstTypeRecurse, because a survivor keeps three
+-- blue disks as readily as one of each colour (javap zombie.inventory.ItemContainer:
+-- getAllTypeRecurse(String) returns the ArrayList of them).
+function CeroSecContextMenu.floppiesOn(playerObj)
+	local out = {}
+	local inv = playerObj:getInventory()
+	if not inv then return out end
+	for i = 1, #CeroSec.FLOPPY_TYPES do
+		local found = inv:getAllTypeRecurse(CeroSec.FLOPPY_TYPES[i])
+		if found ~= nil then
+			for j = 0, found:size() - 1 do
+				out[#out + 1] = found:get(j)
+			end
+		end
+	end
+	return out
+end
+
+-- What one disk reads as on the menu. The label FIRST, because that is the thing
+-- the survivor wrote in order to be able to pick this disk out of four, and the
+-- shell's colour after it in brackets.
+--
+-- item:getName() is the label when there is one written on it and the translated
+-- item name otherwise (CeroSecFloppyMenu), so an unlabelled disk reads
+-- `3.5" Floppy Disk (blue)` and a labelled one `BACKUP (blue)`. The colour is
+-- always there: without it four unlabelled disks would be four identical lines,
+-- which is the menu this submenu exists to replace.
+function CeroSecContextMenu.diskEntry(item)
+	local name = item:getName()
+	if type(name) ~= "string" then name = "" end
+	local colour = CeroSec.floppyColourKey(item:getFullType())
+	if colour == nil then return name end
+	return name .. " (" .. getText(colour) .. ")"
+end
+
 function CeroSecContextMenu.onInsertFloppy(worldobjects, computer, playerObj, height, item)
 	CeroSecReach.walkToFront(playerObj, computer, function()
 		ISTimedActionQueue.add(ISCeroSecDiskAction:new(playerObj, computer, height, item))
@@ -131,16 +172,45 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 
 	-- Nothing to insert is not an entry at all: a player with no disk on him has
 	-- no business reading about a drive.
-	local item = CeroSecContextMenu.floppyOn(playerObj)
-	if item then
+	--
+	-- ONE disk is the direct entry it has always been. More than one and it becomes
+	-- a submenu with a line per disk, because a drive with one slot and a survivor
+	-- with four disks is a choice, and an entry that silently took the first blue
+	-- one was the whole of the complaint this answers.
+	--
+	-- A full drive beats being out of reach, deliberately: it is the reason a
+	-- player can act on standing where he is.
+	local disks = CeroSecContextMenu.floppiesOn(playerObj)
+	local insertReason = reason
+	if inDrive then insertReason = "Tooltip_CeroSec_DriveFull" end
+
+	if #disks == 1 then
 		local insert = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"),
-			worldobjects, CeroSecContextMenu.onInsertFloppy, computer, playerObj, height, item)
-		-- A full drive beats being out of reach, deliberately: it is the reason a
-		-- player can act on standing where he is.
-		if inDrive then
-			grey(insert, "Tooltip_CeroSec_DriveFull")
-		else
-			grey(insert, reason)
+			worldobjects, CeroSecContextMenu.onInsertFloppy, computer, playerObj, height,
+			disks[1])
+		grey(insert, insertReason)
+	elseif #disks > 1 and insertReason ~= nil then
+		-- Refused, so there is nothing to choose BETWEEN: one greyed line carrying the
+		-- reason, and no submenu behind it. A greyed parent over a list of disks would
+		-- be a menu that invites a survivor to pick one and then refuses the pick, and
+		-- the line he needs to read is the reason and not the four names.
+		--
+		-- No callback on it either -- label only, the way the dev submenu's own parent
+		-- is added -- so there is nothing there to fire even if a greyed entry were
+		-- ever clickable.
+		local insert = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"))
+		grey(insert, insertReason)
+	elseif #disks > 1 then
+		-- getNew, addSubMenu, then fill it: the order every vanilla submenu is built
+		-- in (ISWorldObjectContextMenu.lua:1167-1169), and the order addDevMenu below
+		-- builds its own in. addSubMenu copies the child's number onto the parent
+		-- option, so the child has to exist first.
+		local parent = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"))
+		local sub = ISContextMenu:getNew(context)
+		context:addSubMenu(parent, sub)
+		for d = 1, #disks do
+			sub:addOption(CeroSecContextMenu.diskEntry(disks[d]), worldobjects,
+				CeroSecContextMenu.onInsertFloppy, computer, playerObj, height, disks[d])
 		end
 	end
 

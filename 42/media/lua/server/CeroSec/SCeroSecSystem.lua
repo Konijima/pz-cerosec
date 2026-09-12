@@ -1060,6 +1060,30 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 		disk = read
 	end
 
+	-- The sticker, read off the ITEM and not off its modData, and written over
+	-- whatever the modData said.
+	--
+	-- The item is where the label really lives (CeroSecFloppyMenu): setName plus
+	-- setCustomName plus syncItemFields is what writes it, and syncItemFields is the
+	-- engine's own sync -- there is no per-item modData transmit on InventoryItem in
+	-- 42.20.4 to match it (javap zombie.inventory.InventoryItem: hasModData,
+	-- getModData, copyModData, and nothing that sends one). So the name is the one
+	-- reading of the label that is true on both sides of a multiplayer game, and a
+	-- modData label that disagrees with it is a stale copy and not a second opinion.
+	--
+	-- No custom name is NO sticker, and that is why this clears rather than merely
+	-- overwrites: a disk somebody erased the label from must come out of the drive
+	-- with it still erased.
+	--
+	-- Held to CeroSecOS.labelOk on the way in, which is tighter than the slot's own
+	-- gate: this is a client's string and the two commands that print it are lines
+	-- on a screen.
+	disk.label = nil
+	if item:isCustomName() then
+		local written = item:getName()
+		if CeroSecOS.labelOk(written) then disk.label = written end
+	end
+
 	local done = luaObject:insertDisk(disk, item:getFullType())
 	if not done then return end
 
@@ -1108,6 +1132,22 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		CeroSec.log(CeroSec.LOG_ERROR,
 			"the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
 		return
+	end
+
+	-- And the sticker back onto the shell. This is not belt-and-braces: an insert
+	-- DESTROYS the item and an eject makes a NEW one (inv:AddItem above), so without
+	-- these three calls a disk labelled BACKUP would come out of the drive called
+	-- "3.5 inch Floppy Disk" and the survivor's own handwriting would be gone. The
+	-- three calls are vanilla's Rename Bag's, in its order
+	-- (ISInventoryPaneContextMenu.lua:2753-2755).
+	--
+	-- writeDiskTo above has already put the label in the item's modData -- `label` is
+	-- one of the three keys a disk owns there (CeroSecOS.DISK_KEYS) -- so the record
+	-- and the name come out of the drive saying the same thing.
+	if CeroSecOS.labelOk(disk.label) then
+		item:setName(disk.label)
+		item:setCustomName(true)
+		item:syncItemFields()
 	end
 
 	-- And only now does it come out. If it somehow does not, the item goes with it:
@@ -1839,17 +1879,53 @@ Commands.debug = function(self, playerObj, x, y, z, token, args)
 	self:reply(playerObj, "debug", snapshot)
 end
 
+-- A refusal, back to the window that asked, on the very `debug` answer a snapshot
+-- comes on -- with an `error` on it and no tab, so the window puts it on the first
+-- line of the block under the list and leaves the lists it has alone.
+--
+-- There was no such thing until now, and that was the defect: `debugact` called
+-- turnOn, turnOn refuses a machine whose chunk is away -- the wire is asked of a
+-- SQUARE and there is nobody to ask -- the boolean was dropped here, nothing was
+-- answered, and the window drew the same `off` two seconds later. A button that
+-- cannot work looked exactly like a button that had. A refusal a player cannot read
+-- is a refusal that looks like a bug in the mod.
+local function refuseAct(system, playerObj, token, x, y, z, why)
+	system:reply(playerObj, "debug",
+		{ token = token, error = why, x = x, y = y, z = z })
+end
+
 Commands.debugact = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
 	if not CeroSec.debugAllowed() then return end
 	if type(args) ~= "table" or type(args.act) ~= "string" then return end
 	local luaObject = self:getLuaObjectAt(x, y, z)
-	if not luaObject then return end
+	if not luaObject then
+		refuseAct(self, playerObj, token, x, y, z, "no machine at " ..
+			tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
+		return
+	end
 
 	if args.act == "on" then
-		if not luaObject.on then luaObject:turnOn() end
+		-- Asked before it is done, and the SAME question the window greys the button
+		-- with (CeroSecDebug.turnOnRefusal): one rule, one place, one wording.
+		local why = CeroSecDebug.turnOnRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn on: " .. why)
+		elseif not luaObject:turnOn() then
+			-- Nothing above found a reason and the object refused anyway, which can
+			-- only be a rule that has moved since this was written. Said plainly
+			-- rather than swallowed: a silence here is how the last one hid.
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOn refused and did not say why")
+		end
 	elseif args.act == "off" then
-		if luaObject.on then luaObject:turnOff() end
+		local why = CeroSecDebug.turnOffRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn off: " .. why)
+		elseif not luaObject:turnOff() then
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOff refused and did not say why")
+		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)
 	end
@@ -1874,10 +1950,55 @@ local function tokenOf(args)
 	return token
 end
 
+--
+-- The one command that is about no machine at all
+--
+-- Every command above names a square -- a computer's, or a fixture's -- because
+-- every one of them is about a thing standing somewhere. Looking a number up in a
+-- telephone directory is not: the book is in a survivor's hands and the premises
+-- it lists may be a county away with nothing built on it yet. So it goes in its
+-- own table, which is what the dispatcher checks before it insists on three
+-- coordinates.
+--
+--   phonebook { rx, ry }  -- the listings of one exchange's region
+--   listings  { rx, ry, exchange, entries = { { name, number } }, capped }
+--
+-- The REGION is what travels and not a coordinate on the map, because a region is
+-- what an exchange is (CeroSecOS.phoneExchange) and it is the whole of what the
+-- book was stamped with. Two numbers, floored, and nothing else is believed.
+--
+-- Answered to the ASKING PLAYER through self:reply, like every other answer here:
+-- a book in one survivor's hands is not read out to the server.
+--
+local PlayerCommands = {}
+
+PlayerCommands.phonebook = function(self, playerObj, args)
+	local rx, ry = args.rx, args.ry
+	if type(rx) ~= "number" or type(ry) ~= "number" then return end
+	rx, ry = math.floor(rx), math.floor(ry)
+	local entries, capped = CeroSecNet.directory(rx, ry)
+	self:reply(playerObj, "listings", {
+		rx = rx, ry = ry,
+		token = tokenOf(args),
+		exchange = CeroSecOS.phoneExchangeOfRegion(rx, ry),
+		entries = entries,
+		capped = capped,
+	})
+end
+
 function SCeroSecSystem:OnClientCommand(command, playerObj, args)
+	if not playerObj then return end
+	-- The commands about no square, first: insisting on three coordinates for one
+	-- of those would refuse it, and the refusal would be silent.
+	local free = PlayerCommands[command]
+	if free then
+		if type(args) ~= "table" then return end
+		free(self, playerObj, args)
+		return
+	end
+
 	local fn = Commands[command]
 	if not fn then return end
-	if not playerObj then return end
 	local x, y, z = coordsOf(args)
 	if not x then return end
 	fn(self, playerObj, x, y, z, tokenOf(args), args)

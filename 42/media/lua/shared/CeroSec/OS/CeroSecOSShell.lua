@@ -1670,7 +1670,14 @@ commands.df = function(state, session, args, env)
 	if mount ~= nil then
 		local fs = CeroSecOS.fsFor(state, mount.dir)
 		local fnodes, fbytes = CeroSecOS.fsUsage(state, fs)
-		out[#out + 1] = dfLine(CeroSecOS.FD_NAME, fs.bytes, fbytes)
+		-- The sticker, after the columns and not in the Filesystem one: that column
+		-- is ten characters wide and truncates, and a label cut in half is a label
+		-- that lies about which disk this is. On the BYTES row alone -- the two rows
+		-- are two ceilings of one disk, and saying it twice would read as two.
+		local line = dfLine(CeroSecOS.FD_NAME, fs.bytes, fbytes)
+		local label = CeroSecOS.labelOfDev(state, CeroSecOS.FD_NAME)
+		if label ~= nil then line = line .. "  (" .. label .. ")" end
+		out[#out + 1] = line
 		out[#out + 1] = dfLine(CeroSecOS.FD_NAME .. " nodes", fs.nodes, fnodes)
 	end
 	return true, out

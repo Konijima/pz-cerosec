@@ -131,6 +131,27 @@ file root may write. Volume 2 has all three.
 
 Then a greeting naming this system, and then it asks who you are.]],
 
+[[Other people's numbers: the phone book.
+
+That Phone line: is your own number, and a number is only useful if you
+have somebody else's. They are in the telephone directory, and the county
+is full of them: on a hall table, behind a shop counter, in a desk drawer.
+
+Pick one up, right-click it in your bag and choose Look up numbers. It
+opens as a book with pages, and the first leaf names the exchange it was
+printed for:
+
+  Coffee Shop ................................ 555-0416
+
+That is a business and its line. Dial it from any machine in the county
+and it is the same seven digits; Volume 2 has the command.
+
+Two things about it. A directory covers ONE exchange -- the part of the
+county its copy was printed in -- so a shop three towns over is in another
+book, and a book carried across the county is still the book of where it
+came from. And houses are not listed: a directory needs a family name to
+print, and nobody wrote those down.]],
+
 [[Saying who you are.
 
   login: admin

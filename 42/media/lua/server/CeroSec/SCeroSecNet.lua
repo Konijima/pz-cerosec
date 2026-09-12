@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecPhonebook"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSNet"
 
@@ -205,6 +206,29 @@ local function zonesAt(square)
 	return out
 end
 
+-- IS THIS ZONE THE KIND A PREMISES IS TAGGED WITH? Its area when it is, nil when
+-- it is not: a named zone of type ZombiesType with an outline that is a pair of
+-- numbers and covers something.
+--
+-- Extracted so there is ONE of it. The rule is asked in two places now -- here,
+-- of the zones on a machine's square, and by the telephone directory, of the
+-- zones of a whole region (CeroSecNet.directory) -- and a book that decided what
+-- a premises is by its own copy of the test would be a book that listed shops
+-- with no line and missed shops with one. The area TEST against the building is
+-- not in here, because a zone has no building of its own: it is the caller's, and
+-- both callers make it.
+function CeroSecNet.isPremisesZone(zone)
+	if zone == nil then return nil end
+	if zone:getType() ~= CeroSecNet.PREMISES_TYPE then return nil end
+	local name = zone:getName()
+	if type(name) ~= "string" or name == "" then return nil end
+	local w, h = zone:getWidth(), zone:getHeight()
+	if type(w) ~= "number" or type(h) ~= "number" then return nil end
+	local area = w * h
+	if area <= 0 then return nil end
+	return area
+end
+
 -- The premises: two bytes, the exchange behind them, and what it is called.
 -- nil for a computer in no building at all, which is what a player-built base is.
 function CeroSecNet.premisesOf(luaObject)
@@ -228,18 +252,11 @@ function CeroSecNet.premisesOf(luaObject)
 		local zones = zonesAt(square)
 		for i = 1, #zones do
 			local zone = zones[i]
-			local name = zone:getName()
-			if zone:getType() == CeroSecNet.PREMISES_TYPE
-					and type(name) == "string" and name ~= "" then
-				local w, h = zone:getWidth(), zone:getHeight()
-				if type(w) == "number" and type(h) == "number" then
-					local own = w * h
-					-- Strictly smaller, and the smallest of the ones that are: a shop
-					-- inside a shop is the shop a survivor is standing in.
-					if own > 0 and own < area and (bestArea == nil or own < bestArea) then
-						best, bestArea = zone, own
-					end
-				end
+			local own = CeroSecNet.isPremisesZone(zone)
+			-- Strictly smaller, and the smallest of the ones that are: a shop
+			-- inside a shop is the shop a survivor is standing in.
+			if own ~= nil and own < area and (bestArea == nil or own < bestArea) then
+				best, bestArea = zone, own
 			end
 		end
 	end
@@ -253,6 +270,119 @@ function CeroSecNet.premisesOf(luaObject)
 	local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
 	if b1 == nil then return nil end
 	return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName()
+end
+
+--
+-- THE TELEPHONE DIRECTORY OF ONE REGION
+--
+-- One exchange, one book (CeroSecPhonebook): every premises of the region that
+-- the map gave a name, with the number a computer standing in it would answer on.
+-- Asked of the SERVER because it is a question about the world -- which zones lie
+-- where, and which of them are inside a building -- exactly as premisesOf is, and
+-- answered to the one player who asked.
+--
+-- Every engine call, proved at the bytecode level on projectzomboid.jar 42.20.4:
+--
+--   zombie.iso.IsoWorld.getMetaGrid() -> zombie.iso.IsoMetaGrid
+--   zombie.iso.IsoMetaGrid.getZonesIntersecting(int x, int y, int z, int w, int h)
+--       -> java.util.ArrayList<zombie.iso.zones.Zone>
+--       (it delegates to the 6-arg overload with a fresh ArrayList, walks the
+--        cells the rectangle touches, and Zone.intersects(x,y,z,w,h) treats
+--        z == Integer.MAX_VALUE as "any level" -- so a z of 0 is the ground
+--        floor's zones, which is where a shop's zone is laid out)
+--   zombie.iso.IsoMetaGrid.getBuildingAt(int x, int y) -> zombie.iso.BuildingDef
+--       (a walk of `buildings`, returning the first whose box holds the tile)
+--   zombie.iso.zones.Zone.getName/getType/getX/getY/getWidth/getHeight
+--   zombie.iso.BuildingDef.getX/getY/getX2/getY2() -> int
+--
+-- WHICH ZONES COUNT, and this is where the book and the line are held together.
+-- The predicate is premisesOf's own (CeroSecNet.isPremisesZone) and the area test
+-- is premisesOf's own too -- a zone is a tenancy only inside a building it is
+-- STRICTLY SMALLER than -- which is what keeps the region-sized named zones the
+-- spawner uses out of the book: "Farm" is 262 by 226 and "StreetPoor" covers a
+-- suburb, and neither is a business with a telephone.
+--
+-- The building is probed at the zone's MIDDLE tile and not at its corner. The
+-- corner is what the KEY is hashed out of and has to be, but a shop's corner tile
+-- is very often its wall or the pavement outside it, and a probe there would drop
+-- real shops; the middle of a shop is inside the building the shop is in. It is
+-- the one place this differs from premisesOf, which asks the building the MACHINE
+-- stands in -- a machine is the only thing that can answer that, and a book
+-- printed before anybody put a computer anywhere cannot.
+--
+-- THE NUMBER is CeroSecOS.phoneOfZone and nothing else: the same exchange and the
+-- same four digits lineOf composes out of the record premisesOf writes. A machine
+-- put in the shop afterwards reads the book's own line back off its BIOS.
+--
+-- A RESIDENCE IS NOT IN HERE. A house is a premises and has a line, and the map
+-- gives it no name to print -- see the head of CeroSecPhonebook.
+--
+
+-- How big the building at a tile is, or nil for a tile in no building. The
+-- footprint the way premisesOf derives it: the corners, x2 exclusive.
+local function footprintAt(grid, x, y)
+	local def = grid:getBuildingAt(x, y)
+	if def == nil then return nil end
+	local bx, by, x2, y2 = def:getX(), def:getY(), def:getX2(), def:getY2()
+	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
+	if type(x2) ~= "number" or type(y2) ~= "number" then return nil end
+	local area = (x2 - bx) * (y2 - by)
+	if area <= 0 then return nil end
+	return area
+end
+
+-- The listings of region rx,ry: a list of { name, number } and whether the cap
+-- bit. An empty list for a region with nothing named in it, and for a bench with
+-- no world -- there is no world to ask, so there is nothing in the book.
+function CeroSecNet.directory(rx, ry)
+	local out = {}
+	if type(rx) ~= "number" or type(ry) ~= "number" then return out, false end
+	if getWorld == nil then return out, false end
+	local world = getWorld()
+	if world == nil then return out, false end
+	local grid = world:getMetaGrid()
+	if grid == nil then return out, false end
+
+	local size = CeroSecOS.PHONE_REGION
+	local x0, y0 = math.floor(rx) * size, math.floor(ry) * size
+	local list = grid:getZonesIntersecting(x0, y0, 0, size, size)
+	if list == nil then return out, false end
+
+	local capped = false
+	local seen = {}
+	for i = 0, list:size() - 1 do
+		local zone = list:get(i)
+		local area = CeroSecNet.isPremisesZone(zone)
+		if area ~= nil then
+			local zx, zy = zone:getX(), zone:getY()
+			local zw, zh = zone:getWidth(), zone:getHeight()
+			-- The CORNER decides which book the premises is in, because the corner is
+			-- what the exchange is derived from: a zone straddling two regions is
+			-- listed once, in the book of the region its number belongs to.
+			local cx, cy = CeroSecOS.phoneRegionOf(zx, zy)
+			if cx == math.floor(rx) and cy == math.floor(ry) then
+				-- One zone is one entry however many cells the sweep found it in.
+				local key = zx .. "," .. zy .. "," .. zw .. "," .. zh
+				if not seen[key] then
+					seen[key] = true
+					local footprint = footprintAt(grid,
+						zx + math.floor(zw / 2), zy + math.floor(zh / 2))
+					if footprint ~= nil and area < footprint then
+						local number = CeroSecOS.phoneOfZone(zx, zy, zw, zh)
+						local name = CeroSecPhonebook.spaced(zone:getName())
+						if number ~= nil and name ~= nil then
+							if #out >= CeroSecPhonebook.MAX_ENTRIES then
+								capped = true
+							else
+								out[#out + 1] = { name = name, number = number }
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return out, capped
 end
 
 -- Every machine the server holds, which is every machine in the county that has

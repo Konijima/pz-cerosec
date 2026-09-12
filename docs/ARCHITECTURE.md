@@ -621,6 +621,22 @@ a menu offering "Read the manual" three times over would be a menu nobody could
 use. It is an ordered list and not a map keyed by item, because `pairs()` would
 shuffle the entries from one right-click to the next.
 
+**A double-click** on a volume opens it too. Vanilla routes the gesture through
+`ISInventoryPane:onMouseDoubleClick` (`ISInventoryPane.lua:1141`) into
+`:doContextualDblClick(item)` (`:1199`), a ladder of elseifs over what the item is;
+at `:1102-1103` a Literature item goes to `ISInventoryPaneContextMenu.readItem`,
+which queues vanilla's hours-long `ISReadABook`. Our volumes are
+`ItemType = base:normal` on purpose and never reach that rung, so
+`CeroSecManualMenu.hookDoubleClick` **wraps** `doContextualDblClick`: our three books
+go to `CeroSecManualMenu.onRead` — the context menu's own handler, so the two doors
+cannot drift — and everything else is handed to the original untouched. The wrap is
+idempotent, or a second one would make `vanillaDblClick` point at the wrapper and any
+other item would recurse until the stack gave out.
+
+**The floppies' own inventory menu** is `client/CeroSec/CeroSecFloppyMenu.lua`, on
+the same event: *Label floppy*, and *change*/*erase* once there is writing on a disk.
+See [DEVICES.md](DEVICES.md) for where the label lives and what prints it.
+
 **The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
 **temporary testing aid and has to be set to `false` before the Workshop release.**
 While it is on, every computer — lit or dark, in reach or not — carries a last entry
@@ -640,8 +656,8 @@ the submenu is empty, with a line in the log saying which volume file did not lo
 Off, nothing at all is added.
 
 **The items** are `common/media/scripts/items_cerosec.txt`: `CeroSec.ManualUser`,
-`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`, and `CeroSec.Manual`, the
-single book that shipped before the set. All four are `ItemType = base:normal` and
+`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`. All three are
+`ItemType = base:normal` and
 **not** `base:literature`, on purpose: a literature item that cannot be written on is
 one the vanilla menu offers to *read*, and vanilla's read is a timed action that sits
 the character down for hours. They keep `DisplayCategory = Literature`, which is a
@@ -650,9 +666,12 @@ still file themselves with the books. `Icon = CeroSecManualUser` resolves to
 `common/media/textures/Item_CeroSecManualUser.png`: the game builds `"Item_" .. Icon`
 and looks it up as `media/textures/<that>.png`.
 
-`CeroSec.Manual` stays **defined** and is no longer **loot**. An item script that
-stops naming an item leaves every copy of it in every save as a missing item, so it
-is still there; read, it opens volume one, which is the volume it became.
+`CeroSec.Manual`, the single book that shipped before the set, is **gone** —
+removed on the inventory wave. It was defined but not loot, and read it opened
+volume one: two items with one content, which on an inventory menu is a fourth
+"Read the manual" nobody can tell from the first. A save that still holds a copy
+loses it, which is what dropping an item script entry costs and is acceptable
+before release.
 
 The three icons are made from the shipped one by `tools/make-volume-icons.py` —
 same 32×32 book, three bindings. The navy is channel-swapped rather than picked again by
