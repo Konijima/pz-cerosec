@@ -3,5 +3,8 @@
     "ContextMenu_CeroSec_TurnOff": "Éteindre l'ordinateur",
     "ContextMenu_CeroSec_Use": "Utiliser l'ordinateur",
     "ContextMenu_CeroSec_ReadManual": "Lire le manuel",
+    "ContextMenu_CeroSec_ReadUser": "Lire le guide de l'utilisateur",
+    "ContextMenu_CeroSec_ReadAdmin": "Lire le guide de l'administrateur système",
+    "ContextMenu_CeroSec_ReadProgrammer": "Lire le guide du programmeur",
     "ContextMenu_CeroSec_DevManual": "Lire le manuel CeroSec (dev)"
 }

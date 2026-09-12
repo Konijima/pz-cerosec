@@ -10,10 +10,20 @@
 --
 -- What it takes is the text, written elsewhere:
 --
---   CeroSecManual = {
---     title = "...", edition = "...",
---     chapters = { { title = "...", pages = { "text\n\nmore text", ... } } },
---   }
+--   { title = "...", edition = "...",
+--     chapters = { { title = "...", pages = { "a page of text", ... } } } }
+--
+-- and one of those is one VOLUME. The set is three of them -- see the shelf,
+-- below -- and the whole of what a volume adds to the shape above is an `id`
+-- and a `name`.
+--
+-- A `\n` in an authored page ends a line HERE, and that is the layout's rule
+-- and not the writer's: what a writer types is prose hard-wrapped at whatever
+-- column his editor sits at, and a blank line is his paragraph break. The two
+-- are reconciled before anything reaches this file, by CeroSecManualUI.reflow,
+-- which joins each of his paragraphs back into one piece and leaves the blank
+-- lines and the example lines standing. So by the time a page gets here every
+-- `\n` left in it is a break somebody meant.
 --
 -- What it hands back is a flat list of PAGES, in the order they are turned,
 -- each one a list of drawable lines. The book is read two pages at a time --
@@ -38,6 +48,77 @@ CeroSecManualBook.EXAMPLE_PREFIX = "  "
 
 function CeroSecManualBook.isExample(line)
 	return string.sub(line, 1, 2) == CeroSecManualBook.EXAMPLE_PREFIX
+end
+
+--
+-- The shelf
+--
+-- CeroSec Systems shipped a documentation SET and not a book: three volumes,
+-- each its own file, each assigning itself into one table the files share.
+--
+--   CeroSecManual.volumes = CeroSecManual.volumes or {}
+--   CeroSecManual.volumes[1] = {
+--     id = "user", title = nil, name = "User's Guide",
+--     edition = "First Edition, 1993",
+--     chapters = { { title = "1. ...", pages = { "..." } } },
+--   }
+--
+-- The `or {}` on the first line is the whole of why they are separate files
+-- and still one shelf: the game loads them in whatever order it loads them in,
+-- and none of the three may assume it is first.
+--
+-- `id` is what a reader is opened by and what an item is mapped to, and it is
+-- never shown. `name` is what the cover says and what the dev door lists.
+-- `title` is NOT written: it names the version of the OS the set is for and
+-- that number has one home, CeroSecOS.VERSION, which is not loaded yet when
+-- these files are read -- the game sorts every relative path, lowercased, and
+-- shared/cerosec/cerosecmanualuser.lua comes long before
+-- shared/cerosec/os/cerosecos.lua. So the cover is stamped at the last moment
+-- before a layout reads it, by stamp() below.
+--
+-- Until all three files exist the shelf is empty and the reader falls back to
+-- the single book CeroSecManual is on its own.
+
+-- The bookmark key a book with no volume behind it is filed under. The legacy
+-- single book is not a volume and has no id of its own, and a dev bookmark
+-- table needs something to key it by.
+CeroSecManualBook.LEGACY_ID = "manual"
+
+-- Every volume on the shelf, in the order the files numbered them. Read
+-- through a function and never cached: a reload of one of the three files is a
+-- reload of the shelf.
+function CeroSecManualBook.shelf()
+	if type(CeroSecManual) ~= "table" then return {} end
+	local volumes = CeroSecManual.volumes
+	if type(volumes) ~= "table" then return {} end
+	return volumes
+end
+
+-- The volume an id names, stamped and ready to lay out. A nil id is the first
+-- volume -- opening "the manual" with nothing said about which one is opening
+-- the User's Guide -- and an id nothing answers to is nil, which is a caller's
+-- to fall back on and not this one's to guess at.
+function CeroSecManualBook.volume(id)
+	local volumes = CeroSecManualBook.shelf()
+	if #volumes == 0 then return nil end
+	if id == nil then return CeroSecManualBook.stamp(volumes[1]) end
+	for i = 1, #volumes do
+		if volumes[i].id == id then return CeroSecManualBook.stamp(volumes[i]) end
+	end
+	return nil
+end
+
+-- Stamp a volume's cover with the version the OS really reports. Idempotent,
+-- and there is no second place the number is written. A volume with no name --
+-- a half-written file -- is left alone rather than given a title ending in a
+-- space, and a core that is not loaded yet leaves the cover blank rather than
+-- taking the book down with it.
+function CeroSecManualBook.stamp(volume)
+	if type(volume) ~= "table" then return volume end
+	if type(volume.name) ~= "string" or volume.name == "" then return volume end
+	if type(CeroSecOS) ~= "table" or CeroSecOS.VERSION == nil then return volume end
+	volume.title = "CeroSec OS " .. CeroSecOS.VERSION .. " " .. volume.name
+	return volume
 end
 
 --
@@ -101,9 +182,9 @@ end
 --
 
 -- One authored page becomes a list of drawable lines: { text = ..., code = }.
--- `\n` is the paragraph break the contract names, and a run of them is kept as
--- blank lines so the writer's spacing survives. Example lines come through
--- exactly as they were typed.
+-- `\n` ends a line, and a run of them is kept as blank lines so the spacing
+-- the reflow left survives. Example lines come through exactly as they were
+-- typed.
 function CeroSecManualBook.layout(text, opts)
 	local out = {}
 	-- gmatch on "([^\n]*)\n?" would loop forever on the empty tail in 5.1, so
@@ -160,7 +241,12 @@ end
 -- of a page in `pages` is its printed page number.
 function CeroSecManualBook.open(manual, opts)
 	local book = {
-		title = (manual and manual.title) or "Manual",
+		-- The stamped cover, or -- a volume whose stamp could not be made,
+		-- because the core was not loaded when it was asked for -- the volume's
+		-- own name. A cover reading "User's Guide" without the version on it is
+		-- worse than one with it and a great deal better than one reading
+		-- "Manual".
+		title = (manual and (manual.title or manual.name)) or "Manual",
 		edition = (manual and manual.edition) or "",
 		pages = {},
 		chapters = {},

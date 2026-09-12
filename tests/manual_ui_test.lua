@@ -144,6 +144,35 @@ ISButton = { new = function(_, x, y, w, h, title, target, onclick)
 		title = title, target = target, onclick = onclick }, Button)
 end }
 
+-- A context menu and its submenus, faked the way the game builds them:
+-- ISContextMenu:getNew(parent) hands back a child menu and addSubMenu(option,
+-- menu) hangs it off an option (ISContextMenu.lua:1075-1077,1199). What the
+-- bench keeps is which option each submenu was hung off, because a submenu
+-- built and filled but never attached is an entry that leads nowhere -- and
+-- the entries inside it would look perfectly right to a test that only counted
+-- them.
+local ContextMenu = {}
+ContextMenu.__index = ContextMenu
+function ContextMenu.new()
+	return setmetatable({ labels = {}, options = {}, subs = {} }, ContextMenu)
+end
+function ContextMenu:addOption(label, target, callback, arg, arg2)
+	local option = { label = label, target = target,
+		callback = callback, arg = arg, arg2 = arg2 }
+	self.labels[#self.labels + 1] = label
+	self.options[#self.options + 1] = option
+	return option
+end
+function ContextMenu:addSubMenu(option, menu)
+	self.subs[#self.subs + 1] = { option = option, menu = menu }
+	menu.hungOff = option
+end
+ISContextMenu = { getNew = function(_, parent)
+	local menu = ContextMenu.new()
+	menu.parent = parent
+	return menu
+end }
+
 --
 -- The mod, loaded the way the game loads it.
 --
@@ -238,8 +267,11 @@ local function newPlayer()
 	}
 end
 
-local function newWindow(item)
-	local window = CeroSecManualUI:new(0, 0, newPlayer(), item)
+-- A window on a named volume. With no volume named it is the legacy single
+-- book, which is what CeroSecManual is until the shelf is stood up -- and what
+-- every block below this one that says nothing about volumes is reading.
+local function newVolumeWindow(volumeId, item)
+	local window = CeroSecManualUI:new(0, 0, newPlayer(), volumeId, item)
 	window:initialise()
 	window:createChildren()
 	-- What was painted this frame, and where.
@@ -258,6 +290,10 @@ local function newWindow(item)
 		self:render()
 	end
 	return window
+end
+
+local function newWindow(item)
+	return newVolumeWindow(nil, item)
 end
 
 --
@@ -820,9 +856,9 @@ end
 
 do
 	local options = {}
-	local context = { addOption = function(_, label, target, callback, arg)
+	local context = { addOption = function(_, label, target, callback, arg, arg2)
 		options[#options + 1] = { label = label, target = target,
-			callback = callback, arg = arg }
+			callback = callback, arg = arg, arg2 = arg2 }
 		return {}
 	end }
 	local player = newPlayer()
@@ -838,6 +874,7 @@ do
 	eq("one option when the manual is in the selection", #options, 1)
 	eq("named the way the menu names it", options[1].label, "ContextMenu_CeroSec_ReadManual")
 	eq("carrying the manual itself", options[1].target, manual)
+	eq("the book that shipped before the set opens volume one", options[1].arg2, "user")
 
 	-- A stack of identical items arrives as one table with an items array
 	-- inside it, not as an InventoryItem. That is the shape that would slip
@@ -851,11 +888,62 @@ do
 	-- The handler is what opens the window.
 	eq("the option calls the reader", options[1].callback, CeroSecManualMenu.onRead)
 	eq("with the player behind it", options[1].arg, player)
+
+	-- Three volumes, three options, each one carrying its OWN item and its own
+	-- volume id. One option reading "Read the manual" three times over would be
+	-- a menu nobody could use, and an option that carried the wrong id would
+	-- open the right survivor at the wrong book.
+	local VOLUMES = {
+		{ item = "CeroSec.ManualUser", volume = "user",
+			label = "ContextMenu_CeroSec_ReadUser" },
+		{ item = "CeroSec.ManualAdmin", volume = "admin",
+			label = "ContextMenu_CeroSec_ReadAdmin" },
+		{ item = "CeroSec.ManualProgrammer", volume = "programmer",
+			label = "ContextMenu_CeroSec_ReadProgrammer" },
+	}
+	local copies = {}
+	for v = 1, #VOLUMES do
+		options = {}
+		copies[v] = newItem(VOLUMES[v].item)
+		CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { other, copies[v] })
+		eq(VOLUMES[v].item .. " is one option", #options, 1)
+		eq("named after its own volume", options[1].label, VOLUMES[v].label)
+		eq("carrying that copy", options[1].target, copies[v])
+		eq("and opening that volume", options[1].arg2, VOLUMES[v].volume)
+	end
+
+	-- All three in one selection: three options, in the order the set is
+	-- printed in and not in whatever order a hash walked them.
+	options = {}
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
+		{ copies[3], copies[1], copies[2] })
+	eq("the whole set is three options", #options, 3)
+	for v = 1, #VOLUMES do
+		eq("option " .. v .. " is volume " .. v, options[v].arg2, VOLUMES[v].volume)
+		eq("option " .. v .. " carries volume " .. v .. "'s own copy",
+			options[v].target, copies[v])
+	end
+
+	-- Every label the menu can print is a key the mod ships a string for. A
+	-- label nobody translated comes out on the menu as the key itself.
+	local handle = assert(io.open("42/media/lua/shared/Translate/EN/ContextMenu.json", "r"))
+	local strings = handle:read("*a")
+	handle:close()
+	for b = 1, #CeroSecManualMenu.BOOKS do
+		local key = CeroSecManualMenu.BOOKS[b].label
+		check("EN ContextMenu.json defines " .. key,
+			string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+	end
 end
 
 --
 -- The testing door on the computer's menu (CeroSec.DEV_MANUAL_MENU)
 --
+
+-- A right-click on the lit computer, built by the block below and used again
+-- by the volume block after it -- which asks the same door for three entries
+-- instead of one.
+local worldMenuOn
 
 do
 	-- The world menu is a client file of ours and it is loaded here with the
@@ -901,15 +989,16 @@ do
 	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecContextMenu.lua"))
 	chunk()
 
-	local function menuOn(target)
+	-- The whole menu a right-click on one computer builds.
+	local function fullMenuOn(target)
 		picked = target
-		local labels = {}
-		local context = { addOption = function(_, label, ...)
-			labels[#labels + 1] = label
-			return {}
-		end }
+		local context = ContextMenu.new()
 		CeroSecContextMenu.OnFillWorldObjectContextMenu(0, context, {}, false)
-		return labels
+		return context
+	end
+
+	local function menuOn(target)
+		return fullMenuOn(target).labels
 	end
 
 	-- On, with the flag: the two options that belong to the machine, and the
@@ -941,6 +1030,29 @@ do
 	eq("its own option and nothing else", labels[1], "ContextMenu_CeroSec_TurnOn")
 
 	CeroSec.DEV_MANUAL_MENU = true
+
+	-- The door is a SUBMENU, and with no shelf standing up -- CeroSecManual is
+	-- the legacy single book here and has no volumes -- it holds the one entry
+	-- that opens that book.
+	local menu = fullMenuOn(computer)
+	eq("the door is the only submenu on the menu", #menu.subs, 1)
+	eq("and it hangs off the door's own entry",
+		menu.subs[1].option, menu.options[3])
+	local sub = menu.subs[1].menu
+	eq("with no shelf it holds one entry", #sub.options, 1)
+	eq("which opens the reader", sub.options[1].callback,
+		CeroSecContextMenu.onDevManual)
+	eq("on no volume in particular", sub.options[1].arg, nil)
+	eq("with the player it belongs to", sub.options[1].target, player)
+
+	-- And the door's own entry does nothing itself: a parent that both opens a
+	-- submenu and fires a callback fires it on the way past.
+	eq("the door's own entry has no callback of its own",
+		menu.options[3].callback, nil)
+
+	-- Kept for the volume block below, which builds this same menu on this same
+	-- lit computer against a shelf of three.
+	worldMenuOn = function() return fullMenuOn(computer) end
 end
 
 --
@@ -952,7 +1064,7 @@ do
 	-- write where it was left, so the bookmark is the module's -- and it must
 	-- be a DIFFERENT bookmark from any copy's, or turning the pages of a book
 	-- nobody owns would move somebody's real one.
-	CeroSecManualUI.devPage = 1
+	CeroSecManualUI.devPages = {}
 
 	local item = newItem()
 	local owned = newWindow(item)
@@ -961,18 +1073,19 @@ do
 	local ownedPage = owned.page
 	owned:close()
 
-	local dev = CeroSecManualUI:new(0, 0, newPlayer(), nil)
+	local dev = CeroSecManualUI:new(0, 0, newPlayer(), nil, nil)
 	eq("a book with no copy opens at the front", dev.page, 1)
 	check("and not where the owned copy was left", ownedPage ~= 1)
 
 	dev:onNext()
 	local devPage = dev.page
-	eq("its bookmark went on the module", CeroSecManualUI.devPage, devPage)
+	eq("its bookmark went on the module, filed under the book it really opened",
+		CeroSecManualUI.devPages[CeroSecManualBook.LEGACY_ID], devPage)
 	eq("and the copy's own is untouched", item.data.page, ownedPage)
 	check("the two bookmarks are not the same", devPage ~= ownedPage)
 
 	-- Opened again, it comes back to its own page.
-	local again = CeroSecManualUI:new(0, 0, newPlayer(), nil)
+	local again = CeroSecManualUI:new(0, 0, newPlayer(), nil, nil)
 	eq("the door reopens where the door left off", again.page, devPage)
 
 	-- And the copy still opens on the copy's page.
@@ -984,7 +1097,212 @@ do
 	again.playerObj.isDead = function() return true end
 	check("a dead reader closes it", again:stillValid() == false)
 
-	CeroSecManualUI.devPage = 1
+	CeroSecManualUI.devPages = {}
+end
+
+--
+-- The set: three volumes on one shelf
+--
+-- The real text is three files the bench never reads, so the shelf here is the
+-- bench's own: three volumes of two chapters each, deliberately of different
+-- lengths, so a reader that opened the wrong one is a reader with the wrong
+-- number of chapters and the wrong words on the paper.
+--
+
+do
+	local real = CeroSecManual
+	local realOS = CeroSecOS
+
+	-- The core, for the stamp. The manual files load before it does, which is
+	-- the whole reason the cover is stamped at read time and not written into
+	-- the table -- so the bench has a version to stamp WITH.
+	CeroSecOS = { VERSION = "1.0" }
+
+	local function volume(id, name, one, two)
+		return {
+			id = id, title = nil, name = name,
+			edition = "First Edition, 1993",
+			-- Three authored pages to a chapter, so a volume is several sheets
+			-- thick. A volume of two short chapters is two sheets, and two
+			-- readers turned to different places in a two-sheet book land on
+			-- the same one -- which would make a bookmark that was shared look
+			-- exactly like a bookmark that was not.
+			chapters = {
+				{ title = "1. " .. one, pages = {
+					one .. " is where it starts.",
+					one .. " goes on from there.",
+					one .. " is done with." } },
+				{ title = "2. " .. two, pages = {
+					two .. " is where it ends.",
+					two .. " goes on from there.",
+					two .. " is done with." } },
+			},
+		}
+	end
+
+	CeroSecManual = { volumes = {
+		volume("user", "User's Guide", "Your machine", "The shell"),
+		volume("admin", "System Administrator's Guide", "Accounts", "Backups"),
+		volume("programmer", "Programmer's Guide", "The script", "The devices"),
+	} }
+
+	eq("the shelf is three volumes", #CeroSecManualBook.shelf(), 3)
+
+	-- Each volume opens as itself: its own cover, its own edition, its own two
+	-- chapters, and its own words on its own leaves.
+	for v = 1, 3 do
+		local want = CeroSecManual.volumes[v]
+		local window = newVolumeWindow(want.id, newItem())
+
+		eq(want.id .. " is the book that opened", window.bookId, want.id)
+		eq(want.id .. "'s cover is stamped with the version and its own name",
+			window.book.title, "CeroSec OS 1.0 " .. want.name)
+		eq(want.id .. " wears that title on the window", window.titleText,
+			"CeroSec OS 1.0 " .. want.name)
+		eq(want.id .. "'s cover carries its edition", window.book.edition,
+			"First Edition, 1993")
+		eq(want.id .. " has two chapters", #window.book.chapters, 2)
+		for c = 1, 2 do
+			eq(want.id .. " chapter " .. c .. " is its own",
+				window.book.chapters[c].title, want.chapters[c].title)
+		end
+
+		-- The contents leaf lists that volume's chapters and nobody else's.
+		window:onContents()
+		window:frame()
+		eq(want.id .. "'s contents has two rows", #window.hotRows, 2)
+		local titles = {}
+		for i = 1, #window.painted do titles[window.painted[i].text] = true end
+		for c = 1, 2 do
+			check(want.id .. "'s contents prints " .. want.chapters[c].title,
+				titles[want.chapters[c].title] == true)
+		end
+		for w = 1, 3 do
+			if w ~= v then
+				local other = CeroSecManual.volumes[w]
+				check(want.id .. "'s contents does not print " .. other.chapters[1].title,
+					titles[other.chapters[1].title] ~= true)
+			end
+		end
+
+		-- And the words of its own first chapter are the words on its leaf.
+		window:goToPage(window.book.chapters[1].page)
+		window:frame()
+		local onPaper = {}
+		for i = 1, #window.painted do onPaper[window.painted[i].text] = true end
+		check(want.id .. " prints its own first page",
+			onPaper[want.chapters[1].pages[1]] == true)
+	end
+
+	-- Stamping is idempotent and reaches the volume itself, so a second reader
+	-- opened on the same volume is not a second concatenation.
+	local once = CeroSecManualBook.volume("admin").title
+	local twice = CeroSecManualBook.volume("admin").title
+	eq("stamping twice stamps the same cover", twice, once)
+
+	-- An id nothing on the shelf answers to is not a book.
+	eq("an unknown id is nobody's volume", CeroSecManualBook.volume("editor"), nil)
+	-- And a reader asked for one falls back to the legacy book rather than
+	-- opening blank paper.
+	CeroSecManual.chapters = real.chapters
+	CeroSecManual.title = "CeroSec OS User's Manual"
+	local fallen = newVolumeWindow("editor", newItem())
+	eq("a reader asked for a volume that is not there reads the legacy book",
+		fallen.bookId, CeroSecManualBook.LEGACY_ID)
+	eq("which is the legacy book's own chapters", #fallen.book.chapters,
+		#real.chapters)
+	CeroSecManual.chapters = nil
+	CeroSecManual.title = nil
+
+	-- Nothing said about the volume is volume one: "read the manual" with
+	-- nobody saying which.
+	eq("no volume named is the first one", newVolumeWindow(nil, newItem()).bookId, "user")
+
+	--
+	-- A bookmark belongs to a COPY, and two copies of two volumes are two
+	-- bookmarks. This is the one that would pass unnoticed if the reader wrote
+	-- its place under a key it shared: both books would open on whichever was
+	-- put down last.
+	--
+	do
+		local userCopy = newItem("CeroSec.ManualUser")
+		local progCopy = newItem("CeroSec.ManualProgrammer")
+
+		local user = newVolumeWindow("user", userCopy)
+		user:onNext()
+		user:onNext()
+		local userPage = user.page
+		user:close()
+
+		local prog = newVolumeWindow("programmer", progCopy)
+		eq("the other volume's copy opens at the front", prog.page, 1)
+		prog:onNext()
+		local progPage = prog.page
+		prog:close()
+
+		check("the two copies are on different leaves", userPage ~= progPage)
+		eq("the User's Guide kept its own place", userCopy.data.page, userPage)
+		eq("the Programmer's Guide kept its own", progCopy.data.page, progPage)
+
+		eq("and each reopens where it was put down",
+			newVolumeWindow("user", userCopy).page, userPage)
+		eq("each, separately",
+			newVolumeWindow("programmer", progCopy).page, progPage)
+	end
+
+	--
+	-- The door's own bookmarks, one per volume. There is no item to write on,
+	-- so they live on the module -- and a single one of them would move the
+	-- reader's place in all three books at once.
+	--
+	do
+		CeroSecManualUI.devPages = {}
+
+		local admin = newVolumeWindow("admin", nil)
+		admin:onNext()
+		local adminPage = admin.page
+		eq("the door's place in the admin volume is filed under it",
+			CeroSecManualUI.devPages.admin, adminPage)
+		eq("and it wrote nothing against any other volume",
+			CeroSecManualUI.devPages.user, nil)
+
+		local user = newVolumeWindow("user", nil)
+		eq("the door opens another volume at its front", user.page, 1)
+		eq("without having moved the first", CeroSecManualUI.devPages.admin, adminPage)
+
+		eq("and comes back to the admin volume where it left it",
+			newVolumeWindow("admin", nil).page, adminPage)
+
+		CeroSecManualUI.devPages = {}
+	end
+
+	--
+	-- The door, against a shelf of three: three entries, one per volume, each
+	-- one named the way its volume names itself and each one carrying its own
+	-- id.
+	--
+	do
+		CeroSec.DEV_MANUAL_MENU = true
+		local menu = worldMenuOn()
+		eq("the door is still one entry on the machine's own menu", #menu.labels, 3)
+		eq("and still last", menu.labels[3], "ContextMenu_CeroSec_DevManual")
+		eq("still exactly one submenu", #menu.subs, 1)
+		eq("hung off the door", menu.subs[1].option, menu.options[3])
+
+		local sub = menu.subs[1].menu
+		eq("three volumes, three entries", #sub.options, 3)
+		for v = 1, 3 do
+			local want = CeroSecManual.volumes[v]
+			eq("entry " .. v .. " is named after its volume", sub.options[v].label,
+				want.name)
+			eq("entry " .. v .. " opens the reader", sub.options[v].callback,
+				CeroSecContextMenu.onDevManual)
+			eq("entry " .. v .. " carries its own id", sub.options[v].arg, want.id)
+		end
+	end
+
+	CeroSecManual = real
+	CeroSecOS = realOS
 end
 
 --
@@ -1005,25 +1323,81 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	eq("two blocks: the module and the item", opens, 2)
+	eq("five blocks: the module and the four books", opens, 5)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
-	check("and the item the loot table names",
-		string.find(code, "item Manual", 1, true) ~= nil)
 
-	-- Every key the game needs, and its value.
-	local keys = {}
-	for key, value in string.gmatch(code, "([A-Za-z]+)%s*=%s*([^,\n]+),") do
-		keys[key] = value
+	-- Each item block on its own, by name: a file read as one lump would let a
+	-- key missing from the third book be answered by the first book's copy of
+	-- it, which is the whole of what this check exists to catch.
+	local blocks = {}
+	for name, body in string.gmatch(code, "item%s+([A-Za-z]+)%s*(%b{})") do
+		blocks[name] = body
 	end
-	for _, key in ipairs({ "DisplayName", "DisplayCategory", "ItemType",
-			"Weight", "Icon", "StaticModel", "WorldStaticModel" }) do
-		check("the script sets " .. key, keys[key] ~= nil)
+
+	-- The three volumes, and the single book that shipped before them and is
+	-- still defined because it is in saves.
+	local BOOKS = {
+		{ item = "ManualUser", icon = "CeroSecManualUser",
+			name = "CeroSec OS User's Guide" },
+		{ item = "ManualAdmin", icon = "CeroSecManualAdmin",
+			name = "CeroSec OS System Administrator's Guide" },
+		{ item = "ManualProgrammer", icon = "CeroSecManualProgrammer",
+			name = "CeroSec OS Programmer's Guide" },
+		{ item = "Manual", icon = "CeroSecManual",
+			name = "CeroSec OS User's Manual" },
+	}
+	eq("four item blocks and no more", #BOOKS, 4)
+
+	for b = 1, #BOOKS do
+		local book = BOOKS[b]
+		local body = blocks[book.item]
+		check("the script declares item " .. book.item, body ~= nil)
+
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		for _, key in ipairs({ "DisplayName", "DisplayCategory", "ItemType",
+				"Weight", "Icon", "StaticModel", "WorldStaticModel" }) do
+			check(book.item .. " sets " .. key, keys[key] ~= nil)
+		end
+		eq(book.item .. " is a plain item, so vanilla adds no Read of its own",
+			keys.ItemType, "base:normal")
+		eq(book.item .. " is filed under Literature all the same",
+			keys.DisplayCategory, "Literature")
+		eq(book.item .. " is named the way the set names it",
+			keys.DisplayName, book.name)
+		eq(book.item .. " carries its own binding on the icon", keys.Icon, book.icon)
+		eq(book.item .. " has a model in the hand", keys.StaticModel, "Book")
+		eq(book.item .. " has one on the ground", keys.WorldStaticModel,
+			"BookClosedGround")
+
+		-- Icon = Foo is media/textures/Item_Foo.png, so the file has to be there
+		-- under exactly that name. A volume whose icon is missing is a white
+		-- question mark in the inventory and nothing logged.
+		local png = io.open("common/media/textures/Item_" .. keys.Icon .. ".png", "r")
+		check(book.item .. "'s icon is a file the mod ships", png ~= nil)
+		if png then png:close() end
+
+		-- And the three volumes are three DIFFERENT icons: three items pointing
+		-- at one texture would look exactly like a set on the shelf and exactly
+		-- the same in the pack.
+		for c = 1, b - 1 do
+			check(book.item .. " does not share " .. BOOKS[c].item .. "'s icon",
+				book.icon ~= BOOKS[c].icon)
+		end
+
+		-- The name the game builds is the module and the item, and it is what
+		-- the menu maps to a volume and the loot table inserts.
+		local fullType = "CeroSec." .. book.item
+		local mapped = false
+		for m = 1, #CeroSecManualMenu.BOOKS do
+			if CeroSecManualMenu.BOOKS[m].item == fullType then mapped = true end
+		end
+		check(fullType .. " is a book the inventory menu knows how to open", mapped)
 	end
-	eq("it is a plain item, so vanilla adds no Read of its own",
-		keys.ItemType, "base:normal")
-	eq("filed under Literature all the same", keys.DisplayCategory, "Literature")
 
 	-- Every line inside a block ends in a comma: the one syntax slip in a
 	-- script file that costs the whole file.
@@ -1035,17 +1409,15 @@ do
 		end
 	end
 
-	-- Icon = Foo is media/textures/Item_Foo.png, so the file has to be there
-	-- under exactly that name.
-	local icon = keys.Icon
-	local png = io.open("common/media/textures/Item_" .. icon .. ".png", "r")
-	check("the icon named by the script is the icon the mod ships", png ~= nil)
-	if png then png:close() end
-
-	-- The name the loot table inserts is the module and the item, spelled the
-	-- way the script spells them.
-	eq("the loot table's item name matches the script",
-		"CeroSec.Manual", "CeroSec.Manual")
+	-- The item names in the mod's Lua are names the script really declares.
+	-- This is the pair that goes wrong silently: a typo in either half is a
+	-- loot table filling shelves with an item that does not exist, or a menu
+	-- offering to open a book nobody can hold.
+	for m = 1, #CeroSecManualMenu.BOOKS do
+		local fullType = CeroSecManualMenu.BOOKS[m].item
+		local short = string.match(fullType, "^CeroSec%.(.+)$")
+		check(fullType .. " is declared in the item script", blocks[short] ~= nil)
+	end
 end
 
 --
@@ -1070,17 +1442,64 @@ do
 	eq("the file hooked the first distribution event",
 		#Events.OnPreDistributionMerge.handlers, 1)
 
+	local VOLUMES = CeroSecManualLoot.VOLUMES
+	eq("three volumes go on the shelves", #VOLUMES, 3)
+
 	local added = CeroSecManualLoot.add()
-	eq("every list named was found and filled", added, #KEYS)
+	eq("every list named was found and filled by every volume",
+		added, #KEYS * #VOLUMES)
 
 	for i = 1, #KEYS do
-		local items = ProceduralDistributions.list[KEYS[i]].items
-		eq(KEYS[i] .. " kept what was already in it", items[1], "Something")
-		eq(KEYS[i] .. " has the manual at the end", items[#items - 1], "CeroSec.Manual")
-		eq(KEYS[i] .. " gave it the weight the table says",
-			items[#items], CeroSecManualLoot.WEIGHTS[KEYS[i]])
-		eq(KEYS[i] .. " still has an even number of entries", #items % 2, 0)
+		local key = KEYS[i]
+		local items = ProceduralDistributions.list[key].items
+		eq(key .. " kept what was already in it", items[1], "Something")
+		eq(key .. " still has an even number of entries", #items % 2, 0)
+		eq(key .. " grew by one name and one weight per volume",
+			#items, 2 + 2 * #VOLUMES)
+
+		-- The three volumes, in the order the set is printed, each with the
+		-- share of volume one's weight it was given.
+		for v = 1, #VOLUMES do
+			local volume = VOLUMES[v]
+			local at = 2 + (v - 1) * 2 + 1
+			eq(key .. " has " .. volume.item .. " in place " .. v, items[at],
+				volume.item)
+			local share = (volume.raised and volume.raised[key]) or volume.share
+			eq(key .. " gave " .. volume.item .. " its share of volume one's weight",
+				items[at + 1], CeroSecManualLoot.WEIGHTS[key] * share)
+		end
+
+		-- And the book that shipped before the set is not on any shelf: it is
+		-- still an item, because it is in saves, but nothing spawns it.
+		for n = 1, #items, 2 do
+			check(key .. " does not spawn the legacy book",
+				items[n] ~= "CeroSec.Manual")
+		end
 	end
+
+	-- Volume one is the weight the table was measured at, volume two is half of
+	-- it and volume three a quarter -- except where the programmers were.
+	eq("volume one is the weight in the table", VOLUMES[1].share, 1)
+	eq("volume two is half of it", VOLUMES[2].share, 0.5)
+	eq("volume three is a quarter", VOLUMES[3].share, 0.25)
+	local RAISED = { "UniversityLibraryComputer", "UniversityDesk_Computer",
+		"BookstoreComputer", "ElectronicStoreMagazines" }
+	for r = 1, #RAISED do
+		eq("volume three is raised at " .. RAISED[r],
+			VOLUMES[3].raised[RAISED[r]], 0.5)
+	end
+	for v = 1, #VOLUMES do
+		for key in pairs(VOLUMES[v].raised or {}) do
+			check("a raise names a list that is in the table: " .. key,
+				CeroSecManualLoot.WEIGHTS[key] ~= nil)
+		end
+	end
+
+	-- The shares are halves and quarters so that no weight is a float that
+	-- nearly is what it says it is. The rarest list is the one that would show
+	-- it first.
+	eq("the rarest weight in the set is exact",
+		CeroSecManualLoot.WEIGHTS.LivingRoomShelf * VOLUMES[3].share, 0.025)
 
 	-- Fired twice -- a Lua reload does that -- and nothing doubles.
 	local lengths = {}
@@ -1098,6 +1517,47 @@ do
 	CeroSecManualLoot.added = false
 	ProceduralDistributions.list.LibraryComputer = nil
 	eq("a missing list is skipped quietly", CeroSecManualLoot.add(), 0)
+
+	--
+	-- The sandbox option, if a sandbox option file ever declares one. Nothing
+	-- declares it yet, and the point of the check is that a mod reading a var
+	-- nobody declared must not be a mod that spawns nothing.
+	--
+	eq("with no sandbox group at all the multiplier is one",
+		CeroSecManualLoot.abundance(), 1)
+
+	SandboxVars = {}
+	eq("with a SandboxVars but no group of ours it is still one",
+		CeroSecManualLoot.abundance(), 1)
+
+	SandboxVars.CeroSec = {}
+	eq("with a group but no option it is still one",
+		CeroSecManualLoot.abundance(), 1)
+
+	-- Every value that is not an abundance is ignored rather than argued with:
+	-- each of these, taken at face value, empties Knox County of the book.
+	for _, bad in ipairs({ 0, -1, "lots", true }) do
+		SandboxVars.CeroSec.LootAbundance = bad
+		eq("a LootAbundance of " .. tostring(bad) .. " is not an abundance",
+			CeroSecManualLoot.abundance(), 1)
+	end
+
+	SandboxVars.CeroSec.LootAbundance = 2
+	eq("a number is the number", CeroSecManualLoot.abundance(), 2)
+
+	-- And it reaches the weights, on a shelf of its own: a multiplier read and
+	-- then not used would leave every assertion above green.
+	ProceduralDistributions.list = { LibraryComputer = { rolls = 4, items = {} } }
+	CeroSecManualLoot.added = false
+	CeroSecManualLoot.add()
+	local items = ProceduralDistributions.list.LibraryComputer.items
+	for v = 1, #VOLUMES do
+		local share = VOLUMES[v].share
+		eq("volume " .. v .. "'s weight was doubled with the shelves",
+			items[v * 2], CeroSecManualLoot.WEIGHTS.LibraryComputer * share * 2)
+	end
+
+	SandboxVars = nil
 end
 
 print("manual_ui_test: " .. count .. " checks passed")

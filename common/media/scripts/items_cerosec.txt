@@ -1,7 +1,8 @@
 module CeroSec
 {
-    /* The manual. One item, and every key on it verified against the game
-       rather than against a wiki:
+    /* The manual. Four items -- the three volumes of the set, and the single
+       book that shipped before the set did -- and every key on them verified
+       against the game rather than against a wiki:
 
        - The block syntax and the key spellings are literature.txt's
          (media/scripts/generated/items/literature.txt): Base.Book at 1704,
@@ -43,6 +44,47 @@ module CeroSec
        comes from Translate/EN/ItemName.json, keyed "CeroSec.Manual" the way
        vanilla keys "Base.Book_Computer". */
 
+    /* Volume one of three. Same weight as the other two: they are the same
+       book in three bindings, and a set whose volumes weigh differently in the
+       pack is a set somebody would have to think about. */
+    item ManualUser
+    {
+        DisplayName = CeroSec OS User's Guide,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.8,
+        Icon = CeroSecManualUser,
+        StaticModel = Book,
+        WorldStaticModel = BookClosedGround,
+    }
+
+    item ManualAdmin
+    {
+        DisplayName = CeroSec OS System Administrator's Guide,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.8,
+        Icon = CeroSecManualAdmin,
+        StaticModel = Book,
+        WorldStaticModel = BookClosedGround,
+    }
+
+    item ManualProgrammer
+    {
+        DisplayName = CeroSec OS Programmer's Guide,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.8,
+        Icon = CeroSecManualProgrammer,
+        StaticModel = Book,
+        WorldStaticModel = BookClosedGround,
+    }
+
+    /* The book that shipped before the set did. It is not loot any more -- the
+       three volumes above are -- but it stays DEFINED, because it is in saves:
+       an item script that stops naming an item leaves every copy of it in
+       every container as a missing item. Read, it opens volume one, which is
+       the volume it became. */
     item Manual
     {
         DisplayName = CeroSec OS User's Manual,

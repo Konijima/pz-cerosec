@@ -149,6 +149,12 @@ end
 -- copy of the book anywhere and no walk to get to it, so the reader can be
 -- worked on without first going shopping for the item.
 --
+-- A SUBMENU, because the manual is three volumes and a door onto one of them
+-- is a door onto a third of the reader. One entry per volume on the shelf,
+-- named the way the volume names itself; with no shelf at all -- the volume
+-- files are not written yet -- one entry onto the legacy single book, which is
+-- what the reader falls back to anyway.
+--
 -- LAST on the menu, deliberately: it is not part of the machine and it must
 -- never sit between the two options that are. And it asks nothing of the
 -- computer -- not its power, not its height, not whether anybody can stand in
@@ -159,12 +165,31 @@ end
 -- found or it is not read.
 function CeroSecContextMenu.addDevManual(context, playerObj)
 	if not CeroSec.DEV_MANUAL_MENU then return end
-	context:addOption(getText("ContextMenu_CeroSec_DevManual"), playerObj,
-		CeroSecContextMenu.onDevManual)
+
+	-- getNew, addSubMenu, then fill it: the order every vanilla submenu is
+	-- built in (ISWorldObjectContextMenu.lua:1167-1169). addSubMenu copies the
+	-- child's number onto the parent option, so the child has to exist first.
+	local option = context:addOption(getText("ContextMenu_CeroSec_DevManual"))
+	local sub = ISContextMenu:getNew(context)
+	context:addSubMenu(option, sub)
+
+	local shelf = CeroSecManualBook.shelf()
+	if #shelf == 0 then
+		sub:addOption(getText("ContextMenu_CeroSec_DevManual"), playerObj,
+			CeroSecContextMenu.onDevManual, nil)
+		return
+	end
+	for v = 1, #shelf do
+		local volume = shelf[v]
+		-- The volume's own name, not a translation key: this is a door into a
+		-- piece of documentation and it is never seen by a player.
+		sub:addOption(volume.name or volume.id, playerObj,
+			CeroSecContextMenu.onDevManual, volume.id)
+	end
 end
 
-function CeroSecContextMenu.onDevManual(playerObj)
-	CeroSecManualUI.open(playerObj, nil)
+function CeroSecContextMenu.onDevManual(playerObj, volumeId)
+	CeroSecManualUI.open(playerObj, volumeId, nil)
 end
 
 Events.OnFillWorldObjectContextMenu.Add(CeroSecContextMenu.OnFillWorldObjectContextMenu)

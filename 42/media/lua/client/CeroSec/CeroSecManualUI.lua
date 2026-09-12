@@ -17,9 +17,16 @@ require "CeroSec/CeroSecManualBook"
 -- of paper on the screen and the survivor goes on doing whatever he was doing.
 --
 -- The TEXT is not here and is not this file's business: it is the global
--- CeroSecManual, written in shared/CeroSec/CeroSecManual.lua, and the shape of
--- it is the contract CeroSecManualBook documents. A missing or half-written
--- manual opens as an empty book rather than as an error.
+-- CeroSecManual, written in shared/CeroSec/, and the shape of it is the
+-- contract CeroSecManualBook documents. A missing or half-written manual opens
+-- as an empty book rather than as an error.
+--
+-- There are THREE of them -- the User's Guide, the System Administrator's
+-- Guide and the Programmer's Guide -- and a reader is opened on ONE, named by
+-- its id. The window lays that volume out and nothing else: its cover, its
+-- contents, its chapters. A set whose volume files are not all there yet falls
+-- back to the single book CeroSecManual was before the set, so an edition
+-- half-written is still an edition that opens.
 --
 -- The one thing the reader does to that text before laying it out is take the
 -- writer's hard wrapping back out of it -- see reflow(), below.
@@ -34,12 +41,14 @@ CeroSecManualUI.instances = {}
 -- sits in the same table anything else may put something in.
 CeroSecManualUI.PAGE_KEY = "page"
 
--- The bookmark of a book that has no copy: the testing door on the computer's
--- menu (CeroSec.DEV_MANUAL_MENU) opens the manual with no item behind it, and
--- there is nowhere on an item to write where it was left. So it is written
--- here, on the module, for as long as the session lasts. It is not saved and it
--- is not meant to be: a book nobody owns has no shelf to be put back on.
-CeroSecManualUI.devPage = 1
+-- The bookmarks of the books that have no copy: the testing door on the
+-- computer's menu (CeroSec.DEV_MANUAL_MENU) opens a volume with no item behind
+-- it, and there is nowhere on an item to write where it was left. So they are
+-- written here, on the module, for as long as the session lasts. Keyed by
+-- volume, because the door opens three different books and the reader's place
+-- in one of them is not his place in another. Not saved and not meant to be: a
+-- book nobody owns has no shelf to be put back on.
+CeroSecManualUI.devPages = {}
 
 -- Paper and ink. Deliberately not CeroSec.COLORS: that palette is a phosphor
 -- screen and this is a printed book, and a book that glows green would be the
@@ -146,18 +155,27 @@ end
 -- Opening
 --
 
--- The manual as it stands right now. Read through a function and never cached,
--- because the text is a separate file and a reload of it must not leave every
--- open book showing the old edition.
-function CeroSecManualUI.text()
-	-- The cover carries the OS' version and the manual file cannot build it at
-	-- load time (the core loads after it), so it is stamped here, at the last
-	-- moment before the layout reads it. A half-written table that has no
-	-- stamp of its own is still an empty book and never an error.
+-- One volume of the manual as it stands right now, and the id it is filed
+-- under. Read through a function and never cached, because the text is in
+-- separate files and a reload of one of them must not leave every open book
+-- showing the old edition.
+--
+-- The cover carries the OS' version and a manual file cannot build it at load
+-- time (the core loads after all of them), so it is stamped here, at the last
+-- moment before the layout reads it. A half-written table that never gets a
+-- stamp is still an empty book and never an error.
+--
+-- With no shelf at all -- the volume files are not written yet -- this is the
+-- single book CeroSecManual was before the set, filed under its own id. That
+-- fallback is the reason nothing here treats an absent volume as a fault.
+function CeroSecManualUI.text(volumeId)
+	local volume = CeroSecManualBook.volume(volumeId)
+	if volume then return volume, volume.id end
+
 	if CeroSecManual and CeroSecManual.stampVersion then
 		CeroSecManual.stampVersion()
 	end
-	return CeroSecManual
+	return CeroSecManual, CeroSecManualBook.LEGACY_ID
 end
 
 --
@@ -213,7 +231,7 @@ function CeroSecManualUI.reflow(text)
 end
 
 -- The manual with every authored page reflowed, which is what the layout is
--- given. A fresh table of the three fields the layout reads, because the text
+-- given. A fresh table of the four fields the layout reads, because the text
 -- is a global anybody may be reading and a reader must not rewrite it.
 function CeroSecManualUI.reflowed(manual)
 	if type(manual) ~= "table" then return manual end
@@ -226,10 +244,18 @@ function CeroSecManualUI.reflowed(manual)
 		for p = 1, #written do pages[p] = CeroSecManualUI.reflow(written[p]) end
 		chapters[c] = { title = chapter.title, pages = pages }
 	end
-	return { title = manual.title, edition = manual.edition, chapters = chapters }
+	return { title = manual.title, name = manual.name,
+		edition = manual.edition, chapters = chapters }
 end
 
-function CeroSecManualUI.open(playerObj, item)
+-- Open a volume. `volumeId` is one of the ids on the shelf, or nil for "the
+-- manual" with nothing said about which -- which is the first volume, or the
+-- legacy single book if there is no shelf.
+--
+-- The player stays the first argument and not the volume: the window belongs
+-- to him, it is his instance that a second opening closes, and he is what
+-- closes it when he dies.
+function CeroSecManualUI.open(playerObj, volumeId, item)
 	measure()
 	local playerNum = playerObj:getPlayerNum()
 	local previous = CeroSecManualUI.instances[playerNum]
@@ -237,18 +263,19 @@ function CeroSecManualUI.open(playerObj, item)
 
 	local x = (getCore():getScreenWidth() - WINDOW_W) / 2
 	local y = (getCore():getScreenHeight() - WINDOW_H) / 2
-	local window = CeroSecManualUI:new(x, y, playerObj, item)
+	local window = CeroSecManualUI:new(x, y, playerObj, volumeId, item)
 	window:initialise()
 	window:addToUIManager()
 	CeroSecManualUI.instances[playerNum] = window
 	return window
 end
 
-function CeroSecManualUI:new(x, y, playerObj, item)
+function CeroSecManualUI:new(x, y, playerObj, volumeId, item)
 	measure()
 	local o = ISCollapsableWindow.new(self, x, y, WINDOW_W, WINDOW_H)
 	o.playerObj = playerObj
 	o.playerNum = playerObj:getPlayerNum()
+	o.volumeId = volumeId
 	o.item = item
 
 	o:layout()
@@ -256,8 +283,9 @@ function CeroSecManualUI:new(x, y, playerObj, item)
 	-- the manual may have been rewritten since it was written there -- so it
 	-- goes through the book's own clamp, which also brings it back to the left
 	-- leaf of its sheet. With no item there is no modData, and the bookmark is
-	-- the module's own.
-	local page = CeroSecManualUI.devPage
+	-- the module's own for THIS volume: the door's place in the Programmer's
+	-- Guide is not its place in the User's Guide.
+	local page = CeroSecManualUI.devPages[o.bookId]
 	if item and item.getModData then
 		local data = item:getModData()
 		page = data and data[CeroSecManualUI.PAGE_KEY]
@@ -278,7 +306,13 @@ end
 -- Lay the text out against the geometry as it stands. Called when the window
 -- is made and again whenever the measured layout has moved under it.
 function CeroSecManualUI:layout()
-	self.book = CeroSecManualBook.open(CeroSecManualUI.reflowed(CeroSecManualUI.text()), {
+	local text, bookId = CeroSecManualUI.text(self.volumeId)
+	-- What the reader really ended up with, which is not always what was asked
+	-- for: an id nothing on the shelf answers to is the legacy book. The
+	-- bookmark of a book with no copy is filed under this and not under the
+	-- asking id, so a fallback and the book it fell back to share one place.
+	self.bookId = bookId
+	self.book = CeroSecManualBook.open(CeroSecManualUI.reflowed(text), {
 		width = LEAF_W - PAD_X * 2,
 		rows = CeroSecManualUI.LEAF_ROWS,
 		measure = textWidth,
@@ -360,7 +394,7 @@ end
 function CeroSecManualUI:remember()
 	local item = self.item
 	if not item or not item.getModData then
-		CeroSecManualUI.devPage = self.page
+		CeroSecManualUI.devPages[self.bookId] = self.page
 		return
 	end
 	local data = item:getModData()
