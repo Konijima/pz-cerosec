@@ -1,5 +1,9 @@
 # Parcours de test CeroSec
 
+Voir aussi [TESTING.md](TESTING.md) pour les suites headless (`sh tests/run.sh`)
+et les rungs [TEST-rung1.md](TEST-rung1.md), [TEST-rung2.md](TEST-rung2.md) et
+[TEST-rung4.md](TEST-rung4.md).
+
 Ce parcours couvre CeroSec au-delà de ce qui a déjà été vu marcher : allumer et
 éteindre un ordinateur, ouvrir le terminal, se connecter, le fait que l'écran
 appartient à la machine, renommer avec `hostname` et ouvrir le manuel par le menu

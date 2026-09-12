@@ -1,5 +1,7 @@
 # CeroSec rung 2 — manual test checklist
 
+See also [TESTING.md](TESTING.md) for the headless suites and the other rungs.
+
 Build 42.20.4. The terminal window is the one part of the mod no headless test can
 reach: the pure logic under it (hostname, prompt, the console and its ring, the
 history) is covered by `tests/terminal_test.lua`, everything below needs a pair of

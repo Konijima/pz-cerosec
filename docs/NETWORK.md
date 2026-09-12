@@ -1,0 +1,450 @@
+# CeroSec — Network
+
+Three links, one command surface: coax inside a building, the phone across the
+county, and radio to whatever is in earshot. Identities and their derivations,
+each link's own rules and rates, the pty a remote session lives on, and where
+every result string a player reads actually comes from.
+
+See also: [PLAYERS.md](PLAYERS.md) for `ifconfig`/`ping`/`rlogin`/`cu`/`call` as a
+player uses them, [PROTOCOL.md](PROTOCOL.md) for whose screen a remote order
+writes to and the terminal rule for `rlogin`/`rsh`, [SECURITY.md](SECURITY.md) for
+the security angle on trust files.
+
+## Ethernet, and the machines of a building
+
+Every computer in a **map building** is on one length of coax with the others,
+and it has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two
+bytes come from where the building stands and the last is which computer of it
+this is. The BIOS announces it between the drive and the login, `ifconfig`
+prints it any time, and nothing sets it -- the address is a fact about the card
+the way the hostname is a fact about the machine. A computer in a base **you**
+built is in no building the map knows about, so it has no wire at all and says
+so: `eth0: flags=2<BROADCAST>` with no address under it.
+
+Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
+machine's own line and the machine never writes in it again, so the first thing
+to do with a new one is write the others down:
+
+```
+10.4.17.3 gate
+10.4.17.4 office pump
+```
+
+| command | does |
+| --- | --- |
+| `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
+| `ping <host\|address>` | three packets a second apart, and the statistics |
+| `ruptime` | the machines of this building that are switched on |
+| `rwho` | who is logged in on them |
+| `who [am i]` | who is logged in *here*, with where each came from |
+| `last [name]` | the logins in `/var/log/wtmp`, newest first |
+| `rlogin <host> [-l user]` | a shell on another machine, on this screen |
+| `rsh <host> [-l user] <command>...` | one command over there |
+| `rcp <src> <dst>` | one file across, one end of it `<host>:<path>` |
+
+`ruptime` and `rwho` are the rwho package's, cut where sixty columns forced a
+cut: one load average instead of three, and no `down` row for a machine that is
+off -- a real one keeps the last report it heard in `/var/spool/rwho` and there
+is no spool here, so a dark machine is a machine nothing on the wire has ever
+heard of. The load is how many jobs the machine has that can run, which is what
+a load average has counted since the first one; nothing here averages anything,
+so it is this instant's.
+
+**`rlogin` is a shell over there on this glass.** It asks `login:` and
+`password:` through the far machine's own accounts, and from then on every line
+typed is that machine's: its files, its `/dev`, its accounts, its jobs, its
+budget. The screen is one unbroken stream -- your own prompt, the `rlogin` you
+typed, the far machine's work, and then your own prompt again with all of it
+still above -- because a real terminal never had a second screen to put anything
+on. Your history keeps the `rlogin` line and nothing you typed over there; the
+far machine's history keeps that, in its own home. The editor travels: `edit`
+down an `rlogin` opens the far machine's file and Tab saves it over there.
+
+**`rlogin` needs a terminal to hand over**, the way `rlogin(1)` does: it puts
+your own terminal into raw mode and gives the far end everything typed on it, so
+a job with nobody in front of it has nothing to give and gets
+`rlogin: not a terminal` -- a crontab line, an `&`, a `$(...)` and a stage of a
+pipeline. A script run from the prompt in the **foreground** keeps the terminal it
+was started from, exactly as it does on real Unix, so a `./nightly.sh` with an
+`rlogin` in it opens its session. Without that rule a crontab was a way to land a
+logged-in session on the glass of a machine nobody was standing at.
+
+`exit` ends it, and so does Escape at an idle prompt; either way the line
+`Connection closed.` comes back. Escape while something is running over there is
+that job's `^C` and not the end of the session. Switching either machine off,
+the power going out and either computer being picked up all end it too, and so
+does a `shutdown` typed inside it.
+
+**A password every time is what the trust files are for**, and either of the two
+is enough. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
+each: a bare host name trusts **the same account** on it and nobody in as
+anybody else, and a host and an account names the account *coming in* --
+`here admin` in bob's own `~/.rhosts` lets `here`'s admin be bob, which is
+`ruserok(3)`'s reading of that second field and is what `rlogin gate -l bob` is
+for. `~/.rhosts` is the
+account's own half, and it is checked the way `rlogind` checks it -- it has to be
+**your** file and nobody but you may write it, so one owned by somebody else or
+one at mode `664` is ignored without a word. `root` is never trusted by
+`/etc/hosts.equiv`, only by `/root/.rhosts`.
+
+`rsh` never asks for a password, because `rshd` does not: trust or
+`rsh: gate: Permission denied`. It needs **no** terminal, which is the whole
+reason a crontab calls `rsh` and not `rlogin`, and it never takes the screen over:
+the session it opens is for the command's output and not for a pair of hands.
+
+**`rsh` blocks.** The job that gave the order is parked — `ps` shows a `W`, `jobs`
+says `remote`, and it spends nothing at all while it waits — the far machine runs
+the command on its own budget, and then what that command printed is delivered
+into the waiting job's own output stream, with the far command's status in `$?`.
+So it goes wherever that job was already writing: the glass for a line typed at
+the prompt, the pipe for `rsh gate ls | wc -l`, the word for `$(rsh gate date)`,
+the file for `rsh gate date > file`, `/var/mail/<you>` for a cron line. Then the
+job runs on, which is why an `rsh` is no longer the last thing a script ever does.
+A remote command that never ends keeps the local job waiting until Escape or
+`kill` (either tears the far session down) or until the far machine's own cpu
+ceiling kills it, which comes back as a status of 130. No greeting is printed on
+an `rsh` session — `rshd` prints none, `login` does — so what comes back is the
+command's output and nothing else. `rcp` needs the same trust, lands the file as the account you are,
+and is judged by the far machine's own permissions, its 4096-byte file ceiling
+and its own 64K disk. It is not quick: the wire runs at about a kilobyte a
+second.
+
+The limits, because each is something a player meets. Four sessions may come in
+at once and the fifth is `rlogin: connect: Connection refused`. A chain of
+`rlogin`s goes two machines deep and the third is refused in the same words. And
+a session costs the **far** machine: a loop left running on `gate` slows `gate`
+down and leaves your own machine at an idle prompt.
+
+`/var/log/wtmp` is what `last` reads: root's, `644`, two hundred lines deep with
+the oldest dropped, and exempt from the 64 KB disk quota by its path exactly as
+`/var/log/cron` is. That is why `wtmp begins` is a real answer on this machine
+rather than the formality it is on a real one.
+
+## The telephone
+
+The coax reaches one building. The telephone reaches the county.
+
+A building the map knows has **one line** in it, and the number belongs to the
+line and not to a machine: every computer in that building answers on it, one
+call at a time. It is `555-NNNN` -- the exchange fiction has used since the Bell
+System set it aside -- and the four digits are derived from where the building
+stands, exactly as the address is, so nobody can type a new one. The firmware
+announces it under the card, and that BIOS screen is the **only** place it is
+written: there is no `/etc/phone`, because the number belongs to the wall and not
+to the disk in the case. A computer in a base you built is in no building, so it
+has no line: `cu: no phone line`.
+
+| command | does |
+| --- | --- |
+| `cu telno` | call another machine: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ cu 555-0102
+CONNECT 2400
+Connected.
+login:
+```
+
+Four words in capitals are the **modem** talking and not a command, and they are
+a Hayes-compatible modem's own result codes: `CONNECT 2400` when the far end
+answered, `BUSY` when the line is in use at either end, `NO DIALTONE` when there
+is no exchange, and `NO CARRIER` when nobody answered or the line went away
+under a call that was up. `Connected.` and `Disconnected.` are `cu(1)`'s own two
+lines.
+
+From `login:` on it is `rlogin`'s session -- the far machine's files, its
+accounts, one of its same four `ttyp` lines, its jobs, and it counts as a hop of
+the same two-deep chain -- with two differences:
+
+- **A password every time.** `/etc/hosts.equiv` and `~/.rhosts` are lists of
+  *machines*, and a call carries no machine, only a number: `ruserok(3)` has
+  never had an answer for one. So no trust file is asked, however trusted your
+  computer is on its own coax.
+- **It is slow.** The line is 2400 baud, which on a sixty-column screen is four
+  lines a second (`CeroSec.PHONE_LINES_PER_S`) underneath the machine's own
+  twenty. Nothing is dropped: a `cat` down a call arrives in handfuls.
+
+Over there, `who` and `last` name the **number** the call came from -- `(555-0417)`
+in the host column -- and that is what goes into `/var/log/wtmp`. It is the honest
+thing to record: a number is what a stranger has instead of a name.
+
+`exit` over there ends it, and `~.` typed alone on a line at the far machine's
+prompt ends it from this end -- `cu`'s own tilde escape, read by the near end and
+never sent down the line, so it is a command on neither machine and in neither
+history. (The other tilde escapes are not here: `~!` is a second shell and
+`~%put` is a file transfer.) Escape still works the way it does down an `rlogin`:
+`^C` for whatever is running over there, and the end of an idle session.
+
+`rsh` and `rcp` do **not** dial. They are network commands -- `rcmd(3)`, a
+socket, a route -- and a call is not a route: `rsh shed date` on a machine in
+another building is `No route to host` whether or not you could have called it.
+Copying a file by telephone was `uucp`'s job, and `uucp` is not on this disk.
+
+**The exchange is the county's grid.** A telephone exchange is a building full of
+switches on the mains, so the day the sandbox's power cutoff arrives there is no
+dial tone anywhere, for good -- and a call that was up when it happened comes
+back as `NO CARRIER`. That is the real difference between the two links: the coax
+is two machines and a wire and goes on working with a generator at each end,
+while a call needs a third building that is still working. Whether the grid is
+alive is asked the way the game's own Lua asks it (`ISButtonPrompt.lua:520`).
+A server that wants it otherwise sets one option:
+
+| `SandboxVars.CeroSec.PhoneService` | the exchange |
+| --- | --- |
+| `grid` (default, and what anything unset means) | lives as long as the county's power |
+| `never` | there is no telephone service at all, from day one |
+| `always` | on its own generator; it outlives the grid |
+
+## The radio
+
+The coax reaches one building, the telephone reaches the county, and the radio
+reaches whatever is in earshot of an aerial -- with no wire and no exchange, which
+makes it the **only link that outlives the county's power**.
+
+A **two-way** radio (a ham set, a walkie, a man-pack: `TwoWay = true` in the
+game's own item scripts) that the machine can reach becomes its **TNC** -- the box
+that turned a computer into a radio station in 1993. Its reach is the machine's own
+room in a building the map knows, or one tile in a base you built, and there is one
+per machine, on the serial port:
+
+```
+admin@ksp-04-11:~$ dev radio
+radio0    ham          2E 1N      144.390 on
+admin@ksp-04-11:~$ cat /dev/radio0
+144.390 on
+```
+
+The frequency in megahertz and one of three words: `on`, `off`, `no power` (a dead
+grid or a flat battery, and to a TNC those are the same thing). **Read-only**, at
+mode `440` like the motion sensor: the game has exactly one path that moves a
+radio's channel and it is the radio window's own timed action, so the knob is on
+the set and a survivor turns it by hand. `dev find radio0` outlines it when there
+are two in the room.
+
+A station needs a **callsign**, and unlike the address and the number it is a
+FILE:
+
+```
+admin@ksp-04-11:~$ cat /etc/callsign
+KD4AXR
+```
+
+Root's and `644`, seeded with one derived from the building key and the machine's
+own number -- `K`/`N`/`W`, an optional second letter, the fourth call district's
+digit (Kentucky), and three letters, which is what a United States amateur held in
+1993 -- and announced by the firmware under the modem, the way a TNC printed its
+own `MYCALL` at power-up. Root may write it to anything, which is the whole
+security lesson below.
+
+| command | does |
+| --- | --- |
+| `call CALLSIGN` | raise a station: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ call KE4QWZ
+*** CONNECTED to KE4QWZ
+login:
+```
+
+Lines with three stars are the **TNC** talking and not a command, and they are a
+TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
+`*** retry count exceeded` and `*** BUSY`. (A TNC-2 spells the last one
+`*** <call> busy`; the bare word was chosen so the one-line refusal reads like the
+modem's `BUSY` on the link before this one, and the callsign is on the line above
+it anyway.) Two more the machine says in its own name, because it can see them
+without transmitting: `call: no radio` and `call: no callsign`.
+
+Both sets must be on, both powered, and **both on the same frequency** -- agree
+one off the air, walk to the set, turn the knob, and check with
+`cat /dev/radio0`. The link holds out to the **smaller** of the two transmit
+ranges (7500 tiles for a ham set, 8000 for a walkie) measured on x and y with no
+z in it, which is the game's own arithmetic. A password is asked **every time**:
+no trust file is consulted, because a callsign is a file anybody with a radio and
+an editor can choose. Over there `who` and `last` name the **callsign**, and that
+is what goes into `/var/log/wtmp`.
+
+`*** retry count exceeded` is the single answer to every way a call goes
+unanswered -- no such station, a machine or a set switched off, a flat battery, the
+wrong frequency, out of range, or a chunk the server has not loaded -- because a
+station that hears nothing learns nothing about why. And one of those is worse
+than anything the telephone had: **a radio is a tile.** The server holds every
+machine's disk whether its chunk is in memory or not, which is why `ruptime`,
+`ping`, `rlogin` and `cu` all answer for a computer at the far end of the county;
+a radio is registered with the game's radio subsystem in `addToWorld` and
+unregistered in `removeFromWorld`, so a station in a town nobody is standing in
+cannot be raised at all.
+
+**Everybody hears it.** Every connect and every disconnect goes out as a real
+transmission on the real frequency, from the caller's own set, with the game's own
+distance distortion applied:
+
+```
+KE4QWZ de KD4AXR *** CONNECTED
+```
+
+Anybody in the county with a walkie tuned to that frequency and inside range reads
+it in their radio window. That is not decoration and it is not a fault: a wire
+cannot be overheard and a telephone call cannot either, and a radio cannot be
+anything else. The defence is to change frequency and agree the new one off the
+air -- which is why the knob is on the set and not in the machine.
+
+There is **no sandbox option** for the radio. A range multiplier was considered and
+rejected: the ranges are the game's own numbers for the game's own sets, and a
+server that doubled them would be a server where the manual's arithmetic is wrong.
+
+
+## Underneath: identities, links and sessions
+
+The engine's half is `shared/CeroSec/OS/CeroSecOSNet.lua` and it knows nothing
+about the game: the four files (`/etc/hosts`, `/etc/hosts.equiv`, `~/.rhosts`,
+`/var/log/wtmp`), the arithmetic that turns a building's corner into two bytes of
+an address, the shape of every line the five listing commands print, the trust
+rules, and the pty table a session lives in. `rlogin`, `rsh` and `rcp` decide
+everything that can be decided from here -- the name, whether the wire reaches,
+how deep the chain already is -- and then end in an order to the server
+(`"rlogin"`, `"rsh"`), exactly as `shutdown` does.
+
+
+`env.net` is the link layer, handed in beside `env.devices` and built fresh for
+every line typed, because both are answers about a moment:
+
+| call | answers |
+| --- | --- |
+| `reach(addr)` | `ok`, and which of strerror's words to wear when not |
+| `peers()` | every machine of this wire that is up: host, addr, up, users, load, who |
+| `sessions()` | who is logged in on *this* machine, console and ptys |
+| `copy(spec)` | `rcp`'s own copy, judged by both disks |
+
+`server/CeroSec/SCeroSecNet.lua` is the other half and the only one that knows
+there is a world, and it now holds **two link kinds**, which is what the promise
+about "a new kind of link and not a new command" came to:
+
+| kind | the answer | the rule |
+| --- | --- | --- |
+| Ethernet | `reachable(system, from, addr)` | the same map building, both machines on |
+| telephone | `reachablePhone(system, from, tel)` | both have a line, both on, the exchange alive, the line free at each end |
+| radio | `reachableRadio(system, from, call)` | both machines on, a two-way set in reach of each and both switched on and powered, the same channel, inside the smaller transmit range, both sets free, and both chunks loaded |
+
+Three answers, no new command learnt and no engine file touched by the second and
+third except to add one of their own. What a new kind owes, and the telephone and
+the radio are the two worked examples:
+
+- **an identity**, derived and not stored twice. The number comes off the
+  building key already on the machine's disk (`CeroSecOS.phoneKey` of
+  `netRecord`'s `b1`/`b2`, one more multiply-add modulo 2^16 so that adjacent
+  buildings are not adjacent numbers), so it is answerable for a machine whose
+  chunk nobody has loaded, needs no new field in the save and no migration, and
+  cannot disagree with the address about whether the computer is in a building.
+  Collisions are documented rather than fixed: two buildings on one number are
+  two buildings on one line, and nothing here routes.
+- **its own refusals**, in the voice of the hardware that would have said them:
+  strerror's words for a socket, a Hayes modem's result codes for a call.
+- **a marked pty**. `pty.phone` is the whole of what makes a session a call --
+  the busy rule, the trickle and the two endings are all read off it -- so
+  everything that already knows what a pty is goes on working unchanged.
+- **busy derived, never counted.** `CeroSecNet.lineBusy` walks the county's pty
+  tables, because a call's two ends are both on the pty; a counter beside them is
+  a second truth that leaks the first time a machine is picked up mid-call.
+- **a teardown reason.** `tearDown(system, object, line, why)`: `"carrier"` when
+  the link went (power at either end, a machine picked up, the exchange dying
+  mid-call, noticed in `farOf`, where every keystroke on a session already goes)
+  and nothing when somebody hung up. A wire says one line whatever ended it.
+- **its own rate, if it is slower than the machine.** `CeroSecNet.callRoom` keeps
+  a one-second window on the pty and `SCeroSecJobs` drains under both ceilings;
+  what the line cannot carry is kept, never dropped.
+- **a sandbox option, read the guarded way.** `SandboxVars.CeroSec.PhoneService`,
+  and `CeroSecNet.gridAlive()` asks the game the way the game's own Lua does --
+  `getSandboxOptions():getElecShutModifier()` against
+  `getGameTime():getWorldAgeHours()` (`ISButtonPrompt.lua:520`), where `-1` is
+  the power already gone and `2147483647` is the power that never goes
+  (`zombie.SandboxOptions.randomElectricityShut`, javap'd). A game it cannot ask
+  at all answers "alive": a mod that could not read the option must not take the
+  telephone out of every server it cannot interrogate.
+
+The radio pays every one of those and adds three of its own, all three because it
+is the first link that is a THING STANDING ON A TILE:
+
+- **a proof section before a design.** `server/CeroSec/SCeroSecRadio.lua` opens
+  with seven numbered facts about the game's radio model, each cited to `javap` on
+  the jar or to the game's own Lua, because the design bent to three of them: the
+  channel is kilohertz (`DeviceData.getChannel`, and the radio UI divides by a
+  thousand), range is applied on x and y with no z and with no hard cutoff
+  (`ZomboidRadio.DistributeTransmission` scrambles past `0.9 * range`), and a
+  radio whose chunk is unloaded is not in the list a transmission is distributed
+  over at all (`IsoWaveSignal.addToWorld` -> `RegisterDevice`).
+- **a device, not a second discovery.** The TNC is one entry appended to
+  `CeroSecDevices.find`, with its own reach (`CeroSecRadio.REACH`) because a TNC
+  has a foot of cable and the ordinary walk covers a whole building. Its
+  vocabulary is empty and its mode is therefore `440`, not `660`: the sensor's
+  rule -- a `w` bit must not promise a write that cannot happen -- applied twice.
+- **a failure the other links do not have.** No aerial, an unloaded chunk, a
+  retuned knob: all silence, and `farOf` re-asks `CeroSecNet.radioHolds` on every
+  keystroke so a link that has gone is found the moment anybody touches it.
+
+`cu` is the engine-side worked example of the same split: it decides the shape of
+a number, whether this machine has a line at all and the hop ceiling, and ends in
+a `"cu"` order. It is refused where `rlogin` is when no job has a terminal, in its
+own name (`CeroSecOSVM`), and `~.` is a shape the engine recognises
+(`CeroSecOS.isCuEscape`) and the server acts on in `Commands.exec` -- a tilde
+escape is read by the near end and never sent down the line, so the far shell
+never sees it and neither history has it.
+
+**Why a machine answers with its chunk unloaded.** The rung rests on it, so it is
+written down beside the code that uses it. `zombie.globalObjects.SGlobalObjects`
+reads `gos_cerosec.bin` whole at server start and `SGlobalObjectSystem:
+initLuaObjects` builds one Lua object per global object, so
+`getLuaObjectCount()` is every computer in Knox County that has ever been
+switched on and not every computer in memory; `SGlobalObject:getIsoObject()`
+answers `nil` for one whose chunk is not loaded, which is why every call on it in
+`SCeroSecObject` is guarded. So a machine's disk, its power flag and the record
+of its address are readable whatever the streamer is doing. Three things need
+the chunk -- the power check, `/dev`, and working out which building a computer
+stands in -- and the third is done once, when the machine is switched on, with
+the answer written into the machine's own state (`CeroSecOS.netRecord`, three
+numbers, saved). `tests/window_test.lua` has a machine whose `getSquare()` and
+`getIsoObject()` both answer `nil` and which still answers `ruptime`, a `ping`,
+an `rlogin` and a write to its disk.
+
+**The address** is assigned once and never moved: the lowest number nobody in the
+same building has, exactly as a device number is the lowest its kind has never
+used. A computer carried into another building is renumbered the next time it is
+switched on or a window opens on it -- the two bytes it carries no longer match
+where it stands -- and one carried out of every building keeps what it had,
+because a machine with no address at all is not something to invent. The
+machine's own line in `/etc/hosts` is written the first time it learns an
+address and never again.
+
+**A session is a pty on the far machine carrying a `console`** -- the same table a
+machine's own screen is, so the login prompt, the shell, the editor, Escape, `$?`
+and the `su` stack all work on it unchanged. It carries three fields a machine's
+own console has not got: `watchAt` (which machine's windows are looking at it),
+`line` (the pty's name, what `who` prints and what tags every job it starts) and
+`hops`. The console that dialled carries `remote`, naming the machine and the
+line. Neither is saved: a pty is runtime state like a job, so a machine that
+comes back from a reload comes back at its own prompt with nothing open.
+
+The lines are **one glass**. A pty's console starts with a copy of what was on
+the dialling screen and hands it back when the session ends, which is why a
+survivor sees one unbroken stream and why the local scrollback is still there
+afterwards.
+
+So the scheduler stopped being a machine with one console. A job is tagged with
+the line it was started from (`job.pty`), writes to that screen, and is killed
+when the session ends; one pass can finish four lines at once and each order goes
+to the screen its job was writing to. Output is drained **round-robin across the
+jobs, one further along every draining pass** -- a machine gets its twenty lines
+in the first pass of each second and nothing in the nine after it, so draining
+from the front of the list handed all twenty to the same job for ever, and a job
+whose output cannot drain is a job that never runs again. A job whose screen has
+gone has its output thrown away, or it would never be reaped and its slot would
+never come back.
+
+Every command that types at the machine resolves the chain through one door,
+`SCeroSecSystem:targetFor`, which is also where a session whose far end has gone
+is torn down and the glass handed back.
+
+`ping` and `rcp` wait, so the VM grew the one thing it could not say: a command
+that wants to be **woken later** rather than answered. `control = "sleep"` with
+`{ ms, cont }` leaves the job `"sleeping"` against `env.nowMs` exactly as `sleep
+1` does, and the continuation is called with an empty line when it comes round.
+The waiting costs the machine nothing.

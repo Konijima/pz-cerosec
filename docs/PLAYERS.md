@@ -1,0 +1,840 @@
+# CeroSec — Player's Guide
+
+Everything a survivor needs to run a CeroSec computer from inside the game: logging
+in, sharing files, the devices it can reach, the phone and the radio, floppy disks,
+and where to find the in-game manual. For the engine and server internals behind
+each of these, see [ARCHITECTURE.md](ARCHITECTURE.md), [DEVICES.md](DEVICES.md) and
+[NETWORK.md](NETWORK.md). For the shell scripting language, see
+[SCRIPTING.md](SCRIPTING.md).
+
+See also: [../README.md](../README.md) for install and status.
+
+Right-click a desktop computer (the beige `Desktop` tile) and choose **Turn on
+computer**. It needs power in the room; if there is none, the option is greyed out.
+Once it is on, right-click again for **Use computer**: the character walks to the
+front of the machine, sits down if there is a chair pulled up to it, and the
+terminal opens.
+
+At the `login:` prompt, use one of the two accounts that ship on every fresh
+machine, both with an empty password — just press Enter when asked:
+
+| user | password |
+| --- | --- |
+| `admin` | (empty) |
+| `root` | (empty) |
+
+**Accounts.** Every machine ships with those two and root can make more:
+`sudo adduser bob` writes the account, makes `/home/bob` for it and says out loud
+that it has no password yet — set one with `passwd bob` before somebody else does.
+`sudo adduser -a bob` sets the account's `admin` flag; the flag is **informational
+today** and grants nothing at all — what actually gives power is being `root` or
+being named in `/etc/sudoers` — and its one visible effect is the `#` on the
+prompt instead of the `$`. `id bob` says what the machine knows about a name, and
+`sudo deluser bob` takes it away again (`-r` takes his home directory with it;
+without it his files stay, still owned by a name the machine no longer knows).
+
+`su bob` becomes somebody else at the same glass: it asks for **his** password
+(root is asked for nobody's), the prompt changes, and `exit` comes back to who you
+were instead of logging out — up to four deep. Walk away and come back and the
+machine is still where you left it, four users deep if that is where you left it.
+`sudo su bob` is the same switch without knowing his password (`sudo su` is root's),
+because root is asked for nobody's.
+
+**Sharing a file.** A mode is three digits — you, your group, everybody else — and
+the machine reads exactly one of them: the first if you own the file, the second if
+you are in its group, the third otherwise. Root walks through all three. Every
+account is already in a group of its own name, so a fresh file is shared with
+nobody until you say otherwise:
+
+```
+sudo groupadd crew
+sudo gpasswd -a bob crew
+chgrp crew notes.txt
+chmod 660 notes.txt
+```
+
+Now you and `bob` both read and write `notes.txt` and nobody else can open it.
+`groups` and `id` say what you are in; `ls -l` shows the group beside the owner.
+A shipped machine already has `users`, which `admin` is in. Delete a group and
+files still naming it keep the name — `ls -l` shows it dangling, nobody is in it,
+and `chgrp` will not hand that name out again.
+
+`/etc/sudoers` stays the authority on who may `sudo`; the `sudo` group mirrors it,
+so a name in that file is in the group whether a line of `/etc/group` says so or
+not. Joining the group by hand shares the group's files and nothing else — it does
+not give out root.
+
+Commands:
+
+| command | does |
+| --- | --- |
+| `ls [-1laACF] [path]` | list a directory; columns when a person is reading, one name per line when anything else is (a pipe, a `$( )`, a file), `-1` and `-C` force either; `-l` adds owner, group, size and date, `-F` marks directories with `/` and links with `@`, `-a` shows hidden names plus `.` and `..`, `-A` shows hidden names without them |
+| `cd [dir]` | change directory (home if no argument) |
+| `pwd` | print the working directory |
+| `cat <file>...` | print a file |
+| `edit <file>` | open the file in the editor |
+| `write <file> <text>` | write text to a file (used by the editor's save) |
+| `touch <file>` | create an empty file, or move an existing one's date to now |
+| `mkdir <dir>` | create a directory |
+| `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
+| `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
+| `ln -s <target> <name>` | make a symbolic link; there are no hard links here |
+| `readlink <name>` | print what a link points at, and nothing at all for anything else |
+| `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
+| `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
+| `chown <user> <path>` | change the owner |
+| `chgrp <group> <path>` | change the group (owner or root; the group must exist) |
+| `whoami` | print the logged-in user |
+| `id [name]` | `uid=<name> flag=admin\|user groups=<its groups, comma-separated>` |
+| `groups [name]` | the same list, blank-separated |
+| `groupadd <name>` | make a group (root only) |
+| `groupdel <name>` | remove one (root only); `root`, `sudo` and `users` cannot go |
+| `gpasswd -a\|-d <user> <group>` | put a name in or out of a group (root only) |
+| `su [name]` | become another user (`root` by default); `exit` comes back |
+| `adduser [-a] <name>` | make an account with an empty password (root only); `-a` sets its `admin` flag |
+| `deluser [-r] <name>` | remove an account (root only); `-r` removes its home directory too |
+| `hostname` | print the machine's name |
+| `passwd [user]` | change a password (root may change anyone's) |
+| `hash <text> [salt]` | show what a password would hash to |
+| `grep [-c] [-i] [-n] [-v] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines without it, `-c` prints how many instead of which); there is no regex on this machine |
+| `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
+| `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
+| `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
+| `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
+| `df` | how much of the 64K disk and the 512 nodes are used — and a `fd0` row of its own while a floppy is mounted |
+| `newfs <device>` | put a filesystem on the disk in the drive, emptying it: `newfs /dev/fd0` prints `/dev/fd0: 4096 bytes, 32 inodes` |
+| `mount` | what is mounted, one line each: `/dev/hda on / type ufs (rw)` |
+| `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
+| `umount <dir>` | take it off again — refused with `Device busy` while any session's working directory is inside it |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
+| `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
+| `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
+| `man <command>` | what a command does, and how it is spelled |
+| `sudo <command...>` | run one command as `root` |
+| `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
+| `shutdown -c` | call a pending one off |
+| `halt` | `shutdown -h now` under its older name (root only) |
+| `reboot` / `restart` | switch it off and straight back on (root only) |
+| `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
+| `!!` / `!<n>` | run the last line again, or line `<n>` |
+| `sleep <seconds>` | wait, costing the machine nothing while it does |
+| `printf <format> [arg...]` | `%s`, `%d`, `%%`, `\n` and `\t` |
+| `test <expr>` / `[ <expr> ]` | the file and string tests, as in any `sh` |
+| `true` / `false` | a status and nothing else |
+| `echo <text>` | print text |
+| `clear` | clear the screen |
+| `exit` | log out |
+| `> file` / `>> file` | redirect a command's output, write or append |
+
+The commands are files: `/bin/<name>`, owner `root`, mode `755`, and the file's
+contents are the one-line description `help` prints. `cat /bin/ls` prints
+`list a directory`, `rm /bin/ls` really does take `ls` away, and `chmod 644 /bin/ls`
+puts it out of everybody's reach but root's. That holds for the small ones the
+engine runs without leaving the house too — `echo`, `printf`, `test`, `[`, `true`,
+`false` and `sleep` are resolved through `/bin/<name>` first and then executed
+inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
+`chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
+`/bin/sh` is the shell itself: delete it and every line typed answers
+`sh: command not found`, and the BIOS repair brings it back.
+
+Which directories a bare name is looked for in is `PATH`, an ordinary shell
+variable. A login sets it to `/bin` and sets `HOME` beside it; a `.profile` widens
+it (`PATH=$PATH:$HOME/bin`); a script inherits the shell's, in the foreground and
+behind an `&` alike — a `&` is a subshell and starts with a copy of everything the
+shell held — while every line `cron` runs starts at `/bin` with `HOME` and nothing
+else, which is the oldest trap in `cron` and is why a crontab line spells the whole
+path. The walk is POSIX's: left to right, the first
+file with `x` on it for whoever typed it wins, and something in the way without `x`
+does not stop the search — found everywhere and runnable nowhere is
+`permission denied`, found nowhere at all is `command not found`. A file found in
+`/bin` is the machine's own executable and the engine is behind it; a file found
+anywhere else is run as a **script**, so `~/bin` is where an account's own commands
+go and a name there shadows one in `/bin` when `PATH` says so. A symlink in `/bin`
+is a name for somebody's file, not one of the machine's, so
+`ln -s ~/tools/hello /bin/hello` hands everybody with `r+x` on the target a command
+called `hello`. A word with a `/` in it is a path and is never looked up.
+`PATH` may name eight directories and a ninth is refused where it is set: every
+command on the machine walks that string, so its length is a price everybody pays
+(see "Design rules").
+
+Two kinds of word are **not** files, and could not be. The reserved words
+(`if then elif else fi for while until do done`) are grammar. The shell's own words
+(`cd exit fg jobs wait read shift break continue history`) change the shell itself
+or own what it started, which no separate program could do — `cd` cannot be a file in
+Unix and is not one here. The five of them that carry a description and a usage line
+(`cd`, `exit`, `fg`, `jobs`, `wait`) keep both, so `help` lists them and `man cd` answers;
+what they do not have is an executable to find, to delete or to `chmod`. `help` is
+the one command with a file that is run without it, so that a player who has just
+wiped the machine he is standing at can still ask what happened — and `exit`, being a
+shell word, is how he walks away. `help` prints the `/bin` table first and those
+words under it. Real Unix ships `/bin/pwd`, `/bin/su`, `/bin/kill` and `/bin/echo`,
+and so does this machine.
+
+A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
+`.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
+special — there is no globbing here for one to hide from.
+
+**Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
+was typed. Everything that acts on a *file* follows it — `cat`, `cp`, `chmod`, a
+redirect — and the permissions are the target's, so a link to something you may not
+read buys you nothing. The four that act on the *link* do not — `-l` and `-F` are the two flags that ask
+`ls` about the link itself, which is POSIX's rule for both: `ls -l` draws it
+(`lrwxrwxrwx  admin  admin   log -> /var/log/cron`), `ls -F` marks it `@`, `rm`
+takes the link away and leaves the file, `mv` moves the link, and `readlink` prints
+what it holds. A link to a name that is not there is allowed and answers
+`no such file` on use; a loop of them answers
+`too many levels of symbolic links` after eight hops. There are **no hard links**:
+two names for one node would be one table under two keys, and the game copies the
+state by recursion (`copyTable` on pickup, and the save file), so the second name
+would become a second file the first time somebody picked the computer up.
+
+**`/dev/null`** reads as nothing at all and swallows anything written to it, so
+`sh nightly.sh > /dev/null` throws output away. It is a device — `rm`, `mv`, `cp`
+and `edit` all answer `is a device` — it is mode `666`, and it costs the disk
+nothing however much goes into it. Only *output* goes there: this machine has no
+`2>`, and errors always reach the glass.
+
+**`/var/tmp`** is the one directory anybody may write in (`drwxrwxrwx`) and the one
+where only the owner of a file, or root, may delete it or rename it out again.
+Everywhere else a directory you may write is a directory you may delete from; real
+machines carry that exception as a fourth mode digit (`1777`) and every mode here is
+three digits, so the rule is the **place's** — decided by the path, exactly as the
+quota exemptions are.
+
+`edit` turns the screen into a small editor: Tab saves, Esc leaves — and asks
+`Save modified buffer? (y/n)` first when there is something unsaved. Those two are
+the only keys the game hands a focused text box, which is why they are the two the
+key bar names. A file is capped at 4096 bytes and a line at 60 characters; the game's own text
+box stops accepting new keystrokes at 2000 characters typed in one sitting, though a
+bigger file still opens and still saves.
+
+`passwd` asks for the old password (skipped for root), the new one, and a retype.
+`hash` runs the same hashing the passwords use on any text you give it, so you can
+see what a password would look like stored.
+
+`sudo` runs one command as `root`. Who may is `/etc/sudoers`, one name a line, and
+a fresh machine has `admin` on it. It asks for **your own** password first
+(`[sudo] password for admin: `), and one wrong answer is
+`sudo: authentication failure` — there is no second try, because somebody had to be
+standing at the keyboard to type the first. A name that is not in the file gets
+`<user> is not in the sudoers file.` The command runs with root's powers and the
+working directory you were in; the session at the glass is untouched, so
+`sudo cd /root` moves nobody and `whoami` still says `admin` afterwards. Put
+`NOPASSWD` after a name in `/etc/sudoers` and that account is never asked.
+
+A redirect on a line that asks waits for the answer with the command:
+`sudo cat /etc/passwd > copie.txt` puts the file in the file and nothing on the
+glass. What `>` names is **opened** where a shell opens it — before the command
+runs — so a password answered wrongly leaves the empty file behind, exactly as a
+real one does, and `>>` adds to what is there.
+
+`shutdown` and `reboot` are the power button typed instead of pressed, and they are
+root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
+gone, and every terminal open on it closes. `reboot` turns it off and straight back
+on, and the windows stay: everybody standing there watches the BIOS count the
+memory again and lands back at `login:`. What is on the disk survives both — this
+is a power cycle, not a repair.
+
+`shutdown` also takes a time. `-h` halts, `-r` reboots, neither halts; `now` and no
+time at all are the same thing. `+N` is N minutes away, and the machine broadcasts
+to every screen in front of it when the order is given, again one minute before, and
+once more as it goes:
+
+```
+root@ksp-04-11:~# shutdown -r +5
+The system is going down for reboot in 5 minutes!
+...
+The system is going down for reboot in 1 minute!
+...
+The system is going down for reboot NOW!
+```
+
+`shutdown -c` prints `shutdown: cancelled`. One pending order per machine: a second
+is `shutdown: already scheduled` rather than a quiet replacement, because nobody
+should be told two different times. `halt` is `shutdown -h now`.
+
+The timer is the scheduler's pass and lives on the machine, not in the window: close
+the window, walk away, come back, and it is still counting. It is **not** persisted
+— the power going out, the computer being picked up, or a reload all forget it, and
+the machine stays up. That is deliberate and it is in the manual: this machine has
+no process table on its disk.
+
+**Escape** interrupts what the machine is in the middle of, and closes the window
+when it is not in the middle of anything. At a `passwd` or `sudo` question, or with
+a login name half typed, it prints `^C` on the line and puts the shell prompt back
+(or `login:`); at an idle shell it shuts the window. In the editor it is still the
+editor's Escape, and at the BIOS' question — which has nothing behind it to give up
+on — it still closes.
+
+If the machine will not boot — no `/bin`, or no account left in `/etc/passwd` — the
+screen ends on `No operating system found.` and `Restore system? (y/n)`. `y` puts
+the commands, the accounts and the system files back and touches nothing under
+`/home` or `/root`; `n` leaves it sitting there, and anything typed at it brings the
+question back; `exit` or Escape walks away from it.
+
+The building the computer stands in is wired to it. `/dev` holds one file per
+door, light switch and window it can reach — its own building when its
+square has one, every room of it; ten tiles of its own floor when it has not,
+which is what a computer in a player-built base gets. `dev` is how you work them:
+
+```
+dev
+door0   exterior              0 5S        W  locked
+door1   kitchen-hallway       2W 1N       N  closed
+door2   built                 4E 9S +1    N  closed
+light0  office                0 0            on
+light1  hallway               3E 2N          off
+lock0   exterior              0 5S        W  locked
+lock1   built                 4E 9S +1    N  padlock
+win0    office                1E 0        N  locked
+```
+
+`door0` and `lock0` are one door twice over: the thing that opens, and the key
+that holds it shut. Only a door the lock can actually stop somebody at gets that
+second row — in this game a key stops a survivor who is *outside* a building and
+nobody who is inside, so exterior doors and player-built doors have a `lockN` and
+interior doors do not.
+
+The id you name it by, the rooms it stands between — the map's own raw names,
+`exterior` where one side is the outdoors, `built` for something a player put up
+— where it is from where the computer stands, which way it faces, and its state.
+The offset is the column that tells two devices apart when the room names do
+not: tiles east or west, tiles north or south, `0 0` for the computer's own
+square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
+and then by number,
+so `light2` comes before `light10`; in a big building `dev door`, `dev light`,
+`dev lock`, `dev sensor` and `dev win` cut it down to one kind. One id reads that one back, an id and a word
+works it and answers with the state read back afterwards, and `toggle` is
+whichever of the pair it is not in now:
+
+```
+dev light0          -> light0: on
+dev light0 off      -> light0: off
+dev door1 open      -> door1: open
+dev door0 open      -> door0: locked
+dev lock1 toggle    -> lock1: unlocked
+dev find door1      -> door1: highlighted
+```
+
+A door opens with nobody's hand on it: no survivor walks over, nothing is
+animated, and everybody on the server sees it swing. The computer is not a key,
+though — a locked door answers `door0: locked` and stays shut until its `lockN`
+is unlocked.
+
+`dev find` answers the question a listing cannot: **which** of the thirty-five it
+is. A light blinks for six seconds and goes back exactly as it was found — a
+server-side timer on `Events.OnTick`, gated on `getTimestampMs()` the way
+vanilla's own `forageServer` gets under a minute — and a light with no power
+answers `light0: no power`, the same as a write. A door or a window has nothing
+to blink with, so the server tells the one window that asked where to look and
+that player's client outlines the object with vanilla's `setHighlighted` /
+`setOutlineHighlight`, which take the local player number first: in multiplayer
+only the survivor who typed it sees the outline. It asks for the right it uses —
+a light is switched, so blinking one needs write; a door is only drawn around, so
+reading it is enough.
+
+Underneath, `dev` is `cat` and a redirect on the node — the same permissions, the
+same words, the same refusals — and `ls -l /dev` is the same devices with the
+mode, the owner and the group in front of them and no room left for the offset:
+
+```
+crw-rw----  root  sudo  door0   exterior       W  locked
+crw-rw----  root  sudo  light0  office            on
+crw-rw----  root  sudo  lock0   exterior       W  locked
+
+cat /dev/light0
+echo off > /dev/light0
+```
+
+`light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`; `door`
+takes `open` and `close`. No kind has heard of another's words, so anything else
+is `light0: invalid value`. A device answers in its own name, not the
+command's:
+
+| line | what happened |
+| --- | --- |
+| `light0: no power` | the switch has no electricity, no bulb, or nothing to switch |
+| `lock0: no such device` | it was taken away, or it is in a chunk nobody has loaded |
+| `win0: smashed` | the glass is gone; there is no lock left to turn |
+| `win0: barricaded` | it is boarded up |
+| `lock1: no padlock` | a player-built door with neither padlock nor key on it |
+| `door0: locked` | held by a key the machine has not got: `unlock` its `lockN` first |
+| `door0: barricaded` | planks on it, and no machine takes those off |
+| `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it — the game's own test, so a survivor could not open it by hand either |
+| `light0: invalid value` | that word means nothing to that kind |
+| `light0: permission denied` | the mode says no |
+| `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
+| `sensor0: invalid value` | a sensor takes no word at all: every write to one says this |
+
+`dev`'s own two are a command's and are signed like one: `dev: <word>: unknown
+kind` (the kinds are `door`, `light`, `lock`, `sensor` and `win`) and
+`dev: <id>: no such device`
+for a name no device of the machine's answers to at all.
+
+A number belongs to a device for the life of the machine. `light0` is the same
+switch tomorrow as it is today, and one that is torn out leaves a **gap** —
+nothing moves up into it — so a line you wrote into a file still means what it
+meant. A device that is out of reach is not listed at all; naming it says `no
+such device`, which is the difference between a switch that is off the grid and a
+path you mistyped.
+
+Devices are owner `root`, group `sudo`, mode `660` — so root and anybody
+`/etc/sudoers` names read and work them, with no `sudo` typed and no password
+asked, and everybody else gets `light0: permission denied` from the device itself.
+A sensor is born `440` instead, `cr--r-----`, because it is read-only by nature
+and the mode says so before anybody tries.
+Root may open one up to everybody with `chmod 666 /dev/light0` — that lasts.
+The group does not move: `chgrp` on a device answers `is a device`, because only
+the mode of one outlives the command it was typed in. Nothing else works on one
+either: `rm`, `mv`, `cp` and `edit` all answer `is a device`, and nothing can be
+created in `/dev` at all.
+
+Opening a door is not this. `unlock` takes the lock off; somebody still has to
+walk over and open it.
+
+**Motion sensors** are the one device you supply yourself. The part is a vanilla
+**Motion Sensor** (`Base.MotionSensor`) — the electronics module, out of a house
+alarm or off an electronics shelf, the same one the game's own sensor recipes eat.
+*Drop* one on the floor of a room the machine can reach and it becomes a
+`sensorN`. Pick it up and the device is gone, and the number it had stays
+reserved, so a name you wrote into a script answers `sensor0: no such device`
+rather than pretending.
+
+```
+dev sensor
+sensor0 office                1E 0           clear
+sensor1 store                 4E 2S          motion
+
+cat /dev/sensor0     -> clear
+echo motion > /dev/sensor0
+sensor0: invalid value
+```
+
+What it watches is **its own room, out to three tiles**. It never sees through a
+wall, so a head in the hall tells you nothing about the kitchen; where there is no
+room at all — a base, a yard — it watches three tiles in every direction and its
+description reads `built`. A survivor, a zombie, an animal and a **car** all set it
+off, which is what the game's own sensors trigger on; an invisible character does
+not.
+
+One thing the machine will **not** do: wire up a bomb. The fifteen
+`*SensorV1/V2/V3` items — pipe bomb, aerosol bomb, flame trap, smoke bomb, noise
+trap, each with a motion sensor taped to it — are never devices, whatever they are
+called. A mine that goes off when it detects movement is not a motion sensor, and
+a security system built out of five of them is a security system that kills you.
+
+And it is a **movement** detector, not a proximity fuse. The contact closes the
+moment the picture in front of it changes — somebody moved, walked in, or walked
+out — and it stays closed for five seconds after the last movement. So a zombie
+that wanders into the field and **stops** reads `clear` five seconds later, with
+the zombie still standing there. That is what a real one does, and it is why a
+script polls a sensor instead of reading it once.
+
+Click the window's close button, or run `exit`, to leave. The screen itself keeps
+running: log back in later and it is exactly as it was left.
+
+## The other computers in the building
+
+Every computer in a **map building** is on one length of coax with the others,
+and it has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two
+bytes come from where the building stands and the last is which computer of it
+this is. The BIOS announces it between the drive and the login, `ifconfig`
+prints it any time, and nothing sets it -- the address is a fact about the card
+the way the hostname is a fact about the machine. A computer in a base **you**
+built is in no building the map knows about, so it has no wire at all and says
+so: `eth0: flags=2<BROADCAST>` with no address under it.
+
+Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
+machine's own line and the machine never writes in it again, so the first thing
+to do with a new one is write the others down:
+
+```
+10.4.17.3 gate
+10.4.17.4 office pump
+```
+
+| command | does |
+| --- | --- |
+| `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
+| `ping <host\|address>` | three packets a second apart, and the statistics |
+| `ruptime` | the machines of this building that are switched on |
+| `rwho` | who is logged in on them |
+| `who [am i]` | who is logged in *here*, with where each came from |
+| `last [name]` | the logins in `/var/log/wtmp`, newest first |
+| `rlogin <host> [-l user]` | a shell on another machine, on this screen |
+| `rsh <host> [-l user] <command>...` | one command over there |
+| `rcp <src> <dst>` | one file across, one end of it `<host>:<path>` |
+
+`ruptime` and `rwho` are the rwho package's, cut where sixty columns forced a
+cut: one load average instead of three, and no `down` row for a machine that is
+off -- a real one keeps the last report it heard in `/var/spool/rwho` and there
+is no spool here, so a dark machine is a machine nothing on the wire has ever
+heard of. The load is how many jobs the machine has that can run, which is what
+a load average has counted since the first one; nothing here averages anything,
+so it is this instant's.
+
+**`rlogin` is a shell over there on this glass.** It asks `login:` and
+`password:` through the far machine's own accounts, and from then on every line
+typed is that machine's: its files, its `/dev`, its accounts, its jobs, its
+budget. The screen is one unbroken stream -- your own prompt, the `rlogin` you
+typed, the far machine's work, and then your own prompt again with all of it
+still above -- because a real terminal never had a second screen to put anything
+on. Your history keeps the `rlogin` line and nothing you typed over there; the
+far machine's history keeps that, in its own home. The editor travels: `edit`
+down an `rlogin` opens the far machine's file and Tab saves it over there.
+
+**`rlogin` needs a terminal to hand over**, the way `rlogin(1)` does: it puts
+your own terminal into raw mode and gives the far end everything typed on it, so
+a job with nobody in front of it has nothing to give and gets
+`rlogin: not a terminal` -- a crontab line, an `&`, a `$(...)` and a stage of a
+pipeline. A script run from the prompt in the **foreground** keeps the terminal it
+was started from, exactly as it does on real Unix, so a `./nightly.sh` with an
+`rlogin` in it opens its session. Without that rule a crontab was a way to land a
+logged-in session on the glass of a machine nobody was standing at.
+
+`exit` ends it, and so does Escape at an idle prompt; either way the line
+`Connection closed.` comes back. Escape while something is running over there is
+that job's `^C` and not the end of the session. Switching either machine off,
+the power going out and either computer being picked up all end it too, and so
+does a `shutdown` typed inside it.
+
+**A password every time is what the trust files are for**, and either of the two
+is enough. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
+each: a bare host name trusts **the same account** on it and nobody in as
+anybody else, and a host and an account names the account *coming in* --
+`here admin` in bob's own `~/.rhosts` lets `here`'s admin be bob, which is
+`ruserok(3)`'s reading of that second field and is what `rlogin gate -l bob` is
+for. `~/.rhosts` is the
+account's own half, and it is checked the way `rlogind` checks it -- it has to be
+**your** file and nobody but you may write it, so one owned by somebody else or
+one at mode `664` is ignored without a word. `root` is never trusted by
+`/etc/hosts.equiv`, only by `/root/.rhosts`.
+
+`rsh` never asks for a password, because `rshd` does not: trust or
+`rsh: gate: Permission denied`. It needs **no** terminal, which is the whole
+reason a crontab calls `rsh` and not `rlogin`, and it never takes the screen over:
+the session it opens is for the command's output and not for a pair of hands.
+
+**`rsh` blocks.** The job that gave the order is parked — `ps` shows a `W`, `jobs`
+says `remote`, and it spends nothing at all while it waits — the far machine runs
+the command on its own budget, and then what that command printed is delivered
+into the waiting job's own output stream, with the far command's status in `$?`.
+So it goes wherever that job was already writing: the glass for a line typed at
+the prompt, the pipe for `rsh gate ls | wc -l`, the word for `$(rsh gate date)`,
+the file for `rsh gate date > file`, `/var/mail/<you>` for a cron line. Then the
+job runs on, which is why an `rsh` is no longer the last thing a script ever does.
+A remote command that never ends keeps the local job waiting until Escape or
+`kill` (either tears the far session down) or until the far machine's own cpu
+ceiling kills it, which comes back as a status of 130. No greeting is printed on
+an `rsh` session — `rshd` prints none, `login` does — so what comes back is the
+command's output and nothing else. `rcp` needs the same trust, lands the file as the account you are,
+and is judged by the far machine's own permissions, its 4096-byte file ceiling
+and its own 64K disk. It is not quick: the wire runs at about a kilobyte a
+second.
+
+The limits, because each is something a player meets. Four sessions may come in
+at once and the fifth is `rlogin: connect: Connection refused`. A chain of
+`rlogin`s goes two machines deep and the third is refused in the same words. And
+a session costs the **far** machine: a loop left running on `gate` slows `gate`
+down and leaves your own machine at an idle prompt.
+
+`/var/log/wtmp` is what `last` reads: root's, `644`, two hundred lines deep with
+the oldest dropped, and exempt from the 64 KB disk quota by its path exactly as
+`/var/log/cron` is. That is why `wtmp begins` is a real answer on this machine
+rather than the formality it is on a real one.
+
+## The telephone
+
+The coax reaches one building. The telephone reaches the county.
+
+A building the map knows has **one line** in it, and the number belongs to the
+line and not to a machine: every computer in that building answers on it, one
+call at a time. It is `555-NNNN` -- the exchange fiction has used since the Bell
+System set it aside -- and the four digits are derived from where the building
+stands, exactly as the address is, so nobody can type a new one. The firmware
+announces it under the card, and that BIOS screen is the **only** place it is
+written: there is no `/etc/phone`, because the number belongs to the wall and not
+to the disk in the case. A computer in a base you built is in no building, so it
+has no line: `cu: no phone line`.
+
+| command | does |
+| --- | --- |
+| `cu telno` | call another machine: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ cu 555-0102
+CONNECT 2400
+Connected.
+login:
+```
+
+Four words in capitals are the **modem** talking and not a command, and they are
+a Hayes-compatible modem's own result codes: `CONNECT 2400` when the far end
+answered, `BUSY` when the line is in use at either end, `NO DIALTONE` when there
+is no exchange, and `NO CARRIER` when nobody answered or the line went away
+under a call that was up. `Connected.` and `Disconnected.` are `cu(1)`'s own two
+lines.
+
+From `login:` on it is `rlogin`'s session -- the far machine's files, its
+accounts, one of its same four `ttyp` lines, its jobs, and it counts as a hop of
+the same two-deep chain -- with two differences:
+
+- **A password every time.** `/etc/hosts.equiv` and `~/.rhosts` are lists of
+  *machines*, and a call carries no machine, only a number: `ruserok(3)` has
+  never had an answer for one. So no trust file is asked, however trusted your
+  computer is on its own coax.
+- **It is slow.** The line is 2400 baud, which on a sixty-column screen is four
+  lines a second (`CeroSec.PHONE_LINES_PER_S`) underneath the machine's own
+  twenty. Nothing is dropped: a `cat` down a call arrives in handfuls.
+
+Over there, `who` and `last` name the **number** the call came from -- `(555-0417)`
+in the host column -- and that is what goes into `/var/log/wtmp`. It is the honest
+thing to record: a number is what a stranger has instead of a name.
+
+`exit` over there ends it, and `~.` typed alone on a line at the far machine's
+prompt ends it from this end -- `cu`'s own tilde escape, read by the near end and
+never sent down the line, so it is a command on neither machine and in neither
+history. (The other tilde escapes are not here: `~!` is a second shell and
+`~%put` is a file transfer.) Escape still works the way it does down an `rlogin`:
+`^C` for whatever is running over there, and the end of an idle session.
+
+`rsh` and `rcp` do **not** dial. They are network commands -- `rcmd(3)`, a
+socket, a route -- and a call is not a route: `rsh shed date` on a machine in
+another building is `No route to host` whether or not you could have called it.
+Copying a file by telephone was `uucp`'s job, and `uucp` is not on this disk.
+
+**The exchange is the county's grid.** A telephone exchange is a building full of
+switches on the mains, so the day the sandbox's power cutoff arrives there is no
+dial tone anywhere, for good -- and a call that was up when it happened comes
+back as `NO CARRIER`. That is the real difference between the two links: the coax
+is two machines and a wire and goes on working with a generator at each end,
+while a call needs a third building that is still working. Whether the grid is
+alive is asked the way the game's own Lua asks it (`ISButtonPrompt.lua:520`).
+A server that wants it otherwise sets one option:
+
+| `SandboxVars.CeroSec.PhoneService` | the exchange |
+| --- | --- |
+| `grid` (default, and what anything unset means) | lives as long as the county's power |
+| `never` | there is no telephone service at all, from day one |
+| `always` | on its own generator; it outlives the grid |
+
+## The radio
+
+The coax reaches one building, the telephone reaches the county, and the radio
+reaches whatever is in earshot of an aerial -- with no wire and no exchange, which
+makes it the **only link that outlives the county's power**.
+
+A **two-way** radio (a ham set, a walkie, a man-pack: `TwoWay = true` in the
+game's own item scripts) that the machine can reach becomes its **TNC** -- the box
+that turned a computer into a radio station in 1993. Its reach is the machine's own
+room in a building the map knows, or one tile in a base you built, and there is one
+per machine, on the serial port:
+
+```
+admin@ksp-04-11:~$ dev radio
+radio0    ham          2E 1N      144.390 on
+admin@ksp-04-11:~$ cat /dev/radio0
+144.390 on
+```
+
+The frequency in megahertz and one of three words: `on`, `off`, `no power` (a dead
+grid or a flat battery, and to a TNC those are the same thing). **Read-only**, at
+mode `440` like the motion sensor: the game has exactly one path that moves a
+radio's channel and it is the radio window's own timed action, so the knob is on
+the set and a survivor turns it by hand. `dev find radio0` outlines it when there
+are two in the room.
+
+A station needs a **callsign**, and unlike the address and the number it is a
+FILE:
+
+```
+admin@ksp-04-11:~$ cat /etc/callsign
+KD4AXR
+```
+
+Root's and `644`, seeded with one derived from the building key and the machine's
+own number -- `K`/`N`/`W`, an optional second letter, the fourth call district's
+digit (Kentucky), and three letters, which is what a United States amateur held in
+1993 -- and announced by the firmware under the modem, the way a TNC printed its
+own `MYCALL` at power-up. Root may write it to anything, which is the whole
+security lesson below.
+
+| command | does |
+| --- | --- |
+| `call CALLSIGN` | raise a station: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ call KE4QWZ
+*** CONNECTED to KE4QWZ
+login:
+```
+
+Lines with three stars are the **TNC** talking and not a command, and they are a
+TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
+`*** retry count exceeded` and `*** BUSY`. (A TNC-2 spells the last one
+`*** <call> busy`; the bare word was chosen so the one-line refusal reads like the
+modem's `BUSY` on the link before this one, and the callsign is on the line above
+it anyway.) Two more the machine says in its own name, because it can see them
+without transmitting: `call: no radio` and `call: no callsign`.
+
+Both sets must be on, both powered, and **both on the same frequency** -- agree
+one off the air, walk to the set, turn the knob, and check with
+`cat /dev/radio0`. The link holds out to the **smaller** of the two transmit
+ranges (7500 tiles for a ham set, 8000 for a walkie) measured on x and y with no
+z in it, which is the game's own arithmetic. A password is asked **every time**:
+no trust file is consulted, because a callsign is a file anybody with a radio and
+an editor can choose. Over there `who` and `last` name the **callsign**, and that
+is what goes into `/var/log/wtmp`.
+
+`*** retry count exceeded` is the single answer to every way a call goes
+unanswered -- no such station, a machine or a set switched off, a flat battery, the
+wrong frequency, out of range, or a chunk the server has not loaded -- because a
+station that hears nothing learns nothing about why. And one of those is worse
+than anything the telephone had: **a radio is a tile.** The server holds every
+machine's disk whether its chunk is in memory or not, which is why `ruptime`,
+`ping`, `rlogin` and `cu` all answer for a computer at the far end of the county;
+a radio is registered with the game's radio subsystem in `addToWorld` and
+unregistered in `removeFromWorld`, so a station in a town nobody is standing in
+cannot be raised at all.
+
+**Everybody hears it.** Every connect and every disconnect goes out as a real
+transmission on the real frequency, from the caller's own set, with the game's own
+distance distortion applied:
+
+```
+KE4QWZ de KD4AXR *** CONNECTED
+```
+
+Anybody in the county with a walkie tuned to that frequency and inside range reads
+it in their radio window. That is not decoration and it is not a fault: a wire
+cannot be overheard and a telephone call cannot either, and a radio cannot be
+anything else. The defence is to change frequency and agree the new one off the
+air -- which is why the knob is on the set and not in the machine.
+
+There is **no sandbox option** for the radio. A range multiplier was considered and
+rejected: the ranges are the game's own numbers for the game's own sets, and a
+server that doubled them would be a server where the manual's arithmetic is wrong.
+
+
+## The floppy drive
+
+There is a slot on the front of the case, and a 3.5-inch disk goes into it. That is
+how anything gets off one machine and onto another: write your notes, put them on a
+disk, walk the disk across town.
+
+Right-click the computer and the menu offers **Insert floppy** while you are
+carrying one and **Eject floppy** once one is in. Both work on a dark machine as
+well as a lit one — a drive is a spring and a lever, not a circuit — and one disk
+fits at a time, which is what *Eject the floppy first* on a greyed-out Insert
+means.
+
+A disk out of a box is **blank**: there is no filesystem on it and nothing can be
+written to it until you put one there.
+
+```
+admin@ksp-04-11:~$ cat /dev/fd0
+blank
+admin@ksp-04-11:~$ newfs /dev/fd0
+/dev/fd0: 4096 bytes, 32 inodes
+admin@ksp-04-11:~$ mount /dev/fd0 /mnt
+admin@ksp-04-11:~$ cp notes.txt /mnt
+admin@ksp-04-11:~$ ls /mnt
+notes.txt
+admin@ksp-04-11:~$ umount /mnt
+```
+
+`/dev/fd0` is the drive and exists only while there is a disk in it. `newfs`
+formats — which empties, every time, on every machine there has ever been — and
+`mount` grafts the disk onto `/mnt`, an empty directory the machine ships for
+exactly this. From then on `/mnt` **is** the disk and every command you know works
+through it; whatever was in `/mnt` before is covered, not deleted, and comes back
+when you `umount`.
+
+A disk holds **4096 bytes and 32 files**, which is one file as big as a file here
+gets or a dozen short notes, and those are its own ceilings: fill the disk and `df`
+has not moved on `hda`, fill the machine and the disk is still yours to write to.
+
+```
+admin@ksp-04-11:~$ df
+Filesystem   Size   Used  Avail  Use%
+hda         65536   2155  63381    4%
+nodes         512     90    422   18%
+fd0          4096      5   4091    1%
+fd0 nodes      32      2     30    7%
+```
+
+What travels with the disk is everything on it — the names, the contents, who owns
+each file and what its mode is — so a file that was yours on one machine is yours
+on the next, because an account is a name and the name goes with the file.
+
+Three things to know. `umount` refuses while anybody's working directory is inside
+the mount (`umount: /mnt: Device busy`) — including somebody who got there through
+a symbolic link, since where he is standing is a place and not a spelling; `cd` out
+and try again. So does `rm -r` or `mv` on the mount point itself, or on any directory with a mount under it —
+unhooking the place a mount is written against would leave the disk in the drive
+and no path to it. Ejecting a mounted
+disk unmounts it first and loses nothing, because every write here is finished by
+the time the command that made it came back. And `mv` will not carry a file between
+the two disks (`cross-device link`) — use `cp` and then `rm`, which are two commands
+because they are two things that can go wrong separately.
+
+Who may format and who may mount is the mode on `/dev/fd0` and nothing else: it is
+`root`'s, group `sudo`, at `660`, so `newfs` (which writes a super block) wants the
+`w` bit and `mount` (which reads one) wants the `r` bit. `chmod 666 /dev/fd0` really
+does hand the drive to the whole office.
+
+## Finding the manual
+
+CeroSec Systems shipped a **documentation set**, three volumes of it, and it is the
+documentation for everything above — the commands, the files, the accounts, the
+BIOS — written for somebody sitting at one of these machines in 1993.
+
+| | |
+| --- | --- |
+| **CeroSec OS User's Guide** | the blue one, marked 1. Turning the machine on, logging in, the shell, the editor, your own files. What came in the box. |
+| **CeroSec OS System Administrator's Guide** | the green one, marked 2. Accounts, groups, permissions, the system files, the devices, the network. What the office's own machine-minder got. |
+| **CeroSec OS Programmer's Guide** | the red one, marked 3. Scripts, cron, jobs and pipes. What the one person writing anything for the machine got. |
+
+They are loot. They are not in a crafting recipe and they are not given to you at
+the start: they spawn where a book about a computer would have been sold, shelved or
+left behind. The computer aisle of a **library**, a **bookshop** or a **university
+library**; a **cyber cafe**'s desks and filing cabinets; the magazine rack of an
+**electronics store**; a **university computing desk**; a **control room** counter.
+More rarely, in an **office desk** or on an **office supply shelf**, where somebody
+who bought one put it down. Rarest of all, on a **living room shelf** at home.
+
+CeroSec Systems printed far fewer of the later volumes than of the first, and that
+is what you will feel looking for them: the **User's Guide** at the rate above, the
+**System Administrator's Guide** at half of it, and the **Programmer's Guide** at a
+quarter — except at a university, a bookshop's computer aisle or an electronics
+store, where it comes back up to a half, because that is where the people writing
+anything for these machines were buying their books.
+
+Rare, and findable: in the computer section of a library the User's Guide is roughly
+the odds of a particular computer paperback, so a shelf or two of looking. In a
+random office desk it is the rarity of a business paperback, so it is a surprise. The
+exact weights, and the vanilla items each one was measured against, are in
+`42/media/lua/server/CeroSec/CeroSecManualLoot.lua`.
+
+**Reading one.** Right-click the book in your inventory and choose **Read the User's
+Guide** — or the Administrator's, or the Programmer's, whichever you are holding. It
+opens as an open book: its own cover, its own contents, two pages side by side, a
+chapter title at the head of each leaf, page numbers at the outer corners.
+
+| | |
+| --- | --- |
+| **Next >** / Right arrow | turn the sheet forward |
+| **< Back** / Left arrow | turn it back |
+| **Contents** | the table of contents; click a chapter to jump to it |
+| **Escape** | close the book |
+
+The survivor does not read it — **you** do. There is no reading skill, no time
+spent, no animation and nothing queued: the book is paper on your screen and the
+character goes on doing whatever he was doing. Walk with it open, fight with it
+open, drive with it open.
+
+Where you left off is written on **that copy of the book**, so closing it and
+opening it again puts you back on the same spread, across a save as well. Two
+copies are two bookmarks, and so are two volumes: your place in the Programmer's
+Guide is not your place in the User's Guide.
+

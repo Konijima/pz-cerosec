@@ -1,5 +1,7 @@
 # CeroSec rung 4 — manual test checklist
 
+See also [TESTING.md](TESTING.md) for the headless suites and the other rungs.
+
 Build 42.20.4. Everything the headless benches cannot reach: the real world under
 `/dev`. The engine's half is pinned character by character in `tests/os_test.lua`,
 and the discovery is driven over a fake world in `tests/window_test.lua`, so what
