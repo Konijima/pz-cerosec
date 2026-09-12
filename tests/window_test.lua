@@ -4157,16 +4157,20 @@ local function newNet()
 			getY = function() return 10 end, getZ = function() return 0 end } end,
 		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end,
 	}
-	local window = CeroSecTerminal:new(0, 0, player, computer)
-	window:initialise()
-	window:createChildren()
-	window.stillValid = function() return true end
-	window.painted = {}
-	window.rects = {}
-	window.drawText = function(self, text, x, y)
-		self.painted[#self.painted + 1] = { text = text, x = x, y = y }
+	local function newWindow()
+		local w = CeroSecTerminal:new(0, 0, player, computer)
+		w:initialise()
+		w:createChildren()
+		w.stillValid = function() return true end
+		w.painted = {}
+		w.rects = {}
+		w.drawText = function(self, text, x, y)
+			self.painted[#self.painted + 1] = { text = text, x = x, y = y }
+		end
+		w.drawRect = function() end
+		return w
 	end
-	window.drawRect = function() end
+	local window = newWindow()
 	net.window = window
 
 	net.said = {}
@@ -4198,7 +4202,21 @@ local function newNet()
 		window:render()
 	end
 
+	-- A window the client has SHUT takes no more keys. The game has it off the UI
+	-- manager and the machine has its watcher off the book, so every screen the
+	-- server pushes afterwards goes nowhere and the glass stands exactly as it
+	-- stood -- which a bench that kept typing at it would read as an answer. That
+	-- is how "Escape at an idle prompt breaks the next rlogin" was reported: the
+	-- window was gone, and the still glass was mistaken for a stale one. So the
+	-- keyboard helpers refuse, and net.reopen is the way back.
+	local function atTheKeyboard()
+		if window.closing then
+			error("the window was closed -- net.reopen() is the way back to a glass", 3)
+		end
+	end
+
 	function net.enter(line)
+		atTheKeyboard()
 		_G.__now = _G.__now + 1000
 		window.entry:setText(line or "")
 		window.entry:setCursorPos(#(line or ""))
@@ -4207,9 +4225,48 @@ local function newNet()
 	end
 
 	function net.escape()
+		atTheKeyboard()
 		_G.__now = _G.__now + 100
 		window:onOtherKey(Keyboard.KEY_ESCAPE)
 		net.frame()
+	end
+
+	-- The window closed and opened again on the same computer, which is the only
+	-- way back to a glass Escape shut. A NEW window with a token of its own:
+	-- everything the machine holds -- the screen, the session, the shell's
+	-- variables -- is still there, and everything the window held is gone. The
+	-- same shape as bench.reopen, which the benches above the wire use.
+	function net.reopen()
+		if not window.closing then window:close() end
+		window = newWindow()
+		net.window = window
+		window:askForScreen()
+		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+		net.frame()
+		return window
+	end
+
+	-- How many windows the machine is still pushing screens to. Escape at an idle
+	-- prompt shuts a window, and a shut window that kept its watcher would have
+	-- the machine talking to a glass nobody is in front of.
+	function net.watchers(object)
+		local watchers = (object or net.here).watchers
+		if watchers == nil then return 0 end
+		local n = 0
+		for _ in pairs(watchers) do n = n + 1 end
+		return n
+	end
+
+	-- The BOTTOM of the glass: what the machine is asking for NOW. A session that
+	-- has been and gone leaves its prompt in the scrollback for good, so "is the
+	-- far prompt anywhere on the glass" is not the question a bench about a NEW
+	-- session may ask -- net.glass would answer yes to yesterday's.
+	function net.bottom()
+		for i = #window.painted, 1, -1 do
+			local text = window.painted[i].text
+			if type(text) == "string" and text ~= "" then return text end
+		end
+		return ""
 	end
 
 	function net.glass(needle)
@@ -5405,15 +5462,158 @@ do
 	check("the session is up", net.glass("admin@" .. net.host(net.gate)))
 	-- The window closes and opens again, which is what walking away and coming
 	-- back is: the machine still holds the session.
-	net.window:close()
-	net.window:askForScreen()
-	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
-	net.frame()
-	check("and it is still on the glass when the window comes back",
-		net.glass("admin@" .. net.host(net.gate)))
+	net.reopen()
+	-- The BOTTOM of the glass, not "anywhere on it": a session that had ended
+	-- would leave its prompt in the scrollback and pass the looser question.
+	eq("and it is still on the glass when the window comes back",
+		net.bottom(), "admin@" .. net.host(net.gate) .. ":~$ ")
 	net.enter("hostname")
 	net.tick(2)
 	check("and still typing at the far machine", net.glass(net.host(net.gate)))
+end
+
+-- A refused rlogin, Escape, and the rlogin that works afterwards.
+--
+-- Reported as a bug in the window: after `rlogin nosuchhost` was refused,
+-- Escape "left the glass painting the local prompt" while the next `rlogin gate`
+-- opened a real trusted session on the far machine. It is not one, and the two
+-- halves of it are worth holding down separately, because each is a thing that
+-- could break.
+--
+-- The refusal is the resolver's and never reaches the wire, so it must leave the
+-- console EXACTLY as the line found it -- no half-dialled session, nothing
+-- pending, no flag for the next command to trip over. And Escape at an idle
+-- local prompt shuts the window, which is what it is for: there is no session to
+-- give up on and the machine is not in the middle of anything. A shut window is
+-- gone from the UI manager and its watcher is off the machine's book, so nothing
+-- the server pushes afterwards can reach it -- which is the whole of what the
+-- report saw. The way back to a glass is the way back in the game: open the
+-- computer again.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/home/admin/.rhosts", net.host(net.here) .. " admin", 600, "admin")
+	net.login("admin")
+
+	-- Every field the console carries, before the line and after it. Asked of the
+	-- whole table and not of the three fields a guess would name: what a refusal
+	-- must not leave behind is anything at all.
+	--
+	-- Two are the shell's own and are asked about separately below: the lines on
+	-- the glass, and $? -- a command that failed has to leave a failing status,
+	-- and a refused rlogin failed.
+	local function marks()
+		local out, console = {}, net.here:consoleState()
+		for key, value in pairs(console) do
+			if key ~= "lines" and key ~= "status" then out[key] = tostring(value) end
+		end
+		return out, #console.lines
+	end
+	local before, rows = marks()
+	net.enter("rlogin nosuchhost")
+	net.tick(3)
+	check("the resolver refuses the name", net.glass("rlogin: nosuchhost: unknown host"))
+	local after, rowsAfter = marks()
+	for key, value in pairs(after) do
+		eq("the refusal left the console's " .. key .. " alone", value, before[key])
+	end
+	for key in pairs(before) do
+		check("and took nothing off it (" .. key .. ")", after[key] ~= nil)
+	end
+	eq("the line it printed and the line that was typed, and no more",
+		rowsAfter, rows + 2)
+	eq("nothing was dialled", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("and $? says the command failed", net.here:consoleState().status, 1)
+
+	-- And the refusal that comes back from the WIRE, which is the one that could
+	-- leave a half-dialled session behind: the resolver's refusal never reaches
+	-- the far machine, and the dial the far machine turns down does. Its four
+	-- lines are taken, so the fifth caller is refused where the pty would have
+	-- been opened.
+	local far = net.gate:osState()
+	-- The table the far machine keeps its lines in, made the way the dial makes it
+	-- (SCeroSecNet connect): a machine nobody has called yet has no lines at all.
+	if net.gate.ptys == nil then net.gate.ptys = {} end
+	for i = 1, CeroSecOS.PTY_MAX do
+		local pty = CeroSecOS.remoteOpen(far, net.gate.ptys,
+			{ fromHost = "busy" .. i, want = "admin", hops = 1, at = 100 })
+		check("a line on the far machine is taken (" .. i .. ")", pty ~= nil)
+	end
+	before, rows = marks()
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("the far machine turns the fifth caller down",
+		net.glass("rlogin: connect: Connection refused"))
+	after, rowsAfter = marks()
+	for key, value in pairs(after) do
+		eq("the far machine's refusal left the console's " .. key .. " alone",
+			value, before[key])
+	end
+	for key in pairs(before) do
+		check("and took nothing off it either (" .. key .. ")", after[key] ~= nil)
+	end
+	eq("with no fifth line opened", CeroSecOS.ptyCount(net.gate.ptys),
+		CeroSecOS.PTY_MAX)
+	for i = 0, CeroSecOS.PTY_MAX - 1 do
+		net.gate.ptys[CeroSecOS.ptyLine(i)] = nil
+	end
+
+	-- Escape, with nothing to interrupt and no session to give up on.
+	eq("the machine has one window on it", net.watchers(), 1)
+	net.escape()
+	check("Escape shut the window", net.window.closing)
+	eq("and the machine stopped pushing screens to it", net.watchers(), 0)
+	local ok = pcall(net.enter, "rlogin gate")
+	eq("a shut window takes no more keys", ok, false)
+
+	-- The way back, and the session that was said not to show.
+	net.reopen()
+	eq("the machine hands the new window its own prompt",
+		net.bottom(), "admin@" .. net.host(net.here) .. ":~$ ")
+	net.enter("rlogin gate")
+	net.tick(3)
+	eq("a trusted rlogin opens one session over there",
+		CeroSecOS.ptyCount(net.gate.ptys), 1)
+	check("without asking for a password", net.gate.ptys.ttyp0.trusted)
+	eq("and the far machine's prompt is at the bottom of the glass",
+		net.bottom(), "admin@" .. net.host(net.gate) .. ":~$ ")
+	net.enter("hostname")
+	net.tick(2)
+	check("which is whose keyboard it now is", net.glass(net.host(net.gate)))
+end
+
+-- The same, after a session that ENDED properly. `exit` puts the glass back on
+-- the local shell, so the Escape after it is the idle one again -- and the far
+-- machine's prompt is in the scrollback for good, which is why every question
+-- here is about the BOTTOM of the glass.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/home/admin/.rhosts", net.host(net.here) .. " admin", 600, "admin")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	local gate = "admin@" .. net.host(net.gate) .. ":~$ "
+	eq("the session is on the glass", net.bottom(), gate)
+	net.enter("exit")
+	net.tick(3)
+	eq("and exit hands the glass back to the local shell",
+		net.bottom(), "admin@" .. net.host(net.here) .. ":~$ ")
+	eq("with no line left open over there", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("and nothing remote on the console", net.here:consoleState().remote == nil)
+
+	-- Escape is the idle one: there is nothing to interrupt and nothing to hang up.
+	net.escape()
+	check("so it shuts the window", net.window.closing)
+	eq("and takes its watcher with it", net.watchers(), 0)
+
+	net.reopen()
+	net.enter("rlogin gate")
+	net.tick(3)
+	eq("the second session opens", CeroSecOS.ptyCount(net.gate.ptys), 1)
+	-- The first session's prompt is up in the scrollback: a bench that asked
+	-- net.glass this would be green whether the second session happened or not.
+	eq("and the far prompt is at the bottom of the glass again", net.bottom(), gate)
 end
 
 -- The loopback: a second session on the machine one is sitting at. It needs no
