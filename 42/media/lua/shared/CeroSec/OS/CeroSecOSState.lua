@@ -67,17 +67,32 @@ end
 
 -- Everything the game stores must be a plain nested table of strings, numbers
 -- and booleans: no functions, no userdata, no metatables, no cycles.
-local function checkPlain(value, seen, where)
+--
+-- And it must END. The cycle test catches a table that contains itself; it does not
+-- catch a chain fifty thousand tables long, and that was a stack overflow out of
+-- whoever asked rather than an answer. Only a hand-edited save file holds one --
+-- nothing this engine writes goes that deep, and everything that arrives from
+-- outside is refused before it gets here (CeroSecOS.diskShape) -- but a gate whose
+-- job is to say whether a blob can be run on has to survive the blob.
+--
+-- The bound is the copy's, for the copy's reason (see CeroSecOS.DISK_COPY_DEPTH):
+-- two table levels for every level a path on this machine may go down, and three
+-- in front for the state, its filesystem and that node's children.
+local PLAIN_DEPTH = 3 + 2 * CeroSecOS.MAX_DEPTH
+
+local function checkPlain(value, seen, where, depth)
 	local t = type(value)
 	if t == "string" or t == "number" or t == "boolean" then return true end
 	if t ~= "table" then return false, where .. ": " .. t .. " is not storable" end
 	if getmetatable(value) ~= nil then return false, where .. ": has a metatable" end
 	if seen[value] then return false, where .. ": cycle" end
+	depth = depth or 0
+	if depth > PLAIN_DEPTH then return false, where .. ": too deep" end
 	seen[value] = true
 	for k, v in pairs(value) do
 		local kt = type(k)
 		if kt ~= "string" and kt ~= "number" then return false, where .. ": key of type " .. kt end
-		local ok, reason = checkPlain(v, seen, where .. "." .. tostring(k))
+		local ok, reason = checkPlain(v, seen, where .. "." .. tostring(k), depth + 1)
 		if not ok then return false, reason end
 	end
 	seen[value] = nil
@@ -336,8 +351,11 @@ function CeroSecOS.validateDisk(disk, bounded)
 	end
 	if not bounded then return true end
 
-	local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
-	if nodes > CeroSecOS.FLOPPY_NODES then return false, "floppy: too many nodes" end
+	-- The node ceiling is not asked here: CeroSecOS.diskShape carries the count and
+	-- stops the walk on it, which is the whole point of counting there -- asked at
+	-- this end, the answer arrives after the tree has been walked three times and
+	-- copied once.
+	local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
 	if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end
 	local big = CeroSecOS.tooBigOn(disk.fs)
 	if big ~= nil then return false, "floppy" .. big .. ": file too large" end

@@ -366,14 +366,24 @@ CeroSecOS.MAX_STAMP = 1000000000000
 --   * how many entries a directory holds, counted before the names are gathered
 --     and sorted: MAX_DIR_ENTRIES is what refuses four hundred thousand children
 --     in one comparison, and gathering them first was nine seconds of it.
+--   * how many NODES the whole tree holds, which is the same lesson one level up.
+--     A well-formed tree -- every node legal, every directory inside its ceiling,
+--     every path inside its depth -- was walked in full three times and copied once
+--     before checkNode answered "too many nodes" against a ceiling of thirty-two.
+--     Two hundred thousand nodes was four and a half seconds; the answer was known
+--     at the thirty-third. The count is carried here, so it is the walk's own and
+--     the walk stops on it.
 --
 -- The order is the order of what it costs: the cheap tests on this node, then the
 -- count, then the walk.
-function CeroSecOS.diskShape(node, where, depth)
+function CeroSecOS.diskShape(node, where, depth, tally)
 	where = where or ""
 	depth = depth or 0
+	tally = tally or { nodes = 0 }
 	if type(node) ~= "table" then return where, "not a node" end
 	if depth > CeroSecOS.MAX_DEPTH then return where, "path too deep" end
+	tally.nodes = tally.nodes + 1
+	if tally.nodes > CeroSecOS.FLOPPY_NODES then return where, "too many nodes" end
 	-- A disk has no business carrying a device: `newfs` never makes one, a device
 	-- describes the world around a MACHINE, and the boot gate lets the `null` kind
 	-- through only because its walk is shared with the machine's own drive -- where
@@ -419,7 +429,7 @@ function CeroSecOS.diskShape(node, where, depth)
 	local names = CeroSecOS.childNames(node)
 	for i = 1, #names do
 		local at, why = CeroSecOS.diskShape(node.children[names[i]],
-			where .. "/" .. names[i], depth + 1)
+			where .. "/" .. names[i], depth + 1, tally)
 		if at ~= nil then return at, why end
 	end
 	return nil

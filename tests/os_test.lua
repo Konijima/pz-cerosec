@@ -10591,6 +10591,57 @@ do
 		select(2, CeroSecOS.validateDisk({ v = 1, fs = crowd }, true)),
 		"floppy: directory full")
 
+	-- The same lesson one level up: a WELL-FORMED tree -- every node legal, every
+	-- directory inside its ceiling, every path inside its depth -- was walked in
+	-- full three times and copied once before anything consulted the node ceiling.
+	-- The count is the walk's now, so the answer arrives at the node after the last
+	-- one a disk may hold.
+	local crowds = CeroSecOS.newDir("root", 755)
+	local into = crowds
+	for i = 1, CeroSecOS.FLOPPY_NODES * 4 do
+		-- One short of the ceiling, so the directory always has room for the child
+		-- that carries the tree downwards: what this shape is about is the NODE
+		-- count, and a directory that ran over its own would answer first.
+		if CeroSecOS.countEntries(into) >= CeroSecOS.MAX_DIR_ENTRIES - 1 then
+			local down = CeroSecOS.newDir("root", 755)
+			into.children.s = down
+			into = down
+		else
+			into.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
+		end
+	end
+	-- The reason names the node the count ran out on, which is the walk saying
+	-- where it stopped rather than what it added up to.
+	local why = select(2, CeroSecOS.diskFromData({ v = 1, fs = crowds }))
+	check("more nodes than a disk holds, all of them legal: " .. tostring(why),
+		string.find(tostring(why), ": too many nodes", 1, true) ~= nil)
+	-- And exactly as many as it holds is not too many.
+	local exact = CeroSecOS.newDir("root", 755)
+	for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
+		exact.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
+	end
+	check("and a disk filled to the node ceiling goes in",
+		CeroSecOS.diskFromData({ v = 1, fs = exact }) ~= nil)
+
+	-- The gate the BOOT runs has to survive the blob too. Its plainness walk has a
+	-- cycle test, which catches a table containing itself and not a chain fifty
+	-- thousand tables long -- nothing this engine writes goes that deep and nothing
+	-- from outside gets that far, but a gate whose job is to say whether a blob can
+	-- be run on must not fall down on one.
+	do
+		local deepState = fresh()
+		local at = deepState.fs
+		for _ = 1, CeroSecOS.MAX_DEPTH * 8 do
+			local down = CeroSecOS.newDir("root", 755)
+			at.children.d = down
+			at = down
+		end
+		local dOk, dWhy = CeroSecOS.validate(deepState)
+		eq("a state deeper than any path on it is refused", dOk, false)
+		check("and says so rather than falling down: " .. tostring(dWhy),
+			string.find(tostring(dWhy), "too deep", 1, true) ~= nil)
+	end
+
 	-- None of it is paid for before it is refused: the field rules are asked of the
 	-- table the game handed over, and the copy that walks every byte of a disk comes
 	-- after them.
