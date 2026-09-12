@@ -74,7 +74,27 @@ the chunk arriving: **the power check happens on the next load**, at the first m
 there is a room to ask, so a machine whose generator ran dry while you were away is
 lit until you walk back in and dark by the time you can see it. Coming back also
 re-applies the sprite and announces the object to the client, which is what puts the
-screen's glow back (`newLuaObjectOnClient` → `CCeroSecObject:syncLight`).
+screen's glow back (`newLuaObjectOnClient` → `CCeroSecSystem:newLuaObjectAt` →
+`CCeroSecObject:syncLight`).
+
+**The glow is the cell's, not ours.** The light is one `IsoLightSource` on the cell's
+lamppost stack (`getCell():addLamppost`), and the engine takes it off that stack
+whenever the square leaves the loaded window: `LightingJNI.checkLights` walks
+`IsoCell.getLamppostPositions()` and removes any source whose `isInBounds()` is false —
+inside some player's `IsoChunkMap` world tiles — or whose recorded `chunk` is not the
+chunk now covering its square (`javap -c`: `checkLights` offsets 78-123,
+`IsoLightSource.isInBounds`). It tells nobody, and the handle `addLamppost` returned
+goes on existing. So `CCeroSecObject:hasLight()` asks the CELL — `getLightSourceAt` at
+our square, identical to our handle — and never `self.light` on its own: reading "I have
+a handle" as "there is a light" is what left a teleport across the county with a lit
+sprite and no glow, for ever, since `addLight` then refused to ask for another. There is
+no sweep: `syncLight` is called from the four events that can change the answer — the
+announce (a chunk arriving, and the first time a client hears of a machine at all), the
+update, the removal packet, and `OnObjectAboutToBeRemoved` for a pickup — and on the
+announce the state is read off the sprite the chunk brought (`onFromSprite`), because
+Java copies the announced fields into our table only *after* `newLuaObjectAt` returns
+and never calls `OnLuaObjectUpdated` on that path (`javap -c CGlobalObjectSystem`:
+`OnLuaObjectUpdated` is named only inside `receiveUpdateLuaObjectAt`).
 
 This is vanilla's own habit with a global object it cannot see:
 `SCampfireSystem.lua:157-159` skips a campfire whose square is gone — *"if campfire is
@@ -98,7 +118,12 @@ leave it on, the session alive and cron firing every minute; `dev light0 on` ans
 `light0: no such device`; the chunk comes back with a wire and it is still on with its
 sprite and its glow put back; the chunk comes back to a dark room and it goes off at
 that first check, not a minute later; and the control — a machine the sweep **can**
-see loses its power and goes off on the next minute.
+see loses its power and goes off on the next minute. The glow has its own bench in the
+same section, with the real `CCeroSecSystem` and `CCeroSecObject` on a fake cell that
+keeps a lamppost stack and drops it with the chunk the way `checkLights` does: one light
+while the machine is lit, none while the chunk is away, exactly one again when it comes
+back however many times the square is announced, none for a machine switched off out of
+view, and the light following the object through a pickup and a placement.
 
 ## The clock
 

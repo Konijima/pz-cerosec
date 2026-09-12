@@ -1363,6 +1363,19 @@ rechargement du morceau, jamais avant. La règle est dans
      machine du même bâtiment par `rlogin` ne liste rien et `echo on >
      /dev/light0` répond `light0: no such device` : c'est le monde qui manque, pas
      la machine. [ ]
+225b. **La lueur revient d'un aller-retour très loin.** Un ordinateur allumé, se
+     placer devant pour voir la lueur bleutée sur le mur, puis se téléporter très
+     loin (ou traverser la carte) assez pour que le quartier se décharge, et
+     revenir tout de suite. Attendu : la lueur est là **dès que le morceau de
+     carte arrive**, sans rien toucher, sans attendre une minute et sans passer
+     par l'interrupteur — une seule lueur, jamais deux. Refaire l'aller-retour
+     trois ou quatre fois de suite : c'est toujours une. C'était le bogue
+     rapporté (« je me téléporte très loin et je reviens, la lumière n'est plus
+     là alors que l'ordinateur est allumé ») : le moteur retire la lueur avec le
+     morceau de carte et ne le dit à personne. Le contrôle du même geste :
+     éteindre la machine pendant l'absence (par `rlogin` depuis une autre du même
+     bâtiment, ou un `halt` au crontab) → au retour, sprite éteint et **aucune**
+     lueur. [ ]
 226. **Le générateur mort pendant l'absence.** Un ordinateur allumé dans un
      bâtiment alimenté par un générateur, réseau coupé (`ElecShutModifier` passé,
      ou bâtiment hors réseau). Vider le générateur d'essence ou l'éteindre, puis
