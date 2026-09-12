@@ -2486,6 +2486,45 @@ do
 	check("and its end is announced", bench.painted("[1] done"))
 end
 
+-- A statement behind an `&` is a SUBSHELL: it starts with a copy of the
+-- variables the shell that wrote it was holding.
+--
+-- It used to start with PATH and nothing else at all -- not even HOME -- so the
+-- same file answered differently in the foreground and behind the prompt, and
+-- Volume 3 had a page showing the gap as though it were a rule. cron is the
+-- only thing on this machine that starts with an environment of its own, and
+-- that one is real: it is the oldest trap in Unix and the book keeps it.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/where.sh", 'echo "HOME is [$HOME] x is [$x]"\n')
+	bench.script("/home/admin/set.sh", "y=inside\n")
+
+	bench.enter("x=hi")
+	bench.enter("./where.sh")
+	bench.tick(3)
+	bench.frame()
+	check("in the foreground it has the shell's variables",
+		bench.painted("HOME is [/home/admin] x is [hi]"))
+
+	bench.enter("./where.sh &")
+	bench.tick(4)
+	bench.frame()
+	check("and behind the prompt it has the same ones",
+		bench.painted("HOME is [/home/admin] x is [hi]"))
+
+	-- A COPY, and not the shell's own table: what a job behind the prompt sets is
+	-- its own and dies with it, which is what a subshell is.
+	bench.enter("y=outside")
+	bench.enter("./set.sh &")
+	bench.tick(4)
+	bench.enter("echo [$y]")
+	bench.tick(2)
+	bench.frame()
+	check("what the background job set did not come back", bench.painted("[outside]"))
+	check("and certainly not that", not bench.painted("[inside]"))
+end
+
 -- ps, jobs and kill, from the prompt, on a job that is running.
 do
 	local bench = newBench()

@@ -862,6 +862,9 @@ end
 -- reload.
 function SCeroSecSystem:startJob(luaObject, console, data)
 	if type(data) ~= "table" or type(data.prog) ~= "table" then return nil end
+	-- The shell that asked is this console's, so what the job starts with is a
+	-- copy of that shell's variables: it is a subshell of the line that was typed.
+	if data.vars == nil then data.vars = CeroSecOS.copyVars(console.shvars) end
 	local job, reason = CeroSecJobs.start(self, luaObject, console, data, data.bg and true or false)
 	if job == nil then
 		CeroSec.consolePush(console, "sh: " .. tostring(reason))

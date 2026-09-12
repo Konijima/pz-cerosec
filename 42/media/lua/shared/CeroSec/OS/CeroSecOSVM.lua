@@ -392,12 +392,26 @@ end
 -- The job
 --
 
+-- A COPY of a shell's variables, for something that starts AS a subshell of it:
+-- a stage of a pipeline, or a statement behind an `&`. It begins with everything
+-- its parent held -- PATH, HOME, whatever was set at the prompt -- which is what
+-- a fork gives a child, and what it does with them afterwards is its own: `x=5`
+-- in a background job leaves the shell that started it alone.
+function CeroSecOS.copyVars(vars)
+	local out = {}
+	if type(vars) == "table" then
+		for name, value in pairs(vars) do out[name] = value end
+	end
+	return out
+end
+
 -- opts: prog, args (args[1] is $1), name, cmd, session, id, bg, vars, status.
 --
 -- vars, when given, is taken BY REFERENCE and is the caller's to keep: it is
--- how the prompt has an environment that outlives one line. A script is never
--- handed one -- its variables are its own and die with it, the way a child
--- shell's do.
+-- how the prompt has an environment that outlives one line. Anything that is a
+-- subshell of another hands a COPY in (CeroSecOS.copyVars above), and what is
+-- handed nothing at all -- a cron line -- starts with the default below, which
+-- is cron's own trap and is the one place it is still right.
 function CeroSecOS.newJob(opts)
 	local args = {}
 	if type(opts.args) == "table" then
@@ -407,10 +421,11 @@ function CeroSecOS.newJob(opts)
 	local vars, nvars = opts.vars, 0
 	if type(vars) ~= "table" then
 		-- The initial environment of a shell nobody handed one: PATH, and the
-		-- default at that. A script and a cron line both come through here, and
-		-- both start with /bin and never with the PATH of whatever started them --
-		-- which is the classic cron trap, and is why the manual says to write the
-		-- whole path in a crontab line.
+		-- default at that. That is the CRON line's case -- cron hands in the
+		-- account's own loginVars and nothing of whatever was typed at a prompt,
+		-- which is the classic cron trap and is why the manual says to write the
+		-- whole path in a crontab line. A script, foreground or behind an `&`, is
+		-- a subshell and is handed a copy of its parent's instead.
 		vars = { PATH = CeroSecOS.DEFAULT_PATH }
 		nvars = 1
 	else
@@ -1599,14 +1614,8 @@ local function newStage(job, node, out, into, last)
 	local stage = CeroSecOS.newJob({
 		prog = { node }, args = job.args, name = job.name, cmd = job.cmd,
 		session = job.session, status = job.status,
+		vars = CeroSecOS.copyVars(job.vars),
 	})
-	local vars, nvars = {}, 0
-	for k, v in pairs(job.vars) do
-		vars[k] = v
-		nvars = nvars + 1
-	end
-	stage.vars = vars
-	stage.nvars = nvars
 	stage.pipe = out
 	stage.stdinBuf = into
 	-- Whether what this stage writes ends up on a screen. Only the last one can:

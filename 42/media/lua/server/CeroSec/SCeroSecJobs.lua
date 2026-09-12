@@ -167,6 +167,12 @@ function CeroSecJobs.start(system, luaObject, console, data, bg)
 		cmd = data.cmd,
 		bg = bg,
 		session = system:sessionOf(console),
+		-- The variables the shell that asked for this job was holding, copied:
+		-- a statement behind an `&` is a subshell of it and starts with what it
+		-- had. The caller does the copying, because only the caller knows whose
+		-- shell it was; a caller that hands none gets the default environment,
+		-- which is cron's case and nobody else's.
+		vars = data.vars,
 	})
 	return enrol(system, luaObject, console, job, bg)
 end
@@ -575,7 +581,12 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			local cmd = job.name .. ":" .. tostring(job.spawnLine or 1) .. " &"
 			if job.promptLine ~= nil then cmd = job.promptLine end
 			local order = { name = job.name, prog = { job.spawn }, args = job.args,
-				cmd = cmd }
+				cmd = cmd,
+				-- A COPY of what the shell that wrote the `&` was holding. That is
+				-- what a subshell gets on every Unix there has ever been, and
+				-- without it `./where.sh &` ran with PATH and nothing else -- not
+				-- even HOME -- while the same file in the foreground had the lot.
+				vars = CeroSecOS.copyVars(job.vars) }
 			job.spawn = nil
 			job.spawnLine = nil
 			-- What tells the caller this pass answered an "&". A line typed at

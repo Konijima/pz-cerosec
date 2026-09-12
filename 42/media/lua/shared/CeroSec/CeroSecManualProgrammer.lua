@@ -1319,22 +1319,22 @@ own bin is not there, however carefully you added it at your prompt. So:
   30 4 * * * /home/admin/bin/nightly.sh
 
 The first one is not found at four in the morning and the second one is.
-Write the whole path in a crontab line, always, or set PATH yourself on
-the first line of the script.
+Write the whole path in a crontab line, always.
 
-A cron line does get HOME, and starts in your own directory. A job put
-behind the prompt with an ampersand is the harsher case: it gets PATH and
-nothing else at all, not even HOME.
+It does get HOME, and starts in your own directory. What it does not get
+is anything you set at a prompt: cron is the only thing on this machine
+with an environment of its own.
 
+  admin@ksp-04-11:~$ x=hi
   admin@ksp-04-11:~$ ./where.sh
-  HOME is [/home/admin]
+  HOME is [/home/admin] x is [hi]
   admin@ksp-04-11:~$ ./where.sh &
   [1] 44
-  HOME is []
+  HOME is [/home/admin] x is [hi]
 
-Same file, same machine, different answer. A script run in the foreground
-borrows your prompt's variables; one behind the prompt does not. Set what
-you need at the top of the file.]],
+Same file, same answer: an ampersand is a subshell, and a subshell starts
+with a copy of everything the shell held. A copy, so what it sets after
+that is its own and dies with it.]],
 
 [[Where a cron job's words go.
 

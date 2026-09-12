@@ -230,9 +230,11 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 
 Which directories a bare name is looked for in is `PATH`, an ordinary shell
 variable. A login sets it to `/bin` and sets `HOME` beside it; a `.profile` widens
-it (`PATH=$PATH:$HOME/bin`); a script and every line `cron` runs start at `/bin`
-again and never inherit the shell's, which is the oldest trap in `cron` and is why a
-crontab line spells the whole path. The walk is POSIX's: left to right, the first
+it (`PATH=$PATH:$HOME/bin`); a script inherits the shell's, in the foreground and
+behind an `&` alike — a `&` is a subshell and starts with a copy of everything the
+shell held — while every line `cron` runs starts at `/bin` with `HOME` and nothing
+else, which is the oldest trap in `cron` and is why a crontab line spells the whole
+path. The walk is POSIX's: left to right, the first
 file with `x` on it for whoever typed it wins, and something in the way without `x`
 does not stop the search — found everywhere and runnable nowhere is
 `permission denied`, found nowhere at all is `command not found`. A file found in
