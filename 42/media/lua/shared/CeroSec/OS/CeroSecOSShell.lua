@@ -947,10 +947,10 @@ commands.ls = function(state, session, args, env, stdin, sh)
 	local shown = path
 	if shown == nil then shown = "." end
 	-- A link NAMED on the line is followed, so `ls linkdir` lists the directory it
-	-- points at -- and `ls -l linkdir` describes the link instead, because that is
-	-- what a long listing of a link is for. Every other ls draws the same
-	-- distinction, and the children of a directory are never followed at all.
-	local node, reason = CeroSecOS.getNode(state, session, path, long)
+	-- points at. -l and -F are the two flags that ask about the link ITSELF --
+	-- POSIX says so, and it is what they are for: one draws the arrow, the other
+	-- marks the at-sign. The children of a directory are never followed at all.
+	local node, reason = CeroSecOS.getNode(state, session, path, long or classify)
 	if node == nil then return fail("ls", shown, reason) end
 
 	if node.type ~= "dir" then

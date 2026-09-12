@@ -266,7 +266,8 @@ special — there is no globbing here for one to hide from.
 **Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
 was typed. Everything that acts on a *file* follows it — `cat`, `cp`, `chmod`, a
 redirect — and the permissions are the target's, so a link to something you may not
-read buys you nothing. The four that act on the *link* do not: `ls -l` draws it
+read buys you nothing. The four that act on the *link* do not — `-l` and `-F` are the two flags that ask
+`ls` about the link itself, which is POSIX's rule for both: `ls -l` draws it
 (`lrwxrwxrwx  admin  admin   log -> /var/log/cron`), `ls -F` marks it `@`, `rm`
 takes the link away and leaves the file, `mv` moves the link, and `readlink` prints
 what it holds. A link to a name that is not there is allowed and answers

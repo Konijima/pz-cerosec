@@ -262,15 +262,16 @@ through it -- cat reads the file, a redirect writes it, chmod changes it:
   admin@ksp-04-11:~$ ls -l log
   lrwxrwxrwx  admin  admin   log -> /var/log/cron
 
-ls -l draws the arrow, ls -F marks it with an at-sign, and the l in front
-of the mode says it is one. rm takes the LINK away and leaves the file; mv
+ls -l draws the arrow and ls -F marks it with an at-sign -- those two ask
+about the link, everything else about the file -- and the l in front of
+the mode says it is one. rm takes the LINK away and leaves the file; mv
 moves the link. What a link may do is what the FILE allows: one pointing
 at something you may not read buys you nothing.
 
-A link to a name that is not there is allowed -- the machine says "no such
-file" the moment you use it -- and one pointing at itself says "too many
-levels of symbolic links" after eight hops rather than hanging. There are
-no hard links: ln without -s prints its usage line.]],
+A link to a name that is not there is allowed -- "no such file" the moment
+you use it -- and one pointing at itself says "too many levels of symbolic
+links" after eight hops rather than hanging. There are no hard links: ln
+without -s prints its usage line.]],
 
 [[Two places are not like the rest of the disk.
 
@@ -2259,9 +2260,6 @@ that are not like the rest of the disk.
   too many levels of symbolic links
       a link points at itself, or at another that points
       back: eight hops and the machine stops, chapter 3
-  is a link
-      a command that wanted a file was handed the link
-      itself rather than what it points at
   too many PATH entries
       PATH may name eight directories and no more
   type: <name>: not found

@@ -8710,6 +8710,10 @@ do
 	local marked = okAt(state, admin, "ls -F")
 	check("ls -F marks it with an at-sign",
 		string.find(marked[1], "link@", 1, true) ~= nil)
+	-- Named on the line, -l and -F are the two flags that ask about the LINK and
+	-- not about what it points at, which is POSIX's rule for both of them.
+	ok(state, admin, "ls -F link", { "link@" })
+	ok(state, admin, "ls link", { "link" })
 
 	-- Writing through it writes the file, and the link is untouched.
 	ok(state, admin, 'write link "written through"', {})
@@ -8746,11 +8750,12 @@ do
 
 	ok(state, admin, "cat p/one.txt", { "first" })
 	ok(state, admin, "ls p", { "one.txt" })
-	-- Named on the line with -l it is the link that is described; without -l the
-	-- directory it points at is listed, which is what every ls does.
+	-- Named on the line with -l or -F it is the link that is spoken about; with
+	-- neither, the directory it points at is listed, which is what every ls does.
 	local shown = okAt(state, admin, "ls -l p")
 	eq("ls -l p describes the link", shown[1], "lrwxrwxrwx  admin  admin   p -> papers")
 	-- `cd` through one keeps the path as it was typed, the way a shell does.
+	ok(state, admin, "ls -F p", { "p@" })
 	ok(state, admin, "cd p", {})
 	ok(state, admin, "pwd", { "/home/admin/p" })
 	ok(state, admin, "cd ..", {})

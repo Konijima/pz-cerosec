@@ -139,6 +139,11 @@ end
 -- so a device never comes back as "is a directory".
 function CeroSecOS.notAFile(node)
 	if CeroSecOS.isDev(node) then return "is a device" end
+	-- No command reaches this with a link today: everything that wanted text
+	-- asked getNode, and getNode follows one. It is here so that the day one does
+	-- ask without following, the machine says what it found instead of calling a
+	-- link a directory -- and it is deliberately not in the manual, because
+	-- nothing a player can type produces it.
 	if CeroSecOS.isLink(node) then return "is a link" end
 	return "is a directory"
 end
