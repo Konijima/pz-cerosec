@@ -80,6 +80,67 @@ module CeroSec
         WorldStaticModel = BookClosedGround,
     }
 
+    /* RETIRED, AND STILL DECLARED. The single book that shipped before the set
+       did.
+
+       It is not loot -- CeroSecManualLoot names the three volumes above and
+       nothing generates one any more -- and nothing this mod does will ever
+       make another. It stays DEFINED because it is in SAVES, and the reason is
+       worth writing down once, because it is the rule the whole mod now runs on
+       (docs/CONTRIBUTING.md): an item script that stops naming an item does not
+       retire it, it DELETES every copy of it in every container in the world.
+
+       Traced through the jar (42.20.4), because "it probably still loads" is
+       exactly the kind of thing that turns out to be false:
+
+       - a saved item is a SHORT and not a name. InventoryItem.loadItem reads
+         the registry id and calls InventoryItemFactory.CreateItem(short), which
+         asks WorldDictionary.getItemInfoFromID and then ItemInfo.isValid()
+         (javap -c zombie.inventory.InventoryItemFactory, CreateItem(S) at
+         offsets 0-13).
+       - a type no script declares any more resolves to nothing, CreateItem
+         answers null, and loadItem skips the item's bytes, writes one line
+         through DebugLog and returns null (javap -c
+         zombie.inventory.InventoryItem, loadItem at 84-178).
+       - CompressIdenticalItems.load then puts that null into the container's
+         includingObsoleteItems and NOT into its items (javap -c
+         zombie.inventory.CompressIdenticalItems, load at 114-140). The
+         container is fine. The book is gone, and one line in the console is all
+         anybody is told.
+
+       AND THE `Obsolete` FLAG IS NOT THE WAY OUT. It is real -- Item.DoParam
+       compares the key OBSOLETE case-insensitively and sets the field (javap -c
+       zombie.scripting.objects.Item, offsets 10987-11007) -- and it does stop a
+       type spawning: ItemContainer.AddItem(String) returns null for one (offsets
+       50-58), ItemPickerJava logs `ignoring invalid ItemPicker item type "%s",
+       obsolete = "%s"` and skips it, and RecipeManager leaves it out. But
+       WorldDictionary.onLoadItem copies Item.getObsolete() into
+       ItemInfo.obsolete (offsets 235-240), and DictionaryInfo.isValid() answers
+       FALSE for an obsolete entry (offsets 0-26) -- which is the very test
+       CreateItem(short) just failed above. So `Obsolete = true` DELETES every
+       saved copy exactly as removing the block does. It is the flag for "this
+       type is finished and so is everything made of it", not for "keep what
+       people are holding". No vanilla item script sets it: there is not one
+       `Obsolete` in media/scripts, and vanilla's Lua reads getObsolete() in one
+       place, to hide an item from the admin item list
+       (ISItemsListViewer.lua:53).
+
+       So: DECLARED, out of every loot table, and converted into CeroSec.ManualUser
+       -- the volume it became -- the first time a survivor reads it
+       (CeroSecManualMenu.LEGACY). Every key below is the User's Guide's, because
+       that is what it is; the icon is its own, so a copy still in a crate looks
+       like the book it was printed as. */
+    item Manual
+    {
+        DisplayName = CeroSec OS User's Manual,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.8,
+        Icon = CeroSecManual,
+        StaticModel = Book,
+        WorldStaticModel = BookClosedGround,
+    }
+
     /* The floppy disks. Four of them, and the four are the same disk in four
        colours of shell -- which is how a box of them was sold in 1993 and why
        they all carry the same DisplayName: a survivor tells them apart by

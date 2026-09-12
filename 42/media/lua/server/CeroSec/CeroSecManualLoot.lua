@@ -71,9 +71,13 @@ require "CeroSec/CeroSecDefs"
 -- 0.1 times 0.25 is exactly 0.025 in a double, so none of the twelve times
 -- three numbers is a float that nearly is what it says it is.
 --
--- CeroSec.Manual -- the single book that shipped before the set -- is gone: the
--- item was removed on the inventory wave, and the three volumes are the whole of
--- what a player finds.
+-- CeroSec.Manual -- the single book that shipped before the set -- is NOT in any of
+-- this, and never will be. It is still an ITEM, because it is in saves and dropping
+-- the declaration would delete every copy of it in the world (the reasoning, traced
+-- through the jar, is in common/media/scripts/items_cerosec.txt), but nothing
+-- generates one: what a player finds from here on is one of the three volumes, and
+-- what he already has turns into volume one the first time he reads it
+-- (CeroSecManualMenu.LEGACY).
 --
 -- The insertion is done on Events.OnPreDistributionMerge, the first of the
 -- three distribution events the game fires (SuburbsDistributions.lua:208-210):

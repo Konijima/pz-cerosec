@@ -35,6 +35,42 @@ CeroSecManualMenu.BOOKS = {
 		label = "ContextMenu_CeroSec_ReadProgrammer" },
 }
 
+--
+-- The book that shipped BEFORE the set, and what happens to a copy still in a save
+--
+-- CeroSec.Manual was one book, and the set of three replaced it. It is not in BOOKS
+-- above, because BOOKS is the set on the SHELF -- the three volumes the loot tables
+-- generate and the three the script pins itself against -- and this is not a volume
+-- any more. Nothing makes another one.
+--
+-- It is still declared in items_cerosec.txt, and the whole reasoning for that is
+-- written where the declaration is: dropping an item block deletes every copy of it
+-- in every container in the world, and so does the engine's own `Obsolete` flag. The
+-- only way to keep what a survivor is holding is to keep the type.
+--
+-- So it CONVERTS. `becomes` is the volume it was: the same book, under the name the
+-- set gave it, so a survivor who had one ends up with the User's Guide and not with a
+-- fourth item nobody else in the world has.
+--
+-- WHEN it converts is a choice, and this is the least invasive one there is: at the
+-- moment he READS it. Not while the context menu is being built -- a handler that
+-- took an item out of a container in the middle of the pane drawing that container is
+-- a handler asking for trouble, and this event is fired once per right-click on
+-- anything -- and not on a timer sweeping everybody's bags. The option and the
+-- double-click both funnel through CeroSecManualMenu.onRead, so there is one place
+-- where it happens and one gesture that causes it, and a copy nobody has touched sits
+-- in its crate as the book it was printed as.
+--
+-- The label is the User's Guide's own, which is what it opens. There is deliberately
+-- no ContextMenu_CeroSec_ReadManual key any more: a second label for one book would
+-- be the menu offering the same volume twice.
+CeroSecManualMenu.LEGACY = {
+	item = "CeroSec.Manual",
+	volume = "user",
+	becomes = "CeroSec.ManualUser",
+	label = "ContextMenu_CeroSec_ReadUser",
+}
+
 -- The one item out of a menu entry, whether it is an item or a stack of them.
 local function itemOf(entry)
 	if entry == nil then return nil end
@@ -53,6 +89,12 @@ function CeroSecManualMenu.volumeOf(fullType)
 			return CeroSecManualMenu.BOOKS[b].volume
 		end
 	end
+	-- And the retired single book, which opens the volume it became. Here rather than
+	-- as a fourth row of BOOKS so that the double-click answers it too: this is the one
+	-- function both doors ask.
+	if fullType == CeroSecManualMenu.LEGACY.item then
+		return CeroSecManualMenu.LEGACY.volume
+	end
 	return nil
 end
 
@@ -65,7 +107,53 @@ function CeroSecManualMenu.findManual(items, fullType)
 	return nil
 end
 
+-- The retired book, turned into the volume it became. The replacement, or nil when
+-- nothing could be done -- in which case the old book is STILL IN HIS BAG, which is
+-- the whole reason the order below is what it is.
+--
+-- Vanilla's own three-call shape for replacing an item a survivor is holding
+-- (shared/TimedActions/ISPadlockAction.lua:33-45, shared/Items/OnBreak.lua:508-511):
+-- AddItem plus sendAddItemToContainer, then Remove plus sendRemoveItemFromContainer.
+-- The two send* calls are what a multiplayer client owes the server for a container it
+-- has just changed, and ISPadlockAction makes them unguarded in a shared file, so they
+-- are there in a single-player game too; the nil test is for the bench's fake game,
+-- like every other engine global this mod reaches for (HaloTextHelper, JoypadState).
+--
+-- ADD FIRST, remove second. A full bag, an AddItem that answers nil, anything at all
+-- going wrong the other way round leaves a survivor who asked to read a book holding
+-- neither book -- and the item he lost was the one thing in the world nothing can make
+-- another of.
+--
+-- And the bookmark goes with it: the two are the same volume, so the page he was on is
+-- the page he is still on.
+function CeroSecManualMenu.convertLegacy(item)
+	local container = item:getContainer()
+	if container == nil then return nil end
+	local fresh = container:AddItem(CeroSecManualMenu.LEGACY.becomes)
+	if fresh == nil then return nil end
+	if sendAddItemToContainer ~= nil then sendAddItemToContainer(container, fresh) end
+
+	local was = item.getModData and item:getModData() or nil
+	local now = fresh.getModData and fresh:getModData() or nil
+	if was ~= nil and now ~= nil and was[CeroSecManualUI.PAGE_KEY] ~= nil then
+		now[CeroSecManualUI.PAGE_KEY] = was[CeroSecManualUI.PAGE_KEY]
+	end
+
+	container:Remove(item)
+	if sendRemoveItemFromContainer ~= nil then sendRemoveItemFromContainer(container, item) end
+	return fresh
+end
+
+-- Opening a volume, and the ONE place the retired book is converted: the menu option
+-- and the double-click both come through here, so a survivor cannot reach the reader
+-- by a road that leaves him holding the old item.
+--
+-- A conversion that could not be done is not a refusal to read: he opens the book he
+-- has, exactly as he did before, and the next time he tries it will be converted.
 function CeroSecManualMenu.onRead(item, playerObj, volumeId)
+	if item:getFullType() == CeroSecManualMenu.LEGACY.item then
+		item = CeroSecManualMenu.convertLegacy(item) or item
+	end
 	CeroSecManualUI.open(playerObj, volumeId, item)
 end
 
@@ -104,6 +192,16 @@ function CeroSecManualMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 			context:addOption(getText(book.label), copy,
 				CeroSecManualMenu.onRead, playerObj, book.volume)
 		end
+	end
+
+	-- And the retired single book, under the three: it is not one of the set any more,
+	-- and a survivor holding both it and the User's Guide is offered the Guide first.
+	-- One entry and not two, because it opens the same volume -- and reading it is what
+	-- turns it into the Guide (CeroSecManualMenu.LEGACY).
+	local legacy = CeroSecManualMenu.findManual(items, CeroSecManualMenu.LEGACY.item)
+	if legacy then
+		context:addOption(getText(CeroSecManualMenu.LEGACY.label), legacy,
+			CeroSecManualMenu.onRead, playerObj, CeroSecManualMenu.LEGACY.volume)
 	end
 
 	-- And the phone book, last: it is vanilla's item and not one of the set, so it

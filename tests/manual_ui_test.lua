@@ -324,14 +324,59 @@ local BENCH_TITLE = "CeroSec OS " .. CeroSecOS.VERSION .. " User's Guide"
 -- One book, one window, one item.
 --
 
-local function newItem(fullType)
+-- A container that really holds things, because the retired book's conversion is a
+-- REPLACEMENT in one: AddItem, then Remove, and the bench has to be able to say what
+-- is in the bag afterwards. `refuse` is the shape the ORDER of those two halves exists
+-- for -- a full bag -- and the two send* calls a multiplayer client owes the server are
+-- counted rather than stubbed away.
+local newItem
+local function newContainer(name)
+	local held = {}
+	return {
+		name = name or "inventory",
+		held = held,
+		added = 0,
+		removed = 0,
+		refuse = false,
+		AddItem = function(self, fullType)
+			-- Counted as an ATTEMPT and not as a success, so a bench can tell "it never
+			-- tried" from "it tried and the bag was full".
+			self.added = self.added + 1
+			if self.refuse then return nil end
+			local made = newItem(fullType)
+			made.container = self
+			held[#held + 1] = made
+			return made
+		end,
+		Remove = function(self, item)
+			self.removed = self.removed + 1
+			for i = #held, 1, -1 do
+				if held[i] == item then table.remove(held, i) end
+			end
+		end,
+		holds = function(self, fullType)
+			for i = 1, #held do
+				if held[i].fullType == fullType then return held[i] end
+			end
+			return nil
+		end,
+	}
+end
+
+newItem = function(fullType)
 	local data = {}
 	return {
 		__class = "InventoryItem",
 		fullType = fullType or "CeroSec.ManualUser",
 		getFullType = function(self) return self.fullType end,
 		getModData = function() return data end,
-		getContainer = function() return { name = "inventory" } end,
+		-- A bag of its own unless a bench puts it in one, so that any book in this file
+		-- can be read -- reading the retired one replaces it in whatever it is in.
+		container = nil,
+		getContainer = function(self)
+			if self.container == nil then self.container = newContainer() end
+			return self.container
+		end,
 		data = data,
 	}
 end
@@ -951,14 +996,25 @@ do
 	eq("carrying the manual itself", options[1].target, manual)
 	eq("and opening volume one", options[1].arg2, "user")
 
-	-- The single-volume book that shipped BEFORE the set is not an item any
-	-- more, so nothing on this menu answers for it. Asserted, and not merely
-	-- left out: a menu that still offered a fourth "Read the manual" for an
-	-- item no script declares is the duplicate this wave removed coming back.
+	-- The single-volume book that shipped BEFORE the set: ONE entry and not two, and
+	-- it is volume one's own label -- a second "Read the manual" beside "Read the
+	-- User's Guide" would be the menu offering the same book twice under two names,
+	-- which is the duplicate the set replaced.
 	options = {}
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
-		{ newItem("CeroSec.Manual") })
-	eq("the legacy single book is not on the menu at all", #options, 0)
+	local legacy = newItem("CeroSec.Manual")
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { legacy })
+	eq("the retired book is on the menu", #options, 1)
+	eq("under volume one's own label", options[1].label, "ContextMenu_CeroSec_ReadUser")
+	eq("carrying that very copy", options[1].target, legacy)
+	eq("and opening volume one", options[1].arg2, "user")
+
+	-- And the two together are two entries, in the order the set is printed in: the
+	-- Guide first, the book it replaced under it.
+	options = {}
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { legacy, manual })
+	eq("both books, both entries", #options, 2)
+	eq("the Guide first", options[1].target, manual)
+	eq("and the retired book under it", options[2].target, legacy)
 
 	-- A stack of identical items arrives as one table with an items array
 	-- inside it, not as an InventoryItem. That is the shape that would slip
@@ -1374,12 +1430,51 @@ do
 	eq("a vanilla book is still vanilla's", ISInventoryPane.dblClicked[1], book)
 	check("and no reader opened on it", CeroSecManualUI.instances[0] == nil)
 
-	-- The legacy single-volume item is not one of ours any more, so it is not one
-	-- the double-click answers for either.
+	-- The retired single-volume book. The double-click answers it too -- both doors go
+	-- through volumeOf, so a copy in a save opens by the same gesture as the set -- and
+	-- the gesture is also what CONVERTS it: the reader that opens is on the User's
+	-- Guide the bag now holds and not on the book that has just left it.
+	CeroSecManualUI.instances[0] = nil
 	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
-	ISInventoryPane.doContextualDblClick(pane, newItem("CeroSec.Manual"))
-	eq("the removed book gets no reader", ISInventoryPane.dblCalls, 1)
-	check("and opens nothing", CeroSecManualUI.instances[0] == nil)
+	local bag = newContainer()
+	local old = newItem("CeroSec.Manual")
+	old.container = bag
+	bag.held[1] = old
+	old:getModData()[CeroSecManualUI.PAGE_KEY] = 4
+	ISInventoryPane.doContextualDblClick(pane, old)
+	eq("the original was not called for it", ISInventoryPane.dblCalls, 0)
+	local opened = CeroSecManualUI.instances[0]
+	check("a reader opened", opened ~= nil)
+	eq("on volume one", opened and opened.volumeId, "user")
+	local grown = bag:holds("CeroSec.ManualUser")
+	check("the bag holds the User's Guide now", grown ~= nil)
+	eq("and the reader is on THAT copy", opened and opened.item, grown)
+	eq("the old book is out of the bag", bag:holds("CeroSec.Manual"), nil)
+	eq("it went to the shelf once", bag.added, 1)
+	eq("and removed once", bag.removed, 1)
+	eq("and the page he was on came with it",
+		grown and grown:getModData()[CeroSecManualUI.PAGE_KEY], 4)
+	if opened then opened:close() end
+
+	-- A bag that will not take the new book: he keeps the old one and still reads it.
+	-- The order of the two halves is the whole of this -- removed first, a survivor who
+	-- asked to read a book would be holding neither, and the one he lost is the one
+	-- thing in the world nothing can make another of.
+	CeroSecManualUI.instances[0] = nil
+	local full = newContainer()
+	full.refuse = true
+	local kept = newItem("CeroSec.Manual")
+	kept.container = full
+	full.held[1] = kept
+	ISInventoryPane.doContextualDblClick(pane, kept)
+	eq("it tried, once", full.added, 1)
+	eq("and nothing was taken out of the bag", full.removed, 0)
+	check("his book is still his", full:holds("CeroSec.Manual") == kept)
+	local anyway = CeroSecManualUI.instances[0]
+	check("and he is reading it", anyway ~= nil)
+	eq("the book he has", anyway and anyway.item, kept)
+	eq("on volume one all the same", anyway and anyway.volumeId, "user")
+	if anyway then anyway:close() end
 
 	-- Nothing under the cursor, and a pane whose character has gone. Both are
 	-- the original's to answer -- a reader opened on a nil player is a window
@@ -2193,10 +2288,11 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the three books, the four disks, the four hardware modules and
-	-- the book that teaches them.
-	eq("thirteen blocks: the module, the three books, the four disks, the four "
-		.. "hardware modules and the Field Wiring Guide", opens, 13)
+	-- The module, the three books, the four disks, the four hardware modules, the book
+	-- that teaches them, and the RETIRED single book -- which is declared and is not
+	-- loot, because dropping an item block deletes every copy of it in every save.
+	eq("fourteen blocks: the module, the three books, the retired one, the four "
+		.. "disks, the four hardware modules and the Field Wiring Guide", opens, 14)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -2220,7 +2316,32 @@ do
 			name = "CeroSec OS Programmer's Guide" },
 	}
 	eq("three item blocks and no more", #BOOKS, 3)
-	check("the legacy single-volume item is not declared", blocks.Manual == nil)
+
+	-- And the retired one, which is DECLARED and is not one of the set.
+	--
+	-- Asserted here rather than left out, because the two halves of the promise are
+	-- easy to half-keep: a wave that dropped the block would delete every copy in
+	-- every save (the reasoning is in the script, traced through the jar), and a wave
+	-- that put it back into BOOKS or into the loot tables would be printing a book
+	-- CeroSec Systems stopped printing.
+	check("the retired single-volume item is still declared", blocks.Manual ~= nil)
+	eq("under volume one's own name", string.match(blocks.Manual,
+		"DisplayName%s*=%s*([^,\n]+),"), "CeroSec OS User's Manual")
+	eq("and its own icon, so a copy in a crate looks like the book it was",
+		string.match(blocks.Manual, "Icon%s*=%s*([^,\n]+),"), "CeroSecManual")
+	check("its icon is a file the mod ships",
+		io.open("common/media/textures/Item_CeroSecManual.png", "r") ~= nil)
+	local inSet = false
+	for m = 1, #CeroSecManualMenu.BOOKS do
+		if CeroSecManualMenu.BOOKS[m].item == "CeroSec.Manual" then inSet = true end
+	end
+	check("it is NOT one of the three on the shelf", not inSet)
+	eq("but the menu opens it as volume one",
+		CeroSecManualMenu.volumeOf("CeroSec.Manual"), "user")
+	eq("and reading one turns it into the Guide",
+		CeroSecManualMenu.LEGACY.becomes, "CeroSec.ManualUser")
+	check("and the item it becomes is declared too",
+		blocks[string.match(CeroSecManualMenu.LEGACY.becomes, "^CeroSec%\.(.+)$")] ~= nil)
 
 	for b = 1, #BOOKS do
 		local book = BOOKS[b]
