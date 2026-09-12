@@ -7968,6 +7968,7 @@ do
 	-- And the list itself, which is what the glass was printed from: one station,
 	-- the far one, and never this station's own callsign -- a box does not hear
 	-- itself, and the boot screen has this machine's call on the glass already.
+	check("this box wrote the far station down", net.here.heard ~= nil)
 	eq("one station in the list", #net.here.heard, 1)
 	eq("and it is the far station", net.here.heard[1].call, theirCall)
 
