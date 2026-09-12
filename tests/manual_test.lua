@@ -1,6 +1,22 @@
--- Checks CeroSecManual.lua against the engine it describes. Run from the
--- repo root:
+-- Checks the manual against the engine it describes. Run from the repo root:
 --   lua5.1 tests/manual_test.lua
+--
+-- There are two books on the shelf now, and this file checks both.
+--
+-- CeroSecManual.lua is the LEGACY book: one volume, correct, written for
+-- somebody who has used a bigger Unix before. It stays until the three volumes
+-- that replace it all exist, and it keeps its own bounds here.
+--
+-- CeroSecManual.volumes[n] is a VOLUME of the 1993 documentation set -- Volume 1
+-- the User's Guide (CeroSecManualUser.lua), and whatever else has been written
+-- since. A volume has its own shape rules (8..12 chapters, 3..8 pages each,
+-- 50..70 pages) and its cover is stamped by the reader, not typed in the file.
+--
+-- The COVERAGE rule spans both: the UNION of the legacy book's reference
+-- chapters and every volume's must carry every COMMAND_INFO usage line, and the
+-- union of the error appendices must carry every error string the engine can
+-- print. So today the legacy book still carries the admin and programmer parts,
+-- and the day Volumes 2 and 3 cover them it may go.
 
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
@@ -36,9 +52,51 @@ do
 	dchunk()
 end
 
-local chunk, err = loadfile("42/media/lua/shared/CeroSec/CeroSecManual.lua")
+local MANUAL_DIR = "42/media/lua/shared/CeroSec/"
+
+local chunk, err = loadfile(MANUAL_DIR .. "CeroSecManual.lua")
 if not chunk then error("cannot load CeroSecManual.lua: " .. tostring(err)) end
 chunk()
+
+--
+-- The volumes.
+--
+-- Every CeroSecManual*.lua beside the legacy book is loaded, and a file counts
+-- as a volume only if loading it put something in CeroSecManual.volumes. That is
+-- what lets a new volume file be dropped in and checked with no change here, and
+-- what lets CeroSecManualBook.lua -- the LAYOUT engine, which is not text --
+-- sit in the same directory without being mistaken for a book.
+local volumeFiles = {}
+do
+	local ls = io.popen("ls -1 " .. MANUAL_DIR)
+	if ls == nil then error("cannot list " .. MANUAL_DIR) end
+	for name in ls:lines() do
+		if string.find(name, "^CeroSecManual.+%.lua$") ~= nil then
+			volumeFiles[#volumeFiles + 1] = name
+		end
+	end
+	ls:close()
+	table.sort(volumeFiles)
+end
+
+local volumes = {}
+do
+	CeroSecManual.volumes = CeroSecManual.volumes or {}
+	for i = 1, #volumeFiles do
+		local path = MANUAL_DIR .. volumeFiles[i]
+		local vchunk, verr = loadfile(path)
+		if not vchunk then error("cannot load " .. path .. ": " .. tostring(verr)) end
+		vchunk()
+	end
+	-- In the order they are read, not the order the files happened to be listed.
+	for n = 1, 16 do
+		local vol = CeroSecManual.volumes[n]
+		if type(vol) == "table" then
+			vol.number = n
+			volumes[#volumes + 1] = vol
+		end
+	end
+end
 
 local count = 0
 local function check(what, cond)
@@ -174,27 +232,61 @@ check("and the firmware version is one string in one place",
 check("total pages is 45..140 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 140)
 
 --
--- Every command in COMMAND_INFO appears in the quick-reference chapter,
--- with its exact usage line.
+-- The chapters that are LISTS, gathered across the legacy book and every
+-- volume: a reference chapter (the usage lines) and an error appendix (the
+-- strings the machine prints). The coverage rules below are about the UNION of
+-- them, not about any one book -- that is what lets a volume take a slice of the
+-- old book's job without the checks going soft in between.
 --
-local refChapter = nil
-for ci = 1, #chapters do
-	if string.find(chapters[ci].title, "commands and limits", 1, true) ~= nil then
-		refChapter = chapters[ci]
+local function chapterTextMatching(chapterList, ...)
+	local wanted = { ... }
+	local out = {}
+	for ci = 1, #chapterList do
+		local title = chapterList[ci].title
+		for wi = 1, #wanted do
+			if string.find(title, wanted[wi], 1, true) ~= nil then
+				local pages = chapterList[ci].pages
+				for pi = 1, #pages do out[#out + 1] = pages[pi] end
+				break
+			end
+		end
 	end
+	if #out == 0 then return nil end
+	return table.concat(out, "\n")
 end
-check("there is a quick-reference chapter", refChapter ~= nil)
 
-local refText = {}
-for pi = 1, #refChapter.pages do refText[#refText + 1] = refChapter.pages[pi] end
-refText = table.concat(refText, "\n")
+local REF_TITLES = { "commands and limits", "Quick reference" }
+local ERR_TITLES = { "what the machine says" }
 
+local refText = chapterTextMatching(chapters, unpack(REF_TITLES))
+check("the legacy book still has a quick-reference chapter", refText ~= nil)
+
+local errTextLegacy = chapterTextMatching(chapters, unpack(ERR_TITLES))
+check("the legacy book still has an error appendix", errTextLegacy ~= nil)
+
+-- The union, one string each.
+local refUnion = { refText }
+local errUnion = { errTextLegacy }
+for vi = 1, #volumes do
+	local vol = volumes[vi]
+	local r = chapterTextMatching(vol.chapters, unpack(REF_TITLES))
+	if r ~= nil then refUnion[#refUnion + 1] = r end
+	local e = chapterTextMatching(vol.chapters, unpack(ERR_TITLES))
+	if e ~= nil then errUnion[#errUnion + 1] = e end
+end
+refUnion = table.concat(refUnion, "\n")
+errUnion = table.concat(errUnion, "\n")
+
+--
+-- Every command in COMMAND_INFO appears in a quick-reference chapter, with its
+-- exact usage line.
+--
 local commandNames = {}
 for name, info in pairs(CeroSecOS.COMMAND_INFO) do
 	commandNames[#commandNames + 1] = name
-	check("quick reference names " .. name, string.find(refText, name, 1, true) ~= nil)
-	check("quick reference carries " .. name .. "'s exact usage line",
-		string.find(refText, info.usage, 1, true) ~= nil)
+	check("a quick reference names " .. name, string.find(refUnion, name, 1, true) ~= nil)
+	check("a quick reference carries " .. name .. "'s exact usage line",
+		string.find(refUnion, info.usage, 1, true) ~= nil)
 end
 table.sort(commandNames)
 check("collected every COMMAND_INFO entry", #commandNames > 0)
@@ -211,17 +303,7 @@ check("help is mentioned somewhere in the book", string.find(wholeBook, "help", 
 -- <path>/<name> halves are the caller's argument and are not literal
 -- strings the manual could quote).
 --
-local errChapter = nil
-for ci = 1, #chapters do
-	if string.find(chapters[ci].title, "what the machine says", 1, true) ~= nil then
-		errChapter = chapters[ci]
-	end
-end
-check("there is an error-message appendix", errChapter ~= nil)
-
-local errText = {}
-for pi = 1, #errChapter.pages do errText[#errText + 1] = errChapter.pages[pi] end
-errText = table.concat(errText, "\n")
+local errText = errUnion
 
 -- The shared filesystem reasons (CeroSecOSFS.lua), bare, before the shell
 -- prefixes them with "<command>: <path>: ".
@@ -507,6 +589,268 @@ do
 	check("/root ships at mode 700", state.fs.children.root.mode == 700)
 	check("book states /root ships at 700",
 		string.find(wholeBook, "/root, ships tighter, at 700", 1, true) ~= nil)
+end
+
+--
+-- The volumes.
+--
+-- Same form rules as the legacy book, with a volume's own bounds, plus the two
+-- things only a volume has: a cover that is NOT written in the file (the reader
+-- stamps it from CeroSecOS.VERSION, so a `title` typed here would be a second
+-- copy of the number) and a `name` for the reader to stamp it with.
+--
+check("at least one volume exists", #volumes >= 1)
+
+local volumeById = {}
+
+for vi = 1, #volumes do
+	local vol = volumes[vi]
+	local where = "volume " .. vol.number
+
+	check(where .. " has an id", type(vol.id) == "string" and vol.id ~= "")
+	check(where .. " has a name", type(vol.name) == "string" and vol.name ~= "")
+	check(where .. " has an edition", type(vol.edition) == "string" and vol.edition ~= "")
+	-- Not a mistake and not an omission: the cover is stamped, and a volume that
+	-- typed its own title would name an OS version the engine did not hand it.
+	check(where .. " leaves its title to the reader", vol.title == nil)
+	check(where .. " has chapters", type(vol.chapters) == "table")
+	volumeById[vol.id] = vol
+
+	local vchapters = vol.chapters
+	check(where .. " has 8..12 chapters (" .. #vchapters .. ")",
+		#vchapters >= 8 and #vchapters <= 12)
+
+	local vpages, vseen, vwhole = 0, {}, {}
+	for ci = 1, #vchapters do
+		local ch = vchapters[ci]
+		local cwhere = where .. " chapter " .. ci
+		check(cwhere .. " has a title", type(ch.title) == "string" and ch.title ~= "")
+		check(cwhere .. " title is unique", vseen[ch.title] == nil)
+		vseen[ch.title] = true
+		check(cwhere .. " has pages", type(ch.pages) == "table")
+		local n = #ch.pages
+		check(cwhere .. " (" .. ch.title .. ") has 3..8 pages (" .. n .. ")",
+			n >= 3 and n <= 8)
+		vpages = vpages + n
+
+		for pi = 1, n do
+			local page = ch.pages[pi]
+			local pwhere = where .. " " .. ch.title .. " page " .. pi
+			check(pwhere .. " is a string", type(page) == "string")
+			check(pwhere .. " is not empty",
+				page ~= "" and string.find(page, "%S") ~= nil)
+			check(pwhere .. " is at most 1000 characters (" .. #page .. ")", #page <= 1000)
+
+			for i = 1, #page do
+				local b = string.byte(page, i)
+				check(pwhere .. " byte " .. i .. " is ASCII (" .. b .. ")",
+					b == 9 or b == 10 or (b >= 32 and b <= 126))
+			end
+
+			for line in (page .. "\n"):gmatch("([^\n]*)\n") do
+				if string.sub(line, 1, 2) == "  " then
+					check(pwhere .. ' example line fits 60 columns: "' .. line ..
+						'" (' .. #line .. ")", #line <= 60)
+				end
+			end
+
+			-- No page names an OS version of its own, exactly as in the legacy
+			-- book: the cover is the only place the number appears at all. The
+			-- letter test in front of "OS" lets "CeroSec BIOS 1.0" through.
+			for pos in string.gmatch(page, "()OS %d+%.%d+") do
+				local before = pos > 1 and string.sub(page, pos - 1, pos - 1) or ""
+				check(pwhere .. " names no OS version of its own",
+					string.find(before, "%a") ~= nil)
+			end
+
+			vwhole[#vwhole + 1] = page
+		end
+	end
+
+	check(where .. " has 50..70 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 70)
+	vol.wholeText = table.concat(vwhole, "\n")
+end
+
+--
+-- Volume 1, the User's Guide, has two rules of its own.
+--
+do
+	local vol = volumeById["user"]
+	check("Volume 1 is the User's Guide", vol ~= nil and vol.name == "User's Guide")
+
+	--
+	-- 1. The reference card is nothing but exact usage lines.
+	--
+	-- Every line of it that is a screen line is one COMMAND_INFO usage line,
+	-- character for character. So a card entry cannot drift from the shell's own
+	-- grammar, and a command the card names with the wrong shape fails here
+	-- rather than sending a player to type something the machine refuses.
+	--
+	local card = nil
+	for ci = 1, #vol.chapters do
+		if string.find(vol.chapters[ci].title, "Quick reference", 1, true) ~= nil then
+			card = vol.chapters[ci]
+		end
+	end
+	check("Volume 1 has a quick-reference card", card ~= nil)
+
+	local carded, entries = {}, 0
+	for pi = 1, #card.pages do
+		for line in (card.pages[pi] .. "\n"):gmatch("([^\n]*)\n") do
+			if string.sub(line, 1, 2) == "  " then
+				local body = string.sub(line, 3)
+				local name = string.match(body, "^(%S+)")
+				check('card line names a command: "' .. body .. '"',
+					name ~= nil and CeroSecOS.COMMAND_INFO[name] ~= nil)
+				check('card line is ' .. name .. "'s exact usage line: \"" .. body .. '"',
+					body == CeroSecOS.commandUsage(name))
+				carded[name] = true
+				entries = entries + 1
+			end
+		end
+	end
+	-- A card that has quietly lost half its entries is a card that still passes
+	-- every check above.
+	check("the card carries at least 30 commands (" .. entries .. ")", entries >= 30)
+
+	-- And the commands a first volume has no business naming are not on it: the
+	-- accounts, the groups, sudo, the devices, cron and the network are Volumes
+	-- 2 and 3, and a card that hands a beginner `deluser` is a card that lies
+	-- about which book he is holding.
+	local NOT_VOLUME_ONE = {
+		"adduser", "deluser", "gpasswd", "groupadd", "groupdel", "sudo",
+		"dev", "crontab", "mail", "ifconfig", "ping", "rcp", "rlogin",
+		"rsh", "ruptime", "rwho", "hostname", "sh",
+	}
+	for i = 1, #NOT_VOLUME_ONE do
+		check("the card leaves " .. NOT_VOLUME_ONE[i] .. " to a later volume",
+			carded[NOT_VOLUME_ONE[i]] == nil)
+	end
+
+	--
+	-- 2. Every screen line that shows somebody typing shows a real word.
+	--
+	-- A "Try it" box that tells a beginner to type something the machine has
+	-- never heard of is the one kind of error that costs him his trust in the
+	-- whole book. Running all of them here is not possible -- most want a disk
+	-- in a particular state -- so what is checked is the first word of every
+	-- line that carries a prompt: it has to be a command the machine has, a word
+	-- the shell itself is, a reserved word, a variable being set, or a history
+	-- event.
+	--
+	-- The one exception is a short, declared list of words the book introduces on
+	-- purpose. Anything else is a typo or an invention, and fails.
+	local DELIBERATE = {
+		-- chapter 8 has the reader make this one himself, in ~/bin
+		hello = true,
+		-- chapter 2 types this on purpose, to show "command not found"
+		sl = true,
+	}
+
+	local shown = 0
+	for ci = 1, #vol.chapters do
+		local ch = vol.chapters[ci]
+		for pi = 1, #ch.pages do
+			for line in (ch.pages[pi] .. "\n"):gmatch("([^\n]*)\n") do
+				if string.sub(line, 1, 2) == "  " then
+					local word = string.match(line, "^  %S+@%S-[%$#] (%S+)")
+					if word ~= nil then
+						shown = shown + 1
+						local known = CeroSecOS.COMMAND_INFO[word] ~= nil
+							or CeroSecOS.SHELL_BUILTINS[word] == true
+							or CeroSecOS.RESERVED[word] == true
+							or DELIBERATE[word] == true
+							-- x=... , a variable being set
+							or string.find(word, "^[%a_][%w_]*=") ~= nil
+							-- !! and !5 , a line from the history
+							or string.find(word, "^!") ~= nil
+						check(ch.title .. ' page ' .. pi ..
+							' types a word the machine knows: "' .. word .. '"', known)
+					end
+				end
+			end
+		end
+	end
+	check("Volume 1 shows at least 30 typed lines (" .. shown .. ")", shown >= 30)
+
+	--
+	-- 3. The numbers a beginner will actually run into are the engine's.
+	--
+	-- Each of these is a whole PHRASE built from the constant, not the bare
+	-- number: "96" on its own is a substring of "4096" and "32" of "32768", so a
+	-- bare-number search passes on a book that has gone stale. What is searched
+	-- is the volume's own text with every run of whitespace flattened to one
+	-- space, because the reader reflows prose and a sentence may wrap anywhere.
+	--
+	local flat = string.gsub(vol.wholeText, "%s+", " ")
+	local function states(what, phrase)
+		check("Volume 1 states " .. what .. ': "' .. phrase .. '"',
+			string.find(flat, phrase, 1, true) ~= nil)
+	end
+
+	states("the screen", "Screen: " .. CeroSecOS.COLS .. " columns wide, "
+		.. CeroSec.ROWS .. " rows tall")
+	states("the editor's rows", "gets " .. CeroSec.EDIT_ROWS .. " of those rows")
+	states("the editor's line width",
+		"a line stops at " .. CeroSec.EDIT_MAX_LINE .. " characters")
+	states("the typing line", "typing line takes " .. CeroSec.INPUT_MAX .. " characters")
+	states("one file's ceiling", "One file: " .. CeroSecOS.MAX_FILE_BYTES .. " bytes.")
+	states("the drive", "The drive: " .. CeroSecOS.DISK_BYTES .. " bytes and "
+		.. CeroSecOS.MAX_NODES .. " files")
+	states("one directory's ceiling",
+		"One directory: " .. CeroSecOS.MAX_DIR_ENTRIES .. " entries.")
+	states("how deep a path may go",
+		CeroSecOS.MAX_DEPTH .. " levels of directory below the root, and "
+		.. CeroSecOS.MAX_NAME .. " characters in any one name")
+	states("the history kept", "the last " .. CeroSecOS.HISTORY_MAX .. " lines and "
+		.. (CeroSecOS.HISTORY_BYTES / 1024) .. " kilobytes")
+	states("what history prints",
+		"prints the last " .. CeroSecOS.HISTORY_SHOW .. " of them")
+	states("how many directories PATH may name",
+		"PATH may name " .. CeroSecOS.MAX_PATH_DIRS .. " directories")
+	states("how deep su stacks", "su stacks " .. CeroSecOS.SU_MAX .. " deep")
+
+	-- The name column of ls -l, which the legacy book gets wrong: it says
+	-- seventeen and the engine cuts at twelve. Measured off the engine rather
+	-- than typed, by listing a name too long for it and counting what came back.
+	do
+		local state = CeroSecOS.newState("ksp-04-11")
+		local session = CeroSecOS.login(state, "admin", "")
+		local ok, lines = CeroSecOS.runArgs(state, session,
+			{ "touch", string.rep("a", CeroSecOS.MAX_NAME) }, nil, { now = 0 })
+		check("the bench could make a long-named file", ok == true)
+		ok, lines = CeroSecOS.runArgs(state, session, { "ls", "-l" }, nil, { now = 0 })
+		check("the bench could list it", ok == true and #lines == 1)
+		local shown = string.match(lines[1], "(%S+)$")
+		check("and the engine really did cut the name", string.find(shown, "~", 1, true) ~= nil)
+		states("the ls -l name column", "a name up to " .. #shown .. " characters")
+		check("Volume 1 says the width in words too, in chapter 3",
+			string.find(flat, "twelve characters wide", 1, true) ~= nil)
+		check("and twelve really is the number the engine cut to", #shown == 12)
+	end
+
+	-- The two lines it quotes off a real screen, which are the two a player is
+	-- most likely to compare against the glass in front of him.
+	check("Volume 1 quotes the real BIOS line",
+		string.find(vol.wholeText, CeroSec.BOOT_LINES[1], 1, true) ~= nil)
+	-- editKeys() is padded out to the width of the bar it draws; what the book
+	-- shows is the bar with its trailing blank taken off, which a page may not
+	-- carry (a run of spaces at the end of a line is not something to print).
+	check("Volume 1 quotes the editor's key bar",
+		string.find(vol.wholeText, (string.gsub(CeroSec.editKeys(), "%s+$", "")), 1, true) ~= nil)
+
+	-- Every chapter carries its "Classic mistake" box. It is the shape Mathieu
+	-- asked for, and a chapter that quietly loses one loses the part a beginner
+	-- reads first.
+	for ci = 1, #vol.chapters do
+		local ch = vol.chapters[ci]
+		local has = false
+		for pi = 1, #ch.pages do
+			if string.find(ch.pages[pi], "Classic mistake", 1, true) ~= nil then has = true end
+		end
+		check(ch.title .. " has a Classic mistake box", has)
+	end
 end
 
 print(count .. " manual checks passed")
