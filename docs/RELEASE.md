@@ -13,7 +13,7 @@ and never a link, [TESTING.md](TESTING.md) for what the suite proves, and
 | --- | --- | --- |
 | 1 | Drop the two originals in place: `workshop/art/poster.png` (4:3) and `workshop/art/banner.png` (16:5) | by hand |
 | 2 | Cut the four published images | `python3 tools/make-workshop-images.py` |
-| 3 | Turn the one development flag off: `CeroSec.DEV_MANUAL_MENU = false` | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
+| 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |

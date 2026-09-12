@@ -8,7 +8,7 @@ See also: [PROTOCOL.md](PROTOCOL.md) for the wire the terminal runs on, which
 this window borrows; [ARCHITECTURE.md](ARCHITECTURE.md) for what the server
 holds and why an unloaded chunk changes nothing about it;
 [TESTING.md](TESTING.md) for the two suites that prove this, and
-[PARCOURS-TEST.md](PARCOURS-TEST.md#w-la-fenêtre-de-débogage-palier-debug) for
+[PARCOURS-TEST.md](PARCOURS-TEST.md#x-la-fenêtre-de-débogage-palier-debug) for
 the in-game walk.
 
 ## The two flags, and the one before release
@@ -313,4 +313,4 @@ box and button, and an `Events` register whose `Remove` really removes.
 
 The in-game half — what is actually on the glass, whether the columns line up,
 whether the buttons do what they say — is
-[PARCOURS-TEST.md](PARCOURS-TEST.md#w-la-fenêtre-de-débogage-palier-debug).
+[PARCOURS-TEST.md](PARCOURS-TEST.md#x-la-fenêtre-de-débogage-palier-debug).
