@@ -1702,7 +1702,6 @@ night has to be cut back. tail keeps the end of a file and wc counts it.
   echo "$log holds $n lines"
   if [ $n -gt $keep ]; then
       cat $log | tail -n $keep > $log.new
-      rm $log
       mv $log.new $log
       echo "cut back to $keep"
   fi
@@ -1713,9 +1712,11 @@ night has to be cut back. tail keeps the end of a file and wc counts it.
   admin@ksp-04-11:~$ head -n 1 watch.log
   entry 21
 
-The rm before the mv is not tidiness. mv will not write over a file that
-is already there -- it answers "file exists" and the whole thing quietly
-does nothing -- which is how the first draft of this page was wrong.]],
+There is no rm before the mv, and there must not be one. mv writes over
+the file already there -- a rename points a name somewhere else, and what
+it pointed at is gone -- so the new log takes the old name in one step,
+with no moment in which the log is missing. An earlier draft of this page
+had the rm, and with it a gap where a cron job would have found no log.]],
 
 [[Number five. A menu, for somebody who does not want to learn any of this.
 
@@ -1895,16 +1896,16 @@ And the ones about finding a program at all:
   sh: usage: sh <file> [args]
   sh: !<n>: event not found]],
 
-[[The reasons that come off the disk. Each wears the command's name and the
-path first: cat: notes: no such file.
+[[The reasons off the disk, each wearing the command's name and the path
+first: cat: notes: no such file.
 
   no such file          is a directory
   not a directory       permission denied
-  file exists           invalid name
   invalid characters    invalid destination
-  path too deep         is a device
+  path too deep         directory not empty
   file too large        directory full
-  disk full             /dev: read-only
+  file exists   invalid name   is a device
+  disk full     /dev: read-only
 
 A device answers in its OWN name and no command's:
 

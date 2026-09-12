@@ -660,6 +660,80 @@ do
 end
 
 --
+-- 6a. mv writes over what is already there.
+--
+-- rename(2) replaces its destination, and mv has done so since there was an mv.
+-- What decides is w on the DIRECTORY the name is in -- the listing is what is
+-- written -- and never the destination's own mode: a file nobody may write is
+-- still a name somebody may make mean something else.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	ok(state, admin, 'write keep.txt "new"', {})
+	ok(state, admin, 'write gone.txt "old"', {})
+	ok(state, admin, "mv keep.txt gone.txt", {})
+	ok(state, admin, "cat gone.txt", { "new" })
+	ok(state, admin, "ls", { "gone.txt" })
+
+	-- The destination's own mode decides nothing. 400 is a file its owner may
+	-- not write, and the name is still his to point somewhere else.
+	ok(state, admin, 'write src.txt "moved"', {})
+	ok(state, admin, "chmod 400 gone.txt", {})
+	ok(state, admin, "mv src.txt gone.txt", {})
+	ok(state, admin, "cat gone.txt", { "moved" })
+
+	-- The directory's mode decides everything. /etc is root's at 755, so a name
+	-- in it is not admin's to write over.
+	ok(state, admin, 'write mine.txt "x"', {})
+	bad(state, admin, "mv mine.txt /etc/motd", "mv: /etc/motd: permission denied")
+	ok(state, admin, "cat mine.txt", { "x" })
+
+	-- A directory destination is still moved INTO, and the collision that then
+	-- happens inside it is judged like any other.
+	ok(state, admin, "mkdir box", {})
+	ok(state, admin, 'write box/mine.txt "older"', {})
+	ok(state, admin, "mv mine.txt box", {})
+	ok(state, admin, "cat box/mine.txt", { "x" })
+
+	-- A directory is replaced only by a directory, and only an empty one.
+	ok(state, admin, "mkdir into", {})
+	ok(state, admin, "mkdir into/empty", {})
+	ok(state, admin, "mkdir empty", {})
+	ok(state, admin, "touch empty/inside.txt", {})
+	ok(state, admin, "mv empty into", {})
+	ok(state, admin, "ls into/empty", { "inside.txt" })
+
+	ok(state, admin, "mkdir full", {})
+	ok(state, admin, "touch into/full", {})
+	bad(state, admin, "mv full into", "mv: into/full: not a directory")
+	ok(state, admin, "rm into/full", {})
+	ok(state, admin, "mkdir into/full", {})
+	ok(state, admin, "touch into/full/held.txt", {})
+	bad(state, admin, "mv full into", "mv: into/full: directory not empty")
+	ok(state, admin, "ls into/full", { "held.txt" })
+
+	-- And a file is never written over a directory, whichever way round.
+	ok(state, admin, "touch loose.txt", {})
+	ok(state, admin, "mkdir into/loose.txt", {})
+	bad(state, admin, "mv loose.txt into", "mv: into/loose.txt: is a directory")
+
+	-- The bytes the destination held are freed BY the replacement: the disk after
+	-- it holds the source's bytes where the destination's used to be.
+	local _, before = CeroSecOS.usage(state)
+	ok(state, admin, 'write short.txt "ab"', {})
+	ok(state, admin, 'write long.txt "' .. string.rep("y", 200) .. '"', {})
+	local _, both = CeroSecOS.usage(state)
+	eq("two files on the disk", both, before + 202)
+	ok(state, admin, "mv short.txt long.txt", {})
+	local _, after = CeroSecOS.usage(state)
+	eq("and one of them after the replacement, holding the short file's bytes",
+		after, before + 2)
+	ok(state, admin, "cat long.txt", { "ab" })
+end
+
+--
 -- 7. Permissions enforced by the shell.
 --
 
@@ -796,6 +870,11 @@ do
 	eq("still at the ceiling after a rename",
 		CeroSecOS.countEntries(state.fs.children.home.children.admin), full)
 	bad(state, admin, "cp g1 f1", "cp: f1: directory full")
+	-- A rename ONTO a name that is taken works there too: a replacement adds no
+	-- entry to the listing either, so the ceiling has nothing to say about it.
+	ok(state, admin, "mv f2 f3", {})
+	eq("one fewer entry after a replacement",
+		CeroSecOS.countEntries(state.fs.children.home.children.admin), full - 1)
 end
 
 do
@@ -9055,6 +9134,12 @@ do
 		"mv: /home/bob/taken: permission denied")
 	badAt(state, bob, "mv /var/tmp/mine.txt /var/tmp/taken",
 		"mv: /var/tmp/taken: permission denied")
+	-- Nor write over it, which is the same thing done the other way round: a
+	-- rename ONTO a name in here destroys what the name meant, and destroying
+	-- somebody else's file is the one thing 777 in here does not allow.
+	badAt(state, bob, "mv /var/tmp/bobs.txt /var/tmp/mine.txt",
+		"mv: /var/tmp/mine.txt: permission denied")
+	ok(state, bob, "cat /var/tmp/mine.txt", { "admin here" })
 	check("and it is all still there",
 		CeroSecOS.systemNode(state, "/var/tmp/mine.txt") ~= nil)
 

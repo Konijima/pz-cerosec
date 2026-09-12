@@ -311,6 +311,9 @@ local FS_REASONS = {
 	"no such file", "is a directory", "not a directory", "permission denied",
 	"file exists", "invalid name", "path too deep", "directory full",
 	"disk full", "file too large", "invalid characters", "invalid destination",
+	-- What a move answers when it is asked to write a directory over one that
+	-- has something in it: rename(2)'s ENOTEMPTY, in this machine's own words.
+	"directory not empty",
 }
 for i = 1, #FS_REASONS do
 	check("error appendix carries the reason \"" .. FS_REASONS[i] .. "\"",

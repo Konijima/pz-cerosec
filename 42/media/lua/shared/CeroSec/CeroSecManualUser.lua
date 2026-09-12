@@ -389,25 +389,28 @@ Wrap words in double quotes when your text has a space in it.]],
 cp copies a file, mv renames or moves one, and rm destroys one. All three
 take the thing first and where it is going second.
 
-Try it, with ls after every line so you can see what changed.
+Try it, with ls after every line to see what changed.
 
   admin@ksp-04-11:~$ cp note.txt spare.txt
   admin@ksp-04-11:~$ mv spare.txt old.txt
   admin@ksp-04-11:~$ rm old.txt
 
+mv over a name that is taken writes over it without asking: that is how
+you replace a file in one step, and how a mistyped destination destroys
+one.
+
 A directory is not a file, and none of the three will take a whole
 directory without being told twice. cp wants -r for "and everything
-inside it". rm wants -r for the same reason, and refuses outright without
-it:
+inside it", and rm wants -r for the same reason:
 
   admin@ksp-04-11:~$ rm notes
   rm: notes: is a directory
   admin@ksp-04-11:~$ rm -r notes
 
 Read that second line twice before you press Enter. rm -r does not ask,
-it does not confirm, and there is no way to get any of it back. There is
-no wastebasket on this machine. CeroSec Systems has lost more customer
-data to a hurried rm -r than to every power cut in Kentucky.]],
+it does not confirm, and there is no way to get any of it back. CeroSec
+Systems has lost more customer data to a hurried rm -r than to every
+power cut in Kentucky.]],
 
 [[Looking at a file properly: ls -l.
 
@@ -1396,6 +1399,9 @@ what it actually means.
       you may not read, write or step into it
   file exists
       something is already at that name
+  directory not empty
+      mv was asked to write a directory over one that
+      has something in it
 
 Classic mistake. Reading the first word and the last word and skipping the
 middle one. The middle piece is the only part that tells you which file the

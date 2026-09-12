@@ -455,7 +455,12 @@ end
 -- move, which only changes where an already counted node hangs).
 -- fromParent, when given, is the directory the node is leaving: a rename inside
 -- a full directory must not trip the entry limit.
-local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, fromParent)
+-- replace says a name already taken is not a refusal but a REPLACEMENT, which is
+-- what rename(2) does and what a move is (see CeroSecOS.moveNode). A replacement
+-- takes no new entry in the listing either, so the entry limit is not asked
+-- about it: a full directory can still have one of its own names written over.
+local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, fromParent,
+		replace)
 	if #parts == 0 then return nil, nil, "file exists" end
 	local name = parts[#parts]
 	if not CeroSecOS.isValidFileName(name) then return nil, nil, "invalid name" end
@@ -471,9 +476,11 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 	local parent, reason = CeroSecOS.getNode(state, session, parentPath)
 	if parent == nil then return nil, nil, reason end
 	if parent.type ~= "dir" then return nil, nil, "not a directory" end
-	if parent.children[name] ~= nil then return nil, nil, "file exists" end
+	local taken = parent.children[name] ~= nil
+	if taken and not replace then return nil, nil, "file exists" end
 	if not CeroSecOS.can(state, session, parent, "w") then return nil, nil, "permission denied" end
-	if parent ~= fromParent and CeroSecOS.countEntries(parent) >= CeroSecOS.MAX_DIR_ENTRIES then
+	if not taken and parent ~= fromParent
+			and CeroSecOS.countEntries(parent) >= CeroSecOS.MAX_DIR_ENTRIES then
 		return nil, nil, "directory full"
 	end
 
@@ -610,6 +617,25 @@ end
 
 -- Detach a node and reattach it elsewhere, without ever leaving it dangling:
 -- the destination is fully checked before the source is unhooked.
+--
+-- A destination that already exists is REPLACED, which is what rename(2) does and
+-- what `mv` has done since there was an mv: the name is made to mean the source,
+-- and what it used to mean is gone. Three things stand in the way and the
+-- destination's own mode is NOT one of them -- a file you may not write is still a
+-- name you may make mean something else, because what is written is the
+-- DIRECTORY's listing and w on the directory is the permission for that:
+--
+--   * a directory is replaced only by a directory, and only an empty one
+--     ("directory not empty"): what rename answers with ENOTEMPTY;
+--   * a directory is never replaced by a file ("is a directory"), nor a file by a
+--     directory ("not a directory");
+--   * a sticky directory's rule holds over the name being written as well as the
+--     one being taken away: replacing somebody else's file in /var/tmp is
+--     destroying it, which is the one thing 777 there does not allow.
+--
+-- The bytes the destination held are freed by the replacement itself -- one
+-- assignment, the old node dropped as the new one lands -- so a move never asks
+-- the disk for room it is about to give back.
 function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local fromAbs, fromParts = CeroSecOS.resolve(session, fromPath)
 	local toAbs, toParts = CeroSecOS.resolve(session, toPath)
@@ -633,8 +659,24 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	if not stickyOk(state, session, fromParentPath, node) then return nil, "permission denied" end
 
 	local parent, name, areason =
-		checkAttach(state, session, toParts, 0, 0, subtreeDepth(node), fromParent)
+		checkAttach(state, session, toParts, 0, 0, subtreeDepth(node), fromParent, true)
 	if parent == nil then return nil, areason end
+
+	-- What is about to be written over, judged before anything is unhooked.
+	local old = parent.children[name]
+	if old ~= nil and old ~= node then
+		-- Not through a move. A device is the world around the machine and is not
+		-- a name on the disk to be written over (see removeNode).
+		if CeroSecOS.isDev(old) then return nil, "is a device" end
+		if node.type == "dir" then
+			if old.type ~= "dir" then return nil, "not a directory" end
+			if CeroSecOS.countEntries(old) > 0 then return nil, "directory not empty" end
+		elseif old.type == "dir" then
+			return nil, "is a directory"
+		end
+		local toParentPath = CeroSecOS.parentOf(toParts)
+		if not stickyOk(state, session, toParentPath, old) then return nil, "permission denied" end
+	end
 
 	fromParent.children[fromName] = nil
 	parent.children[name] = node

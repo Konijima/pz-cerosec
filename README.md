@@ -172,7 +172,7 @@ Commands:
 | `touch <file>` | create an empty file, or move an existing one's date to now |
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
-| `mv <src> <dst>` | move or rename |
+| `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
 | `ln -s <target> <name>` | make a symbolic link; there are no hard links here |
 | `readlink <name>` | print what a link points at, and nothing at all for anything else |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
