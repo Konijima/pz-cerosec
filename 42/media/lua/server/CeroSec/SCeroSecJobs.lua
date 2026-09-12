@@ -5,6 +5,7 @@ require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSCron"
 require "CeroSec/OS/CeroSecOSScript"
 require "CeroSec/OS/CeroSecOSVM"
+require "CeroSec/SCeroSecNet"
 
 --
 -- The scheduler.
@@ -98,6 +99,11 @@ end
 -- job needs whoever built it.
 local function enrol(system, luaObject, console, job, bg)
 	local book = CeroSecJobs.book(luaObject)
+	-- Which screen it belongs to. A console with a line name is a pty's -- a
+	-- session that came in over the wire -- and every job it starts is tagged with
+	-- it, so the scheduler knows whose glass to write on and so the session taking
+	-- its shell away takes its jobs too.
+	if console ~= nil and type(console.line) == "string" then job.pty = console.line end
 	book.seq = book.seq + 1
 	job.id = CeroSecJobs.FIRST_ID + book.seq - 1
 	-- The prompt's own job holds no slot: `[1]` is what the shell STARTED, and
@@ -447,7 +453,8 @@ end
 -- even when the command printed nothing at all.
 --
 -- Returns the steps it spent.
-function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token, force)
+function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token,
+		force, forConsole)
 	local book = luaObject.jobs
 	if book == nil or #book.list == 0 then
 		CeroSecJobs.killAll(luaObject)
@@ -458,11 +465,36 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		return 0
 	end
 	local state = luaObject:osState()
-	local console = luaObject:consoleState()
-	if state == nil or console == nil then
+	local own = luaObject:consoleState()
+	if state == nil or own == nil then
 		CeroSecJobs.killAll(luaObject)
 		return 0
 	end
+
+	-- Which screen a job writes to.
+	--
+	-- A job the survivor at the keyboard started writes to the machine's own
+	-- console. One started down an rlogin writes to the pty's, which is on
+	-- somebody else's glass -- and a pty that has GONE, because the session was
+	-- closed while the job was still running, is a shell with no terminal: the
+	-- job goes with it, exactly as it goes when the machine is switched off.
+	local function screenOf(job)
+		if job.pty == nil then return own end
+		local pty = CeroSecOS.remoteLine(luaObject.ptys, job.pty)
+		if pty == nil then return nil end
+		return pty.console
+	end
+
+	-- Every screen this pass touched, so each is pushed once and no more. A
+	-- machine with the survivor at its keyboard and three sessions in from the
+	-- wire has four of them, and a line written on one is nobody else's business.
+	local dirty, dirtyList = {}, {}
+	local function touch(console)
+		if console == nil or dirty[console] then return end
+		dirty[console] = true
+		dirtyList[#dirtyList + 1] = console
+	end
+	if force then touch(forConsole or own) end
 
 	local env = system:execEnv(luaObject, state, playerObj, token)
 	env.nowMs = now
@@ -475,6 +507,11 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	for i = 1, #book.list do
 		local job = book.list[i]
 
+		-- The session it was running for has gone. Nothing it writes has anywhere
+		-- to go, so it stops here.
+		if job.pty ~= nil and screenOf(job) == nil then
+			CeroSecOS.killJob(job, nil)
+		end
 		-- A `wait` whose jobs have all gone.
 		if job.state == "waiting" and job.waitFor ~= nil
 				and CeroSecOS.jobWaitDone(job, book.list) then
@@ -506,11 +543,14 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		-- it: `cd` typed at the glass moves the machine's cursor, and `su`
 		-- changes who the machine is logged in as. Written back every pass,
 		-- because the job may move it at any step and the screen that goes out
-		-- below has to agree with it.
-		if job.interactive then system:writeSession(console, job.session) end
+		-- below has to agree with it. The console is the job's own, which down an
+		-- rlogin is the pty's: a `cd` typed there moves that session and not the
+		-- survivor's who is standing at the far machine.
+		if job.interactive then
+			local screen = screenOf(job)
+			if screen ~= nil then system:writeSession(screen, job.session) end
+		end
 	end
-
-	local changed = force and true or false
 
 	-- A statement with "&" behind it, asked for by a job that is already
 	-- running. One per pass and per job, so a loop full of them makes four jobs
@@ -532,7 +572,11 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			-- (SCeroSecSystem:startPrompt) and the pass that MAKES a job is
 			-- never the pass the line finishes in, so it has to know.
 			job.spawned = true
-			local made = CeroSecJobs.start(system, luaObject, console, order, true)
+			local screen = screenOf(job)
+			local made = nil
+			if screen ~= nil then
+				made = CeroSecJobs.start(system, luaObject, screen, order, true)
+			end
 			if made == nil then
 				-- Said by the job that asked, so it drains at the same rate its
 				-- own output does: a loop full of refusals is as quiet as a
@@ -540,11 +584,13 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				CeroSecOS.jobSay(job, "sh: too many jobs")
 				job.status = 1
 			end
-			changed = true
+			touch(screen)
 		end
 	end
 
-	-- The output, at the rate the screen and the network can take it.
+	-- The output, at the rate the screen and the network can take it. The rate is
+	-- the MACHINE's and is shared by every screen on it: four sessions trickling
+	-- at once cost the server what one does.
 	local room = outRoom(book, now)
 	for i = 1, #book.list do
 		local job = book.list[i]
@@ -564,64 +610,86 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				CeroSecOS.mailAppend(state, job.mailTo, CeroSecOS.hostname(state), cmd,
 					job.out, CeroSecOS.clockOf(env))
 				job.out = {}
-				changed = true
+				touch(own)
 			end
 		else
-		local kept = {}
-		for k = 1, #job.out do
-			if room > 0 then
-				CeroSec.consolePush(console, job.out[k])
-				room = room - 1
-				book.winCount = book.winCount + 1
-				changed = true
-			else
-				kept[#kept + 1] = job.out[k]
+			local screen = screenOf(job)
+			local kept = {}
+			for k = 1, #job.out do
+				if room > 0 and screen ~= nil then
+					CeroSec.consolePush(screen, job.out[k])
+					room = room - 1
+					book.winCount = book.winCount + 1
+					touch(screen)
+				else
+					kept[#kept + 1] = job.out[k]
+				end
 			end
-		end
-		job.out = kept
+			job.out = kept
 		end
 	end
 
 	-- The question a foreground job is asking, put up as an ordinary console
 	-- prompt with an ordinary token. The console cannot tell a script's `read`
-	-- from passwd's own question, and does not have to.
-	local fg = CeroSecJobs.foreground(luaObject, console)
-	if fg ~= nil and fg.ask ~= nil and console.prompt == nil then
-		console.prompt = { text = fg.ask.text or "", mask = fg.ask.mask and true or false,
-			cont = { cmd = "job", id = fg.id } }
-		changed = true
+	-- from passwd's own question, and does not have to. Asked of every screen on
+	-- the machine, because each has a foreground job of its own.
+	local screens = { own }
+	do
+		local ptys = CeroSecOS.ptyList(luaObject.ptys)
+		for i = 1, #ptys do
+			if type(ptys[i].console) == "table" then screens[#screens + 1] = ptys[i].console end
+		end
+	end
+	for s = 1, #screens do
+		local screen = screens[s]
+		local fg = CeroSecJobs.foreground(luaObject, screen)
+		if fg ~= nil and fg.ask ~= nil and screen.prompt == nil then
+			screen.prompt = { text = fg.ask.text or "", mask = fg.ask.mask and true or false,
+				cont = { cmd = "job", id = fg.id } }
+			touch(screen)
+		end
 	end
 
 	-- Reaping. A job is only taken off the machine once the last of its output
 	-- has reached the screen, or the last thing it said would be lost.
-	local kept = {}
-	local control, controlData = nil, nil
+	--
+	-- An order a job gave belongs to the screen that job was writing to, so the
+	-- orders are collected as pairs and carried out after every screen has gone
+	-- out. A machine can have four of them in one pass.
+	local kept, orders = {}, {}
 	for i = 1, #book.list do
 		local job = book.list[i]
 		if CeroSecOS.jobIsOver(job) and #job.out == 0 then
+			local screen = screenOf(job)
 			-- A cron job says nothing when it ends either: "[1] done" is a
 			-- message to whoever started it, and nobody started this one.
 			local line = nil
 			if job.mailTo == nil then line = endLine(job) end
-			if line ~= nil then
-				CeroSec.consolePush(console, line)
+			if line ~= nil and screen ~= nil then
+				CeroSec.consolePush(screen, line)
 				book.winCount = book.winCount + 1
 			end
-			if console.job == job.id then
-				console.job = nil
+			if screen ~= nil and screen.job == job.id then
+				screen.job = nil
 				-- The status the prompt comes back with, kept on the console the
 				-- way a shell keeps $?.
-				console.status = job.status
-				if console.prompt ~= nil and type(console.prompt.cont) == "table"
-						and console.prompt.cont.cmd == "job" then
-					console.prompt = nil
+				screen.status = job.status
+				if screen.prompt ~= nil and type(screen.prompt.cont) == "table"
+						and screen.prompt.cont.cmd == "job" then
+					screen.prompt = nil
+				end
+				-- An rsh is one command and the session was for it: when it is
+				-- over, so is the connection. Carried out with the other orders,
+				-- after the last of its output has reached the glass.
+				if CeroSecNet.isOneShot(luaObject, screen) then
+					orders[#orders + 1] = { console = screen, control = "endsession" }
 				end
 			end
-			if job.control ~= nil then
-				control = job.control
-				controlData = job.controlData
+			if job.control ~= nil and screen ~= nil then
+				orders[#orders + 1] = { console = screen, control = job.control,
+					data = job.controlData }
 			end
-			changed = true
+			touch(screen)
 		else
 			kept[#kept + 1] = job
 		end
@@ -629,22 +697,44 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	book.list = kept
 	if #book.list == 0 and luaObject.shutdown == nil then forget(luaObject) end
 
-	if changed then
+	if #dirtyList > 0 then
 		luaObject:mirrorOS()
-		system:pushScreen(luaObject, state, console)
+		for i = 1, #dirtyList do
+			system:pushScreen(luaObject, state, dirtyList[i])
+		end
 	end
-	-- Last, and never before the screen has gone out: a line that ended on
+
+	-- Last, and never before the screens have gone out: a line that ended on
 	-- `reboot` is a screen every survivor at the machine watches go down.
+	for i = 1, #orders do
+		CeroSecJobs.applyControl(system, luaObject, state, book, orders[i], playerObj)
+	end
+	return used
+end
+
+-- One order a finished job gave, carried out. Pulled out of runMachine because a
+-- machine can now finish four lines in one pass -- one at its own keyboard and
+-- one down each session -- and each order belongs to the screen its job was
+-- writing to.
+function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerObj)
+	local console = order.console
+	local control = order.control
+	local data = order.data
 	if control == "clear" then
 		CeroSec.consoleClear(console)
 		system:pushScreen(luaObject, state, console)
 	elseif control == "exit" then
-		CeroSec.consoleLogout(console)
+		-- `exit` at the glass logs the account out. Down an rlogin it is the end
+		-- of the SESSION: the shell rlogind started has gone, so there is nothing
+		-- left to be logged into and the connection closes, which is what every
+		-- rlogin has done since the first one.
+		if CeroSecNet.endSession(system, luaObject, console) then return end
+		system:logOut(luaObject, state, console)
 		system:pushScreen(luaObject, state, console)
 	elseif control == "edit" then
-		system:applyOrder(console, control, controlData, playerObj)
+		system:applyOrder(console, control, data, playerObj)
 		system:pushScreen(luaObject, state, console)
-	elseif control == "fg" and type(controlData) == "table" then
+	elseif control == "fg" and type(data) == "table" then
 		-- `fg`: the console's attention moves to a job it already has. Only the
 		-- machine can do it -- the engine has no console -- and it is two things
 		-- and nothing more: the job stops being a background job, so what it
@@ -652,21 +742,25 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		-- the prompt belongs to it, which is what makes Escape its ^C.
 		for i = 1, #book.list do
 			local job = book.list[i]
-			if job.id == controlData.id and not CeroSecOS.jobIsOver(job) then
+			if job.id == data.id and not CeroSecOS.jobIsOver(job) then
 				job.bg = false
 				console.job = job.id
 				system:pushScreen(luaObject, state, console)
 			end
 		end
 	elseif control == "schedule" then
-		CeroSecJobs.schedule(luaObject, controlData)
+		CeroSecJobs.schedule(luaObject, data)
 	elseif control == "cancel" then
 		luaObject.shutdown = nil
+	elseif control == "rlogin" or control == "rsh" then
+		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj)
+	elseif control == "endsession" then
+		CeroSecNet.endSession(system, luaObject, console)
 	elseif control ~= nil then
 		system:applyPower(luaObject, control)
 	end
-	return used
 end
+
 
 --
 -- One pass over every machine

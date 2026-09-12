@@ -265,6 +265,7 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSUsers.lua",
 	"shared/CeroSec/OS/CeroSecOSVM.lua",
 	"server/CeroSec/SCeroSecDevices.lua",
+	"server/CeroSec/SCeroSecNet.lua",
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
@@ -3331,6 +3332,709 @@ do
 		string.find(mail, "good", 1, true) ~= nil)
 	check("and nothing of the bad one", mail ~= nil and
 		string.find(mail, "bad", 1, true) == nil)
+end
+
+--
+-- 40. The network (rung 6a)
+--
+-- Two machines in one building and one in another, all three real
+-- SCeroSecObjects on one real SCeroSecSystem, with the real link layer between
+-- them. What is asserted is what a player would read on the glass.
+--
+-- The bench deliberately gives the machines nothing but a SQUARE and a BUILDING
+-- DEF -- no IsoObject at all, exactly as SGlobalObject answers for a chunk the
+-- streamer has not brought in -- and one of the three has its square taken away
+-- after it has been switched on, which is the state a computer at the far end of
+-- the county is in. It still answers ruptime, ping, rlogin and rcp, because the
+-- server holds its disk whatever the streamer is doing (see the head of
+-- SCeroSecNet.lua).
+--
+
+local function newNet()
+	CeroSecJobs.machines = {}
+	local system = SCeroSecSystem:new()
+	local objects = {}
+
+	-- A building is two numbers and nothing else as far as the wire is
+	-- concerned: the corner of its BuildingDef, which is where it stands on the
+	-- map and does not move.
+	local function buildingAt(bx, by)
+		local def = { getX = function() return bx end, getY = function() return by end }
+		return { getDef = function() return def end }
+	end
+
+	local function machine(x, y, z, building)
+		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
+		local square = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getRoom = function() return nil end,
+			getBuilding = function() return building end,
+			getObjects = function() return { size = function() return 0 end } end,
+		}
+		object.getIsoObject = function() return nil end
+		object.getSquare = function() return square end
+		object.updateOnClient = function() end
+		object.playSound = function() end
+		object.syncSprite = function() end
+		object:initNew()
+		object.hasPower = function() return true end
+		objects[#objects + 1] = object
+		return object
+	end
+
+	system.getLuaObjectCount = function() return #objects end
+	system.getLuaObjectByIndex = function(_, i) return objects[i] end
+	system.getLuaObjectAt = function(_, x, y, z)
+		for i = 1, #objects do
+			local o = objects[i]
+			if o.x == x and o.y == y and o.z == z then return o end
+		end
+		return nil
+	end
+	system.getIsoObjectAt = function() return nil end
+
+	local office = buildingAt(400, 700)
+	local shed = buildingAt(900, 120)
+	local net = { system = system, objects = objects, machine = machine,
+		office = office, shed = shed }
+
+	-- Two in the office, one in the shed down the road.
+	net.here = machine(10, 10, 0, office)
+	net.gate = machine(12, 10, 0, office)
+	net.far = machine(60, 60, 0, shed)
+	for i = 1, #objects do objects[i]:turnOn() end
+
+	-- A window on the first one, wired the way newBench wires its own.
+	local player = {
+		getPlayerNum = function() return 0 end,
+		getOnlineID = function() return -1 end,
+		isDead = function() return false end,
+		playSoundLocal = function() end,
+		getCurrentSquare = function() return { getZ = function() return 0 end } end,
+		getX = function() return 10.5 end,
+		getY = function() return 10.5 end,
+	}
+	local computer = {
+		getSquare = function() return { getX = function() return 10 end,
+			getY = function() return 10 end, getZ = function() return 0 end } end,
+		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end,
+	}
+	local window = CeroSecTerminal:new(0, 0, player, computer)
+	window:initialise()
+	window:createChildren()
+	window.stillValid = function() return true end
+	window.painted = {}
+	window.rects = {}
+	window.drawText = function(self, text, x, y)
+		self.painted[#self.painted + 1] = { text = text, x = x, y = y }
+	end
+	window.drawRect = function() end
+	net.window = window
+
+	net.said = {}
+	local function record(a)
+		if type(a) ~= "table" or type(a.lines) ~= "table" then return end
+		for i = 1, #a.lines do net.said[#net.said + 1] = a.lines[i] end
+	end
+	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
+		local replies = {}
+		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
+		system:OnClientCommand(command, sender, args)
+		for i = 1, #replies do window:onServerCommand(replies[i][1], replies[i][2]) end
+	end } }
+
+	function net.tick(times)
+		for _ = 1, (times or 1) do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			local replies = {}
+			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
+			CeroSecJobs.tick()
+			for i = 1, #replies do window:onServerCommand(replies[i][1], replies[i][2]) end
+		end
+		net.frame()
+	end
+
+	function net.frame()
+		window.painted = {}
+		window:prerender()
+		window:render()
+	end
+
+	function net.enter(line)
+		_G.__now = _G.__now + 1000
+		window.entry:setText(line or "")
+		window.entry:setCursorPos(#(line or ""))
+		window:onCommandEntered()
+		net.frame()
+	end
+
+	function net.escape()
+		_G.__now = _G.__now + 100
+		window:onOtherKey(Keyboard.KEY_ESCAPE)
+		net.frame()
+	end
+
+	function net.glass(needle)
+		for i = 1, #window.painted do
+			local text = window.painted[i].text
+			if type(text) == "string" and string.find(text, needle, 1, true) then return true end
+		end
+		return false
+	end
+
+	function net.heard(needle)
+		for i = 1, #net.said do
+			if string.find(net.said[i], needle, 1, true) then return true end
+		end
+		return false
+	end
+
+	-- Forget every line said so far. A screen is a hundred lines and a bench that
+	-- asks "was this never said" has to ask it of one command and not of the whole
+	-- session before it.
+	function net.forget()
+		net.said = {}
+	end
+
+	function net.login(name, password)
+		window:askForScreen()
+		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+		net.frame()
+		net.enter(name)
+		net.enter(password or "")
+	end
+
+	-- Write a file on any of the three, as root, the way the editor would.
+	function net.put(object, path, text, mode, owner)
+		local state = object:osState()
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(), path,
+			text, false, 100)
+		if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+		local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+		if mode ~= nil then node.mode = mode end
+		if owner ~= nil then node.owner = owner end
+		return node
+	end
+
+	function net.text(object, path)
+		local node = CeroSecOS.systemNode(object:osState(), path)
+		if type(node) ~= "table" or node.type ~= "file" then return nil end
+		return node.data or ""
+	end
+
+	function net.addr(object)
+		return CeroSecOS.address(object:osState())
+	end
+
+	function net.host(object)
+		return CeroSecOS.hostname(object:osState())
+	end
+
+	-- Name the other two in this machine's /etc/hosts, which is the only resolver
+	-- there is: a survivor who has not written a line cannot say "gate".
+	function net.name(object, other, as)
+		local state = object:osState()
+		local node = CeroSecOS.systemNode(state, CeroSecOS.HOSTS_PATH)
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+			(node.data or "") .. "\n" .. net.addr(other) .. " " .. as, 100)
+	end
+
+	return net
+end
+
+--
+-- Identity: an address per machine, the same three numbers for one building.
+--
+
+do
+	local net = newNet()
+	local a, b, c = net.addr(net.here), net.addr(net.gate), net.addr(net.far)
+	check("every machine has an address", a ~= nil and b ~= nil and c ~= nil)
+	check("and it is on the ten network", string.sub(a, 1, 3) == "10.")
+	-- The first three numbers are the building's and the last is the machine's.
+	local netA = string.match(a, "^(%d+%.%d+%.%d+)%.%d+$")
+	local netB = string.match(b, "^(%d+%.%d+%.%d+)%.%d+$")
+	local netC = string.match(c, "^(%d+%.%d+%.%d+)%.%d+$")
+	eq("two machines in one building share a network", netB, netA)
+	check("a machine in another building does not", netC ~= netA)
+	check("and the two in one building are two machines", a ~= b)
+	eq("the first is .1", a, netA .. ".1")
+	eq("the second is .2", b, netA .. ".2")
+
+	-- Derived from where the building stands, so it is the same answer twice.
+	local b1, b2 = CeroSecOS.buildingKey(400, 700)
+	eq("the address is the building's key and the machine's number",
+		a, CeroSecOS.addressText(b1, b2, 1))
+
+	-- And the machine wrote itself one line of /etc/hosts and no more.
+	local hosts = net.text(net.here, "/etc/hosts")
+	check("the machine's own line is in /etc/hosts",
+		string.find(hosts, a .. " " .. net.host(net.here), 1, true) ~= nil)
+	check("and so is the loopback",
+		string.find(hosts, "127.0.0.1 localhost", 1, true) ~= nil)
+	-- Asked again, nothing moves: the file is the player's from here on.
+	CeroSecNet.identify(net.system, net.here, net.here:osState())
+	eq("identify twice writes nothing twice", net.text(net.here, "/etc/hosts"), hosts)
+end
+
+--
+-- ifconfig, and the BIOS line
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+	check("the BIOS announced the card", net.heard("Ethernet: eth0 " .. net.addr(net.here)))
+
+	net.enter("ifconfig")
+	check("ifconfig names eth0", net.glass("eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>"))
+	check("with the address on it", net.glass("inet " .. net.addr(net.here)
+		.. " netmask 0xffffff00"))
+	check("and the loopback under it", net.glass("lo0: flags=8<LOOPBACK>"))
+	net.enter("ifconfig eth9")
+	check("a card that is not there", net.glass("ifconfig: interface eth9 does not exist"))
+end
+
+-- A computer in no building has no wire, and says so rather than inventing one.
+do
+	local net = newNet()
+	local loose = net.machine(80, 80, 0, nil)
+	loose:turnOn()
+	eq("a machine in no building has no address", CeroSecOS.address(loose:osState()), nil)
+	local ok, lines = CeroSecOS.runArgs(loose:osState(),
+		{ user = "root", cwd = "/root" }, { "ifconfig" }, nil, { now = 0 })
+	eq("ifconfig says the card is down", lines[1], "eth0: flags=2<BROADCAST>")
+	check("and prints no inet line for it",
+		string.find(lines[2], "lo0", 1, true) ~= nil)
+end
+
+--
+-- ruptime and rwho
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+	-- Somebody logged in on gate as well, so the counts are two different
+	-- numbers rather than the same one twice.
+	local gateConsole = net.gate:consoleState()
+	gateConsole.user = "root"
+	gateConsole.cwd = "/root"
+	gateConsole.loginAt = 100
+
+	_G.__now = _G.__now + 65000
+	net.enter("ruptime")
+	local host = net.host(net.here)
+	local gate = net.host(net.gate)
+	check("this machine is on the list", net.glass(host))
+	check("and so is the other one in the building", net.glass(gate))
+	check("with one user on it", net.glass("1 user,"))
+	check("the machine down the road is not", not net.glass(net.host(net.far)))
+	check("and the load is printed the way ruptime prints it", net.glass("load 0.00"))
+
+	net.enter("rwho")
+	check("rwho names the account and where it is sitting",
+		net.glass("root") and net.glass(gate .. ":console"))
+	check("and the one at this keyboard", net.glass("admin"))
+end
+
+--
+-- ping
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.name(net.here, net.far, "shed")
+	net.login("admin")
+
+	net.enter("ping gate")
+	check("ping names what it is pinging",
+		net.heard("PING gate (" .. net.addr(net.gate) .. "): 56 data bytes"))
+	check("the first packet answered",
+		net.heard("64 bytes from " .. net.addr(net.gate) .. ": icmp_seq=0 ttl=255 time=0.4 ms"))
+	-- The other two are a second apart, so the job is asleep in between.
+	check("nothing of the second packet yet", not net.heard("icmp_seq=1"))
+	net.tick(4)
+	check("still asleep after four passes", not net.heard("icmp_seq=1"))
+	net.tick(12)
+	check("the second packet came round", net.heard("icmp_seq=1"))
+	net.tick(12)
+	check("and the third", net.heard("icmp_seq=2"))
+	check("with the statistics behind it", net.heard("--- gate ping statistics ---"))
+	check("three out of three", net.heard("3 packets transmitted, 3 packets received, 0% packet loss"))
+	check("and a round trip", net.heard("round-trip min/avg/max = 0.4/0.4/0.4 ms"))
+
+	-- A name nothing carries is refused before a packet is sent.
+	net.enter("ping pump")
+	check("an unknown name is ping's own refusal", net.glass("ping: unknown host pump"))
+end
+
+-- A machine nothing can reach, on a bench where no packet has ever arrived: the
+-- screen is a hundred lines and every push carries all of them, so "this was
+-- never said" is only a true question of a session that has not said it yet.
+do
+	local net = newNet()
+	net.name(net.here, net.far, "shed")
+	net.login("admin")
+	net.enter("ping shed")
+	net.tick(30)
+	check("the machine down the road never answers", not net.heard("bytes from"))
+	check("and the summary says so",
+		net.heard("3 packets transmitted, 0 packets received, 100% packet loss"))
+	check("with no round trip on it", not net.heard("min/avg/max"))
+end
+
+-- A switched-off machine on the same wire is a machine that answers nothing.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+	net.gate:turnOff()
+	net.enter("ping gate")
+	net.tick(30)
+	check("a dark machine answers nothing", not net.heard("bytes from"))
+	check("and the loss is total",
+		net.heard("3 packets transmitted, 0 packets received, 100% packet loss"))
+end
+
+--
+-- rlogin: with a password, with a trust file, and refused
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(2)
+	check("the far machine asks who is there", net.glass("login:"))
+	eq("and the window is drawing the far machine's screen", net.window.mode, "prompt")
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	local gate = net.host(net.gate)
+	check("the prompt is the far machine's", net.glass("admin@" .. gate))
+
+	-- Every line typed is the far machine's now.
+	net.enter("hostname")
+	net.tick(2)
+	check("hostname answers with the far machine's name", net.glass(gate))
+	net.enter("pwd")
+	net.tick(2)
+	check("and pwd with the far machine's home", net.glass("/home/admin"))
+
+	-- Who is logged in over there, and where he came from.
+	net.enter("who")
+	net.tick(2)
+	check("who names the pty", net.glass("ttyp0"))
+	check("and the machine the session came from", net.glass("(" .. net.host(net.here) .. ")"))
+
+	-- The local machine's history kept the rlogin line and nothing typed over
+	-- there; the far machine's history kept what was typed on it.
+	local here = net.text(net.here, "/home/admin/.sh_history")
+	check("the local history has the rlogin line",
+		string.find(here, "rlogin gate", 1, true) ~= nil)
+	check("and not what was typed on the far machine",
+		string.find(here, "hostname", 1, true) == nil)
+	local there = net.text(net.gate, "/home/admin/.sh_history")
+	check("the far machine's history has it", there ~= nil and
+		string.find(there, "hostname", 1, true) ~= nil)
+
+	-- exit ends the session and the glass comes back.
+	net.forget()
+	net.enter("exit")
+	net.tick(3)
+	check("the session says it is over", net.heard("Connection closed."))
+	check("and the local prompt is back", net.glass("admin@" .. net.host(net.here)))
+	eq("the far machine has no pty left", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("and the local console is looking at nothing",
+		net.here:consoleState().remote == nil)
+end
+
+-- A wrong password is one answer and no session.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/nothing", "x")
+	local state = net.gate:osState()
+	CeroSecOS.setPassword(state, "admin", "hunter2", 1, 100)
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(2)
+	net.enter("admin")
+	net.enter("wrong")
+	net.tick(2)
+	check("the far machine refuses", net.heard("login incorrect"))
+	check("and asks again", net.glass("login:"))
+	eq("the pty is still open while it asks", CeroSecOS.ptyCount(net.gate.ptys), 1)
+	-- A remote login prompt with nothing typed at it is not the machine being in
+	-- the middle of something, so Escape there is what closes the connection.
+	net.escape()
+	net.tick(3)
+	eq("Escape closed the session", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("and the local prompt is back", net.glass("admin@" .. net.host(net.here)))
+end
+
+-- ~/.rhosts, and the two ways it is ignored.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	local from = net.host(net.here)
+	-- Owned by somebody else: ignored without a word.
+	net.put(net.gate, "/home/admin/.rhosts", from .. " admin", 600, "bob")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(2)
+	check("a .rhosts that is not the account's own is ignored", net.glass("login:"))
+	net.escape()
+	net.tick(3)
+
+	-- The account's own, but the world may write it: ignored as well.
+	net.put(net.gate, "/home/admin/.rhosts", from .. " admin", 666, "admin")
+	net.enter("rlogin gate")
+	net.tick(2)
+	check("nor is one anybody may write", net.glass("login:"))
+	net.escape()
+	net.tick(3)
+
+	-- And now properly: 600, owned by admin.
+	net.put(net.gate, "/home/admin/.rhosts", from .. " admin", 600, "admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("a trusted login is asked for no password",
+		net.glass("admin@" .. net.host(net.gate)))
+	check("and is logged in", net.gate.ptys.ttyp0.console.user == "admin")
+	-- wtmp on the far machine says who came in and from where.
+	local wtmp = net.text(net.gate, "/var/log/wtmp")
+	check("the far machine's wtmp has the login",
+		string.find(wtmp, "in admin ttyp0 " .. from, 1, true) ~= nil)
+	net.enter("exit")
+	net.tick(3)
+	check("and the logout behind it",
+		string.find(net.text(net.gate, "/var/log/wtmp"), "out admin ttyp0 " .. from,
+			1, true) ~= nil)
+end
+
+-- /etc/hosts.equiv is the machine's own half of the same question.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("a bare host name trusts the same account on it",
+		net.glass("admin@" .. net.host(net.gate)))
+	-- And it never trusts root, which is ruserok's own rule.
+	eq("hosts.equiv does not let root in",
+		CeroSecOS.equivOk(net.gate:osState(), net.host(net.here), "root", "root"), false)
+end
+
+--
+-- last
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+	net.enter("last")
+	check("last names the account at the keyboard", net.glass("admin"))
+	check("on the console", net.glass("console"))
+	check("and says he is still there", net.glass("still logged in"))
+	check("with the file's own beginning under it", net.glass("wtmp begins"))
+	net.enter("exit")
+	net.tick(2)
+	net.login("admin")
+	net.enter("last")
+	check("a session that ended carries how long it lasted", net.glass(" - "))
+end
+
+--
+-- rsh
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+
+	-- No trust, no password, no command.
+	net.enter("rsh gate hostname")
+	net.tick(3)
+	check("rsh never asks and never runs without trust",
+		net.glass("rsh: gate: Permission denied"))
+	eq("and took no line on the far machine", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.forget()
+	net.enter("rsh gate hostname")
+	net.tick(4)
+	check("with trust it runs and the answer comes back", net.heard(net.host(net.gate)))
+	check("and says nothing about a connection", not net.heard("Connection closed."))
+	net.tick(4)
+	eq("the session closed when the command was done",
+		CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("and the local prompt is back", net.glass("admin@" .. net.host(net.here)))
+end
+
+--
+-- rcp, both ways, and the far machine's quota
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.put(net.here, "/etc/hosts.equiv", net.host(net.gate), 644, "root")
+	net.login("admin")
+
+	net.enter("echo hello > notes.txt")
+	net.tick(2)
+	net.enter("rcp notes.txt gate:/home/admin/there.txt")
+	-- The wire takes as long as it takes, so the command is asleep.
+	net.tick(8)
+	eq("the file landed on the far machine", net.text(net.gate, "/home/admin/there.txt"),
+		"hello")
+	check("and nothing was said about it", not net.glass("rcp:"))
+
+	-- And back again, under another name.
+	net.enter("rcp gate:/home/admin/there.txt back.txt")
+	net.tick(8)
+	eq("and comes back", net.text(net.here, "/home/admin/back.txt"), "hello")
+
+	-- The far machine's own ceilings, not this one's: a file too big for a file.
+	local big = string.rep("y", CeroSecOS.MAX_FILE_BYTES + 1)
+	local state = net.here:osState()
+	CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/notes.txt").data = big
+	net.enter("rcp notes.txt gate:/home/admin/big.txt")
+	net.tick(4)
+	check("the far machine refuses what will not fit a file",
+		net.glass("rcp: /home/admin/big.txt: file too large"))
+	eq("and nothing landed", net.text(net.gate, "/home/admin/big.txt"), nil)
+
+	-- A machine that does not trust this one refuses the copy outright.
+	net.put(net.gate, "/etc/hosts.equiv", "# nobody", 644, "root")
+	net.enter("rcp back.txt gate:/home/admin/no.txt")
+	net.tick(4)
+	check("rcp with no trust", net.glass("rcp: gate: Permission denied"))
+end
+
+--
+-- The limits: four sessions, two hops, another building, an unknown name
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.name(net.here, net.far, "shed")
+	net.login("admin")
+
+	net.enter("rlogin shed")
+	net.tick(2)
+	check("a machine in another building has no wire to it",
+		net.glass("rlogin: shed: No route to host"))
+	net.enter("rlogin pump")
+	net.tick(2)
+	check("and a name nothing carries", net.glass("rlogin: pump: unknown host"))
+
+	net.gate:turnOff()
+	net.enter("rlogin gate")
+	net.tick(2)
+	check("a dark machine on the wire is down", net.glass("rlogin: gate: Host is down"))
+	net.gate:turnOn()
+
+	-- Four lines in by hand, and the fifth is refused.
+	local far = net.gate:osState()
+	net.gate.ptys = {}
+	for i = 1, CeroSecOS.PTY_MAX do
+		local pty = CeroSecOS.remoteOpen(far, net.gate.ptys, { fromHost = "other", hops = 1 })
+		check("line " .. i .. " opened", pty ~= nil)
+	end
+	eq("four lines are taken", CeroSecOS.ptyCount(net.gate.ptys), CeroSecOS.PTY_MAX)
+	net.enter("rlogin gate")
+	net.tick(2)
+	check("the fifth caller is refused", net.glass("rlogin: connect: Connection refused"))
+	net.gate.ptys = {}
+end
+
+-- Two hops, and the third refused.
+do
+	local net = newNet()
+	local third = net.machine(14, 10, 0, net.office)
+	third:turnOn()
+	net.name(net.here, net.gate, "gate")
+	net.name(net.gate, third, "pump")
+	net.name(third, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.put(third, "/etc/hosts.equiv", net.host(net.gate), 644, "root")
+	net.put(net.gate, "/etc/hosts.equiv",
+		net.host(net.here) .. "\n" .. net.host(third), 644, "root")
+	net.login("admin")
+
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("one hop out", net.glass("admin@" .. net.host(net.gate)))
+	net.enter("rlogin pump")
+	net.tick(3)
+	check("two hops out", net.glass("admin@" .. net.host(third)))
+	eq("and the chain is two long",
+		CeroSecOS.ptyCount(net.gate.ptys) + CeroSecOS.ptyCount(third.ptys), 2)
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("the third hop is refused", net.glass("rlogin: connect: Connection refused"))
+
+	-- The far machine going dark ends the whole chain behind it.
+	net.forget()
+	third:turnOff()
+	net.enter("hostname")
+	net.tick(3)
+	check("a session whose machine went dark is over", net.heard("Connection closed."))
+end
+
+-- A machine whose chunk nobody has loaded still answers.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	-- Switched on, numbered, and then the streamer takes its square away: this
+	-- is exactly what SGlobalObject answers for an unloaded chunk.
+	net.gate.getSquare = function() return nil end
+	net.gate.getIsoObject = function() return nil end
+	eq("the unloaded machine has no square", net.gate:getSquare(), nil)
+	net.login("admin")
+
+	net.enter("ruptime")
+	check("and is still on the wire", net.glass(net.host(net.gate)))
+	net.enter("ping gate")
+	net.tick(30)
+	check("and still answers a ping",
+		net.heard("3 packets transmitted, 3 packets received, 0% packet loss"))
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("and still takes a login", net.glass("admin@" .. net.host(net.gate)))
+	net.enter("echo deep > /home/admin/deep.txt")
+	net.tick(3)
+	eq("and its disk is really written", net.text(net.gate, "/home/admin/deep.txt"), "deep")
+end
+
+-- Shutting the far machine down from inside the session closes it.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	net.forget()
+	net.enter("sudo halt")
+	net.enter("")
+	net.tick(4)
+	eq("the far machine is off", net.gate.on, false)
+	check("and the session said so", net.heard("Connection closed."))
+	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
 end
 
 print("window_test: " .. count .. " checks passed")

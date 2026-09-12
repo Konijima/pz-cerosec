@@ -406,6 +406,13 @@ function CeroSecOS.newJob(opts)
 			stamp = session.stamp,
 			login = CeroSecOS.loginOf(session),
 			stack = CeroSecOS.copyStack(session.stack),
+			-- Which terminal the job is running on, and how many rlogins out it
+			-- is. Both are facts about the SCREEN and not about the job, so they
+			-- travel into it rather than being looked up: `who am i` in a script
+			-- names the line the script was started from, and an rlogin inside a
+			-- session is one hop further out than the session is.
+			line = session.line,
+			hops = session.hops,
 		},
 		frames = { { k = "block", prog = opts.prog, i = 1 } },
 		caps = {},

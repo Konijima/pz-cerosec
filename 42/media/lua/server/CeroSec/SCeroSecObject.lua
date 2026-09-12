@@ -14,6 +14,7 @@ require "CeroSec/OS/CeroSecOSScript"
 require "CeroSec/OS/CeroSecOSShell"
 require "CeroSec/OS/CeroSecOSComplete"
 require "CeroSec/OS/CeroSecOSVM"
+require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
 
 SCeroSecObject = SGlobalObject:derive("SCeroSecObject")
@@ -108,6 +109,10 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
+	-- A computer being picked up is a computer that lost its power: every session
+	-- on it and every session it had open ends, and the glass at the far end of
+	-- each is told.
+	CeroSecNet.closeSessions(self.luaSystem, self)
 	self.console = nil
 	CeroSecJobs.killAll(self)
 	self:dropWatchers()
@@ -308,6 +313,13 @@ function SCeroSecObject:turnOn()
 	-- here, so there is nothing to repair and nothing to check.
 	self.console = CeroSec.newConsole()
 	self.consoleChecked = true
+	-- When it came up, for ruptime. Runtime state like the jobs: a server that
+	-- came back up forgets it, and ruptime counts from the restart.
+	self.upMs = getTimestampMs()
+	-- Which building it stands in, and therefore its address. Here rather than at
+	-- the first command because the power check has just proved the chunk is
+	-- loaded, which is the one thing working a building out needs.
+	CeroSecNet.identify(self.luaSystem, self, self:osState())
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	-- @reboot, which is the one crontab line that is not a time: the machine has
@@ -318,6 +330,17 @@ end
 
 function SCeroSecObject:turnOff()
 	if not self.on then return false end
+	-- The sessions first, before the console is thrown away: it is what remembers
+	-- where the outbound one went, and the inbound ones have a glass each to tell.
+	-- A survivor logged in at the keyboard gets his logout written too, or `last`
+	-- would say he is still there for ever.
+	local state = self:osState()
+	if state ~= nil and type(self.console) == "table"
+			and type(self.console.user) == "string" then
+		CeroSecOS.wtmpAppend(state, "out", self.console.user, CeroSecOS.CONSOLE_LINE,
+			nil, CeroSecOS.clockOf(self.luaSystem:clockEnv()))
+	end
+	CeroSecNet.closeSessions(self.luaSystem, self)
 	self.on = false
 	-- Everything that was running is gone with the power, which is what a
 	-- switch at the back of the case does. reboot goes through here too, so a

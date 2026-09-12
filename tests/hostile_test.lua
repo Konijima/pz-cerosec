@@ -57,6 +57,7 @@ local FILES = {
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSSystem.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSUsers.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSVM.lua",
+	"42/media/lua/server/CeroSec/SCeroSecNet.lua",
 	"42/media/lua/server/CeroSec/SCeroSecJobs.lua",
 }
 for i = 1, #FILES do

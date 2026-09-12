@@ -190,6 +190,11 @@ function CeroSecTerminal:new(x, y, playerObj, computer)
 	-- Whether the machine is in the middle of something. The machine's word,
 	-- and the only thing Escape looks at to tell an interrupt from a close.
 	o.active = false
+	-- Whether what is on the glass is a session on another machine. The machine's
+	-- word again, and Escape is the only thing that reads it: at an idle remote
+	-- prompt there is a connection to give up on, so the key is an interrupt
+	-- rather than the close of a window nobody asked to shut.
+	o.remote = false
 
 	-- The editor. edit is the machine's word about it -- the path, the buffer,
 	-- the file on the disk, and whether this window is the one holding the
@@ -412,6 +417,7 @@ function CeroSecTerminal:showScreen(args, animate)
 	self.screen = args.lines or {}
 	self.prompt = args.prompt or ""
 	self.active = args.active and true or false
+	self.remote = args.remote and true or false
 	self.scroll = 0
 
 	if animate and #self.screen > 0 then
@@ -1166,7 +1172,11 @@ function CeroSecTerminal:onOtherKey(key)
 	-- (args.active) and never something worked out from the prompt on the
 	-- glass -- the window cannot tell "New password: " from any other question,
 	-- and should not have to.
-	if self.active then
+	-- A remote session is the one place Escape means something at an IDLE prompt
+	-- too: the survivor is still standing at his own machine, so the window has
+	-- nothing to shut, and what there is to give up on is the connection. The
+	-- machine decides which of the two it is; the window only asks.
+	if self.active or self.remote then
 		self:setBusy()
 		self:send("interrupt", {})
 		return

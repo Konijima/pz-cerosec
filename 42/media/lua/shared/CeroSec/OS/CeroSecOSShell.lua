@@ -2237,6 +2237,11 @@ local function rootSessionFrom(session)
 		login = CeroSecOS.loginOf(session),
 		stack = CeroSecOS.copyStack(session.stack),
 		borrowed = true,
+		-- The terminal is the terminal whoever the command runs as: `sudo rlogin`
+		-- is one hop further out than the session that typed it, and `sudo who am
+		-- i` names the line it was typed on.
+		line = session.line,
+		hops = session.hops,
 	}
 end
 
@@ -2935,6 +2940,8 @@ continueLine = function(state, session, cont, line, env, redirect)
 			login = CeroSecOS.loginOf(session),
 			stack = CeroSecOS.copyStack(session.stack),
 			borrowed = true,
+			line = session.line,
+			hops = session.hops,
 			-- Which session is the real one at the glass, for the one command
 			-- that acts on it: `sudo su bob` answered a password first is still
 			-- bob at this computer (see suTarget).

@@ -426,12 +426,25 @@ CeroSec.BOOT_LINES = {
 -- Which of those lines carries the capacity.
 CeroSec.BOOT_DISK_LINE = 3
 
+-- And what the card is called when the firmware finds one. The address is NOT
+-- written here and could not be: it is a fact about which building the computer
+-- stands in, and the BIOS is handed it (see CeroSec.bootLines).
+CeroSec.BOOT_ETHER = "Ethernet: " .. "eth0 "
+
 -- The BIOS as it goes onto a screen: the lines above with the real disk on the
--- drive line. A copy every time, so nothing ever writes into the template.
-function CeroSec.bootLines()
+-- drive line, and the card under it when the machine has an address. A copy every
+-- time, so nothing ever writes into the template.
+--
+-- A machine with no address prints no Ethernet line at all -- one in a
+-- player-built base has no wire to be on -- rather than a line with nothing after
+-- the colon, which would be a BIOS announcing hardware the machine has not got.
+function CeroSec.bootLines(addr)
 	local out = {}
 	for i = 1, #CeroSec.BOOT_LINES do out[i] = CeroSec.BOOT_LINES[i] end
 	out[CeroSec.BOOT_DISK_LINE] = out[CeroSec.BOOT_DISK_LINE] .. CeroSecOS.diskLabel()
+	if type(addr) == "string" and addr ~= "" then
+		table.insert(out, CeroSec.BOOT_DISK_LINE + 1, CeroSec.BOOT_ETHER .. addr)
+	end
 	return out
 end
 
@@ -639,6 +652,10 @@ function CeroSec.repairConsole(console)
 	end
 	-- $?, as the prompt last came back with it.
 	if type(console.status) == "number" then out.status = math.floor(console.status) end
+	-- When the account at the glass logged in, which is what `who` prints. Machine
+	-- state like the account itself: a survivor who walked away and came back is
+	-- still logged in since the minute he sat down.
+	if type(console.loginAt) == "number" then out.loginAt = math.floor(console.loginAt) end
 	-- The su stack: machine state like the user and the working directory, and
 	-- saved with them. Kept entry by entry, only where an entry is still a name
 	-- and a path, and never deeper than the ceiling -- a forged console must not

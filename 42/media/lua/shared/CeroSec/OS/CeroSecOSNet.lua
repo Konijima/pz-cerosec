@@ -1320,6 +1320,10 @@ commands.rcp = function(state, session, args, env)
 	end
 	local spec = {
 		addr = addr, host = host, user = CeroSecOS.userOf(session),
+		-- Where the caller is standing, so the local half of the copy resolves a
+		-- relative path the way every other command on the line does. The tilde is
+		-- already gone: the shell expanded it before this command saw a thing.
+		cwd = session.cwd or "/",
 		fromHost = CeroSecOS.hostname(state),
 		push = toHost ~= nil,
 		remote = toPath or fromPath,

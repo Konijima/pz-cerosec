@@ -3,6 +3,7 @@ if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/SCeroSecDevices"
+require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
 require "CeroSec/SCeroSecObject"
 
@@ -243,6 +244,40 @@ function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
 	return luaObject, state, console
 end
 
+-- Where a keystroke goes.
+--
+-- A window is open on ONE computer and names that one in every command it sends.
+-- What is on its glass may be a shell on another machine entirely: an rlogin puts
+-- the far machine's session on this screen, and a second one puts a third
+-- machine's session on it. So every command that types AT the machine resolves
+-- the chain here, and what comes back is the machine whose shell is behind the
+-- glass, that machine's filesystem, the console the glass is showing, and the
+-- computer the window is actually standing at.
+--
+-- A chain that has gone -- the far machine switched off, the session closed from
+-- the other side, the computer picked up -- is torn down here and the glass goes
+-- back to the console it belongs to. That is the honest answer for a keystroke
+-- sent to a session that is over, and it is the one place every command gets it
+-- for free.
+function SCeroSecSystem:targetFor(playerObj, x, y, z, token)
+	local host, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not host then return nil end
+	local object, at = host, state
+	-- Bounded by the hop ceiling and one more, so a chain can never be a loop:
+	-- every link was made by an rlogin that paid for it.
+	for _ = 1, CeroSecOS.HOP_MAX + 1 do
+		if console.remote == nil then return object, at, console, host end
+		local pty, far, farState = CeroSecNet.farOf(self, console)
+		if pty == nil then
+			CeroSecNet.hangUp(self, console)
+			self:pushScreen(object, at, console)
+			return nil
+		end
+		object, at, console = far, farState, pty.console
+	end
+	return object, at, console, host
+end
+
 --
 -- The BIOS
 --
@@ -327,6 +362,12 @@ function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	-- refused and `shutdown -c` knows there is something to cancel. Read, never
 	-- written: the scheduler owns the timer, and a command only asks about it.
 	if luaObject ~= nil then env.shutdown = luaObject.shutdown end
+	-- The wire. Like the devices, it is an answer about a MOMENT -- which machines
+	-- are on it right now, and who is sitting at them -- so it is built fresh for
+	-- every line typed and never remembered.
+	if luaObject ~= nil and state ~= nil then
+		env.net = CeroSecNet.envFor(self, luaObject, state)
+	end
 	return env
 end
 
@@ -454,6 +495,13 @@ function SCeroSecSystem:sessionOf(console)
 		stamp = getTimestampMs(),
 		login = console.user,
 		stack = console.stack,
+		-- Which line this session is on, and how many rlogins out it is. Both are
+		-- facts about the SCREEN: the survivor at the keyboard is on the console
+		-- and is nought hops out, and a session that came in over the wire carries
+		-- its pty's name and the depth of the chain it is part of. `who` prints
+		-- the first and rlogin refuses a third hop on the second.
+		line = console.line or CeroSecOS.CONSOLE_LINE,
+		hops = console.hops or 0,
 	}
 end
 
@@ -465,6 +513,19 @@ function SCeroSecSystem:writeSession(console, session)
 	local stack = session.stack
 	if type(stack) ~= "table" or #stack == 0 then stack = nil end
 	console.stack = stack
+end
+
+-- Logging out, and the line it leaves in the machine's own record of who was on
+-- it. One place, because a logout happens in two -- an `exit` answered at a
+-- question, and an `exit` a job finished on -- and a `last` that only saw one of
+-- them would be a `last` that told half the truth.
+function SCeroSecSystem:logOut(luaObject, state, console)
+	if type(console.user) == "string" then
+		CeroSecOS.wtmpAppend(state, "out", console.user,
+			console.line or CeroSecOS.CONSOLE_LINE, console.fromHost,
+			CeroSecOS.clockOf(self:clockEnv()))
+	end
+	CeroSec.consoleLogout(console)
 end
 
 function SCeroSecSystem:isAdmin(state, name)
@@ -575,12 +636,28 @@ function SCeroSecSystem:editArgs(luaObject, state, console, playerObj)
 	}
 end
 
+-- Which machine's windows are looking at a console.
+--
+-- Its own, normally. A remote session's console lives on the machine whose shell
+-- is behind it and is watched from the machine the window is open on, and every
+-- answer about it has to carry THAT computer's coordinates -- a terminal believes
+-- nothing that does not name the computer it is standing at
+-- (CeroSecTerminal:isMine).
+function SCeroSecSystem:watchedAt(luaObject, console)
+	local at = console.watchAt
+	if type(at) ~= "table" then return luaObject end
+	local object = self:getLuaObjectAt(at.x, at.y, at.z)
+	if object == nil then return luaObject end
+	return object
+end
+
 -- One screen, as a window has to be told it. The prompt is derived from the
 -- console here and nowhere else, so no two windows can disagree about it.
 function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 	local hostname = self:hostnameOf(luaObject, state)
+	local at = self:watchedAt(luaObject, console)
 	return {
-		x = luaObject.x, y = luaObject.y, z = luaObject.z,
+		x = at.x, y = at.y, z = at.z,
 		token = token,
 		hostname = hostname,
 		booted = console.booted and true or false,
@@ -601,6 +678,10 @@ function SCeroSecSystem:screenArgs(luaObject, state, console, token, playerObj)
 		-- with every screen would put a hundred lines on the wire every time
 		-- anybody typed anything.
 		user = console.user,
+		-- Whether what is on the glass is a session on another machine. The
+		-- window needs exactly one thing from it: Escape at an idle remote prompt
+		-- closes the session instead of closing the window.
+		remote = console.line ~= nil and true or false,
 	}
 end
 
@@ -612,7 +693,11 @@ function SCeroSecSystem:sendHistory(luaObject, state, console, playerObj, token)
 	if state ~= nil and console.user ~= nil then
 		lines = CeroSecOS.historyTail(state, self:sessionOf(console), CeroSecOS.HISTORY_TAIL)
 	end
-	self:reply(playerObj, "history", { x = luaObject.x, y = luaObject.y, z = luaObject.z,
+	-- Addressed to one window, so it names the computer that window is standing
+	-- at: down an rlogin the history is the far machine's and the coordinates are
+	-- still this one's.
+	local seat = self:watchedAt(luaObject, console)
+	self:reply(playerObj, "history", { x = seat.x, y = seat.y, z = seat.z,
 		token = token, lines = lines })
 end
 
@@ -620,8 +705,9 @@ end
 -- requester is one of them and is answered here like the others, by its own
 -- token -- there is no private half of a screen anybody is standing in front of.
 function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
-	if not luaObject.watchers then return end
-	for key, watcher in pairs(luaObject.watchers) do
+	local at = self:watchedAt(luaObject, console)
+	if not at.watchers then return end
+	for key, watcher in pairs(at.watchers) do
 		if watcher.player and key ~= exceptKey then
 			self:reply(watcher.player, "screen",
 				self:screenArgs(luaObject, state, console, watcher.token, watcher.player))
@@ -650,7 +736,11 @@ end
 function SCeroSecSystem:bootScreen(console, state)
 	if console.booted then return false end
 	console.booted = true
-	CeroSec.consolePushAll(console, CeroSec.bootLines())
+	-- The card and its address, which the firmware can only announce once the
+	-- server has worked out which building the computer stands in.
+	local addr = nil
+	if state ~= nil then addr = CeroSecOS.address(state) end
+	CeroSec.consolePushAll(console, CeroSec.bootLines(addr))
 	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
 	return true
 end
@@ -795,6 +885,12 @@ Commands.open = function(self, playerObj, x, y, z, token)
 	local key = watcherKeyOf(playerObj, token)
 	luaObject:addWatcher(key, playerObj, token)
 
+	-- Which building the computer stands in, and therefore its address. Asked
+	-- here and when the machine is switched on, because those are the two moments
+	-- the chunk is certainly loaded -- and written into the machine's own state,
+	-- so that every other question about the wire can be answered without it.
+	CeroSecNet.identify(self, luaObject, luaObject:osState())
+
 	-- What the machine has on its disk, decided before a single line is put on
 	-- the screen: the boot either ends at a login prompt or it ends at the
 	-- BIOS' question, and which of the two is not the window's business.
@@ -822,24 +918,25 @@ end
 -- that typed at a prompt that has since changed gets the screen back and
 -- nothing else.
 Commands.input = function(self, playerObj, x, y, z, token, args)
-	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
-	if not luaObject then return end
+	local host, hostConsole = self:biosConsoleFor(playerObj, x, y, z, token)
+	if not host then return end
 
 	local text = args.text
 	if type(text) ~= "string" then text = "" end
 
 	-- The BIOS' question is answered before anything asks for a filesystem:
-	-- there may not be one, and that is what is being asked about.
-	if self:atBios(console) then
-		self:answerBios(luaObject, console, playerObj, token, text)
+	-- there may not be one, and that is what is being asked about. It is always
+	-- the computer the window is standing at -- a machine with no operating
+	-- system has nothing to rlogin out of.
+	if self:atBios(hostConsole) then
+		self:answerBios(host, hostConsole, playerObj, token, text)
 		return
 	end
 
-	local state = luaObject:osState()
-	if not state then
-		self:replyClosed(playerObj, x, y, z, "broken", token)
-		return
-	end
+	-- And then wherever the glass is really typing: this machine, or a session
+	-- on another one.
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
+	if not luaObject then return end
 
 	-- What the core ordered, if anything did. Declared out here because the
 	-- power orders are carried out after the screen has gone out, and the
@@ -871,6 +968,14 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- glass is still set, exactly as nothing of his session is.
 			console.shvars = {}
 			console.status = nil
+			-- When, and on which line: what `who` prints and what `last` reads
+			-- back out of /var/log/wtmp. The console's own line is "console" --
+			-- the survivor is at the keyboard -- and a pty's is its own name,
+			-- with the machine it came from beside it.
+			local now = CeroSecOS.clockOf(self:clockEnv())
+			console.loginAt = now or 0
+			CeroSecOS.wtmpAppend(state, "in", session.user,
+				console.line or CeroSecOS.CONSOLE_LINE, console.fromHost, now)
 			CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
 			-- ~/.profile, after the greeting and before the first prompt, the
 			-- way sh has run it since the seventh edition. It runs as the
@@ -909,7 +1014,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- the editor above all -- need to know whose keyboard is on the
 			-- machine. `sudo reboot` ends here, on the password.
 			CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
-				getTimestampMs(), playerObj, token, true)
+				getTimestampMs(), playerObj, token, true, console)
 			return
 		end
 
@@ -921,7 +1026,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		self:writeSession(console, session)
 		luaObject:mirrorOS()
 		if control == "exit" then
-			CeroSec.consoleLogout(console)
+			self:logOut(luaObject, state, console)
 		elseif control == "clear" then
 			CeroSec.consoleClear(console)
 		else
@@ -950,13 +1055,13 @@ end
 -- the window when the account at the glass changes under it, which is the only
 -- time its copy can be the wrong account's.
 Commands.histtail = function(self, playerObj, x, y, z, token)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 	self:sendHistory(luaObject, state, console, playerObj, token)
 end
 
 Commands.exec = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	if CeroSec.consoleWaiting(console) ~= "shell" then
@@ -1025,7 +1130,7 @@ end
 -- back the line it answered ABOUT, so a window that has typed on since can tell
 -- the answer is no longer about what it is holding.
 Commands.complete = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 
 	-- Nothing is completed at a question, in the editor, or while a job holds
@@ -1052,8 +1157,12 @@ Commands.complete = function(self, playerObj, x, y, z, token, args)
 
 	local cursor = at
 	if done.replacement ~= nil then cursor = done.start - 1 + #done.replacement end
+	-- Addressed to the window, so it carries the computer the window is standing
+	-- at and not the one whose /bin was searched: down an rlogin those are two
+	-- different machines, and a terminal believes nothing that names another.
+	local seat = self:watchedAt(luaObject, console)
 	self:reply(playerObj, "completed", {
-		x = luaObject.x, y = luaObject.y, z = luaObject.z, token = token,
+		x = seat.x, y = seat.y, z = seat.z, token = token,
 		line = line, at = at,
 		start = done.start, replacement = done.replacement, cursor = cursor,
 		candidates = done.candidates,
@@ -1092,7 +1201,7 @@ function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, 
 	while true do
 		job.spawned = nil
 		CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
-			getTimestampMs(), playerObj, token, true)
+			getTimestampMs(), playerObj, token, true, console)
 		turns = turns + 1
 		if job.spawned == nil or CeroSecOS.jobIsOver(job) or turns > CeroSecOS.MAX_JOBS then
 			break
@@ -1135,7 +1244,7 @@ end
 -- The buffer as it stands, with the file untouched. Sent while it is being
 -- typed so that the machine, and not the window, is what holds the work.
 Commands.editbuf = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
@@ -1155,7 +1264,7 @@ end
 -- so the editor has no permissions, no limits and no printable rule of its own:
 -- it gets the one line the filesystem answers with and puts it on the glass.
 Commands.editsave = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
@@ -1206,7 +1315,7 @@ end
 -- this: a window that shuts leaves the machine in the editor, and the buffer
 -- with it.
 Commands.editexit = function(self, playerObj, x, y, z, token, args)
-	local luaObject, state, console = self:consoleFor(playerObj, x, y, z, token)
+	local luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 	if not self:isEditor(luaObject, console, playerObj) then
 		self:pushScreen(luaObject, state, console)
@@ -1223,12 +1332,28 @@ end
 -- and not a client-side reset because the screen belongs to the machine: every
 -- window standing at it sees the same ^C on the same line.
 Commands.interrupt = function(self, playerObj, x, y, z, token, args)
-	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
-	if not luaObject then return end
+	local host, hostConsole = self:biosConsoleFor(playerObj, x, y, z, token)
+	if not host then return end
 
-	local state = luaObject:osState()
+	local luaObject, state, console = host, host:osState(), hostConsole
 	if not state then
 		self:replyClosed(playerObj, x, y, z, "broken", token)
+		return
+	end
+	-- A session on another machine, when that is what the glass is showing: the
+	-- ^C belongs to whatever is running over there.
+	if hostConsole.remote ~= nil then
+		luaObject, state, console = self:targetFor(playerObj, x, y, z, token)
+		if not luaObject then return end
+	end
+
+	-- Escape at an idle REMOTE prompt closes the session. There is nothing to
+	-- interrupt and the window must not shut -- the survivor is still standing at
+	-- his own machine -- so the one thing left to give up on is the connection.
+	-- It is the only place Escape means something the local machine's own prompt
+	-- does not, and the manual says so.
+	if type(console.line) == "string" and not CeroSec.consoleActive(console) then
+		CeroSecNet.endSession(self, luaObject, console)
 		return
 	end
 
@@ -1265,7 +1390,7 @@ Commands.interrupt = function(self, playerObj, x, y, z, token, args)
 	-- pushes the screen -- and every line it produces lands after the "^C"
 	-- pushed above, which is the order they happened in.
 	CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
-		getTimestampMs(), playerObj, token, true)
+		getTimestampMs(), playerObj, token, true, console)
 end
 
 Commands.close = function(self, playerObj, x, y, z, token)
@@ -1326,6 +1451,13 @@ end
 function SCeroSecSystem:checkPower()
 	for i = 1, self:getLuaObjectCount() do
 		local luaObject = self:getLuaObjectByIndex(i)
+		-- A machine that has been running since before this rung, or one carried
+		-- into a building while it was switched on, has no address yet. Asked only
+		-- of a machine that has not got one, so the sweep costs nothing on a
+		-- county where every computer is already numbered.
+		if luaObject.on and CeroSecOS.netRecord(luaObject.os) == nil then
+			CeroSecNet.identify(self, luaObject, luaObject:osState())
+		end
 		if luaObject.on and not luaObject:hasPower() then
 			self:evictWatchers(luaObject, "power")
 			luaObject:turnOff()
