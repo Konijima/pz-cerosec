@@ -101,6 +101,20 @@ local function watcherKeyOf(playerObj, token)
 	return tostring(playerObj:getOnlineID()) .. "/" .. tostring(token)
 end
 
+-- A token for a window that is not there yet. Every other token in this mod is
+-- the client's own -- the window picks one and stamps its commands with it -- and
+-- this is the one the server has to mint, because the window it names is one the
+-- server is asking the client to build (reopenFor, after a reboot). Shaped like
+-- the window's own (CeroSecTerminal's newToken) with an "s" in front, so a
+-- server's token and a client's can never be the same string.
+SCeroSecSystem.tokenCount = 0
+
+local function newServerToken(playerObj)
+	SCeroSecSystem.tokenCount = SCeroSecSystem.tokenCount + 1
+	return "s" .. tostring(playerObj:getPlayerNum()) .. "-" ..
+		tostring(getTimestampMs()) .. "-" .. tostring(SCeroSecSystem.tokenCount)
+end
+
 --
 -- Answering one player
 --
@@ -759,20 +773,6 @@ function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
 	end
 end
 
--- The same answer the opener of a freshly switched on machine gets, but to
--- every window at once: a machine that has just rebooted is a machine every
--- pair of eyes in front of it watches type itself out again.
-function SCeroSecSystem:pushOpened(luaObject, state, console)
-	if not luaObject.watchers then return end
-	for _, watcher in pairs(luaObject.watchers) do
-		if watcher.player then
-			local args = self:screenArgs(luaObject, state, console, watcher.token, watcher.player)
-			args.animate = true
-			self:reply(watcher.player, "opened", args)
-		end
-	end
-end
-
 -- The first screenful after a power-on: the BIOS lines, and the motd when there
 -- is a system to greet from. Answers whether it did anything -- a machine
 -- already booted is not booted twice, which is what keeps the second player to
@@ -810,36 +810,96 @@ end
 -- they go through the very same turnOff/turnOn -- the sprite, the sound, the
 -- console thrown away -- and not through a second, quieter path beside it.
 --
--- The one difference is the windows. Turning a machine off tells every terminal
--- open on it that it is over and forgets them, which is right for a machine
--- somebody switched off at the case and wrong for one that is coming back in
--- the same breath. So a reboot holds the watchers aside across the two calls
--- and hands them the new screen itself.
+-- The one difference is the windows, and the DARK between the two calls. A
+-- reboot on a real machine is the power going and coming back, so it is off in
+-- the meantime: the unlit sprite on the tile, no glow on the wall, no screen to
+-- read. It used to be one call after the other in the same breath, which left
+-- the sprite lit and the boot typing itself out inside a window that had never
+-- shut -- a machine that never went down.
+--
+-- So it goes down properly. turnOff does what it does for a switch at the case,
+-- except that the watchers are held aside across it so its own eviction says
+-- nothing: what a window at a rebooting machine is told is `reboot` and not
+-- `off`, which is the one word that tells the client this one is coming back.
+-- Who was at the glass is remembered beside the interval, and CeroSec.REBOOT_DARK_MS
+-- later the scheduler brings the machine up through turnOn -- the same road a
+-- hand at the switch takes, and therefore the same power question.
 --
 
 function SCeroSecSystem:reboot(luaObject)
 	local watchers = luaObject.watchers
 	luaObject.watchers = nil
-	luaObject:turnOff()
+	local wentDown = luaObject:turnOff()
 	luaObject.watchers = watchers
+	-- A machine that was not on has nothing to reboot, and nothing was said to
+	-- anybody: the windows are left exactly as they were.
+	if not wentDown then return end
 
-	if not luaObject:turnOn() then
-		-- The room lost its power between the two. The machine stays dark, and
-		-- the windows are told what the power sweep would have told them.
-		self:evictWatchers(luaObject, "power")
-		return
+	-- Who to hand the window back to. The player and not the watcher key: the
+	-- key holds the token of a window that is about to shut, and the window that
+	-- comes back is a new one with a token of its own.
+	local waiting = {}
+	if watchers then
+		for _, watcher in pairs(watchers) do
+			if watcher.player then waiting[#waiting + 1] = watcher.player end
+		end
 	end
+	self:evictWatchers(luaObject, "reboot")
 
+	CeroSecJobs.scheduleReboot(luaObject, getTimestampMs() + CeroSec.REBOOT_DARK_MS, waiting)
+end
+
+-- The other end of the dark interval, called by the scheduler's own pass
+-- (CeroSecJobs.checkReboot).
+--
+-- turnOn and not a quieter path beside it: the sprite, the sound, the fresh
+-- console and @reboot are all its, and so is the power question -- a room that
+-- went dark in those three seconds leaves the machine off, exactly as an outage
+-- leaves a real one off, and the survivor switches it on by hand later.
+function SCeroSecSystem:resumeReboot(luaObject, waiting)
+	if not luaObject:turnOn() then return end
 	local console = luaObject:consoleState()
-	if not console then
-		self:evictWatchers(luaObject, "power")
-		return
-	end
+	if not console then return end
 	local state = self:biosState(luaObject)
 	self:bootScreen(console, state)
 	-- A machine that went down broken comes back broken, and says so.
 	if state == nil and not self:atBios(console) then self:askBios(console) end
-	self:pushOpened(luaObject, state, console)
+	self:reopenFor(luaObject, state, console, waiting)
+end
+
+-- The windows that were at the glass when it went dark, handed back.
+--
+-- Not pushScreen: that answers a window that is open, and every one of these
+-- was told to shut when the machine went down. So
+-- what goes out is the first screenful of a window that does not exist yet, and
+-- the client builds the box around it through the very path the walk ends in --
+-- no second window class, and no second walk.
+--
+-- Only to a player who is still standing at the machine, and only while the
+-- machine is in the world at all. One who wandered off in those three seconds
+-- gets nothing and uses the computer by hand, which is the same answer the power
+-- sweep gives a window whose player left.
+function SCeroSecSystem:reopenFor(luaObject, state, console, waiting)
+	if type(waiting) ~= "table" then return end
+	if not luaObject:isLoaded() then return end
+	for i = 1, #waiting do
+		local playerObj = waiting[i]
+		if playerObj and not playerObj:isDead()
+				and isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
+			local token = newServerToken(playerObj)
+			luaObject:addWatcher(watcherKeyOf(playerObj, token), playerObj, token)
+			local args = self:screenArgs(luaObject, state, console, token, playerObj)
+			-- The BIOS types itself out for him, because he is watching the
+			-- machine he just rebooted come up.
+			args.animate = true
+			-- Which of the local players on this connection it is for. Every other
+			-- answer reaches a window that already knows; this one has to say, because
+			-- the window is the thing being asked for.
+			args.player = playerObj:getPlayerNum()
+			self:reply(playerObj, "reopened", args)
+			self:sendHistory(luaObject, state, console, playerObj, token)
+		end
+	end
 end
 
 -- The two orders that end a screen instead of changing it. Run after the screen
@@ -1000,6 +1060,30 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 		disk = read
 	end
 
+	-- The sticker, read off the ITEM and not off its modData, and written over
+	-- whatever the modData said.
+	--
+	-- The item is where the label really lives (CeroSecFloppyMenu): setName plus
+	-- setCustomName plus syncItemFields is what writes it, and syncItemFields is the
+	-- engine's own sync -- there is no per-item modData transmit on InventoryItem in
+	-- 42.20.4 to match it (javap zombie.inventory.InventoryItem: hasModData,
+	-- getModData, copyModData, and nothing that sends one). So the name is the one
+	-- reading of the label that is true on both sides of a multiplayer game, and a
+	-- modData label that disagrees with it is a stale copy and not a second opinion.
+	--
+	-- No custom name is NO sticker, and that is why this clears rather than merely
+	-- overwrites: a disk somebody erased the label from must come out of the drive
+	-- with it still erased.
+	--
+	-- Held to CeroSecOS.labelOk on the way in, which is tighter than the slot's own
+	-- gate: this is a client's string and the two commands that print it are lines
+	-- on a screen.
+	disk.label = nil
+	if item:isCustomName() then
+		local written = item:getName()
+		if CeroSecOS.labelOk(written) then disk.label = written end
+	end
+
 	local done = luaObject:insertDisk(disk, item:getFullType())
 	if not done then return end
 
@@ -1048,6 +1132,22 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		CeroSec.log(CeroSec.LOG_ERROR,
 			"the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
 		return
+	end
+
+	-- And the sticker back onto the shell. This is not belt-and-braces: an insert
+	-- DESTROYS the item and an eject makes a NEW one (inv:AddItem above), so without
+	-- these three calls a disk labelled BACKUP would come out of the drive called
+	-- "3.5 inch Floppy Disk" and the survivor's own handwriting would be gone. The
+	-- three calls are vanilla's Rename Bag's, in its order
+	-- (ISInventoryPaneContextMenu.lua:2753-2755).
+	--
+	-- writeDiskTo above has already put the label in the item's modData -- `label` is
+	-- one of the three keys a disk owns there (CeroSecOS.DISK_KEYS) -- so the record
+	-- and the name come out of the drive saying the same thing.
+	if CeroSecOS.labelOk(disk.label) then
+		item:setName(disk.label)
+		item:setCustomName(true)
+		item:syncItemFields()
 	end
 
 	-- And only now does it come out. If it somehow does not, the item goes with it:
@@ -1779,17 +1879,53 @@ Commands.debug = function(self, playerObj, x, y, z, token, args)
 	self:reply(playerObj, "debug", snapshot)
 end
 
+-- A refusal, back to the window that asked, on the very `debug` answer a snapshot
+-- comes on -- with an `error` on it and no tab, so the window puts it on the first
+-- line of the block under the list and leaves the lists it has alone.
+--
+-- There was no such thing until now, and that was the defect: `debugact` called
+-- turnOn, turnOn refuses a machine whose chunk is away -- the wire is asked of a
+-- SQUARE and there is nobody to ask -- the boolean was dropped here, nothing was
+-- answered, and the window drew the same `off` two seconds later. A button that
+-- cannot work looked exactly like a button that had. A refusal a player cannot read
+-- is a refusal that looks like a bug in the mod.
+local function refuseAct(system, playerObj, token, x, y, z, why)
+	system:reply(playerObj, "debug",
+		{ token = token, error = why, x = x, y = y, z = z })
+end
+
 Commands.debugact = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
 	if not CeroSec.debugAllowed() then return end
 	if type(args) ~= "table" or type(args.act) ~= "string" then return end
 	local luaObject = self:getLuaObjectAt(x, y, z)
-	if not luaObject then return end
+	if not luaObject then
+		refuseAct(self, playerObj, token, x, y, z, "no machine at " ..
+			tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
+		return
+	end
 
 	if args.act == "on" then
-		if not luaObject.on then luaObject:turnOn() end
+		-- Asked before it is done, and the SAME question the window greys the button
+		-- with (CeroSecDebug.turnOnRefusal): one rule, one place, one wording.
+		local why = CeroSecDebug.turnOnRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn on: " .. why)
+		elseif not luaObject:turnOn() then
+			-- Nothing above found a reason and the object refused anyway, which can
+			-- only be a rule that has moved since this was written. Said plainly
+			-- rather than swallowed: a silence here is how the last one hid.
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOn refused and did not say why")
+		end
 	elseif args.act == "off" then
-		if luaObject.on then luaObject:turnOff() end
+		local why = CeroSecDebug.turnOffRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot turn off: " .. why)
+		elseif not luaObject:turnOff() then
+			refuseAct(self, playerObj, token, x, y, z,
+				"turnOff refused and did not say why")
+		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)
 	end

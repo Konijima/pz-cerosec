@@ -54,6 +54,22 @@ local function textWidth(s)
 	local last = string.sub(s, -1)
 	return CHAR_W * (#s - 1) + (INK[last] or CHAR_W - 1)
 end
+
+-- The ADVANCE of a string off the same fake, worked out the same way the window
+-- works it out (the "M" sentinel, CeroSecTerminal.lua:1416-1419): the bench
+-- measures columns with the arithmetic under test rather than with a second one of
+-- its own, so a column that is one glyph's ink too narrow is a column this file
+-- catches instead of agreeing with.
+local function adv(s)
+	if s == nil or s == "" then return 0 end
+	return textWidth(s .. "M") - textWidth("M")
+end
+
+-- What the window pads a cell by inside its column and leaves as air on its right
+-- (PAD and GAP in CeroSecDebugUI). Here as numbers because what the bench asserts
+-- is where the ink LANDS, not what the constant says.
+local CELL_PAD = 10
+local CELL_GAP = 6
 _G.getTextManager = function()
 	return {
 		MeasureStringX = function(_, _, s) return textWidth(s) end,
@@ -156,6 +172,24 @@ function ISCollapsableWindow.resizeWidgetHeight() return 6 end
 function ISCollapsableWindow.drawText(self, text, x, y)
 	self.painted[#self.painted + 1] = { text = text, x = x, y = y }
 end
+
+--
+-- ISPanel, which is what each tab's VIEW is: the thing the tab panel positions,
+-- with the list a header row down inside it. Nothing of it is faked but the four
+-- calls the window makes on it -- its geometry comes from applyElement above, so
+-- what the bench reads off a view is what the window set.
+--
+local Panel = {}
+Panel.__index = Panel
+applyElement(Panel)
+function Panel:noBackground() self.background = false end
+ISPanel = { new = function(_, x, y, w, h)
+	local o = setmetatable({}, Panel)
+	o.x, o.y, o.width, o.height = x, y, w, h
+	o.children = {}
+	o.painted = {}
+	return o
+end }
 
 --
 -- ISScrollingListBox: what was put in it, in order, and the columns it was given.
@@ -271,6 +305,7 @@ Button.__index = Button
 applyElement(Button)
 function Button:setFont(font) self.font = font end
 function Button:setEnable(v) self.enabled = v end
+function Button:setTitle(title) self.title = title end
 ISButton = { new = function(_, x, y, w, h, title, target, onclick)
 	local o = setmetatable({}, Button)
 	o.x, o.y, o.width, o.height = x, y, w, h
@@ -369,8 +404,21 @@ local function newBench()
 		isDead = function() return false end,
 		teleports = {},
 	}
+	-- Standing at the machine the window opens on, which is where a survivor who
+	-- right-clicked a computer is. Where he is matters now: the window greys "Open
+	-- terminal" on a machine he is not beside, with the server's own tolerance
+	-- (SCeroSecSystem's isAdjacent).
+	player.x, player.y, player.z = 10.5, 10.5, 0
+	player.getX = function() return player.x end
+	player.getY = function() return player.y end
+	player.getZ = function() return player.z end
+	player.getCurrentSquare = function()
+		return { getZ = function() return player.z end }
+	end
 	player.teleportTo = function(_, x, y, z)
 		player.teleports[#player.teleports + 1] = { x = x, y = y, z = z }
+		-- And he really is there afterwards, because the window asks where he is.
+		player.x, player.y, player.z = x, y, z
 	end
 	bench.player = player
 
@@ -420,6 +468,23 @@ local function newBench()
 		return bench.window.lists[bench.window:activeIndex()]
 	end
 
+	function bench.view()
+		return bench.window.views[bench.window:activeIndex()]
+	end
+
+	-- Which column a string was painted in, by the x it was painted at: the window
+	-- draws a cell at its column's offset plus the pad, so the x names the column.
+	-- -1 for ink that lands in no column at all, which is the answer that fails a
+	-- check below.
+	function bench.columnAt(x)
+		local list = bench.list()
+		if list.colX == nil then return -1 end
+		for k = 1, #list.colX do
+			if list.colX[k] + CELL_PAD == x then return k end
+		end
+		return -1
+	end
+
 	function bench.buttonNamed(label)
 		for i = 1, #bench.window.buttons do
 			local made = bench.window.buttons[i].button
@@ -452,13 +517,37 @@ local function snapshot(token, tab, rows, info)
 	return { token = token, tab = tab, rows = rows, info = info or {} }
 end
 
+-- Two machines the mod is doing something with. `used` is the server's own flag
+-- (SCeroSecDebug.isUsed) and both carry it, because the window shows the used ones
+-- by default and a bench whose rows were all filtered out would be a bench about an
+-- empty list.
 local function machineRows()
 	return {
 		{ c = { "10,10,0", "S", "on", "here", "yes", "office", "10.4.17.1",
-			"555-0142", "-", "0", "1" }, x = 10, y = 10, z = 0 },
+			"555-0142", "-", "0", "1" }, x = 10, y = 10, z = 0, used = true },
 		{ c = { "60,60,0", "E", "on", "away", "-", "shed", "10.9.44.1",
-			"555-0911", "KE4QWZ", "2", "0" }, x = 60, y = 60, z = 0 },
+			"555-0911", "KE4QWZ", "2", "0" }, x = 60, y = 60, z = 0, used = true },
 	}
+end
+
+-- The county as a save an hour old really answers it: one machine in use and two
+-- computer sprites a chunk brought in and nobody ever touched.
+local function countyRows()
+	local rows = machineRows()
+	rows[2] = { c = { "300,220,0", "N", "off", "away", "-", "-", "-", "-", "-", "-", "-" },
+		x = 300, y = 220, z = 0, used = false }
+	rows[3] = { c = { "301,220,0", "N", "off", "away", "-", "-", "-", "-", "-", "-", "-" },
+		x = 301, y = 220, z = 0, used = false }
+	return rows
+end
+
+-- A snapshot of the shape Commands.debug sends for a machine that cannot be
+-- switched on, with the server's own words for why (CeroSecDebug.selection).
+local function selected(token, fields)
+	local snap = snapshot(token, "machines", machineRows(), { "machines: 2 of 2" })
+	snap.x, snap.y, snap.z = 10, 10, 0
+	for key, value in pairs(fields) do snap[key] = value end
+	return snap
 end
 
 --
@@ -852,6 +941,386 @@ do
 	eq("and the third is the instance", CeroSecDebugUI.instance, third)
 	third:close()
 	eq("and shutting it leaves nothing behind", bench.handlerCount(), 0)
+end
+
+--
+-- 10. The layout, in numbers
+--
+-- What this block exists for: the tab strip and the column headers were drawn on
+-- the SAME ROW, so "ess", "tel", "call", "jobs", "eyes" showed through between the
+-- tab labels. A list box with columns draws its header row ABOVE its own top edge,
+-- at `0 - self.itemheight` (ISScrollingListBox.lua:553-562), and ISTabPanel:addView
+-- puts a view at `self.tabHeight` (:493) -- so a list that IS the view has nowhere
+-- to draw its headers but on the strip.
+--
+-- Every number below is a pixel and not a field: what is asserted is that the four
+-- bands of this window (strip, header row, rows, buttons, detail) do not reach into
+-- each other, before AND after a resize.
+--
+
+local function checkBands(bench, when)
+	local window = bench.window
+	local panel = window.panel
+	local L = window.numbers
+
+	for i = 1, #window.views do
+		local view = window.views[i]
+		local list = window.lists[i]
+		check(when .. ": view " .. i .. " starts at or below the tab strip",
+			view.y >= panel.tabHeight)
+		-- The header strip the LIST BOX draws, in the view's own coordinates: one
+		-- item height, ending flush against the first row -- which is why the room
+		-- for it has to be reserved above the list and cannot be found later.
+		local headerTop = view.y + list.y - list.itemheight
+		local headerBottom = view.y + list.y
+		check(when .. ": the header row of list " .. i .. " is clear of the strip",
+			headerTop >= panel.tabHeight)
+		local firstRowText = view.y + list.y + (list.itemPadY or 0)
+		check(when .. ": and it ends above the first row's own text",
+			headerBottom < firstRowText)
+		check(when .. ": list " .. i .. " ends inside the panel",
+			view.y + list.y + list.height <= panel.height)
+		check(when .. ": and it is given the height that is left",
+			list.height > 0)
+	end
+
+	local list = window.lists[1]
+	local listBottom = panel.y + window.views[1].y + list.y + list.height
+	local buttonsTop = window.buttons[1].button.y
+	check(when .. ": the buttons are under the list", buttonsTop >= listBottom)
+	for i = 1, #window.buttons do
+		eq(when .. ": button " .. i .. " is on the same row",
+			window.buttons[i].button.y, buttonsTop)
+	end
+	check(when .. ": and the detail block is under the buttons",
+		L.infoY >= buttonsTop + L.buttonH)
+	check(when .. ": with the whole of it above the resize widget",
+		L.infoY + L.infoH <= window.height - L.rh)
+end
+
+do
+	local bench = newBench()
+	local window = bench.window
+
+	-- The window round the panel, which is ISEntitiesDebugWindow's own arithmetic
+	-- (:33-52): the title bar, then a border, then the panel.
+	eq("the panel is a border below the title bar", window.panel.y,
+		window.numbers.th + 10)
+	eq("and a border in from the left", window.panel.x, 10)
+	eq("as wide as the window less both borders", window.panel.width,
+		window.width - 20)
+
+	checkBands(bench, "as opened")
+
+	-- And after the corner is dragged. Same function, same numbers: two copies of
+	-- this arithmetic is how the header row ended up on the strip.
+	window:setWidth(1100)
+	window:setHeight(760)
+	window:onResize()
+	eq("the panel followed the width", window.panel.width, 1080)
+	checkBands(bench, "after a resize")
+	for i = 1, #window.views do
+		eq("view " .. i .. " followed the width too", window.views[i].width, 1080)
+		eq("and so did its list", window.lists[i].width, 1080)
+	end
+
+	-- Smaller than it opened, as well: a window dragged in is still a window whose
+	-- bands do not overlap.
+	window:setWidth(700)
+	window:setHeight(560)
+	window:onResize()
+	checkBands(bench, "after being dragged in")
+
+	-- And at the floor it sets for the resize widget, which is the smallest it can
+	-- be dragged to: ISResizeWidget's own default is nothing at all, so the floor
+	-- has to be this window's own or the bands go through each other.
+	check("it has a floor to drag to", window.minimumHeight ~= nil)
+	check("and a width to go with it", window.minimumWidth ~= nil)
+	window:setWidth(window.minimumWidth)
+	window:setHeight(window.minimumHeight)
+	window:onResize()
+	checkBands(bench, "at its floor")
+	eq("and at the floor the list is exactly one row tall",
+		window.lists[1].height, window.lists[1].itemheight)
+	check("with every button still inside it",
+		window.buttons[#window.buttons].button.x +
+			window.buttons[#window.buttons].button.width <= window.width)
+end
+
+--
+-- 11. The columns
+--
+-- Measured off the header and off the widest cell, never overlapping, and the last
+-- one absorbing what is left. A column drawn at the same offset as its neighbour is
+-- the "call" that was on top of "jobs".
+--
+
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", machineRows(), { "machines: 2 of 2" }))
+	local list = bench.list()
+	local spec = CeroSecDebugUI.TABS[1]
+
+	eq("every column has a width", #list.colW, #spec.columns)
+	for k = 1, #list.colX do
+		check("column " .. k .. " has a width", list.colW[k] > 0)
+		if k > 1 then
+			eq("column " .. k .. " starts exactly where the one before it ends",
+				list.colX[k], list.colX[k - 1] + list.colW[k - 1])
+		end
+		-- Room for its own header, measured the way the window measures it.
+		check("column " .. k .. " has room for the word over it",
+			list.colW[k] - CELL_PAD - CELL_GAP >= adv(spec.columns[k][1]))
+		-- And for the widest cell under it, which is what a measured column is for.
+		local widest = 0
+		local rows = machineRows()
+		for r = 1, #rows do
+			local at = adv(rows[r].c[k])
+			if at > widest then widest = at end
+		end
+		check("and for the widest cell in it",
+			list.colW[k] - CELL_PAD - CELL_GAP >= widest)
+	end
+	-- The list box draws the header row and the rules at these very offsets, so
+	-- they have to be the same numbers.
+	for k = 1, #list.colX do
+		eq("the list box's own column " .. k .. " is at the same offset",
+			list.columns[k].size, list.colX[k])
+	end
+	eq("the last column absorbs the rest of the width",
+		list.colX[#list.colX] + list.colW[#list.colW], list:getWidth())
+
+	-- Every cell lands inside its own column. Read off what was PAINTED: the x it
+	-- was drawn at names the column, and the ink has to end before the next one
+	-- starts.
+	bench.frame()
+	local cells = 0
+	for i = 1, #list.painted do
+		local at = list.painted[i]
+		local k = bench.columnAt(at.x)
+		check("the cell '" .. tostring(at.text) .. "' is in a column", k ~= -1)
+		if k ~= -1 then
+			cells = cells + 1
+			check("and its ink ends before column " .. (k + 1) .. " starts",
+				at.x + adv(at.text) <= list.colX[k] + list.colW[k])
+		end
+	end
+	check("and there were cells to check", cells >= 11)
+end
+
+-- A cell far too long for any column: the columns are squeezed to fit the window,
+-- every one keeps its floor, and the cell that no longer fits is CUT and not drawn
+-- over its neighbour.
+do
+	local bench = newBench()
+	local window = bench.window
+	local rows = machineRows()
+	rows[1].c[6] = string.rep("verylonghostname", 20)
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", rows, { "machines: 2 of 2" }))
+	local list = bench.list()
+
+	eq("the table still ends at the edge of the list",
+		list.colX[#list.colX] + list.colW[#list.colW], list:getWidth())
+	local floor = CELL_PAD + adv("nnnn") + CELL_GAP
+	for k = 1, #list.colW do
+		check("column " .. k .. " is not squeezed below its floor",
+			list.colW[k] >= floor)
+		if k > 1 then
+			eq("and column " .. k .. " still starts where the one before ends",
+				list.colX[k], list.colX[k - 1] + list.colW[k - 1])
+		end
+	end
+
+	bench.frame()
+	local cut = nil
+	for i = 1, #list.painted do
+		local at = list.painted[i]
+		local k = bench.columnAt(at.x)
+		if k ~= -1 then
+			check("nothing is painted past its column (" .. tostring(at.text) .. ")",
+				at.x + adv(at.text) <= list.colX[k] + list.colW[k])
+			-- The first row's own host cell, which is the long one: the second row's
+			-- is "shed" and fits anywhere.
+			if k == 6 and cut == nil then cut = at.text end
+		end
+	end
+	check("the long cell was drawn", cut ~= nil)
+	check("and it was cut", cut ~= rows[1].c[6])
+	eq("with the mark the rest of the mod cuts with",
+		string.sub(cut, -1), "~")
+end
+
+--
+-- 12. Which machines are shown, and how many of how many
+--
+
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", countyRows(), { "machines: 3 of 3" }))
+
+	-- Used only, to begin with: the two computers a chunk brought in and nobody
+	-- ever touched are not what somebody opened this window to look at.
+	eq("only the machines in use are listed", #bench.list().items, 1)
+	eq("and it is the one in use", bench.list().items[1].item.x, 10)
+	bench.frame()
+	check("the count says how many of how many", bench.painted("showing 1 of 3"))
+	check("and which way the filter is set", bench.painted("used only"))
+
+	-- The button offers the other way, and pressing it shows the county.
+	local made = bench.buttonNamed("IGUI_CeroSec_Debug_ShowAll")
+	check("the filter button offers all of them", made ~= nil)
+	bench.forget()
+	press(made)
+	eq("all three are listed", #bench.list().items, 3)
+	eq("and it asked the server for nothing to do it", #bench.sent, 0)
+	bench.frame()
+	check("the count moved with it", bench.painted("showing 3 of 3"))
+	check("and the mode with it", bench.painted("all machines"))
+	check("the button now offers the way back",
+		bench.buttonNamed("IGUI_CeroSec_Debug_ShowUsed") ~= nil)
+
+	-- A refresh does not undo it: the filter is the window's, like which tab is in
+	-- front.
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", countyRows(), { "machines: 3 of 3" }))
+	eq("a new snapshot is filtered the same way", #bench.list().items, 3)
+
+	-- And it is the Machines tab's button and no other's.
+	bench.frame()
+	eq("the filter is there on the Machines tab",
+		bench.buttonNamed("IGUI_CeroSec_Debug_ShowUsed").visible, true)
+	window.panel:activateView("Files")
+	bench.frame()
+	eq("and not on any other",
+		bench.buttonNamed("IGUI_CeroSec_Debug_ShowUsed").visible, false)
+end
+
+-- The cursor stays on the machine it was on, and not on the row number it was on.
+--
+-- THREE machines and a new order that puts the clicked one in the MIDDLE, because
+-- ISScrollingListBox:clear() leaves the selection at 1: a bench whose answer was 1
+-- would be a bench that passes for a window that keeps nothing at all.
+do
+	local bench = newBench()
+	local window = bench.window
+	local three = machineRows()
+	three[3] = { c = { "12,10,0", "W", "on", "here", "yes", "gate", "10.4.17.2",
+		"555-0143", "-", "0", "0" }, x = 12, y = 10, z = 0, used = true }
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", three))
+	bench.list():clickRow(3)
+	eq("the third machine is selected", window.cx, 12)
+	eq("and the cursor is on its row", bench.list().selected, 3)
+
+	-- The same three, in the order a county answers them the moment a machine is
+	-- adopted or dropped above one of them.
+	local order = { three[1], three[3], three[2] }
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", order))
+	eq("all three are still listed", #bench.list().items, 3)
+	eq("and the cursor followed the MACHINE, not the row number",
+		bench.list().selected, 2)
+	eq("which is the machine that was clicked",
+		bench.list().items[bench.list().selected].item.x, 12)
+end
+
+--
+-- 13. Why a button cannot be pressed
+--
+-- The window Mathieu opened had "Turn on" enabled on a machine whose chunk was
+-- away. He pressed it; the server refused, because the wire is asked of a square
+-- and there was nobody to ask; and nothing at all happened on the glass.
+--
+
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = false, canTurnOff = true, on = false, loaded = false,
+		reason = "its chunk is away, so there is nobody to ask about the wire" ..
+			" -- teleport to it first" }))
+	bench.frame()
+
+	eq("Turn on is greyed when the server says it cannot",
+		bench.buttonNamed("IGUI_CeroSec_Debug_TurnOn").enabled, false)
+	eq("Turn off is not, because turning off asks the world nothing",
+		bench.buttonNamed("IGUI_CeroSec_Debug_TurnOff").enabled, true)
+	eq("Teleport is never greyed on a selected machine",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Teleport").enabled, true)
+	eq("Open terminal is greyed with no chunk in",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Terminal").enabled, false)
+	check("and the first line under the list says why in the server's words",
+		bench.painted("nobody to ask about the wire"))
+
+	-- Pressing it anyway asks nothing and still says why: a window that only greyed
+	-- the button would go on sending.
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_TurnOn"))
+	eq("a press the window knows cannot work sends nothing", #bench.sent, 0)
+	bench.frame()
+	check("and it says so", bench.painted("cannot turn on"))
+
+	-- A refusal that comes back ON THE WIRE is shown, never swallowed -- and it
+	-- does not empty the lists on the way past.
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token,
+		error = "cannot turn on: there is no wire at its square",
+		x = 10, y = 10, z = 0 })
+	bench.frame()
+	check("a refusal from the server is on the glass",
+		bench.painted("no wire at its square"))
+	eq("and the list it arrived over is untouched", #bench.list().items, 2)
+
+	-- Somebody else's refusal is nobody's business here.
+	local before = window.refusal
+	CeroSecDebugUI.onServerAnswer("debug", { token = "dbg-somebody-else",
+		error = "cannot turn on: some other window's machine" })
+	eq("a refusal carrying another window's token is dropped", window.refusal, before)
+end
+
+-- A machine that CAN come on: nothing is greyed and there is nothing to say.
+do
+	local bench = newBench()
+	local window = bench.window
+	_G.__computers["10,10,0"] = { __class = "IsoObject",
+		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = true, canTurnOff = false, on = false, loaded = true }))
+	bench.frame()
+	eq("Turn on is usable", bench.buttonNamed("IGUI_CeroSec_Debug_TurnOn").enabled, true)
+	eq("Turn off is greyed on a machine that is off",
+		bench.buttonNamed("IGUI_CeroSec_Debug_TurnOff").enabled, false)
+	eq("and the terminal is greyed on a machine that is off",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Terminal").enabled, false)
+	check("the reason line says which of them is why",
+		bench.painted("cannot open the terminal: it is off"))
+
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_TurnOn"))
+	eq("and the press goes out", bench.last("debugact").args.act, "on")
+
+	-- On, in the world and beside the player: the terminal opens.
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = false, canTurnOff = true, on = true, loaded = true,
+		reason = "it is already on" }))
+	bench.frame()
+	eq("with it on and the player at it the terminal is offered",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Terminal").enabled, true)
+	eq("and nothing is greyed for a reason worth printing",
+		window:reasonLine(), nil)
+
+	-- Two squares away is not adjacent, which is the server's own answer.
+	bench.player.x, bench.player.y = 14.5, 10.5
+	bench.frame()
+	eq("a player who walked off cannot open it",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Terminal").enabled, false)
+	check("and is told why", bench.painted("not standing at it"))
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_Terminal"))
+	eq("and pressing it opens nothing", #CeroSecTerminal.opened, 0)
 end
 
 print("debug_ui_test: " .. count .. " checks passed")

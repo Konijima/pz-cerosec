@@ -141,6 +141,13 @@ _G.IsoDoor = {
 -- it, which is what every bench that is not about devices runs on.
 _G.__world = nil
 _G.getCell = function() return _G.__world end
+-- The local players, by player number. Vanilla's own way of turning the number
+-- an answer carries into the survivor it belongs to, and the only way the client
+-- has of doing it: getSpecificPlayer is what the context menu uses
+-- (CeroSecContextMenu.addEntries) and what the reopen after a reboot uses, since
+-- the window it is asked to make has nobody to ask yet. Filled in by newBench.
+_G.__players = {}
+_G.getSpecificPlayer = function(num) return _G.__players[num] end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
@@ -243,6 +250,14 @@ function Box:type(s)
 end
 ISTextEntryBox = { new = function(_, _, _, _, _, _) return Box.new() end }
 
+-- An ArrayList as the game hands one over: 0-based get, and a size.
+local function javaList(items)
+	return {
+		size = function() return #items end,
+		get = function(_, i) return items[i + 1] end,
+	}
+end
+
 local function derive(base, name)
 	local o = {}
 	for key, value in pairs(base) do o[key] = value end
@@ -269,7 +284,17 @@ function ISCollapsableWindow.render() end
 function ISCollapsableWindow.onMouseDown() end
 function ISCollapsableWindow.onMouseUp() end
 function ISCollapsableWindow.initialise() end
-function ISCollapsableWindow.addToUIManager() end
+-- The game's own order, and not a no-op: addToUIManager instantiates an element
+-- that has not been instantiated yet, and instantiate() is what calls
+-- createChildren (ISUIElement.lua:1365-1371 and :993-1007). The windows this
+-- bench builds by hand call createChildren themselves; a window the CLIENT builds
+-- -- CeroSecTerminal.open, which is the path a reopen after a reboot goes through
+-- -- has only this, exactly as in the game.
+function ISCollapsableWindow.addToUIManager(self)
+	if self.instantiated then return end
+	self.instantiated = true
+	self:createChildren()
+end
 function ISCollapsableWindow.removeFromUIManager() end
 function ISCollapsableWindow.addChild(self, child) self.children[#self.children + 1] = child end
 function ISCollapsableWindow.setResizable() end
@@ -279,6 +304,9 @@ function ISCollapsableWindow.drawRect() end
 function ISCollapsableWindow.drawText() end
 
 CeroSecReach = {
+	-- The desk the computer stands on, as the context menu reads it and as the
+	-- reopen after a reboot reads it again: a table, which is "mid".
+	height = function() return "mid" end,
 	frontSquare = function() return { getX = function() return 9 end,
 		getY = function() return 10 end, getZ = function() return 0 end } end,
 	chairInFront = function() return nil end,
@@ -411,6 +439,11 @@ local function newBench()
 	-- a bench that left a job running would otherwise have it stepped by the
 	-- next bench's ticks. One bench, one county.
 	CeroSecJobs.machines = {}
+	-- And the client's registry of open windows, for the same reason: a window
+	-- the game itself made -- which is what a reopen after a reboot is -- lives in
+	-- there, and a bench must not inherit the last bench's.
+	CeroSecTerminal.instances = {}
+	_G.__players = {}
 	local player = {
 		getPlayerNum = function() return 0 end,
 		getOnlineID = function() return -1 end,
@@ -444,10 +477,13 @@ local function newBench()
 	system.getLuaObjectCount = function() return 1 end
 	system.getLuaObjectByIndex = function() return object end
 
+	_G.__players[0] = player
+
 	local window = CeroSecTerminal:new(0, 0, player, computer)
 	window:initialise()
 	window:createChildren()
-	local bench = { window = window, object = object, system = system, player = player }
+	local bench = { window = window, object = object, system = system, player = player,
+		computer = computer }
 
 	-- The CLIENT's copy of this machine, and the one mechanism the game has for
 	-- keeping it in step with the server's. The server writes the sync keys it
@@ -479,6 +515,11 @@ local function newBench()
 	-- before it goes down and wipes the console -- a reboot's own broadcast is
 	-- one. This is where those are looked for.
 	bench.said = {}
+	-- Why a window was told to shut, in the order the reasons went out. The reason
+	-- is the server's word and the client only logs it, so it is caught on the
+	-- wire: "off" is a machine somebody switched off, "reboot" is one that is
+	-- coming back, and the client tells them apart by nothing else.
+	bench.closed = {}
 	local function record(a)
 		if type(a) ~= "table" or type(a.lines) ~= "table" then return end
 		for i = 1, #a.lines do bench.said[#bench.said + 1] = a.lines[i] end
@@ -490,15 +531,17 @@ local function newBench()
 		return false
 	end
 
+	-- Every answer the server produced, to whoever it is for. Written once, below,
+	-- because the three ways a bench makes the server speak -- a line typed, a
+	-- scheduler pass, the minute hand -- all deliver the same way, and one of the
+	-- answers makes a window instead of reaching one.
+	local deliver
+
 	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
 		local replies = {}
 		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 		system:OnClientCommand(command, sender, args)
-		for i = 1, #replies do
-			for w = 1, #bench.windows do
-				bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-			end
-		end
+		deliver(replies)
 	end } }
 
 	local function watch(w)
@@ -516,6 +559,42 @@ local function newBench()
 	-- What the glass shows, and where.
 	watch(window)
 
+	-- The client's own door for an answer that is not addressed to any window,
+	-- because the window it names does not exist yet: a machine that has finished
+	-- rebooting asks for one (CeroSecTerminal.onServerAnswer -> reopen), which
+	-- builds it through CeroSecTerminal.open exactly as the end of the walk does.
+	-- It lands in the client's registry and not in this bench's list, so it is
+	-- adopted from there -- a real window, made by the real path.
+	local function adopt()
+		for _, w in pairs(CeroSecTerminal.instances) do
+			local known = false
+			for i = 1, #bench.windows do
+				if bench.windows[i] == w then known = true end
+			end
+			if not known then
+				watch(w)
+				bench.windows[#bench.windows + 1] = w
+			end
+		end
+	end
+
+	function deliver(replies)
+		for i = 1, #replies do
+			local command, args = replies[i][1], replies[i][2]
+			if command == "closed" then
+				bench.closed[#bench.closed + 1] = args.reason
+			end
+			if command == "reopened" then
+				CeroSecTerminal.onServerAnswer(command, args)
+				adopt()
+			else
+				for w = 1, #bench.windows do
+					bench.windows[w]:onServerCommand(command, args)
+				end
+			end
+		end
+	end
+
 	-- A second player, at the same computer, with a window of his own. His own
 	-- online id, because the server keys a watcher on it and split screen is
 	-- the one case where two windows share a connection.
@@ -524,6 +603,7 @@ local function newBench()
 		for key, value in pairs(player) do other[key] = value end
 		other.getPlayerNum = function() return 1 end
 		other.getOnlineID = function() return -2 end
+		_G.__players[1] = other
 		local w = CeroSecTerminal:new(0, 0, other, computer)
 		w:initialise()
 		w:createChildren()
@@ -542,11 +622,7 @@ local function newBench()
 			local replies = {}
 			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 			CeroSecJobs.tick()
-			for i = 1, #replies do
-				for w = 1, #bench.windows do
-					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-				end
-			end
+			deliver(replies)
 		end
 		bench.frame()
 	end
@@ -572,11 +648,7 @@ local function newBench()
 			system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
 			system:checkPower()
 			system:checkCron()
-			for i = 1, #replies do
-				for w = 1, #bench.windows do
-					bench.windows[w]:onServerCommand(replies[i][1], replies[i][2])
-				end
-			end
+			deliver(replies)
 		end
 		-- And the passes a job needs to actually run: cron makes a job, the
 		-- scheduler is what steps it.
@@ -1239,9 +1311,132 @@ do
 	check("and the window shut itself", bench.window.closing)
 end
 
--- reboot, with a second player standing at the same glass.
+--
+-- reboot: the machine goes dark, and the window comes back
+--
+-- Mathieu, in the game: "reboot should also turn the screen off, and the
+-- terminal UI should open again once it booted." It used to be turnOff and
+-- turnOn in the same breath, which left the sprite lit and the boot typing
+-- itself out inside a window that had never shut -- a machine that never went
+-- down. So what is asserted here is the physical machine as much as the glass:
+-- the unlit tile, the client's copy the glow is drawn from, the three dark
+-- seconds, and then a NEW window with a token of its own.
+
+-- The machine as the WORLD has it: the tile's own object with the sprite on it,
+-- the square it stands on, and the cell that answers for that square. newBench
+-- stubs all three out, because most of this file is about the glass -- but a
+-- reboot is a machine going physically off and physically back, so the sprite is
+-- half of what is being asserted, and the client cannot find the computer to put
+-- a window back on without the cell.
+local function embody(bench)
+	local kit = { loaded = true }
+	-- __class, because the device layer asks what an object on a square IS before
+	-- it makes a /dev entry of it (CeroSecDevices.classify), and the plain
+	-- IsoObject a vanilla computer tile is is none of the things it looks for.
+	local iso = { __class = "IsoObject", sprite = CeroSec.SPRITES_ON["S"], modData = {} }
+	iso.getSpriteName = function() return iso.sprite end
+	iso.setSpriteFromName = function(_, name) iso.sprite = name end
+	iso.transmitUpdatedSpriteToClients = function() end
+	iso.hasModData = function() return true end
+	iso.getModData = function() return iso.modData end
+	iso.transmitModData = function() end
+	local square = {
+		getX = function() return 10 end,
+		getY = function() return 10 end,
+		getZ = function() return 0 end,
+		getRoom = function() return nil end,
+		getBuilding = function() return nil end,
+		getObjects = function() return javaList({ iso }) end,
+		-- The other two lists a square answers with, and the socket. Empty and
+		-- live: the computer's own tile is the only thing in this cell, so /dev on
+		-- this machine is the door-and-light-less room it really is.
+		getWorldObjects = function() return javaList({}) end,
+		getMovingObjects = function() return javaList({}) end,
+		haveElectricity = function() return true end,
+		hasGridPower = function() return false end,
+	}
+	iso.getSquare = function() return kit.loaded and square or nil end
+	kit.iso = iso
+	-- The stubs off: the real syncSprite, with a real iso object to put a sprite
+	-- on and a real square under it.
+	bench.object.syncSprite = nil
+	bench.object.getIsoObject = function() return kit.loaded and iso or nil end
+	bench.object.getSquare = function() return kit.loaded and square or nil end
+	-- And the cell the CLIENT looks the computer up in, which is a different
+	-- question from the machine's own square: the reopen is handed coordinates and
+	-- has to find the tile itself, because a Java handle does not travel.
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		if not kit.loaded then return nil end
+		if x == 10 and y == 10 and z == 0 then return square end
+		return nil
+	end }
+	return kit
+end
+
+-- The dark interval, counted the way the server counts it: the scheduler's own
+-- pass on the wall clock, like a pending `shutdown +N`.
+local function waitOutTheDark(bench)
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(1)
+end
+
 do
 	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	eq("the tile starts lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+
+	bench.enter("reboot")
+	bench.frame()
+
+	-- Off, physically. The sprite is what somebody in the room sees; the client's
+	-- copy of `on` is what the screen's glow is drawn from
+	-- (CCeroSecObject:syncLight), and it is the only server-side proof of a glow
+	-- there is.
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is the unlit sprite", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("the client was told, so the glow is gone", bench.client.on, false)
+	eq("and there is no screen to read", bench.object.console, nil)
+	check("the window shut", bench.window.closing)
+	eq("and it was told this machine is coming back",
+		bench.closed[#bench.closed], "reboot")
+	eq("nobody is watching a dark machine", bench.object.watchers, nil)
+
+	-- And it stays dark. Three seconds of a 1993 desktop, and nothing in them.
+	bench.tick(10)
+	eq("a second in it is still off", bench.object.on, false)
+	eq("with nothing reopened", #bench.windows, 1)
+
+	waitOutTheDark(bench)
+	eq("then it comes back on", bench.object.on, true)
+	eq("the tile is lit again", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("the client was told, so the glow is back", bench.client.on, true)
+	eq("and a window came with it", #bench.windows, 2)
+
+	local back = bench.windows[2]
+	check("a window of its own, on a fresh token", back.token ~= bench.window.token)
+	eq("at the same machine", back.cx, 10)
+	eq("and the character is at the keyboard again", back.typeHeight ~= nil, true)
+	eq("it is watching the BIOS type itself out", back.revealing, true)
+
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	check("the BIOS is on the new glass", bench.paintedOn(back, CeroSec.BOOT_LINES[1]))
+	eq("and it ends at a login prompt", back.prompt, "login: ")
+	eq("with nobody logged in", bench.object.console.user, nil)
+
+	-- And the disk came through it: a reboot is not a repair.
+	bench.enterOn(back, "root")
+	bench.enterOn(back, "")
+	bench.enterOn(back, "ls /bin")
+	bench.frame()
+	check("the machine is the one it was", bench.paintedOn(back, "shutdown"))
+end
+
+-- Two pairs of eyes at the same glass: both windows go, and both come back.
+do
+	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("root")
 	local other = bench.addWindow()
 	other:askForScreen()
@@ -1250,39 +1445,142 @@ do
 
 	bench.enter("reboot")
 	bench.frame()
+	check("the first window shut", bench.window.closing)
+	check("and so did the second", other.closing)
+	eq("both were told the same word", bench.closed[#bench.closed], "reboot")
+	eq("the tile is unlit for both of them", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
 
-	check("the first window stayed open", not bench.window.closing)
-	check("and so did the second", not other.closing)
-	eq("the machine came back on", bench.object.on, true)
-	eq("with a screen of its own", type(bench.object.console), "table")
-	eq("and nobody logged in on it", bench.object.console.user, nil)
+	waitOutTheDark(bench)
+	eq("and two windows came back", #bench.windows, 4)
+	local first, second = bench.windows[3], bench.windows[4]
+	check("each on its own token", first.token ~= second.token)
+	eq("one for each survivor", first.playerNum ~= second.playerNum, true)
+	eq("both replaying the boot", first.revealing and second.revealing, true)
+end
 
-	-- Both of them are watching the BIOS type itself out again, which is the
-	-- one thing that says it really went down and came back.
-	eq("the first window is replaying the boot", bench.window.revealing, true)
-	eq("and so is the second", other.revealing, true)
+-- A second survivor standing at the same desk who never opened a terminal. The
+-- window comes back for the WATCHERS and not for whoever happens to be standing
+-- there: he was not looking at a screen before the reboot and he is not handed one
+-- after it.
+do
+	local bench = newBench()
+	embody(bench)
+	bench.login("root")
+	-- A window of his own, never opened on the machine: the server has never heard
+	-- of him, which is exactly what a bystander is.
+	bench.addWindow()
 
-	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.enter("reboot")
 	bench.frame()
-	check("the BIOS is on the first glass", bench.painted(CeroSec.BOOT_LINES[1]))
-	eq("and it ends at a login prompt", bench.window.prompt, "login: ")
-	eq("for the second window too", other.prompt, "login: ")
-	eq("both are at a prompt", bench.window.mode, "prompt")
-	eq("and so is the other", other.mode, "prompt")
+	waitOutTheDark(bench)
+	eq("the machine came back", bench.object.on, true)
+	eq("one window came back, not two", #bench.windows, 3)
+	eq("and the one that did is the one that was open",
+		bench.windows[3].playerNum, bench.window.playerNum)
+end
 
-	-- And the disk came through it: a reboot is not a repair.
-	bench.enter("root")
-	bench.enter("")
+-- A survivor who walked away from the desk while the screen was dark.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
 	bench.frame()
-	eq("root logs back in", bench.window.mode, "shell")
-	bench.enter("ls /bin")
+	check("his window shut with the machine", bench.window.closing)
+
+	-- Ten squares away by the time it comes up. Nothing opens under him: he walks
+	-- back and uses the computer by hand, like anybody arriving at a lit screen.
+	bench.player.getX = function() return 20.5 end
+
+	waitOutTheDark(bench)
+	eq("the machine came back up", bench.object.on, true)
+	eq("the tile is lit", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+	eq("but no window did", #bench.windows, 1)
+	eq("and nobody is watching it", bench.object.watchers, nil)
+end
+
+-- The power went while the machine was down, which is the one thing a real
+-- machine cannot come back from on its own.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
 	bench.frame()
-	check("the machine is the one it was", bench.painted("shutdown"))
+	bench.object.hasPower = function() return false end
+
+	waitOutTheDark(bench)
+	eq("it stays dark", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("no window came back", #bench.windows, 1)
+	eq("and nothing is pending any more", bench.object.rebooting, nil)
+
+	-- And a hand at the switch is what brings it back, once there is a wire again.
+	bench.object.hasPower = function() return true end
+	bench.object:toggle()
+	eq("switched on by hand", bench.object.on, true)
+	eq("and the tile with it", kit.iso.sprite, CeroSec.SPRITES_ON["S"])
+end
+
+-- Switched on by hand while it was dark, and switched off again. The order that
+-- was given was a reboot, but a hand at the case has overtaken it: the machine
+-- stays off, and nothing comes back three seconds later.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
+	bench.frame()
+	bench.object:toggle()
+	eq("switched on by hand", bench.object.on, true)
+	bench.object:toggle()
+	eq("and off again", bench.object.on, false)
+	eq("the dark interval went with it", bench.object.rebooting, nil)
+
+	waitOutTheDark(bench)
+	eq("it stays off", bench.object.on, false)
+	eq("the tile stays unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("and no window came back", #bench.windows, 1)
+end
+
+-- A machine whose chunk went away while it was dark: it comes up, because power
+-- and jobs are the machine's own business, but nothing is opened on a tile the
+-- client cannot see.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("reboot")
+	bench.frame()
+	kit.loaded = false
+
+	waitOutTheDark(bench)
+	eq("no window on a machine out of the world", #bench.windows, 1)
+	eq("and nobody is watching it", bench.object.watchers, nil)
+end
+
+-- halt is the other order, and it is unchanged: off, and no coming back.
+do
+	local bench = newBench()
+	local kit = embody(bench)
+	bench.login("root")
+	bench.enter("halt")
+	bench.frame()
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	eq("the window was told it is over, not that it is coming back",
+		bench.closed[#bench.closed], "off")
+	eq("nothing is pending", bench.object.rebooting, nil)
+
+	waitOutTheDark(bench)
+	eq("and it is still off three seconds later", bench.object.on, false)
+	eq("with no window back", #bench.windows, 1)
 end
 
 -- sudo reboot: the same, from an account that is not root.
 do
 	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("admin")
 	bench.enter("sudo reboot")
 	bench.frame()
@@ -1291,21 +1589,20 @@ do
 
 	bench.enter("")
 	bench.frame()
-	eq("and then it goes down and comes back", bench.object.on, true)
+	eq("and then it goes dark", bench.object.on, false)
+	eq("tile and all", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("with the window shut", bench.window.closing)
+
+	waitOutTheDark(bench)
+	eq("and comes back", bench.object.on, true)
 	eq("with nobody logged in", bench.object.console.user, nil)
-	eq("the window stayed and is booting", bench.window.revealing, true)
-	check("and it was not closed", not bench.window.closing)
+	eq("and his window back", #bench.windows, 2)
 end
 
--- A reboot on a machine that lost its power while it was down.
-do
-	local bench = newBench()
-	bench.login("root")
-	bench.object.hasPower = function() return false end
-	bench.enter("reboot")
-	eq("it stays dark", bench.object.on, false)
-	check("and the window is told", bench.window.closing)
-end
+-- The world this section laid out is its own. Every bench above it runs on a game
+-- with no cell at all, and so does every bench below.
+_G.__world = nil
+
 
 -- sudo edit: the buffer is root's, and it saves.
 do
@@ -1609,14 +1906,6 @@ do
 	eq("and two digits do not change the shape", o(-12, 30, 0), "12W 30S")
 	-- The widest a real one gets, and the column dev keeps for it.
 	eq("the widest offset there is", #o(-10, -10, -1), 10)
-end
-
--- An ArrayList as the game hands one over: 0-based get, and a size.
-local function javaList(items)
-	return {
-		size = function() return #items end,
-		get = function(_, i) return items[i + 1] end,
-	}
 end
 
 local FakeWorld = {}
@@ -3391,7 +3680,16 @@ do
 	bench.enter("")
 	bench.frame()
 	check("the machine has no job book left", bench.object.jobs == nil)
-	eq("and no machine is left in the scheduler", #CeroSecJobs.machines, 0)
+	-- The one thing the scheduler still holds it for is the dark interval: a
+	-- machine that is coming back is counted on the same pass a pending shutdown
+	-- is (CeroSecJobs.checkReboot).
+	eq("the machine is in the scheduler for the dark alone", #CeroSecJobs.machines, 1)
+	eq("and that is all it is there for", bench.object.jobs, nil)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(2)
+	eq("it came back running nothing", bench.object.on, true)
+	eq("and the scheduler has let it go", #CeroSecJobs.machines, 0)
 end
 
 --
@@ -3603,6 +3901,7 @@ end
 -- shutdown -r +1: the broadcast, the warning, and the reboot.
 do
 	local bench = newBench()
+	local kit = embody(bench)
 	bench.login("root")
 	local other = bench.addWindow()
 	other:askForScreen()
@@ -3624,16 +3923,25 @@ do
 	bench.tick(5)
 	eq("still up", bench.object.on, true)
 
-	-- And then it goes down and comes back.
+	-- And then it goes down: the timer's reboot is the typed one's reboot, dark
+	-- interval and all.
 	_G.__now = _G.__now + 61000
 	bench.tick(1)
 	-- Said, not painted: the line goes out to every window and the machine wipes
-	-- its console in the same breath, so the glass has already been redrawn by
-	-- the fresh boot before this bench renders.
+	-- its console in the same breath, so there is no glass left to paint it on.
 	check("it says NOW", bench.heard("The system is going down for reboot NOW!"))
+	eq("the machine is off", bench.object.on, false)
+	eq("the tile is unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
+	check("both windows shut", bench.window.closing and other.closing)
+	eq("and both were told why", bench.closed[#bench.closed], "reboot")
+	eq("nothing is pending any more", bench.object.shutdown, nil)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	bench.tick(1)
 	eq("and the machine came back", bench.object.on, true)
 	eq("with nobody logged in", bench.object.console.user, nil)
-	eq("and nothing pending", bench.object.shutdown, nil)
+	eq("and two windows back at it", #bench.windows, 4)
+	_G.__world = nil
 end
 
 -- shutdown -c, and a warning a minute out on a longer one.
@@ -4392,8 +4700,8 @@ local function newNet()
 	end
 	local window = newWindow()
 	net.window = window
-	-- The survivor himself, for the one command that is about no machine: looking a
-	-- number up in the telephone directory (PlayerCommands.phonebook).
+	-- The player himself, for the benches that drive a command straight into
+	-- OnClientCommand instead of through a terminal window.
 	net.player = player
 
 	net.said = {}
@@ -5642,6 +5950,34 @@ do
 	eq("the far machine is off", net.gate.on, false)
 	check("and the session said so", net.heard("Connection closed."))
 	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
+end
+
+-- And rebooting it from inside the session closes it the same way. A reboot is
+-- the far machine going down, whatever it does three seconds later: the words the
+-- remote end reads are the words it has always read, and the window that comes
+-- back at the end of a dark interval is a LOCAL one -- there is nobody standing
+-- at the machine on the other end of the wire.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	net.forget()
+	net.enter("sudo reboot")
+	net.enter("")
+	net.tick(4)
+	eq("the far machine is dark", net.gate.on, false)
+	check("and the session said so, in the same words", net.heard("Connection closed."))
+	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
+	eq("no session is left on it", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
+	net.tick(1)
+	eq("the far machine came back up", net.gate.on, true)
+	eq("with nobody logged in", net.gate.console.user, nil)
+	eq("and nobody watching it", net.gate.watchers, nil)
 end
 
 -- The editor travels: the buffer belongs to the session, so it is the far
@@ -7688,15 +8024,30 @@ local function newInventory()
 	local inv = { items = {}, nextID = 100 }
 	function inv:add(fullType, data)
 		self.nextID = self.nextID + 1
+		-- The NAME is modelled the way the engine really holds it: one field, which
+		-- getName and getDisplayName both just read (javap -c
+		-- zombie.inventory.InventoryItem -- getDisplayName is a single getfield on
+		-- `name`), starting at the item's ordinary name and replaced wholesale by
+		-- setName. So a disk with no label is a disk whose name is the generic one and
+		-- NOT a disk with no name -- which is exactly the case that would let a bench
+		-- pass while the server read the generic name as a label.
 		local item = {
 			id = self.nextID,
 			type = fullType,
 			data = data or {},
+			name = "3.5 inch Floppy Disk",
+			customName = false,
+			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
 			hasModData = function(self) return true end,
 			getModData = function(self) return self.data end,
 			getContainer = function(self) return inv end,
+			getName = function(self) return self.name end,
+			setName = function(self, s) self.name = s end,
+			isCustomName = function(self) return self.customName end,
+			setCustomName = function(self, b) self.customName = b end,
+			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -7871,6 +8222,127 @@ do
 	check("the note is readable on the other machine",
 		other.painted("the pumps are at the depot"))
 	check("both lines of it", other.painted("and the keys are under the mat"))
+
+	--
+	-- The sticker, through the slot and back out
+	--
+	-- The label is written on the ITEM (its custom name) and read at the slot; the
+	-- machine keeps it on the disk record and prints it on `mount` and `df`; the
+	-- eject puts it back on the shell.
+	--
+	-- Which has to be ASSERTED and not assumed, because the item does not survive the
+	-- round trip: an insert removes it and an eject makes a NEW one with AddItem, so
+	-- a label that was not deliberately carried across would be gone.
+	--
+	local labelled = otherInv:add("CeroSec.FloppyGreen")
+	labelled:setName("PAYROLL 93")
+	labelled:setCustomName(true)
+
+	-- The other machine's drive still has the red disk in it; out it comes first.
+	other.send("ejectfloppy")
+	eq("the drive is free", other.object:hasDisk(), false)
+
+	other.send("insertfloppy", { item = labelled:getID() })
+	eq("the labelled disk went in", other.object:hasDisk(), true)
+	eq("and the machine wrote the sticker on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- And the two commands a survivor asks "which disk is this" with say so.
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("mount names the disk by what is written on it",
+		other.painted("/dev/fd0 on /mnt type ufs (rw) (PAYROLL 93)"))
+	other.enter("df")
+	other.frame()
+	check("and df wears it too", other.painted("(PAYROLL 93)"))
+
+	-- Out again: a NEW item, and the handwriting is on it.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local back = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyGreen" then
+			back = otherInv.items[i]
+		end
+	end
+	check("the green disk is back", back ~= nil)
+	check("and it really is a new item, not the one that went in", back ~= labelled)
+	eq("wearing the label", back:getName(), "PAYROLL 93")
+	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
+
+	-- Back in, and the label is still the label: it lives on the disk and survives
+	-- as many trips through the slot as the survivor makes.
+	other.send("insertfloppy", { item = back:getID() })
+	eq("the label survived the round trip",
+		CeroSecOS.floppyOf(other.object:osState()).label, "PAYROLL 93")
+
+	-- A disk with NO label: no sticker on the record, and no empty brackets on the
+	-- two lines. The generic item name is not a label, and reading it as one would
+	-- put "3.5 inch Floppy Disk" in the mount listing of every machine in Kentucky.
+	other.send("ejectfloppy")
+	local plain = otherInv:add("CeroSec.FloppyBlue")
+	eq("its name is the ordinary one", plain:getName(), "3.5 inch Floppy Disk")
+	eq("and it is not a custom name", plain:isCustomName(), false)
+	other.send("insertfloppy", { item = plain:getID() })
+	eq("an unlabelled disk carries no sticker",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.enter("newfs /dev/fd0")
+	other.enter("mount /dev/fd0 /mnt")
+	other.enter("mount")
+	other.frame()
+	check("and mount prints the bare line",
+		other.painted("/dev/fd0 on /mnt type ufs (rw)"))
+	check("with the generic name nowhere near it",
+		not other.painted("3.5 inch Floppy Disk"))
+
+	-- Erased: a name the survivor took the flag off. The slot CLEARS the record
+	-- rather than leaving the last label on it, or a disk somebody erased would come
+	-- out of the drive still labelled.
+	other.enter("umount /mnt")
+	other.frame()
+	other.send("ejectfloppy")
+	local erased = otherInv:add("CeroSec.FloppyRed")
+	erased:setName("OLD")
+	erased:setCustomName(true)
+	other.send("insertfloppy", { item = erased:getID() })
+	eq("labelled first", CeroSecOS.floppyOf(other.object:osState()).label, "OLD")
+	other.send("ejectfloppy")
+	local again = nil
+	for i = 1, #otherInv.items do
+		if otherInv.items[i]:getFullType() == "CeroSec.FloppyRed" then
+			again = otherInv.items[i]
+		end
+	end
+	again:setCustomName(false)
+	other.send("insertfloppy", { item = again:getID() })
+	eq("and the erase reaches the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+
+	-- A label a CLIENT could never have typed. The slot holds what arrives to
+	-- CeroSecOS.labelOk, which is tighter than the gate: the two commands that print
+	-- it are lines on a screen, and a forged name with a newline in it would put a
+	-- second line in the mount listing.
+	other.send("ejectfloppy")
+	local forged = otherInv:add("CeroSec.FloppyYellow")
+	forged:setName("two\nlines")
+	forged:setCustomName(true)
+	other.send("insertfloppy", { item = forged:getID() })
+	eq("a forged label is not written on the record",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	eq("and the disk went in all the same", other.object:hasDisk(), true)
+	other.send("ejectfloppy")
+	local over = otherInv:add("CeroSec.FloppyYellow")
+	over:setName(string.rep("L", CeroSecOS.LABEL_MAX + 1))
+	over:setCustomName(true)
+	other.send("insertfloppy", { item = over:getID() })
+	eq("nor is one over the ceiling",
+		CeroSecOS.floppyOf(other.object:osState()).label, nil)
+	other.send("ejectfloppy")
 
 	-- And the first machine has nothing left of it.
 	eq("the first machine's drive is empty", bench.object:hasDisk(), false)
@@ -9529,5 +10001,161 @@ do
 	CeroSec.logRing = {}
 end
 
+
+--
+-- 52. What the window may do, and why it may not (the debug rework)
+--
+-- The window greys a button and prints a reason, and neither answer is its own:
+-- both are built here, by the same readings the act itself goes through. The defect
+-- this block exists for: "Turn on" was offered on a machine whose chunk was away,
+-- the press went out on the wire, turnOn refused for want of a square to ask about
+-- the wire, and NOTHING came back -- a button that could not work looked exactly
+-- like a button that had.
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- The machine in the shed is on and its chunk is away, which is the state
+	-- Mathieu's row was in but the other way round: switch it off first.
+	local away = net.far
+	eq("the far machine has no chunk", away:isLoaded(), false)
+	eq("switching it off works even so", away:turnOff(), true)
+
+	local why = CeroSecDebug.turnOnRefusal(away)
+	check("a machine whose chunk is away cannot be switched on", why ~= nil)
+	check("and the reason names the chunk and not the wiring",
+		string.find(why, "chunk is away", 1, true) ~= nil)
+	check("and it says what to do about it",
+		string.find(why, "teleport", 1, true) ~= nil)
+	eq("turning it OFF is refused because it is already off",
+		CeroSecDebug.turnOffRefusal(away), "it is already off")
+
+	-- The same machine with its chunk in and a wire: no refusal at all. The chunk
+	-- coming in is an IsoObject with modData on it, because switching a machine on
+	-- mirrors its state into the tile (SCeroSecObject:toModData).
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	eq("with the chunk in and a wire there is nothing to refuse",
+		CeroSecDebug.turnOnRefusal(away), nil)
+	-- And with the chunk in and no wire, the OTHER sentence -- which is the
+	-- distinction a sweep once got wrong.
+	away.hasPower = function() return false end
+	eq("a loaded machine with no wire says the wire",
+		CeroSecDebug.turnOnRefusal(away), "there is no wire at its square")
+	away.hasPower = function() return true end
+	eq("and it really does come on", away:turnOn(), true)
+	eq("after which it cannot come on again", CeroSecDebug.turnOnRefusal(away),
+		"it is already on")
+	eq("and turning it off is what is left", CeroSecDebug.turnOffRefusal(away), nil)
+
+	-- Nothing selected is a refusal too, and never an error.
+	check("nothing selected cannot be switched on",
+		CeroSecDebug.turnOnRefusal(nil) ~= nil)
+
+	-- Every snapshot carries those answers, whatever tab it is for: the buttons
+	-- under the list are the same six on every tab.
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for i = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[i], net.here)
+		eq(tabs[i] .. " says whether the machine can come on", snap.canTurnOn, false)
+		eq("and whether it can go off", snap.canTurnOff, true)
+		eq("and whether it is on", snap.on, true)
+		-- This bench's machines have no IsoObject at all, which is a county nobody
+		-- is standing in: loaded is the honest answer and the window greys the
+		-- terminal on it.
+		eq("and whether its chunk is in", snap.loaded, false)
+		eq("with the reason it cannot come on", snap.reason, "it is already on")
+	end
+end
+
+-- Which machines are worth a row: the flag the window's "used only" filter reads.
+do
+	local net = newNet()
+	-- A computer sprite a chunk brought in and nobody ever touched, which is what
+	-- forty-four of Mathieu's rows were. The system makes one for every valid iso
+	-- object of every loaded square, so this is not a rare case at all.
+	local idle = net.machine(300, 220, 0, net.shed)
+	eq("it is off", idle.on, false)
+	eq("and it has no disk of its own", idle.os, nil)
+	eq("so it has never been used", CeroSecDebug.isUsed(idle), false)
+	eq("while a machine that is on has been", CeroSecDebug.isUsed(net.here), true)
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	local idleRow, liveRow = nil, nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "300,220,0" then idleRow = snap.rows[i] end
+		if snap.rows[i].c[1] == "10,10,0" then liveRow = snap.rows[i] end
+	end
+	check("the untouched one is still on the list", idleRow ~= nil)
+	eq("and its row says it has never been used", idleRow.used, false)
+	eq("while the live one's says it has", liveRow.used, true)
+
+	-- And a machine switched off after being used stays used: it has a disk.
+	net.here:turnOff()
+	eq("a machine that has been used stays used once it is off",
+		CeroSecDebug.isUsed(net.here), true)
+end
+
+-- The refusal on the WIRE, through the real command door.
+do
+	local net = newNet()
+	local away = net.far
+	away:turnOff()
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("the server answered the press", #answers, 1)
+	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
+	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")
+	check("with the refusal on it",
+		string.find(tostring(answers[1].args.error), "cannot turn on", 1, true) ~= nil)
+	check("and the reason in it",
+		string.find(tostring(answers[1].args.error), "chunk is away", 1, true) ~= nil)
+	eq("and no tab, so no list is emptied by it", answers[1].args.tab, nil)
+	eq("the machine is still off", away.on, false)
+
+	-- A press that CAN work answers nothing at all: the snapshot two seconds later
+	-- is what says it happened, and a window that had to read a receipt would be a
+	-- window that showed one.
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return {} end,
+		transmitModData = function() end }
+	away.getIsoObject = function() return tile end
+	away.hasPower = function() return true end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "on" })
+	eq("nothing is answered when it worked", #answers, 0)
+	eq("and the machine came on", away.on, true)
+
+	-- Turning off a machine that is already off is refused in the same words.
+	away:turnOff()
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "off" })
+	eq("the press was answered", #answers, 1)
+	check("with the refusal",
+		string.find(tostring(answers[1].args.error), "already off", 1, true) ~= nil)
+
+	-- And a machine nothing answers to -- which is what 0,0,0 is -- says that.
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "on" })
+	eq("a triple nothing is at is answered too", #answers, 1)
+	check("with what is wrong with it",
+		string.find(tostring(answers[1].args.error), "no machine at", 1, true) ~= nil)
+end
 
 print("window_test: " .. count .. " checks passed")
