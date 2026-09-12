@@ -61,6 +61,15 @@ because the answer is only true for the moment it is asked:
 - No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
   the same z. A `nil` square is an unloaded chunk and is skipped.
 
+Before either: the machine's **own** square. No square there is a chunk the streamer
+has not brought in, and a machine that is not in the world reaches nothing — `find`
+answers an empty list at once rather than walking four hundred tiles that cannot be
+there, which is the same guard `CeroSecRadio.tncAt` wears one layer down. So a computer
+you have walked away from lists no devices and answers `no such device` about the
+numbers in its own book, and its sensors fall out of the sampling book on the usual two
+scans of grace. It is not switched off for it and it keeps running: the rule is
+[ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away).
+
 Classification is `instanceof`, and it answers a **list**, because one object can
 be two devices: `IsoLightSwitch` → `light`, `IsoWindow` → `win`, `IsoDoor` →
 `door` *and* `lock` when the lock bites, `IsoThumpable` with `isDoor()` → `door`

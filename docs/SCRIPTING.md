@@ -450,9 +450,15 @@ and `stdin.done` closes the pipe behind it, which is how `head -n 1` ends a floo
 `cronLog` and `mailAppend`. `commands.crontab` and `commands.mail` live there too.
 
 `CeroSecJobs.cronPass(system, luaObject, now)` is the daemon, and there is no process
-for it: `SCeroSecSystem:checkCron()` walks every machine whose chunk is loaded on
+for it: `SCeroSecSystem:checkCron()` walks every machine that is **on** on
 `Events.EveryOneMinute` — the same sweep the power check uses, because the two ask the
-same question of the same list. `luaObject.cron.minute` is the minute it last looked
+same question of the same list. On, and not "in view": a machine whose chunk the
+streamer has taken away keeps its power, its jobs and its crontab, and cron goes on
+firing for it, because none of the three is a thing in the world (see
+[ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away) — the pass used to stop for
+such a machine, but only because the power sweep had switched it off first). A line
+that reaches for `/dev` out there is told `no such device` like any other line about a
+device out of reach. `luaObject.cron.minute` is the minute it last looked
 at and is **runtime state**, dropped by `turnOff` and not by `killAll`: a machine
 that has only just come into view runs nothing for the minute it arrived in, and a
 minute nobody swept is a minute that is gone. `CeroSecJobs.atBoot` is `@reboot`,

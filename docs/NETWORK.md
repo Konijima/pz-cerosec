@@ -401,7 +401,10 @@ of its address are readable whatever the streamer is doing. Three things need
 the chunk -- the power check, `/dev`, and working out which building a computer
 stands in -- and the third is done once, when the machine is switched on, with
 the answer written into the machine's own state (`CeroSecOS.netRecord`, three
-numbers, saved). `tests/window_test.lua` has a machine whose `getSquare()` and
+numbers, saved). The first of the three is not merely skipped but *postponed*: a
+machine out of the world keeps the state it had, and the power question is asked again
+the moment its chunk comes back
+([ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away)). `tests/window_test.lua` has a machine whose `getSquare()` and
 `getIsoObject()` both answer `nil` and which still answers `ruptime`, a `ping`,
 an `rlogin` and a write to its disk.
 

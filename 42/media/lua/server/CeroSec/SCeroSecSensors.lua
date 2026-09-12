@@ -423,6 +423,13 @@ end
 -- would only be a second chance to disagree with it. A machine that is OFF is
 -- not walked at all, which is the whole of "a sensor is wired to a computer": no
 -- machine on, no pass, no cost.
+--
+-- And a machine whose chunk nobody has loaded costs nothing either: its own
+-- square is not in the world, so the find below answers an empty list at once
+-- (CeroSecDevices.find) and the heads it had fall out of the book on the usual
+-- two scans of grace. That is right and not merely cheap -- a head nobody can
+-- see is a head nothing is sampling -- and the machine itself is not touched by
+-- it: it keeps running, and the sensors come back with the chunk.
 function CeroSecSensors.scan(system, now)
 	if system ~= nil then
 		for i = 1, system:getLuaObjectCount() do

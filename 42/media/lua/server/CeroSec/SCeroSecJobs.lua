@@ -255,8 +255,13 @@ end
 --
 -- The daemon, which is not a process: there is no room on a machine this size
 -- for one, and there is no need for one either -- a pass once a game minute over
--- every machine whose chunk is loaded is exactly what crond does with its own
--- sleep. What a crontab MEANS is the core's (CeroSecOSCron.lua); what is here is
+-- every machine that is switched on is exactly what crond does with its own
+-- sleep. Switched on, and not "in view": a machine whose chunk the streamer has
+-- taken away keeps its power, its jobs and its crontab, because none of the three
+-- is a thing in the world (SCeroSecSystem:checkCron, and the head of
+-- SCeroSecNet.lua).
+--
+-- What a crontab MEANS is the core's (CeroSecOSCron.lua); what is here is
 -- the clock, the job-making and the four-job ceiling, because only the machine
 -- knows how many jobs it already has.
 --

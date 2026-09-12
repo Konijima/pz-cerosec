@@ -1364,11 +1364,10 @@ a pipeline: neither has anybody in front of it either.
 
 [[Two things cron will not do.
 
-It does not catch up. A machine that was switched off at four, or standing
-in a part of the county nobody was near, does not run four o'clock's line
-when it comes back. A minute cron slept through is gone. @reboot is the
-one that runs on the way up, and it runs then and not for the minutes that
-went by while the machine was dark.
+It does not catch up. A machine that was switched off at four does not run
+four o'clock's line when it comes back. A minute cron slept through is
+gone. @reboot is the one that runs on the way up, and it runs then and not
+for the minutes that went by while the machine was dark.
 
 And it does not get more than its share. Four jobs at once is the whole
 machine's ceiling, cron's lines included, and a line that comes due with
@@ -1383,6 +1382,23 @@ log and the mailbox are bounded and neither costs you disk.
 So: keep cron lines short and let them finish. A line that starts a loop
 which never ends is a slot gone until somebody kills it, and three of
 those is a machine that can no longer run anything at four.]],
+
+[[Being far away is not being switched off.
+
+A machine standing in a part of the county nobody has been near for a week
+is still running, and cron is still running on it. It keeps its own clock,
+its lines come due on time, and what they write is on the disk when you
+get there. Walking off does not stop a machine; only the power going, the
+switch, or somebody carrying it away does.
+
+What it cannot do out there is touch the building. A line that writes a
+file, adds up a log or posts you a report works exactly as it does under
+your nose. A line that reaches for a door, a light or a sensor is answered
+
+  light0: no such device
+
+until you are back in the neighbourhood, because the wires to those things
+are the room itself and the room is not there while nobody is.]],
 
 [[.profile, which is a script too.
 

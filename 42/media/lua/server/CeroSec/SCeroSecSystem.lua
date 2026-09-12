@@ -1655,20 +1655,32 @@ end
 -- player has wandered off, died or left is not a window any more. Nothing of
 -- the screen is lost by either: the console belongs to the machine, and only a
 -- machine going dark clears it.
+--
+-- This list is every computer in the county and not only the ones in memory
+-- (getLuaObjectCount is the whole of gos_cerosec.bin -- the head of
+-- SCeroSecNet.lua), so everything here that needs the WORLD is asked only of a
+-- machine the world still has: the address, the power and the book of device
+-- numbers all go through a square. A machine whose chunk is away keeps the state
+-- it had and is asked again the moment the chunk comes back
+-- (SCeroSecObject:stateToIsoObject). What the machine's own DISK answers is not
+-- in here at all and goes on regardless -- cron's pass below, and the jobs the
+-- scheduler steps.
 function SCeroSecSystem:checkPower()
 	for i = 1, self:getLuaObjectCount() do
 		local luaObject = self:getLuaObjectByIndex(i)
+		local loaded = luaObject:isLoaded()
 		-- A machine that has been running since before this rung, or one carried
 		-- into a building while it was switched on, has no address yet. Asked only
 		-- of a machine that has not got one, so the sweep costs nothing on a
 		-- county where every computer is already numbered.
-		if luaObject.on and CeroSecOS.netRecord(luaObject.os) == nil then
+		if luaObject.on and loaded and CeroSecOS.netRecord(luaObject.os) == nil then
 			CeroSecNet.identify(self, luaObject, luaObject:osState())
 		end
-		if luaObject.on and not luaObject:hasPower() then
-			self:evictWatchers(luaObject, "power")
-			luaObject:turnOff()
-		elseif luaObject.watchers then
+		-- The power decision is the machine's own, so that the sweep and a chunk
+		-- coming back cannot disagree about it, and it is where the rule about an
+		-- unloaded chunk lives: no square, no decision.
+		local wentDark = luaObject:checkPower()
+		if not wentDark and luaObject.watchers then
 			for key, watcher in pairs(luaObject.watchers) do
 				local playerObj = watcher.player
 				if not playerObj or playerObj:isDead()
@@ -1685,8 +1697,10 @@ function SCeroSecSystem:checkPower()
 			-- the glass moves -- a line already printed stays printed, here as on
 			-- any terminal -- but the book of numbers catches up, so a window
 			-- that was smashed or a door that was built while the screen was open
-			-- already has its number by the time `ls /dev` is typed.
-			if luaObject.watchers then
+			-- already has its number by the time `ls /dev` is typed. A machine out
+			-- of the world is skipped: /dev is the squares around it and there are
+			-- none, so the walk would cost a chunk's worth of nothing.
+			if loaded and luaObject.watchers then
 				CeroSecDevices.refresh(luaObject, luaObject:osState())
 			end
 		end
@@ -1695,11 +1709,17 @@ end
 
 -- cron's own minute hand.
 --
--- Every machine whose chunk is loaded, once a game minute: the same sweep the
--- power check walks, because the two ask the same question of the same list and a
--- second walk would only be a second chance to disagree about it. A machine
--- nobody has loaded is a machine cron is not running on, which is what makes a
--- missed minute a minute that is simply gone (see CeroSecJobs.cronPass).
+-- Every machine that is ON, once a game minute: the same sweep the power check
+-- walks, because the two ask the same question of the same list and a second walk
+-- would only be a second chance to disagree about it.
+--
+-- The chunk is not one of the conditions, and that is the decision: a crontab is
+-- the machine's own business and needs nothing of the world -- a script that
+-- writes a file, mails a report or shuts the machine down runs as well out of
+-- sight as in it. Only the lines that reach for /dev find the world gone, and
+-- they are told "no such device" like any other line about a device out of
+-- reach. (The pass USED to stop for a machine out of view, but only because the
+-- power sweep switched such a machine off first, which was the bug above.)
 function SCeroSecSystem:checkCron()
 	local now = CeroSecOS.clockOf(self:clockEnv())
 	if now == nil then return end

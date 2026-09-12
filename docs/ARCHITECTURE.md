@@ -51,6 +51,55 @@ The context menu, the reach checks and the terminal window are all client-side;
 the wire between them and the server — the message list, the screen shape and
 who a token addresses — is [PROTOCOL.md](PROTOCOL.md).
 
+## The chunk that goes away
+
+A computer keeps the state it had while its chunk is not loaded. It stays on, it keeps
+its jobs, its pending `shutdown` and its crontab, it goes on answering the wire, and
+its disk goes on being written — none of the five is a thing in the world. Only what
+the world owns goes with the chunk: `/dev`, the sensor heads, and the power question
+itself.
+
+The power question is the one that used to get this wrong. `SCeroSecObject:hasPower()`
+asks the machine's **square** (`haveElectricity()`, or `hasGridPower()` in a room —
+the same test `ISWorldObjectContextMenu.lua:460` makes), and a chunk the streamer has
+taken away has no square at all, so `false` from it means *there was nobody to ask*
+and not *the room has no wire*. The minute sweep read it as the second and switched
+off every computer the survivor had walked away from — the bug behind "I go far, and I
+come back and they are off". So the decision lives in one place,
+`SCeroSecObject:checkPower()`, and it refuses to decide anything about a machine the
+world has not got: `isLoaded()` (the `IsoObject`, which is the stricter of the two
+handles) first, `hasPower()` second. `SCeroSecSystem:checkPower()` — the
+`EveryOneMinute` sweep — calls exactly that, and so does `stateToIsoObject`, which is
+the chunk arriving: **the power check happens on the next load**, at the first moment
+there is a room to ask, so a machine whose generator ran dry while you were away is
+lit until you walk back in and dark by the time you can see it. Coming back also
+re-applies the sprite and announces the object to the client, which is what puts the
+screen's glow back (`newLuaObjectOnClient` → `CCeroSecObject:syncLight`).
+
+This is vanilla's own habit with a global object it cannot see:
+`SCampfireSystem.lua:157-159` skips a campfire whose square is gone — *"if campfire is
+burning (and still there, I mean not destroy because of streaming)"* — and so does
+`lowerFirelvl` at `:100-101`, while `lowerFuelAmount:135-138` goes on burning its fuel
+regardless, because the fuel is the fire's own state and not the world's.
+
+**A chunk unloading is not a removal.** `Events.OnObjectAboutToBeRemoved` is triggered
+in exactly two places in 42.20.4: `IsoGridSquare.RemoveTileObject(IsoObject, boolean)`
+(`javap -c`: `LuaEventManager.triggerEvent` at offset 177) and
+`RemoveItemFromSquarePacket` — a player or the network taking the object off its
+square. `IsoChunk` never calls `RemoveTileObject`; what it fires when it lets its
+squares go is `ReuseGridsquare` (`IsoChunk.doReuseGridsquares:3044`). So the vanilla
+handler that removes the Lua object — and with it the disk, the jobs and every session
+— runs when the computer is picked up or smashed, and never because somebody walked
+away. Nothing here overrides it.
+
+`tests/window_test.lua` has the whole rule: a machine with a session open on it and a
+crontab due loses its square, its `IsoObject` and its room; ten minutes of the sweep
+leave it on, the session alive and cron firing every minute; `dev light0 on` answers
+`light0: no such device`; the chunk comes back with a wire and it is still on with its
+sprite and its glow put back; the chunk comes back to a dark room and it goes off at
+that first check, not a minute later; and the control — a machine the sweep **can**
+see loses its power and goes off on the next minute.
+
 ## The clock
 
 The engine has no clock and asks for none. `env.now` is one number — seconds since

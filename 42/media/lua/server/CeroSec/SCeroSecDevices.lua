@@ -462,8 +462,16 @@ function CeroSecDevices.find(x, y, z)
 	if cell == nil then return found end
 
 	local square = cell:getGridSquare(x, y, z)
-	local building = nil
-	if square ~= nil then building = square:getBuilding() end
+	-- No square at all is a chunk the streamer has not brought in, and a machine
+	-- that is not in the world reaches nothing: no /dev, and nothing for the
+	-- sensor scan to sample (CeroSecSensors.scan). The same rule and the same
+	-- guard the radio wears one layer down (CeroSecRadio.tncAt), and it is here
+	-- rather than inside the two branches below because the no-building branch
+	-- would otherwise walk four hundred squares that cannot be there -- once a
+	-- minute, for every machine in the county the player has walked away from.
+	if square == nil then return found end
+
+	local building = square:getBuilding()
 
 	if building ~= nil then
 		-- Every room of the building, through its definition: BuildingDef

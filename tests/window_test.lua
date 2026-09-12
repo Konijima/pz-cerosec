@@ -291,6 +291,28 @@ SGlobalObjectSystem.new = function(self, name)
 end
 SGlobalObjectSystem.initSystem = function() end
 SGlobalObjectSystem.RegisterSystemClass = function() end
+-- The two the game itself brings, copied rather than approximated: the unload
+-- section at the bottom is about what happens INSIDE loadIsoObject when a chunk
+-- comes back, which is the one path a bench cannot fake without them
+-- (media/lua/server/Map/SGlobalObjectSystem.lua:128-149).
+SGlobalObjectSystem.getLuaObjectOnSquare = function(self, square)
+	if not square then return nil end
+	return self:getLuaObjectAt(square:getX(), square:getY(), square:getZ())
+end
+SGlobalObjectSystem.loadIsoObject = function(self, isoObject)
+	if not isoObject or not isoObject:getSquare() then return end
+	if not self:isValidIsoObject(isoObject) then return end
+	local luaObject = self:getLuaObjectOnSquare(isoObject:getSquare())
+	if luaObject then
+		luaObject:stateToIsoObject(isoObject)
+		return
+	end
+	-- Vanilla's other branch makes a brand new GlobalObject out of the sprite,
+	-- which needs the Java system this bench has none of. No bench here takes it:
+	-- a computer the server has never seen is a different rung, and an error is
+	-- better than a silent nothing if one ever does.
+	error("loadIsoObject: no luaObject to load onto", 2)
+end
 
 --
 -- The mod, loaded the way the game loads it.
@@ -2418,6 +2440,11 @@ do
 	-- padlocked door two tiles away is in; a light switch twenty tiles away is
 	-- not, and neither is one a floor up.
 	local world = FakeWorld.new()
+	-- The tile the computer itself stands on, which a world has to have before
+	-- the machine reaches anything at all: no square of its own is a chunk the
+	-- streamer has not brought in, and such a machine finds no devices
+	-- (CeroSecDevices.find, and CeroSecRadio.tncAt one layer down).
+	world.square(10, 10, 0, nil)
 	local near = world.put(world.square(12, 10, 0, nil), fakeThumpable(true, true))
 	local far = world.put(world.square(10 + CeroSecDevices.RADIUS + 1, 10, 0, nil),
 		fakeLight(true, true))
@@ -6951,6 +6978,331 @@ do
 	other.enter("ls /mnt")
 	other.frame()
 	check("with the file still on it", other.painted("a"))
+end
+
+--
+-- 42. The chunk that went away (rung 6d)
+--
+-- "When I go far, some of my computers get shut down; I come back and they are
+-- off." The cause was the minute sweep in SCeroSecSystem: hasPower is asked of
+-- the machine's SQUARE, a chunk the streamer has taken away has none, and the
+-- sweep read "no square" as "no wire in the room" and switched the machine off
+-- -- every computer the survivor had walked away from, once a minute, for ever.
+--
+-- The rule now, and it is vanilla's own habit with a global object it cannot see
+-- (SCampfireSystem.lua:157-159 skips a campfire whose square is gone -- "and
+-- still there, I mean not destroy because of streaming" -- while
+-- lowerFuelAmount:135-138 goes on burning its fuel regardless): a machine out of the
+-- world keeps the state it had. It stays on, it keeps its jobs and its crontab,
+-- and it keeps answering the wire, because none of the three is a thing in the
+-- world. Only what the world owns is gone: /dev, the sensor heads, and the power
+-- question itself -- and the power question is asked again, at once, the moment
+-- the chunk comes back.
+--
+-- The event a bench cannot see is the one that does NOT fire. A chunk unloading
+-- does not fire Events.OnObjectAboutToBeRemoved: the only two callers of that
+-- event in 42.20.4 are IsoGridSquare.RemoveTileObject (javap'd:
+-- LuaEventManager.triggerEvent at offset 177 of RemoveTileObject(IsoObject,
+-- boolean)) and the RemoveItemFromSquarePacket, i.e. a player or the network
+-- taking the object off its square. IsoChunk never calls RemoveTileObject at all;
+-- what it fires when it lets its squares go is "ReuseGridsquare"
+-- (IsoChunk.doReuseGridsquares:3044). So the vanilla handler that removes the Lua
+-- object -- and with it the disk, the jobs and the sessions -- runs when the
+-- computer is picked up or smashed, and never because the player walked away.
+--
+
+do
+	-- The corner of the office the player's own machine stands in (net.office up
+	-- in newNet), so the streamed machine is in the same building and therefore
+	-- on the same wire: the Ethernet rule is one building.
+	local OFFICE_X, OFFICE_Y = 400, 700
+
+	-- One more machine on a real newNet, with everything the WORLD owns behind a
+	-- single switch: its square, its iso object, the room its devices are in and
+	-- the cell that answers for its tiles. machine() up in newNet stubs hasPower
+	-- and syncSprite, because the benches above it are about the wire; here both
+	-- stubs come off and the real questions are asked of a real square, which is
+	-- the whole subject of this section.
+	local function streamed(net, x, y)
+		local chunk = { loaded = true, powered = true, told = 0, sprites = {} }
+
+		local function newSquare(sx, sy, objects)
+			local sq = { objects = objects or {}, items = {}, bodies = {} }
+			sq.getX = function() return sx end
+			sq.getY = function() return sy end
+			sq.getZ = function() return 0 end
+			sq.getRoom = function() return chunk.room end
+			sq.getBuilding = function() return chunk.building end
+			sq.getObjects = function() return javaList(sq.objects) end
+			sq.getWorldObjects = function() return javaList(sq.items) end
+			sq.getMovingObjects = function() return javaList(sq.bodies) end
+			-- The wall socket: the two calls hasPower makes, in the order it makes
+			-- them (ISWorldObjectContextMenu.lua:460). One switch for both, because
+			-- what this bench means by no power is a dark building and not which of
+			-- the generator and the county grid went.
+			sq.haveElectricity = function() return chunk.powered end
+			sq.hasGridPower = function() return false end
+			return sq
+		end
+
+		chunk.light = fakeLight(true, true)
+		local here = newSquare(x, y)
+		local beside = newSquare(x + 1, y, { chunk.light })
+		-- The tile it is on, which is what FakeWorld.put gives a device and what
+		-- the device layer asks of one before it acts on it (the alive() check in
+		-- SCeroSecDevices): a switch whose chunk is away is not on a square either.
+		chunk.light.getSquare = function() return chunk.loaded and beside or nil end
+		chunk.room = { getName = function() return "office" end,
+			getSquares = function() return javaList({ here, beside }) end }
+		local def = {
+			getX = function() return OFFICE_X end,
+			getY = function() return OFFICE_Y end,
+			-- A RoomDef answers no IsoRoom for a room whose chunks are not in,
+			-- which is what FakeWorld's own building def does further up.
+			getRooms = function() return javaList({
+				{ getIsoRoom = function() return chunk.loaded and chunk.room or nil end },
+			}) end,
+		}
+		chunk.building = { getDef = function() return def end }
+
+		-- The tile's own object, which is what a chunk brings back with it. Its
+		-- sprite starts OFF because that is what is on the tile before anybody has
+		-- switched the machine on.
+		local iso = { sprite = CeroSec.SPRITES_OFF["S"], modData = {} }
+		iso.getSpriteName = function() return iso.sprite end
+		iso.setSpriteFromName = function(_, name)
+			iso.sprite = name
+			chunk.sprites[#chunk.sprites + 1] = name
+		end
+		iso.transmitUpdatedSpriteToClients = function() end
+		iso.hasModData = function() return true end
+		iso.getModData = function() return iso.modData end
+		iso.transmitModData = function() end
+		iso.getSquare = function() return chunk.loaded and here or nil end
+		chunk.iso = iso
+
+		-- The cell, which is a different question from the machine's own square:
+		-- /dev and the sensor scan are discovered through getCell
+		-- (CeroSecDevices.find), so a chunk that is away has to be away from that
+		-- too. Nothing else in the county is in this cell, which is all the two
+		-- benches that read /dev need.
+		_G.__world = { getGridSquare = function(_, gx, gy, gz)
+			if not chunk.loaded or gz ~= 0 then return nil end
+			if gx == x and gy == y then return here end
+			if gx == x + 1 and gy == y then return beside end
+			return nil
+		end }
+
+		-- The client's end of a chunk coming back: stateToIsoObject announces the
+		-- object, which is what puts the screen's glow back on
+		-- (CCeroSecSystem:newLuaObjectAt -> syncLight). Counted, because "the
+		-- client was told" is the only server-side proof of a light there is.
+		net.system.newLuaObjectOnClient = function(_, o)
+			if o == chunk.object then chunk.told = chunk.told + 1 end
+		end
+
+		local object = net.machine(x, y, 0, chunk.building)
+		object.hasPower = nil
+		object.syncSprite = nil
+		object.getSquare = function() return chunk.loaded and here or nil end
+		object.getIsoObject = function() return chunk.loaded and iso or nil end
+		chunk.object = object
+		object:turnOn()
+
+		-- The streamer, both ways. Away takes the square, the iso object, the room
+		-- and the tiles all at once, which is what one chunk going out of memory
+		-- does. Back puts the very same ones in again and then hands the iso object
+		-- to the system exactly as the game does: MapObjects.OnLoadWithSprite ->
+		-- LoadComputer -> loadIsoObject (the foot of SCeroSecSystem.lua).
+		function chunk.away()
+			chunk.loaded = false
+		end
+		function chunk.back(powered)
+			chunk.powered = powered ~= false
+			chunk.loaded = true
+			net.system:loadIsoObject(iso)
+		end
+
+		return chunk
+	end
+
+	-- The whole of the report, in one bench: ten minutes out of view with a
+	-- session open on it and a crontab due every minute.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		net.name(net.here, far, "deep")
+		net.put(far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+		net.crontab(far, "admin", "* * * * * echo alive >> /home/admin/log")
+		net.login("admin")
+
+		net.enter("rlogin deep")
+		net.tick(3)
+		check("the far machine takes the login", net.glass("admin@" .. net.host(far)))
+		-- And its light switch is a device while the chunk is in, which is what
+		-- makes the refusal below a refusal and not an empty bench.
+		net.enter("dev light0 off")
+		net.tick(2)
+		eq("the switch it reaches really moves", chunk.light.activated, false)
+		check("and dev said what it read back", net.glass("light0: off"))
+
+		-- One minute with the chunk still in, so that cron has looked at the clock
+		-- once: the minute a machine comes into view in is never a minute it runs
+		-- anything for, and a bench that skipped this would be counting nine.
+		net.minute(1)
+		eq("and nothing has run yet", net.text(far, "/home/admin/log"), nil)
+
+		-- The survivor walks out of town. Nothing else changes: the machine is on,
+		-- somebody is logged into it from the wire, its crontab is due.
+		chunk.away()
+		eq("its square is gone", far:getSquare(), nil)
+		eq("and so is its iso object", far:getIsoObject(), nil)
+		eq("which is what the machine itself says", far:isLoaded(), false)
+
+		net.forget()
+		net.minute(10)
+		eq("ten minutes of the sweep leave it on", far.on, true)
+		check("with nothing said about power", not net.heard("Connection closed."))
+		eq("the session is still open", CeroSecOS.ptyCount(far.ptys), 1)
+		eq("its screen was never thrown away", type(far.console), "table")
+
+		-- And it is still a machine: the line goes out of view and comes back.
+		net.enter("hostname")
+		net.tick(2)
+		check("the far machine still answers", net.glass(net.host(far)))
+
+		-- cron kept its minute hand. Ten minutes out of view, ten lines, whatever
+		-- the streamer was doing: a crontab is the disk's and not the world's.
+		local log = net.text(far, "/home/admin/log")
+		eq("cron fired every minute it was out of view",
+			log ~= nil and #CeroSecOS.splitLines(log), 10)
+
+		-- The one thing that is really gone is the world. The number is still in
+		-- the machine's book -- a number is spent for the life of the machine --
+		-- so what it gets is "no such device" and not "no such file": the
+		-- difference between a switch out of reach and a path he mistyped.
+		net.forget()
+		net.enter("dev light0 on")
+		net.tick(2)
+		check("the switch out of view refuses by name", net.glass("light0: no such device"))
+		eq("and nothing moved in the world", chunk.light.activated, false)
+		eq("the machine is still on for having been asked", far.on, true)
+	end
+
+	-- He comes home, and the building still has its wire.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		net.name(net.here, far, "deep")
+		net.put(far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+		net.login("admin")
+		net.enter("rlogin deep")
+		net.tick(3)
+
+		chunk.away()
+		net.minute(3)
+		chunk.told = 0
+		chunk.sprites = {}
+		chunk.back(true)
+		eq("the machine that was on is still on", far.on, true)
+		eq("the sprite on the tile is the lit one", chunk.iso.sprite, CeroSec.SPRITES_ON["S"])
+		check("and the client was told, so the glow is back", chunk.told >= 1)
+		eq("the session survived the whole errand", CeroSecOS.ptyCount(far.ptys), 1)
+
+		-- /dev is back with the chunk, by the number it always had.
+		net.enter("dev light0 off")
+		net.tick(2)
+		eq("and the switch answers again", chunk.light.activated, false)
+	end
+
+	-- He comes home, and the generator ran dry while he was away. THIS is where
+	-- the machine goes dark: at the first moment there is a room to ask, and not
+	-- because nobody could see it.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		net.name(net.here, far, "deep")
+		net.put(far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+		net.login("admin")
+		net.enter("rlogin deep")
+		net.tick(3)
+
+		chunk.away()
+		net.minute(3)
+		eq("out of view it is still on", far.on, true)
+		net.forget()
+		chunk.back(false)
+		eq("the chunk came back to a dark room and the machine went off",
+			far.on, false)
+		eq("the sprite on the tile went dark with it",
+			chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
+		eq("its screen is gone", far.console, nil)
+		check("and the session was told", net.heard("Connection closed."))
+
+		-- The first check and not the second: no minute of the sweep has run.
+		net.enter("rlogin deep")
+		net.tick(2)
+		check("and it is down for anybody who calls", net.glass("rlogin: deep: Host is down"))
+	end
+
+	-- A machine switched off while nobody could see it. The sprite could not
+	-- follow -- there was no tile to put it on -- so the tile is caught up when
+	-- the chunk comes back, with the power still on.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		net.name(net.here, far, "deep")
+		net.put(far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+		-- root's crontab, because halt is root's command (CeroSecOSShell's
+		-- commands.shutdown refuses anybody else) and cron runs a line as the
+		-- account whose crontab it is.
+		net.crontab(far, "root", "* * * * * halt")
+		net.login("admin")
+
+		-- One minute in view for cron's minute hand, then out of town.
+		net.minute(1)
+		eq("nothing has run yet", far.on, true)
+		chunk.away()
+		net.minute(2)
+		eq("the crontab shut it down out of view", far.on, false)
+		eq("and the tile it left behind still shows the lit sprite",
+			chunk.iso.sprite, CeroSec.SPRITES_ON["S"])
+
+		chunk.told = 0
+		chunk.back(true)
+		eq("the chunk comes back to the dark sprite",
+			chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
+		check("and the client is told, so no glow comes back with it", chunk.told >= 1)
+		eq("a dark machine is not switched on by its chunk arriving", far.on, false)
+	end
+
+	-- The control: the sweep still switches off a machine it CAN see. Without
+	-- this the guard above could be a guard on everything.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		net.name(net.here, far, "deep")
+		net.put(far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+		net.login("admin")
+		net.enter("rlogin deep")
+		net.tick(3)
+		net.forget()
+
+		-- The chunk stays in and the room loses its power.
+		chunk.powered = false
+		eq("it is still on until the sweep looks", far.on, true)
+		net.minute(1)
+		eq("the first minute of the sweep switched it off", far.on, false)
+		eq("with the dark sprite on its tile", chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
+		check("and the session was told", net.heard("Connection closed."))
+	end
+
+	_G.__world = nil
 end
 
 print("window_test: " .. count .. " checks passed")

@@ -23,6 +23,14 @@ The suites, in the order they run:
   uses the same two buildings four hundred squares apart -- where not one
   r-command reaches and `cu` does -- with a fake `getSandboxOptions` and a world
   age, so the grid can be killed under a call that is up.
+- `window_test.lua` also holds the unload bench: one machine of that same system with
+  everything the world owns behind a single switch -- its square, its `IsoObject`, the
+  room its devices are in and the cell that answers for its tiles -- so the streamer
+  can be made to take a chunk away with a session open on the machine and a crontab
+  due, and to bring it back with or without a wire in the wall. It is the bench for
+  the rule in
+  [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away), and it carries its own
+  control: a machine the sweep CAN see still goes off when its room does.
 - `manual_test.lua` — the documentation set against the engine it describes: the
   shape of every volume (8..13 chapters, 3..9 pages each, 50..76 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every

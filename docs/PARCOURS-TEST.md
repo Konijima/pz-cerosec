@@ -1214,6 +1214,37 @@ avant.
      lignes doivent arriver **deux par seconde**, visiblement plus lentement
      qu'un appel téléphonique (quatre) et rien ne doit manquer à la fin. [ ]
 
+## U. Le morceau de carte qui s'en va (palier 6d)
+
+Le monde se décharge autour du joueur (le jeu garde 13x13 morceaux de 8 tuiles).
+Une machine hors du monde garde l'état qu'elle avait : elle reste allumée, ses jobs
+et son crontab continuent, elle répond encore au fil, et seuls `/dev` et la mesure
+du courant s'en vont avec le morceau de carte. Le courant est remesuré au
+rechargement du morceau, jamais avant. La règle est dans
+[ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away).
+
+222. **S'éloigner, revenir, tout est encore allumé.** Allumer deux ou trois
+     ordinateurs dans un bâtiment sur le réseau (ou sur un générateur), poser un
+     `crontab -e` avec `* * * * * date >> /home/admin/heures` sur l'un d'eux, puis
+     partir assez loin pour décharger le quartier (traverser la ville, ou dormir
+     ailleurs) et revenir quinze minutes de jeu plus tard. Attendu : les machines
+     sont **toutes encore allumées**, la lueur d'écran est de retour (une seule par
+     écran), le terminal retrouve le même écran qu'avant, et `cat
+     /home/admin/heures` montre une ligne par minute passée, y compris les minutes
+     où personne ne regardait. Pendant l'absence, `ls /dev` depuis une autre
+     machine du même bâtiment par `rlogin` ne liste rien et `echo on >
+     /dev/light0` répond `light0: no such device` : c'est le monde qui manque, pas
+     la machine. [ ]
+223. **Le générateur mort pendant l'absence.** Un ordinateur allumé dans un
+     bâtiment alimenté par un générateur, réseau coupé (`ElecShutModifier` passé,
+     ou bâtiment hors réseau). Vider le générateur d'essence ou l'éteindre, puis
+     s'éloigner assez pour décharger le morceau de carte **avant** que la minute
+     suivante passe, attendre, et revenir. Attendu : la machine est éteinte, et
+     elle s'éteint **au retour** (sprite éteint, plus de lueur, un terminal ouvert
+     dessus se ferme en disant que le courant est parti), pas pendant l'absence.
+     Le contrôle du même geste : rester devant la machine et couper le générateur
+     sur place → elle s'éteint toute seule dans la minute qui suit. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

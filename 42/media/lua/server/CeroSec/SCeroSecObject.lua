@@ -101,6 +101,18 @@ end
 -- is dropped (CGlobalObjectSystem.receiveUpdateLuaObjectAt returns early).
 -- CCeroSecSystem:newLuaObjectAt tolerates the repeat.
 function SCeroSecObject:stateToIsoObject(isoObject)
+	-- The chunk is back, so the one question nobody could ask while it was away
+	-- is asked now and first: has the room still got a wire? Nothing asked it in
+	-- the meantime -- the minute sweep skips a machine with no world to look at
+	-- (checkPower below) -- so a computer whose generator ran dry or whose grid
+	-- went while the survivor was on the other side of town goes dark at the
+	-- moment he walks back in, and not a minute later.
+	--
+	-- Before the three calls below because turnOff does all three itself (apply
+	-- syncs the sprite, mirrors the state and announces it), and they are
+	-- idempotent, so a machine that has just gone dark is still announced with
+	-- the dark sprite on it.
+	self:checkPower()
 	self:syncSprite()
 	-- Derived, so it is worked out again on every chunk load rather than read off
 	-- a field the save file might disagree with.
@@ -258,11 +270,66 @@ end
 -- Power
 --
 
+-- Is this machine's chunk in the world right now?
+--
+-- Everything the WORLD has to answer needs this first, and nothing the DISK
+-- answers on its own does: a machine whose chunk the streamer has taken away
+-- keeps its last state, goes on running its jobs and goes on answering the wire
+-- (the head of SCeroSecNet.lua), because the state lives in gos_cerosec.bin and
+-- not in the chunk.
+--
+-- The iso object and not the square, which is the stricter of the two. A square
+-- with no computer on it any more is a machine on its way out of the system
+-- (Events.OnObjectAboutToBeRemoved -> SGlobalObjectSystem:removeLuaObject for
+-- one taken or destroyed, SGlobalObjectSystem:OnChunkLoaded for one that went
+-- while nobody was looking), and a machine on its way out is not one to switch
+-- off first.
+function SCeroSecObject:isLoaded()
+	return self:getIsoObject() ~= nil
+end
+
+-- Is there a wire at this machine's square?
+--
+-- Asked of the WORLD, so it is only an answer at all while the chunk is loaded:
+-- false for a machine nobody has streamed in means "there was nobody to ask",
+-- not "the room has no power". turnOn wants exactly that reading -- a machine
+-- nobody can reach is a machine nobody can switch on -- and the decision that
+-- switches a machine OFF wants the other, which is what checkPower below is for.
 function SCeroSecObject:hasPower()
 	local square = self:getSquare()
 	if not square then return false end
 	-- Same test the car battery charger uses (ISWorldObjectContextMenu.lua:460).
 	return square:haveElectricity() or (square:hasGridPower() and square:getRoom() ~= nil)
+end
+
+-- The power decision for one machine, and the only place it is made: the minute
+-- sweep asks it of every machine the server holds (SCeroSecSystem:checkPower)
+-- and a chunk coming back asks it of the one that has just arrived
+-- (stateToIsoObject).
+--
+-- The guard is the whole of it. hasPower is asked of the machine's SQUARE, and a
+-- machine whose chunk is unloaded has none -- so without the guard a survivor who
+-- walked far enough came home to a building of dark computers: the sweep read "no
+-- square" as "no wire" and switched off every machine behind him. A machine out
+-- of the world keeps the state it had, and the question waits for the chunk.
+--
+-- That is vanilla's own habit with a global object it cannot see: the campfire
+-- sweep skips one whose square is gone -- "if campfire is burning (and still
+-- there, I mean not destroy because of streaming)", SCampfireSystem.lua:157-159,
+-- and the same guard at :100-101 -- while it goes on burning its fuel regardless
+-- (lowerFuelAmount:135-138), which is the fire's own state and not the world's.
+--
+-- true when the machine was switched off here.
+function SCeroSecObject:checkPower()
+	if not self.on then return false end
+	if not self:isLoaded() then return false end
+	if self:hasPower() then return false end
+	-- Every window open on it is told why it is over, not merely forgotten: the
+	-- reason is what the glass prints.
+	if self.luaSystem and self.luaSystem.evictWatchers then
+		self.luaSystem:evictWatchers(self, "power")
+	end
+	return self:turnOff()
 end
 
 --
