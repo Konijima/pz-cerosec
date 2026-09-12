@@ -453,16 +453,52 @@ to do with a new one is write the others down:
 10.4.17.4 office pump
 ```
 
+**`arp` is what tells you the addresses to write in it.** There is no name
+server on this rung, so the two halves of the wire do not meet on their own:
+`ruptime` lists the machines by the name each one *broadcasts* about itself,
+`ping` and `rlogin` want a name `/etc/hosts` carries, and until there was an
+`arp` nothing on the disk joined the two -- `ruptime` showed `office` and
+`ping office` said `unknown host`. `arp -a` is the cache: every other machine of
+the building that is switched on, in `arp(8)`'s own shape, with a `?` for an
+address no line of `/etc/hosts` names yet.
+
+```
+admin@ksp-04-11:~$ arp -a
+gate (10.4.17.9) at 8:0:20:1e:2a:4b
+? (10.4.17.4) at 8:0:20:3c:7f:11
+root@ksp-04-11:~# echo "10.4.17.4 office" >> /etc/hosts
+```
+
+`arp <host>` is one entry, by name or by address, and
+`<host> (<addr>) -- no entry` -- arp's own line, unsigned -- for a machine it
+resolved and has no card for: switched off, or in another building. A name
+nothing resolves is `arp: <host>: unknown host`. The machine itself is in no
+cache of its own, exactly as no kernel ARPs for its own address.
+
+The Ethernet address is **derived** from the network address (`8:0:20` is Sun's
+OUI, which is what a county office's boxes were, and the three low bytes come
+from `b1`, `b2` and `n` through the same multiply-add modulo 2^16 the building
+key uses). It is stored nowhere, so the same machine answers the same card for
+ever, and the three forms of `arp(8)` that CHANGE a line -- `-d`, `-s`, `-f` --
+are not here rather than here and lying.
+
+**An address is accepted anywhere a name is**, and resolved with no lookup at
+all: `ping 10.4.17.4`, `rlogin 10.4.17.4`, `rsh 10.4.17.4 date`,
+`rcp log 10.4.17.4:/tmp/log` and `arp 10.4.17.4` all work on a machine whose
+`/etc/hosts` somebody emptied. `ruptime` and `rwho` are the exception and stay
+names: they are reports the machines broadcast about themselves.
+
 | command | does |
 | --- | --- |
 | `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
+| `arp -a \| arp <host\|address>` | the cards on the wire, address by address |
 | `ping <host\|address>` | three packets a second apart, and the statistics |
 | `ruptime` | the machines of this building that are switched on |
 | `rwho` | who is logged in on them |
 | `who [am i]` | who is logged in *here*, with where each came from |
 | `last [name]` | the logins in `/var/log/wtmp`, newest first |
-| `rlogin <host> [-l user]` | a shell on another machine, on this screen |
-| `rsh <host> [-l user] <command>...` | one command over there |
+| `rlogin <host\|address> [-l user]` | a shell on another machine, on this screen |
+| `rsh <host\|address> [-l user] <command>...` | one command over there |
 | `rcp <src> <dst>` | one file across, one end of it `<host>:<path>` |
 
 `ruptime` and `rwho` are the rwho package's, cut where sixty columns forced a
@@ -499,7 +535,16 @@ the power going out and either computer being picked up all end it too, and so
 does a `shutdown` typed inside it.
 
 **A password every time is what the trust files are for**, and either of the two
-is enough. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
+is enough. A line names a machine either way -- `gate` or `10.4.17.3` -- and a
+NAME is matched the only way this rung can match one: through the trusting
+machine's own `/etc/hosts`, against the address the session arrived from. It is
+never matched against the name the caller announces. That name is the caller's
+own `/etc/hostname`, a `644` file its own root may write to anything, so a
+machine that trusted one would let anybody with root on any computer in the
+building type `hostname gate` and walk in through a line somebody wrote about
+gate -- which is why `ruptime`'s names are reports and not credentials, and why
+a caller with no address at all (a telephone call, a radio link) is trusted by
+neither file. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
 each: a bare host name trusts **the same account** on it and nobody in as
 anybody else, and a host and an account names the account *coming in* --
 `here admin` in bob's own `~/.rhosts` lets `here`'s admin be bob, which is
@@ -537,6 +582,12 @@ at once and the fifth is `rlogin: connect: Connection refused`. A chain of
 `rlogin`s goes two machines deep and the third is refused in the same words. And
 a session costs the **far** machine: a loop left running on `gate` slows `gate`
 down and leaves your own machine at an idle prompt.
+
+**Where a session came from** is the receiving machine's own answer, not the
+caller's: `rlogind` takes the address off the wire and asks its own `/etc/hosts`
+what it is called, so `who`'s brackets, `last`'s host column and
+`/var/log/wtmp` carry the name when a line of that file gives one and the bare
+address when none does.
 
 `/var/log/wtmp` is what `last` reads: root's, `644`, two hundred lines deep with
 the oldest dropped, and exempt from the 64 KB disk quota by its path exactly as

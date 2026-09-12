@@ -596,8 +596,17 @@ for vi = 1, #volumes do
 		-- one subject -- and nothing else in the book is allowed near this number:
 		-- the 1000-character page and the volume's own page total are what keep a
 		-- chapter a chapter, and neither of those moved.
-		check(cwhere .. " (" .. ch.title .. ") has 3..13 pages (" .. n .. ")",
-			n >= 3 and n <= 13)
+		--
+		-- Fourteen since rung 6d, and the same volume earned it a third time for the
+		-- reason the first two were earned: `arp` is what joins the names ruptime
+		-- broadcasts to the addresses /etc/hosts wants, and a reader looking for "how
+		-- do I reach that machine" would have to know he was missing a NAME before he
+		-- could find the page that says so. It is one page, and the chapter it belongs
+		-- in is the one the other three answers are in. Thirteen was exactly where
+		-- this chapter already stood, which is a bound forbidding the next honest page
+		-- rather than catching a chapter that has swallowed a book.
+		check(cwhere .. " (" .. ch.title .. ") has 3..14 pages (" .. n .. ")",
+			n >= 3 and n <= 14)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -641,8 +650,13 @@ for vi = 1, #volumes do
 	-- chapter rather than catching a volume that has lost half of itself, which is
 	-- what it is for. An eighty-page administrator's guide is still a 1993
 	-- paperback.
-	check(where .. " has 50..80 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 80)
+	-- Eighty-four since rung 6d, and it moved for the third time for the reason it
+	-- moved the first two: arp is a page of chapter 8 and a page of the appendix,
+	-- and eighty was exactly where Volume 2 then stood. A bound resting on the
+	-- current number forbids the next honest page instead of catching a volume that
+	-- has lost half of itself.
+	check(where .. " has 50..84 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 84)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 

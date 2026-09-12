@@ -392,6 +392,43 @@ function CeroSecOS.resolveHost(state, word)
 	return entry.addr, word
 end
 
+-- The OTHER direction, which is the one a machine asks about a caller it did not
+-- choose: an address -> the names THIS machine's /etc/hosts gives it, in the
+-- order the line has them, or an empty list for an address no line carries.
+--
+-- gethostbyaddr(3) and nothing more. The first line for the address wins, the way
+-- a lookup down a file does and the way readHosts already indexes it: a second
+-- line naming the same address is a line the resolver never reaches.
+--
+-- It is what `who`, `last` and arp all print, and it is the ONLY thing the trust
+-- files are allowed to match a name against -- see CeroSecOS.trustWords.
+function CeroSecOS.hostsNames(state, addr)
+	local out = {}
+	if not CeroSecOS.isAddress(addr) then return out end
+	local _, _, byAddr = CeroSecOS.readHosts(state)
+	local entry = byAddr[addr]
+	if entry == nil then return out end
+	for i = 1, #entry.names do out[#out + 1] = entry.names[i] end
+	return out
+end
+
+-- What this machine calls the far end of a session: the name its own /etc/hosts
+-- gives the address, and the ADDRESS itself when no line carries it.
+--
+-- That is rlogind's own answer and the reason it is worth spelling out. A real
+-- one takes the peer's address off the socket and asks the resolver what it is
+-- called; with no DNS on the rung the resolver is /etc/hosts, and a caller no
+-- line names has no name -- so what goes in the host column of wtmp, and into
+-- who's brackets, is the dotted quad. It is never the name the caller announces:
+-- a machine's own /etc/hostname is a file its own root may write to anything, and
+-- a far machine that believed one would be printing whatever it was told.
+function CeroSecOS.originOf(state, addr)
+	if not CeroSecOS.isAddress(addr) then return nil end
+	local names = CeroSecOS.hostsNames(state, addr)
+	if #names > 0 then return names[1] end
+	return addr
+end
+
 -- What a fresh machine's /etc/hosts holds before it knows its own address: the
 -- loopback, and nothing else there is to say.
 function CeroSecOS.defaultHosts()
@@ -461,6 +498,25 @@ end
 -- The bare host trusts THE SAME NAME on it: a line "gate" in /etc/hosts.equiv
 -- lets gate's admin in as admin and nobody in as anybody else.
 --
+-- WHICH MACHINE A LINE IS ABOUT, which is the whole of the security in these two
+-- files. What rlogind and rshd are handed is the caller's ADDRESS off the socket,
+-- and the name in a trust line is turned into an address the only way this rung
+-- has: through THIS machine's /etc/hosts. So a line may be written either way --
+--
+--     gate
+--     10.4.17.3
+--     10.4.17.3 admin
+--
+-- and a NAME matches only when a line of the local /etc/hosts gives that name to
+-- the address the session came from. It is never matched against the name the
+-- caller announces. That name is the caller's own /etc/hostname, a 644 file its
+-- own root may write to anything, and it is what ruptime and rwho print because
+-- those are reports a machine broadcasts about itself -- believing one here would
+-- let anybody with root on any computer in the building type `hostname gate` and
+-- walk in through a line somebody wrote about gate. So trust is a question about
+-- an address, and a machine whose caller has none (a telephone call, a radio
+-- link) trusts nobody: see CeroSecOS.trustWords.
+--
 -- A host and an account names the account COMING IN, not the one being come in
 -- as, which is ruserok(3)'s own reading of the second field: a line
 -- "gate admin" in bob's ~/.rhosts lets gate's admin become bob, because the file
@@ -483,7 +539,11 @@ function CeroSecOS.parseEquivLine(line)
 	local words = {}
 	for word in string.gmatch(line, "[^ \t]+") do words[#words + 1] = word end
 	if #words == 0 or #words > 2 then return nil end
-	if not CeroSecOS.isValidHostname(words[1]) then return nil end
+	-- A host or an address: the two spellings of the same machine, and a name can
+	-- never be mistaken for an address because isValidHostname carries no dot.
+	if not CeroSecOS.isValidHostname(words[1]) and not CeroSecOS.isAddress(words[1]) then
+		return nil
+	end
 	if #words == 1 then return { host = words[1] } end
 	if not CeroSecOS.isValidName(words[2]) then return nil end
 	return { host = words[1], user = words[2] }
@@ -500,12 +560,33 @@ function CeroSecOS.parseEquiv(text)
 	return out
 end
 
--- Does this list let `fromUser` on `fromHost` in as `asUser`? The two forms,
+-- Every word a trust line may use for the machine at `fromAddr`: the address
+-- itself, and every name the local /etc/hosts gives it. nil when the caller has
+-- no address at all, which is a caller these two files have nothing to say about.
+--
+-- The names come from the machine being ASKED, not from the machine asking. That
+-- is the whole rule, and it is one function so that no caller can arrive at a
+-- trust decision with a name somebody else chose.
+function CeroSecOS.trustWords(state, fromAddr)
+	if not CeroSecOS.isAddress(fromAddr) then return nil end
+	local out = { fromAddr }
+	local names = CeroSecOS.hostsNames(state, fromAddr)
+	for i = 1, #names do out[#out + 1] = names[i] end
+	return out
+end
+
+-- Does this list let `fromUser` on one of `words` in as `asUser`? The two forms,
 -- and no third.
-local function equivAllows(entries, fromHost, fromUser, asUser)
+local function equivAllows(entries, words, fromUser, asUser)
+	local function names(host)
+		for i = 1, #words do
+			if words[i] == host then return true end
+		end
+		return false
+	end
 	for i = 1, #entries do
 		local entry = entries[i]
-		if entry.host == fromHost then
+		if names(entry.host) then
 			if entry.user == nil then
 				if fromUser == asUser then return true end
 			elseif entry.user == fromUser then
@@ -520,9 +601,10 @@ end
 -- /etc/passwd -- by path, with no session. It is root's file and 644, so there
 -- is no permission question to ask about it; what matters is that a rlogind
 -- reads it whoever is coming in, and a rlogind does not have a session yet.
-function CeroSecOS.equivOk(state, fromHost, fromUser, asUser)
-	if type(fromHost) ~= "string" or type(asUser) ~= "string" then return false end
-	if type(fromUser) ~= "string" then return false end
+function CeroSecOS.equivOk(state, fromAddr, fromUser, asUser)
+	if type(asUser) ~= "string" or type(fromUser) ~= "string" then return false end
+	local words = CeroSecOS.trustWords(state, fromAddr)
+	if words == nil then return false end
 	-- root is never trusted by /etc/hosts.equiv. That is ruserok's own rule and
 	-- the most important line in it: a machine that let the root of any trusted
 	-- host in as its own root would be a machine whose password is the weakest
@@ -530,7 +612,7 @@ function CeroSecOS.equivOk(state, fromHost, fromUser, asUser)
 	if asUser == "root" then return false end
 	local node = CeroSecOS.systemNode(state, CeroSecOS.EQUIV_PATH)
 	if node == nil or node.type ~= "file" then return false end
-	return equivAllows(CeroSecOS.parseEquiv(node.data or ""), fromHost, fromUser, asUser)
+	return equivAllows(CeroSecOS.parseEquiv(node.data or ""), words, fromUser, asUser)
 end
 
 -- The account's own half: ~/.rhosts, and the two facts rlogind checks about the
@@ -547,9 +629,10 @@ end
 -- password exactly as it would be with no file at all. That is what rlogind
 -- does, and saying so out loud would be telling a caller which of the two tests
 -- it failed.
-function CeroSecOS.rhostsOk(state, asUser, fromHost, fromUser)
-	if type(asUser) ~= "string" or type(fromHost) ~= "string" then return false end
-	if type(fromUser) ~= "string" then return false end
+function CeroSecOS.rhostsOk(state, asUser, fromAddr, fromUser)
+	if type(asUser) ~= "string" or type(fromUser) ~= "string" then return false end
+	local words = CeroSecOS.trustWords(state, fromAddr)
+	if words == nil then return false end
 	local user = CeroSecOS.getUser(state, asUser)
 	if user == nil or type(user.home) ~= "string" then return false end
 	local path = user.home .. "/" .. CeroSecOS.RHOSTS_NAME
@@ -561,7 +644,7 @@ function CeroSecOS.rhostsOk(state, asUser, fromHost, fromUser)
 	local mode = node.mode or 0
 	if CeroSecOS.digitWritable(math.fmod(math.floor(mode / 10), 10)) then return false end
 	if CeroSecOS.digitWritable(math.fmod(mode, 10)) then return false end
-	return equivAllows(CeroSecOS.parseEquiv(node.data or ""), fromHost, fromUser, asUser)
+	return equivAllows(CeroSecOS.parseEquiv(node.data or ""), words, fromUser, asUser)
 end
 
 -- Does one octal digit of a mode carry its write bit? The middle bit of three,
@@ -573,9 +656,12 @@ end
 
 -- The question rlogind and rshd both ask, and the order they ask it in: the
 -- machine's own list first, then the account's. Either is enough.
-function CeroSecOS.trusts(state, asUser, fromHost, fromUser)
-	if CeroSecOS.equivOk(state, fromHost, fromUser, asUser) then return true end
-	return CeroSecOS.rhostsOk(state, asUser, fromHost, fromUser)
+--
+-- `fromAddr` is the caller's ADDRESS and never a name: a caller with no address
+-- is trusted by neither file. See the head of this section.
+function CeroSecOS.trusts(state, asUser, fromAddr, fromUser)
+	if CeroSecOS.equivOk(state, fromAddr, fromUser, asUser) then return true end
+	return CeroSecOS.rhostsOk(state, asUser, fromAddr, fromUser)
 end
 
 -- What a machine ships with: nothing trusted, and a line saying what a line
@@ -583,6 +669,7 @@ end
 -- the names in; one that did not, did not.
 function CeroSecOS.defaultEquiv()
 	return "# host [user] -- one a line; a bare host trusts the same name on it\n"
+		.. "# a name has to be in /etc/hosts here; an address needs no line\n"
 		.. "# nothing is trusted until somebody writes a line here"
 end
 
@@ -591,8 +678,10 @@ end
 --
 
 -- Is that word something a session could have come FROM? One of the three
--- origins this machine has, and no fourth: a hostname off the coax, a telephone
--- number, or a callsign off the air. Written as one function because it is one
+-- origins this machine has, and no fourth: a machine off the coax -- named by a
+-- line of the local /etc/hosts, or by its bare ADDRESS when no line carries it,
+-- which is what CeroSecOS.originOf hands over -- a telephone number, or a
+-- callsign off the air. Written as one function because it is one
 -- question, asked in one place, and because the day a fourth link is built the
 -- thing that has to change is here and not inside a parser.
 --
@@ -603,6 +692,7 @@ end
 function CeroSecOS.isWtmpOrigin(word)
 	if type(word) ~= "string" then return false end
 	if CeroSecOS.isValidHostname(word) then return true end
+	if CeroSecOS.isAddress(word) then return true end
 	if CeroSecOS.isPhoneNumber(word) then return true end
 	if type(CeroSecOS.isCallsign) == "function" and CeroSecOS.isCallsign(word) then
 		return true
@@ -902,6 +992,171 @@ commands.ifconfig = function(state, session, args, env)
 		return false, { "ifconfig: interface " .. want .. " does not exist" }
 	end
 	return true, ifaceLines(state, want)
+end
+
+--
+-- arp
+--
+-- arp(8), and it is the command that closes the gap between the two halves of a
+-- network with no name server in it: ruptime says what the machines CALL
+-- themselves and /etc/hosts wants an ADDRESS, and until there was an arp there
+-- was nothing on the disk that told a survivor the addresses he was surrounded
+-- by. A real arp is exactly that command -- what the kernel has learnt about the
+-- wire, address by address -- and a 1993 administrator read one for this reason.
+--
+-- Two of its five forms, and the three that are missing are missing for one
+-- reason: -d deletes an entry, -s sets one and -f reads a file of them, and every
+-- Ethernet address on this rung is DERIVED from the network address (see
+-- CeroSecOS.etherOf) and is stored nowhere at all. There is nothing to delete,
+-- nothing to set and no file to read, so the flags that would say so are not
+-- there rather than there and lying.
+--
+-- What the cache holds. A real one holds the machines this one has spoken to
+-- lately; this one holds every OTHER switched-on machine of the building, which
+-- is the set ruptime reports and the set `ping` can reach. Not itself: a machine
+-- does not ARP for its own address, and BSD's cache has no line for it either.
+-- A machine that is off is not in it, exactly as it is not in ruptime -- and that
+-- is the same single deviation the manual already names for ruptime, there being
+-- no daemon here keeping what the wire said an hour ago.
+--
+
+-- The first three bytes of every card on the wire: Sun Microsystems' own OUI,
+-- which is what "8:0:20" was in 1993 and what the arp(8) manual page of the day
+-- printed in its own example. A building full of Sun boxes is what a county
+-- office had.
+CeroSecOS.ETHER_OUI = "8:0:20"
+
+-- The lower three bytes, derived from the three numbers of the address that vary:
+-- b1 and b2, which are the building, and n, which is the machine. Two rounds of
+-- the same 16-bit multiply-add the building key and the telephone number are made
+-- of -- exact in a double, deterministic for ever, and scattering neighbours so
+-- that two machines of one building do not read as two cards off one reel.
+--
+-- It is DERIVED and it is not a field: there is no state to save, nothing to
+-- migrate, no ifconfig and no arp -s that writes one, and a machine off an older
+-- save answers the same card the first time anybody asks. The manual says so
+-- where it prints one.
+function CeroSecOS.etherKey(b1, b2, n)
+	if type(b1) ~= "number" or type(b2) ~= "number" or type(n) ~= "number" then
+		return nil
+	end
+	b1, b2, n = math.floor(b1), math.floor(b2), math.floor(n)
+	if b1 < 0 or b1 > 255 or b2 < 0 or b2 > 255 or n < 0 or n > 255 then return nil end
+	local k = (b1 * 256 + b2) * 256 + n
+	local h = math.fmod(k * 25173 + 13849, 65536)
+	local g = math.fmod(h * 40503 + 12289, 65536)
+	return math.floor(h / 256), math.fmod(h, 256), math.floor(g / 256)
+end
+
+-- One byte as arp prints one: lower-case hex with no leading zero, which is
+-- printf's "%x" and is why a real one reads "8:0:20:1e:2a:4b" and not
+-- "08:00:20:1e:2a:4b". Written out by hand because the engine has no
+-- string.format on it.
+CeroSecOS.ETHER_HEX = "0123456789abcdef"
+
+function CeroSecOS.etherByte(n)
+	if type(n) ~= "number" then return nil end
+	n = math.floor(n)
+	if n < 0 or n > 255 then return nil end
+	local lo = math.fmod(n, 16)
+	local hi = math.floor(n / 16)
+	local out = string.sub(CeroSecOS.ETHER_HEX, lo + 1, lo + 1)
+	if hi > 0 then out = string.sub(CeroSecOS.ETHER_HEX, hi + 1, hi + 1) .. out end
+	return out
+end
+
+-- An address -> the card that answers for it. nil for anything that is not an
+-- address. The first number is not in it: every address on this rung is on the
+-- ten network, so it carries nothing to derive from.
+function CeroSecOS.etherOf(addr)
+	if not CeroSecOS.isAddress(addr) then return nil end
+	local _, b1, b2, n = string.match(addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+	local x, y, z = CeroSecOS.etherKey(tonumber(b1), tonumber(b2), tonumber(n))
+	if x == nil then return nil end
+	return CeroSecOS.ETHER_OUI .. ":" .. CeroSecOS.etherByte(x) .. ":"
+		.. CeroSecOS.etherByte(y) .. ":" .. CeroSecOS.etherByte(z)
+end
+
+-- One line of arp -a, and arp's own shape for it:
+--
+--     gate (10.4.17.3) at 8:0:20:1e:2a:4b
+--     ? (10.4.17.4) at 8:0:20:3c:7f:11
+--
+-- The "?" is arp's own and it is the point of the command: it is what a machine
+-- prints for an address gethostbyaddr could not name, which here means no line of
+-- /etc/hosts carries it yet. A real one prints the interface it was learnt on
+-- after the card ("on eth0"); this screen is sixty columns and there is one
+-- Ethernet on the machine.
+CeroSecOS.ARP_NO_NAME = "?"
+
+function CeroSecOS.arpLine(name, addr)
+	local mac = CeroSecOS.etherOf(addr)
+	if mac == nil then return nil end
+	return tostring(name) .. " (" .. addr .. ") at " .. mac
+end
+
+-- What arp calls an address: the name the local /etc/hosts gives it, or "?".
+local function arpName(state, addr)
+	local names = CeroSecOS.hostsNames(state, addr)
+	if #names > 0 then return names[1] end
+	return CeroSecOS.ARP_NO_NAME
+end
+
+-- Is this address in the cache? Every other machine of the building that is
+-- switched on -- so not this one, and not the loopback, neither of which any
+-- kernel has an Ethernet entry for.
+local function inCache(state, env, addr)
+	if not CeroSecOS.isAddress(addr) then return false end
+	if addr == CeroSecOS.LOOPBACK_ADDR then return false end
+	if addr == CeroSecOS.address(state) then return false end
+	return reachable(env, addr)
+end
+
+commands.arp = function(state, session, args, env)
+	if #args ~= 2 then return usage("arp") end
+
+	if args[2] == "-a" then
+		local peers = peersOf(env)
+		local rows = {}
+		for i = 1, #peers do
+			local addr = peers[i].addr
+			if inCache(state, env, addr) then rows[#rows + 1] = addr end
+		end
+		-- By address, and by its four numbers rather than by its letters: 10.4.17.9
+		-- comes before 10.4.17.10 on a wire and after it in a string sort. The
+		-- broadcast names the peers arrived under are not sorted on and not printed
+		-- -- arp is a command about addresses.
+		table.sort(rows, function(a, b)
+			local aq = { string.match(a, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
+			local bq = { string.match(b, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
+			for i = 1, 4 do
+				local x, y = tonumber(aq[i]), tonumber(bq[i])
+				if x ~= y then return x < y end
+			end
+			return false
+		end)
+		local out = {}
+		for i = 1, #rows do
+			out[#out + 1] = CeroSecOS.arpLine(arpName(state, rows[i]), rows[i])
+		end
+		return true, out
+	end
+
+	local addr = CeroSecOS.resolveHost(state, args[2])
+	if addr == nil then
+		-- arp's own refusal for a word the resolver cannot place, in this machine's
+		-- spelling of it: a real one hands the job to herror(3), which says "Unknown
+		-- host" in capitals, and every refusal on this disk is lower case.
+		return fail("arp", args[2], CeroSecOS.NET_REASON.unknown)
+	end
+	if not inCache(state, env, addr) then
+		-- arp(8)'s own line for a host it resolved and has no entry for, and it
+		-- carries neither the command's name nor a colon: the word the player typed,
+		-- the address it resolved to, and what is missing. It is still a refusal, so
+		-- a script can tell "not on the wire" from "here is the card".
+		return false, { args[2] .. " (" .. addr .. ") -- no entry" }
+	end
+	return true, { CeroSecOS.arpLine(arpName(state, addr), addr) }
 end
 
 --
@@ -1562,7 +1817,12 @@ commands.rcp = function(state, session, args, env)
 		-- relative path the way every other command on the line does. The tilde is
 		-- already gone: the shell expanded it before this command saw a thing.
 		cwd = session.cwd or "/",
+		-- Who is copying, for the far machine's trust files: the ADDRESS, which is
+		-- the only thing about a caller the caller did not choose. fromHost travels
+		-- beside it because rcp's own refusal names the machine, and is nothing the
+		-- far end decides anything by.
 		fromHost = CeroSecOS.hostname(state),
+		fromAddr = CeroSecOS.address(state),
 		push = toHost ~= nil,
 		remote = toPath or fromPath,
 		["local"] = args[3],

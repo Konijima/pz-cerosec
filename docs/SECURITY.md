@@ -62,3 +62,16 @@ owned by the account, or writable by anyone else, is ignored without a word,
 because a login that could be redirected by editing someone else's trust file
 would not be trust at all. See [NETWORK.md](NETWORK.md) for the full rule and
 for `rsh`'s own no-terminal, no-trust-prompt behaviour.
+
+**A machine cannot name itself into trust.** A trust line may carry a name or an
+address, and the name is resolved through the TRUSTING machine's own
+`/etc/hosts`, against the address the session arrived from
+(`CeroSecOS.trustWords`). It is never matched against the name the caller
+announces: `/etc/hostname` is a `644` file its own root may write to anything and
+`ruptime` prints whatever it says, so a machine that matched on the announced
+name would let anybody with root on any computer in the building type
+`hostname gate` and walk in through a line somebody wrote about `gate`. The same
+rule is what makes a caller with no address — a call, a radio link — trusted by
+neither file, and what `who`, `last` and `/var/log/wtmp` record: the name the
+receiving machine's own `/etc/hosts` gives the caller's address, else the bare
+address.

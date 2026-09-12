@@ -626,6 +626,10 @@ end
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
+	-- Two forms and no flag that CHANGES a line, because an Ethernet address here
+	-- is derived and stored nowhere: see the head of arp in CeroSecOSNet.lua.
+	arp      = { desc = "show the cards on the wire",
+		usage = "arp -a | arp <host|address>" },
 	-- The operand is a callsign and the usage line says so in capitals, because
 	-- that is how a callsign is written and a survivor who types it in lower case
 	-- is a survivor the command refuses.
@@ -695,11 +699,11 @@ CeroSecOS.COMMAND_INFO = {
 	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
 	readlink = { desc = "print what a link points at", usage = "readlink <name>" },
 	rcp      = { desc = "copy a file to or from another machine",
-		usage = "rcp <src> <dst>, one of them <host>:<path>" },
-	rlogin   = { desc = "log in on another machine", usage = "rlogin <host> [-l user]" },
+		usage = "rcp <src> <dst>, one is <host|address>:<path>" },
+	rlogin   = { desc = "log in on another machine", usage = "rlogin <host|address> [-l user]" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
 	rsh      = { desc = "run one command on another machine",
-		usage = "rsh <host> [-l user] <command>..." },
+		usage = "rsh <host|address> [-l user] <command>..." },
 	ruptime  = { desc = "list the machines on the wire", usage = "ruptime" },
 	rwho     = { desc = "list who is logged in on them", usage = "rwho" },
 	sh       = { desc = "run a script", usage = "sh <file> [args]" },

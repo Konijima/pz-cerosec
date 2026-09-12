@@ -4318,6 +4318,20 @@ local function newNet()
 		if done == nil then error("cannot write crontab: " .. tostring(reason), 2) end
 	end
 
+	-- The other two machines know THIS one by name, and that is a line of THEIR
+	-- /etc/hosts. It has to be: a name in a trust file is matched against the
+	-- caller's address through the file of the machine being ASKED
+	-- (CeroSecOS.trustWords), never against the name the caller announces -- so a
+	-- bench that writes this machine's name into a trust file over there needs the
+	-- far machine to be able to resolve it, which is the first job the manual gives
+	-- an administrator. Written here so that those benches are about TRUST.
+	--
+	-- This machine's own /etc/hosts is left exactly as the machine wrote it: one
+	-- line, its own. The benches about the resolver -- arp, ping, and what `who`
+	-- prints about a caller nobody has written down -- depend on that.
+	net.name(net.gate, net.here, net.host(net.here))
+	net.name(net.far, net.here, net.host(net.here))
+
 	return net
 end
 
@@ -4640,6 +4654,135 @@ do
 	-- And it never trusts root, which is ruserok's own rule.
 	eq("hosts.equiv does not let root in",
 		CeroSecOS.equivOk(net.gate:osState(), net.host(net.here), "root", "root"), false)
+end
+
+--
+-- 40b. Naming a neighbour, end to end (rung 6d)
+--
+-- The gap a survivor actually falls into: ruptime lists a machine by the name it
+-- broadcasts, `ping <that name>` says unknown host, and until there was an arp
+-- there was nothing on the disk that told him the ADDRESS to write down. The whole
+-- repair, typed on the glass and nowhere else.
+--
+do
+	local net = newNet()
+	net.login("root")
+	local gate = net.host(net.gate)
+	local addr = net.addr(net.gate)
+
+	net.enter("ruptime")
+	check("ruptime lists the other machine by the name it broadcasts", net.glass(gate))
+	net.enter("ping " .. gate)
+	check("and nothing on this machine resolves that name",
+		net.glass("ping: unknown host " .. gate))
+
+	net.enter("arp -a")
+	check("arp has the address, with no name for it",
+		net.glass("? (" .. addr .. ") at " .. CeroSecOS.etherOf(addr)))
+	check("and this machine is not in its own cache",
+		not net.glass("(" .. net.addr(net.here) .. ")"))
+
+	-- The line, written by hand, which is what the manual tells him to do.
+	net.enter('echo "' .. addr .. ' gate" >> /etc/hosts')
+	net.enter("arp -a")
+	check("now arp names it", net.glass("gate (" .. addr .. ") at "))
+	net.enter("ping gate")
+	check("and ping reaches it", net.heard("PING gate (" .. addr .. "): 56 data bytes"))
+	net.tick(30)
+	check("all three packets came back",
+		net.heard("3 packets transmitted, 3 packets received, 0% packet loss"))
+
+	-- And the address needs no line at all: rlogin takes one straight.
+	net.enter("rlogin " .. addr)
+	net.tick(2)
+	check("rlogin by address opens a session", net.glass("login:"))
+	net.escape()
+	net.tick(3)
+end
+
+--
+-- 40c. A machine cannot name itself into trust
+--
+-- /etc/hostname is a file the machine's OWN root may write to anything, and
+-- ruptime broadcasts what it says. If a trust line were matched against that name,
+-- anybody with root on any computer in the building could type `hostname gate` and
+-- walk in through a line somebody wrote about gate. The line is matched against the
+-- caller's ADDRESS through the far machine's own /etc/hosts instead, and this is
+-- the bench that says so.
+--
+do
+	local net = newNet()
+	-- gate trusts whatever ITS /etc/hosts calls "pump", and names nothing pump.
+	net.put(net.gate, "/etc/hosts.equiv", "pump", 644, "root")
+	net.name(net.here, net.gate, "gate")
+	local was = net.host(net.here)
+
+	-- This machine renames itself pump. Root's own file, root's own right.
+	net.put(net.here, "/etc/hostname", "pump", 644, "root")
+	eq("the machine now calls itself pump", net.host(net.here), "pump")
+
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("the far machine asks for a password anyway", net.glass("login:"))
+	eq("and nobody is logged in on the line",
+		net.gate.ptys.ttyp0.console.user, nil)
+	-- What the far machine calls the session is what ITS file says, which is the
+	-- name this machine used to announce -- and never the one it announces now.
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	net.enter("who")
+	net.tick(2)
+	check("who names the caller off the far machine's own /etc/hosts",
+		net.glass("(" .. was .. ")"))
+	check("and not the name the caller announces", not net.glass("(pump)"))
+	net.enter("exit")
+	net.tick(3)
+
+	-- Write the line gate was missing and the same trust file lets him in.
+	net.name(net.gate, net.here, "pump")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("a name the far machine's /etc/hosts resolves is the caller",
+		net.glass("admin@" .. net.host(net.gate)))
+	net.enter("exit")
+	net.tick(3)
+end
+
+--
+-- 40d. A caller nobody has written down is named by its address
+--
+-- rlogind's own reverse lookup, and the honest answer when it finds nothing: the
+-- dotted quad, in who's brackets, in last's host column and in wtmp. A trust line
+-- may carry the same quad, which is the one spelling of a machine that nothing on
+-- the far end has to be told.
+--
+do
+	local net = newNet()
+	-- gate forgets this machine's name, and trusts its ADDRESS instead.
+	net.put(net.gate, "/etc/hosts", "127.0.0.1 localhost", 644, "root")
+	net.put(net.gate, "/etc/hosts.equiv", net.addr(net.here), 644, "root")
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("an address in hosts.equiv trusts the machine at it",
+		net.glass("admin@" .. net.host(net.gate)))
+	net.enter("who")
+	net.tick(2)
+	check("who names the session by the address", net.glass("(" .. net.addr(net.here) .. ")"))
+	net.enter("last")
+	net.tick(2)
+	check("and last has it in the host column", net.glass(net.addr(net.here)))
+	net.enter("exit")
+	net.tick(3)
+	local wtmp = net.text(net.gate, "/var/log/wtmp")
+	check("wtmp recorded the address as the origin",
+		string.find(wtmp, "in admin ttyp0 " .. net.addr(net.here), 1, true) ~= nil)
+	check("and the logout behind it",
+		string.find(wtmp, "out admin ttyp0 " .. net.addr(net.here), 1, true) ~= nil)
 end
 
 --
@@ -5150,7 +5293,10 @@ do
 	net.name(net.gate, third, "pump")
 	net.name(third, net.gate, "gate")
 	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
-	net.put(third, "/etc/hosts.equiv", net.host(net.gate), 644, "root")
+	-- third trusts the machine ITS OWN /etc/hosts calls "gate", which is the line
+	-- above: a trust line is a name this machine can resolve to the caller's
+	-- address, and third has never heard gate announce anything.
+	net.put(third, "/etc/hosts.equiv", "gate", 644, "root")
 	net.put(net.gate, "/etc/hosts.equiv",
 		net.host(net.here) .. "\n" .. net.host(third), 644, "root")
 	net.login("admin")
@@ -7109,6 +7255,16 @@ do
 		chunk.object = object
 		object:turnOn()
 
+		-- And it knows the survivor's machine by name, exactly as the other two in
+		-- newNet do and for the same reason: a name in one of its trust files is
+		-- matched against the caller's ADDRESS through ITS own /etc/hosts
+		-- (CeroSecOS.trustWords), never against the name the caller announces. The
+		-- line is written now, while the chunk is in, because /etc/hosts is a file
+		-- on the disk and the whole point of this section is that the disk does not
+		-- go away with the chunk -- so what this names goes on being named while
+		-- the machine is out of the world.
+		net.name(object, net.here, net.host(net.here))
+
 		-- The streamer, both ways. Away takes the square, the iso object, the room
 		-- and the tiles all at once, which is what one chunk going out of memory
 		-- does. Back puts the very same ones in again and then hands the iso object
@@ -7300,6 +7456,122 @@ do
 		eq("the first minute of the sweep switched it off", far.on, false)
 		eq("with the dark sprite on its tile", chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
 		check("and the session was told", net.heard("Connection closed."))
+	end
+
+	-- THE ADDRESS AND THE CHUNK, which are two books and not one -- the seam
+	-- between this section and the wire.
+	--
+	-- A machine is NUMBERED out of the world: CeroSecNet.identify reads the
+	-- building off a square, so it only ever happens while the chunk is in (turnOn,
+	-- a window opening, and the minute sweep for a machine that has not got a
+	-- number yet). A machine is TRUSTED out of its RECORD, which is three numbers
+	-- in the state and therefore on the disk the server holds whether the chunk is
+	-- in or not. So the two halves come apart exactly here: a machine already
+	-- numbered goes on being reached and trusted by that number with no square, no
+	-- tile and no room left around it.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		local addr = net.addr(far)
+		-- By the ADDRESS and by nothing else: the line streamed() wrote is taken
+		-- back out of the far machine's resolver, so there is no name for this
+		-- machine over there to fall back on, and admin's own list is the only file
+		-- that says anything about the caller.
+		net.put(far, "/etc/hosts", "127.0.0.1 localhost", 644, "root")
+		net.put(far, "/home/admin/.rhosts", net.addr(net.here), 600, "admin")
+		net.login("admin")
+
+		chunk.away()
+		eq("the chunk is away", far:isLoaded(), false)
+		eq("and the machine kept the number it was given", net.addr(far), addr)
+
+		-- Typed as the quad, because a name for it would be a line of THIS
+		-- machine's /etc/hosts and the far end is what this bench is about.
+		net.enter("rlogin " .. addr)
+		net.tick(3)
+		check("a machine out of the world still takes a trusted login",
+			net.glass("admin@" .. net.host(far)))
+		net.enter("who")
+		net.tick(2)
+		check("and names the caller by the address it came from",
+			net.glass("(" .. net.addr(net.here) .. ")"))
+		net.enter("exit")
+		net.tick(3)
+	end
+
+	-- The other half, which is the one that would have been a hole: numbering
+	-- WAITS for the chunk. A computer switched on in a base somebody built has no
+	-- address -- no map building, no wire -- and carrying it into a building does
+	-- not give it one while nobody is looking: the sweep has no square to read the
+	-- building off. So until the chunk comes in it is on nobody's wire, and the
+	-- most generous trust file in the county is a file about a machine that cannot
+	-- call. The chunk arrives, the sweep numbers it, and the same line lets the
+	-- survivor in.
+	do
+		local net = newNet()
+		local inWorld, building = true, nil
+		local iso = { modData = {} }
+		iso.hasModData = function() return true end
+		iso.getModData = function() return iso.modData end
+		iso.transmitModData = function() end
+		iso.getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end
+		iso.setSpriteFromName = function() end
+		iso.transmitUpdatedSpriteToClients = function() end
+
+		local old = net.machine(24, 10, 0, nil)
+		local square = {
+			getX = function() return 24 end,
+			getY = function() return 10 end,
+			getZ = function() return 0 end,
+			getRoom = function() return nil end,
+			getBuilding = function() return building end,
+			getObjects = function() return javaList({}) end,
+			haveElectricity = function() return true end,
+			hasGridPower = function() return false end,
+		}
+		old.getSquare = function() return inWorld and square or nil end
+		old.getIsoObject = function() return inWorld and iso or nil end
+		-- The real power question, off the real square: the stub machine() puts
+		-- there is for the benches about the wire.
+		old.hasPower = nil
+
+		-- Switched on in the base: a building the map knows is the one thing the
+		-- wire needs, and there is none.
+		old:turnOn()
+		eq("a machine in no building is on", old.on, true)
+		eq("and has no address to be on a wire with", net.addr(old), nil)
+
+		-- Carried into the office, and the quarter goes out of memory before the
+		-- minute turns.
+		building = net.office
+		inWorld = false
+		net.put(old, "/home/admin/.rhosts", net.addr(net.here), 600, "admin")
+		net.login("admin")
+
+		net.minute(3)
+		eq("three minutes of the sweep leave it unnumbered", net.addr(old), nil)
+		eq("because there was no square to read its building off",
+			old:isLoaded(), false)
+		net.enter("rlogin " .. net.host(old))
+		net.tick(2)
+		-- Nothing to escape from: the refusal is the resolver's and no session was
+		-- ever begun, so the survivor is at his own prompt already.
+		check("and nothing resolves it, so nobody calls it",
+			net.glass("rlogin: " .. net.host(old) .. ": unknown host"))
+
+		-- The survivor comes back, and the first minute with the chunk in is the
+		-- minute it joins the wire.
+		inWorld = true
+		net.minute(1)
+		local addr = net.addr(old)
+		check("the chunk comes in and the sweep numbers it", addr ~= nil)
+		net.enter("rlogin " .. addr)
+		net.tick(3)
+		check("and the list that said nothing now takes the login",
+			net.glass("admin@" .. net.host(old)))
+		net.enter("exit")
+		net.tick(3)
 	end
 
 	_G.__world = nil

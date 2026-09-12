@@ -60,7 +60,14 @@ CeroSecOS.STATE_VERSION = 1
 --    about the building and is on no disk, so there is no file to seed for it and
 --    no /etc/phone to read: the number is announced by the firmware and by cu,
 --    the way an address is announced and never stored twice.
-CeroSecOS.SYSTEM_VERSION = 14
+-- 14: the radio. /bin/call, and /etc/callsign -- the one file of the three links
+--    that IS on the disk, because a callsign is a licence and root may change it
+--    (see CeroSecOS.ensureCallsign).
+-- 15: /bin/arp, which is how a survivor learns the ADDRESSES on his wire: ruptime
+--    broadcasts names and /etc/hosts wants an address, and nothing on the disk
+--    joined the two. No file behind it -- an Ethernet address is derived from the
+--    network address and stored nowhere (CeroSecOS.etherOf).
+CeroSecOS.SYSTEM_VERSION = 15
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
