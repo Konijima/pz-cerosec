@@ -259,23 +259,40 @@ end
 -- back to the console it belongs to. That is the honest answer for a keystroke
 -- sent to a session that is over, and it is the one place every command gets it
 -- for free.
-function SCeroSecSystem:targetFor(playerObj, x, y, z, token)
-	local host, state, console = self:consoleFor(playerObj, x, y, z, token)
-	if not host then return nil end
-	local object, at = host, state
+-- The chain a console is at the near end of, followed to the shell at the far
+-- end of it. The machine, its filesystem and the console the glass is really
+-- showing -- which is the machine's own when nothing is open.
+--
+-- nil when a link has gone: the session is torn down here and the caller hands
+-- the local screen back, which is the honest answer for a keystroke sent to a
+-- session that is over.
+function SCeroSecSystem:followChain(luaObject, state, console)
+	local object, at = luaObject, state
 	-- Bounded by the hop ceiling and one more, so a chain can never be a loop:
 	-- every link was made by an rlogin that paid for it.
 	for _ = 1, CeroSecOS.HOP_MAX + 1 do
-		if console.remote == nil then return object, at, console, host end
+		if console.remote == nil then return object, at, console end
 		local pty, far, farState = CeroSecNet.farOf(self, console)
 		if pty == nil then
 			CeroSecNet.hangUp(self, console)
-			self:pushScreen(object, at, console)
-			return nil
+			return nil, object, at, console
 		end
 		object, at, console = far, farState, pty.console
 	end
-	return object, at, console, host
+	return object, at, console
+end
+
+function SCeroSecSystem:targetFor(playerObj, x, y, z, token)
+	local host, state, console = self:consoleFor(playerObj, x, y, z, token)
+	if not host then return nil end
+	local object, at, shown = self:followChain(host, state, console)
+	if object == nil then
+		-- at and shown carry the near end the chain broke at, so the glass it was
+		-- looking at gets its own screen back.
+		self:pushScreen(at, shown, console)
+		return nil
+	end
+	return object, at, shown, host
 end
 
 --
@@ -905,12 +922,21 @@ Commands.open = function(self, playerObj, x, y, z, token)
 	-- that answered it, is left exactly as the last player left it.
 	if state == nil and not self:atBios(console) then self:askBios(console) end
 
-	local args = self:screenArgs(luaObject, state, console, token, playerObj)
+	-- A machine with a session open on it shows the SESSION, whoever opens the
+	-- window: the screen belongs to the machine, so a second survivor walking up
+	-- to it -- or the first one coming back -- reads the same glass.
+	local shownObj, shownState, shown = luaObject, state, console
+	if state ~= nil then
+		local far, farState, farConsole = self:followChain(luaObject, state, console)
+		if far ~= nil then shownObj, shownState, shown = far, farState, farConsole end
+	end
+
+	local args = self:screenArgs(shownObj, shownState, shown, token, playerObj)
 	args.animate = animate
 	self:reply(playerObj, "opened", args)
-	self:sendHistory(luaObject, state, console, playerObj, token)
+	self:sendHistory(shownObj, shownState, shown, playerObj, token)
 	-- Somebody else may have been looking at the blank screen when it booted.
-	if animate then self:pushScreen(luaObject, state, console, key) end
+	if animate then self:pushScreen(shownObj, shownState, shown, key) end
 end
 
 -- The answer to whatever is being asked. login, password and the line a command

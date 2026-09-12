@@ -4069,6 +4069,58 @@ do
 	check("with the local prompt back", net.glass("admin@" .. net.host(net.here)))
 end
 
+-- The editor travels: the buffer belongs to the session, so it is the far
+-- machine's file that opens and the far machine's disk that is written.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	net.enter("edit remote.txt")
+	net.tick(2)
+	eq("the window is in the editor", net.window.mode, "edit")
+	check("on the far machine's path", net.glass("/home/admin/remote.txt"))
+	check("and this window holds the keyboard", net.window:editing())
+	net.window.entry:type("over there")
+	net.frame()
+	net.window:onOtherKey(Keyboard.KEY_TAB)
+	net.tick(2)
+	eq("the far machine's disk has it",
+		net.text(net.gate, "/home/admin/remote.txt"), "over there")
+	eq("and this machine's has nothing at that name",
+		net.text(net.here, "/home/admin/remote.txt"), nil)
+	net.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	net.tick(2)
+	eq("Escape leaves the editor and not the session", net.window.mode, "shell")
+	check("the far machine's prompt is back", net.glass("admin@" .. net.host(net.gate)))
+end
+
+-- A window that opens on a machine with a session on it shows the session: the
+-- screen belongs to the machine, so a second survivor walking up reads the same
+-- glass as the first.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("the session is up", net.glass("admin@" .. net.host(net.gate)))
+	-- The window closes and opens again, which is what walking away and coming
+	-- back is: the machine still holds the session.
+	net.window:close()
+	net.window:askForScreen()
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	net.frame()
+	check("and it is still on the glass when the window comes back",
+		net.glass("admin@" .. net.host(net.gate)))
+	net.enter("hostname")
+	net.tick(2)
+	check("and still typing at the far machine", net.glass(net.host(net.gate)))
+end
+
 -- The loopback: a second session on the machine one is sitting at. It needs no
 -- wire and no building, which is what a loopback is for.
 do
