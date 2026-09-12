@@ -1465,7 +1465,7 @@ end
 --
 -- Accounts, from the chair
 --
--- `sudo adduser` and `su` are the two of this rung that are not one command and
+-- `sudo useradd` and `su` are the two of this rung that are not one command and
 -- one answer: sudo asks for a password before it runs anything, su asks for
 -- another and then changes who the machine is logged in as. What is asserted is
 -- the PROMPT on the glass -- the machine's own line under the cursor -- because
@@ -1478,15 +1478,15 @@ do
 	bench.login("admin")
 	eq("admin is at his own prompt", bench.window.prompt, "admin@" .. host .. ":~$ ")
 
-	bench.enter("sudo adduser bob")
+	bench.enter("sudo useradd bob")
 	bench.frame()
 	eq("sudo asks first", bench.window.prompt, "[sudo] password for admin: ")
 	eq("and hides the answer", bench.window.mask, true)
 	bench.enter("")
 	bench.frame()
-	check("the account was made", bench.painted("adduser: bob: created"))
+	check("the account was made", bench.painted("useradd: bob: created"))
 	check("and the open password is said out loud",
-		bench.painted("adduser: set a password with passwd bob"))
+		bench.painted("useradd: set a password with passwd bob"))
 	check("the machine really has him",
 		CeroSecOS.getUser(bench.object:osState(), "bob") ~= nil)
 
@@ -1516,7 +1516,7 @@ do
 	eq("still logged in", bench.window.mode, "shell")
 	eq("the console says so too", bench.object.console.user, "admin")
 	eq("and the stack is gone rather than left empty", bench.object.console.stack, nil)
-	check("the screen kept what was on it", bench.painted("adduser: bob: created"))
+	check("the screen kept what was on it", bench.painted("useradd: bob: created"))
 
 	-- The second one is a logout.
 	bench.enter("exit")
@@ -1524,7 +1524,7 @@ do
 	eq("the login prompt is back", bench.window.prompt, "login: ")
 	eq("at a prompt, not a shell", bench.window.mode, "prompt")
 	eq("nobody is logged in", bench.object.console.user, nil)
-	check("and the screen was wiped", not bench.painted("adduser: bob: created"))
+	check("and the screen was wiped", not bench.painted("useradd: bob: created"))
 end
 
 --
@@ -1539,9 +1539,9 @@ do
 	bench.login("admin")
 	CeroSecOS.setData(bench.object:osState(), CeroSecOS.rootSession(),
 		CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
-	bench.enter("sudo adduser bob")
+	bench.enter("sudo useradd bob")
 	bench.frame()
-	check("bob is on the machine", bench.painted("adduser: bob: created"))
+	check("bob is on the machine", bench.painted("useradd: bob: created"))
 
 	bench.enter("sudo su bob")
 	bench.frame()
@@ -2507,7 +2507,7 @@ do
 	-- very same switch.
 	bench.enter("su root")
 	bench.enter("")
-	bench.enter("adduser bob")
+	bench.enter("useradd bob")
 	bench.enter("exit")
 	bench.frame()
 	eq("back to admin", bench.object.console.user, "admin")

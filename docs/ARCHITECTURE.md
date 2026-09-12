@@ -233,25 +233,44 @@ any write invalidates the cache by construction. `passwd` rewrites the whole fil
 through the ordinary `setData`, so the ceilings and the printable rule apply and a
 refusal leaves it byte for byte as it was.
 
-`adduser` **appends** its line and `deluser` drops every line that names the
+`useradd` **appends** its line and `userdel` drops every line that names the
 account, keeping every other line exactly as it lies — comments and unparseable
 lines included; only `passwd`, which has to touch a line in the middle, rewrites
 the file from what it parsed. Both go through the ordinary `setData`, so a full
-disk refuses an `adduser` the way it refuses a `touch`. The name a machine will
+disk refuses a `useradd` the way it refuses a `touch`. The name a machine will
 *make* is narrower than the name it will *parse*: `[a-z][a-z0-9_-]` up to sixteen
 characters, so that it is always a name a prompt, a home directory and an `ls -l`
 owner column can hold — while a machine that has been running a while keeps
-whatever accounts are already in its file. The last field, `admin` or `user`, is
-**informational**: nothing in the core reads it except the prompt, which wears
-`#` for an `admin` account and `$` for a `user` one, and `id`, which prints it.
-Power is being `root` or being in `/etc/sudoers`, and a later rung is what will
-give the flag a meaning.
+whatever accounts are already in its file. The names are System V's since
+`SYSTEM_VERSION` 16 — `useradd`, `userdel`, `usermod`, 1989, and what Solaris 2
+shipped in 1992; `adduser`/`deluser` are Debian's and a decade late for a 1993
+machine, so their `/bin` files are **deleted** at that top-up
+(`CeroSecOS.RETIRED_BIN`).
+
+The last field, `admin` or `user`, still grants nothing by itself: nothing in the
+core reads it except the prompt, which wears `#` for an `admin` account and `$` for
+a `user` one, and `id`, which prints it. What it *reports* since 16 is whether the
+account is in `wheel` — `useradd -G` and `usermod -G` write it from that membership,
+so the field and the group never disagree about an account either has touched. This
+is what replaced the `adduser -a` "admin flag", which no command ever consulted:
+4.4BSD gates `su` on `wheel`, sudo of the era takes a `%group` line, and the shipped
+`/etc/sudoers` carries `%wheel` — so the group really is what grants root.
+Deliberately **not** migrated: an account whose old line says `admin` is not put in
+`wheel`, because the flag never granted anything and a top-up that handed it root
+would be giving away a power the machine never had.
 
 **`/etc/sudoers`** — who may `sudo`, owner `root`, mode `440`, one name a line with
-an optional ` NOPASSWD` after it. Blank lines and lines whose first non-blank
-character is `#` are comments; anything else that is not a name, or a name and the
-single word `NOPASSWD`, is skipped, and a name that appears twice keeps its first
-line. Same one-slot content-keyed cache as the accounts. Root is never looked up in
+an optional ` NOPASSWD` after it. A word beginning `%` is a **group**, which is
+sudo's own syntax: every account in it may run a command as root, and the shipped
+file carries `%wheel`. Blank lines and lines whose first non-blank character is `#`
+are comments; anything else that is not a name or a `%group`, optionally followed by
+the single word `NOPASSWD`, is skipped, and a name that appears twice keeps its
+first line. `CeroSecOS.sudoer` walks the file in order and the **first** line that
+matches the account wins, by name or by group — so `kate NOPASSWD` above `%wheel` is
+kate not being asked. Group lines are resolved with `CeroSecOS.inGroupFile`, which
+reads `/etc/passwd` and `/etc/group` only: `inGroup` mirrors *this* file for the
+group called `sudo`, and a `%sudo` line read through it would ask itself who may
+sudo. Same one-slot content-keyed cache as the accounts. Root is never looked up in
 it: an `/etc/sudoers` with nobody in it must not be able to take `sudo` from the one
 account that can put it back.
 
@@ -265,19 +284,28 @@ list of valid names separated by commas — so `crew:admin,` and `crew:,admin` a
 both dropped whole rather than half read. Blank lines and lines whose first
 non-blank character is `#` are comments, a name that appears twice keeps its
 **first** line, and the same one-slot cache keyed on the node and its text applies.
-A machine ships with `root:`, `sudo:admin` and `users:admin`.
+A machine ships with `root:`, `sudo:admin`, `users:admin` and `wheel:` — wheel
+**empty**, so a shipped machine is exactly the machine it was: `admin` may `sudo`
+because `/etc/sudoers` names him, and `wheel` is the door an administrator opens
+for somebody else.
 
 Every account is additionally in a **primary group of its own name**, with no line
 anywhere: `bob` is in group `bob` whether `/etc/group` mentions him or not, and
-`adduser` writes nothing here. That is what `chgrp bob <path>` takes, and it is
-also why `groupdel bob` and `gpasswd -a bob bob` both answer `no such group` —
-there is no line to remove and none to add anybody to.
+`useradd` writes nothing here unless `-G` names a group. That is what
+`chgrp bob <path>` takes, and it is also why `groupdel bob` answers `no such group`
+and `usermod -G bob bob` moves nothing — there is no line to remove and none to put
+anybody on.
 
-`groupadd` appends, `groupdel` drops every line naming the group, and `gpasswd`
-rewrites the first line naming it; every other line is kept exactly as it lies,
-comments included. All three go through the ordinary `setData`. A group name obeys
-`CeroSecOS.isValidUserName` — the two share a namespace, so a group nobody could
-ever have as a primary group would be a trap. `root`, `sudo` and `users`
+`groupadd` appends, `groupdel` drops every line naming the group, `usermod -G`
+**sets** the lines an account is on (SVR4's own semantics: the list is what it is in
+afterwards, a group not on the list is one it has left, and an empty list is refused
+— there is no SVR4 spelling for "in no groups at all"), and `userdel` sweeps a name
+out of every line in one write (`CeroSecOS.removeGroupMember`), because with `%wheel`
+in `/etc/sudoers` a name left in `wheel` is root waiting for whoever is given that
+name next. Every other line is kept exactly as it lies, comments included. All go
+through the ordinary `setData`. A group name obeys `CeroSecOS.isValidUserName` — the
+two share a namespace, so a group nobody could ever have as a primary group would be
+a trap. `root`, `wheel`, `sudo` and `users`
 (`CeroSecOS.GROUP_KEEP`) cannot be deleted; anything else can, and files still
 carrying the name keep it, dangling, which is what `ls -l` shows.
 
@@ -285,7 +313,8 @@ The `sudo` group is the one place two files meet. `/etc/sudoers` remains the
 authority on who may run a command as root; `CeroSecOS.inGroup(state, user,
 "sudo")` answers true for a name in *either* file, so `id` and `groups` show it and
 the `660` on a device means what its comment always claimed. Membership of the
-group grants no `sudo`: only `/etc/sudoers` does that.
+group grants no `sudo` by itself: only `/etc/sudoers` does that — which since
+`SYSTEM_VERSION` 16 it does for `wheel`, by naming it.
 
 **`/etc/hostname`** — the machine's name: 1 to 16 characters of `[a-z0-9-]`, never
 starting with `-` (the name is written into `state.hostname` too, where `validate`
@@ -351,7 +380,7 @@ small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceilin
 its own 64 — how many commands ship is no reason to mount more of the world.)
 
 The state also carries `sysv`, the *contents* it was built with (`CeroSecOS.SYSTEM_VERSION`
-is 14 today) as opposed to `v`, the schema. A wave that adds a command adds a file to
+is 16 today) as opposed to `v`, the schema. A wave that adds a command adds a file to
 `/bin`, so on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up —
 the standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
@@ -435,7 +464,7 @@ stack is stored as no stack at all. The core sees it on the session
 (`session.stack`), beside `session.login` — the account really at the glass, as
 opposed to the account a command is running as. A borrowed session (sudo's, and a
 chain carrying its authority) is given `login` and a **copy** of the stack: it may
-read who the glass would come back to (`deluser` refuses to remove one of them)
+read who the glass would come back to (`userdel` refuses to remove one of them)
 and anything it pushes or pops dies with the command — which is what keeps
 `sudo cd /root` from moving anybody.
 
@@ -668,3 +697,14 @@ nobody declared is simply not in it; and a value that is not a positive number i
 ignored rather than argued with, since a nil, a string, a zero or a negative would
 each quietly take every book out of the world.
 
+
+`SYSTEM_VERSION` 16 is the second version to take something away, on the very rule
+version 8 ran on: `/bin/adduser`, `/bin/deluser`, `/bin/gpasswd` and `/bin/hash` are
+**deleted**, and only where the file is exactly what was shipped — owner `root`, mode
+`755`, the seeded description — because anything else at that name is a player's own
+work. It seeds `/bin/useradd`, `/bin/userdel`, `/bin/usermod` and `/bin/mkpasswd` in
+their place, and the `wheel` pair: the group itself, empty, and the `%wheel` line in
+`/etc/sudoers` (`CeroSecOS.ensureWheel`). Those two are the only **lines** any top-up
+has ever added to a file a player may have edited, and each is added once, only where
+its own line is missing, and never to a file that parses to nobody at all — that one
+is the BIOS' business, and a line added there would make the repair keep it for ever.

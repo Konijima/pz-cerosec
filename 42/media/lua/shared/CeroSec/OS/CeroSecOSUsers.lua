@@ -323,7 +323,7 @@ end
 -- MAX_USERNAME long. Deliberately narrower than the parser's, which takes any
 -- valid file name: a machine that has been running a while may hold accounts
 -- this rung would never have created, and refusing to parse them would be
--- taking somebody's machine away. So this gates adduser and nothing else.
+-- taking somebody's machine away. So this gates useradd and nothing else.
 --
 -- Every name it accepts is also a valid file name, which is what lets
 -- /home/<name> be created for it without a second rule.
@@ -377,6 +377,35 @@ function CeroSecOS.removeUser(state, name, now)
 		if user == nil or user.name ~= name then out[#out + 1] = lines[i] end
 	end
 	return writePasswdText(state, table.concat(out, "\n"), now)
+end
+
+-- The single place the fourth field is written after the line exists, and the
+-- only thing that writes it is `usermod -G`: the field says whether the account
+-- is in `wheel` (see the head of the account commands in CeroSecOSShell.lua), so
+-- the command that moves an account in or out of that group is the command that
+-- moves it. The file is rewritten from what was parsed, exactly as passwd does
+-- it, because the line is in the middle.
+function CeroSecOS.setAdmin(state, name, admin, now)
+	local users, order = CeroSecOS.readUsers(state)
+	local user = users[name]
+	if user == nil then return nil, "no such user" end
+	local out = {}
+	for i = 1, #order do
+		local one = users[order[i]]
+		if one.name == name then
+			out[i] = CeroSecOS.passwdLine({
+				name = one.name, password = one.password, home = one.home,
+				admin = admin and true or false,
+			})
+		else
+			out[i] = CeroSecOS.passwdLine(one)
+		end
+	end
+	local done, reason =
+		CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.PASSWD_PATH,
+			table.concat(out, "\n"), now)
+	if done == nil then return nil, reason end
+	return true, nil
 end
 
 -- The single place a password is written.
@@ -490,7 +519,7 @@ end
 CeroSecOS.SU_MAX = 4
 
 -- A copy of that stack, entry by entry. What a borrowed session is given: it may
--- READ who the glass would come back to -- deluser refuses to take one of them
+-- READ who the glass would come back to -- userdel refuses to take one of them
 -- away -- and anything it pushes or pops dies with the command.
 function CeroSecOS.copyStack(stack)
 	if type(stack) ~= "table" then return nil end
@@ -528,16 +557,24 @@ end
 --
 --     admin
 --     kate NOPASSWD
+--     %wheel
+--
+-- A name with a "%" in front of it is a GROUP, which is sudo's own syntax and
+-- has been since the tool was published: every account in that group may run a
+-- command as root. The shipped file carries `%wheel`, so putting somebody in
+-- wheel is what makes him an administrator on this machine -- which is 4.4BSD's
+-- rule for `su` and the 1993 answer to the question `adduser -a` used to pretend
+-- to answer.
 --
 -- The file IS the list, exactly as /etc/passwd is the accounts: there is no
 -- table beside it, nothing caches across a change to it, and root editing it
 -- with the editor changes who may sudo. Owner root, mode 440.
 --
 -- Parsing is strict and silent, like the passwd parser. A blank line and a line
--- whose first non-blank character is "#" are comments. Anything else is a name,
--- optionally followed by the single word NOPASSWD, and a line that is not that
--- is skipped -- so a typo takes one name off the list and never puts a wrong
--- one on it.
+-- whose first non-blank character is "#" are comments. Anything else is a name
+-- or a %group, optionally followed by the single word NOPASSWD, and a line that
+-- is not that is skipped -- so a typo takes one name off the list and never puts
+-- a wrong one on it.
 --
 
 local function trim(s)
@@ -555,24 +592,39 @@ local function trim(s)
 	return string.sub(s, i, j)
 end
 
--- One line -> { name, nopasswd }, or nil.
+-- One line -> { name, group, nopasswd }, or nil. `name` is the word exactly as
+-- the file has it, "%" and all, because that is what a rewrite has to put back;
+-- `group` is the name behind the "%" and is nil on a line that names an account.
+local function sudoersWord(word)
+	if type(word) ~= "string" or word == "" then return nil end
+	if string.sub(word, 1, 1) ~= "%" then
+		if not CeroSecOS.isValidName(word) then return nil end
+		return word, nil
+	end
+	local group = string.sub(word, 2)
+	if not CeroSecOS.isValidName(group) then return nil end
+	return word, group
+end
+
 function CeroSecOS.parseSudoersLine(line)
 	if type(line) ~= "string" then return nil end
 	local body = trim(line)
 	if body == "" then return nil end
 	if string.sub(body, 1, 1) == "#" then return nil end
 
-	local name = string.match(body, "^([^ \t]+)$")
-	if name ~= nil then
-		if not CeroSecOS.isValidName(name) then return nil end
-		return { name = name, nopasswd = false }
+	local one = string.match(body, "^([^ \t]+)$")
+	if one ~= nil then
+		local name, group = sudoersWord(one)
+		if name == nil then return nil end
+		return { name = name, group = group, nopasswd = false }
 	end
 
 	local word, flag = string.match(body, "^([^ \t]+)[ \t]+([^ \t]+)$")
 	if word == nil then return nil end
-	if not CeroSecOS.isValidName(word) then return nil end
+	local name, group = sudoersWord(word)
+	if name == nil then return nil end
 	if flag ~= "NOPASSWD" then return nil end
-	return { name = word, nopasswd = true }
+	return { name = name, group = group, nopasswd = true }
 end
 
 -- text -> entries by name, names in the order the file has them. A name that
@@ -611,10 +663,29 @@ end
 -- The entry for one account, or nil when it is not in the file. A machine with
 -- no /etc/sudoers at all is a machine where nobody may sudo, which is the
 -- honest answer for a file that says who may.
+--
+-- Two ways to be in it and the FIRST line that matches wins, which is the rule
+-- this file already runs on and the rule a lookup down a file has: a line with
+-- the account's own name, or a `%group` line naming a group it is in. So a
+-- `kate NOPASSWD` above `%wheel` is kate not being asked, and the same two lines
+-- the other way round are kate being asked like the rest of the group.
+--
+-- The group test is the FILE's -- a primary group or a line in /etc/group -- and
+-- deliberately not CeroSecOS.inGroup, which mirrors this very file for the group
+-- called "sudo": a `%sudo` line read through that one would ask itself who may
+-- sudo and never come back.
 function CeroSecOS.sudoer(state, name)
 	if type(name) ~= "string" then return nil end
-	local entries = CeroSecOS.readSudoers(state)
-	return entries[name]
+	local entries, order = CeroSecOS.readSudoers(state)
+	for i = 1, #order do
+		local entry = entries[order[i]]
+		if entry.group == nil then
+			if entry.name == name then return entry end
+		elseif CeroSecOS.inGroupFile(state, name, entry.group) then
+			return entry
+		end
+	end
+	return nil
 end
 
 -- Every line that names this account, taken out; every other line kept exactly
@@ -642,11 +713,19 @@ function CeroSecOS.removeSudoer(state, name, now)
 	return true, nil
 end
 
--- What a machine ships with: the one non-root account, and it is asked for its
--- password. An open account plus a passwordless sudo would make root free for
--- whoever walks up, and the accounts ship open.
+-- What a machine ships with: the one non-root account by name, the wheel group
+-- by group, and both are asked for a password. An open account plus a
+-- passwordless sudo would make root free for whoever walks up, and the accounts
+-- ship open.
+--
+-- `%wheel` is what makes `useradd -G wheel bob` mean something: the group ships
+-- EMPTY, so the shipped machine is exactly the machine it was -- admin may sudo
+-- because his name is here -- and an administrator who puts somebody in wheel has
+-- given him root without editing this file at all.
 function CeroSecOS.defaultSudoers()
 	return "# who may run a command as root, and whether he is asked for his password\n"
+		.. "# a bare word is an account; %word is a group -- 4.4BSD gates su on wheel\n"
+		.. "%" .. CeroSecOS.WHEEL_GROUP .. "\n"
 		.. "admin"
 end
 
@@ -674,7 +753,7 @@ end
 --
 -- Every account is a member of a group of its OWN NAME whether the file says so
 -- or not: that is its primary group, the one a file it makes belongs to, and it
--- needs no line. adduser writes none.
+-- needs no line. useradd writes none.
 --
 
 -- One line -> { name, members, set }, or nil. `set` is the members again, by
@@ -773,13 +852,21 @@ end
 --   with it -- which is what makes crw-rw----  root  sudo on a light switch
 --   mean "whoever may sudo may throw it", with no sudo typed.
 function CeroSecOS.inGroup(state, user, group)
+	if CeroSecOS.inGroupFile(state, user, group) then return true end
+	if group == "sudo" and CeroSecOS.sudoer(state, user) ~= nil then return true end
+	return false
+end
+
+-- The first two ways on their own: what /etc/passwd and /etc/group say, with no
+-- glance at /etc/sudoers. This is the half CeroSecOS.sudoer asks, because that
+-- one is what the third way reads -- a `%sudo` line answered through inGroup
+-- above would be the sudoers file asking itself who may sudo.
+function CeroSecOS.inGroupFile(state, user, group)
 	if type(user) ~= "string" or type(group) ~= "string" then return false end
 	if user == group then return true end
 	local groups = CeroSecOS.readGroups(state)
 	local entry = groups[group]
-	if entry ~= nil and entry.set[user] then return true end
-	if group == "sudo" and CeroSecOS.sudoer(state, user) ~= nil then return true end
-	return false
+	return entry ~= nil and entry.set[user] == true
 end
 
 -- Every group an account is in, in the order `groups` and `id` print them: the
@@ -891,13 +978,52 @@ function CeroSecOS.setGroupMember(state, name, group, member, now)
 	return writeGroupText(state, table.concat(out, "\n"), now)
 end
 
--- What a machine ships with. root's own group, empty; the group the devices
--- belong to, mirroring the shipped /etc/sudoers; and the one an account joins
--- to share a file with the next survivor who sits down.
+-- Every line naming this account as a member, rewritten without it; every other
+-- line kept exactly as it lies. What `userdel` sweeps: a name left in a group is
+-- a share waiting for whoever is given that name next, and with `%wheel` in
+-- /etc/sudoers a name left in wheel is root waiting for him.
+--
+-- One write for the whole file rather than one per group, because the ceilings
+-- are paid per write and an account in four groups must not be four chances of a
+-- full disk.
+function CeroSecOS.removeGroupMember(state, name, now)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if node == nil or node.type ~= "file" then return true, nil end
+	local lines = CeroSecOS.splitLines(node.data or "")
+	local out, dropped = {}, false
+	for i = 1, #lines do
+		local entry = CeroSecOS.parseGroupLine(lines[i])
+		if entry ~= nil and entry.set[name] then
+			dropped = true
+			local members = {}
+			for j = 1, #entry.members do
+				if entry.members[j] ~= name then members[#members + 1] = entry.members[j] end
+			end
+			out[#out + 1] = CeroSecOS.groupLine({ name = entry.name, members = members })
+		else
+			out[#out + 1] = lines[i]
+		end
+	end
+	-- Nothing to do is not a write: the file keeps its timestamp.
+	if not dropped then return true, nil end
+	return writeGroupText(state, table.concat(out, "\n"), now)
+end
+
+-- What a machine ships with. root's own group, empty; wheel, empty, which is
+-- what /etc/sudoers grants and what an account is put in to be made an
+-- administrator; the group the devices belong to, mirroring the shipped
+-- /etc/sudoers; and the one an account joins to share a file with the next
+-- survivor who sits down.
+--
+-- wheel ships with nobody in it on purpose. The shipped `admin` account may sudo
+-- because /etc/sudoers names it, exactly as it always did, and a shipped machine
+-- is therefore the machine it was; wheel is the door an administrator opens for
+-- somebody else.
 function CeroSecOS.defaultGroup()
 	return "# name:member,member,... -- one group a line\n"
 		.. "# every account is also in a group of its own name\n"
 		.. "root:\n"
 		.. "sudo:admin\n"
-		.. "users:admin"
+		.. "users:admin\n"
+		.. CeroSecOS.WHEEL_GROUP .. ":"
 end

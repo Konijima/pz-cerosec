@@ -1608,31 +1608,37 @@ do
 end
 
 do
-	-- The hash command: the same function, on a string you choose.
+	-- The mkpasswd command: the same function, on a string you choose. It was
+	-- called `hash` until SYSTEM_VERSION 16, which was not a name any Unix would
+	-- have used for anything; the tool itself is still CeroSec Systems' own, and
+	-- the manual's deviations page says so.
 	local state = fresh()
 	local session = open(state, "admin")
 
-	ok(state, session, "hash hunter2 abcdef", { CeroSecOS.hashPassword("hunter2", "abcdef") })
+	ok(state, session, "mkpasswd hunter2 abcdef", { CeroSecOS.hashPassword("hunter2", "abcdef") })
 	-- Pinned, so a change to the construction is a change to this file.
-	ok(state, session, "hash hunter2 abcdef",
+	ok(state, session, "mkpasswd hunter2 abcdef",
 		{ "$cs1$abcdef$" .. string.sub(CeroSecOS.hashPassword("hunter2", "abcdef"), 13) })
-	ok(state, session, 'hash "" abcdef', { CeroSecOS.hashPassword("", "abcdef") })
+	ok(state, session, 'mkpasswd "" abcdef', { CeroSecOS.hashPassword("", "abcdef") })
 
 	-- Without a salt, a fresh one each time: two runs never agree.
-	local first = ok(state, session, "hash hunter2")[1]
-	local second = ok(state, session, "hash hunter2")[1]
+	local first = ok(state, session, "mkpasswd hunter2")[1]
+	local second = ok(state, session, "mkpasswd hunter2")[1]
 	check("a fresh salt every time", first ~= second)
 	check("and both are stored passwords", CeroSecOS.splitHash(first) ~= nil)
 	eq("a hash line fits the screen", #first <= CeroSecOS.COLS, true)
 
-	bad(state, session, "hash", "hash: usage: hash <text> [salt]")
-	bad(state, session, "hash a b c", "hash: usage: hash <text> [salt]")
-	bad(state, session, "hash x BAD", "hash: BAD: invalid salt")
+	bad(state, session, "mkpasswd", "mkpasswd: usage: mkpasswd <text> [salt]")
+	bad(state, session, "mkpasswd a b c", "mkpasswd: usage: mkpasswd <text> [salt]")
+	bad(state, session, "mkpasswd x BAD", "mkpasswd: BAD: invalid salt")
 	-- Single quotes, because the prompt speaks the script language now: inside
 	-- DOUBLE quotes "$b" is a variable and expands to nothing, which would make
-	-- this line `hash x a` and a perfectly good salt.
-	bad(state, session, "hash x 'a$b'", "hash: a$b: invalid salt")
-	ok(state, session, 'hash x "a$b"', nil)
+	-- this line `mkpasswd x a` and a perfectly good salt.
+	bad(state, session, "mkpasswd x 'a$b'", "mkpasswd: a$b: invalid salt")
+	ok(state, session, 'mkpasswd x "a$b"', nil)
+
+	-- And the old name is gone from the machine, not aliased to the new one.
+	bad(state, session, "hash x abcdef", "hash: command not found")
 end
 
 --
@@ -2749,11 +2755,21 @@ end
 do
 	local state = fresh()
 
-	-- A list somebody wrote is kept, exactly as the accounts are.
+	-- A list somebody wrote is kept, exactly as the accounts are. The one line
+	-- the repair adds to it is the `%wheel` line, and only where it is missing:
+	-- the group is what `useradd -G wheel` puts an account in, and a machine whose
+	-- sudoers file did not grant it would be a machine where that flag means
+	-- nothing (CeroSecOS.ensureWheel).
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "kate NOPASSWD")
 	CeroSecOS.restoreSystem(state)
-	eq("a sudoers that still names somebody is kept",
-		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "kate NOPASSWD")
+	eq("a sudoers that still names somebody is kept, with the wheel line added",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+	CeroSecOS.restoreSystem(state)
+	eq("and it is added once and not again",
+		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data,
+		"kate NOPASSWD\n%" .. CeroSecOS.WHEEL_GROUP)
+	eq("kate is still not asked", CeroSecOS.sudoer(state, "kate").nopasswd, true)
 
 	-- One that names nobody is not a list.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "rubbish line here")
@@ -3592,7 +3608,7 @@ do
 end
 
 --
--- 25. Accounts: adduser, deluser, id, and su (rung 3).
+-- 25. Accounts: useradd, userdel, id, and su (rung 3).
 --
 
 -- The name rule for an account the machine MAKES. Narrower than a file name on
@@ -3612,31 +3628,31 @@ do
 	eq("sixteen characters", CeroSecOS.MAX_USERNAME, 16)
 end
 
--- adduser: what it writes, and what it refuses.
+-- useradd: what it writes, and what it refuses.
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local admin = open(state, "admin")
 
-	-- Root's, and root's alone -- which is what makes `sudo adduser` the way an
+	-- Root's, and root's alone -- which is what makes `sudo useradd` the way an
 	-- admin does it.
-	badAt(state, admin, "adduser bob", "adduser: permission denied")
+	badAt(state, admin, "useradd bob", "useradd: permission denied")
 	eq("and nothing was made", CeroSecOS.getUser(state, "bob"), nil)
 
-	badAt(state, rootSession, "adduser", "adduser: usage: adduser [-a] <name>")
-	badAt(state, rootSession, "adduser bob carl", "adduser: usage: adduser [-a] <name>")
-	badAt(state, rootSession, "adduser -x bob", "adduser: -x: unknown option")
+	badAt(state, rootSession, "useradd", "useradd: usage: useradd [-G group[,group...]] login")
+	badAt(state, rootSession, "useradd bob carl", "useradd: usage: useradd [-G group[,group...]] login")
+	badAt(state, rootSession, "useradd -x bob", "useradd: -x: unknown option")
 	-- A name that begins with "-" is read as a flag, the way every shell reads
 	-- one, and the refusal is about the flag it looks like.
-	badAt(state, rootSession, "adduser -bob", "adduser: -bob: unknown option")
-	badAt(state, rootSession, "adduser Bob", "adduser: Bob: invalid name")
-	badAt(state, rootSession, "adduser 1bob", "adduser: 1bob: invalid name")
-	badAt(state, rootSession, "adduser admin", "adduser: admin: already exists")
-	badAt(state, rootSession, "adduser root", "adduser: root: already exists")
+	badAt(state, rootSession, "useradd -bob", "useradd: -bob: unknown option")
+	badAt(state, rootSession, "useradd Bob", "useradd: Bob: invalid name")
+	badAt(state, rootSession, "useradd 1bob", "useradd: 1bob: invalid name")
+	badAt(state, rootSession, "useradd admin", "useradd: admin: already exists")
+	badAt(state, rootSession, "useradd root", "useradd: root: already exists")
 
-	okAt(state, rootSession, "adduser bob", {
-		"adduser: bob: created",
-		"adduser: set a password with passwd bob",
+	okAt(state, rootSession, "useradd bob", {
+		"useradd: bob: created",
+		"useradd: set a password with passwd bob",
 	})
 
 	local bob = CeroSecOS.getUser(state, "bob")
@@ -3667,15 +3683,35 @@ do
 	-- 750: nobody else goes in there.
 	badAt(state, admin, "ls /home/bob", "ls: /home/bob: permission denied")
 
-	-- -a writes the flag, and nothing else changes.
-	okAt(state, rootSession, "adduser -a kate", {
-		"adduser: kate: created",
-		"adduser: set a password with passwd kate",
+	-- -G wheel is what `adduser -a` was: the membership 4.4BSD gates su on, the
+	-- group the shipped /etc/sudoers grants, and the flag on the /etc/passwd line
+	-- written from it.
+	okAt(state, rootSession, "useradd -G wheel kate", {
+		"useradd: kate: created",
+		"useradd: set a password with passwd kate",
 	})
 	eq("the flag is on the line", CeroSecOS.getUser(state, "kate").admin, true)
+	check("and she really is in wheel",
+		CeroSecOS.inGroup(state, "kate", CeroSecOS.WHEEL_GROUP))
+	check("which is what lets her sudo", CeroSecOS.sudoer(state, "kate") ~= nil)
 	eq("and the home is the same shape",
 		CeroSecOS.systemNode(state, "/home/kate").mode, CeroSecOS.HOME_MODE)
 	eq("the machine still validates", CeroSecOS.validate(state), true)
+
+	-- A list, and every group on it has to exist FIRST: a typo in the second name
+	-- is a typo, and a typo must not leave an account behind it.
+	okAt(state, rootSession, "groupadd crew", {})
+	okAt(state, rootSession, "useradd -G crew,wheel liz", nil)
+	-- The primary first, then /etc/group's own order -- wheel ships above the
+	-- group groupadd appended -- and then the mirrored sudo, which is there
+	-- because wheel is what grants it.
+	eq("both memberships", table.concat(CeroSecOS.groupsOf(state, "liz"), ","),
+		"liz,wheel,crew,sudo")
+	badAt(state, rootSession, "useradd -G crew,nosuch mia",
+		"useradd: nosuch: no such group")
+	eq("and no account was made", CeroSecOS.getUser(state, "mia"), nil)
+	badAt(state, rootSession, "useradd -G '' nan", "useradd: empty group list")
+	eq("nor by an empty list", CeroSecOS.getUser(state, "nan"), nil)
 end
 
 -- An existing directory is adopted, not remade.
@@ -3686,9 +3722,9 @@ do
 	okAt(state, rootSession, "chmod 700 /home/carl", {})
 	okAt(state, rootSession, "write /home/carl/notes.txt \"keep me\"", {})
 
-	okAt(state, rootSession, "adduser carl", {
-		"adduser: carl: created",
-		"adduser: set a password with passwd carl",
+	okAt(state, rootSession, "useradd carl", {
+		"useradd: carl: created",
+		"useradd: set a password with passwd carl",
 	})
 	local home = CeroSecOS.systemNode(state, "/home/carl")
 	eq("it changed hands", home.owner, "carl")
@@ -3697,7 +3733,7 @@ do
 
 	-- A file at that name is not a home, and the refusal says so.
 	okAt(state, rootSession, "write /home/dave hello", {})
-	badAt(state, rootSession, "adduser dave", "adduser: /home/dave: not a directory")
+	badAt(state, rootSession, "useradd dave", "useradd: /home/dave: not a directory")
 	eq("and no account was made", CeroSecOS.getUser(state, "dave"), nil)
 end
 
@@ -3707,56 +3743,56 @@ do
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, "rm -r /home", {})
 
-	badAt(state, rootSession, "adduser eve", "adduser: /home/eve: no such file")
+	badAt(state, rootSession, "useradd eve", "useradd: /home/eve: no such file")
 	eq("the line that was written is taken back out", CeroSecOS.getUser(state, "eve"), nil)
 	check("and the accounts that were there are still there", holds(state, "admin", ""))
 	eq("the machine still validates", CeroSecOS.validate(state), true)
 end
 
--- sudo adduser: the way somebody who is not root makes an account.
+-- sudo useradd: the way somebody who is not root makes an account.
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	local asked = run(state, admin, "sudo adduser -a bob")
+	local asked = run(state, admin, "sudo useradd -G wheel bob")
 	eq("sudo asks for admin's password", asked.data.text, "[sudo] password for admin: ")
 	local made = answer(state, admin, asked.data.cont, "")
 	eq("it succeeds", made.ok, true)
-	eq("and says so", made.lines[1], "adduser: bob: created")
+	eq("and says so", made.lines[1], "useradd: bob: created")
 	eq("the account is there", CeroSecOS.getUser(state, "bob").admin, true)
 	eq("the home is his", CeroSecOS.systemNode(state, "/home/bob").owner, "bob")
 	eq("and the console is still admin's", admin.user, "admin")
 end
 
--- deluser: the guards, the two files, and the home.
+-- userdel: the guards, the two files, and the home.
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local admin = open(state, "admin")
-	okAt(state, rootSession, "adduser bob", nil)
-	okAt(state, rootSession, "adduser carl", nil)
+	okAt(state, rootSession, "useradd bob", nil)
+	okAt(state, rootSession, "useradd carl", nil)
 
-	badAt(state, admin, "deluser bob", "deluser: permission denied")
-	badAt(state, rootSession, "deluser", "deluser: usage: deluser [-r] <name>")
-	badAt(state, rootSession, "deluser -x bob", "deluser: -x: unknown option")
-	badAt(state, rootSession, "deluser bob carl", "deluser: usage: deluser [-r] <name>")
-	badAt(state, rootSession, "deluser nosuch", "deluser: nosuch: no such user")
+	badAt(state, admin, "userdel bob", "userdel: permission denied")
+	badAt(state, rootSession, "userdel", "userdel: usage: userdel [-r] login")
+	badAt(state, rootSession, "userdel -x bob", "userdel: -x: unknown option")
+	badAt(state, rootSession, "userdel bob carl", "userdel: usage: userdel [-r] login")
+	badAt(state, rootSession, "userdel nosuch", "userdel: nosuch: no such user")
 	-- Root is the way back into the machine and is not one of the accounts.
-	badAt(state, rootSession, "deluser root", "deluser: root: cannot remove")
+	badAt(state, rootSession, "userdel root", "userdel: root: cannot remove")
 
 	-- The account at the glass. The session running the command is root's --
 	-- that is what sudo does -- and the guard is about who is logged in.
 	local asRoot = open(state, "root")
 	asRoot.login = "bob"
-	badAt(state, asRoot, "deluser bob", "deluser: bob: user is logged in")
+	badAt(state, asRoot, "userdel bob", "userdel: bob: user is logged in")
 	-- And a user the glass would come back to through `exit`.
 	asRoot.login = "carl"
 	asRoot.stack = { { user = "bob", cwd = "/home/bob" } }
-	badAt(state, asRoot, "deluser bob", "deluser: bob: user is logged in")
+	badAt(state, asRoot, "userdel bob", "userdel: bob: user is logged in")
 	check("neither of them was touched", CeroSecOS.getUser(state, "bob") ~= nil)
 
 	-- Without -r the home stays exactly where it is, owned by a name the
 	-- machine no longer knows.
-	okAt(state, rootSession, "deluser bob", { "deluser: bob: removed" })
+	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
 	eq("the account is gone", CeroSecOS.getUser(state, "bob"), nil)
 	check("and cannot log in", CeroSecOS.login(state, "bob", "") == nil)
 	local home = CeroSecOS.systemNode(state, "/home/bob")
@@ -3767,7 +3803,7 @@ do
 
 	-- With -r it goes, and everything under it.
 	okAt(state, rootSession, "write /home/carl/notes.txt hello", {})
-	okAt(state, rootSession, "deluser -r carl", { "deluser: carl: removed" })
+	okAt(state, rootSession, "userdel -r carl", { "userdel: carl: removed" })
 	eq("the account is gone", CeroSecOS.getUser(state, "carl"), nil)
 	eq("and so is the home", CeroSecOS.systemNode(state, "/home/carl"), nil)
 	eq("the machine still validates", CeroSecOS.validate(state), true)
@@ -3777,34 +3813,34 @@ end
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH,
 		"# who may\nadmin\nbob NOPASSWD")
 	eq("bob may sudo", CeroSecOS.sudoer(state, "bob").nopasswd, true)
 
-	okAt(state, rootSession, "deluser bob", { "deluser: bob: removed" })
+	okAt(state, rootSession, "userdel bob", { "userdel: bob: removed" })
 	eq("and now he is nobody", CeroSecOS.sudoer(state, "bob"), nil)
 	eq("admin kept his line", CeroSecOS.sudoer(state, "admin").name, "admin")
 	eq("and the comment is still in the file",
 		CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH).data, "# who may\nadmin")
 
 	-- A machine with no /etc/sudoers at all has nothing to take out of it.
-	okAt(state, rootSession, "adduser dan", nil)
+	okAt(state, rootSession, "useradd dan", nil)
 	okAt(state, rootSession, "rm /etc/sudoers", {})
-	okAt(state, rootSession, "deluser dan", { "deluser: dan: removed" })
+	okAt(state, rootSession, "userdel dan", { "userdel: dan: removed" })
 end
 
--- `sudo deluser` on the account at the glass: the borrowed session knows who
+-- `sudo userdel` on the account at the glass: the borrowed session knows who
 -- typed the line, so an admin cannot delete himself out from under himself.
 do
 	local state = fresh()
 	local admin = open(state, "admin")
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "admin NOPASSWD")
-	badAt(state, admin, "sudo deluser admin", "deluser: admin: user is logged in")
+	badAt(state, admin, "sudo userdel admin", "userdel: admin: user is logged in")
 	check("and he is still there", CeroSecOS.getUser(state, "admin") ~= nil)
 	-- Somebody else, though, goes.
-	okAt(state, admin, "sudo adduser bob", nil)
-	okAt(state, admin, "sudo deluser bob", { "deluser: bob: removed" })
+	okAt(state, admin, "sudo useradd bob", nil)
+	okAt(state, admin, "sudo userdel bob", { "userdel: bob: removed" })
 end
 
 -- id.
@@ -3829,18 +3865,22 @@ do
 	badAt(state, admin, "groups a b", "groups: usage: groups [name]")
 
 	-- A brand new account is in one group: its own.
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob" })
 	okAt(state, admin, "groups bob", { "bob" })
-	okAt(state, rootSession, "adduser -a kate", nil)
-	okAt(state, admin, "id kate", { "uid=kate flag=admin groups=kate" })
+	-- -G wheel: the group, the flag on the line, and the sudo the shipped
+	-- /etc/sudoers grants it, all three off the one flag.
+	okAt(state, rootSession, "useradd -G wheel kate", nil)
+	okAt(state, admin, "id kate", { "uid=kate flag=admin groups=kate,wheel,sudo" })
 	-- sudo is the SUDOERS file, whatever /etc/group says: it is the authority
 	-- and the group mirrors it.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.SUDOERS_PATH, "bob")
 	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob,sudo" })
+	-- admin is in the sudo group by a LINE of /etc/group, which is a share and not
+	-- a power: the sudoers file above no longer names him and he may not sudo.
 	okAt(state, admin, "id admin", { "uid=admin flag=user groups=admin,sudo,users" })
 	-- And a line of /etc/group is the other half of it.
-	okAt(state, rootSession, "gpasswd -a bob users", {})
+	okAt(state, rootSession, "usermod -G users bob", {})
 	okAt(state, admin, "id bob", { "uid=bob flag=user groups=bob,users,sudo" })
 end
 
@@ -3848,7 +3888,7 @@ end
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 
 	badAt(state, rootSession, "su nosuch", "su: nosuch: no such user")
 	badAt(state, rootSession, "su a b", "su: usage: su [name]")
@@ -3880,7 +3920,7 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 	CeroSecOS.setPassword(state, "bob", "hunter2", "x", FIXED)
 
 	local asked = run(state, admin, "su bob")
@@ -3927,7 +3967,7 @@ do
 
 	-- An account taken out of the file between the question and the answer.
 	local gone = run(state, admin, "su bob")
-	okAt(state, rootSession, "deluser bob", nil)
+	okAt(state, rootSession, "userdel bob", nil)
 	says(answer(state, admin, gone.data.cont, "hunter2"), "su: authentication failure")
 	eq("and nobody was switched", admin.user, "admin")
 end
@@ -4029,7 +4069,7 @@ end
 do
 	local state = fresh()
 	state.sysv = 3
-	local added = { "adduser", "deluser", "id", "su" }
+	local added = { "useradd", "userdel", "id", "su" }
 	for i = 1, #added do state.fs.children.bin.children[added[i]] = nil end
 	state.fs.children.home.children.admin.children["mine.txt"] =
 		CeroSecOS.newFile("admin", 644, "keep me")
@@ -4051,24 +4091,26 @@ do
 	-- They really run on it.
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, "id", { "uid=root flag=admin groups=root" })
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 
 	-- And the BIOS repair ships them too.
 	local broken = fresh()
-	broken.fs.children.bin.children.adduser = nil
+	broken.fs.children.bin.children.useradd = nil
 	broken.fs.children.bin.children.su = nil
 	CeroSecOS.restoreSystem(broken)
-	check("the repair puts adduser back", broken.fs.children.bin.children.adduser ~= nil)
+	check("the repair puts useradd back", broken.fs.children.bin.children.useradd ~= nil)
 	check("and su", broken.fs.children.bin.children.su ~= nil)
 	eq("at this build", broken.sysv, CeroSecOS.SYSTEM_VERSION)
 end
 
--- A machine from the rung before this one is topped up with the five group
--- commands and with /etc/group, and nothing else on it is touched.
+-- A machine from the rung before this one is topped up with the group commands
+-- and with /etc/group, and nothing else on it is touched. `gpasswd` was one of
+-- them and is not any more: SYSTEM_VERSION 16 retired that name for `usermod -G`,
+-- so what a version-4 machine is topped up with is the four that are left.
 do
 	local state = fresh()
 	state.sysv = 4
-	local added = { "chgrp", "gpasswd", "groupadd", "groupdel", "groups" }
+	local added = { "chgrp", "groupadd", "groupdel", "groups" }
 	for i = 1, #added do state.fs.children.bin.children[added[i]] = nil end
 	state.fs.children.etc.children.group = nil
 	state.fs.children.home.children.admin.children["mine.txt"] =
@@ -4091,20 +4133,24 @@ do
 	check("/etc/group was seeded", groupNode ~= nil)
 	eq("/etc/group is root's", groupNode.owner, "root")
 	eq("/etc/group is 644", groupNode.mode, CeroSecOS.GROUP_MODE)
-	eq("/etc/group holds the shipped three", groupNode.data, CeroSecOS.defaultGroup())
+	eq("/etc/group holds the shipped four", groupNode.data, CeroSecOS.defaultGroup())
 	eq("the player's file was not touched", old.data, "keep me")
 	eq("and still has no group of its own", old.group, nil)
 	eq("which reads as its owner", CeroSecOS.groupOf(old), "admin")
 	eq("it validates", CeroSecOS.validate(state), true)
 	eq("and asked once only", CeroSecOS.upgradeSystem(state), false)
 
-	-- A /etc/group somebody has been keeping is NOT rewritten.
+	-- A /etc/group somebody has been keeping is NOT rewritten. The one line the
+	-- top-up adds to it is `wheel`, empty, because /etc/sudoers grants that group
+	-- and `useradd -G wheel` puts an account in it (CeroSecOS.ensureWheel).
 	local kept = fresh()
 	kept.sysv = 4
 	CeroSecOS.setData(kept, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:admin")
 	CeroSecOS.upgradeSystem(kept)
-	eq("a group file that is there is left alone",
-		kept.fs.children.etc.children.group.data, "crew:admin")
+	eq("a group file that is there is left alone, wheel apart",
+		kept.fs.children.etc.children.group.data,
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
+	check("and nobody is in it", not CeroSecOS.inGroup(kept, "admin", CeroSecOS.WHEEL_GROUP))
 
 	-- The BIOS repair, on the same terms: a file that still holds a group is
 	-- kept, one that parses to nothing is written back.
@@ -4113,8 +4159,9 @@ do
 	CeroSecOS.setData(broken, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "crew:admin")
 	CeroSecOS.restoreSystem(broken)
 	check("the repair puts groupadd back", broken.fs.children.bin.children.groupadd ~= nil)
-	eq("and keeps a group file that still parses",
-		broken.fs.children.etc.children.group.data, "crew:admin")
+	eq("and keeps a group file that still parses, wheel apart",
+		broken.fs.children.etc.children.group.data,
+		"crew:admin\n" .. CeroSecOS.WHEEL_GROUP .. ":")
 
 	local wiped = fresh()
 	CeroSecOS.setData(wiped, CeroSecOS.rootSession(), CeroSecOS.GROUP_PATH, "# nothing but this")
@@ -4405,7 +4452,7 @@ do
 	-- so admin throws the switch with no sudo typed, and bob, who is in no
 	-- group of the machine's but his own, gets nothing at all.
 	local admin = open(state, "admin")
-	okAt(state, root, "adduser bob", nil)
+	okAt(state, root, "useradd bob", nil)
 	local bob = open(state, "bob")
 
 	okAt(state, admin, "cat /dev/light0", { "on" }, env)
@@ -4790,7 +4837,7 @@ do
 	local devices = mockupDevices()
 	local env = devEnv(devices)
 	local admin = open(state, "admin")
-	okAt(state, root, "adduser bob", nil)
+	okAt(state, root, "useradd bob", nil)
 	local bob = open(state, "bob")
 
 	-- root, and admin, who is in /etc/sudoers and so in the group sudo.
@@ -4882,7 +4929,7 @@ do
 	local devices = mockupDevices()
 	local env = devEnv(devices)
 	local admin = open(state, "admin")
-	okAt(state, root, "adduser bob", nil)
+	okAt(state, root, "useradd bob", nil)
 	local bob = open(state, "bob")
 
 	okAt(state, admin, "dev find light0", { "light0: blinking" }, env)
@@ -5139,7 +5186,7 @@ do
 	-- 440 keeps everybody else out, and a chmod moves it and is remembered.
 	local admin = open(state, "admin")
 	okAt(state, admin, "cat /dev/sensor0", { "clear" }, env)
-	okAt(state, session, "adduser bob", nil)
+	okAt(state, session, "useradd bob", nil)
 	local bob = open(state, "bob")
 	badAt(state, bob, "cat /dev/sensor0", "sensor0: permission denied", env)
 	okAt(state, session, "chmod 444 /dev/sensor0", {}, env)
@@ -5336,13 +5383,20 @@ end
 do
 	local state = fresh()
 	local groups, order = CeroSecOS.readGroups(state)
-	eq("three groups ship", #order, 3)
+	eq("four groups ship", #order, 4)
 	eq("the first", order[1], "root")
 	eq("the second", order[2], "sudo")
 	eq("the third", order[3], "users")
+	eq("the fourth", order[4], CeroSecOS.WHEEL_GROUP)
 	eq("root's is empty", #groups.root.members, 0)
+	-- wheel ships empty too, and that is the whole of why a shipped machine is
+	-- the machine it always was: the `%wheel` line in /etc/sudoers grants nobody
+	-- until an administrator puts somebody in it (`useradd -G wheel`).
+	eq("and wheel is empty", #groups[CeroSecOS.WHEEL_GROUP].members, 0)
 	check("admin is in sudo", groups.sudo.set.admin)
 	check("and in users", groups.users.set.admin)
+	check("and in no wheel", not CeroSecOS.inGroup(state, "admin", CeroSecOS.WHEEL_GROUP))
+	check("but he may still sudo, by name", CeroSecOS.sudoer(state, "admin") ~= nil)
 
 	-- The cache is keyed on the file, so an edit is seen.
 	local same = CeroSecOS.readGroups(state)
@@ -5390,10 +5444,10 @@ end
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
-	okAt(state, rootSession, "adduser bob", nil)
-	okAt(state, rootSession, "adduser kate", nil)
+	okAt(state, rootSession, "useradd bob", nil)
+	okAt(state, rootSession, "useradd kate", nil)
 	okAt(state, rootSession, "groupadd crew", {})
-	okAt(state, rootSession, "gpasswd -a bob crew", {})
+	okAt(state, rootSession, "usermod -G crew bob", {})
 
 	local file = CeroSecOS.newFile("admin", 640, "shared")
 	file.group = "crew"
@@ -5423,7 +5477,7 @@ do
 
 	-- The owner digit wins over the group's, even when the owner is in it.
 	file.mode = 470
-	okAt(state, rootSession, "gpasswd -a admin crew", {})
+	okAt(state, rootSession, "usermod -G users,crew admin", {})
 	check("the owner is judged as the owner", not CeroSecOS.can(state, admin, file, "w"))
 	check("and the member as the member", CeroSecOS.can(state, bobS, file, "w"))
 
@@ -5458,7 +5512,7 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local admin = open(state, "admin")
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 	local bob = open(state, "bob")
 
 	okAt(state, admin, "touch /home/admin/notes.txt", {})
@@ -5508,17 +5562,17 @@ do
 		CeroSecOS.mtimeOf(state.fs.children.home.children.admin.children.sub), FIXED)
 end
 
--- 22f. groupadd, groupdel, gpasswd -- and a dangling group.
+-- 22f. groupadd, groupdel, usermod -G -- and a dangling group.
 do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local admin = open(state, "admin")
-	okAt(state, rootSession, "adduser bob", nil)
+	okAt(state, rootSession, "useradd bob", nil)
 
 	-- Root only, for all three.
 	badAt(state, admin, "groupadd crew", "groupadd: permission denied")
 	badAt(state, admin, "groupdel users", "groupdel: permission denied")
-	badAt(state, admin, "gpasswd -a bob users", "gpasswd: permission denied")
+	badAt(state, admin, "usermod -G users bob", "usermod: permission denied")
 
 	okAt(state, rootSession, "groupadd crew", {})
 	check("the line is in the file",
@@ -5533,22 +5587,39 @@ do
 		"groupadd: " .. string.rep("c", 17) .. ": invalid name")
 	badAt(state, rootSession, "groupadd", "groupadd: usage: groupadd <name>")
 
-	-- gpasswd, both ways, and both refusals.
-	okAt(state, rootSession, "gpasswd -a bob crew", {})
+	-- usermod -G, which SETS the list: what is on the line is what he is in
+	-- afterwards, which is SVR4's rule and not gpasswd's add-one-drop-one.
+	okAt(state, rootSession, "usermod -G crew bob", {})
 	okAt(state, rootSession, "groups bob", { "bob crew" })
-	badAt(state, rootSession, "gpasswd -a bob crew", "gpasswd: crew: already a member")
-	okAt(state, rootSession, "gpasswd -d bob crew", {})
+	-- Setting the same list again is not a refusal: SVR4's -G says where the
+	-- account ends up, and it is already there.
+	okAt(state, rootSession, "usermod -G crew bob", {})
+	okAt(state, rootSession, "groups bob", { "bob crew" })
+	-- A second group ADDS, and dropping it from the list takes it away: one flag,
+	-- both directions, because the list is the whole answer.
+	okAt(state, rootSession, "usermod -G crew,users bob", {})
+	okAt(state, rootSession, "groups bob", { "bob users crew" })
+	okAt(state, rootSession, "usermod -G users bob", {})
+	okAt(state, rootSession, "groups bob", { "bob users" })
+	badAt(state, rootSession, "usermod -G crew nosuch", "usermod: nosuch: no such user")
+	badAt(state, rootSession, "usermod -G nosuch bob", "usermod: nosuch: no such group")
+	-- A primary group is not a membership anybody granted, so naming it is naming
+	-- a group with no line -- which is what it will always be.
+	okAt(state, rootSession, "usermod -G bob bob", {})
 	okAt(state, rootSession, "groups bob", { "bob" })
-	badAt(state, rootSession, "gpasswd -d bob crew", "gpasswd: crew: not a member")
-	badAt(state, rootSession, "gpasswd -a nosuch crew", "gpasswd: nosuch: no such user")
-	badAt(state, rootSession, "gpasswd -a bob nosuch", "gpasswd: nosuch: no such group")
-	-- A primary group has no line, so there is nothing to add anybody to.
-	badAt(state, rootSession, "gpasswd -a bob bob", "gpasswd: bob: no such group")
-	badAt(state, rootSession, "gpasswd -x bob crew", "gpasswd: usage: gpasswd -a|-d <user> <group>")
-	badAt(state, rootSession, "gpasswd -a bob", "gpasswd: usage: gpasswd -a|-d <user> <group>")
+	badAt(state, rootSession, "usermod -a bob crew",
+		"usermod: usage: usermod -G group[,group...] login")
+	badAt(state, rootSession, "usermod -G bob",
+		"usermod: usage: usermod -G group[,group...] login")
+	-- And the one list -G will not take: an empty one. SVR4 has no spelling for
+	-- "in no groups at all", and a `usermod -G ""` that quietly emptied the list
+	-- would be the one way this command takes power away by accident.
+	badAt(state, rootSession, "usermod -G '' bob", "usermod: empty group list")
+	badAt(state, rootSession, "usermod -G crew,, bob", "usermod: empty group list")
+	okAt(state, rootSession, "groups bob", { "bob" })
 
 	-- Every other line of the file is kept exactly as it lies.
-	okAt(state, rootSession, "gpasswd -a bob crew", {})
+	okAt(state, rootSession, "usermod -G crew bob", {})
 	local text = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH).data
 	check("the comment is still there", string.find(text, "# name:member", 1, true) ~= nil)
 	check("and the shipped lines", string.find(text, "\nsudo:admin\n", 1, true) ~= nil)
@@ -7185,12 +7256,14 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ adduser arp call cat chgrp chmod chown clear cp crontab cu date deluser dev df"
-		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
-		.. " help hostname id ifconfig kill last ln ls mail man mkdir mount mv newfs passwd ping"
+	local WANT = "[ arp call cat chgrp chmod chown clear cp crontab cu date dev df"
+		.. " echo edit false grep groupadd groupdel groups halt head"
+		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd mount mv newfs"
+		.. " passwd ping"
 		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail test touch true umount uniq wc which who whoami write"
+		.. " sleep sort su sudo tail test touch true umount uniq useradd userdel usermod"
+		.. " wc which who whoami write"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)

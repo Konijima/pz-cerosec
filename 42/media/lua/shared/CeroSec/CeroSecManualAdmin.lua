@@ -226,11 +226,11 @@ machine can tell you what a password was -- only whether one you typed is
 the same. The salt is why two accounts with the same password do not look
 alike on the disk. You can watch the machinery work:
 
-  admin@ksp-04-11:~$ hash knox 42f7pl
+  admin@ksp-04-11:~$ mkpasswd knox 42f7pl
   $cs1$42f7pl$b36c5193655e2d64e38523e242fb7fa8
 
-Give hash no salt and it makes a fresh one, so the line is different every
-time you ask. That is the salt doing its job, not the machine being
+Give mkpasswd no salt and it makes a fresh one, so the line is different
+every time you ask. That is the salt doing its job, not the machine being
 unreliable.]],
 
 [[An EMPTY second field is an account with no password, and an account
@@ -242,23 +242,20 @@ The home. An absolute path, and it is where the account lands at login and
 what a bare cd goes to. Nothing checks that it exists; an account whose
 home has been deleted logs in and stands at the root of the disk.
 
-The flag, which is the last field and is either admin or user. Here is the
-honest answer about it, because the word invites a wrong guess: today the
-flag grants NOTHING. No command on this machine consults it. Its one
-visible effect is the pound sign on the prompt instead of the dollar sign.
-Power is being root, or being named in /etc/sudoers, and nothing else. A
-later release may give the flag a meaning; this one does not, and we would
-rather write that down than let you hand somebody a mark you believed was
-a key.]],
+The flag, admin or user, grants nothing by itself: no command consults it,
+and its one visible effect is the pound sign on the prompt. What it REPORTS
+is whether the account is in the group wheel -- and wheel is what grants,
+because the shipped /etc/sudoers carries a %wheel line. usermod -G writes
+this field from that membership, so the two never disagree.]],
 
-[[Making one. adduser is root's, and it does three things: writes the
+[[Making one. useradd is root's, and it does three things: writes the
 line, makes the home, and says out loud that the account is open.
 
 Try it.
 
-  root@ksp-04-11:~# adduser bob
-  adduser: bob: created
-  adduser: set a password with passwd bob
+  root@ksp-04-11:~# useradd bob
+  useradd: bob: created
+  useradd: set a password with passwd bob
 
 Do the second line now, not later. Between those two commands bob is an
 account anybody in the office can log in to by pressing Enter.
@@ -268,13 +265,13 @@ account anybody in the office can log in to by pressing Enter.
   Retype new password:
   passwd: password updated
 
-adduser -a sets the admin flag, which means the pound sign and nothing
-more. A name it will not make it says so about:
+useradd -G wheel makes an administrator: wheel is the group /etc/sudoers
+grants, so he may sudo. A name it will not make it says so about:
 
-  root@ksp-04-11:~# adduser bob
-  adduser: bob: already exists
-  root@ksp-04-11:~# adduser Kate
-  adduser: Kate: invalid name
+  root@ksp-04-11:~# useradd bob
+  useradd: bob: already exists
+  root@ksp-04-11:~# useradd Kate
+  useradd: Kate: invalid name
 
 A home directory that is already there is ADOPTED rather than remade: it
 changes hands and keeps everything in it. Somebody's files are not an
@@ -282,8 +279,8 @@ obstacle to giving him an account.]],
 
 [[Unmaking one, and this is where care is owed.
 
-  root@ksp-04-11:~# deluser kate
-  deluser: kate: removed
+  root@ksp-04-11:~# userdel kate
+  userdel: kate: removed
 
 That takes the line out of /etc/passwd, and takes the name out of
 /etc/sudoers with it -- a name left in that file is a line waiting for
@@ -292,16 +289,16 @@ files stay exactly where they were, owned by a name the machine no longer
 knows, and ls -l shows it. That is the truth rather than a tidy lie about
 whose files those were.
 
-  root@ksp-04-11:~# deluser -r kate
+  root@ksp-04-11:~# userdel -r kate
 
 -r takes the home with it. There is no wastebasket.
 
 Two refusals, and both are the machine looking after you:
 
-  root@ksp-04-11:~# deluser root
-  deluser: root: cannot remove
-  root@ksp-04-11:~# deluser admin
-  deluser: admin: user is logged in
+  root@ksp-04-11:~# userdel root
+  userdel: root: cannot remove
+  root@ksp-04-11:~# userdel admin
+  userdel: admin: user is logged in
 
 Root is the way back into the machine, so it is not one of the accounts.
 And no account is pulled out from under a live session, including one the
@@ -326,7 +323,7 @@ passwd with no name changes your own and asks for the old one first. Root
 is asked for nobody's old password -- its own included -- and root is the
 only account that may change somebody else's.
 
-Classic mistake. Running adduser, being interrupted, and coming back
+Classic mistake. Running useradd, being interrupted, and coming back
 tomorrow. The account has been sitting there with no password all night,
 and the machine told you so at the time, in the second line it printed.
 Read the second line.]],
@@ -360,7 +357,7 @@ rule the rest of this chapter turns on.]],
 anywhere that says so.
 
 bob is in group bob whether /etc/group mentions him or not. That is his
-PRIMARY group, adduser writes nothing for it, and it is what a fresh file
+PRIMARY group, useradd writes nothing for it, and it is what a fresh file
 of his is shared with -- which is to say, nobody.
 
 The consequence catches everybody once. A primary group is not a
@@ -369,11 +366,12 @@ away:
 
   root@ksp-04-11:~# groupdel bob
   groupdel: bob: no such group
-  root@ksp-04-11:~# gpasswd -a bob bob
-  gpasswd: bob: no such group
+  root@ksp-04-11:~# usermod -G bob bob
+  root@ksp-04-11:~# groups bob
+  bob
 
-Neither is an error about bob. Both mean "there is no LINE for that, and
-there never will be".
+The refusal means "there is no LINE for that, and there never will be", and
+the usermod moved nothing for the same reason.
 
 It is also what makes chgrp bob something worth typing: handing a file to
 bob's primary group hands it to bob and to nobody else.]],
@@ -383,30 +381,30 @@ bob's primary group hands it to bob and to nobody else.]],
 Try it, and watch the file change under it.
 
   root@ksp-04-11:~# groupadd crew
-  root@ksp-04-11:~# gpasswd -a bob crew
-  root@ksp-04-11:~# gpasswd -a admin crew
+  root@ksp-04-11:~# usermod -G crew bob
+  root@ksp-04-11:~# usermod -G users,crew admin
   root@ksp-04-11:~# cat /etc/group
   # name:member,member,... -- one group a line
   # every account is also in a group of its own name
   root:
   sudo:admin
   users:admin
+  wheel:
   crew:bob,admin
   root@ksp-04-11:~# groups bob
   bob crew
 
-groupadd appends a line. gpasswd -a puts a name in it and gpasswd -d
-takes one out. Every other line of the file is kept exactly as it lies,
-comments and all. A group name obeys the same rule an account name does,
-because the two share a namespace: a group nobody could ever have as a
-primary group would be a trap.
+groupadd appends a line. usermod -G SETS the lines a name is on: the list
+is what he is in afterwards, and a group he was in that is not on it is one
+he has left. It will not take an empty list. Every other line of the file
+is kept as it lies, comments and all.
 
   root@ksp-04-11:~# groupadd crew
   groupadd: crew: already exists
   root@ksp-04-11:~# groupdel users
   groupdel: users: cannot remove
 
-root, sudo and users are the machine's own and cannot go.]],
+root, wheel, sudo and users are the machine's own and cannot go.]],
 
 [[The three digits, for real this time.
 
@@ -1589,7 +1587,7 @@ interrupt, and root can edit anybody's .profile, which is the way back
 from the second one. Note that the firmware's repair never touches a home,
 so restoring a machine will not clear one of these.
 
-Classic mistake. Fixing a stranded account by deleting it with deluser -r.
+Classic mistake. Fixing a stranded account by deleting it with userdel -r.
 You have deleted his files to remove one line. sudo edit its .profile.]],
 
 [[The second filesystem.
@@ -1744,18 +1742,18 @@ Being somebody else.
 
 Accounts.
 
-  adduser [-a] <name>
-  deluser [-r] <name>
+  useradd [-G group[,group...]] login
+  userdel [-r] login
   passwd [user]
   id [name]
   groups [name]
-  hash <text> [salt]
+  mkpasswd <text> [salt]
 
 Groups, and who may read what.
 
   groupadd <name>
   groupdel <name>
-  gpasswd -a|-d <user> <group>
+  usermod -G group[,group...] login
   chmod <mode> <path>
   chown <user> <path>
   chgrp <group> <path>]==],
@@ -1850,11 +1848,11 @@ Being somebody else, and the accounts.
   passwd: passwords do not match
   passwd: password too long
   passwd: no such user
-  adduser: <name>: already exists
-  deluser: <name>: user is logged in
-  deluser: root: cannot remove
+  useradd: <name>: already exists
+  userdel: <name>: user is logged in
+  userdel: root: cannot remove
   chown: <name>: no such user
-  hash: <salt>: invalid salt
+  mkpasswd: <salt>: invalid salt
       a salt is digits and lower-case letters only]],
 
 [[The groups, and the machine's name.
@@ -1864,9 +1862,9 @@ Being somebody else, and the accounts.
   groupadd: <name>: already exists
   groupdel: <name>: cannot remove
       root, sudo and users are the machine's own
-  gpasswd: <name>: no such group
-  gpasswd: <name>: already a member
-  gpasswd: <name>: not a member
+  usermod: <name>: no such group
+  usermod: <name>: no such user
+  usermod: empty group list
   hostname: <name>: invalid name
 
 Switching it off. The first three are the timer's and the fourth is a

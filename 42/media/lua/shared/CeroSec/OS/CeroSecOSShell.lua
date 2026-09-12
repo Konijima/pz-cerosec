@@ -625,7 +625,6 @@ end
 --
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
-	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
 	-- Two forms and no flag that CHANGES a line, because an Ethernet address here
 	-- is derived and stored nowhere: see the head of arp in CeroSecOSNet.lua.
 	arp      = { desc = "show the cards on the wire",
@@ -649,7 +648,6 @@ CeroSecOS.COMMAND_INFO = {
 	-- and a usage line is the one place a command speaks the manual's language.
 	cu       = { desc = "call another machine on the phone", usage = "cu telno" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
-	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
 	dev      = { desc = "list and work the devices",
 		usage = "dev [kind|id [value|toggle]|find <id>]" },
 	df       = { desc = "report disk space", usage = "df" },
@@ -659,13 +657,11 @@ CeroSecOS.COMMAND_INFO = {
 	fg       = { desc = "bring a background job to the front",
 		usage = "fg [%<n>|<id>]", shell = true },
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
-	gpasswd  = { desc = "add or drop a group member", usage = "gpasswd -a|-d <user> <group>" },
 	grep     = { desc = "find a string in files",
 		usage = "grep [-c] [-i] [-n] [-v] <text> [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
 	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
 	groups   = { desc = "print an account's groups", usage = "groups [name]" },
-	hash     = { desc = "hash a string the way a password is", usage = "hash <text> [salt]" },
 	halt     = { desc = "switch the machine off", usage = "halt" },
 	head     = { desc = "print the first lines of a file",
 		usage = "head [-n N|-N] [file]" },
@@ -684,6 +680,12 @@ CeroSecOS.COMMAND_INFO = {
 	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
+	-- CeroSec Systems' own, and the manual's deviations page says so: no Unix of
+	-- 1993 shipped a command that hashed a string you chose. The name is the one
+	-- the job would have been given -- crypt(3) is the library call and `mkpasswd`
+	-- is what a tool that makes one is called.
+	mkpasswd = { desc = "hash a string the way a password is",
+		usage = "mkpasswd <text> [salt]" },
 	-- The floppy drive's three. `mount` with nothing after it is the listing, which
 	-- is why the whole of its operand half is optional.
 	mount    = { desc = "list the filesystems, or mount one",
@@ -723,6 +725,18 @@ CeroSecOS.COMMAND_INFO = {
 	type     = { desc = "say what a word is", usage = "type <name>", shell = true },
 	umount   = { desc = "unmount a filesystem", usage = "umount <dir>" },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
+	-- The three account commands, under the names System V gave them in 1989 and
+	-- Solaris 2 shipped in 1992. The operand is "login" because that is what
+	-- useradd(1M), userdel(1M) and usermod(1M) call it, and a usage line is the
+	-- one place a command speaks the manual's language.
+	useradd  = { desc = "add an account",
+		usage = "useradd [-G group[,group...]] login" },
+	userdel  = { desc = "remove an account", usage = "userdel [-r] login" },
+	-- SVR4's -G SETS the supplementary list: what is on the line is what the
+	-- account is in afterwards, and what is not on it is a group it has left. It
+	-- is not gpasswd's add-one-drop-one, and the manual page says so.
+	usermod  = { desc = "set an account's supplementary groups",
+		usage = "usermod -G group[,group...] login" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
@@ -730,6 +744,30 @@ CeroSecOS.COMMAND_INFO = {
 	who      = { desc = "list who is logged in here", usage = "who [am i]" },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
+}
+
+--
+-- What this build TOOK AWAY
+--
+-- A name that was in the table above and is not any more, with the description
+-- the file in /bin shipped with. A machine saved before the change has that
+-- file, and `ls /bin` on it would still offer a command nothing is behind: the
+-- top-up deletes it (see CeroSecOS.upgradeSystem), and only where it is exactly
+-- what was shipped -- owner root, mode 755, that very description. Anything else
+-- at that name is a player's own work and stays.
+--
+-- The same mechanism, and the same rule, that took /bin/cd and /bin/exit away
+-- when those became words of the shell. What is different is only the reason:
+-- these are names 1993 did not have.
+--
+--   useradd, userdel, usermod  the System V names, 1989
+--   mkpasswd                   the old `hash`, renamed
+--
+CeroSecOS.RETIRED_BIN = {
+	adduser  = "add an account",
+	deluser  = "remove an account",
+	gpasswd  = "add or drop a group member",
+	hash     = "hash a string the way a password is",
 }
 
 -- The two halves of an entry, read through a function and never off the table:
@@ -2388,18 +2426,26 @@ continuations.passwd = function(state, session, cont, line, env)
 	return false, { "passwd: authentication failure" }
 end
 
--- hash. The same function the passwords go through, on a string you choose, so
--- what a stored password looks like is something the machine can show you. A
+-- mkpasswd. The same function the passwords go through, on a string you choose,
+-- so what a stored password looks like is something the machine can show you. A
 -- salt of your own makes it reproducible; without one you get a fresh salt and
 -- a line that is different every time, which is the point of a salt.
-commands.hash = function(state, session, args, env)
-	if #args < 2 or #args > 3 then return usage("hash") end
+--
+-- No Unix of 1993 had this command: crypt(3) was the library call and nothing in
+-- /bin wrapped it. So it is CeroSec Systems' own, under the name the job would
+-- have been given, and the manual's deviations page says so out loud. It was
+-- called `hash` until this build, which was not a name any Unix would have used
+-- for anything.
+commands.mkpasswd = function(state, session, args, env)
+	if #args < 2 or #args > 3 then return usage("mkpasswd") end
 	local salt = args[3]
 	if salt == nil or salt == "" then
 		salt = CeroSecOS.newSalt(state, args[2] .. tostring(session.stamp))
 	end
-	if not CeroSecOS.isValidSalt(salt) then return fail("hash", salt, "invalid salt") end
-	if CeroSecOS.hasControlBytes(args[2]) then return fail("hash", args[2], "invalid characters") end
+	if not CeroSecOS.isValidSalt(salt) then return fail("mkpasswd", salt, "invalid salt") end
+	if CeroSecOS.hasControlBytes(args[2]) then
+		return fail("mkpasswd", args[2], "invalid characters")
+	end
 	-- fit() breaks anything wider than the screen across lines, so a long salt
 	-- wraps instead of being cut.
 	return true, { CeroSecOS.hashPassword(args[2], salt) }
@@ -2615,63 +2661,169 @@ end
 --
 -- Making and unmaking one is root's, and root's alone: /etc/passwd is root's
 -- file, and an account is a way into the machine. So an admin does it the way
--- he does everything else that is root's -- `sudo adduser bob` -- and there is
+-- he does everything else that is root's -- `sudo useradd bob` -- and there is
 -- no second rule for who may.
 --
--- Both commands are ordinary writes to ordinary files: the account is a line in
--- /etc/passwd, the home is a directory made with createNode, and the ceilings,
--- the permission bits and the printable rule are the filesystem's exactly as
--- they are for a player. A full disk refuses an adduser the way it refuses a
--- touch.
+-- The names are System V's -- useradd, userdel, usermod, 1989, and what Solaris
+-- 2 shipped in 1992 -- and so are the flags: `-r` removes the home, `-G` SETS
+-- the supplementary group list. There was never an `adduser` on a System V or a
+-- BSD of 1993; Debian wrote that one, and it is a decade late here.
 --
--- What the "admin" flag on the line MEANS is: nothing, today. No command
--- consults it; the two things that grant power are being root and being named
--- in /etc/sudoers. Its one visible effect is the "#" on the prompt. It is
--- carried, printed by `id` and set by `adduser -a` so that a later rung has
--- something to give meaning to -- and the README says so rather than letting a
--- player believe he has just made somebody powerful.
+-- All three are ordinary writes to ordinary files: the account is a line in
+-- /etc/passwd, the home is a directory made with createNode, the groups are
+-- lines in /etc/group, and the ceilings, the permission bits and the printable
+-- rule are the filesystem's exactly as they are for a player. A full disk
+-- refuses a useradd the way it refuses a touch.
+--
+-- WHAT BECAME OF THE "admin" FLAG
+--
+-- `adduser -a` set a flag on the /etc/passwd line that no command consulted:
+-- its one visible effect was the "#" on the prompt. There is no such flag on any
+-- Unix, and the 1993 answer to "make this account an administrator" is a GROUP:
+-- 4.4BSD gates `su` on membership of `wheel`, and sudo of the era takes a
+-- `%group` line in /etc/sudoers. So `useradd -G wheel bob` is what `adduser -a
+-- bob` was, and it means something now -- the shipped /etc/sudoers carries
+-- `%wheel`, so the group really is what grants root.
+--
+-- The flag on the line stays, because the line's fourth field is the format and
+-- a machine off an older save file still carries one. What changed is who writes
+-- it: the two commands that can move an account in or out of `wheel` write it
+-- from the membership, so the field and the group never say different things
+-- about an account either of them has touched.
 --
 
-commands.adduser = function(state, session, args, env)
-	if CeroSecOS.userOf(session) ~= "root" then return fail("adduser", nil, "permission denied") end
+-- The -G list: the groups an account is to be in, in the order they were
+-- written, each one once. nil plus the refusal already worded.
+--
+-- An EMPTY list is refused. SVR4's -G takes a list of groups, and "no groups at
+-- all" is not one of them: a `usermod -G ""` that quietly emptied the list would
+-- be the one spelling of this command that takes power away by accident.
+local function groupList(cmd, text)
+	if type(text) ~= "string" or text == "" then
+		return nil, fail(cmd, nil, "empty group list")
+	end
+	local names, seen = {}, {}
+	local start = 1
+	while true do
+		local p = string.find(text, ",", start, true)
+		local piece
+		if p == nil then piece = string.sub(text, start) else piece = string.sub(text, start, p - 1) end
+		if piece == "" then return nil, fail(cmd, nil, "empty group list") end
+		if not seen[piece] then
+			seen[piece] = true
+			names[#names + 1] = piece
+		end
+		if p == nil then break end
+		start = p + 1
+	end
+	return names
+end
 
-	local admin, name = false, nil
-	for i = 2, #args do
-		local a = args[i]
-		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
-			for c = 2, #a do
-				if string.sub(a, c, c) ~= "a" then return fail("adduser", a, "unknown option") end
-			end
-			admin = true
-		elseif name == nil then
-			name = a
-		else
-			return usage("adduser")
+-- Put the account in exactly these groups and in no others, and answer whether
+-- `wheel` is one of them. Every group has to exist first -- the whole list is
+-- checked before a byte is written, so a typo in the third name does not leave
+-- an account half moved.
+local function setGroups(state, cmd, name, groups, now)
+	for i = 1, #groups do
+		local group = groups[i]
+		if not CeroSecOS.groupExists(state, group) then
+			return nil, fail(cmd, group, "no such group")
 		end
 	end
-	if name == nil or name == "" then return usage("adduser") end
-	if not CeroSecOS.isValidUserName(name) then return fail("adduser", name, "invalid name") end
-	if CeroSecOS.getUser(state, name) ~= nil then return fail("adduser", name, "already exists") end
+	local wheel = false
+	local want = {}
+	for i = 1, #groups do
+		want[groups[i]] = true
+		if groups[i] == CeroSecOS.WHEEL_GROUP then wheel = true end
+	end
+	-- Out of the ones it is in and not on the list. The primary group is not a
+	-- membership anybody granted, so it is not one -G takes away.
+	local had = CeroSecOS.groupsOf(state, name)
+	for i = 1, #had do
+		local group = had[i]
+		if group ~= name and not want[group] then
+			local done, reason = CeroSecOS.setGroupMember(state, name, group, false, now)
+			-- "not a member" is the mirrored sudo group answering: /etc/sudoers is
+			-- what puts a name in that one and it is not this command's to edit.
+			if done == nil and reason ~= "not a member" then
+				return nil, fail(cmd, group, reason)
+			end
+		end
+	end
+	-- And into the ones on the list it is not in yet.
+	for i = 1, #groups do
+		local group = groups[i]
+		if group ~= name and not CeroSecOS.inGroup(state, name, group) then
+			local done, reason = CeroSecOS.setGroupMember(state, name, group, true, now)
+			if done == nil then return nil, fail(cmd, group, reason) end
+		end
+	end
+	return wheel
+end
+
+commands.useradd = function(state, session, args, env)
+	if CeroSecOS.userOf(session) ~= "root" then return fail("useradd", nil, "permission denied") end
+
+	local groups, name = nil, nil
+	local i = 2
+	while i <= #args do
+		local a = args[i]
+		if name == nil and a == "-G" then
+			local list, okFlag, lines = groupList("useradd", args[i + 1])
+			if list == nil then return okFlag, lines end
+			groups = list
+			i = i + 2
+		elseif name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			return fail("useradd", a, "unknown option")
+		elseif name == nil then
+			name = a
+			i = i + 1
+		else
+			return usage("useradd")
+		end
+	end
+	if name == nil or name == "" then return usage("useradd") end
+	if not CeroSecOS.isValidUserName(name) then return fail("useradd", name, "invalid name") end
+	if CeroSecOS.getUser(state, name) ~= nil then return fail("useradd", name, "already exists") end
+	-- The groups are judged BEFORE the account exists: a line named on the
+	-- command line that is not a group is a typo, and a typo must not leave an
+	-- account behind it.
+	if groups ~= nil then
+		for k = 1, #groups do
+			if not CeroSecOS.groupExists(state, groups[k]) then
+				return fail("useradd", groups[k], "no such group")
+			end
+		end
+	end
 
 	local now = CeroSecOS.clockOf(env)
 	local home = CeroSecOS.HOME_PATH .. "/" .. name
 	local node, reason = CeroSecOS.getNode(state, session, home)
-	if node == nil and reason ~= "no such file" then return fail("adduser", home, reason) end
-	if node ~= nil and node.type ~= "dir" then return fail("adduser", home, "not a directory") end
+	if node == nil and reason ~= "no such file" then return fail("useradd", home, reason) end
+	if node ~= nil and node.type ~= "dir" then return fail("useradd", home, "not a directory") end
+
+	-- Is this account going to be in wheel? That is what the flag on its
+	-- /etc/passwd line says, so it is settled before the line is written.
+	local admin = false
+	if groups ~= nil then
+		for k = 1, #groups do
+			if groups[k] == CeroSecOS.WHEEL_GROUP then admin = true end
+		end
+	end
 
 	-- The account first and the home second, so that a refusal on the way --
 	-- a full disk, a /home that is not there any more -- takes the account back
 	-- out and leaves the machine exactly as it was. Half an account is worse
 	-- than none: it is a name in the file with nowhere to stand.
 	local done, wreason = CeroSecOS.addUser(state, name, home, admin, session.stamp, now)
-	if done == nil then return fail("adduser", name, wreason) end
+	if done == nil then return fail("useradd", name, wreason) end
 
 	if node == nil then
 		local made, creason = CeroSecOS.createNode(state, session, home,
 			CeroSecOS.newDir(name, CeroSecOS.HOME_MODE), now)
 		if made == nil then
 			CeroSecOS.removeUser(state, name, now)
-			return fail("adduser", home, creason)
+			return fail("useradd", home, creason)
 		end
 	else
 		-- A directory that is already there is ADOPTED, not remade: it changes
@@ -2681,46 +2833,51 @@ commands.adduser = function(state, session, args, env)
 		if now ~= nil then node.mtime = now end
 	end
 
+	if groups ~= nil then
+		local _, gOk, gLines = setGroups(state, "useradd", name, groups, now)
+		if gOk ~= nil then return gOk, gLines end
+	end
+
 	-- The password is empty, and an empty password is a way in. Said out loud
 	-- on the line after, because a machine that quietly ships an open account
 	-- is a machine nobody remembers to close.
 	return true, {
-		"adduser: " .. name .. ": created",
-		"adduser: set a password with passwd " .. name,
+		"useradd: " .. name .. ": created",
+		"useradd: set a password with passwd " .. name,
 	}
 end
 
-commands.deluser = function(state, session, args, env)
-	if CeroSecOS.userOf(session) ~= "root" then return fail("deluser", nil, "permission denied") end
+commands.userdel = function(state, session, args, env)
+	if CeroSecOS.userOf(session) ~= "root" then return fail("userdel", nil, "permission denied") end
 
 	local removeHome, name = false, nil
 	for i = 2, #args do
 		local a = args[i]
 		if name == nil and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			for c = 2, #a do
-				if string.sub(a, c, c) ~= "r" then return fail("deluser", a, "unknown option") end
+				if string.sub(a, c, c) ~= "r" then return fail("userdel", a, "unknown option") end
 			end
 			removeHome = true
 		elseif name == nil then
 			name = a
 		else
-			return usage("deluser")
+			return usage("userdel")
 		end
 	end
-	if name == nil or name == "" then return usage("deluser") end
+	if name == nil or name == "" then return usage("userdel") end
 
 	-- Root is not one of the accounts: it is the way back into the machine, and
 	-- a computer with no root on it is a computer whose BIOS is the only way in.
 	-- Asked before the file is even looked at, so the answer is the same on a
 	-- machine somebody has been editing by hand.
-	if name == "root" then return fail("deluser", name, "cannot remove") end
+	if name == "root" then return fail("userdel", name, "cannot remove") end
 
 	local user = CeroSecOS.getUser(state, name)
-	if user == nil then return fail("deluser", name, "no such user") end
+	if user == nil then return fail("userdel", name, "no such user") end
 	-- Not the account at the glass, and not one the glass would come back to
 	-- through `exit`: pulling either out from under a live session leaves
 	-- somebody logged in as nobody.
-	if CeroSecOS.isLoggedIn(session, name) then return fail("deluser", name, "user is logged in") end
+	if CeroSecOS.isLoggedIn(session, name) then return fail("userdel", name, "user is logged in") end
 
 	local now = CeroSecOS.clockOf(env)
 
@@ -2732,21 +2889,54 @@ commands.deluser = function(state, session, args, env)
 		local home = user.home
 		local node, reason = CeroSecOS.getNode(state, session, home)
 		if node == nil then
-			if reason ~= "no such file" then return fail("deluser", home, reason) end
+			if reason ~= "no such file" then return fail("userdel", home, reason) end
 		else
 			local gone, greason = CeroSecOS.removeNode(state, session, home, true, now)
-			if gone == nil then return fail("deluser", home, greason) end
+			if gone == nil then return fail("userdel", home, greason) end
 		end
 	end
 
 	local done, reason = CeroSecOS.removeUser(state, name, now)
-	if done == nil then return fail("deluser", name, reason) end
+	if done == nil then return fail("userdel", name, reason) end
 	-- And the right to become root with it: a name left in /etc/sudoers is a
-	-- line waiting for whoever is given that name next.
+	-- line waiting for whoever is given that name next, and so is a name left in
+	-- a group that /etc/sudoers grants.
 	local dropped, sreason = CeroSecOS.removeSudoer(state, name, now)
-	if dropped == nil then return fail("deluser", CeroSecOS.SUDOERS_PATH, sreason) end
+	if dropped == nil then return fail("userdel", CeroSecOS.SUDOERS_PATH, sreason) end
+	local swept, greason = CeroSecOS.removeGroupMember(state, name, now)
+	if swept == nil then return fail("userdel", CeroSecOS.GROUP_PATH, greason) end
 
-	return true, { "deluser: " .. name .. ": removed" }
+	return true, { "userdel: " .. name .. ": removed" }
+end
+
+-- usermod -G crew,wheel bob. SVR4's -G, which SETS the list: bob is in crew and
+-- wheel afterwards and in nothing else he was put in by hand. A primary group is
+-- not a membership anybody granted, so it is not one this takes away -- and an
+-- empty list is refused rather than read as "in nothing", because `usermod -G ""`
+-- taking somebody's power away by accident is the one thing this command must
+-- never do quietly.
+commands.usermod = function(state, session, args, env)
+	if #args ~= 4 or args[2] ~= "-G" then return usage("usermod") end
+	if CeroSecOS.userOf(session) ~= "root" then return fail("usermod", nil, "permission denied") end
+	local name = args[4]
+	local user = CeroSecOS.getUser(state, name)
+	if user == nil then return fail("usermod", name, "no such user") end
+
+	local groups, okFlag, lines = groupList("usermod", args[3])
+	if groups == nil then return okFlag, lines end
+
+	local now = CeroSecOS.clockOf(env)
+	local wheel, gOk, gLines = setGroups(state, "usermod", name, groups, now)
+	if wheel == nil then return gOk, gLines end
+
+	-- And the flag on the /etc/passwd line, which is what the prompt's "#" and
+	-- `id` read: it says whether the account is in wheel, so it is written from
+	-- the membership this command has just settled and never beside it.
+	if wheel ~= (user.admin == true) then
+		local done, reason = CeroSecOS.setAdmin(state, name, wheel, now)
+		if done == nil then return fail("usermod", name, reason) end
+	end
+	return true, {}
 end
 
 -- id. What the machine knows about an account in one line: the name, the flag
@@ -2825,23 +3015,10 @@ commands.groupdel = function(state, session, args, env)
 	return true, {}
 end
 
--- gpasswd -a bob crew / gpasswd -d bob crew. A primary group is not a
--- membership anybody granted, so it is not one anybody may grant or take away:
--- `gpasswd -a bob bob` is refused as "no such group", because there is no line
--- for it and never will be.
-commands.gpasswd = function(state, session, args, env)
-	if #args ~= 4 then return usage("gpasswd") end
-	local flag = args[2]
-	if flag ~= "-a" and flag ~= "-d" then return usage("gpasswd") end
-	if CeroSecOS.userOf(session) ~= "root" then return fail("gpasswd", nil, "permission denied") end
-	local name, group = args[3], args[4]
-	if CeroSecOS.getUser(state, name) == nil then return fail("gpasswd", name, "no such user") end
-	local done, reason =
-		CeroSecOS.setGroupMember(state, name, group, flag == "-a", CeroSecOS.clockOf(env))
-	if done == nil then return fail("gpasswd", group, reason) end
-	return true, {}
-end
-
+-- Filling one is `usermod -G`, which lives with the two account commands above:
+-- there was no gpasswd in 1993 either -- shadow-utils wrote it in 1996 -- and
+-- SVR4's answer to "put bob in crew" was always a flag on usermod.
+--
 --
 -- su
 --

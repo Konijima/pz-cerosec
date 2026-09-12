@@ -24,13 +24,15 @@ machine, both with an empty password — just press Enter when asked:
 | `root` | (empty) |
 
 **Accounts.** Every machine ships with those two and root can make more:
-`sudo adduser bob` writes the account, makes `/home/bob` for it and says out loud
+`sudo useradd bob` writes the account, makes `/home/bob` for it and says out loud
 that it has no password yet — set one with `passwd bob` before somebody else does.
-`sudo adduser -a bob` sets the account's `admin` flag; the flag is **informational
-today** and grants nothing at all — what actually gives power is being `root` or
-being named in `/etc/sudoers` — and its one visible effect is the `#` on the
-prompt instead of the `$`. `id bob` says what the machine knows about a name, and
-`sudo deluser bob` takes it away again (`-r` takes his home directory with it;
+`sudo useradd -G wheel bob` makes him an **administrator**, and that means one
+thing: he is in the group `wheel`, which the shipped `/etc/sudoers` grants with a
+`%wheel` line, so he may `sudo`. The `admin` flag on his `/etc/passwd` line is
+written from that membership and grants nothing by itself — its one visible effect
+is the `#` on the prompt instead of the `$`. `id bob` says what the machine knows
+about a name, and
+`sudo userdel bob` takes it away again (`-r` takes his home directory with it;
 without it his files stay, still owned by a name the machine no longer knows).
 
 `su bob` becomes somebody else at the same glass: it asks for **his** password
@@ -50,7 +52,7 @@ nobody until you say otherwise:
 
 ```
 sudo groupadd crew
-sudo gpasswd -a bob crew
+sudo usermod -G crew bob
 chgrp crew notes.txt
 chmod 660 notes.txt
 ```
@@ -90,14 +92,14 @@ Commands:
 | `id [name]` | `uid=<name> flag=admin\|user groups=<its groups, comma-separated>` |
 | `groups [name]` | the same list, blank-separated |
 | `groupadd <name>` | make a group (root only) |
-| `groupdel <name>` | remove one (root only); `root`, `sudo` and `users` cannot go |
-| `gpasswd -a\|-d <user> <group>` | put a name in or out of a group (root only) |
+| `groupdel <name>` | remove one (root only); `root`, `wheel`, `sudo` and `users` cannot go |
+| `usermod -G group[,group...] login` | **set** an account's supplementary groups, replacing the list (root only); it will not take an empty one |
 | `su [name]` | become another user (`root` by default); `exit` comes back |
-| `adduser [-a] <name>` | make an account with an empty password (root only); `-a` sets its `admin` flag |
-| `deluser [-r] <name>` | remove an account (root only); `-r` removes its home directory too |
+| `useradd [-G group[,group...]] login` | make an account with an empty password (root only); `-G wheel` makes it an administrator |
+| `userdel [-r] login` | remove an account (root only); `-r` removes its home directory too, and either way its name is swept out of `/etc/sudoers` and every group |
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
-| `hash <text> [salt]` | show what a password would hash to |
+| `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own — no 1993 Unix had this) |
 | `grep [-c] [-i] [-n] [-v] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines without it, `-c` prints how many instead of which); there is no regex on this machine |
 | `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
 | `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
@@ -211,11 +213,13 @@ box stops accepting new keystrokes at 2000 characters typed in one sitting, thou
 bigger file still opens and still saves.
 
 `passwd` asks for the old password (skipped for root), the new one, and a retype.
-`hash` runs the same hashing the passwords use on any text you give it, so you can
-see what a password would look like stored.
+`mkpasswd` runs the same hashing the passwords use on any text you give it, so you
+can see what a password would look like stored. It is not a Unix command: no 1993
+system shipped one, and the manual's *What is not Unix here* page says so.
 
-`sudo` runs one command as `root`. Who may is `/etc/sudoers`, one name a line, and
-a fresh machine has `admin` on it. It asks for **your own** password first
+`sudo` runs one command as `root`. Who may is `/etc/sudoers`, one name a line — or
+`%group`, which grants every account in that group — and a fresh machine has
+`admin` and `%wheel` on it. It asks for **your own** password first
 (`[sudo] password for admin: `), and one wrong answer is
 `sudo: authentication failure` — there is no second try, because somebody had to be
 standing at the keyboard to type the first. A name that is not in the file gets

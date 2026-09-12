@@ -67,7 +67,14 @@ CeroSecOS.STATE_VERSION = 1
 --    broadcasts names and /etc/hosts wants an address, and nothing on the disk
 --    joined the two. No file behind it -- an Ethernet address is derived from the
 --    network address and stored nowhere (CeroSecOS.etherOf).
-CeroSecOS.SYSTEM_VERSION = 15
+-- 16: the names 1993 really used. /bin/useradd, /bin/userdel and /bin/usermod
+--    (System V, 1989; Solaris 2, 1992) and /bin/mkpasswd seeded; /bin/adduser,
+--    /bin/deluser, /bin/gpasswd and /bin/hash DELETED -- the first version since
+--    8 to take a file away, on the very rule that one ran on (see
+--    CeroSecOS.RETIRED_BIN and the deletion half of upgradeSystem). And the
+--    `wheel` pair, which is what replaces the "admin flag" `adduser -a` set: the
+--    group itself, empty, and the `%wheel` line in /etc/sudoers that grants it.
+CeroSecOS.SYSTEM_VERSION = 16
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -218,10 +225,19 @@ CeroSecOS.SUDOERS_MODE = 440
 -- make two commands lie.
 CeroSecOS.GROUP_MODE = 644
 
--- The three groups a machine ships with, and the only ones groupdel refuses to
--- take away: root's own, the one the devices belong to, and the one an account
--- joins to share files.
-CeroSecOS.GROUP_KEEP = { root = true, sudo = true, users = true }
+-- The group 4.4BSD gates `su` on, and the one the shipped /etc/sudoers grants
+-- with a `%wheel` line: putting an account in it is what "make this account an
+-- administrator" means on this machine, and it is what `useradd -G wheel` does.
+-- The name lives here, above both files that mean the same group by it.
+CeroSecOS.WHEEL_GROUP = "wheel"
+
+-- The four groups a machine ships with, and the only ones groupdel refuses to
+-- take away: root's own, wheel, the one the devices belong to, and the one an
+-- account joins to share files. wheel is here for the reason the others are --
+-- /etc/sudoers names it, and a `groupdel wheel` would be a line in that file
+-- pointing at nothing.
+CeroSecOS.GROUP_KEEP = { root = true, sudo = true, users = true,
+	[CeroSecOS.WHEEL_GROUP] = true }
 
 -- A machine name is 1..16 characters of [a-z0-9-] and never starts with "-".
 -- The leading digit rule is isValidName's: the name is also written into the

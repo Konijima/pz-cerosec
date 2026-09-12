@@ -37,10 +37,20 @@ password, a history, or a file root chose to delete. See
 [ARCHITECTURE.md](ARCHITECTURE.md#system-files-and-their-formats) for the file
 formats and the BIOS gate itself.
 
-`/etc/sudoers` is the sole authority on who may `sudo`; being in the `sudo` group
-gives out the group's own files and nothing else, root included is never looked
-up in `/etc/sudoers` — an empty sudoers file must not be able to take `sudo` away
-from the one account that could put it back.
+`/etc/sudoers` is the sole authority on who may `sudo`. A line is an account name
+or a `%group`, and the shipped file carries both: `admin` by name, and `%wheel`.
+Being in the `sudo` group gives out the group's own files and nothing else — it is
+that file's mirror and never its authority — while being in `wheel` really does
+grant root, because `/etc/sudoers` says so. `useradd -G wheel <login>` and
+`usermod -G wheel <login>` are therefore **power grants** and are root's alone, the
+way editing the file is; the `admin` flag on an `/etc/passwd` line reports that
+membership and grants nothing on its own. Root is never looked up in `/etc/sudoers`
+— an empty sudoers file must not be able to take `sudo` away from the one account
+that could put it back.
+
+`userdel` sweeps the name out of `/etc/sudoers` **and out of every group**, in one
+write each: a name left in `wheel` is root waiting for whoever is given that name
+next.
 
 ## What the server guarantees against a script
 

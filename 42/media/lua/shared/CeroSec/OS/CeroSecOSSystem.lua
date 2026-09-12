@@ -96,6 +96,54 @@ function CeroSecOS.ensureMnt(state)
 	return node
 end
 
+-- The `wheel` group and the /etc/sudoers line that grants it, added to whatever
+-- the two files already hold. Each is written only where its own line is
+-- missing, and each write goes through the ordinary filesystem gate, so a full
+-- disk leaves both files byte for byte as they were.
+--
+-- true when it changed something. Used by the top-up and by nothing a player can
+-- reach: a fresh machine ships with both lines already (defaultGroup,
+-- defaultSudoers) and this finds nothing to do on one.
+function CeroSecOS.ensureWheel(state)
+	local changed = false
+	local root = CeroSecOS.rootSession()
+
+	local group = CeroSecOS.systemNode(state, CeroSecOS.GROUP_PATH)
+	if type(group) == "table" and group.type == "file" then
+		local groups, order = CeroSecOS.parseGroup(group.data or "")
+		-- A file that parses to no group at all is the BIOS' business, exactly as
+		-- an unparseable sudoers is: the repair writes the shipped groups back and
+		-- wheel is one of them. A line added here would make that file parse to one
+		-- group and so make the repair keep it for ever.
+		if #order > 0 and groups[CeroSecOS.WHEEL_GROUP] == nil then
+			local text = group.data or ""
+			if text ~= "" then text = text .. "\n" end
+			text = text .. CeroSecOS.groupLine({ name = CeroSecOS.WHEEL_GROUP, members = {} })
+			if CeroSecOS.setData(state, root, CeroSecOS.GROUP_PATH, text) ~= nil then
+				changed = true
+			end
+		end
+	end
+
+	local sudoers = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+	if type(sudoers) == "table" and sudoers.type == "file" then
+		local entries, order = CeroSecOS.parseSudoers(sudoers.data or "")
+		-- A file that parses to NOBODY is not a list, and it is the BIOS' business
+		-- and not this one's: the repair writes the shipped list back, and that one
+		-- carries the wheel line already. Adding a line to a rubbish file here
+		-- would make it parse to somebody and so make the repair keep it for ever.
+		if #order > 0 and entries["%" .. CeroSecOS.WHEEL_GROUP] == nil then
+			local text = sudoers.data or ""
+			if text ~= "" then text = text .. "\n" end
+			text = text .. "%" .. CeroSecOS.WHEEL_GROUP
+			if CeroSecOS.setData(state, root, CeroSecOS.SUDOERS_PATH, text) ~= nil then
+				changed = true
+			end
+		end
+	end
+	return changed
+end
+
 --
 -- Topping an older machine up
 --
@@ -128,26 +176,34 @@ function CeroSecOS.upgradeSystem(state)
 
 	local bin = CeroSecOS.systemNode(state, CeroSecOS.BIN_PATH)
 	if type(bin) == "table" and bin.type == "dir" and type(bin.children) == "table" then
-		-- The other direction, and the only thing here that takes anything away:
-		-- earlier versions shipped an executable for words that are the shell
-		-- itself (cd, exit, jobs, wait), and a machine saved before this one has
-		-- files that never had anything behind them. They go -- but only where
-		-- they are exactly what was shipped: owner root, mode 755, and the very
-		-- description that was seeded. Anything else at that name is a player's
-		-- own work and is left where it is; nothing here is allowed to be a
-		-- deletion somebody did not ask for.
+		-- The other direction, and the only thing here that takes anything away.
+		-- Two kinds of name reach it and both are the same deed:
+		--
+		--   * a word that is the shell ITSELF (cd, exit, jobs, wait). Earlier
+		--     versions shipped an executable for each, and a machine saved before
+		--     that change has files that never had anything behind them;
+		--   * a name this build RETIRED (CeroSecOS.RETIRED_BIN) -- adduser,
+		--     deluser, gpasswd, hash -- which are names no Unix of 1993 had. The
+		--     command is gone from the engine, so the file left in /bin would be a
+		--     name `help` offers and the shell refuses.
+		--
+		-- They go -- but only where the file is exactly what was shipped: owner
+		-- root, mode 755, and the very description that was seeded. Anything else
+		-- at that name is a player's own work and is left where it is; nothing here
+		-- is allowed to be a deletion somebody did not ask for.
+		local function drop(name, desc)
+			local node = bin.children[name]
+			if type(node) ~= "table" or node.type ~= "file" then return end
+			if node.owner ~= "root" or node.mode ~= 755 or node.data ~= desc then return end
+			bin.children[name] = nil
+			nodes = nodes - 1
+			bytes = bytes - #(node.data or "")
+		end
 		local info = CeroSecOS.COMMAND_INFO or {}
 		for name, entry in pairs(info) do
-			if entry.shell == true then
-				local node = bin.children[name]
-				if type(node) == "table" and node.type == "file" and node.owner == "root"
-						and node.mode == 755 and node.data == CeroSecOS.commandDesc(name) then
-					bin.children[name] = nil
-					nodes = nodes - 1
-					bytes = bytes - #(node.data or "")
-				end
-			end
+			if entry.shell == true then drop(name, CeroSecOS.commandDesc(name)) end
 		end
+		for name, desc in pairs(CeroSecOS.RETIRED_BIN or {}) do drop(name, desc) end
 
 		local names = CeroSecOS.binNames()
 		for i = 1, #names do
@@ -186,6 +242,24 @@ function CeroSecOS.upgradeSystem(state)
 				etc.children.group = CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, text)
 			end
 		end
+
+		-- The one thing here that adds a LINE to a file a player may have edited,
+		-- and it is the pair of lines `wheel` is: a group with nobody in it, and the
+		-- /etc/sudoers line that grants it. Neither gives anybody anything -- the
+		-- group ships empty on a new machine for the same reason -- and without both
+		-- of them `useradd -G wheel bob` on a machine off an older save would put bob
+		-- in a group nothing reads, which is what the manual says wheel is NOT.
+		--
+		-- Once, at this version bump, and only where the line is not there at all: a
+		-- line a player takes out AFTER the top-up stays out, because the number has
+		-- moved and this never runs again.
+		--
+		-- What is deliberately NOT done is putting the accounts whose /etc/passwd
+		-- line says "admin" into wheel. That flag never granted anything -- no
+		-- command consulted it -- so an account carrying one is owed nothing, and a
+		-- top-up that handed it root would be this build giving away a power the
+		-- machine never had.
+		CeroSecOS.ensureWheel(state)
 	end
 
 	-- /var, for a machine saved before there was a cron on it. Made only where
@@ -383,6 +457,11 @@ function CeroSecOS.restoreSystem(state)
 		etc.children.group =
 			CeroSecOS.newFile("root", CeroSecOS.GROUP_MODE, CeroSecOS.defaultGroup())
 	end
+
+	-- And the wheel pair, on the terms ensureWheel sets: each line added only
+	-- where it is missing. A repair that put the group back and not the sudoers
+	-- line would leave a machine where `useradd -G wheel` means nothing.
+	CeroSecOS.ensureWheel(state)
 
 	CeroSecOS.fillBin(CeroSecOS.ensureSystemDir(state, "bin"))
 	-- And /var, which is the machine's own tree exactly as /bin and /etc are. The

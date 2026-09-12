@@ -200,17 +200,17 @@ passé réellement, même quand ça correspond au texte attendu.
     Remettre la ligne. [ ]
 60. `root`, faire de la ligne `admin NOPASSWD`. `admin`, `sudo whoami` → `root`
     sans aucune question. Remettre `admin` seul. [ ]
-61. `admin`, `sudo adduser bob`, mot de passe vide → `bob: created` puis
-    `adduser: set a password with passwd bob`. `ls -l /home` → `bob`,
+61. `admin`, `sudo useradd bob`, mot de passe vide → `bob: created` puis
+    `useradd: set a password with passwd bob`. `ls -l /home` → `bob`,
     `drwxr-x---`. `id bob` → `uid=bob flag=user groups=bob`. [ ]
-62. `adduser Bob` → `adduser: Bob: invalid name`. `adduser admin` →
-    `adduser: admin: already exists`. `adduser -a kate` puis `id kate` →
+62. `useradd Bob` → `useradd: Bob: invalid name`. `useradd admin` →
+    `useradd: admin: already exists`. `useradd -a kate` puis `id kate` →
     `flag=admin`, mais `sudo ls` en `kate` reste
     `kate is not in the sudoers file.` [ ]
-63. `deluser root` → `deluser: root: cannot remove`. `admin`,
-    `sudo deluser admin` → `deluser: admin: user is logged in`. `deluser bob`
+63. `userdel root` → `userdel: root: cannot remove`. `admin`,
+    `sudo userdel admin` → `userdel: admin: user is logged in`. `userdel bob`
     sans `-r` → `id bob` devient `no such user` mais `ls -l /home` montre
-    encore le dossier `bob`. `deluser -r carl` → le dossier disparaît. [ ]
+    encore le dossier `bob`. `userdel -r carl` → le dossier disparaît. [ ]
 64. `admin`, `su` (mot de passe défini sur `root`) → `Password:` avec des `*` ;
     mauvais mot de passe → `su: authentication failure`. Bon mot de passe →
     `root@<host>:/root#`. `exit` → retour à `admin@<host>:~$`, écran non
@@ -225,7 +225,7 @@ passé réellement, même quand ça correspond au texte attendu.
     groups=admin,sudo,users`. [ ]
 67. `admin`, sans `su`, `echo on > /dev/light0` → la lumière s'allume, aucun mot
     de passe demandé (le groupe `sudo` fait le travail). [ ]
-68. `sudo adduser bob`, `passwd bob`, se reconnecter en `bob`,
+68. `sudo useradd bob`, `passwd bob`, se reconnecter en `bob`,
     `echo off > /dev/light0` → `light0: permission denied`, la lumière reste
     allumée. [ ]
 69. `root`, ajouter une ligne `bob` à `/etc/sudoers`, puis `bob`, `id` →
@@ -236,7 +236,7 @@ passé réellement, même quand ça correspond au texte attendu.
     `chmod 770 /home/admin/shared`, `chmod 755 /home/admin`. `bob` :
     `cd /home/admin/shared`, `write note.txt hi`, `ls -l` → le fichier est là,
     propriété de `bob`, groupe `bob`. `admin` : `cat shared/note.txt` → `hi`. [ ]
-71. `sudo adduser kate`, se reconnecter en `kate`, `ls /home/admin/shared` →
+71. `sudo useradd kate`, se reconnecter en `kate`, `ls /home/admin/shared` →
     `permission denied` (troisième compte, pas membre). [ ]
 72. `admin`, `chmod 700 /home/admin/shared` → `bob` refusé à `ls`. Remettre
     `770` → `bob` rentre de nouveau. [ ]
@@ -911,7 +911,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `admin@gate:~$` arrive directement. Puis `chmod 666 .rhosts` et ressortir :
      le `rlogin` suivant redemande `login:` sans dire pourquoi. Remettre 600. [ ]
 183b. Le deuxième champ nomme le compte **qui arrive**, pas celui qu'on devient.
-     Dans la session sur `gate` : `sudo adduser bob`, puis
+     Dans la session sur `gate` : `sudo useradd bob`, puis
      `sudo edit /home/bob/.rhosts` avec `<nom de la machine locale> admin`,
      `sudo chown bob /home/bob/.rhosts`, `sudo chmod 600 /home/bob/.rhosts`,
      `exit`. Puis `rlogin gate -l bob` → aucun mot de passe, et `whoami` là-bas
@@ -1003,7 +1003,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `rm: /dev/null: is a device`. [ ]
 198. `/var/tmp` et `ls` dans un tube. `ls -l /var` → `tmp` est en
      `drwxrwxrwx`. `echo a moi > /var/tmp/mien.txt`, puis
-     `sudo adduser bob`, `su bob` (mot de passe vide : Entrée), et depuis bob :
+     `sudo useradd bob`, `su bob` (mot de passe vide : Entrée), et depuis bob :
      `rm /var/tmp/mien.txt` → `permission denied`, alors que
      `echo a bob > /var/tmp/bob.txt` marche et que `rm /var/tmp/bob.txt` marche
      aussi. `exit` pour revenir. Ensuite, avec des lumières dans le bâtiment :
@@ -1087,7 +1087,7 @@ coques.
      le reposer ailleurs, le rallumer et se connecter : `ls /dev` → `fd0` est
      toujours là, rien n'est monté (`mount` ne liste que `hda`), et un seul
      `mount /dev/fd0 /mnt` retrouve les fichiers. [ ]
-209. **Les droits sur le lecteur.** `sudo adduser bob`, `su bob`, puis
+209. **Les droits sur le lecteur.** `sudo useradd bob`, `su bob`, puis
      `newfs /dev/fd0` → `newfs: /dev/fd0: permission denied`, pareil pour
      `mount` et `cat /dev/fd0`. `exit`, puis `sudo chmod 666 /dev/fd0` et
      redevenir `bob` : `mount /dev/fd0 /mnt` passe. Le mode reste au **lecteur** :

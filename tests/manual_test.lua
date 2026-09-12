@@ -308,11 +308,13 @@ local LITERAL_MESSAGES = {
 	"su: authentication failure",
 	"su: too many levels",
 	"sudo: authentication failure",
-	"adduser: <name>: already exists",
-	"deluser: <name>: user is logged in",
-	"deluser: root: cannot remove",
+	"useradd: <name>: already exists",
+	"userdel: <name>: user is logged in",
+	"userdel: root: cannot remove",
 	"chown: <name>: no such user",
-	"hash: <salt>: invalid salt",
+	"mkpasswd: <salt>: invalid salt",
+	-- SYSTEM_VERSION 16's own: the one list `usermod -G` will not take.
+	"usermod: empty group list",
 	"help: no commands in " .. CeroSecOS.BIN_PATH .. ": the system is damaged.",
 	"help: switch the computer off and on to repair it.",
 	"cerosec: nothing to answer",
@@ -726,7 +728,7 @@ do
 	-- 2 and 3, and a card that hands a beginner `deluser` is a card that lies
 	-- about which book he is holding.
 	local NOT_VOLUME_ONE = {
-		"adduser", "deluser", "gpasswd", "groupadd", "groupdel", "sudo",
+		"useradd", "userdel", "usermod", "groupadd", "groupdel", "sudo",
 		"dev", "crontab", "mail", "ifconfig", "ping", "rcp", "rlogin",
 		"rsh", "ruptime", "rwho", "hostname", "sh",
 	}
@@ -903,8 +905,8 @@ do
 	-- Everything this volume is FOR is on it. A card that has quietly lost the
 	-- devices, or cron, or the wire, still passes every check above.
 	local IS_VOLUME_TWO = {
-		"su", "sudo", "exit", "adduser", "deluser", "passwd", "id", "groups", "hash",
-		"groupadd", "groupdel", "gpasswd", "chmod", "chown", "chgrp",
+		"su", "sudo", "exit", "useradd", "userdel", "passwd", "id", "groups", "mkpasswd",
+		"groupadd", "groupdel", "usermod", "chmod", "chown", "chgrp",
 		"hostname", "df", "ps", "jobs", "kill", "fg",
 		"shutdown", "halt", "reboot", "restart",
 		"dev", "crontab", "mail",
