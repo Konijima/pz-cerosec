@@ -94,6 +94,39 @@ reader, and finding one in the world). `PARCOURS-TEST.md` covers everything past
 those three rungs and has not yet had a rung of its own; it is reported step by
 step, OK or KO, with one line on what actually happened.
 
+## The millisecond ceilings are calibrated, not fixed
+
+`hostile_test.lua` is the only suite that asserts on real time, and a bare
+millisecond number says as much about who else is on the box as it does about the
+engine. On a bench machine that is also running the game and a few coding agents
+(load average 5 to 9) the 4 ms ceiling went red two runs in three at 4.1 to 5.5 ms
+— on the untouched base as much as on a branch that touched no engine file. A red
+that says nothing about the code is noise, and noise trains a reader to ignore the
+colour.
+
+So the ceilings stay and the yardstick moves. Right before the first timed section,
+in the same process, the bench times a fixed pure-Lua workload (arithmetic and table
+writes, nothing of the engine in it, a few tens of milliseconds), three times, and
+keeps the cheapest run — the cheapest is the one that got the most of the processor.
+That over `CALIB_REF_MS`, the value the same workload costs on an idle box, is a
+scale factor, and every millisecond ceiling in the file becomes `limit * max(1,
+scale)`:
+
+- an idle box scales by 1 and is held to exactly the strict number it always was,
+- a box that is half taken gets an allowance in proportion to how slow **it** is,
+- past **3×** there is no allowance at all: the bench refuses with `box too loaded
+  to measure: rerun idle` rather than pretend it measured something.
+
+The scale and the raw milliseconds are printed on the bench's `calibration` report
+line, so any figure below it can be read back against the box that produced it.
+`CALIB_REF_MS` is a measurement of one machine and belongs to it: its comment in
+the file says when, how and on what it was taken, and it is re-measured — on a box
+with nothing else on it — not guessed at.
+
+What is **not** scaled: every step-count assertion. Steps are the real budget proof
+and a step costs the same on a loaded box as on a quiet one; a loaded box is no
+reason to let a program spend more of them. Only the wall-clock ceilings move.
+
 ## The mutation habit
 
 A suite that has never gone red on the bug it claims to catch is not proven —
