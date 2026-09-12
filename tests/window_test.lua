@@ -5908,14 +5908,23 @@ do
 	eq("the smallest qualifying zone wins",
 		CeroSecOS.premisesOf(house:osState()), "Kiosk")
 
+	-- A CONTROL first, because the two refusals below would be green on a zone that
+	-- simply misses the machine's square: the same outline with the right type and a
+	-- name IS a premises, so what the two of them prove is the type and the name.
+	_G.__zones = { { name = "Control", x = 498, y = 498, w = 4, h = 4 } }
+	house:turnOff()
+	house:turnOn()
+	check("a zone of that outline does reach the machine", telOf(house) ~= alone)
+	eq("and it is the one named", CeroSecOS.premisesOf(house:osState()), "Control")
+
 	-- A zone of the WRONG TYPE is not a premises whatever its size: the rule is
 	-- ZombiesType, which is the kind a shop is tagged with.
-	_G.__zones = { { name = "Nav", type = "Nav", x = 495, y = 495, w = 4, h = 4 } }
+	_G.__zones = { { name = "Nav", type = "Nav", x = 498, y = 498, w = 4, h = 4 } }
 	house:turnOff()
 	house:turnOn()
 	eq("a zone of another type is no premises", telOf(house), alone)
 	-- And one with no name at all is not one either.
-	_G.__zones = { { name = "", x = 495, y = 495, w = 4, h = 4 } }
+	_G.__zones = { { name = "", x = 498, y = 498, w = 4, h = 4 } }
 	house:turnOff()
 	house:turnOn()
 	eq("nor is a zone nobody named", telOf(house), alone)

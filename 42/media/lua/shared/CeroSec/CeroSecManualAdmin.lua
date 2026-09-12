@@ -1084,8 +1084,9 @@ door is a loop, and loops are Volume 3.]],
 
 		{ title = "8. The other machines in the building", pages = {
 
-[[Every computer in a building the map knows is on one length of coax with
-the others in that building, and it has an address it did not choose.
+[[Every computer on a premises the map knows -- a house, or one shop of a
+mall -- is on one length of coax with the others on it, and it has an
+address it did not choose.
 
   admin@ksp-04-11:~$ ifconfig
   eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>
@@ -1093,14 +1094,14 @@ the others in that building, and it has an address it did not choose.
   lo0: flags=8<LOOPBACK>
         inet 127.0.0.1 netmask 0xff000000
 
-Four numbers: ten, then two that come from where the building stands, then
-which computer of that building this is. Nothing sets it. The address is a
+Four numbers: ten, then two that come from where the premises is, then
+which computer of it this is. Nothing sets it. The address is a
 fact about the card the way the name is a fact about the machine, and
 there is no argument to ifconfig that changes either. The firmware
 announces it between the drive and the login, so you can read a machine's
 address without logging in at all.
 
-A computer in a base YOU built is in no building the map knows, so it has
+A computer in a base YOU built is on no premises the map knows, so it has
 no wire and says so plainly -- eth0 with flags and no address under it.
 Nothing on this chapter's list will do anything on such a machine, and
 that is not a fault to hunt.]],
@@ -1255,29 +1256,28 @@ everybody may read it and only root may change it. wtmp begins is a real
 answer on this machine, not a formality: that line is where the memory
 runs out.]],
 
-[[A MODEM SITS ON ITS OWN LINE. Every computer in a building the map knows
-has a telephone number of its own, seven digits, and one call at a time on
-it. The firmware announces it under the card.
+[[ONE LINE PER PREMISES: a shop, or a whole house. A house is one building and
+one line; a mall is one building and thirty shops, each with its own. Seven
+digits, announced under the card.
 
   Detecting drives ... hda 64K
   Ethernet: eth0 10.4.17.3
-  Phone line: 555-0417
+  Phone line: 555-0417 (CoffeeShop)
   Booting from hda ...
 
-The first three digits are the exchange, which is the TOWN's: every machine
-around here shares them, and the next town is on another switch. The last
-four are this machine. Neither is written anywhere on the disk -- there is
-no /etc/phone. A computer in a base you built has no line, and nor has one
-saved before this firmware until it is switched on where it stands:
+The first three digits are the exchange, and that is the TOWN's: every
+around here shares them and the next town is on another switch. The last
+four are the premises; the name in brackets is the shop. None of it is on
+the disk: there is no /etc/phone.
 
-  admin@ksp-04-11:~$ cu 555-0102
-  cu: no phone line
+A machine with no line prints none and cu says so: a base you built, or a
+save older than this firmware until it is switched on where it stands.
 
-Two machines can land on one number. That is a PARTY LINE, and the lower
-address on the wire answers, every time.
+Every computer of one premises is on that ONE line and the lowest address
+answers. Two premises can land on one number too: a PARTY LINE either way.
 
 The exchange is a building full of switches on the county's power, and when
-that goes the telephone goes with it -- everywhere, at once, for good.]],
+that goes the telephone goes with it: everywhere, at once, for good.]],
 
 [[cu dials, and then nothing happens for a while. That is the ring.
 
@@ -1898,7 +1898,7 @@ are the ones a real one prints for the same trouble.
   rlogin: gate: Host is down
       on the wire, and switched off
   rlogin: gate: No route to host
-      no wire between here and there: another building,
+      no wire between here and there: another premises,
       or a base somebody built
   rlogin: connect: Connection refused
       no line free -- four are in -- or the chain of
@@ -1925,8 +1925,8 @@ shape and tells you at a glance which of the two you have.
       no address either
   office (10.4.17.4) -- no entry
       the name resolved and nothing of that address is on
-      the wire: a machine switched off, or one in another
-      building. No command in front of it -- what arp
+      the wire: a machine switched off, or one on another
+      premises. No command in front of it -- what arp
       prints is the word you typed, the address behind it,
       and what is missing
 

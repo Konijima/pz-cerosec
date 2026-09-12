@@ -141,14 +141,20 @@ function CeroSecOS.buildingKey(bx, by)
 end
 
 -- And the same two bytes for a premises INSIDE a building, which is what a shop in
--- a mall is: the corner hashed exactly as a building corner is, then the SIZE
--- folded in and the whole thing put through one more round.
+-- a mall is: buildingKey's own arithmetic over four numbers instead of two -- the
+-- corner hashed as a building corner is, the SIZE hashed the same way, and the two
+-- added.
 --
--- The extra round is what keeps a shop apart from the building it is in: a zone
--- often starts at the building's own corner, and without it the coffee shop in the
--- corner of the mall would share the mall's key -- which is the very thing this is
--- here to stop. The size is in the hash because two zones can start on one tile
--- (a shop and the mall-wide zone above it) and only their outlines differ.
+-- The size is in the hash and has to be. A zone's corner is very often the
+-- building's own -- the shop in the corner of the mall -- and a key made of the
+-- corner alone would be the mall's key, which is the very thing this is here to
+-- stop; and two zones do start on one tile, a shop and the mall-wide zone over it,
+-- with nothing but their outlines to tell them apart.
+--
+-- No scatter here, exactly as there is none in buildingKey: what scatters a key is
+-- the number and the address made out of it (CeroSecOS.phoneKey), and a premises
+-- key that scattered where a building key does not would be two answers to one
+-- question.
 --
 -- Deterministic and nothing else, exactly as buildingKey is: the same zone answers
 -- the same two bytes on every load, for ever. Two premises that collide are two
@@ -161,7 +167,6 @@ function CeroSecOS.premisesKey(zx, zy, zw, zh)
 	local size = math.fmod(math.floor(zw) * 40503 + math.floor(zh) * 12289, 65536)
 	local h = math.fmod(corner + size, 65536)
 	if h < 0 then h = h + 65536 end
-	h = scatter(h)
 	return math.floor(h / 256), math.fmod(h, 256)
 end
 
