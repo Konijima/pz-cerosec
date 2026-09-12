@@ -67,17 +67,39 @@ CeroSecOS.MAX_FILE_BYTES = 4096  -- bytes in one file
 -- back by hand after an `rm` was refused as "directory full", and the next wave
 -- that adds one could not seed it at all. So the ceiling is the shipped set plus
 -- room for a third as many again: yours in /bin, and a wave's worth of honest
--- growth. The DISK is what bounds a machine (MAX_NODES, 32K); this bounds one
+-- growth. The DISK is what bounds a machine (MAX_NODES, 64K); this bounds one
 -- LISTING, and a listing of 96 short names is six screens of columns.
 CeroSecOS.MAX_DIR_ENTRIES = 96
-CeroSecOS.MAX_NODES = 256        -- nodes on the whole computer, root included
--- The disk. One number, because the machine has one drive: it is what the
--- BIOS announces at power-on ("hda 32K"), what df divides by, and what the
+CeroSecOS.MAX_NODES = 512        -- nodes on the whole computer, root included
+-- The hard disk. One number, because the machine has one FIXED drive: it is what
+-- the BIOS announces at power-on ("hda 64K"), what df divides by, and what the
 -- write path refuses to go past. MAX_TOTAL_BYTES is the name the limits are
 -- read under, DISK_BYTES the name the hardware is read under; they are the
 -- same number by construction and never two numbers that can drift apart.
-CeroSecOS.DISK_BYTES = 32768
+--
+-- 64K and 512 nodes, twice what the machine shipped with, and the number that
+-- decides it is the FLOPPY's. A 3.5-inch disk held 1.44 MB in 1993 and the hard
+-- disk of a desk machine of that year held twenty-odd megabytes: a floppy was
+-- about seven per cent of the drive it was carried to. That ratio is what makes
+-- a disk worth carrying -- a floppy that held a third of the machine would be a
+-- second hard disk, and one that held a thousandth would be a keepsake -- so the
+-- floppy is 4096 bytes (one maximal file, or a dozen notes) and the drive is the
+-- sixteen of them the ratio asks for. The nodes go with the bytes: 32 on the
+-- floppy, 512 on the drive.
+--
+-- An older machine off a save file gains the room and loses nothing: the quota
+-- is asked of the tree at every write and there is no stored total to move (see
+-- CeroSecOS.upgradeSystem, which does not have to know about this at all).
+CeroSecOS.DISK_BYTES = 65536
 CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
+
+-- The floppy. The same two ceilings the hard disk has, for the disk in the drive
+-- on the front of the case: what `newfs` initialises, what `df` reports beside
+-- hda while one is mounted, and what a write under /mnt dies on. A file's own
+-- ceiling is NOT halved with it -- MAX_FILE_BYTES is the machine's and is 4096
+-- everywhere -- so a floppy holds exactly one file as big as a file gets.
+CeroSecOS.FLOPPY_BYTES = 4096
+CeroSecOS.FLOPPY_NODES = 32
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
 -- A symbolic link holds a PATH, so how long one may be is what a path may be on
@@ -285,7 +307,7 @@ end
 --
 
 -- What the BIOS says it found and what df calls the drive. Whole kilobytes
--- while the disk is one -- 32768 bytes is "32K" and not "32.0K" -- and whole
+-- while the disk is one -- 65536 bytes is "64K" and not "64.0K" -- and whole
 -- megabytes past that, so a bigger drive at a later rung does not print a
 -- five-digit K.
 function CeroSecOS.diskLabel()

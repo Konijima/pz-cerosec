@@ -901,25 +901,31 @@ do
 end
 
 do
-	-- 32768 bytes on the whole computer.
+	-- Every byte of the hard disk, whatever DISK_BYTES says it holds.
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local _, used = CeroSecOS.usage(state)
 	-- Written through the filesystem and not through the prompt: a 4096-byte
 	-- block is four times what one WORD may be (CeroSecOS.MAX_VAR_BYTES), and
 	-- filling a disk is what the editor does.
-	local block = string.rep("y", 4096)
-	for i = 1, 7 do
+	--
+	-- How MANY blocks is worked out from the drive and never typed: the drive
+	-- doubled when the floppy arrived (rung 4e) and a hand-typed seven would have
+	-- left this bench filling half a disk and asserting it was full.
+	local block = string.rep("y", CeroSecOS.MAX_FILE_BYTES)
+	local blocks = math.floor((CeroSecOS.DISK_BYTES - used) / CeroSecOS.MAX_FILE_BYTES)
+	check("the drive has room for more than one maximal file", blocks >= 2)
+	for i = 1, blocks do
 		local wrote = CeroSecOS.writeFile(state, rootSession, "/b" .. i, block, false, nil)
 		if not wrote then error("write /b" .. i .. " failed") end
 	end
 	local _, now = CeroSecOS.usage(state)
-	eq("seven blocks written", now, used + 7 * 4096)
-	local room = 32768 - now
+	eq("every block written", now, used + blocks * CeroSecOS.MAX_FILE_BYTES)
+	local room = CeroSecOS.DISK_BYTES - now
 	eq("and the last of the room too",
 		CeroSecOS.writeFile(state, rootSession, "/last", string.rep("z", room), false, nil), true)
 	local _, full = CeroSecOS.usage(state)
-	eq("disk exactly full", full, 32768)
+	eq("disk exactly full", full, CeroSecOS.DISK_BYTES)
 	ok(state, rootSession, "touch /nothing", {})            -- an empty file costs no bytes
 	bad(state, rootSession, 'write /nothing "x"', "write: /nothing: disk full")
 	bad(state, rootSession, 'write /brand "x"', "write: /brand: disk full")
@@ -927,7 +933,7 @@ do
 end
 
 do
-	-- 256 nodes on the whole computer.
+	-- Every node of the hard disk, whatever MAX_NODES says it holds.
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
@@ -943,14 +949,14 @@ do
 		made = made + 1
 		local full = false
 		for i = 1, 64 do
-			if nodes + made >= 256 then full = true break end
+			if nodes + made >= CeroSecOS.MAX_NODES then full = true break end
 			if not exec(state, rootSession, "touch /p" .. dir .. "/f" .. i) then break end
 			made = made + 1
 		end
 		if full then break end
 	end
 	local total = CeroSecOS.usage(state)
-	eq("node ceiling reached", total, 256)
+	eq("node ceiling reached", total, CeroSecOS.MAX_NODES)
 	-- The last directory still has room for an entry; the computer does not.
 	local last = "/p" .. dir .. "/last"
 	check("the last directory is not full itself",
@@ -1163,9 +1169,16 @@ do
 
 	-- Over the disk quota is a state a machine can be IN and never a state it
 	-- cannot be loaded from: the refusal belongs to the write path.
+	--
+	-- How many maximal files it takes to go past the drive is worked out from the
+	-- drive, never typed: nine of them were one too many on a 32K disk and eight
+	-- too few on a 64K one.
 	local overTotal = fresh()
-	for i = 1, 9 do
-		overTotal.fs.children[ "big" .. i ] = CeroSecOS.newFile("root", 644, string.rep("x", 4096))
+	local overBlocks =
+		math.floor(CeroSecOS.MAX_TOTAL_BYTES / CeroSecOS.MAX_FILE_BYTES) + 1
+	for i = 1, overBlocks do
+		overTotal.fs.children[ "big" .. i ] =
+			CeroSecOS.newFile("root", 644, string.rep("x", CeroSecOS.MAX_FILE_BYTES))
 	end
 	eq("an oversize disk still validates", CeroSecOS.validate(overTotal), true)
 	local overUsed = select(2, CeroSecOS.usage(overTotal))
@@ -3241,8 +3254,12 @@ do
 	eq("one byte is 1%", 1, math.ceil(1 * 100 / CeroSecOS.DISK_BYTES))
 	badAt(state, admin, "df -h", "df: usage: df")
 
-	-- The BIOS says the same number the ceiling is.
-	eq("the disk label", CeroSecOS.diskLabel(), "32K")
+	-- The BIOS says the same number the ceiling is. The LABEL is pinned against
+	-- the arithmetic that builds it rather than against a typed string: what is
+	-- being asserted is that whole kilobytes come out whole, on whatever drive the
+	-- machine is shipping with.
+	eq("the disk label", CeroSecOS.diskLabel(),
+		tostring(CeroSecOS.DISK_BYTES / 1024) .. "K")
 	eq("and it is the ceiling", CeroSecOS.DISK_BYTES, CeroSecOS.MAX_TOTAL_BYTES)
 end
 
@@ -6648,11 +6665,21 @@ do
 	-- history of three renamed on top of it: the rename is allowed -- nothing is
 	-- ever deleted to make room -- and the machine is over quota.
 	local HIST = 3000
-	for i = 1, 7 do
+	-- As many maximal files as the drive takes and no more, worked out from the
+	-- drive: what this bench needs is a disk with LESS room left on it than the
+	-- history holds, and seven files was that on a 32K drive and nowhere near it
+	-- on a 64K one.
+	local before = select(2, CeroSecOS.usage(state))
+	local blocks =
+		math.floor((CeroSecOS.MAX_TOTAL_BYTES - before) / CeroSecOS.MAX_FILE_BYTES)
+	for i = 1, blocks do
 		local made = CeroSecOS.createNode(state, rootSession, "/big" .. i,
 			CeroSecOS.newFile("root", 644, string.rep("x", CeroSecOS.MAX_FILE_BYTES)), nil)
 		check("/big" .. i .. " went on the disk", made ~= nil)
 	end
+	local spare = CeroSecOS.MAX_TOTAL_BYTES - select(2, CeroSecOS.usage(state))
+	check("less room left than the history holds (" .. spare .. " < " .. HIST .. ")",
+		spare < HIST)
 	local node = nil
 	while node == nil or #node.data < HIST do
 		CeroSecOS.historyAppend(state, admin, "echo padding line for the history", FIXED)

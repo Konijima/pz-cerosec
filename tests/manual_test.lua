@@ -352,7 +352,11 @@ end
 -- future change to a limit fails this test instead of only going stale in
 -- the reader's hands.
 --
-check("the set states the disk size", string.find(wholeBook, "32K", 1, true) ~= nil)
+-- The disk as the BIOS and df spell it, off CeroSecOS.diskLabel rather than typed:
+-- the drive grew when the floppy arrived (rung 4e) and a hand-typed "32K" here
+-- would have passed on a book that still said the old number.
+check("the set states the disk size (" .. CeroSecOS.diskLabel() .. ")",
+	string.find(wholeBook, CeroSecOS.diskLabel(), 1, true) ~= nil)
 check("the set states the node ceiling (" .. CeroSecOS.MAX_NODES .. ")",
 	string.find(wholeBook, tostring(CeroSecOS.MAX_NODES), 1, true) ~= nil)
 check("the set states the file size ceiling (" .. CeroSecOS.MAX_FILE_BYTES .. ")",

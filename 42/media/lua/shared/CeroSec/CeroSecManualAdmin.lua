@@ -1262,11 +1262,11 @@ of them is the disk.
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   2075  30693    7%
-  nodes         256     86    170   34%
+  hda         65536   2075  63461    4%
+  nodes         512     86    426   17%
 
-Thirty-two kilobytes and two hundred and fifty-six files and directories,
-whichever runs out first, and a fresh machine has already spent a third of
+Sixty-four kilobytes and five hundred and twelve files and directories,
+whichever runs out first, and a fresh machine has already spent a sixth of
 the second one on /bin. Type df before you let anybody start keeping notes
 on a machine, and again once a week.
 
@@ -1345,7 +1345,7 @@ it move:
   admin@ksp-04-11:~$ mv .sh_history loot.txt
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   2107  30661    7%
+  hda         65536   2107  63429    4%
 
 Thirty-two bytes appeared out of nowhere. Move it back and they go again.
 /var/log/cron, /var/log/wtmp and the mailboxes are exempt the same way and
@@ -1554,7 +1554,7 @@ rlogins 2 machines deep.
 
 The logs: /var/log/wtmp holds 200 lines, /var/log/cron 100, and a mailbox
 100 -- oldest dropped in every case, and all three exempt from the disk's
-32768 bytes by their path.
+65536 bytes by their path.
 
 Classic mistake. Typing the square brackets. They mark a part you may
 leave out; they are not part of the command.]],

@@ -299,7 +299,7 @@ end
 --
 -- One file across the wire, and both ends of it are judged by their own machine:
 -- the read by the source's permissions, the write by the target's permissions,
--- its 4096-byte file ceiling and its own 32K disk. There is no privilege
+-- its 4096-byte file ceiling and its own 64K disk. There is no privilege
 -- anywhere in it -- the account it runs as on the far machine is the account it
 -- was on this one, which is what rcp over rsh has always been.
 --

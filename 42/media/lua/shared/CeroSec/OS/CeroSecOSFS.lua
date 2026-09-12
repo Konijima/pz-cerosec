@@ -204,7 +204,7 @@ end
 -- What the disk quota does not count
 --
 -- What the MACHINE writes about itself does not fill the drive. Three kinds of
--- file are exempt from the 32K, and all three are things a machine writes
+-- file are exempt from the 64K, and all three are things a machine writes
 -- without anybody asking it to:
 --
 --   * an account's own ~/.sh_history -- `df` must not move because somebody

@@ -115,13 +115,13 @@ out over a couple of seconds.
 
   CeroSec BIOS 1.0 -- (c) 1993 CeroSec Systems
   Memory test: 640K OK
-  Detecting drives ... hda 32K
+  Detecting drives ... hda 64K
   Booting from hda ...
 
 Line one is the firmware, the small permanent program that wakes the
 machine up. It has its own version number and it is not the operating
 system. Line two says the memory answered. Line three says it found the
-drive, which it calls hda, and that the drive holds 32K. Line four says
+drive, which it calls hda, and that the drive holds 64K. Line four says
 it is loading the operating system off that drive.
 
 Then a greeting line naming this system, and then the machine asks who
@@ -488,7 +488,7 @@ This is a small machine and it is honest about it.
 One file may hold 4096 bytes. That is about a page and a half of typing.
 Past it, the machine says "file too large" and writes nothing.
 
-The whole drive holds 32768 bytes and 256 files and directories, whichever
+The whole drive holds 65536 bytes and 512 files and directories, whichever
 runs out first. Past either, every command that writes says "disk full".
 
 And one directory may hold 96 entries. Past that, "directory full".
@@ -497,8 +497,8 @@ df shows you where you stand, as two lines:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   2075  30693    7%
-  nodes         256     86    170   34%
+  hda         65536   2075  63461    4%
+  nodes         512     86    426   17%
 
 The first line is bytes, the second is the count of files and directories.
 When either Avail column reaches nothing, you delete something or you stop
@@ -1137,7 +1137,7 @@ middle of a line it is just an exclamation mark.]],
 A thousand lines and sixteen kilobytes, whichever fills first, and the
 oldest go over the side to make room.
 
-Those sixteen kilobytes do not count against the machine's 32768 bytes of
+Those sixteen kilobytes do not count against the machine's 65536 bytes of
 drive. A shell's memory of itself should not be the thing that fills up
 your disk, so df will not move because you typed a lot. ls -l still tells
 you honestly how big the file is.
@@ -1362,7 +1362,7 @@ characters.
 
 One file: 4096 bytes.
 
-The drive: 32768 bytes and 256 files and directories, whichever runs out
+The drive: 65536 bytes and 512 files and directories, whichever runs out
 first. One directory: 96 entries. 16 levels of directory below the root,
 and 32 characters in any one name.
 
@@ -1424,7 +1424,7 @@ Running out of room. Chapter 3 has the numbers.
   file too large
       past 4096 bytes for that one file
   disk full
-      past 32768 bytes, or past 256 files, on the machine
+      past 65536 bytes, or past 512 files, on the machine
   directory full
       the parent already holds 96 entries
 

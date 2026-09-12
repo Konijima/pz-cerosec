@@ -204,7 +204,7 @@ Commands:
 | `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
 | `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
-| `df` | how much of the 32K disk and the 256 nodes are used |
+| `df` | how much of the 64K disk and the 512 nodes are used — and a `fd0` row of its own while a floppy is mounted |
 | `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
 | `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
@@ -628,7 +628,7 @@ ceiling kills it, which comes back as a status of 130. No greeting is printed on
 an `rsh` session — `rshd` prints none, `login` does — so what comes back is the
 command's output and nothing else. `rcp` needs the same trust, lands the file as the account you are,
 and is judged by the far machine's own permissions, its 4096-byte file ceiling
-and its own 32K disk. It is not quick: the wire runs at about a kilobyte a
+and its own 64K disk. It is not quick: the wire runs at about a kilobyte a
 second.
 
 The limits, because each is something a player meets. Four sessions may come in
@@ -1309,7 +1309,7 @@ on the machine does arithmetic on. No clock stays no clock with a format: `date
 zero.
 
 `CeroSecOS.DISK_BYTES` is the one number for the drive: the BIOS announces it
-(`CeroSec.bootLines()` appends `hda 32K`), `df` divides by it, and the write path
+(`CeroSec.bootLines()` appends `hda 64K`), `df` divides by it, and the write path
 refuses to go past it. There is no second copy of it anywhere to drift.
 
 #### /dev, and the world outside the machine
@@ -1756,8 +1756,8 @@ what vanilla pickup and placement copy — so a computer carried across town kee
 files, and only `v`, `on`, `facing` are sent to clients on add or update. The console
 is deliberately excluded from both: it is a screen, not a disk (a computer picked up
 is a computer that lost its power), and the client never reads the stored screen,
-only the lines the server answers it with. A filesystem is capped at 256 nodes, 96
-entries per directory, 16 levels deep and 32768 bytes total, so the mirror stays
+only the lines the server answers it with. A filesystem is capped at 512 nodes, 96
+entries per directory, 16 levels deep and 65536 bytes total, so the mirror stays
 small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceiling of
 64, which is a `/bin` with no room to put a deleted command back into. `/dev` keeps
 its own 64 — how many commands ship is no reason to mount more of the world.)

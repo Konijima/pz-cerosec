@@ -1286,9 +1286,11 @@ do
 
 	-- The number on the BIOS line is the ceiling a write really dies on, and
 	-- not the 20MB that used to be typed into the boot lines by hand.
-	check("the BIOS announces the real drive", bench.painted("Detecting drives ... hda 32K"))
+	check("the BIOS announces the real drive", bench.painted(
+		"Detecting drives ... hda " .. CeroSecOS.diskLabel()))
 	check("and never a drive the machine has not got", not bench.painted("20MB"))
-	eq("because the label is the ceiling", CeroSecOS.diskLabel(), "32K")
+	eq("because the label is the ceiling", CeroSecOS.diskLabel(),
+		tostring(CeroSecOS.DISK_BYTES / 1024) .. "K")
 
 	-- The whole round trip for the clock: the game's calendar, through the
 	-- server, onto the glass.
@@ -1317,7 +1319,7 @@ do
 	bench.enter("df")
 	bench.frame()
 	check("df names the drive", bench.painted("hda"))
-	check("and its size", bench.painted("32768"))
+	check("and its size", bench.painted(tostring(CeroSecOS.DISK_BYTES)))
 
 	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
 end

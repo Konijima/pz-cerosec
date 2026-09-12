@@ -448,7 +448,7 @@ CeroSec.BOOT_LINES = {
 	-- The capacity is NOT written here: it is the engine's ceiling and it is
 	-- appended at power-on by bootLines(). A BIOS that announces a drive the
 	-- machine does not have is a BIOS lying to the player about the one number
-	-- he will run into -- `df` and a full disk say 32K, so this says 32K.
+	-- he will run into -- `df` and a full disk say 64K, so this says 64K.
 	"Detecting drives ... hda ",
 	"Booting from hda ...",
 	"",
