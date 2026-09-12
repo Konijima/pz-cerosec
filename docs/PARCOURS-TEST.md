@@ -474,11 +474,13 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      ouvre son propre volume, sans copie du livre dans l'inventaire, sur un
      ordinateur allumé ou éteint, à portée ou pas. L'entrée parente elle-même
      n'ouvre rien quand on passe dessus. [ ]
-102. Menu debug → Items list, filtre `CeroSec` → quatre objets :
-     `CeroSec.ManualUser`, `CeroSec.ManualAdmin`, `CeroSec.ManualProgrammer` et
-     `CeroSec.Manual`. Catégorie affichée Literature pour les quatre, noms
+102. Menu debug → Items list, filtre `CeroSec` → TROIS livres :
+     `CeroSec.ManualUser`, `CeroSec.ManualAdmin` et `CeroSec.ManualProgrammer`.
+     `CeroSec.Manual` n'existe plus du tout : l'ancien livre unique était une
+     deuxième copie du volume 1 sous un autre nom et il a été retiré du script.
+     Catégorie affichée Literature pour les trois, noms
      "CeroSec OS User's Guide", "... System Administrator's Guide",
-     "... Programmer's Guide", "CeroSec OS User's Manual". Faire apparaître les
+     "... Programmer's Guide". Faire apparaître les
      trois volumes dans l'inventaire → trois icônes DIFFÉRENTES : le même livre
      à petit écran vert, relié bleu marqué 1, vert marqué 2, rouge marqué 3.
      Jamais un point d'interrogation blanc, et le chiffre reste lisible à la
@@ -487,12 +489,11 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      "Read the System Administrator's Guide" / "Read the Programmer's Guide",
      une seule option et la bonne ; pas de "Read" ni "Write" ni "Look at
      pictures" de la vanille. Sélectionner les trois ensemble → trois options,
-     dans l'ordre 1, 2, 3. Et `CeroSec.Manual`, le livre d'avant le coffret :
-     "Read the manual", qui ouvre le **volume 1** -- le volume qu'il est devenu.
-     L'ancien livre unique n'existe plus comme texte : vérifier que sa
-     couverture dit bien `CeroSec OS 1.0 User's Guide` et que sa table des
-     matières est celle du volume 1 (`1. Your first day`), et non celle de
-     l'ancien livre (`1. Your machine`). [ ]
+     dans l'ordre 1, 2, 3. Aucune option "Read the manual" nulle part : l'objet
+     qui la portait n'existe plus. Vérifier que la couverture du volume 1 dit
+     bien `CeroSec OS 1.0 User's Guide` et que sa table des matières est celle
+     du volume 1 (`1. Your first day`), et non celle de l'ancien livre
+     (`1. Your machine`). [ ]
 104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
@@ -527,8 +528,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      chargement `the manual set added in 36 places` (douze listes fois trois
      volumes). Menu debug → Spawn rate checker, liste `LibraryComputer` :
      `CeroSec.ManualUser` à 4, `CeroSec.ManualAdmin` à 2,
-     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et `CeroSec.Manual`
-     ABSENT de la liste. Liste `UniversityDesk_Computer` :
+     `CeroSec.ManualProgrammer` à 1, dans cet ordre, et aucune ligne
+     `CeroSec.Manual`. Liste `UniversityDesk_Computer` :
      `CeroSec.ManualProgrammer` remonte à 2. [ ]
 114. Vérifier que la version affichée est la même partout : la bannière de
      démarrage et `/etc/motd` disent `CeroSec OS 1.0`, la couverture de chacun

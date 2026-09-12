@@ -166,12 +166,14 @@ itself worth one look (step 9).
    (`~/Zomboid/console.txt`) has no `FileNotFoundException` and no script parse error
    naming `items_cerosec.txt`. A single bad key takes the **whole file** down, so a
    silent load is the whole of this check.
-2. **All four are in the item list.** Open the debug menu (or the admin panel) →
-   **Items list**. Filter on `CeroSec`. `CeroSec.ManualUser`, `CeroSec.ManualAdmin`,
-   `CeroSec.ManualProgrammer` and `CeroSec.Manual` are all there, every display
-   category reads **Literature**, and the names read **CeroSec OS User's Guide**,
-   **CeroSec OS System Administrator's Guide**, **CeroSec OS Programmer's Guide** and
-   **CeroSec OS User's Manual** — the names from `Translate/EN/ItemName.json`, not
+2. **All three are in the item list, and only three.** Open the debug menu (or the
+   admin panel) → **Items list**. Filter on `CeroSec`. `CeroSec.ManualUser`,
+   `CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer` are there and
+   `CeroSec.Manual` is **not** — the old single-volume book was a second copy of
+   volume one and was removed. Every display category reads **Literature**, and the
+   names read **CeroSec OS User's Guide**,
+   **CeroSec OS System Administrator's Guide** and **CeroSec OS Programmer's Guide**
+   — the names from `Translate/EN/ItemName.json`, not
    the `DisplayName` fallback and not the raw `ManualUser`.
 3. **Spawn all three volumes.** Spawn one of each into the character's inventory.
    Weight 0.8 each, and three **different** icons: the same book with the little green
@@ -192,10 +194,9 @@ itself worth one look (step 9).
 6. **All three at once.** Select all three volumes together and right-click. Three
    options, one per volume, in the order 1, 2, 3 — not one option, and not the same
    option three times.
-7. **The old book still opens.** Spawn `CeroSec.Manual`, the single book that
-   shipped before the set. Right-click → **"Read the manual"**, and it opens the
-   **User's Guide**. It is still an item on purpose — it is in saves — and it is no
-   longer loot, which step 29 is where you check.
+7. **The old book is gone.** `CeroSec.Manual` cannot be spawned: it is not a
+   declared item any more. Nothing anywhere offers **"Read the manual"** — that
+   option and its translation key were removed with the item.
 
 ### B — Opening the book
 
@@ -294,8 +295,8 @@ vanilla numbers each one was set against.
     rate checker** (LootZed), pick `LibraryComputer`. `CeroSec.ManualUser` is in the
     list at weight 4, sitting beside `Book_Computer` at 20 and 10;
     `CeroSec.ManualAdmin` at 2 and `CeroSec.ManualProgrammer` at 1, in that order.
-    `CeroSec.Manual` is **not in the list at all** — it is still an item, it is no
-    longer loot.
+    `CeroSec.Manual` is **not in the list at all** — and not an item either, since
+    it was removed.
 30. **Volume three is raised where the programmers were.** Same checker, pick
     `UniversityDesk_Computer`: `CeroSec.ManualProgrammer` is at **2**, the same as
     `CeroSec.ManualAdmin`, not at 1. Same again for `UniversityLibraryComputer`,

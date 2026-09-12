@@ -283,7 +283,7 @@ local function newItem(fullType)
 	local data = {}
 	return {
 		__class = "InventoryItem",
-		fullType = fullType or "CeroSec.Manual",
+		fullType = fullType or "CeroSec.ManualUser",
 		getFullType = function(self) return self.fullType end,
 		getModData = function() return data end,
 		getContainer = function() return { name = "inventory" } end,
@@ -902,9 +902,18 @@ do
 
 	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { other, manual })
 	eq("one option when the manual is in the selection", #options, 1)
-	eq("named the way the menu names it", options[1].label, "ContextMenu_CeroSec_ReadManual")
+	eq("named the way the menu names it", options[1].label, "ContextMenu_CeroSec_ReadUser")
 	eq("carrying the manual itself", options[1].target, manual)
-	eq("the book that shipped before the set opens volume one", options[1].arg2, "user")
+	eq("and opening volume one", options[1].arg2, "user")
+
+	-- The single-volume book that shipped BEFORE the set is not an item any
+	-- more, so nothing on this menu answers for it. Asserted, and not merely
+	-- left out: a menu that still offered a fourth "Read the manual" for an
+	-- item no script declares is the duplicate this wave removed coming back.
+	options = {}
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
+		{ newItem("CeroSec.Manual") })
+	eq("the legacy single book is not on the menu at all", #options, 0)
 
 	-- A stack of identical items arrives as one table with an items array
 	-- inside it, not as an InventoryItem. That is the shape that would slip
@@ -1560,9 +1569,9 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the four books, the four disks and the four hardware modules.
-	eq("thirteen blocks: the module, the four books, the four disks and the "
-		.. "four hardware modules", opens, 13)
+	-- The module, the three books, the four disks and the four hardware modules.
+	eq("twelve blocks: the module, the three books, the four disks and the "
+		.. "four hardware modules", opens, 12)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -1575,8 +1584,8 @@ do
 		blocks[name] = body
 	end
 
-	-- The three volumes, and the single book that shipped before them and is
-	-- still defined because it is in saves.
+	-- The three volumes, and those only. The single book that shipped before
+	-- them was a second copy of volume one under another name and is gone.
 	local BOOKS = {
 		{ item = "ManualUser", icon = "CeroSecManualUser",
 			name = "CeroSec OS User's Guide" },
@@ -1584,10 +1593,9 @@ do
 			name = "CeroSec OS System Administrator's Guide" },
 		{ item = "ManualProgrammer", icon = "CeroSecManualProgrammer",
 			name = "CeroSec OS Programmer's Guide" },
-		{ item = "Manual", icon = "CeroSecManual",
-			name = "CeroSec OS User's Manual" },
 	}
-	eq("four item blocks and no more", #BOOKS, 4)
+	eq("three item blocks and no more", #BOOKS, 3)
+	check("the legacy single-volume item is not declared", blocks.Manual == nil)
 
 	for b = 1, #BOOKS do
 		local book = BOOKS[b]

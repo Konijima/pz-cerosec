@@ -14,7 +14,7 @@ require "CeroSec/CeroSecManualUI"
 -- (ISRemoveItemTool.lua:347-357). One copy of a given book is enough -- they
 -- are all the same book -- so the first one found is the one its option opens.
 --
--- There are three books now, so there may be three options: each volume in the
+-- There are three books, so there may be three options: each volume in the
 -- selection gets its own, named after itself. A menu offering "Read the manual"
 -- three times over would be a menu that cannot be used.
 --
@@ -24,11 +24,6 @@ CeroSecManualMenu = {}
 -- The set, in the order it is printed on the shelf, and the order the menu
 -- lists it in: an ordered list and not a map keyed by item, because pairs()
 -- would shuffle the entries from one right-click to the next.
---
--- CeroSec.Manual is the book that shipped BEFORE the set did. It is still
--- defined, because it is in saves, and it opens volume one -- the volume it
--- became. It is last here so that a survivor holding both the old book and the
--- new User's Guide is offered the new one first.
 CeroSecManualMenu.BOOKS = {
 	{ item = "CeroSec.ManualUser", volume = "user",
 		label = "ContextMenu_CeroSec_ReadUser" },
@@ -36,8 +31,6 @@ CeroSecManualMenu.BOOKS = {
 		label = "ContextMenu_CeroSec_ReadAdmin" },
 	{ item = "CeroSec.ManualProgrammer", volume = "programmer",
 		label = "ContextMenu_CeroSec_ReadProgrammer" },
-	{ item = "CeroSec.Manual", volume = "user",
-		label = "ContextMenu_CeroSec_ReadManual" },
 }
 
 -- The one item out of a menu entry, whether it is an item or a stack of them.

@@ -594,8 +594,8 @@ the submenu is empty, with a line in the log saying which volume file did not lo
 Off, nothing at all is added.
 
 **The items** are `common/media/scripts/items_cerosec.txt`: `CeroSec.ManualUser`,
-`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`, and `CeroSec.Manual`, the
-single book that shipped before the set. All four are `ItemType = base:normal` and
+`CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`. All three are
+`ItemType = base:normal` and
 **not** `base:literature`, on purpose: a literature item that cannot be written on is
 one the vanilla menu offers to *read*, and vanilla's read is a timed action that sits
 the character down for hours. They keep `DisplayCategory = Literature`, which is a
@@ -604,9 +604,12 @@ still file themselves with the books. `Icon = CeroSecManualUser` resolves to
 `common/media/textures/Item_CeroSecManualUser.png`: the game builds `"Item_" .. Icon`
 and looks it up as `media/textures/<that>.png`.
 
-`CeroSec.Manual` stays **defined** and is no longer **loot**. An item script that
-stops naming an item leaves every copy of it in every save as a missing item, so it
-is still there; read, it opens volume one, which is the volume it became.
+`CeroSec.Manual`, the single book that shipped before the set, is **gone** —
+removed on the inventory wave. It was defined but not loot, and read it opened
+volume one: two items with one content, which on an inventory menu is a fourth
+"Read the manual" nobody can tell from the first. A save that still holds a copy
+loses it, which is what dropping an item script entry costs and is acceptable
+before release.
 
 The three icons are made from the shipped one by `tools/make-volume-icons.py` —
 same 32×32 book, three bindings. The navy is channel-swapped rather than picked again by

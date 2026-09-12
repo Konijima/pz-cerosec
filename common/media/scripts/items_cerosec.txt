@@ -1,8 +1,7 @@
 module CeroSec
 {
-    /* The manual. Four items -- the three volumes of the set, and the single
-       book that shipped before the set did -- and every key on them verified
-       against the game rather than against a wiki:
+    /* The manual. Three items -- the three volumes of the set -- and every key
+       on them verified against the game rather than against a wiki:
 
        - The block syntax and the key spellings are literature.txt's
          (media/scripts/generated/items/literature.txt): Base.Book at 1704,
@@ -28,7 +27,8 @@ module CeroSec
          Normal item still files itself under Literature, which is where a book
          belongs in the list.
 
-       - Icon = CeroSecManual resolves to media/textures/Item_CeroSecManual.png:
+       - Icon = CeroSecManualUser resolves to
+         media/textures/Item_CeroSecManualUser.png:
          Item.DoParam builds `itemName = "Item_" + icon` and asks
          Texture.trygetTexture for it (javap -c zombie.scripting.objects.Item,
          the Icon branch at 528-567), and trygetTexture turns a bare name into
@@ -41,7 +41,7 @@ module CeroSec
          there is no model to drop on the ground.
 
        DisplayName is here as the fallback; the name a player actually reads
-       comes from Translate/EN/ItemName.json, keyed "CeroSec.Manual" the way
+       comes from Translate/EN/ItemName.json, keyed "CeroSec.ManualUser" the way
        vanilla keys "Base.Book_Computer". */
 
     /* Volume one of three. Same weight as the other two: they are the same
@@ -76,22 +76,6 @@ module CeroSec
         ItemType = base:normal,
         Weight = 0.8,
         Icon = CeroSecManualProgrammer,
-        StaticModel = Book,
-        WorldStaticModel = BookClosedGround,
-    }
-
-    /* The book that shipped before the set did. It is not loot any more -- the
-       three volumes above are -- but it stays DEFINED, because it is in saves:
-       an item script that stops naming an item leaves every copy of it in
-       every container as a missing item. Read, it opens volume one, which is
-       the volume it became. */
-    item Manual
-    {
-        DisplayName = CeroSec OS User's Manual,
-        DisplayCategory = Literature,
-        ItemType = base:normal,
-        Weight = 0.8,
-        Icon = CeroSecManual,
         StaticModel = Book,
         WorldStaticModel = BookClosedGround,
     }
