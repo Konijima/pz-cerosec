@@ -659,25 +659,26 @@ because what it mends is the system files.]],
 
 [[Switching a machine off, in words instead of by hand.
 
-Both commands are root's. Not because work would be lost -- everything is
-on the disk and survives -- but because a second survivor standing at the
-same glass loses his session, and that is not an ordinary account's to
-take.
+Both are root's: a second survivor standing at the same glass loses his
+session, and that is not an ordinary account's to take. Nothing is lost
+either way -- it is all on the disk.
 
   admin@ksp-04-11:~$ shutdown
   shutdown: permission denied
   root@ksp-04-11:~# shutdown
 
 shutdown switches the machine off: the screen goes, the glow goes, every
-window open on it closes. reboot, and its exact twin restart, switch it
-off and straight back on, and everybody watching sees the firmware count
-the memory out loud again and lands at a fresh login: prompt.
+window open on it closes. halt is its older name, and is shutdown -h now.
 
-halt is the older name for shutdown -h now and does the same thing.
+reboot, and its exact twin restart, is a power CYCLE: off the same way,
+dark about three seconds, then on again by itself. Stay at the keyboard
+and your window comes back where it was; step away while it is dark and it
+comes up without you. A room that loses its power in those seconds leaves
+the machine off, as an outage leaves any machine off.
 
-None of the three is a repair. The disk comes through untouched, which is
-why "switch it off and on again" mends a machine whose /bin is empty: what
-mends it is the firmware's question on the way back up, not the power.]],
+Neither is a repair: the disk comes through untouched. What mends a
+machine whose /bin is empty is the firmware's question on the way back up,
+not the power.]],
 
 [[shutdown also takes a time, which is how you clear a machine other people
 are working at.
@@ -738,7 +739,7 @@ thing itself. The modules are the next two pages.
 
 The reach is the BUILDING. If the computer's square belongs to a building
 the map knows, it gets every room of it, upstairs and down. If it does not
-it gets ten tiles of its own floor every way. Sixty four at the outside.
+it gets ten tiles of its own floor every way. 256 at the outside.
 
   root@ksp-04-11:~# dev
   door0   exterior              0 5S        W  locked
@@ -772,29 +773,29 @@ the way a door's does, and unlocked means shut.
 If your server turned the option Hardware modules required OFF, forget all
 this: every door, window, lock and light is under /dev, fitted or not.]],
 
-[[Fitting one, and taking it off.
+[[Where a box comes from, fitting it, and taking it off.
 
-Right-click the door, the window or the light switch ITSELF -- not the
-computer -- and take CeroSec hardware. You need the box in your bag, a
-screwdriver, and the trade: a contact or a relay at Electricity 1, a
-strike at 2, an operator at 3. It takes a few seconds and pays a little
-Electricity for the work.
+Nobody works these four out at the bench. The diagrams and the parts
+lists went out with the fitters, in the CeroSec Field Wiring Guide: look
+on an electronics shop's rack, in a bookshop, a tool shop, an
+electrician's van. Find a copy and READ it: the four appear in the
+Electrical tab. A lifetime electrician gets there in the end. Everybody
+else reads it.
+
+Fitting: right-click the door, window or light switch ITSELF -- not the
+computer -- and take CeroSec hardware. You need the box, a screwdriver,
+and the trade: a contact or a relay at Electricity 1, a strike at 2, an
+operator at 3.
 
 Remove gives the box back whole. The device goes with it and its NUMBER
-does not: screw another contact to that door next week and it is the
-same doorN a script wrote down last week.
+does not: the same doorN answers next week.
 
-Two entries are greyed out, and both are about the fixture:
+Two entries are greyed out, both about the fixture:
 
   a strike on an interior door
       a key there stops nobody: the lock would lie
   an operator on a garage or double door
-      a machine moves one leaf, the rest stay shut
-
-A device with nothing to write with has no w in its mode at all,
-cr--r-----: everybody but root is stopped by the mode, and root, who
-walks past every mode, by the device -- door1: operation not supported.
-A window wears that always.]],
+      a machine moves one leaf, the rest stay shut]],
 
 [[Reading that table.
 
@@ -813,7 +814,8 @@ when the room names do not.
 Then which way it faces, and then its state.
 
 The table runs by kind and then by number, so light2 comes before light10.
-In a big building one kind at a time is easier to read:
+A mall is ONE building, so /dev is the one directory the 96-entry rule
+does not hold for. In a big building one kind at a time is easier to read:
 
   root@ksp-04-11:~# dev light
   light0  office                0 0            on
@@ -1134,8 +1136,9 @@ door is a loop, and loops are Volume 3.]],
 
 		{ title = "8. The other machines in the building", pages = {
 
-[[Every computer in a building the map knows is on one length of coax with
-the others in that building, and it has an address it did not choose.
+[[Every computer on a premises the map knows -- a house, or one shop of a
+mall -- is on one length of coax with the others on it, and it has an
+address it did not choose.
 
   admin@ksp-04-11:~$ ifconfig
   eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>
@@ -1143,14 +1146,14 @@ the others in that building, and it has an address it did not choose.
   lo0: flags=8<LOOPBACK>
         inet 127.0.0.1 netmask 0xff000000
 
-Four numbers: ten, then two that come from where the building stands, then
-which computer of that building this is. Nothing sets it. The address is a
+Four numbers: ten, then two that come from where the premises is, then
+which computer of it this is. Nothing sets it. The address is a
 fact about the card the way the name is a fact about the machine, and
 there is no argument to ifconfig that changes either. The firmware
 announces it between the drive and the login, so you can read a machine's
 address without logging in at all.
 
-A computer in a base YOU built is in no building the map knows, so it has
+A computer in a base YOU built is on no premises the map knows, so it has
 no wire and says so plainly -- eth0 with flags and no address under it.
 Nothing on this chapter's list will do anything on such a machine, and
 that is not a fault to hunt.]],
@@ -1305,54 +1308,55 @@ everybody may read it and only root may change it. wtmp begins is a real
 answer on this machine, not a formality: that line is where the memory
 runs out.]],
 
-[[The building has a telephone line as well as the coax, and the number
-belongs to the LINE: every computer in the building answers on it, and one
-call at a time. The firmware announces it under the card.
+[[ONE LINE PER PREMISES: a shop, or a whole house. A house is one building and
+one line; a mall is one building and thirty shops, each with its own. Seven
+digits, announced under the card.
 
   Detecting drives ... hda 64K
   Ethernet: eth0 10.4.17.3
-  Phone line: 555-0417
+  Phone line: 555-0417 (CoffeeShop)
   Booting from hda ...
 
-Nothing sets that number, and it is written nowhere on the disk -- there is
-no /etc/phone, because a number belongs to the wall and not to the case.
-A computer in a base you built has no line at all:
+The first three digits are the exchange, and that is the TOWN's: every
+around here shares them and the next town is on another switch. The last
+four are the premises; the name in brackets is the shop. None of it is on
+the disk: there is no /etc/phone.
 
-  admin@ksp-04-11:~$ cu 555-0102
-  cu: no phone line
+A machine with no line prints none and cu says so: a base you built, or a
+save older than this firmware until it is switched on where it stands.
+
+Every computer of one premises is on that ONE line and the lowest address
+answers. Two premises can land on one number too: a PARTY LINE either way.
 
 The exchange is a building full of switches on the county's power, and when
-that goes the telephone goes with it -- everywhere, at once, for good. That
-is the real difference between the two links: the coax is two machines and
-a wire between them, and a call needs a third building that is still
-working.]],
+that goes the telephone goes with it: everywhere, at once, for good.]],
 
-[[cu dials. What answers is the modem's own voice, and then cu's:
+[[cu dials, and then nothing happens for a while. That is the ring.
 
   admin@ksp-04-11:~$ cu 555-0102
   CONNECT 2400
   Connected.
   login:
 
-From there it is rlogin's session: the far machine's files, its accounts,
-one of its four ttyp lines. Two differences. It asks for a password EVERY
-time, whatever the trust files say -- those name machines, and a call has
-no machine in it, only a number. And it is slow: 2400 baud is four lines a
-second, so a cat down a call arrives in handfuls.
+Four seconds of silence before that carrier, which is what a 2400-baud
+handshake took. A busy line answers in two. A number nobody answers costs
+fifteen: this modem's S7 register is set to 15, and S7 is how long a modem
+waits for a carrier. Escape gives up on a dial, in the same
+word. Both numbers are busy while it rings.
+
+From there it is rlogin's session, with two differences. It asks for a
+password EVERY time -- the trust files name machines, and a call has only a
+number in it. And 2400 baud is four lines a second.
 
 Over there, who and last name the number that called.
 
   kate     ttyp0    555-0417   Jun 27 13:07
 
-exit over there ends it; ~. typed alone on a line ends it from here. Either
-way the line is Disconnected. The rest are the modem's:
+exit over there ends it; ~. alone on a line ends it from here. Either way
+the line says Disconnected. Every other word a dial ends in is the modem's,
+and chapter 12 carries them.
 
-  BUSY          the line is in use, this end's or theirs
-  NO DIALTONE   no power in the county, so no exchange
-  NO CARRIER    nobody answered, or the line went away
-
-rsh and rcp do not dial: a call is not a route. A file by telephone was
-uucp's work, and uucp is not on this disk.]],
+rsh and rcp do not dial: a call is not a route.]],
 
 [[The third link is the radio, and it is the only one that outlives the
 county's power. A two-way radio in the machine's own room -- a ham set
@@ -1809,8 +1813,8 @@ The system files, and the modes they ship at: /etc/passwd is 600,
 /etc/sudoers 440 and /etc/group 644. /etc/motd holds 10 lines. A crontab
 holds 32 lines, and both it and the directory it sits in are root's.
 
-The building: 64 devices at most, at mode 660, and dev find shows one for
-6 seconds.
+The building: 256 devices at most, at mode 660, and dev find shows one
+for 6 seconds.
 
 Work: 4 jobs to a machine, cron's included, and a job that spins 5
 minutes with nothing to wait for is taken away.
@@ -1948,7 +1952,7 @@ are the ones a real one prints for the same trouble.
   rlogin: gate: Host is down
       on the wire, and switched off
   rlogin: gate: No route to host
-      no wire between here and there: another building,
+      no wire between here and there: another premises,
       or a base somebody built
   rlogin: connect: Connection refused
       no line free -- four are in -- or the chain of
@@ -1975,8 +1979,8 @@ shape and tells you at a glance which of the two you have.
       no address either
   office (10.4.17.4) -- no entry
       the name resolved and nothing of that address is on
-      the wire: a machine switched off, or one in another
-      building. No command in front of it -- what arp
+      the wire: a machine switched off, or one on another
+      premises. No command in front of it -- what arp
       prints is the word you typed, the address behind it,
       and what is missing
 

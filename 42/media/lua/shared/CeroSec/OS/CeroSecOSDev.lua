@@ -229,15 +229,28 @@ function CeroSecOS.ensureDev(state)
 	return dir
 end
 
--- How many nodes /dev may hold: a machine in the middle of a shopping mall is
--- not a machine with four hundred entries in one listing.
+-- How many nodes /dev may hold.
 --
--- 64, written here rather than taken from MAX_DIR_ENTRIES, which it used to be.
+-- 256, written here rather than taken from MAX_DIR_ENTRIES, which it used to be.
 -- That ceiling moved because /bin outgrew it, and how many COMMANDS ship is no
 -- reason to mount more of the world: what is built here is built afresh at the
 -- top of every command, so this number is a cost paid over and over and the
 -- other one is not.
-CeroSecOS.DEV_MAX = 64
+--
+-- It was 64, and 64 was a machine in the middle of a shopping mall that could not
+-- see half the mall: a computer in one store of a mall is in a BUILDING with every
+-- other store's lights, doors and windows in it, and the map has buildings with
+-- several hundred of them. A survivor who cannot see a light through `dev` cannot
+-- reach it at all, and a ceiling that hides the world is worse than a listing that
+-- takes a few screens.
+--
+-- So /dev is the one directory the 96-entry rule (CeroSecOS.MAX_DIR_ENTRIES) does
+-- not hold for, and that is not an exemption written anywhere: the rule guards the
+-- WRITE path, and the write path refuses /dev as read-only one gate earlier
+-- (CeroSecOSFS, "read-only"), while the state gate refuses any device of the world
+-- on a saved disk at all. Nothing can put an entry in /dev but the mount, so the
+-- mount's own ceiling is the only one there is -- and it is this one.
+CeroSecOS.DEV_MAX = 256
 
 function CeroSecOS.isDev(node)
 	return type(node) == "table" and node.type == "dev"

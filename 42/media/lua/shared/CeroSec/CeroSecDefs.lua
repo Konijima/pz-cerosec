@@ -519,6 +519,19 @@ CeroSec.STEP_BUDGET_PER_MACHINE = 100
 -- minute on a server.
 CeroSec.JOB_PASS_MS = 100
 
+-- How long a rebooting machine stays dark, in real milliseconds.
+--
+-- A reboot is the power going and coming back, so there is an interval where the
+-- machine is off: the sprite is the unlit one, the screen's glow is gone and
+-- there is no screen to read. Three seconds is a 1993 desktop's own answer --
+-- the case switch off and on again, long enough to see and short enough that
+-- nobody walks away from it -- and it is REAL time and not game time, because it
+-- is the machine's own clock and not the county's.
+--
+-- Counted by the scheduler's own pass, like a pending `shutdown +N`: there is no
+-- timer anywhere else on the machine, so there is none here either.
+CeroSec.REBOOT_DARK_MS = 3000
+
 -- Lines one machine may put on its screen in a second. Beyond it a job is
 -- paused until the window comes round, so `while true; do echo x; done` is a
 -- slow trickle and never a flood -- neither of the network nor of the hundred
@@ -632,14 +645,16 @@ CeroSec.BOOT_DISK_LINE = 3
 CeroSec.BOOT_ETHER = "Ethernet: " .. "eth0 "
 
 -- And the telephone line, announced under the card and on the same terms: the
--- number is a fact about the building the computer stands in, the firmware is
--- handed it, and a machine with no line prints no line at all.
+-- number is a fact about the modem and where it is standing, the firmware is
+-- handed it, and a machine with no line prints no line at all -- one in no
+-- building, and one off a save written before the line belonged to the modem
+-- rather than to the building (CeroSecOS.phoneOf).
 --
 -- The BIOS screen is the ONLY place the number is written down. There is no
 -- /etc/phone and there could not be one honestly: the number belongs to the line
--- on the wall and not to the disk in the case, so a file holding it would be a
--- file that goes on being right after the computer has been carried into another
--- building. cu is the other place to read it, and it reads the line too.
+-- the modem is plugged into and not to the disk in the case, so a file holding it
+-- would be a file that goes on being right after the computer has been carried
+-- somewhere else. cu is the other place to read it, and it reads the line too.
 CeroSec.BOOT_PHONE = "Phone line: "
 
 -- And the station's callsign, under the modem, because that is the order the
@@ -678,18 +693,21 @@ function CeroSec.bootLines(addr, tel, call)
 	end
 	-- Under the card, because that is the order the firmware finds them in: the
 	-- card is in a slot and the modem is behind it. Counted from wherever the card
-	-- left off, so a machine with a line and no address -- which nothing can be
-	-- today, the two coming off one record -- would still print it in the right
-	-- place instead of over the top of "Booting from hda".
+	-- left off, so a machine with a line and no address would still print it in the
+	-- right place instead of over the top of "Booting from hda". (The other way
+	-- round is no longer hypothetical and was when this was written: a machine
+	-- saved before the line belonged to the modem has an ADDRESS and no telephone
+	-- until the server sees which building it stands in again, so the Ethernet line
+	-- is there and this one is not.)
 	if type(tel) == "string" and tel ~= "" then
 		at = at + 1
 		table.insert(out, at, CeroSec.BOOT_PHONE .. tel)
 	end
 	-- The TNC's own banner line, counted from wherever the modem left off for the
-	-- same reason the modem was counted from the card: a machine with a callsign
-	-- and no telephone -- which is nothing today, the two coming off one record,
-	-- and is one line of arithmetic away from being possible -- still prints it in
-	-- the right place instead of over the top of "Booting from hda".
+	-- same reason the modem was counted from the card: a machine with a callsign and
+	-- no telephone is an ordinary machine now -- an older save whose record carries
+	-- no exchange has both the address the callsign is derived from and no line --
+	-- so it prints in the right place instead of over the top of "Booting from hda".
 	if type(call) == "string" and call ~= "" then
 		table.insert(out, at + 1, CeroSec.BOOT_CALL .. call)
 	end

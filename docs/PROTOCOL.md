@@ -60,6 +60,25 @@ client-side. The window talks to the server over the global object channel:
                       editbuf, editsave, editexit, histtail
     server -> client: opened, screen, closed, history
 
+`closed` carries the reason the window is shutting: `off`, `power`, `reach`, `gone`,
+`broken`, `exit` — and `reboot`, which is the only one that says the machine is
+coming back. A reboot is a power cycle and the machine is physically off for
+`CeroSec.REBOOT_DARK_MS` in the middle of it, so the window really does shut; what
+makes it different from `off` is what happens at the other end of the dark.
+
+`reopened` is that other end, and it is the one answer that is not addressed to a
+window: it ASKS for one. The server remembers which players were at the glass when
+the machine went dark, and when the machine comes back up it sends each of them who
+is still standing there a whole screen — the same fields `opened` carries — under a
+token the SERVER minted (every other token in the mod is the window's own) plus the
+local player number, because there is no window yet to route it by. The client
+builds the box around it through `CeroSecTerminal.sitDown`, which is the very call
+the end of the walk makes (`ISCeroSecUseAction:perform`): the same window class, the
+same character at the keyboard, no second walk and no second seat. A player who
+wandered off in those seconds is sent nothing and uses the computer by hand. In
+multiplayer each one is a `sendServerCommand(player, ...)` of its own, like every
+other answer.
+
 A screen is sent whole: the lines, the prompt, the mode (`prompt`, `shell` or
 `edit`), whether the answer is masked, whether the machine is in the middle of
 something (`active`), the editor's own screen, and `user` — who is logged in, as one

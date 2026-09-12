@@ -105,6 +105,17 @@ CeroSecOS.NET_PREFIX = 10
 CeroSecOS.LOOPBACK_ADDR = "127.0.0.1"
 CeroSecOS.LOOPBACK_NAME = "localhost"
 
+-- One round of the linear congruential generator every key and every number on
+-- this rung is scattered with: a multiply-add modulo 2^16, which a double holds
+-- exactly, with the multiplier 25173 and the increment 13849 -- a generator that
+-- has been in print since the eighties. One place, because a second copy of it is
+-- a second answer waiting to happen.
+local function scatter(x)
+	local h = math.fmod(x * 25173 + 13849, 65536)
+	if h < 0 then h = h + 65536 end
+	return h
+end
+
 -- Two bytes out of where the building stands, so that every computer in one
 -- building agrees about the first three numbers of its address and two
 -- buildings almost never do.
@@ -125,6 +136,36 @@ function CeroSecOS.buildingKey(bx, by)
 	bx = math.floor(bx)
 	by = math.floor(by)
 	local h = math.fmod(bx * 40503 + by * 12289, 65536)
+	if h < 0 then h = h + 65536 end
+	return math.floor(h / 256), math.fmod(h, 256)
+end
+
+-- And the same two bytes for a premises INSIDE a building, which is what a shop in
+-- a mall is: buildingKey's own arithmetic over four numbers instead of two -- the
+-- corner hashed as a building corner is, the SIZE hashed the same way, and the two
+-- added.
+--
+-- The size is in the hash and has to be. A zone's corner is very often the
+-- building's own -- the shop in the corner of the mall -- and a key made of the
+-- corner alone would be the mall's key, which is the very thing this is here to
+-- stop; and two zones do start on one tile, a shop and the mall-wide zone over it,
+-- with nothing but their outlines to tell them apart.
+--
+-- No scatter here, exactly as there is none in buildingKey: what scatters a key is
+-- the number and the address made out of it (CeroSecOS.phoneKey), and a premises
+-- key that scattered where a building key does not would be two answers to one
+-- question.
+--
+-- Deterministic and nothing else, exactly as buildingKey is: the same zone answers
+-- the same two bytes on every load, for ever. Two premises that collide are two
+-- premises with no wire between them and one telephone line between them, which is
+-- a party line and is documented as one.
+function CeroSecOS.premisesKey(zx, zy, zw, zh)
+	if type(zx) ~= "number" or type(zy) ~= "number" then return nil end
+	if type(zw) ~= "number" or type(zh) ~= "number" then return nil end
+	local corner = math.fmod(math.floor(zx) * 40503 + math.floor(zy) * 12289, 65536)
+	local size = math.fmod(math.floor(zw) * 40503 + math.floor(zh) * 12289, 65536)
+	local h = math.fmod(corner + size, 65536)
 	if h < 0 then h = h + 65536 end
 	return math.floor(h / 256), math.fmod(h, 256)
 end
@@ -178,7 +219,34 @@ function CeroSecOS.netRecord(state)
 	if b2 ~= math.floor(b2) or b2 < 0 or b2 > 255 then return nil end
 	-- 0 is the network itself and 255 is the broadcast: neither is a machine.
 	if n ~= math.floor(n) or n < 1 or n > 254 then return nil end
-	return { b1 = b1, b2 = b2, n = n, wrote = net.wrote and true or false }
+	-- And the fourth number, which is the telephone exchange and is OPTIONAL: every
+	-- machine of every save written before the line became the modem's own carries
+	-- three numbers and not four, and such a machine has no telephone at all until
+	-- the record is made again where it stands (CeroSecNet.identify). One that is
+	-- THERE has to be an exchange -- a value in the field that is not one is a
+	-- forged save and not a machine with half a record, which is the rule the three
+	-- above already run on.
+	local ex = net.ex
+	if ex ~= nil then
+		if type(ex) ~= "number" or ex ~= math.floor(ex) then return nil end
+		if ex < CeroSecOS.PHONE_EXCHANGE_MIN or ex > CeroSecOS.PHONE_EXCHANGE_MAX then
+			return nil
+		end
+	end
+	-- And what the PREMISES is called, which is optional twice over: a machine whose
+	-- premises is the building it stands in has no name to carry, and so has every
+	-- machine saved before the line belonged to the premises. A value that is there
+	-- has to be a name a screen can carry -- a string, inside one line, with no
+	-- control bytes in it -- because it is printed by the firmware and by nothing
+	-- that could sanitise it later.
+	local pz = net.pz
+	if pz ~= nil then
+		if type(pz) ~= "string" or pz == "" then return nil end
+		if #pz > CeroSecOS.COLS then return nil end
+		if CeroSecOS.hasControlBytes(pz) then return nil end
+	end
+	return { b1 = b1, b2 = b2, n = n, ex = ex, pz = pz,
+		wrote = net.wrote and true or false }
 end
 
 -- The machine's own address, or nil for a machine with no wire in it -- one in a
@@ -191,111 +259,236 @@ end
 
 -- The record, written. The server is the only caller: it is the half that knows
 -- which building a computer stands in and which machines are already on the
--- wire, and it hands over three numbers it has worked out.
-function CeroSecOS.setNetRecord(state, b1, b2, n)
+-- wire, and it hands over the numbers it has worked out.
+--
+-- ex is the telephone exchange, and it may be left out: a machine that gets a
+-- record with no exchange in it is a machine with an address and no telephone,
+-- which is what every save written before the line became the modem's own has
+-- until the server sees the building again.
+-- pz is what the premises is called, and may be left out: a machine whose premises
+-- is the building it stands in has nothing to be called.
+function CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz)
 	if type(state) ~= "table" then return nil end
 	if CeroSecOS.addressText(b1, b2, n) == nil then return nil end
-	state.net = { b1 = math.floor(b1), b2 = math.floor(b2), n = math.floor(n) }
+	local record = { b1 = math.floor(b1), b2 = math.floor(b2), n = math.floor(n) }
+	if ex ~= nil then
+		if type(ex) ~= "number" then return nil end
+		ex = math.floor(ex)
+		if ex < CeroSecOS.PHONE_EXCHANGE_MIN or ex > CeroSecOS.PHONE_EXCHANGE_MAX then
+			return nil
+		end
+		record.ex = ex
+	end
+	-- A name that will not do is DROPPED and the record is still written: the
+	-- premises is the two bytes and the name is a label, so a zone somebody called
+	-- something unprintable is a premises with no name and never a machine with no
+	-- line. Refusing the record here would take the telephone away over a word.
+	if type(pz) == "string" and pz ~= "" and #pz <= CeroSecOS.COLS
+			and not CeroSecOS.hasControlBytes(pz) then
+		record.pz = pz
+	end
+	state.net = record
 	return CeroSecOS.netRecord(state)
 end
 
 --
 -- The phone line
 --
--- A building the map knows has ONE telephone line in it, and the number belongs
--- to the LINE and not to a machine: every computer in that building answers on
--- it, one call at a time, exactly as one office shared one number and one modem
--- in 1993. A computer in a base somebody built is in no building, so it has no
--- line at all -- the same fact that leaves it with no Ethernet.
+-- ONE LINE PER PREMISES, which is the one fact everything below follows from. It
+-- was one line per BUILDING, and a building is the wrong unit: a shopping mall is
+-- ONE BuildingDef with thirty shops in it, so thirty businesses shared one number
+-- and one modem -- and only the lowest-numbered computer of the whole mall could
+-- ever be rung, the rest being unreachable by telephone for as long as they stood
+-- there. A house is a building and is one premises; a mall is a building and is
+-- thirty.
 --
--- The number is 555-NNNN. 555 is the exchange television and film have used for
--- a number that must not ring a real telephone since the Bell System set it
--- aside, and it is what a Knox County number reads as here; the four digits are
--- derived from the building and nobody can type a new one, exactly as nobody can
--- type an address.
+-- WHAT A PREMISES IS, and the map really does say. Map designers tag the shops
+-- inside a mall with named zones of type ZombiesType -- "CoffeeShop", 17 by 11, at
+-- 12858,1329 -- so a shop has an outline in the map data even though no RoomDef
+-- says whose shop it is (a RoomDef's name is a LOOT TYPE, "clothsstore", and not a
+-- tenancy). The rule is therefore:
 --
--- WHERE THE FOUR DIGITS COME FROM. The building's own key -- the two bytes b1
--- and b2 that the address's middle is made of, which are a hash of the corner of
--- its BuildingDef (CeroSecOS.buildingKey) -- put through one more step of the
--- same arithmetic: a multiply-add modulo 2^16, which is what a double holds
--- exactly. It is a second hash of the key rather than a second hash of the
--- corner for one reason that matters: the number has to be answerable for a
--- machine whose chunk nobody has loaded, and what such a machine has on its disk
--- is its RECORD -- b1, b2, n -- and not the coordinates they came from. So there
--- is no new field in the save, no migration, and a machine off an older save
--- answers its own number the first time anybody asks.
+--   the premises is the named ZombiesType zone containing the machine's square
+--   whose area is strictly SMALLER than the building's own footprint; the
+--   smallest such zone when several qualify; and otherwise the building.
 --
--- The extra step matters too: without it two buildings a street apart, whose
--- keys are near each other, would have consecutive telephone numbers, and a
--- county where 555-0416 is next door to 555-0417 is a county whose numbers look
--- invented. The multiplier scatters them.
+-- The area test is what keeps a house one line: the named zones a house sits in
+-- are the town-sized ones -- a suburb, a district -- and a zone bigger than the
+-- building it covers is not a tenancy inside it. A zone exactly the building's
+-- size is the building by another name and loses on the same test. So on the map
+-- that ships, almost every machine is where it was and only a mall changes.
 --
--- COLLISIONS. Ten thousand numbers and 65536 keys, so two buildings with
--- different keys can share a number -- about one pair in ten thousand -- and two
--- buildings that collide in the KEY share it always. Neither is a fault to fix
--- here: two buildings with one number are two buildings on one line as far as
--- this machine is concerned, and there is nothing on this rung that routes. A
--- call is placed to a number and the machine that answers is the machine that
--- answers.
+-- The premises decides BOTH links: the telephone number and the Ethernet segment
+-- come off the same two bytes, so two shops in a mall are two lines and two
+-- lengths of coax -- which is what two businesses in one building had.
+--
+-- The engine does not do any of that looking: which zones lie on a square is a
+-- question about the world, so it is the server's (CeroSecNet.premisesOf) and what
+-- arrives here is the two bytes it decided on. What IS here is the arithmetic.
+--
+-- The number is NNN-NNNN, seven digits, which is what a call inside one area code
+-- was dialled as in 1993.
+--
+-- THE EXCHANGE is the first three, and it is a fact about the TOWN. A central
+-- office served a place -- one switch in one building, and every subscriber wired
+-- back to it -- so the numbers of one town share their first three digits and a
+-- town down the road does not. Here the "town" is the map region the premises
+-- stands in: the PHONE_REGION-tile square its corner falls in, hashed. A region
+-- and not the game's own 300-tile cell, deliberately -- a cell is smaller than
+-- Rosewood and every town would be three exchanges -- and not a real-world
+-- office-code table either, because Knox County is not a real place. 200 to 999:
+-- a central-office code could not begin with 0 or 1 in the North American plan of
+-- 1993, those being the operator and the long-distance prefix.
+--
+-- THE FOUR DIGITS are the subscriber, and they come off the premises key -- the two
+-- bytes b1 and b2 the address's middle is made of -- and off nothing else. Which is
+-- the whole reason they are derived from the RECORD and not from the coordinates: a
+-- number has to be answerable for a machine whose chunk nobody has loaded, and what
+-- such a machine has on its disk is its record.
+--
+-- The exchange is the one thing that cannot be: a region is a coordinate, and the
+-- record does not carry one. So the record carries the EXCHANGE instead -- one
+-- field, written when the machine learns where it is standing, at the one moment
+-- its chunk is certainly loaded. A machine saved before this carries the building
+-- bytes and no exchange, and has no telephone at all until the server sees its
+-- square again, which is the next time it is switched on or a window is opened on
+-- it. The BIOS line is empty until then, and the manual says so.
+--
+-- THE SCATTER. Both halves go through the same generator: a multiply-add modulo
+-- 2^16 with the multiplier 25173 and the increment 13849, which is a linear
+-- congruential generator that has been in print since the eighties and is exact in
+-- a double. It matters: without it two premises a street apart, whose keys are near
+-- each other, would have consecutive telephone numbers, and a county where
+-- 555-0416 is next door to 555-0417 is a county whose numbers look invented. The
+-- 16-bit result is SCALED onto the range rather than taken modulo it: a modulo
+-- would make everything under 5536 a seventh likelier than everything above it,
+-- and the multiplication is exact (65535 * 10000 is well under 2^53).
+--
+-- COLLISIONS, and they are a PARTY LINE. Ten thousand subscriber numbers to a
+-- region, so two premises of one region can land on one number -- and when they do,
+-- the lowest n answers, every time, exactly as it does for the several machines of
+-- ONE premises. That is not a fault to fix here: two subscribers on one line is a
+-- party line, which is what a rural exchange sold in 1993, and there is nothing on
+-- this rung that routes. A call is placed to a number and the machine that answers
+-- is the machine that answers. The manual says so in those words.
 --
 
--- The exchange, and how long a number is.
-CeroSecOS.PHONE_EXCHANGE = "555"
+-- How long a number is, and what an exchange may be.
 CeroSecOS.PHONE_DIGITS = 4
 CeroSecOS.PHONE_NUMBERS = 10000
+CeroSecOS.PHONE_EXCHANGE_MIN = 200
+CeroSecOS.PHONE_EXCHANGE_MAX = 999
+
+-- How big a region one central office serves, in tiles.
+CeroSecOS.PHONE_REGION = 1024
 
 -- The speed of the line, which is what the modem reports when it has one and
 -- what the trickle is derived from (CeroSec.PHONE_LINES_PER_S).
 CeroSecOS.PHONE_BAUD = 2400
 
--- The building key -> the four digits, as a number 0..9999. nil for anything
--- that is not a key.
+-- Where the building stands -> which central office it is wired to, as the three
+-- digits themselves. nil for anything that is not a pair of map coordinates.
 --
--- The key is b1 * 256 + b2, which is the very 16-bit number buildingKey worked
--- out; 25173 and 13849 are the multiplier and the increment of a linear
--- congruential generator modulo 2^16 that has been in print since the eighties,
--- so adjacent keys land nowhere near each other. The 16-bit result is then
--- scaled onto the ten thousand numbers rather than taken modulo them: a modulo
--- would make everything under 5536 a seventh likelier than everything above it,
--- and the multiplication is exact in a double (65535 * 10000 is well under 2^53).
+-- Asked of the CORNER of the BuildingDef, which is the very coordinate the address
+-- is hashed out of, so that every computer of one building agrees about its
+-- exchange even when the building straddles two regions.
+function CeroSecOS.phoneExchange(bx, by)
+	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
+	local cx = math.floor(math.floor(bx) / CeroSecOS.PHONE_REGION)
+	local cy = math.floor(math.floor(by) / CeroSecOS.PHONE_REGION)
+	-- Folded into one number the way a building key is -- 256 and not 65536, because
+	-- the generator is modulo 2^16 and a multiplier of 65536 would leave the whole
+	-- of cx out of the answer -- and scattered twice for the reason the subscriber
+	-- digits are: two towns side by side must not be 418 and 419. 256 is room for a
+	-- map 262144 tiles across, which is eighteen times the one that ships.
+	local h = scatter(scatter(math.fmod(cx, 256) * 256 + math.fmod(cy, 256)))
+	local span = CeroSecOS.PHONE_EXCHANGE_MAX - CeroSecOS.PHONE_EXCHANGE_MIN + 1
+	return CeroSecOS.PHONE_EXCHANGE_MIN + math.floor(h * span / 65536)
+end
+
+-- The premises key -> the four subscriber digits, as a number 0..9999. nil for
+-- anything that is not a key.
+--
+-- The key is b1 * 256 + b2, which is the very 16-bit number the premises key was
+-- worked out as; one round of the scatter above puts adjacent keys nowhere near
+-- each other.
 function CeroSecOS.phoneKey(b1, b2)
 	if type(b1) ~= "number" or type(b2) ~= "number" then return nil end
 	b1 = math.floor(b1)
 	b2 = math.floor(b2)
 	if b1 < 0 or b1 > 255 or b2 < 0 or b2 > 255 then return nil end
-	local h = math.fmod((b1 * 256 + b2) * 25173 + 13849, 65536)
-	if h < 0 then h = h + 65536 end
+	local h = scatter(b1 * 256 + b2)
 	return math.floor(h * CeroSecOS.PHONE_NUMBERS / 65536)
 end
 
 -- The number as it is written, and the one place it is written: the BIOS line,
 -- cu, who and last all read it out of here.
-function CeroSecOS.phoneText(n)
-	if type(n) ~= "number" then return nil end
+function CeroSecOS.phoneText(ex, n)
+	if type(ex) ~= "number" or type(n) ~= "number" then return nil end
+	ex = math.floor(ex)
 	n = math.floor(n)
+	if ex < CeroSecOS.PHONE_EXCHANGE_MIN or ex > CeroSecOS.PHONE_EXCHANGE_MAX then
+		return nil
+	end
 	if n < 0 or n >= CeroSecOS.PHONE_NUMBERS then return nil end
 	local digits = tostring(n)
 	while #digits < CeroSecOS.PHONE_DIGITS do digits = "0" .. digits end
-	return CeroSecOS.PHONE_EXCHANGE .. "-" .. digits
+	return tostring(ex) .. "-" .. digits
 end
 
--- This machine's line, or nil for a machine that has none. The same record the
--- address is read out of, so the two answers can never disagree about whether
--- the computer is in a building.
+-- This machine's line, or nil for a machine that has none: one in no building at
+-- all, and one whose record was written before the line belonged to the modem. The
+-- same record the address is read out of, so the two answers can never disagree
+-- about whether the computer is in a building.
 function CeroSecOS.phoneOf(state)
 	local net = CeroSecOS.netRecord(state)
-	if net == nil then return nil end
-	return CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2))
+	if net == nil or net.ex == nil then return nil end
+	return CeroSecOS.phoneText(net.ex, CeroSecOS.phoneKey(net.b1, net.b2))
 end
 
--- Is that a number somebody could dial? The exchange, a hyphen and four digits
--- and nothing else: there is no long distance in Knox County and no operator to
--- ask, so a word that is not this shape is not a telephone number.
+-- What the PREMISES is called, when the map named it and the name is one a screen
+-- can carry: the zone a shop in a mall is tagged with. nil for a machine whose
+-- premises is the building it stands in, which is every machine in a house.
+--
+-- The NAME and nothing else -- which premises a machine is on is the server's
+-- question (CeroSecNet.premisesOf) and was answered before this record was written.
+--
+-- It is a label and nothing else -- no link reads it, nothing is keyed by it, and
+-- two shops with one name are still two premises because the KEY is the outline and
+-- not the word. Announced by the firmware beside the number, because a survivor in
+-- a mall with thirty lines in it needs to know which one he is sitting at.
+function CeroSecOS.premisesName(state)
+	local net = CeroSecOS.netRecord(state)
+	if net == nil then return nil end
+	return net.pz
+end
+
+-- The BIOS's telephone line, which is the number and the premises behind it when
+-- there is one. One place, so the firmware cannot drift from what `cu` reads.
+--
+-- The name is dropped rather than truncated when the whole line will not fit the
+-- screen: a BIOS line cut off in the middle is worse than one that says only the
+-- number, and the number is the half a survivor has to write down.
+function CeroSecOS.phoneLine(state)
+	local tel = CeroSecOS.phoneOf(state)
+	if tel == nil then return nil end
+	local name = CeroSecOS.premisesName(state)
+	if name == nil then return tel end
+	local long = tel .. " (" .. name .. ")"
+	if #CeroSec.BOOT_PHONE + #long > CeroSecOS.COLS then return tel end
+	return long
+end
+
+-- Is that a number somebody could dial? Three digits, a hyphen and four digits and
+-- nothing else -- and the first of them is 2 to 9, because a central-office code
+-- could not begin with 0 or 1. There is no long distance in Knox County and no
+-- operator to ask, so a word that is not this shape is not a telephone number.
 function CeroSecOS.isPhoneNumber(text)
 	if type(text) ~= "string" then return false end
-	local digits = string.match(text,
-		"^" .. CeroSecOS.PHONE_EXCHANGE .. "%-(%d%d%d%d)$")
-	return digits ~= nil
+	local ex, digits = string.match(text, "^([2-9]%d%d)%-(%d%d%d%d)$")
+	if ex == nil or digits == nil then return false end
+	local n = tonumber(ex)
+	return n >= CeroSecOS.PHONE_EXCHANGE_MIN and n <= CeroSecOS.PHONE_EXCHANGE_MAX
 end
 
 --
@@ -1588,6 +1781,39 @@ CeroSecOS.MODEM = {
 	noCarrier = "NO CARRIER",
 }
 
+--
+-- HOW LONG A DIAL TAKES, which is the other half of what a modem was: the result
+-- code is the END of something a survivor sat through. Wall-clock seconds, like
+-- every other delay on either link (CeroSec.PHONE_LINES_PER_S is a wall-clock
+-- rate, and rcp's wait is wall-clock milliseconds) -- a call is a thing happening
+-- in a room and not a thing happening in game hours.
+--
+--   4 seconds to CONNECT 2400. Off-hook, the tones, the far modem's answer tone
+--     and the two of them agreeing on a speed: a 2400-baud handshake really did
+--     take about that, and it is the one delay a player is glad to hear.
+--   2 seconds to BUSY. The exchange returns busy tone as soon as it has looked the
+--     number up, and the modem needs two of them to know a tone from an answer.
+--   15 seconds to NO CARRIER, and that is the modem's S7 REGISTER: S7 is how long
+--     a Hayes-compatible modem waits for a carrier after dialling before it gives
+--     up and hangs up. The factory default was 30 or 50 depending on the model;
+--     this machine's modem has S7=15, which is a SETTING and not a rule, and the
+--     manual says so in those words so that it is a fact about this modem and not
+--     a number somebody here invented.
+CeroSecOS.MODEM_S7 = 15
+CeroSecOS.RING_ANSWER_MS = 4000
+CeroSecOS.RING_BUSY_MS = 2000
+CeroSecOS.RING_TIMEOUT_MS = CeroSecOS.MODEM_S7 * 1000
+
+-- How long the modem holds the line for an outcome. 0 for the two that are not a
+-- ring at all: NO DIALTONE is what the receiver says the instant it is lifted, and
+-- a machine with no line never lifted one.
+function CeroSecOS.ringMs(word)
+	if word == nil then return CeroSecOS.RING_ANSWER_MS end
+	if word == CeroSecOS.MODEM.busy then return CeroSecOS.RING_BUSY_MS end
+	if word == CeroSecOS.MODEM.noCarrier then return CeroSecOS.RING_TIMEOUT_MS end
+	return 0
+end
+
 -- And what cu(1) itself says, which is BSD's own two lines: one when the
 -- connection is made and one when it is over.
 CeroSecOS.CU_CONNECTED = "Connected."
@@ -1748,10 +1974,10 @@ end
 commands.cu = function(state, session, args, env)
 	if #args ~= 2 then return usage("cu") end
 	if not CeroSecOS.isPhoneNumber(args[2]) then return usage("cu") end
-	-- No telephone in the building, or no building: the machine says so itself
-	-- and never lifts the receiver. It is asked before the hop ceiling because it
-	-- is the plainer fact of the two.
-	if CeroSecOS.phoneOf(state) == nil then
+	-- No telephone at all: the machine says so itself and never lifts the receiver.
+	-- It is asked before the hop ceiling because it is the plainer fact of the two.
+	local mine = CeroSecOS.phoneOf(state)
+	if mine == nil then
 		return false, { CeroSecOS.CU_NO_LINE }
 	end
 	-- The same ceiling rlogin pays, and for the same reason: every hop is a shell
@@ -1761,8 +1987,51 @@ commands.cu = function(state, session, args, env)
 	if hopsOf(session) >= CeroSecOS.HOP_MAX then
 		return false, { CeroSecOS.MODEM.busy }
 	end
-	return true, { }, "cu", { tel = args[2], user = CeroSecOS.userOf(session),
+	local data = { tel = args[2], user = CeroSecOS.userOf(session),
 		from = CeroSecOS.userOf(session), hops = hopsOf(session) + 1 }
+
+	-- THE RING. What a dial really is: the modem goes off-hook, dials, and then
+	-- there is nothing on the screen at all until the far end answers or the modem
+	-- gives up. Which of the three it will be is the WORLD's to say, so it is asked
+	-- of the link layer now -- and then the machine waits the time that outcome
+	-- takes before it prints a word or opens a session (CeroSecOS.ringMs).
+	--
+	-- A machine with no link layer under it cannot be asked, and dials straight
+	-- through: there is no world to ring in, which is what a bench is.
+	local link = linkOf(env)
+	if link == nil or type(link.phone) ~= "function" then
+		return true, { }, "cu", data
+	end
+	local word = link.phone(args[2])
+	local ms = CeroSecOS.ringMs(word)
+	-- Nothing to wait for: no dial tone is what the receiver tells you the instant
+	-- it is lifted, and a machine with no line never lifted one.
+	if ms <= 0 then
+		if word == nil then return true, { }, "cu", data end
+		return false, { word }
+	end
+	-- The line is HELD for the length of the ring, at both ends, and the record of
+	-- it is the waiting job itself (CeroSecNet.lineBusy reads it off there). `dial`
+	-- is what makes the wait a dial rather than a pause: it is the name the refusal
+	-- wears if there is no terminal to hand a session to, and it is checked before
+	-- the wait and not after it.
+	return true, { }, "sleep", { ms = ms, dial = "cu",
+		ring = { tel = mine, to = args[2], abort = CeroSecOS.MODEM.noCarrier },
+		cont = { cmd = "cu", word = word, data = data } }
+end
+
+-- The far end has answered, or has not. Whichever it was, it was decided before
+-- the ring began and the ring is what the survivor paid for it: a call that went
+-- through opens the session here, and one that did not prints the modem's word.
+--
+-- Asked of the world AGAIN at the door (CeroSecNet.dialPhone), and deliberately:
+-- four seconds is time for the far machine to be switched off, and what a caller
+-- gets then is NO CARRIER rather than a session on a computer that has gone.
+CeroSecOS.continuations.cu = function(state, session, cont, line, env)
+	if type(cont) ~= "table" then return false, { CeroSecOS.MODEM.noCarrier } end
+	if cont.word ~= nil then return false, { cont.word } end
+	if type(cont.data) ~= "table" then return false, { CeroSecOS.MODEM.noCarrier } end
+	return true, { }, "cu", cont.data
 end
 
 --

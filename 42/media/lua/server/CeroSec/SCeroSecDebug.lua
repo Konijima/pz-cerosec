@@ -129,6 +129,78 @@ function CeroSecDebug.powerOf(luaObject)
 	return luaObject:hasPower() and true or false
 end
 
+-- Has this machine ever been anything but a sprite the streamer walked past?
+--
+-- The server holds a machine for EVERY computer sprite any chunk has ever brought
+-- in: the engine hands each object of each loaded square to isValidIsoObject and
+-- makes a global object for the ones that answer yes
+-- (SGlobalObjectSystem:loadIsoObject, media/lua/server/Map/SGlobalObjectSystem.lua:133-146).
+-- So a save an hour old holds every screen in every office the survivor has walked
+-- through -- forty-four of them, dark, with nothing in any column but their
+-- position -- and the handful the mod is actually doing something with are
+-- somewhere in the middle of that list.
+--
+-- The ones worth showing by default are the ones with something ON them: switched
+-- on, or carrying a disk of their own. self.os stays nil until a machine is first
+-- used, which is the whole point of it being nil (SCeroSecObject:initNew), so it is
+-- exactly the right question and costs no disk read at all.
+function CeroSecDebug.isUsed(luaObject)
+	if luaObject.on then return true end
+	return type(luaObject.os) == "table"
+end
+
+--
+-- What the selected machine can be asked to do
+--
+-- The window greys a button with these and prints the reason under the list, and
+-- neither answer is its own. Both are decided HERE, by the same readings the act
+-- itself goes through -- SCeroSecObject:turnOn refuses on hasPower, and hasPower is
+-- asked of a SQUARE -- so a button greyed in the window is a button whose act the
+-- server would refuse, and the day the rule moves the window moves with it.
+--
+-- This is the hole Mathieu fell into: "Turn on" was enabled on a machine whose
+-- chunk was away, the press went out on the wire, turnOn refused for want of a
+-- square to ask about the wire, the boolean was dropped, and nothing at all
+-- happened on the glass.
+--
+-- nil for no refusal, which is what "it can be turned on" is.
+function CeroSecDebug.turnOnRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if luaObject.on then return "it is already on" end
+	-- The chunk before the wire, because the wire is asked of a square and a
+	-- machine nobody has streamed in has none: hasPower answers false for want of
+	-- anybody to ask, and that is not the same sentence as "the room has no power"
+	-- (the note on SCeroSecObject:checkPower, and the sweep that once switched off
+	-- every computer behind a walking survivor).
+	if not luaObject:isLoaded() then
+		return "its chunk is away, so there is nobody to ask about the wire" ..
+			" -- teleport to it first"
+	end
+	if not luaObject:hasPower() then return "there is no wire at its square" end
+	return nil
+end
+
+-- Turning OFF asks nothing of the world: the power is a fact the server holds, and
+-- a machine on the far side of the map with its chunk away goes off when it is told
+-- to (SCeroSecObject:turnOff, which checks nothing but self.on).
+function CeroSecDebug.turnOffRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if not luaObject.on then return "it is already off" end
+	return nil
+end
+
+-- The fields every snapshot carries about the SELECTED machine, whatever tab was
+-- asked for -- because the buttons under the list are the same six on every tab.
+function CeroSecDebug.selection(snap, luaObject)
+	local why = CeroSecDebug.turnOnRefusal(luaObject)
+	snap.canTurnOn = why == nil
+	snap.reason = why
+	snap.canTurnOff = CeroSecDebug.turnOffRefusal(luaObject) == nil
+	snap.on = luaObject ~= nil and luaObject.on and true or false
+	snap.loaded = luaObject ~= nil and luaObject:isLoaded() and true or false
+	return snap
+end
+
 --
 -- 1. Machines
 --
@@ -144,7 +216,7 @@ function CeroSecDebug.machines(system)
 		if luaObject ~= nil then
 			local state = luaObject.os
 			local live = CeroSecDebug.jobCount(luaObject)
-			rows[#rows + 1] = row({
+			local made = row({
 				pos(luaObject.x, luaObject.y, luaObject.z),
 				luaObject.facing,
 				luaObject.on and "on" or "off",
@@ -157,6 +229,11 @@ function CeroSecDebug.machines(system)
 				live,
 				CeroSecDebug.watcherCount(luaObject),
 			}, luaObject.x, luaObject.y, luaObject.z)
+			-- What the window's "used only" filter reads. On the ROW and not in the
+			-- info block, because it is a fact about that machine and the filter is
+			-- applied to one row at a time.
+			made.used = CeroSecDebug.isUsed(luaObject)
+			rows[#rows + 1] = made
 		end
 	end
 	return {
@@ -246,6 +323,10 @@ end
 --     public int getX();  getY();  getX2();  getY2();  getArea();
 --     -- the corner and the far corner of the footprint, which is where the
 --     -- building IS on the map and does not move (see CeroSecNet.buildingOf).
+--     -- x2 is EXCLUSIVE: getW() is `getfield x2; getfield x; isub` with no
+--     -- iconst_1, so the width is x2 - x and not x2 - x + 1. getArea() is not
+--     -- the box at all -- it walks `rooms` and sums RoomDef.getArea() -- which
+--     -- is why the size printed here is derived and the area is asked for.
 --   zombie.iso.areas.IsoRoom
 --     public java.lang.String getName();
 --     public zombie.iso.RoomDef getRoomDef();
@@ -290,7 +371,7 @@ function CeroSecDebug.premises(luaObject)
 		local x1, y1, x2, y2 = def:getX(), def:getY(), def:getX2(), def:getY2()
 		out[#out + 1] = "building: " .. cell(x1) .. "," .. cell(y1) ..
 			" to " .. cell(x2) .. "," .. cell(y2) ..
-			"  " .. cell((x2 - x1) + 1) .. "x" .. cell((y2 - y1) + 1) ..
+			"  " .. cell(x2 - x1) .. "x" .. cell(y2 - y1) ..
 			"  area " .. cell(def:getArea()) ..
 			"  rooms " .. cell(def:getRoomsNumber())
 	end
@@ -784,21 +865,27 @@ end
 -- The snapshot for one tab, with the selected machine where a tab needs one.
 -- nil for a tab nobody asked for, which is what an unknown word from a client
 -- gets.
+--
+-- Every snapshot leaves here carrying what the selected machine can be asked to do
+-- (CeroSecDebug.selection), whichever tab it is for: the buttons under the list are
+-- the same on every tab, so the answer that greys them has to be on every answer.
 function CeroSecDebug.snapshotOf(system, tab, luaObject)
+	local snap = nil
 	if tab == "machines" then
-		local snap = CeroSecDebug.machines(system)
+		snap = CeroSecDebug.machines(system)
 		local detail = CeroSecDebug.machineDetail(system, luaObject)
 		for i = 1, #detail do snap.info[#snap.info + 1] = detail[i] end
-		return snap
-	end
-	if tab == "files" then return CeroSecDebug.files(system, luaObject) end
-	if tab == "devices" then return CeroSecDebug.devices(system, luaObject) end
-	if tab == "network" then return CeroSecDebug.network(system) end
-	if tab == "scheduler" then
-		local snap = CeroSecDebug.scheduler(system)
+	elseif tab == "files" then
+		snap = CeroSecDebug.files(system, luaObject)
+	elseif tab == "devices" then
+		snap = CeroSecDebug.devices(system, luaObject)
+	elseif tab == "network" then
+		snap = CeroSecDebug.network(system)
+	elseif tab == "scheduler" then
+		snap = CeroSecDebug.scheduler(system)
 		local cron = CeroSecDebug.cron(system, luaObject)
 		for i = 1, #cron do snap.info[#snap.info + 1] = cron[i] end
-		return snap
 	end
-	return nil
+	if snap == nil then return nil end
+	return CeroSecDebug.selection(snap, luaObject)
 end

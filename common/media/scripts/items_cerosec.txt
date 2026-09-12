@@ -219,4 +219,73 @@ module CeroSec
         Icon = CeroSecDoorOperator,
         WorldStaticModel = ScrapMetal,
     }
+
+    /* The book the four recipes come out of.
+
+       This is the one item in the mod that IS base:literature, and it is the
+       opposite of the decision the manual volumes took at the top of this file.
+       They are base:normal precisely so that vanilla adds no Read of its own,
+       because they are read by the player. This one is read by the CHARACTER:
+       vanilla's Read is the whole mechanism, and every line of it is the
+       engine's.
+
+       - `LearnedRecipes` is the B42 spelling. There is no `TeachedRecipes` left
+         anywhere in media/scripts -- not one line -- and the key the game reads
+         is this one: literature.txt:5307-5320 (Base.ElectronicsMag1, which
+         teaches the remote controller) and :5781-5786 (Base.MechanicMag1).
+
+       - Reading it teaches, and no Lua of ours is involved at any point.
+         IsoGameCharacter.ReadLiterature(Literature) walks
+         Literature.getLearnedRecipes(), skips what getKnownRecipes() already
+         contains and calls learnRecipe(String) on the rest -- javap -c
+         zombie.characters.IsoGameCharacter, the ReadLiterature body at
+         offsets 24-81. The Lua side only offers the option
+         (ISInventoryPaneContextMenu.lua:1081 spots an item with
+         getLearnedRecipes(), :1107 adds Read) and runs the timed action
+         (ISReadABook, whose perform() at :194 does not learn anything: it
+         closes the book).
+
+       - Every other key on it is Base.ElectronicsMag1's, verbatim, because a
+         magazine that weighs or files itself differently from the five the game
+         already prints is a magazine a player can tell is a mod's:
+         DisplayCategory = RecipeResource (IGUI_ItemCat_RecipeResource is a key
+         the game ships, EN/IG_UI.json:284), Weight = 0.5, BoredomChange -20 and
+         StressChange -15, Tags = base:magazine.
+
+       - StaticModel = Magazine and WorldStaticModel = MagazineGround are
+         Base.SmithingMag1's own two (literature.txt:12-13) and both are
+         declared in vanilla: models_items.txt:281 and :4493. The five
+         ElectronicsMag items each name a per-issue ground model of their own
+         (MagazineElec1Ground and its four brothers) and this book is not one of
+         their issues, so it takes the generic pair rather than borrowing an
+         issue's cover.
+
+       - OnCreate is vanilla's own and it does exactly one thing: javap -c
+         zombie.scripting.logic.ItemCodeOnCreate.onCreateRecipeMagazine is four
+         instructions long and they set modData.literatureTitle to the item's
+         full type. That is what `Re-read` rather than `Read` is built on
+         (ISReadABook:perform :194, isLiteratureRead) -- it does NOT rename the
+         item, so the DisplayName below survives it.
+
+       DisplayName is the fallback; ItemName.json is what a player reads, and
+       Tooltip_item_CeroSecWiringGuide is in Tooltip.json beside it, the way
+       Base.MechanicMag1 carries Tooltip_item_MechanicMag1
+       (literature.txt:5781). */
+
+    item WiringGuide
+    {
+        DisplayName = CeroSec Field Wiring Guide,
+        DisplayCategory = RecipeResource,
+        ItemType = base:literature,
+        Weight = 0.5,
+        Icon = CeroSecWiringGuide,
+        BoredomChange = -20,
+        StressChange = -15,
+        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator,
+        Tooltip = Tooltip_item_CeroSecWiringGuide,
+        StaticModel = Magazine,
+        WorldStaticModel = MagazineGround,
+        Tags = base:magazine,
+        OnCreate = ItemCodeOnCreate.onCreateRecipeMagazine,
+    }
 }

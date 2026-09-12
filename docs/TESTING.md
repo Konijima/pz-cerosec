@@ -73,7 +73,13 @@ The suites, in the order they run:
   vanilla's own debug call, the terminal only where the chunk is in), the Log
   tab's three filters, the two-second clock, and the one that matters: closing
   takes the tick handler OFF the event, counted on the event itself rather than
-  taken on the window's word.
+  taken on the window's word. And the rework of 2026-09-12: the bands of the
+  layout in PIXELS before and after a resize (no header row on the tab strip, no
+  buttons over the list), the measured columns (none overlapping, every cell inside
+  its own, a cell too long cut with a `~` instead of drawn over its neighbour), the
+  used-only filter with its `showing N of M`, a cursor that follows its machine
+  through a reordered county, and every button greyed with the reason under the list
+  — a refusal from the server included, which is the one that used to be swallowed.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.

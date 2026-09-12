@@ -116,7 +116,7 @@ Commands:
 | `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
 | `shutdown -c` | call a pending one off |
 | `halt` | `shutdown -h now` under its older name (root only) |
-| `reboot` / `restart` | switch it off and straight back on (root only) |
+| `reboot` / `restart` | switch it off, wait three seconds, and switch it back on (root only) |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
@@ -232,10 +232,21 @@ real one does, and `>>` adds to what is there.
 
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
-gone, and every terminal open on it closes. `reboot` turns it off and straight back
-on, and the windows stay: everybody standing there watches the BIOS count the
-memory again and lands back at `login:`. What is on the disk survives both — this
-is a power cycle, not a repair.
+gone, and every terminal open on it closes.
+
+`reboot` is a power CYCLE and looks like one. The machine goes off the same way —
+the tile goes dark, the glow on the wall goes with it, and every terminal open on it
+closes — and about three seconds later it comes back on by itself: the BIOS counts
+the memory again and lands at `login:`. If you are still standing at the keyboard
+when it comes up, your terminal opens again by itself, in the same place, with no
+walk back to the machine; if you wandered off in those three seconds it comes up
+without you and you use it by hand like any other lit screen. Two survivors at one
+machine both get their window back.
+
+A machine whose room lost its power while it was dark stays dark, exactly as a real
+one does after an outage: it does not come back by itself, and somebody switches it
+on at the case. What is on the disk survives all of it — a reboot is a power cycle,
+not a repair.
 
 `shutdown` also takes a time. `-h` halts, `-r` reboots, neither halts; `now` and no
 time at all are the same thing. `+N` is N minutes away, and the machine broadcasts
@@ -446,13 +457,27 @@ which kind it is, so a contact taken off and put back a week later is the same
 shape is born at — because a door that has just grown an operator must not be one
 nobody may write to.
 
-**Where they come from.** Built at a workbench with Electricity at the same level
-that fits them (an electrician learns these by being an electrician, so there is
-nothing to read), out of electronics scrap, wire, screws, sheet metal and — for
-the operator — a box of engine parts. Found in an electrician's van, on the
-shelves of an electronics shop, in a warehouse crate, a tool shop, a garage and a
-crate of tools: a contact is the common one and an operator is eight times rarer,
-in every list.
+**Where they come from.** Found ready-made in an electrician's van, on the shelves
+of an electronics shop, in a warehouse crate, a tool shop, a garage and a crate of
+tools: a contact is the common one and an operator is eight times rarer, in every
+list.
+
+Or **built**, once you have read the book. The four recipes are not something an
+electrician works out at the bench: they are printed in the **CeroSec Field
+Wiring Guide** (`CeroSec.WiringGuide`), a trade magazine with the diagrams and the
+parts lists for all four in it. It turns up where the game's own electronics
+magazines turn up, and at the same rates — likeliest on an **electronics shop's
+magazine rack**, then a bookshop, a tool shop and an electrician's van, then a
+mixed rack, a post office's mail, a warehouse crate of magazines and a library.
+Right-click it, **Read**, and the four appear in the **Electrical** tab.
+
+After that the *skill* still gates the craft, exactly as it gates the fitting:
+Electricity 1 for a contact or a relay, 2 for a strike, 3 for an operator, out of
+electronics scrap, wire, screws, sheet metal and — for the operator — a box of
+engine parts. A very experienced electrician does eventually work them out
+unaided (Electricity 7, 7, 8 and 9), which is what the game does with every
+magazine recipe it ships: the magazine is the way you get there early, not the
+only way.
 
 **With the option off**, none of this exists: every door, window, lock and light
 of the building is in `/dev` the way it was before the modules, the right-click
@@ -499,15 +524,23 @@ script polls a sensor instead of reading it once.
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
 
-## The other computers in the building
+## The other computers on the premises
 
-Every computer in a **map building** is on one length of coax with the others,
+Every computer on a **premises** is on one length of coax with the others,
 and it has an address it did not choose: `10.<b1>.<b2>.<n>`, where the first two
-bytes come from where the building stands and the last is which computer of it
-this is. The BIOS announces it between the drive and the login, `ifconfig`
+bytes come from where the premises is and the last is which computer of it
+this is.
+
+**A premises is not a building.** A house is one building and one premises; a
+shopping mall is one building and thirty shops, and each shop is its own -- its own
+wire and its own telephone number. What tells them apart is the map's own zones: a
+named zone smaller than the building it sits in is a shop, and the zones a house
+sits in are suburbs and districts, all bigger than the house. So on the map that
+ships, almost nothing changes -- and a mall stops being one telephone for thirty
+businesses. The BIOS announces it between the drive and the login, `ifconfig`
 prints it any time, and nothing sets it -- the address is a fact about the card
 the way the hostname is a fact about the machine. A computer in a base **you**
-built is in no building the map knows about, so it has no wire at all and says
+built is on no premises the map knows about, so it has no wire at all and says
 so: `eth0: flags=2<BROADCAST>` with no address under it.
 
 Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
@@ -525,7 +558,7 @@ server on this rung, so the two halves of the wire do not meet on their own:
 `ping` and `rlogin` want a name `/etc/hosts` carries, and until there was an
 `arp` nothing on the disk joined the two -- `ruptime` showed `office` and
 `ping office` said `unknown host`. `arp -a` is the cache: every other machine of
-the building that is switched on, in `arp(8)`'s own shape, with a `?` for an
+the premises that is switched on, in `arp(8)`'s own shape, with a `?` for an
 address no line of `/etc/hosts` names yet.
 
 ```
@@ -537,13 +570,13 @@ root@ksp-04-11:~# echo "10.4.17.4 office" >> /etc/hosts
 
 `arp <host>` is one entry, by name or by address, and
 `<host> (<addr>) -- no entry` -- arp's own line, unsigned -- for a machine it
-resolved and has no card for: switched off, or in another building. A name
+resolved and has no card for: switched off, or on another premises. A name
 nothing resolves is `arp: <host>: unknown host`. The machine itself is in no
 cache of its own, exactly as no kernel ARPs for its own address.
 
 The Ethernet address is **derived** from the network address (`8:0:20` is Sun's
 OUI, which is what a county office's boxes were, and the three low bytes come
-from `b1`, `b2` and `n` through the same multiply-add modulo 2^16 the building
+from `b1`, `b2` and `n` through the same multiply-add modulo 2^16 the premises
 key uses). It is stored nowhere, so the same machine answers the same card for
 ever, and the three forms of `arp(8)` that CHANGE a line -- `-d`, `-s`, `-f` --
 are not here rather than here and lying.
@@ -559,7 +592,7 @@ names: they are reports the machines broadcast about themselves.
 | `ifconfig [-a\|<iface>]` | the two interfaces, `eth0` and `lo0` |
 | `arp -a \| arp <host\|address>` | the cards on the wire, address by address |
 | `ping <host\|address>` | three packets a second apart, and the statistics |
-| `ruptime` | the machines of this building that are switched on |
+| `ruptime` | the machines of this premises that are switched on |
 | `rwho` | who is logged in on them |
 | `who [am i]` | who is logged in *here*, with where each came from |
 | `last [name]` | the logins in `/var/log/wtmp`, newest first |
@@ -607,7 +640,7 @@ machine's own `/etc/hosts`, against the address the session arrived from. It is
 never matched against the name the caller announces. That name is the caller's
 own `/etc/hostname`, a `644` file its own root may write to anything, so a
 machine that trusted one would let anybody with root on any computer in the
-building type `hostname gate` and walk in through a line somebody wrote about
+premises type `hostname gate` and walk in through a line somebody wrote about
 gate -- which is why `ruptime`'s names are reports and not credentials, and why
 a caller with no address at all (a telephone call, a radio link) is trusted by
 neither file. `/etc/hosts.equiv` is the machine's own, root's and `644`, one line
@@ -662,17 +695,34 @@ rather than the formality it is on a real one.
 
 ## The telephone
 
-The coax reaches one building. The telephone reaches the county.
+The coax reaches one premises. The telephone reaches the county.
 
-A building the map knows has **one line** in it, and the number belongs to the
-line and not to a machine: every computer in that building answers on it, one
-call at a time. It is `555-NNNN` -- the exchange fiction has used since the Bell
-System set it aside -- and the four digits are derived from where the building
-stands, exactly as the address is, so nobody can type a new one. The firmware
-announces it under the card, and that BIOS screen is the **only** place it is
-written: there is no `/etc/phone`, because the number belongs to the wall and not
-to the disk in the case. A computer in a base you built is in no building, so it
-has no line: `cu: no phone line`.
+A premises has **one line**, and the number belongs to the line and not to a
+machine: every computer on that premises answers on it, one call at a time. So a
+house is one number and a mall is thirty.
+
+The number is seven digits, `NNN-NNNN`, which is how a call inside one area code
+was dialled in 1993. The first three are the **exchange** and they belong to the
+*town*: every machine around here shares them, and the next town is on another
+switch. The last four are the premises. Both are derived from where the machine
+stands, exactly as the address is, so nobody can type a new one.
+
+The firmware announces it under the card, and that BIOS screen is the **only**
+place it is written -- there is no `/etc/phone` -- with the shop's name behind it
+where the map gave it one:
+
+```
+Phone line: 555-0417 (CoffeeShop)
+```
+
+A computer in a base you built is on no premises, so it has no line:
+`cu: no phone line`. Neither has a machine off a save older than this firmware,
+until somebody switches it on or opens a window on it where it stands.
+
+**A party line.** Several machines of one premises are all on that one line and
+the lowest address is the one that picks up -- a house has one line and one modem
+set to answer. Two premises can land on one number too, and then it is the same
+answer: the lowest address answers, and the line is busy for both.
 
 | command | does |
 | --- | --- |
@@ -691,6 +741,21 @@ answered, `BUSY` when the line is in use at either end, `NO DIALTONE` when there
 is no exchange, and `NO CARRIER` when nobody answered or the line went away
 under a call that was up. `Connected.` and `Disconnected.` are `cu(1)`'s own two
 lines.
+
+**And then there is the waiting.** Nothing at all is on the screen while the modem
+dials and the far end rings:
+
+| what you get | how long it takes |
+| --- | --- |
+| `CONNECT 2400` | about 4 seconds, which is what a 2400-baud handshake took |
+| `BUSY` | about 2 |
+| `NO CARRIER` | **15**, which is this modem's `S7` register -- how long it waits for a carrier before it hangs up |
+| `NO DIALTONE` | at once: that is what you hear the moment the receiver goes up |
+
+Both numbers are busy for the whole of that, so a fifteen-second ring is fifteen
+seconds in which neither telephone can take another call. Escape gives up on the
+dial, and the modem says `NO CARRIER` about that too -- a receiver put down is a
+carrier that never came.
 
 From `login:` on it is `rlogin`'s session -- the far machine's files, its
 accounts, one of its same four `ttyp` lines, its jobs, and it counts as a hop of
@@ -717,7 +782,7 @@ history. (The other tilde escapes are not here: `~!` is a second shell and
 
 `rsh` and `rcp` do **not** dial. They are network commands -- `rcmd(3)`, a
 socket, a route -- and a call is not a route: `rsh shed date` on a machine in
-another building is `No route to host` whether or not you could have called it.
+another premises is `No route to host` whether or not you could have called it.
 Copying a file by telephone was `uucp`'s job, and `uucp` is not on this disk.
 
 **The exchange is the county's grid.** A telephone exchange is a building full of
@@ -737,7 +802,7 @@ A server that wants it otherwise sets one option:
 
 ## The radio
 
-The coax reaches one building, the telephone reaches the county, and the radio
+The coax reaches one premises, the telephone reaches the county, and the radio
 reaches whatever is in earshot of an aerial -- with no wire and no exchange, which
 makes it the **only link that outlives the county's power**.
 
@@ -769,7 +834,7 @@ admin@ksp-04-11:~$ cat /etc/callsign
 KD4AXR
 ```
 
-Root's and `644`, seeded with one derived from the building key and the machine's
+Root's and `644`, seeded with one derived from the premises key and the machine's
 own number -- `K`/`N`/`W`, an optional second letter, the fourth call district's
 digit (Kentucky), and three letters, which is what a United States amateur held in
 1993 -- and announced by the firmware under the modem, the way a TNC printed its
