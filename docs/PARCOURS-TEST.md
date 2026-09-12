@@ -855,6 +855,19 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      retirer la confiance (`rlogin gate`, `rm .rhosts`, `exit`) et refaire
      `rsh gate hostname` → `rsh: gate: Permission denied`, sans aucune question.
      Remettre le `.rhosts`. [ ]
+187b. **`rsh` attend et revient.** `rsh gate hostname | wc -l` → `1` (la ligne
+     est entrée dans le tuyau, pas sur la glace). `x=$(rsh gate hostname); echo
+     [$x]` → `[<nom de gate>]`. `rsh gate hostname > venu.txt` puis
+     `cat venu.txt` → le nom. Un script `echo avant`, `rsh gate dev light0`,
+     `echo "apres $?"` → les trois lignes, dans cet ordre, `apres 0`. Et
+     `rsh gate false; echo $?` → `1` : le `$?` est celui de la commande de
+     l'autre machine. [ ]
+187c. Une commande distante qui ne finit jamais :
+     `rsh gate "while true; do x=1; done" &` puis `jobs` → `[1] remote`, et `ps`
+     sur **gate** (depuis un `rlogin` dans une autre fenêtre) montre la boucle
+     là-bas. `kill %1` ici → le travail part et la session sur `gate` se ferme
+     avec lui (`who` sur `gate` n'a plus de `ttyp`). Même chose en coupant le
+     courant de la pièce pendant l'attente. [ ]
 188. `echo bonjour > notes.txt` puis
      `rcp notes.txt gate:/home/admin/venu.txt` → la commande prend une seconde
      ou deux et ne dit rien du tout. Vérifier avec `rsh gate cat

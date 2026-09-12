@@ -704,6 +704,28 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	local kept, orders = {}, {}
 	for i = 1, #book.list do
 		local job = book.list[i]
+		-- An rsh a job is WAITING on, and a far session a job that has died left
+		-- open. Both are collected with the orders below and carried out after
+		-- every screen has gone out, because dialling paints the far machine's
+		-- glass and a teardown paints this one's.
+		--
+		-- The job is not ended by either: an rsh is a wait and not an exit, so the
+		-- order is given while the job that gave it is still on the book -- which
+		-- is what lets the answer come back into it (CeroSecOS.jobRemote).
+		if job.dial ~= nil and not CeroSecOS.jobIsOver(job) then
+			orders[#orders + 1] = { console = screenOf(job) or own, control = "rsh",
+				data = job.dial, forJob = job }
+			job.dial = nil
+		end
+		if job.remote ~= nil and CeroSecOS.jobIsOver(job) then
+			-- Escape, `kill`, the cpu limit, the session the job was writing to
+			-- going away: whichever it was, nobody is listening at this end any
+			-- more and the far machine is told, the way rshd's connection dropping
+			-- tells it.
+			orders[#orders + 1] = { console = screenOf(job) or own, control = "hangup",
+				data = job.remote }
+			job.remote = nil
+		end
 		if CeroSecOS.jobIsOver(job) and #job.out == 0 then
 			local screen = screenOf(job)
 			-- A cron job says nothing when it ends either: "[1] done" is a
@@ -798,7 +820,13 @@ function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerO
 	elseif control == "cancel" then
 		luaObject.shutdown = nil
 	elseif control == "rlogin" or control == "rsh" then
-		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj)
+		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj, order.forJob)
+	elseif control == "hangup" and type(data) == "table" then
+		-- A far session whose near end has gone. Nothing is delivered anywhere:
+		-- the job that was waiting for it is over, and what the far machine wrote
+		-- has nobody left to read it.
+		local object = system:getLuaObjectAt(data.x, data.y, data.z)
+		if object ~= nil then CeroSecNet.tearDown(system, object, data.line) end
 	elseif control == "endsession" then
 		CeroSecNet.endSession(system, luaObject, console)
 	elseif control ~= nil then

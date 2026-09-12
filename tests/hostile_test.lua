@@ -1565,6 +1565,201 @@ do
 	eq("and following it is refused by the depth ceiling", why, "path too deep")
 end
 
+--
+-- 25. rsh, which WAITS (rung 6c)
+--
+-- rsh blocks now: the job that gave it is parked -- state "waiting", no cpu
+-- clock running, nothing on the processor -- while the FAR machine runs the
+-- command on its own budget, and when the answer comes back the job runs on.
+-- Which makes a loop of them the cheapest expensive-looking program a player can
+-- write, and puts two questions to this bench:
+--
+--   * a script dialling over and over costs this machine nothing that climbs,
+--     and cannot fill the far machine either -- one command at a time is all a
+--     blocking rsh can have out there;
+--   * a remote command that never ends holds ONE job here, at no cost, until
+--     somebody takes it away -- and taking it away takes the far session with
+--     it, wherever the far command had got to.
+--
+-- The link layer is faked the way section 19's is (every wire reaches), and the
+-- two machines are real: the far one runs a real shell on a real pty and its
+-- jobs are stepped by the same scheduler.
+--
+
+local function newNetBench()
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	local objects = {}
+	local nsys = {}
+	function nsys:execEnv(luaObject, state)
+		return { now = 740000000, nowMs = _G.__now,
+			net = { reach = function() return true end } }
+	end
+	function nsys:clockEnv() return { now = 740000000 } end
+	function nsys:sessionOf(console)
+		return { user = console.user or "admin", cwd = console.cwd or "/home/admin",
+			stamp = 1, line = console.line, hops = console.hops }
+	end
+	function nsys:writeSession(console, session)
+		console.user = session.user
+		console.cwd = session.cwd
+		console.stack = session.stack
+	end
+	function nsys:pushScreen() pushes = pushes + 1 end
+	function nsys:applyPower() end
+	function nsys:getLuaObjectCount() return #objects end
+	function nsys:getLuaObjectByIndex(i) return objects[i] end
+	function nsys:getLuaObjectAt(x, y, z)
+		for i = 1, #objects do
+			local o = objects[i]
+			if o.x == x and o.y == y and o.z == z then return o end
+		end
+		return nil
+	end
+	-- The one thing a dial asks of the server that this bench has to answer: the
+	-- far machine's shell, as its pty's own foreground job. The real server takes
+	-- a pass in the caller's hand here and the scheduler's next tick does it
+	-- instead, which is one pass later and nothing else.
+	function nsys:startPrompt(luaObject, console, line)
+		local job, refusal = CeroSecJobs.startPrompt(self, luaObject, console, line)
+		if job == nil then CeroSec.consolePush(console, tostring(refusal)) end
+		return job
+	end
+
+	local function machine(x, name, n)
+		local state = CeroSecOS.newState(name)
+		local console = CeroSec.newConsole()
+		console.booted = true
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		-- `os` is the MIRRORED state, and the link layer reads the address off that
+		-- rather than off osState(): a ping must not walk every disk in the county
+		-- (SCeroSecNet's recordOf). The real object mirrors on every write; here the
+		-- table is the same one, which is the same fact.
+		local m = { on = true, console = console, x = x, y = 0, z = 0, os = state }
+		function m:osState() return state end
+		function m:consoleState() return self.console end
+		function m:mirrorOS() end
+		CeroSecOS.setNetRecord(state, 1, 1, n)
+		objects[#objects + 1] = m
+		return m, state, console
+	end
+
+	local here, hereState, hereConsole = machine(1, "ksp-here", 1)
+	local far, farState, farConsole = machine(2, "ksp-far", 2)
+	-- "gate" is the far machine, and the far machine trusts this one: rshd's whole
+	-- protocol, so that every line gets as far as a real command over there.
+	local hosts = CeroSecOS.systemNode(hereState, CeroSecOS.HOSTS_PATH)
+	CeroSecOS.setData(hereState, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		(hosts.data or "") .. "\n" .. CeroSecOS.address(farState) .. " gate", 100)
+	CeroSecOS.writeFile(farState, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
+		CeroSecOS.hostname(hereState), false, 100)
+	return { sys = nsys, here = here, hereState = hereState, hereConsole = hereConsole,
+		far = far, farState = farState, farConsole = farConsole }
+end
+
+do
+	local bench = newNetBench()
+	put(bench.hereState, "/home/admin/dial.sh", "while true; do rsh gate true; done\n")
+	local job = typeLine(bench.sys, bench.here, bench.hereState, bench.hereConsole,
+		"sh dial.sh")
+	check("the dialling script started", job ~= nil)
+
+	local result = drive(bench.here, PASSES, nil, function()
+		check("the far machine never holds more than one line of this script's",
+			CeroSecOS.ptyCount(bench.far.ptys) <= 1)
+		check("nor more than its own four jobs",
+			#CeroSecJobs.book(bench.far).list <= CeroSecOS.MAX_JOBS)
+		check("and the near console keeps its hundred lines",
+			#bench.hereConsole.lines <= CeroSec.CONSOLE_MAX)
+	end)
+	flat("a loop of rsh", result)
+	timely("a loop of rsh", result)
+	note("a loop of rsh", result)
+
+	-- The witness: it really did dial, over and over, and it really is still
+	-- going round -- a flat cost on a script that never reached the wire would
+	-- prove nothing at all.
+	check("the script went round many times (" .. tostring(job.steps) .. " steps)",
+		job.steps > 100)
+	check("it is still running", not CeroSecOS.jobIsOver(job))
+	-- It really reached the far machine, over and over: that machine's own wtmp
+	-- has a line in and a line out for every dial, which is what rshd logs.
+	local wtmp = CeroSecOS.systemNode(bench.farState, CeroSecOS.WTMP_PATH)
+	local ins = 0
+	for _ in string.gmatch(wtmp ~= nil and wtmp.data or "", "\nin ") do ins = ins + 1 end
+	check("the far machine logged many sessions in (" .. ins .. ")", ins > 5)
+	check("and this machine's own glass stayed empty",
+		#bench.hereConsole.lines == 0)
+end
+
+do
+	local bench = newNetBench()
+	put(bench.hereState, "/home/admin/hold.sh",
+		"rsh gate \"while true; do x=1; done\"\necho after\n")
+	local job = typeLine(bench.sys, bench.here, bench.hereState, bench.hereConsole,
+		"sh hold.sh")
+
+	-- Two passes to get the dial out of the door, and then the steps it has spent
+	-- are the steps it will have spent: what a wait costs is nothing.
+	drive(bench.here, 2)
+	eq("the job is waiting", job.state, "waiting")
+	local spent = job.steps
+	local result = drive(bench.here, 200, nil, function()
+		check("the waiting job is off the processor", job.cpuSince == nil)
+		eq("and spends nothing while it waits", job.steps, spent)
+	end)
+	flat("rsh waiting on a loop", result)
+	note("rsh waiting on a loop", result, " (waiting)")
+
+	eq("it is waiting still", job.state, "waiting")
+	eq("and `jobs` has a word of its own for it", CeroSecOS.jobWord(job), "remote")
+	-- The far machine is the one doing the work, on its own budget: the loop is
+	-- its pty's own foreground job, which is why `liveJobs` is not what counts it.
+	check("the far machine is the one doing the work",
+		#CeroSecJobs.book(bench.far).list >= 1)
+	eq("one line out there", CeroSecOS.ptyCount(bench.far.ptys), 1)
+	check("and the script has not gone on", #bench.hereConsole.lines == 0)
+
+	-- Escape, which is what a survivor does: the job goes, and the far session
+	-- goes with it wherever the far command had got to.
+	job.killReq = true
+	_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+	CeroSecJobs.tick()
+	_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+	CeroSecJobs.tick()
+	check("the job is over", CeroSecOS.jobIsOver(job))
+	eq("the line was given back", CeroSecOS.ptyCount(bench.far.ptys), 0)
+	eq("and the far machine is running nothing at all",
+		#CeroSecJobs.book(bench.far).list, 0)
+	check("nothing of the loop reached this machine's glass",
+		not string.find(table.concat(bench.hereConsole.lines, "\n"), "after", 1, true))
+end
+
+do
+	-- The other way a remote that never ends comes back: the FAR machine's cpu
+	-- ceiling. Five minutes of its processor with no wait in it and the far job is
+	-- killed, which ends the session, which is what finally answers the job that
+	-- has been waiting here -- with 130, the status a killed job carries.
+	local bench = newNetBench()
+	put(bench.hereState, "/home/admin/hold.sh",
+		"rsh gate \"while true; do x=1; done\"\necho \"after $?\"\n")
+	local job = typeLine(bench.sys, bench.here, bench.hereState, bench.hereConsole,
+		"sh hold.sh")
+	-- A second a pass, which is how this bench reaches a five-minute ceiling in a
+	-- few hundred passes (section 9 does the same).
+	local passes = CeroSec.JOB_CPU_LIMIT_S + 20
+	local result = drive(bench.here, passes, 1000)
+	flat("rsh waiting on the far cpu ceiling", result)
+	note("rsh, far cpu ceiling", result, " (killed over there)")
+
+	check("the far machine killed it", CeroSecOS.ptyCount(bench.far.ptys) == 0)
+	check("the job that was waiting is running again", CeroSecOS.jobIsOver(job))
+	local said = table.concat(bench.hereConsole.lines, "\n")
+	check("and went on with the status of a killed command: " .. said,
+		string.find(said, "after 130", 1, true) ~= nil)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

@@ -1072,15 +1072,14 @@ A redirect onto a device is how you work the building. That is chapter 10,
 and the sign means the same thing there: what would have been printed goes
 into the thing on the right.
 
-The honest note about the network, since you will try it. rsh runs one
-command on another machine, and what it prints comes back on YOUR screen
--- but not into a pipe and not into a catch:
+One on the wire, since you will try it. rsh runs one command on another
+machine and hands back what it printed, and that goes wherever anything
+else on the line would have gone -- a pipe, a catch, a file:
 
-  admin@ksp-04-11:~$ rsh gate ls | wc -l
-       0
+  admin@ksp-04-11:~$ rsh gate ls /bin | wc -l
+      66
 
-That is a thing this machine cannot do yet, and CeroSec Systems would
-rather print it here than have you spend an evening on it.
+Chapter 10 has the rest of it.
 
 Classic mistake. Writing cmd > file inside a loop and wondering why the
 file holds one line. Each turn replaces the lot. Inside a loop you almost
@@ -1562,24 +1561,36 @@ of /etc/hosts carries that name; Host is down means it is on the wire and
 switched off; No route to host means there is no wire between here and
 there at all.]],
 
-[[The one rule about rsh in a file.
+[[What an rsh in a file does while it waits.
 
-rsh ends the script it is written in. Everything above it runs; nothing
-below it does.
+rsh waits for the far machine and then goes on. Your job is parked while
+the other computer runs the command -- it spends nothing at all doing that,
+and ps shows it with a W -- and what the far command printed arrives where
+anything else on the line would have gone.
 
   admin@ksp-04-11:~$ cat night.sh
   #!/bin/sh
   echo before
   rsh gate dev light0
-  echo after
+  echo "after, $?"
   admin@ksp-04-11:~$ ./night.sh
   before
+  light0: on
+  after, 0
 
-There is no "after" there and it is not a misprint. That line handed the
-shell over to the other machine, whose answer arrives here on its own. So
-put an rsh at the END of a script.
+So $? after an rsh is the FAR command's status, a catch holds what it
+printed, and a pipe is fed by it. What you cannot do is type at it: an rsh
+is one command and not a session, and the keyboard stays here.
 
-rcp has no such rule. A backup runs to the end:
+A remote command that never ends leaves your job waiting for ever, and
+jobs says which wait it is:
+
+  admin@ksp-04-11:~$ jobs
+  [1] remote   rsh gate sleep 300 &
+
+Escape, or kill, and the session over there goes with it.]],
+
+[[rcp waits the same way, and always has.
 
   admin@ksp-04-11:~$ cat backup.sh
   #!/bin/sh

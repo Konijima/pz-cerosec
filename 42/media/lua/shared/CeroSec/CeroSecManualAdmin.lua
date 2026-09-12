@@ -1144,10 +1144,10 @@ is that machine's -- its files, its /dev, its accounts, its crontabs. exit
 ends it and Connection closed. comes back. It needs a terminal to hand
 over, so nothing automatic can use it.
 
-rsh runs ONE command over there and never asks for a password: either the
-far machine trusts this one or you get
-rsh: gate: Permission denied. It needs no terminal, which is the whole
-reason a crontab calls rsh.
+rsh runs ONE command over there, waits for it and hands back what it
+printed. It never asks for a password: either the far machine trusts this
+one or you get rsh: gate: Permission denied. No terminal needed, which is
+why a crontab calls rsh.
 
 rcp copies one file across, one end written host:path. It needs the same
 trust, lands as the account you are, and is judged by the far machine's

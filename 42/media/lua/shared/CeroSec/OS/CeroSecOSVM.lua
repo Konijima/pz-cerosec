@@ -1287,16 +1287,36 @@ local function applyControl(job, control, data, env)
 		job.status = 1
 		return true
 	end
-	-- rsh needs no terminal and never has: it is one command and a pipe back,
-	-- which is why a crontab calls rsh and not rlogin. But it must not take the
-	-- glass either -- the session it opens is for the command's output and not for
-	-- a pair of hands -- so a job with no terminal marks its order DETACHED, and
-	-- the server neither points the near console at the far machine nor gives it
-	-- the far machine's lines. What comes back goes where everything else this
-	-- job printed goes: the mail for a cron line, the job's own lines on the
-	-- glass for a `&`.
-	if control == "rsh" and type(data) == "table" and not jobHasTerminal(job) then
-		data.noTty = { mailTo = job.mailTo, cmd = job.cmd }
+	-- rsh WAITS.
+	--
+	-- It needs no terminal and never has -- it is one command and a pipe back,
+	-- which is why a crontab calls rsh and not rlogin -- and it takes no glass
+	-- either: the session it opens is for the command's output and not for a pair
+	-- of hands. So the order is marked detached whoever gave it, the server points
+	-- no console at the far machine, and what the far command printed comes back
+	-- into THIS job's output stream (CeroSecOS.jobRemote below) -- the glass for a
+	-- line typed at the prompt, the pipe for a stage, the word for a $(...), the
+	-- mail for a cron line. One door, the same one everything else this job wrote
+	-- went through.
+	--
+	-- The dial itself is asked OF THE MACHINE, exactly as an `&` is (job.spawn):
+	-- only the machine can reach another machine. The job goes to sleep on it --
+	-- state "waiting", costing nothing at all, no cpu clock running -- and the far
+	-- machine's own budget pays for the far command. When it is done, its lines
+	-- and its status arrive and the job runs on at the next line of the script,
+	-- which is what rsh has always done. Before this, an rsh ENDED the job that
+	-- gave it: `rsh gate date` was the last thing a script ever did, and
+	-- `rsh gate hostname | wc -l` answered 0.
+	if control == "rsh" and type(data) == "table" then
+		flushPartial(job)
+		-- Whose output stream the answer belongs in. The ID and not the job: a
+		-- stage of a pipeline is a shell of its own that shares its pipeline's id
+		-- and is in no job book, and the pipeline is what the machine holds.
+		data.noTty = { job = job.id }
+		job.dial = data
+		job.state = "waiting"
+		job.cpuSince = nil
+		return true
 	end
 	-- `clear` is an escape sequence a program writes to its OWN terminal, so a job
 	-- with none writes it where everything else it writes goes: into the mail for a
@@ -1574,17 +1594,23 @@ local function runSimple(state, job, f, env)
 	local walkCost = 0
 	if type(sh.walked) == "number" and sh.walked > 1 then walkCost = sh.walked - 1 end
 
-	if redirect ~= nil and job.cont ~= nil then
+	-- An rsh is the other command that has written nothing yet: it has gone to
+	-- wait for another machine, and the lines it will hand back are the far
+	-- command's (CeroSecOS.jobRemote). Same shape, same reason, same file opened
+	-- here where a shell opens it.
+	if redirect ~= nil and (job.cont ~= nil or job.dial ~= nil) then
 		local openOk, openLines =
 			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
 		if openOk then
-			job.contRedirect = { path = redirect.path, append = redirect.append, who = name }
+			local pending = { path = redirect.path, append = redirect.append, who = name }
+			if job.dial ~= nil then job.dialRedirect = pending else job.contRedirect = pending end
 		else
 			-- A target that cannot be opened is a command that does not run, the
-			-- way it is on a real shell. The question goes with it: there is
-			-- nothing left for an answer to do.
+			-- way it is on a real shell. The question -- or the dial -- goes with
+			-- it: there is nothing left for an answer to do.
 			job.cont = nil
 			job.ask = nil
+			job.dial = nil
 			job.state = "running"
 			errLines(job, openLines)
 			job.status = 1
@@ -1750,6 +1776,82 @@ local function askingStage(job)
 	return nil
 end
 
+-- The same, for the stage that is waiting on an rsh. One at a time: the dial
+-- travels up to the job because the machine knows nothing of stages, and the
+-- answer has to find its way back to the shell that asked for it.
+local function dialingStage(job)
+	local frames = job.frames
+	if frames == nil then return nil end
+	for i = #frames, 1, -1 do
+		local f = frames[i]
+		if f.k == "pipe" and f.dialling ~= nil then
+			local stage = f.stages[f.dialling]
+			if stage ~= nil then return f, stage end
+		end
+	end
+	return nil
+end
+
+-- What the far machine answered, into the job that has been waiting for it.
+--
+-- The lines go through the job's own door (writeLines), so where they end up is
+-- whatever this job was writing to and not this function's business: the glass,
+-- the pipe the stage is writing into, the word a $(...) is collecting, the mail a
+-- cron line's output goes to. The status is the far command's, which is what `$?`
+-- after an rsh means on every machine that has one.
+--
+-- Answers true when there was a job waiting; the caller has a session to close
+-- either way.
+-- failed says the lines are a REFUSAL and not output: a dial that never got
+-- through is the machine talking, so it goes where every other refusal goes --
+-- the screen, and never down a pipe or into a captured word.
+-- state and env, when the caller has them, are what a redirect on the rsh needs:
+-- `rsh gate date > out` opened `out` when the order was given and the far
+-- machine's lines are what goes in it. A caller that hands none writes to the
+-- job's own output, which is what a machine with no filesystem to hand could do
+-- anyway.
+function CeroSecOS.jobRemote(job, lines, status, failed, state, env)
+	if type(job) ~= "table" then return false end
+	local frame, stage = dialingStage(job)
+	local target = job
+	if stage ~= nil then
+		frame.dialling = nil
+		target = stage
+	end
+	job.dial = nil
+	-- The session is over, so the line it was on is not this job's to hang up any
+	-- more. Cleared here and not by the machine, because the delivery IS the end of
+	-- it -- and a line that has been given back is a line the far machine may hand
+	-- to somebody else in the next second.
+	job.remote = nil
+	-- A stage killed by the pipe closing in front of it (`rsh gate yes | head -1`)
+	-- is a stage with nowhere to put what came back. The session still closes.
+	if CeroSecOS.jobIsOver(target) then return false end
+	local pending = target.dialRedirect
+	target.dialRedirect = nil
+	if type(lines) == "table" then
+		if failed then
+			-- A refusal is not output and never goes where output was going: not
+			-- down a pipe, not into a word, and not into the file `>` named.
+			errLines(target, lines)
+		elseif pending ~= nil and type(state) == "table" then
+			local ok, refusal = CeroSecOS.writeRedirect(state, target.session, pending.who,
+				pending, table.concat(lines, "\n"), env)
+			if not ok then
+				errLines(target, refusal)
+				status = 1
+			end
+		else
+			writeLines(target, lines)
+		end
+	end
+	if type(status) == "number" then target.status = math.floor(status) end
+	flushPartial(target)
+	target.state = "running"
+	if target ~= job and job.state == "waiting" then job.state = "running" end
+	return true
+end
+
 -- Is there anything for this stage to read?
 local function inputReady(buf)
 	if buf == nil then return true end
@@ -1765,6 +1867,23 @@ local function pipeStep(state, job, f, env)
 	-- What the last stage has written goes out first, so the pipeline's output
 	-- reaches the screen at the same rate everything else does.
 	drainTail(job, pipes[n])
+
+	-- An rsh a stage has asked for. The machine knows nothing of stages, so the
+	-- order travels up to the job and the frame remembers which stage it belongs
+	-- to (CeroSecOS.jobRemote sends the answer back down). One at a time: a
+	-- pipeline with two rsh in it dials the second when the first is done, and the
+	-- stage that is waiting is not a stage the walk below will step.
+	if job.dial == nil and f.dialling == nil then
+		for i = 1, n do
+			local stage = stages[i]
+			if stage.dial ~= nil then
+				f.dialling = i
+				job.dial = stage.dial
+				stage.dial = nil
+				break
+			end
+		end
+	end
 
 	-- The book-keeping the whole rule below reads: a stage that is over has
 	-- written everything it will write, and will read nothing more.
@@ -2495,6 +2614,14 @@ end
 function CeroSecOS.jobWord(job)
 	if job.state == "running" and job.blocked == "output" then return "output" end
 	if job.state == "running" and job.blocked == "input" then return "sleeping" end
+	-- A wait of its own, and worth its own word: a job held on an rsh is waiting
+	-- for ANOTHER MACHINE and not for somebody at this keyboard to type
+	-- something. One word, like "output" above and for the same reason -- the
+	-- column `jobs` prints it in is eight characters wide, because the row after
+	-- it is the line that was typed and the screen is sixty.
+	if job.state == "waiting" and (job.dial ~= nil or job.remote ~= nil) then
+		return "remote"
+	end
 	return job.state
 end
 

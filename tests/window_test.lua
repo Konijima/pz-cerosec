@@ -4170,6 +4170,11 @@ do
 	local mail = net.text(net.here, "/var/mail/admin")
 	check("the far machine's answer came back in the mail",
 		mail ~= nil and string.find(mail, net.host(net.gate), 1, true) ~= nil)
+	-- And nothing else the session did: what an rsh hands back is the command's
+	-- output. rshd prints no greeting -- that is login's job -- and a motd in
+	-- somebody's mail every minute is a line the command never wrote.
+	check("with no greeting in it",
+		mail ~= nil and string.find(mail, "unauthorized access", 1, true) == nil)
 	eq("the line was given back when the command was done",
 		CeroSecOS.ptyCount(net.gate.ptys), 0)
 	check("and nothing of it was painted", not net.glass(net.host(net.gate)))
@@ -4177,17 +4182,19 @@ do
 end
 
 --
--- rsh behind a `&`, and rsh in a pipeline
+-- rsh WAITS, and what comes back goes where the job was writing
 --
--- A `&` is the other job with no terminal, and what it prints belongs on the
--- glass with the rest of what a background job prints -- which is what a `&` has
--- always been allowed to do. What it may not do is hand the glass over.
+-- rsh is one command and a pipe back, and the pipe back is the point: the job
+-- that gave the order is PARKED while the far machine runs the command, and what
+-- the far command printed arrives in that job's own output stream -- the glass for
+-- a line typed at the prompt, the pipe for a stage, the word for a $(...), the
+-- mail for a cron line -- with the far command's status in $?. Then the job runs
+-- on.
 --
--- THE PIPELINE IS THE ONE THING THIS RUNG DOES NOT DO. A real rsh writes down
--- the pipe, and this one does not: the local job is over by the time the far
--- machine answers, so there is no pipe left to write into and the answer lands on
--- the screen. Asserted rather than left unsaid, because the day it is fixed this
--- is the check that has to change -- and the manual says it too.
+-- Before this an rsh ENDED the job that gave it, which made `rsh gate date` the
+-- last thing any script ever did and `rsh gate hostname | wc -l` answer 0. What
+-- it still may not do is hand the glass over: the session is for the command's
+-- output and not for a pair of hands.
 --
 
 do
@@ -4200,20 +4207,167 @@ do
 	net.enter("rsh gate hostname &")
 	net.tick(10)
 	check("a backgrounded rsh runs and the answer reaches the glass",
-		net.heard(net.host(net.gate)))
+		net.glass(net.host(net.gate)))
 	eq("and the glass was never pointed at the far machine",
 		net.here.console.remote, nil)
 	eq("the line was given back", CeroSecOS.ptyCount(net.gate.ptys), 0)
+end
+
+-- In a pipeline: the stage behind it reads the far machine's lines, which is
+-- what a real rsh has always fed.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
 
 	net.forget()
 	net.enter("rsh gate hostname | wc -l")
 	net.tick(10)
-	check("in a pipeline the answer still reaches the glass",
-		net.heard(net.host(net.gate)))
-	check("and the stage behind it read nothing -- the rung's own limit",
-		net.heard("0"))
-	eq("but nothing was taken over", net.here.console.remote, nil)
+	-- One line, which is the whole assertion about what an rsh hands back: the far
+	-- machine's greeting is not in it (rshd prints none -- that is login's job),
+	-- and neither is anything else the session did. A motd down the pipe would
+	-- make this two.
+	check("the stage behind it counted the line it was fed", net.glass("     1"))
+	check("and the line itself went down the pipe and not onto the glass",
+		not net.glass(net.host(net.gate)))
+	eq("nothing was taken over", net.here.console.remote, nil)
 	eq("and no line was left open", CeroSecOS.ptyCount(net.gate.ptys), 0)
+end
+
+-- In a $(...), and in a script that goes on afterwards with the far command's
+-- own status in $?.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	net.forget()
+	net.enter("x=$(rsh gate hostname); echo [$x] $?")
+	net.tick(10)
+	check("the word is what the far machine printed",
+		net.glass("[" .. net.host(net.gate) .. "] 0"))
+
+	net.put(net.here, "/home/admin/two.sh",
+		"rsh gate hostname\necho \"after $?\"\nrsh gate false\necho \"then $?\"\n",
+		755, "admin")
+	net.forget()
+	net.enter("./two.sh")
+	net.tick(16)
+	check("a script goes on to its next line", net.glass("after 0"))
+	check("with the far command's status in $?, whatever it was",
+		net.glass("then 1"))
+	eq("and both lines were given back", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	-- And into a file, which is the fourth door the same lines can go through.
+	-- The file was opened when the order was given, the way a shell opens it, and
+	-- what lands in it is what the far machine printed.
+	net.forget()
+	net.enter("rsh gate hostname > kept.txt")
+	net.tick(10)
+	eq("the file holds the far machine's answer",
+		net.text(net.here, "/home/admin/kept.txt"), net.host(net.gate))
+
+	-- rcp was in the same trap next door, for a plainer reason: a redirect on a
+	-- command that hands back an ORDER used to drop the order's data on the way
+	-- out of runArgs, so `rcp ... > out` became a wait with nothing to wait on and
+	-- the job ended there. It waits for the wire and goes on.
+	net.forget()
+	net.enter("rcp kept.txt gate:/home/admin/copy.txt > log.txt; echo \"copied $?\"")
+	net.tick(12)
+	check("the copy said how it went", net.glass("copied 0"))
+	eq("and the far machine has the file",
+		net.text(net.gate, "/home/admin/copy.txt"), net.host(net.gate))
+end
+
+-- A machine that will not have us: the refusal comes back into the job that is
+-- waiting, as a refusal and not as output, and the script goes on from it.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+
+	net.put(net.here, "/home/admin/try.sh",
+		"rsh gate hostname | wc -l\necho \"piped $?\"\n" ..
+		"rsh gate hostname\necho \"alone $?\"\n", 755, "admin")
+	net.forget()
+	net.enter("./try.sh")
+	net.tick(16)
+	check("rshd's own word for a machine that does not trust this one",
+		net.glass("rsh: gate: Permission denied"))
+	check("the refusal did not go down the pipe: the stage read nothing",
+		net.glass("     0"))
+	-- A pipeline's status is its LAST stage's, which is `wc` and which worked --
+	-- POSIX, and nothing to do with the rsh in front of it. The rsh's own status
+	-- is the line after it: 1, which is what rsh answers for a connection it
+	-- could not make.
+	check("the script went on past the pipeline", net.glass("piped 0"))
+	check("and past the rsh, with rsh's own status", net.glass("alone 1"))
+	eq("no line was taken on the far machine", CeroSecOS.ptyCount(net.gate.ptys), 0)
+end
+
+-- A remote command that never ends holds the job here, at no cost, until Escape
+-- -- and Escape takes the far session down with it.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	net.forget()
+	net.enter("rsh gate \"while true; do x=1; done\" &")
+	net.tick(4)
+	local job = nil
+	local list = CeroSecJobs.book(net.here).list
+	for i = 1, #list do
+		if not list[i].interactive then job = list[i] end
+	end
+	check("the job is on the machine", job ~= nil)
+	eq("waiting for the far machine and nothing else", job.state, "waiting")
+	eq("with a word of its own", CeroSecOS.jobWord(job), "remote")
+	eq("one line out there", CeroSecOS.ptyCount(net.gate.ptys), 1)
+
+	net.enter("jobs")
+	net.tick(2)
+	check("`jobs` says so", net.glass("[1] remote"))
+
+	local spent = job.steps
+	net.tick(10)
+	eq("the wait costs nothing at all", job.steps, spent)
+	eq("and it is the far machine that is busy", CeroSecOS.ptyCount(net.gate.ptys), 1)
+
+	net.enter("kill %1")
+	net.tick(4)
+	check("kill ends it", CeroSecOS.jobIsOver(job))
+	eq("and the far session goes with it", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("the far machine is running nothing",
+		net.gate.jobs == nil or #net.gate.jobs.list == 0)
+end
+
+-- And the other way a near end goes away: the machine it was waiting on is
+-- switched off. A machine that has stopped is not waiting for anything, so the
+-- line it was holding over there is given back.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	net.enter("rsh gate \"while true; do x=1; done\" &")
+	net.tick(4)
+	eq("a line is open out there", CeroSecOS.ptyCount(net.gate.ptys), 1)
+
+	net.here:turnOff()
+	eq("the switch at the back gives it back", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	-- The far job is killed with the line, and what is left of it on the far
+	-- machine's book is a job that is over, waiting to be reaped like any other.
+	local running = 0
+	local list = net.gate.jobs ~= nil and net.gate.jobs.list or {}
+	for i = 1, #list do
+		if not CeroSecOS.jobIsOver(list[i]) then running = running + 1 end
+	end
+	eq("and the far machine is running nothing", running, 0)
 end
 
 --

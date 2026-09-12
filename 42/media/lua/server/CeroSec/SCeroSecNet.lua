@@ -441,7 +441,35 @@ end
 -- When it ends, the sheet is delivered where everything else the job printed
 -- went: the account's mailbox for a cron line, and the job's own lines on the
 -- glass for a `&`, which is exactly what a `&` has always been allowed to do.
-local function deliver(system, homeObject, home, spec, lines)
+-- The job on a machine that is waiting for one of these, by id. Over is gone: a
+-- job that was killed while its rsh was still out there is not a job to write to.
+local function waitingJob(luaObject, id)
+	if luaObject == nil or type(id) ~= "number" then return nil end
+	local book = luaObject.jobs
+	if book == nil then return nil end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		if job.id == id and not CeroSecOS.jobIsOver(job) then return job end
+	end
+	return nil
+end
+
+local function deliver(system, homeObject, home, spec, lines, status, failed)
+	-- The job that is WAITING for this, which is every rsh: its lines go through
+	-- its own output door -- the glass, the pipe, the word a $(...) is collecting,
+	-- the mail for a cron line -- and its status is the far command's. Asked first,
+	-- and it answers for the whole delivery: a job waiting on an rsh is where the
+	-- answer belongs, and there is nowhere else for it to go.
+	local job = waitingJob(homeObject, spec.job)
+	if job ~= nil then
+		-- The near machine's own state and env go with it: a `>` on the rsh opened
+		-- its file when the order was given and the far machine's lines are what
+		-- belong in it, and that write is the near machine's disk.
+		CeroSecOS.jobRemote(job, lines, status, failed, homeObject:osState(),
+			system:execEnv(homeObject, homeObject:osState()))
+		if homeObject ~= nil then homeObject:mirrorOS() end
+		return
+	end
 	if type(lines) ~= "table" or #lines == 0 then return end
 	local state = nil
 	if homeObject ~= nil then state = homeObject:osState() end
@@ -494,13 +522,25 @@ function CeroSecNet.tearDown(system, object, line)
 	end
 
 	local home, homeObject = CeroSecNet.diallerOf(system, pty)
-	if home ~= nil and pty.noTty ~= nil then
-		-- A session nobody watched. What it printed is delivered, and the console
-		-- it was dialled FROM is left exactly as it is: its `remote` was never set
-		-- to this line, and a survivor may well have a session of his own on it.
-		local lines = nil
-		if type(screen) == "table" then lines = screen.lines end
-		deliver(system, homeObject, home, pty.noTty, lines)
+	if pty.noTty ~= nil then
+		-- A session nobody watched. What it printed is delivered -- into the job
+		-- that is waiting for it, which is every rsh -- and the console it was
+		-- dialled FROM is left exactly as it is: its `remote` was never set to this
+		-- line, and a survivor may well have a session of his own on it.
+		--
+		-- The status goes with the lines. It is the far command's own, kept on the
+		-- pty's console when its job was reaped (runMachine), and it is what `$?`
+		-- after an rsh answers. No status at all means nothing ever ran over there
+		-- -- a shell the far machine has not got, a machine with no room for the
+		-- job -- and rsh answers 1 for that, the way it answers 1 for a connection
+		-- it could not make.
+		local lines, status = nil, nil
+		if type(screen) == "table" then
+			lines = screen.lines
+			status = tonumber(screen.status)
+		end
+		if status == nil then status = 1 end
+		deliver(system, homeObject, home, pty.noTty, lines, status)
 	elseif home ~= nil then
 		home.remote = nil
 		-- The one glass: what the session printed is what is on the screen.
@@ -562,6 +602,22 @@ end
 -- does every session it had OPEN somewhere else. Run BEFORE the console is
 -- thrown away, because the console is what remembers where they went.
 function CeroSecNet.closeSessions(system, luaObject)
+	-- The sessions its JOBS had open first. An rsh is a job waiting for another
+	-- machine and holding a line over there, and a machine that has stopped is not
+	-- waiting for anything: it is called before killAll takes the book away
+	-- (SCeroSecObject), because the book is what remembers where those lines are.
+	local book = luaObject.jobs
+	if book ~= nil then
+		for i = 1, #book.list do
+			local job = book.list[i]
+			local at = job.remote
+			if type(at) == "table" then
+				job.remote = nil
+				local object = system:getLuaObjectAt(at.x, at.y, at.z)
+				if object ~= nil then CeroSecNet.tearDown(system, object, at.line) end
+			end
+		end
+	end
 	if type(luaObject.console) == "table" then
 		CeroSecNet.hangUp(system, luaObject.console)
 	end
@@ -628,7 +684,12 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.shvars = CeroSecOS.loginVars(account.home)
 	console.status = nil
 	console.loginAt = now or 0
-	CeroSec.consolePushAll(console, CeroSecOS.motdLines(far))
+	-- No motd on an rsh (pty.quiet): rshd does not print one, login does, and an
+	-- rsh is not a login. It matters more than the flavour of it -- what comes back
+	-- from an rsh is the far command's output and goes into a pipe, a $(...) or
+	-- somebody's mail, and a greeting in there is a line the far command did not
+	-- write.
+	if not pty.quiet then CeroSec.consolePushAll(console, CeroSecOS.motdLines(far)) end
 	if now ~= nil then
 		CeroSecOS.wtmpAppend(far, "in", account.name, pty.line, pty.fromHost, now)
 		object:mirrorOS()
@@ -740,7 +801,11 @@ end
 
 -- The order, carried out. Called from the scheduler, after the screen carrying
 -- the line that was typed has gone out.
-function CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj)
+-- forJob is the job the order came off, for an rsh: it is WAITING on this dial
+-- and is still on the machine's book. What it gets is the far line to hang up (so
+-- Escape and `kill` reach across the wire), or the refusal and a status if the
+-- dial never happened at all.
+function CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj, forJob)
 	if type(data) ~= "table" then return end
 	local state = luaObject:osState()
 	local noTty = detachedDial(console, data)
@@ -765,8 +830,12 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 		-- the only thing a detached dial ever says, and it says it where the job
 		-- that dialled was printing. Every refusal the ENGINE could work out was
 		-- printed by the command itself, long before this.
+		--
+		-- A job waiting on it is let go here, with the status rsh answers when it
+		-- could not get through: a script whose rsh was refused goes on to its next
+		-- line, and it is the refusal and not a hang that it goes on from.
 		if noTty ~= nil then
-			deliver(system, luaObject, console, noTty, { tostring(refusal) })
+			deliver(system, luaObject, console, noTty, { tostring(refusal) }, 1, true)
 			return
 		end
 		CeroSec.consolePush(console, tostring(refusal))
@@ -780,10 +849,23 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 	system:pushScreen(object, far, pty.console)
 
 	if control == "rsh" then
+		-- Which line on which machine the job that is waiting has to hang up, if
+		-- it is killed or its session goes away before the far command is done.
+		-- Written before the far job is started, because the far job may be over
+		-- inside this very call.
+		if type(forJob) == "table" and not CeroSecOS.jobIsOver(forJob) then
+			forJob.remote = { x = object.x, y = object.y, z = object.z, line = pty.line }
+		end
 		-- The line it was given, as the pty's own foreground job. The shell is a
 		-- file over there like everything else, so a machine whose /bin/sh has
 		-- been deleted answers an rsh the way it answers a survivor.
-		system:startPrompt(object, pty.console, data.cmd, playerObj, nil)
+		local farJob = system:startPrompt(object, pty.console, data.cmd, playerObj, nil)
+		-- And a machine that could not start it at all -- no shell, no room on its
+		-- own job book -- is a session with nothing in it. It is closed here rather
+		-- than left open: what the far machine said about it is on that console and
+		-- is delivered by the teardown, and a job waiting on a session nothing is
+		-- ever going to run is a job that would wait for ever.
+		if farJob == nil then CeroSecNet.tearDown(system, object, pty.line) end
 	elseif pty.trusted then
 		-- A trusted login skipped the password, so it owes the account the two
 		-- things a login owes it: its own history, and its own ~/.profile.

@@ -561,12 +561,22 @@ one at mode `664` is ignored without a word. `root` is never trusted by
 
 `rsh` never asks for a password, because `rshd` does not: trust or
 `rsh: gate: Permission denied`. It needs **no** terminal, which is the whole
-reason a crontab calls `rsh` and not `rlogin`: from cron the answer comes back in
-`/var/mail/<you>`, from behind an `&` it comes back on the glass with the rest of
-what a background job prints, and neither of those ever takes the screen over.
-What it prints reaches the glass and not a pipe
--- there is no `rsh gate date > file` on this machine, `rsh gate date | wc -l`
-reads nothing, and `rcp` is how something comes back. `rcp` needs the same trust, lands the file as the account you are,
+reason a crontab calls `rsh` and not `rlogin`, and it never takes the screen over:
+the session it opens is for the command's output and not for a pair of hands.
+
+**`rsh` blocks.** The job that gave the order is parked — `ps` shows a `W`, `jobs`
+says `remote`, and it spends nothing at all while it waits — the far machine runs
+the command on its own budget, and then what that command printed is delivered
+into the waiting job's own output stream, with the far command's status in `$?`.
+So it goes wherever that job was already writing: the glass for a line typed at
+the prompt, the pipe for `rsh gate ls | wc -l`, the word for `$(rsh gate date)`,
+the file for `rsh gate date > file`, `/var/mail/<you>` for a cron line. Then the
+job runs on, which is why an `rsh` is no longer the last thing a script ever does.
+A remote command that never ends keeps the local job waiting until Escape or
+`kill` (either tears the far session down) or until the far machine's own cpu
+ceiling kills it, which comes back as a status of 130. No greeting is printed on
+an `rsh` session — `rshd` prints none, `login` does — so what comes back is the
+command's output and nothing else. `rcp` needs the same trust, lands the file as the account you are,
 and is judged by the far machine's own permissions, its 4096-byte file ceiling
 and its own 32K disk. It is not quick: the wire runs at about a kilobyte a
 second.
@@ -818,7 +828,8 @@ wait for an answer that could never come, and four of those are every job slot t
 machine has. `clear` runs and clears nothing, because the glass is not a cron
 line's to wipe. `edit` has always answered `edit: not a terminal`, and an `exit`
 ends the line and never the session. `rsh` is the one that does work without a
-terminal, exactly as real `rsh` does, and its answer comes back in the mail.
+terminal, exactly as real `rsh` does: the cron job waits for it and what the far
+command printed comes back in the mail, with everything else that line printed.
 
 What a cron job **prints** never reaches the screen — there is nobody at the screen
 at four in the morning. It is mailed to the account, with the `From` and `Subject`
@@ -1907,10 +1918,16 @@ how deep the chain already is -- and then end in an order to the server
 every `$(...)`, and deliberately at any DEPTH, so a foreground script inherits the
 terminal it was started from. `exitLeavesTheMachine` is that rule plus the depth
 rule, which is the one thing `exit` has and `rlogin` has not. An `"rlogin"` order
-from a job with none is refused there; an `"rsh"` order is marked `noTty` instead,
-and `SCeroSecNet.connect` then gives the session a console of its own with no copy
-of the glass on it, never points the near console at it, and delivers what it
-printed when it ends -- the mailbox for a cron line, the glass for a `&`. The one
+from a job with none is refused there; an `"rsh"` order is marked `noTty`
+whoever gave it, and `SCeroSecNet.connect` then gives the session a console of
+its own with no copy of the glass on it and never points the near console at it.
+The order is carried out while the job that gave it is still on the book — it is
+a WAIT and not an exit (`job.dial`, the same road `job.spawn` takes for an `&`,
+because only the machine can reach another machine) — and the teardown hands what
+the session printed, plus the far job's status, to `CeroSecOS.jobRemote`, which
+writes it through that job's own door: the glass, the pipe, the capture, the mail.
+A stage of a pipeline dials through its pipeline (`f.dialling` on the pipe frame),
+since a stage is a shell the machine knows nothing about. The one
 guard that closes every path at once is in `SCeroSecSystem:pushScreen`, which
 sends nothing from a console marked `noTty` to any window: the FAR machine's own
 scheduler pushes the screens its jobs wrote on and knows nothing about whose

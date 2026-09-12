@@ -3222,14 +3222,23 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	-- one that asks, or one that opens the editor -- has no output to redirect
 	-- yet, so the redirection never applies to it.
 	-- "job" joins them: a script that has just been handed to the machine has
-	-- printed nothing yet, and its output goes to the screen as it is made.
+	-- printed nothing yet, and its output goes to the screen as it is made. So
+	-- does "rsh", which has gone to WAIT for another machine: the lines it will
+	-- hand back are the far command's, and the file is opened and remembered by
+	-- the shell that typed it and written when they land (CeroSecOSVM's
+	-- job.dialRedirect).
 	local redirectable = control ~= "prompt" and control ~= "edit" and control ~= "job"
+		and control ~= "rsh"
 	if ok and redirect ~= nil and redirectable then
 		-- ">" and ">>" are the same order to a device: it has no contents to
 		-- append to, only a state to be put into.
 		local wroteOk, wroteLines =
 			CeroSecOS.writeRedirect(state, session, name, redirect, table.concat(lines, "\n"), env)
-		return wroteOk, wroteLines, control
+		-- data with it: an order this branch let through is still an order, and one
+		-- handed on without its data is one the caller cannot carry out. `rcp
+		-- notes gate:notes > out` gave a "sleep" with nothing to sleep on before
+		-- this, and the job ended on it.
+		return wroteOk, wroteLines, control, data
 	end
 
 	return ok, CeroSecOS.fit(lines), control, data
