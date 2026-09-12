@@ -17,9 +17,16 @@ case "${1:-}" in
   sync)
     mkdir -p "$DEST"
     rsync -a --delete "$REPO/42" "$REPO/common" "$DEST/"
+    # Steam writes its item id into the Workshop-side workshop.txt after the
+    # first upload; keep that line when the repo copy has none yet.
+    ID=$(grep -h '^id=' "$WS/workshop.txt" 2>/dev/null | head -1 || true)
     for f in workshop.txt preview.png; do
       rm -f "$WS/$f"; cp "$REPO/workshop/$f" "$WS/$f"
     done
+    if [ -n "$ID" ] && ! grep -q '^id=' "$WS/workshop.txt"; then
+      printf '%s\n' "$ID" >> "$WS/workshop.txt"
+      echo "kept Steam's $ID (copy it into $REPO/workshop/workshop.txt and commit)"
+    fi
     echo "copied to $DEST"
     echo "upload from the game, then: sh tools/workshop-sync.sh clean"
     ;;

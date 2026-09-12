@@ -13,16 +13,6 @@ scratch, vanilla Lua only, server-authoritative, Build 42.
 
 Made by Konijima.
 
----
-
-CeroSec puts a small Unix on the vanilla desktop computers of Knox County. Right-click
-one to turn it on: the sprite lights up, the screen glows, and a green 60x20 terminal
-opens with a BIOS boot line, a login prompt and a real shell behind it — files,
-permissions, an editor, `passwd`. The screen belongs to the machine, not to the
-player: walk away and come back to the same session, still logged in, and two
-survivors standing at one computer read and type on the same glass. Every bit of it
-is server-authoritative and safe in multiplayer.
-
 ## Status
 
 Build 42.20.4. From scratch, vanilla Lua only, no dependencies.
