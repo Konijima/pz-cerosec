@@ -1255,54 +1255,56 @@ everybody may read it and only root may change it. wtmp begins is a real
 answer on this machine, not a formality: that line is where the memory
 runs out.]],
 
-[[The building has a telephone line as well as the coax, and the number
-belongs to the LINE: every computer in the building answers on it, and one
-call at a time. The firmware announces it under the card.
+[[A MODEM SITS ON ITS OWN LINE. Every computer in a building the map knows
+has a telephone number of its own, seven digits, and one call at a time on
+it. The firmware announces it under the card.
 
   Detecting drives ... hda 64K
   Ethernet: eth0 10.4.17.3
   Phone line: 555-0417
   Booting from hda ...
 
-Nothing sets that number, and it is written nowhere on the disk -- there is
-no /etc/phone, because a number belongs to the wall and not to the case.
-A computer in a base you built has no line at all:
+The first three digits are the exchange, which is the TOWN's: every machine
+around here shares them, and the next town is on another switch. The last
+four are this machine. Neither is written anywhere on the disk -- there is
+no /etc/phone. A computer in a base you built has no line, and nor has one
+saved before this firmware until it is switched on where it stands:
 
   admin@ksp-04-11:~$ cu 555-0102
   cu: no phone line
 
-The exchange is a building full of switches on the county's power, and when
-that goes the telephone goes with it -- everywhere, at once, for good. That
-is the real difference between the two links: the coax is two machines and
-a wire between them, and a call needs a third building that is still
-working.]],
+Two machines can land on one number. That is a PARTY LINE, and the lower
+address on the wire answers, every time.
 
-[[cu dials. What answers is the modem's own voice, and then cu's:
+The exchange is a building full of switches on the county's power, and when
+that goes the telephone goes with it -- everywhere, at once, for good.]],
+
+[[cu dials, and then nothing happens for a while. That is the ring.
 
   admin@ksp-04-11:~$ cu 555-0102
   CONNECT 2400
   Connected.
   login:
 
-From there it is rlogin's session: the far machine's files, its accounts,
-one of its four ttyp lines. Two differences. It asks for a password EVERY
-time, whatever the trust files say -- those name machines, and a call has
-no machine in it, only a number. And it is slow: 2400 baud is four lines a
-second, so a cat down a call arrives in handfuls.
+Four seconds of silence before that carrier, which is what a 2400-baud
+handshake took. A busy line answers in two. A number nobody answers costs
+fifteen: this modem's S7 register is set to 15, and S7 is how long a modem
+waits for a carrier. Escape gives up on a dial, in the same
+word. Both numbers are busy while it rings.
+
+From there it is rlogin's session, with two differences. It asks for a
+password EVERY time -- the trust files name machines, and a call has only a
+number in it. And 2400 baud is four lines a second.
 
 Over there, who and last name the number that called.
 
   kate     ttyp0    555-0417   Jun 27 13:07
 
-exit over there ends it; ~. typed alone on a line ends it from here. Either
-way the line is Disconnected. The rest are the modem's:
+exit over there ends it; ~. alone on a line ends it from here. Either way
+the line says Disconnected. Every other word a dial ends in is the modem's,
+and chapter 12 carries them.
 
-  BUSY          the line is in use, this end's or theirs
-  NO DIALTONE   no power in the county, so no exchange
-  NO CARRIER    nobody answered, or the line went away
-
-rsh and rcp do not dial: a call is not a route. A file by telephone was
-uucp's work, and uucp is not on this disk.]],
+rsh and rcp do not dial: a call is not a route.]],
 
 [[The third link is the radio, and it is the only one that outlives the
 county's power. A two-way radio in the machine's own room -- a ham set

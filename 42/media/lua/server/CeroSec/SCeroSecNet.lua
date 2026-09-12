@@ -16,11 +16,15 @@ require "CeroSec/OS/CeroSecOSNet"
 -- There are two links, and the promise the manual made about the second one is
 -- kept here and nowhere else:
 --
---   * ETHERNET (reachable): a length of coax between the computers of ONE map
---     building, both switched on. Every r-command goes down it and nothing else.
---   * THE TELEPHONE (reachablePhone): one line per building, one call at a time,
+--   * ETHERNET (reachable): a length of coax between the computers of ONE
+--     PREMISES, both switched on. Every r-command goes down it and nothing else.
+--   * THE TELEPHONE (reachablePhone): one line per PREMISES, one call at a time,
 --     the county's exchange alive, both machines on. Distance does not matter and
---     neither does which building is which -- that is what a telephone IS.
+--     neither does which premises is which -- that is what a telephone IS.
+--
+-- A premises is a shop inside a mall or a whole house, and which it is comes out
+-- of the map (CeroSecNet.premisesOf below). Both links come off the same two
+-- bytes, so two shops in one mall are two segments and two telephone lines.
 --
 -- The second one added one command (cu) and one answer here; it changed no other
 -- command, which is what "a new kind of link and not a new command to learn"
@@ -56,6 +60,10 @@ require "CeroSec/OS/CeroSecOSNet"
 
 CeroSecNet = CeroSecNet or {}
 
+-- The kind of zone a premises is tagged with. ZombiesType is the spawner's own
+-- kind, and it is the one a shop inside a mall carries.
+CeroSecNet.PREMISES_TYPE = "ZombiesType"
+
 --
 -- Identity
 --
@@ -68,14 +76,133 @@ CeroSecNet = CeroSecNet or {}
 --
 -- nil for a computer in no building at all, which is what a player-built base
 -- is: no wire, and every command says so.
-function CeroSecNet.buildingOf(luaObject)
+local function defOf(luaObject)
 	local square = luaObject:getSquare()
 	if square == nil then return nil end
 	local building = square:getBuilding()
 	if building == nil then return nil end
 	local def = building:getDef()
 	if def == nil then return nil end
+	return def, square
+end
+
+function CeroSecNet.buildingOf(luaObject)
+	local def = defOf(luaObject)
+	if def == nil then return nil end
 	return def:getX(), def:getY()
+end
+
+--
+-- WHICH PREMISES A COMPUTER STANDS IN
+--
+-- One line and one length of coax per PREMISES, and a building is not one: a
+-- shopping mall is one BuildingDef with thirty shops in it, and a house is one
+-- BuildingDef with one household in it. The map knows the difference, and this is
+-- where it is asked.
+--
+-- THE RULE. The premises is the named zone of type ZombiesType containing the
+-- machine's square whose area is strictly smaller than the building's own
+-- footprint; the smallest of them when several qualify; otherwise the building
+-- itself, exactly as it was before.
+--
+-- Why ZombiesType and why the area test. Map designers tag the shops inside a mall
+-- with small named ZombiesType zones -- "CoffeeShop", 17 by 11 -- because that is
+-- how the spawner is told what kind of dead to put in a shop; it is the only place
+-- in the shipped map data where a shop has an outline of its own (a RoomDef's name
+-- is a loot type, "clothsstore", and says nothing about tenancy). The zones a HOUSE
+-- sits in are the other kind: a suburb, a district, a whole town, all of them
+-- bigger than the house. So the area test is the whole of what tells a tenancy from
+-- a region, and a zone exactly the building's size is the building under another
+-- name and loses on the same test.
+--
+-- Proved at the bytecode level on projectzomboid.jar 42.20.4, because every engine
+-- call on this rung has to be:
+--
+--   zombie.iso.IsoWorld.getMetaGrid() -> zombie.iso.IsoMetaGrid
+--   zombie.iso.IsoMetaGrid.getZonesAt(int, int, int)
+--       -> java.util.ArrayList<zombie.iso.zones.Zone>
+--   zombie.iso.zones.Zone.getName()   -> String (getfield name)
+--   zombie.iso.zones.Zone.getType()   -> String (getfield type)
+--   zombie.iso.zones.Zone.getX/getY() -> int    (getfield x, y)
+--   zombie.iso.zones.Zone.getWidth()  -> int    (getfield w)
+--   zombie.iso.zones.Zone.getHeight() -> int    (getfield h)
+--   zombie.iso.BuildingDef.getX/getY/getX2/getY2() -> int
+--
+-- The getters and not the public fields, which is what the game's own Lua does
+-- (media/lua/shared/Traps/TrapSystem.lua:12-17 walks getZonesAt and asks
+-- zone:getType(); client/DebugUIs/DebugContextMenu.lua:1239 does the same).
+--
+-- Asked only where the chunk is certainly loaded -- the two moments identify is
+-- called -- and the answer is written into the machine's own record, so nothing
+-- ever asks the world twice.
+--
+
+-- The zones on a square, as a plain array. An empty one for a game with no world
+-- to ask, which is what a bench without one is and what a server mid-load can be.
+local function zonesAt(square)
+	if getWorld == nil then return {} end
+	local world = getWorld()
+	if world == nil then return {} end
+	local grid = world:getMetaGrid()
+	if grid == nil then return {} end
+	local list = grid:getZonesAt(square:getX(), square:getY(), square:getZ())
+	if list == nil then return {} end
+	local out = {}
+	for i = 0, list:size() - 1 do
+		local zone = list:get(i)
+		if zone ~= nil then out[#out + 1] = zone end
+	end
+	return out
+end
+
+-- The premises: two bytes, the exchange behind them, and what it is called.
+-- nil for a computer in no building at all, which is what a player-built base is.
+function CeroSecNet.premisesOf(luaObject)
+	local def, square = defOf(luaObject)
+	if def == nil then return nil end
+	local bx, by = def:getX(), def:getY()
+	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
+
+	-- The building's own footprint, which is what a tenancy has to be smaller than.
+	-- 0 for a def that will not say -- and a footprint of nothing is a building no
+	-- zone can be inside, so every zone loses and the building wins, which is the
+	-- answer this rung had before there were zones in it.
+	local area = 0
+	local x2, y2 = def:getX2(), def:getY2()
+	if type(x2) == "number" and type(y2) == "number" then
+		area = (x2 - bx) * (y2 - by)
+	end
+
+	local best, bestArea = nil, nil
+	if area > 0 then
+		local zones = zonesAt(square)
+		for i = 1, #zones do
+			local zone = zones[i]
+			local name = zone:getName()
+			if zone:getType() == CeroSecNet.PREMISES_TYPE
+					and type(name) == "string" and name ~= "" then
+				local w, h = zone:getWidth(), zone:getHeight()
+				if type(w) == "number" and type(h) == "number" then
+					local own = w * h
+					-- Strictly smaller, and the smallest of the ones that are: a shop
+					-- inside a shop is the shop a survivor is standing in.
+					if own > 0 and own < area and (bestArea == nil or own < bestArea) then
+						best, bestArea = zone, own
+					end
+				end
+			end
+		end
+	end
+
+	if best == nil then
+		local b1, b2 = CeroSecOS.buildingKey(bx, by)
+		if b1 == nil then return nil end
+		return b1, b2, CeroSecOS.phoneExchange(bx, by), nil
+	end
+	local zx, zy = best:getX(), best:getY()
+	local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
+	if b1 == nil then return nil end
+	return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName()
 end
 
 -- Every machine the server holds, which is every machine in the county that has
@@ -145,35 +272,38 @@ end
 -- invent.
 function CeroSecNet.identify(system, luaObject, state)
 	if state == nil then return false end
-	local bx, by = CeroSecNet.buildingOf(luaObject)
-	if bx == nil then return false end
-	local b1, b2 = CeroSecOS.buildingKey(bx, by)
-	if b1 == nil then return false end
-
-	-- Which central office this building is wired to. Worked out from the corner
-	-- itself and not from the key, because the key is two bytes of a hash and a
-	-- region is a coordinate -- which is the whole reason the exchange is a FIELD in
-	-- the record instead of something derived from it (see the note over
+	-- The PREMISES and not the building: a shop in a mall is its own, and a house is
+	-- the building. Both links come off these two bytes -- the segment and the line
+	-- -- so two shops in one mall are two of each.
+	--
+	-- The exchange comes back beside them because it cannot be derived from them:
+	-- the key is two bytes of a hash and a region is a coordinate, which is the whole
+	-- reason the exchange is a FIELD in the record (see the note over
 	-- CeroSecOS.phoneExchange).
-	local ex = CeroSecOS.phoneExchange(bx, by)
+	local b1, b2, ex, pz = CeroSecNet.premisesOf(luaObject)
+	if b1 == nil then return false end
 
 	local net = CeroSecOS.netRecord(state)
 	if net ~= nil and net.b1 == b1 and net.b2 == b2 then
-		-- Already on the wire here. One thing may still be missing: every machine
-		-- saved before the line belonged to the modem carries three numbers and no
-		-- exchange, and such a machine has NO TELEPHONE -- an empty line in the BIOS,
-		-- and `cu: no phone line` -- until the record is made again where it stands.
-		-- This is that moment: the chunk is loaded, so the building is answerable,
-		-- and nothing has to be migrated anywhere else.
-		if net.ex ~= nil or ex == nil then return false end
-		if CeroSecOS.setNetRecord(state, b1, b2, net.n, ex) == nil then return false end
+		-- Already on this premises's wire. Two things may still be missing, and both
+		-- are the same fact: every machine saved before the line belonged to the
+		-- premises carries the building bytes and no exchange, so it has NO TELEPHONE
+		-- -- an empty line in the BIOS, and `cu: no phone line` -- until the record is
+		-- made again where it stands. This is that moment: the chunk is loaded, so the
+		-- square is answerable, and nothing has to be migrated anywhere else.
+		--
+		-- A machine whose bytes already match is a machine whose PREMISES has not
+		-- moved, so only the two labels can have: the exchange and the name.
+		if net.ex ~= nil and net.pz == pz then return false end
+		if ex == nil then return false end
+		if CeroSecOS.setNetRecord(state, b1, b2, net.n, ex, pz) == nil then return false end
 		luaObject:mirrorOS()
 		return true
 	end
 
 	local n = freeNumber(system, luaObject, b1, b2)
 	if n == nil then return false end
-	if CeroSecOS.setNetRecord(state, b1, b2, n, ex) == nil then return false end
+	if CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz) == nil then return false end
 	-- And the machine's own line in /etc/hosts, once. After this the file is the
 	-- player's: a name he added stays, a line he deleted stays deleted.
 	CeroSecOS.writeOwnHost(state, CeroSecOS.clockOf(system:clockEnv()))
@@ -302,17 +432,18 @@ function CeroSecNet.exchangeAlive()
 	return CeroSecNet.gridAlive()
 end
 
--- A machine's own line, which IS its number: one modem, one line, one number.
--- nil for a machine that has none -- one in no building at all, and one whose
--- record was written before the line belonged to the modem rather than to the
--- building it stands in.
+-- The PREMISES's line, which IS its number: one premises, one line, one number,
+-- shared by every computer standing on it. nil for a machine that has none -- one
+-- in no building at all, and one whose record was written before the line belonged
+-- to the premises rather than to the whole building.
 --
 -- The number is the KEY the busy rule is asked in, and that is the whole of what
--- changed when the line stopped being the building's: the key used to be the two
--- bytes of the building, so a mall was one line and thirty shops took turns on it.
+-- changed when the line stopped being the building's: the key is the two bytes of
+-- the PREMISES now, so a mall is thirty lines and not one that thirty shops took
+-- turns on.
 local function lineKey(net)
 	if net == nil or net.ex == nil then return nil end
-	return CeroSecOS.phoneText(net.ex, CeroSecOS.phoneKey(net.b1, net.b2, net.n))
+	return CeroSecOS.phoneText(net.ex, CeroSecOS.phoneKey(net.b1, net.b2))
 end
 
 -- One place, read two ways, and the two can never disagree: keyOf is what the busy
@@ -363,8 +494,8 @@ end
 -- and the line is busy for ever with nobody on it. Walking the county costs what
 -- a ping costs and cannot be wrong.
 --
--- Both ENDS make the line busy, which is what one line per modem means: a machine
--- that has dialled OUT cannot take a call either.
+-- Both ENDS make the line busy, which is what one line per premises means: a shop
+-- whose other machine has dialled OUT cannot take a call either.
 --
 -- And a line that is RINGING is busy too, at both ends, for the length of the
 -- ring: a modem that has lifted the receiver and is waiting for an answer is
@@ -393,15 +524,16 @@ function CeroSecNet.lineBusy(system, key)
 	end) and true or false
 end
 
--- Who answers a number. One modem, one line, so it is the machine whose own number
--- that is -- and a machine that is switched off cannot answer, which is a telephone
--- ringing in an empty office.
+-- Who answers a number. Every computer of the premises shares the line, so the one
+-- that picks up is the one with the lowest address on it -- the desk the modem is on
+-- -- and it is the same desk every time, which is what makes a number something a
+-- player can write down. A machine that is switched off cannot answer; a premises
+-- where every machine is off is a telephone ringing in an empty shop.
 --
--- Two machines on one number is a PARTY LINE: ten thousand subscriber numbers to a
--- region, so the derivation lets two of them land on one, and the lower n picks up
--- every time. It is the same desk every time, which is what makes a number
--- something a player can write down, and a rural exchange really did sell two
--- subscribers one line in 1993.
+-- Two PREMISES on one number is the same answer read once more: ten thousand
+-- subscriber numbers to a region, so the derivation lets two of them land on one,
+-- and the lowest n of the pair picks up. Either way it is a PARTY LINE, which is
+-- what a rural exchange really sold in 1993, and the manual says so.
 function CeroSecNet.atPhone(system, tel)
 	if tel == nil then return nil end
 	local best, bestNet = nil, nil
@@ -431,8 +563,8 @@ function CeroSecNet.reachablePhone(system, from, tel)
 	-- what the receiver tells you first.
 	if not CeroSecNet.exchangeAlive() then return nil, CeroSecOS.MODEM.noDialtone end
 	local myKey = lineKey(mine)
-	-- This building's own line, in use by somebody: a survivor on the other
-	-- machine in the room is on the telephone, and there is one telephone.
+	-- This premises's own line, in use by somebody: a survivor on the other
+	-- machine in the shop is on the telephone, and there is one telephone.
 	if CeroSecNet.lineBusy(system, myKey) then return nil, CeroSecOS.MODEM.busy end
 	local object = CeroSecNet.atPhone(system, tel)
 	-- Nobody answered: a number no building has, or a building with every machine
@@ -440,7 +572,7 @@ function CeroSecNet.reachablePhone(system, from, tel)
 	-- nothing about a county he cannot reach, which is what a telephone is like.
 	if object == nil then return nil, CeroSecOS.MODEM.noCarrier end
 	local theirKey = CeroSecNet.keyOf(object)
-	-- This building's own number, dialled from inside it: the line is busy because
+	-- This premises's own number, dialled from inside it: the line is busy because
 	-- the caller is the one using it.
 	if theirKey == myKey then return nil, CeroSecOS.MODEM.busy end
 	if CeroSecNet.lineBusy(system, theirKey) then return nil, CeroSecOS.MODEM.busy end

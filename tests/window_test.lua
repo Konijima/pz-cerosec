@@ -4086,6 +4086,38 @@ end
 -- SCeroSecNet.lua).
 --
 
+-- THE MAP'S ZONES, which is where a premises comes from.
+--
+-- A list of { name, type, x, y, w, h } a bench lays out, and getZonesAt answers the
+-- ones covering a tile -- which is what zombie.iso.IsoMetaGrid.getZonesAt does
+-- (proved at the bytecode level at the head of SCeroSecNet.lua). Empty is a map
+-- with no zones on it, which is what every bench but the premises ones runs on.
+_G.__zones = {}
+local function fakeZone(z)
+	return {
+		getName = function() return z.name end,
+		getType = function() return z.type or "ZombiesType" end,
+		getX = function() return z.x end,
+		getY = function() return z.y end,
+		getWidth = function() return z.w end,
+		getHeight = function() return z.h end,
+	}
+end
+_G.getWorld = function()
+	return { getMetaGrid = function()
+		return { getZonesAt = function(_, x, y, _z)
+			local hits = {}
+			for i = 1, #_G.__zones do
+				local z = _G.__zones[i]
+				if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
+					hits[#hits + 1] = fakeZone(z)
+				end
+			end
+			return javaList(hits)
+		end }
+	end }
+end
+
 local function newNet()
 	CeroSecJobs.machines = {}
 	local system = SCeroSecSystem:new()
@@ -4094,8 +4126,14 @@ local function newNet()
 	-- A building is two numbers and nothing else as far as the wire is
 	-- concerned: the corner of its BuildingDef, which is where it stands on the
 	-- map and does not move.
-	local function buildingAt(bx, by)
-		local def = { getX = function() return bx end, getY = function() return by end }
+	-- A building is its corner AND its footprint now: the premises rule asks how big
+	-- the building is, because a named zone only counts as a premises inside it when
+	-- it is SMALLER. 40 by 40 unless a bench says otherwise, which is a house.
+	local function buildingAt(bx, by, w, h)
+		w = w or 40
+		h = h or 40
+		local def = { getX = function() return bx end, getY = function() return by end,
+			getX2 = function() return bx + w end, getY2 = function() return by + h end }
 		return { getDef = function() return def end }
 	end
 
@@ -4134,7 +4172,7 @@ local function newNet()
 	local office = buildingAt(400, 700)
 	local shed = buildingAt(900, 120)
 	local net = { system = system, objects = objects, machine = machine,
-		office = office, shed = shed }
+		office = office, shed = shed, buildingAt = buildingAt }
 
 	-- Two in the office, one in the shed down the road.
 	net.here = machine(10, 10, 0, office)
@@ -5705,30 +5743,24 @@ do
 	local net = newNet()
 	local b1, b2 = CeroSecOS.buildingKey(400, 700)
 	local ex = CeroSecOS.phoneExchange(400, 700)
-	-- ONE LINE PER MODEM. The number is worked out from the building key, the
-	-- machine's own number on the wire and the region the building stands in --
-	-- every one of them a fact the bench can derive for itself without being told.
-	eq("the office machine's number is its own", telOf(net.here),
-		CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 1)))
-	eq("and the machine at the next desk has ANOTHER one",
-		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 2)))
-	check("which is not the same number",
-		telOf(net.gate) ~= telOf(net.here))
+	-- ONE LINE PER PREMISES, and with no zone on the map a premises is the whole
+	-- building: both office machines are on one line, worked out from the building
+	-- key and the region the building stands in -- facts the bench derives for
+	-- itself without being told.
+	eq("the office's number is the premises's", telOf(net.here),
+		CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2)))
+	eq("and the other machine in the room answers on the same one",
+		telOf(net.gate), telOf(net.here))
 	check("the shed down the road has a different one",
 		telOf(net.far) ~= telOf(net.here))
-	-- ONE CENTRAL OFFICE TO A TOWN. Both office machines and the shed down the road
-	-- are inside one PHONE_REGION square, so all three are wired back to one switch
-	-- and share the first three digits -- which is the point of the exchange: the
-	-- numbers of one place look like each other.
-	eq("both office machines are on one central office",
-		string.sub(telOf(net.gate), 1, 3), string.sub(telOf(net.here), 1, 3))
-	eq("and so is the shed, being in the same town",
+	-- ONE CENTRAL OFFICE TO A TOWN. The office and the shed are inside one
+	-- PHONE_REGION square, so both are wired back to one switch and share the first
+	-- three digits -- which is the point of the exchange: the numbers of one place
+	-- look like each other.
+	eq("both are on one central office",
 		string.sub(telOf(net.far), 1, 3), string.sub(telOf(net.here), 1, 3))
 	-- And a building in the next region along is on ANOTHER switch.
-	local town = net.machine(300, 300, 0, (function()
-		local def = { getX = function() return 1200 end, getY = function() return 40 end }
-		return { getDef = function() return def end }
-	end)())
+	local town = net.machine(300, 300, 0, net.buildingAt(1200, 40))
 	town:turnOn()
 	check("a building a region away is on another central office",
 		string.sub(telOf(town), 1, 3) ~= string.sub(telOf(net.here), 1, 3))
@@ -5746,10 +5778,10 @@ do
 	eq("and there is no file to read it out of", ok, false)
 	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
 
-	-- AN OLDER SAVE. Every machine written before the line belonged to the modem
-	-- carries three numbers and no exchange, and such a machine has NO telephone at
-	-- all -- there is no region on its disk to work one out from. It gets one the
-	-- next time the server sees which building it is standing in, which is the next
+	-- AN OLDER SAVE. Every machine written before the line belonged to the premises
+	-- carries the building bytes and no exchange, and such a machine has NO
+	-- telephone at all -- there is no region on its disk to work one out from. It
+	-- gets one the next time the server sees where it is standing, which is the next
 	-- time it is switched on or a window opens on it, and nothing is migrated
 	-- anywhere else.
 	local old = net.gate:osState()
@@ -5762,9 +5794,7 @@ do
 	net.gate:turnOff()
 	net.gate:turnOn()
 	eq("switching it on gives it the line it should have had",
-		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, was.n)))
-	eq("and the number it had before the record was spoilt",
-		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 2)))
+		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2)))
 
 	-- A computer in a base somebody built is in no building, so there is nothing
 	-- to derive either a wire or a telephone from.
@@ -5776,6 +5806,123 @@ do
 	check("having never lifted the receiver", net.far.ptys == nil)
 end
 
+-- A SHOP IN A MALL IS A PREMISES, and a house is not thirty of them.
+--
+-- The map tags the shops inside a mall with small named ZombiesType zones. Three
+-- machines in ONE building: one in each of two such zones and one in neither, which
+-- is three premises -- three telephone lines and three lengths of coax -- and the
+-- rule that keeps a house one premises is the AREA test.
+do
+	local net = newNet()
+	-- A mall: the office building, 40 by 40, with two shops in it.
+	_G.__zones = {
+		{ name = "CoffeeShop", x = 8, y = 8, w = 6, h = 6 },
+		{ name = "Bakery", x = 20, y = 8, w = 6, h = 6 },
+	}
+	-- net.here is at 10,10 (the coffee shop), net.gate at 12,10 (the coffee shop
+	-- too), and a third machine at 22,10 (the bakery). A fourth stands in the mall
+	-- and in neither shop.
+	local baker = net.machine(22, 10, 0, net.office)
+	local hall = net.machine(35, 35, 0, net.office)
+	for _, m in ipairs({ net.here, net.gate, baker, hall }) do
+		m:turnOff()
+		m:turnOn()
+	end
+
+	-- THREE PREMISES, THREE NUMBERS.
+	check("the coffee shop has a line", telOf(net.here) ~= nil)
+	eq("and both its machines are on it", telOf(net.gate), telOf(net.here))
+	check("the bakery next door has another", telOf(baker) ~= telOf(net.here))
+	check("and the mall's own floor a third",
+		telOf(hall) ~= telOf(net.here) and telOf(hall) ~= telOf(baker))
+	-- All three on one central office, because one building is one town.
+	eq("all three are on one central office",
+		string.sub(telOf(baker), 1, 3), string.sub(telOf(net.here), 1, 3))
+
+	-- THREE SEGMENTS. The premises decides the coax too, so the shop next door is
+	-- not on this one's wire at all -- which is what two businesses in one building
+	-- had.
+	local mine = CeroSecOS.netRecord(net.here:osState())
+	local theirs = CeroSecOS.netRecord(baker:osState())
+	check("the bakery is on another segment",
+		mine.b1 ~= theirs.b1 or mine.b2 ~= theirs.b2)
+	eq("and the coffee shop's two machines are on one",
+		CeroSecOS.netRecord(net.gate:osState()).b1, mine.b1)
+	net.login("admin")
+	net.name(net.here, baker, "bakery")
+	net.enter("ping bakery")
+	net.tick(40)
+	check("so no r-command reaches it", net.glass("100% packet loss"))
+	-- While the telephone does, which is the whole point of a line per premises.
+	dial(net, telOf(baker))
+	check("and the telephone does", net.glass("CONNECT 2400"))
+
+	-- And the firmware says WHICH line this is, because a survivor in a mall with
+	-- thirty of them needs to know.
+	check("the BIOS names the premises",
+		net.glass("Phone line: " .. telOf(net.here) .. " (CoffeeShop)"))
+	eq("which is on the record and not worked out twice",
+		CeroSecOS.premisesOf(net.here:osState()), "CoffeeShop")
+	eq("a machine on the mall floor has no premises name",
+		CeroSecOS.premisesOf(hall:osState()), nil)
+	_G.__zones = {}
+end
+
+-- THE AREA TEST, which is the whole of what tells a tenancy from a region.
+do
+	local net = newNet()
+	local house = net.machine(500, 500, 0, net.buildingAt(2000, 2000, 10, 10))
+	house:turnOn()
+	local alone = telOf(house)
+	check("a house with no zone on it has a line", alone ~= nil)
+
+	-- A named zone BIGGER than the building is a suburb and not a tenancy: the
+	-- house keeps the one line it had.
+	_G.__zones = { { name = "Suburb", x = 400, y = 400, w = 400, h = 400 } }
+	house:turnOff()
+	house:turnOn()
+	eq("a zone bigger than the building is no premises", telOf(house), alone)
+
+	-- A zone EXACTLY the building's area is the building under another name, and
+	-- loses on the same test -- strictly smaller, or nothing.
+	_G.__zones = { { name = "Same", x = 495, y = 495, w = 10, h = 10 } }
+	house:turnOff()
+	house:turnOn()
+	eq("a zone the building's own size is no premises either", telOf(house), alone)
+
+	-- One tile smaller IS one, and the house is suddenly a shop.
+	_G.__zones = { { name = "Shop", x = 495, y = 495, w = 10, h = 9 } }
+	house:turnOff()
+	house:turnOn()
+	check("a zone smaller than the building is a premises", telOf(house) ~= alone)
+	eq("and it is named", CeroSecOS.premisesOf(house:osState()), "Shop")
+
+	-- The SMALLEST of the ones that qualify: a shop inside a shop is the shop the
+	-- survivor is standing in.
+	_G.__zones = {
+		{ name = "Shop", x = 495, y = 495, w = 10, h = 9 },
+		{ name = "Kiosk", x = 498, y = 498, w = 4, h = 4 },
+	}
+	house:turnOff()
+	house:turnOn()
+	eq("the smallest qualifying zone wins",
+		CeroSecOS.premisesOf(house:osState()), "Kiosk")
+
+	-- A zone of the WRONG TYPE is not a premises whatever its size: the rule is
+	-- ZombiesType, which is the kind a shop is tagged with.
+	_G.__zones = { { name = "Nav", type = "Nav", x = 495, y = 495, w = 4, h = 4 } }
+	house:turnOff()
+	house:turnOn()
+	eq("a zone of another type is no premises", telOf(house), alone)
+	-- And one with no name at all is not one either.
+	_G.__zones = { { name = "", x = 495, y = 495, w = 4, h = 4 } }
+	house:turnOff()
+	house:turnOn()
+	eq("nor is a zone nobody named", telOf(house), alone)
+	_G.__zones = {}
+end
+
+-- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
 -- two commands over there that name the number it came from.
 do
@@ -5866,7 +6013,8 @@ end
 do
 	local net = newNet()
 	local other = net.machine(200, 200, 0, (function()
-		local def = { getX = function() return 1200 end, getY = function() return 40 end }
+		local def = { getX = function() return 1200 end, getY = function() return 40 end,
+			getX2 = function() return 1240 end, getY2 = function() return 80 end }
 		return { getDef = function() return def end }
 	end)())
 	other:turnOn()
@@ -5897,22 +6045,14 @@ do
 	net.tick(3)
 	check("the call is over", net.heard("Disconnected."))
 
-	-- THE MACHINE AT THE NEXT DESK IS NOW REACHABLE, and this is the whole of what
-	-- changed: it used to share the building's one line, so its number was this
-	-- machine's own and dialling it was always BUSY. It has a line of its own now.
-	dial(net, telOf(net.gate))
-	check("the machine at the next desk answers", net.glass("CONNECT 2400"))
-	eq("on its own line", CeroSecOS.ptyCount(net.gate.ptys), 1)
-	net.enter("admin")
-	net.enter("")
-	net.tick(2)
-	check("the prompt is its", net.glass("admin@" .. net.host(net.gate)))
-	net.forget()
-	net.enter("~.")
-	net.tick(3)
-	check("hung up", net.heard("Disconnected."))
+	-- The machine at the next desk is on THIS premises, so its number is this
+	-- machine's own and dialling it is dialling a line one is already on.
+	eq("the next desk is on the same line", telOf(net.gate), telOf(net.here))
+	dial(net, telOf(net.gate), CeroSecOS.RING_BUSY_MS)
+	check("so dialling it is busy", net.glass("BUSY"))
+	eq("and nothing was opened", CeroSecOS.ptyCount(net.gate.ptys or {}), 0)
 
-	-- One's OWN number is still busy, because the caller is the one using the line.
+	-- One's OWN number is busy for the same reason: the caller is using the line.
 	dial(net, telOf(net.here), CeroSecOS.RING_BUSY_MS)
 	check("dialling one's own modem is dialling a line one is using",
 		net.glass("BUSY"))
@@ -5925,7 +6065,8 @@ end
 do
 	local net = newNet()
 	local other = net.machine(200, 200, 0, (function()
-		local def = { getX = function() return 1200 end, getY = function() return 40 end }
+		local def = { getX = function() return 1200 end, getY = function() return 40 end,
+			getX2 = function() return 1240 end, getY2 = function() return 80 end }
 		return { getDef = function() return def end }
 	end)())
 	other:turnOn()
@@ -6006,30 +6147,33 @@ do
 	net.far:turnOn()
 end
 
--- A PARTY LINE. Two machines that hash onto one number are two subscribers on one
--- line, which is what a rural exchange sold in 1993: the lower one on the wire
--- answers, every time, and both of their lines are busy while it is up.
+-- A PARTY LINE, which is what several telephones on one line is and what a rural
+-- exchange really sold in 1993. There are two ways to be on one here and they end
+-- in the same answer: several machines of ONE premises, and two PREMISES that
+-- hashed onto one number. The lowest address answers, every time, and the line is
+-- busy for all of them while it is up.
 do
 	local net = newNet()
 	net.login("admin")
-	-- Made rather than hunted for: the record is what the number comes off, so a
-	-- machine can be given the record of another one's line. Two of the shed's
-	-- machines on one number is exactly what the derivation allows.
+	-- The second kind, made rather than hunted for: the record is what the number
+	-- comes off, so a machine can be given another premises's two bytes. A shop on
+	-- the mall floor landing on the shed's number is exactly what ten thousand
+	-- subscriber numbers to a region allows.
 	local twin = net.machine(300, 300, 0, net.shed)
 	twin:turnOn()
 	local state = twin:osState()
 	local mine = CeroSecOS.netRecord(net.far:osState())
 	check("the shed's own machine has a record", mine ~= nil)
-	-- Same building, same exchange, same n -- and therefore the same number. The
+	-- The same two bytes and the same exchange, and therefore the same number. The
 	-- address collides too, which is what two subscribers on one line looked like
 	-- from the exchange's side: there is nothing on this rung that routes.
-	CeroSecOS.setNetRecord(state, mine.b1, mine.b2, mine.n, mine.ex)
+	CeroSecOS.setNetRecord(state, mine.b1, mine.b2, mine.n + 1, mine.ex)
 	twin:mirrorOS()
 	eq("and the twin answers to the same number", telOf(twin), telOf(net.far))
 
 	dial(net, telOf(net.far))
 	check("the call goes through", net.glass("CONNECT 2400"))
-	eq("the lower machine on the wire is the one that picked up",
+	eq("the lowest address on the line is the one that picked up",
 		CeroSecOS.ptyCount(net.far.ptys), 1)
 	eq("and the other subscriber took no line",
 		CeroSecOS.ptyCount(twin.ptys or {}), 0)
@@ -6391,13 +6535,11 @@ do
 	check("the machine has a callsign", CeroSecOS.isCallsign(here))
 	check("so has the one beside it", CeroSecOS.isCallsign(gate))
 	check("and the shed down the road", CeroSecOS.isCallsign(far))
-	-- Per MACHINE, which is what makes it a STATION -- and the telephone number is
-	-- per machine too now, so the two are alike in that and the callsign is still
-	-- not a rearrangement of the number: the multipliers differ on purpose.
+	-- Per MACHINE and not per premises, which is what makes it a STATION: the
+	-- telephone number is the premises's and two computers in one office share it.
 	check("the two machines in the office are two stations", here ~= gate)
-	check("each with a telephone line of its own",
-		telOf(net.here) ~= telOf(net.gate))
-	check("and a callsign that is not its number's digits",
+	eq("and they do share the one telephone line", telOf(net.here), telOf(net.gate))
+	check("a callsign is not a rearrangement of the number either",
 		string.find(here, string.sub(telOf(net.here), 5), 1, true) == nil)
 	check("the shed is a third station", far ~= here and far ~= gate)
 	-- Kentucky is the fourth call district, and that digit is a fact about the map.
@@ -7635,6 +7777,8 @@ do
 		local def = {
 			getX = function() return OFFICE_X end,
 			getY = function() return OFFICE_Y end,
+			getX2 = function() return OFFICE_X + 40 end,
+			getY2 = function() return OFFICE_Y + 40 end,
 			-- A RoomDef answers no IsoRoom for a room whose chunks are not in,
 			-- which is what FakeWorld's own building def does further up.
 			getRooms = function() return javaList({

@@ -771,9 +771,13 @@ function SCeroSecSystem:bootScreen(console, state)
 	if console.booted then return false end
 	console.booted = true
 	-- The card and its address, which the firmware can only announce once the
-	-- server has worked out which building the computer stands in.
+	-- server has worked out which PREMISES the computer stands in -- a shop inside a
+	-- mall, or a whole house.
 	-- And the telephone line under it, which is the same fact read a second way:
-	-- both come off the machine's own record of which building it stands in.
+	-- both come off the machine's own record of the premises it stands on. The line
+	-- carries the premises's NAME behind the number when the map gave it one and it
+	-- fits the screen (CeroSecOS.phoneLine), because a survivor in a mall with thirty
+	-- lines in it needs to know which one he is sitting at.
 	-- And the TNC's banner under the modem, which is the one of the three that is
 	-- read off the DISK: an address and a number are facts about where the machine
 	-- stands, and a callsign is a file somebody may have written (see
@@ -781,7 +785,7 @@ function SCeroSecSystem:bootScreen(console, state)
 	local addr, tel, call = nil, nil, nil
 	if state ~= nil then
 		addr = CeroSecOS.address(state)
-		tel = CeroSecOS.phoneOf(state)
+		tel = CeroSecOS.phoneLine(state)
 		call = CeroSecOS.callsignOf(state)
 	end
 	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel, call))

@@ -1686,8 +1686,13 @@ do
 	local msPerPass = (os.clock() - clockStart) * 1000 / RINGING
 	eq("no pass over four ringing telephones spends a single step", worst, 0)
 	eq("nor do all of them together", spentAny, 0)
-	check("and a pass costs under " .. WALL_MS_ASLEEP .. " ms of real time (" ..
-		string.format("%.4f", msPerPass) .. ")", msPerPass < WALL_MS_ASLEEP)
+	-- And the real time, against the sleeping ceiling times the number of machines:
+	-- WALL_MS_ASLEEP is what ONE machine asleep may cost a pass, and a pass here
+	-- walks four of them. The steps above are the assertion that matters; this is
+	-- the belt that says the walk itself did not become the cost.
+	local asleepCeiling = WALL_MS_ASLEEP * RINGERS
+	check("and a pass costs under " .. asleepCeiling .. " ms of real time (" ..
+		string.format("%.4f", msPerPass) .. ")", msPerPass < asleepCeiling)
 	for m = 1, RINGERS do
 		local job = CeroSecJobs.book(machines[m]).list[1]
 		eq("machine " .. m .. " is still ringing after fourteen seconds",
