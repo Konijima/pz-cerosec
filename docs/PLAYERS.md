@@ -121,8 +121,8 @@ Commands:
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
 | `sudo <command...>` | run one command as `root` |
-| `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
-| `shutdown -c` | call a pending one off |
+| `shutdown [-h\|-r] now\|+N` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
+| `kill <id>` | call a pending `+N` off: it is a process, and that is how you stop one |
 | `halt` | `shutdown -h now` under its older name (root only) |
 | `reboot` | switch it off, wait three seconds, and switch it back on (root only); `shutdown -r now` is the long way |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
@@ -276,9 +276,24 @@ The system is going down for reboot in 1 minute!
 The system is going down for reboot NOW!
 ```
 
-`shutdown -c` prints `shutdown: cancelled`. One pending order per machine: a second
-is `shutdown: already scheduled` rather than a quiet replacement, because nobody
-should be told two different times. `halt` is `shutdown -h now`.
+**A pending order is a process**, which is what BSD's `shutdown(8)` is: it forks,
+prints its pid and sleeps until the minute. So it is a job in the ordinary book --
+`[1] 44` when it is given, named `shutdown` in `ps`, listed by `jobs`, owned by the
+account that gave it -- and you call it off the way you stop any process:
+
+```
+root@ksp-04-11:~# jobs
+[1] waiting  shutdown -r +5
+root@ksp-04-11:~# kill 44
+```
+
+`kill` says nothing when it worked, which is `kill`. Root may, and so may the
+account that ordered it; anybody else gets
+`kill: 44: Operation not permitted`. There is **no `shutdown -c`**: that flag is
+sysvinit's, which is Linux and later than this machine. Two orders at once are
+allowed, because two processes are -- both warn, and the first minute to arrive
+takes the machine down -- and what bounds them is the job book, four to a machine.
+`halt` is `shutdown -h now`.
 
 The timer is the scheduler's pass and lives on the machine, not in the window: close
 the window, walk away, come back, and it is still counting. It is **not** persisted
@@ -741,6 +756,7 @@ answer: the lowest address answers, and the line is busy for both.
 | command | does |
 | --- | --- |
 | `cu telno` | call another machine: a session on it, on this screen |
+| `cu -l line` | open a serial line instead of dialling: the radio's is `/dev/radio0` |
 
 ```
 admin@ksp-04-11:~$ cu 555-0102
@@ -879,15 +895,31 @@ digit (Kentucky), and three letters, which is what a United States amateur held 
 own `MYCALL` at power-up. Root may write it to anything, which is the whole
 security lesson below.
 
+The box is a **peripheral on a serial line**, so it is reached the way 1993 reached
+one -- there is no `call` command, and the one that was here until
+`SYSTEM_VERSION` 17 was invented:
+
 | command | does |
 | --- | --- |
-| `call CALLSIGN` | raise a station: a session on it, on this screen |
+| `cu -l line` | open a serial line: `/dev/radio0` is the TNC's |
 
 ```
-admin@ksp-04-11:~$ call KE4QWZ
+admin@ksp-04-11:~$ cu -l /dev/radio0
+CeroSec Systems TNC-200 (TNC-2 compatible)
+cmd: MYCALL
+MYCALL KD4AXR
+cmd: C KE4QWZ
 *** CONNECTED to KE4QWZ
 login:
 ```
+
+At `cmd:` the box takes the TNC-2's own commands, in either case, with the box's
+own abbreviations: `MYCALL` (and `MYCALL W4ZZZ` to set it, which is
+`/etc/callsign`, so root only), `CONNECT`/`C`, `DISCONNE`/`D`, `CONV`/`K`,
+`MHEARD`/`MH`, `MHCLEAR`. Anything else gets `?EH`, which is what a TNC-2 answers
+a line it did not understand. **Escape** steps out of a link back to `cmd:` with
+the link still up, `K` goes back in, `D` drops it, and `~.` alone on a line hangs
+the whole line up and gives the shell back.
 
 Lines with three stars are the **TNC** talking and not a command, and they are a
 TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
@@ -895,7 +927,8 @@ TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
 `*** <call> busy`; the bare word was chosen so the one-line refusal reads like the
 modem's `BUSY` on the link before this one, and the callsign is on the line above
 it anyway.) Two more the machine says in its own name, because it can see them
-without transmitting: `call: no radio` and `call: no callsign`.
+without transmitting: `cu: no radio` and `cu: no callsign` -- and a machine with no
+set in its room has no line to open: `cu: /dev/radio0: no such device`.
 
 Both sets must be on, both powered, and **both on the same frequency** -- agree
 one off the air, walk to the set, turn the knob, and check with
@@ -906,7 +939,7 @@ no trust file is consulted, because a callsign is a file anybody with a radio an
 an editor can choose. Over there `who` and `last` name the **callsign**, and that
 is what goes into `/var/log/wtmp`.
 
-`*** retry count exceeded` is the single answer to every way a call goes
+`*** retry count exceeded` is the single answer to every way a connect goes
 unanswered -- no such station, a machine or a set switched off, a flat battery, the
 wrong frequency, out of range, or a chunk the server has not loaded -- because a
 station that hears nothing learns nothing about why. And one of those is worse

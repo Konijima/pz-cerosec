@@ -5,7 +5,7 @@ county, and radio to whatever is in earshot. Identities and their derivations,
 each link's own rules and rates, the pty a remote session lives on, and where
 every result string a player reads actually comes from.
 
-See also: [PLAYERS.md](PLAYERS.md) for `ifconfig`/`ping`/`rlogin`/`cu`/`call` as a
+See also: [PLAYERS.md](PLAYERS.md) for `ifconfig`/`ping`/`rlogin`/`cu` as a
 player uses them, [PROTOCOL.md](PROTOCOL.md) for whose screen a remote order
 writes to and the terminal rule for `rlogin`/`rsh`, [SECURITY.md](SECURITY.md) for
 the security angle on trust files.
@@ -460,15 +460,66 @@ digit (Kentucky), and three letters, which is what a United States amateur held 
 own `MYCALL` at power-up. Root may write it to anything, which is the whole
 security lesson below.
 
-| command | does |
-| --- | --- |
-| `call CALLSIGN` | raise a station: a session on it, on this screen |
+### The TNC, and how one was driven
+
+There is **no `call` command**, and there was one until `SYSTEM_VERSION` 17. It was
+invented here: no Unix ever shipped a `/bin/call`, because packet radio was never
+something the kernel did. A TNC was a box on the end of an RS-232 cable with its
+own firmware and its own prompt, and a 1993 operator reached it the way he reached
+any other serial device -- `cu(1)` on its line:
 
 ```
-admin@ksp-04-11:~$ call KE4QWZ
+admin@ksp-04-11:~$ cu -l /dev/radio0
+CeroSec Systems TNC-200 (TNC-2 compatible)
+cmd: MYCALL
+MYCALL KD4AXR
+cmd: C KE4QWZ
 *** CONNECTED to KE4QWZ
 login:
 ```
+
+`cu -l line` is cu(1)'s own second form -- a line to open instead of a number to
+dial -- so `cu`'s usage line is now `cu telno | cu -l line`. **Two things here are
+ours and are declared** (`CeroSecOS.DEVIATIONS`, and Volume 1's "What is not Unix
+here"): the line is a *character device naming a radio* (`/dev/radio0`) where a
+real `cu` is handed a tty and reads `/etc/remote`, neither of which this machine
+has; and the banner line, a real TNC-2 having printed whatever its vendor chose.
+
+The command set at `cmd:` is the TNC-2's, cut to six with the box's own
+abbreviations, case-insensitive as a TNC was:
+
+| at `cmd:` | does |
+| --- | --- |
+| `MYCALL` / `MY` | print the callsign; an unprogrammed box says `MYCALL NOCALL` |
+| `MYCALL <call>` | set it -- it is `/etc/callsign`, so root only |
+| `CONNECT <call>` / `C` | connect, then converse: keys go to the far station |
+| `DISCONNE` / `D` | drop the link, staying at `cmd:` |
+| `CONV` / `K` | back into converse on a link you stepped out of |
+| `MHEARD` / `MH` | the stations heard since power-up, newest first |
+| `MHCLEAR` | empty that list |
+| anything else | `?EH`, which is the box's own answer to a line it did not understand |
+
+Three ways out of a link, and they are three different things. **Escape** is the
+TNC-2's interrupt key: back to `cmd:` with the link still up (`K` goes back in).
+**`D`** drops the link and leaves the box at `cmd:`. **`~.`** alone on a line is
+`cu`'s own escape and hangs the whole line up -- link and `cu` together -- which
+prints `*** DISCONNECTED` from the link layer and then `Disconnected.` from `cu`,
+and gives the shell back. `exit` on the far machine ends it from that end.
+
+That is why `cu` is a *program that stays*: it holds the near end of the link, so
+^C at its prompt takes the link with it, the machine going dark takes it, and a
+link that goes away underneath puts the box back at `cmd:` rather than dumping the
+survivor at a shell prompt he did not ask for.
+
+`MHEARD` is the real thing and not a log of this machine's own work: the link layer
+writes a station down on **every** machine whose aerial can hear it. Hearing is not
+connecting -- one transmission, so the only range in it is the *transmitter's*,
+where a link holds out to the smaller of the two -- so a station can sit in `MHEARD`
+and still answer a connect with silence, which is the first thing anybody with a
+handheld learns. One line per station (heard again moves it to the top with a new
+time), eighteen deep, which is a TNC-2's depth, and the list is RAM in a box on a
+desk: `turnOff` empties it. The time is printed because a TNC-2 prints one when
+`DAYTIME` is set, and `DAYTIME` here is set at power-up off the machine's clock.
 
 Lines with three stars are the **TNC** talking and not a command, and they are a
 TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
@@ -476,7 +527,8 @@ TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
 `*** <call> busy`; the bare word was chosen so the one-line refusal reads like the
 modem's `BUSY` on the link before this one, and the callsign is on the line above
 it anyway.) Two more the machine says in its own name, because it can see them
-without transmitting: `call: no radio` and `call: no callsign`.
+without transmitting: `cu: no radio` and `cu: no callsign` -- and a machine with no
+set in its room has no line to open at all: `cu: /dev/radio0: no such device`.
 
 Both sets must be on, both powered, and **both on the same frequency** -- agree
 one off the air, walk to the set, turn the knob, and check with
@@ -487,7 +539,7 @@ no trust file is consulted, because a callsign is a file anybody with a radio an
 an editor can choose. Over there `who` and `last` name the **callsign**, and that
 is what goes into `/var/log/wtmp`.
 
-`*** retry count exceeded` is the single answer to every way a call goes
+`*** retry count exceeded` is the single answer to every way a connect goes
 unanswered -- no such station, a machine or a set switched off, a flat battery, the
 wrong frequency, out of range, or a chunk the server has not loaded -- because a
 station that hears nothing learns nothing about why. And one of those is worse

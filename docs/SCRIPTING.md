@@ -43,9 +43,13 @@ ceiling is still four *scripts*.
 model differs from a real `sh` and it is deliberate: there is one job book per
 computer (`luaObject.jobs`), four is a *computer's* ceiling rather than a session's,
 and `jobs` lists every background job on the machine whoever started it. Walk away
-and they keep running; the next survivor to sit down sees them, and may `fg` and
-`kill` them. On a real Unix a job is a process group the shell owns and `jobs` shows
-you only your own. `help`, `man jobs` and Volume 3 all say so in those words — the
+and they keep running; the next survivor to sit down sees them, and may `fg` them.
+On a real Unix a job is a process group the shell owns and `jobs` shows you only
+your own. What is *not* deviated from is `kill(2)`'s rule: root, or the account the
+job belongs to, and anybody else gets
+`kill: <id>: Operation not permitted`. The deviation is about what you can SEE and
+pick up, never about stopping somebody else's work -- which matters more since a
+pending `shutdown +N` is itself a job of root's. `help`, `man jobs` and Volume 3 all say so in those words — the
 description is *"list the background jobs on this machine"* — because a model that
 differs has to be readable off the machine itself.
 
@@ -153,6 +157,14 @@ sleeping, `W` waiting for an answer, `O` held back by the screen) and the steps
 spent, `kill` takes either a number or `%slot`, and `wait` holds the prompt until
 the background jobs are done. Four jobs to a machine — a *machine*, which is why
 `jobs` is the machine's listing and not the shell's.
+
+Two of the four are not scripts at all, and both are there because the thing they
+stand for is a *process* on a real Unix. A pending `shutdown +N` is a job named
+`shutdown`, waiting, owned by the account that gave the order, and `kill` is how it
+is called off (there is no `shutdown -c`: that flag is sysvinit's). A
+`cu -l /dev/radio0` sitting at the TNC's `cmd:` prompt is a job too, and it is the
+program *holding* the radio link: `kill` it, or Escape at its prompt, and the link
+goes with it.
 
 **A runaway script cannot hurt anybody.** Every job gets a slice of each tenth of a
 second and no more, so `while true; do echo x; done` makes that one machine slow at

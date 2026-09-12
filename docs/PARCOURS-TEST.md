@@ -732,11 +732,12 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `while true; do echo z; done`, se reconnecter → l'invite est occupée,
      **Échap** la rend, et `edit .profile` permet de réparer le fichier : la
      machine n'est jamais bloquée. [ ]
-147. En `root` : `shutdown -r +2` → `The system is going down for reboot in 2
-     minutes!` s'affiche sur **tous** les écrans ouverts sur la machine.
-     `shutdown -h +5` → `shutdown: already scheduled`. Attendre une minute →
-     `... in 1 minute!`. `shutdown -c` → `shutdown: cancelled`, et la machine
-     reste allumée passé le délai. Refaire `shutdown -r +1`, laisser filer →
+147. En `root` : `shutdown -r +2` → une ligne `[1] 44` (le numéro du **processus**)
+     puis `The system is going down for reboot in 2 minutes!` sur **tous** les
+     écrans ouverts sur la machine. Attendre une minute → `... in 1 minute!`.
+     `shutdown -c` → la ligne d'usage `shutdown: usage: shutdown [-h|-r] now|+N` :
+     ce drapeau n'existe pas ici, et l'ordre est **toujours** en attente. Refaire
+     `shutdown -r +1`, laisser filer →
      `The system is going down for reboot NOW!`, la machine s'éteint et la
      fenêtre se ferme, puis trois secondes de noir, puis le BIOS et `login:`
      dans une fenêtre rouverte toute seule — un `reboot` programmé est le même
@@ -745,6 +746,20 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
      compte à rebours est oublié et la machine reste allumée (c'est voulu et
      c'est écrit dans le manuel). `halt` en `root` → la machine s'éteint. [ ]
+147a. **Un ordre en attente est un processus**, et on l'annule en le tuant : c'est
+     ce que fait un vrai `shutdown` de 1993, et il n'y a pas de `-c`. En `root` :
+     `shutdown -h +3`, puis `jobs` → une ligne `[1] waiting` suivie de
+     `shutdown -h +3`, et `ps` → la même chose avec son numéro et un `W`.
+     `kill %1` (ou `kill <numéro>`) → **rien ne s'affiche**, c'est ainsi que
+     `kill` répond, et passé les trois minutes la machine est **toujours
+     allumée**. Deux ordres à la fois sont permis (deux processus le sont) :
+     `shutdown -h +5` puis `shutdown -r +9` → les deux sont acceptés, `jobs` en
+     montre deux, et c'est la première échéance qui emporte la machine ; tuer les
+     deux pour la suite. Puis la permission : `shutdown -h +3` en `root`,
+     `exit`, se reconnecter en `admin`, `kill <numéro>` →
+     `kill: <numéro>: Operation not permitted`, et la machine s'éteint quand même
+     à l'heure dite. Enfin `shutdown -r +1` tué avant la minute → **aucun**
+     redémarrage, pas même le noir de trois secondes. [ ]
 148. Fichiers cachés et `/bin` : `ls -a` dans le home → `.` et `..` en tête,
      puis les noms pointés, puis le reste ; `ls -A` → les mêmes sans `.` ni
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
@@ -1369,33 +1384,78 @@ avant.
      **deux** machines d'un même bâtiment doivent avoir des indicatifs
      **différents** (contrairement au numéro de téléphone, qui est celui du
      bâtiment). [ ]
-217. **La liaison.** Régler les deux radios sur la **même** fréquence et les
-     allumer. Depuis `ici` : `call <indicatif de là-bas>` (en majuscules) →
-     `*** CONNECTED to <indicatif>`, puis le `login:` de l'autre machine. S'y
-     connecter : l'invite devient `admin@<là-bas>`, `hostname` répond son nom.
-     Vérifier que le mot de passe est demandé **même** avec le nom de `ici` dans
+217. **Le dialogue du TNC.** Il n'y a **pas** de commande `call` : le TNC est un
+     boîtier au bout d'un câble série, et on l'atteint comme n'importe quel
+     périphérique série de 1993. Depuis `ici` : `cu -l /dev/radio0` → une seule
+     ligne `CeroSec Systems TNC-200 (TNC-2 compatible)`, puis l'invite du boîtier,
+     `cmd:`. Y taper : `MYCALL` → `MYCALL <indicatif>` ; `MH` → **rien** (le
+     boîtier n'a encore rien entendu) ; `BONJOUR` → `?EH`, qui est la seule chose
+     qu'un TNC-2 répond à une ligne qu'il ne comprend pas ; `mycall` en
+     minuscules → la même réponse que `MYCALL` (un TNC ne distingue pas la
+     casse) ; une ligne vide → l'invite `cmd:` revient et rien d'autre. Ressortir
+     avec `~.` seul sur la ligne → `Disconnected.` et l'invite du shell.
+     Vérifier aussi qu'`enlever la radio de la pièce` puis `cu -l /dev/radio0`
+     donne `cu: /dev/radio0: no such device` (il n'y a pas de ligne à ouvrir), et
+     que `cu -l /dev/null` donne la même chose. Remettre la radio. [ ]
+217a. **MYCALL écrit le fichier.** En `admin`, à `cmd:` : `MYCALL W4ZZZ` →
+     `cu: /etc/callsign: permission denied` et `cat /etc/callsign` est inchangé
+     (c'est un fichier de `root` : la mémoire du boîtier, c'est ce fichier). En
+     `root` : `MYCALL W4ZZZ` → `MYCALL W4ZZZ`, et `cat /etc/callsign` répond
+     `W4ZZZ`. `MYCALL kd4axr` → `MYCALL KD4AXR` (mis en majuscules, comme un TNC
+     le fait), et `MYCALL nimportequoi` → `?EH` sans rien changer. [ ]
+217b. **La liaison.** Régler les deux radios sur la **même** fréquence et les
+     allumer. Depuis `ici`, à `cmd:` : `C <indicatif de là-bas>` →
+     `*** CONNECTED to <indicatif>`, puis le `login:` de l'autre machine
+     (`CONNECT <indicatif>` en entier fait la même chose). S'y connecter :
+     l'invite devient `admin@<là-bas>`, `hostname` répond son nom. Vérifier que le
+     mot de passe est demandé **même** avec le nom de `ici` dans
      `/etc/hosts.equiv` de `là-bas`. Puis là-bas : `who` → `ttyp0` avec
-     `(<indicatif de ici>)` entre parenthèses, et `last` pareil. Ressortir avec
-     `exit` → `*** DISCONNECTED` (et **pas** `Disconnected.`, qui est le
-     téléphone, ni `Connection closed.`, qui est le fil). Rappeler et taper `~.`
-     seul sur la ligne : même résultat, et l'écran revient à l'invite locale. [ ]
+     `(<indicatif de ici>)` entre parenthèses, et `last` pareil. [ ]
+217c. **Les trois sorties, et elles ne font pas la même chose.** Liaison ouverte,
+     à l'invite de la machine d'en face : **Échap** → retour à `cmd:`, **sans**
+     `*** DISCONNECTED` : c'est la touche d'interruption du TNC-2 et la liaison est
+     toujours là. `K` (ou `CONV`) → on est de nouveau sur la machine d'en face,
+     avec son écran tel qu'on l'a laissé. Échap de nouveau, puis `D` (ou
+     `DISCONNE`) → `*** DISCONNECTED` et on reste à `cmd:` ; un deuxième `D`
+     répond la même ligne. Enfin `~.` → `Disconnected.` et l'invite du shell.
+     Reprendre une liaison et essayer l'autre ordre : `~.` directement depuis la
+     machine d'en face → `*** DISCONNECTED` **puis** `Disconnected.`, et l'invite
+     du shell (le boîtier dit que la liaison tombe, `cu` dit qu'il raccroche).
+     `exit` là-bas fait la même chose depuis l'autre bout. [ ]
 218. **Tout le comté écoute.** Prendre un talkie dans l'inventaire, le régler sur
      la **même** fréquence que les deux postes, l'allumer, et rester à portée.
-     Refaire un `call` : dans la fenêtre du talkie doit apparaître une ligne
+     Refaire une liaison : dans la fenêtre du talkie doit apparaître une ligne
      `<indicatif appelé> de <indicatif appelant> *** CONNECTED`. Raccrocher : une
      deuxième ligne, la même avec `*** DISCONNECTED`. Changer la fréquence du
      talkie et refaire un appel : plus rien. C'est la leçon de sécurité du
      palier — la radio ne peut pas se taire, et la seule défense est de changer de
      fréquence. [ ]
+218a. **MHEARD : ce que les boîtiers ont noté.** Les deux postes accordés et
+     allumés. Ouvrir une liaison depuis `ici` puis revenir à `cmd:` (Échap) et
+     taper `MH` → une ligne `<indicatif de là-bas>  hh:mm` : l'indicatif et
+     l'heure, parce qu'un TNC-2 imprime l'heure quand `DAYTIME` est réglé, et ici
+     il l'est au démarrage sur l'horloge de la machine. **Jamais** son propre
+     indicatif : un boîtier ne s'entend pas. Aller sur `là-bas`,
+     `cu -l /dev/radio0`, `MH` → l'indicatif de `ici` avec une heure : les deux
+     bouts se sont entendus, une liaison étant deux émissions. Revenir sur `ici`,
+     `MHCLEAR` puis `MH` → plus rien. Refaire une liaison pour remplir la liste,
+     puis **éteindre l'ordinateur** et le rallumer : `cu -l /dev/radio0` puis `MH`
+     → vide (c'est de la RAM dans un boîtier ; le courant l'emporte). Enfin la
+     portée : régler le talkie de l'étape 218 sur la même fréquence, s'en éloigner
+     franchement, refaire une liaison → rien de neuf dans `MH` là-bas. [ ]
 219. **Les six silences.** Chacun de ces six cas doit répondre exactement
-     `*** retry count exceeded`, et rien d'autre : (a) la radio de `là-bas`
+     `*** retry count exceeded`, et rien d'autre — chacun tapé comme `C
+     <indicatif>` à l'invite `cmd:` du boîtier : (a) la radio de `là-bas`
      éteinte ; (b) sa pile retirée ; (c) sa fréquence changée (les deux postes
      allumés, mais pas sur la même) ; (d) la machine `là-bas` éteinte ;
-     (e) un indicatif que personne n'a (`call W4ZZZ`) ; (f) son propre indicatif.
-     Vérifier aussi les deux refus que la machine dit en son **propre** nom sans
-     émettre : enlever la radio de la pièce de `ici` → `call: no radio` (et
-     `dev radio` ne liste plus rien) ; la remettre, puis `rm /etc/callsign` en
-     root → `call: no callsign`. [ ]
+     (e) un indicatif que personne n'a (`C W4ZZZ`) ; (f) son propre indicatif.
+     Après chacun, le boîtier revient à `cmd:` et reste utilisable. Vérifier aussi
+     les refus que la machine dit en son **propre** nom sans émettre : enlever la
+     radio de la pièce de `ici` → `cu -l /dev/radio0` répond
+     `cu: /dev/radio0: no such device` (et `dev radio` ne liste plus rien) ; la
+     remettre, puis `rm /etc/callsign` en root, ouvrir la ligne et `C
+     <indicatif>` → `cu: no callsign` (et `MYCALL` → `MYCALL NOCALL`, la valeur
+     d'usine d'un boîtier que personne n'a programmé). [ ]
 220. **La distance et le chargement du monde.** Laisser les deux postes allumés et
      accordés, puis s'éloigner : une liaison ne tient que jusqu'à la **plus
      petite** des deux portées (7500 tuiles pour un poste amateur). Plus
@@ -1403,23 +1463,36 @@ avant.
      éteindre la radio d'en face (ou la déplacer hors de la pièce) pendant que la
      session est ouverte, et taper n'importe quoi → `*** retry count exceeded` et
      retour à l'invite locale (et **pas** `*** DISCONNECTED` : la liaison est
-     tombée, personne n'a raccroché). Enfin le cas propre à la radio : s'éloigner
-     assez pour que le morceau de carte de `là-bas` ne soit plus chargé, puis
-     `call <son indicatif>` → `*** retry count exceeded`, alors que
+     tombée, personne n'a raccroché) — et l'écran revient à `cmd:` et **pas** au
+     shell : c'est `cu` qui tient la ligne et il est toujours là. Enfin le cas
+     propre à la radio : s'éloigner assez pour que le morceau de carte de
+     `là-bas` ne soit plus chargé, puis `C <son indicatif>` →
+     `*** retry count exceeded`, alors que
      `cu 555-NNNN` vers la **même** machine marche toujours. Une radio est une
      tuile ; un disque, non. [ ]
 221. **Un poste, une liaison, et ce qui ne s'émet pas.** Mettre **une seule**
      radio dans une pièce où il y a **deux** ordinateurs (la paire de la section
-     N). Ouvrir une liaison depuis le premier, puis aller au second et faire
-     `call <même indicatif>` → `*** BUSY`. Raccrocher, puis vérifier qu'une
-     liaison ne se laisse pas automatiser : `crontab -e` avec
-     `* * * * * call <indicatif>`, attendre une minute → `mail` dit
-     `call: not a terminal`, **aucune** session ne s'est ouverte là-bas, et — le
+     N). Ouvrir une liaison depuis le premier, puis aller au second,
+     `cu -l /dev/radio0` et `C <même indicatif>` → `*** BUSY`. Raccrocher, puis
+     vérifier qu'une liaison ne se laisse pas automatiser : `crontab -e` avec
+     `* * * * * cu -l /dev/radio0`, attendre une minute → `mail` dit
+     `cu: not a terminal`, la bannière du boîtier n'apparaît **pas** (la ligne n'a
+     jamais été ouverte), **aucune** session ne s'est ouverte là-bas, et — le
      point important — **rien n'est passé sur les ondes** (le talkie de l'étape
      218, accordé et allumé, ne doit rien afficher). Finir par `crontab -r`.
      Vérifier aussi la lenteur : lancer `ls /bin` sur la machine d'en face, les
      lignes doivent arriver **deux par seconde**, visiblement plus lentement
      qu'un appel téléphonique (quatre) et rien ne doit manquer à la fin. [ ]
+221a. **`call` a disparu, et la machine d'une vieille partie le perd.** Sur une
+     machine neuve : `call KD4AXR` → `call: command not found`, `ls /bin` ne montre
+     pas `call`, `help` ne le nomme pas, et **Tab** après `cal` ne complète rien.
+     Puis la mise à niveau : charger une partie **d'avant** cette version (ou
+     recréer le cas à la main en root — `echo "call another machine on the radio" >
+     /bin/call` puis `chmod 755 /bin/call`, et dans le débogueur remettre le
+     `sysv` de la machine à 16), éteindre et rallumer l'ordinateur → `/bin/call`
+     a été **supprimé** par la mise à niveau et `ls /bin` ne le montre plus. Un
+     fichier que le joueur a écrit lui-même à ce nom (un contenu différent, un
+     autre mode ou un autre propriétaire) doit au contraire **rester**. [ ]
 
 ## U. Nommer les voisines (palier 6d)
 

@@ -790,6 +790,13 @@ ignored rather than argued with, since a nil, a string, a zero or a negative wou
 each quietly take every book out of the world.
 
 
+`SYSTEM_VERSION` 17 takes one more away and seeds nothing at all: `/bin/call` is
+**deleted**, on the same rule and for the same reason as `restart` before it -- it
+was invented here. Packet radio was never something a kernel did: a TNC was a box
+on an RS-232 cable, so the box is reached with `cu -l /dev/radio0` (cu(1)'s own
+second form, and cu is already on the disk) and driven with the TNC-2's own
+commands. See the radio section of [NETWORK.md](NETWORK.md).
+
 `SYSTEM_VERSION` 16 is the second version to take something away, on the very rule
 version 8 ran on: `/bin/adduser`, `/bin/deluser`, `/bin/gpasswd` and `/bin/hash` are
 **deleted**, and only where the file is exactly what was shipped — owner `root`, mode
