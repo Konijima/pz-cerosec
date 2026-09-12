@@ -340,6 +340,7 @@ local FILES = {
 	"server/CeroSec/SCeroSecRadio.lua",
 	"server/CeroSec/SCeroSecDevices.lua",
 	"server/CeroSec/SCeroSecNet.lua",
+	"server/CeroSec/SCeroSecDebug.lua",
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
@@ -7776,5 +7777,437 @@ do
 
 	_G.__world = nil
 end
+
+
+--
+-- 45. The debug snapshots (the debug wave)
+--
+-- What the debug window is handed, built by the server: the machine list, the
+-- file tree, /dev, the wire and the scheduler. The window itself is
+-- tests/debug_ui_test.lua; this is the half that reads the county.
+--
+-- What is asserted is the ROWS, because a row is what a player reads. Three
+-- things are worth a bench of their own and each has one below: a machine whose
+-- chunk is away is still in the list (the whole reason the server holds every
+-- disk), every cap holds against a disk that is over it, and the devices
+-- snapshot is the device layer's own discovery and not a second one.
+--
+
+-- Which cell of which row, by the first cell. Rows are found by what they say
+-- and never by their index: a list that grew a row at the top would otherwise
+-- move every assertion below it and none of them would notice.
+local function rowWith(snap, first)
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == first then return snap.rows[i] end
+	end
+	return nil
+end
+
+local function infoHas(snap, needle)
+	for i = 1, #snap.info do
+		if string.find(snap.info[i], needle, 1, true) then return true end
+	end
+	return false
+end
+
+-- The machine list, over the network bench's three machines: two in the office
+-- and one in the shed, none of them with an IsoObject -- which is a chunk the
+-- streamer has not brought in.
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- One of the three brought into the world, so "here" and "away" are both on
+	-- the glass and a snapshot that answered the same word for every machine
+	-- could not pass.
+	net.here.getIsoObject = function() return { __class = "IsoObject" } end
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.here)
+	eq("every machine the server holds is listed", #snap.rows, 3)
+
+	local here = rowWith(snap, "10,10,0")
+	local far = rowWith(snap, "60,60,0")
+	check("the machine the window is at is on the list", here ~= nil)
+	check("and so is the one down the road", far ~= nil)
+	eq("the loaded one says so", here.c[4], "here")
+	eq("the one whose chunk is away says THAT", far.c[4], "away")
+	-- The bug this row exists for: a machine out of the world has no square, so
+	-- there is nobody to ask about its wiring -- and "no" would be a lie, the
+	-- same lie that once switched off every computer behind a walking survivor
+	-- (SCeroSecObject:checkPower).
+	eq("and nothing is claimed about the wire it cannot be asked about", far.c[5], "-")
+	eq("it is still on and still says so", far.c[3], "on")
+	eq("with its own hostname off its own disk", far.c[6], net.host(net.far))
+	eq("and its own address", far.c[7], net.addr(net.far))
+
+	-- A row carries the machine it names, which is what makes it selectable.
+	eq("a row names its machine", far.x, 60)
+	eq("and its y", far.y, 60)
+	eq("and its z", far.z, 0)
+
+	check("the list says how many of how many it is showing",
+		infoHas(snap, "machines: 3 of 3"))
+	-- And the detail of the SELECTED machine, under the list.
+	check("the selected machine's console is described", infoHas(snap, "console booted="))
+	check("with its jobs and its windows", infoHas(snap, "windows "))
+
+	-- Nothing selected is a list with no detail under it and never an error.
+	local none = CeroSecDebug.snapshotOf(net.system, "machines", nil)
+	eq("with nothing selected the list is still the list", #none.rows, 3)
+	check("and it says so", infoHas(none, "no machine selected"))
+end
+
+-- The file tree, and the cap on it. Six hundred nodes against a cap of 512: the
+-- disk's own node ceiling is 512 too, so the nodes are made by hand, past the
+-- gate, exactly as a forged save would arrive.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+
+	-- Six hundred files, in ten directories of sixty: the machine's own ceilings
+	-- are 512 nodes and 96 entries a directory, so a disk this size is not a disk
+	-- the engine would let a player make -- which is the point. The nodes go in
+	-- behind the gate and the machine is handed back RAW, the way a forged save
+	-- or a state written by an older build arrives, because what is under test is
+	-- the cap on the WIRE and not the cap on the disk.
+	local dir = CeroSecOS.systemNode(state, "/home/admin")
+	check("there is a home to fill", type(dir) == "table" and dir.type == "dir")
+	for d = 1, 10 do
+		local sub = CeroSecOS.newDir("admin", 755, 1000)
+		dir.children["d" .. d] = sub
+		for i = 1, 60 do
+			sub.children["f" .. i] = CeroSecOS.newFile("admin", 644, "x", 1000)
+		end
+	end
+	local forgedNodes = CeroSecOS.usage(state)
+	check("the disk really is over the cap (" .. forgedNodes .. " nodes)",
+		forgedNodes > CeroSecDebug.FILE_MAX)
+	-- The validator would throw a disk this size out, and rightly: the bench
+	-- hands the state over itself so that the snapshot is asked about the tree it
+	-- was given rather than about nothing at all.
+	bench.object.osState = function() return state end
+
+	local snap = CeroSecDebug.snapshotOf(bench.system, "files", bench.object)
+	eq("the tree stops at the cap", #snap.rows, CeroSecDebug.FILE_MAX)
+	check("and says it did", infoHas(snap, "rows 512 (cap 512)"))
+	-- The root is the first row whatever the walk found, because the walk starts
+	-- there: a tree whose first row was a file would be a tree walked upwards.
+	eq("the walk starts at the root", snap.rows[1].c[1], "/")
+	eq("which is a directory", snap.rows[1].c[2], "dir")
+	eq("with the mode ls would print", snap.rows[1].c[3],
+		CeroSecOS.permString(state.fs))
+
+	local passwd = rowWith(snap, "/etc/passwd")
+	check("a real file of the machine is on the list", passwd ~= nil)
+	eq("with its owner", passwd.c[4], "root")
+	eq("and its size in bytes", passwd.c[5],
+		tostring(#(CeroSecOS.systemNode(state, "/etc/passwd").data or "")))
+
+	-- The ceilings, read off the functions that enforce them.
+	local nodes, bytes = CeroSecOS.usage(state)
+	check("the disk's own numbers are reported",
+		infoHas(snap, "nodes " .. nodes .. " of " .. CeroSecOS.MAX_NODES))
+	check("and its bytes", infoHas(snap, "bytes " .. bytes .. " of "))
+
+	-- No cell on the wire is longer than the cap, whatever is on the disk: a
+	-- forged node name is a string a client would otherwise be handed whole.
+	--
+	-- The name begins with a "0" so that it sorts to the FRONT of the directory
+	-- and is inside the five hundred and twelve rows the snapshot sends. A long
+	-- name buried past the cap would be a name the bench never saw, and the
+	-- assertion would have been green for having read nothing -- which is exactly
+	-- what happened the first time this was written.
+	local long = "0" .. string.rep("z", 399)
+	dir.children[long] = CeroSecOS.newFile("admin", 644, "x", 1000)
+	snap = CeroSecDebug.snapshotOf(bench.system, "files", bench.object)
+	local sawLong = false
+	local worst = 0
+	for i = 1, #snap.rows do
+		for k = 1, #snap.rows[i].c do
+			local text = snap.rows[i].c[k]
+			if #text > worst then worst = #text end
+			if string.find(text, "0zzzz", 1, true) then sawLong = true end
+		end
+	end
+	check("the four-hundred-character name really is in the rows sent", sawLong)
+	check("and no cell is longer than the cell cap (" .. worst .. ")",
+		worst <= CeroSecDebug.CELL_MAX)
+end
+
+-- /dev, against the mockup's world: the same discovery the engine is handed,
+-- numbered the same way, with the world facts the engine has no use for beside
+-- it.
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+
+	-- What `find` answers, numbered by the layer that owns the numbering. The
+	-- snapshot has to agree with THIS and not with a walk of its own: the numbers
+	-- are spent for the life of the machine, and a second numbering would hand
+	-- out different ones.
+	local found = CeroSecDevices.number(state,
+		CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z))
+	local want = {}
+	for i = 1, #found do want[found[i].id] = found[i] end
+
+	local snap = CeroSecDebug.snapshotOf(bench.system, "devices", bench.object)
+	eq("one row per device find answered", #snap.rows, #found)
+	for i = 1, #snap.rows do
+		local id = snap.rows[i].c[1]
+		local entry = want[id]
+		check("the snapshot names " .. id .. " and find did too", entry ~= nil)
+		eq(id .. " is the kind find said", snap.rows[i].c[2], entry.kind)
+		eq(id .. " is where find said", snap.rows[i].c[7],
+			entry.x .. "," .. entry.y .. "," .. entry.z)
+	end
+
+	-- The two rows the mockup is built around, spelled out: the front door is a
+	-- door AND a lock on one object, and a light switch reads its own state.
+	local door0 = rowWith(snap, "door0")
+	check("the front door is a device", door0 ~= nil)
+	eq("and it is a door", door0.c[2], "door")
+	eq("with the handle the server would tell a client to look for", door0.c[8],
+		kit.front:getSpriteName())
+	eq("and its object is still on its square", door0.c[10], "here")
+	local light0 = rowWith(snap, "light0")
+	check("the office switch is a device", light0 ~= nil)
+	eq("and it reads what the switch reads", light0.c[9], "on")
+
+	-- A sensor: no sprite to be found again by (it is drawn from a model), and a
+	-- record in the sampling book.
+	kit.world.drop(kit.world.squares["10,10,0"], fakeSensor())
+	snap = CeroSecDebug.snapshotOf(bench.system, "devices", bench.object)
+	local sensor0 = rowWith(snap, "sensor0")
+	check("a dropped head is a device", sensor0 ~= nil)
+	-- A world item is drawn from a model and has no sprite name at all, so what
+	-- the server would point a client at is the ITEM -- and that is what the
+	-- column shows, because it shows the handle a highlight carries and not a
+	-- field (CeroSecDevices.handleOf).
+	eq("its handle is the item and not a sprite", sensor0.c[8], "Base.MotionSensor")
+
+	-- And a light switch has no handle at all: it blinks where everybody can see
+	-- it, so nothing about it is ever addressed to one screen and getSpriteName is
+	-- a call the mod does not make on a switch.
+	eq("a light carries no handle", rowWith(snap, "light0").c[8], "-")
+	check("and the sampling book has a record of it",
+		infoHas(snap, "sensor0: range "))
+
+	-- Picked up again: the number stays spent and the row says the object is
+	-- gone, which is the difference between a device out of reach and a path
+	-- somebody mistyped.
+	local dead = nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "door0" then dead = snap.rows[i] end
+	end
+	check("door0 is there before anything is taken away", dead ~= nil)
+
+	_G.__world = nil
+end
+
+-- The wire: the segments, the exchange, the sessions that are up, and the log of
+-- what was made and refused.
+do
+	local net = newNet()
+	-- The wire's log is module-level state like the scheduler's list of machines,
+	-- so a bench that asks what is IN it starts with its own empty one: the
+	-- benches above this have been making and dropping sessions for eight thousand
+	-- lines and the ring is long since full.
+	CeroSecNet.events = {}
+	net.login("admin")
+	net.forget()
+
+	local snap = CeroSecDebug.snapshotOf(net.system, "network", nil)
+	-- Two buildings, so two segments and two telephone lines.
+	local segments = 0
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "eth" then segments = segments + 1 end
+	end
+	eq("one segment per building", segments, 2)
+	check("and the list says so", infoHas(snap, "segments 2"))
+	check("the exchange is described", rowWith(snap, "tel") ~= nil)
+
+	-- A refusal leaves a line in the wire's own log, which is the one thing
+	-- about the network that used to leave no trace at all: the pty was never
+	-- made and the screen has scrolled.
+	-- The last thing the wire was asked, whatever it was. Asserted on the CONTENT
+	-- and never on the count: the ring is fifty lines deep and a full one does not
+	-- grow, so "one more event than before" is an assertion that goes quiet the
+	-- moment the bench above it has been busy.
+	local function lastEvent()
+		return CeroSecNet.events[#CeroSecNet.events]
+	end
+
+	-- A name nothing resolves never reaches the wire at all -- the resolver
+	-- refuses it -- so the refusal that is worth logging is the one about the
+	-- WIRE: a real machine, a real address, and no coax between two buildings.
+	CeroSecNet.events = {}
+	net.enter("rlogin nosuchmachine")
+	net.tick(2)
+	eq("a name nothing resolves is not a wire event", #CeroSecNet.events, 0)
+
+	net.enter("rlogin " .. net.addr(net.far))
+	net.tick(2)
+	local event = lastEvent()
+	check("a refused connection is noted", event ~= nil)
+	eq("as a question about the coax", event.cmd, "eth")
+	eq("naming the address it was asked about", event.to, net.addr(net.far))
+	eq("with the reason the link layer had", event.what, "unreach")
+	snap = CeroSecDebug.snapshotOf(net.system, "network", nil)
+	local said = false
+	for i = 1, #snap.rows do
+		local row = snap.rows[i]
+		if row.c[1] == "evt" and row.c[4] == net.addr(net.far)
+				and row.c[5] == "unreach" then
+			said = true
+		end
+	end
+	check("and the refusal is on the Network tab", said)
+
+	-- A session that IS up is a pty, and a pty is where a session lives.
+	net.enter("rlogin " .. net.addr(net.gate))
+	net.tick(3)
+	net.enter("admin")
+	net.enter("")
+	net.tick(3)
+	snap = CeroSecDebug.snapshotOf(net.system, "network", nil)
+	local pty = nil
+	for i = 1, #snap.rows do
+		if snap.rows[i].c[1] == "pty" then pty = snap.rows[i] end
+	end
+	check("an open session is listed as a pty", pty ~= nil)
+	eq("on the line the engine gave it", pty.c[2], "ttyp0")
+	net.enter("exit")
+	net.tick(3)
+
+	-- The log is bounded: fifty is fifty whatever the county does.
+	for _ = 1, CeroSecNet.EVENT_MAX * 2 do
+		CeroSecNet.note(net.here, "rlogin", "nowhere", "refused")
+	end
+	eq("the wire's log holds its cap and no more", #CeroSecNet.events,
+		CeroSecNet.EVENT_MAX)
+end
+
+-- The scheduler: the jobs the machines are running, with the budgets beside
+-- them, and the selected machine's crontab as cron itself reads it.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.script("/home/admin/slow.sh", "sleep 30\n")
+	bench.enter("sh slow.sh &")
+	bench.tick(1)
+
+	local snap = CeroSecDebug.snapshotOf(bench.system, "scheduler", bench.object)
+	local job = CeroSecJobs.book(bench.object).list[1]
+	check("the machine has a job", job ~= nil)
+	local row = rowWith(snap, "10,10,0")
+	check("and the scheduler tab lists one", row ~= nil)
+	eq("by the id the scheduler gave it", row.c[2], tostring(job.id))
+	eq("with the word the engine prints for its state", row.c[5],
+		CeroSecOS.jobWord(job))
+	check("the budgets are beside them",
+		infoHas(snap, "budget per tick " .. CeroSec.STEP_BUDGET_PER_TICK))
+	check("and the cpu ceiling",
+		infoHas(snap, "cpu limit " .. CeroSec.JOB_CPU_LIMIT_S .. "s"))
+
+	-- A crontab line, read through the engine's own parser and judged due by the
+	-- engine's own cronDue -- never by arithmetic of the window's.
+	local state = bench.object:osState()
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * echo tick", false, 100)
+	snap = CeroSecDebug.snapshotOf(bench.system, "scheduler", bench.object)
+	check("the crontab line is listed", infoHas(snap, "echo tick"))
+	check("and every minute is due now", infoHas(snap, "DUE NOW"))
+
+	-- A line nothing could have installed is named as bad, in the parser's words.
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"60 * * * * echo never", false, 100)
+	snap = CeroSecDebug.snapshotOf(bench.system, "scheduler", bench.object)
+	check("a bad field is named", infoHas(snap, "BAD (bad minute)"))
+end
+
+-- The dump, which is the one thing that writes nowhere but the log.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local said = {}
+	local realPrint = print
+	print = function(text) said[#said + 1] = tostring(text) end
+	local written = CeroSecDebug.dump(bench.object)
+	print = realPrint
+	check("the dump printed something", written > 0)
+	-- The cap, plus the one line that says the dump was cut there. A state is
+	-- hundreds of nodes and a log file is somebody's text editor.
+	check("it is bounded (" .. written .. " lines)",
+		written <= CeroSecDebug.DUMP_MAX + 1)
+	eq("and it printed exactly what it counted", #said, written)
+	check("a disk this size really did hit the cap",
+		written == CeroSecDebug.DUMP_MAX + 1)
+	eq("and the last line says where it was cut",
+		said[#said], "CeroSec dump: cut at " .. CeroSecDebug.DUMP_MAX .. " lines")
+	local named = false
+	for i = 1, #said do
+		if string.find(said[i], "os.fs", 1, true) then named = true end
+	end
+	check("the filesystem is in it", named)
+end
+
+-- The log ring: two hundred lines, and the two hundred and first drops the
+-- oldest. It is not gated on CeroSec.DEBUG -- the print is, the ring is not --
+-- because a Log tab that needed DEBUG turned on first would be empty exactly
+-- when somebody opens it to find out what went wrong.
+do
+	CeroSec.logRing = {}
+	eq("DEBUG is off, as it ships", CeroSec.DEBUG, false)
+	CeroSec.log("first")
+	eq("and the line is in the ring all the same", #CeroSec.logRing, 1)
+	eq("at the info level, which is what a caller that says nothing means",
+		CeroSec.logRing[1].level, CeroSec.LOG_INFO)
+	eq("with the text it was given", CeroSec.logRing[1].text, "first")
+
+	CeroSec.log(CeroSec.LOG_WARN, "careful")
+	eq("a level given is the level kept", CeroSec.logRing[2].level, CeroSec.LOG_WARN)
+	eq("and the text is still the text", CeroSec.logRing[2].text, "careful")
+
+	-- Two hundred more on top of the two above: the cap is two hundred, so the two
+	-- oldest go and the ring holds "line 1" to "line 200".
+	for i = 1, CeroSec.LOG_MAX do CeroSec.log("line " .. i) end
+	eq("the ring holds its cap and no more", #CeroSec.logRing, CeroSec.LOG_MAX)
+	eq("the front of it is the oldest line still kept",
+		CeroSec.logRing[1].text, "line 1")
+	eq("and the newest is the last one written",
+		CeroSec.logRing[CeroSec.LOG_MAX].text, "line " .. CeroSec.LOG_MAX)
+	-- And the two that fell off really are gone, which is the half a count cannot
+	-- prove: a ring that kept them and dropped from the WRONG end would have the
+	-- right length and the wrong lines.
+	local stale = false
+	for i = 1, #CeroSec.logRing do
+		local text = CeroSec.logRing[i].text
+		if text == "first" or text == "careful" then stale = true end
+	end
+	check("the two oldest were dropped", not stale)
+
+	-- And one of the mod's own refusals really does carry a level, so the
+	-- window's filter has something to filter: a state the validator throws out
+	-- is an error and says so.
+	CeroSec.logRing = {}
+	local bench = newBench()
+	bench.object.os = { v = CeroSecOS.STATE_VERSION, fs = "not a filesystem" }
+	bench.object.osBroken = nil
+	eq("the validator refuses it", bench.object:osState(), nil)
+	local level = nil
+	for i = 1, #CeroSec.logRing do
+		if string.find(CeroSec.logRing[i].text, "os refused at", 1, true) then
+			level = CeroSec.logRing[i].level
+		end
+	end
+	eq("and the refusal is logged as an error", level, CeroSec.LOG_ERROR)
+	CeroSec.logRing = {}
+end
+
 
 print("window_test: " .. count .. " checks passed")

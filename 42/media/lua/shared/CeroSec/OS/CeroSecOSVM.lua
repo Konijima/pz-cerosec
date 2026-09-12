@@ -2492,7 +2492,7 @@ function CeroSecOS.jobStep(state, job, env, budget)
 		-- a job whose turns move nothing that progressKey can see, and that is
 		-- worth knowing about.
 		if CeroSec ~= nil and CeroSec.log ~= nil then
-			CeroSec.log("jobStep: maxTurns reached on job " .. tostring(job.id) ..
+			CeroSec.log(CeroSec.LOG_WARN, "jobStep: maxTurns reached on job " .. tostring(job.id) ..
 				" (" .. tostring(job.cmd) .. ")")
 		end
 	end

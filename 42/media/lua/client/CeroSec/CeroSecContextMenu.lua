@@ -277,7 +277,7 @@ function CeroSecContextMenu.addDevManual(context, playerObj)
 
 	local shelf = CeroSecManualBook.shelf()
 	if #shelf == 0 and CeroSec.log ~= nil then
-		CeroSec.log("manual: the shelf is empty -- no volume file loaded")
+		CeroSec.log(CeroSec.LOG_ERROR, "manual: the shelf is empty -- no volume file loaded")
 	end
 	for v = 1, #shelf do
 		local volume = shelf[v]

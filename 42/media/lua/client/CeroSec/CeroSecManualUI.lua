@@ -176,7 +176,7 @@ function CeroSecManualUI.text(volumeId)
 	if volume then return volume, volume.id end
 
 	if CeroSec ~= nil and CeroSec.log ~= nil then
-		CeroSec.log("manual: nothing on the shelf answers to " .. tostring(volumeId) ..
+		CeroSec.log(CeroSec.LOG_ERROR, "manual: nothing on the shelf answers to " .. tostring(volumeId) ..
 			" -- a CeroSecManual volume file did not load")
 	end
 	return nil, volumeId or CeroSecManualBook.NO_VOLUME

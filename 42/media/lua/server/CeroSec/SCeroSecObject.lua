@@ -385,7 +385,9 @@ function SCeroSecObject:osState()
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then
 		self.osBroken = true
-		CeroSec.log("os refused at " .. self.x .. "," .. self.y .. "," .. self.z .. ": " .. tostring(reason))
+		CeroSec.log(CeroSec.LOG_ERROR,
+			"os refused at " .. self.x .. "," .. self.y .. "," .. self.z
+				.. ": " .. tostring(reason))
 		return nil, reason
 	end
 	return self.os

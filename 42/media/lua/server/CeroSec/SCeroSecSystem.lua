@@ -2,6 +2,7 @@ if isClient() then return end
 
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/SCeroSecDebug"
 require "CeroSec/SCeroSecDevices"
 require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
@@ -248,7 +249,7 @@ function SCeroSecSystem:consoleFor(playerObj, x, y, z, token)
 	local state, reason = luaObject:osState()
 	if not state then
 		self:replyClosed(playerObj, x, y, z, "broken", token)
-		if reason then CeroSec.log("console refused: " .. tostring(reason)) end
+		if reason then CeroSec.log(CeroSec.LOG_WARN, "console refused: " .. tostring(reason)) end
 		return nil
 	end
 	return luaObject, state, console
@@ -413,7 +414,8 @@ function SCeroSecSystem:biosState(luaObject)
 	if state == nil then return nil end
 	local ok, reason = CeroSecOS.systemOk(state)
 	if not ok then
-		CeroSec.log("no system at " .. luaObject.x .. "," .. luaObject.y .. ": " .. tostring(reason))
+		CeroSec.log(CeroSec.LOG_WARN,
+			"no system at " .. luaObject.x .. "," .. luaObject.y .. ": " .. tostring(reason))
 		return nil
 	end
 	return state
@@ -979,8 +981,8 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 	if item:hasModData() and CeroSecOS.dataHasDisk(item:getModData()) then
 		local read, reason = CeroSecOS.diskFromData(item:getModData())
 		if read == nil then
-			CeroSec.log("refused a disk at " .. x .. "," .. y .. "," .. z .. ": "
-				.. tostring(reason))
+			CeroSec.log(CeroSec.LOG_WARN, "refused a disk at " .. x .. "," .. y .. "," .. z
+				.. ": " .. tostring(reason))
 			return
 		end
 		disk = read
@@ -1031,7 +1033,8 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 	if not CeroSecOS.writeDiskTo(item:getModData(), disk) then
 		inv:Remove(item)
 		if isServer() then sendRemoveItemFromContainer(inv, item) end
-		CeroSec.log("the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
+		CeroSec.log(CeroSec.LOG_ERROR,
+			"the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
 		return
 	end
 
@@ -1605,6 +1608,62 @@ Commands.close = function(self, playerObj, x, y, z, token)
 	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then return end
 	luaObject:removeWatcher(watcherKeyOf(playerObj, token))
+end
+
+--
+-- The debug window
+--
+-- Two commands, and neither is like the ones above: they are about the COUNTY and
+-- not about a terminal, so nothing here asks whether the player is standing next
+-- to anything. The x, y, z every command carries is the machine SELECTED in the
+-- window -- which may be a computer on the other side of the map, or none at all
+-- (0,0,0 answers to nobody and is what "nothing selected" looks like on the wire).
+--
+-- What is asked instead is CeroSec.debugAllowed(), here as well as on the client
+-- that offered the entry: a client is not to be trusted about whether it was
+-- allowed to ask. Today that is the DEV_DEBUG_MENU flag or the game's own debug
+-- mode; the release gating adds the admin check beside it (see docs/DEBUG.md).
+--
+-- `debug` is a READ and answers a snapshot. `debugact` is the only writing thing
+-- the window can do, and it does not do it: it calls the very object methods the
+-- context menu's own commands call, so a machine switched on from the debug
+-- window is switched on exactly as a survivor switches one on.
+--
+
+Commands.debug = function(self, playerObj, x, y, z, token, args)
+	if token == nil then return end
+	if not CeroSec.debugAllowed() then return end
+	if type(args) ~= "table" then return end
+	local tab = args.tab
+	if not CeroSecDebug.isTab(tab) then return end
+
+	-- nil for a machine nothing answers to, which is what "nothing selected" is.
+	-- Deliberately NOT adopted the way computerFor adopts one: the window is a
+	-- reader, and a read must not bring a computer into the system.
+	local luaObject = self:getLuaObjectAt(x, y, z)
+	local snapshot = CeroSecDebug.snapshotOf(self, tab, luaObject)
+	if snapshot == nil then return end
+
+	snapshot.token = token
+	snapshot.tab = tab
+	snapshot.x, snapshot.y, snapshot.z = x, y, z
+	self:reply(playerObj, "debug", snapshot)
+end
+
+Commands.debugact = function(self, playerObj, x, y, z, token, args)
+	if token == nil then return end
+	if not CeroSec.debugAllowed() then return end
+	if type(args) ~= "table" or type(args.act) ~= "string" then return end
+	local luaObject = self:getLuaObjectAt(x, y, z)
+	if not luaObject then return end
+
+	if args.act == "on" then
+		if not luaObject.on then luaObject:turnOn() end
+	elseif args.act == "off" then
+		if luaObject.on then luaObject:turnOff() end
+	elseif args.act == "dump" then
+		CeroSecDebug.dump(luaObject)
+	end
 end
 
 -- Nothing a client sends is believed on its word. Coordinates have to be three

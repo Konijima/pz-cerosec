@@ -641,6 +641,18 @@ local function build(luaObject, state)
 	return list, byId, map
 end
 
+-- The same discovery, for a reader that is not the engine: the list /dev would
+-- be built from, and the entries behind it with their world objects on them.
+--
+-- It exists so the debug window can show what the SERVER sees -- the sprite a
+-- device is, the square it is on, whether its object is still there -- without
+-- working any of it out again: a debug window that numbered devices itself would
+-- be a second numbering, and the day the real one changed it would quietly
+-- disagree. Nothing here writes anything; build() is the same call envFor makes.
+function CeroSecDevices.snapshot(luaObject, state)
+	return build(luaObject, state)
+end
+
 -- Is the object we found still where we found it? Belt and braces: list() and
 -- write() happen inside one command, so nothing should have moved -- but a
 -- Java handle to an object that has been taken off its square is exactly the
@@ -877,6 +889,27 @@ local function classOf(entry)
 	return "IsoThumpable"
 end
 
+-- How that object is found again on the far side: the class above, and ONE of two
+-- handles -- a sprite name for a fixture, the item's full type for a dropped head,
+-- because getSpriteName on a world item answers a model's name or nothing at all.
+--
+-- nil for a device that never travels to one screen, which is a LIGHT: a light
+-- answers "which one am I" by blinking, where everybody in the room can see it,
+-- so nothing about it is ever addressed to a window and getSpriteName is a call
+-- this file does not make on a switch.
+--
+-- One place, because find() sends it and the debug snapshot (SCeroSecDebug) shows
+-- it: two answers to "how is this object found again" would be one too many, and
+-- the second one would be the one that went stale.
+function CeroSecDevices.handleOf(entry)
+	if type(entry) ~= "table" or entry.object == nil then return nil end
+	if entry.kind == "light" then return nil end
+	if entry.kind == "sensor" then
+		return classOf(entry), "", CeroSecSensors.typeOf(entry.object)
+	end
+	return classOf(entry), entry.object:getSpriteName(), ""
+end
+
 -- The env.devices table for one machine. Built once per command: the discovery
 -- is the expensive half and nothing may ask the world twice inside one line and
 -- get two answers.
@@ -939,15 +972,11 @@ function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 			-- full type instead and the client uses whichever its class calls for.
 			-- Only one of the two is ever asked of an object, because getItem is a
 			-- question a light switch has no answer to.
-			local sprite, item = "", ""
-			if entry.kind == "sensor" then
-				item = CeroSecSensors.typeOf(entry.object)
-			else
-				sprite = entry.object:getSpriteName()
-			end
+			local class, sprite, item = CeroSecDevices.handleOf(entry)
+			if class == nil then return false, "no such device" end
 			system:reply(playerObj, "highlight", {
 				x = entry.x, y = entry.y, z = entry.z, token = token,
-				class = classOf(entry), sprite = sprite, item = item,
+				class = class, sprite = sprite, item = item,
 				seconds = seconds,
 			})
 			return true, nil, "highlighted"
