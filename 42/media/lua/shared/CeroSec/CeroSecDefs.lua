@@ -502,6 +502,19 @@ CeroSec.STEP_BUDGET_PER_MACHINE = 100
 -- minute on a server.
 CeroSec.JOB_PASS_MS = 100
 
+-- How long a rebooting machine stays dark, in real milliseconds.
+--
+-- A reboot is the power going and coming back, so there is an interval where the
+-- machine is off: the sprite is the unlit one, the screen's glow is gone and
+-- there is no screen to read. Three seconds is a 1993 desktop's own answer --
+-- the case switch off and on again, long enough to see and short enough that
+-- nobody walks away from it -- and it is REAL time and not game time, because it
+-- is the machine's own clock and not the county's.
+--
+-- Counted by the scheduler's own pass, like a pending `shutdown +N`: there is no
+-- timer anywhere else on the machine, so there is none here either.
+CeroSec.REBOOT_DARK_MS = 3000
+
 -- Lines one machine may put on its screen in a second. Beyond it a job is
 -- paused until the window comes round, so `while true; do echo x; done` is a
 -- slow trickle and never a flood -- neither of the network nor of the hundred

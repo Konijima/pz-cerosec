@@ -218,6 +218,40 @@ function CeroSecJobs.schedule(luaObject, data)
 	return luaObject.shutdown
 end
 
+--
+-- The dark interval of a reboot
+--
+-- A machine that is coming back is off in the meantime, and "in the meantime" is
+-- this pass -- the same clock the pending shutdown above is counted on, for the
+-- same reason: there is no timer anywhere else on the machine.
+--
+-- RUNTIME state like that one, and not among the object's saved keys: a server
+-- that went down while a machine was dark comes back with the machine off, which
+-- is what a real one does when the power goes while it is down. The survivor
+-- switches it on by hand.
+--
+-- It holds the players who were at the glass when it went dark, because they are
+-- the ones the window is handed back to (SCeroSecSystem:reopenFor).
+--
+
+function CeroSecJobs.scheduleReboot(luaObject, at, waiting)
+	if type(at) ~= "number" then return nil end
+	luaObject.rebooting = { at = at, waiting = waiting }
+	register(luaObject)
+	return luaObject.rebooting
+end
+
+-- The moment the interval is up, on every pass, beside the shutdown clock. A
+-- machine somebody switched on by hand while it was dark is simply let go: it is
+-- already up, and turnOn says so.
+function CeroSecJobs.checkReboot(system, luaObject, now)
+	local pending = luaObject.rebooting
+	if pending == nil then return end
+	if pending.at - now > 0 then return end
+	luaObject.rebooting = nil
+	system:resumeReboot(luaObject, pending.waiting)
+end
+
 -- One line onto the machine's screen, and out to every window standing at it.
 -- A broadcast is not a reply: it reaches everybody or it is not a broadcast.
 local function broadcast(system, luaObject, line)
@@ -785,7 +819,9 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		end
 	end
 	book.list = kept
-	if #book.list == 0 and luaObject.shutdown == nil then forget(luaObject) end
+	if #book.list == 0 and luaObject.shutdown == nil and luaObject.rebooting == nil then
+		forget(luaObject)
+	end
 
 	if #dirtyList > 0 then
 		luaObject:mirrorOS()
@@ -881,6 +917,10 @@ function CeroSecJobs.pass(now)
 	-- The clocks first, and all of them: a shutdown is not something a machine
 	-- at the wrong end of a busy county may be late for, and it costs no steps.
 	for i = 1, n do CeroSecJobs.checkShutdown(system, order[i], now) end
+	-- And the dark interval of a machine that is coming back, which is the same
+	-- kind of clock and is owed the same punctuality: a player is standing in
+	-- front of an unlit screen waiting for it.
+	for i = 1, n do CeroSecJobs.checkReboot(system, order[i], now) end
 
 	for i = 1, n do
 		local machine = order[i]
@@ -889,7 +929,7 @@ function CeroSecJobs.pass(now)
 			local share = CeroSec.STEP_BUDGET_PER_MACHINE
 			if share > total then share = total end
 			total = total - CeroSecJobs.runMachine(system, machine, share, now)
-		elseif machine.shutdown == nil then
+		elseif machine.shutdown == nil and machine.rebooting == nil then
 			-- Nothing running and nothing pending: it is not a machine the
 			-- scheduler has anything to do with any more.
 			forget(machine)
