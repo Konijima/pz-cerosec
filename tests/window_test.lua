@@ -5664,27 +5664,76 @@ local function ownSaid(object, needle)
 	return false
 end
 
-local function typeAt(net, object, line)
+local function typeAt(net, object, line, ticks)
 	local console = object:consoleState()
 	console.booted = true
 	console.user = "admin"
 	console.cwd = "/home/admin"
 	net.system:startPrompt(object, console, line, nil, nil)
-	net.tick(3)
+	net.tick(ticks or 3)
+end
+
+-- THE RING. A modem prints nothing at all while it dials and the far end rings,
+-- so every bench below has to sit through the ring the outcome it is asserting on
+-- costs: CeroSecOS.RING_ANSWER_MS of wall clock for a call that is answered,
+-- RING_BUSY_MS for a busy line and RING_TIMEOUT_MS -- the modem's S7 -- for one
+-- nobody picks up. A pass is CeroSec.JOB_PASS_MS of that clock.
+--
+-- Two passes over: one for the pass the wait is set up in and one for the pass
+-- after it, which is where the result code is actually written. Derived from the
+-- constants and not written out, deliberately -- this is the bench's own PACING
+-- and not a claim about the numbers; what asserts the numbers is os_test 48 and
+-- the timing bench below, which reads the clock itself.
+local function ringPasses(ms)
+	return math.ceil(ms / CeroSec.JOB_PASS_MS) + 2
+end
+
+local function ringOut(net, ms)
+	net.tick(ringPasses(ms or CeroSecOS.RING_ANSWER_MS))
+end
+
+-- `cu`, and the ring behind it, in one line -- because a bench that dialled and
+-- looked at the glass in the same breath would be looking at a modem still
+-- dialling, and would read the silence as an answer.
+local function dial(net, tel, ms)
+	net.enter("cu " .. tel)
+	ringOut(net, ms)
 end
 
 -- The number, the BIOS line, and a machine with no line at all.
 do
 	local net = newNet()
-	local office = CeroSecOS.phoneKey(CeroSecOS.buildingKey(400, 700))
-	eq("the office's number is the building's", telOf(net.here),
-		CeroSecOS.phoneText(office))
-	eq("and the other machine in the room answers on the same one",
-		telOf(net.gate), telOf(net.here))
+	local b1, b2 = CeroSecOS.buildingKey(400, 700)
+	local ex = CeroSecOS.phoneExchange(400, 700)
+	-- ONE LINE PER MODEM. The number is worked out from the building key, the
+	-- machine's own number on the wire and the region the building stands in --
+	-- every one of them a fact the bench can derive for itself without being told.
+	eq("the office machine's number is its own", telOf(net.here),
+		CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 1)))
+	eq("and the machine at the next desk has ANOTHER one",
+		telOf(net.gate), CeroSecOS.phoneText(ex, CeroSecOS.phoneKey(b1, b2, 2)))
+	check("which is not the same number",
+		telOf(net.gate) ~= telOf(net.here))
 	check("the shed down the road has a different one",
 		telOf(net.far) ~= telOf(net.here))
-	-- Four digits behind the one exchange there is, always.
-	check("it is a 555 number", string.find(telOf(net.here), "^555%-%d%d%d%d") ~= nil)
+	-- ONE CENTRAL OFFICE TO A TOWN. Both office machines and the shed down the road
+	-- are inside one PHONE_REGION square, so all three are wired back to one switch
+	-- and share the first three digits -- which is the point of the exchange: the
+	-- numbers of one place look like each other.
+	eq("both office machines are on one central office",
+		string.sub(telOf(net.gate), 1, 3), string.sub(telOf(net.here), 1, 3))
+	eq("and so is the shed, being in the same town",
+		string.sub(telOf(net.far), 1, 3), string.sub(telOf(net.here), 1, 3))
+	-- And a building in the next region along is on ANOTHER switch.
+	local town = net.machine(300, 300, 0, (function()
+		local def = { getX = function() return 1200 end, getY = function() return 40 end }
+		return { getDef = function() return def end }
+	end)())
+	town:turnOn()
+	check("a building a region away is on another central office",
+		string.sub(telOf(town), 1, 3) ~= string.sub(telOf(net.here), 1, 3))
+	check("seven digits, and the office code does not start with 0 or 1",
+		string.find(telOf(net.here), "^[2-9]%d%d%-%d%d%d%d") ~= nil)
 	check("and the machine knows it is one", CeroSecOS.isPhoneNumber(telOf(net.here)))
 
 	-- The firmware announces it under the card, which is the only place it is
@@ -5715,8 +5764,7 @@ do
 	local tel = telOf(net.far)
 	local mine = telOf(net.here)
 
-	net.enter("cu " .. tel)
-	net.tick(2)
+	dial(net, tel)
 	check("the modem answers first", net.glass("CONNECT 2400"))
 	check("and then cu", net.glass("Connected."))
 	check("the far machine asks who is there", net.glass("login:"))
@@ -5768,8 +5816,7 @@ end
 do
 	local net = newNet()
 	net.login("admin")
-	net.enter("cu " .. telOf(net.far))
-	net.tick(2)
+	dial(net, telOf(net.far))
 	net.enter("admin")
 	net.enter("")
 	net.tick(2)
@@ -5794,36 +5841,34 @@ do
 	check("off a call it is just a word", net.glass("~.: command not found"))
 end
 
--- One line to a building: a third machine dialling a line that is in use.
+-- ONE LINE PER MODEM: a third machine dialling a line that is in use, the machine
+-- at the next desk, and the two ends a ring holds.
 do
 	local net = newNet()
-	local other = net.machine(200, 200, 0, net.machine ~= nil and (function()
+	local other = net.machine(200, 200, 0, (function()
 		local def = { getX = function() return 1200 end, getY = function() return 40 end }
 		return { getDef = function() return def end }
-	end)() or nil)
+	end)())
 	other:turnOn()
 	net.login("admin")
 	local tel = telOf(net.far)
 
-	net.enter("cu " .. tel)
-	net.tick(2)
+	dial(net, tel)
 	check("the call is up", net.glass("CONNECT 2400"))
 
-	-- The shed's line is busy, and so is the office's -- a building whose machine
-	-- has dialled out cannot take a call either.
-	typeAt(net, other, "cu " .. tel)
+	-- The shed's line is busy, and so is this machine's -- a modem that has dialled
+	-- out cannot take a call either.
+	typeAt(net, other, "cu " .. tel, ringPasses(CeroSecOS.RING_BUSY_MS))
 	check("a third machine gets the busy signal", ownSaid(other, "BUSY"))
 	eq("and no second line was taken over there",
 		CeroSecOS.ptyCount(net.far.ptys), 1)
-	typeAt(net, other, "cu " .. telOf(net.here))
-	check("and so does one dialling the building that dialled",
+	typeAt(net, other, "cu " .. telOf(net.here), ringPasses(CeroSecOS.RING_BUSY_MS))
+	check("and so does one dialling the machine that dialled",
 		ownSaid(other, "BUSY"))
 	eq("no line on this machine either", CeroSecOS.ptyCount(net.here.ptys or {}), 0)
 
-	-- The other machine in one's OWN building is on the same line, so its number
-	-- is one's own and dialling it is dialling a line one is using. The call above
-	-- has to be finished with first, and ~. is only read at a shell prompt -- at
-	-- the far machine's login: it would be a name -- so this logs in to hang up.
+	-- Hang up. ~. is only read at a shell prompt -- at the far machine's login it
+	-- would be a name -- so this logs in to do it.
 	net.enter("admin")
 	net.enter("")
 	net.tick(2)
@@ -5831,9 +5876,173 @@ do
 	net.enter("~.")
 	net.tick(3)
 	check("the call is over", net.heard("Disconnected."))
-	net.enter("cu " .. telOf(net.gate))
+
+	-- THE MACHINE AT THE NEXT DESK IS NOW REACHABLE, and this is the whole of what
+	-- changed: it used to share the building's one line, so its number was this
+	-- machine's own and dialling it was always BUSY. It has a line of its own now.
+	dial(net, telOf(net.gate))
+	check("the machine at the next desk answers", net.glass("CONNECT 2400"))
+	eq("on its own line", CeroSecOS.ptyCount(net.gate.ptys), 1)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the prompt is its", net.glass("admin@" .. net.host(net.gate)))
+	net.forget()
+	net.enter("~.")
 	net.tick(3)
-	check("one's own building is always busy", net.glass("BUSY"))
+	check("hung up", net.heard("Disconnected."))
+
+	-- One's OWN number is still busy, because the caller is the one using the line.
+	dial(net, telOf(net.here), CeroSecOS.RING_BUSY_MS)
+	check("dialling one's own modem is dialling a line one is using",
+		net.glass("BUSY"))
+end
+
+-- BOTH ENDS ARE BUSY WHILE IT RINGS. A modem that has gone off-hook is holding
+-- its line before anybody has answered, and the telephone that is ringing cannot
+-- take a second call either -- so a fifteen-second ring is fifteen seconds in
+-- which neither number is free.
+do
+	local net = newNet()
+	local other = net.machine(200, 200, 0, (function()
+		local def = { getX = function() return 1200 end, getY = function() return 40 end }
+		return { getDef = function() return def end }
+	end)())
+	other:turnOn()
+	net.login("admin")
+	local mine, theirs = telOf(net.here), telOf(net.far)
+
+	-- Ringing, and no further along than that: the machine is asleep on a clock
+	-- with nothing on the glass, and the far machine has no line taken.
+	net.enter("cu " .. theirs)
+	net.tick(4)
+	check("nothing is on the glass while it rings", not net.glass("CONNECT 2400"))
+	check("nor any word at all", not net.glass("NO CARRIER") and not net.glass("BUSY"))
+	eq("and no line is open over there", CeroSecOS.ptyCount(net.far.ptys or {}), 0)
+	local ring = CeroSecNet.ringOf(net.here)
+	check("the dialling job is what holds the line", ring ~= nil)
+	eq("this end of it", ring.tel, mine)
+	eq("and the end it is ringing", ring.to, theirs)
+	check("the caller's own line reads busy", CeroSecNet.lineBusy(net.system, mine))
+	check("and so does the line that is ringing",
+		CeroSecNet.lineBusy(net.system, theirs))
+
+	-- A third machine dialling either of them, mid-ring, gets the busy signal.
+	typeAt(net, other, "cu " .. theirs, ringPasses(CeroSecOS.RING_BUSY_MS))
+	check("a third machine dialling the ringing telephone is refused",
+		ownSaid(other, "BUSY"))
+
+	-- And the ring finishes into a call, the line held all the way through.
+	ringOut(net)
+	check("the call goes through in the end", net.glass("CONNECT 2400"))
+	eq("and now it is a session", CeroSecOS.ptyCount(net.far.ptys), 1)
+	eq("with nothing left ringing", CeroSecNet.ringOf(net.here), nil)
+end
+
+-- HOW LONG A DIAL TAKES, read off the clock: four seconds to CONNECT, two to
+-- BUSY, and the modem's S7 -- fifteen -- to NO CARRIER.
+--
+-- Measured as a NUMBER OF PASSES and not as a "before/after" on the glass: a
+-- bench that only asserted the word appeared would be green on a modem that
+-- answered instantly. The numbers are written out rather than read off the
+-- constants for the reason the 2400-baud bench writes its own out -- a bound whose
+-- reference is its own source proves nothing.
+do
+	local net = newNet()
+	net.login("admin")
+
+	-- Four seconds is forty passes of a hundred milliseconds. At thirty-five there
+	-- is still nothing; by forty-five the modem has answered.
+	net.enter("cu " .. telOf(net.far))
+	net.tick(35)
+	check("nothing at three and a half seconds", not net.glass("CONNECT 2400"))
+	net.tick(10)
+	check("and the carrier at four and a bit", net.glass("CONNECT 2400"))
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	net.forget()
+	net.enter("~.")
+	net.tick(3)
+
+	-- Two seconds for a busy tone: one's own number is always busy.
+	net.forget()
+	net.enter("cu " .. telOf(net.here))
+	net.tick(15)
+	check("nothing at a second and a half", not net.glass("BUSY"))
+	net.tick(10)
+	check("and the busy tone at two and a bit", net.glass("BUSY"))
+
+	-- Fifteen seconds for a number nobody answers: the machine is switched off, so
+	-- the modem waits out S7 and gives up.
+	local dark = telOf(net.far)
+	net.far:turnOff()
+	net.forget()
+	net.enter("cu " .. dark)
+	net.tick(140)
+	check("nothing at fourteen seconds", not net.glass("NO CARRIER"))
+	net.tick(20)
+	check("and NO CARRIER at fifteen and a bit", net.glass("NO CARRIER"))
+	net.far:turnOn()
+end
+
+-- A PARTY LINE. Two machines that hash onto one number are two subscribers on one
+-- line, which is what a rural exchange sold in 1993: the lower one on the wire
+-- answers, every time, and both of their lines are busy while it is up.
+do
+	local net = newNet()
+	net.login("admin")
+	-- Made rather than hunted for: the record is what the number comes off, so a
+	-- machine can be given the record of another one's line. Two of the shed's
+	-- machines on one number is exactly what the derivation allows.
+	local twin = net.machine(300, 300, 0, net.shed)
+	twin:turnOn()
+	local state = twin:osState()
+	local mine = CeroSecOS.netRecord(net.far:osState())
+	check("the shed's own machine has a record", mine ~= nil)
+	-- Same building, same exchange, same n -- and therefore the same number. The
+	-- address collides too, which is what two subscribers on one line looked like
+	-- from the exchange's side: there is nothing on this rung that routes.
+	CeroSecOS.setNetRecord(state, mine.b1, mine.b2, mine.n, mine.ex)
+	twin:mirrorOS()
+	eq("and the twin answers to the same number", telOf(twin), telOf(net.far))
+
+	dial(net, telOf(net.far))
+	check("the call goes through", net.glass("CONNECT 2400"))
+	eq("the lower machine on the wire is the one that picked up",
+		CeroSecOS.ptyCount(net.far.ptys), 1)
+	eq("and the other subscriber took no line",
+		CeroSecOS.ptyCount(twin.ptys or {}), 0)
+	-- The line is one line: the twin cannot dial out while it is up.
+	typeAt(net, twin, "cu " .. telOf(net.here), ringPasses(CeroSecOS.RING_BUSY_MS))
+	check("the other subscriber's telephone is busy too", ownSaid(twin, "BUSY"))
+end
+
+-- ESCAPE ABORTS A DIAL, and the word for it is the modem's own: a dial the DTE
+-- gave up on ends in NO CARRIER, which is what a Hayes modem prints when the
+-- receiver goes down before a carrier came up.
+do
+	local net = newNet()
+	net.login("admin")
+	local dark = telOf(net.far)
+	net.far:turnOff()
+	net.enter("cu " .. dark)
+	net.tick(20)
+	check("it is still ringing", not net.glass("NO CARRIER"))
+	check("and holding the line", CeroSecNet.ringOf(net.here) ~= nil)
+	net.forget()
+	net.escape()
+	net.tick(3)
+	check("Escape hangs up in the modem's own word", net.heard("NO CARRIER"))
+	eq("and the line is let go with it", CeroSecNet.ringOf(net.here), nil)
+	check("nothing is holding the caller's number",
+		not CeroSecNet.lineBusy(net.system, telOf(net.here)))
+	check("nor the one it was ringing", not CeroSecNet.lineBusy(net.system, dark))
+	-- And the prompt is back, so the next line is taken.
+	net.far:turnOn()
+	net.forget()
+	dial(net, dark)
+	check("the machine dials again straight afterwards", net.glass("CONNECT 2400"))
 end
 
 -- The exchange is the county's grid: no power, no dial tone, and a call that was
@@ -5848,15 +6057,13 @@ do
 	-- bench in this file puts the clock back and leaves the world newborn.
 	_G.__gameTime.ageHours = 240
 	_G.__sandbox.elecShut = 5
-	net.enter("cu " .. tel)
-	net.tick(3)
+	dial(net, tel)
 	check("no exchange, no dial tone", net.glass("NO DIALTONE"))
 	check("and nothing was opened", net.far.ptys == nil)
 
 	-- The option a server can set, read the way vanilla reads its own.
 	_G.SandboxVars = { CeroSec = { PhoneService = "always" } }
-	net.enter("cu " .. tel)
-	net.tick(3)
+	dial(net, tel)
 	check("an exchange on a generator still answers", net.glass("CONNECT 2400"))
 	eq("a line is taken", CeroSecOS.ptyCount(net.far.ptys), 1)
 
@@ -5873,8 +6080,7 @@ do
 	_G.SandboxVars = { CeroSec = { PhoneService = "never" } }
 	_G.__sandbox.elecShut = 100
 	check("the grid is back", CeroSecNet.gridAlive())
-	net.enter("cu " .. tel)
-	net.tick(3)
+	dial(net, tel)
 	check("and never means never", net.glass("NO DIALTONE"))
 	_G.SandboxVars = nil
 	_G.__gameTime.ageHours = 0
@@ -5884,18 +6090,24 @@ end
 do
 	local net = newNet()
 	net.login("admin")
+	local dark = telOf(net.far)
 	net.far:turnOff()
-	net.enter("cu " .. telOf(net.far))
-	net.tick(3)
-	check("a dark building does not answer", net.glass("NO CARRIER"))
+	dial(net, dark, CeroSecOS.RING_TIMEOUT_MS)
+	check("a dark machine does not answer", net.glass("NO CARRIER"))
 	net.far:turnOn()
-	-- A number in the right shape that no building in the county has. 555-0000 is
-	-- one this bench's two buildings are not on, and the check says so.
-	local nobody = "555-0000"
-	check("the bench's own buildings are not on it",
-		telOf(net.here) ~= nobody and telOf(net.far) ~= nobody)
-	net.enter("cu " .. nobody)
-	net.tick(3)
+	-- A number in the right shape that nobody in the county has. Built by walking
+	-- the subscriber numbers of this bench's own exchange until one is free, because
+	-- with a line per MODEM there are three numbers to miss and not two.
+	local nobody = nil
+	for n = 0, 20 do
+		local try = CeroSecOS.phoneText(CeroSecOS.phoneExchange(400, 700), n)
+		if try ~= telOf(net.here) and try ~= telOf(net.gate) and try ~= telOf(net.far) then
+			nobody = try
+			break
+		end
+	end
+	check("there is a number in this county nobody answers to", nobody ~= nil)
+	dial(net, nobody, CeroSecOS.RING_TIMEOUT_MS)
 	check("a number nobody has does not answer either", net.glass("NO CARRIER"))
 	-- And a word that is not a number at all never reaches the exchange.
 	net.enter("cu 5551219")
@@ -5911,8 +6123,7 @@ end
 do
 	local net = newNet()
 	net.login("admin")
-	net.enter("cu " .. telOf(net.far))
-	net.tick(2)
+	dial(net, telOf(net.far))
 	net.enter("admin")
 	net.enter("")
 	net.tick(2)
@@ -5936,15 +6147,13 @@ do
 	net.enter("rlogin gate")
 	net.tick(3)
 	check("one hop out, over the wire", net.glass("admin@" .. net.host(net.gate)))
-	net.enter("cu " .. telOf(net.far))
-	net.tick(3)
+	dial(net, telOf(net.far))
 	net.enter("admin")
 	net.enter("")
 	net.tick(3)
 	check("two hops out, the second by telephone",
 		net.glass("admin@" .. net.host(net.far)))
-	net.enter("cu " .. telOf(net.here))
-	net.tick(3)
+	dial(net, telOf(net.here), CeroSecOS.RING_BUSY_MS)
 	check("and the third hop is refused", net.glass("BUSY"))
 	eq("with no third line anywhere",
 		CeroSecOS.ptyCount(net.gate.ptys) + CeroSecOS.ptyCount(net.far.ptys), 2)
@@ -5978,8 +6187,7 @@ end
 do
 	local net = newNet()
 	net.login("admin")
-	net.enter("cu " .. telOf(net.far))
-	net.tick(2)
+	dial(net, telOf(net.far))
 	net.enter("admin")
 	net.enter("")
 	net.tick(2)
@@ -6163,10 +6371,14 @@ do
 	check("the machine has a callsign", CeroSecOS.isCallsign(here))
 	check("so has the one beside it", CeroSecOS.isCallsign(gate))
 	check("and the shed down the road", CeroSecOS.isCallsign(far))
-	-- Per MACHINE and not per building, which is what makes it a STATION: the
-	-- telephone number is the building's and two computers in one office share it.
+	-- Per MACHINE, which is what makes it a STATION -- and the telephone number is
+	-- per machine too now, so the two are alike in that and the callsign is still
+	-- not a rearrangement of the number: the multipliers differ on purpose.
 	check("the two machines in the office are two stations", here ~= gate)
-	eq("and they do share the one telephone line", telOf(net.here), telOf(net.gate))
+	check("each with a telephone line of its own",
+		telOf(net.here) ~= telOf(net.gate))
+	check("and a callsign that is not its number's digits",
+		string.find(here, string.sub(telOf(net.here), 5), 1, true) == nil)
 	check("the shed is a third station", far ~= here and far ~= gate)
 	-- Kentucky is the fourth call district, and that digit is a fact about the map.
 	eq("every station is in the fourth district", string.sub(here, -4, -4), "4")
@@ -6593,7 +6805,7 @@ do
 	-- And the same machine over the telephone, in the same breath: the disk is
 	-- here and the link that does not need a tile still reaches it.
 	say(net, "cu " .. telOf(net.far))
-	net.tick(2)
+	ringOut(net)
 	check("while the telephone reaches it perfectly well", net.glass("CONNECT 2400"))
 	_G.__world = nil
 end

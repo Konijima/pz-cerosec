@@ -1470,8 +1470,10 @@ do
 	for m = 1, 6 do
 		local state = CeroSecOS.newState("ksp")
 		-- A machine IN a building: it has a line of its own, so nothing here is
-		-- refused for the cheap reason. The record is what a line is derived from.
-		CeroSecOS.setNetRecord(state, 4, 17, m)
+		-- refused for the cheap reason. The record is what a line is derived from,
+		-- exchange and all -- a record with no exchange in it is a machine with no
+		-- telephone, and every one of these lines would be refused on the spot.
+		CeroSecOS.setNetRecord(state, 4, 17, m, 555)
 		local console = CeroSec.newConsole()
 		console.user = "admin"
 		console.cwd = "/home/admin"

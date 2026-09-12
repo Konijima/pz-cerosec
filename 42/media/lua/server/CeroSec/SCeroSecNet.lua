@@ -150,12 +150,30 @@ function CeroSecNet.identify(system, luaObject, state)
 	local b1, b2 = CeroSecOS.buildingKey(bx, by)
 	if b1 == nil then return false end
 
+	-- Which central office this building is wired to. Worked out from the corner
+	-- itself and not from the key, because the key is two bytes of a hash and a
+	-- region is a coordinate -- which is the whole reason the exchange is a FIELD in
+	-- the record instead of something derived from it (see the note over
+	-- CeroSecOS.phoneExchange).
+	local ex = CeroSecOS.phoneExchange(bx, by)
+
 	local net = CeroSecOS.netRecord(state)
-	if net ~= nil and net.b1 == b1 and net.b2 == b2 then return false end
+	if net ~= nil and net.b1 == b1 and net.b2 == b2 then
+		-- Already on the wire here. One thing may still be missing: every machine
+		-- saved before the line belonged to the modem carries three numbers and no
+		-- exchange, and such a machine has NO TELEPHONE -- an empty line in the BIOS,
+		-- and `cu: no phone line` -- until the record is made again where it stands.
+		-- This is that moment: the chunk is loaded, so the building is answerable,
+		-- and nothing has to be migrated anywhere else.
+		if net.ex ~= nil or ex == nil then return false end
+		if CeroSecOS.setNetRecord(state, b1, b2, net.n, ex) == nil then return false end
+		luaObject:mirrorOS()
+		return true
+	end
 
 	local n = freeNumber(system, luaObject, b1, b2)
 	if n == nil then return false end
-	if CeroSecOS.setNetRecord(state, b1, b2, n) == nil then return false end
+	if CeroSecOS.setNetRecord(state, b1, b2, n, ex) == nil then return false end
 	-- And the machine's own line in /etc/hosts, once. After this the file is the
 	-- player's: a name he added stays, a line he deleted stays deleted.
 	CeroSecOS.writeOwnHost(state, CeroSecOS.clockOf(system:clockEnv()))
@@ -284,25 +302,58 @@ function CeroSecNet.exchangeAlive()
 	return CeroSecNet.gridAlive()
 end
 
--- Which building's line a machine is on, as one string to key a lookup by. nil
--- for a machine that is on none, which is a machine with no telephone.
+-- A machine's own line, which IS its number: one modem, one line, one number.
+-- nil for a machine that has none -- one in no building at all, and one whose
+-- record was written before the line belonged to the modem rather than to the
+-- building it stands in.
+--
+-- The number is the KEY the busy rule is asked in, and that is the whole of what
+-- changed when the line stopped being the building's: the key used to be the two
+-- bytes of the building, so a mall was one line and thirty shops took turns on it.
 local function lineKey(net)
-	if net == nil then return nil end
-	return tostring(net.b1) .. "." .. tostring(net.b2)
+	if net == nil or net.ex == nil then return nil end
+	return CeroSecOS.phoneText(net.ex, CeroSecOS.phoneKey(net.b1, net.b2, net.n))
 end
 
+-- One place, read two ways, and the two can never disagree: keyOf is what the busy
+-- rule and a pty's own record of the call are keyed by, lineOf is what `who`,
+-- `last`, the BIOS line and cu print. They are the same string.
 function CeroSecNet.keyOf(luaObject)
 	return lineKey(recordOf(luaObject))
 end
 
 -- This machine's number, or nil for one with no line.
 function CeroSecNet.lineOf(luaObject)
-	local net = recordOf(luaObject)
-	if net == nil then return nil end
-	return CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2))
+	return lineKey(recordOf(luaObject))
 end
 
--- Is a building's line in use right now?
+-- The dial a machine is in the middle of, or nil. One at a time and no more: the
+-- line is busy for the length of the ring, so a second dial off the same machine
+-- cannot get past the busy rule to start one.
+--
+-- Read off the JOB BOOK and never off a field beside it, which is the doctrine the
+-- busy rule below already runs on one level up (the pty table IS the record of a
+-- call). A ring is a job asleep on a clock; a job that has gone -- killed by
+-- Escape, by `kill`, by the cpu ceiling, by the machine going dark -- has hung up
+-- by the same act, and there is nothing left holding anything. A counter beside the
+-- jobs would be a line busy for ever with nobody on it.
+--
+-- It costs a walk of a book that holds four jobs at the most, and only for a
+-- machine that has a book at all: a machine at its prompt has none.
+function CeroSecNet.ringOf(luaObject)
+	if luaObject == nil then return nil end
+	local book = luaObject.jobs
+	if book == nil or type(book.list) ~= "table" then return nil end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		if type(job.ring) == "table" and not CeroSecOS.jobIsOver(job) then
+			return job.ring
+		end
+	end
+	return nil
+end
+
+-- Is a line in use right now?
 --
 -- DERIVED and never counted. A call is two things -- a pty on the machine that
 -- answered and a glass at the machine that dialled -- and both of them are on the
@@ -312,19 +363,29 @@ end
 -- and the line is busy for ever with nobody on it. Walking the county costs what
 -- a ping costs and cannot be wrong.
 --
--- Both ENDS make the line busy, which is what one line per building means: a
--- building whose machine has dialled OUT cannot take a call either.
+-- Both ENDS make the line busy, which is what one line per modem means: a machine
+-- that has dialled OUT cannot take a call either.
+--
+-- And a line that is RINGING is busy too, at both ends, for the length of the
+-- ring: a modem that has lifted the receiver and is waiting for an answer is
+-- holding the line, and the far telephone that is ringing cannot take a second
+-- call. That half is not on a pty -- there is no session yet -- so it is read off
+-- the JOB that is dialling (CeroSecNet.ringOf), which is the same doctrine one step
+-- along: the thing that is waiting IS the record of the ring, and a job that has
+-- gone away has let the line go with it. Nothing is counted anywhere.
 function CeroSecNet.lineBusy(system, key)
 	if key == nil then return false end
 	return each(system, function(other)
+		local ring = CeroSecNet.ringOf(other)
+		if ring ~= nil and (ring.tel == key or ring.to == key) then return true end
 		local ptys = CeroSecOS.ptyList(other.ptys)
 		if #ptys == 0 then return nil end
 		local theirs = CeroSecNet.keyOf(other)
 		for i = 1, #ptys do
 			local pty = ptys[i]
 			if type(pty.phone) == "table" then
-				-- The building that DIALLED is on the pty; the building that
-				-- ANSWERED is the machine the pty is on.
+				-- The machine that DIALLED is on the pty; the machine that
+				-- ANSWERED is the one the pty is on.
 				if pty.phone.key == key or theirs == key then return true end
 			end
 		end
@@ -332,20 +393,23 @@ function CeroSecNet.lineBusy(system, key)
 	end) and true or false
 end
 
--- Who answers a number. Every computer of the building shares the line, so the
--- one that picks up is the one with the lowest address on it -- the desk the
--- modem is on -- and it is the same desk every time, which is what makes a number
--- something a player can write down.
+-- Who answers a number. One modem, one line, so it is the machine whose own number
+-- that is -- and a machine that is switched off cannot answer, which is a telephone
+-- ringing in an empty office.
 --
--- A machine that is switched off cannot answer; a building where every machine is
--- off is a telephone ringing in an empty office.
+-- Two machines on one number is a PARTY LINE: ten thousand subscriber numbers to a
+-- region, so the derivation lets two of them land on one, and the lower n picks up
+-- every time. It is the same desk every time, which is what makes a number
+-- something a player can write down, and a rural exchange really did sell two
+-- subscribers one line in 1993.
 function CeroSecNet.atPhone(system, tel)
+	if tel == nil then return nil end
 	local best, bestNet = nil, nil
 	each(system, function(other)
 		if not other.on then return nil end
 		local net = recordOf(other)
 		if net == nil then return nil end
-		if CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2)) ~= tel then return nil end
+		if lineKey(net) ~= tel then return nil end
 		if bestNet == nil or net.n < bestNet.n then
 			best, bestNet = other, net
 		end
@@ -381,6 +445,22 @@ function CeroSecNet.reachablePhone(system, from, tel)
 	if theirKey == myKey then return nil, CeroSecOS.MODEM.busy end
 	if CeroSecNet.lineBusy(system, theirKey) then return nil, CeroSecOS.MODEM.busy end
 	return object
+end
+
+-- Who would answer that number, asked in FULL: the line layer's own question plus
+-- the one thing dialPhone used to ask after it -- a machine sitting at the
+-- firmware's question has no operating system to answer a modem with, and nobody
+-- picking up is nobody picking up.
+--
+-- One function because it is asked twice about one call: once when the modem goes
+-- off-hook, to work out which of the three things the ring will end in, and once at
+-- the door when the ring is over, because four seconds is time enough for the far
+-- machine to have been switched off.
+function CeroSecNet.ringAnswer(system, from, tel)
+	local found, word = CeroSecNet.reachablePhone(system, from, tel)
+	if found == nil then return nil, word end
+	if found:osState() == nil then return nil, CeroSecOS.MODEM.noCarrier end
+	return found
 end
 
 -- The call a screen is on, when it is on one: what makes the trickle slower than
@@ -711,6 +791,18 @@ function CeroSecNet.envFor(system, luaObject, state)
 
 		sessions = function()
 			return CeroSecNet.sessions(luaObject)
+		end,
+
+		-- Would a call to that number be answered, and if not, what does the modem
+		-- say? nil for "somebody would pick up". It is the whole of what the engine
+		-- needs to know before it starts ringing: which of the three outcomes this
+		-- dial is going to have, so it can hold the line for as long as that outcome
+		-- takes (CeroSecOS.ringMs). The dial itself is still the machine's, and the
+		-- question is asked again at the door.
+		phone = function(tel)
+			local object, word = CeroSecNet.ringAnswer(system, luaObject, tel)
+			if object == nil then return word end
+			return nil
 		end,
 
 		copy = function(spec)
@@ -1366,11 +1458,8 @@ end
 -- is what a modem gives you: the reason a call did not happen is the last thing
 -- printed before the receiver goes down.
 function CeroSecNet.dialPhone(system, luaObject, console, data)
-	local found, word = CeroSecNet.reachablePhone(system, luaObject, data.tel)
+	local found, word = CeroSecNet.ringAnswer(system, luaObject, data.tel)
 	if found == nil then return nil, word end
-	-- A machine with no operating system on it -- one sitting at the firmware's
-	-- own question -- has nothing to answer a modem with. Nobody picked up.
-	if found:osState() == nil then return nil, CeroSecOS.MODEM.noCarrier end
 	local pty, object, far = connect(system, luaObject, console, "cu", data, found)
 	-- The one thing left that can refuse a call the exchange put through: a far
 	-- machine with all four of its lines taken by sessions off its own coax. It is

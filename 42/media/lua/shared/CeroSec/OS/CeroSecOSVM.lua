@@ -529,6 +529,15 @@ end
 
 function CeroSecOS.killJob(job, reason)
 	if job.state == "done" or job.state == "killed" or job.state == "error" then return false end
+	-- A job killed in the middle of a dial has hung up, and the thing holding the
+	-- line says what a hang-up sounds like. The word is the DIALLER's -- the
+	-- command wrote it into the ring when it lifted the receiver -- so nothing here
+	-- knows what a modem is; it says the line it was handed, through the job's own
+	-- output door, and lets the line go.
+	if type(job.ring) == "table" and job.ring.abort ~= nil then
+		outLine(job, tostring(job.ring.abort))
+	end
+	job.ring = nil
 	job.killReason = reason
 	job.status = 130
 	finish(job, "killed")
@@ -1199,9 +1208,26 @@ local function applyControl(job, control, data, env)
 	-- is the same answer `sleep` gives one, except that here there is nothing to
 	-- refuse -- the waiting is the command's own pacing and not something typed.
 	if control == "sleep" and type(data) == "table" then
+		-- A wait that ENDS IN A DIAL -- which is the ring of a telephone call --
+		-- is refused here if there is nobody standing at the machine, and refused
+		-- BEFORE the wait rather than after it: a crontab line must not hold a
+		-- telephone line open for fifteen seconds to be told the thing the door
+		-- would have told it at once. The word is the command's own, so the
+		-- refusal reads the same as the one the order itself gets below.
+		if data.dial ~= nil and not jobHasTerminal(job) then
+			flushPartial(job)
+			errLine(job, tostring(data.dial) .. ": not a terminal")
+			job.status = 1
+			return true
+		end
 		flushPartial(job)
 		local now = CeroSecOS.nowMsOf(env)
 		local ms = tonumber(data.ms)
+		-- And the line the wait is HOLDING, when it is holding one. It lives on
+		-- the job, never beside it: a job that has gone -- killed, interrupted,
+		-- over its cpu -- has let go of the line by the same act, so the busy rule
+		-- reads the jobs and there is nothing to leak (CeroSecNet.lineBusy).
+		if type(data.ring) == "table" then job.ring = data.ring end
 		if now ~= nil and ms ~= nil and ms > 0 then
 			job.cont = data.cont
 			job.timer = true
@@ -1399,6 +1425,10 @@ local function resumeCont(state, job, text, env)
 	job.cont = nil
 	job.contRedirect = nil
 	job.ask = nil
+	-- The ring is over, whichever way it ended, so the line is not held any more.
+	-- Cleared BEFORE the continuation runs: the continuation of a dial that was
+	-- answered asks the world for that line a second time, at the door.
+	job.ring = nil
 	job.state = "running"
 	-- The redirect the line was typed with goes back down with the answer: the
 	-- chain is where the command finally runs, and the writing belongs beside
