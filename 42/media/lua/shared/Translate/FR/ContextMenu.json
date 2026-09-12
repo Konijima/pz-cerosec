@@ -6,7 +6,8 @@
     "ContextMenu_CeroSec_ReadUser": "Lire le guide de l'utilisateur",
     "ContextMenu_CeroSec_ReadAdmin": "Lire le guide de l'administrateur système",
     "ContextMenu_CeroSec_ReadProgrammer": "Lire le guide du programmeur",
-    "ContextMenu_CeroSec_DevManual": "Lire le manuel CeroSec (dev)",
+    "ContextMenu_CeroSec_Dev": "CeroSec (dev)",
+    "ContextMenu_CeroSec_DevDebug": "Fenêtre de débogage",
     "ContextMenu_CeroSec_InsertFloppy": "Insérer une disquette",
     "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette"
 }

@@ -13,6 +13,7 @@ lua5.1 tests/terminal_test.lua
 lua5.1 tests/window_test.lua
 lua5.1 tests/hostile_test.lua
 lua5.1 tests/manual_ui_test.lua
+lua5.1 tests/debug_ui_test.lua
 # Not piped: a pipe would hide its exit status from set -e.
 log=$(mktemp)
 if sh tests/selfcalls-check.sh > "$log" 2>&1; then

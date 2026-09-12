@@ -4,6 +4,7 @@ require "CeroSec/ISCeroSecToggleAction"
 require "CeroSec/ISCeroSecUseAction"
 require "CeroSec/ISCeroSecDiskAction"
 require "CeroSec/CeroSecManualUI"
+require "CeroSec/CeroSecDebugUI"
 
 CeroSecContextMenu = {}
 
@@ -242,54 +243,81 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 
 	CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj, height)
 
-	CeroSecContextMenu.addDevManual(context, playerObj)
+	CeroSecContextMenu.addDevMenu(context, playerObj, computer)
 end
 
--- The testing door. While CeroSec.DEV_MANUAL_MENU is on, any computer -- lit or
--- dark, in reach or not -- offers the manual straight off its menu, with no
--- copy of the book anywhere and no walk to get to it, so the reader can be
--- worked on without first going shopping for the item.
+-- The testing doors. While either dev flag is on, any computer -- lit or dark, in
+-- reach or not -- carries a last entry on its menu with the mod's own tools behind
+-- it: the manual reader with no copy of the book anywhere
+-- (CeroSec.DEV_MANUAL_MENU), and the debug window (CeroSec.DEV_DEBUG_MENU, or the
+-- game's own debug mode -- CeroSec.debugAllowed). So either can be worked on
+-- without first going shopping for an item or restarting the game with -debug.
 --
--- A SUBMENU, because the manual is three volumes and a door onto one of them
--- is a door onto a third of the reader. One entry per volume on the shelf,
--- named the way the volume names itself. With no shelf at all there is nothing
--- to put a door onto: the three volumes are shipped files and an empty shelf is
--- one of them failing to load, which is said in the log and not answered with a
--- menu entry onto nothing.
+-- A SUBMENU, because there is more than one door: the manual is three volumes and
+-- a door onto one of them is a door onto a third of the reader, and the debug
+-- window is a fourth entry beside them. With no shelf at all there is nothing to
+-- put a manual door onto: the three volumes are shipped files and an empty shelf
+-- is one of them failing to load, which is said in the log and not answered with
+-- a menu entry onto nothing.
 --
--- LAST on the menu, deliberately: it is not part of the machine and it must
--- never sit between the two options that are. And it asks nothing of the
+-- LAST on the menu, deliberately: none of it is part of the machine and it must
+-- never sit between the options that are. The manual entries ask nothing of the
 -- computer -- not its power, not its height, not whether anybody can stand in
--- front of it -- because it is not really about the computer at all. The
--- computer is only the nearest thing to right-click.
+-- front of it -- because they are not about the computer at all. The debug entry
+-- does take the computer, but only as the machine it opens SELECTED: it is the one
+-- the survivor right-clicked, which is the one he is asking about.
 --
--- Off, this adds nothing and there is not an entry to be seen: the book is
--- found or it is not read.
-function CeroSecContextMenu.addDevManual(context, playerObj)
-	if not CeroSec.DEV_MANUAL_MENU then return end
+-- With both flags off this adds nothing and there is not an entry to be seen.
+function CeroSecContextMenu.addDevMenu(context, playerObj, computer)
+	local manual = CeroSec.DEV_MANUAL_MENU
+	local debug = CeroSec.debugAllowed()
+	if not manual and not debug then return end
 
 	-- getNew, addSubMenu, then fill it: the order every vanilla submenu is
 	-- built in (ISWorldObjectContextMenu.lua:1167-1169). addSubMenu copies the
 	-- child's number onto the parent option, so the child has to exist first.
-	local option = context:addOption(getText("ContextMenu_CeroSec_DevManual"))
+	local option = context:addOption(getText("ContextMenu_CeroSec_Dev"))
 	local sub = ISContextMenu:getNew(context)
 	context:addSubMenu(option, sub)
 
-	local shelf = CeroSecManualBook.shelf()
-	if #shelf == 0 and CeroSec.log ~= nil then
-		CeroSec.log(CeroSec.LOG_ERROR, "manual: the shelf is empty -- no volume file loaded")
+	if manual then
+		local shelf = CeroSecManualBook.shelf()
+		if #shelf == 0 and CeroSec.log ~= nil then
+			CeroSec.log(CeroSec.LOG_ERROR,
+				"manual: the shelf is empty -- no volume file loaded")
+		end
+		for v = 1, #shelf do
+			local volume = shelf[v]
+			-- The volume's own name, not a translation key: this is a door into a
+			-- piece of documentation and it is never seen by a player.
+			sub:addOption(volume.name or volume.id, playerObj,
+				CeroSecContextMenu.onDevManual, volume.id)
+		end
 	end
-	for v = 1, #shelf do
-		local volume = shelf[v]
-		-- The volume's own name, not a translation key: this is a door into a
-		-- piece of documentation and it is never seen by a player.
-		sub:addOption(volume.name or volume.id, playerObj,
-			CeroSecContextMenu.onDevManual, volume.id)
+
+	-- LAST inside the submenu, for the reason the submenu is last on the menu: the
+	-- three above it are one tool and this is another.
+	if debug then
+		sub:addOption(getText("ContextMenu_CeroSec_DevDebug"), playerObj,
+			CeroSecContextMenu.onDevDebug, computer)
 	end
 end
 
 function CeroSecContextMenu.onDevManual(playerObj, volumeId)
 	CeroSecManualUI.open(playerObj, volumeId, nil)
+end
+
+-- The computer under the cursor is the machine the window opens selected. Its
+-- SQUARE and not the object: the window carries three numbers, because the
+-- machine it is looking at may be one whose chunk went away while the window was
+-- open.
+function CeroSecContextMenu.onDevDebug(playerObj, computer)
+	local square = computer ~= nil and computer:getSquare() or nil
+	if square == nil then
+		CeroSecDebugUI.open(playerObj)
+		return
+	end
+	CeroSecDebugUI.open(playerObj, square:getX(), square:getY(), square:getZ())
 end
 
 Events.OnFillWorldObjectContextMenu.Add(CeroSecContextMenu.OnFillWorldObjectContextMenu)

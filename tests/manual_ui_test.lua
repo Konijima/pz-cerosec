@@ -963,7 +963,13 @@ do
 end
 
 --
--- The testing door on the computer's menu (CeroSec.DEV_MANUAL_MENU)
+-- The testing doors on the computer's menu (CeroSec.DEV_MANUAL_MENU and
+-- CeroSec.DEV_DEBUG_MENU)
+--
+-- One submenu, named for the mod and not for the manual, with a door per volume
+-- in it and the debug window last. Each flag decides its own entries and the
+-- submenu is there when EITHER of them is on -- which is what makes turning one
+-- off before release a change of one line.
 --
 
 -- A right-click on the lit computer, built by the block below and used again
@@ -1051,50 +1057,78 @@ do
 		return fullMenuOn(target).labels
 	end
 
-	-- On, with the flag: the two options that belong to the machine, and the
-	-- door LAST behind them.
+	-- On, with both flags: the two options that belong to the machine, and the
+	-- dev submenu LAST behind them.
 	CeroSec.DEV_MANUAL_MENU = true
+	CeroSec.DEV_DEBUG_MENU = true
 	local labels = menuOn(computer)
 	eq("a lit computer offers three entries", #labels, 3)
 	eq("the machine's own first", labels[1], "ContextMenu_CeroSec_TurnOff")
 	eq("then its terminal", labels[2], "ContextMenu_CeroSec_Use")
-	eq("and the door last", labels[3], "ContextMenu_CeroSec_DevManual")
+	eq("and the dev submenu last", labels[3], "ContextMenu_CeroSec_Dev")
 
-	-- Off: no terminal, and the door is still there and still last, because it
-	-- asks nothing of the computer.
+	-- Off: no terminal, and the submenu is still there and still last, because
+	-- neither door asks anything of the computer.
 	labels = menuOn(off)
 	eq("a dark computer offers two entries", #labels, 2)
 	eq("no terminal on a dark screen", labels[1], "ContextMenu_CeroSec_TurnOn")
-	eq("the door is still last", labels[2], "ContextMenu_CeroSec_DevManual")
+	eq("the submenu is still last", labels[2], "ContextMenu_CeroSec_Dev")
 
-	-- Without the flag: not an entry to be seen, on either machine.
+	-- Without BOTH flags: not an entry to be seen, on either machine. Both,
+	-- because either one on is a submenu with something in it.
 	CeroSec.DEV_MANUAL_MENU = false
+	CeroSec.DEV_DEBUG_MENU = false
 	labels = menuOn(computer)
-	eq("with the flag off a lit computer is back to two", #labels, 2)
+	eq("with both flags off a lit computer is back to two", #labels, 2)
 	for i = 1, #labels do
-		check("and none of them is the door",
-			labels[i] ~= "ContextMenu_CeroSec_DevManual")
+		check("and none of them is the submenu",
+			labels[i] ~= "ContextMenu_CeroSec_Dev")
 	end
 	labels = menuOn(off)
 	eq("and a dark one back to one", #labels, 1)
 	eq("its own option and nothing else", labels[1], "ContextMenu_CeroSec_TurnOn")
 
+	-- One flag on is a submenu with only that flag's doors in it. The manual's
+	-- first: one volume on the bench's shelf, so one entry and nothing else.
 	CeroSec.DEV_MANUAL_MENU = true
-
-	-- The door is a SUBMENU, one entry per volume on the shelf. The bench's shelf
-	-- is one volume, so it is one entry -- and it is the VOLUME's id that is
-	-- carried, because there is nothing behind the shelf for a door onto "the
-	-- manual in general" to open.
+	CeroSec.DEV_DEBUG_MENU = false
 	local menu = fullMenuOn(computer)
-	eq("the door is the only submenu on the menu", #menu.subs, 1)
-	eq("and it hangs off the door's own entry",
+	eq("the manual flag alone is still a submenu", #menu.subs, 1)
+	eq("with the volume in it and nothing else", #menu.subs[1].menu.options, 1)
+
+	-- And the debug flag alone, which is the shape the release is heading for:
+	-- the manual is found or it is not read, and the window is a developer's.
+	CeroSec.DEV_MANUAL_MENU = false
+	CeroSec.DEV_DEBUG_MENU = true
+	menu = fullMenuOn(computer)
+	eq("the debug flag alone is a submenu too", #menu.subs, 1)
+	local only = menu.subs[1].menu.options
+	eq("with one entry in it", #only, 1)
+	eq("and it is the window", only[1].label, "ContextMenu_CeroSec_DevDebug")
+	eq("which opens the debug window", only[1].callback,
+		CeroSecContextMenu.onDevDebug)
+	eq("on the computer that was right-clicked", only[1].arg, computer)
+	eq("and for the player who asked", only[1].target, player)
+
+	CeroSec.DEV_MANUAL_MENU = true
+	CeroSec.DEV_DEBUG_MENU = true
+
+	-- The submenu, with both flags: one entry per volume on the shelf and the
+	-- debug window LAST behind them. The bench's shelf is one volume, so it is two
+	-- entries -- and it is the VOLUME's id that is carried, because there is
+	-- nothing behind the shelf for a door onto "the manual in general" to open.
+	menu = fullMenuOn(computer)
+	eq("the dev door is the only submenu on the menu", #menu.subs, 1)
+	eq("and it hangs off the dev entry",
 		menu.subs[1].option, menu.options[3])
 	local sub = menu.subs[1].menu
-	eq("one volume, one entry", #sub.options, 1)
+	eq("one volume and the window, so two entries", #sub.options, 2)
 	eq("which opens the reader", sub.options[1].callback,
 		CeroSecContextMenu.onDevManual)
 	eq("on the volume it names", sub.options[1].arg, "user")
 	eq("with the player it belongs to", sub.options[1].target, player)
+	eq("and the window is last", sub.options[2].label,
+		"ContextMenu_CeroSec_DevDebug")
 
 	-- And the door's own entry does nothing itself: a parent that both opens a
 	-- submenu and fires a callback fires it on the way past.
@@ -1463,14 +1497,17 @@ do
 	--
 	do
 		CeroSec.DEV_MANUAL_MENU = true
+		CeroSec.DEV_DEBUG_MENU = true
 		local menu = worldMenuOn()
 		eq("the door is still one entry on the machine's own menu", #menu.labels, 3)
-		eq("and still last", menu.labels[3], "ContextMenu_CeroSec_DevManual")
+		eq("and still last", menu.labels[3], "ContextMenu_CeroSec_Dev")
 		eq("still exactly one submenu", #menu.subs, 1)
 		eq("hung off the door", menu.subs[1].option, menu.options[3])
 
 		local sub = menu.subs[1].menu
-		eq("three volumes, three entries", #sub.options, 3)
+		eq("three volumes and the window, so four entries", #sub.options, 4)
+		eq("with the window last", sub.options[4].label,
+			"ContextMenu_CeroSec_DevDebug")
 		for v = 1, 3 do
 			local want = CeroSecManual.volumes[v]
 			eq("entry " .. v .. " is named after its volume", sub.options[v].label,

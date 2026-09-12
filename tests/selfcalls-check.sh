@@ -58,6 +58,18 @@ setTitle              ISCollapsableWindow
 setActionAnim         ISBaseTimedAction
 setAnimVariable       ISBaseTimedAction
 setOverrideHandModels ISBaseTimedAction
+instantiate           ISScrollingListBox
+getWidth              ISUIElement
+getHeight             ISUIElement
+setWidth              ISUIElement
+setHeight             ISUIElement
+getYScroll            ISUIElement
+isMouseOver           ISUIElement
+titleBarHeight        ISCollapsableWindow
+resizeWidgetHeight    ISCollapsableWindow
+drawSelection         ISScrollingListBox
+drawMouseOverHighlight ISScrollingListBox
+isMouseOverScrollBar  ISScrollingListBox
 "
 
 allowed=$(echo "$INHERITED" | awk 'NF { print $1 }' | sort -u)

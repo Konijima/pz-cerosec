@@ -51,6 +51,15 @@ The suites, in the order they run:
   per copy and per volume, the dev submenu, the keys all four item blocks set and the
   icons they name, and the twelve loot lists times three volumes with the sandbox
   multiplier.
+- `debug_ui_test.lua` — the debug window: six tabs with their own columns, every
+  cell of every column drawn at its own column and not all at the left, a
+  snapshot that carries another window's token drawn nowhere, selecting a machine
+  asking the server again under this window's token while the county list keeps
+  its rows, the six buttons (three through the server, the teleport through
+  vanilla's own debug call, the terminal only where the chunk is in), the Log
+  tab's three filters, the two-second clock, and the one that matters: closing
+  takes the tick handler OFF the event, counted on the event itself rather than
+  taken on the window's word.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.
