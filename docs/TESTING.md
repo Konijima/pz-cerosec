@@ -97,6 +97,8 @@ The suites, in the order they run:
   call, not a syntax error.
 - `kahlua-check.sh` — `luac5.1 -p` on every shipped file, plus a grep of the OS core
   for constructs the game's Kahlua cannot run.
+- `kahlua-run.sh` — every shipped file actually loaded on the real Kahlua, out of the
+  game's own jar. See below.
 
 What no headless test can reach — the sprite, the context menu, sitting down, the
 glow, what is actually on screen — is covered by the manual checklists in `docs/`:
@@ -105,6 +107,73 @@ login and the shell) and `TEST-rung4.md` (the manual: the item, the icon, the
 reader, and finding one in the world). `PARCOURS-TEST.md` covers everything past
 those three rungs and has not yet had a rung of its own; it is reported step by
 step, OK or KO, with one line on what actually happened.
+
+## The engine is loaded on the real Kahlua, not only on lua5.1
+
+Every suite above runs on `lua5.1`. The game does not: it runs Lua on Kahlua
+(`se.krka.kahlua`, bundled in `projectzomboid.jar`), a different parser and a
+different VM. `kahlua-check.sh` greps for the constructs Kahlua is known to refuse,
+which is a list of the mistakes we have already made — it cannot see a Kahlua parse
+error it has no pattern for, and it cannot see anything that goes wrong when a file
+*runs*. On 2026-09-12 the game said `Object tried to call nil` on an engine function
+and nothing in `tests/` could even say whether the files loaded.
+
+`tests/kahlua-run.sh` closes that. It compiles `tools/KahluaRun.java` into
+`tools/out/` (gitignored, rebuilt when the source is newer) and loads every file we
+ship on Kahlua itself, in three groups:
+
+1. **`shared/`, in the game's load order.** The order is the game's, proven from the
+   bytecode of `zombie.Lua.LuaManager`: `searchFolders()` adds each path lowercased
+   and relative to the lua root, then `LoadDirBase()` does
+   `Collections.sort(loadList, String.CASE_INSENSITIVE_ORDER)`. Each file is compiled
+   with `LuaCompiler.loadis(InputStream, String, KahluaTable)` and run with
+   `KahluaThread.pcall`. A compile error or a load-time error prints the file, the
+   line and the message, and the run exits 1.
+2. **The engine's surface.** Every `CeroSecOS.<name>(` and `CeroSec.<name>(` that any
+   file under `server/` or `client/` calls has to be a function in the loaded
+   environment — the same idea as `selfcalls-check.sh`, one step out. A missing name
+   is reported with the file that calls it. That is the check that names what the
+   game only calls "nil".
+3. **`server/` and `client/`.** Parsed and their top level run, on a short list of
+   named stubs for the game globals those top levels touch: `isClient`/`isServer`,
+   `Events` (one auto-filled table with a no-op `Add`), `getText`, `MapObjects`, and
+   six class roots (`ISBaseObject`, `ISCollapsableWindow`, `ISBaseTimedAction`,
+   `SGlobalObject`, `SGlobalObjectSystem`, `CGlobalObject`, `CGlobalObjectSystem`)
+   whose `derive()` makes a child that derives in turn. A file whose top level ever
+   wants more than that goes on `PARSE_ONLY` in `KahluaRun.java` and is parsed only,
+   and the report says so for that file — the list stays short on purpose, because a
+   growing pile of stubs is a second game, not a test.
+
+`require` is the game's semantics, not Lua's: a name resolves to one of our files
+under `shared/`, `server/` or `client/` and loads it once; a second `require` of the
+same name is a no-op. A `require` of one of the game's own files (`Map/SGlobalObject`,
+`ISUI/ISCollapsableWindow`) is a no-op too, and the run prints the list of those
+rather than hiding them.
+
+Two bits of plumbing, both forced and both in the script's header: the game's classes
+are Java 25 class files and the `javac` on this box is 21, so `KahluaRun` reaches
+Kahlua by **reflection** and *runs* on the game's bundled `jre64`; and Kahlua's
+`setupEnvironment()` reads `stdlib.lua` as a path relative to the working directory,
+so the java process runs **in the game folder** and takes the repo root as its
+argument.
+
+**What it proves:** that Kahlua parses every file we ship, that the engine's top level
+runs on Kahlua from a cold environment in the game's order, and that every engine
+function the outer layers call by name exists once that load is done.
+
+**What it does not prove.** It is a load, not a game.
+
+- The environment is Kahlua's own (`J2SEPlatform.newEnvironment()` plus the game's
+  `stdlib.lua`). The **game's own Lua** is not there: none of `media/lua/shared/**` of
+  the base game, no `ISBaseObject`, no `luautils`, no `Translate` — the class roots
+  above are stubs of the right shape, nothing more. A call into vanilla Lua that is
+  wrong is still only caught by `javap` and by playing.
+- The **event bus is a no-op**. `Events.OnFoo.Add(f)` is accepted and `f` is never
+  called, so nothing past load time runs: no tick, no `prerender`, no packet, no
+  timed action. Those are `selfcalls-check.sh`, the lua5.1 suites, and the manual
+  checklists.
+- No Java at all: no `IsoObject`, no `getSquare()`, no ModData round trip. What a
+  stub returns is what the file sees.
 
 ## The millisecond ceilings are calibrated, not fixed
 
@@ -153,7 +222,7 @@ printed figures, not just against a green line.
 ## Verify by exit code
 
 `tests/run.sh` is `set -e`: it stops at the first failing suite and its own exit
-status is the answer. Read that status, not the last line printed — `selfcalls-check.sh`
-and `kahlua-check.sh` are deliberately not piped into anything for the same reason,
-a pipe would hide their exit status from `set -e`.
+status is the answer. Read that status, not the last line printed — `selfcalls-check.sh`,
+`kahlua-check.sh` and `kahlua-run.sh` are deliberately not piped into anything for the
+same reason, a pipe would hide their exit status from `set -e`.
 
