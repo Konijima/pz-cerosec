@@ -4193,6 +4193,35 @@ do
 		CeroSecJobs.pendingShutdown(bench.object) == nil)
 end
 
+-- A LINE TYPED PAST THE MINUTE does not lose the order, and this is why the
+-- pending shutdown is a job that never runs rather than one asleep on a timer: a
+-- pass run in a player's own hand (Commands.exec, Commands.input) steps the jobs
+-- without looking at the shutdown clock at all, so an order asleep on a wake-up
+-- time would come due there, run out of a program with nothing in it, and finish
+-- quietly having switched nothing off.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("shutdown -h +1")
+	bench.frame()
+	check("the order is pending", CeroSecJobs.pendingShutdown(bench.object) ~= nil)
+
+	-- The minute passes with no scheduler pass in it, and then a line is typed:
+	-- that line's own pass is the first thing to touch the book.
+	_G.__now = _G.__now + 61000
+	bench.enter("echo hi")
+	bench.frame()
+	check("the line ran", bench.painted("hi"))
+	eq("the machine is still on: only the clock may switch it off",
+		bench.object.on, true)
+	check("and the order is still pending",
+		CeroSecJobs.pendingShutdown(bench.object) ~= nil)
+
+	-- And the scheduler's own pass is what carries it out.
+	bench.tick(1)
+	eq("now it is off", bench.object.on, false)
+end
+
 -- An ordinary account may not kill root's shutdown, which is kill(2)'s own rule
 -- and the reason it arrived: an account that could would be an account that can
 -- switch the machine off.
