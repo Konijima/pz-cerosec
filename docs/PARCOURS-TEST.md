@@ -101,9 +101,18 @@ passé réellement, même quand ça correspond au texte attendu.
     (sprite éteint, son de bascule), la fenêtre se ferme d'elle-même. [ ]
 26. Rallumer, ouvrir, `root`, `ls /home/admin` et `cat /etc/passwd` → exactement
     comme avant l'arrêt (un arrêt est une coupure, pas une réparation). [ ]
-27. `root`, `reboot` → la fenêtre reste ouverte, l'écran rejoue
-    `CeroSec BIOS 1.0`, compte la mémoire, détecte le disque, affiche le motd,
-    s'arrête à `login:`. [ ]
+27. `root`, `reboot` → l'ordinateur s'éteint pour de vrai : sprite éteint, lueur
+    de l'écran disparue, la fenêtre se ferme. Environ trois secondes plus tard la
+    machine se rallume toute seule et la fenêtre se rouvre à la même place, sans
+    remarcher jusqu'à la machine : elle rejoue `CeroSec BIOS 1.0`, compte la
+    mémoire, détecte le disque, affiche le motd, s'arrête à `login:`. [ ]
+27b. Refaire `reboot` et **s'éloigner du bureau** pendant le noir → la machine
+    revient allumée toute seule, mais aucune fenêtre ne s'ouvre : revenir et
+    l'utiliser à la main comme n'importe quel écran allumé. [ ]
+27c. Refaire `reboot` et **couper le courant de la pièce** pendant les trois
+    secondes de noir → la machine reste éteinte, comme une vraie après une panne.
+    Remettre le courant : elle ne revient pas d'elle-même, c'est la main sur
+    l'interrupteur qui la rallume. [ ]
 
 ## C. Shell de base
 
@@ -569,9 +578,12 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
 124. Un joueur déverrouille une porte à clé depuis l'ordinateur ; l'autre
      l'ouvre à la main. Puis le premier la reverrouille depuis l'ordinateur ;
      le second est refusé en essayant de l'ouvrir. [ ]
-125. L'un des deux tape `reboot` en `root` : les deux fenêtres restent
-     ouvertes et rejouent le BIOS ensemble jusqu'à `login:`, aucune des deux
-     ne se ferme et aucune ne reste sur l'ancien écran. [ ]
+125. L'un des deux tape `reboot` en `root` : les deux fenêtres se ferment et le
+     sprite s'éteint pour les deux joueurs. Trois secondes plus tard la machine
+     se rallume et **les deux** fenêtres se rouvrent, chacune chez son joueur, et
+     rejouent le BIOS ensemble jusqu'à `login:`. Aucune ne reste sur l'ancien
+     écran. Si l'un des deux s'éloigne pendant le noir, seul celui qui est resté
+     retrouve sa fenêtre. [ ]
 126. Un joueur ferme sa fenêtre en pleine partie (ou quitte) ; l'autre continue
      de taper, et dans la minute qui suit, la machine ne compte plus la
      fenêtre partie dans ses balayages. [ ]
@@ -639,9 +651,9 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `[1] killed: cpu limit` toute seule. Vérifier avec `ps` avant et après.
      Noter si le jeu a saccadé une seule fois pendant ces cinq minutes. [ ]
 139. `sh boucle.sh &` puis `reboot` en `root` (ou couper le courant de la
-     pièce) → après le BIOS et la reconnexion, `ps` est vide : un redémarrage
-     ne laisse aucun travail en cours. Même chose après avoir sauvegardé et
-     rechargé la partie. [ ]
+     pièce) → après le noir, le BIOS et la reconnexion, `ps` est vide : un
+     redémarrage ne laisse aucun travail en cours. Même chose après avoir
+     sauvegardé et rechargé la partie. [ ]
 
 140. `while true; do echo tick; sleep 1; done &` tapé **directement à
      l'invite** (aucun fichier) → la machine répond `[1] <numéro>` et rend
@@ -685,7 +697,11 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `shutdown -h +5` → `shutdown: already scheduled`. Attendre une minute →
      `... in 1 minute!`. `shutdown -c` → `shutdown: cancelled`, et la machine
      reste allumée passé le délai. Refaire `shutdown -r +1`, laisser filer →
-     `The system is going down for reboot NOW!` puis le BIOS et `login:`.
+     `The system is going down for reboot NOW!`, la machine s'éteint et la
+     fenêtre se ferme, puis trois secondes de noir, puis le BIOS et `login:`
+     dans une fenêtre rouverte toute seule — un `reboot` programmé est le même
+     `reboot`. `halt` se comporte comme avant : la machine s'éteint et rien ne
+     revient.
      Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
      compte à rebours est oublié et la machine reste allumée (c'est voulu et
      c'est écrit dans le manuel). `halt` en `root` → la machine s'éteint. [ ]

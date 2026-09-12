@@ -116,7 +116,7 @@ Commands:
 | `shutdown [-h\|-r] [now\|+N]` | switch the machine off, or reboot it with `-r`; `+N` is N minutes from now and warns every screen at the machine (root only) |
 | `shutdown -c` | call a pending one off |
 | `halt` | `shutdown -h now` under its older name (root only) |
-| `reboot` / `restart` | switch it off and straight back on (root only) |
+| `reboot` / `restart` | switch it off, wait three seconds, and switch it back on (root only) |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
@@ -232,10 +232,21 @@ real one does, and `>>` adds to what is there.
 
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
-gone, and every terminal open on it closes. `reboot` turns it off and straight back
-on, and the windows stay: everybody standing there watches the BIOS count the
-memory again and lands back at `login:`. What is on the disk survives both — this
-is a power cycle, not a repair.
+gone, and every terminal open on it closes.
+
+`reboot` is a power CYCLE and looks like one. The machine goes off the same way —
+the tile goes dark, the glow on the wall goes with it, and every terminal open on it
+closes — and about three seconds later it comes back on by itself: the BIOS counts
+the memory again and lands at `login:`. If you are still standing at the keyboard
+when it comes up, your terminal opens again by itself, in the same place, with no
+walk back to the machine; if you wandered off in those three seconds it comes up
+without you and you use it by hand like any other lit screen. Two survivors at one
+machine both get their window back.
+
+A machine whose room lost its power while it was dark stays dark, exactly as a real
+one does after an outage: it does not come back by itself, and somebody switches it
+on at the case. What is on the disk survives all of it — a reboot is a power cycle,
+not a repair.
 
 `shutdown` also takes a time. `-h` halts, `-r` reboots, neither halts; `now` and no
 time at all are the same thing. `+N` is N minutes away, and the machine broadcasts
