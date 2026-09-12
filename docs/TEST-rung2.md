@@ -726,8 +726,10 @@ the seven should be in the list, with the machine's own files untouched.
      — they were never stamped and nothing invents a date for them. Write to one
      (`edit /etc/motd`, save) and its date becomes now.
 164. **The BIOS tells the truth about the drive.** Switch a computer off and on
-     and watch the boot lines: `Detecting drives ... hda 32K`. Then type `df`:
-     the `hda` row says `32768` under Size. The two numbers are the same number.
+     and watch the boot lines: `Detecting drives ... hda 64K`. Then type `df`:
+     the `hda` row says `65536` under Size. The two numbers are the same number.
+     (32K and 32768 until rung 4e, when the drive was sized against the floppy
+     that would be carried to it.)
 165. **`df` counts what is really there.** Note the `Used` figures. Write a big
      file (`edit big.txt`, paste a few hundred characters, save) and run `df`
      again: bytes used went up by what you wrote and the node count went up by
