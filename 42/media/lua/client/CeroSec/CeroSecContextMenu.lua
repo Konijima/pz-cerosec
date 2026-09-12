@@ -108,7 +108,7 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 	-- nothing is the only honest answer: a menu built on a guess about what is in
 	-- the drive is a menu that offers to eject nothing.
 	if not luaObject then return end
-	local inDrive = luaObject.disk == true
+	local inDrive = CeroSec.diskInDrive(luaObject)
 
 	-- Out of reach greys both entries for the same reason the two above are
 	-- greyed, and in the same order: it is the same walk.

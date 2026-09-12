@@ -1025,6 +1025,13 @@ coques.
      disquette a quitté l'inventaire ; le menu offre maintenant **Eject
      floppy**. Avec une deuxième disquette sur soi, **Insert floppy** est grisé
      et l'infobulle dit *Eject the floppy first.* [ ]
+199b. **Le menu après l'éjection.** Disquette dans la fente, cliquer **Eject
+     floppy** → la disquette revient dans l'inventaire. **Refermer le menu et
+     rouvrir le clic droit** : **Insert floppy** est là et n'est PAS grisé — pas
+     d'infobulle *Eject the floppy first* — et **Eject floppy** a disparu. C'est
+     la copie du client qui est en cause et non la machine : le menu montrait la
+     fente encore pleine alors que la disquette était dans les mains du
+     survivant. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
      Insert et Eject sont toujours proposés — une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.

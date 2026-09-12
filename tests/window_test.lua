@@ -298,6 +298,16 @@ SGlobalObjectSystem = { derive = function(self, name) return derive(self, name) 
 SGlobalObjectSystem.new = function(self, name)
 	local o = setmetatable({}, self)
 	o.name = name
+	-- The Java system, with the three key lists the mod fills. Vanilla's own new()
+	-- calls initSystem right here (media/lua/server/Map/SGlobalObjectSystem.lua:24)
+	-- and that is what fills them, so the sync list the client mirror below is
+	-- built from is the MOD's list and never a copy of it in this file.
+	o.system = {
+		setModDataKeys = function(s, keys) s.modDataKeys = keys end,
+		setObjectModDataKeys = function(s, keys) s.objectModDataKeys = keys end,
+		setObjectSyncKeys = function(s, keys) s.syncKeys = keys end,
+	}
+	o:initSystem()
 	return o
 end
 SGlobalObjectSystem.initSystem = function() end
@@ -416,7 +426,6 @@ local function newBench()
 	local object = SCeroSecObject:new(system, { x = 10, y = 10, z = 0 })
 	object.getIsoObject = function() return nil end
 	object.getSquare = function() return nil end
-	object.updateOnClient = function() end
 	object.playSound = function() end
 	object.syncSprite = function() end
 	object:initNew()
@@ -435,6 +444,25 @@ local function newBench()
 	window:initialise()
 	window:createChildren()
 	local bench = { window = window, object = object, system = system, player = player }
+
+	-- The CLIENT's copy of this machine, and the one mechanism the game has for
+	-- keeping it in step with the server's. The server writes the sync keys it
+	-- HAS -- TableNetworkUtils.saveSome walks the table and skips a key that is
+	-- not in it -- and the client rawsets each key it RECEIVES into its own copy
+	-- (CGlobalObjectSystem.receiveUpdateLuaObjectAt; both javap'd on 42.20.4). So
+	-- it is a merge and not a replacement: a key the server sets back to nil never
+	-- crosses, and the client keeps what it was told last time. Faked exactly that
+	-- way on purpose -- a fake that copied the whole table would let a server that
+	-- nils a synced key pass, which is the bug that put "Eject floppy" on the menu
+	-- of a machine whose drive was empty.
+	bench.client = {}
+	object.updateOnClient = function(self)
+		local keys = system.system.syncKeys
+		for i = 1, #keys do
+			local value = self[keys[i]]
+			if value ~= nil then bench.client[keys[i]] = value end
+		end
+	end
 	-- Every window open on this computer. One to begin with; a second player
 	-- standing at the same glass is bench.addWindow().
 	bench.windows = { window }
@@ -7109,6 +7137,8 @@ do
 	check("and the drive was heard to take it", bench.heardSound("CeroSecInsertDisc"))
 	eq("the machine knows there is one in it", bench.object:hasDisk(), true)
 	eq("and the client is told the one bit it needs", bench.object.disk, true)
+	eq("and its own copy has it", bench.client.disk, true)
+	eq("so its menu would offer Eject", CeroSec.diskInDrive(bench.client), true)
 
 	-- And now there is a drive to talk to.
 	bench.enter("ls /dev")
@@ -7146,7 +7176,14 @@ do
 	eq("in the colour it went in as", inv.items[1]:getFullType(), "CeroSec.FloppyRed")
 	check("and the drive was heard to give it back", bench.heardSound("CeroSecEjectDisc"))
 	eq("the slot is empty", bench.object:hasDisk(), false)
-	eq("and the client is told", bench.object.disk, nil)
+	-- A real false and not a nil, and then the client's OWN copy, which is the
+	-- half the flag exists for: the disk was back in his hands and the menu went
+	-- on greying Insert with "the drive is full" and offering Eject, because a nil
+	-- is not something the update carries (the merge above).
+	eq("and the client is told", bench.object.disk, false)
+	eq("and its own copy says the slot is empty", bench.client.disk, false)
+	eq("so its menu offers Insert and not Eject",
+		CeroSec.diskInDrive(bench.client), false)
 	local carried = inv.items[1]:getModData()
 	eq("the item carries the disk's own version", carried.v, CeroSecOS.FLOPPY_VERSION)
 	check("and its filesystem", type(carried.fs) == "table")
@@ -7263,6 +7300,7 @@ do
 	check("the disk is still in the drive", CeroSecOS.floppyOf(state) ~= nil)
 	eq("nothing is mounted any more", CeroSecOS.mountTable(state), nil)
 	eq("and the client is still told there is a disk in it", bench.object.disk, true)
+	eq("in its own copy too", bench.client.disk, true)
 
 	-- Switched back on, one `mount` is the whole of the way back.
 	bench.object.on = true
