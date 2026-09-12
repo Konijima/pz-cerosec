@@ -172,6 +172,9 @@ function CeroSecOS.upgradeSystem(state)
 	-- /var, for a machine saved before there was a cron on it. Made only where
 	-- it is missing, like everything else here.
 	CeroSecOS.ensureVar(state)
+	-- And the two network files, on the same terms: a machine saved before there
+	-- was a wire in it has neither, and neither is damage.
+	CeroSecOS.ensureNet(state)
 
 	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
@@ -363,6 +366,10 @@ function CeroSecOS.restoreSystem(state)
 	-- crontabs, the log and the mail in it are left where they are: a repair puts
 	-- the directories back, it does not throw away what a player asked for.
 	CeroSecOS.ensureVar(state)
+	-- /etc/hosts and /etc/hosts.equiv, on the same terms as the rest of /etc:
+	-- made where they are missing, and one that is there is left exactly as it
+	-- lies -- a name a survivor wrote down is not damage.
+	CeroSecOS.ensureNet(state)
 
 	-- A repaired machine has everything this build ships, so there is nothing
 	-- left for the upgrade to top up.

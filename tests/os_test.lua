@@ -3,7 +3,7 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath", "CeroSecOSScript",
 	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 	"CeroSecOSVM",
 }
@@ -244,8 +244,8 @@ do
 	-- The skeleton is nine nodes plus the five of the /var tree, plus one
 	-- executable per command plus /etc/passwd, /etc/sudoers and /etc/group, and
 	-- every byte of it is accounted for: the machine's name, the motd, the
-	-- accounts file, the sudoers file, the groups file, and the one-line
-	-- description in each executable. The /var tree is five directories and no
+	-- accounts file, the sudoers file, the groups file, the two network files,
+	-- and the one-line description in each executable. The /var tree is five directories and no
 	-- bytes at all: what goes in it is written when something asks for it.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
@@ -253,11 +253,13 @@ do
 	local passwd = state.fs.children.etc.children.passwd
 	local sudoers = state.fs.children.etc.children.sudoers
 	local group = state.fs.children.etc.children.group
+	local hosts = state.fs.children.etc.children.hosts
+	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + 5 + #binNames + 3)
+	eq("skeleton node count", nodes, 9 + 5 + #binNames + 5)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
-			+ #group.data + binBytes)
+			+ #group.data + #hosts.data + #equiv.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	eq("empty hostname falls back", CeroSecOS.newState("").hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -823,8 +825,8 @@ do
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
 	-- The skeleton, the /var tree, plus one executable per command, plus
-	-- /etc/passwd and /etc/sudoers.
-	eq("starting node count", nodes, 9 + 5 + #CeroSecOS.binNames() + 3)
+	-- /etc/passwd, /etc/sudoers, /etc/group and the two network files.
+	eq("starting node count", nodes, 9 + 5 + #CeroSecOS.binNames() + 5)
 	local made = 0
 	local dir = 0
 	while true do
@@ -885,16 +887,28 @@ do
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultGroup()), 5)
 			.. "  " .. EPOCH .. "  group")
-	eq("ls -l motd",
+	-- hostname, hosts and hosts.equiv sort in that order: "hostn" is before
+	-- "hosts", and the dotted name is behind the bare one.
+	eq("ls -l hosts",
 		etc[3],
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultHosts()), 5)
+			.. "  " .. EPOCH .. "  hosts")
+	eq("ls -l hosts.equiv",
+		etc[4],
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
+			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv()), 5)
+			.. "  " .. EPOCH .. "  hosts.equiv")
+	eq("ls -l motd",
+		etc[5],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   52"
 			.. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
-		etc[5],
+		etc[7],
 		"-r--r-----" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
 			.. "  " .. EPOCH .. "  sudoers")
-	eq("ls -l /etc has 5 lines", #etc, 5)
+	eq("ls -l /etc has 7 lines", #etc, 7)
 
 	-- The group column is the node's group and not its owner once they differ.
 	ok(state, rootSession, "chgrp users /etc/motd", {})
@@ -6534,9 +6548,9 @@ do
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ adduser cat chgrp chmod chown clear cp crontab date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
-		.. " help hostname id kill ls mail man mkdir mv passwd printf ps pwd reboot"
-		.. " restart rm sh shutdown sleep sort su sudo tail test touch true uniq"
-		.. " wc whoami write"
+		.. " help hostname id ifconfig kill last ls mail man mkdir mv passwd ping"
+		.. " printf ps pwd rcp reboot restart rlogin rm rsh ruptime rwho sh shutdown"
+		.. " sleep sort su sudo tail test touch true uniq wc who whoami write"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -6715,10 +6729,17 @@ do
 	--
 	-- Command names, in the first word.
 	--
-	completes(state, admin, "l", "ls ", 1)
-	offers(state, admin, "l", "ls")
+	completes(state, admin, "ls", "ls ", 1)
+	offers(state, admin, "ls", "ls")
+	-- Two of them share a letter and nothing more, so the line does not move.
+	completes(state, admin, "l", "l", 1)
+	offers(state, admin, "l", "last ls")
 	-- Unique, and the space says so: a command name is finished when it is found.
-	completes(state, admin, "who", "whoami ", 1)
+	completes(state, admin, "whoa", "whoami ", 1)
+	-- A whole command name that is also the start of another is a prefix and not
+	-- a match: `who` gets no space, because `whoami` is still on the table.
+	completes(state, admin, "who", "who", 1)
+	offers(state, admin, "who", "who whoami")
 	-- Several: as far as they agree and not a character further.
 	completes(state, admin, "grou", "group", 1)
 	offers(state, admin, "grou", "groupadd groupdel groups")
@@ -6742,8 +6763,8 @@ do
 	local lsNode = CeroSecOS.getNode(state, root, "/bin/ls")
 	lsNode.mode = 700
 	lsNode.owner = "root"
-	completes(state, admin, "l", nil)
-	completes(state, root, "l", "ls ", 1)
+	completes(state, admin, "ls", nil)
+	completes(state, root, "ls", "ls ", 1)
 	lsNode.mode = 755
 	lsNode.owner = "root"
 
@@ -6758,7 +6779,10 @@ do
 	-- Absolute, and through a parent.
 	completes(state, admin, "ls /et", "/etc/", 4)
 	completes(state, admin, "ls work/../not", "work/../note", 4)
-	offers(state, admin, "ls /etc/h", "hostname")
+	offers(state, admin, "ls /etc/h", "hostname hosts hosts.equiv")
+	-- And a dotted name is one name: "hosts" is a prefix of "hosts.equiv", so
+	-- neither of them finishes and the line stops where they part.
+	completes(state, admin, "ls /etc/hosts", "/etc/hosts", 4)
 	-- The directory half comes back exactly as it was typed.
 	completes(state, admin, "cat /etc/mo", "/etc/motd ", 5)
 
@@ -6808,20 +6832,20 @@ do
 	--
 	-- Where a command begins. Word one, and after each separator.
 	--
-	completes(state, admin, "echo a; l", "ls ", 9)
-	completes(state, admin, "echo a && l", "ls ", 11)
-	completes(state, admin, "echo a || l", "ls ", 11)
-	completes(state, admin, "echo a | l", "ls ", 10)
-	completes(state, admin, "echo a & l", "ls ", 10)
-	completes(state, admin, "echo $(l", "ls ", 8)
+	completes(state, admin, "echo a; ls", "ls ", 9)
+	completes(state, admin, "echo a && ls", "ls ", 11)
+	completes(state, admin, "echo a || ls", "ls ", 11)
+	completes(state, admin, "echo a | ls", "ls ", 10)
+	completes(state, admin, "echo a & ls", "ls ", 10)
+	completes(state, admin, "echo $(ls", "ls ", 8)
 	-- sudo runs a command, so the word after it is a command name.
-	completes(state, admin, "sudo l", "ls ", 6)
-	completes(state, admin, "sudo sudo l", "ls ", 11)
+	completes(state, admin, "sudo ls", "ls ", 6)
+	completes(state, admin, "sudo sudo ls", "ls ", 11)
 	-- And the word after THAT is a path again.
 	completes(state, admin, "sudo cat no", "note", 10)
 	-- A reserved word that opens a command is followed by one.
-	completes(state, admin, "if l", "ls ", 4)
-	completes(state, admin, "while l", "ls ", 7)
+	completes(state, admin, "if ls", "ls ", 4)
+	completes(state, admin, "while ls", "ls ", 7)
 	-- A redirection is followed by a FILE and never by a command.
 	completes(state, admin, "echo hi > no", "note", 11)
 	completes(state, admin, "echo hi >> no", "note", 12)
@@ -6874,10 +6898,10 @@ do
 	empty("no user", CeroSecOS.complete(state, { cwd = "/" }, "l", 1))
 	empty("no line", CeroSecOS.complete(state, admin, nil, 1))
 	-- A cursor past the line, or before it, is clamped rather than believed.
-	eq("a cursor past the end is the end", CeroSecOS.complete(state, admin, "l", 99).replacement,
+	eq("a cursor past the end is the end", CeroSecOS.complete(state, admin, "ls", 99).replacement,
 		"ls ")
 	eq("and one below the start is the start",
-		CeroSecOS.complete(state, admin, "l", -5).replacement, "")
+		CeroSecOS.complete(state, admin, "ls", -5).replacement, "")
 end
 
 --

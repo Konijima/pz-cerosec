@@ -675,8 +675,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   1569  31199    5%
-  nodes         256     71    185   28%]],
+  hda         32768   2006  30762    7%
+  nodes         256     82    174   33%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1478,7 +1478,222 @@ because ps shows what the machine is running.]],
 
 		} },
 
-		{ title = "16. Appendix: commands and limits", pages = {
+		{ title = "16. The network", pages = {
+
+[[Your machine has a wire in it. It runs to the other computers of this
+building and nowhere else: a length of coax under the floor, which is what
+an office had in 1993. There is no gateway, no telephone and no radio yet,
+and a machine in the building across the street cannot be reached at all.
+
+The boot says so. Between the drive and the first prompt the BIOS prints
+the card it found and the address on it:
+
+  CeroSec BIOS 1.0 -- (c) 1993 CeroSec Systems
+  Memory test: 640K OK
+  Detecting drives ... hda 32K
+  Ethernet: eth0 10.4.17.2
+  Booting from hda ...
+
+ifconfig prints the same thing at any time, with the loopback under it:
+
+  eth0: flags=63<UP,BROADCAST,NOTRAILERS,RUNNING>
+        inet 10.4.17.2 netmask 0xffffff00
+  lo0: flags=8<LOOPBACK>
+        inet 127.0.0.1 netmask 0xff000000]],
+
+[[The address is not yours to choose. The first three numbers come from
+where the building stands and the last from which computer of it this one
+is, so every machine under one roof agrees about the network and each has
+a number of its own. There is nothing ifconfig will set: the address is a
+fact about the card, the way the hostname is a fact about the machine.
+
+A computer in a base you built yourself is in no building the map knows
+about, so it has no wire at all. ifconfig says so plainly -- eth0 with no
+inet line under it -- and every command in this chapter will tell you the
+same thing in its own words. That is not a fault to repair. It is a rung
+that is not built yet.
+
+hostname is unchanged and is still what /etc/hostname says (chapter 8).
+A name and an address are two different things, and the file that ties
+them together is the next page.]],
+
+[[Names live in /etc/hosts, and it is your file. It ships with two lines
+-- the loopback, and this machine -- and the machine never writes in it
+again:
+
+  # address  host  [alias...]
+  127.0.0.1 localhost
+  10.4.17.2 ksp-a-a
+
+Every name any command in this chapter takes is looked up there, and
+nowhere else. So the first thing to do with a new machine is write the
+others down:
+
+  root@ksp-a-a:~# edit /etc/hosts
+  10.4.17.3 gate
+  10.4.17.4 office pump
+
+A line is an address, the machine's name, and any number of other names
+for it. A "#" starts a comment. A line that will not parse is skipped in
+silence, which is what every resolver has always done with one.
+
+An address typed straight out needs no line at all: ping 10.4.17.3 works
+on a machine whose /etc/hosts somebody emptied.]],
+
+[[Two commands say what is out there. ruptime lists the machines:
+
+  gate      up  3+02:15,  1 user,  load 0.02
+  ksp-a-a   up  00:41,  2 users,  load 0.00
+
+and rwho says who is on them:
+
+  admin    gate:console     Jul  8 14:32
+  bob      ksp-a-a:ttyp0    Jul  8 15:06
+
+A machine that is switched off is not on the list. A real ruptime keeps
+the last report it heard from every machine and can tell you one has gone
+quiet; this one has no such file, so a dark machine is a machine nothing
+on the wire has ever heard of. Switch it on and it appears.
+
+The load is how many jobs the machine has that can run. A real one
+averages that over a minute, five and fifteen; nothing here averages
+anything, so there is one number and it is this instant's.]],
+
+[[ping is the question you ask when something is wrong. Three packets, a
+second apart:
+
+  admin@ksp-a-a:~$ ping gate
+  PING gate (10.4.17.3): 56 data bytes
+  64 bytes from 10.4.17.3: icmp_seq=0 ttl=255 time=0.4 ms
+  64 bytes from 10.4.17.3: icmp_seq=1 ttl=255 time=0.4 ms
+  64 bytes from 10.4.17.3: icmp_seq=2 ttl=255 time=0.4 ms
+
+  --- gate ping statistics ---
+  3 packets transmitted, 3 packets received, 0% packet loss
+  round-trip min/avg/max = 0.4/0.4/0.4 ms
+
+A machine that is off, or in another building, answers nothing and the
+summary says 100% packet loss. A name no line of /etc/hosts carries is
+ping: unknown host gate, before a packet is sent.
+
+The three seconds are real seconds and cost the machine nothing: the job
+is asleep between packets, exactly as a script's own sleep is.]],
+
+[[rlogin is a shell on another machine, on this screen.
+
+  admin@ksp-a-a:~$ rlogin gate
+  login: admin
+  password:
+  CeroSec OS -- unauthorized access is prohibited.
+  admin@gate:~$
+
+From there every line you type is gate's: its files, its /dev, its
+accounts, its jobs. This screen is only the glass. rlogin gate -l bob
+asks to come in as bob instead of as yourself.
+
+exit ends it, and so does Escape at an idle prompt; either way the line
+
+  Connection closed.
+
+comes back and you are at your own prompt again. Escape while something
+is running on the far end is that job's ^C and not the end of the
+session, exactly as it is at your own machine. Switching either machine
+off, losing the power, or picking either computer up ends it too.
+
+Your own command history keeps the rlogin line and nothing you typed on
+the far side: the far side has a history of its own, in gate's own home.]],
+
+[[A password every time is what trust files are for. Two of them, and
+either is enough.
+
+/etc/hosts.equiv is the machine's own, root's, one line each:
+
+  gate
+  gate admin
+
+A bare host name trusts the SAME account on it: with "gate" in gate's
+own list, ksp-a-a's admin gets in as admin with no password, and nobody
+gets in as anybody else. A host and an account name that account.
+
+~/.rhosts is your own half, in your own home, and it is checked the way
+rlogind checks it: it has to be YOUR file and nobody but you may write
+it. A .rhosts owned by somebody else, or one at mode 664, is ignored
+without a word -- a trust file another survivor can edit is a trust file
+another survivor wrote. Make it 600 and it is read:
+
+  admin@gate:~$ edit .rhosts
+  ksp-a-a admin
+  admin@gate:~$ chmod 600 .rhosts
+
+root is never trusted by /etc/hosts.equiv, only by /root/.rhosts.]],
+
+[[rsh runs one command over there and comes straight back:
+
+  admin@ksp-a-a:~$ rsh gate cat /dev/door0
+  closed
+
+It never asks for a password. If the far machine does not trust this one
+the answer is rsh: gate: Permission denied, and the trust files above are
+the whole of the fix. What rsh prints reaches the screen and not a pipe:
+there is no rsh gate date > file on this machine, and the way to bring
+something back is the next command.
+
+rcp copies one file, and one end of it is somewhere else:
+
+  rcp notes.txt gate:/home/admin/notes.txt
+  rcp gate:/var/log/cron here.txt
+
+Trust is required, as for rsh. The file lands as the account you are, in
+the far machine's own quota and under its own permissions, so a full disk
+over there is rcp: /home/admin/notes.txt: disk full. It is not quick: the
+wire runs at about a kilobyte a second, and a full file takes a few.]],
+
+[[who is who is logged in on THIS machine, and it is the command that
+tells you somebody is inside:
+
+  admin@gate:~$ who
+  admin    console  Jul  8 14:32
+  bob      ttyp0    Jul  8 15:06  (ksp-a-a)
+
+The console is the keyboard in front of you. A ttyp is somebody who came
+in over the wire, and the machine in brackets is where he came from.
+who am i prints your own line only, which down an rlogin is the ttyp.
+
+last is the same question about the past, out of /var/log/wtmp:
+
+  admin@gate:~$ last
+  bob      ttyp0    ksp-a-a    Jul  8 15:06  still logged in
+  admin    console             Jul  8 14:32 - 14:40  (00:08)
+
+  wtmp begins Jul  8 09:12
+
+The file holds two hundred lines and the oldest go, which is why "wtmp
+begins" is a real answer here and not a formality. It costs nothing on
+the 32K disk, like the cron log.]],
+
+[[The limits, because every one of them is something you will meet.
+
+Four sessions may come in at once. The fifth is rlogin: connect:
+Connection refused, and so is an rlogin from a machine you already
+rlogged into twice -- two hops is as far as a chain goes, and the third
+is refused in the same words, because there is no machine at the end of
+it willing to accept.
+
+A remote session costs the FAR machine and not this one: its four job
+slots, its twenty lines a second, its five-minute ceiling on a spinning
+job. A loop left running on gate slows gate down and leaves your own
+machine at an idle prompt.
+
+The editor travels. edit down an rlogin opens the far machine's file on
+this glass and Tab saves it over there, because the buffer belongs to the
+session and the session is gate's. So does crontab -e.
+
+The commands on these pages are the ones a telephone line and a radio
+will use when they arrive. What changes then is which machines answer and
+not what you type.]],
+
+		} },
+		{ title = "17. Appendix: commands and limits", pages = {
 
 -- The one page with a "]]" inside it -- dev's usage line ends in two closing
 -- brackets -- so it is the one page written with a level-one long bracket.
@@ -1518,30 +1733,38 @@ itself.
   help
   hostname [name]
   id [name]
+  ifconfig [-a|<interface>]
   jobs
   kill <id>|%<n>
+  last [name]
   ls [-laAF] [path]
   mail
   man <command>
   mkdir <dir>
   mv <src> <dst>
   passwd [user]
+  ping <host|address>
   printf <format> [arg...]
   ps
   pwd
+  rcp <src> <dst>, one of them <host>:<path>
   reboot
   restart
+  rlogin <host> [-l user]
   rm [-r] <path>...
-  sh <file> [args]
+  rsh <host> [-l user] <command>...
+  ruptime
+  rwho
+
+(continued)]],
+
+[[  sh <file> [args]
   shutdown [-h|-r] [now|+N] | shutdown -c
   sleep <seconds>
   sort [-r] [-n] [-u] [file]...
   su [name]
   sudo <command> [args]
-
-(continued)]],
-
-[[  tail [-n N|-N] [file]
+  tail [-n N|-N] [file]
   test <expression>
   [ <expression> ]
   touch <file>
@@ -1550,6 +1773,7 @@ itself.
   uniq [-c] [file]
   wait [id]...
   wc [-clw] [file]...
+  who [am i]
   whoami
   write <file> <text>
 
@@ -1615,9 +1839,22 @@ and no offset -- the screen is sixty columns wide.
 chmod and cat work on a device the way they work on a file; rm, mv,
 cp and edit do not.]],
 
+[[Network words, for chapter 16. The address is 10.<b1>.<b2>.<n>: the
+first three numbers are the building's and the last is which computer of
+it this is, and nothing sets either. The interfaces are eth0 and lo0.
+The files are /etc/hosts (root, 644, yours to write), /etc/hosts.equiv
+(root, 644) and ~/.rhosts, which must be your own and mode 600 or it is
+ignored; the record of logins is /var/log/wtmp, root's and 644, two
+hundred lines deep and exempt from the 32K.
+Four sessions may come in at once, on ttyp0 to ttyp3, and a chain of
+rlogins goes two machines deep. ping sends three packets a second apart.
+rcp runs at about a kilobyte a second. A remote session spends the FAR
+machine's four job slots and its twenty lines a second, never this
+machine's.]],
+
 		} },
 
-		{ title = "17. Appendix: what the machine says", pages = {
+		{ title = "18. Appendix: what the machine says", pages = {
 
 [[Every command signs its own errors with its own name first, then the
 path or word that failed, then the reason -- always in that order, and
@@ -1868,6 +2105,46 @@ question the machine no longer asks:
 
   cerosec: nothing to answer]],
 
+
+[[The network's refusals, for chapter 16. rlogin, rsh and rcp sign theirs
+with their own name, and the words are the ones a real one prints for the
+same trouble.
+
+  rlogin: gate: unknown host
+      no line of /etc/hosts carries that name
+  rlogin: gate: Host is down
+      it is on the wire and it is switched off
+  rlogin: gate: No route to host
+      there is no wire between here and there: another
+      building, or a base you built yourself
+  rlogin: connect: Connection refused
+      it answered and has no line free -- four sessions
+      are already in -- or the chain of rlogins is
+      already two machines deep
+  rsh: gate: Permission denied
+      it does not trust this machine: /etc/hosts.equiv
+      and ~/.rhosts are the fix
+  Connection closed.
+      the session is over; you are at your own prompt]],
+
+[[ping says nothing at all about a machine that does not answer -- a
+packet that never arrives prints no line -- and the summary is where you
+read it: "3 packets transmitted, 0 packets received, 100% packet loss",
+which is the one line of it that is a hair wider than this page and is
+therefore written out here rather than drawn.
+
+A name it cannot look up it refuses before it sends anything, in its own
+shape, with the name behind the reason rather than in front of it:
+
+  ping: unknown host gate
+
+ifconfig has one refusal and it is about a name no card answers to:
+
+  ifconfig: interface eth9 does not exist
+
+who, last, ruptime and rwho refuse nothing. Each of them answers an empty
+screen when there is nothing to say -- no machines on the wire, nobody
+logged in, no wtmp yet -- because none of those is a fault.]],
 		} },
 
 	},

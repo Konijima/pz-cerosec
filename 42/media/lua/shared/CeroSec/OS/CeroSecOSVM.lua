@@ -1076,8 +1076,35 @@ end
 -- The order every control the core can hand back is dealt with. A script is
 -- not a screen: an editor cannot open on it, so `edit` is refused where it was
 -- typed rather than half-opened somewhere nobody is looking.
-local function applyControl(job, control, data)
+local function applyControl(job, control, data, env)
 	if control == nil then return true end
+	-- A command that has to WAIT. ping spaces its three packets a second apart
+	-- and rcp takes as long as the wire takes; neither of those is a question and
+	-- neither is a `sleep` somebody typed, so the command hands back how long it
+	-- wants and a token to be woken with. The job goes to sleep exactly as
+	-- `sleep 1` leaves it -- off the processor, costing nothing while it waits --
+	-- and when it comes round the token is answered with an empty line.
+	--
+	-- A machine with no clock cannot wait, so the command runs on at once: that
+	-- is the same answer `sleep` gives one, except that here there is nothing to
+	-- refuse -- the waiting is the command's own pacing and not something typed.
+	if control == "sleep" and type(data) == "table" then
+		flushPartial(job)
+		local now = CeroSecOS.nowMsOf(env)
+		local ms = tonumber(data.ms)
+		if now ~= nil and ms ~= nil and ms > 0 then
+			job.cont = data.cont
+			job.timer = true
+			job.wakeMs = now + math.floor(ms)
+			job.state = "sleeping"
+			return true
+		end
+		job.cont = data.cont
+		job.timer = true
+		job.wakeMs = 0
+		job.state = "sleeping"
+		return true
+	end
 	if control == "prompt" and type(data) == "table" then
 		-- A stage that READS a pipe cannot be answered. Its question would come
 		-- back through the continuation, and a continuation is one call with a
@@ -1138,6 +1165,37 @@ local function applyControl(job, control, data)
 	flushPartial(job)
 	job.sig = { k = "exit", n = job.status }
 	return true
+end
+
+-- The answer to a continuation, whatever woke it: a line somebody typed, or a
+-- clock the command itself asked to be woken by. One place, because the two must
+-- do the same thing to the job -- the chain's authority, its redirect, its
+-- output and the order it may give are the chain's and not the caller's.
+local function resumeCont(state, job, text, env)
+	local cont = job.cont
+	local pending = job.contRedirect
+	job.cont = nil
+	job.contRedirect = nil
+	job.ask = nil
+	job.state = "running"
+	-- The redirect the line was typed with goes back down with the answer: the
+	-- chain is where the command finally runs, and the writing belongs beside
+	-- the writing every other command's redirect goes through.
+	local ok, lines, control, data =
+		CeroSecOS.continue(state, job.session, cont, text, env, pending)
+	-- A chain that is still asking -- `sudo passwd root > out` -- has still
+	-- written nothing, so its redirect waits for the next answer.
+	if pending ~= nil and control == "prompt" then job.contRedirect = pending end
+	if ok then
+		writeLines(job, lines)
+		job.status = 0
+	else
+		-- A refusal is not output, so in a stage it goes to the screen and
+		-- not down the pipe -- the rule every other command already runs on.
+		errLines(job, lines)
+		job.status = 1
+	end
+	applyControl(job, control, data, env)
 end
 
 local function runSimple(state, job, f, env)
@@ -1292,7 +1350,7 @@ local function runSimple(state, job, f, env)
 		errLines(job, lines)
 		job.status = 1
 	end
-	applyControl(job, control, data)
+	applyControl(job, control, data, env)
 
 	-- A command that has ASKED something has written nothing yet, so runArgs left
 	-- its redirect alone -- and the redirect must not be forgotten there, or
@@ -1972,6 +2030,14 @@ function CeroSecOS.jobStep(state, job, env, budget)
 			job.state = "running"
 			job.wakeMs = nil
 			job.cpuSince = now
+			-- A wait a COMMAND asked for rather than a `sleep` somebody typed:
+			-- the continuation it left behind is answered here, with nothing
+			-- typed, and the waking costs the one step a builtin costs.
+			if job.timer then
+				job.timer = nil
+				resumeCont(state, job, "", env)
+				return job.state, 1
+			end
 		else
 			return "sleeping", 0
 		end
@@ -2118,30 +2184,7 @@ function CeroSecOS.jobInput(state, job, text, env)
 	end
 
 	if job.cont ~= nil then
-		local cont = job.cont
-		local pending = job.contRedirect
-		job.cont = nil
-		job.contRedirect = nil
-		job.ask = nil
-		job.state = "running"
-		-- The redirect the line was typed with goes back down with the answer: the
-		-- chain is where the command finally runs, and the writing belongs beside
-		-- the writing every other command's redirect goes through.
-		local ok, lines, control, data =
-			CeroSecOS.continue(state, job.session, cont, text, env, pending)
-		-- A chain that is still asking -- `sudo passwd root > out` -- has still
-		-- written nothing, so its redirect waits for the next answer.
-		if pending ~= nil and control == "prompt" then job.contRedirect = pending end
-		if ok then
-			writeLines(job, lines)
-			job.status = 0
-		else
-			-- A refusal is not output, so in a stage it goes to the screen and
-			-- not down the pipe -- the rule every other command already runs on.
-			errLines(job, lines)
-			job.status = 1
-		end
-		applyControl(job, control, data)
+		resumeCont(state, job, text, env)
 		return true
 	end
 

@@ -48,6 +48,10 @@ function CeroSecOS.newState(hostname)
 	-- older one being topped up and a machine the BIOS has repaired all have the
 	-- same tree.
 	CeroSecOS.ensureVar(state)
+	-- And /etc/hosts and /etc/hosts.equiv. The machine's own line in the first is
+	-- not written here: an address is a fact about which building the computer
+	-- stands in, and nothing in the engine has ever seen a building.
+	CeroSecOS.ensureNet(state)
 	return state
 end
 

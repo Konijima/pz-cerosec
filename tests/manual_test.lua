@@ -4,7 +4,7 @@
 
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
-	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSFS", "CeroSecOSPath",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath",
 	"CeroSecOSScript", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSDev",
 	"CeroSecOSVM",
@@ -80,7 +80,10 @@ local chapters = CeroSecManual.chapters
 -- what lives in /bin, and the shutdown timer).
 -- Raised to 17 by rung 5b, which owes the book a chapter on pipes and cron and
 -- pushes the two appendices to 16 and 17.
-check("chapter count is 10..17", #chapters >= 10 and #chapters <= 17)
+-- Raised to 18 by rung 6a, which owes the book a chapter on the network -- the
+-- address, /etc/hosts, rlogin, the trust files, who and last -- and pushes the
+-- two appendices to 17 and 18.
+check("chapter count is 10..18", #chapters >= 10 and #chapters <= 18)
 
 local totalPages = 0
 local seenTitles = {}
@@ -100,8 +103,10 @@ for ci = 1, #chapters do
 	-- Raised from 8 to 11 by rung 5b: the error appendix owes the player the
 	-- pipeline's refusals, cron's and fg's, and a chapter that is a LIST is the
 	-- one kind that grows by the page rather than by the paragraph.
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..11 pages",
-		n >= 2 and n <= 11)
+	-- Raised from 11 to 13 by rung 6a, for the same reason again: the network's
+	-- own refusals are two more pages of that list.
+	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..13 pages",
+		n >= 2 and n <= 13)
 	totalPages = totalPages + n
 
 	for pi = 1, n do
@@ -159,7 +164,9 @@ check("and the firmware version is one string in one place",
 -- worth of honest growth or it is only a chore to move.
 -- Raised from 100 to 118 by rung 5b, which added a chapter (pipes and cron)
 -- and pages to the two appendices.
-check("total pages is 45..118 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 118)
+-- Raised from 118 to 132 by rung 6a: ten pages of network and a page each on the
+-- two appendices.
+check("total pages is 45..132 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 132)
 
 --
 -- Every command in COMMAND_INFO appears in the quick-reference chapter,

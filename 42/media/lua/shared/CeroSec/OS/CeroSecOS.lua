@@ -40,7 +40,13 @@ CeroSecOS.STATE_VERSION = 1
 -- 9: /bin/sort and /bin/uniq, the two commands a pipeline is built to reach;
 --    /bin/crontab and /bin/mail, and the /var tree the two of them live on --
 --    /var/spool/cron, /var/log and /var/mail.
-CeroSecOS.SYSTEM_VERSION = 9
+-- 10: the network. /bin/ifconfig, /bin/ping, /bin/rlogin, /bin/rsh, /bin/rcp,
+--    /bin/ruptime, /bin/rwho, /bin/who, /bin/last, and the two files a name and
+--    a trust are looked up in -- /etc/hosts and /etc/hosts.equiv. The machine's
+--    own line in /etc/hosts is not seeded here: it needs an address, which is a
+--    fact about the building and is only known once the server has looked (see
+--    CeroSecOS.writeOwnHost).
+CeroSecOS.SYSTEM_VERSION = 10
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

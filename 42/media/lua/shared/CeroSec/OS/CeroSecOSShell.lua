@@ -72,6 +72,7 @@ CeroSecOS.HISTORY_TAIL = 100
 CeroSecOS.MAX_EXEMPT_ACCOUNTS = 4
 CeroSecOS.MAX_EXEMPT_BYTES = CeroSecOS.MAX_EXEMPT_ACCOUNTS
 	* (CeroSecOS.HISTORY_BYTES + CeroSecOS.MAIL_BYTES) + CeroSecOS.CRON_LOG_BYTES
+	+ CeroSecOS.WTMP_BYTES
 
 -- And what the HISTORIES alone may cost: four of them, which is the number the
 -- append path pays at every line (see CeroSecOS.historyAppend). A kind of its
@@ -589,8 +590,11 @@ CeroSecOS.COMMAND_INFO = {
 	help     = { desc = "list the commands in /bin", usage = "help" },
 	hostname = { desc = "print or set the machine's name", usage = "hostname [name]" },
 	id       = { desc = "print an account and its groups", usage = "id [name]" },
+	ifconfig = { desc = "show the network interfaces",
+		usage = "ifconfig [-a|<interface>]" },
 	jobs     = { desc = "list the machine's jobs", usage = "jobs", shell = true },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
+	last     = { desc = "list the logins on this machine", usage = "last [name]" },
 	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
 	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
@@ -600,9 +604,17 @@ CeroSecOS.COMMAND_INFO = {
 	pwd      = { desc = "print the working directory", usage = "pwd" },
 	reboot   = { desc = "restart the machine", usage = "reboot" },
 	restart  = { desc = "restart the machine", usage = "restart" },
+	ping     = { desc = "see whether a machine answers", usage = "ping <host|address>" },
 	printf   = { desc = "print a formatted string", usage = "printf <format> [arg...]" },
 	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
+	rcp      = { desc = "copy a file to or from another machine",
+		usage = "rcp <src> <dst>, one of them <host>:<path>" },
+	rlogin   = { desc = "log in on another machine", usage = "rlogin <host> [-l user]" },
 	rm       = { desc = "remove a file or a directory", usage = "rm [-r] <path>..." },
+	rsh      = { desc = "run one command on another machine",
+		usage = "rsh <host> [-l user] <command>..." },
+	ruptime  = { desc = "list the machines on the wire", usage = "ruptime" },
+	rwho     = { desc = "list who is logged in on them", usage = "rwho" },
 	sh       = { desc = "run a script", usage = "sh <file> [args]" },
 	shutdown = { desc = "switch the machine off",
 		usage = "shutdown [-h|-r] [now|+N] | shutdown -c" },
@@ -618,6 +630,7 @@ CeroSecOS.COMMAND_INFO = {
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
+	who      = { desc = "list who is logged in here", usage = "who [am i]" },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
 }

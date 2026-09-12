@@ -256,6 +256,7 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
 	"shared/CeroSec/OS/CeroSecOSDev.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
+"shared/CeroSec/OS/CeroSecOSNet.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",
 	"shared/CeroSec/OS/CeroSecOSScript.lua",
 	"shared/CeroSec/OS/CeroSecOSShell.lua",
@@ -2873,7 +2874,7 @@ do
 		bench.window.entry:getInternalText(), "cd work/")
 
 	-- The first word is a command name.
-	bench.typed("who")
+	bench.typed("whoa")
 	bench.tab()
 	bench.frame()
 	eq("the first word completes to a command",
@@ -2935,7 +2936,7 @@ do
 	_G.__now = _G.__now + 4000
 	bench.tick(2)
 	eq("the prompt is back", bench.window.mode, "shell")
-	bench.typed("who")
+	bench.typed("whoa")
 	bench.tab()
 	bench.frame()
 	eq("and Tab completes at it", bench.window.entry:getInternalText(), "whoami ")

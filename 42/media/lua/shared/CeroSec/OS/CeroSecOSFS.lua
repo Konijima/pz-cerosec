@@ -210,6 +210,10 @@ function CeroSecOS.exemptPaths(state)
 	-- has always been, and it must not start costing him his disk for it.
 	rule("/root/" .. CeroSecOS.HISTORY_NAME, "root", CeroSecOS.HISTORY_BYTES, "history")
 	rule(CeroSecOS.CRON_LOG_PATH, "root", CeroSecOS.CRON_LOG_BYTES, "log")
+	-- And the machine's record of who logged in on it, which is the same kind of
+	-- file for the same reason: a machine must not fill its own disk with what it
+	-- said about itself while nobody was looking.
+	rule(CeroSecOS.WTMP_PATH, "root", CeroSecOS.WTMP_BYTES, "log")
 	return paths
 end
 
