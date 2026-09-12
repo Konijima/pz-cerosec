@@ -48,6 +48,38 @@ CeroSecPhonebook.ITEM = "Base.Phonebook"
 CeroSecPhonebook.DATA_KEY = "cerosec"
 CeroSecPhonebook.REGION_KEY = "region"
 
+-- And the shape of that one table, with a chain beside it, on exactly the terms the
+-- door modules have (see the head of CeroSecModules.lua): a stamp on an item is a
+-- save file, and the edition written on a copy is a thing a survivor found and
+-- carried, so a wave that changes what is written there does not cost him the book
+-- he is holding. Empty today; an absent number is the oldest shape, because the two
+-- coordinates in a table written before this wave are the two coordinates version 1
+-- has. Stamped when the edition is (CeroSecPhonebook.stampRegion).
+CeroSecPhonebook.VERSION = 1
+CeroSecPhonebook.VERSION_KEY = "v"
+CeroSecPhonebook.MIGRATIONS = {}
+CeroSecPhonebook.OLDEST_VERSION = 1
+
+-- The table, walked up to this build, in place. true when it is readable at all: one
+-- a LATER build wrote is left exactly as it is and answers false, so the copy is a
+-- copy nobody has opened yet rather than a copy this build has re-stamped with a
+-- region of its own -- and putting the newer mod back gives the edition back.
+function CeroSecPhonebook.migrate(mine)
+	if type(mine) ~= "table" then return false end
+	local v = mine[CeroSecPhonebook.VERSION_KEY]
+	if type(v) ~= "number" or v ~= math.floor(v) or v < CeroSecPhonebook.OLDEST_VERSION then
+		v = CeroSecPhonebook.OLDEST_VERSION
+	end
+	if v > CeroSecPhonebook.VERSION then return false end
+	for n = v + 1, CeroSecPhonebook.VERSION do
+		local step = CeroSecPhonebook.MIGRATIONS[n]
+		if type(step) ~= "function" then return false end
+		step(mine)
+		mine[CeroSecPhonebook.VERSION_KEY] = n
+	end
+	return true
+end
+
 -- What the cover says. English, like the manual volumes and for the same reason:
 -- it is a 1993 American book and not a label on the interface.
 CeroSecPhonebook.TITLE = "Knox County Telephone Directory"
@@ -198,6 +230,11 @@ function CeroSecPhonebook.regionOn(data)
 	if type(data) ~= "table" then return nil end
 	local mine = data[CeroSecPhonebook.DATA_KEY]
 	if type(mine) ~= "table" then return nil end
+	-- The chain, in the ONE place the stamp is read, so a copy written by an older
+	-- build is walked up here or nowhere. One a later build wrote reads as unstamped:
+	-- the number on it is not a number this build knows, and inventing an edition for
+	-- it would be worse than opening the book on the place it was picked up.
+	if not CeroSecPhonebook.migrate(mine) then return nil end
 	local region = mine[CeroSecPhonebook.REGION_KEY]
 	if type(region) ~= "table" then return nil end
 	local rx, ry = region[1], region[2]
@@ -220,5 +257,8 @@ function CeroSecPhonebook.stampRegion(data, rx, ry)
 		data[CeroSecPhonebook.DATA_KEY] = mine
 	end
 	mine[CeroSecPhonebook.REGION_KEY] = { math.floor(rx), math.floor(ry) }
+	-- And the shape it is written in, beside it: the one write there is, so the one
+	-- place the stamp goes.
+	mine[CeroSecPhonebook.VERSION_KEY] = CeroSecPhonebook.VERSION
 	return math.floor(rx), math.floor(ry)
 end

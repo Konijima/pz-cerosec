@@ -10807,6 +10807,140 @@ do
 		CeroSecOS.diskFromData({ v = 1, fs = forged }), nil)
 end
 
+-- 47l2. The disk has a chain of its own, and a number of its own to count against.
+--
+-- A floppy is carried between machines and outlives any one of them, so its shape is
+-- its own fact: CeroSecOS.FLOPPY_VERSION and CeroSecOS.DISK_MIGRATIONS, walked by
+-- CeroSecOS.migrateDisk on both roads in -- the slot, and the state a disk rides
+-- inside when the game is saved with one in the drive.
+do
+	-- The chain is unbroken from the oldest shape to this one. The bench that would
+	-- go red on the day somebody bumps the number and forgets the step.
+	for n = CeroSecOS.OLDEST_FLOPPY_VERSION + 1, CeroSecOS.FLOPPY_VERSION do
+		check("there is a disk step for v" .. n, type(CeroSecOS.DISK_MIGRATIONS[n]) == "function")
+	end
+
+	-- A disk at this build's shape walks nothing and comes back as itself.
+	local disk = CeroSecOS.newFloppy("PAYROLL")
+	local walked, why = CeroSecOS.migrateDisk(disk)
+	check("a current disk comes back as itself", walked == disk)
+	eq("with nothing to say", why, nil)
+	eq("and its label", disk.label, "PAYROLL")
+
+	-- One a LATER build wrote: refused, not touched, and refused at the SLOT with a
+	-- word a screen can carry rather than with "bad version" -- the two are not the
+	-- same problem and a survivor can do something about exactly one of them.
+	local later = { v = CeroSecOS.FLOPPY_VERSION + 1, label = "TOMORROW" }
+	local no, reason = CeroSecOS.migrateDisk(later)
+	eq("a newer disk is refused", no, nil)
+	eq("and says why", reason, "newer")
+	eq("and is not touched", later.v, CeroSecOS.FLOPPY_VERSION + 1)
+	eq("nor is what is written on it", later.label, "TOMORROW")
+	local atSlot, slotWhy = CeroSecOS.diskFromData(later)
+	eq("the slot will not take it", atSlot, nil)
+	eq("and says so in words", slotWhy, "floppy: newer than this mod")
+
+	-- A disk with no version at all is NOT handed back blank: a machine that
+	-- formatted a floppy it could not read would be a machine that wipes somebody's
+	-- work to make it fit.
+	local noV = { label = "WHO KNOWS", fs = CeroSecOS.newFloppyRoot("admin") }
+	local none, noneWhy = CeroSecOS.migrateDisk(noV)
+	eq("an unversioned disk is refused", none, nil)
+	eq("with the gate's own words", noneWhy, "floppy: bad version")
+	eq("and is left exactly as it is", noV.label, "WHO KNOWS")
+	check("filesystem and all", noV.fs ~= nil)
+
+	-- The keys. DISK_KEYS is what a disk of this shape owns; DISK_LEGACY_KEYS is what
+	-- an older one owned and a step is on its way to taking off, and the field gate
+	-- has to accept both or a step could never see the name it was written for -- the
+	-- gate runs at the slot, before a byte is copied.
+	-- The CABLE, and not just the parts.
+	--
+	-- DISK_MIGRATIONS is empty -- nothing on a disk has changed shape yet -- so
+	-- nothing above proves the walk actually CALLS a step: a bench that only asks a
+	-- chain with no links in it whether it did nothing would be green with the loop
+	-- deleted. So one is planted for the length of this block, the way a step will
+	-- really be written, and both roads in are held to it. Put back at the end, or
+	-- every bench after this one would be running against a shape nothing ships.
+	local shipped = CeroSecOS.FLOPPY_VERSION
+	local ran = 0
+	CeroSecOS.DISK_MIGRATIONS[shipped + 1] = function(d)
+		ran = ran + 1
+		d.label = "WALKED"
+	end
+	CeroSecOS.FLOPPY_VERSION = shipped + 1
+
+	local old = { v = shipped, label = "BEFORE" }
+	local up, upWhy = CeroSecOS.migrateDisk(old)
+	check("the planted step ran on the slot road", up == old)
+	eq("exactly once", ran, 1)
+	eq("with nothing to say", upWhy, nil)
+	eq("it did its work", old.label, "WALKED")
+	eq("and the number moved", old.v, shipped + 1)
+	-- Twice is a no-op, because the number moved: the second call has no step left
+	-- to walk. That is what makes the chain safe to run on every load.
+	CeroSecOS.migrateDisk(old)
+	eq("a second pass runs nothing", ran, 1)
+
+	-- And the OTHER road: a disk that rides inside the state, which never comes
+	-- past the slot again after the game has been saved with one in the drive.
+	local carried = fresh()
+	carried.floppy = { v = shipped, label = "IN THE DRIVE" }
+	CeroSecOS.migrate(carried, "ksp-front-01")
+	eq("the in-drive disk was walked too", ran, 2)
+	eq("and it is at the shape the code reads", carried.floppy.v, shipped + 1)
+	eq("with the step's work on it", carried.floppy.label, "WALKED")
+
+	CeroSecOS.FLOPPY_VERSION = shipped
+	CeroSecOS.DISK_MIGRATIONS[shipped + 1] = nil
+	eq("the shipped number is back", CeroSecOS.FLOPPY_VERSION, shipped)
+	eq("and the planted step is gone", CeroSecOS.DISK_MIGRATIONS[shipped + 1], nil)
+
+	eq("no legacy key today", #CeroSecOS.DISK_LEGACY_KEYS, 0)
+	local forged = { v = CeroSecOS.FLOPPY_VERSION, payload = "x" }
+	eq("a name no disk owns is refused", CeroSecOS.diskFromData(forged), nil)
+	-- And the same name, declared legacy, is let past the gate. Put back at once: the
+	-- list is the shipped one and a bench that left a name on it would be a bench
+	-- that widened the closed namespace for every bench after it.
+	CeroSecOS.DISK_LEGACY_KEYS = { "payload" }
+	check("a declared legacy name is let through to the chain",
+		CeroSecOS.diskFieldsOk(forged) == true)
+	CeroSecOS.DISK_LEGACY_KEYS = {}
+	eq("and the list is back to the shipped one", #CeroSecOS.DISK_LEGACY_KEYS, 0)
+end
+
+-- 47l3. A disk in the DRIVE is walked with the machine, and a newer one refuses it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("NOTES")
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "echo hi > /mnt/x", {})
+
+	-- The machine came off an older save with the disk still in the slot.
+	state.v = 1
+	local back = CeroSecOS.migrate(state, "ksp-front-01")
+	check("the machine came back", back == state)
+	eq("and the disk is still in the drive", state.floppy.label, "NOTES")
+	eq("at its own shape", state.floppy.v, CeroSecOS.FLOPPY_VERSION)
+	check("with the file that was written on it",
+		state.floppy.fs.children["x"] ~= nil)
+	eq("and the machine runs on it", CeroSecOS.validate(state), true)
+
+	-- And a disk a LATER build wrote in the drive of a machine this build could
+	-- otherwise read: the whole machine is unreadable, for the same reason and with
+	-- the same answer. Nothing is touched -- asked BEFORE a step writes anything.
+	local mixed = fresh()
+	mixed.v = 1
+	mixed.floppy = { v = CeroSecOS.FLOPPY_VERSION + 1, label = "TOMORROW" }
+	local refused, why = CeroSecOS.migrate(mixed, "ksp-front-01")
+	eq("a newer disk refuses the machine", refused, nil)
+	eq("and says why", why, "newer")
+	eq("and the machine was not walked", mixed.v, 1)
+	eq("nor the disk", mixed.floppy.v, CeroSecOS.FLOPPY_VERSION + 1)
+end
+
 -- 47m. A mount naming a drive with nothing in it is swept on the way in.
 do
 	local state = fresh()

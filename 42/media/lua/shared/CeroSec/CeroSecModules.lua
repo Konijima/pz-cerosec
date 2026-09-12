@@ -59,6 +59,64 @@ CeroSecModules = CeroSecModules or {}
 -- lower case, like everything else this mod writes into somebody else's table.
 CeroSecModules.DATA_KEY = "cerosec"
 
+--
+-- The shape of that table, and how it is changed
+--
+-- A door is a save file too. What is screwed to it is written into the CHUNK and
+-- comes back when the chunk does, so the four ids in there are as persistent as the
+-- machine's filesystem and are owed the same promise: a wave that renames one, or
+-- drops one, or changes what one MEANS does not cost a survivor the hardware he
+-- climbed up to fit.
+--
+-- So the table carries a version, and a chain beside it:
+-- CeroSecModules.MIGRATIONS[n] takes the table at n - 1 and leaves it at n. Empty
+-- today, because nothing has changed shape yet; what matters is that there is
+-- somewhere for the first step to go.
+--
+-- A table with NO version is version 1, not version 0, and that is not a guess: the
+-- ids in a table written before this wave are the ids version 1 has, so an absent
+-- number reads as the shape it really is. The number is stamped on the next write
+-- (CeroSecModules.setOn) rather than on every read, because a read happens on a
+-- client -- the right-click menu asks what is fitted -- and a client writing into a
+-- door's modData writes into nothing anybody else will ever see.
+--
+CeroSecModules.VERSION = 1
+CeroSecModules.VERSION_KEY = "v"
+CeroSecModules.MIGRATIONS = {}
+CeroSecModules.OLDEST_VERSION = 1
+
+-- Which shape this table is in. A number that is not a whole one in range is not a
+-- version anything here wrote, and it reads as the oldest -- the same answer an
+-- absent one gets, for the same reason: the ids are what they are.
+function CeroSecModules.versionOf(fitted)
+	if type(fitted) ~= "table" then return nil end
+	local v = fitted[CeroSecModules.VERSION_KEY]
+	if type(v) ~= "number" or v ~= math.floor(v) then return CeroSecModules.OLDEST_VERSION end
+	if v < CeroSecModules.OLDEST_VERSION then return CeroSecModules.OLDEST_VERSION end
+	return v
+end
+
+-- The table, walked up to this build, in place. true when it is readable at all.
+--
+-- A table a LATER build wrote is left exactly as it is and answers false: the ids in
+-- it may mean something this build does not know, and reading them anyway would be
+-- this build deciding what somebody else's hardware is. A door like that has no
+-- modules as far as this build is concerned -- which is a door that does nothing,
+-- not a door that loses its boxes -- and putting the newer mod back brings them all
+-- back, because nothing here ever wrote over them.
+function CeroSecModules.migrate(fitted)
+	if type(fitted) ~= "table" then return false end
+	local v = CeroSecModules.versionOf(fitted)
+	if v > CeroSecModules.VERSION then return false end
+	for n = v + 1, CeroSecModules.VERSION do
+		local step = CeroSecModules.MIGRATIONS[n]
+		if type(step) ~= "function" then return false end
+		step(fitted)
+		fitted[CeroSecModules.VERSION_KEY] = n
+	end
+	return true
+end
+
 -- The sandbox option, declared in 42/media/sandbox-options.txt and read below.
 CeroSecModules.SANDBOX = "HardwareRequired"
 
@@ -160,6 +218,12 @@ function CeroSecModules.installedOn(object)
 	if data == nil then return out end
 	local fitted = data[CeroSecModules.DATA_KEY]
 	if type(fitted) ~= "table" then return out end
+	-- The chain, on the way in and in one place: this is the ONE function that reads
+	-- what is screwed to an object, so a table written by an older build is walked up
+	-- here or nowhere. One a LATER build wrote is not read at all -- an empty answer,
+	-- which is a door that does nothing rather than a door whose boxes were guessed
+	-- at (see CeroSecModules.migrate).
+	if not CeroSecModules.migrate(fitted) then return out end
 	for i = 1, #CeroSecModules.LIST do
 		local id = CeroSecModules.LIST[i].id
 		if fitted[id] == true then out[id] = true end
@@ -195,12 +259,24 @@ function CeroSecModules.setOn(object, id, on)
 	end
 	if on then
 		fitted[id] = true
+		-- And the shape it is in, stamped on the write. This is the server, and the
+		-- only place a door's modules are ever written: a number put on here travels
+		-- with the table (transmitModData) and is saved with the chunk, so the day a
+		-- step is written there is something for it to count against. A table with no
+		-- number is the oldest shape and is read as one (CeroSecModules.versionOf), so
+		-- nothing depends on the stamp having happened.
+		fitted[CeroSecModules.VERSION_KEY] = CeroSecModules.VERSION
 	else
 		fitted[id] = nil
 		local left = false
 		for i = 1, #CeroSecModules.LIST do
 			if fitted[CeroSecModules.LIST[i].id] == true then left = true end
 		end
+		-- The last box off takes the table with it, version stamp and all: a door
+		-- somebody wired and unwired carries nothing, exactly as it did before the
+		-- stamp existed. IsoObject.save skips an EMPTY modData and a table holding only
+		-- a number is not empty, so leaving one behind would be a few bytes in every
+		-- chunk for the rest of the save.
 		if not left then data[CeroSecModules.DATA_KEY] = nil end
 	end
 	object:transmitModData()

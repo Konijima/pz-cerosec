@@ -1443,6 +1443,101 @@ do
 end
 
 --
+-- The two namespaces on an ITEM and an OBJECT, and their own chains
+--
+-- A door with boxes screwed to it and a phone book with an edition written on it are
+-- save files as much as the machine is: what is in them comes back with the chunk
+-- and with the item, and a wave that changes their shape is owed the same promise.
+-- Both carry a version now, both are walked in the ONE place they are read, and both
+-- refuse to READ a table a later build wrote rather than guessing at it.
+--
+do
+	-- An object with a modData table, which is the whole of what either namespace
+	-- needs: a door for CeroSecModules, an item for CeroSecPhonebook.
+	local function thing()
+		local data = {}
+		local o
+		o = {
+			transmits = 0,
+			hasModData = function() return true end,
+			getModData = function() return data end,
+			transmitModData = function() o.transmits = o.transmits + 1 end,
+		}
+		return o
+	end
+
+	-- A door wired before the version existed: the ids and nothing else, which is
+	-- what every door in every save carries today.
+	local door = thing()
+	door:getModData()[CeroSecModules.DATA_KEY] = { strike = true, contact = true }
+	local fitted = CeroSecModules.installedOn(door)
+	eq("an unstamped door keeps its strike", fitted.strike, true)
+	eq("and its contact", fitted.contact, true)
+	eq("because no number reads as the oldest shape",
+		CeroSecModules.versionOf(door:getModData()[CeroSecModules.DATA_KEY]),
+		CeroSecModules.OLDEST_VERSION)
+
+	-- The next write stamps it, and the boxes are still there afterwards.
+	eq("the server fits one more", CeroSecModules.setOn(door, "operator", true), true)
+	eq("and the shape is written down now",
+		door:getModData()[CeroSecModules.DATA_KEY][CeroSecModules.VERSION_KEY],
+		CeroSecModules.VERSION)
+	fitted = CeroSecModules.installedOn(door)
+	eq("the strike is still on", fitted.strike, true)
+	eq("the contact is still on", fitted.contact, true)
+	eq("and the operator went on", fitted.operator, true)
+	eq("and the number is not read as a module", fitted[CeroSecModules.VERSION_KEY], nil)
+
+	-- The last box off still takes the table away, stamp and all.
+	CeroSecModules.setOn(door, "strike", false)
+	CeroSecModules.setOn(door, "contact", false)
+	CeroSecModules.setOn(door, "operator", false)
+	eq("the last box off takes the stamp with it",
+		door:getModData()[CeroSecModules.DATA_KEY], nil)
+
+	-- A door a LATER build wired: not read, and not written over.
+	local future = thing()
+	local later = { strike = true }
+	later[CeroSecModules.VERSION_KEY] = CeroSecModules.VERSION + 1
+	future:getModData()[CeroSecModules.DATA_KEY] = later
+	eq("a later build's door reads as nothing fitted",
+		CeroSecModules.installedOn(future).strike, nil)
+	eq("and its own number is untouched",
+		later[CeroSecModules.VERSION_KEY], CeroSecModules.VERSION + 1)
+	eq("and so is the box on it: the newer mod gives it back", later.strike, true)
+
+	-- The phone book. A copy stamped before the version existed keeps its edition.
+	local book = thing()
+	book:getModData()[CeroSecPhonebook.DATA_KEY] =
+		{ [CeroSecPhonebook.REGION_KEY] = { 7, 9 } }
+	local rx, ry = CeroSecPhonebook.regionOn(book:getModData())
+	eq("an unstamped copy keeps its region x", rx, 7)
+	eq("and its region y", ry, 9)
+
+	-- Stamping one writes the shape beside the edition, and the edition is printed
+	-- once: a book carried across the county is still the book of where it was found.
+	local fresh = thing()
+	CeroSecPhonebook.stampRegion(fresh:getModData(), 3, 4)
+	eq("a new stamp carries the shape",
+		fresh:getModData()[CeroSecPhonebook.DATA_KEY][CeroSecPhonebook.VERSION_KEY],
+		CeroSecPhonebook.VERSION)
+	local kx = CeroSecPhonebook.stampRegion(fresh:getModData(), 11, 12)
+	eq("and a second stamp changes nothing", kx, 3)
+
+	-- A copy a LATER build stamped: read as unstamped, and left alone.
+	local tomorrow = thing()
+	local mine = { [CeroSecPhonebook.REGION_KEY] = { 1, 2 } }
+	mine[CeroSecPhonebook.VERSION_KEY] = CeroSecPhonebook.VERSION + 1
+	tomorrow:getModData()[CeroSecPhonebook.DATA_KEY] = mine
+	eq("a later build's copy reads as unopened",
+		CeroSecPhonebook.regionOn(tomorrow:getModData()), nil)
+	eq("its number is untouched",
+		mine[CeroSecPhonebook.VERSION_KEY], CeroSecPhonebook.VERSION + 1)
+	eq("and so is the edition on it",
+		mine[CeroSecPhonebook.REGION_KEY][1], 1)
+end
+
+--
 -- Escape: an interrupt when the machine is in the middle of something, a close
 -- when it is not.
 --

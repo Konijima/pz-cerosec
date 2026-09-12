@@ -337,6 +337,13 @@ function CeroSecOS.diskFieldsOk(disk)
 		for i = 1, #CeroSecOS.DISK_KEYS do
 			if key == CeroSecOS.DISK_KEYS[i] then known = true end
 		end
+		-- And a name an OLDER disk owned, which a migration is on its way to taking
+		-- off: this gate runs before any step could, so a step that renamed a key
+		-- would otherwise never see a disk carrying the old name
+		-- (CeroSecOS.DISK_LEGACY_KEYS).
+		for i = 1, #CeroSecOS.DISK_LEGACY_KEYS do
+			if key == CeroSecOS.DISK_LEGACY_KEYS[i] then known = true end
+		end
 		if not known then return false, "floppy: unknown field" end
 	end
 	if type(disk.fs) ~= "table" then return true end
@@ -471,6 +478,37 @@ CeroSecOS.MIGRATIONS[2] = function(state)
 	dropQuotaFlags(state.fs)
 end
 
+-- One disk, brought up to this build. Its own chain, against its own number
+-- (CeroSecOS.FLOPPY_VERSION): a floppy is carried between machines and outlives any
+-- one of them, so what shape it is in is its own fact and not the machine's.
+--
+--   disk, nil            walked, and ready for the gate.
+--   nil, "newer"         written by a LATER build: refused, and not touched.
+--   nil, "bad version"   no version, or older than the oldest step there is.
+--
+-- The last one is NOT a blank disk handed back. A machine that formatted a floppy it
+-- could not read would be a machine that wipes somebody's work to make it fit, so a
+-- disk the chain cannot read is left exactly as it is and refused where it stands --
+-- at the slot with a reason on the screen (CeroSecOS.diskFromData), or by the gate
+-- for one already in the drive, which is what happened to such a disk before there
+-- was a chain at all.
+function CeroSecOS.migrateDisk(disk)
+	if type(disk) ~= "table" then return nil, "floppy: not a disk" end
+	local v = disk.v
+	if type(v) == "number" and v > CeroSecOS.FLOPPY_VERSION then return nil, "newer" end
+	if type(v) ~= "number" or v ~= math.floor(v)
+			or v < CeroSecOS.OLDEST_FLOPPY_VERSION then
+		return nil, "floppy: bad version"
+	end
+	for n = v + 1, CeroSecOS.FLOPPY_VERSION do
+		local step = CeroSecOS.DISK_MIGRATIONS[n]
+		if type(step) ~= "function" then return nil, "floppy: bad version" end
+		step(disk)
+		disk.v = n
+	end
+	return disk, nil
+end
+
 -- A saved state, brought up to this build.
 --
 --   state, nil     ready for the gate: the same table, migrated where it lies, or
@@ -488,6 +526,15 @@ function CeroSecOS.migrate(state, hostname)
 
 	local v = state.v
 	if type(v) == "number" and v > CeroSecOS.STATE_VERSION then return nil, "newer" end
+	-- And the disk in the drive, asked FIRST -- before a single step writes anything
+	-- -- because "not touched" has to mean it. A floppy a later build wrote makes the
+	-- whole machine unreadable and gets the same answer for the same reason: nothing
+	-- here can read what is in the slot, and putting the newer mod back is the repair.
+	local inDrive = state.floppy
+	if type(inDrive) == "table" and type(inDrive.v) == "number"
+			and inDrive.v > CeroSecOS.FLOPPY_VERSION then
+		return nil, "newer"
+	end
 	if type(v) ~= "number" or v ~= math.floor(v)
 			or v < CeroSecOS.OLDEST_STATE_VERSION then
 		return CeroSecOS.newState(hostname), nil
@@ -507,6 +554,13 @@ function CeroSecOS.migrate(state, hostname)
 		-- back at the version it really reached and walks the rest on the next load.
 		state.v = n
 	end
+
+	-- And the disk in the drive, walked on its own number. Here and not at the slot
+	-- because a disk RIDES INSIDE the state: one that was in the drive when the game
+	-- was saved comes back with the machine and never passes CeroSecOS.diskFromData
+	-- again. A newer one was refused above; one the chain cannot read is left exactly
+	-- as it is for the gate to refuse, which is what happened to it before.
+	if type(state.floppy) == "table" then CeroSecOS.migrateDisk(state.floppy) end
 
 	-- And the CONTENTS, which is the other number and is not part of the chain: a
 	-- machine saved before this build has neither the executables it added nor the

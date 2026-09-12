@@ -133,7 +133,17 @@ CeroSecOS.FS_TYPE = "ufs"
 -- modData. Separate from CeroSecOS.STATE_VERSION on purpose: a disk is carried
 -- between machines and outlives any one of them, so what shape it is in is its
 -- own fact.
+--
+-- It has a chain of its own beside it, the same shape the machine's has and for the
+-- same reason: CeroSecOS.DISK_MIGRATIONS[n] takes a disk at n - 1 and leaves it at
+-- n (CeroSecOS.migrateDisk). Empty today, because nothing on a disk has changed
+-- shape yet -- the LABEL has no version of its own and never will, because it is
+-- one of the three keys a disk owns and travels in the disk's own record.
 CeroSecOS.FLOPPY_VERSION = 1
+
+-- The steps, and the oldest shape they can start from.
+CeroSecOS.DISK_MIGRATIONS = {}
+CeroSecOS.OLDEST_FLOPPY_VERSION = 1
 
 -- How long a volume label may be, and the ONE place that number lives: the
 -- inventory's label box derives its own ceiling from this, so a label a survivor
@@ -280,6 +290,16 @@ function CeroSecOS.diskFromData(data)
 	if not fOk then return nil, fReason end
 	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
+	-- The disk's own chain, on OUR copy and never on the game's table: a disk written
+	-- by an older build is brought up to this one here, which is the moment it enters
+	-- the engine. A newer one is refused with a word the screen can carry rather than
+	-- with "bad version", because the two are not the same problem and the survivor
+	-- can do something about exactly one of them.
+	local walked, why = CeroSecOS.migrateDisk(disk)
+	if walked == nil then
+		if why == "newer" then return nil, "floppy: newer than this mod" end
+		return nil, why
+	end
 	-- Bounded: this is the SLOT, and what arrives here is a table off a save file
 	-- or off a client, walked on every command from then on. The disk a machine
 	-- hands out is held to the same bound before it leaves the drive, so there is
@@ -303,6 +323,19 @@ end
 -- and then blanked has no filesystem any more and an `fs` left behind from the
 -- last time would be a blank disk that still remembers.
 CeroSecOS.DISK_KEYS = { "v", "fs", "label" }
+
+-- And the keys an OLDER disk owned and this one does not: a name a migration is on
+-- its way to renaming or dropping.
+--
+-- Empty, and it exists because the closed-key rule and the chain would otherwise
+-- contradict each other. CeroSecOS.diskFieldsOk refuses a disk carrying any key that
+-- is not one of ours -- which is what keeps a payload from riding into the save file
+-- under a name nothing weighs -- and it is asked at the SLOT, before a byte is
+-- copied and therefore before any migration could run. So the day a step renames a
+-- key, the old name goes in here: accepted by the gate, and taken off by the step
+-- that replaces it. A migration is the one thing allowed to rename or drop a key,
+-- and this is how it is allowed to.
+CeroSecOS.DISK_LEGACY_KEYS = {}
 
 -- Write one onto an item's modData, in place. The table is the game's; what is
 -- put in it is a private copy of ours (see CeroSecOS.diskToData).
