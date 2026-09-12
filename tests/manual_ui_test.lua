@@ -1189,6 +1189,22 @@ do
 		check("and nothing to insert", menu.labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
 	end
 
+	-- 3b. An empty drive the server has SAID is empty. That is a false and not an
+	-- absence -- the update that tells a client the disk came out cannot carry a
+	-- nil (SCeroSecObject:syncDisk) -- and a menu that read the flag as "there is
+	-- something there" would be the eject bug all over again, one layer up.
+	carried = { type = CeroSec.FLOPPY_TYPES[1] }
+	mirror.disk = false
+	menu = fullMenuOn(computer)
+	insert, eject = nil, nil
+	for i = 1, #menu.options do
+		if menu.labels[i] == "ContextMenu_CeroSec_InsertFloppy" then insert = menu.options[i] end
+		if menu.labels[i] == "ContextMenu_CeroSec_EjectFloppy" then eject = menu.options[i] end
+	end
+	check("a drive the server calls empty offers Insert", insert ~= nil)
+	eq("and does not grey it", insert.notAvailable, nil)
+	eq("and there is nothing to eject", eject, nil)
+
 	-- 4. One of each. Both entries, Insert greyed with the sentence that says what
 	-- to do about it -- and that sentence is the game's UI talking, not Unix: a
 	-- refusal a survivor can act on standing where he is.

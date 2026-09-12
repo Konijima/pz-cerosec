@@ -128,7 +128,9 @@ group and leaves the owner; `cp` gives the copy the caller's name for both.
 `CeroSecOS.can(state, session, node, what)` is the only place a permission is
 decided, and it reads exactly one digit:
 
-1. `root` bypasses everything, before anything else is asked.
+1. `root` bypasses everything, before anything else is asked — except `what ==
+   "x"` on a node that is not a directory, which needs at least one of the three
+   `x` bits set (4.4BSD `vaccess()`: root may not execute what nobody may).
 2. `node.owner == session.user` — the **first** digit, and the other two are never
    consulted for him even if he is also in the group.
 3. `CeroSecOS.inGroup(state, user, CeroSecOS.groupOf(node))` — the **middle** digit.

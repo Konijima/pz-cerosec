@@ -177,6 +177,15 @@ function CeroSec.floppyTypeOr(fullType)
 	return CeroSec.FLOPPY_TYPES[1]
 end
 
+-- Is there a disk in that machine's drive, as far as the CLIENT knows? The one
+-- bit of the drive the server syncs (SCeroSecObject:syncDisk), read the same way
+-- everywhere so there is one answer and not two. Only a real true counts: a
+-- client copy the server has never told anything says nothing, and it must not
+-- say "full".
+function CeroSec.diskInDrive(luaObject)
+	return type(luaObject) == "table" and luaObject.disk == true
+end
+
 -- Fresh state. Left open for later rungs (os, hostname).
 function CeroSec.newState(facing)
 	return { v = CeroSec.STATE_VERSION, on = false, facing = facing or "S" }

@@ -1,5 +1,76 @@
+# The Steam Workshop item, as the game's own submit screen reads it.
+#
+# The format is SteamWorkshopItem.readWorkshopTxt (javap -p -c on the shipped
+# projectzomboid.jar). Every line is trimmed; a blank one, or one starting with
+# "#" or "//", is skipped, which is why these comments are legal. The keys it
+# knows are id=, title=, description=, tags=, visibility= and version= (read and
+# ignored). "description=" may repeat: each line is appended to the one before
+# with a single newline between them (BootstrapMethods #9, "\1\n"), so a blank
+# line in the description is a bare "description=" here. "tags=" is split on ";"
+# and the legal set is media/WorkshopTags.txt, one tag a line. "visibility=" is
+# one of public, friendsOnly, private, unlisted.
+#
+# "id=" is written by Steam after the first upload: the submit screen calls
+# writeWorkshopTxt the moment you leave its second page, and that rewrite puts
+# version=1 first, then id=, title=, one description= a line, tags= and
+# visibility=. It does NOT keep these comments. Copy them back from git if you
+# want them, and see docs/RELEASE.md for the rest of the checklist.
 version=1
 title=CeroSec
-description=CeroSec OS for the computers of Knox County. Turn vanilla computers on, open a terminal, run a small OS, network machines together and automate doors, locks and lights.
-tags=Build 42;Interface;Multiplayer
+description=[h1]THE NETWORK NEVER DIED.[/h1]
+description=
+description=CeroSec puts a small Unix on the desktop computers that were already standing in Knox County. Right-click one to switch it on, right-click again to sit down at it, and a green 60x20 terminal opens on a BIOS boot line and a login prompt. Behind the prompt is CeroSec OS 1.0, a 1993 Unix with files, permissions, accounts, an editor, a shell language and cron. The disk belongs to the machine and not to you: walk away and come back to the same session still logged in, and a computer you unplug and carry across the county keeps everything that was on it.
+description=
+description=[b]REAL UNIX TERMINAL. NETWORKING AND REMOTE ACCESS. MULTI-USER SYSTEM. 1993 REALISTIC ENVIRONMENT. FOR PROJECT ZOMBOID.[/b]
+description=
+description=[hr][/hr]
+description=[h1]Features[/h1]
+description=[list]
+description=[*][b]A real terminal.[/b] Sixty columns by twenty, a BIOS that counts the memory, a login prompt, a shell. Two survivors standing at one computer read and type on the same glass.
+description=[*][b]Files, permissions and accounts.[/b] Owner, group and other, three octal digits, symbolic modes, symbolic links. Accounts, groups, [b]su[/b] and [b]sudo[/b] with a real [b]/etc/sudoers[/b] behind it.
+description=[*][b]An editor.[/b] [b]edit[/b] turns the screen into one: Tab saves, Escape leaves and asks first.
+description=[*][b]Shell scripting.[/b] The prompt is the script language, with [b]sh[/b]'s own grammar: [b]if[/b], [b]while[/b], [b]for[/b], variables, [b]$( )[/b], pipes, redirects, background jobs, [b]jobs[/b] and [b]kill[/b]. [b]cron[/b] runs a crontab on the minute hand while nobody is watching.
+description=[*][b]The building, under /dev.[/b] One file per door, light switch, lock and window the machine can reach, worked by name: [b]dev light0 off[/b], [b]dev door1 open[/b], [b]dev lock1 toggle[/b]. Drop a vanilla Motion Sensor in a room and it becomes a [b]sensorN[/b] a script can poll.
+description=[*][b]Three ways out of the case.[/b] Every computer in a map building is on one length of coax with the others, with its own address: [b]arp[/b], [b]ping[/b], [b]ruptime[/b], [b]rlogin[/b], [b]rsh[/b] and [b]rcp[/b], and trust files that spare you the password. Past the building, a modem dials the county at 2400 baud with [b]cu[/b]. Past the county's power, a two-way radio becomes the machine's TNC and [b]call[/b] raises another station by callsign, where anybody tuned to that frequency hears the connect.
+description=[*][b]Floppy disks.[/b] A 3.5 inch disk with a filesystem of its own: [b]newfs[/b], [b]mount[/b], copy your notes onto it, carry it across town.
+description=[*][b]A manual you have to find.[/b] Three volumes, the User's Guide, the System Administrator's Guide and the Programmer's Guide, printed in 1993 and spawning where a book about a computer would have been sold or shelved. They open as a book on your screen and the survivor goes on doing whatever they were doing.
+description=[*][b]Server-safe by construction.[/b] Every script runs on a step budget, the disk is 64 KB, a file is 4096 bytes, and four jobs is four jobs. Nothing a player types is ever handed to Lua.
+description=[/list]
+description=
+description=[hr][/hr]
+description=[h1]Getting started[/h1]
+description=The first ten minutes, in order:
+description=[list]
+description=[*]Right-click a desktop computer and choose [b]Turn on computer[/b]. It needs power in the room.
+description=[*]Right-click it again and choose [b]Use computer[/b]. Your survivor walks over and sits down.
+description=[*]At [b]login:[/b] type [b]admin[/b], then press Enter at the password: a shipped machine has [b]admin[/b] and [b]root[/b], both with no password yet.
+description=[*]Type [b]help[/b] for the commands, then [b]dev[/b] to see the doors, lights and locks this machine can reach. Try [b]dev light0 off[/b].
+description=[*]Type [b]exit[/b], or close the window, and walk away. The screen keeps running and is exactly as you left it next time.
+description=[/list]
+description=
+description=[hr][/hr]
+description=[h1]Multiplayer[/h1]
+description=Every computer's disk lives on the server, and every command is run there. A client asks; it never decides. Two survivors at one machine share the screen, a third can [b]rlogin[/b] in from the machine next door, and what one of them writes the others read.
+description=The budgets are the reason this is safe to run on a public server. A script is stepped, not looped to the end, so a [b]while true[/b] somebody left running costs that machine its own share and nothing else. A remote session costs the far machine, not yours. Four sessions may come in at once and the fifth is refused.
+description=
+description=[hr][/hr]
+description=[h1]Early release[/h1]
+description=This is version 0.1.0. Everything listed above is finished, tested and documented. What is being built now:
+description=[list]
+description=[*]Hardware modules you install on a door yourself, instead of a building that is wired to the computer from the start.
+description=[*]One phone line per machine, with seven-digit numbers, instead of one line per building.
+description=[*][b]mheard[/b], so a radio station can tell you who it has heard lately.
+description=[*]A debug window for server admins.
+description=[/list]
+description=Bugs and questions go in the comments here. The source, the issue tracker and the full documentation are at [b]github.com/Konijima/pz-cerosec[/b], which opens at release.
+description=
+description=[hr][/hr]
+description=[h1]Made by Konijima[/h1]
+description=[list]
+description=[*]No dependencies. Vanilla Lua, nothing bundled, nothing required.
+description=[*]Build 42 only, and there will be no Build 41 version.
+description=[*]Safe to add to a running save. Removing the mod leaves the computers as furniture; the manuals and floppies in inventories are lost.
+description=[/list]
+description=[quote]Faithful to Unix, nothing invented. Where a real /bin/sh, a real cron, a real rlogin or a real Hayes modem would answer a certain way, this machine answers the same way, refusals included. A behaviour with no real-world model is a behaviour we questioned.[/quote]
+tags=Build 42;Interface;Items;Literature;Multiplayer;Realistic
 visibility=unlisted

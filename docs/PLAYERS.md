@@ -42,7 +42,9 @@ because root is asked for nobody's.
 
 **Sharing a file.** A mode is three digits — you, your group, everybody else — and
 the machine reads exactly one of them: the first if you own the file, the second if
-you are in its group, the third otherwise. Root walks through all three. Every
+you are in its group, the third otherwise. Root walks through all three, except
+for running something: a file with no `x` bit at all is one root may not execute
+either, which is why `chmod 600 /bin/ls` takes `ls` away from root as well. Every
 account is already in a group of its own name, so a fresh file is shared with
 nobody until you say otherwise:
 
