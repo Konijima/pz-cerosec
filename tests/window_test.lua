@@ -4170,6 +4170,29 @@ do
 	eq("and the scheduler has let it go", #CeroSecJobs.machines, 0)
 end
 
+-- A pending order whose process is DEAD does not fire, and the clock is what has
+-- to know it: the reaping normally takes a killed job off the book inside the very
+-- pass that killed it, so this is the one thing the ordinary path cannot show --
+-- the order still in the book with its job killed, which is what a pass would see
+-- if anything ever killed one between two passes.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("shutdown -h +1")
+	bench.frame()
+	local pending = CeroSecJobs.pendingShutdown(bench.object)
+	check("the order is pending", pending ~= nil)
+	-- Killed where it stands, and NOT reaped: no pass is run in between.
+	CeroSecOS.killJob(pending, nil)
+	eq("the job is dead", pending.state, "killed")
+	check("and still on the book", CeroSecJobs.book(bench.object).list[1] == pending)
+	-- The minute arrives and the clock looks at the book.
+	CeroSecJobs.checkShutdown(CeroSecJobs.system, bench.object, _G.__now + 120000)
+	eq("a dead process switches nothing off", bench.object.on, true)
+	check("and the order is not pending any more",
+		CeroSecJobs.pendingShutdown(bench.object) == nil)
+end
+
 -- An ordinary account may not kill root's shutdown, which is kill(2)'s own rule
 -- and the reason it arrived: an account that could would be an account that can
 -- switch the machine off.
@@ -8172,11 +8195,21 @@ do
 	-- And the box is back at ITS prompt and not at the shell: cu is still holding
 	-- the serial line, which is the whole difference between a link going away and
 	-- a line being hung up.
-	check("the glass is this machine's again",
-		net.glass(CeroSecOS.TNC_PROMPT))
+	--
+	-- Asked of the CONSOLE and not of the glass, and that is the lesson of this
+	-- bench: `cmd:` is on the screen already, five lines up from when the line was
+	-- opened, so a painted-line search is green on a box that has been left hanging
+	-- for ever. What is asked is what the machine is WAITING for.
+	local console = net.here:consoleState()
+	eq("the machine is at a question", CeroSec.consoleWaiting(console), "prompt")
+	eq("and it is the box's own prompt", console.prompt.text, CeroSecOS.TNC_PROMPT)
+	eq("answered by the TNC", console.prompt.cont.cmd, "job")
+	check("the glass is this machine's again", console.remote == nil)
 	say(net, "~.")
 	net.tick(2)
-	check("and ~. gives the shell back", net.glass("admin@" .. net.host(net.here)))
+	eq("and ~. gives the shell back", CeroSec.consoleWaiting(net.here:consoleState()),
+		"shell")
+	check("with cu's own last word", net.heard(CeroSecOS.CU_DISCONNECTED))
 	_G.__world = nil
 end
 

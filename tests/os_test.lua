@@ -6610,6 +6610,30 @@ do
 	ok, lines = exec(state, admin, "kill", env)
 	eq("and kill with nothing to kill says how", lines[1], "kill: usage: kill <id>|%<n>")
 
+	-- WHOSE job it is. kill(2) is root, or the account the process belongs to, and
+	-- EPERM for anybody else. It is the one rule the jobs deviation does NOT touch:
+	-- `jobs` and `ps` still list what everybody started, and `fg` still pulls one
+	-- forward, but stopping another account's work is not a survivor's to do -- and
+	-- a pending `shutdown +N` is a job of root's, so an account that could would be
+	-- an account that can switch the machine off.
+	job.killReq = nil
+	job.session = { user = "root", cwd = "/root", stamp = 1 }
+	ok, lines = exec(state, admin, "kill 42", env)
+	eq("an ordinary account may not kill root's job", ok, false)
+	eq("and gets strerror's own words", lines[1],
+		"kill: 42: Operation not permitted")
+	eq("nothing was asked for", job.killReq, nil)
+	ok = exec(state, open(state, "root"), "kill 42", env)
+	eq("root may kill anybody's", ok, true)
+	eq("and it was asked for", job.killReq, "user")
+	job.killReq = nil
+	job.session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+	ok = exec(state, admin, "kill 42", env)
+	eq("and an account may kill its own", ok, true)
+	eq("which is asked for too", job.killReq, "user")
+	job.killReq = nil
+	job.session = admin
+
 	-- Four jobs is the ceiling, and it is the ENGINE that refuses the fifth.
 	for i = 2, CeroSecOS.MAX_JOBS do
 		jobs[i] = CeroSecOS.newJob({ id = 42 + i, prog = data.prog, args = {},
@@ -12507,6 +12531,16 @@ do
 	end
 	table.sort(retired)
 	check("there are names to retire (" .. #retired .. ")", #retired >= 4)
+	-- Named one by one and not left to the loop above, which derives its work from
+	-- the very table a wave can forget to add a name to: a build that retired a
+	-- command in the engine and not in RETIRED_BIN leaves a file in /bin that
+	-- `help` offers and the shell refuses, and a bench walking the table would be
+	-- green on it. `call` is this wave's (SYSTEM_VERSION 17).
+	check("call is one of the names this build retires",
+		CeroSecOS.RETIRED_BIN.call ~= nil)
+	check("and it really is gone from the engine",
+		CeroSecOS.COMMAND_INFO.call == nil and CeroSecOS.commands.call == nil)
+	check("restart is still one of them", CeroSecOS.RETIRED_BIN.restart ~= nil)
 	-- One of them is a player's own work at that name: a file he wrote himself.
 	-- Nothing here is allowed to be a deletion somebody did not ask for.
 	bin.children.hash = CeroSecOS.newFile("admin", 755, "mine, not yours")
@@ -12526,11 +12560,12 @@ do
 	eq("a file of the player's own at a retired name is left alone",
 		bin.children.hash.data, "mine, not yours")
 	eq("and so is the shipped one somebody chmod'd", bin.children.restart.mode, 700)
+	eq("/bin/call, by name, is gone", bin.children.call, nil)
 
 	-- And the shell agrees: a name with no file is a name that is not found.
 	local admin = open(state, "admin")
 	local ENV2 = { now = 0, nowMs = 1, jobs = {} }
-	local GONE = { "adduser", "deluser", "gpasswd", "readlink", "write" }
+	local GONE = { "adduser", "deluser", "gpasswd", "readlink", "write", "call" }
 	for i = 1, #GONE do
 		badAt(state, admin, GONE[i] .. " x", GONE[i] .. ": command not found", ENV2)
 	end
