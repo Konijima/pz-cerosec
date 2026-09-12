@@ -4504,18 +4504,21 @@ do
 	-- than one pass this time: the loop is a job like any other and the player's
 	-- own pass is only the first of them.
 	--
-	-- `ls /dev | grep light` catches more than the two lights, and that is this
-	-- machine and not this bench: `ls` writes in columns down a pipe as well as
-	-- at the glass, so a line with `light0` on it carries whatever else shares
-	-- its row. The loop therefore says "invalid value" at a door and a window on
-	-- its way past -- which is why the script's status below is the last `dev`'s
-	-- and not a zero. What matters here is that the lights moved and the console
-	-- is still standing.
+	-- `ls /dev | grep light` catches the two lights and nothing else, because a
+	-- pipe is not a screen: ls writes one name a line down one (rung 6b), so the
+	-- loop is handed light0 and light1 and not whatever shared a packed row with
+	-- them. Before that it was handed rows, said "invalid value" at a door and a
+	-- window on its way past, and came back with the last `dev`'s status.
 	bench.enter("./lights.sh off")
 	bench.tick(8)
 	eq("the office light went off", kit.light0.activated, false)
 	eq("the hallway light stayed off", kit.light1.activated, false)
 	check("and dev said what it read back", bench.painted("light0: off"))
+	check("and again for the other one", bench.painted("light1: off"))
+	-- Nothing but the lights was reached: a door in the same directory is not
+	-- something the loop ever names now.
+	check("no door was asked for a light's word", not bench.painted("invalid value"))
+	eq("so the script came back successful", bench.object.console.status, 0)
 	eq("the bottom of the glass is a prompt", string.sub(bottom(), 1, 5), "root@")
 	eq("root is still standing there", bench.object.console.user, "root")
 

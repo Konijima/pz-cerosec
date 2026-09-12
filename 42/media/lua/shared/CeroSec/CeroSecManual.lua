@@ -1795,7 +1795,7 @@ itself.
   kill <id>|%<n>
   last [name]
   ln -s <target> <name>
-  ls [-laAF] [path]
+  ls [-1laACF] [path]
   mail
   man <command>
   mkdir <dir>

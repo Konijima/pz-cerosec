@@ -644,7 +644,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- Symbolic only, and the usage line says so: see the note above
 	-- CeroSecOS.newLink for why this machine has no hard links.
 	ln       = { desc = "make a symbolic link", usage = "ln -s <target> <name>" },
-	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
+	ls       = { desc = "list a directory", usage = "ls [-1laACF] [path]" },
 	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
@@ -887,7 +887,24 @@ commands.cd = function(state, session, args, env)
 	return true, {}
 end
 
-commands.ls = function(state, session, args, env)
+--
+-- ls, and who is reading it
+--
+-- Columns are for a PERSON. The moment the output is going anywhere else -- down
+-- a pipe, into a $( ), into a file -- ls prints one name per line, which is what
+-- every ls has done since it learned to ask isatty, and which is the difference
+-- between
+--
+--   for l in $(ls /dev | grep light); do ...
+--
+-- picking out the lights and picking out whatever else happened to share a row
+-- with them. The shell is what knows whether there is a screen on the other end
+-- and says so (see the `tty` half of what a command is handed).
+--
+-- Either way can be asked for outright: -1 is one per line and -C is columns,
+-- the later of the two winning, exactly as -a and -A already do here. -l is one
+-- per line by its nature and neither flag has anything to say about it.
+commands.ls = function(state, session, args, env, stdin, sh)
 	-- Flags are letters, so "-lF", "-Fl" and "-l -F" are the same line. A bare
 	-- "-" is not a flag and never was: it is a name, and a name is what the
 	-- error about it should be about.
@@ -896,6 +913,9 @@ commands.ls = function(state, session, args, env)
 	-- except those two. The later of the two wins, which is how a real ls reads
 	-- a line that carries both.
 	local dots, hiddenToo = false, false
+	-- nil until the line says: a line that says neither is answered by whether
+	-- there is a screen there.
+	local columns = nil
 	for i = 2, #args do
 		local a = args[i]
 		if string.sub(a, 1, 1) == "-" and a ~= "-" then
@@ -909,6 +929,10 @@ commands.ls = function(state, session, args, env)
 					dots, hiddenToo = true, true
 				elseif flag == "A" then
 					dots, hiddenToo = false, true
+				elseif flag == "1" then
+					columns = false
+				elseif flag == "C" then
+					columns = true
 				else
 					return fail("ls", a, "unknown option")
 				end
@@ -984,6 +1008,10 @@ commands.ls = function(state, session, args, env)
 		end
 	end
 	if long then return true, out end
+	-- Columns when there is somebody to read them, one name a line when there is
+	-- not -- unless the line said which, in which case it said which.
+	if columns == nil then columns = shTty(sh) end
+	if not columns then return true, out end
 	return true, CeroSecOS.columnize(out, CeroSecOS.COLS)
 end
 

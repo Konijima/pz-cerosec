@@ -595,7 +595,7 @@ do
 	bad(state, admin, "ls /root/x", "ls: /root/x: permission denied")
 	bad(state, admin, "ls /nope", "ls: /nope: no such file")
 	bad(state, admin, "ls -z", "ls: -z: unknown option")
-	bad(state, admin, "ls a b", "ls: usage: ls [-laAF] [path]")
+	bad(state, admin, "ls a b", "ls: usage: ls [-1laACF] [path]")
 	bad(state, admin, "mkdir", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir a b", "mkdir: usage: mkdir <dir>")
 	bad(state, admin, "mkdir /etc/x", "mkdir: /etc/x: permission denied")
@@ -721,9 +721,15 @@ do
 	ok(state, admin, "echo fresh > notes.txt", {})
 	ok(state, admin, "cat notes.txt", { "fresh" })
 	ok(state, admin, "ls / > listing.txt", {})
-	-- What went into the file is what was on the screen: the packed row, not a
-	-- name per line. A redirect stores the OUTPUT and never a second rendering.
-	ok(state, admin, "cat listing.txt", { "bin   dev   etc   home  root  var" })
+	-- A file is not a screen, so what goes into it is one name per line: columns
+	-- are for somebody reading them, and a name a line is what the next command
+	-- can use (see section 46).
+	ok(state, admin, "cat listing.txt",
+		{ "bin", "dev", "etc", "home", "root", "var" })
+	-- Asked for outright, the columns go into the file exactly as they would have
+	-- gone onto the glass.
+	ok(state, admin, "ls -C / > packed.txt", {})
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  root  var" })
 	ok(state, admin, "echo x>tight.txt", {})            -- no spaces around >
 	ok(state, admin, "cat tight.txt", { "x" })
 	ok(state, admin, "> empty.txt", {})                 -- bare redirect creates the file
@@ -3118,7 +3124,7 @@ do
 	-- refusal names the argument as typed.
 	badAt(state, admin, "ls -lz", "ls: -lz: unknown option")
 	badAt(state, admin, "ls -zl", "ls: -zl: unknown option")
-	badAt(state, admin, "ls -l a b", "ls: usage: ls [-laAF] [path]")
+	badAt(state, admin, "ls -l a b", "ls: usage: ls [-1laACF] [path]")
 end
 
 -- 20g. df, against a state whose numbers are known.
@@ -3346,7 +3352,7 @@ end
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-laAF] [path]" })
+	okAt(state, admin, "man ls", { "ls - list a directory", "usage: ls [-1laACF] [path]" })
 	okAt(state, admin, "man date", { "date - print the date and time", "usage: date [+FORMAT]" })
 	badAt(state, admin, "man", "man: usage: man <command>")
 	badAt(state, admin, "man ls date", "man: usage: man <command>")
@@ -3355,7 +3361,7 @@ do
 	-- The description is the FILE's: rewrite /bin/ls and man says what it says.
 	local rootSession = open(state, "root")
 	okAt(state, rootSession, 'write /bin/ls "shows you things"', {})
-	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-laAF] [path]" })
+	okAt(state, admin, "man ls", { "ls - shows you things", "usage: ls [-1laACF] [path]" })
 	-- And a command that is gone has no manual.
 	okAt(state, rootSession, "rm /bin/ls", {})
 	badAt(state, admin, "man ls", "man: ls: no manual entry")
@@ -9082,6 +9088,81 @@ do
 	check("and it is back", tmp ~= nil)
 	eq("at the mode it ships at", tmp.mode, CeroSecOS.TMP_MODE)
 	eq("and the number has moved", state.sysv, CeroSecOS.SYSTEM_VERSION)
+end
+
+--
+-- 46. ls, and who is reading it (rung 6b)
+--
+-- Columns are for a person. Anywhere else -- a pipe, a $( ), a file -- it is one
+-- name per line, which is what makes a listing something the next command can
+-- use.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- At the glass: packed, as it has always been.
+	ok(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
+
+	-- Down a pipe: a name a line. The stage on the left is not writing to a
+	-- screen, and the one on the right is.
+	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "root", "var" })
+	ok(state, admin, "ls / | grep e", { "dev", "etc", "home" })
+	ok(state, admin, "ls / | wc -l", { "     6" })
+	-- Which is the whole point: a loop over a listing gets the names and not the
+	-- rows they were packed into.
+	ok(state, admin, "for f in $(ls /); do echo [$f]; done",
+		{ "[bin]", "[dev]", "[etc]", "[home]", "[root]", "[var]" })
+	-- A capture of it is the names, separated the way a capture separates lines.
+	ok(state, admin, "x=$(ls /)", {})
+	ok(state, admin, "echo $x", { "bin dev etc home root var" })
+
+	-- Into a file: a name a line as well, because a file is not a screen either.
+	ok(state, admin, "ls / > listed.txt", {})
+	ok(state, admin, "cat listed.txt", { "bin", "dev", "etc", "home", "root", "var" })
+
+	-- And either can be asked for outright, whoever is reading.
+	ok(state, admin, "ls -1 /", { "bin", "dev", "etc", "home", "root", "var" })
+	ok(state, admin, "ls -C / | cat", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "ls -C / > packed.txt", {})
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  root  var" })
+	-- The later of the two wins, exactly as -a and -A do.
+	ok(state, admin, "ls -1C /", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "ls -C1 /", { "bin", "dev", "etc", "home", "root", "var" })
+	-- -l was always a line each and neither flag has anything to say about it.
+	local long = okAt(state, admin, "ls -l1 /")
+	eq("a long listing is a line each whatever else is asked", #long, 6)
+	badAt(state, admin, "ls -q /", "ls: -q: unknown option")
+
+	-- The last stage of a pipeline IS writing to the glass, so it packs: `cat`
+	-- hands the lines over and the ls at the end of it is the one in front of a
+	-- person.
+	ok(state, admin, "cat listed.txt | sort | uniq",
+		{ "bin", "dev", "etc", "home", "root", "var" })
+end
+
+-- The other three doors to the same question, asked of the engine rather than
+-- through a line: a stage that is not last, a capture, and cron's mail.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- A cron job's output goes to a mailbox and not to a screen, so its `ls` is a
+	-- name a line -- the same answer the pipe gets, for the same reason.
+	local job = CeroSecOS.newJob({
+		prog = CeroSecOS.parseScript("ls /"), session = admin, name = "cron",
+	})
+	job.mailTo = "admin"
+	local out = {}
+	local turns = 0
+	while not CeroSecOS.jobIsOver(job) and turns < 50 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, job, { now = FIXED }, 100)
+		for i = 1, #job.out do out[#out + 1] = job.out[i] end
+		job.out = {}
+	end
+	eq("cron's ls is a name a line", #out, 6)
+	eq("the first of them", out[1], "bin")
 end
 
 print("os_test: " .. count .. " assertions passed")
