@@ -16,17 +16,17 @@ require "CeroSec/CeroSecManualBook"
 -- no reading skill, no animation and no game time spent. The window is a piece
 -- of paper on the screen and the survivor goes on doing whatever he was doing.
 --
--- The TEXT is not here and is not this file's business: it is the global
--- CeroSecManual, written in shared/CeroSec/, and the shape of it is the
--- contract CeroSecManualBook documents. A missing or half-written manual opens
--- as an empty book rather than as an error.
+-- The TEXT is not here and is not this file's business: it is CeroSecManual.volumes,
+-- written in shared/CeroSec/, and the shape of it is the contract
+-- CeroSecManualBook documents. A missing or half-written manual opens as an
+-- empty book rather than as an error.
 --
 -- There are THREE of them -- the User's Guide, the System Administrator's
 -- Guide and the Programmer's Guide -- and a reader is opened on ONE, named by
 -- its id. The window lays that volume out and nothing else: its cover, its
--- contents, its chapters. A set whose volume files are not all there yet falls
--- back to the single book CeroSecManual was before the set, so an edition
--- half-written is still an edition that opens.
+-- contents, its chapters. There is no fourth book behind them any more: the
+-- single volume this mod shipped before the set was retired once all three
+-- existed, and a shelf with nothing on it is a volume file that failed to load.
 --
 -- The one thing the reader does to that text before laying it out is take the
 -- writer's hard wrapping back out of it -- see reflow(), below.
@@ -165,17 +165,21 @@ end
 -- moment before the layout reads it. A half-written table that never gets a
 -- stamp is still an empty book and never an error.
 --
--- With no shelf at all -- the volume files are not written yet -- this is the
--- single book CeroSecManual was before the set, filed under its own id. That
--- fallback is the reason nothing here treats an absent volume as a fault.
+-- There is no book behind an id nothing answers to and there is no fallback
+-- left: the set is three shipped files, each of which puts itself on the shelf
+-- at load time, so an empty shelf is not a state the game has -- it is a file
+-- that failed to load. That is a bug and it is said where an operator can read
+-- it; the window still opens, as an empty book, because a reader is the wrong
+-- place to take a client down from.
 function CeroSecManualUI.text(volumeId)
 	local volume = CeroSecManualBook.volume(volumeId)
 	if volume then return volume, volume.id end
 
-	if CeroSecManual and CeroSecManual.stampVersion then
-		CeroSecManual.stampVersion()
+	if CeroSec ~= nil and CeroSec.log ~= nil then
+		CeroSec.log("manual: nothing on the shelf answers to " .. tostring(volumeId) ..
+			" -- a CeroSecManual volume file did not load")
 	end
-	return CeroSecManual, CeroSecManualBook.LEGACY_ID
+	return nil, volumeId or CeroSecManualBook.NO_VOLUME
 end
 
 --
@@ -249,8 +253,7 @@ function CeroSecManualUI.reflowed(manual)
 end
 
 -- Open a volume. `volumeId` is one of the ids on the shelf, or nil for "the
--- manual" with nothing said about which -- which is the first volume, or the
--- legacy single book if there is no shelf.
+-- manual" with nothing said about which, which is the first volume.
 --
 -- The player stays the first argument and not the volume: the window belongs
 -- to him, it is his instance that a second opening closes, and he is what
@@ -307,10 +310,9 @@ end
 -- is made and again whenever the measured layout has moved under it.
 function CeroSecManualUI:layout()
 	local text, bookId = CeroSecManualUI.text(self.volumeId)
-	-- What the reader really ended up with, which is not always what was asked
-	-- for: an id nothing on the shelf answers to is the legacy book. The
-	-- bookmark of a book with no copy is filed under this and not under the
-	-- asking id, so a fallback and the book it fell back to share one place.
+	-- What the reader really ended up with. The bookmark of a book with no copy
+	-- is filed under this, and it is never nil: a bookmark table cannot be keyed
+	-- by nothing, and a reader opened on "the manual" is reading volume one.
 	self.bookId = bookId
 	self.book = CeroSecManualBook.open(CeroSecManualUI.reflowed(text), {
 		width = LEAF_W - PAD_X * 2,

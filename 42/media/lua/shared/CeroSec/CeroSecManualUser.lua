@@ -18,12 +18,10 @@
 -- version, and nothing in this file may touch CeroSecOS at load time -- the
 -- game loads shared/cerosec/ ahead of shared/cerosec/os/.
 
--- Both lines are written defensively so this file does not care whether the
--- legacy book has loaded yet. Note the one thing that WOULD break it: the legacy
--- CeroSecManual.lua assigns a fresh table to CeroSecManual rather than adding to
--- one, so a load order that put it after this file would wipe `volumes`. The game
--- sorts shared/cerosec/cerosecmanual.lua ahead of cerosecmanualuser.lua, so it
--- does not today; a file named between the two is the thing to watch for.
+-- Both lines are written defensively so this file does not care which of the
+-- three volume files the game loads first: none of them may assume it is the one
+-- that creates the table. (CeroSecManual.lua, which used to be a book of its own,
+-- is now the same two lines and nothing else.)
 CeroSecManual = CeroSecManual or {}
 CeroSecManual.volumes = CeroSecManual.volumes or {}
 
@@ -1306,6 +1304,7 @@ Making, copying, destroying.
   rm [-r] <path>...
   echo [text...]
   edit <file>
+  write <file> <text>
 
 Reading a file without opening it.
 

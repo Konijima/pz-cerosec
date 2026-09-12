@@ -27,11 +27,10 @@
 -- version, and nothing in this file may touch CeroSecOS at load time -- the
 -- game loads shared/cerosec/ ahead of shared/cerosec/os/.
 
--- Both lines are written defensively so this file does not care whether the
--- legacy book or Volume 1 has loaded yet. The one load order that WOULD break
--- it is the legacy CeroSecManual.lua landing after this file, since it assigns a
--- fresh table rather than adding to one; the game sorts cerosecmanual.lua ahead
--- of cerosecmanualadmin.lua, so it does not today.
+-- Both lines are written defensively so this file does not care which of the
+-- three volume files the game loads first: none of them may assume it is the one
+-- that creates the table. (CeroSecManual.lua, which used to be a book of its own,
+-- is now the same two lines and nothing else.)
 CeroSecManual = CeroSecManual or {}
 CeroSecManual.volumes = CeroSecManual.volumes or {}
 
@@ -1683,11 +1682,10 @@ pipeline:
   sudo: not a terminal
   edit: not a terminal
 
-A password question is only ever put up for the job holding the prompt.
-From cron it would wait for an answer that could never come.
+A password question is only ever put up for the job holding the prompt;
+from cron it would wait for an answer that could never come.
 
-And the machine's own lines about work, which no command signs because
-they are not a command's to say:
+And the machine's own lines about work, which no command signs:
 
   killed: cpu limit
       five minutes of spinning with nothing to wait for
@@ -1695,6 +1693,8 @@ they are not a command's to say:
   kill: <id>: no such job
   fg: no current job
   fg: %<n>: no such job
+  cerosec: nothing to answer
+      an answer, and no question waiting
 
 Classic mistake. Reading the first word and the last word of a refusal and
 skipping the middle one. The middle piece is the only part that tells you

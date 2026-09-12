@@ -1751,10 +1751,14 @@ there — shows its `name` on the cover rather than the word "Manual".
 
 `CeroSecManualBook.shelf()` is the volumes as they stand and
 `CeroSecManualBook.volume(id)` is one of them, stamped; a nil id is the first
-volume. **Until all three files exist** the shelf is empty and everything falls back
-to the single book `CeroSecManual` was before the set — its own `title`,
-`edition` and `chapters`, stamped by `CeroSecManual.stampVersion()` — so a set
-half-written is still a set that opens.
+volume. There is **nothing behind the shelf**: `CeroSecManual.lua` was itself a book
+once — one volume, written for somebody who had used a bigger Unix before — and it
+was retired when the third volume was written, because two books describing one
+machine is one book too many. What is left of that file is the two lines above. So
+an empty shelf is not a state this mod has: it is a volume file that failed to load,
+and it is said in the log (`CeroSecManualUI.text`, `CeroSecContextMenu.addDevManual`)
+rather than papered over. The reader still opens, as an empty book, because a reader
+is the wrong place to take a client down from.
 
 ASCII only. `\n` is a paragraph break. **An authored page is a page**: the writer
 decides where a page ends and the layout honours it, so pages want to be about 900
@@ -1803,9 +1807,9 @@ A window is opened on one volume — `CeroSecManualUI.open(playerObj, volumeId, 
 — and lays that volume out and nothing else: its cover, its contents, its chapters.
 The player stays the first argument because the window belongs to him: it is his
 instance a second opening closes, and it is his death that shuts it. `window.bookId`
-is what the reader really ended up with, which is not always what was asked for: an
-id nothing on the shelf answers to falls back to the legacy book and is filed under
-that.
+is what the reader really ended up with, and it is what a bookmark with no copy
+behind it is filed under — never nil, because a bookmark table cannot be keyed by
+nothing.
 
 **The menu** is `client/CeroSec/CeroSecManualMenu.lua`, on
 `Events.OnFillInventoryObjectContextMenu` — the event vanilla put there for exactly
@@ -1831,8 +1835,9 @@ its power, not its height, not whether anybody can stand in front of it — beca
 is not really about the computer at all. A book opened that way has no item to write
 a bookmark on, so it keeps its own on the module, keyed by volume
 (`CeroSecManualUI.devPages`): session-lived, never saved, and never the same
-bookmark as a copy's. With no shelf standing up the submenu holds the one entry that
-opens the legacy book. Off, nothing at all is added.
+bookmark as a copy's. With no shelf standing up there is nothing to put a door onto and
+the submenu is empty, with a line in the log saying which volume file did not load.
+Off, nothing at all is added.
 
 **The items** are `common/media/scripts/items_cerosec.txt`: `CeroSec.ManualUser`,
 `CeroSec.ManualAdmin` and `CeroSec.ManualProgrammer`, and `CeroSec.Manual`, the
@@ -2085,6 +2090,15 @@ machine with no operating system and the BIOS repairs.
 - `window_test.lua` also holds the network bench: three real machines on one real
   system, two in a building and one down the road, one of them with its square
   and its `IsoObject` taken away after it was switched on.
+- `manual_test.lua` — the documentation set against the engine it describes: the
+  shape of every volume (8..12 chapters, 3..8 pages each, 50..70 pages, plain ASCII,
+  nothing over a thousand characters, example lines inside sixty columns), every
+  `COMMAND_INFO` usage line and every error string the machine can print carried
+  somewhere in the **union** of the three, each volume's own rules (a card that is
+  nothing but exact usage lines, every typed word a word the machine knows, every
+  ceiling quoted as a phrase built from the engine's own constant), and eight facts
+  pinned against the code so a change to the CODE is what breaks a page. There is no
+  fourth book behind the set, and a shelf that is not three volumes fails here.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a
@@ -2092,7 +2106,7 @@ machine with no operating system and the BIOS repairs.
   memory and the cpu ceiling firing where it should. It prints the numbers.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, opening each of three volumes
-  off a fake shelf and falling back to the legacy book when there is none, a bookmark
+  off a fake shelf and opening blank paper for an id nothing answers to, a bookmark
   per copy and per volume, the dev submenu, the keys all four item blocks set and the
   icons they name, and the twelve loot lists times three volumes with the sandbox
   multiplier.

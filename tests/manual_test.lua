@@ -1,22 +1,29 @@
 -- Checks the manual against the engine it describes. Run from the repo root:
 --   lua5.1 tests/manual_test.lua
 --
--- There are two books on the shelf now, and this file checks both.
+-- There is ONE book on the shelf: the 1993 documentation SET, three volumes,
+-- one file each -- CeroSecManualUser.lua (Volume 1, the User's Guide),
+-- CeroSecManualAdmin.lua (Volume 2, the System Administrator's Guide) and
+-- CeroSecManualProgrammer.lua (Volume 3, the Programmer's Guide). Each puts
+-- itself into CeroSecManual.volumes at load time; CeroSecManual.lua is the table
+-- they hang on and holds no text at all any more.
 --
--- CeroSecManual.lua is the LEGACY book: one volume, correct, written for
--- somebody who has used a bigger Unix before. It stays until the three volumes
--- that replace it all exist, and it keeps its own bounds here.
+-- A volume has its own shape rules (8..12 chapters, 3..8 pages each, 50..70
+-- pages, plain ASCII, nothing over a thousand characters, example lines inside
+-- sixty columns) and its cover is stamped by the reader and never typed in the
+-- file.
 --
--- CeroSecManual.volumes[n] is a VOLUME of the 1993 documentation set -- Volume 1
--- the User's Guide (CeroSecManualUser.lua), and whatever else has been written
--- since. A volume has its own shape rules (8..12 chapters, 3..8 pages each,
--- 50..70 pages) and its cover is stamped by the reader, not typed in the file.
+-- The COVERAGE rule is about the UNION of the three: the union of their
+-- reference chapters must carry every COMMAND_INFO usage line, character for
+-- character, and the union of their error appendices must carry every error
+-- string the engine can print. WHICH volume carries a thing is the volume's own
+-- business -- an administrator's refusal belongs in Volume 2 and a programmer's
+-- in Volume 3 -- and what may never happen is a command or a refusal that no
+-- volume carries at all.
 --
--- The COVERAGE rule spans both: the UNION of the legacy book's reference
--- chapters and every volume's must carry every COMMAND_INFO usage line, and the
--- union of the error appendices must carry every error string the engine can
--- print. So today the legacy book still carries the admin and programmer parts,
--- and the day Volumes 2 and 3 cover them it may go.
+-- The single book this mod shipped before the set (CeroSecManual.lua's own
+-- chapters) was retired once all three volumes existed. Nothing falls back to
+-- it, and an empty shelf is a volume file that failed to load.
 
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
@@ -105,138 +112,52 @@ local function check(what, cond)
 end
 
 check("CeroSecManual is a table", type(CeroSecManual) == "table")
-
--- The cover is stamped, not written: the version on it is the engine's own and
--- there is no second copy of the number anywhere in the book.
-check("the cover is stamped, not typed", type(CeroSecManual.stampVersion) == "function")
-CeroSecManual.stampVersion()
-
-check("has a title", type(CeroSecManual.title) == "string" and CeroSecManual.title ~= "")
-check("has an edition", type(CeroSecManual.edition) == "string" and CeroSecManual.edition ~= "")
-check("has chapters", type(CeroSecManual.chapters) == "table")
-
 check("the version is one string in one place", type(CeroSecOS.VERSION) == "string"
 	and CeroSecOS.VERSION ~= "")
-check("the title names the OS version the engine reports",
-	CeroSecManual.title == "CeroSec OS " .. CeroSecOS.VERSION .. " User's Manual")
-
-local chapters = CeroSecManual.chapters
 
 --
--- Whole-book shape: chapter count, page counts, unique titles, no empty
--- page, everything ASCII, nothing over the page cap, example lines fit.
+-- The shelf, and the whole of what is on it.
 --
--- Raised to 15 by rung 5a, which added the Scripts chapter and pushed the two
--- appendices to 14 and 15. The bounds below moved with it: 15 chapters, 8
--- pages in any one of them, 90 pages in the book, 1000 characters on a page.
+-- There is no legacy book any more. CeroSecManual.lua held one volume for
+-- somebody who had used a bigger Unix before, and it carried the machine on its
+-- own until all three volumes of the 1993 set existed; now it holds the table
+-- they hang themselves on and nothing else. So an empty shelf is not a state
+-- this mod has -- it is a volume file that failed to load -- and it fails here.
 --
--- Raised again to 16 by rung 5a.1, which made the prompt the script language
--- and so owed the book a chapter on the shell you type at -- the history file,
--- ~/.profile and the ceilings the prompt now shares with a script -- pushing
--- the appendices to 15 and 16. The page ceiling went to 100 with it: the wave
--- also added pages to four existing chapters (hidden files, chmod in letters,
--- what lives in /bin, and the shutdown timer).
--- Raised to 17 by rung 5b, which owes the book a chapter on pipes and cron and
--- pushes the two appendices to 16 and 17.
--- Raised to 18 by rung 6a, which owes the book a chapter on the network -- the
--- address, /etc/hosts, rlogin, the trust files, who and last -- and pushes the
--- two appendices to 17 and 18.
-check("chapter count is 10..18", #chapters >= 10 and #chapters <= 18)
+check("the shelf holds the three volumes of the set (" .. #volumes .. ")",
+	#volumes == 3)
+check("and nothing is left of the single book: no chapters",
+	CeroSecManual.chapters == nil)
+check("no cover", CeroSecManual.title == nil)
+check("and nothing to stamp one with", CeroSecManual.stampVersion == nil)
 
-local totalPages = 0
-local seenTitles = {}
--- The whole text, concatenated, so the command/error sweeps below can just
--- look for a substring rather than walk chapters and pages themselves.
+-- Every page of every volume, concatenated: what the sweeps below look for a
+-- substring in. The union and not any one book, which is the rule this file has
+-- been written to since the second volume arrived -- what matters is that the
+-- SET says a thing, not which of the three says it.
 local wholeBook = {}
-
-for ci = 1, #chapters do
-	local ch = chapters[ci]
-	check("chapter " .. ci .. " has a title", type(ch.title) == "string" and ch.title ~= "")
-	check("chapter " .. ci .. " title is unique",
-		seenTitles[ch.title] == nil)
-	seenTitles[ch.title] = true
-
-	check("chapter " .. ci .. " has pages", type(ch.pages) == "table")
-	local n = #ch.pages
-	-- Raised from 8 to 11 by rung 5b: the error appendix owes the player the
-	-- pipeline's refusals, cron's and fg's, and a chapter that is a LIST is the
-	-- one kind that grows by the page rather than by the paragraph.
-	-- Raised from 11 to 13 by rung 6a, for the same reason again: the network's
-	-- own refusals are two more pages of that list.
-	-- And from 13 to 14 by rung 6b: links, PATH and the two places that are not
-	-- like the rest of the disk owe that list one page more.
-	check("chapter " .. ci .. " (" .. ch.title .. ") has 2..14 pages",
-		n >= 2 and n <= 14)
-	totalPages = totalPages + n
-
-	for pi = 1, n do
-		local page = ch.pages[pi]
-		local where = ch.title .. " page " .. pi
-		check(where .. " is a string", type(page) == "string")
-		check(where .. " is not empty", page ~= "" and string.find(page, "%S") ~= nil)
-		check(where .. " is at most 1000 characters (" .. #page .. ")", #page <= 1000)
-
-		-- ASCII only: every byte in 0x09..0x7E (tab, and printable range;
-		-- \n is 0x0A, allowed as the paragraph break the spec calls for).
-		for i = 1, #page do
-			local b = string.byte(page, i)
-			check(where .. " byte " .. i .. " is ASCII (" .. b .. ")",
-				b == 9 or b == 10 or (b >= 32 and b <= 126))
-		end
-
-		-- Example lines: anything starting with two literal spaces is kept
-		-- monospaced by the reader, so it must fit the 60-column screen.
-		for line in (page .. "\n"):gmatch("([^\n]*)\n") do
-			if string.sub(line, 1, 2) == "  " then
-				check(where .. ' example line fits 60 columns: "' .. line .. '" (' .. #line .. ")",
-					#line <= 60)
-			end
-		end
-
-		-- No page names an OS version of its own. The cover is the only place
-		-- the number appears at all, and it is stamped from CeroSecOS.VERSION;
-		-- a "CeroSec OS 3.2" left in the prose is a second number the player
-		-- reads on the same machine. The letter test in front of "OS" is what
-		-- lets "CeroSec BIOS 1.0" through: the firmware has its own version.
-		for pos in string.gmatch(page, "()OS %d+%.%d+") do
-			local before = pos > 1 and string.sub(page, pos - 1, pos - 1) or ""
-			check(where .. " names no OS version of its own: " ..
-				string.sub(page, pos - 8 < 1 and 1 or pos - 8, pos + 8),
-				string.find(before, "%a") ~= nil)
-		end
-
-		wholeBook[#wholeBook + 1] = page
+for vi = 1, #volumes do
+	local vchapters = volumes[vi].chapters
+	for ci = 1, #vchapters do
+		local pages = vchapters[ci].pages
+		for pi = 1, #pages do wholeBook[#wholeBook + 1] = pages[pi] end
 	end
 end
 wholeBook = table.concat(wholeBook, "\n")
 
 -- The BIOS line the book prints is the BIOS line the machine prints.
-check("the book quotes the real BIOS line",
+check("the set quotes the real BIOS line",
 	string.find(wholeBook, CeroSec.BOOT_LINES[1], 1, true) ~= nil)
 check("and the firmware version is one string in one place",
 	type(CeroSec.BIOS_VERSION) == "string" and CeroSec.BIOS_VERSION ~= "")
 
--- The upper bound is a ceiling on the BOOK, not on any one chapter -- a
--- chapter is 2..8 pages and there are at most 16 of them, so 128 is the most
--- the shape above can hold at all. Raised from 80 to 90 when the Scripts
--- chapter arrived and from 90 to 100 by rung 5a.1: the number is there to
--- catch a book that has quietly doubled, and it must leave room for a rung's
--- worth of honest growth or it is only a chore to move.
--- Raised from 100 to 118 by rung 5b, which added a chapter (pipes and cron)
--- and pages to the two appendices.
--- Raised from 118 to 132 by rung 6a: ten pages of network and a page each on the
--- two appendices.
--- Raised from 132 to 140 by rung 6b: two pages on links and the two new places in
--- the filesystem, two on PATH and what ls does off the glass, one on the refusals
--- all of that added, and room left for the next wave to be honest in.
-check("total pages is 45..140 (" .. totalPages .. ")", totalPages >= 45 and totalPages <= 140)
-
 --
--- The chapters that are LISTS, gathered across the legacy book and every
--- volume: a reference chapter (the usage lines) and an error appendix (the
--- strings the machine prints). The coverage rules below are about the UNION of
--- them, not about any one book -- that is what lets a volume take a slice of the
--- old book's job without the checks going soft in between.
+-- The chapters that are LISTS, gathered across the three volumes: a reference
+-- chapter (the usage lines) and an error appendix (the strings the machine
+-- prints). The coverage rules below are about the UNION of them and not about
+-- any one volume -- an administrator's refusal belongs in Volume 2 and a
+-- programmer's in Volume 3, and what must never happen is a command or a
+-- refusal that NO volume carries.
 --
 local function chapterTextMatching(chapterList, ...)
 	local wanted = { ... }
@@ -255,18 +176,18 @@ local function chapterTextMatching(chapterList, ...)
 	return table.concat(out, "\n")
 end
 
-local REF_TITLES = { "commands and limits", "Quick reference" }
+-- Volume 3's reference chapter is its GRAMMAR appendix: there was no room on
+-- its shelf for a card of its own (twelve chapters, seventy pages, both at the
+-- ceiling) and the shapes of the words it leans on -- sh, test, wait, printf --
+-- are written there, beside the grammar they belong to.
+local REF_TITLES = { "commands and limits", "Quick reference", "the grammar" }
 local ERR_TITLES = { "what the machine says" }
 
-local refText = chapterTextMatching(chapters, unpack(REF_TITLES))
-check("the legacy book still has a quick-reference chapter", refText ~= nil)
-
-local errTextLegacy = chapterTextMatching(chapters, unpack(ERR_TITLES))
-check("the legacy book still has an error appendix", errTextLegacy ~= nil)
-
--- The union, one string each.
-local refUnion = { refText }
-local errUnion = { errTextLegacy }
+-- The union, one string each. Every volume carries one of each, and the checks
+-- below are what says so: a volume that lost its card or its appendix takes a
+-- command or a refusal off the union with it.
+local refUnion = {}
+local errUnion = {}
 for vi = 1, #volumes do
 	local vol = volumes[vi]
 	local r = chapterTextMatching(vol.chapters, unpack(REF_TITLES))
@@ -431,18 +352,24 @@ end
 -- future change to a limit fails this test instead of only going stale in
 -- the reader's hands.
 --
-check("book states the disk size", string.find(wholeBook, "32K", 1, true) ~= nil)
-check("book states the node ceiling (" .. CeroSecOS.MAX_NODES .. ")",
+check("the set states the disk size", string.find(wholeBook, "32K", 1, true) ~= nil)
+check("the set states the node ceiling (" .. CeroSecOS.MAX_NODES .. ")",
 	string.find(wholeBook, tostring(CeroSecOS.MAX_NODES), 1, true) ~= nil)
-check("book states the file size ceiling (" .. CeroSecOS.MAX_FILE_BYTES .. ")",
+check("the set states the file size ceiling (" .. CeroSecOS.MAX_FILE_BYTES .. ")",
 	string.find(wholeBook, tostring(CeroSecOS.MAX_FILE_BYTES), 1, true) ~= nil)
-check("book states the su stack ceiling (" .. CeroSecOS.SU_MAX .. ")",
+check("the set states the su stack ceiling (" .. CeroSecOS.SU_MAX .. ")",
 	string.find(wholeBook, "four", 1, true) ~= nil or
 	string.find(wholeBook, tostring(CeroSecOS.SU_MAX), 1, true) ~= nil)
 
 --
 -- Eight fact-checked defects, each pinned against the engine so a future
 -- change to the code, not just to the book, is what breaks these.
+--
+-- They were written against the single book that used to be on the shelf, whose
+-- wording they quoted. That book is gone and the three volumes say the same
+-- things in their own words, so what is quoted here is THEIR wording -- the
+-- engine half of every one of them is untouched, because the engine half is the
+-- part that is worth having.
 --
 
 -- 1. ~ and ~/... expand to the reader's own home everywhere they are typed;
@@ -456,9 +383,10 @@ do
 		CeroSecOS.expandHome("~/x", home) == home .. "/x")
 	check("expandHome('~root', home) is untouched",
 		CeroSecOS.expandHome("~root", home) == "~root")
-	check("book shows a tilde expanding (cat ~/)",
-		string.find(wholeBook, "cat ~/", 1, true) ~= nil)
-	check("book no longer claims a typed tilde is never expanded",
+	check("the set shows a tilde expanding",
+		string.find(wholeBook, "cd ~ goes home", 1, true) ~= nil
+		and string.find(wholeBook, "~/notes is your own", 1, true) ~= nil)
+	check("and never claims a typed tilde is not expanded",
 		string.find(wholeBook, "does not go home", 1, true) == nil and
 		string.find(wholeBook, "never expanded", 1, true) == nil)
 end
@@ -468,9 +396,9 @@ end
 do
 	check("formatStamp(0) is \"Jan  1 00:00\"",
 		CeroSecOS.formatStamp(0) == "Jan  1 00:00")
-	check("book carries the no-stamp stamp \"Jan  1 00:00\"",
+	check("the set carries the no-stamp stamp \"Jan  1 00:00\"",
 		string.find(wholeBook, "Jan  1 00:00", 1, true) ~= nil)
-	check("book no longer claims an old file prints its year",
+	check("and never claims an old file prints its year",
 		string.find(wholeBook, "prints its\nyear", 1, true) == nil and
 		string.find(wholeBook, "prints its year", 1, true) == nil)
 end
@@ -510,16 +438,17 @@ do
 	old.group = nil
 	check("a node with no group reads as its owner", CeroSecOS.groupOf(old) == "admin")
 
-	check("book explains the middle digit is the group's",
-		string.find(wholeBook, "one for the group, one for everybody else", 1, true) ~= nil)
-	check("book says all three digits are read",
+	check("the set explains the middle digit is the group's",
+		string.find(wholeBook, "The next three are the group's", 1, true) ~= nil
+		and string.find(wholeBook, "The last three are everybody else's", 1, true) ~= nil)
+	check("and says all three digits are read",
 		string.find(wholeBook, "All three digits are read", 1, true) ~= nil)
-	check("book no longer claims the middle digit decides nothing",
-		string.find(wholeBook, "decides nothing", 1, true) == nil and
+	check("and never claims the middle digit decides nothing",
+		string.find(wholeBook, "middle digit decides nothing", 1, true) == nil and
 		string.find(wholeBook, "kept for a later release", 1, true) == nil)
-	check("book shows the group column of ls -l",
-		string.find(wholeBook, "-rw-r-----  admin  users     412", 1, true) ~= nil)
-	check("book quotes /etc/group's format",
+	check("the set shows the group column of ls -l",
+		string.find(wholeBook, "-rw-r-----  admin  users      11", 1, true) ~= nil)
+	check("and quotes /etc/group's format",
 		string.find(wholeBook, "sudo:admin", 1, true) ~= nil)
 end
 
@@ -537,8 +466,9 @@ do
 		state.fs.children.bin.children.ls.mode == 755)
 	check("restoreSystem does not touch a player's own file under /home",
 		state.fs.children.home.children.admin.children["mine.txt"] ~= nil)
-	check("book says the repair always rewrites the standard commands",
-		string.find(wholeBook, "always rewrites every standard command", 1, true) ~= nil)
+	check("the set says the repair always rewrites the standard commands",
+		string.find(wholeBook, "it rewrites every standard command, every time",
+			1, true) ~= nil)
 end
 
 -- 5. clear, exit (logout) and power loss/shutdown all wipe the console;
@@ -548,10 +478,13 @@ do
 	CeroSec.consoleLogout(console)
 	check("consoleLogout empties the console's lines",
 		#console.lines == 0)
-	local n = 0
-	for _ in wholeBook:gmatch("clear, exit and power leaving the machine") do n = n + 1 end
-	check("both chapters name the same three things that wipe the glass (" .. n .. ")",
-		n >= 2)
+	-- One place now, and one is enough: the legacy book said it in two chapters and
+	-- this was the check that they agreed. Volume 1 is the book the glass belongs
+	-- to and it says it once, in the chapter about reading the screen.
+	check("the set names the three things that wipe the glass",
+		string.find(wholeBook,
+			"clear typed by hand, exit logging\nout, and power leaving the machine",
+			1, true) ~= nil)
 end
 
 -- 6. df's real header and two data lines, exactly as the engine prints
@@ -565,7 +498,7 @@ do
 	local ok, lines = CeroSecOS.runArgs(state, session, { "df" }, nil, { now = 0 })
 	check("df ran", ok == true)
 	for i = 1, #lines do
-		check("book's df transcript carries the real line \"" .. lines[i] .. "\"",
+		check("the set's df transcript carries the real line \"" .. lines[i] .. "\"",
 			string.find(wholeBook, lines[i], 1, true) ~= nil)
 	end
 end
@@ -590,8 +523,8 @@ end
 do
 	local state = CeroSecOS.newState("ksp-04-11")
 	check("/root ships at mode 700", state.fs.children.root.mode == 700)
-	check("book states /root ships at 700",
-		string.find(wholeBook, "/root, ships tighter, at 700", 1, true) ~= nil)
+	check("the set states /root ships at 700",
+		string.find(wholeBook, "/root is root's own at mode 700", 1, true) ~= nil)
 end
 
 --
@@ -1134,6 +1067,65 @@ do
 		check("Volume 2 says so", string.find(flat,
 			"The directory is root's at mode " .. CeroSecOS.CRON_DIR_MODE, 1, true) ~= nil)
 	end
+end
+
+--
+-- Volume 3, the Programmer's Guide, has rules of its own too -- fewer, because
+-- the two volumes above it carry the card and the ceilings, and one that is
+-- ONLY this volume's: it is the book with no quick-reference chapter, so the
+-- shapes of the words nobody else's card carries are written in its appendix and
+-- the union's coverage leans on them being there.
+--
+do
+	local vol = volumeById["programmer"]
+	check("Volume 3 is the Programmer's Guide",
+		vol ~= nil and vol.name == "Programmer's Guide")
+
+	-- 1. The words no other card carries, in their exact shape. Derived from the
+	-- other two cards rather than hand-listed: a command Volume 1 or 2 takes onto
+	-- its card stops being this volume's to spell, and one they drop becomes it.
+	local others = {}
+	for vi = 1, #volumes do
+		if volumes[vi].id ~= "programmer" then
+			local card = chapterTextMatching(volumes[vi].chapters, unpack(REF_TITLES))
+			if card ~= nil then others[#others + 1] = card end
+		end
+	end
+	others = table.concat(others, "\n")
+	local mine = chapterTextMatching(vol.chapters, unpack(REF_TITLES))
+	check("Volume 3 has the chapter its shapes are written in", mine ~= nil)
+	local carried = 0
+	for name, info in pairs(CeroSecOS.COMMAND_INFO) do
+		if string.find(others, info.usage, 1, true) == nil then
+			check("Volume 3 spells " .. name .. " exactly, since no other card does: \""
+				.. info.usage .. "\"", string.find(mine, info.usage, 1, true) ~= nil)
+			carried = carried + 1
+		end
+	end
+	check("and there really are some of those (" .. carried .. ")", carried >= 5)
+
+	-- 2. Every chapter carries its "Classic mistake" box, as Volumes 1 and 2 do.
+	for ci = 1, #vol.chapters do
+		local ch = vol.chapters[ci]
+		local has = false
+		for pi = 1, #ch.pages do
+			if string.find(ch.pages[pi], "Classic mistake", 1, true) ~= nil then has = true end
+		end
+		check("Volume 3: " .. ch.title .. " has a Classic mistake box", has)
+	end
+
+	-- 3. The two numbers a programmer runs into that are this volume's to state.
+	local flat = string.gsub(vol.wholeText, "%s+", " ")
+	check("Volume 3 states the job ceiling",
+		string.find(flat, "Four jobs is the ceiling", 1, true) ~= nil)
+	-- The two parser ceilings, as a PHRASE and not as a bare number: "8" on its
+	-- own is a substring of half the numbers on the machine, and this file has been
+	-- caught by that before.
+	local NUMBER = { [8] = "eight", [16] = "Sixteen" }
+	check("Volume 3 states how deep the loops nest and how long a pipeline may be",
+		string.find(flat, NUMBER[CeroSecOS.MAX_NEST] ..
+			" deep is as far as these nest, and " .. NUMBER[CeroSecOS.MAX_STAGES] ..
+			" is as long as a pipeline may be", 1, true) ~= nil)
 end
 
 print(count .. " manual checks passed")

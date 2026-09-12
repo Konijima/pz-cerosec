@@ -433,7 +433,11 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      une seule option et la bonne ; pas de "Read" ni "Write" ni "Look at
      pictures" de la vanille. Sélectionner les trois ensemble → trois options,
      dans l'ordre 1, 2, 3. Et `CeroSec.Manual`, le livre d'avant le coffret :
-     "Read the manual", qui ouvre le volume 1. [ ]
+     "Read the manual", qui ouvre le **volume 1** -- le volume qu'il est devenu.
+     L'ancien livre unique n'existe plus comme texte : vérifier que sa
+     couverture dit bien `CeroSec OS 1.0 User's Guide` et que sa table des
+     matières est celle du volume 1 (`1. Your first day`), et non celle de
+     l'ancien livre (`1. Your machine`). [ ]
 104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste
@@ -445,8 +449,8 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
 107. Page 2 de chaque volume ne liste QUE ses propres chapitres : aucun
      chapitre d'un des deux autres volumes n'y apparaît. [ ]
 108. Table des matières : chaque ligne reprend exactement le titre du chapitre
-     tel qu'il apparaît sur sa propre feuille (`1. Your machine`, jamais
-     `1.  1. Your machine`), numéro de page aligné à droite. Cliquer sur
+     tel qu'il apparaît sur sa propre feuille (`1. Your first day`, jamais
+     `1.  1. Your first day`), numéro de page aligné à droite. Cliquer sur
      chaque ligne → ouvre au premier feuillet du bon chapitre, et le numéro
      affiché sur la table correspond au numéro écrit au pied de la feuille. [ ]
 109. Flèche droite fait ce que fait `Next >`, flèche gauche ce que fait

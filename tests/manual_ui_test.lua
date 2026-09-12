@@ -9,10 +9,11 @@
 -- says.
 --
 -- The TEXT of the manual is not this bench's business and is not in the mod
--- under test: shared/CeroSec/CeroSecManual.lua is written separately. So the
--- bench brings a placeholder of its own, three chapters of known length, and
--- that placeholder lives HERE and is never shipped. A bench that read the real
--- text would go red every time somebody fixed a typo in it.
+-- under test: the three volume files under shared/CeroSec/ are written
+-- separately. So the bench brings a placeholder of its own -- a shelf of one
+-- volume, three chapters of known length -- and that placeholder lives HERE and
+-- is never shipped. A bench that read the real text would go red every time
+-- somebody fixed a typo in it.
 --
 
 --
@@ -215,10 +216,13 @@ end
 local EXAMPLE = "  ls -l /etc/passwd"
 local LONG = string.rep("Wm", 90)
 
-CeroSecManual = {
-	title = "CeroSec OS User's Manual",
-	edition = "First edition, 1993",
-	chapters = {
+-- A shelf of ONE volume, because that is what the reader reads: there is no book
+-- behind the shelf any more (the single volume this mod shipped first was retired
+-- when the third was written), so a bench book is a VOLUME with an id, and the
+-- cover is stamped from CeroSecOS.VERSION the way a real one is.
+CeroSecOS = CeroSecOS or { VERSION = "1.0" }
+
+local BENCH_CHAPTERS = {
 		{
 			title = "Getting Started",
 			pages = {
@@ -241,8 +245,31 @@ CeroSecManual = {
 			title = "Accounts",
 			pages = { "Root can make an account and root can take it away." },
 		},
-	},
 }
+
+-- One volume on one shelf, made fresh each time a block wants its own: the
+-- reader reads CeroSecManual.volumes and a block that swapped the table has to
+-- put a shelf back and not a book.
+local function benchShelf(chapters, id, name)
+	return { volumes = { {
+		id = id or "user",
+		title = nil,
+		name = name or "User's Guide",
+		edition = "First edition, 1993",
+		chapters = chapters or BENCH_CHAPTERS,
+	} } }
+end
+
+CeroSecManual = benchShelf()
+
+-- The one volume on it, stamped, which is what a layout is handed.
+local function benchVolume()
+	return CeroSecManualBook.volume(nil)
+end
+
+-- What the reader stamps on the cover of it, which is what the window's title
+-- bar wears.
+local BENCH_TITLE = "CeroSec OS " .. CeroSecOS.VERSION .. " User's Guide"
 
 --
 -- One book, one window, one item.
@@ -497,8 +524,7 @@ do
 	-- chapter of one page, so the running head (FONT_HEAD) and the page number
 	-- (FONT_FOOT) are the only other things on the sheet.
 	local function paintedIn(page, font)
-		CeroSecManual = { title = "T", edition = "",
-			chapters = { { title = "C", pages = { page } } } }
+		CeroSecManual = benchShelf({ { title = "C", pages = { page } } })
 		local window = newWindow(newItem())
 		window:goToPage(window.book.chapters[1].page)
 		window:frame()
@@ -564,9 +590,9 @@ end
 
 do
 	local opts = { width = 300, rows = 6, measure = bodyWidth }
-	local book = CeroSecManualBook.open(CeroSecManual, opts)
+	local book = CeroSecManualBook.open(benchVolume(), opts)
 
-	eq("the title came through", book.title, "CeroSec OS User's Manual")
+	eq("the title came through", book.title, BENCH_TITLE)
 	eq("and the edition", book.edition, "First edition, 1993")
 	eq("three chapters", #book.chapters, 3)
 
@@ -684,7 +710,7 @@ do
 	local window = newWindow(item)
 
 	eq("it opens at the front", window.page, 1)
-	eq("the window wears the book's title", window.titleText, CeroSecManual.title)
+	eq("the window wears the book's title", window.titleText, BENCH_TITLE)
 	check("it asked for key events", window.wantKeys == true)
 	eq("three buttons", #window.children, 3)
 
@@ -1031,18 +1057,19 @@ do
 
 	CeroSec.DEV_MANUAL_MENU = true
 
-	-- The door is a SUBMENU, and with no shelf standing up -- CeroSecManual is
-	-- the legacy single book here and has no volumes -- it holds the one entry
-	-- that opens that book.
+	-- The door is a SUBMENU, one entry per volume on the shelf. The bench's shelf
+	-- is one volume, so it is one entry -- and it is the VOLUME's id that is
+	-- carried, because there is nothing behind the shelf for a door onto "the
+	-- manual in general" to open.
 	local menu = fullMenuOn(computer)
 	eq("the door is the only submenu on the menu", #menu.subs, 1)
 	eq("and it hangs off the door's own entry",
 		menu.subs[1].option, menu.options[3])
 	local sub = menu.subs[1].menu
-	eq("with no shelf it holds one entry", #sub.options, 1)
+	eq("one volume, one entry", #sub.options, 1)
 	eq("which opens the reader", sub.options[1].callback,
 		CeroSecContextMenu.onDevManual)
-	eq("on no volume in particular", sub.options[1].arg, nil)
+	eq("on the volume it names", sub.options[1].arg, "user")
 	eq("with the player it belongs to", sub.options[1].target, player)
 
 	-- And the door's own entry does nothing itself: a parent that both opens a
@@ -1080,7 +1107,7 @@ do
 	dev:onNext()
 	local devPage = dev.page
 	eq("its bookmark went on the module, filed under the book it really opened",
-		CeroSecManualUI.devPages[CeroSecManualBook.LEGACY_ID], devPage)
+		CeroSecManualUI.devPages["user"], devPage)
 	eq("and the copy's own is untouched", item.data.page, ownedPage)
 	check("the two bookmarks are not the same", devPage ~= ownedPage)
 
@@ -1200,19 +1227,15 @@ do
 	local twice = CeroSecManualBook.volume("admin").title
 	eq("stamping twice stamps the same cover", twice, once)
 
-	-- An id nothing on the shelf answers to is not a book.
+	-- An id nothing on the shelf answers to is not a book, and there is nothing
+	-- behind the shelf to fall back on any more: the reader opens blank paper and
+	-- says so in the log, because a shelf that cannot answer an id is a volume
+	-- file that did not load and not a state the game has.
 	eq("an unknown id is nobody's volume", CeroSecManualBook.volume("editor"), nil)
-	-- And a reader asked for one falls back to the legacy book rather than
-	-- opening blank paper.
-	CeroSecManual.chapters = real.chapters
-	CeroSecManual.title = "CeroSec OS User's Manual"
 	local fallen = newVolumeWindow("editor", newItem())
-	eq("a reader asked for a volume that is not there reads the legacy book",
-		fallen.bookId, CeroSecManualBook.LEGACY_ID)
-	eq("which is the legacy book's own chapters", #fallen.book.chapters,
-		#real.chapters)
-	CeroSecManual.chapters = nil
-	CeroSecManual.title = nil
+	eq("a reader asked for a volume that is not there is filed under what it asked",
+		fallen.bookId, "editor")
+	eq("and holds no chapters at all", #fallen.book.chapters, 0)
 
 	-- Nothing said about the volume is volume one: "read the manual" with
 	-- nobody saying which.

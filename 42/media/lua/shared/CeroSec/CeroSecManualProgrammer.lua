@@ -1905,7 +1905,14 @@ And the ones about finding a program at all:
       PATH may name eight directories
   type: <name>: not found
   sh: usage: sh <file> [args]
-  sh: !<n>: event not found]],
+  sh: !<n>: event not found
+
+The shapes of the words this volume leans on, which no card in Volumes 1
+and 2 carries:
+
+  sh <file> [args]        test <expression>
+  [ <expression> ]        wait [id]...
+  printf <format> [arg...]    true    false]],
 
 [[The reasons off the disk, each wearing the command's name and the path
 first: cat: notes: no such file.

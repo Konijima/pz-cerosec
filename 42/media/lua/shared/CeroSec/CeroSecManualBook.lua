@@ -76,13 +76,14 @@ end
 -- shared/cerosec/os/cerosecos.lua. So the cover is stamped at the last moment
 -- before a layout reads it, by stamp() below.
 --
--- Until all three files exist the shelf is empty and the reader falls back to
--- the single book CeroSecManual is on its own.
+-- All three files exist, and there is nothing behind them: the single volume
+-- this mod shipped first was retired when the third was written. An empty shelf
+-- is therefore a file that did not load and not a state the game has.
 
--- The bookmark key a book with no volume behind it is filed under. The legacy
--- single book is not a volume and has no id of its own, and a dev bookmark
--- table needs something to key it by.
-CeroSecManualBook.LEGACY_ID = "manual"
+-- The bookmark key for a reader that ended up with no book at all. A bookmark
+-- table cannot be keyed by nothing, and the empty book an unloaded shelf opens
+-- as still has a place in it the reader was left at.
+CeroSecManualBook.NO_VOLUME = "none"
 
 -- Every volume on the shelf, in the order the files numbered them. Read
 -- through a function and never cached: a reload of one of the three files is a

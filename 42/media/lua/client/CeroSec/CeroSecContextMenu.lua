@@ -151,9 +151,10 @@ end
 --
 -- A SUBMENU, because the manual is three volumes and a door onto one of them
 -- is a door onto a third of the reader. One entry per volume on the shelf,
--- named the way the volume names itself; with no shelf at all -- the volume
--- files are not written yet -- one entry onto the legacy single book, which is
--- what the reader falls back to anyway.
+-- named the way the volume names itself. With no shelf at all there is nothing
+-- to put a door onto: the three volumes are shipped files and an empty shelf is
+-- one of them failing to load, which is said in the log and not answered with a
+-- menu entry onto nothing.
 --
 -- LAST on the menu, deliberately: it is not part of the machine and it must
 -- never sit between the two options that are. And it asks nothing of the
@@ -174,10 +175,8 @@ function CeroSecContextMenu.addDevManual(context, playerObj)
 	context:addSubMenu(option, sub)
 
 	local shelf = CeroSecManualBook.shelf()
-	if #shelf == 0 then
-		sub:addOption(getText("ContextMenu_CeroSec_DevManual"), playerObj,
-			CeroSecContextMenu.onDevManual, nil)
-		return
+	if #shelf == 0 and CeroSec.log ~= nil then
+		CeroSec.log("manual: the shelf is empty -- no volume file loaded")
 	end
 	for v = 1, #shelf do
 		local volume = shelf[v]
