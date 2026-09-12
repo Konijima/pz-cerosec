@@ -24,7 +24,10 @@ each.
 ## What root can and cannot undo
 
 Root bypasses every permission check before anything else is asked
-(`CeroSecOS.can`), and may rewrite any system file including its own way in —
+(`CeroSecOS.can`), with the one exception a real machine keeps: execute on a
+non-directory needs at least one of the three `x` bits set, so `chmod 600
+/bin/ls` locks `ls` for root too (4.4BSD `vaccess()`, POSIX "appropriate
+privileges"). Root may rewrite any system file including its own way in —
 `/etc/passwd`, `/etc/sudoers`, `/etc/group`, `/bin` itself. The one way back from
 a machine broken this way is the BIOS repair (`CeroSecOS.restoreSystem`), and it
 is deliberately narrow: it remakes `/etc`, `/bin` and the filesystem root only

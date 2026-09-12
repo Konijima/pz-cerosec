@@ -2042,11 +2042,22 @@ do
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 	ok(state, admin, "ls /etc/motd", { "motd" })
 
-	-- Not executable: refused for everybody the bits refuse, and root bypasses
-	-- them the way root bypasses every other bit on the machine.
+	-- Not executable: refused for everybody the bits refuse, and refused for
+	-- root too. Root walks through r and w and through any directory, but x on
+	-- a file with none of the three x bits set is the one thing a mode still
+	-- says to root -- 4.4BSD's vaccess(), and a real machine's answer.
 	ok(state, rootSession, "chmod 644 /bin/ls", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
+	bad(state, rootSession, "ls /etc/motd", "ls: permission denied")
+	-- One x bit anywhere is enough for root, and for nobody else: the bit for
+	-- other, which admin is, still refuses admin.
+	ok(state, rootSession, "chmod 001 /bin/ls", {})
 	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "chmod 010 /bin/ls", {})
+	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "chmod 100 /bin/ls", {})
+	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	bad(state, admin, "ls /etc/motd", "ls: permission denied")
 	-- x for the owner only is x for root only.
 	ok(state, rootSession, "chmod 700 /bin/ls", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
@@ -2085,6 +2096,42 @@ do
 	-- Without x on it, it is not runnable at all.
 	ok(state, admin, "chmod 644 /home/admin/ls", {})
 	bad(state, admin, "./ls", "./ls: permission denied")
+
+	eq("the state still validates", CeroSecOS.validate(state), true)
+end
+
+do
+	-- The same script, run by root. A mode still says one thing to root, and it
+	-- is the x bit: a file nobody may execute is a file root may not execute
+	-- either. Root reads it, writes it, deletes it, and will not RUN it.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+	ok(state, rootSession, "cd /root", {})
+	ok(state, rootSession, "chmod 755 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+
+	-- No x bit anywhere: refused, in the same words an ordinary account gets.
+	ok(state, rootSession, "chmod 644 /root/go.sh", {})
+	bad(state, rootSession, "./go.sh", "./go.sh: permission denied")
+	-- Root still reads it and still writes it: only x is gated.
+	ok(state, rootSession, "cat /root/go.sh", { "echo hello" })
+	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+
+	-- Any ONE of the three x bits is enough. None of these three modes gives
+	-- root a bit of its own -- root is the owner here, and 010 and 001 leave
+	-- the owner's digit at 6 -- and each of them still lets root run it, which
+	-- is exactly what "at least one x bit" means.
+	ok(state, rootSession, "chmod 100 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+	ok(state, rootSession, "chmod 010 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+	ok(state, rootSession, "chmod 001 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+
+	-- And 000 is 000 for root too.
+	ok(state, rootSession, "chmod 000 /root/go.sh", {})
+	bad(state, rootSession, "./go.sh", "./go.sh: permission denied")
 
 	eq("the state still validates", CeroSecOS.validate(state), true)
 end
@@ -5925,6 +5972,28 @@ do
 	truth("[ -w /home/admin/file.txt ]", true)
 	truth("[ -x /bin/ls ]", true)
 	truth("[ -x /home/admin/file.txt ]", true)
+	-- -x asks the same question the shell asks before running something, so it
+	-- answers the same way for root: no x bit anywhere, no x, even for root.
+	do
+		local rootSession = open(state, "root")
+		local function rootTruth(expr, want)
+			local r = runScript(state, rootSession,
+				"if " .. expr .. "; then echo Y; else echo N; fi")
+			eq("root: `" .. expr .. "`", r.out[1], want and "Y" or "N")
+		end
+		ok(state, rootSession, "chmod 644 /home/admin/file.txt", {})
+		rootTruth("[ -x /home/admin/file.txt ]", false)
+		rootTruth("[ -r /home/admin/file.txt ]", true)
+		rootTruth("[ -w /home/admin/file.txt ]", true)
+		-- A directory is never gated on x for root.
+		rootTruth("[ -x /home/admin ]", true)
+		ok(state, rootSession, "chmod 700 /home/admin", {})
+		rootTruth("[ -x /home/admin ]", true)
+		ok(state, rootSession, "chmod 755 /home/admin", {})
+		ok(state, rootSession, "chmod 001 /home/admin/file.txt", {})
+		rootTruth("[ -x /home/admin/file.txt ]", true)
+		ok(state, rootSession, "chmod 755 /home/admin/file.txt", {})
+	end
 	truth("[ -z '' ]", true)
 	truth("[ -z x ]", false)
 	truth("[ -n x ]", true)
@@ -6932,8 +7001,13 @@ do
 	okAt(state, root, "rm /bin/echo", {}, env)
 	badAt(state, admin, "echo works", "echo: command not found", env)
 
-	-- Shut one and it is out of an ordinary account's reach, and still root's.
+	-- Shut one and it is out of everybody's reach, root's included: 600 leaves
+	-- no x bit at all, and that is the one thing a mode still says to root.
+	-- Give it back one x bit and it is root's again, and still nobody else's.
 	okAt(state, root, "chmod 600 /bin/printf", {}, env)
+	badAt(state, admin, "printf hi", "printf: permission denied", env)
+	badAt(state, root, "printf hi", "printf: permission denied", env)
+	okAt(state, root, "chmod 700 /bin/printf", {}, env)
 	badAt(state, admin, "printf hi", "printf: permission denied", env)
 	okAt(state, root, "printf hi", { "hi" }, env)
 

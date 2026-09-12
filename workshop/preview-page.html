@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CeroSec on the Steam Workshop (local preview)</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; background: #1b2838;
+    font: 15px/1.5 "Motiva Sans", Arial, Helvetica, sans-serif;
+    color: #c6d4df;
+  }
+  .page { max-width: 940px; margin: 0 auto; padding: 24px 16px 64px; }
+  .head { color: #ffffff; font-size: 26px; font-weight: 400; margin: 0 0 4px; }
+  .by { color: #8f98a0; font-size: 13px; margin: 0 0 20px; }
+  .card { background: #16202d; border-radius: 3px; padding: 20px 24px; }
+  .banner { display: block; width: 100%; border-radius: 3px; margin: 0 0 20px; }
+  .nobanner {
+    border: 1px dashed #4c6b8a; border-radius: 3px; padding: 28px;
+    text-align: center; color: #8f98a0; font-size: 13px; margin: 0 0 20px;
+  }
+  h1 { color: #ffffff; font-size: 21px; font-weight: 400; margin: 24px 0 10px; }
+  h2 { color: #ffffff; font-size: 17px; font-weight: 400; margin: 20px 0 8px; }
+  p { margin: 0 0 12px; }
+  strong { color: #e5e9ea; font-weight: 700; }
+  hr { border: 0; border-top: 1px solid #2a3f5a; margin: 24px 0; }
+  ul { margin: 0 0 12px; padding-left: 22px; }
+  li { margin: 0 0 8px; }
+  blockquote {
+    margin: 16px 0 0; padding: 12px 16px;
+    background: #1b2838; border-left: 2px solid #4c6b8a; color: #a7b6c2;
+  }
+  a { color: #66c0f4; }
+  .meta { margin-top: 28px; color: #8f98a0; font-size: 13px; }
+  .tag {
+    display: inline-block; background: #2a3f5a; color: #c6d4df;
+    border-radius: 2px; padding: 3px 9px; margin: 0 6px 6px 0; font-size: 12px;
+  }
+</style>
+<div class="page">
+  <p class="head">CeroSec</p>
+  <p class="by">Made by Konijima &middot; Project Zomboid &middot; Build 42</p>
+  <div class="card">
+    <img class="banner" src="banner.png" alt="CeroSec">
+    <h1>THE NETWORK NEVER DIED.</h1>
+<p>CeroSec puts a small Unix on the desktop computers that were already standing in Knox County. Right-click one to switch it on, right-click again to sit down at it, and a green 60x20 terminal opens on a BIOS boot line and a login prompt. Behind the prompt is CeroSec OS 1.0, a 1993 Unix with files, permissions, accounts, an editor, a shell language and cron. The disk belongs to the machine and not to you: walk away and come back to the same session still logged in, and a computer you unplug and carry across the county keeps everything that was on it.</p>
+<strong>REAL UNIX TERMINAL. NETWORKING AND REMOTE ACCESS. MULTI-USER SYSTEM. 1993 REALISTIC ENVIRONMENT. FOR PROJECT ZOMBOID.</strong>
+<hr>
+<h1>Features</h1>
+<ul><li><strong>A real terminal.</strong> Sixty columns by twenty, a BIOS that counts the memory, a login prompt, a shell. Two survivors standing at one computer read and type on the same glass.</li><li><strong>Files, permissions and accounts.</strong> Owner, group and other, three octal digits, symbolic modes, symbolic links. Accounts, groups, <strong>su</strong> and <strong>sudo</strong> with a real <strong>/etc/sudoers</strong> behind it.</li><li><strong>An editor.</strong> <strong>edit</strong> turns the screen into one: Tab saves, Escape leaves and asks first.</li><li><strong>Shell scripting.</strong> The prompt is the script language, with <strong>sh</strong>&#x27;s own grammar: <strong>if</strong>, <strong>while</strong>, <strong>for</strong>, variables, <strong>$( )</strong>, pipes, redirects, background jobs, <strong>jobs</strong> and <strong>kill</strong>. <strong>cron</strong> runs a crontab on the minute hand while nobody is watching.</li><li><strong>The building, under /dev.</strong> One file per door, light switch, lock and window the machine can reach, worked by name: <strong>dev light0 off</strong>, <strong>dev door1 open</strong>, <strong>dev lock1 toggle</strong>. Drop a vanilla Motion Sensor in a room and it becomes a <strong>sensorN</strong> a script can poll.</li><li><strong>Three ways out of the case.</strong> Every computer in a map building is on one length of coax with the others, with its own address: <strong>arp</strong>, <strong>ping</strong>, <strong>ruptime</strong>, <strong>rlogin</strong>, <strong>rsh</strong> and <strong>rcp</strong>, and trust files that spare you the password. Past the building, a modem dials the county at 2400 baud with <strong>cu</strong>. Past the county&#x27;s power, a two-way radio becomes the machine&#x27;s TNC and <strong>call</strong> raises another station by callsign, where anybody tuned to that frequency hears the connect.</li><li><strong>Floppy disks.</strong> A 3.5 inch disk with a filesystem of its own: <strong>newfs</strong>, <strong>mount</strong>, copy your notes onto it, carry it across town.</li><li><strong>A manual you have to find.</strong> Three volumes, the User&#x27;s Guide, the System Administrator&#x27;s Guide and the Programmer&#x27;s Guide, printed in 1993 and spawning where a book about a computer would have been sold or shelved. They open as a book on your screen and the survivor goes on doing whatever they were doing.</li><li><strong>Server-safe by construction.</strong> Every script runs on a step budget, the disk is 64 KB, a file is 4096 bytes, and four jobs is four jobs. Nothing a player types is ever handed to Lua.</li></ul>
+<hr>
+<h1>Getting started</h1>
+<p>The first ten minutes, in order:</p>
+<ul><li>Right-click a desktop computer and choose <strong>Turn on computer</strong>. It needs power in the room.</li><li>Right-click it again and choose <strong>Use computer</strong>. Your survivor walks over and sits down.</li><li>At <strong>login:</strong> type <strong>admin</strong>, then press Enter at the password: a shipped machine has <strong>admin</strong> and <strong>root</strong>, both with no password yet.</li><li>Type <strong>help</strong> for the commands, then <strong>dev</strong> to see the doors, lights and locks this machine can reach. Try <strong>dev light0 off</strong>.</li><li>Type <strong>exit</strong>, or close the window, and walk away. The screen keeps running and is exactly as you left it next time.</li></ul>
+<hr>
+<h1>Multiplayer</h1>
+<p>Every computer&#x27;s disk lives on the server, and every command is run there. A client asks; it never decides. Two survivors at one machine share the screen, a third can <strong>rlogin</strong> in from the machine next door, and what one of them writes the others read.</p>
+<p>The budgets are the reason this is safe to run on a public server. A script is stepped, not looped to the end, so a <strong>while true</strong> somebody left running costs that machine its own share and nothing else. A remote session costs the far machine, not yours. Four sessions may come in at once and the fifth is refused.</p>
+<hr>
+<h1>Early release</h1>
+<p>This is version 0.1.0. Everything listed above is finished, tested and documented. What is being built now:</p>
+<ul><li>Hardware modules you install on a door yourself, instead of a building that is wired to the computer from the start.</li><li>One phone line per machine, with seven-digit numbers, instead of one line per building.</li><li><strong>mheard</strong>, so a radio station can tell you who it has heard lately.</li><li>A debug window for server admins.</li></ul>
+<p>Bugs and questions go in the comments here. The source, the issue tracker and the full documentation are at <strong>github.com/Konijima/pz-cerosec</strong>, which opens at release.</p>
+<hr>
+<h1>Made by Konijima</h1>
+<ul><li>No dependencies. Vanilla Lua, nothing bundled, nothing required.</li><li>Build 42 only, and there will be no Build 41 version.</li><li>Safe to add to a running save. Removing the mod leaves the computers as furniture; the manuals and floppies in inventories are lost.</li></ul>
+<blockquote>Faithful to Unix, nothing invented. Where a real /bin/sh, a real cron, a real rlogin or a real Hayes modem would answer a certain way, this machine answers the same way, refusals included. A behaviour with no real-world model is a behaviour we questioned.</blockquote>
+  </div>
+  <div class="meta">
+    <p>Tags: <span class="tag">Build 42</span><span class="tag">Interface</span><span class="tag">Items</span><span class="tag">Literature</span><span class="tag">Multiplayer</span><span class="tag">Realistic</span></p>
+    <p>Visibility: unlisted &middot; Workshop ID: not uploaded yet</p>
+    <p>Local preview of workshop/workshop.txt. Steam's own renderer is not this
+    one; use this page to judge the structure, not the pixels.</p>
+  </div>
+</div>

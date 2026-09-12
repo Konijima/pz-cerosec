@@ -600,6 +600,12 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
 129. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
      compte.sh` puis `./compte.sh` → `./compte.sh: permission denied`, alors
      que `sh compte.sh` marche toujours. [ ]
+129a. En `root` (`su -`, ou une session root), `cd /home/admin`, `chmod 644
+     compte.sh` puis `./compte.sh` → `./compte.sh: permission denied` **pour
+     root aussi** : un fichier sans aucun bit `x` est un fichier que personne
+     n'a le droit d'exécuter, root compris. `chmod 100 compte.sh` (ou `010`, ou
+     `001` : un seul bit `x` n'importe où suffit) → `./compte.sh` repart. Puis
+     `chmod 755 compte.sh`. [ ]
 130. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
      nom nu reste une commande de `/bin` et rien d'autre. [ ]
 131. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
@@ -686,7 +692,8 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
      `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
      `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
-     alors que `sudo echo hi` marche encore ; `if true; then history; fi`
+     et `sudo echo hi` est refusé de la même façon (aucun bit `x` : même root
+     ne l'exécute pas), puis `sudo chmod 755 /bin/echo` le remet ; `if true; then history; fi`
      marche toujours (la grammaire n'est pas un fichier) ; `ls /bin` ne montre
      ni `cd` ni `exit` ni `jobs` ni `wait` -- ce sont des mots du shell, pas des
      fichiers -- et `cd /etc` marche quand meme, `man cd` repond, et `help` les
