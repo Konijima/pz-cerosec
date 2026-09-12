@@ -1276,6 +1276,124 @@ do
 		"4 inbound loops", result.worst, result.msPerPass)
 end
 
+--
+-- A crontab of rlogin lines, on every machine in the county
+--
+-- The one a reviewer found: a cron line is a job with nobody in front of it, and
+-- an rlogin from one used to hand the machine's OWN physical glass to another
+-- computer, logged in. So this is the cheapest way a player could write that
+-- attack -- thirty-two of them a minute on six machines, with a link layer that
+-- says every wire reaches and a host that always resolves, so every single line
+-- gets as far as the order -- and what is asserted is that it costs flat, says so
+-- in the mail, and opens NOTHING.
+--
+-- Deliberately without a world behind it: the refusal is the ENGINE's, so if a
+-- single line ever got as far as the link layer, CeroSecNet would be asked for a
+-- machine by a system that has no getLuaObjectCount and the bench would die
+-- rather than pass quietly.
+--
+
+do
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	local minute = 0
+	local system3 = {}
+	-- A link layer that reaches everything: nothing is refused for being out of
+	-- earshot, so every line spends what a line that really dials would spend.
+	function system3:execEnv(luaObject, state)
+		return { now = 740000000 + minute * 60, nowMs = _G.__now,
+			net = { reach = function() return true end } }
+	end
+	function system3:clockEnv() return { now = 740000000 + minute * 60 } end
+	function system3:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function system3:writeSession() end
+	function system3:pushScreen() end
+	function system3:applyPower() end
+
+	local LINES = 32
+	local machines, states = {}, {}
+	local lines = {}
+	-- An address and not a name: it resolves with nothing written in /etc/hosts,
+	-- which keeps the bench about the rlogin and not about the resolver.
+	for i = 1, LINES do lines[i] = "* * * * * rlogin 10.99.1." .. i end
+	local crontab = table.concat(lines, "\n")
+	for m = 1, 6 do
+		local state = CeroSecOS.newState("ksp")
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = 20 + m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("admin"), crontab, false, 100)
+		if done == nil then error("cannot write the crontab: " .. tostring(reason)) end
+		machines[m], states[m] = machine, state
+	end
+
+	local perMinute, worst = {}, 0
+	local clockStart = os.clock()
+	for _ = 1, 100 do
+		minute = minute + 1
+		local spent = 0
+		for m = 1, 6 do CeroSecJobs.cronPass(system3, machines[m], 740000000 + minute * 60) end
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			CeroSecJobs.system = system3
+			CeroSecJobs.pass(_G.__now)
+			spent = spent + tickSteps
+			if tickSteps > worst then worst = tickSteps end
+		end
+		perMinute[#perMinute + 1] = spent
+		for m = 1, 6 do
+			check("no machine ever holds more than four jobs",
+				CeroSecOS.liveJobs(CeroSecJobs.book(machines[m]).list) <= CeroSecOS.MAX_JOBS)
+			-- The two that matter: not a line was opened anywhere, and not a
+			-- character of it reached the glass a survivor would be standing at.
+			check("not one session was opened", machines[m].ptys == nil)
+			check("and the machine's own glass is untouched",
+				#machines[m].console.lines == 0)
+			check("nor pointed at anything", machines[m].console.remote == nil)
+		end
+	end
+	local msPerMinute = (os.clock() - clockStart) * 1000 / 100
+
+	check("no pass spent more than the county's budget (" .. worst .. ")",
+		worst <= CeroSec.STEP_BUDGET_PER_TICK + CeroSecOS.STEP_COST_COMMAND)
+	-- Flat, counted from the SECOND minute: the passes of the first happen before
+	-- cron has fired for the first time, so it spends nothing at all and a window
+	-- that included it would be comparing ten minutes of work against nine.
+	local early, late = 0, 0
+	for i = 2, 11 do early = early + perMinute[i] end
+	for i = 91, 100 do late = late + perMinute[i] end
+	eq("the first minute is before cron has fired", perMinute[1], 0)
+	check("and the second one already has work in it", perMinute[2] > 0)
+	check("the cost of a minute does not climb (minutes 2-11: " .. early ..
+		", last 10: " .. late .. ")", late <= early + CeroSec.STEP_BUDGET_PER_TICK)
+
+	-- And every one of them said WHY, in rlogin's own words, in the account's
+	-- mailbox -- which is bounded, like every other thing cron writes.
+	for m = 1, 6 do
+		local box = CeroSecOS.systemNode(states[m], CeroSecOS.mailPath("admin"))
+		check("the mailbox is there", box ~= nil)
+		check("and it is rlogin that is talking",
+			string.find(box.data, "rlogin: not a terminal", 1, true) ~= nil)
+		check("a hundred lines at most (" .. #CeroSecOS.splitLines(box.data) .. ")",
+			#CeroSecOS.splitLines(box.data) <= CeroSecOS.MAIL_LINES)
+		check("and four kilobytes at most (" .. #box.data .. ")",
+			#box.data <= CeroSecOS.MAIL_BYTES)
+		check("the machine still boots with it on it",
+			CeroSecOS.validate(states[m]) == true)
+	end
+
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
+		LINES .. " cron rlogins", worst, msPerMinute)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

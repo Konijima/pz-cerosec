@@ -3541,6 +3541,47 @@ local function newNet()
 			(node.data or "") .. "\n" .. net.addr(other) .. " " .. as, 100)
 	end
 
+	-- A minute of the world's clock, which is what cron keeps its time by, plus
+	-- the passes the job cron makes needs to actually run. The same shape as
+	-- newBench's own minute, because a crontab on a machine with a wire in it is
+	-- still a crontab.
+	-- The minute itself, with no passes behind it: a bench that wants to look at
+	-- the machine BETWEEN the passes cron's job needs has to be able to take them
+	-- one at a time.
+	function net.cron()
+		local clock = _G.__gameTime
+		clock.minutes = clock.minutes + 1
+		if clock.minutes >= 60 then
+			clock.minutes = 0
+			clock.hour = clock.hour + 1
+			if clock.hour >= 24 then
+				clock.hour = 0
+				clock.day = clock.day + 1
+			end
+		end
+		local replies = {}
+		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
+		system:checkPower()
+		system:checkCron()
+		for i = 1, #replies do window:onServerCommand(replies[i][1], replies[i][2]) end
+	end
+
+	function net.minute(times)
+		for _ = 1, (times or 1) do
+			net.cron()
+			net.tick(4)
+		end
+	end
+
+	-- A crontab for an account on any of the three, written where crontab(1)
+	-- writes it.
+	function net.crontab(object, user, text)
+		local state = object:osState()
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			"/var/spool/cron/" .. user, text, false, 100)
+		if done == nil then error("cannot write crontab: " .. tostring(reason), 2) end
+	end
+
 	return net
 end
 
@@ -3913,6 +3954,224 @@ do
 end
 
 --
+-- rlogin wants a terminal
+--
+-- The hole this section closes: a crontab line is a job with NOBODY in front of
+-- it, and the console the scheduler hands its orders to is the machine's OWN
+-- glass. So `* * * * * rlogin gate` used to dial out and land the session on the
+-- physical screen -- a survivor walking up to the machine found himself logged
+-- into another computer with nothing to say how he got there, and a `&` behind
+-- the line did the same. 4.4BSD's rlogin opens a terminal on the far end and
+-- needs one on this end to hand it: no terminal, no session.
+--
+-- The rule, four ways of having no terminal: a cron line, a `&`, a `$(...)` and
+-- a stage of a pipeline. A script run from the prompt in the FOREGROUND keeps
+-- the terminal it was started from, which is what real Unix does and is the
+-- whole reason an operator's `./nightly.sh` still works.
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	-- gate trusts here, so a session that got through would need no password:
+	-- the worst case, which is the one worth asserting.
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	-- 1. From cron.
+	net.crontab(net.here, "admin", "* * * * * rlogin gate")
+	net.minute(2)
+	eq("a crontab rlogin opens no line on the far machine",
+		CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("and the glass in front of the survivor is still his own",
+		net.here.console.remote, nil)
+	local log = net.text(net.here, "/var/log/cron")
+	check("cron ran the line", log ~= nil and
+		string.find(log, "CMD (rlogin gate)", 1, true) ~= nil)
+	local mail = net.text(net.here, "/var/mail/admin")
+	check("and what it said went in the mail, in rlogin's own words",
+		mail ~= nil and string.find(mail, "rlogin: not a terminal", 1, true) ~= nil)
+	check("nothing of it reached the glass", not net.glass("not a terminal"))
+
+	-- Never, however many minutes go by: a crontab is not a thing that gets
+	-- through on the tenth try.
+	net.crontab(net.here, "admin", "")
+	net.minute(4)
+	eq("still no line on the far machine", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("and still his own glass", net.here.console.remote, nil)
+
+	-- 2. In the background.
+	net.forget()
+	net.enter("rlogin gate &")
+	net.tick(6)
+	check("a backgrounded rlogin says it has no terminal",
+		net.heard("rlogin: not a terminal"))
+	eq("and takes no line", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("the glass is the survivor's", net.here.console.remote, nil)
+
+	-- 3. Inside a substitution, which is a subshell whose output is a pipe: there
+	-- is nowhere for a session to go. The refusal lands IN the substitution,
+	-- because this machine has one channel and a capture catches what a command
+	-- says whether it went right or wrong (CeroSecOSVM, errLine) -- the same
+	-- answer `$(ls /nope)` gives. What matters is the line it did not take.
+	net.forget()
+	net.enter("x=$(rlogin gate); echo [$x]")
+	net.tick(6)
+	check("a substitution gets the same answer",
+		net.heard("[rlogin: not a terminal]"))
+	eq("and takes no line", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("the glass is the survivor's", net.here.console.remote, nil)
+
+	-- 4. A stage of a pipeline.
+	net.forget()
+	net.enter("rlogin gate | cat")
+	net.tick(6)
+	check("a pipeline stage gets the same answer", net.heard("rlogin: not a terminal"))
+	eq("and takes no line", CeroSecOS.ptyCount(net.gate.ptys), 0)
+	eq("the glass is still the survivor's", net.here.console.remote, nil)
+end
+
+--
+-- A script in the foreground keeps the terminal it was started from
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	net.put(net.here, "/home/admin/go.sh", "rlogin gate", 755, "admin")
+	net.enter("./go.sh")
+	net.tick(6)
+	check("the session opened", net.glass("admin@" .. net.host(net.gate)))
+	eq("and the far machine has a line", CeroSecOS.ptyCount(net.gate.ptys), 1)
+	check("no refusal was printed", not net.heard("not a terminal"))
+end
+
+--
+-- rsh needs no terminal, and never takes one
+--
+-- Real rsh runs without a terminal: it is one command and a pipe back, which is
+-- the whole reason it is what a crontab calls. What it may never do is what
+-- rlogin may never do either -- put a session on a screen nobody asked. So a
+-- crontab's rsh runs, and what comes back is MAIL.
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	-- A command with a `sleep` in front of it, deliberately: everything else an
+	-- rsh runs is over inside the one pass that opened the session, and a session
+	-- that never outlives a pass is a session no assertion between passes can
+	-- look at. This one holds its line on the far machine for a second.
+	net.crontab(net.here, "admin", "* * * * * rsh gate \"sleep 1; hostname\"")
+
+	-- Watched after EVERY pass and not once at the end: the teardown puts `remote`
+	-- back to nil either way, so an assertion made afterwards cannot tell a glass
+	-- that was never taken from a glass that was taken and given back -- and one
+	-- pass is long enough for the survivor's window to have been told.
+	local taken, opened = false, false
+	for _ = 1, 2 do
+		net.cron()
+		for _ = 1, 24 do
+			net.tick(1)
+			if net.here.console.remote ~= nil then taken = true end
+			if CeroSecOS.ptyCount(net.gate.ptys) > 0 then opened = true end
+		end
+	end
+	-- The witness is not an empty one: the rsh really did run inside the passes
+	-- that were watched, which is what makes `taken` false worth anything.
+	eq("the line on the far machine was taken while the glass was watched",
+		opened, true)
+	eq("and the survivor's glass was never pointed at it", taken, false)
+
+	local mail = net.text(net.here, "/var/mail/admin")
+	check("the far machine's answer came back in the mail",
+		mail ~= nil and string.find(mail, net.host(net.gate), 1, true) ~= nil)
+	eq("the line was given back when the command was done",
+		CeroSecOS.ptyCount(net.gate.ptys), 0)
+	check("and nothing of it was painted", not net.glass(net.host(net.gate)))
+	check("nor ever said to a window", not net.heard(net.host(net.gate)))
+end
+
+--
+-- rsh behind a `&`, and rsh in a pipeline
+--
+-- A `&` is the other job with no terminal, and what it prints belongs on the
+-- glass with the rest of what a background job prints -- which is what a `&` has
+-- always been allowed to do. What it may not do is hand the glass over.
+--
+-- THE PIPELINE IS THE ONE THING THIS RUNG DOES NOT DO. A real rsh writes down
+-- the pipe, and this one does not: the local job is over by the time the far
+-- machine answers, so there is no pipe left to write into and the answer lands on
+-- the screen. Asserted rather than left unsaid, because the day it is fixed this
+-- is the check that has to change -- and the manual says it too.
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	net.forget()
+	net.enter("rsh gate hostname &")
+	net.tick(10)
+	check("a backgrounded rsh runs and the answer reaches the glass",
+		net.heard(net.host(net.gate)))
+	eq("and the glass was never pointed at the far machine",
+		net.here.console.remote, nil)
+	eq("the line was given back", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	net.forget()
+	net.enter("rsh gate hostname | wc -l")
+	net.tick(10)
+	check("in a pipeline the answer still reaches the glass",
+		net.heard(net.host(net.gate)))
+	check("and the stage behind it read nothing -- the rung's own limit",
+		net.heard("0"))
+	eq("but nothing was taken over", net.here.console.remote, nil)
+	eq("and no line was left open", CeroSecOS.ptyCount(net.gate.ptys), 0)
+end
+
+--
+-- The same rule standing at the door
+--
+-- The engine refuses an rlogin with no terminal where it is written, and
+-- CeroSecNet.answerDial refuses one again when the console it arrives on is a
+-- detached session's sheet of paper. Two porters, so it is asked of both: this is
+-- the second one, called the way the scheduler calls it.
+--
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+
+	local sheet = CeroSec.newConsole()
+	sheet.booted = true
+	sheet.user = "admin"
+	sheet.cwd = "/home/admin"
+	sheet.noTty = true
+	CeroSecNet.answerDial(net.system, net.here, sheet, "rlogin",
+		{ host = net.host(net.gate), addr = net.addr(net.gate), user = "admin",
+			from = "admin", hops = 1 })
+	eq("a dial off a sheet of paper opens no line",
+		CeroSecOS.ptyCount(net.gate.ptys), 0)
+	local said = false
+	for i = 1, #sheet.lines do
+		if sheet.lines[i] == "rlogin: not a terminal" then said = true end
+	end
+	eq("and says so on the sheet", said, true)
+	eq("the survivor's glass is untouched", net.here.console.remote, nil)
+end
+
+--
 -- rcp, both ways, and the far machine's quota
 --
 
@@ -4260,6 +4519,130 @@ do
 	eq("and still at a shell", bench.window.mode, "shell")
 
 	_G.__world = nil
+end
+
+
+--
+-- The rest of the audit: every order a job with no terminal can give
+--
+-- rlogin was the one that handed a session over. The same question asked of
+-- every other order the engine can hand the machine, from a crontab line -- the
+-- job with nobody in front of it that is easiest for a player to write:
+--
+--   prompt (su, passwd, sudo)  answered: nobody can be asked, so it is not asked
+--   clear                      withheld: the glass is not this job's to wipe
+--   edit                       refused already ("edit: not a terminal")
+--   exit                       ends the line, never the session (main's own fix)
+--   fg                         refused by fg itself, before any order
+--   rsh                        runs, detached (the section above)
+--   rcp, sleep                 no screen in them at all
+--   schedule, shutdown, reboot  cron's to give, and a real cron gives them
+--
+-- The prompt one was a machine-killer and not a nuisance: a question that could
+-- never be answered left the job waiting for ever, and four of those are every
+-- job slot the machine has -- after `* * * * * su root` had run four times, that
+-- computer could not run a single command again.
+--
+
+do
+	local net = newNet()
+	net.login("admin")
+
+	local function fromCron(line)
+		net.crontab(net.here, "admin", "* * * * * " .. line)
+		net.minute(2)
+		net.crontab(net.here, "admin", "")
+		local mail = net.text(net.here, "/var/mail/admin") or ""
+		CeroSecOS.writeFile(net.here:osState(), CeroSecOS.rootSession(),
+			"/var/mail/admin", "", false, 100)
+		local live = 0
+		local book = net.here.jobs
+		if book ~= nil then live = #book.list end
+		return mail, live
+	end
+
+	-- su, passwd and sudo: each signs the refusal with its own name, which is the
+	-- shape every refusal on this machine has.
+	local mail, live = fromCron("su root")
+	check("su from cron says it has no terminal",
+		string.find(mail, "su: not a terminal", 1, true) ~= nil)
+	eq("and leaves no job waiting for an answer", live, 0)
+	eq("and nobody was made root", net.here.console.user, "admin")
+
+	mail = fromCron("passwd admin")
+	check("passwd from cron says the same",
+		string.find(mail, "passwd: not a terminal", 1, true) ~= nil)
+
+	mail = fromCron("sudo cat /etc/shadow")
+	check("and so does sudo",
+		string.find(mail, "sudo: not a terminal", 1, true) ~= nil)
+	check("and the file it wanted is not in the mail",
+		string.find(mail, "root:", 1, true) == nil)
+
+	-- Four of them, which is every job slot there is: the machine is still a
+	-- machine afterwards.
+	fromCron("su root")
+	fromCron("su root")
+	fromCron("su root")
+	fromCron("su root")
+	net.enter("echo alive")
+	net.tick(3)
+	check("four unanswerable questions later the machine still runs a line",
+		net.glass("alive"))
+
+	-- clear: the glass a survivor is reading is not a cron line's to wipe.
+	net.enter("echo keep-me")
+	net.tick(3)
+	check("the line is on the glass", net.glass("keep-me"))
+	local before = #net.here.console.lines
+	check("the glass has lines on it", before > 0)
+	fromCron("clear")
+	eq("a cron clear leaves every one of them", #net.here.console.lines, before)
+	check("including the one that was being read", net.glass("keep-me"))
+	-- And the word still clears it when a pair of hands types it.
+	net.enter("clear")
+	net.tick(3)
+	check("typed at the glass it still clears", not net.glass("keep-me"))
+
+	-- edit, which the machine refused before any of this was written: the file has
+	-- to exist, or the refusal is about the file and not about the terminal.
+	net.put(net.here, "/home/admin/notes", "hello", 644, "admin")
+	mail = fromCron("edit /home/admin/notes")
+	check("edit from cron says it has no terminal",
+		string.find(mail, "edit: not a terminal", 1, true) ~= nil)
+
+	-- exit, which main's own fix is about: a cron line is not a way to log the
+	-- console out.
+	net.enter("echo still-here")
+	net.tick(3)
+	fromCron("exit")
+	eq("a cron exit leaves the account at the glass", net.here.console.user, "admin")
+	check("and the glass it was reading", net.glass("still-here"))
+
+	-- A pipeline in the BACKGROUND, which is the other way to have no keyboard: a
+	-- stage of it has no more of one than the pipeline. `sudo echo hi | cat` asks
+	-- at the prompt, and the same line with a `&` behind it has nobody to ask --
+	-- so it is told, rather than waiting for ever in a job slot.
+	net.forget()
+	net.enter("sudo echo hi | cat &")
+	net.tick(10)
+	check("a backgrounded pipeline that asks is told there is no terminal",
+		net.heard("sudo: not a terminal"))
+	eq("and nothing is left waiting for an answer",
+		net.here.jobs == nil or #net.here.jobs.list, 0)
+	-- The same line in the foreground still asks, because somebody is there.
+	net.forget()
+	net.enter("sudo echo hi | cat")
+	net.tick(4)
+	check("in the foreground it asks for the password",
+		net.glass("[sudo] password for admin:"))
+	net.escape()
+	net.tick(4)
+
+	-- fg: refused by fg itself, which never gets as far as an order.
+	mail = fromCron("fg")
+	check("fg from cron has no job to bring forward",
+		string.find(mail, "fg: no current job", 1, true) ~= nil)
 end
 
 print("window_test: " .. count .. " checks passed")

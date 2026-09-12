@@ -1080,6 +1080,34 @@ end
 -- Running one simple command
 --
 
+-- Has this job a CONTROLLING TERMINAL -- a screen with somebody in front of it,
+-- whose attention the job holds?
+--
+-- Three ways of having none, and every one of them is a job that runs with
+-- nobody there:
+--
+--   * it is not the prompt's own job (`job.interactive`) -- a crontab line and a
+--     `&` are the machine's work and not a pair of hands';
+--   * it is a stage of a pipeline -- what it writes goes to the stage on its
+--     right and not to a glass;
+--   * it is inside a $(...) -- a subshell whose output is being collected, which
+--     is a pipe wearing another name.
+--
+-- What is deliberately NOT on the list is DEPTH. `./nightly.sh` run from the
+-- prompt is the prompt's own job one level deeper, and a terminal is inherited:
+-- that is what real Unix does, and it is the difference between a script an
+-- operator runs and a script cron runs. `exitLeavesTheMachine` below is this
+-- rule plus the depth rule, because `exit` is the one order a file may not give
+-- on its shell's behalf.
+local function jobHasTerminal(job)
+	if not job.interactive then return false end
+	if job.inPipe then return false end
+	for i = 1, #job.frames do
+		if job.frames[i].k == "capture" then return false end
+	end
+	return true
+end
+
 -- The order every control the core can hand back is dealt with. A script is
 -- not a screen: an editor cannot open on it, so `edit` is refused where it was
 -- typed rather than half-opened somewhere nobody is looking.
@@ -1124,7 +1152,15 @@ local function applyControl(job, control, data, env)
 		-- `sudo echo hi | cat` puts the password question up on the console
 		-- (pipeStep carries it out of the stage) and resumes the stage with the
 		-- answer, which is what real sudo does with a pipeline behind it.
-		if job.inPipe and job.stdinBuf ~= nil then
+		--
+		-- And a BACKGROUND job cannot be answered either -- a crontab line or a
+		-- `&` -- for the plainer reason that nobody is standing in front of it. Its
+		-- question is only ever put up for the job that HOLDS the prompt
+		-- (CeroSecJobs.runMachine), so `* * * * * su root` used to leave a job
+		-- waiting for an answer that could never come: four of those and the
+		-- machine had no job slot left for anything, ever. The same answer `read`
+		-- gives one, which is end of file and a status to say so.
+		if (job.inPipe and job.stdinBuf ~= nil) or job.bg then
 			flushPartial(job)
 			local who = "sh"
 			if type(data.cont) == "table" and type(data.cont.cmd) == "string" then
@@ -1159,6 +1195,49 @@ local function applyControl(job, control, data, env)
 		job.status = 1
 		return true
 	end
+	-- rlogin opens a SESSION, and a session is a terminal handed to another
+	-- machine: rlogin(1) puts its own terminal into raw mode and hands the far
+	-- end everything typed on it, so a job with no terminal has nothing to give
+	-- and nowhere to put what comes back. Refused here, where it was written, the
+	-- same answer and for the same reason as `edit`.
+	--
+	-- Without this a crontab line was a way to reach out from a machine nobody
+	-- was standing at and land a logged-in session on its physical glass: the
+	-- order carries the screen the job was writing to, and for a job with no
+	-- session of its own that screen is the machine's own console. A survivor who
+	-- walked up found somebody else's computer on it.
+	if control == "rlogin" and not jobHasTerminal(job) then
+		flushPartial(job)
+		errLine(job, "rlogin: not a terminal")
+		job.status = 1
+		return true
+	end
+	-- rsh needs no terminal and never has: it is one command and a pipe back,
+	-- which is why a crontab calls rsh and not rlogin. But it must not take the
+	-- glass either -- the session it opens is for the command's output and not for
+	-- a pair of hands -- so a job with no terminal marks its order DETACHED, and
+	-- the server neither points the near console at the far machine nor gives it
+	-- the far machine's lines. What comes back goes where everything else this
+	-- job printed goes: the mail for a cron line, the job's own lines on the
+	-- glass for a `&`.
+	if control == "rsh" and type(data) == "table" and not jobHasTerminal(job) then
+		data.noTty = { mailTo = job.mailTo, cmd = job.cmd }
+	end
+	-- `clear` is an escape sequence a program writes to its OWN terminal, so a job
+	-- with none writes it where everything else it writes goes: into the mail for a
+	-- cron line, down the pipe for a stage, into the word for a $(...) -- and this
+	-- machine strips control bytes off every line (CeroSecOS.fit), so nothing is
+	-- left of it anywhere. What it may not do is wipe the glass of a machine
+	-- nobody is standing at: `* * * * * clear` took the screen a survivor was
+	-- reading, once a minute, and left no sign of why.
+	--
+	-- The job still ends here, exactly as it does when the order IS given: the
+	-- only thing withheld is the order.
+	if control == "clear" and not jobHasTerminal(job) then
+		flushPartial(job)
+		job.sig = { k = "exit", n = job.status, all = true }
+		return true
+	end
 	-- clear, edit, shutdown, reboot and exit are the machine's, and whoever is
 	-- running the machine is what carries them out -- after the job's own output
 	-- has reached the screen, so nothing a player typed is swallowed by the
@@ -1180,28 +1259,25 @@ end
 
 -- Is this `exit` the one that leaves the MACHINE, or the one that leaves a
 -- script? Only the word typed at the glass is the first kind, and "at the glass"
--- is three things at once, every one of which has to hold:
+-- is a terminal (jobHasTerminal above: the prompt's own job, outside every pipe
+-- and every $(...)) plus one thing more that is `exit`'s alone:
 --
---   * the prompt's own job (`job.interactive`) -- a background job, a cron line
---     and a stage of a pipeline have nobody standing in front of them;
 --   * the TOP level of it: `./lights.sh` is the prompt's own job one level
 --     deeper (CeroSecOS.jobRun), and an `exit 1` inside a file is the file
 --     ending with status 1 and the prompt coming back -- which is POSIX, and
 --     is the whole reason a usage-and-exit script does not throw a player off
---     the machine;
---   * outside every $(...): a substitution is a subshell, and a subshell's
---     `exit` ends the subshell.
+--     the machine.
+--
+-- Depth is `exit`'s and not rlogin's: a script run in the foreground INHERITS
+-- the terminal it was started from, so `rlogin gate` in a file works, while
+-- `exit` in a file ends the file.
 --
 -- ~/.profile is deliberately on the other side of this line: it runs AS the
 -- login shell, at depth one, so its `exit` logs out -- which is what bash does
 -- with a profile and what the manual says here.
 local function exitLeavesTheMachine(job)
-	if not job.interactive then return false end
-	if job.inPipe then return false end
+	if not jobHasTerminal(job) then return false end
 	if job.depth > 1 then return false end
-	for i = 1, #job.frames do
-		if job.frames[i].k == "capture" then return false end
-	end
 	return true
 end
 
@@ -1494,6 +1570,10 @@ local function newStage(job, node, out, into)
 	-- front of, so `edit` is refused in one and a `read` with no pipe on its
 	-- input reads end of file, exactly as a background job's does.
 	stage.inPipe = true
+	-- And a stage of a pipeline nobody is standing in front of has no more of a
+	-- keyboard than the pipeline: `sudo echo hi | cat` asks at the prompt, the
+	-- same line with a `&` behind it has nobody to ask.
+	stage.bg = job.bg
 	-- Where what goes wrong goes. Not into the pipe: an error is not output.
 	stage.errTo = job
 	return stage

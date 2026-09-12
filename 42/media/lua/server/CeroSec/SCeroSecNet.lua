@@ -428,6 +428,44 @@ function CeroSecNet.diallerOf(system, pty)
 	return other.console, object
 end
 
+-- A DETACHED session, and where what it printed goes.
+--
+-- rsh from a crontab line or from behind a `&` is a session nobody is watching:
+-- the job that dialled it had no terminal, so the console the order arrived with
+-- is the machine's own glass and has nothing to do with the command. Such a
+-- session gets a console of its own with no copy of that glass on it, marked
+-- `noTty` -- and a console marked `noTty` is never pushed to a window
+-- (SCeroSecSystem:pushScreen), which is what makes it a sheet of paper rather
+-- than a second screen.
+--
+-- When it ends, the sheet is delivered where everything else the job printed
+-- went: the account's mailbox for a cron line, and the job's own lines on the
+-- glass for a `&`, which is exactly what a `&` has always been allowed to do.
+local function deliver(system, homeObject, home, spec, lines)
+	if type(lines) ~= "table" or #lines == 0 then return end
+	local state = nil
+	if homeObject ~= nil then state = homeObject:osState() end
+	if spec.mailTo ~= nil and state ~= nil then
+		CeroSecOS.mailAppend(state, spec.mailTo, CeroSecOS.hostname(state), spec.cmd,
+			lines, CeroSecOS.clockOf(system:clockEnv()))
+		homeObject:mirrorOS()
+		return
+	end
+	if type(home) ~= "table" then return end
+	for i = 1, #lines do CeroSec.consolePush(home, lines[i]) end
+	if homeObject ~= nil then system:pushScreen(homeObject, state, home) end
+end
+
+-- Is the order a dial nobody is standing behind? Either the engine said so --
+-- the job that gave it had no controlling terminal -- or the console it was
+-- given on is itself a detached one, because a detached session's own dials are
+-- no more watched than it is.
+local function detachedDial(console, data)
+	if type(data) == "table" and type(data.noTty) == "table" then return data.noTty end
+	if type(console) == "table" and console.noTty then return { } end
+	return nil
+end
+
 -- The one teardown, whichever end asked for it.
 --
 -- The line comes off the far machine's pty table, its logout goes into the far
@@ -456,7 +494,14 @@ function CeroSecNet.tearDown(system, object, line)
 	end
 
 	local home, homeObject = CeroSecNet.diallerOf(system, pty)
-	if home ~= nil then
+	if home ~= nil and pty.noTty ~= nil then
+		-- A session nobody watched. What it printed is delivered, and the console
+		-- it was dialled FROM is left exactly as it is: its `remote` was never set
+		-- to this line, and a survivor may well have a session of his own on it.
+		local lines = nil
+		if type(screen) == "table" then lines = screen.lines end
+		deliver(system, homeObject, home, pty.noTty, lines)
+	elseif home ~= nil then
 		home.remote = nil
 		-- The one glass: what the session printed is what is on the screen.
 		if type(screen) == "table" and type(screen.lines) == "table" then
@@ -629,6 +674,16 @@ local function connect(system, luaObject, console, cmd, data)
 		return nil, CeroSecOS.netRefusal(cmd, data.host, reason)
 	end
 	pty.from = { x = luaObject.x, y = luaObject.y, z = luaObject.z, line = console.line }
+	-- A detached session takes no copy of the glass and the glass is not pointed
+	-- at it: the near console keeps showing what it was showing, whether that is a
+	-- prompt nobody is at or a session a survivor opened himself.
+	local noTty = detachedDial(console, data)
+	if noTty ~= nil then
+		pty.noTty = noTty
+		pty.console = newPtyConsole(nil, pty, watchAt, data.hops)
+		pty.console.noTty = true
+		return pty, object, far, fromHost
+	end
 	pty.console = newPtyConsole(console, pty, watchAt, data.hops)
 	console.remote = { x = object.x, y = object.y, z = object.z, line = pty.line }
 	return pty, object, far, fromHost
@@ -688,6 +743,15 @@ end
 function CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj)
 	if type(data) ~= "table" then return end
 	local state = luaObject:osState()
+	local noTty = detachedDial(console, data)
+	-- The engine refuses an rlogin with no terminal where it was written
+	-- (CeroSecOSVM applyControl), and this is the same rule standing at the door:
+	-- a screen nobody is watching is not a terminal to hand a session, whichever
+	-- way the order got here. What it says goes where the sheet goes.
+	if control == "rlogin" and noTty ~= nil then
+		deliver(system, luaObject, console, noTty, { "rlogin: not a terminal" })
+		return
+	end
 	local pty, object, far, refusal = nil, nil, nil, nil
 	if control == "rlogin" then
 		pty, object, far = CeroSecNet.dial(system, luaObject, console, data)
@@ -697,13 +761,22 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 	if pty == nil then
 		-- object carries the line to print when the dial failed.
 		refusal = object
+		-- A refusal the far machine handed back -- no line free, no trust -- is
+		-- the only thing a detached dial ever says, and it says it where the job
+		-- that dialled was printing. Every refusal the ENGINE could work out was
+		-- printed by the command itself, long before this.
+		if noTty ~= nil then
+			deliver(system, luaObject, console, noTty, { tostring(refusal) })
+			return
+		end
 		CeroSec.consolePush(console, tostring(refusal))
 		if state ~= nil then system:pushScreen(luaObject, state, console) end
 		return
 	end
 
 	-- The glass is the session's now. Pushed from the FAR machine, because that
-	-- is whose hostname, whose prompt and whose files the screen is about.
+	-- is whose hostname, whose prompt and whose files the screen is about. A
+	-- detached session has no glass, and pushScreen knows it.
 	system:pushScreen(object, far, pty.console)
 
 	if control == "rsh" then

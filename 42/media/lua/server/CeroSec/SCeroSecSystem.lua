@@ -722,6 +722,13 @@ end
 -- requester is one of them and is answered here like the others, by its own
 -- token -- there is no private half of a screen anybody is standing in front of.
 function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
+	-- A detached session's console is a sheet of paper and not a glass: it was
+	-- opened by an rsh for a job with no terminal, nobody is looking at it, and
+	-- what it collects is delivered when the session ends (SCeroSecNet, deliver).
+	-- Guarded HERE rather than at each of the four callers, because the far
+	-- machine's own scheduler pushes the screens its jobs wrote on and knows
+	-- nothing about whose session they are.
+	if console.noTty then return end
 	local at = self:watchedAt(luaObject, console)
 	if not at.watchers then return end
 	for key, watcher in pairs(at.watchers) do
