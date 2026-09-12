@@ -74,6 +74,17 @@ _G.getSandboxOptions = function()
 		getTimeSinceApo = function() return s.timeSinceApo end,
 	}
 end
+-- The sandbox options a MOD declares, which is a different table from the
+-- getSandboxOptions() object above: SandboxVars is a plain Lua table the game
+-- fills in from 42/media/sandbox-options.txt, and a group nobody declared is
+-- simply not in it (CeroSecModules.required).
+--
+-- HardwareRequired is FALSE here and true in the game, deliberately: every bench
+-- in this file that was written before rung 4f is a bench about the world as it
+-- was, where a door is a device because it is a door. Those benches are the
+-- control for the option being off, and they are not to be touched. The hardware
+-- section at the bottom sets it true for itself and puts it back.
+_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
 _G.getText = function(key) return key end
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
@@ -321,6 +332,7 @@ end
 local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
+	"shared/CeroSec/CeroSecModules.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -1692,11 +1704,42 @@ function FakeWorld.new()
 	return world
 end
 
+-- Everything a hardware module can be screwed to carries modData, because the
+-- game's own do: IsoObject keeps a KahluaTable and saves it with the chunk under
+-- its own flag bit, and IsoThumpable keeps a second one of its own and saves
+-- that (docs/notes/modules-proofs.md, 1). transmitModData is COUNTED and not
+-- merely answered, for the same reason a sync is: "the other players were told"
+-- is the half of a server-side write that no field on the object can show.
+local function fittable(o)
+	o.modData = {}
+	o.transmits = 0
+	o.hasModData = function() return true end
+	o.getModData = function() return o.modData end
+	o.transmitModData = function() o.transmits = o.transmits + 1 end
+	return o
+end
+
+-- Screw one on, the way the install command does. A bench that wrote the table
+-- itself would be a bench agreeing with itself about the shape of it.
+local function fit(object, id)
+	local data = object:getModData()
+	if data[CeroSecModules.DATA_KEY] == nil then data[CeroSecModules.DATA_KEY] = {} end
+	data[CeroSecModules.DATA_KEY][id] = true
+	return object
+end
+
+local function unfit(object, id)
+	local data = object:getModData()
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if fitted ~= nil then fitted[id] = nil end
+	return object
+end
+
 -- The four kinds. Each one answers the calls SCeroSecDevices makes on it and
 -- counts the syncs, because "the change reached every watcher" is the half of a
 -- server-side write that a state field cannot show.
 local function fakeLight(on, powered)
-	local o = { __class = "IsoLightSwitch", activated = on, powered = powered, syncs = 0 }
+	local o = fittable({ __class = "IsoLightSwitch", activated = on, powered = powered, syncs = 0 })
 	o.isActivated = function() return o.activated end
 	o.canSwitchLight = function() return o.powered end
 	o.setActive = function(_, want)
@@ -1750,8 +1793,8 @@ local function openable(o)
 end
 
 local function fakeDoor(locked, north, opposite, exterior)
-	local o = { __class = "IsoDoor", lockedByKey = locked, north = north,
-		opposite = opposite, exterior = exterior == true, syncs = 0 }
+	local o = fittable({ __class = "IsoDoor", lockedByKey = locked, north = north,
+		opposite = opposite, exterior = exterior == true, syncs = 0 })
 	highlightable(o)
 	openable(o)
 	o.getNorth = function() return o.north end
@@ -1769,8 +1812,8 @@ local function fakeDoor(locked, north, opposite, exterior)
 end
 
 local function fakeWindow(locked, north)
-	local o = { __class = "IsoWindow", locked = locked, north = north,
-		smashed = false, barricaded = false, syncs = 0 }
+	local o = fittable({ __class = "IsoWindow", locked = locked, north = north,
+		smashed = false, barricaded = false, syncs = 0 })
 	highlightable(o)
 	o.getNorth = function() return o.north end
 	o.isLocked = function() return o.locked end
@@ -1785,8 +1828,8 @@ end
 -- door's business and a built door never has it asked. A fake that answers a
 -- call nothing makes is a fake that claims a call we make.
 local function fakeThumpable(padlock, north)
-	local o = { __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
-		lockedByKey = false, keyId = 0, north = north, syncs = 0 }
+	local o = fittable({ __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
+		lockedByKey = false, keyId = 0, north = north, syncs = 0 })
 	highlightable(o)
 	openable(o)
 	o.isDoor = function() return true end
@@ -5876,7 +5919,11 @@ do
 	net.enter("cu " .. tel)
 	net.tick(3)
 	check("and never means never", net.glass("NO DIALTONE"))
-	_G.SandboxVars = nil
+	-- Put back what the file runs on, which is not nil any more: a world with no
+	-- CeroSec group at all is a world where the hardware IS required
+	-- (CeroSecModules.required fails closed), and every device bench after this
+	-- one is about the world with the option off.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
 	_G.__gameTime.ageHours = 0
 end
 
@@ -7775,6 +7822,244 @@ do
 	end
 
 	_G.__world = nil
+end
+
+--
+-- The hardware modules
+--
+-- Rung 4f: a door, a window and a light switch are only in /dev when somebody
+-- has screwed a module to them. The sandbox option CeroSec.HardwareRequired is
+-- the switch, it is ON in the game, and every OTHER device bench in this file
+-- is the control for it being off -- they run on the default this file sets at
+-- the top and they were not touched for this rung.
+--
+-- What is asserted here is the same thing those assert: what is on the GLASS.
+-- The wiring itself is written straight into the object's modData, the way the
+-- install command writes it, and the install command's own half is the section
+-- after this one.
+--
+
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+
+	local bench = newBench()
+	bench.login("admin")
+
+	-- Nothing is wired, so there is nothing to reach -- and the machine is the
+	-- same machine, in the same building, with the same doors in it.
+	bench.enter("dev")
+	bench.frame()
+	check("no door is a device", not bench.painted("exterior"))
+	check("no light is a device", not bench.painted("office"))
+	check("no window is a device", not bench.painted("win0"))
+	bench.enter("ls /dev")
+	bench.frame()
+	check("and /dev holds nothing of the world", not bench.painted("door0"))
+	check("nor a light", not bench.painted("light0"))
+	-- A number a player wrote down last week is not a path he mistyped.
+	bench.enter("dev light0")
+	bench.frame()
+	check("a device nobody fitted is no such device",
+		bench.painted("dev: light0: no such device"))
+
+	-- A relay on the office switch, and only on that one.
+	fit(kit.light0, "relay")
+	bench.enter("dev")
+	bench.frame()
+	check("the switch with a relay on it is a device", bench.painted("light0  office"))
+	check("the one without is still not", not bench.painted("hallway"))
+	bench.enter("echo off > /dev/light0")
+	bench.frame()
+	eq("and it throws the switch", kit.light0.activated, false)
+	eq("and it was broadcast", kit.light0.syncs, 1)
+
+	-- An operator on the door between the kitchen and the hallway, which is a
+	-- door no lock means anything on: one device, and it opens.
+	fit(kit.inner, "operator")
+	bench.enter("echo open > /dev/door0")
+	bench.frame()
+	eq("the door with an operator on it opens", kit.inner.open, true)
+	eq("the world was told", kit.inner.syncs, 1)
+	bench.enter("cat /dev/door0")
+	bench.frame()
+	check("and it reads back open", bench.painted("open"))
+	check("no lock device came with it", not bench.painted("lock0"))
+
+	-- A magnetic contact on the front door: the machine can SEE it and cannot
+	-- move it. Same kind, same words, nothing behind them.
+	fit(kit.front, "contact")
+	bench.enter("cat /dev/door1")
+	bench.frame()
+	check("a door with only a contact on it reads", bench.painted("locked"))
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("and wears a mode that promises nothing",
+		bench.painted("cr--r-----  root  sudo  door1   exterior"))
+	check("while the one with an operator wears rw",
+		bench.painted("crw-rw----  root  sudo  door0   kitchen-hall~"))
+
+	-- admin is in the sudo group, so 440 lets him read it and stops him there.
+	bench.enter("echo open > /dev/door1")
+	bench.frame()
+	check("an ordinary account is refused by the mode",
+		bench.painted("door1: permission denied"))
+	eq("and the door was never asked", kit.front.silentToggles, 0)
+
+	-- root walks past the mode, the way root walks past every mode on this
+	-- machine, and is refused by the device itself.
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+	eq("root is at the glass", bench.object.console.user, "root")
+	bench.enter("echo open > /dev/door1")
+	bench.frame()
+	check("and root is refused by the hardware that is not there",
+		bench.painted("door1: operation not supported"))
+	eq("the door still never moved", kit.front.silentToggles, 0)
+	eq("and nothing was broadcast about it", kit.front.syncs, 0)
+	-- `dev` is the same refusal through the other door into it.
+	bench.enter("dev door1 open")
+	bench.frame()
+	check("dev says the same thing", bench.painted("door1: operation not supported"))
+
+	-- A strike is the lock and nothing else: the door it is on still does not
+	-- open, and the key it carries now answers.
+	fit(kit.front, "strike")
+	bench.enter("echo unlock > /dev/lock0")
+	bench.frame()
+	eq("the strike works the lock", kit.front.lockedByKey, false)
+	eq("and it was broadcast", kit.front.syncs, 1)
+	bench.enter("echo open > /dev/door1")
+	bench.frame()
+	check("and the door is still a door with no operator on it",
+		bench.painted("door1: operation not supported"))
+
+	-- The number is spent for the life of the machine, hardware or no hardware:
+	-- taking the contact off makes the device unreachable and taking it back on
+	-- gives back the SAME id, which is what a script that says door1 depends on.
+	unfit(kit.front, "contact")
+	bench.enter("dev door1")
+	bench.frame()
+	-- Mounted and not listed: the machine remembers the number and cannot reach
+	-- it, which is "no such device" in the DEVICE's own name and not "no such
+	-- file" in the filesystem's.
+	check("a device whose module came off is out of reach",
+		bench.painted("door1: no such device"))
+	-- The lock on the same door is a device of its own with a module of its own,
+	-- and it is untouched: what came off was the contact.
+	bench.enter("cat /dev/lock0")
+	bench.frame()
+	check("while the strike on the same door still answers", bench.painted("unlocked"))
+	fit(kit.front, "contact")
+	bench.enter("cat /dev/door1")
+	bench.frame()
+	check("and it comes back as the same device", bench.painted("closed"))
+
+	-- And the hardware CHANGING under a device moves its mode with it, without
+	-- moving its number: an operator fitted to the door that had a contact on it
+	-- is the same door1, read-write now, and it opens.
+	fit(kit.front, "operator")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	check("the same device wears rw once an operator is on it",
+		bench.painted("crw-rw----  root  sudo  door1   exterior"))
+	bench.enter("echo open > /dev/door1")
+	bench.frame()
+	eq("and now it opens", kit.front.open, true)
+
+	-- A window takes a contact and there is no second module for it: the game
+	-- has no call that moves a sash without a survivor standing at it, so a
+	-- wired window is one the machine reads.
+	fit(kit.win0, "contact")
+	bench.enter("cat /dev/win0")
+	bench.frame()
+	check("a wired window reads", bench.painted("locked"))
+	bench.enter("echo unlock > /dev/win0")
+	bench.frame()
+	check("and refuses every word", bench.painted("win0: operation not supported"))
+	eq("the window was not touched", kit.win0.locked, true)
+	eq("and nothing was broadcast about it", kit.win0.syncs, 0)
+
+	-- The server's OWN belt for the same case, asked directly. Everything above
+	-- this line is refused by the engine before the world layer is reached, so
+	-- the only way to see the second guard do anything is to call the world layer
+	-- itself -- which is what a caller with its own idea of /dev would be.
+	do
+		local env = CeroSecDevices.envFor(bench.object, bench.object:osState())
+		local done, reason = env.write("win0", "unlock")
+		eq("the world layer refuses it too", done, false)
+		eq("in the same words", reason, "operation not supported")
+		eq("and the window is still locked", kit.win0.locked, true)
+		local opened, whyNot = env.write("door1", "close")
+		eq("while the door with an operator on it takes the order", opened, true)
+		eq("with nothing to say about it", whyNot, nil)
+		eq("and it shut", kit.front.open, false)
+	end
+
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+end
+
+-- The control, on a world where nothing at all is wired: the option off is the
+-- building as it was before this rung, every device of it, with the numbers the
+-- mockup approved. This is the same assertion the first device section makes and
+-- it is made again HERE, beside the gate, so that a gate which stopped reading
+-- the option fails in the section it belongs to.
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("ls -l /dev")
+	bench.frame()
+	local want = {
+		"crw-rw----  root  sudo  door0   exterior       W  locked",
+		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
+		"crw-rw----  root  sudo  door2   built          N  closed",
+		"crw-rw----  root  sudo  light0  office            on",
+		"crw-rw----  root  sudo  light1  hallway           off",
+		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+		"crw-rw----  root  sudo  lock1   built          N  padlock",
+		"crw-rw----  root  sudo  win0    office         N  locked",
+	}
+	for i = 1, #want do
+		check("with the option off, the glass still shows: " .. want[i],
+			bench.painted(want[i]))
+	end
+	_G.__world = nil
+end
+
+-- And a world the sandbox says nothing about at all -- a server whose options
+-- file failed to load, or a save from before this rung. It fails CLOSED: no
+-- hardware, no devices, which is a thing a player sees at once and can fix from
+-- the sandbox screen. The other way round is a world that quietly went back to
+-- magic and looks exactly like a working one.
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = nil
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("dev")
+	bench.frame()
+	check("no options at all is not a world of open doors",
+		not bench.painted("exterior"))
+	check("nor of lights", not bench.painted("office"))
+
+	-- The same machine, the same second, with the group there and the option off.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	bench.enter("dev")
+	bench.frame()
+	check("and the option said out loud brings the building back",
+		bench.painted("exterior"))
+
+	_G.__world = nil
+	kit = nil
 end
 
 print("window_test: " .. count .. " checks passed")

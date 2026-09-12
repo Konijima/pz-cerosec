@@ -4136,7 +4136,7 @@ local function fakeDevices(entries)
 		for i = 1, #devices.entries do
 			local e = devices.entries[i]
 			out[i] = { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
-				pos = e.pos, state = e.state, mode = e.mode, dead = e.dead }
+				pos = e.pos, state = e.state, mode = e.mode, dead = e.dead, ro = e.ro }
 		end
 		return out
 	end
@@ -5116,6 +5116,74 @@ do
 	badAt(state, session, "dev find sensor0", "sensor0: no such device", devEnv(gone))
 	badAt(state, session, "echo x > /dev/sensor0", "sensor0: no such device", devEnv(gone))
 	okAt(state, session, "dev sensor", {}, devEnv(gone))
+end
+
+-- 21r. A device with nothing behind it to write with.
+--
+-- The OTHER read-only device, and it is not a kind: a `door` like any other,
+-- with the same two words in its vocabulary, on an object nobody has fitted an
+-- actuator to -- a magnetic contact and no operator. What the world hands over
+-- is one more field on the entry (`ro`), and the engine's whole half is here:
+-- the node is born 440, and the write that walks past 440 -- root's, and root's
+-- only, because root walks past every mode on this machine -- is refused in the
+-- device's own name and never reaches the caller.
+--
+-- The fake would take that write and carry it out, which is the point of proving
+-- it here rather than against a world: the refusal is the ENGINE's, not the
+-- server's. The server's own belt for the same case is in
+-- tests/window_test.lua, against real doors.
+do
+	eq("a device with no actuator is born read-only",
+		CeroSecOS.devModeFor("door", true), CeroSecOS.DEV_MODE_RO)
+	eq("and the same kind without the flag is not",
+		CeroSecOS.devModeFor("door"), CeroSecOS.DEV_MODE)
+	eq("a sensor is the same number by its kind",
+		CeroSecOS.devModeFor("sensor"), CeroSecOS.DEV_MODE_RO)
+
+	local state = fresh()
+	local root = open(state, "root")
+	local admin = open(state, "admin")
+	local devices = fakeDevices({
+		{ id = "door0", kind = "door", desc = "exterior", side = "W", pos = "0 0",
+			state = "closed", ro = true, mode = 440,
+			becomes = { open = "open", close = "closed" } },
+		{ id = "door1", kind = "door", desc = "office", side = "N", pos = "1E 0",
+			state = "closed", becomes = { open = "open", close = "closed" } },
+	})
+	local env = devEnv(devices)
+
+	okAt(state, root, "ls -l /dev", {
+		"cr--r-----  root  sudo  door0   exterior       W  closed",
+		"crw-rw----  root  sudo  door1   office         N  closed",
+		"crw-rw-rw-  root  root  null",
+	}, env)
+
+	-- Read by anybody the 4 in the middle digit covers, which is the sudo group.
+	okAt(state, admin, "cat /dev/door0", { "closed" }, env)
+	okAt(state, root, "dev door0", { "door0: closed" }, env)
+
+	-- Written by nobody. The mode stops everybody but root; root is stopped by
+	-- the device, with write(2)'s own word for it.
+	badAt(state, admin, "echo open > /dev/door0", "door0: permission denied", env)
+	badAt(state, root, "echo open > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "dev door0 open", "door0: operation not supported", env)
+	-- And the word makes no difference, because it cannot: a device with nothing
+	-- behind it has nothing to carry any word out with, so it is refused before
+	-- the vocabulary is ever consulted.
+	badAt(state, root, "echo close > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "echo banana > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "dev door0 toggle", "door0: operation not supported", env)
+	eq("and not one of them reached the world", #devices.writes, 0)
+
+	-- A chmod opens the reading; it does not invent an actuator.
+	okAt(state, root, "chmod 666 /dev/door0", {}, env)
+	badAt(state, root, "echo open > /dev/door0", "door0: operation not supported", env)
+	eq("still nothing reached the world", #devices.writes, 0)
+
+	-- The door beside it, with an operator on it, is untouched by any of this.
+	okAt(state, root, "echo open > /dev/door1", {}, env)
+	eq("the one that is wired still works", devices.writes[1], "door1=open")
+	okAt(state, root, "cat /dev/door1", { "open" }, env)
 end
 
 --
