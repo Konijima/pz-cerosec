@@ -991,8 +991,9 @@ each file and what its mode is — so a file that was yours on one machine is yo
 on the next, because an account is a name and the name goes with the file.
 
 Three things to know. `umount` refuses while anybody's working directory is inside
-the mount (`umount: /mnt: Device busy`); `cd` out and try again. So does `rm -r` or
-`mv` on the mount point itself, or on any directory with a mount under it —
+the mount (`umount: /mnt: Device busy`) — including somebody who got there through
+a symbolic link, since where he is standing is a place and not a spelling; `cd` out
+and try again. So does `rm -r` or `mv` on the mount point itself, or on any directory with a mount under it —
 unhooking the place a mount is written against would leave the disk in the drive
 and no path to it. Ejecting a mounted
 disk unmounts it first and loses nothing, because every write here is finished by
@@ -1696,10 +1697,31 @@ Across the boundary, a disk is **copied** and never handed over
 (`CeroSecOS.diskFromData` / `diskToData`). An item's modData is a `KahluaTable` the
 game owns, and the engine's own gate runs on whatever goes into the machine's state
 on every command from then on — so what goes in has to be a plain Lua table this
-engine made. The same gate `validate` uses (`CeroSecOS.validateDisk`) runs at the
-**slot**, so a forged or damaged disk is refused there rather than three commands
-later by a gate that then calls the whole machine broken. An item always *has* a
-modData table, so nothing written in it means a blank disk and not a refusal.
+engine made. `CeroSecOS.validateDisk` runs at the **slot**, so a forged or damaged
+disk is refused there rather than three commands later by a gate that then calls the
+whole machine broken. An item always *has* a modData table, so nothing written in it
+means a blank disk and not a refusal.
+
+That gate is asked two different questions, which is what its `bounded` argument is
+for. The **slot** asks the ceilings, because a disk arriving from an item did not
+have to come from a machine like this one. The **boot gate** does not, for exactly
+the reason it does not ask them of the machine's own drive: being over a quota is a
+state a filesystem can be *in*, and the answer to it is that the next write says
+`disk full` until room is made. A boot gate that refused would cost the player his
+whole computer for a disk he could have fixed with one `rm` — `osState`'s refusal is
+sticky and the firmware repair deliberately does not reach into the drive.
+
+**Logical and physical paths.** `getNode` crosses a mount on the path it really
+took, with every symbolic link already followed, and hands back the path that was
+*typed*, because that is what `cd` keeps and what every shell prints. Those are not
+the same string, and every rule about where a node lives — which disk it is on,
+whether it is a mount point, whether it is under `/dev` — is a fact about the place
+and not about the name, so it is asked with the fourth value `getNode` returns and
+never with the third. Asked with the name, as they were when this was first written,
+a symbolic link carried a write past the ceilings of the disk it landed on, a rename
+past the cross-device refusal, a removal past the mount-point guard, and a mount
+onto a name no walk would ever cross. `CeroSecOS.physicalOf` answers the same
+question for a path that does not exist yet, which is what a create needs.
 
 `mv` does not cross the two disks. `rename(2)` answers `EXDEV` and so does this,
 in that error's own words; real `mv` falls back on a copy and this one deliberately

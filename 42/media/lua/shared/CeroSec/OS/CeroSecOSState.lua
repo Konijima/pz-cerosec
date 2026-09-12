@@ -224,13 +224,28 @@ end
 -- An UNFORMATTED disk is a disk with no filesystem on it -- the normal state of a
 -- new one out of the box -- so a missing tree is not a fault.
 --
--- Asked twice: by validate below, of the disk that is in the drive, and by the
--- INSERT, of the disk that is about to go in (SCeroSecSystem). Those are the same
--- question and this is the one place it is answered, so a disk a machine would
--- refuse to boot with is a disk no slot will take.
+-- Asked in two places and NOT with the same question, which is the whole of what
+-- `bounded` is for:
+--
+--   * the BOOT GATE (validate, below) asks whether the core can run on this disk
+--     at all -- its shape. It does not ask whether the disk is over its own
+--     ceilings, for exactly the reason it does not ask it of the machine's own
+--     drive: being over a quota is a state a filesystem can be IN, and the answer
+--     to it is that the next write says "disk full" until room is made. A gate
+--     that refused would cost the player his whole COMPUTER -- osState's refusal
+--     is sticky, and the firmware repair does not reach into the drive -- for a
+--     disk he could have fixed with one `rm`.
+--   * the SLOT (CeroSecOS.diskFromData) asks `bounded`, because a disk arriving
+--     from an item's modData did not necessarily come from a machine like this
+--     one. Nothing the write path can do puts a disk past its ceilings, so one
+--     that is past them arrived from somewhere nobody can name.
+--
+-- The boot gate still bounds the node count, at the machine's own ceiling rather
+-- than the floppy's: a walk has to end, and a save file is a thing somebody can
+-- write.
 --
 -- ok, reason.
-function CeroSecOS.validateDisk(disk)
+function CeroSecOS.validateDisk(disk, bounded)
 	if type(disk) ~= "table" then return false, "floppy: not a disk" end
 	local ok, reason = checkPlain(disk, {}, "floppy")
 	if not ok then return false, reason end
@@ -244,15 +259,22 @@ function CeroSecOS.validateDisk(disk)
 	if type(disk.fs) ~= "table" or disk.fs.type ~= "dir" then
 		return false, "floppy: root is not a directory"
 	end
-	local dOk, dReason =
-		checkNode(disk.fs, "", 0, { nodes = 0, max = CeroSecOS.FLOPPY_NODES })
-	if not dOk then return false, "floppy" .. dReason end
-	-- And the bytes, which checkNode does not ask about for the machine's own drive
-	-- (being over the quota is a state a machine can be IN). A floppy is different:
-	-- nothing on this machine can put a disk over its ceiling, so a disk that is
-	-- over one did not come from here.
-	local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
-	if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end
+	local max = CeroSecOS.MAX_NODES
+	if bounded then max = CeroSecOS.FLOPPY_NODES end
+	local dOk, dReason = checkNode(disk.fs, "", 0, { nodes = 0, max = max })
+	if not dOk then
+		-- checkNode's reasons are "<path>: <why>", and the path is relative to the
+		-- disk's own root, so the word "floppy" goes straight in front of it. Two of
+		-- them are not paths at all ("too many nodes"), and those want the separator
+		-- putting in -- which is what "floppytoo many nodes" was.
+		local head = string.sub(dReason, 1, 1)
+		if head ~= ":" and head ~= "/" then dReason = ": " .. dReason end
+		return false, "floppy" .. dReason
+	end
+	if bounded then
+		local _, bytes = CeroSecOS.subtreeUsage(disk.fs)
+		if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end
+	end
 	return true
 end
 

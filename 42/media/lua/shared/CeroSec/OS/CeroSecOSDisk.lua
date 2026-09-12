@@ -212,7 +212,10 @@ end
 function CeroSecOS.diskFromData(data)
 	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
-	local ok, why = CeroSecOS.validateDisk(disk)
+	-- Bounded, because this is the SLOT: a disk arriving from an item did not
+	-- necessarily come from a machine like this one, and nothing the write path can
+	-- do puts one past its own ceilings.
+	local ok, why = CeroSecOS.validateDisk(disk, true)
 	if not ok then return nil, why end
 	return disk
 end
@@ -595,12 +598,17 @@ commands.mount = function(state, session, args, env)
 		return fail("mount", devPath, "permission denied")
 	end
 
-	local dirNode, dreason, dirAbs = CeroSecOS.getNode(state, session, dir)
+	-- The place, as the walk really reaches it. A mount is written down by PATH and
+	-- read back by path at every component of every walk, so a mount recorded under
+	-- a name that goes through a symbolic link is a mount no walk will ever cross --
+	-- and one whose ceilings every write beside it would still be judged against.
+	local dirNode, dreason, dirAbs, dirPhys = CeroSecOS.getNode(state, session, dir)
 	if dirNode == nil then return fail("mount", dir, dreason) end
 	if dirNode.type ~= "dir" then return fail("mount", dir, "not a directory") end
-	if dirAbs == "/" then return fail("mount", dir, "Device busy") end
+	if dirPhys == nil then dirPhys = dirAbs end
+	if dirPhys == "/" then return fail("mount", dir, "Device busy") end
 	-- Already something there, or this very drive already mounted somewhere else.
-	if CeroSecOS.mountAt(state, dirAbs) ~= nil then
+	if CeroSecOS.mountAt(state, dirPhys) ~= nil then
 		return fail("mount", dir, "Device busy")
 	end
 	if CeroSecOS.fdMount(state) ~= nil then
@@ -615,7 +623,7 @@ commands.mount = function(state, session, args, env)
 			.. ": Incorrect super block" }
 	end
 
-	CeroSecOS.addMount(state, CeroSecOS.FD_NAME, dirAbs)
+	CeroSecOS.addMount(state, CeroSecOS.FD_NAME, dirPhys)
 	return true, {}
 end
 
@@ -647,13 +655,21 @@ local function cwdsOf(state, session, env)
 	return out
 end
 
--- Is anybody standing on it? A cwd is a path as it was typed, so it is resolved
--- before it is compared -- "/mnt/." and "/mnt" are the same place.
+-- Is anybody standing on it?
+--
+-- A cwd is a path as it was TYPED, and a survivor who typed `cd` into a symbolic
+-- link is standing in the place it points at whatever his prompt says -- so each
+-- one is walked, not merely resolved as a string. Walked as root, because the
+-- question is where somebody IS and not what this session may look at; a cwd the
+-- walk cannot reach at all falls back to the string, which is the answer for a
+-- directory that has been deleted underneath him.
 function CeroSecOS.mountBusy(state, session, env, dir)
 	local cwds = cwdsOf(state, session, env)
+	local walker = CeroSecOS.rootSession()
 	for i = 1, #cwds do
-		local abs = CeroSecOS.resolve(nil, cwds[i])
-		if CeroSecOS.isInside(abs, dir) then return true end
+		local _, _, _, phys = CeroSecOS.getNode(state, walker, cwds[i])
+		if phys == nil then phys = CeroSecOS.resolve(nil, cwds[i]) end
+		if CeroSecOS.isInside(phys, dir) then return true end
 	end
 	return false
 end
@@ -661,8 +677,11 @@ end
 commands.umount = function(state, session, args, env)
 	if #args ~= 2 then return usage("umount") end
 	local dir = args[2]
-	local dirAbs = CeroSecOS.resolve(session, dir)
-	local mount = CeroSecOS.mountAt(state, dirAbs)
+	-- Where the walk really lands, for the reason the mount was written down that
+	-- way: a mount point reached through a link is the same mount point.
+	local _, _, dirAbs, dirPhys = CeroSecOS.getNode(state, session, dir)
+	if dirPhys == nil then dirPhys = CeroSecOS.resolve(session, dir) end
+	local mount = CeroSecOS.mountAt(state, dirPhys)
 	-- Nothing mounted there. mount(8)'s own answer for it, which names the thing
 	-- the player got wrong: the place, not the disk.
 	if mount == nil then return fail("umount", dir, "not mounted") end
@@ -674,10 +693,10 @@ commands.umount = function(state, session, args, env)
 		return fail("umount", dir, "permission denied")
 	end
 
-	if CeroSecOS.mountBusy(state, session, env, dirAbs) then
+	if CeroSecOS.mountBusy(state, session, env, dirPhys) then
 		return fail("umount", dir, "Device busy")
 	end
 
-	CeroSecOS.dropMount(state, dirAbs)
+	CeroSecOS.dropMount(state, dirPhys)
 	return true, {}
 end

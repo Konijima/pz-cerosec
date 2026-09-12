@@ -9869,23 +9869,45 @@ do
 	eq("a root that is not a directory",
 		CeroSecOS.validateDisk({ v = 1, fs = CeroSecOS.newFile("root", 644, "x") }), false)
 
-	-- Past the disk's own node ceiling: a disk the write path could never have
-	-- made, so it did not come from here.
+	-- Past the disk's own ceilings, which the BOOT GATE deliberately does not ask
+	-- about and the SLOT does.
+	--
+	-- Being over a quota is a state a filesystem can be IN -- that is already the
+	-- rule for the machine's own drive -- and the answer to it is that the next
+	-- write says "disk full" until room is made. A boot gate that refused would
+	-- cost the player his whole computer for a disk he could fix with one `rm`:
+	-- osState's refusal is sticky and the firmware repair does not reach into the
+	-- drive. The slot asks, because a disk arriving from an item did not have to
+	-- come from a machine like this one.
 	local many = CeroSecOS.newDir("root", 755)
 	for i = 1, CeroSecOS.FLOPPY_NODES do
 		many.children["f" .. i] = CeroSecOS.newFile("root", 644, "")
 	end
-	eq("a disk past its node ceiling is refused",
-		CeroSecOS.validateDisk({ v = 1, fs = many }), false)
-	-- And past its byte ceiling, which is a thing validate does NOT ask about the
-	-- machine's own drive: being over quota is a state a machine can be in, and a
-	-- floppy cannot get into it.
+	eq("the boot gate runs on a disk past its node ceiling",
+		CeroSecOS.validateDisk({ v = 1, fs = many }), true)
+	eq("and the slot will not take it",
+		CeroSecOS.validateDisk({ v = 1, fs = many }, true), false)
+	eq("in a sentence with its separator in it",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = many }, true)),
+		"floppy: too many nodes")
 	local fat = CeroSecOS.newDir("root", 755)
 	fat.children["big"] = CeroSecOS.newFile("root", 644,
 		string.rep("x", CeroSecOS.FLOPPY_BYTES))
 	fat.children["more"] = CeroSecOS.newFile("root", 644, "x")
-	eq("a disk past its byte ceiling is refused",
-		CeroSecOS.validateDisk({ v = 1, fs = fat }), false)
+	eq("the boot gate runs on a disk past its byte ceiling",
+		CeroSecOS.validateDisk({ v = 1, fs = fat }), true)
+	eq("and the slot will not take that either",
+		CeroSecOS.validateDisk({ v = 1, fs = fat }, true), false)
+	-- The boot gate still bounds what a walk costs, at the machine's own ceiling:
+	-- a save file is a thing somebody can write.
+	local huge = CeroSecOS.newDir("root", 755)
+	for i = 1, 12 do
+		local sub = CeroSecOS.newDir("root", 755)
+		for j = 1, 90 do sub.children["f" .. j] = CeroSecOS.newFile("root", 644, "") end
+		huge.children["d" .. i] = sub
+	end
+	eq("a forged tree past the machine's own node ceiling is refused",
+		CeroSecOS.validateDisk({ v = 1, fs = huge }), false)
 
 	-- The copy refuses what it cannot carry, rather than dropping it quietly.
 	eq("a function on a disk is not a disk",
@@ -10036,6 +10058,240 @@ do
 	okAt(state, open(state, "root"), "rm /bin/newfs", {})
 	badAt(state, admin, "newfs /dev/fd0", "newfs: command not found")
 	okAt(state, admin, "mount", { "/dev/hda on / type ufs (rw)" })
+end
+
+
+-- 47p. Through a symbolic link, every rule is the same rule
+--
+-- The walk crosses a mount on the path it really took, with every link already
+-- followed; the path it HANDS BACK is the one that was typed, because that is
+-- what `cd` keeps and what every shell prints. Those two are not the same string,
+-- and every rule about where a node lives -- which disk it is on, whether it is a
+-- mount point, whether it is under /dev -- has to be asked with the first.
+--
+-- Asked with the second, as they were when this rung was first written, a
+-- symbolic link carried a write past the ceilings of the disk it landed on, a
+-- rename past the cross-device refusal, a removal past the mount-point guard, and
+-- a mount onto a name no walk would ever cross. Every block below is one of those.
+--
+do
+	local state = fresh()
+	local rootSession = open(state, "root")
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "ln -s /mnt /home/admin/gate", {})
+
+	-- 1. The DISK's node ceiling, reached through the link.
+	for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
+		okAt(state, admin, "touch /home/admin/gate/f" .. i, {})
+	end
+	eq("the disk is at its own node ceiling and not the machine's",
+		select(1, CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(state))),
+		CeroSecOS.FLOPPY_NODES)
+	badAt(state, admin, "touch /home/admin/gate/one-more",
+		"touch: /home/admin/gate/one-more: disk full")
+	-- The machine, which has hundreds left, is untouched by it.
+	okAt(state, admin, "touch /home/admin/plenty", {})
+	for i = 1, CeroSecOS.FLOPPY_NODES - 1 do
+		okAt(state, admin, "rm /home/admin/gate/f" .. i, {})
+	end
+
+	-- 2. The DISK's byte ceiling, likewise.
+	local block = string.rep("y", CeroSecOS.MAX_FILE_BYTES)
+	eq("one maximal file fills the disk through the link",
+		CeroSecOS.writeFile(state, rootSession, "/home/admin/gate/big", block, false, nil),
+		true)
+	badAt(state, admin, "echo x > /home/admin/gate/more",
+		"echo: /home/admin/gate/more: disk full")
+	okAt(state, admin, "echo x > /home/admin/fine", {})
+	okAt(state, rootSession, "rm /home/admin/gate/big", {})
+
+	-- 3. A rename across the two disks, spelled through the link.
+	okAt(state, admin, "echo mine > /home/admin/notes.txt", {})
+	badAt(state, admin, "mv /home/admin/notes.txt /home/admin/gate/notes.txt",
+		"mv: /home/admin/gate/notes.txt: cross-device link")
+	badAt(state, admin, "mv /home/admin/notes.txt /home/admin/gate",
+		"mv: /home/admin/gate/notes.txt: cross-device link")
+	okAt(state, admin, "cat /home/admin/notes.txt", { "mine" })
+	-- And back the other way.
+	okAt(state, admin, "cp /home/admin/notes.txt /home/admin/gate", {})
+	badAt(state, admin, "mv /home/admin/gate/notes.txt /home/admin/back.txt",
+		"mv: /home/admin/back.txt: cross-device link")
+	-- A rename INSIDE the disk, spelled through the link, is an ordinary rename.
+	okAt(state, admin, "mv /home/admin/gate/notes.txt /home/admin/gate/other.txt", {})
+	okAt(state, admin, "ls /mnt", { "other.txt" })
+end
+
+do
+	-- 4. The mount point itself, reached through a link: not a name to take away
+	-- and not a name to move. The move is the one that matters most -- it would
+	-- have grafted the floppy's own root table into state.fs, leaving two live
+	-- owners of one disk, which is the thing the copy on the item boundary exists
+	-- to prevent.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, rootSession, "newfs /dev/fd0", nil)
+	okAt(state, rootSession, "mount /dev/fd0 /mnt", {})
+	okAt(state, rootSession, "echo secret > /mnt/notes.txt", {})
+	okAt(state, rootSession, "ln -s / /root/r", {})
+
+	badAt(state, rootSession, "rm -r /root/r/mnt", "rm: /root/r/mnt: Device busy")
+	badAt(state, rootSession, "mv /root/r/mnt /root/moved", "mv: /root/moved: Device busy")
+	check("the mount point is still on the disk", state.fs.children.mnt ~= nil)
+	eq("nothing was grafted anywhere", state.fs.children.root.children.moved, nil)
+	eq("and the mount still works", CeroSecOS.mountTable(state) ~= nil, true)
+	okAt(state, rootSession, "cat /mnt/notes.txt", { "secret" })
+	okAt(state, rootSession, "cat /root/r/mnt/notes.txt", { "secret" })
+
+	-- The floppy's root is the machine's only through the mount, and never a node
+	-- hanging in state.fs.
+	local floppy = CeroSecOS.floppyRoot(state)
+	local function reaches(node, target, depth)
+		if node == target then return true end
+		if depth > 8 or type(node) ~= "table" or node.children == nil then return false end
+		local names = CeroSecOS.childNames(node)
+		for i = 1, #names do
+			if reaches(node.children[names[i]], target, depth + 1) then return true end
+		end
+		return false
+	end
+	check("the disk's root is nowhere inside the machine's own tree",
+		not reaches(state.fs, floppy, 0))
+end
+
+do
+	-- 5. A mount made ONTO a symbolic link is written down at the place, not at
+	-- the name: a mount recorded under a name that goes through a link is a mount
+	-- no walk will ever cross, and one whose ceilings every write beside it would
+	-- still have been judged against.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, rootSession, "newfs /dev/fd0", nil)
+	okAt(state, rootSession, "mkdir /root/real", {})
+	okAt(state, rootSession, "ln -s /root/real /root/link", {})
+	okAt(state, rootSession, "mount /dev/fd0 /root/link", {})
+
+	eq("the table holds the place", state.mounts[1].dir, "/root/real")
+	okAt(state, rootSession, "mount", { "/dev/hda on / type ufs (rw)",
+		"/dev/fd0 on /root/real type ufs (rw)" })
+	-- And it is really crossed, by either spelling.
+	okAt(state, rootSession, "echo on the disk > /root/link/a.txt", {})
+	check("the file is on the disk", CeroSecOS.floppyRoot(state).children["a.txt"] ~= nil)
+	eq("and not on the hard drive underneath",
+		state.fs.children.root.children.real.children["a.txt"], nil)
+	okAt(state, rootSession, "cat /root/real/a.txt", { "on the disk" })
+	-- Unmounted by either spelling too, and what was underneath comes back.
+	okAt(state, rootSession, "umount /root/link", {})
+	okAt(state, rootSession, "ls /root/real", {})
+	okAt(state, rootSession, "mount /dev/fd0 /root/real", {})
+	okAt(state, rootSession, "umount /root/link", {})
+	eq("nothing mounted", CeroSecOS.mountTable(state), nil)
+end
+
+do
+	-- 6. A session standing in the mount through a link is a session standing in
+	-- the mount. A cwd is a path as it was TYPED, so each one is walked and not
+	-- merely resolved as a string.
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	okAt(state, admin, "ln -s /mnt /home/admin/gate", {})
+	okAt(state, admin, "cd /home/admin/gate", {})
+	eq("the prompt still says what he typed", admin.cwd, "/home/admin/gate")
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy")
+	-- And somebody else, over the wire, standing in it the same way.
+	okAt(state, admin, "cd /", {})
+	local env = { now = FIXED, net = {
+		sessions = function()
+			return { { user = "bob", line = "ttyp0", cwd = "/home/admin/gate" } }
+		end,
+	} }
+	badAt(state, admin, "umount /mnt", "umount: /mnt: Device busy", env)
+	okAt(state, admin, "umount /mnt", {})
+end
+
+do
+	-- 7. /dev is read-only through a link as well. The rule was asked of the typed
+	-- path, so a link into /dev was a create /dev accepted.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	-- The sentence is the FILESYSTEM's here and not the command's: the commands
+	-- carry a courtesy of their own that names the directory rather than the name
+	-- ("/dev: read-only", so a player who tried once does not try a second name),
+	-- and that one is spelled against the path as typed. Under it is this gate,
+	-- which is the one that cannot be gone round, and it answers in the ordinary
+	-- grammar: the command, the name, the reason.
+	okAt(state, rootSession, "ln -s /dev /root/d", {})
+	badAt(state, rootSession, "touch /root/d/x", "touch: /root/d/x: read-only")
+	badAt(state, rootSession, "mkdir /root/d/x", "mkdir: /root/d/x: read-only")
+	eq("and nothing was made in /dev",
+		CeroSecOS.countEntries(CeroSecOS.systemNode(state, CeroSecOS.DEV_PATH)), 1)
+end
+
+do
+	-- 8. A removal through a link unhooks the node from where it really hangs.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	okAt(state, rootSession, "mkdir /root/real", {})
+	okAt(state, rootSession, "echo x > /root/real/f.txt", {})
+	okAt(state, rootSession, "ln -s /root/real /root/link", {})
+	okAt(state, rootSession, "rm /root/link/f.txt", {})
+	eq("the file really went", state.fs.children.root.children.real.children["f.txt"], nil)
+	-- And the link itself is still a link: rm takes away the name it was given.
+	check("the link is untouched", state.fs.children.root.children.link ~= nil)
+	okAt(state, rootSession, "rm /root/link", {})
+	check("and now it is gone", state.fs.children.root.children.link == nil)
+	check("while what it pointed at stays", state.fs.children.root.children.real ~= nil)
+end
+
+do
+	-- 9. A history that lands on a floppy.
+	--
+	-- The exemption that makes a history free is the HARD DISK's -- it exists so
+	-- that `df` on hda does not move because somebody typed -- so a home with a
+	-- disk mounted over it has no exemption to spend and the history is an ordinary
+	-- file on that disk. Written straight onto the node, as it is on the hard
+	-- drive, it grew to sixteen kilobytes on a four-kilobyte disk, and the boot
+	-- gate then refused the whole computer for it.
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy()
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /home/admin", {})
+	for i = 1, 400 do
+		CeroSecOS.historyAppend(state, admin, "echo a line of ordinary length " .. i, FIXED)
+	end
+	local nodes, bytes = CeroSecOS.subtreeUsage(CeroSecOS.floppyRoot(state))
+	check("the history is bounded by the disk it is on (" .. bytes .. ")",
+		bytes <= CeroSecOS.FLOPPY_BYTES)
+	check("and by what a file may hold", bytes <= CeroSecOS.MAX_FILE_BYTES)
+	eq("it costs a node like any other file", nodes, 2)
+	eq("the machine still boots", CeroSecOS.validate(state), true)
+	-- It really is being kept, and the oldest lines are the ones that go.
+	local kept = CeroSecOS.historyLines(state, admin)
+	check("there is a history there at all", #kept > 0)
+	eq("ending on the last line typed", kept[#kept], "echo a line of ordinary length 400")
+
+	-- The hard disk's own history is untouched by any of this: sixteen kilobytes,
+	-- and exempt.
+	local other = fresh()
+	local them = open(other, "admin")
+	local before = select(2, CeroSecOS.usage(other))
+	for i = 1, 400 do
+		CeroSecOS.historyAppend(other, them, "echo a line of ordinary length " .. i, FIXED)
+	end
+	local node = CeroSecOS.systemNode(other, "/home/admin/" .. CeroSecOS.HISTORY_NAME)
+	check("a history on the hard disk is still the bigger file (" .. #node.data .. ")",
+		#node.data > CeroSecOS.MAX_FILE_BYTES)
+	check("and still under its own ceiling", #node.data <= CeroSecOS.HISTORY_BYTES)
+	eq("and still costs the drive nothing but its node",
+		select(2, CeroSecOS.usage(other)), before)
 end
 
 print("os_test: " .. count .. " assertions passed")

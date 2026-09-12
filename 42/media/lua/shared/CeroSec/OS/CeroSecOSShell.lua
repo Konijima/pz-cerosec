@@ -114,17 +114,24 @@ end
 -- anything over the 4096 a file may hold, and this file is exempt from both by
 -- construction. Everything else a write owes -- the printable rule, the owner,
 -- the mode, the permission to write at all -- is still paid, above.
-local function historyPut(node, lines)
+-- The lines, oldest dropped until they fit, as one blob. The ceiling is handed
+-- in because a history does not always land on the machine's own drive: see
+-- CeroSecOS.historyAppend.
+local function historyText(lines, ceiling)
 	while #lines > CeroSecOS.HISTORY_MAX do table.remove(lines, 1) end
 	local text = table.concat(lines, "\n")
-	while #text > CeroSecOS.HISTORY_BYTES and #lines > 1 do
+	while #text > ceiling and #lines > 1 do
 		table.remove(lines, 1)
 		text = table.concat(lines, "\n")
 	end
 	-- One line of its own, longer than the whole file may be: cut rather than
 	-- refused, because the alternative is a history that silently stops.
-	if #text > CeroSecOS.HISTORY_BYTES then text = string.sub(text, 1, CeroSecOS.HISTORY_BYTES) end
-	node.data = text
+	if #text > ceiling then text = string.sub(text, 1, ceiling) end
+	return text
+end
+
+local function historyPut(node, lines)
+	node.data = historyText(lines, CeroSecOS.HISTORY_BYTES)
 end
 
 -- One line onto the end of the account's history. Quiet on every refusal: a
@@ -162,6 +169,24 @@ function CeroSecOS.historyAppend(state, session, line, now)
 
 	local lines = CeroSecOS.splitLines(node.data or "")
 	lines[#lines + 1] = line
+
+	-- Where the history really is.
+	--
+	-- Everything above this line is about the EXEMPTION, and the exemption belongs
+	-- to the hard disk: it exists so that `df` on hda does not move because
+	-- somebody typed, and it is what lets this write go straight onto the node
+	-- instead of through the quota. A home with a disk mounted over it is not the
+	-- hard disk, and there is no exemption there to spend -- so a history on a
+	-- floppy is an ORDINARY file on that floppy: bounded by what a file may hold,
+	-- counted against the disk like anything else, and refused when the disk is
+	-- full. Which is exactly what writing it through setData is.
+	local _, _, _, phys = CeroSecOS.getNode(state, session, path)
+	local fs = CeroSecOS.fsFor(state, phys or path)
+	if fs.at ~= "/" then
+		local text = historyText(lines, CeroSecOS.MAX_FILE_BYTES)
+		return CeroSecOS.setData(state, session, path, text, now) == true
+	end
+
 	historyPut(node, lines)
 	if now ~= nil then node.mtime = now end
 	return true

@@ -379,6 +379,16 @@ end
 -- So a link that points at itself costs eight hops and then says so, and a pair
 -- that point at each other costs the same -- there is no path through here that
 -- does not end.
+--
+-- The FOURTH return is the path the walk really took: the components as they
+-- stood at the end of it, with every link already followed. It is not the same
+-- thing as the third -- `cd /root/link` keeps `/root/link`, because that is the
+-- path the survivor typed and the one every shell prints -- and the difference is
+-- what every RULE about where a node lives has to be asked with. Which disk it is
+-- on, whether it is a mount point, whether it is under /dev: those are facts about
+-- the place the walk landed, and the logical path is a name for that place and not
+-- the place. Asking them of the logical path is how a symbolic link was able to
+-- carry a write past the ceilings of the disk it landed on.
 -- The absolute path of the first n components of a walk. Built a piece at a time
 -- rather than with table.concat's four-argument form, which is not worth betting
 -- on under Kahlua.
@@ -443,7 +453,31 @@ function CeroSecOS.getNode(state, session, path, noFollow)
 			i = i + 1
 		end
 	end
-	return node, nil, abs
+	return node, nil, abs, "/" .. table.concat(parts, "/")
+end
+
+-- Where a path WOULD be, whether or not anything is there: the physical path of
+-- its parent with the last component on the end.
+--
+-- This is what a create has to be judged with -- which disk it lands on, and
+-- whether it lands under /dev -- and a create is the one case getNode cannot
+-- answer, because the thing being asked about is not there yet. The parent IS
+-- there, or the create is about to fail for a reason of its own, so the walk is
+-- asked about the parent and the name is put back on.
+--
+-- physical path, physical parent path, name. All three nil for "/" itself, which
+-- has no parent and is nothing anybody creates.
+function CeroSecOS.physicalOf(state, session, path)
+	local _, parts = CeroSecOS.resolve(session, path)
+	if #parts == 0 then return nil, nil, nil end
+	local parentPath, name = CeroSecOS.parentOf(parts)
+	local _, _, _, parentPhys = CeroSecOS.getNode(state, session, parentPath)
+	-- A parent the walk could not reach is a parent that will refuse the create in
+	-- its own words a line later; the logical path is the best answer there is for
+	-- it and is never used to grant anything.
+	if parentPhys == nil then parentPhys = parentPath end
+	if parentPhys == "/" then return "/" .. name, parentPhys, name end
+	return parentPhys .. "/" .. name, parentPhys, name
 end
 
 -- A node the machine itself reads, by absolute path, with no session and no
@@ -494,17 +528,26 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 	if #parts == 0 then return nil, nil, "file exists" end
 	local name = parts[#parts]
 	if not CeroSecOS.isValidFileName(name) then return nil, nil, "invalid name" end
-	if #parts + addDepth > CeroSecOS.MAX_DEPTH then return nil, nil, "path too deep" end
 
 	local parentPath = CeroSecOS.parentOf(parts)
+	local parent, reason, _, parentPhys = CeroSecOS.getNode(state, session, parentPath)
+	if parent == nil then return nil, nil, reason end
+	-- Everything below is a question about WHERE the parent is, and the answer is
+	-- the path the walk really took and never the one that was typed: a symbolic
+	-- link is a name for a place and not the place. Asked of the typed path, a link
+	-- into /dev was a create /dev accepted, and a link into a mounted disk was a
+	-- write judged against the wrong drive's ceilings.
+	if parentPhys == nil then parentPhys = parentPath end
+	local _, physParts = CeroSecOS.resolve(nil, parentPhys)
+	if #physParts + 1 + addDepth > CeroSecOS.MAX_DEPTH then
+		return nil, nil, "path too deep"
+	end
 	-- /dev is not a directory anybody writes into. Its contents are the world
 	-- around the machine, worked out afresh at every command, so a file put
 	-- there would be gone by the next one -- and root is not told a lie about a
 	-- write that will not last. The commands that create say so in their own
 	-- words; this is the gate under all of them, so cp and mv cannot go round.
-	if parentPath == CeroSecOS.DEV_PATH then return nil, nil, "read-only" end
-	local parent, reason = CeroSecOS.getNode(state, session, parentPath)
-	if parent == nil then return nil, nil, reason end
+	if parentPhys == CeroSecOS.DEV_PATH then return nil, nil, "read-only" end
 	if parent.type ~= "dir" then return nil, nil, "not a directory" end
 	local taken = parent.children[name] ~= nil
 	if taken and not replace then return nil, nil, "file exists" end
@@ -519,7 +562,7 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 	-- drive otherwise. Neither is ever counted against the other -- a full floppy
 	-- is a `df` that has not moved on hda (see CeroSecOS.fsFor).
 	if addNodes > 0 or addBytes > 0 then
-		local fs = CeroSecOS.fsFor(state, parentPath)
+		local fs = CeroSecOS.fsFor(state, parentPhys)
 		local nodes, bytes = CeroSecOS.fsUsage(state, fs)
 		if nodes + addNodes > fs.nodes then return nil, nil, "disk full" end
 		if bytes + addBytes > fs.bytes then return nil, nil, "disk full" end
@@ -598,21 +641,28 @@ function CeroSecOS.removeNode(state, session, path, recursive, now)
 	-- The link and not what it points at: `rm` takes away the name it was given,
 	-- which for a symbolic link is the link. Deleting what a link points at is
 	-- done by naming that.
-	local node, reason = CeroSecOS.getNode(state, session, abs, true)
+	local node, reason, _, phys = CeroSecOS.getNode(state, session, abs, true)
 	if node == nil then return nil, reason end
+	-- Where the node really IS, which is where it has to be unhooked from: a path
+	-- with a link in the middle of it names a place somewhere else entirely, and
+	-- unhooking it from the typed path's parent would take a name away from a
+	-- directory that never held it.
+	if phys == nil then phys = abs end
+	local _, physParts = CeroSecOS.resolve(nil, phys)
+	if #physParts == 0 then return nil, "permission denied" end
 	-- A device is not the machine's to take away: unplugging a light switch is
 	-- done with a screwdriver, standing in front of it.
 	if CeroSecOS.isDev(node) then return nil, "is a device" end
 	-- And neither is a directory something is mounted on, nor one with a mount
 	-- somewhere under it: taking it away would leave a mount written down against
 	-- a place that is not there any more (see CeroSecOS.mountUnder).
-	if CeroSecOS.mountUnder(state, abs) ~= nil then return nil, "Device busy" end
+	if CeroSecOS.mountUnder(state, phys) ~= nil then return nil, "Device busy" end
 	if node.type == "dir" then
 		if not recursive then return nil, "is a directory" end
 		if not canRemoveTree(state, session, node) then return nil, "permission denied" end
 	end
 
-	local parentPath, name = CeroSecOS.parentOf(parts)
+	local parentPath, name = CeroSecOS.parentOf(physParts)
 	local parent, preason = CeroSecOS.getNode(state, session, parentPath)
 	if parent == nil then return nil, preason end
 	if not CeroSecOS.can(state, session, parent, "w") then return nil, "permission denied" end
@@ -625,7 +675,7 @@ end
 
 -- Replace a file's contents. true, reason.
 function CeroSecOS.setData(state, session, path, data, now)
-	local node, reason, abs = CeroSecOS.getNode(state, session, path)
+	local node, reason, _, phys = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, reason end
 	if node.type ~= "file" then return nil, CeroSecOS.notAFile(node) end
 	if not CeroSecOS.can(state, session, node, "w") then return nil, "permission denied" end
@@ -645,7 +695,7 @@ function CeroSecOS.setData(state, session, path, data, now)
 	-- And it is asked of the disk the FILE is on, which is the floppy when the file
 	-- is under a mount point: a note written on a disk fills the disk and never the
 	-- machine it happens to be plugged into.
-	local fs = CeroSecOS.fsFor(state, abs)
+	local fs = CeroSecOS.fsFor(state, phys)
 	local _, before = CeroSecOS.fsUsage(state, fs)
 	local old = node.data
 	node.data = data
@@ -682,20 +732,32 @@ end
 -- the disk for room it is about to give back.
 function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local fromAbs, fromParts = CeroSecOS.resolve(session, fromPath)
-	local toAbs, toParts = CeroSecOS.resolve(session, toPath)
 	if #fromParts == 0 then return nil, "permission denied" end
 
 	-- The link and not its target, exactly as with a removal: moving a link moves
 	-- the link, and a relative target now means something else, which is what it
 	-- means on every machine that has ever had them.
-	local node, reason = CeroSecOS.getNode(state, session, fromAbs, true)
+	local node, reason, _, fromPhys = CeroSecOS.getNode(state, session, fromAbs, true)
 	if node == nil then return nil, reason end
 	if CeroSecOS.isDev(node) then return nil, "is a device" end
+
+	-- Both ends as the walk really reaches them, and every rule below asked with
+	-- those and never with what was typed. A link in the middle of either path
+	-- names a place on another filesystem, in another directory, possibly under a
+	-- mount -- and a rename judged on the name instead of the place unhooked a node
+	-- from a directory that never held it, and carried a tree onto a disk whose
+	-- ceilings it had never been shown.
+	if fromPhys == nil then fromPhys = fromAbs end
+	local _, fromPhysParts = CeroSecOS.resolve(nil, fromPhys)
+	if #fromPhysParts == 0 then return nil, "permission denied" end
+	local toPhys = CeroSecOS.physicalOf(state, session, toPath)
+	if toPhys == nil then return nil, "file exists" end
+	local _, toParts = CeroSecOS.resolve(nil, toPhys)
 	-- A mount point is not a name to move, and neither is a directory with a mount
 	-- under it; nor is a name that would be WRITTEN OVER one, which is the same
 	-- unhooking done from the other end.
-	if CeroSecOS.mountUnder(state, fromAbs) ~= nil then return nil, "Device busy" end
-	if CeroSecOS.mountUnder(state, toAbs) ~= nil then return nil, "Device busy" end
+	if CeroSecOS.mountUnder(state, fromPhys) ~= nil then return nil, "Device busy" end
+	if CeroSecOS.mountUnder(state, toPhys) ~= nil then return nil, "Device busy" end
 	-- A rename is ONE filesystem's operation and cannot reach across two, which is
 	-- what rename(2) answers EXDEV to -- "Cross-device link", in the words the
 	-- system has used for it since there were two devices. The way across is `cp`
@@ -706,12 +768,12 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	-- Judged here and not in `mv`, so that the order of the refusals is the order
 	-- the mutator checks them in: a mount point named as the source is Device busy
 	-- and not a cross-device link, which is the truer of the two sentences about it.
-	if CeroSecOS.fsFor(state, fromAbs).at ~= CeroSecOS.fsFor(state, toAbs).at then
+	if CeroSecOS.fsFor(state, fromPhys).at ~= CeroSecOS.fsFor(state, toPhys).at then
 		return nil, "cross-device link"
 	end
-	if CeroSecOS.isInside(toAbs, fromAbs) then return nil, "invalid destination" end
+	if CeroSecOS.isInside(toPhys, fromPhys) then return nil, "invalid destination" end
 
-	local fromParentPath, fromName = CeroSecOS.parentOf(fromParts)
+	local fromParentPath, fromName = CeroSecOS.parentOf(fromPhysParts)
 	local fromParent, freason = CeroSecOS.getNode(state, session, fromParentPath)
 	if fromParent == nil then return nil, freason end
 	if not CeroSecOS.can(state, session, fromParent, "w") then return nil, "permission denied" end
