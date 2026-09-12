@@ -152,8 +152,16 @@ _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
 _G.MapObjects = { OnNewWithSprite = function() end, OnLoadWithSprite = function() end }
+-- The handlers are KEPT, so that a bench can fire one. The mod hangs two things
+-- on an event and nothing else can reach them: the client drops a computer's glow
+-- from Events.OnObjectAboutToBeRemoved, which is what a pickup fires, and a fake
+-- that threw the function away could only ever bench the other half.
 _G.Events = setmetatable({}, { __index = function(t, key)
-	local event = { Add = function() end }
+	local event = { handlers = {} }
+	event.Add = function(fn) event.handlers[#event.handlers + 1] = fn end
+	event.trigger = function(...)
+		for i = 1, #event.handlers do event.handlers[i](...) end
+	end
 	rawset(t, key, event)
 	return event
 end })
@@ -364,6 +372,122 @@ SGlobalObjectSystem.loadIsoObject = function(self, isoObject)
 end
 
 --
+-- The CLIENT's half of the same pair, which is where a glow lives. Both base
+-- classes are vanilla's, copied rather than approximated for the same reason the
+-- two above are: the whole subject of the glow section at the bottom is what
+-- happens INSIDE newLuaObjectAt when a chunk comes back, and the Lua that calls
+-- it is Java's (media/lua/client/Map/CGlobalObject.lua and
+-- CGlobalObjectSystem.lua on 42.20.4).
+--
+CGlobalObject = { derive = function(self, name) return derive(self, name) end }
+-- A GlobalObject IS its modData table -- Java makes the table, Lua puts a
+-- metatable on that very one -- so a bench's fake GlobalObject hands one over the
+-- same way, and a field the client sets is a field the "packet" wrote.
+CGlobalObject.new = function(self, luaSystem, globalObject)
+	local o = globalObject:getModData()
+	setmetatable(o, self)
+	self.__index = self
+	o.luaSystem = luaSystem
+	o.globalObject = globalObject
+	o.x = globalObject:getX()
+	o.y = globalObject:getY()
+	o.z = globalObject:getZ()
+	return o
+end
+CGlobalObject.getIsoObject = function(self)
+	if not self.luaSystem then return nil end
+	return self.luaSystem:getIsoObjectAt(self.x, self.y, self.z)
+end
+CGlobalObject.getSquare = function(self)
+	return getCell():getGridSquare(self.x, self.y, self.z)
+end
+CGlobalObject.fromModData = function(self, modData)
+	for k, v in pairs(modData) do self[k] = v end
+end
+CGlobalObject.updateFromIsoObject = function(self)
+	local isoObject = self:getIsoObject()
+	if isoObject then self:fromModData(isoObject:getModData()) end
+end
+
+CGlobalObjectSystem = { derive = function(self, name) return derive(self, name) end }
+CGlobalObjectSystem.RegisterSystemClass = function() end
+CGlobalObjectSystem.new = function(self, name)
+	local o = setmetatable({}, self)
+	o.systemName = name
+	-- The Java mirror: the three calls the mod and the base class make on it. A
+	-- GlobalObject is keyed by its square, which is how the real lookup works
+	-- (GlobalObjectLookup), so announcing the same square twice finds the first
+	-- one -- the repeat the client has to survive.
+	local objects, order = {}, {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	o.system = {
+		getObjectAt = function(_, x, y, z) return objects[key(x, y, z)] end,
+		getObjectCount = function() return #order end,
+		getObjectByIndex = function(_, i) return order[i + 1] end,
+		newObject = function(_, x, y, z)
+			if objects[key(x, y, z)] then error("newObject: already one there", 2) end
+			local modData = {}
+			local globalObject = {
+				getX = function() return x end,
+				getY = function() return y end,
+				getZ = function() return z end,
+				getModData = function() return modData end,
+			}
+			objects[key(x, y, z)] = globalObject
+			order[#order + 1] = globalObject
+			return globalObject
+		end,
+		removeObject = function(_, globalObject)
+			objects[key(globalObject:getX(), globalObject:getY(), globalObject:getZ())] = nil
+			for i = 1, #order do
+				if order[i] == globalObject then table.remove(order, i) break end
+			end
+		end,
+	}
+	o:initSystem()
+	return o
+end
+CGlobalObjectSystem.initSystem = function() end
+CGlobalObjectSystem.newLuaObjectAt = function(self, x, y, z)
+	return self:newLuaObject(self.system:newObject(x, y, z))
+end
+CGlobalObjectSystem.getLuaObjectAt = function(self, x, y, z)
+	local globalObject = self.system:getObjectAt(x, y, z)
+	if globalObject then globalObject:getModData():updateFromIsoObject() end
+	return globalObject and globalObject:getModData() or nil
+end
+CGlobalObjectSystem.getLuaObjectOnSquare = function(self, square)
+	if not square then return nil end
+	return self:getLuaObjectAt(square:getX(), square:getY(), square:getZ())
+end
+CGlobalObjectSystem.removeLuaObject = function(self, luaObject)
+	if not luaObject or (luaObject.luaSystem ~= self) then return end
+	self.system:removeObject(luaObject.globalObject)
+end
+CGlobalObjectSystem.removeLuaObjectAt = function(self, x, y, z)
+	self:removeLuaObject(self:getLuaObjectAt(x, y, z))
+end
+CGlobalObjectSystem.getIsoObjectOnSquare = function(self, square)
+	if not square then return nil end
+	for i = 1, square:getObjects():size() do
+		local isoObject = square:getObjects():get(i - 1)
+		if self:isValidIsoObject(isoObject) then return isoObject end
+	end
+	return nil
+end
+CGlobalObjectSystem.getIsoObjectAt = function(self, x, y, z)
+	local cell = getCell()
+	if not cell then return nil end
+	return self:getIsoObjectOnSquare(cell:getGridSquare(x, y, z))
+end
+CGlobalObjectSystem.getLuaObjectCount = function(self)
+	return self.system:getObjectCount()
+end
+CGlobalObjectSystem.getLuaObjectByIndex = function(self, index)
+	return self.system:getObjectByIndex(index - 1):getModData()
+end
+
+--
 -- The mod, loaded the way the game loads it.
 --
 
@@ -394,6 +518,12 @@ local FILES = {
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
+	-- The client's mirror and the glow on it. Loaded for real, and not stubbed like
+	-- the CCeroSecSystem the window benches talk to: the light is the one thing in
+	-- this mod that only the client has, so a stub in its place is a bench that
+	-- cannot see a glow at all.
+	"client/CeroSec/CCeroSecObject.lua",
+	"client/CeroSec/CCeroSecSystem.lua",
 	-- The one under test is loaded from a path the caller may override, so the
 	-- same bench can be pointed at an older window and made to fail.
 	nil,
@@ -414,6 +544,15 @@ end
 -- The game is up now, and the font it hands out for UIFont.Code is the right
 -- one. Anything measured before this line was measured against the wrong one.
 _G.__cellMeasure = nil
+
+-- The real client classes, put aside: newBench below replaces the global
+-- CCeroSecSystem with the stub every window bench sends its commands through, so
+-- the glow section at the bottom would otherwise have nothing left to run.
+local CClientSystem = CCeroSecSystem
+-- And the handler the client hangs on a pickup, caught while the global still
+-- names the real class (the mod's own closure reads that global, so the bench puts
+-- the real one back for the moment it fires).
+local OnObjectAboutToBeRemoved = Events.OnObjectAboutToBeRemoved
 
 local count = 0
 local function check(what, cond)
@@ -8290,7 +8429,11 @@ do
 		-- The tile's own object, which is what a chunk brings back with it. Its
 		-- sprite starts OFF because that is what is on the tile before anybody has
 		-- switched the machine on.
-		local iso = { sprite = CeroSec.SPRITES_OFF["S"], modData = {} }
+		-- Named, because it is on a square the device scan walks now, and a plain
+		-- IsoObject is not a light switch, a door or a window: the classifier asks
+		-- instanceof about each object it finds (SCeroSecDevices.classify) and the
+		-- fake that answers "yes" to everything would fit a relay to a computer.
+		local iso = { __class = "IsoObject", sprite = CeroSec.SPRITES_OFF["S"], modData = {} }
 		iso.getSpriteName = function() return iso.sprite end
 		iso.setSpriteFromName = function(_, name)
 			iso.sprite = name
@@ -8302,18 +8445,54 @@ do
 		iso.transmitModData = function() end
 		iso.getSquare = function() return chunk.loaded and here or nil end
 		chunk.iso = iso
+		-- On its tile, which is the only place the CLIENT can find it: the client
+		-- has no GlobalObject of its own to read a sprite off, it walks the square's
+		-- objects (CGlobalObjectSystem:getIsoObjectOnSquare).
+		here.objects[#here.objects + 1] = iso
 
 		-- The cell, which is a different question from the machine's own square:
 		-- /dev and the sensor scan are discovered through getCell
 		-- (CeroSecDevices.find), so a chunk that is away has to be away from that
 		-- too. Nothing else in the county is in this cell, which is all the two
 		-- benches that read /dev need.
-		_G.__world = { getGridSquare = function(_, gx, gy, gz)
+		local cell = { getGridSquare = function(_, gx, gy, gz)
 			if not chunk.loaded or gz ~= 0 then return nil end
 			if gx == x and gy == y then return here end
 			if gx == x + 1 and gy == y then return beside end
 			return nil
 		end }
+
+		-- And the cell's lampposts, which is what the glow IS. addLamppost pushes an
+		-- IsoLightSource onto IsoCell.lamppostPositions and hands it back;
+		-- removeLamppost takes one off. strays counts a removal aimed at a source the
+		-- stack has not got: the game would shrug that off (removeLamppost only sets
+		-- the source's life to 0), so it is counted here rather than thrown, and
+		-- asserted at zero -- a mod that keeps aiming at lights the engine already
+		-- took is a mod that thinks it has one.
+		chunk.lampposts = {}
+		chunk.strays = 0
+		cell.getLightSourceAt = function(_, gx, gy, gz)
+			for i = 1, #chunk.lampposts do
+				local light = chunk.lampposts[i]
+				if light.x == gx and light.y == gy and light.z == gz then return light end
+			end
+			return nil
+		end
+		cell.addLamppost = function(_, gx, gy, gz, r, g, b, radius)
+			local light = { x = gx, y = gy, z = gz, r = r, g = g, b = b, radius = radius }
+			chunk.lampposts[#chunk.lampposts + 1] = light
+			return light
+		end
+		cell.removeLamppost = function(_, light)
+			for i = 1, #chunk.lampposts do
+				if chunk.lampposts[i] == light then
+					table.remove(chunk.lampposts, i)
+					return
+				end
+			end
+			chunk.strays = chunk.strays + 1
+		end
+		_G.__world = cell
 
 		-- The client's end of a chunk coming back: stateToIsoObject announces the
 		-- object, which is what puts the screen's glow back on
@@ -8348,6 +8527,15 @@ do
 		-- LoadComputer -> loadIsoObject (the foot of SCeroSecSystem.lua).
 		function chunk.away()
 			chunk.loaded = false
+			-- What the engine does when the window of loaded chunks moves off a
+			-- square, and does without a word to anybody: LightingJNI.checkLights
+			-- walks IsoCell.getLamppostPositions() every pass and removes any source
+			-- whose isInBounds() is false -- "inside some player's IsoChunkMap world
+			-- tiles" -- or whose recorded chunk is not the chunk now covering its
+			-- square (javap -c LightingJNI.checkLights, offsets 78-123, and
+			-- IsoLightSource.isInBounds). The mod keeps its handle and loses the
+			-- light, which is the whole bug this section is about.
+			chunk.lampposts = {}
 		end
 		function chunk.back(powered)
 			chunk.powered = powered ~= false
@@ -8648,6 +8836,142 @@ do
 			net.glass("admin@" .. net.host(old)))
 		net.enter("exit")
 		net.tick(3)
+	end
+
+	-- 42b. THE GLOW THAT DID NOT COME BACK
+	--
+	-- "When I teleport very far and come back, the computer light is not there even
+	-- though the computer is on." The sprite was right and the glow was gone, and it
+	-- never came back -- not on the next chunk load, not ever.
+	--
+	-- Two faults, one behind the other, and both are about who OWNS the light.
+	--
+	-- The engine takes it. LightingJNI.checkLights walks
+	-- IsoCell.getLamppostPositions() and removes any source whose isInBounds() is
+	-- false -- "inside some player's IsoChunkMap world tiles" -- or whose recorded
+	-- chunk is not the chunk now covering its square (javap -c on 42.20.4:
+	-- checkLights offsets 78-123, IsoLightSource.isInBounds). Nothing is said to
+	-- anybody. The mod kept the handle addLamppost had given it and read "I have a
+	-- handle" as "there is a light", so addLight did nothing for ever after.
+	--
+	-- And nothing asked. The announce is the only call the client gets when a chunk
+	-- comes back (the server's stateToIsoObject ends in newLuaObjectOnClient), and
+	-- Java's receiveNewLuaObjectAt calls the Lua newLuaObjectAt and no other method:
+	-- OnLuaObjectUpdated is named only inside receiveUpdateLuaObjectAt (javap -c
+	-- CGlobalObjectSystem). A minute sweep used to paper over it, and could not: the
+	-- sweep called the same syncLight that believed the same handle.
+	--
+	-- So the whole client half runs here for real -- CCeroSecObject and
+	-- CCeroSecSystem, not the stub the window benches send commands through -- with
+	-- Java's two receive methods written out in the order Java does them.
+	do
+		local net = newNet()
+		local chunk = streamed(net, 20, 10)
+		local far = chunk.object
+		local client = CClientSystem:new()
+
+		-- The synced keys, and only those: the server writes the ones it has and the
+		-- client rawsets the ones it receives (TableNetworkUtils.saveSome and the copy
+		-- loop in both receive methods).
+		local function sync(mirror, source)
+			local keys = net.system.system.syncKeys
+			for i = 1, #keys do
+				local value = source[keys[i]]
+				if value ~= nil then mirror[keys[i]] = value end
+			end
+		end
+		-- receiveNewLuaObjectAt: newLuaObjectAt FIRST, the copy after it. The order is
+		-- the point -- a client that read its own `on` inside newLuaObjectAt would be
+		-- reading the state from before the packet, which is why the glow is decided
+		-- off the sprite the chunk brought with it.
+		local function announce(source)
+			local mirror = client:newLuaObjectAt(source.x, source.y, source.z)
+			sync(mirror, source)
+			return mirror
+		end
+		net.system.newLuaObjectOnClient = function(_, o)
+			if o == far then chunk.told = chunk.told + 1 end
+			announce(o)
+		end
+		-- receiveUpdateLuaObjectAt: the copy first, OnLuaObjectUpdated after.
+		far.updateOnClient = function(self)
+			local mirror = client:getLuaObjectAt(self.x, self.y, self.z)
+			if not mirror then return end
+			sync(mirror, self)
+			client:OnLuaObjectUpdated(mirror)
+		end
+
+		local function glows() return #chunk.lampposts end
+
+		eq("the machine is on", far.on, true)
+		eq("and nothing is lit before the client has been told of it", glows(), 0)
+
+		-- The chunk arrives, which is the announce (MapObjects.OnLoadWithSprite ->
+		-- loadIsoObject -> stateToIsoObject).
+		chunk.back(true)
+		local mirror = client:getLuaObjectAt(20, 10, 0)
+		eq("the chunk arrives and the screen glows", glows(), 1)
+		eq("on the machine's own square", chunk.lampposts[1].x, 20)
+		eq("one square wide", chunk.lampposts[1].radius, CeroSec.LIGHT_RADIUS)
+		eq("and bluish-white, so it reads as a monitor", chunk.lampposts[1].b, CeroSec.LIGHT_B)
+
+		-- Ten miles away. The engine drops the light and says nothing.
+		chunk.away()
+		eq("the survivor leaves the county and the light goes with the chunk", glows(), 0)
+		check("while the client is still holding the handle it was given",
+			mirror.light ~= nil)
+
+		-- He comes home. THIS is the report.
+		chunk.back(true)
+		eq("he comes home to a lit screen and the glow is back", glows(), 1)
+
+		-- And the same square is announced more than once per visit, which is the
+		-- repeat newLuaObjectAt exists to tolerate.
+		net.system:loadIsoObject(chunk.iso)
+		net.system:loadIsoObject(chunk.iso)
+		eq("announced three times over, and there is exactly one light", glows(), 1)
+		eq("and nothing was ever aimed at a light the engine had already taken",
+			chunk.strays, 0)
+
+		-- Switched off while nobody could see it: there was no tile to put the dark
+		-- sprite on, and there is no light to come back to.
+		chunk.away()
+		net.forget()
+		far:turnOff()
+		eq("the crontab -- or the wire -- switched it off out of view", far.on, false)
+		chunk.back(true)
+		eq("the dark sprite is on the tile", chunk.iso.sprite, CeroSec.SPRITES_OFF["S"])
+		eq("and a dark machine comes home with no glow", glows(), 0)
+		eq("with nothing aimed at a light either", chunk.strays, 0)
+
+		-- Switched on with the chunk in, which is the other receive method.
+		far:turnOn()
+		eq("it goes back on", far.on, true)
+		eq("and the update lights it where it stands", glows(), 1)
+
+		-- Picked up. The client drops the glow the moment the object leaves its
+		-- square -- Events.OnObjectAboutToBeRemoved, which is the earlier of the two
+		-- ways it hears -- and the server's removal packet lands on
+		-- removeLuaObjectAt right after. Both go through removeLight.
+		local stub = CCeroSecSystem
+		CCeroSecSystem = CClientSystem
+		CCeroSecSystem.instance = client
+		OnObjectAboutToBeRemoved.trigger(chunk.iso)
+		CCeroSecSystem.instance = nil
+		CCeroSecSystem = stub
+		eq("picking the computer up takes its glow with it", glows(), 0)
+		client:removeLuaObjectAt(20, 10, 0)
+		eq("the client has no machine on that square any more",
+			client:getLuaObjectAt(20, 10, 0), nil)
+		eq("and the removal packet found nothing left to take", chunk.strays, 0)
+
+		-- Put down again, lit. A machine the client has never heard of arrives by the
+		-- same announce -- a placement and the first chunk of a session are one path
+		-- -- so the glow comes with the state.
+		local placed = announce(far)
+		eq("the computer put back down is lit again", glows(), 1)
+		eq("and the client knows it is on", placed.on, true)
+		check("on a mirror that is not the one that was taken away", placed ~= mirror)
 	end
 
 	_G.__world = nil

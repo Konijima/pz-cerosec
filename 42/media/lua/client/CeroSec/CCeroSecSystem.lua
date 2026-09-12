@@ -21,10 +21,21 @@ end
 -- The server announces an object whenever a chunk holding one is loaded, which
 -- happens more than once for the same location. GlobalObjectSystem.newObject
 -- throws on a duplicate, so hand back the existing object instead.
+--
+-- And this is where the glow comes back. The announce is the only call the client
+-- gets when a chunk returns, and Java's receiveNewLuaObjectAt calls this method
+-- and nothing else -- it copies the announced state in afterwards and never calls
+-- OnLuaObjectUpdated, which only receiveUpdateLuaObjectAt does (javap -c
+-- CGlobalObjectSystem). So the state to match is read off the IsoObject the chunk
+-- brought with it, not off our own table, which the copy has not reached yet.
 function CCeroSecSystem:newLuaObjectAt(x, y, z)
 	local existing = self.system:getObjectAt(x, y, z)
-	if existing then return existing:getModData() end
-	return CGlobalObjectSystem.newLuaObjectAt(self, x, y, z)
+	local luaObject = existing and existing:getModData()
+		or CGlobalObjectSystem.newLuaObjectAt(self, x, y, z)
+	local on = luaObject:onFromSprite()
+	if on ~= nil then luaObject.on = on end
+	luaObject:syncLight()
+	return luaObject
 end
 
 function CCeroSecSystem:removeLuaObjectAt(x, y, z)
@@ -59,22 +70,13 @@ Events.OnServerCommand.Add(function(module, command, args)
 	CeroSecDebugUI.onServerAnswer(command, args)
 end)
 
--- Idempotent sweep. Catches the cases no single event covers: objects announced
--- by receiveNewLuaObjectAt (which does not call OnLuaObjectUpdated), a cell that
--- dropped our light with its chunk, and a light left behind by anything else.
-function CCeroSecSystem:syncLights()
-	local count = self:getLuaObjectCount()
-	if not count then return end
-	for i = 1, count do
-		self:getLuaObjectByIndex(i):syncLight()
-	end
-end
-
+-- There is no sweep. This used to walk every object once a minute, because the
+-- announce path did not sync the light and the object believed its own handle --
+-- and a sweep could not mend that either, since addLight saw self.light set and
+-- did nothing. Now the four events that can change the answer each make it match
+-- (announce, update, removal, pickup) and the cell is asked whether the light is
+-- really there, so there is nothing left for a minute hand to catch up on.
 CGlobalObjectSystem.RegisterSystemClass(CCeroSecSystem)
-
-Events.EveryOneMinute.Add(function()
-	if CCeroSecSystem.instance then CCeroSecSystem.instance:syncLights() end
-end)
 
 -- Drop the glow the moment the computer goes, rather than waiting for the server
 -- to tell us the GlobalObject is gone. Fires on pickup for plain objects
