@@ -7914,7 +7914,24 @@ do
 	net.tick(3)
 	check("D says the box's own line", net.heard(CeroSecOS.TNC.disconnected))
 	eq("and gives the line back", CeroSecOS.ptyCount(net.far.ptys), 0)
-	check("the box is still at cmd:", net.glass(CeroSecOS.TNC_PROMPT))
+	-- And the near SCREEN is the box's dialog and not the session's copy of it.
+	-- That is what the parked glass costs if it is got wrong: the session's console
+	-- carries a copy of this screen taken when the link was MADE, so a teardown
+	-- that painted it back over a parked screen would lose every line typed at
+	-- cmd: since -- the `D` a survivor just typed among them -- and would say
+	-- *** DISCONNECTED a second time under a prompt that is still up. Read off the
+	-- console, because the window's painted lines are a hundred-line screen and
+	-- would show the old copy just as happily.
+	local lines = net.here:consoleState().lines
+	local downs, echoed = 0, false
+	for i = 1, #lines do
+		if lines[i] == CeroSecOS.TNC.disconnected then downs = downs + 1 end
+		if string.find(lines[i], CeroSecOS.TNC_PROMPT .. "D", 1, true) then echoed = true end
+	end
+	eq("said once and not twice", downs, 1)
+	check("and the D that was typed is still on the screen", echoed)
+	check("the box is still at cmd:",
+		net.here:consoleState().prompt.text == CeroSecOS.TNC_PROMPT)
 	check("and cu has NOT hung up", not net.heard(CeroSecOS.CU_DISCONNECTED))
 	-- A second D on a box holding nothing says the same thing and nothing else.
 	say(net, "D")
