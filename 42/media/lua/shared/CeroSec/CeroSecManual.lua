@@ -1364,7 +1364,9 @@ fork: x=$(cat notes | head -n 1).
 A command that asks something -- sudo, passwd -- may ask from a stage
 that has nothing on its input: sudo cat notes | grep -i knox puts the
 password question up on the glass and carries on with the answer. A stage
-that reads a pipe cannot, and says "not a terminal" instead.]],
+that reads a pipe cannot, and says "not a terminal" instead -- and so does
+the whole pipeline with an & behind it, which has nobody at the glass to
+ask at all.]],
 
 [[$? after a pipeline is the LAST stage's status, and nobody else's. And a
 reader that stops reading ends the writer where it stands, so an endless
@@ -1438,6 +1440,31 @@ machine full is SKIPPED, not queued, and the log says so --
 A crontab holds at most 32 lines. Root may put a file into the spool by
 hand, and a bad line in one is not run: it is logged, once a minute it
 would have been due in, and the good lines around it still run.]],
+
+[[A cron line has no terminal, and the machine holds it to that: there is
+nobody in front of the glass at four in the morning, so nothing a cron
+line runs may write on it or ask it anything.
+
+  rlogin      rlogin: not a terminal
+  su          su: not a terminal
+  passwd      passwd: not a terminal
+  sudo        sudo: not a terminal
+  edit        edit: not a terminal
+  clear       runs, and clears nothing
+  exit        ends the line, never the session
+
+The same is true of a job started with an & behind it, and of a stage of a
+pipeline: neither has a pair of hands in front of it either.]],
+
+[[A password question is only ever put in front of the job holding the
+prompt, so a cron line that asked one would wait for an answer that could
+never come -- and four jobs waiting like that are every slot the machine
+has. It is told instead, in the mail, and the slot comes back.
+
+rsh is the one that works with no terminal, exactly as the real one does:
+it is one command and an answer, which is why a crontab calls rsh and not
+rlogin. Its answer comes back in the mail, and a machine that answers an
+rsh at four in the morning has nothing on its glass to show for it.]],
 
 [[Waiting for a door to open is not a command -- it is a loop. Unix has
 never had a "wait until this happens", and the way it has always been
@@ -1609,6 +1636,20 @@ off, losing the power, or picking either computer up ends it too.
 Your own command history keeps the rlogin line and nothing you typed on
 the far side: the far side has a history of its own, in gate's own home.]],
 
+[[rlogin hands your terminal to the far machine, so it needs one to hand:
+a job with nobody in front of it gets rlogin: not a terminal instead. That
+is a crontab line, an & behind the command, a $(...) and a stage of a
+pipeline.
+
+A script you run yourself in the foreground keeps the terminal it was
+started from, the way it does on any Unix, so ./nightly.sh with an rlogin
+in it opens its session and every line under it is gate's.
+
+Without that rule a crontab would be a way to put a logged-in session on
+the glass of a machine nobody is standing at -- which is somebody else's
+computer under the next pair of hands to walk up to it, with nothing on
+the screen to say how it got there.]],
+
 [[A password every time is what trust files are for. Two of them, and
 either is enough.
 
@@ -1642,11 +1683,19 @@ root is never trusted by /etc/hosts.equiv, only by /root/.rhosts.]],
 
 It never asks for a password. If the far machine does not trust this one
 the answer is rsh: gate: Permission denied, and the trust files above are
-the whole of the fix. What rsh prints reaches the screen and not a pipe:
-there is no rsh gate date > file on this machine, and the way to bring
-something back is the next command.
+the whole of the fix.
 
-rcp copies one file, and one end of it is somewhere else:
+rsh needs no terminal, which is what makes it the one of these three a
+script and a crontab can use. From a crontab the answer comes back in
+/var/mail, from behind an & it comes back on the glass with the rest of
+what a background job says, and neither of them ever takes the screen
+over the way an rlogin does.
+
+What rsh prints reaches the screen and not a pipe: there is no
+rsh gate date > file on this machine, rsh gate date | wc -l reads
+nothing, and the way to bring something back is the next command.]],
+
+[[rcp copies one file, and one end of it is somewhere else:
 
   rcp notes.txt gate:/home/admin/notes.txt
   rcp gate:/var/log/cron here.txt
@@ -2055,9 +2104,9 @@ script, because they are not a script's to say:
   divide by zero
   bad arithmetic
   edit: not a terminal
-      the editor needs a screen, and a background job and
-      a stage of a pipeline have none -- sudo and passwd
-      say it too in a stage that READS a pipe
+      signed rlogin:, su:, passwd: or sudo: too -- all
+      five want somebody at the glass, and a crontab line,
+      an &, a $(...) and a pipeline stage have nobody
   sleep: invalid interval
   sleep: no clock
   read: not a name

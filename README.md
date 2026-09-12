@@ -481,6 +481,15 @@ on. Your history keeps the `rlogin` line and nothing you typed over there; the
 far machine's history keeps that, in its own home. The editor travels: `edit`
 down an `rlogin` opens the far machine's file and Tab saves it over there.
 
+**`rlogin` needs a terminal to hand over**, the way `rlogin(1)` does: it puts
+your own terminal into raw mode and gives the far end everything typed on it, so
+a job with nobody in front of it has nothing to give and gets
+`rlogin: not a terminal` -- a crontab line, an `&`, a `$(...)` and a stage of a
+pipeline. A script run from the prompt in the **foreground** keeps the terminal it
+was started from, exactly as it does on real Unix, so a `./nightly.sh` with an
+`rlogin` in it opens its session. Without that rule a crontab was a way to land a
+logged-in session on the glass of a machine nobody was standing at.
+
 `exit` ends it, and so does Escape at an idle prompt; either way the line
 `Connection closed.` comes back. Escape while something is running over there is
 that job's `^C` and not the end of the session. Switching either machine off,
@@ -500,9 +509,13 @@ one at mode `664` is ignored without a word. `root` is never trusted by
 `/etc/hosts.equiv`, only by `/root/.rhosts`.
 
 `rsh` never asks for a password, because `rshd` does not: trust or
-`rsh: gate: Permission denied`. What it prints reaches the glass and not a pipe
--- there is no `rsh gate date > file` on this machine, and `rcp` is how something
-comes back. `rcp` needs the same trust, lands the file as the account you are,
+`rsh: gate: Permission denied`. It needs **no** terminal, which is the whole
+reason a crontab calls `rsh` and not `rlogin`: from cron the answer comes back in
+`/var/mail/<you>`, from behind an `&` it comes back on the glass with the rest of
+what a background job prints, and neither of those ever takes the screen over.
+What it prints reaches the glass and not a pipe
+-- there is no `rsh gate date > file` on this machine, `rsh gate date | wc -l`
+reads nothing, and `rcp` is how something comes back. `rcp` needs the same trust, lands the file as the account you are,
 and is judged by the far machine's own permissions, its 4096-byte file ceiling
 and its own 32K disk. It is not quick: the wire runs at about a kilobyte a
 second.
@@ -745,6 +758,16 @@ written for, and there is no `anacron` here. And it does not get more than its
 share: a machine runs four jobs at once and no more, cron's included, so a line that
 comes due with the machine full is **skipped** and the log says so in cron's own
 words, `(CRON) error (can't fork)`.
+
+**A cron line has no terminal**, and the machine holds it to that. Nothing it can
+write reaches the glass a survivor might be standing at: `rlogin` is refused with
+`rlogin: not a terminal`, and so are `su`, `passwd` and `sudo` — a password
+question is only ever put up for the job holding the prompt, so from cron it would
+wait for an answer that could never come, and four of those are every job slot the
+machine has. `clear` runs and clears nothing, because the glass is not a cron
+line's to wipe. `edit` has always answered `edit: not a terminal`, and an `exit`
+ends the line and never the session. `rsh` is the one that does work without a
+terminal, exactly as real `rsh` does, and its answer comes back in the mail.
 
 What a cron job **prints** never reaches the screen — there is nobody at the screen
 at four in the morning. It is mailed to the account, with the `From` and `Subject`
@@ -1729,6 +1752,21 @@ rules, and the pty table a session lives in. `rlogin`, `rsh` and `rcp` decide
 everything that can be decided from here -- the name, whether the wire reaches,
 how deep the chain already is -- and then end in an order to the server
 (`"rlogin"`, `"rsh"`), exactly as `shutdown` does.
+
+**Whether the job giving that order has a terminal is decided in the engine**, in
+`jobHasTerminal` (`CeroSecOSVM.lua`): the prompt's own job, outside every pipe and
+every `$(...)`, and deliberately at any DEPTH, so a foreground script inherits the
+terminal it was started from. `exitLeavesTheMachine` is that rule plus the depth
+rule, which is the one thing `exit` has and `rlogin` has not. An `"rlogin"` order
+from a job with none is refused there; an `"rsh"` order is marked `noTty` instead,
+and `SCeroSecNet.connect` then gives the session a console of its own with no copy
+of the glass on it, never points the near console at it, and delivers what it
+printed when it ends -- the mailbox for a cron line, the glass for a `&`. The one
+guard that closes every path at once is in `SCeroSecSystem:pushScreen`, which
+sends nothing from a console marked `noTty` to any window: the FAR machine's own
+scheduler pushes the screens its jobs wrote on and knows nothing about whose
+session they are. `answerDial` asks the same question again at the door, for an
+order that reached the server any other way.
 
 `env.net` is the link layer, handed in beside `env.devices` and built fresh for
 every line typed, because both are answers about a moment:
