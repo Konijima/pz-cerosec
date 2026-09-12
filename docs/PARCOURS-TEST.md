@@ -204,13 +204,31 @@ passé réellement, même quand ça correspond au texte attendu.
     `useradd: set a password with passwd bob`. `ls -l /home` → `bob`,
     `drwxr-x---`. `id bob` → `uid=bob flag=user groups=bob`. [ ]
 62. `useradd Bob` → `useradd: Bob: invalid name`. `useradd admin` →
-    `useradd: admin: already exists`. `useradd -a kate` puis `id kate` →
-    `flag=admin`, mais `sudo ls` en `kate` reste
-    `kate is not in the sudoers file.` [ ]
+    `useradd: admin: already exists`. [ ]
+62a. **`-G wheel` fait un administrateur, et ça veut dire quelque chose.**
+    `sudo useradd -G wheel kate` puis `id kate` → `flag=admin` **et**
+    `groups=kate,wheel,sudo`. `passwd kate`, se reconnecter en `kate`,
+    `sudo whoami` → son propre mot de passe est demandé, puis `root` : c'est la
+    ligne `%wheel` de `/etc/sudoers` qui l'accorde, pas le drapeau.
+    `cat /etc/sudoers` pour la voir. [ ]
+62b. **La liste REMPLACE, elle n'ajoute pas.** `admin` : `sudo groupadd crew`,
+    `sudo usermod -G crew,wheel kate`, `groups kate` → `kate wheel crew sudo`.
+    Puis `sudo usermod -G crew kate` → `groups kate` → `kate crew` : `wheel` est
+    parti et `sudo whoami` en `kate` répond
+    `kate is not in the sudoers file.` C'est la sémantique SVR4 de `-G`. [ ]
+62c. **La liste vide est refusée.** `sudo usermod -G "" kate` →
+    `usermod: empty group list`, et `groups kate` n'a pas bougé. Puis
+    `sudo usermod -G nosuch kate` → `usermod: nosuch: no such group`, toujours
+    rien de changé. `sudo usermod -G crew nosuchuser` →
+    `usermod: nosuchuser: no such user`. [ ]
 63. `userdel root` → `userdel: root: cannot remove`. `admin`,
     `sudo userdel admin` → `userdel: admin: user is logged in`. `userdel bob`
     sans `-r` → `id bob` devient `no such user` mais `ls -l /home` montre
     encore le dossier `bob`. `userdel -r carl` → le dossier disparaît. [ ]
+63a. **`userdel` balaie le nom partout.** `sudo useradd -G wheel dan`,
+    `cat /etc/group` → `wheel:dan`. `sudo userdel dan`, `cat /etc/group` →
+    `wheel:` de nouveau, et `cat /etc/sudoers` n'a jamais eu son nom. Un nom
+    laissé dans `wheel` serait `root` qui attend le prochain `dan`. [ ]
 64. `admin`, `su` (mot de passe défini sur `root`) → `Password:` avec des `*` ;
     mauvais mot de passe → `su: authentication failure`. Bon mot de passe →
     `root@<host>:/root#`. `exit` → retour à `admin@<host>:~$`, écran non
@@ -231,7 +249,7 @@ passé réellement, même quand ça correspond au texte attendu.
 69. `root`, ajouter une ligne `bob` à `/etc/sudoers`, puis `bob`, `id` →
     `groups=bob,sudo`, et `echo off > /dev/light0` fonctionne. Retirer la
     ligne : ça s'arrête, sans redémarrer la machine. [ ]
-70. `admin` : `sudo groupadd crew`, `sudo gpasswd -a bob crew`,
+70. `admin` : `sudo groupadd crew`, `sudo usermod -G crew bob`,
     `mkdir /home/admin/shared`, `chgrp crew /home/admin/shared`,
     `chmod 770 /home/admin/shared`, `chmod 755 /home/admin`. `bob` :
     `cd /home/admin/shared`, `echo hi > note.txt`, `ls -l` → le fichier est là,
@@ -242,8 +260,9 @@ passé réellement, même quand ça correspond au texte attendu.
     `770` → `bob` rentre de nouveau. [ ]
 73. `root`, `groupdel crew` → `ls -l /home/admin` montre encore `crew` dans la
     colonne groupe, personne dedans ; `chgrp crew /home/admin/shared` répond
-    ensuite `chgrp: crew: no such group`. `groupdel root`, `groupdel sudo` et
-    `groupdel users` répondent tous `cannot remove`. [ ]
+    ensuite `chgrp: crew: no such group`. `groupdel root`, `groupdel wheel`,
+    `groupdel sudo` et `groupdel users` répondent tous `cannot remove` — les
+    quatre groupes livrés, `wheel` inclus parce que `/etc/sudoers` le nomme. [ ]
 
 ## G. Fichiers système et BIOS
 
@@ -272,9 +291,10 @@ passé réellement, même quand ça correspond au texte attendu.
     `login:` ; le fichier laissé sous `/home` est intact. [ ]
 82. Ouvrir un ordinateur venant d'une sauvegarde faite avant cette version →
     `help` liste déjà toutes les commandes (`sudo`, `shutdown`, `reboot`,
-    `chgrp`, `gpasswd`, `groupadd`, etc.) et `cat /etc/sudoers` (en `root`)
-    montre la liste livrée, sans que rien d'existant sur le disque ait
-    bougé. [ ]
+    `chgrp`, `usermod`, `groupadd`, `more`, `find`, `cut`, `tr`, `tee`,
+    `uptime`, `w`, etc.), les vieux noms n'y sont **plus** (étape 274), et
+    `cat /etc/sudoers` (en `root`) montre la liste livrée plus la ligne
+    `%wheel`, sans que rien d'existant sur le disque ait bougé. [ ]
 
 ## H. Périphériques
 
@@ -1621,6 +1641,88 @@ un interrupteur dans la pièce.
      sous-menu **CeroSec (dev)** du tout sur le menu d'un ordinateur. Relancer le
      jeu avec `-debug` : le sous-menu revient avec **Fenêtre de débogage** dedans
      et **rien** d'autre — le manuel se trouve ou ne se lit pas. [ ]
+
+## Y. Les outils qui manquaient, et les noms qui s'en vont (fidélité A)
+
+263. **`more`, le pagineur.** `admin` : `edit long.txt` et y mettre une
+     quarantaine de lignes numérotées (ou `ls -l /bin > long.txt`), sauver.
+     `more long.txt` → dix-neuf lignes puis `--More--(NN%)` sur la vingtième.
+     Taper une **espace** puis Entrée → l'écran suivant, et le pourcentage a
+     monté. Entrée **seule** → une seule ligne de plus. `q` puis Entrée →
+     l'invite revient, rien de plus n'est affiché. [ ]
+264. **Échap à l'invite du pagineur.** `more long.txt`, puis Échap → `^C` après
+     le `--More--`, la fenêtre reste ouverte et le shell revient. [ ]
+265. **`more` dans un tube, en dernier.** `ls -l /bin | more` → même chose, une
+     page à la fois. Puis `ls /bin | more | wc -l` → **un seul nombre** et
+     aucune question : quand sa sortie n'est pas un écran, `more` recopie sans
+     pagineur, ce que fait le vrai. Et `more long.txt > copie.txt` → rien à
+     l'écran, `wc -l copie.txt` compte tout le fichier. [ ]
+266. **`more` sans personne devant.** `more long.txt &` → `more: not a
+     terminal`. Même chose depuis une ligne de `crontab` : le courrier dit
+     `more: not a terminal`. [ ]
+267. **`find`.** `mkdir -p` n'existe pas : faire `mkdir arbre`,
+     `mkdir arbre/dedans`, `touch arbre/haut.txt`, `touch arbre/dedans/bas.txt`,
+     `touch arbre/dedans/bas.log`. Puis `find arbre` → cinq lignes, le dossier
+     **avant** ce qu'il contient. `find arbre -type d` → deux. `find arbre -name
+     "*.txt"` → deux. `find arbre -name "bas.*"` → deux. `find arbre -name
+     "*.txt" -type d` → **rien** (les deux tests doivent être vrais).
+     `find arbre -print` → comme `find arbre`. `find` tout seul → la ligne
+     d'usage. [ ]
+268. **`find` et ce qu'il ne peut pas lire.** `admin`, `find /` → il nomme
+     `/root` et dit ensuite `find: /root: permission denied`, et la marche
+     continue. La commande est **en échec** : `find / | wc -l` affiche donc les
+     chemins au lieu de les compter, exactement comme `cat bon mauvais | wc -l`.
+     En `root`, `find / -name "*.txt"` marche partout. [ ]
+269. **`cut`.** `cut -d : -f 1 /etc/passwd` → `root` puis `admin`.
+     `cut -c 1-8 /etc/passwd` → les huit premiers caractères de chaque ligne.
+     `echo un,deux,trois > c.txt` puis `cut -d , -f 1,3 c.txt` → `un,trois`
+     (le séparateur revient **entre** les champs gardés), `cut -d , -f 2- c.txt`
+     → `deux,trois`. `echo sansvirgule > s.txt` puis `cut -d , -f 2 s.txt` →
+     `sansvirgule`, la ligne **entière** : elle n'a pas de champ à découper.
+     `cut -c x c.txt` → `cut: x: invalid list`. [ ]
+270. **`tr`.** `cat c.txt | tr a-z A-Z` → `UN,DEUX,TROIS`.
+     `cat c.txt | tr -d ,` → `undeuxtrois`. `cat c.txt | tr a-z x` → que des
+     `x` sauf les virgules (le dernier caractère du deuxième jeu sert pour tout
+     le reste). `tr a-z A-Z` **sans tube** → la ligne d'usage : `tr` ne lit que
+     son entrée standard, comme tous les `tr`. `cat c.txt | tr z-a b` →
+     `tr: z-a: invalid set`. [ ]
+271. **`tee`.** `ls /bin | tee liste | wc -l` → un nombre à l'écran **et**
+     `wc -l liste` donne le même. `ls /etc | tee liste` → `liste` est
+     **remplacé**. `ls /etc | tee -a liste` → il est doublé, sans ligne vide au
+     milieu. `cat c.txt | tee /etc/motd` en `admin` →
+     `tee: /etc/motd: permission denied`. [ ]
+272. **`uptime` et `w`.** `uptime` → une ligne de la forme
+     ` 3:14PM  up 2 days,  4:03,  1 user,  load 0.00 0.00 0.00`, tenant dans les
+     soixante colonnes. Lancer `sleep 300 &` quatre fois, attendre une dizaine
+     de secondes, `uptime` → la première moyenne monte (elle compte les travaux
+     prêts à tourner) ; `kill` les quatre, attendre une minute, elle redescend.
+     `w` → la même ligne, puis
+     `USER     TTY      FROM        LOGIN@ IDLE  WHAT` et une ligne par session.
+     `FROM` est `-` au clavier ; `WHAT` est `w` lui-même. `uptime -a` → la ligne
+     d'usage. [ ]
+273. **`w` avec une session venue du réseau.** Depuis une deuxième machine,
+     `rlogin <hôte>` et se connecter. Sur la première, `w` → **deux** lignes :
+     la console et un `ttyp0` dont `FROM` est le nom de la machine d'en face, et
+     la première ligne dit `2 users`. Laisser la session distante tranquille une
+     minute : sa colonne `IDLE` monte. [ ]
+274. **Les vieux noms ont disparu, et la mise à niveau les a effacés.** Sur une
+     machine **d'une sauvegarde antérieure à cette version** (ou après
+     `sudo rm /bin/hash` sur une neuve, ce qui est la même absence) : `adduser`,
+     `deluser`, `gpasswd`, `hash`, `readlink`, `restart` et `write` répondent
+     tous `command not found`, et `ls /bin` n'en montre aucun. `help` non plus.
+     Et ce qu'il faut taper à la place : `useradd`, `userdel`, `usermod -G`,
+     `mkpasswd`, `ls -l` pour lire la flèche d'un lien, `reboot`, et
+     `echo texte > fichier`. [ ]
+275. **La page des écarts.** Ouvrir le **Guide de l'utilisateur** (volume 1),
+     chapitre 1, et tourner jusqu'à **What is not Unix here** : elle nomme
+     `help`, `dev`, `mkpasswd`, `edit`, `sudo`, `jobs`, `more` et dit où `hash`,
+     `readlink`, `restart` et `write` sont partis. Rien d'autre sur la machine
+     ne doit surprendre quelqu'un qui a déjà utilisé un Unix. [ ]
+276. **`jobs` appartient à la machine.** `admin` : `sleep 300 &`. Puis `exit`,
+     se reconnecter (ou se connecter en `bob` depuis une autre fenêtre sur la
+     **même** machine) et taper `jobs` → le travail de `admin` est là, avec son
+     crochet. `kill %1` marche. `man jobs` dit
+     `list the background jobs on this machine`. [ ]
 
 ## Rapport
 

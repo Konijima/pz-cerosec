@@ -72,7 +72,13 @@ Full player reference: [docs/PLAYERS.md](docs/PLAYERS.md).
 - **Faithful to Unix; invent nothing.** Where a real `/bin/sh`, `cron`, `rlogin`
   or a Hayes modem would answer a certain way, this machine answers the same way
   — refusals included. A behaviour with no real-world model is a behaviour to
-  question.
+  question. The commands wear the names 1993 gave them: `useradd`, `userdel`,
+  `usermod -G` (System V, 1989), and not Debian's `adduser` or shadow-utils'
+  `gpasswd`. The handful of things that have no 1993 model and are kept anyway
+  — `help`, `dev`, `mkpasswd`, `edit`, `sudo`, and jobs that belong to the
+  machine rather than to the shell — are listed in `CeroSecOS.DEVIATIONS` and
+  declared on a page of the in-game Volume 1, *What is not Unix here*, which a
+  bench checks against that list in both directions.
 - **Waves in worktrees.** Each wave of work happens in its own git worktree
   branched from a named base commit, is proven by `sh tests/run.sh` and never by
   starting the game, and merges only after a verifier reads the diff and Mathieu
