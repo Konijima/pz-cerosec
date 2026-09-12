@@ -18,12 +18,18 @@ require "CeroSec/CeroSecTerminal"
 -- IT LOOKS LIKE THE GAME'S OWN DEBUG WINDOWS and deliberately not like the
 -- terminal beside it. A phosphor screen is a thing in the world that a survivor
 -- reads; this is a tool, and the game already has a shape for one: an
--- ISCollapsableWindow with an ISTabPanel in it and an ISScrollingListBox per tab
--- with columns on it, which is ISEntitiesDebugWindow's shape
+-- ISCollapsableWindow with an ISTabPanel in it, an ISPanel per tab as that tab's
+-- view, and an ISScrollingListBox with columns inside each view -- which is
+-- ISEntitiesDebugWindow's shape
 -- (media/lua/client/DebugUIs/DebugMenu/Entity/ISEntitiesDebugWindow.lua:46-62)
 -- down to the border spacing. No colours of our own, no fonts of our own: the
 -- list box's own palette and UIFont.Small, so it sits among vanilla's tools
 -- rather than among ours.
+--
+-- The list is INSIDE a view and is not the view itself, and that is the whole of
+-- what went wrong the first time: a list box with columns draws its header row
+-- above its own top edge, so a list put where a tab view goes draws its headers on
+-- the tab strip. See the long note on layout() below.
 --
 -- IT WORKS NOTHING OUT. Every row on it is a row the server built
 -- (server/CeroSec/SCeroSecDebug.lua), and the window draws the cells it is
@@ -162,11 +168,21 @@ local function measure()
 	-- CeroSecTerminal's; the arithmetic is the same.
 	local cellW = manager:MeasureStringX(font, "nn") - manager:MeasureStringX(font, "n")
 	if cellW < 1 then cellW = 1 end
-	-- The advance of the widest glyph of the face, which is what tells a cell
-	-- that CANNOT overflow its column from one that has to be measured: a string
-	-- of n characters is at most n of these wide.
-	WIDE_W = manager:MeasureStringX(font, "MM") - M_INK
-	if WIDE_W < cellW then WIDE_W = cellW end
+	-- The advance of the widest glyph of the face, which is what tells a cell that
+	-- CANNOT overflow its column from one that has to be measured: a string of n
+	-- characters is at most n of these wide.
+	--
+	-- Four candidates and the widest of them, not "M" alone: which glyph is the
+	-- widest is the FACE's business and a proportional one is free to make "W" or
+	-- "@" wider than "M" -- and a bound that is one pixel too small is a cell that
+	-- skips the measurement and gets drawn over its neighbour, which is the very
+	-- defect this file is fixing.
+	WIDE_W = cellW
+	local widest = { "M", "W", "@", "%" }
+	for i = 1, #widest do
+		local at = manager:MeasureStringX(font, widest[i] .. "M") - M_INK
+		if at > WIDE_W then WIDE_W = at end
+	end
 	local fontH = manager:getFontHeight(font)
 	if cellW == CELL_W and fontH == FONT_H then return end
 
@@ -460,6 +476,26 @@ function CeroSecDebugUI:createChildren()
 	end
 
 	self:applyLayout()
+
+	-- A floor to drag to, set here because this is where the sizes of the things
+	-- that have to fit are known. ISResizeWidget's own default is nothing at all
+	-- (ISResizeWidget.lua:13-22), and a window dragged smaller than the sum of its
+	-- own bands is a window whose list has a negative height; vanilla's own debug
+	-- window sets its two in createChildren for the same reason
+	-- (ISEntitiesDebugWindow.lua:37-38).
+	--
+	-- The height is exactly the one at which the list is ONE row tall: what it is
+	-- now, less the room the list has now, plus one row. The width is the button
+	-- row, which is the one thing in here that does not reflow.
+	local widest = 0
+	for i = 1, #self.buttons do
+		local made = self.buttons[i].button
+		local right = made:getX() + made:getWidth()
+		if right > widest then widest = right end
+	end
+	self.minimumWidth = widest + BORDER
+	self.minimumHeight = self:getHeight() - self.numbers.listH +
+		self.lists[1].itemheight
 end
 
 --
@@ -977,7 +1013,13 @@ function CeroSecDebugUI:onFilter()
 	self.filterButton:setTitle(self.usedOnly and
 		getText("IGUI_CeroSec_Debug_ShowAll") or
 		getText("IGUI_CeroSec_Debug_ShowUsed"))
-	self:fill("machines")
+	if self.snapshots["machines"] == nil then
+		-- Nothing in hand to sift again, so ask: a count line left over from the
+		-- other mode would be a count of rows nobody is looking at.
+		self:refresh()
+	else
+		self:fill("machines")
+	end
 end
 
 -- A level button. `self` is the window and the button is the one that was

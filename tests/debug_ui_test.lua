@@ -1030,6 +1030,21 @@ do
 	window:setHeight(560)
 	window:onResize()
 	checkBands(bench, "after being dragged in")
+
+	-- And at the floor it sets for the resize widget, which is the smallest it can
+	-- be dragged to: ISResizeWidget's own default is nothing at all, so the floor
+	-- has to be this window's own or the bands go through each other.
+	check("it has a floor to drag to", window.minimumHeight ~= nil)
+	check("and a width to go with it", window.minimumWidth ~= nil)
+	window:setWidth(window.minimumWidth)
+	window:setHeight(window.minimumHeight)
+	window:onResize()
+	checkBands(bench, "at its floor")
+	eq("and at the floor the list is exactly one row tall",
+		window.lists[1].height, window.lists[1].itemheight)
+	check("with every button still inside it",
+		window.buttons[#window.buttons].button.x +
+			window.buttons[#window.buttons].button.width <= window.width)
 end
 
 --
