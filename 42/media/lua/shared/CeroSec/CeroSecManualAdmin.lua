@@ -772,29 +772,29 @@ the way a door's does, and unlocked means shut.
 If your server turned the option Hardware modules required OFF, forget all
 this: every door, window, lock and light is under /dev, fitted or not.]],
 
-[[Fitting one, and taking it off.
+[[Where a box comes from, fitting it, and taking it off.
 
-Right-click the door, the window or the light switch ITSELF -- not the
-computer -- and take CeroSec hardware. You need the box in your bag, a
-screwdriver, and the trade: a contact or a relay at Electricity 1, a
-strike at 2, an operator at 3. It takes a few seconds and pays a little
-Electricity for the work.
+Nobody works these four out at the bench. The diagrams and the parts
+lists went out with the fitters, in the CeroSec Field Wiring Guide: look
+on an electronics shop's rack, in a bookshop, a tool shop, an
+electrician's van. Find a copy and READ it: the four appear in the
+Electrical tab. A lifetime electrician gets there in the end. Everybody
+else reads it.
+
+Fitting: right-click the door, window or light switch ITSELF -- not the
+computer -- and take CeroSec hardware. You need the box, a screwdriver,
+and the trade: a contact or a relay at Electricity 1, a strike at 2, an
+operator at 3.
 
 Remove gives the box back whole. The device goes with it and its NUMBER
-does not: screw another contact to that door next week and it is the
-same doorN a script wrote down last week.
+does not: the same doorN answers next week.
 
-Two entries are greyed out, and both are about the fixture:
+Two entries are greyed out, both about the fixture:
 
   a strike on an interior door
       a key there stops nobody: the lock would lie
   an operator on a garage or double door
-      a machine moves one leaf, the rest stay shut
-
-A device with nothing to write with has no w in its mode at all,
-cr--r-----: everybody but root is stopped by the mode, and root, who
-walks past every mode, by the device -- door1: operation not supported.
-A window wears that always.]],
+      a machine moves one leaf, the rest stay shut]],
 
 [[Reading that table.
 

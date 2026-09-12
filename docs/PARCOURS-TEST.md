@@ -1381,18 +1381,39 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      `dev light0` répond `light0: no such device`. Le reposer : c'est **le même
      `light0`** qu'avant. Sur une porte qui porte contact **et** gâche, retirer
      le contact ne touche pas à la gâche : `lockN` répond toujours. [ ]
-235. **Fabriquer les quatre.** Avec Électricité 1 : le contact magnétique et le
-     module relais sont dans l'onglet **Électrique** de l'établi, **déjà
-     appris** (aucun magazine à lire). À 2 la gâche apparaît, à 3 l'opérateur.
-     Vérifier qu'un tournevis est demandé et **rendu** (il est toujours là après
-     la fabrication), et que l'opérateur mange bien une boîte de pièces de
+235. **Le guide, et ce qu'il débloque.** Nouvelle partie, Électricité 1,
+     **sans avoir rien lu** : ouvrir l'établi, onglet **Électrique** → aucun
+     des quatre modules n'est proposé. C'est le changement de cette vague ;
+     s'ils sont déjà là, la recette s'auto-apprend encore au niveau qui la
+     fabrique. Se donner un `CeroSec.WiringGuide` : il s'appelle **Guide de
+     câblage CeroSec**, il pèse 0,5, il est rangé sous **Ressource de recette**
+     et son infobulle nomme les quatre modules. Clic droit → **Lire** — c'est
+     l'entrée *vanilla*, aucune des nôtres, et le personnage s'assoit et lit.
+     Attendu : à la fin, les quatre recettes sont apprises d'un coup, et un
+     deuxième clic droit propose **Relire**. [ ]
+235b. **Fabriquer les quatre.** Le guide lu, avec Électricité 1 : le contact
+     magnétique et le module relais sont dans l'onglet **Électrique** de
+     l'établi. À 2 la gâche apparaît, à 3 l'opérateur — la compétence barre
+     toujours la fabrication, le livre n'enlève que l'ignorance. Vérifier qu'un
+     tournevis est demandé et **rendu** (il est toujours là après la
+     fabrication), et que l'opérateur mange bien une boîte de pièces de
      moteur. [ ]
+235c. **L'électricien chevronné s'en passe.** Personnage monté à **Électricité
+     7** sans avoir jamais vu le guide : le contact et le relais sont là quand
+     même (la gâche à 8, l'opérateur à 9). C'est la forme vanilla — le
+     magazine avance l'accès, il n'en est pas la seule porte. [ ]
 236. **Le butin.** Dans une camionnette d'électricien, une boutique
      d'électronique, une caisse d'entrepôt, une quincaillerie ou un garage : on
      trouve des contacts assez souvent, des relais moins, des gâches encore
      moins et un opérateur rarement. Aucun module sur un bureau de bureau ni
      dans une bibliothèque — ce ne sont pas les mêmes étagères que les
-     disquettes. [ ]
+     disquettes. Le **guide**, lui, se trouve là où le jeu met ses propres
+     magazines d'électronique et aux mêmes taux : surtout sur le présentoir
+     d'une boutique d'électronique, puis une librairie, une quincaillerie et la
+     camionnette d'un électricien, puis un présentoir mixte, le courrier d'un
+     bureau de poste, une caisse de magazines et une bibliothèque. Nulle part
+     ailleurs : pas sur l'étagère d'un salon ni dans la garde-robe d'un enfant,
+     là où le jeu met ses magazines « traînés ». [ ]
 237. **L'option désactivée, c'est le monde d'avant.** Nouvelle partie, bac à
      sable, page CeroSec, décocher « Modules matériels obligatoires ». Attendu :
      dans un bâtiment où **rien n'est posé**, `ls -l /dev` liste toutes les

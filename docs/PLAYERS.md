@@ -446,13 +446,27 @@ which kind it is, so a contact taken off and put back a week later is the same
 shape is born at — because a door that has just grown an operator must not be one
 nobody may write to.
 
-**Where they come from.** Built at a workbench with Electricity at the same level
-that fits them (an electrician learns these by being an electrician, so there is
-nothing to read), out of electronics scrap, wire, screws, sheet metal and — for
-the operator — a box of engine parts. Found in an electrician's van, on the
-shelves of an electronics shop, in a warehouse crate, a tool shop, a garage and a
-crate of tools: a contact is the common one and an operator is eight times rarer,
-in every list.
+**Where they come from.** Found ready-made in an electrician's van, on the shelves
+of an electronics shop, in a warehouse crate, a tool shop, a garage and a crate of
+tools: a contact is the common one and an operator is eight times rarer, in every
+list.
+
+Or **built**, once you have read the book. The four recipes are not something an
+electrician works out at the bench: they are printed in the **CeroSec Field
+Wiring Guide** (`CeroSec.WiringGuide`), a trade magazine with the diagrams and the
+parts lists for all four in it. It turns up where the game's own electronics
+magazines turn up, and at the same rates — likeliest on an **electronics shop's
+magazine rack**, then a bookshop, a tool shop and an electrician's van, then a
+mixed rack, a post office's mail, a warehouse crate of magazines and a library.
+Right-click it, **Read**, and the four appear in the **Electrical** tab.
+
+After that the *skill* still gates the craft, exactly as it gates the fitting:
+Electricity 1 for a contact or a relay, 2 for a strike, 3 for an operator, out of
+electronics scrap, wire, screws, sheet metal and — for the operator — a box of
+engine parts. A very experienced electrician does eventually work them out
+unaided (Electricity 7, 7, 8 and 9), which is what the game does with every
+magazine recipe it ships: the magazine is the way you get there early, not the
+only way.
 
 **With the option off**, none of this exists: every door, window, lock and light
 of the building is in `/dev` the way it was before the modules, the right-click
