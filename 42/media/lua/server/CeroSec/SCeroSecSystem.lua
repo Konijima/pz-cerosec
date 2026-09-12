@@ -421,10 +421,11 @@ function SCeroSecSystem:execEnv(luaObject, state, playerObj, token)
 	if luaObject ~= nil and luaObject.jobs ~= nil and type(luaObject.jobs.load) == "table" then
 		env.load = luaObject.jobs.load
 	end
-	-- The order the machine is already under, so that a second `shutdown +5` is
-	-- refused and `shutdown -c` knows there is something to cancel. Read, never
-	-- written: the scheduler owns the timer, and a command only asks about it.
-	if luaObject ~= nil then env.shutdown = luaObject.shutdown end
+	-- The stations the TNC has heard since the power came on, so that MHEARD reads
+	-- the very list the link layer writes (CeroSecNet.heardOnAir) -- there is no
+	-- second copy of it either. Handed over by REFERENCE, because MHCLEAR empties
+	-- it where it lies, the way `kill` reaches the job it was handed the same way.
+	if luaObject ~= nil then env.heard = luaObject.heard end
 	-- The wire. Like the devices, it is an answer about a MOMENT -- which machines
 	-- are on it right now, and who is sitting at them -- so it is built fresh for
 	-- every line typed and never remembered.
@@ -1527,7 +1528,15 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- distinction a window that sends whole lines cannot make. The manual says both.
 	if CeroSecOS.isCuEscape(line) and CeroSecNet.callOn(luaObject, console) ~= nil then
 		CeroSec.consolePush(console, self:promptFor(state, console) .. line)
+		-- A radio link is held by a cu on the near machine, and hanging the line up
+		-- is the end of that program as well as of the link: the box's word for the
+		-- link going down is pushed by the teardown, and cu's own last word comes
+		-- from the program itself when it is let go. Read BEFORE the teardown,
+		-- which is what takes the pty this is found through away.
+		local pty = CeroSecOS.remoteLine(luaObject.ptys, console.line)
+		local job, object = CeroSecNet.tncJobFor(self, pty)
 		CeroSecNet.endSession(self, luaObject, console)
+		if job ~= nil then CeroSecJobs.tncBye(self, object, job) end
 		return
 	end
 
@@ -1811,6 +1820,14 @@ Commands.interrupt = function(self, playerObj, x, y, z, token, args)
 	-- It is the only place Escape means something the local machine's own prompt
 	-- does not, and the manual says so.
 	if type(console.line) == "string" and not CeroSec.consoleActive(console) then
+		-- Except on a RADIO link, where it means what the same key means on a
+		-- TNC-2: back to the box's cmd: prompt, with the link still up. The link is
+		-- held by a cu on the near machine and that program is still running, so
+		-- there is somewhere to go back TO -- which is exactly what the other two
+		-- links have not got, an rlogin and a telephone call being held by the
+		-- console alone. `~.` is still how the line is hung up, and D still how the
+		-- link is dropped; the manual says all three.
+		if CeroSecNet.parkTnc(self, luaObject, console) then return end
 		CeroSecNet.endSession(self, luaObject, console)
 		return
 	end

@@ -2519,9 +2519,9 @@ do
 	ok(state, rootSession, "halt", {}, "shutdown")
 	-- Nothing else is a time, and the usage says the name that was typed.
 	bad(state, rootSession, "shutdown soon",
-		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c")
+		"shutdown: usage: shutdown [-h|-r] now|+N")
 	bad(state, rootSession, "shutdown -h now extra",
-		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c")
+		"shutdown: usage: shutdown [-h|-r] now|+N")
 	bad(state, rootSession, "reboot -f", "reboot: usage: reboot")
 	bad(state, rootSession, "halt now", "halt: usage: halt")
 	bad(state, admin, "halt", "halt: permission denied")
@@ -7255,7 +7255,7 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ arp call cat chgrp chmod chown clear cp crontab cu cut date dev df"
+	local WANT = "[ arp cat chgrp chmod chown clear cp crontab cu cut date dev df"
 		.. " echo edit false find grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
 		.. " mv newfs passwd ping"
@@ -7337,6 +7337,7 @@ do
 	local root = open(state, "root")
 	local admin = open(state, "admin")
 	local env = { now = FIXED, nowMs = 100000, jobs = {} }
+	local USAGE = "shutdown: usage: " .. CeroSecOS.commandUsage("shutdown")
 
 	-- The wording is Unix's, to the exclamation mark.
 	eq("five minutes", CeroSecOS.shutdownLine("reboot", 5),
@@ -7358,31 +7359,43 @@ do
 	eq("and it says so on the screen", r.lines[1],
 		"The system is going down for reboot in 5 minutes!")
 
-	-- One at a time.
-	local pending = { at = r.data.at, kind = "reboot" }
-	local env2 = { now = FIXED, nowMs = 100000, jobs = {}, shutdown = pending }
-	badAt(state, root, "shutdown -h +1", "shutdown: already scheduled", env2)
+	eq("the account that ordered it travels with it", r.data.user, "root")
+	eq("and the line, for the command column of ps", r.data.cmd, "shutdown -r +5")
 
-	-- Cancelling.
-	r = runAt(state, root, "shutdown -c", env2)
-	eq("cancelling is taken", r.ok, true)
-	eq("and ordered", r.control, "cancel")
-	eq("with the one line Unix prints", r.lines[1], "shutdown: cancelled")
-	badAt(state, root, "shutdown -c", "shutdown: no shutdown scheduled", env)
+	-- TWO of them, because on a real BSD a second shutdown is a second process:
+	-- both sleep, both broadcast, and the first minute to arrive wins. It used to
+	-- be refused here and there was nothing to point the refusal at.
+	local second = runAt(state, root, "shutdown -h +1", env)
+	eq("a second order is taken", second.ok, true)
+	eq("and is a second process", second.control, "schedule")
+
+	-- What bounds it is the job book, because a pending order IS a process: four
+	-- to a machine, shutdowns counted with everything else.
+	local full = { now = FIXED, nowMs = 100000, jobs = {
+		{ id = 42, state = "waiting", session = { user = "root" } },
+		{ id = 43, state = "waiting", session = { user = "root" } },
+		{ id = 44, state = "waiting", session = { user = "root" } },
+		{ id = 45, state = "waiting", session = { user = "root" } },
+	} }
+	badAt(state, root, "shutdown -r +5", "shutdown: too many jobs", full)
+
+	-- And `-c` is GONE. It is sysvinit's flag, which is Linux: a 1993 machine
+	-- cancels a shutdown by killing the process, so the usage line is what a `-c`
+	-- gets now.
+	badAt(state, root, "shutdown -c", USAGE, env)
 
 	-- What is not a time.
 	badAt(state, root, "shutdown +0",
-		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+		"shutdown: usage: shutdown [-h|-r] now|+N", env)
 	badAt(state, root, "shutdown +9999",
-		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+		"shutdown: usage: shutdown [-h|-r] now|+N", env)
 	badAt(state, root, "shutdown -x",
-		"shutdown: usage: shutdown [-h|-r] [now|+N] | shutdown -c", env)
+		"shutdown: usage: shutdown [-h|-r] now|+N", env)
 	-- A machine with no clock cannot be given a time.
 	badAt(state, root, "shutdown -r +5", "shutdown: no clock", { now = FIXED, jobs = {} })
 
 	-- Root's, all of it.
 	badAt(state, admin, "shutdown -r +5", "shutdown: permission denied", env)
-	badAt(state, admin, "shutdown -c", "shutdown: permission denied", env2)
 end
 
 
@@ -11786,13 +11799,13 @@ do
 	for i = 1, #shapes do
 		local o, l = CeroSecOS.runArgs(state, admin, { "cu", shapes[i] }, nil, env)
 		eq("cu refuses " .. shapes[i], o, false)
-		eq("with the usage line", l[1], "cu: usage: cu telno")
+		eq("with the usage line", l[1], "cu: usage: " .. CeroSecOS.commandUsage("cu"))
 	end
 	local o, l = CeroSecOS.runArgs(state, admin, { "cu" }, nil, env)
 	eq("and cu with nothing after it is the usage line too", l[1],
-		"cu: usage: cu telno")
+		"cu: usage: " .. CeroSecOS.commandUsage("cu"))
 	o, l = CeroSecOS.runArgs(state, admin, { "cu", "555-0417", "555-0418" }, nil, env)
-	eq("and so are two numbers", l[1], "cu: usage: cu telno")
+	eq("and so are two numbers", l[1], "cu: usage: " .. CeroSecOS.commandUsage("cu"))
 
 	-- A number in the right shape, on a machine with a line, from a session that
 	-- is not down a chain: nothing is left for the engine to decide, so it hands
@@ -11982,69 +11995,293 @@ do
 	eq("silence has a name", CeroSecOS.TNC.retry, "*** retry count exceeded")
 	eq("and so has a station that will not take a second link",
 		CeroSecOS.TNC.busy, "*** BUSY")
+	eq("a line it could not make sense of gets the box's own eh",
+		CeroSecOS.TNC.eh, "?EH")
 	eq("the line the county reads carries no name on the end of it",
 		CeroSecOS.TNC.onAir, "*** CONNECTED")
-	eq("no radio", CeroSecOS.CALL_NO_RADIO, "call: no radio")
-	eq("no licence", CeroSecOS.CALL_NO_CALLSIGN, "call: no callsign")
+	eq("the box says what it is when the line opens", CeroSecOS.TNC_BANNER,
+		"CeroSec Systems TNC-200 (TNC-2 compatible)")
+	check("in one line and under the screen", #CeroSecOS.TNC_BANNER <= CeroSecOS.COLS)
+	eq("and then its own prompt", CeroSecOS.TNC_PROMPT, "cmd:")
+	eq("an unprogrammed box has the factory callsign", CeroSecOS.TNC_NOCALL, "NOCALL")
+	eq("no radio", CeroSecOS.TNC_NO_RADIO, "cu: no radio")
+	eq("no licence", CeroSecOS.TNC_NO_CALLSIGN, "cu: no callsign")
+	eq("no line to open at all", CeroSecOS.tncNoDevice("/dev/radio0"),
+		"cu: /dev/radio0: no such device")
 	eq("and the air runs at 1200 baud", CeroSecOS.RADIO_BAUD, 1200)
+	-- The name every one of the three -- the command, the manual and the parcours
+	-- -- has to spell the same way.
+	eq("the line the TNC sits on", CeroSecOS.TNC_DEV, "/dev/radio0")
+	eq("and the heard list is as deep as a TNC-2's", CeroSecOS.MHEARD_MAX, 18)
 end
 
--- `call`, up to the point where the world has to be asked.
+-- MHEARD's own rule, which is the engine's half of the heard list: one line per
+-- station, most recent first, eighteen of them.
+do
+	local list = nil
+	list = CeroSecOS.heardAdd(list, "KD4AXR", 100)
+	list = CeroSecOS.heardAdd(list, "KE4QWZ", 200)
+	eq("two stations heard", #list, 2)
+	eq("the most recent first", list[1].call, "KE4QWZ")
+	eq("and the older behind it", list[2].call, "KD4AXR")
+	-- The same station again is the same LINE, moved up with a new time: a heard
+	-- list is one entry per station and not a log of transmissions.
+	list = CeroSecOS.heardAdd(list, "KD4AXR", 300)
+	eq("still two stations", #list, 2)
+	eq("the one heard again is on top", list[1].call, "KD4AXR")
+	eq("with its new time", list[1].at, 300)
+	-- Nothing that is not a callsign ever gets in, whatever the world hands over.
+	eq("a word no station could be called is not written down",
+		#CeroSecOS.heardAdd(list, "not-a-call", 400), 2)
+	eq("and neither is nothing", #CeroSecOS.heardAdd(list, nil, 400), 2)
+
+	-- The depth, and the nineteenth station.
+	local deep = nil
+	local calls = {}
+	for i = 1, 19 do
+		calls[i] = CeroSecOS.callsignFor(4, 17, i)
+		deep = CeroSecOS.heardAdd(deep, calls[i], 1000 + i)
+	end
+	eq("eighteen and no more", #deep, CeroSecOS.MHEARD_MAX)
+	eq("the nineteenth is on top", deep[1].call, calls[19])
+	eq("and the first has been pushed off the bottom", deep[18].call, calls[2])
+
+	-- What MH prints.
+	local lines = CeroSecOS.heardLines({
+		{ call = "KD4AXR", at = CeroSecOS.timeFromParts(1993, 7, 8, 14, 32, 0) },
+		{ call = "W4ZZZ", at = CeroSecOS.timeFromParts(1993, 7, 8, 9, 5, 0) },
+	})
+	eq("one line per station", #lines, 2)
+	eq("the callsign and the time", lines[1], "KD4AXR  14:32")
+	eq("padded so the times line up", lines[2], "W4ZZZ   09:05")
+	eq("and a box that has heard nothing prints nothing",
+		#CeroSecOS.heardLines(nil), 0)
+end
+
+--
+-- The TNC dialog, driven the way the console drives it: a prompt, a line, and
+-- the continuation token that carries the box's memory. This is the whole of
+-- `cu -l /dev/radio0` that does not need a world.
+--
 do
 	local state = fresh()
 	local admin = open(state, "admin")
-	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+	local root = open(state, "root")
+	local set = { id = "radio0", kind = "radio", desc = "ham", side = "",
+		pos = "2E 1N", state = "144.390 on", mode = 440 }
+	local env = { now = FIXED, nowMs = 1000, jobs = {},
+		devices = fakeDevices({ set }) }
 
-	-- No licence: refused before anything is transmitted, and in the machine's own
-	-- name rather than the TNC's, because a TNC that has no MYCALL will not key the
-	-- transmitter either.
-	local none, nl = CeroSecOS.runArgs(state, admin, { "call", "KD4AXR" }, nil, env)
-	eq("a station with no callsign cannot call", none, false)
-	eq("and says so itself", nl[1], CeroSecOS.CALL_NO_CALLSIGN)
+	-- No set in the room is no line to open, and cu says so without keying
+	-- anything: /dev is where a radio would be and there is nothing at that name.
+	local none = runAt(state, admin, "cu -l /dev/radio0",
+		{ now = FIXED, nowMs = 1000, jobs = {} })
+	eq("a machine with no radio cannot open the line", none.ok, false)
+	eq("and cu says which line", none.lines[1],
+		CeroSecOS.tncNoDevice("/dev/radio0"))
+	-- A device that is not a serial line is not one either, and neither is a file.
+	local hole = runAt(state, admin, "cu -l /dev/null", env)
+	eq("the hole in the disk is not a TNC", hole.ok, false)
+	eq("and says so as a device", hole.lines[1], CeroSecOS.tncNoDevice("/dev/null"))
+	local notdev = runAt(state, admin, "cu -l /etc/passwd", env)
+	eq("nor is a file", notdev.ok, false)
+	-- And the flag needs its line.
+	local flag = runAt(state, admin, "cu -l", env)
+	eq("cu -l with nothing after it is the usage line", flag.ok, false)
+	eq("which carries both of cu's forms", flag.lines[1],
+		"cu: usage: " .. CeroSecOS.commandUsage("cu"))
 
+	-- The line opens: one banner and the box's prompt. The order is an ordinary
+	-- question, which is why the console needs to know nothing about any of this.
+	local open_ = runAt(state, admin, "cu -l /dev/radio0", env)
+	eq("the line opens", open_.ok, true)
+	eq("with one line, the banner", #open_.lines, 1)
+	eq("naming the box", open_.lines[1], CeroSecOS.TNC_BANNER)
+	eq("and the job is left at a question", open_.control, "prompt")
+	eq("which is the TNC's prompt", open_.data.text, CeroSecOS.TNC_PROMPT)
+	eq("answered by the TNC", open_.data.cont.cmd, "tnc")
+	eq("and nothing is masked about it", open_.data.mask, false)
+
+	-- One turn of the dialog: whatever is typed, what the box prints, and the
+	-- prompt it puts back up. Answers the lines and the data of the order.
+	local function say(session, cont, line, e)
+		local said, lines, control, data =
+			CeroSecOS.continue(state, session, cont, line, e or env)
+		check("`" .. line .. "` is answered", said == true)
+		for i = 1, #lines do
+			check("`" .. line .. "` line " .. i .. " fits 60 columns",
+				#lines[i] <= CeroSecOS.COLS)
+		end
+		return lines, data, control
+	end
+	-- The same, for a turn that puts the prompt back up: the cont that comes back
+	-- is the box's memory and is what the next line is answered with.
+	local function at(session, cont, line, e)
+		local lines, data, control = say(session, cont, line, e)
+		eq("`" .. line .. "` is the TNC's order", control, "tnc")
+		check("`" .. line .. "` asks again", type(data.cont) == "table")
+		eq("`" .. line .. "` at cmd:", data.text, CeroSecOS.TNC_PROMPT)
+		return lines, data.cont
+	end
+
+	local cont = open_.data.cont
+	-- An empty line at cmd: is a box printing its prompt again and nothing else.
+	local lines
+	lines, cont = at(admin, cont, "")
+	eq("an empty line says nothing", #lines, 0)
+	lines, cont = at(admin, cont, "   ")
+	eq("and neither does a blank one", #lines, 0)
+
+	-- MYCALL, shown. A machine with no /etc/callsign is a box nobody has
+	-- programmed, and the factory value is what one of those says.
+	lines, cont = at(admin, cont, "MYCALL")
+	eq("an unprogrammed box", lines[1], "MYCALL NOCALL")
 	CeroSecOS.setNetRecord(state, 4, 17, 3)
 	CeroSecOS.ensureCallsign(state)
 	local mine = CeroSecOS.callsignOf(state)
+	lines, cont = at(admin, cont, "MYCALL")
+	eq("and a programmed one says what it is", lines[1], "MYCALL " .. mine)
+	lines, cont = at(admin, cont, "my")
+	eq("MY is the box's own abbreviation", lines[1], "MYCALL " .. mine)
+	lines, cont = at(admin, cont, "mycall")
+	eq("and case does not matter to a TNC", lines[1], "MYCALL " .. mine)
 
-	local ran, out, control, data =
-		CeroSecOS.runArgs(state, admin, { "call", "KD4AXR" }, nil, env)
-	eq("a call is an order to whoever is running the machine", ran, true)
-	eq("and it prints nothing itself", #out, 0)
-	eq("the order is call's", control, "call")
-	eq("carrying the callsign", data.call, "KD4AXR")
-	eq("the account that typed it", data.user, "admin")
-	eq("who is asking", data.from, "admin")
-	eq("and one hop further out than the session it came from", data.hops, 1)
+	-- MYCALL, set: the file, through the filesystem, with the session's own
+	-- authority. /etc/callsign is root's and 644, so that is the whole rule.
+	lines, cont = at(admin, cont, "MYCALL W4ZZZ")
+	eq("an ordinary account may not program the box", lines[1],
+		"cu: " .. CeroSecOS.CALLSIGN_PATH .. ": permission denied")
+	eq("and the callsign is untouched", CeroSecOS.callsignOf(state), mine)
+	lines, cont = at(root, cont, "MYCALL W4ZZZ")
+	eq("root may, and the box echoes it back", lines[1], "MYCALL W4ZZZ")
+	eq("and the file is what changed", CeroSecOS.callsignOf(state), "W4ZZZ")
+	lines, cont = at(root, cont, "mycall kd4axr")
+	eq("a callsign is upper-cased, the way a TNC upper-cases one",
+		lines[1], "MYCALL KD4AXR")
+	eq("in the file too", CeroSecOS.callsignOf(state), "KD4AXR")
+	lines, cont = at(root, cont, "MYCALL nonsense")
+	eq("a word no station could be called gets the box's eh",
+		lines[1], CeroSecOS.TNC.eh)
+	eq("and changes nothing", CeroSecOS.callsignOf(state), "KD4AXR")
 
-	-- The shape is judged here and never by the world.
-	local bad, bl = CeroSecOS.runArgs(state, admin, { "call", "kd4axr" }, nil, env)
-	eq("a callsign in lower case is a usage error", bad, false)
-	eq("and the usage line is the one the manual carries", bl[1],
-		"call: usage: " .. CeroSecOS.commandUsage("call"))
-	local num = CeroSecOS.runArgs(state, admin, { "call", "555-0417" }, nil, env)
-	eq("a telephone number is not a callsign", num, false)
-	local bare = CeroSecOS.runArgs(state, admin, { "call" }, nil, env)
-	eq("and nothing at all is not either", bare, false)
-	local two = CeroSecOS.runArgs(state, admin, { "call", "KD4AXR", "KE4QWZ" }, nil, env)
-	eq("nor two of them", two, false)
+	-- The word the box does not know. ?EH is its whole vocabulary for one.
+	lines, cont = at(admin, cont, "HELLO")
+	eq("an unknown command", lines[1], CeroSecOS.TNC.eh)
+	eq("and nothing else", #lines, 1)
+	lines, cont = at(admin, cont, "ls -l")
+	eq("a Unix command is not a TNC command either", lines[1], CeroSecOS.TNC.eh)
 
-	-- Calling oneself: the TNC would hear its own connect request, which is
-	-- silence as far as AX.25 is concerned.
-	local self_, sl = CeroSecOS.runArgs(state, admin, { "call", mine }, nil, env)
-	eq("a station cannot connect to itself", self_, false)
-	eq("and what it gets is silence", sl[1], CeroSecOS.TNC.retry)
+	-- MHEARD, off the list the machine hands over.
+	lines, cont = at(admin, cont, "MH")
+	eq("a box that has heard nothing prints nothing", #lines, 0)
+	local heard = { now = FIXED, nowMs = 1000, jobs = {},
+		devices = fakeDevices({ set }),
+		heard = { { call = "KE4QWZ", at = FIXED } } }
+	lines, cont = at(admin, cont, "MHEARD", heard)
+	eq("one station heard", #lines, 1)
+	eq("with its callsign and the time", lines[1], "KE4QWZ  14:32")
+	lines, cont = at(admin, cont, "MH", heard)
+	eq("MH is the same command", lines[1], "KE4QWZ  14:32")
+	-- MHCLEAR empties the box's RAM where it lies, which is the list the machine
+	-- handed in: there is no second copy of it anywhere.
+	lines, cont = at(admin, cont, "MHCLEAR", heard)
+	eq("MHCLEAR says nothing", #lines, 0)
+	eq("and the machine's own list is empty", #heard.heard, 0)
+	lines, cont = at(admin, cont, "MH", heard)
+	eq("so MH has nothing to print", #lines, 0)
 
-	-- The hop ceiling, which a link pays exactly as an rlogin and a call do -- and
-	-- what it gets is the TNC's word, because on the air the TNC does the talking.
+	-- D and K with no link: a box that is holding nothing has let go already, and
+	-- there is nothing to converse with.
+	lines, cont = at(admin, cont, "D")
+	eq("DISCONNE with no link", lines[1], CeroSecOS.TNC.disconnected)
+	lines, cont = at(admin, cont, "DISCONNE")
+	eq("spelt out, the same", lines[1], CeroSecOS.TNC.disconnected)
+	lines, cont = at(admin, cont, "K")
+	eq("and converse with no link is the same line", lines[1],
+		CeroSecOS.TNC.disconnected)
+
+	-- CONNECT, and everything about it the engine decides before the world is
+	-- asked. The shape of the word first.
+	lines, cont = at(admin, cont, "C kd4axr")
+	eq("a station this machine IS gets silence", lines[1], CeroSecOS.TNC.retry)
+	lines, cont = at(admin, cont, "C 555-0417")
+	eq("a telephone number is not a callsign", lines[1], CeroSecOS.TNC.eh)
+	lines, cont = at(admin, cont, "C")
+	eq("and a connect with nothing to connect to", lines[1], CeroSecOS.TNC.eh)
+
+	-- A station that is not this one: nothing is left for the engine to decide,
+	-- so it hands the link over to whoever is running the machine.
+	local data, control
+	lines, data, control = say(admin, cont, "C KE4QWZ")
+	eq("a connect prints nothing itself", #lines, 0)
+	eq("and is the TNC's order", control, "tnc")
+	eq("it is a link order", type(data.link), "table")
+	eq("to connect", data.link.op, "connect")
+	eq("carrying the callsign", data.link.call, "KE4QWZ")
+	eq("the account that typed it", data.link.user, "admin")
+	eq("who is asking", data.link.from, "admin")
+	eq("and one hop further out than the session it came from", data.link.hops, 1)
+	local short = say(admin, cont, "CONNECT KE4QWZ")
+	eq("CONNECT spelt out prints nothing either", #short, 0)
+
+	-- A machine with no licence may not transmit, and that is asked of the disk
+	-- before anything else about the air.
+	local blank = fresh()
+	local badmin = open(blank, "admin")
+	local bok, blines, bcontrol, bdata = CeroSecOS.continue(blank, badmin,
+		CeroSecOS.tncCont(nil), "C KE4QWZ",
+		{ now = FIXED, nowMs = 1000, jobs = {}, devices = fakeDevices({ set }) })
+	eq("a station with no callsign is answered", bok, true)
+	eq("with the machine's own line and not the TNC's", blines[1],
+		CeroSecOS.TNC_NO_CALLSIGN)
+	eq("nothing is transmitted", bcontrol, "tnc")
+	check("and the box is back at cmd:", bdata.link == nil)
+
+	-- The hop ceiling, which a link pays exactly as an rlogin and a call do, and
+	-- what a chain at the ceiling gets is the TNC's word for a link it will not
+	-- open.
 	local deep = open(state, "admin")
 	deep.hops = CeroSecOS.HOP_MAX
-	local d, dl = CeroSecOS.runArgs(state, deep, { "call", "KD4AXR" }, nil, env)
-	eq("a chain at the ceiling cannot call", d, false)
-	eq("and the TNC will not take it", dl[1], CeroSecOS.TNC.busy)
+	lines = at(deep, cont, "C KE4QWZ")
+	eq("a chain at the ceiling cannot connect", lines[1], CeroSecOS.TNC.busy)
 	deep.hops = CeroSecOS.HOP_MAX - 1
-	local u, _, uc = CeroSecOS.runArgs(state, deep, { "call", "KD4AXR" }, nil, env)
-	eq("one hop short of it calls", u, true)
-	eq("and it is still call's order", uc, "call")
+	local _, near = say(deep, cont, "C KE4QWZ")
+	eq("one hop short of it connects", near.link.op, "connect")
+
+	-- `~.` is cu's own escape and is read by the program holding the line, never
+	-- sent down it. With no link there is nothing to hang up, so cu says its last
+	-- word and the program is over -- no prompt comes back.
+	local bye, byeData, byeControl = say(admin, cont, "~.")
+	eq("cu says one line", #bye, 1)
+	eq("and it is cu's own", bye[1], CeroSecOS.CU_DISCONNECTED)
+	eq("with no order behind it", byeControl, nil)
+	eq("and no prompt", byeData, nil)
+
+	-- And what the machine hands back INTO the dialog when it has done something
+	-- to a link: the TNC's word for it, said, and the prompt again. The station
+	-- the link is still up to travels in the cont, which is the box's memory.
+	local held = CeroSecOS.tncSayCont("KE4QWZ")
+	lines, cont = at(admin, held, CeroSecOS.TNC.retry)
+	eq("the box says what the link layer said", lines[1], CeroSecOS.TNC.retry)
+	eq("and remembers the link", cont.to, "KE4QWZ")
+	-- With a link in hand, D and K mean something.
+	lines, data = say(admin, cont, "D")
+	eq("D prints the box's own line", lines[1], CeroSecOS.TNC.disconnected)
+	eq("and asks the machine to drop the link", data.link.op, "drop")
+	lines, data = say(admin, cont, "K")
+	eq("K prints nothing", #lines, 0)
+	eq("and asks for converse", data.link.op, "conv")
+	lines, data = say(admin, cont, "CONV")
+	eq("CONV is the same command", data.link.op, "conv")
+	lines, data = say(admin, cont, "~.")
+	eq("and `~.` hangs the link up first", data.link.op, "hangup")
+	-- A second connect on a box that has a link is the one thing it cannot do.
+	lines = at(admin, cont, "C W4ZZZ")
+	eq("a box with a link will not open a second", lines[1], CeroSecOS.TNC.eh)
+	-- The bye cont, which is what a hangup comes back through.
+	local last, _, lastControl = say(admin, CeroSecOS.tncByeCont(), "")
+	eq("cu's last word", last[1], CeroSecOS.CU_DISCONNECTED)
+	eq("and the program is over", lastControl, nil)
 end
 
 -- wtmp's host column carries all three origins now, and that is the bug this

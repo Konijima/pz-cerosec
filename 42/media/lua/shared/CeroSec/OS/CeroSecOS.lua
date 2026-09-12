@@ -74,7 +74,11 @@ CeroSecOS.STATE_VERSION = 1
 --    CeroSecOS.RETIRED_BIN and the deletion half of upgradeSystem). And the
 --    `wheel` pair, which is what replaces the "admin flag" `adduser -a` set: the
 --    group itself, empty, and the `%wheel` line in /etc/sudoers that grants it.
-CeroSecOS.SYSTEM_VERSION = 16
+-- 17: the radio, the way 1993 reached one. /bin/call DELETED -- it was invented
+--    here, and a TNC is a box on a serial line, so the box is reached with
+--    `cu -l /dev/radio0` and driven with the TNC-2's own commands (see the head of
+--    CeroSecOSRadio.lua). Nothing is seeded: cu is already on the disk.
+CeroSecOS.SYSTEM_VERSION = 17
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

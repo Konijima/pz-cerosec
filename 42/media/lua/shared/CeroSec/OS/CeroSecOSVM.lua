@@ -1347,17 +1347,50 @@ local function applyControl(job, control, data, env)
 	-- crontab that could dial out would land a logged-in session on the physical
 	-- screen of a machine nobody was standing at, whichever kind of link it used
 	-- to get there.
-	--
-	-- And `call` is the third of the three, for the third time for the one reason:
-	-- a session on the far machine on THIS glass. On the air it would be worse than
-	-- either -- a crontab that called out would also key a transmitter and put two
-	-- callsigns over the county every time it ran, on a machine nobody was standing
-	-- at. Refused here, before the order is given, so nothing is transmitted at all.
-	if (control == "rlogin" or control == "cu" or control == "call")
-			and not jobHasTerminal(job) then
+	if (control == "rlogin" or control == "cu") and not jobHasTerminal(job) then
 		flushPartial(job)
 		errLine(job, control .. ": not a terminal")
 		job.status = 1
+		return true
+	end
+	-- The TNC's command mode, which is the third of them and is refused for the
+	-- same reason twice over: it is a DIALOG -- a prompt and an answer, with
+	-- nobody there to give one -- and what it can be driven to do is open a
+	-- session on the far machine on THIS glass. On the air it would be worse than
+	-- either of the other two: a crontab that connected out would also key a
+	-- transmitter and put two callsigns over the county every time it ran, on a
+	-- machine nobody was standing at. Refused here, before the line is opened, so
+	-- nothing is transmitted at all. Signed `cu`, because cu is the program.
+	if control == "tnc" and type(data) == "table" then
+		if not jobHasTerminal(job) then
+			flushPartial(job)
+			errLine(job, "cu: not a terminal")
+			job.status = 1
+			return true
+		end
+		flushPartial(job)
+		-- What the BOX says when the line opens, and it is written here rather than
+		-- printed by the command: a banner is the thing on the end of a line saying
+		-- hello, so a line that was never opened -- a crontab's, a background job's
+		-- -- must not have anything to say. It used to be the command's own output
+		-- and so reached the mail of a cron line that had just been refused.
+		if type(data.lines) == "table" then writeLines(job, data.lines) end
+		-- Something only the machine can do to the LINK -- connect, drop, enter
+		-- converse, hang up. The job waits on it exactly as an rsh waits on its
+		-- dial: off the processor, costing nothing, with the order carried out
+		-- after the lines it printed have reached the glass (CeroSecJobs.runMachine
+		-- reads job.dial). What comes back is another turn at cmd:, or the end of
+		-- the program.
+		if type(data.link) == "table" then
+			data.link.control = "tnclink"
+			job.dial = data.link
+			job.state = "waiting"
+			job.cpuSince = nil
+			return true
+		end
+		job.cont = data.cont
+		job.ask = { text = tostring(data.text or ""), mask = false, cont = true }
+		job.state = "waiting"
 		return true
 	end
 	-- rsh WAITS.
@@ -2899,6 +2932,19 @@ end
 -- kill: a request, not a deed. The scheduler is what takes a job off the
 -- machine, because it is what has to tell the screen about it -- so this sets
 -- the flag and answers, and the job is gone by the next pass.
+--
+-- WHOSE JOB IT IS. kill(2) is root, or the account the process belongs to, and
+-- nobody else: a survivor may not stop what somebody else started, and EPERM is
+-- what he gets. That rule arrived with the pending shutdown -- `shutdown +5` is a
+-- process of root's now, and an ordinary account that could kill it could switch
+-- the machine's own order off -- and it is applied to every job, because there is
+-- no version of it that is only about one command.
+--
+-- It does not touch the deviation beside it. The jobs are still the MACHINE's:
+-- `jobs` and `ps` list every one of them whoever started it, and `fg` still pulls
+-- one forward, because a survivor who sits down at a glass has to be able to SEE
+-- what is running and to watch it. What he may not do is stop another account's
+-- work, which is Unix's rule and not this machine's.
 commands.kill = function(state, session, args, env)
 	if #args ~= 2 then return false, { "kill: usage: " .. CeroSecOS.commandUsage("kill") } end
 	local jobs = CeroSecOS.jobsOf(env)
@@ -2915,6 +2961,11 @@ commands.kill = function(state, session, args, env)
 		local matches = false
 		if bySlot then matches = job.n == n else matches = job.id == n end
 		if matches and not CeroSecOS.jobIsOver(job) then
+			local me = CeroSecOS.userOf(session)
+			local owner = (job.session or {}).user
+			if me ~= "root" and owner ~= nil and owner ~= me then
+				return false, { "kill: " .. args[2] .. ": Operation not permitted" }
+			end
 			job.killReq = "user"
 			return true, {}
 		end

@@ -640,10 +640,6 @@ CeroSecOS.COMMAND_INFO = {
 	-- is derived and stored nowhere: see the head of arp in CeroSecOSNet.lua.
 	arp      = { desc = "show the cards on the wire",
 		usage = "arp -a | arp <host|address>" },
-	-- The operand is a callsign and the usage line says so in capitals, because
-	-- that is how a callsign is written and a survivor who types it in lower case
-	-- is a survivor the command refuses.
-	call     = { desc = "call another machine on the radio", usage = "call CALLSIGN" },
 	cat      = { desc = "print a file", usage = "cat [file]..." },
 	-- The five words the SHELL is, and so the five with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either
@@ -662,7 +658,11 @@ CeroSecOS.COMMAND_INFO = {
 		usage = "cut -c <list> | -d <delim> -f <list> [file]..." },
 	-- The operand is "telno" and not "<number>": it is cu(1)'s own name for it,
 	-- and a usage line is the one place a command speaks the manual's language.
-	cu       = { desc = "call another machine on the phone", usage = "cu telno" },
+	-- Both of cu's forms, because cu(1) has two: a number to dial, or `-l` and a
+	-- LINE to open with whatever is on the end of it. The line on this machine is
+	-- the radio, and what answers on it is the TNC (CeroSecOS.tncOpen).
+	cu       = { desc = "call another machine, or open a line",
+		usage = "cu telno | cu -l line" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	dev      = { desc = "list and work the devices",
 		usage = "dev [kind|id [value|toggle]|find <id>]" },
@@ -733,7 +733,7 @@ CeroSecOS.COMMAND_INFO = {
 	rwho     = { desc = "list who is logged in on them", usage = "rwho" },
 	sh       = { desc = "run a script", usage = "sh <file> [args]" },
 	shutdown = { desc = "switch the machine off",
-		usage = "shutdown [-h|-r] [now|+N] | shutdown -c" },
+		usage = "shutdown [-h|-r] now|+N" },
 	sleep    = { desc = "wait for a number of seconds", usage = "sleep <seconds>" },
 	sort     = { desc = "sort lines", usage = "sort [-r] [-n] [-u] [file]..." },
 	su       = { desc = "become another user", usage = "su [name]" },
@@ -834,6 +834,19 @@ CeroSecOS.DEVIATIONS = {
 	-- The console's deviation rather than the pager's, and `read -n 1` has had the
 	-- same shape since it was written.
 	{ name = "more", why = "its keys need Enter behind them: the console reads a line" },
+	-- The radio's serial line, and the box's own first line. `cu -l line` is
+	-- cu(1)'s own flag and the TNC-2 command set behind it is the TNC-2's, so the
+	-- two things this machine made up are: the line is a CHARACTER DEVICE naming a
+	-- radio (/dev/radio0) where a real cu is handed /dev/ttya and reads
+	-- /etc/remote, which this machine has not got; and the banner the box prints
+	-- when the line opens, a real TNC-2 having printed whatever its vendor's
+	-- firmware printed.
+	{ name = "cu", why = "-l names /dev/radio0, and the TNC's banner line is ours" },
+	-- And the second name that is GONE: `call CALLSIGN` was this machine's own
+	-- command for the radio until SYSTEM_VERSION 17. No Unix had one -- a TNC was
+	-- a box on a serial line -- and a player who used it last week will type it.
+	{ name = "call", gone = true,
+		why = "the TNC is driven with cu -l /dev/radio0 since SYSTEM_VERSION 17" },
 }
 
 --
@@ -858,9 +871,13 @@ CeroSecOS.DEVIATIONS = {
 --   ln -s, and `ls -l`         the old `readlink`, which is 1997 -- a decade late.
 --                              What a link points at is in the arrow `ls -l` draws
 --   reboot, shutdown -r        the old `restart`, which was invented here
+--   cu -l /dev/radio0          the old `call`, which was invented here too: a TNC
+--                              was a peripheral on a serial line, and the way to
+--                              a serial line is cu(1)
 --
 CeroSecOS.RETIRED_BIN = {
 	adduser  = "add an account",
+	call     = "call another machine on the radio",
 	deluser  = "remove an account",
 	gpasswd  = "add or drop a group member",
 	hash     = "hash a string the way a password is",
@@ -3163,7 +3180,7 @@ end
 -- and short enough that the arithmetic cannot run off the end of a number.
 CeroSecOS.SHUTDOWN_MAX_MINUTES = 1440
 
--- shutdown [-h|-r] [now|+N], and shutdown -c.
+-- shutdown [-h|-r] now|+N.
 --
 -- `-h` halts and `-r` reboots, exactly as they do on a real one; with neither,
 -- the machine halts. `now` and no time at all are the same thing. `+N` puts
@@ -3172,22 +3189,22 @@ CeroSecOS.SHUTDOWN_MAX_MINUTES = 1440
 -- SCHEDULER's, because the core has no clock of its own and no machine to
 -- switch off.
 --
--- One pending order per machine: a second is refused rather than quietly
--- replacing the first, so nobody is told the machine is going down at two
--- different times.
+-- A PENDING ORDER IS A PROCESS, which is the one thing about this command that
+-- 1993 settles and this machine got wrong until SYSTEM_VERSION 17. BSD's
+-- shutdown(8) forks, prints its pid and sleeps until the minute; it is in `ps`
+-- like anything else, and the way you call it off is the way you stop any other
+-- process -- you kill it. There is no `-c`: that flag is sysvinit's, which is
+-- Linux and is 1992 at the earliest on a machine nobody in Knox County had. So
+-- `shutdown -c` is gone, the order shows up in `jobs` and in `ps` under the
+-- account that gave it, and `kill` is how it is called off.
+--
+-- Which means a SECOND pending order is allowed, because on a real BSD it is: two
+-- shutdowns are two processes, both sleeping, both broadcasting, and the first
+-- minute to arrive takes the machine down. It used to be refused here, and there
+-- is nothing in 4.4BSD to point at for the refusal. What bounds it now is the
+-- job book -- four processes on this machine, shutdowns included.
 commands.shutdown = function(state, session, args, env)
 	local control, i = "shutdown", 2
-
-	if args[2] == "-c" then
-		if #args > 2 then return usage("shutdown") end
-		if CeroSecOS.userOf(session) ~= "root" then
-			return fail("shutdown", nil, "permission denied")
-		end
-		if type(env) ~= "table" or type(env.shutdown) ~= "table" then
-			return fail("shutdown", nil, "no shutdown scheduled")
-		end
-		return true, { "shutdown: cancelled" }, "cancel"
-	end
 
 	if args[2] == "-h" then
 		i = 3
@@ -3209,14 +3226,26 @@ commands.shutdown = function(state, session, args, env)
 		return usage("shutdown")
 	end
 
-	if type(env) == "table" and type(env.shutdown) == "table" then
-		return fail("shutdown", nil, "already scheduled")
-	end
 	local nowMs = CeroSecOS.nowMsOf(env)
 	if nowMs == nil then return fail("shutdown", nil, "no clock") end
+	-- The room for it, asked the way `sh` and `wait` ask: a pending order is a
+	-- process and the machine's ceiling is on processes. The job this command is
+	-- running in is not one of the jobs in its way.
+	if CeroSecOS.liveJobs(CeroSecOS.jobsOf(env), CeroSecOS.askingId(env))
+			>= CeroSecOS.MAX_JOBS then
+		return false, { "shutdown: too many jobs" }
+	end
 
 	return true, { CeroSecOS.shutdownLine(control, minutes) }, "schedule",
-		{ at = nowMs + minutes * 60000, kind = control }
+		{ at = nowMs + minutes * 60000, kind = control,
+			-- Who ordered it, for the book: the account `kill` will let call it off
+			-- besides root. It is the account the command RAN as, so a `sudo
+			-- shutdown +5` is root's order and not the ordinary account's -- which is
+			-- what sudo means and what the far end of every other authority check on
+			-- this machine reads.
+			user = CeroSecOS.userOf(session),
+			-- And what `ps` shows in the command column.
+			cmd = table.concat(args, " ") }
 end
 
 commands.reboot = powerCommand("reboot", "reboot")

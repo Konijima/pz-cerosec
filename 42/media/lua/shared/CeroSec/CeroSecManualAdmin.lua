@@ -685,6 +685,7 @@ are working at.
 are the same thing. +N is N minutes from now, up to a day.
 
   root@ksp-04-11:~# shutdown -r +5
+  [1] 44
   The system is going down for reboot in 5 minutes!
 
 Every screen standing at the machine gets that line, gets it again one
@@ -693,32 +694,32 @@ minute before, and once more as the machine goes:
   The system is going down for reboot in 1 minute!
   The system is going down for reboot NOW!
 
-One pending order per machine. A second is refused rather than quietly
-replacing the first, because nobody should be told two different times:
+A PENDING ORDER IS A PROCESS. That is the [1] 44: a job, with an id,
+owned by the account that gave it. ps and jobs show it, and you call it
+off the way you stop any process.
 
-  root@ksp-04-11:~# shutdown -r +5
-  shutdown: already scheduled
-  root@ksp-04-11:~# shutdown -c
-  shutdown: cancelled
+  root@ksp-04-11:~# jobs
+  [1] waiting  shutdown -r +5
+  root@ksp-04-11:~# kill 44
 
--c with nothing pending says shutdown: no shutdown scheduled.]],
+kill says nothing, which is kill. Root may, and so may the account that
+ordered it; nobody else. There is no shutdown -c here: that flag is
+another kind of Unix's, and this one had a process table.]],
 
 [[Two honest limits on that timer, and one on the machine.
 
-The timer lives on the MACHINE and not in your window: close the window,
+Two orders at once are allowed, because two processes are: both warn, and
+the first minute to arrive wins. What bounds them is the job book.
+
+The order lives on the MACHINE and not in your window: close the window,
 walk away, come back, and it is still counting down. But it is not written
 to the disk. The power going out, the computer being carried off, or the
-world being loaded again all forget a pending shutdown and the machine
-stays up. This computer keeps no list of running work on its disk, and we
-would rather write that here than have you find it out.
+world being loaded again all forget it and the machine stays up: this
+computer keeps no list of running work on its disk.
 
-The power going out is the other way a machine stops, and it is not
-gentle: the screen clears, anything unsaved in the editor is gone, and the
-disk is as it was.
-
-And a computer that is picked up keeps its disk and loses its screen: its
-files, accounts and crontabs travel with it, and what was running does
-not.
+The power going out is not gentle either: the screen clears, anything
+unsaved in the editor is gone, and the disk is as it was. A computer that
+is picked up keeps its disk and loses its screen.
 
 Classic mistake. Typing shutdown at the end of the day on a machine
 somebody else is logged into, having read this far and not chapter 8. Type
@@ -1369,62 +1370,62 @@ device:
 
 The frequency in megahertz, and what the set is doing: on, off, or no
 power -- a dead grid or a flat battery, and to a TNC those are the same
-thing. Read-only, all of it: the knob is on the radio and you turn it by
-hand. Two sets in the room, and dev find radio0 shows which is yours.
+thing. Read-only: the knob is on the radio and you turn it by hand. Two
+sets in the room, and dev find radio0 shows which is yours.
 
 A station needs a callsign, and it is a file:
 
   admin@ksp-04-11:~$ cat /etc/callsign
   KD4AXR
 
-Root's and 644. The firmware prints it at power-on, the way a TNC printed
-its own when you switched it on.]],
+Root's and 644. It is the box's MYCALL: a TNC kept its callsign in its own
+memory, and here that memory is this file. The firmware prints it at
+power-on, the way a TNC printed its own when you switched it on.]],
 
-[[call dials. It takes a CALLSIGN in capitals and nothing else: there is
-no name to look up and no number to dial, because a station twenty miles
-away is in no /etc/hosts and on nobody's telephone line.
+[[A TNC is a peripheral, so you reach it the way 1993 reached any
+peripheral: cu on its line. cu -l names a LINE instead of a number, and
+the box answers with one line about itself and then its own prompt.
 
-  admin@ksp-04-11:~$ call KE4QWZ
+  admin@ksp-04-11:~$ cu -l /dev/radio0
+  CeroSec Systems TNC-200 (TNC-2 compatible)
+  cmd: MYCALL
+  MYCALL KD4AXR
+  cmd: C KE4QWZ
   *** CONNECTED to KE4QWZ
   login:
 
+Six commands at cmd:, each with the short form the box takes. MYCALL
+shows the callsign; MYCALL W4ZZZ sets it, and it is a file, so root only.
+C call connects, CONNECT the same. D disconnects, DISCONNE the same. K
+goes back into a link you stepped out of, CONV the same. MH lists the
+stations heard, MHEARD the same, and MHCLEAR empties it. Anything else
+gets ?EH: the box did not understand you.
+
 Both sets on, both with power, and BOTH ON THE SAME FREQUENCY. That last
 one is the whole job: agree a frequency with whoever is at the other end,
-walk to your set, turn the knob, and check it with cat /dev/radio0 before
-you type anything.
+walk to your set, turn the knob, and check it with cat /dev/radio0.]],
 
-From there it is cu's session -- the far machine's files, one of its four
-ttyp lines, a password EVERY time -- and slower again: 1200 baud is two
-lines a second, half what a call carries.
+[[A link that is up is cu's session -- the far machine's files, one of its
+four ttyp lines, a password EVERY time -- and slower again: 1200 baud is
+two lines a second, half what a telephone call carries.
 
 Over there, who and last name the CALLSIGN that called.
 
   kate     ttyp0    KE4QWZ     Jun 27 13:07
 
-exit there ends it, ~. alone on a line ends it here, and both print
-*** DISCONNECTED.]],
+Three ways back, and they are three different things. Escape steps out of
+the link to cmd:, WITHOUT dropping it -- the box is still connected, and K
+goes back in. D at cmd: drops the link and leaves you at cmd:. And ~.
+alone on a line hangs the whole line up, link and cu together, which is
+how you get back to the shell:
 
-[[The refusals. Two are the TNC talking, which is why they carry stars:
+  cmd: D
+  *** DISCONNECTED
+  cmd: ~.
+  Disconnected.
 
-  *** retry count exceeded
-  *** BUSY
-
-The first is nobody answered, and a radio never says why -- no such
-station, a machine or a set switched off, a flat battery, the wrong
-frequency, out of range, or a town nobody is standing in. It is also what
-you get when a link goes away underneath you. The second is a station
-that has a link already: one connection per radio, either end, and two
-machines in one room share one set.
-
-Two more the machine says without transmitting at all, because it can see
-them for itself:
-
-  admin@ksp-04-11:~$ call KE4QWZ
-  call: no radio
-
-no two-way set in this machine's room, so there is no TNC on it. And
-call: no callsign, for a machine whose /etc/callsign is gone. A station
-with no callsign may not transmit, and this one will not.]],
+exit on the far machine ends it from that end. The refusals -- retry count
+exceeded, BUSY, no radio, no callsign -- are in chapter 12.]],
 
 [[Now the part that matters, and it is why the chapter ends here.
 
@@ -1441,12 +1442,12 @@ cannot either. A radio cannot be anything else, and every operator in
 1993 knew it.
 
 Change frequency, and agree the new one OFF the air. That is the defence,
-and it is why the knob is on the set. Keep the set switched off between
-calls: a station nobody can raise is a station nobody hears.
+and it is why the knob is on the set. Keep the set off between links: a
+station nobody can raise is a station nobody hears.
 
-And the callsign is not a lock. It is a FILE that root may write to
-anything -- which is why call asks for a password every time, whatever
-/etc/hosts.equiv says.]],
+And the callsign is not a lock. It is a FILE root may write to anything,
+and MYCALL writes it -- which is why a link asks for a password every
+time, whatever /etc/hosts.equiv says.]],
 
 [[The limits, the refusals, and what is coming.
 
@@ -1462,13 +1463,13 @@ away, and so is a third hop of a chain. A session costs the FAR machine.
   admin@ksp-04-11:~$ rlogin office
   rlogin: connect: Connection refused
 
-A call pays the same ceilings and so does a radio link. Range on the air:
+A telephone call pays the same ceilings and so does a link. Range on the air:
 7500 tiles for a ham set, 8000 for a walkie, the SMALLER of the two, and
 floors do not count. A radio is also a thing standing on a tile: a station
 in a town nobody is near cannot be raised at all, where the wire and the
 telephone reach the county regardless.
 
-Three links now, every one behind a command you knew.
+Three links now, and every one of them is cu or rlogin.
 
 Classic mistake. Trusting a machine in /etc/hosts.equiv and forgetting
 that whoever gets root on THAT machine has yours too.]],
@@ -1767,7 +1768,7 @@ Groups, and who may read what.
   jobs
   kill <id>|%<n>
   fg [%<n>|<id>]
-  shutdown [-h|-r] [now|+N] | shutdown -c
+  shutdown [-h|-r] now|+N
   halt
   reboot
 
@@ -1793,13 +1794,12 @@ The wire.
   rsh <host|address> [-l user] <command>...
   rcp <src> <dst>, one is <host|address>:<path>
 
-The telephone.
+The telephone, and the radio through the TNC on its line.
 
-  cu telno
+  cu telno | cu -l line
 
-The radio.
-
-  call CALLSIGN]==],
+At cmd: on the TNC: MYCALL, C call, D, K, MH, MHCLEAR. Escape steps out
+of a link to cmd:, and ~. alone on a line hangs the line up.]==],
 
 [[The numbers an administrator runs into, all in one place.
 
@@ -1867,16 +1867,13 @@ Being somebody else, and the accounts.
   usermod: empty group list
   hostname: <name>: invalid name
 
-Switching it off. The first three are the timer's and the fourth is a
-machine with no clock to count from.
+Switching it off. The first is a machine with no clock to count from and
+the second is its job book full: a pending order is a process.
 
-  shutdown: already scheduled
-      one pending order per machine, never two times
-  shutdown: no shutdown scheduled
-      -c with nothing to call off
-  shutdown: cancelled
-      not an error: what -c prints when it worked
   shutdown: no clock
+  shutdown: too many jobs
+  kill: <id>: Operation not permitted
+      not yours to stop, and you are not root
 
 A machine that has lost its commands says two lines and they are the only
 two help ever prints on its own behalf:
@@ -2007,21 +2004,25 @@ happened to a call in one word and there was nobody else to report it.
   Disconnected.
       one end hung up on purpose: ~. here, exit there]],
 
-[[The radio, chapter 8. Four of these six are the TNC talking and not a
-command, which is why they carry three stars: a TNC printed its own lines
-that way so an operator could tell the box from the man at the far end.
+[[The radio, chapter 8. Five of these seven are the TNC talking and not a
+command: the four with three stars, which is how a TNC printed its own
+lines so an operator could tell the box from the man at the far end, and
+the one with a question mark.
 
-  call: no radio
+  cu: /dev/radio0: no such device
       no two-way radio in this machine's room, so there is
-      no TNC on it and nothing to transmit with
-  call: no callsign
+      no TNC on its line and no line to open
+  cu: no callsign
       /etc/callsign is gone or holds something no station
       could be called, and a station with no callsign may
       not transmit
+  ?EH
+      the box did not understand that line. Its whole
+      vocabulary for a word it does not know
   *** CONNECTED to KE4QWZ
       the far TNC answered and the link is up
   *** DISCONNECTED
-      one end let go on purpose: ~. here, exit there
+      one end let go on purpose: D or exit there
   *** retry count exceeded
       nobody answered, and a radio never says why. It also
       ends a link that went away underneath you
@@ -2036,12 +2037,11 @@ here and is not a refusal at all:
 the station called, the station calling, and what happened. Every connect
 and every disconnect, on the frequency they were made on. Chapter 8.]],
 
-[[The seven that want somebody at the glass, and the machine says so
+[[The six that want somebody at the glass, and the machine says so
 wherever there is nobody -- cron, a background job, a pipeline stage:
 
   rlogin: not a terminal
   cu: not a terminal
-  call: not a terminal
   su: not a terminal
   passwd: not a terminal
   sudo: not a terminal

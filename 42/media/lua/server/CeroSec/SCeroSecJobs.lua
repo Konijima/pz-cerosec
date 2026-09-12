@@ -181,13 +181,12 @@ end
 -- power, a computer picked up: all four are the machine stopping, and a
 -- machine that has stopped is running nothing.
 function CeroSecJobs.killAll(luaObject)
-	-- A pending shutdown goes with them. It is an order given to a machine that
-	-- is running, and a machine that has stopped is not running it any more:
-	-- `shutdown -r +5` does not survive the power going out, and the README and
-	-- the manual say so.
-	local had = luaObject.jobs ~= nil or luaObject.shutdown ~= nil
+	-- A pending shutdown goes with them, and now it goes with them for nothing but
+	-- being in the book: it is an order given to a machine that is running, and a
+	-- machine that has stopped is not running it any more. `shutdown -r +5` does
+	-- not survive the power going out, and the README and the manual say so.
+	local had = luaObject.jobs ~= nil
 	luaObject.jobs = nil
-	luaObject.shutdown = nil
 	-- And a dark interval, for the same reason one notch further along: this is
 	-- only ever reached from turnOff, and a machine that has just been switched off
 	-- is not a machine somebody rebooted. The order matters and is the reboot's own
@@ -207,22 +206,69 @@ end
 --
 -- The pending shutdown
 --
--- `shutdown -r +5` is an order with a clock on it, and the clock is this pass:
--- there is no timer anywhere else on the machine. It is RUNTIME state -- it is
--- not among the object's saved keys -- so a server restart forgets it and the
--- machine simply stays up, which is the honest answer for a machine with no
--- process table on its disk.
+-- `shutdown -r +5` is an order with a clock on it, and it is A PROCESS -- which is
+-- what BSD's shutdown(8) is: it forks, prints its pid and sleeps until the
+-- minute. So it is a JOB on this machine, in the ordinary book, with an id and a
+-- slot, owned by the account that gave the order; `jobs` and `ps` show it, `wait`
+-- waits for it, and `kill` is what calls it off, because killing the process is
+-- how a real one is called off and there is no `-c` on a 1993 shutdown.
 --
--- It survives a window closing, because it belongs to the machine and not to
--- anybody standing at it, and it does not survive the power going out or the
--- computer being picked up, because neither of those is a machine any more.
+-- It is a job that never runs. state "waiting" is the whole of it: jobStep answers
+-- a waiting job in one test and spends nothing, and nothing ever wakes it -- the
+-- clock it is waiting on is the SCHEDULER's pass (CeroSecJobs.checkShutdown
+-- below), which is where it was before and has to stay, because a machine with a
+-- shutdown pending and nothing running must still go down at the minute it was
+-- told to. A "sleeping" job with a wake time would have been the prettier shape
+-- and was rejected: a pass run in a player's hand (Commands.exec, Commands.input)
+-- steps jobs without looking at any clock but its own, so the order would have
+-- come due, run out of a program with nothing in it, and finished quietly having
+-- switched nothing off.
+--
+-- What is on the job: `job.shutdown`, which is the order -- when, which kind, and
+-- whether the minute's warning has gone out. Everything else about it is what
+-- every other job has.
+--
+-- RUNTIME state, like the book it is in: a server restart forgets it and the
+-- machine simply stays up, which is the honest answer for a machine with no
+-- process table on its disk. It survives a window closing, because a job belongs
+-- to the machine and not to anybody standing at it, and it does not survive the
+-- power going out or the computer being picked up, because neither of those is a
+-- machine any more (CeroSecJobs.killAll).
 --
 
-function CeroSecJobs.schedule(luaObject, data)
+-- The pending order on a machine, or nil. The first one, and there can be two:
+-- a second `shutdown +N` is a second process, exactly as it is on a real BSD.
+function CeroSecJobs.pendingShutdown(luaObject)
+	local book = luaObject.jobs
+	if book == nil then return nil end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		if job.shutdown ~= nil and not CeroSecOS.jobIsOver(job) then return job end
+	end
+	return nil
+end
+
+-- job, or nil plus the reason: the machine's own ceiling, met here like every
+-- other job's, because a pending shutdown spends a process slot like every other.
+function CeroSecJobs.schedule(system, luaObject, console, data)
 	if type(data) ~= "table" or type(data.at) ~= "number" then return nil end
-	luaObject.shutdown = { at = data.at, kind = data.kind or "shutdown", warned = false }
-	register(luaObject)
-	return luaObject.shutdown
+	local book = CeroSecJobs.book(luaObject)
+	if liveCount(book) >= CeroSecOS.MAX_JOBS then return nil, "too many jobs" end
+	local session = system:sessionOf(console)
+	local job = CeroSecOS.newJob({
+		-- A program with nothing in it, because there is nothing to run: what this
+		-- job does is BE there until the minute comes.
+		prog = {},
+		name = "shutdown",
+		cmd = data.cmd or "shutdown",
+		bg = true,
+		-- The account that gave the order, which is the account the command ran as
+		-- and so is root for a `sudo shutdown +5`. It is what `kill` reads.
+		session = { user = data.user or session.user, cwd = "/", stamp = session.stamp },
+	})
+	job.shutdown = { at = data.at, kind = data.kind or "shutdown", warned = false }
+	job.state = "waiting"
+	return enrol(system, luaObject, console, job, true)
 end
 
 --
@@ -268,26 +314,41 @@ local function broadcast(system, luaObject, line)
 	system:pushScreen(luaObject, luaObject:osState(), console)
 end
 
--- The warning a minute out, and then the deed. Run for every machine that has
--- one, on every pass, before any job is stepped: a machine with a shutdown
--- pending and nothing running must still go down at the minute it was told to.
+-- The warning a minute out, and then the deed. Run for every machine that has a
+-- pending order, on every pass, before any job is stepped: a machine with a
+-- shutdown pending and nothing running must still go down at the minute it was
+-- told to.
+--
+-- The lines are BROADCAST and not written into the job's own output, which is the
+-- one place this differs from an ordinary process: "the system is going down" is a
+-- message to every terminal on the machine -- wall's job on a real one -- and not
+-- a line for whoever happened to type the order. So it goes to the machine's own
+-- console, where every window standing at the glass reads it.
+--
+-- Two pending orders are two clocks and both are read. The first minute to arrive
+-- takes the machine down and killAll takes the other order with it, which is what
+-- happens on a real machine and needs nothing written here to make it so.
 function CeroSecJobs.checkShutdown(system, luaObject, now)
-	local pending = luaObject.shutdown
-	if pending == nil then return end
-	if not luaObject.on then
-		luaObject.shutdown = nil
-		return
-	end
-	local left = pending.at - now
-	if left <= 0 then
-		luaObject.shutdown = nil
-		broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 0))
-		system:applyPower(luaObject, pending.kind)
-		return
-	end
-	if not pending.warned and left <= 60000 then
-		pending.warned = true
-		broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 1))
+	local book = luaObject.jobs
+	if book == nil then return end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		local pending = job.shutdown
+		if pending ~= nil and not CeroSecOS.jobIsOver(job) then
+			-- A machine that is already off has no order to carry out. It is not
+			-- cleared here: the power going out took the whole book with it.
+			if not luaObject.on then return end
+			local left = pending.at - now
+			if left <= 0 then
+				broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 0))
+				system:applyPower(luaObject, pending.kind)
+				return
+			end
+			if not pending.warned and left <= 60000 then
+				pending.warned = true
+				broadcast(system, luaObject, CeroSecOS.shutdownLine(pending.kind, 1))
+			end
+		end
 	end
 end
 
@@ -454,6 +515,48 @@ function CeroSecJobs.atBoot(system, luaObject)
 	end
 	if fired > 0 then luaObject:mirrorOS() end
 	return fired
+end
+
+--
+-- Putting a cu back at the TNC's prompt
+--
+-- A `cu -l /dev/radio0` is a job that spends its life waiting: at cmd: for a line
+-- to be typed, and then -- if the box has a link -- for that link to end or for
+-- the survivor to interrupt back out of converse. Waiting costs nothing at all:
+-- no clock runs and jobStep answers a waiting job in one test.
+--
+-- Between those two states the job holds no continuation, which is what keeps a
+-- prompt off the glass while the session is on it. So the two doors back in are
+-- here, and they are the only things on the server that touch a job's cont: one
+-- says a line and asks again, the other says cu's last word and lets the program
+-- end. The SHAPES are the engine's (CeroSecOS.tncSayCont, CeroSecOS.tncByeCont) --
+-- nothing here knows what a continuation looks like inside.
+--
+-- `line` is the TNC's own word for whatever happened, or nil for nothing to say;
+-- `to` is the station the link is STILL up to, or nil for a box with no link.
+-- A pass follows, in whatever hand this was called in, so the prompt reaches the
+-- glass in the same round trip as the key that caused it.
+local function resumeTnc(system, luaObject, job, cont, line)
+	if luaObject == nil or job == nil or not luaObject.on then return false end
+	if CeroSecOS.jobIsOver(job) or job.state ~= "waiting" then return false end
+	local state = luaObject:osState()
+	if state == nil then return false end
+	job.cont = cont
+	if not CeroSecOS.jobInput(state, job, line or "",
+			system:execEnv(luaObject, state, nil, nil)) then
+		return false
+	end
+	CeroSecJobs.runMachine(system, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
+		getTimestampMs(), nil, nil, true, nil)
+	return true
+end
+
+function CeroSecJobs.tncSay(system, luaObject, job, line, to)
+	return resumeTnc(system, luaObject, job, CeroSecOS.tncSayCont(to), line)
+end
+
+function CeroSecJobs.tncBye(system, luaObject, job)
+	return resumeTnc(system, luaObject, job, CeroSecOS.tncByeCont(), nil)
 end
 
 function CeroSecJobs.foreground(luaObject, console)
@@ -783,8 +886,12 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		-- order is given while the job that gave it is still on the book -- which
 		-- is what lets the answer come back into it (CeroSecOS.jobRemote).
 		if job.dial ~= nil and not CeroSecOS.jobIsOver(job) then
-			orders[#orders + 1] = { console = screenOf(job) or own, control = "rsh",
-				data = job.dial, forJob = job }
+			-- Which KIND of dial. An rsh is the usual one and says so by carrying no
+			-- control of its own; the TNC's dialog carries "tnclink", because what it
+			-- asks for is a connect, a disconnect or a converse on a link this very
+			-- job is holding (CeroSecNet.tncLink).
+			orders[#orders + 1] = { console = screenOf(job) or own,
+				control = job.dial.control or "rsh", data = job.dial, forJob = job }
 			job.dial = nil
 		end
 		if job.remote ~= nil and CeroSecOS.jobIsOver(job) then
@@ -832,7 +939,7 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 		end
 	end
 	book.list = kept
-	if #book.list == 0 and luaObject.shutdown == nil and luaObject.rebooting == nil then
+	if #book.list == 0 and luaObject.rebooting == nil then
 		forget(luaObject)
 	end
 
@@ -888,12 +995,21 @@ function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerO
 			end
 		end
 	elseif control == "schedule" then
-		CeroSecJobs.schedule(luaObject, data)
-	elseif control == "cancel" then
-		luaObject.shutdown = nil
-	elseif control == "rlogin" or control == "rsh" or control == "cu"
-			or control == "call" then
+		-- The pending order, as a process. A machine with no room for one says so
+		-- where the line was typed, exactly as it does for an `&` it cannot start.
+		local job, reason = CeroSecJobs.schedule(system, luaObject, console, data)
+		if job == nil then
+			CeroSec.consolePush(console, "shutdown: " .. tostring(reason))
+			system:pushScreen(luaObject, state, console)
+		end
+	elseif control == "rlogin" or control == "rsh" or control == "cu" then
 		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj, order.forJob)
+	elseif control == "tnclink" then
+		-- The TNC's dialog asking for something only the machine can do to a radio
+		-- link. It is not a dial like the three above -- there is no session to
+		-- open in three of the four cases -- and the job that asked lives through
+		-- all of them, which is why it is handed over.
+		CeroSecNet.tncLink(system, luaObject, console, data, order.forJob)
 	elseif control == "hangup" and type(data) == "table" then
 		-- A far session whose near end has gone. Nothing is delivered anywhere:
 		-- the job that was waiting for it is over, and what the far machine wrote
@@ -929,6 +1045,8 @@ function CeroSecJobs.pass(now)
 
 	-- The clocks first, and all of them: a shutdown is not something a machine
 	-- at the wrong end of a busy county may be late for, and it costs no steps.
+	-- Before the jobs are stepped, and that is the whole reason the pending order
+	-- is a job that never runs rather than one asleep on a timer.
 	for i = 1, n do CeroSecJobs.checkShutdown(system, order[i], now) end
 	-- And the dark interval of a machine that is coming back, which is the same
 	-- kind of clock and is owed the same punctuality: a player is standing in
@@ -942,7 +1060,7 @@ function CeroSecJobs.pass(now)
 			local share = CeroSec.STEP_BUDGET_PER_MACHINE
 			if share > total then share = total end
 			total = total - CeroSecJobs.runMachine(system, machine, share, now)
-		elseif machine.shutdown == nil and machine.rebooting == nil then
+		elseif machine.rebooting == nil then
 			-- Nothing running and nothing pending: it is not a machine the
 			-- scheduler has anything to do with any more.
 			forget(machine)

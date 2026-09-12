@@ -1019,6 +1019,74 @@ function CeroSecNet.reachableRadio(system, from, call)
 	return object, why, mine, theirs
 end
 
+--
+-- MHEARD, the world's half
+--
+-- The engine keeps the RULE for the list -- one line per station, most recent
+-- first, eighteen of them (CeroSecOS.heardAdd) -- and has no way of knowing which
+-- aerials can hear which transmission. This is that half.
+--
+-- WHAT HEARING IS, and it is not what a LINK is. A link is two transmissions and
+-- holds out to the SMALLER of the two ranges, because the weaker end has to be
+-- heard too; hearing is ONE transmission, so the only range in it is the
+-- transmitter's. That is why a station can sit in MHEARD and still answer a
+-- connect with silence: a big set twenty miles away is heard by a walkie that
+-- cannot be heard back, which is the first thing anybody with a handheld learns.
+--
+-- Measured between the two SETS and not between the machines, because a
+-- transmission is a thing an aerial does and the game measures it from the
+-- transmitter's own tile (proof 5 in SCeroSecRadio.lua). x and y only: the game's
+-- own radio has no z in it.
+--
+-- The list is RUNTIME state on the machine (luaObject.heard) and is not among the
+-- object's saved keys: it is RAM in a box on a desk, and it goes when the power
+-- does (SCeroSecObject:turnOff).
+--
+
+-- Is that set inside the transmitting set's range? Squared on both sides, so
+-- nothing here takes a square root -- and strictly inside, because at exactly the
+-- range the game scrambles a line a hundred per cent and a line scrambled whole
+-- carries no callsign to write down.
+local function inEarshot(set, ear)
+	local reach = set.range
+	if reach <= 0 then return false end
+	local dx = ear.x - set.x
+	local dy = ear.y - set.y
+	return dx * dx + dy * dy < reach * reach
+end
+
+-- One transmission, written down by everybody who can hear it. `call` is the
+-- station that transmitted and `set` is the aerial it came out of.
+--
+-- The transmitter is skipped, which is the game's own rule for a transmission and
+-- the TNC's for its heard list: a station does not hear itself (proof 5 -- the
+-- device on the source tile is not in the distribution), and a box does not log
+-- its own callsign.
+--
+-- Answers how many stations wrote it down, which is what the bench counts.
+function CeroSecNet.heardOnAir(system, set, call, now)
+	if type(set) ~= "table" or type(call) ~= "string" then return 0 end
+	local heard = 0
+	each(system, function(other)
+		if not other.on then return nil end
+		local ear = CeroSecRadio.tncOf(other)
+		if ear == nil then return nil end
+		-- Its own aerial: the set that transmitted. Compared by KEY, because two
+		-- machines in one room share one set and neither of them heard it.
+		if CeroSecRadio.keyOf(ear) == CeroSecRadio.keyOf(set) then return nil end
+		if not ear.on or not ear.powered then return nil end
+		-- Two frequencies are two conversations, and a receiver on another one
+		-- heard nothing at all: it is the game's own test as well (the channel
+		-- equality in DistributeTransmission).
+		if ear.channel ~= set.channel then return nil end
+		if not inEarshot(set, ear) then return nil end
+		other.heard = CeroSecOS.heardAdd(other.heard, call, now)
+		heard = heard + 1
+		return nil
+	end)
+	return heard
+end
+
 -- Does a link that was made still hold? Asked on every keystroke that goes down
 -- it, for the reason the telephone's exchange is asked there: the radio is a link
 -- that can go away with both machines still switched on and nobody having typed
@@ -1458,12 +1526,51 @@ function CeroSecNet.announceRadio(system, pty, what)
 	if caller == nil then return false end
 	local set = CeroSecRadio.tncOf(caller)
 	if set == nil then return false end
+	-- And the boxes in earshot write the station down, exactly as they did when
+	-- the link came up: a disconnect is a transmission like any other. One and not
+	-- two, this time, because the far end may be the very thing that has gone --
+	-- a machine switched off transmits nothing, and a line invented for a set that
+	-- is not there would be a station heard by nobody.
+	CeroSecNet.heardOnAir(system, set, pty.radio.call,
+		CeroSecOS.clockOf(system:clockEnv()))
 	return CeroSecRadio.announce(set, pty.radio.to, pty.radio.call, what)
+end
+
+-- The cu that is holding the near end of a link, and the machine it runs on.
+--
+-- A radio link is made from inside a program -- `cu -l /dev/radio0`, at the TNC's
+-- cmd: prompt -- and that program does not go away when the link comes up: it is
+-- what the link hangs off, which is why ^C at the near prompt takes the link with
+-- it (the job dies, and a dead job's `remote` is hung up) and why the link comes
+-- back to cmd: when it ends. Found off the job's own note of the far line, which
+-- is the same field an rsh uses and is set where the link is made.
+--
+-- nil for every other kind of session: an rlogin, an rsh and a telephone call are
+-- held by the console and by nothing else.
+function CeroSecNet.tncJobFor(system, pty)
+	if type(pty) ~= "table" or type(pty.radio) ~= "table" then return nil end
+	local at = pty.from
+	if type(at) ~= "table" then return nil end
+	local object = system:getLuaObjectAt(at.x, at.y, at.z)
+	if object == nil or not object.on then return nil end
+	local book = object.jobs
+	if book == nil then return nil end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		if job.tnc and type(job.remote) == "table" and job.remote.line == pty.line
+				and not CeroSecOS.jobIsOver(job) then
+			return job, object
+		end
+	end
+	return nil
 end
 
 function CeroSecNet.tearDown(system, object, line, why)
 	local pty = CeroSecOS.remoteLine(object.ptys, line)
 	if pty == nil then return false end
+	-- Asked BEFORE anything is taken away: the pty is what says where the near end
+	-- is, and this is about to remove it.
+	local tncJob, tncObject = CeroSecNet.tncJobFor(system, pty)
 	-- The other half of the wire's log: a session that ends, with the reason it
 	-- was given. Noted here rather than at the several callers, for the reason the
 	-- connect wrapper exists.
@@ -1511,17 +1618,36 @@ function CeroSecNet.tearDown(system, object, line, why)
 		if status == nil then status = 1 end
 		deliver(system, homeObject, home, pty.noTty, lines, status)
 	elseif home ~= nil then
+		-- Whether the glass was actually ON this session. Normally it was -- that
+		-- is what `remote` means -- but a radio link PARKED at the TNC's cmd:
+		-- prompt is a session nobody is looking at: the near screen went back to
+		-- the box's own dialog and has been typed on since, so painting the far
+		-- console's copy over it would lose every line of that dialog, and a
+		-- closing line would land under a cmd: prompt that is still up.
+		local watching = home.remote ~= nil
 		home.remote = nil
-		-- The one glass: what the session printed is what is on the screen.
-		if type(screen) == "table" and type(screen.lines) == "table" then
-			home.lines = screen.lines
+		if watching then
+			-- The one glass: what the session printed is what is on the screen.
+			if type(screen) == "table" and type(screen.lines) == "table" then
+				home.lines = screen.lines
+			end
+			-- An rsh is one command and not a login, so it says nothing when it is
+			-- done: no rsh anybody has ever run printed "Connection closed.".
+			if not pty.quiet then CeroSec.consolePush(home, closingLine(pty, why)) end
 		end
-		-- An rsh is one command and not a login, so it says nothing when it is
-		-- done: no rsh anybody has ever run printed "Connection closed.".
-		if not pty.quiet then CeroSec.consolePush(home, closingLine(pty, why)) end
 		if homeObject ~= nil then
 			system:pushScreen(homeObject, homeObject:osState(), home)
 		end
+	end
+	-- And the PROGRAM holding the near end of a radio link, which is a cu at a
+	-- TNC: a link that has gone puts the box back at its own cmd: prompt, whichever
+	-- end let go of it and whatever took it away -- the far machine switched off, a
+	-- set carried out of the room, a knob turned. It is skipped for the two orders
+	-- the box gave itself (D and ~.), because those clear the job's own note of the
+	-- link before they tear it down: what to say and what to do next are the
+	-- dialog's own there, and are said by CeroSecNet.tncLink.
+	if tncJob ~= nil then
+		CeroSecJobs.tncSay(system, tncObject, tncJob, nil, nil)
 	end
 	return true
 end
@@ -1889,7 +2015,9 @@ function CeroSecNet.dialRadio(system, luaObject, console, data)
 	local call = CeroSecNet.callsignOf(luaObject)
 	if call == nil then return nil, CeroSecOS.CALL_NO_CALLSIGN end
 	local radio = { call = call, to = data.call, key = CeroSecRadio.keyOf(mine) }
-	local pty, object, far = connect(system, luaObject, console, "call", data, found, radio)
+	-- Signed `cu`, which is the program that opened the line: the wire's log names
+	-- the command a session was made by, and since SYSTEM_VERSION 17 that is cu.
+	local pty, object, far = connect(system, luaObject, console, "cu", data, found, radio)
 	-- The one thing left that can refuse a link the air carried: a far machine with
 	-- all four of its lines taken by sessions off its own coax. It is the TNC's
 	-- busy and not a "connection refused" -- a station that hears a DM back hears
@@ -1907,7 +2035,134 @@ function CeroSecNet.dialRadio(system, luaObject, console, data)
 	-- counterpart so that both ends of a link are announced by the one set, in the
 	-- one place, with the one pair of callsigns.
 	CeroSecRadio.announce(mine, data.call, call, CeroSecOS.TNC.onAir)
+	-- And what every TNC in earshot WROTE DOWN, which is the third half and is on
+	-- nobody's glass either until somebody types MH. A connect is two
+	-- transmissions -- the request and the answer -- so it is logged as two: every
+	-- box that can hear the caller's aerial has the caller in its list, and every
+	-- box that can hear the far one has the far station. Which is why, and it is
+	-- the whole use of the list, BOTH ENDS of a link have each other in it.
+	local now = CeroSecOS.clockOf(system:clockEnv())
+	CeroSecNet.heardOnAir(system, mine, call, now)
+	CeroSecNet.heardOnAir(system, theirs, data.call, now)
 	return pty, object, far
+end
+
+--
+-- The four things the TNC's dialog can ask of the machine
+--
+-- The dialog itself is the engine's (CeroSecOS.continuations.tnc): it reads the
+-- line, decides what was typed and says what a box says. What it cannot do is
+-- touch the link, because a link is two aerials and a pty -- so a `C`, a `D`, a
+-- `K` and a `~.` come out of it as an ORDER, exactly as `rlogin` and `cu`'s dial
+-- do, and this is where the four are carried out.
+--
+-- THE JOB LIVES THROUGH ALL OF THEM. That is the difference from `call`, which
+-- ended the line that gave it and left the session standing on its own: cu is the
+-- program holding the serial line and it is still holding it while the link is
+-- up. So the job waits (costing nothing, no clock running) and is put back at
+-- cmd: by CeroSecJobs.tncSay when there is something to say.
+--
+--   connect  the link is made and the glass follows it to the far login prompt
+--   conv     the glass follows a link that is up and was parked
+--   drop     D: the link goes, the box stays at cmd:
+--   hangup   ~.: the link goes and so does cu, which says Disconnected.
+--
+function CeroSecNet.tncLink(system, luaObject, console, data, job)
+	if type(data) ~= "table" or job == nil then return end
+	local op = data.op
+	local state = luaObject:osState()
+
+	if op == "connect" then
+		local pty, object, far = CeroSecNet.dialRadio(system, luaObject, console, data)
+		if pty == nil then
+			-- object carries the TNC's own word for it. The box says it and asks
+			-- again: a connect that failed is a box that is still at cmd: with no
+			-- link, which is what a survivor sees on a real one.
+			CeroSecJobs.tncSay(system, luaObject, job, tostring(object), nil)
+			return
+		end
+		-- Which line on which machine this job is holding. The same field an rsh
+		-- writes and for the same three reasons: ^C and `kill` reach across the
+		-- air, a machine going dark takes its links with it
+		-- (CeroSecNet.closeSessions), and a link that ends finds its way back to
+		-- this job (CeroSecNet.tncJobFor).
+		job.remote = { x = object.x, y = object.y, z = object.z, line = pty.line }
+		job.tnc = true
+		system:pushScreen(object, far, pty.console)
+		return
+	end
+
+	-- The three that are about a link this job already has. A job with none has
+	-- nothing to do to it, and the box says the only true thing there is.
+	local at = job.remote
+	if type(at) ~= "table" then
+		CeroSecJobs.tncSay(system, luaObject, job, CeroSecOS.TNC.disconnected, nil)
+		return
+	end
+	local object = system:getLuaObjectAt(at.x, at.y, at.z)
+	local pty = nil
+	if object ~= nil then pty = CeroSecOS.remoteLine(object.ptys, at.line) end
+
+	if op == "conv" then
+		-- Back into converse. The link is asked about first, and this is the one
+		-- place it CAN be asked about after the fact: a parked box hears nothing, so
+		-- a set switched off or carried away while the survivor sat at cmd: is
+		-- discovered here -- which is exactly when a real operator would discover
+		-- it, on the first thing he sent.
+		if pty == nil or not CeroSecNet.radioHolds(system, pty, object) then
+			job.remote = nil
+			if pty ~= nil then CeroSecNet.tearDown(system, object, at.line, "carrier") end
+			CeroSecJobs.tncSay(system, luaObject, job, CeroSecOS.TNC.disconnected, nil)
+			return
+		end
+		console.remote = { x = object.x, y = object.y, z = object.z, line = at.line }
+		-- The glass is the session's again, and what it has to show is what the
+		-- session has been holding all along -- including anything the far machine
+		-- printed while nobody was looking, which is what a buffer in a box is for.
+		system:pushScreen(object, object:osState(), pty.console)
+		return
+	end
+
+	-- D and ~. both let the link go. The job's note of it is cleared FIRST, so the
+	-- teardown does not also put the box back at cmd: (CeroSecNet.tearDown reads
+	-- tncJobFor off that note): what to say next is the dialog's own here, and the
+	-- two orders do not say the same thing.
+	job.remote = nil
+	if pty ~= nil then CeroSecNet.tearDown(system, object, at.line) end
+	if op == "hangup" then
+		-- `~.` is cu hanging up, so cu is over: its own last word and the shell.
+		CeroSecJobs.tncBye(system, luaObject, job)
+		return
+	end
+	-- D: the box printed *** DISCONNECTED itself, before the order was given.
+	CeroSecJobs.tncSay(system, luaObject, job, nil, nil)
+	if state ~= nil then system:pushScreen(luaObject, state, console) end
+end
+
+-- The TNC's interrupt key, which on a TNC-2 is what takes an operator out of
+-- converse and back to cmd: WITHOUT dropping the link. Escape is that key here,
+-- and this is the one place where Escape at an idle remote prompt does not close
+-- the session (SCeroSecSystem Commands.interrupt).
+--
+-- console is the FAR machine's pty console -- the one the glass is showing.
+-- Answers true when it was a parked radio link and the key has been dealt with.
+function CeroSecNet.parkTnc(system, luaObject, console)
+	if type(console) ~= "table" or type(console.line) ~= "string" then return false end
+	local pty = CeroSecOS.remoteLine(luaObject.ptys, console.line)
+	if pty == nil or type(pty.radio) ~= "table" then return false end
+	local job, object = CeroSecNet.tncJobFor(system, pty)
+	if job == nil or object == nil then return false end
+	local home = CeroSecNet.diallerOf(system, pty)
+	if home == nil then return false end
+	-- The glass stops following the link and goes back to the box's own dialog,
+	-- with everything the session printed kept on it: nothing is lost by parking,
+	-- which is the whole difference between this and hanging up.
+	if type(console.lines) == "table" then home.lines = console.lines end
+	home.remote = nil
+	-- And the box asks again, with the link still in its hand: `to` is what makes
+	-- D and K mean something at the prompt that comes back.
+	CeroSecJobs.tncSay(system, object, job, nil, pty.radio.to)
+	return true
 end
 
 -- rsh: one command, the caller's account, and no password ever. Trust or
@@ -1957,7 +2212,7 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 	-- (CeroSecOSVM applyControl), and this is the same rule standing at the door:
 	-- a screen nobody is watching is not a terminal to hand a session, whichever
 	-- way the order got here. What it says goes where the sheet goes.
-	if (control == "rlogin" or control == "cu" or control == "call") and noTty ~= nil then
+	if (control == "rlogin" or control == "cu") and noTty ~= nil then
 		deliver(system, luaObject, console, noTty, { control .. ": not a terminal" })
 		return
 	end
@@ -1966,8 +2221,6 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 		pty, object, far = CeroSecNet.dial(system, luaObject, console, data)
 	elseif control == "cu" then
 		pty, object, far = CeroSecNet.dialPhone(system, luaObject, console, data)
-	elseif control == "call" then
-		pty, object, far = CeroSecNet.dialRadio(system, luaObject, console, data)
 	else
 		pty, object, far = CeroSecNet.remoteCommand(system, luaObject, console, data)
 	end

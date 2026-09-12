@@ -2009,6 +2009,14 @@ end
 --
 
 commands.cu = function(state, session, args, env)
+	-- `cu -l line`, which is cu(1)'s OTHER form and its own flag: not a number to
+	-- dial but a serial line to open, with whatever is on the end of it. On this
+	-- machine the one thing on the end of one is the TNC, so the dialog that
+	-- follows is the radio's and lives with the radio (CeroSecOS.tncOpen).
+	if args[2] == "-l" then
+		if #args ~= 3 then return usage("cu") end
+		return CeroSecOS.tncOpen(state, session, args[3], env)
+	end
 	if #args ~= 2 then return usage("cu") end
 	if not CeroSecOS.isPhoneNumber(args[2]) then return usage("cu") end
 	-- No telephone at all: the machine says so itself and never lifts the receiver.

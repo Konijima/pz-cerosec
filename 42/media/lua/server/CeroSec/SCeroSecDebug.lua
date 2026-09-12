@@ -291,7 +291,7 @@ function CeroSecDebug.machineDetail(system, luaObject)
 	out[#out + 1] = "jobs " .. live .. " live of " .. held .. " held" ..
 		"  ptys " .. cell(CeroSecOS.ptyCount(luaObject.ptys)) ..
 		"  windows " .. cell(CeroSecDebug.watcherCount(luaObject)) ..
-		"  shutdown " .. cell(luaObject.shutdown ~= nil)
+		"  shutdown " .. cell(CeroSecJobs.pendingShutdown(luaObject) ~= nil)
 
 	local premises = CeroSecDebug.premises(luaObject)
 	for i = 1, #premises do out[#out + 1] = premises[i] end

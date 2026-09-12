@@ -4079,12 +4079,31 @@ do
 		bench.painted("The system is going down for reboot in 1 minute!"))
 	check("the second pair of eyes too",
 		bench.paintedOn(other, "The system is going down for reboot in 1 minute!"))
-	check("and it is pending", bench.object.shutdown ~= nil)
+	check("and it is pending", CeroSecJobs.pendingShutdown(bench.object) ~= nil)
 	eq("the machine is still up", bench.object.on, true)
-	-- A second one is refused rather than replacing the first.
+	-- A pending order is a PROCESS, so it is in the book like any other: `jobs`
+	-- shows it, under the account that gave it.
+	local pending = CeroSecJobs.pendingShutdown(bench.object)
+	eq("it is a job named shutdown", pending.name, "shutdown")
+	eq("owned by the account that ordered it", pending.session.user, "root")
+	eq("waiting, and spending nothing", pending.state, "waiting")
+	bench.enter("jobs")
+	bench.frame()
+	check("jobs lists it", bench.painted("shutdown -r +1"))
+	bench.enter("ps")
+	bench.frame()
+	check("and so does ps", bench.painted("shutdown -r +1"))
+	-- A SECOND one is allowed, because two processes are: the first minute to
+	-- arrive is the one that takes the machine down.
 	bench.enter("shutdown -h +5")
 	bench.frame()
-	check("only one at a time", bench.painted("shutdown: already scheduled"))
+	check("a second order is taken", bench.painted("going down for halt in 5"))
+	check("no refusal", not bench.painted("already scheduled"))
+	local two = 0
+	for i = 1, #bench.object.jobs.list do
+		if bench.object.jobs.list[i].shutdown ~= nil then two = two + 1 end
+	end
+	eq("two processes are sleeping on it", two, 2)
 
 	-- Nothing happens until the minute is up.
 	bench.tick(5)
@@ -4101,7 +4120,8 @@ do
 	eq("the tile is unlit", kit.iso.sprite, CeroSec.SPRITES_OFF["S"])
 	check("both windows shut", bench.window.closing and other.closing)
 	eq("and both were told why", bench.closed[#bench.closed], "reboot")
-	eq("nothing is pending any more", bench.object.shutdown, nil)
+	eq("nothing is pending any more",
+		CeroSecJobs.pendingShutdown(bench.object), nil)
 
 	_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS
 	bench.tick(1)
@@ -4111,7 +4131,8 @@ do
 	_G.__world = nil
 end
 
--- shutdown -c, and a warning a minute out on a longer one.
+-- Calling a pending order off, which is killing the process that holds it, and
+-- the warning a minute out on a longer one.
 do
 	local bench = newBench()
 	bench.login("root")
@@ -4119,6 +4140,8 @@ do
 	bench.enter("shutdown -h +2")
 	bench.frame()
 	check("two minutes out", bench.painted("The system is going down for halt in 2 minutes!"))
+	local pending = CeroSecJobs.pendingShutdown(bench.object)
+	check("it is a process", pending ~= nil)
 
 	-- A minute passes: the warning, and still up.
 	_G.__now = _G.__now + 61000
@@ -4126,16 +4149,69 @@ do
 	check("the minute warning", bench.painted("The system is going down for halt in 1 minute!"))
 	eq("still up", bench.object.on, true)
 
+	-- `shutdown -c` is not a flag on this machine any more: it is sysvinit's.
 	bench.enter("shutdown -c")
 	bench.frame()
-	check("cancelled", bench.painted("shutdown: cancelled"))
-	eq("and nothing is pending", bench.object.shutdown, nil)
+	check("the flag is gone", bench.painted("usage: shutdown [-h|-r] now|+N"))
+	check("and nothing was cancelled by it",
+		CeroSecJobs.pendingShutdown(bench.object) ~= nil)
+
+	-- kill is how it is called off, by its slot or by its id, and kill says
+	-- nothing at all when it worked.
+	bench.enter("kill %" .. pending.n)
+	bench.frame()
+	bench.tick(1)
+	eq("and nothing is pending", CeroSecJobs.pendingShutdown(bench.object), nil)
 
 	-- The minute it would have gone down on comes and goes.
 	_G.__now = _G.__now + 120000
 	bench.tick(2)
 	eq("the machine is still up", bench.object.on, true)
 	eq("and the scheduler has let it go", #CeroSecJobs.machines, 0)
+end
+
+-- An ordinary account may not kill root's shutdown, which is kill(2)'s own rule
+-- and the reason it arrived: an account that could would be an account that can
+-- switch the machine off.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("shutdown -h +2")
+	bench.frame()
+	local pending = CeroSecJobs.pendingShutdown(bench.object)
+	check("root's order is pending", pending ~= nil)
+
+	bench.enter("exit")
+	bench.frame()
+	bench.login("admin")
+	bench.enter("kill " .. pending.id)
+	bench.frame()
+	bench.tick(1)
+	check("an ordinary account is refused",
+		bench.painted("kill: " .. pending.id .. ": Operation not permitted"))
+	check("and the order stands", CeroSecJobs.pendingShutdown(bench.object) ~= nil)
+	eq("and the machine is still going down at the minute", bench.object.on, true)
+
+	-- It still fires, having survived the wrong hands.
+	_G.__now = _G.__now + 121000
+	bench.tick(1)
+	eq("the machine is off", bench.object.on, false)
+end
+
+-- `shutdown -r +1` killed before the minute is a machine that does not reboot.
+do
+	local bench = newBench()
+	bench.login("root")
+	bench.enter("shutdown -r +1")
+	bench.frame()
+	local pending = CeroSecJobs.pendingShutdown(bench.object)
+	bench.enter("kill " .. pending.id)
+	bench.frame()
+	bench.tick(1)
+	_G.__now = _G.__now + 121000
+	bench.tick(2)
+	eq("no reboot", bench.object.on, true)
+	check("and nothing is dark", bench.object.rebooting == nil)
 end
 
 -- halt is shutdown -h now under the name it has had since the seventies.
@@ -7409,6 +7485,37 @@ local function say(net, line)
 	net.enter(line)
 end
 
+-- The TNC's line, opened. Since SYSTEM_VERSION 17 there is no `call` command:
+-- the box is a peripheral on a serial line and it is reached with cu, so every
+-- bench that used to type one line types two -- the line, and the connect at the
+-- box's own cmd: prompt. Both go in through the window's own keyboard, the second
+-- through the PROMPT path, because cmd: is a question like any other.
+local function tnc(net)
+	say(net, "cu -l " .. CeroSecOS.TNC_DEV)
+	net.tick(2)
+end
+
+-- Open the line and connect, which is what `call CALLSIGN` used to be.
+local function connect(net, call, ticks)
+	tnc(net)
+	say(net, "C " .. call)
+	net.tick(ticks or 3)
+end
+
+-- A line typed at a machine this bench has no window on, while that machine is at
+-- a QUESTION rather than at its shell: the console's prompt, answered the way
+-- Commands.input answers one. typeAt above is the same shape for the shell, and
+-- for the same reason -- there is no window on those machines to press a key at.
+local function answerAt(net, object, line, ticks)
+	local console = object:consoleState()
+	local state = object:osState()
+	console.prompt = nil
+	local job = CeroSecJobs.foreground(object, console)
+	CeroSecOS.jobInput(state, job, line,
+		net.system:execEnv(object, state, nil, nil))
+	net.tick(ticks or 3)
+end
+
 --
 -- The callsign: a file, derived, per machine, and announced by the firmware.
 --
@@ -7463,8 +7570,7 @@ do
 	say(net, "echo W4ZZZ > /etc/callsign")
 	net.tick(3)
 	eq("root wrote a new callsign", callOf(net.here), "W4ZZZ")
-	say(net, "call " .. callOf(net.far))
-	net.tick(3)
+	connect(net, callOf(net.far))
 	check("the link is up", net.glass(CeroSecOS.TNC.connected .. callOf(net.far)))
 	say(net, "admin")
 	say(net, "")
@@ -7481,9 +7587,11 @@ do
 	local st = other:osState()
 	CeroSecOS.setData(st, CeroSecOS.rootSession(), CeroSecOS.CALLSIGN_PATH, "not-a-call", 100)
 	eq("a file that is not a callsign is no callsign", callOf(other), nil)
-	typeAt(net, other, "call " .. callOf(net.far))
-	check("and call says so in its own name",
-		ownSaid(other, CeroSecOS.CALL_NO_CALLSIGN))
+	typeAt(net, other, "cu -l " .. CeroSecOS.TNC_DEV)
+	check("the line opens anyway: the box is there", ownSaid(other, CeroSecOS.TNC_BANNER))
+	answerAt(net, other, "C " .. callOf(net.far))
+	check("and the machine says so in its own name",
+		ownSaid(other, CeroSecOS.TNC_NO_CALLSIGN))
 	_G.__world = nil
 end
 
@@ -7662,7 +7770,9 @@ do
 	net.login("admin")
 	local myCall, theirCall = callOf(net.here), callOf(net.far)
 
-	say(net, "call " .. theirCall)
+	tnc(net)
+	check("the box says what it is", net.glass(CeroSecOS.TNC_BANNER))
+	say(net, "C " .. theirCall)
 	net.tick(2)
 	check("the TNC answers first",
 		net.glass(CeroSecOS.TNC.connected .. theirCall))
@@ -7725,8 +7835,7 @@ do
 	net.aerial(net.here)
 	net.aerial(net.far)
 	net.login("admin")
-	say(net, "call " .. callOf(net.far))
-	net.tick(2)
+	connect(net, callOf(net.far), 2)
 	say(net, "admin")
 	say(net, "")
 	net.tick(2)
@@ -7734,10 +7843,169 @@ do
 	net.forget()
 	say(net, "~.")
 	net.tick(3)
-	check("~. hangs up", net.heard(CeroSecOS.TNC.disconnected))
+	check("~. hangs the link up", net.heard(CeroSecOS.TNC.disconnected))
+	-- And cu with it: the program holding the line is over, which is what a tilde
+	-- escape has always ended, so the shell comes back and not cmd:.
+	check("and cu says its own last word", net.heard(CeroSecOS.CU_DISCONNECTED))
 	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
 	check("and the glass is this machine's again",
 		net.glass("admin@" .. net.host(net.here)))
+	_G.__world = nil
+end
+
+-- The TNC's interrupt key, D, and K: the three ways out of a link and back, and
+-- the one thing `call` could never do -- step out of a link without dropping it.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	connect(net, callOf(net.far), 2)
+	say(net, "admin")
+	say(net, "")
+	net.tick(2)
+	check("the link is up", net.glass("admin@" .. net.host(net.far)))
+
+	-- Escape at an idle prompt over there is the TNC's interrupt key: back to
+	-- cmd:, with the link still in the box's hand.
+	net.forget()
+	net.escape()
+	net.tick(2)
+	check("Escape puts the box back at its prompt", net.glass(CeroSecOS.TNC_PROMPT))
+	check("and says nothing about a disconnect",
+		not net.heard(CeroSecOS.TNC.disconnected))
+	eq("the line over there is still taken", CeroSecOS.ptyCount(net.far.ptys), 1)
+	check("and the window is not shut", not net.window.closing)
+
+	-- K goes back in, and what is on the glass is the session that was waiting.
+	say(net, "K")
+	net.tick(3)
+	check("K is converse again", net.glass("admin@" .. net.host(net.far)))
+	eq("still one line", CeroSecOS.ptyCount(net.far.ptys), 1)
+
+	-- And D drops it, from cmd:.
+	net.escape()
+	net.tick(2)
+	net.forget()
+	say(net, "D")
+	net.tick(3)
+	check("D says the box's own line", net.heard(CeroSecOS.TNC.disconnected))
+	eq("and gives the line back", CeroSecOS.ptyCount(net.far.ptys), 0)
+	check("the box is still at cmd:", net.glass(CeroSecOS.TNC_PROMPT))
+	check("and cu has NOT hung up", not net.heard(CeroSecOS.CU_DISCONNECTED))
+	-- A second D on a box holding nothing says the same thing and nothing else.
+	say(net, "D")
+	net.tick(2)
+	check("D with no link is still one line", net.glass(CeroSecOS.TNC.disconnected))
+	say(net, "~.")
+	net.tick(3)
+	check("and ~. is what gives the shell back", net.heard(CeroSecOS.CU_DISCONNECTED))
+	check("at this machine's prompt", net.glass("admin@" .. net.host(net.here)))
+	_G.__world = nil
+end
+
+-- MHEARD: what the boxes in earshot wrote down. A connect is two transmissions,
+-- so both ends have each other in their list, and the power going out empties it.
+do
+	local net = newRadioNet()
+	local mine = net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	local myCall, theirCall = callOf(net.here), callOf(net.far)
+
+	tnc(net)
+	net.forget()
+	say(net, "MH")
+	net.tick(2)
+	check("a box that has heard nothing prints nothing",
+		not net.heard(theirCall))
+	say(net, "C " .. theirCall)
+	net.tick(3)
+	check("the link is up", net.glass(CeroSecOS.TNC.connected .. theirCall))
+
+	-- The far machine wrote this station down, off the caller's own transmission.
+	-- Read off the list rather than typed at: there is no window on that machine,
+	-- and what MH prints out of a list is pinned in os_test.
+	local theirs = net.far.heard
+	check("the far box heard this station", theirs ~= nil and #theirs == 1)
+	eq("by callsign", theirs[1].call, myCall)
+	check("with a time on it", type(theirs[1].at) == "number")
+	local shown = CeroSecOS.heardLines(theirs)
+	check("which is what MH would print over there",
+		string.find(shown[1], myCall, 1, true) == 1)
+
+	-- And this one heard the far station answer, which is the other half of a
+	-- connect. Typed at the box, because this is the machine with the window.
+	net.escape()
+	net.tick(2)
+	net.forget()
+	say(net, "MH")
+	net.tick(3)
+	check("MH lists the station this box heard", net.heard(theirCall))
+	-- And the list itself, which is what the glass was printed from: one station,
+	-- the far one, and never this station's own callsign -- a box does not hear
+	-- itself, and the boot screen has this machine's call on the glass already.
+	eq("one station in the list", #net.here.heard, 1)
+	eq("and it is the far station", net.here.heard[1].call, theirCall)
+
+	-- MHCLEAR empties it, and so does the power going out: the list is RAM in a
+	-- box on a desk, with no battery behind it.
+	net.forget()
+	say(net, "MHCLEAR")
+	net.tick(2)
+	net.forget()
+	say(net, "MH")
+	net.tick(2)
+	eq("the machine's own list is empty", #net.here.heard, 0)
+	eq("the far one still has its own", #net.far.heard, 1)
+	net.far:turnOff()
+	eq("and the power going out takes that one", net.far.heard, nil)
+
+	-- Eighteen deep, and the nineteenth station pushes the oldest off the bottom.
+	-- Driven through the link layer, which is the half that decides who can hear
+	-- what: one transmission per station, from this machine's own aerial.
+	net.here.heard = nil
+	local calls = {}
+	for i = 1, 19 do
+		calls[i] = CeroSecOS.callsignFor(4, 200, i)
+		CeroSecNet.heardOnAir(net.system, CeroSecRadio.tncOf(net.far), calls[i], 1000 + i)
+	end
+	local list = net.here.heard
+	eq("eighteen and no more", #list, CeroSecOS.MHEARD_MAX)
+	eq("the nineteenth is on top", list[1].call, calls[19])
+	eq("and the first one heard is gone", list[18].call, calls[2])
+	local _ = mine
+	_G.__world = nil
+end
+
+-- Hearing is not connecting: one transmission, so the only range in it is the
+-- TRANSMITTER's, and a station out of earshot writes nothing down at all.
+do
+	local net = newRadioNet()
+	net.aerial(net.here)
+	local theirs = net.aerial(net.far)
+	net.login("admin")
+
+	-- Out of range: the far set is 50 tiles away and this bench moves it further
+	-- than its own range carries.
+	theirs.data.range = 10
+	eq("nobody in earshot", CeroSecNet.heardOnAir(net.system,
+		CeroSecRadio.tncOf(net.far), callOf(net.far), 100), 0)
+	check("so nothing was written down", net.here.heard == nil)
+	theirs.data.range = 7500
+	eq("in earshot, one box wrote it down", CeroSecNet.heardOnAir(net.system,
+		CeroSecRadio.tncOf(net.far), callOf(net.far), 100), 1)
+	eq("and it is the far station's callsign",
+		net.here.heard[1].call, callOf(net.far))
+
+	-- Another frequency is another conversation, and a receiver on one heard
+	-- nothing at all.
+	net.here.heard = nil
+	theirs.data.channel = 145010
+	eq("a station on another frequency is not heard",
+		CeroSecNet.heardOnAir(net.system, CeroSecRadio.tncOf(net.far),
+			callOf(net.far), 100), 0)
+	check("nothing written", net.here.heard == nil)
 	_G.__world = nil
 end
 
@@ -7751,11 +8019,12 @@ do
 	net.login("admin")
 	local theirCall = callOf(net.far)
 
-	-- No aerial at all: the machine can see that for itself.
-	say(net, "call " .. theirCall)
+	-- No aerial at all: there is no line to open, and cu can see that for itself
+	-- because a radio is a file under /dev and there is nothing at that name.
+	say(net, "cu -l " .. CeroSecOS.TNC_DEV)
 	net.tick(3)
-	check("a machine with no set says so in its own name",
-		net.glass(CeroSecOS.CALL_NO_RADIO))
+	check("a machine with no set has no line to open",
+		net.glass(CeroSecOS.tncNoDevice(CeroSecOS.TNC_DEV)))
 	check("having never transmitted", #net.air == 0)
 	check("and opened no line over there", net.far.ptys == nil)
 
@@ -7765,51 +8034,44 @@ do
 	-- This machine's own set switched off: a TNC cannot tell, so it transmits
 	-- into a dead radio and the retries run out.
 	mine.data.on = false
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("a set of one's own that is off is silence, not a diagnosis",
 		net.glass(CeroSecOS.TNC.retry))
 	mine.data.on = true
 
 	-- The far set switched off.
 	theirs.data.on = false
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("a far set that is off is the same silence", net.glass(CeroSecOS.TNC.retry))
 	theirs.data.on = true
 
 	-- The far set with no power.
 	theirs.data.power = 0
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("and so is a flat battery over there", net.glass(CeroSecOS.TNC.retry))
 	theirs.data.power = 1
 
 	-- Two frequencies are two conversations.
 	theirs.data.channel = 145010
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("the wrong frequency is silence too", net.glass(CeroSecOS.TNC.retry))
 	theirs.data.channel = 144390
 
 	-- Out of range: the SMALLER of the two ranges decides, so one narrow set is
 	-- enough to break a link two wide ones would have carried.
 	theirs.data.range = 10
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("out of range is silence", net.glass(CeroSecOS.TNC.retry))
 	theirs.data.range = 7500
 
 	-- A callsign nobody answers to.
-	say(net, "call W4ZZZ")
-	net.tick(3)
+	connect(net, "W4ZZZ")
 	check("a station the county has not got is the same line",
 		net.glass(CeroSecOS.TNC.retry))
 
 	-- A machine switched off cannot answer.
 	net.far:turnOff()
-	say(net, "call " .. theirCall)
-	net.tick(3)
+	connect(net, theirCall)
 	check("nor can a computer that is switched off", net.glass(CeroSecOS.TNC.retry))
 	_G.__world = nil
 end
@@ -7819,18 +8081,24 @@ do
 	local net = newRadioNet()
 	net.aerial(net.here)
 	net.login("admin")
-	say(net, "call " .. callOf(net.here))
-	net.tick(3)
+	connect(net, callOf(net.here))
 	check("a station cannot connect to itself", net.glass(CeroSecOS.TNC.retry))
-	say(net, "call kd4axr")
+	-- The box is still at cmd: after that, so the rest of the words go straight in.
+	-- A TNC upper-cases what you type at it, so a lower-case callsign is a
+	-- callsign; a word that is not one at all gets the box's one error line.
+	say(net, "C kd4axr")
 	net.tick(3)
-	check("a callsign in lower case is not one", net.glass("call: usage: call CALLSIGN"))
-	say(net, "call")
+	check("a lower-case callsign is upper-cased, and is this station",
+		net.glass(CeroSecOS.TNC.retry))
+	say(net, "C")
 	net.tick(3)
-	check("and neither is nothing at all", net.glass("call: usage: call CALLSIGN"))
-	say(net, "call 555-0142")
+	check("a connect with nothing to connect to", net.glass(CeroSecOS.TNC.eh))
+	say(net, "C 555-0142")
 	net.tick(3)
-	check("nor a telephone number", net.glass("call: usage: call CALLSIGN"))
+	check("nor is a telephone number a callsign", net.glass(CeroSecOS.TNC.eh))
+	say(net, "HELLO")
+	net.tick(3)
+	check("and a word the box never heard of", net.glass(CeroSecOS.TNC.eh))
 	_G.__world = nil
 end
 
@@ -7844,10 +8112,13 @@ do
 	net.login("admin")
 	-- No square in the world at the shed at all, which is exactly what an
 	-- unloaded chunk answers.
-	say(net, "call " .. callOf(net.far))
-	net.tick(3)
+	connect(net, callOf(net.far))
 	check("a station whose chunk is not loaded cannot be raised",
 		net.glass(CeroSecOS.TNC.retry))
+	-- And the line hung up before the telephone is tried, or cu would be holding
+	-- the serial line while a second cu wanted to dial.
+	say(net, "~.")
+	net.tick(2)
 	-- And the same machine over the telephone, in the same breath: the disk is
 	-- here and the link that does not need a tile still reaches it.
 	say(net, "cu " .. telOf(net.far))
@@ -7864,14 +8135,14 @@ do
 	net.world.put(net.world.square(10, 10, 0, room), fakeRadio({}))
 	net.aerial(net.far)
 	net.login("admin")
-	say(net, "call " .. callOf(net.far))
-	net.tick(2)
+	connect(net, callOf(net.far), 2)
 	say(net, "admin")
 	say(net, "")
 	net.tick(2)
 	check("the first machine has the air", net.glass("admin@" .. net.host(net.far)))
 	-- The other computer in the room, on the same aerial.
-	typeAt(net, net.gate, "call " .. callOf(net.far))
+	typeAt(net, net.gate, "cu -l " .. CeroSecOS.TNC_DEV)
+	answerAt(net, net.gate, "C " .. callOf(net.far))
 	check("and the one beside it is told the set is busy",
 		ownSaid(net.gate, CeroSecOS.TNC.busy))
 	local _ = room
@@ -7886,8 +8157,7 @@ do
 	net.aerial(net.here)
 	local theirs = net.aerial(net.far)
 	net.login("admin")
-	say(net, "call " .. callOf(net.far))
-	net.tick(2)
+	connect(net, callOf(net.far), 2)
 	say(net, "admin")
 	say(net, "")
 	net.tick(2)
@@ -7899,8 +8169,14 @@ do
 	check("the keystroke finds the link gone", net.heard(CeroSecOS.TNC.retry))
 	check("and not a hangup", not net.heard(CeroSecOS.TNC.disconnected))
 	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
-	check("and the glass is this machine's again",
-		net.glass("admin@" .. net.host(net.here)))
+	-- And the box is back at ITS prompt and not at the shell: cu is still holding
+	-- the serial line, which is the whole difference between a link going away and
+	-- a line being hung up.
+	check("the glass is this machine's again",
+		net.glass(CeroSecOS.TNC_PROMPT))
+	say(net, "~.")
+	net.tick(2)
+	check("and ~. gives the shell back", net.glass("admin@" .. net.host(net.here)))
 	_G.__world = nil
 end
 
@@ -7911,18 +8187,18 @@ do
 	net.aerial(net.here)
 	net.aerial(net.far)
 	net.login("admin")
-	net.crontab(net.here, "admin", "* * * * * call " .. callOf(net.far))
+	net.crontab(net.here, "admin", "* * * * * cu -l " .. CeroSecOS.TNC_DEV)
 	net.minute(2)
-	eq("a crontab call opens no line on the far machine",
+	eq("a crontab opens no line on the far machine",
 		CeroSecOS.ptyCount(net.far.ptys), 0)
 	local mail = net.text(net.here, "/var/mail/admin")
 	check("and the mail says why", mail ~= nil and
-		string.find(mail, "call: not a terminal", 1, true) ~= nil)
+		string.find(mail, "cu: not a terminal", 1, true) ~= nil)
 	check("having never transmitted either", #net.air == 0)
-	say(net, "call " .. callOf(net.far) .. " &")
+	say(net, "cu -l " .. CeroSecOS.TNC_DEV .. " &")
 	net.tick(4)
-	check("a backgrounded call says it has no terminal either",
-		net.heard("call: not a terminal"))
+	check("a backgrounded one says it has no terminal either",
+		net.heard("cu: not a terminal"))
 	_G.__world = nil
 end
 
@@ -7933,8 +8209,7 @@ do
 	net.aerial(net.here)
 	net.aerial(net.far)
 	net.login("admin")
-	say(net, "call " .. callOf(net.far))
-	net.tick(2)
+	connect(net, callOf(net.far), 2)
 	say(net, "admin")
 	say(net, "")
 	net.tick(2)

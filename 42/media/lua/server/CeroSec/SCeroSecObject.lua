@@ -559,6 +559,10 @@ function SCeroSecObject:turnOff()
 	-- back is a machine that has only just come into view, so it runs nothing for
 	-- the minute it arrived in and nothing at all for the minutes it was dark.
 	self.cron = nil
+	-- And the stations the TNC had heard. That list is RAM in a box on the desk --
+	-- a TNC-2 kept MHEARD in memory with no battery behind it -- so the power going
+	-- empties it, and `MH` on a machine that has just come up prints nothing.
+	self.heard = nil
 	-- A dark screen remembers nothing, and the terminals that were open have to
 	-- be told, not merely forgotten.
 	self.console = nil

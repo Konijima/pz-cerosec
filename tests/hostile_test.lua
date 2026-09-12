@@ -1621,6 +1621,8 @@ do
 		check("the mailbox is there", box ~= nil)
 		check("and it is cu that is talking",
 			string.find(box.data, "cu: not a terminal", 1, true) ~= nil)
+		check("and never the box, which was there to be opened",
+			string.find(box.data, CeroSecOS.TNC_BANNER, 1, true) == nil)
 		check("a hundred lines at most (" .. #CeroSecOS.splitLines(box.data) .. ")",
 			#CeroSecOS.splitLines(box.data) <= CeroSecOS.MAIL_LINES)
 		check("and four kilobytes at most (" .. #box.data .. ")",
@@ -1817,6 +1819,143 @@ do
 end
 
 --
+-- FOUR TNCs SITTING AT cmd: (rung 6c, SYSTEM_VERSION 17)
+--
+-- `cu -l /dev/radio0` is a PROGRAM now, and a program that spends its life waiting
+-- for a line to be typed at it: the box prints its prompt and then nothing happens
+-- at all until somebody types. Four machines of the county can be sitting at that
+-- prompt at once, indefinitely -- nothing times it out, unlike a dial, which S7
+-- ends after fifteen seconds -- so a box that spun the scheduler would be worse
+-- than the ringing telephones above: it would be for ever.
+--
+-- It must cost NOTHING, and nothing is what is asserted: not a step spent by any
+-- machine on any pass while the four of them sit there. The mechanism is the VM's
+-- own wait (jobStep answers "waiting" and spends nought before it reaches the
+-- walker), which is the mechanism a `read` in a script is already proved on -- this
+-- is that proof again with a TNC in front of it.
+--
+-- And it ENDS, on `~.`, because a bench that proved a prompt costs nothing would
+-- otherwise be just as green on a program that could never be got out of.
+--
+
+do
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	-- A world with one radio on it, which is all tncOpen asks for: /dev is mounted
+	-- for the length of a command and the line has to be a node in it.
+	local function oneRadio()
+		return {
+			list = function()
+				return { { id = "radio0", kind = "radio", desc = "ham", side = "",
+					pos = "2E 1N", state = "144.390 on", mode = 440 } }
+			end,
+			write = function() return false, "permission denied" end,
+		}
+	end
+	local tncSystem = {}
+	function tncSystem:execEnv(luaObject, state)
+		return { now = 740000000, nowMs = _G.__now, devices = oneRadio(),
+			jobs = luaObject.jobs ~= nil and luaObject.jobs.list or nil,
+			heard = luaObject.heard }
+	end
+	function tncSystem:clockEnv() return { now = 740000000 } end
+	function tncSystem:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function tncSystem:writeSession() end
+	function tncSystem:pushScreen() end
+	function tncSystem:applyPower() end
+
+	local BOXES = 4
+	local machines, consoles, opened = {}, {}, {}
+	for m = 1, BOXES do
+		local state = CeroSecOS.newState("ksp")
+		CeroSecOS.setNetRecord(state, 4, 17, m)
+		CeroSecOS.ensureCallsign(state)
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = 90 + m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		machines[m], consoles[m] = machine, console
+		local job = CeroSecJobs.startPrompt(tncSystem, machine, console,
+			"cu -l " .. CeroSecOS.TNC_DEV)
+		if job == nil then error("the line was refused before it opened") end
+	end
+
+	-- One pass to open the four lines: startPrompt puts the line on the book and the
+	-- scheduler is what runs it, which is where the question is asked for.
+	_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+	CeroSecJobs.system = tncSystem
+	CeroSecJobs.pass(_G.__now)
+
+	for m = 1, BOXES do
+		local job = CeroSecJobs.book(machines[m]).list[1]
+		eq("box " .. m .. " is waiting at its prompt", job.state, "waiting")
+		eq("with the TNC's own prompt up", consoles[m].prompt.text, CeroSecOS.TNC_PROMPT)
+		local said = false
+		for i = 1, #consoles[m].lines do
+			if consoles[m].lines[i] == CeroSecOS.TNC_BANNER then said = true end
+		end
+		check("and the banner on the glass", said)
+		opened[m] = job.steps
+	end
+
+	-- Thirty seconds of passes -- twice the whole of S7, because nothing ends this
+	-- one -- and not a step spent by anybody.
+	local SITTING = 300
+	local worst, spentAny = 0, 0
+	local clockStart = os.clock()
+	for _ = 1, SITTING do
+		_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+		tickSteps = 0
+		CeroSecJobs.system = tncSystem
+		CeroSecJobs.pass(_G.__now)
+		if tickSteps > worst then worst = tickSteps end
+		spentAny = spentAny + tickSteps
+	end
+	local msPerPass = (os.clock() - clockStart) * 1000 / SITTING
+	eq("no pass over four boxes at cmd: spends a single step", worst, 0)
+	eq("nor do all of them together", spentAny, 0)
+	local sittingCeiling = ceiling(WALL_MS_ASLEEP * BOXES)
+	check("and a pass costs under " .. string.format("%.4f", sittingCeiling) ..
+		" ms of real time (" .. string.format("%.4f", msPerPass) .. ")",
+		msPerPass < sittingCeiling)
+	for m = 1, BOXES do
+		local job = CeroSecJobs.book(machines[m]).list[1]
+		eq("box " .. m .. " is still at cmd: after thirty seconds", job.state, "waiting")
+		eq("having spent nothing since the line opened", job.steps, opened[m])
+	end
+
+	-- And `~.` gets out of it: the line is hung up, cu says its own last word and
+	-- the job is gone off the book.
+	for m = 1, BOXES do
+		local machine = machines[m]
+		local job = CeroSecJobs.book(machine).list[1]
+		consoles[m].prompt = nil
+		CeroSecOS.jobInput(machine:osState(), job, "~.",
+			tncSystem:execEnv(machine, machine:osState()))
+	end
+	for _ = 1, 5 do
+		_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+		CeroSecJobs.system = tncSystem
+		CeroSecJobs.pass(_G.__now)
+	end
+	for m = 1, BOXES do
+		eq("box " .. m .. "'s line is hung up", #CeroSecJobs.book(machines[m]).list, 0)
+		local said = false
+		for i = 1, #consoles[m].lines do
+			if consoles[m].lines[i] == CeroSecOS.CU_DISCONNECTED then said = true end
+		end
+		check("and cu said so in its own word", said)
+	end
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.4f ms/pass",
+		BOXES .. " boxes at cmd:", worst, msPerPass)
+end
+
+--
 -- A radio link left open, with a loop running down it (rung 6c)
 --
 -- The same worst case one link down. A radio session is a pty like any other, so
@@ -1866,15 +2005,17 @@ do
 end
 
 --
--- Thirty-two crontab lines that all try to CALL (rung 6c)
+-- Thirty-two crontab lines that all open the TNC's LINE (rung 6c)
 --
--- The county's worst radio abuse: every machine's crontab full of `call`, every
--- minute, for a hundred minutes. Nothing may be opened and -- the assertion this
--- bench exists for -- NOTHING MAY BE TRANSMITTED: a crontab that could key a
--- transmitter would put two callsigns over the county every minute from a machine
--- nobody was standing at, which is worse than the session it would have opened.
--- The refusal is in the engine, before the order is ever given (CeroSecOSVM), so
--- the count below is of transmissions the mod made and it must be zero.
+-- The county's worst radio abuse: every machine's crontab full of `cu -l
+-- /dev/radio0`, every minute, for a hundred minutes. Nothing may be opened and --
+-- the assertion this bench exists for -- NOTHING MAY BE TRANSMITTED: a crontab
+-- that could reach the box would sit at a cmd: prompt nobody can type at, four
+-- job slots at a time, and anything it was driven to would key a transmitter and
+-- put two callsigns over the county from a machine nobody was standing at. The
+-- refusal is in the engine, before the line is ever opened (CeroSecOSVM's `tnc`
+-- control asks jobHasTerminal), so the count below is of transmissions the mod
+-- made and it must be zero.
 --
 
 do
@@ -1886,7 +2027,18 @@ do
 
 	local system5 = { }
 	function system5:clockEnv() return { now = 740000000 } end
-	function system5:execEnv(object, state) return { now = 740000000, nowMs = _G.__now } end
+	-- With a radio in every room, so that what refuses these lines is the TERMINAL
+	-- rule and not a missing device: a bench where the line could not be opened
+	-- anyway would be green on a machine that let cron open one.
+	function system5:execEnv(object, state)
+		return { now = 740000000, nowMs = _G.__now, devices = {
+			list = function()
+				return { { id = "radio0", kind = "radio", desc = "ham", side = "",
+					pos = "2E 1N", state = "144.390 on", mode = 440 } }
+			end,
+			write = function() return false, "permission denied" end,
+		} }
+	end
 	function system5:pushScreen() end
 	function system5:reply() end
 	function system5:getLuaObjectAt() return nil end
@@ -1899,7 +2051,7 @@ do
 	-- The crontab ceiling, which is what "a crontab full of them" means.
 	local LINES = 32
 	local lines = {}
-	for i = 1, LINES do lines[i] = "* * * * * call KE4QWZ" end
+	for i = 1, LINES do lines[i] = "* * * * * cu -l " .. CeroSecOS.TNC_DEV end
 	local crontab = table.concat(lines, "\n")
 
 	local machines, states = {}, {}
@@ -1957,15 +2109,17 @@ do
 	for m = 1, 6 do
 		local box = CeroSecOS.systemNode(states[m], CeroSecOS.mailPath("admin"))
 		check("the mailbox is there", box ~= nil)
-		check("and it is call that is talking",
-			string.find(box.data, "call: not a terminal", 1, true) ~= nil)
+		check("and it is cu that is talking",
+			string.find(box.data, "cu: not a terminal", 1, true) ~= nil)
+		check("and never the box, which was there to be opened",
+			string.find(box.data, CeroSecOS.TNC_BANNER, 1, true) == nil)
 		check("the machine still boots with it on it",
 			CeroSecOS.validate(states[m]) == true)
 	end
 
 	_G.getZomboidRadio = before
 	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
-		LINES .. " cron call dials", worst, msPerMinute)
+		LINES .. " cron TNC lines", worst, msPerMinute)
 end
 
 --

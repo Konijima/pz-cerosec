@@ -228,11 +228,25 @@ here the way it was there -- an add-on, with /etc/sudoers deciding who.
 
 jobs lists the background jobs on the MACHINE and not the ones your shell
 started. One book per computer, four to a computer. Walk away and they keep
-running; whoever sits down next sees them and may kill them. Kept on
-purpose: it is what lets you pick up what the last survivor left running.
+running, and whoever sits down next sees them. Kept on purpose: it is what
+lets you pick up what the last survivor left. Stopping one is Unix's own
+rule: yours, or root's.
 
 more reads a LINE where the real one reads a key, because this screen has
 one typing line and Enter sends it. read -n 1 is the same.]],
+
+[[What is not Unix here, and the end of the list.
+
+cu -l opens a LINE instead of dialling a number, which is cu's own flag --
+but the line on this machine is a RADIO: /dev/radio0, with a packet box on
+it. A real cu is handed a tty and reads /etc/remote to know what is behind
+it, and neither is on this disk. The one line that box prints when the line
+opens is ours as well: a real one printed whatever its maker chose.
+
+There was a call CALLSIGN command here until this release. If you type it
+you will get command not found. It was never Unix -- a packet box was a
+peripheral on a serial line, and the way to one is cu -l /dev/radio0, which
+Volume 2 chapter 8 teaches.]],
 
 [[And two shapes are cut rather than changed. A line here is sixty columns,
 so uptime says "load" where 4.4BSD says "load averages:", and w prints the
@@ -1551,8 +1565,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2602  62934    4%
-  nodes         512     97    415   19%
+  hda         65536   2572  62964    4%
+  nodes         512     96    416   19%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1690,7 +1704,7 @@ Is the machine busy, and who is on it.
 
 [[Switching the machine off. Both want root.
 
-  shutdown [-h|-r] [now|+N] | shutdown -c
+  shutdown [-h|-r] now|+N
   reboot
 
 The numbers, all in one place.
