@@ -2007,7 +2007,8 @@ table qu'il avait écrite.
      - `mount /dev/fd0 /mnt` monte la disquette et `df` montre l'étiquette
        écrite avant la mise à jour ;
      - les modules vissés sur une porte avant la mise à jour répondent encore :
-       `dev` les liste et `echo open > /dev/door0` marche. [ ]
+       `dev` les liste, et en `root` (`su root`)
+       `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231). [ ]
 
 ## Rapport
 
