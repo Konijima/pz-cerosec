@@ -171,6 +171,24 @@ local function capturing(job)
 	return caps ~= nil and #caps > 0
 end
 
+-- Is what this job writes going to a SCREEN? Asked by the shell before it runs a
+-- command, because a command may print differently to a person than to another
+-- command -- `ls` in columns at the glass, one name a line down a pipe, exactly
+-- as every ls has done since isatty existed.
+--
+-- Three things take the screen away, and they are the three doors outLine writes
+-- through: a $(...) catching the output, a pipe carrying it to another command,
+-- and cron carrying it to somebody's mail. A stage is the one that needs care: a
+-- pipeline's LAST stage writes into a pipe too, and that pipe is drained onto
+-- whatever is running the pipeline (drainTail), so its answer is its parent's --
+-- which is what `stage.screen` remembers, worked out where the stages are made.
+local function toScreen(job)
+	if capturing(job) then return false end
+	if job.mailTo ~= nil then return false end
+	if job.pipe ~= nil then return job.screen == true end
+	return true
+end
+
 -- Stopping the job is what a capture does when it catches too much, and the
 -- error is raised from inside the writing. Declared here, written below with
 -- the rest of the job's ending.
@@ -355,6 +373,13 @@ end
 -- else, so every road into a variable meets them.
 local function setVar(job, name, value)
 	if #value > CeroSecOS.MAX_VAR_BYTES then return "variable too large" end
+	-- PATH is the one variable whose LENGTH is a cost to everybody: every command
+	-- the shell runs walks it, so the ceiling on how many directories it may name
+	-- is met here, where the value is set, the way every other ceiling on this
+	-- machine is met where the thing is made.
+	if name == "PATH" and #CeroSecOS.pathDirs(value) > CeroSecOS.MAX_PATH_DIRS then
+		return "too many PATH entries"
+	end
 	if job.vars[name] == nil then
 		if job.nvars >= CeroSecOS.MAX_VARS then return "too many variables" end
 		job.nvars = job.nvars + 1
@@ -381,7 +406,13 @@ function CeroSecOS.newJob(opts)
 	local session = opts.session or CeroSecOS.rootSession()
 	local vars, nvars = opts.vars, 0
 	if type(vars) ~= "table" then
-		vars = {}
+		-- The initial environment of a shell nobody handed one: PATH, and the
+		-- default at that. A script and a cron line both come through here, and
+		-- both start with /bin and never with the PATH of whatever started them --
+		-- which is the classic cron trap, and is why the manual says to write the
+		-- whole path in a crontab line.
+		vars = { PATH = CeroSecOS.DEFAULT_PATH }
+		nvars = 1
 	else
 		for _, _ in pairs(vars) do nvars = nvars + 1 end
 	end
@@ -1296,7 +1327,8 @@ local function resumeCont(state, job, text, env)
 	-- chain is where the command finally runs, and the writing belongs beside
 	-- the writing every other command's redirect goes through.
 	local ok, lines, control, data =
-		CeroSecOS.continue(state, job.session, cont, text, env, pending)
+		CeroSecOS.continue(state, job.session, cont, text, env, pending,
+			{ path = CeroSecOS.pathValue(job.vars), tty = pending == nil and toScreen(job) })
 	-- A chain that is still asking -- `sudo passwd root > out` -- has still
 	-- written nothing, so its redirect waits for the next answer.
 	if pending ~= nil and control == "prompt" then job.contRedirect = pending end
@@ -1352,7 +1384,8 @@ local function runSimple(state, job, f, env)
 
 	if #args == 0 then
 		if redirect ~= nil then
-			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env)
+			local ok, lines = CeroSecOS.runArgs(state, job.session, {}, redirect, env, nil,
+				{ path = CeroSecOS.pathValue(job.vars), tty = false })
 			errLines(job, lines)
 			if ok then job.status = 0 else job.status = 1 end
 			return CeroSecOS.STEP_COST_COMMAND
@@ -1377,12 +1410,17 @@ local function runSimple(state, job, f, env)
 	-- commands a machine has is not, and it is written on the disk. So
 	-- `rm /bin/sleep` takes sleep away and `chmod 600 /bin/echo` puts echo out
 	-- of reach, exactly as they do for `ls`.
+	local builtinWalk = 0
 	if builtin ~= nil and CeroSecOS.BUILTIN_FILES[name] then
-		local refusal = CeroSecOS.whyNotRun(state, job.session, name)
+		local refusal, _, walked =
+			CeroSecOS.whyNotRun(state, job.session, name, CeroSecOS.pathValue(job.vars))
+		-- The same charge as below, for the same reason: a builtin that is a file
+		-- in /bin is looked up like any other command, and the walk is what it is.
+		if type(walked) == "number" and walked > 1 then builtinWalk = walked - 1 end
 		if refusal ~= nil then
 			errLines(job, CeroSecOS.fit({ name .. ": " .. refusal }))
 			job.status = 1
-			return 1
+			return 1 + builtinWalk
 		end
 	end
 	if builtin ~= nil then
@@ -1405,10 +1443,10 @@ local function runSimple(state, job, f, env)
 		end
 		if status == nil then
 			if fatal ~= nil then jobError(job, fatal) end
-			return 1
+			return 1 + builtinWalk
 		end
 		job.status = status
-		return 1
+		return 1 + builtinWalk
 	end
 
 	-- The standard input this command has, which on this machine is a pipe and
@@ -1432,9 +1470,14 @@ local function runSimple(state, job, f, env)
 	-- not handed to the command at all where there is a pipe: it is carried out
 	-- below, through the very same door -- the first write replaces, every one
 	-- after it appends, and a call that produced nothing writes nothing.
+	-- What the shell knows and the command does not: where a bare name is looked
+	-- up, and whether what it writes is going to a screen. A redirect is the third
+	-- thing that takes the screen away and is the shell's own half of the line, so
+	-- it is answered here rather than inside toScreen.
+	local sh = { path = CeroSecOS.pathValue(job.vars), tty = redirect == nil and toScreen(job) }
 	local ok, lines, control, data =
 		CeroSecOS.runArgs(state, job.session, args, stdin == nil and redirect or nil,
-			env, stdin)
+			env, stdin, sh)
 	if stdin ~= nil and stdin.want then
 		f.rd.want = true
 		-- Everything that was in the pipe has been read: a command is handed
@@ -1480,6 +1523,13 @@ local function runSimple(state, job, f, env)
 	-- Asked of the job and not of the control, because a question the job was
 	-- refused -- a stage reading a pipe -- is not a question anybody will answer,
 	-- and its redirect is the ordinary one runArgs has already dealt with.
+	-- What the lookup cost, on top of the command itself. The first directory is
+	-- what STEP_COST_COMMAND was measured on -- every command was a walk of /bin --
+	-- so what is charged here is the directories past it, one step each: a walk of
+	-- a filesystem is not a table lookup and the budget has to see it.
+	local walkCost = 0
+	if type(sh.walked) == "number" and sh.walked > 1 then walkCost = sh.walked - 1 end
+
 	if redirect ~= nil and job.cont ~= nil then
 		local openOk, openLines =
 			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
@@ -1496,7 +1546,7 @@ local function runSimple(state, job, f, env)
 			job.status = 1
 		end
 	end
-	return CeroSecOS.STEP_COST_COMMAND
+	return CeroSecOS.STEP_COST_COMMAND + walkCost
 end
 
 --
@@ -1545,7 +1595,7 @@ end
 -- shell holds. The copy is the point -- it is what a subshell is -- and it is
 -- why a `cd`, an assignment or a `read` inside a stage is gone the moment the
 -- pipeline is over.
-local function newStage(job, node, out, into)
+local function newStage(job, node, out, into, last)
 	local stage = CeroSecOS.newJob({
 		prog = { node }, args = job.args, name = job.name, cmd = job.cmd,
 		session = job.session, status = job.status,
@@ -1559,6 +1609,10 @@ local function newStage(job, node, out, into)
 	stage.nvars = nvars
 	stage.pipe = out
 	stage.stdinBuf = into
+	-- Whether what this stage writes ends up on a screen. Only the last one can:
+	-- its pipe is drained onto whoever is running the pipeline, so it inherits the
+	-- answer from there, and every stage in front of it is writing to a command.
+	stage.screen = last == true and toScreen(job)
 	-- The same process as far as anything a script can ask is concerned: $$ is
 	-- the shell's own number and a subshell does not get a new one, and how deep
 	-- the scripts are nested is the pipeline's depth and not one more.
@@ -1798,7 +1852,8 @@ local function pushNode(job, node)
 		local pipes, stages = {}, {}
 		for i = 1, #node.stages do pipes[i] = newPipe() end
 		for i = 1, #node.stages do
-			stages[i] = newStage(job, node.stages[i], pipes[i], pipes[i - 1])
+			stages[i] = newStage(job, node.stages[i], pipes[i], pipes[i - 1],
+				i == #node.stages)
 		end
 		return pushFrame(job, { k = "pipe", node = node, line = node.line,
 			stages = stages, pipes = pipes })

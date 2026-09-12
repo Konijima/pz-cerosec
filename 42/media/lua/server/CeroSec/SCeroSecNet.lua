@@ -625,7 +625,7 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.user = account.name
 	console.cwd = account.home or "/"
 	console.stack = nil
-	console.shvars = {}
+	console.shvars = CeroSecOS.loginVars(account.home)
 	console.status = nil
 	console.loginAt = now or 0
 	CeroSec.consolePushAll(console, CeroSecOS.motdLines(far))

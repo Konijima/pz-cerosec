@@ -217,6 +217,31 @@ local function fail(cmd, arg, reason)
 	return false, { cmd .. ": " .. arg .. ": " .. reason }
 end
 
+--
+-- What the shell knows, beside the arguments
+--
+-- A command is handed one more thing than its words: a small table of what the
+-- SHELL knows about the line -- where a bare name is looked up (PATH) and
+-- whether what the command writes is going to a screen at all. Neither is a fact
+-- about the filesystem, so neither is looked up by whoever needs it; they travel
+-- together, built once by the walker (CeroSecOSVM.runSimple) and passed down.
+--
+-- A caller that hands over none -- a bench calling straight in -- is a shell with
+-- the default PATH standing in front of a terminal, which is where a person
+-- typing is.
+--
+local function shPath(sh)
+	if type(sh) ~= "table" or type(sh.path) ~= "string" then return CeroSecOS.DEFAULT_PATH end
+	return sh.path
+end
+
+-- false only when the shell SAID so: a pipe, a capture or a redirect is what
+-- takes the screen away, and nothing else may be read as having taken it.
+local function shTty(sh)
+	if type(sh) ~= "table" then return true end
+	return sh.tty ~= false
+end
+
 -- The one usage line there is for a command: the string in COMMAND_INFO. `man
 -- ls` prints it and a wrong `ls` prints it, so the two can never drift into
 -- saying different things.
@@ -626,10 +651,15 @@ CeroSecOS.COMMAND_INFO = {
 		usage = "tail [-n N|-N] [file]" },
 	test     = { desc = "evaluate an expression", usage = "test <expression>" },
 	touch    = { desc = "create a file, or stamp it", usage = "touch <file>" },
+	-- A word the shell IS, like cd: `type` has to know the shell's own words and
+	-- the PATH it looks a name up on, and neither of those is anything a file in
+	-- /bin could be handed.
+	type     = { desc = "say what a word is", usage = "type <name>", shell = true },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
+	which    = { desc = "find a command on PATH", usage = "which <name>" },
 	who      = { desc = "list who is logged in here", usage = "who [am i]" },
 	whoami   = { desc = "print the current user", usage = "whoami" },
 	write    = { desc = "write a line into a file", usage = "write <file> <text>" },
@@ -720,7 +750,15 @@ CeroSecOS.BUILTIN_FILES = {
 -- The words that are the shell's own, for `help` to list under the table of
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
-CeroSecOS.HELP_BUILTINS = "cd exit fg jobs wait read shift break continue history"
+CeroSecOS.HELP_BUILTINS = "cd exit fg jobs wait read shift break continue history type"
+
+-- The same words as a set, derived from the line `help` prints rather than
+-- listed a second time beside it: a word `help` says is the shell's own is one
+-- here by construction, and the two cannot drift apart. `type` is what reads it.
+CeroSecOS.SHELL_BUILTINS = {}
+for word in string.gmatch(CeroSecOS.HELP_BUILTINS, "[^ ]+") do
+	CeroSecOS.SHELL_BUILTINS[word] = true
+end
 
 -- Column the descriptions line up in, in help. The longest name is "hostname".
 local L_CMD = 9
@@ -2259,7 +2297,7 @@ end
 -- the shell resolves one -- /bin/<name>, x for the session that runs it -- so
 -- root walks through a mode the caller could not, which is the point, and a
 -- command that is not in /bin is not found for root either.
-local function sudoRun(state, session, args, from, env)
+local function sudoRun(state, session, args, from, env, sh)
 	local name = args[from]
 	local sub = rootSessionFrom(session)
 
@@ -2284,8 +2322,11 @@ local function sudoRun(state, session, args, from, env)
 	local fn = commands[name]
 	if fn == nil then return false, { name .. ": command not found" } end
 
+	-- Looked up on the caller's own PATH, as root: the authority sudo lends is
+	-- root's rights on the file, not a second PATH of its own -- real sudo of
+	-- this era reset nothing about the environment either.
 	if not CeroSecOS.BUILTINS[name] then
-		local refusal = CeroSecOS.whyNotRun(state, sub, name)
+		local refusal = CeroSecOS.whyNotRun(state, sub, name, shPath(sh))
 		if refusal ~= nil then return false, { name .. ": " .. refusal } end
 	end
 
@@ -2304,12 +2345,12 @@ local function sudoRun(state, session, args, from, env)
 	-- session none of them borrowed.
 	sub.real = session.real or session
 
-	local ok, lines, control, data = fn(state, sub, own, env)
+	local ok, lines, control, data = fn(state, sub, own, env, nil, sh)
 	carryAs("root", control, data)
 	return ok, lines, control, data
 end
 
-commands.sudo = function(state, session, args, env)
+commands.sudo = function(state, session, args, env, stdin, sh)
 	-- `sudo sudo ls` is one sudo. Real sudo runs the second one as root and
 	-- ends up in the same place; there is no reason to make a player type his
 	-- password to be asked for it again.
@@ -2321,11 +2362,11 @@ commands.sudo = function(state, session, args, env)
 	-- Root is already root. No file is consulted: an /etc/sudoers with nobody
 	-- in it must not be able to take sudo away from the one account that could
 	-- put it back.
-	if me == "root" then return sudoRun(state, session, args, from, env) end
+	if me == "root" then return sudoRun(state, session, args, from, env, sh) end
 
 	local entry = CeroSecOS.sudoer(state, me)
 	if entry == nil then return false, { me .. " is not in the sudoers file." } end
-	if entry.nopasswd then return sudoRun(state, session, args, from, env) end
+	if entry.nopasswd then return sudoRun(state, session, args, from, env, sh) end
 
 	-- Nothing of the password goes into the token, not even a hash of it: the
 	-- answer is judged against /etc/passwd when it arrives, which is the one
@@ -2338,7 +2379,7 @@ commands.sudo = function(state, session, args, env)
 		{ cmd = "sudo", user = me, args = rest })
 end
 
-continuations.sudo = function(state, session, cont, line, env)
+continuations.sudo = function(state, session, cont, line, env, sh)
 	local me = CeroSecOS.userOf(session)
 
 	-- Asked again, at the answer: a token names the account it was issued for,
@@ -2365,7 +2406,7 @@ continuations.sudo = function(state, session, cont, line, env)
 		if type(args[i]) ~= "string" then return false, { "sudo: authentication failure" } end
 	end
 	if args[1] == nil then return usage("sudo") end
-	return sudoRun(state, session, args, 1, env)
+	return sudoRun(state, session, args, 1, env, sh)
 end
 
 --
@@ -2669,29 +2710,147 @@ end
 --
 -- Resolving a command
 --
--- A name typed at the shell is a file in /bin and nothing else. There is no
--- PATH, no ./thing and no command hiding in a home directory: /bin/<name> or
--- the machine has never heard of it.
+-- A name typed at the shell is a FILE, and PATH says which directories are
+-- looked in for it, left to right. The default is one directory -- /bin, where
+-- the commands ship -- so a machine nobody has touched behaves exactly as it did
+-- when /bin was the only place there was.
 --
--- nil when the command may run, or the bare reason it may not -- the caller
--- puts the name in front of it, so the two lines a player ever sees here are
+-- PATH is an ordinary shell variable: a login sets it, `.profile` may add to it
+-- (PATH=$PATH:$HOME/bin), and a script or a cron line starts with the default
+-- and never with the shell's, which is the classic cron trap and is named in the
+-- manual. What is NOT looked up is a reserved word or one of the shell's own
+-- words: `if` is grammar and `cd` cannot be a file, so no PATH can hold either.
+-- A word with a "/" in it is a path and is not searched for at all.
+--
+
+-- The value a lookup walks, off the shell's own variables.
+--
+-- Absent is not empty. A shell whose PATH nobody set looks in /bin -- the way a
+-- real sh falls back on a path of its own when the variable is not in the
+-- environment, and what keeps a machine saved before there was a PATH on it able
+-- to run a command. An EMPTY value is a value: one empty field, which is the
+-- working directory and nothing else, so `PATH= ls` is "command not found".
+function CeroSecOS.pathValue(vars)
+	if type(vars) ~= "table" or type(vars.PATH) ~= "string" then
+		return CeroSecOS.DEFAULT_PATH
+	end
+	return vars.PATH
+end
+
+-- The environment a login hands the shell, which is where PATH comes from at a
+-- prompt. HOME goes in with it: it is the other thing a login shell has always
+-- set, and it is what makes PATH=$PATH:$HOME/bin a line worth writing in a
+-- .profile. A fresh table every time, so no two shells ever share one.
+function CeroSecOS.loginVars(home)
+	local vars = { PATH = CeroSecOS.DEFAULT_PATH }
+	if type(home) == "string" and home ~= "" then vars.HOME = home end
+	return vars
+end
+
+-- Where a name is found, walked left to right. absolute path, or nil plus the
+-- bare reason -- the caller puts the name in front of it, so the two lines a
+-- player ever sees are
 --   ls: command not found
 --   ls: permission denied
 --
-function CeroSecOS.whyNotRun(state, session, name)
-	local node, reason = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH .. "/" .. name)
-	if node == nil then
-		-- Nothing there, /bin itself gone, /bin turned into a file: from where
-		-- the shell stands they are the same answer. A refusal on the way in --
-		-- /bin chmodded shut -- is not, and says what it is.
-		if reason == "no such file" or reason == "not a directory" then return "command not found" end
-		return reason
+-- POSIX's rule and every sh's: the first candidate that is a file with x on it
+-- for whoever typed it WINS, and a candidate that cannot be run does not stop the
+-- search -- a copy of `ls` in ~/bin with no x on it is a file in the way, not a
+-- command, and /bin/ls behind it still runs. What the walk carries is the best
+-- REFUSAL it met on the way, so a name found everywhere and runnable nowhere
+-- says "permission denied", and a name nothing answers to at all says "command
+-- not found".
+-- The third answer is how many directories were actually looked in, which is
+-- what the walk COST: the shell charges it (see CeroSecOSVM.runSimple), because a
+-- long PATH makes every command on the machine dearer and a budget that could not
+-- see that would not be a budget.
+--
+-- At most MAX_PATH_DIRS of them. A PATH with more in it is refused where it is
+-- set, so the only way to reach this bound is a value off a save file; what is
+-- past it is not looked at, and the machine is slow for nobody.
+function CeroSecOS.lookupPath(state, session, name, path)
+	if path == nil then path = CeroSecOS.DEFAULT_PATH end
+	local dirs = CeroSecOS.pathDirs(path)
+	local refusal = nil
+	local last = #dirs
+	if last > CeroSecOS.MAX_PATH_DIRS then last = CeroSecOS.MAX_PATH_DIRS end
+	for i = 1, last do
+		local node, reason, abs = CeroSecOS.getNode(state, session, dirs[i] .. "/" .. name)
+		if node == nil then
+			-- Nothing there, a PATH entry that is not a directory, a PATH entry
+			-- shut to this account: none of the three stops the walk, and the
+			-- last one is worth saying when nothing further along answers.
+			if reason ~= "no such file" and reason ~= "not a directory" then
+				refusal = reason
+			end
+		elseif node.type ~= "file" then
+			-- A directory called /bin/ls is not a command and neither is a
+			-- device: both are something in the way, exactly as a file with no x
+			-- on it is, and saying "is a directory" about a name the player never
+			-- typed as a path would only puzzle him.
+		elseif CeroSecOS.can(state, session, node, "x") then
+			return abs, nil, i
+		else
+			refusal = "permission denied"
+		end
 	end
-	-- A directory called /bin/ls is not a command, and saying "is a directory"
-	-- about something the player never named as a path would only puzzle him.
-	if node.type ~= "file" then return "command not found" end
-	if not CeroSecOS.can(state, session, node, "x") then return "permission denied" end
-	return nil
+	if refusal ~= nil then return nil, refusal, last end
+	return nil, "command not found", last
+end
+
+-- nil when the command may run, or the bare reason it may not. The path it was
+-- found at comes back beside the nil, for the caller that needs to know WHICH
+-- file answered.
+function CeroSecOS.whyNotRun(state, session, name, path)
+	local found, refusal, walked = CeroSecOS.lookupPath(state, session, name, path)
+	if found == nil then return refusal, nil, walked end
+	return nil, found, walked
+end
+
+--
+-- which: where a name would be found, and nothing else.
+--
+-- It says nothing when it has nothing to say: a name no PATH entry answers to
+-- prints no line at all and comes back unsuccessful, which is what makes
+-- `which thing > /dev/null` the test it has been used as since csh shipped it.
+--
+-- It answers about FILES, because that is all a PATH holds: `which cd` finds
+-- nothing, exactly as it finds nothing on a real machine, and `type` is the word
+-- that knows about the shell's own.
+commands.which = function(state, session, args, env, stdin, sh)
+	if #args ~= 2 then return usage("which") end
+	local found = CeroSecOS.lookupPath(state, session, args[2], shPath(sh))
+	if found == nil then return false, {} end
+	return true, { found }
+end
+
+-- type: which of the three kinds of word this is, in sh's own wording.
+--
+--   admin@ksp-04-11:~$ type ls
+--   ls is /bin/ls
+--   admin@ksp-04-11:~$ type cd
+--   cd is a shell builtin
+--   admin@ksp-04-11:~$ type if
+--   if is a shell keyword
+--
+-- The order is the shell's own order of looking: a reserved word is grammar and
+-- was never a command, the shell's own words come next, and everything else is a
+-- file found on PATH. So a `ls` of your own in ~/bin is named by its own path
+-- here -- type says what WOULD run and never what ships.
+--
+-- The commands the engine runs without leaving the house -- echo, printf, test,
+-- true, false, sleep -- are files in /bin on this machine and are named as files,
+-- because that is what they are here: `rm /bin/echo` takes echo away.
+commands.type = function(state, session, args, env, stdin, sh)
+	if #args ~= 2 then return usage("type") end
+	local name = args[2]
+	if CeroSecOS.RESERVED[name] then return true, { name .. " is a shell keyword" } end
+	if CeroSecOS.SHELL_BUILTINS[name] or CeroSecOS.isShellWord(name) then
+		return true, { name .. " is a shell builtin" }
+	end
+	local found = CeroSecOS.lookupPath(state, session, name, shPath(sh))
+	if found == nil then return fail("type", name, "not found") end
+	return true, { name .. " is " .. found }
 end
 
 --
@@ -2834,7 +2993,8 @@ function CeroSecOS.expandTilde(state, session, args, redirect)
 	end
 end
 
-function CeroSecOS.runArgs(state, session, args, redirect, env, stdin)
+function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
+	local path, tty = shPath(sh), shTty(sh)
 	CeroSecOS.expandTilde(state, session, args, redirect)
 
 	-- A bare redirection still creates (or truncates) the file.
@@ -2850,11 +3010,10 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin)
 
 	local name = args[1]
 
-	-- A name with a slash in it is a PATH and never a command in /bin: ./backup
-	-- and /home/admin/backup are the file itself, run because it carries x for
-	-- whoever typed it. There is still no PATH on this machine -- a bare name
-	-- is /bin/<name> and nothing else -- which is why this is the only door a
-	-- file outside /bin has.
+	-- A name with a slash in it is a PATH and is never looked up: ./backup and
+	-- /home/admin/backup are the file itself, run because it carries x for
+	-- whoever typed it. PATH is for BARE names only, which is what it has always
+	-- been for.
 	if string.find(name, "/", 1, true) ~= nil then
 		local rest = {}
 		for i = 2, #args do rest[#rest + 1] = args[i] end
@@ -2864,13 +3023,39 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin)
 	end
 
 	local fn = commands[name]
-	if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
-	if not CeroSecOS.BUILTINS[name] then
-		local refusal = CeroSecOS.whyNotRun(state, session, name)
-		if refusal ~= nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
+	-- The shell's own words are never looked up. `cd` is not a file -- a program
+	-- cannot move the shell that ran it -- so there is nothing on any PATH that
+	-- could answer for one, and `help` is the word a machine with nothing left in
+	-- /bin still answers.
+	if CeroSecOS.BUILTINS[name] then
+		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
+	else
+		local found, refusal, walked = CeroSecOS.lookupPath(state, session, name, path)
+		-- What the walk cost, back into the table the shell handed down: the
+		-- walker charges it, and a caller that gave no table is a caller that is
+		-- not charging anything either.
+		if type(sh) == "table" then sh.walked = walked end
+		if found == nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
+		-- WHICH file answered decides what runs. One in /bin is the machine's own
+		-- executable and the engine is what is behind it -- a file there with no
+		-- command behind it is not a command, exactly as it never was. One found
+		-- anywhere else is a file, and a file that is run is a script: that is
+		-- what makes ~/bin an account's own commands, and what lets a name there
+		-- shadow the one in /bin when PATH names it first, which is the whole
+		-- point of a PATH.
+		local _, parts = CeroSecOS.resolve(nil, found)
+		if CeroSecOS.parentOf(parts) ~= CeroSecOS.BIN_PATH then
+			local rest = {}
+			for i = 2, #args do rest[#rest + 1] = args[i] end
+			local ok, lines, control, data = CeroSecOS.startScript(state, session, found, found,
+				rest, table.concat(args, " "), env, true)
+			return ok, CeroSecOS.fit(lines), control, data
+		end
+		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 	end
 
-	local ok, lines, control, data = fn(state, session, args, env, stdin)
+	local ok, lines, control, data = fn(state, session, args, env, stdin,
+		{ path = path, tty = tty })
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on
@@ -2907,17 +3092,17 @@ end
 -- one a command is handed.
 local continueLine
 
-function CeroSecOS.continue(state, session, cont, line, env, redirect)
+function CeroSecOS.continue(state, session, cont, line, env, redirect, sh)
 	-- A chain that ends in a command is a command, so /dev is under it too:
 	-- `sudo cat /dev/light0` asks for a password first and reads the switch
 	-- afterwards, on the answer.
 	CeroSecOS.mountDev(state, env)
-	local ok, lines, control, data = continueLine(state, session, cont, line, env, redirect)
+	local ok, lines, control, data = continueLine(state, session, cont, line, env, redirect, sh)
 	CeroSecOS.unmountDev(state, env)
 	return ok, lines, control, data
 end
 
-continueLine = function(state, session, cont, line, env, redirect)
+continueLine = function(state, session, cont, line, env, redirect, sh)
 	if type(state) ~= "table" or state.fs == nil then return false, { "no filesystem" } end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return false, { "not logged in" }
@@ -2949,7 +3134,7 @@ continueLine = function(state, session, cont, line, env, redirect)
 		}
 	end
 
-	local ok, lines, control, data = fn(state, run, cont, line, env)
+	local ok, lines, control, data = fn(state, run, cont, line, env, sh)
 	if lines == nil then lines = {} end
 	if run ~= session then carryAs(cont.as, control, data) end
 

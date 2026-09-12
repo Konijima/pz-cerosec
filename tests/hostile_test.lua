@@ -1394,6 +1394,110 @@ do
 		LINES .. " cron rlogins", worst, msPerMinute)
 end
 
+--
+-- 21. The longest PATH there can be (rung 6b)
+--
+-- Every command a shell runs is a walk along PATH, so the length of that string
+-- is the price of every command on the machine. Two programs here, and they are
+-- the two halves of the same question:
+--
+--   * the worst PATH a player may SET -- eight directories, seven of them not
+--     there, /bin at the very end, so every lookup walks the whole way;
+--   * a PATH nobody could have set, three hundred and forty fields of it,
+--     written straight into the console the way a forged save file would.
+--
+-- Both have to stay flat, stay timely, and stay inside the budget -- and the
+-- first one has to be charged for what it costs, which is what makes the second
+-- bounded rather than merely unlikely.
+--
+
+local function longPath(fields)
+	local out = {}
+	for _ = 1, fields - 1 do out[#out + 1] = "/nope" end
+	out[#out + 1] = "/bin"
+	return table.concat(out, ":")
+end
+
+do
+	local machine, state, console = newMachine()
+	local worstLegal = longPath(CeroSecOS.MAX_PATH_DIRS)
+	eq("it is as many directories as a shell may have",
+		#CeroSecOS.pathDirs(worstLegal), CeroSecOS.MAX_PATH_DIRS)
+
+	-- `test` is one of the commands the engine runs without leaving the house and
+	-- is still looked up as a file, so this is the walk and nothing else: no
+	-- output, no writing, one lookup an iteration.
+	put(state, "/home/admin/walk.sh",
+		"PATH=" .. worstLegal .. "\nwhile true; do test 1 = 1; done\n")
+	local job = typeLine(system, machine, state, console, "sh walk.sh")
+
+	local result = drive(machine, PASSES)
+	flat("worst legal PATH", result)
+	timely("worst legal PATH", result)
+	note("worst legal PATH", result)
+
+	check("it is still running", job ~= nil and not CeroSecOS.jobIsOver(job))
+	eq("and it has said nothing at all", #console.lines, 0)
+	eq("the command was found at the end of the walk", job.status, 0)
+	eq("the PATH is the one it set", job.vars.PATH, worstLegal)
+	check("the machine still boots", CeroSecOS.validate(state) == true)
+end
+
+-- One longer than that is refused where it is set, and the line says which
+-- ceiling it met. A player cannot buy himself a dearer machine.
+do
+	local machine, state, console = newMachine()
+	local tooMany = longPath(CeroSecOS.MAX_PATH_DIRS + 1)
+	put(state, "/home/admin/greedy.sh", "PATH=" .. tooMany .. "\necho reached\n")
+	local job = typeLine(system, machine, state, console, "sh greedy.sh")
+	drive(machine, 20)
+	eq("the script stopped on the ceiling", job.state, "error")
+	eq("and said which", console.lines[#console.lines],
+		"greedy.sh: line 1: too many PATH entries")
+	eq("nothing after it ran", #console.lines, 1)
+end
+
+-- And the one nobody could have typed: a console off a save file with a
+-- kilobyte of PATH in it. The walk stops at the ceiling, so what it costs is
+-- eight directories whatever the string says.
+do
+	local machine, state, console = newMachine()
+	local field = "/a:"
+	local fields = math.floor(CeroSecOS.MAX_VAR_BYTES / #field)
+	local forged = string.rep(field, fields) .. "/bin"
+	check("the forged PATH is hundreds of fields deep (" ..
+		#CeroSecOS.pathDirs(forged) .. ")", #CeroSecOS.pathDirs(forged) > 300)
+
+	-- The bound itself, asked of the walk directly: /bin is the last field of
+	-- that string and is never reached, and the walk says how far it went.
+	local found, reason, walked =
+		CeroSecOS.lookupPath(state, system:sessionOf(console), "ls", forged)
+	eq("the walk finds nothing past the ceiling", found, nil)
+	eq("and says so", reason, "command not found")
+	eq("having looked in exactly the ceiling's worth of directories", walked,
+		CeroSecOS.MAX_PATH_DIRS)
+
+	-- And under the scheduler, with a loop looking a name up every iteration.
+	-- The loop is a `for` over a list of words: `while` would need a command for
+	-- its condition, and on this PATH there is no command to be had.
+	console.shvars = { PATH = forged }
+	local words = {}
+	for i = 1, 200 do words[i] = "w" .. i end
+	local job = typeLine(system, machine, state, console,
+		"for i in " .. table.concat(words, " ") .. "; do test 1 = 1; done")
+
+	local result = drive(machine, 400)
+	flat("forged long PATH", result)
+	timely("forged long PATH", result)
+	note("forged long PATH", result)
+
+	check("every iteration said the same thing",
+		string.find(console.lines[#console.lines] or "", "command not found", 1, true) ~= nil)
+	check("the console never kept more than its hundred lines",
+		#console.lines <= CeroSec.CONSOLE_MAX)
+	check("the machine still boots", CeroSecOS.validate(state) == true)
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

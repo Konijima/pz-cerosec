@@ -104,10 +104,15 @@ CeroSecOS.DEV_VALUES = {
 	door  = { open = true, close = true },
 }
 
--- How many nodes /dev may hold. The same ceiling every other directory has:
--- a machine in the middle of a shopping mall is not a machine with four hundred
--- entries in one listing.
-CeroSecOS.DEV_MAX = CeroSecOS.MAX_DIR_ENTRIES
+-- How many nodes /dev may hold: a machine in the middle of a shopping mall is
+-- not a machine with four hundred entries in one listing.
+--
+-- 64, written here rather than taken from MAX_DIR_ENTRIES, which it used to be.
+-- That ceiling moved because /bin outgrew it, and how many COMMANDS ship is no
+-- reason to mount more of the world: what is built here is built afresh at the
+-- top of every command, so this number is a cost paid over and over and the
+-- other one is not.
+CeroSecOS.DEV_MAX = 64
 
 function CeroSecOS.isDev(node)
 	return type(node) == "table" and node.type == "dev"

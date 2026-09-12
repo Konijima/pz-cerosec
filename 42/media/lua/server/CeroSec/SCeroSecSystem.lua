@@ -998,8 +998,11 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- and a stack left behind by anything is not this one's.
 			console.stack = nil
 			-- A login is a fresh shell: nothing the last account set at this
-			-- glass is still set, exactly as nothing of his session is.
-			console.shvars = {}
+			-- glass is still set, exactly as nothing of his session is. What it
+			-- does start with is what a login shell has always set -- PATH, so a
+			-- bare name is looked up in /bin, and HOME.
+			console.shvars = CeroSecOS.loginVars(
+				(CeroSecOS.getUser(state, session.user) or {}).home)
 			console.status = nil
 			-- When, and on which line: what `who` prints and what `last` reads
 			-- back out of /var/log/wtmp. The console's own line is "console" --
@@ -1139,7 +1142,10 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- been deleted has no shell to parse a line with, and says so -- the two
 	-- words that still work are the two that always do, one to ask what
 	-- happened and one to walk away.
-	local shRefusal = CeroSecOS.whyNotRun(state, session, "sh")
+	-- On /bin and not on the account's PATH: the shell is the machine's own and
+	-- is where it ships, and a PATH somebody wrote into a .profile must not be
+	-- able to say which program parses the next line.
+	local shRefusal = CeroSecOS.whyNotRun(state, session, "sh", CeroSecOS.DEFAULT_PATH)
 	local bare = string.match(line, "^%s*(%S+)%s*$")
 	if shRefusal ~= nil and not (bare ~= nil and CeroSecOS.NO_SHELL_WORDS[bare]) then
 		CeroSec.consolePush(console, "sh: " .. shRefusal)

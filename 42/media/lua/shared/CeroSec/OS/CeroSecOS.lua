@@ -46,7 +46,12 @@ CeroSecOS.STATE_VERSION = 1
 --    own line in /etc/hosts is not seeded here: it needs an address, which is a
 --    fact about the building and is only known once the server has looked (see
 --    CeroSecOS.writeOwnHost).
-CeroSecOS.SYSTEM_VERSION = 10
+-- 11: the shell that looks a name up. /bin/which, /bin/ln and /bin/readlink --
+--    `type` is a word the shell IS and has no file, like cd -- plus the two
+--    places the filesystem grew: /dev/null, the device that reads empty and
+--    swallows what is written to it, and /var/tmp, the directory anybody may
+--    write in and only the owner of a file may delete from.
+CeroSecOS.SYSTEM_VERSION = 11
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -55,7 +60,16 @@ CeroSecOS.COLS = 60
 -- Limits, enforced in one place each (see CeroSecOSFS.lua).
 CeroSecOS.MAX_NAME = 32          -- characters in a single path component
 CeroSecOS.MAX_FILE_BYTES = 4096  -- bytes in one file
-CeroSecOS.MAX_DIR_ENTRIES = 64   -- files + dirs directly inside one dir
+-- Files and directories directly inside one directory.
+--
+-- 96, and the number that decides it is /bin's: the shipped commands were 64 of
+-- them at the ceiling of 64, which is a /bin with no room in it -- a command put
+-- back by hand after an `rm` was refused as "directory full", and the next wave
+-- that adds one could not seed it at all. So the ceiling is the shipped set plus
+-- room for a third as many again: yours in /bin, and a wave's worth of honest
+-- growth. The DISK is what bounds a machine (MAX_NODES, 32K); this bounds one
+-- LISTING, and a listing of 96 short names is six screens of columns.
+CeroSecOS.MAX_DIR_ENTRIES = 96
 CeroSecOS.MAX_NODES = 256        -- nodes on the whole computer, root included
 -- The disk. One number, because the machine has one drive: it is what the
 -- BIOS announces at power-on ("hda 32K"), what df divides by, and what the
@@ -99,6 +113,29 @@ CeroSecOS.MOTD = "CeroSec OS " .. CeroSecOS.VERSION ..
 -- does take the commands away.
 CeroSecOS.BIN_PATH = "/bin"
 CeroSecOS.ETC_PATH = "/etc"
+-- What PATH holds on a machine nobody has changed it on: the one directory the
+-- commands ship in. A login puts it in the shell's environment
+-- (CeroSecOS.loginVars), a script and a cron line start with it
+-- (CeroSecOS.newJob), and a shell that has no PATH at all falls back on it --
+-- see CeroSecOS.pathValue for why absent and empty are not the same thing.
+CeroSecOS.DEFAULT_PATH = "/bin"
+
+-- How many directories a lookup will walk.
+--
+-- Every command a shell runs is a walk along PATH, so the length of that string
+-- is the price of every command on the machine -- and a kilobyte of it is three
+-- hundred and forty directories, which is three hundred and forty walks of the
+-- filesystem for one `ls`. Measured, that is a command twenty times dearer than
+-- the budget believes it is, which is a budget that no longer protects anybody
+-- (tests/hostile_test.lua carries the numbers).
+--
+-- So the ceiling is eight, which is the number this machine uses everywhere it
+-- means "more than anybody writes" -- the stages of a pipeline, the depth of a
+-- script inside a script. A PATH with more in it is refused where it is SET, with
+-- a reason, the way every other ceiling here is refused; the walk stops at eight
+-- as well, so a value that came off a save file nobody can explain is slow for
+-- nobody.
+CeroSecOS.MAX_PATH_DIRS = 8
 -- Where an account's home is made. A home is the account's own and nobody
 -- else's: 750, so the owner reads, writes and enters it and everybody else
 -- stays outside it.

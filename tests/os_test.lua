@@ -756,17 +756,23 @@ do
 	-- The word ceiling, which is what the prompt meets first.
 	bad(state, admin, 'write w.txt "' .. string.rep("x", 1025) .. '"', "sh: word too large")
 
-	-- 64 entries per directory.
-	for i = 1, 64 do
+	-- The entries one directory holds, whatever the ceiling is set to: read off
+	-- the engine rather than typed here, so the wave that moved it from 64 to 96
+	-- (to leave room in /bin) moved this with it and did not have to be noticed.
+	local full = CeroSecOS.MAX_DIR_ENTRIES
+	for i = 1, full do
 		local execOk = exec(state, admin, "touch f" .. i)
 		if not execOk then error("touch f" .. i .. " failed") end
 	end
-	eq("directory holds 64", CeroSecOS.countEntries(state.fs.children.home.children.admin), 64)
-	bad(state, admin, "touch f65", "touch: f65: directory full")
-	bad(state, admin, "mkdir d65", "mkdir: d65: directory full")
+	eq("directory holds the ceiling",
+		CeroSecOS.countEntries(state.fs.children.home.children.admin), full)
+	local past = "f" .. (full + 1)
+	bad(state, admin, "touch " .. past, "touch: " .. past .. ": directory full")
+	bad(state, admin, "mkdir d" .. (full + 1), "mkdir: d" .. (full + 1) .. ": directory full")
 	-- A rename inside a full directory still works: nothing is being added.
 	ok(state, admin, "mv f1 g1", {})
-	eq("still 64 after a rename", CeroSecOS.countEntries(state.fs.children.home.children.admin), 64)
+	eq("still at the ceiling after a rename",
+		CeroSecOS.countEntries(state.fs.children.home.children.admin), full)
 	bad(state, admin, "cp g1 f1", "cp: f1: directory full")
 end
 
@@ -5961,13 +5967,18 @@ do
 	local state = fresh()
 	local admin = open(state, "admin")
 
-	-- Sixty-four variables, and the sixty-fifth is refused.
+	-- Sixty-four variables, and the next one is refused. A script does not start
+	-- with an empty environment -- it starts with the one a shell is given, PATH
+	-- and all -- so what is already there is counted off the ceiling rather than
+	-- assumed away: the line that dies is the one that asks for the 65th.
+	local base = CeroSecOS.newJob({ prog = {} }).nvars
+	check("a script starts with an environment", base >= 1)
 	local many = {}
 	for i = 1, CeroSecOS.MAX_VARS + 1 do many[#many + 1] = "v" .. i .. "=" .. i end
 	local run = runScript(state, admin, table.concat(many, "\n"))
-	eq("the sixty-fifth variable stops the script", run.job.state, "error")
+	eq("the variable past the ceiling stops the script", run.job.state, "error")
 	eq("and says which ceiling", run.out[1],
-		"bench.sh: line " .. (CeroSecOS.MAX_VARS + 1) .. ": too many variables")
+		"bench.sh: line " .. (CeroSecOS.MAX_VARS + 1 - base) .. ": too many variables")
 	eq("with the status a fatal error carries", run.job.status, 2)
 
 	-- A kilobyte is the ceiling on the WORD, "x=" and all: the word is built
@@ -6714,7 +6725,7 @@ do
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
 		.. " help hostname id ifconfig kill last ls mail man mkdir mv passwd ping"
 		.. " printf ps pwd rcp reboot restart rlogin rm rsh ruptime rwho sh shutdown"
-		.. " sleep sort su sudo tail test touch true uniq wc who whoami write"
+		.. " sleep sort su sudo tail test touch true uniq wc which who whoami write"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -8363,6 +8374,260 @@ do
 	CeroSecOS.upgradeSystem(old)
 	eq("rm /bin/ping is a deletion and not a suggestion",
 		CeroSecOS.systemNode(old, "/bin/ping"), nil)
+end
+
+--
+-- 43. PATH: where a bare name is looked up (rung 6b)
+--
+-- A command is a file and PATH says which directories are looked in for it. The
+-- default is /bin, which is where the machine has always looked, so everything
+-- above this section is a test of the default as much as of the commands in it.
+--
+
+-- The split, which is pure string work and knows nothing about a disk.
+do
+	local function dirs(value)
+		return table.concat(CeroSecOS.pathDirs(value), "|")
+	end
+	eq("one directory", dirs("/bin"), "/bin")
+	eq("two", dirs("/bin:/home/admin/bin"), "/bin|/home/admin/bin")
+	-- An empty field is the working directory, which is what a leading, a
+	-- trailing or a doubled colon has always meant.
+	eq("a leading colon is here first", dirs(":/bin"), ".|/bin")
+	eq("a trailing colon is here last", dirs("/bin:"), "/bin|.")
+	eq("a doubled colon is here in the middle", dirs("/a::/b"), "/a|.|/b")
+	eq("an empty PATH is one field, not none", dirs(""), ".")
+	eq("and a value that is not a string is no fields at all", dirs(nil), "")
+end
+
+-- Absent is not empty: a shell with no PATH at all looks in /bin, and one with
+-- an empty PATH looks where it stands and nowhere else.
+do
+	eq("no variables at all", CeroSecOS.pathValue(nil), CeroSecOS.DEFAULT_PATH)
+	eq("no PATH among them", CeroSecOS.pathValue({ x = "1" }), CeroSecOS.DEFAULT_PATH)
+	eq("an empty PATH is kept as it was set", CeroSecOS.pathValue({ PATH = "" }), "")
+	eq("and one that is set is what is walked",
+		CeroSecOS.pathValue({ PATH = "/a:/b" }), "/a:/b")
+
+	-- What a login hands the shell: PATH, and the HOME that makes
+	-- PATH=$PATH:$HOME/bin a line worth writing.
+	local vars = CeroSecOS.loginVars("/home/admin")
+	eq("a login sets PATH", vars.PATH, CeroSecOS.DEFAULT_PATH)
+	eq("and HOME", vars.HOME, "/home/admin")
+	eq("an account with no home gets no HOME", CeroSecOS.loginVars(nil).HOME, nil)
+	check("and two logins never share one table",
+		CeroSecOS.loginVars("/root") ~= CeroSecOS.loginVars("/root"))
+
+	-- A script and a cron line start with the default and with nothing else:
+	-- what the shell that started them has is not theirs. That is the cron trap.
+	local job = CeroSecOS.newJob({ prog = {} })
+	eq("a job nobody handed an environment starts with the default PATH",
+		job.vars.PATH, CeroSecOS.DEFAULT_PATH)
+	eq("and with nothing else in it", job.nvars, 1)
+end
+
+-- How many directories a PATH may name. The ceiling is met where the value is
+-- SET, with a reason, because the length of PATH is what every command on the
+-- machine costs.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local function path(n)
+		local out = {}
+		for i = 1, n do out[i] = "/d" .. i end
+		return table.concat(out, ":")
+	end
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+	ok(state, admin, "PATH=" .. path(CeroSecOS.MAX_PATH_DIRS), {})
+	eq("the ceiling's worth is set", admin.shvars.PATH, path(CeroSecOS.MAX_PATH_DIRS))
+	bad(state, admin, "PATH=" .. path(CeroSecOS.MAX_PATH_DIRS + 1),
+		"sh: too many PATH entries")
+	eq("and the refused line changed nothing", admin.shvars.PATH,
+		path(CeroSecOS.MAX_PATH_DIRS))
+
+	-- The walk stops there as well, so a value off a save file nobody can explain
+	-- is slow for nobody: /bin at the end of a long one is never reached.
+	local long = path(CeroSecOS.MAX_PATH_DIRS + 20) .. ":/bin"
+	local found, reason, walked = CeroSecOS.lookupPath(state, admin, "ls", long)
+	eq("nothing is found past the ceiling", found, nil)
+	eq("and it reads as a missing command", reason, "command not found")
+	eq("having walked exactly the ceiling", walked, CeroSecOS.MAX_PATH_DIRS)
+	-- What the walk COST comes back with it, because the shell charges it.
+	local hit, noReason, hitWalk = CeroSecOS.lookupPath(state, admin, "ls", "/d1:/d2:/bin")
+	eq("a hit says where it was found", hit, "/bin/ls")
+	eq("with no reason beside it", noReason, nil)
+	eq("and how many directories it took", hitWalk, 3)
+end
+
+-- The walk itself, at the prompt.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+
+	ok(state, admin, "mkdir /home/admin/bin", {})
+	ok(state, admin, 'write /home/admin/bin/hello "echo hello from bin"', {})
+	ok(state, admin, "chmod 755 /home/admin/bin/hello", {})
+
+	-- Not on the PATH yet: a file with x on it is not a command until a
+	-- directory PATH names holds it.
+	bad(state, admin, "hello", "hello: command not found")
+	-- ...and the same file, by path, runs -- a word with a slash in it is never
+	-- looked up at all.
+	ok(state, admin, "/home/admin/bin/hello", { "hello from bin" })
+
+	ok(state, admin, "PATH=$PATH:/home/admin/bin", {})
+	ok(state, admin, "echo $PATH", { "/bin:/home/admin/bin" })
+	-- A file found outside /bin is a FILE, so what runs is its text: that is
+	-- what makes ~/bin an account's own commands.
+	ok(state, admin, "hello", { "hello from bin" })
+	ok(state, admin, "which hello", { "/home/admin/bin/hello" })
+	ok(state, admin, "type hello", { "hello is /home/admin/bin/hello" })
+
+	-- An earlier directory with something in the way does not stop the walk.
+	-- POSIX's rule: the first match that is executable wins.
+	ok(state, admin, "cp /bin/ls /home/admin/bin/ls", {})
+	ok(state, admin, "chmod 644 /home/admin/bin/ls", {})
+	ok(state, admin, "PATH=/home/admin/bin:/bin", {})
+	ok(state, admin, "ls /etc/motd", { "motd" })
+	eq("and which names the one that would run",
+		okAt(state, admin, "which ls")[1], "/bin/ls")
+	-- With x on it, the one in front wins -- and it is a script, so its text is
+	-- what runs and the real ls is shadowed.
+	ok(state, admin, 'write /home/admin/bin/ls "echo mine"', {})
+	ok(state, admin, "chmod 755 /home/admin/bin/ls", {})
+	ok(state, admin, "ls /etc/motd", { "mine" })
+	ok(state, admin, "which ls", { "/home/admin/bin/ls" })
+	ok(state, admin, "rm /home/admin/bin/ls", {})
+
+	-- Found everywhere and runnable nowhere is "permission denied"; found
+	-- nowhere at all is "command not found". The reason the walk carries is the
+	-- best one it met.
+	ok(state, admin, "cp /bin/ls /home/admin/bin/ls", {})
+	ok(state, admin, "chmod 644 /home/admin/bin/ls", {})
+	ok(state, admin, "PATH=/home/admin/bin", {})
+	bad(state, admin, "ls /etc/motd", "ls: permission denied")
+	bad(state, admin, "pwd", "pwd: command not found")
+	-- /bin is off the PATH, so the walk cannot even find which: the refusal is
+	-- about the command that was typed, as every refusal here is.
+	bad(state, admin, "which ls", "which: command not found")
+	-- Back on a PATH that holds it, `which` says nothing at all about a name it
+	-- cannot answer for and comes back unsuccessful -- which is what
+	-- `which x > /dev/null` has always been used as.
+	ok(state, admin, "PATH=/bin", {})
+	local silent = expect(state, admin, "which nosuch", false, {})
+	eq("which prints nothing when it finds nothing", #silent, 0)
+	ok(state, admin, "PATH=/home/admin/bin", {})
+
+	-- An empty field is the working directory. Standing in the directory the
+	-- script is in is not enough on a PATH that does not say so...
+	ok(state, admin, "cd /home/admin/bin", {})
+	ok(state, admin, "PATH=/bin", {})
+	bad(state, admin, "hello", "hello: command not found")
+	-- ...and a leading colon is what says so.
+	ok(state, admin, "PATH=:/bin", {})
+	ok(state, admin, "hello", { "hello from bin" })
+
+	-- An empty PATH is one empty field and nothing else: the working directory,
+	-- where there is no echo to run what was found.
+	ok(state, admin, "PATH=", {})
+	bad(state, admin, "hello", "echo: command not found")
+	ok(state, admin, "cd /etc", {})
+	bad(state, admin, "hello", "hello: command not found")
+	-- The shell's own words are never looked up, so they still work: that is
+	-- what "cd cannot be a file" means. pwd is a file and is not found.
+	ok(state, admin, "cd /var", {})
+	bad(state, admin, "pwd", "pwd: command not found")
+end
+
+-- The shell's own words are the shell's, whatever PATH says. Asked with an
+-- empty PATH, where nothing at all can be found.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	admin.shvars = { PATH = "" }
+	ok(state, admin, "cd /var", {})
+	ok(state, admin, 'if true; then echo unreachable; fi', { "true: command not found" },
+		nil)
+	-- ...because `true` is a FILE on this machine and is looked up like any
+	-- other. The grammar around it is not, and neither is cd: the line above ran
+	-- its `if` and only the command inside it was missing.
+	bad(state, admin, "echo hi", "echo: command not found")
+end
+
+-- type: the three kinds of word, in sh's own wording.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "type ls", { "ls is /bin/ls" })
+	ok(state, admin, "type cd", { "cd is a shell builtin" })
+	ok(state, admin, "type type", { "type is a shell builtin" })
+	ok(state, admin, "type history", { "history is a shell builtin" })
+	ok(state, admin, "type if", { "if is a shell keyword" })
+	ok(state, admin, "type done", { "done is a shell keyword" })
+	ok(state, admin, "type in", { "in is a shell keyword" })
+	-- The ones the engine runs without leaving the house are files here, and are
+	-- named as files: `rm /bin/echo` takes echo away.
+	ok(state, admin, "type echo", { "echo is /bin/echo" })
+	ok(state, admin, "type [", { "[ is /bin/[" })
+	bad(state, admin, "type nosuch", "type: nosuch: not found")
+	-- `type` is the shell's own word, so it has no file to find, delete or
+	-- chmod -- and `which`, which answers about files only, finds nothing for it.
+	eq("no /bin/type ships", CeroSecOS.systemNode(state, "/bin/type"), nil)
+	check("and it is not in the list /bin is filled from", (function()
+		local names = CeroSecOS.binNames()
+		for i = 1, #names do
+			if names[i] == "type" then return false end
+		end
+		return true
+	end)())
+	local silent = expect(state, admin, "which cd", false, {})
+	eq("which finds nothing for a shell word", #silent, 0)
+	ok(state, admin, "which which", { "/bin/which" })
+
+	-- Both take one name and say so otherwise.
+	bad(state, admin, "which", "which: usage: which <name>")
+	bad(state, admin, "type", "type: usage: type <name>")
+end
+
+-- ~/.profile is where PATH is extended, and it is the shell's own environment
+-- it extends: what it sets is set at the prompt afterwards.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local vars = CeroSecOS.loginVars("/home/admin")
+
+	local made = CeroSecOS.createNode(state, admin, "/home/admin/bin",
+		CeroSecOS.newDir("admin", 755), nil)
+	check("the bin directory was made", made ~= nil)
+	put(state, admin, "/home/admin/bin/hello", "echo hello from bin")
+	local node = CeroSecOS.getNode(state, admin, "/home/admin/bin/hello")
+	node.mode = 755
+	put(state, admin, "/home/admin/.profile", "PATH=$PATH:$HOME/bin")
+
+	-- The profile, run the way a login runs it: a job on the shell's own
+	-- variables, named after the file.
+	local profile = CeroSecOS.promptJob(state, admin, "PATH=$PATH:$HOME/bin", vars, nil,
+		".profile")
+	check("the profile parsed", profile ~= nil)
+	local turns = 0
+	while not CeroSecOS.jobIsOver(profile) and turns < 50 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, profile, {}, 100)
+	end
+	eq("the profile extended the shell's PATH", vars.PATH, "/bin:/home/admin/bin")
+
+	-- And the very next line typed finds the command.
+	admin.shvars = vars
+	ok(state, admin, "hello", { "hello from bin" })
+
+	-- A SCRIPT does not inherit it: it starts with the default, which is the
+	-- classic cron trap written out.
+	put(state, admin, "/home/admin/bench.sh", "echo $PATH\nhello")
+	local run = runScript(state, admin, "echo $PATH\nhello")
+	eq("a script starts with the default PATH", run.out[1], CeroSecOS.DEFAULT_PATH)
+	eq("so the command the prompt found is not found in a script", run.out[2],
+		"hello: command not found")
 end
 
 print("os_test: " .. count .. " assertions passed")

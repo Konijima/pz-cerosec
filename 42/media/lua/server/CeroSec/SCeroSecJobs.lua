@@ -144,7 +144,13 @@ end
 function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
 	local state = luaObject:osState()
 	if state == nil then return nil, "no filesystem" end
-	if type(console.shvars) ~= "table" then console.shvars = {} end
+	-- A console that has none -- one saved before there was a PATH on this
+	-- machine, or one whose variables a repair dropped -- gets what a login gives
+	-- one, rather than an empty environment nothing could look a name up in.
+	if type(console.shvars) ~= "table" then
+		local account = CeroSecOS.getUser(state, system:sessionOf(console).user)
+		console.shvars = CeroSecOS.loginVars(account ~= nil and account.home or nil)
+	end
 	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
 		console.shvars, console.status, name)
 	if job == nil then return nil, refusal end
@@ -291,6 +297,11 @@ local function cronFire(system, luaObject, console, state, user, home, entry, no
 		cmd = entry.cmd,
 		bg = true,
 		session = { user = user, cwd = home or "/", stamp = 1 },
+		-- Cron's own environment, and not the shell's: the default PATH and the
+		-- account's home, which is exactly what Vixie's cron puts in one. A line
+		-- that worked at a prompt because ~/bin was on the PATH there does not
+		-- work here, and the manual says so.
+		vars = CeroSecOS.loginVars(home),
 	})
 	-- Where what it prints goes. Set before it is enrolled, because that is what
 	-- tells the book this is not the shell's job.

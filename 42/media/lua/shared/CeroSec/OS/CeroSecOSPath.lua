@@ -73,6 +73,35 @@ function CeroSecOS.expandHome(path, home)
 	return path
 end
 
+-- The directories a command name is looked for in, in the order PATH names
+-- them. Pure string work like the rest of this file: nothing here looks at the
+-- disk, and a directory that is not one is the walk's problem and not the
+-- split's.
+--
+-- An empty field is the working directory, which is what a leading, a trailing
+-- or a doubled colon has meant since PATH existed -- ":/bin" looks here first --
+-- and it comes back as "." so it is resolved against the session's cwd like any
+-- other relative path. So an empty PATH is one field and not none: it is the
+-- working directory, and nothing in /bin answers a bare name at all.
+function CeroSecOS.pathDirs(value)
+	local dirs = {}
+	if type(value) ~= "string" then return dirs end
+	local from = 1
+	while true do
+		local p = string.find(value, ":", from, true)
+		local piece
+		if p == nil then
+			piece = string.sub(value, from)
+		else
+			piece = string.sub(value, from, p - 1)
+		end
+		if piece == "" then piece = "." end
+		dirs[#dirs + 1] = piece
+		if p == nil then return dirs end
+		from = p + 1
+	end
+end
+
 -- Absolute path of the directory holding the given components, plus the last
 -- component. Returns nil for "/" itself, which has no parent.
 -- table.concat is called with two arguments only: the four-argument form is not

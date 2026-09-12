@@ -2582,6 +2582,11 @@ do
 	local bench = newBench()
 	bench.login("admin")
 
+	-- What a login puts in them before anybody types: the two a login shell has
+	-- always set, and the real server is what set them here.
+	eq("a login sets PATH", bench.object.console.shvars.PATH, CeroSecOS.DEFAULT_PATH)
+	eq("and HOME", bench.object.console.shvars.HOME, "/home/admin")
+
 	bench.enter("x=5")
 	bench.enter("echo $x")
 	bench.frame()

@@ -675,8 +675,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   2006  30762    7%
-  nodes         256     82    174   33%]],
+  hda         32768   2028  30740    7%
+  nodes         256     83    173   33%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1826,10 +1826,12 @@ itself.
   [ <expression> ]
   touch <file>
   true
+  type <name>
   false
   uniq [-c] [file]
   wait [id]...
   wc [-clw] [file]...
+  which <name>
   who [am i]
   whoami
   write <file> <text>
@@ -1842,13 +1844,14 @@ shell itself (chapter 8). The grammar:
 The ones that change the shell or own what it started, and so could never
 be a separate program:
 
-  cd exit fg jobs wait read shift break continue history
+  cd exit fg jobs wait read shift break continue
+  history type
 
 help prints those two lists under the table above. Those words and help
 are what the machine keeps working when /bin is gone.]],
 
 [[Limits, all of them fixed by the machine and none of them a setting:
-the disk holds 32K across at most 256 files and directories, 64 entries
+the disk holds 32K across at most 256 files and directories, 96 entries
 in any one directory, sixteen levels below the root. One file holds at
 most 4096 bytes and one line inside it at most 60 characters -- the width
 of the screen itself. A path component is at most 32 characters; an
