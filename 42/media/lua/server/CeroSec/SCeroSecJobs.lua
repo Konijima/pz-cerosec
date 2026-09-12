@@ -659,12 +659,30 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 			job.out = {}
 		else
 			local screen = screenOf(job)
+			-- And a second ceiling under the machine's, for a job writing down a
+			-- TELEPHONE line: 2400 baud is CeroSec.PHONE_LINES_PER_S lines a second
+			-- and no more. It is the LINE's ceiling and not the machine's -- the
+			-- window is kept on the call itself -- so two calls into one computer
+			-- each trickle at their own speed while the machine's twenty a second
+			-- still holds over both of them and over its own glass.
+			--
+			-- Nothing is thrown away: what the line could not carry this second is
+			-- kept exactly as what the screen could not take is kept, and goes out
+			-- in the passes after it. A player watching a call sees a `cat` arrive
+			-- four lines at a time, which is what a modem looked like.
+			local call = CeroSecNet.callOn(luaObject, screen)
+			local slow = nil
+			if call ~= nil then slow = CeroSecNet.callRoom(call, now) end
 			local kept = {}
 			for k = 1, #job.out do
-				if room > 0 then
+				if room > 0 and (slow == nil or slow > 0) then
 					CeroSec.consolePush(screen, job.out[k])
 					room = room - 1
 					book.winCount = book.winCount + 1
+					if slow ~= nil then
+						slow = slow - 1
+						call.outCount = call.outCount + 1
+					end
 					touch(screen)
 				else
 					kept[#kept + 1] = job.out[k]
@@ -819,7 +837,7 @@ function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerO
 		CeroSecJobs.schedule(luaObject, data)
 	elseif control == "cancel" then
 		luaObject.shutdown = nil
-	elseif control == "rlogin" or control == "rsh" then
+	elseif control == "rlogin" or control == "rsh" or control == "cu" then
 		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj, order.forJob)
 	elseif control == "hangup" and type(data) == "table" then
 		-- A far session whose near end has gone. Nothing is delivered anywhere:

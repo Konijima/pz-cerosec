@@ -772,9 +772,14 @@ function SCeroSecSystem:bootScreen(console, state)
 	console.booted = true
 	-- The card and its address, which the firmware can only announce once the
 	-- server has worked out which building the computer stands in.
-	local addr = nil
-	if state ~= nil then addr = CeroSecOS.address(state) end
-	CeroSec.consolePushAll(console, CeroSec.bootLines(addr))
+	-- And the telephone line under it, which is the same fact read a second way:
+	-- both come off the machine's own record of which building it stands in.
+	local addr, tel = nil, nil
+	if state ~= nil then
+		addr = CeroSecOS.address(state)
+		tel = CeroSecOS.phoneOf(state)
+	end
+	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel))
 	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
 	return true
 end
@@ -1249,6 +1254,25 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- would put a second, bare prompt line above it and push the live one down.
 	if string.find(line, "[^ \t]") == nil then
 		self:pushScreen(luaObject, state, console)
+		return
+	end
+
+	-- `~.` on a telephone call, which is cu's own escape and the near end hanging
+	-- up. It is answered HERE, before the shell, before history and before the far
+	-- machine is told anything, because that is what a tilde escape IS: a line read
+	-- by the program holding the receiver and never sent down the line. So it is
+	-- not a command over there, it is in neither machine's history, and a far shell
+	-- that happened to have a file called `~.` is never asked about it.
+	--
+	-- Only at a prompt, and only on a CALL. Escape is what interrupts something
+	-- running over there (and what hangs up an idle session of either kind), so
+	-- there is nothing here for a line typed while the far machine is busy; and an
+	-- rlogin has no tilde escape at all, because rlogin's own escape character is
+	-- "~" typed as the FIRST thing on a line with no shell reading it -- a
+	-- distinction a window that sends whole lines cannot make. The manual says both.
+	if CeroSecOS.isCuEscape(line) and CeroSecNet.callOn(luaObject, console) ~= nil then
+		CeroSec.consolePush(console, self:promptFor(state, console) .. line)
+		CeroSecNet.endSession(self, luaObject, console)
 		return
 	end
 

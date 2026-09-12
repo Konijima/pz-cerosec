@@ -13,10 +13,18 @@ require "CeroSec/OS/CeroSecOSNet"
 -- one stands in, and whether either has power. This file answers it, and it is
 -- the only half of the network that knows there is a game.
 --
--- The rule for this rung is one wire and nothing else: Ethernet between the
--- computers of ONE map building, both switched on. A later rung adds the phone
--- line and the radio by adding a second answer here -- reachable() -- and
--- changes no command and no engine file, which is the promise the manual makes.
+-- There are two links, and the promise the manual made about the second one is
+-- kept here and nowhere else:
+--
+--   * ETHERNET (reachable): a length of coax between the computers of ONE map
+--     building, both switched on. Every r-command goes down it and nothing else.
+--   * THE TELEPHONE (reachablePhone): one line per building, one call at a time,
+--     the county's exchange alive, both machines on. Distance does not matter and
+--     neither does which building is which -- that is what a telephone IS.
+--
+-- The second one added one command (cu) and one answer here; it changed no other
+-- command, which is what "a new kind of link and not a new command to learn"
+-- meant.
 --
 --
 -- WHY A MACHINE ANSWERS WITH ITS CHUNK UNLOADED
@@ -196,6 +204,201 @@ local function wire(system, from)
 		return nil
 	end)
 	return out
+end
+
+--
+-- The telephone
+--
+-- THE EXCHANGE IS THE COUNTY GRID. A telephone exchange in 1993 was a building
+-- full of switches on the mains with batteries for a few hours, and Knox County's
+-- power goes off on a day the sandbox chose. When it does, the exchange goes with
+-- it: there is no dial tone, and a call is not a thing anybody can place. That is
+-- the one rule that makes the telephone a different kind of link from the coax --
+-- the coax is two machines and a wire and goes on working with a generator behind
+-- each of them, and the telephone needs a third party who is not there any more.
+--
+-- Whether the grid is alive is asked the way the game's own Lua asks it
+-- (media/lua/client/ISUI/ISButtonPrompt.lua:520, and the same arithmetic in
+-- media/lua/server/radio/ISWeatherChannel.lua:153-154):
+--
+--   day = getGameTime():getWorldAgeHours() / 24
+--         + (getSandboxOptions():getTimeSinceApo() - 1) * 30
+--   alive = ElecShutModifier > -1 and day < ElecShutModifier
+--
+-- The > -1 is not a nil guard, it is the option's own bottom: zombie.SandboxOptions
+-- randomElectricityShut answers -1 for the first setting of ElecShut, which is
+-- the power already off at the start, and 2147483647 for the last, which is the
+-- power that never goes (javap'd on projectzomboid.jar). So -1 means there is no
+-- day on which it goes off because it went off before the first one, and a day
+-- number can never be under it.
+--
+-- Asked of the option and not of a square, deliberately: square:hasGridPower()
+-- answers about a place, and the exchange is not in the room with the computer.
+--
+CeroSecNet.SANDBOX = "PhoneService"
+
+-- The option a server may set, if a sandbox option file ever declares one, read
+-- the way vanilla reads its own grouped options -- `SandboxVars.Map and
+-- (SandboxVars.Map.AllowWorldMap == true)`, ISWorldMap.lua:1493 -- because
+-- SandboxVars is a plain table and a group nobody declared is simply not in it.
+-- Nothing here creates the option; this is the hook it would land in.
+--
+--   "grid"   the exchange lives as long as the county's power does (the default)
+--   "never"  there is no telephone service at all, from the first day
+--   "always" the exchange is on a generator and outlives the grid
+--
+-- Anything else is not one of the three and is ignored rather than argued with.
+function CeroSecNet.phoneService()
+	local group = SandboxVars and SandboxVars.CeroSec
+	local value = group and group[CeroSecNet.SANDBOX]
+	if value == "never" or value == "always" then return value end
+	return "grid"
+end
+
+-- Is the county's power still on? true when the game cannot be asked at all: a
+-- mod that could not read the option must not quietly take the telephone out of
+-- every server it cannot interrogate, and the failure it would cause -- a call
+-- that goes through -- is the one a player can see and report.
+function CeroSecNet.gridAlive()
+	if getGameTime == nil or getSandboxOptions == nil then return true end
+	local time = getGameTime()
+	local options = getSandboxOptions()
+	if time == nil or options == nil then return true end
+	local off = options:getElecShutModifier()
+	if type(off) ~= "number" or off <= -1 then return false end
+	local day = time:getWorldAgeHours() / 24 + (options:getTimeSinceApo() - 1) * 30
+	if type(day) ~= "number" then return true end
+	return day < off
+end
+
+function CeroSecNet.exchangeAlive()
+	local mode = CeroSecNet.phoneService()
+	if mode == "never" then return false end
+	if mode == "always" then return true end
+	return CeroSecNet.gridAlive()
+end
+
+-- Which building's line a machine is on, as one string to key a lookup by. nil
+-- for a machine that is on none, which is a machine with no telephone.
+local function lineKey(net)
+	if net == nil then return nil end
+	return tostring(net.b1) .. "." .. tostring(net.b2)
+end
+
+function CeroSecNet.keyOf(luaObject)
+	return lineKey(recordOf(luaObject))
+end
+
+-- This machine's number, or nil for one with no line.
+function CeroSecNet.lineOf(luaObject)
+	local net = recordOf(luaObject)
+	if net == nil then return nil end
+	return CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2))
+end
+
+-- Is a building's line in use right now?
+--
+-- DERIVED and never counted. A call is two things -- a pty on the machine that
+-- answered and a glass at the machine that dialled -- and both of them are on the
+-- pty, so the pty table IS the record of who is on the telephone. A counter
+-- beside it would be a second truth that leaks: a machine picked up mid-call, a
+-- server restarted with a call open, a teardown down a path somebody forgot,
+-- and the line is busy for ever with nobody on it. Walking the county costs what
+-- a ping costs and cannot be wrong.
+--
+-- Both ENDS make the line busy, which is what one line per building means: a
+-- building whose machine has dialled OUT cannot take a call either.
+function CeroSecNet.lineBusy(system, key)
+	if key == nil then return false end
+	return each(system, function(other)
+		local ptys = CeroSecOS.ptyList(other.ptys)
+		if #ptys == 0 then return nil end
+		local theirs = CeroSecNet.keyOf(other)
+		for i = 1, #ptys do
+			local pty = ptys[i]
+			if type(pty.phone) == "table" then
+				-- The building that DIALLED is on the pty; the building that
+				-- ANSWERED is the machine the pty is on.
+				if pty.phone.key == key or theirs == key then return true end
+			end
+		end
+		return nil
+	end) and true or false
+end
+
+-- Who answers a number. Every computer of the building shares the line, so the
+-- one that picks up is the one with the lowest address on it -- the desk the
+-- modem is on -- and it is the same desk every time, which is what makes a number
+-- something a player can write down.
+--
+-- A machine that is switched off cannot answer; a building where every machine is
+-- off is a telephone ringing in an empty office.
+function CeroSecNet.atPhone(system, tel)
+	local best, bestNet = nil, nil
+	each(system, function(other)
+		if not other.on then return nil end
+		local net = recordOf(other)
+		if net == nil then return nil end
+		if CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2)) ~= tel then return nil end
+		if bestNet == nil or net.n < bestNet.n then
+			best, bestNet = other, net
+		end
+		return nil
+	end)
+	return best
+end
+
+-- Can `from` place a call to that number right now?
+-- the machine that answers, or nil plus the word the MODEM prints.
+function CeroSecNet.reachablePhone(system, from, tel)
+	if not from.on then return nil, CeroSecOS.MODEM.noCarrier end
+	local mine = recordOf(from)
+	-- No line at all. The command itself has already said so in cu's own words
+	-- before it ever got here; this is the door saying the same thing, and there
+	-- is no modem to print anything for a machine that has none.
+	if mine == nil then return nil, CeroSecOS.CU_NO_LINE end
+	-- No exchange, no dial tone. Asked before the line, because a dead exchange is
+	-- what the receiver tells you first.
+	if not CeroSecNet.exchangeAlive() then return nil, CeroSecOS.MODEM.noDialtone end
+	local myKey = lineKey(mine)
+	-- This building's own line, in use by somebody: a survivor on the other
+	-- machine in the room is on the telephone, and there is one telephone.
+	if CeroSecNet.lineBusy(system, myKey) then return nil, CeroSecOS.MODEM.busy end
+	local object = CeroSecNet.atPhone(system, tel)
+	-- Nobody answered: a number no building has, or a building with every machine
+	-- switched off. The two are deliberately the same word -- a caller finds out
+	-- nothing about a county he cannot reach, which is what a telephone is like.
+	if object == nil then return nil, CeroSecOS.MODEM.noCarrier end
+	local theirKey = CeroSecNet.keyOf(object)
+	-- This building's own number, dialled from inside it: the line is busy because
+	-- the caller is the one using it.
+	if theirKey == myKey then return nil, CeroSecOS.MODEM.busy end
+	if CeroSecNet.lineBusy(system, theirKey) then return nil, CeroSecOS.MODEM.busy end
+	return object
+end
+
+-- The call a screen is on, when it is on one: what makes the trickle 2400 baud
+-- and what makes a teardown speak the modem's words.
+function CeroSecNet.callOn(luaObject, console)
+	if luaObject == nil or type(console) ~= "table" then return nil end
+	if type(console.line) ~= "string" then return nil end
+	local pty = CeroSecOS.remoteLine(luaObject.ptys, console.line)
+	if pty == nil or type(pty.phone) ~= "table" then return nil end
+	return pty
+end
+
+-- Lines that call may still take this second. The window is kept on the PTY,
+-- beside the line it belongs to, because the ceiling is the LINE's: two calls
+-- into one machine are two lines and each gets its own 2400 baud, while the
+-- machine's own twenty a second still holds over both of them.
+function CeroSecNet.callRoom(pty, now)
+	if type(pty.outMs) ~= "number" or now - pty.outMs >= 1000 then
+		pty.outMs = now
+		pty.outCount = 0
+	end
+	local room = CeroSec.PHONE_LINES_PER_S - (pty.outCount or 0)
+	if room < 0 then return 0 end
+	return room
 end
 
 --
@@ -399,6 +602,23 @@ end
 -- the manual says so.
 CeroSecNet.CLOSED = "Connection closed."
 
+-- And what a CALL says when it is over, which is not the same line: rlogin's
+-- connection closed and a telephone call did not, it hung up. Two endings, and
+-- they are cu's and the modem's:
+--
+--   Disconnected.  either end hung up on purpose -- `~.` here, `exit` there
+--   NO CARRIER     the line went away underneath it: a machine lost its power,
+--                  somebody picked one up, or the county's exchange died
+--
+-- The difference is worth a line of screen because it is the difference between
+-- "I am done" and "something happened", and on a telephone that is the only
+-- diagnosis there is.
+local function closingLine(pty, why)
+	if type(pty.phone) ~= "table" then return CeroSecNet.CLOSED end
+	if why == "carrier" then return CeroSecOS.MODEM.noCarrier end
+	return CeroSecOS.CU_DISCONNECTED
+end
+
 -- The pty a console is looking at, the machine it is on, and that machine's
 -- state. nil when the far end has gone: switched off, picked up, or the session
 -- closed from the other side.
@@ -411,6 +631,18 @@ function CeroSecNet.farOf(system, console)
 	if pty == nil then return nil end
 	local far = object:osState()
 	if far == nil then return nil end
+	-- A call whose exchange has died since it was placed. This is the one link
+	-- that can fail with both machines still switched on and nothing in the world
+	-- having moved, so it is asked HERE -- the one place every keystroke on a
+	-- session goes through -- rather than by a timer of its own: the carrier is
+	-- gone the moment anybody touches the line, which is when a player finds out
+	-- about a dropped telephone call anyway.
+	--
+	-- Torn down here and not left to the caller, so the words are the modem's.
+	if type(pty.phone) == "table" and not CeroSecNet.exchangeAlive() then
+		CeroSecNet.tearDown(system, object, handle.line, "carrier")
+		return nil
+	end
 	return pty, object, far
 end
 
@@ -501,8 +733,13 @@ end
 -- console that dialled -- with every line the session printed still on it -- and
 -- that console is told in rlogin's own words.
 --
+-- why is "carrier" when it was the LINK that went and not somebody hanging up:
+-- it is the difference between NO CARRIER and Disconnected. on a telephone call,
+-- and nothing at all on a wire, where a session that ends says one line whatever
+-- ended it.
+--
 -- Answers true when there was a session to end.
-function CeroSecNet.tearDown(system, object, line)
+function CeroSecNet.tearDown(system, object, line, why)
 	local pty = CeroSecOS.remoteLine(object.ptys, line)
 	if pty == nil then return false end
 	local screen = pty.console
@@ -549,7 +786,7 @@ function CeroSecNet.tearDown(system, object, line)
 		end
 		-- An rsh is one command and not a login, so it says nothing when it is
 		-- done: no rsh anybody has ever run printed "Connection closed.".
-		if not pty.quiet then CeroSec.consolePush(home, CeroSecNet.CLOSED) end
+		if not pty.quiet then CeroSec.consolePush(home, closingLine(pty, why)) end
 		if homeObject ~= nil then
 			system:pushScreen(homeObject, homeObject:osState(), home)
 		end
@@ -568,8 +805,13 @@ function CeroSecNet.killPty(luaObject, line)
 	end
 end
 
--- The near end hanging up: Escape at an idle remote prompt, or the machine this
--- glass is on going dark.
+-- The near end losing the session: the machine this glass is on going dark, or a
+-- chain whose far end is no longer there.
+--
+-- Always the LINK's teardown and never a hangup, which is why it does not take a
+-- reason: every caller of it is a machine or a wire that went away. Escape at an
+-- idle remote prompt and `~.` go through endSession instead, and those two are
+-- somebody hanging up.
 function CeroSecNet.hangUp(system, console)
 	local handle = console.remote
 	if type(handle) ~= "table" then return false end
@@ -578,7 +820,7 @@ function CeroSecNet.hangUp(system, console)
 		console.remote = nil
 		return true
 	end
-	return CeroSecNet.tearDown(system, object, handle.line)
+	return CeroSecNet.tearDown(system, object, handle.line, "carrier")
 end
 
 -- The far end hanging up: `exit` on the far machine's own prompt, which is the
@@ -700,10 +942,16 @@ end
 -- The far machine, its state, this machine's name, and a line on it -- or nil
 -- plus which of strerror's words to wear. Shared by rlogin and rsh, because the
 -- two differ in exactly one thing and it is not this.
-local function connect(system, luaObject, console, cmd, data)
-	local object = CeroSecNet.reachable(system, luaObject, data.addr)
+-- found, when the caller has already worked out which machine answers: that is
+-- the telephone, where the far end is decided by a number and not by an address
+-- and the refusals are the modem's words rather than strerror's.
+local function connect(system, luaObject, console, cmd, data, found)
+	local object = found
 	if object == nil then
-		return nil, CeroSecOS.netRefusal(cmd, data.host, "unreach")
+		object = CeroSecNet.reachable(system, luaObject, data.addr)
+		if object == nil then
+			return nil, CeroSecOS.netRefusal(cmd, data.host, "unreach")
+		end
 	end
 	local far = object:osState()
 	if far == nil then
@@ -717,6 +965,25 @@ local function connect(system, luaObject, console, cmd, data)
 	if state ~= nil then
 		fromHost = CeroSecOS.hostname(state)
 		fromAddr = CeroSecOS.address(state)
+	end
+	-- WHERE A CALL SAYS IT CAME FROM. A session that arrived over the wire is
+	-- named by the machine it came from, because on one length of coax that name
+	-- means something to everybody on it. A call is named by the NUMBER it was
+	-- placed from: the far machine has never heard of this one's hostname, has no
+	-- line in /etc/hosts for it and no way to check one, and what a survivor over
+	-- there needs is the thing he could ring back. So `who` prints (555-0142),
+	-- `last` prints it in the host column, and that is what goes into wtmp.
+	--
+	-- It is also the honest answer to the security question a call raises: an
+	-- inbound telephone session is from a stranger, and a number is what a
+	-- stranger has instead of a name.
+	local phone = nil
+	if type(data.tel) == "string" then
+		local tel = CeroSecNet.lineOf(luaObject)
+		if tel == nil then return nil, CeroSecOS.CU_NO_LINE end
+		fromHost = tel
+		fromAddr = nil
+		phone = { tel = tel, key = CeroSecNet.keyOf(luaObject) }
 	end
 
 	local watchAt = CeroSecNet.watchAtOf(luaObject, console)
@@ -735,6 +1002,11 @@ local function connect(system, luaObject, console, cmd, data)
 		return nil, CeroSecOS.netRefusal(cmd, data.host, reason)
 	end
 	pty.from = { x = luaObject.x, y = luaObject.y, z = luaObject.z, line = console.line }
+	-- And the call it came in on, when that is what it is: the number that dialled
+	-- and the building whose line is now busy. It is the whole of what makes this
+	-- pty a call rather than a session -- the trickle, the busy rule and the two
+	-- endings are all read off it.
+	pty.phone = phone
 	-- A detached session takes no copy of the glass and the glass is not pointed
 	-- at it: the near console keeps showing what it was showing, whether that is a
 	-- prompt nobody is at or a session a survivor opened himself.
@@ -765,6 +1037,40 @@ function CeroSecNet.dial(system, luaObject, console, data)
 			CeroSecOS.clockOf(system:clockEnv()))
 		pty.trusted = true
 	end
+	return pty, object, far
+end
+
+-- cu: the same session down the telephone, and always a password.
+--
+-- No trust file is asked, and that is not an omission: /etc/hosts.equiv and
+-- ~/.rhosts are lists of MACHINES, and the far machine cannot tell which machine
+-- is on the other end of a telephone call -- there is no address in a call, only
+-- a number, and a number is a building. ruserok has never had an answer for one.
+-- So the caller meets `login:` and `password:` however trusted his own computer
+-- is on its own coax, which is also the only thing standing between a county full
+-- of survivors and everybody else's disks.
+--
+-- The refusals here are the modem's words and they come back as ONE line, which
+-- is what a modem gives you: the reason a call did not happen is the last thing
+-- printed before the receiver goes down.
+function CeroSecNet.dialPhone(system, luaObject, console, data)
+	local found, word = CeroSecNet.reachablePhone(system, luaObject, data.tel)
+	if found == nil then return nil, word end
+	-- A machine with no operating system on it -- one sitting at the firmware's
+	-- own question -- has nothing to answer a modem with. Nobody picked up.
+	if found:osState() == nil then return nil, CeroSecOS.MODEM.noCarrier end
+	local pty, object, far = connect(system, luaObject, console, "cu", data, found)
+	-- The one thing left that can refuse a call the exchange put through: a far
+	-- machine with all four of its lines taken by sessions off its own coax. It is
+	-- a busy signal and not a "connection refused" -- a caller with a receiver to
+	-- his ear hears the same tone whether the line is in use or the switchboard is
+	-- full. (object carries connect's own refusal line, which is not a modem's.)
+	if pty == nil then return nil, CeroSecOS.MODEM.busy end
+	-- The modem's own two lines, then cu's, on the glass the call is now on: the
+	-- pty's console carries a copy of everything that was on the screen, so these
+	-- land under the `cu` the survivor typed and above the far machine's `login:`.
+	CeroSec.consolePush(pty.console, CeroSecOS.MODEM.connect)
+	CeroSec.consolePush(pty.console, CeroSecOS.CU_CONNECTED)
 	return pty, object, far
 end
 
@@ -813,13 +1119,15 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 	-- (CeroSecOSVM applyControl), and this is the same rule standing at the door:
 	-- a screen nobody is watching is not a terminal to hand a session, whichever
 	-- way the order got here. What it says goes where the sheet goes.
-	if control == "rlogin" and noTty ~= nil then
-		deliver(system, luaObject, console, noTty, { "rlogin: not a terminal" })
+	if (control == "rlogin" or control == "cu") and noTty ~= nil then
+		deliver(system, luaObject, console, noTty, { control .. ": not a terminal" })
 		return
 	end
 	local pty, object, far, refusal = nil, nil, nil, nil
 	if control == "rlogin" then
 		pty, object, far = CeroSecNet.dial(system, luaObject, console, data)
+	elseif control == "cu" then
+		pty, object, far = CeroSecNet.dialPhone(system, luaObject, console, data)
 	else
 		pty, object, far = CeroSecNet.remoteCommand(system, luaObject, console, data)
 	end
