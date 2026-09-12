@@ -2553,19 +2553,50 @@ do
 end
 
 -- Four jobs is the ceiling, and the fifth is refused where it was typed.
+--
+-- Counted the same way whichever way a job starts, which it was not: a script
+-- behind an `&` runs INSIDE the job the machine made for it and asks the machine
+-- for no second one, and `sh` used to count that job among the ones in its way --
+-- so the fourth `./spin.sh &` refused itself, with the machine's own words, while
+-- the fourth typed loop went through. Both are asserted here, side by side.
 do
 	local bench = newBench()
 	bench.login("admin")
 	bench.script("/home/admin/spin.sh", "while true; do x=1; done\n")
 	for _ = 1, 4 do
-		bench.enter("sh spin.sh &")
+		bench.enter("./spin.sh &")
+		bench.tick(1)
 	end
 	bench.frame()
-	eq("four jobs", #CeroSecJobs.book(bench.object).list, 4)
-	bench.enter("sh spin.sh &")
+	eq("four background scripts are running",
+		CeroSecOS.liveJobs(CeroSecJobs.book(bench.object).list), 4)
+	check("and none of them refused itself", not bench.painted("too many jobs"))
+	bench.enter("./spin.sh &")
+	bench.tick(1)
 	bench.frame()
 	check("the fifth is refused", bench.painted("sh: too many jobs"))
-	eq("and there are still four", #CeroSecJobs.book(bench.object).list, 4)
+	eq("and there are still four",
+		CeroSecOS.liveJobs(CeroSecJobs.book(bench.object).list), 4)
+end
+
+-- The same ceiling, the same count, for four typed loops: no file, no `sh`, and
+-- the fifth refused in the same words.
+do
+	local bench = newBench()
+	bench.login("admin")
+	for _ = 1, 4 do
+		bench.enter("while true; do x=1; done &")
+		bench.tick(1)
+	end
+	bench.frame()
+	eq("four typed loops are running",
+		CeroSecOS.liveJobs(CeroSecJobs.book(bench.object).list), 4)
+	bench.enter("while true; do x=1; done &")
+	bench.tick(1)
+	bench.frame()
+	check("the fifth is refused", bench.painted("sh: too many jobs"))
+	eq("and there are still four",
+		CeroSecOS.liveJobs(CeroSecJobs.book(bench.object).list), 4)
 end
 
 -- Reboot kills everything that was running.

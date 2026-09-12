@@ -143,12 +143,41 @@ end
 -- How many of them are still running. The prompt's own job is NOT one of them:
 -- it is the shell, not a job the shell started, so `jobs` does not list it and
 -- the four-job ceiling is still four SCRIPTS and not three plus the prompt.
-function CeroSecOS.liveJobs(jobs)
+--
+-- exceptId, when given, is a job that is not counted either: the job ASKING. A
+-- command that asks whether the machine has room -- `sh`, `wait` -- is asking
+-- about the jobs in its way, and the job it is running in is not one of them. It
+-- is an id and not the table, because a stage of a pipeline is a shell of its own
+-- that shares its pipeline's id and is not in the book at all.
+function CeroSecOS.liveJobs(jobs, exceptId)
 	local live = 0
 	for i = 1, #jobs do
-		if not jobs[i].interactive and not CeroSecOS.jobIsOver(jobs[i]) then live = live + 1 end
+		if jobs[i].id ~= exceptId and not jobs[i].interactive
+				and not CeroSecOS.jobIsOver(jobs[i]) then
+			live = live + 1
+		end
 	end
 	return live
+end
+
+-- The job whose turn it is, left on the machine's env by the walker below.
+--
+-- A command is handed the env and never the job it runs in -- a command is not
+-- allowed to reach into the shell -- and two of them nevertheless have to know
+-- where they stand in the job book (`sh` and `wait`, which ask whether the
+-- machine has room for what they would start). This is the one thing they may
+-- ask, and nil is the honest answer for a command run straight off runArgs by a
+-- bench or by the server, with no job around it at all.
+function CeroSecOS.jobOf(env)
+	if type(env) ~= "table" or type(env.job) ~= "table" then return nil end
+	return env.job
+end
+
+-- The id of it, or nil: what liveJobs above wants.
+function CeroSecOS.askingId(env)
+	local job = CeroSecOS.jobOf(env)
+	if job == nil then return nil end
+	return job.id
 end
 
 local function trim(s)
@@ -1884,6 +1913,10 @@ end
 -- One turn of the machine. Returns how many steps it cost -- 0 for the frame
 -- work between commands, 1 for a command or a loop iteration.
 stepOnce = function(state, job, env)
+	-- Whose turn this is, for the two commands that may ask (CeroSecOS.jobOf).
+	-- Written on every turn and for a STAGE as well as for a job, so it is never
+	-- last pass's job and never the pipeline instead of the shell in it.
+	if type(env) == "table" then env.job = job end
 	local frames = job.frames
 	local f = frames[#frames]
 	if f == nil then
@@ -2366,6 +2399,10 @@ end
 function CeroSecOS.jobInput(state, job, text, env)
 	if type(job) ~= "table" or job.state ~= "waiting" then return false end
 	if type(text) ~= "string" then text = "" end
+	-- The answer runs a command outside the walker's loop, so the job it belongs
+	-- to is named here as well (see stepOnce): `sudo sh nightly.sh` runs its `sh`
+	-- when the password comes back.
+	if type(env) == "table" then env.job = job end
 
 	-- A question a STAGE of a pipeline asked. The answer is the stage's, not the
 	-- pipeline's: the frame remembers which one asked and the stage is fed the
@@ -2507,7 +2544,11 @@ end
 -- script that will not parse never becomes a job.
 function CeroSecOS.startScript(state, session, who, path, args, line, env, needX)
 	local jobs = CeroSecOS.jobsOf(env)
-	if CeroSecOS.liveJobs(jobs) >= CeroSecOS.MAX_JOBS then
+	-- The jobs in the way, which do not include the one this `sh` is running in:
+	-- a script runs INSIDE the job that asked for it (CeroSecOS.jobRun) and asks
+	-- the machine for no second one, so counting the asker made the fourth
+	-- `./thing &` refuse itself while the fourth typed loop went through.
+	if CeroSecOS.liveJobs(jobs, CeroSecOS.askingId(env)) >= CeroSecOS.MAX_JOBS then
 		return false, { who .. ": too many jobs" }
 	end
 
@@ -2714,7 +2755,9 @@ end
 -- while it waits and Escape kills the waiting and not the jobs waited on.
 commands.wait = function(state, session, args, env)
 	local jobs = CeroSecOS.jobsOf(env)
-	if CeroSecOS.liveJobs(jobs) >= CeroSecOS.MAX_JOBS then
+	-- The asker is not one of the jobs in its way, exactly as in startScript
+	-- above: the `wait` runs in the job that typed it and asks for no other.
+	if CeroSecOS.liveJobs(jobs, CeroSecOS.askingId(env)) >= CeroSecOS.MAX_JOBS then
 		return false, { "wait: too many jobs" }
 	end
 

@@ -1167,15 +1167,14 @@ nothing else is disturbed:
   admin@ksp-04-11:~$ while true; do sleep 9; done &
   sh: too many jobs
 
-One honest wrinkle. A FILE put in the background needs its slot before it
-can open itself, so the fourth background script -- not the fourth typed
-loop, the fourth script -- refuses in the script's own name:
+Four is four whichever way the job started: a typed loop, a file behind an
+ampersand, a cron line. A script behind an ampersand runs INSIDE the job
+the machine made for it and asks for no second one, so it needs no slot of
+its own.
 
-  ./wait.sh: too many jobs
-
-Three background scripts and a prompt is the shape to plan for. It is more
-than a 1993 desk has ever needed, and if you want a fourth thing watched,
-watch two of them from one script with one loop.]],
+Four background jobs and a prompt is the shape to plan for. It is more
+than a 1993 desk has needed, and if you want a fifth thing watched, watch
+two of them from one script with one loop.]],
 
 [[How the machine shares itself out.
 
