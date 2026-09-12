@@ -1,5 +1,20 @@
 # CeroSec
 
+![CeroSec](workshop/banner.png)
+
+**THE NETWORK NEVER DIED.**
+
+A small Unix on the vanilla desktop computers of Knox County: switch one on, sit
+down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt.
+Behind it are files, permissions, accounts, an editor, shell scripts, cron, the
+doors and lights of the building under `/dev`, and three ways off the machine:
+coax to the rest of the building, a modem to the county, a radio past both. From
+scratch, vanilla Lua only, server-authoritative, Build 42.
+
+Made by Konijima.
+
+---
+
 CeroSec puts a small Unix on the vanilla desktop computers of Knox County. Right-click
 one to turn it on: the sprite lights up, the screen glows, and a green 60x20 terminal
 opens with a BIOS boot line, a login prompt and a real shell behind it — files,
@@ -103,6 +118,8 @@ Three lessons this codebase paid for and does not intend to relearn:
   layout, and coding and security rules.
 - [docs/SECURITY.md](docs/SECURITY.md) — the password hash, what root can and
   cannot undo, and what the server guarantees against a hostile script.
+- [docs/RELEASE.md](docs/RELEASE.md) — the ordered Workshop release checklist:
+  the images, the flags, the upload, the tag, the visibility.
 
 The in-game manual's own text lives in
 [`42/media/lua/shared/CeroSec/CeroSecManualUser.lua`](42/media/lua/shared/CeroSec/CeroSecManualUser.lua),
