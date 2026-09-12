@@ -328,6 +328,21 @@ function CeroSecOS.exemptOthers(state, node, kind)
 	return exempted
 end
 
+-- Is there a device anywhere in this subtree? Asked of a DISK and of nothing else:
+-- a device costs the quota nothing by design (see CeroSecOS.subtreeUsage), which is
+-- right for the machine's own /dev -- built afresh every command and swept again --
+-- and is a hole on a disk, where nothing sweeps and the nodes are saved.
+function CeroSecOS.hasDevUnder(node)
+	if type(node) ~= "table" then return false end
+	if node.type == "dev" then return true end
+	if node.children == nil then return false end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do
+		if CeroSecOS.hasDevUnder(node.children[names[i]]) then return true end
+	end
+	return false
+end
+
 -- The path of the first file in this subtree that is bigger than a file may be, or
 -- nil. Asked of a DISK and of nothing else: a node on the machine's own drive may
 -- reach HISTORY_BYTES, because a history is exempt from the quota and grows past

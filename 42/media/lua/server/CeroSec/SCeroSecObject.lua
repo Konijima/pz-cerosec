@@ -185,7 +185,36 @@ function SCeroSecObject:insertDisk(disk, fullType)
 	return true
 end
 
--- Take it out. The disk and the shell it goes back into, or nil plus the reason.
+-- What is in the drive and whether it may come out, WITHOUT taking it out. The
+-- disk and the shell it goes back into, or nil plus the reason.
+--
+-- Split from the taking-out on purpose. An eject is four things that can each
+-- refuse -- there is a disk, it may leave, there is a hand to put it in, and it
+-- will go onto the item -- and doing any of them after the disk has left the drive
+-- is how an eject ends half done: two sounds for a gesture that achieved nothing,
+-- a mount dropped for no reason, and a player told nothing at all.
+--
+-- "It may leave" is the one that is not obvious. A disk no slot would take must
+-- not go out into his hands: out there it is a disk nobody in the world will
+-- accept and no screen says why, while in the machine it is a disk `df` explains
+-- and one `rm` fixes. Nothing the write path can do makes one -- a disk is held to
+-- its ceilings at every write -- so this is the belt under that and not the rule.
+function SCeroSecObject:diskToEject()
+	local state = self:osState()
+	if state == nil then return nil, "broken" end
+	local disk = state.floppy
+	if disk == nil then return nil, "empty" end
+	local fits, why = CeroSecOS.validateDisk(disk, true)
+	if not fits then
+		CeroSec.log("the drive at " .. self.x .. "," .. self.y .. "," .. self.z
+			.. " kept the disk: " .. tostring(why))
+		return nil, why
+	end
+	return disk, CeroSec.floppyTypeOr(state.fdtype)
+end
+
+-- And now it really leaves. Called only once everything above has been answered,
+-- so from here there is nothing left that can refuse.
 --
 -- The mount goes with it, and nothing is lost by that: every write on this
 -- machine is finished by the time the command that made it answered -- there is
@@ -193,25 +222,11 @@ end
 -- bookkeeping and never a flush. That is why ejecting a mounted disk is allowed
 -- at all: on a machine with write-behind it would be how you lose a file.
 function SCeroSecObject:ejectDisk()
+	local disk, fullType = self:diskToEject()
+	if disk == nil then return nil, fullType end
 	local state = self:osState()
-	if state == nil then return nil, "broken" end
-	local disk = state.floppy
-	if disk == nil then return nil, "empty" end
-	-- A disk no slot would take does not leave the drive, and this is the only
-	-- place that can be said while the player can still do something about it: out
-	-- in his hands it is a disk nobody in the world will accept and nothing on any
-	-- screen says why; in the machine it is a disk `df` explains and one `rm`
-	-- fixes. Nothing the write path can do makes one -- a disk is held to its
-	-- ceilings at every write -- so this is the belt under that and not the rule.
-	local fits, why = CeroSecOS.validateDisk(disk, true)
-	if not fits then
-		CeroSec.log("the drive at " .. self.x .. "," .. self.y .. "," .. self.z
-			.. " kept the disk: " .. tostring(why))
-		return nil, why
-	end
 	CeroSecOS.unmountAll(state)
 	state.floppy = nil
-	local fullType = CeroSec.floppyTypeOr(state.fdtype)
 	state.fdtype = nil
 	self:mirrorOS()
 	self:publishOS()

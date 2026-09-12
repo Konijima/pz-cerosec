@@ -281,6 +281,33 @@ function CeroSecOS.validateDisk(disk, bounded)
 	end
 	if not bounded then return true end
 
+	-- Every key the disk carries, and not only its filesystem.
+	--
+	-- The ceilings below are asked of disk.fs, so anything hung on the disk beside
+	-- it was weighed by nothing at all: a megabyte under a name of its own rode
+	-- into state.floppy, into the save file and out to every client, invisible to
+	-- `df` and to `ls` and undeletable by any command. CeroSecOS.DISK_KEYS is the
+	-- whole of what a disk owns, and a key that is not one of them is a refusal and
+	-- not a value to drop quietly -- the same rule the copy runs on, for the same
+	-- reason: what it is is somebody's work, or somebody's payload, and either way
+	-- it is not ours to carry without looking at it.
+	for key in pairs(disk) do
+		local known = false
+		for i = 1, #CeroSecOS.DISK_KEYS do
+			if key == CeroSecOS.DISK_KEYS[i] then known = true end
+		end
+		if not known then return false, "floppy: unknown field" end
+	end
+
+	-- And no device. A disk has no business carrying one: `newfs` never makes one,
+	-- a device describes the world around a MACHINE, and the boot gate lets the
+	-- `null` kind through only because checkNode is shared with the machine's own
+	-- drive -- where a device costs the quota nothing on purpose. On a disk that
+	-- exemption is a hole: three thousand of them weigh nothing, count nothing, fill
+	-- no directory that `df` can see, and cost the boot gate forty milliseconds on
+	-- every command the machine runs afterwards.
+	if CeroSecOS.hasDevUnder(disk.fs) then return false, "floppy: bad type" end
+
 	local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
 	if nodes > CeroSecOS.FLOPPY_NODES then return false, "floppy: too many nodes" end
 	if bytes > CeroSecOS.FLOPPY_BYTES then return false, "floppy: disk full" end

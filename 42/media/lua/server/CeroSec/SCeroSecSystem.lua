@@ -990,30 +990,43 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 	local luaObject = self:driveFor(playerObj, x, y, z)
 	if not luaObject then return end
 
-	local disk, fullType = luaObject:ejectDisk()
-	if not disk then return end
+	-- Everything that can refuse is asked BEFORE the disk leaves the drive, so a
+	-- refusal is a gesture that did nothing rather than an eject that got half way:
+	-- the disk is still in, the mount is still up, and no sound was played for it.
+	local disk, fullType = luaObject:diskToEject()
+	if not disk then
+		-- A drive that keeps a disk says so on the machine's own glass, which is
+		-- where this machine says everything. Only that one refusal: "there is no
+		-- disk in it" is a gesture the menu should not have offered, and a machine
+		-- whose state the validator has refused has nothing to write a line on.
+		if fullType ~= "empty" and fullType ~= "broken" then
+			local console = luaObject:consoleState()
+			if console ~= nil then
+				CeroSec.consolePush(console, CeroSecOS.FD_KEPT)
+				local state = luaObject:osState()
+				if state ~= nil then self:pushScreen(luaObject, state, console) end
+			end
+		end
+		return
+	end
 
 	-- Into his hands, in the shell it went in as. The modData is written before
 	-- the item is announced to the clients, or what they would be handed is a
 	-- blank disk with the right colour on it.
 	local inv = playerObj:getInventory()
 	local item = inv:AddItem(fullType)
-	if not item then
-		-- Nowhere to put it. Rather than destroy the disk, put it back in the
-		-- drive: the survivor is carrying too much, which is a thing he can fix.
-		luaObject:insertDisk(disk, fullType)
-		return
-	end
-	-- And if the disk cannot be written onto the item after all, it goes back in
-	-- the drive with the shell it came in, exactly as it does when there is nowhere
-	-- to put it: the one thing an eject may never do is leave the disk nowhere.
+	-- Nowhere to put it: the survivor is carrying too much, which is a thing he can
+	-- fix. Nothing has happened to the machine.
+	if not item then return end
 	if not CeroSecOS.writeDiskTo(item:getModData(), disk) then
 		inv:Remove(item)
 		if isServer() then sendRemoveItemFromContainer(inv, item) end
-		luaObject:insertDisk(disk, fullType)
 		CeroSec.log("the disk would not go onto the item at " .. x .. "," .. y .. "," .. z)
 		return
 	end
+
+	-- And only now does it come out.
+	luaObject:ejectDisk()
 	if isServer() then sendAddItemToContainer(inv, item) end
 end
 

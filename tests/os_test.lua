@@ -10448,4 +10448,77 @@ do
 		CeroSecOS.DISK_COPY_DEPTH, 3 + 2 * CeroSecOS.MAX_DEPTH)
 end
 
+
+-- 47r. What "bounded" has to be able to see
+--
+-- The ceilings a slot asks about are asked of the disk's FILESYSTEM, and twice
+-- that was not the whole disk.
+--
+-- A key hung on the disk beside its filesystem was weighed by nothing at all: a
+-- megabyte under a name of its own rode into state.floppy, into the save file and
+-- out to every client, invisible to `df` and to `ls` and undeletable by any
+-- command. And a device node costs the quota nothing BY DESIGN -- which is right
+-- for the machine's own /dev, built afresh every command and swept again, and is a
+-- hole on a disk, where nothing sweeps and the nodes are saved: three thousand of
+-- them weigh nothing, count nothing, and cost the boot gate forty milliseconds on
+-- every command the machine runs afterwards.
+--
+do
+	local tiny = CeroSecOS.newDir("root", 755)
+
+	-- The three keys a disk owns, and nothing else. What it IS is somebody's work
+	-- or somebody's payload, and either way it is not ours to carry unweighed.
+	eq("a disk is its own three keys",
+		table.concat(CeroSecOS.DISK_KEYS, " "), "v fs label")
+	eq("and a fourth is a refusal",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, junk = "x" }, true)),
+		"floppy: unknown field")
+	eq("a numeric one too",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [3] = "x" }, true)),
+		"floppy: unknown field")
+	eq("and the slot is where it is asked",
+		CeroSecOS.diskFromData({ v = 1, fs = tiny, junk = string.rep("x", 100000) }), nil)
+	-- The three themselves still go in, label and all.
+	check("an honest disk is untouched by the rule",
+		CeroSecOS.diskFromData({ v = 1, fs = tiny, label = "WORK" }) ~= nil)
+	check("and one with no label", CeroSecOS.diskFromData({ v = 1, fs = tiny }) ~= nil)
+
+	-- No device on a disk. newfs never makes one, and the boot gate lets the null
+	-- kind through only because its walk is shared with the machine's own drive.
+	local devs = CeroSecOS.newDir("root", 755)
+	devs.children.null = CeroSecOS.newNull()
+	eq("a device on a disk is a refusal",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = devs }, true)), "floppy: bad type")
+	eq("at the slot", CeroSecOS.diskFromData({ v = 1, fs = devs }), nil)
+	-- However deep it is buried, and however little the ceilings can see of it.
+	local deep = CeroSecOS.newDir("root", 755)
+	local sub = CeroSecOS.newDir("root", 755)
+	sub.children.null = CeroSecOS.newNull()
+	deep.children.d = sub
+	eq("buried as deep as you like", CeroSecOS.diskFromData({ v = 1, fs = deep }), nil)
+	-- A thousand of them weigh nothing and count nothing, which is the whole reason
+	-- the rule is about the TYPE and not about the weight.
+	local many = CeroSecOS.newDir("root", 755)
+	for i = 1, 90 do many.children["n" .. i] = CeroSecOS.newNull() end
+	local nodes, bytes = CeroSecOS.subtreeUsage(many)
+	eq("ninety devices weigh nothing", bytes, 0)
+	eq("and count as nothing", nodes, 1)
+	eq("and are refused all the same",
+		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
+
+	-- And what the machine makes for itself passes, every time: a formatted disk
+	-- with the most a survivor can put on it.
+	local state = fresh()
+	local admin = open(state, "admin")
+	state.floppy = CeroSecOS.newFloppy("WORK")
+	okAt(state, admin, "newfs /dev/fd0", nil)
+	okAt(state, admin, "mount /dev/fd0 /mnt", {})
+	local block = string.rep("y", CeroSecOS.MAX_FILE_BYTES)
+	eq("the disk is filled to its ceiling",
+		CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/mnt/big", block, false, nil),
+		true)
+	eq("and the slot still takes it",
+		CeroSecOS.diskFromData(CeroSecOS.diskToData(state.floppy)) ~= nil, true)
+end
+
 print("os_test: " .. count .. " assertions passed")

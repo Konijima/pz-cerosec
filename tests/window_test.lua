@@ -5843,13 +5843,30 @@ do
 	bench.send("ejectfloppy")
 	eq("the drive kept it", bench.object:hasDisk(), true)
 	eq("and handed him nothing", #inv.items, 0)
-	check("and said nothing it did not do", not bench.heardSound("CeroSecEjectDisc"))
+	check("and made no sound it had not earned",
+		not bench.heardSound("CeroSecEjectDisc"))
+	-- Nor is it a gesture that says nothing: the machine has a screen of its own
+	-- and the drive talks on it, or the player is left with a menu entry that does
+	-- nothing for a reason he cannot reach.
+	bench.frame()
+	check("the drive said why on the glass", bench.painted(CeroSecOS.FD_KEPT))
+	-- And the mount it was under is still up: a refused eject is a gesture that did
+	-- nothing at all, not one that got half way.
+	eq("nothing was unmounted", CeroSecOS.mountTable(bench.object:osState()) ~= nil, true)
+	-- `ls` and not `cat`: the file is four thousand bytes of one character and the
+	-- machine drains its output at twenty lines a second, so a cat here would still
+	-- be printing when the next line was typed.
+	bench.enter("ls -l /mnt")
+	bench.frame()
+	check("and the disk still reads", bench.painted("4096"))
 
 	-- One rm is the way out, and then it comes out and goes back in.
+	bench.sounds = {}
 	bench.enter("rm /mnt/b")
 	bench.frame()
 	bench.send("ejectfloppy")
 	eq("now it comes out", bench.object:hasDisk(), false)
+	check("with the sound of it", bench.heardSound("CeroSecEjectDisc"))
 	eq("into his hands", #inv.items, 1)
 	eq("in the shell it was in", inv.items[1]:getFullType(), "CeroSec.FloppyRed")
 	-- And every slot in the world takes it, which is the invariant the whole of

@@ -91,6 +91,15 @@ CeroSecOS.FD_BLANK = "blank"
 CeroSecOS.FD_READY = "ready"
 CeroSecOS.FD_MOUNTED = "mounted"
 
+-- What the drive says on the glass when it will not give a disk back.
+--
+-- The refusal is a belt under a thing the write path cannot do, so it is not a
+-- sentence anybody should ever see -- and a gesture that does nothing and says
+-- nothing is the one kind of refusal a player cannot act on. The machine has a
+-- screen of its own and this is the machine talking, so it says it there, in the
+-- shape a device on this machine says everything: its own name, then why.
+CeroSecOS.FD_KEPT = "fd0: disk over its ceiling, cannot eject -- see df"
+
 -- Where a disk is mounted on a machine nobody has told otherwise. Shipped empty
 -- and root's at 755, which is what /mnt has been on every Unix that had one.
 CeroSecOS.MNT_NAME = "mnt"

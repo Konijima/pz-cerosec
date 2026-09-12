@@ -1724,7 +1724,13 @@ a disk; that is the belt under it, not the rule.
 The ceilings a disk is held to are the disk's, per file included: `MAX_FILE_BYTES`
 and not the `HISTORY_BYTES` a node on the hard drive may reach, because that larger
 number belongs to the history exemption and the exemption belongs to the hard drive
-alone. Nothing on a disk is ever exempt from anything.
+alone. Nothing on a disk is ever exempt from anything — which is also why a disk may
+carry no **device**: a device costs the quota nothing by design, and that is right
+for the machine's own `/dev`, built afresh every command and swept again, and is a
+hole on a disk where nothing sweeps and the nodes are saved. And the ceilings are
+asked of the whole disk and not only of its filesystem: `CeroSecOS.DISK_KEYS` is
+everything a disk owns, and a key that is not one of them is refused rather than
+carried unweighed.
 
 Two things stay on the hard drive whatever is mounted. A `~/.sh_history` is exempt
 from the quota because the exemption is the *drive's* — it exists so `df` on `hda`
