@@ -1498,6 +1498,62 @@ do
 	check("the machine still boots", CeroSecOS.validate(state) == true)
 end
 
+--
+-- 22. A symbolic link that points at itself (rung 6b)
+--
+-- A link is a path the walk follows, so a loop of them is the cheapest endless
+-- walk a player can write: two links pointing at each other, and one `cat`.
+-- What bounds it is MAX_LINK_HOPS, counted per resolution, and what this asks is
+-- whether a loop looked up as fast as the machine allows stays flat.
+--
+
+do
+	local machine, state, console = newMachine()
+	local root = CeroSecOS.rootSession()
+	-- The worst shape there is: a chain as long as the ceiling allows, ending in a
+	-- link back to its own front, so every lookup walks the whole way before it
+	-- gives up.
+	local names = {}
+	for i = 1, CeroSecOS.MAX_LINK_HOPS do names[i] = "/home/admin/L" .. i end
+	for i = 1, #names do
+		local target = names[i + 1] or names[1]
+		local made, why = CeroSecOS.createNode(state, root, names[i],
+			CeroSecOS.newLink("admin", target), 100)
+		if made == nil then error("cannot make " .. names[i] .. ": " .. tostring(why)) end
+	end
+
+	-- The bound itself: the resolution ends, with the reason, and not after some
+	-- number of hops that depends on how the loop was drawn.
+	local node, reason = CeroSecOS.getNode(state, system:sessionOf(console), names[1])
+	eq("the walk gives up", node, nil)
+	eq("and says which ceiling it met", reason, "too many levels of symbolic links")
+
+	put(state, "/home/admin/loop.sh", "while true; do cat /home/admin/L1; done\n")
+	local job = typeLine(system, machine, state, console, "sh loop.sh")
+
+	local result = drive(machine, PASSES)
+	flat("symlink loop", result)
+	timely("symlink loop", result)
+	note("symlink loop", result)
+
+	check("it is still running", job ~= nil and not CeroSecOS.jobIsOver(job))
+	check("saying the same thing every time round",
+		string.find(console.lines[#console.lines] or "", "too many levels", 1, true) ~= nil)
+	check("the console never kept more than its hundred lines",
+		#console.lines <= CeroSec.CONSOLE_MAX)
+	check("the machine still boots with the loop on its disk",
+		CeroSecOS.validate(state) == true)
+
+	-- And a link that points at a path DEEPER than the machine can address is the
+	-- other way a walk could have run away: it says so instead.
+	local deep = "/" .. string.rep("d/", CeroSecOS.MAX_DEPTH) .. "d"
+	local made = CeroSecOS.createNode(state, root, "/home/admin/deep",
+		CeroSecOS.newLink("admin", deep), 100)
+	check("the deep link was made", made ~= nil)
+	local _, why = CeroSecOS.getNode(state, system:sessionOf(console), "/home/admin/deep")
+	eq("and following it is refused by the depth ceiling", why, "path too deep")
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

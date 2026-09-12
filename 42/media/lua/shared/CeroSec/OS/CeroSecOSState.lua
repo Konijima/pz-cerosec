@@ -125,6 +125,22 @@ local function checkNode(node, where, depth, tally)
 		return true
 	end
 
+	-- A symbolic link: a path, as text, and never empty. An empty one would be a
+	-- link the walk resolves to the directory it sits in, which is not a thing a
+	-- link can mean, and `ln` refuses to make one -- so a state carrying one came
+	-- from somewhere nobody can name and is not something to run on.
+	if node.type == "link" then
+		if type(node.target) ~= "string" then return false, where .. ": bad target" end
+		if node.target == "" then return false, where .. ": bad target" end
+		if #node.target > CeroSecOS.MAX_LINK_BYTES then
+			return false, where .. ": target too long"
+		end
+		if CeroSecOS.hasControlBytes(node.target) then
+			return false, where .. ": invalid characters"
+		end
+		return true
+	end
+
 	if node.type ~= "dir" then return false, where .. ": bad type" end
 	if type(node.children) ~= "table" then return false, where .. ": bad children" end
 	local names = CeroSecOS.childNames(node)

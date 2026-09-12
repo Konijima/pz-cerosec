@@ -10,6 +10,20 @@
 --            children = { [name] = node } }
 --   file = { type = "file", owner = "admin", group = "users", mode = 640,
 --            data = "text" }
+--   link = { type = "link", owner = "admin", group = "admin", mode = 777,
+--            target = "../notes.txt" }
+--
+-- A link holds a PATH, exactly as it was typed, and nothing else: it is followed
+-- by getNode below and by nothing else in the whole engine, so no command has to
+-- know about one. Its own mode is 777 and means nothing -- what is asked of a
+-- link is asked of what it points at, which is what a symbolic link is -- and a
+-- link that points nowhere is an ordinary "no such file" on use and a line of its
+-- own in `ls -l`. There are no HARD links on this machine: two names for one node
+-- would be one table under two keys, and the game copies the state table by
+-- recursion (ISMoveableSpriteProps' copyTable, and the save file itself), so the
+-- second name would become a second FILE the first time somebody picked the
+-- computer up. A link that quietly stops being a link is worse than no hard
+-- links, so `ln` makes symbolic ones and says so.
 --
 -- The group is what the middle digit of the mode is about, and a node that has
 -- none reads as its owner's own name -- every node of every machine saved before
@@ -45,6 +59,17 @@ local BITS = { r = 4, w = 2, x = 1 }
 function CeroSecOS.newDir(owner, mode, mtime)
 	local who = owner or "root"
 	local node = { type = "dir", owner = who, group = who, mode = mode or 755, children = {} }
+	if mtime ~= nil then node.mtime = mtime end
+	return node
+end
+
+-- A symbolic link. Always 777: the bits on a link are not read by anything, here
+-- or on a real machine, and writing them as anything else would invite somebody
+-- to believe they were.
+function CeroSecOS.newLink(owner, target, mtime)
+	local who = owner or "root"
+	local node =
+		{ type = "link", owner = who, group = who, mode = 777, target = target or "" }
 	if mtime ~= nil then node.mtime = mtime end
 	return node
 end
@@ -95,6 +120,8 @@ function CeroSecOS.permString(node)
 		s = "d"
 	elseif node.type == "dev" then
 		s = "c"
+	elseif node.type == "link" then
+		s = "l"
 	end
 	local mode = node.mode or 0
 	local digits = { math.floor(mode / 100) % 10, math.floor(mode / 10) % 10, mode % 10 }
@@ -112,7 +139,12 @@ end
 -- so a device never comes back as "is a directory".
 function CeroSecOS.notAFile(node)
 	if CeroSecOS.isDev(node) then return "is a device" end
+	if CeroSecOS.isLink(node) then return "is a link" end
 	return "is a directory"
+end
+
+function CeroSecOS.isLink(node)
+	return type(node) == "table" and node.type == "link"
 end
 
 -- Sorted child names. pairs() order is not defined, and the core must be
@@ -148,6 +180,10 @@ function CeroSecOS.subtreeUsage(node)
 	local nodes, bytes = 1, 0
 	if node.type == "file" then
 		bytes = #(node.data or "")
+	elseif node.type == "link" then
+		-- The path it holds is bytes on the disk like any others: a link is a node
+		-- and what is written in it is what it costs.
+		bytes = #(node.target or "")
 	elseif node.children ~= nil then
 		local names = CeroSecOS.childNames(node)
 		for i = 1, #names do
@@ -225,6 +261,11 @@ end
 local function walkUsage(node, path, exempt, budget, ignore)
 	if type(node) ~= "table" or node.type == "dev" then return 0, 0, 0 end
 	if node == ignore then return 1, 0, 0 end
+	if node.type == "link" then
+		-- Never exempt: the exemption is for what the MACHINE writes about itself,
+		-- and a link is something somebody made.
+		return 1, #(node.target or ""), 0
+	end
 	if node.type == "file" then
 		local size = #(node.data or "")
 		local rule = exempt[path]
@@ -287,6 +328,7 @@ end
 -- rung), so the check cannot stop at the node itself.
 function CeroSecOS.subtreeHasControlBytes(node)
 	if node.type == "file" then return CeroSecOS.hasControlBytes(node.data or "") end
+	if node.type == "link" then return CeroSecOS.hasControlBytes(node.target or "") end
 	if node.children == nil then return false end
 	local names = CeroSecOS.childNames(node)
 	for i = 1, #names do
@@ -314,15 +356,57 @@ end
 -- node, reason, absolute path. Traversing a directory needs x on it; the last
 -- component itself is not tested, so getNode("/root") succeeds for admin and
 -- it is cd that refuses to enter.
-function CeroSecOS.getNode(state, session, path)
+--
+-- Symbolic links are followed HERE and nowhere else in the engine, which is why
+-- no command had to learn about them: a link in the middle of a path is the
+-- directory it names, and a link at the end of one is the file it names. The path
+-- that comes back is still the path as it was TYPED -- the logical one, the way
+-- `cd` keeps it and every shell prints it -- and never where the links landed.
+--
+-- noFollow leaves the LAST component alone, which is the difference between stat
+-- and lstat and the difference between reading a link's target and reading the
+-- file it points at. The commands that act on the link itself -- ls -l, rm, mv,
+-- readlink -- ask for it; everything else follows, the way everything else on a
+-- real machine does.
+--
+-- The walk is bounded twice: MAX_LINK_HOPS links in one resolution, and
+-- MAX_DEPTH components once a target has been hung on the front of what is left.
+-- So a link that points at itself costs eight hops and then says so, and a pair
+-- that point at each other costs the same -- there is no path through here that
+-- does not end.
+function CeroSecOS.getNode(state, session, path, noFollow)
 	local abs, parts = CeroSecOS.resolve(session, path)
 	local node = state.fs
-	for i = 1, #parts do
+	local hops = 0
+	local i = 1
+	while i <= #parts do
 		if node.type ~= "dir" then return nil, "not a directory", abs end
 		if not CeroSecOS.can(state, session, node, "x") then return nil, "permission denied", abs end
 		local child = node.children[parts[i]]
 		if child == nil then return nil, "no such file", abs end
-		node = child
+		if child.type == "link" and not (noFollow and i == #parts) then
+			hops = hops + 1
+			if hops > CeroSecOS.MAX_LINK_HOPS then
+				return nil, "too many levels of symbolic links", abs
+			end
+			-- The target is read from where the LINK is, so a relative one means
+			-- what it says: "notes.txt" beside the link, "../notes.txt" above it.
+			-- Whatever was still to walk is hung back on the end, and the walk
+			-- starts again from the root -- which is what makes a link to a
+			-- directory a directory for the rest of the path.
+			local here = {}
+			for k = 1, i - 1 do here[k] = parts[k] end
+			local _, walk = CeroSecOS.resolve({ cwd = "/" .. table.concat(here, "/") },
+				child.target or "")
+			for k = i + 1, #parts do walk[#walk + 1] = parts[k] end
+			if #walk > CeroSecOS.MAX_DEPTH then return nil, "path too deep", abs end
+			parts = walk
+			node = state.fs
+			i = 1
+		else
+			node = child
+			i = i + 1
+		end
 	end
 	return node, nil, abs
 end
@@ -434,7 +518,10 @@ function CeroSecOS.removeNode(state, session, path, recursive, now)
 	local abs, parts = CeroSecOS.resolve(session, path)
 	if #parts == 0 then return nil, "permission denied" end
 
-	local node, reason = CeroSecOS.getNode(state, session, abs)
+	-- The link and not what it points at: `rm` takes away the name it was given,
+	-- which for a symbolic link is the link. Deleting what a link points at is
+	-- done by naming that.
+	local node, reason = CeroSecOS.getNode(state, session, abs, true)
 	if node == nil then return nil, reason end
 	-- A device is not the machine's to take away: unplugging a light switch is
 	-- done with a screwdriver, standing in front of it.
@@ -492,7 +579,10 @@ function CeroSecOS.moveNode(state, session, fromPath, toPath, now)
 	local toAbs, toParts = CeroSecOS.resolve(session, toPath)
 	if #fromParts == 0 then return nil, "permission denied" end
 
-	local node, reason = CeroSecOS.getNode(state, session, fromAbs)
+	-- The link and not its target, exactly as with a removal: moving a link moves
+	-- the link, and a relative target now means something else, which is what it
+	-- means on every machine that has ever had them.
+	local node, reason = CeroSecOS.getNode(state, session, fromAbs, true)
 	if node == nil then return nil, reason end
 	if CeroSecOS.isDev(node) then return nil, "is a device" end
 	if CeroSecOS.isInside(toAbs, fromAbs) then return nil, "invalid destination" end
@@ -522,6 +612,13 @@ end
 function CeroSecOS.copyNode(node, owner)
 	if node.type == "file" then
 		return CeroSecOS.newFile(owner or node.owner, node.mode, node.data)
+	end
+	-- A link inside a copied tree is copied AS A LINK, which is what cp -R does:
+	-- following one would be a copy that walks out of the tree it was given, and
+	-- a link to an ancestor would be a copy with no end to it. A link named on the
+	-- line is a different question and is followed (see commands.cp).
+	if node.type == "link" then
+		return CeroSecOS.newLink(owner or node.owner, node.target)
 	end
 	local copy = CeroSecOS.newDir(owner or node.owner, node.mode)
 	local names = CeroSecOS.childNames(node)

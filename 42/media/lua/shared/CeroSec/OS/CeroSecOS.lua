@@ -80,6 +80,22 @@ CeroSecOS.DISK_BYTES = 32768
 CeroSecOS.MAX_TOTAL_BYTES = CeroSecOS.DISK_BYTES -- sum of every file's data
 CeroSecOS.MAX_DEPTH = 16         -- path components below /
 
+-- A symbolic link holds a PATH, so how long one may be is what a path may be on
+-- this machine: every component at its own ceiling, sixteen of them, and a
+-- separator in front of each. Derived and never eyeballed -- a link that could
+-- hold more than the filesystem can address would be a link that cannot be
+-- followed, and one that could hold less would refuse a path the machine allows.
+CeroSecOS.MAX_LINK_BYTES = CeroSecOS.MAX_DEPTH * (CeroSecOS.MAX_NAME + 1)
+
+-- How many symbolic links one path may go through before the machine gives up.
+--
+-- Eight, which is what the Unix these machines are from uses (MAXSYMLINKS), and
+-- it is counted per RESOLUTION and not per component: a link to a link to a link
+-- is three of them, and a link that points at itself is eight and then
+-- "too many levels of symbolic links". That is what makes a loop cost a bounded
+-- number of steps instead of hanging the machine.
+CeroSecOS.MAX_LINK_HOPS = 8
+
 -- What the disk quota does not count is bounded twice over -- once per file and
 -- once for the whole machine -- and both of those numbers are sums of the three
 -- ceilings involved (the history, a mailbox, the cron log). They are written

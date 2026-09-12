@@ -675,8 +675,8 @@ whichever runs out first, one line for each of the two:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         32768   2028  30740    7%
-  nodes         256     83    173   33%]],
+  hda         32768   2075  30693    7%
+  nodes         256     85    171   34%]],
 
 [[grep looks for a plain string inside one or more files, one line per
 match, the file's name in front of it when there is more than one file to
@@ -1794,6 +1794,7 @@ itself.
   jobs
   kill <id>|%<n>
   last [name]
+  ln -s <target> <name>
   ls [-laAF] [path]
   mail
   man <command>
@@ -1804,6 +1805,7 @@ itself.
   printf <format> [arg...]
   ps
   pwd
+  readlink <name>
   rcp <src> <dst>, one of them <host>:<path>
   reboot
   restart

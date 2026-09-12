@@ -500,6 +500,27 @@ end
 -- screen should be asked to hold.
 local L_OWNER, L_GROUP, L_SIZE, L_NAME = 6, 6, 5, 12
 
+-- A link's own long line. It says what it points AT, because that is the whole of
+-- what a link is: the size and the date of one are the length of the path in it
+-- and the moment it was made, and neither is anything a player is looking for.
+-- The columns in front of it are the ordinary ones, so a listing still lines up.
+--
+--   lrwxrwxrwx  admin  admin  notes -> ../notes.txt
+--
+-- 10 perm + 2 + 6 owner + 1 + 6 group + 2 = 27, which leaves 33 for the pair. The
+-- longest a target may be is far more than that, so it is the TARGET that is cut
+-- and the name is kept whole: the name is what a player typed.
+local L_LINK = CeroSecOS.COLS - (10 + 2 + L_OWNER + 1 + L_GROUP + 2)
+
+local function linkLine(node, name)
+	local head = CeroSecOS.permString(node)
+		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(node.owner or "?", L_OWNER), L_OWNER)
+		.. " " .. CeroSecOS.padRight(
+			CeroSecOS.truncate(CeroSecOS.groupOf(node), L_GROUP), L_GROUP)
+		.. "  "
+	return head .. CeroSecOS.truncate(name .. " -> " .. (node.target or ""), L_LINK)
+end
+
 local function longLine(node, name)
 	local size
 	if node.type == "dir" then
@@ -620,6 +641,9 @@ CeroSecOS.COMMAND_INFO = {
 	jobs     = { desc = "list the machine's jobs", usage = "jobs", shell = true },
 	kill     = { desc = "stop a job", usage = "kill <id>|%<n>" },
 	last     = { desc = "list the logins on this machine", usage = "last [name]" },
+	-- Symbolic only, and the usage line says so: see the note above
+	-- CeroSecOS.newLink for why this machine has no hard links.
+	ln       = { desc = "make a symbolic link", usage = "ln -s <target> <name>" },
 	ls       = { desc = "list a directory", usage = "ls [-laAF] [path]" },
 	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
@@ -632,6 +656,7 @@ CeroSecOS.COMMAND_INFO = {
 	ping     = { desc = "see whether a machine answers", usage = "ping <host|address>" },
 	printf   = { desc = "print a formatted string", usage = "printf <format> [arg...]" },
 	ps       = { desc = "list the machine's jobs and their cpu", usage = "ps" },
+	readlink = { desc = "print what a link points at", usage = "readlink <name>" },
 	rcp      = { desc = "copy a file to or from another machine",
 		usage = "rcp <src> <dst>, one of them <host>:<path>" },
 	rlogin   = { desc = "log in on another machine", usage = "rlogin <host> [-l user]" },
@@ -897,7 +922,11 @@ commands.ls = function(state, session, args, env)
 
 	local shown = path
 	if shown == nil then shown = "." end
-	local node, reason = CeroSecOS.getNode(state, session, path)
+	-- A link NAMED on the line is followed, so `ls linkdir` lists the directory it
+	-- points at -- and `ls -l linkdir` describes the link instead, because that is
+	-- what a long listing of a link is for. Every other ls draws the same
+	-- distinction, and the children of a directory are never followed at all.
+	local node, reason = CeroSecOS.getNode(state, session, path, long)
 	if node == nil then return fail("ls", shown, reason) end
 
 	if node.type ~= "dir" then
@@ -907,8 +936,10 @@ commands.ls = function(state, session, args, env)
 		if node.dead then return fail("ls", shown, "no such file") end
 		if long then
 			if CeroSecOS.isDev(node) then return true, { CeroSecOS.devLine(node) } end
+			if CeroSecOS.isLink(node) then return true, { linkLine(node, name) } end
 			return true, { longLine(node, name) }
 		end
+		if classify and CeroSecOS.isLink(node) then name = name .. "@" end
 		return true, { CeroSecOS.truncate(name, CeroSecOS.COLS) }
 	end
 	if not CeroSecOS.can(state, session, node, "r") then return fail("ls", shown, "permission denied") end
@@ -934,11 +965,17 @@ commands.ls = function(state, session, args, env)
 		local child = entries[i].node
 		local label = entries[i].name
 		if classify and child.type == "dir" then label = label .. "/" end
+		-- A link wears "@", the way it has since 4.2BSD: it is not a directory and
+		-- it is not an ordinary file, and which of the two it POINTS at is not
+		-- something a one-character mark should be asked to say.
+		if classify and CeroSecOS.isLink(child) then label = label .. "@" end
 		if long then
 			-- A device has no size and no date; what stands in those columns is
 			-- what it is and what it is doing (CeroSecOS.devLine).
 			if CeroSecOS.isDev(child) then
 				out[#out + 1] = CeroSecOS.devLine(child)
+			elseif CeroSecOS.isLink(child) then
+				out[#out + 1] = linkLine(child, label)
 			else
 				out[#out + 1] = longLine(child, label)
 			end
@@ -1332,6 +1369,71 @@ commands.cp = function(state, session, args, env)
 		CeroSecOS.createNode(state, session, target, copy, CeroSecOS.clockOf(env))
 	if created == nil then return fail("cp", target, creason) end
 	return true, {}
+end
+
+--
+-- ln, readlink
+--
+-- Symbolic links, and only those: see the note above CeroSecOS.newLink for why a
+-- machine whose state is copied by recursion cannot carry a hard one.
+--
+--   admin@ksp-04-11:~$ ln -s /var/log/cron log
+--   admin@ksp-04-11:~$ cat log
+--   admin@ksp-04-11:~$ readlink log
+--   /var/log/cron
+--
+-- The target is kept exactly as it was typed, and it is NOT checked: a link to a
+-- file that does not exist yet is a link somebody meant to make -- the machine
+-- says "no such file" the moment it is used, which is the honest answer and the
+-- one every Unix gives. What is checked is what a link IS: a path this machine
+-- could address at all, and printable like everything else it stores.
+commands.ln = function(state, session, args, env)
+	local symbolic, paths = false, {}
+	for i = 2, #args do
+		local a = args[i]
+		if #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				if string.sub(a, c, c) ~= "s" then return fail("ln", a, "unknown option") end
+			end
+			symbolic = true
+		else
+			paths[#paths + 1] = a
+		end
+	end
+	-- Without -s there is nothing this machine could make, so the usage line is
+	-- the whole answer: it names the flag that is missing.
+	if not symbolic or #paths ~= 2 then return usage("ln") end
+	local target, name = paths[1], paths[2]
+	if target == "" then return fail("ln", name, "invalid name") end
+	if #target > CeroSecOS.MAX_LINK_BYTES then return fail("ln", name, "file too large") end
+
+	-- A directory named as the second argument takes the link INSIDE it, under the
+	-- target's own last component, the way `ln -s /bin/ls .` has always worked.
+	-- Judged on the name as typed, because that is what the link will hold.
+	local dstNode = CeroSecOS.getNode(state, session, name)
+	if dstNode ~= nil and dstNode.type == "dir" then
+		local _, parts = CeroSecOS.resolve(nil, target)
+		if #parts == 0 then return fail("ln", name, "invalid name") end
+		name = name .. "/" .. parts[#parts]
+	end
+
+	if underDev(session, name) then return devReadOnly() end
+	local link = CeroSecOS.newLink(CeroSecOS.userOf(session), target)
+	local made, reason = CeroSecOS.createNode(state, session, name, link, CeroSecOS.clockOf(env))
+	if made == nil then return fail("ln", name, reason) end
+	return true, {}
+end
+
+-- readlink: what the link holds, as it was typed. Nothing at all for a name that
+-- is not a link, and unsuccessful with it -- the same silence `which` keeps about
+-- a command it cannot find, and for the same reason: it is a question, and the
+-- answer to "what does this point at" for a file is not a sentence.
+commands.readlink = function(state, session, args, env)
+	if #args ~= 2 then return usage("readlink") end
+	local node, reason = CeroSecOS.getNode(state, session, args[2], true)
+	if node == nil then return fail("readlink", args[2], reason) end
+	if not CeroSecOS.isLink(node) then return false, {} end
+	return true, { node.target or "" }
 end
 
 -- chmod. An octal mode, or a symbolic one applied to the mode the file already
@@ -2763,7 +2865,14 @@ end
 -- The third answer is how many directories were actually looked in, which is
 -- what the walk COST: the shell charges it (see CeroSecOSVM.runSimple), because a
 -- long PATH makes every command on the machine dearer and a budget that could not
--- see that would not be a budget.
+-- see that would not be a budget. The fourth says whether what answered was a
+-- symbolic LINK, which the caller needs because a link in /bin is not one of the
+-- machine's own executables -- it is a name for somebody's file.
+--
+-- Each candidate is looked at without following the last component, so the link
+-- can be told from what it points at; a link is then followed once, to judge x
+-- and the type on the FILE, which is where a symbolic link's permissions have
+-- always lived. A link that points nowhere is nothing there, and the walk goes on.
 --
 -- At most MAX_PATH_DIRS of them. A PATH with more in it is refused where it is
 -- set, so the only way to reach this bound is a value off a save file; what is
@@ -2775,7 +2884,10 @@ function CeroSecOS.lookupPath(state, session, name, path)
 	local last = #dirs
 	if last > CeroSecOS.MAX_PATH_DIRS then last = CeroSecOS.MAX_PATH_DIRS end
 	for i = 1, last do
-		local node, reason, abs = CeroSecOS.getNode(state, session, dirs[i] .. "/" .. name)
+		local candidate = dirs[i] .. "/" .. name
+		local node, reason, abs = CeroSecOS.getNode(state, session, candidate, true)
+		local link = CeroSecOS.isLink(node)
+		if link then node, reason = CeroSecOS.getNode(state, session, candidate) end
 		if node == nil then
 			-- Nothing there, a PATH entry that is not a directory, a PATH entry
 			-- shut to this account: none of the three stops the walk, and the
@@ -2789,7 +2901,7 @@ function CeroSecOS.lookupPath(state, session, name, path)
 			-- on it is, and saying "is a directory" about a name the player never
 			-- typed as a path would only puzzle him.
 		elseif CeroSecOS.can(state, session, node, "x") then
-			return abs, nil, i
+			return abs, nil, i, link
 		else
 			refusal = "permission denied"
 		end
@@ -2805,6 +2917,16 @@ function CeroSecOS.whyNotRun(state, session, name, path)
 	local found, refusal, walked = CeroSecOS.lookupPath(state, session, name, path)
 	if found == nil then return refusal, nil, walked end
 	return nil, found, walked
+end
+
+-- Is what answered for this name one of the MACHINE's own executables? Only a
+-- file that really lies in /bin is: a link there is a name somebody made for a
+-- file of his own, and what runs is that file. Written once, because the walker
+-- and the shell both ask it.
+local function isSystemBin(found, link)
+	if link then return false end
+	local _, parts = CeroSecOS.resolve(nil, found)
+	return CeroSecOS.parentOf(parts) == CeroSecOS.BIN_PATH
 end
 
 --
@@ -3030,7 +3152,8 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 	if CeroSecOS.BUILTINS[name] then
 		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 	else
-		local found, refusal, walked = CeroSecOS.lookupPath(state, session, name, path)
+		local found, refusal, walked, link =
+			CeroSecOS.lookupPath(state, session, name, path)
 		-- What the walk cost, back into the table the shell handed down: the
 		-- walker charges it, and a caller that gave no table is a caller that is
 		-- not charging anything either.
@@ -3038,13 +3161,12 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		if found == nil then return false, CeroSecOS.fit({ name .. ": " .. refusal }) end
 		-- WHICH file answered decides what runs. One in /bin is the machine's own
 		-- executable and the engine is what is behind it -- a file there with no
-		-- command behind it is not a command, exactly as it never was. One found
-		-- anywhere else is a file, and a file that is run is a script: that is
-		-- what makes ~/bin an account's own commands, and what lets a name there
-		-- shadow the one in /bin when PATH names it first, which is the whole
-		-- point of a PATH.
-		local _, parts = CeroSecOS.resolve(nil, found)
-		if CeroSecOS.parentOf(parts) ~= CeroSecOS.BIN_PATH then
+		-- command behind it is not a command, exactly as it never was. Anything
+		-- else is a file, and a file that is run is a script: that is what makes
+		-- ~/bin an account's own commands, what lets a name there shadow the one in
+		-- /bin when PATH names it first, and what makes `ln -s` into /bin a way to
+		-- give everybody a command of your own.
+		if not isSystemBin(found, link) then
 			local rest = {}
 			for i = 2, #args do rest[#rest + 1] = args[i] end
 			local ok, lines, control, data = CeroSecOS.startScript(state, session, found, found,

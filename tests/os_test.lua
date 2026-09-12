@@ -6723,8 +6723,9 @@ do
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ adduser cat chgrp chmod chown clear cp crontab date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
-		.. " help hostname id ifconfig kill last ls mail man mkdir mv passwd ping"
-		.. " printf ps pwd rcp reboot restart rlogin rm rsh ruptime rwho sh shutdown"
+		.. " help hostname id ifconfig kill last ln ls mail man mkdir mv passwd ping"
+		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"
+		.. " sh shutdown"
 		.. " sleep sort su sudo tail test touch true uniq wc which who whoami write"
 
 	eq("/bin holds exactly these",
@@ -6906,9 +6907,9 @@ do
 	--
 	completes(state, admin, "ls", "ls ", 1)
 	offers(state, admin, "ls", "ls")
-	-- Two of them share a letter and nothing more, so the line does not move.
+	-- Three of them share a letter and nothing more, so the line does not move.
 	completes(state, admin, "l", "l", 1)
-	offers(state, admin, "l", "last ls")
+	offers(state, admin, "l", "last ln ls")
 	-- Unique, and the space says so: a command name is finished when it is found.
 	completes(state, admin, "whoa", "whoami ", 1)
 	-- A whole command name that is also the start of another is a prefix and not
@@ -8628,6 +8629,268 @@ do
 	eq("a script starts with the default PATH", run.out[1], CeroSecOS.DEFAULT_PATH)
 	eq("so the command the prompt found is not found in a script", run.out[2],
 		"hello: command not found")
+end
+
+--
+-- 44. Symbolic links (rung 6b)
+--
+-- A link is a node holding a PATH. getNode follows one and nothing else in the
+-- engine does, so what is tested here is that every command inherited the right
+-- behaviour: the ones that act on the FILE follow, and the four that act on the
+-- LINK -- ls -l, rm, mv, readlink -- do not.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	ok(state, admin, 'write notes.txt "hello there"', {})
+	ok(state, admin, "ln -s notes.txt link", {})
+
+	-- The node itself: a path, as typed, and 777 that means nothing.
+	local link = CeroSecOS.getNode(state, admin, "/home/admin/link", true)
+	eq("it is a link", link.type, "link")
+	eq("it holds the target as it was typed", link.target, "notes.txt")
+	eq("its mode is 777", link.mode, 777)
+	eq("and it is the account's own", link.owner, "admin")
+	check("the state still validates", CeroSecOS.validate(state) == true)
+
+	-- Reading through it is reading the file.
+	ok(state, admin, "cat link", { "hello there" })
+	ok(state, admin, "readlink link", { "notes.txt" })
+	-- A name that is not a link is not an error and is not an answer either.
+	local silent = expect(state, admin, "readlink notes.txt", false, {})
+	eq("readlink says nothing about a file", #silent, 0)
+	badAt(state, admin, "readlink nosuch", "readlink: nosuch: no such file")
+
+	-- What ls says about one.
+	local long = okAt(state, admin, "ls -l link")
+	eq("ls -l describes the link and not the file", long[1],
+		"lrwxrwxrwx  admin  admin   link -> notes.txt")
+	eq("and it fits the screen", #long[1] <= CeroSecOS.COLS, true)
+	local marked = okAt(state, admin, "ls -F")
+	check("ls -F marks it with an at-sign",
+		string.find(marked[1], "link@", 1, true) ~= nil)
+
+	-- Writing through it writes the file, and the link is untouched.
+	ok(state, admin, 'write link "written through"', {})
+	ok(state, admin, "cat notes.txt", { "written through" })
+	eq("the link is still a link",
+		CeroSecOS.getNode(state, admin, "/home/admin/link", true).type, "link")
+
+	-- Copying one copies what it POINTS at, which is POSIX's cp.
+	ok(state, admin, "cp link copy", {})
+	eq("the copy is a file",
+		CeroSecOS.getNode(state, admin, "/home/admin/copy", true).type, "file")
+	ok(state, admin, "cat copy", { "written through" })
+
+	-- Moving one moves the LINK.
+	ok(state, admin, "mv link moved", {})
+	ok(state, admin, "readlink moved", { "notes.txt" })
+	check("and nothing happened to the file",
+		CeroSecOS.getNode(state, admin, "/home/admin/notes.txt") ~= nil)
+
+	-- Removing one removes the LINK.
+	ok(state, admin, "rm moved", {})
+	eq("the link is gone", CeroSecOS.getNode(state, admin, "/home/admin/moved"), nil)
+	check("and the file it pointed at is not",
+		CeroSecOS.getNode(state, admin, "/home/admin/notes.txt") ~= nil)
+end
+
+-- A link to a directory is a directory for everything that walks through it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "mkdir papers", {})
+	ok(state, admin, 'write papers/one.txt "first"', {})
+	ok(state, admin, "ln -s papers p", {})
+
+	ok(state, admin, "cat p/one.txt", { "first" })
+	ok(state, admin, "ls p", { "one.txt" })
+	-- Named on the line with -l it is the link that is described; without -l the
+	-- directory it points at is listed, which is what every ls does.
+	local shown = okAt(state, admin, "ls -l p")
+	eq("ls -l p describes the link", shown[1], "lrwxrwxrwx  admin  admin   p -> papers")
+	-- `cd` through one keeps the path as it was typed, the way a shell does.
+	ok(state, admin, "cd p", {})
+	ok(state, admin, "pwd", { "/home/admin/p" })
+	ok(state, admin, "cd ..", {})
+	ok(state, admin, "pwd", { "/home/admin" })
+	-- And a write through it lands in the real directory.
+	ok(state, admin, 'write p/two.txt "second"', {})
+	ok(state, admin, "ls papers", { "one.txt  two.txt" })
+end
+
+-- A link that points nowhere, and links that point at each other.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "ln -s nowhere dangle", {})
+	-- Making one is allowed: a link to a file that is not there yet is a link
+	-- somebody meant to make, and it says so the moment it is used.
+	badAt(state, admin, "cat dangle", "cat: dangle: no such file")
+	badAt(state, admin, "cd dangle", "cd: dangle: no such file")
+	ok(state, admin, "readlink dangle", { "nowhere" })
+	local shown = okAt(state, admin, "ls -l dangle")
+	eq("ls -l still describes it", shown[1],
+		"lrwxrwxrwx  admin  admin   dangle -> nowhere")
+	ok(state, admin, "rm dangle", {})
+
+	-- A loop costs the hop ceiling and then says which ceiling it met.
+	ok(state, admin, "ln -s b a", {})
+	ok(state, admin, "ln -s a b", {})
+	badAt(state, admin, "cat a", "cat: a: too many levels of symbolic links")
+	badAt(state, admin, "ls -l a/x", "ls: a/x: too many levels of symbolic links")
+	-- A link to itself is the same answer.
+	ok(state, admin, "ln -s self self", {})
+	badAt(state, admin, "cat self", "cat: self: too many levels of symbolic links")
+	-- ...and the LINKS are still readable, which is what lets somebody fix it.
+	ok(state, admin, "readlink a", { "b" })
+	ok(state, admin, "rm a", {})
+	badAt(state, admin, "cat b", "cat: b: no such file")
+
+	-- A chain shorter than the ceiling is followed all the way.
+	local names = {}
+	-- Exactly the ceiling's worth of links, so the last one is the last hop that
+	-- is allowed and the one hung in front of it is one too many.
+	for i = 1, CeroSecOS.MAX_LINK_HOPS do names[i] = "h" .. i end
+	ok(state, admin, 'write end.txt "the end"', {})
+	ok(state, admin, "ln -s end.txt " .. names[1], {})
+	for i = 2, #names do
+		ok(state, admin, "ln -s " .. names[i - 1] .. " " .. names[i], {})
+	end
+	ok(state, admin, "cat " .. names[#names], { "the end" })
+	-- One more hop than the ceiling and it stops.
+	ok(state, admin, "ln -s " .. names[#names] .. " over", {})
+	badAt(state, admin, "cat over", "cat: over: too many levels of symbolic links")
+end
+
+-- The permissions are the TARGET's: a link is a name and grants nothing.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob")
+	CeroSecOS.createNode(state, root, "/home/bob", CeroSecOS.newDir("bob", 750), nil)
+
+	put(state, root, "/root/secret.txt", "the code is 1234")
+	-- A link anybody may read, to a file only root may.
+	ok(state, root, "ln -s /root/secret.txt /home/bob/peek", {})
+	local seen = CeroSecOS.getNode(state, bob, "/home/bob/peek", true)
+	eq("bob can see the link itself", seen.type, "link")
+	ok(state, bob, "readlink /home/bob/peek", { "/root/secret.txt" })
+	-- ...and it buys him nothing at all: /root is 700.
+	badAt(state, bob, "cat /home/bob/peek", "cat: /home/bob/peek: permission denied")
+	ok(state, root, "cat /home/bob/peek", { "the code is 1234" })
+end
+
+-- A link in /bin is a command for everybody who may run what it points at.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob")
+
+	-- admin's own script, readable and executable by everybody, in a directory
+	-- everybody may walk through -- his home included, which ships at 750: a link
+	-- grants nothing, so every directory on the way to the target has to let the
+	-- other account through or the command is his alone.
+	ok(state, root, "chmod 755 /home/admin", {})
+	CeroSecOS.createNode(state, root, "/home/admin/tools", CeroSecOS.newDir("admin", 755), nil)
+	put(state, admin, "/home/admin/tools/hello", "echo hello from the tools")
+	local script = CeroSecOS.getNode(state, admin, "/home/admin/tools/hello")
+	script.mode = 755
+	ok(state, root, "ln -s /home/admin/tools/hello /bin/hello", {})
+
+	-- Anybody's bare name finds it, because /bin is on everybody's PATH.
+	ok(state, admin, "hello", { "hello from the tools" })
+	ok(state, bob, "hello", { "hello from the tools" })
+	ok(state, bob, "which hello", { "/bin/hello" })
+	ok(state, bob, "type hello", { "hello is /bin/hello" })
+	-- Take x off the TARGET and it stops being a command for anybody but root.
+	script.mode = 700
+	badAt(state, bob, "hello", "hello: permission denied")
+	ok(state, root, "hello", { "hello from the tools" })
+	-- And the link is what `ls -l /bin` says it is.
+	local shown = okAt(state, root, "ls -l /bin/hello")
+	eq("the link in /bin describes itself", shown[1],
+		"lrwxrwxrwx  root   root    hello -> /home/admin/tools/hello")
+	eq("in sixty columns exactly", #shown[1], CeroSecOS.COLS - 1)
+
+	-- A target too long for the columns is what gets cut, and the name is kept
+	-- whole: the name is what somebody typed.
+	ok(state, root, "ln -s /home/admin/tools/a/very/long/way/down/there /bin/far", {})
+	local cut = okAt(state, root, "ls -l /bin/far")
+	eq("the target is cut with a tilde", cut[1],
+		"lrwxrwxrwx  root   root    far -> /home/admin/tools/a/very/~")
+	eq("and the line is the width of the screen", #cut[1], CeroSecOS.COLS)
+end
+
+-- A link inside a copied tree stays a link, and a link is a node with bytes.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	ok(state, admin, "mkdir tree", {})
+	ok(state, admin, 'write tree/real.txt "body"', {})
+	ok(state, admin, "ln -s real.txt tree/also", {})
+
+	local before, bytesBefore = CeroSecOS.usage(state)
+	ok(state, admin, "cp -r tree copy", {})
+	local after, bytesAfter = CeroSecOS.usage(state)
+	eq("the copy is a link and not a file",
+		CeroSecOS.getNode(state, admin, "/home/admin/copy/also", true).type, "link")
+	eq("pointing at the same thing it did",
+		CeroSecOS.getNode(state, admin, "/home/admin/copy/also", true).target, "real.txt")
+	-- Which means it now points at the copy's own file, exactly as cp -R leaves it.
+	ok(state, admin, "cat copy/also", { "body" })
+	eq("a link is one node like anything else", after - before, 3)
+	eq("and its target text is bytes on the disk", bytesAfter - bytesBefore,
+		#"body" + #"real.txt")
+
+	-- A dangling link inside a tree is copied too: nothing is resolved.
+	ok(state, admin, "ln -s gone tree/broken", {})
+	ok(state, admin, "cp -r tree second", {})
+	eq("the dangling one came across",
+		CeroSecOS.getNode(state, admin, "/home/admin/second/broken", true).target, "gone")
+end
+
+-- What a link may hold, and what it may not.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- The ceiling is the longest path this machine can address.
+	local tooLong = "/" .. string.rep("a", CeroSecOS.MAX_LINK_BYTES)
+	badAt(state, admin, "ln -s " .. tooLong .. " big", "ln: big: file too large")
+	eq("nothing was made", CeroSecOS.getNode(state, admin, "/home/admin/big"), nil)
+	-- The name is a name like any other, and a flag after the first operand is a
+	-- name too -- which isValidName refuses, the way it refuses one everywhere.
+	badAt(state, admin, "ln -s x -bad", "ln: -bad: invalid name")
+	badAt(state, admin, "ln -z x y", "ln: -z: unknown option")
+	ok(state, admin, 'write taken.txt "x"', {})
+	badAt(state, admin, "ln -s x taken.txt", "ln: taken.txt: file exists")
+	-- A directory as the second argument puts the link inside it, under the
+	-- target's own last name.
+	ok(state, admin, "mkdir here", {})
+	ok(state, admin, "ln -s /bin/ls here", {})
+	ok(state, admin, "readlink here/ls", { "/bin/ls" })
+	-- /dev takes nothing, links included.
+	badAt(state, admin, "ln -s /bin/ls /dev/ls", CeroSecOS.DEV_PATH .. ": read-only")
+	-- And a line with no -s in it is not a line this machine can carry out.
+	badAt(state, admin, "ln taken.txt hard", "ln: usage: ln -s <target> <name>")
+	badAt(state, admin, "ln -s one", "ln: usage: ln -s <target> <name>")
+
+	-- A forged state: a link with nothing in it is not something to run on.
+	local empty = CeroSecOS.newLink("admin", "x")
+	state.fs.children.home.children.admin.children.bad = empty
+	check("a link with a target validates", CeroSecOS.validate(state) == true)
+	empty.target = ""
+	check("one with an empty target does not", CeroSecOS.validate(state) == false)
+	empty.target = string.rep("a", CeroSecOS.MAX_LINK_BYTES + 1)
+	check("nor one longer than a path can be", CeroSecOS.validate(state) == false)
+	empty.target = nil
+	check("nor one with no target at all", CeroSecOS.validate(state) == false)
 end
 
 print("os_test: " .. count .. " assertions passed")
