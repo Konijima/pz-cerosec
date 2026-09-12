@@ -431,6 +431,20 @@ CeroSec.JOB_PASS_MS = 100
 -- lines the screen keeps.
 CeroSec.JOB_OUT_PER_SEC = 20
 
+-- And lines a session that came in OVER THE TELEPHONE may take in a second,
+-- which is a ceiling of its own underneath that one: the far machine is as fast
+-- as ever, the LINE is what is slow, and a player has to be able to see that a
+-- call is not a wire.
+--
+-- Four, and it is derived and not chosen. The line runs at 2400 baud
+-- (CeroSecOS.PHONE_BAUD), which with the start and stop bits of an asynchronous
+-- serial line is ten bits to the byte and therefore 240 bytes a second. A line
+-- on this screen is at most CeroSecOS.COLS characters and the carriage return
+-- and line feed behind it are two more: 62 bytes, and 240 / 62 is 3.87. So four
+-- lines a second is the most 2400 baud can carry, and the number moves if either
+-- the speed or the width of the screen ever does.
+CeroSec.PHONE_LINES_PER_S = 4
+
 -- How long a job may hold the processor with no wait in it before the machine
 -- takes it away, in seconds of wall clock. A sandbox option would be the
 -- natural home for this one day; today it is a constant, on purpose -- a server
@@ -505,6 +519,17 @@ CeroSec.BOOT_DISK_LINE = 3
 -- stands in, and the BIOS is handed it (see CeroSec.bootLines).
 CeroSec.BOOT_ETHER = "Ethernet: " .. "eth0 "
 
+-- And the telephone line, announced under the card and on the same terms: the
+-- number is a fact about the building the computer stands in, the firmware is
+-- handed it, and a machine with no line prints no line at all.
+--
+-- The BIOS screen is the ONLY place the number is written down. There is no
+-- /etc/phone and there could not be one honestly: the number belongs to the line
+-- on the wall and not to the disk in the case, so a file holding it would be a
+-- file that goes on being right after the computer has been carried into another
+-- building. cu is the other place to read it, and it reads the line too.
+CeroSec.BOOT_PHONE = "Phone line: "
+
 -- The BIOS as it goes onto a screen: the lines above with the real disk on the
 -- drive line, and the card under it when the machine has an address. A copy every
 -- time, so nothing ever writes into the template.
@@ -512,12 +537,22 @@ CeroSec.BOOT_ETHER = "Ethernet: " .. "eth0 "
 -- A machine with no address prints no Ethernet line at all -- one in a
 -- player-built base has no wire to be on -- rather than a line with nothing after
 -- the colon, which would be a BIOS announcing hardware the machine has not got.
-function CeroSec.bootLines(addr)
+function CeroSec.bootLines(addr, tel)
 	local out = {}
 	for i = 1, #CeroSec.BOOT_LINES do out[i] = CeroSec.BOOT_LINES[i] end
 	out[CeroSec.BOOT_DISK_LINE] = out[CeroSec.BOOT_DISK_LINE] .. CeroSecOS.diskLabel()
+	local at = CeroSec.BOOT_DISK_LINE
 	if type(addr) == "string" and addr ~= "" then
-		table.insert(out, CeroSec.BOOT_DISK_LINE + 1, CeroSec.BOOT_ETHER .. addr)
+		at = at + 1
+		table.insert(out, at, CeroSec.BOOT_ETHER .. addr)
+	end
+	-- Under the card, because that is the order the firmware finds them in: the
+	-- card is in a slot and the modem is behind it. Counted from wherever the card
+	-- left off, so a machine with a line and no address -- which nothing can be
+	-- today, the two coming off one record -- would still print it in the right
+	-- place instead of over the top of "Booting from hda".
+	if type(tel) == "string" and tel ~= "" then
+		table.insert(out, at + 1, CeroSec.BOOT_PHONE .. tel)
 	end
 	return out
 end

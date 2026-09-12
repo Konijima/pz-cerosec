@@ -1228,11 +1228,60 @@ everybody may read it and only root may change it. wtmp begins is a real
 answer on this machine, not a formality: that line is where the memory
 runs out.]],
 
+[[The building has a telephone line as well as the coax, and the number
+belongs to the LINE: every computer in the building answers on it, and one
+call at a time. The firmware announces it under the card.
+
+  Detecting drives ... hda 64K
+  Ethernet: eth0 10.4.17.3
+  Phone line: 555-0417
+  Booting from hda ...
+
+Nothing sets that number, and it is written nowhere on the disk -- there is
+no /etc/phone, because a number belongs to the wall and not to the case.
+A computer in a base you built has no line at all:
+
+  admin@ksp-04-11:~$ cu 555-0102
+  cu: no phone line
+
+The exchange is a building full of switches on the county's power, and when
+that goes the telephone goes with it -- everywhere, at once, for good. That
+is the real difference between the two links: the coax is two machines and
+a wire between them, and a call needs a third building that is still
+working.]],
+
+[[cu dials. What answers is the modem's own voice, and then cu's:
+
+  admin@ksp-04-11:~$ cu 555-0102
+  CONNECT 2400
+  Connected.
+  login:
+
+From there it is rlogin's session: the far machine's files, its accounts,
+one of its four ttyp lines. Two differences. It asks for a password EVERY
+time, whatever the trust files say -- those name machines, and a call has
+no machine in it, only a number. And it is slow: 2400 baud is four lines a
+second, so a cat down a call arrives in handfuls.
+
+Over there, who and last name the number that called.
+
+  kate     ttyp0    555-0417   Jun 27 13:07
+
+exit over there ends it; ~. typed alone on a line ends it from here. Either
+way the line is Disconnected. The rest are the modem's:
+
+  BUSY          the line is in use, this end's or theirs
+  NO DIALTONE   no power in the county, so no exchange
+  NO CARRIER    nobody answered, or the line went away
+
+rsh and rcp do not dial: a call is not a route. A file by telephone was
+uucp's work, and uucp is not on this disk.]],
+
 [[The limits, the refusals, and what is coming.
 
 Four sessions may come in at once, on ttyp0 to ttyp3; the fifth is turned
-away. A chain of rlogins goes two machines deep and the third is turned
-away in the same words. A session costs the FAR machine.
+away, and so is a third hop of a chain, in the same words. A session costs
+the FAR machine.
 
   admin@ksp-04-11:~$ rlogin nowhere
   rlogin: nowhere: unknown host
@@ -1244,11 +1293,13 @@ away in the same words. A session costs the FAR machine.
   rlogin: connect: Connection refused
 
 Four troubles: a name in no hosts file, a machine with no power, no wire
-between here and there, and a machine with nothing left to accept with.
+between here and there, and nothing left to accept with.
 
-CeroSec Systems intends to put the telephone and the radio behind these
-same commands. That will be a new kind of LINK and not a new command to
-learn. No dates in a manual.
+A call pays the same ceilings: one of those four lines, one hop, the far
+machine's jobs.
+
+The radio is what is left to build -- another kind of LINK behind commands
+you already know, the way the telephone was. No dates in a manual.
 
 Classic mistake. Trusting a machine in /etc/hosts.equiv and forgetting
 that whoever gets root on THAT machine has yours too.]],
@@ -1571,7 +1622,11 @@ The wire.
   last [name]
   rlogin <host> [-l user]
   rsh <host> [-l user] <command>...
-  rcp <src> <dst>, one of them <host>:<path>]==],
+  rcp <src> <dst>, one of them <host>:<path>
+
+The telephone.
+
+  cu telno]==],
 
 [[The numbers an administrator runs into, all in one place.
 
@@ -1736,6 +1791,29 @@ are the ones a real one prints for the same trouble.
 
 who, last, ruptime and rwho refuse nothing at all: an empty screen is
 their answer when there is nothing to say.]],
+
+[[The telephone, chapter 8. Four of these five are the MODEM talking and
+not a command, which is why they are in capitals: a modem reported what
+happened to a call in one word and there was nobody else to report it.
+
+  cu: no phone line
+      this computer is in no building, so there is no
+      telephone in it to lift
+  BUSY
+      the line is in use -- this building's or theirs.
+      There is one line to a building and one call on it
+  NO DIALTONE
+      the county's power has gone and the exchange with
+      it. Nothing dials again, ever
+  NO CARRIER
+      nobody answered -- a number no building has, or a
+      building with every machine off -- or the line went
+      away under a call that was up
+  CONNECT 2400
+      the far modem answered. Connected. is cu saying the
+      same thing in its own voice
+  Disconnected.
+      one end hung up on purpose: ~. here, exit there]],
 
 [[The five that want somebody at the glass, and the machine tells them so
 wherever there is nobody -- a crontab line, a background job, a stage of a

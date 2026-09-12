@@ -56,7 +56,11 @@ CeroSecOS.STATE_VERSION = 1
 --    device it is mounted FROM is not seeded and never could be -- /dev/fd0
 --    exists for the length of one command and only while there is a disk in the
 --    slot (see CeroSecOSDisk.lua).
-CeroSecOS.SYSTEM_VERSION = 12
+-- 13: the telephone. /bin/cu, and nothing else -- the line itself is a fact
+--    about the building and is on no disk, so there is no file to seed for it and
+--    no /etc/phone to read: the number is announced by the firmware and by cu,
+--    the way an address is announced and never stored twice.
+CeroSecOS.SYSTEM_VERSION = 13
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

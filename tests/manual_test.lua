@@ -578,8 +578,15 @@ for vi = 1, #volumes do
 		vseen[ch.title] = true
 		check(cwhere .. " has pages", type(ch.pages) == "table")
 		local n = #ch.pages
-		check(cwhere .. " (" .. ch.title .. ") has 3..8 pages (" .. n .. ")",
-			n >= 3 and n <= 8)
+		-- Nine and not eight since rung 6b, and the volume that moved it is the one
+		-- that earned it: the telephone is a second kind of link and it went into the
+		-- chapter the first one is in, because a reader looking for "how do I reach
+		-- that machine" must not have to know which wire the answer is about. Eight
+		-- was the width of the widest chapter there was and never a rule about
+		-- reading; the page ceiling and the volume's fifty-to-seventy-six are what
+		-- keep a chapter a chapter.
+		check(cwhere .. " (" .. ch.title .. ") has 3..9 pages (" .. n .. ")",
+			n >= 3 and n <= 9)
 		vpages = vpages + n
 
 		for pi = 1, n do

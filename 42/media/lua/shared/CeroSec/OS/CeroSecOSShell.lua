@@ -637,6 +637,9 @@ CeroSecOS.COMMAND_INFO = {
 	clear    = { desc = "clear the screen", usage = "clear" },
 	cp       = { desc = "copy a file or a tree", usage = "cp [-r] <src> <dst>" },
 	crontab  = { desc = "list, edit or drop your crontab", usage = "crontab -e|-l|-r" },
+	-- The operand is "telno" and not "<number>": it is cu(1)'s own name for it,
+	-- and a usage line is the one place a command speaks the manual's language.
+	cu       = { desc = "call another machine on the phone", usage = "cu telno" },
 	date     = { desc = "print the date and time", usage = "date [+FORMAT]" },
 	deluser  = { desc = "remove an account", usage = "deluser [-r] <name>" },
 	dev      = { desc = "list and work the devices",

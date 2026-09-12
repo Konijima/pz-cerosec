@@ -200,6 +200,105 @@ function CeroSecOS.setNetRecord(state, b1, b2, n)
 end
 
 --
+-- The phone line
+--
+-- A building the map knows has ONE telephone line in it, and the number belongs
+-- to the LINE and not to a machine: every computer in that building answers on
+-- it, one call at a time, exactly as one office shared one number and one modem
+-- in 1993. A computer in a base somebody built is in no building, so it has no
+-- line at all -- the same fact that leaves it with no Ethernet.
+--
+-- The number is 555-NNNN. 555 is the exchange television and film have used for
+-- a number that must not ring a real telephone since the Bell System set it
+-- aside, and it is what a Knox County number reads as here; the four digits are
+-- derived from the building and nobody can type a new one, exactly as nobody can
+-- type an address.
+--
+-- WHERE THE FOUR DIGITS COME FROM. The building's own key -- the two bytes b1
+-- and b2 that the address's middle is made of, which are a hash of the corner of
+-- its BuildingDef (CeroSecOS.buildingKey) -- put through one more step of the
+-- same arithmetic: a multiply-add modulo 2^16, which is what a double holds
+-- exactly. It is a second hash of the key rather than a second hash of the
+-- corner for one reason that matters: the number has to be answerable for a
+-- machine whose chunk nobody has loaded, and what such a machine has on its disk
+-- is its RECORD -- b1, b2, n -- and not the coordinates they came from. So there
+-- is no new field in the save, no migration, and a machine off an older save
+-- answers its own number the first time anybody asks.
+--
+-- The extra step matters too: without it two buildings a street apart, whose
+-- keys are near each other, would have consecutive telephone numbers, and a
+-- county where 555-0416 is next door to 555-0417 is a county whose numbers look
+-- invented. The multiplier scatters them.
+--
+-- COLLISIONS. Ten thousand numbers and 65536 keys, so two buildings with
+-- different keys can share a number -- about one pair in ten thousand -- and two
+-- buildings that collide in the KEY share it always. Neither is a fault to fix
+-- here: two buildings with one number are two buildings on one line as far as
+-- this machine is concerned, and there is nothing on this rung that routes. A
+-- call is placed to a number and the machine that answers is the machine that
+-- answers.
+--
+
+-- The exchange, and how long a number is.
+CeroSecOS.PHONE_EXCHANGE = "555"
+CeroSecOS.PHONE_DIGITS = 4
+CeroSecOS.PHONE_NUMBERS = 10000
+
+-- The speed of the line, which is what the modem reports when it has one and
+-- what the trickle is derived from (CeroSec.PHONE_LINES_PER_S).
+CeroSecOS.PHONE_BAUD = 2400
+
+-- The building key -> the four digits, as a number 0..9999. nil for anything
+-- that is not a key.
+--
+-- The key is b1 * 256 + b2, which is the very 16-bit number buildingKey worked
+-- out; 25173 and 13849 are the multiplier and the increment of a linear
+-- congruential generator modulo 2^16 that has been in print since the eighties,
+-- so adjacent keys land nowhere near each other. The 16-bit result is then
+-- scaled onto the ten thousand numbers rather than taken modulo them: a modulo
+-- would make everything under 5536 a seventh likelier than everything above it,
+-- and the multiplication is exact in a double (65535 * 10000 is well under 2^53).
+function CeroSecOS.phoneKey(b1, b2)
+	if type(b1) ~= "number" or type(b2) ~= "number" then return nil end
+	b1 = math.floor(b1)
+	b2 = math.floor(b2)
+	if b1 < 0 or b1 > 255 or b2 < 0 or b2 > 255 then return nil end
+	local h = math.fmod((b1 * 256 + b2) * 25173 + 13849, 65536)
+	if h < 0 then h = h + 65536 end
+	return math.floor(h * CeroSecOS.PHONE_NUMBERS / 65536)
+end
+
+-- The number as it is written, and the one place it is written: the BIOS line,
+-- cu, who and last all read it out of here.
+function CeroSecOS.phoneText(n)
+	if type(n) ~= "number" then return nil end
+	n = math.floor(n)
+	if n < 0 or n >= CeroSecOS.PHONE_NUMBERS then return nil end
+	local digits = tostring(n)
+	while #digits < CeroSecOS.PHONE_DIGITS do digits = "0" .. digits end
+	return CeroSecOS.PHONE_EXCHANGE .. "-" .. digits
+end
+
+-- This machine's line, or nil for a machine that has none. The same record the
+-- address is read out of, so the two answers can never disagree about whether
+-- the computer is in a building.
+function CeroSecOS.phoneOf(state)
+	local net = CeroSecOS.netRecord(state)
+	if net == nil then return nil end
+	return CeroSecOS.phoneText(CeroSecOS.phoneKey(net.b1, net.b2))
+end
+
+-- Is that a number somebody could dial? The exchange, a hyphen and four digits
+-- and nothing else: there is no long distance in Knox County and no operator to
+-- ask, so a word that is not this shape is not a telephone number.
+function CeroSecOS.isPhoneNumber(text)
+	if type(text) ~= "string" then return false end
+	local digits = string.match(text,
+		"^" .. CeroSecOS.PHONE_EXCHANGE .. "%-(%d%d%d%d)$")
+	return digits ~= nil
+end
+
+--
 -- /etc/hosts
 --
 -- hosts(5), and it is the PLAYER's file. The machine writes its own line into
@@ -1180,6 +1279,55 @@ CeroSecOS.NET_REASON = {
 	unknown = "unknown host",
 }
 
+-- What the MODEM says, which is a different voice from the commands' and is
+-- printed in capitals because that is how it came out of a Hayes-compatible
+-- modem in 1993: the four result codes a dial can end in, and they are the
+-- modem's words and not this machine's.
+--
+--   CONNECT 2400  the far modem answered and the carrier is up
+--   BUSY          the line is in use -- this end's or the other end's
+--   NO DIALTONE   the exchange is dead: the county has no power
+--   NO CARRIER    nobody answered, or the carrier went away mid-call
+--
+-- There is no RING and no ATDT echo: the machine dials, it does not let a player
+-- talk to the modem, and an AT command set would be a second language to learn
+-- for a call that has exactly one thing to say.
+CeroSecOS.MODEM = {
+	connect = "CONNECT " .. CeroSecOS.PHONE_BAUD,
+	busy = "BUSY",
+	noDialtone = "NO DIALTONE",
+	noCarrier = "NO CARRIER",
+}
+
+-- And what cu(1) itself says, which is BSD's own two lines: one when the
+-- connection is made and one when it is over.
+CeroSecOS.CU_CONNECTED = "Connected."
+CeroSecOS.CU_DISCONNECTED = "Disconnected."
+
+-- The one string on this rung that is nobody's but this game's, and it is here
+-- because there is nothing in 4.4BSD to be faithful TO: a real cu is told which
+-- line to use by /etc/remote and says "cu: unknown host" or "link down" about
+-- one it cannot find, and neither of those is true of a computer standing in a
+-- shed with no telephone in it. So the machine says the plain thing instead, in
+-- cu's own shape -- the command's name, a colon, and what is wrong.
+CeroSecOS.CU_NO_LINE = "cu: no phone line"
+
+-- cu's escape, and the whole of what this machine implements of it. BSD's cu
+-- reads a "~" at the start of a line as a word to ITSELF rather than to the far
+-- machine, and "~." is the one that hangs up. The others -- "~!", "~%put",
+-- "~$" -- are not here: they are a second shell and a file transfer, and this
+-- rung has neither.
+--
+-- It is read by whatever is holding the near end of the line and never reaches
+-- the far shell, which is why the server answers it (SCeroSecSystem Commands.exec)
+-- and the engine only says what it looks like.
+CeroSecOS.CU_ESCAPE = "~."
+
+function CeroSecOS.isCuEscape(line)
+	if type(line) ~= "string" then return false end
+	return string.match(line, "^[ \t]*~%.[ \t]*$") ~= nil
+end
+
 -- How a refusal about a machine is signed. rcmd(3) prints some of these itself,
 -- without the name of the program that called it; this machine signs every
 -- refusal with the command that made it, exactly as the other sixty do.
@@ -1281,6 +1429,51 @@ commands.rsh = function(state, session, args, env)
 	return true, { }, "rsh", { host = host, addr = addr, user = want,
 		from = CeroSecOS.userOf(session), cmd = table.concat(line, " "),
 		hops = hopsOf(session) + 1 }
+end
+
+--
+-- cu
+--
+-- cu(1): call up another machine. It is the fourth command that reaches another
+-- computer and the only one that does not go down the coax -- it dials the
+-- telephone -- and it is deliberately the same SHAPE as rlogin, because that is
+-- what a survivor already knows: a session on the far machine, on this glass,
+-- ending at its own login prompt.
+--
+-- What it does NOT share with rlogin is trust. rlogin and rsh ask
+-- /etc/hosts.equiv and ~/.rhosts because the machine at the other end of a wire
+-- in the same building is a machine an office vouched for; a telephone call comes
+-- from anywhere there is a telephone, and ruserok has never had anything to say
+-- about one. So cu asks for a password every time, whatever either file says.
+--
+-- rsh and rcp do not dial at all, and that is BSD's own division: they are
+-- NETWORK commands -- rcmd(3), a socket, a route -- and a dial is not a route.
+-- A file over the telephone was uucp's job and uucp is not on this disk yet.
+--
+-- What the engine can decide is: the shape of the line, whether this machine has
+-- a telephone line at all, and how deep the chain already is. Everything else --
+-- a dial tone, a free line at either end, somebody to answer -- is the world's,
+-- and the modem's words for it come back from the link layer.
+--
+
+commands.cu = function(state, session, args, env)
+	if #args ~= 2 then return usage("cu") end
+	if not CeroSecOS.isPhoneNumber(args[2]) then return usage("cu") end
+	-- No telephone in the building, or no building: the machine says so itself
+	-- and never lifts the receiver. It is asked before the hop ceiling because it
+	-- is the plainer fact of the two.
+	if CeroSecOS.phoneOf(state) == nil then
+		return false, { CeroSecOS.CU_NO_LINE }
+	end
+	-- The same ceiling rlogin pays, and for the same reason: every hop is a shell
+	-- held open on a third machine's budget. What a chain at the ceiling gets is
+	-- the modem's word for a call that cannot be put through, because on the
+	-- telephone it is the modem that does the talking.
+	if hopsOf(session) >= CeroSecOS.HOP_MAX then
+		return false, { CeroSecOS.MODEM.busy }
+	end
+	return true, { }, "cu", { tel = args[2], user = CeroSecOS.userOf(session),
+		from = CeroSecOS.userOf(session), hops = hopsOf(session) + 1 }
 end
 
 --

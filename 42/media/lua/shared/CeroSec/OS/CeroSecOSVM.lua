@@ -1281,9 +1281,15 @@ local function applyControl(job, control, data, env)
 	-- order carries the screen the job was writing to, and for a job with no
 	-- session of its own that screen is the machine's own console. A survivor who
 	-- walked up found somebody else's computer on it.
-	if control == "rlogin" and not jobHasTerminal(job) then
+	--
+	-- cu is the same thing down a telephone line -- a session on the far machine,
+	-- on this glass -- so it is refused in the same place and in its own name: a
+	-- crontab that could dial out would land a logged-in session on the physical
+	-- screen of a machine nobody was standing at, whichever kind of link it used
+	-- to get there.
+	if (control == "rlogin" or control == "cu") and not jobHasTerminal(job) then
 		flushPartial(job)
-		errLine(job, "rlogin: not a terminal")
+		errLine(job, control .. ": not a terminal")
 		job.status = 1
 		return true
 	end
