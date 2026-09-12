@@ -494,6 +494,13 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      bien `CeroSec OS 1.0 User's Guide` et que sa table des matières est celle
      du volume 1 (`1. Your first day`), et non celle de l'ancien livre
      (`1. Your machine`). [ ]
+103a. Double-clic sur un volume dans l'inventaire → le livre s'ouvre, exactement
+     comme par l'option "Read the ..." : le bon volume, sa propre couverture, et
+     le signet de CET exemplaire. Aucune animation de lecture, rien en file
+     d'action. Double-clic sur un livre de la vanille (`Base.Book`) → le
+     comportement vanilla habituel, PAS notre lecteur. Double-clic sur une arme
+     → elle s'équipe comme avant ; sur un sac → il s'équipe comme avant. C'est
+     ce qui prouve que l'enveloppe rend la main à la fonction d'origine. [ ]
 104. Ouvrir un volume → deux feuilles crème côte à côte, numéros de page aux
      coins extérieurs, boutons `< Back`, `Contents`, `Next >` sous le livre. [ ]
 105. Marcher, ouvrir une porte, se faire mordre avec le livre ouvert → il reste

@@ -178,6 +178,32 @@ end }
 -- The mod, loaded the way the game loads it.
 --
 
+-- The inventory pane, faked down to the one function the double-click funnels
+-- through (ISInventoryPane.lua:1199 calls :doContextualDblClick(item), and the
+-- real one is a ladder of elseifs over what the item IS). The bench's is a
+-- recorder: what the mod's wrap has to prove is that it answers for OUR books
+-- and hands every other item back to the original untouched -- not what vanilla
+-- then does with a screwdriver.
+--
+-- Stood up BEFORE the mod files are loaded below, because CeroSecManualMenu
+-- wraps this function at load time. A bench that faked the pane afterwards
+-- would be a bench where the wrap never happened, and it would still pass every
+-- assertion about the context menu beside it.
+-- The CALLS are counted apart from the items recorded, deliberately: the pane is
+-- also handed a double-click on empty space, and an item of nil appended to a
+-- list does not make the list longer. Counted by the list alone, "the original
+-- was called with nothing" and "the original was never called" would be the same
+-- green.
+ISInventoryPane = {}
+ISInventoryPane.dblClicked = {}
+ISInventoryPane.dblCalls = 0
+function ISInventoryPane.doContextualDblClick(pane, item)
+	ISInventoryPane.dblCalls = ISInventoryPane.dblCalls + 1
+	ISInventoryPane.dblClicked[#ISInventoryPane.dblClicked + 1] = item
+	return "vanilla"
+end
+local VANILLA_DBLCLICK = ISInventoryPane.doContextualDblClick
+
 local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
@@ -973,6 +999,116 @@ do
 		check("EN ContextMenu.json defines " .. key,
 			string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
 	end
+end
+
+--
+-- Double-clicking a volume opens it
+--
+-- The wrap on ISInventoryPane:doContextualDblClick. Two things to prove and they
+-- are not the same thing: our books open the reader, and every other item is
+-- handed to the function that was there before -- because a wrap that swallowed
+-- the gesture for a screwdriver would break equipping a weapon by double-click
+-- for every player with this mod on.
+--
+
+do
+	local player = newPlayer()
+	_G.getSpecificPlayer = function() return player end
+	local pane = { player = 0 }
+
+	check("the wrap was put on at load time",
+		CeroSecManualMenu.vanillaDblClick ~= nil)
+	eq("and it kept the function that was there before",
+		CeroSecManualMenu.vanillaDblClick, VANILLA_DBLCLICK)
+	check("the pane's function is no longer the original",
+		ISInventoryPane.doContextualDblClick ~= VANILLA_DBLCLICK)
+
+	-- Each volume, through the pane's own function -- the one the game calls --
+	-- and not through the mod's handler directly: what is under test is the
+	-- route, and a bench that called CeroSecManualMenu.doubleClick itself would
+	-- pass with the wrap never installed.
+	local VOLUMES = { { item = "CeroSec.ManualUser", volume = "user" },
+		{ item = "CeroSec.ManualAdmin", volume = "admin" },
+		{ item = "CeroSec.ManualProgrammer", volume = "programmer" } }
+	for v = 1, #VOLUMES do
+		CeroSecManualUI.instances[0] = nil
+		ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+		local copy = newItem(VOLUMES[v].item)
+		ISInventoryPane.doContextualDblClick(pane, copy)
+		local window = CeroSecManualUI.instances[0]
+		check("a double-click on " .. VOLUMES[v].item .. " opens the reader",
+			window ~= nil)
+		eq("on its own volume", window and window.volumeId, VOLUMES[v].volume)
+		eq("carrying that copy, so the bookmark is the copy's",
+			window and window.item, copy)
+		eq("and the original was not called for it", ISInventoryPane.dblCalls, 0)
+		window:close()
+	end
+
+	-- Anything else falls straight through, with the item as it was given.
+	CeroSecManualUI.instances[0] = nil
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	local other = newItem("Base.Screwdriver")
+	local answer = ISInventoryPane.doContextualDblClick(pane, other)
+	eq("another item goes to the original", ISInventoryPane.dblCalls, 1)
+	eq("with the item it was given", ISInventoryPane.dblClicked[1], other)
+	eq("and the original's answer is handed back", answer, "vanilla")
+	check("no reader was opened for it", CeroSecManualUI.instances[0] == nil)
+
+	-- A vanilla BOOK, not just a tool: the item vanilla's own ladder reads at
+	-- ISInventoryPane.lua:1102. Ours must not catch it.
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	local book = newItem("Base.Book")
+	ISInventoryPane.doContextualDblClick(pane, book)
+	eq("a vanilla book is still vanilla's", ISInventoryPane.dblClicked[1], book)
+	check("and no reader opened on it", CeroSecManualUI.instances[0] == nil)
+
+	-- The legacy single-volume item is not one of ours any more, so it is not one
+	-- the double-click answers for either.
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	ISInventoryPane.doContextualDblClick(pane, newItem("CeroSec.Manual"))
+	eq("the removed book gets no reader", ISInventoryPane.dblCalls, 1)
+	check("and opens nothing", CeroSecManualUI.instances[0] == nil)
+
+	-- Nothing under the cursor, and a pane whose character has gone. Both are
+	-- the original's to answer -- a reader opened on a nil player is a window
+	-- with no bookmark and no owner.
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	ISInventoryPane.doContextualDblClick(pane, nil)
+	eq("a double-click on nothing goes to the original",
+		ISInventoryPane.dblCalls, 1)
+	_G.getSpecificPlayer = function() return nil end
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	ISInventoryPane.doContextualDblClick(pane, newItem("CeroSec.ManualUser"))
+	eq("a pane with no character hands the book back to the original",
+		ISInventoryPane.dblCalls, 1)
+	check("and opens no reader", CeroSecManualUI.instances[0] == nil)
+	_G.getSpecificPlayer = function() return player end
+
+	-- Wrapping twice would make vanillaDblClick point at our own wrapper, and a
+	-- double-click on a screwdriver would then recurse until the stack gave out.
+	-- So: the second call does nothing, and the pane's function is untouched.
+	local wrapped = ISInventoryPane.doContextualDblClick
+	eq("a second hook is refused", CeroSecManualMenu.hookDoubleClick(), false)
+	eq("and the wrap is the one that was already there",
+		ISInventoryPane.doContextualDblClick, wrapped)
+	eq("still holding the true original",
+		CeroSecManualMenu.vanillaDblClick, VANILLA_DBLCLICK)
+	ISInventoryPane.dblClicked, ISInventoryPane.dblCalls = {}, 0
+	ISInventoryPane.doContextualDblClick(pane, newItem("Base.Screwdriver"))
+	eq("and one call still reaches the original exactly once",
+		ISInventoryPane.dblCalls, 1)
+
+	-- Every book on the menu is a book the double-click knows, read off the one
+	-- table both doors use. A volume added to the set with no double-click would
+	-- be a book you can right-click and not open.
+	for b = 1, #CeroSecManualMenu.BOOKS do
+		local book2 = CeroSecManualMenu.BOOKS[b]
+		eq(book2.item .. " is the same volume on both doors",
+			CeroSecManualMenu.volumeOf(book2.item), book2.volume)
+	end
+	check("and nothing else is one of ours",
+		CeroSecManualMenu.volumeOf("Base.Book") == nil)
 end
 
 --

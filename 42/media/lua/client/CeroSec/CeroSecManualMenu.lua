@@ -1,3 +1,4 @@
+require "ISUI/ISInventoryPane"
 require "CeroSec/CeroSecManualUI"
 
 --
@@ -41,6 +42,19 @@ local function itemOf(entry)
 	return nil
 end
 
+-- Which volume one of our items opens, or nil for anything that is not one of
+-- them. The BOOKS table above is the only list of that anywhere: the menu, the
+-- double-click and the benches all read it, so an item added to the set is on
+-- both doors at once or on neither.
+function CeroSecManualMenu.volumeOf(fullType)
+	for b = 1, #CeroSecManualMenu.BOOKS do
+		if CeroSecManualMenu.BOOKS[b].item == fullType then
+			return CeroSecManualMenu.BOOKS[b].volume
+		end
+	end
+	return nil
+end
+
 -- The first copy of one named book in a selection.
 function CeroSecManualMenu.findManual(items, fullType)
 	for i = 1, #items do
@@ -71,4 +85,73 @@ function CeroSecManualMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 	end
 end
 
+--
+-- Double-clicking a volume opens it
+--
+-- A book you double-click opens: that is what the gesture means everywhere else
+-- in this inventory, and vanilla already routes it. The chain is
+-- ISInventoryPane:onMouseDoubleClick (ISInventoryPane.lua:1141) calling
+-- ISInventoryPane:doContextualDblClick(item) (:1199) for an item in the player's
+-- own inventory, and that one is a ladder of elseifs over what the item IS --
+-- a weapon is equipped, a map is checked, and at :1102-1103 a Literature item
+-- that is not uninteresting and is readable in this light goes to
+-- ISInventoryPaneContextMenu.readItem, which queues vanilla's own ISReadABook.
+--
+-- Our volumes never reach that rung: they are ItemType = base:normal on purpose
+-- (items_cerosec.txt), so vanilla's Literature test is false for them and its
+-- read -- the timed action that sits the character down for hours -- is exactly
+-- what we do not want. So the gesture is ours to answer, and the place to answer
+-- it is doContextualDblClick itself: it is the ONE function the double-click
+-- funnels through, it is called with the item, and it is where every other
+-- "double-click does the obvious thing" in the game is written.
+--
+-- A WRAPPER and not a replacement. The original is kept and called for
+-- everything that is not one of our three books, so a double-click on a
+-- screwdriver, a bag or a vanilla book does precisely what it did before this
+-- mod was installed. Our books return before it and the original never sees
+-- them, which is the only reason nothing needs to be known about its ladder.
+--
+-- Idempotent, and it has to be: wrapping twice would make CeroSecManualMenu.vanillaDblClick
+-- point at our own wrapper and a double-click on a screwdriver would recurse
+-- until the stack gave out. The guard is the wrapper's own presence and not a
+-- flag beside it, so a reload that dropped the flag could not lose the wrap.
+--
+-- ISInventoryPane is REQUIRED at the top of this file rather than hooked on an
+-- event: a wrap written against a class that is not loaded yet is a wrap on nil,
+-- and require is how this mod already reaches a vanilla class it derives from
+-- (ISCeroSecDiskAction.lua requires TimedActions/ISBaseTimedAction).
+--
+
+CeroSecManualMenu.vanillaDblClick = nil
+
+-- true when this was one of ours and the reader is open, false when the gesture
+-- is somebody else's business. A pane whose player has gone -- the window
+-- outliving the character by a frame -- is nobody's book: false, so the original
+-- answers it and not a reader opened on nil.
+function CeroSecManualMenu.doubleClick(pane, item)
+	if item == nil or not instanceof(item, "InventoryItem") then return false end
+	local volume = CeroSecManualMenu.volumeOf(item:getFullType())
+	if volume == nil then return false end
+	local playerObj = getSpecificPlayer(pane.player)
+	if playerObj == nil then return false end
+	-- Through the menu's own handler, so the two doors cannot drift: the option
+	-- "Read the User's Guide" and a double-click on the same book are one path.
+	CeroSecManualMenu.onRead(item, playerObj, volume)
+	return true
+end
+
+function CeroSecManualMenu.hookDoubleClick()
+	if ISInventoryPane == nil then return false end
+	if CeroSecManualMenu.vanillaDblClick ~= nil then return false end
+	local original = ISInventoryPane.doContextualDblClick
+	if original == nil then return false end
+	CeroSecManualMenu.vanillaDblClick = original
+	ISInventoryPane.doContextualDblClick = function(pane, item)
+		if CeroSecManualMenu.doubleClick(pane, item) then return end
+		return original(pane, item)
+	end
+	return true
+end
+
 Events.OnFillInventoryObjectContextMenu.Add(CeroSecManualMenu.OnFillInventoryObjectContextMenu)
+CeroSecManualMenu.hookDoubleClick()

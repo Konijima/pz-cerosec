@@ -934,7 +934,8 @@ exact weights, and the vanilla items each one was measured against, are in
 `42/media/lua/server/CeroSec/CeroSecManualLoot.lua`.
 
 **Reading one.** Right-click the book in your inventory and choose **Read the User's
-Guide** — or the Administrator's, or the Programmer's, whichever you are holding. It
+Guide** — or the Administrator's, or the Programmer's, whichever you are holding. Or
+just **double-click it**, which opens the same volume the same way. It
 opens as an open book: its own cover, its own contents, two pages side by side, a
 chapter title at the head of each leaf, page numbers at the outer corners.
 
