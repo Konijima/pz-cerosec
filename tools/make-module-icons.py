@@ -22,6 +22,14 @@
 # Mathieu may well replace all four by hand; this file is what makes them
 # reproducible in the meantime, and every colour is named once at the top so a
 # repaint is one line.
+#
+# The contact sheet to judge them by -- the four at 1x and 4x on a checkerboard
+# -- is tools/out/modules-sheet.png, which is NOT in the repository: tools/out is
+# scratch (.gitignore). Rebuild it with
+#
+#   python3 tools/make-module-icons.py --sheet
+
+import sys
 
 from PIL import Image
 
@@ -189,3 +197,30 @@ magnetic_contact()
 relay()
 electric_strike()
 door_operator()
+
+
+# The contact sheet, on demand: the four icons at 1x over 4x on a checkerboard,
+# which is the only way to judge a 32-pixel icon that will be looked at in an
+# inventory row. Written into tools/out, which the repository does not keep.
+if "--sheet" in sys.argv:
+    import os
+    zoom, pad = 4, 10
+    cell = SIZE * zoom
+    names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator"]
+    ims = [Image.open(OUT % n).convert("RGBA") for n in names]
+    w = pad + len(ims) * (cell + pad)
+    h = pad + SIZE + pad + cell + pad
+    sheet = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+    for bx in range(0, w, 8):
+        for by in range(0, h, 8):
+            c = (58, 58, 64, 255) if (bx // 8 + by // 8) % 2 == 0 else (34, 34, 38, 255)
+            for x in range(bx, min(bx + 8, w)):
+                for y in range(by, min(by + 8, h)):
+                    sheet.putpixel((x, y), c)
+    for k, im in enumerate(ims):
+        x = pad + k * (cell + pad)
+        sheet.alpha_composite(im, (x + (cell - SIZE) // 2, pad))
+        sheet.alpha_composite(im.resize((cell, cell), Image.NEAREST), (x, pad + SIZE + pad))
+    os.makedirs("tools/out", exist_ok=True)
+    sheet.save("tools/out/modules-sheet.png")
+    print("wrote tools/out/modules-sheet.png")
