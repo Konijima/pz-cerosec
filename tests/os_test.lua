@@ -4,6 +4,7 @@
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
 	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSDisk", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOSRadio",
 	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 	"CeroSecOSVM",
 }
@@ -6992,7 +6993,7 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ adduser cat chgrp chmod chown clear cp crontab cu date deluser dev df"
+	local WANT = "[ adduser call cat chgrp chmod chown clear cp crontab cu date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mount mv newfs passwd ping"
 		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"

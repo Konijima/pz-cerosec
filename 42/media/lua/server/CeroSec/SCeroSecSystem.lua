@@ -774,12 +774,17 @@ function SCeroSecSystem:bootScreen(console, state)
 	-- server has worked out which building the computer stands in.
 	-- And the telephone line under it, which is the same fact read a second way:
 	-- both come off the machine's own record of which building it stands in.
-	local addr, tel = nil, nil
+	-- And the TNC's banner under the modem, which is the one of the three that is
+	-- read off the DISK: an address and a number are facts about where the machine
+	-- stands, and a callsign is a file somebody may have written (see
+	-- CeroSec.BOOT_CALL).
+	local addr, tel, call = nil, nil, nil
 	if state ~= nil then
 		addr = CeroSecOS.address(state)
 		tel = CeroSecOS.phoneOf(state)
+		call = CeroSecOS.callsignOf(state)
 	end
-	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel))
+	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel, call))
 	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
 	return true
 end
@@ -1263,6 +1268,11 @@ Commands.exec = function(self, playerObj, x, y, z, token, args)
 	-- by the program holding the receiver and never sent down the line. So it is
 	-- not a command over there, it is in neither machine's history, and a far shell
 	-- that happened to have a file called `~.` is never asked about it.
+	--
+	-- Either KIND of call: a telephone call and a radio link are both a program on
+	-- THIS machine holding the far end open, and `~.` is a line read by that
+	-- program. One escape, because there is one program -- a survivor does not
+	-- learn a second way to hang up for having dialled a different link.
 	--
 	-- Only at a prompt, and only on a CALL. Escape is what interrupts something
 	-- running over there (and what hangs up an idle session of either kind), so

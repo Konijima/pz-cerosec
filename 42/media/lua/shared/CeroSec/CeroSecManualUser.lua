@@ -121,13 +121,13 @@ out over a couple of seconds.
 Line one is the firmware, the small permanent program that wakes the
 machine up. It has its own version number and it is not the operating
 system. Line two says the memory answered. Line three says it found the
-drive, which it calls hda, and that the drive holds 64K. Line four says
-it is loading the operating system off that drive.
+drive, which it calls hda, and that it holds 64K. Line four is the
+operating system being loaded off it.
 
-A machine in a building prints two lines more under the drive: the network
-card with its address, and Phone line: 555-0417, the building's phone.
-Neither is yours to change, and that screen is the only place the number
-is written. Volume 2 has both.
+A machine in a building prints three lines more under the drive: the
+network card and its address, Phone line: 555-0417, and Callsign: KD4AXR,
+what it calls itself on the radio. The first two are fixed; the third is a
+file root may write. Volume 2 has all three.
 
 Then a greeting naming this system, and then it asks who you are.]],
 
@@ -1368,8 +1368,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2188  63348    4%
-  nodes         512     91    421   18%
+  hda         65536   2221  63315    4%
+  nodes         512     92    420   18%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 

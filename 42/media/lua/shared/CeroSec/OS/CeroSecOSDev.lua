@@ -124,6 +124,12 @@ CeroSecOS.DEV_VALUES = {
 	door   = { open = true, close = true },
 	sensor = {},
 	floppy = {},
+	-- The third empty one, and it is empty for the sensor's reason read yet
+	-- another way: the frequency of a radio is set on the radio's own knob, by a
+	-- survivor standing in front of it, and the game has exactly one path that
+	-- moves it (see proof 7 at the head of SCeroSecRadio.lua). There is no word a
+	-- machine could write to an aerial.
+	radio = {},
 }
 
 -- The mode a kind is born at, where DEV_MODE is not it. A sensor is read-only by
@@ -137,6 +143,11 @@ CeroSecOS.DEV_VALUES = {
 -- was typed in; this is only where it STARTS.
 CeroSecOS.DEV_MODES = {
 	sensor = 440,
+	-- And the radio, for the same rule and not for a second one: its vocabulary
+	-- is empty, so a `w` in the middle digit would be this machine promising a
+	-- write that cannot happen. 660 was the shape this rung was sketched in and
+	-- 440 is what the shape already on the disk forces -- one rule, applied twice.
+	radio = 440,
 }
 
 -- What a kind's node is mounted at when nobody has chmodded it. The one place

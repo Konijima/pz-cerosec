@@ -439,6 +439,12 @@ function CeroSecOS.ensureNet(state)
 		etc.children["hosts.equiv"] =
 			CeroSecOS.newFile("root", CeroSecOS.EQUIV_MODE, CeroSecOS.defaultEquiv())
 	end
+	-- And the station's callsign, which is the third link's half of the same job
+	-- and is seeded on the same terms: only where the name is free, and only for a
+	-- machine that has a record to derive one from -- a computer in a base
+	-- somebody built has no address, no telephone number and no callsign, all
+	-- three for the one reason. See CeroSecOSRadio.lua.
+	CeroSecOS.ensureCallsign(state)
 	return etc
 end
 

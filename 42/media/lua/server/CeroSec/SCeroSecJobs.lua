@@ -837,7 +837,8 @@ function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerO
 		CeroSecJobs.schedule(luaObject, data)
 	elseif control == "cancel" then
 		luaObject.shutdown = nil
-	elseif control == "rlogin" or control == "rsh" or control == "cu" then
+	elseif control == "rlogin" or control == "rsh" or control == "cu"
+			or control == "call" then
 		CeroSecNet.answerDial(system, luaObject, console, control, data, playerObj, order.forJob)
 	elseif control == "hangup" and type(data) == "table" then
 		-- A far session whose near end has gone. Nothing is delivered anywhere:

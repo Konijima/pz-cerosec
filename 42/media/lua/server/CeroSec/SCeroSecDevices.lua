@@ -4,6 +4,7 @@ require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSDev"
 require "CeroSec/SCeroSecSensors"
+require "CeroSec/SCeroSecRadio"
 
 --
 -- The world, as devices.
@@ -434,6 +435,25 @@ local function scanSquare(square, found, seen)
 	end
 end
 
+-- The machine's TNC, added to whatever the walk found. It is not discovered by
+-- the walk and must not be: the radio's reach is its OWN -- the machine's room,
+-- or a tile around it in a base -- and it is narrower than either branch below,
+-- because a TNC is a box with a foot of cable to the set and not a thing that
+-- works across a building. The rule and every game call behind it are in
+-- SCeroSecRadio.lua.
+--
+-- One entry at the most, because a machine has one serial port. A radio already
+-- found at that key -- which cannot happen, radios not being on the walk -- is
+-- left alone, so the belt is the same one scanSquare wears.
+local function withTnc(found, seen, x, y, z)
+	local entry = CeroSecRadio.entryAt(x, y, z)
+	if entry == nil then return found end
+	if seen[entry.key] then return found end
+	seen[entry.key] = true
+	found[#found + 1] = entry
+	return found
+end
+
 -- Every device the machine at x, y, z can reach right now, unnumbered.
 function CeroSecDevices.find(x, y, z)
 	local found, seen = {}, {}
@@ -467,7 +487,7 @@ function CeroSecDevices.find(x, y, z)
 				end
 			end
 		end
-		return found
+		return withTnc(found, seen, x, y, z)
 	end
 
 	-- No building: a square of ten tiles around the machine, on its own floor.
@@ -478,7 +498,7 @@ function CeroSecDevices.find(x, y, z)
 			scanSquare(cell:getGridSquare(x + dx, y + dy, z), found, seen)
 		end
 	end
-	return found
+	return withTnc(found, seen, x, y, z)
 end
 
 --
@@ -653,6 +673,13 @@ local function act(entry, value)
 	-- no action for it must refuse in its own name and not fall through to the
 	-- lock branch below, which would ask a dropped pipe bomb about its padlock.
 	if entry.kind == "sensor" then return false, "invalid value" end
+
+	-- And the radio, the same belt for the same reason: its vocabulary is empty
+	-- too (the knob is the survivor's -- proof 7 in SCeroSecRadio.lua), so a write
+	-- is refused a layer up and never arrives. If one ever did, it refuses in its
+	-- own name rather than falling through to the lock branch below and asking an
+	-- aerial about its padlock.
+	if entry.kind == CeroSecRadio.KIND then return false, "invalid value" end
 
 	if entry.kind == "light" then
 		local want = value == "on"
@@ -834,6 +861,10 @@ local function classOf(entry)
 	-- drawn from a model). See CeroSecTerminal:objectAt.
 	if entry.kind == "sensor" then return "IsoWorldInventoryObject" end
 	if entry.kind == "win" then return "IsoWindow" end
+	-- A radio is a fixture with a sprite like a light switch, so the outline finds
+	-- it the ordinary way: `dev find radio0` is how a survivor with two sets in the
+	-- room learns which one his machine is wired to.
+	if entry.kind == CeroSecRadio.KIND then return "IsoRadio" end
 	if instanceof(entry.object, "IsoDoor") then return "IsoDoor" end
 	return "IsoThumpable"
 end

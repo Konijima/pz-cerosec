@@ -1277,11 +1277,102 @@ way the line is Disconnected. The rest are the modem's:
 rsh and rcp do not dial: a call is not a route. A file by telephone was
 uucp's work, and uucp is not on this disk.]],
 
+[[The third link is the radio, and it is the only one that outlives the
+county's power. A two-way radio in the machine's own room -- a ham set
+on a table, a walkie somebody put down -- becomes its TNC, the box that
+turns a computer into a radio station. One per machine, and it is a
+device:
+
+  admin@ksp-04-11:~$ dev radio
+  radio0    ham          2E 1N      144.390 on
+  admin@ksp-04-11:~$ cat /dev/radio0
+  144.390 on
+
+The frequency in megahertz, and what the set is doing: on, off, or no
+power -- a dead grid or a flat battery, and to a TNC those are the same
+thing. Read-only, all of it: the knob is on the radio and you turn it by
+hand. Two sets in the room, and dev find radio0 shows which is yours.
+
+A station needs a callsign, and it is a file:
+
+  admin@ksp-04-11:~$ cat /etc/callsign
+  KD4AXR
+
+Root's and 644. The firmware prints it at power-on, the way a TNC printed
+its own when you switched it on.]],
+
+[[call dials. It takes a CALLSIGN in capitals and nothing else: there is
+no name to look up and no number to dial, because a station twenty miles
+away is in no /etc/hosts and on nobody's telephone line.
+
+  admin@ksp-04-11:~$ call KE4QWZ
+  *** CONNECTED to KE4QWZ
+  login:
+
+Both sets on, both with power, and BOTH ON THE SAME FREQUENCY. That last
+one is the whole job: agree a frequency with whoever is at the other end,
+walk to your set, turn the knob, and check it with cat /dev/radio0 before
+you type anything.
+
+From there it is cu's session -- the far machine's files, one of its four
+ttyp lines, a password EVERY time -- and slower again: 1200 baud is two
+lines a second, half what a call carries.
+
+Over there, who and last name the CALLSIGN that called.
+
+  kate     ttyp0    KE4QWZ     Jun 27 13:07
+
+exit there ends it, ~. alone on a line ends it here, and both print
+*** DISCONNECTED.]],
+
+[[The refusals. Two are the TNC talking, which is why they carry stars:
+
+  *** retry count exceeded
+  *** BUSY
+
+The first is nobody answered, and a radio never says why -- no such
+station, a machine or a set switched off, a flat battery, the wrong
+frequency, out of range, or a town nobody is standing in. It is also what
+you get when a link goes away underneath you. The second is a station
+that has a link already: one connection per radio, either end, and two
+machines in one room share one set.
+
+Two more the machine says without transmitting at all, because it can see
+them for itself:
+
+  admin@ksp-04-11:~$ call KE4QWZ
+  call: no radio
+
+no two-way set in this machine's room, so there is no TNC on it. And
+call: no callsign, for a machine whose /etc/callsign is gone. A station
+with no callsign may not transmit, and this one will not.]],
+
+[[Now the part that matters, and it is why the chapter ends here.
+
+EVERY CONNECT AND EVERY DISCONNECT GOES OUT OVER THE AIR. Not the session
+-- the two announcements. Anybody in the county with a walkie tuned to
+your frequency, in range, reads this in his radio window:
+
+  KE4QWZ de KD4AXR *** CONNECTED
+
+Two callsigns and the fact that two machines are talking. He now knows
+there is a computer worth walking to, roughly where, and which frequency
+to sit on and listen. A wire cannot be overheard and a telephone call
+cannot either. A radio cannot be anything else, and every operator in
+1993 knew it.
+
+Change frequency, and agree the new one OFF the air. That is the defence,
+and it is why the knob is on the set. Keep the set switched off between
+calls: a station nobody can raise is a station nobody hears.
+
+And the callsign is not a lock. It is a FILE that root may write to
+anything -- which is why call asks for a password every time, whatever
+/etc/hosts.equiv says.]],
+
 [[The limits, the refusals, and what is coming.
 
 Four sessions may come in at once, on ttyp0 to ttyp3; the fifth is turned
-away, and so is a third hop of a chain, in the same words. A session costs
-the FAR machine.
+away, and so is a third hop of a chain. A session costs the FAR machine.
 
   admin@ksp-04-11:~$ rlogin nowhere
   rlogin: nowhere: unknown host
@@ -1292,14 +1383,13 @@ the FAR machine.
   admin@ksp-04-11:~$ rlogin office
   rlogin: connect: Connection refused
 
-Four troubles: a name in no hosts file, a machine with no power, no wire
-between here and there, and nothing left to accept with.
+A call pays the same ceilings and so does a radio link. Range on the air:
+7500 tiles for a ham set, 8000 for a walkie, the SMALLER of the two, and
+floors do not count. A radio is also a thing standing on a tile: a station
+in a town nobody is near cannot be raised at all, where the wire and the
+telephone reach the county regardless.
 
-A call pays the same ceilings: one of those four lines, one hop, the far
-machine's jobs.
-
-The radio is what is left to build -- another kind of LINK behind commands
-you already know, the way the telephone was. No dates in a manual.
+Three links now, every one behind a command you knew.
 
 Classic mistake. Trusting a machine in /etc/hosts.equiv and forgetting
 that whoever gets root on THAT machine has yours too.]],
@@ -1626,7 +1716,11 @@ The wire.
 
 The telephone.
 
-  cu telno]==],
+  cu telno
+
+The radio.
+
+  call CALLSIGN]==],
 
 [[The numbers an administrator runs into, all in one place.
 
@@ -1737,7 +1831,7 @@ command's:
 
   dev: <word>: unknown kind
       the kinds are:
-      door, floppy, light, lock, sensor and win
+      door, floppy, light, lock, radio, sensor and win
   dev: <id>: no such device
   /dev: read-only
       nothing may be created under /dev at all]],
@@ -1815,18 +1909,48 @@ happened to a call in one word and there was nobody else to report it.
   Disconnected.
       one end hung up on purpose: ~. here, exit there]],
 
-[[The five that want somebody at the glass, and the machine tells them so
-wherever there is nobody -- a crontab line, a background job, a stage of a
-pipeline:
+[[The radio, chapter 8. Four of these six are the TNC talking and not a
+command, which is why they carry three stars: a TNC printed its own lines
+that way so an operator could tell the box from the man at the far end.
+
+  call: no radio
+      no two-way radio in this machine's room, so there is
+      no TNC on it and nothing to transmit with
+  call: no callsign
+      /etc/callsign is gone or holds something no station
+      could be called, and a station with no callsign may
+      not transmit
+  *** CONNECTED to KE4QWZ
+      the far TNC answered and the link is up
+  *** DISCONNECTED
+      one end let go on purpose: ~. here, exit there
+  *** retry count exceeded
+      nobody answered, and a radio never says why. It also
+      ends a link that went away underneath you
+  *** BUSY
+      that station has a link already, or this one has]],
+
+[[And the line the rest of the county reads, which is on nobody's screen
+here and is not a refusal at all:
+
+  KE4QWZ de KD4AXR *** CONNECTED
+
+the station called, the station calling, and what happened. Every connect
+and every disconnect, on the frequency they were made on. Chapter 8.]],
+
+[[The seven that want somebody at the glass, and the machine says so
+wherever there is nobody -- cron, a background job, a pipeline stage:
 
   rlogin: not a terminal
+  cu: not a terminal
+  call: not a terminal
   su: not a terminal
   passwd: not a terminal
   sudo: not a terminal
   edit: not a terminal
 
 A password question is only ever put up for the job holding the prompt;
-from cron it would wait for an answer that could never come.
+from cron it would wait for an answer that never comes.
 
 And the machine's own lines about work, which no command signs:
 

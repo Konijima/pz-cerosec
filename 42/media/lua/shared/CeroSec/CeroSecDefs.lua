@@ -445,6 +445,24 @@ CeroSec.JOB_OUT_PER_SEC = 20
 -- the speed or the width of the screen ever does.
 CeroSec.PHONE_LINES_PER_S = 4
 
+-- And lines a session that came in OVER THE AIR may take in a second, which is
+-- the same kind of ceiling one notch lower: the far machine is as fast as ever,
+-- the LINK is slower than the telephone, and a player has to be able to feel
+-- which of the three he is on without being told.
+--
+-- Two, and it is derived the way the telephone's four is. Packet radio ran at
+-- 1200 baud (CeroSecOS.RADIO_BAUD), and AX.25 is HDLC -- a synchronous link with
+-- no start and stop bits to pay for -- so 1200 bits a second is 150 bytes a
+-- second and not 120. A line on this screen is at most CeroSec.COLS characters
+-- with a carriage return and a line feed behind it: 62 bytes, and 150 / 62 is
+-- 2.42. So two lines a second is the most 1200 baud can carry, and it is
+-- generous at that -- every frame also pays a fourteen-byte AX.25 address field,
+-- a control byte, a protocol byte and a two-byte frame check, which the arithmetic
+-- above ignores because a long line amortises them and a short one does not.
+--
+-- The number moves if either the speed or the width of the screen ever does.
+CeroSec.RADIO_LINES_PER_S = 2
+
 -- How long a job may hold the processor with no wait in it before the machine
 -- takes it away, in seconds of wall clock. A sandbox option would be the
 -- natural home for this one day; today it is a constant, on purpose -- a server
@@ -530,6 +548,24 @@ CeroSec.BOOT_ETHER = "Ethernet: " .. "eth0 "
 -- building. cu is the other place to read it, and it reads the line too.
 CeroSec.BOOT_PHONE = "Phone line: "
 
+-- And the station's callsign, under the modem, because that is the order the
+-- firmware finds them in: the card is in a slot, the modem is behind it and the
+-- TNC is on the serial port at the back.
+--
+-- It is announced at power-on for a reason that is the period's own and not a
+-- convenience: a TNC held its callsign in its own battery-backed memory, under
+-- the name MYCALL, and printed it in its banner every time it was switched on --
+-- so that the operator could see what his station was about to say it was before
+-- it said it. That is exactly the line here.
+--
+-- Unlike the address and the number, this one is read off the DISK
+-- (/etc/callsign) and not off the machine's record of where it stands, and that
+-- difference is the whole security lesson of the radio: an address cannot be
+-- typed, a telephone number cannot be typed, and a callsign is a file. A machine
+-- whose /etc/callsign root deleted announces nothing at all and cannot get on the
+-- air, which is what a station with no licence is.
+CeroSec.BOOT_CALL = "Callsign: "
+
 -- The BIOS as it goes onto a screen: the lines above with the real disk on the
 -- drive line, and the card under it when the machine has an address. A copy every
 -- time, so nothing ever writes into the template.
@@ -537,7 +573,7 @@ CeroSec.BOOT_PHONE = "Phone line: "
 -- A machine with no address prints no Ethernet line at all -- one in a
 -- player-built base has no wire to be on -- rather than a line with nothing after
 -- the colon, which would be a BIOS announcing hardware the machine has not got.
-function CeroSec.bootLines(addr, tel)
+function CeroSec.bootLines(addr, tel, call)
 	local out = {}
 	for i = 1, #CeroSec.BOOT_LINES do out[i] = CeroSec.BOOT_LINES[i] end
 	out[CeroSec.BOOT_DISK_LINE] = out[CeroSec.BOOT_DISK_LINE] .. CeroSecOS.diskLabel()
@@ -552,7 +588,16 @@ function CeroSec.bootLines(addr, tel)
 	-- today, the two coming off one record -- would still print it in the right
 	-- place instead of over the top of "Booting from hda".
 	if type(tel) == "string" and tel ~= "" then
-		table.insert(out, at + 1, CeroSec.BOOT_PHONE .. tel)
+		at = at + 1
+		table.insert(out, at, CeroSec.BOOT_PHONE .. tel)
+	end
+	-- The TNC's own banner line, counted from wherever the modem left off for the
+	-- same reason the modem was counted from the card: a machine with a callsign
+	-- and no telephone -- which is nothing today, the two coming off one record,
+	-- and is one line of arithmetic away from being possible -- still prints it in
+	-- the right place instead of over the top of "Booting from hda".
+	if type(call) == "string" and call ~= "" then
+		table.insert(out, at + 1, CeroSec.BOOT_CALL .. call)
 	end
 	return out
 end

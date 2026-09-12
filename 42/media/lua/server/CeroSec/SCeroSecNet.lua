@@ -159,6 +159,12 @@ function CeroSecNet.identify(system, luaObject, state)
 	-- And the machine's own line in /etc/hosts, once. After this the file is the
 	-- player's: a name he added stays, a line he deleted stays deleted.
 	CeroSecOS.writeOwnHost(state, CeroSecOS.clockOf(system:clockEnv()))
+	-- And the station's callsign, which is derived from the very three numbers
+	-- just written and is therefore answerable for the first time now. Seeded
+	-- here as well as in ensureNet, so that a machine which has only this moment
+	-- learned which building it stands in gets its licence without waiting for a
+	-- reload -- the same pair of places /etc/hosts's own line is written from.
+	CeroSecOS.ensureCallsign(state)
 	luaObject:mirrorOS()
 	return true
 end
@@ -377,13 +383,20 @@ function CeroSecNet.reachablePhone(system, from, tel)
 	return object
 end
 
--- The call a screen is on, when it is on one: what makes the trickle 2400 baud
--- and what makes a teardown speak the modem's words.
+-- The call a screen is on, when it is on one: what makes the trickle slower than
+-- the wire and what makes a teardown speak somebody else's words.
+--
+-- Either KIND of call. A telephone call and a radio link are two different links
+-- with two different voices and two different speeds, and exactly one thing is
+-- the same about both of them: they are not the coax. Every place that asks this
+-- question is asking that one -- the trickle, `~.`, and which line a teardown
+-- prints -- and each reads the pty afterwards to find out which it got.
 function CeroSecNet.callOn(luaObject, console)
 	if luaObject == nil or type(console) ~= "table" then return nil end
 	if type(console.line) ~= "string" then return nil end
 	local pty = CeroSecOS.remoteLine(luaObject.ptys, console.line)
-	if pty == nil or type(pty.phone) ~= "table" then return nil end
+	if pty == nil then return nil end
+	if type(pty.phone) ~= "table" and type(pty.radio) ~= "table" then return nil end
 	return pty
 end
 
@@ -396,9 +409,218 @@ function CeroSecNet.callRoom(pty, now)
 		pty.outMs = now
 		pty.outCount = 0
 	end
-	local room = CeroSec.PHONE_LINES_PER_S - (pty.outCount or 0)
+	-- Which link's ceiling, read off the pty: 2400 baud down a telephone line and
+	-- 1200 over the air, which is the number each link really ran at and therefore
+	-- two different handfuls on the screen.
+	local per = CeroSec.PHONE_LINES_PER_S
+	if type(pty.radio) == "table" then per = CeroSec.RADIO_LINES_PER_S end
+	local room = per - (pty.outCount or 0)
 	if room < 0 then return 0 end
 	return room
+end
+
+--
+-- The radio
+--
+-- THERE IS NO THIRD PARTY AND NO WIRE. That is the whole of what makes this link
+-- different from the other two, and everything below follows from it:
+--
+--   * the coax is two machines and a length of cable, and goes on working with a
+--     generator behind each of them;
+--   * the telephone needs the county's exchange, which is a building full of
+--     switches on the mains, so it dies when the grid does;
+--   * the radio needs nothing but two aerials in earshot -- and therefore it
+--     works after the grid has gone, and it is the only link that does.
+--
+-- What it pays for that is three things the other two never pay:
+--
+--   1. DISTANCE. A transmitter has a range and the game says what it is
+--      (DeviceData.getTransmitRange, 7500 for a ham set and 8000 for a walkie),
+--      measured on x and y with no z in it, which is the game's own arithmetic
+--      (proof 5 in SCeroSecRadio.lua). The link holds out to the SMALLER of the
+--      two ranges, because a link is two transmissions and the weaker one decides.
+--
+--   2. A CHUNK. A radio is a tile, and a tile the streamer has not brought in
+--      does not exist -- it is not even in the list a transmission is
+--      distributed over (proof 6). A machine's DISK the server holds whatever the
+--      streamer is doing, which is why ruptime, ping, rlogin and cu all answer
+--      for a computer nobody is standing near; a machine's RADIO it does not. So
+--      a call to a station in an empty town gets the TNC's word for silence, and
+--      that is honest rather than convenient: there is no aerial there to answer
+--      with.
+--
+--   3. EVERYBODY HEARS IT. Every connect and every disconnect goes out as a real
+--      transmission on the real frequency, so anybody in the county with a walkie
+--      tuned to it reads the two callsigns (CeroSecRadio.announce). The other two
+--      links are private by construction and this one cannot be, which is what a
+--      radio IS.
+--
+-- And the identity is a FILE. /etc/callsign, root's and writable, so a callsign
+-- is what a station says it is -- which is why no trust file is asked over the
+-- air and a password is asked every time.
+--
+-- ONE LINK PER RADIO, both ends. A TNC has one connection in it, and two
+-- machines in one room share one set: the second one cannot get on the air while
+-- the first one is on it. Derived and never counted, exactly as the telephone's
+-- busy line is -- the pty table IS the record of who is on the air.
+--
+
+-- This machine's callsign, off its own disk. nil for a machine with no
+-- /etc/callsign that is a callsign, which is a station with no licence.
+function CeroSecNet.callsignOf(luaObject)
+	local state = luaObject:osState()
+	if state == nil then return nil end
+	return CeroSecOS.callsignOf(state)
+end
+
+-- Which set a machine is wired to, as the key the busy rule is asked in. nil for
+-- a machine with no radio in reach and for one whose square is not loaded.
+function CeroSecNet.radioKeyOf(luaObject)
+	return CeroSecRadio.keyOf(CeroSecRadio.tncOf(luaObject))
+end
+
+-- Who answers a callsign. Every machine the server holds is asked -- the whole
+-- county, loaded or not -- because the file is on the disk and the disk is here;
+-- whether it can be HEARD is the next question and not this one.
+--
+-- A machine that is switched off cannot answer. Two machines that answer to one
+-- callsign -- which the derivation allows, the county being bigger than the
+-- callsigns are (CeroSecOS.callsignFor) -- are two stations answering one
+-- connect, and the first in the county's own order is the one reached. On the air
+-- that is exactly what happens and there is nothing in AX.25 that arbitrates it
+-- either.
+function CeroSecNet.atCall(system, call)
+	if type(call) ~= "string" then return nil end
+	return each(system, function(other)
+		if not other.on then return nil end
+		if CeroSecNet.callsignOf(other) ~= call then return nil end
+		return other
+	end)
+end
+
+-- Is that set on the air right now?
+--
+-- Both ENDS make it busy, which is what one connection per TNC means: the
+-- machine that CALLED holds the caller's set (pty.radio.key) and the machine that
+-- ANSWERED holds its own. Walked rather than counted, for the reason
+-- CeroSecNet.lineBusy is walked rather than counted: a counter beside the ptys is
+-- a second truth that leaks, and the walk cannot be wrong.
+--
+-- The far machine's own set is worked out only for a machine that HAS a pty, so
+-- the county is not scanned for aerials on a question about somebody's screen.
+function CeroSecNet.radioBusy(system, key)
+	if key == nil then return false end
+	return each(system, function(other)
+		local ptys = CeroSecOS.ptyList(other.ptys)
+		if #ptys == 0 then return nil end
+		local theirs = nil
+		for i = 1, #ptys do
+			local pty = ptys[i]
+			if type(pty.radio) == "table" then
+				if pty.radio.key == key then return true end
+				if theirs == nil then theirs = CeroSecNet.radioKeyOf(other) end
+				if theirs == key then return true end
+			end
+		end
+		return nil
+	end) and true or false
+end
+
+-- Are two sets in earshot of each other? The smaller of the two ranges against
+-- the distance between the MACHINES, squared on both sides so that nothing here
+-- takes a square root.
+--
+-- The machines and not the sets, deliberately: a machine is where a survivor is
+-- standing and a set is on the desk beside it, so the two differ by a tile out of
+-- thousands, and the position that matters to a player is the one he can see on
+-- the map. The ANNOUNCEMENT uses the set's own tile, because that one is the
+-- game's to measure and the game measures from the transmitter (proof 5).
+--
+-- At exactly the range the game scrambles a line a hundred per cent, so a link
+-- out at the range is a link that could not pass a byte; the comparison is
+-- therefore strictly inside it.
+function CeroSecNet.radioInRange(from, to, mine, theirs)
+	local reach = mine.range
+	if theirs.range < reach then reach = theirs.range end
+	if reach <= 0 then return false end
+	local dx = to.x - from.x
+	local dy = to.y - from.y
+	return dx * dx + dy * dy < reach * reach
+end
+
+-- Can `from` raise that station right now?
+-- the machine that answers plus both sets, or nil plus the one line to print.
+--
+-- ONE refusal covers every way a call goes unanswered -- no such station, a
+-- machine switched off, a set switched off, a flat battery, the wrong frequency,
+-- too far, a chunk nobody has loaded -- and it is the TNC's own
+-- "*** retry count exceeded". That is not laziness: a station that hears nothing
+-- back learns NOTHING about why, which is the one thing a radio has in common
+-- with a telephone and the reason both links are worse to diagnose than a wire.
+-- The machine says what it can see for itself (no set at all, no callsign) in its
+-- own name, and everything beyond its own aerial is silence.
+function CeroSecNet.reachableRadio(system, from, call)
+	if not from.on then return nil, CeroSecOS.TNC.retry end
+	-- No set in reach: the machine can see that for itself, there being no
+	-- /dev/radio0 on it, and it says so rather than keying a transmitter it has
+	-- not got.
+	local mine = CeroSecRadio.tncOf(from)
+	if mine == nil then return nil, CeroSecOS.CALL_NO_RADIO end
+	-- A set that is switched off, or has nothing behind it, is NOT one of those: a
+	-- TNC's only cables are the audio and the press-to-talk, so it cannot tell
+	-- whether the radio in front of it is alive. It transmits into a dead set and
+	-- the retries run out. `cat /dev/radio0` is how a survivor finds out, and the
+	-- manual says so.
+	if not mine.on or not mine.powered then return nil, CeroSecOS.TNC.retry end
+	local myKey = CeroSecRadio.keyOf(mine)
+	if CeroSecNet.radioBusy(system, myKey) then return nil, CeroSecOS.TNC.busy end
+
+	local object = CeroSecNet.atCall(system, call)
+	if object == nil then return nil, CeroSecOS.TNC.retry end
+	local theirs = CeroSecRadio.tncOf(object)
+	if theirs == nil then return nil, CeroSecOS.TNC.retry end
+	if not theirs.on or not theirs.powered then return nil, CeroSecOS.TNC.retry end
+	-- Two frequencies are two conversations. It is the one refusal of the six that
+	-- a survivor can do something about from where he is sitting, and he cannot
+	-- learn it from here -- which is why the announcement matters and why the
+	-- manual tells him to agree a frequency first.
+	if theirs.channel ~= mine.channel then return nil, CeroSecOS.TNC.retry end
+	local theirKey = CeroSecRadio.keyOf(theirs)
+	-- One set serving both ends: two machines in one room, and the station is
+	-- calling itself. A TNC will not connect to its own radio.
+	if theirKey == myKey then return nil, CeroSecOS.TNC.busy end
+	if CeroSecNet.radioBusy(system, theirKey) then return nil, CeroSecOS.TNC.busy end
+	if not CeroSecNet.radioInRange(from, object, mine, theirs) then
+		return nil, CeroSecOS.TNC.retry
+	end
+	return object, nil, mine, theirs
+end
+
+-- Does a link that was made still hold? Asked on every keystroke that goes down
+-- it, for the reason the telephone's exchange is asked there: the radio is a link
+-- that can go away with both machines still switched on and nobody having typed
+-- anything -- somebody turns the set off, carries it out of the room, or turns
+-- the knob -- and the moment a player finds out about a dead link is the moment
+-- he touches it.
+--
+-- Costed deliberately: it is two room scans, and only for a session that is on
+-- the air. The alternative is a link that goes on working after the aerial has
+-- been unplugged, which is the failure a player would report as a bug.
+function CeroSecNet.radioHolds(system, pty, object)
+	local at = pty.from
+	if type(at) ~= "table" then return false end
+	local caller = system:getLuaObjectAt(at.x, at.y, at.z)
+	if caller == nil or not caller.on then return false end
+	local mine = CeroSecRadio.tncOf(caller)
+	local theirs = CeroSecRadio.tncOf(object)
+	if mine == nil or theirs == nil then return false end
+	if not mine.on or not mine.powered then return false end
+	if not theirs.on or not theirs.powered then return false end
+	if mine.channel ~= theirs.channel then return false end
+	-- The set the link was MADE on, and not merely any set in the room: a survivor
+	-- who carried a second radio in has not moved the link onto it.
+	if CeroSecRadio.keyOf(mine) ~= pty.radio.key then return false end
+	return CeroSecNet.radioInRange(caller, object, mine, theirs)
 end
 
 --
@@ -613,7 +835,18 @@ CeroSecNet.CLOSED = "Connection closed."
 -- The difference is worth a line of screen because it is the difference between
 -- "I am done" and "something happened", and on a telephone that is the only
 -- diagnosis there is.
+-- And what a RADIO LINK says, which is a third pair and the TNC's own: a TNC-2
+-- printed "*** DISCONNECTED" when either end let go, and when the link failed
+-- under it -- the final poll retried and never answered -- it printed
+-- "*** retry count exceeded" first. So the split is exactly the modem's split
+-- read in the TNC's voice: one line for "I am done" and another for "something
+-- happened", and on a radio, as on a telephone, that is the only diagnosis there
+-- is.
 local function closingLine(pty, why)
+	if type(pty.radio) == "table" then
+		if why == "carrier" then return CeroSecOS.TNC.retry end
+		return CeroSecOS.TNC.disconnected
+	end
 	if type(pty.phone) ~= "table" then return CeroSecNet.CLOSED end
 	if why == "carrier" then return CeroSecOS.MODEM.noCarrier end
 	return CeroSecOS.CU_DISCONNECTED
@@ -640,6 +873,14 @@ function CeroSecNet.farOf(system, console)
 	--
 	-- Torn down here and not left to the caller, so the words are the modem's.
 	if type(pty.phone) == "table" and not CeroSecNet.exchangeAlive() then
+		CeroSecNet.tearDown(system, object, handle.line, "carrier")
+		return nil
+	end
+	-- And a radio link whose aerial has gone: a set switched off, carried out of
+	-- the room, retuned, or a machine walked out of range. Asked in the same place
+	-- and for the same reason -- it is the one place every keystroke on a session
+	-- goes through, and a link is dead the moment anybody touches it.
+	if type(pty.radio) == "table" and not CeroSecNet.radioHolds(system, pty, object) then
 		CeroSecNet.tearDown(system, object, handle.line, "carrier")
 		return nil
 	end
@@ -739,9 +980,31 @@ end
 -- ended it.
 --
 -- Answers true when there was a session to end.
+-- One line on the air about a link, from the CALLER's set: the two callsigns and
+-- what the TNC did. Re-read from the world and never off a copy kept on the pty,
+-- because by the time a link ends the set may have been carried somewhere else --
+-- and a set that is gone is a transmitter that cannot say anything, which is
+-- silence and not a line invented for it.
+function CeroSecNet.announceRadio(system, pty, what)
+	if type(pty.radio) ~= "table" then return false end
+	local at = pty.from
+	if type(at) ~= "table" then return false end
+	local caller = system:getLuaObjectAt(at.x, at.y, at.z)
+	if caller == nil then return false end
+	local set = CeroSecRadio.tncOf(caller)
+	if set == nil then return false end
+	return CeroSecRadio.announce(set, pty.radio.to, pty.radio.call, what)
+end
+
 function CeroSecNet.tearDown(system, object, line, why)
 	local pty = CeroSecOS.remoteLine(object.ptys, line)
 	if pty == nil then return false end
+	-- The county hears a link go down exactly as it heard it come up. Sent FIRST,
+	-- while the pty is still on the table and the machine that dialled can still
+	-- be found: a teardown is about to take both of those away.
+	if type(pty.radio) == "table" then
+		CeroSecNet.announceRadio(system, pty, CeroSecOS.TNC.disconnected)
+	end
 	local screen = pty.console
 	local user = nil
 	if type(screen) == "table" then user = screen.user end
@@ -957,7 +1220,9 @@ end
 -- found, when the caller has already worked out which machine answers: that is
 -- the telephone, where the far end is decided by a number and not by an address
 -- and the refusals are the modem's words rather than strerror's.
-local function connect(system, luaObject, console, cmd, data, found)
+-- radio, when the link is the air: the { call, to, key } the pty carries, worked
+-- out by dialRadio because it is the half that has both sets in its hand.
+local function connect(system, luaObject, console, cmd, data, found, radio)
 	local object = found
 	if object == nil then
 		object = CeroSecNet.reachable(system, luaObject, data.addr)
@@ -997,6 +1262,21 @@ local function connect(system, luaObject, console, cmd, data, found)
 		fromAddr = nil
 		phone = { tel = tel, key = CeroSecNet.keyOf(luaObject) }
 	end
+	-- WHERE A RADIO LINK SAYS IT CAME FROM: the CALLSIGN, for the telephone's
+	-- reason taken one step further. The far machine has never heard of this one's
+	-- hostname and there is no address in a transmission either -- what arrives
+	-- over the air is a callsign, and a callsign is the only thing a survivor over
+	-- there could answer back to. So `who` prints (KE4QWZ), `last` prints it in the
+	-- host column, and that is what goes into wtmp.
+	--
+	-- And it is the honest answer to the security question, which is sharper here
+	-- than on the telephone: a number is at least a fact about a wall, and a
+	-- callsign is a file. What the far machine records is what the caller SAID he
+	-- was called.
+	if type(radio) == "table" then
+		fromHost = radio.call
+		fromAddr = nil
+	end
 
 	local watchAt = CeroSecNet.watchAtOf(luaObject, console)
 	local pty, reason = CeroSecOS.remoteOpen(far, object.ptys, {
@@ -1019,6 +1299,11 @@ local function connect(system, luaObject, console, cmd, data, found)
 	-- pty a call rather than a session -- the trickle, the busy rule and the two
 	-- endings are all read off it.
 	pty.phone = phone
+	-- And the link it came in over, when that is what it is. Everything that makes
+	-- this pty a radio link rather than a session is read off it: the trickle, the
+	-- one-connection-per-set rule, the keystroke-by-keystroke check that the aerial
+	-- is still there, the two endings, and the line the county hears.
+	pty.radio = radio
 	-- A detached session takes no copy of the glass and the glass is not pointed
 	-- at it: the near console keeps showing what it was showing, whether that is a
 	-- prompt nobody is at or a session a survivor opened himself.
@@ -1086,6 +1371,51 @@ function CeroSecNet.dialPhone(system, luaObject, console, data)
 	return pty, object, far
 end
 
+-- call: the same session over the air, and always a password.
+--
+-- No trust file is asked, and here it is not merely that /etc/hosts.equiv and
+-- ~/.rhosts are lists of MACHINES. A callsign is a file root can write
+-- (/etc/callsign), so a machine that trusted one would be trusting a string
+-- anybody with a radio and an editor can choose. The caller meets `login:` and
+-- `password:` however trusted his own computer is on its own coax, and however
+-- respectable the callsign he announced.
+--
+-- The refusals are the TNC's words and come back as ONE line, which is what a
+-- TNC gives you: the reason a link did not happen is the last thing it prints
+-- before the prompt comes back.
+function CeroSecNet.dialRadio(system, luaObject, console, data)
+	local found, word, mine, theirs = CeroSecNet.reachableRadio(system, luaObject, data.call)
+	if found == nil then return nil, word end
+	-- A machine with no operating system on it -- one sitting at the firmware's
+	-- own question -- has nothing to answer a connect with. The retries run out,
+	-- which is all a station ever learns about it.
+	if found:osState() == nil then return nil, CeroSecOS.TNC.retry end
+	-- Whose station this is, read off this machine's own disk. It cannot be nil:
+	-- the command refused a machine with no callsign before the order was given.
+	local call = CeroSecNet.callsignOf(luaObject)
+	if call == nil then return nil, CeroSecOS.CALL_NO_CALLSIGN end
+	local radio = { call = call, to = data.call, key = CeroSecRadio.keyOf(mine) }
+	local pty, object, far = connect(system, luaObject, console, "call", data, found, radio)
+	-- The one thing left that can refuse a link the air carried: a far machine with
+	-- all four of its lines taken by sessions off its own coax. It is the TNC's
+	-- busy and not a "connection refused" -- a station that hears a DM back hears
+	-- the same thing whether the far TNC has a link already or the far computer has
+	-- no terminal left. (object carries connect's own refusal line, which is not a
+	-- TNC's.)
+	if pty == nil then return nil, CeroSecOS.TNC.busy end
+	-- The TNC's own line on the glass the link is now on: the pty's console carries
+	-- a copy of everything that was on the screen, so this lands under the `call`
+	-- the survivor typed and above the far machine's `login:`.
+	CeroSec.consolePush(pty.console, CeroSecOS.TNC.connected .. data.call)
+	-- And the same event on the air, which is the half that is not on anybody's
+	-- glass: every walkie in the county tuned to that frequency and inside the
+	-- weaker of the two ranges reads it. Sent here rather than from tearDown's
+	-- counterpart so that both ends of a link are announced by the one set, in the
+	-- one place, with the one pair of callsigns.
+	CeroSecRadio.announce(mine, data.call, call, CeroSecOS.TNC.onAir)
+	return pty, object, far
+end
+
 -- rsh: one command, the caller's account, and no password ever. Trust or
 -- nothing, which is rshd's whole protocol.
 function CeroSecNet.remoteCommand(system, luaObject, console, data)
@@ -1131,7 +1461,7 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 	-- (CeroSecOSVM applyControl), and this is the same rule standing at the door:
 	-- a screen nobody is watching is not a terminal to hand a session, whichever
 	-- way the order got here. What it says goes where the sheet goes.
-	if (control == "rlogin" or control == "cu") and noTty ~= nil then
+	if (control == "rlogin" or control == "cu" or control == "call") and noTty ~= nil then
 		deliver(system, luaObject, console, noTty, { control .. ": not a terminal" })
 		return
 	end
@@ -1140,6 +1470,8 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 		pty, object, far = CeroSecNet.dial(system, luaObject, console, data)
 	elseif control == "cu" then
 		pty, object, far = CeroSecNet.dialPhone(system, luaObject, console, data)
+	elseif control == "call" then
+		pty, object, far = CeroSecNet.dialRadio(system, luaObject, console, data)
 	else
 		pty, object, far = CeroSecNet.remoteCommand(system, luaObject, console, data)
 	end

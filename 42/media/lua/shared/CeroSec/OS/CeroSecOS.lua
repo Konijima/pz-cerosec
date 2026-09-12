@@ -60,7 +60,7 @@ CeroSecOS.STATE_VERSION = 1
 --    about the building and is on no disk, so there is no file to seed for it and
 --    no /etc/phone to read: the number is announced by the firmware and by cu,
 --    the way an address is announced and never stored twice.
-CeroSecOS.SYSTEM_VERSION = 13
+CeroSecOS.SYSTEM_VERSION = 14
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

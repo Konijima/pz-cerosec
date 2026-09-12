@@ -52,6 +52,7 @@ local FILES = {
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSFS.lua",
 "42/media/lua/shared/CeroSec/OS/CeroSecOSNet.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSPath.lua",
+	"42/media/lua/shared/CeroSec/OS/CeroSecOSRadio.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSScript.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSShell.lua",
 	"42/media/lua/shared/CeroSec/OS/CeroSecOSState.lua",
@@ -61,6 +62,7 @@ local FILES = {
 	"42/media/lua/server/CeroSec/SCeroSecNet.lua",
 	"42/media/lua/server/CeroSec/SCeroSecJobs.lua",
 	"42/media/lua/server/CeroSec/SCeroSecSensors.lua",
+	"42/media/lua/server/CeroSec/SCeroSecRadio.lua",
 }
 -- What the sensor pass asks of the game, and nothing else: a cell to look squares
 -- up in, and a class test. Both nil-safe, so every bench in this file that is not
@@ -651,8 +653,15 @@ do
 	-- passes of it may not cost fifty kilobytes.
 	check("the state stops growing (" .. string.format("%.0f", early) .. "K after 100 passes, " ..
 		string.format("%.0f", late) .. "K after 1000)", late - early < 50)
-	check("and the whole bench holds well under a megabyte (" ..
-		string.format("%.0f", late) .. "K)", late < 1024)
+	-- The FLOOR of this one is the mod itself: every engine file and every server
+	-- file this bench loads is Lua in the heap before a machine exists, and rung
+	-- 6c added two files to that (CeroSecOSRadio and SCeroSecRadio) which carried
+	-- it past a megabyte on their own. So the number moved to 1152K and the
+	-- assertion above it did not: what catches a leak is `late - early`, which is
+	-- growth over nine hundred passes and is unaffected by how much source was
+	-- read at the top of the file. This one catches a heap that has doubled.
+	check("and the whole bench holds well under 1152K (" ..
+		string.format("%.0f", late) .. "K)", late < 1152)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before

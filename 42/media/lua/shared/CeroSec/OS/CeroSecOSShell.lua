@@ -626,6 +626,10 @@ end
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
 	adduser  = { desc = "add an account", usage = "adduser [-a] <name>" },
+	-- The operand is a callsign and the usage line says so in capitals, because
+	-- that is how a callsign is written and a survivor who types it in lower case
+	-- is a survivor the command refuses.
+	call     = { desc = "call another machine on the radio", usage = "call CALLSIGN" },
 	cat      = { desc = "print a file", usage = "cat [file]..." },
 	-- The five words the SHELL is, and so the five with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either

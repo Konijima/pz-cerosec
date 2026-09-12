@@ -8,7 +8,7 @@
 -- itself into CeroSecManual.volumes at load time; CeroSecManual.lua is the table
 -- they hang on and holds no text at all any more.
 --
--- A volume has its own shape rules (8..13 chapters, 3..8 pages each, 50..76
+-- A volume has its own shape rules (8..13 chapters, 3..13 pages each, 50..80
 -- pages, plain ASCII, nothing over a thousand characters, example lines inside
 -- sixty columns) and its cover is stamped by the reader and never typed in the
 -- file.
@@ -35,6 +35,7 @@
 local OS_DIR = "42/media/lua/shared/CeroSec/OS/"
 local OS_FILES = {
 	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath",
+	"CeroSecOSRadio",
 	"CeroSecOSScript", "CeroSecOSShell",
 	"CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers", "CeroSecOSDev",
 	"CeroSecOSDisk",
@@ -585,8 +586,18 @@ for vi = 1, #volumes do
 		-- was the width of the widest chapter there was and never a rule about
 		-- reading; the page ceiling and the volume's fifty-to-seventy-six are what
 		-- keep a chapter a chapter.
-		check(cwhere .. " (" .. ch.title .. ") has 3..9 pages (" .. n .. ")",
-			n >= 3 and n <= 9)
+		--
+		-- Thirteen since rung 6c, and the same volume earned it a second time for the
+		-- same reason: the RADIO is the third kind of link and it went into that one
+		-- chapter too, because "how do I reach that machine" has three answers now
+		-- and a reader who had to pick the chapter by the wire would have to know
+		-- the answer before he could look it up. Chapter 8 of Volume 2 is therefore
+		-- the widest chapter in the set on purpose -- it is three chapters' worth of
+		-- one subject -- and nothing else in the book is allowed near this number:
+		-- the 1000-character page and the volume's own page total are what keep a
+		-- chapter a chapter, and neither of those moved.
+		check(cwhere .. " (" .. ch.title .. ") has 3..13 pages (" .. n .. ")",
+			n >= 3 and n <= 13)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -623,8 +634,15 @@ for vi = 1, #volumes do
 		end
 	end
 
-	check(where .. " has 50..76 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 76)
+	-- Eighty and not seventy-six since rung 6c, and it is the same kind of move
+	-- the last one was: the radio is five pages of chapter 8 plus two of the
+	-- appendix, and seventy-six was exactly where Volume 2 already stood -- a bound
+	-- sitting on the current number is a bound that forbids the next honest
+	-- chapter rather than catching a volume that has lost half of itself, which is
+	-- what it is for. An eighty-page administrator's guide is still a 1993
+	-- paperback.
+	check(where .. " has 50..80 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 80)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 
