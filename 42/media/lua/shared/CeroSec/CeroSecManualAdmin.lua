@@ -734,7 +734,7 @@ word into one of them works the thing itself.
 The reach is the BUILDING. If the computer's square belongs to a building
 the map knows, it gets every room of it, upstairs and down. If it does not
 -- which is what a computer in a base you built is -- it gets ten tiles of
-its own floor in every direction. Sixty four devices at the outside.
+its own floor in every direction. 256 devices at the outside.
 
   root@ksp-04-11:~# dev
   door0   exterior              0 5S        W  locked
@@ -763,7 +763,8 @@ when the room names do not.
 Then which way it faces, and then its state.
 
 The table runs by kind and then by number, so light2 comes before light10.
-In a big building one kind at a time is easier to read:
+A mall is ONE building, so /dev is the one directory the 96-entry rule
+does not hold for. In a big building one kind at a time is easier to read:
 
   root@ksp-04-11:~# dev light
   light0  office                0 0            on
@@ -1758,8 +1759,8 @@ The system files, and the modes they ship at: /etc/passwd is 600,
 /etc/sudoers 440 and /etc/group 644. /etc/motd holds 10 lines. A crontab
 holds 32 lines, and both it and the directory it sits in are root's.
 
-The building: 64 devices at most, at mode 660, and dev find shows one for
-6 seconds.
+The building: 256 devices at most, at mode 660, and dev find shows one
+for 6 seconds.
 
 Work: 4 jobs to a machine, cron's included, and a job that spins 5
 minutes with nothing to wait for is taken away.

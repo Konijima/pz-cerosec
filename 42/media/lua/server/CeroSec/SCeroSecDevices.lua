@@ -183,7 +183,13 @@ CeroSecDevices.blinks = {}
 -- How many entries os.devmap may hold. A number spent is spent for the life of
 -- the machine, so this is what stops a computer carried across the map from
 -- growing a book of dead devices in the save file.
-CeroSecDevices.MAP_MAX = 128
+--
+-- 512, which is twice what /dev can mount at once (CeroSecOS.DEV_MAX). It was 128
+-- against a /dev of 64, and the pair keep that proportion on purpose: the book has
+-- to hold the devices of the building the machine is standing in AND the ones it
+-- was standing in before, or a computer carried back into a mall it has already
+-- numbered gives every light a second number.
+CeroSecDevices.MAP_MAX = 512
 
 -- The room a square is in, by its raw id ("kitchen", "office"), or nil.
 local function roomName(square)

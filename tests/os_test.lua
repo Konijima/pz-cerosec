@@ -5118,6 +5118,56 @@ do
 	okAt(state, session, "dev sensor", {}, devEnv(gone))
 end
 
+-- 21r. A MALL. /dev is the one directory the 96-entry rule does not hold for,
+-- and this is the pair of facts that says so: two hundred devices mount and list,
+-- and /tmp still refuses the ninety-seventh file in the same breath.
+--
+-- Two hundred and not 256, so the assertion is about the exemption and not about
+-- the ceiling being touched: a /dev of exactly DEV_MAX would go green on an engine
+-- that had quietly clamped the mount to 96 and then to the ceiling again.
+do
+	local state = fresh()
+	local session = open(state, "root")
+	local entries = {}
+	for i = 1, 200 do
+		entries[i] = { id = "light" .. (i - 1), kind = "light", desc = "mall",
+			side = "", state = "on" }
+	end
+	local env = devEnv(fakeDevices(entries))
+
+	CeroSecOS.mountDev(state, env)
+	local dir = state.fs.children.dev
+	-- The 200 lights plus the machine's own null device.
+	eq("two hundred devices mount in one /dev", CeroSecOS.countEntries(dir), 201)
+	check("which is well past one directory's ceiling",
+		CeroSecOS.countEntries(dir) > CeroSecOS.MAX_DIR_ENTRIES)
+	CeroSecOS.unmountDev(state, env)
+	-- And nothing of them is left behind, so the state gate never sees the mall:
+	-- the 96-entry rule and the node quota are both asked of a /dev with the null
+	-- device in it and nothing else (21g says the same thing about one device).
+	eq("swept off again", CeroSecOS.countEntries(dir), 1)
+	eq("and the machine runs on what is left", CeroSecOS.validate(state), true)
+
+	-- And it LISTS: `dev light` is the everyday face of those nodes, and a
+	-- listing that stopped at 96 would be a mall a survivor can only half reach.
+	local shown = okAt(state, session, "dev light", nil, env)
+	eq("all two hundred are listed", #shown, 200)
+	eq("the first", string.sub(shown[1], 1, 6), "light0")
+	-- light10 before light2: by kind and then by NUMBER, over two hundred of them.
+	eq("in the table's own order", string.sub(shown[200], 1, 8), "light199")
+
+	-- The rule itself has not moved anywhere else. An ordinary directory takes 96
+	-- and refuses the ninety-seventh, which is the ceiling /dev is exempt FROM.
+	okAt(state, session, "mkdir /root/mall", {}, env)
+	for i = 1, CeroSecOS.MAX_DIR_ENTRIES do
+		okAt(state, session, "touch /root/mall/f" .. i, {}, env)
+	end
+	eq("an ordinary directory holds one directory's worth",
+		CeroSecOS.countEntries(state.fs.children.root.children.mall),
+		CeroSecOS.MAX_DIR_ENTRIES)
+	badAt(state, session, "touch /root/mall/last", "touch: /root/mall/last: directory full", env)
+end
+
 --
 -- 22. Groups: /etc/group, the three-digit evaluation, and the five commands.
 --
