@@ -575,6 +575,22 @@ a menu offering "Read the manual" three times over would be a menu nobody could
 use. It is an ordered list and not a map keyed by item, because `pairs()` would
 shuffle the entries from one right-click to the next.
 
+**A double-click** on a volume opens it too. Vanilla routes the gesture through
+`ISInventoryPane:onMouseDoubleClick` (`ISInventoryPane.lua:1141`) into
+`:doContextualDblClick(item)` (`:1199`), a ladder of elseifs over what the item is;
+at `:1102-1103` a Literature item goes to `ISInventoryPaneContextMenu.readItem`,
+which queues vanilla's hours-long `ISReadABook`. Our volumes are
+`ItemType = base:normal` on purpose and never reach that rung, so
+`CeroSecManualMenu.hookDoubleClick` **wraps** `doContextualDblClick`: our three books
+go to `CeroSecManualMenu.onRead` — the context menu's own handler, so the two doors
+cannot drift — and everything else is handed to the original untouched. The wrap is
+idempotent, or a second one would make `vanillaDblClick` point at the wrapper and any
+other item would recurse until the stack gave out.
+
+**The floppies' own inventory menu** is `client/CeroSec/CeroSecFloppyMenu.lua`, on
+the same event: *Label floppy*, and *change*/*erase* once there is writing on a disk.
+See [DEVICES.md](DEVICES.md) for where the label lives and what prints it.
+
 **The testing door.** `CeroSec.DEV_MANUAL_MENU` in `CeroSecDefs.lua` is a
 **temporary testing aid and has to be set to `false` before the Workshop release.**
 While it is on, every computer — lit or dark, in reach or not — carries a last entry

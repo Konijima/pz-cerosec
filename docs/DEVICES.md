@@ -384,7 +384,17 @@ shape `state.floppy` has while the disk is in the drive, because it *is*
 deliberately three (`CeroSecOSDisk.lua`):
 
 - **The disk.** `state.floppy`, or nothing at all when the slot is empty. A missing
-  `fs` is an unformatted disk, which is what a new one out of a box is.
+  `fs` is an unformatted disk, which is what a new one out of a box is. `label` is
+  the sticker a survivor writes on it with a pen, and it is the one field of the
+  record a player puts there himself: it lives on the ITEM as its custom name
+  (`CeroSecFloppyMenu`, on the inventory menu), the slot reads it off the item and
+  writes it here, `mount` and `df` print it after the device, and the eject puts it
+  back on the shell — which has to be done deliberately, because an insert destroys
+  the item and an eject makes a new one. `CeroSecOS.labelOk` is the whole of what may
+  be written: up to `CeroSecOS.LABEL_MAX` (24) letters, digits, spaces, dashes and
+  dots, never empty and never all spaces. It is held to that at the slot as well as
+  in the box, because a forged name with a newline in it would put a second line in
+  the mount listing.
 - **The device.** `/dev/fd0` is mounted on `/dev` for the length of one command,
   exactly as a light switch is, and only while there is a disk in the slot — so a
   saved machine never carries one. Its kind has an **empty** vocabulary, like a
