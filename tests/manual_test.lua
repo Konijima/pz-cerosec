@@ -849,6 +849,79 @@ do
 	check("Volume 1 quotes the editor's key bar",
 		string.find(vol.wholeText, (string.gsub(CeroSec.editKeys(), "%s+$", "")), 1, true) ~= nil)
 
+	--
+	-- 4. THE DECLARED DEVIATIONS.
+	--
+	-- The project rule is: faithful to Unix as it was in 1993, invent nothing, and
+	-- every deviation that is KEPT is declared in the manual. CeroSecOS.DEVIATIONS
+	-- is that list in the engine; the page below is it in the player's hands, and
+	-- this is the bench that makes the second follow the first.
+	--
+	-- A deviation nobody wrote down is a lie the machine tells. So: the page has to
+	-- exist, it has to name every entry of the list, and every entry has to be
+	-- true of the engine -- a name that is not `gone` is a command the machine has,
+	-- and one that is `gone` is a command it has not.
+	--
+	do
+		local TITLE = "What is not Unix here"
+		local pages = {}
+		for ci = 1, #vol.chapters do
+			local ch = vol.chapters[ci]
+			for pi = 1, #ch.pages do
+				-- The page itself, and every page after it in the same chapter: the
+				-- list is longer than a thousand characters and a page may not be, so
+				-- it runs onto continuation pages that do not repeat the title.
+				if string.find(ch.pages[pi], TITLE, 1, true) ~= nil and #pages == 0 then
+					for k = pi, #ch.pages do pages[#pages + 1] = ch.pages[k] end
+				end
+			end
+		end
+		check("Volume 1 carries the \"" .. TITLE .. "\" page", #pages > 0)
+		local page = table.concat(pages, "\n")
+
+		-- Every word of it, so a name is matched WHOLE: "more" is inside "moreover"
+		-- and a substring search would pass on a page that never mentioned the pager.
+		local said = {}
+		for word in string.gmatch(page, "[%a%-]+") do said[word] = true end
+
+		check("CeroSecOS.DEVIATIONS is a list",
+			type(CeroSecOS.DEVIATIONS) == "table" and #CeroSecOS.DEVIATIONS > 0)
+		local flagged = 0
+		for i = 1, #CeroSecOS.DEVIATIONS do
+			local one = CeroSecOS.DEVIATIONS[i]
+			check("deviation " .. i .. " has a name",
+				type(one.name) == "string" and one.name ~= "")
+			check("deviation " .. i .. " says why",
+				type(one.why) == "string" and one.why ~= "")
+			check("the deviations page names " .. one.name, said[one.name] == true)
+			-- And the engine agrees about whether it is there at all.
+			if one.gone then
+				check(one.name .. " really is gone from the machine",
+					CeroSecOS.COMMAND_INFO[one.name] == nil)
+				check("and is one of the names the top-up deletes",
+					(CeroSecOS.RETIRED_BIN or {})[one.name] ~= nil)
+			else
+				check(one.name .. " really is a command this machine has",
+					CeroSecOS.COMMAND_INFO[one.name] ~= nil)
+			end
+			flagged = flagged + 1
+		end
+		check("and there really are some of them (" .. flagged .. ")", flagged >= 7)
+
+		-- The other direction: every name the engine RETIRED whose replacement is
+		-- not a name of its own is on the page too. A player who used `readlink`
+		-- last week will type it and get "command not found" with no hint at all,
+		-- and this page is where he finds out where it went. adduser, deluser and
+		-- gpasswd are not on it because their replacements are commands Volume 2
+		-- teaches by name.
+		local TAUGHT = { adduser = true, deluser = true, gpasswd = true }
+		for name, _ in pairs(CeroSecOS.RETIRED_BIN or {}) do
+			if not TAUGHT[name] then
+				check("the page says where " .. name .. " went", said[name] == true)
+			end
+		end
+	end
+
 	-- Every chapter carries its "Classic mistake" box. It is the shape Mathieu
 	-- asked for, and a chapter that quietly loses one loses the part a beginner
 	-- reads first.

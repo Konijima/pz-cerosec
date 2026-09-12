@@ -174,6 +174,59 @@ is blank and dark. You did not break it. The building lost power, which
 turns the machine off and clears the glass. Check the power first, always,
 before you suspect the computer.]],
 
+[[What is not Unix here.
+
+If you have never used a Unix, skip this page; chapter 2 is where you want
+to be. If you have, read it and save yourself an argument. Everything else
+in these three volumes behaves as you remember. These are the exceptions,
+and they are all of them:
+
+help is not a Unix command. There was never one. It lists what is in /bin,
+which is why a machine somebody has been deleting from has a shorter help
+than a fresh one. man -k is what you are reaching for and it is not here:
+it wants a database of descriptions and there is no room on the drive.
+
+dev is not one either, and could not be: no Unix of any year had a door to
+open. It is the everyday face of /dev, and everything it does can be done
+with cat and a greater-than sign instead.
+
+mkpasswd is ours. crypt was a library call in 1993 and nothing in /bin
+wrapped it. It was called hash on this machine until this release; if you
+type that, you will get command not found, and mkpasswd is where it went.]],
+
+[[What is not Unix here, continued.
+
+edit is a SCREEN editor under a name 4.3BSD gave to a LINE editor. The real
+edit was ex being friendly, one line at a time. This one is a buffer on the
+glass with Tab to save and Escape to leave. vi is what it ought to be
+called, and vi is four thousand lines of C not on this disk.
+
+sudo is real for the year and was still not part of Unix: written in 1980,
+passed from hand to hand, installed by administrators who wanted it. It is
+here the way it was there -- an add-on, with /etc/sudoers deciding who.
+
+jobs lists the background jobs on the MACHINE and not the ones your shell
+started. One book per computer, four to a computer. Walk away and they keep
+running; whoever sits down next sees them and may kill them. Kept on
+purpose: it is what lets you pick up what the last survivor left running.
+
+more reads a LINE where the real one reads a key, because this screen has
+one typing line and Enter sends it. read -n 1 is the same.]],
+
+[[And two shapes are cut rather than changed. A line here is sixty columns,
+so uptime says "load" where 4.4BSD says "load averages:", and w prints the
+clock where a real one prints a weekday. Every other cut in the book is
+named beside the command it belongs to.
+
+That is the whole list. If something else on this machine surprises you, it
+is a fault and not a decision, and the three volumes are where to look for
+what it should have done.
+
+Classic mistake. Typing hash, or readlink, or restart, or write, because an
+older CeroSec machine had them. None of the four was ever a Unix command.
+mkpasswd, ls -l, reboot and echo text > file are what they were pretending
+to be, and what to type instead.]],
+
 		} },
 
 		{ title = "2. Talking to the machine", pages = {

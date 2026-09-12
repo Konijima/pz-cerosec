@@ -777,6 +777,66 @@ CeroSecOS.COMMAND_INFO = {
 }
 
 --
+-- WHAT IS NOT UNIX HERE
+--
+-- This machine is a 1993 Unix and everything on it is copied from one: 4.4BSD,
+-- SunOS 4, System V Release 4, POSIX.2 of 1992. Nothing is invented -- except
+-- the handful of things below, and the rule is that every one of them is
+-- DECLARED, in the manual, in the player's own hands, on a page of Volume 1.
+--
+-- This is that list, and it is what the page is checked against
+-- (tests/manual_test.lua): a deviation nobody wrote down is a lie the machine
+-- tells, and a page that has quietly lost an entry fails the bench rather than
+-- going stale in the reader's hands.
+--
+-- `name` is the word the page has to carry. `gone` marks a name that is NOT on
+-- this machine and is here because a player may have heard of it or seen it on an
+-- older one -- the page has to say where it went.
+--
+CeroSecOS.DEVIATIONS = {
+	-- Not a Unix command at all. `man -k` and `apropos` are what a real one had,
+	-- and both want a whatis database this machine has no room for; what is here
+	-- instead is a listing of /bin, which is why a machine whose /bin has been cut
+	-- down has a shorter help and one with no /bin cannot describe itself.
+	{ name = "help", why = "no Unix had it; it lists /bin, and man -k wants a database" },
+	-- The world, which no Unix of any year had: doors, lights, locks and windows
+	-- are under /dev and `dev` is the everyday face of them. Everything it does
+	-- goes through the same two calls `cat /dev/light0` and `echo off >
+	-- /dev/light0` reach, so it adds a table to read and no power.
+	{ name = "dev", why = "the building is not something a 1993 Unix had to work" },
+	-- CeroSec Systems' own: crypt(3) was the library call and nothing in /bin
+	-- wrapped it. It was called `hash` until SYSTEM_VERSION 16, which was not a
+	-- name any Unix would have used.
+	{ name = "mkpasswd", why = "no 1993 tool hashed a string you chose" },
+	-- A screen editor under a name 4.3BSD gave to a LINE editor: the real edit(1)
+	-- is ex in its friendly mode, one line at a time. This one is a full-screen
+	-- buffer with Tab to save and Escape to leave, because a line editor on a
+	-- glass a survivor is standing at would be cruelty. vi is what it should be
+	-- called and vi is four thousand lines of C.
+	{ name = "edit", why = "a screen editor under 4.3BSD's name for a line editor" },
+	-- Real for the year and still not part of Unix: sudo was Bob Coggeshall and
+	-- Cliff Spencer's, 1980, passed around by hand and installed by an
+	-- administrator who wanted it. So it is on this machine the way it was on a
+	-- real one -- an add-on, with /etc/sudoers deciding -- and not as something
+	-- the system shipped.
+	{ name = "sudo", why = "an add-on of the era, not part of any Unix" },
+	-- The jobs belong to the MACHINE and not to the shell that typed them: one
+	-- book per computer, four to a computer, and `jobs` lists every background job
+	-- on it whoever started it. On a real Unix a job is a process group the shell
+	-- owns. Kept on purpose -- it is what lets a survivor pick up what the last
+	-- one left running -- and said plainly instead (see commands.jobs).
+	{ name = "jobs", why = "the jobs are the machine's, not the shell's" },
+	-- And the one name that is GONE: `hash` was renamed to mkpasswd, and the page
+	-- has to say so, because a player who used it last week will type it.
+	{ name = "hash", gone = true, why = "renamed mkpasswd at SYSTEM_VERSION 16" },
+	-- The pager's keys. more(1) reads the KEY you press; this console has one
+	-- input line and Enter is what sends it, so Space is a space and then Enter.
+	-- The console's deviation rather than the pager's, and `read -n 1` has had the
+	-- same shape since it was written.
+	{ name = "more", why = "its keys need Enter behind them: the console reads a line" },
+}
+
+--
 -- What this build TOOK AWAY
 --
 -- A name that was in the table above and is not any more, with the description
