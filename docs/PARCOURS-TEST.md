@@ -1214,6 +1214,51 @@ avant.
      lignes doivent arriver **deux par seconde**, visiblement plus lentement
      qu'un appel téléphonique (quatre) et rien ne doit manquer à la fin. [ ]
 
+## U. Nommer les voisines (palier 6d)
+
+Les deux ordinateurs d'un **même bâtiment** de la section N, tous les deux
+allumés. Repartir d'un `/etc/hosts` que personne n'a encore complété : celui que
+la machine s'écrit toute seule (la boucle locale et sa propre ligne). `ici` est la
+machine devant laquelle on est assis, `gate` l'autre.
+
+222. **Le trou que `arp` bouche.** `ruptime` → l'autre machine est là, listée par
+     le nom qu'elle **annonce** (`ksp-<x>-<y>`). Taper `ping <ce nom>` →
+     `ping: unknown host <ce nom>` : rien sur ce disque ne résout ce nom. Puis
+     `arp -a` → une ligne par **autre** machine allumée du bâtiment, de la forme
+     `? (10.x.y.2) at 8:0:20:<3 octets>` : le `?` parce qu'aucune ligne de
+     `/etc/hosts` ne nomme cette adresse. Vérifier trois choses : la machine
+     devant laquelle on est assis **n'est pas** dans sa propre liste ; refaire
+     `arp -a` donne exactement la même carte (elle est dérivée, pas tirée au
+     sort) ; et `arp -a` après avoir éteint et rallumé l'autre machine donne
+     encore la même. Enfin `arp <nom annoncé>` → `arp: <nom>: unknown host`, et
+     `arp 10.x.y.9` (une adresse que personne ne porte) →
+     `10.x.y.9 (10.x.y.9) -- no entry`, sans `arp:` devant. [ ]
+223. **La ligne écrite à la main.** `sudo edit /etc/hosts` (ou, en root,
+     `echo "10.x.y.2 gate" >> /etc/hosts`), ajouter l'adresse relevée à l'étape
+     222 sous le nom `gate`, sauver. `arp -a` → la même ligne dit maintenant
+     `gate (10.x.y.2) at 8:0:20:...`, **avec la même carte qu'avant** : le nom a
+     changé, l'adresse et la carte non. `ping gate` → trois réponses. Puis
+     l'autre sens : `rlogin 10.x.y.2` **sans aucune ligne** pour elle → la
+     session s'ouvre sur `login:`, et pareil pour `rsh 10.x.y.2 hostname` et
+     `rcp <fichier> 10.x.y.2:/tmp/a` une fois la confiance en place. Se
+     connecter là-bas et taper `who` : la session est nommée par ce que le
+     `/etc/hosts` **de cette machine-là** dit de l'adresse d'ici -- le nom s'il y
+     a une ligne, l'adresse `10.x.y.1` toute nue sinon (c'est le cas par défaut,
+     personne n'a rien écrit là-bas). `last` et `cat /var/log/wtmp` doivent
+     porter exactement la même chose dans la colonne d'origine. [ ]
+224. **Une machine ne se nomme pas elle-même dans la confiance.** Sur `gate`, en
+     root : `echo "pump" > /etc/hosts.equiv` -- un nom que le `/etc/hosts` de
+     `gate` ne porte pas. Revenir ici et se renommer : `sudo hostname pump`, puis
+     vérifier avec `hostname` et avec `ruptime` **depuis gate** (la machine
+     s'annonce bien `pump` maintenant). Refaire `rlogin gate` → il demande
+     **quand même** `login:` et `password:`. Puis, toujours sur `gate` en root,
+     ajouter la ligne qui manquait : `echo "10.x.y.1 pump" >> /etc/hosts`.
+     Refaire `rlogin gate` → cette fois la session s'ouvre **sans mot de passe**.
+     Remettre `echo "<adresse d'ici>" > /etc/hosts.equiv` (l'adresse au lieu du
+     nom) et retirer la ligne de `/etc/hosts` : la confiance tient toujours, une
+     adresse n'a besoin de personne pour être résolue. Finir par
+     `sudo hostname <le nom d'origine>` et `echo "" > /etc/hosts.equiv`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

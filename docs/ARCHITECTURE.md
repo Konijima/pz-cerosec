@@ -307,8 +307,8 @@ that name — and then moves the number up. At the current number it does nothin
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion. As of
 this wave the top-up is generic: it walks `CeroSecOS.binNames()` against what is
 actually in `/bin` rather than hand-listing what each numbered version added, which
-is why versions 13 and 14 (the telephone's and radio's own files, `/etc/callsign`
-included) have no numbered entry below — they were seeded through `ensureNet` /
+is why versions 13, 14 and 15 (the telephone's and radio's own files,
+`/etc/callsign` included, and `/bin/arp`) have no numbered entry below — they were seeded through `ensureNet` /
 `ensureCallsign`, called unconditionally on every upgrade, the BIOS repair and a
 fresh machine alike, on the same "only where the name is free" terms. The
 version-by-version history below (8 through 12) is kept because each of those
