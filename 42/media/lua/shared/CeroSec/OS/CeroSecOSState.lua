@@ -392,11 +392,58 @@ function CeroSecOS.validateDisk(disk, bounded)
 	return true
 end
 
+--
+-- Migration
+--
+-- A machine is a table in gos_cerosec.bin, written by a build that is not this
+-- one. CeroSecOS.STATE_VERSION is the shape this build reads, and
+-- CeroSecOS.MIGRATIONS is what turns an older shape into it: MIGRATIONS[n] takes
+-- a state that is at n - 1 and leaves it at n, so a v1 state meeting a v4 build
+-- walks 2, then 3, then 4, and keeps everything on it.
+--
+-- Three rules, and the first is what this section exists for:
+--
+--   * a state OLDER than this build is MIGRATED and never thrown away. It used to
+--     be thrown away: every version that was not the current one became a fresh
+--     machine -- the filesystem, the accounts, the disk in the drive, all of it --
+--     so the first bump of STATE_VERSION would have wiped every computer in every
+--     save. Which is exactly why the number had never been moved, and why nothing
+--     that belonged in the SHAPE could ever be changed.
+--   * a state NEWER than this build is REFUSED, and not touched. The player has
+--     put an older mod back under a save a later one wrote, and there is nothing
+--     here that can read it -- a migration runs forwards only. So the bytes stay
+--     exactly as they are, the machine says so on its screen and the switch at the
+--     back of the case still works: putting the newer mod back is the whole of the
+--     repair, and a build that "fixed" a state it could not read would have
+--     destroyed a save its own author could still open.
+--   * a state with NO version, or one below the oldest step there is, is a fresh
+--     machine. That is what a pre-release save is -- nothing shipped that wrote
+--     one -- and it is the one case where something is lost.
+--
+-- Every step is IDEMPOTENT: run twice on one table it leaves it as the first run
+-- did. Nothing in production depends on that -- the version moves as each step
+-- lands -- but tests/migrate_test.lua holds every step to it, because a step that
+-- is not idempotent is a step whose second half nobody can read.
+--
+-- And a step never asks the WORLD anything. It is handed a table and nothing else:
+-- which building a machine stands in, what is on its square and who is logged in
+-- at it are not facts a save file holds, and a step that needed one of them could
+-- not run for a machine whose chunk nobody has loaded -- which is most of them.
+-- The top-ups that DO need the world stay where the square is answerable and are
+-- called from there: the address, the telephone exchange and the premises name in
+-- CeroSecNet.identify, the devices under /dev in the scheduler. The mount table
+-- and /dev are swept on the way in by SCeroSecObject:osState, once, beside this.
+--
+CeroSecOS.MIGRATIONS = {}
+
+-- The oldest shape the chain can start from: below this there is no step to run,
+-- because nothing was ever released that wrote one.
+CeroSecOS.OLDEST_STATE_VERSION = 1
+
 -- The quota exemption used to be a flag on the node (`nq`), written by the one
 -- function that appended to a history and read by the usage count. It is a PATH
 -- now (CeroSecOS.exemptPaths) and nothing reads the field any more, so a machine
--- saved while it existed carries a field that means nothing: taken off here, on
--- the way in, rather than left to sit in the save file forever.
+-- saved while it existed carries a field that means nothing.
 local function dropQuotaFlags(node)
 	if type(node) ~= "table" then return end
 	node.nq = nil
@@ -404,25 +451,66 @@ local function dropQuotaFlags(node)
 	for _, child in pairs(node.children) do dropQuotaFlags(child) end
 end
 
--- Anything the game hands back becomes a v1 state. Today there is no older
--- schema, so nil and junk alike become a fresh machine; a v1 state passes
--- through untouched.
+-- 2: the accounts file, and the quota flags.
+--
+-- Both of these were repaired on EVERY read of the state, and neither could ever
+-- stop being: there was no number anywhere that could say the repair had already
+-- happened, so `nq` was swept off every node of every machine for the rest of the
+-- save's life and the accounts table was looked for on every command.
+--
+--   * the accounts. They lived in a table on the state (state.users) and their
+--     passwords were once in clear; /etc/passwd is the truth now, and the file
+--     wins over the table wherever a state somehow has both
+--     (CeroSecOS.migrateUsers, which also fills a /bin such a machine never had).
+--   * the quota exemption, above.
+--
+-- Idempotent by construction: migrateUsers returns at once when there is no
+-- table, and a walk that clears a field that is already nil clears nothing.
+CeroSecOS.MIGRATIONS[2] = function(state)
+	CeroSecOS.migrateUsers(state)
+	dropQuotaFlags(state.fs)
+end
+
+-- A saved state, brought up to this build.
+--
+--   state, nil     ready for the gate: the same table, migrated where it lies, or
+--                  a fresh machine where there was nothing to keep.
+--   nil, "newer"   refused and NOT touched -- see the head of this section.
+--
+-- The caller validates, and this deliberately does not: a state of a version it
+-- CAN read is kept even when the gate then refuses it, because the way back from a
+-- filesystem the core cannot run on is the BIOS (SCeroSecObject:restoreOS), which
+-- keeps /home -- and handing back a fresh machine instead would be this function
+-- throwing away the very thing it exists to save. It used to do exactly that, and
+-- it was invisible because the only states that ever reached it were junk.
 function CeroSecOS.migrate(state, hostname)
-	if type(state) == "table" and state.v == CeroSecOS.STATE_VERSION then
-		-- The accounts first: a machine saved before this rung carries them in
-		-- a table on the state, and one saved before that carries their
-		-- passwords in clear. validate refuses both. Repairing before the gate
-		-- is what keeps such a machine's filesystem instead of throwing it away.
-		CeroSecOS.migrateUsers(state)
-		dropQuotaFlags(state.fs)
-		-- And a mount naming a drive with nothing in it, which is a mount nothing
-		-- could walk through. Before the gate, like the rest of this.
-		CeroSecOS.checkMounts(state)
-		-- And then the contents: a machine saved before this build has neither
-		-- the executables it added nor the files, and neither is damage.
-		CeroSecOS.upgradeSystem(state)
-		local ok = CeroSecOS.validate(state)
-		if ok then return state end
+	if type(state) ~= "table" then return CeroSecOS.newState(hostname), nil end
+
+	local v = state.v
+	if type(v) == "number" and v > CeroSecOS.STATE_VERSION then return nil, "newer" end
+	if type(v) ~= "number" or v ~= math.floor(v)
+			or v < CeroSecOS.OLDEST_STATE_VERSION then
+		return CeroSecOS.newState(hostname), nil
 	end
-	return CeroSecOS.newState(hostname)
+
+	for n = v + 1, CeroSecOS.STATE_VERSION do
+		local step = CeroSecOS.MIGRATIONS[n]
+		-- A hole in the chain, which is not a thing a shipped build can have: the
+		-- bench walks every number from the oldest to this one and goes red on a
+		-- missing step (tests/migrate_test.lua). Reached anyway, the honest answer
+		-- is a fresh machine and not a half-migrated one -- a state left between two
+		-- shapes is a state nothing can ever read again.
+		if type(step) ~= "function" then return CeroSecOS.newState(hostname), nil end
+		step(state)
+		-- Moved as each step lands and not once at the end, so a state that dies
+		-- half way through -- a step that errors, a server killed under it -- comes
+		-- back at the version it really reached and walks the rest on the next load.
+		state.v = n
+	end
+
+	-- And the CONTENTS, which is the other number and is not part of the chain: a
+	-- machine saved before this build has neither the executables it added nor the
+	-- files it seeds, and neither is damage (CeroSecOS.upgradeSystem).
+	CeroSecOS.upgradeSystem(state)
+	return state, nil
 end

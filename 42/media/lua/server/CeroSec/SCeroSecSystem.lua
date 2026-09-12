@@ -476,6 +476,36 @@ function SCeroSecSystem:askBios(console)
 	}
 end
 
+-- What the firmware says about a disk written by a LATER build of the mod: the one
+-- machine with nothing to boot that the BIOS must not offer to repair.
+--
+-- 60 columns, like every line the engine puts on this screen.
+SCeroSecSystem.NEWER_LINE = "System newer than firmware: update the mod."
+
+-- A machine with nothing to boot, and the one place the two reasons are told
+-- apart.
+--
+-- "No operating system found" is a QUESTION, because the BIOS can answer it: the
+-- system files are gone off a disk this build understands, and the repair puts them
+-- back. A state a LATER build wrote is not a question at all -- nothing here can
+-- read it, and "y" would mean this build writing its own shape over a save its own
+-- author could still open -- so the screen says what is wrong and stops there.
+--
+-- Halted and not prompting, which is what makes it a dead end rather than a
+-- refusal to be argued with: atBios is true for a halted console, so the line is
+-- said once and every later look at the machine leaves the screen exactly as it is.
+-- Nothing is reset, nothing is written back to the disk, and the switch at the back
+-- of the case still works -- turnOff has never needed a state (SCeroSecObject).
+function SCeroSecSystem:sayNoSystem(luaObject, console)
+	if luaObject.osNewer then
+		console.prompt = nil
+		console.halted = true
+		CeroSec.consolePush(console, SCeroSecSystem.NEWER_LINE)
+		return
+	end
+	self:askBios(console)
+end
+
 -- The screen, worked out again from whatever the machine is now: a repair that
 -- worked means the state is back and the login prompt with it.
 function SCeroSecSystem:pushBios(luaObject, console)
@@ -511,7 +541,7 @@ function SCeroSecSystem:answerBios(luaObject, console, playerObj, token, text)
 
 	local state = self:biosState(luaObject)
 	if state == nil then
-		self:askBios(console)
+		self:sayNoSystem(luaObject, console)
 	else
 		console.halted = nil
 		CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
@@ -877,7 +907,9 @@ function SCeroSecSystem:resumeReboot(luaObject, waiting)
 	local state = self:biosState(luaObject)
 	self:bootScreen(console, state)
 	-- A machine that went down broken comes back broken, and says so.
-	if state == nil and not self:atBios(console) then self:askBios(console) end
+	if state == nil and not self:atBios(console) then
+		self:sayNoSystem(luaObject, console)
+	end
 	self:reopenFor(luaObject, state, console, waiting)
 end
 
@@ -1317,7 +1349,9 @@ Commands.open = function(self, playerObj, x, y, z, token)
 
 	-- Asked once. A machine already sitting on the question, or on the refusal
 	-- that answered it, is left exactly as the last player left it.
-	if state == nil and not self:atBios(console) then self:askBios(console) end
+	if state == nil and not self:atBios(console) then
+		self:sayNoSystem(luaObject, console)
+	end
 
 	-- A machine with a session open on it shows the SESSION, whoever opens the
 	-- window: the screen belongs to the machine, so a second survivor walking up

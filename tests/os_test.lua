@@ -203,7 +203,9 @@ end
 
 do
 	local state = fresh()
-	eq("schema version", state.v, 1)
+	-- The constant and not the number: which number it IS, and that the chain
+	-- reaches it from every older shape, is tests/migrate_test.lua's business.
+	eq("schema version", state.v, CeroSecOS.STATE_VERSION)
 	eq("hostname", state.hostname, "ksp-front-01")
 	eq("sessions start empty", #state.sessions, 0)
 	eq("fs root is a dir", state.fs.type, "dir")
@@ -1110,9 +1112,16 @@ do
 	eq("nil does not validate", nilOk, false)
 	eq("nil reason", nilReason, "state is not a table")
 
-	local wrongVersion = fresh()
-	wrongVersion.v = 2
-	eq("a v2 state is refused", CeroSecOS.validate(wrongVersion), false)
+	-- The gate asks for THIS build's shape and nothing else, in both directions: an
+	-- older state reaches it only after the chain has walked it up, and a newer one
+	-- never reaches it at all (CeroSecOS.migrate refuses it first). Both numbers are
+	-- derived from the constant so that a bump does not make this bench a liar.
+	local older = fresh()
+	older.v = CeroSecOS.STATE_VERSION - 1
+	eq("an unmigrated older state is refused", CeroSecOS.validate(older), false)
+	local newer = fresh()
+	newer.v = CeroSecOS.STATE_VERSION + 1
+	eq("a newer state is refused", CeroSecOS.validate(newer), false)
 
 	local noSysv = fresh()
 	noSysv.sysv = nil
@@ -1219,21 +1228,42 @@ do
 	eq("an invalid child name is refused", CeroSecOS.validate(badChildName), false)
 
 
-	-- migrate.
+	-- migrate. Nothing to keep becomes a fresh machine at the current version.
 	local migrated = CeroSecOS.migrate(nil)
-	eq("migrate(nil) gives a v1 state", migrated.v, 1)
+	eq("migrate(nil) gives a current state", migrated.v, CeroSecOS.STATE_VERSION)
 	eq("migrate(nil) validates", CeroSecOS.validate(migrated), true)
 	eq("migrate(nil) uses the default hostname", migrated.hostname, CeroSecOS.DEFAULT_HOSTNAME)
 	eq("migrate takes a hostname", CeroSecOS.migrate(nil, "ksp-back-02").hostname, "ksp-back-02")
-	eq("migrate of junk gives a v1 state", CeroSecOS.migrate("garbage").v, 1)
-	eq("migrate of an empty table gives a v1 state", CeroSecOS.migrate({}).v, 1)
+	eq("migrate of junk gives a current state",
+		CeroSecOS.migrate("garbage").v, CeroSecOS.STATE_VERSION)
+	eq("migrate of an empty table gives a current state",
+		CeroSecOS.migrate({}).v, CeroSecOS.STATE_VERSION)
+	-- And a version that is not a whole number, which is not a shape anything ever
+	-- wrote: it is neither older nor newer, so it is nothing to keep.
+	eq("a fractional version gives a current state",
+		CeroSecOS.migrate({ v = 1.5 }).v, CeroSecOS.STATE_VERSION)
 
 	local live = fresh()
-	check("migrate passes a valid v1 state through", CeroSecOS.migrate(live) == live)
+	check("migrate passes a current state through", CeroSecOS.migrate(live) == live)
+
+	-- A state of a version migrate CAN read is KEPT even when the gate then
+	-- refuses it, and this is the whole point of the wave: the filesystem stays on
+	-- the disk and the way back is the BIOS, which keeps /home. It used to be
+	-- replaced with a brand new machine here.
 	local broken = fresh()
 	broken.fs.children.etc.children.passwd = nil
-	check("migrate replaces a broken v1 state", CeroSecOS.migrate(broken) ~= broken)
-	eq("the replacement validates", CeroSecOS.validate(CeroSecOS.migrate(broken)), true)
+	check("migrate keeps a broken current state", CeroSecOS.migrate(broken) == broken)
+	eq("and does not hide that the gate refuses it", CeroSecOS.validate(broken), false)
+
+	-- A state a LATER build wrote: refused, and not touched.
+	local newer = fresh()
+	newer.v = CeroSecOS.STATE_VERSION + 1
+	newer.hostname = "ksp-from-tomorrow"
+	local refused, why = CeroSecOS.migrate(newer, "ksp-front-01")
+	eq("a newer state is refused", refused, nil)
+	eq("and says why", why, "newer")
+	eq("and is not touched", newer.v, CeroSecOS.STATE_VERSION + 1)
+	eq("not even its name", newer.hostname, "ksp-from-tomorrow")
 end
 
 --
@@ -1538,6 +1568,10 @@ end
 -- copied from a save file, because that is the only shape such a save has.
 local function oldState(rootPassword, adminPassword)
 	local state = fresh()
+	-- It is a v1 state, and that is not decoration: the accounts table is the shape
+	-- the chain's step 2 was written for, so a save carrying one carries the version
+	-- that had one. A v1 with the step still to run is what this whole bench is.
+	state.v = 1
 	-- A save from before the contents were numbered carries no number.
 	state.sysv = nil
 	state.fs.children.etc.children.passwd = nil
@@ -7066,14 +7100,20 @@ do
 end
 
 -- 34d. The old flag is taken off on the way in
+--
+-- By the chain's step 2 and not on every read any more: the flag only ever
+-- existed on a v1 machine, so a v1 is what carries one and a walk of the whole
+-- filesystem on every command was the price of having no number to count against.
 do
 	local state = fresh()
+	state.v = 1
 	local hist = CeroSecOS.newFile("admin", CeroSecOS.HISTORY_MODE, "echo hi")
 	hist.nq = true
 	state.fs.children.home.children.admin.children[CeroSecOS.HISTORY_NAME] = hist
 	state.fs.children.etc.children.motd.nq = true
 	local back = CeroSecOS.migrate(state, "ksp-front-01")
 	eq("the machine came back", back, state)
+	eq("and is at this build's shape now", state.v, CeroSecOS.STATE_VERSION)
 	eq("the flag is off the history", hist.nq, nil)
 	eq("and off every other node", state.fs.children.etc.children.motd.nq, nil)
 	eq("and the history is exempt all the same", CeroSecOS.exemptUsage(state), #"echo hi")
@@ -10785,10 +10825,18 @@ do
 	eq("and the sweep takes it away", CeroSecOS.checkMounts(state), true)
 	eq("leaving nothing mounted", CeroSecOS.mountTable(state), nil)
 	eq("and nothing left to sweep", CeroSecOS.checkMounts(state), false)
-	-- migrate runs it, which is what makes a saved state safe to run on.
+	-- It is NOT a migration, and it is deliberately not in the chain: what makes a
+	-- mount stale is the disk coming out, which happens while the machine is
+	-- running and not when a save file is read. So it is a sweep on the one road a
+	-- state comes in by (SCeroSecObject:osState, beside unmountDev) and it runs on
+	-- every read rather than once per shape -- a chain step would run once for ever
+	-- and the second disk pulled out by hand would go unswept.
 	state.mounts = { { dev = "fd0", dir = "/mnt", type = "ufs" } }
 	eq("migrate hands the same machine back", CeroSecOS.migrate(state, "ksp-front-01"), state)
-	eq("with the mount swept off it", CeroSecOS.mountTable(state), nil)
+	check("and left the mount alone: sweeping it is not the chain's job",
+		CeroSecOS.mountTable(state) ~= nil)
+	eq("the sweep is what takes it off", CeroSecOS.checkMounts(state), true)
+	eq("and then it is gone", CeroSecOS.mountTable(state), nil)
 end
 
 -- 47m2. A mount point is not a name to take away.

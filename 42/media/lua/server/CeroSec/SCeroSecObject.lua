@@ -132,6 +132,12 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
+	-- And the other sticky refusal. A state a later build wrote is still one after
+	-- it has been carried across town, so this does not make it readable -- osState
+	-- puts the flag straight back on the next read. What it does is ask the question
+	-- again about the state the ITEM brought, which need not be the one the machine
+	-- refused.
+	self.osNewer = nil
 	-- The disk that was in the slot travelled with the machine, inside the OS
 	-- state. A computer put down on the other side of town still has it -- and
 	-- nothing is mounted any more, for the reason the power switch has: it was
@@ -360,25 +366,43 @@ end
 -- The state, or nil plus a reason when it is not something the core can run on.
 -- The refusal is sticky and logged once: a state the validator rejects is a
 -- state we would rather stop touching than repair blindly.
+--
+-- And it is the ONE road a saved state comes in by. Everything that hands this
+-- object a state writes self.os and then asks here -- a chunk coming back
+-- (stateToIsoObject), a machine adopted from its sprite (stateFromIsoObject), a
+-- computer put down out of somebody's hands (resetForPlacement, both through
+-- osFromIsoObject) -- so the migration chain runs on every one of them and on none
+-- of them twice: at the current version it has no steps to walk.
 function SCeroSecObject:osState()
 	if self.osBroken then return nil, "refused" end
+	-- A state a LATER build wrote, which nothing here can read. Sticky like the
+	-- refusal above, and for a stronger reason: those bytes are somebody else's and
+	-- are not ours to repair (see the migration section of CeroSecOSState.lua).
+	if self.osNewer then return nil, "newer" end
 
-	if type(self.os) ~= "table" or self.os.v ~= CeroSecOS.STATE_VERSION then
-		self.os = CeroSecOS.migrate(self.os, self:hostname())
+	-- The chain. It used to be here that a version that was not the current one
+	-- became a FRESH MACHINE -- self.os was replaced wholesale and the filesystem,
+	-- the accounts and the disk in the drive went with it -- which is why
+	-- STATE_VERSION had never been moved: bumping it would have wiped every
+	-- computer in every save on the first load.
+	local was = self.os
+	local wasV = type(was) == "table" and was.v or nil
+	local migrated, why = CeroSecOS.migrate(self.os, self:hostname())
+	if migrated == nil then
+		self.osNewer = true
+		CeroSec.log(CeroSec.LOG_ERROR,
+			"os newer than this build at " .. self.x .. "," .. self.y .. "," .. self.z
+				.. ": v" .. tostring(wasV) .. " > v" .. tostring(CeroSecOS.STATE_VERSION))
+		return nil, why
+	end
+	-- The mirror is only rebuilt when something actually moved -- a fresh machine,
+	-- or a state the chain walked -- because this runs on every command and the
+	-- mirror holds the very same table the rest of the time (see mirrorOS).
+	if migrated ~= was or migrated.v ~= wasV then
+		self.os = migrated
 		self:mirrorOS()
-		return self.os
 	end
 
-	-- A machine saved before passwords were hashed carries them in clear, and
-	-- the validator refuses those. That is the one repair a state of the current
-	-- version gets, and it happens before the gate rather than after it: the
-	-- alternative is throwing away a working filesystem over a password field.
-	CeroSecOS.migrateUsers(self.os)
-	-- The same two repairs CeroSecOS.migrate does, and for the same reason: they
-	-- happen before the gate rather than after it. A machine saved by an older
-	-- build is missing the executables that build never had, and topping it up
-	-- is not throwing a working filesystem away.
-	CeroSecOS.upgradeSystem(self.os)
 	-- The devices under /dev are mounted for the length of one scheduler pass and
 	-- taken away again by CeroSecOS.jobStep. This is the belt to that pair of
 	-- braces: a
@@ -408,15 +432,28 @@ end
 -- has already refused: a machine whose disk is unreadable is exactly the
 -- machine this is for, so it runs on self.os raw rather than on osState().
 --
--- A state of the current version is repaired in place, which is what keeps
--- /home: migrate would hand back a brand new machine instead. Anything else --
--- a version we do not know, junk, nothing at all -- has no filesystem worth
--- keeping and goes through migrate.
+-- Every state the chain can READ is repaired in place, which is what keeps /home:
+-- the version is walked up to this build first and the system files are then put
+-- back onto the machine that was already there. Only what the chain cannot read --
+-- junk, nothing at all, a save older than the oldest step -- comes back as a fresh
+-- machine, and that is migrate's decision and not this one's.
+--
+-- A state a LATER build wrote is not repaired at all. There is nothing here that
+-- can read it, so a repair would be this build writing its own shape over a save
+-- whose own author could still open it; the screen says what is wrong instead
+-- (SCeroSecSystem:sayNoSystem) and the BIOS never asks its question.
 --
 -- true when the machine boots afterwards.
 function SCeroSecObject:restoreOS()
-	if type(self.os) ~= "table" or self.os.v ~= CeroSecOS.STATE_VERSION then
-		self.os = CeroSecOS.migrate(self.os, self:hostname())
+	if self.osNewer then return false end
+	local migrated = CeroSecOS.migrate(self.os, self:hostname())
+	if migrated == nil then
+		self.osNewer = true
+		return false
+	end
+	if migrated ~= self.os then
+		-- A fresh machine: it ships with everything restoreSystem would put back.
+		self.os = migrated
 	else
 		CeroSecOS.restoreSystem(self.os)
 	end

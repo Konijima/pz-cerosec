@@ -1329,6 +1329,120 @@ do
 end
 
 --
+-- A save written by an older build: the machine keeps everything on it
+--
+-- What the chain is FOR, asked at the object and not at the engine: osState is the
+-- one road a saved state comes in by, and what goes in here is a state of the shape
+-- before this build's -- the very thing that used to be replaced with a brand new
+-- machine, filesystem and accounts and all, because the version did not match.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("mkdir /home/admin/work")
+	bench.enter('echo "keep me" > /home/admin/work/notes.txt')
+	bench.enter("exit")
+	bench.frame()
+
+	-- The save file, as an older build left it: the shape one behind this one, and
+	-- the contents number behind too. Both are what an older build really wrote.
+	local saved = bench.object.os
+	saved.v = CeroSecOS.STATE_VERSION - 1
+	saved.sysv = 1
+	bench.object.osBroken = nil
+
+	local state = bench.object:osState()
+	check("the machine came back at all", state ~= nil)
+	check("and it is the SAME machine, not a new one", state == saved)
+	eq("at this build's shape now", state.v, CeroSecOS.STATE_VERSION)
+	eq("and this build's contents", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	local node = CeroSecOS.systemNode(state, "/home/admin/work/notes.txt")
+	check("the file in /home is still there", node ~= nil)
+	eq("byte for byte", node.data, "keep me")
+	check("and the accounts still log in", CeroSecOS.login(state, "admin", "") ~= nil)
+
+	-- And it boots to a login prompt rather than to the BIOS: an older save is not
+	-- damage.
+	bench.window:askForScreen()
+	bench.frame()
+	check("and never meets the BIOS", not bench.painted("No operating system found."))
+end
+
+--
+-- A save written by a LATER build: refused, untouched, and the firmware says so
+--
+-- The other end of the chain, and the one the mod cannot repair: the player has
+-- put an older CeroSec back under a save a newer one wrote. Nothing here can read
+-- the state, so nothing here touches it -- and the BIOS must not offer its
+-- question, because "y" would be this build writing its own shape over a save its
+-- own author could still open.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter('echo "tomorrow" > /home/admin/n.txt')
+	bench.enter("exit")
+	bench.frame()
+
+	local saved = bench.object.os
+	local wrote = CeroSecOS.systemNode(saved, "/home/admin/n.txt")
+	check("the file is there to begin with", wrote ~= nil)
+	local was = wrote.data
+	saved.v = CeroSecOS.STATE_VERSION + 1
+	-- And the CONTENTS number a later build would carry, which is the witness that
+	-- says whether anything here wrote to the state at all: every path that touches
+	-- a machine -- the top-up and the BIOS repair alike -- ends by setting it to
+	-- THIS build's number, so a state that still carries the later one is a state
+	-- nothing wrote to.
+	saved.sysv = CeroSecOS.SYSTEM_VERSION + 1
+	bench.object.osBroken = nil
+	bench.object.osNewer = nil
+
+	local state, why = bench.object:osState()
+	eq("the machine is refused", state, nil)
+	eq("and says why", why, "newer")
+	eq("the state was left at its own version", saved.v, CeroSecOS.STATE_VERSION + 1)
+	eq("and its contents number is still the later build's",
+		saved.sysv, CeroSecOS.SYSTEM_VERSION + 1)
+	eq("and the file on it is byte for byte what it was",
+		CeroSecOS.systemNode(saved, "/home/admin/n.txt").data, was)
+	check("and the object still holds that very table", bench.object.os == saved)
+
+	-- The screen. The firmware's own voice, and NOT the BIOS' question.
+	bench.window:askForScreen()
+	bench.frame()
+	check("the firmware says what is wrong",
+		bench.painted("System newer than firmware: update the mod."))
+	check("and does not offer to repair it",
+		not bench.painted("No operating system found."))
+	eq("nothing is asked", bench.window.prompt, "")
+	eq("the machine is halted", CeroSec.consoleHalted(bench.object.console), true)
+
+	-- Typing at it says the same thing again and never the question.
+	bench.enter("")
+	bench.frame()
+	check("still the firmware's line", bench.painted("System newer than firmware: update the mod."))
+	check("and still not the BIOS' question", not bench.painted("No operating system found."))
+
+	-- The repair itself refuses, and -- the half a return value cannot prove --
+	-- writes NOTHING. A restoreSystem that ran here would put this build's system
+	-- files onto a disk a later build owns and move the contents number down to
+	-- ours, so the number is what says it did not run.
+	eq("restoreOS does nothing", bench.object:restoreOS(), false)
+	eq("and the state is still the later build's", saved.v, CeroSecOS.STATE_VERSION + 1)
+	eq("and its contents number was not written down to ours",
+		saved.sysv, CeroSecOS.SYSTEM_VERSION + 1)
+	eq("and the file on it is still byte for byte what it was",
+		CeroSecOS.systemNode(saved, "/home/admin/n.txt").data, was)
+	check("and still that very table", bench.object.os == saved)
+
+	-- And the switch at the back of the case still works, which is the whole of
+	-- what a player can do about it.
+	eq("it can still be switched off", bench.object:turnOff(), true)
+	eq("and it is off", bench.object.on, false)
+end
+
+--
 -- Escape: an interrupt when the machine is in the middle of something, a close
 -- when it is not.
 --

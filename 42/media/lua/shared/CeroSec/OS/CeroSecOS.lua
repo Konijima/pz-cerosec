@@ -14,13 +14,31 @@
 
 CeroSecOS = CeroSecOS or {}
 
-CeroSecOS.STATE_VERSION = 1
+-- The SHAPE the state is in, and the number the migration chain counts against.
+-- Every step from an older shape to this one is a function in
+-- CeroSecOS.MIGRATIONS (see the head of the migration section in
+-- CeroSecOSState.lua), so moving this number keeps a save instead of throwing it
+-- away -- which is the whole reason it had never been moved before.
+--
+-- 2: the accounts file and the quota flags. Two repairs that were done on EVERY
+--    read of the state, unversioned, because there was no number that could say
+--    they had already been done: state.users -> /etc/passwd with hashed
+--    passwords (CeroSecOS.migrateUsers), and the `nq` flag swept off every node
+--    of the filesystem (the exemption is a PATH now, CeroSecOS.exemptPaths).
+CeroSecOS.STATE_VERSION = 2
 
 -- What the machine's own system files are expected to hold, as opposed to what
--- shape the state is in. STATE_VERSION is the schema and moving it throws a save
--- away; this one is the CONTENTS -- which executables are standard, which files
--- /etc is expected to have -- and moving it tops an older machine up on the way
--- in, once, without touching anything a player put there.
+-- shape the state is in. STATE_VERSION is the schema, and a save written in an
+-- older one is walked up to it by the chain; this one is the CONTENTS -- which
+-- executables are standard, which files /etc is expected to have -- and moving
+-- it tops an older machine up on the way in, once, without touching anything a
+-- player put there.
+--
+-- Which of the two to move is the question every wave asks, and the answer is
+-- what the change IS: a file the machine ships in /bin or /etc is CONTENTS and
+-- moves sysv; a field of the state itself -- one renamed, one dropped, one whose
+-- meaning changed -- is the SHAPE and moves STATE_VERSION with a migration
+-- beside it. See docs/CONTRIBUTING.md.
 --
 -- 2: /bin/sudo, /bin/shutdown, /bin/reboot, /bin/restart and /etc/sudoers.
 -- 3: /bin/date, /bin/df, /bin/grep, /bin/head, /bin/tail, /bin/wc, /bin/man.
