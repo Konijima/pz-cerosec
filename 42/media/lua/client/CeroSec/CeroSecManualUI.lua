@@ -21,6 +21,9 @@ require "CeroSec/CeroSecManualBook"
 -- it is the contract CeroSecManualBook documents. A missing or half-written
 -- manual opens as an empty book rather than as an error.
 --
+-- The one thing the reader does to that text before laying it out is take the
+-- writer's hard wrapping back out of it -- see reflow(), below.
+--
 
 CeroSecManualUI = ISCollapsableWindow:derive("CeroSecManualUI")
 
@@ -157,6 +160,75 @@ function CeroSecManualUI.text()
 	return CeroSecManual
 end
 
+--
+-- Reflowing an authored page
+--
+-- The text is typed into a file by hand, so its paragraphs are hard-wrapped at
+-- whatever column the writer's editor sat at -- and a leaf is not that column.
+-- Handing that straight to the layout, which ends a line at every `\n`, printed
+-- each of the writer's lines and then wrapped what was left of it again: a
+-- seventy-column line on a sixty-four-column leaf came out as a full row and
+-- then a row holding the one word that fell off it. That is what page 87 looked
+-- like -- prose, then a line reading "the", then prose again.
+--
+-- So inside a page a SINGLE newline is a SPACE: the paragraph is joined back
+-- into one piece and wrapped once, against the leaf. A BLANK line is the
+-- paragraph break, and typing one is the only way the writer gets a break. An
+-- example line -- two leading spaces, drawn monospaced and never wrapped -- is
+-- never joined to anything: it keeps its own row whatever is above or below it,
+-- and the newline between an example and prose is a real break on both sides.
+--
+-- This rewrites the TEXT and nothing else. The wrapping, the widths, the fonts
+-- and the pagination are the book's (CeroSecManualBook) and are untouched: what
+-- reaches it is the same contract it already documents, with the writer's
+-- accidental line endings taken back out of it first.
+function CeroSecManualUI.reflow(text)
+	if type(text) ~= "string" then return text end
+	local out = {}      -- the lines to hand on, in the order they were written
+	local para = nil    -- the prose gathered so far, waiting for what ends it
+	-- Walked by hand rather than by gmatch, for the reason CeroSecManualBook's
+	-- own splitter is: "([^\n]*)\n?" loops forever on the empty tail in 5.1.
+	local start = 1
+	while true do
+		local stop = string.find(text, "\n", start, true)
+		local piece = stop and string.sub(text, start, stop - 1) or string.sub(text, start)
+		if CeroSecManualBook.isExample(piece) then
+			if para then out[#out + 1] = para; para = nil end
+			out[#out + 1] = piece
+		elseif string.match(piece, "%S") then
+			-- Trimmed at both ends, because the join is what puts the single
+			-- space between two of these: a line typed with a trailing space, or
+			-- indented by one, would otherwise be joined with two or three.
+			local prose = string.match(piece, "^%s*(.-)%s*$")
+			para = para and (para .. " " .. prose) or prose
+		else
+			if para then out[#out + 1] = para; para = nil end
+			out[#out + 1] = ""
+		end
+		if not stop then break end
+		start = stop + 1
+	end
+	if para then out[#out + 1] = para end
+	return table.concat(out, "\n")
+end
+
+-- The manual with every authored page reflowed, which is what the layout is
+-- given. A fresh table of the three fields the layout reads, because the text
+-- is a global anybody may be reading and a reader must not rewrite it.
+function CeroSecManualUI.reflowed(manual)
+	if type(manual) ~= "table" then return manual end
+	local chapters = {}
+	local authored = manual.chapters or {}
+	for c = 1, #authored do
+		local chapter = authored[c]
+		local pages = {}
+		local written = chapter.pages or {}
+		for p = 1, #written do pages[p] = CeroSecManualUI.reflow(written[p]) end
+		chapters[c] = { title = chapter.title, pages = pages }
+	end
+	return { title = manual.title, edition = manual.edition, chapters = chapters }
+end
+
 function CeroSecManualUI.open(playerObj, item)
 	measure()
 	local playerNum = playerObj:getPlayerNum()
@@ -206,7 +278,7 @@ end
 -- Lay the text out against the geometry as it stands. Called when the window
 -- is made and again whenever the measured layout has moved under it.
 function CeroSecManualUI:layout()
-	self.book = CeroSecManualBook.open(CeroSecManualUI.text(), {
+	self.book = CeroSecManualBook.open(CeroSecManualUI.reflowed(CeroSecManualUI.text()), {
 		width = LEAF_W - PAD_X * 2,
 		rows = CeroSecManualUI.LEAF_ROWS,
 		measure = textWidth,
