@@ -1431,11 +1431,37 @@ un interrupteur dans la pièce.
      en bas. Attendu : elle ressemble aux fenêtres de debug du jeu (mêmes
      couleurs, même police, mêmes en-têtes de colonnes), et pas au terminal vert.
      [ ]
-242. **L'onglet Machines.** Attendu : une ligne par ordinateur que le serveur
-     tient, y compris celui du bâtiment loin, avec sa position, son orientation,
-     on/off, si son morceau de carte est chargé, son nom, son adresse, son numéro
-     de téléphone, son indicatif, ses jobs et le nombre de fenêtres ouvertes
-     dessus. La machine devant laquelle on est est déjà sélectionnée. [ ]
+241b. **Rien de dessiné deux fois sur la même ligne.** C'est le défaut du
+     2026-09-12 : la rangée d'onglets et les en-têtes de colonnes étaient sur la
+     MÊME ligne (on lisait « ess », « tel », « call », « jobs », « eyes » entre les
+     noms d'onglets). Attendu, de haut en bas et sans chevauchement : la barre de
+     titre, la rangée d'onglets, la rangée grise des en-têtes de colonnes, les
+     lignes, la rangée de boutons, puis le bloc de détail. Passer sur chacun des
+     six onglets : la même chose partout. [ ]
+241c. **Les colonnes.** Attendu : chaque colonne est assez large pour son
+     en-tête ET pour la plus longue cellule affichée, aucune cellule n'empiète sur
+     la colonne d'à côté, les traits verticaux tombent entre les colonnes et pas au
+     milieu d'un mot, et la dernière colonne va jusqu'au bord droit. Sélectionner
+     une machine avec un nom d'hôte long et regarder l'onglet Files (les chemins
+     sont les cellules les plus longues) : une cellule trop longue est **coupée**
+     avec un `~`, jamais dessinée par-dessus la suivante. [ ]
+242. **L'onglet Machines.** Attendu : une ligne par ordinateur **utilisé** que le
+     serveur tient, y compris celui du bâtiment loin, avec ses colonnes nommées en
+     mots clairs — `x,y,z`, `facing`, `power`, `chunk`, `wire`, `host`, `address`,
+     `tel`, `call`, `jobs`, `windows`. La machine devant laquelle on est est déjà
+     sélectionnée. [ ]
+242b. **Le filtre, et le compte.** Sous la liste, une ligne `showing N of M` avec
+     le mode (`used only`). Le bouton **Voir toutes les machines** montre tout :
+     attendu, beaucoup plus de lignes — une par sprite d'ordinateur que le streamer
+     a chargé depuis le début de la partie, éteinte, avec des colonnes vides (c'est
+     ce que Mathieu a vu : 44 lignes pour 6 machines qui comptent) — et `N` monte
+     jusqu'à `M`. Le bouton devient **Voir les utilisées** et revient en arrière. Le
+     filtre ne change rien à la sélection ni aux autres onglets, et il ne demande
+     rien au serveur (aucun délai). [ ]
+242c. **La sélection tient.** Machine sélectionnée, attendre trois
+     rafraîchissements (six secondes) sans toucher à rien. Attendu : la ligne
+     surlignée est toujours la MÊME machine, même si une autre est apparue ou a
+     disparu au-dessus d'elle dans la liste. [ ]
 243. **Sous la liste.** Attendu : le détail de la machine sélectionnée sur
      plusieurs lignes — son sprite, la version de son état, `sysv`, si le système
      passe, et sa console (qui est connecté, dans quel répertoire, combien de
@@ -1462,10 +1488,28 @@ un interrupteur dans la pièce.
      son nom et son adresse sont là, parce que le serveur tient son disque quoi
      que fasse le streamer. [ ]
 246. **Éteindre à distance.** Machine loin sélectionnée, cliquer **Éteindre**.
-     Attendu : sa colonne on/off passe à `off` dans les deux secondes. Rallumer
-     avec **Allumer** : elle ne se rallume **que** si son morceau de carte est
-     chargé (le courant se demande à un carré), sinon rien ne bouge — et c'est la
-     bonne réponse. [ ]
+     Attendu : sa colonne `power` passe à `off` dans les deux secondes — éteindre ne
+     demande rien au monde, le serveur tient l'état. [ ]
+246b. **Rallumer une machine dont le quartier n'est pas chargé, et savoir
+     pourquoi.** C'est l'autre moitié du défaut du 2026-09-12 : le bouton
+     **Allumer** était cliquable, on cliquait, et il ne se passait **rien du tout**.
+     Machine loin (colonne `chunk` = `away`) sélectionnée. Attendu : le bouton
+     **Allumer** est **grisé**, et la PREMIÈRE ligne du bloc sous la liste dit
+     pourquoi — « cannot turn on: its chunk is away, so there is nobody to ask about
+     the wire -- teleport to it first ». Cliquer dessus quand même : rien ne part sur
+     le fil et la ligne reste. [ ]
+246c. **Rallumer une machine qu'on peut rallumer.** Se téléporter à la machine
+     loin (étape 247), attendre que la colonne `chunk` passe à `here` et que `wire`
+     dise `yes`. Attendu : **Allumer** n'est plus grisé, la ligne de raison est
+     vide, et le clic allume la machine (colonne `power` → `on` dans les deux
+     secondes, l'écran s'allume dans le monde). Puis **Allumer** se grise et
+     **Éteindre** s'active. [ ]
+246d. **Un refus que le serveur envoie quand même.** Couper le courant de la pièce
+     (générateur à l'arrêt / interrupteur du réseau) SANS rafraîchir, puis cliquer
+     **Allumer** dans les deux secondes qui suivent — le bouton était encore
+     activé. Attendu : le refus revient du serveur et s'affiche sur la première
+     ligne (« cannot turn on: there is no wire at its square »), jamais un clic
+     muet. [ ]
 247. **S'y téléporter.** Machine loin sélectionnée, cliquer **S'y téléporter** →
      le personnage se retrouve au milieu du carré de cette machine (pas sur le
      coin), le quartier se charge, et la colonne **chunk** de cette ligne passe à
@@ -1473,8 +1517,13 @@ un interrupteur dans la pièce.
 248. **Ouvrir le terminal.** Sur une machine allumée dont le quartier est chargé
      et à côté de laquelle on se trouve, cliquer **Ouvrir le terminal** → le
      terminal s'ouvre comme si on avait utilisé l'ordinateur par devant, sans la
-     marche et sans la chaise. Sur une machine loin : rien ne s'ouvre (avec
-     `CeroSec.DEBUG = true`, une ligne le dit dans la console). [ ]
+     marche et sans la chaise. [ ]
+248b. **Les trois raisons de ne pas l'ouvrir.** Attendu : le bouton est grisé et la
+     première ligne sous la liste dit laquelle des trois manque — « cannot open the
+     terminal: its chunk is away, there is no screen in the world » (machine loin),
+     « ... it is off » (machine éteinte devant laquelle on est), « ... the player is
+     not standing at it » (machine allumée et chargée, mais on s'est éloigné de trois
+     carrés). Faire les trois. Cliquer quand même : rien ne s'ouvre. [ ]
 249. **L'onglet Files.** Attendu : l'arbre du disque de la machine sélectionnée,
      `/` en première ligne, puis `/bin`, `/etc`, `/home`… en profondeur, avec le
      mode écrit comme `ls -l` l'écrit, le propriétaire, la taille et la date.
@@ -1534,9 +1583,11 @@ un interrupteur dans la pièce.
      [ ]
 259. **Deux fenêtres, une seule.** Ouvrir la fenêtre, puis la rouvrir par le menu
      d'un autre ordinateur → la première se ferme, il n'y en a jamais deux. [ ]
-260. **Redimensionner.** Tirer le coin de la fenêtre → la liste et les colonnes
-     suivent le bord, les boutons restent sous la liste, et le bloc de détail
-     reste lisible en bas. [ ]
+260. **Redimensionner.** Tirer le coin de la fenêtre, en grand PUIS en petit → la
+     liste et les colonnes suivent le bord, la dernière colonne va toujours jusqu'au
+     bord droit, les boutons restent sous la liste, le bloc de détail reste lisible
+     en bas, et surtout : les en-têtes de colonnes ne remontent JAMAIS sur la rangée
+     d'onglets, à aucune taille. Vérifier sur deux onglets différents. [ ]
 261. **Fermer, et le rafraîchissement qui s'arrête.** Mettre
      `CeroSec.DEBUG = true`, ouvrir la fenêtre, la fermer par sa croix, et
      regarder la console pendant une minute. Attendu : plus rien de la fenêtre —
