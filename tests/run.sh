@@ -35,4 +35,14 @@ else
 	exit 1
 fi
 
+log=$(mktemp)
+if sh tests/kahlua-run.sh > "$log" 2>&1; then
+	tail -1 "$log"
+	rm -f "$log"
+else
+	cat "$log"
+	rm -f "$log"
+	exit 1
+fi
+
 echo "all tests passed"
