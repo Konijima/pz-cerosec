@@ -648,7 +648,12 @@ CeroSecOS.COMMAND_INFO = {
 	mail     = { desc = "read the mail cron left you", usage = "mail" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
+	-- The floppy drive's three. `mount` with nothing after it is the listing, which
+	-- is why the whole of its operand half is optional.
+	mount    = { desc = "list the filesystems, or mount one",
+		usage = "mount [<device> <dir>]" },
 	mv       = { desc = "move or rename a file", usage = "mv <src> <dst>" },
+	newfs    = { desc = "put a filesystem on a disk", usage = "newfs <device>" },
 	passwd   = { desc = "change a password", usage = "passwd [user]" },
 	pwd      = { desc = "print the working directory", usage = "pwd" },
 	reboot   = { desc = "restart the machine", usage = "reboot" },
@@ -680,6 +685,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- the PATH it looks a name up on, and neither of those is anything a file in
 	-- /bin could be handed.
 	type     = { desc = "say what a word is", usage = "type <name>", shell = true },
+	umount   = { desc = "unmount a filesystem", usage = "umount <dir>" },
 	uniq     = { desc = "drop repeated lines", usage = "uniq [-c] [file]" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
@@ -1335,6 +1341,18 @@ commands.mv = function(state, session, args, env)
 		target = dst .. "/" .. name
 	end
 
+	-- A rename is one filesystem's operation and cannot reach across two, which is
+	-- what rename(2) answers EXDEV to -- "Cross-device link", in the words the
+	-- system has used for it since there were two devices. The way across is `cp`
+	-- and then `rm`: two acts, because they can fail separately, and a machine that
+	-- hid a half-finished copy behind the word "mv" would be a machine that lost a
+	-- file while saying it had moved one. The manual says so.
+	local srcAbs = CeroSecOS.resolve(session, src)
+	local dstAbs = CeroSecOS.resolve(session, target)
+	if CeroSecOS.fsFor(state, srcAbs).at ~= CeroSecOS.fsFor(state, dstAbs).at then
+		return fail("mv", target, "cross-device link")
+	end
+
 	local done, mreason = CeroSecOS.moveNode(state, session, src, target, CeroSecOS.clockOf(env))
 	if done == nil then return fail("mv", target, mreason) end
 	return true, {}
@@ -1580,10 +1598,15 @@ commands.date = function(state, session, args, env)
 	return true, { CeroSecOS.formatTime(now, string.sub(form, 2)) }
 end
 
--- df. Two lines, because this machine has two ceilings and either of them is
--- what a write dies on: the bytes on the disk and the nodes on it. Both are
--- counted off the tree at the moment it is asked -- there is no counter kept
--- beside the filesystem that could ever disagree with it.
+-- df. Two lines per filesystem, because a disk on this machine has two ceilings
+-- and either of them is what a write dies on: the bytes on it and the nodes on
+-- it. Both are counted off the tree at the moment it is asked -- there is no
+-- counter kept beside the filesystem that could ever disagree with it.
+--
+-- The hard disk always, and the floppy under it while one is mounted -- which is
+-- what df has always done: it reports what is MOUNTED, and a disk sitting in the
+-- drive unmounted is a disk no filesystem is reading. The two are counted apart
+-- and neither is ever counted against the other (see CeroSecOS.fsFor).
 local D_NAME, D_NUM, D_PCT = 10, 5, 4
 
 local function dfLine(name, total, used)
@@ -1603,7 +1626,7 @@ end
 commands.df = function(state, session, args, env)
 	if #args > 1 then return usage("df") end
 	local nodes, bytes = CeroSecOS.usage(state)
-	return true, {
+	local out = {
 		CeroSecOS.padRight("Filesystem", D_NAME)
 			.. "  " .. CeroSecOS.padLeft("Size", D_NUM)
 			.. "  " .. CeroSecOS.padLeft("Used", D_NUM)
@@ -1612,6 +1635,17 @@ commands.df = function(state, session, args, env)
 		dfLine(CeroSecOS.DISK_NAME, CeroSecOS.DISK_BYTES, bytes),
 		dfLine("nodes", CeroSecOS.MAX_NODES, nodes),
 	}
+	-- The mounted floppy, named the way the drive is named: its own two rows, and
+	-- the node row says which disk it is about, because the machine's own does not
+	-- have to.
+	local mount = CeroSecOS.fdMount(state)
+	if mount ~= nil then
+		local fs = CeroSecOS.fsFor(state, mount.dir)
+		local fnodes, fbytes = CeroSecOS.fsUsage(state, fs)
+		out[#out + 1] = dfLine(CeroSecOS.FD_NAME, fs.bytes, fbytes)
+		out[#out + 1] = dfLine(CeroSecOS.FD_NAME .. " nodes", fs.nodes, fnodes)
+	end
+	return true, out
 end
 
 --

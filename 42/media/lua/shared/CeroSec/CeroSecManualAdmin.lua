@@ -1371,6 +1371,45 @@ so restoring a machine will not clear one of these.
 Classic mistake. Fixing a stranded account by deleting it with deluser -r.
 You have deleted his files to remove one line. sudo edit its .profile.]],
 
+[[The second filesystem.
+
+A disk in the drive on the front of the case is a filesystem of its own,
+and the machine tells you what is mounted if you ask it with nothing:
+
+  admin@ksp-04-11:~$ mount
+  /dev/hda on / type ufs (rw)
+  /dev/fd0 on /mnt type ufs (rw)
+
+The first line is the root filesystem and is always there: a machine
+whose root could be unmounted is a machine with no /bin. The second is a
+floppy, and /mnt is the directory it is mounted on -- root's at 755 and
+shipped empty, because anything kept in it vanishes from view the moment
+somebody mounts a disk over it.
+
+The disk's own 4096 bytes are never counted against the machine's 65536,
+in df or anywhere else. Volume 1, chapter 11 is the rest of it.
+
+Classic mistake. Keeping a file in /mnt. It is a place, not a drawer.]],
+
+[[Who may mount one is the mode on the drive and nothing else.
+
+  admin@ksp-04-11:~$ ls -l /dev
+  crw-rw----  root  sudo  fd0     WORK         ready
+
+/dev/fd0 is root's, group sudo, at 660, like every other device here --
+and on this one both bits are read. mount reads the super block, so it
+wants r; newfs writes one, so it wants w. Nobody outside the sudo group
+has either, and there is no second list of names anywhere that could
+disagree with the mode.
+
+So chmod 666 /dev/fd0 really does hand the drive to the whole office, and
+chmod 640 really does leave the group able to mount a disk and unable to
+format one. The mode is the drive's and not the disk's: it outlives
+whatever was in the slot when you typed it.
+
+Classic mistake. Reaching for sudo to mount a disk. An account in the
+sudo group already has the drive; the mode says so.]],
+
 		} },
 
 		{ title = "10. The security checklist", pages = {
@@ -1642,7 +1681,8 @@ dev's own two are signed the way a command signs, because they are a
 command's:
 
   dev: <word>: unknown kind
-      the kinds are door, light, lock, sensor and win
+      the kinds are:
+      door, floppy, light, lock, sensor and win
   dev: <id>: no such device
   /dev: read-only
       nothing may be created under /dev at all]],

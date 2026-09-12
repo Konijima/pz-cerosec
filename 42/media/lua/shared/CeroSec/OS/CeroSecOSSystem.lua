@@ -77,6 +77,25 @@ function CeroSecOS.ensureSystemDir(state, name)
 	return node
 end
 
+-- /mnt, the one directory a disk is mounted on. Root's at 755 and shipped empty,
+-- which is what /mnt has been on every Unix that had one: it is a PLACE and not a
+-- drawer, and a machine that kept files in it would be a machine whose files
+-- disappear the moment somebody mounts something.
+--
+-- Made only where the name is free, like everything else the machine seeds: a
+-- /mnt root deleted stays deleted, and anything else at that name is somebody's
+-- own work.
+function CeroSecOS.ensureMnt(state)
+	if type(state) ~= "table" then return nil end
+	if type(state.fs) ~= "table" or type(state.fs.children) ~= "table" then return nil end
+	local node = state.fs.children[CeroSecOS.MNT_NAME]
+	if node ~= nil then return node end
+	if CeroSecOS.countEntries(state.fs) >= CeroSecOS.MAX_DIR_ENTRIES then return nil end
+	node = CeroSecOS.newDir("root", CeroSecOS.MNT_MODE)
+	state.fs.children[CeroSecOS.MNT_NAME] = node
+	return node
+end
+
 --
 -- Topping an older machine up
 --
@@ -177,6 +196,8 @@ function CeroSecOS.upgradeSystem(state)
 	CeroSecOS.ensureNet(state)
 	-- And /dev/null, for a machine saved before there was a hole in its disk.
 	CeroSecOS.ensureDev(state)
+	-- And /mnt, for a machine saved before there was a slot on the front of it.
+	CeroSecOS.ensureMnt(state)
 
 	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
@@ -376,6 +397,9 @@ function CeroSecOS.restoreSystem(state)
 	-- BIOS's business -- they are not on the disk at all -- so this puts back
 	-- exactly one node.
 	CeroSecOS.ensureDev(state)
+	-- And /mnt. What is IN the drive is not the BIOS's business either: a disk is a
+	-- thing in the world, and repairing a machine has never meant reaching into it.
+	CeroSecOS.ensureMnt(state)
 
 	-- A repaired machine has everything this build ships, so there is nothing
 	-- left for the upgrade to top up.

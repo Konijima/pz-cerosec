@@ -275,6 +275,7 @@ local FILES = {
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
 	"shared/CeroSec/OS/CeroSecOSDev.lua",
+	"shared/CeroSec/OS/CeroSecOSDisk.lua",
 	"shared/CeroSec/OS/CeroSecOSFS.lua",
 "shared/CeroSec/OS/CeroSecOSNet.lua",
 	"shared/CeroSec/OS/CeroSecOSPath.lua",

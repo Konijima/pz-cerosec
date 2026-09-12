@@ -2,8 +2,8 @@
 --
 -- The first of the three books CeroSec Systems shipped with a machine in 1993.
 -- This one is for somebody who has never sat in front of one of these: it
--- teaches the screen, the prompt, the disk, the editor, the modes and the small
--- tools, and it stops where the second volume starts (accounts, groups, sudo,
+-- teaches the screen, the prompt, the disk, the floppy drive, the editor, the
+-- modes and the small tools, and it stops where the second volume starts (accounts, groups, sudo,
 -- the system files, the devices) and the third one after that.
 --
 -- The shape of a page is the reader's, not this file's: plain ASCII, "\n\n"
@@ -232,7 +232,7 @@ Try it.
 
 That "usage:" line is worth learning to read. ls is the word you type.
 Square brackets mean optional. So ls on its own is legal, ls -l is legal,
-and ls -l /etc is legal. Chapter 11 of this volume is nothing but a page
+and ls -l /etc is legal. Chapter 12 of this volume is nothing but a page
 of those lines, for the day you need one fast.]],
 
 [[Three keys that save your fingers.
@@ -307,17 +307,18 @@ forgot Enter. The machine has not read your line yet.]],
 
 Everything the machine keeps is a file, and files live in folders, which
 this machine calls directories. Directories live inside other directories,
-and at the very top is one that holds all of them. It has no name: it is
-written as a single slash, and everyone calls it the root.
+and at the top is one holding all of them. It has no name: it is written
+as a single slash, and everyone calls it the root.
 
-Six drawers there, on every machine.
+Seven drawers there, on every machine.
 
   admin@ksp-04-11:~$ ls /
-  bin   dev   etc   home  root  var
+  bin   dev   etc   home  mnt   root  var
 
-bin holds the commands, every one of them a real file. dev, etc, root and
-var belong to the machine and its administrator; Volume 2 opens them. home
-holds one directory per ordinary account, and yours is /home/admin.
+bin holds the commands, every one a real file. dev, etc, root and var
+belong to the machine; Volume 2 opens them. home holds one directory per
+account, and yours is /home/admin. mnt stays empty: a floppy is mounted
+there, chapter 11.
 
 pwd prints where you are standing. ls lists what is there. Try both.
 
@@ -327,8 +328,8 @@ pwd prints where you are standing. ls lists what is there. Try both.
   admin@ksp-04-11:~$
 
 ls printed nothing, the right answer on a fresh machine: your directory is
-empty. The squiggle in the prompt stands for that directory, written there
-instead of /home/admin to keep the line short.]],
+empty. The squiggle in the prompt stands for it, written there instead of
+/home/admin to keep the line short.]],
 
 [[Moving about.
 
@@ -1281,7 +1282,140 @@ a customer wrote us a letter about it.]],
 
 		} },
 
-		{ title = "11. Quick reference card", pages = {
+		{ title = "11. The floppy drive", pages = {
+
+[[There is a slot on the front of the case, and a 3.5-inch disk goes into
+it. That is how anything gets off one of these machines and onto another
+one: you write your notes, you put them on a disk, you walk the disk
+across town.
+
+A disk holds 4096 bytes, which is one file as big as a file on this
+machine gets, or a dozen short notes. It is not a second hard drive and
+it was never sold as one.
+
+Right-click the computer and the menu offers Insert floppy when you are
+carrying one, and Eject floppy once one is in. Both are the same walk to
+the front of the machine that switching it on is, and you will hear the
+drive take it.
+
+A new disk out of the box is blank: there is no filesystem on it at all
+and nothing can be written to it until you put one there. Three commands
+do the whole job, and this chapter is those three.
+
+Classic mistake. Buying a disk and expecting to copy a file onto it
+straight away. A blank disk has to be formatted first, every time, on
+every machine there has ever been.]],
+
+[[Once a disk is in the slot, the machine grows a file for the drive:
+
+  admin@ksp-04-11:~$ ls -l /dev
+  crw-rw----  root  sudo  fd0     WORK         blank
+  crw-rw-rw-  root  root  null
+
+fd0 is the drive. The column after its name is the label on the sticker,
+and the last word is what is in it: blank, ready, or mounted.
+
+  admin@ksp-04-11:~$ cat /dev/fd0
+  blank
+
+Take the disk out and the file goes with it. There is nothing under /dev
+for a drive with nothing in it, which is the honest answer: the slot is
+empty.
+
+Formatting is newfs, and it prints what it made:
+
+  admin@ksp-04-11:~$ newfs /dev/fd0
+  /dev/fd0: 4096 bytes, 32 inodes
+
+That empties the disk. Everything that was on it is gone, which is what
+formatting a disk has always meant.
+
+Classic mistake. Running newfs on a disk that had something on it,
+because a command with "new" in its name sounded harmless.]],
+
+[[A filesystem on a disk is not reachable until you mount it, and this
+machine has one place to mount it: /mnt, an empty directory that is
+there for exactly this.
+
+  admin@ksp-04-11:~$ mount /dev/fd0 /mnt
+  admin@ksp-04-11:~$ ls /mnt
+
+Nothing yet, and no complaint either: the disk is empty. From here on
+/mnt IS the disk. Every command you know works through it and none of
+them has to be told anything:
+
+  admin@ksp-04-11:~$ cp notes.txt /mnt
+  admin@ksp-04-11:~$ ls /mnt
+  notes.txt
+  admin@ksp-04-11:~$ cd /mnt
+  admin@ksp-04-11:/mnt$ edit shopping.txt
+
+Type mount with nothing after it and it tells you what is mounted:
+
+  admin@ksp-04-11:~$ mount
+  /dev/hda on / type ufs (rw)
+  /dev/fd0 on /mnt type ufs (rw)
+
+Classic mistake. Copying a file to /mnt with no disk mounted. It works,
+and it writes to the hard drive: /mnt is an ordinary directory when
+nothing is mounted on it, and the file is not on any disk.]],
+
+[[The disk has its own room, and it is nothing to do with the machine's.
+df says so once one is mounted:
+
+  admin@ksp-04-11:~$ df
+  Filesystem   Size   Used  Avail  Use%
+  hda         65536   2155  63381    4%
+  nodes         512     90    422   18%
+  fd0          4096      5   4091    1%
+  fd0 nodes      32      2     30    7%
+
+Two more rows, and they are the disk's: 4096 bytes and 32 files and
+directories. Fill the disk and the machine says disk full about the
+write to /mnt and nothing at all about hda. Fill the machine and the
+disk is still yours to write to.
+
+What travels with the disk is everything on it: the names, the contents,
+who owns each file and what its mode is. Carry it to the machine next
+door and your files are still yours there, because an account is a name
+and the name goes with the file. root, as always, reads all of it.
+
+Classic mistake. Assuming the disk gets a share of the machine's 65536
+bytes. It does not. It has 4096 of its own, and that is all it will ever
+have.]],
+
+[[When you are done, unmount before you eject:
+
+  admin@ksp-04-11:/mnt$ cd
+  admin@ksp-04-11:~$ umount /mnt
+
+umount refuses while anybody is standing in it -- yourself included:
+
+  admin@ksp-04-11:/mnt$ umount /mnt
+  umount: /mnt: Device busy
+
+cd out of it and try again. Same for newfs: a mounted disk is not
+formatted under the feet of whoever is reading it.
+
+Nothing is lost by forgetting. Ejecting a mounted disk unmounts it
+first, and every write here is finished by the time the command that
+made it comes back: no buffer waits to be flushed, and there is no such
+thing as a half-written file.
+
+One thing mv will not do is carry a file between the two disks:
+
+  admin@ksp-04-11:~$ mv notes.txt /mnt
+  mv: /mnt/notes.txt: cross-device link
+
+Use cp and then rm. Two commands, because they are two things that can
+go wrong separately.
+
+Classic mistake. Walking off with the disk while the window is open.
+Eject it from the menu; that is what the menu is for.]],
+
+		} },
+
+		{ title = "12. Quick reference card", pages = {
 
 [==[Every command in this volume, with its exact shape. Square brackets are
 optional parts; never type the brackets. Angle brackets are something you
@@ -1294,6 +1428,12 @@ Getting about, and looking.
   ls [-1laACF] [path]
   cat [file]...
   df
+
+The floppy drive.
+
+  newfs <device>
+  mount [<device> <dir>]
+  umount <dir>
 
 Making, copying, destroying.
 
@@ -1376,7 +1516,7 @@ leave out; they are not part of the command.]],
 
 		} },
 
-		{ title = "12. Appendix: what the machine says", pages = {
+		{ title = "13. Appendix: what the machine says", pages = {
 
 [[Every refusal on this machine is one line, and it is built the same way
 every time:
@@ -1492,6 +1632,29 @@ Pipes, from chapter 7.
 
   <name> is not in the sudoers file.
       that account may not become root at all; Volume 2]],
+
+[[The floppy drive, and the disk in it.
+
+  newfs: /dev/fd0: no such file
+      there is no disk in the slot
+  newfs: /dev/fd0: permission denied
+      the drive is root's and the sudo group's; Volume 2
+  newfs: /dev/fd0: Device busy
+      unmount it first
+  newfs: /dev/fd0: not a floppy drive
+      that path is something else
+  mount: /dev/fd0 on /mnt: Incorrect super block
+      the disk is blank; newfs it
+  mount: /mnt: Device busy
+      something is already mounted there
+  mount: /mnt: not a directory
+      a disk mounts on a directory and nothing else
+  umount: /mnt: not mounted
+      nothing is mounted there
+  umount: /mnt: Device busy
+      a session's working directory is inside it
+  mv: /mnt/notes.txt: cross-device link
+      mv cannot cross two disks; use cp and rm]],
 
 [[The editor, whose messages sit on its own bottom line rather than at a
 prompt.

@@ -379,9 +379,22 @@ end
 -- So a link that points at itself costs eight hops and then says so, and a pair
 -- that point at each other costs the same -- there is no path through here that
 -- does not end.
+-- The absolute path of the first n components of a walk. Built a piece at a time
+-- rather than with table.concat's four-argument form, which is not worth betting
+-- on under Kahlua.
+local function pathUpTo(parts, n)
+	local head = {}
+	for k = 1, n do head[k] = parts[k] end
+	return "/" .. table.concat(head, "/")
+end
+
 function CeroSecOS.getNode(state, session, path, noFollow)
 	local abs, parts = CeroSecOS.resolve(session, path)
 	local node = state.fs
+	-- Is there a second filesystem on this machine at all? Asked once, because the
+	-- answer is nil on every machine with an empty drive and the walk must not pay
+	-- for a floppy nobody put in (see CeroSecOSDisk.lua).
+	local mounts = CeroSecOS.mountTable(state)
 	local hops = 0
 	local i = 1
 	while i <= #parts do
@@ -410,6 +423,23 @@ function CeroSecOS.getNode(state, session, path, noFollow)
 			i = 1
 		else
 			node = child
+			-- A mount point is the ROOT OF THE MOUNTED DISK and not the directory
+			-- that is on the hard drive underneath it, which is what a mount has
+			-- meant since there were two filesystems. Crossed here and nowhere
+			-- else -- the same place a symbolic link is followed, and for the same
+			-- reason: no command in the engine had to learn there is a floppy.
+			--
+			-- A mount whose drive is empty is not crossed and the directory
+			-- underneath shows through. Nothing can leave one behind -- the eject
+			-- path unmounts, and CeroSecOS.checkMounts sweeps a forged one off on
+			-- the way in -- so this is the belt and not the rule.
+			if mounts ~= nil then
+				local mount = CeroSecOS.mountAt(state, pathUpTo(parts, i))
+				if mount ~= nil then
+					local root = CeroSecOS.mountedRoot(state, mount)
+					if root ~= nil then node = root end
+				end
+			end
 			i = i + 1
 		end
 	end
@@ -484,10 +514,15 @@ local function checkAttach(state, session, parts, addNodes, addBytes, addDepth, 
 		return nil, nil, "directory full"
 	end
 
+	-- Which disk this lands on, and therefore which two ceilings it is judged
+	-- against: the floppy's when the path is under a mount point, the machine's own
+	-- drive otherwise. Neither is ever counted against the other -- a full floppy
+	-- is a `df` that has not moved on hda (see CeroSecOS.fsFor).
 	if addNodes > 0 or addBytes > 0 then
-		local nodes, bytes = CeroSecOS.usage(state)
-		if nodes + addNodes > CeroSecOS.MAX_NODES then return nil, nil, "disk full" end
-		if bytes + addBytes > CeroSecOS.MAX_TOTAL_BYTES then return nil, nil, "disk full" end
+		local fs = CeroSecOS.fsFor(state, parentPath)
+		local nodes, bytes = CeroSecOS.fsUsage(state, fs)
+		if nodes + addNodes > fs.nodes then return nil, nil, "disk full" end
+		if bytes + addBytes > fs.bytes then return nil, nil, "disk full" end
 	end
 
 	return parent, name, nil
@@ -586,7 +621,7 @@ end
 
 -- Replace a file's contents. true, reason.
 function CeroSecOS.setData(state, session, path, data, now)
-	local node, reason = CeroSecOS.getNode(state, session, path)
+	local node, reason, abs = CeroSecOS.getNode(state, session, path)
 	if node == nil then return nil, reason end
 	if node.type ~= "file" then return nil, CeroSecOS.notAFile(node) end
 	if not CeroSecOS.can(state, session, node, "w") then return nil, "permission denied" end
@@ -602,11 +637,16 @@ function CeroSecOS.setData(state, session, path, data, now)
 	-- already past it -- a history renamed into an ordinary file is bytes that
 	-- were exempt a moment ago -- still lets a shorter line be written over a
 	-- longer one, because that is room being made and not room being taken.
-	local _, before = CeroSecOS.usage(state)
+	--
+	-- And it is asked of the disk the FILE is on, which is the floppy when the file
+	-- is under a mount point: a note written on a disk fills the disk and never the
+	-- machine it happens to be plugged into.
+	local fs = CeroSecOS.fsFor(state, abs)
+	local _, before = CeroSecOS.fsUsage(state, fs)
 	local old = node.data
 	node.data = data
-	local _, after = CeroSecOS.usage(state)
-	if after > CeroSecOS.MAX_TOTAL_BYTES and after > before then
+	local _, after = CeroSecOS.fsUsage(state, fs)
+	if after > fs.bytes and after > before then
 		node.data = old
 		return nil, "disk full"
 	end

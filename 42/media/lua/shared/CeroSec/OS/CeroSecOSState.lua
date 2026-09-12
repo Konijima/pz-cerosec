@@ -54,6 +54,10 @@ function CeroSecOS.newState(hostname)
 	-- not written here: an address is a fact about which building the computer
 	-- stands in, and nothing in the engine has ever seen a building.
 	CeroSecOS.ensureNet(state)
+	-- And /mnt, the place a floppy is mounted on. state.floppy stays absent: a
+	-- fresh machine has an empty drive, and so does every machine until somebody
+	-- puts a disk in the slot.
+	CeroSecOS.ensureMnt(state)
 	return state
 end
 
@@ -80,6 +84,9 @@ local function checkPlain(value, seen, where)
 	return true
 end
 
+-- tally carries the node ceiling it is counting against rather than reading
+-- MAX_NODES itself: the same walk checks the machine's own drive and the disk in
+-- its slot, and those are two different ceilings (CeroSecOS.FLOPPY_NODES).
 local function checkNode(node, where, depth, tally)
 	if type(node) ~= "table" then return false, where .. ": not a node" end
 	if type(node.owner) ~= "string" then return false, where .. ": bad owner" end
@@ -104,18 +111,19 @@ local function checkNode(node, where, depth, tally)
 	end
 
 	-- The machine's own null device, and no other device: the world's are mounted
-	-- for the length of one command and swept off again (CeroSecOS.unmountDev), so
-	-- a light switch on a saved disk is a state nothing here can be asked to run
-	-- on. It is NOT counted: a device costs the disk nothing anywhere else either
-	-- (CeroSecOS.subtreeUsage), and a gate that counted it differently from the
-	-- quota would refuse a machine the quota had just let fill up.
+	-- for the length of one command and swept off again (CeroSecOS.unmountDev), and
+	-- so is the floppy drive -- /dev/fd0 on a saved disk is a state nothing here can
+	-- be asked to run on either. It is NOT counted: a device costs the disk nothing
+	-- anywhere else either (CeroSecOS.subtreeUsage), and a gate that counted it
+	-- differently from the quota would refuse a machine the quota had just let fill
+	-- up.
 	if node.type == "dev" then
 		if not CeroSecOS.isNull(node) then return false, where .. ": bad type" end
 		return true
 	end
 
 	tally.nodes = tally.nodes + 1
-	if tally.nodes > CeroSecOS.MAX_NODES then return false, "too many nodes" end
+	if tally.nodes > tally.max then return false, "too many nodes" end
 
 	if node.type == "file" then
 		if type(node.data) ~= "string" then return false, where .. ": bad data" end
@@ -184,8 +192,39 @@ function CeroSecOS.validate(state)
 	end
 	if type(state.fs) ~= "table" then return false, "bad fs" end
 	if state.fs.type ~= "dir" then return false, "fs root is not a directory" end
-	local fsOk, fsReason = checkNode(state.fs, "", 0, { nodes = 0 })
+	local fsOk, fsReason =
+		checkNode(state.fs, "", 0, { nodes = 0, max = CeroSecOS.MAX_NODES })
 	if not fsOk then return false, fsReason end
+
+	-- The disk in the drive, when there is one. It is not part of state.fs and is
+	-- never counted against the machine's quota (see CeroSecOSDisk.lua), so it is
+	-- walked here on its own, against its own node ceiling: a disk forged past what
+	-- a floppy holds is a disk the write path would never have made and is not
+	-- something to run on.
+	--
+	-- An UNFORMATTED disk is a disk with no filesystem on it and is the normal state
+	-- of a new one out of the box, so a missing tree is not a fault. The mount table
+	-- is not validated here at all: a mount naming a drive with nothing in it is
+	-- repaired on the way in (CeroSecOS.checkMounts), the way a light switch left on
+	-- /dev is swept, because it is a thing the core can run on perfectly well and
+	-- simply must not be left believing.
+	local disk = state.floppy
+	if disk ~= nil then
+		if type(disk) ~= "table" then return false, "floppy: not a disk" end
+		if disk.v ~= CeroSecOS.FLOPPY_VERSION then return false, "floppy: bad version" end
+		if disk.label ~= nil then
+			if type(disk.label) ~= "string" then return false, "floppy: bad label" end
+			if #disk.label > CeroSecOS.LABEL_MAX then return false, "floppy: bad label" end
+		end
+		if disk.fs ~= nil then
+			if type(disk.fs) ~= "table" or disk.fs.type ~= "dir" then
+				return false, "floppy: root is not a directory"
+			end
+			local dOk, dReason =
+				checkNode(disk.fs, "", 0, { nodes = 0, max = CeroSecOS.FLOPPY_NODES })
+			if not dOk then return false, "floppy" .. dReason end
+		end
+	end
 
 	-- The accounts are a FILE now, so this is all validate has to say about
 	-- them: that the file is there and that it is root's. What is in it is the
@@ -222,6 +261,9 @@ function CeroSecOS.migrate(state, hostname)
 		-- is what keeps such a machine's filesystem instead of throwing it away.
 		CeroSecOS.migrateUsers(state)
 		dropQuotaFlags(state.fs)
+		-- And a mount naming a drive with nothing in it, which is a mount nothing
+		-- could walk through. Before the gate, like the rest of this.
+		CeroSecOS.checkMounts(state)
 		-- And then the contents: a machine saved before this build has neither
 		-- the executables it added nor the files, and neither is damage.
 		CeroSecOS.upgradeSystem(state)

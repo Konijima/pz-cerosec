@@ -112,12 +112,18 @@ CeroSecOS.DEV_GROUP = "sudo"
 -- sensor that a motion sensor would do. The kind has to be HERE and not merely
 -- absent, because a kind the core has no entry for is an entry nodeFor drops on
 -- the floor: absent means "not a device", empty means "read-only".
+-- The floppy drive is the second empty one, and for the same reason read the
+-- other way round: there is no WORD a survivor could write to a raw disk. Its
+-- `w` bit is still read -- by `newfs`, which opens the device to format it, the
+-- way newfs on a real machine does -- so 660 on it promises nothing a redirect
+-- could ask for and everything `newfs` asks for (see CeroSecOSDisk.lua).
 CeroSecOS.DEV_VALUES = {
 	light  = { on = true, off = true },
 	lock   = { lock = true, unlock = true },
 	win    = { lock = true, unlock = true },
 	door   = { open = true, close = true },
 	sensor = {},
+	floppy = {},
 }
 
 -- The mode a kind is born at, where DEV_MODE is not it. A sensor is read-only by
@@ -278,7 +284,13 @@ function CeroSecOS.unmountDev(state, env)
 		-- Every device except the machine's own: /dev/null is on the disk and is
 		-- not something the world hands over, so the sweep is not about it.
 		if CeroSecOS.isDev(node) and not CeroSecOS.isNull(node) then
-			if devices ~= nil and type(devices.chmod) == "function"
+			-- The floppy drive is not the world's either -- it is bolted to the case
+			-- -- so its mode is remembered on the machine's own state rather than in
+			-- the caller's book of devices. A chmod on it outlives the disk that
+			-- happened to be in it when it was typed.
+			if CeroSecOS.isFloppyDev(node) then
+				if node.mode ~= node.mounted then state.fdmode = node.mode end
+			elseif devices ~= nil and type(devices.chmod) == "function"
 					and node.mode ~= node.mounted then
 				devices.chmod(node.id, node.mode)
 			end
@@ -287,22 +299,42 @@ function CeroSecOS.unmountDev(state, env)
 	end
 end
 
--- Build /dev's children from what the caller can see right now. Anything
--- already there under a name a device wants is LEFT alone: /dev is read-only to
--- everybody, so nothing should be, and a machine whose save file carries
--- something odd at that name is a machine we would rather show the oddity than
--- quietly overwrite.
+-- The floppy drive, which is a device of the MACHINE and not of the world: it is
+-- there whenever there is a disk in it, with no caller to ask and nothing to
+-- discover. First on, so that a building with sixty-four light switches in it
+-- cannot push the drive off the end of DEV_MAX -- a survivor can walk away from a
+-- light he cannot reach through the machine, and he cannot walk away from the
+-- disk he just put in the slot. The room that is left comes back.
+local function mountDrive(state, dir, room)
+	if room <= 0 then return room end
+	if dir.children[CeroSecOS.FD_NAME] ~= nil then return room end
+	local node = CeroSecOS.newFloppyDev(state)
+	if node == nil then return room end
+	node.mounted = node.mode
+	dir.children[CeroSecOS.FD_NAME] = node
+	return room - 1
+end
+
+-- Build /dev's children from what the caller can see right now, plus the drive on
+-- the front of the case. Anything already there under a name a device wants is
+-- LEFT alone: /dev is read-only to everybody, so nothing should be, and a machine
+-- whose save file carries something odd at that name is a machine we would rather
+-- show the oddity than quietly overwrite.
 function CeroSecOS.mountDev(state, env)
 	CeroSecOS.unmountDev(state, env)
-	local devices = CeroSecOS.devicesOf(env)
-	if devices == nil then return end
 	local dir = devDir(state)
 	if dir == nil then return end
+	-- The drive goes on whether the caller handed any world over or not: a machine
+	-- on a bench with no building around it still has a slot on the front of it.
+	local room = CeroSecOS.DEV_MAX - CeroSecOS.countEntries(dir)
+	room = mountDrive(state, dir, room)
+
+	local devices = CeroSecOS.devicesOf(env)
+	if devices == nil then return end
 
 	local list = devices.list()
 	if type(list) ~= "table" then return end
 
-	local room = CeroSecOS.DEV_MAX - CeroSecOS.countEntries(dir)
 	for i = 1, #list do
 		if room <= 0 then return end
 		local node = nodeFor(list[i])

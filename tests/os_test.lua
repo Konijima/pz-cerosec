@@ -3,7 +3,7 @@
 
 local DIR = "42/media/lua/shared/CeroSec/OS/"
 local FILES = {
-	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath", "CeroSecOSScript",
+	"CeroSecOS", "CeroSecOSComplete", "CeroSecOSCron", "CeroSecOSDev", "CeroSecOSDisk", "CeroSecOSFS", "CeroSecOSNet", "CeroSecOSPath", "CeroSecOSScript",
 	"CeroSecOSShell", "CeroSecOSState", "CeroSecOSSystem", "CeroSecOSUsers",
 	"CeroSecOSVM",
 }
@@ -209,13 +209,24 @@ do
 	eq("fs root owner", state.fs.owner, "root")
 
 	local names = CeroSecOS.childNames(state.fs)
-	eq("root has 6 entries", #names, 6)
+	eq("root has 7 entries", #names, 7)
 	eq("root entry 1", names[1], "bin")
 	eq("root entry 2", names[2], "dev")
 	eq("root entry 3", names[3], "etc")
 	eq("root entry 4", names[4], "home")
-	eq("root entry 5", names[5], "root")
-	eq("root entry 6", names[6], "var")
+	eq("root entry 5", names[5], "mnt")
+	eq("root entry 6", names[6], "root")
+	eq("root entry 7", names[7], "var")
+
+	-- /mnt: a PLACE for a floppy to be mounted on, root's at 755 and empty. Empty
+	-- is the whole of what it is: anything kept in it disappears from view the
+	-- moment somebody mounts a disk over it.
+	local mnt = state.fs.children.mnt
+	eq("/mnt is root's", mnt.owner, "root")
+	eq("/mnt mode", mnt.mode, CeroSecOS.MNT_MODE)
+	eq("/mnt ships empty", CeroSecOS.countEntries(mnt), 0)
+	eq("and nothing is mounted on a fresh machine", CeroSecOS.mountTable(state), nil)
+	eq("and the drive is empty", CeroSecOS.floppyOf(state), nil)
 
 	-- /var and the three under it: the crontab spool, root's and 700, and the
 	-- two ordinary directories the log and the mail hang in.
@@ -272,7 +283,7 @@ do
 	local hosts = state.fs.children.etc.children.hosts
 	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 9 + 6 + #binNames + 5)
+	eq("skeleton node count", nodes, 10 + 6 + #binNames + 5)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
@@ -486,7 +497,7 @@ do
 	eq("help header", helpLines[1], "CeroSec OS commands:")
 
 	-- Packed into columns: five short names fit one row of a 60-column screen.
-	ok(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
 	ok(state, admin, "ls", {})
 	ok(state, admin, "mkdir sub", {})
 	ok(state, admin, "ls", { "sub" })
@@ -799,11 +810,11 @@ do
 	-- are for somebody reading them, and a name a line is what the next command
 	-- can use (see section 46).
 	ok(state, admin, "cat listing.txt",
-		{ "bin", "dev", "etc", "home", "root", "var" })
+		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
 	-- Asked for outright, the columns go into the file exactly as they would have
 	-- gone onto the glass.
 	ok(state, admin, "ls -C / > packed.txt", {})
-	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  var" })
 	ok(state, admin, "echo x>tight.txt", {})            -- no spaces around >
 	ok(state, admin, "cat tight.txt", { "x" })
 	ok(state, admin, "> empty.txt", {})                 -- bare redirect creates the file
@@ -937,10 +948,10 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	-- The skeleton, the /var tree, plus one executable per command, plus
-	-- /etc/passwd, /etc/sudoers, /etc/group and the two network files. /dev/null
-	-- is a device and is not a node the disk counts.
-	eq("starting node count", nodes, 9 + 6 + #CeroSecOS.binNames() + 5)
+	-- The skeleton (/mnt included), the /var tree, plus one executable per command,
+	-- plus /etc/passwd, /etc/sudoers, /etc/group and the two network files.
+	-- /dev/null is a device and is not a node the disk counts.
+	eq("starting node count", nodes, 10 + 6 + #CeroSecOS.binNames() + 5)
 	local made = 0
 	local dir = 0
 	while true do
@@ -982,13 +993,17 @@ do
 	-- is still the owner's own name.
 	local EPOCH = "Jan  1 00:00"
 	local lines = ok(state, admin, "ls -l /", nil)
-	eq("ls -l lists 6 entries", #lines, 6)
+	eq("ls -l lists 7 entries", #lines, 7)
 	eq("ls -l bin",
 		lines[1],
 		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.binNames()), 5) .. "  " .. EPOCH .. "  bin")
-	eq("ls -l root dir",
+	eq("ls -l mnt",
 		lines[5],
+		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "    0"
+			.. "  " .. EPOCH .. "  mnt")
+	eq("ls -l root dir",
+		lines[6],
 		"drwx------" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "    0"
 			.. "  " .. EPOCH .. "  root")
 	for i = 1, #lines do
@@ -2596,7 +2611,7 @@ do
 	bad(state, admin, "ls /", "ls: permission denied")
 	local listed = run(state, admin, "sudo ls /")
 	eq("sudo ls runs", listed.ok, true)
-	eq("and lists", listed.lines[1], "bin   dev   etc   home  root  var")
+	eq("and lists", listed.lines[1], "bin   dev   etc   home  mnt   root  var")
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 
 	-- The two orders come back out of sudo untouched.
@@ -3178,7 +3193,7 @@ do
 	-- And through the command.
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
+	okAt(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
 	okAt(state, admin, "ls", {})
 	okAt(state, admin, "touch only.txt", {})
 	okAt(state, admin, "ls", { "only.txt" })
@@ -3186,9 +3201,9 @@ do
 	okAt(state, admin, "ls", { "only.txt  sub" })
 	-- -F marks the directories and nothing else.
 	okAt(state, admin, "ls -F", { "only.txt  sub/" })
-	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  root/  var/" })
+	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  mnt/   root/  var/" })
 	-- The mark is part of the name, so it is what the column is measured on.
-	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 39)
+	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 46)
 end
 
 -- 20f. ls -l, with a clock and with the flags together.
@@ -6979,10 +6994,10 @@ do
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ adduser cat chgrp chmod chown clear cp crontab date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
-		.. " help hostname id ifconfig kill last ln ls mail man mkdir mv passwd ping"
+		.. " help hostname id ifconfig kill last ln ls mail man mkdir mount mv newfs passwd ping"
 		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail test touch true uniq wc which who whoami write"
+		.. " sleep sort su sudo tail test touch true umount uniq wc which who whoami write"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -9331,43 +9346,43 @@ do
 	local admin = open(state, "admin")
 
 	-- At the glass: packed, as it has always been.
-	ok(state, admin, "ls /", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
 
 	-- Down a pipe: a name a line. The stage on the left is not writing to a
 	-- screen, and the one on the right is.
-	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "root", "var" })
+	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
 	ok(state, admin, "ls / | grep e", { "dev", "etc", "home" })
-	ok(state, admin, "ls / | wc -l", { "     6" })
+	ok(state, admin, "ls / | wc -l", { "     7" })
 	-- Which is the whole point: a loop over a listing gets the names and not the
 	-- rows they were packed into.
 	ok(state, admin, "for f in $(ls /); do echo [$f]; done",
-		{ "[bin]", "[dev]", "[etc]", "[home]", "[root]", "[var]" })
+		{ "[bin]", "[dev]", "[etc]", "[home]", "[mnt]", "[root]", "[var]" })
 	-- A capture of it is the names, separated the way a capture separates lines.
 	ok(state, admin, "x=$(ls /)", {})
-	ok(state, admin, "echo $x", { "bin dev etc home root var" })
+	ok(state, admin, "echo $x", { "bin dev etc home mnt root var" })
 
 	-- Into a file: a name a line as well, because a file is not a screen either.
 	ok(state, admin, "ls / > listed.txt", {})
-	ok(state, admin, "cat listed.txt", { "bin", "dev", "etc", "home", "root", "var" })
+	ok(state, admin, "cat listed.txt", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
 
 	-- And either can be asked for outright, whoever is reading.
-	ok(state, admin, "ls -1 /", { "bin", "dev", "etc", "home", "root", "var" })
-	ok(state, admin, "ls -C / | cat", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "ls -1 /", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
+	ok(state, admin, "ls -C / | cat", { "bin   dev   etc   home  mnt   root  var" })
 	ok(state, admin, "ls -C / > packed.txt", {})
-	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  root  var" })
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  var" })
 	-- The later of the two wins, exactly as -a and -A do.
-	ok(state, admin, "ls -1C /", { "bin   dev   etc   home  root  var" })
-	ok(state, admin, "ls -C1 /", { "bin", "dev", "etc", "home", "root", "var" })
+	ok(state, admin, "ls -1C /", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "ls -C1 /", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
 	-- -l was always a line each and neither flag has anything to say about it.
 	local long = okAt(state, admin, "ls -l1 /")
-	eq("a long listing is a line each whatever else is asked", #long, 6)
+	eq("a long listing is a line each whatever else is asked", #long, 7)
 	badAt(state, admin, "ls -q /", "ls: -q: unknown option")
 
 	-- The last stage of a pipeline IS writing to the glass, so it packs: `cat`
 	-- hands the lines over and the ls at the end of it is the one in front of a
 	-- person.
 	ok(state, admin, "cat listed.txt | sort | uniq",
-		{ "bin", "dev", "etc", "home", "root", "var" })
+		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
 end
 
 -- The other three doors to the same question, asked of the engine rather than
@@ -9389,7 +9404,7 @@ do
 		for i = 1, #job.out do out[#out + 1] = job.out[i] end
 		job.out = {}
 	end
-	eq("cron's ls is a name a line", #out, 6)
+	eq("cron's ls is a name a line", #out, 7)
 	eq("the first of them", out[1], "bin")
 end
 

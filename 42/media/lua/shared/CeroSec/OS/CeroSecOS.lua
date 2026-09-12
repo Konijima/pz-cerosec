@@ -51,7 +51,12 @@ CeroSecOS.STATE_VERSION = 1
 --    places the filesystem grew: /dev/null, the device that reads empty and
 --    swallows what is written to it, and /var/tmp, the directory anybody may
 --    write in and only the owner of a file may delete from.
-CeroSecOS.SYSTEM_VERSION = 11
+-- 12: the floppy drive. /bin/mount, /bin/umount and /bin/newfs, and the one
+--    directory a disk is mounted on: /mnt, root's at 755 and shipped empty. The
+--    device it is mounted FROM is not seeded and never could be -- /dev/fd0
+--    exists for the length of one command and only while there is a disk in the
+--    slot (see CeroSecOSDisk.lua).
+CeroSecOS.SYSTEM_VERSION = 12
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
