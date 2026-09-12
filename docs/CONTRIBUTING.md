@@ -90,3 +90,12 @@ scripts are not, so the whole mod has to sit where it is loaded from.
   cannot carry an exemption to where it does not belong. See
   [ARCHITECTURE.md](ARCHITECTURE.md#persistence) and
   [DEVICES.md](DEVICES.md#the-floppy-drive-and-the-second-filesystem).
+
+## Workshop copy
+
+Never link `~/Zomboid/Workshop/CeroSec/Contents/mods/CeroSec` to the repo: the
+game scans that folder as a mod too, and through a symlink `ScriptManager`
+builds a doubled path and loses every script file (items, sounds). At
+publication time run `sh tools/workshop-sync.sh sync`, upload from the game's
+Workshop screen, then `sh tools/workshop-sync.sh clean` so the game loads the
+real folder again.
