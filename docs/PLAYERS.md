@@ -789,6 +789,30 @@ A server that wants it otherwise sets one option:
 | `never` | there is no telephone service at all, from day one |
 | `always` | on its own generator; it outlives the grid |
 
+**The phone book.** Your own number is on the BIOS screen. Everybody else's is in
+the telephone directory, and the county is full of them -- `Phonebook` is a vanilla
+item that turns up on hall tables and behind shop counters. Right-click a copy in
+your bag: **Look up numbers** opens it as a book with leaves, the businesses of one
+exchange, a name and a number a line:
+
+```
+  Coffee Shop ................................ 555-0416
+```
+
+Dial it with `cu` from any machine in the county -- it is the same seven digits
+everywhere, and `NO CARRIER` after fifteen seconds is a shop with no computer
+switched on in it rather than a wrong number.
+
+A directory covers **one exchange**: the part of the county its copy was printed
+in, which is where you first opened it. The exchange goes on the item's name the
+moment you do, so three books in a bag are three books you can tell apart, and a
+book carried across the county is still the book of where it came from. Turn the
+leaves the way you turn the manual's.
+
+**Houses are not listed.** A house has a line like anything else, and nobody wrote
+the family names down: an unlisted number is an unlisted number. Neither is where a
+shop stands -- a directory prints names and numbers, and the rest is walking.
+
 ## The radio
 
 The coax reaches one premises, the telephone reaches the county, and the radio

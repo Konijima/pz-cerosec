@@ -1204,6 +1204,51 @@ celui de West Point) avec deux boutiques différentes.
      `Phone line:` (le central est calculé au moment où la machine revoit son
      carré). Une machine dont on regarde l'écran sans l'allumer doit aussi
      l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
+215e. **L'annuaire : le trouver et le lire.** Ramasser un `Phonebook` (table
+     d'entrée, comptoir de magasin, tiroir de bureau — l'objet vanilla) et faire
+     un clic droit dessus dans le sac : sous l'option vanilla **Lire** (qui doit
+     toujours être là) il y a **Chercher un numéro**. Cliquer : une fenêtre de
+     livre s'ouvre, comme le manuel, titrée `Knox County Telephone Directory`.
+     Le premier feuillet est la page de titre, le deuxième la table des matières
+     avec une seule ligne `Exchange NNN`, et ensuite la préface (deux lignes) puis
+     les inscriptions, une par ligne, `Nom ..... NNN-NNNN`, en police fixe et
+     alignées. Vérifier **au passage** que le nom de l'objet dans le sac a changé
+     et porte le central : `Phonebook (central NNN)`. Les flèches gauche/droite
+     tournent les feuillets, Échap ferme. Rouvrir : il s'ouvre à la page où on
+     l'a laissé. [ ]
+215f. **Un annuaire = un central, et il ne bouge pas.** Noter les trois chiffres
+     du central du livre et les comparer avec les trois premiers du
+     `Phone line:` d'un ordinateur du même coin de la carte : **les mêmes**.
+     Puis partir à plus de 1024 tuiles (une autre ville) avec ce même livre et
+     rouvrir : **même** central, **mêmes** inscriptions, et le nom de l'objet n'a
+     pas changé une deuxième fois — c'est l'annuaire de là où on l'a trouvé.
+     Ramasser un **deuxième** `Phonebook` sur place et l'ouvrir : central
+     **différent**, inscriptions différentes. [ ]
+215g. **Un numéro de l'annuaire sonne vraiment.** Dans une boutique nommée par la
+     carte (une boutique de mall, un restaurant), poser un ordinateur, l'allumer
+     et lire son `Phone line: NNN-NNNN (NomDeLaZone)`. Rouvrir l'annuaire de
+     cette région : la boutique doit y être, sous son nom **séparé en mots**
+     (`CoffeeShop` → `Coffee Shop`), avec **exactement** ce numéro. Depuis un
+     autre ordinateur d'un autre local : `cu <ce numéro>` → environ quatre
+     secondes, puis `CONNECT 2400` et le `login:` d'en face. Puis éteindre
+     l'ordinateur de la boutique et rappeler le **même** numéro de l'annuaire :
+     **rien pendant quinze secondes**, puis `NO CARRIER` (chronométrer). Faire de
+     même sur une inscription derrière laquelle personne n'a jamais rien posé :
+     `NO CARRIER` après quinze secondes aussi — l'inscription est bonne, le local
+     est vide. [ ]
+215h. **Ce qui n'est pas dedans.** Dans une **maison** ordinaire, poser un
+     ordinateur, l'allumer, noter son numéro : il n'est **nulle part** dans
+     l'annuaire de la région (aucune ligne ne porte ces sept chiffres) — les
+     pages blanches demanderaient un nom de famille que la carte ne donne pas.
+     Parcourir ensuite tout l'annuaire feuillet par feuillet : **aucune**
+     coordonnée de carte n'y apparaît, et aucun nom de zone de région (`Farm`,
+     `StreetPoor`, `University`) — seulement des commerces. Si la dernière ligne
+     du dernier feuillet dit que l'annuaire est plein, c'est le plafond de 400 :
+     le noter dans le rapport. [ ]
+215i. **Multijoueur.** Deux joueurs, chacun son `Phonebook`, ouverts en même
+     temps dans deux régions différentes : chacun voit **son** central et ses
+     propres inscriptions, et la fenêtre de l'un ne change pas quand l'autre
+     ouvre la sienne. [ ]
 
 ## T. La radio (palier 6c)
 

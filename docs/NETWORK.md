@@ -371,6 +371,54 @@ A server that wants it otherwise sets one option:
 | `never` | there is no telephone service at all, from day one |
 | `always` | on its own generator; it outlives the grid |
 
+### The phone book
+
+A number is only useful if you have somebody else's, so `Base.Phonebook` --
+vanilla's own item, in 22 loot spots, which until now only relieved boredom -- is
+the **Knox County telephone directory**. Right-click a copy in the inventory:
+*Look up numbers* opens the manual reader on a generated volume, the yellow pages
+of one exchange, `NAME ..... NNN-NNNN` a line.
+
+**One book is one exchange, and the copy remembers which.** The first time a given
+copy is opened it is stamped with the `PHONE_REGION` cell of the reader's square
+-- `cerosec.region = {rx, ry}` in the item's modData -- and its name gets the
+exchange (`InventoryItem.setName`, the vanilla display name kept in front:
+"Phonebook (exchange 732)"). After that the stamp never moves, so a book picked up
+in Rosewood and read in Muldraugh is still Rosewood's book. That is what carrying
+a phone book across a county does, and it is the whole reason the edition is on
+the item and not worked out again at every opening.
+
+**Who is in it.** The client asks the server (`sendClientCommand("CeroSec",
+"phonebook", { rx, ry })` -- the one command in `SCeroSecSystem` that names no
+square, which is why it lives in its own `PlayerCommands` table) and the server
+sweeps that region with
+`getWorld():getMetaGrid():getZonesIntersecting(x, y, 0, w, h)`. It keeps the zones
+`CeroSecNet.isPremisesZone` calls a premises -- which is `premisesOf`'s own
+predicate, extracted so there is one of it -- applies `premisesOf`'s own area test
+against the building, and derives each number with `CeroSecOS.phoneOfZone`, which
+is the exchange-of-the-corner and four-digits-of-the-premises-key composition
+`lineOf` makes off the record. So a computer standing in `CoffeeShop` reads the
+book's own line off its BIOS. Sorted by name and then by number, capped at 400
+with the cap printed on the last line, and answered to the asking player only.
+
+The **corner** decides which book a premises is in, because the corner is what the
+exchange is derived from: a shop in a building straddling two regions is listed
+once, in the book its number belongs to.
+
+The area test is where it differs from `premisesOf` by one probe, and it has to.
+`premisesOf` asks the building the MACHINE stands in; a book printed before
+anybody put a computer anywhere has no machine, so the building is probed at the
+zone's **middle tile** (`getBuildingAt(int, int)`) instead. The corner is very
+often a wall or the pavement, and probing there would drop real shops. Without the
+test the spawner's region-sized named zones would be listed as businesses --
+`Farm` is 262 by 226, `StreetPoor` covers a suburb -- and neither has a telephone.
+
+**No residences, and no coordinates.** A house is a premises and has a line; the
+map gives it no name to print, and a white-pages line needs a family name Knox
+County does not have anywhere in its data. Inventing one is not on the table, so a
+residence is simply unlisted, the way an unlisted number was. Where a shop stands
+is not printed either: a directory prints names and numbers.
+
 ## The radio
 
 The coax reaches one premises, the telephone reaches the county, and the radio
