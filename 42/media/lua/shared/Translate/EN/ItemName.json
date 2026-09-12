@@ -10,5 +10,6 @@
     "CeroSec.MagneticContact": "Magnetic Contact",
     "CeroSec.Relay": "Relay Module",
     "CeroSec.ElectricStrike": "Electric Strike",
-    "CeroSec.DoorOperator": "Door Operator"
+    "CeroSec.DoorOperator": "Door Operator",
+    "CeroSec.WiringGuide": "CeroSec Field Wiring Guide"
 }

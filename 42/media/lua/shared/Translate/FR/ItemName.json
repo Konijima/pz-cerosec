@@ -6,5 +6,6 @@
     "CeroSec.MagneticContact": "Contact magnétique",
     "CeroSec.Relay": "Module relais",
     "CeroSec.ElectricStrike": "Gâche électrique",
-    "CeroSec.DoorOperator": "Opérateur de porte"
+    "CeroSec.DoorOperator": "Opérateur de porte",
+    "CeroSec.WiringGuide": "Guide de câblage CeroSec"
 }

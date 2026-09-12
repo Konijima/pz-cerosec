@@ -7,5 +7,6 @@
     "Tooltip_CeroSec_NoFixture": "Ce module ne va pas ici.",
     "Tooltip_CeroSec_NoLock": "Cette porte n'a pas de serrure à câbler.",
     "Tooltip_CeroSec_ManyDoors": "Un ordinateur ne peut pas actionner une porte double ou de garage.",
-    "Tooltip_CeroSec_Fitted": "Il y en a déjà un."
+    "Tooltip_CeroSec_Fitted": "Il y en a déjà un.",
+    "Tooltip_item_CeroSecWiringGuide": "Manuel de chantier CeroSec Systems. Schémas de câblage et<br>nomenclatures des quatre modules d'interface : contact<br>magnétique, relais, gâche électrique et opérateur de porte."
 }
