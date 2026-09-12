@@ -51,6 +51,52 @@ The context menu, the reach checks and the terminal window are all client-side;
 the wire between them and the server — the message list, the screen shape and
 who a token addresses — is [PROTOCOL.md](PROTOCOL.md).
 
+## Standing at a computer
+
+`CeroSecReach.lua` answers where the player has to be: the **front square** is the
+neighbour the screen looks at (`CeroSec.frontOffset`), and every action of the mod
+refuses to run anywhere else. Reaching is that square plus a height —
+`CeroSecReach.height` reads the surface the computer stands on and calls it `low`
+(the floor, a crouched animation), `mid` (a desk) or `high` (out of reach, the
+option greyed out).
+
+Inside that square the mod aims at a **point**, not at the tile, because a tile is
+a metre wide and the game reads the character's float position for everything that
+follows. Two points:
+
+* the **seat point** when there is a chair in front of the screen — the place the
+  game itself would stand him in to take that chair from the front
+  (`SeatingManager:getAdjacentPosition`, the very call `ISRestAction` scores its
+  twelve candidates with). The seat the character ends up in is chosen by nothing
+  but where he stands, so a walk to the middle of the square used to end in a
+  character sitting down sideways at a screen he had asked to read.
+* the **stand point** when there is not: `CeroSec.standPoint`, which is
+  `CeroSec.STAND_INSET` of a tile off the middle of the front square, toward the
+  computer, and centred on the other axis. A computer facing south has its front
+  square to the south and the player stands in the north part of it; the other
+  three facings are derived from `FRONT_OFFSET` and cannot disagree with it. The
+  middle of the square is a visible step short of the desk — the character typed
+  at the air — and the inset is what closes it.
+
+The walk is `ISPathFindAction:pathToLocationF`, which takes floats and is what
+vanilla itself uses to put a character at a point inside a tile
+(`ISCampingMenu.lua:476` and `:505`, 0.2 or 0.8 into the adjacent tile, toward the
+campfire). It is never skipped for a player who is already on the square: paths to
+a SQUARE are satisfied by a character standing anywhere in it, which is how
+"already next to the computer" produced both bugs. `CeroSecTerminal:resettle` is
+the same rule while the window is open — a click that hands the keyboard back also
+puts the character back, on the chair if there is one and on the stand point if
+there is not, and only when he is more than `CeroSec.STAND_NEAR` from it. The
+turn itself is never walked: it is `ISCeroSecTypeAction:waitToStart`.
+
+What the inset can promise is where the pathfinder aims, and therefore which seat
+the game picks and where the character comes to rest. What it cannot promise is
+contact with the desk sprite: a character is a 0.24-wide moving object
+(`IsoMovingObject.width`, javap'd) and that width only ever separates him from
+other characters, while a solid table blocks its own square and nothing inside
+ours — so the number is a look, not a collision. It is **tuned by eye in game**,
+and it is one constant.
+
 ## The chunk that goes away
 
 A computer keeps the state it had while its chunk is not loaded. It stays on, it keeps

@@ -173,7 +173,7 @@ end
 --
 -- So the approach is never skipped and never approximate. The target is a
 -- point, not a square: the very place vanilla would have him stand to take that
--- chair from the front, or the middle of the front square when there is no
+-- chair from the front, or the stand point of the front square when there is no
 -- chair. A character already standing in the square is walked to the point
 -- inside it exactly like one coming from across the room.
 --
@@ -196,17 +196,46 @@ function CeroSecReach.seatSpot(playerObj, chair)
 	return position:x(), position:y(), position:z()
 end
 
+-- The stand point of this computer, in the float coordinates a character stands
+-- on: the place on the front square from which a player on his feet has the
+-- keyboard under his hands rather than a step of floor in front of him
+-- (CeroSec.standPoint, and CeroSec.STAND_INSET is the distance). nil when the
+-- computer has no front square. The facing cannot be missing here: frontSquare
+-- is itself nil without one.
+function CeroSecReach.standPoint(computer)
+	local front = CeroSecReach.frontSquare(computer)
+	if not front then return nil end
+	local x, y = CeroSec.standPoint(front:getX(), front:getY(),
+		CeroSec.facingOf(computer:getSpriteName()))
+	if x == nil then return nil end
+	return x, y, front:getZ()
+end
+
+-- Is the player already standing at the keyboard -- that is, within
+-- CeroSec.STAND_NEAR of the stand point? False when there is no stand point to
+-- be at.
+function CeroSecReach.atStandPoint(playerObj, computer)
+	if not playerObj then return false end
+	local x, y = CeroSecReach.standPoint(computer)
+	if x == nil then return false end
+	return CeroSec.atPoint(playerObj:getX(), playerObj:getY(), x, y, CeroSec.STAND_NEAR)
+end
+
 -- Where the player is to end up: the chair's seat point when he is on his way
--- to sit in it, else the middle of the front square. Never the corner of it he
--- happened to be standing in.
+-- to sit in it, else the stand point of the front square. Never the corner of it
+-- he happened to be standing in, and not the middle either -- the middle is a
+-- step away from the desk, which is what a player using a computer standing up
+-- was seen to be.
 --
 -- wantSeat is what tells the two apart. Using the computer takes the chair;
 -- switching it on and off does not, and would be refused by its own action for
 -- standing anywhere but the front square -- so the seat point is only ever
--- aimed at when it is inside that square, and the middle of it answers for
+-- aimed at when it is inside that square, and the stand point answers for
 -- everything else. That guard is deliberate: the seat point is the game's, and
 -- where the game puts it for a chair against a desk is not something this can
--- prove without the game.
+-- prove without the game. A chair that is there is therefore never traded for
+-- the stand point: the seat is the pose, and the sit places the character
+-- itself.
 function CeroSecReach.approachPoint(playerObj, computer, wantSeat)
 	local front = CeroSecReach.frontSquare(computer)
 	if not front then return nil end
@@ -221,8 +250,7 @@ function CeroSecReach.approachPoint(playerObj, computer, wantSeat)
 		end
 	end
 
-	local x, y = CeroSec.squareCentre(front:getX(), front:getY())
-	return x, y, front:getZ()
+	return CeroSecReach.standPoint(computer)
 end
 
 -- Walk to that point -- the front square, not any free neighbour -- and then

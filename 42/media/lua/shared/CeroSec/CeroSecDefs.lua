@@ -279,6 +279,46 @@ function CeroSec.squareCentre(x, y)
 	return x + 0.5, y + 0.5
 end
 
+-- How far from the middle of the front square, toward the computer, a player
+-- who uses it standing is put. 0.30 of a tile, which leaves him 0.20 from the
+-- edge the two squares share -- vanilla's own number for the same question: the
+-- walk to a campfire aims at 0.2 or 0.8 inside the adjacent tile, toward the
+-- fire (ISCampingMenu.lua:466-490). TUNED BY EYE IN GAME: only the screen says
+-- whether the hands land on the keyboard, and this is the one number to move.
+CeroSec.STAND_INSET = 0.30
+
+-- How near the stand point counts as standing on it, in tiles. A character
+-- already this close is left where he is rather than walked a hand's width.
+-- Vanilla asks the same question with a wider margin (0.2, ISCampingMenu.lua:472
+-- and 500: DistToSquared < 0.2 * 0.2); ours is tighter because being at the
+-- keyboard is the whole point of the walk.
+CeroSec.STAND_NEAR = 0.1
+
+-- The stand point: where on the front square a player using the computer on
+-- foot belongs. fx, fy are the front square's integer coordinates -- its
+-- north-west corner -- and facing is the COMPUTER's facing, so the step from
+-- the middle of the square back toward the computer is the front offset
+-- reversed. Centred on the other axis, because nothing pulls him sideways.
+-- A computer facing S has its front square to the south, and the player stands
+-- in the north part of it; the other three follow from FRONT_OFFSET and can
+-- never disagree with it. nil, nil for anything that is not one of the four
+-- facings.
+function CeroSec.standPoint(fx, fy, facing)
+	local dx, dy = CeroSec.frontOffset(facing)
+	if not dx then return nil, nil end
+	local cx, cy = CeroSec.squareCentre(fx, fy)
+	return cx - dx * CeroSec.STAND_INSET, cy - dy * CeroSec.STAND_INSET
+end
+
+-- Is a character at a point? Squared distance under a squared tolerance, the
+-- comparison vanilla makes with IsoMovingObject.DistToSquared before it decides
+-- a walk is not worth queueing (ISCampingMenu.lua:472-474).
+function CeroSec.atPoint(px, py, x, y, tolerance)
+	if px == nil or py == nil or x == nil or y == nil then return false end
+	local dx, dy = px - x, py - y
+	return dx * dx + dy * dy < tolerance * tolerance
+end
+
 --
 -- Screen geometry
 --

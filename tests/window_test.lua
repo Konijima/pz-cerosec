@@ -157,9 +157,27 @@ _G.Events = setmetatable({}, { __index = function(t, key)
 	rawset(t, key, event)
 	return event
 end })
-_G.ISTimedActionQueue = { isPlayerDoingAction = function() return false end, add = function() end }
-_G.ISCeroSecTypeAction = { new = function() return {} end }
-_G.ISRestAction = { new = function() return {} end }
+-- The action queue, recording. Everything the mod queues lands in __queued, in
+-- order, so a bench can say WHERE a walk was aimed and not merely that one
+-- happened. clear() empties the list the way it empties the queue.
+_G.__queued = {}
+_G.ISTimedActionQueue = {
+	isPlayerDoingAction = function() return false end,
+	add = function(action) _G.__queued[#_G.__queued + 1] = action; return action end,
+	clear = function() _G.__queued = {} end,
+}
+_G.ISCeroSecTypeAction = { new = function(_, character, object, height, window)
+	return { __what = "type", character = character, object = object,
+		height = height, window = window }
+end }
+_G.ISRestAction = { new = function(_, character, chair) return { __what = "rest",
+	character = character, chair = chair } end }
+-- The walk to a float point, built the way vanilla builds it: the goal is a
+-- table tagged 'LocationF' and the three coordinates (ISPathFindAction.lua:122,
+-- media/lua/client/Vehicles/TimedActions/ISPathFindAction.lua on 42.20.4).
+_G.ISPathFindAction = { pathToLocationF = function(_, character, x, y, z)
+	return { __what = "walk", character = character, goal = { "LocationF", x, y, z } }
+end }
 
 -- The font. UIFont.Code is monospaced -- media/fonts/EN/fonts.txt maps Code to
 -- zomboidCode.fnt, and all 613 of its glyphs declare xadvance=8 -- so the pen
@@ -307,6 +325,17 @@ CeroSecReach = {
 	-- The desk the computer stands on, as the context menu reads it and as the
 	-- reopen after a reboot reads it again: a table, which is "mid".
 	height = function() return "mid" end,
+	-- Where a player using this computer on his feet belongs, and whether he is
+	-- already standing there. "Already there" by default, which is the world every
+	-- bench written before the stand point was written in: resettle with no chair
+	-- then has nothing to do, exactly as it had nothing to do before. The drift
+	-- benches set __drifted for themselves and put it back.
+	standPoint = function()
+		local x, y = CeroSec.standPoint(9, 10, "S")
+		return x, y, 0
+	end,
+	atStandPoint = function() return not CeroSecReach.__drifted end,
+	approachPoint = function() return CeroSecReach.standPoint() end,
 	frontSquare = function() return { getX = function() return 9 end,
 		getY = function() return 10 end, getZ = function() return 0 end } end,
 	chairInFront = function() return nil end,
@@ -9638,6 +9667,331 @@ do
 	end
 	eq("and the refusal is logged as an error", level, CeroSec.LOG_ERROR)
 	CeroSec.logRing = {}
+end
+
+--
+-- Standing at the keyboard
+--
+-- The screenshot: a player using a computer with no chair stood in the MIDDLE of
+-- the front square, a visible step short of the desk, typing at the air. Where
+-- he is walked to is the whole of the fix, so these benches run the REAL reach
+-- module -- not the stub the rest of this file uses -- against a world built by
+-- hand, and read the coordinates out of the walk it queues.
+--
+
+do
+	local stub = CeroSecReach
+
+	-- The world. Squares by coordinate, each with the objects a bench puts on it.
+	local squares = {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	local function square(x, y, z, objects)
+		local sq = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getObjects = function() return javaList(objects or {}) end,
+			canReachTo = function() return true end,
+		}
+		squares[key(x, y, z)] = sq
+		return sq
+	end
+	_G.__world = { getGridSquare = function(_, x, y, z) return squares[key(x, y, z)] end }
+	-- The two vanilla calls canStandInFront leans on, both answering yes: what
+	-- these benches are about is the POINT, and a blocked square is its own bench
+	-- in the rung 2 manual.
+	_G.AdjacentFreeTileFinder = { privTrySquare = function() return true end }
+	_G.IsoFlagType = { bed = "bed" }
+	-- The seat point, as the game hands it over: a Vector3f the call fills in.
+	-- __seat is where this fake world puts it; nil is the game refusing the place.
+	_G.__seat = nil
+	_G.Vector3f = { new = function()
+		local v = { vx = 0, vy = 0, vz = 0 }
+		v.x = function(s) return s.vx end
+		v.y = function(s) return s.vy end
+		v.z = function(s) return s.vz end
+		return v
+	end }
+	_G.SeatingManager = { getInstance = function() return {
+		getTilePositionCount = function() return 1 end,
+		getFacingDirection = function(_, object) return object.__facing end,
+		getAdjacentPosition = function(_, _, _, _, _, _, _, position)
+			if _G.__seat == nil then return false end
+			position.vx, position.vy, position.vz = _G.__seat[1], _G.__seat[2], _G.__seat[3]
+			return true
+		end,
+	} end }
+
+	local path = "42/media/lua/client/CeroSec/CeroSecReach.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+
+	-- A computer at 10,10 facing the given way, and its front square. The chair,
+	-- when a bench wants one, stands on the front square and looks back at the
+	-- screen (CeroSec.chairFacingFor).
+	local function world(facing, withChair)
+		squares = {}
+		local chair = nil
+		local dx, dy = CeroSec.frontOffset(facing)
+		local computer = {
+			getSpriteName = function() return CeroSec.SPRITES_ON[facing] end,
+		}
+		local front
+		if withChair then
+			chair = {
+				__facing = CeroSec.chairFacingFor(facing),
+				getSprite = function() return { getProperties = function() return {
+					has = function(_, name) return name == IsoFlagType.bed end,
+				} end } end,
+			}
+			front = square(10 + dx, 10 + dy, 0, { chair })
+			chair.getSquare = function() return front end
+		else
+			front = square(10 + dx, 10 + dy, 0, {})
+		end
+		local home = square(10, 10, 0, { computer })
+		computer.getSquare = function() return home end
+		return computer, front, chair
+	end
+
+	-- A player at a float position, standing.
+	local function stander(x, y)
+		return {
+			getX = function() return x end,
+			getY = function() return y end,
+			getCurrentSquare = function() return squares[key(math.floor(x), math.floor(y), 0)] end,
+			isSittingOnFurniture = function() return false end,
+			getSitOnFurnitureObject = function() return nil end,
+		}
+	end
+
+	local function walkGoal()
+		for i = #_G.__queued, 1, -1 do
+			local action = _G.__queued[i]
+			if action.goal then return action.goal[2], action.goal[3], action.goal[4] end
+		end
+		return nil
+	end
+
+	-- The stand point of each facing, through the module rather than through the
+	-- arithmetic: the square it reads is the FRONT square, and the axis it shifts
+	-- on is the facing's.
+	local WANT = {
+		S = { 10.5, 11.2 },
+		N = { 10.5, 9.8 },
+		E = { 11.2, 10.5 },
+		W = { 9.8, 10.5 },
+	}
+	for _, facing in ipairs(CeroSec.FACINGS) do
+		local computer = world(facing, false)
+		local x, y, z = CeroSecReach.standPoint(computer)
+		eq("stand point x, facing " .. facing, x, WANT[facing][1])
+		eq("stand point y, facing " .. facing, y, WANT[facing][2])
+		eq("stand point z, facing " .. facing, z, 0)
+	end
+
+	-- No square under the computer, no stand point -- and no error.
+	do
+		local computer = world("S", false)
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		eq("no square, no stand point", CeroSecReach.standPoint(computer), nil)
+		computer.getSquare = function() return home end
+	end
+
+	-- The walk, standing: a player across the room is aimed at the stand point
+	-- and not at the middle of the square.
+	do
+		local computer, front = world("S", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		local arrived = false
+		check("walkToFront runs", CeroSecReach.walkToFront(player, computer,
+			function() arrived = true end, true))
+		check("and the follow-up is queued", arrived)
+		local x, y, z = walkGoal()
+		eq("standing: walked to the stand point x", x, 10.5)
+		eq("standing: walked to the stand point y", y, 11.2)
+		eq("standing: same level", z, front:getZ())
+		check("standing: not the middle of the square", y ~= 11.5)
+	end
+
+	-- The walk, standing, from INSIDE the front square and at its middle -- the
+	-- player the screenshot shows. The walk is still queued: a tenth of a tile is
+	-- a walk, and skipping it is what left him short of the desk.
+	do
+		local computer = world("S", false)
+		local player = stander(10.5, 11.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		check("already on the square: still a walk", x ~= nil)
+		eq("already on the square: to the stand point x", x, 10.5)
+		eq("already on the square: to the stand point y", y, 11.2)
+	end
+
+	-- With a chair there, nothing changes: the seat point is the game's answer and
+	-- the sit places the character itself.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("a chair: walked to the seat point x", x, 10.42)
+		eq("a chair: walked to the seat point y", y, 11.61)
+	end
+
+	-- A seat point the game refuses, or one outside the front square, falls back
+	-- to the stand point -- never to a point on somebody else's tile.
+	do
+		local computer = world("S", true)
+		_G.__seat = nil
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("no seat point: the stand point x", x, 10.5)
+		eq("no seat point: the stand point y", y, 11.2)
+
+		_G.__seat = { 10.5, 12.5, 0 }
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		x, y = walkGoal()
+		eq("a seat point off the square: the stand point x", x, 10.5)
+		eq("a seat point off the square: the stand point y", y, 11.2)
+	end
+
+	-- The toggle asks for no seat, so a chair standing there is not aimed at: the
+	-- switch is thrown from the stand point.
+	do
+		local computer = world("S", true)
+		_G.__seat = { 10.42, 11.61, 0 }
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end)
+		local x, y = walkGoal()
+		eq("the toggle walks to the stand point x", x, 10.5)
+		eq("the toggle walks to the stand point y", y, 11.2)
+	end
+
+	-- East and west shift on x and not on y. This is the mutation guard: a module
+	-- that shifted the wrong axis gives 10.5, 10.2 here and 10.5 is the x of it.
+	do
+		local computer = world("E", false)
+		local player = stander(4.5, 4.5)
+		_G.__queued = {}
+		CeroSecReach.walkToFront(player, computer, function() end, true)
+		local x, y = walkGoal()
+		eq("E: the shift is on x", x, 11.2)
+		eq("E: y is the middle", y, 10.5)
+	end
+
+	-- Already at the keyboard, asked as the window asks it.
+	do
+		local computer = world("S", false)
+		check("at the stand point", CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		check("a hair off it is still at it",
+			CeroSecReach.atStandPoint(stander(10.53, 11.17), computer))
+		check("the middle of the square is not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.5), computer))
+		check("no player, not at it", not CeroSecReach.atStandPoint(nil, computer))
+		local home = computer:getSquare()
+		computer.getSquare = function() return nil end
+		check("no stand point, not at it",
+			not CeroSecReach.atStandPoint(stander(10.5, 11.2), computer))
+		computer.getSquare = function() return home end
+	end
+
+	_G.__world = nil
+	_G.__seat = nil
+	CeroSecReach = stub
+end
+
+--
+-- Drifting off the keyboard
+--
+-- Getting the keyboard back is also getting the character back to it. With no
+-- chair to sit on that means the stand point, and only when he has really left
+-- it: a click that changed nothing must queue nothing, or every press on the
+-- window would cancel the typing action and start another.
+--
+
+do
+	local bench = newBench()
+	bench.frame()
+	-- The character is at the keyboard, which is what the use action leaves behind
+	-- (ISCeroSecUseAction -> CeroSecTerminal.sitDown -> startTyping), and the box
+	-- has the keys.
+	bench.window:startTyping("mid")
+	bench.window:setEntryActive(true)
+
+	-- Standing where he belongs: a click hands the keyboard back and nothing else.
+	_G.__queued = {}
+	CeroSecReach.__drifted = false
+	bench.window:onMouseDown(0, 0)
+	bench.window:updateSettle()
+	local walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("at the keyboard: no walk queued", walks, 0)
+	eq("and the typing action is untouched", bench.window.wantStand, nil)
+
+	-- Shoved half a tile off it: the same click walks him back, and the typing
+	-- action goes in behind the walk.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("drifted: the window owes him a step", bench.window.wantStand, true)
+	eq("and the typing action was let go of", bench.window.typeAction, nil)
+
+	_G.__queued = {}
+	bench.window:updateSettle()
+	eq("the debt is paid once", bench.window.wantStand, nil)
+	local walk, typed = nil, nil
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walk = _G.__queued[i] end
+		if _G.__queued[i].__what == "type" then typed = i end
+	end
+	check("a walk was queued", walk ~= nil)
+	local sx, sy = CeroSec.standPoint(9, 10, "S")
+	eq("aimed at the stand point x", walk.goal[2], sx)
+	eq("aimed at the stand point y", walk.goal[3], sy)
+	check("and the typing action behind it", typed ~= nil and typed > 1)
+
+	-- A second click while the step is still owed queues nothing more.
+	bench.window:onMouseDown(0, 0)
+	bench.window:onMouseDown(0, 0)
+	eq("one debt, not three", bench.window.wantStand, true)
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("and one walk", walks, 1)
+
+	-- Back at the keyboard by the time the queue is free: nothing is walked.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	CeroSecReach.__drifted = false
+	_G.__queued = {}
+	bench.window:updateSettle()
+	walks = 0
+	for i = 1, #_G.__queued do
+		if _G.__queued[i].__what == "walk" then walks = walks + 1 end
+	end
+	eq("arrived on his own: no walk", walks, 0)
+
+	-- Closing the window drops the debt with everything else.
+	CeroSecReach.__drifted = true
+	bench.window:onMouseDown(0, 0)
+	eq("owed again", bench.window.wantStand, true)
+	bench.window:close()
+	eq("closed: nothing owed", bench.window.wantStand, nil)
+	CeroSecReach.__drifted = false
 end
 
 

@@ -14,10 +14,11 @@ local function hasPower(square)
 	return square:haveElectricity() or (square:hasGridPower() and square:getRoom() ~= nil)
 end
 
--- Walk to the middle of the square the screen looks at, then toggle from there.
--- The middle and not the square: a player already standing in it is walked to
--- the point inside it all the same, so the switch is thrown from where the
--- character can be seen to be standing at the machine (CeroSecReach.walkToFront).
+-- Walk to the stand point of the square the screen looks at, then toggle from
+-- there. The point and not the square: a player already standing in it is walked
+-- to the point inside it all the same, so the switch is thrown from where the
+-- character can be seen to be standing at the machine, against the desk and not
+-- a step from it (CeroSecReach.walkToFront).
 -- The toggle action checks in its isValid that the player really made it, so a
 -- walk that fails or gets interrupted changes nothing.
 function CeroSecContextMenu.onToggle(worldobjects, computer, playerObj, height)

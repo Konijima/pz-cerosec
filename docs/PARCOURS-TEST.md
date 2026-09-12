@@ -52,8 +52,20 @@ passé réellement, même quand ça correspond au texte attendu.
    ordinateur." Passer par l'arrière ne débloque rien. [ ]
 6. Carré devant traversé par une fenêtre fermée → grisé. Ouvrir la fenêtre →
    reste grisé, une fenêtre n'est pas un endroit où se tenir. [ ]
-7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → pas
-   de marche du tout, directement l'animation. [ ]
+7. Personnage déjà debout sur le carré devant l'écran, clic droit, bascule → il
+   fait un pas dans le carré pour se coller au meuble, puis l'animation. [ ]
+7a. **Debout au clavier.** Ordinateur sur un bureau, AUCUNE chaise devant, "Use
+   computer" depuis l'autre bout de la pièce → au bout de la marche le
+   personnage est collé au bureau, pas au milieu du carré : les mains tombent
+   sur le clavier et non dans le vide. Refaire sur les quatre orientations (S,
+   E, N, O) → toujours contre le meuble, et toujours centré sur l'autre axe,
+   jamais de travers dans un coin du carré. [ ]
+7b. **La dérive.** Terminal ouvert debout, se faire pousser par un zombi (ou
+   faire un pas dans le carré avec les touches de déplacement) sans quitter le
+   carré → cliquer sur la fenêtre : le personnage revient au clavier, se
+   retourne vers l'écran, et l'animation de frappe reprend. Cliquer trois fois
+   de suite alors qu'il est déjà au clavier → aucun pas, aucun saccade, la
+   frappe n'est pas coupée. [ ]
 8. Lancer la bascule depuis l'autre bout de la pièce, puis appuyer sur une
    touche de déplacement pendant la marche → le personnage s'arrête,
    l'ordinateur NE bascule PAS, aucune erreur dans `console.txt`. [ ]
