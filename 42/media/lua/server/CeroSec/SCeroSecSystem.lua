@@ -101,6 +101,20 @@ local function watcherKeyOf(playerObj, token)
 	return tostring(playerObj:getOnlineID()) .. "/" .. tostring(token)
 end
 
+-- A token for a window that is not there yet. Every other token in this mod is
+-- the client's own -- the window picks one and stamps its commands with it -- and
+-- this is the one the server has to mint, because the window it names is one the
+-- server is asking the client to build (reopenFor, after a reboot). Shaped like
+-- the window's own (CeroSecTerminal's newToken) with an "s" in front, so a
+-- server's token and a client's can never be the same string.
+SCeroSecSystem.tokenCount = 0
+
+local function newServerToken(playerObj)
+	SCeroSecSystem.tokenCount = SCeroSecSystem.tokenCount + 1
+	return "s" .. tostring(playerObj:getPlayerNum()) .. "-" ..
+		tostring(getTimestampMs()) .. "-" .. tostring(SCeroSecSystem.tokenCount)
+end
+
 --
 -- Answering one player
 --
@@ -759,20 +773,6 @@ function SCeroSecSystem:pushScreen(luaObject, state, console, exceptKey)
 	end
 end
 
--- The same answer the opener of a freshly switched on machine gets, but to
--- every window at once: a machine that has just rebooted is a machine every
--- pair of eyes in front of it watches type itself out again.
-function SCeroSecSystem:pushOpened(luaObject, state, console)
-	if not luaObject.watchers then return end
-	for _, watcher in pairs(luaObject.watchers) do
-		if watcher.player then
-			local args = self:screenArgs(luaObject, state, console, watcher.token, watcher.player)
-			args.animate = true
-			self:reply(watcher.player, "opened", args)
-		end
-	end
-end
-
 -- The first screenful after a power-on: the BIOS lines, and the motd when there
 -- is a system to greet from. Answers whether it did anything -- a machine
 -- already booted is not booted twice, which is what keeps the second player to
@@ -781,9 +781,13 @@ function SCeroSecSystem:bootScreen(console, state)
 	if console.booted then return false end
 	console.booted = true
 	-- The card and its address, which the firmware can only announce once the
-	-- server has worked out which building the computer stands in.
+	-- server has worked out which PREMISES the computer stands in -- a shop inside a
+	-- mall, or a whole house.
 	-- And the telephone line under it, which is the same fact read a second way:
-	-- both come off the machine's own record of which building it stands in.
+	-- both come off the machine's own record of the premises it stands on. The line
+	-- carries the premises's NAME behind the number when the map gave it one and it
+	-- fits the screen (CeroSecOS.phoneLine), because a survivor in a mall with thirty
+	-- lines in it needs to know which one he is sitting at.
 	-- And the TNC's banner under the modem, which is the one of the three that is
 	-- read off the DISK: an address and a number are facts about where the machine
 	-- stands, and a callsign is a file somebody may have written (see
@@ -791,7 +795,7 @@ function SCeroSecSystem:bootScreen(console, state)
 	local addr, tel, call = nil, nil, nil
 	if state ~= nil then
 		addr = CeroSecOS.address(state)
-		tel = CeroSecOS.phoneOf(state)
+		tel = CeroSecOS.phoneLine(state)
 		call = CeroSecOS.callsignOf(state)
 	end
 	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel, call))
@@ -806,36 +810,96 @@ end
 -- they go through the very same turnOff/turnOn -- the sprite, the sound, the
 -- console thrown away -- and not through a second, quieter path beside it.
 --
--- The one difference is the windows. Turning a machine off tells every terminal
--- open on it that it is over and forgets them, which is right for a machine
--- somebody switched off at the case and wrong for one that is coming back in
--- the same breath. So a reboot holds the watchers aside across the two calls
--- and hands them the new screen itself.
+-- The one difference is the windows, and the DARK between the two calls. A
+-- reboot on a real machine is the power going and coming back, so it is off in
+-- the meantime: the unlit sprite on the tile, no glow on the wall, no screen to
+-- read. It used to be one call after the other in the same breath, which left
+-- the sprite lit and the boot typing itself out inside a window that had never
+-- shut -- a machine that never went down.
+--
+-- So it goes down properly. turnOff does what it does for a switch at the case,
+-- except that the watchers are held aside across it so its own eviction says
+-- nothing: what a window at a rebooting machine is told is `reboot` and not
+-- `off`, which is the one word that tells the client this one is coming back.
+-- Who was at the glass is remembered beside the interval, and CeroSec.REBOOT_DARK_MS
+-- later the scheduler brings the machine up through turnOn -- the same road a
+-- hand at the switch takes, and therefore the same power question.
 --
 
 function SCeroSecSystem:reboot(luaObject)
 	local watchers = luaObject.watchers
 	luaObject.watchers = nil
-	luaObject:turnOff()
+	local wentDown = luaObject:turnOff()
 	luaObject.watchers = watchers
+	-- A machine that was not on has nothing to reboot, and nothing was said to
+	-- anybody: the windows are left exactly as they were.
+	if not wentDown then return end
 
-	if not luaObject:turnOn() then
-		-- The room lost its power between the two. The machine stays dark, and
-		-- the windows are told what the power sweep would have told them.
-		self:evictWatchers(luaObject, "power")
-		return
+	-- Who to hand the window back to. The player and not the watcher key: the
+	-- key holds the token of a window that is about to shut, and the window that
+	-- comes back is a new one with a token of its own.
+	local waiting = {}
+	if watchers then
+		for _, watcher in pairs(watchers) do
+			if watcher.player then waiting[#waiting + 1] = watcher.player end
+		end
 	end
+	self:evictWatchers(luaObject, "reboot")
 
+	CeroSecJobs.scheduleReboot(luaObject, getTimestampMs() + CeroSec.REBOOT_DARK_MS, waiting)
+end
+
+-- The other end of the dark interval, called by the scheduler's own pass
+-- (CeroSecJobs.checkReboot).
+--
+-- turnOn and not a quieter path beside it: the sprite, the sound, the fresh
+-- console and @reboot are all its, and so is the power question -- a room that
+-- went dark in those three seconds leaves the machine off, exactly as an outage
+-- leaves a real one off, and the survivor switches it on by hand later.
+function SCeroSecSystem:resumeReboot(luaObject, waiting)
+	if not luaObject:turnOn() then return end
 	local console = luaObject:consoleState()
-	if not console then
-		self:evictWatchers(luaObject, "power")
-		return
-	end
+	if not console then return end
 	local state = self:biosState(luaObject)
 	self:bootScreen(console, state)
 	-- A machine that went down broken comes back broken, and says so.
 	if state == nil and not self:atBios(console) then self:askBios(console) end
-	self:pushOpened(luaObject, state, console)
+	self:reopenFor(luaObject, state, console, waiting)
+end
+
+-- The windows that were at the glass when it went dark, handed back.
+--
+-- Not pushScreen: that answers a window that is open, and every one of these
+-- was told to shut when the machine went down. So
+-- what goes out is the first screenful of a window that does not exist yet, and
+-- the client builds the box around it through the very path the walk ends in --
+-- no second window class, and no second walk.
+--
+-- Only to a player who is still standing at the machine, and only while the
+-- machine is in the world at all. One who wandered off in those three seconds
+-- gets nothing and uses the computer by hand, which is the same answer the power
+-- sweep gives a window whose player left.
+function SCeroSecSystem:reopenFor(luaObject, state, console, waiting)
+	if type(waiting) ~= "table" then return end
+	if not luaObject:isLoaded() then return end
+	for i = 1, #waiting do
+		local playerObj = waiting[i]
+		if playerObj and not playerObj:isDead()
+				and isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
+			local token = newServerToken(playerObj)
+			luaObject:addWatcher(watcherKeyOf(playerObj, token), playerObj, token)
+			local args = self:screenArgs(luaObject, state, console, token, playerObj)
+			-- The BIOS types itself out for him, because he is watching the
+			-- machine he just rebooted come up.
+			args.animate = true
+			-- Which of the local players on this connection it is for. Every other
+			-- answer reaches a window that already knows; this one has to say, because
+			-- the window is the thing being asked for.
+			args.player = playerObj:getPlayerNum()
+			self:reply(playerObj, "reopened", args)
+			self:sendHistory(luaObject, state, console, playerObj, token)
+		end
+	end
 end
 
 -- The two orders that end a screen instead of changing it. Run after the screen

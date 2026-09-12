@@ -1560,9 +1560,10 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the four books, the four disks and the four hardware modules.
-	eq("thirteen blocks: the module, the four books, the four disks and the "
-		.. "four hardware modules", opens, 13)
+	-- The module, the four books, the four disks, the four hardware modules and
+	-- the book that teaches them.
+	eq("fourteen blocks: the module, the four books, the four disks, the four "
+		.. "hardware modules and the Field Wiring Guide", opens, 14)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -1866,6 +1867,55 @@ do
 		-- Texture.trygetTexture for.
 		local icon = io.open("common/media/textures/Item_" .. want.icon .. ".png", "r")
 		check("and the icon file is there: Item_" .. want.icon .. ".png", icon ~= nil)
+		if icon ~= nil then icon:close() end
+	end
+
+	-- The Field Wiring Guide, which is the one item in this mod that IS
+	-- base:literature and is checked here for that above everything else. The
+	-- four volumes at the top of the item script are base:normal on purpose --
+	-- they are read by the PLAYER and vanilla must add no Read of its own --
+	-- and this one is the exact opposite: vanilla's Read is the entire
+	-- mechanism, and an ItemType that drifted back to base:normal would be a
+	-- book with no Read option, no ReadLiterature call and therefore no recipe
+	-- ever learned, with nothing logged anywhere.
+	do
+		local body = blocks.WiringGuide
+		check("the script declares item WiringGuide", body ~= nil)
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		eq("the guide is literature, which is what makes vanilla offer Read",
+			keys.ItemType, "base:literature")
+		eq("and it teaches by LearnedRecipes, B42's key -- there is no "
+			.. "TeachedRecipes left in the game",
+			keys.LearnedRecipes ~= nil, true)
+		check("the script does not use the B41 spelling anywhere",
+			string.find(code, "TeachedRecipes", 1, true) == nil)
+
+		-- Base.ElectronicsMag1's own keys, verbatim: a magazine that weighs or
+		-- files itself differently from the five the game already prints is a
+		-- magazine a player can tell is a mod's.
+		eq("filed where vanilla files a recipe magazine", keys.DisplayCategory,
+			"RecipeResource")
+		eq("half a kilo, like every vanilla magazine", keys.Weight, "0.5")
+		eq("it reads like a magazine", keys.BoredomChange, "-20")
+		eq("and relaxes like one", keys.StressChange, "-15")
+		eq("it is tagged as one", keys.Tags, "base:magazine")
+		eq("vanilla's own OnCreate, which only stamps literatureTitle",
+			keys.OnCreate, "ItemCodeOnCreate.onCreateRecipeMagazine")
+		eq("its fallback name", keys.DisplayName, "CeroSec Field Wiring Guide")
+		eq("its tooltip key", keys.Tooltip, "Tooltip_item_CeroSecWiringGuide")
+
+		-- Both models are Base.SmithingMag1's and both are declared in vanilla
+		-- (models_items.txt:281 and :4493). A magazine with no world model is a
+		-- magazine that lies on the floor as nothing at all.
+		eq("a model in the hand", keys.StaticModel, "Magazine")
+		eq("and one on the ground", keys.WorldStaticModel, "MagazineGround")
+
+		local icon = io.open("common/media/textures/Item_CeroSecWiringGuide.png", "r")
+		check("and the icon file is there: Item_CeroSecWiringGuide.png",
+			icon ~= nil)
 		if icon ~= nil then icon:close() end
 	end
 
@@ -2251,6 +2301,162 @@ do
 end
 
 --
+-- Where the Field Wiring Guide is found
+--
+-- The fourth loot table, and the one that is not a judgement: the guide is an
+-- electronics magazine and its nine shelves and nine weights are Base
+-- ElectronicsMag1-5's own, copied out of ProceduralDistributions.lua. So what is
+-- asserted here is the shape the other three are asserted on -- every list
+-- found, the item in it once, the weights exact, a second pass that adds
+-- nothing, a renamed list skipped quietly and the sandbox multiplier reaching
+-- the numbers -- plus the one thing only this table can be wrong about: a shelf
+-- or a share that is not the vanilla family's.
+--
+do
+	local chunk = assert(loadfile(LUA .. "server/CeroSec/CeroSecGuideLoot.lua"))
+	chunk()
+
+	local KEYS = {}
+	for key in pairs(CeroSecGuideLoot.WEIGHTS) do KEYS[#KEYS + 1] = key end
+	table.sort(KEYS)
+	eq("nine shelves hold the guide", #KEYS, 9)
+
+	-- Vanilla's own numbers, written out again here rather than read off the
+	-- table under test: a weight changed in CeroSecGuideLoot.lua would otherwise
+	-- be a weight this bench agreed with. These nine are the lists in
+	-- media/lua/server/Items/ProceduralDistributions.lua that hold all five
+	-- ElectronicsMag items at one weight, and the number is that weight.
+	local FAMILY = {
+		ElectronicStoreMagazines = 8,
+		BookstoreMisc = 2,
+		BookstoreBlueCollar = 2,
+		ToolStoreBooks = 2,
+		ElectricianTools = 2,
+		MagazineRackMixed = 1,
+		PostOfficeMagazines = 1,
+		CrateMagazines = 1,
+		LibraryMagazines = 1,
+	}
+	for i = 1, #KEYS do
+		eq(KEYS[i] .. " carries the vanilla family's own weight",
+			CeroSecGuideLoot.WEIGHTS[KEYS[i]], FAMILY[KEYS[i]])
+	end
+	local named = 0
+	for _ in pairs(FAMILY) do named = named + 1 end
+	eq("and there are no shelves beyond the family's", named, #KEYS)
+
+	-- The shop it was sold in is where it is commonest, by a factor of four over
+	-- anywhere else. A table whose weights were all equal would pass every
+	-- assertion above and would be a magazine that is as likely in a post box as
+	-- on the rack it was printed for.
+	check("the electronics shop is the likeliest place of all",
+		CeroSecGuideLoot.WEIGHTS.ElectronicStoreMagazines
+			> CeroSecGuideLoot.WEIGHTS.BookstoreMisc)
+	eq("four times the bookshop's", CeroSecGuideLoot.WEIGHTS.ElectronicStoreMagazines,
+		CeroSecGuideLoot.WEIGHTS.BookstoreMisc * 4)
+
+	ProceduralDistributions.list = {}
+	for i = 1, #KEYS do
+		ProceduralDistributions.list[KEYS[i]] = { rolls = 4, items = { "Something", 10 } }
+	end
+
+	SandboxVars = nil
+	CeroSecGuideLoot.added = false
+	local added = CeroSecGuideLoot.add()
+	eq("every list named was found and filled", added, #KEYS)
+
+	for i = 1, #KEYS do
+		local key = KEYS[i]
+		local items = ProceduralDistributions.list[key].items
+		eq(key .. " kept what was already in it", items[1], "Something")
+		eq(key .. " still has an even number of entries", #items % 2, 0)
+		eq(key .. " grew by exactly one name and one weight", #items, 4)
+		eq(key .. " holds the guide", items[3], CeroSecGuideLoot.ITEM)
+		eq(key .. " gave it the family's weight", items[4], FAMILY[key])
+	end
+
+	-- The guide is on every one of its nine shelves. A book missing from one
+	-- shelf is a book a player never finds in the one shop he went to for it,
+	-- and nothing anywhere would say so.
+	for i = 1, #KEYS do
+		local items = ProceduralDistributions.list[KEYS[i]].items
+		local found = false
+		for n = 1, #items, 2 do
+			if items[n] == CeroSecGuideLoot.ITEM then found = true end
+		end
+		check(KEYS[i] .. " really has the guide on it", found)
+	end
+
+	-- It is a book, so it goes where books go, and it shares no shelf with the
+	-- hardware it teaches: nobody kept a magazine in a crate of door operators.
+	local shared = 0
+	for key in pairs(CeroSecGuideLoot.WEIGHTS) do
+		if CeroSecModuleLoot.WEIGHTS[key] ~= nil then shared = shared + 1 end
+	end
+	eq("only the electrician's van holds both the guide and the hardware",
+		shared, 1)
+	check("and that one is the electrician's van",
+		CeroSecModuleLoot.WEIGHTS.ElectricianTools ~= nil
+			and CeroSecGuideLoot.WEIGHTS.ElectricianTools ~= nil)
+
+	-- No shelf of the guide's spawns a module, a disk or a volume of the manual.
+	for i = 1, #KEYS do
+		local items = ProceduralDistributions.list[KEYS[i]].items
+		for n = 1, #items, 2 do
+			check(KEYS[i] .. " spawns no volume of the manual",
+				string.find(tostring(items[n]), "CeroSec.Manual", 1, true) == nil)
+			check(KEYS[i] .. " spawns no floppy disk",
+				string.find(tostring(items[n]), "CeroSec.Floppy", 1, true) == nil)
+		end
+	end
+
+	-- Fired twice -- a Lua reload does that -- and nothing doubles.
+	local lengths = {}
+	for i = 1, #KEYS do
+		lengths[i] = #ProceduralDistributions.list[KEYS[i]].items
+	end
+	CeroSecGuideLoot.added = false
+	eq("a second pass adds nothing", CeroSecGuideLoot.add(), 0)
+	for i = 1, #KEYS do
+		eq(KEYS[i] .. " was not doubled",
+			#ProceduralDistributions.list[KEYS[i]].items, lengths[i])
+	end
+
+	-- A list vanilla renamed is a list that is skipped, not a crash.
+	CeroSecGuideLoot.added = false
+	ProceduralDistributions.list[KEYS[1]] = nil
+	eq("a missing list is skipped quietly", CeroSecGuideLoot.add(), 0)
+
+	-- A list nobody named has no weight at all.
+	eq("no weight for a list that does not exist",
+		CeroSecGuideLoot.weightFor("NoSuchShelf", 1), nil)
+
+	-- The same sandbox option the other three read, read the same way.
+	SandboxVars = nil
+	eq("with no sandbox group at all the multiplier is one",
+		CeroSecGuideLoot.abundance(), 1)
+	SandboxVars = { CeroSec = {} }
+	eq("with a group but no option it is still one", CeroSecGuideLoot.abundance(), 1)
+	for _, bad in ipairs({ 0, -1, "lots", true }) do
+		SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = bad
+		eq("a LootAbundance of " .. tostring(bad) .. " is not an abundance",
+			CeroSecGuideLoot.abundance(), 1)
+	end
+	SandboxVars.CeroSec[CeroSecManualLoot.SANDBOX] = 2
+	eq("a number is the number", CeroSecGuideLoot.abundance(), 2)
+
+	-- And it reaches the weights: a multiplier read and then not used would leave
+	-- every assertion above green.
+	ProceduralDistributions.list = { ElectricianTools = { rolls = 3, items = {} } }
+	CeroSecGuideLoot.added = false
+	CeroSecGuideLoot.add()
+	eq("the guide's weight was doubled with the shelves",
+		ProceduralDistributions.list.ElectricianTools.items[2],
+		CeroSecGuideLoot.WEIGHTS.ElectricianTools * 2)
+	SandboxVars = nil
+end
+
+--
 -- The recipe script: the keys the game will be asked to parse, and the two
 -- numbers it shares with the Lua
 --
@@ -2275,12 +2481,16 @@ do
 	check("it declares the mod's own module",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
 
-	-- One block per module, keyed by what it makes.
+	-- One block per module, keyed by what it makes, and the craftRecipe NAMES
+	-- kept beside them: the name is what the Field Wiring Guide has to say back,
+	-- and it is checked against the guide at the bottom of this block.
 	local recipes = {}
+	local names = {}
 	for name, body in string.gmatch(code, "craftRecipe%s+([A-Za-z]+)%s*(%b{})") do
 		local made = string.match(body, "outputs%s*{%s*item%s+1%s+([%w%.]+)")
 		check("craftRecipe " .. name .. " makes something", made ~= nil)
 		recipes[made or name] = body
+		names[#names + 1] = name
 	end
 
 	for m = 1, #CeroSecModules.LIST do
@@ -2306,8 +2516,24 @@ do
 		-- and not the other fails HERE and not in somebody's inventory.
 		local needs = tonumber(string.match(body, "SkillRequired = Electricity:(%d+)"))
 		eq(module.item .. " is built at the level it is fitted at", needs, module.skill)
+
+		-- And it is NOT known at that level, which is the whole of what the
+		-- Field Wiring Guide is for. A recipe whose auto-learn sits at or under
+		-- its own SkillRequired is a recipe every survivor who can craft it
+		-- already knows, and a book that teaches it teaches nobody anything --
+		-- which is exactly what this file said before the guide existed. The
+		-- gap is vanilla's: MakeImprovisedFlashlight is 1 and 3, and
+		-- MakeRemoteControllerV1 -- the electrical recipe these four are
+		-- nearest to -- is 2 and 8.
 		local learns = tonumber(string.match(body, "AutoLearnAll = Electricity:(%d+)"))
-		eq(module.item .. " is learned at that same level", learns, module.skill)
+		check(module.item .. " still has an auto-learn level at all, the way "
+			.. "every magazine-taught vanilla recipe does", learns ~= nil)
+		check(module.item .. " is NOT auto-learned at the level that can craft "
+			.. "it: that is what the guide is for",
+			(learns or 0) > (needs or 0))
+		eq(module.item .. "'s auto-learn is the remote controller's own gap "
+			.. "above what it requires", learns, (needs or 0) + 6)
+
 
 		-- A screwdriver, kept: it is the same tool the install asks for, and a
 		-- recipe that ate it would leave a survivor unable to fit what he just
@@ -2320,6 +2546,37 @@ do
 	local made = 0
 	for _ in pairs(recipes) do made = made + 1 end
 	eq("one recipe per module and not one more", made, #CeroSecModules.LIST)
+
+	-- The book, against the recipes. LearnedRecipes is a list of craftRecipe
+	-- NAMES and the game matches them as strings: a recipe renamed here and not
+	-- in the item script is a book that silently teaches nothing at all, and
+	-- nothing in the game would say so -- the item would load, the Read option
+	-- would appear, and the crafting tab would stay empty.
+	local ihandle = io.open("common/media/scripts/items_cerosec.txt", "r")
+	check("the item script is where the recipes' book lives", ihandle ~= nil)
+	local itext = ihandle:read("*a")
+	ihandle:close()
+	local icode = string.gsub(itext, "/%*.-%*/", "")
+	local guide = string.match(icode, "item%s+WiringGuide%s*(%b{})")
+	check("the item script declares the Field Wiring Guide", guide ~= nil)
+
+	local taught = {}
+	local taughtCount = 0
+	for one in string.gmatch(
+			string.match(guide or "", "LearnedRecipes%s*=%s*([^,\n]+)") or "",
+			"[^;]+") do
+		one = string.gsub(one, "%s", "")
+		if one ~= "" then
+			taught[one] = true
+			taughtCount = taughtCount + 1
+		end
+	end
+	eq("the guide teaches one recipe per module and not one more",
+		taughtCount, #CeroSecModules.LIST)
+	table.sort(names)
+	for n = 1, #names do
+		check("the guide names the recipe " .. names[n], taught[names[n]] == true)
+	end
 end
 
 print("manual_ui_test: " .. count .. " checks passed")

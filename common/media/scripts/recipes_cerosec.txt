@@ -33,14 +33,36 @@ module CeroSec
          (CeroSecModules.LIST: contact 1, relay 1, strike 2, operator 3). A
          survivor who can fit one can build one.
 
-       - AutoLearnAll at that same level, which is the decision this rung took
-         and a deliberate departure from vanilla's own electrical recipes: those
-         set AutoLearnAny several levels ABOVE what they require (the remote
-         controller needs Electricity 2 and teaches itself at 8). These four are
-         the mod's own hardware and there is no magazine in Knox County that
-         would ever have printed them, so an electrician learns them by being an
-         electrician. `All` rather than `Any` so that a second skill added here
-         later would tighten the gate and not widen it.
+       - NeedToBeLearn, and the book. These four are LEARNED, from
+         CeroSec.WiringGuide -- the Field Wiring Guide, found in the world and
+         read (items_cerosec.txt, and the engine does the rest:
+         IsoGameCharacter.ReadLiterature walks the item's LearnedRecipes and
+         calls learnRecipe on each). The recipe NAMES below are therefore load
+         bearing twice over: the guide names them back.
+
+       - AutoLearnAll six levels above SkillRequired, which is vanilla's own
+         shape for a recipe a magazine teaches and not a departure from it. The
+         rung that wrote these first set it EQUAL to SkillRequired, so an
+         electrician who could build one already knew how, and the book would
+         have had nothing to teach anybody. Vanilla never does that. It keeps
+         both keys and it spreads them:
+
+           MakeImprovisedFlashlight   SkillRequired 1, AutoLearnAny 3
+             recipes/recipes_electrical.txt:101-109, taught by
+             Base.ElectronicsMag5 (literature.txt:5367-5377)
+           MakeRemoteControllerV1     SkillRequired 2, AutoLearnAny 8
+             recipes/recipes_traps.txt:3-11, taught by
+             Base.ElectronicsMag1 (literature.txt:5307-5320)
+
+         So the skill still gates the CRAFT at the level the module is fitted
+         at, the book is how a survivor actually comes by the recipe, and a
+         master electrician works it out for himself eventually. Six is the
+         remote controller's own gap (2 to 8), and the remote controller is the
+         vanilla recipe these four are nearest to.
+
+         `All` rather than vanilla's `Any` is kept from the first rung, so that
+         a second skill added here later would tighten the gate and not widen
+         it.
 
        - xpAward is set against the vanilla recipes above, which pay 10 for a
          flashlight and 6 to 14 for a remote controller. */
@@ -53,7 +75,7 @@ module CeroSec
         SkillRequired = Electricity:1,
         Tags = AnySurfaceCraft,
         category = Electrical,
-        AutoLearnAll = Electricity:1,
+        AutoLearnAll = Electricity:7,
         xpAward = Electricity:5,
         inputs
         {
@@ -76,7 +98,7 @@ module CeroSec
         SkillRequired = Electricity:1,
         Tags = AnySurfaceCraft,
         category = Electrical,
-        AutoLearnAll = Electricity:1,
+        AutoLearnAll = Electricity:7,
         xpAward = Electricity:8,
         inputs
         {
@@ -99,7 +121,7 @@ module CeroSec
         SkillRequired = Electricity:2,
         Tags = AnySurfaceCraft,
         category = Electrical,
-        AutoLearnAll = Electricity:2,
+        AutoLearnAll = Electricity:8,
         xpAward = Electricity:10,
         inputs
         {
@@ -128,7 +150,7 @@ module CeroSec
         SkillRequired = Electricity:3,
         Tags = AnySurfaceCraft,
         category = Electrical,
-        AutoLearnAll = Electricity:3,
+        AutoLearnAll = Electricity:9,
         xpAward = Electricity:14,
         inputs
         {
