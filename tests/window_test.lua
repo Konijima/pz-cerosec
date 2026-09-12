@@ -7973,6 +7973,33 @@ do
 	_G.__world = nil
 end
 
+-- The set CARRIED AWAY between opening the line and connecting, which is the one
+-- way a machine with an open line can have no aerial: the device check is at the
+-- door (cu would not open a line with nothing behind it), so this is the path the
+-- link layer's own "no radio" is left for, and a bench is what keeps that line a
+-- line rather than a nil.
+do
+	local net = newRadioNet()
+	local mine = net.aerial(net.here)
+	net.aerial(net.far)
+	net.login("admin")
+	tnc(net)
+	check("the line is open", net.glass(CeroSecOS.TNC_BANNER))
+	-- Somebody unplugs the set and walks off with it: what is left on the square is
+	-- not a two-way radio any more, so the machine has no TNC.
+	mine.data.twoWay = false
+	net.forget()
+	say(net, "C " .. callOf(net.far))
+	net.tick(3)
+	check("the machine says it has no radio, in its own name",
+		net.heard(CeroSecOS.TNC_NO_RADIO))
+	check("having transmitted nothing", #net.air == 0)
+	check("and opened no line over there", net.far.ptys == nil)
+	eq("and the box is still at cmd:",
+		net.here:consoleState().prompt.text, CeroSecOS.TNC_PROMPT)
+	_G.__world = nil
+end
+
 -- MHEARD: what the boxes in earshot wrote down. A connect is two transmissions,
 -- so both ends have each other in their list, and the power going out empties it.
 do

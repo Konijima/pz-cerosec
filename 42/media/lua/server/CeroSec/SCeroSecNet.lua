@@ -976,9 +976,11 @@ local function reachableRadioOn(system, from, call)
 	if not from.on then return nil, CeroSecOS.TNC.retry end
 	-- No set in reach: the machine can see that for itself, there being no
 	-- /dev/radio0 on it, and it says so rather than keying a transmitter it has
-	-- not got.
+	-- not got. It is reached only by a set that has GONE since the line was opened
+	-- -- carried out of the room, picked up -- because cu would not have opened a
+	-- line with no device behind it (CeroSecOS.tncOpen).
 	local mine = CeroSecRadio.tncOf(from)
-	if mine == nil then return nil, CeroSecOS.CALL_NO_RADIO end
+	if mine == nil then return nil, CeroSecOS.TNC_NO_RADIO end
 	-- A set that is switched off, or has nothing behind it, is NOT one of those: a
 	-- TNC's only cables are the audio and the press-to-talk, so it cannot tell
 	-- whether the radio in front of it is alive. It transmits into a dead set and
@@ -2010,10 +2012,12 @@ function CeroSecNet.dialRadio(system, luaObject, console, data)
 	-- own question -- has nothing to answer a connect with. The retries run out,
 	-- which is all a station ever learns about it.
 	if found:osState() == nil then return nil, CeroSecOS.TNC.retry end
-	-- Whose station this is, read off this machine's own disk. It cannot be nil:
-	-- the command refused a machine with no callsign before the order was given.
+	-- Whose station this is, read off this machine's own disk. It should not be
+	-- nil: the box refused a station with no MYCALL before the order was given
+	-- (CeroSecOS.continuations.tnc), and what is left here is the file being
+	-- deleted in between.
 	local call = CeroSecNet.callsignOf(luaObject)
-	if call == nil then return nil, CeroSecOS.CALL_NO_CALLSIGN end
+	if call == nil then return nil, CeroSecOS.TNC_NO_CALLSIGN end
 	local radio = { call = call, to = data.call, key = CeroSecRadio.keyOf(mine) }
 	-- Signed `cu`, which is the program that opened the line: the wire's log names
 	-- the command a session was made by, and since SYSTEM_VERSION 17 that is cu.
