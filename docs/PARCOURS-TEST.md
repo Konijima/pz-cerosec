@@ -1343,12 +1343,22 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      porte extérieure de l'étape 230 → la gâche se pose, et `lockN` apparaît à
      côté de `doorN` : `echo unlock > /dev/lockN` déverrouille, essayer d'entrer
      depuis dehors le confirme. [ ]
-233. **La fenêtre ne prend qu'un contact.** Clic droit sur une fenêtre avec la
-     gâche ou l'opérateur en poche → « Ce module ne va pas ici. ». Avec le
-     contact → il se pose, `winN` apparaît. `cat /dev/winN` lit son état ;
-     `echo unlock > /dev/winN` en `root` → `winN: operation not supported`, et
-     le loquet ne bouge pas. C'est une limite du jeu, pas un oubli : rien dans
-     le moteur n'ouvre un châssis sans un survivant devant. [ ]
+233. **La fenêtre ne prend qu'un contact, et le contact sent le châssis.** Clic
+     droit sur une fenêtre avec la gâche ou l'opérateur en poche → « Ce module
+     ne va pas ici. ». Avec le contact → il se pose, `winN` apparaît. Ouvrir la
+     fenêtre **à la main**, puis `dev winN` → `winN: open` ; la refermer →
+     `winN: locked` ou `unlocked` selon le loquet. Casser la vitre → `smashed`,
+     même châssis ouvert : le verre passe avant le reste. `dev winN toggle` sur
+     une fenêtre ouverte → `winN: cannot toggle` (ses deux mots sont `lock` et
+     `unlock`, rien ne défait un châssis). `echo unlock > /dev/winN` en `root` →
+     `winN: operation not supported`, et le loquet ne bouge pas : rien dans le
+     moteur n'ouvre un châssis sans un survivant devant, donc une fenêtre se lit
+     et ne se travaille pas. [ ]
+233b. **La lecture du châssis vaut dans les deux modes.** Option **désactivée**
+     (étape 237), sans aucun module posé : ouvrir une fenêtre à la main et
+     `dev winN` → `winN: open` tout pareil, et `echo lock > /dev/winN`
+     fonctionne toujours comme avant ce palier. Ce que le contact achète, c'est
+     le droit d'exister dans `/dev`, jamais un mot de plus. [ ]
 234. **Retirer rend le module entier.** Clic droit sur l'interrupteur de l'étape
      229 → « Retirer Module relais ». Attendu : le relais **revient dans le
      sac** (un seul, pas deux), l'interrupteur disparaît de `dev`, et

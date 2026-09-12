@@ -1813,9 +1813,14 @@ end
 
 local function fakeWindow(locked, north)
 	local o = fittable({ __class = "IsoWindow", locked = locked, north = north,
-		smashed = false, barricaded = false, syncs = 0 })
+		smashed = false, barricaded = false, open = false, syncs = 0 })
 	highlightable(o)
 	o.getNorth = function() return o.north end
+	-- The sash. NOT openable() above, deliberately: that one also writes a
+	-- ToggleDoorSilent, and there is no call in the game that moves a window
+	-- without a survivor standing at it -- a fake that answered one would be a
+	-- fake claiming a call we could make.
+	o.IsOpen = function() return o.open end
 	o.isLocked = function() return o.locked end
 	o.isSmashed = function() return o.smashed end
 	o.isBarricaded = function() return o.barricaded end
@@ -2190,13 +2195,54 @@ do
 	bench.enter("dev lock1 unlock")
 	bench.frame()
 
+	-- The sash, which is what a magnetic contact is FOR and which a window device
+	-- could always see and never said. It is read with the option OFF as well as
+	-- on: what a window IS does not depend on what is screwed to it.
+	kit.win0.open = true
+	bench.enter("dev win0")
+	bench.frame()
+	check("an open window reads open", bench.painted("win0: open"))
+	bench.enter("ls -l /dev/win0")
+	bench.frame()
+	check("and the listing says so too",
+		bench.painted("crw-rw----  root  sudo  win0    office         N  open"))
+	-- Open beats the latch, the way a door's open beats its lock: the word is
+	-- about the hole in the wall and not about the catch on it.
+	eq("the latch is untouched and unasked", kit.win0.locked, false)
+	kit.win0.locked = true
+	bench.enter("clear")
+	bench.enter("dev win0")
+	bench.frame()
+	check("a locked window that is open still reads open",
+		bench.painted("win0: open"))
+	check("and says nothing about the catch", not bench.painted("win0: locked"))
+	-- And nothing undoes it: a window's two words are lock and unlock, and
+	-- guessing a direction for a sash no machine can move would be an invention.
+	bench.enter("dev win0 toggle")
+	bench.frame()
+	check("there is no opposite to open", bench.painted("win0: cannot toggle"))
+	kit.win0.open = false
+	bench.enter("dev win0")
+	bench.frame()
+	check("shut again, the latch is the word", bench.painted("win0: locked"))
+	kit.win0.locked = false
+
 	-- Somebody smashes the window. The next listing says so, and the machine
 	-- refuses to work a lock that is not there any more.
 	kit.win0.smashed = true
+	kit.win0.open = true
+	-- The glass wiped first, because a negative assertion on a screen that keeps
+	-- a hundred lines of scrollback is an assertion about everything typed
+	-- before it (CeroSec.CONSOLE_MAX).
+	bench.enter("clear")
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("the smashed window shows",
 		bench.painted("crw-rw----  root  sudo  win0    office         N  smashed"))
+	-- Broken beats the sash: there is no window left to be open, so the word a
+	-- survivor needs is the one about the glass.
+	check("and not what the sash is doing", not bench.painted("N  open"))
+	kit.win0.open = false
 	bench.enter("echo lock > /dev/win0")
 	bench.frame()
 	check("and refuses to be locked", bench.painted("win0: smashed"))
@@ -7973,9 +8019,16 @@ do
 	-- has no call that moves a sash without a survivor standing at it, so a
 	-- wired window is one the machine reads.
 	fit(kit.win0, "contact")
-	bench.enter("cat /dev/win0")
+	bench.enter("dev win0")
 	bench.frame()
-	check("a wired window reads", bench.painted("locked"))
+	check("a wired window reads its latch", bench.painted("win0: locked"))
+	-- And its sash, which is the whole of what a magnetic contact does: it is a
+	-- switch on the frame, and what closes it is the window being shut.
+	kit.win0.open = true
+	bench.enter("dev win0")
+	bench.frame()
+	check("and the contact sees the sash", bench.painted("win0: open"))
+	kit.win0.open = false
 	bench.enter("echo unlock > /dev/win0")
 	bench.frame()
 	check("and refuses every word", bench.painted("win0: operation not supported"))

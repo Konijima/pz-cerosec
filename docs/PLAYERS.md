@@ -419,7 +419,12 @@ this mod because there is none in the game: the only call that moves a sash is
 `IsoWindow.ToggleWindow(IsoGameCharacter)` and it wants a survivor standing at
 it. So with the option on, a window is a thing the machine watches and never
 works — which also means the `win` device's `lock` and `unlock` words only ever
-do anything with the option **off**.
+do anything with the option **off**. Watching is what a magnetic contact is for:
+a `winN` reads `smashed`, `barricaded`, `open`, `locked` or `unlocked`, in that
+order — the glass, then the sash, then the catch — so `open` beats the latch the
+way a door's does and `unlocked` means shut. `dev win0 toggle` on an open window
+answers `win0: cannot toggle`: its two words are `lock` and `unlock`, and there
+is nothing that undoes a sash.
 
 **Fitting one.** Right-click the door, window or light switch itself — not the
 computer — and take **CeroSec hardware**. It asks for the module in your bag, a

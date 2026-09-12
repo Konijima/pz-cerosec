@@ -228,11 +228,27 @@ local function doorDesc(door)
 	return here .. "-" .. there
 end
 
+-- open, smashed, barricaded, locked or unlocked -- and the ORDER is the door's,
+-- read the same way for the same reason (doorState, below).
+--
+-- Broken and boarded first: either of them is what a survivor needs to be told,
+-- and neither is something a latch has anything to say about. A smashed window
+-- has no sash left to be open and a boarded one cannot move, so neither of them
+-- is ever the sash's business either.
+--
+-- Then OPEN, ahead of the latch, exactly as a door puts `open` ahead of
+-- `locked`: a window a survivor has pushed up is open whatever its latch says,
+-- and the word that matters is the one about the hole in the wall. So `locked`
+-- and `unlocked` both mean shut, the way a door's `locked` means closed -- five
+-- words and not eight, because nobody needs to be told "open and unlocked".
+--
+-- IsOpen() is the call, the same name a door answers to
+-- (docs/notes/modules-proofs.md, 4), and it is what a magnetic contact on a
+-- window is FOR: the contact senses the sash, and now the device says so.
 local function windowState(win)
-	-- Broken and boarded first: either of them is what a survivor needs to be
-	-- told, and neither is something a lock has anything to say about.
 	if win:isSmashed() then return "smashed" end
 	if win:isBarricaded() then return "barricaded" end
+	if win:IsOpen() then return "open" end
 	if win:isLocked() then return "locked" end
 	return "unlocked"
 end

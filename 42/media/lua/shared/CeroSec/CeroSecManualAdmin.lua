@@ -748,22 +748,25 @@ it gets ten tiles of its own floor every way. Sixty four at the outside.
 
 [[The four modules, and what each one buys.
 
-Nothing in that table is there because it is a door. It is there because
-somebody went up to it with a screwdriver and a box:
+Nothing in that table is there because it is a door, but because somebody
+went up to it with a screwdriver and a box:
 
   magnetic contact  the machine can SEE a door or a window
   relay             it can throw a light switch
   electric strike   it can work a door's lock
   door operator     it can open and shut a door
 
-So a door with a contact and nothing else is a doorN you can read and
-cannot move. Put an operator on that same door and the same doorN opens;
-add a strike and the lockN appears beside it. A window takes a contact and
-nothing else, ever: no machine in 1993 opened a sash, and none does here.
+A door with only a contact on it is a doorN you can read and cannot move.
+An operator opens it; a strike adds the lockN beside it.
 
-If your server has turned the sandbox option Hardware modules required
-OFF, forget all of this -- every door, window, lock and light of the
-building is under /dev with nothing fitted at all.]],
+A window takes a contact and nothing else, ever: nothing in this game
+opens a sash with nobody standing at it. And a contact is what a window
+wants. A winN reads smashed, barricaded, open, locked or unlocked, in that
+order -- the glass, then the sash, then the catch -- so open beats locked
+the way a door's does, and unlocked means shut.
+
+If your server turned the option Hardware modules required OFF, forget all
+this: every door, window, lock and light is under /dev, fitted or not.]],
 
 [[Fitting one, and taking it off.
 

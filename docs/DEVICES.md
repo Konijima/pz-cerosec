@@ -126,7 +126,9 @@ belt for a caller that reaches the world layer directly.
 A **window is always `ro`** when the option is on: the only call in the game that
 moves a sash is `IsoWindow.ToggleWindow(IsoGameCharacter)`, which wants a
 character, so there is no window actuator to build. With the option off the `win`
-device locks and unlocks exactly as it always did.
+device locks and unlocks exactly as it always did. What a contact on a window
+buys is the reading, and that is the point of a magnetic contact: it senses the
+sash.
 
 **Hardware changing under a live device** moves its mode and never its number:
 the key a number hangs on is `kind:x:y:z:side:n` and neither the kind nor the
@@ -193,6 +195,15 @@ Lua's own way of asking (`server/BuildingObjects/ISBuildUtil.lua:556`,
 `ISDoubleDoor.lua:315`). `ToggleDoorSilent` moves the one object it is called on
 while vanilla's own toggle walks every leaf through `forEachDoorObject`, so a
 machine that opened one would leave the rest shut. Those keep their `lock`.
+
+**A window's states** are `smashed`, `barricaded`, `open`, `locked` and
+`unlocked`, read in that order — the glass, then the sash
+(`IsoWindow.IsOpen()`), then the catch. `open` comes ahead of the latch for the
+reason a door's does, and `unlocked` therefore means shut; a smashed or boarded
+window has no sash worth reporting, so those two still come first. `open` has no
+opposite in `DEV_OPPOSITE.win` (the kind's words are `lock` and `unlock`), so
+`dev win0 toggle` on an open window answers `win0: cannot toggle` rather than
+guessing a direction for a sash no machine can move.
 
 **A door's states** are `open`, `closed` and `locked`, and `locked` implies
 closed — three words, not four, because a survivor who reads `locked` has been
