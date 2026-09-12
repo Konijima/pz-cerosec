@@ -9,5 +9,6 @@
     "IGUI_CeroSec_Debug_TurnOff": "Turn off",
     "IGUI_CeroSec_Debug_Teleport": "Teleport to it",
     "IGUI_CeroSec_Debug_Terminal": "Open terminal",
-    "IGUI_CeroSec_Debug_Dump": "Dump state"
+    "IGUI_CeroSec_Debug_Dump": "Dump state",
+    "IGUI_CeroSec_Phonebook_Named": "%1 (exchange %2)"
 }

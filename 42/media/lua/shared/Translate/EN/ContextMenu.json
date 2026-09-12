@@ -12,5 +12,6 @@
     "ContextMenu_CeroSec_EjectFloppy": "Eject floppy",
     "ContextMenu_CeroSec_Install": "Install %1",
     "ContextMenu_CeroSec_Remove": "Remove %1",
-    "ContextMenu_CeroSec_Modules": "CeroSec hardware"
+    "ContextMenu_CeroSec_Modules": "CeroSec hardware",
+    "ContextMenu_CeroSec_LookUpNumbers": "Look up numbers"
 }

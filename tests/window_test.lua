@@ -343,6 +343,9 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The telephone directory's generator: pure Lua, and the server's own
+	-- enumeration (CeroSecNet.directory) names it.
+	"shared/CeroSec/CeroSecPhonebook.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -4221,18 +4224,60 @@ local function fakeZone(z)
 		getHeight = function() return z.h end,
 	}
 end
+-- THE MAP'S BUILDINGS, for the one caller that asks about a building it has no
+-- machine in: the telephone directory, which has to know whether a named zone is
+-- a tenancy INSIDE something (CeroSecNet.directory). A list of
+-- { x, y, w, h } and getBuildingAt answers the first whose box holds the tile,
+-- which is the walk zombie.iso.IsoMetaGrid.getBuildingAt(int, int) does (javap:
+-- it walks `buildings` and compares x, y, getW(), getH()). x2 is EXCLUSIVE, the
+-- way net.buildingAt below says it is.
+_G.__buildings = {}
+local function fakeBuildingDef(b)
+	return {
+		getX = function() return b.x end,
+		getY = function() return b.y end,
+		getX2 = function() return b.x + b.w end,
+		getY2 = function() return b.y + b.h end,
+	}
+end
 _G.getWorld = function()
 	return { getMetaGrid = function()
-		return { getZonesAt = function(_, x, y, _z)
-			local hits = {}
-			for i = 1, #_G.__zones do
-				local z = _G.__zones[i]
-				if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
-					hits[#hits + 1] = fakeZone(z)
+		return {
+			getZonesAt = function(_, x, y, _z)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local z = _G.__zones[i]
+					if x >= z.x and x < z.x + z.w and y >= z.y and y < z.y + z.h then
+						hits[#hits + 1] = fakeZone(z)
+					end
 				end
-			end
-			return javaList(hits)
-		end }
+				return javaList(hits)
+			end,
+			-- getZonesIntersecting(x, y, z, w, h): every zone whose rectangle overlaps
+			-- the one asked for. Zone.intersects(x,y,z,w,h) in the jar is exactly this
+			-- test on the four edges (javap, and z == Integer.MAX_VALUE is its
+			-- any-level case; nothing here has a zone off the ground floor).
+			getZonesIntersecting = function(_, x, y, _z, w, h)
+				local hits = {}
+				for i = 1, #_G.__zones do
+					local zone = _G.__zones[i]
+					if x + w > zone.x and x < zone.x + zone.w
+							and y + h > zone.y and y < zone.y + zone.h then
+						hits[#hits + 1] = fakeZone(zone)
+					end
+				end
+				return javaList(hits)
+			end,
+			getBuildingAt = function(_, x, y)
+				for i = 1, #_G.__buildings do
+					local b = _G.__buildings[i]
+					if x >= b.x and x < b.x + b.w and y >= b.y and y < b.y + b.h then
+						return fakeBuildingDef(b)
+					end
+				end
+				return nil
+			end,
+		}
 	end }
 end
 
@@ -4347,6 +4392,9 @@ local function newNet()
 	end
 	local window = newWindow()
 	net.window = window
+	-- The survivor himself, for the one command that is about no machine: looking a
+	-- number up in the telephone directory (PlayerCommands.phonebook).
+	net.player = player
 
 	net.said = {}
 	local function record(a)
@@ -6067,6 +6115,166 @@ do
 	house:turnOn()
 	eq("nor is a zone nobody named", telOf(house), alone)
 	_G.__zones = {}
+end
+
+--
+-- THE TELEPHONE DIRECTORY (the phone book wave)
+--
+-- Base.Phonebook is the yellow pages of the region it was found in, and the whole
+-- of what this bench is about is that the BOOK and the LINE cannot disagree: a
+-- computer put in a shop must answer on the number the book printed for that shop,
+-- and the book must hold the shops of ONE exchange and nothing else.
+--
+-- The fake map grows two things for it: getZonesIntersecting, which is how a whole
+-- region is swept, and getBuildingAt, which is how a named zone is told from a
+-- named REGION -- the spawner tags a suburb "StreetPoor" and a farm "Farm" the way
+-- it tags a shop "CoffeeShop", and neither of the first two is a business with a
+-- telephone.
+--
+do
+	local net = newNet()
+	local R = CeroSecOS.PHONE_REGION
+
+	-- A mall in region 0,0 with three shops in it, two of them one chain; a house
+	-- with nothing named on it; a suburb-sized zone that is nobody's tenancy; and a
+	-- zone exactly the mall's own size, which is the mall under another name.
+	local mall = net.buildingAt(200, 300, 60, 40, 30)
+	local house = net.buildingAt(500, 500, 10, 10, 3)
+	-- And a second mall a region away, whose shop must not turn up in this book.
+	local farMall = net.buildingAt(R + 200, 300, 60, 40, 30)
+	_G.__buildings = {
+		{ x = 200, y = 300, w = 60, h = 40 },
+		{ x = 500, y = 500, w = 10, h = 10 },
+		{ x = R + 200, y = 300, w = 60, h = 40 },
+	}
+	_G.__zones = {
+		{ name = "CoffeeShop", x = 210, y = 310, w = 17, h = 11 },
+		{ name = "Bakery", x = 240, y = 310, w = 12, h = 10 },
+		-- The same chain's second shop: one name, its own outline, its own number.
+		{ name = "CoffeeShop", x = 230, y = 320, w = 17, h = 11 },
+		-- A suburb. Its middle (300,300) is on no building at all, so no footprint
+		-- can be bigger than it and it is not a tenancy.
+		{ name = "StreetPoor", x = 100, y = 100, w = 400, h = 400 },
+		-- The mall by another name: exactly its footprint, which loses on the same
+		-- strictly-smaller test premisesOf runs.
+		{ name = "Mall", x = 200, y = 300, w = 60, h = 40 },
+		-- A zone of the wrong type, and one nobody named.
+		{ name = "Nav", type = "Nav", x = 205, y = 305, w = 6, h = 6 },
+		{ name = "", x = 206, y = 306, w = 6, h = 6 },
+		-- Another region's shop, on another exchange.
+		{ name = "Pharmacist", x = R + 210, y = 310, w = 17, h = 11 },
+	}
+
+	-- Ask the server the way the client asks it: one command, no square, and the
+	-- answer goes to the player who asked.
+	local function ask(rx, ry)
+		local got = nil
+		net.system.reply = function(_, who, cmd, args)
+			if cmd == "listings" then got = args; got.who = who end
+		end
+		net.system:OnClientCommand("phonebook", net.player,
+			{ rx = rx, ry = ry, token = "look" })
+		return got
+	end
+
+	local book = ask(0, 0)
+	check("the server answers a look-up", book ~= nil)
+	eq("to the survivor who asked and nobody else", book.who, net.player)
+	eq("carrying the token back", book.token, "look")
+	eq("for the region asked for", book.rx .. "," .. book.ry, "0,0")
+	eq("under the exchange of that region", book.exchange,
+		CeroSecOS.phoneExchange(0, 0))
+	check("and nothing was cut", book.capped == false)
+
+	local names = {}
+	local byNumber = {}
+	for i = 1, #book.entries do
+		names[#names + 1] = book.entries[i].name
+		byNumber[book.entries[i].number] = book.entries[i].name
+	end
+	table.sort(names)
+	eq("three business listings and no more", #book.entries, 3)
+	eq("the shops of the mall, camel case taken out",
+		table.concat(names, "|"), "Bakery|Coffee Shop|Coffee Shop")
+
+	-- A CHAIN is two listings with one name and two numbers, each on its own line.
+	local chain = {}
+	for i = 1, #book.entries do
+		if book.entries[i].name == "Coffee Shop" then chain[#chain + 1] = book.entries[i].number end
+	end
+	eq("the chain is listed twice", #chain, 2)
+	check("on two different numbers", chain[1] ~= chain[2])
+
+	-- WHAT IS NOT IN IT. The suburb, the mall under its own name, the wrong type,
+	-- the unnamed zone -- and the HOUSE, which has a line and no name to print.
+	for _, absent in ipairs({ "Street Poor", "Mall", "Nav", "Pharmacist" }) do
+		check(absent .. " is not a business listing",
+			string.find("|" .. table.concat(names, "|") .. "|",
+				"|" .. absent .. "|", 1, true) == nil)
+	end
+
+	-- THE BOOK AND THE LINE. A computer in the coffee shop the map drew at 210,310
+	-- must read the book's own number off its BIOS. This is the assertion the whole
+	-- wave rests on: derive the number any other way and it goes red.
+	local shop = net.machine(212, 312, 0, mall)
+	shop:turnOn()
+	local tel = telOf(shop)
+	check("a machine in the coffee shop has a line", tel ~= nil)
+	eq("and the book printed that very number for Coffee Shop", byNumber[tel], "Coffee Shop")
+	eq("which is the premises the record names", CeroSecOS.premisesName(shop:osState()),
+		"CoffeeShop")
+	eq("on the book's own exchange", tonumber(string.sub(tel, 1, 3)), book.exchange)
+
+	-- A RESIDENCE is not listed, and it is not listed because it has no name and
+	-- not because it has no line: the house answers on one.
+	local home = net.machine(505, 505, 0, house)
+	home:turnOn()
+	local homeTel = telOf(home)
+	check("the house has a line of its own", homeTel ~= nil)
+	eq("and no listing anywhere in the book", byNumber[homeTel], nil)
+
+	-- ANOTHER REGION IS ANOTHER BOOK. The pharmacy is in region 1,0 and the two
+	-- books share nothing -- not a listing and not an exchange.
+	local far = ask(1, 0)
+	eq("the next region's book has its own listing", #far.entries, 1)
+	eq("which is the pharmacy", far.entries[1].name, "Pharmacist")
+	check("on another exchange", far.exchange ~= book.exchange)
+	local pharmacy = net.machine(R + 212, 312, 0, farMall)
+	pharmacy:turnOn()
+	eq("and the machine in it answers on the number that book printed",
+		far.entries[1].number, telOf(pharmacy))
+
+	-- A region with nothing in it is an empty book and not a broken one.
+	local empty = ask(7, 7)
+	eq("a region with no premises in it lists nothing", #empty.entries, 0)
+	check("and says so without being cut", empty.capped == false)
+
+	-- THE CAP. A region with more premises than a book holds is cut, and the answer
+	-- SAYS it was cut rather than looking like a smaller county.
+	local many = {}
+	-- Laid out in rows INSIDE the region, because a zone whose corner falls past the
+	-- region's far edge is in the next region's book by the corner rule above -- and
+	-- a row of 405 zones three tiles apart would have run out of region long before
+	-- it ran out of shops.
+	_G.__buildings = { { x = 2 * R, y = 0, w = R, h = R } }
+	for i = 1, CeroSecPhonebook.MAX_ENTRIES + 5 do
+		many[i] = { name = "Shop" .. i,
+			x = 2 * R + math.fmod(i, 30) * 3, y = math.floor(i / 30) * 3,
+			w = 2, h = 2 }
+	end
+	_G.__zones = many
+	local full = ask(2, 0)
+	eq("the book holds its cap and not one more", #full.entries,
+		CeroSecPhonebook.MAX_ENTRIES)
+	check("and the answer says it was cut", full.capped == true)
+	-- Which is what the last line of the last leaf prints.
+	local volume = CeroSecPhonebook.volume(full.exchange, full.entries, full.capped)
+	local last = volume.chapters[1].pages[#volume.chapters[1].pages]
+	check("the printed book says so on its last line",
+		string.find(last, "This directory is full", 1, true) ~= nil)
+
+	_G.__zones = {}
+	_G.__buildings = {}
 end
 
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the

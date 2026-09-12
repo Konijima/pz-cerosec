@@ -12,5 +12,6 @@
     "ContextMenu_CeroSec_EjectFloppy": "Éjecter la disquette",
     "ContextMenu_CeroSec_Install": "Installer %1",
     "ContextMenu_CeroSec_Remove": "Retirer %1",
-    "ContextMenu_CeroSec_Modules": "Matériel CeroSec"
+    "ContextMenu_CeroSec_Modules": "Matériel CeroSec",
+    "ContextMenu_CeroSec_LookUpNumbers": "Chercher un numéro"
 }

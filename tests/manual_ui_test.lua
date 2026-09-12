@@ -186,6 +186,12 @@ local FILES = {
 	-- names typed again here.
 	"shared/CeroSec/CeroSecModules.lua",
 	"shared/CeroSec/CeroSecManualBook.lua",
+	-- The telephone directory: the generator, which is pure, and the client half
+	-- that stamps the copy and opens the reader on it. The menu below requires
+	-- both, because the phone book's entry sits beside the volumes'.
+	"shared/CeroSec/OS/CeroSecOSNet.lua",
+	"shared/CeroSec/CeroSecPhonebook.lua",
+	"client/CeroSec/CeroSecPhonebookUI.lua",
 	"client/CeroSec/CeroSecManualUI.lua",
 	"client/CeroSec/CeroSecManualMenu.lua",
 }
@@ -224,7 +230,11 @@ local LONG = string.rep("Wm", 90)
 -- behind the shelf any more (the single volume this mod shipped first was retired
 -- when the third was written), so a bench book is a VOLUME with an id, and the
 -- cover is stamped from CeroSecOS.VERSION the way a real one is.
-CeroSecOS = CeroSecOS or { VERSION = "1.0" }
+-- The core's net half IS loaded now (the directory's arithmetic is in it), so
+-- CeroSecOS is already standing and only the version has to be put on it: the
+-- file that carries the real one is not in this bench's list.
+CeroSecOS = CeroSecOS or {}
+CeroSecOS.VERSION = CeroSecOS.VERSION or "1.0"
 
 local BENCH_CHAPTERS = {
 		{
@@ -963,6 +973,298 @@ do
 		local key = CeroSecManualMenu.BOOKS[b].label
 		check("EN ContextMenu.json defines " .. key,
 			string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+	end
+end
+
+--
+-- THE TELEPHONE DIRECTORY (the phone book wave)
+--
+-- Base.Phonebook gets one entry on the inventory menu and vanilla's Read keeps its
+-- own; the copy is stamped with the region it was first opened in and with the
+-- exchange of it, once and never again; and what comes back off the server is laid
+-- out by the reader as a book with leaves, not as a list in a box.
+--
+-- The server is not here. What is faked is the ONE call the client makes
+-- (CCeroSecSystem.instance:sendCommand) and the one answer it gets back, so what
+-- this bench asserts is the client half exactly: what goes out, what is written on
+-- the item, and what ends up on the paper.
+--
+
+do
+	local R = CeroSecOS.PHONE_REGION
+
+	-- A phone book: vanilla's item, with the name the game gives it and a modData
+	-- table anything may write into.
+	local function newPhonebook()
+		local item = newItem(CeroSecPhonebook.ITEM)
+		item.displayName = "Phonebook"
+		item.getName = function(self) return self.displayName end
+		item.setName = function(self, name) self.displayName = name end
+		return item
+	end
+
+	-- A survivor standing somewhere, which is the whole of what the stamp is made
+	-- of.
+	local function newReader(x, y)
+		local player = newPlayer()
+		player.getX = function() return x end
+		player.getY = function() return y end
+		return player
+	end
+
+	-- What went out on the wire, and the answer the server would have sent back.
+	local sent = {}
+	CCeroSecSystem = { instance = { sendCommand = function(_, playerObj, command, args)
+		sent[#sent + 1] = { player = playerObj, command = command, args = args }
+	end } }
+	local function lastSent()
+		return sent[#sent]
+	end
+	local function answer(entries, capped)
+		local out = lastSent()
+		CeroSecPhonebookUI.onServerAnswer("listings", {
+			token = out.args.token,
+			rx = out.args.rx, ry = out.args.ry,
+			exchange = CeroSecOS.phoneExchangeOfRegion(out.args.rx, out.args.ry),
+			entries = entries or {},
+			capped = capped or false,
+		})
+		return CeroSecManualUI.instances[0]
+	end
+
+	--
+	-- The menu entry
+	--
+	local options = {}
+	local context = { addOption = function(_, label, target, callback, arg, arg2)
+		options[#options + 1] = { label = label, target = target,
+			callback = callback, arg = arg, arg2 = arg2 }
+		return {}
+	end }
+	local reader = newReader(300.5, 700.5)
+	_G.getSpecificPlayer = function() return reader end
+
+	local book = newPhonebook()
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { book })
+	eq("a phone book is one option", #options, 1)
+	eq("named the way the menu names it", options[1].label,
+		"ContextMenu_CeroSec_LookUpNumbers")
+	eq("carrying the copy itself", options[1].target, book)
+	eq("and it is the look-up and not the reader", options[1].callback,
+		CeroSecManualMenu.onLookUp)
+	eq("with the survivor behind it", options[1].arg, reader)
+
+	-- And nothing else gets it. A manual is not a phone book and a phone book is
+	-- not one of the volumes: the entry is on Base.Phonebook and on nothing else.
+	options = {}
+	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
+		{ newItem("Base.Book"), newItem("CeroSec.ManualUser") })
+	for i = 1, #options do
+		check("only the volume is offered here",
+			options[i].label ~= "ContextMenu_CeroSec_LookUpNumbers")
+	end
+	-- The phone book is never one of the volumes, which is the list the bench above
+	-- holds to items this mod declares.
+	for b = 1, #CeroSecManualMenu.BOOKS do
+		check("the phone book is not on the shelf",
+			CeroSecManualMenu.BOOKS[b].item ~= CeroSecPhonebook.ITEM)
+	end
+	-- Every label it can print is a string the mod ships, in both languages.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open("42/media/lua/shared/Translate/" .. lang ..
+			"/ContextMenu.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		check(lang .. " ContextMenu.json defines the look-up",
+			string.find(strings, '"' .. CeroSecManualMenu.PHONEBOOK.label .. '"',
+				1, true) ~= nil)
+	end
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open("42/media/lua/shared/Translate/" .. lang ..
+			"/IG_UI.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		check(lang .. " IG_UI.json defines the stamped name",
+			string.find(strings, '"IGUI_CeroSec_Phonebook_Named"', 1, true) ~= nil)
+	end
+
+	--
+	-- The edition: stamped once, where it was found
+	--
+	sent = {}
+	CeroSecManualMenu.onLookUp(book, reader)
+	local rx, ry = CeroSecPhonebook.regionOn(book.data)
+	eq("the copy is stamped with the reader's region",
+		rx .. "," .. ry, "0,0")
+	local exchange = CeroSecOS.phoneExchangeOfRegion(0, 0)
+	eq("and its name carries the exchange", book:getName(),
+		"IGUI_CeroSec_Phonebook_Named")
+	eq("one look-up is one question to the server", #sent, 1)
+	eq("which is the phonebook command", lastSent().command, "phonebook")
+	eq("for the region on the copy", lastSent().args.rx .. "," .. lastSent().args.ry, "0,0")
+	check("under a token of its own", type(lastSent().args.token) == "string")
+	eq("asked as the survivor who is holding it", lastSent().player, reader)
+
+	-- A SECOND OPEN, A REGION AWAY, IS THE SAME BOOK. This is the whole point of
+	-- the stamp: a phone book carried across the county is the book of where it was
+	-- printed.
+	local elsewhere = newReader(R * 3 + 40.5, R * 2 + 12.5)
+	local name = book:getName()
+	sent = {}
+	CeroSecManualMenu.onLookUp(book, elsewhere)
+	local again, againY = CeroSecPhonebook.regionOn(book.data)
+	eq("the region on the copy has not moved", again .. "," .. againY, "0,0")
+	eq("nor has its name been stamped twice", book:getName(), name)
+	eq("and it is still region 0,0 that is asked for",
+		lastSent().args.rx .. "," .. lastSent().args.ry, "0,0")
+
+	-- A FRESH COPY found over there is that region's book, which is the same rule
+	-- read the other way round.
+	local other = newPhonebook()
+	sent = {}
+	CeroSecManualMenu.onLookUp(other, elsewhere)
+	eq("a copy found elsewhere is stamped elsewhere",
+		lastSent().args.rx .. "," .. lastSent().args.ry, "3,2")
+	check("on another exchange", CeroSecOS.phoneExchangeOfRegion(3, 2) ~= exchange)
+
+	--
+	-- The reader, on a generated book
+	--
+	sent = {}
+	CeroSecManualMenu.onLookUp(book, reader)
+	local window = answer({
+		{ name = "Coffee Shop", number = "555-0416" },
+		{ name = "Bakery", number = "555-0417" },
+		{ name = "Coffee Shop", number = "555-9001" },
+	}, false)
+	check("the answer opens a reader", window ~= nil)
+	eq("on the directory and not on a volume", window.book.title,
+		CeroSecPhonebook.TITLE)
+	eq("with the copy behind it, so the bookmark has somewhere to go",
+		window.item, book)
+
+	-- The book's own leaves: a title leaf, a contents leaf, then the exchange and
+	-- the listings.
+	check("it has leaves", #window.book.pages >= 4)
+	eq("the first is the title leaf", window.book.pages[1].kind, "title")
+	eq("the second is the contents", window.book.pages[2].kind, "toc")
+	eq("whose one row is the exchange", window.book.pages[2].entries[1].title,
+		"Exchange " .. exchange)
+
+	-- What is painted, which is what a player reads. The listings are monospaced
+	-- lines, because a column of dot leaders is a column only in a fixed font.
+	local seen = {}
+	for p = 1, #window.book.pages do
+		local page = window.book.pages[p]
+		for l = 1, #(page.lines or {}) do
+			seen[#seen + 1] = page.lines[l]
+		end
+	end
+	local function lineWith(needle)
+		for i = 1, #seen do
+			if string.find(seen[i].text, needle, 1, true) then return seen[i] end
+		end
+		return nil
+	end
+	check("the preface is on the paper", lineWith("Dial the seven digits") ~= nil)
+	local listing = lineWith("Bakery")
+	check("the bakery is listed", listing ~= nil)
+	check("in the monospaced face", listing.code == true)
+	check("with dot leaders between the name and the number",
+		string.find(listing.text, "Bakery %.%.%.") ~= nil)
+	check("and the number at the end",
+		string.sub(listing.text, -8) == "555-0417")
+	eq("every listing line is sixty columns", #listing.text, 60)
+	check("the number is on no line of prose",
+		lineWith("555-0417").code == true)
+	-- No coordinates anywhere: where a shop is is not what a directory prints.
+	for i = 1, #seen do
+		check("no map coordinate on the paper",
+			string.find(seen[i].text, "%d%d%d%d,%s*%d%d%d%d") == nil)
+	end
+
+	-- Turning it, and the bookmark: a directory is read like any other book.
+	local before = window.page
+	window:onNext()
+	check("the leaves turn", window.page ~= before or
+		CeroSecManualBook.sheetCount(window.book) == 1)
+	eq("and where it was left is written on the copy",
+		book.data[CeroSecManualUI.PAGE_KEY], window.page)
+
+	-- A book with nothing in it opens as a book that says so, never as blank paper
+	-- and never as an error.
+	window:close()
+	sent = {}
+	CeroSecManualMenu.onLookUp(newPhonebook(), reader)
+	local emptyWindow = answer({}, false)
+	check("an exchange with no businesses in it still opens", emptyWindow ~= nil)
+	local said = false
+	for p = 1, #emptyWindow.book.pages do
+		for l = 1, #(emptyWindow.book.pages[p].lines or {}) do
+			if string.find(emptyWindow.book.pages[p].lines[l].text,
+					"No business listings", 1, true) then said = true end
+		end
+	end
+	check("and says there are none", said)
+	emptyWindow:close()
+
+	-- An answer nobody asked for opens nothing. A token is what pairs an answer to
+	-- a look-up, and a second answer on a spent token is an answer to a question
+	-- already served.
+	sent = {}
+	CeroSecManualUI.instances[0] = nil
+	CeroSecPhonebookUI.onServerAnswer("listings",
+		{ token = "never-asked", rx = 0, ry = 0, exchange = exchange, entries = {} })
+	eq("an answer to nobody opens no book", CeroSecManualUI.instances[0], nil)
+
+	--
+	-- The generator itself, on its own
+	--
+	eq("camel case comes apart", CeroSecPhonebook.spaced("CoffeeShop"), "Coffee Shop")
+	eq("three words too", CeroSecPhonebook.spaced("VariousFoodMarket"),
+		"Various Food Market")
+	eq("a run of capitals is left alone", CeroSecPhonebook.spaced("PileOCrepe"),
+		"Pile OCrepe")
+	eq("and one word stays one", CeroSecPhonebook.spaced("Bakery"), "Bakery")
+	-- A name too long is cut and never wrapped: a listing on two rows is a listing
+	-- whose number belongs to the row above it.
+	local long = CeroSecPhonebook.entryLine(string.rep("W", 90), "555-0100")
+	eq("a very long name still makes one line of sixty", #long, 60)
+	check("ending in its number", string.sub(long, -8) == "555-0100")
+	-- Sorted by name and then by number, so a chain's two shops never swap places
+	-- between two openings.
+	local sorted = CeroSecPhonebook.sorted({
+		{ name = "Bakery", number = "555-9999" },
+		{ name = "Coffee Shop", number = "555-0002" },
+		{ name = "Bakery", number = "555-0001" },
+	})
+	eq("sorted by name", sorted[1].name .. "|" .. sorted[2].name .. "|" .. sorted[3].name,
+		"Bakery|Bakery|Coffee Shop")
+	eq("and by number within a name", sorted[1].number, "555-0001")
+	-- The cap is TOLD and never guessed: a region with exactly the cap in it is not
+	-- a region that was cut.
+	local exact = {}
+	for i = 1, CeroSecPhonebook.MAX_ENTRIES do
+		exact[i] = { name = "Shop", number = "555-" .. string.format("%04d", i) }
+	end
+	local full = CeroSecPhonebook.volume(exchange, exact, false)
+	for p = 1, #full.chapters[1].pages do
+		check("a full book that was not cut says nothing about being cut",
+			string.find(full.chapters[1].pages[p], "full at", 1, true) == nil)
+	end
+	-- And every page of a generated book obeys the manual's own two rules, which is
+	-- what lets the reader lay it out: a page of at most 1000 characters, and an
+	-- example line of at most 60 columns.
+	for p = 1, #full.chapters[1].pages do
+		local page = full.chapters[1].pages[p]
+		check("page " .. p .. " is at most 1000 characters (" .. #page .. ")",
+			#page <= 1000)
+		for line in (page .. "\n"):gmatch("([^\n]*)\n") do
+			if string.sub(line, 1, 2) == "  " then
+				check("page " .. p .. " example line fits 60 columns (" .. #line .. ")",
+					#line <= 60)
+			end
+		end
 	end
 end
 

@@ -9,5 +9,6 @@
     "IGUI_CeroSec_Debug_TurnOff": "Éteindre",
     "IGUI_CeroSec_Debug_Teleport": "S'y téléporter",
     "IGUI_CeroSec_Debug_Terminal": "Ouvrir le terminal",
-    "IGUI_CeroSec_Debug_Dump": "Vider l'état"
+    "IGUI_CeroSec_Debug_Dump": "Vider l'état",
+    "IGUI_CeroSec_Phonebook_Named": "%1 (central %2)"
 }

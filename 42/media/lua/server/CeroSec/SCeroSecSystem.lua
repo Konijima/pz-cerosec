@@ -1814,10 +1814,55 @@ local function tokenOf(args)
 	return token
 end
 
+--
+-- The one command that is about no machine at all
+--
+-- Every command above names a square -- a computer's, or a fixture's -- because
+-- every one of them is about a thing standing somewhere. Looking a number up in a
+-- telephone directory is not: the book is in a survivor's hands and the premises
+-- it lists may be a county away with nothing built on it yet. So it goes in its
+-- own table, which is what the dispatcher checks before it insists on three
+-- coordinates.
+--
+--   phonebook { rx, ry }  -- the listings of one exchange's region
+--   listings  { rx, ry, exchange, entries = { { name, number } }, capped }
+--
+-- The REGION is what travels and not a coordinate on the map, because a region is
+-- what an exchange is (CeroSecOS.phoneExchange) and it is the whole of what the
+-- book was stamped with. Two numbers, floored, and nothing else is believed.
+--
+-- Answered to the ASKING PLAYER through self:reply, like every other answer here:
+-- a book in one survivor's hands is not read out to the server.
+--
+local PlayerCommands = {}
+
+PlayerCommands.phonebook = function(self, playerObj, args)
+	local rx, ry = args.rx, args.ry
+	if type(rx) ~= "number" or type(ry) ~= "number" then return end
+	rx, ry = math.floor(rx), math.floor(ry)
+	local entries, capped = CeroSecNet.directory(rx, ry)
+	self:reply(playerObj, "listings", {
+		rx = rx, ry = ry,
+		token = tokenOf(args),
+		exchange = CeroSecOS.phoneExchangeOfRegion(rx, ry),
+		entries = entries,
+		capped = capped,
+	})
+end
+
 function SCeroSecSystem:OnClientCommand(command, playerObj, args)
+	if not playerObj then return end
+	-- The commands about no square, first: insisting on three coordinates for one
+	-- of those would refuse it, and the refusal would be silent.
+	local free = PlayerCommands[command]
+	if free then
+		if type(args) ~= "table" then return end
+		free(self, playerObj, args)
+		return
+	end
+
 	local fn = Commands[command]
 	if not fn then return end
-	if not playerObj then return end
 	local x, y, z = coordsOf(args)
 	if not x then return end
 	fn(self, playerObj, x, y, z, tokenOf(args), args)
