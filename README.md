@@ -17,7 +17,7 @@ Done:
   sprite per facing, power checked against the room, and a chair taken automatically
   when one is pulled up to the desk.
 - The OS engine: a filesystem with owners and permissions and modification times, a
-  shell (`[ adduser cat cd chgrp chmod chown clear cp crontab cu date deluser dev df
+  shell (`[ adduser call cat cd chgrp chmod chown clear cp crontab cu date deluser dev df
   echo edit exit false fg gpasswd grep groupadd groupdel groups halt hash head
   help hostname id ifconfig jobs kill last ls mail man mkdir mount mv newfs passwd
   ping printf
@@ -119,8 +119,17 @@ Done:
   lines a second because the line is 2400 baud, and `~.` or `exit` to hang up. The
   exchange runs on the county's power: when the grid goes, so does the dial tone,
   for good.
+- The radio: a two-way radio in the machine's own room is its **TNC**,
+  `/dev/radio0`, read-only -- the frequency in MHz and whether the set is on, off
+  or unpowered. A station is a callsign in `/etc/callsign`, derived per machine and
+  announced by the firmware, and `call KD4AXR` opens the same session over the air:
+  a password every time, two lines a second because the air is 1200 baud, `~.` or
+  `exit` to hang up. It is the one link that outlives the county's power -- and the
+  one that cannot be private: every connect and disconnect goes out as a real
+  transmission on the real frequency, so anybody listening reads
+  `KD4AXR de KE4QWZ *** CONNECTED`.
 
-Next: the radio, which adds a link and not a command.
+Three links now, all three behind commands a survivor already knew.
 
 ## For players
 
@@ -740,6 +749,103 @@ A server that wants it otherwise sets one option:
 | `grid` (default, and what anything unset means) | lives as long as the county's power |
 | `never` | there is no telephone service at all, from day one |
 | `always` | on its own generator; it outlives the grid |
+
+### The radio
+
+The coax reaches one building, the telephone reaches the county, and the radio
+reaches whatever is in earshot of an aerial -- with no wire and no exchange, which
+makes it the **only link that outlives the county's power**.
+
+A **two-way** radio (a ham set, a walkie, a man-pack: `TwoWay = true` in the
+game's own item scripts) that the machine can reach becomes its **TNC** -- the box
+that turned a computer into a radio station in 1993. Its reach is the machine's own
+room in a building the map knows, or one tile in a base you built, and there is one
+per machine, on the serial port:
+
+```
+admin@ksp-04-11:~$ dev radio
+radio0    ham          2E 1N      144.390 on
+admin@ksp-04-11:~$ cat /dev/radio0
+144.390 on
+```
+
+The frequency in megahertz and one of three words: `on`, `off`, `no power` (a dead
+grid or a flat battery, and to a TNC those are the same thing). **Read-only**, at
+mode `440` like the motion sensor: the game has exactly one path that moves a
+radio's channel and it is the radio window's own timed action, so the knob is on
+the set and a survivor turns it by hand. `dev find radio0` outlines it when there
+are two in the room.
+
+A station needs a **callsign**, and unlike the address and the number it is a
+FILE:
+
+```
+admin@ksp-04-11:~$ cat /etc/callsign
+KD4AXR
+```
+
+Root's and `644`, seeded with one derived from the building key and the machine's
+own number -- `K`/`N`/`W`, an optional second letter, the fourth call district's
+digit (Kentucky), and three letters, which is what a United States amateur held in
+1993 -- and announced by the firmware under the modem, the way a TNC printed its
+own `MYCALL` at power-up. Root may write it to anything, which is the whole
+security lesson below.
+
+| command | does |
+| --- | --- |
+| `call CALLSIGN` | raise a station: a session on it, on this screen |
+
+```
+admin@ksp-04-11:~$ call KE4QWZ
+*** CONNECTED to KE4QWZ
+login:
+```
+
+Lines with three stars are the **TNC** talking and not a command, and they are a
+TNC-2's own: `*** CONNECTED to <call>`, `*** DISCONNECTED`,
+`*** retry count exceeded` and `*** BUSY`. (A TNC-2 spells the last one
+`*** <call> busy`; the bare word was chosen so the one-line refusal reads like the
+modem's `BUSY` on the link before this one, and the callsign is on the line above
+it anyway.) Two more the machine says in its own name, because it can see them
+without transmitting: `call: no radio` and `call: no callsign`.
+
+Both sets must be on, both powered, and **both on the same frequency** -- agree
+one off the air, walk to the set, turn the knob, and check with
+`cat /dev/radio0`. The link holds out to the **smaller** of the two transmit
+ranges (7500 tiles for a ham set, 8000 for a walkie) measured on x and y with no
+z in it, which is the game's own arithmetic. A password is asked **every time**:
+no trust file is consulted, because a callsign is a file anybody with a radio and
+an editor can choose. Over there `who` and `last` name the **callsign**, and that
+is what goes into `/var/log/wtmp`.
+
+`*** retry count exceeded` is the single answer to every way a call goes
+unanswered -- no such station, a machine or a set switched off, a flat battery, the
+wrong frequency, out of range, or a chunk the server has not loaded -- because a
+station that hears nothing learns nothing about why. And one of those is worse
+than anything the telephone had: **a radio is a tile.** The server holds every
+machine's disk whether its chunk is in memory or not, which is why `ruptime`,
+`ping`, `rlogin` and `cu` all answer for a computer at the far end of the county;
+a radio is registered with the game's radio subsystem in `addToWorld` and
+unregistered in `removeFromWorld`, so a station in a town nobody is standing in
+cannot be raised at all.
+
+**Everybody hears it.** Every connect and every disconnect goes out as a real
+transmission on the real frequency, from the caller's own set, with the game's own
+distance distortion applied:
+
+```
+KE4QWZ de KD4AXR *** CONNECTED
+```
+
+Anybody in the county with a walkie tuned to that frequency and inside range reads
+it in their radio window. That is not decoration and it is not a fault: a wire
+cannot be overheard and a telephone call cannot either, and a radio cannot be
+anything else. The defence is to change frequency and agree the new one off the
+air -- which is why the knob is on the set and not in the machine.
+
+There is **no sandbox option** for the radio. A range multiplier was considered and
+rejected: the ranges are the game's own numbers for the game's own sets, and a
+server that doubled them would be a server where the manual's arithmetic is wrong.
 
 ### The prompt, and a script
 
@@ -2385,9 +2491,11 @@ about "a new kind of link and not a new command" came to:
 | --- | --- | --- |
 | Ethernet | `reachable(system, from, addr)` | the same map building, both machines on |
 | telephone | `reachablePhone(system, from, tel)` | both have a line, both on, the exchange alive, the line free at each end |
+| radio | `reachableRadio(system, from, call)` | both machines on, a two-way set in reach of each and both switched on and powered, the same channel, inside the smaller transmit range, both sets free, and both chunks loaded |
 
-A third one (the radio) is a third answer beside them and touches no command and
-no engine file. What a new kind owes, and the telephone is the worked example:
+Three answers, no new command learnt and no engine file touched by the second and
+third except to add one of their own. What a new kind owes, and the telephone and
+the radio are the two worked examples:
 
 - **an identity**, derived and not stored twice. The number comes off the
   building key already on the machine's disk (`CeroSecOS.phoneKey` of
@@ -2420,6 +2528,26 @@ no engine file. What a new kind owes, and the telephone is the worked example:
   (`zombie.SandboxOptions.randomElectricityShut`, javap'd). A game it cannot ask
   at all answers "alive": a mod that could not read the option must not take the
   telephone out of every server it cannot interrogate.
+
+The radio pays every one of those and adds three of its own, all three because it
+is the first link that is a THING STANDING ON A TILE:
+
+- **a proof section before a design.** `server/CeroSec/SCeroSecRadio.lua` opens
+  with seven numbered facts about the game's radio model, each cited to `javap` on
+  the jar or to the game's own Lua, because the design bent to three of them: the
+  channel is kilohertz (`DeviceData.getChannel`, and the radio UI divides by a
+  thousand), range is applied on x and y with no z and with no hard cutoff
+  (`ZomboidRadio.DistributeTransmission` scrambles past `0.9 * range`), and a
+  radio whose chunk is unloaded is not in the list a transmission is distributed
+  over at all (`IsoWaveSignal.addToWorld` -> `RegisterDevice`).
+- **a device, not a second discovery.** The TNC is one entry appended to
+  `CeroSecDevices.find`, with its own reach (`CeroSecRadio.REACH`) because a TNC
+  has a foot of cable and the ordinary walk covers a whole building. Its
+  vocabulary is empty and its mode is therefore `440`, not `660`: the sensor's
+  rule -- a `w` bit must not promise a write that cannot happen -- applied twice.
+- **a failure the other links do not have.** No aerial, an unloaded chunk, a
+  retuned knob: all silence, and `farOf` re-asks `CeroSecNet.radioHolds` on every
+  keystroke so a link that has gone is found the moment anybody touches it.
 
 `cu` is the engine-side worked example of the same split: it decides the shape of
 a number, whether this machine has a line at all and the hop ceiling, and ends in

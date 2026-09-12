@@ -1134,6 +1134,82 @@ l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
      une machine d'une base construite (aucun bâtiment) : `cu 555-NNNN` →
      `cu: no phone line`, et son BIOS n'affiche aucune ligne `Phone line:`. [ ]
 
+## T. La radio (palier 6c)
+
+Il faut **deux ordinateurs dans deux bâtiments**, comme à la section S, et en plus
+**deux radios bidirectionnelles** : une radio amateur (`Premium Technologies Ham`,
+la tuile `appliances_com_01`, ou l'objet `HamRadio1` posé à la main) ou un
+talkie-walkie, une par machine, **dans la même pièce** que l'ordinateur. Un poste
+radio ordinaire ou un téléviseur ne compte pas : il ne fait que recevoir. Prévoir
+aussi un talkie dans l'inventaire pour la dernière étape. `ici` et `là-bas` comme
+avant.
+
+216. **Le TNC et l'indicatif.** Poser une radio dans la pièce de `ici`, l'allumer
+     (piles ou courant) et régler sa fréquence dans sa propre fenêtre, par
+     exemple 144.390. Puis sur la machine : `dev radio` → une ligne `radio0`,
+     `ham` (ou `walkie`), la position de la radio par rapport à l'ordinateur, et
+     `144.390 on`. `cat /dev/radio0` → `144.390 on`. Éteindre la radio →
+     `144.390 off` ; enlever la pile (ou couper le courant de la pièce) →
+     `144.390 no power`. Vérifier qu'on ne peut rien y écrire :
+     `echo 145.010 > /dev/radio0` → `radio0: permission denied`, et
+     `ls -l /dev/radio0` → `cr--r-----`. Enfin le BIOS : éteindre et rallumer
+     l'ordinateur, une ligne `Callsign: K?4???` doit apparaître **sous**
+     `Phone line:`, et `cat /etc/callsign` doit donner le même indicatif. Les
+     **deux** machines d'un même bâtiment doivent avoir des indicatifs
+     **différents** (contrairement au numéro de téléphone, qui est celui du
+     bâtiment). [ ]
+217. **La liaison.** Régler les deux radios sur la **même** fréquence et les
+     allumer. Depuis `ici` : `call <indicatif de là-bas>` (en majuscules) →
+     `*** CONNECTED to <indicatif>`, puis le `login:` de l'autre machine. S'y
+     connecter : l'invite devient `admin@<là-bas>`, `hostname` répond son nom.
+     Vérifier que le mot de passe est demandé **même** avec le nom de `ici` dans
+     `/etc/hosts.equiv` de `là-bas`. Puis là-bas : `who` → `ttyp0` avec
+     `(<indicatif de ici>)` entre parenthèses, et `last` pareil. Ressortir avec
+     `exit` → `*** DISCONNECTED` (et **pas** `Disconnected.`, qui est le
+     téléphone, ni `Connection closed.`, qui est le fil). Rappeler et taper `~.`
+     seul sur la ligne : même résultat, et l'écran revient à l'invite locale. [ ]
+218. **Tout le comté écoute.** Prendre un talkie dans l'inventaire, le régler sur
+     la **même** fréquence que les deux postes, l'allumer, et rester à portée.
+     Refaire un `call` : dans la fenêtre du talkie doit apparaître une ligne
+     `<indicatif appelé> de <indicatif appelant> *** CONNECTED`. Raccrocher : une
+     deuxième ligne, la même avec `*** DISCONNECTED`. Changer la fréquence du
+     talkie et refaire un appel : plus rien. C'est la leçon de sécurité du
+     palier — la radio ne peut pas se taire, et la seule défense est de changer de
+     fréquence. [ ]
+219. **Les six silences.** Chacun de ces six cas doit répondre exactement
+     `*** retry count exceeded`, et rien d'autre : (a) la radio de `là-bas`
+     éteinte ; (b) sa pile retirée ; (c) sa fréquence changée (les deux postes
+     allumés, mais pas sur la même) ; (d) la machine `là-bas` éteinte ;
+     (e) un indicatif que personne n'a (`call W4ZZZ`) ; (f) son propre indicatif.
+     Vérifier aussi les deux refus que la machine dit en son **propre** nom sans
+     émettre : enlever la radio de la pièce de `ici` → `call: no radio` (et
+     `dev radio` ne liste plus rien) ; la remettre, puis `rm /etc/callsign` en
+     root → `call: no callsign`. [ ]
+220. **La distance et le chargement du monde.** Laisser les deux postes allumés et
+     accordés, puis s'éloigner : une liaison ne tient que jusqu'à la **plus
+     petite** des deux portées (7500 tuiles pour un poste amateur). Plus
+     intéressant et plus facile à provoquer : ouvrir une liaison, puis faire
+     éteindre la radio d'en face (ou la déplacer hors de la pièce) pendant que la
+     session est ouverte, et taper n'importe quoi → `*** retry count exceeded` et
+     retour à l'invite locale (et **pas** `*** DISCONNECTED` : la liaison est
+     tombée, personne n'a raccroché). Enfin le cas propre à la radio : s'éloigner
+     assez pour que le morceau de carte de `là-bas` ne soit plus chargé, puis
+     `call <son indicatif>` → `*** retry count exceeded`, alors que
+     `cu 555-NNNN` vers la **même** machine marche toujours. Une radio est une
+     tuile ; un disque, non. [ ]
+221. **Un poste, une liaison, et ce qui ne s'émet pas.** Mettre **une seule**
+     radio dans une pièce où il y a **deux** ordinateurs (la paire de la section
+     N). Ouvrir une liaison depuis le premier, puis aller au second et faire
+     `call <même indicatif>` → `*** BUSY`. Raccrocher, puis vérifier qu'une
+     liaison ne se laisse pas automatiser : `crontab -e` avec
+     `* * * * * call <indicatif>`, attendre une minute → `mail` dit
+     `call: not a terminal`, **aucune** session ne s'est ouverte là-bas, et — le
+     point important — **rien n'est passé sur les ondes** (le talkie de l'étape
+     218, accordé et allumé, ne doit rien afficher). Finir par `crontab -r`.
+     Vérifier aussi la lenteur : lancer `ls /bin` sur la machine d'en face, les
+     lignes doivent arriver **deux par seconde**, visiblement plus lentement
+     qu'un appel téléphonique (quatre) et rien ne doit manquer à la fin. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
