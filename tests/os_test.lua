@@ -10506,6 +10506,75 @@ do
 	eq("and are refused all the same",
 		CeroSecOS.diskFromData({ v = 1, fs = many }), nil)
 
+	-- The blank disk is the shape the rule was half a rule on: a floppy off a shelf
+	-- has no filesystem, so the gate used to answer "nothing to check" and take
+	-- whatever else was written on it -- and then one `newfs` gave it a filesystem
+	-- and the disk could never come out of the drive again.
+	eq("a blank disk is asked the same question",
+		CeroSecOS.diskFromData({ v = 1, junk = string.rep("x", 100000) }), nil)
+	check("and an honest blank one still goes in",
+		CeroSecOS.diskFromData({ v = 1 }) ~= nil)
+
+	-- The same rule one level down, which is where the rest of it was hiding: a
+	-- node's fields are its kind's and nothing else, and a `children` table on a
+	-- FILE node is a whole tree the quota walk never descends into.
+	eq("what a node is made of is its kind's five fields and one",
+		table.concat(CeroSecOS.NODE_OWN_FIELD and
+			{ CeroSecOS.NODE_OWN_FIELD.dir, CeroSecOS.NODE_OWN_FIELD.file,
+				CeroSecOS.NODE_OWN_FIELD.link } or {}, " "), "children data target")
+	local onFs = CeroSecOS.newDir("root", 755)
+	onFs.junk = "x"
+	eq("junk on the disk's own root", CeroSecOS.diskFromData({ v = 1, fs = onFs }), nil)
+	local onNode = CeroSecOS.newDir("root", 755)
+	onNode.children.f = CeroSecOS.newFile("root", 644, "")
+	onNode.children.f.junk = "x"
+	eq("junk on a node inside it", CeroSecOS.diskFromData({ v = 1, fs = onNode }), nil)
+	local hidden = CeroSecOS.newDir("root", 755)
+	local asFile = CeroSecOS.newFile("root", 644, "")
+	asFile.children = {}
+	for i = 1, 40 do asFile.children["n" .. i] = CeroSecOS.newFile("root", 644, "") end
+	hidden.children.h = asFile
+	eq("a whole tree hung under a file node weighs nothing",
+		select(2, CeroSecOS.subtreeUsage(hidden)), 0)
+	eq("and is refused", CeroSecOS.diskFromData({ v = 1, fs = hidden }), nil)
+	local asLink = CeroSecOS.newDir("root", 755)
+	local lk = CeroSecOS.newLink("root", "/x")
+	lk.children = { y = CeroSecOS.newFile("root", 644, "") }
+	asLink.children.l = lk
+	eq("under a link node too", CeroSecOS.diskFromData({ v = 1, fs = asLink }), nil)
+	-- And an owner nothing prints is a hiding place by another name.
+	local longOwner = CeroSecOS.newDir("root", 755)
+	longOwner.owner = string.rep("a", CeroSecOS.MAX_NAME + 1)
+	eq("an owner longer than a name may be",
+		CeroSecOS.diskFromData({ v = 1, fs = longOwner }), nil)
+
+	-- None of it is paid for before it is refused: the field rules are asked of the
+	-- table the game handed over, and the copy that walks every byte of a disk comes
+	-- after them.
+	local wide = {}
+	for i = 1, 20000 do wide["k" .. i] = i end
+	eq("a payload under a name of its own is refused without being copied",
+		CeroSecOS.diskFromData({ v = 1, deep = wide }), nil)
+	local onIt = CeroSecOS.newDir("root", 755)
+	onIt.wide = wide
+	eq("and one hung on a node, likewise",
+		CeroSecOS.diskFromData({ v = 1, fs = onIt }), nil)
+
+	-- The line the drive says on the glass carries the REASON and never a summary
+	-- of it: two of the four things that keep a disk in the drive are not a ceiling,
+	-- and a line naming the wrong trouble sends the player to a df that shows him
+	-- nothing wrong.
+	for _, reason in ipairs({ "floppy: disk full", "floppy: too many nodes",
+			"floppy: unknown field", "floppy/notes.txt: unknown field",
+			"floppy: bad type" }) do
+		local line = CeroSecOS.fdKeptLine(reason)
+		check("the drive's line fits the screen: " .. line, #line <= CeroSecOS.COLS)
+		check("and carries " .. reason,
+			string.find(line, string.match(reason, "([^:]+)$"), 1, true) ~= nil)
+		check("under the drive's own name",
+			string.sub(line, 1, #CeroSecOS.FD_KEPT) == CeroSecOS.FD_KEPT)
+	end
+
 	-- And what the machine makes for itself passes, every time: a formatted disk
 	-- with the most a survivor can put on it.
 	local state = fresh()

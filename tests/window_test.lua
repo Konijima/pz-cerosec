@@ -5849,7 +5849,12 @@ do
 	-- and the drive talks on it, or the player is left with a menu entry that does
 	-- nothing for a reason he cannot reach.
 	bench.frame()
-	check("the drive said why on the glass", bench.painted(CeroSecOS.FD_KEPT))
+	-- And the line carries the REASON: two of the four things that keep a disk in
+	-- the drive are not "over a ceiling", and a line that names the wrong trouble
+	-- sends the player to a `df` that shows him nothing wrong.
+	check("the drive said why on the glass",
+		bench.painted(CeroSecOS.fdKeptLine("floppy: disk full")))
+	check("and the reason is in it", bench.painted("disk full"))
 	-- And the mount it was under is still up: a refused eject is a gesture that did
 	-- nothing at all, not one that got half way.
 	eq("nothing was unmounted", CeroSecOS.mountTable(bench.object:osState()) ~= nil, true)

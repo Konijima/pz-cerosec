@@ -1727,10 +1727,18 @@ number belongs to the history exemption and the exemption belongs to the hard dr
 alone. Nothing on a disk is ever exempt from anything — which is also why a disk may
 carry no **device**: a device costs the quota nothing by design, and that is right
 for the machine's own `/dev`, built afresh every command and swept again, and is a
-hole on a disk where nothing sweeps and the nodes are saved. And the ceilings are
-asked of the whole disk and not only of its filesystem: `CeroSecOS.DISK_KEYS` is
-everything a disk owns, and a key that is not one of them is refused rather than
-carried unweighed.
+hole on a disk where nothing sweeps and the nodes are saved.
+
+Before any ceiling, though, comes what a disk is allowed to be **made of**
+(`CeroSecOS.diskFieldsOk`), because a ceiling is asked of a filesystem and a *field*
+is a place to hide things. `CeroSecOS.DISK_KEYS` is everything a disk owns and
+`CeroSecOS.NODE_FIELDS` everything a node is, so junk hung on the disk, on its root,
+on any node, or a whole subtree hung under a *file* node — which the quota walk never
+descends into and the node count never sees — is refused rather than carried
+unweighed, saved and published. It is asked of the table the game handed over and
+before a byte of it is copied: the copy is what a payload is paid for in, and four
+hundred thousand keys under a name nobody here has ever written cost half a second
+to walk and one comparison to refuse.
 
 Two things stay on the hard drive whatever is mounted. A `~/.sh_history` is exempt
 from the quota because the exemption is the *drive's* — it exists so `df` on `hda`

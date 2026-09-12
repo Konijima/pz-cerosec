@@ -1002,7 +1002,7 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		if fullType ~= "empty" and fullType ~= "broken" then
 			local console = luaObject:consoleState()
 			if console ~= nil then
-				CeroSec.consolePush(console, CeroSecOS.FD_KEPT)
+				CeroSec.consolePush(console, CeroSecOS.fdKeptLine(fullType))
 				local state = luaObject:osState()
 				if state ~= nil then self:pushScreen(luaObject, state, console) end
 			end
@@ -1025,8 +1025,14 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		return
 	end
 
-	-- And only now does it come out.
-	luaObject:ejectDisk()
+	-- And only now does it come out. If it somehow does not, the item goes with it:
+	-- the player holding a disk the machine still has is a duplication, which is
+	-- the one failure worse than the eject not happening.
+	if not luaObject:ejectDisk() then
+		inv:Remove(item)
+		if isServer() then sendRemoveItemFromContainer(inv, item) end
+		return
+	end
 	if isServer() then sendAddItemToContainer(inv, item) end
 end
 

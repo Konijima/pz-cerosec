@@ -253,12 +253,71 @@ end
 -- the history exemption's and the exemption belongs to the hard drive alone (see
 -- CeroSecOS.historyAppend). Nothing on a disk is ever exempt from anything.
 --
+-- What a disk is ALLOWED TO BE MADE OF -- its keys, and the fields of every node
+-- on it -- with nothing read that is not a key.
+--
+-- Split out and asked FIRST, of the table the game handed over and before a byte of
+-- it is copied, because that copy is what a payload is paid for in: four hundred
+-- thousand keys under a name nobody here has ever written cost half a second to
+-- walk and one comparison to refuse. Everything in here refuses on the first thing
+-- it finds and never descends past it.
+--
+-- Three rules:
+--
+--   * the disk's own keys. The ceilings are asked of disk.fs, so anything hung on
+--     the disk beside it was weighed by nothing at all: a megabyte under a name of
+--     its own rode into state.floppy, into the save file and out to every client,
+--     invisible to `df` and to `ls` and undeletable by any command.
+--     CeroSecOS.DISK_KEYS is the whole of what a disk owns, and a key that is not
+--     one of them is a refusal and not a value to drop quietly -- the same rule the
+--     copy runs on, for the same reason: what it is is somebody's work, or
+--     somebody's payload, and either way it is not ours to carry unlooked at. Asked
+--     of a BLANK disk too, which is the shape that made this half a rule the first
+--     time: a floppy off a shelf has no filesystem, the gate answered "nothing to
+--     check" and took whatever else was written on it, and then one `newfs` gave it
+--     a filesystem and the disk could never come out again.
+--   * no device, which is the same hiding place with a type on it (see
+--     CeroSecOS.hasDevUnder). Asked before the field rule, because a device IS a
+--     node with fields no other node has and the field rule would catch it while
+--     saying the less true of the two things about it.
+--   * the fields of every node, which is where the other half of the first rule was
+--     hiding: checkNode reads the fields it knows for a node's own kind and ignores
+--     every other key, and subtreeUsage weighs `data` and `target` and descends
+--     only into a directory's children -- so junk on a node, and a whole tree hung
+--     under a FILE node, were unvalidated, unweighed and uncounted (see
+--     CeroSecOS.junkUnder).
+--
+-- ok, reason.
+function CeroSecOS.diskFieldsOk(disk)
+	if type(disk) ~= "table" then return false, "floppy: not a disk" end
+	for key in pairs(disk) do
+		local known = false
+		for i = 1, #CeroSecOS.DISK_KEYS do
+			if key == CeroSecOS.DISK_KEYS[i] then known = true end
+		end
+		if not known then return false, "floppy: unknown field" end
+	end
+	if type(disk.fs) ~= "table" then return true end
+	if CeroSecOS.hasDevUnder(disk.fs) then return false, "floppy: bad type" end
+	local junk = CeroSecOS.junkUnder(disk.fs)
+	if junk ~= nil then return false, "floppy" .. junk .. ": unknown field" end
+	return true
+end
+
 -- ok, reason.
 function CeroSecOS.validateDisk(disk, bounded)
 	if type(disk) ~= "table" then return false, "floppy: not a disk" end
+	if disk.v ~= CeroSecOS.FLOPPY_VERSION then return false, "floppy: bad version" end
+
+	-- The FIELD rules come first, and they are asked of the table the game handed
+	-- over rather than of a copy of it: see CeroSecOS.diskFieldsOk.
+	if bounded then
+		local fOk, fReason = CeroSecOS.diskFieldsOk(disk)
+		if not fOk then return false, fReason end
+	end
+
 	local ok, reason = checkPlain(disk, {}, "floppy")
 	if not ok then return false, reason end
-	if disk.v ~= CeroSecOS.FLOPPY_VERSION then return false, "floppy: bad version" end
 	if disk.label ~= nil then
 		if type(disk.label) ~= "string" then return false, "floppy: bad label" end
 		if #disk.label > CeroSecOS.LABEL_MAX then return false, "floppy: bad label" end
@@ -280,33 +339,6 @@ function CeroSecOS.validateDisk(disk, bounded)
 		return false, "floppy" .. dReason
 	end
 	if not bounded then return true end
-
-	-- Every key the disk carries, and not only its filesystem.
-	--
-	-- The ceilings below are asked of disk.fs, so anything hung on the disk beside
-	-- it was weighed by nothing at all: a megabyte under a name of its own rode
-	-- into state.floppy, into the save file and out to every client, invisible to
-	-- `df` and to `ls` and undeletable by any command. CeroSecOS.DISK_KEYS is the
-	-- whole of what a disk owns, and a key that is not one of them is a refusal and
-	-- not a value to drop quietly -- the same rule the copy runs on, for the same
-	-- reason: what it is is somebody's work, or somebody's payload, and either way
-	-- it is not ours to carry without looking at it.
-	for key in pairs(disk) do
-		local known = false
-		for i = 1, #CeroSecOS.DISK_KEYS do
-			if key == CeroSecOS.DISK_KEYS[i] then known = true end
-		end
-		if not known then return false, "floppy: unknown field" end
-	end
-
-	-- And no device. A disk has no business carrying one: `newfs` never makes one,
-	-- a device describes the world around a MACHINE, and the boot gate lets the
-	-- `null` kind through only because checkNode is shared with the machine's own
-	-- drive -- where a device costs the quota nothing on purpose. On a disk that
-	-- exemption is a hole: three thousand of them weigh nothing, count nothing, fill
-	-- no directory that `df` can see, and cost the boot gate forty milliseconds on
-	-- every command the machine runs afterwards.
-	if CeroSecOS.hasDevUnder(disk.fs) then return false, "floppy: bad type" end
 
 	local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
 	if nodes > CeroSecOS.FLOPPY_NODES then return false, "floppy: too many nodes" end

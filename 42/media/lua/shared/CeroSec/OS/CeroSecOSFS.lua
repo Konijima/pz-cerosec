@@ -328,10 +328,59 @@ function CeroSecOS.exemptOthers(state, node, kind)
 	return exempted
 end
 
--- Is there a device anywhere in this subtree? Asked of a DISK and of nothing else:
--- a device costs the quota nothing by design (see CeroSecOS.subtreeUsage), which is
--- right for the machine's own /dev -- built afresh every command and swept again --
--- and is a hole on a disk, where nothing sweeps and the nodes are saved.
+-- What a node on this machine is made of, by type.
+--
+-- Every node is these five, and then the one field its own kind carries. The list
+-- exists because a disk arrives from outside and a FIELD is a place to hide
+-- things: a key no node here has ever had is weighed by nothing, reachable by no
+-- command, deletable by nobody, and saved and published for as long as the disk is
+-- in the drive -- and a `children` table hung on a FILE node is a whole tree that
+-- the quota walk does not descend into and the node count never sees.
+CeroSecOS.NODE_FIELDS = {
+	type = true, owner = true, group = true, mode = true, mtime = true,
+}
+CeroSecOS.NODE_OWN_FIELD = { dir = "children", file = "data", link = "target" }
+
+-- The path of the first node under here carrying something no node of its kind
+-- carries, or nil. Asked of a DISK and of nothing else: the machine's own drive is
+-- built only by this engine, and a gate that refused a field there would be a gate
+-- that can brick a computer over a stale key an older build wrote.
+--
+-- Owners and groups are bounded here too. checkNode asks only that they are
+-- strings, which is all the machine's own drive needs -- nothing there can set one
+-- that is not an account -- and on a disk an unbounded string in a field nothing
+-- prints is the same hiding place by another name.
+function CeroSecOS.junkUnder(node, where)
+	where = where or ""
+	if type(node) ~= "table" then return where end
+	local own = CeroSecOS.NODE_OWN_FIELD[node.type]
+	for key in pairs(node) do
+		if not CeroSecOS.NODE_FIELDS[key] and key ~= own then return where end
+	end
+	if type(node.owner) == "string" and #node.owner > CeroSecOS.MAX_NAME then return where end
+	if node.group ~= nil and type(node.group) == "string"
+			and #node.group > CeroSecOS.MAX_NAME then
+		return where
+	end
+	if own ~= "children" or node.children == nil then return nil end
+	local names = CeroSecOS.childNames(node)
+	for i = 1, #names do
+		local found = CeroSecOS.junkUnder(node.children[names[i]], where .. "/" .. names[i])
+		if found ~= nil then return found end
+	end
+	return nil
+end
+
+-- Is there a device anywhere in this subtree? Asked of a DISK and of nothing else.
+--
+-- A disk has no business carrying one: `newfs` never makes one, a device describes
+-- the world around a MACHINE, and the boot gate lets the `null` kind through only
+-- because its walk is shared with the machine's own drive -- where a device costs
+-- the quota nothing on purpose, being built afresh at the top of every command and
+-- swept off before the answer. On a disk that exemption is a hole: nothing sweeps,
+-- the nodes are saved, and three thousand of them weigh nothing, count nothing,
+-- fill no directory `df` can see, and cost the boot gate forty milliseconds on
+-- every command the machine runs from then on.
 function CeroSecOS.hasDevUnder(node)
 	if type(node) ~= "table" then return false end
 	if node.type == "dev" then return true end

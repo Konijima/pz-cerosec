@@ -98,7 +98,22 @@ CeroSecOS.FD_MOUNTED = "mounted"
 -- nothing is the one kind of refusal a player cannot act on. The machine has a
 -- screen of its own and this is the machine talking, so it says it there, in the
 -- shape a device on this machine says everything: its own name, then why.
-CeroSecOS.FD_KEPT = "fd0: disk over its ceiling, cannot eject -- see df"
+--
+-- The WHY is carried and never summarised. It was one fixed sentence about being
+-- over a ceiling, and two of the four reasons a disk can be kept are not that --
+-- a line that names the wrong trouble is worse than the silence it replaced,
+-- because it sends the player to a `df` that shows him nothing wrong.
+CeroSecOS.FD_KEPT = "fd0: cannot eject -- "
+
+function CeroSecOS.fdKeptLine(reason)
+	local why = tostring(reason)
+	-- The gate's reasons are spelled "floppy: ..." because that is what the gate is
+	-- about. On the glass the drive is talking about itself and has already said
+	-- its own name, so the word comes off.
+	local cut = string.match(why, "^floppy[^:]*:%s*(.+)$")
+	if cut ~= nil then why = cut end
+	return CeroSecOS.truncate(CeroSecOS.FD_KEPT .. why, CeroSecOS.COLS)
+end
 
 -- Where a disk is mounted on a machine nobody has told otherwise. Shipped empty
 -- and root's at 755, which is what /mnt has been on every Unix that had one.
@@ -226,6 +241,12 @@ end
 -- rather than three commands later by a gate that then calls the whole machine
 -- broken.
 function CeroSecOS.diskFromData(data)
+	-- What it is made of, read off the game's own table and before any of it is
+	-- copied: the copy walks every table on the disk, and a payload hidden in a
+	-- field nobody here has ever written is paid for by that walk whether it is
+	-- refused afterwards or not (see CeroSecOS.diskFieldsOk).
+	local fOk, fReason = CeroSecOS.diskFieldsOk(data)
+	if not fOk then return nil, fReason end
 	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
 	-- Bounded: this is the SLOT, and what arrives here is a table off a save file

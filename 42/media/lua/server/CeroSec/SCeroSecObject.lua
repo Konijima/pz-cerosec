@@ -222,6 +222,11 @@ end
 -- bookkeeping and never a flush. That is why ejecting a mounted disk is allowed
 -- at all: on a machine with write-behind it would be how you lose a file.
 function SCeroSecObject:ejectDisk()
+	-- Asked again, and the answer is used. Within one call it cannot have changed
+	-- -- osState is deterministic and the caller has just asked -- and it is the
+	-- only thing between this and handing the player a disk the machine still has,
+	-- which is a duplication and not a loss. A check that costs nothing is the right
+	-- price for that.
 	local disk, fullType = self:diskToEject()
 	if disk == nil then return nil, fullType end
 	local state = self:osState()
