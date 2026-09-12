@@ -34,7 +34,12 @@ _G.ZombRand = function() return 0 end
 -- exists for exactly that reason). The fake counts the same way, so a server
 -- that forgot to add the one is a server this bench fails: a fake handing over
 -- 1-based numbers would let the wrong arithmetic pass.
-_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
+-- ageHours is how long the world has been running, which is the number the
+-- grid question is asked in: ten days here, with the power set to go on day a
+-- hundred (__sandbox below), so the default world has a dial tone in it. The
+-- two benches that move this clock put it back the way they found it.
+_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32,
+	ageHours = 240 }
 _G.getGameTime = function()
 	local t = _G.__gameTime
 	if t == nil then return nil end
@@ -44,6 +49,29 @@ _G.getGameTime = function()
 		getDay = function() return t.day end,
 		getHour = function() return t.hour end,
 		getMinutes = function() return t.minutes end,
+		-- How long the world has been running, which is the other half of the
+		-- grid question. Vanilla's own number, in hours and not days.
+		getWorldAgeHours = function() return t.ageHours or 0 end,
+	}
+end
+-- The county's power, which is what the telephone exchange runs on. These are
+-- exactly the calls the game's own Lua makes to ask whether the grid is still up
+-- (media/lua/client/ISUI/ISButtonPrompt.lua:520 and
+-- media/lua/server/radio/ISWeatherChannel.lua:153): the age of the world in
+-- hours, the day the power is set to go, and how long the apocalypse had been
+-- running when the character arrived.
+--
+-- The power goes on day a hundred and the world is ten days old (__gameTime
+-- above), so the default world this bench runs in has a dial tone. A bench that
+-- wants the grid dead moves elecShut; one that wants to see what the mod does
+-- with a game it cannot ask at all sets __sandbox to nil.
+_G.__sandbox = { elecShut = 100, timeSinceApo = 1 }
+_G.getSandboxOptions = function()
+	local s = _G.__sandbox
+	if s == nil then return nil end
+	return {
+		getElecShutModifier = function() return s.elecShut end,
+		getTimeSinceApo = function() return s.timeSinceApo end,
 	}
 end
 _G.getText = function(key) return key end
@@ -5232,6 +5260,376 @@ do
 	net.enter("exit")
 	net.tick(3)
 	eq("and it closes like any other", CeroSecOS.ptyCount(net.here.ptys), 0)
+end
+
+--
+-- The telephone (rung 6b)
+--
+-- Two buildings four hundred squares apart, which is what makes this section
+-- about the telephone and not about the coax: not one of the commands in the
+-- chapter before this one reaches from the office to the shed, and cu does.
+--
+-- The number is the BUILDING's, so the office's two machines share one, and it
+-- is derived from the corner of the building's def the way the address is --
+-- which means the bench can work out what it should be without being told.
+--
+
+local function telOf(object)
+	return CeroSecOS.phoneOf(object:osState())
+end
+
+-- What is on a machine's OWN glass, for the machines this bench has no window
+-- on: a third computer dialling is a real line typed at a real prompt, and the
+-- server path it goes through is the one Commands.exec ends in.
+local function ownSaid(object, needle)
+	local lines = object:consoleState().lines
+	for i = 1, #lines do
+		if string.find(lines[i], needle, 1, true) then return true end
+	end
+	return false
+end
+
+local function typeAt(net, object, line)
+	local console = object:consoleState()
+	console.booted = true
+	console.user = "admin"
+	console.cwd = "/home/admin"
+	net.system:startPrompt(object, console, line, nil, nil)
+	net.tick(3)
+end
+
+-- The number, the BIOS line, and a machine with no line at all.
+do
+	local net = newNet()
+	local office = CeroSecOS.phoneKey(CeroSecOS.buildingKey(400, 700))
+	eq("the office's number is the building's", telOf(net.here),
+		CeroSecOS.phoneText(office))
+	eq("and the other machine in the room answers on the same one",
+		telOf(net.gate), telOf(net.here))
+	check("the shed down the road has a different one",
+		telOf(net.far) ~= telOf(net.here))
+	-- Four digits behind the one exchange there is, always.
+	check("it is a 555 number", string.find(telOf(net.here), "^555%-%d%d%d%d") ~= nil)
+	check("and the machine knows it is one", CeroSecOS.isPhoneNumber(telOf(net.here)))
+
+	-- The firmware announces it under the card, which is the only place it is
+	-- written: nothing on the disk holds it.
+	net.login("admin")
+	check("the BIOS announces the line", net.glass("Phone line: " .. telOf(net.here)))
+	check("under the card", net.glass("Ethernet: eth0 " .. net.addr(net.here)))
+	local ok, lines = CeroSecOS.runArgs(net.here:osState(),
+		{ user = "root", cwd = "/root" }, { "cat", "/etc/phone" }, nil, { now = 0 })
+	eq("and there is no file to read it out of", ok, false)
+	check("no such file", string.find(lines[1], "no such file", 1, true) ~= nil)
+
+	-- A computer in a base somebody built is in no building, so there is nothing
+	-- to derive either a wire or a telephone from.
+	local loose = net.machine(80, 80, 0, nil)
+	loose:turnOn()
+	eq("a machine in no building has no line", telOf(loose), nil)
+	typeAt(net, loose, "cu " .. telOf(net.far))
+	check("and cu says so in its own words", ownSaid(loose, "cu: no phone line"))
+	check("having never lifted the receiver", net.far.ptys == nil)
+end
+
+-- A call, end to end: the modem, cu, the far machine's login, the work, and the
+-- two commands over there that name the number it came from.
+do
+	local net = newNet()
+	net.login("admin")
+	local tel = telOf(net.far)
+	local mine = telOf(net.here)
+
+	net.enter("cu " .. tel)
+	net.tick(2)
+	check("the modem answers first", net.glass("CONNECT 2400"))
+	check("and then cu", net.glass("Connected."))
+	check("the far machine asks who is there", net.glass("login:"))
+	-- No trust file is asked over the telephone, so the password is asked even
+	-- though the far machine trusts this one on its own coax.
+	net.put(net.far, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	local shed = net.host(net.far)
+	check("the prompt is the far machine's", net.glass("admin@" .. shed))
+	eq("a line is taken over there", CeroSecOS.ptyCount(net.far.ptys), 1)
+
+	net.enter("hostname")
+	net.tick(3)
+	check("and every line typed is the far machine's", net.glass(shed))
+
+	-- Who is on it, and where from: a call has no host name in it, so what the far
+	-- machine knows about the caller is the number he can be rung back on.
+	net.enter("who")
+	net.tick(3)
+	check("who names the pty", net.glass("ttyp0"))
+	check("and the number that called", net.glass("(" .. mine .. ")"))
+	net.enter("last")
+	net.tick(3)
+	check("last has it too", net.glass(mine))
+	check("and wtmp is where it read it",
+		string.find(net.text(net.far, "/var/log/wtmp"), mine, 1, true) ~= nil)
+
+	-- rsh does not dial. It is a network command and the shed is in another
+	-- building, which is the whole of what No route to host means.
+	net.name(net.here, net.far, "shed")
+	net.forget()
+	net.enter("exit")
+	net.tick(3)
+	check("the call says it is over in cu's own word", net.heard("Disconnected."))
+	check("and not in rlogin's", not net.heard("Connection closed."))
+	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
+
+	net.enter("rsh shed hostname")
+	net.tick(3)
+	check("rsh will not use the telephone", net.glass("rsh: shed: No route to host"))
+	net.enter("rcp notes.txt shed:/tmp/notes.txt")
+	net.tick(3)
+	check("and neither will rcp", net.glass("rcp: shed: No route to host"))
+end
+
+-- ~. is the near end hanging up, and it never reaches the far shell.
+do
+	local net = newNet()
+	net.login("admin")
+	net.enter("cu " .. telOf(net.far))
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the call is up", net.glass("admin@" .. net.host(net.far)))
+	net.forget()
+	net.enter("~.")
+	net.tick(3)
+	check("~. hangs up", net.heard("Disconnected."))
+	eq("the line is given back", CeroSecOS.ptyCount(net.far.ptys), 0)
+	check("and the glass is this machine's again",
+		net.glass("admin@" .. net.host(net.here)))
+	-- It was never a command anywhere: not over there, and not in this machine's
+	-- history either, because the shell here never saw it.
+	local there = net.text(net.far, "/home/admin/.sh_history")
+	check("the far machine never heard of it",
+		there == nil or string.find(there, "~.", 1, true) == nil)
+	local here = net.text(net.here, "/home/admin/.sh_history")
+	check("and neither did this one", string.find(here, "~.", 1, true) == nil)
+	-- A ~. at one's own prompt is an ordinary line and gets an ordinary refusal.
+	net.enter("~.")
+	net.tick(3)
+	check("off a call it is just a word", net.glass("~.: command not found"))
+end
+
+-- One line to a building: a third machine dialling a line that is in use.
+do
+	local net = newNet()
+	local other = net.machine(200, 200, 0, net.machine ~= nil and (function()
+		local def = { getX = function() return 1200 end, getY = function() return 40 end }
+		return { getDef = function() return def end }
+	end)() or nil)
+	other:turnOn()
+	net.login("admin")
+	local tel = telOf(net.far)
+
+	net.enter("cu " .. tel)
+	net.tick(2)
+	check("the call is up", net.glass("CONNECT 2400"))
+
+	-- The shed's line is busy, and so is the office's -- a building whose machine
+	-- has dialled out cannot take a call either.
+	typeAt(net, other, "cu " .. tel)
+	check("a third machine gets the busy signal", ownSaid(other, "BUSY"))
+	eq("and no second line was taken over there",
+		CeroSecOS.ptyCount(net.far.ptys), 1)
+	typeAt(net, other, "cu " .. telOf(net.here))
+	check("and so does one dialling the building that dialled",
+		ownSaid(other, "BUSY"))
+	eq("no line on this machine either", CeroSecOS.ptyCount(net.here.ptys or {}), 0)
+
+	-- The other machine in one's OWN building is on the same line, so its number
+	-- is one's own and dialling it is dialling a line one is using. The call above
+	-- has to be finished with first, and ~. is only read at a shell prompt -- at
+	-- the far machine's login: it would be a name -- so this logs in to hang up.
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	net.forget()
+	net.enter("~.")
+	net.tick(3)
+	check("the call is over", net.heard("Disconnected."))
+	net.enter("cu " .. telOf(net.gate))
+	net.tick(3)
+	check("one's own building is always busy", net.glass("BUSY"))
+end
+
+-- The exchange is the county's grid: no power, no dial tone, and a call that was
+-- up when it went is a call with no carrier.
+do
+	local net = newNet()
+	net.login("admin")
+	local tel = telOf(net.far)
+
+	-- The grid dies: the world is ten days old and the power was set to go on day
+	-- five. Both halves are set here rather than relied on, because an earlier
+	-- bench in this file puts the clock back and leaves the world newborn.
+	_G.__gameTime.ageHours = 240
+	_G.__sandbox.elecShut = 5
+	net.enter("cu " .. tel)
+	net.tick(3)
+	check("no exchange, no dial tone", net.glass("NO DIALTONE"))
+	check("and nothing was opened", net.far.ptys == nil)
+
+	-- The option a server can set, read the way vanilla reads its own.
+	_G.SandboxVars = { CeroSec = { PhoneService = "always" } }
+	net.enter("cu " .. tel)
+	net.tick(3)
+	check("an exchange on a generator still answers", net.glass("CONNECT 2400"))
+	eq("a line is taken", CeroSecOS.ptyCount(net.far.ptys), 1)
+
+	-- And the grid coming back under a call that is up: nothing happens to it,
+	-- because the call was never the grid's to begin with on this setting.
+	_G.SandboxVars = { CeroSec = { PhoneService = "grid" } }
+	net.forget()
+	net.enter("admin")
+	net.tick(3)
+	check("the call it was on is gone with the exchange", net.heard("NO CARRIER"))
+	eq("and the line is back", CeroSecOS.ptyCount(net.far.ptys), 0)
+
+	-- never, which is a server with no telephone service at all.
+	_G.SandboxVars = { CeroSec = { PhoneService = "never" } }
+	_G.__sandbox.elecShut = 100
+	check("the grid is back", CeroSecNet.gridAlive())
+	net.enter("cu " .. tel)
+	net.tick(3)
+	check("and never means never", net.glass("NO DIALTONE"))
+	_G.SandboxVars = nil
+	_G.__gameTime.ageHours = 0
+end
+
+-- Nobody there: a number no building has, and a building with its machines off.
+do
+	local net = newNet()
+	net.login("admin")
+	net.far:turnOff()
+	net.enter("cu " .. telOf(net.far))
+	net.tick(3)
+	check("a dark building does not answer", net.glass("NO CARRIER"))
+	net.far:turnOn()
+	-- A number in the right shape that no building in the county has. 555-0000 is
+	-- one this bench's two buildings are not on, and the check says so.
+	local nobody = "555-0000"
+	check("the bench's own buildings are not on it",
+		telOf(net.here) ~= nobody and telOf(net.far) ~= nobody)
+	net.enter("cu " .. nobody)
+	net.tick(3)
+	check("a number nobody has does not answer either", net.glass("NO CARRIER"))
+	-- And a word that is not a number at all never reaches the exchange.
+	net.enter("cu 5551219")
+	net.tick(3)
+	check("a word that is no number is the usage line",
+		net.glass("cu: usage: cu telno"))
+	net.enter("cu")
+	net.tick(3)
+	check("and so is cu with nothing after it", net.glass("cu: usage: cu telno"))
+end
+
+-- A call dies with the machine at either end of it.
+do
+	local net = newNet()
+	net.login("admin")
+	net.enter("cu " .. telOf(net.far))
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the call is up", net.glass("admin@" .. net.host(net.far)))
+	net.forget()
+	net.far:turnOff()
+	net.enter("hostname")
+	net.tick(3)
+	check("the far machine going dark drops the carrier", net.heard("NO CARRIER"))
+	check("and the glass is this machine's again",
+		net.glass("admin@" .. net.host(net.here)))
+end
+
+-- The hop rule holds on the telephone, and a chain pays it whichever links it
+-- is made of: a wire, then a call, and the third is refused.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("one hop out, over the wire", net.glass("admin@" .. net.host(net.gate)))
+	net.enter("cu " .. telOf(net.far))
+	net.tick(3)
+	net.enter("admin")
+	net.enter("")
+	net.tick(3)
+	check("two hops out, the second by telephone",
+		net.glass("admin@" .. net.host(net.far)))
+	net.enter("cu " .. telOf(net.here))
+	net.tick(3)
+	check("and the third hop is refused", net.glass("BUSY"))
+	eq("with no third line anywhere",
+		CeroSecOS.ptyCount(net.gate.ptys) + CeroSecOS.ptyCount(net.far.ptys), 2)
+end
+
+-- cu wants a terminal, exactly as rlogin does: a crontab line that dialled would
+-- land a logged-in session on the glass of a machine nobody is standing at.
+do
+	local net = newNet()
+	net.login("admin")
+	net.crontab(net.here, "admin", "* * * * * cu " .. telOf(net.far))
+	net.minute(2)
+	eq("a crontab cu opens no line on the far machine",
+		CeroSecOS.ptyCount(net.far.ptys), 0)
+	local mail = net.text(net.here, "/var/mail/admin")
+	check("and what it said went in the mail, in cu's own words",
+		mail ~= nil and string.find(mail, "cu: not a terminal", 1, true) ~= nil)
+
+	net.enter("cu " .. telOf(net.far) .. " &")
+	net.tick(3)
+	check("a backgrounded cu says it has no terminal",
+		net.heard("cu: not a terminal"))
+	net.enter("x=$(cu " .. telOf(net.far) .. "); echo [$x]")
+	net.tick(3)
+	check("and so does one inside a substitution",
+		net.heard("[cu: not a terminal]"))
+end
+
+-- 2400 baud: a call is four lines a second and the machine at the far end is as
+-- fast as it ever was.
+do
+	local net = newNet()
+	net.login("admin")
+	net.enter("cu " .. telOf(net.far))
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	local pty = CeroSecOS.ptyList(net.far.ptys)[1]
+	check("the session is a call", pty ~= nil and type(pty.phone) == "table")
+	eq("and it came from this building's line", pty.phone.tel, telOf(net.here))
+
+	-- Twenty lines asked for at once. The machine's own ceiling is twenty a
+	-- second and the line's is four, so the line is what is counted here.
+	local before = #pty.console.lines
+	net.enter("for i in 1 2 3 4 5 6 7 8 9 10; do echo $i; done")
+	-- One second of passes, and no more.
+	net.tick(9)
+	local after = #pty.console.lines - before
+	-- Eight and not four, and the number is written out rather than taken from
+	-- CeroSec.PHONE_LINES_PER_S: a bound that reads the constant it is meant to
+	-- hold moves with it, and a bench whose reference is its own source proves
+	-- nothing. Eight is two of the line's seconds, because these passes straddle
+	-- one -- the line typed moved the clock a second on its own -- and ten lines at
+	-- the machine's own twenty a second would all be here at once.
+	check("a second of a call carries about four lines (" .. after .. ")",
+		after >= 2 and after <= 8)
+	-- The rest arrives; nothing was thrown away.
+	net.tick(40)
+	check("and the whole of it arrives in the end", net.glass("10"))
 end
 
 -- Whose budget a remote session spends, through the real scheduler.

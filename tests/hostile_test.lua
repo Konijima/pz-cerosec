@@ -1416,6 +1416,177 @@ do
 end
 
 --
+-- A crontab of cu lines, on every machine in the county (rung 6b)
+--
+-- The telephone reaches ANOTHER BUILDING, which is the one thing the coax never
+-- did: a cron line that could dial would be a way to land a logged-in session on
+-- the physical glass of a computer on the other side of Knox County, once a
+-- minute, from a machine nobody is standing at. So the same attack the rlogin
+-- section above is here for is written again with the new link, and what is
+-- asserted is the same three things: it costs flat, it says so in the mail, and
+-- it opens NOTHING.
+--
+-- Deliberately without a world behind it, exactly as the rlogin one is: the
+-- refusal is the ENGINE's, so if a single line ever got as far as the link layer,
+-- CeroSecNet would be asked for a dial tone by a system that has no
+-- getLuaObjectCount and the bench would die rather than pass quietly.
+--
+
+do
+	CeroSecJobs.machines = {}
+	CeroSecJobs.lastMs = 0
+	local minute = 0
+	local system4 = {}
+	function system4:execEnv(luaObject, state)
+		return { now = 740000000 + minute * 60, nowMs = _G.__now,
+			net = { reach = function() return true end } }
+	end
+	function system4:clockEnv() return { now = 740000000 + minute * 60 } end
+	function system4:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function system4:writeSession() end
+	function system4:pushScreen() end
+	function system4:applyPower() end
+
+	local LINES = 32
+	local machines, states = {}, {}
+	local lines = {}
+	-- Thirty-two different numbers, so nothing is deduplicated anywhere by
+	-- accident: each line is a call to a building of its own.
+	for i = 1, LINES do
+		lines[i] = "* * * * * cu 555-" .. string.sub("000" .. tostring(i), -4)
+	end
+	local crontab = table.concat(lines, "\n")
+	for m = 1, 6 do
+		local state = CeroSecOS.newState("ksp")
+		-- A machine IN a building: it has a line of its own, so nothing here is
+		-- refused for the cheap reason. The record is what a line is derived from.
+		CeroSecOS.setNetRecord(state, 4, 17, m)
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = 40 + m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("admin"), crontab, false, 100)
+		if done == nil then error("cannot write the crontab: " .. tostring(reason)) end
+		machines[m], states[m] = machine, state
+	end
+	check("every machine of this county has a telephone line",
+		CeroSecOS.phoneOf(states[1]) ~= nil)
+
+	local perMinute, worst = {}, 0
+	local clockStart = os.clock()
+	for _ = 1, 100 do
+		minute = minute + 1
+		local spent = 0
+		for m = 1, 6 do CeroSecJobs.cronPass(system4, machines[m], 740000000 + minute * 60) end
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			CeroSecJobs.system = system4
+			CeroSecJobs.pass(_G.__now)
+			spent = spent + tickSteps
+			if tickSteps > worst then worst = tickSteps end
+		end
+		perMinute[#perMinute + 1] = spent
+		for m = 1, 6 do
+			check("no machine ever holds more than four jobs",
+				CeroSecOS.liveJobs(CeroSecJobs.book(machines[m]).list) <= CeroSecOS.MAX_JOBS)
+			check("not one call was opened", machines[m].ptys == nil)
+			check("and the machine's own glass is untouched",
+				#machines[m].console.lines == 0)
+			check("nor pointed at anything", machines[m].console.remote == nil)
+		end
+	end
+	local msPerMinute = (os.clock() - clockStart) * 1000 / 100
+
+	check("no pass spent more than the county's budget (" .. worst .. ")",
+		worst <= CeroSec.STEP_BUDGET_PER_TICK + CeroSecOS.STEP_COST_COMMAND)
+	local early, late = 0, 0
+	for i = 2, 11 do early = early + perMinute[i] end
+	for i = 91, 100 do late = late + perMinute[i] end
+	eq("the first minute is before cron has fired", perMinute[1], 0)
+	check("and the second one already has work in it", perMinute[2] > 0)
+	check("the cost of a minute does not climb (minutes 2-11: " .. early ..
+		", last 10: " .. late .. ")", late <= early + CeroSec.STEP_BUDGET_PER_TICK)
+
+	for m = 1, 6 do
+		local box = CeroSecOS.systemNode(states[m], CeroSecOS.mailPath("admin"))
+		check("the mailbox is there", box ~= nil)
+		check("and it is cu that is talking",
+			string.find(box.data, "cu: not a terminal", 1, true) ~= nil)
+		check("a hundred lines at most (" .. #CeroSecOS.splitLines(box.data) .. ")",
+			#CeroSecOS.splitLines(box.data) <= CeroSecOS.MAIL_LINES)
+		check("and four kilobytes at most (" .. #box.data .. ")",
+			#box.data <= CeroSecOS.MAIL_BYTES)
+		check("the machine still boots with it on it",
+			CeroSecOS.validate(states[m]) == true)
+	end
+
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
+		LINES .. " cron cu dials", worst, msPerMinute)
+end
+
+--
+-- A call left open, with a loop running down it (rung 6b)
+--
+-- The worst a caller can do with a line he has: log in and start something that
+-- never stops writing. A telephone session is a pty like any other, so the
+-- machine's ceilings hold it -- and it has one more of its own, the line's 2400
+-- baud, which must not be a way to make the machine work harder either: what the
+-- line cannot carry is KEPT, and a job holding lines is a job that is not run.
+--
+-- So the assertions are the pty section's, plus the one that is new: no second of
+-- any call ever carried more than CeroSec.PHONE_LINES_PER_S lines.
+--
+
+do
+	local here = newMachine()
+	here.x = 9
+	local far, farState = newMachine()
+	local pty = attach(far, farState, here)
+	-- What makes it a call and not a session on the wire: where it came from is a
+	-- number, and the pty carries the line it is on.
+	pty.phone = { tel = "555-0142", key = "4.17" }
+	pty.fromHost = "555-0142"
+
+	typeLine(system, far, farState, pty.console, "while true; do echo deep; done")
+	local worstSecond = 0
+	local result = drive(far, PASSES, nil, function()
+		local room = CeroSec.PHONE_LINES_PER_S - (pty.outCount or 0)
+		if (pty.outCount or 0) > worstSecond then worstSecond = pty.outCount end
+		check("no second of the call carried more than the line can (" ..
+			tostring(pty.outCount) .. ")", room >= 0)
+		check("the call's screen never holds more than its hundred lines",
+			#pty.console.lines <= CeroSec.CONSOLE_MAX)
+		check("and the machine at the glass is running nothing",
+			here.jobs == nil or #here.jobs.list == 0)
+	end)
+	flat("a loop down a call", result)
+	timely("a loop down a call", result)
+	check("the loop is still going", #far.jobs.list > 0)
+	check("it wrote on the call's screen", #pty.console.lines > 0)
+	eq("and not a line on the machine's own", #far.console.lines, 0)
+	-- The trickle really bit: a second of this loop on the machine's own glass is
+	-- CeroSec.JOB_OUT_PER_SEC lines, and a second of it down a call is four.
+	-- Four written out, not read off CeroSec.PHONE_LINES_PER_S: a bound taken from
+	-- the constant it is there to hold would move with it and prove nothing.
+	eq("a second of a call is four lines and never twenty", worstSecond, 4)
+	check("which is well under the machine's own ceiling",
+		4 < CeroSec.JOB_OUT_PER_SEC)
+	-- And what the line could not carry is still in the job, bounded by the row
+	-- ceiling like every other job's output and not growing for ever.
+	check("the job's held output is bounded (" .. #far.jobs.list[1].out .. ")",
+		#far.jobs.list[1].out <= CeroSecOS.JOB_OUT_MAX)
+	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/pass",
+		"a call left open", result.worst, result.msPerPass)
+end
+
+--
 -- 21. The longest PATH there can be (rung 6b)
 --
 -- Every command a shell runs is a walk along PATH, so the length of that string

@@ -10762,4 +10762,151 @@ do
 		CeroSecOS.diskFromData(CeroSecOS.diskToData(state.floppy)) ~= nil, true)
 end
 
+--
+-- 48. The telephone line (rung 6b)
+--
+-- The engine's half of a call: the number, the shape of one, the words the modem
+-- and cu print, and everything cu can refuse before anybody has to ask the world
+-- about a dial tone. Whether a call goes through is the server's and is proved in
+-- tests/window_test.lua.
+--
+
+do
+	-- The number comes off the building's KEY, which is what a machine carries on
+	-- its own disk -- so it is answerable for a computer whose chunk nobody has
+	-- loaded, and asking twice is asking the same question.
+	local b1, b2 = CeroSecOS.buildingKey(400, 700)
+	local n = CeroSecOS.phoneKey(b1, b2)
+	check("a building key has a number behind it", n ~= nil)
+	eq("asked twice it is the same number", CeroSecOS.phoneKey(b1, b2), n)
+	check("and it is one of the ten thousand there are",
+		n >= 0 and n < CeroSecOS.PHONE_NUMBERS)
+	eq("junk is no number", CeroSecOS.phoneKey("x", 1), nil)
+	eq("nor is half a key", CeroSecOS.phoneKey(4), nil)
+	eq("nor a byte that is not one", CeroSecOS.phoneKey(256, 0), nil)
+
+	-- Two buildings a square apart have keys near each other, and their numbers
+	-- must NOT be: a county where next door is 555-0418 is a county whose
+	-- telephone numbers look made up. That is what the extra step is for.
+	local e1, e2 = CeroSecOS.buildingKey(401, 700)
+	local far = CeroSecOS.phoneKey(e1, e2)
+	check("the building next door has a number nowhere near it (" .. n .. ", " ..
+		far .. ")", math.abs(far - n) > 100)
+
+	-- Written one way, and only one.
+	eq("four digits behind the exchange", CeroSecOS.phoneText(417), "555-0417")
+	eq("and the first number of all is padded", CeroSecOS.phoneText(0), "555-0000")
+	eq("the last one is not", CeroSecOS.phoneText(9999), "555-9999")
+	eq("there is no ten thousandth", CeroSecOS.phoneText(10000), nil)
+	eq("nor a negative one", CeroSecOS.phoneText(-1), nil)
+	eq("nor one made of a string", CeroSecOS.phoneText("417"), nil)
+
+	check("a number is a number", CeroSecOS.isPhoneNumber("555-0417"))
+	check("three digits are not", not CeroSecOS.isPhoneNumber("555-417"))
+	check("five are not", not CeroSecOS.isPhoneNumber("555-04170"))
+	check("another exchange is not", not CeroSecOS.isPhoneNumber("556-0417"))
+	check("an address is not", not CeroSecOS.isPhoneNumber("10.4.17.2"))
+	check("and neither is a name", not CeroSecOS.isPhoneNumber("gate"))
+
+	-- The machine's own line comes off the same record the address does, so the
+	-- two can never disagree about whether the computer is in a building at all.
+	local state = fresh()
+	eq("a machine with no record has no line", CeroSecOS.phoneOf(state), nil)
+	check("a record is written", CeroSecOS.setNetRecord(state, b1, b2, 3) ~= nil)
+	eq("and the line is the building's", CeroSecOS.phoneOf(state),
+		CeroSecOS.phoneText(n))
+	-- Two machines of one building share it, which is what one line per building
+	-- means: the number is the LINE's and the last byte of the address is not in it.
+	local other = fresh()
+	CeroSecOS.setNetRecord(other, b1, b2, 9)
+	eq("the other machine in the room answers the same number",
+		CeroSecOS.phoneOf(other), CeroSecOS.phoneOf(state))
+	-- And it is nowhere on the disk: the number belongs to the wall.
+	eq("there is no file holding it",
+		CeroSecOS.systemNode(state, "/etc/phone"), nil)
+end
+
+-- The words. Four are the modem's and two are cu's, and the modem's are in
+-- capitals because that is how they came out of one.
+do
+	eq("the modem reports the speed it got", CeroSecOS.MODEM.connect, "CONNECT 2400")
+	eq("a line in use", CeroSecOS.MODEM.busy, "BUSY")
+	eq("no exchange", CeroSecOS.MODEM.noDialtone, "NO DIALTONE")
+	eq("and a line that went away", CeroSecOS.MODEM.noCarrier, "NO CARRIER")
+	eq("cu says it is connected", CeroSecOS.CU_CONNECTED, "Connected.")
+	eq("and that it is not any more", CeroSecOS.CU_DISCONNECTED, "Disconnected.")
+	-- The speed in the modem's line is the speed the trickle is derived from, and
+	-- not a second number that can drift away from it.
+	check("the speed in the line is the line's speed",
+		string.find(CeroSecOS.MODEM.connect,
+			tostring(CeroSecOS.PHONE_BAUD), 1, true) ~= nil)
+
+	-- cu's escape, as a shape. Alone on a line, blanks around it allowed, and
+	-- nothing else on the line at all.
+	check("~. is the escape", CeroSecOS.isCuEscape("~."))
+	check("with blanks around it", CeroSecOS.isCuEscape("   ~.  "))
+	check("a tab is a blank", CeroSecOS.isCuEscape("\t~."))
+	check("~ alone is not", not CeroSecOS.isCuEscape("~"))
+	check("nor is ~.x", not CeroSecOS.isCuEscape("~.x"))
+	check("nor a ~. with a command behind it", not CeroSecOS.isCuEscape("~. exit"))
+	check("nor one inside a line", not CeroSecOS.isCuEscape("echo ~."))
+	check("nor BSD's other escapes, which this machine has not got",
+		not CeroSecOS.isCuEscape("~!") and not CeroSecOS.isCuEscape("~%put f"))
+	check("and junk is not", not CeroSecOS.isCuEscape(nil))
+end
+
+-- What cu refuses on its own, with no link layer to ask: a machine with no
+-- telephone, a number that is not one, and a chain already at the ceiling.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	-- A machine in no building. No net record, so no line -- and cu says so in its
+	-- own shape, which is the one string on this rung that is not 4.4BSD's.
+	local ok, lines = CeroSecOS.runArgs(state, admin, { "cu", "555-0417" }, nil, env)
+	eq("cu on a machine with no line fails", ok, false)
+	eq("in its own words", lines[1], "cu: no phone line")
+
+	-- Now it has one, and what is refused is the shape of the number.
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	local shapes = { "5550417", "555-417", "gate", "10.4.17.2", "555-04170" }
+	for i = 1, #shapes do
+		local o, l = CeroSecOS.runArgs(state, admin, { "cu", shapes[i] }, nil, env)
+		eq("cu refuses " .. shapes[i], o, false)
+		eq("with the usage line", l[1], "cu: usage: cu telno")
+	end
+	local o, l = CeroSecOS.runArgs(state, admin, { "cu" }, nil, env)
+	eq("and cu with nothing after it is the usage line too", l[1],
+		"cu: usage: cu telno")
+	o, l = CeroSecOS.runArgs(state, admin, { "cu", "555-0417", "555-0418" }, nil, env)
+	eq("and so are two numbers", l[1], "cu: usage: cu telno")
+
+	-- A number in the right shape, on a machine with a line, from a session that
+	-- is not down a chain: nothing is left for the engine to decide, so it hands
+	-- the order over.
+	local ran, out, control, data =
+		CeroSecOS.runArgs(state, admin, { "cu", "555-0417" }, nil, env)
+	eq("a dial is an order to whoever is running the machine", ran, true)
+	eq("and it prints nothing itself", #out, 0)
+	eq("the order is cu's", control, "cu")
+	eq("carrying the number", data.tel, "555-0417")
+	eq("the account that typed it", data.user, "admin")
+	eq("who is asking", data.from, "admin")
+	eq("and one hop further out than the session it came from", data.hops, 1)
+
+	-- The hop ceiling, which a call pays exactly as an rlogin does -- and what it
+	-- gets is the modem's word, because on a telephone it is the modem talking.
+	local deep = open(state, "admin")
+	deep.hops = CeroSecOS.HOP_MAX
+	local d, dl = CeroSecOS.runArgs(state, deep, { "cu", "555-0417" }, nil, env)
+	eq("a chain at the ceiling cannot dial", d, false)
+	eq("and the line is busy as far as it is concerned", dl[1], "BUSY")
+	-- One hop short of it still can.
+	deep.hops = CeroSecOS.HOP_MAX - 1
+	local u, _, uc = CeroSecOS.runArgs(state, deep, { "cu", "555-0417" }, nil, env)
+	eq("one hop short of it dials", u, true)
+	eq("and it is still cu's order", uc, "cu")
+end
+
 print("os_test: " .. count .. " assertions passed")

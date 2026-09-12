@@ -856,7 +856,7 @@ function CeroSecNet.closeSessions(system, luaObject)
 			if type(at) == "table" then
 				job.remote = nil
 				local object = system:getLuaObjectAt(at.x, at.y, at.z)
-				if object ~= nil then CeroSecNet.tearDown(system, object, at.line) end
+				if object ~= nil then CeroSecNet.tearDown(system, object, at.line, "carrier") end
 			end
 		end
 	end
@@ -872,7 +872,10 @@ function CeroSecNet.closeSessions(system, luaObject)
 	-- different glass at the other end of it.
 	ptys = CeroSecOS.ptyList(luaObject.ptys)
 	for i = 1, #ptys do
-		CeroSecNet.tearDown(system, luaObject, ptys[i].line)
+		-- "carrier", because this is a machine that has STOPPED and not a survivor
+		-- hanging up: what the glass at the other end has to read about a call is that
+		-- the line went away, which is what a modem says about it.
+		CeroSecNet.tearDown(system, luaObject, ptys[i].line, "carrier")
 	end
 	luaObject.ptys = nil
 end
@@ -907,6 +910,15 @@ local function newPtyConsole(from, pty, watchAt, hops)
 	console.watchAt = watchAt
 	console.line = pty.line
 	console.hops = hops
+	-- Where the session came from, on the CONSOLE as well as on the pty. The
+	-- login path writes wtmp off the console it is standing at
+	-- (SCeroSecSystem Commands.input, and the logout in logOut does the same), so
+	-- a pty console with no fromHost on it is a session whose "in" record says it
+	-- came from nowhere -- which is what the machine's own keyboard says. It was
+	-- true of every rlogin that asked for a password since the wire was built; the
+	-- telephone is what made it visible, because a call's origin is the only thing
+	-- the far machine ever learns about the caller.
+	console.fromHost = pty.fromHost
 	if type(from) == "table" and type(from.lines) == "table" then
 		for i = 1, #from.lines do
 			CeroSec.consolePush(console, from.lines[i])
