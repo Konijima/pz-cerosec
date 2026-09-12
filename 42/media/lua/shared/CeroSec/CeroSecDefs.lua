@@ -9,8 +9,46 @@ CeroSec = CeroSec or {}
 
 CeroSec.DEBUG = false
 
-function CeroSec.log(message)
-	if CeroSec.DEBUG then print("CeroSec: " .. tostring(message)) end
+--
+-- The mod's own log
+--
+-- One door for everything the mod says about itself, and it does two things with
+-- a line: it PRINTS it, gated on CeroSec.DEBUG exactly as it always was, and it
+-- APPENDS it to a ring buffer the debug window's Log tab reads.
+--
+-- The append is NOT gated on DEBUG, deliberately. The print goes to the game's
+-- console and is noise a player never asked for; the ring is two hundred lines
+-- of memory that only a debug window ever looks at, and a Log tab that needed
+-- DEBUG turned on first would be a Log tab that is empty exactly when somebody
+-- opens it to find out what went wrong.
+--
+-- The ring is per Lua STATE. In singleplayer there is one, so it holds the
+-- client's lines and the server's together; on a dedicated server the client's
+-- window shows the client's own, and the server's are in the server log. See
+-- docs/DEBUG.md.
+--
+CeroSec.LOG_INFO = "info"
+CeroSec.LOG_WARN = "warn"
+CeroSec.LOG_ERROR = "error"
+
+-- Lines kept. Two hundred: enough to hold a boot, a login and a few commands'
+-- worth of complaint, and small enough that nobody has to think about it.
+CeroSec.LOG_MAX = 200
+
+CeroSec.logRing = CeroSec.logRing or {}
+
+-- CeroSec.log(text) is an info line -- which is what every call site that does
+-- not care says -- and CeroSec.log(level, text) names one of the three levels
+-- above. Two arities and not two functions: there is one log, and a caller that
+-- has nothing to say about the level should not have to say anything.
+function CeroSec.log(level, text)
+	if text == nil then
+		text = level
+		level = CeroSec.LOG_INFO
+	end
+	local line = tostring(text)
+	if CeroSec.DEBUG then print("CeroSec: " .. line) end
+	CeroSec.ringPush(CeroSec.logRing, { level = level, text = line }, CeroSec.LOG_MAX)
 end
 
 -- TESTING AID. SET TO false BEFORE THE WORKSHOP RELEASE.
@@ -26,6 +64,36 @@ end
 -- option: an option is something a server owner can turn on, and this is not
 -- for them. It is read by CeroSecContextMenu and by nothing else.
 CeroSec.DEV_MANUAL_MENU = true
+
+-- TESTING AID. SET TO false BEFORE THE WORKSHOP RELEASE.
+--
+-- The same kind of door, onto the debug window (CeroSecDebugUI): every computer
+-- offers it off the dev submenu whether the game is in debug mode or not, so the
+-- window can be worked on in an ordinary save.
+--
+-- Once it is false the window is still there and is offered whenever the GAME is
+-- in debug mode, which is what CeroSec.debugAllowed below says -- so setting it
+-- to false takes the door away from a player and leaves it for a developer. The
+-- check is wired now rather than later, so that turning the flag off is the whole
+-- of the release change and not the start of one.
+CeroSec.DEV_DEBUG_MENU = true
+
+-- May the debug window be opened at all? The flag, or the game's own debug mode.
+--
+-- isDebugEnabled is zombie.Lua.LuaManager$GlobalObject.isDebugEnabled()
+-- (javap: `public static boolean isDebugEnabled();`), which is what vanilla's own
+-- debug UIs are behind. It is referenced through the global rather than called
+-- outright because this file is pure Lua and is loaded by benches with no game
+-- around it at all: no game, no debug mode, and the flag is the whole answer.
+--
+-- Both ends ask this -- the menu that offers the window and the server command
+-- that answers it -- because a client is not to be trusted about whether it was
+-- allowed to ask.
+function CeroSec.debugAllowed()
+	if CeroSec.DEV_DEBUG_MENU then return true end
+	if isDebugEnabled == nil then return false end
+	return isDebugEnabled() and true or false
+end
 
 -- Vanilla desktop computer tiles, tileset appliances_com_01.
 -- OFF tiles carry Facing/IsMoveAble/PickUpWeight; the ON tiles (76-79) do not,
@@ -107,6 +175,15 @@ end
 function CeroSec.floppyTypeOr(fullType)
 	if CeroSec.isFloppyType(fullType) then return fullType end
 	return CeroSec.FLOPPY_TYPES[1]
+end
+
+-- Is there a disk in that machine's drive, as far as the CLIENT knows? The one
+-- bit of the drive the server syncs (SCeroSecObject:syncDisk), read the same way
+-- everywhere so there is one answer and not two. Only a real true counts: a
+-- client copy the server has never told anything says nothing, and it must not
+-- say "full".
+function CeroSec.diskInDrive(luaObject)
+	return type(luaObject) == "table" and luaObject.disk == true
 end
 
 -- Fresh state. Left open for later rungs (os, hostname).

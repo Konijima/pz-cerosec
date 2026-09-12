@@ -531,9 +531,10 @@ at the BIOS.
 120. **Putting it back.** `write /bin/ls "list a directory"` then
      `chmod 755 /bin/ls`: `ls` works again. An executable is an ordinary file.
 121. **A command nobody may run.** `chmod 644 /bin/ls`, `exit`, log in as
-     `admin`: `ls` → `ls: permission denied`. Log back in as `root`: `ls` works
-     — root walks through the bits here as everywhere. `chmod 755 /bin/ls` to
-     put it back.
+     `admin`: `ls` → `ls: permission denied`. Log back in as `root`: `ls` is
+     refused too — a file with no `x` bit at all is one root may not execute
+     either. `chmod 700 /bin/ls` and root runs it again; `chmod 755 /bin/ls` to
+     put it back for everybody.
 122. **Wiping the machine.** As `root`, first `mkdir /home/admin/work` and
      `write /home/admin/work/notes.txt "keep me"`. Then `rm -r /bin`. Now `ls`,
      `cat`, `pwd` are all `command not found`, and `help` says

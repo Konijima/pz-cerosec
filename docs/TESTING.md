@@ -31,6 +31,20 @@ The suites, in the order they run:
   the rule in
   [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away), and it carries its own
   control: a machine the sweep CAN see still goes off when its room does.
+- `window_test.lua` also holds the hardware-module benches: the mockup's own
+  building with `SandboxVars.CeroSec.HardwareRequired` turned on, so that a bare
+  door, window and light switch are absent from `/dev` until a module is written
+  into the object's modData; a contact alone giving a device that reads and
+  refuses every write in two different voices (the mode's for anybody, the
+  device's for root); the mode following the hardware while the number does not;
+  the control with the option off, which is what every device bench written
+  before rung 4f now stands as; a world with no sandbox group at all, which fails
+  closed; and the two install commands end to end against a fake inventory, a
+  perk level and a screwdriver — every refusal proved by what did NOT happen,
+  since those commands answer nothing.
+- `os_test.lua` section 21r is the engine's own half of that: a `ro` entry from a
+  fake caller that would happily have carried the write out, so the refusal is
+  proved to be the engine's and not the server's.
 - `manual_test.lua` — the documentation set against the engine it describes: the
   shape of every volume (8..13 chapters, 3..9 pages each, 50..76 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every
@@ -51,6 +65,15 @@ The suites, in the order they run:
   per copy and per volume, the dev submenu, the keys all four item blocks set and the
   icons they name, and the twelve loot lists times three volumes with the sandbox
   multiplier.
+- `debug_ui_test.lua` — the debug window: six tabs with their own columns, every
+  cell of every column drawn at its own column and not all at the left, a
+  snapshot that carries another window's token drawn nowhere, selecting a machine
+  asking the server again under this window's token while the county list keeps
+  its rows, the six buttons (three through the server, the teleport through
+  vanilla's own debug call, the terminal only where the chunk is in), the Log
+  tab's three filters, the two-second clock, and the one that matters: closing
+  takes the tick handler OFF the event, counted on the event itself rather than
+  taken on the window's word.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.

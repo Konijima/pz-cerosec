@@ -1,12 +1,17 @@
 # CeroSec
 
-CeroSec puts a small Unix on the vanilla desktop computers of Knox County. Right-click
-one to turn it on: the sprite lights up, the screen glows, and a green 60x20 terminal
-opens with a BIOS boot line, a login prompt and a real shell behind it — files,
-permissions, an editor, `passwd`. The screen belongs to the machine, not to the
-player: walk away and come back to the same session, still logged in, and two
-survivors standing at one computer read and type on the same glass. Every bit of it
-is server-authoritative and safe in multiplayer.
+![CeroSec](workshop/banner.png)
+
+**THE NETWORK NEVER DIED.**
+
+A small Unix on the vanilla desktop computers of Knox County: switch one on, sit
+down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt.
+Behind it are files, permissions, accounts, an editor, shell scripts, cron, the
+doors and lights of the building under `/dev`, and three ways off the machine:
+coax to the rest of the building, a modem to the county, a radio past both. From
+scratch, vanilla Lua only, server-authoritative, Build 42.
+
+Made by Konijima.
 
 ## Status
 
@@ -15,14 +20,19 @@ Build 42.20.4. From scratch, vanilla Lua only, no dependencies.
 Done: the OS engine (filesystem, permissions, accounts, groups, a real shell
 language with pipes and job control), cron, the manual as a three-volume in-game
 documentation set, floppy disks with their own filesystem, the device network
-under `/dev` (doors, switches, motion sensors), and three links out to the rest of
-the county — coax to the other machines in a building, the telephone, and radio.
+under `/dev` (doors, switches, motion sensors) and the four hardware modules a
+survivor has to fit before a computer reaches any of it, and three links out to
+the rest of the county — coax to the other machines in a building, the telephone, and radio.
 See "Documentation" below for where each of those is written up.
 
-What's next: `CeroSec.DEV_MANUAL_MENU` (`42/media/lua/shared/CeroSec/CeroSecDefs.lua`)
-is still `true`. It is a testing aid that puts a manual reader on every computer's
-right-click menu regardless of whether anyone has found a book, and it **has to be
-set to `false` before the Workshop release**.
+What's next: two testing aids in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` are
+still `true`, and **both have to be set to `false` before the Workshop release**.
+`CeroSec.DEV_MANUAL_MENU` puts a manual reader on every computer's right-click menu
+regardless of whether anyone has found a book. `CeroSec.DEV_DEBUG_MENU` puts the
+debug window there — every computer the server holds, the selected machine's
+filesystem, its `/dev`, the wire, the scheduler and the mod's own log — and once it
+is `false` that window is offered only in the game's own debug mode. See
+[docs/DEBUG.md](docs/DEBUG.md).
 
 ## Install (local play)
 
@@ -41,7 +51,10 @@ is loaded from. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#repository-layou
 1. Right-click a desktop computer and choose **Turn on computer** (needs power).
 2. Right-click again for **Use computer** to sit down and open the terminal.
 3. At `login:`, use `admin` or `root`, both with an empty password — press Enter.
-4. `dev` lists what the machine can reach; `help` lists the commands.
+4. `dev` lists what the machine can reach; `help` lists the commands. A door,
+   window or light is only on that list once somebody has screwed a CeroSec
+   module to it — right-click the fixture itself, **CeroSec hardware** — unless
+   the sandbox option `CeroSec.HardwareRequired` is turned off.
 5. Click the window's close button, or type `exit`, to walk away — the screen
    keeps running and is exactly as you left it next time.
 
@@ -97,12 +110,17 @@ Three lessons this codebase paid for and does not intend to relearn:
   identities, their rules and rates, and the sessions they carry.
 - [docs/SCRIPTING.md](docs/SCRIPTING.md) — the shell language, pipes, cron, job
   control, and the step machine and scheduler underneath.
+- [docs/DEBUG.md](docs/DEBUG.md) — the debug window: the two dev flags and the
+  release gating to come, the six tabs, the protocol, what it costs the server,
+  and the three things it can change.
 - [docs/TESTING.md](docs/TESTING.md) — `sh tests/run.sh`, what each suite proves,
   and the manual checklists for what no headless test can reach.
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — the wave process, repository
   layout, and coding and security rules.
 - [docs/SECURITY.md](docs/SECURITY.md) — the password hash, what root can and
   cannot undo, and what the server guarantees against a hostile script.
+- [docs/RELEASE.md](docs/RELEASE.md) — the ordered Workshop release checklist:
+  the images, the flags, the upload, the tag, the visibility.
 
 The in-game manual's own text lives in
 [`42/media/lua/shared/CeroSec/CeroSecManualUser.lua`](42/media/lua/shared/CeroSec/CeroSecManualUser.lua),

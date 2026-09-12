@@ -42,7 +42,9 @@ because root is asked for nobody's.
 
 **Sharing a file.** A mode is three digits — you, your group, everybody else — and
 the machine reads exactly one of them: the first if you own the file, the second if
-you are in its group, the third otherwise. Root walks through all three. Every
+you are in its group, the third otherwise. Root walks through all three, except
+for running something: a file with no `x` bit at all is one root may not execute
+either, which is why `chmod 600 /bin/ls` takes `ls` away from root as well. Every
 account is already in a group of its own name, so a fresh file is shared with
 nobody until you say otherwise:
 
@@ -272,10 +274,12 @@ the commands, the accounts and the system files back and touches nothing under
 `/home` or `/root`; `n` leaves it sitting there, and anything typed at it brings the
 question back; `exit` or Escape walks away from it.
 
-The building the computer stands in is wired to it. `/dev` holds one file per
-door, light switch and window it can reach — its own building when its
-square has one, every room of it; ten tiles of its own floor when it has not,
-which is what a computer in a player-built base gets. `dev` is how you work them:
+The building the computer stands in is wired to it — literally, with a
+screwdriver. `/dev` holds one file per door, light switch and window it can reach
+**that somebody has fitted a hardware module to** (see below): its own building
+when its square has one, every room of it; ten tiles of its own floor when it has
+not, which is what a computer in a player-built base gets. `dev` is how you work
+them:
 
 ```
 dev
@@ -391,6 +395,68 @@ created in `/dev` at all.
 
 Opening a door is not this. `unlock` takes the lock off; somebody still has to
 walk over and open it.
+
+### The hardware modules
+
+Nothing is a device because of what it is. It is a device because somebody went
+up to it with a screwdriver and a box, and the sandbox option
+`CeroSec.HardwareRequired` — **on** by default — is what says so. Four boxes,
+each bought with one level of Electricity and one gesture:
+
+| module | goes on | what the machine gets |
+| --- | --- | --- |
+| `CeroSec.MagneticContact` | a door **or** a window | that `doorN` or `winN`, **read-only** |
+| `CeroSec.Relay` | a light switch | `lightN`, on and off |
+| `CeroSec.ElectricStrike` | a door a lock bites on | `lockN`, lock and unlock |
+| `CeroSec.DoorOperator` | a door | `doorN`, open and close |
+
+So a door with only a contact on it is a `doorN` you can `cat` and cannot write:
+its mode is `cr--r-----`, everybody but root is stopped by the mode, and root is
+stopped by the device — `door1: operation not supported`, which is `write(2)`'s
+own `EOPNOTSUPP` in this machine's lower case. Put an operator on that same door
+and the same `doorN` opens; add a strike and the `lockN` appears beside it.
+
+**A window takes a contact and nothing else.** There is no window actuator in
+this mod because there is none in the game: the only call that moves a sash is
+`IsoWindow.ToggleWindow(IsoGameCharacter)` and it wants a survivor standing at
+it. So with the option on, a window is a thing the machine watches and never
+works — which also means the `win` device's `lock` and `unlock` words only ever
+do anything with the option **off**. Watching is what a magnetic contact is for:
+a `winN` reads `smashed`, `barricaded`, `open`, `locked` or `unlocked`, in that
+order — the glass, then the sash, then the catch — so `open` beats the latch the
+way a door's does and `unlocked` means shut. `dev win0 toggle` on an open window
+answers `win0: cannot toggle`: its two words are `lock` and `unlock`, and there
+is nothing that undoes a sash.
+
+**Fitting one.** Right-click the door, window or light switch itself — not the
+computer — and take **CeroSec hardware**. It asks for the module in your bag, a
+`Base.Screwdriver`, and Electricity at the module's level: a contact or a relay
+at **1**, a strike at **2**, an operator at **3**. The job is a few seconds,
+shorter the better an electrician you are, and pays a little Electricity. Remove
+gives the box back whole.
+
+Two entries come up greyed with the reason on them, and both are about the
+fixture rather than about you: a **strike on an interior door** (a key there
+stops nobody, so the lock would be a device that lies) and an **operator on a
+garage or double door** (a machine moves one leaf and would leave the rest shut).
+
+The **number does not move** for any of this. It hangs on where the device is and
+which kind it is, so a contact taken off and put back a week later is the same
+`doorN` a script wrote down. Only the mode moves — back to what a device of that
+shape is born at — because a door that has just grown an operator must not be one
+nobody may write to.
+
+**Where they come from.** Built at a workbench with Electricity at the same level
+that fits them (an electrician learns these by being an electrician, so there is
+nothing to read), out of electronics scrap, wire, screws, sheet metal and — for
+the operator — a box of engine parts. Found in an electrician's van, on the
+shelves of an electronics shop, in a warehouse crate, a tool shop, a garage and a
+crate of tools: a contact is the common one and an operator is eight times rarer,
+in every list.
+
+**With the option off**, none of this exists: every door, window, lock and light
+of the building is in `/dev` the way it was before the modules, the right-click
+menu is not there at all, and a module already fitted is simply not consulted.
 
 **Motion sensors** are the one device you supply yourself. The part is a vanilla
 **Motion Sensor** (`Base.MotionSensor`) — the electronics module, out of a house

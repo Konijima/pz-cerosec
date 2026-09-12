@@ -16,8 +16,10 @@ apparaissent une fois, rien d'autre n'est touché. Régler
 `CeroSec.DEBUG = true` dans `42/media/lua/shared/CeroSec/CeroSecDefs.lua` pour voir
 les lignes de console pendant les tests.
 
-L'option **Read the CeroSec manual (dev)** est déjà présente sur tous les
-ordinateurs (`CeroSec.DEV_MANUAL_MENU = true`). Un ordinateur de bureau
+Le sous-menu **CeroSec (dev)** est déjà présent sur tous les ordinateurs : il
+tient les trois volumes du manuel (`CeroSec.DEV_MANUAL_MENU = true`) et la
+**fenêtre de débogage** (`CeroSec.DEV_DEBUG_MENU = true`, voir la section X et
+[DEBUG.md](DEBUG.md)). Un ordinateur de bureau
 (`Desktop`) se trouve dans les bureaux et dans les maisons ; le menu debug peut
 aussi en faire apparaître un, ou fournir un Computer en objet à placer. Pour une
 chaise, tirer n'importe quelle chaise de bureau devant l'écran, dos au moniteur.
@@ -600,6 +602,12 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
 129. `chmod 755 compte.sh` puis `./compte.sh` → même résultat. `chmod 644
      compte.sh` puis `./compte.sh` → `./compte.sh: permission denied`, alors
      que `sh compte.sh` marche toujours. [ ]
+129a. En `root` (`su -`, ou une session root), `cd /home/admin`, `chmod 644
+     compte.sh` puis `./compte.sh` → `./compte.sh: permission denied` **pour
+     root aussi** : un fichier sans aucun bit `x` est un fichier que personne
+     n'a le droit d'exécuter, root compris. `chmod 100 compte.sh` (ou `010`, ou
+     `001` : un seul bit `x` n'importe où suffit) → `./compte.sh` repart. Puis
+     `chmod 755 compte.sh`. [ ]
 130. `compte.sh` tout court (sans `./`) → `compte.sh: command not found` : un
      nom nu reste une commande de `/bin` et rien d'autre. [ ]
 131. `edit bonjour.sh` avec `read -p "nom? " n` puis `echo "salut $n"` →
@@ -686,7 +694,8 @@ capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
      `..` ; `ls -la` et `ls -aF` lisent pareil (`./` et `../` avec `-F`). Puis
      `sudo rm /bin/sleep` → `sleep 1` répond `sleep: command not found` ;
      `sudo chmod 600 /bin/echo` → `echo hi` répond `echo: permission denied`
-     alors que `sudo echo hi` marche encore ; `if true; then history; fi`
+     et `sudo echo hi` est refusé de la même façon (aucun bit `x` : même root
+     ne l'exécute pas), puis `sudo chmod 755 /bin/echo` le remet ; `if true; then history; fi`
      marche toujours (la grammaire n'est pas un fichier) ; `ls /bin` ne montre
      ni `cd` ni `exit` ni `jobs` ni `wait` -- ce sont des mots du shell, pas des
      fichiers -- et `cd /etc` marche quand meme, `man cd` repond, et `help` les
@@ -1018,6 +1027,13 @@ coques.
      disquette a quitté l'inventaire ; le menu offre maintenant **Eject
      floppy**. Avec une deuxième disquette sur soi, **Insert floppy** est grisé
      et l'infobulle dit *Eject the floppy first.* [ ]
+199b. **Le menu après l'éjection.** Disquette dans la fente, cliquer **Eject
+     floppy** → la disquette revient dans l'inventaire. **Refermer le menu et
+     rouvrir le clic droit** : **Insert floppy** est là et n'est PAS grisé — pas
+     d'infobulle *Eject the floppy first* — et **Eject floppy** a disparu. C'est
+     la copie du client qui est en cause et non la machine : le menu montrait la
+     fente encore pleine alors que la disquette était dans les mains du
+     survivant. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
      Insert et Eject sont toujours proposés — une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
@@ -1340,6 +1356,248 @@ rechargement du morceau, jamais avant. La règle est dans
      dessus se ferme en disant que le courant est parti), pas pendant l'absence.
      Le contrôle du même geste : rester devant la machine et couper le générateur
      sur place → elle s'éteint toute seule dans la minute qui suit. [ ]
+
+## W. Les modules matériels (palier 4f)
+
+Depuis ce palier, une porte, une fenêtre ou un interrupteur n'est un
+périphérique que si **quelqu'un y a vissé un module**. L'option de bac à sable
+`CeroSec.HardwareRequired` (page « CeroSec » de l'écran des options, **activée
+par défaut**) commande tout : désactivée, c'est exactement le monde d'avant. Les
+quatre modules sont le contact magnétique (voit une porte ou une fenêtre), le
+relais (actionne un interrupteur), la gâche électrique (la serrure) et
+l'opérateur de porte (ouvre et ferme). Règles et preuves :
+[DEVICES.md](DEVICES.md#the-hardware-modules).
+
+227. **Un bâtiment tout neuf ne répond à rien.** Nouvelle partie avec l'option
+     **activée** (la valeur par défaut : ne rien toucher dans le bac à sable).
+     Ordinateur alimenté dans une maison avec des portes, des fenêtres et des
+     interrupteurs. En `root` : `ls -l /dev` → **rien du monde**, seulement
+     `null` et `fd0` s'il y a une disquette. `dev` → tableau vide. `dev light0`
+     → `dev: light0: no such device`. C'est le changement de ce palier ; si des
+     portes apparaissent encore, l'option n'est pas lue. [ ]
+228. **Le menu, et ce qu'il refuse.** Clic droit sur un **interrupteur**, sans
+     rien dans le sac → aucune entrée « Matériel CeroSec » (on ne parle pas de
+     matériel qu'on n'a pas). Se donner un `CeroSec.Relay` : l'entrée apparaît,
+     « Installer Module relais ». Sans tournevis → grisée, infobulle « Il vous
+     faut un tournevis. ». Avec le tournevis mais Électricité 0 → grisée,
+     « Électricité 1 requise. ». Même essai en visant une **porte** avec le
+     relais en poche → « Ce module ne va pas ici. ». [ ]
+229. **Poser le relais.** Électricité 1, tournevis et relais en main, clic droit
+     sur l'interrupteur → Installer. Attendu : le personnage **marche jusqu'à
+     l'interrupteur**, joue l'animation de fouille quelques secondes, le relais
+     **quitte le sac**, le tournevis reste, et un petit gain d'XP Électricité
+     apparaît. Puis sur l'ordinateur : `dev` → l'interrupteur est là,
+     `echo off > /dev/light0` éteint bien la pièce. [ ]
+230. **Le contact seul : on regarde, on ne touche pas.** Poser un
+     `CeroSec.MagneticContact` sur une porte **extérieure**. `ls -l /dev` → la
+     ligne de cette porte porte `cr--r-----` (pas de `w`). En `admin` :
+     `echo open > /dev/doorN` → `doorN: permission denied`. Faire `su root`
+     puis le même ordre → `doorN: operation not supported`. Dans les deux cas
+     la porte **ne bouge pas** dans le monde. `cat /dev/doorN` répond
+     `closed`, `open` ou `locked` selon ce qu'on lui fait à la main : ouvrir la
+     porte au clic et relire → la lecture suit. [ ]
+231. **L'opérateur sur la même porte.** Poser un `CeroSec.DoorOperator`
+     (Électricité 3) sur cette porte. Attendu : **même numéro** qu'à l'étape
+     230 — `doorN` n'a pas changé — mais `ls -l /dev` montre maintenant
+     `crw-rw----`, et `echo open > /dev/doorN` ouvre la porte pour de bon. Si la
+     porte est verrouillée, elle répond `doorN: locked` : c'est la serrure, pas
+     le module. [ ]
+232. **La gâche, et les deux portes qui la refusent.** Sur une porte
+     **intérieure** (une pièce de chaque côté), clic droit avec la gâche →
+     entrée grisée, « Cette porte n'a pas de serrure à câbler. ». Sur une porte
+     de **garage** ou une porte double, avec l'opérateur → grisée, « Un
+     ordinateur ne peut pas actionner une porte double ou de garage. ». Sur la
+     porte extérieure de l'étape 230 → la gâche se pose, et `lockN` apparaît à
+     côté de `doorN` : `echo unlock > /dev/lockN` déverrouille, essayer d'entrer
+     depuis dehors le confirme. [ ]
+233. **La fenêtre ne prend qu'un contact, et le contact sent le châssis.** Clic
+     droit sur une fenêtre avec la gâche ou l'opérateur en poche → « Ce module
+     ne va pas ici. ». Avec le contact → il se pose, `winN` apparaît. Ouvrir la
+     fenêtre **à la main**, puis `dev winN` → `winN: open` ; la refermer →
+     `winN: locked` ou `unlocked` selon le loquet. Casser la vitre → `smashed`,
+     même châssis ouvert : le verre passe avant le reste. `dev winN toggle` sur
+     une fenêtre ouverte → `winN: cannot toggle` (ses deux mots sont `lock` et
+     `unlock`, rien ne défait un châssis). `echo unlock > /dev/winN` en `root` →
+     `winN: operation not supported`, et le loquet ne bouge pas : rien dans le
+     moteur n'ouvre un châssis sans un survivant devant, donc une fenêtre se lit
+     et ne se travaille pas. [ ]
+233b. **La lecture du châssis vaut dans les deux modes.** Option **désactivée**
+     (étape 237), sans aucun module posé : ouvrir une fenêtre à la main et
+     `dev winN` → `winN: open` tout pareil, et `echo lock > /dev/winN`
+     fonctionne toujours comme avant ce palier. Ce que le contact achète, c'est
+     le droit d'exister dans `/dev`, jamais un mot de plus. [ ]
+234. **Retirer rend le module entier.** Clic droit sur l'interrupteur de l'étape
+     229 → « Retirer Module relais ». Attendu : le relais **revient dans le
+     sac** (un seul, pas deux), l'interrupteur disparaît de `dev`, et
+     `dev light0` répond `light0: no such device`. Le reposer : c'est **le même
+     `light0`** qu'avant. Sur une porte qui porte contact **et** gâche, retirer
+     le contact ne touche pas à la gâche : `lockN` répond toujours. [ ]
+235. **Fabriquer les quatre.** Avec Électricité 1 : le contact magnétique et le
+     module relais sont dans l'onglet **Électrique** de l'établi, **déjà
+     appris** (aucun magazine à lire). À 2 la gâche apparaît, à 3 l'opérateur.
+     Vérifier qu'un tournevis est demandé et **rendu** (il est toujours là après
+     la fabrication), et que l'opérateur mange bien une boîte de pièces de
+     moteur. [ ]
+236. **Le butin.** Dans une camionnette d'électricien, une boutique
+     d'électronique, une caisse d'entrepôt, une quincaillerie ou un garage : on
+     trouve des contacts assez souvent, des relais moins, des gâches encore
+     moins et un opérateur rarement. Aucun module sur un bureau de bureau ni
+     dans une bibliothèque — ce ne sont pas les mêmes étagères que les
+     disquettes. [ ]
+237. **L'option désactivée, c'est le monde d'avant.** Nouvelle partie, bac à
+     sable, page CeroSec, décocher « Modules matériels obligatoires ». Attendu :
+     dans un bâtiment où **rien n'est posé**, `ls -l /dev` liste toutes les
+     portes, fenêtres, serrures et lumières comme aux étapes 83 à 90, `echo
+     unlock > /dev/win0` fonctionne de nouveau, et le clic droit sur une porte
+     **n'offre aucune entrée** « Matériel CeroSec » (poser un module n'y
+     servirait à rien). [ ]
+238. **Ça survit à la sauvegarde et au déchargement.** Option activée, deux ou
+     trois modules posés. Quitter la partie, revenir : `dev` montre exactement
+     les mêmes périphériques avec les mêmes numéros. Puis s'éloigner assez pour
+     décharger le quartier et revenir (section V) : au retour, les modules sont
+     toujours là. [ ]
+239. **En multijoueur (si testé).** Hôte + client : le client pose un module,
+     l'hôte voit le périphérique apparaître dans `dev` sur sa propre machine
+     sans recharger, et inversement. Le client qui n'est **pas** à côté de la
+     porte ne peut rien poser dessus. [ ]
+## X. La fenêtre de débogage (palier debug)
+
+La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
+Elle ne change que trois choses : allumer, éteindre, et où le personnage se
+trouve. Tout le reste est en lecture. Détails et protocole dans
+[DEBUG.md](DEBUG.md).
+
+Pour cette section : deux ordinateurs allumés dans le même bâtiment, un troisième
+dans un bâtiment loin (le même décor que la section N), et au moins une porte et
+un interrupteur dans la pièce.
+
+240. **La porte.** Clic droit sur un ordinateur → dernière entrée du menu,
+     **CeroSec (dev)**, et dedans les trois volumes du manuel puis **Fenêtre de
+     débogage** en dernier. Attendu : le sous-menu ne s'appelle plus « Read the
+     CeroSec manual (dev) », il porte le nom du mod, et l'entrée debug est bien
+     la dernière des quatre. [ ]
+241. **Ouvrir.** Cliquer **Fenêtre de débogage** → une fenêtre s'ouvre au centre
+     de l'écran, avec une barre de titre « CeroSec débogage », six onglets
+     (Machines, Files, Devices, Network, Scheduler, Log) et une rangée de boutons
+     en bas. Attendu : elle ressemble aux fenêtres de debug du jeu (mêmes
+     couleurs, même police, mêmes en-têtes de colonnes), et pas au terminal vert.
+     [ ]
+242. **L'onglet Machines.** Attendu : une ligne par ordinateur que le serveur
+     tient, y compris celui du bâtiment loin, avec sa position, son orientation,
+     on/off, si son morceau de carte est chargé, son nom, son adresse, son numéro
+     de téléphone, son indicatif, ses jobs et le nombre de fenêtres ouvertes
+     dessus. La machine devant laquelle on est est déjà sélectionnée. [ ]
+243. **Sous la liste.** Attendu : le détail de la machine sélectionnée sur
+     plusieurs lignes — son sprite, la version de son état, `sysv`, si le système
+     passe, et sa console (qui est connecté, dans quel répertoire, combien de
+     lignes à l'écran). Ouvrir le terminal dessus, taper `ls`, revenir à la
+     fenêtre : le nombre de lignes a bougé dans les deux secondes. [ ]
+243b. **Où la machine se trouve.** Toujours sous la liste, après la console :
+     l'empreinte du bâtiment (coin, coin opposé, taille, superficie, nombre de
+     pièces) ou `outdoors` pour une machine dans une base construite, le nom de la
+     pièce, et une ligne par zone dans laquelle le carré se trouve — son type, son
+     nom, sa position, `w x h`, sa boîte (`w*h`) et sa superficie réelle. Faire
+     l'essai **dans un centre commercial** : attendu, la zone nommée du magasin est
+     plus petite que le bâtiment autour d'elle, et pour une zone de forme
+     irrégulière la superficie réelle est plus petite que sa boîte. Sur une machine
+     dont le morceau de carte n'est pas chargé : `premises: no square (the chunk is
+     away)` et rien d'autre — personne n'est là pour répondre. [ ]
+244. **Sélectionner une autre machine.** Cliquer la ligne de l'ordinateur du
+     bâtiment loin. Attendu : la liste garde ses lignes et la ligne cliquée reste
+     surlignée, le détail dessous devient celui de cette machine, et les onglets
+     Files et Devices se vident puis se remplissent avec ceux de la nouvelle
+     machine — jamais le disque de l'ancienne sous le nom de la nouvelle. [ ]
+245. **La machine dont le quartier n'est pas chargé.** Sa colonne **chunk** dit
+     `away` et sa colonne **wire** dit `-` et pas `no` : personne n'est là pour
+     répondre sur le courant. Attendu : elle est quand même **allumée** (`on`), et
+     son nom et son adresse sont là, parce que le serveur tient son disque quoi
+     que fasse le streamer. [ ]
+246. **Éteindre à distance.** Machine loin sélectionnée, cliquer **Éteindre**.
+     Attendu : sa colonne on/off passe à `off` dans les deux secondes. Rallumer
+     avec **Allumer** : elle ne se rallume **que** si son morceau de carte est
+     chargé (le courant se demande à un carré), sinon rien ne bouge — et c'est la
+     bonne réponse. [ ]
+247. **S'y téléporter.** Machine loin sélectionnée, cliquer **S'y téléporter** →
+     le personnage se retrouve au milieu du carré de cette machine (pas sur le
+     coin), le quartier se charge, et la colonne **chunk** de cette ligne passe à
+     `here` au rafraîchissement suivant. [ ]
+248. **Ouvrir le terminal.** Sur une machine allumée dont le quartier est chargé
+     et à côté de laquelle on se trouve, cliquer **Ouvrir le terminal** → le
+     terminal s'ouvre comme si on avait utilisé l'ordinateur par devant, sans la
+     marche et sans la chaise. Sur une machine loin : rien ne s'ouvre (avec
+     `CeroSec.DEBUG = true`, une ligne le dit dans la console). [ ]
+249. **L'onglet Files.** Attendu : l'arbre du disque de la machine sélectionnée,
+     `/` en première ligne, puis `/bin`, `/etc`, `/home`… en profondeur, avec le
+     mode écrit comme `ls -l` l'écrit, le propriétaire, la taille et la date.
+     Sous la liste : le compte de nœuds et d'octets contre les plafonds. Comparer
+     avec `ls -l /etc` tapé dans le terminal de la même machine : mêmes modes,
+     mêmes propriétaires, mêmes tailles. [ ]
+250. **Vider l'état.** `CeroSec.DEBUG` n'a rien à voir ici. Cliquer **Vider
+     l'état** → la console du jeu (`console.txt`) reçoit le contenu de l'état de
+     la machine, une ligne par clé, et une dernière ligne qui dit où ça a été
+     coupé. Attendu : c'est borné (pas plus de 401 lignes), et rien n'apparaît
+     dans la fenêtre. [ ]
+251. **L'onglet Devices.** Attendu : une ligne par entrée de `/dev` de la machine
+     sélectionnée, avec le même nom et le même état que `ls -l /dev` dans son
+     terminal, plus ce que le terminal ne montre pas : le carré absolu de l'objet,
+     la « poignée » qu'un `dev find` enverrait (le nom de sprite d'une porte, le
+     type d'objet d'un détecteur posé par terre, **rien** pour un interrupteur —
+     un interrupteur clignote au lieu d'être entouré), et si l'objet est encore
+     là. Sous la liste : le carnet de numéros et un enregistrement par détecteur.
+     [ ]
+252. **Un périphérique qui s'en va.** Ramasser le détecteur posé par terre.
+     Attendu : au rafraîchissement suivant sa ligne dit que l'objet est parti
+     (`gone`) et son numéro reste dépensé — c'est la différence entre un
+     périphérique hors de portée et un chemin mal tapé. [ ]
+253. **L'onglet Network.** Attendu : une ligne `eth` par bâtiment avec ses
+     machines et leurs adresses, une ligne `tel` par bâtiment avec libre/occupé,
+     une ligne `tel exchange` avec l'état du central et du réseau, une ligne
+     `radio` par machine qui a un indicatif, et rien de plus s'il n'y a aucune
+     session ouverte. [ ]
+254. **Une session qui monte.** `rlogin` depuis une machine du bâtiment vers
+     l'autre du même bâtiment, se connecter. Attendu : une ligne `pty ttyp0`
+     apparaît avec d'où elle vient, par quel lien, combien de sauts et son âge, et
+     des lignes `evt` disent ce que le fil a été demandé et ce qu'il a répondu.
+     Taper `exit` : la ligne `pty` disparaît et une ligne `evt close` apparaît.
+     [ ]
+255. **Un refus qui laisse une trace.** `rlogin` vers l'adresse de la machine du
+     bâtiment **loin** (pas de câble entre deux bâtiments) → le terminal dit son
+     refus, et dans l'onglet Network une ligne `evt eth <adresse> unreach`
+     apparaît. Attendu : c'est la seule trace qui existe de ce refus, puisque
+     aucune session n'a été créée et que l'écran finira par défiler. En revanche
+     `rlogin nimportequoi` (un nom que rien ne résout) **ne** fait **pas** de
+     ligne `evt` : ce refus est celui du résolveur et n'atteint jamais le fil. [ ]
+256. **L'onglet Scheduler.** Lancer `sleep 60 &` sur la machine sélectionnée.
+     Attendu : une ligne apparaît avec la machine, l'id que le shell a annoncé,
+     le slot `[1]`, le nom, l'état, les pas, le temps processeur et la dette —
+     l'état étant le mot que `jobs` imprime pour le même job. Sous la liste : les
+     constantes de budget de `CeroSecDefs` et l'horloge du planificateur. [ ]
+257. **Le crontab.** `crontab -e` avec `* * * * * date` sur la machine
+     sélectionnée. Attendu : sous la liste, une ligne par ligne de crontab avec
+     `DUE NOW` ou `waiting` et la commande. Écrire une ligne impossible à la main
+     en root (`60 * * * * echo non` dans `/var/spool/cron/admin`) : une ligne
+     `BAD (bad minute)` apparaît, avec le numéro de ligne. [ ]
+258. **L'onglet Log.** Attendu : les lignes que le mod a écrites sur lui-même,
+     la plus récente en bas, avec leur niveau. Les boutons **All**, **Warnings**
+     et **Errors** filtrent, et les trois boutons ne sont là que sur cet onglet.
+     Attendu aussi : il y a des lignes **même avec `CeroSec.DEBUG = false`** —
+     l'impression dans la console est conditionnée par ce réglage, l'anneau non.
+     [ ]
+259. **Deux fenêtres, une seule.** Ouvrir la fenêtre, puis la rouvrir par le menu
+     d'un autre ordinateur → la première se ferme, il n'y en a jamais deux. [ ]
+260. **Redimensionner.** Tirer le coin de la fenêtre → la liste et les colonnes
+     suivent le bord, les boutons restent sous la liste, et le bloc de détail
+     reste lisible en bas. [ ]
+261. **Fermer, et le rafraîchissement qui s'arrête.** Mettre
+     `CeroSec.DEBUG = true`, ouvrir la fenêtre, la fermer par sa croix, et
+     regarder la console pendant une minute. Attendu : plus rien de la fenêtre —
+     elle ne demande plus rien au serveur. (C'est la fuite que
+     `tests/debug_ui_test.lua` garde, mais elle se voit aussi comme ça.) [ ]
+262. **Le drapeau.** Mettre `CeroSec.DEV_DEBUG_MENU = false` et
+     `CeroSec.DEV_MANUAL_MENU = false`, recharger la partie. Attendu : plus de
+     sous-menu **CeroSec (dev)** du tout sur le menu d'un ordinateur. Relancer le
+     jeu avec `-debug` : le sous-menu revient avec **Fenêtre de débogage** dedans
+     et **rien** d'autre — le manuel se trouve ou ne se lit pas. [ ]
 
 ## Rapport
 

@@ -65,6 +65,56 @@ CeroSecNet = CeroSecNet or {}
 CeroSecNet.PREMISES_TYPE = "ZombiesType"
 
 --
+-- The wire's own log
+--
+-- Every session this file makes or refuses, in order, bounded. It exists for the
+-- debug window's Network tab: a refusal is the one thing about the wire that
+-- leaves no trace anywhere -- the pty was never made, nothing was written to a
+-- disk, and the line the player read went to a screen that has scrolled -- so
+-- "why will this machine not rlogin into that one" is a question nothing could
+-- answer after the fact.
+--
+-- RUNTIME state like the ptys and the jobs beside it, and for the same reason: a
+-- server that came back up has no sessions, so it can have no history of them.
+-- Nothing reads it but a debug window and nothing is decided by it.
+--
+CeroSecNet.EVENT_MAX = 50
+
+CeroSecNet.events = CeroSecNet.events or {}
+CeroSecNet.eventSeq = CeroSecNet.eventSeq or 0
+
+-- One line. `cmd` is the command that asked (rlogin, rsh, cu, ...), `to` what it
+-- asked for, `what` what happened -- which for a refusal is the machine's own
+-- refusal line and not a word of this file's invention.
+function CeroSecNet.note(luaObject, cmd, to, what)
+	CeroSecNet.eventSeq = CeroSecNet.eventSeq + 1
+	local from = nil
+	if luaObject ~= nil then
+		from = tostring(luaObject.x) .. "," .. tostring(luaObject.y)
+			.. "," .. tostring(luaObject.z)
+	end
+	CeroSec.ringPush(CeroSecNet.events, {
+		n = CeroSecNet.eventSeq,
+		at = getTimestampMs(),
+		from = from,
+		cmd = tostring(cmd),
+		to = to and tostring(to) or "",
+		what = tostring(what),
+	}, CeroSecNet.EVENT_MAX)
+end
+
+-- What a session was asked for, in the words the command was given: a name, an
+-- address, a number or a callsign, whichever of the four this one is.
+local function askedFor(data, radio)
+	if type(radio) == "table" and type(radio.call) == "string" then return radio.call end
+	if type(data) ~= "table" then return "" end
+	if type(data.tel) == "string" then return data.tel end
+	if type(data.host) == "string" then return data.host end
+	if type(data.addr) == "string" then return data.addr end
+	return ""
+end
+
+--
 -- Identity
 --
 
@@ -325,7 +375,7 @@ end
 -- the machine, or nil plus which of strerror's words to wear:
 --   "down"    it is on this wire and it is switched off
 --   "unreach" there is no wire between here and there at all
-function CeroSecNet.reachable(system, from, addr)
+local function reachableOn(system, from, addr)
 	-- The loopback reaches this machine and nothing else, whatever building it is
 	-- in and whether it has a wire at all -- which is what a loopback is. The
 	-- engine already answers a ping on it; this is the other half, so that
@@ -343,6 +393,19 @@ function CeroSecNet.reachable(system, from, addr)
 	if found.net.b1 ~= mine.b1 or found.net.b2 ~= mine.b2 then return nil, "unreach" end
 	if not found.object.on then return nil, "down" end
 	return found.object
+end
+
+-- The same question, with a line in the wire's log behind it. Wrapped rather than
+-- noted at each of the six ways out, so a seventh cannot be added without one.
+--
+-- This is where a REFUSAL about the wire is decided -- every command that names a
+-- far machine asks here first (env.net.reach), and a name that was refused left
+-- no trace anywhere before this: no pty was made, nothing was written to a disk,
+-- and the line the player read is on a screen that has scrolled.
+function CeroSecNet.reachable(system, from, addr)
+	local object, why = reachableOn(system, from, addr)
+	CeroSecNet.note(from, "eth", addr, object ~= nil and "reachable" or tostring(why))
+	return object, why
 end
 
 -- Every machine on this one's wire that is switched on, itself included.
@@ -552,7 +615,7 @@ end
 
 -- Can `from` place a call to that number right now?
 -- the machine that answers, or nil plus the word the MODEM prints.
-function CeroSecNet.reachablePhone(system, from, tel)
+local function reachablePhoneOn(system, from, tel)
 	if not from.on then return nil, CeroSecOS.MODEM.noCarrier end
 	local mine = recordOf(from)
 	-- No line at all. The command itself has already said so in cu's own words
@@ -577,6 +640,14 @@ function CeroSecNet.reachablePhone(system, from, tel)
 	if theirKey == myKey then return nil, CeroSecOS.MODEM.busy end
 	if CeroSecNet.lineBusy(system, theirKey) then return nil, CeroSecOS.MODEM.busy end
 	return object
+end
+
+-- And the telephone's, logged for the reason the wire's is: what the modem said
+-- is a line on a screen and nothing else.
+function CeroSecNet.reachablePhone(system, from, tel)
+	local object, why = reachablePhoneOn(system, from, tel)
+	CeroSecNet.note(from, "tel", tel, object ~= nil and "answered" or tostring(why))
+	return object, why
 end
 
 -- Who would answer that number, asked in FULL: the line layer's own question plus
@@ -771,7 +842,7 @@ end
 -- with a telephone and the reason both links are worse to diagnose than a wire.
 -- The machine says what it can see for itself (no set at all, no callsign) in its
 -- own name, and everything beyond its own aerial is silence.
-function CeroSecNet.reachableRadio(system, from, call)
+local function reachableRadioOn(system, from, call)
 	if not from.on then return nil, CeroSecOS.TNC.retry end
 	-- No set in reach: the machine can see that for itself, there being no
 	-- /dev/radio0 on it, and it says so rather than keying a transmitter it has
@@ -806,6 +877,16 @@ function CeroSecNet.reachableRadio(system, from, call)
 		return nil, CeroSecOS.TNC.retry
 	end
 	return object, nil, mine, theirs
+end
+
+-- And the air's. The refusal here is the one worth a log more than either of the
+-- other two: six different things answer with the same word, on purpose, because
+-- a station that gets no reply learns nothing about why -- so the reason the
+-- SERVER had is the only place the truth exists at all.
+function CeroSecNet.reachableRadio(system, from, call)
+	local object, why, mine, theirs = reachableRadioOn(system, from, call)
+	CeroSecNet.note(from, "radio", call, object ~= nil and "connected" or tostring(why))
+	return object, why, mine, theirs
 end
 
 -- Does a link that was made still hold? Asked on every keystroke that goes down
@@ -1226,6 +1307,10 @@ end
 function CeroSecNet.tearDown(system, object, line, why)
 	local pty = CeroSecOS.remoteLine(object.ptys, line)
 	if pty == nil then return false end
+	-- The other half of the wire's log: a session that ends, with the reason it
+	-- was given. Noted here rather than at the several callers, for the reason the
+	-- connect wrapper exists.
+	CeroSecNet.note(object, "close", line, why or "closed")
 	-- The county hears a link go down exactly as it heard it come up. Sent FIRST,
 	-- while the pty is still on the table and the machine that dialled can still
 	-- be found: a teardown is about to take both of those away.
@@ -1449,7 +1534,7 @@ end
 -- and the refusals are the modem's words rather than strerror's.
 -- radio, when the link is the air: the { call, to, key } the pty carries, worked
 -- out by dialRadio because it is the half that has both sets in its hand.
-local function connect(system, luaObject, console, cmd, data, found, radio)
+local function connectTo(system, luaObject, console, cmd, data, found, radio)
 	local object = found
 	if object == nil then
 		object = CeroSecNet.reachable(system, luaObject, data.addr)
@@ -1552,6 +1637,22 @@ local function connect(system, luaObject, console, cmd, data, found, radio)
 	end
 	pty.console = newPtyConsole(console, pty, watchAt, data.hops)
 	console.remote = { x = object.x, y = object.y, z = object.z, line = pty.line }
+	return pty, object, far, fromHost, fromAddr
+end
+
+-- The same call, with a line in the wire's log behind it. Wrapped rather than
+-- noted at each of the six ways out of connectTo, so a seventh cannot be added
+-- without a line: every session on this machine is made or refused HERE.
+local function connect(system, luaObject, console, cmd, data, found, radio)
+	local pty, object, far, fromHost, fromAddr =
+		connectTo(system, luaObject, console, cmd, data, found, radio)
+	if pty ~= nil then
+		CeroSecNet.note(luaObject, cmd, askedFor(data, radio),
+			"open " .. tostring(pty.line) .. " as " .. tostring(fromHost))
+	end
+	-- A refusal is NOT noted here: every refusal about the wire, the telephone and
+	-- the air is decided in the three reachable* doors above and is noted there, and
+	-- a second line for the same "no" would be one fact twice.
 	return pty, object, far, fromHost, fromAddr
 end
 

@@ -2,5 +2,12 @@
     "IGUI_CeroSec_Hint": "Esc ferme | Haut/Bas historique",
     "IGUI_CeroSec_Manual_Prev": "< Retour",
     "IGUI_CeroSec_Manual_Next": "Suivant >",
-    "IGUI_CeroSec_Manual_Contents": "Sommaire"
+    "IGUI_CeroSec_Manual_Contents": "Sommaire",
+    "IGUI_CeroSec_Debug_Title": "CeroSec débogage",
+    "IGUI_CeroSec_Debug_Refresh": "Rafraîchir",
+    "IGUI_CeroSec_Debug_TurnOn": "Allumer",
+    "IGUI_CeroSec_Debug_TurnOff": "Éteindre",
+    "IGUI_CeroSec_Debug_Teleport": "S'y téléporter",
+    "IGUI_CeroSec_Debug_Terminal": "Ouvrir le terminal",
+    "IGUI_CeroSec_Debug_Dump": "Vider l'état"
 }

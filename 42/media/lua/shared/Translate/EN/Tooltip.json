@@ -2,5 +2,11 @@
     "Tooltip_CeroSec_NoPower": "This computer has no power.",
     "Tooltip_CeroSec_NoAccess": "You cannot stand in front of this computer.",
     "Tooltip_CeroSec_TooHigh": "This computer is too high to reach.",
-    "Tooltip_CeroSec_DriveFull": "Eject the floppy first."
+    "Tooltip_CeroSec_DriveFull": "Eject the floppy first.",
+    "Tooltip_CeroSec_NeedScrewdriver": "You need a screwdriver.",
+    "Tooltip_CeroSec_NeedSkill": "Electricity %1 required.",
+    "Tooltip_CeroSec_NoFixture": "This module does not fit here.",
+    "Tooltip_CeroSec_NoLock": "This door has no lock worth wiring.",
+    "Tooltip_CeroSec_ManyDoors": "A computer cannot work a double or garage door.",
+    "Tooltip_CeroSec_Fitted": "One is already fitted."
 }

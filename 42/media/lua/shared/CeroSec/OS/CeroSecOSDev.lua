@@ -21,6 +21,14 @@
 -- business and is decided in SCeroSecDevices.lua; the core only ever sees the
 -- kinds it has words for.
 --
+-- The OTHER way a device is read and never written is an entry marked `ro`, and
+-- it is not about the kind: it is one particular device with nothing behind it
+-- to carry a write out -- a door with a magnetic contact on it and no operator
+-- (SCeroSecDevices.lua and CeroSecModules.lua). It is born 440 like a sensor,
+-- and the write that gets past the mode is refused in its own name:
+--
+--   door3: operation not supported
+--
 -- A device node is NOT a file. It has no data, it is never written to the disk,
 -- and the core never touches the world itself: what it holds is a description
 -- and a state, both handed over by whoever is running the machine, and a write
@@ -40,7 +48,7 @@
 --
 -- env.devices, when the caller supplies one, with two functions:
 --   list()             -> array of entries, each { id, kind, desc, side, pos,
---                         state, mode, dead }. The IDS ARE THE CALLER'S: it is the
+--                         state, mode, dead, ro }. The IDS ARE THE CALLER'S: it is the
 --                         server that discovers the world and that keeps a
 --                         device's number stable across reloads. The core only
 --                         ever renders what it is handed.
@@ -141,18 +149,30 @@ CeroSecOS.DEV_VALUES = {
 -- The mode is still a chmod's to move like any other (`chmod 444 /dev/sensor0`
 -- opens the reading to the whole office), and it still outlives the command it
 -- was typed in; this is only where it STARTS.
+-- Read by root and by the sudo group, written by nobody. The mode of a device
+-- there is no way to write, whatever the reason there is none.
+CeroSecOS.DEV_MODE_RO = 440
+
 CeroSecOS.DEV_MODES = {
-	sensor = 440,
+	sensor = CeroSecOS.DEV_MODE_RO,
 	-- And the radio, for the same rule and not for a second one: its vocabulary
 	-- is empty, so a `w` in the middle digit would be this machine promising a
 	-- write that cannot happen. 660 was the shape this rung was sketched in and
 	-- 440 is what the shape already on the disk forces -- one rule, applied twice.
-	radio = 440,
+	radio = CeroSecOS.DEV_MODE_RO,
 }
 
 -- What a kind's node is mounted at when nobody has chmodded it. The one place
 -- DEV_MODES is read, so a kind with no entry is DEV_MODE and never nil.
-function CeroSecOS.devModeFor(kind)
+--
+-- `ro` is the SECOND way a device can be read-only, and it is not about the kind
+-- at all: a door with a magnetic contact on it and no operator is a door the
+-- machine can see and cannot move, and it is a `door` like any other. The kind
+-- says what words exist; this says whether this particular one has anything
+-- behind it to carry them out. Either is 440, for the same reason: a `w` in the
+-- middle digit would be a machine promising a write that cannot happen.
+function CeroSecOS.devModeFor(kind, ro)
+	if ro then return CeroSecOS.DEV_MODE_RO end
 	local mode = CeroSecOS.DEV_MODES[kind]
 	if type(mode) ~= "number" then return CeroSecOS.DEV_MODE end
 	return mode
@@ -269,7 +289,7 @@ local function nodeFor(entry)
 
 	local mode = entry.mode
 	if type(mode) ~= "number" or mode < 0 or mode > 777 or mode ~= math.floor(mode) then
-		mode = CeroSecOS.devModeFor(entry.kind)
+		mode = CeroSecOS.devModeFor(entry.kind, entry.ro)
 	end
 
 	local node = {
@@ -284,6 +304,11 @@ local function nodeFor(entry)
 		pos = "",
 		state = "",
 	}
+	-- A device with nothing behind it to carry a write out. The caller decides
+	-- which those are -- it is the only side that knows what is wired to what --
+	-- and the node carries the fact so that a write is refused HERE, before the
+	-- world is asked anything (devWrite, below).
+	if entry.ro then node.ro = true end
 	if type(entry.desc) == "string" then node.desc = entry.desc end
 	if type(entry.side) == "string" then node.side = entry.side end
 	if type(entry.pos) == "string" then node.pos = entry.pos end
@@ -415,6 +440,17 @@ function CeroSecOS.devWrite(state, session, node, value, env)
 	-- it: it is a hole in the disk, and a machine with no devices around it still
 	-- has one.
 	if CeroSecOS.isNull(node) then return true, nil end
+
+	-- A device with nothing behind it to do the writing. Before the vocabulary,
+	-- deliberately: what word was typed cannot matter to a device that has no way
+	-- to carry any of them out, and a machine that judged the word first would be
+	-- telling a survivor to try another one.
+	--
+	-- 440 means such a device is normally refused a line above, by the mode, and
+	-- this is what answers root after a `chmod 660` -- the one door the mode
+	-- leaves open. "operation not supported" is write(2)'s own EOPNOTSUPP, in the
+	-- lower case every other reason on this machine is written in.
+	if node.ro then return refuse(node, "operation not supported") end
 
 	local word = trim(value)
 	local allowed = CeroSecOS.DEV_VALUES[node.kind]

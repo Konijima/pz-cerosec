@@ -131,7 +131,7 @@ function CeroSecFloppyLoot.add()
 		if not pool or type(pool.items) ~= "table" then
 			-- Say so once and carry on: a list vanilla renamed must not take the
 			-- mod down with it.
-			CeroSec.log("no distribution list named " .. tostring(key))
+			CeroSec.log(CeroSec.LOG_WARN, "no distribution list named " .. tostring(key))
 		else
 			local weight = CeroSecFloppyLoot.weightFor(key, abundance)
 			for i = 1, #CeroSec.FLOPPY_TYPES do

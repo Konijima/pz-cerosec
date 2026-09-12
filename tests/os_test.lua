@@ -2042,11 +2042,22 @@ do
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 	ok(state, admin, "ls /etc/motd", { "motd" })
 
-	-- Not executable: refused for everybody the bits refuse, and root bypasses
-	-- them the way root bypasses every other bit on the machine.
+	-- Not executable: refused for everybody the bits refuse, and refused for
+	-- root too. Root walks through r and w and through any directory, but x on
+	-- a file with none of the three x bits set is the one thing a mode still
+	-- says to root -- 4.4BSD's vaccess(), and a real machine's answer.
 	ok(state, rootSession, "chmod 644 /bin/ls", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
+	bad(state, rootSession, "ls /etc/motd", "ls: permission denied")
+	-- One x bit anywhere is enough for root, and for nobody else: the bit for
+	-- other, which admin is, still refuses admin.
+	ok(state, rootSession, "chmod 001 /bin/ls", {})
 	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "chmod 010 /bin/ls", {})
+	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	ok(state, rootSession, "chmod 100 /bin/ls", {})
+	ok(state, rootSession, "ls /etc/motd", { "motd" })
+	bad(state, admin, "ls /etc/motd", "ls: permission denied")
 	-- x for the owner only is x for root only.
 	ok(state, rootSession, "chmod 700 /bin/ls", {})
 	bad(state, admin, "ls /etc/motd", "ls: permission denied")
@@ -2085,6 +2096,42 @@ do
 	-- Without x on it, it is not runnable at all.
 	ok(state, admin, "chmod 644 /home/admin/ls", {})
 	bad(state, admin, "./ls", "./ls: permission denied")
+
+	eq("the state still validates", CeroSecOS.validate(state), true)
+end
+
+do
+	-- The same script, run by root. A mode still says one thing to root, and it
+	-- is the x bit: a file nobody may execute is a file root may not execute
+	-- either. Root reads it, writes it, deletes it, and will not RUN it.
+	local state = fresh()
+	local rootSession = open(state, "root")
+	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+	ok(state, rootSession, "cd /root", {})
+	ok(state, rootSession, "chmod 755 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+
+	-- No x bit anywhere: refused, in the same words an ordinary account gets.
+	ok(state, rootSession, "chmod 644 /root/go.sh", {})
+	bad(state, rootSession, "./go.sh", "./go.sh: permission denied")
+	-- Root still reads it and still writes it: only x is gated.
+	ok(state, rootSession, "cat /root/go.sh", { "echo hello" })
+	ok(state, rootSession, 'write /root/go.sh "echo hello"', {})
+
+	-- Any ONE of the three x bits is enough. None of these three modes gives
+	-- root a bit of its own -- root is the owner here, and 010 and 001 leave
+	-- the owner's digit at 6 -- and each of them still lets root run it, which
+	-- is exactly what "at least one x bit" means.
+	ok(state, rootSession, "chmod 100 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+	ok(state, rootSession, "chmod 010 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+	ok(state, rootSession, "chmod 001 /root/go.sh", {})
+	ok(state, rootSession, "./go.sh", { "hello" })
+
+	-- And 000 is 000 for root too.
+	ok(state, rootSession, "chmod 000 /root/go.sh", {})
+	bad(state, rootSession, "./go.sh", "./go.sh: permission denied")
 
 	eq("the state still validates", CeroSecOS.validate(state), true)
 end
@@ -4136,7 +4183,7 @@ local function fakeDevices(entries)
 		for i = 1, #devices.entries do
 			local e = devices.entries[i]
 			out[i] = { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
-				pos = e.pos, state = e.state, mode = e.mode, dead = e.dead }
+				pos = e.pos, state = e.state, mode = e.mode, dead = e.dead, ro = e.ro }
 		end
 		return out
 	end
@@ -5118,7 +5165,75 @@ do
 	okAt(state, session, "dev sensor", {}, devEnv(gone))
 end
 
--- 21r. A MALL. /dev is the one directory the 96-entry rule does not hold for,
+-- 21r. A device with nothing behind it to write with.
+--
+-- The OTHER read-only device, and it is not a kind: a `door` like any other,
+-- with the same two words in its vocabulary, on an object nobody has fitted an
+-- actuator to -- a magnetic contact and no operator. What the world hands over
+-- is one more field on the entry (`ro`), and the engine's whole half is here:
+-- the node is born 440, and the write that walks past 440 -- root's, and root's
+-- only, because root walks past every mode on this machine -- is refused in the
+-- device's own name and never reaches the caller.
+--
+-- The fake would take that write and carry it out, which is the point of proving
+-- it here rather than against a world: the refusal is the ENGINE's, not the
+-- server's. The server's own belt for the same case is in
+-- tests/window_test.lua, against real doors.
+do
+	eq("a device with no actuator is born read-only",
+		CeroSecOS.devModeFor("door", true), CeroSecOS.DEV_MODE_RO)
+	eq("and the same kind without the flag is not",
+		CeroSecOS.devModeFor("door"), CeroSecOS.DEV_MODE)
+	eq("a sensor is the same number by its kind",
+		CeroSecOS.devModeFor("sensor"), CeroSecOS.DEV_MODE_RO)
+
+	local state = fresh()
+	local root = open(state, "root")
+	local admin = open(state, "admin")
+	local devices = fakeDevices({
+		{ id = "door0", kind = "door", desc = "exterior", side = "W", pos = "0 0",
+			state = "closed", ro = true, mode = 440,
+			becomes = { open = "open", close = "closed" } },
+		{ id = "door1", kind = "door", desc = "office", side = "N", pos = "1E 0",
+			state = "closed", becomes = { open = "open", close = "closed" } },
+	})
+	local env = devEnv(devices)
+
+	okAt(state, root, "ls -l /dev", {
+		"cr--r-----  root  sudo  door0   exterior       W  closed",
+		"crw-rw----  root  sudo  door1   office         N  closed",
+		"crw-rw-rw-  root  root  null",
+	}, env)
+
+	-- Read by anybody the 4 in the middle digit covers, which is the sudo group.
+	okAt(state, admin, "cat /dev/door0", { "closed" }, env)
+	okAt(state, root, "dev door0", { "door0: closed" }, env)
+
+	-- Written by nobody. The mode stops everybody but root; root is stopped by
+	-- the device, with write(2)'s own word for it.
+	badAt(state, admin, "echo open > /dev/door0", "door0: permission denied", env)
+	badAt(state, root, "echo open > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "dev door0 open", "door0: operation not supported", env)
+	-- And the word makes no difference, because it cannot: a device with nothing
+	-- behind it has nothing to carry any word out with, so it is refused before
+	-- the vocabulary is ever consulted.
+	badAt(state, root, "echo close > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "echo banana > /dev/door0", "door0: operation not supported", env)
+	badAt(state, root, "dev door0 toggle", "door0: operation not supported", env)
+	eq("and not one of them reached the world", #devices.writes, 0)
+
+	-- A chmod opens the reading; it does not invent an actuator.
+	okAt(state, root, "chmod 666 /dev/door0", {}, env)
+	badAt(state, root, "echo open > /dev/door0", "door0: operation not supported", env)
+	eq("still nothing reached the world", #devices.writes, 0)
+
+	-- The door beside it, with an operator on it, is untouched by any of this.
+	okAt(state, root, "echo open > /dev/door1", {}, env)
+	eq("the one that is wired still works", devices.writes[1], "door1=open")
+	okAt(state, root, "cat /dev/door1", { "open" }, env)
+end
+
+-- 21s. A MALL. /dev is the one directory the 96-entry rule does not hold for,
 -- and this is the pair of facts that says so: two hundred devices mount and list,
 -- and /tmp still refuses the ninety-seventh file in the same breath.
 --
@@ -5907,6 +6022,28 @@ do
 	truth("[ -w /home/admin/file.txt ]", true)
 	truth("[ -x /bin/ls ]", true)
 	truth("[ -x /home/admin/file.txt ]", true)
+	-- -x asks the same question the shell asks before running something, so it
+	-- answers the same way for root: no x bit anywhere, no x, even for root.
+	do
+		local rootSession = open(state, "root")
+		local function rootTruth(expr, want)
+			local r = runScript(state, rootSession,
+				"if " .. expr .. "; then echo Y; else echo N; fi")
+			eq("root: `" .. expr .. "`", r.out[1], want and "Y" or "N")
+		end
+		ok(state, rootSession, "chmod 644 /home/admin/file.txt", {})
+		rootTruth("[ -x /home/admin/file.txt ]", false)
+		rootTruth("[ -r /home/admin/file.txt ]", true)
+		rootTruth("[ -w /home/admin/file.txt ]", true)
+		-- A directory is never gated on x for root.
+		rootTruth("[ -x /home/admin ]", true)
+		ok(state, rootSession, "chmod 700 /home/admin", {})
+		rootTruth("[ -x /home/admin ]", true)
+		ok(state, rootSession, "chmod 755 /home/admin", {})
+		ok(state, rootSession, "chmod 001 /home/admin/file.txt", {})
+		rootTruth("[ -x /home/admin/file.txt ]", true)
+		ok(state, rootSession, "chmod 755 /home/admin/file.txt", {})
+	end
 	truth("[ -z '' ]", true)
 	truth("[ -z x ]", false)
 	truth("[ -n x ]", true)
@@ -6914,8 +7051,13 @@ do
 	okAt(state, root, "rm /bin/echo", {}, env)
 	badAt(state, admin, "echo works", "echo: command not found", env)
 
-	-- Shut one and it is out of an ordinary account's reach, and still root's.
+	-- Shut one and it is out of everybody's reach, root's included: 600 leaves
+	-- no x bit at all, and that is the one thing a mode still says to root.
+	-- Give it back one x bit and it is root's again, and still nobody else's.
 	okAt(state, root, "chmod 600 /bin/printf", {}, env)
+	badAt(state, admin, "printf hi", "printf: permission denied", env)
+	badAt(state, root, "printf hi", "printf: permission denied", env)
+	okAt(state, root, "chmod 700 /bin/printf", {}, env)
 	badAt(state, admin, "printf hi", "printf: permission denied", env)
 	okAt(state, root, "printf hi", { "hi" }, env)
 

@@ -28,10 +28,12 @@ function SCeroSecObject:initNew()
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
 	self.facing = "S"
-	-- self.disk stays nil until a disk goes in the slot. It is DERIVED from the
-	-- OS state and is not saved: what is in the drive is state.floppy's to say,
-	-- and a second copy of that in gos_cerosec.bin is a second copy that can be
-	-- wrong.
+	-- self.disk is false and not nil, and stays a boolean for ever after: the
+	-- sync is a MERGE and a nil never crosses it (see syncDisk). It is DERIVED
+	-- from the OS state and is not saved: what is in the drive is state.floppy's
+	-- to say, and a second copy of that in gos_cerosec.bin is a second copy that
+	-- can be wrong.
+	self.disk = false
 	-- self.os stays nil until the machine is first used: an untouched computer
 	-- costs nothing in gos_cerosec.bin. self.console stays nil until the
 	-- machine is switched on: a screen only exists while there is power.
@@ -173,9 +175,18 @@ function SCeroSecObject:hasDisk()
 end
 
 -- Bring the flag the client sees in line with the state.
+--
+-- A real false, never a nil, and that is the whole of it: the update the line
+-- below sends is a MERGE and not a replacement. The server writes only the sync
+-- keys it actually HAS (TableNetworkUtils.saveSome walks the table and skips
+-- what is not there) and the client rawsets each key it receives into its own
+-- copy (CGlobalObjectSystem.receiveUpdateLuaObjectAt, both javap'd on 42.20.4).
+-- So a key set back to nil is a key that is simply not in the packet, and the
+-- client keeps the true it was told last time: the drive came out, the menu went
+-- on offering Eject and greying Insert with "the drive is full".
 function SCeroSecObject:syncDisk()
 	local had = self.disk
-	self.disk = self:hasDisk() or nil
+	self.disk = self:hasDisk()
 	if had ~= self.disk then self:updateOnClient() end
 end
 
@@ -385,7 +396,9 @@ function SCeroSecObject:osState()
 	local ok, reason = CeroSecOS.validate(self.os)
 	if not ok then
 		self.osBroken = true
-		CeroSec.log("os refused at " .. self.x .. "," .. self.y .. "," .. self.z .. ": " .. tostring(reason))
+		CeroSec.log(CeroSec.LOG_ERROR,
+			"os refused at " .. self.x .. "," .. self.y .. "," .. self.z
+				.. ": " .. tostring(reason))
 		return nil, reason
 	end
 	return self.os

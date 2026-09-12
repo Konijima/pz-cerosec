@@ -128,7 +128,9 @@ group and leaves the owner; `cp` gives the copy the caller's name for both.
 `CeroSecOS.can(state, session, node, what)` is the only place a permission is
 decided, and it reads exactly one digit:
 
-1. `root` bypasses everything, before anything else is asked.
+1. `root` bypasses everything, before anything else is asked — except `what ==
+   "x"` on a node that is not a directory, which needs at least one of the three
+   `x` bits set (4.4BSD `vaccess()`: root may not execute what nobody may).
 2. `node.owner == session.user` — the **first** digit, and the other two are never
    consulted for him even if he is also in the group.
 3. `CeroSecOS.inGroup(state, user, CeroSecOS.groupOf(node))` — the **middle** digit.
@@ -652,7 +654,14 @@ rather than taking the mod down.
 `CeroSecManualLoot.abundance()` is the hook for a sandbox option: every weight
 multiplied by `SandboxVars.CeroSec.LootAbundance` if a sandbox option file ever
 declares one, so a server that wants the set common or all but absent moves one
-number instead of thirty-six. Nothing declares it yet. It is read the way vanilla
+number instead of thirty-six. Nothing declares it yet — the mod now HAS a sandbox
+options file (`42/media/sandbox-options.txt`, which is where
+`zombie.sandbox.CustomSandboxOptions.init()` looks for a mod's; see
+[notes/modules-proofs.md](notes/modules-proofs.md)), and it deliberately declares
+one option and not three: `CeroSec.HardwareRequired`, the hardware-module gate of
+[DEVICES.md](DEVICES.md#the-hardware-modules). Declaring `LootAbundance` and
+`PhoneService` would change what a running server does, and that is a decision of
+its own rather than a side effect of this one. It is read the way vanilla
 reads its own grouped options — `SandboxVars.Map and (SandboxVars.Map.AllowWorldMap
 == true)`, `ISWorldMap.lua:1493` — because `SandboxVars` is a plain table and a group
 nobody declared is simply not in it; and a value that is not a positive number is

@@ -68,6 +68,21 @@ do
 	dchunk()
 end
 
+-- The hardware modules, for the one thing the manual quotes out of them: what
+-- each asks of an electrician. A level changed in the code has to break a PAGE.
+local modulesPath = "42/media/lua/shared/CeroSec/CeroSecModules.lua"
+do
+	-- It is the first file this suite loads that requires another, and the game
+	-- is what answers a require. Everything it asks for is already loaded above,
+	-- so the stub is the honest one: nothing to do.
+	local realRequire = require
+	require = function() end
+	local mchunk, merr = loadfile(modulesPath)
+	if not mchunk then error("cannot load " .. modulesPath .. ": " .. tostring(merr)) end
+	mchunk()
+	require = realRequire
+end
+
 local MANUAL_DIR = "42/media/lua/shared/CeroSec/"
 
 local chunk, err = loadfile(MANUAL_DIR .. "CeroSecManual.lua")
@@ -328,6 +343,10 @@ local DEVICE_MESSAGES = {
 	"no padlock",
 	"blocked",
 	"invalid value",
+	-- What a device with nothing behind it to write with answers: write(2)'s own
+	-- EOPNOTSUPP text, in this machine's lower case (CeroSecOSDev's devWrite,
+	-- and SCeroSecDevices' act for the belt behind it).
+	"operation not supported",
 	CeroSecOS.DEV_PATH .. ": read-only",
 }
 for i = 1, #DEVICE_MESSAGES do
@@ -963,6 +982,22 @@ do
 		"/etc/motd holds " .. CeroSecOS.MOTD_MAX_LINES .. " lines")
 	states("a crontab's ceiling",
 		"A crontab holds " .. CeroSecOS.CRON_MAX_LINES .. " lines")
+	-- The hardware modules' levels, read off the list the install and the recipes
+	-- both run on rather than typed here: a module that moved a level has to
+	-- break this page.
+	do
+		local byId = {}
+		for i = 1, #CeroSecModules.LIST do
+			byId[CeroSecModules.LIST[i].id] = CeroSecModules.LIST[i]
+		end
+		check("a contact and a relay are the same level",
+			byId.contact.skill == byId.relay.skill)
+		states("what each module asks of an electrician",
+			"a contact or a relay at Electricity " .. byId.contact.skill
+			.. ", a strike at " .. byId.strike.skill
+			.. ", an operator at " .. byId.operator.skill)
+	end
+
 	states("the devices", CeroSecOS.DEV_MAX .. " devices at most, at mode "
 		.. CeroSecOS.DEV_MODE .. ", and dev find shows one for "
 		.. CeroSecOS.DEV_FIND_SECONDS .. " seconds")
@@ -997,6 +1032,7 @@ do
 		"win0: barricaded", "lock1: no padlock", "door0: locked",
 		"door0: barricaded", "door0: blocked", "light0: invalid value",
 		"light0: permission denied", "win0: cannot toggle",
+		"door0: operation not supported",
 		"dev: <word>: unknown kind", "dev: <id>: no such device",
 		CeroSecOS.DEV_PATH .. ": read-only",
 	}
