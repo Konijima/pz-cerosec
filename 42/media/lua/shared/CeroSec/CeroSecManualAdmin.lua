@@ -1132,6 +1132,32 @@ machine that is off is not listed at all -- there is no daemon here
 keeping the last thing it said -- and that is where these two differ from
 the ones you may know.]],
 
+[[Naming your neighbours, and nothing does it for you.
+
+ruptime lists the machines by the name each one calls itself; ping and
+rlogin want a name /etc/hosts carries. So a machine you can SEE is a
+machine you cannot reach yet:
+
+  admin@ksp-04-11:~$ ping office
+  ping: unknown host office
+
+arp is the other half: the cards on the wire, and a ? for an address no
+line of /etc/hosts names.
+
+  admin@ksp-04-11:~$ arp -a
+  gate (10.4.17.9) at 8:0:20:1e:2a:4b
+  ? (10.4.17.4) at 8:0:20:3c:7f:11
+  root@ksp-04-11:~# echo "10.4.17.4 office" >> /etc/hosts
+
+Now ping office answers. An address works anywhere a name does, so
+rlogin 10.4.17.4 needs no line at all. The card is derived from the
+address: no arp -d and no arp -s, because nothing sets one.
+
+Trust is a line about a MACHINE: a name in /etc/hosts.equiv or ~/.rhosts
+is the one YOUR /etc/hosts gives the caller's address, never the one he
+announced. ruptime's names are what a machine SAYS it is called, and root
+over there may say anything.]],
+
 [[ping is how you tell a machine that is off from a machine you cannot
 reach at all. Three packets, a second apart, and then the summary:
 
@@ -1705,14 +1731,15 @@ Work with nobody standing there.
 The wire.
 
   ifconfig [-a|<interface>]
+  arp -a | arp <host|address>
   ping <host|address>
   ruptime
   rwho
   who [am i]
   last [name]
-  rlogin <host> [-l user]
-  rsh <host> [-l user] <command>...
-  rcp <src> <dst>, one of them <host>:<path>
+  rlogin <host|address> [-l user]
+  rsh <host|address> [-l user] <command>...
+  rcp <src> <dst>, one is <host|address>:<path>
 
 The telephone.
 
@@ -1885,6 +1912,23 @@ are the ones a real one prints for the same trouble.
 
 who, last, ruptime and rwho refuse nothing at all: an empty screen is
 their answer when there is nothing to say.]],
+
+[[arp, chapter 8. It signs the refusal that belongs to the RESOLVER and
+does not sign the one that belongs to the cache, which is a real arp's own
+shape and tells you at a glance which of the two you have.
+
+  arp: office: unknown host
+      no line of /etc/hosts carries that name, and it is
+      no address either
+  office (10.4.17.4) -- no entry
+      the name resolved and nothing of that address is on
+      the wire: a machine switched off, or one in another
+      building. No command in front of it -- what arp
+      prints is the word you typed, the address behind it,
+      and what is missing
+
+arp -a refuses nothing: a wire with nothing else on it is an empty screen,
+exactly as ruptime's is.]],
 
 [[The telephone, chapter 8. Four of these five are the MODEM talking and
 not a command, which is why they are in capitals: a modem reported what

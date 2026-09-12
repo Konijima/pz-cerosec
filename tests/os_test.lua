@@ -6993,7 +6993,7 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ adduser call cat chgrp chmod chown clear cp crontab cu date deluser dev df"
+	local WANT = "[ adduser arp call cat chgrp chmod chown clear cp crontab cu date deluser dev df"
 		.. " echo edit false gpasswd grep groupadd groupdel groups halt hash head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mount mv newfs passwd ping"
 		.. " printf ps pwd rcp readlink reboot restart rlogin rm rsh ruptime rwho"
@@ -8297,6 +8297,12 @@ do
 	eq("a bare host is a host", CeroSecOS.parseEquivLine("gate").host, "gate")
 	check("with no account on it", CeroSecOS.parseEquivLine("gate").user == nil)
 	eq("a host and an account", CeroSecOS.parseEquivLine("gate admin").user, "admin")
+	-- And a line may name the machine by its address instead, which is the other
+	-- spelling of the same machine and needs no /etc/hosts at all.
+	eq("an address is a host too", CeroSecOS.parseEquivLine("10.4.17.3").host, "10.4.17.3")
+	eq("with an account behind it",
+		CeroSecOS.parseEquivLine("10.4.17.3 admin").user, "admin")
+	eq("a word that is neither is nothing", CeroSecOS.parseEquivLine("10.4.17"), nil)
 	-- A plus trusts the whole world, which was a hole in 1993 and is one now: it
 	-- does not parse, so it trusts nobody rather than everybody.
 	eq("a bare plus is not a line", CeroSecOS.parseEquivLine("+"), nil)
@@ -8308,22 +8314,31 @@ do
 	CeroSecOS.createNode(state, CeroSecOS.rootSession(), "/home/bob",
 		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), FIXED)
 
+	-- WHO IS ASKING is an ADDRESS, and a name in a trust file is matched against it
+	-- through THIS machine's /etc/hosts and through nothing else. So the caller
+	-- below is 10.4.17.3 throughout, and it is called "gate" here because a line of
+	-- this machine's own file says so.
+	local GATE = "10.4.17.3"
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		GATE .. " gate", FIXED)
+
 	-- Nothing trusted on a shipped machine.
 	check("a shipped machine trusts nobody",
-		not CeroSecOS.trusts(state, "admin", "gate", "admin"))
+		not CeroSecOS.trusts(state, "admin", GATE, "admin"))
 
 	-- The machine-wide half.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, "gate", FIXED)
 	check("a bare host trusts the same account on it",
-		CeroSecOS.equivOk(state, "gate", "admin", "admin"))
+		CeroSecOS.equivOk(state, GATE, "admin", "admin"))
 	check("and nobody in as anybody else",
-		not CeroSecOS.equivOk(state, "gate", "bob", "admin"))
-	check("nor a host nobody named", not CeroSecOS.equivOk(state, "pump", "admin", "admin"))
+		not CeroSecOS.equivOk(state, GATE, "bob", "admin"))
+	check("nor a machine the file does not name",
+		not CeroSecOS.equivOk(state, "10.4.17.9", "admin", "admin"))
 	-- ruserok's own rule, and the most important line in it.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
 		"gate\ngate root", FIXED)
 	check("hosts.equiv never lets root in",
-		not CeroSecOS.equivOk(state, "gate", "root", "root"))
+		not CeroSecOS.equivOk(state, GATE, "root", "root"))
 
 	-- The account's own half, and the two facts about the FILE that decide
 	-- whether a byte of it is read at all.
@@ -8333,35 +8348,35 @@ do
 	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
 	node.owner = "bob"
 	node.mode = 600
-	check("bob's own .rhosts at 600 is read", CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	check("bob's own .rhosts at 600 is read", CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	-- The second field names the account COMING IN, which is ruserok's reading of
 	-- it: bob's own file saying "gate admin" is bob letting gate's admin be him.
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), path, "gate admin", FIXED)
 	check("a line naming another account lets THAT account in as bob",
-		CeroSecOS.rhostsOk(state, "bob", "gate", "admin"))
+		CeroSecOS.rhostsOk(state, "bob", GATE, "admin"))
 	check("and not whoever happens to be asking",
-		not CeroSecOS.rhostsOk(state, "bob", "gate", "kate"))
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "kate"))
 	check("nor bob himself, whom the line does not name",
-		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	CeroSecOS.setData(state, CeroSecOS.rootSession(), path, "gate bob", FIXED)
 	node.owner = "admin"
 	check("one owned by somebody else is ignored",
-		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.owner = "root"
 	check("root's is read, because root owns everything anyway",
-		CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.owner = "bob"
 	node.mode = 620
 	check("one the group may write is ignored",
-		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.mode = 602
 	check("and one the world may write",
-		not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.mode = 644
 	check("644 is readable by all and writable by none but bob",
-		CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+		CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.mode = 666
-	check("666 is not", not CeroSecOS.rhostsOk(state, "bob", "gate", "bob"))
+	check("666 is not", not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
 	node.mode = 600
 	-- root IS trusted by his own .rhosts, which is the other half of the rule.
 	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/root/.rhosts", "gate root",
@@ -8370,7 +8385,7 @@ do
 	rootFile.owner = "root"
 	rootFile.mode = 600
 	check("root's own .rhosts does let root in",
-		CeroSecOS.trusts(state, "root", "gate", "root"))
+		CeroSecOS.trusts(state, "root", GATE, "root"))
 
 	-- The write bit of one digit, which is the whole of the mode test.
 	check("6 is writable", CeroSecOS.digitWritable(6))
@@ -8554,6 +8569,328 @@ do
 	badAt(state, admin, "rcp a b", "rcp: usage: " .. CeroSecOS.commandUsage("rcp"), ENV)
 	badAt(state, admin, "rcp gate:a gate:b", "rcp: usage: " ..
 		CeroSecOS.commandUsage("rcp"), ENV)
+end
+
+-- arp: the cards on the wire, and the name /etc/hosts does or does not give one
+--
+-- The command that closes the gap between ruptime, which broadcasts NAMES, and
+-- /etc/hosts, which wants an ADDRESS. What is asserted is the shape of every line
+-- 4.4BSD's own arp prints, and that not one of them is built out of the name a
+-- machine announced about itself.
+do
+	-- The card is derived and stored nowhere: the same address answers the same
+	-- three bytes for ever, and no two machines of one building share one.
+	local mac = CeroSecOS.etherOf("10.4.17.3")
+	eq("the card carries Sun's OUI", string.sub(mac, 1, #CeroSecOS.ETHER_OUI + 1),
+		CeroSecOS.ETHER_OUI .. ":")
+	eq("asked twice it is the same card", CeroSecOS.etherOf("10.4.17.3"), mac)
+	check("six bytes of it", string.find(mac, "^8:0:20:%x+:%x+:%x+$") ~= nil)
+	check("another machine is another card", CeroSecOS.etherOf("10.4.17.4") ~= mac)
+	check("and another building too", CeroSecOS.etherOf("10.9.9.3") ~= mac)
+	eq("a word that is no address has no card", CeroSecOS.etherOf("gate"), nil)
+	eq("nor has a quad with a byte over 255", CeroSecOS.etherOf("10.4.17.256"), nil)
+
+	-- printf's %x, which is what makes a real one read 8:0:20:1e:2a:4b and never
+	-- 08:00:20:1e:2a:4b.
+	eq("a byte under sixteen is one digit", CeroSecOS.etherByte(8), "8")
+	eq("and over it is two", CeroSecOS.etherByte(30), "1e")
+	eq("zero is zero", CeroSecOS.etherByte(0), "0")
+	eq("255 is ff", CeroSecOS.etherByte(255), "ff")
+	eq("and nothing outside a byte is one", CeroSecOS.etherByte(256), nil)
+
+	-- The three derived bytes have to be three bytes and not one repeated: a hash
+	-- that answered the same number three times would pass the pattern above.
+	local seen, cards = {}, 0
+	for n = 1, 40 do
+		local one = CeroSecOS.etherOf("10.4.17." .. n)
+		local x, y, z = string.match(one, "^8:0:20:(%x+):(%x+):(%x+)$")
+		check("card " .. n .. " parses", x ~= nil)
+		check("and every byte of it is a byte", tonumber(x, 16) <= 255
+			and tonumber(y, 16) <= 255 and tonumber(z, 16) <= 255)
+		if seen[one] == nil then seen[one] = true; cards = cards + 1 end
+	end
+	eq("forty machines are forty cards", cards, 40)
+
+	-- The exact cards, pinned. Derived means derived for ever: a machine off a save
+	-- made today has to answer the same three bytes next year, so the arithmetic is
+	-- held to its answer and not merely to its shape.
+	eq("the card of 10.4.17.3", CeroSecOS.etherOf("10.4.17.3"), "8:0:20:2:18:73")
+	eq("the card of 10.4.17.4", CeroSecOS.etherOf("10.4.17.4"), "8:0:20:64:6d:9")
+	eq("and of a machine in another building",
+		CeroSecOS.etherOf("10.9.9.3"), "8:0:20:5a:18:5b")
+
+	-- All THREE bytes have to come from the address. A byte derived from nothing is
+	-- a byte that never moves, and the pattern above would not notice one: this
+	-- sweeps 320 machines over 16 buildings and counts what each byte does.
+	local one, two, three = {}, {}, {}
+	local c1, c2, c3 = 0, 0, 0
+	for b = 0, 15 do
+		for n = 1, 20 do
+			local x, y, z = CeroSecOS.etherKey(4, b, n)
+			if one[x] == nil then one[x] = true; c1 = c1 + 1 end
+			if two[y] == nil then two[y] = true; c2 = c2 + 1 end
+			if three[z] == nil then three[z] = true; c3 = c3 + 1 end
+		end
+	end
+	check("the first byte moves with the address (" .. c1 .. ")", c1 >= 64)
+	check("so does the second (" .. c2 .. ")", c2 >= 8)
+	check("and so does the third (" .. c3 .. ")", c3 >= 64)
+	eq("three numbers that are not three numbers have no card",
+		CeroSecOS.etherKey(4, 17, 300), nil)
+end
+
+do
+	local state = fresh()
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	local admin = open(state, "admin")
+	-- This machine is .2 and knows one name besides its own.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"127.0.0.1 localhost\n10.4.17.2 ksp-front-01\n10.4.17.3 gate", FIXED)
+
+	-- A wire with three machines on it, and the peers arrive under the names they
+	-- BROADCAST -- the third one calling itself "gate" as well, which is exactly
+	-- what a machine whose root typed `hostname gate` would do. arp must not print
+	-- a word of it.
+	local WIRE = { ["10.4.17.2"] = true, ["10.4.17.3"] = true, ["10.4.17.4"] = true }
+	local env = { now = FIXED, net = {
+		reach = function(addr)
+			if WIRE[addr] then return true end
+			return false, "unreach"
+		end,
+		peers = function()
+			return {
+				{ host = "gate", addr = "10.4.17.4" },
+				{ host = "ksp-front-01", addr = "10.4.17.2" },
+				{ host = "zzz", addr = "10.4.17.3" },
+			}
+		end,
+	} }
+
+	local out = okAt(state, admin, "arp -a", nil, env)
+	eq("a machine is not in its own cache", #out, 2)
+	eq("an address a line of /etc/hosts names is printed by that name", out[1],
+		"gate (10.4.17.3) at " .. CeroSecOS.etherOf("10.4.17.3"))
+	eq("and one no line names is a question mark", out[2],
+		"? (10.4.17.4) at " .. CeroSecOS.etherOf("10.4.17.4"))
+
+	-- One entry, asked for by name and by address, and the name printed is the
+	-- FILE's and not the word typed.
+	okAt(state, admin, "arp gate",
+		{ "gate (10.4.17.3) at " .. CeroSecOS.etherOf("10.4.17.3") }, env)
+	okAt(state, admin, "arp 10.4.17.3",
+		{ "gate (10.4.17.3) at " .. CeroSecOS.etherOf("10.4.17.3") }, env)
+	okAt(state, admin, "arp 10.4.17.4",
+		{ "? (10.4.17.4) at " .. CeroSecOS.etherOf("10.4.17.4") }, env)
+
+	-- arp(8)'s two refusals. The first is the resolver's and is signed; the second
+	-- is arp's own line about a machine it resolved and has no entry for, and it
+	-- carries neither the command's name nor a colon.
+	badAt(state, admin, "arp pump", "arp: pump: unknown host", env)
+	badAt(state, admin, "arp 10.4.17.9", "10.4.17.9 (10.4.17.9) -- no entry", env)
+	badAt(state, admin, "arp ksp-front-01",
+		"ksp-front-01 (10.4.17.2) -- no entry", env)
+	badAt(state, admin, "arp localhost", "localhost (127.0.0.1) -- no entry", env)
+	-- A machine that is switched off is a machine the wire has not heard from,
+	-- which is the same answer ruptime gives by leaving it out.
+	WIRE["10.4.17.3"] = nil
+	badAt(state, admin, "arp gate", "gate (10.4.17.3) -- no entry", env)
+	WIRE["10.4.17.3"] = true
+
+	badAt(state, admin, "arp", "arp: usage: " .. CeroSecOS.commandUsage("arp"), env)
+	badAt(state, admin, "arp -a gate", "arp: usage: "
+		.. CeroSecOS.commandUsage("arp"), env)
+
+	-- And with no link layer at all -- a machine with the wire out of it -- the
+	-- cache is empty and nothing is in it.
+	okAt(state, admin, "arp -a", {}, ENV)
+	badAt(state, admin, "arp gate", "gate (10.4.17.3) -- no entry", ENV)
+end
+
+-- An address is accepted everywhere a host is, and resolved with no lookup
+--
+-- The file is EMPTY here, so nothing but the dotted quad itself can be what
+-- answered: a resolver that only knew names would refuse every line below.
+do
+	local state = fresh()
+	CeroSecOS.setNetRecord(state, 4, 17, 2)
+	local admin = open(state, "admin")
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH, "", FIXED)
+	local env = { now = FIXED, net = {
+		reach = function(addr)
+			if addr == "10.4.17.3" then return true end
+			return false, "unreach"
+		end,
+		peers = function() return { { host = "zzz", addr = "10.4.17.3" } } end,
+	} }
+
+	local ping = okAt(state, admin, "ping 10.4.17.3", nil, env)
+	eq("ping takes an address and names it", ping[1],
+		"PING 10.4.17.3 (10.4.17.3): 56 data bytes")
+	eq("and the packet came back from it", ping[2],
+		"64 bytes from 10.4.17.3: icmp_seq=0 ttl=255 time=0.4 ms")
+
+	local r = runAt(state, admin, "rlogin 10.4.17.3", env)
+	eq("rlogin takes an address", r.ok, true)
+	eq("and hands the machine over by it", r.control, "rlogin")
+	eq("with the address as the host", r.data.host, "10.4.17.3")
+	eq("and as the address", r.data.addr, "10.4.17.3")
+
+	-- rsh's order goes to the MACHINE and not to the console, so the shell's job
+	-- is left waiting on another computer rather than carrying a control back: the
+	-- order itself is read off the command.
+	local shOk, _, shControl, shData = CeroSecOS.runArgs(state, admin,
+		{ "rsh", "10.4.17.3", "date" }, nil, env)
+	eq("rsh takes one too", shOk, true)
+	eq("and hands it out as an order", shControl, "rsh")
+	eq("with the command behind it", shData.cmd, "date")
+	eq("and the address as the host", shData.host, "10.4.17.3")
+	local sh = runAt(state, admin, "rsh 10.4.17.3 date", env)
+	eq("and through the shell the line is taken and not refused", sh.ok, true)
+	eq("with nothing printed here", #sh.lines, 0)
+
+	-- rcp's remote half is host:path, and the host half of it is an address as
+	-- readily as a name (CeroSecOS.splitRemote).
+	local host, path = CeroSecOS.splitRemote("10.4.17.3:/tmp/log")
+	eq("rcp splits an address off a path", host, "10.4.17.3")
+	eq("and keeps the path whole", path, "/tmp/log")
+	env.net.copy = function(spec) return true, nil, 10 end
+	local cp = runAt(state, admin, "rcp /etc/motd 10.4.17.3:/tmp/log", env)
+	eq("and the copy is taken", cp.ok, true)
+
+	-- arp as well, which is the point of it: a machine whose name nobody has
+	-- written down is a machine you ask about by address.
+	okAt(state, admin, "arp 10.4.17.3",
+		{ "? (10.4.17.3) at " .. CeroSecOS.etherOf("10.4.17.3") }, env)
+
+	-- And a quad that is not one is still a name, and is refused as a name.
+	badAt(state, admin, "ping 10.4.17.256", "ping: unknown host 10.4.17.256", env)
+	badAt(state, admin, "rlogin 10.4.017.3", "rlogin: 10.4.017.3: unknown host", env)
+
+	-- A machine off the wire is named by the address in the refusal, which is what
+	-- a real one prints when it cannot name it.
+	badAt(state, admin, "rlogin 10.4.17.9", "rlogin: 10.4.17.9: No route to host", env)
+end
+
+-- Where a session came from: the name /etc/hosts gives the address, else the
+-- address
+--
+-- gethostbyaddr(3) and rlogind's own reverse lookup. It is the RECEIVING
+-- machine's file that decides, and what it never uses is the name the caller
+-- announced -- see CeroSecOS.originOf.
+do
+	local state = fresh()
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"127.0.0.1 localhost\n10.4.17.3 gate pump", FIXED)
+	eq("an address the file names is that name", CeroSecOS.originOf(state, "10.4.17.3"),
+		"gate")
+	eq("and the aliases are on the same line",
+		table.concat(CeroSecOS.hostsNames(state, "10.4.17.3"), " "), "gate pump")
+	eq("an address no line carries is itself", CeroSecOS.originOf(state, "10.4.17.4"),
+		"10.4.17.4")
+	eq("a name is no address to look up", CeroSecOS.originOf(state, "gate"), nil)
+	eq("and an address nothing names has no names",
+		#CeroSecOS.hostsNames(state, "10.4.17.4"), 0)
+
+	-- Both of them go into wtmp, because both are origins: the host column used to
+	-- take a hostname, a telephone number or a callsign, and a bare quad is the
+	-- fourth shape it has to hold -- an origin it refused would be a login `last`
+	-- could not read.
+	check("a quad is an origin", CeroSecOS.isWtmpOrigin("10.4.17.4"))
+	check("and so is a name", CeroSecOS.isWtmpOrigin("gate"))
+	check("a record from an address parses",
+		CeroSecOS.parseWtmpLine("in admin ttyp0 10.4.17.4 741186720") ~= nil)
+	eq("with the address in the host column",
+		CeroSecOS.parseWtmpLine("in admin ttyp0 10.4.17.4 741186720").host, "10.4.17.4")
+	check("and it is written", CeroSecOS.wtmpAppend(state, "in", "admin", "ttyp0",
+		"10.4.17.4", FIXED))
+	local admin = open(state, "admin")
+	local last = okAt(state, admin, "last", nil, { now = FIXED })
+	eq("last prints the address where a name would be", last[1],
+		"admin    ttyp0    10.4.17.4  Jul  8 14:32  still logged in")
+	eq("and who puts it in its brackets",
+		CeroSecOS.whoLine("admin", "ttyp0", FIXED, "10.4.17.4"),
+		"admin    ttyp0    Jul  8 14:32  (10.4.17.4)")
+end
+
+-- Trust is a question about an ADDRESS, and a name only through /etc/hosts
+--
+-- The security rule of the two trust files, and the one this wave came to fix: a
+-- machine's own /etc/hostname is a 644 file its own root may write to anything, so
+-- a far machine that matched a trust line against the name a caller ANNOUNCED
+-- would let anybody with root on any computer in the building type
+-- `hostname gate` and walk in through a line somebody wrote about gate.
+do
+	local state = fresh()
+	local GATE = "10.4.17.3"
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
+		"gate", FIXED)
+
+	-- No line of THIS machine's /etc/hosts gives that address the name, so the
+	-- line in hosts.equiv is about a machine this one cannot identify.
+	check("a name nothing resolves trusts nobody",
+		not CeroSecOS.trusts(state, "admin", GATE, "admin"))
+	-- And the name the caller calls itself buys nothing at all: it is not even a
+	-- thing the question can be asked with any more.
+	check("nor does the name a machine announces",
+		not CeroSecOS.trusts(state, "admin", "gate", "admin"))
+	check("nor a telephone number", not CeroSecOS.trusts(state, "admin", "555-0417", "admin"))
+	check("nor a callsign", not CeroSecOS.trusts(state, "admin", "KD4AXR", "admin"))
+	check("nor nothing at all", not CeroSecOS.trusts(state, "admin", nil, "admin"))
+
+	-- Write the line that names it, and the same file now trusts it.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		GATE .. " gate", FIXED)
+	check("a name /etc/hosts gives the caller's address is the caller",
+		CeroSecOS.trusts(state, "admin", GATE, "admin"))
+	-- An alias on that line is the same machine, which is what a resolver says.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		GATE .. " pump gate", FIXED)
+	check("and so is an alias on it", CeroSecOS.trusts(state, "admin", GATE, "admin"))
+	-- The same name on ANOTHER address is another machine.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		"10.4.17.9 gate", FIXED)
+	check("the line is about one address and not about the name",
+		not CeroSecOS.trusts(state, "admin", GATE, "admin"))
+	check("and it is about that one", CeroSecOS.trusts(state, "admin", "10.4.17.9", "admin"))
+
+	-- A trust line may carry the address itself, and then no /etc/hosts is needed
+	-- at all: it is the machine, written the way the machine cannot argue with.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH, "", FIXED)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
+		GATE, FIXED)
+	check("an address in hosts.equiv trusts that machine",
+		CeroSecOS.trusts(state, "admin", GATE, "admin"))
+	check("and nobody else", not CeroSecOS.trusts(state, "admin", "10.4.17.4", "admin"))
+	-- The two-word form, with an address in front of it.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
+		GATE .. " admin", FIXED)
+	addUser(state, "bob")
+	check("an address and an account names the account coming in",
+		CeroSecOS.equivOk(state, GATE, "admin", "bob"))
+	check("and not whoever is asking", not CeroSecOS.equivOk(state, GATE, "kate", "bob"))
+
+	-- ~/.rhosts is the same rule in the account's own file.
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH, "", FIXED)
+	CeroSecOS.createNode(state, CeroSecOS.rootSession(), "/home/bob",
+		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), FIXED)
+	local path = "/home/bob/.rhosts"
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), path, "gate bob", false, FIXED)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+	node.owner = "bob"
+	node.mode = 600
+	check("a name in .rhosts that nothing resolves trusts nobody",
+		not CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), path, GATE .. " bob", FIXED)
+	check("the address does", CeroSecOS.rhostsOk(state, "bob", GATE, "bob"))
+	-- The trust words, which is the one place the rule lives.
+	eq("the words a line may use are the address and its names",
+		table.concat(CeroSecOS.trustWords(state, GATE) or {}, " "), GATE)
+	CeroSecOS.setData(state, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		GATE .. " gate pump", FIXED)
+	eq("and every name on the line", table.concat(
+		CeroSecOS.trustWords(state, GATE) or {}, " "), GATE .. " gate pump")
+	eq("a caller with no address has no words",
+		CeroSecOS.trustWords(state, "gate"), nil)
 end
 
 -- The hop ceiling is the session's own, and it is paid before a name is looked up.

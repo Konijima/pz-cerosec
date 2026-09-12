@@ -1368,8 +1368,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2221  63315    4%
-  nodes         512     92    420   18%
+  hda         65536   2311  63225    4%
+  nodes         512     93    419   19%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 

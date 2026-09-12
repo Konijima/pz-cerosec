@@ -4291,6 +4291,20 @@ local function newNet()
 		if done == nil then error("cannot write crontab: " .. tostring(reason), 2) end
 	end
 
+	-- The other two machines know THIS one by name, and that is a line of THEIR
+	-- /etc/hosts. It has to be: a name in a trust file is matched against the
+	-- caller's address through the file of the machine being ASKED
+	-- (CeroSecOS.trustWords), never against the name the caller announces -- so a
+	-- bench that writes this machine's name into a trust file over there needs the
+	-- far machine to be able to resolve it, which is the first job the manual gives
+	-- an administrator. Written here so that those benches are about TRUST.
+	--
+	-- This machine's own /etc/hosts is left exactly as the machine wrote it: one
+	-- line, its own. The benches about the resolver -- arp, ping, and what `who`
+	-- prints about a caller nobody has written down -- depend on that.
+	net.name(net.gate, net.here, net.host(net.here))
+	net.name(net.far, net.here, net.host(net.here))
+
 	return net
 end
 
@@ -4613,6 +4627,135 @@ do
 	-- And it never trusts root, which is ruserok's own rule.
 	eq("hosts.equiv does not let root in",
 		CeroSecOS.equivOk(net.gate:osState(), net.host(net.here), "root", "root"), false)
+end
+
+--
+-- 40b. Naming a neighbour, end to end (rung 6d)
+--
+-- The gap a survivor actually falls into: ruptime lists a machine by the name it
+-- broadcasts, `ping <that name>` says unknown host, and until there was an arp
+-- there was nothing on the disk that told him the ADDRESS to write down. The whole
+-- repair, typed on the glass and nowhere else.
+--
+do
+	local net = newNet()
+	net.login("root")
+	local gate = net.host(net.gate)
+	local addr = net.addr(net.gate)
+
+	net.enter("ruptime")
+	check("ruptime lists the other machine by the name it broadcasts", net.glass(gate))
+	net.enter("ping " .. gate)
+	check("and nothing on this machine resolves that name",
+		net.glass("ping: unknown host " .. gate))
+
+	net.enter("arp -a")
+	check("arp has the address, with no name for it",
+		net.glass("? (" .. addr .. ") at " .. CeroSecOS.etherOf(addr)))
+	check("and this machine is not in its own cache",
+		not net.glass("(" .. net.addr(net.here) .. ")"))
+
+	-- The line, written by hand, which is what the manual tells him to do.
+	net.enter('echo "' .. addr .. ' gate" >> /etc/hosts')
+	net.enter("arp -a")
+	check("now arp names it", net.glass("gate (" .. addr .. ") at "))
+	net.enter("ping gate")
+	check("and ping reaches it", net.heard("PING gate (" .. addr .. "): 56 data bytes"))
+	net.tick(30)
+	check("all three packets came back",
+		net.heard("3 packets transmitted, 3 packets received, 0% packet loss"))
+
+	-- And the address needs no line at all: rlogin takes one straight.
+	net.enter("rlogin " .. addr)
+	net.tick(2)
+	check("rlogin by address opens a session", net.glass("login:"))
+	net.escape()
+	net.tick(3)
+end
+
+--
+-- 40c. A machine cannot name itself into trust
+--
+-- /etc/hostname is a file the machine's OWN root may write to anything, and
+-- ruptime broadcasts what it says. If a trust line were matched against that name,
+-- anybody with root on any computer in the building could type `hostname gate` and
+-- walk in through a line somebody wrote about gate. The line is matched against the
+-- caller's ADDRESS through the far machine's own /etc/hosts instead, and this is
+-- the bench that says so.
+--
+do
+	local net = newNet()
+	-- gate trusts whatever ITS /etc/hosts calls "pump", and names nothing pump.
+	net.put(net.gate, "/etc/hosts.equiv", "pump", 644, "root")
+	net.name(net.here, net.gate, "gate")
+	local was = net.host(net.here)
+
+	-- This machine renames itself pump. Root's own file, root's own right.
+	net.put(net.here, "/etc/hostname", "pump", 644, "root")
+	eq("the machine now calls itself pump", net.host(net.here), "pump")
+
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("the far machine asks for a password anyway", net.glass("login:"))
+	eq("and nobody is logged in on the line",
+		net.gate.ptys.ttyp0.console.user, nil)
+	-- What the far machine calls the session is what ITS file says, which is the
+	-- name this machine used to announce -- and never the one it announces now.
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	net.enter("who")
+	net.tick(2)
+	check("who names the caller off the far machine's own /etc/hosts",
+		net.glass("(" .. was .. ")"))
+	check("and not the name the caller announces", not net.glass("(pump)"))
+	net.enter("exit")
+	net.tick(3)
+
+	-- Write the line gate was missing and the same trust file lets him in.
+	net.name(net.gate, net.here, "pump")
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("a name the far machine's /etc/hosts resolves is the caller",
+		net.glass("admin@" .. net.host(net.gate)))
+	net.enter("exit")
+	net.tick(3)
+end
+
+--
+-- 40d. A caller nobody has written down is named by its address
+--
+-- rlogind's own reverse lookup, and the honest answer when it finds nothing: the
+-- dotted quad, in who's brackets, in last's host column and in wtmp. A trust line
+-- may carry the same quad, which is the one spelling of a machine that nothing on
+-- the far end has to be told.
+--
+do
+	local net = newNet()
+	-- gate forgets this machine's name, and trusts its ADDRESS instead.
+	net.put(net.gate, "/etc/hosts", "127.0.0.1 localhost", 644, "root")
+	net.put(net.gate, "/etc/hosts.equiv", net.addr(net.here), 644, "root")
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+
+	net.enter("rlogin gate")
+	net.tick(3)
+	check("an address in hosts.equiv trusts the machine at it",
+		net.glass("admin@" .. net.host(net.gate)))
+	net.enter("who")
+	net.tick(2)
+	check("who names the session by the address", net.glass("(" .. net.addr(net.here) .. ")"))
+	net.enter("last")
+	net.tick(2)
+	check("and last has it in the host column", net.glass(net.addr(net.here)))
+	net.enter("exit")
+	net.tick(3)
+	local wtmp = net.text(net.gate, "/var/log/wtmp")
+	check("wtmp recorded the address as the origin",
+		string.find(wtmp, "in admin ttyp0 " .. net.addr(net.here), 1, true) ~= nil)
+	check("and the logout behind it",
+		string.find(wtmp, "out admin ttyp0 " .. net.addr(net.here), 1, true) ~= nil)
 end
 
 --
@@ -5123,7 +5266,10 @@ do
 	net.name(net.gate, third, "pump")
 	net.name(third, net.gate, "gate")
 	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
-	net.put(third, "/etc/hosts.equiv", net.host(net.gate), 644, "root")
+	-- third trusts the machine ITS OWN /etc/hosts calls "gate", which is the line
+	-- above: a trust line is a name this machine can resolve to the caller's
+	-- address, and third has never heard gate announce anything.
+	net.put(third, "/etc/hosts.equiv", "gate", 644, "root")
 	net.put(net.gate, "/etc/hosts.equiv",
 		net.host(net.here) .. "\n" .. net.host(third), 644, "root")
 	net.login("admin")

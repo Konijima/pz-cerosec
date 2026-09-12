@@ -740,7 +740,10 @@ local function farEnd(system, luaObject, spec)
 	if object == nil then return nil, CeroSecOS.NET_REASON.unreach end
 	local state = object:osState()
 	if state == nil then return nil, CeroSecOS.NET_REASON.unreach end
-	if not CeroSecOS.trusts(state, spec.user, spec.fromHost, spec.user) then
+	-- The ADDRESS the copy is coming from, never the name this machine announces:
+	-- rshd is handed a socket and the trust files are lists of machines, not of
+	-- things a caller says about itself (see the trust note in connect()).
+	if not CeroSecOS.trusts(state, spec.user, spec.fromAddr, spec.user) then
 		return nil, CeroSecOS.NET_REASON.denied
 	end
 	-- The account has to exist over there, and rsh's word for one that does not
@@ -1239,9 +1242,18 @@ local function connect(system, luaObject, console, cmd, data, found, radio)
 	local state = luaObject:osState()
 	local fromHost = CeroSecOS.DEFAULT_HOSTNAME
 	local fromAddr = nil
-	if state ~= nil then
-		fromHost = CeroSecOS.hostname(state)
-		fromAddr = CeroSecOS.address(state)
+	if state ~= nil then fromAddr = CeroSecOS.address(state) end
+	-- WHAT THE FAR MACHINE CALLS THIS ONE. Its own /etc/hosts decides, off the
+	-- address the session arrived from -- and when no line of it carries that
+	-- address, the origin is the dotted quad itself (CeroSecOS.originOf). That is
+	-- rlogind's own reverse lookup, and it is deliberately NOT this machine's
+	-- /etc/hostname: a hostname is a file its own root may write to anything, so a
+	-- far machine that recorded the name a caller announced would be recording
+	-- whatever it was told -- and, before this, would have TRUSTED it. What a
+	-- machine announces about itself is the business of ruptime and rwho, which are
+	-- reports and not credentials.
+	if fromAddr ~= nil then
+		fromHost = CeroSecOS.originOf(far, fromAddr) or fromAddr
 	end
 	-- WHERE A CALL SAYS IT CAME FROM. A session that arrived over the wire is
 	-- named by the machine it came from, because on one length of coax that name
@@ -1312,11 +1324,11 @@ local function connect(system, luaObject, console, cmd, data, found, radio)
 		pty.noTty = noTty
 		pty.console = newPtyConsole(nil, pty, watchAt, data.hops)
 		pty.console.noTty = true
-		return pty, object, far, fromHost
+		return pty, object, far, fromHost, fromAddr
 	end
 	pty.console = newPtyConsole(console, pty, watchAt, data.hops)
 	console.remote = { x = object.x, y = object.y, z = object.z, line = pty.line }
-	return pty, object, far, fromHost
+	return pty, object, far, fromHost, fromAddr
 end
 
 -- rlogin: a login prompt on the far machine, unless a trust file says the
@@ -1326,10 +1338,13 @@ end
 -- prompt still asks for a name, because this machine's login is a login and not
 -- a protocol handshake with a user name in it. The manual says so.
 function CeroSecNet.dial(system, luaObject, console, data)
-	local pty, object, far, fromHost = connect(system, luaObject, console, "rlogin", data)
+	local pty, object, far, fromHost, fromAddr =
+		connect(system, luaObject, console, "rlogin", data)
 	if pty == nil then return nil, object end
 	local account = CeroSecOS.getUser(far, data.user)
-	if account ~= nil and CeroSecOS.trusts(far, data.user, fromHost, data.from) then
+	-- The trust question is asked about the ADDRESS the session came from and never
+	-- about fromHost, which is only what the far machine has decided to CALL it.
+	if account ~= nil and CeroSecOS.trusts(far, data.user, fromAddr, data.from) then
 		CeroSecNet.logIn(system, object, far, pty, account,
 			CeroSecOS.clockOf(system:clockEnv()))
 		pty.trusted = true
@@ -1428,12 +1443,14 @@ function CeroSecNet.remoteCommand(system, luaObject, console, data)
 		return nil, CeroSecOS.netRefusal("rsh", data.host, "down")
 	end
 	local state = luaObject:osState()
-	local fromHost = CeroSecOS.DEFAULT_HOSTNAME
-	if state ~= nil then fromHost = CeroSecOS.hostname(state) end
+	local fromAddr = nil
+	if state ~= nil then fromAddr = CeroSecOS.address(state) end
 	-- Judged before a line is taken: a caller it will not trust is not a caller
-	-- it should spend a pty on.
+	-- it should spend a pty on. The caller is its ADDRESS -- see the trust note in
+	-- connect() above -- and a machine with no wire in it has none and is trusted
+	-- by nobody.
 	local account = CeroSecOS.getUser(far, data.user)
-	if account == nil or not CeroSecOS.trusts(far, data.user, fromHost, data.from) then
+	if account == nil or not CeroSecOS.trusts(far, data.user, fromAddr, data.from) then
 		return nil, CeroSecOS.netRefusal("rsh", data.host, "denied")
 	end
 

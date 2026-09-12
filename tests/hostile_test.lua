@@ -1994,6 +1994,14 @@ local function newNetBench()
 	local hosts = CeroSecOS.systemNode(hereState, CeroSecOS.HOSTS_PATH)
 	CeroSecOS.setData(hereState, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
 		(hosts.data or "") .. "\n" .. CeroSecOS.address(farState) .. " gate", 100)
+	-- And it can NAME this one, which is what makes that trust line about a
+	-- machine: a name in /etc/hosts.equiv is resolved through the far machine's own
+	-- /etc/hosts and never against the name a caller announces
+	-- (CeroSecOS.trustWords).
+	local farHosts = CeroSecOS.systemNode(farState, CeroSecOS.HOSTS_PATH)
+	CeroSecOS.setData(farState, CeroSecOS.rootSession(), CeroSecOS.HOSTS_PATH,
+		(farHosts.data or "") .. "\n" .. CeroSecOS.address(hereState) .. " "
+		.. CeroSecOS.hostname(hereState), 100)
 	CeroSecOS.writeFile(farState, CeroSecOS.rootSession(), CeroSecOS.EQUIV_PATH,
 		CeroSecOS.hostname(hereState), false, 100)
 	return { sys = nsys, here = here, hereState = hereState, hereConsole = hereConsole,
