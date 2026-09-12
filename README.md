@@ -50,6 +50,12 @@ Done:
   `toggle` it, or `find` it and watch it blink or light up in the world. A door
   opens and closes with nobody's hand on it; a lock is only fitted where a lock
   can actually stop somebody, which in this game is the outside of a building.
+- Motion sensors: drop one of the game's own sensor bombs on the floor and it
+  becomes a `sensorN` that reads `motion` or `clear`. It is the item and nothing
+  of ours: its range is the game's `SensorRange`, it watches its own room and not
+  through walls, the contact holds five seconds after the last movement, and a
+  body that stops moving reads `clear` again — because it detects movement and
+  not bodies. Read-only, mode `440`.
 - Scripts: a real shell language in a file -- variables, `if`, `for`, `while`,
   `until`, `test`, `&&`, `||`, `$(command)`, `$((arithmetic))`, `read`, `sleep`,
   background jobs -- run by a step machine on a budget, so an endless loop makes
@@ -75,9 +81,10 @@ Done:
   background job to the front, where its output goes on the glass and Escape is its
   `^C`. There is no `bg`, because nothing here suspends a job.
 - Waiting on a device is a loop and not a command, the way it has always been in
-  Unix: `while [ "$(cat /dev/door0)" = closed ]; do sleep 5; done`. A sleeping job
-  is off the processor entirely, so that costs one turn every five seconds and can
-  wait for days.
+  Unix: `while [ "$(cat /dev/sensor0)" = clear ]; do sleep 4; done`. A sleeping job
+  is off the processor entirely, so that costs one turn every four seconds and can
+  wait for days. Four and not ten: a sensor's contact is held five seconds, so a
+  longer sleep can step straight over somebody crossing the room.
 - The manual: a three-volume documentation set that spawns where computers do,
   read by the player in a two-page reader with a table of contents, each volume
   remembering the page the copy in his hands was left on.
@@ -197,7 +204,7 @@ Commands:
 | `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
 | `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
 | `df` | how much of the 32K disk and the 256 nodes are used |
-| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, or one worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`; `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
 | `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
@@ -394,7 +401,7 @@ not: tiles east or west, tiles north or south, `0 0` for the computer's own
 square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
 and then by number,
 so `light2` comes before `light10`; in a big building `dev door`, `dev light`,
-`dev lock` and `dev win` cut it down to one kind. One id reads that one back, an id and a word
+`dev lock`, `dev sensor` and `dev win` cut it down to one kind. One id reads that one back, an id and a word
 works it and answers with the state read back afterwards, and `toggle` is
 whichever of the pair it is not in now:
 
@@ -455,9 +462,11 @@ command's:
 | `light0: invalid value` | that word means nothing to that kind |
 | `light0: permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
+| `sensor0: invalid value` | a sensor takes no word at all: every write to one says this |
 
 `dev`'s own two are a command's and are signed like one: `dev: <word>: unknown
-kind` (the kinds are `light`, `lock` and `win`) and `dev: <id>: no such device`
+kind` (the kinds are `door`, `light`, `lock`, `sensor` and `win`) and
+`dev: <id>: no such device`
 for a name no device of the machine's answers to at all.
 
 A number belongs to a device for the life of the machine. `light0` is the same
@@ -470,6 +479,8 @@ path you mistyped.
 Devices are owner `root`, group `sudo`, mode `660` — so root and anybody
 `/etc/sudoers` names read and work them, with no `sudo` typed and no password
 asked, and everybody else gets `light0: permission denied` from the device itself.
+A sensor is born `440` instead, `cr--r-----`, because it is read-only by nature
+and the mode says so before anybody tries.
 Root may open one up to everybody with `chmod 666 /dev/light0` — that lasts.
 The group does not move: `chgrp` on a device answers `is a device`, because only
 the mode of one outlives the command it was typed in. Nothing else works on one
@@ -478,6 +489,38 @@ created in `/dev` at all.
 
 Opening a door is not this. `unlock` takes the lock off; somebody still has to
 walk over and open it.
+
+**Motion sensors** are the one device you supply yourself. Drop one of the game's
+own sensor bombs on the floor of a room the machine can reach — a
+`PipeBombSensorV1`, an `AerosolbombSensorV2`, any of the fifteen — and it becomes
+a `sensorN`. *Dropped*, not placed: lying on the boards, unarmed. Pick it up and
+the device is gone, and the number it had stays reserved, so a name you wrote into
+a script answers `sensor0: no such device` rather than pretending.
+
+```
+dev sensor
+sensor0 office                1E 0           clear
+sensor1 store                 4E 2S          motion
+
+cat /dev/sensor0     -> clear
+echo motion > /dev/sensor0
+sensor0: invalid value
+```
+
+What it watches is **its own room, out to its range**: three tiles for a V1, four
+for a V2, five or six for a V3, straight off the game's own `SensorRange`. It
+never sees through a wall, so a head in the hall tells you nothing about the
+kitchen; where there is no room at all — a base, a yard — it watches its range in
+every direction and its description reads `built`. A survivor, a zombie, an animal
+and a **car** all set it off, which is what the game's own sensors trigger on; an
+invisible character does not.
+
+And it is a **movement** detector, not a proximity fuse. The contact closes the
+moment the picture in front of it changes — somebody moved, walked in, or walked
+out — and it stays closed for five seconds after the last movement. So a zombie
+that wanders into the field and **stops** reads `clear` five seconds later, with
+the zombie still standing there. That is what a real one does, and it is why a
+script polls a sensor instead of reading it once.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
@@ -1319,6 +1362,12 @@ be two devices: `IsoLightSwitch` → `light`, `IsoWindow` → `win`, `IsoDoor` �
 `door` *and* `lock` when the lock bites, `IsoThumpable` with `isDoor()` → `door`
 and `lock` (`built`). A player-built window frame is not a device this rung.
 
+A **motion sensor** is not on that list at all, because a dropped item is not on
+`getObjects()`: `scanWorldItems` walks `getWorldObjects()` beside it
+(`ArrayList<IsoWorldInventoryObject>`, the list vanilla's own
+`ISBuildUtil.lua:315` and `ISWorldObjectContextMenu.lua:2957` read) and asks each
+item what its range is. See **Motion sensors, underneath** below.
+
 **Where a lock bites**, which is the rule that decides whether a door gets a
 `lock` row at all:
 
@@ -1366,6 +1415,11 @@ the device is:
 ```lua
 state.devmap["light:1024:998:0::0"] = { id = "light0", kind = "light", n = 0, mode = 660 }
 ```
+
+A new kind's starting mode is `CeroSecOS.DEV_MODES[kind]` through
+`CeroSecOS.devModeFor`, which is `CeroSecOS.DEV_MODE` (660) for everything except
+`sensor` (440). It is only where a mode *starts*: a `chmod` moves it and the book
+above is what makes that outlive the command.
 
 The trailing `0` is an ordinal that tells two devices of one kind facing the same
 way on one square apart — the object index would have done it and is not stable
@@ -1424,6 +1478,67 @@ The one-minute sweep (`CeroSecDevices.refresh`) renumbers for a machine somebody
 is standing at. Nothing already on the glass changes — a printed line stays
 printed, here as on any terminal — but a device that appeared since already has
 its number by the time `ls /dev` is typed.
+
+**Motion sensors, underneath** (`SCeroSecSensors.lua`). Nothing of ours goes into
+the world: the device *is* the item lying on the floor.
+
+- **Which items.** Any dropped item with a positive `SensorRange`, asked of the
+  item and never matched against a list of names — `getWorldObjects()` →
+  `IsoWorldInventoryObject:getItem()` → `instanceof(item, "HandWeapon")` →
+  `item:getSensorRange()`, all four `javap`'d. That is the fifteen
+  `{PipeBomb,Aerosolbomb,NoiseTrap,SmokeBomb,FlameTrap}SensorV{1,2,3}` items
+  (`media/scripts/generated/items/weapon.txt`: V1 = 3, V2 = 4, V3 = 5 or 6) and
+  anything another mod ships with the same field. `sensorRange` lives on
+  `HandWeapon` and is copied there from the script by
+  `zombie.scripting.objects.Item.InstanceItem(String, boolean)` (bytecode offsets
+  2016–2019), so every instance of one answers its script's number. `Base.MotionSensor`
+  itself is *not* a device: it is the crafting component and carries no range, and
+  a range for it would have to be invented. A **placed** sensor bomb is not one
+  either — `CanBePlaced` with a `PlacedSprite` makes an armed `IsoTrap` of it.
+- **The field of view and the cadence are `IsoTrap.updateVictimsInSensorRange`'s**,
+  arithmetic included: `SENSOR_TIMER` is `new OnceEvery(1.0f)` so the sample is
+  once a second; `mo:getZi() == square:getZ()` so one floor only;
+  `DistanceToSquared(mo:getX(), mo:getY(), getX() + 0.5, getY() + 0.5) <= range *
+  range` — **squared euclidean from the centre of the head's own tile**, not a
+  Chebyshev box; and an `IsoGameCharacter` that `isInvisible()` is skipped while a
+  `BaseVehicle`, which extends `IsoMovingObject` and is not a character, is not.
+  A car is warm.
+- **The one test not mirrored** is `LosUtil.lineClear`. No vanilla Lua touches
+  `LosUtil` anywhere, so whether its nested `TestResults` enum is reachable from
+  Lua at all is unproven, and a LOS trace per body per second per sensor is the
+  dearest thing this file could do. The **room** stands in its place — the game's
+  own partition of the inside of a building by its walls — so the field is
+  `room:getSquares()` intersected with the range box, and a head with no room
+  under it gets the range alone. That is the honest statement and it is the one
+  the manual prints: *in a room, the part of that room within range; outside one,
+  the range.*
+- **What movement is, and this half is ours.** The game's trap is a proximity fuse
+  that fires on a body standing still; a PIR is not. A sample is a **signature** —
+  every body in the field, quantized to `CeroSecSensors.STEP` (10, tenths of a
+  tile), sorted, joined — and a signature differing from the one before it closes
+  the contact for `CeroSec.SENSOR_HOLD_S` (5) seconds. One comparison covers
+  moved, entered *and* left, with no identity followed, because a PIR has no
+  identities either. The first sample of a newly discovered head sets the baseline
+  and fires nothing: a one-second warm-up, which every PIR ever fitted has had.
+- **Whose state it is.** The sensor's, keyed by where the head is plus its ordinal
+  on that tile — one head, one contact, however many machines watch it, and it is
+  sampled once however many are watching. Never saved: a contact is five seconds
+  long and a reload is the end of it.
+- **When it runs.** `CeroSecSensors.tick` is one `Events.OnTick` handler with two
+  gates on `getTimestampMs`: `SCAN_MS` (60000) walks every machine that is **on**
+  and registers the sensors it can reach, and `SAMPLE_MS` (1000) samples the book.
+  A machine that is off is not walked, so no machine on means no pass and no cost.
+  A command typed at the glass registers too (`build`), so a head dropped ten
+  seconds ago is warm before the next `cat` rather than at the top of the minute.
+  A head no live machine has asked about for two scans is forgotten. Ceilings:
+  `FIELD_MAX` (169, which is the 13×13 box of the widest vanilla range) and
+  `SENSOR_MAX` (100).
+- **What it costs.** `hostile_test` section 20 drives the worst county there is —
+  six machines, eight heads each, forty squares a field, nine hundred and sixty
+  bodies, every one of them moving every second — for a thousand seconds: **1920
+  squares and about 4.9 ms per second**, flat, with every contact closed. Half a
+  percent of one second. An empty county costs under a hundredth of a
+  millisecond, because the pass over an empty book does nothing at all.
 
 ### System files, and their formats
 

@@ -410,6 +410,41 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      `locked`) : `dev doorN open` → `doorN: locked`. Enfin, une porte de
      garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
      `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
+100f. **Détecteur de mouvement, le posé.** Se fabriquer (ou se donner en debug)
+     un des quinze objets à capteur — `PipeBombSensorV1` fait l'affaire — et le
+     **laisser tomber par terre** (pas « placer » : posé, c'est un piège armé,
+     et ce n'est pas la même chose) dans la pièce nommée où se trouve
+     l'ordinateur. `dev sensor` → une ligne `sensorN`, description = le nom brut
+     de la pièce, colonne côté **vide**, position juste, état `clear`.
+     `ls -l /dev` sur cette ligne → `cr--r-----` et non `crw-rw----` : mode
+     `440`. Lâcher un marteau à côté → il n'apparaît **pas**. [ ]
+100g. **Marcher devant.** Rester immobile 10 secondes, `cat /dev/sensorN` →
+     `clear`. Puis traverser la pièce devant le capteur et taper tout de suite
+     `cat /dev/sensorN` → `motion`. Refaire avec un V3 (portée 6) et un V1
+     (portée 3) dans la même pièce : le V1 ne doit pas voir un mouvement à cinq
+     cases de lui, le V3 oui. Passer dans la pièce **d'à côté**, mur entre les
+     deux, à une seule case du capteur → il reste `clear` : un PIR ne voit pas à
+     travers un mur. Faire entrer une **voiture** dans le champ → `motion` (le
+     capteur du jeu lui-même déclenche sur un véhicule). [ ]
+100h. **Le maintien de cinq secondes, et le zombi immobile.** Bouger devant le
+     capteur puis s'arrêter net et compter : `cat` à 2 s → `motion`, `cat` à 4 s
+     → `motion`, `cat` à 6 s → `clear`. Attirer un zombi dans le champ et le
+     laisser **debout sans bouger** (derrière une clôture, ou endormi) : six
+     secondes après son dernier pas, `cat` dit `clear` alors qu'il est toujours
+     là. C'est voulu : le capteur détecte le MOUVEMENT et pas les corps.
+     Vérifier aussi qu'écrire est refusé : `echo motion > /dev/sensorN` et
+     `dev sensorN motion` → `sensorN: invalid value`, et `dev sensorN toggle` →
+     `sensorN: cannot toggle`. [ ]
+100i. **Le ramasser, et le montrer.** `dev find sensorN` → la ligne répond
+     `sensorN: highlighted` et l'objet au sol est entouré environ six secondes,
+     pour celui qui a tapé et pour personne d'autre. Puis ramasser le capteur :
+     `dev sensor` ne le liste plus, `cat /dev/sensorN` répond
+     `sensorN: no such device` (pas `no such file`). Le relâcher **sur la même
+     case** → il reprend `sensorN`, le numéro appartenant à l'endroit ; le
+     lâcher sur une autre case → il prend le numéro suivant jamais utilisé.
+     Enfin, éteindre l'ordinateur, marcher, revenir, rallumer, attendre une
+     minute, `cat` → `clear` d'abord (le capteur se réchauffe une seconde), puis
+     `motion` en bougeant devant. [ ]
 
 ## I. Manuel
 

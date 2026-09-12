@@ -1673,21 +1673,21 @@ broken during the day:
   win1 refused
   09:15 done]],
 
-[[Number three. The door watcher, with a log and a lamp.
+[[Number three. The night watch, with a log and a lamp.
 
   #!/bin/sh
-  # watch.sh -- shout when door0 stops being shut.
+  # watch.sh -- shout when sensor0 sees anything move.
   log=/home/admin/watch.log
-  while [ "$(cat /dev/door0)" = closed ]; do
-      sleep 5
+  while [ "$(cat /dev/sensor0)" = clear ]; do
+      sleep 4
   done
   echo on > /dev/light0
-  echo "$(date +%H:%M) front door opened" >> $log
-  echo "the front door opened"
+  echo "$(date +%H:%M) movement in the office" >> $log
+  echo "something is moving in the office"
 
   admin@ksp-04-11:~$ ./watch.sh &
   [1] 43
-  the front door opened
+  something is moving in the office
   [1] done
 
 Start it from the crontab at the other end of the day, and it watches
@@ -1695,10 +1695,11 @@ while nobody watches it:
 
   0 22 * * * /home/admin/bin/watch.sh
 
-Two honest limits. It watches ONE door; watch several by putting the whole
-thing inside a while true loop with a for in it and the sleep at the
-bottom. And it ends when the door opens, so it says so once. A loop round
-the lot says so every night.]],
+Three honest limits. Four seconds is not a guess: a contact is held five,
+so a sleep of four cannot step over one and a sleep of ten can. It watches
+ONE sensor; watch several with a for inside a while true and the sleep at
+the bottom. And it ends on the first contact, so it says so once -- a loop
+round the lot says so every night.]],
 
 [[Number four. Keeping a log from eating the disk.
 
