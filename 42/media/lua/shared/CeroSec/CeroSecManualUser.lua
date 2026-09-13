@@ -269,21 +269,22 @@ office machine changes hands: somebody had this desk before you. If the
 greeting on the screen names a company, or login: refuses the name you
 were given, that is what has happened.
 
-Three places to look, and none of them is a guess.
+Four places to look, and none of them is a guess.
 
   who is on it        cat /etc/passwd
   what it has done    cat /var/log/messages
   who last sat here   last
+  what he typed       cat .sh_history
 
-/etc/passwd is one line per account and the second field is not a
-password, it is what a password turns into; you cannot read one back out
-of it. The first field is the name to type at login:.
+/etc/passwd is one line per account. The first field is the name to type
+at login:; the second is not a password but what one turns into, and you
+cannot read one back out of it.
 
-If nobody left you the password, ask the person who had the desk. If
-there is nobody to ask, your site administrator can set you a new one in
-a moment (Volume 2, chapter 2), and the firmware can put a machine back
-to the way it left our factory without touching anybody's home
-directory -- which is the last resort and is in chapter 10.]],
+If nobody left you the password, ask whoever had the desk. Failing that,
+your site administrator can set you a new one (Volume 2, chapter 2), and
+the firmware can put a machine back to the way it left our factory
+without touching anybody's home directory -- the last resort, chapter
+10.]],
 
 		} },
 

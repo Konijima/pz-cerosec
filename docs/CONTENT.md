@@ -70,9 +70,16 @@ a prefilled machine crashed; hex is parsed by `CeroSecOS.hexValue` now.
 
 | keyed on | what it decides | why |
 | --- | --- | --- |
-| **the premises** (its two bytes) | root's password, every account's login and password | so a paper found anywhere in that premises names something true of every machine in it |
-| **the machine** (premises + square) | which scripts are in `~/bin`, the hours in the log | the desk, not the company. Nothing a *paper* names may be keyed here. |
+| **the premises** (its two bytes) | root's password, every account's login and password, **which telling of each file this company keeps** | so a paper found anywhere in that premises names something true of every machine in it, and two machines of one office read one office's readme |
+| **the machine** (premises + square) | **whose desk it is**, which scripts are in `~/bin`, the hours in the log, **the shell history, the login records, the draft, whether somebody was left logged in** | the desk, not the company. Nothing a *paper* names may be keyed here. |
 | **nothing** (a roll) | whether a floppy has content, whether a body carries a paper | the roll happens once and its *result* is saved on the item |
+
+The three key builders are `CeroSecContent.rootKey`, `accountKey` and
+`machineKey`, and wave 7c added the fourth the first two only implied:
+**`premisesKey`**, which is what a *telling* is chosen on. The rule that decides
+which of the two a thing belongs to has not moved: **anything a premises IS must
+be answered the same way from every square of it**, and anything about a desk is
+the machine's.
 
 The people are the premises' and not the machine's, and that was forced by the
 papers: two desks in one office are two desks of one company, and a corpse cannot
@@ -89,6 +96,12 @@ It is **not** a migration step, for the reason the address is not one either: wh
 premises a machine stands in is a question about a *square*, and most machines in a
 save have no chunk loaded. `turnOn` is the moment the chunk is certainly there,
 because the power check has just proved it.
+
+`prefill` answers **four** things since wave 7c: the profile id, the root password,
+the logins by slot, and the session that was still open at the glass as
+`{ user =, at = }` or nil. It takes one new input, `opts.numbers` — telephone numbers
+of the machine's own region, for the `cu` line in somebody's history — because the
+catalogue has no world and may not invent one.
 
 **Everything goes through the engine's own write path** — `CeroSecOS.createNode`,
 `CeroSecOS.setPassword` — so the quota, the modes, the owners, the 96 entries to a
@@ -134,12 +147,17 @@ CeroSecContent.PROFILES.office = {
   host     = "acct",     -- head of the hostname; the coordinate tail is kept
   motd     = "...",      -- /etc/motd, at most MOTD_MAX_LINES lines of 60 columns
   root     = true,       -- a root password to derive, hash, and never store
-  accounts = { { name =, admin =, pass =, files = { { path =, mode =, text = } } } },
+  session  = false,      -- and never found with somebody still logged in
+  accounts = { { name =, admin =, pass =, cron = { "0 2 * * * ..." },
+                 files = { { path =, mode =, texts = { v1, v2, v3 } } } } },
   bin      = { { script = "lights.sh", chance = 60, to = "/usr/local/src" } },
   logs     = { "..." },  -- /var/log/messages, dated in the week before day one
-  mail     = { { to =, from =, subj =, body = } },
-  cron     = { { to = 1, lines = { "0 22 * * * ..." } } },
-  files    = { { path =, mode =, owner =, text = }, { path =, dir = true } },
+  history  = { "cat ledger.txt", ... },   -- the owner's own ~/.sh_history lines
+  lockup   = "sh bin/locks.sh lock lock0",-- the last thing he did before he left
+  draft    = { v1, v2, v3 },              -- draft.txt, on about half the machines
+  mail     = { { { to =, from =, subj =, back =, hour =, min =, body = } }, ... },
+  cron     = { { to = "root", lines = { "0 * * * * ..." } } },
+  files    = { { path =, mode =, owner =, texts = }, { path =, dir = true } },
 }
 ```
 
@@ -163,11 +181,17 @@ Five things to know:
 And three fields wave 7b added, each because a premises the county really has
 could not be written without it:
 
-- **`cron`** is a crontab per account, in Vixie's own five fields, written to
+- **`cron`** is a crontab, in Vixie's own five fields, written to
   `/var/spool/cron/<login>` exactly where `crontab(1)` writes one — root's, `600`,
   in root's `700` directory. It is a real crontab and the machine really runs it: a
   shop whose lights went off at ten every night is a shop whose lights still go off
-  at ten. `to` is a slot number or a literal login, the way `mail`'s is.
+  at ten. **Since wave 7c there are two kinds of it.** A `cron` inside an *account*
+  entry is that account's own and is written only on the machine he **owns**,
+  because the line runs in his home with his `bin` on the path — the bookkeeper's
+  nightly total reads *his* ledger, so on the desk beside his it would mail
+  `no such file` once a night for ever. `profile.cron`, with a literal login in
+  `to`, is the machine's own: the post's hourly door check out of `/usr/local/bin`,
+  the vendor's weekly sweep of `/var`, neither of which names a home.
 - a **`files` entry marked `dir`** is a directory and not a file, with its parents
   made above it. A profile that wanted a tree of its own — `/usr/local/src` on the
   vendor's bench machine — had no way to make one, and a path whose parent is
@@ -183,12 +207,17 @@ could not be written without it:
 **What the bench holds a crontab to**, and both halves matter. Every line goes
 through `CeroSecOS.checkCrontab`, the machine's own parser, in the writer *and* in
 the bench: a line the parser refuses is a line that does nothing for ever and says
-nothing about why. And a line naming a script of ours must name the path the profile
-really writes it to — an entry behind a `chance` is on some machines and not others,
-and one naming `to` is somewhere else entirely, so a crontab saying
-`/usr/local/bin/check.sh` on a machine that put `check.sh` in a home is a line that
-mails `not found` once an hour for ever. That check went red on the military post the
-day it was written.
+nothing about why. And a line naming a script of ours must name a file that is
+**really on the machine the bench just built**, with `$HOME` resolved to the
+crontab owner's own home.
+
+That second half used to ask the *catalogue* — "does `profile.bin` always write
+this path" — and the catalogue always says yes, so it was an assertion that could
+not fail. Wave 7c found what it had been hiding: the military post's
+`/usr/local/bin/check.sh` **was never written on any machine in the county**,
+because `placeScripts` was called only for a machine with an ordinary account to
+hang a `~/bin` under and the post has none. Its hourly crontab had been mailing
+`not found` since 7b shipped. Fixed, and the bench walks the built filesystem now.
 
 **And one crontab is TYPED**, as the account it belongs to, on a machine the profile
 built, with the environment a login really hands a shell. A crontab that *parses* is
@@ -205,21 +234,29 @@ and cut to sixty columns with the hostname in front of it — a survivor reads
 
 ### The ten as shipped
 
-Every one of the ten is written. Each is a story in **three files**, and each carries
-at least one script a survivor can copy onto a building of his own.
+Every one of the ten is written, each in **three or four files** plus the history
+that comes with them, and each carries at least one script a survivor can copy onto a
+building of his own. Every prose file below is **three tellings** (above), so the
+column names the file and not the words in it.
 
-| id | host | root | accounts | the three files |
+| id | host | root | accounts | what is on a desk |
 | --- | --- | --- | --- | --- |
 | `residential` | `ksp` | no | 2, both open | `notes.txt`, `porch.txt` (what a timer really is), a child's `report.txt` |
-| `office` | `acct` | yes | 3 | `handover.txt`, `ledger.txt`, `memo.txt`; the crontab the handover note talks about really runs `total.sh` on the ledger |
-| `police` | `disp` | yes | 3, one named `dispatch` | `bolo.txt`, `handover.txt`, and `/var/log/dispatch` — which stops in the middle of a line at 5:05 on the morning of the 9th |
-| `bank` | `vault` | yes | 3 | `accounts.dat` in four plain columns, `audit.txt` (the examiner's three answers, as two commands), `vault.txt` |
-| `store` | `till` | yes | 2 | `inventory.txt` counted on the 6th, `prices.txt` in cents, `closing.txt` |
-| `school` | `bell` | yes | 3 | `grades.txt` by student number, `bells.txt`, a `detention.txt` that will not write the two names down |
-| `clinic` | `ward` | yes | 3 | `patients.txt` (rooms and wards, nothing medical), `rounds.txt`, `supplies.txt` |
-| `radio` | `studio` | yes | 2 | `sched.txt`, `notes.txt`, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
-| `military` | `post` | yes | **none** | `/root/memo-01.txt` to `-03.txt`, on the exclusion zone |
-| `cerosec` | `cerosec` | yes | 3, one named `support` | `bench.txt`, `answers.txt`, `/usr/local/src/CHANGES` |
+| `office` | `acct` | yes | 3 | `handover.txt` + `ledger.txt` + the nightly crontab that really runs `total.sh` on it; `readme.txt`; `memo.txt` |
+| `police` | `disp` | yes | 3, one named `dispatch` | `handover.txt` + `bolo.txt` + the cells crontab; `shifts.txt`; `keys.txt`; and `/var/log/dispatch`, which stops in the middle of a line on the morning of the 9th |
+| `bank` | `vault` | yes | 3 | `accounts.dat` in four plain columns, `audit.txt` (the examiner's answers, as two commands), `vault.txt`, `counter.txt` |
+| `store` | `till` | yes | 2 | `inventory.txt`, `prices.txt` in cents, `closing.txt`, `note.txt` |
+| `school` | `bell` | yes | 3 | `grades.txt` by student number, `bells.txt`, a `detention.txt` that will not write the names down, `library.txt` |
+| `clinic` | `ward` | yes | 3 | `patients.txt` (rooms and wards, nothing medical), `rounds.txt`, `supplies.txt`, `nights.txt` |
+| `radio` | `studio` | yes | 2 | `sched.txt`, `notes.txt`, `readme.txt`, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
+| `military` | `post` | yes | **none** | `/root/memo-01.txt` to `-03.txt`, on the exclusion zone. `session = false`. |
+| `cerosec` | `cerosec` | yes | 3, one named `support` | `bench.txt`, `answers.txt`, `tickets.txt`, `/usr/local/src/CHANGES` |
+
+**Which of those files a player finds depends on whose desk he is at** — see *One
+machine is one person's desk*. The five profiles whose third slot used to carry
+nothing gained a file in wave 7c (`keys.txt`, `counter.txt`, `library.txt`,
+`nights.txt`, `tickets.txt`), because a machine whose owner is a slot with no files
+is a machine with an empty home, and one desk in five was coming up bare.
 
 **The military post is the one with no ordinary account on it.** A post did not hand
 out logins; a man sat down at it because he was allowed to be in the room. So there
@@ -236,6 +273,205 @@ A machine whose premises resolves to an id nobody had written was prefilled with
 nothing at all, which is exactly a bare machine. That path is still there and is
 still tested (`tests/window_test.lua` takes a profile out of the catalogue to provoke
 it), because the next id somebody declares will go through it.
+
+## One machine is one person's desk
+
+**The complaint this answers, in the words it was made in:** several computers in
+one building held the same things, and every office in the county told the same
+story with other names. Both halves were true, and the first one was the worse of
+the two — every account's `files` were written onto every machine, so an office
+with three people in it was three desks carrying the same three homes. That is not
+an office. It is one machine copied three times.
+
+So a machine has an **owner**: one slot of `profile.accounts`, chosen by
+`CeroSecContent.ownerSlot` out of the **machine's** key.
+
+- **his** home is the populated one — his files, his `~/bin`, his `~/.sh_history`,
+  his `draft.txt`, his crontab if his slot declares one;
+- the **other accounts are all still there**, with their own passwords, because the
+  people are the premises' and a paper in a dead man's pocket has to be able to name
+  one of them (see *What is keyed on what*). Their homes hold their own
+  `.sh_history` and nothing else: two or three lines, because they sat down at
+  somebody else's desk, looked at one thing and went away;
+- a premises with **one** account has that account everywhere;
+- a slot whose generated login collided with a name the machine already had is not
+  the owner: the desk falls to the first slot that really got made, so a machine is
+  never nobody's.
+
+What a player meets, and it is the point: two computers in one office, the same
+staff in `/etc/passwd` with the same passwords, the same root password on the paper
+in the drawer — and two different men's desks, two different weeks in
+`~/.sh_history`, two different sets of logins in `last`, and only one of them
+running the nightly job.
+
+## Three tellings of every file
+
+Every prose file of every profile is written **three** times
+(`CeroSecContent.VARIANTS`), and which telling a premises reads is the
+**premises'** own: `number(secret, premisesKey .. "/v/" .. file, 3)`, spelt
+`CeroSecContent.variantOf`. Thirty-one prose files, ninety-three tellings.
+
+An entry carries one of:
+
+| | |
+| --- | --- |
+| **`texts`** | three tellings. Every prose file. |
+| **`text`** | one telling, and it has to be a `CeroSecContent.DATA` table: those are the very files the scripts are proved against, and a table that came out different on every machine would be a bench proving one of three. The bench asserts that a one-telling entry *is* a data table. |
+| **`extra`** | three tails appended under a `text`. How a data table varies without moving: the six rows the bench adds up are still the six rows the bench adds up, and this branch's own accounts are under them. |
+
+All of it goes through **`CeroSecContent.textFor`**, the one place a text is
+composed, and **one number per file is spent on both** `texts` and `extra` — a
+premises has one telling of one file, not two.
+
+**The names go in at fill time.** A file is written once and read in every office
+in the county, so the people in it are placeholders: `{owner}` is whoever sat at
+*this* machine, `{staff1}`..`{staff3}` are the premises' accounts by slot, `{host}`
+is the machine. `CeroSecContent.fillNames` puts them in; a placeholder with nobody
+behind it becomes `somebody` and never a brace on the glass, which the bench
+asserts of every telling of every file.
+
+**There is no `{town}`**, and the reason is worth stating: a town name would have to
+be derived from the telephone exchange's region, and nothing in the county knows
+one — the exchange is a hash of a map coordinate and the map's own region names are
+not data this mod has. An invented town is a town that is not on the map the player
+is standing on, which is the same lie the BBS disk refuses to tell. Muldraugh and
+West Point are named in one file because they are real places on the real map, named
+as landmarks and not as this premises' own town.
+
+### Four rules the three tellings are written to
+
+1. **A telling is picked per FILE**, so telling 2 of the handover note stands beside
+   telling 1 of the ledger. Any three may therefore be read side by side — which
+   means anything one file depends on another for (the column that is cents, the
+   name of a script, the number of a device) is the **same** in all three tellings
+   of both. What varies is the voice, the person writing, the detail and the
+   complaint. Never the machine underneath.
+2. **Nothing names a date the save might not have**, except the two hand-kept logs
+   that always did and may: `/var/log/dispatch` and `/var/log/heard` are about
+   particular nights in July, and the outbreak is in July.
+3. **Nobody signs his own name as somebody else's.** A file in slot 1's home is
+   written *by* slot 1, so it names `{staff2}` and `{staff3}` and never `{staff1}`.
+4. **No town.** Above.
+
+## The history: what the last week looked like
+
+Four files per machine, all derived from the **machine** key, all dated before the
+save's own start, and written to agree with each other.
+
+### `~/.sh_history`
+
+The owner's, **12 to 30 lines** (`HISTORY_MIN`, `HISTORY_SPAN`). The body alternates
+the profile's own `history` lines with `CeroSecContent.HIST_COMMON` — `ls`, `who`,
+`date`, `df` — because nine tenths of a real history is housekeeping and one that
+was all story would read like a film. Two typos out of `HIST_TYPOS`, and they are
+typos in an **argument** and never in a command name: a man mistyping a filename is
+a man, and a line whose first word is nonsense is a line the bench cannot tell from
+a mistake in the catalogue. Then the tail, which is the only part written to be
+read: `mail`, `cat /var/log/messages`, `who`, `date`, a `cu` call if there was a
+number to ring, the last thing the profile says he locked (`lockup`), and
+`shutdown -h now`.
+
+Written at `<home>/.sh_history`, mode 600, owned by that account — the path and the
+mode are what make it the file `history`, Up and Down and
+`CeroSecOS.historyLines` all read. The bench reads it back through that function,
+as the account, and puts the **first word of every line** through the shell's own
+lookup (`CeroSecOS.whyNotRun`) on the machine the profile built: a history cannot
+name a program this Unix has not got.
+
+### `/var/log/wtmp`, which is what `last` prints
+
+Seeded through **`CeroSecOS.wtmpAppend`**, record by record, **oldest first** —
+because `last` pairs a login with the logout that closed it in the order the *file*
+has them, and a file written any other way is a file whose sessions pair up wrongly.
+Six to fourteen sessions over the fortnight before the save (`WTMP_DAYS`), the
+**owner three in five** because it is his desk, the other staff and root the rest,
+and the last session an hour to three before the save begins — the morning of it, on
+the default save.
+
+Every moment is computed **before** any length is, so that no man leaves after the
+next man sat down.
+
+### Somebody who never logged out
+
+**About one machine in four** (`CeroSecContent.LIVE_ONE_IN`), and **never** the
+military post, which carries `session = false`: a post was a room a man was let
+into, and he was relieved or he left. `CeroSecContent.liveSession` decides it,
+`prefill` answers it as a fourth return value `{ user =, at = }`, and
+`SCeroSecObject:prefill` is where it reaches the glass — the account, his home as
+the working directory, the moment `wtmp` says he sat down, and the environment a
+login hands a shell. A player who opens that machine gets his prompt and is asked
+for nothing.
+
+Two things about it. **`booted` is left alone on purpose**, so the BIOS lines and
+the motd still print above the prompt: a screen that came up already at a prompt
+with nothing over it reads as a machine that is broken. And **it is a declared
+deviation**. A real Unix cannot restore a session across a power cut and neither can
+this one — a survivor's own machine comes back to `login:` every time, and that is
+right. What this does is choose the story: `wtmp` says a man logged in on the
+morning of it and never logged out, and the console agrees with `wtmp` instead of
+with the boot sequence. It happens once in the life of a machine and it is written
+down where it is done rather than hidden.
+
+**The two halves are one fact told twice.** A machine left logged in has a `wtmp`
+record with no logout behind it *and* a history that does not end on
+`shutdown -h now`. A history carrying both would be calling itself a liar on one
+screen, and the bench holds both directions.
+
+### `/var/mail/<owner>`
+
+A **story**: three to six messages over the outbreak week, in three tellings, with
+the last one unanswered. Work, family, a colleague who is not coming in, the county
+or the radio station about the roads and the cordon, a CeroSec Systems support
+reply. One message of each telling goes to **another** staff member, so a survivor
+who logs in as the wrong man still finds something in his spool.
+
+The format is the machine's own twice over: the separator is the
+`From <sender>  <date>` line **`CeroSecOS.mailAppend`** writes, so a mailbox this
+seeds and a mailbox `cron` appends to are one file `mail` reads from end to end —
+and under it are the four headers a message really carries, `From:`, `To:`, `Date:`
+and `Subject:`. The envelope line above repeating the sender and the date is not a
+mistake: that is what an mbox is, and it is how `mail` tells one message from the
+next.
+
+Outside senders carry a **UUCP bang path** (`county!clerk`, `wknx!news`,
+`cerosec!support`), which is how mail reached a 1993 desk machine nobody was logged
+into; a local delivery carries a plain name or a role.
+
+`back` is **days before the start day** and never a date, so a save that begins in
+October gets a week dated in October. A message that would land at or after the
+moment the save begins is **dropped** rather than moved — the trimming rule — and it
+costs a save that starts at half past midnight its last message and nothing else.
+Bounded by `MAIL_LINES` and `MAIL_BYTES` here, because a mailbox is exempt from the
+disk quota by its path and nothing else would bound it.
+
+### The outbreak week in `/var/log/messages`, and the draft
+
+`placeLog` writes the premises' own `logs` and then **three** entries off
+`CeroSecContent.LOG_EVENTS` — a machine that came back up on its own, a refused
+login, a call that got `no carrier` — at the **hours nobody is at a desk**: the
+premises' own lines are dated 07:00 to 16:00 and these are 00:00 to 05:00, which is
+also how the bench tells them apart. Nothing in that list claims a halt, because
+the dispatch desk's own log is a file people typed in until five in the morning on
+the 9th and two files on one screen may not call each other liars.
+
+And `draft.txt`, in the owner's home, on **about half** the machines: a page he was
+writing that stops in the middle of a sentence. Three tellings, and the bench holds
+every one of them to not ending on a full stop.
+
+### The `cu` line, and why the server has to help
+
+A telephone number in a history has to be a number **this** county really has, and
+the catalogue has no world and may not guess — the same rule that keeps the BBS
+disk's numbers a stub until somebody puts the disk in a machine. So the server hands
+`prefill` a list: **`CeroSecNet.regionNumbers(x, y, b1, b2, max)`** asks the
+machine's own region for its listings the way `fillLateDisk` does, takes the
+premises' own line out of them (a man does not ring the telephone on his own desk),
+and hands over at most `CeroSecContent.DIAL_MAX` of them. A machine with no listings
+in its region simply has **no `cu` line**.
+
+The cost is one zone sweep of one region, once in the life of a machine, at the
+power-on where the chunk is already known to be loaded — the same sweep the
+telephone book does when a player opens it.
 
 ## The disk catalogue
 
@@ -578,8 +814,10 @@ Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **2** as of wave 7b, which filled the eight empty
-profiles and the five empty disk slots. It is the catalogue's own number and **must
+`CeroSecContent.VERSION` is **3** as of wave 7c, which gave every machine an owner,
+every prose file three tellings, and every desk a week of history behind it. (**2**
+was wave 7b, which filled the eight empty profiles and the five empty disk slots.) It
+is the catalogue's own number and **must
 never become a save-shape number**: nothing a profile writes is marked as having come from one, so
 a later catalogue changes what the next untouched machine gets and changes nothing
 about a machine somebody has already switched on.

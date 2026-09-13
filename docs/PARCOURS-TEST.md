@@ -2255,13 +2255,18 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
        `admin` et deux personnes ;
      - fouiller les tiroirs, comptoirs et casiers du **même** poste jusqu'à
        trouver `Sticky note: root / <mot>`, puis `su root` avec ce mot : ça passe ;
-     - `cat /var/log/dispatch` montre neuf lignes du 5 au 9 juillet, et la
-       dernière s'arrête au milieu : `Jul 09 0505` et rien après ;
-     - `cat /home/dispatch/bolo.txt` se lit en entier, aucune ligne ne dépasse le
-       bord droit de l'écran ;
+     - `cat /var/log/dispatch` montre huit ou neuf lignes de juillet et la
+       dernière s'arrête **au milieu d'une ligne**, au petit matin du 9 (le texte
+       exact dépend de la premises : il y en a trois versions, voir l'étape 310) ;
+     - si le bureau garni est celui de `dispatch`, `cat /home/dispatch/bolo.txt` se
+       lit en entier, aucune ligne ne dépasse le bord droit ; sinon c'est un autre
+       compte qui a des fichiers (étape 302) et `bolo.txt` est sur l'autre machine
+       du poste ;
      - `crontab -l -u dispatch` n'existe pas ; faire `sudo cat
-       /var/spool/cron/dispatch` → une ligne à `0 22 * * *` qui appelle
-       `locks.sh`. [ ]
+       /var/spool/cron/dispatch` → **sur la machine de `dispatch`**, une ligne à
+       `0 22 * * *` qui appelle `locks.sh` ; sur la machine d'un autre compte, pas
+       de crontab pour `dispatch` — le travail appartient au bureau où il se fait
+       (étape 302). [ ]
 
 289. **Le script du poste marche vraiment.** Toujours sur la machine de l'étape
      288, connecté sur le compte `dispatch` (mot de passe dérivé, voir
@@ -2276,7 +2281,9 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      - `sh ~/bin/locks.sh unlock lock0` la déverrouille. [ ]
 
 290. **Le journal du magasin s'éteint tout seul.** Dans un magasin (zone
-     `...Store`, `...Shop` ou `...Market`), machine jamais touchée : l'invite dit
+     `...Store`, `...Shop` ou `...Market`), machine jamais touchée dont le bureau
+     garni est celui du patron (sinon essayer l'autre machine du magasin, ou un
+     autre magasin) : l'invite dit
      `till-`, `cat ~/inventory.txt` se lit, et `sh ~/bin/total.sh prices.txt 2`
      additionne la colonne et répond un nombre. Câbler un relais sur un
      interrupteur (section W), noter son numéro avec `dev light`, mettre l'heure
@@ -2382,6 +2389,107 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      s'exécute **jamais**. Puis mettre la même ligne dans un crontab
      (`crontab -e`, `* * * * * cu 418-0100`) et attendre une minute :
      `mail` montre `cu: not a terminal`. [ ]
+
+## AC. Un bureau, deux personnes, et la semaine d'avant (vague 7c)
+
+Même condition qu'aux sections AA et AB : option bac à sable **Machines et
+disquettes garnies** sur **Activé**. Les mots de passe et les noms sont propres à la
+sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à recopier.
+
+302. **Deux ordinateurs du même bureau sont deux bureaux différents.** Trouver un
+     bâtiment avec **deux** ordinateurs vanilla jamais touchés dans la même
+     premises (même zone nommée, ou même bâtiment sans zone). Allumer les deux :
+     - `cat /etc/passwd` sur les deux → **exactement** les mêmes comptes, dans le
+       même ordre ;
+     - sur la machine A, `ls /home/*` → **un seul** des dossiers personnels
+       contient des fichiers ; les autres ne contiennent que des fichiers en point
+       (`ls -a` les montre) ;
+     - sur la machine B, c'est **un autre** compte qui a les fichiers ;
+     - se connecter au même compte sur les deux avec le même mot de passe (le
+       papier du tiroir, ou la note dans une poche) : ça passe des deux côtés ;
+     - `su root` avec le mot de passe du papier : ça passe des deux côtés aussi, le
+       papier est celui de la premises. [ ]
+
+303. **Ce qu'il a tapé.** Sur la machine du propriétaire (celle dont le dossier
+     personnel est garni), connecté sur ce compte :
+     - `ls -a` montre `.sh_history` ;
+     - `wc -l .sh_history` → entre 12 et 30 ;
+     - `cat .sh_history` se lit en entier, aucune ligne ne dépasse le bord droit ;
+     - les dernières lignes sont le matin du 9 : `mail`, `cat /var/log/messages`,
+       `who`, `date`, parfois un `cu 555-XXXX`, puis ce qu'il a fermé, puis
+       `shutdown -h now` ;
+     - appuyer sur **Haut** à l'invite : les mêmes lignes remontent, dans l'ordre,
+       de la plus récente à la plus ancienne ;
+     - `history` les affiche numérotées ;
+     - prendre **n'importe quelle** ligne de ce fichier et la retaper : aucune ne
+       répond `command not found` (les fautes qu'il a faites sont des fautes de
+       nom de fichier, pas de commande). [ ]
+
+304. **Qui s'est assis là.** Toujours sur la même machine : `last`
+     - affiche les connexions de la quinzaine, la plus récente en haut ;
+     - le compte du propriétaire revient plus souvent que les autres ;
+     - chaque ligne porte une durée entre parenthèses, sauf au plus une ;
+     - la dernière ligne du bloc est `wtmp begins <date>` ;
+     - **toutes** les dates sont antérieures au jour où la partie commence ;
+     - `last <compte>` d'un des autres employés → ses propres connexions, et lui
+       aussi a un `.sh_history` court dans son dossier (deux ou trois lignes). [ ]
+
+305. **Le courrier de la semaine.** Connecté sur le compte du propriétaire :
+     `mail`
+     - de trois à six messages, le plus ancien en premier ;
+     - chacun porte `From:`, `To:` (son propre nom), `Date:` et `Subject:` ;
+     - toutes les dates tombent dans la semaine qui précède le début de la partie ;
+     - il y a du travail, de la famille, quelqu'un qui ne rentre pas, le comté ou
+       la radio à propos des routes, et le dernier message n'a jamais reçu de
+       réponse ;
+     - relancer `mail` tout de suite après → `No mail for <compte>` : le lire le
+       vide, comme sur une vraie machine ;
+     - se connecter sur **un autre** compte de la même premises et faire `mail` →
+       lui aussi a reçu un message, même si son dossier personnel est vide. [ ]
+
+306. **Une machine trouvée déjà ouverte.** Allumer des ordinateurs jamais touchés
+     jusqu'à en trouver un qui, après les lignes du BIOS et le message d'accueil,
+     affiche directement une **invite de shell** au lieu de `login:` (environ un
+     sur quatre) :
+     - aucun mot de passe n'est demandé ;
+     - `whoami` donne un compte de la premises, pas `admin` ;
+     - `pwd` donne son dossier personnel ;
+     - `echo $HOME` et `echo $PATH` répondent, la session est complète ;
+     - `last` montre `still logged in` en face de son nom, une seule fois ;
+     - `cat .sh_history` **ne finit pas** par `shutdown -h now` ;
+     - `exit` → l'écran retombe sur `login:` et il faudra son mot de passe pour
+       revenir. [ ]
+
+307. **Le poste militaire n'est jamais laissé ouvert.** Allumer tous les
+     ordinateurs de poste militaire qu'on trouve : aucun n'affiche jamais une
+     invite de shell au démarrage, toujours `login:`. [ ]
+
+308. **Le journal a les nuits de juillet dedans.** Sur n'importe quelle machine
+     garnie, `sudo cat /var/log/messages` (ou en root) : sous les lignes de
+     travail, datées entre 7h et 16h, il y a deux ou trois lignes datées **entre
+     minuit et 5h** — un redémarrage que personne n'a demandé, une connexion
+     refusée, un `cu: no carrier`. [ ]
+
+309. **La page qu'il n'a pas finie.** Sur environ une machine sur deux, le dossier
+     du propriétaire contient `draft.txt` : `cat draft.txt` → le texte s'arrête au
+     milieu d'une phrase, sans point final. [ ]
+
+310. **Le bureau d'à côté raconte autrement.** Trouver deux premises du **même
+     type** dans deux endroits différents (deux bureaux, deux magasins) avec des
+     machines jamais touchées :
+     - le fichier du même nom (`handover.txt`, `inventory.txt`, `memo.txt`) n'a
+       pas le même texte des deux côtés ;
+     - les noms cités dedans sont ceux des employés de **cette** premises, et
+       `cat /etc/passwd` le confirme ;
+     - aucun texte ne contient d'accolade `{` ou `}` ;
+     - `mail` des deux côtés montre des sujets différents. [ ]
+
+311. **Le numéro qu'il a composé est un vrai.** Sur une machine dont le
+     `.sh_history` contient une ligne `cu 555-XXXX` : ouvrir l'annuaire
+     téléphonique (le livre vanilla) dans la même région et y retrouver ce numéro,
+     puis taper la ligne telle quelle → le modem sonne et répond
+     `CONNECT 2400` s'il y a un ordinateur allumé au bout, `NO CARRIER` sinon.
+     Ce n'est jamais le numéro de la premises où l'on est. [ ]
 
 ## Rapport
 

@@ -1136,12 +1136,25 @@ open, an empty disk. Either way, **a computer somebody has already switched on i
 never touched** — whatever you built on a machine stays exactly as you left it.
 
 **Somebody's machine.** A computer in an office comes up with the office's own
-greeting on the screen, a handful of staff accounts in `/etc/passwd`, their files
-in their homes, a week of `/var/log/messages` from the last days anybody came to
-work, and unread mail in `/var/mail`. Some of those accounts are open and you can
-simply log in; some have passwords. A computer in a house is a quieter thing and
-usually has nothing locked at all. The name on the machine changes with it: the
-front-office machine is not `ksp-` anything.
+greeting on the screen, a handful of staff accounts in `/etc/passwd`, a week of
+`/var/log/messages` from the last days anybody came to work, and unread mail in
+`/var/mail`. Some of those accounts are open and you can simply log in; some have
+passwords. A computer in a house is a quieter thing and usually has nothing locked at
+all. The name on the machine changes with it: the front-office machine is not `ksp-`
+anything.
+
+**But it is one person's desk, not the whole office's.** The accounts are the
+company's and every machine in the building has all of them — but only **one** of
+them has files on the computer you are standing at. Two computers in one office are
+two different men's desks: the bookkeeper's has the ledger and the nightly job that
+adds it up, the man at the next desk has his own memo and no job at all, and both
+know the same three people and the same passwords. So a building with two computers
+in it is worth walking twice.
+
+**And the office down the road tells the story in other words.** Every note, every
+handover, every list is written three ways, and which one a premises keeps is that
+premises' own for the life of the save — with its own people's names in it. Reading
+one office does not mean you have read them all.
 
 **Whose machine it was depends on the building**, and there are ten kinds:
 
@@ -1149,14 +1162,30 @@ front-office machine is not `ksp-` anything.
 | --- | --- |
 | **a house** | somebody's notes, a page on how the porch light got put on a timer, a child's history homework. Nothing locked. |
 | **an office** | a handover note, a ledger in cents, and the nightly job that mails the totals — which is a real line in a real crontab and really runs |
-| **a sheriff's dispatch** | a shared `dispatch` login, a standing lookout list, and `/var/log/dispatch`, which stops in the middle of a line at five in the morning on the 9th |
+| **a sheriff's dispatch** | a shared `dispatch` login, a standing lookout list, and `/var/log/dispatch`, which stops in the middle of a line on the morning of the 9th |
 | **a bank** | `accounts.dat` in four plain columns and the audit the examiner asks for, written down as two commands you can type |
-| **a shop** | what was on the floor on the 6th, the prices in cents, and the order to close up in |
+| **a shop** | what was on the floor when somebody last counted it, the prices in cents, and the order to close up in |
 | **a school** | grades by student number, because the names are in the cabinet; the bells on a clockwork timer the computer cannot reach |
 | **a clinic** | rooms and wards and what has to happen next. Nothing medical: that is the chart, and the chart stays on the trolley |
 | **a radio station** | the hour-by-hour sheet the machine reads off its own clock, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
 | **a military post** | `root` and **nothing else**. No open account, and nothing in anybody's pocket. Three memoranda on the exclusion zone, and the last one tells whoever is reading it that the road south was open on the 8th of July |
 | **CeroSec Systems** | the vendor's own bench: the whole script library standing together in `/usr/local/src`, a `CHANGES` that says why `hash` became `mkpasswd`, and the support mailbox |
+
+**What they were doing before it happened.** Every desk carries the last week of
+whoever sat at it, and none of it is decoration:
+
+| | |
+| --- | --- |
+| `cat .sh_history` | every line he typed, oldest first, twelve to thirty of them. Press Up at the prompt and you are walking the same list. The last few are the morning it started: he read his mail, he looked at the log, he rang somebody, he locked what the computer could lock, and then `shutdown -h now`. Or not. |
+| `last` | who logged in at that keyboard over the fortnight, newest first, with how long each session lasted. The owner most, the others now and then. |
+| `mail` | three to six messages from the outbreak week: work, family, somebody who is not coming in, the county or the radio station about the roads, a reply from CeroSec Systems. The last one is unanswered. Reading it empties the spool, so read it once and read it properly. |
+| `cat /var/log/messages` | the premises' own week, and then the nights at the end of it: a machine that came back up at four in the morning, a login that was refused, a call that got no carrier. |
+| `cat draft.txt` | on about half of them: a page he was writing. It stops in the middle of a sentence. |
+
+**And about one machine in four you will find still logged in.** Nobody ever typed
+`exit`, so it comes up at that man's prompt and asks you for nothing — his home, his
+shell, his history under your fingers. `last` on such a machine says `still logged
+in` against the last name on it. That never happens at a military post.
 
 **Some of them do things while you are not there.** A shop's lights go off at nine,
 a bank's vault door pulls itself to at six on weekdays, the cells in a dispatch
@@ -1164,6 +1193,10 @@ office lock at ten, a clinic mails the morning round list at seven. Those are
 ordinary crontab lines and `crontab -l` shows them to you — and nothing happens at
 all unless somebody has wired a module onto the fixture, which is the same rule
 every device follows.
+
+A job like that belongs to **the man whose desk it was**, because it runs in his home
+with his programs: it is on the computer he sat at and not on the one beside it. If
+the cells in an office of two computers do not lock at ten, try the other machine.
 
     login: root
     Password:
