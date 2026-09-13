@@ -9,8 +9,7 @@ date.
 ## Unreleased
 
 - Two computers in one office now belong to two different people. Each machine
-  has one person's files, his own command history, his own mail and his own
-  nightly job; the other staff still have accounts on it, with the same
+  has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
   passwords, and empty homes. A building with two computers is worth walking
   twice.
 - Every note, handover, ledger, memo and list is written three ways now, and
@@ -18,7 +17,7 @@ date.
   its own people's names in it. The office down the road tells the same kind of
   story in another voice.
 - Every desk carries the last week of whoever sat at it. `cat .sh_history` is
-  every line he typed, and Up at the prompt walks the same list; the last few
+  every line they typed, and Up at the prompt walks the same list; the last few
   are the morning it started.
 - `last` now tells you who logged in at that keyboard over the fortnight before
   the outbreak, the owner most, with how long each session lasted.
@@ -31,8 +30,7 @@ date.
   call that got no carrier.
 - About half the machines have a page somebody was writing, `draft.txt`, that
   stops in the middle of a sentence.
-- About one machine in four is found still logged in. It comes up at that man's
-  prompt and asks you for nothing, because he never typed `exit`. Never at a
+- About one machine in four is found still logged in. It comes up at that person's prompt and asks you for nothing, because they never typed `exit`. Never at a
   military post.
 - Five kinds of premises gained a file for the member of staff who had none, so
   no desk comes up empty.
