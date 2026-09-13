@@ -2051,9 +2051,15 @@ end
 -- mode; the release gating adds the admin check beside it (see docs/DEBUG.md).
 --
 -- `debug` is a READ and answers a snapshot. `debugact` is the only writing thing
--- the window can do, and it does not do it: it calls the very object methods the
--- context menu's own commands call, so a machine switched on from the debug
--- window is switched on exactly as a survivor switches one on.
+-- the window can do, and for `on` and `off` it does not do it itself: it calls the
+-- very object methods the context menu's own commands call, so a machine switched
+-- on from the debug window is switched on exactly as a survivor switches one on.
+--
+-- `reset` is the one act with no survivor's gesture behind it -- it makes a machine
+-- nobody has ever used out of one that has been, so that a first power-on can be
+-- tried a second time (SCeroSecObject:resetMachine, and docs/DEBUG.md for why it
+-- exists at all). It is a developer's act and lives behind the same door as the
+-- rest of this window and behind two clicks on the glass.
 --
 
 Commands.debug = function(self, playerObj, x, y, z, token, args)
@@ -2122,6 +2128,19 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		elseif not luaObject:turnOff() then
 			refuseAct(self, playerObj, token, x, y, z,
 				"turnOff refused and did not say why")
+		end
+	elseif args.act == "reset" then
+		-- The one act that WRITES a machine's disk, and the same question the window
+		-- greys the button with: off, and nothing else (CeroSecDebug.resetRefusal).
+		-- Behind the same door as everything else in here, which is the whole of the
+		-- protection it has: debugAllowed was asked at the top of this function and
+		-- a client is not trusted about it.
+		local why = CeroSecDebug.resetRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot reset: " .. why)
+		elseif not luaObject:resetMachine() then
+			refuseAct(self, playerObj, token, x, y, z,
+				"reset refused and did not say why")
 		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)

@@ -1323,4 +1323,184 @@ do
 	eq("and pressing it opens nothing", #CeroSecTerminal.opened, 0)
 end
 
+--
+-- 14. Reset machine, and the two clicks in front of it
+--
+-- The one act in this window that cannot be undone: the selected machine's whole
+-- filesystem, thrown away so that its first power-on can happen a second time
+-- (docs/DEBUG.md, and SCeroSecObject:resetMachine for what the server does with
+-- it). What this block is about is the GUARD in front of it, because there is no
+-- dialog: the first click arms and says what is about to happen to which machine,
+-- the second click sends, and the arming expires by itself.
+--
+
+do
+	local bench = newBench()
+	local window = bench.window
+	-- An off machine in the world, which is the one state a reset is allowed in.
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = true, canTurnOff = false, on = false, loaded = true,
+		canReset = true }))
+	bench.frame()
+	local reset = bench.buttonNamed("IGUI_CeroSec_Debug_Reset")
+	check("there is a Reset machine button", reset ~= nil)
+	eq("and it comes after Dump state",
+		window.buttons[6].button.title, "IGUI_CeroSec_Debug_Dump")
+	eq("as the button after it", window.buttons[7].button.title,
+		"IGUI_CeroSec_Debug_Reset")
+	eq("it is usable on a machine that is off", reset.enabled, true)
+
+	-- AND IT IS ON THE GLASS. The opening width comes off the widest tab's nominal
+	-- columns and the button row comes off the words on the buttons: the seventh
+	-- button is what made the two disagree, and a button hanging over the window's
+	-- own right edge is a button somebody has to drag the corner to find.
+	local widest = 0
+	for i = 1, #window.buttons do
+		local made = window.buttons[i].button
+		if made.x + made.width > widest then widest = made.x + made.width end
+	end
+	check("every button is inside the window it opened at (" .. widest .. " of " ..
+		window:getWidth() .. ")", widest <= window:getWidth())
+	-- And the list under it went with the width, because there is one arrangement
+	-- and not two.
+	eq("and the list was laid out at that width", window.lists[1].width,
+		window:getWidth() - 20)
+
+	-- ONE CLICK SENDS NOTHING. It arms, and the line under the list says what the
+	-- next click will do and to which machine -- by its hostname, off its own row.
+	bench.forget()
+	press(reset)
+	eq("the first click sends nothing at all", #bench.sent, 0)
+	bench.frame()
+	check("and says what the next one will do", bench.painted("Click again to reset"))
+	check("naming the machine by its hostname", bench.painted("office"))
+	check("and where it stands", bench.painted("10,10,0"))
+
+	-- THE SECOND CLICK SENDS IT, and asks for the tab again so the row is redrawn.
+	bench.forget()
+	press(reset)
+	local act = bench.last("debugact")
+	check("the second click sends an act", act ~= nil)
+	eq("which is 'reset'", act.args.act, "reset")
+	eq("on the selected machine", act.args.x, 10)
+	eq("and its y", act.args.y, 10)
+	eq("under this window's own token", act.args.token, window.token)
+	check("and it asks for the tab again afterwards", bench.last("debug") ~= nil)
+
+	-- And it is armed no more: a third click arms again rather than resetting again.
+	bench.forget()
+	press(reset)
+	eq("the click after it arms instead of sending", #bench.sent, 0)
+end
+
+-- THE ARMING EXPIRES. A guard that waits for ever is a guard that is not there:
+-- five seconds later the first click is forgotten and the next one arms again.
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = true, canTurnOff = false, on = false, loaded = true,
+		canReset = true }))
+	local reset = bench.buttonNamed("IGUI_CeroSec_Debug_Reset")
+
+	press(reset)
+	check("it is armed", window:resetArmed())
+	-- Just inside the five seconds it is still armed, and the sentence is still up.
+	_G.__now = _G.__now + CeroSecDebugUI.ARM_MS - 1
+	bench.frame()
+	check("a moment before the five seconds it still is", window:resetArmed())
+	check("and still says so", bench.painted("Click again to reset"))
+	-- And one millisecond past them it is not.
+	_G.__now = _G.__now + 1
+	bench.frame()
+	check("a moment after them it is not", not window:resetArmed())
+	check("and the line is gone with it", not bench.painted("Click again to reset"))
+	bench.forget()
+	press(reset)
+	eq("so the click that comes late arms and sends nothing", #bench.sent, 0)
+
+	-- ARMED FOR ONE MACHINE. A click that armed one row and a click that fired on
+	-- another would be a reset of a computer nobody aimed at.
+	check("armed again by that late click", window:resetArmed())
+	bench.list():clickRow(2)
+	check("and moving to another machine disarms it", not window:resetArmed())
+	bench.forget()
+	press(reset)
+	eq("so the first click on the new row only arms", #bench.sent, 0)
+end
+
+-- A MACHINE THAT IS ON is not reset: the button is greyed on the server's own
+-- answer, pressing it anyway sends nothing and says why, and an arming that was
+-- standing is dropped -- a machine somebody switched on between the two clicks
+-- must not be reset by the second one.
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = true, canTurnOff = false, on = false, loaded = true,
+		canReset = true }))
+	local reset = bench.buttonNamed("IGUI_CeroSec_Debug_Reset")
+	press(reset)
+	check("armed on a machine that was off", window:resetArmed())
+
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = false, canTurnOff = true, on = true, loaded = true,
+		reason = "it is already on",
+		canReset = false, resetReason = "it is on -- switch it off first" }))
+	bench.frame()
+	eq("Reset machine is greyed on a machine that is on", reset.enabled, false)
+
+	bench.forget()
+	press(reset)
+	eq("and the armed click that follows sends nothing", #bench.sent, 0)
+	check("the arming is dropped", not window:resetArmed())
+	bench.frame()
+	check("and the line says why in the server's own words",
+		bench.painted("switch it off first"))
+
+	-- A refusal that comes back on the WIRE is shown like any other.
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token,
+		error = "cannot reset: it is on -- switch it off first",
+		x = 10, y = 10, z = 0 })
+	bench.frame()
+	check("a refusal from the server is on the glass", bench.painted("cannot reset"))
+end
+
+-- With nothing selected it is greyed like the others, and a machine the reset has
+-- just emptied does not vanish out of the list under the cursor: `os` gone is
+-- `used` gone, and the "used only" filter would take the row away at the very
+-- moment its reader needs it.
+do
+	local bench = newBench()
+	local window = bench.window
+	window.cx, window.cy, window.cz = nil, nil, nil
+	bench.frame()
+	eq("Reset machine is greyed with nothing selected",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Reset").enabled, false)
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_Reset"))
+	eq("and pressing it sends nothing", #bench.sent, 0)
+
+	-- The county as it answers after a reset: the selected machine is one nobody has
+	-- used any more.
+	window.cx, window.cy, window.cz = 300, 220, 0
+	local rows = countyRows()
+	CeroSecDebugUI.onServerAnswer("debug", snapshot(window.token, "machines", rows))
+	eq("the filter is still on used only", window.usedOnly, true)
+	local shown = window.lists[1].debugRows
+	local mine = false
+	for i = 1, #shown do
+		if shown[i].x == 300 then mine = true end
+	end
+	check("and the machine that was just reset is still on the glass", mine)
+	eq("with the used ones beside it", #shown, 2)
+	-- While the OTHER untouched machine is still filtered away: the exception is the
+	-- cursor's row and not the filter giving up.
+	local other = false
+	for i = 1, #shown do
+		if shown[i].x == 301 then other = true end
+	end
+	check("and the one nobody is looking at is not", not other)
+end
+
 print("debug_ui_test: " .. count .. " checks passed")

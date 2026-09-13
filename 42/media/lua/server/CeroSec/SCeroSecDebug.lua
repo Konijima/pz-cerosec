@@ -189,13 +189,31 @@ function CeroSecDebug.turnOffRefusal(luaObject)
 	return nil
 end
 
+-- And the developer's reset, which asks the world nothing at all: it throws a
+-- state away and puts a fresh machine in its place (SCeroSecObject:resetMachine),
+-- and a machine on the far side of the county with its chunk away is reset exactly
+-- like one in the room. The one thing it wants is a machine that has STOPPED: a
+-- reset on a running computer would take its jobs and its screen away behind the
+-- back of everybody standing at it.
+function CeroSecDebug.resetRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if luaObject.on then return "it is on -- switch it off first" end
+	return nil
+end
+
 -- The fields every snapshot carries about the SELECTED machine, whatever tab was
--- asked for -- because the buttons under the list are the same six on every tab.
+-- asked for -- because the buttons under the list are the same seven on every tab.
 function CeroSecDebug.selection(snap, luaObject)
 	local why = CeroSecDebug.turnOnRefusal(luaObject)
 	snap.canTurnOn = why == nil
 	snap.reason = why
 	snap.canTurnOff = CeroSecDebug.turnOffRefusal(luaObject) == nil
+	-- Its own reason and not `reason`: that one is turnOn's, and a window that
+	-- printed "it is already on" for a refused reset would be a window blaming the
+	-- wrong rule.
+	local noReset = CeroSecDebug.resetRefusal(luaObject)
+	snap.canReset = noReset == nil
+	snap.resetReason = noReset
 	snap.on = luaObject ~= nil and luaObject.on and true or false
 	snap.loaded = luaObject ~= nil and luaObject:isLoaded() and true or false
 	return snap

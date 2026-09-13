@@ -12614,4 +12614,209 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
+--
+-- 53. The developer's reset (the debug wave's one irreversible act)
+--
+-- A machine whose FIRST power-on went wrong halfway through is a machine there is
+-- no second try on: prefill runs once in the life of a computer and never again, so
+-- a half filled disk stays half filled for ever and the bug that made it cannot be
+-- provoked twice. "Reset machine" is what makes a machine nobody has ever used out
+-- of one that has been used (SCeroSecObject:resetMachine), and this is the bench
+-- for it: the state really goes, the DISK really stays, and the power-on after it
+-- really does prefill the machine again -- with the same accounts, because the
+-- accounts come out of the save's own secret and the premises, neither of which a
+-- reset touches.
+--
+do
+	local net = newNet()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+	_G.getWorld = zonedWorld
+	_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+
+	local machine = net.machine(10, 10, 0, net.office)
+	machine:turnOn()
+	local state = machine:osState()
+
+	-- THE WITNESS, and it is not a formality: everything below compares a machine
+	-- before a reset with the same machine after one, and a bench whose machine came
+	-- up bare would be comparing two empty disks and passing.
+	local users, order = CeroSecOS.readUsers(state)
+	check("the machine came up with somebody's accounts on it (" .. #order .. ")",
+		#order > 2)
+	local b1, b2 = CeroSecNet.premisesOf(machine)
+	local paper = CeroSecContent.password(net.system:secret(),
+		CeroSecContent.rootKey(b1, b2))
+	check("and the paper in the drawer opens it", CeroSecOS.checkPassword(users.root, paper))
+	local namesWas = table.concat(order, " ")
+	local hostWas = state.hostname
+
+	-- Something of the player's own on the disk, which is what a reset is allowed to
+	-- destroy and the papers in the drawer are not.
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/mine.txt", "my work",
+		false, nil)
+	check("with a file of his own on it",
+		CeroSecOS.systemNode(state, "/mine.txt") ~= nil)
+
+	-- And a disk in the drive: a player carried it here, it is a thing in the world,
+	-- and the one thing a reset must not throw away.
+	local fs = CeroSecOS.newDir("root", 755)
+	fs.children.notes = CeroSecOS.newFile("root", 644, "his own disk")
+	state.floppy = { v = CeroSecOS.FLOPPY_VERSION, fs = fs }
+	state.fdtype = "CeroSec.FloppyRed"
+	machine:syncDisk()
+	eq("and a disk in its drive", machine:hasDisk(), true)
+
+	-- And the premises has already had its paper. That bookkeeping is the SYSTEM's
+	-- and is about a PREMISES (CeroSecNotes.premisesMark), so a reset must not touch
+	-- it: the note in the drawer names a password derived from the secret and the
+	-- premises, both of which survive this, and clearing the mark would put a second
+	-- paper in the next drawer somebody opens.
+	CeroSecNotes.markNote(net.system, b1, b2)
+
+	-- A machine that is ON is not reset: it would have its jobs and its screen taken
+	-- away behind the back of everybody standing at it.
+	eq("a running machine refuses the reset",
+		CeroSecDebug.resetRefusal(machine), "it is on -- switch it off first")
+	eq("and nothing selected refuses it too",
+		CeroSecDebug.resetRefusal(nil), "nothing is selected")
+
+	machine:turnOff()
+	eq("switched off there is nothing to refuse", CeroSecDebug.resetRefusal(machine), nil)
+
+	-- The state the reset is judged against is PROVOKED and not waited for. A machine
+	-- that is off has no jobs and no windows -- turnOff took them -- so a bench that
+	-- only switched it off would assert zero against zero and stay green with the
+	-- killing taken out of the reset altogether.
+	machine.jobs = { next = 7, list = { { id = 1, state = "running", prog = {} } } }
+	machine.watchers = { ["p0-1"] = { player = net.player, token = "1" } }
+	machine.rebooting = { at = 1, waiting = {} }
+	machine.heard = { { call = "KE4QWZ", at = 1 } }
+	machine.console = CeroSec.newConsole()
+	-- What the server says to a window it is closing, kept: a window is TOLD the
+	-- machine is over and never merely forgotten.
+	local told = {}
+	net.system.reply = function(_, _, cmd, args)
+		told[#told + 1] = { cmd = cmd, args = args }
+	end
+
+	eq("the reset says it happened", machine:resetMachine(), true)
+	eq("the window standing at it was told", #told, 1)
+	eq("in the words a window shuts itself on", told[1].cmd, "closed")
+
+	eq("the state is gone", machine.os ~= nil and machine.os.fs ~= nil
+		and CeroSecOS.systemNode(machine.os, "/mine.txt") or nil, nil)
+	eq("every job with it", machine.jobs, nil)
+	eq("every window", machine.watchers, nil)
+	eq("the dark interval of a reboot", machine.rebooting, nil)
+	eq("the stations the TNC had heard", machine.heard, nil)
+	eq("and the screen", machine.console, nil)
+	eq("it is still off", machine.on, false)
+
+	-- THE DISK IS STILL IN THE DRIVE, with what is written on it.
+	eq("the disk did not leave the drive", machine:hasDisk(), true)
+	eq("and the client is told so", machine.disk, true)
+	eq("with what was written on it",
+		machine.os.floppy.fs.children.notes.data, "his own disk")
+	eq("in the shell it came in", machine.os.fdtype, "CeroSec.FloppyRed")
+	-- And the paper already placed is still on the books.
+	eq("the note this premises had is not handed out again",
+		CeroSecNotes.hasNote(net.system, b1, b2), true)
+
+	-- AND THE POWER-ON AFTER IT PREFILLS AGAIN, which is the whole point.
+	--
+	-- With the window's own detail block asked in between, because that is what a
+	-- developer actually does -- the reset is a button on a window that reads the
+	-- selected machine's disk every two seconds -- and osState is what MAKES a state
+	-- out of nothing: a reset remembered as "self.os is nil" would be undone by the
+	-- refresh that followed it.
+	CeroSecDebug.snapshotOf(net.system, "files", machine)
+
+	eq("it comes back on", machine:turnOn(), true)
+	local now = machine:osState()
+	local usersNow, orderNow = CeroSecOS.readUsers(now)
+	eq("with the same accounts as before", table.concat(orderNow, " "), namesWas)
+	eq("and the same name on the machine", now.hostname, hostWas)
+	-- The PASSWORDS and not the bytes of /etc/passwd: every hash is salted with a
+	-- salt of its own (the $cs1$ field), so the same password written twice is two
+	-- different lines -- and what a player holds is the paper, which is what this
+	-- types at it.
+	check("so the paper already in the drawer still opens it",
+		CeroSecOS.checkPassword(usersNow.root, paper))
+	eq("the file the player had written is gone",
+		CeroSecOS.systemNode(now, "/mine.txt"), nil)
+	eq("and the disk is still in the drive", machine:hasDisk(), true)
+	local passwdNow = CeroSecOS.systemNode(now, CeroSecOS.PASSWD_PATH).data
+
+	-- And it is ONCE again: the machine that has just been prefilled is a machine
+	-- somebody has used, and switching it off and on does not fill it twice.
+	machine:turnOff()
+	machine:turnOn()
+	eq("the power-on after that is not a first one",
+		CeroSecOS.systemNode(machine:osState(), CeroSecOS.PASSWD_PATH).data, passwdNow)
+
+	_G.__zones = {}
+	_G.getWorld = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+-- Through the real command door: the refusal a window prints, and the door that is
+-- shut.
+do
+	local net = newNet()
+	local machine = net.here
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	-- On, so it is refused -- and answered, because a refusal a player cannot read
+	-- is a refusal that looks like a bug in the mod.
+	eq("the machine is on", machine.on, true)
+	local was = machine.os
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "reset" })
+	eq("the press was answered", #answers, 1)
+	check("with the refusal",
+		string.find(tostring(answers[1].args.error), "cannot reset", 1, true) ~= nil)
+	check("in the server's own words",
+		string.find(tostring(answers[1].args.error), "switch it off first", 1, true) ~= nil)
+	eq("and the state is exactly the one it had", machine.os, was)
+
+	-- Off, it happens, and a press that worked answers nothing at all: the snapshot
+	-- two seconds later is what says so.
+	machine:turnOff()
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "reset" })
+	eq("nothing is answered when it worked", #answers, 0)
+	eq("and the machine has no state at all", machine.os, nil)
+
+	-- Every snapshot says whether the selected machine may be reset, whatever tab it
+	-- is for, because the button under the list is on every tab.
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for i = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[i], machine)
+		eq(tabs[i] .. " says an off machine may be reset", snap.canReset, true)
+		eq("with nothing to say about why not", snap.resetReason, nil)
+	end
+	local snap = CeroSecDebug.snapshotOf(net.system, "machines", net.gate)
+	eq("and a machine that is on may not", snap.canReset, false)
+	eq("with the reason", snap.resetReason, "it is on -- switch it off first")
+
+	-- THE DOOR SHUT. Every command of this window asks CeroSec.debugAllowed, and the
+	-- release turns the flag off: with no debug mode around it the reset is not a
+	-- refusal, it is nothing at all -- the command does not answer and does not act.
+	local hadFlag = CeroSec.DEV_DEBUG_MENU
+	CeroSec.DEV_DEBUG_MENU = false
+	eq("the door really is shut", CeroSec.debugAllowed(), false)
+	net.gate:turnOff()
+	local gateState = net.gate.os
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 12, y = 10, z = 0, token = "dbg-0-1", act = "reset" })
+	eq("a reset through a shut door answers nothing", #answers, 0)
+	eq("and resets nothing", net.gate.os, gateState)
+	CeroSec.DEV_DEBUG_MENU = hadFlag
+end
+
 print("window_test: " .. count .. " checks passed")

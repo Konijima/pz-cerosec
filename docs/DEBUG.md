@@ -104,6 +104,12 @@ Widths are measured with the **advance** of a string and not with
 is exact): `MeasureStringX` answers the last glyph's ink where the pen moves by its
 advance.
 
+The width it OPENS at comes off the widest tab's nominal columns, and the button
+row's width comes off the words on the buttons, so the two are free to disagree —
+the seventh button is what made them. So the window is never opened narrower than
+its own button row (`createChildren`, after the resize floors): a button hanging
+over the window's right edge is a button somebody has to drag the corner to find.
+
 Resizable, one instance at a time (a second opening closes the first), and it
 **remembers nothing** between sessions — not its position, not the tab that was in
 front, not the machine that was selected. A debug window is opened to answer a
@@ -306,7 +312,8 @@ connection is not a window (see [PROTOCOL.md](PROTOCOL.md)).
     client -> server: debug     { x, y, z, token, tab }
                       debugact  { x, y, z, token, act }
     server -> client: debug     { x, y, z, token, tab, rows, info,
-                                  canTurnOn, canTurnOff, on, loaded, reason }
+                                  canTurnOn, canTurnOff, canReset, on, loaded,
+                                  reason, resetReason }
                       debug     { x, y, z, token, error }        -- a refusal
 
 `x, y, z` is the machine **selected in the window** and not a computer the player
@@ -320,9 +327,10 @@ every other command of this module, and it is deliberate: they are about the
 COUNTY. What is asked instead is `CeroSec.debugAllowed()`.
 
 `tab` is one of `machines`, `files`, `devices`, `network`, `scheduler` — anything
-else is answered with nothing. `act` is `on`, `off` or `dump`; the first two are
-the object's own `turnOn`/`turnOff`, which are the very calls
-`SCeroSecObject:toggle` makes for the context menu.
+else is answered with nothing. `act` is `on`, `off`, `dump` or `reset`; the first
+two are the object's own `turnOn`/`turnOff`, which are the very calls
+`SCeroSecObject:toggle` makes for the context menu, and the last is the one act
+with no survivor's gesture behind it (see **Reset machine** below).
 
 `rows` is an array of `{ c = { "cell", ... }, x, y, z, used }` — plain strings,
 every cell truncated to 64 characters with the same `~` the terminal truncates
@@ -330,9 +338,11 @@ with, and the coordinates only on the Machines tab, where they are what makes a 
 selectable; `used` only there too, for the filter. `info` is an array of strings for
 the block under the list.
 
-`canTurnOn`, `canTurnOff`, `on`, `loaded` and `reason` are about the **selected**
-machine and ride on every tab's snapshot, because the buttons under the list are the
-same six on every tab. They are built by `CeroSecDebug.selection` off the very
+`canTurnOn`, `canTurnOff`, `canReset`, `on`, `loaded`, `reason` and `resetReason`
+are about the **selected** machine and ride on every tab's snapshot, because the
+buttons under the list are the same seven on every tab. The reset carries its own
+reason and does not borrow `reason`: that one is `turnOn`'s, and a window printing
+"it is already on" for a refused reset would be blaming the wrong rule. They are built by `CeroSecDebug.selection` off the very
 readings the act itself goes through, so a button greyed in the window is a button
 whose act the server would refuse — and the day the rule moves, the window moves
 with it.
@@ -362,9 +372,10 @@ which is what `ls /dev` costs and is paid once per refresh. The premises block i
 one square, one `BuildingDef` and one `getZonesAt` — all three for the selected
 machine only, and none of them for the two hundred rows above it.
 
-## The three things it can change
+## The four things it can change
 
-Everything else is a read. The three are the two power buttons and the teleport:
+Everything else is a read. The four are the two power buttons, the teleport and
+the reset:
 
 - **Turn on** / **Turn off** go through `Commands.debugact`, which calls the
   object's own `turnOn`/`turnOff`. Same path, same sprite, same sound, same
@@ -405,6 +416,70 @@ Everything else is a read. The three are the two power buttons and the teleport:
 
 **Dump state** writes nothing: it prints.
 
+## Reset machine
+
+**A machine nobody has ever used, made out of one that has.** Prefill runs at the
+FIRST power-on and at no other moment (`SCeroSecObject:prefill`), so a machine
+whose first power-on went wrong halfway through — a crash mid-prefill — is a
+machine there is no second try on: it is half filled for ever and the bug that
+half filled it cannot be provoked again. This button is what makes the second try
+possible, and it exists for testing and for nothing else.
+
+**It is refused on a machine that is not OFF**, in the server's own words
+(`CeroSecDebug.resetRefusal`: `it is on -- switch it off first`), which is what
+greys the button and what the reason line prints. It asks the world nothing at
+all, so a machine on the far side of the county with its chunk away is reset
+exactly like one in the room — the difference from **Turn on**, which needs a
+square to ask about the wire.
+
+What `SCeroSecObject:resetMachine` does, and it is everything `turnOff` does plus
+the disk: every job killed and the pending `shutdown` order with them, the dark
+interval of a reboot dropped, the machine taken off the scheduler's book
+(`CeroSecJobs.killAll`), every window standing at it **told** and not merely
+forgotten, then `os`, `console`, `heard`, `cron` and the two sticky refusals
+(`osBroken`, `osNewer`) gone, and the state pushed out to the IsoObject and to
+the clients the way `turnOff` pushes one.
+
+**The disk stays in the drive.** What is in the slot is a thing in the WORLD — a
+player carried it here — and it lives inside the machine's state only because that
+is where the serializer can keep it. So it is lifted out, the state is thrown
+away, and it goes back into the fresh one. There is deliberately no "eject it to
+the floor first": a disk in a drive is in the drive, which is the same rule the
+pickup path wears. A machine with an empty drive comes back with no state at all;
+one with a disk comes back with a fresh state whose only content is the drive.
+
+**The accounts come back the same, and the paper in the drawer still opens them.**
+Everything prefill derives comes out of the save's own secret and the premises,
+and a reset touches neither — so the same profile, the same logins and the same
+root password come back. The note bookkeeping (`CeroSecNotes.premisesMark`, on the
+system and saved with the save) is **not** cleared either: it is about a PREMISES
+and not about a machine, the paper already in a desk is still valid, and clearing
+it would put a second copy of one password in the next drawer somebody opens.
+
+**How the next power-on knows.** `self.osFresh`, set here and consumed by
+`turnOn`, where it is read beside the `bare` test. It has to be a flag and not the
+absence of a state, because the absence does not survive being LOOKED at:
+`osState` makes a fresh machine out of nothing, and this very window asks `osState`
+of the selected machine every two seconds for its detail block — so a reset
+remembered as "`self.os` is nil" would be undone by the refresh that followed it.
+It is runtime state and not among the object's saved keys: reset, then reload
+without switching the machine on, and it simply comes up as the fresh machine it
+now is with no prefill. The gesture is reset and then switch on.
+
+**Two clicks on the glass, and no dialog.** The first click arms and turns the
+reason line into `Click again to reset <host> at x,y,z`; the second sends; the
+arming expires after `CeroSecDebugUI.ARM_MS` (five seconds) and is dropped by a
+click on another row or by the machine coming on in between. A vanilla modal would
+be one more window over a window that is already a tool, and what a reader needs
+is not a box to click through but to be told which machine he is about to empty.
+
+**The row does not vanish under the cursor.** A reset machine has no `os`, so the
+server's `used` flag goes false and the `used only` filter would take its row away
+at the very moment its reader needs it — a computer that looked deleted. So
+`CeroSecDebugUI:passes` keeps the SELECTED machine's row whatever the filter says,
+on this refresh and on every one after it, while the machines nobody is looking at
+stay filtered away.
+
 ## What is proven, and where
 
 `tests/window_test.lua` holds the server half — the snapshots built against three
@@ -416,6 +491,15 @@ lines. Section 52 adds the rework's half of it: the three refusals of
 ever touched, the selection fields on every tab's snapshot, and a refusal driven
 through the real `OnClientCommand` door and read off the reply.
 
+Section 53 is the reset's: a real machine prefilled off a real premises, a file of
+the player's own on it, a disk in its drive and a paper already marked for the
+premises — reset, and then switched on again — plus the refusal on a running
+machine, the refusal through the real `OnClientCommand` door, and the same door
+with `CeroSec.debugAllowed` shut, which answers nothing and acts on nothing. The
+jobs, the windows, the reboot interval and the heard stations it clears are
+PROVOKED onto a machine that is off, because `turnOff` has already taken them and a
+bench that merely switched the machine off would assert zero against zero.
+
 `tests/debug_ui_test.lua` holds the window, against a fake tab panel, panel, list
 box and button, and an `Events` register whose `Remove` really removes. Its blocks
 10 to 13 are the rework's: the bands of the layout in pixels before and after a
@@ -424,11 +508,21 @@ rather than drawn over its neighbour), the filter and the `showing N of M` line,
 cursor staying on its machine through a reordered county, and the greying and the
 reason line for every button.
 
+Its block 14 is the reset's half: the button greyed and usable, the first click
+that sends nothing and names the machine, the second that sends, the five seconds
+running out, an arming that does not cross a change of row or a machine coming on,
+and the selected row surviving the filter.
+
 The whole of it is mutation-checked: a view put at `y = 0`, a list with no headroom
 for its header row, cells drawn at their natural width, the filter off by default,
 a selection kept by index, `debugact` swallowing the refusal the way it used to, and
 a `turnOnRefusal` that blames the wiring for a chunk nobody can ask — each one turns
-a bench red.
+a bench red. And for the reset: one click that resets, a reset allowed on a running
+machine, the note bookkeeping cleared, the jobs left alive, the disk dropped with
+the state, `osFresh` never set (so the next power-on does not prefill), the selected
+row filtered away, and the shut door ignored — eight more, each one red. And a
+ninth on the layout: the window opened at its nominal width with the button row
+wider than it, which puts the last button over the edge.
 
 The in-game half — what is actually on the glass, whether the columns line up,
 whether the buttons do what they say — is
