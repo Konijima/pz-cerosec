@@ -290,8 +290,9 @@ end
 --     root     = true,       a root password to derive, hash and never store
 --     logs     = { "..." },  lines for /var/log/messages, dated before day one
 --     mail     = { { to=, from=, subj=, body= } },
---     bin      = { { script="lights.sh", chance=60, to="home" } },
---     files    = { { path=, mode=, owner=, text= } },
+--     cron     = { { to=1, lines={ "0 22 * * * ..." } } },
+--     bin      = { { script="lights.sh", chance=60, to="/usr/local/src" } },
+--     files    = { { path=, mode=, owner=, text= }, { path=, dir=true } },
 --   }
 --
 -- Five things to know about it:
@@ -313,6 +314,25 @@ end
 --   * every text is written through the FS gate and therefore TRIMMED rather
 --     than forced: the order of the table is the order things are written in, so
 --     put what matters first.
+--
+-- And three things wave 7b added, each because a premises the county really has
+-- could not be written without it:
+--
+--   * `cron` is a crontab per account, in Vixie's own five fields, written to
+--     /var/spool/cron/<login> exactly where crontab(1) writes one. `to` is a slot
+--     number or a literal login, the way `mail`'s is. It is a real crontab and the
+--     machine really runs it, which is the point: a shop whose lights went off at
+--     ten every night is a shop whose lights still go off at ten. The bench holds
+--     every one of them to CeroSecOS.checkCrontab -- a crontab the machine's own
+--     crontab(1) would refuse is a crontab that does nothing and says nothing.
+--   * a `files` entry with `dir = true` is a DIRECTORY and not a file. A profile
+--     that wanted a tree of its own -- /usr/local/src on the vendor's own machine
+--     -- had no way to make one, and a path whose parent is missing is a file the
+--     gate refuses for a reason nothing in the catalogue could see.
+--   * a `bin` entry may name `to`, an absolute directory, instead of going into
+--     the first account's ~/bin. The directory and its parents are made if they
+--     are missing. One script still has one copy: `to` moves where the copy is
+--     put and never what is in it.
 --
 -- The ten ids exist now and eight of them are deliberately EMPTY. A machine
 -- whose premises resolves to an empty id is prefilled with nothing at all, which
@@ -408,11 +428,32 @@ end
 -- runs every one of them through the engine: `needs` is what it declares it
 -- wants standing around it, and the bench stubs exactly that.
 --
---   SCRIPTS[name] = { mode = 755, needs = { devices = { {id=,kind=} } },
---                     args = { "light0" }, text = "..." }
+--   SCRIPTS[name] = { mode = 755, needs = { devices = { {id=,kind=} },
+--                                          files = { {path=,text=} } },
+--                     args = { "light0" }, input = { "y" }, text = "..." }
 --
 -- `args` is what the bench runs it WITH, and it is part of the library because a
 -- script whose usage nobody recorded is a script nobody can prove runs.
+--
+-- `needs.files` is the other half of `needs.devices` and was added for the same
+-- reason: a script that reads a file cannot be proved by running it on a machine
+-- where the file is not there. The bench writes exactly what is declared, under the
+-- account's own home, and nothing else -- so a script that quietly reached for a
+-- second file finds it missing, which is the whole point of declaring.
+--
+-- `input` is what somebody TYPES at it: the lines a `read` is answered with, in
+-- order. A program that asks questions -- a game -- cannot be proved by running it
+-- and reading what came back, because nothing comes back until it has been
+-- answered. The bench answers it through CeroSecOS.jobInput, which is the one door
+-- an answer goes through on a real machine, and holds the recorded lines to playing
+-- it to the END: a script still waiting when the list runs out is a script whose
+-- usage nobody really recorded.
+--
+-- THE USAGE RULE, and what it is for. A script somebody found and typed the name of
+-- must say how it is used and must not claim success -- so the bench runs every one
+-- of them with NO arguments as well. A script that takes none (`args = {}`) is not
+-- held to it, there being no wrong way to run it; and it cannot get out of the rule
+-- by declaring so, because the bench also asks whether the text mentions `$1`.
 --
 CeroSecContent.SCRIPTS = {}
 
@@ -446,6 +487,7 @@ CeroSecContent.SCRIPTS["lights.sh"] = {
 --     id     = "UTILITIES",  what the entry is called in here and in the bench
 --     label  = "UTILITIES",  what is written on the disk, CeroSecOS.labelOk
 --     weight = 4,            out of 100; what is left over is a blank disk
+--     late   = "NUMBERS.TXT" one file is a stub until the disk is first inserted
 --     files  = { { name="lights.sh", script="lights.sh" },
 --                { name="README.TXT", mode=644, text="..." } },
 --   }
@@ -467,6 +509,40 @@ CeroSecContent.SCRIPTS["lights.sh"] = {
 --   * BLANK is in the table with no files on purpose: it is the entry the roll
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
+--
+-- AND A SIXTH, which wave 7b needed and which is the one piece of mechanics it
+-- added: `late`.
+--
+-- A floppy is created in LOOT and loot has no location. The disk is in a drawer in
+-- a town nobody has walked into yet; there is no square to ask, no premises, no
+-- region and therefore no telephone exchange -- and a BBS list printed with the
+-- numbers of somewhere else is a disk that lies to the player in the one way this
+-- catalogue is not allowed to.
+--
+-- So one file of such an entry is a STUB when the disk is made, and it is filled
+-- in the first time somebody puts the disk in a machine: the server knows which
+-- square that machine is on, and therefore which exchange's book the numbers come
+-- out of (CeroSecNet.fillLateDisk).
+--
+-- HOW "HAS IT BEEN FILLED YET" IS ANSWERED, and it is answered without a field of
+-- its own. A disk owns three keys and only three (CeroSecOS.DISK_KEYS), and the
+-- gate at the slot refuses a disk carrying a fourth -- which is what keeps a
+-- payload out of the save file -- so there is nowhere on a disk to write a flag
+-- and nothing that would survive being written there. The mark is the FILE: the
+-- late file is filled only while it still holds, byte for byte, the stub the
+-- catalogue shipped.
+--
+-- That is not a trick, it is the rule upgradeSystem already uses to take a retired
+-- command out of /bin: a file that is exactly what was shipped is the system's to
+-- replace, and anything else at that name is a survivor's own work and stays. So a
+-- player who wrote his own notes over the stub keeps them, on every machine he ever
+-- puts the disk in, and the disk never rewrites itself under him.
+--
+-- What it costs: a survivor who types the shipped stub onto a blank disk by hand,
+-- labels it, and inserts it gets the listings printed. He has to reproduce a text
+-- he could only have read off another copy of the same disk, which is a curiosity
+-- and not a way in -- the numbers are the region's own telephone directory and the
+-- phone book in his other pocket has all of them in it already.
 --
 CeroSecContent.DISKS = {
 	{
@@ -532,6 +608,19 @@ function CeroSecContent.diskById(id)
 	return nil
 end
 
+-- And by the STICKER, which is the only thing a disk in somebody's pocket carries
+-- of the entry it came from. Written as its own walk rather than as diskById of the
+-- label: the two are the same string for every entry there is, and a lookup that
+-- leaned on that would be a lookup that broke the day an entry is labelled in words
+-- and identified by a word.
+function CeroSecContent.diskByLabel(label)
+	if type(label) ~= "string" then return nil end
+	for i = 1, #CeroSecContent.DISKS do
+		if CeroSecContent.DISKS[i].label == label then return CeroSecContent.DISKS[i] end
+	end
+	return nil
+end
+
 -- One catalogue entry -> the table that goes in an item's modData: v, fs and
 -- label, which is the whole of what a disk owns (CeroSecOS.DISK_KEYS). Built
 -- through CeroSecOS.newFloppy and CeroSecOS.createNode, so the disk's own
@@ -582,6 +671,134 @@ function CeroSecContent.diskData(entry, now)
 	end
 	CeroSecOS.unmountAll(state)
 	return disk, written
+end
+
+--
+-- THE LATE FILE: a disk whose story needs a place, and a place loot has not got
+--
+-- See the sixth note over CeroSecContent.DISKS for why this exists at all.
+--
+
+-- How many listings go on a late BBS list, and why not more: a floppy is 4096
+-- bytes and the other two files on that disk have to fit beside these. Eight is a
+-- page of a hand-kept list, which is what somebody who called around actually had.
+CeroSecContent.BBS_MAX = 8
+
+-- The names somebody wrote beside the numbers. A board was named by whoever ran it
+-- out of his spare room, and these are named the way those were: a place, a shift,
+-- or a joke about the telephone bill.
+--
+-- They are INVENTED and the numbers are not, which is the whole shape of the disk:
+-- the four digits ring a real premises of the player's own region, because they
+-- come out of the county's own directory, and the name beside them is what the
+-- disk's owner wrote on his list.
+CeroSecContent.BBS_NAMES = {
+	"The Back Porch", "Night Shift", "Knox Exchange", "The Tool Shed",
+	"Coal Town", "Static Line", "The Waiting Room", "Bluegrass Board",
+	"Dead Letter Office", "The Annex", "Third Shift", "Riverbend",
+}
+
+-- Which file of an entry is the late one, and the text it shipped with. Both come
+-- off the entry itself so there is ONE copy of the stub: the sentinel the fill
+-- compares against IS the catalogue's own text, and a wave that edited the stub
+-- and forgot the sentinel is a wave that cannot happen.
+--
+-- name, stub -- or nil for an entry with no late file.
+function CeroSecContent.lateFile(entry)
+	if type(entry) ~= "table" then return nil end
+	if type(entry.late) ~= "string" then return nil end
+	if type(entry.files) ~= "table" then return nil end
+	for i = 1, #entry.files do
+		local file = entry.files[i]
+		if file.name == entry.late and type(file.text) == "string" then
+			return file.name, file.text
+		end
+	end
+	return nil
+end
+
+-- Is this disk a copy of a late entry that has not been filled in yet?
+--
+-- Three questions, and all three have to answer yes: the sticker names a late
+-- entry, the file is on the disk, and it still holds the stub. entry, name -- or
+-- nil, which is every other disk in the county and is the answer taken on every
+-- single insertion, so it is three table reads and a string compare.
+function CeroSecContent.lateEntryFor(disk)
+	if type(disk) ~= "table" or type(disk.label) ~= "string" then return nil end
+	local entry = CeroSecContent.diskByLabel(disk.label)
+	if entry == nil then return nil end
+	local name, stub = CeroSecContent.lateFile(entry)
+	if name == nil then return nil end
+	local root = disk.fs
+	if type(root) ~= "table" or type(root.children) ~= "table" then return nil end
+	local node = root.children[name]
+	if type(node) ~= "table" or node.type ~= "file" then return nil end
+	if node.data ~= stub then return nil end
+	return entry, name
+end
+
+-- The list itself: the exchange, then a name and a number a line at a time.
+--
+-- PURE, and that is what keeps this file a catalogue: what premises are in the
+-- region and what they are called is the server's question (CeroSecNet.directory),
+-- and turning a list of numbers into a page is this one's.
+--
+-- Which name goes with which number is decided by THE NUMBER, so the pairing is a
+-- fact about the region and not about the order the map handed its zones over: the
+-- same county gives the same list however it was enumerated. Nothing here is
+-- hashed against the save's secret -- a printed disk is not a password.
+function CeroSecContent.bbsText(exchange, numbers)
+	if type(numbers) ~= "table" then return nil end
+	local names = CeroSecContent.BBS_NAMES
+	local out = {
+		"BOARDS I CALL -- exchange " .. tostring(exchange),
+		"",
+	}
+	local put = 0
+	for i = 1, #numbers do
+		local number = numbers[i]
+		if type(number) == "string" and put < CeroSecContent.BBS_MAX then
+			local digits = tonumber(string.match(number, "(%d+)$") or "0") or 0
+			local at = math.floor(math.fmod(digits + i, #names)) + 1
+			local name = names[at]
+			-- Name, dot leaders, number -- a hand-kept list laid out the way the
+			-- telephone book it was copied out of lays one out, and inside the sixty
+			-- columns the screen has.
+			local room = 52 - #number
+			local dots = string.rep(".", room - #name)
+			out[#out + 1] = "  " .. name .. " " .. dots .. " " .. number
+			put = put + 1
+		end
+	end
+	if put == 0 then return nil end
+	out[#out + 1] = ""
+	out[#out + 1] = "Dial one with: cu " .. tostring(numbers[1])
+	out[#out + 1] = "Most of them stopped answering in July."
+	return table.concat(out, "\n"), put
+end
+
+-- Fill the late file in, once. `numbers` is the region's own numbers, in the order
+-- the book prints them.
+--
+-- Written through the ENGINE's own write path onto the disk in a throwaway drive,
+-- exactly as diskData writes the disk in the first place, so the floppy's 4096
+-- bytes decide how much of the list fits and a list that would not fit leaves the
+-- stub exactly where it was. Answers true when the file really changed.
+function CeroSecContent.fillLate(disk, exchange, numbers, now)
+	local entry, name = CeroSecContent.lateEntryFor(disk)
+	if entry == nil then return false end
+	local text = CeroSecContent.bbsText(exchange, numbers)
+	if text == nil then return false end
+	local state = CeroSecOS.newState(nil)
+	state.floppy = disk
+	if CeroSecOS.addMount(state, CeroSecOS.FD_NAME, CeroSecOS.MNT_PATH) == nil then
+		return false
+	end
+	local session = CeroSecOS.rootSession()
+	local done = CeroSecOS.writeFile(state, session,
+		CeroSecOS.MNT_PATH .. "/" .. name, text, false, now)
+	CeroSecOS.unmountAll(state)
+	return done ~= nil
 end
 
 --
@@ -739,6 +956,24 @@ local function placeDir(state, session, path, owner, mode, now)
 	return CeroSecOS.createNode(state, session, path, node, now) ~= nil
 end
 
+-- The same, plus every parent above it. createNode makes ONE node and refuses a
+-- path whose parent is not there -- which is right, and is why /usr/local/src
+-- needed three calls and a caller that remembered to make them in order. The
+-- walk is bounded by CeroSecOS.MAX_DEPTH, and a parent that could not be made
+-- stops it: the deeper directory would be refused anyway and the refusal is the
+-- trimming rule doing its job.
+local function placeDirTree(state, session, path, owner, mode, now)
+	if type(path) ~= "string" or string.sub(path, 1, 1) ~= "/" then return false end
+	local at, made = "", 0
+	for part in string.gmatch(path, "[^/]+") do
+		made = made + 1
+		if made > CeroSecOS.MAX_DEPTH then return false end
+		at = at .. "/" .. part
+		if not placeDir(state, session, at, owner, mode, now) then return false end
+	end
+	return made > 0
+end
+
 
 -- The accounts a profile asks for, made and (some of them) given a password.
 -- Answers the array of logins it actually made, in order, because the files and
@@ -816,21 +1051,58 @@ end
 -- script of ours in there would be a script the next version argues about. A
 -- survivor's own ~/bin is already on his path (see the manual's chapter on where
 -- commands come from).
+-- An entry naming `to` goes into that directory instead, owned by root: it is not
+-- one man's copy of a tool but a copy the machine keeps -- the vendor's own
+-- /usr/local/src, which is where a 1993 machine's local software really lived.
 local function placeScripts(state, session, profile, secret, mkey, login, now)
 	if type(profile.bin) ~= "table" then return end
-	local made = false
+	local made = {}
 	for i = 1, #profile.bin do
 		local entry = profile.bin[i]
 		local script = CeroSecContent.SCRIPTS[entry.script]
 		if script ~= nil
 				and CeroSecContent.chance(secret,
 					CeroSecContent.key(mkey, "bin", entry.script), entry.chance or 100) then
-			if not made then
-				made = placeDir(state, session, "/home/" .. login .. "/bin", login, 755, now)
+			local dir, owner = "/home/" .. login .. "/bin", login
+			if type(entry.to) == "string" and string.sub(entry.to, 1, 1) == "/" then
+				dir, owner = entry.to, "root"
 			end
-			if made then
-				place(state, session, "/home/" .. login .. "/bin/" .. entry.script, login,
-					script.mode, script.text, now)
+			if made[dir] == nil then
+				made[dir] = placeDirTree(state, session, dir, owner, 755, now)
+			end
+			if made[dir] then
+				place(state, session, dir .. "/" .. entry.script, owner, script.mode,
+					script.text, now)
+			end
+		end
+	end
+end
+
+-- /var/spool/cron/<login>: what the machine was doing while nobody stood at it.
+--
+-- Root's and 600 in a directory that is root's and 700, which is exactly where
+-- crontab(1) puts one and the whole of why one account cannot write a line that
+-- runs as another. A survivor who wants to read it says `sudo crontab -l -u` --
+-- there is no such flag, so he says `sudo cat` -- and one who owns the account
+-- says `crontab -l`, which is the everyday way in.
+local function placeCron(state, session, profile, logins, now)
+	if type(profile.cron) ~= "table" then return end
+	for i = 1, #profile.cron do
+		local item = profile.cron[i]
+		local to = item.to
+		if type(to) == "number" then to = logins[to] end
+		if type(to) == "string" and CeroSecOS.getUser(state, to) ~= nil
+				and type(item.lines) == "table" and #item.lines > 0 then
+			local text = table.concat(item.lines, "\n")
+			-- Held to the machine's own crontab(1) HERE, by the one function that
+			-- writes one: a file that will not parse is a file the survivor's own
+			-- `crontab -l` prints and `cron` silently does nothing with, and the
+			-- catalogue must not be able to ship one. The bench asserts it too, of
+			-- every line of every profile; this is the belt, so a profile written
+			-- after the bench was last read cannot get one past.
+			if CeroSecOS.checkCrontab(CeroSecOS.cronPath(to), text) == nil then
+				place(state, session, CeroSecOS.cronPath(to), "root",
+					CeroSecOS.CRONTAB_MODE, text, now)
 			end
 		end
 	end
@@ -920,9 +1192,9 @@ end
 --
 -- Order matters and this is the order: the hostname, then the accounts (because
 -- everything else is addressed to them), then their files and scripts, then the
--- machine-wide files, then the motd, then the log and the mail. Everything after
--- a refusal still runs -- a full disk trims the tail of a profile and never its
--- head.
+-- machine-wide files, then the motd, then the log, the mail and the crontabs.
+-- Everything after a refusal still runs -- a full disk trims the tail of a profile
+-- and never its head.
 --
 function CeroSecContent.prefill(state, opts)
 	if type(state) ~= "table" or type(opts) ~= "table" then return nil end
@@ -974,8 +1246,13 @@ function CeroSecContent.prefill(state, opts)
 		for i = 1, #profile.files do
 			local file = profile.files[i]
 			if type(file.path) == "string" then
-				place(state, session, file.path, file.owner or "root", file.mode,
-					file.text, now)
+				if file.dir then
+					placeDirTree(state, session, file.path, file.owner or "root",
+						file.mode or 755, now)
+				else
+					place(state, session, file.path, file.owner or "root", file.mode,
+						file.text, now)
+				end
 			end
 		end
 	end
@@ -986,6 +1263,7 @@ function CeroSecContent.prefill(state, opts)
 
 	placeLog(state, session, profile, secret, mkey, opts.start, now)
 	placeMail(state, session, profile, logins, now)
+	placeCron(state, session, profile, logins, now)
 
 	-- And root's own password, LAST, so that everything above it happened as root
 	-- on a machine whose root account was still open -- and so that a refusal

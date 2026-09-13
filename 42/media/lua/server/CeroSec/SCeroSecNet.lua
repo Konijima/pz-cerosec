@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecPhonebook"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSNet"
@@ -450,6 +451,58 @@ function CeroSecNet.directory(rx, ry)
 		end
 	end
 	return out, capped
+end
+
+--
+-- A DISK THAT WAS PRINTED WHERE IT WAS FOUND
+--
+-- A floppy is created in loot, and loot has no location: the disk is in a drawer in
+-- a town nobody has walked into, so there is no square, no premises and therefore
+-- no exchange at the moment it is made. A BBS list printed with the numbers of
+-- somewhere else is the one kind of lie the catalogue is not allowed to tell, so one
+-- file of such an entry ships as a stub and is filled HERE -- the first time the
+-- disk goes into a machine, which is the first moment there is a square to ask.
+--
+-- Which region is the machine's own, asked the way the phone book asks it
+-- (CeroSecOS.phoneRegionOf of the tile, CeroSecOS.phoneExchangeOfRegion for the
+-- three digits), so the numbers on the disk are the numbers in the book in the
+-- survivor's other pocket and the same numbers `cu` really dials.
+--
+-- THE NUMBERS AND NOT THE NAMES. What goes on the disk is the region's own four
+-- digits with an INVENTED board name beside each -- the numbers ring real premises
+-- and the names are what the disk's owner wrote on his list. A hand-kept list of
+-- boards that named the shops they were in would be a phone book, and the county
+-- already has one.
+--
+-- Cheap on every insertion and that is deliberate: CeroSecContent.lateEntryFor is
+-- three table reads and a string compare, and the zone sweep below happens only for
+-- a disk that really is a stub of a real catalogue entry -- which is at most once in
+-- the life of any one disk.
+--
+-- Answers true when the disk really changed.
+function CeroSecNet.fillLateDisk(disk, x, y, now)
+	if CeroSecContent.lateEntryFor(disk) == nil then return false end
+	if type(x) ~= "number" or type(y) ~= "number" then return false end
+	local rx, ry = CeroSecOS.phoneRegionOf(x, y)
+	if rx == nil then return false end
+	local exchange = CeroSecOS.phoneExchangeOfRegion(rx, ry)
+	if exchange == nil then return false end
+	-- The book's own listings, in the book's own order, so a survivor holding both
+	-- reads the disk's numbers in the order he reads the directory's.
+	local entries = CeroSecPhonebook.sorted(CeroSecNet.directory(rx, ry))
+	local numbers, seen = {}, {}
+	for i = 1, #entries do
+		local number = entries[i].number
+		if not seen[number] then
+			seen[number] = true
+			numbers[#numbers + 1] = number
+		end
+		-- A party line is two premises on one number and is one line on a hand-kept
+		-- list, which is why the duplicates are dropped here rather than printed
+		-- twice under two board names.
+	end
+	if #numbers == 0 then return false end
+	return CeroSecContent.fillLate(disk, exchange, numbers, now)
 end
 
 -- Every machine the server holds, which is every machine in the county that has
