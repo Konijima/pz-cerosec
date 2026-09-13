@@ -487,8 +487,12 @@ function CeroSecNet.fillLateDisk(disk, x, y, now)
 	if rx == nil then return false end
 	local exchange = CeroSecOS.phoneExchangeOfRegion(rx, ry)
 	if exchange == nil then return false end
-	-- The book's own listings, in the book's own order, so a survivor holding both
-	-- reads the disk's numbers in the order he reads the directory's.
+	-- Every listing of the region, and the ORDER IS NOT SETTLED HERE: the layout
+	-- sorts by number (CeroSecContent.bbsText), which is the order a hand-kept list
+	-- of numbers to turn is kept in and which is what keeps the order the map handed
+	-- its zones over out of the page. Sorted by name on the way through anyway, so
+	-- that what is dropped when a region has more premises than a page holds is a
+	-- decision and not an accident of enumeration.
 	local entries = CeroSecPhonebook.sorted(CeroSecNet.directory(rx, ry))
 	local numbers, seen = {}, {}
 	for i = 1, #entries do

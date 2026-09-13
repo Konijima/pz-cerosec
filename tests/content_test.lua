@@ -734,6 +734,58 @@ do
 end
 
 --
+-- 4c. Every data file a script was proved on is a file some premises really keeps
+--
+-- CeroSecContent.DATA is named twice on purpose: once by the script that reads it
+-- and once by the machine or the disk that carries it. If only the script named
+-- one, the bench would be running audit.sh on a file of its own invention and
+-- calling that proof.
+--
+
+do
+	local names = {}
+	for name in pairs(CeroSecContent.DATA) do names[#names + 1] = name end
+	table.sort(names)
+	check("there are data files", #names > 0)
+	for i = 1, #names do
+		local name, text = names[i], CeroSecContent.DATA[names[i]]
+		local found = nil
+		for id in pairs(CeroSecContent.PROFILES) do
+			local profile = CeroSecContent.PROFILES[id]
+			if type(profile.accounts) == "table" then
+				for a = 1, #profile.accounts do
+					local files = profile.accounts[a].files
+					if type(files) == "table" then
+						for f = 1, #files do
+							if files[f].path == name and files[f].text == text then
+								found = id
+							end
+						end
+					end
+				end
+			end
+			if type(profile.files) == "table" then
+				for f = 1, #profile.files do
+					if profile.files[f].path == name and profile.files[f].text == text then
+						found = id
+					end
+				end
+			end
+		end
+		for d = 1, #CeroSecContent.DISKS do
+			local files = CeroSecContent.DISKS[d].files
+			for f = 1, #files do
+				if files[f].name == name and files[f].text == text then
+					found = CeroSecContent.DISKS[d].id
+				end
+			end
+		end
+		check("the data file " .. name .. " is carried by something in the county",
+			found ~= nil)
+	end
+end
+
+--
 -- 5. The same secret twice is the same machine, and another secret is another one
 --
 
@@ -1024,7 +1076,22 @@ do
 			local root = disk.fs
 			check(where .. " has a filesystem on it", type(root) == "table")
 			local names = CeroSecOS.childNames(root)
-			eq(where .. " has one entry per file", #names, #entry.files)
+			-- One node per entry, counted over the whole TREE and not over the root:
+			-- a distribution disk has a MAN directory on it, and the six pages in it
+			-- are six entries the root has never heard of. The root's own children
+			-- are the entries with no slash in their name.
+			local flat = 0
+			for f = 1, #entry.files do
+				if string.find(entry.files[f].name, "/", 1, true) == nil then
+					flat = flat + 1
+				end
+			end
+			eq(where .. " has one root entry per flat file", #names, flat)
+			local deep = walk(root)
+			local made = 0
+			for _ in pairs(deep) do made = made + 1 end
+			eq(where .. " has one node per entry, the root itself aside", made - 1,
+				#entry.files)
 			local _, bytes = CeroSecOS.subtreeUsage(root)
 			check(where .. " is inside FLOPPY_BYTES (" .. bytes .. ")",
 				bytes <= CeroSecOS.FLOPPY_BYTES)
@@ -1042,17 +1109,28 @@ do
 				end
 			end
 			check(where .. " has a README.TXT", readme ~= nil)
+			-- Every node on the disk, at whatever depth: the name is one the machine
+			-- will take, what is in it carries no control byte, and every line of it
+			-- fits the glass. A page in MAN is read with `cat` like anything else.
+			for path, node in pairs(deep) do
+				if path ~= "/" then
+					local leaf = string.match(path, "([^/]+)$")
+					check(where .. path .. " is a name the machine will take",
+						CeroSecOS.isValidFileName(leaf))
+					check(where .. path .. " carries no control byte",
+						not CeroSecOS.hasControlBytes(node.data or ""))
+					for line in ((node.data or "") .. "\n"):gmatch("([^\n]*)\n") do
+						check(where .. path .. ' line fits 60 columns: "' .. line
+							.. '" (' .. #line .. ")", #line <= CeroSecOS.COLS)
+					end
+				end
+			end
+			-- And the README names every entry BESIDE it, which is the root's own
+			-- children and not the tree: a directory is named and what is in it is
+			-- listed by `ls`, exactly as a distribution disk's own README did it.
 			for n = 1, #names do
 				local name = names[n]
 				local node = root.children[name]
-				check(where .. "/" .. name .. " is a name the machine will take",
-					CeroSecOS.isValidFileName(name))
-				check(where .. "/" .. name .. " carries no control byte",
-					not CeroSecOS.hasControlBytes(node.data or ""))
-				for line in ((node.data or "") .. "\n"):gmatch("([^\n]*)\n") do
-					check(where .. "/" .. name .. ' line fits 60 columns: "' .. line
-						.. '"', #line <= CeroSecOS.COLS)
-				end
 				if node ~= readme then
 					check(where .. "'s README names " .. name,
 						string.find(readme.data or "", name, 1, true) ~= nil)
@@ -1243,12 +1321,18 @@ do
 			not CeroSecContent.fillLate(CeroSecContent.diskData(entry, START), 418, nil,
 				START))
 
-		-- The pairing is a fact about the REGION and not about the order the map
-		-- handed its zones over: the same numbers in another order pair up the same
-		-- way, so two survivors reading two copies of the list read one list.
+		-- The list is a fact about the REGION and not about the order the map handed
+		-- its zones over. Byte for byte, and that is the strong form: two survivors
+		-- reading two copies of the disk read the SAME PAGE, and not merely the same
+		-- numbers in some order. It is what the sort inside bbsText is for, and the
+		-- weaker version of this assertion -- "a number keeps its board" -- is what
+		-- caught the first draft, which paired a name to a number's POSITION.
 		do
-			local a = CeroSecContent.bbsText(418, { HERE[1], HERE[2] })
-			local b = CeroSecContent.bbsText(418, { HERE[2], HERE[1] })
+			local a = CeroSecContent.bbsText(418, HERE)
+			local shuffled = {}
+			for i = #HERE, 1, -1 do shuffled[#shuffled + 1] = HERE[i] end
+			local b = CeroSecContent.bbsText(418, shuffled)
+			eq("the page is the same page however the county was enumerated", a, b)
 			local function nameFor(text, number)
 				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
 					if string.find(line, number, 1, true) ~= nil then
@@ -1257,8 +1341,12 @@ do
 				end
 				return nil
 			end
-			eq("a number keeps its board however the county was enumerated",
-				nameFor(a, HERE[1]), nameFor(b, HERE[1]))
+			eq("and a number keeps its board", nameFor(a, HERE[1]),
+				nameFor(b, HERE[1]))
+			-- And a number keeps it when the rest of the county changes around it,
+			-- which is what "decided by the number" has to mean.
+			local alone = CeroSecContent.bbsText(418, { HERE[1] })
+			eq("even on a list of one", nameFor(alone, HERE[1]), nameFor(a, HERE[1]))
 		end
 
 		-- More listings than a page holds: cut to BBS_MAX and not printed past the

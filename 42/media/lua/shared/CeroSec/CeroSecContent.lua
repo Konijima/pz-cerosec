@@ -986,7 +986,11 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 -- Five things to know:
 --
 --   * a file entry carries EITHER `script` (a name in CeroSecContent.SCRIPTS,
---     which brings its own mode) or `text` and `mode`. Never both.
+--     which brings its own mode) or `text` and `mode`. Never both. An entry marked
+--     `dir` is a directory, and a `name` may then be two components with a slash
+--     between them ("MAN", then "MAN/CU.TXT") -- two is all the depth a floppy
+--     gets, and the entry that makes a directory has to come before the entries
+--     inside it.
 --   * README.TXT is in CAPITALS and so is every name on a disk that is not a
 --     script, because a 1993 floppy came out of a DOS machine and that is what
 --     was on it. The bench holds every README to naming every file beside it.
@@ -1042,18 +1046,367 @@ CeroSecContent.DISKS = {
 		weight = 4,
 		files = {
 			{ name = "lights.sh", script = "lights.sh" },
+			{ name = "check.sh", script = "check.sh" },
 			{ name = "README.TXT", mode = 644, text = table.concat({
 				"UTILITIES DISK",
 				"",
 				"lights.sh   switch the lights you name off.",
-				"            usage: sh lights.sh light0 light1",
+				"            sh lights.sh light0 light1",
+				"check.sh    say which of the doors you name is open.",
+				"            sh check.sh door0 door1",
 				"",
-				"Copy it to the machine before you run it:",
+				"Copy them onto the machine before you run them:",
 				"",
 				"  cp /mnt/lights.sh ~/bin",
 				"",
-				"Ask the machine what lights it has with: ls /dev",
+				"Ask the machine what it can reach with: ls /dev",
+				"Neither of them names a device of its own, so they",
+				"work on any building with the modules fitted.",
 			}, "\n") },
+		},
+	},
+	--
+	-- THE FIVE wave 7b wrote.
+	--
+	{
+		id = "BBS LIST",
+		label = "BBS LIST",
+		weight = 3,
+		-- THE ONE LATE ENTRY, and the sixth note over this table is the whole of
+		-- why: the numbers on it are the numbers of the exchange the disk is first
+		-- put into a machine in, because a disk in a drawer in a town nobody has
+		-- walked into has no exchange to be printed from.
+		late = "NUMBERS.TXT",
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"BBS LIST",
+				"",
+				"NUMBERS.TXT  the boards, with their numbers.",
+				"CALLS.TXT    the packet stations I have heard, by",
+				"             callsign. Nothing on that list is a",
+				"             thing you dial.",
+				"",
+				"Dial a board with cu and the seven digits:",
+				"",
+				"  cu 418-2201",
+				"",
+				"That one is mine and it is not yours. Use the ones",
+				"in NUMBERS.TXT. What comes back is CONNECT 2400 if",
+				"there is a machine on the end, and NO CARRIER after",
+				"fifteen seconds if there is not.",
+			}, "\n") },
+			-- THE STUB. Short, and it reads as what it is: a side of a disk its
+			-- owner had not written up. The fill replaces it byte for byte at the
+			-- first insertion (CeroSecContent.fillLate), so a player only ever sees
+			-- this on a disk used in a region with no listed premises in it at all
+			-- -- and on such a disk it is the truth.
+			{ name = "NUMBERS.TXT", mode = 644, text = table.concat({
+				"BOARDS I CALL",
+				"",
+				"(nothing written on this side yet)",
+			}, "\n") },
+			{ name = "CALLS.TXT", mode = 644, text = table.concat({
+				"PACKET STATIONS I HAVE HEARD",
+				"",
+				"  K4QDL   most nights, on 144.390",
+				"  WB4NRT  the repeater crowd. Loud and never quiet.",
+				"  N4FKX   once, very weak, asking for a relay",
+				"  KD4AXR  a machine and not a man. It took a connect",
+				"          and then said nothing at all.",
+				"",
+				"A callsign is not a number and there is no dialling",
+				"it. You open the line to your own radio and raise",
+				"the station from there:",
+				"",
+				"  cu -l /dev/radio0",
+			}, "\n") },
+		},
+	},
+	{
+		id = "WARDIALER",
+		label = "WARDIALER",
+		weight = 2,
+		files = {
+			-- THE DECISION, said on the disk itself in the plainest words there
+			-- are. See the WARDIALER paragraph in docs/CONTENT.md for the proof.
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"WARDIALER",
+				"",
+				"There is no wardialer on this disk and there cannot",
+				"be one. cu hands the screen over to whatever answers",
+				"and the script that called it ENDS there -- the line",
+				"after a cu never runs -- and from cron or from a",
+				"background job cu will not dial at all. So what is",
+				"on here is the method and the book, not a program.",
+				"",
+				"RANGE.TXT  the numbers to turn, in what order, and",
+				"           how to read what comes back.",
+				"log.sh     write down what happened: the date, the",
+				"           number, and one word.",
+				"",
+				"  cp /mnt/log.sh ~/bin",
+				"  sh ~/bin/log.sh ~/dialled 418-2201 answered",
+			}, "\n") },
+			{ name = "RANGE.TXT", mode = 644, text = table.concat({
+				"HOW TO WORK A RANGE",
+				"",
+				"The first three digits are the exchange and every",
+				"telephone in one town shares them. So the only part",
+				"worth turning is the last four.",
+				"",
+				"Start at 0100 and go up in hundreds. Anything that",
+				"answers at all, write it down and come back to it",
+				"when you have the whole hundred done.",
+				"",
+				"  cu 418-0100",
+				"  cu 418-0200",
+				"",
+				"What comes back, and what it means:",
+				"",
+				"  CONNECT 2400  a machine, and you are now on it.",
+				"  NO CARRIER    nothing answered. Fifteen seconds.",
+				"  BUSY          somebody is on that line already.",
+				"  NO DIALTONE   your own line is dead. Stop.",
+				"",
+				"Escape hangs up, the same key that stops everything",
+				"else on this machine.",
+			}, "\n") },
+			{ name = "log.sh", script = "log.sh" },
+		},
+	},
+	{
+		id = "GAMES",
+		label = "GAMES",
+		weight = 3,
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"GAMES",
+				"",
+				"  sh /mnt/guess.sh 100",
+				"  sh /mnt/hangman.sh /mnt/WORDS.TXT",
+				"  sh /mnt/adventure.sh",
+				"",
+				"guess.sh      it picks one, you find it. Eight goes.",
+				"hangman.sh    a word out of WORDS.TXT, a letter at a",
+				"              time. Six wrong and it is over.",
+				"adventure.sh  five rooms and one locked door.",
+				"",
+				"All three are short enough to read, which is most of",
+				"what they are for.",
+			}, "\n") },
+			{ name = "guess.sh", script = "guess.sh" },
+			{ name = "hangman.sh", script = "hangman.sh" },
+			{ name = "adventure.sh", script = "adventure.sh" },
+			{ name = "WORDS.TXT", mode = 644, text = CeroSecContent.DATA["WORDS.TXT"] },
+		},
+	},
+	{
+		id = "BACKUP",
+		label = "BACKUP",
+		weight = 3,
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"BACKUP",
+				"",
+				"Everything out of my home directory, 8 July.",
+				"",
+				"DIARY.TXT    what I have been writing since the 4th.",
+				"LETTERS.TXT  the two I wrote and did not send.",
+				"FAMILY.TXT   everybody's numbers.",
+				"",
+				"If you have found this and you can still telephone",
+				"anybody, ring them and tell them where you got it.",
+			}, "\n") },
+			{ name = "DIARY.TXT", mode = 644, text = table.concat({
+				"4 July",
+				"The plant shut at noon and nobody said why. Half of",
+				"them went straight to the bar from the gate. I came",
+				"home and put the radio on and there was nothing on",
+				"the radio either.",
+				"",
+				"5 July",
+				"Drove in for bread. The road at the trestle is shut",
+				"and there is a soldier standing on it, a young one,",
+				"who would not look at me while he turned me round.",
+				"",
+				"6 July",
+				"Earl came by. He says the hospital is not taking",
+				"anybody at all and that the line on the map moved",
+				"north in the night. We put the shutters up. It felt",
+				"stupid doing it in the daylight.",
+				"",
+				"8 July",
+				"The telephone has been ringing all morning and it is",
+				"not ringing here. It is ringing next door and nobody",
+				"has picked it up. I am putting this on a disk",
+				"because the machine is the only thing in this house",
+				"still doing what it did last week.",
+			}, "\n") },
+			{ name = "LETTERS.TXT", mode = 644, text = table.concat({
+				"To Mother, not sent:",
+				"",
+				"We are all right and the house is all right. Do not",
+				"try to drive down. If the road is open they will",
+				"tell you it is shut, and if it is shut they will",
+				"tell you nothing at all.",
+				"",
+				"To the county, not sent:",
+				"",
+				"I have telephoned four times about the water and",
+				"been told four times that somebody will come out.",
+				"Nobody has come out. I am writing it down so that",
+				"when this is over there is a piece of paper with a",
+				"date on it.",
+			}, "\n") },
+			{ name = "FAMILY.TXT", mode = 644, text = table.concat({
+				"EVERYBODY'S NUMBERS",
+				"",
+				"  Mother          418-0233",
+				"  Earl and Wanda  418-1147",
+				"  the plant       418-4400",
+				"  the doctor      418-0180",
+				"  next door       418-1162",
+				"",
+				"The first three are this exchange. If you are",
+				"reading this somewhere else in the county then they",
+				"are somebody else's numbers now, and I am sorry.",
+			}, "\n") },
+		},
+	},
+	{
+		id = "CEROSEC OS 1.0 DIST",
+		label = "CEROSEC OS 1.0 DIST",
+		weight = 2,
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"CEROSEC OS 1.0 -- DISTRIBUTION MEDIA",
+				"CeroSec Systems, Louisville, Kentucky",
+				"",
+				"INSTALL.TXT  how the system is put back onto a",
+				"             machine. Read it first.",
+				"MAN          six pages out of the manual: the six",
+				"             commands people telephone us about.",
+				"lights.sh    switch the lights you name off.",
+				"locks.sh     lock or unlock a row of locks.",
+				"sweep.sh     list every file under a directory.",
+				"",
+				"The three programs are the beginning of the local",
+				"library. The whole of it stands in /usr/local/src on",
+				"the bench machine of any of our service departments.",
+			}, "\n") },
+			{ name = "INSTALL.TXT", mode = 644, text = table.concat({
+				"INSTALLING FROM THIS DISK",
+				"",
+				"You do not install from this disk by running",
+				"anything on it. There is nothing on here that can",
+				"write to a system disk, and that is deliberate: a",
+				"floppy that could rewrite the system is a floppy",
+				"that can destroy a working machine by being left in",
+				"the drive.",
+				"",
+				"What installs the system is the machine itself. Hold",
+				"the power switch until the firmware comes up and",
+				"choose repair. It writes a fresh system onto the",
+				"disk out of its own read-only copy, which is the",
+				"same version as this media -- and it KEEPS /home.",
+				"Every account survives. Every password survives.",
+				"What goes back to how we shipped it is /bin, /etc",
+				"and the rest of the system.",
+				"",
+				"So the answer to a machine that will not boot has",
+				"always been: repair it, and then put your own files",
+				"back from a disk like this one.",
+			}, "\n") },
+			{ name = "MAN", dir = true, mode = 755 },
+			{ name = "MAN/MOUNT.TXT", mode = 644, text = table.concat({
+				"MOUNT(8)",
+				"",
+				"  mount [<device> <dir>]",
+				"",
+				"Reach the filesystem on a disk. This machine has one",
+				"place to put one and it is /mnt.",
+				"",
+				"  mount /dev/fd0 /mnt",
+				"",
+				"With nothing after it, mount lists what is mounted.",
+				"Say umount /mnt when you are done, and cd out of it",
+				"first or it will tell you it is busy.",
+			}, "\n") },
+			{ name = "MAN/NEWFS.TXT", mode = 644, text = table.concat({
+				"NEWFS(8)",
+				"",
+				"  newfs <device>",
+				"",
+				"Put a filesystem on a disk. A disk out of the box",
+				"has none and nothing can be written to it until it",
+				"has one.",
+				"",
+				"  newfs /dev/fd0",
+				"",
+				"It empties the disk. That is what formatting a disk",
+				"has always meant and we are not going to ask twice.",
+			}, "\n") },
+			{ name = "MAN/CU.TXT", mode = 644, text = table.concat({
+				"CU(1)",
+				"",
+				"  cu telno",
+				"  cu -l line",
+				"",
+				"Call another machine on the telephone, or open the",
+				"line to whatever is wired to the machine.",
+				"",
+				"  cu 418-2201",
+				"  cu -l /dev/radio0",
+				"",
+				"The screen belongs to the far end until you hang up",
+				"with Escape. Nothing can drive it for you: a script",
+				"that calls cu ends where the cu is.",
+			}, "\n") },
+			{ name = "MAN/CRONTAB.TXT", mode = 644, text = table.concat({
+				"CRONTAB(1)",
+				"",
+				"  crontab -e|-l|-r",
+				"",
+				"The machine doing something with nobody standing at",
+				"it. Five fields and a command: minute, hour, day of",
+				"the month, month, day of the week.",
+				"",
+				"  0 22 * * * echo off > /dev/light0",
+				"",
+				"What a line prints goes in your mail and never on",
+				"the screen, there being nobody at the screen. Read",
+				"it with mail.",
+			}, "\n") },
+			{ name = "MAN/DEV.TXT", mode = 644, text = table.concat({
+				"DEV(8)",
+				"",
+				"  dev [kind|id [value|toggle]|find <id>]",
+				"",
+				"The building, as the machine sees it. Everything dev",
+				"does you can do with two commands you already know:",
+				"",
+				"  cat /dev/light0",
+				"  echo off > /dev/light0",
+				"",
+				"A fixture with no module wired to it is not a device",
+				"and will not be in the list. That is an electrician.",
+			}, "\n") },
+			{ name = "MAN/MKPASSWD.TXT", mode = 644, text = table.concat({
+				"MKPASSWD(1)",
+				"",
+				"  mkpasswd <text> [salt]",
+				"",
+				"Hash a string the way a password is hashed. Ours,",
+				"and no other Unix has it: the library call is what",
+				"everybody else was given.",
+				"",
+				"It does not set a password and it does not read one.",
+				"It is for seeing that two strings hash the same, and",
+				"it was called hash until we renamed it.",
+			}, "\n") },
+			{ name = "lights.sh", script = "lights.sh" },
+			{ name = "locks.sh", script = "locks.sh" },
+			{ name = "sweep.sh", script = "sweep.sh" },
 		},
 	},
 	{
@@ -1069,7 +1422,7 @@ CeroSecContent.DISKS = {
 -- in it that is still missing is fine, and an entry whose id is in NEITHER list
 -- is a catalogue nobody wrote down.
 CeroSecContent.DISK_SLOTS = {
-	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS UPGRADE",
+	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS 1.0 DIST",
 }
 
 -- The entry a roll lands on, or nil for a blank disk. `roll` is 1..100.
@@ -1150,11 +1503,23 @@ function CeroSecContent.diskData(entry, now)
 				mode = script.mode
 			end
 		end
-		if type(text) == "string" and CeroSecOS.isValidFileName(file.name) then
-			local node = CeroSecOS.newFile("root", mode or 644, text)
+		-- A name may be one component or two -- "MAN" and "MAN/CU.TXT" -- and two is
+		-- the whole of the depth a floppy gets. A distribution disk really did have a
+		-- MAN directory on it; a tree deeper than that on a 4096-byte disk read at
+		-- sixty columns is a tree nobody would walk.
+		local node = nil
+		if file.dir then
+			node = CeroSecOS.newDir("root", mode or 755)
+		elseif type(text) == "string" then
+			node = CeroSecOS.newFile("root", mode or 644, text)
+		end
+		if node ~= nil and CeroSecContent.diskNameOk(file.name) then
 			local path = CeroSecOS.MNT_PATH .. "/" .. file.name
 			-- nil on a full disk, a name already there, a byte the machine will not
-			-- carry. Trimmed, never argued with: see the head of this file.
+			-- carry, a directory above it that is not there -- an entry naming one
+			-- must come after the entry that makes it, which is the order rule this
+			-- table already has. Trimmed, never argued with: see the head of this
+			-- file.
 			if CeroSecOS.createNode(state, session, path, node, now) ~= nil then
 				written = written + 1
 			end
@@ -1162,6 +1527,19 @@ function CeroSecContent.diskData(entry, now)
 	end
 	CeroSecOS.unmountAll(state)
 	return disk, written
+end
+
+-- A name a disk entry may carry: one component, or two with a slash between them.
+-- Every component is held to the machine's own rule, so a name the filesystem
+-- would refuse is refused here and the entry is simply not written.
+function CeroSecContent.diskNameOk(name)
+	if type(name) ~= "string" or name == "" then return false end
+	local at = string.find(name, "/", 1, true)
+	if at == nil then return CeroSecOS.isValidFileName(name) end
+	local head = string.sub(name, 1, at - 1)
+	local tail = string.sub(name, at + 1)
+	if not CeroSecOS.isValidFileName(head) then return false end
+	return CeroSecOS.isValidFileName(tail)
 end
 
 --
@@ -1234,23 +1612,44 @@ end
 -- region and what they are called is the server's question (CeroSecNet.directory),
 -- and turning a list of numbers into a page is this one's.
 --
--- Which name goes with which number is decided by THE NUMBER, so the pairing is a
--- fact about the region and not about the order the map handed its zones over: the
--- same county gives the same list however it was enumerated. Nothing here is
--- hashed against the save's secret -- a printed disk is not a password.
+-- SORTED HERE, and by the number, which does two things at once. It is the order a
+-- hand list of numbers to turn is kept in -- lowest first, the way RANGE.TXT on the
+-- wardialer disk tells a survivor to work a range -- and it is what keeps the order
+-- the map handed its zones over from reaching the page: the same county gives the
+-- same list, byte for byte, however it was enumerated. CeroSecPhonebook.sorted
+-- sorts for the same reason one level up.
+--
+-- Which name goes with which number is decided by THE NUMBER and never by its
+-- position, so a board keeps its name whatever else is on the list; two numbers
+-- landing on one name take the next one along, which the sort makes a decision and
+-- not an accident. Nothing here is hashed against the save's secret -- a printed
+-- disk is not a password.
 function CeroSecContent.bbsText(exchange, numbers)
 	if type(numbers) ~= "table" then return nil end
 	local names = CeroSecContent.BBS_NAMES
+	local list = {}
+	for i = 1, #numbers do
+		if type(numbers[i]) == "string" then list[#list + 1] = numbers[i] end
+	end
+	if #list == 0 then return nil end
+	table.sort(list)
 	local out = {
 		"BOARDS I CALL -- exchange " .. tostring(exchange),
 		"",
 	}
-	local put = 0
-	for i = 1, #numbers do
-		local number = numbers[i]
-		if type(number) == "string" and put < CeroSecContent.BBS_MAX then
+	local put, taken = 0, {}
+	for i = 1, #list do
+		local number = list[i]
+		if put < CeroSecContent.BBS_MAX then
 			local digits = tonumber(string.match(number, "(%d+)$") or "0") or 0
-			local at = math.floor(math.fmod(digits + i, #names)) + 1
+			local at = math.floor(math.fmod(digits, #names)) + 1
+			local hops = 0
+			while taken[at] and hops < #names do
+				at = at + 1
+				if at > #names then at = 1 end
+				hops = hops + 1
+			end
+			taken[at] = true
 			local name = names[at]
 			-- Name, dot leaders, number -- a hand-kept list laid out the way the
 			-- telephone book it was copied out of lays one out, and inside the sixty
@@ -1261,9 +1660,8 @@ function CeroSecContent.bbsText(exchange, numbers)
 			put = put + 1
 		end
 	end
-	if put == 0 then return nil end
 	out[#out + 1] = ""
-	out[#out + 1] = "Dial one with: cu " .. tostring(numbers[1])
+	out[#out + 1] = "Dial one with: cu " .. tostring(list[1])
 	out[#out + 1] = "Most of them stopped answering in July."
 	return table.concat(out, "\n"), put
 end
