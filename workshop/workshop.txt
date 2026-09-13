@@ -47,6 +47,7 @@
 # down, and a scaled-down bitmap face comes back with grey edges.
 # ---------------------------------------------------------------------------
 version=1
+id=3801094056
 title=CeroSec - Unix Network Terminal
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/banner.png[/img]
 description=
@@ -190,7 +191,7 @@ description=
 description=If it earned it, a rating and a favourite put it in front of the next person looking for one.
 description=
 description=[hr][/hr]
-description=Workshop ID: (assigned at release)
+description=Workshop ID: 3801094056
 description=Mod ID: CeroSec
 tags=Build 42;Interface;Items;Literature;Multiplayer;Realistic
 visibility=unlisted
