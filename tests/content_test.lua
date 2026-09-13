@@ -495,6 +495,13 @@ do
 				CeroSecContent.prefill(state, opts(SECRET_A, { premises = premises }))
 			eq("profile " .. id .. " is the one asked for", got, id)
 
+			-- WHOSE DESK THIS MACHINE IS. Asked of the catalogue with the very key the
+			-- prefill used, so the bench and the writer cannot pick two owners.
+			local mkey = CeroSecContent.machineKey(12, 34, 8130, 9254, 0)
+			local ownerSlot = CeroSecContent.ownerSlot(SECRET_A, mkey, profile)
+			local ownerName = nil
+			if ownerSlot ~= nil then ownerName = logins[ownerSlot] end
+
 			-- THE BOOT GATE. Everything else in here is detail; this is the one that
 			-- says the machine still works. A prefilled state the validator refuses
 			-- is a computer the player switches on and finds broken, for ever, with
@@ -581,13 +588,35 @@ do
 							check(id .. " account " .. a .. " is open",
 								CeroSecOS.checkPassword(user, ""))
 						end
+						-- ONE MACHINE IS ONE PERSON'S DESK. The owner's files are on it and
+						-- nobody else's are, and both halves are asserted: "the owner's are
+						-- there" alone would pass a prefill that wrote everybody's, which is
+						-- exactly what this wave took out.
 						if type(profile.accounts[a].files) == "table" then
 							for f = 1, #profile.accounts[a].files do
 								local file = profile.accounts[a].files[f]
 								local at = all["/home/" .. login .. "/" .. file.path]
-								check(id .. " " .. login .. "'s " .. file.path .. " is there",
-									at ~= nil and at.type == "file")
-								eq(id .. " and it is his", at.owner, login)
+								if a == ownerSlot then
+									check(id .. " the owner " .. login .. "'s " .. file.path
+										.. " is there", at ~= nil and at.type == "file")
+									eq(id .. " and it is his", at.owner, login)
+								else
+									eq(id .. " " .. login .. " is not the owner, so his "
+										.. file.path .. " is not on this machine", at, nil)
+								end
+							end
+						end
+						-- And his home is EMPTY of anything but dot-files, however the
+						-- catalogue is written: a file nobody declared is a file this check
+						-- would miss if it only walked the declarations.
+						if a ~= ownerSlot then
+							local home = all["/home/" .. login]
+							if home ~= nil and home.type == "dir" then
+								local kids = CeroSecOS.childNames(home)
+								for k = 1, #kids do
+									check(id .. " " .. login .. "'s home holds only dot-files ("
+										.. kids[k] .. ")", string.sub(kids[k], 1, 1) == ".")
+								end
 							end
 						end
 					end
@@ -667,22 +696,6 @@ do
 			-- it with the machine's own parser, so a line the parser refuses is a line
 			-- that does nothing for ever and says nothing about why.
 			if type(profile.cron) == "table" then
-				-- Which script PATHS this profile really writes, and certainly: an
-				-- entry behind a chance is on some machines and not others, and an
-				-- entry naming `to` is somewhere else entirely. The path and not the
-				-- name, because a crontab line saying /usr/local/bin/check.sh on a
-				-- machine that put check.sh in a home is a line that mails
-				-- "not found" for ever.
-				local certain = {}
-				if type(profile.bin) == "table" then
-					for b = 1, #profile.bin do
-						local entry = profile.bin[b]
-						if (entry.chance or 100) >= 100 then
-							local dir = entry.to or "$HOME/bin"
-							certain[dir .. "/" .. entry.script] = true
-						end
-					end
-				end
 				for c = 1, #profile.cron do
 					local to = profile.cron[c].to
 					if type(to) == "number" then to = logins[to] end
@@ -696,15 +709,29 @@ do
 						local entries = CeroSecOS.parseCrontab(tab.data)
 						check(id .. " and it has lines in it (" .. #entries .. ")",
 							#entries > 0 and #entries <= CeroSecOS.CRON_MAX_LINES)
-						-- And a line that calls a script of ours calls one that is
-						-- REALLY there, at the very path the line names. A crontab
-						-- naming a script placed behind a roll is a crontab that mails
-						-- "not found" on the machines the roll missed, and one naming
-						-- the wrong directory is one that never worked anywhere.
+						-- And a line that calls a script of ours calls a file that is
+						-- REALLY ON THIS MACHINE, at the very path the line names.
+						--
+						-- ASKED OF THE FILESYSTEM AND NOT OF THE CATALOGUE, and that is
+						-- the fix for a bench that went green over a broken machine. It
+						-- used to derive the set of paths the profile "always writes" out
+						-- of profile.bin and compare against that -- so it asked the
+						-- catalogue whether the catalogue meant to write the file, and
+						-- the catalogue always means to. The military post's
+						-- /usr/local/bin/check.sh was never written at all, because
+						-- placeScripts was called only for a machine with an ordinary
+						-- account on it and the post has none, and its crontab mailed
+						-- "not found" once an hour for ever. Walking the built machine is
+						-- the only question that could have caught it.
+						--
+						-- $HOME is what cron hands the shell, so it is resolved to the
+						-- crontab owner's own home before the path is looked up.
+						local ownHome = (CeroSecOS.getUser(state, to) or {}).home or "/"
 						for named in string.gmatch(tab.data, "([%$%w%-%./]+%.sh)") do
+							local at = string.gsub(named, "%$HOME", ownHome)
 							check(id .. " its crontab calls " .. named
-								.. ", which the profile always writes there",
-								certain[named] == true)
+								.. ", and " .. at .. " is really on the machine",
+								all[at] ~= nil and all[at].type == "file")
 						end
 					end
 				end
@@ -742,14 +769,37 @@ end
 -- one built to run from cron at all.
 --
 
+-- WHERE THE DESK IS. A crontab inside an account entry is written only on the
+-- machine that account OWNS (see CeroSecContent.ownerSlot), so a bench that wants
+-- to type the station engineer's own line has to stand at the station engineer's
+-- own desk. It walks the square until the machine key picks the slot it wants,
+-- which is what a survivor walking a building does, and answers the overrides for
+-- `opts`. nil for a slot no square in the walk reaches, which is a red rather than
+-- a silent skip.
+local function deskFor(id, secret, want, b1, b2)
+	local profile = CeroSecContent.PROFILES[id]
+	for i = 0, 200 do
+		local x, y = 8130 + i, 9254 + i * 3
+		local mkey = CeroSecContent.machineKey(b1 or 12, b2 or 34, x, y, 0)
+		if CeroSecContent.ownerSlot(secret, mkey, profile) == want then
+			return { x = x, y = y, b1 = b1 or 12, b2 = b2 or 34 }, mkey
+		end
+	end
+	return nil
+end
+
 do
 	local state = CeroSecOS.newState("ksp-4-b")
-	local id, _, logins =
-		CeroSecContent.prefill(state, opts(SECRET_A, { premises = "radio" }))
+	local slot = 1
+	local where = deskFor("radio", SECRET_A, slot)
+	check("a square exists where the station engineer's own desk is", where ~= nil)
+	where.premises = "radio"
+	local id, _, logins = CeroSecContent.prefill(state, opts(SECRET_A, where))
 	eq("the station is the profile asked for", id, "radio")
-	local login = logins[1]
+	local login = logins[slot]
 	check("and it has the engineer's account on it", login ~= nil)
-	local password = CeroSecContent.accountPassword(SECRET_A, 12, 34, 1, login)
+	local password =
+		CeroSecContent.accountPassword(SECRET_A, 12, 34, slot, login)
 	local session = CeroSecOS.login(state, login, password)
 	check("who can log in with the password a paper would name", session ~= nil)
 	-- The environment a LOGIN hands a shell, which is where $HOME comes from --

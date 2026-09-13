@@ -57,7 +57,7 @@ CeroSecContent = CeroSecContent or {}
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
 -- about a machine somebody has already switched on. Bumped when a wave adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
-CeroSecContent.VERSION = 2
+CeroSecContent.VERSION = 3
 
 --
 -- Is there anything already on the machines at all?
@@ -292,14 +292,39 @@ end
 --   PROFILES[id] = {
 --     host     = "acct",     head of the hostname; the coordinate tail is kept
 --     motd     = "...",      /etc/motd, at most MOTD_MAX_LINES lines of 60 cols
---     accounts = { { name=, admin=, pass=, files={ {path,mode,text} } }, ... },
+--     accounts = { { name=, admin=, pass=, files={ {path,mode,texts} } }, ... },
 --     root     = true,       a root password to derive, hash and never store
 --     logs     = { "..." },  lines for /var/log/messages, dated before day one
 --     mail     = { { to=, from=, subj=, body= } },
 --     cron     = { { to=1, lines={ "0 22 * * * ..." } } },
 --     bin      = { { script="lights.sh", chance=60, to="/usr/local/src" } },
---     files    = { { path=, mode=, owner=, text= }, { path=, dir=true } },
+--     files    = { { path=, mode=, owner=, texts= }, { path=, dir=true } },
 --   }
+--
+-- ONE MACHINE IS ONE PERSON'S DESK (wave 7c). The accounts are the PREMISES' and
+-- every machine in the building has all of them, with their passwords -- but only
+-- ONE of them has files on this machine, chosen by the machine's own key
+-- (CeroSecContent.ownerSlot). The others' homes hold their dot-files and nothing
+-- else. That is what an office is, and it is what the complaint that started this
+-- wave was about: three accounts' homes written onto every desk in the room is one
+-- machine copied three times.
+--
+-- AND EVERY PROSE FILE HAS THREE TELLINGS (wave 7c). An entry carries `texts`, an
+-- array of CeroSecContent.VARIANTS of them, and which one a premises reads is the
+-- premises' own (CeroSecContent.variantOf) -- so the office down the road tells the
+-- same kind of story in other words, with its own people's names put in where the
+-- text wrote {owner}, {staff1} and {host} (CeroSecContent.fillNames). A `text` is
+-- still legal and still means one telling; `extra` is three tails under a `text`,
+-- which is how a data table varies without moving the rows a script is proved on.
+-- All of it goes through CeroSecContent.textFor, which is the one place a text is
+-- composed.
+--
+-- THE RULE THE THREE TELLINGS ARE WRITTEN TO, and it is not obvious: a variant is
+-- picked PER FILE, so telling 2 of the handover note stands beside telling 1 of the
+-- ledger. Any three may therefore be read together -- which means a fact one file
+-- depends on another for (the column that is cents, the name of a script, a device
+-- id) must be the SAME in all three tellings of both. What varies is the voice, the
+-- person writing, the detail and the complaint; never the machine underneath.
 --
 -- Five things to know about it:
 --
@@ -1979,9 +2004,157 @@ function CeroSecContent.lockedSlots(profile)
 end
 
 -- Everything else about a machine is keyed on the premises AND the machine's
--- own square, so two computers in one office are two people's computers.
+-- own square, so two computers in one office are two people's computers. It is
+-- what says WHOSE desk this one is (CeroSecContent.ownerSlot), what is in his
+-- history, who logged in on it and when, and which scripts are in his bin.
 function CeroSecContent.machineKey(b1, b2, x, y, z)
 	return CeroSecContent.key("m", b1, b2, x, y, z)
+end
+
+-- And the premises' own key, which wave 7c needed and the two above only implied:
+-- rootKey and accountKey are both built out of the premises' two bytes, and now
+-- so is WHICH TELLING of a story this company's files carry.
+--
+-- It is the premises' and not the machine's on purpose, and it is the same
+-- decision the people were: a readme is the COMPANY's readme, so the two machines
+-- of one office carry the same one, exactly as they carry the same staff. What
+-- differs between two desks of one office is whose desk it is -- the owner, his
+-- history, his mail, the login records -- and every one of those is keyed on the
+-- machine.
+function CeroSecContent.premisesKey(b1, b2)
+	return CeroSecContent.key("p", b1, b2)
+end
+
+-- How many tellings of one file the catalogue carries. Three, and it is a number
+-- rather than "however many are in the table" because the bench holds every entry
+-- to having exactly this many: a file somebody wrote two variants of is a file two
+-- premises in three share, and the whole point of this is that they do not.
+CeroSecContent.VARIANTS = 3
+
+-- Which telling this premises got of the file called `name`. The PREMISES and the
+-- file's own name and nothing else, so:
+--
+--   * two machines of one office read the same readme, because it is one office's
+--     readme;
+--   * two offices read different ones, which is what a county of offices is;
+--   * two files of one office are not forced onto one number, so an office is not
+--     "the office that got telling two" all the way down.
+--
+-- Never nil: a secret it cannot hash falls back on the first telling, which is a
+-- file that is there rather than a file that is not.
+function CeroSecContent.variantOf(secret, b1, b2, name)
+	local n = CeroSecContent.number(secret,
+		CeroSecContent.key(CeroSecContent.premisesKey(b1, b2), "v", name),
+		CeroSecContent.VARIANTS)
+	if n == nil then return 1 end
+	return n
+end
+
+-- WHOSE MACHINE THIS ONE IS, as a slot number of profile.accounts.
+--
+-- The complaint this answers, in the words it was made in: several computers in
+-- one building held the same things. They did, because every account's files were
+-- written onto every machine -- so an office with three people in it was three
+-- desks with the same three homes on them, which is not an office, it is one
+-- machine copied three times.
+--
+-- So one machine is one person's desk. The owner's home is the one that is
+-- populated; the others exist, with their passwords, and their homes hold their
+-- own dot-files and nothing else. Which is what walking into an office is: the
+-- accounts are the company's, the files on this keyboard are the man who sat here.
+--
+-- Keyed on the MACHINE, which is the whole point of it, and never on the premises:
+-- the second desk in the room has to be somebody else's for this to have been
+-- worth doing. A premises with one account has that account everywhere.
+function CeroSecContent.ownerSlot(secret, mkey, profile)
+	if type(profile) ~= "table" or type(profile.accounts) ~= "table" then return nil end
+	local n = #profile.accounts
+	if n == 0 then return nil end
+	if n == 1 then return 1 end
+	local slot = CeroSecContent.number(secret, CeroSecContent.key(mkey, "owner"), n)
+	if slot == nil then return 1 end
+	return slot
+end
+
+--
+-- The names in the text
+--
+-- A file of a profile is written once and read in every office in the county, so
+-- the people in it are placeholders and the premises' own staff are put in at fill
+-- time. {owner} is whoever sat at THIS machine, {staff1}..{staff3} are the
+-- premises' accounts by slot -- the same three people on every machine in the
+-- building -- and {host} is the machine's own name.
+--
+-- There is no {town}. A town name would have to be derived from the telephone
+-- exchange's region, and nothing in the county knows one: the exchange is a hash
+-- of a map coordinate and the map's own region names are not data this mod has.
+-- Inventing one would put a town in Knox County that is not in Knox County, which
+-- is the one kind of lie this catalogue is not allowed to tell -- so the texts are
+-- written without a town in them. (Muldraugh and West Point are named in one file
+-- because those are real places on the real map and are named as landmarks, not
+-- as this premises' own town.)
+CeroSecContent.PLACEHOLDERS = { "owner", "staff1", "staff2", "staff3", "host" }
+
+-- What goes in when a placeholder has nobody behind it -- a slot whose login
+-- collided, a profile with fewer people than a text names. A word and never the
+-- braces: a survivor reading "ask {staff3} about it" is reading a bug, and a
+-- survivor reading "ask somebody about it" is reading a shrug. The bench asserts
+-- no braces survive in any file of any profile in any telling.
+CeroSecContent.NO_NAME = "somebody"
+
+function CeroSecContent.fillNames(text, names)
+	if type(text) ~= "string" then return nil end
+	local list = CeroSecContent.PLACEHOLDERS
+	local out = text
+	for i = 1, #list do
+		local value = nil
+		if type(names) == "table" then value = names[list[i]] end
+		if type(value) ~= "string" or value == "" then value = CeroSecContent.NO_NAME end
+		-- Braces are not pattern characters and a login is [a-z0-9], so neither
+		-- side of this carries a "%" and there is nothing to escape.
+		out = string.gsub(out, "{" .. list[i] .. "}", value)
+	end
+	return out
+end
+
+-- The text of one catalogue entry, in this premises' telling, with its people in
+-- it. The ONE place a text is composed, so a file of a profile and a file of a
+-- machine-wide `files` entry cannot end up with two different rules.
+--
+-- An entry carries `text` or `texts`, never both:
+--
+--   text    one telling. A DATA file and little else: CeroSecContent.DATA's
+--           tables are the very files the scripts are proved against, and a table
+--           that came out different on every machine would be a bench proving one
+--           of three.
+--   texts   three tellings, chosen by the premises. Every prose file is one.
+--   extra   three tails, appended under `text`. It is how a data table varies
+--           without moving: the six rows the bench adds up are still the six rows
+--           the bench adds up, and the rows under them are this premises' own.
+--
+-- ONE NUMBER PER FILE, spent on both: the telling that picks the prose picks the
+-- tail, because a premises has one telling of one file and not two.
+function CeroSecContent.textFor(entry, secret, b1, b2, name, names)
+	if type(entry) ~= "table" then return nil end
+	local pick = CeroSecContent.variantOf(secret, b1, b2, name)
+	local text = entry.text
+	if type(entry.texts) == "table" and #entry.texts > 0 then
+		local v = pick
+		if v > #entry.texts then v = #entry.texts end
+		text = entry.texts[v]
+	end
+	if type(text) ~= "string" then return nil end
+	if type(entry.extra) == "table" and #entry.extra > 0 then
+		local v = pick
+		if v > #entry.extra then v = #entry.extra end
+		local tail = entry.extra[v]
+		if type(tail) == "table" and #tail > 0 then
+			text = text .. "\n" .. table.concat(tail, "\n")
+		elseif type(tail) == "string" and tail ~= "" then
+			text = text .. "\n" .. tail
+		end
+	end
+	return CeroSecContent.fillNames(text, names)
 end
 
 -- How many days before day one the oldest log line is written. A week: the last
@@ -2084,14 +2257,18 @@ end
 -- is relative to the home and never absolute: an account's files belong to the
 -- account, and a profile that could write anywhere would be a profile that could
 -- rewrite /etc/passwd.
-local function placeHomeFiles(state, session, account, login, now)
+--
+-- Called for the OWNER's slot and for no other (see CeroSecContent.ownerSlot):
+-- the other people on the machine have accounts and no files, which is what an
+-- office is.
+local function placeHomeFiles(state, session, account, login, secret, b1, b2, names, now)
 	if type(account.files) ~= "table" then return end
 	local home = "/home/" .. login
 	for i = 1, #account.files do
 		local file = account.files[i]
 		if type(file.path) == "string" and string.find(file.path, "/") == nil then
 			place(state, session, home .. "/" .. file.path, login, file.mode or 644,
-				file.text, now)
+				CeroSecContent.textFor(file, secret, b1, b2, file.path, names), now)
 		end
 	end
 end
@@ -2110,13 +2287,18 @@ local function placeScripts(state, session, profile, secret, mkey, login, now)
 	for i = 1, #profile.bin do
 		local entry = profile.bin[i]
 		local script = CeroSecContent.SCRIPTS[entry.script]
-		if script ~= nil
+		local dir, owner = nil, nil
+		if type(entry.to) == "string" and string.sub(entry.to, 1, 1) == "/" then
+			dir, owner = entry.to, "root"
+		elseif type(login) == "string" then
+			dir, owner = "/home/" .. login .. "/bin", login
+		end
+		-- An entry with no `to` on a machine with no ordinary account has nowhere to
+		-- go, and /home/root/bin is not a place: the profile that has no people on it
+		-- names `to` on every entry, and this is what says so out loud.
+		if script ~= nil and dir ~= nil
 				and CeroSecContent.chance(secret,
 					CeroSecContent.key(mkey, "bin", entry.script), entry.chance or 100) then
-			local dir, owner = "/home/" .. login .. "/bin", login
-			if type(entry.to) == "string" and string.sub(entry.to, 1, 1) == "/" then
-				dir, owner = entry.to, "root"
-			end
 			if made[dir] == nil then
 				made[dir] = placeDirTree(state, session, dir, owner, 755, now)
 			end
@@ -2128,6 +2310,23 @@ local function placeScripts(state, session, profile, secret, mkey, login, now)
 	end
 end
 
+-- Who a `to` field means, and the one place it is read: a slot number is the
+-- premises' account in that slot, the word "owner" is whoever sat at THIS machine,
+-- and anything else is a literal login ("root", "support").
+--
+-- "owner" is wave 7c's and it is not a convenience. A crontab line saying
+-- $HOME/bin/total.sh runs in the home of the account the crontab belongs to, and
+-- the scripts are the OWNER's now -- so a crontab pinned to slot 1 on a machine
+-- whose desk is slot 2's is a line that mails "not found" once a night for ever.
+-- Written as one function because cron and mail both ask it and a second copy is a
+-- second answer waiting to happen.
+local function whoFor(to, logins, owner)
+	if type(to) == "number" then return logins[to] end
+	if to == "owner" then return owner end
+	if type(to) == "string" then return to end
+	return nil
+end
+
 -- /var/spool/cron/<login>: what the machine was doing while nobody stood at it.
 --
 -- Root's and 600 in a directory that is root's and 700, which is exactly where
@@ -2135,25 +2334,51 @@ end
 -- runs as another. A survivor who wants to read it says `sudo crontab -l -u` --
 -- there is no such flag, so he says `sudo cat` -- and one who owns the account
 -- says `crontab -l`, which is the everyday way in.
-local function placeCron(state, session, profile, logins, now)
-	if type(profile.cron) ~= "table" then return end
-	for i = 1, #profile.cron do
-		local item = profile.cron[i]
-		local to = item.to
-		if type(to) == "number" then to = logins[to] end
-		if type(to) == "string" and CeroSecOS.getUser(state, to) ~= nil
-				and type(item.lines) == "table" and #item.lines > 0 then
-			local text = table.concat(item.lines, "\n")
-			-- Held to the machine's own crontab(1) HERE, by the one function that
-			-- writes one: a file that will not parse is a file the survivor's own
-			-- `crontab -l` prints and `cron` silently does nothing with, and the
-			-- catalogue must not be able to ship one. The bench asserts it too, of
-			-- every line of every profile; this is the belt, so a profile written
-			-- after the bench was last read cannot get one past.
-			if CeroSecOS.checkCrontab(CeroSecOS.cronPath(to), text) == nil then
-				place(state, session, CeroSecOS.cronPath(to), "root",
-					CeroSecOS.CRONTAB_MODE, text, now)
-			end
+-- One crontab, held to the machine's own crontab(1) first. Quiet on a refusal,
+-- like every other write here.
+local function placeOneCron(state, session, to, lines, now)
+	if type(to) ~= "string" or CeroSecOS.getUser(state, to) == nil then return end
+	if type(lines) ~= "table" or #lines == 0 then return end
+	local text = table.concat(lines, "\n")
+	-- Held to the machine's own crontab(1) HERE, by the one function that
+	-- writes one: a file that will not parse is a file the survivor's own
+	-- `crontab -l` prints and `cron` silently does nothing with, and the
+	-- catalogue must not be able to ship one. The bench asserts it too, of
+	-- every line of every profile; this is the belt, so a profile written
+	-- after the bench was last read cannot get one past.
+	if CeroSecOS.checkCrontab(CeroSecOS.cronPath(to), text) == nil then
+		place(state, session, CeroSecOS.cronPath(to), "root",
+			CeroSecOS.CRONTAB_MODE, text, now)
+	end
+end
+
+-- The crontabs, and there are two kinds of them since wave 7c.
+--
+-- AN ACCOUNT'S OWN (`cron` inside an account entry) is written only when that
+-- account is the OWNER of this machine, because a crontab is a list of things that
+-- run in that account's home and with that account's bin on the path. The
+-- bookkeeper's nightly total reads HIS ledger out of HIS home and calls the copy
+-- of total.sh in HIS bin, so on the desk next to his -- another man, another home,
+-- no ledger in it -- that line would mail "no such file" once a night for ever.
+-- One machine is one desk, so one machine runs the job of the person whose desk it
+-- is. Two computers in one office now do different things at two in the morning,
+-- which is the whole of what this wave is for.
+--
+-- THE MACHINE'S OWN (`profile.cron`, with a literal login in `to`) is root's, and
+-- is what a job that belongs to no desk is: the military post's hourly door check
+-- out of /usr/local/bin, the vendor's weekly sweep of /var. It is written whoever
+-- owns the machine, because nothing in it names a home.
+local function placeCron(state, session, profile, logins, owner, ownerSlot, now)
+	if type(profile.cron) == "table" then
+		for i = 1, #profile.cron do
+			local item = profile.cron[i]
+			placeOneCron(state, session, whoFor(item.to, logins, owner), item.lines, now)
+		end
+	end
+	if ownerSlot ~= nil and type(profile.accounts) == "table" then
+		local account = profile.accounts[ownerSlot]
+		if type(account) == "table" then
+			placeOneCron(state, session, owner, account.cron, now)
 		end
 	end
 end
@@ -2275,21 +2500,50 @@ function CeroSecContent.prefill(state, opts)
 
 	local logins =
 		makeAccounts(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
-	local first = nil
-	if type(profile.accounts) == "table" then
+
+	-- WHOSE DESK THIS IS. One slot, off the machine's key, and the only home this
+	-- machine has anything in.
+	local slot = CeroSecContent.ownerSlot(secret, mkey, profile)
+	local owner = nil
+	if slot ~= nil then owner = logins[slot] end
+	-- A slot whose login collided with one the machine already had: the desk is
+	-- the first account that really got made, so a machine is never nobody's.
+	if owner == nil and type(profile.accounts) == "table" then
 		for i = 1, #profile.accounts do
-			local login = logins[i]
-			if login ~= nil then
-				if first == nil then first = login end
-				placeHomeFiles(state, session, profile.accounts[i], login, now)
+			if logins[i] ~= nil then
+				slot, owner = i, logins[i]
+				break
 			end
 		end
 	end
-	-- The scripts go in the FIRST account's ~/bin: a profile's first slot is the
-	-- person whose machine it is, and a copy in every home would be the same file
-	-- three times on a 64K disk.
-	if first ~= nil then
-		placeScripts(state, session, profile, secret, mkey, first, now)
+
+	-- The people, as the texts name them: the premises' staff by slot, the man at
+	-- this keyboard, and the machine itself. Built once and handed to every write,
+	-- so a name cannot be composed two ways.
+	local names = {
+		owner = owner,
+		staff1 = logins[1], staff2 = logins[2], staff3 = logins[3],
+		host = state.hostname,
+	}
+
+	if owner ~= nil then
+		placeHomeFiles(state, session, profile.accounts[slot], owner, secret,
+			opts.b1, opts.b2, names, now)
+		-- The scripts go in the OWNER's ~/bin, which is the same rule his files
+		-- follow: they are the tools on this desk. A copy in every home would be the
+		-- same file three times on a 64K disk.
+		placeScripts(state, session, profile, secret, mkey, owner, now)
+	else
+		-- A PROFILE WITH NO ORDINARY ACCOUNT AT ALL -- the military post -- and this
+		-- branch is a bug fix and not a tidy-up. placeScripts used to be called only
+		-- when there was an account to put a ~/bin under, so the post's one entry,
+		-- which names /usr/local/bin and needs no home at all, was never written:
+		-- /usr/local/bin/check.sh was missing on every military machine in the county
+		-- and its crontab mailed "not found" once an hour for ever. The bench read
+		-- the crontab against the PROFILE TABLE -- "does the catalogue always write
+		-- this path" -- and the catalogue said yes, so it went green. Section 4 now
+		-- asks the filesystem instead.
+		placeScripts(state, session, profile, secret, mkey, nil, now)
 	end
 
 	if type(profile.files) == "table" then
@@ -2301,7 +2555,8 @@ function CeroSecContent.prefill(state, opts)
 						file.mode or 755, now)
 				else
 					place(state, session, file.path, file.owner or "root", file.mode,
-						file.text, now)
+						CeroSecContent.textFor(file, secret, opts.b1, opts.b2, file.path,
+							names), now)
 				end
 			end
 		end
@@ -2313,7 +2568,7 @@ function CeroSecContent.prefill(state, opts)
 
 	placeLog(state, session, profile, secret, mkey, opts.start, now)
 	placeMail(state, session, profile, logins, now)
-	placeCron(state, session, profile, logins, now)
+	placeCron(state, session, profile, logins, owner, slot, now)
 
 	-- And root's own password, LAST, so that everything above it happened as root
 	-- on a machine whose root account was still open -- and so that a refusal
@@ -2417,7 +2672,7 @@ CeroSecContent.PROFILES.office = {
 				"telephone:12340",
 				"the coffee fund:1500",
 			}, "\n") },
-		} },
+		}, cron = { "0 2 * * * sh $HOME/bin/total.sh $HOME/ledger.txt 2" } },
 		{ pass = false, files = {
 			{ path = "readme.txt", text = table.concat({
 				"My password is my own business. Ask me and I will",
@@ -2438,9 +2693,6 @@ CeroSecContent.PROFILES.office = {
 	bin = {
 		{ script = "lights.sh", chance = 60 },
 		{ script = "total.sh" },
-	},
-	cron = {
-		{ to = 1, lines = { "0 2 * * * sh $HOME/bin/total.sh $HOME/ledger.txt 2" } },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -2502,7 +2754,7 @@ CeroSecContent.PROFILES.police = {
 				"Anybody in a hospital gown outside the fence. The",
 				"state people want to be told. We do not go in.",
 			}, "\n") },
-		} },
+		}, cron = { "0 22 * * * sh $HOME/bin/locks.sh lock lock0 lock1" } },
 		{ pass = false, files = {
 			{ path = "shifts.txt", text = table.concat({
 				"Nights, this week and next. Nobody has swapped and",
@@ -2517,9 +2769,6 @@ CeroSecContent.PROFILES.police = {
 		{ script = "locks.sh" },
 		{ script = "check.sh", chance = 60 },
 		{ script = "lights.sh", chance = 40 },
-	},
-	cron = {
-		{ to = 1, lines = { "0 22 * * * sh $HOME/bin/locks.sh lock lock0 lock1" } },
 	},
 	files = {
 		-- THE SPINE OF THE STORY, and it is in /var/log because that is where a
@@ -2587,7 +2836,7 @@ CeroSecContent.PROFILES.bank = {
 				"The fourth column has been cents since 1987 and he",
 				"knows it. Do not convert it for him.",
 			}, "\n") },
-		} },
+		}, cron = { "0 18 * * 1-5 sh $HOME/bin/lockup.sh door0 lock0" } },
 		{ pass = true, files = {
 			{ path = "vault.txt", text = table.concat({
 				"The vault door is on the computer now and it is not",
@@ -2607,9 +2856,6 @@ CeroSecContent.PROFILES.bank = {
 		{ script = "audit.sh" },
 		{ script = "total.sh" },
 		{ script = "lockup.sh" },
-	},
-	cron = {
-		{ to = 1, lines = { "0 18 * * 1-5 sh $HOME/bin/lockup.sh door0 lock0" } },
 	},
 	logs = {
 		"login: failed login on console",
@@ -2667,7 +2913,7 @@ CeroSecContent.PROFILES.store = {
 				"computer at all -- do that one by hand and pull it",
 				"to you until it clicks.",
 			}, "\n") },
-		} },
+		}, cron = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
 		{ pass = false, files = {
 			{ path = "note.txt", text = table.concat({
 				"The number for the padlock on the gate is not",
@@ -2680,9 +2926,6 @@ CeroSecContent.PROFILES.store = {
 		{ script = "total.sh" },
 		{ script = "lights.sh" },
 		{ script = "lockup.sh" },
-	},
-	cron = {
-		{ to = 1, lines = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -2730,7 +2973,7 @@ CeroSecContent.PROFILES.school = {
 				"That is the corridor and the gymnasium. Every",
 				"classroom is a switch on the wall, as it always was.",
 			}, "\n") },
-		} },
+		}, cron = { "0 22 * * * sh $HOME/bin/lights.sh light0 light1" } },
 		{ pass = true, files = {
 			{ path = "detention.txt", text = table.concat({
 				"Detention, Friday, two of them.",
@@ -2747,9 +2990,6 @@ CeroSecContent.PROFILES.school = {
 	bin = {
 		{ script = "lights.sh" },
 		{ script = "check.sh", chance = 70 },
-	},
-	cron = {
-		{ to = 1, lines = { "0 22 * * * sh $HOME/bin/lights.sh light0 light1" } },
 	},
 	logs = {
 		"login: failed login on console",
@@ -2784,7 +3024,7 @@ CeroSecContent.PROFILES.clinic = {
 				"NOTHING MEDICAL GOES IN THIS FILE. That is the",
 				"chart, and the chart stays on the trolley.",
 			}, "\n") },
-		} },
+		}, cron = { "0 7 * * * sh $HOME/bin/rounds.sh $HOME/patients.txt" } },
 		{ pass = false, files = {
 			{ path = "supplies.txt", text = table.concat({
 				"What we are out of, 7 July:",
@@ -2803,9 +3043,6 @@ CeroSecContent.PROFILES.clinic = {
 		{ script = "rounds.sh" },
 		{ script = "locks.sh", chance = 60 },
 		{ script = "check.sh", chance = 60 },
-	},
-	cron = {
-		{ to = 1, lines = { "0 7 * * * sh $HOME/bin/rounds.sh $HOME/patients.txt" } },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -2849,7 +3086,7 @@ CeroSecContent.PROFILES.radio = {
 				"",
 				"Keep the hours two digits. 06, never 6.",
 			}, "\n") },
-		} },
+		}, cron = { "5 * * * * sh $HOME/bin/announce.sh $HOME/sched.txt" } },
 		{ pass = false, files = {
 			{ path = "readme.txt", text = table.concat({
 				"If you are on at midnight and the tone is still on",
@@ -2861,9 +3098,6 @@ CeroSecContent.PROFILES.radio = {
 	bin = {
 		{ script = "announce.sh" },
 		{ script = "lights.sh", chance = 50 },
-	},
-	cron = {
-		{ to = 1, lines = { "5 * * * * sh $HOME/bin/announce.sh $HOME/sched.txt" } },
 	},
 	files = {
 		-- What the station HEARD, which is the one file in the county that says
@@ -3033,7 +3267,7 @@ CeroSecContent.PROFILES.cerosec = {
 		{ script = "adventure.sh", to = "/usr/local/src" },
 	},
 	cron = {
-		{ to = 1, lines = { "0 4 * * 0 sh /usr/local/src/sweep.sh /var" } },
+		{ to = "root", lines = { "0 4 * * 0 sh /usr/local/src/sweep.sh /var" } },
 	},
 	files = {
 		{ path = "/usr/local/src/CHANGES", owner = "root", mode = 644,
