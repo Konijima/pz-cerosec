@@ -633,6 +633,50 @@ function CeroSecContent.rootKey(b1, b2)
 	return CeroSecContent.key("root", b1, b2)
 end
 
+-- AND SO ARE THE PEOPLE, and this is the decision the papers forced. An account's
+-- login and an account's password are keyed on the PREMISES and its slot number,
+-- not on the machine -- so two computers in one office have the same staff on
+-- them, which is what an office is, and so a paper found on a body in the car park
+-- can name one of them without knowing which desk the man sat at.
+--
+-- The alternative was machine-keyed people, which is what this was first. It gave
+-- two desks in one office two disjoint sets of employees -- already a little
+-- untrue -- and it made a note in a dead man's pocket impossible to write: the
+-- corpse cannot say which machine its owner used, so a note keyed on a machine
+-- would name an account that machine had and the machine beside it did not.
+--
+-- What stays MACHINE-keyed is everything that is about the desk and not about the
+-- company: which scripts are in ~/bin, and the hours in the log.
+function CeroSecContent.accountKey(b1, b2, slot)
+	return CeroSecContent.key("a", b1, b2, slot)
+end
+
+-- One slot's login, which both the prefill and a paper derive for themselves.
+function CeroSecContent.accountLogin(secret, b1, b2, slot)
+	return CeroSecContent.login(secret, CeroSecContent.accountKey(b1, b2, slot))
+end
+
+-- And its password. The login goes INTO the key as well as the slot, so a wave
+-- that reordered a profile's accounts would change the password of an account that
+-- kept its name, rather than quietly handing one person another's password.
+function CeroSecContent.accountPassword(secret, b1, b2, slot, login)
+	return CeroSecContent.password(secret,
+		CeroSecContent.key("ap", b1, b2, slot, login))
+end
+
+-- The slots of a profile that have a password on them, as an array of slot
+-- numbers. What a paper in a pocket may name, and the one place that list is
+-- worked out: an empty one is a profile whose people are all open accounts, and
+-- there is nothing to write on a paper about those.
+function CeroSecContent.lockedSlots(profile)
+	local out = {}
+	if type(profile) ~= "table" or type(profile.accounts) ~= "table" then return out end
+	for i = 1, #profile.accounts do
+		if profile.accounts[i].pass then out[#out + 1] = i end
+	end
+	return out
+end
+
 -- Everything else about a machine is keyed on the premises AND the machine's
 -- own square, so two computers in one office are two people's computers.
 function CeroSecContent.machineKey(b1, b2, x, y, z)
@@ -677,14 +721,14 @@ end
 -- scripts and the mail are addressed to the person the profile meant even when
 -- an earlier slot was skipped. A dense list would have handed slot 2's files to
 -- slot 3's login the moment one name collided with "admin".
-local function makeAccounts(state, session, profile, secret, mkey, now)
+local function makeAccounts(state, session, profile, secret, b1, b2, mkey, now)
 	local made = {}
 	if type(profile.accounts) ~= "table" then return made end
 	for i = 1, #profile.accounts do
 		local account = profile.accounts[i]
 		local name = account.name
 		if type(name) ~= "string" then
-			name = CeroSecContent.login(secret, CeroSecContent.key(mkey, "u", i))
+			name = CeroSecContent.accountLogin(secret, b1, b2, i)
 		end
 		if not CeroSecOS.isValidUserName(name) then name = nil end
 		-- A login the machine already has -- "root", "admin", or the same name
@@ -704,7 +748,7 @@ local function makeAccounts(state, session, profile, secret, mkey, now)
 		if name ~= nil then
 			if account.pass then
 				local password =
-					CeroSecContent.password(secret, CeroSecContent.key(mkey, "p", i))
+					CeroSecContent.accountPassword(secret, b1, b2, i, name)
 				-- A refusal here leaves the account OPEN, which is a machine somebody
 				-- can still get into. The reverse -- a password set that the note does
 				-- not know -- is the one outcome that locks a player out, and it cannot
@@ -873,7 +917,8 @@ function CeroSecContent.prefill(state, opts)
 		end
 	end
 
-	local logins = makeAccounts(state, session, profile, secret, mkey, now)
+	local logins =
+		makeAccounts(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
 	local first = nil
 	if type(profile.accounts) == "table" then
 		for i = 1, #profile.accounts do

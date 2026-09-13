@@ -172,6 +172,39 @@ module CeroSec
        "CeroSec.FloppyBlue"; the DisplayName here is the fallback, and it is
        spelled out in words because a double quote in a script value is not
        something to bet on. */
+    /* THE PAPER SOMEBODY WROTE A PASSWORD ON.
+       One item for the two places a password is found -- the drawer of a desk and
+       the pocket of a dead employee -- because it IS one thing: a note with a
+       login and a password on it. Which one it is is in the name the item carries
+       (CeroSecNotes writes it with setName), and nothing else about the item
+       differs.
+
+       base:normal and not base:literature, for the manuals' own reason: a
+       Literature item that cannot be written on is one vanilla's inventory menu
+       offers to READ, and Read is a timed action that burns hours of game time.
+       There is nothing to read here that the item's name does not already say.
+
+       StaticModel and WorldStaticModel are SheetPaper2's own, verbatim
+       (media/scripts/generated/items/literature.txt:1839-1840): a sheet of paper
+       on the floor, which is what this is.
+
+       Weight is 0.01 -- vanilla's lightest paper is 0.1 and that is a whole sheet.
+       A survivor must never leave a password behind because his bag was full.
+
+       DisplayName here is the fallback; the name a player reads comes from
+       Translate/EN/ItemName.json, and the name he reads on a note that has been
+       WRITTEN on is neither: it is the custom name CeroSecNotes puts on it. */
+    item StickyNote
+    {
+        DisplayName = Sticky Note,
+        DisplayCategory = Literature,
+        ItemType = base:normal,
+        Weight = 0.01,
+        Icon = CeroSecStickyNote,
+        StaticModel = SheetOfPaper,
+        WorldStaticModel = SheetOfPaper,
+    }
+
     item FloppyBlue
     {
         DisplayName = 3.5 inch Floppy Disk,

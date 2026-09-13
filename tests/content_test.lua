@@ -430,10 +430,10 @@ do
 						if profile.accounts[a].pass then
 							-- The password is DERIVED and never stored, so the only way to ask
 							-- whether it is the right one is to try it, which is what a
-							-- survivor does.
-							local want = CeroSecContent.password(SECRET_A,
-								CeroSecContent.key(CeroSecContent.machineKey(12, 34, 8130, 9254, 0),
-									"p", a))
+							-- survivor does -- and the derivation is the PREMISES', which is
+							-- what lets a paper in a dead man's pocket name it.
+							local want =
+								CeroSecContent.accountPassword(SECRET_A, 12, 34, a, login)
 							check(id .. " account " .. a .. " holds its derived password",
 								CeroSecOS.checkPassword(user, want))
 							check(id .. " account " .. a .. " is not open",
@@ -601,8 +601,11 @@ do
 	check("and this note does not open that machine",
 		not CeroSecOS.checkPassword(CeroSecOS.getUser(elsewhere, "root"), note))
 
-	-- Two machines in ONE premises share root's password -- it is the premises'
-	-- password and the note says so -- and have different PEOPLE on them.
+	-- Two machines in ONE premises are two desks of one company: the same root
+	-- password, and the SAME PEOPLE on them. That is what makes a paper found on a
+	-- body in the car park mean anything -- a corpse cannot say which desk its owner
+	-- sat at, so an account keyed on the machine would be an account the note could
+	-- not name.
 	local second2 = CeroSecOS.newState("ksp-9-c")
 	local _, samePremises, logins2 = CeroSecContent.prefill(second2,
 		opts(SECRET_A, { premises = "Office", x = 9000, y = 1 }))
@@ -610,7 +613,27 @@ do
 		samePremises, machine)
 	local _, _, logins1 = CeroSecContent.prefill(CeroSecOS.newState("ksp-4-b"),
 		opts(SECRET_A, { premises = "Office" }))
-	check("but not the same people", logins2[1] ~= logins1[1])
+	eq("and the same people", logins2[1], logins1[1])
+	-- And a machine in ANOTHER premises has other people on it.
+	local _, _, logins3 = CeroSecContent.prefill(CeroSecOS.newState("ksp-4-b"),
+		opts(SECRET_A, { premises = "Office", b1 = 12, b2 = 35 }))
+	check("while another premises has its own", logins3[1] ~= logins1[1])
+
+	-- THE PAPER IN A POCKET. An ordinary account's login and password, derived from
+	-- the premises alone, by the two calls a note makes -- and it logs in.
+	do
+		local slots = CeroSecContent.lockedSlots(CeroSecContent.PROFILES.office)
+		check("the office has an account with a password on it", #slots > 0)
+		local slot = slots[1]
+		local login = CeroSecContent.accountLogin(SECRET_A, 12, 34, slot)
+		local password = CeroSecContent.accountPassword(SECRET_A, 12, 34, slot, login)
+		local who = CeroSecOS.getUser(state, login)
+		check("the login a paper names is on the machine (" .. login .. ")", who ~= nil)
+		check("and the password beside it logs him in",
+			CeroSecOS.checkPassword(who, password))
+		check("and it is not root's", password ~= note)
+		check("and root is not what the paper names", login ~= "root")
+	end
 end
 
 --

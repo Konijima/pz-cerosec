@@ -3,6 +3,7 @@ if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecNotes"
 require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDebug"
 require "CeroSec/SCeroSecDevices"
@@ -30,6 +31,7 @@ function SCeroSecSystem:initSystem()
 	-- a machine, and this is where it goes.
 	--
 	--   seed   the per-save secret, sixteen hex digits (CeroSecContent).
+	--   notes  which premises have already had their desk note (CeroSecNotes).
 	--
 	-- Proved at the bytecode level on projectzomboid.jar 42.20.4, because "it
 	-- probably persists" is not a thing to bet a player's save on:
@@ -55,7 +57,7 @@ function SCeroSecSystem:initSystem()
 	-- stays on the server. Nothing puts it in setObjectSyncKeys, nothing puts it in
 	-- getInitialStateForClient, and a client is never told a password: it is told
 	-- the lines a machine printed, exactly as before.
-	self.system:setModDataKeys({ "seed" })
+	self.system:setModDataKeys({ "seed", "notes" })
 
 	-- Fields of each GlobalObject that are saved to gos_cerosec.bin. 'os' and
 	-- 'console' are nested tables; the serializer recurses into those
