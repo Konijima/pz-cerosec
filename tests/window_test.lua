@@ -38,8 +38,17 @@ _G.ZombRand = function() return 0 end
 -- grid question is asked in: ten days here, with the power set to go on day a
 -- hundred (__sandbox below), so the default world has a dial tone in it. The
 -- two benches that move this clock put it back the way they found it.
+--
+-- startYear/startMonth/startDay are the save's FIRST day and are the same
+-- zero-based encoding: GameTime's constructor sets `day` and `startDay` from one
+-- literal and `month` and `startMonth` from another (javap -c zombie.GameTime),
+-- so 6 and 8 here are July the 9th, 1993, which is where the default save starts
+-- and where the log on a prefilled machine is dated. The world is ten days old
+-- above and two days past the start here, which is deliberately not the same
+-- number: a bench where the current date and the start date are one date cannot
+-- tell the two getters apart.
 _G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32,
-	ageHours = 240 }
+	ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 _G.getGameTime = function()
 	local t = _G.__gameTime
 	if t == nil then return nil end
@@ -52,6 +61,9 @@ _G.getGameTime = function()
 		-- How long the world has been running, which is the other half of the
 		-- grid question. Vanilla's own number, in hours and not days.
 		getWorldAgeHours = function() return t.ageHours or 0 end,
+		getStartYear = function() return t.startYear end,
+		getStartMonth = function() return t.startMonth end,
+		getStartDay = function() return t.startDay end,
 	}
 end
 -- The county's power, which is what the telephone exchange runs on. These are
@@ -84,7 +96,17 @@ end
 -- was, where a door is a device because it is a door. Those benches are the
 -- control for the option being off, and they are not to be touched. The hardware
 -- section at the bottom sets it true for itself and puts it back.
-_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+--
+-- PrefilledMachines is FALSE here and true in the game, for exactly the same
+-- reason and it is worth spelling out: every bench in this file was written
+-- against a machine that comes up with two open accounts and an empty disk, which
+-- is what turning the option off IS. Left on, three hundred machines in this file
+-- would come up with somebody's accounts and somebody's files on them -- the suite
+-- happens to stay green, but every one of those benches would then be asking its
+-- question of a machine nobody wrote it for. The content section sets it true for
+-- itself and puts it back, and that section is where the option being ON is
+-- proved.
+_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 _G.getText = function(key) return key end
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
@@ -524,6 +546,11 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The world content: the catalogue and the generators the server prefills a
+	-- machine from. Loaded before the OS core, which is the order the GAME loads
+	-- them in (shared/CeroSec/ ahead of shared/CeroSec/OS/) and the whole reason
+	-- that file may not touch CeroSecOS at its top level.
+	"shared/CeroSec/CeroSecContent.lua",
 	-- The telephone directory's generator: pure Lua, and the server's own
 	-- enumeration (CeroSecNet.directory) names it.
 	"shared/CeroSec/CeroSecPhonebook.lua",
@@ -2070,7 +2097,8 @@ do
 
 	-- And it FOLLOWS the game: a machine whose clock never moved would pass the
 	-- line above and fail this one.
-	_G.__gameTime = { year = 1993, month = 11, day = 24, hour = 6, minutes = 5 }
+	_G.__gameTime = { year = 1993, month = 11, day = 24, hour = 6, minutes = 5,
+		ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 	bench.enter("date")
 	bench.frame()
 	check("and moves with it", bench.painted("Sat Dec 25 06:05:00 1993"))
@@ -2091,7 +2119,11 @@ do
 	check("df names the drive", bench.painted("hda"))
 	check("and its size", bench.painted(tostring(CeroSecOS.DISK_BYTES)))
 
-	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
+	-- Put back exactly as it was found, START DATE INCLUDED: a section that restored
+	-- only the current date left every section after it running on a game that would
+	-- not say when the save began, and a prefilled machine with no log on it.
+	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32,
+		ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 end
 
 --
@@ -5052,6 +5084,12 @@ local function fakeBuildingDef(b)
 		getY2 = function() return b.y + b.h end,
 	}
 end
+-- Kept in a local as well as in the global, because one section below sets
+-- _G.getWorld to NIL on purpose -- "a machine whose chunk is away" -- and every
+-- section after it would otherwise be running on a map with no zones on it
+-- without saying so. A section that wants the map back says `_G.getWorld =
+-- zonedWorld` and means it.
+local zonedWorld
 _G.getWorld = function()
 	return { getMetaGrid = function()
 		return {
@@ -5092,6 +5130,8 @@ _G.getWorld = function()
 		}
 	end }
 end
+
+zonedWorld = _G.getWorld
 
 local function newNet()
 	CeroSecJobs.machines = {}
@@ -7467,7 +7507,7 @@ do
 	-- CeroSec group at all is a world where the hardware IS required
 	-- (CeroSecModules.required fails closed), and every device bench after this
 	-- one is about the world with the option off.
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 	_G.__gameTime.ageHours = 0
 end
 
@@ -10141,7 +10181,7 @@ do
 	end
 
 	_G.__world = nil
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
 -- The control, on a world where nothing at all is wired: the option off is the
@@ -10152,7 +10192,7 @@ end
 do
 	local kit = mockupWorld()
 	_G.__world = kit.world
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 
 	local bench = newBench()
 	bench.login("admin")
@@ -10194,7 +10234,7 @@ do
 	check("nor of lights", not bench.painted("office"))
 
 	-- The same machine, the same second, with the group there and the option off.
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 	bench.enter("dev")
 	bench.frame()
 	check("and the option said out loud brings the building back",
@@ -10386,7 +10426,7 @@ do
 	eq("and the strike beside it did not", fittedOn(kit.front, "strike"), true)
 
 	_G.__world = nil
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
 
@@ -11523,5 +11563,126 @@ do
 	check("both lines are on the glass", bench.painted("one") and bench.painted("two"))
 end
 
+--
+-- WHAT IS ALREADY ON A MACHINE NOBODY HAS SWITCHED ON
+--
+-- The world half of the content wave. What each profile PUTS on a machine is
+-- tests/content_test.lua's -- it builds every one of them and runs every script --
+-- and this is the other half, which only the world can answer:
+--
+--   * the profile comes off the PREMISES the machine stands in, by the same rule
+--     the telephone line does;
+--   * it happens at the FIRST power-on and at no other moment, and never to a
+--     machine that already had a state;
+--   * the option off is the bare machine this mod shipped with.
+--
+-- The option is ON for this section and put back afterwards, which is the shape
+-- the hardware sections use.
+--
+do
+	local net = newNet()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+	-- The map back: a section above took getWorld away to prove what a machine with
+	-- no chunk says, and a premises is a question about zones.
+	_G.getWorld = zonedWorld
+	-- A shop inside the office building, strictly smaller than its footprint, which
+	-- is what makes it a premises at all.
+	_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+
+	-- net.here stands at 10,10 inside that zone. It has never been switched on in
+	-- this bench, so this call is its first.
+	local machine = net.machine(10, 10, 0, net.office)
+	check("the machine starts with no state at all", machine.os == nil)
+	machine:turnOn()
+	local state = machine:osState()
+	check("and switching it on gives it one", state ~= nil)
+
+	-- The office profile: more accounts than the two a bare machine ships with, and
+	-- root is no longer open.
+	local users, order = CeroSecOS.readUsers(state)
+	check("a machine in an office comes up with people on it (" .. #order .. ")",
+		#order > 2)
+	check("and root is not open any more",
+		not CeroSecOS.checkPassword(users.root, ""))
+	check("its name says which premises it is", state.hostname ~= "ksp-7t-jc"
+		and string.find(state.hostname, "^acct%-") ~= nil)
+	eq("and /etc/hostname agrees with it",
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+	check("the premises name is on the record",
+		CeroSecOS.premisesName(state) == "FrontOffice")
+	check("there is a week of log on it",
+		CeroSecOS.systemNode(state, CeroSecOS.LOG_PATH .. "/messages") ~= nil)
+	check("and the machine boots", (CeroSecOS.validate(state)))
+
+	-- THE PASSWORD A PLAYER WILL FIND. Derived from the premises and the save's own
+	-- secret, by the same two calls the paper in the drawer makes -- so this is the
+	-- assertion that the note and the machine agree, made on a real machine in a
+	-- real building.
+	local b1, b2 = CeroSecNet.premisesOf(machine)
+	local note = CeroSecContent.password(net.system:secret(),
+		CeroSecContent.rootKey(b1, b2))
+	check("the password on the paper logs root in",
+		CeroSecOS.checkPassword(CeroSecOS.readUsers(state).root, note))
+
+	-- AND IT HAPPENS ONCE. Switching the machine off and on again is not a second
+	-- first boot: the accounts, the files and the hostname are the ones already
+	-- there.
+	local before = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH).data
+	machine:turnOff()
+	machine:turnOn()
+	eq("switching it off and on again does not prefill it twice",
+		CeroSecOS.systemNode(machine:osState(), CeroSecOS.PASSWD_PATH).data, before)
+
+	-- A MACHINE SOMEBODY HAS ALREADY USED, which is what every computer in an
+	-- existing save is: a state is put on it by hand -- an old machine, two open
+	-- accounts, a file of somebody's -- and it comes up untouched.
+	do
+		local old = net.machine(11, 10, 0, net.office)
+		old.os = CeroSecOS.newState("ksp-b-a")
+		CeroSecOS.writeFile(old.os, CeroSecOS.rootSession(), "/home/admin/mine.txt",
+			"my work", false, nil)
+		local was = CeroSecOS.systemNode(old.os, CeroSecOS.PASSWD_PATH).data
+		old:turnOn()
+		local now = old:osState()
+		eq("an existing machine keeps its accounts",
+			CeroSecOS.systemNode(now, CeroSecOS.PASSWD_PATH).data, was)
+		eq("and its hostname", now.hostname, "ksp-b-a")
+		check("and the file somebody wrote on it",
+			CeroSecOS.systemNode(now, "/home/admin/mine.txt") ~= nil)
+		check("and root is still open", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(now).root, ""))
+	end
+
+	-- A MACHINE IN NO BUILDING AT ALL, which is a player-built base: bare, exactly
+	-- as it has no address and no telephone line.
+	do
+		local outside = net.machine(5000, 5000, 0, nil)
+		outside:turnOn()
+		local bare = outside:osState()
+		local _, ord = CeroSecOS.readUsers(bare)
+		eq("a machine in no building comes up bare", #ord, 2)
+		check("with root open", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(bare).root, ""))
+	end
+
+	-- THE OPTION OFF, which is the control and is the world this mod shipped with.
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+		local plain = net.machine(12, 10, 0, net.office)
+		plain:turnOn()
+		local bare = plain:osState()
+		local _, ord = CeroSecOS.readUsers(bare)
+		eq("with the option off a machine comes up with two accounts", #ord, 2)
+		check("root open", CeroSecOS.checkPassword(CeroSecOS.readUsers(bare).root, ""))
+		eq("and the name the coordinates give it", bare.hostname,
+			CeroSec.hostnameFor(12, 10))
+		eq("and no log", CeroSecOS.systemNode(bare, CeroSecOS.LOG_PATH .. "/messages"),
+			nil)
+	end
+
+	_G.__zones = {}
+	_G.getWorld = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
 
 print("window_test: " .. count .. " checks passed")

@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "Map/SGlobalObjectSystem"
+require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDebug"
@@ -24,8 +25,37 @@ end
 function SCeroSecSystem:initSystem()
 	SGlobalObjectSystem.initSystem(self)
 
-	-- Fields of this system that are saved.
-	self.system:setModDataKeys(nil)
+	-- Fields of this system that are saved. It was nil -- nothing -- until this
+	-- wave: the world content needs ONE number that belongs to the save and not to
+	-- a machine, and this is where it goes.
+	--
+	--   seed   the per-save secret, sixteen hex digits (CeroSecContent).
+	--
+	-- Proved at the bytecode level on projectzomboid.jar 42.20.4, because "it
+	-- probably persists" is not a thing to bet a player's save on:
+	--
+	--   SGlobalObjectSystem.setModDataKeys(KahluaTable) clears its HashSet and adds
+	--       every STRING in the table handed over (offsets 0-81; a non-string is an
+	--       IllegalArgumentException, so the list is names and nothing else).
+	--   SGlobalObjectSystem.save(ByteBuffer) makes a fresh table, walks the
+	--       system's own modData, copies across ONLY the keys in that HashSet
+	--       (rawget/rawset at 69-74 behind a HashSet.contains at 54) and writes it
+	--       with KahluaTable.save at 112.
+	--   SGlobalObjectSystem.load(ByteBuffer, int) reads it straight back into the
+	--       same modData table (KahluaTable.load at offset 13).
+	--
+	-- And the Lua system object IS that modData table -- SGlobalObjectSystem.lua:19
+	-- takes `system:getModData()` and gives it this class's metatable -- so
+	-- `self.seed` is the field, and gos_cerosec.bin is where it lands: the same file
+	-- the machines are already in, written and read with the save.
+	--
+	-- NOT ModData.getOrCreate/transmit, which was the other candidate. That is the
+	-- global mod-data channel and its whole purpose is to be TRANSMITTED to clients
+	-- -- and the secret is what every password in the county is derived from. It
+	-- stays on the server. Nothing puts it in setObjectSyncKeys, nothing puts it in
+	-- getInitialStateForClient, and a client is never told a password: it is told
+	-- the lines a machine printed, exactly as before.
+	self.system:setModDataKeys({ "seed" })
 
 	-- Fields of each GlobalObject that are saved to gos_cerosec.bin. 'os' and
 	-- 'console' are nested tables; the serializer recurses into those
@@ -49,6 +79,65 @@ end
 
 function SCeroSecSystem:newLuaObject(globalObject)
 	return SCeroSecObject:new(self, globalObject)
+end
+
+--
+-- THE PER-SAVE SECRET
+--
+-- Sixteen hex digits, made once for the life of the save and never again. A
+-- string and not a number: a Lua double carries 53 bits of mantissa, so a 64-bit
+-- integer kept as one is an integer whose bottom eleven bits are a lie, and it
+-- would ride into gos_cerosec.bin that way.
+--
+-- Everything the world content generates is hash(this, key), so this number is
+-- what makes a password the same password on every reload and a different one in
+-- the next save. Made LAZILY, at the first machine that needs it, rather than at
+-- server start: a save where nobody ever switches a computer on never grows the
+-- field, and a save that has one keeps it for ever.
+--
+-- The randomness is the engine's own, the way vanilla rolls anything: four draws
+-- of ZombRand(65536) -- `ZombRand(double)` is on LuaManager$GlobalObject, javap'd
+-- -- and the millisecond clock mixed in, so two servers started from the same
+-- image at the same moment do not agree. A box with neither is a box with no
+-- world in it, which is a bench, and it gets a fixed secret rather than a nil:
+-- a bench must be able to reach this code, and a save with no secret would mean
+-- every read of it had to answer "maybe".
+SCeroSecSystem.BENCH_SECRET = "cec05ec0cec05ec0"
+
+local function hex4(n)
+	local out = ""
+	local digits = "0123456789abcdef"
+	for _ = 1, 4 do
+		local d = math.fmod(math.floor(n), 16)
+		out = string.sub(digits, d + 1, d + 1) .. out
+		n = math.floor(n / 16)
+	end
+	return out
+end
+
+-- The method is `secret` and the field is `seed`, deliberately not one word: a
+-- method and an instance field of the same name on a table whose metatable is its
+-- own class is a field that SHADOWS the method the moment it is written, and the
+-- second call would try to call a string.
+function SCeroSecSystem:secret()
+	if CeroSecContent.isSecret(self.seed) then return self.seed end
+	if ZombRand == nil then return SCeroSecSystem.BENCH_SECRET end
+	local ms = 0
+	if getTimestampMs ~= nil then ms = getTimestampMs() or 0 end
+	local secret = ""
+	local scale = 1
+	for i = 1, 4 do
+		local draw = math.floor(ZombRand(65536))
+		-- The clock, one chunk of it per draw, so a run of ZombRand that happened to
+		-- repeat does not make two saves agree.
+		local slice = math.fmod(math.floor(ms / scale), 65536)
+		secret = secret .. hex4(math.fmod(draw + slice, 65536))
+		scale = scale * 65536
+	end
+	if not CeroSecContent.isSecret(secret) then return SCeroSecSystem.BENCH_SECRET end
+	self.seed = secret
+	CeroSec.log("the save's content secret was made")
+	return secret
 end
 
 function SCeroSecSystem:isValidIsoObject(isoObject)
@@ -377,6 +466,33 @@ function SCeroSecSystem:clockEnv()
 		gt:getHour(), gt:getMinutes(), 0)
 	if now == nil then return {} end
 	return { now = now }
+end
+
+-- WHEN THE SAVE BEGAN, as the one number the engine carries. A fact about the
+-- SAVE and not about any machine, which is why it is here beside the clock.
+--
+-- The start getters are the same zero-based encoding getMonth and getDay are:
+-- GameTime's constructor sets `day` and `startDay` from one literal and `month`
+-- and `startMonth` from another (javap -c zombie.GameTime, offsets 66-69 and
+-- 102-105), so the "+ 1" clockEnv already puts on the current date belongs on the
+-- start date too. getStartYear/getStartMonth/getStartDay are public and zero-arg.
+--
+-- nil for a box with no game in it, which is a bench -- and a machine prefilled
+-- with no start date is a machine with no /var/log, because a log line with no
+-- date on it is not a log line.
+function SCeroSecSystem:startTime()
+	if getGameTime == nil then return nil end
+	local gt = getGameTime()
+	if gt == nil then return nil end
+	if gt.getStartYear == nil then return nil end
+	-- Every one of the three read, and every one of them checked, the way clockEnv
+	-- checks its own answer: a game that will not say what day it started is a
+	-- machine with no log on it, and never a machine with a log dated in 1970.
+	local year, month, day = gt:getStartYear(), gt:getStartMonth(), gt:getStartDay()
+	if type(year) ~= "number" or type(month) ~= "number" or type(day) ~= "number" then
+		return nil
+	end
+	return CeroSecOS.timeFromParts(year, month + 1, day + 1, 0, 0, 0)
 end
 
 --

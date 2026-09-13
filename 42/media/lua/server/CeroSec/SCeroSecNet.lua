@@ -231,8 +231,17 @@ end
 
 -- The premises: two bytes, the exchange behind them, and what it is called.
 -- nil for a computer in no building at all, which is what a player-built base is.
-function CeroSecNet.premisesOf(luaObject)
-	local def, square = defOf(luaObject)
+--
+-- Asked of a SQUARE, so that the one rule about what a premises is answers every
+-- question about it. There are three of those now -- which wire a computer is on,
+-- which profile a machine gets, and which premises a note in a drawer or a note in
+-- a dead man's pocket belongs to -- and a second copy of the rule for the papers
+-- would be papers that named a premises the telephone did not agree with.
+function CeroSecNet.premisesOfSquare(square)
+	if square == nil then return nil end
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
 	if def == nil then return nil end
 	local bx, by = def:getX(), def:getY()
 	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
@@ -270,6 +279,13 @@ function CeroSecNet.premisesOf(luaObject)
 	local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
 	if b1 == nil then return nil end
 	return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName()
+end
+
+-- The same question about a COMPUTER, which is the caller this started as: the
+-- square it stands on, and nothing else.
+function CeroSecNet.premisesOf(luaObject)
+	local _, square = defOf(luaObject)
+	return CeroSecNet.premisesOfSquare(square)
 end
 
 --

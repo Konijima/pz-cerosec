@@ -59,6 +59,31 @@ CeroSecContent = CeroSecContent or {}
 CeroSecContent.VERSION = 1
 
 --
+-- Is there anything already on the machines at all?
+--
+-- The sandbox option, read the way vanilla reads its own grouped options --
+-- `SandboxVars.Map and (SandboxVars.Map.AllowMiniMap == true)`,
+-- client/ISUI/Maps/ISMiniMap.lua:687 -- because SandboxVars is a plain table and
+-- a group nobody declared is simply not in it.
+--
+-- Anything that is not the literal false is "yes", which keeps the DECLARED
+-- default (42/media/sandbox-options.txt says true) for a save from before the
+-- option, a group that is not there and a sandbox file that failed to load. The
+-- other direction would be a world that quietly went back to bare machines and
+-- looked exactly like a working one.
+--
+-- One reader, two callers: the machines (SCeroSecObject:turnOn) and the notes
+-- (CeroSecNotes). A second copy of this test is how a mod ends up with the option
+-- off for the computers and on for the paper in the drawer.
+CeroSecContent.SANDBOX = "PrefilledMachines"
+
+function CeroSecContent.enabled()
+	local group = SandboxVars and SandboxVars.CeroSec
+	if group == nil then return true end
+	return group[CeroSecContent.SANDBOX] ~= false
+end
+
+--
 -- The derivation
 --
 

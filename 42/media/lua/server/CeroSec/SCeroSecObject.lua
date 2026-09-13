@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "Map/SGlobalObject"
+require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSPath"
@@ -546,6 +547,66 @@ end
 -- Toggle
 --
 
+--
+-- WHAT IS ALREADY ON A MACHINE NOBODY HAS EVER SWITCHED ON
+--
+-- Called from turnOn and from nowhere else, for a machine whose state was made a
+-- moment ago and never for one that already had one: a computer somebody has used
+-- is HIS, and a wave that prefilled an existing machine would be a wave that wrote
+-- over somebody's accounts and somebody's files. The test is the one thing that
+-- cannot lie about it -- whether self.os was a table before osState was asked --
+-- and it is made in turnOn, before the call.
+--
+-- Here and not in a migration step, for the reason the address is not in one
+-- either: this needs the WORLD. Which premises the machine stands in is a question
+-- about a square, and most machines in a save have no chunk loaded. turnOn is the
+-- moment the chunk is certainly there, because the power check has just proved it.
+--
+-- The profile id, or nil for a machine left bare. The password it derived is
+-- deliberately NOT answered and never logged: the letters exist for the length of
+-- one call and the only place they are ever written is the paper in the drawer,
+-- which derives them again for itself.
+function SCeroSecObject:prefill(state)
+	if state == nil then return nil end
+	if not CeroSecContent.enabled() then return nil end
+	local system = self.luaSystem
+	if system == nil or system.secret == nil then return nil end
+
+	-- Which premises, by the one rule there is about what a premises is
+	-- (CeroSecNet.premisesOfSquare). nil is a computer in no building at all, which
+	-- is what a player-built base is: it gets a bare machine, exactly as it gets no
+	-- address and no telephone line.
+	local b1, b2, _, zone = CeroSecNet.premisesOf(self)
+	if b1 == nil then return nil end
+
+	-- And what the ROOM is called, which is the second question and is asked only
+	-- because the first so often has no answer: the shipped map names the shops
+	-- inside a mall with zones and names a house with nothing at all. IsoRoom's
+	-- getName is one getfield on its `roomDef` string (javap -c
+	-- zombie.iso.areas.IsoRoom), so it IS the RoomDef's name -- which is a LOOT
+	-- type ("kitchen", "clothsstore") and says nothing about tenancy. That is why it
+	-- is asked second and why an answer nobody has a word for is a house.
+	local room = nil
+	local square = self:getSquare()
+	if square ~= nil then
+		local isoRoom = square:getRoom()
+		if isoRoom ~= nil then room = isoRoom:getName() end
+	end
+
+	local id = CeroSecContent.prefill(state, {
+		secret = system:secret(),
+		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
+		premises = zone, room = room,
+		start = system:startTime(),
+		now = CeroSecOS.clockOf(system:clockEnv()),
+	})
+	if id == nil then return nil end
+	self:mirrorOS()
+	CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
+		.. " came up prefilled as " .. id)
+	return id
+end
+
 function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
@@ -557,10 +618,19 @@ function SCeroSecObject:turnOn()
 	-- When it came up, for ruptime. Runtime state like the jobs: a server that
 	-- came back up forgets it, and ruptime counts from the restart.
 	self.upMs = getTimestampMs()
+	-- Whether there was a machine here at all a moment ago. Read BEFORE osState is
+	-- asked, because osState is what makes one: after the call there is always a
+	-- table and nothing can tell the two cases apart any more.
+	local bare = type(self.os) ~= "table"
+	local state = self:osState()
+	-- What is already on it, once in the life of the machine (see prefill above).
+	-- Before identify, so that the hostname a profile gives it is the name that
+	-- goes into /etc/hosts and onto the prompt.
+	if bare then self:prefill(state) end
 	-- Which building it stands in, and therefore its address. Here rather than at
 	-- the first command because the power check has just proved the chunk is
 	-- loaded, which is the one thing working a building out needs.
-	CeroSecNet.identify(self.luaSystem, self, self:osState())
+	CeroSecNet.identify(self.luaSystem, self, state)
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	-- @reboot, which is the one crontab line that is not a time: the machine has

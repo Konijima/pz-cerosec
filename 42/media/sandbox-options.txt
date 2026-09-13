@@ -28,3 +28,27 @@ option CeroSec.HardwareRequired
     page = CeroSec,
     translation = CeroSec_HardwareRequired,
 }
+
+/* Is there anything already ON the computers, and on the disks beside them?
+ *
+ * On, which is the mod's own answer and NOT the world as it was before the
+ * option existed: a vanilla computer switched on for the first time comes up
+ * with somebody's accounts on it, his files, a motd, a week of log, and
+ * sometimes a password to find; a floppy off a shelf sometimes has a program and
+ * a README on it. Off is the bare machine this mod shipped with -- two open
+ * accounts and an empty disk -- and it is there for a server that wants the
+ * computers to be a blank sheet.
+ *
+ * IT IS THE ONE OPTION OF OURS WHOSE DEFAULT CHANGES A WORLD, and it changes it
+ * in one direction only: a machine somebody has already switched on is HIS and is
+ * never touched (SCeroSecObject:turnOn prefills only where the state was made a
+ * moment ago). What changes is the machines nobody has been to yet, which is what
+ * this is for. Said again in docs/CONTENT.md, where a player can read it.
+ */
+option CeroSec.PrefilledMachines
+{
+    type = boolean,
+    default = true,
+    page = CeroSec,
+    translation = CeroSec_PrefilledMachines,
+}

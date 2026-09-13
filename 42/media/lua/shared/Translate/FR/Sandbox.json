@@ -1,5 +1,7 @@
 {
     "Sandbox_CeroSec": "CeroSec",
     "Sandbox_CeroSec_HardwareRequired": "Modules matériels obligatoires",
-    "Sandbox_CeroSec_HardwareRequired_tooltip": "Activé : un ordinateur n'atteint qu'une porte, une fenêtre, une serrure ou une lumière sur laquelle quelqu'un a posé un module CeroSec -- contact magnétique, relais, gâche électrique ou opérateur de porte, installé au tournevis avec la compétence Électricité. Désactivé : toutes les portes, fenêtres, serrures et lumières du bâtiment sont dans /dev, câblées ou non, comme avant l'existence de cette option."
+    "Sandbox_CeroSec_HardwareRequired_tooltip": "Activé : un ordinateur n'atteint qu'une porte, une fenêtre, une serrure ou une lumière sur laquelle quelqu'un a posé un module CeroSec -- contact magnétique, relais, gâche électrique ou opérateur de porte, installé au tournevis avec la compétence Électricité. Désactivé : toutes les portes, fenêtres, serrures et lumières du bâtiment sont dans /dev, câblées ou non, comme avant l'existence de cette option.",
+    "Sandbox_CeroSec_PrefilledMachines": "Machines et disquettes garnies",
+    "Sandbox_CeroSec_PrefilledMachines_tooltip": "Activé : un ordinateur allumé pour la première fois démarre avec les comptes de quelqu'un, ses fichiers, un motd, une semaine de journal et parfois un mot de passe à trouver dans un tiroir à côté; une disquette ramassée porte parfois un programme et un README. Désactivé : la machine nue -- deux comptes ouverts, un disque vide. Un ordinateur que quelqu'un a déjà allumé n'est jamais touché, dans les deux cas."
 }
