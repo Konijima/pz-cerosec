@@ -1230,6 +1230,13 @@ do
 	end
 	eq("nothing declares a late file it has not got",
 		CeroSecContent.lateFile({ late = "NOPE.TXT", files = {} }), nil)
+	-- AND THERE IS ONE. Everything below this is inside `if lateCount > 0`, because
+	-- the mechanism is for a catalogue that has such an entry and there was a build
+	-- with none -- so without this line, a wave that dropped `late` off the BBS list
+	-- would take the whole of section 7b out of the suite in silence and the bench
+	-- would still say it passed.
+	check("the shipped catalogue has a late entry in it (" .. lateCount .. ")",
+		lateCount > 0)
 
 	-- The numbers a region hands over, in the shape CeroSecNet.directory answers
 	-- them in. Written down rather than taken off a world: there is no world here,
