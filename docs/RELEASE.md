@@ -7,6 +7,27 @@ See also: [CONTRIBUTING.md](CONTRIBUTING.md) for why the Workshop folder is a co
 and never a link, [TESTING.md](TESTING.md) for what the suite proves, and
 [PARCOURS-TEST.md](PARCOURS-TEST.md) for what it cannot.
 
+## One-time break before 0.1.0: every hash changed (2026-09-12)
+
+A save written by a build older than this one has passwords in it that **will not
+verify any more**, and generated content (root's password, the sticky note, the
+names, the logs) that is a different set of values. Accepted, because we are
+pre-release and nothing is published yet.
+
+Why: Kahlua's `%` operator is `a - (int)(a / b) * b` with a 32-bit `(int)` that
+clamps at 2147483647, so it was wrong inside the mixer's `mul()` and the game's
+hashes were never the same numbers as the bench's. The engine uses
+`CeroSecOS.mod` now and both VMs give lua5.1's answer, which is the one every
+fixture and every value in [CONTENT.md](CONTENT.md) already held -- so the
+canonical numbers did not move, the game moved onto them. Same day, same cause
+family: `tonumber(s, 16)` returned nil on Kahlua above `0x7fffffff` and is now
+`CeroSecOS.hexValue`. See [TESTING.md](TESTING.md).
+
+A machine caught by it: root's password is the one derived from the save's own
+secret, so the BIOS repair hands it back -- and an account a player made himself
+has to be reset by root. Nothing else on the machine is touched: the filesystem,
+the files and the state shape are all unaffected.
+
 ## The checklist
 
 | # | step | command |

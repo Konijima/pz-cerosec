@@ -1257,6 +1257,21 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 		if CeroSecOS.labelOk(written) then disk.label = written end
 	end
 
+	-- AND THE ONE DISK WHOSE STORY NEEDED A PLACE. A BBS list off a shelf carries a
+	-- stub where its numbers go, because loot has no location and there was no
+	-- exchange to print: this is the first moment there is a square to ask, so it is
+	-- where the printing happens (CeroSecNet.fillLateDisk, and the sixth note over
+	-- CeroSecContent.DISKS for the whole of why).
+	--
+	-- AFTER the label is read and BEFORE the disk goes in the drive: the sticker is
+	-- what says which catalogue entry this is, and a disk already in a machine is a
+	-- disk the survivor is reading. It is done to OUR copy -- the validated private
+	-- one above -- and what is on the copy is what the drive takes and what an eject
+	-- writes back onto the item, so the printing outlives the insertion by the same
+	-- path everything else on the disk does. Nothing happens for every other disk in
+	-- the county and nothing happens twice for this one.
+	CeroSecNet.fillLateDisk(disk, x, y, nil)
+
 	local done = luaObject:insertDisk(disk, item:getFullType())
 	if not done then return end
 

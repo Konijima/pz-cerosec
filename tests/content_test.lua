@@ -311,30 +311,59 @@ end
 -- The script engine, driven the way the server drives it -- os_test.lua's own
 -- loop, cut to what a bench that only runs scripts needs. The parse, the
 -- expansion, the commands and every ceiling are the engine's.
-local function run(state, session, line, env)
+-- `answers` is what somebody types at it, in order, and it is what lets a bench
+-- run a program that ASKS -- a game. Every answer goes back through
+-- CeroSecOS.jobInput, which is the one door an answer goes through on a real
+-- machine; a question past the end of the list is not answered at all, so the job
+-- comes back still waiting and the caller can say so instead of the bench looping
+-- on an empty line for ever.
+local function run(state, session, line, env, answers)
 	env = env or { now = START }
 	if session.shvars == nil then session.shvars = {} end
 	local job, refusal =
 		CeroSecOS.promptJob(state, session, line, session.shvars, session.status)
 	if job == nil then return false, { refusal }, 0 end
-	local out, turns = {}, 0
+	local out, turns, at = {}, 0, 1
 	while not CeroSecOS.jobIsOver(job) and turns < 2000 do
 		turns = turns + 1
 		CeroSecOS.jobStep(state, job, env, 1000)
 		for k = 1, #job.out do out[#out + 1] = job.out[k] end
 		job.out = {}
-		if job.state == "waiting" or job.state == "sleeping" then break end
+		if job.state == "waiting" and job.ask ~= nil and answers ~= nil
+				and at <= #answers then
+			CeroSecOS.jobInput(state, job, answers[at], env)
+			at = at + 1
+		elseif job.state == "waiting" or job.state == "sleeping" then
+			break
+		end
 		if job.spawn ~= nil then break end
 	end
 	for k = 1, #job.out do out[#out + 1] = job.out[k] end
 	session.status = job.status
-	return job.status == 0, out, turns, job
+	return job.status == 0, out, turns, job, at - 1
 end
 
 -- A fake env.devices, os_test.lua's shape, built out of what a script DECLARED it
 -- needs. That is the point of `needs` being in the library: the bench stubs
 -- exactly what the script says it wants and nothing else, so a script that
 -- quietly reached for a second device would find it missing.
+--
+-- What the WORLD answers after a write, which is not the word that was written.
+-- `echo close > /dev/door0` and then `cat /dev/door0` reads "closed", and a lock
+-- written "lock" reads "locked": the state words are the ones the world composes
+-- out of the object itself (SCeroSecDevices.doorState and the two beside it --
+-- "open"/"closed"/"locked" for a door, "locked"/"unlocked" for a lock), while the
+-- vocabulary a write uses is the imperative (CeroSecOS.DEV_VALUES).
+--
+-- Written down here because a stub that echoed the written word back would be a
+-- machine that does not exist, and a script that reads a device back to check its
+-- own work -- which is what a lockup script is FOR -- would be proved against it.
+local STATE_AFTER = {
+	open = "open", close = "closed",
+	lock = "locked", unlock = "unlocked",
+	on = "on", off = "off",
+}
+
 local function devicesFor(needs)
 	local entries = {}
 	if type(needs) == "table" and type(needs.devices) == "table" then
@@ -360,7 +389,7 @@ local function devicesFor(needs)
 		devices.writes[#devices.writes + 1] = id .. "=" .. value
 		local e = byId[id]
 		if e == nil then return false, "no such device" end
-		e.state = value
+		e.state = STATE_AFTER[value] or value
 		return true, nil, e.state
 	end
 	devices.chmod = function() end
@@ -579,9 +608,181 @@ do
 					end
 				end
 			end
+
+			-- THE CRONTABS, and this is the one thing about a profile that has to be
+			-- true of the file's CONTENTS and not only of where it landed: cron reads
+			-- it with the machine's own parser, so a line the parser refuses is a line
+			-- that does nothing for ever and says nothing about why.
+			if type(profile.cron) == "table" then
+				-- Which script PATHS this profile really writes, and certainly: an
+				-- entry behind a chance is on some machines and not others, and an
+				-- entry naming `to` is somewhere else entirely. The path and not the
+				-- name, because a crontab line saying /usr/local/bin/check.sh on a
+				-- machine that put check.sh in a home is a line that mails
+				-- "not found" for ever.
+				local certain = {}
+				if type(profile.bin) == "table" then
+					for b = 1, #profile.bin do
+						local entry = profile.bin[b]
+						if (entry.chance or 100) >= 100 then
+							local dir = entry.to or "$HOME/bin"
+							certain[dir .. "/" .. entry.script] = true
+						end
+					end
+				end
+				for c = 1, #profile.cron do
+					local to = profile.cron[c].to
+					if type(to) == "number" then to = logins[to] end
+					if to ~= nil then
+						local tab = all[CeroSecOS.cronPath(to)]
+						check(id .. " " .. tostring(to) .. " has a crontab", tab ~= nil)
+						eq(id .. " and the crontab is root's", tab.owner, "root")
+						eq(id .. " at the crontab mode", tab.mode, CeroSecOS.CRONTAB_MODE)
+						eq(id .. " and crontab(1) itself accepts it",
+							CeroSecOS.checkCrontab(CeroSecOS.cronPath(to), tab.data), nil)
+						local entries = CeroSecOS.parseCrontab(tab.data)
+						check(id .. " and it has lines in it (" .. #entries .. ")",
+							#entries > 0 and #entries <= CeroSecOS.CRON_MAX_LINES)
+						-- And a line that calls a script of ours calls one that is
+						-- REALLY there, at the very path the line names. A crontab
+						-- naming a script placed behind a roll is a crontab that mails
+						-- "not found" on the machines the roll missed, and one naming
+						-- the wrong directory is one that never worked anywhere.
+						for named in string.gmatch(tab.data, "([%$%w%-%./]+%.sh)") do
+							check(id .. " its crontab calls " .. named
+								.. ", which the profile always writes there",
+								certain[named] == true)
+						end
+					end
+				end
+			end
+
+			-- A `files` entry marked `dir` is a directory and is there as one: a
+			-- profile whose tree was not made is a profile whose files were all
+			-- refused for a reason nothing in the catalogue could see.
+			if type(profile.files) == "table" then
+				for f = 1, #profile.files do
+					local file = profile.files[f]
+					if file.dir then
+						local at = all[file.path]
+						check(id .. " made the directory " .. tostring(file.path),
+							at ~= nil and at.type == "dir")
+					end
+				end
+			end
 		end
 	end
 	check("at least two profiles are written", built >= 2)
+end
+
+--
+-- 4b. THE CRONTAB'S OWN LINE, RUN AS THE ACCOUNT IT BELONGS TO
+--
+-- Everything above proves a crontab is a file cron will PARSE. That is not the
+-- same thing as a line that works: the command in it names a path with $HOME in
+-- it, an account whose login was generated, and a script placed behind a roll --
+-- three ways to write a line that parses perfectly and mails "not found" once an
+-- hour for ever.
+--
+-- So one is taken off a prefilled machine and TYPED, as the account it belongs to,
+-- on the machine the profile built. The radio station's, because its line is the
+-- one built to run from cron at all.
+--
+
+do
+	local state = CeroSecOS.newState("ksp-4-b")
+	local id, _, logins =
+		CeroSecContent.prefill(state, opts(SECRET_A, { premises = "radio" }))
+	eq("the station is the profile asked for", id, "radio")
+	local login = logins[1]
+	check("and it has the engineer's account on it", login ~= nil)
+	local password = CeroSecContent.accountPassword(SECRET_A, 12, 34, 1, login)
+	local session = CeroSecOS.login(state, login, password)
+	check("who can log in with the password a paper would name", session ~= nil)
+	-- The environment a LOGIN hands a shell, which is where $HOME comes from --
+	-- and cron hands its jobs the same one (CeroSecOS.loginVars, called by
+	-- CeroSecJobs for a cron job and by the console for a prompt). A bench that
+	-- left it empty would be a bench in which $HOME is the empty string and every
+	-- path in the crontab is wrong in exactly the way this is here to catch.
+	session.shvars = CeroSecOS.loginVars("/home/" .. login)
+
+	local tab = CeroSecOS.systemNode(state, CeroSecOS.cronPath(login))
+	check("the station has a crontab", tab ~= nil)
+	local entries = CeroSecOS.parseCrontab(tab.data)
+	check("with a line in it", #entries > 0)
+	local env = { now = START, devices = devicesFor(nil) }
+	for e = 1, #entries do
+		local ran, lines = run(state, session, entries[e].cmd, env)
+		check("its crontab line runs: " .. entries[e].cmd .. " -> "
+			.. table.concat(lines, " / "), ran)
+		check("and printed something worth mailing", #lines > 0)
+		for l = 1, #lines do
+			check('and it fits the screen: "' .. lines[l] .. '"',
+				#lines[l] <= CeroSecOS.COLS)
+		end
+		-- And what it printed is the line of the sheet for the hour the bench's
+		-- clock says it is, which is nine in the morning.
+		check("and it is the nine o'clock line (" .. table.concat(lines, " ") .. ")",
+			string.find(table.concat(lines, " "), "morning show", 1, true) ~= nil)
+	end
+
+	-- The same line, the way a machine nobody is standing at really runs it: with
+	-- no terminal. A cron line is refused nothing here -- announce.sh reads a file
+	-- and prints, which is all cron ever wanted -- and this is what says so.
+	local vok, vwhy = CeroSecOS.validate(state)
+	check("and the station still boots afterwards: " .. tostring(vwhy), vok)
+end
+
+--
+-- 4c. Every data file a script was proved on is a file some premises really keeps
+--
+-- CeroSecContent.DATA is named twice on purpose: once by the script that reads it
+-- and once by the machine or the disk that carries it. If only the script named
+-- one, the bench would be running audit.sh on a file of its own invention and
+-- calling that proof.
+--
+
+do
+	local names = {}
+	for name in pairs(CeroSecContent.DATA) do names[#names + 1] = name end
+	table.sort(names)
+	check("there are data files", #names > 0)
+	for i = 1, #names do
+		local name, text = names[i], CeroSecContent.DATA[names[i]]
+		local found = nil
+		for id in pairs(CeroSecContent.PROFILES) do
+			local profile = CeroSecContent.PROFILES[id]
+			if type(profile.accounts) == "table" then
+				for a = 1, #profile.accounts do
+					local files = profile.accounts[a].files
+					if type(files) == "table" then
+						for f = 1, #files do
+							if files[f].path == name and files[f].text == text then
+								found = id
+							end
+						end
+					end
+				end
+			end
+			if type(profile.files) == "table" then
+				for f = 1, #profile.files do
+					if profile.files[f].path == name and profile.files[f].text == text then
+						found = id
+					end
+				end
+			end
+		end
+		for d = 1, #CeroSecContent.DISKS do
+			local files = CeroSecContent.DISKS[d].files
+			for f = 1, #files do
+				if files[f].name == name and files[f].text == text then
+					found = CeroSecContent.DISKS[d].id
+				end
+			end
+		end
+		check("the data file " .. name .. " is carried by something in the county",
+			found ~= nil)
+	end
 end
 
 --
@@ -726,6 +927,14 @@ do
 				#line <= CeroSecOS.COLS)
 		end
 		check(name .. " says how it is run", type(script.args) == "table")
+		-- A script that reads $1 and records no arguments is a script that has got
+		-- out of the usage rule below by declaring itself argument-free. Asked of the
+		-- TEXT, because the text is the only honest witness to what it wants.
+		check(name .. " that reads $1 records an argument",
+			string.find(script.text, "$1", 1, true) == nil or #script.args > 0)
+		check(name .. " records the lines typed at it if it asks anything",
+			string.find(script.text, "read ", 1, true) == nil
+				or type(script.input) == "table")
 
 		-- And now run it.
 		local state = CeroSecOS.newState("ksp-4-b")
@@ -735,6 +944,18 @@ do
 		local done, why =
 			CeroSecOS.writeFile(state, session, path, script.text, false, START)
 		check(name .. " goes onto a machine: " .. tostring(why), done ~= nil)
+		-- The files it declared it wants standing beside it, and nothing else: the
+		-- other half of `needs`, written under the account's own home the way the
+		-- devices are stubbed one to one (see the head of devicesFor).
+		if type(script.needs) == "table" and type(script.needs.files) == "table" then
+			for f = 1, #script.needs.files do
+				local file = script.needs.files[f]
+				local put, fwhy = CeroSecOS.writeFile(state, session,
+					"/home/admin/" .. file.path, file.text, false, START)
+				check(name .. " gets " .. tostring(file.path) .. ": " .. tostring(fwhy),
+					put ~= nil)
+			end
+		end
 		local env = { now = START, devices = devicesFor(script.needs) }
 
 		local ok, out = run(state, session, "chmod 755 " .. name, env)
@@ -742,13 +963,22 @@ do
 
 		local line = "./" .. name
 		for a = 1, #script.args do line = line .. " " .. script.args[a] end
-		local ran, lines, turns = run(state, session, line, env)
+		local ran, lines, turns, job, used = run(state, session, line, env, script.input)
 		check(name .. " runs: " .. table.concat(lines, " / "), ran)
 		check(name .. " printed something", #lines > 0)
 		-- Under budget, which is the other half of "it runs": a script that only
 		-- finishes because the bench gave it two thousand turns is a script that
 		-- would be killed on a real machine (`killed: cpu limit`).
 		check(name .. " finishes in a handful of turns (" .. turns .. ")", turns < 50)
+		-- And the lines recorded for it really play it to the end. A game left at a
+		-- question is a game whose `input` nobody finished writing, and it would
+		-- otherwise pass as "it ran" on the strength of its first prompt.
+		check(name .. " is over and not still asking (" .. tostring(job.state) .. ")",
+			CeroSecOS.jobIsOver(job))
+		if type(script.input) == "table" then
+			check(name .. " uses the lines recorded for it (" .. used .. " of "
+				.. #script.input .. ")", used == #script.input)
+		end
 		for l = 1, #lines do
 			check(name .. ' output fits 60 columns: "' .. lines[l] .. '"',
 				#lines[l] <= CeroSecOS.COLS)
@@ -757,19 +987,26 @@ do
 		-- And with NO arguments, which is the other way it will be run: by somebody
 		-- who found it and typed its name. It must say how it is used and not fall
 		-- over.
-		local bare, bareLines = run(state, session, "./" .. name, env)
-		check(name .. " with no arguments says something", #bareLines > 0)
-		check(name .. " with no arguments does not say sh had an error",
-			string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
-		check(name .. " with no arguments is not a nil call",
-			string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
-		-- A script run with no arguments must SAY SO and must not claim success:
-		-- unconditional, because written as "if it failed, it must print usage" the
-		-- requirement quietly stops being checked the day a script starts exiting 0
-		-- with nothing to do.
-		check(name .. " with no arguments does not claim success", not bare)
-		check(name .. " with no arguments prints a usage line",
-			string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
+		--
+		-- Asked of a script that TAKES an argument, and of no other: a program with
+		-- no arguments at all -- a game -- has no wrong way to be run, and the run
+		-- above already was the bare one. What stops a script from getting out of
+		-- this by declaring `args = {}` is the $1 check at the top of the loop.
+		if #script.args > 0 then
+			local bare, bareLines = run(state, session, "./" .. name, env)
+			check(name .. " with no arguments says something", #bareLines > 0)
+			check(name .. " with no arguments does not say sh had an error",
+				string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
+			check(name .. " with no arguments is not a nil call",
+				string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
+			-- A script run with no arguments must SAY SO and must not claim success:
+			-- unconditional, because written as "if it failed, it must print usage" the
+			-- requirement quietly stops being checked the day a script starts exiting 0
+			-- with nothing to do.
+			check(name .. " with no arguments does not claim success", not bare)
+			check(name .. " with no arguments prints a usage line",
+				string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
+		end
 
 		-- The machine is still a machine afterwards.
 		local vok, vwhy = CeroSecOS.validate(state)
@@ -839,7 +1076,22 @@ do
 			local root = disk.fs
 			check(where .. " has a filesystem on it", type(root) == "table")
 			local names = CeroSecOS.childNames(root)
-			eq(where .. " has one entry per file", #names, #entry.files)
+			-- One node per entry, counted over the whole TREE and not over the root:
+			-- a distribution disk has a MAN directory on it, and the six pages in it
+			-- are six entries the root has never heard of. The root's own children
+			-- are the entries with no slash in their name.
+			local flat = 0
+			for f = 1, #entry.files do
+				if string.find(entry.files[f].name, "/", 1, true) == nil then
+					flat = flat + 1
+				end
+			end
+			eq(where .. " has one root entry per flat file", #names, flat)
+			local deep = walk(root)
+			local made = 0
+			for _ in pairs(deep) do made = made + 1 end
+			eq(where .. " has one node per entry, the root itself aside", made - 1,
+				#entry.files)
 			local _, bytes = CeroSecOS.subtreeUsage(root)
 			check(where .. " is inside FLOPPY_BYTES (" .. bytes .. ")",
 				bytes <= CeroSecOS.FLOPPY_BYTES)
@@ -857,17 +1109,28 @@ do
 				end
 			end
 			check(where .. " has a README.TXT", readme ~= nil)
+			-- Every node on the disk, at whatever depth: the name is one the machine
+			-- will take, what is in it carries no control byte, and every line of it
+			-- fits the glass. A page in MAN is read with `cat` like anything else.
+			for path, node in pairs(deep) do
+				if path ~= "/" then
+					local leaf = string.match(path, "([^/]+)$")
+					check(where .. path .. " is a name the machine will take",
+						CeroSecOS.isValidFileName(leaf))
+					check(where .. path .. " carries no control byte",
+						not CeroSecOS.hasControlBytes(node.data or ""))
+					for line in ((node.data or "") .. "\n"):gmatch("([^\n]*)\n") do
+						check(where .. path .. ' line fits 60 columns: "' .. line
+							.. '" (' .. #line .. ")", #line <= CeroSecOS.COLS)
+					end
+				end
+			end
+			-- And the README names every entry BESIDE it, which is the root's own
+			-- children and not the tree: a directory is named and what is in it is
+			-- listed by `ls`, exactly as a distribution disk's own README did it.
 			for n = 1, #names do
 				local name = names[n]
 				local node = root.children[name]
-				check(where .. "/" .. name .. " is a name the machine will take",
-					CeroSecOS.isValidFileName(name))
-				check(where .. "/" .. name .. " carries no control byte",
-					not CeroSecOS.hasControlBytes(node.data or ""))
-				for line in ((node.data or "") .. "\n"):gmatch("([^\n]*)\n") do
-					check(where .. "/" .. name .. ' line fits 60 columns: "' .. line
-						.. '"', #line <= CeroSecOS.COLS)
-				end
 				if node ~= readme then
 					check(where .. "'s README names " .. name,
 						string.find(readme.data or "", name, 1, true) ~= nil)
@@ -935,6 +1198,201 @@ do
 		check("and it can be read", #read > 0)
 		local vok, vwhy = CeroSecOS.validate(state)
 		check("and the machine still boots with it in the drive: " .. tostring(vwhy), vok)
+	end
+end
+
+--
+-- 7b. THE LATE FILE: the one disk whose story needs a place
+--
+-- A floppy is created in loot and loot has no location, so a BBS list cannot be
+-- printed with the numbers of the region it is found in at the moment it is made.
+-- One file of such an entry ships as a STUB and is filled the first time the disk
+-- goes into a machine, out of that machine's own exchange.
+--
+-- The pure half is here: what a stub is, what fills it, and that it is filled ONCE.
+-- That the numbers really come off the inserting machine's square is
+-- CeroSecNet.fillLateDisk's, and it is walked in docs/PARCOURS-TEST.md.
+--
+
+do
+	-- Every entry that declares a late file really has one, with text. `late`
+	-- naming a file nobody shipped would be an entry that can never be filled and
+	-- nothing else would ever say so.
+	local lateCount = 0
+	for i = 1, #CeroSecContent.DISKS do
+		local entry = CeroSecContent.DISKS[i]
+		if entry.late ~= nil then
+			lateCount = lateCount + 1
+			local name, stub = CeroSecContent.lateFile(entry)
+			eq("disk " .. entry.id .. " has the late file it names", name, entry.late)
+			check("and the stub is text", type(stub) == "string" and stub ~= "")
+		end
+	end
+	eq("nothing declares a late file it has not got",
+		CeroSecContent.lateFile({ late = "NOPE.TXT", files = {} }), nil)
+	-- AND THERE IS ONE. Everything below this is inside `if lateCount > 0`, because
+	-- the mechanism is for a catalogue that has such an entry and there was a build
+	-- with none -- so without this line, a wave that dropped `late` off the BBS list
+	-- would take the whole of section 7b out of the suite in silence and the bench
+	-- would still say it passed.
+	check("the shipped catalogue has a late entry in it (" .. lateCount .. ")",
+		lateCount > 0)
+
+	-- The numbers a region hands over, in the shape CeroSecNet.directory answers
+	-- them in. Written down rather than taken off a world: there is no world here,
+	-- which is the whole reason the layout half is a pure function.
+	local HERE = { "418-2201", "418-0347", "418-7719", "418-4488" }
+	local THERE = { "233-1010", "233-9002" }
+
+	if lateCount > 0 then
+		local entry = nil
+		for i = 1, #CeroSecContent.DISKS do
+			if CeroSecContent.DISKS[i].late ~= nil then entry = CeroSecContent.DISKS[i] end
+		end
+		local name, stub = CeroSecContent.lateFile(entry)
+
+		local disk = CeroSecContent.diskData(entry, START)
+		local got, gotName = CeroSecContent.lateEntryFor(disk)
+		eq("a disk off a shelf is the entry it came from", got, entry)
+		eq("and the file waiting to be filled is the one named", gotName, name)
+		eq("which still holds the stub", disk.fs.children[name].data, stub)
+
+		check("the fill writes it", CeroSecContent.fillLate(disk, 418, HERE, START))
+		local filled = disk.fs.children[name].data
+		check("with the exchange on it", string.find(filled, "418", 1, true) ~= nil)
+		for i = 1, #HERE do
+			check("and with " .. HERE[i] .. " on it",
+				string.find(filled, HERE[i], 1, true) ~= nil)
+		end
+		check("and a name beside the number",
+			string.find(filled, CeroSecContent.BBS_NAMES[1], 1, true) ~= nil
+				or string.find(filled, CeroSecContent.BBS_NAMES[2], 1, true) ~= nil
+				or string.find(filled, CeroSecContent.BBS_NAMES[3], 1, true) ~= nil)
+		for line in (filled .. "\n"):gmatch("([^\n]*)\n") do
+			check('a filled line fits 60 columns: "' .. line .. '" (' .. #line .. ")",
+				#line <= CeroSecOS.COLS)
+		end
+		-- And the disk is still a disk a machine will take, ceilings included: the
+		-- list is bigger than the stub it replaced.
+		local ok, why = CeroSecOS.validateDisk(disk, true)
+		check("and the slot still takes it: " .. tostring(why), ok)
+		local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
+		check("inside FLOPPY_BYTES (" .. bytes .. ")", bytes <= CeroSecOS.FLOPPY_BYTES)
+		check("inside FLOPPY_NODES (" .. nodes .. ")", nodes <= CeroSecOS.FLOPPY_NODES)
+
+		-- ONCE. The disk is not a late one any more, and the second machine it goes
+		-- into does not print its own county over the first one's.
+		eq("a filled disk is no longer waiting", CeroSecContent.lateEntryFor(disk), nil)
+		check("so the next machine fills nothing",
+			not CeroSecContent.fillLate(disk, 233, THERE, START))
+		eq("and the list is still the one it was printed with", disk.fs.children[name].data,
+			filled)
+		check("with none of the other county's numbers on it",
+			string.find(disk.fs.children[name].data, THERE[1], 1, true) == nil)
+
+		-- A survivor's own work at that name is his. This is the rule upgradeSystem
+		-- uses on /bin and it is the rule here: what is exactly what shipped is the
+		-- system's to replace, and anything else is somebody's.
+		do
+			local his = CeroSecContent.diskData(entry, START)
+			his.fs.children[name].data = "the ones that still answer:"
+			eq("a disk somebody wrote over is not waiting to be filled",
+				CeroSecContent.lateEntryFor(his), nil)
+			check("and nothing overwrites him",
+				not CeroSecContent.fillLate(his, 418, HERE, START))
+			eq("his line is still there", his.fs.children[name].data,
+				"the ones that still answer:")
+		end
+
+		-- A region with nothing named in it prints nothing, and the stub says so
+		-- rather than the disk carrying an empty heading.
+		do
+			local empty = CeroSecContent.diskData(entry, START)
+			check("a county with no listings fills nothing",
+				not CeroSecContent.fillLate(empty, 418, {}, START))
+			eq("and the stub is untouched", empty.fs.children[name].data, stub)
+		end
+
+		-- Every other disk in the county, and every kind of junk, answers nothing.
+		eq("a blank disk is not waiting",
+			CeroSecContent.lateEntryFor(CeroSecOS.newFloppy()), nil)
+		eq("nor is a disk with somebody's own sticker on it",
+			CeroSecContent.lateEntryFor(CeroSecOS.newFloppy("PAYROLL")), nil)
+		eq("nor is the utilities disk",
+			CeroSecContent.lateEntryFor(
+				CeroSecContent.diskData(CeroSecContent.diskById("UTILITIES"), START)), nil)
+		eq("nor is nothing at all", CeroSecContent.lateEntryFor(nil), nil)
+		check("and filling nothing is refused",
+			not CeroSecContent.fillLate(nil, 418, HERE, START))
+		check("and so is filling with junk for numbers",
+			not CeroSecContent.fillLate(CeroSecContent.diskData(entry, START), 418, nil,
+				START))
+
+		-- The list is a fact about the REGION and not about the order the map handed
+		-- its zones over. Byte for byte, and that is the strong form: two survivors
+		-- reading two copies of the disk read the SAME PAGE, and not merely the same
+		-- numbers in some order. It is what the sort inside bbsText is for, and the
+		-- weaker version of this assertion -- "a number keeps its board" -- is what
+		-- caught the first draft, which paired a name to a number's POSITION.
+		do
+			local a = CeroSecContent.bbsText(418, HERE)
+			local shuffled = {}
+			for i = #HERE, 1, -1 do shuffled[#shuffled + 1] = HERE[i] end
+			local b = CeroSecContent.bbsText(418, shuffled)
+			eq("the page is the same page however the county was enumerated", a, b)
+			local function nameFor(text, number)
+				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+					if string.find(line, number, 1, true) ~= nil then
+						return string.match(line, "^  (.-) %.")
+					end
+				end
+				return nil
+			end
+			eq("and a number keeps its board", nameFor(a, HERE[1]),
+				nameFor(b, HERE[1]))
+			-- And a number keeps it when the rest of the county changes around it,
+			-- which is what "decided by the number" has to mean.
+			local alone = CeroSecContent.bbsText(418, { HERE[1] })
+			eq("even on a list of one", nameFor(alone, HERE[1]), nameFor(a, HERE[1]))
+		end
+
+		-- More listings than a page holds: cut to BBS_MAX and not printed past the
+		-- disk. A region with four hundred premises in it is a region whose book is
+		-- four hundred lines and whose FLOPPY is four thousand bytes.
+		do
+			local many = {}
+			for i = 1, 400 do many[i] = "418-" .. string.format("%04d", i) end
+			local big = CeroSecContent.diskData(entry, START)
+			check("a county of four hundred still fills",
+				CeroSecContent.fillLate(big, 418, many, START))
+			local lines = CeroSecOS.splitLines(big.fs.children[name].data)
+			check("with a page of them and no more (" .. #lines .. ")",
+				#lines <= CeroSecContent.BBS_MAX + 6)
+			local _, bytes2 = CeroSecOS.subtreeUsage(big.fs)
+			check("and inside the floppy (" .. bytes2 .. ")",
+				bytes2 <= CeroSecOS.FLOPPY_BYTES)
+			local dok, dwhy = CeroSecOS.validateDisk(big, true)
+			check("and the slot takes it: " .. tostring(dwhy), dok)
+		end
+
+		-- And the filled disk really READS on a machine, through the drive, which is
+		-- the thing a player actually does with it.
+		do
+			local state = CeroSecOS.newState("ksp-4-b")
+			local session = CeroSecOS.login(state, "admin", "")
+			local mine = CeroSecContent.diskData(entry, START)
+			CeroSecContent.fillLate(mine, 418, HERE, START)
+			state.floppy = mine
+			local env = { now = START, devices = devicesFor(nil) }
+			local mok, mlines = run(state, session, "mount /dev/fd0 /mnt", env)
+			check("a filled disk mounts: " .. table.concat(mlines, " / "), mok)
+			local read = select(2, run(state, session, "cat /mnt/" .. name, env))
+			local text = table.concat(read, " ")
+			check("and the numbers are on the screen (" .. text .. ")",
+				string.find(text, HERE[1], 1, true) ~= nil)
+			local vok, vwhy = CeroSecOS.validate(state)
+			check("and the machine still boots: " .. tostring(vwhy), vok)
+		end
 	end
 end
 

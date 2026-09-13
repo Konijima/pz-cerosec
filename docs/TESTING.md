@@ -184,6 +184,90 @@ argument.
 runs on Kahlua from a cold environment in the game's order, and that every engine
 function the outer layers call by name exists once that load is done.
 
+## The probe: the same functions RUN on both VMs, and the answers compared
+
+Loading proves a file parses and that its top level survives. It proves **nothing
+about what the standard library answers.** On 2026-09-12 the first power-on of a
+prefilled machine died with `__add not defined for operands in placeLog`, and the
+cause was one line: `tonumber(s, 16)` goes through `Integer.parseInt(s, 16)` in
+Kahlua (`javap -c se.krka.kahlua.vm.KahluaUtil`: base 10 is `Double.parseDouble`,
+every other base is `Integer.parseInt`, and the `NumberFormatException` lands in a
+catch that returns `null`). So it answered **nil** for every eight-digit hash from
+`80000000` up -- half of them -- while every file loaded and every lua5.1 suite was
+green. The fix is `CeroSecOS.hexValue`, which multiplies the digits out by hand and
+is the only way the mod parses hex.
+
+`tests/kahlua-probe.lua` is what would have caught it. It calls the engine's **pure**
+functions with fixed inputs and prints one line per result, and `kahlua-run.sh` runs
+it twice -- once with `lua5.1`, once on the game's Kahlua through
+`KahluaRun --eval <file.lua> <root>` -- and **fails on any line that differs**, with
+the diff. `--eval` loads `shared/` quietly, installs a `print` that renders its
+arguments with the VM's own `tostring` (`KahluaUtil.tostring`, because Kahlua's
+`BaseLib.print` hands its text to a callback the game installs and there is no game
+here), and runs the file.
+
+What it covers: `CeroSecOS.hexValue` at the edges (`7fffffff`, `80000000`,
+`ffffffff`, upper case, empty, a non-digit, a non-string), `CeroSecOS.digest` at 0,
+16 and `HASH_ROUNDS` rounds including bytes 0 and 255, `CeroSecContent.derive` /
+`key` / `number` / `chance` on a fixed secret, `CeroSecOS.phoneKey` and `phoneText`
+at both ends of the exchange, the `string.format` patterns the shell's columns are
+built out of (`%5.2f`, `%-8s`, `%02d`, `%x`, `%%`), `math.fmod` and `%` on negatives,
+`math.floor` of a negative, `tostring` of `1e15` and of `1/3`, `string.byte`/`char`
+at 0 and 255, `string.rep`/`sub`/`gsub`/`find`, `table.concat`, and the clock-free
+calendar the log placer steps in (`timeFromParts`, `dateParts`, `formatDate`,
+`formatTime`, `formatStamp`).
+
+Adding to it: print a **line**, named, for anything the engine gets out of the
+standard library or out of arithmetic. Never print anything that depends on a clock,
+a random number, `pairs` order or a path -- it has to be a pure function of nothing
+or the diff cries wolf. The raw `tonumber(s, 16)` is deliberately **not** probed: it
+answers nil on Kahlua and a number on lua5.1 and always will, so a line for it would
+be a red that can never go green. The `hexValue` lines are the canary instead: point
+`hexValue` back at `tonumber` and they differ, which is how the probe was proven to
+catch the bug it was written for.
+
+### The three rules the probe cannot carry, and one grep that can (2026-09-12)
+
+The probe found a second and much larger divergence the day it was written, and
+that one is fixed too: **`CeroSecOS.digest` answered differently on the two VMs.**
+`digest("", 16)` was `1c016990080ede755131cf2f9b0ecd65` under lua5.1 and
+`7eb118b8d258f3e9f18d63987b1a55aa` on Kahlua, so `CeroSecContent.derive` and every
+stored password differed *in the game* from every value in `tests/`,
+`tests/fixtures/` and `docs/CONTENT.md`.
+
+The cause, from `javap -c se.krka.kahlua.vm.KahluaThread`, `primitiveMath`, case
+`OP_MOD`: Kahlua compiles `a % b` as `a - (int)(a / b) * b`, and that `(int)` is
+Java's `d2i`, which **clamps at 2147483647**. So the `%` operator is wrong the
+moment the quotient reaches 2^31. Measured at runtime on both VMs, with
+`big = 47564 * 3266489917`: `big % 65536` is `60828` under lua5.1 and
+`14629838122396` on Kahlua -- and `(ah * b) % 65536` is exactly the line at the
+bottom of `mul()` in the mixer. `CeroSecOS.mod(a, b)` = `a - math.floor(a / b) * b`
+replaces it, and the whole mixer goes through that expression -- written out by hand
+inside `mul()`, `rotl()` and `absorb()` rather than called, because the mixer is the
+one hot loop in the mod and a call per modulo took a 4000-round hash from 4.3 ms to
+18.4 ms under lua5.1 (7.7 ms as it stands, against the 50 ms `os_test` allows, and
+Kahlua is several times slower again). Everything outside that loop calls
+`CeroSecOS.mod`. lua5.1's answer is the canonical
+one and did not move, so no fixture and no documented value changed; the game now
+agrees with them. `math.fmod` is **not** affected -- it is `MathLib` and agrees on
+both VMs at every size and both signs, which the probe pins.
+
+Three rules come out of it, and they are rules rather than probe lines because a
+line for any of them could never go green:
+
+1. **Never `tostring` a non-integer.** Kahlua renders a double the Java way
+   (`1.0E15`, `0.3333333333333333`); lua5.1 uses `%.14g` (`1e+15`,
+   `0.33333333333333`). `math.floor` first. This one IS greppable and is now
+   checked: `kahlua-check.sh` fails on a `/` or `*` inside `tostring()` without a
+   `math.floor` in the same call (`forbid_unless`, proven by mutation).
+2. **Never `%` a negative.** Kahlua truncates toward zero where Lua floors, so
+   `-7 % 3` is `-1` there and `2` here. Normalise the left operand first, the way
+   `scatter()` in `CeroSecOSNet.lua` already does (`if h < 0 then h = h + 65536`).
+3. **Never `%` when the quotient can reach 2^31.** Use `CeroSecOS.mod`. Not
+   greppable -- it is a fact about operand ranges, not about text -- so it is
+   reviewed: the audit of every modulo in `42/media/lua/shared/CeroSec/**` is in
+   the commit that introduced `CeroSecOS.mod`.
+
 **What it does not prove.** It is a load, not a game.
 
 - The environment is Kahlua's own (`J2SEPlatform.newEnvironment()` plus the game's

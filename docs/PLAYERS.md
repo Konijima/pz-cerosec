@@ -1143,6 +1143,28 @@ simply log in; some have passwords. A computer in a house is a quieter thing and
 usually has nothing locked at all. The name on the machine changes with it: the
 front-office machine is not `ksp-` anything.
 
+**Whose machine it was depends on the building**, and there are ten kinds:
+
+| | |
+| --- | --- |
+| **a house** | somebody's notes, a page on how the porch light got put on a timer, a child's history homework. Nothing locked. |
+| **an office** | a handover note, a ledger in cents, and the nightly job that mails the totals — which is a real line in a real crontab and really runs |
+| **a sheriff's dispatch** | a shared `dispatch` login, a standing lookout list, and `/var/log/dispatch`, which stops in the middle of a line at five in the morning on the 9th |
+| **a bank** | `accounts.dat` in four plain columns and the audit the examiner asks for, written down as two commands you can type |
+| **a shop** | what was on the floor on the 6th, the prices in cents, and the order to close up in |
+| **a school** | grades by student number, because the names are in the cabinet; the bells on a clockwork timer the computer cannot reach |
+| **a clinic** | rooms and wards and what has to happen next. Nothing medical: that is the chart, and the chart stays on the trolley |
+| **a radio station** | the hour-by-hour sheet the machine reads off its own clock, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
+| **a military post** | `root` and **nothing else**. No open account, and nothing in anybody's pocket. Three memoranda on the exclusion zone, and the last one tells whoever is reading it that the road south was open on the 8th of July |
+| **CeroSec Systems** | the vendor's own bench: the whole script library standing together in `/usr/local/src`, a `CHANGES` that says why `hash` became `mkpasswd`, and the support mailbox |
+
+**Some of them do things while you are not there.** A shop's lights go off at nine,
+a bank's vault door pulls itself to at six on weekdays, the cells in a dispatch
+office lock at ten, a clinic mails the morning round list at seven. Those are
+ordinary crontab lines and `crontab -l` shows them to you — and nothing happens at
+all unless somebody has wired a module onto the fixture, which is the same rule
+every device follows.
+
     login: root
     Password:
     Login incorrect.
@@ -1171,19 +1193,53 @@ firmware gives: hold the switch through the BIOS and let it **repair** the syste
 which reinstalls it and keeps `/home`.
 
 **Disks with something on them.** Most floppies you find are blank, exactly as
-before. A few are not: they come already labelled, and the label is on the item in
-your inventory. Put one in the drive, mount it, and read the `README.TXT` — a 1993
-disk had one, in capitals, and it tells you what the other files on the disk are
-and how to run them.
+before — seventeen disks in a hundred are not. Those come already labelled, and the
+label is on the item in your inventory. Put one in the drive, mount it, and read the
+`README.TXT` — a 1993 disk had one, in capitals, and it tells you what the other
+files on the disk are and how to run them.
 
     admin@acct-04-11:~$ mount /dev/fd0 /mnt
     admin@acct-04-11:~$ cat /mnt/README.TXT
+
+There are six labels:
+
+| | |
+| --- | --- |
+| **UTILITIES** | two programs for the building: lights off, and which door is open |
+| **BBS LIST** | telephone numbers of boards somebody used to call, and callsigns he used to hear. See below |
+| **WARDIALER** | no wardialer. `cu` hands the screen to whatever answers and the script that called it stops there, so the disk carries the *method* instead: how to turn a range, what each modem word means, and a program to write down what happened |
+| **GAMES** | guess the number, hangman, and a five-room adventure. All three short enough to read |
+| **BACKUP** | somebody's home directory, saved on the 8th of July: a diary in four entries, two letters that were never sent, and the family's telephone numbers |
+| **CEROSEC OS 1.0 DIST** | the distribution media the machine was sold with. How the firmware puts the system back, six manual pages in `MAN/`, and three programs |
+
+**The BBS list is printed where you first use it.** The numbers on that disk are the
+numbers of *your* exchange — they come out of the same county directory the phone
+book does, so they ring real premises, and a computer in one of those premises
+answers `CONNECT 2400`. What is written beside each one is the board's name, in the
+handwriting of whoever owned the disk. It is printed the first time you put the disk
+in any machine and it never changes after that, so the list is the list of wherever
+you were standing. Write over it and it is yours: nothing will overwrite what you
+typed.
+
+    admin@acct-04-11:~$ cat /mnt/NUMBERS.TXT
+    admin@acct-04-11:~$ cu 418-2201
 
 **Programs somebody wrote.** Some machines have a script or two in their owner's
 `~/bin`, which is already on your path once you are logged in as him. They are
 written in the same `sh` you write in, so `cat` one and read it — that is how you
 learn what this machine can do. Copy one off a disk with `cp /mnt/thing.sh ~/bin`
 and it is yours.
+
+There are thirteen of them in the county and **every one is a template**: none names
+a device or a file of its own, so a script off a shop's machine works on your own
+base once you have wired it. Lights off, locks either way, close a door and bolt it
+(reading the door back first, because bolting a door that would not close bolts
+nothing), which door is open, grep a columns file, add a column up, sort a list to
+work down, print the line of a table for the hour it is, list everything under a
+tree, write a line in a log — and three games.
+
+The one place all thirteen stand together is `/usr/local/src` on the bench machine of
+a CeroSec Systems service department. The distribution disk says so, and it is true.
 
 **And the phone book.** A vanilla phone book picked up in Knox County lists the
 premises of that region with the number a computer standing in one would answer on

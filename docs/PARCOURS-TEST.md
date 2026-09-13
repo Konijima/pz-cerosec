@@ -2180,6 +2180,149 @@ qu'on lit sur le papier soit celui que la machine demande.
      - il ouvre quand même la machine de cette partie-là ;
      - le mot de passe de la première partie n'ouvre **pas** cette machine. [ ]
 
+## AB. Les programmes, les disquettes et les huit commerces (vague 7b)
+
+Même condition qu'à la section AA : option bac à sable **Machines et disquettes
+garnies** sur **Activé**, qui est le défaut. Les mots de passe sont propres à la
+sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
+
+288. **Un ordinateur de poste de police.** Trouver un poste de police (zone nommée
+     `Police...`, ou un bâtiment dont le jeu nomme une pièce `police`) avec un
+     ordinateur vanilla jamais touché. L'allumer :
+     - l'invite commence par `disp-` et la queue reste les coordonnées ;
+     - le message d'accueil dit `KNOX COUNTY SHERIFF -- DISPATCH` ;
+     - `cat /etc/passwd` montre un compte nommé **`dispatch`** en plus de `root`,
+       `admin` et deux personnes ;
+     - fouiller les tiroirs, comptoirs et casiers du **même** poste jusqu'à
+       trouver `Sticky note: root / <mot>`, puis `su root` avec ce mot : ça passe ;
+     - `cat /var/log/dispatch` montre neuf lignes du 5 au 9 juillet, et la
+       dernière s'arrête au milieu : `Jul 09 0505` et rien après ;
+     - `cat /home/dispatch/bolo.txt` se lit en entier, aucune ligne ne dépasse le
+       bord droit de l'écran ;
+     - `crontab -l -u dispatch` n'existe pas ; faire `sudo cat
+       /var/spool/cron/dispatch` → une ligne à `0 22 * * *` qui appelle
+       `locks.sh`. [ ]
+
+289. **Le script du poste marche vraiment.** Toujours sur la machine de l'étape
+     288, connecté sur le compte `dispatch` (mot de passe dérivé, voir
+     l'étape 288 ; ou en root) :
+     - `ls ~/bin` montre `locks.sh` ;
+     - `cat ~/bin/locks.sh` se lit : chaque ligne tient dans les 60 colonnes ;
+     - `sh ~/bin/locks.sh` **sans argument** dit comment on l'utilise et ne
+       prétend pas avoir réussi ;
+     - poser une gâche électrique (section W) sur une porte de la pièce, puis
+       `dev lock` pour lire son numéro, puis `sh ~/bin/locks.sh lock lock0` → la
+       porte se verrouille pour de bon et le script réaffiche `lock0 locked` ;
+     - `sh ~/bin/locks.sh unlock lock0` la déverrouille. [ ]
+
+290. **Le journal du magasin s'éteint tout seul.** Dans un magasin (zone
+     `...Store`, `...Shop` ou `...Market`), machine jamais touchée : l'invite dit
+     `till-`, `cat ~/inventory.txt` se lit, et `sh ~/bin/total.sh prices.txt 2`
+     additionne la colonne et répond un nombre. Câbler un relais sur un
+     interrupteur (section W), noter son numéro avec `dev light`, mettre l'heure
+     de la partie juste avant 21:00 et attendre : à 21:00 la lumière s'éteint
+     sans que personne ne tape rien, et `mail` sur le compte du patron montre ce
+     que la ligne de cron a imprimé. [ ]
+
+291. **Le poste militaire n'a pas de compte ordinaire.** Trouver un bâtiment que
+     la carte nomme `Military` ou `Army` (le camp, un poste de contrôle) avec un
+     ordinateur dedans :
+     - l'invite dit `post-` ;
+     - le message d'accueil finit par `KEEP OUT.` ;
+     - `cat /etc/passwd` montre **exactement** `root` et `admin` et personne
+       d'autre : aucun nom de personne ;
+     - `su root` avec un mot de passe vide est refusé ;
+     - fouiller les tiroirs du même bâtiment jusqu'au papier `root`, puis
+       `su root` avec ce mot ;
+     - `ls /root` montre `memo-01.txt`, `memo-02.txt`, `memo-03.txt`, et le
+       troisième dit que la route du sud était ouverte le 8 juillet ;
+     - tuer des zombies **à l'intérieur** de ce bâtiment : aucun ne porte de
+       note, jamais — il n'y a pas de compte ordinaire à nommer. [ ]
+
+292. **La machine du vendeur porte toute la bibliothèque.** Cette étape demande
+     une carte de mod avec une zone nommée `CeroSec...` : la carte livrée avec le
+     jeu n'en a aucune. À défaut, la faire en mode debug en nommant une zone.
+     Machine allumée : `ls /usr/local/src` montre treize `.sh` et un `CHANGES`,
+     et `sh /usr/local/src/sweep.sh /etc` liste les fichiers de `/etc` et les
+     compte. [ ]
+
+293. **Une disquette BBS LIST donne les numéros de VOTRE région.** Fouiller les
+     endroits à disquettes jusqu'à en trouver une étiquetée `BBS LIST` (3 sur
+     100 ; le débug peut en faire apparaître).
+     - **avant de l'insérer**, ramasser un annuaire (`Phonebook`) dans la même
+       ville et l'ouvrir : noter deux ou trois numéros de l'exchange ;
+     - insérer la disquette dans un ordinateur de cette ville, `mount /dev/fd0
+       /mnt`, `cat /mnt/NUMBERS.TXT` → une liste de noms de BBS avec des numéros,
+       et l'en-tête nomme le même exchange que l'annuaire ;
+     - **au moins un** des numéros de la liste est un numéro que l'annuaire
+       imprime aussi ;
+     - `cu <ce numéro>` : si un ordinateur de ce commerce est allumé, le modem
+       répond `CONNECT 2400` ; sinon `NO CARRIER` au bout d'une quinzaine de
+       secondes ;
+     - `cat /mnt/CALLS.TXT` montre des indicatifs, et le fichier dit lui-même
+       qu'un indicatif ne se compose pas. [ ]
+
+294. **La liste est imprimée UNE fois.** Suite de l'étape 293 : éjecter la
+     disquette, traverser la carte jusqu'à une autre ville (un autre exchange,
+     que l'annuaire local confirme), insérer la **même** disquette dans une
+     machine là-bas et relire `/mnt/NUMBERS.TXT` → **exactement** la même liste et
+     le même exchange que la première fois. La disquette est l'annuaire de là où
+     on l'a utilisée d'abord, pas de là où on est. [ ]
+
+295. **Ce qu'on a écrit dessus reste.** Suite : `edit /mnt/NUMBERS.TXT`, effacer
+     tout et taper une ligne à soi, sauver, éjecter, insérer dans une troisième
+     machine → la ligne est toujours là. Rien ne la réécrit, jamais. [ ]
+
+296. **GUESS.SH se joue.** Trouver ou faire apparaître une disquette `GAMES`,
+     l'insérer, `mount /dev/fd0 /mnt`, `cat /mnt/README.TXT`, puis
+     `sh /mnt/guess.sh 100` :
+     - il annonce un nombre entre 1 et 100 et huit essais ;
+     - taper `50`, il répond `Higher.` ou `Lower.` ;
+     - continuer en coupant l'intervalle en deux : il finit par dire
+       `That is it.` avec le nombre et le nombre d'essais ;
+     - taper une lettre au lieu d'un nombre → `Digits only.` et l'essai ne compte
+       pas ; taper Entrée à vide → `A number, please.` ;
+     - relancer le jeu **la même minute de jeu** : le nombre est le même (il
+       vient des secondes de l'horloge). Attendre une minute et relancer : il
+       change. [ ]
+
+297. **HANGMAN.SH se joue.** Même disquette :
+     `sh /mnt/hangman.sh /mnt/WORDS.TXT` → une rangée de points et
+     `6 wrong left`. Taper `e` : soit les lettres apparaissent **en capitales**
+     dans le mot, soit le compteur descend. Continuer jusqu'à gagner (le mot
+     s'affiche en entier suivi de `You have it.`) ou perdre (`Out of guesses.`
+     et le mot). [ ]
+
+298. **ADVENTURE.SH va jusqu'au bout.** Même disquette, `sh /mnt/adventure.sh` :
+     - il annonce `THE OLD WATERWORKS` et la liste des mots ;
+     - `n`, `e` → le couloir ; `s` tout de suite → `The stair door is locked.` ;
+     - `n`, `take` → la clé ; `s`, `s` → la salle des pompes et `THE END.`, et le
+       script se termine (l'invite revient) ;
+     - relancer et taper `quit` n'importe où → il sort proprement ;
+     - taper n'importe quel autre mot → `I do not know how to <mot>.` [ ]
+
+299. **La disquette du vendeur enseigne et n'exécute rien.** Trouver ou faire
+     apparaître `CEROSEC OS 1.0 DIST`, l'insérer, la monter :
+     - `ls /mnt` montre `README.TXT`, `INSTALL.TXT`, `MAN`, et trois `.sh` ;
+     - `ls /mnt/MAN` montre six pages ; `cat /mnt/MAN/CU.TXT` se lit ;
+     - `cat /mnt/INSTALL.TXT` explique la réparation par le BIOS et dit qu'il n'y
+       a rien sur la disquette qui puisse écrire sur un disque système ;
+     - vérifier que c'est vrai : il n'y a **aucun** programme sur cette disquette
+       qui touche `/bin` ou `/etc`. [ ]
+
+300. **Une disquette BACKUP raconte quelqu'un.** Trouver ou faire apparaître
+     `BACKUP`, la monter, lire les quatre fichiers : la dernière entrée du
+     journal est datée du **8 juillet** et `FAMILY.TXT` dit lui-même que ses
+     numéros ne sont pas ceux de votre exchange. [ ]
+
+301. **La disquette WARDIALER dit pourquoi il n'y en a pas.** Monter la
+     disquette `WARDIALER`, lire `README.TXT` : il dit qu'un script ne peut pas
+     conduire `cu`. Le vérifier soi-même : `edit essai.sh`, écrire deux lignes,
+     `cu 418-0100` puis `echo apres`, `sh essai.sh` → la deuxième ligne ne
+     s'exécute **jamais**. Puis mettre la même ligne dans un crontab
+     (`crontab -e`, `* * * * * cu 418-0100`) et attendre une minute :
+     `mail` montre `cu: not a terminal`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

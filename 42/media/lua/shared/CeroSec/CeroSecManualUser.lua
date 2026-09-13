@@ -1636,6 +1636,39 @@ go wrong separately.
 Classic mistake. Walking off with the disk while the window is open.
 Eject it from the menu; that is what the menu is for.]],
 
+[[A machine that is not new.
+
+These machines are not often sold once. One that has
+been in service carries the last office's people in
+/etc/passwd, their files in their homes, a greeting
+somebody else wrote, and a week of
+/var/log/messages. Some of those accounts are open.
+Some are not.
+
+If nobody has told you a password, ask the machine
+who has been using it:
+
+  admin@ksp-04-11:~$ last
+
+An open account is usually enough to read /var/log
+and work out what the machine was for. Look in
+somebody's bin as well: what is in there is the work
+it was doing, in the same sh you write in, and
+cat shows it.
+
+  admin@ksp-04-11:~$ cat ~/bin/lights.sh
+
+If there is no way in at all, the firmware puts a
+fresh system on the disk and keeps every home.
+Volume 2 covers that.
+
+Classic mistake. Throwing a disk away because the
+machine said nothing when you put it in. One with
+writing on the label usually has a README.TXT:
+
+  admin@ksp-04-11:~$ mount /dev/fd0 /mnt
+  admin@ksp-04-11:~$ cat /mnt/README.TXT]],
+
 		} },
 
 		{ title = "12. Quick reference card", pages = {
