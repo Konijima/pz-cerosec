@@ -94,6 +94,15 @@ So `CeroSecContextMenu.findComputer` asks in this order:
    on. A computer whose pixels are under the cursor wins; nothing refuses a hit
    because something else was picked first.
 
+That order is a choice and it has one edge: two desks side by side, each with a
+computer, and the cursor on the *left* monitor while the game resolves the click to
+the *right* desk. Pass 1 would then answer with the right-hand computer where the
+mask would have answered with the left-hand one. It is kept that way deliberately —
+the game's own resolution is the engine's answer and our box arithmetic rests on one
+assumption the engine alone can settle (that `getCameraOffX()` is
+`IsoCamera.frameState.offX` when the menu is built), so deferring to the game first
+fails safe. `docs/PARCOURS-TEST.md` step 12e is the click that checks it.
+
 `CeroSecReach.drawnBox` is the renderer's three terms and not two:
 `ISCoordConversion.ToScreen` for the square's anchor, less
 `IsoObject.getOffsetX()` and `getOffsetY()` — which are `32 * tileScale` and

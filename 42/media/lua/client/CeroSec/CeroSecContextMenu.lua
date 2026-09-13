@@ -257,6 +257,15 @@ end
 -- was picked first.
 --
 -- A joypad has no mouse, so it gets the first pass and stops there.
+--
+-- The order has one edge, kept on purpose: two desks side by side, each with a
+-- computer, the cursor on the left monitor and the game resolving the click to the
+-- right desk. The first pass answers with the right-hand computer where the mask
+-- would have answered with the left-hand one. The game's resolution is the engine's
+-- own answer, and the box arithmetic of the second pass rests on one thing only the
+-- engine can settle -- that getCameraOffX() is IsoCamera.frameState.offX at the
+-- moment the menu is built -- so deferring to the game first fails safe.
+-- docs/PARCOURS-TEST.md step 12e is the click that checks it.
 function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
 	if CeroSec.DEBUG then logHanded(worldobjects) end
 
