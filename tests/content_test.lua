@@ -221,12 +221,59 @@ do
 	eq("and the case does not matter",
 		CeroSecContent.profileFor("ACCOUNTING OFFICE", nil), "office")
 	eq("a police zone", CeroSecContent.profileFor("PoliceStorage", nil), "police")
-	eq("the ZONE wins over the room",
-		CeroSecContent.profileFor("Office", "kitchen"), "office")
-	eq("and the room is asked when there is no zone",
+	eq("the ZONE wins over the rooms",
+		CeroSecContent.profileFor("Office", { "kitchen" }), "office")
+	eq("and the rooms are asked when there is no zone",
+		CeroSecContent.profileFor(nil, { "kitchen" }), "residential")
+	eq("one room may be given as a bare string",
 		CeroSecContent.profileFor(nil, "kitchen"), "residential")
 	eq("a room nobody has a word for is a house",
-		CeroSecContent.profileFor(nil, "zzzz"), CeroSecContent.DEFAULT_PROFILE)
+		CeroSecContent.profileFor(nil, { "zzzz" }), CeroSecContent.DEFAULT_PROFILE)
+	eq("no rooms at all is a house", CeroSecContent.profileFor(nil, {}),
+		CeroSecContent.DEFAULT_PROFILE)
+
+	--
+	-- THE BUG THIS SHAPE EXISTS FOR, and it shipped once.
+	--
+	-- A profile used to be decided from the ROOM THE CALLER STOOD IN. In a house
+	-- with a study in it the desk in the study answered "office" -- a profile with a
+	-- root password, so a note was written into the drawer -- and the computer in
+	-- the living room of the SAME HOUSE answered "residential", which has none. The
+	-- paper named a password no machine in the county had, which is the one thing
+	-- the whole design promises cannot happen.
+	--
+	-- The answer is a list of the BUILDING's rooms, the same list from every square
+	-- of it, and the assertion is that ONE question has ONE answer.
+	--
+	local house = { "kitchen", "livingroom", "bedroom", "office" }
+	local fromStudy = CeroSecContent.profileFor(nil, house)
+	local fromLivingRoom = CeroSecContent.profileFor(nil, house)
+	eq("every square of one house gets one profile", fromStudy, fromLivingRoom)
+
+	-- And the order the engine hands the rooms over in cannot change it. The scan
+	-- walks the WORD list and asks every name about each word, so "which room wins"
+	-- is a decision in an ordered list and not an accident of iteration.
+	local shuffled = { "office", "bedroom", "kitchen", "livingroom" }
+	eq("and the order the rooms arrive in does not change it",
+		CeroSecContent.profileFor(nil, shuffled), fromStudy)
+	local reversed = {}
+	for i = #house, 1, -1 do reversed[#reversed + 1] = house[i] end
+	eq("nor does reading them backwards",
+		CeroSecContent.profileFor(nil, reversed), fromStudy)
+
+	-- A building with an office room in it IS an office by that list, which is the
+	-- decision: the word list is ordered and `office` sits above the household
+	-- words. What matters is not which way it goes -- it is that it goes the same
+	-- way for the drawer and for the desk.
+	eq("a house with a study in it is an office to everybody in it", fromStudy,
+		"office")
+	eq("and a house with no study in it is a house to everybody in it",
+		CeroSecContent.profileFor(nil, { "kitchen", "livingroom", "bedroom" }),
+		"residential")
+
+	-- Junk in the list is skipped and does not stop the scan.
+	eq("a list with holes and junk in it still answers",
+		CeroSecContent.profileFor(nil, { "", 7, false, "office" }), "office")
 
 	-- Every word in the table resolves to an id that is in PROFILE_IDS. A word
 	-- pointing at an id nobody declared would be a machine prefilled with nothing
@@ -241,6 +288,11 @@ do
 			known[pair[2]] == true)
 		eq('and the word "' .. pair[1] .. '" resolves to it',
 			CeroSecContent.profileFor(pair[1], nil), pair[2])
+		-- And the same word found in a ROOM name resolves to the same profile: the
+		-- two halves of the question are answered by one list, so a word that meant
+		-- one thing to a zone and another to a room is impossible.
+		eq('and the same word in a room name resolves to it too',
+			CeroSecContent.profileFor(nil, { pair[1] }), pair[2])
 	end
 	check("the default is a declared id", known[CeroSecContent.DEFAULT_PROFILE] == true)
 
@@ -387,7 +439,11 @@ do
 			for path, node in pairs(all) do
 				local isOurs = shipped[path] == nil
 					or path == CeroSecOS.MOTD_PATH or path == CeroSecOS.HOSTNAME_PATH
-				if isOurs then wrote = wrote + 1 end
+				-- Counted only for a path the machine did NOT already have. /etc/motd
+				-- and /etc/hostname are on every fresh machine, so counting those made
+				-- the "wrote something" check below true whatever a profile did -- an
+				-- assertion that could not fail, which is worse than no assertion.
+				if shipped[path] == nil then wrote = wrote + 1 end
 				if node.type == "file" then
 					check(id .. " " .. path .. " is inside MAX_FILE_BYTES ("
 						.. #(node.data or "") .. ")",
@@ -408,7 +464,8 @@ do
 				end
 			end
 
-			check(id .. " actually wrote something (" .. wrote .. ")", wrote > 0)
+			check(id .. " put files on the machine that were not already there ("
+				.. wrote .. ")", wrote > 0)
 
 			-- The hostname. The head is the profile's and the TAIL is still the
 			-- machine's coordinates, so /etc/hosts, the prompt and ruptime all agree.
@@ -706,10 +763,13 @@ do
 			string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
 		check(name .. " with no arguments is not a nil call",
 			string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
-		if not bare then
-			check(name .. " with no arguments prints a usage line",
-				string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
-		end
+		-- A script run with no arguments must SAY SO and must not claim success:
+		-- unconditional, because written as "if it failed, it must print usage" the
+		-- requirement quietly stops being checked the day a script starts exiting 0
+		-- with nothing to do.
+		check(name .. " with no arguments does not claim success", not bare)
+		check(name .. " with no arguments prints a usage line",
+			string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
 
 		-- The machine is still a machine afterwards.
 		local vok, vwhy = CeroSecOS.validate(state)

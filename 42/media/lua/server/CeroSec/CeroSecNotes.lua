@@ -34,25 +34,48 @@ require "CeroSec/SCeroSecNet"
 -- (CeroSecNet.premisesOfSquare): a shop in a mall is its own premises, with its own
 -- machine, its own note and its own staff, exactly as it is its own telephone line.
 --
--- THE HOOK, proved at the bytecode level on projectzomboid.jar 42.20.4:
+-- THE HOOK, proved at the bytecode level on projectzomboid.jar 42.20.4. Every
+-- claim here was re-read against the jar after a review found the first version of
+-- this comment wrong in the one way that mattered -- see THE THIRD ARGUMENT below.
 --
---   zombie.inventory.ItemPickerJava.fillContainerInternal is the ONE place a
---   container is filled, and it fires Events.OnFillContainer with THREE
---   arguments -- roomName, containerType, itemContainer -- which is what vanilla's
---   own handler takes (media/lua/server/Items/LootLog.lua:7, registered at :34).
+--   Events.OnFillContainer carries THREE arguments -- roomName, containerType,
+--   and a container -- which is what vanilla's own handler takes
+--   (media/lua/server/Items/LootLog.lua:7, registered at :34).
 --
---   It returns at once when the container has no square (`getSourceGrid()` at
---   offset 25, `ifnull` to the return at 42), so a container this handler is told
---   about ALWAYS has one, and getSourceGrid is the square to ask -- it is the very
---   one the engine itself just used to find the room.
+--   zombie.inventory.ItemPickerJava fires it from TEN places in FOUR methods, and
+--   they do not all mean the same thing:
+--
+--     fillContainerInternal      the room's own containers (offsets 657, 704, 766)
+--                                and a body's pockets (offset 430)
+--     doRollItemInternal         a BAG that was rolled into a container, twice:
+--     rollContainerItemInternal  room names "Zombie Bag" (261, 320) and
+--                                "Container" (1207, 1373, 954, 1103)
+--
+--   THE THIRD ARGUMENT IS NOT ALWAYS AN ItemContainer. At offset 1207 it is
+--   `ItemPickerContainer.bags` -- a zombie.inventory.ItemPickerJava$ItemPickerContainer,
+--   which is a distribution table and not a container at all -- while at 1373 it is
+--   a real one (InventoryContainer.getItemContainer). So this handler asks
+--   `instanceof(container, "ItemContainer")` before it touches the thing, and that
+--   is not belt and braces: reading a field off a Java object Kahlua has no class
+--   metatable for is not guaranteed to answer nil quietly.
+--
+--   THE SQUARE. fillContainerInternal returns at once when the container has no
+--   source grid (`getSourceGrid()` at offset 25, `ifnull` to the return at 42), so
+--   a container IT tells us about always has one. The bag paths make no such
+--   promise, which is the second reason the nil test below is a real test.
 --
 --   A ZOMBIE'S INVENTORY GOES DOWN THE SAME EVENT. When the container's type is
 --   "inventorymale" or "inventoryfemale" (the two ldc_w at offsets 47 and 60), it
 --   fires OnFillContainer with the room name "Zombie" (the ldc_w at 433) and
 --   RETURNS at 442 -- so a body never sees the room distributions, and "Zombie" in
---   the first argument is how this handler tells a pocket from a drawer. A
---   skeleton is refused before that (IsoDeadBody.isSkeleton at 93-99), so a note
---   is never on a pile of bones nobody would search.
+--   the FIRST argument is how this handler tells a pocket from a drawer. It is the
+--   first argument and never the second on purpose: at offsets 106-133 a container
+--   whose parent is an IsoDeadBody has its type replaced by the body's
+--   getOutfitName(), so the second argument for a CORPSE is an outfit name and for
+--   a walking zombie is "inventorymale" -- two different strings for one thing,
+--   and neither of them is what this keys on. A skeleton is refused before the
+--   event (IsoDeadBody.isSkeleton at 93-99), so a note is never on a pile of bones
+--   nobody would search.
 --
 -- WHY NOT Events.OnZombieDead. It exists (IsoZombie.onKilled triggers it) and it
 -- would have worked, but it is the wrong moment: a zombie's inventory is filled
@@ -210,7 +233,11 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	if not CeroSecContent.enabled() then return end
 	local system = SCeroSecSystem and SCeroSecSystem.instance
 	if system == nil or system.secret == nil then return end
-	if container == nil or container.getSourceGrid == nil then return end
+	-- What arrived is not always a container (see THE THIRD ARGUMENT above). The
+	-- class is asked of the ENGINE, which is the one thing that can answer it, and
+	-- asked before anything is read off the object.
+	if container == nil or instanceof == nil then return end
+	if not instanceof(container, "ItemContainer") then return end
 
 	local square = container:getSourceGrid()
 	if square == nil then return end
@@ -219,11 +246,14 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	-- written there, which is the same answer a machine standing there gets.
 	if b1 == nil then return end
 
-	local room = nil
-	local isoRoom = square:getRoom()
-	if isoRoom ~= nil then room = isoRoom:getName() end
+	-- The BUILDING's rooms and not this drawer's own room, which is the whole of
+	-- what keeps the paper and the machine agreeing: see the head of
+	-- CeroSecNet.premisesRooms. Asked of the drawer's own room, the desk in a study
+	-- answered "office" and the computer in the living room of the same house
+	-- answered "residential", and the paper named a password nothing had.
+	local rooms = CeroSecNet.premisesRooms(square, zone)
 
-	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(zone, room)]
+	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(zone, rooms)]
 	-- A premises whose profile wave 7b has not written yet: no machine is prefilled
 	-- there, so there is no password to find and nothing to write.
 	if type(profile) ~= "table" then return end

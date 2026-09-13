@@ -123,7 +123,16 @@ end
 -- second call would try to call a string.
 function SCeroSecSystem:secret()
 	if CeroSecContent.isSecret(self.seed) then return self.seed end
-	if ZombRand == nil then return SCeroSecSystem.BENCH_SECRET end
+	-- No generator at all, which is a box with no game in it. The fixed secret is
+	-- WRITTEN to the field rather than merely answered, so that everything in such
+	-- a session agrees with everything else in it -- a paper written before a
+	-- generator appeared and a machine prefilled after it would otherwise disagree
+	-- for ever, which is the one failure this whole design exists to make
+	-- impossible.
+	if ZombRand == nil then
+		self.seed = SCeroSecSystem.BENCH_SECRET
+		return self.seed
+	end
 	local ms = 0
 	if getTimestampMs ~= nil then ms = getTimestampMs() or 0 end
 	local secret = ""

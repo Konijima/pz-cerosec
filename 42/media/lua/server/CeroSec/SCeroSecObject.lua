@@ -557,6 +557,17 @@ end
 -- cannot lie about it -- whether self.os was a table before osState was asked --
 -- and it is made in turnOn, before the call.
 --
+-- ONE CONSEQUENCE, and it is chosen rather than overlooked. resetForPlacement asks
+-- osState too, so a computer somebody PICKS UP and PUTS DOWN has a state from that
+-- moment on and comes up bare when it is finally switched on -- even if nobody ever
+-- typed at it. That is the right way round: the test is "has this machine got a
+-- filesystem", which is a fact, and the alternative is a flag saying "has anybody
+-- really used it", which is a second opinion about the same thing and the sort of
+-- thing that goes wrong in a save. The cost is that carrying an untouched office
+-- machine out of its building loses it its profile -- and the paper in the drawer
+-- is then a paper for a machine that is not there any more, which is a true thing
+-- about a looted office.
+--
 -- Here and not in a migration step, for the reason the address is not in one
 -- either: this needs the WORLD. Which premises the machine stands in is a question
 -- about a square, and most machines in a save have no chunk loaded. turnOn is the
@@ -579,24 +590,22 @@ function SCeroSecObject:prefill(state)
 	local b1, b2, _, zone = CeroSecNet.premisesOf(self)
 	if b1 == nil then return nil end
 
-	-- And what the ROOM is called, which is the second question and is asked only
-	-- because the first so often has no answer: the shipped map names the shops
-	-- inside a mall with zones and names a house with nothing at all. IsoRoom's
-	-- getName is one getfield on its `roomDef` string (javap -c
-	-- zombie.iso.areas.IsoRoom), so it IS the RoomDef's name -- which is a LOOT
-	-- type ("kitchen", "clothsstore") and says nothing about tenancy. That is why it
-	-- is asked second and why an answer nobody has a word for is a house.
-	local room = nil
-	local square = self:getSquare()
-	if square ~= nil then
-		local isoRoom = square:getRoom()
-		if isoRoom ~= nil then room = isoRoom:getName() end
-	end
+	-- And what the BUILDING's rooms are called, which is the second question and is
+	-- asked only because the first so often has no answer: the shipped map names the
+	-- shops inside a mall with zones and names a house with nothing at all.
+	--
+	-- The BUILDING's rooms and NOT this machine's own square's room, and that is not
+	-- a detail: a paper in a drawer of the same premises asks the very same question
+	-- (CeroSecNotes.onFillContainer) and the two must get one answer. Asked of the
+	-- square, a house with a study in it answered "office" to the desk in the study
+	-- and "residential" to the computer in the living room, and the note named a
+	-- password no machine had. See the head of CeroSecNet.premisesRooms.
+	local rooms = CeroSecNet.premisesRooms(self:getSquare(), zone)
 
 	local id = CeroSecContent.prefill(state, {
 		secret = system:secret(),
 		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
-		premises = zone, room = room,
+		premises = zone, rooms = rooms,
 		start = system:startTime(),
 		now = CeroSecOS.clockOf(system:clockEnv()),
 	})

@@ -289,6 +289,57 @@ function CeroSecNet.premisesOf(luaObject)
 end
 
 --
+-- WHAT A PREMISES IS CALLED, for the one caller that must get the SAME answer
+-- from every square of it: the world content (CeroSecContent.profileFor).
+--
+-- This exists because of a bug that was shipped and caught in review, and the bug
+-- is worth writing down because it is the shape of every mistake this rung can
+-- make. The profile of a machine was decided from the ROOM THE MACHINE STOOD IN,
+-- and the profile behind a paper in a drawer from the ROOM THE DRAWER STOOD IN.
+-- In a house with a study in it, the desk in the study answered "office" -- a
+-- profile with a root password, so a note was written -- and the computer in the
+-- living room answered "residential", which has none. The paper named a password
+-- no machine in the county had. Two squares of one premises are one premises, and
+-- anything a premises IS has to be answered the same way from every one of them.
+--
+-- So the rule has two halves and neither of them reads the caller's own square:
+--
+--   * a premises that is a named ZONE is called by its zone's name, and by nothing
+--     else. The rooms are the mall's and belong to thirty other shops.
+--   * a premises that is a BUILDING is called by the names of ALL its rooms --
+--     BuildingDef.getRooms(), which is a fact about the building and is the same
+--     list whichever square asked. Which of them decides is CeroSecContent's, and
+--     it walks its own word list in order so that the order the engine hands the
+--     rooms over in cannot change the answer.
+--
+-- Engine calls, proved at the bytecode level on projectzomboid.jar 42.20.4:
+--
+--   zombie.iso.BuildingDef.getRooms() -> java.util.ArrayList<zombie.iso.RoomDef>
+--   zombie.iso.RoomDef.getName()      -> String
+--
+-- An array of names, or nil: a zone premises, a square in no building, and a def
+-- that will not list its rooms all answer nothing, and nothing is a house.
+function CeroSecNet.premisesRooms(square, zoneName)
+	if zoneName ~= nil then return nil end
+	if square == nil then return nil end
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
+	if def == nil or def.getRooms == nil then return nil end
+	local list = def:getRooms()
+	if list == nil then return nil end
+	local out = {}
+	for i = 0, list:size() - 1 do
+		local room = list:get(i)
+		if room ~= nil and room.getName ~= nil then
+			local name = room:getName()
+			if type(name) == "string" and name ~= "" then out[#out + 1] = name end
+		end
+	end
+	return out
+end
+
+--
 -- THE TELEPHONE DIRECTORY OF ONE REGION
 --
 -- One exchange, one book (CeroSecPhonebook): every premises of the region that

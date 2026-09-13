@@ -12,7 +12,8 @@
 -- data tables and functions over them. It does not look at the world, it does
 -- not read the state of any machine by itself, and it holds no clock -- what
 -- decides which profile a machine gets is the server (SCeroSecObject:turnOn, by
--- way of CeroSecNet.premisesOf), and every date it writes is handed to it. That
+-- way of CeroSecNet.premisesOfSquare), and every date it writes is handed to it.
+-- That
 -- is what lets tests/content_test.lua build every profile and run every script
 -- with no game under it.
 --
@@ -345,22 +346,42 @@ CeroSecContent.PREMISES_WORDS = {
 	{ "livingroom", "residential" }, { "house", "residential" },
 }
 
--- premisesName, roomName -> profile id. Pure, and that is the seam the bench
--- uses: what a square's zone and room are CALLED is the server's business
--- (CeroSecNet.premisesOf, SCeroSecObject:profileKey); which profile a pair of
--- names means is decided here, with no world in sight.
-function CeroSecContent.profileFor(premisesName, roomName)
+-- premisesName, rooms -> profile id. Pure, and that is the seam the bench uses:
+-- what a premises is CALLED is the server's business (CeroSecNet.premisesOfSquare
+-- and CeroSecNet.premisesRooms); which profile a set of names means is decided
+-- here, with no world in sight.
+--
+-- `rooms` is the whole building's list of room names, or one name, or nothing.
+-- It is the BUILDING's and never the caller's own square's, and that is the fix to
+-- a bug that shipped: see the head of CeroSecNet.premisesRooms. A house with a
+-- study in it answered "office" to the desk in the study and "residential" to the
+-- computer in the living room, so the note in the drawer named a password no
+-- machine had.
+--
+-- THE SCAN IS BY WORD AND NOT BY NAME, and that is the other half of the same
+-- fix. The outer loop walks PREMISES_WORDS in ITS order and asks every name about
+-- each word in turn -- so the order the engine hands a building's rooms over in
+-- cannot change the answer, and "which room wins" is a decision written down in
+-- one ordered list rather than an accident of iteration.
+function CeroSecContent.profileFor(premisesName, rooms)
 	local words = CeroSecContent.PREMISES_WORDS
-	local haystacks = { premisesName, roomName }
-	for h = 1, #haystacks do
-		local text = haystacks[h]
-		if type(text) == "string" and text ~= "" then
-			text = string.lower(text)
-			for i = 1, #words do
-				if string.find(text, words[i][1], 1, true) ~= nil then
-					return words[i][2]
-				end
+	local names = {}
+	if type(premisesName) == "string" and premisesName ~= "" then
+		names[#names + 1] = string.lower(premisesName)
+	end
+	if type(rooms) == "string" then
+		if rooms ~= "" then names[#names + 1] = string.lower(rooms) end
+	elseif type(rooms) == "table" then
+		for i = 1, #rooms do
+			if type(rooms[i]) == "string" and rooms[i] ~= "" then
+				names[#names + 1] = string.lower(rooms[i])
 			end
+		end
+	end
+	for i = 1, #words do
+		local word = words[i][1]
+		for n = 1, #names do
+			if string.find(names[n], word, 1, true) ~= nil then return words[i][2] end
 		end
 	end
 	return CeroSecContent.DEFAULT_PROFILE
@@ -878,7 +899,7 @@ end
 -- used is his.
 --
 --   state       a state CeroSecOS.newState has just made
---   opts        { secret=, b1=, b2=, x=, y=, z=, premises=, room=, start=, now= }
+--   opts        { secret=, b1=, b2=, x=, y=, z=, premises=, rooms=, start=, now= }
 --
 -- Answers the profile id it used and the root password it derived, or nil for a
 -- machine it left alone. The password is answered for the BENCH and for the
@@ -893,7 +914,7 @@ end
 function CeroSecContent.prefill(state, opts)
 	if type(state) ~= "table" or type(opts) ~= "table" then return nil end
 	if not CeroSecContent.isSecret(opts.secret) then return nil end
-	local id = CeroSecContent.profileFor(opts.premises, opts.room)
+	local id = CeroSecContent.profileFor(opts.premises, opts.rooms)
 	local profile = CeroSecContent.PROFILES[id]
 	-- An id wave 7b has not filled in yet. A bare machine, which is what one was
 	-- before this file existed, and not an error.

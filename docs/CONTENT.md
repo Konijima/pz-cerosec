@@ -58,7 +58,7 @@ on the server, which is the whole of the difference.
 | keyed on | what it decides | why |
 | --- | --- | --- |
 | **the premises** (its two bytes) | root's password, every account's login and password | so a paper found anywhere in that premises names something true of every machine in it |
-| **the machine** (premises + square) | which scripts are in `~/bin`, the hours in the log | the desk, not the company |
+| **the machine** (premises + square) | which scripts are in `~/bin`, the hours in the log | the desk, not the company. Nothing a *paper* names may be keyed here. |
 | **nothing** (a roll) | whether a floppy has content, whether a body carries a paper | the roll happens once and its *result* is saved on the item |
 
 The people are the premises' and not the machine's, and that was forced by the
@@ -91,10 +91,25 @@ paper, and the paper derives them again for itself.
 
 Which profile a machine gets: the **named zone** of its premises
 (`CeroSecNet.premisesOfSquare`, the same rule the telephone line uses), else the
-**room's** name, else **residential**. Both are matched against
-`CeroSecContent.PREMISES_WORDS`, lowercased substrings, first match wins — because
-map data is all there is to go on: a premises zone is named by whoever drew the
-map and a `RoomDef`'s name is a *loot type* and says nothing about tenancy.
+names of **all the rooms in its building** (`CeroSecNet.premisesRooms` →
+`BuildingDef.getRooms()` → `RoomDef.getName()`), else **residential**. They are
+matched against `CeroSecContent.PREMISES_WORDS` — because map data is all there is
+to go on: a premises zone is named by whoever drew the map and a `RoomDef`'s name
+is a *loot type* and says nothing about tenancy.
+
+**The whole building, and never the caller's own square.** This is the fix to a bug
+that shipped in this wave and was caught in review. The profile used to come from
+the room the *caller* stood in, so in a house with a study in it the desk in the
+study answered `office` — a profile with a root password, so a note was written —
+while the computer in the living room of the same house answered `residential`,
+which has none: the paper named a password no machine in the county had. Two squares
+of one premises are one premises, and anything a premises *is* must be answered the
+same way from every one of them.
+
+The scan walks the **word list** in its order and asks every name about each word in
+turn, so the order the engine hands a building's rooms over in cannot change the
+answer, and "which room wins" is a decision written down in one ordered list rather
+than an accident of iteration.
 
 A machine in **no building at all** — a player-built base — is left bare, exactly
 as it gets no address and no telephone line.
@@ -199,13 +214,30 @@ one it is is in the name the item carries, and nothing else about it differs.
 Nothing is ever dropped on the floor: a note on the ground is a note under a
 bookshelf nobody will look at.
 
-**The hook is `Events.OnFillContainer`**, and it covers both.
-`ItemPickerJava.fillContainerInternal` fires it with three arguments — roomName,
-containerType, itemContainer, vanilla's own `LootLog.lua:7` signature — and for a
-**zombie's pockets** it fires the same event with the room name `"Zombie"` and
-returns, so a body never sees the room distributions. The container always has a
-square, because the method returns when `getSourceGrid()` is null; skeletons are
+**The hook is `Events.OnFillContainer`**, and it covers both. It carries three
+arguments — roomName, containerType, and a container — vanilla's own `LootLog.lua:7`
+signature. For a **zombie's pockets** the engine fires it with the room name
+`"Zombie"` and returns, so a body never sees the room distributions; skeletons are
 refused before the event, so no note is on a pile of bones.
+
+**The third argument is not always an `ItemContainer`.** `ItemPickerJava` fires this
+event from **ten** places in four methods — the room's containers, a body's pockets,
+and bags rolled into a container under the room names `"Zombie Bag"` and
+`"Container"` — and four of those hand over an `ItemPickerJava$ItemPickerContainer`,
+a distribution table and not a container at all. So the handler asks the engine's own
+`instanceof(container, "ItemContainer")` **before it touches the thing**, and that is
+not belt and braces: reading a field off a Java object Kahlua has no class metatable
+for is not guaranteed to answer nil quietly. `tests/window_test.lua` proves it with an
+object that raises on any field read.
+
+It also keys off the **first** argument and never the second: a container whose parent
+is an `IsoDeadBody` has its type replaced by the body's `getOutfitName()`, so the
+second argument is an outfit name for a corpse and `"inventorymale"` for a walking
+zombie — two strings for one thing.
+
+`fillContainerInternal` returns before the event when the container has no source
+grid, so a container *it* reports always has a square; the bag paths make no such
+promise, which is why the nil test is a real test.
 
 Not `Events.OnZombieDead`, which exists and would be the wrong moment: pockets are
 filled once, when the zombie is made, and a hook on death would drop a paper into a

@@ -30,6 +30,24 @@ and never a link, [TESTING.md](TESTING.md) for what the suite proves, and
 | 16 | Make the GitHub repository public | `gh repo edit Konijima/pz-cerosec --visibility public` |
 | 17 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
+## What this release changes in an existing world
+
+One thing, and it has to be said out loud because the compatibility contract only
+allows a new sandbox option to change a world if the release notes say so plainly.
+
+**`CeroSec.PrefilledMachines` defaults to ON.** In a save that already exists, every
+computer **nobody has switched on yet** will come up as somebody's machine — his
+accounts, his files, a motd, a week of log, sometimes a root password with a paper
+to find. Floppies generated from now on may carry a program and a README, and papers
+with passwords on them appear in desks and in the pockets of the dead.
+
+**Nothing a player built is touched.** A machine somebody has already switched on
+keeps its accounts, its files and its name; the option changes only machines that
+have never had a filesystem. A server that wants the old world turns the option off
+and gets it back exactly — two open accounts and an empty disk.
+
+See [CONTENT.md](CONTENT.md).
+
 ## Step 5a: every release captures a fixture
 
 `sh tools/capture-fixture.sh` builds a whole machine with the code as it stands —
