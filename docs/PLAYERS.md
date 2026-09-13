@@ -1123,3 +1123,69 @@ opening it again puts you back on the same spread, across a save as well. Two
 copies are two bookmarks, and so are two volumes: your place in the Programmer's
 Guide is not your place in the User's Guide.
 
+
+## What you may find
+
+Knox County had computers in it before the outbreak, and people were using them.
+So a vanilla computer you switch on for **the first time** is usually not a machine
+out of a box — it is somebody's machine, and what is on it depends on whose it was.
+
+This is the sandbox option **Prefilled machines and disks**, and it is **on** by
+default. Turn it off and every computer is a bare one: `root` and `admin`, both
+open, an empty disk. Either way, **a computer somebody has already switched on is
+never touched** — whatever you built on a machine stays exactly as you left it.
+
+**Somebody's machine.** A computer in an office comes up with the office's own
+greeting on the screen, a handful of staff accounts in `/etc/passwd`, their files
+in their homes, a week of `/var/log/messages` from the last days anybody came to
+work, and unread mail in `/var/mail`. Some of those accounts are open and you can
+simply log in; some have passwords. A computer in a house is a quieter thing and
+usually has nothing locked at all. The name on the machine changes with it: the
+front-office machine is not `ksp-` anything.
+
+    login: root
+    Password:
+    Login incorrect.
+
+**The password is in the building.** For a machine with a locked `root`, somebody
+wrote the password down, because everybody did:
+
+| | |
+| --- | --- |
+| **in a drawer** | a yellow sticky note in a desk, a counter, a filing cabinet, a locker, a dresser or a side table **of that same premises**. Its name in your inventory *is* the password: `Sticky note: root / falcon12`. One per premises, at most. |
+| **in a pocket** | about one dead employee in twenty, killed **inside** that premises, has his own login folded in his pocket: `Note: rmiller / thunder07`. Never root's — he was never given it. |
+
+A shop in a mall is its own premises, with its own machine, its own staff and its
+own note — the same rule the telephone line uses. A body in the street carries
+nothing: he worked somewhere, but not there.
+
+The two always agree, and they agree **before you ever touch the machine**: find
+the note on Monday, switch the computer on a week later, and the password on the
+paper is the one it wants. They are different in another save.
+
+**If you never find a paper**, the machine is not lost. `last` tells you which
+accounts have been used. An open account is often enough to read `/var/log` and see
+who was here. The passwords are a plain word and two digits, so guessing is not
+hopeless. And the 1993 answer to a machine nobody can get into is the one the
+firmware gives: hold the switch through the BIOS and let it **repair** the system,
+which reinstalls it and keeps `/home`.
+
+**Disks with something on them.** Most floppies you find are blank, exactly as
+before. A few are not: they come already labelled, and the label is on the item in
+your inventory. Put one in the drive, mount it, and read the `README.TXT` — a 1993
+disk had one, in capitals, and it tells you what the other files on the disk are
+and how to run them.
+
+    admin@acct-04-11:~$ mount /dev/fd0 /mnt
+    admin@acct-04-11:~$ cat /mnt/README.TXT
+
+**Programs somebody wrote.** Some machines have a script or two in their owner's
+`~/bin`, which is already on your path once you are logged in as him. They are
+written in the same `sh` you write in, so `cat` one and read it — that is how you
+learn what this machine can do. Copy one off a disk with `cp /mnt/thing.sh ~/bin`
+and it is yours.
+
+**And the phone book.** A vanilla phone book picked up in Knox County lists the
+premises of that region with the number a computer standing in one would answer on
+— which is how you find a machine to dial without walking into the shop. See
+[the telephone](#the-telephone).

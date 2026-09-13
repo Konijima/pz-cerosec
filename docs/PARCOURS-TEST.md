@@ -2010,6 +2010,103 @@ table qu'il avait écrite.
        `dev` les liste, et en `root` (`su root`)
        `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231). [ ]
 
+## AA. Ce qui est déjà sur les machines (contenu du monde, vague 7a)
+
+Tout ce qui suit demande l'option bac à sable **Machines et disquettes garnies**
+sur **Activé** (c'est le défaut). Les étapes 285 et 286 la mettent à l'arrêt pour
+prouver le contrôle : une machine nue, comme avant cette vague.
+
+Les mots de passe de cette section sont **propres à la sauvegarde**. Rien de ce
+qui est écrit ici n'est un mot de passe à recopier : ce qui compte est que celui
+qu'on lit sur le papier soit celui que la machine demande.
+
+278. **Un ordinateur jamais allumé dans un bureau.** Trouver un bâtiment que la
+     carte a marqué comme bureau (une zone nommée, ou une pièce que le jeu
+     appelle `office`) avec un ordinateur vanilla dedans, **jamais touché de la
+     partie**. L'allumer :
+     - le BIOS compte sa mémoire, puis l'écran finit sur `login:` ;
+     - l'invite ne dit **pas** `ksp-` : le nom de la machine commence par le mot
+       du commerce (`acct-`), et la queue reste les coordonnées ;
+     - se connecter sur un compte **ouvert** (un des noms trouvés plus bas) : le
+       message d'accueil n'est pas celui d'usine, il nomme l'entreprise ;
+     - `cat /etc/passwd` montre **plus de deux** comptes : `root`, `admin` et des
+       gens avec des noms de personnes ;
+     - `cat /var/log/messages` montre une semaine de lignes datées **avant** le
+       premier jour de la partie (juillet 1993 sur une partie par défaut), chaque
+       ligne tient dans les 60 colonnes ;
+     - `ls -l /home` montre un répertoire par personne, à son nom ;
+     - `cat /var/mail/root` (en root, après l'étape 280) montre un courrier non lu ;
+     - `su root` avec un mot de passe vide est **refusé** : `root` est fermé. [ ]
+
+279. **Le papier dans le tiroir.** Dans le **même** commerce, fouiller les
+     bureaux, comptoirs, classeurs et casiers jusqu'à trouver un objet dont le nom
+     dans l'inventaire est `Sticky note: root / <mot>`.
+     - l'objet est une note jaune, il pèse presque rien ;
+     - **un seul** papier `root` par commerce : les autres tiroirs du même
+       commerce n'en ont pas d'autre ;
+     - rien n'est jamais **par terre** : le papier est toujours dans un contenant ;
+     - un bureau d'un **autre** bâtiment donne un autre mot. [ ]
+
+280. **Le mot du papier ouvre la machine.** Revenir à l'ordinateur de l'étape 278,
+     `su root`, taper le mot lu sur le papier : ça passe, l'invite devient
+     `root@...#`. C'est l'assertion centrale de la vague : le papier et la machine
+     ne se parlent jamais, ils calculent tous les deux la même réponse. [ ]
+
+281. **Le papier trouvé AVANT d'allumer la machine.** Dans un autre commerce
+     jamais visité : fouiller d'abord (trouver la note), **puis** allumer
+     l'ordinateur pour la première fois. Le mot de passe de la note est celui que
+     la machine demande. L'ordre n'a aucune importance, et c'est ce qu'il faut
+     constater. [ ]
+
+282. **Le papier dans la poche d'un mort.** Tuer les zombies **à l'intérieur**
+     d'un commerce garni et fouiller les corps. Environ un sur vingt porte un
+     objet nommé `Note: <compte> / <mot>`.
+     - le compte nommé n'est **jamais** `root` ;
+     - `su <compte>` sur la machine du même commerce, avec ce mot : ça passe ;
+     - un zombie tué **dehors** (rue, stationnement, champ) n'en porte jamais. [ ]
+
+283. **Une disquette avec quelque chose dessus.** Fouiller les endroits à
+     disquettes (bureau de cybercafé, classeur, étagère d'électronique) jusqu'à
+     en trouver une dont le nom dans l'inventaire n'est pas `Disquette 3,5 po`
+     mais une **étiquette** en majuscules (`UTILITIES`).
+     - la mettre dans le lecteur, `mount /dev/fd0 /mnt`, `ls /mnt` : il y a un
+       `README.TXT` et au moins un fichier `.sh` ;
+     - `cat /mnt/README.TXT` : le texte nomme les fichiers qui sont à côté, et
+       rien d'autre ;
+     - `df` montre l'étiquette de la disquette ;
+     - suivre le README : `cp /mnt/lights.sh ~/bin`, puis `lights.sh` sans
+       argument dit comment on l'utilise, et avec le nom d'une lumière câblée
+       (section W) l'éteint pour de bon ;
+     - la **plupart** des disquettes ramassées sont encore vierges : en ramasser
+       une dizaine et constater qu'au plus une ou deux portent une étiquette. [ ]
+
+284. **Une machine déjà utilisée n'est jamais regarnie.** Sur l'ordinateur de
+     l'étape 278 : `mkdir ~/travail`, `echo garde-moi > ~/travail/n.txt`, éteindre
+     avec l'interrupteur, rallumer. Les comptes, le nom de la machine, le journal
+     et le fichier écrit sont exactement les mêmes : rien n'a été réécrit. [ ]
+
+285. **L'option à l'arrêt : la machine nue.** Nouvelle partie, **Machines et
+     disquettes garnies** sur **Désactivé**. Allumer un ordinateur dans un bureau :
+     - l'invite dit `ksp-` et les coordonnées ;
+     - `cat /etc/passwd` montre **exactement deux** lignes, `root` et `admin` ;
+     - `su root` avec un mot de passe **vide** passe ;
+     - `cat /var/log/messages` dit `cat: no such file` ;
+     - fouiller les tiroirs du même bureau : aucun papier ;
+     - les disquettes ramassées sont toutes vierges. [ ]
+
+286. **Une machine hors de tout bâtiment.** Poser un ordinateur dans une base
+     construite par le joueur (aucun bâtiment de la carte dessous), l'allumer avec
+     l'option **activée** : deux comptes, `root` ouvert, aucun journal — comme une
+     machine nue. C'est le même refus que pour l'adresse et la ligne
+     téléphonique : pas de bâtiment, pas de commerce. [ ]
+
+287. **Une autre sauvegarde, d'autres mots de passe.** Créer une **deuxième**
+     partie sur la même carte, aller au **même** commerce que l'étape 278, y
+     trouver la note et allumer la machine :
+     - le mot de passe sur la note n'est **pas** celui de la première partie ;
+     - il ouvre quand même la machine de cette partie-là ;
+     - le mot de passe de la première partie n'ouvre **pas** cette machine. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
