@@ -45,6 +45,7 @@ the files and the state shape are all unaffected.
 | 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
 | 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=760,6600 "file://$PWD/workshop/preview-page.html"` |
+| 8a | **The item against Steam's own ceilings.** Also run by `sh tests/run.sh`, so this is a reminder rather than a second gate | `python3 tools/check-workshop.py` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
 | 11 | Copy the `id=` Steam wrote back into the repo, and into the description's last-but-one line | `grep ^id= ~/Zomboid/Workshop/CeroSec/workshop.txt` |
@@ -257,6 +258,49 @@ side at **512 and at 200** on neutral grey, and 200 is the size that decides it 
 The chosen one becomes both `workshop/preview.png` and `42/poster.png`. They are
 the same picture at the same size on purpose: the Workshop preview and the mod
 panel's poster are the same promise made twice.
+
+## The description has a ceiling, and going over it fails silently (2026-09-13)
+
+The first upload created item **3801094056**. The update after it was **accepted
+by the submit screen** and the published page came back **0 bytes, no preview, no
+description**. No error in the game, none on the item page, nothing in the log.
+
+The cause: the description was **9502 bytes** and Valve's ceiling is **8000**.
+`ISteamUGC.SetItemDescription` refers the limit to
+`k_cchPublishedDocumentDescriptionMax` on the `ISteamRemoteStorage` constants
+page, where it is documented as *the maximum size in bytes that a Workshop item
+description can be*. Two neighbours on the same page matter here too:
+`k_cchPublishedDocumentTitleMax` is 128 + 1 and `k_cchTagListMax` is 1024 + 1.
+
+**Bytes, not characters.** Today every one of these files is ASCII and the two
+counts agree. The day a translated page carries one accented letter they stop
+agreeing, and the byte is the one Steam counts. `tools/check-workshop.py`
+measures UTF-8 length everywhere for that reason.
+
+**The guard.** `python3 tools/check-workshop.py`, run by `sh tests/run.sh`,
+fails and names the number on any of:
+
+- the joined description over 8000 bytes;
+- the description under 8000 **but over it once the ten commented `# SHOT`
+  slots become real `[img]` lines**, 100 bytes reserved each. This is the trap
+  that made the first failure possible: the description fitted on the day it was
+  written and the pictures had not been put in yet;
+- `title=` over 128 bytes, or the tag list over 1024;
+- a tag that is not a line of the game's own `media/WorkshopTags.txt`, since a
+  tag the game does not know is dropped in silence;
+- `visibility=` outside `public`, `friendsOnly`, `private`, `unlisted`;
+- `workshop/preview.png` missing, not a PNG, not square, neither 256 nor 512
+  wide, or over 1024000 bytes: the three refusals of
+  `SteamWorkshopItem.validatePreviewImage`.
+
+All six were proved red against planted copies before the guard was committed,
+including an 8001-byte description, an `Interfaces` tag and a 1187287-byte
+preview. It is run unpiped in `tests/run.sh`, because a pipe would hide its exit
+status from `set -e` and a guard whose status is swallowed is decoration.
+
+**The running budget.** The description is 6795 bytes with ten screenshot slots
+still to fill, so 7795 of 8000 once they are in. That is 205 bytes of headroom:
+adding a paragraph to this page means taking one out.
 
 ## What the sizes are, and why
 

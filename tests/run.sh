@@ -76,4 +76,23 @@ else
 	exit 1
 fi
 
+# The Workshop item against Steam's own ceilings and the jar's own preview
+# rules. Here rather than in tools/ because it is the one failure in this
+# project that is completely silent: on 2026-09-13 an update to item
+# 3801094056 was accepted by the submit screen and the published page came
+# back 0 bytes, no preview, no description, with no error anywhere. The
+# description was 9502 bytes against a ceiling of 8000.
+#
+# Not piped, for the reason the two blocks above say: a pipe would hide its
+# exit status from set -e, which is how a guard becomes decoration.
+log=$(mktemp)
+if python3 tools/check-workshop.py > "$log" 2>&1; then
+	tail -1 "$log"
+	rm -f "$log"
+else
+	cat "$log"
+	rm -f "$log"
+	exit 1
+fi
+
 echo "all tests passed"
