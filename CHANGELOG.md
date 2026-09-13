@@ -1,6 +1,6 @@
 # Changelog
 
-Player-facing notes, one entry per Workshop release. Every wave adds its lines
+Player-facing notes, one entry per Workshop release. Every change adds its lines
 under **Unreleased** in the words a subscriber reads, not the words a commit
 reads. At release, `python3 tools/changelog-steam.py` prints the newest section
 in the shape Steam's Change Notes take, and the section gets its version and

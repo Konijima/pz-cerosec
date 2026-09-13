@@ -2146,11 +2146,11 @@ table qu'il avait écrite.
        `dev` les liste, et en `root` (`su root`)
        `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231). [ ]
 
-## AA. Ce qui est déjà sur les machines (contenu du monde, vague 7a)
+## AA. Ce qui est déjà sur les machines (contenu du monde, 1re partie)
 
 Tout ce qui suit demande l'option bac à sable **Machines et disquettes garnies**
 sur **Activé** (c'est le défaut). Les étapes 285 et 286 la mettent à l'arrêt pour
-prouver le contrôle : une machine nue, comme avant cette vague.
+prouver le contrôle : une machine nue, comme avant ce changement.
 
 Les mots de passe de cette section sont **propres à la sauvegarde**. Rien de ce
 qui est écrit ici n'est un mot de passe à recopier : ce qui compte est que celui
@@ -2185,7 +2185,7 @@ qu'on lit sur le papier soit celui que la machine demande.
 
 280. **Le mot du papier ouvre la machine.** Revenir à l'ordinateur de l'étape 278,
      `su root`, taper le mot lu sur le papier : ça passe, l'invite devient
-     `root@...#`. C'est l'assertion centrale de la vague : le papier et la machine
+     `root@...#`. C'est l'assertion centrale du changement : le papier et la machine
      ne se parlent jamais, ils calculent tous les deux la même réponse. [ ]
 
 281. **Le papier trouvé AVANT d'allumer la machine.** Dans un autre commerce
@@ -2206,7 +2206,7 @@ qu'on lit sur le papier soit celui que la machine demande.
      en trouver une dont le nom dans l'inventaire n'est pas le nom ordinaire d'une
      disquette mais une **étiquette** en majuscules (`UTILITIES`). (Le nom
      ordinaire est encore en anglais en français : `ItemName.json` FR ne traduit
-     pas les quatre disquettes, ce qui est d'avant cette vague.)
+     pas les quatre disquettes, ce qui est d'avant ce changement.)
      - la mettre dans le lecteur, `mount /dev/fd0 /mnt`, `ls /mnt` : il y a un
        `README.TXT` et au moins un fichier `.sh` ;
      - `cat /mnt/README.TXT` : le texte nomme les fichiers qui sont à côté, et
@@ -2245,7 +2245,7 @@ qu'on lit sur le papier soit celui que la machine demande.
      - il ouvre quand même la machine de cette partie-là ;
      - le mot de passe de la première partie n'ouvre **pas** cette machine. [ ]
 
-## AB. Les programmes, les disquettes et les huit commerces (vague 7b)
+## AB. Les programmes, les disquettes et les huit commerces (2e partie)
 
 Même condition qu'à la section AA : option bac à sable **Machines et disquettes
 garnies** sur **Activé**, qui est le défaut. Les mots de passe sont propres à la
@@ -2395,7 +2395,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      (`crontab -e`, `* * * * * cu 418-0100`) et attendre une minute :
      `mail` montre `cu: not a terminal`. [ ]
 
-## AC. Un bureau, deux personnes, et la semaine d'avant (vague 7c)
+## AC. Un bureau, deux personnes, et la semaine d'avant (3e partie)
 
 Même condition qu'aux sections AA et AB : option bac à sable **Machines et
 disquettes garnies** sur **Activé**. Les mots de passe et les noms sont propres à la

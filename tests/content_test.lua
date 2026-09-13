@@ -198,7 +198,7 @@ do
 			string.find(real, "^%u%l+ %u%l+$") ~= nil)
 	end
 
-	-- Every name in the lists, on its own, because the lists are what wave 7b
+	-- Every name in the lists, on its own, because the lists are what the world-content work, part 2
 	-- lengthens and a name with a space or a capital in it would be a silent
 	-- fallback to "user" for one machine in thirty-four.
 	for _, which in ipairs({ "first", "last" }) do
@@ -472,7 +472,7 @@ do
 		local profile = CeroSecContent.PROFILES[id]
 		-- The eight empty slots. A machine on such a premises is prefilled with
 		-- nothing, which is what a machine was before this file existed -- and that
-		-- is asserted rather than skipped, because "wave 7b will fill it" must not
+		-- is asserted rather than skipped, because "the world-content work, part 2 will fill it" must not
 		-- be able to become "and until then it half fills it".
 		if profile == nil then
 			local state = CeroSecOS.newState("ksp-4-b")
@@ -591,7 +591,7 @@ do
 						-- ONE MACHINE IS ONE PERSON'S DESK. The owner's files are on it and
 						-- nobody else's are, and both halves are asserted: "the owner's are
 						-- there" alone would pass a prefill that wrote everybody's, which is
-						-- exactly what this wave took out.
+						-- exactly what this change took out.
 						if type(profile.accounts[a].files) == "table" then
 							for f = 1, #profile.accounts[a].files do
 								local file = profile.accounts[a].files[f]
@@ -898,15 +898,15 @@ end
 -- Section 4 builds ONE machine of each profile, so it reads one telling of each
 -- file and the other two are never looked at. That is exactly the shape in which a
 -- text with a line eighty columns wide, or a {staff4} nothing fills, sits in the
--- tree for a wave and turns up on a player's screen in the one office in three
+-- tree for a change and turns up on a player's screen in the one office in three
 -- that got it.
 --
 -- So this walks the CATALOGUE and not a machine: every entry, every telling, with
 -- names put in, held to the same rules section 4 holds the one it built to. And it
 -- asserts the shape of the format as well as the text -- three tellings and not
 -- two, never `text` and `texts` together, and PROSE MUST HAVE THREE. That last one
--- is the requirement of this wave, and it is the only assertion here that a
--- forgetful next wave could fail.
+-- is the requirement of this change, and it is the only assertion here that a
+-- forgetful next change could fail.
 --
 
 -- What a file may be, read at sixty columns. A thousand two hundred bytes is
@@ -935,7 +935,7 @@ do
 				CeroSecContent.VARIANTS)
 		else
 			-- A file with one telling is a DATA table and nothing else. The rule of
-			-- this wave in one assertion: prose varies, and the tables the scripts are
+			-- this change in one assertion: prose varies, and the tables the scripts are
 			-- proved against do not.
 			check(where .. " has one telling only because it is a data table the "
 				.. "scripts are proved against", IS_DATA[entry.text] == true)
@@ -1411,7 +1411,7 @@ do
 	-- constant under test cannot fail when the constant goes to zero, which is a
 	-- mutation that passed. The premises' own lines are written between seven in the
 	-- morning and four in the afternoon and the outbreak's between midnight and five,
-	-- so a line before six is a line only this wave can have put there.
+	-- so a line before six is a line only this change can have put there.
 	do
 		local nights = 0
 		for i = 1, #CeroSecContent.PROFILE_IDS do
@@ -1574,7 +1574,7 @@ end
 --
 -- 4g. TWO MACHINES OF ONE OFFICE
 --
--- The whole wave in one section, and it is asked of built machines because what a
+-- The whole change in one section, and it is asked of built machines because what a
 -- player meets is two computers in one room: the same company, the same people,
 -- the same passwords, and two different men's desks with two different weeks on
 -- them.
@@ -2033,7 +2033,7 @@ do
 	eq("a roll of nothing is blank", CeroSecContent.diskForRoll(0), nil)
 	eq("junk for a roll is blank", CeroSecContent.diskForRoll("x"), nil)
 
-	-- The slots wave 7b fills. An id in neither list is a catalogue entry nobody
+	-- The slots the world-content work, part 2 fills. An id in neither list is a catalogue entry nobody
 	-- wrote down.
 	for i = 1, #CeroSecContent.DISK_SLOTS do
 		local id = CeroSecContent.DISK_SLOTS[i]
@@ -2108,7 +2108,7 @@ do
 		CeroSecContent.lateFile({ late = "NOPE.TXT", files = {} }), nil)
 	-- AND THERE IS ONE. Everything below this is inside `if lateCount > 0`, because
 	-- the mechanism is for a catalogue that has such an entry and there was a build
-	-- with none -- so without this line, a wave that dropped `late` off the BBS list
+	-- with none -- so without this line, a change that dropped `late` off the BBS list
 	-- would take the whole of section 7b out of the suite in silence and the bench
 	-- would still say it passed.
 	check("the shipped catalogue has a late entry in it (" .. lateCount .. ")",
@@ -2558,7 +2558,7 @@ do
 		after - before < 20)
 
 	-- AND THE DISK'S OWN CEILINGS, which are the small ones: 4096 bytes and 32
-	-- nodes. A catalogue entry far over both -- which is what wave 7b will write by
+	-- nodes. A catalogue entry far over both -- which is what the world-content work, part 2 will write by
 	-- accident one day -- must come out as a disk the SLOT still takes, with as many
 	-- files on it as fit, and never as a disk no machine in the county will accept.
 	do

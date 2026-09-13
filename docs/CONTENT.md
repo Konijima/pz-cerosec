@@ -1,7 +1,7 @@
 # CeroSec — World content
 
 What is already on the machines, on the disks and on the papers of Knox County:
-the mechanics of it, the catalogue format a wave writes into, and how one number
+the mechanics of it, the catalogue format a change writes into, and how one number
 per save makes a note in a drawer agree with a computer nobody has switched on.
 
 See also: [PLAYERS.md](PLAYERS.md) for what a player meets,
@@ -75,7 +75,7 @@ a prefilled machine crashed; hex is parsed by `CeroSecOS.hexValue` now.
 | **nothing** (a roll) | whether a floppy has content, whether a body carries a paper | the roll happens once and its *result* is saved on the item |
 
 The three key builders are `CeroSecContent.rootKey`, `accountKey` and
-`machineKey`, and wave 7c added the fourth the first two only implied:
+`machineKey`, and the world-content work, part 3 added the fourth the first two only implied:
 **`premisesKey`**, which is what a *telling* is chosen on. The rule that decides
 which of the two a thing belongs to has not moved: **anything a premises IS must
 be answered the same way from every square of it**, and anything about a desk is
@@ -97,7 +97,7 @@ premises a machine stands in is a question about a *square*, and most machines i
 save have no chunk loaded. `turnOn` is the moment the chunk is certainly there,
 because the power check has just proved it.
 
-`prefill` answers **four** things since wave 7c: the profile id, the root password,
+`prefill` answers **four** things since the world-content work, part 3: the profile id, the root password,
 the logins by slot, and the session that was still open at the glass as
 `{ user =, at = }` or nil. It takes one new input, `opts.numbers` — telephone numbers
 of the machine's own region, for the `cu` line in somebody's history — because the
@@ -124,7 +124,7 @@ to go on: a premises zone is named by whoever drew the map and a `RoomDef`'s nam
 is a *loot type* and says nothing about tenancy.
 
 **The whole building, and never the caller's own square.** This is the fix to a bug
-that shipped in this wave and was caught in review. The profile used to come from
+that shipped in this change and was caught in review. The profile used to come from
 the room the *caller* stood in, so in a house with a study in it the desk in the
 study answered `office` — a profile with a root password, so a note was written —
 while the computer in the living room of the same house answered `residential`,
@@ -178,14 +178,14 @@ Five things to know:
   first. A `path` inside an account's `files` is relative to that account's home
   and may not contain a `/`.
 
-And three fields wave 7b added, each because a premises the county really has
+And three fields the world-content work, part 2 added, each because a premises the county really has
 could not be written without it:
 
 - **`cron`** is a crontab, in Vixie's own five fields, written to
   `/var/spool/cron/<login>` exactly where `crontab(1)` writes one — root's, `600`,
   in root's `700` directory. It is a real crontab and the machine really runs it: a
   shop whose lights went off at ten every night is a shop whose lights still go off
-  at ten. **Since wave 7c there are two kinds of it.** A `cron` inside an *account*
+  at ten. **Since the world-content work, part 3 there are two kinds of it.** A `cron` inside an *account*
   entry is that account's own and is written only on the machine he **owns**,
   because the line runs in his home with his `bin` on the path — the bookkeeper's
   nightly total reads *his* ledger, so on the desk beside his it would mail
@@ -213,7 +213,7 @@ crontab owner's own home.
 
 That second half used to ask the *catalogue* — "does `profile.bin` always write
 this path" — and the catalogue always says yes, so it was an assertion that could
-not fail. Wave 7c found what it had been hiding: the military post's
+not fail. the world-content work, part 3 found what it had been hiding: the military post's
 `/usr/local/bin/check.sh` **was never written on any machine in the county**,
 because `placeScripts` was called only for a machine with an ordinary account to
 hang a `~/bin` under and the post has none. Its hourly crontab had been mailing
@@ -254,7 +254,7 @@ column names the file and not the words in it.
 
 **Which of those files a player finds depends on whose desk he is at** — see *One
 machine is one person's desk*. The five profiles whose third slot used to carry
-nothing gained a file in wave 7c (`keys.txt`, `counter.txt`, `library.txt`,
+nothing gained a file in the world-content work, part 3 (`keys.txt`, `counter.txt`, `library.txt`,
 `nights.txt`, `tickets.txt`), because a machine whose owner is a slot with no files
 is a machine with an empty home, and one desk in five was coming up bare.
 
@@ -639,7 +639,7 @@ fourth, which is what keeps a payload out of the save file — so there is nowhe
 disk to write a flag and nothing that would survive being written there. The mark is
 **the file**: `CeroSecContent.lateEntryFor` answers the entry only while the late file
 still holds, byte for byte, the stub the catalogue shipped, and the stub it compares
-against *is* the catalogue's own text, so a wave that edited the stub and forgot the
+against *is* the catalogue's own text, so a change that edited the stub and forgot the
 sentinel cannot happen.
 
 That is not a trick. It is the rule `upgradeSystem` already uses to take a retired
@@ -667,7 +667,7 @@ the four item blocks — an item-script key vanilla ships itself
 (`ItemCodeOnCreate.onCreatePaperwork` on `Base.Paperwork`) and which is traced
 through the jar in the comment over those blocks.
 
-**A declared deviation.** The design for this wave said to hash the item's id.
+**A declared deviation.** The design for this change said to hash the item's id.
 There is no id: `InventoryItem.id` is written only by `load` and by
 `createCloneItem`, so a freshly instanced item is id 0 and every floppy in the
 county would hash the same. The roll is `ZombRand`, the way vanilla rolls loot —
@@ -807,16 +807,16 @@ script proved against a file of the bench's own invention cannot happen. The ben
 walks the table both ways.
 
 **One engine quirk found while writing these and deliberately not fixed here**, this
-being a content wave: `$(( ))` cannot read a positional parameter. `$((5 % $1))`
+being a world-content work: `$(( ))` cannot read a positional parameter. `$((5 % $1))`
 answers `bad arithmetic`, because the arithmetic reader takes a name to be
 `[A-Za-z_]` (`arithUnit` in `CeroSecOSVM.lua`) and a real `sh` reads `$1` there.
 Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **3** as of wave 7c, which gave every machine an owner,
+`CeroSecContent.VERSION` is **3** as of the world-content work, part 3, which gave every machine an owner,
 every prose file three tellings, and every desk a week of history behind it. (**2**
-was wave 7b, which filled the eight empty profiles and the five empty disk slots.) It
+was the world-content work, part 2, which filled the eight empty profiles and the five empty disk slots.) It
 is the catalogue's own number and **must
 never become a save-shape number**: nothing a profile writes is marked as having come from one, so
 a later catalogue changes what the next untouched machine gets and changes nothing

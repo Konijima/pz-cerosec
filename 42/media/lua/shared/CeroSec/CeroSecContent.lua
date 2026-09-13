@@ -55,7 +55,7 @@ CeroSecContent = CeroSecContent or {}
 -- Which catalogue this is. Not a save-shape number and it must never become one:
 -- nothing written by a profile is marked as having come from one, so a later
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
--- about a machine somebody has already switched on. Bumped when a wave adds or
+-- about a machine somebody has already switched on. Bumped when a change adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
 CeroSecContent.VERSION = 3
 
@@ -183,7 +183,7 @@ end
 -- through CeroSecOS.isValidUserName, because what this returns goes into
 -- /etc/passwd and a line that will not parse is an account nobody can log in to.
 --
--- Wave 7b lengthened both lists to forty-four apiece. Nothing derived from them
+-- the world-content work, part 2 lengthened both lists to forty-four apiece. Nothing derived from them
 -- is stored, so a longer list changes the next untouched machine and no machine
 -- already switched on -- a save in progress keeps every person it already had.
 --
@@ -223,7 +223,7 @@ CeroSecContent.NAMES = {
 -- that comes out too long for MAX_USERNAME falls back to the first name, and a
 -- first name that is somehow not a valid login falls back to "user". Neither
 -- can happen with the lists above -- the bench proves every combination -- and
--- both are here because the lists are what wave 7b is going to lengthen.
+-- both are here because the lists are what the world-content work, part 2 is going to lengthen.
 function CeroSecContent.login(secret, key)
 	local first = CeroSecContent.pick(CeroSecContent.NAMES.first, secret,
 		CeroSecContent.key(key, "first"))
@@ -287,7 +287,7 @@ function CeroSecContent.password(secret, key)
 end
 
 --
--- THE PROFILE FORMAT -- and this is the part wave 7b writes against.
+-- THE PROFILE FORMAT -- and this is the part the world-content work, part 2 writes against.
 --
 --   PROFILES[id] = {
 --     host     = "acct",     head of the hostname; the coordinate tail is kept
@@ -301,15 +301,15 @@ end
 --     files    = { { path=, mode=, owner=, texts= }, { path=, dir=true } },
 --   }
 --
--- ONE MACHINE IS ONE PERSON'S DESK (wave 7c). The accounts are the PREMISES' and
+-- ONE MACHINE IS ONE PERSON'S DESK (the world-content work, part 3). The accounts are the PREMISES' and
 -- every machine in the building has all of them, with their passwords -- but only
 -- ONE of them has files on this machine, chosen by the machine's own key
 -- (CeroSecContent.ownerSlot). The others' homes hold their dot-files and nothing
 -- else. That is what an office is, and it is what the complaint that started this
--- wave was about: three accounts' homes written onto every desk in the room is one
+-- change was about: three accounts' homes written onto every desk in the room is one
 -- machine copied three times.
 --
--- AND EVERY PROSE FILE HAS THREE TELLINGS (wave 7c). An entry carries `texts`, an
+-- AND EVERY PROSE FILE HAS THREE TELLINGS (the world-content work, part 3). An entry carries `texts`, an
 -- array of CeroSecContent.VARIANTS of them, and which one a premises reads is the
 -- premises' own (CeroSecContent.variantOf) -- so the office down the road tells the
 -- same kind of story in other words, with its own people's names put in where the
@@ -346,7 +346,7 @@ end
 --     than forced: the order of the table is the order things are written in, so
 --     put what matters first.
 --
--- And three things wave 7b added, each because a premises the county really has
+-- And three things the world-content work, part 2 added, each because a premises the county really has
 -- could not be written without it:
 --
 --   * `cron` is a crontab per account, in Vixie's own five fields, written to
@@ -367,7 +367,7 @@ end
 --
 -- The ten ids exist now and eight of them are deliberately EMPTY. A machine
 -- whose premises resolves to an empty id is prefilled with nothing at all, which
--- is exactly a bare machine -- so wave 7b fills a table and changes no code.
+-- is exactly a bare machine -- so the world-content work, part 2 fills a table and changes no code.
 --
 
 CeroSecContent.PROFILE_IDS = {
@@ -401,7 +401,7 @@ CeroSecContent.PREMISES_WORDS = {
 	{ "military", "military" }, { "army", "military" },
 	-- CeroSec Systems' own premises, which the shipped map has none of and a mod
 	-- map may: it is in the list so that every declared id is REACHABLE, which the
-	-- bench asserts. An id nothing resolves to is a profile wave 7b would write and
+	-- bench asserts. An id nothing resolves to is a profile the world-content work, part 2 would write and
 	-- nobody would ever see.
 	{ "cerosec", "cerosec" },
 	{ "office", "office" }, { "warehouse", "office" }, { "factory", "office" },
@@ -486,7 +486,7 @@ end
 -- held to it, there being no wrong way to run it; and it cannot get out of the rule
 -- by declaring so, because the bench also asks whether the text mentions `$1`.
 --
--- WHAT IS IN HERE, and the rule wave 7b wrote it to. Thirteen scripts: four that
+-- WHAT IS IN HERE, and the rule the world-content work, part 2 wrote it to. Thirteen scripts: four that
 -- work the building (lights, lockup, unlock, check), five that work a file
 -- (audit, total, rounds, announce, sweep), one that keeps a log (log.sh), and
 -- three that are games. Every one of them is a TEMPLATE and not a tool -- the
@@ -1003,7 +1003,7 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 }
 
 --
--- THE DISK CATALOGUE -- the other half of what wave 7b writes.
+-- THE DISK CATALOGUE -- the other half of what the world-content work, part 2 writes.
 --
 --   DISKS[i] = {
 --     id     = "UTILITIES",  what the entry is called in here and in the bench
@@ -1036,7 +1036,7 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
 --
--- AND A SIXTH, which wave 7b needed and which is the one piece of mechanics it
+-- AND A SIXTH, which the world-content work, part 2 needed and which is the one piece of mechanics it
 -- added: `late`.
 --
 -- A floppy is created in LOOT and loot has no location. The disk is in a drawer in
@@ -1104,7 +1104,7 @@ CeroSecContent.DISKS = {
 		},
 	},
 	--
-	-- THE FIVE wave 7b wrote.
+	-- THE FIVE the world-content work, part 2 wrote.
 	--
 	{
 		id = "BBS LIST",
@@ -1602,7 +1602,7 @@ CeroSecContent.DISKS = {
 	},
 }
 
--- The ids wave 7b fills. Named here rather than left to be remembered, and the
+-- The ids the world-content work, part 2 fills. Named here rather than left to be remembered, and the
 -- bench walks the list: an id in it that has become a real entry is fine, an id
 -- in it that is still missing is fine, and an entry whose id is in NEITHER list
 -- is a catalogue nobody wrote down.
@@ -1755,8 +1755,8 @@ CeroSecContent.BBS_NAMES = {
 
 -- Which file of an entry is the late one, and the text it shipped with. Both come
 -- off the entry itself so there is ONE copy of the stub: the sentinel the fill
--- compares against IS the catalogue's own text, and a wave that edited the stub
--- and forgot the sentinel is a wave that cannot happen.
+-- compares against IS the catalogue's own text, and a change that edited the stub
+-- and forgot the sentinel is a change that cannot happen.
 --
 -- name, stub -- or nil for an entry with no late file.
 function CeroSecContent.lateFile(entry)
@@ -1898,7 +1898,7 @@ end
 --   LuaManager.getFunctionObject splits a name on "." and walks the global env
 --       (offsets 31-48), so a dotted name in a table of ours resolves.
 --
--- WHAT IS ROLLED, AND WHY IT IS NOT A HASH. The design for this wave said to hash
+-- WHAT IS ROLLED, AND WHY IT IS NOT A HASH. The design for this change said to hash
 -- the item's id. There is no id to hash: InventoryItem.id is only ever written by
 -- InventoryItem.load and by createCloneItem -- the only two putfields on the
 -- field in the whole class -- so a freshly instanced item is id 0 and every
@@ -1908,7 +1908,7 @@ end
 -- saved is its RESULT in the item's own modData. A disk's contents never change
 -- afterwards, through any number of reloads, because nothing rolls again.
 --
--- This is a DEVIATION from the wave's design and it is declared in
+-- This is a DEVIATION from that work's design and it is declared in
 -- docs/CONTENT.md as one.
 --
 -- The hook runs wherever an item is instanced, which includes a client. It is
@@ -1982,7 +1982,7 @@ function CeroSecContent.accountLogin(secret, b1, b2, slot)
 	return CeroSecContent.login(secret, CeroSecContent.accountKey(b1, b2, slot))
 end
 
--- And its password. The login goes INTO the key as well as the slot, so a wave
+-- And its password. The login goes INTO the key as well as the slot, so a change
 -- that reordered a profile's accounts would change the password of an account that
 -- kept its name, rather than quietly handing one person another's password.
 function CeroSecContent.accountPassword(secret, b1, b2, slot, login)
@@ -2011,7 +2011,7 @@ function CeroSecContent.machineKey(b1, b2, x, y, z)
 	return CeroSecContent.key("m", b1, b2, x, y, z)
 end
 
--- And the premises' own key, which wave 7c needed and the two above only implied:
+-- And the premises' own key, which the world-content work, part 3 needed and the two above only implied:
 -- rootKey and accountKey are both built out of the premises' two bytes, and now
 -- so is WHICH TELLING of a story this company's files carry.
 --
@@ -2314,7 +2314,7 @@ end
 -- premises' account in that slot, the word "owner" is whoever sat at THIS machine,
 -- and anything else is a literal login ("root", "support").
 --
--- "owner" is wave 7c's and it is not a convenience. A crontab line saying
+-- "owner" is the world-content work, part 3's and it is not a convenience. A crontab line saying
 -- $HOME/bin/total.sh runs in the home of the account the crontab belongs to, and
 -- the scripts are the OWNER's now -- so a crontab pinned to slot 1 on a machine
 -- whose desk is slot 2's is a line that mails "not found" once a night for ever.
@@ -2352,7 +2352,7 @@ local function placeOneCron(state, session, to, lines, now)
 	end
 end
 
--- The crontabs, and there are two kinds of them since wave 7c.
+-- The crontabs, and there are two kinds of them since the world-content work, part 3.
 --
 -- AN ACCOUNT'S OWN (`cron` inside an account entry) is written only when that
 -- account is the OWNER of this machine, because a crontab is a list of things that
@@ -2362,7 +2362,7 @@ end
 -- no ledger in it -- that line would mail "no such file" once a night for ever.
 -- One machine is one desk, so one machine runs the job of the person whose desk it
 -- is. Two computers in one office now do different things at two in the morning,
--- which is the whole of what this wave is for.
+-- which is the whole of what this change is for.
 --
 -- THE MACHINE'S OWN (`profile.cron`, with a literal login in `to`) is root's, and
 -- is what a job that belongs to no desk is: the military post's hourly door check
@@ -2427,8 +2427,8 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 	if type(profile.logs) ~= "table" or #profile.logs == 0 then return end
 	if type(startTime) ~= "number" then return end
 	-- The premises' own week, and then the county's. Built into a list of its own
-	-- rather than added to the profile: the catalogue is a constant and a wave that
-	-- appended to profile.logs would be a wave whose second machine had six extra
+	-- rather than added to the profile: the catalogue is a constant and a change that
+	-- appended to profile.logs would be a change whose second machine had six extra
 	-- lines on it.
 	local messages, own = {}, #profile.logs
 	for i = 1, own do messages[i] = profile.logs[i] end
@@ -2467,7 +2467,7 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 		-- the line. A survivor reads this file with `cat` on a sixty column terminal
 		-- that does not wrap, so a line longer than sixty is a line whose end nobody
 		-- can ever read -- and the hostname in front of the message is up to sixteen
-		-- characters of it. Cutting it here means wave 7b cannot write a message
+		-- characters of it. Cutting it here means the world-content work, part 2 cannot write a message
 		-- that disappears off the right of the glass.
 		local line = CeroSecOS.formatStamp(at) .. " " .. state.hostname
 			.. " " .. messages[i]
@@ -2480,7 +2480,7 @@ end
 --
 -- /var/mail/<login>: THE MAIL NOBODY HAD READ
 --
--- Wave 7c rewrote this, and it is the part of the wave a player is most likely to
+-- the world-content work, part 3 rewrote this, and it is the part of the change a player is most likely to
 -- read: people were doing things before they died, and mail is the one file on a
 -- 1993 desk machine that is dated, addressed and written by somebody who is not in
 -- the room. So a mailbox is now a STORY -- three to six messages over the outbreak
@@ -2876,7 +2876,7 @@ end
 --                 numbers= }
 --
 -- Answers FOUR things now: the profile id it used, the root password it derived,
--- the logins by slot, and -- wave 7c -- the session that was still open at the
+-- the logins by slot, and -- the world-content work, part 3 -- the session that was still open at the
 -- glass, as { user =, at = }, or nil. The password is answered for the BENCH and
 -- for the sticky note's sake and is written nowhere: the caller may not keep it.
 -- Answers nil for a machine it left alone.
@@ -2900,7 +2900,7 @@ function CeroSecContent.prefill(state, opts)
 	if not CeroSecContent.isSecret(opts.secret) then return nil end
 	local id = CeroSecContent.profileFor(opts.premises, opts.rooms)
 	local profile = CeroSecContent.PROFILES[id]
-	-- An id wave 7b has not filled in yet. A bare machine, which is what one was
+	-- An id the world-content work, part 2 has not filled in yet. A bare machine, which is what one was
 	-- before this file existed, and not an error.
 	if type(profile) ~= "table" then return nil end
 
@@ -2995,7 +2995,7 @@ function CeroSecContent.prefill(state, opts)
 		names, opts.start, now)
 
 	--
-	-- THE HISTORY, and it is the whole of what wave 7c is for: people were doing
+	-- THE HISTORY, and it is the whole of what the world-content work, part 3 is for: people were doing
 	-- things before they died. Three files say so and they have to agree.
 	--
 	-- WHO WAS STILL LOGGED IN, decided first because both of the other two depend on
@@ -3065,7 +3065,7 @@ end
 -- `cat` on a 60 column screen and the terminal does not wrap. The bench holds
 -- every one of them to it.
 --
--- AND EVERY PROSE FILE HAS THREE TELLINGS (wave 7c). Which one a premises reads
+-- AND EVERY PROSE FILE HAS THREE TELLINGS (the world-content work, part 3). Which one a premises reads
 -- is the premises' own (CeroSecContent.variantOf), so the office in the next town
 -- tells the same kind of story in another voice, with its own people's names in it
 -- where the text writes {owner}, {staff1}, {staff2}, {staff3} or {host}.
