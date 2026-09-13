@@ -205,6 +205,34 @@ module CeroSec
         WorldStaticModel = SheetOfPaper,
     }
 
+    /* THE FOUR DISKS, and the one key on them that is not decoration.
+
+       OnCreate names a Lua function that is called with the item as its ONE
+       argument the moment the item is made, and it is how a floppy off a shelf
+       sometimes has something written on it. Traced through the jar (42.20.4),
+       because an item-script key is exactly the kind of thing that turns out not
+       to work:
+
+       - Item.DoParam reads the key "OnCreate" into the private field luaCreate
+         (javap -c zombie.scripting.objects.Item: ldc_w "OnCreate" at 11017,
+         putfield luaCreate at 11031).
+       - Item.InstanceItem(String, boolean) -- which every item creation goes
+         through -- calls InventoryItem.initialiseItem() at offset 4059, guarded
+         by isInitialised() and by the calling thread being GameWindow.gameThread,
+         GameLoadingState.loader or GameServer.mainThread (4022-4055). Loot
+         generation runs on the loader thread.
+       - InventoryItem.initialiseItem() looks the name up with
+         LuaManager.getFunctionObject and calls it through
+         LuaCaller.protectedCallVoid with the item as the only argument (offsets
+         6-32).
+       - getFunctionObject splits a DOTTED name on "." , walks each segment out of
+         the global environment with rawget and requires each intermediate to be a
+         KahluaTable (offsets 31-124) -- which a plain Lua table of ours is. So
+         `CeroSecContent.onCreateFloppy` resolves.
+
+       And vanilla ships the key itself: media/scripts/generated/items/
+       literature.txt:4795 is `OnCreate = ItemCodeOnCreate.onCreatePaperwork` on
+       Base.Paperwork. */
     item FloppyBlue
     {
         DisplayName = 3.5 inch Floppy Disk,
@@ -213,6 +241,7 @@ module CeroSec
         Weight = 0.1,
         Icon = CeroSecFloppyBlue,
         WorldStaticModel = CeroSecFloppyBlue,
+        OnCreate = CeroSecContent.onCreateFloppy,
     }
 
     item FloppyYellow
@@ -223,6 +252,7 @@ module CeroSec
         Weight = 0.1,
         Icon = CeroSecFloppyYellow,
         WorldStaticModel = CeroSecFloppyYellow,
+        OnCreate = CeroSecContent.onCreateFloppy,
     }
 
     item FloppyRed
@@ -233,6 +263,7 @@ module CeroSec
         Weight = 0.1,
         Icon = CeroSecFloppyRed,
         WorldStaticModel = CeroSecFloppyRed,
+        OnCreate = CeroSecContent.onCreateFloppy,
     }
 
     item FloppyGreen
@@ -243,6 +274,7 @@ module CeroSec
         Weight = 0.1,
         Icon = CeroSecFloppyGreen,
         WorldStaticModel = CeroSecFloppyGreen,
+        OnCreate = CeroSecContent.onCreateFloppy,
     }
 
     /* The hardware modules, rung 4f.

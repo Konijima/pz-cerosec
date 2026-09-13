@@ -879,7 +879,99 @@ do
 end
 
 --
--- 8. What a refusal does: TRIMMED, never a crash
+-- 8. The item hook: a floppy off a shelf
+--
+-- What `OnCreate = CeroSecContent.onCreateFloppy` does when the game calls it with
+-- an item. The fake item answers the five calls the hook makes and nothing else,
+-- which is the point: a hook that quietly reached for a sixth would find it
+-- missing here.
+--
+
+do
+	local function newFloppy(data)
+		local item = { data = data or {}, name = "3.5\" Floppy Disk", custom = false,
+			synced = 0 }
+		item.getModData = function() return item.data end
+		item.setName = function(_, text) item.name = text end
+		item.getName = function() return item.name end
+		item.setCustomName = function(_, flag) item.custom = flag end
+		item.isCustomName = function() return item.custom end
+		item.syncItemFields = function() item.synced = item.synced + 1 end
+		return item
+	end
+
+	-- A roll this bench decides, in place of the engine's. Every assertion below is
+	-- about what the hook does WITH a roll, so the roll itself is not left to a
+	-- generator: a bench whose result depends on one is a bench that is red on
+	-- somebody else's machine.
+	local roll = 0
+	local hadRand = _G.ZombRand
+	_G.ZombRand = function() return roll end
+
+	-- A roll that lands on the UTILITIES entry.
+	local entry = CeroSecContent.diskById("UTILITIES")
+	local at = 0
+	for i = 1, #CeroSecContent.DISKS do
+		if CeroSecContent.DISKS[i] == entry then break end
+		at = at + (tonumber(CeroSecContent.DISKS[i].weight) or 0)
+	end
+	roll = at  -- ZombRand(100) answers 0..99, and the hook adds one
+
+	local item = newFloppy()
+	CeroSecContent.onCreateFloppy(item)
+	eq("a disk that rolled a catalogue entry is at this floppy version",
+		item.data.v, CeroSecOS.FLOPPY_VERSION)
+	check("and has a filesystem on it", type(item.data.fs) == "table")
+	eq("and carries the label", item.data.label, entry.label)
+	eq("which is written on the item's name", item:getName(), entry.label)
+	check("as a custom name, or the translated name would win", item:isCustomName())
+	eq("and it was sent", item.synced, 1)
+	local ok, why = CeroSecOS.validateDisk(CeroSecOS.diskFromData(item.data), true)
+	check("and the slot takes it: " .. tostring(why), ok)
+	-- README.TXT really is on the disk the ITEM carries, which is the one thing the
+	-- catalogue checks above cannot say: they weighed the disk diskData made, and
+	-- this weighs the copy that went through the item's modData.
+	local root = CeroSecOS.diskFromData(item.data).fs
+	check("with the README on it", root.children["README.TXT"] ~= nil)
+
+	-- A roll past every weight is a blank disk: no filesystem, no label, and the
+	-- name it came with.
+	roll = 99
+	local blank = newFloppy()
+	CeroSecContent.onCreateFloppy(blank)
+	eq("a disk that rolled nothing carries nothing", blank.data.v, nil)
+	eq("and no label", blank.data.label, nil)
+	eq("and keeps the name it came with", blank:getName(), "3.5\" Floppy Disk")
+	check("and is not a custom name", not blank:isCustomName())
+
+	-- A disk that ALREADY has something written on it is left alone. An item made
+	-- by cloning a written one arrives here with its modData filled in, and a hook
+	-- that rolled again would wipe somebody's work.
+	roll = at
+	local written = newFloppy({ v = CeroSecOS.FLOPPY_VERSION, label = "PAYROLL" })
+	CeroSecContent.onCreateFloppy(written)
+	eq("a disk that already carries something keeps its label",
+		written.data.label, "PAYROLL")
+	eq("and nothing was written on its name", written:getName(), "3.5\" Floppy Disk")
+
+	-- And junk, because this runs for every floppy the game ever makes.
+	CeroSecContent.onCreateFloppy(nil)
+	do
+		local noData = { getModData = function() return nil end }
+		CeroSecContent.onCreateFloppy(noData)
+	end
+	_G.ZombRand = nil
+	do
+		local noRand = newFloppy()
+		CeroSecContent.onCreateFloppy(noRand)
+		eq("a box with no generator in it makes a blank disk", noRand.data.v, nil)
+	end
+	_G.ZombRand = hadRand
+	check("nothing threw", true)
+end
+
+--
+-- 9. What a refusal does: TRIMMED, never a crash
 --
 -- The rule the whole file rests on. A profile is loot, and loot that can take a
 -- machine down is loot that breaks a save -- so a machine with no room left on it
