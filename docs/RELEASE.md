@@ -54,7 +54,24 @@ the files and the state shape are all unaffected.
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | **Make the GitHub repository public.** The description's banner and its eight section headers are fetched from it: they are dead images until this is done | `gh repo edit Konijima/pz-cerosec --visibility public` |
 | 17 | Open the item's own page in a browser and check the nine repo-hosted images actually rendered | Steam item page |
+| 17a | **Mathieu confirms the credit line** for the reused assets, below | by hand |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
+
+### Step 17a: the one line in the description nobody here can verify
+
+The CREDITS section says:
+
+> Sounds and floppy disk art: from Konijima's earlier Computer mod, reused by their author.
+
+That is what the repository's own history says — the nineteen `.ogg` files and
+`common/media/models_X/WorldItems/CeroSecFloppy.FBX` arrived in the first commit
+and are understood to come from Konijima's Computer mod (Steam item 2635550102),
+same author, so reuse is his to make. **Nothing in this repository proves it**:
+there is no licence file, no attribution file and no note beside the assets. It is
+the one claim on the page resting on somebody's memory rather than on a file, and
+an attribution that turns out to be wrong is the kind of thing a Workshop item gets
+taken down for. So it is confirmed out loud before the item is public, and if any
+of those files came from anywhere else, the line is corrected first.
 
 ## Steps 6a and 6b: the two the headless suite cannot do
 
