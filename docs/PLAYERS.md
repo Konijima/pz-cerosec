@@ -165,7 +165,10 @@ is a name for somebody's file, not one of the machine's, so
 called `hello`. A word with a `/` in it is a path and is never looked up.
 `PATH` may name eight directories and a ninth is refused where it is set: every
 command on the machine walks that string, so its length is a price everybody pays
-(see "Design rules").
+(see "Design rules"). **Tab** walks the same string, bounded the same way: a name
+of your own in `~/bin` is completed once `PATH` names that directory, and not
+before — a completion that offered a name the shell would not then find would be a
+Tab that lies about what the machine can do.
 
 Two kinds of word are **not** files, and could not be. The reserved words
 (`if then elif else fi for while until do done`) are grammar. The shell's own words

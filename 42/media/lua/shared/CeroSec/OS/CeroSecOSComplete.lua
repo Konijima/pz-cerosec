@@ -5,8 +5,12 @@
 -- and the session and answers with strings. It moves nothing, creates nothing
 -- and stamps nothing.
 --
---   CeroSecOS.complete(state, session, line, cursor)
+--   CeroSecOS.complete(state, session, line, cursor, path)
 --     -> { replacement = string|nil, candidates = { ... }, start = index }
+--
+-- path is the shell's own PATH -- the value the lookup would walk for a bare
+-- name. A caller that hands none is a shell with the default, which is where a
+-- machine nobody has touched stands.
 --
 -- cursor is how many characters of the line are BEFORE the caret, 0..#line,
 -- which is the number the window's text box answers. The word being completed
@@ -22,10 +26,11 @@
 --
 -- What it completes, and it is ksh's answer to the same question:
 --
---   * the first word of a command -> a COMMAND. The executables in /bin the
---     account may run, plus the words that are the shell itself and have no
---     file at all (the reserved words and the builtins). A unique one gets a
---     trailing space, because a command name is finished when it is found.
+--   * the first word of a command -> a COMMAND. The executables the account may
+--     run in the directories PATH names, plus the words that are the shell
+--     itself and have no file at all (the reserved words and the builtins). A
+--     unique one gets a trailing space, because a command name is finished when
+--     it is found.
 --   * anywhere else -> a PATH, relative to the session's cwd, absolute, or
 --     under "~". A unique directory gets a trailing "/" so the next component
 --     can be typed straight on; a unique file gets a trailing space.
@@ -222,7 +227,7 @@ end
 -- Every command name that starts with prefix: the files in /bin the account may
 -- run, plus the words the shell itself is. Sorted, and each name once -- `help`
 -- is both a file and a builtin.
-local function commandNames(state, session, prefix)
+local function commandNames(state, session, prefix, path)
 	local hidden = string.sub(prefix, 1, 1) == "."
 	local seen = {}
 	local names = {}
@@ -234,13 +239,31 @@ local function commandNames(state, session, prefix)
 		names[#names + 1] = name
 	end
 
-	local bin = CeroSecOS.getNode(state, session, CeroSecOS.BIN_PATH)
-	if bin ~= nil and bin.type == "dir" and CeroSecOS.can(state, session, bin, "r") then
-		local kids = CeroSecOS.listedNames(bin, hidden)
-		for i = 1, #kids do
-			local node = bin.children[kids[i]]
-			if node.type == "file" and CeroSecOS.can(state, session, node, "x") then
-				offer(kids[i])
+	-- Every directory PATH names, in the order it names them, exactly as the
+	-- lookup walks them (CeroSecOS.lookupPath): a name completion offers has to
+	-- be a name the shell would then find, and the shell stopped looking only in
+	-- /bin when PATH arrived. So a `hello` in ~/bin with PATH=$PATH:$HOME/bin
+	-- completes, and one there without the PATH entry does not.
+	--
+	-- Bounded by the same MAX_PATH_DIRS, for the same reason: Tab is pressed
+	-- oftener than a command is run, and a PATH off a save file may be longer
+	-- than the one the shell would take.
+	local dirs = CeroSecOS.pathDirs(path or CeroSecOS.DEFAULT_PATH)
+	local last = #dirs
+	if last > CeroSecOS.MAX_PATH_DIRS then last = CeroSecOS.MAX_PATH_DIRS end
+	for d = 1, last do
+		local dir = CeroSecOS.getNode(state, session, dirs[d])
+		if dir ~= nil and dir.type == "dir" and CeroSecOS.can(state, session, dir, "r") then
+			local kids = CeroSecOS.listedNames(dir, hidden)
+			for i = 1, #kids do
+				-- Through the walk and not off the table, so a symbolic link is
+				-- judged on what it points AT -- which is where x has always
+				-- lived, and what the lookup does with one.
+				local node = CeroSecOS.getNode(state, session, dirs[d] .. "/" .. kids[i])
+				if node ~= nil and node.type == "file"
+						and CeroSecOS.can(state, session, node, "x") then
+					offer(kids[i])
+				end
 			end
 		end
 	end
@@ -286,7 +309,7 @@ local function answer(replacement, candidates, start)
 	return { replacement = replacement, candidates = candidates, start = start }
 end
 
-function CeroSecOS.complete(state, session, line, cursor)
+function CeroSecOS.complete(state, session, line, cursor, path)
 	if type(state) ~= "table" or state.fs == nil then return answer(nil, {}, 1) end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return answer(nil, {}, 1)
@@ -300,10 +323,11 @@ function CeroSecOS.complete(state, session, line, cursor)
 	local ok, word, start, words, dq = scan(line, cursor)
 	if not ok then return answer(nil, {}, cursor + 1) end
 
-	-- A command name is a name and never a path: there is no PATH on this
-	-- machine, so nothing but /bin and the shell's own words is offered for it.
+	-- A command name is a NAME and not a path: what is offered for it is what the
+	-- shell would find for it -- every executable on PATH the account may run,
+	-- plus the words the shell itself is.
 	if atCommand(words) then
-		local names = commandNames(state, session, word)
+		local names = commandNames(state, session, word, path)
 		if #names == 0 then return answer(nil, {}, start) end
 		local close = ""
 		if dq then close = "\"" end

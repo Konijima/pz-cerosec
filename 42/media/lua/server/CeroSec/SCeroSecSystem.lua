@@ -1802,7 +1802,10 @@ Commands.complete = function(self, playerObj, x, y, z, token, args)
 
 	local env = self:execEnv(luaObject, state, playerObj, token)
 	CeroSecOS.mountDev(state, env)
-	local done = CeroSecOS.complete(state, self:sessionOf(console), line, at)
+	-- On the console's OWN PATH, which is the one the line being typed would be
+	-- looked up on: a .profile that added ~/bin has to complete what is in it.
+	local done = CeroSecOS.complete(state, self:sessionOf(console), line, at,
+		CeroSecOS.pathValue(console.shvars))
 	CeroSecOS.unmountDev(state, env)
 
 	local cursor = at

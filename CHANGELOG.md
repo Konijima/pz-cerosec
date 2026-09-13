@@ -8,6 +8,9 @@ date.
 
 ## Unreleased
 
+- Tab now finishes a command of your own. It looks where the machine looks — every
+  directory on `PATH` — so a program in `~/bin` is completed as soon as `PATH`
+  names that directory, instead of only the ones in `/bin`.
 - `sudo cd /root` used to do nothing and say nothing. It now answers
   `sudo: cd: command not found`, which is what sudo says about a word the shell
   itself is — it runs programs, and there is no program called `cd`.

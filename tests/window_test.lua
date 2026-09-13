@@ -4598,6 +4598,31 @@ do
 	eq("the first word completes to a command",
 		bench.window.entry:getInternalText(), "whoami ")
 
+	-- And a command name is completed on the shell's OWN PATH, which is the wire
+	-- this end proves: the engine's half is pinned in os_test, and what is asked
+	-- here is that the value the console holds is the value that walk gets. A
+	-- `hello` of his own, and the PATH entry that makes it a command.
+	bench.enter("mkdir bin")
+	bench.enter("echo hi > bin/hello")
+	bench.enter("chmod 755 bin/hello")
+	bench.frame()
+	bench.typed("hell")
+	bench.tab()
+	bench.frame()
+	eq("a command of his own is not completed before the PATH names it",
+		bench.window.entry:getInternalText(), "hell")
+	bench.enter("PATH=$PATH:$HOME/bin")
+	bench.frame()
+	bench.typed("hell")
+	bench.tab()
+	bench.frame()
+	eq("and is completed once it does",
+		bench.window.entry:getInternalText(), "hello ")
+	-- The same shell, and the same value: the line really runs.
+	bench.enter("hello")
+	bench.frame()
+	check("and the name the completion offered runs", bench.heard("hi"))
+
 	-- What is to the right of the caret is kept.
 	bench.typed("cat no > out.txt", 6)
 	bench.tab()

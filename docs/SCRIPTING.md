@@ -62,9 +62,14 @@ it, and never quietly shortened. (It had a hundred-line ceiling as well until a
 later change, and that one cut a capture short *in silence*: `x=$(cat 150-lines)` came
 back as a hundred of them with nothing said. One rule, and it refuses out loud.)
 
-**Tab completes.** In the first word of a line it offers command names — the files
-in `/bin` the account may run, plus the words the shell itself is (the reserved words
-and the builtins, which have no file at all). Anywhere else it offers paths: relative
+**Tab completes.** In the first word of a line it offers command names — every
+executable the account may run in the directories `PATH` names, walked left to right
+and bounded by the same `MAX_PATH_DIRS` the lookup is bounded by, plus the words the
+shell itself is (the reserved words and the builtins, which have no file at all). It
+is the shell's own `PATH` that is walked and not a fixed `/bin`, because a completion
+that offered a name the lookup would not find would be a Tab that lies: a `hello` in
+`~/bin` completes once `PATH=$PATH:$HOME/bin` has been typed, and not before. A link
+is judged on what it points at, where `x` lives. Anywhere else it offers paths: relative
 to the cwd, absolute, or under `~`. One match is filled in whole with a trailing
 space, or a trailing `/` when it is a directory; several fill in the longest prefix
 they share and stop, and a second Tab on the same word lists them in columns the way

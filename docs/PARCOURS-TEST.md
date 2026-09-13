@@ -892,6 +892,11 @@ en observant le jeu réel, pas par un banc de test.
      se poser juste après le `e`. Confirmer surtout que la touche Tab arrive
      bien à la fenêtre en jeu -- le jeu ne donne qu'Échap et Tab à une boîte de
      texte focalisée, et ça n'a jamais été vérifié avec un vrai clavier. [ ]
+163a. **Tab connaît le PATH, pas seulement `/bin`.** `mkdir bin`,
+     `echo "echo hi" > bin/hello`, `chmod 755 bin/hello`. Taper `hell` puis Tab
+     → **rien ne bouge** (le PATH ne nomme pas encore ce dossier). Puis
+     `PATH=$PATH:$HOME/bin`, retaper `hell` et Tab → la ligne devient
+     `hello ` avec l'espace, et `hello` tout court répond `hi`. [ ]
 164. À l'étape 163, appuyer sur Tab une deuxième fois : les deux noms doivent
      s'afficher en colonnes sur l'écran, et l'invite avec `cat note` se
      redessiner juste en dessous. Noter ce qui arrive à cette liste quand on

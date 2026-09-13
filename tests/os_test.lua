@@ -7524,6 +7524,13 @@ local function comp(state, session, line, cursor)
 	return CeroSecOS.complete(state, session, line, cursor or #line)
 end
 
+-- The same, on a shell whose PATH is not the default one. A separate helper
+-- because every bench above is about the default and must stay that way: a
+-- machine nobody has touched completes what /bin holds and nothing else.
+local function compOn(state, session, line, path)
+	return CeroSecOS.complete(state, session, line, #line, path)
+end
+
 local function completes(state, session, line, want, at)
 	local r = comp(state, session, line)
 	eq('"' .. line .. '" completes to "' .. tostring(want) .. '"', r.replacement, want)
@@ -7589,9 +7596,10 @@ do
 	offers(state, admin, "help", "help")
 	-- Nothing at all: no match, nothing put in the line.
 	completes(state, admin, "zz", nil)
-	-- The first word is a NAME and never a path: there is no PATH here, so a
-	-- directory of the cwd is not a command.
+	-- The first word is a NAME and never a path: the default PATH names /bin and
+	-- nothing else, so a directory of the cwd is not a command.
 	completes(state, admin, "wor", nil)
+
 
 	-- An executable an ordinary account may not run is not offered to him, and
 	-- is offered to root.
@@ -7737,6 +7745,94 @@ do
 		"ls ")
 	eq("and one below the start is the start",
 		CeroSecOS.complete(state, admin, "ls", -5).replacement, "")
+end
+
+--
+-- Command names come off PATH, not off /bin.
+--
+-- The lookup has walked PATH since rung 6b and completion had not: `hello` in
+-- ~/bin was a command the shell ran and Tab did not know about, which is a Tab
+-- that lies about what the machine can do.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local function put(path, text)
+		local done, reason = CeroSecOS.writeFile(state, admin, path, text or "x", false, FIXED)
+		if done == nil then error("cannot write " .. path .. ": " .. tostring(reason), 2) end
+	end
+	local function dir(path, mode)
+		local done, reason = CeroSecOS.createNode(state, admin, path,
+			CeroSecOS.newDir("admin", mode or 755, FIXED), FIXED)
+		if done == nil then error("cannot mkdir " .. path .. ": " .. tostring(reason), 2) end
+	end
+
+	dir("/home/admin/bin")
+	put("/home/admin/bin/hello", "echo hi")
+	local hello = CeroSecOS.getNode(state, admin, "/home/admin/bin/hello")
+	hello.mode = 755
+	local HOMEBIN = "/bin:/home/admin/bin"
+	-- Not on the default PATH, and there on the PATH that names it.
+	eq("hello is not a command on the default PATH",
+		comp(state, admin, "hel").replacement, "help ")
+	eq("and is one on a PATH that names ~/bin",
+		compOn(state, admin, "hell", HOMEBIN).replacement, "hello ")
+	-- Both directories are walked, and the names come back in one sorted list
+	-- with no duplicate in it: `help` is in /bin and `hello` is in ~/bin.
+	eq("both directories are offered from",
+		table.concat(compOn(state, admin, "hel", HOMEBIN).candidates, " "), "hello help")
+	-- A file with no x on it is a file in the way and not a command, exactly as
+	-- it is to the lookup.
+	hello.mode = 644
+	eq("without x it is not offered", compOn(state, admin, "hell", HOMEBIN).replacement, nil)
+	hello.mode = 755
+	-- A link is judged on what it points AT, which is where x lives.
+	local made = CeroSecOS.createNode(state, admin, "/home/admin/bin/zap",
+		CeroSecOS.newLink("admin", "/home/admin/bin/hello", FIXED), FIXED)
+	check("the link was made", made ~= nil)
+	eq("a link to an executable completes",
+		compOn(state, admin, "za", HOMEBIN).replacement, "zap ")
+	-- And a link that points nowhere is nothing there.
+	CeroSecOS.removeNode(state, admin, "/home/admin/bin/hello", false, FIXED)
+	eq("a link to nothing is not a command",
+		compOn(state, admin, "za", HOMEBIN).replacement, nil)
+	put("/home/admin/bin/hello", "echo hi")
+	CeroSecOS.getNode(state, admin, "/home/admin/bin/hello").mode = 755
+
+	-- An empty field is the working directory, which is what a leading, trailing
+	-- or doubled colon has meant since PATH existed. So `./thing` needs no dot
+	-- when the cwd is on the PATH -- and a DIRECTORY of the cwd is still not a
+	-- command.
+	dir("/home/admin/own")
+	put("/home/admin/own.sh", "echo hi")
+	CeroSecOS.getNode(state, admin, "/home/admin/own.sh").mode = 755
+	eq("an empty field is the cwd", compOn(state, admin, "own.", "/bin:").replacement,
+		"own.sh ")
+	eq("and a directory there is still not a command",
+		compOn(state, admin, "own", "/bin:").replacement, "own.sh ")
+
+	-- A PATH entry that is not there, is not a directory, or is shut to the
+	-- account: none of the three stops the walk, and none of them is an error.
+	eq("a PATH entry that does not exist is walked past",
+		compOn(state, admin, "hell", "/nope:/home/admin/bin").replacement, "hello ")
+	eq("a PATH entry that is a file is walked past",
+		compOn(state, admin, "hell", "/etc/motd:/home/admin/bin").replacement, "hello ")
+	local shutBin = CeroSecOS.getNode(state, admin, "/home/admin/bin")
+	shutBin.mode = 300
+	eq("a directory it may not read offers nothing",
+		compOn(state, admin, "hell", HOMEBIN).replacement, nil)
+	eq("and the rest of the PATH still answers",
+		compOn(state, admin, "hel", HOMEBIN).replacement, "help ")
+	shutBin.mode = 755
+
+	-- The ceiling is the lookup's own: what is past MAX_PATH_DIRS is not looked
+	-- at, so a forged PATH off a save file cannot make Tab walk the disk. The
+	-- eight directories here are /bin repeated, with ~/bin at the ninth place.
+	local forged = {}
+	for i = 1, CeroSecOS.MAX_PATH_DIRS do forged[i] = "/bin" end
+	forged[#forged + 1] = "/home/admin/bin"
+	eq("the ninth directory of a forged PATH is not walked",
+		compOn(state, admin, "hell", table.concat(forged, ":")).replacement, nil)
 end
 
 --

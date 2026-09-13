@@ -1301,6 +1301,10 @@ gave anything else x in chapter 5.
   admin@ksp-04-11:~$ type hello
   hello is /home/admin/bin/hello
 
+Tab knows about it as well. Completion walks the same PATH the machine
+walks, so hel and Tab finishes hello once your bin is on the list, and
+does not before.
+
 The catch: that PATH line is forgotten the moment you log out. To have it
 every time, put it in a file called .profile in your own home, which the
 next chapter is about.
