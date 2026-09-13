@@ -89,7 +89,7 @@ Full player reference: [docs/PLAYERS.md](docs/PLAYERS.md).
   machine rather than to the shell — are listed in `CeroSecOS.DEVIATIONS` and
   declared on a page of the in-game Volume 1, *What is not Unix here*, which a
   bench checks against that list in both directions.
-- **Waves in worktrees.** Each wave of work happens in its own git worktree
+- **Changes in worktrees.** Each change of work happens in its own git worktree
   branched from a named base commit, is proven by `sh tests/run.sh` and never by
   starting the game, and merges only after a verifier reads the diff and Mathieu
   says `go`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
@@ -103,7 +103,7 @@ Three lessons this codebase paid for and does not intend to relearn:
   because `ScriptManager` resolves through the link before it matters. See
   "Install" above.
 - **`MeasureStringX` measures a glyph's ink, not its advance** — the manual
-  reader sized its monospaced column on the *ink* of `"M"` until a wave that
+  reader sized its monospaced column on the *ink* of `"M"` until a change that
   measured the gap between two of them instead, because `"M"` in the game's own
   font is a pixel wider in ink than the cell it is drawn in. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-manual-reader).
@@ -134,7 +134,7 @@ Three lessons this codebase paid for and does not intend to relearn:
   and the three things it can change.
 - [docs/TESTING.md](docs/TESTING.md) — `sh tests/run.sh`, what each suite proves,
   and the manual checklists for what no headless test can reach.
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — the wave process, repository
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — the change process, repository
   layout, and coding and security rules.
 - [docs/SECURITY.md](docs/SECURITY.md) — the password hash, what root can and
   cannot undo, and what the server guarantees against a hostile script.

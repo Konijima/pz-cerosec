@@ -36,7 +36,7 @@ function SCeroSecSystem:initSystem()
 	SGlobalObjectSystem.initSystem(self)
 
 	-- Fields of this system that are saved. It was nil -- nothing -- until this
-	-- wave: the world content needs ONE number that belongs to the save and not to
+	-- change: the world content needs ONE number that belongs to the save and not to
 	-- a machine, and this is where it goes.
 	--
 	--   seed   the per-save secret, sixteen hex digits (CeroSecContent).

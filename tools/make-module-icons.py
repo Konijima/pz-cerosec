@@ -23,7 +23,7 @@
 # apart by that lamp. On the Wiring Guide it is the whole cover: the book is
 # CeroSec Systems' own printing and it is printed in the colour of their screen.
 #
-# Mathieu may well replace all four by hand; this file is what makes them
+# The art may well be replaced by hand later; this file is what makes all four
 # reproducible in the meantime, and every colour is named once at the top so a
 # repaint is one line.
 #

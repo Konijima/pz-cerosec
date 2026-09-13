@@ -52,7 +52,7 @@ Every engine call this needs is `javap`'d on `projectzomboid.jar` 42.20.4:
 `BuildingDef.getX/getY/getX2/getY2`. The getters and not the public fields, which
 is what the game's own Lua does (`shared/Traps/TrapSystem.lua:12-17`).
 
-**Migration.** A net record written before this wave carries the *building* bytes
+**Migration.** A net record written before this change carries the *building* bytes
 and no exchange. It is rebuilt when the machine's square is loaded -- the two
 moments `CeroSecNet.identify` is called, switching on and opening a window -- and
 until then such a machine has an address and **no telephone at all**: an empty

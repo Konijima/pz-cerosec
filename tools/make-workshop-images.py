@@ -55,7 +55,7 @@ Where the sizes come from:
     item's own screenshots are the hosting.
 
 Adjustable crops. Each is a box in FRACTIONS of the source image, left, top,
-right, bottom, so it survives Mathieu redrawing the art at another size. A crop
+right, bottom, so it survives the art being redrawn at another size. A crop
 that is not square is squared off around its own centre before the resize, so
 none of the outputs is ever stretched.
 
@@ -459,7 +459,7 @@ def main():
     if missing:
         for p in missing:
             print("missing source art: %s" % p, file=sys.stderr)
-        print("Mathieu drops the two originals there; this script never draws them.",
+        print("Drop the two source images there; this script never draws them.",
               file=sys.stderr)
         return 1
 

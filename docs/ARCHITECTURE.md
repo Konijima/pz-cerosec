@@ -534,19 +534,19 @@ its own 64 — how many commands ship is no reason to mount more of the world.)
 
 The state also carries `sysv`, the *contents* it was built with (`CeroSecOS.SYSTEM_VERSION`
 is 17 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 2 today — see
-[Migration](#migration) below). A wave that adds a command adds a file to
+[Migration](#migration) below). A change that adds a command adds a file to
 `/bin`, so on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up —
 the standard executables that are missing, and `/etc/sudoers` when there is nothing at
 that name — and then moves the number up. At the current number it does nothing at
 all, which is what keeps root's `rm /bin/ls` a deletion and not a suggestion. As of
-this wave the top-up is generic: it walks `CeroSecOS.binNames()` against what is
+this change the top-up is generic: it walks `CeroSecOS.binNames()` against what is
 actually in `/bin` rather than hand-listing what each numbered version added, which
 is why versions 13, 14 and 15 (the telephone's and radio's own files,
 `/etc/callsign` included, and `/bin/arp`) have no numbered entry below — they were seeded through `ensureNet` /
 `ensureCallsign`, called unconditionally on every upgrade, the BIOS repair and a
 fresh machine alike, on the same "only where the name is free" terms. The
 version-by-version history below (8 through 12) is kept because each of those
-waves really did add exactly what it says; read it as history, not as a claim that
+changes really did add exactly what it says; read it as history, not as a claim that
 12 is current.
 `SYSTEM_VERSION` 12 seeds `/bin/mount`, `/bin/umount` and `/bin/newfs`, and the one
 directory a disk is mounted on: `/mnt`, root's at 755 and shipped empty. The device
@@ -648,7 +648,7 @@ was.
 
 ## Migration
 
-**A mod update never costs a player what he built**, and until this wave that was not
+**A mod update never costs a player what he built**, and until this change that was not
 true of the one number that mattered. `CeroSecOS.STATE_VERSION` is the *shape* of the
 state, and a version that was not the current one became a **fresh machine**:
 `SCeroSecObject:osState` replaced `self.os` wholesale, and `CeroSecOS.migrate` handed
@@ -727,7 +727,7 @@ An unreadable disk is never handed back blank: a machine that formatted a floppy
 could not read would be a machine that wipes somebody's work to make it fit.
 
 An absent number is the **oldest** shape and not version zero — the ids on a door
-written before this wave are the ids version 1 has — and the stamp is a thing the next
+written before this change are the ids version 1 has — and the stamp is a thing the next
 write adds. That matters for the modules in particular: a read happens on a client, and
 a client writing into a door's `modData` writes into nothing anybody else will ever
 see.
@@ -840,8 +840,8 @@ vanilla reads its *own* book in (`SurvivalGuide.lua:3-4,47`), and examples are
 the way the terminal measures its own — `MeasureStringX("MM") - MeasureStringX("M")`,
 the advance and not the ink of a glyph, because `MeasureStringX` counts the last
 character of a string as its ink `width` and `M` in `zomboidCode.fnt` is a pixel
-wider in ink (9) than the cell it is drawn in (8). It was the ink until the debts
-wave, which is 64 pixels of leaf per side that the text never filled. Everything
+wider in ink (9) than the cell it is drawn in (8). It was the ink until a later
+change, which is 64 pixels of leaf per side that the text never filled. Everything
 else the reader measures is *centring and wrapping* — a title, an edition, a page
 number, whether a body line fits the leaf — and is left on `MeasureStringX`
 deliberately: nothing there places a column, and the error is the side bearing of one
@@ -918,7 +918,7 @@ still file themselves with the books. `Icon = CeroSecManualUser` resolves to
 and looks it up as `media/textures/<that>.png`.
 
 `CeroSec.Manual`, the single book that shipped before the set, is **gone** —
-removed on the inventory wave. It was defined but not loot, and read it opened
+removed on the inventory work. It was defined but not loot, and read it opened
 volume one: two items with one content, which on an inventory menu is a fourth
 "Read the manual" nobody can tell from the first. A save that still holds a copy
 loses it, which is what dropping an item script entry costs and is acceptable

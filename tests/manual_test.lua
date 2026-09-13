@@ -922,9 +922,9 @@ do
 		end
 	end
 
-	-- Every chapter carries its "Classic mistake" box. It is the shape Mathieu
-	-- asked for, and a chapter that quietly loses one loses the part a beginner
-	-- reads first.
+	-- Every chapter carries its "Classic mistake" box. It is the shape the
+	-- design asks for, and a chapter that quietly loses one loses the part a
+	-- beginner reads first.
 	for ci = 1, #vol.chapters do
 		local ch = vol.chapters[ci]
 		local has = false

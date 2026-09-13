@@ -25,7 +25,7 @@
 --   two accounts        /etc/passwd, hashed, one of them an admin
 --   a home with work    files, and a script -- a script still RUNS afterwards
 --   a cron line         /var/spool/cron/<user>, which is a file with a schedule in it
---   a net record        with an exchange, which is the field the phone wave added
+--   a net record        with an exchange, which is the field the telephone work added
 --   a disk in the drive with a label and a file on it
 --   two door modules    and a phone book stamp -- item and object modData, which are
 --                       not the machine's state and have chains of their own
@@ -97,7 +97,7 @@ put("/home/admin/count.sh", "echo one\necho two\n")
 -- A cron line. The crontab is a file under /var/spool/cron, one per account.
 put(CeroSecOS.cronPath("admin"), "*/5 * * * * echo tick\n")
 
--- The wire, and the telephone exchange beside it -- the field the phone wave added
+-- The wire, and the telephone exchange beside it -- the field the telephone work added
 -- and topped up inline, which is why it is in here.
 if CeroSecOS.setNetRecord(state, 10, 4, 17, 555, "Coffee Shop") == nil then
 	error("cannot write the net record")

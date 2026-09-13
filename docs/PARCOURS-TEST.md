@@ -668,7 +668,7 @@ dessus.
 
 Les étapes 140 à 148 ne passent par aucun fichier : elles se tapent à l'invite,
 parce que l'invite **est** le langage de script depuis le palier 5a.1. C'est la
-capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
+capture d'écran prise en jeu qui les a fait écrire (`while: command not found`).
 
 127. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
      enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
@@ -1791,7 +1791,7 @@ un interrupteur dans la pièce.
      le mode (`used only`). Le bouton **Voir toutes les machines** montre tout :
      attendu, beaucoup plus de lignes — une par sprite d'ordinateur que le streamer
      a chargé depuis le début de la partie, éteinte, avec des colonnes vides (c'est
-     ce que Mathieu a vu : 44 lignes pour 6 machines qui comptent) — et `N` monte
+     ce qu'on a vu en jeu : 44 lignes pour 6 machines qui comptent) — et `N` monte
      jusqu'à `M`. Le bouton devient **Voir les utilisées** et revient en arrière. Le
      filtre ne change rien à la sélection ni aux autres onglets, et il ne demande
      rien au serveur (aucun délai). [ ]

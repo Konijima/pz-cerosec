@@ -147,7 +147,7 @@ end
 --
 -- Topping an older machine up
 --
--- A wave that adds a command adds a file to /bin, and a machine that was saved
+-- A change that adds a command adds a file to /bin, and a machine that was saved
 -- before it has neither. That is not damage -- the BIOS is for damage -- and it
 -- is not something to seed on every load either, because root deleting
 -- /bin/ls is root's right and must stay deleted.

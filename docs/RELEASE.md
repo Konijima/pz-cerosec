@@ -57,7 +57,7 @@ the files and the state shape are all unaffected.
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
 | 17 | Open the item's own page in a browser and check the nine media-repo images actually rendered | Steam item page |
-| 17a | **Mathieu confirms the credit line** for the reused assets, below | by hand |
+| 17a | **The maintainer confirms the credit line** for the reused assets, below | by hand |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
 ### Step 17a: the one line in the description nobody here can verify

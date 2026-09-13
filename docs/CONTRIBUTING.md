@@ -1,21 +1,21 @@
 # CeroSec — Contributing
 
-How a wave of work happens, how the repo is laid out, and the coding and
-security rules every wave is held to.
+How a change of work happens, how the repo is laid out, and the coding and
+security rules every change is held to.
 
-See also: [TESTING.md](TESTING.md) for what a wave has to pass before it merges,
+See also: [TESTING.md](TESTING.md) for what a change has to pass before it merges,
 [SECURITY.md](SECURITY.md) for the rules a reviewer checks first,
 [ARCHITECTURE.md](ARCHITECTURE.md) for the persistence rules a version bump obeys.
 
-## The wave process
+## The change process
 
-Work happens in waves, each in its own git worktree branched from a named base
+Work happens in changes, each in its own git worktree branched from a named base
 commit — never in the live mod folder directly, and never by resetting a shared
-branch. A wave that touches the game itself never starts the game to prove
+branch. A change that touches the game itself never starts the game to prove
 itself; `sh tests/run.sh` and the manual checklists in `docs/` are the proof.
-A verifier reads the diff before it merges to main, and a wave ends with a
+A verifier reads the diff before it merges to main, and a change ends with a
 short report — what changed, what `tests/run.sh` printed, any stale claim found
-along the way — and a `go` from Mathieu before the next wave starts on top of it.
+along the way — and a `go` from Mathieu before the next change starts on top of it.
 
 ## Repository layout
 
@@ -66,12 +66,12 @@ scripts are not, so the whole mod has to sit where it is loaded from.
   world at all. `tests/manual_test.lua` refuses a page that names an OS version
   of its own.
 
-- The manual is updated in the same wave as the command or file it documents:
+- The manual is updated in the same change as the command or file it documents:
   a page that describes a machine the code no longer builds is a stale page,
   and `tests/manual_test.lua` pins every usage line and every error string the
   engine can print somewhere in the union of the three volumes, so a change to
   the code is what breaks a page.
-- `SYSTEM_VERSION` bumps whenever a wave adds a file to `/bin` or seeds a new
+- `SYSTEM_VERSION` bumps whenever a change adds a file to `/bin` or seeds a new
   system file, and `sysv` (the *contents* a machine was built with) is what
   `CeroSecOS.upgradeSystem` tops an older machine up against on load — see
   [ARCHITECTURE.md](ARCHITECTURE.md#persistence). It puts in what is missing and
@@ -114,7 +114,7 @@ numbers exist precisely so that adding a command costs a machine nothing.
   where the world is answerable and is called from there — the address and the
   telephone exchange in `CeroSecNet.identify`, the devices under `/dev` in the
   scheduler.
-- **Read with a default, never with an assumption.** A field a wave added is absent
+- **Read with a default, never with an assumption.** A field a change added is absent
   on every machine saved before it, and absent must read as the old behaviour — not
   as `false`, unless `false` *is* the old behaviour. `node.group` and `node.mtime` are
   the worked examples (see [ARCHITECTURE.md](ARCHITECTURE.md#persistence)).
@@ -186,8 +186,8 @@ real folder again.
 
 ## The changelog
 
-Every wave that changes what a player sees adds its lines to `CHANGELOG.md`
+Every change that changes what a player sees adds its lines to `CHANGELOG.md`
 under **Unreleased**, in the words a subscriber reads. At release the section
 takes its version and date, `python3 tools/changelog-steam.py` prints it as
-Steam Change Notes, and Mathieu pastes that on the item. A wave without a
-changelog line is a wave nobody will know shipped.
+Steam Change Notes, and Mathieu pastes that on the item. A change without a
+changelog line is a change nobody will know shipped.

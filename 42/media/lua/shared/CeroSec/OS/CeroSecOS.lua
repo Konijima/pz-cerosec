@@ -34,7 +34,7 @@ CeroSecOS.STATE_VERSION = 2
 -- it tops an older machine up on the way in, once, without touching anything a
 -- player put there.
 --
--- Which of the two to move is the question every wave asks, and the answer is
+-- Which of the two to move is the question every change asks, and the answer is
 -- what the change IS: a file the machine ships in /bin or /etc is CONTENTS and
 -- moves sysv; a field of the state itself -- one renamed, one dropped, one whose
 -- meaning changed -- is the SHAPE and moves STATE_VERSION with a migration
@@ -114,10 +114,10 @@ CeroSecOS.MAX_FILE_BYTES = 4096  -- bytes in one file
 --
 -- 96, and the number that decides it is /bin's: the shipped commands were 64 of
 -- them at the ceiling of 64, which is a /bin with no room in it -- a command put
--- back by hand after an `rm` was refused as "directory full", and the next wave
+-- back by hand after an `rm` was refused as "directory full", and the next change
 -- that adds one could not seed it at all. So the ceiling is the shipped set plus
--- room for a third as many again: yours in /bin, and a wave's worth of honest
--- growth. The DISK is what bounds a machine (MAX_NODES, 64K); this bounds one
+-- room for a third as many again: yours in /bin, and room for honest growth.
+-- The DISK is what bounds a machine (MAX_NODES, 64K); this bounds one
 -- LISTING, and a listing of 96 short names is six screens of columns.
 CeroSecOS.MAX_DIR_ENTRIES = 96
 CeroSecOS.MAX_NODES = 512        -- nodes on the whole computer, root included

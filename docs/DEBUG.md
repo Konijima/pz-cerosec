@@ -44,8 +44,8 @@ beside it is the one vanilla puts in front of its own admin menu:
 
 Both are globals on the same class (javap: `public static java.lang.String
 getAccessLevel();`, `public static boolean isAccessLevel(java.lang.String);`).
-Adding it is one line in `CeroSec.debugAllowed()`, and it is not in this wave
-because nothing in this wave can be tested against a real server.
+Adding it is one line in `CeroSec.debugAllowed()`, and it is not in this change
+because nothing in this change can be tested against a real server.
 
 ## The door
 
@@ -179,7 +179,7 @@ is selected, because those are facts about a window.
    the game actually computes, and for a polygon or a polyline zone the two are
    different numbers. Telling them apart is the whole point of standing in a mall
    and asking which named zone is smaller than the building around it — which is
-   what the telephone wave's rules are going to be written against.
+   what the telephone work's rules are going to be written against.
 
    All of it is asked of the WORLD, so a machine whose chunk is away answers
    `premises: no square (the chunk is away)` and claims nothing else — the same

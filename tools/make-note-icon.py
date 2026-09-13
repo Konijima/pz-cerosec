@@ -19,8 +19,9 @@
 # four pixels tall, and a survivor reads the note off the item's NAME (the
 # inventory shows "Sticky note: root / falcon12"), not off its icon.
 #
-# Mathieu may well replace it by hand; this file is what makes it reproducible in
-# the meantime, and every colour is named once at the top so a repaint is one line.
+# The art may well be replaced by hand later; this file is what makes it
+# reproducible in the meantime, and every colour is named once at the top so a
+# repaint is one line.
 #
 # The contact sheet to judge it by -- 1x and 4x on a checkerboard -- is
 # tools/out/note-sheet.png, which is NOT in the repository (tools/out is scratch).

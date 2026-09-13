@@ -9,10 +9,9 @@
 // loads our files in the game's own order.
 //
 // Kahlua is reached by reflection on purpose: the jar's class files are
-// version 69 (Java 25) and the javac on this box is 21, so javac cannot see
-// those classes at compile time at all. The class runs under the game's own
-// jre64. Every reflected signature below is the one javap prints, quoted
-// where it is used.
+// version 69 (Java 25), so a javac older than that cannot see those classes at
+// compile time at all. The class runs under the game's own jre64. Every
+// reflected signature below is the one javap prints, quoted where it is used.
 //
 // Usage: java -cp <projectzomboid.jar>:tools/out KahluaRun <repo root>
 //        java -cp <projectzomboid.jar>:tools/out KahluaRun --eval <script.lua> <repo root>

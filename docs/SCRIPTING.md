@@ -58,8 +58,8 @@ is two characters. And one word is 1024 bytes (the script engine's ceiling); the
 typing line only takes 240 characters, so nothing typed reaches it and the editor is
 what fills a file to its own 4096. What `$(...)` catches is that word too and meets
 the same 1024 however many lines it caught — whole under it, `word too large` over
-it, and never quietly shortened. (It had a hundred-line ceiling as well until the
-debts wave, and that one cut a capture short *in silence*: `x=$(cat 150-lines)` came
+it, and never quietly shortened. (It had a hundred-line ceiling as well until a
+later change, and that one cut a capture short *in silence*: `x=$(cat 150-lines)` came
 back as a hundred of them with nothing said. One rule, and it refuses out loud.)
 
 **Tab completes.** In the first word of a line it offers command names — the files
