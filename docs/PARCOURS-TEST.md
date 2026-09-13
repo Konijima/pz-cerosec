@@ -754,6 +754,21 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      `echo [$x]` répond `[]` : une déconnexion emporte les variables. Vérifier
      aussi que `cd /etc` à l'invite déplace bien l'invite (`pwd`), alors que
      `cd /etc` **dans** un script ne la déplace pas. [ ]
+142a. **L'environnement, et ce qu'un script voit.** `edit voir.sh` avec une
+     seule ligne : `echo "x=[$x] w=[$w] HOME=[$HOME]"`, puis
+     `chmod 755 voir.sh`. Taper `x=hi`, `w=secret`, `./voir.sh` →
+     `x=[] w=[] HOME=[/home/admin]` : un script reçoit l'ENVIRONNEMENT (ce
+     qu'un login exporte), jamais les variables de l'invite. `export x` puis
+     `./voir.sh` → `x=[hi] w=[]`. `env` → trois lignes triées, `HOME=...`,
+     `PATH=/bin`, `x=hi`, et **pas** `w`. `export` tout court → les mêmes,
+     précédées de `export `. [ ]
+142b. **Ce qu'un script pose ne revient pas, sauf par le point.** `edit pose.sh`
+     avec `y=dedans`, puis `y=dehors`, `./pose.sh`, `echo [$y]` → `[dehors]`.
+     Ensuite `. ./pose.sh` puis `echo [$y]` → `[dedans]` : le point lit le
+     fichier DANS ce shell-ci. Vérifier aussi `. pose.sh` (sans `./`) →
+     `.: pose.sh: no such file` tant que le dossier n'est pas dans `PATH`, et
+     `chmod 600 pose.sh` → `. ./pose.sh` marche encore (le point veut `r`, pas
+     `x`) alors que `./pose.sh` répond `./pose.sh: permission denied`. [ ]
 143. Taper `while true; do echo y; done` sans `&` → les `y` arrivent en filet,
      il n'y a aucune invite en dessous, et **Échap** rend l'invite avec `^C`.
      Pendant ce temps, marcher et ouvrir une porte : le jeu ne saccade pas. [ ]

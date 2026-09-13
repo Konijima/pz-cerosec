@@ -1967,6 +1967,7 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.cwd = account.home or "/"
 	console.stack = nil
 	console.shvars = CeroSecOS.loginVars(account.home)
+	console.shexport = CeroSecOS.loginExported()
 	console.status = nil
 	console.loginAt = now or 0
 	-- No motd on an rsh (pty.quiet): rshd does not print one, login does, and an

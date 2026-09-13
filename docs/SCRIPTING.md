@@ -111,10 +111,34 @@ the numbers `history` prints are positions in the file as it stands, so they shi
 once the oldest drop off; and `!` is only an event when it is the whole line, there
 being no quoting rule for it here.
 
+**The environment, and what a script can see.** A shell holds variables; the
+**environment** is the subset of them that has been exported, and that is what a
+program it runs is handed — a copy of it, in a table of its own, so an assignment in
+a script never comes back. `export NAME[=value]...` marks a name (POSIX.2's
+`export`), `env` prints the set, and `. <file>` — the dot, sh's since the seventh
+edition — reads a file in the shell standing there instead of running it as a
+program, which is the one way a file's assignments land in the caller. `export` and
+`.` are words the shell **is**: nothing in `/bin` could reach a shell's variables.
+A login exports `PATH` and `HOME`, which is why a script has always been able to
+find a command, and `cron` hands a line the same two and nothing else.
+
+Two tables carry it: `job.vars` and `job.exported`, both by reference from the
+console (`console.shvars`, `console.shexport`) so `export` holds from one line to
+the next, and both copied for a subshell — a stage, an `&`. `job.exported` may be
+**nil**, and nil is not the empty set: it means a caller that said nothing about the
+environment, which reads as *all of them*. That is what a console saved before this
+build means, because until then a foreground script ran on the prompt's own table and
+saw everything on it; the next login writes the real set. `CeroSecOS.jobRun` is where
+the swap happens, and the frame it pushes carries the caller's tables back — the dot
+is the same call with `inPlace`, which keeps the caller's variables, arguments and
+all, and is still a level deeper so a file that dots itself meets
+`SCRIPT_DEPTH_MAX`.
+
 **`~/.profile`** runs at login, after the motd and before the first prompt, if the
 file exists and the account may read it. It runs as the shell's own job, which is
 the point: a variable it sets is set at the prompt and a `cd` it does is where you
-are standing. Its errors read like a script's (`.profile: line 2: ...`) and it
+are standing (it is read the way the dot reads a file, not run the way `sh` runs
+one). Its errors read like a script's (`.profile: line 2: ...`) and it
 respects every budget. The quirk that comes with that, named in the manual: a
 `.profile` with an endless loop in it leaves the account at a busy prompt with
 nothing to type at. It is not a locked machine — Escape is the `^C` — and then edit

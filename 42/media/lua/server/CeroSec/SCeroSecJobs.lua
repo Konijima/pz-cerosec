@@ -150,9 +150,14 @@ function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
 	if type(console.shvars) ~= "table" then
 		local account = CeroSecOS.getUser(state, system:sessionOf(console).user)
 		console.shvars = CeroSecOS.loginVars(account ~= nil and account.home or nil)
+		console.shexport = CeroSecOS.loginExported()
 	end
+	-- console.shexport may be nil, and nil is not "nothing is exported": it is a
+	-- console saved before this build, whose variables a script shared whole, so
+	-- the engine reads it as all of them (the variables section of
+	-- CeroSecOSVM.lua). It is passed as it stands for exactly that reason.
 	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
-		console.shvars, console.status, name)
+		console.shvars, console.status, name, console.shexport)
 	if job == nil then return nil, refusal end
 	return enrol(system, luaObject, console, job, false)
 end
@@ -167,6 +172,7 @@ function CeroSecJobs.start(system, luaObject, console, data, bg)
 		cmd = data.cmd,
 		bg = bg,
 		session = system:sessionOf(console),
+		exported = data.exported,
 		-- The variables the shell that asked for this job was holding, copied:
 		-- a statement behind an `&` is a subshell of it and starts with what it
 		-- had. The caller does the copying, because only the caller knows whose
@@ -415,6 +421,10 @@ local function cronFire(system, luaObject, console, state, user, home, entry, no
 		-- that worked at a prompt because ~/bin was on the PATH there does not
 		-- work here, and the manual says so.
 		vars = CeroSecOS.loginVars(home),
+		-- And they are an ENVIRONMENT: a cron line runs a script, and a script is
+		-- handed the exported names. PATH and HOME being exported is what makes a
+		-- crontab line able to find a command at all.
+		exported = CeroSecOS.loginExported(),
 	})
 	-- Where what it prints goes. Set before it is enrolled, because that is what
 	-- tells the book this is not the shell's job.
@@ -741,7 +751,11 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 				-- what a subshell gets on every Unix there has ever been, and
 				-- without it `./where.sh &` ran with PATH and nothing else -- not
 				-- even HOME -- while the same file in the foreground had the lot.
-				vars = CeroSecOS.copyVars(job.vars) }
+				vars = CeroSecOS.copyVars(job.vars),
+				-- And the marks with them: a subshell knows which of its names are
+				-- in the environment, or `./thing &` would hand that script nothing
+				-- while the same line without the `&` handed it PATH and HOME.
+				exported = CeroSecOS.copyExported(job.exported) }
 			job.spawn = nil
 			job.spawnLine = nil
 			-- What tells the caller this pass answered an "&". A line typed at

@@ -1145,6 +1145,9 @@ function SCeroSecSystem:startJob(luaObject, console, data)
 	-- The shell that asked is this console's, so what the job starts with is a
 	-- copy of that shell's variables: it is a subshell of the line that was typed.
 	if data.vars == nil then data.vars = CeroSecOS.copyVars(console.shvars) end
+	-- With the marks beside them: a subshell inherits which names are in the
+	-- environment, or a script started behind an `&` would export nothing.
+	if data.exported == nil then data.exported = CeroSecOS.copyExported(console.shexport) end
 	local job, reason = CeroSecJobs.start(self, luaObject, console, data, data.bg and true or false)
 	if job == nil then
 		CeroSec.consolePush(console, "sh: " .. tostring(reason))
@@ -1582,6 +1585,9 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- bare name is looked up in /bin, and HOME.
 			console.shvars = CeroSecOS.loginVars(
 				(CeroSecOS.getUser(state, session.user) or {}).home)
+			-- And which of them a program it runs is handed: a login exports what
+			-- it sets, so a script finds PATH and HOME without an export line.
+			console.shexport = CeroSecOS.loginExported()
 			console.status = nil
 			-- When, and on which line: what `who` prints and what `last` reads
 			-- back out of /var/log/wtmp. The console's own line is "console" --

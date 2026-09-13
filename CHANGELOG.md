@@ -8,6 +8,13 @@ date.
 
 ## Unreleased
 
+- A script now gets the **environment**, the way it does on a real Unix, and not
+  whatever you had typed at the prompt. `x=5` is yours; `export x` puts it where a
+  script can see it; `env` prints the set as it will be handed over. What a script
+  sets no longer leaks back out to your prompt either.
+- New: `export NAME[=value]`, `env`, and `.` — the dot, which reads a file **in the
+  shell you are standing in**, so a file of settings is worth keeping again. That is
+  how `.profile` is read.
 - The manual now says why `ln` here always wants `-s`: a 1993 `ln a b` made a second
   name for one and the same file, and this machine cannot hold one — a computer that
   can be picked up and carried is a disk copied name by name, so the second name

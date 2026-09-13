@@ -125,6 +125,9 @@ Commands:
 | `kill <id>` | call a pending `+N` off: it is a process, and that is how you stop one |
 | `halt` | `shutdown -h now` under its older name (root only) |
 | `reboot` | switch it off, wait three seconds, and switch it back on (root only); `shutdown -r now` is the long way |
+| `export NAME[=value]...` | put a name in the **environment**, which is the set of variables a program you run is handed. `x=5` is a variable of the shell's own and a script does not see it; `export x` puts it in, and the value follows the name afterwards. With no name at all it lists what is in the environment, one `export NAME=value` a line |
+| `env` | the environment as it will be handed over, `NAME=value` a line, sorted. Not the shell's variables: `env` shows what a script of yours can actually see |
+| `. <file>` | read the file **in this shell**, so what it sets is still set afterwards — the one way in, because `sh <file>` and `./<file>` run it as a program and a program is handed a copy. It wants `r` on the file and not `x`. This is how `.profile` is read. `source` is csh's and bash's word for it and is not here |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
@@ -148,12 +151,12 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 `sh: command not found`, and the BIOS repair brings it back.
 
 Which directories a bare name is looked for in is `PATH`, an ordinary shell
-variable. A login sets it to `/bin` and sets `HOME` beside it; a `.profile` widens
-it (`PATH=$PATH:$HOME/bin`); a script inherits the shell's, in the foreground and
-behind an `&` alike — a `&` is a subshell and starts with a copy of everything the
-shell held — while every line `cron` runs starts at `/bin` with `HOME` and nothing
-else, which is the oldest trap in `cron` and is why a crontab line spells the whole
-path. The walk is POSIX's: left to right, the first
+variable. A login sets it to `/bin`, sets `HOME` beside it and **exports** both; a
+`.profile` widens it (`PATH=$PATH:$HOME/bin`); a script is handed a **copy of the
+environment** — the exported names and nothing else the shell was holding — in the
+foreground and behind an `&` alike, while every line `cron` runs starts at `/bin`
+with `HOME` and nothing else, which is the oldest trap in `cron` and is why a
+crontab line spells the whole path. The walk is POSIX's: left to right, the first
 file with `x` on it for whoever typed it wins, and something in the way without `x`
 does not stop the search — found everywhere and runnable nowhere is
 `permission denied`, found nowhere at all is `command not found`. A file found in
@@ -172,10 +175,12 @@ Tab that lies about what the machine can do.
 
 Two kinds of word are **not** files, and could not be. The reserved words
 (`if then elif else fi for while until do done`) are grammar. The shell's own words
-(`cd exit fg jobs wait read shift break continue history`) change the shell itself
-or own what it started, which no separate program could do — `cd` cannot be a file in
-Unix and is not one here. The five of them that carry a description and a usage line
-(`cd`, `exit`, `fg`, `jobs`, `wait`) keep both, so `help` lists them and `man cd` answers;
+(`. cd export exit fg jobs wait read shift break continue history`) change the shell
+itself or own what it started, which no separate program could do — `cd` cannot be a
+file in Unix and is not one here, `export` marks the shell's own variables and `.`
+reads a file into it. The seven of them that carry a description and a usage line
+(`.`, `cd`, `export`, `exit`, `fg`, `jobs`, `wait`) keep both, so `help` lists them
+and `man export` answers;
 what they do not have is an executable to find, to delete or to `chmod`. `help` is
 the one command with a file that is run without it, so that a player who has just
 wiped the machine he is standing at can still ask what happened — and `exit`, being a

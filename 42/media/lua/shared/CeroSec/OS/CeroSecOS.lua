@@ -96,7 +96,14 @@ CeroSecOS.STATE_VERSION = 2
 --    here, and a TNC is a box on a serial line, so the box is reached with
 --    `cu -l /dev/radio0` and driven with the TNC-2's own commands (see the head of
 --    CeroSecOSRadio.lua). Nothing is seeded: cu is already on the disk.
-CeroSecOS.SYSTEM_VERSION = 17
+-- 18: the four things a 1993 sh and a 1993 desk had and this machine had not.
+--    /bin/env (the environment, listed), /bin/tar (a text container, so a home
+--    can be backed up onto a floppy) and /bin/at (one job at one time, run
+--    through cron's own machinery) seeded, plus /var/spool/at for the queue's
+--    sake. `export` and `.` are words the shell IS and have no file, like cd;
+--    `find -exec` is a flag on a command that was already there. Nothing is
+--    deleted.
+CeroSecOS.SYSTEM_VERSION = 18
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

@@ -1416,10 +1416,11 @@ One safe example, and it is the one from chapter 8:
 
 Log back in and echo $PATH has your own bin on it, and will every time.
 
-The trap, and we would rather you heard it here. .profile IS your login
-session, not a file it runs. So a line in it saying exit logs you straight
-back out, instantly, every time you log in, and the login: prompt is all
-you will ever see.
+The trap, and we would rather you heard it here. .profile is READ into your
+login session, not run as a program. So a line in it saying exit logs you
+straight back out, instantly, every time you log in, and the login: prompt
+is all you will ever see. (Reading a file into the shell you are
+standing in is what a full stop does: . thatfile.)
 
 Classic mistake. Exactly that. The way out is root, which can edit your
 .profile for you. Read what you put in that file twice.]],
@@ -1618,8 +1619,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2572  62964    4%
-  nodes         512     96    416   19%
+  hda         65536   2593  62943    4%
+  nodes         512     97    415   19%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 

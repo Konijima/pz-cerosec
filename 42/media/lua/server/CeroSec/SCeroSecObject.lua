@@ -650,6 +650,7 @@ function SCeroSecObject:prefill(state)
 			self.console.cwd = user.home or "/"
 			self.console.loginAt = live.at
 			self.console.shvars = CeroSecOS.loginVars(user.home)
+			self.console.shexport = CeroSecOS.loginExported()
 			CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
 				.. " was left logged in as " .. live.user)
 		end

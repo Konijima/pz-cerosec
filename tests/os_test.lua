@@ -338,7 +338,25 @@ do
 	end
 	local implemented = 0
 	for _, _ in pairs(CeroSecOS.commands) do implemented = implemented + 1 end
-	eq("every command is in /bin", implemented, described)
+	-- Every name in the table is runnable, and there are two ways of being so: a
+	-- function in CeroSecOS.commands, or a word the ENGINE runs inside the job
+	-- because it needs the job -- `.` reads a file into this shell and `export`
+	-- marks this shell's variables, and neither could be handed over to a command
+	-- that is given the session and nothing else. Those two still carry a
+	-- description and a usage line, because `help` lists them and `man` prints
+	-- them; what they have is no file and no entry in the table of commands.
+	local engineWords = 0
+	for name, _ in pairs(CeroSecOS.COMMAND_INFO) do
+		if CeroSecOS.commands[name] == nil then
+			check(name .. " is a word the engine runs in the job",
+				CeroSecOS.SHELL_BUILTINS[name] == true)
+			check(name .. " is a shell word, so it has no file",
+				CeroSecOS.isShellWord(name))
+			engineWords = engineWords + 1
+		end
+	end
+	eq("every command is in /bin or is a word of the shell",
+		implemented + engineWords, described)
 end
 
 --
@@ -6532,6 +6550,213 @@ do
 end
 
 --
+-- 28a. The environment: export, env, and the dot
+--
+-- A shell has variables of its own and an environment it hands on, and a script
+-- is handed the second. That was not true here: `sh file` and `./file` ran INSIDE
+-- the job that asked, on the very table the prompt was holding, so a script saw
+-- everything typed at the glass and an assignment in a file came back out of it.
+-- The debt was written down as "a foreground script shares the prompt's
+-- variables"; what a real sh does is hand a program a copy of the exported names
+-- and nothing else, and the dot command is the one door back in.
+--
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- A prompt with a login's environment on it, which is what the console gets:
+	-- PATH and HOME exported, and nothing else.
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+	admin.shexport = CeroSecOS.loginExported()
+	local function typed(line)
+		local vars = admin.shvars
+		local job = CeroSecOS.promptJob(state, admin, line, vars, admin.status, nil,
+			admin.shexport)
+		if job == nil then error("cannot type " .. line, 2) end
+		local out = {}
+		local env = { now = FIXED, nowMs = 1000, jobs = { job } }
+		local turns = 0
+		while not CeroSecOS.jobIsOver(job) and turns < 400 do
+			turns = turns + 1
+			CeroSecOS.jobStep(state, job, env, 200)
+			for i = 1, #job.out do out[#out + 1] = job.out[i] end
+			job.out = {}
+			if job.state == "waiting" or job.state == "sleeping" then break end
+		end
+		admin.status = job.status
+		return out, job
+	end
+	local function says(line, want, what)
+		local out = typed(line)
+		eq((what or line) .. ": line count", #out, #want)
+		for i = 1, #want do eq((what or line) .. ": line " .. i, out[i], want[i]) end
+		return out
+	end
+
+	script(state, "/home/admin/show.sh", 'echo "x is [$x] HOME is [$HOME]"')
+	script(state, "/home/admin/set.sh", "y=inside\necho set")
+
+	-- 1. A variable of the shell's own is not in the environment, so a script
+	-- does not see it. This is the debt, stated the other way round.
+	says("x=hi", {})
+	says("./show.sh", { "x is [] HOME is [/home/admin]" })
+	says("sh show.sh", { "x is [] HOME is [/home/admin]" })
+	-- 2. export puts it in, and then it is.
+	says("export x", {})
+	says("./show.sh", { "x is [hi] HOME is [/home/admin]" })
+	-- The value follows the variable afterwards: export marks a NAME, it does not
+	-- photograph what was in it.
+	says("x=changed", {})
+	says("./show.sh", { "x is [changed] HOME is [/home/admin]" })
+	-- 3. export NAME=value does both in one line.
+	says("export z=deep", {})
+	says('echo "[$z]"', { "[deep]" })
+	script(state, "/home/admin/showz.sh", 'echo "z is [$z]"')
+	says("./showz.sh", { "z is [deep]" })
+
+	-- 4. What a script sets never comes back.
+	says("y=outside", {})
+	says("./set.sh", { "set" })
+	says('echo "[$y]"', { "[outside]" })
+	-- On ONE line, which is the same job: the shell that ran the file is itself
+	-- again the moment the file is over, and that is the table the rest of the line
+	-- reads. Two lines would not say it -- the console holds its own table and a
+	-- job that never gave it back would still leave the prompt looking right.
+	says('./set.sh; echo "[$y]"', { "set", "[outside]" })
+	-- 5. And the dot is the one way in: the same file, read in this shell.
+	says(". ./set.sh", { "set" })
+	says('echo "[$y]"', { "[inside]" })
+	-- The dot keeps the shell's arguments as well, which is what "in place" means:
+	-- a prompt has none, and a file read at it does not get a set of its own.
+	script(state, "/home/admin/args.sh", 'echo "[$#][$1]"')
+	says(". ./args.sh", { "[0][]" })
+
+	-- 6. env prints the environment, sorted, one NAME=value a line -- and it is
+	-- the environment and not the variables: `y` was set at the prompt and is not
+	-- on it, `x` and `z` were exported and are.
+	says("env", { "HOME=/home/admin", "PATH=/bin", "x=changed", "z=deep" })
+	-- 7. export with nothing after it lists the same set in the shape you would
+	-- type back.
+	says("export", {
+		"export HOME=/home/admin", "export PATH=/bin", "export x=changed",
+		"export z=deep" })
+
+	-- 8. A name that is not one ends the line, the way `read` does: export is one
+	-- of sh's special built-ins and a special built-in handed nonsense does not
+	-- carry on.
+	says("export 1x", { "sh: export: not a name" })
+	says("export x y=2 3z", { "sh: export: not a name" })
+	eq("and what it had already done, it had done", admin.shvars.y, "2")
+
+	-- 9. The dot's own refusals. A file that is not there, a directory, a file it
+	-- may not read, no operand at all -- and it wants r and NOT x, because
+	-- nothing executes it.
+	says(". /home/admin/nope", { ".: /home/admin/nope: no such file" })
+	says(". /etc", { ".: /etc: is a directory" })
+	says(".", { ".: usage: . <file>" })
+	says(". a b", { ".: usage: . <file>" })
+	local noX = script(state, "/home/admin/noexec.sh", "echo read anyway")
+	noX.mode = 600
+	says(". ./noexec.sh", { "read anyway" })
+	badAt(state, admin, "./noexec.sh", "./noexec.sh: permission denied")
+	noX.mode = 000
+	says(". ./noexec.sh", { ".: ./noexec.sh: permission denied" })
+	noX.mode = 644
+	-- A file the shell cannot parse is named and nothing of it runs.
+	script(state, "/home/admin/broken.sh", "echo one\nwhile true; do echo x")
+	says(". ./broken.sh", { "broken.sh: line 2: syntax error: missing 'done'" })
+
+	-- 10. The dot looks on PATH when the name has no "/" in it, which is what
+	-- POSIX.2 says of it, and tries the name as it was typed when PATH has
+	-- nothing.
+	says("mkdir /home/admin/bin", {})
+	script(state, "/home/admin/bin/onpath.sh", "w=frompath")
+	says(". onpath.sh", { ".: onpath.sh: no such file" }, "not on PATH yet")
+	says("PATH=$PATH:$HOME/bin", {})
+	says(". onpath.sh", {})
+	says('echo "[$w]"', { "[frompath]" })
+	-- A name with a slash in it is a path and is never looked up.
+	says(". ./set.sh", { "set" })
+end
+
+-- The environment has a ceiling of its own, because a name may be MARKED without
+-- being set: the set beside the variables is not bounded by the variables, and a
+-- loop of exports would otherwise be an unbounded table one door along from the
+-- one that already meets MAX_VARS.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local run = runScript(state, admin,
+		"i=0\nwhile [ $i -lt 200 ]; do export n$i; i=$((i + 1)); done\necho done")
+	eq("the loop of exports was stopped", run.job.state, "error")
+	eq("by the ceiling on how many names a shell may hold", run.out[#run.out],
+		"bench.sh: line 2: too many variables")
+	-- And at the ceiling and not somewhere near it: MAX_VARS names, and the
+	-- sixty-fifth is the one that was refused.
+	local marked = 0
+	for _, on in pairs(run.job.exported or {}) do
+		if on == true then marked = marked + 1 end
+	end
+	eq("exactly MAX_VARS of them are marked (" .. marked .. ")", marked,
+		CeroSecOS.MAX_VARS)
+end
+
+-- A file that dots itself is a file with no end to it, and it meets the same
+-- ceiling a file that runs itself meets: the depth is counted for the dot too.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	script(state, "/home/admin/loop.sh", "echo round\n. /home/admin/loop.sh")
+	local run = runScript(state, admin, ". /home/admin/loop.sh")
+	eq("it ran to the ceiling and stopped", run.job.state, "error")
+	eq("and said which ceiling", run.out[#run.out],
+		"loop.sh: line 2: too deeply nested")
+	-- SCRIPT_DEPTH_MAX levels of it, each having printed its line once: the count
+	-- is what says the depth was counted at all, because a dot that never
+	-- incremented it would have looped until the pass ceiling instead.
+	local said = 0
+	for i = 1, #run.out do
+		if run.out[i] == "round" then said = said + 1 end
+	end
+	eq("one line a level (" .. said .. ")", said, CeroSecOS.SCRIPT_DEPTH_MAX - 1)
+end
+
+-- A shell that was handed no environment at all reads as one whose variables are
+-- ALL in it. That is what a machine saved before this build means -- a script
+-- there shared the prompt's table whole -- and it is what keeps a console off an
+-- older save running the scripts it was running before the update.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	script(state, "/home/admin/show.sh", 'echo "[$old]"')
+	local vars = { PATH = CeroSecOS.DEFAULT_PATH, old = "kept" }
+	local job = CeroSecOS.promptJob(state, admin, "./show.sh", vars, nil, nil, nil)
+	check("the line became a job", job ~= nil)
+	local env = { now = FIXED, nowMs = 1000, jobs = { job } }
+	local out = {}
+	for _ = 1, 100 do
+		if CeroSecOS.jobIsOver(job) then break end
+		CeroSecOS.jobStep(state, job, env, 200)
+		for i = 1, #job.out do out[#out + 1] = job.out[i] end
+		job.out = {}
+	end
+	eq("a variable of an older console reaches the script", out[1], "[kept]")
+	-- And the moment one name is exported, the set is the set: the others go with
+	-- it rather than being dropped, or an `export` would be a way of taking every
+	-- other variable out of the environment.
+	local job2 = CeroSecOS.promptJob(state, admin,
+		"export PATH\n./show.sh", vars, nil, nil, nil)
+	local out2 = {}
+	for _ = 1, 100 do
+		if CeroSecOS.jobIsOver(job2) then break end
+		CeroSecOS.jobStep(state, job2, env, 200)
+		for i = 1, #job2.out do out2[#out2 + 1] = job2.out[i] end
+		job2.out = {}
+	end
+	eq("and an export does not empty it", out2[1], "[kept]")
+end
+
+--
 -- 29. Scripts: what a program costs, in steps
 --
 -- The exact count for a fixed script. A step is a unit of COST: one for
@@ -7342,13 +7567,8 @@ do
 	-- help lists the files, and then the words that are not files.
 	local helpLines = okAt(state, admin, "help", nil, env)
 	local whole = table.concat(helpLines, "\n")
-	check("help names the shell's own words",
-		string.find(whole, CeroSecOS.HELP_RESERVED, 1, true) ~= nil)
-	check("and its state builtins",
-		string.find(whole, CeroSecOS.HELP_BUILTINS, 1, true) ~= nil)
 	check("under a heading that says they have no file",
 		string.find(whole, "shell words (no file in " .. CeroSecOS.BIN_PATH .. "):", 1, true) ~= nil)
-	check("and the block names cd", string.find(whole, "cd", 1, true) ~= nil)
 	-- The listing ABOVE that heading is /bin itself, so a shell word is never a
 	-- line of it -- it is named in the block below and nowhere else.
 	local heading = nil
@@ -7356,6 +7576,26 @@ do
 		if string.find(helpLines[k], "shell words", 1, true) ~= nil then heading = k end
 	end
 	check("the block has a heading", heading ~= nil)
+	-- Every word of both lists is in that block, asked word by word rather than
+	-- as one string: the two lists together are longer than sixty columns since
+	-- `export` and `.` joined them, so help WRAPS them, and a line that does not
+	-- fit is a line the screen cuts. Counted as well as found, so a block that
+	-- lost a word cannot be green for having the rest.
+	local block = " "
+	for k = heading + 1, #helpLines do block = block .. helpLines[k] .. " " end
+	local said = 0
+	for word in string.gmatch(CeroSecOS.HELP_RESERVED .. " " .. CeroSecOS.HELP_BUILTINS,
+			"[^ ]+") do
+		check("help names the shell word " .. word,
+			string.find(block, " " .. word .. " ", 1, true) ~= nil)
+		said = said + 1
+	end
+	check("and there are two dozen of them (" .. said .. ")", said >= 23)
+	check("and the block names cd", string.find(block, " cd ", 1, true) ~= nil)
+	for k = heading + 1, #helpLines do
+		check("help's shell-word line " .. k .. " fits the screen (" ..
+			#helpLines[k] .. ")", #helpLines[k] <= CeroSecOS.COLS)
+	end
 	for i = 1, #shellWords do
 		eq("no line of the table of files describes " .. shellWords[i], (function()
 			for k = 1, heading - 1 do
@@ -7382,7 +7622,7 @@ do
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
 	local WANT = "[ arp cat chgrp chmod chown clear cp crontab cu cut date dev df"
-		.. " echo edit false find grep groupadd groupdel groups halt head"
+		.. " echo edit env false find grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
 		.. " mv newfs passwd ping"
 		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"

@@ -163,11 +163,12 @@ end
 -- The job whose turn it is, left on the machine's env by the walker below.
 --
 -- A command is handed the env and never the job it runs in -- a command is not
--- allowed to reach into the shell -- and two of them nevertheless have to know
--- where they stand in the job book (`sh` and `wait`, which ask whether the
--- machine has room for what they would start). This is the one thing they may
--- ask, and nil is the honest answer for a command run straight off runArgs by a
--- bench or by the server, with no job around it at all.
+-- allowed to reach into the shell -- and three of them nevertheless have to know
+-- where they stand: `sh` and `wait` ask whether the machine has room for what
+-- they would start, and `env` asks what the ENVIRONMENT is, which is a fact about
+-- the shell that started it and about nothing else. All three only read. This is
+-- the one thing they may ask, and nil is the honest answer for a command run
+-- straight off runArgs by a bench or by the server, with no job around it at all.
 function CeroSecOS.jobOf(env)
 	if type(env) ~= "table" or type(env.job) ~= "table" then return nil end
 	return env.job
@@ -405,7 +406,25 @@ local function errLines(job, lines)
 end
 
 --
--- Variables
+-- Variables, and which of them are the ENVIRONMENT
+--
+-- A shell has two things and they are not the same thing: the variables it
+-- holds, and the environment it hands to a program it runs. `x=5` makes a
+-- variable of its own; `export x` puts that name in the environment; and a
+-- program started from there is handed the environment and never the rest of
+-- them. That is sh's oldest distinction and the reason `export` exists at all.
+--
+-- So a job carries two tables. job.vars is name -> value, as it always was;
+-- job.exported is the SET of names that are in the environment. Both travel the
+-- way the prompt's variables travel -- by reference, so `export PATH` on one
+-- line is still in force on the next -- and both are copied for a subshell.
+--
+-- job.exported may be nil, and nil is not the empty set: it means a caller that
+-- said nothing about the environment, and the honest reading of that is that
+-- everything it holds is in it. That is what a machine saved before this build
+-- has to read as, because before it a script shared the prompt's variables
+-- whole; and it is what a bench calling promptJob with a bare table is. A fresh
+-- login says which ones out loud (CeroSecOS.loginExported).
 --
 
 local function getVar(job, name)
@@ -433,6 +452,72 @@ local function setVar(job, name, value)
 	return nil
 end
 
+-- Mark a name as being in the environment. nil, or the reason it may not be.
+-- The set is made on demand, because a job that never exports anything is a job
+-- whose environment is what it was handed.
+--
+-- Bounded by MAX_VARS like the variables themselves: a name may be marked
+-- without being set, so the set is not bounded by the table beside it, and
+-- `while true; do export ...; done` would otherwise be a string that grows for
+-- ever one door along from the one that already meets this ceiling.
+local function markExported(job, name)
+	if job.exported == nil then
+		-- The names it already holds were already in it -- that is what nil
+		-- meant -- so they go in with this one, or an `export` would be a way of
+		-- taking every other variable OUT of the environment.
+		local set = {}
+		for held, _ in pairs(job.vars) do set[held] = true end
+		job.exported = set
+	end
+	if job.exported[name] ~= true then
+		local n = 0
+		for _, on in pairs(job.exported) do
+			if on == true then n = n + 1 end
+		end
+		if n >= CeroSecOS.MAX_VARS then return "too many variables" end
+	end
+	job.exported[name] = true
+	return nil
+end
+
+-- The environment a job hands a PROGRAM it runs: a new table with the exported
+-- names in it and nothing else. What a child does with it is its own -- this is
+-- a copy, and an assignment in a script never comes back.
+function CeroSecOS.exportedVars(vars, exported)
+	local out = {}
+	if type(vars) ~= "table" then return out end
+	for name, value in pairs(vars) do
+		if exported == nil or exported[name] == true then out[name] = value end
+	end
+	return out
+end
+
+-- The same set, copied, for a job that is handed one: a child's `export` marks
+-- the child's environment and not its parent's.
+function CeroSecOS.copyExported(exported)
+	if type(exported) ~= "table" then return nil end
+	local out = {}
+	for name, on in pairs(exported) do
+		if on == true then out[name] = true end
+	end
+	return out
+end
+
+-- Every exported name it holds, sorted: what `env` prints and what `export`
+-- with nothing after it lists. Sorted because pairs is not ordered and a
+-- listing that came back in a different order every time could not be a page of
+-- the manual -- ash walks its own hash table here, which is an order nothing
+-- could print twice.
+function CeroSecOS.envNames(vars, exported)
+	local names = {}
+	if type(vars) ~= "table" then return names end
+	for name, _ in pairs(vars) do
+		if exported == nil or exported[name] == true then names[#names + 1] = name end
+	end
+	table.sort(names)
+	return names
+end
+
 --
 -- The job
 --
@@ -450,13 +535,18 @@ function CeroSecOS.copyVars(vars)
 	return out
 end
 
--- opts: prog, args (args[1] is $1), name, cmd, session, id, bg, vars, status.
+-- opts: prog, args (args[1] is $1), name, cmd, session, id, bg, vars, exported,
+-- status.
 --
 -- vars, when given, is taken BY REFERENCE and is the caller's to keep: it is
 -- how the prompt has an environment that outlives one line. Anything that is a
 -- subshell of another hands a COPY in (CeroSecOS.copyVars above), and what is
 -- handed nothing at all -- a cron line -- starts with the default below, which
 -- is cron's own trap and is the one place it is still right.
+--
+-- exported travels the same way and means the same thing it means on the job
+-- (the head of the variables section): the set of names that are in the
+-- ENVIRONMENT, or nil for a caller that said nothing, which reads as all of them.
 function CeroSecOS.newJob(opts)
 	local args = {}
 	if type(opts.args) == "table" then
@@ -464,15 +554,21 @@ function CeroSecOS.newJob(opts)
 	end
 	local session = opts.session or CeroSecOS.rootSession()
 	local vars, nvars = opts.vars, 0
+	local exported = opts.exported
+	if type(exported) ~= "table" then exported = nil end
 	if type(vars) ~= "table" then
 		-- The initial environment of a shell nobody handed one: PATH, and the
 		-- default at that. That is the CRON line's case -- cron hands in the
 		-- account's own loginVars and nothing of whatever was typed at a prompt,
 		-- which is the classic cron trap and is why the manual says to write the
-		-- whole path in a crontab line. A script, foreground or behind an `&`, is
-		-- a subshell and is handed a copy of its parent's instead.
+		-- whole path in a crontab line. A script run by hand is handed a copy of
+		-- its parent's ENVIRONMENT instead, and a subshell -- a stage, an `&` -- a
+		-- copy of everything its parent held.
 		vars = { PATH = CeroSecOS.DEFAULT_PATH }
 		nvars = 1
+		-- And it is an environment and not a shell variable: a machine with no
+		-- PATH in front of a cron line could not run a command at all.
+		if exported == nil then exported = { PATH = true } end
 	else
 		for _, _ in pairs(vars) do nvars = nvars + 1 end
 	end
@@ -488,6 +584,7 @@ function CeroSecOS.newJob(opts)
 		args = args,
 		vars = vars,
 		nvars = nvars,
+		exported = exported,
 		-- A session of the job's OWN. `cd` inside a script moves the script and
 		-- not the console it was started from, the way a real shell's child
 		-- cannot move its parent.
@@ -576,10 +673,24 @@ local function popFrame(job)
 		-- Newlines become spaces, the way every shell folds a substitution.
 		job.capval = trim(table.concat(buf or {}, " "))
 		job.hasCap = true
-	elseif f.oldArgs ~= nil then
-		job.args = f.oldArgs
-		job.name = f.oldName
+	elseif f.deep then
+		-- A file that has finished: the shell that ran it comes back exactly as it
+		-- was. `deep` and not "it kept some arguments", because the dot command
+		-- keeps the caller's arguments AND its variables and is still one level
+		-- deeper -- a file that dots itself has to meet the depth ceiling.
 		job.depth = job.depth - 1
+		-- The name is put back whichever kind of file it was: a refusal inside a
+		-- dotted file names THAT file and the line in it, because that is where
+		-- the line is, and the shell that dotted it is itself again afterwards.
+		if f.oldName ~= nil then job.name = f.oldName end
+		if f.oldArgs ~= nil then job.args = f.oldArgs end
+		if f.oldVars ~= nil then
+			job.vars = f.oldVars
+			job.nvars = f.oldNvars
+			-- nil is a value here: a shell that said nothing about its environment
+			-- gets that back, and not the set the child was handed.
+			job.exported = f.oldExported
+		end
 	end
 end
 
@@ -1047,6 +1158,92 @@ builtins.shift = function(job, args)
 	local kept = {}
 	for i = n + 1, #job.args do kept[#kept + 1] = job.args[i] end
 	job.args = kept
+	return 0
+end
+
+-- export: which of this shell's variables a program it runs is handed.
+--
+-- `export NAME` marks a name, `export NAME=value` sets it and marks it in one
+-- line, and several names may be marked at once -- POSIX.2's export, and sh's
+-- since the seventh edition. It has to be the shell's own word for the reason
+-- `cd` has to be: a program cannot reach into the shell that ran it, so nothing
+-- in /bin could mark anything.
+--
+-- With no operand it LISTS, in the re-inputtable form POSIX.2 asks of it:
+-- `export NAME=value`, one a line, sorted (pairs is not an order and a listing
+-- nothing could print twice is not a listing). `env` prints the same set the
+-- other way, without the word in front.
+--
+-- A name that is not one is fatal, the way it is for `read` and for the same
+-- reason: export is one of sh's special built-ins, and a special built-in that
+-- is handed nonsense ends a script rather than carrying on with a variable it
+-- could not have.
+builtins.export = function(job, args)
+	if #args == 1 then
+		local names = CeroSecOS.envNames(job.vars, job.exported)
+		for i = 1, #names do
+			writeText(job, "export " .. names[i] .. "=" .. job.vars[names[i]] .. "\n")
+		end
+		return 0
+	end
+	for i = 2, #args do
+		local a = args[i]
+		local eq = string.find(a, "=", 1, true)
+		local name = a
+		if eq ~= nil then name = string.sub(a, 1, eq - 1) end
+		if not CeroSecOS.isVarName(name) then return nil, "export: not a name" end
+		if eq ~= nil then
+			local reason = setVar(job, name, string.sub(a, eq + 1))
+			if reason ~= nil then return nil, reason end
+		end
+		local reason = markExported(job, name)
+		if reason ~= nil then return nil, reason end
+	end
+	return 0
+end
+
+-- The dot command: where a shell reads a file INTO ITSELF.
+--
+-- `. file` is not `sh file`. A program is handed a copy of the environment and
+-- what it sets dies with it, so the dot is the one way a file's assignments land
+-- in the shell that asked for them -- which is what ~/.profile is read with, and
+-- the whole reason a PATH line in a file is worth writing. sh's since the
+-- seventh edition, POSIX.2's "dot"; `source` is csh's word for it, came to bash
+-- from there, and is not on this machine.
+--
+-- The file is looked for on PATH when the name has no "/" in it, which is what
+-- POSIX.2 says of it, and then tried as it was typed -- so `. setup` and
+-- `. ./setup` both read the file in front of you, and neither needs x on it:
+-- nothing here EXECUTES the file, the shell reads it.
+--
+-- No operand after the file. The 1993 form takes none; the arguments form is
+-- later.
+builtins["."] = function(job, args, state, env)
+	if #args ~= 2 then
+		writeText(job, ".: usage: " .. (CeroSecOS.commandUsage(".") or ". <file>") .. "\n")
+		return 1
+	end
+	local path = args[2]
+	if string.find(path, "/", 1, true) == nil then
+		local found = CeroSecOS.lookupPath(state, job.session, path,
+			CeroSecOS.pathValue(job.vars))
+		if found ~= nil then path = found end
+	end
+	local text, refusal = CeroSecOS.readScript(state, job.session, ".", path, false)
+	if text == nil then
+		writeText(job, refusal .. "\n")
+		return 1
+	end
+	local prog, reason, where = CeroSecOS.parseScript(text)
+	if prog == nil then
+		writeText(job, CeroSecOS.scriptError(CeroSecOS.baseNameOf(path), reason, where) .. "\n")
+		return 1
+	end
+	-- In place: the caller's arguments, the caller's variables, and everything
+	-- the file sets left behind in them.
+	if not CeroSecOS.jobRun(job, prog, job.args, CeroSecOS.baseNameOf(path), true) then
+		return nil
+	end
 	return 0
 end
 
@@ -2744,20 +2941,51 @@ end
 -- A nested script: `sh` inside a job runs in the SAME job, one level deeper.
 -- No second job is made, because a script that runs itself would otherwise be
 -- a machine full of jobs in four lines.
-function CeroSecOS.jobRun(job, prog, args, name)
+--
+-- inPlace is the DOT command: `. file` reads the file in the shell that is
+-- standing there, so it keeps that shell's arguments and -- the whole point of
+-- it -- its variables, and what the file sets is still set afterwards. It is
+-- still a level deeper, because a file that dots itself must meet the ceiling
+-- like a file that runs itself.
+--
+-- Everything else is a PROGRAM, and a program is handed a COPY of the
+-- environment: the exported names and their values, and nothing else the shell
+-- was holding. What it sets never comes back, which is the rule the dot command
+-- exists to get round -- on this machine as on the one it is copied from.
+function CeroSecOS.jobRun(job, prog, args, name, inPlace)
 	if job.depth >= CeroSecOS.SCRIPT_DEPTH_MAX then
 		jobError(job, "too deeply nested")
 		return false
 	end
 	job.depth = job.depth + 1
-	local kept = {}
-	for i = 1, #args do kept[i] = args[i] end
-	if not pushFrame(job, { k = "block", prog = prog, i = 1,
-			oldArgs = job.args, oldName = job.name }) then
+	local frame = { k = "block", prog = prog, i = 1, deep = true,
+		oldName = job.name }
+	local kept = nil
+	if not inPlace then
+		kept = {}
+		for i = 1, #args do kept[i] = args[i] end
+		frame.oldArgs = job.args
+		frame.oldVars = job.vars
+		frame.oldNvars = job.nvars
+		frame.oldExported = job.exported
+	end
+	if not pushFrame(job, frame) then
+		job.depth = job.depth - 1
 		return false
 	end
-	job.args = kept
 	job.name = name
+	if not inPlace then
+		job.args = kept
+		local child = CeroSecOS.exportedVars(job.vars, job.exported)
+		local n = 0
+		for _, _ in pairs(child) do n = n + 1 end
+		job.vars = child
+		job.nvars = n
+		-- Every variable a child was handed is in the child's environment, so
+		-- what it passes on again is what it was given plus what it exports. A
+		-- COPY of the set, because a script's `export` is the script's.
+		job.exported = CeroSecOS.copyExported(job.exported)
+	end
 	return true
 end
 

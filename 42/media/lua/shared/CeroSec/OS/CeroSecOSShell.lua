@@ -636,6 +636,12 @@ end
 --
 CeroSecOS.COMMAND_INFO = {
 	["["]    = { desc = "evaluate an expression", usage = "[ <expression> ]" },
+	-- The dot, which is a word the SHELL is for the plainest reason there is: it
+	-- reads a file into the shell standing there, and nothing a program did could
+	-- have that effect. sh's since the seventh edition. `source` is csh's name for
+	-- it and is not here; the manual's deviations page is where a name that is not
+	-- here is said to be missing, and this one never was.
+	["."]    = { desc = "read a file in this shell", usage = ". <file>", shell = true },
 	-- Two forms and no flag that CHANGES a line, because an Ethernet address here
 	-- is derived and stored nowhere: see the head of arp in CeroSecOSNet.lua.
 	arp      = { desc = "show the cards on the wire",
@@ -669,6 +675,17 @@ CeroSecOS.COMMAND_INFO = {
 	df       = { desc = "report disk space", usage = "df" },
 	echo     = { desc = "print its arguments", usage = "echo [text...]" },
 	edit     = { desc = "edit a file", usage = "edit <file>" },
+	-- POSIX's env with neither of its two other halves: no -i, and no
+	-- NAME=value in front of a utility to run. Both of those are about the
+	-- environment a PROGRAM is handed, and the shell already has the second --
+	-- `NAME=value command` -- while the commands on this machine read nothing
+	-- out of an environment but PATH. So what is here is the listing, which is
+	-- the half a survivor types, and the manual page says the other two are not.
+	env      = { desc = "print the environment", usage = "env" },
+	-- A word the shell IS, like cd: it marks which of the SHELL's own variables a
+	-- program it runs is handed, and nothing in /bin could reach them.
+	export   = { desc = "put a variable in the environment",
+		usage = "export NAME[=value]...", shell = true },
 	exit     = { desc = "log out", usage = "exit", shell = true },
 	fg       = { desc = "bring a background job to the front",
 		usage = "fg [%<n>|<id>]", shell = true },
@@ -1000,7 +1017,8 @@ CeroSecOS.BUILTIN_FILES = {
 -- The words that are the shell's own, for `help` to list under the table of
 -- files. Reserved words first, then the builtins that change the shell.
 CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
-CeroSecOS.HELP_BUILTINS = "cd exit fg jobs wait read shift break continue history type"
+CeroSecOS.HELP_BUILTINS =
+	"cd . export exit fg jobs wait read shift break continue history type"
 
 -- The same words as a set, derived from the line `help` prints rather than
 -- listed a second time beside it: a word `help` says is the shell's own is one
@@ -1042,14 +1060,59 @@ commands.help = function(state, session, args, env)
 	-- above, and after it, because the table IS /bin: a name in the block below
 	-- has no executable to find, to delete or to chmod.
 	out[#out + 1] = "shell words (no file in " .. CeroSecOS.BIN_PATH .. "):"
-	out[#out + 1] = " " .. CeroSecOS.HELP_RESERVED
-	out[#out + 1] = " " .. CeroSecOS.HELP_BUILTINS
+	-- Wrapped at the screen's width rather than trusted to fit it. The list grew
+	-- past sixty columns the day `export` and `.` joined it, and a line that does
+	-- not fit is a line the screen CUTS -- so the words are laid out here, where
+	-- their number is known, instead of being counted by hand every time one is
+	-- added.
+	local words = {}
+	for word in string.gmatch(CeroSecOS.HELP_RESERVED .. " " .. CeroSecOS.HELP_BUILTINS,
+			"[^ ]+") do
+		words[#words + 1] = word
+	end
+	local line = ""
+	for i = 1, #words do
+		if line == "" then
+			line = " " .. words[i]
+		elseif #line + 1 + #words[i] <= CeroSecOS.COLS then
+			line = line .. " " .. words[i]
+		else
+			out[#out + 1] = line
+			line = " " .. words[i]
+		end
+	end
+	if line ~= "" then out[#out + 1] = line end
 	return true, out
 end
 
 commands.pwd = function(state, session, args, env)
 	if #args > 1 then return usage("pwd") end
 	return true, { session.cwd }
+end
+
+-- env: the environment, one NAME=value a line.
+--
+-- The environment is not the shell's variables: it is the ones that have been
+-- exported, which is the set a program run from that shell is handed (see the
+-- variables section of CeroSecOSVM.lua). So `x=5; env` does not show x and
+-- `export x; env` does, which is the whole of what this command is for -- it
+-- answers the question "what will a script of mine actually see".
+--
+-- A real env(1) prints its own environment, which it was handed at exec. This one
+-- asks the shell for it through the one door a command has (CeroSecOS.jobOf) --
+-- there is no exec here to carry a copy in -- and nil is an empty environment,
+-- which is the honest answer for an env run with no shell around it at all.
+--
+-- Sorted, because pairs is not an order: a listing that came back differently
+-- every time could not be a page of the manual.
+commands.env = function(state, session, args, env)
+	if #args > 1 then return usage("env") end
+	local job = CeroSecOS.jobOf(env)
+	if job == nil then return true, {} end
+	local names = CeroSecOS.envNames(job.vars, job.exported)
+	local out = {}
+	for i = 1, #names do out[#out + 1] = names[i] .. "=" .. job.vars[names[i]] end
+	return true, out
 end
 
 commands.whoami = function(state, session, args, env)
@@ -4248,6 +4311,20 @@ function CeroSecOS.loginVars(home)
 	return vars
 end
 
+-- And which of them are the ENVIRONMENT, which is the other half of the same
+-- fact: a login exports what it sets, so a script started from that shell is
+-- handed PATH and HOME and no `export` line is needed to make either work.
+-- Anything typed afterwards is the shell's own until somebody exports it.
+--
+-- A set, and a fresh one every time, for the reason above. It goes with the
+-- table from loginVars everywhere one is made -- the console at a login, a pty,
+-- the BIOS repair -- and where it is missing the engine reads "everything it
+-- holds" (see the variables section of CeroSecOSVM.lua), which is what a machine
+-- saved before there was an environment on it has to mean.
+function CeroSecOS.loginExported()
+	return { PATH = true, HOME = true }
+end
+
 -- Where a name is found, walked left to right. absolute path, or nil plus the
 -- bare reason -- the caller puts the name in front of it, so the two lines a
 -- player ever sees are
@@ -4455,7 +4532,12 @@ end
 -- login profile -- rather than a line somebody typed. It changes two things
 -- and nothing else: what a parse error and a run-time error call themselves,
 -- and what `ps` shows.
-function CeroSecOS.promptJob(state, session, line, vars, status, name)
+-- exported is the console's own set of exported names, by reference for the same
+-- reason vars is: `export x` on one line holds on the next. A caller with none
+-- is a shell that has not said which of its variables are the environment, and
+-- the engine reads that as all of them (see the variables section of
+-- CeroSecOSVM.lua) -- which is what a machine saved before this build means.
+function CeroSecOS.promptJob(state, session, line, vars, status, name, exported)
 	if type(state) ~= "table" or state.fs == nil then return nil, "no filesystem" end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return nil, "not logged in"
@@ -4475,7 +4557,7 @@ function CeroSecOS.promptJob(state, session, line, vars, status, name)
 	if name ~= nil then cmd = name end
 	local job = CeroSecOS.newJob({
 		prog = prog, name = name or "sh", cmd = cmd, session = session,
-		vars = vars, status = status,
+		vars = vars, status = status, exported = exported,
 	})
 	-- What makes it the PROMPT's job rather than a script's: `cd` moves the
 	-- console, `exit` logs out instead of ending the script, `edit` may open on

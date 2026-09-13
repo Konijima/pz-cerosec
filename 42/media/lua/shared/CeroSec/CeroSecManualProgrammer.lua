@@ -104,6 +104,31 @@ once more, to see what the machine does with a bad line. It says the same
 thing it says at the prompt, carries on to the next line, and does not
 throw the rest of your file away.]],
 
+[[Reading a file into the shell you are standing in.
+
+sh hello.sh runs the file as a program, and a program cannot change the
+shell that ran it: it is handed a copy of the environment, and everything
+it sets dies with it. Most of the time that is what you want.
+
+When it is not, there is one word for it, and the word is a full stop:
+
+  admin@ksp-04-11:~$ echo "x=5" > set.sh
+  admin@ksp-04-11:~$ sh set.sh
+  admin@ksp-04-11:~$ echo [$x]
+  []
+  admin@ksp-04-11:~$ . set.sh
+  admin@ksp-04-11:~$ echo [$x]
+  [5]
+
+Read it as "read this file here". The file is not run as a program at all;
+its lines are read by the shell in front of you, as though you had typed
+them, so what it sets is still set afterwards. It needs no x on it, only
+r, for the same reason.
+
+That is how .profile is read, and it is the reason a file of settings is
+worth keeping. The word in bash and in csh is source; there is no source
+on this machine, and there was none in 1993 either.]],
+
 [[Running it as a command of its own.
 
 Typing sh in front of a file forever is tiresome, and there is a better
@@ -393,12 +418,40 @@ a script that works for whoever runs it and one that works for you. Get
 into the habit.
 
 Now the fact that catches everybody, and this book would rather tell you
-on page one of the chapter. A script is not you. It gets its own
-variables, and the ones it starts with are not the ones at your prompt --
-only PATH, set to /bin. A script run in the foreground borrows your
-prompt's, which hides this completely until the day you put an ampersand
-on the end of the line. Chapter 9 shows it happening. Set what you need at
-the top of your own scripts and you will never meet it.]],
+on page one of the chapter. A script is not you. It is handed a COPY of
+your ENVIRONMENT -- PATH, HOME, and whatever you have exported -- and
+nothing else you have set, and what it sets never comes back to your
+prompt. The next page is about that word, export, and it is the whole of
+the difference between a variable of yours and a variable your scripts can
+see. Set what you need at the top of your own scripts and you will never
+meet the trouble.]],
+
+[[The environment: what a script of yours can see.
+
+Two different things live at your prompt. There are your VARIABLES, which
+are yours; and there is the ENVIRONMENT, which is the small set of them
+that is handed to every program you run. export is the word that moves a
+name from the first into the second.
+
+  admin@ksp-04-11:~$ x=5
+  admin@ksp-04-11:~$ echo 'echo [$x]' > show.sh
+  admin@ksp-04-11:~$ sh show.sh
+  []
+  admin@ksp-04-11:~$ export x
+  admin@ksp-04-11:~$ sh show.sh
+  [5]
+
+export NAME=value does both in one line. env prints the environment as it
+will be handed over, and export with nothing after it prints the same
+thing in the shape you would type back:
+
+  admin@ksp-04-11:~$ env
+  HOME=/home/admin
+  PATH=/bin
+  x=5
+
+A login exports PATH and HOME for you, which is why a script has always
+been able to find a command.]],
 
 [[Two ceilings on them.
 
@@ -1358,19 +1411,19 @@ The first one is not found at four in the morning and the second one is.
 Write the whole path in a crontab line, always.
 
 It does get HOME, and starts in your own directory. What it does not get
-is anything you set at a prompt: cron is the only thing on this machine
-with an environment of its own.
+is your environment: cron builds one of its own with those two names in it
+and nothing else, so a name you exported at a prompt this morning is not
+there at four tomorrow.
 
-  admin@ksp-04-11:~$ x=hi
+  admin@ksp-04-11:~$ export x=hi
   admin@ksp-04-11:~$ ./where.sh
-  HOME is [/home/admin] x is [hi]
+  x is [hi]
   admin@ksp-04-11:~$ ./where.sh &
   [1] 44
-  HOME is [/home/admin] x is [hi]
+  x is [hi]
 
-Same file, same answer: an ampersand is a subshell, and a subshell starts
-with a copy of everything the shell held. A copy, so what it sets after
-that is its own and dies with it.]],
+An ampersand is a subshell and carries your environment with it. A crontab
+line is not a subshell of anything: set what a script needs inside it.]],
 
 [[Where a cron job's words go.
 
@@ -1452,7 +1505,7 @@ It is where the PATH line from chapter 1 goes to become permanent:
   admin@ksp-04-11:~$ echo $PATH
   /bin:/home/admin/bin
 
-It runs AS your login session and not as a file the session ran, which is
+It is READ, the way a dot reads a file, and not run as a program: that is
 why a variable it sets is set at your prompt and a cd it does is where you
 are standing. Its mistakes read like any script's.
 
@@ -1865,14 +1918,33 @@ Quoting: double quotes hold a word together and let a dollar sign work;
 single quotes let nothing through; a backslash takes the meaning off one
 character. A pound sign starts a comment.
 
-Eleven words the shell runs itself, with no file in /bin needed:
+Thirteen words the shell runs itself, with no file in /bin needed:
 
-  break cd continue exit fg history
-  jobs read shift type wait
+  . break cd continue export exit fg
+  history jobs read shift type wait
 
-Everything else you type is a FILE, found by walking PATH: echo, printf,
-test, sleep and date are files in /bin, which is why ls /bin is the honest
-list of what this machine can do.]],
+Everything else you type is a FILE, found by walking PATH: echo, printf
+and test are files in /bin, which is why ls /bin is the honest list of
+what this machine can do.]],
+
+[[The three shapes about the environment, and the dot.
+
+  export NAME[=value]...
+      put one or more names in the environment, with a
+      value or with the one they already have. With no
+      name at all it lists what is in it, one a line,
+      in the shape you would type back
+  env
+      the environment as it will be handed over,
+      NAME=value, one a line, sorted
+  . <file>
+      read the file in THIS shell, so what it sets is
+      still set afterwards. It wants r on the file and
+      not x, because nothing runs it
+
+sh <file> is the other half of the last one: that runs the file as a
+program, which is handed a copy of the environment and can change nothing
+of yours. Chapter 1 has the pair side by side and chapter 3 has export.]],
 
 [[What the shell says before anything runs. A script that meets one never
 becomes a job: not one line of it happens.

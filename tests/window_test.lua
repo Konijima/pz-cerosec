@@ -3978,35 +3978,55 @@ do
 	check("and its end is announced", bench.painted("[1] done"))
 end
 
--- A statement behind an `&` is a SUBSHELL: it starts with a copy of the
--- variables the shell that wrote it was holding.
+-- What a script of yours can see, end to end, at a real glass: the ENVIRONMENT
+-- and not the shell's variables.
 --
--- It used to start with PATH and nothing else at all -- not even HOME -- so the
--- same file answered differently in the foreground and behind the prompt, and
--- Volume 3 had a page showing the gap as though it were a rule. cron is the
--- only thing on this machine that starts with an environment of its own, and
--- that one is real: it is the oldest trap in Unix and the book keeps it.
+-- A script is a program, and a program is handed a copy of the exported names --
+-- PATH and HOME from the login, and whatever `export` has added. It used to be
+-- handed the prompt's own table BY REFERENCE in the foreground, so `x=hi` was
+-- visible inside a file nobody had exported anything to and an assignment inside
+-- a file came back out to the prompt. The engine's half is pinned in os_test;
+-- what is asked here is that the console's set is the set that travels.
 do
 	local bench = newBench()
 	bench.login("admin")
-	bench.script("/home/admin/where.sh", 'echo "HOME is [$HOME] x is [$x]"\n')
+	bench.script("/home/admin/where.sh",
+		'echo "HOME is [$HOME] x is [$x] w is [$w]"\n')
 	bench.script("/home/admin/set.sh", "y=inside\n")
 
+	-- w is set and never exported, and it is what the `&` case below is for: a
+	-- subshell that lost the MARKS and kept the values would hand a script
+	-- everything, and every assertion about an exported name would still pass.
 	bench.enter("x=hi")
+	bench.enter("w=secret")
 	bench.enter("./where.sh")
 	bench.tick(3)
 	bench.frame()
-	check("in the foreground it has the shell's variables",
-		bench.painted("HOME is [/home/admin] x is [hi]"))
+	check("a login's HOME is in the environment and reaches the script",
+		bench.painted("HOME is [/home/admin] x is [] w is []"))
 
-	bench.enter("./where.sh &")
+	bench.enter("export x")
+	bench.enter("./where.sh")
+	bench.tick(3)
+	bench.frame()
+	check("and an exported variable reaches it too",
+		bench.painted("HOME is [/home/admin] x is [hi] w is []"))
+
+	-- Behind the prompt, the same answer: the `&` makes a subshell, and a
+	-- subshell carries the marks as well as the values.
+	--
+	-- A script of its OWN, and a line that says which run wrote it: the glass
+	-- keeps what has scrolled past, so an assertion about the same words would be
+	-- satisfied by the foreground run above and could never go red.
+	bench.script("/home/admin/bgwhere.sh",
+		'echo "bg HOME is [$HOME] x is [$x] w is [$w]"\n')
+	bench.enter("./bgwhere.sh &")
 	bench.tick(4)
 	bench.frame()
-	check("and behind the prompt it has the same ones",
-		bench.painted("HOME is [/home/admin] x is [hi]"))
+	check("behind the prompt it is the same environment",
+		bench.painted("bg HOME is [/home/admin] x is [hi] w is []"))
 
-	-- A COPY, and not the shell's own table: what a job behind the prompt sets is
-	-- its own and dies with it, which is what a subshell is.
+	-- And nothing a script sets comes back, foreground or background.
 	bench.enter("y=outside")
 	bench.enter("./set.sh &")
 	bench.tick(4)
@@ -4015,6 +4035,36 @@ do
 	bench.frame()
 	check("what the background job set did not come back", bench.painted("[outside]"))
 	check("and certainly not that", not bench.painted("[inside]"))
+	bench.enter("./set.sh")
+	bench.tick(3)
+	bench.enter("echo [$y]")
+	bench.tick(2)
+	bench.frame()
+	check("nor what the foreground one set", bench.painted("[outside]"))
+
+	-- And a script started by a command that asked a QUESTION first: the password
+	-- comes back, the continuation hands back a job order, and the shell that
+	-- asked runs it one level deeper -- so the environment has to survive the
+	-- question as well as the line. Its own file again, so the assertion cannot be
+	-- satisfied by a line further up the glass.
+	bench.script("/home/admin/suwhere.sh",
+		'echo "su HOME is [$HOME] x is [$x] w is [$w]"\n')
+	bench.enter("sudo sh /home/admin/suwhere.sh")
+	bench.frame()
+	eq("sudo asks first", bench.window.prompt, "[sudo] password for admin: ")
+	bench.enter("")
+	bench.tick(4)
+	bench.frame()
+	check("a job made off a continuation is handed the same environment",
+		bench.painted("su HOME is [/home/admin] x is [hi] w is []"))
+
+	-- The one way in is the dot, which reads the file in the shell standing there.
+	bench.enter(". ./set.sh")
+	bench.tick(3)
+	bench.enter("echo [$y]")
+	bench.tick(2)
+	bench.frame()
+	check("the dot reads it into this shell", bench.painted("[inside]"))
 end
 
 -- ps, jobs and kill, from the prompt, on a job that is running.

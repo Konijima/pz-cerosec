@@ -831,6 +831,8 @@ function CeroSec.consoleLogout(console)
 	-- The shell's variables go with the session that set them. Somebody else
 	-- walking up to a logged-out machine gets a shell, not the last one's.
 	console.shvars = nil
+	-- And the note of which of them were the environment, for the same reason.
+	console.shexport = nil
 	-- Who the glass would have come back to through su, with it: an account
 	-- logs out of the machine and not out of its own last switch.
 	console.stack = nil
@@ -976,6 +978,27 @@ function CeroSec.repairConsole(console)
 			end
 		end
 		if n > 0 then out.shvars = kept end
+	end
+	-- And which of them are the ENVIRONMENT: the set `export` marks, kept the same
+	-- way and bounded by the same ceiling. A name may be marked without being set,
+	-- so this is not bounded by the table above.
+	--
+	-- Absent is NOT the empty set. A console saved before there was an environment
+	-- on this machine has no such key, and its variables were shared with every
+	-- script whole -- so the engine reads a missing set as "all of them" (the
+	-- variables section of CeroSecOSVM.lua) and nothing is put here to say
+	-- otherwise. The next login writes the real set.
+	local shexport = console.shexport
+	if type(shexport) == "table" then
+		local kept, n = {}, 0
+		for name, on in pairs(shexport) do
+			if on == true and type(name) == "string" and CeroSecOS.isVarName(name)
+					and n < CeroSecOS.MAX_VARS then
+				kept[name] = true
+				n = n + 1
+			end
+		end
+		if n > 0 then out.shexport = kept end
 	end
 	-- $?, as the prompt last came back with it.
 	if type(console.status) == "number" then out.status = math.floor(console.status) end
