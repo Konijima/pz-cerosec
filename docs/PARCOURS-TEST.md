@@ -1,5 +1,10 @@
 # Parcours de test CeroSec
 
+> **In English:** this is the in-game test checklist — every step that has to be
+> walked on the glass, in order, because no headless suite can reach it. It is
+> written in French because that is the maintainer's working language; an English
+> translation is very welcome as its own pull request.
+
 Voir aussi [TESTING.md](TESTING.md) pour les suites headless (`sh tests/run.sh`)
 et les rungs [TEST-rung1.md](TEST-rung1.md), [TEST-rung2.md](TEST-rung2.md) et
 [TEST-rung4.md](TEST-rung4.md).
