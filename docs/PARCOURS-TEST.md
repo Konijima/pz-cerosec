@@ -2384,8 +2384,10 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
 
 300. **Une disquette BACKUP raconte quelqu'un.** Trouver ou faire apparaître
      `BACKUP`, la monter, lire les quatre fichiers : la dernière entrée du
-     journal est datée du **8 juillet** et `FAMILY.TXT` dit lui-même que ses
-     numéros ne sont pas ceux de votre exchange. [ ]
+     journal est datée du **8 juillet** — dans les trois versions — et
+     `FAMILY.TXT` dit lui-même que ses numéros ne sont pas ceux de votre
+     exchange. Aucune accolade nulle part : les prénoms du journal et des
+     lettres sont de vrais prénoms. [ ]
 
 301. **La disquette WARDIALER dit pourquoi il n'y en a pas.** Monter la
      disquette `WARDIALER`, lire `README.TXT` : il dit qu'un script ne peut pas
@@ -2394,6 +2396,55 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      s'exécute **jamais**. Puis mettre la même ligne dans un crontab
      (`crontab -e`, `* * * * * cu 418-0100`) et attendre une minute :
      `mail` montre `cu: not a terminal`. [ ]
+
+301b. **Une disquette LEDGER et le total de la semaine.** Trouver ou faire
+     apparaître `LEDGER` (2 sur 100), l'insérer, `mount /dev/fd0 /mnt`.
+     - `cat /mnt/README.TXT` nomme `SALES.TXT`, `SUPPLIERS.TXT` et `total.sh`,
+       et dit que tout est en **cents** ;
+     - `cat /mnt/SALES.TXT` → sept lignes, une par jour, trois colonnes
+       séparées par des deux-points ;
+     - `cd /mnt` puis `sh /mnt/total.sh SALES.TXT 3` → la ligne
+       `column 3 of SALES.TXT adds up to 158244`. C'est la semaine en cents,
+       soit 1582,44 $ : le faire à la main sur les sept lignes pour vérifier ;
+     - `sh /mnt/total.sh SALES.TXT 2` → `346`, les tickets ;
+     - le script n'est PAS copié sur la machine : il tourne depuis `/mnt`. [ ]
+
+301c. **Une disquette PERSONAL, et sa dernière lettre est datée.** Trouver ou
+     faire apparaître `PERSONAL` (2 sur 100), la monter.
+     - `cat /mnt/README.TXT` nomme les cinq fichiers et rien d'autre ;
+     - `cat /mnt/LETTERS.TXT` → trois lettres jamais envoyées, chacune avec sa
+       date, et la **dernière** est datée du **8 ou du 9 juillet** ;
+     - `cat /mnt/RECIPE.TXT`, `cat /mnt/POEM.TXT`, `cat /mnt/TODO.TXT`,
+       `cat /mnt/NUMBERS.TXT` se lisent et aucun ne montre d'accolade
+       (`{owner}`, `{staff1}`) : les prénoms sont dedans pour de vrai. [ ]
+
+301d. **Une disquette RADIO LOG à côté de `MHEARD`.** Trouver ou faire
+     apparaître `RADIO LOG` (1 sur 100), la monter sur une machine **qui a un
+     poste radio câblé** (`ls /dev` montre `radio0`).
+     - `cat /mnt/HEARD.LOG` → une douzaine de lignes : jour, heure, indicatif ;
+     - `cat /mnt/MYCALL.TXT` → un indicatif, et `cat /mnt/NETS.TXT` → l'horaire
+       des nets ;
+     - `cu -l /dev/radio0` puis `MHEARD` dans la boîte → la liste des stations
+       entendues **depuis l'allumage**, donc plus courte que le fichier, et sur
+       une machine qui vient de démarrer elle est vide. C'est ce que le
+       `README.TXT` de la disquette annonce. Échap pour récupérer l'écran ;
+     - chaque indicatif du fichier est de la forme qu'une station d'ici porte :
+       `K`, `N` ou `W`, une lettre en option, le chiffre **4**, puis deux ou
+       trois lettres. [ ]
+
+301e. **La même étiquette, trois histoires.** Faire apparaître en mode débug
+     **six** disquettes d'un coup et regarder les étiquettes : sur six tirages,
+     deux disquettes de la même étiquette narrative (`BACKUP`, `LEDGER`,
+     `PERSONAL`, `RADIO LOG`) sortent souvent. En monter deux de la **même**
+     étiquette l'une après l'autre et comparer les fichiers : environ deux fois
+     sur trois ce ne sont pas les mêmes textes et pas les mêmes prénoms. Une
+     `UTILITIES` et une `GAMES`, elles, sont identiques mot pour mot. [ ]
+
+301f. **Le choix ne se refait jamais.** Suite de l'étape 301e : noter deux
+     phrases d'une disquette narrative, `umount /mnt`, éjecter, **sauvegarder et
+     recharger la partie**, remettre la même disquette dans une **autre**
+     machine → mot pour mot le même texte et les mêmes prénoms. La disquette ne
+     se réécrit jamais sous le joueur. [ ]
 
 ## AC. Un bureau, deux personnes, et la semaine d'avant (3e partie)
 

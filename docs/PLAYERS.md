@@ -1234,7 +1234,7 @@ files on the disk are and how to run them.
     admin@acct-04-11:~$ mount /dev/fd0 /mnt
     admin@acct-04-11:~$ cat /mnt/README.TXT
 
-There are six labels:
+There are nine labels:
 
 | | |
 | --- | --- |
@@ -1242,8 +1242,17 @@ There are six labels:
 | **BBS LIST** | telephone numbers of boards somebody used to call, and callsigns he used to hear. See below |
 | **WARDIALER** | no wardialer. `cu` hands the screen to whatever answers and the script that called it stops there, so the disk carries the *method* instead: how to turn a range, what each modem word means, and a program to write down what happened |
 | **GAMES** | guess the number, hangman, and a five-room adventure. All three short enough to read |
-| **BACKUP** | somebody's home directory, saved on the 8th of July: a diary in four entries, two letters that were never sent, and the family's telephone numbers |
+| **BACKUP** | somebody's home directory, saved on the 8th of July: a diary, the letters that were never sent, and the family's telephone numbers |
 | **CEROSEC OS 1.0 DIST** | the distribution media the machine was sold with. How the firmware puts the system back, six manual pages in `MAN/`, and three programs |
+| **LEDGER** | a small shop's books, kept in whole cents because the machine adds whole numbers: a line a day, who the shop buys from, and `total.sh` to add a column up. `sh /mnt/total.sh /mnt/SALES.TXT 3` is the week |
+| **PERSONAL** | somebody's own disk, and none of it is any use to you: letters never sent, a list of things he was going to do, his mother's recipe, a poem he asks you not to laugh at, and four telephone numbers |
+| **RADIO LOG** | a ham club's packet log — every station the machine heard over the week before, when the nets are, and the station's own callsign — with a README on `cu -l /dev/radio0` and why `MHEARD` inside the box says less than the file does |
+
+**The four disks that are somebody's own writing are written three ways.** `BACKUP`,
+`LEDGER`, `PERSONAL` and `RADIO LOG` each have three tellings with three casts of
+people in them, decided when the disk was made and fixed from then on, so the one in
+the drawer across town is another person's week. The vendor's disks and the programs
+are the same on every copy, which is what a manual page and a program are.
 
 **The BBS list is printed where you first use it.** The numbers on that disk are the
 numbers of *your* exchange — they come out of the same county directory the phone

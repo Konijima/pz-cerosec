@@ -34,6 +34,20 @@ date.
   military post.
 - Five kinds of premises gained a file for the member of staff who had none, so
   no desk comes up empty.
+- Three new floppy labels to find. **LEDGER** is a small shop's books, kept in
+  whole cents: a line a day, who the shop buys from, and the program that adds a
+  column up. **PERSONAL** is somebody's own disk and none of it is any use to you:
+  letters he never sent, a list of things he was going to do, his mother's recipe,
+  a poem he asks you not to laugh at. **RADIO LOG** is a ham club's packet log,
+  every station the machine heard over the week before the outbreak, the schedule
+  of the nets, and the station's own callsign.
+- The disks that are somebody's own writing are written three ways now, with three
+  different sets of people in them. The BACKUP diary you find across town is
+  another person's week, not the same one again. Which telling a disk carries is
+  decided when the disk is made and never changes afterwards, through any number
+  of reloads.
+- A box of floppies is as blank as it always was: the three new labels were paid
+  for out of the shares the six already had, not out of the blank ones.
 - Fixed: the military post's hourly door check named a program that was never
   put on the machine, so it mailed `not found` once an hour instead of checking
   the door.
