@@ -929,6 +929,12 @@ en observant le jeu réel, pas par un banc de test.
      Chaque étage d'un tube est un sous-shell, donc la variable meurt avec lui.
      Puis `x=$(echo bonjour)` et `echo $x` → `bonjour`. Dire si le premier
      résultat surprend. [ ]
+169a. **Une capture trop grosse ne salit pas l'écran.** Fabriquer un gros
+     fichier : `edit gros.txt`, coller une quarantaine de lignes de trente
+     caractères (ou `cat /var/log/messages > gros.txt` si le fichier dépasse
+     mille octets), puis `x=$(cat gros.txt)` → **une seule** ligne
+     `sh: word too large`, et rien du contenu du fichier ne défile derrière
+     elle. `echo [$x]` → `[]`. [ ]
 170. `crontab -l` → `no crontab for admin`. Puis `crontab -e`, écrire
      `60 * * * * echo test` et sauver avec Tab : l'écran doit répondre
      `Cannot save: "/var/spool/cron/admin":1: bad minute` et **rien** ne doit

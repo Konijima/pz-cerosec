@@ -61,6 +61,13 @@ the same 1024 however many lines it caught — whole under it, `word too large` 
 it, and never quietly shortened. (It had a hundred-line ceiling as well until a
 later change, and that one cut a capture short *in silence*: `x=$(cat 150-lines)` came
 back as a hundred of them with nothing said. One rule, and it refuses out loud.)
+That refusal is now the **whole** of what reaches the glass. The ceiling is met at the
+write — it has to be, because a capture whose program never ends never reaches the
+substitution to be measured there — so the job dies in the middle of a command's
+output, and the lines that command had already handed over used to arrive behind the
+refusal with nothing catching them: a file's contents spilled across the middle of the
+line being built. A job that has ended writes nowhere, which is one test in `outLine`
+and what a dead process does.
 
 **Tab completes.** In the first word of a line it offers command names — every
 executable the account may run in the directories `PATH` names, walked left to right

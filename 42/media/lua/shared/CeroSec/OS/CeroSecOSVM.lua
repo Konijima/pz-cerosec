@@ -251,6 +251,22 @@ local function captureTooLarge(job)
 end
 
 local function outLine(job, text)
+	-- A job that has ENDED writes nowhere. One door, because a dead process has
+	-- one: whatever was still being handed over when it died is not something
+	-- anybody is owed.
+	--
+	-- The line that made this a rule: a capture past the word ceiling. `x=$(cat
+	-- big)` drops the captures, says "word too large" and stops the job -- and the
+	-- rest of the lines `cat` had ALREADY handed over went on arriving, straight
+	-- onto the glass, because the captures were gone and nothing was catching them
+	-- any more. A file's contents spilled across the middle of the line being
+	-- built, under a refusal that said the value was too big to keep. The refusal
+	-- is the whole of the answer; the line is untouched.
+	--
+	-- Raised where the writing is, and not at the ceiling, because the ceiling is
+	-- met in three places (outLine below, wrapPartial, and the substitution) and
+	-- every one of them ends the job in the middle of somebody's output.
+	if CeroSecOS.jobIsOver(job) then return end
 	local caps = job.caps
 	if capturing(job) then
 		-- One ceiling, and it is the WORD's: what a capture hands back is

@@ -8,6 +8,9 @@ date.
 
 ## Unreleased
 
+- A `$( )` that catches more than a word will hold now says `word too large` and
+  nothing else. It used to say that and then spill the rest of the command's output
+  across the screen, in the middle of the line you were typing.
 - Tab now finishes a command of your own. It looks where the machine looks — every
   directory on `PATH` — so a program in `~/bin` is completed as soon as `PATH`
   names that directory, instead of only the ones in `/bin`.
@@ -17,7 +20,6 @@ date.
 - A sum may now count with what a script was handed: `$((5 % $1))`, `$(($# * 2))`
   and `$((${n} + 1))` all work inside the double brackets, where a dollar sign in
   front of a number used to answer `bad arithmetic`.
-
 - Two computers in one office now belong to two different people. Each machine
   has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
   passwords, and empty homes. A building with two computers is worth walking

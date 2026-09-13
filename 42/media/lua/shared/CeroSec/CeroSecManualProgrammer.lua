@@ -825,6 +825,9 @@ and twenty-four bytes:
   admin@ksp-04-11:~$ x=$(cat big)
   sh: word too large
 
+That line is the whole answer: nothing of what the command had already
+printed arrives behind it.
+
 Catch the number of lines, not the lines. That is almost always what you
 wanted anyway:
 

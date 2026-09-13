@@ -6019,13 +6019,29 @@ do
 		"bench.sh: line 1: word too large")
 	eq("the script stopped there", over150.job.state, "error")
 	eq("and nothing was held", over150.job.vars.y, nil)
-	-- Not the LINE COUNT: the capture is dropped before the error is raised, so
-	-- the rest of the lines the one command had already handed over go on to the
-	-- screen behind it. That is the error path as it stands and was so before this
-	-- ceiling changed -- it is reached by any capture that passes the kilobyte in
-	-- the middle of a command's output -- and it is not what this bench is about.
+	-- And the refusal is the WHOLE of what reaches the screen. The capture is
+	-- dropped where the ceiling is met, so the rest of the lines `cat` had already
+	-- handed over used to arrive behind the refusal with nothing catching them --
+	-- fifty-six rows of the file spilled across the middle of the line being
+	-- built, under a message saying the value was too big to keep. A count and not
+	-- an absence, because "the last line is not done" was green on all fifty-seven
+	-- of them.
+	eq("and nothing of the file spilled onto the screen", #over150.out, 1)
 	check("the line after it never ran",
 		over150.out[#over150.out] ~= "done")
+
+	-- The same ceiling met the other way, and by a flood with no end to it: text
+	-- with no newline in it reaches the ceiling through wrapPartial rather than
+	-- through outLine, because `printf` HOLDS a row instead of writing one. Same
+	-- refusal, and the same one line -- a capture whose program never ends is the
+	-- case the ceiling has to be met at the write for (a substitution that is never
+	-- reached cannot be measured there).
+	script(state, "/home/admin/flood.sh", "while true; do printf 0123456789; done")
+	local spill = runScript(state, admin, "y=$(sh /home/admin/flood.sh)\necho done")
+	eq("a capture of held text is refused too", spill.out[1],
+		"flood.sh: line 1: word too large")
+	eq("and says it once", #spill.out, 1)
+	eq("the job is over", spill.job.state, "error")
 
 	-- Variables and arithmetic.
 	prints(state, admin, "x=3\ny=$((x * 2 + 1))\necho ${y}", { "7" })
