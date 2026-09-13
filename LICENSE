@@ -1,0 +1,22 @@
+CeroSec — licence not yet chosen
+================================
+
+The licence for this mod has **not been decided yet**. The author (Konijima) is
+choosing it, and this file will be replaced by the full text of that licence.
+
+Until then, treat the work as **all rights reserved**:
+
+- You may clone this repository, read it, run it, and play with it.
+- You may open issues and pull requests; by sending a contribution you agree it
+  may be released under whatever licence the author chooses for this file.
+- Do **not** redistribute it, and do not reupload the mod to the Steam Workshop
+  or anywhere else, without asking first.
+
+Ask through the repository: https://github.com/Konijima/pz-cerosec
+
+Third-party material
+--------------------
+
+Some art and sounds shipped in `common/media/` are reused rather than original.
+The credit line on the Steam Workshop page names them; anything reused stays
+under whatever terms it came with, and this file's licence does not extend to it.
