@@ -416,14 +416,28 @@ end
 -- through a copy that keeps ONLY what the game's serializer keeps, and handed to
 -- the boot gate. Every key that went in comes out.
 --
--- WHY THE COPY IS HERE AND IS NOT DECORATION. The mirror holds `os = self.os` --
--- the same table, by reference -- so comparing what came back with what went in
--- proves nothing at all on its own: it is the same table and would be equal to
--- itself on a build that had stopped saving anything. What the SAVE does is
--- serialize, and KahluaTable.save keeps exactly four kinds of value; so the round
--- trip that can fail is the copy, and a state carrying a function, a userdata or
--- a table key of the wrong type is a state the save file loses a limb of. That is
--- the thing this walks.
+-- WHAT CAN ACTUALLY DIFFER, because a round trip written without asking that is a
+-- row of vectors that can never go red. The mirror holds `os = self.os` -- the
+-- same table, by reference -- so "what came back equals what went in" is a table
+-- equal to itself and would pass on a build that had stopped saving anything. It
+-- is here, said out loud, as the statement of the design; the vectors that can
+-- FAIL are the other four:
+--
+--   * the mirror is THERE at all, under the key vanilla's pickup reads
+--     (CeroSec.MOVABLE_DATA_KEY). A wave that renames it or drops the write
+--     leaves every computer carried across town blank, and nothing else notices.
+--   * the mirror carries every field toModData writes -- v, on, facing, os. Drop
+--     `facing` and a computer picked up and put down faces the wrong way; drop
+--     `on` and it comes back dark. Neither is validated by anything.
+--   * a copy of the WHOLE mirror entry keeping only what KahluaTable.save keeps
+--     drops nothing. This is not a second validate: validate is asked of the OS
+--     state alone, and the three fields beside it go into the save file with
+--     nothing weighing them at all.
+--   * and the copy of the state still passes the boot gate, which is the
+--     assertion that validate's rule and the serializer's rule are the SAME rule.
+--     (They are, today -- which is why a function planted in the state is refused
+--     by osState long before it reaches here, and why the mutation that proves
+--     these vectors is a dropped mirror field and not a planted function.)
 --
 -- Answers { pass, fail, lines } like run() does, so the two add up.
 function CeroSecSelfTest.runSave(luaObject)
@@ -445,14 +459,15 @@ function CeroSecSelfTest.runSave(luaObject)
 	-- Asked before anything is written, and in the same words the window greys the
 	-- Turn on button with: the mirror is written into a thing in the WORLD, and a
 	-- machine whose chunk is away has no thing in the world to write it into.
-	if luaObject.isLoaded ~= nil and not luaObject:isLoaded() then
-		vector("chunk", "its chunk is away -- teleport to it first", "loaded")
-		return { pass = pass, fail = fail, lines = lines }
-	end
+	--
+	-- ONE question and not two. A draft asked isLoaded() and then asked for the
+	-- IsoObject, which reads like belt and braces and is not: SCeroSecObject:isLoaded
+	-- IS `getIsoObject() ~= nil`, so the second refusal sat on a path nothing could
+	-- ever reach and would have been a vector that could never go red.
 	local isoObject = nil
 	if luaObject.getIsoObject ~= nil then isoObject = luaObject:getIsoObject() end
 	if isoObject == nil then
-		vector("sprite", "no IsoObject at its square", "a sprite")
+		vector("chunk", "its chunk is away -- teleport to it first", "loaded")
 		return { pass = pass, fail = fail, lines = lines }
 	end
 
@@ -466,23 +481,52 @@ function CeroSecSelfTest.runSave(luaObject)
 	local back = luaObject:osFromIsoObject(isoObject)
 	vector("mirror", type(back), "table")
 	if type(back) ~= "table" then return { pass = pass, fail = fail, lines = lines } end
-	-- The design, said out loud rather than left to be discovered: the mirror is
-	-- the machine's own table and not a copy of it, which is exactly why the
-	-- comparison below is made against a copy this function makes.
+	-- The design, said out loud rather than left to be discovered.
 	vector("mirror is the state", back == state, true)
 
-	local copy, dropped, deep = CeroSecSelfTest.serializable(back, 1)
+	-- The whole mirror ENTRY and not just the OS state: v, on and facing ride into
+	-- the save beside it and nothing validates those three.
+	local entry = CeroSecSelfTest.mirrorEntry(isoObject)
+	vector("entry", type(entry), "table")
+	if type(entry) ~= "table" then return { pass = pass, fail = fail, lines = lines } end
+	vector("entry keys", CeroSecSelfTest.topKeys(entry), "facing on os v")
+
+	local copy, dropped, deep = CeroSecSelfTest.serializable(entry, 1)
 	vector("serializable", dropped, 0)
 	vector("depth", deep, false)
 
-	local ok, why = CeroSecOS.validate(copy)
+	local ok, why = CeroSecOS.validate(copy.os)
 	vector("validate", ok and "ok" or ("NOT OK: " .. tostring(why)), "ok")
 
 	local a = CeroSecSelfTest.keyPaths(back)
-	local b = CeroSecSelfTest.keyPaths(copy)
+	local b = CeroSecSelfTest.keyPaths(copy.os)
 	vector("keys", #a == #b and a == b, true)
 	vector("keys count", #a > 0, true)
 	return { pass = pass, fail = fail, lines = lines }
+end
+
+-- The top-level key names of a table, sorted, as one string. Sorted because pairs
+-- is not ordered; top level only, because what is being asked is which FIELDS
+-- toModData wrote and not what is inside them.
+function CeroSecSelfTest.topKeys(value)
+	if type(value) ~= "table" then return "NOT A TABLE" end
+	local names = {}
+	for key in pairs(value) do names[#names + 1] = tostring(key) end
+	table.sort(names)
+	return table.concat(names, " ")
+end
+
+-- What SCeroSecObject:toModData wrote, read back the way vanilla's own pickup
+-- reads it (ISMoveableSpriteProps.lua:1300): modData.movableData under our key.
+-- osFromIsoObject answers only the `os` inside it, and the three fields beside
+-- that one are exactly the ones nothing else weighs.
+function CeroSecSelfTest.mirrorEntry(isoObject)
+	if isoObject == nil then return nil end
+	if isoObject.hasModData ~= nil and not isoObject:hasModData() then return nil end
+	local modData = isoObject:getModData()
+	if type(modData) ~= "table" then return nil end
+	if type(modData.movableData) ~= "table" then return nil end
+	return modData.movableData[CeroSec.MOVABLE_DATA_KEY]
 end
 
 -- A copy of a state keeping only what KahluaTable.save keeps: strings, numbers,

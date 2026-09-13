@@ -764,6 +764,24 @@ do
 	eq("and asks for no snapshot, the dump going to the log",
 		bench.last("debug"), nil)
 
+	-- The self-test: one act, no snapshot asked for -- the verdict comes back on
+	-- the `debug` answer as a note, and a refresh chasing it would draw over the
+	-- line it lands on.
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_SelfTest"))
+	eq("Self-test sends 'selftest'", bench.last("debugact").args.act, "selftest")
+	eq("on the selected machine, half of what it runs being about one",
+		bench.last("debugact").args.x, 10)
+	eq("and asks for no snapshot", bench.last("debug"), nil)
+
+	-- And the disk, which is about a bag: it still carries the selection, because
+	-- every command of this module does, and the server ignores it.
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_GiveDisk"))
+	eq("Give diagnostics disk sends 'givedisk'",
+		bench.last("debugact").args.act, "givedisk")
+	eq("and asks for no snapshot", bench.last("debug"), nil)
+
 	-- Teleport is the client's own: in singleplayer it is the vanilla debug call
 	-- (IsoGameCharacter.teleportTo), on the MIDDLE of the square, which is what
 	-- vanilla's own spawn-point editor does.
@@ -1321,6 +1339,60 @@ do
 	check("and is told why", bench.painted("not standing at it"))
 	press(bench.buttonNamed("IGUI_CeroSec_Debug_Terminal"))
 	eq("and pressing it opens nothing", #CeroSecTerminal.opened, 0)
+end
+
+--
+-- THE VERDICT ON THE LINE UNDER THE LIST
+--
+-- The self-test answers a `note` and not an `error`, and the two are kept apart
+-- on purpose: a reader has to be able to tell "PASS 138 FAIL 0" from "cannot turn
+-- on", and a refusal outranks a verdict on the one line there is.
+--
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = false, canTurnOff = true, on = true, loaded = true }))
+	bench.frame()
+
+	CeroSecDebugUI.onServerAnswer("debug",
+		{ token = window.token, note = "selftest: PASS 138 FAIL 0" })
+	bench.frame()
+	eq("a note goes on the reason line", window:reasonLine(),
+		"selftest: PASS 138 FAIL 0")
+	check("and is drawn there", bench.painted("selftest: PASS 138 FAIL 0"))
+	eq("and it is not a refusal", window.refusal, nil)
+	-- And no list is emptied by it: a note carries no tab, exactly as a refusal
+	-- does not.
+	check("the machine list is still there", #(bench.list().debugRows or {}) > 0)
+
+	-- A refusal after it wins the line, because a machine that cannot be switched
+	-- on is a thing the reader needs now.
+	CeroSecDebugUI.onServerAnswer("debug",
+		{ token = window.token, error = "cannot turn on: its chunk is away" })
+	bench.frame()
+	eq("a refusal outranks a verdict", window:reasonLine(),
+		"cannot turn on: its chunk is away")
+	eq("and takes the verdict with it", window.notice, nil)
+
+	-- And a note after THAT takes the refusal away, or the window would keep
+	-- showing a refusal the reader has already dealt with.
+	CeroSecDebugUI.onServerAnswer("debug",
+		{ token = window.token, note = "selftest: PASS 138 FAIL 1" })
+	bench.frame()
+	eq("and a verdict after a refusal replaces it", window:reasonLine(),
+		"selftest: PASS 138 FAIL 1")
+
+	-- Another window's note is not this window's.
+	CeroSecDebugUI.onServerAnswer("debug",
+		{ token = "dbg-somebody-else", note = "selftest: PASS 1 FAIL 999" })
+	eq("a note carrying another window's token is dropped", window:reasonLine(),
+		"selftest: PASS 138 FAIL 1")
+
+	-- Clicking a different machine takes it away: half of what the self-test
+	-- reported was about the machine that WAS selected.
+	window:onRowClicked({ x = 12, y = 10, z = 0 })
+	eq("and selecting another machine drops it", window.notice, nil)
 end
 
 print("debug_ui_test: " .. count .. " checks passed")

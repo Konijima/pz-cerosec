@@ -554,6 +554,11 @@ local FILES = {
 	-- The telephone directory's generator: pure Lua, and the server's own
 	-- enumeration (CeroSecNet.directory) names it.
 	"shared/CeroSec/CeroSecPhonebook.lua",
+	-- The self-test and its generated vectors, in the game's own order: the runner
+	-- before the table, and neither of them touching CeroSecOS at its top level,
+	-- because shared/CeroSec/ is loaded ahead of shared/CeroSec/OS/.
+	"shared/CeroSec/CeroSecSelfTest.lua",
+	"shared/CeroSec/CeroSecSelfTestVectors.lua",
 	"shared/CeroSec/OS/CeroSecOS.lua",
 	"shared/CeroSec/OS/CeroSecOSComplete.lua",
 	"shared/CeroSec/OS/CeroSecOSCron.lua",
@@ -12016,6 +12021,328 @@ do
 end
 
 --
+-- THE SELF-TEST, through the real command door
+--
+-- CeroSecSelfTest.run() is the one bench that runs where the mod does, and this is
+-- the bench for the bench: that the vectors pass on lua5.1 at all, that a planted
+-- failure is REPORTED rather than swallowed, that the failing lines reach
+-- CeroSec.log at warn so the window's Log tab can find them, that the summary
+-- comes back on the `debug` answer as a note, and that the save path of the
+-- selected machine is walked and not skipped.
+--
+do
+	-- On the canonical VM, where every vector is right by definition. This is not
+	-- decoration: the vectors are GENERATED from lua5.1, so a table that does not
+	-- pass under lua5.1 is a generator or a body that is broken, and the in-game
+	-- run would be red for a reason nothing here could place.
+	local result = CeroSecSelfTest.run()
+	eq("every vector passes on the VM they were generated from: "
+		.. table.concat(result.lines, " / "), result.fail, 0)
+	check("and there are vectors (" .. result.pass .. ")", result.pass > 100)
+	eq("as many as the table holds", result.pass, #CeroSecSelfTest.VECTORS)
+
+	-- A VECTOR THAT LIES. The whole value of the thing is that it goes red, so it
+	-- is made to.
+	do
+		local kept = CeroSecSelfTest.VECTORS[1].want
+		CeroSecSelfTest.VECTORS[1].want = "NOT WHAT THE ENGINE SAYS"
+		local hurt = CeroSecSelfTest.run()
+		eq("a vector that lies is one failure", hurt.fail, 1)
+		eq("and every other one still passes", hurt.pass, result.pass - 1)
+		check("and the line names the vector and both values: " .. (hurt.lines[1] or ""),
+			string.find(hurt.lines[1] or "", CeroSecSelfTest.VECTORS[1].name, 1, true) ~= nil
+				and string.find(hurt.lines[1] or "", "NOT WHAT THE ENGINE SAYS", 1, true) ~= nil)
+		CeroSecSelfTest.VECTORS[1].want = kept
+	end
+
+	-- A VECTOR NOTHING EVALUATES -- a say() line taken out of the body without the
+	-- table being regenerated. Counted as a failure and not skipped, which is the
+	-- difference between a stale table and a green one.
+	do
+		local n = #CeroSecSelfTest.VECTORS
+		CeroSecSelfTest.VECTORS[n + 1] =
+			{ name = "a line nobody says", want = "anything" }
+		local hurt = CeroSecSelfTest.run()
+		eq("a vector nothing evaluated is a failure", hurt.fail, 1)
+		check("and the line says the body is stale: " .. (hurt.lines[1] or ""),
+			string.find(hurt.lines[1] or "", "the body is stale", 1, true) ~= nil)
+		CeroSecSelfTest.VECTORS[n + 1] = nil
+	end
+
+	-- AND AN ANSWER WITH NO VECTOR, which is the same drift read the other way: a
+	-- line added to the body and the table not regenerated.
+	do
+		local kept = CeroSecSelfTest.VECTORS[1]
+		table.remove(CeroSecSelfTest.VECTORS, 1)
+		local hurt = CeroSecSelfTest.run()
+		eq("an answer with no vector is a failure", hurt.fail, 1)
+		check("and the line says the table is stale: " .. (hurt.lines[1] or ""),
+			string.find(hurt.lines[1] or "", "the table is stale", 1, true) ~= nil)
+		table.insert(CeroSecSelfTest.VECTORS, 1, kept)
+	end
+
+	-- NO VECTORS AT ALL is a failure and never a pass of nothing, which is how the
+	-- whole button would have gone quietly green on a build that shipped without
+	-- the generated file.
+	do
+		local kept = CeroSecSelfTest.VECTORS
+		CeroSecSelfTest.VECTORS = {}
+		local none = CeroSecSelfTest.run()
+		eq("an empty table is a failure", none.fail, 1)
+		eq("and no passes", none.pass, 0)
+		check("and it says what to run: " .. (none.lines[1] or ""),
+			string.find(none.lines[1] or "", "make-selftest-vectors", 1, true) ~= nil)
+		CeroSecSelfTest.VECTORS = kept
+	end
+end
+
+-- The save path, which is the half no offline bench can be asked.
+do
+	local net = newNet()
+	local machine = net.here
+
+	-- A machine with no sprite in the world has nothing to mirror into, and the
+	-- self-test says so rather than passing over it -- which is the case a
+	-- developer meets first, the debug window listing every computer in the county
+	-- and most of their chunks being away.
+	do
+		local out = CeroSecSelfTest.runSave(machine)
+		eq("a machine whose chunk is away is a failure and not a skip", out.fail, 1)
+		check("and it says which, in the window's own words: " .. (out.lines[1] or ""),
+			string.find(out.lines[1] or "", "chunk is away", 1, true) ~= nil)
+		check("and it says what to do about it: " .. (out.lines[1] or ""),
+			string.find(out.lines[1] or "", "teleport to it", 1, true) ~= nil)
+		eq("and nothing else was asked, there being nothing to ask", out.pass, 0)
+	end
+
+	-- And with one. The fake keeps its modData table across calls, which is what an
+	-- IsoObject does and what makes the round trip a round trip at all.
+	--
+	-- The announcement stateToIsoObject ends in is the game's base class's and is
+	-- stubbed here the way the two benches further down stub it: what is being
+	-- walked is the mirror, not who is told about it.
+	net.system.newLuaObjectOnClient = function() end
+	local data = {}
+	local tile = { __class = "IsoObject",
+		hasModData = function() return true end,
+		getModData = function() return data end,
+		transmitModData = function() end,
+		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+	machine.getIsoObject = function() return tile end
+
+	local out = CeroSecSelfTest.runSave(machine)
+	eq("the save path comes back clean: " .. table.concat(out.lines, " / "), out.fail, 0)
+	check("and it asked more than one thing (" .. out.pass .. ")", out.pass >= 6)
+	check("and the mirror really is in the object's own modData",
+		type(data.movableData) == "table"
+			and type(data.movableData[CeroSec.MOVABLE_DATA_KEY]) == "table")
+
+	-- A MIRROR MISSING A FIELD, which is the failure these vectors exist for: `os`
+	-- is validated by the boot gate on every read, and `v`, `on` and `facing` are
+	-- weighed by nothing at all -- so dropping `facing` is a computer that comes
+	-- back from being carried facing the wrong way, and a green suite.
+	--
+	-- The mutation is a dropped field and NOT a function planted in the state,
+	-- which was the first draft and does not work: osState runs validate, validate
+	-- refuses a function, and the round trip never sees it. That is worth knowing
+	-- rather than hiding -- it is the proof that validate's rule and the
+	-- serializer's rule are the same rule -- and it is written down over
+	-- CeroSecSelfTest.runSave.
+	do
+		local kept = machine.toModData
+		machine.toModData = function(self, isoObject)
+			local modData = isoObject:getModData()
+			if not modData.movableData then modData.movableData = {} end
+			modData.movableData[CeroSec.MOVABLE_DATA_KEY] = {
+				v = self.v, on = self.on, os = self.os,
+			}
+		end
+		local hurt = CeroSecSelfTest.runSave(machine)
+		check("a mirror missing a field is reported (" ..
+			table.concat(hurt.lines, " / ") .. ")", hurt.fail > 0)
+		check("and the line names the fields it wanted",
+			string.find(table.concat(hurt.lines, " "), "facing on os v", 1, true) ~= nil)
+		machine.toModData = kept
+		eq("and it is clean again with the real mirror",
+			CeroSecSelfTest.runSave(machine).fail, 0)
+	end
+
+	-- AND A MIRROR THAT IS NOT THERE, which is the key being renamed or the write
+	-- being dropped: every computer carried across town comes back blank.
+	do
+		local kept = machine.toModData
+		machine.toModData = function() end
+		local blank = {}
+		machine.getIsoObject = function()
+			return { __class = "IsoObject",
+				hasModData = function() return true end,
+				getModData = function() return blank end,
+				transmitModData = function() end,
+				getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+		end
+		local hurt = CeroSecSelfTest.runSave(machine)
+		check("a mirror that was never written is reported (" ..
+			table.concat(hurt.lines, " / ") .. ")", hurt.fail > 0)
+		machine.toModData = kept
+		machine.getIsoObject = function()
+			return { __class = "IsoObject",
+				hasModData = function() return true end,
+				getModData = function() return data end,
+				transmitModData = function() end,
+				getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+		end
+		eq("and clean again", CeroSecSelfTest.runSave(machine).fail, 0)
+	end
+
+	-- Both halves added up, which is what the button runs.
+	local all = CeroSecSelfTest.runAll(machine)
+	eq("runAll adds the two up: " .. table.concat(all.lines, " / "), all.fail, 0)
+	check("and counts both", all.pass > CeroSecSelfTest.run().pass)
+	eq("and the summary is one line", CeroSecSelfTest.summary(all),
+		"selftest: PASS " .. all.pass .. " FAIL 0")
+end
+
+-- `debugact selftest` and `debugact givedisk`, on the wire.
+do
+	local net = newNet()
+	local machine = net.here
+	net.system.newLuaObjectOnClient = function() end
+	local data = {}
+	machine.getIsoObject = function()
+		return { __class = "IsoObject",
+			hasModData = function() return true end,
+			getModData = function() return data end,
+			transmitModData = function() end,
+			getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+	end
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+
+	-- A clean run: the verdict comes back as a NOTE and not as an error, on the
+	-- `debug` answer, with no tab -- so the window puts it on the line under the
+	-- list and empties no list for it.
+	CeroSec.logRing = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+	eq("the server answered the press", #answers, 1)
+	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
+	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")
+	eq("and no tab, so no list is emptied by it", answers[1].args.tab, nil)
+	eq("a clean run is not an error", answers[1].args.error, nil)
+	check("and the verdict is on the note: " .. tostring(answers[1].args.note),
+		string.find(tostring(answers[1].args.note), "FAIL 0", 1, true) ~= nil)
+
+	-- The log, which is what the window's Log tab draws. The summary at info,
+	-- whatever happened, because a run that said nothing when it passed is a run
+	-- nobody can tell from a button that did not work.
+	do
+		local infos, warns = 0, 0
+		local summary = nil
+		for i = 1, #CeroSec.logRing do
+			local line = CeroSec.logRing[i]
+			if line.level == CeroSec.LOG_INFO then
+				infos = infos + 1
+				if string.find(line.text, "PASS", 1, true) ~= nil then summary = line.text end
+			elseif line.level == CeroSec.LOG_WARN then
+				warns = warns + 1
+			end
+		end
+		eq("a clean run logs no warnings", warns, 0)
+		check("and logs the summary at info: " .. tostring(summary), summary ~= nil)
+	end
+
+	-- A PLANTED FAILING VECTOR: the line has to reach CeroSec.log at WARN, which is
+	-- the level the Log tab's own filter button reads, and the note has to send the
+	-- reader there.
+	do
+		local kept = CeroSecSelfTest.VECTORS[2].want
+		CeroSecSelfTest.VECTORS[2].want = "A LIE"
+		CeroSec.logRing = {}
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+		check("the verdict says one failed: " .. tostring(answers[1].args.note),
+			string.find(tostring(answers[1].args.note), "FAIL 1", 1, true) ~= nil)
+		check("and sends the reader to the Log tab",
+			string.find(tostring(answers[1].args.note), "Log tab", 1, true) ~= nil)
+		local warned = nil
+		for i = 1, #CeroSec.logRing do
+			if CeroSec.logRing[i].level == CeroSec.LOG_WARN then
+				warned = CeroSec.logRing[i].text
+			end
+		end
+		check("and the failing line is in the log at warn: " .. tostring(warned),
+			warned ~= nil and string.find(warned, "A LIE", 1, true) ~= nil)
+		CeroSecSelfTest.VECTORS[2].want = kept
+	end
+
+	-- THE DISK, into his hands, the way the drive hands one over: an item of one of
+	-- our four types, the catalogue written into its modData, the sticker on the
+	-- shell, and the container told.
+	do
+		local inv = newInventory()
+		net.player.getInventory = function() return inv end
+		answers = {}
+		-- With NOTHING selected, which is what 0,0,0 is: it is about his bag and not
+		-- about a machine, and a button that needed a row clicked first would be a
+		-- button nobody finds the use of.
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "givedisk" })
+		eq("a disk is handed over with no machine selected", #inv.items, 1)
+		local item = inv.items[1]
+		check("it is one of our floppy items", CeroSec.isFloppyType(item:getFullType()))
+		eq("with the sticker on the shell", item:getName(), "CEROSEC DIAGNOSTICS")
+		check("and the custom name flag set, so the game keeps it",
+			item:isCustomName())
+		check("and the fields synced", item.synced > 0)
+		-- And what is written on it is a disk the slot would take, with the suite on
+		-- it: read back through the engine's own reader and not out of the fake.
+		local disk = CeroSecOS.diskFromData(item:getModData())
+		check("the modData carries a disk", type(disk) == "table")
+		check("which the slot would take", CeroSecOS.validateDisk(disk, true))
+		check("with selftest.sh on it",
+			type(disk.fs) == "table" and type(disk.fs.children) == "table"
+				and disk.fs.children["selftest.sh"] ~= nil)
+		check("and the receipt is a note and not an error: "
+			.. tostring(answers[1] and answers[1].args.note),
+			answers[1] ~= nil and type(answers[1].args.note) == "string"
+				and answers[1].args.error == nil)
+
+		-- A bag that will not take it: nothing happens, and the reason is on the
+		-- glass rather than a disk that half arrived.
+		inv.AddItem = function() return nil end
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "givedisk" })
+		eq("a bag that is full gets no second disk", #inv.items, 1)
+		check("and is told why: " .. tostring(answers[1] and answers[1].args.error),
+			answers[1] ~= nil
+				and string.find(tostring(answers[1].args.error), "carrying too much",
+					1, true) ~= nil)
+	end
+
+	-- AND BOTH ARE BEHIND THE SAME DOOR as the rest of the window. A client is not
+	-- to be trusted about whether it was allowed to ask.
+	do
+		local was = CeroSec.DEV_DEBUG_MENU
+		CeroSec.DEV_DEBUG_MENU = false
+		local inv = newInventory()
+		net.player.getInventory = function() return inv end
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "givedisk" })
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+		eq("a forged givedisk on a released build hands nothing over", #inv.items, 0)
+		eq("and a forged selftest answers nothing", #answers, 0)
+		CeroSec.DEV_DEBUG_MENU = was
+	end
+end
+
+--
 -- The pager, driven the way a player drives it (fidelity A)
 --
 -- `more` asks a question, and a question on this machine is a console PROMPT: the
@@ -12618,6 +12945,17 @@ do
 	do
 		local saved = net.system.system.modDataKeys
 		check("the system names the fields it saves", type(saved) == "table")
+		-- AND THEY ARE THE CONSTANTS, by identity. CeroSecSelfTest.keys asks those
+		-- three tables the "seed is saved and never synced" question inside a real
+		-- game, which is only worth anything while the tables it reads are the very
+		-- ones handed over here: a literal list at the call site would make the
+		-- self-test's answer a fact about a copy.
+		eq("and the list is the constant, not a copy of it", saved,
+			CeroSec.SYSTEM_SAVE_KEYS)
+		eq("so is the machines' saved list",
+			net.system.system.objectModDataKeys, CeroSec.OBJECT_SAVE_KEYS)
+		eq("and the client sync list", net.system.system.syncKeys,
+			CeroSec.OBJECT_SYNC_KEYS)
 		local seen = {}
 		for i = 1, #saved do seen[saved[i]] = true end
 		check("the per-save secret is saved", seen.seed == true)

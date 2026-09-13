@@ -2110,10 +2110,81 @@ local function refuseAct(system, playerObj, token, x, y, z, why)
 		{ token = token, error = why, x = x, y = y, z = z })
 end
 
+-- The same door, for something that WORKED and has a sentence to show for it:
+-- the self-test's verdict, and the receipt for a disk handed over. A `note` and
+-- not an `error`, because the window greys nothing on it and a reader must be
+-- able to tell "PASS 128 FAIL 0" from a refusal. Like a refusal, it carries no
+-- tab, so no list is emptied by it.
+local function noteAct(system, playerObj, token, x, y, z, text)
+	system:reply(playerObj, "debug",
+		{ token = token, note = text, x = x, y = y, z = z })
+end
+
+-- THE DEVELOPER'S DISK, into his hands.
+--
+-- A write, and the only one on this whole window -- which is why it is here and
+-- not in SCeroSecDebug.lua, that file being read-only with no exception. It is
+-- ejectfloppy's own path and not a shorter one: AddItem, the modData written
+-- BEFORE the item is announced to the clients, the sticker put on with vanilla's
+-- own three calls, and sendAddItemToContainer last. A disk handed over any other
+-- way is a disk a multiplayer client never sees.
+--
+-- nil when he has it, or the sentence to put on the glass.
+local function giveDiagnosticsDisk(playerObj, now)
+	local entry = CeroSecContent.diskById(CeroSecContent.DIAG_DISK)
+	if entry == nil then return "there is no diagnostics disk in the catalogue" end
+	-- Built from the catalogue at the moment it is asked for, through the very
+	-- function loot builds a disk with, so the floppy in his hand is the floppy the
+	-- bench weighed -- ceilings, modes, printable rule and all.
+	local disk, written = CeroSecContent.diskData(entry, now)
+	if disk == nil then return "the catalogue would not make the disk" end
+	if written < #entry.files then
+		return "only " .. written .. " of " .. #entry.files .. " files fitted on it"
+	end
+
+	local inv = playerObj:getInventory()
+	if inv == nil then return "there is nowhere to put it" end
+	local item = inv:AddItem(CeroSec.FLOPPY_TYPES[1])
+	if not item then return "he is carrying too much" end
+	if not CeroSecOS.writeDiskTo(item:getModData(), disk) then
+		inv:Remove(item)
+		if isServer() then sendRemoveItemFromContainer(inv, item) end
+		return "the disk would not go onto the item"
+	end
+	-- The sticker, so `mount` and `df` name it and the survivor can find it in his
+	-- bag. Vanilla's Rename Bag's three calls, in its order
+	-- (ISInventoryPaneContextMenu.lua:2753-2755).
+	if CeroSecOS.labelOk(disk.label) then
+		item:setName(disk.label)
+		item:setCustomName(true)
+		item:syncItemFields()
+	end
+	if isServer() then sendAddItemToContainer(inv, item) end
+	return nil
+end
+
 Commands.debugact = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
 	if not CeroSec.debugAllowed() then return end
 	if type(args) ~= "table" or type(args.act) ~= "string" then return end
+
+	-- The one act that is about a survivor's BAG and not about a machine, so it is
+	-- answered before the lookup every other act needs: nothing is selected when a
+	-- window is first opened, 0,0,0 is what that looks like on the wire, and a
+	-- "Give diagnostics disk" that refused until a row had been clicked would be a
+	-- button nobody could find the use of.
+	if args.act == "givedisk" then
+		local why = giveDiagnosticsDisk(playerObj, CeroSecOS.clockOf(self:clockEnv()))
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no disk: " .. why)
+		else
+			noteAct(self, playerObj, token, x, y, z,
+				"CEROSEC DIAGNOSTICS is in your inventory -- insert it, then" ..
+				" mount /dev/fd0 /mnt and sh /mnt/selftest.sh")
+		end
+		return
+	end
+
 	local luaObject = self:getLuaObjectAt(x, y, z)
 	if not luaObject then
 		refuseAct(self, playerObj, token, x, y, z, "no machine at " ..
@@ -2144,6 +2215,27 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)
+	elseif args.act == "selftest" then
+		-- Every vector on THIS VM -- the game's Kahlua, in this save -- weighed
+		-- against lua5.1's answers, plus the save path of the selected machine,
+		-- which is the one thing no offline bench can be asked.
+		local result = CeroSecSelfTest.runAll(luaObject)
+		local summary = CeroSecSelfTest.summary(result)
+		-- Every failing line at warn, so the Log tab's own filter finds them, and
+		-- the summary at info whether it passed or not: a run that said nothing
+		-- when it passed would be a run nobody could tell from a button that did
+		-- not work.
+		for i = 1, #result.lines do
+			CeroSec.log(CeroSec.LOG_WARN, result.lines[i])
+		end
+		CeroSec.log(CeroSec.LOG_INFO, summary)
+		-- And to the game log, which is the one place a verdict survives the
+		-- session: console.txt on a client, the server's log on a dedicated one.
+		-- print and not the ring, because the ring is two hundred lines long and a
+		-- release note has to be pasted from somewhere.
+		print("CeroSec " .. summary)
+		noteAct(self, playerObj, token, x, y, z, summary ..
+			(result.fail > 0 and " -- the lines are on the Log tab" or ""))
 	end
 end
 

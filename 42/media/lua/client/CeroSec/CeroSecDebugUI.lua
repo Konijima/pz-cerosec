@@ -454,6 +454,13 @@ function CeroSecDebugUI:createChildren()
 		CeroSecDebugUI.onTerminal, nil)
 	self.dumpButton = button(getText("IGUI_CeroSec_Debug_Dump"),
 		CeroSecDebugUI.onDump, nil)
+	-- The two of the self-test wave, appended after Dump state and not slotted in
+	-- among the others: the row is read left to right and a button that moves is a
+	-- button somebody presses by mistake.
+	self.selfTestButton = button(getText("IGUI_CeroSec_Debug_SelfTest"),
+		CeroSecDebugUI.onSelfTest, nil)
+	self.giveDiskButton = button(getText("IGUI_CeroSec_Debug_GiveDisk"),
+		CeroSecDebugUI.onGiveDisk, nil)
 
 	-- The filter, on the Machines tab and nowhere else. It is made with the WIDER
 	-- of the two words it wears and then given the one it is showing: a button that
@@ -496,6 +503,23 @@ function CeroSecDebugUI:createChildren()
 	self.minimumWidth = widest + BORDER
 	self.minimumHeight = self:getHeight() - self.numbers.listH +
 		self.lists[1].itemheight
+
+	-- And the window is OPENED at least that wide, which the floor above does not
+	-- do on its own: the opening width is worked out from the widest tab's columns
+	-- (measure()) and knows nothing about the button row, so a wave that adds a
+	-- button wide enough to pass it -- "Give diagnostics disk" is the widest label
+	-- on the row -- opens a window with its last buttons off the right edge and a
+	-- minimum nobody can drag back to, since a window cannot be made wider by
+	-- dragging its own corner past the screen.
+	--
+	-- Widened HERE and not in measure(), because the row's width is a measurement
+	-- of the buttons themselves and they do not exist until now; and reflowed with
+	-- applyLayout, so the lists and their columns come out at the new width rather
+	-- than the old one.
+	if self:getWidth() < self.minimumWidth then
+		self:setWidth(self.minimumWidth)
+		self:applyLayout()
+	end
 end
 
 --
@@ -571,6 +595,17 @@ function CeroSecDebugUI:onServerCommand(command, args)
 	-- looked exactly like a button that had worked.
 	if type(args.error) == "string" then
 		self.refusal = args.error
+		self.notice = nil
+		return
+	end
+
+	-- And the other half of that: something that WORKED and has a sentence to show
+	-- for it -- the self-test's verdict, the receipt for a disk. Kept apart from a
+	-- refusal because a reader has to be able to tell "PASS 128 FAIL 0" from
+	-- "cannot turn on", and because a refusal outranks it on the one line there is.
+	if type(args.note) == "string" then
+		self.notice = args.note
+		self.refusal = nil
 		return
 	end
 
@@ -838,6 +873,10 @@ function CeroSecDebugUI:onRowClicked(item)
 	-- included: both were answers about a different computer.
 	self.selection = nil
 	self.refusal = nil
+	-- The verdict goes with them: half of what the self-test reports is about the
+	-- machine that WAS selected, so leaving it up under a new one would be the
+	-- Files tab's own mistake made on one line.
+	self.notice = nil
 	for i = 1, #self.lists do
 		local spec = CeroSecDebugUI.TABS[i]
 		if spec.tab ~= nil and spec.tab ~= "machines" then self.lists[i]:clear() end
@@ -889,6 +928,29 @@ end
 function CeroSecDebugUI:onDump()
 	if not self:hasMachine() then return end
 	self:send("debugact", { act = "dump" })
+end
+
+-- Run every vector on the VM the GAME has, and the save path of the selected
+-- machine with them. The verdict comes back as a `note` and goes on the line
+-- under the list; the failing lines go through CeroSec.log and are on the Log
+-- tab, where the warn filter finds them.
+--
+-- A machine IS wanted, and the button says so rather than greying: half of what
+-- this runs is about the selected machine's own state, and a self-test that
+-- quietly skipped that half would be a pass that proved less than the one before
+-- it (CeroSecSelfTest.runSave reports the refusal as a failed vector).
+function CeroSecDebugUI:onSelfTest()
+	self.refusal = nil
+	self.notice = "self-test running..."
+	self:send("debugact", { act = "selftest" })
+end
+
+-- The developer's floppy, into the survivor's bag. No machine needed: it is about
+-- his inventory, and the server answers it before it looks a machine up.
+function CeroSecDebugUI:onGiveDisk()
+	self.refusal = nil
+	self.notice = nil
+	self:send("debugact", { act = "givedisk" })
 end
 
 -- Stand the player on the selected machine's own square.
@@ -976,6 +1038,10 @@ end
 -- button somebody has just pressed; then the reason it is greyed at all.
 function CeroSecDebugUI:reasonLine()
 	if self.refusal ~= nil then return self.refusal end
+	-- Under a refusal and over everything the window works out for itself: a
+	-- verdict a developer pressed for is what he is looking at the line for, but a
+	-- machine that cannot be switched on is a thing he needs to know now.
+	if self.notice ~= nil then return self.notice end
 	if not self:hasMachine() then
 		return "nothing selected: click a row on the Machines tab"
 	end
