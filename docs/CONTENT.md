@@ -284,6 +284,57 @@ Five things to know:
 Seventeen shares of a hundred; the other eighty-three are a blank disk, which is what
 a box of disks is.
 
+### And a seventh that is not loot: `CEROSEC DIAGNOSTICS`
+
+**Weight 0.** `CeroSecContent.diskForRoll` skips any entry whose weight is not above
+zero, so no drawer in the county has one and no roll can reach it — which
+`content_test.lua` section 7c asserts over all hundred rolls rather than off the
+field, because "weight 0" is the mechanism and "no roll lands on it" is the
+requirement. The only way to one is the debug window's **Give diagnostics disk**,
+behind `CeroSec.debugAllowed` like everything else on that glass
+([DEBUG.md](DEBUG.md)).
+
+On it: `selftest.sh`, `RESULTS.TXT` and a `README.TXT`. The script is **twenty-six
+checks of the shell** — the commands, the pipes, the redirects, the `$(( ))` reader
+and the filesystem — and it is there because the mod's whole headless suite runs on
+`lua5.1` while the game runs Kahlua, and the shell is the half of the mod no
+pure-function vector can reach. What each of the three testing layers proves is in
+[TESTING.md](TESTING.md); it is a release gate ([RELEASE.md](RELEASE.md) step 6b).
+
+Four things about it are worth knowing before touching it:
+
+- **One script and not a `t1.sh`/`t2.sh` split.** Twenty-six checks fit in 3754 of
+  the floppy's 4096 bytes, which leaves about three hundred and forty. That matters:
+  `RESULTS.TXT` grows when it is run, and the room left is what bounds how many
+  failure lines can be written under the verdict. The verdict is written **first** for
+  that reason, so a disk that fills still carries it. A check added to the script
+  comes out of the same three hundred and forty bytes, and section 7c's byte
+  assertions are what say so.
+- **No counters between scripts, had it been split.** A script is a job of its own
+  and its variables go with it, so two parts would have had to pass their tally
+  through a file. As one script the pass count is a variable `p`, and the failures are
+  lines in a scratch file — deliberately two different places, so a miscount cannot
+  make itself agree.
+- **`RESULTS.TXT` ships as a stub at mode 666,** and the mode is the whole point.
+  `/mnt` is root's, so an ordinary account cannot *make* a file on a floppy, but it
+  may write one that is already there and says anybody may. Without that entry the
+  last lines of the script are `permission denied` on every machine a survivor is not
+  root on.
+- **The hash in it is baked and is held to the engine.** The `mkpasswd` check compares
+  against `$cs1$abcdef$74a6...` written into the script, because there is no `lua5.1`
+  in the game to ask for it — and section 7c holds that string to
+  `CeroSecOS.hashPassword(CeroSecSelfTest.PASS_TEXT, PASS_SALT)`. So the day
+  `HASH_ROUNDS` or the mixer moves, the headless suite goes red and the floppy is
+  rewritten, rather than the in-game run going red for a reason nobody can place. It
+  is the check that would have caught the `%` bug: four thousand rounds of a mixer
+  that is nothing but modulo.
+
+Two things the script cannot ask, and both are steps in
+[PARCOURS-TEST.md](PARCOURS-TEST.md) section X instead: a **crontab round trip**
+(a crontab is writable only through `crontab -e`, which wants a terminal) and a
+**permission refusal** (that needs a second account, and `su` and `sudo` both put a
+question on the glass a script cannot answer).
+
 The slot 7a named `CEROSEC OS UPGRADE` shipped as **`CEROSEC OS 1.0 DIST`**: it is
 distribution media, and nothing on it upgrades anything. `INSTALL.TXT` explains the
 BIOS repair as reinstalling from this media and says in as many words that there is

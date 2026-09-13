@@ -308,6 +308,7 @@ connection is not a window (see [PROTOCOL.md](PROTOCOL.md)).
     server -> client: debug     { x, y, z, token, tab, rows, info,
                                   canTurnOn, canTurnOff, on, loaded, reason }
                       debug     { x, y, z, token, error }        -- a refusal
+                      debug     { x, y, z, token, note }         -- it worked
 
 `x, y, z` is the machine **selected in the window** and not a computer the player
 is standing at — it may be on the far side of the map with its chunk unloaded.
@@ -320,9 +321,15 @@ every other command of this module, and it is deliberate: they are about the
 COUNTY. What is asked instead is `CeroSec.debugAllowed()`.
 
 `tab` is one of `machines`, `files`, `devices`, `network`, `scheduler` — anything
-else is answered with nothing. `act` is `on`, `off` or `dump`; the first two are
+else is answered with nothing. `act` is `on`, `off`, `dump`, `selftest` or `givedisk`; the first two are
 the object's own `turnOn`/`turnOff`, which are the very calls
 `SCeroSecObject:toggle` makes for the context menu.
+
+`givedisk` is the one act that does not name a machine, and it is answered **before**
+the lookup every other act needs: it is about the survivor's inventory, nothing is
+selected when a window is first opened, and a button that refused until a row had
+been clicked would be a button nobody finds the use of. It still carries the
+selection, because every command of this module does, and the server ignores it.
 
 `rows` is an array of `{ c = { "cell", ... }, x, y, z, used }` — plain strings,
 every cell truncated to 64 characters with the same `~` the terminal truncates
@@ -339,6 +346,14 @@ with it.
 
 An answer with an **`error`** on it and no `tab` is a refusal: the window puts it on
 the first line of the block under the list and leaves its lists alone.
+
+An answer with a **`note`** on it and no `tab` is the other half of that: something
+that worked and has a sentence to show for it — the self-test's verdict, the receipt
+for a disk handed over. Kept apart from a refusal on purpose, because a reader has to
+be able to tell `PASS 138 FAIL 0` from `cannot turn on`; a refusal outranks a note on
+the one line there is, a note after a refusal replaces it, and both go when another
+machine is selected — half of what the self-test reports is about the machine that
+WAS selected.
 
 **Everything is bounded and says so**: 200 machines, 512 file rows, 128 devices,
 128 jobs, 64 rows a network section, 16 zones, 50 wire events, 64 characters a
@@ -362,9 +377,10 @@ which is what `ls /dev` costs and is paid once per refresh. The premises block i
 one square, one `BuildingDef` and one `getZonesAt` — all three for the selected
 machine only, and none of them for the two hundred rows above it.
 
-## The three things it can change
+## The things it can change
 
-Everything else is a read. The three are the two power buttons and the teleport:
+Everything else is a read. Four of them go to the server and one is the client's
+own:
 
 - **Turn on** / **Turn off** go through `Commands.debugact`, which calls the
   object's own `turnOn`/`turnOff`. Same path, same sprite, same sound, same
@@ -403,7 +419,45 @@ Everything else is a read. The three are the two power buttons and the teleport:
   which is vanilla's `luautils.lua:138-140`). Whichever of the three is missing is
   what the reason line says, and the button is greyed until none is.
 
-**Dump state** writes nothing: it prints.
+- **Self-test** runs `CeroSecSelfTest.runAll` on the selected machine: every vector
+  of `CeroSecSelfTest.vectors` evaluated on **the Kahlua the game is running**, in
+  this save, weighed against the answers `lua5.1` gives (generated and committed as
+  `CeroSecSelfTestVectors.lua`); plus the save path of that machine —
+  `stateToIsoObject`, the mirror read back out of the `IsoObject`'s own modData, a
+  copy keeping only what `KahluaTable.save` keeps, and the boot gate.
+
+  Every failing line goes through `CeroSec.log` at **warn**, which is the level the
+  Log tab's own filter button reads, and names the vector, what `lua5.1` answers and
+  what the game answered. The summary goes at **info** whether it passed or not — a
+  run that said nothing when it passed would be a run nobody can tell from a button
+  that did not work — and through `print`, so `console.txt` holds it and a release
+  note can be pasted from it. And it comes back to the window as a `note`.
+
+  It wants a machine whose chunk is **in**: the mirror is written into a thing in the
+  world. A machine whose chunk is away is reported as a **failed vector** naming the
+  chunk, in the same words the Turn on button greys with, and not skipped — a
+  self-test that quietly ran half of itself would be a pass that proved less than the
+  one before it.
+
+  Why it exists at all: [TESTING.md](TESTING.md), "Three layers". It is a release
+  gate, steps 6a and 6b of [RELEASE.md](RELEASE.md).
+- **Give diagnostics disk** puts `CEROSEC DIAGNOSTICS` in the survivor's inventory:
+  a floppy built from `CeroSecContent.DISKS` at the moment it is asked for, through
+  the same `CeroSecContent.diskData` loot builds one with, so what he is handed is
+  the disk the bench weighed. The item grant is `Commands.ejectfloppy`'s own path and
+  not a shorter one — `AddItem`, the modData written **before** the item is announced
+  to the clients, the sticker put on with vanilla's own three rename calls, and
+  `sendAddItemToContainer` last — because a disk handed over any other way is a disk
+  a multiplayer client never sees.
+
+  The entry has **weight 0**, so `CeroSecContent.diskForRoll` can never land on it
+  and no drawer in the county has one: this button is the only way to it. On it,
+  `selftest.sh` — twenty-six checks of the shell, the text tools, the filesystem and
+  the clock, which is the half of the mod no pure-function vector can reach. See
+  [CONTENT.md](CONTENT.md).
+
+**Dump state** writes nothing: it prints. The self-test writes only through the
+save path it is testing, which is the write a chunk load does anyway.
 
 ## What is proven, and where
 

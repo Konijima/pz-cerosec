@@ -1742,9 +1742,14 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
 ## X. La fenêtre de débogage (palier debug)
 
 La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
-Elle ne change que trois choses : allumer, éteindre, et où le personnage se
-trouve. Tout le reste est en lecture. Détails et protocole dans
-[DEBUG.md](DEBUG.md).
+Elle ne change que cinq choses : allumer, éteindre, où le personnage se trouve,
+lancer l'autotest, et donner la disquette de diagnostic. Tout le reste est en
+lecture. Détails et protocole dans [DEBUG.md](DEBUG.md).
+
+Les étapes 258b à 258i sont la porte de sortie du mod : ce sont les deux seules
+vérifications qui font tourner le moteur sur la machine virtuelle que le joueur a
+vraiment (Kahlua, et pas `lua5.1`), et [RELEASE.md](RELEASE.md) en fait ses étapes
+6a et 6b. Aucune version ne part sans leurs deux sentences collées dans les notes.
 
 Pour cette section : deux ordinateurs allumés dans le même bâtiment, un troisième
 dans un bâtiment loin (le même décor que la section N), et au moins une porte et
@@ -1911,6 +1916,61 @@ un interrupteur dans la pièce.
      Attendu aussi : il y a des lignes **même avec `CeroSec.DEBUG = false`** —
      l'impression dans la console est conditionnée par ce réglage, l'anneau non.
      [ ]
+258b. **L'autotest du moteur.** C'est l'étape qui aurait attrapé les deux bogues
+     du 2026-09-12 : le jeu ne tourne pas sur `lua5.1`, il tourne sur Kahlua, et
+     `tonumber(s, 16)` comme l'opérateur `%` y répondent autrement. Aller sur
+     l'onglet **Machines**, cliquer une ligne dont la colonne `chunk` dit `here`
+     (sinon **S'y téléporter** d'abord), puis presser **Autotest**. Attendu : sous
+     la liste, une ligne `selftest: PASS n FAIL 0` avec `n` au-dessus de cent. La
+     même ligne apparaît sur l'onglet **Log** au niveau `info`, et dans
+     `console.txt`. [ ]
+258c. **Une machine dont le morceau de carte est parti.** Sélectionner
+     l'ordinateur du bâtiment loin (colonne `chunk` à `away`) et presser
+     **Autotest**. Attendu : `FAIL 1` au moins, et sur l'onglet **Log** filtré par
+     **Warnings** une ligne `save.chunk` qui dit que le morceau de carte est parti
+     et qu'il faut s'y téléporter. Ce n'est pas un bogue, c'est le refus attendu :
+     la moitié de l'autotest porte sur le chemin de sauvegarde de la machine
+     choisie, et une machine sans sprite dans le monde n'a rien où l'écrire. Un
+     autotest qui aurait sauté cette moitié en silence aurait annoncé un succès
+     plus pauvre que le précédent. S'y téléporter, presser encore : `FAIL 0`. [ ]
+258d. **Les lignes qui échouent se lisent.** Rien à casser ici : vérifier
+     seulement qu'à l'étape 258c la ligne `warn` nomme la vérification, ce que
+     `lua5.1` répond et ce que le jeu a répondu, et que le bouton **Warnings** de
+     l'onglet Log la trouve. Une ligne de refus qu'un lecteur ne trouve pas est un
+     refus qui ressemble à un bogue du mod. [ ]
+258e. **La disquette de diagnostic.** Presser **Donner la disquette de
+     diagnostic**, sans rien sélectionner si on veut (c'est un geste sur le sac et
+     pas sur une machine). Attendu : une ligne sous la liste qui dit que
+     `CEROSEC DIAGNOSTICS` est dans l'inventaire, et dans le sac une disquette dont
+     l'étiquette porte ce nom. Elle ne se trouve **jamais** en butin : le seul
+     chemin vers elle est ce bouton. [ ]
+258f. **La suite du shell, dans le jeu.** Insérer la disquette dans un ordinateur
+     allumé, s'asseoir devant, ouvrir une session et taper :
+
+         mount /dev/fd0 /mnt
+         sh /mnt/selftest.sh
+
+     Attendu : une ligne par vérification échouée, puis `PASS 26 FAIL 0`, et rien
+     d'autre. `echo $?` répond `0`. Vingt-six vérifications : `echo`, un tube,
+     `cut`, `sort`, `wc`, `grep -c`, `more`, `tee`, `$(( ))` avec un quotient
+     au-dessus de 2^31, `for`, `while`, `read` sur un tube, `mkdir` et `rm`, `test`
+     sur des fichiers, `chmod`, `find`, l'horloge, `df`, l'étiquette dans `mount`,
+     `ls -l /dev`, `dev`, `hostname`, `id`, `uptime`, `mkpasswd`, `sleep`. [ ]
+258g. **Ce qu'elle laisse.** `cat /mnt/RESULTS.TXT` → la même sentence
+     `CEROSEC SELFTEST PASS 26 FAIL 0`, avec les lignes d'échec en dessous s'il y
+     en avait et s'il restait de la place sur la disquette. Puis `ls -l ~` :
+     attendu, **aucun** fichier commençant par `st.` — la suite range ses fichiers
+     de travail derrière elle. Et `df` : le disque n'a pas bougé. [ ]
+258h. **Le crontab, à la main.** La suite ne fait pas ce tour-là et ne peut pas :
+     un crontab ne s'écrit que par `crontab -e`, qui veut un terminal, et un script
+     n'en a pas. Donc ici : `crontab -e`, écrire `0 4 * * * echo minuit`, sauver,
+     puis `crontab -l`. Attendu : la ligne ressort telle quelle. `crontab -r` puis
+     `crontab -l` → `no crontab for admin`. [ ]
+258i. **Un refus de permission, à la main.** Même raison : la suite ne tourne que
+     sous un seul compte, et `su` comme `sudo` posent une question qu'un script ne
+     peut pas répondre. Donc : `touch secret.txt`, `chmod 600 secret.txt`, puis
+     `su` vers un autre compte et `cat ~admin/secret.txt`. Attendu :
+     `permission denied`. [ ]
 259. **Deux fenêtres, une seule.** Ouvrir la fenêtre, puis la rouvrir par le menu
      d'un autre ordinateur → la première se ferme, il n'y en a jamais deux. [ ]
 260. **Redimensionner.** Tirer le coin de la fenêtre, en grand PUIS en petit → la

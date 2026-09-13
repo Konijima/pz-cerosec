@@ -39,6 +39,8 @@ the files and the state shape are all unaffected.
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
 | 5a | **Photograph the save shape this build writes**, and commit it — see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
+| 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
+| 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
 | 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=1100,2400 "file://$PWD/workshop/preview-page.html"` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
@@ -50,6 +52,57 @@ the files and the state shape are all unaffected.
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | Make the GitHub repository public | `gh repo edit Konijima/pz-cerosec --visibility public` |
 | 17 | Flip the Workshop item to public | Steam item page, **Change visibility** |
+
+## Steps 6a and 6b: the two the headless suite cannot do
+
+`sh tests/run.sh` runs on `lua5.1`. **The game does not.** On 2026-09-12 two
+Kahlua-only bugs shipped past a fully green suite in one day -- `tonumber(s, 16)`
+answering nil for half of all hashes, and the `%` operator wrong once the quotient
+reaches 2^31 -- and neither was a missing assertion. The suite was asking the right
+questions of the wrong VM. So no build goes up until somebody has run the engine on
+the VM the player will have. The three layers and what each proves are in
+[TESTING.md](TESTING.md).
+
+**Order matters: both of these come BEFORE step 3.** The debug window is the door to
+them and step 3 sets `CeroSec.DEV_DEBUG_MENU = false`, after which it is offered only
+in the game's own debug mode. Running them after step 3 means launching in debug
+mode, which is a different build from the one being shipped.
+
+**6a -- the engine.** Open the debug window off a computer's dev submenu, click a row
+on the **Machines** tab whose `chunk` column says `here` (**Teleport to it** if not
+-- half of what this runs is the save path of the selected machine, and a machine
+whose chunk is away has no sprite to mirror into, which the self-test reports as a
+failure rather than skipping), then press **Self-test**. The verdict lands on the
+line under the list, in the log at info, and in `console.txt` via `print`:
+
+    CeroSec selftest: PASS 138 FAIL 0
+
+Any failing line is in the log at **warn** -- the **Log** tab, `warn` filter -- and
+names the vector, what lua5.1 answers and what the game answered. A failure here is
+never cosmetic: it means the game computes something differently from every bench in
+`tests/`, and it is a **stop**, not a note in the release.
+
+**6b -- the shell.** Press **Give diagnostics disk** (no machine need be selected --
+it is about your inventory), then right-click a computer, insert the disk, sit down
+and:
+
+    mount /dev/fd0 /mnt
+    sh /mnt/selftest.sh
+
+Twenty-six checks of the commands, the pipes, the redirects, the `$(( ))` reader and
+the filesystem. One line per failure, then:
+
+    PASS 26 FAIL 0
+
+It also writes that into `RESULTS.TXT` on the floppy, so a run can be read back off
+the disk afterwards. The exit status is non-zero on any failure (`echo $?`).
+
+**Paste both summaries into the release notes**, with the build's own numbers. A
+release whose notes say `PASS 138 FAIL 0` and `PASS 26 FAIL 0` is a release somebody
+ran on Kahlua; a release with no numbers in it is one where nobody did, and that is
+the whole point of writing them down rather than ticking a box. Two of the checklist
+steps in [PARCOURS-TEST.md](PARCOURS-TEST.md) section X are the same two gestures,
+with what to look at on the glass.
 
 ## What this release changes in an existing world
 

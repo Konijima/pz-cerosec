@@ -115,9 +115,18 @@ The suites, in the order they run:
   used-only filter with its `showing N of M`, a cursor that follows its machine
   through a reordered county, and every button greyed with the reason under the list
   — a refusal from the server included, which is the one that used to be swallowed.
+- `debug_ui_test.lua` also holds the two buttons of the self-test wave and the
+  `note` they answer with: a verdict on the line under the list, a refusal
+  outranking it, a verdict after a refusal replacing it, and both going when
+  another machine is selected.
 - `selfcalls-check.sh` — every `self:method()` called is defined somewhere, since
   Lua only resolves a method when it is called and a missing one is a silent nil
   call, not a syntax error.
+- the **stale-vector guard** — `tools/make-selftest-vectors.lua` regenerated into a
+  temporary file and diffed against the committed
+  `CeroSecSelfTestVectors.lua`. Not a suite: a two-line check that the numbers the
+  in-game self-test weighs the game against are this build's and not last week's.
+  The fix for a red is to run the generator, never to edit the table.
 - `kahlua-check.sh` — `luac5.1 -p` on every shipped file, plus a grep of the OS core
   for constructs the game's Kahlua cannot run.
 - `kahlua-run.sh` — every shipped file actually loaded on the real Kahlua, out of the
@@ -201,7 +210,13 @@ is the only way the mod parses hex.
 functions with fixed inputs and prints one line per result, and `kahlua-run.sh` runs
 it twice -- once with `lua5.1`, once on the game's Kahlua through
 `KahluaRun --eval <file.lua> <root>` -- and **fails on any line that differs**, with
-the diff. `--eval` loads `shared/` quietly, installs a `print` that renders its
+the diff.
+
+The body of it is **not in `tests/`**. It is `CeroSecSelfTest.vectors`, in
+`42/media/lua/shared/CeroSec/CeroSecSelfTest.lua`, which is a file the mod ships --
+so one body has three readers and there is nothing to drift: the probe prints it on
+both VMs, `tools/make-selftest-vectors.lua` writes lua5.1's answers down, and
+`CeroSecSelfTest.run()` runs it **inside the game**. See the third layer below. `--eval` loads `shared/` quietly, installs a `print` that renders its
 arguments with the VM's own `tostring` (`KahluaUtil.tostring`, because Kahlua's
 `BaseLib.print` hands its text to a callback the game installs and there is no game
 here), and runs the file.
@@ -217,8 +232,10 @@ at 0 and 255, `string.rep`/`sub`/`gsub`/`find`, `table.concat`, and the clock-fr
 calendar the log placer steps in (`timeFromParts`, `dateParts`, `formatDate`,
 `formatTime`, `formatStamp`).
 
-Adding to it: print a **line**, named, for anything the engine gets out of the
-standard library or out of arithmetic. Never print anything that depends on a clock,
+Adding to it: a `say()` line, named, in `CeroSecSelfTest.probe`, for anything the
+engine gets out of the standard library or out of arithmetic -- and then
+`lua5.1 tools/make-selftest-vectors.lua`, or `tests/run.sh` goes red on the stale
+table. Never print anything that depends on a clock,
 a random number, `pairs` order or a path -- it has to be a pure function of nothing
 or the diff cries wolf. The raw `tonumber(s, 16)` is deliberately **not** probed: it
 answers nil on Kahlua and a number on lua5.1 and always will, so a line for it would
@@ -281,6 +298,104 @@ line for any of them could never go green:
   checklists.
 - No Java at all: no `IsoObject`, no `getSquare()`, no ModData round trip. What a
   stub returns is what the file sees.
+
+## Three layers, and what each one actually proves (2026-09-13)
+
+Two Kahlua-only bugs shipped past a green suite in one day. Neither was a missing
+assertion: the suite was asking the right questions of the **wrong VM**. So there
+are three layers now, and it is worth being precise about where each one stops,
+because a reader who thinks the first one covers the third will keep shipping the
+same class of bug.
+
+**1. The lua5.1 suites (`sh tests/run.sh`).** Every rule of the engine, every
+refusal, every ceiling, every screen — twelve thousand assertions in
+`content_test.lua` alone. What they prove: the mod is **correct**, on the VM it was
+written to. What they cannot see: anything the standard library answers differently
+somewhere else, and anything that needs a game.
+
+**2. The offline Kahlua probe (`sh tests/kahlua-run.sh`, inside `run.sh`).** Every
+shipped Lua file loaded on the game's own Kahlua out of `projectzomboid.jar`, and
+then `CeroSecSelfTest.vectors` **run** on both VMs with the outputs diffed byte for
+byte. What it proves: every file parses and its top level survives there, and the
+engine's pure functions — the hex parser, the mixer, the hash, the derivation, the
+date arithmetic, the shell's `$(( ))` reader — give the **same answers** on both.
+What it cannot see: the game's own Lua (none of vanilla's `media/lua/**` is
+present), the event bus (`Events.OnFoo.Add` is accepted and never fires), Java of
+any kind, and therefore the world, the save file, the wire and the sync.
+
+**3. The in-game self-test (the debug window's `Self-test` button, and
+`sh /mnt/selftest.sh` off the diagnostics floppy).** Two halves:
+
+- `CeroSecSelfTest.run()` evaluates the very same vectors **in the save**, on the
+  Kahlua the game is actually running, with the game's own `stdlib.lua` and every
+  vanilla file loaded, and weighs each answer against
+  `CeroSecSelfTestVectors.lua` — lua5.1's answers, generated by
+  `tools/make-selftest-vectors.lua` and committed, because there is no `lua5.1` in
+  the game to ask. Every failing line goes to `CeroSec.log` at **warn** (the Log
+  tab's own filter) and the summary to info and to `print`, so `console.txt` holds
+  it. It also asks the three key lists the save and the wire are made of, which is
+  where `seed` is held to being saved and never synced.
+- `CeroSecSelfTest.runSave(luaObject)` walks the save path of the selected machine:
+  `stateToIsoObject` writes the mirror, `osFromIsoObject` reads it back, the whole
+  mirror entry goes through a copy keeping only what `KahluaTable.save` keeps, and
+  the state in it is handed to the boot gate. It is the one thing no offline bench
+  can be asked, and what it can catch is a **mirror field**: `os` is validated on
+  every read, while `v`, `on` and `facing` ride into the save file weighed by
+  nothing — drop `facing` and a computer picked up and put down faces the wrong
+  way, with a green suite behind it.
+
+And `sh /mnt/selftest.sh`, which is the other half again: twenty-six checks of the
+**shell** — `echo`, a pipe, `cut`, `sort`, `wc`, `grep -c`, `more`, `tee`,
+`$(( ))` at a quotient over 2^31, `for`, `while`, `read` off a pipe, `mkdir`/`rm`,
+`test` on files, `chmod`, `find`, the clock, `df`, `mount`'s label, `ls -l /dev`,
+`dev`, `hostname`, `id`, `uptime`, `mkpasswd` against a baked canonical hash, and
+`sleep`. None of that is a pure function of nothing: it is commands, redirects and
+a filesystem, driven by the step machine, on the VM the game has.
+
+### Where each layer's numbers come from, and the two guards that keep them honest
+
+The vectors are **generated** and committed, which is two ways to go stale, so
+there are two guards and they work from opposite ends:
+
+- `tests/run.sh` regenerates the table into a temporary file and **diffs** it. A
+  `say()` line added to the body, or an engine answer that has legitimately moved,
+  is a red suite with the diff printed and one instruction: run
+  `lua5.1 tools/make-selftest-vectors.lua`. Never edit the table.
+- `CeroSecSelfTest.run()` counts three kinds of failure, and only the first is the
+  obvious one: an answer that differs, **a vector nothing evaluated** (a line taken
+  out of the body), and **an answer with no vector** (a line added). The middle two
+  are how a generated table goes quietly green, and an empty table is a failure
+  rather than a pass of nothing — which is how the whole button would have passed
+  on a build that shipped without the generated file.
+
+The floppy's one baked number gets the same treatment from the other side.
+`selftest.sh` has `$cs1$abcdef$74a6...` written into it, because there is no
+`lua5.1` in the game to ask for it — and `content_test.lua` section 7c holds that
+string to `CeroSecOS.hashPassword(CeroSecSelfTest.PASS_TEXT, PASS_SALT)`. So the day
+`HASH_ROUNDS` or the mixer moves, the headless suite is red and the floppy is
+rewritten, instead of the in-game run going red for a reason nobody can place.
+
+Section 7c also **runs** the floppy under the engine and holds it to `FAIL 0`,
+asserts the pass count against the number of verdict lines the script declares — a
+check added without the count following is that line — and then breaks one check to
+prove `FAIL 0` is an assertion and not a sentence the script prints either way.
+
+### What the shell suite could not be asked, and why
+
+Two things on the wish list are not on the floppy, and both for the same kind of
+reason:
+
+- **A crontab round trip.** A crontab is writable only through `crontab -e`, which
+  opens the editor and wants a terminal; a script has none, and `crontab` takes no
+  file operand (real `crontab file` does; ours is `-e|-l|-r`, which is what keeps
+  one account from writing a line that runs as another). So the script asks
+  `which crontab` and the round trip is a step in
+  [PARCOURS-TEST.md](PARCOURS-TEST.md) section X instead.
+- **A permission REFUSAL.** `chmod 600` is checked by reading the mode back, but
+  "and now another account cannot read it" needs a second account, and `su` and
+  `sudo` both put a password question on the glass — which a script cannot answer.
+  One account can only test what one account can. The refusal is `os_test.lua`'s,
+  many times over, and section X's on the glass.
 
 ## The millisecond ceilings are calibrated, not fixed
 
