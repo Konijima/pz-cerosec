@@ -614,14 +614,19 @@ do
 			-- it with the machine's own parser, so a line the parser refuses is a line
 			-- that does nothing for ever and says nothing about why.
 			if type(profile.cron) == "table" then
-				-- Which scripts this profile really puts in a ~/bin, and certainly:
-				-- an entry behind a chance is in some homes and not others.
+				-- Which script PATHS this profile really writes, and certainly: an
+				-- entry behind a chance is on some machines and not others, and an
+				-- entry naming `to` is somewhere else entirely. The path and not the
+				-- name, because a crontab line saying /usr/local/bin/check.sh on a
+				-- machine that put check.sh in a home is a line that mails
+				-- "not found" for ever.
 				local certain = {}
 				if type(profile.bin) == "table" then
 					for b = 1, #profile.bin do
 						local entry = profile.bin[b]
-						if (entry.chance or 100) >= 100 and entry.to == nil then
-							certain[entry.script] = true
+						if (entry.chance or 100) >= 100 then
+							local dir = entry.to or "$HOME/bin"
+							certain[dir .. "/" .. entry.script] = true
 						end
 					end
 				end
@@ -639,12 +644,14 @@ do
 						check(id .. " and it has lines in it (" .. #entries .. ")",
 							#entries > 0 and #entries <= CeroSecOS.CRON_MAX_LINES)
 						-- And a line that calls a script of ours calls one that is
-						-- REALLY there. A crontab naming a script placed behind a roll is
-						-- a crontab that mails "not found" on the machines the roll
-						-- missed, which is a broken machine dressed as a story.
-						for named in string.gmatch(tab.data, "bin/([%w%-%.]+%.sh)") do
+						-- REALLY there, at the very path the line names. A crontab
+						-- naming a script placed behind a roll is a crontab that mails
+						-- "not found" on the machines the roll missed, and one naming
+						-- the wrong directory is one that never worked anywhere.
+						for named in string.gmatch(tab.data, "([%$%w%-%./]+%.sh)") do
 							check(id .. " its crontab calls " .. named
-								.. ", which the profile always places", certain[named] == true)
+								.. ", which the profile always writes there",
+								certain[named] == true)
 						end
 					end
 				end
@@ -666,6 +673,64 @@ do
 		end
 	end
 	check("at least two profiles are written", built >= 2)
+end
+
+--
+-- 4b. THE CRONTAB'S OWN LINE, RUN AS THE ACCOUNT IT BELONGS TO
+--
+-- Everything above proves a crontab is a file cron will PARSE. That is not the
+-- same thing as a line that works: the command in it names a path with $HOME in
+-- it, an account whose login was generated, and a script placed behind a roll --
+-- three ways to write a line that parses perfectly and mails "not found" once an
+-- hour for ever.
+--
+-- So one is taken off a prefilled machine and TYPED, as the account it belongs to,
+-- on the machine the profile built. The radio station's, because its line is the
+-- one built to run from cron at all.
+--
+
+do
+	local state = CeroSecOS.newState("ksp-4-b")
+	local id, _, logins =
+		CeroSecContent.prefill(state, opts(SECRET_A, { premises = "radio" }))
+	eq("the station is the profile asked for", id, "radio")
+	local login = logins[1]
+	check("and it has the engineer's account on it", login ~= nil)
+	local password = CeroSecContent.accountPassword(SECRET_A, 12, 34, 1, login)
+	local session = CeroSecOS.login(state, login, password)
+	check("who can log in with the password a paper would name", session ~= nil)
+	-- The environment a LOGIN hands a shell, which is where $HOME comes from --
+	-- and cron hands its jobs the same one (CeroSecOS.loginVars, called by
+	-- CeroSecJobs for a cron job and by the console for a prompt). A bench that
+	-- left it empty would be a bench in which $HOME is the empty string and every
+	-- path in the crontab is wrong in exactly the way this is here to catch.
+	session.shvars = CeroSecOS.loginVars("/home/" .. login)
+
+	local tab = CeroSecOS.systemNode(state, CeroSecOS.cronPath(login))
+	check("the station has a crontab", tab ~= nil)
+	local entries = CeroSecOS.parseCrontab(tab.data)
+	check("with a line in it", #entries > 0)
+	local env = { now = START, devices = devicesFor(nil) }
+	for e = 1, #entries do
+		local ran, lines = run(state, session, entries[e].cmd, env)
+		check("its crontab line runs: " .. entries[e].cmd .. " -> "
+			.. table.concat(lines, " / "), ran)
+		check("and printed something worth mailing", #lines > 0)
+		for l = 1, #lines do
+			check('and it fits the screen: "' .. lines[l] .. '"',
+				#lines[l] <= CeroSecOS.COLS)
+		end
+		-- And what it printed is the line of the sheet for the hour the bench's
+		-- clock says it is, which is nine in the morning.
+		check("and it is the nine o'clock line (" .. table.concat(lines, " ") .. ")",
+			string.find(table.concat(lines, " "), "morning show", 1, true) ~= nil)
+	end
+
+	-- The same line, the way a machine nobody is standing at really runs it: with
+	-- no terminal. A cron line is refused nothing here -- announce.sh reads a file
+	-- and prints, which is all cron ever wanted -- and this is what says so.
+	local vok, vwhy = CeroSecOS.validate(state)
+	check("and the station still boots afterwards: " .. tostring(vwhy), vok)
 end
 
 --

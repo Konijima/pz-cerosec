@@ -573,25 +573,33 @@ CeroSecContent.SCRIPTS["lockup.sh"] = {
 	}, "\n"),
 }
 
-CeroSecContent.SCRIPTS["unlock.sh"] = {
-	-- And the other direction, which is the one a survivor wants at three in
-	-- the morning: every lock on the line, open.
+CeroSecContent.SCRIPTS["locks.sh"] = {
+	-- Both directions of a row of locks, which is the shape a shift and a word
+	-- argument are for: two scripts differing by one verb would have been two
+	-- files to keep in step, and the interesting half of this one is that a
+	-- survivor can read how the verb gets out of the way of the list.
 	mode = 755,
-	args = { "lock0", "lock1" },
+	args = { "lock", "lock0", "lock1" },
 	needs = { devices = {
-		{ id = "lock0", kind = "lock", state = "locked" },
-		{ id = "lock1", kind = "lock", state = "locked" },
+		{ id = "lock0", kind = "lock", state = "unlocked" },
+		{ id = "lock1", kind = "lock", state = "unlocked" },
 	} },
 	text = table.concat({
 		"#!/bin/sh",
-		"# unlock.sh -- unlock every lock you name, one by one.",
-		"# usage: unlock.sh <lock> [<lock> ...]",
-		"if [ $# -eq 0 ]; then",
-		"  echo \"usage: unlock.sh <lock> [<lock> ...]\"",
+		"# locks.sh -- lock or unlock every lock you name.",
+		"# usage: locks.sh lock|unlock <lock> [<lock> ...]",
+		"if [ $# -lt 2 ]; then",
+		"  echo \"usage: locks.sh lock|unlock <lock> [<lock> ...]\"",
 		"  exit 1",
 		"fi",
+		"w=$1",
+		"if [ \"$w\" != lock -a \"$w\" != unlock ]; then",
+		"  echo \"usage: locks.sh lock|unlock <lock> [<lock> ...]\"",
+		"  exit 1",
+		"fi",
+		"shift",
 		"while [ $# -gt 0 ]; do",
-		"  echo unlock > /dev/$1",
+		"  echo $w > /dev/$1",
 		"  echo \"$1 $(cat /dev/$1)\"",
 		"  shift",
 		"done",
@@ -1791,6 +1799,30 @@ CeroSecContent.PROFILES.residential = {
 				"- the porch light is on a timer now, ask Dad",
 				"- FIND THE MANUAL",
 			}, "\n") },
+			{ path = "porch.txt", text = table.concat({
+				"How the porch light works, since nobody believes me.",
+				"",
+				"There is a little box wired to the switch and the",
+				"computer can see it. It is light0. Two commands:",
+				"",
+				"  cat /dev/light0",
+				"  echo off > /dev/light0",
+				"",
+				"That is all a timer is. The script in my bin does the",
+				"kitchen one at the same time.",
+			}, "\n") },
+		} },
+		{ pass = false, files = {
+			{ path = "report.txt", text = table.concat({
+				"THE COUNTY IN 1830 -- by me, for Tuesday",
+				"",
+				"In 1830 there was nothing here but the river and",
+				"the salt works. My grandmother says the trestle came",
+				"later and that is where the town went.",
+				"",
+				"I have three pages and it has to be four. Dad says",
+				"do not pad it. I am going to pad it.",
+			}, "\n") },
 		} },
 	},
 	bin = { { script = "lights.sh", chance = 35 } },
@@ -1813,9 +1845,18 @@ CeroSecContent.PROFILES.office = {
 			{ path = "handover.txt", text = table.concat({
 				"Whoever is covering for me:",
 				"",
-				"The nightly job mails the totals to root. If the",
-				"mail stops, the job stopped -- look at crontab -l",
-				"before you look at anything else.",
+				"The nightly job mails the totals to me at two in",
+				"the morning. If the mail stops, the job stopped --",
+				"look at crontab -l before you look at anything else.",
+				"",
+				"The ledger is ledger.txt and the second column is",
+				"cents. Never dollars. It has never been dollars.",
+			}, "\n") },
+			{ path = "ledger.txt", text = table.concat({
+				"freight:41200",
+				"paper and toner:8875",
+				"telephone:12340",
+				"the coffee fund:1500",
 			}, "\n") },
 		} },
 		{ pass = false, files = {
@@ -1824,8 +1865,24 @@ CeroSecContent.PROFILES.office = {
 				"type it for you.",
 			}, "\n") },
 		} },
+		{ pass = true, files = {
+			{ path = "memo.txt", text = table.concat({
+				"To the three of you, and I am not saying it again:",
+				"",
+				"The machine is not a filing cabinet. Anything that",
+				"has to survive this office goes on a disk and the",
+				"disk goes in the cabinet. Sixty-four thousand bytes",
+				"is a week of work, not a career.",
+			}, "\n") },
+		} },
 	},
-	bin = { { script = "lights.sh", chance = 60 } },
+	bin = {
+		{ script = "lights.sh", chance = 60 },
+		{ script = "total.sh" },
+	},
+	cron = {
+		{ to = 1, lines = { "0 2 * * * sh $HOME/bin/total.sh $HOME/ledger.txt 2" } },
+	},
 	logs = {
 		"login: root logged in on console",
 		"cron: ran the nightly totals",
@@ -1841,14 +1898,614 @@ CeroSecContent.PROFILES.office = {
 	},
 }
 
--- Named, and empty until wave 7b. A machine whose premises resolves to one of
--- these is prefilled with nothing, which is exactly what a machine was before
--- this file existed.
-CeroSecContent.PROFILES.police = nil
-CeroSecContent.PROFILES.bank = nil
-CeroSecContent.PROFILES.store = nil
-CeroSecContent.PROFILES.school = nil
-CeroSecContent.PROFILES.clinic = nil
-CeroSecContent.PROFILES.radio = nil
-CeroSecContent.PROFILES.military = nil
-CeroSecContent.PROFILES.cerosec = nil
+--
+-- THE EIGHT wave 7b wrote. Each one is a place in Knox County, each is a story in
+-- THREE files, and each carries at least one script a survivor can copy and use
+-- on a building of his own.
+--
+
+CeroSecContent.PROFILES.police = {
+	host = "disp",
+	motd = table.concat({
+		"KNOX COUNTY SHERIFF -- DISPATCH",
+		"Official use only. Every login is written down, and",
+		"so is every line typed at this keyboard.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		-- NAMED, and the one profile that names an account: a dispatch desk was
+		-- worked in shifts by whoever was on, and a login per deputy is a login
+		-- nobody remembers at four in the morning. It carries a password because
+		-- the desk did.
+		{ name = "dispatch", pass = true, admin = true, files = {
+			{ path = "handover.txt", text = table.concat({
+				"Whoever sits down next:",
+				"",
+				"The cell doors are on the computer now. locks.sh in",
+				"my bin does the pair of them at once:",
+				"",
+				"  sh ~/bin/locks.sh lock lock0 lock1",
+				"",
+				"Check with dev lock before you walk away. The strike",
+				"on the back cell sticks and reads locked when it is",
+				"not. The log is /var/log/dispatch. Write in it. It",
+				"is the only thing anybody upstairs ever reads.",
+			}, "\n") },
+			{ path = "bolo.txt", text = table.concat({
+				"BE ON THE LOOKOUT -- standing list, 8 July",
+				"",
+				"Grey pickup, no plate, on the Muldraugh road three",
+				"nights running. Do not stop it on your own.",
+				"",
+				"Two men on foot out of West Point, walking north on",
+				"the rail bed. Wanted for the co-op break-in.",
+				"",
+				"Anybody in a hospital gown outside the fence. The",
+				"state people want to be told. We do not go in.",
+			}, "\n") },
+		} },
+		{ pass = false, files = {
+			{ path = "shifts.txt", text = table.concat({
+				"Nights, this week and next. Nobody has swapped and",
+				"nobody is going to, so stop asking me.",
+				"",
+				"There are four of us for seven nights. Work it out.",
+			}, "\n") },
+		} },
+		{ pass = true },
+	},
+	bin = {
+		{ script = "locks.sh" },
+		{ script = "check.sh", chance = 60 },
+		{ script = "lights.sh", chance = 40 },
+	},
+	cron = {
+		{ to = 1, lines = { "0 22 * * * sh $HOME/bin/locks.sh lock lock0 lock1" } },
+	},
+	files = {
+		-- THE SPINE OF THE STORY, and it is in /var/log because that is where a
+		-- log lives: root's, at the mode the machine's own logs wear, so an
+		-- account in the sudo group reads it and a stranger does not.
+		{ path = "/var/log/dispatch", owner = "root", mode = 640,
+			text = table.concat({
+				"Jul 05 0710 traffic, 31 at the line, cleared",
+				"Jul 06 2240 alarm at the co-op, nobody there",
+				"Jul 07 0155 fight outside the tavern, two in",
+				"Jul 07 1400 hospital wants two units, sent two",
+				"Jul 08 0620 hospital again, sent everybody",
+				"Jul 08 1910 lost contact with unit 4",
+				"Jul 08 2335 lost contact with unit 2",
+				"Jul 09 0402 nobody answering the desk telephone",
+				"Jul 09 0505",
+			}, "\n") },
+	},
+	logs = {
+		"login: dispatch logged in",
+		"su: dispatch to root",
+		"login: dispatch logged in",
+		"login: failed login on console",
+		"login: dispatch logged in",
+		"halt: system going down",
+	},
+	mail = {
+		{ to = 1, from = "the desk sergeant", subj = "the cells",
+			body = table.concat({
+				"Both of them stay locked from ten at night whoever",
+				"is in them. That is not mine, it came down from the",
+				"county. Put it on the computer and stop arguing.",
+			}, "\n") },
+	},
+}
+
+CeroSecContent.PROFILES.bank = {
+	host = "vault",
+	motd = table.concat({
+		"This terminal records every login and every figure",
+		"typed at it. Do not leave it logged in and do not",
+		"write your password anywhere near it.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "accounts.dat", text = CeroSecContent.DATA["accounts.dat"] },
+			{ path = "audit.txt", text = table.concat({
+				"The examiner comes on the second Tuesday and wants",
+				"the same three answers every time.",
+				"",
+				"How many of them are checking accounts:",
+				"",
+				"  sh ~/bin/audit.sh accounts.dat checking",
+				"",
+				"What the balances add up to, in cents:",
+				"",
+				"  sh ~/bin/total.sh accounts.dat 4",
+				"",
+				"The fourth column has been cents since 1987 and he",
+				"knows it. Do not convert it for him.",
+			}, "\n") },
+		} },
+		{ pass = true, files = {
+			{ path = "vault.txt", text = table.concat({
+				"The vault door is on the computer now and it is not",
+				"a lock anybody picks. It is also not a lock the",
+				"computer can force: lockup.sh pulls the door to and",
+				"then turns the bolt, and if the door will not close",
+				"it says so and stops rather than bolting air.",
+				"",
+				"Read it before you trust it:",
+				"",
+				"  cat ~/bin/lockup.sh",
+			}, "\n") },
+		} },
+		{ pass = false },
+	},
+	bin = {
+		{ script = "audit.sh" },
+		{ script = "total.sh" },
+		{ script = "lockup.sh" },
+	},
+	cron = {
+		{ to = 1, lines = { "0 18 * * 1-5 sh $HOME/bin/lockup.sh door0 lock0" } },
+	},
+	logs = {
+		"login: failed login on console",
+		"login: failed login on console",
+		"su: authentication failure",
+		"login: root logged in on console",
+		"kernel: fd0 write protected",
+		"shutdown: halt by root",
+	},
+	mail = {
+		{ to = 1, from = "the district office", subj = "the examiner",
+			body = table.concat({
+				"He wants the figures read out to him a line at a",
+				"time, the way he always does. Have the machine up",
+				"and the disk in the drive before he sits down.",
+			}, "\n") },
+	},
+}
+
+CeroSecContent.PROFILES.store = {
+	host = "till",
+	motd = table.concat({
+		"Back office. If you are not on the schedule then you",
+		"are not supposed to be back here.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "inventory.txt", text = table.concat({
+				"What is on the floor, counted 6 July. Anything not",
+				"on this list went out the door in the first three",
+				"days and is not coming back.",
+				"",
+				"  nails 3in      4 boxes",
+				"  rope 50ft      2",
+				"  lamp oil       11 tins",
+				"  tarp 8x10      none",
+				"  batteries      none",
+				"  padlock        1, the good one",
+				"",
+				"Prices are in prices.txt and they are in cents.",
+				"The machine adds the column up:",
+				"",
+				"  sh ~/bin/total.sh prices.txt 2",
+			}, "\n") },
+			{ path = "prices.txt", text = CeroSecContent.DATA["prices.txt"] },
+			{ path = "closing.txt", text = table.concat({
+				"Closing up, in this order, every night:",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"  sh ~/bin/lockup.sh door0 lock0",
+				"",
+				"light0 is the floor and light1 is the sign. The",
+				"front door is door0. The back door is not on the",
+				"computer at all -- do that one by hand and pull it",
+				"to you until it clicks.",
+			}, "\n") },
+		} },
+		{ pass = false, files = {
+			{ path = "note.txt", text = table.concat({
+				"The number for the padlock on the gate is not",
+				"written down anywhere and it is not going to be.",
+				"Ask me, or ask whoever is on after me.",
+			}, "\n") },
+		} },
+	},
+	bin = {
+		{ script = "total.sh" },
+		{ script = "lights.sh" },
+		{ script = "lockup.sh" },
+	},
+	cron = {
+		{ to = 1, lines = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
+	},
+	logs = {
+		"login: root logged in on console",
+		"cron: lights out",
+		"login: root logged in on console",
+		"cron: lights out",
+		"login: failed login on console",
+		"cron: no such device: light1",
+	},
+}
+
+CeroSecContent.PROFILES.school = {
+	host = "bell",
+	motd = table.concat({
+		"KNOX COUNTY SCHOOLS -- office terminal",
+		"The grades are on this machine. Any student found at",
+		"this keyboard goes home for the week.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "grades.txt", text = table.concat({
+				"Fourth period, term ending. Numbers only -- the",
+				"names are in the paper file in the cabinet, which",
+				"is where they are staying.",
+				"",
+				"  1104  B",
+				"  1109  C",
+				"  1112  A",
+				"  1118  incomplete",
+				"  1121  B",
+				"  1127  incomplete",
+				"",
+				"Two incompletes. Both were absent from the 4th and",
+				"neither house answers the telephone.",
+			}, "\n") },
+			{ path = "bells.txt", text = table.concat({
+				"The bells are on a clockwork timer in the boiler",
+				"room. The lights are on this machine. They are not",
+				"the same thing and the timer does not care what the",
+				"computer thinks.",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"",
+				"That is the corridor and the gymnasium. Every",
+				"classroom is a switch on the wall, as it always was.",
+			}, "\n") },
+		} },
+		{ pass = true, files = {
+			{ path = "detention.txt", text = table.concat({
+				"Detention, Friday, two of them.",
+				"",
+				"I am not writing the names in here. The last time I",
+				"did, one of the two read it off this screen over my",
+				"shoulder while I was typing it.",
+				"",
+				"Ask me. I remember.",
+			}, "\n") },
+		} },
+		{ pass = false },
+	},
+	bin = {
+		{ script = "lights.sh" },
+		{ script = "check.sh", chance = 70 },
+	},
+	cron = {
+		{ to = 1, lines = { "0 22 * * * sh $HOME/bin/lights.sh light0 light1" } },
+	},
+	logs = {
+		"login: failed login on console",
+		"login: failed login on console",
+		"login: failed login on console",
+		"useradd: account added",
+		"login: root logged in on console",
+		"shutdown: halt by root",
+	},
+}
+
+CeroSecContent.PROFILES.clinic = {
+	host = "ward",
+	motd = table.concat({
+		"Nurses station.",
+		"Everything on this machine is about a person. Log",
+		"out when you stand up.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "patients.txt", text = CeroSecContent.DATA["patients.txt"] },
+			{ path = "rounds.txt", text = table.concat({
+				"Rounds, in room order. The machine sorts them so",
+				"nobody has to read my handwriting:",
+				"",
+				"  sh ~/bin/rounds.sh patients.txt",
+				"",
+				"Column one is the room, column two is the ward and",
+				"column three is what has to happen next.",
+				"",
+				"NOTHING MEDICAL GOES IN THIS FILE. That is the",
+				"chart, and the chart stays on the trolley.",
+			}, "\n") },
+		} },
+		{ pass = false, files = {
+			{ path = "supplies.txt", text = table.concat({
+				"What we are out of, 7 July:",
+				"",
+				"  saline, everything above 500ml",
+				"  gloves, small",
+				"  the good tape",
+				"",
+				"Ordered on the 2nd. Nobody has telephoned back and",
+				"the switchboard rings out now.",
+			}, "\n") },
+		} },
+		{ pass = true },
+	},
+	bin = {
+		{ script = "rounds.sh" },
+		{ script = "locks.sh", chance = 60 },
+		{ script = "check.sh", chance = 60 },
+	},
+	cron = {
+		{ to = 1, lines = { "0 7 * * * sh $HOME/bin/rounds.sh $HOME/patients.txt" } },
+	},
+	logs = {
+		"login: root logged in on console",
+		"cron: rounds mailed",
+		"login: failed login on console",
+		"cron: rounds mailed",
+		"kernel: hda 82 percent full",
+		"cron: rounds mailed",
+	},
+	mail = {
+		{ to = 1, from = "the second floor", subj = "beds",
+			body = table.concat({
+				"We have none. If the sheriff telephones again tell",
+				"them exactly what I told them at six this morning.",
+			}, "\n") },
+	},
+}
+
+CeroSecContent.PROFILES.radio = {
+	host = "studio",
+	motd = table.concat({
+		"Studio B.",
+		"Nothing goes out on the air off this machine. It",
+		"keeps the log and the sheet and that is all it has",
+		"ever done.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "sched.txt", text = CeroSecContent.DATA["sched.txt"] },
+			{ path = "notes.txt", text = table.concat({
+				"The sheet is sched.txt: the hour, then what goes out",
+				"in it. The machine reads the clock and mails me the",
+				"line for the hour it is:",
+				"",
+				"  sh ~/bin/announce.sh sched.txt",
+				"",
+				"It is on cron at five past every hour. If the mail",
+				"stops then either the clock is wrong or somebody has",
+				"edited the sheet into something it cannot read.",
+				"",
+				"Keep the hours two digits. 06, never 6.",
+			}, "\n") },
+		} },
+		{ pass = false, files = {
+			{ path = "readme.txt", text = table.concat({
+				"If you are on at midnight and the tone is still on",
+				"the state frequency, do not say so on the air. Say",
+				"the time and the weather and put a record on.",
+			}, "\n") },
+		} },
+	},
+	bin = {
+		{ script = "announce.sh" },
+		{ script = "lights.sh", chance = 50 },
+	},
+	cron = {
+		{ to = 1, lines = { "5 * * * * sh $HOME/bin/announce.sh $HOME/sched.txt" } },
+	},
+	files = {
+		-- What the station HEARD, which is the one file in the county that says
+		-- what the rest of it sounded like. 644 and root's: a log of the air is
+		-- not a secret, and somebody who gets onto this machine at all should be
+		-- able to read it.
+		{ path = "/var/log/heard", owner = "root", mode = 644,
+			text = table.concat({
+				"Jul 04 1150 the fire service, asking for help",
+				"Jul 05 0940 a man reading a list of names, on 40m",
+				"Jul 06 1815 the state frequency, a tone and nothing",
+				"Jul 07 0300 somebody counting. Got to 60 and stopped",
+				"Jul 08 1420 a woman west of here, asking for a doctor",
+				"Jul 08 2200 the tone again",
+				"Jul 09 0000 nothing on any of them",
+			}, "\n") },
+	},
+	logs = {
+		"login: root logged in on console",
+		"cron: announce mailed",
+		"cron: announce mailed",
+		"login: failed login on console",
+		"cron: announce mailed",
+		"kernel: radio0 present",
+	},
+}
+
+CeroSecContent.PROFILES.military = {
+	host = "post",
+	motd = table.concat({
+		"RESTRICTED. Authorised personnel only.",
+		"Everything on this terminal is classified at the",
+		"level of the operation it names.",
+		"KEEP OUT.",
+	}, "\n"),
+	-- ROOT AND NOTHING ELSE, and it is the one profile with no ordinary account on
+	-- it at all. A post did not hand out logins; a man sat down at it because he
+	-- was allowed to be in the room. So there is no open account to walk in
+	-- through and no note in anybody's pocket -- the only way in is the paper in
+	-- the drawer, or the BIOS. What that costs is said in the manual, and it is
+	-- the same cost every locked machine has.
+	root = true,
+	bin = {
+		-- Nobody's ~/bin to put it in, so it goes where a machine's own local
+		-- software went in 1993.
+		{ script = "check.sh", to = "/usr/local/bin" },
+	},
+	cron = {
+		{ to = "root", lines = { "0 * * * * sh /usr/local/bin/check.sh door0" } },
+	},
+	files = {
+		{ path = "/root/memo-01.txt", owner = "root", mode = 600,
+			text = table.concat({
+				"MEMORANDUM 1 -- 4 July",
+				"",
+				"The line is the river to the west, the county road",
+				"to the north and the rail bed to the east. Nothing",
+				"on foot crosses it in either direction. Nothing.",
+				"",
+				"Vehicles are turned at the first checkpoint and are",
+				"not to be searched at the second.",
+			}, "\n") },
+		{ path = "/root/memo-02.txt", owner = "root", mode = 600,
+			text = table.concat({
+				"MEMORANDUM 2 -- 6 July",
+				"",
+				"The line has moved twice in two days and both times",
+				"we were told after the fact.",
+				"",
+				"Until somebody tells us otherwise, the line is where",
+				"we are standing. The road south is open for us and",
+				"for nobody else.",
+			}, "\n") },
+		{ path = "/root/memo-03.txt", owner = "root", mode = 600,
+			text = table.concat({
+				"MEMORANDUM 3 -- 8 July",
+				"",
+				"Two of the checkpoints did not report this morning.",
+				"We are not to go and look. That order is in writing",
+				"and this is the writing.",
+				"",
+				"If you are reading this and you are not one of us:",
+				"the road south was open on the 8th of July. It will",
+				"not be open now.",
+			}, "\n") },
+	},
+	logs = {
+		"login: root logged in on console",
+		"login: root logged in on console",
+		"login: failed login on console",
+		"login: root logged in on console",
+		"halt: system going down",
+	},
+	mail = {
+		{ to = "root", from = "battalion", subj = "the ninth",
+			body = table.concat({
+				"Hold where you are. Do not withdraw and do not",
+				"advance. Further orders follow.",
+			}, "\n") },
+	},
+}
+
+CeroSecContent.PROFILES.cerosec = {
+	host = "cerosec",
+	motd = table.concat({
+		"CeroSec Systems -- service department",
+		"This is a customer machine on the bench. Whatever is",
+		"on it belongs to whoever brought it in. Read the",
+		"ticket before you touch the disk.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "bench.txt", text = table.concat({
+				"Whatever comes in, the same four things and in this",
+				"order:",
+				"",
+				"  1. sh /usr/local/src/sweep.sh /   what is on it",
+				"  2. last                           who used it",
+				"  3. df                             room left",
+				"  4. the BIOS, if it will not boot at all",
+				"",
+				"The library is /usr/local/src and every one of them",
+				"is commented. Copy what you want into your own bin.",
+				"Leave the originals where they are.",
+			}, "\n") },
+		} },
+		-- NAMED, and for the reason the dispatch desk's is: a support line was
+		-- answered by whoever picked it up, and the mailbox has to be findable by
+		-- somebody who has never seen this machine. Open, deliberately: what is
+		-- in it is a shelf of answers and not anybody's business.
+		{ name = "support", pass = false, files = {
+			{ path = "answers.txt", text = table.concat({
+				"What people telephone about, and what to tell them.",
+				"",
+				"It will not take the disk. It is not formatted:",
+				"  newfs /dev/fd0",
+				"",
+				"I have forgotten the password. Nobody here can tell",
+				"them. Repair from the BIOS keeps /home.",
+				"",
+				"The lights will not come on. There is no module on",
+				"the switch. That is an electrician, not us.",
+				"",
+				"It is slow. Something is running. ps, then kill.",
+			}, "\n") },
+		} },
+		{ pass = true },
+	},
+	-- THE LIBRARY ITSELF, by reference, in the one place on any machine in the
+	-- county where the whole of it stands together. Every entry is the same file
+	-- the disks and the homes carry: one script, one copy (see the head of
+	-- CeroSecContent.SCRIPTS).
+	bin = {
+		{ script = "lights.sh", to = "/usr/local/src" },
+		{ script = "locks.sh", to = "/usr/local/src" },
+		{ script = "lockup.sh", to = "/usr/local/src" },
+		{ script = "check.sh", to = "/usr/local/src" },
+		{ script = "audit.sh", to = "/usr/local/src" },
+		{ script = "total.sh", to = "/usr/local/src" },
+		{ script = "rounds.sh", to = "/usr/local/src" },
+		{ script = "announce.sh", to = "/usr/local/src" },
+		{ script = "sweep.sh", to = "/usr/local/src" },
+		{ script = "log.sh", to = "/usr/local/src" },
+		{ script = "guess.sh", to = "/usr/local/src" },
+		{ script = "hangman.sh", to = "/usr/local/src" },
+		{ script = "adventure.sh", to = "/usr/local/src" },
+	},
+	cron = {
+		{ to = 1, lines = { "0 4 * * 0 sh /usr/local/src/sweep.sh /var" } },
+	},
+	files = {
+		{ path = "/usr/local/src/CHANGES", owner = "root", mode = 644,
+			text = table.concat({
+				"CeroSec OS -- what changed, newest first.",
+				"",
+				"1.0  The shell learned pipes, cron and job control.",
+				"     The floppy drive became a filesystem and not a",
+				"     place to keep one file in.",
+				"     hash became mkpasswd, because no Unix ever had",
+				"     a command called hash.",
+				"     call became cu -l /dev/radio0, because a TNC is",
+				"     a box on a serial line and cu is how you reach",
+				"     one.",
+				"     write went away. Putting text in a file has",
+				"     always been a redirection.",
+				"",
+				"0.9  /dev, and the building on the end of it.",
+				"0.8  Accounts, groups and sudo, in that order.",
+				"0.7  The first shell. There were no pipes in it.",
+			}, "\n") },
+	},
+	logs = {
+		"login: root logged in on console",
+		"cron: sweep ran",
+		"login: root logged in on console",
+		"newfs: fd0 relabelled",
+		"login: support logged in",
+		"cron: sweep ran",
+	},
+	mail = {
+		{ to = 2, from = "a customer", subj = "no dial tone",
+			body = table.concat({
+				"Third week of this. The modem says NO DIAL TONE and",
+				"the telephone on the same desk works perfectly.",
+				"Somebody has to come out here.",
+			}, "\n") },
+	},
+}
