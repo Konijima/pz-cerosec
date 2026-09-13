@@ -1045,6 +1045,13 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 -- and not a way in -- the numbers are the region's own telephone directory and the
 -- phone book in his other pocket has all of them in it already.
 --
+-- The one entry that is neither loot nor a slot: the developer's diagnostics
+-- disk, weight 0, handed out by the debug window and by nothing else. Named here
+-- so that the bench's "every entry is either shipped or a named slot" walk can
+-- say which one it is, and so the server can ask for it by something other than a
+-- string typed twice (SCeroSecSystem's `givedisk`).
+CeroSecContent.DIAG_DISK = "CEROSEC DIAGNOSTICS"
+
 CeroSecContent.DISKS = {
 	{
 		id = "UTILITIES",
@@ -1415,6 +1422,153 @@ CeroSecContent.DISKS = {
 			{ name = "sweep.sh", script = "sweep.sh" },
 		},
 	},
+	--
+	-- THE DEVELOPER'S DISK, and it is the only entry in here that is not loot.
+	--
+	-- Weight 0, so CeroSecContent.diskForRoll can never land on it and no drawer
+	-- in the county has one: the way to it is the debug window's own "Give
+	-- diagnostics disk", behind CeroSec.debugAllowed like everything else on that
+	-- glass (Commands.debugact "givedisk" in SCeroSecSystem.lua).
+	--
+	-- WHAT IT IS FOR. Every bench in tests/ runs on lua5.1 on a developer's box.
+	-- The game runs Kahlua, and twice in one day that difference shipped a bug
+	-- through a green suite. tests/kahlua-probe.lua closed the half of that which
+	-- is pure functions; this disk closes the other half, which is the SHELL: the
+	-- commands, the pipes, the redirects, the arithmetic reader and the
+	-- filesystem, run by the engine, in a save, on the VM the game has.
+	--
+	-- ONE SCRIPT AND NOT FOUR. A floppy is 4096 bytes and 32 nodes, and the
+	-- twenty-six checks fit in one file with about three hundred bytes to spare --
+	-- so there is no t1.sh/t2.sh split, which is just as well: a script is a job
+	-- of its own and its variables go with it, so parts would have had to pass
+	-- their tally through a file. The pass count is a variable and the failures are
+	-- lines in a scratch file, which is deliberately two places: a miscount cannot
+	-- make itself agree.
+	--
+	-- The bench weighs this entry like every other (tests/content_test.lua section
+	-- 7c), RUNS it under the engine and holds it to FAIL 0 -- and holds the hash on
+	-- the last check to CeroSecOS.hashPassword's own answer, so the number on the
+	-- floppy cannot drift off the engine it is there to check.
+	--
+	{
+		id = CeroSecContent.DIAG_DISK,
+		label = "CEROSEC DIAGNOSTICS",
+		-- Never in loot. The gate is diskForRoll's `weight > 0`, and the bench
+		-- walks all hundred rolls to say so out loud.
+		weight = 0,
+		files = {
+			{ name = "selftest.sh", mode = 755, text = table.concat({
+				"#!/bin/sh",
+				"# CEROSEC DIAGNOSTICS -- the machine testing itself.",
+				"# Twenty-six checks. See README.TXT.",
+				"F=~/st.f",
+				"p=0",
+				"echo -n \"\" >$F",
+				"n=echo; e=hi; g=$(echo hi)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=pipe; e=HI; g=$(echo hi | tr a-z A-Z)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=cut; e=b; g=$(echo a:b:c | cut -d : -f 2)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=sort; e=a; g=$(printf \"c\\na\\nb\\n\" | sort | head -n 1)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=sort-u; e=2; g=$(printf \"b\\na\\nb\\n\" | sort -u | wc -l)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=wc; e=3; g=$(printf \"a\\nb\\nc\\n\" | wc -l)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"printf \"a\\nba\\nc\\n\" >~/st.t",
+				"n=grep; e=2; g=$(grep -c a ~/st.t)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=more; e=3; g=$(cat ~/st.t | more | wc -l)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=tee; e=\"z z\"; g=\"$(echo z | tee ~/st.u) $(cat ~/st.u)\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=arith; e=22; g=$(( 3 * 7 + 1 ))",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=modulo; e=\"2 65535\"",
+				"g=\"$(( 2147483648 % 7 )) $(( 4294967295 % 65536 ))\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"s=0",
+				"for i in 1 2 3; do s=$(( s + i )); done",
+				"n=for; e=6; g=$s",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"c=0",
+				"while [ $c -lt 3 ]; do c=$(( c + 1 )); done",
+				"n=while; e=3; g=$c",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=read; e=abc",
+				"g=$(printf \"a\\nb\\nc\\n\" | while read v; do echo -n $v; done)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"mkdir ~/st.d",
+				"touch ~/st.d/f",
+				"chmod 700 ~/st.d",
+				"chmod 600 ~/st.u",
+				"n=mkdir; e=y; g=$([ -d ~/st.d -a -f ~/st.d/f ] && echo y)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=perms; e=rwx",
+				"g=$([ -r ~/st.d -a -w ~/st.d -a -x ~/st.d ] && echo rwx)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=chmod; e=-rw-------; g=$(ls -l ~/st.u | cut -c 1-10)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"rm ~/st.d/f",
+				"n=rm; e=gone; g=$([ -e ~/st.d/f ] || echo gone)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=paths; e=\"/etc/passwd /bin/crontab\"",
+				"g=\"$(find /etc -name passwd) $(which crontab)\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=date; e=$(date +%Y); g=$(date \"+%Y-%m-%d\" | cut -d - -f 1)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=drive; e=\"2 1\"",
+				"g=\"$(df | grep -c fd0) $(mount | grep -c DIAGNOSTICS)\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=dev; e=\"1 1\"",
+				"g=\"$(ls -l /dev | grep -c null) $(dev | grep -c fd0)\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=who; e=\"$(hostname) uid=$(whoami)\"",
+				"g=\"$(cat /etc/hostname) $(id | cut -d \" \" -f 1)\"",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=uptime; e=1; g=$(uptime | grep -c load)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"n=mkpasswd",
+				"e='$cs1$abcdef$74a662fe0a5af94dd93513930da000aa'",
+				"g=$(mkpasswd secret abcdef)",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"sleep 1",
+				"n=sleep; e=0; g=$?",
+				"[ \"$g\" = \"$e\" ] && p=$((p+1)) || echo \"$n: $e vs $g\" >>$F",
+				"f=$(cat $F | wc -l)",
+				"s=\"PASS $p FAIL $f\"",
+				"cat $F",
+				"echo \"$s\"",
+				"echo \"CEROSEC SELFTEST $s\" >/mnt/RESULTS.TXT",
+				"cat $F >>/mnt/RESULTS.TXT",
+				"rm $F",
+				"rm ~/st.t",
+				"rm ~/st.u",
+				"rm -r ~/st.d",
+				"if [ $f -gt 0 ]; then exit 1; fi",
+			}, "\n") },
+			-- Shipped as a STUB at mode 666, and the mode is the whole point: /mnt is
+			-- root's, so an ordinary account cannot make a file on a floppy -- but it
+			-- may write one that is already there and says anybody may. Without this
+			-- entry the last four lines of the script would be `permission denied` on
+			-- every machine a survivor is not root on.
+			{ name = "RESULTS.TXT", mode = 666, text = "(nothing run yet)" },
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"CEROSEC DIAGNOSTICS",
+				"",
+				"The machine testing itself.",
+				"",
+				"  mount /dev/fd0 /mnt",
+				"  sh /mnt/selftest.sh",
+				"",
+				"A line for every check that failed, then PASS n FAIL m. The",
+				"verdict goes into RESULTS.TXT beside it, with the failures",
+				"under it while there is room on the disk for them. Its",
+				"scratch files go in your home and are taken away again.",
+			}, "\n") },
+		},
+	},
 	{
 		id = "BLANK",
 		label = nil,
@@ -1430,6 +1584,7 @@ CeroSecContent.DISKS = {
 CeroSecContent.DISK_SLOTS = {
 	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS 1.0 DIST",
 }
+
 
 -- The entry a roll lands on, or nil for a blank disk. `roll` is 1..100.
 function CeroSecContent.diskForRoll(roll)

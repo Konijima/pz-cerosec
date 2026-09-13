@@ -33,6 +33,17 @@ do
 	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
 	chunk()
 end
+-- The self-test, for the one string section 7c needs out of it: the text and the
+-- salt the diagnostics floppy hashes. Asking it rather than writing them down
+-- again is the whole point -- the number baked into the script has to be the
+-- engine's answer to THESE two, and a bench with its own copy of them would be a
+-- bench that proved a different question.
+do
+	local path = "42/media/lua/shared/CeroSec/CeroSecSelfTest.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+end
 
 local count = 0
 local function check(what, cond)
@@ -341,6 +352,48 @@ local function run(state, session, line, env, answers)
 	for k = 1, #job.out do out[#out + 1] = job.out[k] end
 	session.status = job.status
 	return job.status == 0, out, turns, job, at - 1
+end
+
+-- The same loop, for a script that SLEEPS. `run` above stops at a sleeping job on
+-- purpose -- a bench that waited would be a bench nobody could read -- but the
+-- diagnostics suite has a `sleep 1` in it, and a runner that gave up there would
+-- report the rest of the suite as "never ran".
+--
+-- The millisecond clock is wound FORWARD to the job's own wake time rather than
+-- ticked: a bench that advanced the clock a second at a time would be a bench
+-- whose turn count is the sleep's length, and the turn ceiling is what says a
+-- script finishes at all.
+local function runSleeping(state, session, line, env, answers)
+	env = env or { now = START }
+	if env.nowMs == nil then env.nowMs = 0 end
+	if session.shvars == nil then session.shvars = {} end
+	local job, refusal =
+		CeroSecOS.promptJob(state, session, line, session.shvars, session.status)
+	if job == nil then return false, { refusal }, 0 end
+	local out, turns, at = {}, 0, 1
+	while not CeroSecOS.jobIsOver(job) and turns < 2000 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, job, env, 1000)
+		for k = 1, #job.out do out[#out + 1] = job.out[k] end
+		job.out = {}
+		if job.state == "waiting" and job.ask ~= nil and answers ~= nil
+				and at <= #answers then
+			CeroSecOS.jobInput(state, job, answers[at], env)
+			at = at + 1
+		elseif job.state == "waiting" then
+			break
+		elseif job.state == "sleeping" then
+			if type(job.wakeMs) == "number" and job.wakeMs > env.nowMs then
+				env.nowMs = job.wakeMs
+			else
+				env.nowMs = env.nowMs + 1000
+			end
+		end
+		if job.spawn ~= nil then break end
+	end
+	for k = 1, #job.out do out[#out + 1] = job.out[k] end
+	session.status = job.status
+	return job.status == 0, out, turns, job
 end
 
 -- A fake env.devices, os_test.lua's shape, built out of what a script DECLARED it
@@ -1176,8 +1229,13 @@ do
 	for i = 1, #CeroSecContent.DISK_SLOTS do slots[CeroSecContent.DISK_SLOTS[i]] = true end
 	for i = 1, #CeroSecContent.DISKS do
 		local id = CeroSecContent.DISKS[i].id
+		-- The diagnostics disk is the fourth case and is named by a constant, not
+		-- by a string typed here: it is not loot, so it is not a weighted slot, and
+		-- it is not UTILITIES or BLANK either. Section 7c is what holds it to being
+		-- unreachable from the box.
 		check("catalogue entry " .. id .. " is either shipped or a named slot",
-			slots[id] ~= nil or id == "UTILITIES" or id == "BLANK")
+			slots[id] ~= nil or id == "UTILITIES" or id == "BLANK"
+				or id == CeroSecContent.DIAG_DISK)
 	end
 
 	-- And a disk out of the catalogue MOUNTS on a machine and its files can be
@@ -1393,6 +1451,155 @@ do
 			local vok, vwhy = CeroSecOS.validate(state)
 			check("and the machine still boots: " .. tostring(vwhy), vok)
 		end
+	end
+end
+
+--
+-- 7c. THE DIAGNOSTICS DISK: the machine's own test suite, RUN
+--
+-- Every other bench in here runs on lua5.1. The game runs Kahlua, and the shell
+-- is the half of the mod no pure-function probe can reach: the commands, the
+-- pipes, the redirects, the arithmetic reader and the filesystem. So the mod
+-- ships a floppy with a test suite on it, and this section runs that suite under
+-- the engine and holds it to FAIL 0.
+--
+-- Which is not the same as running it in the game, and is not meant to be. This
+-- says the suite is RIGHT -- twenty-six checks that pass on the canonical VM.
+-- docs/RELEASE.md is what says somebody ran it on the other one.
+--
+do
+	local entry = CeroSecContent.diskById(CeroSecContent.DIAG_DISK)
+	check("the diagnostics disk is in the catalogue", entry ~= nil)
+	eq("it is labelled for the drive", entry.label, "CEROSEC DIAGNOSTICS")
+	-- NEVER IN LOOT, asserted over the whole box and not off the field: weight 0
+	-- is the mechanism, "no roll lands on it" is the requirement, and it is the
+	-- requirement that is checked.
+	eq("it has no weight", tonumber(entry.weight) or 0, 0)
+	for roll = 1, 100 do
+		check("no roll of the box lands on it (" .. roll .. ")",
+			CeroSecContent.diskForRoll(roll) ~= entry)
+	end
+
+	-- THE HASH THE SCRIPT CHECKS ITSELF AGAINST, held to the engine's own answer.
+	-- The script has that string baked into it -- it has to, there being no lua5.1
+	-- in the game to ask -- and a baked number with nothing holding it is a number
+	-- that goes on being green after the thing it measures has moved. This is what
+	-- holds it: the day HASH_ROUNDS or the mixer changes, this line is red and the
+	-- floppy is rewritten, instead of the in-game run going red for a reason
+	-- nobody can place.
+	local script = nil
+	for i = 1, #entry.files do
+		if entry.files[i].name == "selftest.sh" then script = entry.files[i].text end
+	end
+	check("the disk carries selftest.sh", type(script) == "string")
+	local hash = CeroSecOS.hashPassword(CeroSecSelfTest.PASS_TEXT,
+		CeroSecSelfTest.PASS_SALT)
+	check("and the hash baked into it is the engine's own (" .. hash .. ")",
+		string.find(script, hash, 1, true) ~= nil)
+	check("and it is the text and salt the engine was asked about",
+		string.find(script, "mkpasswd " .. CeroSecSelfTest.PASS_TEXT .. " "
+			.. CeroSecSelfTest.PASS_SALT, 1, true) ~= nil)
+
+	-- And now RUN it, on a fresh machine, as an ordinary account, with the disk in
+	-- the drive and mounted the way a survivor mounts one.
+	local state = CeroSecOS.newState("ksp-4-b")
+	local session = CeroSecOS.login(state, "admin", "")
+	check("the bench can log in", session ~= nil)
+	local disk, written = CeroSecContent.diskData(entry, START)
+	eq("the disk took all of its files", written, #entry.files)
+	state.floppy = disk
+	-- The shell's own clock and its own millisecond clock, because the suite has a
+	-- `sleep 1` in it: a job that sleeps is off the processor until env.nowMs comes
+	-- round, so a bench with no millisecond clock would hang at that line for two
+	-- thousand turns and then call it a failure.
+	local env = { now = START, nowMs = 0, up = 12345,
+		devices = devicesFor(nil) }
+	local ok, lines = run(state, session, "mount /dev/fd0 /mnt", env)
+	check("the disk mounts: " .. table.concat(lines, " / "), ok)
+
+	local ran, out = runSleeping(state, session, "sh /mnt/selftest.sh", env)
+	local said = table.concat(out, " / ")
+	-- The verdict line, and it is read off the LAST line rather than searched for
+	-- anywhere in the output: a failure line has the check's name in it and could
+	-- otherwise be mistaken for the summary.
+	local verdict = out[#out]
+	check("the suite printed a verdict (" .. said .. ")", verdict ~= nil)
+	-- FAIL 0 first and by itself, because that is the requirement; the pass count
+	-- is asserted beside it so that a suite whose checks have quietly stopped
+	-- running cannot be green for having run none.
+	check("and nothing failed: " .. said,
+		string.find(verdict or "", "FAIL 0", 1, true) ~= nil)
+	local passed = tonumber(string.match(verdict or "", "PASS (%d+)") or "0")
+	check("and it ran every check it has (" .. passed .. ")", passed >= 26)
+	-- The script's own verdict lines are what a check IS, so the number of them is
+	-- what the pass count has to agree with. A check somebody adds without the
+	-- count following is this line.
+	local declared = 0
+	for _ in string.gmatch(script, "p=%$%(%(p%+1%)%)") do declared = declared + 1 end
+	eq("as many checks as the script declares", passed, declared)
+	check("and it said so on its own exit status", ran)
+	for i = 1, #out do
+		check('a line of it fits 60 columns: "' .. out[i] .. '"',
+			#out[i] <= CeroSecOS.COLS)
+	end
+
+	-- The file it leaves on the disk, which is what somebody who ran it while
+	-- nobody was watching reads afterwards.
+	local results = CeroSecOS.getNode(state, session, "/mnt/RESULTS.TXT")
+	check("it wrote RESULTS.TXT on the disk", results ~= nil)
+	check("with the verdict in it (" .. tostring(results and results.data) .. ")",
+		results ~= nil and string.find(results.data or "", "FAIL 0", 1, true) ~= nil)
+	-- Which it could only do because the stub ships world-writable: /mnt is root's
+	-- and the account running the suite is not.
+	eq("because the stub ships world-writable", results.mode, 666)
+
+	-- It took its scratch files away with it, both because a suite that fills a
+	-- survivor's home is a suite nobody runs twice and because the disk quota is
+	-- the one thing a script can break on a real machine.
+	local home = CeroSecOS.getNode(state, session, "/home/admin")
+	local left = {}
+	local names = CeroSecOS.childNames(home)
+	for i = 1, #names do
+		if string.find(names[i], "^st%.") ~= nil then left[#left + 1] = names[i] end
+	end
+	eq("and left no scratch files behind (" .. table.concat(left, " ") .. ")",
+		#left, 0)
+
+	-- And the machine is still a machine. The suite makes directories, changes
+	-- modes and removes files, which is the whole of what a script can do to one.
+	local vok, vwhy = CeroSecOS.validate(state)
+	check("the machine still boots afterwards: " .. tostring(vwhy), vok)
+	local sok, swhy = CeroSecOS.systemOk(state)
+	check("and its system is still whole: " .. tostring(swhy), sok)
+
+	-- A MUTATION, so that "FAIL 0" is known to be an assertion and not a sentence
+	-- the script prints either way. One check is turned into a lie and the suite
+	-- has to notice, name it, and come back non-zero.
+	do
+		local broken = string.gsub(script, "n=echo; e=hi;", "n=echo; e=HI;", 1)
+		check("the mutation changed the script", broken ~= script)
+		-- The same sticker, because one of the checks reads the label out of
+		-- `mount`: a mutant labelled anything else fails TWO checks and the one
+		-- being proved would be hidden among them.
+		local hurt = { id = "MUTANT", label = entry.label, weight = 0, files = {} }
+		for i = 1, #entry.files do
+			local file = entry.files[i]
+			local text = file.text
+			if file.name == "selftest.sh" then text = broken end
+			hurt.files[i] = { name = file.name, mode = file.mode, text = text }
+		end
+		local s2 = CeroSecOS.newState("ksp-4-c")
+		local ses2 = CeroSecOS.login(s2, "admin", "")
+		s2.floppy = CeroSecContent.diskData(hurt, START)
+		local env2 = { now = START, nowMs = 0, up = 12345, devices = devicesFor(nil) }
+		run(s2, ses2, "mount /dev/fd0 /mnt", env2)
+		local ran2, out2 = runSleeping(s2, ses2, "sh /mnt/selftest.sh", env2)
+		local said2 = table.concat(out2, " / ")
+		check("a broken check is NOT reported as a pass: " .. said2,
+			string.find(out2[#out2] or "", "FAIL 1", 1, true) ~= nil)
+		check("and the failing check is named: " .. said2,
+			string.find(said2, "echo: HI vs hi", 1, true) ~= nil)
+		check("and the suite comes back non-zero", not ran2)
 	end
 end
 
