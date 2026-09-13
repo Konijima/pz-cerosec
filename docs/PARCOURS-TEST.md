@@ -2067,8 +2067,10 @@ qu'on lit sur le papier soit celui que la machine demande.
 
 283. **Une disquette avec quelque chose dessus.** Fouiller les endroits à
      disquettes (bureau de cybercafé, classeur, étagère d'électronique) jusqu'à
-     en trouver une dont le nom dans l'inventaire n'est pas `Disquette 3,5 po`
-     mais une **étiquette** en majuscules (`UTILITIES`).
+     en trouver une dont le nom dans l'inventaire n'est pas le nom ordinaire d'une
+     disquette mais une **étiquette** en majuscules (`UTILITIES`). (Le nom
+     ordinaire est encore en anglais en français : `ItemName.json` FR ne traduit
+     pas les quatre disquettes, ce qui est d'avant cette vague.)
      - la mettre dans le lecteur, `mount /dev/fd0 /mnt`, `ls /mnt` : il y a un
        `README.TXT` et au moins un fichier `.sh` ;
      - `cat /mnt/README.TXT` : le texte nomme les fichiers qui sont à côté, et
