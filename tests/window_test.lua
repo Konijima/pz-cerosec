@@ -12224,9 +12224,30 @@ do
 	-- A clean run: the verdict comes back as a NOTE and not as an error, on the
 	-- `debug` answer, with no tab -- so the window puts it on the line under the
 	-- list and empties no list for it.
+	--
+	-- `print` is caught, because the verdict going to the GAME LOG is a requirement
+	-- and not a nicety: the log ring is two hundred lines and dies with the session,
+	-- and RELEASE.md's step 6a says to paste the summary into the release notes --
+	-- which means it has to be somewhere a release can be pasted FROM, and that is
+	-- console.txt on a client and the server's own log on a dedicated one. Without
+	-- this the line could be deleted and every other assertion here would stay green.
 	CeroSec.logRing = {}
+	local printed = {}
+	local realPrint = print
+	_G.print = function(text) printed[#printed + 1] = tostring(text) end
 	net.system:OnClientCommand("debugact", net.player,
 		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "selftest" })
+	_G.print = realPrint
+	do
+		local said = nil
+		for i = 1, #printed do
+			if string.find(printed[i], "FAIL 0", 1, true) ~= nil then said = printed[i] end
+		end
+		check("the verdict goes to the game log through print: "
+			.. table.concat(printed, " / "), said ~= nil)
+		check("named so a reader knows whose it is: " .. tostring(said),
+			said ~= nil and string.find(said, "CeroSec", 1, true) ~= nil)
+	end
 	eq("the server answered the press", #answers, 1)
 	eq("on the same command a snapshot comes on", answers[1].cmd, "debug")
 	eq("carrying the window's own token", answers[1].args.token, "dbg-0-1")

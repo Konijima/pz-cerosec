@@ -1522,8 +1522,16 @@ do
 	-- The verdict line, and it is read off the LAST line rather than searched for
 	-- anywhere in the output: a failure line has the check's name in it and could
 	-- otherwise be mistaken for the summary.
+	--
+	-- Both halves, because either alone is weak. "The last line is a verdict" is what
+	-- caught the disk shipped without a world-writable RESULTS.TXT -- the write
+	-- refused, `permission denied` came out after the summary, and the last line was
+	-- not a verdict any more -- and "a verdict was printed at all" is what stops the
+	-- first half from being satisfied by a suite that printed nothing but a verdict.
 	local verdict = out[#out]
 	check("the suite printed a verdict (" .. said .. ")", verdict ~= nil)
+	check("the last thing it said IS the verdict and nothing came after it: " .. said,
+		string.match(verdict or "", "^PASS %d+ FAIL %d+$") ~= nil)
 	-- FAIL 0 first and by itself, because that is the requirement; the pass count
 	-- is asserted beside it so that a suite whose checks have quietly stopped
 	-- running cannot be green for having run none.

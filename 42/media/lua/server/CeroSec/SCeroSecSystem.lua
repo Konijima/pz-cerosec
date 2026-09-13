@@ -3,6 +3,15 @@ if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecDefs"
+-- The self-test and its generated vectors. Named here even though the game loads
+-- every file under shared/ on its own, for the reason every other line in this
+-- block is here: `Commands.debugact` calls CeroSecSelfTest.runAll, and a load order
+-- nobody wrote down is a nil call waiting for the day the game walks shared/ in a
+-- different order. The vectors are a second require because they are a second file
+-- -- generated, and the runner reads CeroSecSelfTest.VECTORS when it is CALLED and
+-- never at load time, which is what lets the two be loaded in either order.
+require "CeroSec/CeroSecSelfTest"
+require "CeroSec/CeroSecSelfTestVectors"
 require "CeroSec/CeroSecNotes"
 require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDebug"
