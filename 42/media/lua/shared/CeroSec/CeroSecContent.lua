@@ -177,8 +177,16 @@ end
 -- through CeroSecOS.isValidUserName, because what this returns goes into
 -- /etc/passwd and a line that will not parse is an account nobody can log in to.
 --
--- Wave 7b lengthens both lists. Nothing derived from them is stored, so a longer
--- list changes the next untouched machine and no machine already switched on.
+-- Wave 7b lengthened both lists to forty-four apiece. Nothing derived from them
+-- is stored, so a longer list changes the next untouched machine and no machine
+-- already switched on -- a save in progress keeps every person it already had.
+--
+-- The ten added to each are the ones the shipped thirty-four were short of: the
+-- names of somebody who was of working age in KENTUCKY in 1993 and not of
+-- somebody the census counted nationally. Hensley, Mullins, Sizemore and
+-- Whitaker are eastern-Kentucky surnames the way Smith is an American one -- a
+-- county office with four Millers in it and nobody called Sizemore reads as a
+-- county somewhere else.
 --
 
 CeroSecContent.NAMES = {
@@ -188,6 +196,8 @@ CeroSecContent.NAMES = {
 		"elizabeth", "jennifer", "susan", "margaret", "dorothy", "carol",
 		"donald", "kenneth", "steven", "edward", "brian", "ronald", "anthony",
 		"nancy", "karen", "betty", "helen", "sandra", "donna", "ruth",
+		"gary", "larry", "dennis", "wayne", "curtis", "earl", "sharon",
+		"wanda", "darlene", "peggy",
 	},
 	last = {
 		"smith", "johnson", "williams", "brown", "jones", "miller", "davis",
@@ -195,6 +205,8 @@ CeroSecContent.NAMES = {
 		"harris", "martin", "thompson", "garcia", "martinez", "robinson",
 		"clark", "rodriguez", "lewis", "lee", "walker", "hall", "allen",
 		"young", "king", "wright", "scott", "torres", "hill", "green",
+		"adams", "baker", "campbell", "carter", "coleman", "hatfield",
+		"hensley", "mullins", "sizemore", "whitaker",
 	},
 }
 
@@ -253,6 +265,7 @@ CeroSecContent.WORDS = {
 	"falcon", "sunset", "harvest", "granite", "meadow", "copper", "juniper",
 	"lantern", "compass", "thunder", "maple", "ranger", "willow", "cardinal",
 	"bourbon", "derby", "hickory", "walnut", "tobacco", "limestone",
+	"chestnut", "sycamore", "bluegrass", "trestle",
 }
 
 function CeroSecContent.password(secret, key)
