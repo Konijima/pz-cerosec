@@ -75,7 +75,7 @@ Start with [docs/PLAYERS.md](docs/PLAYERS.md) if you are playing, and with
 | [docs/RELEASE.md](docs/RELEASE.md) | The ordered Workshop release checklist: the images, the flags, the upload, the tag, the visibility. |
 | [docs/PARCOURS-TEST.md](docs/PARCOURS-TEST.md) | The in-game checklist, in French, walked on the glass before a release. |
 | [docs/TEST-rung1.md](docs/TEST-rung1.md), [rung2](docs/TEST-rung2.md), [rung4](docs/TEST-rung4.md) | Older in-game checklists, kept as they were read at the time. |
-| [docs/notes/](docs/notes/) | Engineering notes: bytecode proofs out of the game's jar, kept so a rule can be checked rather than believed. |
+| [docs/notes/](docs/notes/README.md) | Engineering notes: the bytecode proofs out of the game's jar behind the rules, kept so a rule can be checked rather than believed. |
 | [workshop/SHOTS.md](workshop/SHOTS.md) | The screenshots the Workshop page needs, with the in-game settings for each. |
 
 The in-game manual's own text is three Lua files:

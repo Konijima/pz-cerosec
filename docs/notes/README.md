@@ -1,0 +1,28 @@
+# Engineering notes
+
+These are **proofs**, not design documents. Each one exists because a rule in the
+code would otherwise have to be taken on faith, and a rule taken on faith in this
+codebase has already cost a wrong behaviour once. They are written so that a
+reader can check the claim instead of believing it: the class, the method, the
+`javap` line, the bytecode offset, and the vanilla Lua file and line beside it.
+
+They are kept as history as much as as reference. A note says what was true of the
+jar it was read against, with the build number at the top; if the game changes
+under it, the fix is to re-read the jar and add what is now true, never to quietly
+edit the note into agreement.
+
+| Note | What it proves |
+| --- | --- |
+| [modules-proofs.md](modules-proofs.md) | Every engine call the hardware modules make, and — offset by offset in `IsoObject.save`/`load` — that a module written into an object's modData is really saved with the chunk. |
+| [picking.md](picking.md) | What the game's right-click actually hands a context menu: the whole pick pipeline through `UIManager.update`, `IsoObjectPicker` and `FBORenderObjectPicker`, and the two real defects a guess about it was hiding. |
+| [workshop-study.md](workshop-study.md) | How the most subscribed Project Zomboid Workshop pages are built, counted from the raw HTML of their descriptions, and Steam's own rules for images in one. |
+
+The command, for a note of your own:
+
+```
+javap -p -c -cp <path to>/projectzomboid.jar zombie.iso.IsoObject
+```
+
+Read it against the jar that is **installed right now**. Any decompiled dump in
+circulation is older than the jar and has been wrong here; it is not cited in
+these notes and should not be cited in a new one.
