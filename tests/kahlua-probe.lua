@@ -143,15 +143,27 @@ say("fmod 7 3", math.fmod(7, 3))
 say("fmod -7 3", math.fmod(-7, 3))
 say("fmod 7 -3", math.fmod(7, -3))
 say("fmod big", math.fmod(4294967295, 60))
+-- The "%" OPERATOR is probed only where the mod is allowed to use it: both
+-- operands non-negative and the quotient under 2^31. Kahlua's "%" truncates
+-- toward zero where Lua floors (-7 % 3 is -1 there and 2 here) and is outright
+-- wrong once the quotient reaches 2^31, and neither is fixable in the mod -- so
+-- they are a RULE in docs/TESTING.md and a grep in kahlua-check.sh, not a line
+-- here that could never go green. CeroSecOS.mod is what the engine uses.
 say("mod 7 3", 7 % 3)
-say("mod -7 3", -7 % 3)
-say("mod 7 -3", 7 % -3)
+say("CeroSecOS.mod 7 3", CeroSecOS.mod(7, 3))
+say("CeroSecOS.mod big", CeroSecOS.mod(47564 * 3266489917, 65536))
+say("CeroSecOS.mod exact 32", CeroSecOS.mod(4294967295, 65536))
+say("CeroSecOS.mod b zero", CeroSecOS.mod(1, 0))
+say("CeroSecOS.mod a neg", CeroSecOS.mod(-7, 3))
+say("CeroSecOS.mod not number", CeroSecOS.mod("7", 3))
 say("floor -0.5", math.floor(-0.5))
 say("floor div", math.floor(-7 / 3))
-say("tostring 1e15", tostring(1e15))
+-- tostring of a NON-INTEGER is not probed: Kahlua renders a double the Java way
+-- ("1.0E15", "0.3333333333333333") and lua5.1 uses "%.14g" ("1e+15",
+-- "0.33333333333333"). Unfixable, so it is the other half of the rule in
+-- docs/TESTING.md: the engine never puts a non-integer through tostring.
 say("tostring int", tostring(42))
 say("tostring div", tostring(10 / 2))
-say("tostring third", tostring(1 / 3))
 say("tostring neg zero", tostring(0 - 0))
 
 --

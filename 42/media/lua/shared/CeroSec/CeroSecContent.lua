@@ -148,7 +148,11 @@ function CeroSecContent.number(secret, key, n)
 	if hash == nil then return nil end
 	local v = CeroSecOS.hexValue(string.sub(hash, 1, 8))
 	if v == nil then return nil end
-	return math.floor(math.fmod(v, math.floor(n))) + 1
+	-- CeroSecOS.mod and not math.fmod: v reaches 2^32 and n is small, so the
+	-- quotient passes 2^31. math.fmod happens to agree on both VMs at that size,
+	-- but the rule the mod holds is one function for a modulo, and it is that one.
+	-- Same value either way: v is never negative and n is at least 1.
+	return math.floor(CeroSecOS.mod(v, math.floor(n))) + 1
 end
 
 -- One out of a list.

@@ -226,35 +226,47 @@ be a red that can never go green. The `hexValue` lines are the canary instead: p
 `hexValue` back at `tonumber` and they differ, which is how the probe was proven to
 catch the bug it was written for.
 
-### The probe is RED on landing, and on purpose (2026-09-12)
+### The three rules the probe cannot carry, and one grep that can (2026-09-12)
 
-It is not red for the bug above -- that one is fixed and its four lines agree. It is
-red because it immediately found a **second and much larger** divergence, which is
-written down here rather than hidden by trimming the probe:
+The probe found a second and much larger divergence the day it was written, and
+that one is fixed too: **`CeroSecOS.digest` answered differently on the two VMs.**
+`digest("", 16)` was `1c016990080ede755131cf2f9b0ecd65` under lua5.1 and
+`7eb118b8d258f3e9f18d63987b1a55aa` on Kahlua, so `CeroSecContent.derive` and every
+stored password differed *in the game* from every value in `tests/`,
+`tests/fixtures/` and `docs/CONTENT.md`.
 
-- **`CeroSecOS.digest` answers differently on the two VMs.** `digest("", 16)` is
-  `1c016990080ede755131cf2f9b0ecd65` under lua5.1 and
-  `7eb118b8d258f3e9f18d63987b1a55aa` on Kahlua, so `CeroSecContent.derive` and every
-  password hash differ *in the game* from every value in `tests/`, in
-  `tests/fixtures/` and in `docs/CONTENT.md`.
-- **The cause is Kahlua's `%` operator**, proven from
-  `javap -c se.krka.kahlua.vm.KahluaThread`, `primitiveMath`, case `OP_MOD`:
-  `a % b` is compiled as `a - (int)(a / b) * b`, and that `(int)` is Java's `d2i`,
-  which **clamps at 2147483647**. So `%` is simply wrong whenever `a / b` reaches
-  2^31. Measured at runtime on both VMs: with `big = 47564 * 3266489917`,
-  `big % 65536` is `60828` under lua5.1 and `14629838122396` on Kahlua. That is
-  exactly the shape of `mul()` in `CeroSecOSUsers.lua` -- `(ah * b) % 65536` -- which
-  is the bottom of the mixer, so every hash the game has ever computed is a different
-  number from every hash the bench has ever computed.
-- Kahlua's `%` also **truncates toward zero** where Lua floors, so `-7 % 3` is `-1`
-  on Kahlua and `2` under lua5.1, and `tostring` renders a non-integer double the
-  Java way (`1.0E15`, `0.3333333333333333`). Those three lines of the probe are pure
-  VM facts with no fix in the mod; they need a decision of their own (record the
-  expected difference, or stop probing them).
+The cause, from `javap -c se.krka.kahlua.vm.KahluaThread`, `primitiveMath`, case
+`OP_MOD`: Kahlua compiles `a % b` as `a - (int)(a / b) * b`, and that `(int)` is
+Java's `d2i`, which **clamps at 2147483647**. So the `%` operator is wrong the
+moment the quotient reaches 2^31. Measured at runtime on both VMs, with
+`big = 47564 * 3266489917`: `big % 65536` is `60828` under lua5.1 and
+`14629838122396` on Kahlua -- and `(ah * b) % 65536` is exactly the line at the
+bottom of `mul()` in the mixer. `CeroSecOS.mod(a, b)` = `a - math.floor(a / b) * b`
+replaces it, and the whole mixer goes through that expression -- written out by hand
+inside `mul()`, `rotl()` and `absorb()` rather than called, because the mixer is the
+one hot loop in the mod and a call per modulo took a 4000-round hash from 4.3 ms to
+18.4 ms under lua5.1 (7.7 ms as it stands, against the 50 ms `os_test` allows, and
+Kahlua is several times slower again). Everything outside that loop calls
+`CeroSecOS.mod`. lua5.1's answer is the canonical
+one and did not move, so no fixture and no documented value changed; the game now
+agrees with them. `math.fmod` is **not** affected -- it is `MathLib` and agrees on
+both VMs at every size and both signs, which the probe pins.
 
-Fixing the mixer is not a one-line change and it is **not reversible for a save**: a
-password already stored on a machine was hashed the Kahlua way, so making the two VMs
-agree invalidates it. That is a decision, not a fix, and it is open.
+Three rules come out of it, and they are rules rather than probe lines because a
+line for any of them could never go green:
+
+1. **Never `tostring` a non-integer.** Kahlua renders a double the Java way
+   (`1.0E15`, `0.3333333333333333`); lua5.1 uses `%.14g` (`1e+15`,
+   `0.33333333333333`). `math.floor` first. This one IS greppable and is now
+   checked: `kahlua-check.sh` fails on a `/` or `*` inside `tostring()` without a
+   `math.floor` in the same call (`forbid_unless`, proven by mutation).
+2. **Never `%` a negative.** Kahlua truncates toward zero where Lua floors, so
+   `-7 % 3` is `-1` there and `2` here. Normalise the left operand first, the way
+   `scatter()` in `CeroSecOSNet.lua` already does (`if h < 0 then h = h + 65536`).
+3. **Never `%` when the quotient can reach 2^31.** Use `CeroSecOS.mod`. Not
+   greppable -- it is a fact about operand ranges, not about text -- so it is
+   reviewed: the audit of every modulo in `42/media/lua/shared/CeroSec/**` is in
+   the commit that introduced `CeroSecOS.mod`.
 
 **What it does not prove.** It is a load, not a game.
 

@@ -51,13 +51,37 @@ local SEED = { 2166136261, 3323198485, 2654435769, 1103515245 }
 
 local ROT = { 7, 11, 17, 23 }
 
+-- EVERY modulo below goes through CeroSecOS.mod and never through the "%"
+-- operator: Kahlua's "%" is a - (int)(a / b) * b with a 32-bit (int), so it is
+-- wrong whenever the quotient reaches 2^31 -- which `(ah * b) % 65536` does, and
+-- that one line is why the game's hashes were not the bench's hashes. See the
+-- head of CeroSecOS.mod. Held in a local because it is called eight times per
+-- round and there are four thousand rounds in a login; CeroSecOS.lua sorts
+-- first under shared/CeroSec/OS/, so it is there by the time this file loads.
+local mod = CeroSecOS.mod
+-- And math.floor under its own name, because the mixer is the one hot loop in
+-- the mod: a login is four thousand rounds and every round divides eight times.
+local floor = math.floor
+
 -- a * b modulo 2^32, without ever asking a double to hold more than it can. A
 -- Lua number carries 53 bits of mantissa and a 32-bit product needs 64, so the
 -- left operand is split at 16 bits: the high half only matters modulo 2^16.
+--
+-- `ah * b` reaches 2^48, so `mod(ah * b, 65536)` has a quotient over 2^31: this
+-- is the one expression in the mod that the "%" operator got wrong.
+-- The two modulos are mod()'s expression written out: `a - floor(a / b) * b`, not
+-- the "%" operator, and not a call either. Inlined because this is the hot loop
+-- and a call per modulo cost 4x a whole login (4.3 ms -> 18.4 ms per hash under
+-- lua5.1, and Kahlua is several times slower again). It has to stay the same
+-- expression as CeroSecOS.mod: tests/kahlua-probe.lua is what pins that, by
+-- printing both this digest and CeroSecOS.mod on both VMs.
 local function mul(a, b)
-	local ah = math.floor(a / 65536)
+	local ah = floor(a / 65536)
 	local al = a - ah * 65536
-	return ((ah * b) % 65536 * 65536 + al * b) % M
+	local hi = ah * b
+	hi = hi - floor(hi / 65536) * 65536
+	local v = hi * 65536 + al * b
+	return v - floor(v / M) * M
 end
 
 local HEX = "0123456789abcdef"
@@ -65,7 +89,7 @@ local HEX = "0123456789abcdef"
 local function hex8(n)
 	local out = ""
 	for _ = 1, 8 do
-		local d = n % 16
+		local d = mod(n, 16)
 		out = string.sub(HEX, d + 1, d + 1) .. out
 		n = math.floor(n / 16)
 	end
@@ -77,24 +101,36 @@ local BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 local function base36(n, digits)
 	local out = ""
 	for _ = 1, digits do
-		local d = n % 36
+		local d = mod(n, 36)
 		out = string.sub(BASE36, d + 1, d + 1) .. out
 		n = math.floor(n / 36)
 	end
 	return out
 end
 
+-- One lane's rotate-left, and mod()'s expression inlined twice for the same
+-- reason mul() inlines it: the hot loop. `l` is under 2^32 and `low` is a power
+-- of two, so neither quotient comes near the 2^31 the "%" operator breaks at --
+-- the inlining is for speed here and for correctness in mul().
+local function rotl(l, rot)
+	local low = POW[32 - rot]
+	local v = (l - floor(l / low) * low) * POW[rot] + floor(l / low)
+	return v - floor(v / M) * M
+end
+
 -- The four lanes, stirred by one byte.
 local function absorb(l1, l2, l3, l4, b)
-	l1 = mul((l1 + b + 1) % M, MIX[1])
-	l1 = (l1 % POW[32 - ROT[1]] * POW[ROT[1]] + math.floor(l1 / POW[32 - ROT[1]])) % M
-	l2 = mul((l2 + b + 2 + l1) % M, MIX[2])
-	l2 = (l2 % POW[32 - ROT[2]] * POW[ROT[2]] + math.floor(l2 / POW[32 - ROT[2]])) % M
-	l3 = mul((l3 + b + 3 + l2) % M, MIX[3])
-	l3 = (l3 % POW[32 - ROT[3]] * POW[ROT[3]] + math.floor(l3 / POW[32 - ROT[3]])) % M
-	l4 = mul((l4 + b + 4 + l3) % M, MIX[4])
-	l4 = (l4 % POW[32 - ROT[4]] * POW[ROT[4]] + math.floor(l4 / POW[32 - ROT[4]])) % M
-	l1 = (l1 + l4) % M
+	local v
+	v = l1 + b + 1
+	l1 = rotl(mul(v - floor(v / M) * M, MIX[1]), ROT[1])
+	v = l2 + b + 2 + l1
+	l2 = rotl(mul(v - floor(v / M) * M, MIX[2]), ROT[2])
+	v = l3 + b + 3 + l2
+	l3 = rotl(mul(v - floor(v / M) * M, MIX[3]), ROT[3])
+	v = l4 + b + 4 + l3
+	l4 = rotl(mul(v - floor(v / M) * M, MIX[4]), ROT[4])
+	v = l1 + l4
+	l1 = v - floor(v / M) * M
 	return l1, l2, l3, l4
 end
 
@@ -105,12 +141,12 @@ local function digest(text, rounds)
 	local l1, l2, l3, l4 = SEED[1], SEED[2], SEED[3], SEED[4]
 	-- The length goes in first: two strings of different lengths never start
 	-- from the same place.
-	l1, l2, l3, l4 = absorb(l1, l2, l3, l4, #text % 256)
+	l1, l2, l3, l4 = absorb(l1, l2, l3, l4, mod(#text, 256))
 	for i = 1, #text do
 		l1, l2, l3, l4 = absorb(l1, l2, l3, l4, string.byte(text, i))
 	end
 	for r = 1, rounds do
-		l1, l2, l3, l4 = absorb(l1, l2, l3, l4, r % 256)
+		l1, l2, l3, l4 = absorb(l1, l2, l3, l4, mod(r, 256))
 	end
 	return hex8(l1) .. hex8(l2) .. hex8(l3) .. hex8(l4)
 end
@@ -165,7 +201,7 @@ function CeroSecOS.newSalt(state, extra)
 	-- hexValue and not tonumber(s, 16): Kahlua gives nil over 0x7fffffff, and
 	-- the "or 0" here would have quietly made every second salt the same one.
 	local n = CeroSecOS.hexValue(string.sub(short, 1, 8)) or 0
-	return base36(n % 2176782336, CeroSecOS.SALT_DIGITS)
+	return base36(mod(n, 2176782336), CeroSecOS.SALT_DIGITS)
 end
 
 -- The single place a password becomes what is stored. Returns the whole
