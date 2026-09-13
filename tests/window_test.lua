@@ -11968,12 +11968,23 @@ do
 		SCeroSecSystem.instance = net.system
 	end
 
-	-- A PREMISES WHOSE PROFILE IS STILL EMPTY -- a bank, until wave 7b writes it --
-	-- has no machine content and therefore nothing to write on a paper.
+	-- A PREMISES WHOSE PROFILE IS EMPTY has no machine content and therefore
+	-- nothing to write on a paper.
+	--
+	-- The profile is taken out of the catalogue HERE, for the length of this block,
+	-- and this is the fix to a bench that went stale: it used to name the bank,
+	-- which was an empty slot until wave 7b filled it, and it then asserted that a
+	-- bank in Knox County has no password in its drawer -- which had become false.
+	-- What is under test is the MECHANISM (prefill answers nil for an id nobody has
+	-- written, and CeroSecNotes writes nothing for it), and a mechanism has to be
+	-- tested by provoking the state it is for rather than by borrowing a gap in the
+	-- catalogue that the next wave will close.
 	do
 		local net5 = newNet()
 		SCeroSecSystem.instance = net5.system
 		_G.__zones = { { name = "Bank", x = 8, y = 8, w = 6, h = 6 } }
+		local had = CeroSecContent.PROFILES.bank
+		CeroSecContent.PROFILES.bank = nil
 		local sq = net5.machine(10, 10, 0, net5.office):getSquare()
 		local drawer = newContainer(sq)
 		Events.OnFillContainer.trigger("bank", "desk", drawer)
@@ -11981,6 +11992,37 @@ do
 		local body = newContainer(sq)
 		Events.OnFillContainer.trigger("Zombie", "inventorymale", body)
 		eq("and neither do the dead in it", #body.items, 0)
+		CeroSecContent.PROFILES.bank = had
+		check("and the catalogue is put back", CeroSecContent.PROFILES.bank ~= nil)
+		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- AND A PREMISES WHOSE PROFILE HAS NO ROOT PASSWORD, which is the case the
+	-- shipped catalogue really has: a house. The paper's derivation and the
+	-- machine's are one derivation, so a profile with no root password has no note
+	-- anywhere -- and that has to be asserted of a REAL entry, or the day every
+	-- profile carries a password nothing would notice that the rule had stopped
+	-- being exercised.
+	do
+		local net6 = newNet()
+		SCeroSecSystem.instance = net6.system
+		check("the house is a written profile with no root password",
+			CeroSecContent.PROFILES.residential ~= nil
+				and not CeroSecContent.PROFILES.residential.root)
+		_G.__zones = {}
+		local house = net6.buildingAt(4000, 4000, 12, 12, 3,
+			{ "kitchen", "livingroom", "bedroom" })
+		local desk = net6.machine(4004, 4004, 0, house)
+		desk:getSquare().getRoom = function()
+			return { getName = function() return "bedroom" end }
+		end
+		local drawer = newContainer(desk:getSquare())
+		Events.OnFillContainer.trigger("bedroom", "dresser", drawer)
+		eq("a house's dresser carries no password", #drawer.items, 0)
+		desk:turnOn()
+		check("because the machine in it has none",
+			CeroSecOS.checkPassword(CeroSecOS.readUsers(desk:osState()).root, ""))
 		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
 		SCeroSecSystem.instance = net.system
 	end
