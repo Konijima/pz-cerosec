@@ -183,3 +183,11 @@ builds a doubled path and loses every script file (items, sounds). At
 publication time run `sh tools/workshop-sync.sh sync`, upload from the game's
 Workshop screen, then `sh tools/workshop-sync.sh clean` so the game loads the
 real folder again.
+
+## The changelog
+
+Every wave that changes what a player sees adds its lines to `CHANGELOG.md`
+under **Unreleased**, in the words a subscriber reads. At release the section
+takes its version and date, `python3 tools/changelog-steam.py` prints it as
+Steam Change Notes, and Mathieu pastes that on the item. A wave without a
+changelog line is a wave nobody will know shipped.
