@@ -1006,6 +1006,27 @@ do
 	check("and the fill was trimmed rather than forced",
 		after - before < 20)
 
+	-- AND THE DISK'S OWN CEILINGS, which are the small ones: 4096 bytes and 32
+	-- nodes. A catalogue entry far over both -- which is what wave 7b will write by
+	-- accident one day -- must come out as a disk the SLOT still takes, with as many
+	-- files on it as fit, and never as a disk no machine in the county will accept.
+	do
+		local big = { id = "BIG", label = "BIG", weight = 0, files = {} }
+		for i = 1, 40 do
+			big.files[i] = { name = "F" .. i .. ".TXT", mode = 644,
+				text = string.rep("x", 300) }
+		end
+		local disk, written = CeroSecContent.diskData(big, START)
+		check("a catalogue entry over the floppy ceilings writes some of its files ("
+			.. written .. " of " .. #big.files .. ")",
+			written > 0 and written < #big.files)
+		local ok, why = CeroSecOS.validateDisk(disk, true)
+		check("and the slot still takes the disk: " .. tostring(why), ok)
+		local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
+		check("inside FLOPPY_NODES (" .. nodes .. ")", nodes <= CeroSecOS.FLOPPY_NODES)
+		check("inside FLOPPY_BYTES (" .. bytes .. ")", bytes <= CeroSecOS.FLOPPY_BYTES)
+	end
+
 	-- And junk for every input. Nothing here may throw: prefill is called from
 	-- turnOn, and an error there is a computer that cannot be switched on.
 	eq("no state at all", CeroSecContent.prefill(nil, opts(SECRET_A)), nil)
