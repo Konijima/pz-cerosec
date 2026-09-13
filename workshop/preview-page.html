@@ -63,12 +63,12 @@
   <p class="by">Made by Konijima &middot; Project Zomboid &middot; Build 42</p>
   <div class="card">
     
-    <img class="bbimg" src="banner.png" alt="">
+    <div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png</div>
 <p><strong>The desktop computers of Knox County still work. This one runs Unix.</strong></p>
 <p>CeroSec puts a small 1993 Unix on the vanilla desktop computers already in the world. Right-click one to switch it on, right-click again to sit down, and a green 60x20 terminal opens on a BIOS line and a login prompt. Behind it: files, permissions, accounts, a shell with pipes and cron, the building&#x27;s doors and lights under <strong>/dev</strong>, and three ways off the machine.</p>
 <p>The disk belongs to the computer, not to you, so you walk away and come back to the same session. No dependencies, Build 42, safe to add to a save you are already playing.</p>
 <div class="shot">SHOT 01 -- workshop/shots/01-boot-login.png, the hero shot</div>
-<img class="bbimg" src="img/h-features.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-features.png</div>
 <ul><li><strong>A real terminal.</strong> Sixty columns by twenty, a BIOS, a login prompt and a shell, and two survivors at one computer type on one glass.</li><li><strong>Files, permissions, accounts.</strong> Owner, group and other, octal and symbolic modes, links, and <strong>sudo</strong> over a real <strong>/etc/sudoers</strong>.</li><li><strong>The prompt is the script language.</strong> <strong>sh</strong>&#x27;s grammar with pipes, redirects and background jobs, plus <strong>cron</strong> and a screen editor.</li><li><strong>The building, under /dev.</strong> A character device for every door, switch, lock and window the machine can reach: <strong>dev light0 off</strong>, <strong>dev door1 open</strong>.</li><li><strong>Hardware you have to fit.</strong> A contact, a relay, a strike or a door operator goes on the fixture itself, with a screwdriver and Electricity.</li><li><strong>Floppy disks.</strong> A 3.5 inch disk with a filesystem of its own: <strong>newfs</strong>, <strong>mount</strong>, write on the label, carry it across town.</li><li><strong>A manual you have to find.</strong> Three volumes printed in 1993, and your survivor works on while you read.</li></ul>
 <p><strong>How a session looks.</strong> Sixty columns, every line one this machine prints.</p>
 <pre>CeroSec BIOS 1.0 -- (c) 1993 CeroSec Systems
@@ -84,34 +84,34 @@ door0   exterior              1E 0        W  locked
 light0  office                1E 0           on
 admin@acct-12-06:~$ dev light0 off</pre>
 <div class="shot">SHOT 02 -- workshop/shots/02-shell-session.png</div>
-<img class="bbimg" src="img/h-getting-started.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-getting-started.png</div>
 <ul><li>Right-click a desktop computer, <strong>Turn on computer</strong>. It needs power.</li><li>Right-click again, <strong>Use computer</strong>. Your survivor walks over and sits down.</li><li>At <strong>login:</strong> try <strong>admin</strong> and press Enter at the password: a bare machine has <strong>admin</strong> and <strong>root</strong>, both open.</li><li><strong>help</strong> lists the commands, <strong>dev</strong> the doors and lights. That list is empty until a module is on the fixture: right-click the door, <strong>CeroSec hardware</strong>.</li><li>Type <strong>exit</strong> and walk away. The screen keeps running, exactly as you left it.</li></ul>
 <div class="shot">SHOT 03 -- workshop/shots/03-computer-menu.png</div>
 <div class="shot">SHOT 04 -- workshop/shots/04-dev-and-a-door.png</div>
 <div class="shot">SHOT 05 -- workshop/shots/05-fitting-a-module.png</div>
 <div class="shot">SHOT 06 -- workshop/shots/06-the-manual.png</div>
-<img class="bbimg" src="img/h-world.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-world.png</div>
 <ul><li><strong>Somebody&#x27;s machine, not a bare one.</strong> A computer nobody has switched on yet comes up with its owner&#x27;s hostname, accounts, files and log; one already switched on is never touched.</li><li><strong>Ten kinds of premises.</strong> A house, an office, a dispatch room, a bank, a shop, a school, a clinic, a radio station, a military post and CeroSec&#x27;s own bench.</li><li><strong>Their crontab lines still run.</strong> A shop&#x27;s lights go off at nine, a vault pulls to at six.</li><li><strong>The password is written down, because everybody wrote it down.</strong> A sticky note in a desk of that premises, or a dead employee with his login in his pocket, and the item&#x27;s name <strong>is</strong> the password.</li><li><strong>Disks, and the phone book.</strong> Seventeen floppies in a hundred are not blank, and vanilla&#x27;s Phonebook is the Knox County directory.</li></ul>
 <div class="shot">SHOT 07 -- workshop/shots/07-somebody-elses-machine.png</div>
 <div class="shot">SHOT 08 -- workshop/shots/08-floppy-disk.png</div>
-<img class="bbimg" src="img/h-network.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-network.png</div>
 <ul><li><strong>Coax, for the premises.</strong> Every computer of one premises shares a segment and an address it did not choose, with <strong>arp</strong>, <strong>ruptime</strong>, <strong>rlogin</strong>, <strong>rsh</strong> and <strong>rcp</strong>. A mall is thirty shops on thirty segments.</li><li><strong>The telephone, for the county.</strong> One line per premises, one call at a time, a seven-digit number the firmware announces at power-on and nowhere else.</li><li><strong>Packet radio, for after the power.</strong> A two-way radio becomes the machine&#x27;s TNC and a callsign in <strong>/etc/callsign</strong> makes it a station. The only link that outlives the grid.</li></ul>
 <div class="shot">SHOT 09 -- workshop/shots/09-the-building-network.png</div>
 <div class="shot">SHOT 10 -- workshop/shots/10-telephone-and-radio.png</div>
-<img class="bbimg" src="img/h-multiplayer.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-multiplayer.png</div>
 <p>Every disk lives on the server and every command runs there. A client asks; it never decides, and no client is told a password.</p>
 <p><strong>The budgets are why it is safe on a public server.</strong> A script is stepped, never run to the end, so a <strong>while true</strong> costs that machine its own share and nothing else. A disk is 64 KB and the fifth remote session is refused. <strong>Nothing a player types is ever handed to Lua</strong>.</p>
-<img class="bbimg" src="img/h-faithful.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faithful.png</div>
 <p>Where a real <strong>/bin/sh</strong>, <strong>cron</strong>, <strong>rlogin</strong> or Hayes modem would answer a certain way, this machine answers the same way, refusals included.</p>
 <p>Six things have no 1993 model and are kept anyway, and rather than pass them off quietly they are named in the in-game Volume 1.</p>
-<img class="bbimg" src="img/h-faq.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faq.png</div>
 <p><strong>Does it need any other mod?</strong> No: no dependencies, no bundled libraries, vanilla Lua only.</p>
 <p><strong>Can I add it to a save I am already playing?</strong> Yes, and removing it leaves the computers as the furniture they were.</p>
 <p><strong>Will it slow the game down?</strong> No: a script is stepped rather than run to the end, and the ceilings above are the whole of what one computer can cost.</p>
 <p><strong>Does it work in multiplayer?</strong> Yes, built that way rather than adapted, with dedicated-server testing next on the list.</p>
 <p><strong>Does it conflict with other mods?</strong> Nothing known, because it overrides no vanilla file.</p>
 <p><strong>Build 41?</strong> No, and there will not be one: Build 42 only, on 42.20 and up.</p>
-<img class="bbimg" src="img/h-credits.png" alt="">
+<div class="missing">[img] from a host this preview does not resolve: https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-credits.png</div>
 <p><strong>Made by Konijima.</strong></p>
 <p>Written from scratch in vanilla Lua against Build 42.20.4. English and French in the box; another language welcome.</p>
 <p>Sounds and floppy disk art: from Konijima&#x27;s earlier Computer mod, reused by their author.</p>

@@ -23,15 +23,13 @@
 # item, so nothing in the mod's own folder can be shown. Two hosts, and each
 # has a reason:
 #
-#   * the banner and the seven section headers are served out of the GitHub
-#     repository, https://raw.githubusercontent.com/Konijima/pz-cerosec/main/
-#     ..., which answers with access-control-allow-origin: * and therefore
+#   * the banner and the eight section headers are served out of the PUBLIC
+#     repository Konijima/pz-cerosec-media (a copy of workshop/banner.png and
+#     workshop/img/), https://raw.githubusercontent.com/Konijima/pz-cerosec-media/
+#     main/..., which answers with access-control-allow-origin: * and therefore
 #     survives the crossorigin="anonymous" Steam puts on a third-party image.
-#     They are versioned with the mod, so the page cannot drift from the build,
-#     and the URLs below are FINAL: no line here has to be edited at upload.
-#     The one thing that has to be true is that the repository is public before
-#     the item is (docs/RELEASE.md steps 16 and 17) and that workshop/img/ is
-#     committed on main.
+#     The mod's own repository stays private until release; whoever changes an
+#     image here pushes the same file to pz-cerosec-media (docs/RELEASE.md).
 #
 #   * the ten screenshots are uploaded to the ITEM, because that is where a
 #     Workshop screenshot belongs -- it shows in the item's own gallery as well
@@ -49,7 +47,7 @@
 version=1
 id=3801094056
 title=CeroSec - Unix Network Terminal
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/banner.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png[/img]
 description=
 description=[b]The desktop computers of Knox County still work. This one runs Unix.[/b]
 description=
@@ -59,7 +57,7 @@ description=The disk belongs to the computer, not to you, so you walk away and c
 # SHOT 01 -- workshop/shots/01-boot-login.png, the hero shot
 # description=[img]<url of 01-boot-login.png>[/img]
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-features.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-features.png[/img]
 description=
 description=[list]
 description=[*][b]A real terminal.[/b] Sixty columns by twenty, a BIOS, a login prompt and a shell, and two survivors at one computer type on one glass.
@@ -89,7 +87,7 @@ description=[/code]
 # SHOT 02 -- workshop/shots/02-shell-session.png
 # description=[img]<url of 02-shell-session.png>[/img]
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-getting-started.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-getting-started.png[/img]
 description=
 description=[list]
 description=[*]Right-click a desktop computer, [b]Turn on computer[/b]. It needs power.
@@ -107,7 +105,7 @@ description=[/list]
 # SHOT 06 -- workshop/shots/06-the-manual.png
 # description=[img]<url of 06-the-manual.png>[/img]
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-world.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-world.png[/img]
 description=
 description=[list]
 description=[*][b]Somebody's machine, not a bare one.[/b] A computer nobody has switched on yet comes up with its owner's hostname, accounts, files and log; one already switched on is never touched.
@@ -121,7 +119,7 @@ description=[/list]
 # SHOT 08 -- workshop/shots/08-floppy-disk.png
 # description=[img]<url of 08-floppy-disk.png>[/img]
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-network.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-network.png[/img]
 description=
 description=[list]
 description=[*][b]Coax, for the premises.[/b] Every computer of one premises shares a segment and an address it did not choose, with [b]arp[/b], [b]ruptime[/b], [b]rlogin[/b], [b]rsh[/b] and [b]rcp[/b]. A mall is thirty shops on thirty segments.
@@ -133,19 +131,19 @@ description=[/list]
 # SHOT 10 -- workshop/shots/10-telephone-and-radio.png
 # description=[img]<url of 10-telephone-and-radio.png>[/img]
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-multiplayer.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-multiplayer.png[/img]
 description=
 description=Every disk lives on the server and every command runs there. A client asks; it never decides, and no client is told a password.
 description=
 description=[b]The budgets are why it is safe on a public server.[/b] A script is stepped, never run to the end, so a [b]while true[/b] costs that machine its own share and nothing else. A disk is 64 KB and the fifth remote session is refused. [b]Nothing a player types is ever handed to Lua[/b].
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-faithful.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faithful.png[/img]
 description=
 description=Where a real [b]/bin/sh[/b], [b]cron[/b], [b]rlogin[/b] or Hayes modem would answer a certain way, this machine answers the same way, refusals included.
 description=
 description=Six things have no 1993 model and are kept anyway, and rather than pass them off quietly they are named in the in-game Volume 1.
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-faq.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-faq.png[/img]
 description=
 description=[b]Does it need any other mod?[/b] No: no dependencies, no bundled libraries, vanilla Lua only.
 description=
@@ -159,7 +157,7 @@ description=[b]Does it conflict with other mods?[/b] Nothing known, because it o
 description=
 description=[b]Build 41?[/b] No, and there will not be one: Build 42 only, on 42.20 and up.
 description=
-description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-credits.png[/img]
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/img/h-credits.png[/img]
 description=
 description=[b]Made by Konijima.[/b]
 description=

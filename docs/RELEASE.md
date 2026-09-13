@@ -53,8 +53,8 @@ the files and the state shape are all unaffected.
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
-| 16 | **Make the GitHub repository public.** The description's banner and its eight section headers are fetched from it: they are dead images until this is done | `gh repo edit Konijima/pz-cerosec --visibility public` |
-| 17 | Open the item's own page in a browser and check the nine repo-hosted images actually rendered | Steam item page |
+| 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
+| 17 | Open the item's own page in a browser and check the nine media-repo images actually rendered | Steam item page |
 | 17a | **Mathieu confirms the credit line** for the reused assets, below | by hand |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
@@ -196,7 +196,7 @@ has to be hosted somewhere Steam will fetch it from. There are two hosts and the
 split is on purpose.
 
 **The banner and the eight section headers come out of the GitHub repository.**
-`https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/banner.png`
+`https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png`
 and `.../workshop/img/h-*.png`. Those URLs are **already written into
 `workshop/workshop.txt`** and no line of it has to be edited at upload time. Three
 things make that safe, and all three were checked rather than assumed:
