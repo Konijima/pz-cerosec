@@ -51,6 +51,88 @@ The context menu, the reach checks and the terminal window are all client-side;
 the wire between them and the server — the message list, the screen shape and
 who a token addresses — is [PROTOCOL.md](PROTOCOL.md).
 
+## The right-click that finds the computer
+
+The whole of this is proved out of the jar in
+[notes/picking.md](notes/picking.md), with the bytecode offsets; the shape of it is
+
+**The game hands the menu one object.** `UIManager.update` calls
+`IsoObjectPicker.ContextPick(mx, my)` on every mouse **move** and stores the one
+`ClickObject` it answers; the right-button release fires
+`OnObjectRightMouseButtonUp` with that object's `tile`.
+`ISObjectClickHandler.doRClick` builds `worldobjects` out of it plus six `Pick*`
+calls — a door, a window, a window frame, a thumpable, a hoppable, a tree — none
+of which is ever a computer. So `worldobjects` is **one** object, and the
+`Tile Report` / `Room Report` lines the game's debug menu prints are that object
+and its own square.
+
+**`ContextPick` is not a square walk.** It gathers every object that was rendered
+near the point (`getObjectsAt`, `getObjectsOnSquare`), tests each against the box
+the **renderer** recorded for it (`ObjectRenderInfo.renderX/renderY/renderWidth/renderHeight`)
+and then against that object's own alpha mask (`IsoObject.isMaskClicked`), scores
+every survivor with `ClickObject.calculateScore`, and returns the highest. A
+sprite raised onto a table is handled exactly right, because `renderY` already
+carries the raise. A lamp on a table is picked by its own pixels; so is a monitor.
+
+**But the score is not distance.** A desk chair carries `IsoFlagType.bed`, worth
+`+2`, where a plain computer gets nothing from that chain, and the chair stands on
+the player's own square so it pays almost none of the Manhattan penalty. With the
+cursor on the monitor of a computer on a desk and a chair pulled up in front of
+it, the game considers both and — when the chair's back reaches up into the
+monitor's band — hands the menu the **chair**, whose square is one step south of
+the desk's.
+
+So `CeroSecContextMenu.findComputer` asks in this order:
+
+1. **is the object the game handed over a computer**, or is a computer on its
+   square? A computer on the very desk the cursor found is answered here, and the
+   square scan is the pattern vanilla's own one-device menus use
+   (`ISRadioAndTvMenu.lua:16-26`, `ISBBQMenu.lua:20`). A joypad has no mouse and
+   stops here.
+2. **otherwise the mouse itself**, `CeroSecReach.pickComputer`: rebuild each nearby
+   computer's drawn box and ask its own click mask — the same test the game settles
+   on. A computer whose pixels are under the cursor wins; nothing refuses a hit
+   because something else was picked first.
+
+That order is a choice and it has one edge: two desks side by side, each with a
+computer, and the cursor on the *left* monitor while the game resolves the click to
+the *right* desk. Pass 1 would then answer with the right-hand computer where the
+mask would have answered with the left-hand one. It is kept that way deliberately —
+the game's own resolution is the engine's answer and our box arithmetic rests on one
+assumption the engine alone can settle (that `getCameraOffX()` is
+`IsoCamera.frameState.offX` when the menu is built), so deferring to the game first
+fails safe. `docs/PARCOURS-TEST.md` step 12e is the click that checks it.
+
+`CeroSecReach.drawnBox` is the renderer's three terms and not two:
+`ISCoordConversion.ToScreen` for the square's anchor, less
+`IsoObject.getOffsetX()` and `getOffsetY()` — which are `32 * tileScale` and
+`96 * tileScale`, set in the constructor and never zero — less
+`getRenderYOffset() * tileScale` for the raise. A box of `64 × 128` tile units,
+because a 64×128 texture is drawn at `tileScale` and a 128×256 one at half of it,
+and the mask index divides back down by whichever it was.
+
+`CeroSecReach.pickSquares` takes its candidates from the **mouse's own iso tile**
+and not from the square the game picked. That anchor is vanilla's own: the world
+menu resolves the mouse the same way, in the same call chain and behind the same
+joypad guard — `ISCoordConversion.ToWorld(_x * getCore():getZoom(n), _y * ..., z)`
+then `getCell():getGridSquare(wx, wy, z)`, `ISMenuContextWorld.lua:76-79`. It is
+also why the `media/lua/server` folder `ISCoordConversion` lives in is reachable
+from the client at all — that square is itself somewhere inside the staircase the game
+walked out of the mouse, so walking a forward-only staircase again out of it points
+away from the start. The window is derived rather than guessed: with `s = x + y`
+and `d = x - y`, a square's box contains the point only for
+`s(mouse) - 2 + raise/16 <= s <= s(mouse) + 6 + raise/16` and
+`|d - d(mouse)| <= 1`, and `raise` never exceeds `SURFACE_MAX` = 64 —
+`PICK_BEHIND = 2`, `PICK_AHEAD = 6 + 64/16 + 2 = 12` (the last two steps are the
+flooring of the two iso coordinates), `PICK_SIDE = 1`. `s` and `d` share a parity,
+which is why the game's own candidates read as a staircase and why half the pairs
+in that window name no square.
+
+While `CeroSec.DEBUG` is on, every right-click leaves in the log ring the debug
+window's **Log** tab reads: the sprite and the square of everything the game handed
+over, then every candidate the mask pass weighed with its box, its raise and
+whether the mask took it. A miss in game is a line to read.
+
 ## Standing at a computer
 
 `CeroSecReach.lua` answers where the player has to be: the **front square** is the

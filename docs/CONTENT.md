@@ -53,6 +53,19 @@ boundary: the number is in the save file, and a single-player player who reads h
 own save can read `/etc/passwd` out of it just as easily. On a server the save is
 on the server, which is the whole of the difference.
 
+**The hash is VM-independent now, and it was not before 2026-09-12.** Every value
+documented in this file is what `lua5.1` computes, and that is the canonical one --
+but the game computes on Kahlua, whose `%` operator is `a - (int)(a / b) * b` with a
+32-bit `(int)` that clamps at 2147483647, and that made the mixer's `mul()` answer
+different numbers in the game from the numbers in this document and in
+`tests/fixtures/`. `CeroSecOS.mod` fixed it: nothing in here moved, the game moved
+onto it. A save written by an older build therefore holds a different set of
+generated values and passwords that no longer verify -- a one-time break, taken
+before 0.1.0, written up in [RELEASE.md](RELEASE.md). The same day and the same
+family: `tonumber(s, 16)` was nil on Kahlua above `0x7fffffff`, so
+`CeroSecContent.number` returned nil for half of all keys and the first power-on of
+a prefilled machine crashed; hex is parsed by `CeroSecOS.hexValue` now.
+
 ## What is keyed on what
 
 | keyed on | what it decides | why |

@@ -15,6 +15,15 @@
 // where it is used.
 //
 // Usage: java -cp <projectzomboid.jar>:tools/out KahluaRun <repo root>
+//        java -cp <projectzomboid.jar>:tools/out KahluaRun --eval <script.lua> <repo root>
+//
+// The second form is the one that RUNS something: loading a file proves it
+// parses and that its top level survives, and nothing more -- the day this was
+// added, `tonumber(s, 16)` returned nil on Kahlua for half of all hashes (its
+// base-16 path is Integer.parseInt, which throws over 0x7fffffff) and every
+// file loaded fine. So --eval loads shared/ quietly, installs a print that
+// writes to stdout, and runs the given Lua file on the game's own VM:
+// tests/kahlua-probe.lua is run this way and its output diffed against lua5.1.
 //
 
 import java.io.File;
@@ -83,10 +92,19 @@ public final class KahluaRun {
 
 	private static Path root;
 	private static int failures = 0;
+	// --eval loads shared/ for its script's benefit, and the per-file "ok"
+	// lines would land in the output that gets diffed.
+	private static boolean quiet = false;
 
 	public static void main(String[] args) throws Exception {
+		if (args.length == 3 && args[0].equals("--eval")) {
+			eval(Path.of(args[1]).toAbsolutePath().normalize(),
+				Path.of(args[2]).toAbsolutePath().normalize());
+			return;
+		}
 		if (args.length != 1) {
 			System.err.println("usage: KahluaRun <repo root>");
+			System.err.println("       KahluaRun --eval <script.lua> <repo root>");
 			System.exit(2);
 		}
 		root = Path.of(args[0]).toAbsolutePath().normalize();
@@ -120,6 +138,73 @@ public final class KahluaRun {
 			System.exit(1);
 		}
 		System.out.println("kahlua-run: passed");
+	}
+
+	// ---- --eval ----------------------------------------------------------
+
+	// Run one Lua file on the game's Kahlua, with our shared/ files loaded
+	// under it and its print()s going to stdout. Nothing else is printed, so
+	// the output IS the script's output and can be compared with lua5.1's.
+	private static void eval(Path script, Path repoRoot) throws Exception {
+		root = repoRoot;
+		quiet = true;
+		boot();
+		for (String rel : luaFiles("42/media/lua/shared")) {
+			load(rel);
+		}
+		if (failures > 0) {
+			System.err.println("kahlua-run --eval: shared/ does not load (" + failures + ")");
+			System.exit(1);
+		}
+		// An absolute path: compile()'s root.resolve() hands it back as is,
+		// and it is the chunk name Kahlua puts in an error message.
+		Object closure = compile(script.toString());
+		if (closure == null) {
+			System.exit(1);
+		}
+		try {
+			Object[] r = (Object[]) mPcall.invoke(thread, closure, new Object[0]);
+			if (r != null && r.length > 0 && Boolean.FALSE.equals(r[0])) {
+				System.err.println("kahlua-run --eval: " + script + " failed on Kahlua");
+				System.err.println("  " + value(r, 1));
+				if (value(r, 2) != null) {
+					System.err.println("  " + value(r, 2));
+				}
+				System.exit(1);
+			}
+		} catch (InvocationTargetException e) {
+			System.err.println("kahlua-run --eval: " + script + " failed on Kahlua");
+			System.err.println("  " + message(e.getCause()));
+			System.exit(1);
+		}
+		System.out.flush();
+	}
+
+	// Kahlua's BaseLib has a print, but it hands its text to a static
+	// Consumer<String> the game installs (printCallback) and there is no game
+	// here, so we install our own: the values as the VM's own tostring
+	// renders them -- number formatting included, which is exactly the kind
+	// of difference the probe is looking for -- tab separated, one line.
+	private static void installPrint() throws Exception {
+		Class<?> cUtil = Class.forName("se.krka.kahlua.vm.KahluaUtil");
+		Method mTostring = cUtil.getMethod("tostring", Object.class, cThread);
+		InvocationHandler h = (proxy, method, margs) -> {
+			if (!method.getName().equals("call")) {
+				return method.getName().equals("toString") ? "print" : null;
+			}
+			int n = (Integer) margs[1];
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < n; i++) {
+				if (i > 0) {
+					sb.append('\t');
+				}
+				sb.append((String) mTostring.invoke(null, mFrameGet.invoke(margs[0], i), thread));
+			}
+			System.out.println(sb);
+			return 0;
+		};
+		mRawset.invoke(env, "print", Proxy.newProxyInstance(
+			KahluaRun.class.getClassLoader(), new Class<?>[] { cJavaFunction }, h));
 	}
 
 	// ---- environment -----------------------------------------------------
@@ -167,6 +252,7 @@ public final class KahluaRun {
 		cThread.getField("debugOwnerThread").set(thread, Thread.currentThread());
 
 		installRequire();
+		installPrint();
 		runChunk(stubs(), "kahlua-run-stubs.lua");
 	}
 
@@ -322,7 +408,7 @@ public final class KahluaRun {
 			Object[] r = (Object[]) mPcall.invoke(thread, closure, new Object[0]);
 			if (r != null && r.length > 0 && Boolean.FALSE.equals(r[0])) {
 				fail(rel, "run", value(r, 1), value(r, 2));
-			} else {
+			} else if (!quiet) {
 				System.out.println("  ok   " + rel);
 			}
 		} catch (InvocationTargetException e) {

@@ -303,6 +303,62 @@ function CeroSecOS.padLeft(s, width)
 	return string.rep(" ", width - #s) .. s
 end
 
+-- a modulo b, by hand, because the "%" OPERATOR is not the same function under
+-- the two VMs either. Kahlua compiles `a % b` as `a - (int)(a / b) * b`
+-- (javap -c se.krka.kahlua.vm.KahluaThread, primitiveMath, case OP_MOD), and
+-- that (int) is Java's d2i, which CLAMPS at 2147483647. So Kahlua's "%" is
+-- simply wrong the moment the quotient reaches 2^31 -- measured on both VMs,
+-- with big = 47564 * 3266489917: big % 65536 is 60828 under lua5.1 and
+-- 14629838122396 on Kahlua. That is the shape of the mixer's mul(), so every
+-- hash the game computed was a different number from every hash the bench
+-- computed, silently, from the first line of the mod.
+--
+-- math.fmod is NOT affected (it is MathLib, and it agrees on both VMs at every
+-- size and both signs -- tests/kahlua-probe.lua pins that), so this exists for
+-- the "%" operator only.
+--
+-- Non-negative operands only, and that is the whole contract: floor division
+-- makes this Lua 5.1's "%" exactly, and every caller in the mod is working in
+-- 32-bit lanes. nil for b <= 0 and for a negative a -- a caller that has a
+-- negative left operand normalises it first (CeroSecOS.phoneKey's scatter does)
+-- rather than betting on a sign convention two VMs disagree about. Exact while
+-- a stays under 2^53, which is nine orders of magnitude above the 2^48 the
+-- mixer reaches.
+function CeroSecOS.mod(a, b)
+	if type(a) ~= "number" or type(b) ~= "number" then return nil end
+	if b <= 0 or a < 0 then return nil end
+	return a - math.floor(a / b) * b
+end
+
+-- The value of a string of hex digits, by hand, because tonumber(s, 16) is not
+-- the same function under the two VMs. Kahlua's base-16 path is
+-- Integer.parseInt(s, 16) (proven with javap on se.krka.kahlua.vm.KahluaUtil),
+-- so anything from "80000000" up throws NumberFormatException and comes back
+-- NIL -- half of every eight-digit hash -- while lua5.1 hands back the 32-bit
+-- value. Digits multiplied out one at a time give lua5.1's answer on both, so
+-- the numbers a save already holds stay the numbers they were.
+--
+-- nil for anything that is not one or more hex digits, which is what
+-- tonumber(s, 16) does too. Up to thirteen digits stay exact in a double; the
+-- mod never asks for more than eight.
+local HEX_DIGITS = {}
+for i = 0, 9 do HEX_DIGITS[string.sub("0123456789", i + 1, i + 1)] = i end
+for i = 0, 5 do
+	HEX_DIGITS[string.sub("abcdef", i + 1, i + 1)] = 10 + i
+	HEX_DIGITS[string.sub("ABCDEF", i + 1, i + 1)] = 10 + i
+end
+
+function CeroSecOS.hexValue(s)
+	if type(s) ~= "string" or #s == 0 then return nil end
+	local v = 0
+	for i = 1, #s do
+		local d = HEX_DIGITS[string.sub(s, i, i)]
+		if d == nil then return nil end
+		v = v * 16 + d
+	end
+	return v
+end
+
 -- Text the OS stores must be printable: every byte below 0x20 is refused except
 -- newline and tab. This is what keeps a file's contents from ever being taken
 -- for anything but text on the way to the screen.

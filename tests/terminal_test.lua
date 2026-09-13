@@ -919,6 +919,161 @@ check("past the tolerance is not there",
 check("a nil position is never there", not CeroSec.atPoint(nil, 11.2, 10.5, 11.2, 0.1))
 
 --
+-- The screen, and which squares can be drawn over a point on it
+--
+-- This is the arithmetic CeroSecReach.pickSquares' window is derived from, and it
+-- is written here out of the jar rather than out of the module, so the two are
+-- two statements of the same thing and not one statement twice
+-- (zombie/iso/IsoUtils: XToScreen = 32*ts*(x-y), YToScreen = 16*ts*(x+y) + (n-z)*96*ts,
+-- and XToIso/YToIso their inverse; zombie/iso/IsoObject.<init>: offsetX = 32*ts,
+-- offsetY = 96*ts; updateRenderInfoForObjectPicker subtracts both plus
+-- renderYOffset*ts).
+--
+
+local TS = 2 -- Core.tileScale in B42
+
+local function xToScreen(x, y) return 32 * TS * (x - y) end
+local function yToScreen(x, y, z) return 16 * TS * (x + y) - z * 96 * TS end
+local function xToIso(sx, sy, z) return (sx + 2 * sy) / (64 * TS) + 3 * z end
+local function yToIso(sx, sy, z) return (2 * sy - sx) / (64 * TS) + 3 * z end
+
+-- The projection and its inverse are each other's, or nothing below means
+-- anything.
+for _, at in ipairs({ { 0, 0, 0 }, { 2089, 5832, 0 }, { 2089, 5833, 0 },
+		{ -7, 13, 0 }, { 2089, 5832, 1 }, { 1, 2, 3 } }) do
+	local sx, sy = xToScreen(at[1], at[2]), yToScreen(at[1], at[2], at[3])
+	eq("x round-trips at " .. at[1] .. "," .. at[2] .. "," .. at[3],
+		xToIso(sx, sy, at[3]), at[1])
+	eq("y round-trips at " .. at[1] .. "," .. at[2] .. "," .. at[3],
+		yToIso(sx, sy, at[3]), at[2])
+end
+
+-- The box the renderer draws an object into, from its square's anchor.
+local function box(x, y, z, raise)
+	return xToScreen(x, y) - 32 * TS,
+		yToScreen(x, y, z) - 96 * TS - raise * TS,
+		64 * TS, 128 * TS
+end
+
+-- One step of x+y is 16*ts pixels down the screen and one step of x-y is 32*ts
+-- across, which is what makes the window a window at all.
+do
+	local _, y0 = box(10, 10, 0, 0)
+	local _, y1 = box(10, 11, 0, 0)
+	eq("a step of x+y is 16*tileScale down", y1 - y0, 16 * TS)
+	local x0 = box(10, 10, 0, 0)
+	local x1 = box(11, 10, 0, 0)
+	eq("a step of x-y is 32*tileScale across", x1 - x0, 32 * TS)
+	-- And a raise of one lifts the box by tileScale pixels, nothing else.
+	local rx, ry = box(10, 10, 0, 1)
+	eq("a raise does not move the box sideways", rx, x0)
+	eq("a raise lifts it by tileScale", y0 - ry, TS)
+end
+
+-- The window itself. For every raise a computer can sit at and every pixel of a
+-- box a cursor can be on, the square's distance from the mouse's own TILE has to
+-- fall inside what CeroSecReach.PICK_BEHIND / PICK_AHEAD / PICK_SIDE allow --
+-- 2 behind, 12 ahead, 1 either side. The 12 is 6 for the sprite's own height, 4
+-- for a raise of SURFACE_MAX and 2 because the mouse's tile is two floored
+-- coordinates and each loses up to a whole step.
+local BEHIND, AHEAD, SIDE = 2, 12, 1
+do
+	-- The pixels sampled in each box: every fifth, plus both ends and the middle,
+	-- because the extremes of the window live on the edges and a stride that
+	-- steps over them would call a window tight that is not.
+	local function offsets(span)
+		local out, seen = {}, {}
+		for v = 1, span, 5 do out[#out + 1] = v; seen[v] = true end
+		for _, v in ipairs({ 1, 2, span - 1, span, span / 2, span / 2 + 1 }) do
+			if not seen[v] then out[#out + 1] = v; seen[v] = true end
+		end
+		return out
+	end
+
+	local sx, sy = 2089, 5832
+	local worstBehind, worstAhead, worstSide = 0, 0, 0
+	for raise = 0, 64, 4 do
+		local bx, by, bw, bh = box(sx, sy, 0, raise)
+		for _, dx in ipairs(offsets(bw)) do
+			for _, dy in ipairs(offsets(bh)) do
+				local tx = math.floor(xToIso(bx + dx, by + dy, 0))
+				local ty = math.floor(yToIso(bx + dx, by + dy, 0))
+				local ahead = (sx + sy) - (tx + ty)
+				local side = (sx - sy) - (tx - ty)
+				if ahead < -BEHIND or ahead > AHEAD or side < -SIDE or side > SIDE then
+					check("raise " .. raise .. " at +" .. dx .. ",+" .. dy ..
+						" is inside the window (" .. ahead .. " ahead, " .. side .. " aside)", false)
+				end
+				if ahead < worstBehind then worstBehind = ahead end
+				if ahead > worstAhead then worstAhead = ahead end
+				if math.abs(side) > worstSide then worstSide = math.abs(side) end
+			end
+		end
+	end
+
+	-- And what the sweep actually reaches, asserted outright so that trimming a
+	-- constant shows up as a failure and not as a rare miss in game. Behind and
+	-- aside are exactly tight. Ahead stops one short of the twelve, because both
+	-- bounds it is built from are strict -- the top row of the box is outside the
+	-- box test, and two floors lose strictly less than two steps -- and the step
+	-- of slack is left in on purpose: this is float arithmetic and a bound that is
+	-- exactly tight is one rounding away from being wrong.
+	eq("2 behind is reached", worstBehind, -BEHIND)
+	eq("1 aside is reached", worstSide, SIDE)
+	eq("and 11 ahead", worstAhead, 11)
+	check("which the window covers", worstAhead <= AHEAD)
+end
+
+-- Parity: x+y and x-y move together, so half the (ahead, aside) pairs name no
+-- square at all. That is why the game's own candidates read as a staircase
+-- (FBORenderObjectPicker.leftSideXy = {0,0} {0,1} {1,1} {1,2} {2,2} {2,3} {3,3})
+-- rather than as a block, and it is the rule pickSquares walks by.
+--
+-- What is asserted is that the pairs pickSquares SKIPS are the ones that name no
+-- square -- that the parity test is the right test and not merely a test. Turning
+-- the condition around (skipping the even pairs instead) makes this red.
+for ahead = -BEHIND, AHEAD do
+	for aside = -SIDE, SIDE do
+		local dx, dy = (ahead + aside) / 2, (ahead - aside) / 2
+		local whole = dx == math.floor(dx) and dy == math.floor(dy)
+		eq("the pair " .. ahead .. "," .. aside .. " names a whole square exactly when " ..
+			"the parity test keeps it", whole, (ahead + aside) % 2 == 0)
+	end
+end
+-- The game's staircase is inside it, step for step. BEHIND, AHEAD and SIDE here are
+-- the derivation's own numbers; that CeroSecReach uses THESE numbers is asserted in
+-- tests/window_test.lua, which is the one file that can load the module.
+for _, step in ipairs({ { 0, 0 }, { 0, 1 }, { 1, 1 }, { 1, 2 }, { 2, 2 }, { 2, 3 }, { 3, 3 } }) do
+	local ahead, aside = step[1] + step[2], step[1] - step[2]
+	check("the game's own step " .. step[1] .. "," .. step[2] .. " is in the window",
+		ahead >= -BEHIND and ahead <= AHEAD and aside >= -SIDE and aside <= SIDE)
+end
+
+-- The box test, on the edges. Left and top exclusive, right and bottom
+-- inclusive, copied from the picker's own comparison so two boxes sharing an
+-- edge never both claim the pixel.
+do
+	check("inside", CeroSec.pointInBox(10, 10, 0, 0, 20, 20))
+	check("the left edge is not inside", not CeroSec.pointInBox(0, 10, 0, 0, 20, 20))
+	check("the top edge is not inside", not CeroSec.pointInBox(10, 0, 0, 0, 20, 20))
+	check("the right edge is inside", CeroSec.pointInBox(20, 10, 0, 0, 20, 20))
+	check("the bottom edge is inside", CeroSec.pointInBox(10, 20, 0, 0, 20, 20))
+	check("past the right edge is out", not CeroSec.pointInBox(21, 10, 0, 0, 20, 20))
+	check("past the bottom edge is out", not CeroSec.pointInBox(10, 21, 0, 0, 20, 20))
+end
+
+-- Front to back, which is the order two computers under one cursor are tried in.
+do
+	check("nearer the viewer first", CeroSec.drawnBefore(2089, 5833, 0, 2089, 5832, 0))
+	check("and not the other way", not CeroSec.drawnBefore(2089, 5832, 0, 2089, 5833, 0))
+	check("the same x+y on a different square is a tie broken by index",
+		CeroSec.drawnBefore(2090, 5832, 1, 2089, 5833, 0))
+	check("on one square the object drawn last is on top",
+		CeroSec.drawnBefore(2089, 5832, 2, 2089, 5832, 1))
+	check("and not the other way",
+		not CeroSec.drawnBefore(2089, 5832, 1, 2089, 5832, 2))
+end
+--
 -- The look: the constants the window draws with have to be there and be sane.
 --
 

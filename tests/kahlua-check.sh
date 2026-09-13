@@ -52,6 +52,29 @@ forbid() {
 	fi
 }
 
+# Same, with an escape hatch: the pattern finds the candidates and the second
+# pattern is what makes one of them allowed. One grep cannot say "A but not B" on
+# the same line without a lookahead, and grep -E has none.
+forbid_unless() {
+	# shellcheck disable=SC2086
+	hits=$(grep -rnE "$1" $CORE 2>&1)
+	rc=$?
+	if [ "$rc" -gt 1 ]; then
+		echo "  FAIL $3: the search itself failed"
+		echo "$hits" | sed 's/^/       /'
+		status=1
+		return
+	fi
+	hits=$(printf '%s' "$hits" | grep -vE "$2")
+	if [ -n "$hits" ]; then
+		echo "  FAIL $3"
+		echo "$hits" | sed 's/^/       /'
+		status=1
+	else
+		echo "  ok   no $3"
+	fi
+}
+
 echo "== forbidden constructs in $CORE"
 forbid '::[A-Za-z_]+::' 'goto label'
 forbid '(^|[^A-Za-z_])goto[ 	]' 'goto'
@@ -67,6 +90,14 @@ forbid '(^|[^A-Za-z_.])newproxy' 'newproxy'
 forbid '(^|[^A-Za-z_.])(load|loadstring|dofile|loadfile)[ 	]*\(' 'runtime code loading'
 forbid '\\z' 'the \z escape'
 forbid '(^|[^A-Za-z_.])(getfenv|setfenv)[ 	]*\(' 'environment juggling'
+# Kahlua renders a non-integer double the Java way -- tostring(1e15) is "1.0E15"
+# there and "1e+15" under lua5.1, tostring(1/3) is "0.3333333333333333" and
+# "0.33333333333333" -- and there is no fixing that in the mod, so the engine
+# never puts a non-integer through tostring. A division or a multiplication
+# inside tostring() is the shape that does it; math.floor around it is the
+# answer, and is why every one we have is allowed. (The other half of the same
+# rule, the "%" operator, is not greppable: see docs/TESTING.md.)
+forbid_unless 'tostring\([^)]*[*/]' 'math\.floor' 'unfloored arithmetic inside tostring()'
 
 if [ "$status" -ne 0 ]; then
 	echo "kahlua-check: FAILED"

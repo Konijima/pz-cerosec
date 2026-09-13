@@ -222,21 +222,56 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 	end
 end
 
--- The picker hands us what sits under the cursor: on a counter or a desk that
--- is the counter, not the table-top computer on it. Vanilla menus that target
--- one object scan the square of every picked object instead
--- (ISRadioAndTvMenu.lua:16-26, ISBBQMenu.lua:20), so do the same.
---
--- Two passes, cheapest last. First the mouse itself, because a computer raised
--- on a crate is drawn over the square behind it and the picker never names its
--- square at all (see the picking notes in CeroSecReach). Then the plain scan of
--- the picked squares, which is what answers for a joypad, for a click the mouse
--- test does not settle, and for everything that worked before.
-function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
-	if playerIndex and not JoypadState.players[playerIndex + 1] then
-		local picked = CeroSecReach.pickComputer(playerIndex, getMouseX(), getMouseY(), worldobjects)
-		if picked then return picked end
+-- What the game handed the event, written out: the sprite and the square of
+-- every object in worldobjects. One line, only while CeroSec.DEBUG is on, and it
+-- goes through CeroSec.log so the debug window's Log tab shows it -- a right-click
+-- that finds nothing in game is then a line to read rather than a thing to
+-- reproduce.
+local function logHanded(worldobjects)
+	local parts = {}
+	for _, object in ipairs(worldobjects) do
+		local square = object:getSquare()
+		parts[#parts + 1] = tostring(object:getSpriteName()) .. "@" ..
+			(square and (square:getX() .. "," .. square:getY() .. "," .. square:getZ()) or "nowhere")
 	end
+	CeroSec.log("menu: game handed " .. #worldobjects .. " object(s): " ..
+		(#parts > 0 and table.concat(parts, " ") or "none"))
+end
+
+-- The computer the right-click is about, in the order vanilla answers this kind
+-- of question in.
+--
+-- FIRST what the game handed over. ContextPick gives the menu exactly ONE object
+-- (see the picking notes in CeroSecReach), so if a computer stands on that object's
+-- square -- which covers both the computer being handed over itself and a computer
+-- on the very desk the cursor found, since a computer is always on its own square --
+-- that is the answer and there is nothing to search for. Vanilla menus that target
+-- one device do the same square scan (ISRadioAndTvMenu.lua:16-26, ISBBQMenu.lua:20).
+--
+-- One pass and not two: a separate "is the handed object itself a computer" branch
+-- read well and could not be made to fail, because the square scan answers every
+-- case it did. A branch no bench can redden is a branch nobody has checked.
+--
+-- THEN the mouse, because the one object the game hands over is the one that
+-- scored highest and not the one nearest the cursor: a desk chair carries
+-- IsoFlagType.bed and outscores a computer by 2, so a computer on a desk with a
+-- chair pulled up to it loses its own menu to the chair's. That pass rebuilds
+-- each nearby computer's drawn box and asks its own click mask -- the same test
+-- the game settles on -- and nothing in it refuses a hit because something else
+-- was picked first.
+--
+-- A joypad has no mouse, so it gets the first pass and stops there.
+--
+-- The order has one edge, kept on purpose: two desks side by side, each with a
+-- computer, the cursor on the left monitor and the game resolving the click to the
+-- right desk. The first pass answers with the right-hand computer where the mask
+-- would have answered with the left-hand one. The game's resolution is the engine's
+-- own answer, and the box arithmetic of the second pass rests on one thing only the
+-- engine can settle -- that getCameraOffX() is IsoCamera.frameState.offX at the
+-- moment the menu is built -- so deferring to the game first fails safe.
+-- docs/PARCOURS-TEST.md step 12e is the click that checks it.
+function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
+	if CeroSec.DEBUG then logHanded(worldobjects) end
 
 	local done = {}
 	for _, object in ipairs(worldobjects) do
@@ -247,11 +282,22 @@ function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
 			for i = 0, objects:size() - 1 do
 				local candidate = objects:get(i)
 				if CeroSec.isComputerSprite(candidate:getSpriteName()) then
+					if CeroSec.DEBUG then
+						CeroSec.log("menu: a computer on the picked square " ..
+							square:getX() .. "," .. square:getY() .. "," .. square:getZ())
+					end
 					return candidate
 				end
 			end
 		end
 	end
+
+	if playerIndex and not JoypadState.players[playerIndex + 1] then
+		local picked = CeroSecReach.pickComputer(playerIndex, getMouseX(), getMouseY(), worldobjects)
+		if picked then return picked end
+	end
+
+	if CeroSec.DEBUG then CeroSec.log("menu: no computer under the cursor") end
 	return nil
 end
 

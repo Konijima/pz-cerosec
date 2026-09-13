@@ -11249,6 +11249,532 @@ do
 end
 
 --
+-- Picking a computer under the mouse
+--
+-- The screenshot of 2026-09-12: a vanilla computer on a desk at 2089,5832 with a
+-- mahogany chair on 2089,5833 pulled up to it, the cursor on the monitor, and no
+-- CeroSec entry on the menu at all -- the game's own debug lines naming the CHAIR
+-- (Tile Report furniture_seating_indoor_02_0, Room Report x: 2089, y: 5833).
+--
+-- So this bench is that geometry, built out of the engine's own projection rather
+-- than out of the module's: ToScreen and ToWorld below are IsoUtils.XToScreen /
+-- YToScreen / XToIso / YToIso written out again from the jar
+-- (32*tileScale*(x-y), 16*tileScale*(x+y), and their inverse), with a camera
+-- offset that puts the desk somewhere believable on a 1920x1080 screen. If the
+-- module and the projection disagree, they disagree here.
+--
+-- The masks are real too: each object carries a rectangle of opaque texture
+-- pixels and isMaskClicked answers out of it, the way IsoSprite's does, so a
+-- cursor on the chair's own pixels is a cursor the computer's mask refuses.
+--
+
+do
+	local stub = CeroSecReach
+	local realCore = _G.getCore
+
+	local TS = 2 -- Core.tileScale, which is 2 in B42
+	-- Chosen so the desk's screen anchor lands at 600,400.
+	local CAM_X = 32 * TS * (2089 - 5832) - 600
+	local CAM_Y = 16 * TS * (2089 + 5832) - 400
+
+	local function toScreen(x, y, z)
+		return 32 * TS * (x - y) - CAM_X,
+			16 * TS * (y + x) + (0 - z) * 96 * TS - CAM_Y
+	end
+	local function toWorld(sx, sy, z)
+		local x, y = sx + CAM_X, sy + CAM_Y
+		return (x + 2 * y) / (64 * TS) + 3 * z, (2 * y - x) / (64 * TS) + 3 * z
+	end
+
+	_G.Core = { getTileScale = function() return TS end }
+	_G.ISCoordConversion = { ToScreen = toScreen, ToWorld = toWorld }
+	_G.getCore = function()
+		return { getZoom = function() return 1 end,
+			getScreenWidth = function() return 1920 end,
+			getScreenHeight = function() return 1080 end }
+	end
+	_G.AdjacentFreeTileFinder = { privTrySquare = function() return true end }
+	_G.IsoFlagType = { bed = "bed" }
+	_G.SeatingManager = { getInstance = function() return {
+		getTilePositionCount = function() return 1 end,
+		getFacingDirection = function(_, object) return object.__facing end,
+		getAdjacentPosition = function() return false end,
+	} end }
+	_G.JoypadState = { players = {} }
+
+	local squares = {}
+	local function key(x, y, z) return x .. "," .. y .. "," .. z end
+	_G.__world = { getGridSquare = function(_, x, y, z)
+		return squares[key(math.floor(x), math.floor(y), math.floor(z))]
+	end }
+
+	local function square(x, y, z)
+		local sq = squares[key(x, y, z)]
+		if sq then return sq end
+		local objects = {}
+		sq = {
+			__objects = objects,
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getObjects = function() return javaList(objects) end,
+			canReachTo = function() return true end,
+		}
+		squares[key(x, y, z)] = sq
+		return sq
+	end
+
+	-- An object on a square. mask is the rectangle of opaque TEXTURE pixels
+	-- (x0, y0, x1, y1 in a 64x128 sheet); raise is renderYOffset, which is what
+	-- lifts a sprite standing on a table.
+	local function place(x, y, z, sprite, raise, mask, texW, texH)
+		local sq = square(x, y, z)
+		local o
+		o = {
+			getSpriteName = function() return sprite end,
+			getSquare = function() return sq end,
+			getDir = function() return "N" end,
+			getObjectIndex = function() return o.__index end,
+			getOffsetX = function() return 32 * TS end,
+			getOffsetY = function() return 96 * TS end,
+			getRenderYOffset = function() return raise or 0 end,
+			getSprite = function() return {
+				getTextureForCurrentFrame = function() return {
+					getWidthOrig = function() return texW or 64 end,
+					getHeightOrig = function() return texH or 128 end,
+				} end,
+				getProperties = function() return {
+					has = function(_, name)
+						return o.__flags[name] == true or o.__props[name] ~= nil
+					end,
+					get = function(_, name) return o.__props[name] end,
+				} end,
+			} end,
+			isMaskClicked = function(_, px, py)
+				if not mask then return false end
+				return px >= mask[1] and px <= mask[3] and py >= mask[2] and py <= mask[4]
+			end,
+			__flags = {},
+			__props = {},
+		}
+		table.insert(sq.__objects, o)
+		o.__index = #sq.__objects - 1
+		return o
+	end
+
+	local path = "42/media/lua/client/CeroSec/CeroSecReach.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+
+	local menuPath = "42/media/lua/client/CeroSec/CeroSecContextMenu.lua"
+	local menuChunk, menuErr = loadfile(menuPath)
+	if not menuChunk then error("cannot load " .. menuPath .. ": " .. tostring(menuErr)) end
+	local realEvents = _G.Events
+	_G.Events = { OnFillWorldObjectContextMenu = { Add = function() end } }
+	menuChunk()
+	_G.Events = realEvents
+
+	-- The screen anchor the whole bench is pinned to, so a change to the camera
+	-- arithmetic above shows up as a failure here and not as ten silent misses.
+	do
+		-- A canary, not a proof: every cursor coordinate below was worked out by hand
+		-- off this anchor, so a change to CAM_X/CAM_Y has to fail here rather than
+		-- silently move ten clicks somewhere else.
+		local ax, ay = toScreen(2089, 5832, 0)
+		eq("the desk's anchor x", ax, 600)
+		eq("the desk's anchor y", ay, 400)
+		-- This one is a proof: the bench's ToWorld really does invert its ToScreen,
+		-- on a square that is neither the anchor nor the origin.
+		local sx, sy = toScreen(2091, 5830, 0)
+		local wx, wy = toWorld(sx, sy, 0)
+		eq("ToWorld inverts ToScreen on x", wx, 2091)
+		eq("ToWorld inverts ToScreen on y", wy, 5830)
+	end
+
+	--
+	-- The screenshot itself
+	--
+	-- desk at 2089,5832 carrying the computer (renderYOffset 32, a desk's
+	-- surface); chair on 2089,5833 looking north at the screen; the cursor on the
+	-- monitor's own pixels.
+	--
+	-- Monitor box: anchor 600,400 less offsetX 64 and offsetY 192 less the raise
+	-- 32*2 -> 536,144, 128 by 256. Its opaque pixels are texture rows 88..120,
+	-- so screen y 320..384. Chair anchor 536,432 -> box 472,240; its back reaches
+	-- texture row 60, so screen y 360..496.
+	local MONITOR = { 20, 88, 44, 120 }
+	local CHAIRBACK = { 20, 60, 44, 128 }
+
+	local function screenshotWorld()
+		squares = {}
+		local desk = place(2089, 5832, 0, "furniture_tables_high_01_0")
+		desk.__flags.IsTable = true
+		desk.__props.Surface = "32"
+		local computer = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 32, MONITOR)
+		local chair = place(2089, 5833, 0, "furniture_seating_indoor_02_0", 0, CHAIRBACK)
+		chair.__facing = CeroSec.chairFacingFor("S")
+		chair.__flags[IsoFlagType.bed] = true
+		return computer, chair, desk
+	end
+
+	do
+		local computer, chair = screenshotWorld()
+		-- The game picked the chair and handed the menu that one object, which is
+		-- what the Tile Report and the Room Report in the screenshot say.
+		local handed = { chair }
+
+		-- The mouse on the monitor. 598,350 is inside the monitor's opaque band
+		-- and outside the chair's.
+		eq("the chair's own mask says no there",
+			CeroSecReach.isMouseOn(chair, 598, 350, 0), false)
+		eq("the monitor's mask says yes",
+			CeroSecReach.isMouseOn(computer, 598, 350, 0), true)
+
+		-- The desk's square has to be among the squares looked at, and the mouse's
+		-- own tile is two steps of x+y behind it -- nothing like the edge of any
+		-- budget. This is the number that kills the "three-tile diagonal" story.
+		local wx, wy = toWorld(598, 350, 0)
+		local tx, ty = math.floor(wx), math.floor(wy)
+		eq("the mouse's tile", tx .. "," .. ty, "2088,5831")
+		eq("the desk is this many steps of x+y ahead of it",
+			(2089 + 5832) - (tx + ty), 2)
+		local found = false
+		for _, sq in ipairs(CeroSecReach.pickSquares(598, 350, 0, 1)) do
+			if sq:getX() == 2089 and sq:getY() == 5832 then found = true end
+		end
+		check("the desk's square is looked at", found)
+
+		-- And the whole answer, through the two callers.
+		eq("and a desk is a mid-height surface",
+			CeroSecReach.height(computer), "mid")
+
+		eq("pickComputer finds the computer",
+			CeroSecReach.pickComputer(0, 598, 350, handed), computer)
+		_G.getMouseX = function() return 598 end
+		_G.getMouseY = function() return 350 end
+		eq("findComputer finds it too",
+			CeroSecContextMenu.findComputer(handed, 0), computer)
+	end
+
+	-- The cursor on the CHAIR's own pixels, not the monitor's. The chair's back
+	-- reaches up into the monitor's BOX -- 550,380 is inside it -- so a search
+	-- that tested the box and not the mask would answer "computer" here. It must
+	-- answer nothing: the pixels under the cursor are the chair's.
+	do
+		local computer, chair = screenshotWorld()
+		local handed = { chair }
+
+		local x, y, w, h = CeroSecReach.drawnBox(computer)
+		check("550,380 is inside the monitor's box", CeroSec.pointInBox(550, 380, x, y, w, h))
+		eq("but its mask refuses it", CeroSecReach.isMouseOn(computer, 550, 380, 0), false)
+		eq("the chair's mask takes it", CeroSecReach.isMouseOn(chair, 550, 380, 0), true)
+
+		-- The desk's square is looked at all the same, so this is the mask saying
+		-- no and not the search failing to ask.
+		local found = false
+		for _, sq in ipairs(CeroSecReach.pickSquares(550, 380, 0, 1)) do
+			if sq:getX() == 2089 and sq:getY() == 5832 then found = true end
+		end
+		check("the desk's square was still looked at", found)
+
+		eq("pickComputer answers nothing", CeroSecReach.pickComputer(0, 550, 380, handed), nil)
+		_G.getMouseX = function() return 550 end
+		_G.getMouseY = function() return 380 end
+		eq("and so does findComputer", CeroSecContextMenu.findComputer(handed, 0), nil)
+	end
+
+	-- A computer on the floor: no raise, and the cursor on its pixels finds it.
+	do
+		squares = {}
+		local computer = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR)
+		square(2089, 5833, 0)
+		eq("and it is found", CeroSecReach.pickComputer(0, 601, 401, { computer }), computer)
+		eq("height low", CeroSecReach.height(computer), "low")
+	end
+
+	-- A computer on a high shelf. Out of REACH -- that is height's business and
+	-- the menu greys the entries out -- but still found, because a player has to
+	-- be told why he cannot use it. The raise is 80, which needs six steps of
+	-- x+y: exactly the last step of the game's own staircase, and the reason the
+	-- window goes further.
+	do
+		squares = {}
+		local shelf = place(2089, 5832, 0, "shelves_01_0")
+		shelf.__flags.IsTable = true
+		shelf.__props.Surface = "80"
+		local computer = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 80, MONITOR)
+		square(2089, 5833, 0)
+		eq("height high", CeroSecReach.height(computer), "high")
+		local wx, wy = toWorld(600, 256, 0)
+		eq("six steps of x+y ahead of the mouse's tile",
+			(2089 + 5832) - (math.floor(wx) + math.floor(wy)), 6)
+		eq("and it is still found",
+			CeroSecReach.pickComputer(0, 600, 256, { computer }), computer)
+	end
+
+	-- worldobjects carrying the computer itself. The mouse is nowhere near it --
+	-- off the bottom of the world, where no mask can be hit -- so only the pass that
+	-- reads what the game handed over can answer, and deleting that pass turns this
+	-- red. A computer is on its own square, which is why that pass is ONE scan and
+	-- not a scan behind an "is it the computer itself" branch.
+	do
+		local computer = screenshotWorld()
+		_G.getMouseX = function() return 5 end
+		_G.getMouseY = function() return 5 end
+		eq("the mask pass finds nothing at 5,5",
+			CeroSecReach.pickComputer(0, 5, 5, { computer }), nil)
+		eq("handed the computer itself, findComputer takes it",
+			CeroSecContextMenu.findComputer({ computer }, 0), computer)
+	end
+
+	-- And handed the DESK the computer stands on: a computer on the square of a
+	-- picked object is that object's computer, which is how vanilla's own
+	-- one-device menus read a table-top (ISRadioAndTvMenu, ISBBQMenu). Same mouse
+	-- in the weeds, so again only that pass can answer.
+	do
+		local computer, _, desk = screenshotWorld()
+		_G.getMouseX = function() return 5 end
+		_G.getMouseY = function() return 5 end
+		eq("handed the desk, findComputer takes the computer on it",
+			CeroSecContextMenu.findComputer({ desk }, 0), computer)
+	end
+
+	-- A joypad has no mouse at all: the first pass is the whole of its answer.
+	do
+		local computer, chair = screenshotWorld()
+		_G.JoypadState.players = { true }
+		_G.getMouseX = function() return 598 end
+		_G.getMouseY = function() return 350 end
+		eq("joypad: the chair's square has no computer",
+			CeroSecContextMenu.findComputer({ chair }, 0), nil)
+		eq("joypad: the desk's square does",
+			CeroSecContextMenu.findComputer({ computer:getSquare().__objects[1] }, 0), computer)
+		_G.JoypadState.players = {}
+	end
+
+	-- The box, against the renderer's own three terms. A box that forgot
+	-- offsetX/offsetY sits 64 right and 192 low at tileScale 2, which is the
+	-- defect this section was written to kill, so the numbers are asserted
+	-- outright.
+	do
+		local computer = screenshotWorld()
+		local x, y, w, h = CeroSecReach.drawnBox(computer)
+		eq("box x is the anchor less offsetX", x, 600 - 64)
+		eq("box y is the anchor less offsetY and the raise", y, 400 - 192 - 32 * TS)
+		eq("box width", w, 64 * TS)
+		eq("box height", h, 128 * TS)
+		-- The same object with no raise sits exactly the raise lower.
+		local flat = place(2088, 5831, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR)
+		local fx, fy = CeroSecReach.drawnBox(flat)
+		local ax, ay = toScreen(2088, 5831, 0)
+		eq("no raise, no lift on x", fx, ax - 64)
+		eq("no raise, no lift on y", fy, ay - 192)
+	end
+
+	-- The window the candidate squares come out of, as the pure bench derived it
+	-- (tests/terminal_test.lua, "which squares can be drawn over a point"). The
+	-- two are two statements of one thing, and this is where they are made to
+	-- agree.
+	do
+		eq("PICK_BEHIND", CeroSecReach.PICK_BEHIND, 2)
+		eq("PICK_AHEAD", CeroSecReach.PICK_AHEAD, 12)
+		eq("PICK_SIDE", CeroSecReach.PICK_SIDE, 1)
+	end
+
+	-- Past the game's own staircase. A sprite raised the full SURFACE_MAX whose
+	-- pixels are HIGH in its sheet sits ten steps of x+y ahead of the mouse's tile,
+	-- and the game's seven candidate steps reach six. No shipped computer sprite
+	-- draws that high -- which is exactly why the game does find the monitor on the
+	-- desk -- but the window is not allowed to depend on which sprite it is, so the
+	-- case is built and asserted.
+	do
+		squares = {}
+		local shelf = place(2089, 5832, 0, "shelves_01_0")
+		shelf.__flags.IsTable = true
+		shelf.__props.Surface = "64"
+		local tall = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 64, { 20, 8, 44, 24 })
+		local wx, wy = toWorld(600, 110, 0)
+		eq("ten steps of x+y ahead of the mouse's tile",
+			(2089 + 5832) - (math.floor(wx) + math.floor(wy)), 10)
+		eq("still found", CeroSecReach.pickComputer(0, 600, 110, { tall }), tall)
+		eq("and still out of reach", CeroSecReach.height(tall), "mid")
+	end
+
+	-- The instrumentation. With CeroSec.DEBUG on, one right-click has to leave in
+	-- the ring the debug window's Log tab reads: what the game handed over, with
+	-- the sprite and the square of it, and every candidate the mask pass weighed
+	-- with the answer it got. A line nobody can read is not instrumentation.
+	do
+		local computer, chair = screenshotWorld()
+		_G.getMouseX = function() return 598 end
+		_G.getMouseY = function() return 350 end
+		local wasDebug, realPrint = CeroSec.DEBUG, _G.print
+		CeroSec.DEBUG = true
+		_G.print = function() end
+		CeroSec.logRing = {}
+		eq("with the log on, the answer is the same",
+			CeroSecContextMenu.findComputer({ chair }, 0), computer)
+		CeroSec.DEBUG, _G.print = wasDebug, realPrint
+
+		local lines = {}
+		for _, entry in ipairs(CeroSec.logRing) do lines[#lines + 1] = entry.text end
+		local all = table.concat(lines, "\n")
+		check("it says what the game handed over",
+			string.find(all, "furniture_seating_indoor_02_0@2089,5833,0", 1, true) ~= nil)
+		check("it says where the mouse was",
+			string.find(all, "mouse 598,350", 1, true) ~= nil)
+		check("it says the computer's square and raise",
+			string.find(all, "at 2089,5832,0 raise 32", 1, true) ~= nil)
+		check("it says the box it tested", string.find(all, "box 536,144 128x256", 1, true) ~= nil)
+		check("and whether the mask took it", string.find(all, "HIT", 1, true) ~= nil)
+	end
+
+	-- A right-click that finds nothing says so, and says what it weighed on the
+	-- way: that is the line a miss in game is read from.
+	do
+		local _, chair = screenshotWorld()
+		_G.getMouseX = function() return 550 end
+		_G.getMouseY = function() return 380 end
+		local wasDebug, realPrint = CeroSec.DEBUG, _G.print
+		CeroSec.DEBUG = true
+		_G.print = function() end
+		CeroSec.logRing = {}
+		eq("nothing found", CeroSecContextMenu.findComputer({ chair }, 0), nil)
+		CeroSec.DEBUG, _G.print = wasDebug, realPrint
+
+		local lines = {}
+		for _, entry in ipairs(CeroSec.logRing) do lines[#lines + 1] = entry.text end
+		local all = table.concat(lines, "\n")
+		check("the rejected candidate is named",
+			string.find(all, "at 2089,5832,0 raise 32", 1, true) ~= nil)
+		check("with the reason", string.find(all, "no mask", 1, true) ~= nil)
+		check("and the miss is said outright",
+			string.find(all, "no computer under the cursor", 1, true) ~= nil)
+	end
+
+	-- The one line that is NOT behind CeroSec.DEBUG: the cursor inside a computer's
+	-- own rectangle with its mask saying no. That is the shape of every miss this
+	-- section exists for, and a player has to be able to read it off the Log tab
+	-- without editing a file and doing it again (docs/DEBUG.md, "The log": the
+	-- append is never gated).
+	do
+		local _, chair = screenshotWorld()
+		eq("DEBUG is off for this one", CeroSec.DEBUG, false)
+		CeroSec.logRing = {}
+		CeroSecReach.grazeWarned = {}
+		eq("still nothing found", CeroSecReach.pickComputer(0, 550, 380, { chair }), nil)
+		eq("and exactly one line about it", #CeroSec.logRing, 1)
+		eq("as a warning, so the Warnings filter finds it",
+			CeroSec.logRing[1].level, CeroSec.LOG_WARN)
+		check("naming the box and the miss",
+			string.find(CeroSec.logRing[1].text,
+				"on a computer's box and not on its pixels", 1, true) ~= nil)
+		check("and the square", string.find(CeroSec.logRing[1].text, "2089,5832,0", 1, true) ~= nil)
+
+		-- Once per machine, and that is the whole of it. The rectangle is two tiles
+		-- wide and four tall, so in an office the desk, the floor in front of it and
+		-- the chair are all inside some monitor's box; a line per click would empty
+		-- the 200-line ring inside a minute of ordinary play, and a second miss on
+		-- the same machine is the same information as the first.
+		eq("a second miss on the same machine says nothing more",
+			CeroSecReach.pickComputer(0, 551, 381, { chair }), nil)
+		eq("still one line", #CeroSec.logRing, 1)
+
+		-- A different machine gets its own line.
+		local other = place(2089, 5830, 0, CeroSec.SPRITES_OFF.S, 32, CHAIRBACK)
+		square(2089, 5831, 0)
+		local ox, oy, ow, oh = CeroSecReach.drawnBox(other)
+		local inside = { ox + ow / 2, oy + 1 }
+		check("a point inside the other machine's box but off its pixels",
+			CeroSec.pointInBox(inside[1], inside[2], ox, oy, ow, oh)
+				and CeroSecReach.isMouseOn(other, inside[1], inside[2], 0) == false)
+		eq("nothing found on it either",
+			CeroSecReach.pickComputer(0, inside[1], inside[2], { other }), nil)
+		eq("and now there are two lines", #CeroSec.logRing, 2)
+
+		-- A click nowhere near a computer's rectangle says nothing at all. A warning
+		-- that fires when the mod is behaving is a warning nobody reads.
+		CeroSec.logRing = {}
+		eq("nothing found out in the weeds either",
+			CeroSecReach.pickComputer(0, 5, 5, { chair }), nil)
+		eq("and not a word about it", #CeroSec.logRing, 0)
+
+		-- And the case that tells "on the box" from "a candidate at all" apart:
+		-- 600,420 is a step BELOW the monitor's box and still inside the window the
+		-- candidate squares come from, so the computer is weighed and dropped on the
+		-- box. That is an ordinary click on the desk, not a miss, and it must be
+		-- silent.
+		local computer = screenshotWorld()
+		local bx, by, bw, bh = CeroSecReach.drawnBox(computer)
+		check("600,420 is outside the monitor's box",
+			not CeroSec.pointInBox(600, 420, bx, by, bw, bh))
+		local weighed = false
+		for _, sq in ipairs(CeroSecReach.pickSquares(600, 420, 0, 1)) do
+			if sq:getX() == 2089 and sq:getY() == 5832 then weighed = true end
+		end
+		check("but its square is still weighed", weighed)
+		CeroSec.logRing = {}
+		eq("nothing found there", CeroSecReach.pickComputer(0, 600, 420, { chair }), nil)
+		eq("and still not a word", #CeroSec.logRing, 0)
+	end
+
+	-- The box SIZE, against the renderer's rule rather than against a constant. The
+	-- renderer draws a 64x128 texture at scale 2 when tileScale is 2 and a 128x256 one
+	-- at scale 1, so both come to 128 x 256 -- and anything else keeps the sprite
+	-- instance's own scale, whose default is 1. A box hardcoded to 128 x 256 would
+	-- give a 32x64 sprite four times the rectangle it draws into, and would divide the
+	-- mask index by a scale it was never drawn at.
+	do
+		squares = {}
+		local half = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, { 0, 0, 31, 63 }, 32, 64)
+		local _, _, hw, hh = CeroSecReach.drawnBox(half)
+		eq("a 32x64 texture gets a 32x64 box", hw, 32)
+		eq("and not a doubled one", hh, 64)
+
+		squares = {}
+		local big = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, { 0, 0, 127, 255 }, 128, 256)
+		local _, _, bw, bh = CeroSecReach.drawnBox(big)
+		eq("a 128x256 texture is drawn at scale 1", bw, 128)
+		eq("so its box is 128x256 too", bh, 256)
+
+		squares = {}
+		local std = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR)
+		local _, _, sw, sh = CeroSecReach.drawnBox(std)
+		eq("and a 64x128 one is doubled to the same", sw, 128)
+		eq("the same way", sh, 256)
+
+		-- A texture with no size at all is no box, not a division by zero in the
+		-- middle of building a context menu.
+		squares = {}
+		local empty = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR, 0, 0)
+		eq("no size, no box", CeroSecReach.drawnBox(empty), nil)
+		eq("no size, no hit", CeroSecReach.isMouseOn(empty, 598, 350, 0), false)
+	end
+
+	-- No mouse at all, and an object with no square: neither is an error.
+	do
+		local computer, chair = screenshotWorld()
+		eq("no mouse x, no pick", CeroSecReach.pickComputer(0, nil, 350, { chair }), nil)
+		eq("no mouse y, no pick", CeroSecReach.pickComputer(0, 598, nil, { chair }), nil)
+		local home = computer.getSquare
+		computer.getSquare = function() return nil end
+		eq("no square, no box", CeroSecReach.drawnBox(computer), nil)
+		eq("no square, no hit", CeroSecReach.isMouseOn(computer, 598, 350, 0), false)
+		computer.getSquare = home
+	end
+
+	_G.__world = nil
+	_G.getCore = realCore
+	_G.Core = nil
+	_G.ISCoordConversion = nil
+	_G.JoypadState = nil
+	_G.getMouseX = nil
+	_G.getMouseY = nil
+	CeroSecReach = stub
+end
+
+--
 -- Drifting off the keyboard
 --
 -- Getting the keyboard back is also getting the character back to it. With no
