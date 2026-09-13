@@ -122,10 +122,11 @@ CeroSecContent.PROFILES.office = {
   motd     = "...",      -- /etc/motd, at most MOTD_MAX_LINES lines of 60 columns
   root     = true,       -- a root password to derive, hash, and never store
   accounts = { { name =, admin =, pass =, files = { { path =, mode =, text = } } } },
-  bin      = { { script = "lights.sh", chance = 60 } },
+  bin      = { { script = "lights.sh", chance = 60, to = "/usr/local/src" } },
   logs     = { "..." },  -- /var/log/messages, dated in the week before day one
   mail     = { { to =, from =, subj =, body = } },
-  files    = { { path =, mode =, owner =, text = } },
+  cron     = { { to = 1, lines = { "0 22 * * * ..." } } },
+  files    = { { path =, mode =, owner =, text = }, { path =, dir = true } },
 }
 ```
 
@@ -146,16 +147,82 @@ Five things to know:
   first. A `path` inside an account's `files` is relative to that account's home
   and may not contain a `/`.
 
+And three fields wave 7b added, each because a premises the county really has
+could not be written without it:
+
+- **`cron`** is a crontab per account, in Vixie's own five fields, written to
+  `/var/spool/cron/<login>` exactly where `crontab(1)` writes one — root's, `600`,
+  in root's `700` directory. It is a real crontab and the machine really runs it: a
+  shop whose lights went off at ten every night is a shop whose lights still go off
+  at ten. `to` is a slot number or a literal login, the way `mail`'s is.
+- a **`files` entry marked `dir`** is a directory and not a file, with its parents
+  made above it. A profile that wanted a tree of its own — `/usr/local/src` on the
+  vendor's bench machine — had no way to make one, and a path whose parent is
+  missing is a file the gate refuses for a reason nothing in the catalogue could
+  see.
+- a **`bin` entry may name `to`**, an absolute directory, instead of the first
+  account's `~/bin`; the directory and its parents are made if they are missing, and
+  what lands there is root's. One script still has one copy — `to` moves where the
+  copy goes and never what is in it — and it is how the vendor's machine can carry
+  the whole library and the military post, which has no ordinary account at all, can
+  carry one.
+
+**What the bench holds a crontab to**, and both halves matter. Every line goes
+through `CeroSecOS.checkCrontab`, the machine's own parser, in the writer *and* in
+the bench: a line the parser refuses is a line that does nothing for ever and says
+nothing about why. And a line naming a script of ours must name the path the profile
+really writes it to — an entry behind a `chance` is on some machines and not others,
+and one naming `to` is somewhere else entirely, so a crontab saying
+`/usr/local/bin/check.sh` on a machine that put `check.sh` in a home is a line that
+mails `not found` once an hour for ever. That check went red on the military post the
+day it was written.
+
+**And one crontab is TYPED**, as the account it belongs to, on a machine the profile
+built, with the environment a login really hands a shell. A crontab that *parses* is
+not a line that *works*: the command names a path with `$HOME` in it and an account
+whose login was generated. The radio station's line is the one taken, because its
+line is the one built to run from cron at all, and what it prints is the nine
+o'clock entry off the station's own sheet.
+
 A `logs` line is dated from the **save's own start date**
 (`getGameTime():getStartYear()` and the two beside it, which carry the same
 zero-based month and day `getMonth`/`getDay` do), spread over the week before it,
 and cut to sixty columns with the hostname in front of it — a survivor reads
 `/var/log/messages` with `cat` on a terminal that does not wrap.
 
-Ten ids exist: `residential`, `office`, `police`, `bank`, `store`, `school`,
-`clinic`, `radio`, `military`, `cerosec`. **Two are written; the other eight are
-empty**, and a machine whose premises resolves to an empty one is prefilled with
-nothing at all — which is exactly a bare machine. Filling one is writing a table.
+### The ten as shipped
+
+Every one of the ten is written. Each is a story in **three files**, and each carries
+at least one script a survivor can copy onto a building of his own.
+
+| id | host | root | accounts | the three files |
+| --- | --- | --- | --- | --- |
+| `residential` | `ksp` | no | 2, both open | `notes.txt`, `porch.txt` (what a timer really is), a child's `report.txt` |
+| `office` | `acct` | yes | 3 | `handover.txt`, `ledger.txt`, `memo.txt`; the crontab the handover note talks about really runs `total.sh` on the ledger |
+| `police` | `disp` | yes | 3, one named `dispatch` | `bolo.txt`, `handover.txt`, and `/var/log/dispatch` — which stops in the middle of a line at 5:05 on the morning of the 9th |
+| `bank` | `vault` | yes | 3 | `accounts.dat` in four plain columns, `audit.txt` (the examiner's three answers, as two commands), `vault.txt` |
+| `store` | `till` | yes | 2 | `inventory.txt` counted on the 6th, `prices.txt` in cents, `closing.txt` |
+| `school` | `bell` | yes | 3 | `grades.txt` by student number, `bells.txt`, a `detention.txt` that will not write the two names down |
+| `clinic` | `ward` | yes | 3 | `patients.txt` (rooms and wards, nothing medical), `rounds.txt`, `supplies.txt` |
+| `radio` | `studio` | yes | 2 | `sched.txt`, `notes.txt`, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
+| `military` | `post` | yes | **none** | `/root/memo-01.txt` to `-03.txt`, on the exclusion zone |
+| `cerosec` | `cerosec` | yes | 3, one named `support` | `bench.txt`, `answers.txt`, `/usr/local/src/CHANGES` |
+
+**The military post is the one with no ordinary account on it.** A post did not hand
+out logins; a man sat down at it because he was allowed to be in the room. So there
+is no open account to walk in through and no note in anybody's pocket — the only way
+in is the paper in the drawer or the firmware's repair, which is the same cost every
+locked machine has and which the manual states.
+
+**The vendor's own machine carries the whole library** in `/usr/local/src`, by
+reference, which is the one place in the county where all of it stands together — and
+the distribution disk says so in as many words, which is true because this profile is
+what makes it true.
+
+A machine whose premises resolves to an id nobody had written was prefilled with
+nothing at all, which is exactly a bare machine. That path is still there and is
+still tested (`tests/window_test.lua` takes a profile out of the catalogue to provoke
+it), because the next id somebody declares will go through it.
 
 ## The disk catalogue
 
@@ -164,15 +231,22 @@ CeroSecContent.DISKS[i] = {
   id     = "UTILITIES",   -- what the entry is called here and in the bench
   label  = "UTILITIES",   -- what is written on the disk; capitals, labelOk
   weight = 4,             -- out of 100; the remainder is a blank disk
+  late   = "NUMBERS.TXT", -- one file is a stub until the disk is first inserted
   files  = { { name = "lights.sh", script = "lights.sh" },
-             { name = "README.TXT", mode = 644, text = "..." } },
+             { name = "README.TXT", mode = 644, text = "..." },
+             { name = "MAN", dir = true },
+             { name = "MAN/CU.TXT", mode = 644, text = "..." } },
 }
 ```
 
 Five things to know:
 
 - a file entry carries **either** `script` (a name in `CeroSecContent.SCRIPTS`,
-  which brings its own mode) **or** `text` and `mode`. Never both.
+  which brings its own mode) **or** `text` and `mode`. Never both. An entry marked
+  `dir` is a **directory**, and a `name` may then be two components with a slash
+  between them — `MAN`, then `MAN/CU.TXT`. Two is all the depth a floppy gets: a
+  deeper tree on 4096 bytes read at sixty columns is a tree nobody would walk. The
+  entry that makes a directory comes before the entries inside it.
 - `README.TXT` is in **capitals**, and so is every name on a disk that is not a
   script: a 1993 floppy came out of a DOS machine. The bench holds every README to
   naming every file beside it **and only** files that are on it.
@@ -183,8 +257,110 @@ Five things to know:
 - `BLANK` is in the table with no files on purpose: naming the entry a roll lands
   on when nothing is written lets the bench say so out loud.
 
-Slots wave 7b fills: `BBS LIST`, `WARDIALER`, `GAMES`, `BACKUP`,
-`CEROSEC OS UPGRADE`.
+### The six as shipped
+
+| label | share | what is on it |
+| --- | --- | --- |
+| `UTILITIES` | 4 | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
+| `BBS LIST` | 3 | `NUMBERS.TXT` (**late**, see below), `CALLS.TXT` — packet stations somebody heard, by callsign — and how to reach either |
+| `WARDIALER` | 2 | `RANGE.TXT`, `log.sh`, and a README whose first screen says there is no wardialer and why |
+| `GAMES` | 3 | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
+| `BACKUP` | 3 | somebody's home directory on 8 July: `DIARY.TXT` in four entries, `LETTERS.TXT`, `FAMILY.TXT` |
+| `CEROSEC OS 1.0 DIST` | 2 | `INSTALL.TXT`, `MAN/` with six pages, three scripts |
+
+Seventeen shares of a hundred; the other eighty-three are a blank disk, which is what
+a box of disks is.
+
+The slot 7a named `CEROSEC OS UPGRADE` shipped as **`CEROSEC OS 1.0 DIST`**: it is
+distribution media, and nothing on it upgrades anything. `INSTALL.TXT` explains the
+BIOS repair as reinstalling from this media and says in as many words that there is
+nothing on the disk that can write to a system disk — a floppy that could rewrite the
+system is a floppy that destroys a working machine by being left in the drive.
+
+### `WARDIALER`: why there is no wardialer
+
+Because `cu` cannot be driven by a script, and that is a fact about the engine and not
+a decision taken here. `CeroSecOS.jobStep`'s `applyControl` treats a `cu` the way it
+treats `edit` and `shutdown`: the order goes out to whoever is running the machine and
+the job **ends**, whole, with `job.sig = { k = "exit", all = true }`. So the line after
+a `cu` in a script never runs. And from a background job or a cron line it does not
+dial at all — `jobHasTerminal` is false there, and the refusal is `cu: not a terminal`,
+made *before* the ring so a crontab cannot hold a telephone line open for fifteen
+seconds to be told what the door would have told it at once.
+
+`cu` was **not changed**. Handing the glass to the far end is what `cu(1)` does, and a
+scriptable dialler would mean a second way into a session — so the disk ships the
+method instead and says so on its first screen: `RANGE.TXT` (how to turn a range, and
+the four words a modem really answers with — `CONNECT 2400`, `NO CARRIER`, `BUSY`,
+`NO DIALTONE`) and `log.sh`, which writes the date, a number and a word into a file you
+name. Half the job is a thing the machine can do, and that half is on the disk.
+
+### `late`: a disk printed where it is used
+
+A floppy is created in **loot**, and loot has no location: the disk is in a drawer in a
+town nobody has walked into, so there is no square, no premises, no region and
+therefore no telephone exchange at the moment it is made. A BBS list printed with the
+numbers of somewhere else is the one kind of lie this catalogue is not allowed to tell.
+
+So one file of such an entry — the one `late` names — ships as a **stub**, and is
+filled the first time somebody puts the disk in a machine:
+
+1. `Commands.insertfloppy` has just read the disk off the item, validated it through
+   the slot's own gate, and read the sticker off the item's name. That is the last
+   moment before the disk goes in the drive and the first moment there is a square to
+   ask, so the fill happens there, to **our** validated private copy — which is what
+   the drive takes and what an eject writes back onto the item.
+2. `CeroSecNet.fillLateDisk(disk, x, y, now)` asks which region the machine's tile is
+   in (`CeroSecOS.phoneRegionOf`) and what that region's exchange is
+   (`CeroSecOS.phoneExchangeOfRegion`) — the same two questions the phone book asks —
+   and hands `CeroSecNet.directory`'s listings to the catalogue.
+3. `CeroSecContent.fillLate` lays them out (`CeroSecContent.bbsText`) and writes the
+   file through the **engine's own write path** on a throwaway drive, exactly as
+   `diskData` wrote the disk in the first place. So the floppy's 4096 bytes decide how
+   much fits and a list that would not fit leaves the stub where it was.
+
+**The numbers are real and the names are invented**, which is the whole shape of the
+disk: the four digits ring a real premises of the player's own region, because they
+come out of the county's own directory, and the name beside each one is what the
+disk's owner wrote on his list (`CeroSecContent.BBS_NAMES`). Eight of them at most —
+a floppy is 4096 bytes and the other two files have to fit beside these.
+
+**The list is sorted by number**, which does two things at once: it is the order a
+hand-kept list of numbers to turn is really kept in — what `RANGE.TXT` on the wardialer
+disk tells a survivor to do — and it is what keeps the order the map handed its zones
+over from reaching the page. Which name goes with which number is decided by the
+**number** and never by its position in the list. The first draft paired on the
+position, and the bench caught it: two copies of one disk must be the same page, byte
+for byte.
+
+**Where the "has it been filled" mark lives: nowhere.** A disk owns three keys and only
+three (`CeroSecOS.DISK_KEYS`) and the gate at the slot refuses a disk carrying a
+fourth, which is what keeps a payload out of the save file — so there is nowhere on a
+disk to write a flag and nothing that would survive being written there. The mark is
+**the file**: `CeroSecContent.lateEntryFor` answers the entry only while the late file
+still holds, byte for byte, the stub the catalogue shipped, and the stub it compares
+against *is* the catalogue's own text, so a wave that edited the stub and forgot the
+sentinel cannot happen.
+
+That is not a trick. It is the rule `upgradeSystem` already uses to take a retired
+command out of `/bin`: what is exactly what shipped is the system's to replace, and
+anything else at that name is a survivor's own work and stays. So a player who wrote
+his own notes over the stub keeps them, on every machine he ever puts the disk in, and
+the disk never rewrites itself under him.
+
+What it costs: a survivor who types the shipped stub onto a blank disk by hand, labels
+it `BBS LIST` and inserts it gets the listings printed. He has to reproduce a text he
+could only have read off another copy of the same disk, which is a curiosity and not a
+way in — the numbers are the region's own telephone directory and the phone book in his
+other pocket has all of them in it already.
+
+The bench proves the whole of it without a world: a shipped disk is waiting, the fill
+writes it, the filled disk is **not** waiting any more, a second machine in another
+exchange changes nothing, a disk somebody wrote over is left alone, a region with no
+listings leaves the stub, four hundred listings come out as one page inside the floppy,
+and the filled disk mounts and reads on a machine. That the region really is the
+inserting machine's is the world half, and it is step 293 of
+[PARCOURS-TEST.md](PARCOURS-TEST.md).
 
 **How a floppy gets its content.** `OnCreate = CeroSecContent.onCreateFloppy` on
 the four item blocks — an item-script key vanilla ships itself
@@ -267,8 +443,9 @@ here.
 
 ```lua
 CeroSecContent.SCRIPTS["lights.sh"] = {
-  mode = 755, args = { "light0", "light1" },
-  needs = { devices = { { id = "light0", kind = "light", state = "on" } } },
+  mode = 755, args = { "light0", "light1" }, input = { "y" },
+  needs = { devices = { { id = "light0", kind = "light", state = "on" } },
+            files   = { { path = "prices.txt", text = "..." } } },
   text = "#!/bin/sh\n...",
 }
 ```
@@ -280,10 +457,66 @@ that quietly reached for a second device would find it missing.
 its arguments and again with none, and holds every line of every one of them to
 sixty columns.
 
+`needs.files` is the other half of `needs.devices`, and `input` is what somebody
+**types** at it — the lines a `read` is answered with, in order, handed back through
+`CeroSecOS.jobInput`, which is the one door an answer goes through on a real machine.
+A program that asks questions cannot be proved by running it and reading what came
+back, because nothing comes back until it has been answered; and the recorded lines
+have to play it to the **end**, or a game left at its first prompt would pass for one
+that runs.
+
+**The usage rule.** A script somebody found and typed the name of must say how it is
+used and must not claim success, so every one is run with no arguments as well. A
+script that takes none — a game — is not held to it, there being no wrong way to run
+one; and it cannot get out of the rule by declaring `args = {}`, because the bench
+also reads the text for `$1`.
+
+### The thirteen as shipped
+
+| | |
+| --- | --- |
+| `lights.sh <light>...` | switch the lights you name off |
+| `locks.sh lock` or `unlock`, then `<lock>...` | both directions of a row of locks |
+| `lockup.sh <door> <lock>` | close the door, **read it back**, then bolt it |
+| `check.sh <door>...` | which of them is standing open, and how many |
+| `audit.sh <file> <word>` | the lines of a columns file that mention a word |
+| `total.sh <file> <column>` | add a colon-separated column up |
+| `rounds.sh <file>` | the first column, sorted: a list to work down |
+| `announce.sh <file>` | the line of a table for the hour it is now |
+| `sweep.sh <dir>` | every file under a tree, and how many |
+| `log.sh <file> <number> <word>` | one line in a log: the date, a number, a word |
+| `guess.sh <top>` | it picks one, you find it |
+| `hangman.sh <file>` | a word out of a file, a letter at a time |
+| `adventure.sh` | five rooms and one locked door |
+
+Every one of them is a **template and not a tool**: each does one thing, takes its
+devices and its files on the command line rather than naming any, and is short enough
+to read on one screen. A script that hard-coded `light0` would work on exactly one
+building in Knox County and teach nothing.
+
+Two of them are worth reading for the trick. `lockup.sh` reads the door back before
+it bolts it, because bolting a door that would not close bolts nothing and says it
+did. `hangman.sh` masks the word with **three calls to `tr` and no loop over
+characters**: the guessed letters become capitals, then every letter still in lower
+case becomes a dot.
+
+`CeroSecContent.DATA` holds the data files a script is *for*, named twice — once by
+the script that reads it and once by the premises or the disk that carries it. So
+`audit.sh` is proved against the very `accounts.dat` the bank's machine carries, and a
+script proved against a file of the bench's own invention cannot happen. The bench
+walks the table both ways.
+
+**One engine quirk found while writing these and deliberately not fixed here**, this
+being a content wave: `$(( ))` cannot read a positional parameter. `$((5 % $1))`
+answers `bad arithmetic`, because the arithmetic reader takes a name to be
+`[A-Za-z_]` (`arithUnit` in `CeroSecOSVM.lua`) and a real `sh` reads `$1` there.
+Every script here assigns it to a name first.
+
 ## Versions
 
-`CeroSecContent.VERSION` is the catalogue's own number and **must never become a
-save-shape number**: nothing a profile writes is marked as having come from one, so
+`CeroSecContent.VERSION` is **2** as of wave 7b, which filled the eight empty
+profiles and the five empty disk slots. It is the catalogue's own number and **must
+never become a save-shape number**: nothing a profile writes is marked as having come from one, so
 a later catalogue changes what the next untouched machine gets and changes nothing
 about a machine somebody has already switched on.
 

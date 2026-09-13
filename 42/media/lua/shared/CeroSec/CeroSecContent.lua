@@ -57,7 +57,7 @@ CeroSecContent = CeroSecContent or {}
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
 -- about a machine somebody has already switched on. Bumped when a wave adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
-CeroSecContent.VERSION = 1
+CeroSecContent.VERSION = 2
 
 --
 -- Is there anything already on the machines at all?
