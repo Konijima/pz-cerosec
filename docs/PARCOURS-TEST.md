@@ -1249,7 +1249,7 @@ passait dans un seul bâtiment. Les deux doivent avoir du courant. Dans ce qui
 suit, `ici` est la machine devant laquelle on est assis et `là-bas` celle de
 l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
 
-Depuis cette vague, la ligne appartient au **local** (« premises ») et non au
+Depuis ce changement, la ligne appartient au **local** (« premises ») et non au
 bâtiment : une maison est un local, un centre commercial en est trente. Les pas
 215b et 215c sont là pour ça, et ils demandent un mall (le mall de Louisville ou
 celui de West Point) avec deux boutiques différentes.
@@ -1345,7 +1345,7 @@ celui de West Point) avec deux boutiques différentes.
      ne comptent pas. Vérifier au passage qu'un appel vers ce numéro sonne sur la
      machine à l'adresse la plus basse (`who` là-bas), et que pendant ce temps
      l'autre machine de la maison ne peut pas appeler (`BUSY`). [ ]
-215d. **Une sauvegarde d'avant cette vague.** Sur un monde créé avec une version
+215d. **Une sauvegarde d'avant ce changement.** Sur un monde créé avec une version
      précédente du mod, où un ordinateur avait déjà été allumé : le rallumer. Le
      BIOS doit afficher l'adresse `Ethernet:` comme avant **et** une ligne
      `Phone line:` (le central est calculé au moment où la machine revoit son
@@ -1697,7 +1697,7 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      le contact ne touche pas à la gâche : `lockN` répond toujours. [ ]
 235. **Le guide, et ce qu'il débloque.** Nouvelle partie, Électricité 1,
      **sans avoir rien lu** : ouvrir l'établi, onglet **Électrique** → aucun
-     des quatre modules n'est proposé. C'est le changement de cette vague ;
+     des quatre modules n'est proposé. C'est le changement apporté ici ;
      s'ils sont déjà là, la recette s'auto-apprend encore au niveau qui la
      fabrique. Se donner un `CeroSec.WiringGuide` : il s'appelle **Guide de
      câblage CeroSec**, il pèse 0,5, il est rangé sous **Ressource de recette**
