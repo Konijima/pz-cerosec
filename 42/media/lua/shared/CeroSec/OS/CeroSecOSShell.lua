@@ -850,6 +850,17 @@ CeroSecOS.DEVIATIONS = {
 	-- when the line opens, a real TNC-2 having printed whatever its vendor's
 	-- firmware printed.
 	{ name = "cu", why = "-l names /dev/radio0, and the TNC's banner line is ours" },
+	-- ln, which a 1993 one made a HARD link with: `ln a b` was a second NAME for
+	-- one file, and this machine cannot hold one -- two names for one node would
+	-- be one table under two keys, and the game copies the state table by
+	-- recursion, so the second name would become a second FILE the first time
+	-- somebody picked the computer up (the head of CeroSecOS.newLink has it). A
+	-- link that quietly stops being a link is worse than no hard links, so -s is
+	-- required; the page carries the answer a player gets without it, because a
+	-- declaration that does not say what happens is not one.
+	{ name = "ln", phrase = "ln: usage: ln -s <target> <name>",
+		why = "no hard links: the state is copied by recursion, so the second name" ..
+			" would become a second file" },
 	-- Not a command: the one machine in four that is found at somebody's prompt
 	-- after the power came back. No Unix can restore a session across a power cut
 	-- and this one cannot either -- a survivor's own machine comes back to `login:`

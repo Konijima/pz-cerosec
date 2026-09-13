@@ -81,7 +81,7 @@ Commands:
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
-| `ln -s <target> <name>` | make a symbolic link; there are no hard links here |
+| `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional — `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
 | `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |

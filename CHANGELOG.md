@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- The manual now says why `ln` here always wants `-s`: a 1993 `ln a b` made a second
+  name for one and the same file, and this machine cannot hold one — a computer that
+  can be picked up and carried is a disk copied name by name, so the second name
+  would quietly become a second file. The page prints the answer you get without the
+  flag.
 - The manual's *What is not Unix here* page now also owns up to the one thing on
   it that is not a command: a machine nobody logged out of comes back at that
   person's prompt after the power returns, where a real Unix would ask again.

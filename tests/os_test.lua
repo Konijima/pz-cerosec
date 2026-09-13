@@ -10007,9 +10007,24 @@ do
 	eq("and the arrow names the target", pointsAt(state, admin, "here/ls"), "/bin/ls")
 	-- /dev takes nothing, links included.
 	badAt(state, admin, "ln -s /bin/ls /dev/ls", CeroSecOS.DEV_PATH .. ": read-only")
-	-- And a line with no -s in it is not a line this machine can carry out.
+	-- And a line with no -s in it is not a line this machine can carry out: a
+	-- 1993 `ln a b` made a HARD link and there are none here. The answer is the
+	-- usage line, which names the flag that is missing -- and it is the LINE the
+	-- deviations page prints (CeroSecOS.DEVIATIONS carries it as `ln`'s phrase and
+	-- manual_test holds the page to it), so the two cannot drift.
 	badAt(state, admin, "ln taken.txt hard", "ln: usage: ln -s <target> <name>")
 	badAt(state, admin, "ln -s one", "ln: usage: ln -s <target> <name>")
+	eq("and nothing was made at that name",
+		CeroSecOS.getNode(state, admin, "/home/admin/hard", true), nil)
+	-- The declared phrase IS that answer, read off the list rather than typed
+	-- again: a page pinned to a sentence the engine does not say would be a page
+	-- pinned to nothing.
+	local lnSays = nil
+	for i = 1, #CeroSecOS.DEVIATIONS do
+		if CeroSecOS.DEVIATIONS[i].name == "ln" then lnSays = CeroSecOS.DEVIATIONS[i].phrase end
+	end
+	eq("ln's declared phrase is what ln answers", lnSays,
+		"ln: usage: " .. CeroSecOS.commandUsage("ln"))
 
 	-- A forged state: a link with nothing in it is not something to run on.
 	local empty = CeroSecOS.newLink("admin", "x")

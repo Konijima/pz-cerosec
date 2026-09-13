@@ -1124,7 +1124,13 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      `cat casse` → `casse: no such file`, mais `ls -l casse` montre encore la
      flèche. `ln -s a b` et `ln -s b a` puis `cat a` →
      `too many levels of symbolic links`. Enfin `ln notes.txt dur` (sans `-s`)
-     → la ligne d'usage `ln: usage: ln -s <target> <name>`. [ ]
+     → la ligne d'usage `ln: usage: ln -s <target> <name>`, et `ls dur` →
+     `ls: dur: no such file` : rien n'a été créé. [ ]
+196a. **Et la page des écarts le dit.** Volume 1, chapitre 1, la page
+     **One command is narrower here than you remember it: ln** → elle explique
+     qu'un vrai `ln` sans drapeau faisait un lien DUR, pourquoi cette machine
+     n'en a pas (l'ordinateur se transporte, le disque est recopié nom par nom),
+     et elle imprime mot pour mot la réponse de l'étape 196. [ ]
 197. `/dev/null`. `cat /dev/null` → **rien du tout** (pas même une ligne vide).
      `echo bruit > /dev/null` → rien, et `cat /dev/null` toujours rien.
      `df` avant et après doit donner exactement les mêmes nombres.

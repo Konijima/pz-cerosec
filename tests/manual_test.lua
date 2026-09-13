@@ -894,19 +894,27 @@ do
 			check("deviation " .. i .. " says why",
 				type(one.why) == "string" and one.why ~= "")
 			check("the deviations page names " .. one.name, said[one.name] == true)
+			-- An entry carrying a `phrase` is held to it LITERALLY, and the whole
+			-- of the collected run is where it may be. A name is not always enough:
+			-- `login` is a word this very page uses about the login: prompt, so the
+			-- check above is green on a page that never mentioned that deviation at
+			-- all, and `ln`'s declaration is worth nothing unless the answer a
+			-- player really gets is printed beside it.
+			if one.phrase ~= nil then
+				check("deviation " .. one.name .. "'s phrase is a string",
+					type(one.phrase) == "string" and #one.phrase > 0)
+				check("the deviations page says \"" .. tostring(one.phrase) .. "\"",
+					string.find(page, tostring(one.phrase), 1, true) ~= nil)
+			end
 			-- And the engine agrees about whether it is there at all.
 			if one.world then
 				-- The third kind: not a command, so there is no file and no
-				-- COMMAND_INFO entry to weigh it against, and its NAME is not
-				-- enough either -- `login` is a word this very page uses about the
-				-- login: prompt, so the check above passes on a page that never
-				-- mentioned the deviation. What it has to carry is the SENTENCE.
+				-- COMMAND_INFO entry to weigh it against. A `phrase` is what one of
+				-- these is checked by instead, so it is not optional here.
 				check(one.name .. " is not a command",
 					CeroSecOS.COMMAND_INFO[one.name] == nil)
 				check("deviation " .. one.name .. " carries the phrase it owes",
 					type(one.phrase) == "string" and #one.phrase > 0)
-				check("the deviations page says \"" .. tostring(one.phrase) .. "\"",
-					string.find(page, tostring(one.phrase), 1, true) ~= nil)
 			elseif one.gone then
 				check(one.name .. " really is gone from the machine",
 					CeroSecOS.COMMAND_INFO[one.name] == nil)

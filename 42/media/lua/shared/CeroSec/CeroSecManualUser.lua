@@ -254,6 +254,25 @@ nothing: the record says the last man sat down and never left, and the
 screen agrees with the record. A real Unix would ask again, and so does
 yours: log out and login: is what you get.]],
 
+[[One command is narrower here than you remember it: ln.
+
+On a real machine ln with no flag makes a HARD link -- a second name for
+one and the same file, with no signpost in between and no way to tell
+which name came first. This machine has none, and cannot: a computer here
+can be picked up and carried, and what is carried is a copy of the whole
+disk taken name by name, so the second name would quietly become a second
+FILE the first time somebody moved the desk. A link that stops being a
+link is worse than no hard links at all.
+
+So the flag is not optional, and leaving it off makes nothing:
+
+  admin@ksp-04-11:~$ ln a b
+  ln: usage: ln -s <target> <name>
+
+Symbolic links are the whole of what is here, and chapter 8 is where they
+are taught. If you wanted two names for one file, copy it with cp and
+remember which one is which.]],
+
 [[And two shapes are cut rather than changed. A line here is sixty columns,
 so uptime says "load" where 4.4BSD says "load averages:", and w prints the
 clock where a real one prints a weekday. Every other cut in the book is
