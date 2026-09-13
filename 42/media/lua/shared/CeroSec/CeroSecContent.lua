@@ -455,9 +455,71 @@ end
 -- held to it, there being no wrong way to run it; and it cannot get out of the rule
 -- by declaring so, because the bench also asks whether the text mentions `$1`.
 --
+-- WHAT IS IN HERE, and the rule wave 7b wrote it to. Thirteen scripts: four that
+-- work the building (lights, lockup, unlock, check), five that work a file
+-- (audit, total, rounds, announce, sweep), one that keeps a log (log.sh), and
+-- three that are games. Every one of them is a TEMPLATE and not a tool -- the
+-- point is that a survivor reads it with `cat`, sees how the trick is done, and
+-- writes his own. So each does ONE thing, takes its devices and its files on the
+-- command line rather than naming any, and is short enough to read on one screen.
+-- A script that hard-coded `light0` would work on exactly one building in Knox
+-- County and teach nothing.
+--
+-- The data files a script is FOR, and they are up here rather than beside the
+-- profile that ships them because a script and its file are one pair: audit.sh
+-- is proved by the bench against the very accounts.dat the bank's own machine
+-- carries, and total.sh against the shop's own prices. One copy, named twice --
+-- once by the script that reads it and once by the premises that keeps it -- so
+-- the two cannot drift into a script proved on a file nobody has.
+CeroSecContent.DATA = {}
+
+CeroSecContent.DATA["accounts.dat"] = table.concat({
+	"1041:checking:1987:21400",
+	"1042:savings:1991:138050",
+	"1043:checking:1990:4712",
+	"1044:checking:1984:0",
+	"1045:savings:1993:62000",
+	"1046:checking:1992:9980",
+}, "\n")
+CeroSecContent.DATA["prices.txt"] = table.concat({
+	"nails 3in:189",
+	"rope 50ft:1250",
+	"lamp oil:399",
+	"tarp 8x10:875",
+	"batteries:249",
+	"padlock:1195",
+}, "\n")
+CeroSecContent.DATA["patients.txt"] = table.concat({
+	"101:a:for discharge",
+	"104:b:two more days",
+	"106:b:waiting on a bed",
+	"108:a:transferred out",
+	"112:b:for discharge",
+}, "\n")
+CeroSecContent.DATA["sched.txt"] = table.concat({
+	"06 farm report and the weather",
+	"09 the morning show",
+	"12 news, then the swap shop",
+	"15 records until the shift change",
+	"18 news",
+	"21 the county board, when it sits",
+}, "\n")
+CeroSecContent.DATA["WORDS.TXT"] = table.concat({
+	"lantern",
+	"bourbon",
+	"trestle",
+	"hickory",
+	"tobacco",
+	"derby",
+	"limestone",
+	"sycamore",
+}, "\n")
+
 CeroSecContent.SCRIPTS = {}
 
 CeroSecContent.SCRIPTS["lights.sh"] = {
+	-- The one everybody copies first: a row of light switches, off, in
+	-- one line. It is the shape every other script here is a variation on.
 	mode = 755,
 	args = { "light0", "light1" },
 	needs = { devices = {
@@ -469,13 +531,434 @@ CeroSecContent.SCRIPTS["lights.sh"] = {
 		"# lights.sh -- switch the lights you name off, one by one.",
 		"# usage: lights.sh <light> [<light> ...]",
 		"if [ $# -eq 0 ]; then",
-		'  echo "usage: lights.sh <light> [<light> ...]"',
+		"  echo \"usage: lights.sh <light> [<light> ...]\"",
 		"  exit 1",
 		"fi",
 		"while [ $# -gt 0 ]; do",
 		"  echo off > /dev/$1",
-		'  echo "$1 off"',
+		"  echo \"$1 off\"",
 		"  shift",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["lockup.sh"] = {
+	-- Closing up. Two devices and the one habit worth teaching: it READS
+	-- the door back before it locks anything, because locking a door that
+	-- would not close locks nothing and says it did.
+	mode = 755,
+	args = { "door0", "lock0" },
+	needs = { devices = {
+		{ id = "door0", kind = "door", state = "open" },
+		{ id = "lock0", kind = "lock", state = "unlocked" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# lockup.sh -- close a door, then lock it, in that order.",
+		"# usage: lockup.sh <door> <lock>",
+		"if [ $# -ne 2 ]; then",
+		"  echo \"usage: lockup.sh <door> <lock>\"",
+		"  exit 1",
+		"fi",
+		"echo close > /dev/$1",
+		"# Read it back. A door with something in the way does not",
+		"# close, and locking one that is open locks nothing.",
+		"if [ \"$(cat /dev/$1)\" != closed ]; then",
+		"  echo \"$1 will not close. Something is in the way.\"",
+		"  exit 1",
+		"fi",
+		"echo \"$1 closed\"",
+		"echo lock > /dev/$2",
+		"echo \"$2 $(cat /dev/$2)\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["unlock.sh"] = {
+	-- And the other direction, which is the one a survivor wants at three in
+	-- the morning: every lock on the line, open.
+	mode = 755,
+	args = { "lock0", "lock1" },
+	needs = { devices = {
+		{ id = "lock0", kind = "lock", state = "locked" },
+		{ id = "lock1", kind = "lock", state = "locked" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# unlock.sh -- unlock every lock you name, one by one.",
+		"# usage: unlock.sh <lock> [<lock> ...]",
+		"if [ $# -eq 0 ]; then",
+		"  echo \"usage: unlock.sh <lock> [<lock> ...]\"",
+		"  exit 1",
+		"fi",
+		"while [ $# -gt 0 ]; do",
+		"  echo unlock > /dev/$1",
+		"  echo \"$1 $(cat /dev/$1)\"",
+		"  shift",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["check.sh"] = {
+	-- Which door did they leave open. Counts as it goes, which is the little
+	-- thing that turns a listing into an answer.
+	mode = 755,
+	args = { "door0", "door1" },
+	needs = { devices = {
+		{ id = "door0", kind = "door", state = "open" },
+		{ id = "door1", kind = "door", state = "closed" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# check.sh -- which of the doors you name is standing open.",
+		"# usage: check.sh <door> [<door> ...]",
+		"if [ $# -eq 0 ]; then",
+		"  echo \"usage: check.sh <door> [<door> ...]\"",
+		"  exit 1",
+		"fi",
+		"n=0",
+		"while [ $# -gt 0 ]; do",
+		"  s=$(cat /dev/$1)",
+		"  if [ \"$s\" = open ]; then",
+		"    echo \"$1 OPEN\"",
+		"    n=$((n + 1))",
+		"  else",
+		"    echo \"$1 $s\"",
+		"  fi",
+		"  shift",
+		"done",
+		"echo \"$n of them open\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["audit.sh"] = {
+	-- The bank's. grep with a count in front of it, which is what an audit of
+	-- a columns file was in 1993 and still is.
+	--
+	-- Proved against the very accounts.dat the bank ships (CeroSecContent.DATA):
+	-- a script proved on a file of the bench's own invention is a script nobody
+	-- has run on the thing it is for.
+	mode = 755,
+	args = { "accounts.dat", "checking" },
+	needs = { files = {
+		{ path = "accounts.dat", text = CeroSecContent.DATA["accounts.dat"] },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# audit.sh -- the lines of a file that mention a word.",
+		"# usage: audit.sh <file> <word>",
+		"if [ $# -ne 2 ]; then",
+		"  echo \"usage: audit.sh <file> <word>\"",
+		"  exit 1",
+		"fi",
+		"if [ ! -f $1 ]; then",
+		"  echo \"audit.sh: $1: no such file\"",
+		"  exit 1",
+		"fi",
+		"n=$(grep -c $2 $1)",
+		"echo \"$1: $n line(s) with $2 in them\"",
+		"grep -n $2 $1",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["total.sh"] = {
+	-- The shop's till. cut into a for loop into $(( )), which is the whole of
+	-- how this machine adds a column up.
+	mode = 755,
+	args = { "prices.txt", "2" },
+	needs = { files = {
+		{ path = "prices.txt", text = CeroSecContent.DATA["prices.txt"] },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# total.sh -- add up one colon-separated column of a file.",
+		"# usage: total.sh <file> <column>",
+		"if [ $# -ne 2 ]; then",
+		"  echo \"usage: total.sh <file> <column>\"",
+		"  exit 1",
+		"fi",
+		"if [ ! -f $1 ]; then",
+		"  echo \"total.sh: $1: no such file\"",
+		"  exit 1",
+		"fi",
+		"t=0",
+		"for n in $(cut -d : -f $2 $1); do",
+		"  t=$((t + n))",
+		"done",
+		"echo \"column $2 of $1 adds up to $t\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["rounds.sh"] = {
+	-- The clinic's. A list to walk, in order, off a file somebody kept by
+	-- hand: cut into sort, and the count underneath it.
+	mode = 755,
+	args = { "patients.txt" },
+	needs = { files = {
+		{ path = "patients.txt", text = CeroSecContent.DATA["patients.txt"] },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# rounds.sh -- the first column of a colon file, sorted.",
+		"# usage: rounds.sh <file>",
+		"if [ $# -ne 1 ]; then",
+		"  echo \"usage: rounds.sh <file>\"",
+		"  exit 1",
+		"fi",
+		"if [ ! -f $1 ]; then",
+		"  echo \"rounds.sh: $1: no such file\"",
+		"  exit 1",
+		"fi",
+		"cut -d : -f 1 $1 | sort",
+		"echo \"-- $(cat $1 | wc -l) of them, in order\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["announce.sh"] = {
+	-- The station's, and the one built to run from cron: it asks the clock what
+	-- hour it is and prints the line of the sheet for it. A cron line has no
+	-- screen, so what it prints arrives in the mail, which is where a survivor
+	-- finds out the machine was still doing its job while nobody was there.
+	mode = 755,
+	args = { "sched.txt" },
+	needs = { files = {
+		{ path = "sched.txt", text = CeroSecContent.DATA["sched.txt"] },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# announce.sh -- print the line of a table for this hour.",
+		"# usage: announce.sh <file>",
+		"if [ $# -ne 1 ]; then",
+		"  echo \"usage: announce.sh <file>\"",
+		"  exit 1",
+		"fi",
+		"h=$(date +%H)",
+		"line=$(grep \"$h \" $1)",
+		"if [ -z \"$line\" ]; then",
+		"  echo \"$h:00 nothing on the sheet\"",
+		"  exit 0",
+		"fi",
+		"echo \"$h:00 $(echo $line | cut -d ' ' -f 2-9)\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["sweep.sh"] = {
+	-- What is on this machine. The one that teaches `find`, and the one to run
+	-- first on a computer nobody has ever sat at.
+	mode = 755,
+	args = { "/etc" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# sweep.sh -- every file under a directory, and how many.",
+		"# usage: sweep.sh <dir>",
+		"if [ $# -ne 1 ]; then",
+		"  echo \"usage: sweep.sh <dir>\"",
+		"  exit 1",
+		"fi",
+		"find $1 -type f | sort",
+		"echo \"-- $(find $1 -type f | wc -l) file(s) under $1\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["log.sh"] = {
+	-- The wardialer's book. It does not dial -- see the WARDIALER entry in the
+	-- disk catalogue for why nothing can -- it writes down what happened when
+	-- you did, with the date on it, which is the half a machine can do.
+	mode = 755,
+	args = { "418-2201", "answered" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# log.sh -- one line in calls.log: date, number, word.",
+		"# usage: log.sh <number> <word>",
+		"if [ $# -ne 2 ]; then",
+		"  echo \"usage: log.sh <number> <word>\"",
+		"  exit 1",
+		"fi",
+		"echo \"$(date) $1 $2\" >> calls.log",
+		"tail -n 1 calls.log",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["guess.sh"] = {
+	-- And three that are only games, because a 1993 desk machine had games on
+	-- it and they are how somebody learned what `read` was.
+	--
+	-- The number comes off the SECOND HAND of the machine's own clock, which is
+	-- what a shell script had instead of a random number in 1993. So the bench
+	-- knows the answer -- its clock is nine in the morning exactly -- and the
+	-- recorded goes are a binary search that finds it.
+	mode = 755,
+	args = { "20" },
+	input = { "10", "15", "14" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# guess.sh -- the machine picks a number, you find it.",
+		"# usage: guess.sh <top>",
+		"if [ $# -ne 1 ]; then",
+		"  echo \"usage: guess.sh <top>\"",
+		"  exit 1",
+		"fi",
+		"top=$1",
+		"s=$(date +%S)",
+		"s=$((s * 7 + 13))",
+		"n=$((s % top))",
+		"n=$((n + 1))",
+		"echo \"A number between 1 and $top. Eight goes.\"",
+		"t=1",
+		"while [ $t -le 8 ]; do",
+		"  read -p \"$t: \" g",
+		"  bad=$(echo $g | tr -d 0-9)",
+		"  if [ -z \"$g\" ]; then",
+		"    echo \"A number, please.\"",
+		"  elif [ -n \"$bad\" ]; then",
+		"    echo \"Digits only.\"",
+		"  elif [ $g -lt $n ]; then",
+		"    echo \"Higher.\"",
+		"    t=$((t + 1))",
+		"  elif [ $g -gt $n ]; then",
+		"    echo \"Lower.\"",
+		"    t=$((t + 1))",
+		"  else",
+		"    echo \"That is it. $n, in $t.\"",
+		"    exit 0",
+		"  fi",
+		"done",
+		"echo \"Out of goes. It was $n.\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["hangman.sh"] = {
+	-- The masking is three calls to `tr` and no loop over characters: the
+	-- guessed letters are turned into capitals, and then every letter still in
+	-- lower case becomes a dot. It is the trick worth reading the file for.
+	mode = 755,
+	args = { "WORDS.TXT" },
+	needs = { files = {
+		{ path = "WORDS.TXT", text = CeroSecContent.DATA["WORDS.TXT"] },
+	} },
+	-- The word is the sixth line at nine in the morning, and the letters of it
+	input = { "d", "e", "r", "b", "y" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# hangman.sh -- guess the word, a letter at a time.",
+		"# usage: hangman.sh <word file>",
+		"if [ $# -ne 1 ]; then",
+		"  echo \"usage: hangman.sh <word file>\"",
+		"  exit 1",
+		"fi",
+		"if [ ! -f $1 ]; then",
+		"  echo \"hangman.sh: $1: no such file\"",
+		"  exit 1",
+		"fi",
+		"c=$(cat $1 | wc -l)",
+		"s=$(date +%S)",
+		"s=$((s * 3 + 5))",
+		"p=$((s % c))",
+		"p=$((p + 1))",
+		"w=$(head -n $p $1 | tail -n 1)",
+		"got=\"\"",
+		"left=6",
+		"while [ $left -gt 0 ]; do",
+		"  if [ -z \"$got\" ]; then",
+		"    shown=$(echo $w | tr a-z .)",
+		"  else",
+		"    up=$(echo $got | tr a-z A-Z)",
+		"    shown=$(echo $w | tr $got $up)",
+		"    shown=$(echo $shown | tr a-z .)",
+		"  fi",
+		"  if [ $(echo $shown | grep -c .) -eq 0 ]; then",
+		"    echo \"$w. You have it.\"",
+		"    exit 0",
+		"  fi",
+		"  echo \"$shown    $left wrong left\"",
+		"  read -p \"letter? \" l",
+		"  if [ -z \"$l\" ]; then",
+		"    echo \"A letter.\"",
+		"  elif [ $(echo $w | grep -c $l) -gt 0 ]; then",
+		"    got=$got$l",
+		"    echo \"Yes.\"",
+		"  else",
+		"    left=$((left - 1))",
+		"    echo \"No.\"",
+		"  fi",
+		"done",
+		"echo \"Out of guesses. It was $w.\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["adventure.sh"] = {
+	-- Five rooms, and the only script here that takes no arguments at all:
+	-- there is no wrong way to run a game, so the usage rule does not apply to
+	-- it and the bench says so in those words. The recorded moves walk it to
+	-- THE END, which is the only proof a text adventure can be given.
+	mode = 755,
+	args = {},
+	input = { "n", "e", "n", "take", "s", "s" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# adventure.sh -- five rooms, a locked stair and one key.",
+		"r=gate",
+		"k=0",
+		"over=0",
+		"echo \"THE OLD WATERWORKS\"",
+		"echo \"n s e w to walk, take, look, quit. Five rooms.\"",
+		"while [ $over -eq 0 ]; do",
+		"  if [ $r = gate ]; then",
+		"    echo \"A chain gate, hanging open. The yard is north.\"",
+		"  elif [ $r = yard ]; then",
+		"    echo \"Drums and a flatbed with no wheels. A door east,\"",
+		"    echo \"the gate back south.\"",
+		"  elif [ $r = hall ]; then",
+		"    echo \"A corridor smelling of chlorine. Office north,\"",
+		"    echo \"the yard west, a stair down to the south.\"",
+		"  elif [ $r = office ]; then",
+		"    echo \"A desk under a fallen ceiling tile. Hall south.\"",
+		"  else",
+		"    echo \"The pump room. Two feet of water, and a grate\"",
+		"    echo \"overhead with daylight through it. You climb out.\"",
+		"    echo \"THE END.\"",
+		"    over=1",
+		"  fi",
+		"  if [ $over -eq 0 ]; then",
+		"    read -p \"> \" c",
+		"    if [ \"$c\" = quit ]; then",
+		"      echo \"You walk back out to the road.\"",
+		"      over=1",
+		"    elif [ \"$c\" = take ]; then",
+		"      if [ $r = office ]; then",
+		"        k=1",
+		"        echo \"A brass key, taped under the drawer. Yours.\"",
+		"      else",
+		"        echo \"Nothing here worth carrying.\"",
+		"      fi",
+		"    elif [ \"$c\" = look ]; then",
+		"      echo \"You look again. It is the same.\"",
+		"    elif [ \"$c\" = n ]; then",
+		"      if [ $r = gate ]; then r=yard",
+		"      elif [ $r = hall ]; then r=office",
+		"      elif [ $r = pump ]; then r=hall",
+		"      else echo \"There is nothing north of here.\"",
+		"      fi",
+		"    elif [ \"$c\" = s ]; then",
+		"      if [ $r = yard ]; then r=gate",
+		"      elif [ $r = office ]; then r=hall",
+		"      elif [ $r = hall ]; then",
+		"        if [ $k -eq 1 ]; then r=pump",
+		"        else echo \"The stair door is locked. A brass lock.\"",
+		"        fi",
+		"      else echo \"There is nothing south of here.\"",
+		"      fi",
+		"    elif [ \"$c\" = e ]; then",
+		"      if [ $r = yard ]; then r=hall",
+		"      else echo \"There is nothing east of here.\"",
+		"      fi",
+		"    elif [ \"$c\" = w ]; then",
+		"      if [ $r = hall ]; then r=yard",
+		"      else echo \"There is nothing west of here.\"",
+		"      fi",
+		"    else",
+		"      echo \"I do not know how to $c.\"",
+		"    fi",
+		"  fi",
 		"done",
 	}, "\n"),
 }

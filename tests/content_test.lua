@@ -347,6 +347,23 @@ end
 -- needs. That is the point of `needs` being in the library: the bench stubs
 -- exactly what the script says it wants and nothing else, so a script that
 -- quietly reached for a second device would find it missing.
+--
+-- What the WORLD answers after a write, which is not the word that was written.
+-- `echo close > /dev/door0` and then `cat /dev/door0` reads "closed", and a lock
+-- written "lock" reads "locked": the state words are the ones the world composes
+-- out of the object itself (SCeroSecDevices.doorState and the two beside it --
+-- "open"/"closed"/"locked" for a door, "locked"/"unlocked" for a lock), while the
+-- vocabulary a write uses is the imperative (CeroSecOS.DEV_VALUES).
+--
+-- Written down here because a stub that echoed the written word back would be a
+-- machine that does not exist, and a script that reads a device back to check its
+-- own work -- which is what a lockup script is FOR -- would be proved against it.
+local STATE_AFTER = {
+	open = "open", close = "closed",
+	lock = "locked", unlock = "unlocked",
+	on = "on", off = "off",
+}
+
 local function devicesFor(needs)
 	local entries = {}
 	if type(needs) == "table" and type(needs.devices) == "table" then
@@ -372,7 +389,7 @@ local function devicesFor(needs)
 		devices.writes[#devices.writes + 1] = id .. "=" .. value
 		local e = byId[id]
 		if e == nil then return false, "no such device" end
-		e.state = value
+		e.state = STATE_AFTER[value] or value
 		return true, nil, e.state
 	end
 	devices.chmod = function() end
