@@ -2396,9 +2396,47 @@ end
 -- and hands over the second. So the default save's lines are dated in July 1993
 -- because that is when the default save starts, and a save that starts elsewhere
 -- gets a log dated there instead of a lie.
+-- And what the OUTBREAK WEEK put in it, on top of whatever the premises' own
+-- work was: three of these, picked by the machine's key and written at the end of
+-- the week, at the hours nobody is at a desk. A machine that rebooted at four in
+-- the morning, a login that was refused, a call that got no carrier.
+--
+-- They are here and not in a profile because every machine in the county had the
+-- same week: what differs between a dispatch desk and a shop is what the OTHER
+-- lines say, and the shop's machine rebooting at 03:12 on the 7th is not the
+-- shop's story, it is July's.
+--
+-- Nothing in this list claims a halt. The dispatch desk's own log is a file people
+-- typed in until five in the morning on the 9th, so a /var/log/messages saying the
+-- machine went down on the 7th would be two files on one screen calling each other
+-- liars -- which is why the police profile's own logs end on a disk error and not
+-- on a shutdown, and why nothing that lands after them may end the machine either.
+CeroSecContent.LOG_EVENTS = {
+	"login: failed login on console",
+	"kernel: unexpected restart",
+	"cu: no carrier",
+	"kernel: hda read error, retried",
+	"syslogd: restarted",
+	"login: failed login on console",
+	"kernel: fd0 no disk in drive",
+	"cron: no such device",
+}
+CeroSecContent.LOG_EVENT_COUNT = 3
+
 local function placeLog(state, session, profile, secret, mkey, startTime, now)
 	if type(profile.logs) ~= "table" or #profile.logs == 0 then return end
 	if type(startTime) ~= "number" then return end
+	-- The premises' own week, and then the county's. Built into a list of its own
+	-- rather than added to the profile: the catalogue is a constant and a wave that
+	-- appended to profile.logs would be a wave whose second machine had six extra
+	-- lines on it.
+	local messages, own = {}, #profile.logs
+	for i = 1, own do messages[i] = profile.logs[i] end
+	for i = 1, CeroSecContent.LOG_EVENT_COUNT do
+		local pick = CeroSecContent.pick(CeroSecContent.LOG_EVENTS, secret,
+			CeroSecContent.key(mkey, "logev", i))
+		if pick ~= nil then messages[#messages + 1] = pick end
+	end
 	local lines = {}
 	local days = CeroSecContent.LOG_DAYS
 	-- MIDNIGHT of the start day and not the start moment: the save begins at nine
@@ -2406,12 +2444,22 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 	-- dark. A day is what the arithmetic below steps in, so a day is where it
 	-- starts from.
 	local midnight = math.floor(startTime / 86400) * 86400
-	for i = 1, #profile.logs do
+	for i = 1, #messages do
 		-- Spread over the week, oldest first, with the hour rolled out of the line's
 		-- own key so two machines do not have an identical morning.
-		local back = days - math.floor((i - 1) * days / #profile.logs)
-		local hour = CeroSecContent.number(secret,
-			CeroSecContent.key(mkey, "logh", i), 10) + 7
+		local back = days - math.floor((i - 1) * days / #messages)
+		-- Seven in the morning to four in the afternoon for the premises' own lines,
+		-- which is when somebody was there -- and midnight to five for the outbreak
+		-- week's, which is the whole point of them: a machine that came back up on
+		-- its own at four in the morning is a machine nobody restarted.
+		local hour
+		if i <= own then
+			hour = CeroSecContent.number(secret,
+				CeroSecContent.key(mkey, "logh", i), 10) + 7
+		else
+			hour = CeroSecContent.number(secret,
+				CeroSecContent.key(mkey, "logn", i), 6) - 1
+		end
 		local minute = CeroSecContent.number(secret,
 			CeroSecContent.key(mkey, "logm", i), 60) - 1
 		local at = midnight - back * 86400 + hour * 3600 + minute * 60
@@ -2422,34 +2470,391 @@ local function placeLog(state, session, profile, secret, mkey, startTime, now)
 		-- characters of it. Cutting it here means wave 7b cannot write a message
 		-- that disappears off the right of the glass.
 		local line = CeroSecOS.formatStamp(at) .. " " .. state.hostname
-			.. " " .. profile.logs[i]
+			.. " " .. messages[i]
 		lines[#lines + 1] = string.sub(line, 1, CeroSecOS.COLS)
 	end
 	place(state, session, CeroSecOS.LOG_PATH .. "/messages", "root",
 		CeroSecOS.CRON_LOG_MODE, table.concat(lines, "\n"), now)
 end
 
--- /var/mail/<login>: the mail somebody had not read. The format is the one the
--- machine's own `mail` writes (CeroSecOS.mailAppend), which is the only format
--- the machine can read back.
-local function placeMail(state, session, profile, logins, now)
-	if type(profile.mail) ~= "table" then return end
-	for i = 1, #profile.mail do
-		local item = profile.mail[i]
-		local to = item.to
-		if type(to) == "number" then to = logins[to] end
-		if type(to) == "string" and CeroSecOS.getUser(state, to) ~= nil then
-			local body = item.body
-			if type(item.subj) == "string" then
-				body = "Subject: " .. item.subj .. "\n\n" .. tostring(body)
-			end
-			if type(item.from) == "string" then
-				body = "From: " .. item.from .. "\n" .. body
-			end
-			place(state, session, CeroSecOS.mailPath(to), to, CeroSecOS.MAIL_MODE,
-				body, now)
+--
+-- /var/mail/<login>: THE MAIL NOBODY HAD READ
+--
+-- Wave 7c rewrote this, and it is the part of the wave a player is most likely to
+-- read: people were doing things before they died, and mail is the one file on a
+-- 1993 desk machine that is dated, addressed and written by somebody who is not in
+-- the room. So a mailbox is now a STORY -- three to six messages over the outbreak
+-- week, in three tellings like everything else, with the last one unanswered.
+--
+--   mail = {
+--     {  -- telling 1
+--       { to = "owner", from = "head office", subj = "...",
+--         back = 5, hour = 9, min = 12, body = { "...", "..." } },
+--       { to = 2, from = "...", ... },
+--     },
+--     { ... }, { ... },
+--   }
+--
+-- `to` is whoFor's: "owner" is whoever's desk this is, a number is the premises'
+-- account in that slot -- which is how one message lands in a mailbox whose home
+-- is otherwise empty, and a survivor who logs in as the wrong man still finds
+-- something -- and a string is a literal login.
+--
+-- `back` is DAYS BEFORE THE START DAY and never a date: the save's own start is
+-- what the whole catalogue is dated from (see placeLog), so `back = 5` on the
+-- default save is the 4th of July and on another save is five days before whatever
+-- day that one begins. A message that would land at or after the moment the save
+-- begins is DROPPED rather than moved -- the trimming rule, and it costs a save
+-- that starts at half past midnight its last message and nothing else.
+--
+-- THE FORMAT is the machine's own, and it is the machine's own twice over. The
+-- separator is the "From <sender>  <date>" line CeroSecOS.mailAppend writes, so a
+-- mailbox this seeds and a mailbox cron appends to are one file that `mail` reads
+-- from end to end. Under it are the four headers a message really carries -- From:,
+-- To:, Date:, Subject: -- and the envelope line above repeating the sender and the
+-- date is not a mistake: that is what an mbox is, and it is why `mail` can tell one
+-- message from the next at all.
+--
+-- BOUNDED HERE, by lines and by bytes, because a mailbox is exempt from the disk
+-- quota by its path and nothing else would bound it: messages are added while they
+-- fit and the rest are not written. A story whose fourth message is missing is a
+-- mailbox; a machine whose disk the loot filled is a bug.
+local function mailStory(profile, secret, b1, b2)
+	if type(profile.mail) ~= "table" or #profile.mail == 0 then return nil end
+	local v = CeroSecContent.variantOf(secret, b1, b2, "var.mail")
+	if v > #profile.mail then v = #profile.mail end
+	local story = profile.mail[v]
+	if type(story) ~= "table" then return nil end
+	return story
+end
+
+local function mailLines(item, to, at, names)
+	local out = {}
+	local stamp = CeroSecOS.formatDate(at)
+	local from = CeroSecContent.fillNames(item.from or "somebody", names)
+	out[#out + 1] = "From " .. from .. "  " .. stamp
+	out[#out + 1] = "From: " .. from
+	out[#out + 1] = "To: " .. to
+	out[#out + 1] = "Date: " .. stamp
+	out[#out + 1] = "Subject: "
+		.. CeroSecContent.fillNames(item.subj or "(no subject)", names)
+	out[#out + 1] = ""
+	if type(item.body) == "table" then
+		for i = 1, #item.body do
+			out[#out + 1] = CeroSecContent.fillNames(item.body[i], names)
 		end
 	end
+	return out
+end
+
+local function placeMail(state, session, profile, secret, b1, b2, logins, owner,
+		names, startTime, now)
+	local story = mailStory(profile, secret, b1, b2)
+	if story == nil or type(startTime) ~= "number" then return end
+	local midnight = math.floor(startTime / 86400) * 86400
+	-- One list of lines per mailbox, in the order the messages were written, so a
+	-- mailbox that two of them land in reads as one mailbox.
+	local boxes, order = {}, {}
+	for i = 1, #story do
+		local item = story[i]
+		local to = whoFor(item.to, logins, owner)
+		local at = midnight - (item.back or 0) * 86400
+			+ (item.hour or 9) * 3600 + (item.min or 0) * 60
+		if type(to) == "string" and CeroSecOS.getUser(state, to) ~= nil
+				and at < startTime then
+			if boxes[to] == nil then
+				boxes[to] = {}
+				order[#order + 1] = to
+			end
+			local box = boxes[to]
+			if #box > 0 then box[#box + 1] = "" end
+			local message = mailLines(item, to, at, names)
+			for m = 1, #message do box[#box + 1] = message[m] end
+		end
+	end
+	for i = 1, #order do
+		local to = order[i]
+		local kept = boxes[to]
+		-- Bounded by the mailbox's own two ceilings, oldest kept and newest dropped:
+		-- a mailbox is read from the top and the first message is the one that sets
+		-- the scene.
+		while #kept > CeroSecOS.MAIL_LINES do table.remove(kept) end
+		local text = table.concat(kept, "\n")
+		while #text > CeroSecOS.MAIL_BYTES and #kept > 1 do
+			table.remove(kept)
+			text = table.concat(kept, "\n")
+		end
+		place(state, session, CeroSecOS.mailPath(to), to, CeroSecOS.MAIL_MODE,
+			text, now)
+	end
+end
+
+--
+-- ~/.sh_history: WHAT HE TYPED
+--
+-- The other half of "people were doing things before they died", and the half that
+-- is in the man's own hand: a shell writes down every line entered at it
+-- (CeroSecOS.historyAppend), so the history of the account whose desk this was is a
+-- transcript of his last week with the boring parts left in.
+--
+-- Twelve to thirty lines. A shell keeps a thousand and a week of real work would
+-- be a few hundred, but a survivor reads this with `cat` on a sixty column screen
+-- and presses Up at the prompt: thirty lines is what a man can take in, and the
+-- last six are the only ones that are about anything.
+--
+-- THE SHAPE. The body alternates the profile's own work lines with the lines
+-- anybody types at any machine -- ls, who, date, df -- because nine tenths of a
+-- real history is housekeeping and a history that was all story would read like a
+-- film. A line repeats, which is also what a real one does. Then the TAIL, which is
+-- the only part written to be read: he read his mail, he looked at the log, he rang
+-- a number if there was one to ring, he locked what could be locked from a
+-- keyboard, and then either he halted the machine and left or he did not.
+--
+-- AND A MACHINE THAT WAS LEFT LOGGED IN DOES NOT END ON A SHUTDOWN. The two are
+-- one fact told twice: `shutdown -h now` is a man who closed the office, and a
+-- session still open at the glass (CeroSecContent.liveSession) is a man who did
+-- not. A history carrying both would be calling itself a liar on one screen.
+--
+-- EVERY LINE IS A COMMAND THE MACHINE HAS. The bench takes the first word of every
+-- line of every history it can build and puts it through the shell's own lookup
+-- (CeroSecOS.whyNotRun) on the machine the profile built -- so a history cannot
+-- name a program this Unix does not have, and cannot name one that is only in /bin
+-- on some other machine. Which is why the TYPOS below are typos in an ARGUMENT and
+-- never in the command: a man mistyping a filename is a man, and a line whose first
+-- word is nonsense is a line the bench cannot tell from a mistake in this table.
+CeroSecContent.HISTORY_MIN = 12
+CeroSecContent.HISTORY_SPAN = 19
+
+CeroSecContent.HIST_COMMON = {
+	"ls", "ls -a", "ls -l", "pwd", "who", "date", "df", "ps",
+	"cat /etc/motd", "id", "whoami", "uptime", "ls /bin", "ls bin",
+	"cat /var/log/messages", "man ls", "help", "echo $PATH", "w",
+	"last", "df -h", "cd", "cat /etc/passwd", "which sh",
+}
+
+CeroSecContent.HIST_TYPOS = {
+	"cat /var/log/messsages",
+	"ls -l /hom",
+	"cd /ect",
+	"cat /etc/passwd.",
+	"ls -la ~/bni",
+	"more /etc/motd.txt",
+}
+
+-- The tail, for a man who shut the machine down and went home, and for one who
+-- did not. Both end on the morning it started; the difference is the last line.
+CeroSecContent.HIST_TAIL = {
+	"mail", "cat /var/log/messages", "who", "date",
+}
+CeroSecContent.HIST_HALT = "shutdown -h now"
+
+-- A history for one account. `work` is the profile's own lines for the man whose
+-- desk it is, `tail` is whether this is the owner's history or a visitor's, and
+-- `number` is a telephone number of the machine's own region or nil.
+--
+-- A NON-OWNER GETS TWO OR THREE LINES AND NO TAIL, and that is the other half of
+-- the owner rule: `last` says three people logged in at this keyboard over the
+-- fortnight, so three people have a history here -- and two of them sat down at
+-- somebody else's desk, looked at one thing and went away, which is exactly two
+-- lines long.
+local function historyText(profile, secret, mkey, who, work, live, number)
+	local lines = {}
+	local common = CeroSecContent.HIST_COMMON
+	if not who then
+		local n = CeroSecContent.number(secret, CeroSecContent.key(mkey, "hv", "n"), 2) + 1
+		for i = 1, n do
+			lines[#lines + 1] = CeroSecContent.pick(common, secret,
+				CeroSecContent.key(mkey, "hv", i))
+		end
+		return table.concat(lines, "\n")
+	end
+	local want = CeroSecContent.HISTORY_MIN
+		+ CeroSecContent.number(secret, CeroSecContent.key(mkey, "hn"),
+			CeroSecContent.HISTORY_SPAN) - 1
+	local tail = CeroSecContent.HIST_TAIL
+	-- The tail is fixed and the body fills whatever is left, so a short history is
+	-- a short WEEK and never a story with the end cut off.
+	local body = want - #tail - 1
+	if body < 2 then body = 2 end
+	for i = 1, body do
+		local from = common
+		-- Two in five from the premises' own work, which is about how much of a real
+		-- history is the job and not the machine.
+		if work ~= nil and #work > 0
+				and CeroSecContent.number(secret, CeroSecContent.key(mkey, "hw", i), 5) <= 2 then
+			from = work
+		end
+		local at = CeroSecContent.number(secret, CeroSecContent.key(mkey, "hb", i), #from)
+		local line = from[at]
+		-- NOT THE LINE HE JUST TYPED. A real history repeats itself, and this one
+		-- does -- but a hash that lands twice running puts the same line under itself,
+		-- and two identical lines in a row do not read as a man working, they read as
+		-- a program filling a file. The next entry of the same list, which is still
+		-- the same man and the same list.
+		if line ~= nil and line == lines[#lines] then
+			line = from[math.floor(CeroSecOS.mod(at, #from)) + 1]
+		end
+		if line ~= nil then lines[#lines + 1] = line end
+	end
+	-- A typo or two, in the middle of the week where one really happens.
+	for i = 1, 2 do
+		local at = CeroSecContent.number(secret, CeroSecContent.key(mkey, "hti", i),
+			#lines)
+		local typo = CeroSecContent.pick(CeroSecContent.HIST_TYPOS, secret,
+			CeroSecContent.key(mkey, "ht", i))
+		if typo ~= nil and at ~= nil then table.insert(lines, at, typo) end
+	end
+	for i = 1, #tail do lines[#lines + 1] = tail[i] end
+	-- The telephone call, when the server could tell us a number of this machine's
+	-- own region. No number, no line: a history naming an exchange that is not the
+	-- one under the survivor's feet is the one lie the BBS disk is not allowed to
+	-- tell either, and it is not allowed here.
+	if type(number) == "string" and number ~= "" then
+		lines[#lines + 1] = "cu " .. number
+	end
+	if type(profile.lockup) == "string" then lines[#lines + 1] = profile.lockup end
+	if not live then lines[#lines + 1] = CeroSecContent.HIST_HALT end
+	return table.concat(lines, "\n")
+end
+
+-- How many of the region's numbers the server need hand over. Eight, the BBS
+-- disk's own number, and for the same reason: one is chosen out of them and a walk
+-- of four hundred listings to choose it from is a walk nobody needs.
+CeroSecContent.DIAL_MAX = 8
+
+-- Whose number he rang. One of the region's own, off the machine's key, and never
+-- the premises' own line -- a man does not ring the telephone on his own desk.
+local function dialled(secret, mkey, numbers)
+	if type(numbers) ~= "table" or #numbers == 0 then return nil end
+	local pick = CeroSecContent.pick(numbers, secret, CeroSecContent.key(mkey, "dial"))
+	if type(pick) ~= "string" or not CeroSecOS.isPhoneNumber(pick) then return nil end
+	return pick
+end
+
+--
+-- /var/log/wtmp: WHO LOGGED IN, AND WHO NEVER LOGGED OUT
+--
+-- What `last` reads, and the one file on the machine that says how many people
+-- really used it. Seeded through CeroSecOS.wtmpAppend -- the engine's own writer,
+-- record by record, oldest first -- because `last` pairs a login with the logout
+-- that closed it in the ORDER THE FILE HAS THEM, and a file written any other way
+-- is a file whose sessions pair up wrongly.
+--
+-- The fortnight before the save, the owner most often, the other staff now and
+-- then, root when somebody had to be root. The last session is a couple of hours
+-- before the save begins -- the morning of it, on the default save -- and it is the
+-- one that may have no logout.
+--
+-- EVERY RECORD IS BEFORE THE SAVE BEGINS, counted backwards from the start itself
+-- and not forwards from anything, so it is true of a save that starts in October
+-- as well as of one that starts on the 9th of July.
+CeroSecContent.WTMP_DAYS = 14
+CeroSecContent.WTMP_MIN = 6
+CeroSecContent.WTMP_SPAN = 9
+
+-- One machine in four is found with somebody still logged in at it, and it is
+-- never the military post: a post was a room a man was let into and he was relieved
+-- or he left, and a terminal left at somebody's prompt inside a cordon is a story
+-- about the wrong thing.
+--
+-- What it means on the glass is in SCeroSecObject:prefill, and what it costs in
+-- fidelity is written there too.
+CeroSecContent.LIVE_ONE_IN = 4
+
+function CeroSecContent.liveSession(secret, mkey, profile)
+	if type(profile) ~= "table" then return false end
+	if profile.session == false then return false end
+	return CeroSecContent.number(secret, CeroSecContent.key(mkey, "live"),
+		CeroSecContent.LIVE_ONE_IN) == 1
+end
+
+-- Answers the moment of the last login, for the console that is going to be left
+-- at that man's prompt.
+local function placeWtmp(state, profile, secret, mkey, logins, owner, live, startTime)
+	if type(startTime) ~= "number" then return nil end
+	-- Who could have logged in here at all: the owner, the other staff, and root.
+	-- A machine with no ordinary account on it has root and nobody else, which is
+	-- what the military post is.
+	local people = {}
+	if type(owner) == "string" then people[#people + 1] = owner end
+	if type(profile.accounts) == "table" then
+		for i = 1, #profile.accounts do
+			if logins[i] ~= nil and logins[i] ~= owner then
+				people[#people + 1] = logins[i]
+			end
+		end
+	end
+	people[#people + 1] = "root"
+
+	local n = CeroSecContent.WTMP_MIN
+		+ CeroSecContent.number(secret, CeroSecContent.key(mkey, "wn"),
+			CeroSecContent.WTMP_SPAN) - 1
+	local midnight = math.floor(startTime / 86400) * 86400
+
+	-- EVERY MOMENT FIRST, AND THE LENGTHS AFTERWARDS, and that is not tidiness: a
+	-- session's logout has to fall before the next session's login or `last` prints
+	-- a man leaving after the next man sat down. Only the whole list knows that, so
+	-- the whole list is built before any of it is written.
+	local who, at = {}, {}
+	for i = 1, n do
+		-- THE OWNER MOST: three sessions in five are his, and the rest are shared out
+		-- among whoever else the premises has. It is his desk, and a `last` in which
+		-- everybody used it equally is a `last` that says nothing.
+		local name = owner
+		if name == nil
+				or CeroSecContent.number(secret, CeroSecContent.key(mkey, "ww", i), 5) > 3 then
+			name = CeroSecContent.pick(people, secret, CeroSecContent.key(mkey, "wp", i))
+		end
+		if i == n then
+			-- The last one: an hour to three before the save begins, and the owner's,
+			-- whoever else came and went in the fortnight. It is his desk and he was
+			-- the last man at it.
+			if owner ~= nil then name = owner end
+			at[i] = startTime - 3600
+				- CeroSecContent.number(secret, CeroSecContent.key(mkey, "wl"), 120) * 60
+		else
+			-- The fortnight, oldest first, and the walk ends on YESTERDAY rather than
+			-- wherever the arithmetic happened to stop: a desk whose last login before
+			-- the morning of it was four days ago is a desk nobody worked at, which is
+			-- not the story any of these premises tell.
+			local span = CeroSecContent.WTMP_DAYS - 1
+			local steps = n - 2
+			if steps < 1 then steps = 1 end
+			local back = CeroSecContent.WTMP_DAYS - math.floor((i - 1) * span / steps)
+			if back < 1 then back = 1 end
+			local hour = CeroSecContent.number(secret,
+				CeroSecContent.key(mkey, "wh", i), 12) + 6
+			local minute = CeroSecContent.number(secret,
+				CeroSecContent.key(mkey, "wm", i), 60) - 1
+			at[i] = midnight - back * 86400 + hour * 3600 + minute * 60
+		end
+		who[i] = name
+	end
+
+	local lastAt = nil
+	for i = 1, n do
+		local ends = startTime
+		if i < n then ends = at[i + 1] end
+		local out = at[i] + 1800
+			+ CeroSecContent.number(secret, CeroSecContent.key(mkey, "wo", i), 300) * 60
+		if out >= ends then out = ends - 600 end
+		-- A session the arithmetic made shorter than a minute is a man who did not
+		-- sit down: half an hour, which still ends before the next login because the
+		-- moments above are never that close together.
+		if out <= at[i] then out = at[i] + 1800 end
+		-- THE ONE SESSION WITH NO LOGOUT, and only ever the last: a second open
+		-- session would make `last` print two men still logged in on one console.
+		if i == n and live then out = nil end
+		if type(who[i]) == "string" and at[i] < startTime then
+			CeroSecOS.wtmpAppend(state, "in", who[i], CeroSecOS.CONSOLE_LINE, nil, at[i])
+			if out ~= nil and out < startTime then
+				CeroSecOS.wtmpAppend(state, "out", who[i], CeroSecOS.CONSOLE_LINE, nil, out)
+			end
+			if i == n then lastAt = at[i] end
+		end
+	end
+	if not live then return nil end
+	return lastAt
 end
 
 --
@@ -2459,17 +2864,28 @@ end
 -- used is his.
 --
 --   state       a state CeroSecOS.newState has just made
---   opts        { secret=, b1=, b2=, x=, y=, z=, premises=, rooms=, start=, now= }
+--   opts        { secret=, b1=, b2=, x=, y=, z=, premises=, rooms=, start=, now=,
+--                 numbers= }
 --
--- Answers the profile id it used and the root password it derived, or nil for a
--- machine it left alone. The password is answered for the BENCH and for the
--- sticky note's sake and is written nowhere: the caller may not keep it.
+-- Answers FOUR things now: the profile id it used, the root password it derived,
+-- the logins by slot, and -- wave 7c -- the session that was still open at the
+-- glass, as { user =, at = }, or nil. The password is answered for the BENCH and
+-- for the sticky note's sake and is written nowhere: the caller may not keep it.
+-- Answers nil for a machine it left alone.
+--
+-- `numbers` is a list of telephone numbers of the machine's own region, or nil.
+-- The catalogue cannot ask for one -- it has no world and does not want one -- so
+-- the server hands them in the way CeroSecNet.fillLateDisk hands the BBS disk its
+-- listings, and a machine with none simply has no `cu` line in its history. A
+-- history naming an exchange that is not the one under the survivor's feet is the
+-- same lie the BBS disk refuses to tell.
 --
 -- Order matters and this is the order: the hostname, then the accounts (because
 -- everything else is addressed to them), then their files and scripts, then the
--- machine-wide files, then the motd, then the log, the mail and the crontabs.
--- Everything after a refusal still runs -- a full disk trims the tail of a profile
--- and never its head.
+-- machine-wide files, then the motd, then the log, the mail and the crontabs, and
+-- last the three files that say what the last week looked like -- the histories,
+-- the draft, and the login records. Everything after a refusal still runs -- a full
+-- disk trims the tail of a profile and never its head.
 --
 function CeroSecContent.prefill(state, opts)
 	if type(state) ~= "table" or type(opts) ~= "table" then return nil end
@@ -2567,7 +2983,52 @@ function CeroSecContent.prefill(state, opts)
 	end
 
 	placeLog(state, session, profile, secret, mkey, opts.start, now)
-	placeMail(state, session, profile, logins, now)
+	placeMail(state, session, profile, secret, opts.b1, opts.b2, logins, owner,
+		names, opts.start, now)
+
+	--
+	-- THE HISTORY, and it is the whole of what wave 7c is for: people were doing
+	-- things before they died. Three files say so and they have to agree.
+	--
+	-- WHO WAS STILL LOGGED IN, decided first because both of the other two depend on
+	-- it: a man who never logged out did not type `shutdown -h now`, and his session
+	-- in wtmp has no logout behind it.
+	local live = owner ~= nil and CeroSecContent.liveSession(secret, mkey, profile)
+	local number = dialled(secret, mkey, opts.numbers)
+
+	-- ~/.sh_history, the owner's in full and a couple of lines for everybody else
+	-- who sat down here, so that `last` naming three people is three people with a
+	-- history on this machine.
+	if type(profile.accounts) == "table" then
+		for i = 1, #profile.accounts do
+			local login = logins[i]
+			if login ~= nil then
+				local mine = login == owner
+				local work = nil
+				if mine then work = profile.history end
+				local text = historyText(profile, secret,
+					CeroSecContent.key(mkey, "h", i), mine, work, live, number)
+				if text ~= nil and text ~= "" then
+					place(state, session, "/home/" .. login .. "/"
+						.. CeroSecOS.HISTORY_NAME, login, CeroSecOS.HISTORY_MODE, text, now)
+				end
+			end
+		end
+	end
+
+	-- THE DRAFT HE WAS WRITING, on about half the machines, and it stops in the
+	-- middle of a sentence because that is what happened to it.
+	if owner ~= nil and type(profile.draft) == "table"
+			and CeroSecContent.chance(secret, CeroSecContent.key(mkey, "draft"), 50) then
+		place(state, session, "/home/" .. owner .. "/draft.txt", owner, 644,
+			CeroSecContent.textFor({ texts = profile.draft }, secret, opts.b1, opts.b2,
+				"draft.txt", names), now)
+	end
+
+	-- And the login records, last of the three, because the file they go in is the
+	-- one `last` reads and the survivor reads it after everything else.
+	local liveAt = placeWtmp(state, profile, secret, mkey, logins, owner, live,
+		opts.start)
 	placeCron(state, session, profile, logins, owner, slot, now)
 
 	-- And root's own password, LAST, so that everything above it happened as root
@@ -2581,7 +3042,9 @@ function CeroSecContent.prefill(state, opts)
 			CeroSecOS.setPassword(state, "root", password, mkey .. ":root", now)
 		end
 	end
-	return id, password, logins
+	local session4 = nil
+	if live and liveAt ~= nil then session4 = { user = owner, at = liveAt } end
+	return id, password, logins, session4
 end
 
 --
@@ -2733,6 +3196,114 @@ CeroSecContent.PROFILES.residential = {
 		"login: admin logged in on console",
 		"login: admin logged in on console",
 	},
+
+	-- WHAT HE TYPED, and the lines are the premises' own: a house machine is a
+	-- porch light and a list of things to do.
+	history = {
+		"cat notes.txt",
+		"edit notes.txt",
+		"cat porch.txt",
+		"cat /dev/light0",
+		"echo off > /dev/light0",
+		"echo on > /dev/light0",
+		"dev light",
+		"sh bin/lights.sh light0",
+	},
+	lockup = "echo off > /dev/light0",
+	draft = three({
+		"Dear Ruth",
+		"",
+		"I have started this three times. The roads are shut",
+		"and the man on the radio says it is a precaution, and",
+		"nobody I have spoken to believes him.",
+		"",
+		"If you get this at all, we are going to the",
+	}, {
+		"To whoever is in this house after us.",
+		"",
+		"The water is off at the valve under the stairs and",
+		"the heater is off at the breaker. Neither of them is",
+		"broken. There is food in the",
+	}, {
+		"Tuesday",
+		"",
+		"I am writing it down because I keep forgetting what",
+		"day things happened on. Monday the school shut.",
+		"Tuesday the telephone stopped ringing out and started",
+		"just ringing. Today",
+	}),
+	mail = {
+		{
+			{ to = "owner", from = "knox!rholland", subj = "Saturday",
+				back = 5, hour = 8, min = 40, body = {
+					"We have the trailer free Saturday and Sunday both.",
+					"Ring the house, not the yard. Nobody is at the yard.",
+				} },
+			{ to = 2, from = "root", subj = "your account",
+				back = 4, hour = 19, min = 5, body = {
+					"I have made you your own login so that you stop",
+					"using mine. It is open. Do not change the wallpaper.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "the roads",
+				back = 1, hour = 6, min = 30, body = {
+					"Nothing north and nothing east. The county says it is",
+					"a precaution and the county has said that for three",
+					"days now.",
+				} },
+			{ to = "owner", from = "knox!rholland", subj = "are you there",
+				back = 0, hour = 5, min = 55, body = {
+					"Anything. One line. I have tried the telephone eleven",
+					"times.",
+				} },
+		},
+		{
+			{ to = "owner", from = "knox!jbarrett", subj = "the gutter",
+				back = 5, hour = 11, min = 20, body = {
+					"I can do it Thursday if it is dry. Leave the ladder",
+					"round the side.",
+				} },
+			{ to = "owner", from = "cerosec!support", subj = "your enquiry",
+				back = 3, hour = 14, min = 10, body = {
+					"There is no module on your kitchen switch, which is",
+					"why the computer cannot see it. That is an",
+					"electrician and not us. The porch one is fine.",
+				} },
+			{ to = 2, from = "the house", subj = "school",
+				back = 2, hour = 7, min = 15, body = {
+					"No school today and none tomorrow. Stay in the house",
+					"and do not answer the door to anybody at all.",
+				} },
+			{ to = "owner", from = "knox!jbarrett", subj = "Thursday",
+				back = 0, hour = 6, min = 40, body = {
+					"I am not coming Thursday. Nobody is coming Thursday.",
+					"Get out if you have anywhere to go.",
+				} },
+		},
+		{
+			{ to = "owner", from = "wknx!news", subj = "the swap shop",
+				back = 5, hour = 9, min = 5, body = {
+					"Your notice went out at twelve. Two people rang about",
+					"the bicycle and neither left a number, which is the",
+					"usual.",
+				} },
+			{ to = "owner", from = "knox!ehatfield", subj = "the lamp oil",
+				back = 3, hour = 16, min = 45, body = {
+					"The shop has none and the shop is not getting any.",
+					"I have three tins. Come and take one.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "notice",
+				back = 1, hour = 8, min = 0, body = {
+					"Residents are asked to remain at their addresses.",
+					"This notice will be repeated on the hour.",
+				} },
+			{ to = "owner", from = "knox!ehatfield", subj = "(no subject)",
+				back = 0, hour = 4, min = 20, body = {
+					"There is somebody in the road outside my house and he",
+					"has been there since two in the morning. I am not",
+					"going out to him. Are you awake",
+				} },
+		},
+	},
 }
 
 CeroSecContent.PROFILES.office = {
@@ -2856,12 +3427,127 @@ CeroSecContent.PROFILES.office = {
 		"login: failed login on console",
 		"cron: ran the nightly totals",
 	},
+
+	history = {
+		"cat handover.txt",
+		"cat ledger.txt",
+		"edit ledger.txt",
+		"sh bin/total.sh ledger.txt 2",
+		"crontab -l",
+		"cat memo.txt",
+		"df",
+		"sudo cat /var/log/messages",
+	},
+	draft = three({
+		"To the board, and I will put this properly when I have",
+		"the figures in front of me.",
+		"",
+		"Freight is up a third on the quarter and it is not the",
+		"rate, it is the number of runs. Two of our three",
+		"carriers have stopped answering the telephone and the",
+		"third has put his",
+	}, {
+		"Memorandum: closing the office",
+		"",
+		"Nobody has told us to close and nobody is going to.",
+		"So I am writing down what closing would mean, because",
+		"somebody is going to have to decide it on a Friday",
+		"afternoon with half the",
+	}, {
+		"{staff3} --",
+		"",
+		"I have thought about what you said and I think you are",
+		"right about the disk. Sixty-four thousand bytes is not",
+		"a filing cabinet and I have been treating it like one",
+		"for two years. What I would do instead is",
+	}),
 	mail = {
-		{ to = "root", from = "head office", subj = "the new passwords",
-			body = table.concat({
-				"Nobody is to write a password down where it can be",
-				"read. We will be checking the desks.",
-			}, "\n") },
+		{
+			{ to = "root", from = "head office", subj = "the new passwords",
+				back = 5, hour = 9, min = 25, body = {
+					"Nobody is to write a password down where it can be",
+					"read. We will be checking the desks.",
+				} },
+			{ to = "owner", from = "head office", subj = "the quarter",
+				back = 4, hour = 10, min = 40, body = {
+					"Freight, telephone and paper, in cents, by Friday.",
+					"The machine can add the column up. Do not send me a",
+					"column and call it a total.",
+				} },
+			{ to = 2, from = "knox!ltorres", subj = "not in today",
+				back = 2, hour = 7, min = 5, body = {
+					"I am not coming in. It is not me, it is the road --",
+					"they have it shut at the bridge and there is no way",
+					"round that does not add an hour.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "the affected area",
+				back = 1, hour = 9, min = 55, body = {
+					"The area is the county south of the river. Businesses",
+					"inside it are asked to secure and close. There is no",
+					"timetable and there will not be one today.",
+				} },
+			{ to = "owner", from = "head office", subj = "Friday",
+				back = 0, hour = 6, min = 50, body = {
+					"Ignore the last one. Nobody wants the quarter.",
+					"Is there anybody in the building. Anybody at all.",
+				} },
+		},
+		{
+			{ to = "owner", from = "cerosec!support", subj = "ticket 418",
+				back = 5, hour = 13, min = 15, body = {
+					"Your drive belt is on order and we are told two",
+					"weeks. The machine will run on the hard disk in the",
+					"meantime, which is what it has been doing.",
+				} },
+			{ to = "owner", from = "head office", subj = "the coffee fund",
+				back = 4, hour = 15, min = 50, body = {
+					"It is a line of the ledger and it is going to stay a",
+					"line of the ledger. I have had three letters about",
+					"this and I am not having a fourth.",
+				} },
+			{ to = 3, from = "knox!dmullins", subj = "the cabinet key",
+				back = 2, hour = 8, min = 30, body = {
+					"Mine is in my desk, top drawer, at the back. Take it",
+					"if you need it. I do not know when I am next in.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "businesses",
+				back = 1, hour = 11, min = 0, body = {
+					"Premises within the affected area are asked to",
+					"secure and close. There is no compensation scheme",
+					"and there is no timetable.",
+				} },
+			{ to = "owner", from = "head office", subj = "(no subject)",
+				back = 0, hour = 7, min = 20, body = {
+					"Close it. Lock what you can and go home to your",
+					"family. Somebody tell me you got this.",
+				} },
+		},
+		{
+			{ to = "owner", from = "knox!wsizemore", subj = "the invoice",
+				back = 5, hour = 8, min = 55, body = {
+					"Your figure and my figure differ by a hundred times",
+					"exactly, which means one of us is reading cents as",
+					"dollars, and it is not me.",
+				} },
+			{ to = 2, from = "the office manager", subj = "the machine",
+				back = 4, hour = 17, min = 30, body = {
+					"Leave it switched on. The job at two in the morning",
+					"is the only thing in this office that has not",
+					"failed this month.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "your notice",
+				back = 2, hour = 12, min = 10, body = {
+					"We read it at noon and again at six. If you want it",
+					"changed, ring before nine. Nobody is here after",
+					"nine any more.",
+				} },
+			{ to = "owner", from = "knox!wsizemore", subj = "forget the invoice",
+				back = 0, hour = 6, min = 5, body = {
+					"Forget it. I am taking the family south this morning",
+					"and I am telling everybody I can reach to do the",
+					"same. Go.",
+				} },
+		},
 	},
 }
 
@@ -3083,13 +3769,117 @@ CeroSecContent.PROFILES.police = {
 		"login: dispatch logged in",
 		"kernel: fd0 no disk in drive",
 	},
+
+	history = {
+		"sh bin/locks.sh lock lock0 lock1",
+		"sh bin/locks.sh unlock lock0",
+		"dev lock",
+		"dev",
+		"sudo cat /var/log/dispatch",
+		"cat handover.txt",
+		"cat bolo.txt",
+		"edit bolo.txt",
+		"crontab -l",
+	},
+	lockup = "sh bin/locks.sh lock lock0 lock1",
+	draft = three({
+		"REPORT -- and I will type it properly when somebody",
+		"is here to take it.",
+		"",
+		"At about six this morning I was asked to send a unit",
+		"to the hospital doors for the third time in two days.",
+		"I sent everybody. What I want on the record is that I",
+		"was told not to",
+	}, {
+		"To the county, from this desk.",
+		"",
+		"Four men. Seven nights. Nine calls in the hour before",
+		"I started writing this. I have been asked twice today",
+		"to hold at the line and both times the call I was",
+		"holding away from was",
+	}, {
+		"For whoever reads the log after me.",
+		"",
+		"Unit 2 went off the air at the bridge and I am not",
+		"going to be the man who wrote that down and then sat",
+		"here. The cells are locked, the front is bolted and",
+		"the keys are",
+	}),
 	mail = {
-		{ to = 1, from = "the desk sergeant", subj = "the cells",
-			body = table.concat({
-				"Both of them stay locked from ten at night whoever",
-				"is in them. That is not mine, it came down from the",
-				"county. Put it on the computer and stop arguing.",
-			}, "\n") },
+		{
+			{ to = "owner", from = "the desk sergeant", subj = "the cells",
+				back = 5, hour = 10, min = 5, body = {
+					"Both of them stay locked from ten at night whoever",
+					"is in them. That is not mine, it came down from the",
+					"county. Put it on the computer and stop arguing.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "the roads",
+				back = 3, hour = 14, min = 20, body = {
+					"The bridge is closed to everybody including you. The",
+					"rail bed is not a road and nobody is to use it as",
+					"one.",
+				} },
+			{ to = 2, from = "knox!ewhitaker", subj = "tonight",
+				back = 2, hour = 16, min = 45, body = {
+					"I cannot get in tonight and I am not going to",
+					"pretend I can. My road has three cars across it and",
+					"nobody in any of them.",
+				} },
+			{ to = "owner", from = "the desk sergeant", subj = "(no subject)",
+				back = 0, hour = 4, min = 35, body = {
+					"Forget the cells. Forget the log. If you are still",
+					"at that desk when you read this, go home.",
+				} },
+		},
+		{
+			{ to = "owner", from = "the desk sergeant", subj = "the strike",
+				back = 5, hour = 9, min = 15, body = {
+					"The back cell reads locked when it is standing open",
+					"and it has done for a month. Read it back with dev",
+					"lock, every time, until somebody comes to fix it.",
+				} },
+			{ to = "owner", from = "the hospital", subj = "the doors",
+				back = 3, hour = 6, min = 50, body = {
+					"We need somebody at the doors and we have needed",
+					"somebody since last night. I am not going to keep",
+					"asking politely.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "the line",
+				back = 1, hour = 13, min = 5, body = {
+					"Hold at the county line. Do not cross it for a call",
+					"and do not cross it for one of your own. This is not",
+					"a request from this office.",
+				} },
+			{ to = 3, from = "knox!ewhitaker", subj = "my keys",
+				back = 0, hour = 5, min = 40, body = {
+					"The ring is in the hall cabinet. I am not going to",
+					"be needing it. Whoever is left, the gate one is",
+					"bent and goes in the other way up.",
+				} },
+		},
+		{
+			{ to = "owner", from = "wknx!news", subj = "what do we say",
+				back = 5, hour = 11, min = 40, body = {
+					"We will read anything the sheriff's office gives us",
+					"and we will read nothing it does not. Somebody",
+					"telephone us before six.",
+				} },
+			{ to = "owner", from = "the desk sergeant", subj = "unit 4",
+				back = 2, hour = 20, min = 15, body = {
+					"He is not answering and his car is at the co-op with",
+					"the door open. Nobody goes on his own. Nobody.",
+				} },
+			{ to = 2, from = "the desk sergeant", subj = "the bolo",
+				back = 1, hour = 7, min = 30, body = {
+					"Take the pickup off the standing list. We found it.",
+					"Leave the two men on foot on it.",
+				} },
+			{ to = "owner", from = "the hospital", subj = "please",
+				back = 0, hour = 5, min = 10, body = {
+					"There is nobody outside our doors now and that is",
+					"worse. Is there anybody at that desk.",
+				} },
+		},
 	},
 }
 
@@ -3246,13 +4036,114 @@ CeroSecContent.PROFILES.bank = {
 		"kernel: fd0 write protected",
 		"shutdown: halt by root",
 	},
+
+	history = {
+		"cat audit.txt",
+		"sh bin/audit.sh accounts.dat checking",
+		"sh bin/total.sh accounts.dat 4",
+		"cat accounts.dat",
+		"sh bin/lockup.sh door0 lock0",
+		"dev door",
+		"crontab -l",
+		"df",
+	},
+	lockup = "sh bin/lockup.sh door0 lock0",
+	draft = three({
+		"To the district office.",
+		"",
+		"I am asking, in writing, what this branch is supposed",
+		"to do with a vault that cannot be opened by anybody",
+		"who is still coming to work. There are two of us who",
+		"know the procedure and neither of us",
+	}, {
+		"Note for the examiner, whenever he next gets here.",
+		"",
+		"The figures are right and they are in cents. What is",
+		"not right is the number of accounts that have been",
+		"emptied to the last penny in four days. I have",
+		"listed them below and the pattern is",
+	}, {
+		"{staff2} --",
+		"",
+		"If I am not here on Monday the procedure is in",
+		"audit.txt and the door is in vault.txt and neither of",
+		"them is difficult. What is difficult is the part",
+		"nobody wrote down, which is",
+	}),
 	mail = {
-		{ to = 1, from = "the district office", subj = "the examiner",
-			body = table.concat({
-				"He wants the figures read out to him a line at a",
-				"time, the way he always does. Have the machine up",
-				"and the disk in the drive before he sits down.",
-			}, "\n") },
+		{
+			{ to = "owner", from = "the district office", subj = "the examiner",
+				back = 5, hour = 9, min = 10, body = {
+					"He wants the figures read out to him a line at a",
+					"time, the way he always does. Have the machine up",
+					"and the disk in the drive before he sits down.",
+				} },
+			{ to = "owner", from = "the district office", subj = "cash",
+				back = 3, hour = 11, min = 35, body = {
+					"There is no delivery this week and there may not be",
+					"one next week. Do not say so at the counter.",
+				} },
+			{ to = 2, from = "knox!bcampbell", subj = "not in",
+				back = 2, hour = 7, min = 50, body = {
+					"I am at my mother's and I cannot get back. I am",
+					"sorry to do this to you on a Thursday.",
+				} },
+			{ to = "owner", from = "the district office", subj = "(no subject)",
+				back = 0, hour = 6, min = 15, body = {
+					"Secure the vault and leave. Nobody from this office",
+					"is coming and nobody is being sent.",
+				} },
+		},
+		{
+			{ to = "owner", from = "cerosec!support", subj = "ticket 502",
+				back = 5, hour = 14, min = 5, body = {
+					"Your machine will not boot because the system on the",
+					"disk is gone, not because the disk is. The firmware",
+					"repair puts it back and leaves /home alone.",
+				} },
+			{ to = "owner", from = "the district office", subj = "the audit",
+				back = 4, hour = 10, min = 20, body = {
+					"Postponed. Not cancelled, postponed, and I want the",
+					"two commands in audit.txt to still work when he does",
+					"come.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "businesses",
+				back = 1, hour = 12, min = 40, body = {
+					"Premises within the affected area are to be secured",
+					"and closed. Cash handling businesses are asked to",
+					"telephone this office first. Nobody answers it.",
+				} },
+			{ to = 3, from = "knox!bcampbell", subj = "the counter",
+				back = 0, hour = 5, min = 30, body = {
+					"Do not open the front. There were four people on the",
+					"step when I drove past at five and they were not",
+					"queuing.",
+				} },
+		},
+		{
+			{ to = "owner", from = "the district office", subj = "1044",
+				back = 5, hour = 8, min = 45, body = {
+					"The account at nought has been at nought since",
+					"March. Leave it open. He comes in on the first of",
+					"the month and he is somebody's father.",
+				} },
+			{ to = 2, from = "the branch manager", subj = "the door",
+				back = 3, hour = 17, min = 55, body = {
+					"Read vault.txt before Friday. The script stops and",
+					"tells you when the door did not come to, and last",
+					"month it told me twice and I did not read it.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "a statement",
+				back = 1, hour = 15, min = 25, body = {
+					"We are asking every business on the square for one",
+					"line about opening hours. One line, before six.",
+				} },
+			{ to = "owner", from = "the district office", subj = "are you open",
+				back = 0, hour = 7, min = 0, body = {
+					"Is the branch open. Is anybody in it. This is the",
+					"third time I have asked this morning.",
+				} },
+		},
 	},
 }
 
@@ -3389,6 +4280,119 @@ CeroSecContent.PROFILES.store = {
 		"cron: lights out",
 		"login: failed login on console",
 		"cron: no such device: light1",
+	},
+
+	history = {
+		"cat inventory.txt",
+		"edit inventory.txt",
+		"cat prices.txt",
+		"sh bin/total.sh prices.txt 2",
+		"sh bin/lights.sh light0 light1",
+		"sh bin/lockup.sh door0 lock0",
+		"dev light",
+		"cat closing.txt",
+		"crontab -l",
+	},
+	lockup = "sh bin/lockup.sh door0 lock0",
+	draft = three({
+		"Sign for the front window, and I will write it out",
+		"properly on card.",
+		"",
+		"NO LAMP OIL. NO BATTERIES. NO TARPS. PLEASE DO NOT",
+		"ASK WHEN, BECAUSE I DO NOT",
+	}, {
+		"Order sheet, and I know there is nobody to send it to.",
+		"",
+		"  lamp oil        as much as there is",
+		"  batteries       every size, any make",
+		"  rope            50ft, ten of them",
+		"  padlocks        all of them",
+		"",
+		"I have telephoned the depot nine times. The last",
+		"time it",
+	}, {
+		"To whoever opens up after me.",
+		"",
+		"The float is not in the till and it is not in the",
+		"safe. It is in the third tin on the shelf above the",
+		"sink, and I am writing that here because I may not",
+		"be the one who",
+	}),
+	mail = {
+		{
+			{ to = "owner", from = "the depot", subj = "your order",
+				back = 5, hour = 9, min = 30, body = {
+					"Lamp oil is on the truck for Thursday. Batteries are",
+					"not and will not be. Do not ask about tarps.",
+				} },
+			{ to = "owner", from = "knox!cdavis", subj = "Saturday",
+				back = 3, hour = 18, min = 10, body = {
+					"I can do Saturday but not Sunday. My brother has the",
+					"car and my brother has gone to Louisville.",
+				} },
+			{ to = 2, from = "the manager", subj = "the sign",
+				back = 2, hour = 6, min = 45, body = {
+					"The sign is on the computer at nine at night. If you",
+					"find it off in the morning, that is the computer and",
+					"not you.",
+				} },
+			{ to = "owner", from = "the depot", subj = "(no subject)",
+				back = 0, hour = 5, min = 20, body = {
+					"There is no truck Thursday. There is no truck. The",
+					"yard is shut and I am telephoning from my house.",
+				} },
+		},
+		{
+			{ to = "owner", from = "county!clerk", subj = "prices",
+				back = 5, hour = 11, min = 15, body = {
+					"Retailers within the affected area are reminded that",
+					"prices posted before the notice are the prices that",
+					"apply. Complaints have been received.",
+				} },
+			{ to = "owner", from = "the depot", subj = "credit",
+				back = 4, hour = 13, min = 40, body = {
+					"Your account is clear and I have put you first on",
+					"the list for whatever comes in. That is not a",
+					"promise, it is an order of names.",
+				} },
+			{ to = "owner", from = "knox!cdavis", subj = "the padlock",
+				back = 2, hour = 8, min = 25, body = {
+					"Somebody has had the good one off the gate. I did",
+					"not write the number down anywhere, so it is not",
+					"that.",
+				} },
+			{ to = "owner", from = "knox!cdavis", subj = "not coming in",
+				back = 0, hour = 6, min = 30, body = {
+					"I am not coming in and I would not open if I were",
+					"you. There were people at the window at four this",
+					"morning and they were not looking at the window.",
+				} },
+		},
+		{
+			{ to = "owner", from = "cerosec!support", subj = "your enquiry",
+				back = 5, hour = 10, min = 50, body = {
+					"The disk is 65536 bytes and always was. df will show",
+					"you. A floppy holds 4096 and there is no charge for",
+					"a box of them if you buy the drive belt from us.",
+				} },
+			{ to = "owner", from = "the depot", subj = "counted?",
+				back = 3, hour = 15, min = 5, body = {
+					"Send me a count of what is on the floor, not what is",
+					"on the shelf card. There is a difference and we both",
+					"know there is a difference.",
+				} },
+			{ to = 2, from = "wknx!news", subj = "opening hours",
+				back = 1, hour = 12, min = 20, body = {
+					"One line about your hours, before six, and we will",
+					"read it at noon tomorrow.",
+				} },
+			{ to = "owner", from = "the depot", subj = "are you there",
+				back = 0, hour = 4, min = 50, body = {
+					"Answer if you are there. I have nine shops on this",
+					"list and you are the seventh I have written to this",
+					"morning.",
+				} },
+		},
 	},
 }
 
@@ -3556,6 +4560,115 @@ CeroSecContent.PROFILES.school = {
 		"login: root logged in on console",
 		"shutdown: halt by root",
 	},
+
+	history = {
+		"cat grades.txt",
+		"edit grades.txt",
+		"cat bells.txt",
+		"sh bin/lights.sh light0 light1",
+		"dev light",
+		"sh bin/check.sh door0",
+		"crontab -l",
+		"sudo cat /var/log/messages",
+	},
+	lockup = "sh bin/lights.sh light0 light1",
+	draft = three({
+		"To the parents of the fourth period.",
+		"",
+		"Term ends on Friday whatever else happens, and the",
+		"marks will go out on Friday. What I cannot tell you is",
+		"whether there is going to be a",
+	}, {
+		"Notice for the door.",
+		"",
+		"THE SCHOOL IS CLOSED UNTIL FURTHER NOTICE. THIS IS THE",
+		"COUNTY'S DECISION AND NOT THIS OFFICE'S. IF YOUR CHILD",
+		"IS INSIDE THE BUILDING",
+	}, {
+		"Register, and I am keeping it here because the paper",
+		"one is in the hall and the hall is",
+		"",
+		"Monday   19 of 31",
+		"Tuesday  14",
+		"Wednesday 9",
+		"Thursday  4, and two of those were",
+	}),
+	mail = {
+		{
+			{ to = "owner", from = "county!schools", subj = "term marks",
+				back = 5, hour = 9, min = 20, body = {
+					"By student number and not by name, the way it has",
+					"been since the year before last. Nothing with a name",
+					"in it comes off that machine.",
+				} },
+			{ to = 2, from = "knox!mgreen", subj = "Friday",
+				back = 3, hour = 16, min = 30, body = {
+					"I cannot take the detention on Friday. I am not",
+					"going to be in the building on Friday and I think",
+					"you know why.",
+				} },
+			{ to = "owner", from = "county!schools", subj = "closure",
+				back = 1, hour = 7, min = 40, body = {
+					"All county schools are closed from today. Staff are",
+					"not required to attend. Nobody is to be left in a",
+					"building alone.",
+				} },
+			{ to = "owner", from = "knox!mgreen", subj = "1118 and 1127",
+				back = 0, hour = 6, min = 10, body = {
+					"I went to both houses. Nobody at either. The doors",
+					"were open at the second one. What do I do with that.",
+				} },
+		},
+		{
+			{ to = "owner", from = "county!schools", subj = "the boiler",
+				back = 5, hour = 11, min = 5, body = {
+					"The bell timer is on the same key as the boiler and",
+					"the key is on a nail. That is the whole maintenance",
+					"arrangement for this building and it always was.",
+				} },
+			{ to = "owner", from = "cerosec!support", subj = "your enquiry",
+				back = 4, hour = 14, min = 50, body = {
+					"The computer cannot reach the bells. There is no wire",
+					"between that room and this one, and no program can",
+					"make one. Corridor and gymnasium lights only.",
+				} },
+			{ to = 3, from = "knox!agarcia", subj = "the atlas",
+				back = 2, hour = 13, min = 15, body = {
+					"0502 is out with a boy who has not been in since the",
+					"4th. Leave it on the list. It is a book.",
+				} },
+			{ to = "owner", from = "county!schools", subj = "(no subject)",
+				back = 0, hour = 5, min = 45, body = {
+					"Do not open the building today. Do not go in to lock",
+					"it. Is there anybody reading this who is inside a",
+					"school right now.",
+				} },
+		},
+		{
+			{ to = "owner", from = "wknx!news", subj = "closures",
+				back = 5, hour = 8, min = 30, body = {
+					"We read the school closures at seven and at noon. If",
+					"yours is shutting, tell us before six or we will",
+					"read yesterday's list again.",
+				} },
+			{ to = "owner", from = "county!schools", subj = "attendance",
+				back = 3, hour = 10, min = 25, body = {
+					"Send the week's numbers and not the week's excuses.",
+					"We are counting children and not reasons.",
+				} },
+			{ to = 2, from = "the head teacher", subj = "no names",
+				back = 2, hour = 7, min = 55, body = {
+					"I read your detention file over your shoulder from",
+					"the corridor. So can a boy. Take the names out.",
+				} },
+			{ to = "owner", from = "knox!agarcia", subj = "the gymnasium",
+				back = 0, hour = 4, min = 40, body = {
+					"There are people in the gymnasium. The doors were",
+					"locked last night and they are not locked now and I",
+					"am not going in there on my",
+				} },
+		},
+	},
 }
 
 CeroSecContent.PROFILES.clinic = {
@@ -3691,12 +4804,120 @@ CeroSecContent.PROFILES.clinic = {
 		"kernel: hda 82 percent full",
 		"cron: rounds mailed",
 	},
+
+	history = {
+		"sh bin/rounds.sh patients.txt",
+		"cat patients.txt",
+		"edit patients.txt",
+		"cat rounds.txt",
+		"sh bin/locks.sh lock lock0",
+		"dev lock",
+		"crontab -l",
+		"cat supplies.txt",
+	},
+	lockup = "sh bin/locks.sh lock lock0",
+	draft = three({
+		"To the second floor, and I will bring it up myself if",
+		"the telephone is still doing what it is doing.",
+		"",
+		"I have four beds and eleven people who need one. I am",
+		"not asking you to find seven beds. I am asking you to",
+		"tell me, in one sentence, who",
+	}, {
+		"Handover, nights.",
+		"",
+		"Two of us. The round list is in the mail at seven and",
+		"it is right. Rooms in order. What is not on the list",
+		"is that 106 is not waiting on a bed any more and",
+		"nobody has",
+	}, {
+		"Order, urgent, and I know that word has stopped",
+		"meaning anything.",
+		"",
+		"  saline, every size",
+		"  gloves, small and medium",
+		"  tape",
+		"",
+		"Nine days. Two orders. No answer to either. If this",
+		"one is also not",
+	}),
 	mail = {
-		{ to = 1, from = "the second floor", subj = "beds",
-			body = table.concat({
-				"We have none. If the sheriff telephones again tell",
-				"them exactly what I told them at six this morning.",
-			}, "\n") },
+		{
+			{ to = "owner", from = "the second floor", subj = "beds",
+				back = 5, hour = 9, min = 40, body = {
+					"We have none. If the sheriff telephones again tell",
+					"them exactly what I told them at six this morning.",
+				} },
+			{ to = "owner", from = "the depot", subj = "your order",
+				back = 4, hour = 11, min = 10, body = {
+					"Saline is allocated and you are not on the",
+					"allocation. I did not write that list and I cannot",
+					"change it.",
+				} },
+			{ to = 2, from = "knox!sallen", subj = "tonight",
+				back = 2, hour = 17, min = 20, body = {
+					"I will be there but I will be late. The road past",
+					"the church has something across it and I am going",
+					"round by the mill.",
+				} },
+			{ to = "owner", from = "the second floor", subj = "(no subject)",
+				back = 0, hour = 5, min = 25, body = {
+					"Lock the ward doors. Both of them. I am not going to",
+					"explain that in writing and you would not want me",
+					"to.",
+				} },
+		},
+		{
+			{ to = "owner", from = "county!health", subj = "reporting",
+				back = 5, hour = 8, min = 50, body = {
+					"Numbers only, twice a day, to this address. Nothing",
+					"clinical on a terminal and nothing clinical on a",
+					"telephone. The chart stays on the trolley.",
+				} },
+			{ to = "owner", from = "the second floor", subj = "the round list",
+				back = 3, hour = 7, min = 5, body = {
+					"The seven o'clock list is the only thing arriving on",
+					"time in this building. Whoever set that up, thank",
+					"you.",
+				} },
+			{ to = 3, from = "knox!sallen", subj = "the sluice cupboard",
+				back = 1, hour = 15, min = 35, body = {
+					"The second one has the last of the tape in it and",
+					"the key is with whoever is senior. That is you",
+					"tonight.",
+				} },
+			{ to = "owner", from = "county!health", subj = "do not transfer",
+				back = 0, hour = 6, min = 0, body = {
+					"No transfers out of the affected area. None. Every",
+					"receiving hospital has been told the same thing and",
+					"none of them is answering either.",
+				} },
+		},
+		{
+			{ to = "owner", from = "the second floor", subj = "112",
+				back = 5, hour = 10, min = 15, body = {
+					"For discharge, and there is nobody to discharge him",
+					"to. His daughter is in Louisville and the road is",
+					"shut. Leave him where he is.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "advice",
+				back = 3, hour = 12, min = 45, body = {
+					"We are asked to read out what the public should do.",
+					"We would rather read out what you actually say than",
+					"what the county sent us.",
+				} },
+			{ to = 2, from = "the day sister", subj = "the car park",
+				back = 1, hour = 21, min = 30, body = {
+					"Nobody goes out there alone after dark. That is not",
+					"the county's rule and it is not the hospital's, it",
+					"is mine, and I will not be argued with about it.",
+				} },
+			{ to = "owner", from = "the second floor", subj = "are you still there",
+				back = 0, hour = 4, min = 55, body = {
+					"Two of my staff have gone and I do not mean gone",
+					"home. Is there anybody at that station.",
+				} },
+		},
 	},
 }
 
@@ -3832,6 +5053,123 @@ CeroSecContent.PROFILES.radio = {
 		"login: failed login on console",
 		"cron: announce mailed",
 		"kernel: radio0 present",
+	},
+
+	history = {
+		"sh bin/announce.sh sched.txt",
+		"cat sched.txt",
+		"edit sched.txt",
+		"cat notes.txt",
+		"cat /var/log/heard",
+		"cu -l /dev/radio0",
+		"crontab -l",
+		"dev",
+	},
+	draft = three({
+		"Copy for the top of the hour, and I am not reading",
+		"this until somebody senior has seen it.",
+		"",
+		"The county has asked us to say that the roads are",
+		"closed as a precaution. We have been saying that for",
+		"three days. What I would like to say instead is",
+	}, {
+		"Log note, for whoever comes in.",
+		"",
+		"The state frequency has been a tone since Tuesday",
+		"evening. Not silence, a tone. I have written down",
+		"every hour I have checked it and the list is in",
+		"/var/log/heard. What I have not written down is",
+	}, {
+		"Sheet for tomorrow, if there is a tomorrow on the air.",
+		"",
+		"  06 the weather, read twice",
+		"  09 nothing. Records.",
+		"  12 the county notice, word for word",
+		"  15 records",
+		"  18 the county notice again",
+		"",
+		"I have taken the swap shop off because",
+	}),
+	mail = {
+		{
+			{ to = "owner", from = "county!clerk", subj = "read at noon",
+				back = 5, hour = 9, min = 0, body = {
+					"The following is to be read at noon and at six, in",
+					"these words: the closures are a precaution and there",
+					"is no cause for alarm.",
+				} },
+			{ to = "owner", from = "the transmitter shack", subj = "the tone",
+				back = 3, hour = 19, min = 25, body = {
+					"It is not us. I have been up to the mast and it is",
+					"not us. Whatever is on the state frequency is on the",
+					"state frequency.",
+				} },
+			{ to = 2, from = "knox!rking", subj = "midnight",
+				back = 2, hour = 22, min = 40, body = {
+					"I can do midnight to six but I cannot do it twice.",
+					"Somebody has to be in that chair on Friday and it",
+					"cannot be me.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "(no subject)",
+				back = 0, hour = 5, min = 50, body = {
+					"Stop reading the noon notice. Do not read anything",
+					"we sent you this week. Is there anybody still at",
+					"the station.",
+				} },
+		},
+		{
+			{ to = "owner", from = "cerosec!support", subj = "the sheet",
+				back = 5, hour = 13, min = 30, body = {
+					"The program stops because an hour in your file is one",
+					"digit. It has to be 06 and not 6. That is the whole",
+					"fault and there is no charge for it.",
+				} },
+			{ to = "owner", from = "the transmitter shack", subj = "power",
+				back = 4, hour = 6, min = 40, body = {
+					"We have the generator and about two days of fuel for",
+					"it. After that we are off the air and no amount of",
+					"telephoning this shack will change it.",
+				} },
+			{ to = "owner", from = "knox!rking", subj = "the woman on 40m",
+				back = 2, hour = 15, min = 15, body = {
+					"She came up again at eleven and she is west of here,",
+					"not north. Somebody should write that down properly",
+					"and it should not be me at two in the morning.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "what do we say at six",
+				back = 0, hour = 4, min = 30, body = {
+					"Nobody has sent us anything since yesterday morning.",
+					"I am going on at six with the time and the weather",
+					"and a record unless somebody tells me otherwise.",
+				} },
+		},
+		{
+			{ to = "owner", from = "county!clerk", subj = "the board meeting",
+				back = 5, hour = 10, min = 35, body = {
+					"It sits at nine on Thursday and you may carry it",
+					"live, as usual. Two of the members have said they",
+					"will not be attending.",
+				} },
+			{ to = 2, from = "the station manager", subj = "the sheet",
+				back = 3, hour = 18, min = 5, body = {
+					"Two digits on every hour. If you edit it, read it",
+					"back with the program before you go home, because",
+					"the mail stopping is how I find out and I find out",
+					"at five past.",
+				} },
+			{ to = "owner", from = "the transmitter shack", subj = "somebody counting",
+				back = 1, hour = 3, min = 20, body = {
+					"Third night. He gets to sixty and stops. It is on a",
+					"frequency nobody licensed and I have stopped",
+					"listening to it on purpose.",
+				} },
+			{ to = "owner", from = "knox!rking", subj = "I am not coming in",
+				back = 0, hour = 5, min = 5, body = {
+					"I am not coming in and I am telling you rather than",
+					"just not arriving. Put a record on and lock the",
+					"studio door behind you.",
+				} },
+		},
 	},
 }
 
@@ -3970,12 +5308,116 @@ CeroSecContent.PROFILES.military = {
 		"login: root logged in on console",
 		"halt: system going down",
 	},
+
+	-- NEVER FOUND LOGGED IN, and it is the one profile that says so. A post was a
+	-- room a man was let into, and he was relieved or he left; a terminal standing
+	-- at somebody's prompt inside a cordon is a story about the wrong thing.
+	session = false,
+	history = {
+		"cat /root/memo-01.txt",
+		"cat /root/memo-02.txt",
+		"cat /root/memo-03.txt",
+		"edit /root/memo-03.txt",
+		"sh /usr/local/bin/check.sh door0",
+		"dev door",
+		"crontab -l",
+		"ls /root",
+		"cat /var/log/messages",
+	},
+	draft = three({
+		"MEMORANDUM 4 -- not issued",
+		"",
+		"Two checkpoints have been silent for a day and a half",
+		"and the order not to go to them stands. I have put my",
+		"objection in writing twice and this is the third. If",
+		"anybody reads this after",
+	}, {
+		"SITUATION -- 0500",
+		"",
+		"Line held. Two points silent. No contact with",
+		"battalion since the evening. Fuel for the generator",
+		"about thirty hours at this rate. Ammunition is not the",
+		"problem and I want that on the",
+	}, {
+		"To whoever holds this post next.",
+		"",
+		"The memoranda in /root are the orders as I received",
+		"them and I have not edited one of them. What is not in",
+		"them is what the men actually did, which was",
+	}),
 	mail = {
-		{ to = "root", from = "battalion", subj = "the ninth",
-			body = table.concat({
-				"Hold where you are. Do not withdraw and do not",
-				"advance. Further orders follow.",
-			}, "\n") },
+		{
+			{ to = "root", from = "battalion", subj = "the ninth",
+				back = 5, hour = 8, min = 15, body = {
+					"Hold where you are. Do not withdraw and do not",
+					"advance. Further orders follow.",
+				} },
+			{ to = "root", from = "battalion", subj = "the line",
+				back = 3, hour = 14, min = 40, body = {
+					"The boundary has been redrawn. You will be sent the",
+					"new one when it is confirmed. Until then your",
+					"boundary is the one you are standing on.",
+				} },
+			{ to = "root", from = "battalion", subj = "checkpoints",
+				back = 1, hour = 6, min = 20, body = {
+					"You will not send men to a point that has stopped",
+					"reporting. This is not discretionary and it is not",
+					"to be discussed with them.",
+				} },
+			{ to = "root", from = "battalion", subj = "(no subject)",
+				back = 0, hour = 4, min = 45, body = {
+					"Report strength. Report strength. Report strength.",
+				} },
+		},
+		{
+			{ to = "root", from = "battalion", subj = "vehicles",
+				back = 5, hour = 10, min = 50, body = {
+					"Turned at the first point. Not searched at the",
+					"second. Nothing on foot in either direction and the",
+					"word nothing is the word.",
+				} },
+			{ to = "root", from = "battalion", subj = "the road south",
+				back = 4, hour = 17, min = 5, body = {
+					"Open for you and for nobody else. You will not be",
+					"told twice and you will not be told again.",
+				} },
+			{ to = "root", from = "the sheriff", subj = "our units",
+				back = 2, hour = 11, min = 35, body = {
+					"We have two vehicles that have not come back and",
+					"both were last heard from inside your boundary. We",
+					"are asking, not demanding.",
+				} },
+			{ to = "root", from = "battalion", subj = "hold",
+				back = 0, hour = 5, min = 30, body = {
+					"Hold. Nothing else in this message.",
+				} },
+		},
+		{
+			{ to = "root", from = "battalion", subj = "orders, 4 July",
+				back = 5, hour = 7, min = 30, body = {
+					"River west, county road north, rail bed east. The",
+					"cordon is men and not wire. Do not improve it",
+					"without authority.",
+				} },
+			{ to = "root", from = "county!clerk", subj = "civilians",
+				back = 3, hour = 9, min = 55, body = {
+					"This office has been asked eleven times today by",
+					"people who want to reach relatives inside. We are",
+					"telling them to stay where they are. Confirm that",
+					"is still correct.",
+				} },
+			{ to = "root", from = "battalion", subj = "no relief",
+				back = 1, hour = 20, min = 10, body = {
+					"There is no relief coming tonight. Rest half your",
+					"strength and hold with the other half.",
+				} },
+			{ to = "root", from = "the sheriff", subj = "anybody",
+				back = 0, hour = 5, min = 0, body = {
+					"Is there anybody at that post. We have nothing on",
+					"the radio and nothing on the telephone and we are",
+					"four men.",
+				} },
+		},
 	},
 }
 
@@ -4204,12 +5646,125 @@ CeroSecContent.PROFILES.cerosec = {
 		"login: support logged in",
 		"cron: sweep ran",
 	},
+
+	history = {
+		"sh /usr/local/src/sweep.sh /",
+		"last",
+		"df",
+		"cat bench.txt",
+		"ls /usr/local/src",
+		"cat /usr/local/src/CHANGES",
+		"newfs /dev/fd0",
+		"mount /dev/fd0 /mnt",
+		"ls /mnt",
+		"umount /mnt",
+		"mkpasswd",
+	},
+	draft = three({
+		"To every customer with an open ticket.",
+		"",
+		"There are no parts coming. I am writing one letter and",
+		"sending it to all of you rather than telling each of",
+		"you a different story on the telephone. What we can",
+		"still do is",
+	}, {
+		"Service note, for the file.",
+		"",
+		"Four machines in a fortnight with the same fault, and",
+		"the fault is that the disk is 65536 bytes and the",
+		"customer has been told by somebody else that it is",
+		"broken. I want a one page sheet we can post out that",
+		"says",
+	}, {
+		"Notice for the counter.",
+		"",
+		"THE SERVICE DEPARTMENT IS CLOSED. MACHINES ON THE",
+		"BENCH MAY BE COLLECTED BY THE PERSON WHO BROUGHT THEM",
+		"IN. WE CANNOT TELL YOU ANYBODY'S PASSWORD AND WE",
+		"NEVER COULD. IF YOUR MACHINE",
+	}),
 	mail = {
-		{ to = 2, from = "a customer", subj = "no dial tone",
-			body = table.concat({
-				"Third week of this. The modem says NO DIAL TONE and",
-				"the telephone on the same desk works perfectly.",
-				"Somebody has to come out here.",
-			}, "\n") },
+		{
+			{ to = "support", from = "a customer", subj = "no dial tone",
+				back = 5, hour = 9, min = 45, body = {
+					"Third week of this. The modem says NO DIAL TONE and",
+					"the telephone on the same desk works perfectly.",
+					"Somebody has to come out here.",
+				} },
+			{ to = "owner", from = "the parts desk", subj = "back order",
+				back = 4, hour = 13, min = 20, body = {
+					"Drive belts are four weeks and I would not believe",
+					"four weeks. Nothing else on your list has a date",
+					"against it at all.",
+				} },
+			{ to = "owner", from = "a customer", subj = "my password",
+				back = 2, hour = 10, min = 5, body = {
+					"I have been told by three people that you can read",
+					"it off the disk. Please just tell me what it is.",
+				} },
+			{ to = "owner", from = "the parts desk", subj = "(no subject)",
+				back = 0, hour = 6, min = 25, body = {
+					"The warehouse is inside the line. Nothing is coming",
+					"out of it and nobody is going into it. I am sorry.",
+				} },
+		},
+		{
+			{ to = "owner", from = "the parts desk", subj = "the quarter",
+				back = 5, hour = 11, min = 30, body = {
+					"Eleven machines on your bench and nine of them are",
+					"waiting on us. Tell the customers whatever you have",
+					"to tell them.",
+				} },
+			{ to = "support", from = "a customer", subj = "it will not take the disk",
+				back = 4, hour = 15, min = 55, body = {
+					"I have put four different floppies in it and it says",
+					"the same thing about every one of them. They are",
+					"brand new out of the box.",
+				} },
+			{ to = "owner", from = "the counter", subj = "ticket 611",
+				back = 2, hour = 8, min = 10, body = {
+					"Nobody has been back for it since Monday. Put it",
+					"behind the counter with the ticket on it and do not",
+					"take the disk out.",
+				} },
+			{ to = "owner", from = "the parts desk", subj = "the van",
+				back = 1, hour = 16, min = 40, body = {
+					"There is no van this week. If a customer needs his",
+					"machine back he collects it, and he collects it",
+					"before Friday.",
+				} },
+			{ to = "owner", from = "a customer", subj = "are you open",
+				back = 0, hour = 5, min = 40, body = {
+					"I drove to the square and the shutter is down. Is",
+					"anybody reading this. My machine has my whole",
+					"business on it.",
+				} },
+		},
+		{
+			{ to = "owner", from = "the parts desk", subj = "the library",
+				back = 5, hour = 8, min = 20, body = {
+					"Yes, put the whole of /usr/local/src on every bench",
+					"machine. If a customer reads one of them and writes",
+					"his own, that is the machine sold and not lost.",
+				} },
+			{ to = "support", from = "a customer", subj = "it is slow",
+				back = 3, hour = 12, min = 0, body = {
+					"It has been slow since Friday and it was not slow",
+					"before Friday. I have not changed anything, which",
+					"is what everybody says and is true.",
+				} },
+			{ to = "owner", from = "county!clerk", subj = "businesses",
+				back = 1, hour = 14, min = 15, body = {
+					"Premises within the affected area are to be secured",
+					"and closed. Repair trades are not exempt and there",
+					"is no permit scheme.",
+				} },
+			{ to = "owner", from = "a customer", subj = "my machine",
+				back = 0, hour = 4, min = 35, body = {
+					"Keep it. I am not coming back for it. If anybody at",
+					"your company gets out of the county, take the disk",
+					"out and",
+				} },
+		},
 	},
 }

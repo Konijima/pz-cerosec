@@ -606,14 +606,54 @@ function SCeroSecObject:prefill(state)
 	-- password no machine had. See the head of CeroSecNet.premisesRooms.
 	local rooms = CeroSecNet.premisesRooms(self:getSquare(), zone)
 
-	local id = CeroSecContent.prefill(state, {
+	local id, _, _, live = CeroSecContent.prefill(state, {
 		secret = system:secret(),
 		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
 		premises = zone, rooms = rooms,
 		start = system:startTime(),
 		now = CeroSecOS.clockOf(system:clockEnv()),
+		-- The numbers a man at this desk could have rung, for the `cu` line in his
+		-- shell history. Asked of the WORLD here because the catalogue has none and
+		-- must not guess: a history naming an exchange that is not the one under the
+		-- survivor's feet is the lie the BBS disk refuses to tell. A region the map
+		-- named nothing in answers an empty list, and the history has no `cu` line.
+		numbers = CeroSecNet.regionNumbers(self.x, self.y, b1, b2,
+			CeroSecContent.DIAL_MAX),
 	})
 	if id == nil then return nil end
+
+	-- SOMEBODY WHO NEVER LOGGED OUT.
+	--
+	-- About one machine in four (CeroSecContent.liveSession), and never the military
+	-- post. The console was made a moment ago by turnOn, so this is the one place
+	-- where what the catalogue decided about the last fortnight reaches the glass:
+	-- the account, his home as the working directory, the moment wtmp says he sat
+	-- down, and the environment a login hands a shell. A player who opens this
+	-- machine gets his prompt and is asked for nothing.
+	--
+	-- `booted` IS LEFT ALONE, deliberately: the BIOS lines and the motd still print,
+	-- because a screen that came up already at a prompt with nothing above it reads
+	-- as a machine that is broken rather than as a machine somebody left running.
+	--
+	-- AND A DECLARED DEVIATION, because it is one. A real Unix cannot restore a
+	-- session across a power cut and neither can this one -- a survivor's own machine
+	-- comes back to `login:` every time, and that is right. What this does is choose
+	-- the story: wtmp says a man logged in on the morning of it and never logged out,
+	-- and the console agrees with wtmp instead of with the boot sequence. It is the
+	-- only place in the catalogue where the fiction is worth the fidelity, it is
+	-- stated here rather than hidden, and it happens once in the life of a machine.
+	if type(live) == "table" and type(live.user) == "string"
+			and type(self.console) == "table" then
+		local user = CeroSecOS.getUser(state, live.user)
+		if user ~= nil then
+			self.console.user = live.user
+			self.console.cwd = user.home or "/"
+			self.console.loginAt = live.at
+			self.console.shvars = CeroSecOS.loginVars(user.home)
+			CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
+				.. " was left logged in as " .. live.user)
+		end
+	end
 	self:mirrorOS()
 	CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
 		.. " came up prefilled as " .. id)

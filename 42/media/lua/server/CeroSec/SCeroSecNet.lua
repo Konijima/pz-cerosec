@@ -509,6 +509,53 @@ function CeroSecNet.fillLateDisk(disk, x, y, now)
 	return CeroSecContent.fillLate(disk, exchange, numbers, now)
 end
 
+--
+-- THE NUMBERS A MAN AT THIS DESK COULD HAVE RUNG
+--
+-- The same question fillLateDisk asks, asked for the same reason and answered the
+-- same way: the region's own listings, as numbers. It exists for the prefill, which
+-- wants a `cu` line in somebody's shell history and may not invent one -- the
+-- catalogue has no world and a number out of another exchange is the one lie the
+-- BBS disk already refuses to tell (see CeroSecContent.prefill's `numbers`).
+--
+-- Sorted by number, so what comes back is the same list in the same order however
+-- the map handed its zones over, and cut to `max`: the caller wants one number and
+-- a walk of four hundred listings to choose it from is a walk nobody needs.
+--
+-- THE PREMISES' OWN LINE IS TAKEN OUT. A man does not ring the telephone on his own
+-- desk, and on a party line the number of the shop he is standing in is the number
+-- that rings the shop he is standing in.
+--
+-- The cost, stated plainly: one zone sweep of the machine's region, once in the
+-- life of that machine, at the first power-on -- the same sweep the telephone book
+-- does when a player opens it, and in the same place the chunk is already known to
+-- be loaded. An empty list is the honest answer for a bench with no world and for a
+-- region the map named nothing in, and the history simply has no `cu` line.
+function CeroSecNet.regionNumbers(x, y, b1, b2, max)
+	local out = {}
+	if type(x) ~= "number" or type(y) ~= "number" then return out end
+	local rx, ry = CeroSecOS.phoneRegionOf(x, y)
+	if rx == nil then return out end
+	-- The premises' own line, composed the way phoneOf composes it -- out of the
+	-- premises key and the region's exchange. Not read off the machine's record:
+	-- prefill runs BEFORE CeroSecNet.identify, so there is no record yet, and the
+	-- two bytes the caller already has are all the number is made of.
+	local own = CeroSecOS.phoneText(CeroSecOS.phoneExchangeOfRegion(rx, ry),
+		CeroSecOS.phoneKey(b1, b2))
+	local entries = CeroSecPhonebook.sorted(CeroSecNet.directory(rx, ry))
+	local seen = {}
+	for i = 1, #entries do
+		local number = entries[i].number
+		if number ~= own and not seen[number] then
+			seen[number] = true
+			out[#out + 1] = number
+		end
+	end
+	table.sort(out)
+	while #out > (max or 8) do table.remove(out) end
+	return out
+end
+
 -- Every machine the server holds, which is every machine in the county that has
 -- ever been switched on -- loaded chunk or not (see the head of this file).
 local function each(system, fn)

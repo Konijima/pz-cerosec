@@ -661,7 +661,11 @@ do
 				check(id .. " has a log", log ~= nil and log.type == "file")
 				eq(id .. " and the log is root's", log.owner, "root")
 				local lines = CeroSecOS.splitLines(log.data)
-				eq(id .. " one line per entry", #lines, #profile.logs)
+				-- The premises' own week, and the county's on the end of it: three
+				-- outbreak entries off CeroSecContent.LOG_EVENTS, which is what says a
+				-- machine that had been standing there through July looks like it.
+				eq(id .. " one line per entry", #lines,
+					#profile.logs + CeroSecContent.LOG_EVENT_COUNT)
 				for l = 1, #lines do
 					check(id .. " log line " .. l .. " fits the screen", #lines[l] <= CeroSecOS.COLS)
 					local month, day = string.match(lines[l], "^(%a%a%a)%s+(%d+) ")
