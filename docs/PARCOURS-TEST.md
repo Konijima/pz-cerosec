@@ -742,6 +742,13 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      `echo $(whoami)`, `echo 'un   deux'` → chacun répond comme dans un
      script. `while true; do echo x` (sans `done`) →
      `sh: syntax error: missing 'done'` et **rien** ne tourne. [ ]
+141a. **Les dollars dans une somme.** `edit part.sh` avec deux lignes :
+     `echo $(($1 / $2)) chacun, $(($1 % $2)) de reste` et
+     `echo $# nombres`. Puis `chmod 755 part.sh` et `./part.sh 17 5` →
+     `3 chacun, 2 de reste` puis `2 nombres`. `./part.sh` tout court →
+     `part.sh: line 1: divide by zero` (un mot vide vaut zéro, et rien
+     divisé par rien est refusé). À l'invite : `x=9`, `echo $((${x} * 2))`
+     → `18` ; `false`, `echo $(($? + 1))` → `2`. [ ]
 142. `x=5` puis `echo $x` → `5`. Fermer la fenêtre, s'éloigner, revenir,
      rouvrir → `echo $x` répond encore `5`. `exit` puis se reconnecter →
      `echo [$x]` répond `[]` : une déconnexion emporte les variables. Vérifier

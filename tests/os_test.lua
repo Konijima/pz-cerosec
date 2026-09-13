@@ -6028,6 +6028,35 @@ do
 	eq("$# and $1 and $@", run.out[1], "2 [one] [two] [one two]")
 	eq("shift moves them along", run.out[2], "1 [two]")
 
+	-- And the same four inside $(( )), which is where a real sh expands them too:
+	-- POSIX.2 does the parameter expansion first and hands the reader an
+	-- expression with the argument already in it. Every form, because the reader
+	-- knew only [A-Za-z_] and answered "bad arithmetic" for all of them -- `$((5 %
+	-- $1))` on a script given 3 is the line that found it.
+	run = runScript(state, admin,
+		"echo $((5 % $1))\necho $(($1 + $2))\necho $(($# * 10))\n"
+		.. "x=9\necho $((${x} * 2))\nfalse\necho $(($? + 1))\necho $(($$))\necho $(($0))",
+		{ "3", "8" })
+	eq("$1 in a sum", run.out[1], "2")
+	eq("two arguments in one sum", run.out[2], "11")
+	eq("$# in a sum", run.out[3], "20")
+	eq("${name} in a sum", run.out[4], "18")
+	eq("$? in a sum", run.out[5], "2")
+	eq("$$ in a sum is the job id", run.out[6], tostring(JOB_ID))
+	-- $0 is the name the script is running under, and a name is not a number:
+	-- nought, by the same rule an unset variable is nought by.
+	eq("$0 in a sum is nought", run.out[7], "0")
+	eq("and the script ran to the end", #run.out, 7)
+	-- An argument the script was not given is an empty word, and an empty word is
+	-- nought -- not a refusal, exactly as an unset variable is not one.
+	prints(state, admin, "echo $(($1 + 1))", { "1" })
+	-- What is still not arithmetic. $@ is a LIST and no sum can hold one, and a
+	-- brace that does not close is not a name.
+	local bad1 = runScript(state, admin, "echo $(($@))")
+	eq("$@ is not a sum", bad1.out[1], "bench.sh: line 1: bad arithmetic")
+	local bad2 = runScript(state, admin, "echo $((${9bad}))")
+	eq("and neither is ${9bad}", bad2.out[1], "bench.sh: line 1: bad arithmetic")
+
 	-- $$ is the job's own id, and $? the last status.
 	run = runScript(state, admin, "echo $$\nfalse\necho $?\ntrue\necho $?")
 	eq("$$ is the job id", run.out[1], tostring(JOB_ID))

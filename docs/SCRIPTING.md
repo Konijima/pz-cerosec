@@ -126,7 +126,10 @@ a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
 `continue`, `exit`, `return`; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
-and `$((1 + 2 * 3))` on whole numbers; and `echo [-n]`, `printf`, `read`, `sleep`
+and `$((1 + 2 * 3))` on whole numbers — with `$1`, `$#`, `$?`, `$$` and `${NAME}`
+read inside the double brackets as POSIX.2 reads them, the expansion first and the
+sum afterwards, so `$((5 % $1))` is a sum on the first argument; and `echo [-n]`,
+`printf`, `read`, `sleep`
 and `shift` as builtins that work even on a machine whose `/bin` has been emptied.
 
     #!/bin/sh

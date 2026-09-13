@@ -592,6 +592,16 @@ end
 
 local arithSum
 
+-- What a piece of TEXT is worth in a sum: the whole number in it, and nought
+-- when there is not one. Written once, because every expansion inside $(( ))
+-- ends here -- a variable, an argument, ${name} -- and the rule an empty
+-- variable is nought by is the rule an empty argument has to be nought by.
+local function argNumber(text)
+	local v = tonumber(text)
+	if v == nil then return 0 end
+	return math.floor(v)
+end
+
 -- A number, a variable, a parenthesised sum, or a unary minus.
 local function arithUnit(job, s, i)
 	i = arithSkip(s, i)
@@ -611,7 +621,39 @@ local function arithUnit(job, s, i)
 	end
 	-- A dollar in front of a name is allowed and means the same thing: inside
 	-- $(( )) a bare name is already the variable.
-	if c == "$" then i = i + 1 end
+	--
+	-- And the dollars that are NOT names. A real sh expands the inside of $(( ))
+	-- before it evaluates it -- POSIX.2 puts arithmetic expansion after parameter
+	-- expansion and command substitution, so `$((5 % $1))` reaches the reader with
+	-- the first argument already in it -- and a reader that only knew [A-Za-z_]
+	-- answered "bad arithmetic" for every one of them. They are the same four the
+	-- word reader knows (readDollar in CeroSecOSScript.lua), read the same way, so
+	-- `$1` means one thing on this machine wherever it is written.
+	if c == "$" then
+		local nx = string.sub(s, i + 1, i + 1)
+		if string.find(nx, "^[0-9]") ~= nil then
+			-- One digit, like everywhere else here: $1..$9 are the arguments and
+			-- $0 is what the script is called, which is a name and so is nought.
+			local n = tonumber(nx)
+			local text
+			if n == 0 then text = job.name else text = job.args[n] or "" end
+			return argNumber(text), i + 2
+		end
+		if nx == "#" then return #job.args, i + 2 end
+		if nx == "?" then return math.floor(job.status), i + 2 end
+		if nx == "$" then return math.floor(job.id), i + 2 end
+		if nx == "{" then
+			local j = i + 2
+			local name = ""
+			while j <= #s and string.sub(s, j, j) ~= "}" do
+				name = name .. string.sub(s, j, j)
+				j = j + 1
+			end
+			if j > #s or not CeroSecOS.isVarName(name) then return nil, j, "bad arithmetic" end
+			return argNumber(getVar(job, name)), j + 1
+		end
+		i = i + 1
+	end
 	if string.find(c, "^[0-9]") ~= nil then
 		local j = i
 		while j <= #s and string.find(string.sub(s, j, j), "^[0-9]") ~= nil do j = j + 1 end
@@ -621,9 +663,7 @@ local function arithUnit(job, s, i)
 		local j = i
 		while j <= #s and string.find(string.sub(s, j, j), "^[A-Za-z0-9_]") ~= nil do j = j + 1 end
 		local name = string.sub(s, i, j - 1)
-		local v = tonumber(getVar(job, name))
-		if v == nil then v = 0 end
-		return math.floor(v), j
+		return argNumber(getVar(job, name)), j
 	end
 	return nil, i, "bad arithmetic"
 end

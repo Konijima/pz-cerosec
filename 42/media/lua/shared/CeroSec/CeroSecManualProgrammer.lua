@@ -865,6 +865,31 @@ Counting up is the commonest line in this book:
 
   i=$((i + 1))]],
 
+[[Arithmetic on the words a script was handed.
+
+A dollar sign inside the double brackets means what it means outside them.
+The shell puts the word in first and reads the sum afterwards, so the
+numbers a script was given are numbers it can count with.
+
+  admin@ksp-04-11:~$ cat share.sh
+  #!/bin/sh
+  echo $(($1 / $2)) each, $(($1 % $2)) left over
+  echo that was $# numbers
+  admin@ksp-04-11:~$ ./share.sh 17 5
+  3 each, 2 left over
+  that was 2 numbers
+
+$1 to $9, $0, $#, $? and ${NAME} are all read in there, and so is $$. A
+word that is not a number counts as nought -- the same rule an empty
+variable follows -- so a script handed nothing divides by nothing:
+
+  admin@ksp-04-11:~$ ./share.sh
+  share.sh: line 1: divide by zero
+
+Count what you were given before you compute with it:
+
+  if [ $# -lt 2 ]; then echo usage: share.sh a b; exit 2; fi]],
+
 [[Doing arithmetic on the clock.
 
 date +%s prints the time as one plain number, counting seconds, and that

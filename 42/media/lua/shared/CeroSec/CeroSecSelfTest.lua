@@ -244,17 +244,37 @@ function CeroSecSelfTest.probe(say)
 	say("arith neg div", CeroSecSelfTest.arith("-7 / 2"))
 	say("arith neg mod", CeroSecSelfTest.arith("-7 % 3"))
 	say("arith precedence", CeroSecSelfTest.arith("1 + 2 * 3 - 4 / 2"))
+	-- The expansions inside $(( )), which POSIX.2 does before the sum is read.
+	-- Here because they go through tonumber on a word a script was handed, and a
+	-- VM whose tonumber answered differently for "3" would take `$((5 % $1))` --
+	-- the commonest line there is in a script that walks its arguments -- from
+	-- right to nought without a single bench noticing.
+	say("arith argument", CeroSecSelfTest.arith("5 % $1", { "3" }))
+	say("arith argument count", CeroSecSelfTest.arith("$# * 10", { "a", "b" }))
+	say("arith argument missing", CeroSecSelfTest.arith("$2 + 1", { "3" }))
+	say("arith braces", CeroSecSelfTest.arith("${nothing} + 1", { "3" }))
 end
 
 -- One `$(( ))` expression, evaluated the way the shell evaluates one: through a
 -- real job, because the reader is the VM's and takes a job for its variables.
 -- The answer as a string, or the refusal, so a broken arithmetic reader is a
 -- LINE and not an error out of the middle of the probe.
-function CeroSecSelfTest.arith(expr)
+--
+-- args, when given, makes it a SCRIPT's job instead of a prompt's, because $1 is
+-- a script's and a prompt has no arguments to answer with.
+function CeroSecSelfTest.arith(expr, args)
 	local state = CeroSecOS.newState("selftest")
 	local session = CeroSecOS.login(state, "root", "")
 	if session == nil then return "no session" end
-	local job = CeroSecOS.promptJob(state, session, "echo $(( " .. expr .. " ))", {}, 0)
+	local job
+	if args == nil then
+		job = CeroSecOS.promptJob(state, session, "echo $(( " .. expr .. " ))", {}, 0)
+	else
+		local prog = CeroSecOS.parseScript("echo $(( " .. expr .. " ))")
+		if prog == nil then return "no parse" end
+		job = CeroSecOS.newJob({ prog = prog, args = args, name = "probe.sh",
+			session = session })
+	end
 	if job == nil then return "no job" end
 	local env = { now = 0 }
 	local turns = 0

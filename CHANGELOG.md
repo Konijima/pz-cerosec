@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- A sum may now count with what a script was handed: `$((5 % $1))`, `$(($# * 2))`
+  and `$((${n} + 1))` all work inside the double brackets, where a dollar sign in
+  front of a number used to answer `bad arithmetic`.
+
 - Two computers in one office now belong to two different people. Each machine
   has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
   passwords, and empty homes. A building with two computers is worth walking
