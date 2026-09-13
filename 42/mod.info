@@ -1,8 +1,9 @@
 name=CeroSec
 id=CeroSec
-description=THE NETWORK NEVER DIED. <LINE> <LINE>
-description=CeroSec puts a small Unix on the desktop computers of Knox County. Switch one on, sit down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt. Behind it: files, permissions, accounts, an editor, shell scripts and cron. <LINE> <LINE>
-description=Its /dev holds the doors, lights and locks of the building around it. Coax reaches the other machines in that building, a modem dials the county, a radio outlives it. <LINE> <LINE>
+description=<PUSHRGB:0.44,0.75,0.54>THE NETWORK NEVER DIED.<POPRGB> <LINE> <LINE>
+description=A small 1993 Unix on the desktop computers of Knox County. Switch one on, sit down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt. <LINE> <LINE>
+description=Files, permissions, accounts, a shell with pipes and cron. The doors and lights of the building under /dev, once you have screwed a module onto them. Coax to the machines next door, a modem to the county, a radio past both. <LINE> <LINE>
+description=Most computers come up as somebody's: his accounts, his files, a week of his log, and his password written down somewhere in the building. <LINE> <LINE>
 description=Server-authoritative and safe in multiplayer. No dependencies. Build 42 only. <LINE> <LINE>
 description=Made by Konijima.
 poster=poster.png

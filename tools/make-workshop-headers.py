@@ -137,7 +137,7 @@ def main():
         print("%s %dx%d, %d bytes  %s"
               % (dest, HEADER_W, HEADER_H, dest.stat().st_size, words))
 
-    # A sheet to look at them as a set rather than one at a time: seven bands
+    # A sheet to look at them as a set rather than one at a time: bands
     # whose left edges do not line up is the thing this catches.
     gap = 12
     sheet = Image.new("RGB", (HEADER_W, len(HEADERS) * (HEADER_H + gap) - gap),
@@ -149,7 +149,7 @@ def main():
     strip = REPO / "tools" / "out" / "workshop-headers.png"
     strip.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(strip, "PNG", optimize=True)
-    print("%s (all seven, stacked)" % strip)
+    print("%s (all %d, stacked)" % (strip, len(HEADERS)))
     return 0
 
 

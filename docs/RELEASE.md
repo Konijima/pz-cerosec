@@ -33,7 +33,9 @@ the files and the state shape are all unaffected.
 | # | step | command |
 | --- | --- | --- |
 | 1 | Drop the two originals in place: `workshop/art/poster.png` (4:3) and `workshop/art/banner.png` (16:5) | by hand |
-| 2 | Cut the four published images | `python3 tools/make-workshop-images.py` |
+| 1a | **Choose the square poster.** Look at the three candidates side by side, at 512 and at 200, then set `POSTER_CANDIDATE` in `tools/make-workshop-images.py` to `A`, `B` or `C` — see "The square poster" below | `tools/out/poster-candidates.png` |
+| 2 | Cut the four published images, and draw the eight section headers | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py` |
+| 2a | **Take the ten screenshots and the two GIFs** | [../workshop/SHOTS.md](../workshop/SHOTS.md) |
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
@@ -42,16 +44,17 @@ the files and the state shape are all unaffected.
 | 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
 | 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
 | 7 | Walk the in-game checklist, all of it | [PARCOURS-TEST.md](PARCOURS-TEST.md) |
-| 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=1100,2400 "file://$PWD/workshop/preview-page.html"` |
+| 8 | Rebuild and look at the description | `python3 tools/bbcode-preview.py && google-chrome --headless=new --screenshot=tools/out/workshop-page.png --window-size=760,6600 "file://$PWD/workshop/preview-page.html"` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
-| 11 | Copy the `id=` Steam wrote back into the repo | `grep ^id= ~/Zomboid/Workshop/CeroSec/workshop.txt` |
-| 12 | Add the banner as the item's **first screenshot** | Steam item page, **Add images** |
-| 13 | Paste the `[img]` line into the description | see below |
+| 11 | Copy the `id=` Steam wrote back into the repo, and into the description's last-but-one line | `grep ^id= ~/Zomboid/Workshop/CeroSec/workshop.txt` |
+| 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images** — see below |
+| 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
-| 16 | Make the GitHub repository public | `gh repo edit Konijima/pz-cerosec --visibility public` |
-| 17 | Flip the Workshop item to public | Steam item page, **Change visibility** |
+| 16 | **Make the GitHub repository public.** The description's banner and its eight section headers are fetched from it: they are dead images until this is done | `gh repo edit Konijima/pz-cerosec --visibility public` |
+| 17 | Open the item's own page in a browser and check the nine repo-hosted images actually rendered | Steam item page |
+| 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
 ## Steps 6a and 6b: the two the headless suite cannot do
 
@@ -169,20 +172,74 @@ again.
 else. The header explaining the file format lives in git; put it back from there if a
 pass through the submit screen has eaten it.
 
-**The banner cannot be served out of the mod.** Steam renders `[img]` from a URL and
-has no idea what is inside the uploaded item, so `workshop/banner.png` has to be
-hosted somewhere Steam will fetch it from. The item's own screenshots are the simplest
-host: upload `workshop/banner.png` as the **first** screenshot (step 12), open it,
-copy its direct image address, and make that the first line of the description, above
-the tagline:
+**Nothing in the mod can be served as an `[img]`.** Steam renders `[img]` from a URL
+and has no idea what is inside the uploaded item, so every image in the description
+has to be hosted somewhere Steam will fetch it from. There are two hosts and the
+split is on purpose.
+
+**The banner and the eight section headers come out of the GitHub repository.**
+`https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/banner.png`
+and `.../workshop/img/h-*.png`. Those URLs are **already written into
+`workshop/workshop.txt`** and no line of it has to be edited at upload time. Three
+things make that safe, and all three were checked rather than assumed:
+
+- raw.githubusercontent.com answers `access-control-allow-origin: *` and
+  `cross-origin-resource-policy: cross-origin`, so it survives the
+  `crossorigin="anonymous"` Steam puts on a third-party description image;
+- the images are versioned with the mod, so the page cannot drift from the build
+  it describes;
+- the repository going public (step 16) comes **before** the item goes public
+  (step 18). Until step 16 those nine images are 404s, which is why step 17 is to
+  open the page and look.
+
+**The ten screenshots go on the item**, because that is where a Workshop screenshot
+belongs: it shows in the item's own gallery as well as in the description. Their
+URLs do not exist until the upload, so `workshop/workshop.txt` carries a commented
+slot for each, naming its file from [../workshop/SHOTS.md](../workshop/SHOTS.md):
 
 ```
-description=[img]<the URL of the uploaded banner>[/img]
-description=[h1]THE NETWORK NEVER DIED.[/h1]
+# SHOT 01 -- workshop/shots/01-boot-login.png, the hero shot
+# description=[img]<url of 01-boot-login.png>[/img]
 ```
 
-Edit it in `workshop/workshop.txt` and commit it, not only in the Steam text box, or
-the next upload will put the old description back.
+Turning one on is one edit: drop the `#` from the second line, and put the image's
+direct address between the tags. To get that address: open the uploaded screenshot
+on the item page, copy the image location, and **strip the whole query string** —
+the live page serves `.../ugc/<id>/<hash>/?imw=268&imh=268&ima=fit&...`, and the
+bare `.../ugc/<id>/<hash>/` is the full-size original. You cannot invent your own
+resize parameters; `?imw=5000` answers 404.
+
+**Upload order for step 12**, twelve images, because the first one is the item's
+gallery cover:
+
+1. `workshop/art/banner.png` at full size (1648 wide), as the **first** screenshot.
+   The description shows the 630 px cut off the repository; this is the one a
+   visitor gets when they click the gallery.
+2. `workshop/shots/01-boot-login.png` through `10-telephone-and-radio.png`, in
+   order.
+3. The two GIFs.
+
+Edit the description in `workshop/workshop.txt` and commit it, not only in the Steam
+text box, or the next upload will put the old description back.
+
+## The square poster: choosing one
+
+`tools/make-workshop-images.py` draws three and writes all three to `tools/out/`
+every run, whichever one `POSTER_CANDIDATE` publishes. Look at
+`tools/out/poster-candidates.png` before setting it: it puts A, B and C side by
+side at **512 and at 200** on neutral grey, and 200 is the size that decides it —
+`ModInfoPanelDesc` draws poster 0 at 200x200, so a composition that only works at
+512 is one most subscribers never see working.
+
+| | keeps | loses |
+| --- | --- | --- |
+| **A** (default) | the monitor large and centred, the zombie at the window, the wordmark legible at 200 | the left edge of the bookshelf, so two of the four book spines are cut |
+| **B** | every pixel of the original composition, all four spines | height on the subject: the monitor is smaller and the tagline is unreadable at 200 |
+| **C** | the brand, and it is the only one of the three that is fully legible at 200 | the desk, the zombie, and the whole of the atmosphere |
+
+The chosen one becomes both `workshop/preview.png` and `42/poster.png`. They are
+the same picture at the same size on purpose: the Workshop preview and the mod
+panel's poster are the same promise made twice.
 
 ## What the sizes are, and why
 
@@ -194,7 +251,17 @@ shipped jar or off vanilla Lua.
 | `workshop/preview.png` | 512x512 PNG, under 1024000 bytes | `SteamWorkshopItem.validatePreviewImage` refuses anything else: over the byte ceiling is `PreviewFileSize`, non-square or a width that is neither 256 nor 512 is `PreviewDimensions`, unreadable is `PreviewFormat` |
 | `42/poster.png` | 512x512 | the mod panel draws poster 0 with `drawTextureScaled(tex, ..., 200, 200)`, which does not keep the aspect ratio (`ModInfoPanelDesc.lua:12` and `:14`) |
 | `42/icon.png` | 64x64 | drawn at `BUTTON_HGT` (`ModListBox.lua:8`, `:201`) and at 28x28 (`ModOrderListBox.lua:235`) |
-| `workshop/banner.png` | 1000 px wide | the widest Steam shows an `[img]` at before scaling it down; the game never reads this file |
+| `workshop/banner.png` | 630 px wide | Steam's own stylesheet: `.workshopItemDescription img { max-width: 630px }` in `public/css/skin_1/workshop.css` on community.akamai.steamstatic.com. The game never reads this file |
+| `workshop/img/h-*.png` | 630x80 | the same rule. Eight section headers, drawn by `tools/make-workshop-headers.py` |
+
+**The 630 corrects a 1000 that was in this table and in the script until
+2026-09-13, and was never true.** Steam does not show an `[img]` at 1000 px: it
+scales it down to 630, and a bitmap face scaled by 0.63 comes back with grey
+edges instead of square ones. The number is in the stylesheet quoted above. While
+that was being checked, the description column turned out to be about the same
+width: `#leftContents` is `width: 650px` and `.workshopItemDescription` has
+`padding-right: 8px`, so a 630 image is very nearly full bleed, which is why the
+headers are drawn at exactly that and not at "something wide".
 
 The preview image's name and place are not a convention either: the submit screen
 looks for `<workshop folder>/preview.png` and nothing else
@@ -215,7 +282,28 @@ with different rules: lines are **not** trimmed, keys are matched with
 concatenated with **nothing** between them. Line breaks in that description are
 `ISRichTextPanel`'s own `<LINE>`, and no line of it may contain another key's
 spelling (`name=`, `url=`, `poster=`, `icon=`, `id=` and the rest) or that key will
-eat it.
+eat it. **There is therefore no comment syntax in this file and nothing explaining
+itself inside it** — a `#` line saying the word `description=` would be read as a
+description.
+
+**What the description is drawn into, and the two tags it uses.** The panel is
+`ModInfoPanel.Desc` (`media/lua/client/OptionScreens/ModSelector/ModInfoPanelDesc.lua`).
+Its `createChildren` builds the text box at `self.width - 200 - UI_BORDER_SPACING*2`,
+and the chain above it is `MainScreen` → `ModSelector:new(0, 0, self.width, ...)` →
+a mod list `self.width/2 - UI_BORDER_SPACING` wide → `ModInfoPanel` on what is left.
+So the text box is **half the screen width, less 242 px**: 270 px at 1024, 398 at
+1280, 718 at 1920. It is 200 px tall with scrollbars (`addScrollBars(true)`), which
+is about a dozen lines at the narrow end. The description is written for that: the
+tagline and the pitch are in the first screen and the housekeeping is under it,
+because the scroll bar is the part nobody uses.
+
+The tagline is green, and that is not a guess either. `ISRichTextPanel:processCommand`
+takes `CENTRE`, `LEFT`, `RIGHT`, `LINE`, `BR`, `SPACE`, `RED`, `GREEN`, `ORANGE`,
+`GHC`, `BHC`, `RGB:r,g,b`, `PUSHRGB:r,g,b` and `POPRGB`, the colours as floats 0 to 1.
+`mod.info` uses the **push and pop** pair rather than a bare `RGB:`, which is the
+same pair the engine's own `replaceKeyBinding` uses two hundred lines further down
+the same file, so the colour is put back afterwards instead of running to the end of
+the description.
 
 ## Tags
 

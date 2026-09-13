@@ -4,12 +4,20 @@
 
 **THE NETWORK NEVER DIED.**
 
-A small Unix on the vanilla desktop computers of Knox County: switch one on, sit
-down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt.
-Behind it are files, permissions, accounts, an editor, shell scripts, cron, the
-doors and lights of the building under `/dev`, and three ways off the machine:
-coax to the rest of the building, a modem to the county, a radio past both. From
-scratch, vanilla Lua only, server-authoritative, Build 42.
+A small 1993 Unix on the vanilla desktop computers of Knox County: switch one on,
+sit down at it, and a green 60x20 terminal opens on a BIOS line and a login
+prompt. Behind it are files, permissions, accounts, an editor, shell scripts,
+cron, the doors and lights of the building under `/dev` once somebody has screwed
+a module onto them, and three ways off the machine: coax to the rest of the
+premises, a modem to the county, a radio past both.
+
+And the county had computers in it already. A machine nobody has switched on yet
+comes up as somebody's: his accounts, his files, a week of his log, and his
+password written down on a paper in the building, because everybody wrote it
+down. Ten kinds of premises, six labelled floppies, and vanilla's own Phonebook
+turned into the Knox County directory.
+
+From scratch, vanilla Lua only, server-authoritative, Build 42.
 
 Made by Konijima.
 
@@ -21,8 +29,10 @@ Done: the OS engine (filesystem, permissions, accounts, groups, a real shell
 language with pipes and job control), cron, the manual as a three-volume in-game
 documentation set, floppy disks with their own filesystem, the device network
 under `/dev` (doors, switches, motion sensors) and the four hardware modules a
-survivor has to fit before a computer reaches any of it, and three links out to
-the rest of the county — coax to the other machines in a building, the telephone, and radio.
+survivor has to fit before a computer reaches any of it, three links out to
+the rest of the county — coax to the other machines of a premises, the telephone, and radio —
+and the world content: ten premises profiles, the papers that carry the passwords,
+six labelled floppies, and the phone book.
 See "Documentation" below for where each of those is written up.
 
 What's next: two testing aids in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` are
@@ -130,6 +140,11 @@ Three lessons this codebase paid for and does not intend to relearn:
   cannot undo, and what the server guarantees against a hostile script.
 - [docs/RELEASE.md](docs/RELEASE.md) — the ordered Workshop release checklist:
   the images, the flags, the upload, the tag, the visibility.
+- [workshop/SHOTS.md](workshop/SHOTS.md) — the ten screenshots and two GIFs the
+  Workshop page needs, with the in-game settings for each.
+- [docs/notes/workshop-study.md](docs/notes/workshop-study.md) — how the five
+  most subscribed Project Zomboid pages are built, and Steam's own rules for
+  images in a description.
 
 The in-game manual's own text lives in
 [`42/media/lua/shared/CeroSec/CeroSecManualUser.lua`](42/media/lua/shared/CeroSec/CeroSecManualUser.lua),
