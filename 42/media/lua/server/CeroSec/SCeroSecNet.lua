@@ -231,8 +231,17 @@ end
 
 -- The premises: two bytes, the exchange behind them, and what it is called.
 -- nil for a computer in no building at all, which is what a player-built base is.
-function CeroSecNet.premisesOf(luaObject)
-	local def, square = defOf(luaObject)
+--
+-- Asked of a SQUARE, so that the one rule about what a premises is answers every
+-- question about it. There are three of those now -- which wire a computer is on,
+-- which profile a machine gets, and which premises a note in a drawer or a note in
+-- a dead man's pocket belongs to -- and a second copy of the rule for the papers
+-- would be papers that named a premises the telephone did not agree with.
+function CeroSecNet.premisesOfSquare(square)
+	if square == nil then return nil end
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
 	if def == nil then return nil end
 	local bx, by = def:getX(), def:getY()
 	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
@@ -270,6 +279,64 @@ function CeroSecNet.premisesOf(luaObject)
 	local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
 	if b1 == nil then return nil end
 	return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName()
+end
+
+-- The same question about a COMPUTER, which is the caller this started as: the
+-- square it stands on, and nothing else.
+function CeroSecNet.premisesOf(luaObject)
+	local _, square = defOf(luaObject)
+	return CeroSecNet.premisesOfSquare(square)
+end
+
+--
+-- WHAT A PREMISES IS CALLED, for the one caller that must get the SAME answer
+-- from every square of it: the world content (CeroSecContent.profileFor).
+--
+-- This exists because of a bug that was shipped and caught in review, and the bug
+-- is worth writing down because it is the shape of every mistake this rung can
+-- make. The profile of a machine was decided from the ROOM THE MACHINE STOOD IN,
+-- and the profile behind a paper in a drawer from the ROOM THE DRAWER STOOD IN.
+-- In a house with a study in it, the desk in the study answered "office" -- a
+-- profile with a root password, so a note was written -- and the computer in the
+-- living room answered "residential", which has none. The paper named a password
+-- no machine in the county had. Two squares of one premises are one premises, and
+-- anything a premises IS has to be answered the same way from every one of them.
+--
+-- So the rule has two halves and neither of them reads the caller's own square:
+--
+--   * a premises that is a named ZONE is called by its zone's name, and by nothing
+--     else. The rooms are the mall's and belong to thirty other shops.
+--   * a premises that is a BUILDING is called by the names of ALL its rooms --
+--     BuildingDef.getRooms(), which is a fact about the building and is the same
+--     list whichever square asked. Which of them decides is CeroSecContent's, and
+--     it walks its own word list in order so that the order the engine hands the
+--     rooms over in cannot change the answer.
+--
+-- Engine calls, proved at the bytecode level on projectzomboid.jar 42.20.4:
+--
+--   zombie.iso.BuildingDef.getRooms() -> java.util.ArrayList<zombie.iso.RoomDef>
+--   zombie.iso.RoomDef.getName()      -> String
+--
+-- An array of names, or nil: a zone premises, a square in no building, and a def
+-- that will not list its rooms all answer nothing, and nothing is a house.
+function CeroSecNet.premisesRooms(square, zoneName)
+	if zoneName ~= nil then return nil end
+	if square == nil then return nil end
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
+	if def == nil or def.getRooms == nil then return nil end
+	local list = def:getRooms()
+	if list == nil then return nil end
+	local out = {}
+	for i = 0, list:size() - 1 do
+		local room = list:get(i)
+		if room ~= nil and room.getName ~= nil then
+			local name = room:getName()
+			if type(name) == "string" and name ~= "" then out[#out + 1] = name end
+		end
+	end
+	return out
 end
 
 --

@@ -9,7 +9,12 @@
 # every Lua file we ship, then grep the core for what it must never contain.
 #
 
-CORE="42/media/lua/shared/CeroSec/OS"
+# The files that must be Kahlua-pure AND loadable with nothing under them: the OS
+# core, and the content catalogue beside it. CeroSecContent.lua is in here for the
+# same reason the core is -- it is loaded before the core by the game (shared/
+# CeroSec/ ahead of shared/CeroSec/OS/) and by loadfile in the benches, so a
+# `require` or a setmetatable in it is a load-time failure nothing else catches.
+CORE="42/media/lua/shared/CeroSec/OS 42/media/lua/shared/CeroSec/CeroSecContent.lua"
 status=0
 
 echo "== luac5.1 -p on every Lua file"
@@ -23,9 +28,22 @@ for f in $(find 42/media/lua tests -name '*.lua' | sort); do
 done
 
 # forbid <extended regex> <what it is>
+#
+# $CORE is a LIST of paths and is deliberately left unquoted, and grep's exit
+# status is read rather than only its output: quoted, the whole list was one path
+# name, grep said "No such file or directory" on stderr -- and this function
+# printed "ok" for it, because an empty result read as "nothing forbidden found".
+# That is an assertion going green for having looked at nothing. So a grep that
+# ERRORS (status 2) is a failure of the check, not a pass.
 forbid() {
-	hits=$(grep -rnE "$1" "$CORE")
-	if [ -n "$hits" ]; then
+	# shellcheck disable=SC2086
+	hits=$(grep -rnE "$1" $CORE 2>&1)
+	rc=$?
+	if [ "$rc" -gt 1 ]; then
+		echo "  FAIL $2: the search itself failed"
+		echo "$hits" | sed 's/^/       /'
+		status=1
+	elif [ -n "$hits" ]; then
 		echo "  FAIL $2"
 		echo "$hits" | sed 's/^/       /'
 		status=1

@@ -45,6 +45,29 @@ The suites, in the order they run:
 - `os_test.lua` section 21r is the engine's own half of that: a `ro` entry from a
   fake caller that would happily have carried the write out, so the refusal is
   proved to be the engine's and not the server's.
+- `content_test.lua` — the world content, and it is a bench about **loot that can
+  break a save**. Every profile is built on a fresh machine, every one of them is
+  handed to the engine's own boot gate afterwards, and one of them is built on a
+  machine already filled to its node ceiling to prove a profile is *trimmed* rather
+  than forced. Every script the mod ships is **run** — through the real step
+  machine, under its budget, with its recorded arguments and again with none, and
+  with exactly the devices it declared it needs stubbed and nothing else. Every
+  README is held to naming every file beside it **and only** files that are on the
+  disk, every generated login is pushed through a `passwd` line and read back, and
+  two machines generated from one secret are compared byte for byte while a second
+  secret must differ. See [CONTENT.md](CONTENT.md).
+- `window_test.lua` holds the halves of that only the world can answer: that a
+  machine is prefilled at its **first** power-on and never when it already had a
+  state; that the papers in a drawer and in a pocket carry a password the machine
+  then accepts — fired through the engine's own `Events.OnFillContainer` with the
+  engine's own three arguments; that **a paper written from a drawer in one room
+  opens the machine in another room of the same building**, which is the regression
+  a review caught in this wave; that the event's third argument being *not* a
+  container is never read (the bench hands over an object that raises on any field
+  read); and that `setModDataKeys` really names both persisted fields while the
+  client sync list names neither — the one line the whole wave rests on, and until
+  it was written down there the suite stayed green with the save persisting nothing
+  at all.
 - `manual_test.lua` — the documentation set against the engine it describes: the
   shape of every volume (8..13 chapters, 3..14 pages each, 50..84 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every

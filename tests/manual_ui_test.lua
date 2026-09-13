@@ -2289,10 +2289,12 @@ do
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
 	-- The module, the three books, the four disks, the four hardware modules, the book
-	-- that teaches them, and the RETIRED single book -- which is declared and is not
-	-- loot, because dropping an item block deletes every copy of it in every save.
-	eq("fourteen blocks: the module, the three books, the retired one, the four "
-		.. "disks, the four hardware modules and the Field Wiring Guide", opens, 14)
+	-- that teaches them, the RETIRED single book -- which is declared and is not
+	-- loot, because dropping an item block deletes every copy of it in every save --
+	-- and, since the content wave, the sticky note a password is written on.
+	eq("fifteen blocks: the module, the three books, the retired one, the four "
+		.. "disks, the four hardware modules, the Field Wiring Guide and the note",
+		opens, 15)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)

@@ -38,8 +38,17 @@ _G.ZombRand = function() return 0 end
 -- grid question is asked in: ten days here, with the power set to go on day a
 -- hundred (__sandbox below), so the default world has a dial tone in it. The
 -- two benches that move this clock put it back the way they found it.
+--
+-- startYear/startMonth/startDay are the save's FIRST day and are the same
+-- zero-based encoding: GameTime's constructor sets `day` and `startDay` from one
+-- literal and `month` and `startMonth` from another (javap -c zombie.GameTime),
+-- so 6 and 8 here are July the 9th, 1993, which is where the default save starts
+-- and where the log on a prefilled machine is dated. The world is ten days old
+-- above and two days past the start here, which is deliberately not the same
+-- number: a bench where the current date and the start date are one date cannot
+-- tell the two getters apart.
 _G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32,
-	ageHours = 240 }
+	ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 _G.getGameTime = function()
 	local t = _G.__gameTime
 	if t == nil then return nil end
@@ -52,6 +61,9 @@ _G.getGameTime = function()
 		-- How long the world has been running, which is the other half of the
 		-- grid question. Vanilla's own number, in hours and not days.
 		getWorldAgeHours = function() return t.ageHours or 0 end,
+		getStartYear = function() return t.startYear end,
+		getStartMonth = function() return t.startMonth end,
+		getStartDay = function() return t.startDay end,
 	}
 end
 -- The county's power, which is what the telephone exchange runs on. These are
@@ -84,7 +96,17 @@ end
 -- was, where a door is a device because it is a door. Those benches are the
 -- control for the option being off, and they are not to be touched. The hardware
 -- section at the bottom sets it true for itself and puts it back.
-_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+--
+-- PrefilledMachines is FALSE here and true in the game, for exactly the same
+-- reason and it is worth spelling out: every bench in this file was written
+-- against a machine that comes up with two open accounts and an empty disk, which
+-- is what turning the option off IS. Left on, three hundred machines in this file
+-- would come up with somebody's accounts and somebody's files on them -- the suite
+-- happens to stay green, but every one of those benches would then be asking its
+-- question of a machine nobody wrote it for. The content section sets it true for
+-- itself and puts it back, and that section is where the option being ON is
+-- proved.
+_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 _G.getText = function(key) return key end
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
@@ -524,6 +546,11 @@ local LUA = "42/media/lua/"
 local FILES = {
 	"shared/CeroSec/CeroSecDefs.lua",
 	"shared/CeroSec/CeroSecModules.lua",
+	-- The world content: the catalogue and the generators the server prefills a
+	-- machine from. Loaded before the OS core, which is the order the GAME loads
+	-- them in (shared/CeroSec/ ahead of shared/CeroSec/OS/) and the whole reason
+	-- that file may not touch CeroSecOS at its top level.
+	"shared/CeroSec/CeroSecContent.lua",
 	-- The telephone directory's generator: pure Lua, and the server's own
 	-- enumeration (CeroSecNet.directory) names it.
 	"shared/CeroSec/CeroSecPhonebook.lua",
@@ -549,6 +576,11 @@ local FILES = {
 	"server/CeroSec/SCeroSecDebug.lua",
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",
+	-- The papers a password is found on. Loaded for real, and it REGISTERS on
+	-- Events.OnFillContainer at its top level -- the fake Events above keeps
+	-- handlers and can fire them, which is how the notes section below asks the
+	-- game's own question.
+	"server/CeroSec/CeroSecNotes.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
 	-- The client's mirror and the glow on it. Loaded for real, and not stubbed like
 	-- the CCeroSecSystem the window benches talk to: the light is the one thing in
@@ -2070,7 +2102,8 @@ do
 
 	-- And it FOLLOWS the game: a machine whose clock never moved would pass the
 	-- line above and fail this one.
-	_G.__gameTime = { year = 1993, month = 11, day = 24, hour = 6, minutes = 5 }
+	_G.__gameTime = { year = 1993, month = 11, day = 24, hour = 6, minutes = 5,
+		ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 	bench.enter("date")
 	bench.frame()
 	check("and moves with it", bench.painted("Sat Dec 25 06:05:00 1993"))
@@ -2091,7 +2124,11 @@ do
 	check("df names the drive", bench.painted("hda"))
 	check("and its size", bench.painted(tostring(CeroSecOS.DISK_BYTES)))
 
-	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32 }
+	-- Put back exactly as it was found, START DATE INCLUDED: a section that restored
+	-- only the current date left every section after it running on a game that would
+	-- not say when the save began, and a prefilled machine with no log on it.
+	_G.__gameTime = { year = 1993, month = 6, day = 7, hour = 14, minutes = 32,
+		ageHours = 240, startYear = 1993, startMonth = 6, startDay = 8 }
 end
 
 --
@@ -5052,6 +5089,12 @@ local function fakeBuildingDef(b)
 		getY2 = function() return b.y + b.h end,
 	}
 end
+-- Kept in a local as well as in the global, because one section below sets
+-- _G.getWorld to NIL on purpose -- "a machine whose chunk is away" -- and every
+-- section after it would otherwise be running on a map with no zones on it
+-- without saying so. A section that wants the map back says `_G.getWorld =
+-- zonedWorld` and means it.
+local zonedWorld
 _G.getWorld = function()
 	return { getMetaGrid = function()
 		return {
@@ -5093,6 +5136,8 @@ _G.getWorld = function()
 	end }
 end
 
+zonedWorld = _G.getWorld
+
 local function newNet()
 	CeroSecJobs.machines = {}
 	local system = SCeroSecSystem:new()
@@ -5114,7 +5159,12 @@ local function newNet()
 	-- of a rectangular building with no gaps -- close enough for a bench that only
 	-- reads the number back out, and NOT the number the premises rule uses (that one
 	-- derives the footprint from the corners, the way getW/getH do).
-	local function buildingAt(bx, by, w, h, rooms)
+	-- `names` is what the building's rooms are CALLED, which is a different fact
+	-- from how many there are: the world content asks a building for its rooms
+	-- (CeroSecNet.premisesRooms -> BuildingDef.getRooms -> RoomDef.getName) because
+	-- the profile of a premises has to be the same answer from every square of it,
+	-- and a def that would not list them is its own case (nil below).
+	local function buildingAt(bx, by, w, h, rooms, names)
 		w, h, rooms = w or 10, h or 10, rooms or 3
 		local def = {
 			getX = function() return bx end,
@@ -5124,6 +5174,14 @@ local function newNet()
 			getArea = function() return w * h end,
 			getRoomsNumber = function() return rooms end,
 		}
+		if names ~= nil then
+			local defs = {}
+			for i = 1, #names do
+				local name = names[i]
+				defs[i] = { getName = function() return name end }
+			end
+			def.getRooms = function() return javaList(defs) end
+		end
 		return { getDef = function() return def end }
 	end
 
@@ -7467,7 +7525,7 @@ do
 	-- CeroSec group at all is a world where the hardware IS required
 	-- (CeroSecModules.required fails closed), and every device bench after this
 	-- one is about the world with the option off.
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 	_G.__gameTime.ageHours = 0
 end
 
@@ -10141,7 +10199,7 @@ do
 	end
 
 	_G.__world = nil
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
 -- The control, on a world where nothing at all is wired: the option off is the
@@ -10152,7 +10210,7 @@ end
 do
 	local kit = mockupWorld()
 	_G.__world = kit.world
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 
 	local bench = newBench()
 	bench.login("admin")
@@ -10194,7 +10252,7 @@ do
 	check("nor of lights", not bench.painted("office"))
 
 	-- The same machine, the same second, with the group there and the option off.
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 	bench.enter("dev")
 	bench.frame()
 	check("and the option said out loud brings the building back",
@@ -10386,7 +10444,7 @@ do
 	eq("and the strike beside it did not", fittedOn(kit.front, "strike"), true)
 
 	_G.__world = nil
-	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
 
@@ -12049,5 +12107,511 @@ do
 	check("both lines are on the glass", bench.painted("one") and bench.painted("two"))
 end
 
+--
+-- WHAT IS ALREADY ON A MACHINE NOBODY HAS SWITCHED ON
+--
+-- The world half of the content wave. What each profile PUTS on a machine is
+-- tests/content_test.lua's -- it builds every one of them and runs every script --
+-- and this is the other half, which only the world can answer:
+--
+--   * the profile comes off the PREMISES the machine stands in, by the same rule
+--     the telephone line does;
+--   * it happens at the FIRST power-on and at no other moment, and never to a
+--     machine that already had a state;
+--   * the option off is the bare machine this mod shipped with.
+--
+-- The option is ON for this section and put back afterwards, which is the shape
+-- the hardware sections use.
+--
+do
+	local net = newNet()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+	-- The map back: a section above took getWorld away to prove what a machine with
+	-- no chunk says, and a premises is a question about zones.
+	_G.getWorld = zonedWorld
+	-- A shop inside the office building, strictly smaller than its footprint, which
+	-- is what makes it a premises at all.
+	_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+
+	-- net.here stands at 10,10 inside that zone. It has never been switched on in
+	-- this bench, so this call is its first.
+	local machine = net.machine(10, 10, 0, net.office)
+	check("the machine starts with no state at all", machine.os == nil)
+	machine:turnOn()
+	local state = machine:osState()
+	check("and switching it on gives it one", state ~= nil)
+
+	-- The office profile: more accounts than the two a bare machine ships with, and
+	-- root is no longer open.
+	local users, order = CeroSecOS.readUsers(state)
+	check("a machine in an office comes up with people on it (" .. #order .. ")",
+		#order > 2)
+	check("and root is not open any more",
+		not CeroSecOS.checkPassword(users.root, ""))
+	check("its name says which premises it is", state.hostname ~= "ksp-7t-jc"
+		and string.find(state.hostname, "^acct%-") ~= nil)
+	eq("and /etc/hostname agrees with it",
+		CeroSecOS.systemNode(state, CeroSecOS.HOSTNAME_PATH).data, state.hostname)
+	check("the premises name is on the record",
+		CeroSecOS.premisesName(state) == "FrontOffice")
+	check("there is a week of log on it",
+		CeroSecOS.systemNode(state, CeroSecOS.LOG_PATH .. "/messages") ~= nil)
+	check("and the machine boots", (CeroSecOS.validate(state)))
+
+	-- THE PASSWORD A PLAYER WILL FIND. Derived from the premises and the save's own
+	-- secret, by the same two calls the paper in the drawer makes -- so this is the
+	-- assertion that the note and the machine agree, made on a real machine in a
+	-- real building.
+	local b1, b2 = CeroSecNet.premisesOf(machine)
+	local note = CeroSecContent.password(net.system:secret(),
+		CeroSecContent.rootKey(b1, b2))
+	check("the password on the paper logs root in",
+		CeroSecOS.checkPassword(CeroSecOS.readUsers(state).root, note))
+
+	-- AND IT HAPPENS ONCE. Switching the machine off and on again is not a second
+	-- first boot: the accounts, the files and the hostname are the ones already
+	-- there.
+	local before = CeroSecOS.systemNode(state, CeroSecOS.PASSWD_PATH).data
+	machine:turnOff()
+	machine:turnOn()
+	eq("switching it off and on again does not prefill it twice",
+		CeroSecOS.systemNode(machine:osState(), CeroSecOS.PASSWD_PATH).data, before)
+
+	-- A MACHINE SOMEBODY HAS ALREADY USED, which is what every computer in an
+	-- existing save is: a state is put on it by hand -- an old machine, two open
+	-- accounts, a file of somebody's -- and it comes up untouched.
+	do
+		local old = net.machine(11, 10, 0, net.office)
+		old.os = CeroSecOS.newState("ksp-b-a")
+		CeroSecOS.writeFile(old.os, CeroSecOS.rootSession(), "/home/admin/mine.txt",
+			"my work", false, nil)
+		local was = CeroSecOS.systemNode(old.os, CeroSecOS.PASSWD_PATH).data
+		old:turnOn()
+		local now = old:osState()
+		eq("an existing machine keeps its accounts",
+			CeroSecOS.systemNode(now, CeroSecOS.PASSWD_PATH).data, was)
+		eq("and its hostname", now.hostname, "ksp-b-a")
+		check("and the file somebody wrote on it",
+			CeroSecOS.systemNode(now, "/home/admin/mine.txt") ~= nil)
+		check("and root is still open", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(now).root, ""))
+	end
+
+	-- A MACHINE IN NO BUILDING AT ALL, which is a player-built base: bare, exactly
+	-- as it has no address and no telephone line.
+	do
+		local outside = net.machine(5000, 5000, 0, nil)
+		outside:turnOn()
+		local bare = outside:osState()
+		local _, ord = CeroSecOS.readUsers(bare)
+		eq("a machine in no building comes up bare", #ord, 2)
+		check("with root open", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(bare).root, ""))
+	end
+
+	-- THE OPTION OFF, which is the control and is the world this mod shipped with.
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+		local plain = net.machine(12, 10, 0, net.office)
+		plain:turnOn()
+		local bare = plain:osState()
+		local _, ord = CeroSecOS.readUsers(bare)
+		eq("with the option off a machine comes up with two accounts", #ord, 2)
+		check("root open", CeroSecOS.checkPassword(CeroSecOS.readUsers(bare).root, ""))
+		eq("and the name the coordinates give it", bare.hostname,
+			CeroSec.hostnameFor(12, 10))
+		eq("and no log", CeroSecOS.systemNode(bare, CeroSecOS.LOG_PATH .. "/messages"),
+			nil)
+	end
+
+	_G.__zones = {}
+	_G.getWorld = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+--
+-- THE PAPERS A PASSWORD IS FOUND ON
+--
+-- The other half of the same wave: the note in the drawer and the note in a dead
+-- man's pocket, both fired through the engine's own event with the engine's own
+-- three arguments (Events.OnFillContainer, LootLog.lua:7).
+--
+-- The one thing every assertion in here is really about: the paper and the machine
+-- AGREE. They never talk to each other -- both derive the password out of the
+-- save's secret and the premises -- so the note is written here, the machine is
+-- switched on afterwards, and the password off the paper is typed at it.
+--
+do
+	local net = newNet()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+	_G.getWorld = zonedWorld
+	_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+	-- The handler reaches the system the way every server-wide hook in this mod
+	-- does: through the class's own instance, which vanilla's RegisterSystemClass
+	-- sets and this bench sets by hand.
+	local hadInstance = SCeroSecSystem.instance
+	SCeroSecSystem.instance = net.system
+
+	-- A container the game is filling: the three things the handler touches, and
+	-- nothing else. AddItem answers an item the way ItemContainer.AddItem(String)
+	-- does -- javap: it answers the InventoryItem, or null.
+	local function newContainer(square, full)
+		local box = { items = {} }
+		box.getSourceGrid = function() return square end
+		box.AddItem = function(_, fullType)
+			if full then return nil end
+			local item = { type = fullType, name = nil, custom = false, synced = 0 }
+			item.getFullType = function() return item.type end
+			item.setName = function(_, text) item.name = text end
+			item.getName = function() return item.name end
+			item.setCustomName = function(_, flag) item.custom = flag end
+			item.isCustomName = function() return item.custom end
+			item.syncItemFields = function() item.synced = item.synced + 1 end
+			box.items[#box.items + 1] = item
+			return item
+		end
+		return box
+	end
+
+	local inside = net.machine(10, 10, 0, net.office):getSquare()
+	local street = net.machine(5000, 5000, 0, nil):getSquare()
+
+	-- A DRAWER IN THE OFFICE.
+	local desk = newContainer(inside)
+	Events.OnFillContainer.trigger("office", "desk", desk)
+	eq("a desk in an office gets one paper", #desk.items, 1)
+	local note = desk.items[1]
+	eq("and it is the note item", note:getFullType(), CeroSecNotes.ITEM)
+	check("with the password written on its name (" .. tostring(note:getName()) .. ")",
+		string.find(note:getName(), "^Sticky note: root / %w+$") ~= nil)
+	check("and the name is a custom one, or the translated name would win",
+		note:isCustomName())
+	eq("and it was sent", note.synced, 1)
+
+	-- ONE PER PREMISES. Every other drawer in that office is empty.
+	local second = newContainer(inside)
+	Events.OnFillContainer.trigger("office", "desk", second)
+	eq("the second drawer of the same office has none", #second.items, 0)
+	local cabinet = newContainer(inside)
+	Events.OnFillContainer.trigger("office", "filingcabinet", cabinet)
+	eq("nor the filing cabinet", #cabinet.items, 0)
+
+	-- AND THE MACHINE AGREES WITH IT. Switched on AFTER the paper was written,
+	-- which is the order a survivor meets them in.
+	local machine = net.machine(11, 11, 0, net.office)
+	machine:turnOn()
+	local typed = string.match(note:getName(), "/ (%w+)$")
+	check("the password off the paper logs root in at the machine",
+		CeroSecOS.checkPassword(CeroSecOS.readUsers(machine:osState()).root, typed))
+
+	-- NOTHING OUTSIDE A BUILDING.
+	do
+		local outdoors = newContainer(street)
+		Events.OnFillContainer.trigger("", "counter", outdoors)
+		eq("a counter in no building gets nothing", #outdoors.items, 0)
+	end
+
+	-- AND NOT IN A FRIDGE. A password goes in the drawer you open every morning.
+	do
+		local net2 = newNet()
+		SCeroSecSystem.instance = net2.system
+		local sq = net2.machine(10, 10, 0, net2.office):getSquare()
+		local fridge = newContainer(sq)
+		Events.OnFillContainer.trigger("office", "fridge", fridge)
+		eq("a fridge in the same office gets nothing", #fridge.items, 0)
+		-- And the premises is NOT marked by the fridge: the desk still gets its note.
+		local drawer = newContainer(sq)
+		Events.OnFillContainer.trigger("office", "desk", drawer)
+		eq("while the desk beside it still gets one", #drawer.items, 1)
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- A DRAWER THE GAME COULD NOT PUT ANYTHING IN. The premises is left unmarked,
+	-- so the next drawer carries the note instead of the password being lost.
+	do
+		local net3 = newNet()
+		SCeroSecSystem.instance = net3.system
+		local sq = net3.machine(10, 10, 0, net3.office):getSquare()
+		local crammed = newContainer(sq, true)
+		Events.OnFillContainer.trigger("office", "desk", crammed)
+		eq("a full drawer takes nothing", #crammed.items, 0)
+		local next2 = newContainer(sq)
+		Events.OnFillContainer.trigger("office", "desk", next2)
+		eq("and the next drawer carries the note", #next2.items, 1)
+		SCeroSecSystem.instance = net.system
+	end
+
+	--
+	-- A DEAD MAN'S POCKET
+	--
+	-- The engine fires the same event with the room name "Zombie" and the
+	-- container type "inventorymale" or "inventoryfemale" (ItemPickerJava, offsets
+	-- 47, 60 and 433), and returns -- a body never sees the room distributions.
+	--
+	do
+		local net4 = newNet()
+		SCeroSecSystem.instance = net4.system
+		local sq = net4.machine(10, 10, 0, net4.office):getSquare()
+
+		-- ZombRand answers 0 for everything in this file, so every roll comes in:
+		-- one body, one paper, which is what this first assertion is about.
+		local pockets = newContainer(sq)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", pockets)
+		eq("a body in the office carries a paper", #pockets.items, 1)
+		local paper = pockets.items[1]
+		check("with a login and a password on it (" .. tostring(paper:getName()) .. ")",
+			string.find(paper:getName(), "^Note: %w+ / %w+$") ~= nil)
+		check("and it is NOT root's", string.find(paper:getName(), "root", 1, true) == nil)
+
+		-- AND IT LOGS THAT ACCOUNT IN, on the machine in the same office.
+		local box = net4.machine(12, 12, 0, net4.office)
+		box:turnOn()
+		local who, word = string.match(paper:getName(), "^Note: (%w+) / (%w+)$")
+		local user = CeroSecOS.readUsers(box:osState())[who]
+		check("the login on the paper is an account on the machine (" .. tostring(who)
+			.. ")", user ~= nil)
+		check("and the password beside it logs him in",
+			CeroSecOS.checkPassword(user, word))
+		check("and he is not an administrator's account by accident",
+			not CeroSecOS.checkPassword(CeroSecOS.readUsers(box:osState()).root, word))
+
+		-- A BODY IN THE STREET carries nothing: no building, no premises, no staff.
+		local outside = newContainer(street)
+		Events.OnFillContainer.trigger("Zombie", "inventoryfemale", outside)
+		eq("a body in the street carries nothing", #outside.items, 0)
+
+		-- ONE IN TWENTY. ZombRand is replaced for this one measurement -- the file's
+		-- own always answers 0, which is every roll coming in -- and two hundred
+		-- bodies are searched. A paper on every corpse is a paper nobody reads.
+		local hadRand = _G.ZombRand
+		local seed = 0
+		_G.ZombRand = function(n)
+			-- A cycle and not a random number: a bench whose rate depends on a
+			-- generator is a bench that is red on somebody else's machine.
+			seed = seed + 1
+			return math.fmod(seed * 7, math.floor(n))
+		end
+		local carried = 0
+		for i = 1, 200 do
+			local body = newContainer(sq)
+			Events.OnFillContainer.trigger("Zombie", "inventorymale", body)
+			carried = carried + #body.items
+		end
+		_G.ZombRand = hadRand
+		check("about one body in twenty carries a paper (" .. carried .. " of 200)",
+			carried >= 4 and carried <= 20)
+		-- And a body does not consume the premises' desk note: the two are different
+		-- papers and only the desk one is once-per-premises.
+		local drawer2 = newContainer(sq)
+		Events.OnFillContainer.trigger("office", "desk", drawer2)
+		eq("and the drawer still has root's note waiting", #drawer2.items, 1)
+		SCeroSecSystem.instance = net.system
+	end
+
+	--
+	-- THE HOUSE WITH A STUDY IN IT
+	--
+	-- The regression, and it is the one the whole design promises cannot happen. A
+	-- profile used to be decided from the ROOM THE CALLER STOOD IN: the desk in the
+	-- study answered "office" -- root password, so a note went into the drawer --
+	-- and the computer in the living room of the SAME HOUSE answered "residential",
+	-- which has none. The paper named a password nothing in the county had.
+	--
+	-- Both sides ask the BUILDING now (CeroSecNet.premisesRooms), so this asks the
+	-- only question that matters: the paper is written from a drawer in one room and
+	-- typed at a machine in another.
+	--
+	do
+		local net7 = newNet()
+		SCeroSecSystem.instance = net7.system
+		_G.__zones = {}
+		-- A house with four rooms, one of which the map calls a study. No zone on it
+		-- at all, which is what the shipped map gives a house.
+		local home = net7.buildingAt(2000, 2000, 12, 12, 4,
+			{ "kitchen", "livingroom", "bedroom", "office" })
+		-- The drawer is in the STUDY; the computer is in the LIVING ROOM. Two
+		-- different rooms of one building, which is the whole point.
+		local study = net7.machine(2004, 2004, 0, home)
+		local sitting = net7.machine(2008, 2008, 0, home)
+		study:getSquare().getRoom = function()
+			return { getName = function() return "office" end }
+		end
+		sitting:getSquare().getRoom = function()
+			return { getName = function() return "livingroom" end }
+		end
+
+		local drawer = newContainer(study:getSquare())
+		Events.OnFillContainer.trigger("office", "desk", drawer)
+		eq("a study in a house gets a paper", #drawer.items, 1)
+		local word = string.match(drawer.items[1]:getName(), "/ (%w+)$")
+		check("and it names a password", word ~= nil)
+
+		-- AND IT OPENS THE MACHINE IN THE LIVING ROOM.
+		sitting:turnOn()
+		local root = CeroSecOS.readUsers(sitting:osState()).root
+		check("the paper from the study opens the machine in the living room",
+			CeroSecOS.checkPassword(root, word))
+		check("which is not an open machine", not CeroSecOS.checkPassword(root, ""))
+
+		-- And the machine in the study itself, of course.
+		study:turnOn()
+		check("and the machine in the study too", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(study:osState()).root, word))
+
+		-- AND THE OTHER SIDE OF THE SAME RULE: a drawer in the KITCHEN of a house
+		-- that has a study somewhere in it still gets the paper, because what decides
+		-- is the BUILDING and not the room the drawer stands in. This is the case
+		-- that catches the notes half of the old bug -- the drawer's own room says
+		-- "kitchen", which on its own is a house with no root password at all.
+		local other = net7.buildingAt(2500, 2500, 12, 12, 4,
+			{ "kitchen", "livingroom", "bedroom", "office" })
+		local kitchenDesk = net7.machine(2504, 2504, 0, other)
+		kitchenDesk:getSquare().getRoom = function()
+			return { getName = function() return "kitchen" end }
+		end
+		local kdrawer2 = newContainer(kitchenDesk:getSquare())
+		Events.OnFillContainer.trigger("kitchen", "counter", kdrawer2)
+		eq("a kitchen drawer in a house with a study gets the paper", #kdrawer2.items, 1)
+		local kword = string.match(kdrawer2.items[1]:getName(), "/ (%w+)$")
+		kitchenDesk:turnOn()
+		check("and it opens the machine standing in that kitchen",
+			CeroSecOS.checkPassword(CeroSecOS.readUsers(kitchenDesk:osState()).root, kword))
+
+		-- A house with NO study is a house to everybody in it: no paper anywhere.
+		local plain = net7.buildingAt(3000, 3000, 12, 12, 3,
+			{ "kitchen", "livingroom", "bedroom" })
+		local kitchen = net7.machine(3004, 3004, 0, plain)
+		kitchen:getSquare().getRoom = function()
+			return { getName = function() return "kitchen" end }
+		end
+		local kdrawer = newContainer(kitchen:getSquare())
+		Events.OnFillContainer.trigger("kitchen", "counter", kdrawer)
+		eq("a house with no study in it gets no paper", #kdrawer.items, 0)
+		kitchen:turnOn()
+		check("and its machine is open", CeroSecOS.checkPassword(
+			CeroSecOS.readUsers(kitchen:osState()).root, ""))
+		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- A PREMISES WHOSE PROFILE IS STILL EMPTY -- a bank, until wave 7b writes it --
+	-- has no machine content and therefore nothing to write on a paper.
+	do
+		local net5 = newNet()
+		SCeroSecSystem.instance = net5.system
+		_G.__zones = { { name = "Bank", x = 8, y = 8, w = 6, h = 6 } }
+		local sq = net5.machine(10, 10, 0, net5.office):getSquare()
+		local drawer = newContainer(sq)
+		Events.OnFillContainer.trigger("bank", "desk", drawer)
+		eq("a premises nobody has written a profile for gets no paper", #drawer.items, 0)
+		local body = newContainer(sq)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", body)
+		eq("and neither do the dead in it", #body.items, 0)
+		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- THE THIRD ARGUMENT IS NOT ALWAYS A CONTAINER. ItemPickerJava fires this event
+	-- from ten places, and four of them hand over an ItemPickerContainer -- a
+	-- distribution table, not a container at all (offset 1207, room name
+	-- "Container"). The handler asks the engine's own instanceof BEFORE it touches
+	-- the thing, and that is what this proves: the object here SCREAMS if anything
+	-- reads a field off it, so the bench is red on the touch and not merely on the
+	-- outcome.
+	--
+	-- Written the obvious way first -- a plain table and "no note was written" --
+	-- this bench stayed green with the gate deleted, because the container-type gate
+	-- refuses a bag's type anyway. An assertion that passes for the wrong reason is
+	-- not an assertion.
+	do
+		local net8 = newNet()
+		SCeroSecSystem.instance = net8.system
+		local touched = nil
+		local notAContainer = setmetatable({}, { __index = function(_, key)
+			touched = tostring(key)
+			error("the handler read '" .. touched .. "' off an ItemPickerContainer", 0)
+		end })
+		local hadInstanceof = _G.instanceof
+		_G.instanceof = function(object, class)
+			if object == notAContainer then return false end
+			return hadInstanceof(object, class)
+		end
+		local ok, why = pcall(function()
+			Events.OnFillContainer.trigger("Container", "Base.Bag_Schoolbag", notAContainer)
+		end)
+		_G.instanceof = hadInstanceof
+		check("a thing that is not a container is never read: " .. tostring(why), ok)
+		eq("not one field of it", touched, nil)
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- A CORPSE'S SECOND ARGUMENT IS AN OUTFIT NAME and not "inventorymale": at
+	-- offsets 106-133 a container whose parent is an IsoDeadBody has its type
+	-- replaced by getOutfitName(). The handler keys off the FIRST argument, and this
+	-- is what says so.
+	do
+		local net9 = newNet()
+		SCeroSecSystem.instance = net9.system
+		local sq = net9.machine(10, 10, 0, net9.office):getSquare()
+		local pockets = newContainer(sq)
+		Events.OnFillContainer.trigger("Zombie", "OfficeWorker", pockets)
+		eq("a corpse whose type is an outfit name still carries a paper",
+			#pockets.items, 1)
+		check("and it is a login and not root",
+			string.find(pockets.items[1]:getName(), "^Note: %w+ / %w+$") ~= nil
+				and string.find(pockets.items[1]:getName(), "root", 1, true) == nil)
+		SCeroSecSystem.instance = net.system
+	end
+
+	-- THE SAVE'S OWN KEYS. The one line this whole wave rests on, and until it was
+	-- written down here nothing in the suite could see it: setModDataKeys(nil) --
+	-- neither the secret nor the notes persisted -- left every bench green. What
+	-- that regression costs is a re-rolled secret on every reload, so every password
+	-- in the county changes and every paper already lying in the world is wrong for
+	-- ever.
+	--
+	-- The recorder is the fake Java system above, which keeps what the MOD passed
+	-- (SGlobalObjectSystem.new in this file calls initSystem, the way vanilla's own
+	-- new does at Map/SGlobalObjectSystem.lua:24).
+	do
+		local saved = net.system.system.modDataKeys
+		check("the system names the fields it saves", type(saved) == "table")
+		local seen = {}
+		for i = 1, #saved do seen[saved[i]] = true end
+		check("the per-save secret is saved", seen.seed == true)
+		check("and so is which premises already has its paper", seen.notes == true)
+
+		-- AND THE SECRET IS NEVER SENT TO A CLIENT. It is what every password in the
+		-- county derives from; the sync list is the client channel.
+		local sync = net.system.system.syncKeys
+		check("the client sync list is named", type(sync) == "table")
+		for i = 1, #sync do
+			check("the client is not sent the secret (" .. sync[i] .. ")",
+				sync[i] ~= "seed")
+			check("nor the paper bookkeeping (" .. sync[i] .. ")", sync[i] ~= "notes")
+		end
+		eq("and the system tells a joining client nothing at all",
+			net.system:getInitialStateForClient(), nil)
+	end
+
+	-- THE OPTION OFF is no papers at all, which is the world this mod shipped with.
+	do
+		local net6 = newNet()
+		SCeroSecSystem.instance = net6.system
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+		local sq = net6.machine(10, 10, 0, net6.office):getSquare()
+		local drawer = newContainer(sq)
+		Events.OnFillContainer.trigger("office", "desk", drawer)
+		eq("with the option off a desk gets nothing", #drawer.items, 0)
+		local body = newContainer(sq)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", body)
+		eq("and a body carries nothing", #body.items, 0)
+	end
+
+	SCeroSecSystem.instance = hadInstance
+	_G.__zones = {}
+	_G.getWorld = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
 
 print("window_test: " .. count .. " checks passed")

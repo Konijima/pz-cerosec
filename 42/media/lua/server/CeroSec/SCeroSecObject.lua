@@ -1,6 +1,7 @@
 if isClient() then return end
 
 require "Map/SGlobalObject"
+require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
 require "CeroSec/OS/CeroSecOSPath"
@@ -546,6 +547,75 @@ end
 -- Toggle
 --
 
+--
+-- WHAT IS ALREADY ON A MACHINE NOBODY HAS EVER SWITCHED ON
+--
+-- Called from turnOn and from nowhere else, for a machine whose state was made a
+-- moment ago and never for one that already had one: a computer somebody has used
+-- is HIS, and a wave that prefilled an existing machine would be a wave that wrote
+-- over somebody's accounts and somebody's files. The test is the one thing that
+-- cannot lie about it -- whether self.os was a table before osState was asked --
+-- and it is made in turnOn, before the call.
+--
+-- ONE CONSEQUENCE, and it is chosen rather than overlooked. resetForPlacement asks
+-- osState too, so a computer somebody PICKS UP and PUTS DOWN has a state from that
+-- moment on and comes up bare when it is finally switched on -- even if nobody ever
+-- typed at it. That is the right way round: the test is "has this machine got a
+-- filesystem", which is a fact, and the alternative is a flag saying "has anybody
+-- really used it", which is a second opinion about the same thing and the sort of
+-- thing that goes wrong in a save. The cost is that carrying an untouched office
+-- machine out of its building loses it its profile -- and the paper in the drawer
+-- is then a paper for a machine that is not there any more, which is a true thing
+-- about a looted office.
+--
+-- Here and not in a migration step, for the reason the address is not in one
+-- either: this needs the WORLD. Which premises the machine stands in is a question
+-- about a square, and most machines in a save have no chunk loaded. turnOn is the
+-- moment the chunk is certainly there, because the power check has just proved it.
+--
+-- The profile id, or nil for a machine left bare. The password it derived is
+-- deliberately NOT answered and never logged: the letters exist for the length of
+-- one call and the only place they are ever written is the paper in the drawer,
+-- which derives them again for itself.
+function SCeroSecObject:prefill(state)
+	if state == nil then return nil end
+	if not CeroSecContent.enabled() then return nil end
+	local system = self.luaSystem
+	if system == nil or system.secret == nil then return nil end
+
+	-- Which premises, by the one rule there is about what a premises is
+	-- (CeroSecNet.premisesOfSquare). nil is a computer in no building at all, which
+	-- is what a player-built base is: it gets a bare machine, exactly as it gets no
+	-- address and no telephone line.
+	local b1, b2, _, zone = CeroSecNet.premisesOf(self)
+	if b1 == nil then return nil end
+
+	-- And what the BUILDING's rooms are called, which is the second question and is
+	-- asked only because the first so often has no answer: the shipped map names the
+	-- shops inside a mall with zones and names a house with nothing at all.
+	--
+	-- The BUILDING's rooms and NOT this machine's own square's room, and that is not
+	-- a detail: a paper in a drawer of the same premises asks the very same question
+	-- (CeroSecNotes.onFillContainer) and the two must get one answer. Asked of the
+	-- square, a house with a study in it answered "office" to the desk in the study
+	-- and "residential" to the computer in the living room, and the note named a
+	-- password no machine had. See the head of CeroSecNet.premisesRooms.
+	local rooms = CeroSecNet.premisesRooms(self:getSquare(), zone)
+
+	local id = CeroSecContent.prefill(state, {
+		secret = system:secret(),
+		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
+		premises = zone, rooms = rooms,
+		start = system:startTime(),
+		now = CeroSecOS.clockOf(system:clockEnv()),
+	})
+	if id == nil then return nil end
+	self:mirrorOS()
+	CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
+		.. " came up prefilled as " .. id)
+	return id
+end
+
 function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
@@ -557,10 +627,19 @@ function SCeroSecObject:turnOn()
 	-- When it came up, for ruptime. Runtime state like the jobs: a server that
 	-- came back up forgets it, and ruptime counts from the restart.
 	self.upMs = getTimestampMs()
+	-- Whether there was a machine here at all a moment ago. Read BEFORE osState is
+	-- asked, because osState is what makes one: after the call there is always a
+	-- table and nothing can tell the two cases apart any more.
+	local bare = type(self.os) ~= "table"
+	local state = self:osState()
+	-- What is already on it, once in the life of the machine (see prefill above).
+	-- Before identify, so that the hostname a profile gives it is the name that
+	-- goes into /etc/hosts and onto the prompt.
+	if bare then self:prefill(state) end
 	-- Which building it stands in, and therefore its address. Here rather than at
 	-- the first command because the power check has just proved the chunk is
 	-- loaded, which is the one thing working a building out needs.
-	CeroSecNet.identify(self.luaSystem, self, self:osState())
+	CeroSecNet.identify(self.luaSystem, self, state)
 	self:apply()
 	self:playSound("CeroSecBootStart")
 	-- @reboot, which is the one crontab line that is not a time: the machine has

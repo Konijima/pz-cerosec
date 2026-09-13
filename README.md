@@ -116,6 +116,9 @@ Three lessons this codebase paid for and does not intend to relearn:
   identities, their rules and rates, and the sessions they carry.
 - [docs/SCRIPTING.md](docs/SCRIPTING.md) — the shell language, pipes, cron, job
   control, and the step machine and scheduler underneath.
+- [docs/CONTENT.md](docs/CONTENT.md) — what is already on the machines, the disks
+  and the papers: the per-save secret, the profile and disk catalogues, and where
+  a password is found.
 - [docs/DEBUG.md](docs/DEBUG.md) — the debug window: the two dev flags and the
   release gating to come, the six tabs, the protocol, what it costs the server,
   and the three things it can change.
