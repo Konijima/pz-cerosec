@@ -57,14 +57,18 @@ function SCeroSecSystem:initSystem()
 	-- stays on the server. Nothing puts it in setObjectSyncKeys, nothing puts it in
 	-- getInitialStateForClient, and a client is never told a password: it is told
 	-- the lines a machine printed, exactly as before.
-	self.system:setModDataKeys({ "seed", "notes" })
+	-- The three lists are CeroSecDefs' (CeroSec.SYSTEM_SAVE_KEYS and the two
+	-- below), not literals here: `seed` must be in this one and must never be in
+	-- the sync one, and CeroSecSelfTest.keys is what holds them to it in a real
+	-- save on the real Kahlua. A literal here is a rule nothing can read.
+	self.system:setModDataKeys(CeroSec.SYSTEM_SAVE_KEYS)
 
 	-- Fields of each GlobalObject that are saved to gos_cerosec.bin. 'os' and
 	-- 'console' are nested tables; the serializer recurses into those
 	-- (KahluaTableImpl.save). The console is saved so that a screen survives a
 	-- save and a reload the way it survives a player walking away: the machine
 	-- is what remembers, not the session.
-	self.system:setObjectModDataKeys({ 'v', 'on', 'facing', 'os', 'console' })
+	self.system:setObjectModDataKeys(CeroSec.OBJECT_SAVE_KEYS)
 
 	-- Fields sent to clients on add/update. Without this the client mirror
 	-- receives an empty table (SGlobalObjectNetwork saves only these keys).
@@ -76,7 +80,7 @@ function SCeroSecSystem:initSystem()
 	-- it sends anything. It is deliberately NOT in the saved keys above -- what is
 	-- in the drive is state.floppy's to say, and the flag is worked out again on
 	-- every load (SCeroSecObject:syncDisk).
-	self.system:setObjectSyncKeys({ 'v', 'on', 'facing', 'disk' })
+	self.system:setObjectSyncKeys(CeroSec.OBJECT_SYNC_KEYS)
 end
 
 function SCeroSecSystem:newLuaObject(globalObject)

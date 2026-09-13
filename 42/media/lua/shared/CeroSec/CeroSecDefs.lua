@@ -135,6 +135,27 @@ CeroSec.MOVABLE_DATA_KEY = "cerosec"
 CeroSec.STATE_VERSION = 1
 
 --
+-- WHAT IS KEPT AND WHAT IS TOLD
+--
+-- The three lists SCeroSecSystem:initModData hands to the engine's own setters:
+-- which fields of the system go into gos_cerosec.bin, which fields of each
+-- machine go in beside them, and which fields of a machine a CLIENT is sent on
+-- add and update. See the long note at that call site for what each engine
+-- setter does with the list.
+--
+-- They are named constants here and not literals at the call site for one reason:
+-- `seed` is the per-save secret every password in the county is derived from, it
+-- belongs in the first list and must never be in the third -- and a rule that
+-- cannot be read by anything but the eye is a rule the self-test cannot hold.
+-- CeroSecSelfTest.keys asks these three lists that question directly, on the real
+-- Kahlua in a real save, and tests/window_test.lua asserts that these very tables
+-- are what reaches the engine.
+--
+CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes" }
+CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console" }
+CeroSec.OBJECT_SYNC_KEYS = { "v", "on", "facing", "disk" }
+
+--
 -- The floppy disks
 --
 -- Four items, and the four are the same disk in four colours of shell: the

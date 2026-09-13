@@ -29,6 +29,33 @@ else
 	exit 1
 fi
 
+# The self-test's vectors are GENERATED from lua5.1, the canonical VM, and are
+# committed because the game has no lua5.1 in it. So they can go stale two ways --
+# a say() line added to CeroSecSelfTest.vectors, or an engine answer that has
+# legitimately changed -- and either way the table in the tree would be what the
+# engine USED to answer. Regenerated here into a temporary file and diffed: the
+# fix for a red is `lua5.1 tools/make-selftest-vectors.lua`, never an edit of the
+# table. (CeroSecSelfTest.run() catches the same drift from the other side, by
+# counting the vectors nothing evaluated -- two guards, because this one is only
+# run by a developer and that one is only run in a game.)
+VECTORS=42/media/lua/shared/CeroSec/CeroSecSelfTestVectors.lua
+fresh=$(mktemp)
+if ! lua5.1 tools/make-selftest-vectors.lua "$fresh" > /dev/null; then
+	echo "run: the vector generator does not run"
+	rm -f "$fresh"
+	exit 1
+fi
+if ! diff -u "$VECTORS" "$fresh" > /dev/null; then
+	echo "run: FAILED -- $VECTORS is stale"
+	echo "  (-- committed, ++ freshly generated; fix with"
+	echo "   lua5.1 tools/make-selftest-vectors.lua)"
+	diff -u --label committed "$VECTORS" --label generated "$fresh"
+	rm -f "$fresh"
+	exit 1
+fi
+rm -f "$fresh"
+echo "selftest vectors: up to date"
+
 log=$(mktemp)
 if sh tests/kahlua-check.sh > "$log" 2>&1; then
 	tail -1 "$log"
