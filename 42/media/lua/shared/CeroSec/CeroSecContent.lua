@@ -2377,13 +2377,18 @@ CeroSecContent.PROFILES.police = {
 				"Jul 09 0505",
 			}, "\n") },
 	},
+	-- NO HALT ON THE END OF THIS ONE, and that is not a detail: the dispatch log
+	-- above is a file people TYPED in, and its last line is at five in the morning
+	-- on the 9th. A machine whose /var/log/messages said it went down on the 7th
+	-- would be a machine that cannot have been typed at on the 8th, and the two
+	-- files would be calling each other liars on the same screen.
 	logs = {
 		"login: dispatch logged in",
 		"su: dispatch to root",
 		"login: dispatch logged in",
 		"login: failed login on console",
 		"login: dispatch logged in",
-		"halt: system going down",
+		"kernel: fd0 no disk in drive",
 	},
 	mail = {
 		{ to = 1, from = "the desk sergeant", subj = "the cells",
