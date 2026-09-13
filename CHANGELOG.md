@@ -8,6 +8,38 @@ date.
 
 ## Unreleased
 
+- Two computers in one office now belong to two different people. Each machine
+  has one person's files, his own command history, his own mail and his own
+  nightly job; the other staff still have accounts on it, with the same
+  passwords, and empty homes. A building with two computers is worth walking
+  twice.
+- Every note, handover, ledger, memo and list is written three ways now, and
+  which one an office keeps is that office's own for the life of the save, with
+  its own people's names in it. The office down the road tells the same kind of
+  story in another voice.
+- Every desk carries the last week of whoever sat at it. `cat .sh_history` is
+  every line he typed, and Up at the prompt walks the same list; the last few
+  are the morning it started.
+- `last` now tells you who logged in at that keyboard over the fortnight before
+  the outbreak, the owner most, with how long each session lasted.
+- `mail` holds three to six messages from the outbreak week: work, family,
+  somebody who is not coming in, the county or the radio station about the roads
+  and the cordon, a reply from CeroSec Systems support. The last one was never
+  answered.
+- `/var/log/messages` has the nights in it as well as the working days: a
+  machine that came back up at four in the morning, a login that was refused, a
+  call that got no carrier.
+- About half the machines have a page somebody was writing, `draft.txt`, that
+  stops in the middle of a sentence.
+- About one machine in four is found still logged in. It comes up at that man's
+  prompt and asks you for nothing, because he never typed `exit`. Never at a
+  military post.
+- Five kinds of premises gained a file for the member of staff who had none, so
+  no desk comes up empty.
+- Fixed: the military post's hourly door check named a program that was never
+  put on the machine, so it mailed `not found` once an hour instead of checking
+  the door.
+
 ## 0.1.0 - 2026-09-13
 
 First release. Workshop item 3801094056, Build 42 only, no dependencies.
