@@ -8,6 +8,9 @@ date.
 
 ## Unreleased
 
+- `sudo cd /root` used to do nothing and say nothing. It now answers
+  `sudo: cd: command not found`, which is what sudo says about a word the shell
+  itself is — it runs programs, and there is no program called `cd`.
 - A sum may now count with what a script was handed: `$((5 % $1))`, `$(($# * 2))`
   and `$((${n} + 1))` all work inside the double brackets, where a dollar sign in
   front of a number used to answer `bad arithmetic`.

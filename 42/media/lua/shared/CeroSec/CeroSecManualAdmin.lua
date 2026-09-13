@@ -167,17 +167,17 @@ you have decided not to have. Chapter 10 has our advice.]],
 about.
 
 It does not move you. The command runs as root in the directory you were
-standing in, and the session at the glass is untouched: sudo cd /root
-moves nobody and prints nothing, and whoami afterwards still says admin.
+standing in, and the session at the glass is untouched: whoami afterwards
+still says admin.
 
-It cannot run a word the shell itself is. cd, exit, fg, jobs and wait have
-no file in /bin for sudo to find, so:
+It cannot run a word the shell itself is. sudo runs a PROGRAM, and cd,
+exit, fg, jobs and wait have no file in /bin for it to find:
 
-  admin@ksp-04-11:~$ sudo exit
+  admin@ksp-04-11:~$ sudo cd /root
   [sudo] password for admin:
-  sudo: exit: command not found
+  sudo: cd: command not found
 
-which is what a real sudo says about one.
+which is what a real sudo says about one. sudo exit says the same.
 
 And it does not give out a root prompt -- except where you ask for one
 on purpose. sudo su is a root shell at this glass, on the same stack exit

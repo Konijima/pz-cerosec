@@ -853,7 +853,9 @@ en observant le jeu réel, pas par un banc de test.
      qu'aucun mot de passe de `bob` soit demandé, `whoami` répond `bob`, et
      `exit` ramène à `admin`. `sudo su` tout court donne `root` et son `#`.
      `sudo exit` répond `sudo: exit: command not found` et ne déconnecte
-     personne ; `sudo cd /` ne déplace toujours rien. [ ]
+     personne ; `sudo cd /` répond `sudo: cd: command not found` (et non plus
+     rien du tout), `pwd` n'a pas bougé, et `sudo jobs`, `sudo read x` et
+     `sudo type ls` répondent pareil chacun sous son nom. [ ]
 156. En mode Hôte, allumer ou éteindre un ordinateur en étant l'hôte lui-même :
      noter si l'hôte entend son propre son de bascule ou seulement si le
      client distant l'entend. [ ]

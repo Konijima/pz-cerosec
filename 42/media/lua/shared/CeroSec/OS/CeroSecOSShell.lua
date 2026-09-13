@@ -3644,12 +3644,21 @@ local function sudoRun(state, session, args, from, env, sh)
 			table.concat(own, " "), env, true)
 	end
 
-	-- `exit` is not a program and could not be one: it ends the SESSION that ran
-	-- it, and there is no /bin/exit for sudo to find. Real sudo says exactly this
-	-- about it, in its own name, because the name it looked up is the one it could
-	-- not find. (`cd` is the same kind of word and this machine has answered
-	-- `sudo cd` quietly since sudo arrived -- see the note in the manual.)
-	if name == "exit" then return false, { "sudo: exit: command not found" } end
+	-- A word the SHELL is, which is not a program and could not be one: `cd` moves
+	-- the shell that ran it and `exit` ends the session, and there is no file in
+	-- /bin for sudo to find for either. Real sudo RUNS A PROGRAM, so what it says
+	-- is that it could not find the name it was given, in its own name -- and it
+	-- says it about every one of them, which is why this asks the same question the
+	-- shell asks (isShellWord, SHELL_BUILTINS) instead of naming `exit` alone.
+	--
+	-- `sudo cd /etc` was SILENT until SYSTEM_VERSION 18: the word fell through to
+	-- commands.cd, which moved the borrowed session sudo had just made and which
+	-- died with the command. A machine that says nothing and does nothing is the
+	-- one answer a shell must never give, and the manual page already said sudo
+	-- cannot run a word the shell is.
+	if CeroSecOS.isShellWord(name) or CeroSecOS.SHELL_BUILTINS[name] then
+		return false, { "sudo: " .. name .. ": command not found" }
+	end
 
 	local fn = commands[name]
 	if fn == nil then return false, { name .. ": command not found" } end

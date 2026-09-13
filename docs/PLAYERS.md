@@ -235,7 +235,10 @@ system shipped one, and the manual's *What is not Unix here* page says so.
 standing at the keyboard to type the first. A name that is not in the file gets
 `<user> is not in the sudoers file.` The command runs with root's powers and the
 working directory you were in; the session at the glass is untouched, so
-`sudo cd /root` moves nobody and `whoami` still says `admin` afterwards. Put
+`whoami` still says `admin` afterwards. A word the shell **is** cannot be run by
+it at all — sudo runs a program, and `cd`, `exit`, `jobs`, `read` and the rest have
+no file in `/bin` for it to find, so `sudo cd /root` is
+`sudo: cd: command not found`, which is sudo's own line about one. Put
 `NOPASSWD` after a name in `/etc/sudoers` and that account is never asked.
 
 A redirect on a line that asks waits for the answer with the command:

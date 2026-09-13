@@ -633,11 +633,15 @@ not through `rootSessionFrom`, so nothing else can reach it. `su` is the only co
 that reads it (`suTarget`), the ceiling is still the console's four, and root is
 asked for nobody's password: `sudo su` is root, `sudo su bob` is bob.
 
-`sudo exit`, on the other hand, is `sudo: exit: command not found`. `exit` is a shell
-word with no file in `/bin`, so there is nothing for sudo to look up and nothing for
-it to run — which is what real sudo says about one, in its own name. (`cd` is the
-same kind of word and real sudo answers it the same way; this machine has answered
-`sudo cd` quietly since sudo arrived, the manual says so, and that is left alone.)
+`sudo exit`, on the other hand, is `sudo: exit: command not found`, and so is
+`sudo cd`, `sudo jobs`, `sudo read` and every other word the shell **is**: there is
+no file in `/bin` for sudo to look up and nothing for it to run, which is what real
+sudo says about one, in its own name. The test is the shell's own
+(`isShellWord`, `SHELL_BUILTINS`) rather than a list beside it. Until
+`SYSTEM_VERSION 18` only `exit` was named, so `sudo cd /root` fell through to
+`commands.cd`, moved the borrowed session sudo had just made, and printed nothing
+at all — a line that said nothing and did nothing, on a page of the manual that
+already said sudo cannot run a word the shell is.
 
 The editor's buffer lives in the console too (`console.edit`), with the account it
 was opened as: `sudo edit /etc/motd` opens the buffer as `root` and saves as `root`,

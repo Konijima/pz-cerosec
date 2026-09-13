@@ -2666,9 +2666,14 @@ do
 	-- The console's own session is untouched by any of it.
 	eq("still admin", admin.user, "admin")
 	eq("still where he was", admin.cwd, "/home/admin")
+	-- `sudo cd` asks for the password like any other sudo, and then answers that
+	-- there is no such command -- which is what sudo answers about a word the
+	-- shell is, the password having been the question of whether it may run
+	-- anything at all.
 	local moved = run(state, admin, "sudo cd /root")
-	eq("sudo cd succeeds", moved.control, "prompt")
-	answer(state, admin, moved.data.cont, "")
+	eq("sudo cd asks first", moved.control, "prompt")
+	local cdAnswer = answer(state, admin, moved.data.cont, "")
+	eq("then refuses the name", cdAnswer.lines[1], "sudo: cd: command not found")
 	eq("and moves nobody", admin.cwd, "/home/admin")
 
 	-- What sudo is for: a file admin cannot read.
@@ -4075,11 +4080,23 @@ do
 	-- The console's own exit still pops.
 	eq("exit pops", runAt(state, admin, "exit").control, nil)
 
-	-- `sudo cd` moves nobody: cd only ever moves the session that is logged in,
-	-- and sudo's is a copy of it.
+	-- And `sudo cd` is the same answer for the same reason, which is what it was
+	-- NOT until SYSTEM_VERSION 18: it ran the shell word against the borrowed
+	-- session and said nothing at all. Real sudo runs a program, and /bin/cd is
+	-- not one.
 	local where = admin.cwd
-	okAt(state, admin, "sudo cd /", {})
+	badAt(state, admin, "sudo cd /", "sudo: cd: command not found")
 	eq("sudo cd moved nobody", admin.cwd, where)
+	-- Every word the shell is, and not a list of its own: `type` is one that
+	-- carries a usage line and `read` is one that does not, and sudo answers for
+	-- both out of the same test.
+	badAt(state, admin, "sudo jobs", "sudo: jobs: command not found")
+	badAt(state, admin, "sudo read x", "sudo: read: command not found")
+	badAt(state, admin, "sudo type ls", "sudo: type: command not found")
+	-- A name that is nothing at all is still the shell's own refusal and not
+	-- sudo's: nothing was looked up as a shell word, so what answers is the
+	-- lookup, exactly as it does without sudo in front of it.
+	badAt(state, admin, "sudo nosuchthing", "nosuchthing: command not found")
 end
 
 -- The same, through the password: the authority travels in the token and the
