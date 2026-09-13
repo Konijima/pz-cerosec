@@ -78,6 +78,38 @@ passé réellement, même quand ça correspond au texte attendu.
     moniteur → "Turn on computer" est là aussi. [ ]
 12. Clic droit un ou deux pixels au-dessus du sprite, hors de l'écran → l'option
     a disparu, aucun vol de clic vers le carré derrière. [ ]
+12a. **Le bureau avec une chaise devant.** C'EST le cas de la capture du
+    2026-09-12. Ordinateur vanilla posé sur un bureau, une chaise de bureau
+    tirée devant, dos au moniteur (donc le carré devant l'écran est occupé par
+    la chaise). Clic droit en plein milieu du moniteur, pas sur le cadre, pas
+    sur le bureau → "Turn on computer" est là. Refaire une dizaine de fois, en
+    bougeant la souris de quelques pixels entre chaque clic : l'entrée est là
+    chaque fois, jamais une fois sur trois. [ ]
+12b. **Ce que le jeu, lui, a attrapé.** Même position, avec `-debug` : ouvrir le
+    menu et lire les lignes du jeu. `Tile Report` peut très bien nommer la
+    chaise (`furniture_seating_indoor_*`) et `Room Report` donner le carré de la
+    chaise, un carré au sud du bureau → c'est normal et ce n'est plus un
+    problème : le jeu a le droit de choisir la chaise, nos entrées doivent
+    apparaître quand même. Si elles manquent, c'est le moment d'ouvrir l'onglet
+    **Log** de la fenêtre de débogage (étape 12d). [ ]
+12c. **La chaise garde ses propres pixels.** Même position, clic droit sur le
+    DOSSIER de la chaise, là où il n'y a pas de moniteur derrière → aucune
+    entrée CeroSec, le menu est celui de la chaise ("Mahogany Chair", "Sit on
+    ground", "Walk to"). On ne vole pas un clic qui n'est pas le nôtre : si
+    l'entrée apparaît ici, la garde est passée du masque de pixels à une simple
+    boîte. [ ]
+12d. **Lire un raté.** Mettre `CeroSec.DEBUG = true` dans
+    `42/media/lua/shared/CeroSec/CeroSecDefs.lua`, relancer, refaire 12a, puis
+    ouvrir la fenêtre de débogage → onglet **Log**. Il doit y avoir, pour chaque
+    clic droit : une ligne `menu: game handed ...` avec le sprite et le carré de
+    ce que le jeu a donné, une ligne `pick: mouse X,Y zoom Z ... (N candidates)`,
+    et une ligne par candidat avec son carré, son `raise`, sa boîte et `HIT` ou
+    `no mask`. Un raté en jeu se lit ici : le carré du bureau est-il dans les
+    candidats, et le masque a-t-il dit non. [ ]
+12e. **Deux bureaux côte à côte.** Deux ordinateurs sur deux bureaux collés,
+    chacun avec sa chaise. Clic droit sur le moniteur de gauche → c'est
+    l'ordinateur de GAUCHE qui s'allume (vérifier le sprite qui change), pas
+    celui de droite. Puis l'inverse. [ ]
 
 ## B. Terminal, écran de la machine
 

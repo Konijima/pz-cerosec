@@ -415,7 +415,10 @@ end
 -- (FBORenderObjectPicker.ContextPick -> IsoObject.isMaskClicked). The mask is
 -- indexed in texture pixels, so a box drawn bigger than its texture is divided
 -- back down the way ContextPick divides by scaleX/scaleY.
--- Returns hit, x, y, width, height so the caller can log the box it tested.
+--
+-- Returns hit, x, y, width, height, inBox. The box is so the caller can log what
+-- it tested; inBox is so it can tell the two kinds of no apart -- nowhere near it,
+-- against on the rectangle but between the pixels, which is the interesting one.
 function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
 	local x, y, width, height, texture = CeroSecReach.drawnBox(object)
 	if not x then return false end
@@ -423,13 +426,13 @@ function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
 	local zoom = getCore():getZoom(playerIndex or 0)
 	local px, py = mouseX * zoom, mouseY * zoom
 	if not CeroSec.pointInBox(px, py, x, y, width, height) then
-		return false, x, y, width, height
+		return false, x, y, width, height, false
 	end
 
 	local scaleX = width / texture:getWidthOrig()
 	local scaleY = height / texture:getHeightOrig()
 	local hit = object:isMaskClicked(math.floor((px - x) / scaleX), math.floor((py - y) / scaleY), false)
-	return hit == true, x, y, width, height
+	return hit == true, x, y, width, height, true
 end
 
 -- Every square whose sprite can be drawn over the mouse point, on one level.
@@ -508,17 +511,35 @@ function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 			" (" .. tostring(#candidates) .. " candidates)")
 	end
 
+	local grazed = nil
 	for _, candidate in ipairs(candidates) do
-		local hit, x, y, width, height = CeroSecReach.isMouseOn(candidate, mouseX, mouseY, playerIndex)
+		local hit, x, y, width, height, inBox =
+			CeroSecReach.isMouseOn(candidate, mouseX, mouseY, playerIndex)
+		local square = candidate:getSquare()
+		local where = tostring(candidate:getSpriteName()) ..
+			" at " .. tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ()) ..
+			" raise " .. tostring(candidate:getRenderYOffset()) ..
+			" box " .. tostring(x) .. "," .. tostring(y) .. " " .. tostring(width) .. "x" .. tostring(height)
 		if CeroSec.DEBUG then
-			local square = candidate:getSquare()
-			CeroSec.log("pick:   " .. tostring(candidate:getSpriteName()) ..
-				" at " .. tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ()) ..
-				" raise " .. tostring(candidate:getRenderYOffset()) ..
-				" box " .. tostring(x) .. "," .. tostring(y) .. " " .. tostring(width) .. "x" .. tostring(height) ..
-				" -> " .. (hit and "HIT" or "no mask"))
+			CeroSec.log("pick:   " .. where .. " -> " ..
+				(hit and "HIT" or (inBox and "no mask" or "outside the box")))
 		end
 		if hit then return candidate end
+		if inBox and grazed == nil then grazed = where end
+	end
+
+	-- One line, NOT gated on CeroSec.DEBUG, and only for the one no that is worth a
+	-- player's attention: the cursor was inside a computer's own rectangle and its
+	-- mask still said no. That is the shape every miss this section was written for
+	-- had, and it is rare in play -- a click has to land inside a 128 x 256 box to
+	-- earn it -- so the Warnings filter of the debug window's Log tab is the answer
+	-- to "I right-clicked the monitor and got nothing" without anybody having to
+	-- edit a file first and do it again. Everything else above is console noise and
+	-- stays behind the flag (docs/DEBUG.md, "The log").
+	if grazed ~= nil then
+		CeroSec.log(CeroSec.LOG_WARN, "pick: the cursor was on a computer's box and " ..
+			"not on its pixels: " .. grazed ..
+			" (mouse " .. tostring(mouseX) .. "," .. tostring(mouseY) .. ")")
 	end
 	return nil
 end

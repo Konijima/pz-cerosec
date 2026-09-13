@@ -11593,6 +11593,50 @@ do
 			string.find(all, "no computer under the cursor", 1, true) ~= nil)
 	end
 
+	-- The one line that is NOT behind CeroSec.DEBUG: the cursor inside a computer's
+	-- own rectangle with its mask saying no. That is the shape of every miss this
+	-- section exists for, and a player has to be able to read it off the Log tab
+	-- without editing a file and doing it again (docs/DEBUG.md, "The log": the
+	-- append is never gated).
+	do
+		local _, chair = screenshotWorld()
+		eq("DEBUG is off for this one", CeroSec.DEBUG, false)
+		CeroSec.logRing = {}
+		eq("still nothing found", CeroSecReach.pickComputer(0, 550, 380, { chair }), nil)
+		eq("and exactly one line about it", #CeroSec.logRing, 1)
+		eq("as a warning, so the Warnings filter finds it",
+			CeroSec.logRing[1].level, CeroSec.LOG_WARN)
+		check("naming the box and the miss",
+			string.find(CeroSec.logRing[1].text,
+				"on a computer's box and not on its pixels", 1, true) ~= nil)
+		check("and the square", string.find(CeroSec.logRing[1].text, "2089,5832,0", 1, true) ~= nil)
+
+		-- A click nowhere near a computer's rectangle says nothing at all. A warning
+		-- that fires when the mod is behaving is a warning nobody reads.
+		CeroSec.logRing = {}
+		eq("nothing found out in the weeds either",
+			CeroSecReach.pickComputer(0, 5, 5, { chair }), nil)
+		eq("and not a word about it", #CeroSec.logRing, 0)
+
+		-- And the case that tells "on the box" from "a candidate at all" apart:
+		-- 600,420 is a step BELOW the monitor's box and still inside the window the
+		-- candidate squares come from, so the computer is weighed and dropped on the
+		-- box. That is an ordinary click on the desk, not a miss, and it must be
+		-- silent.
+		local computer = screenshotWorld()
+		local bx, by, bw, bh = CeroSecReach.drawnBox(computer)
+		check("600,420 is outside the monitor's box",
+			not CeroSec.pointInBox(600, 420, bx, by, bw, bh))
+		local weighed = false
+		for _, sq in ipairs(CeroSecReach.pickSquares(600, 420, 0, 1)) do
+			if sq:getX() == 2089 and sq:getY() == 5832 then weighed = true end
+		end
+		check("but its square is still weighed", weighed)
+		CeroSec.logRing = {}
+		eq("nothing found there", CeroSecReach.pickComputer(0, 600, 420, { chair }), nil)
+		eq("and still not a word", #CeroSec.logRing, 0)
+	end
+
 	-- No mouse at all, and an object with no square: neither is an error.
 	do
 		local computer, chair = screenshotWorld()

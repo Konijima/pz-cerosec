@@ -202,20 +202,32 @@ console then prints the mouse point and every candidate box that was tested.
 
 ## Picking doubts only the game can settle
 
-- The whole diagnosis rests on `FBORenderObjectPicker.getObjectsAt`, read in the
-  **older** decompiled build. If 42.20.4 widened its `leftSideXy`/`rightSideXy`
-  walk, or if `PerformanceSettings.fboRenderChunk` is off (the legacy
-  `IsoObjectPicker.Add` path registers every rendered sprite and has no such
-  window), the top-of-monitor click was already working and our pass simply
-  agrees with it. Step 37 is what tells us the fix was needed.
-- The drawn box is rebuilt as vanilla does for the water shader's click box
-  (`FBORenderObjectPicker.handleWaterShader`): 64 x 128 tile units at the
-  square's screen position, raised by `getRenderYOffset() * tileScale`. It leaves
-  out `IsoObject.offsetX/offsetY`, which are public fields with no getter and are
-  zero for a static world object. A computer that answers a few pixels off in one
-  direction only would be that.
-- `PICK_REACH = 2` covers a raise of 128 screen pixels at zoom 1, which is the
-  vanilla placement ceiling (`Surface <= 64`, times `tileScale` 2). A computer on
-  something taller than the game itself allows would need a third step.
+- **Corrected 2026-09-12.** The three bullets that stood here were written on the
+  older decompiled build and two of them were wrong. The proof against the shipped
+  42.20.4 jar is [notes/picking.md](notes/picking.md); the corrections are:
+  - `getObjectsAt`'s staircase is real, but three diagonal steps is **six steps of
+    x + y**, which is the whole height of a sprite box. It was never a narrow
+    budget. The reason a monitor on a desk lost its menu is
+    `ClickObject.calculateScore`: a desk chair carries `IsoFlagType.bed` for `+2`
+    where a computer gets nothing, and it stands on the player's own square, so the
+    chair outscores the computer and `worldobjects` comes back as the chair — one
+    square south of the desk.
+  - `IsoObject.offsetX/offsetY` are **not** zero and they **do** have getters
+    (`getOffsetX()`, `getOffsetY()`): they are `32 * tileScale` and
+    `96 * tileScale`, set in the constructor, and the renderer subtracts both. The
+    old box therefore sat 64 pixels right and 192 pixels low at `tileScale` 2 —
+    three quarters of a sprite height, which is why a monitor only ever answered to
+    a click near the ground. "A few pixels off in one direction" was the right
+    suspicion and the wrong size.
+  - `PICK_REACH` is gone. The window is derived from the projection:
+    `PICK_BEHIND = 2`, `PICK_AHEAD = 6 + SURFACE_MAX/16 + 2 = 12`, `PICK_SIDE = 1`,
+    and `tests/terminal_test.lua` sweeps every raise and every pixel of a box to
+    show it is sound and where it is tight.
+- Still only the game can say: whether `getCameraOffX()/getCameraOffY()` are
+  `IsoCamera.frameState.offX/offY` at the moment the menu is built (the algebra
+  agrees, the identity is assumed); whether the chair's back really overlaps the
+  monitor's band on these sprites, i.e. whether the chair beat the computer on
+  score or the computer was never masked at all — the **Log** tab now says which;
+  and the whole of it at a zoom other than 1.
 - Step 44 assumes the front-most computer wins. The order is by `x + y` then by
   index in the square; if the wrong one answers, that ordering is the suspect.

@@ -280,6 +280,23 @@ thing to add when there is a real server to test it against.
 There is exactly one `print(` in the whole mod and it is inside `CeroSec.log`, so
 there was nothing else to route.
 
+### The one line the picking leaves behind
+
+`CeroSecReach.pickComputer` is chatty behind `CeroSec.DEBUG` — the mouse, the zoom,
+the candidate count, and one line per candidate with its square, its `raise`, the
+box that was tested and whether the mask took it — and all of that is console
+noise that stays behind the flag.
+
+One line does not. When the cursor was **inside a computer's own rectangle and its
+mask still said no**, that is written as a `LOG_WARN` whatever the flag says. It is
+the shape every miss the picking was rewritten for had
+([notes/picking.md](notes/picking.md)), and a player who right-clicks a monitor and
+gets no entry must be able to read why off the **Log** tab's Warnings filter
+without first editing a file and doing it again. A click has to land inside a
+128 × 256 box to earn the line, so it does not fire on ordinary play — and a click
+that merely weighed a computer's square and dropped it on the box says nothing,
+because a warning that fires while the mod is behaving is a warning nobody reads.
+
 ## The protocol
 
 Two commands, both on the existing global-object channel, both carrying the
