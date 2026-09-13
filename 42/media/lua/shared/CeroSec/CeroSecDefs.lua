@@ -63,7 +63,7 @@ end
 -- It is deliberately a plain constant in the shared defs and not a sandbox
 -- option: an option is something a server owner can turn on, and this is not
 -- for them. It is read by CeroSecContextMenu and by nothing else.
-CeroSec.DEV_MANUAL_MENU = true
+CeroSec.DEV_MANUAL_MENU = false
 
 -- TESTING AID. SET TO false BEFORE THE WORKSHOP RELEASE.
 --
@@ -76,7 +76,7 @@ CeroSec.DEV_MANUAL_MENU = true
 -- to false takes the door away from a player and leaves it for a developer. The
 -- check is wired now rather than later, so that turning the flag off is the whole
 -- of the release change and not the start of one.
-CeroSec.DEV_DEBUG_MENU = true
+CeroSec.DEV_DEBUG_MENU = false
 
 -- May the debug window be opened at all? The flag, or the game's own debug mode.
 --

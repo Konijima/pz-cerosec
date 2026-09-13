@@ -604,6 +604,12 @@ for i = 1, #FILES - 1 do
 	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
 	chunk()
 end
+
+-- The benches open both developer doors. The shipped defaults are false
+-- (release); the blocks that need a shut door close it themselves.
+CeroSec.DEV_MANUAL_MENU = true
+CeroSec.DEV_DEBUG_MENU = true
+
 do
 	local path = FILES[#FILES]
 	local chunk, err = loadfile(path)

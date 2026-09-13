@@ -48,7 +48,7 @@ the files and the state shape are all unaffected.
 | 8a | **The item against Steam's own ceilings.** Also run by `sh tests/run.sh`, so this is a reminder rather than a second gate | `python3 tools/check-workshop.py` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
-| 11 | Copy the `id=` Steam wrote back into the repo, and into the description's last-but-one line | `grep ^id= ~/Zomboid/Workshop/CeroSec/workshop.txt` |
+| 11 | Copy the `id=` Steam wrote back into the repo (the game appends its own `Workshop ID` and `Mod ID` lines to every description at upload, so the description carries none) | `grep '^id=' ~/Zomboid/Workshop/CeroSec/workshop.txt` then paste it after `version=1` in `workshop/workshop.txt` |
 | 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images** — see below |
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |

@@ -364,6 +364,12 @@ for i = 1, #FILES do
 	chunk()
 end
 
+-- The benches open both developer doors. The shipped defaults are false
+-- (release); the blocks that need a shut door close it themselves.
+CeroSec.DEV_MANUAL_MENU = true
+CeroSec.DEV_DEBUG_MENU = true
+
+
 local count = 0
 local function check(what, cond)
 	count = count + 1
