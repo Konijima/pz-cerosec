@@ -112,8 +112,12 @@ because a 64×128 texture is drawn at `tileScale` and a 128×256 one at half of 
 and the mask index divides back down by whichever it was.
 
 `CeroSecReach.pickSquares` takes its candidates from the **mouse's own iso tile**
-(`ISCoordConversion.ToWorld` on the mouse times the zoom) and not from the square
-the game picked — that square is itself somewhere inside the staircase the game
+and not from the square the game picked. That anchor is vanilla's own: the world
+menu resolves the mouse the same way, in the same call chain and behind the same
+joypad guard — `ISCoordConversion.ToWorld(_x * getCore():getZoom(n), _y * ..., z)`
+then `getCell():getGridSquare(wx, wy, z)`, `ISMenuContextWorld.lua:76-79`. It is
+also why the `media/lua/server` folder `ISCoordConversion` lives in is reachable
+from the client at all — that square is itself somewhere inside the staircase the game
 walked out of the mouse, so walking a forward-only staircase again out of it points
 away from the start. The window is derived rather than guessed: with `s = x + y`
 and `d = x - y`, a square's box contains the point only for

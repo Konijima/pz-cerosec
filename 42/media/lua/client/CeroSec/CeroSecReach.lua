@@ -436,12 +436,26 @@ function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
 end
 
 -- Every square whose sprite can be drawn over the mouse point, on one level.
--- The mouse's own iso tile, the way getObjectsAt takes it
--- (IsoUtils.XToIso/YToIso on the mouse multiplied by the zoom), and then the
--- (x + y, x - y) window PICK_BEHIND/PICK_AHEAD/PICK_SIDE derive above. x + y and
--- x - y always have the same parity, so a sideways step only exists for half the
--- forward steps -- which is precisely why the game's own candidates read as a
--- staircase.
+--
+-- The anchor is the mouse's own iso tile, which is what getObjectsAt walks out of
+-- (IsoUtils.XToIso/YToIso on the mouse multiplied by the zoom) and also what
+-- VANILLA'S OWN world menu does on the way in -- same call, same space, behind the
+-- same joypad guard (ISMenuContextWorld.lua:76-79):
+--
+--   if not JoypadState.players[_playerNum+1] then
+--       local wx,wy = ISCoordConversion.ToWorld( _x*getCore():getZoom(...), _y*getCore():getZoom(...), contextData.player:getZ() );
+--       self.getObjectsSquare( contextData, getCell():getGridSquare(wx, wy, contextData.player:getZ()) );
+--   end
+--
+-- Vanilla takes that one square; we take the window PICK_BEHIND/PICK_AHEAD/PICK_SIDE
+-- derive above, because a raised sprite is not drawn on its own tile. The level is
+-- the one the game resolved the click to rather than vanilla's player:getZ(): the
+-- object it handed over is the object under the cursor, and if that is a floor up
+-- then a floor up is where the cursor is.
+--
+-- x + y and x - y always have the same parity, so a sideways step only exists for
+-- half the forward steps -- which is precisely why the game's own candidates read
+-- as a staircase.
 function CeroSecReach.pickSquares(mouseX, mouseY, z, zoom)
 	local out = {}
 	local wx, wy = ISCoordConversion.ToWorld(mouseX * zoom, mouseY * zoom, z)

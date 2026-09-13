@@ -227,6 +227,36 @@ square:
 
 That is the pattern `CeroSecContextMenu.findComputer` now runs **first**.
 
+### And vanilla resolves the mouse to a tile the same way we now do
+
+`media/lua/client/Context/ISMenuContextWorld.lua:74-79`, in the very call chain the
+right-click runs down (`ISContextManager.createWorldMenu` → `menuWorld.createMenu`,
+the same function that calls `ISWorldObjectContextMenu.createMenu` at `:45`/`:48`):
+
+```lua
+contextData.objects = self.getAllObjects(contextData);
+
+if not JoypadState.players[_playerNum+1] then
+    local wx,wy = ISCoordConversion.ToWorld( _x*getCore():getZoom(contextData.playerNum), _y*getCore():getZoom(contextData.playerNum), contextData.player:getZ() );
+    self.getObjectsSquare( contextData, getCell():getGridSquare(wx, wy, contextData.player:getZ()) );
+end
+```
+
+Three things, all of them the mod's own pattern and none of them invented here:
+
+* `ISCoordConversion.ToWorld` is called **from client code**, so the `media/lua/server`
+  folder it lives in is in the client's Lua state. (`FishingDebugWindow.lua`,
+  `ISRemoveItemTool.lua` and `FireBrushUI.lua` call it too.)
+* the mouse is multiplied by `getCore():getZoom(playerNum)` before it is converted —
+  the same space `ContextPick` puts it in, and the space `CeroSecReach.pickSquares`
+  works in.
+* the whole of it is behind `not JoypadState.players[_playerNum+1]`, which is the
+  guard `CeroSecContextMenu.findComputer` uses for its own mouse pass.
+
+Vanilla takes the one square the mouse lands on; `pickSquares` takes the window of
+§2 around it, because a raised sprite is not drawn on its own tile. The level is the
+one the game resolved the click to rather than vanilla's `player:getZ()`.
+
 ---
 
 ## 2. The projection, and which squares can be drawn over a point
