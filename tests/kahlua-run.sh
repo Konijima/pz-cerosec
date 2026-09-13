@@ -44,6 +44,50 @@ if [ ! -f "$CLASS" ] || [ "$SRC" -nt "$CLASS" ]; then
 	fi
 fi
 
+# Second half: tests/kahlua-probe.lua, RUN on both VMs, outputs compared.
+#
+# Loading proves a file parses and that its top level survives; it proves
+# nothing about what the standard library ANSWERS. tonumber(s, 16) returned nil
+# on Kahlua for half of all hashes (Integer.parseInt behind it) while every file
+# loaded and every lua5.1 bench was green, and the game died on the first
+# power-on of a prefilled machine. So the probe calls the engine's pure
+# functions with fixed inputs and prints a line each, and a single differing
+# line fails this script.
+PROBE="$ROOT/tests/kahlua-probe.lua"
+if [ ! -f "$PROBE" ]; then
+	echo "kahlua-run: missing $PROBE"
+	exit 1
+fi
+if ! command -v lua5.1 > /dev/null 2>&1; then
+	echo "kahlua-run: no lua5.1 to compare against"
+	exit 1
+fi
+
+WANT=$(mktemp)
+GOT=$(mktemp)
+trap 'rm -f "$WANT" "$GOT"' EXIT
+
+if ! lua5.1 "$PROBE" > "$WANT" 2>&1; then
+	echo "kahlua-run: the probe does not run on lua5.1"
+	cat "$WANT"
+	exit 1
+fi
+
 cd "$GAME" || exit 1
-"$JAVA" -cp "$JAR:$OUT" KahluaRun "$ROOT"
-exit $?
+"$JAVA" -cp "$JAR:$OUT" KahluaRun "$ROOT" || exit 1
+
+if ! "$JAVA" -cp "$JAR:$OUT" KahluaRun --eval "$PROBE" "$ROOT" > "$GOT"; then
+	echo "kahlua-run: the probe does not run on Kahlua"
+	cat "$GOT"
+	exit 1
+fi
+
+if ! diff -u "$WANT" "$GOT" > /dev/null; then
+	echo "kahlua-run: FAILED -- the probe answers differently on the two VMs"
+	echo "  (-- lua5.1, ++ the game's Kahlua)"
+	diff -u --label lua5.1 "$WANT" --label kahlua "$GOT"
+	exit 1
+fi
+
+echo "kahlua-run: passed, and the probe agrees on both VMs ($(wc -l < "$WANT") lines)"
+exit 0
