@@ -361,20 +361,60 @@ they are never zero.
 
 ---
 
-## 4. What only a click in game can settle
+## 4. Settled by a second reading of the jar
 
-* Whether `getCameraOffX()/getCameraOffY()` really are `IsoCamera.frameState.offX/offY`
-  at the moment the menu is built. The composition
-  `chunk.renderX * zoom + renderInfo.renderX` is reassembled here as
-  `ToScreen - offsets`; the algebra agrees, the identity of the two camera offsets
-  is assumed.
-* Whether the chair's back really does overlap the monitor's band on the sprites in
-  the screenshot, i.e. whether the chair beat the computer on score or the computer
-  was never masked at all. Either way the fix is the same, and the Log tab now
-  prints which it was.
-* `Core.tileScale` and `Core.getZoom(0)` at a zoom other than 1. Every box term is
-  linear in `tileScale` and the mouse is the only thing multiplied by the zoom, so
-  the arithmetic should not care, but it is untested at zoom ≠ 1.
-* Whether `PerformanceSettings.fboRenderChunk` is on for Mathieu's box. Both
-  picker paths mask and score identically, so the conclusion holds either way; only
-  the candidate-gathering differs, and only the game can say which one ran.
+An adversarial pass over the fix (2026-09-12) closed three of the things this note
+first listed as open:
+
+* **`ISCoordConversion` is in the client's Lua state.** `LuaManager.LoadDirBase()`
+  loads only `shared` + `client`, but `GameLoadingState.enter()` calls
+  `LoadDirBase("server")` on the straight-line path — the `GameClient.client` test
+  at `@21` guards only a port-warning string, not the load — and `GameServer` loads
+  all three. Vanilla client callers exist besides
+  `ISMenuContextWorld.lua:77,249`: `client/DebugUIs/ISRemoveItemTool.lua` and
+  `client/Fishing/FishingDebugWindow.lua`. Singleplayer and multiplayer both.
+* **`XToIso`/`YToIso` use the same camera as `getCameraOffX()`.** The 3-arg
+  `XToIso(F,F,F)` forwards to `XToIso(IsoPlayer.getPlayerIndex(), …)`, and
+  `getCameraOffX()` → `IsoCamera.getOffX()` → `cameras[IsoPlayer.getPlayerIndex()]`.
+  Same index, no zoom in either, and the round trip
+  `XToIso(XToScreen − offX, YToScreen − offY, z) == x` is exact.
+* **The chunk-relative `renderX` reassembles to the world formula.** `isCaching()`
+  does replace x, y with `PZMath.coordmodulof(x, 8)` and store
+  `renderInfo.renderX = sx + xoff` with `xoff = renderChunk.w / 2`
+  (`FBORenderChunkManager.beginRenderChunkLevel` `@36-42`), but the blit sets
+  `chunk.renderX = (XToScreen(wx*8, wy*8) − getOffX()) / zoom − w_eff/2 + fixJigglyModelsX`,
+  so the `w/2` cancels and `chunk.renderX * zoom + renderInfo.renderX` is
+  `XToScreen(world) − camOffX − offsetX`. On Y it cancels too, because
+  `PIXELS_PER_LEVEL == 96 * Core.tileScale` is exactly `YToScreen`'s per-level step,
+  so the level terms annihilate against `yoff`. The mask index matches as well: the
+  engine does `(int)((mouse − x) / scaleX)`, the mod `math.floor((px − x) / scaleX)`.
+
+## 5. What is still only settleable by a click in game
+
+* **`IsoSprite.def.offX/offY/offZ`.** The renderer ADDS them to the tile coordinates
+  before `XToScreen` (`@224-276`), and `IsoObject.load` restores them from the save,
+  so a sprite carrying a placement offset is drawn away from its square's anchor and
+  `drawnBox` does not know it. They are reachable only through `IsoSprite.def`, a
+  public **field** whose accessor `getSpriteInstance()` is private, and no vanilla
+  Lua anywhere reads a Java instance field — so this is left alone rather than
+  guessed at. A computer that answers a whole tile off, and only after being nudged
+  or placed with extended placement, is this.
+* **`PlayerCamera.fixJigglyModelsX/Y`.** A sub-pixel camera-jitter term
+  (`DebugOptions.fboRenderChunk.fixJigglyModels`) that is inside `chunk.renderX` and
+  not inside `ISCoordConversion.ToScreen`. At most about a pixel, and a pixel does
+  not decide a mask, but it is a difference.
+* **The zoom's player index.** `getClickObjects` and `ContextPick` hardcode
+  `Core.getZoom(0)`; the mod uses `getZoom(playerIndex)`, matching
+  `ISMenuContextWorld.lua:77` and matching `getCameraOffX()`, which is per player
+  index. They differ only in split-screen, where the mouse pass does not run anyway
+  (the joypad guard).
+* **Whether the chair's back really overlaps the monitor's band** on the sprites in
+  the screenshot — i.e. whether the chair beat the computer on score or the computer
+  was never masked at all. Either way the fix is the same, and the **Log** tab now
+  says which.
+* **`Core.tileScale` and the whole of it at a zoom other than 1.** Every box term is
+  linear in `tileScale` and the mouse is the only thing multiplied by the zoom, so the
+  arithmetic should not care. Untested.
+* **Which picker path runs.** `PerformanceSettings.fboRenderChunk` decides, and both
+  paths mask and score identically, so the conclusion holds either way; only the
+  candidate gathering differs.

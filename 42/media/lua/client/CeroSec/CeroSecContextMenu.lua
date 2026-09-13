@@ -242,11 +242,15 @@ end
 -- of question in.
 --
 -- FIRST what the game handed over. ContextPick gives the menu exactly ONE object
--- (see the picking notes in CeroSecReach), so if that object IS a computer, or if
--- a computer stands on its square -- which is the case for a computer on the very
--- desk the cursor found -- that is the answer and there is nothing to search
--- for. Vanilla menus that target one device do the same square scan
--- (ISRadioAndTvMenu.lua:16-26, ISBBQMenu.lua:20).
+-- (see the picking notes in CeroSecReach), so if a computer stands on that object's
+-- square -- which covers both the computer being handed over itself and a computer
+-- on the very desk the cursor found, since a computer is always on its own square --
+-- that is the answer and there is nothing to search for. Vanilla menus that target
+-- one device do the same square scan (ISRadioAndTvMenu.lua:16-26, ISBBQMenu.lua:20).
+--
+-- One pass and not two: a separate "is the handed object itself a computer" branch
+-- read well and could not be made to fail, because the square scan answers every
+-- case it did. A branch no bench can redden is a branch nobody has checked.
 --
 -- THEN the mouse, because the one object the game hands over is the one that
 -- scored highest and not the one nearest the cursor: a desk chair carries
@@ -271,12 +275,6 @@ function CeroSecContextMenu.findComputer(worldobjects, playerIndex)
 
 	local done = {}
 	for _, object in ipairs(worldobjects) do
-		if CeroSec.isComputerSprite(object:getSpriteName()) then
-			if CeroSec.DEBUG then
-				CeroSec.log("menu: handed the computer itself")
-			end
-			return object
-		end
 		local square = object:getSquare()
 		if square and not done[square] then
 			done[square] = true

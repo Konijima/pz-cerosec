@@ -390,12 +390,21 @@ CeroSecReach.PICK_SIDE = 1
 --
 -- The same three terms the renderer uses (IsoObject.updateRenderInfoForObjectPicker):
 -- the square's screen position less the camera offset (ISCoordConversion.ToScreen),
--- less the object's own draw offsets, less the raise that lifts a table-top
--- sprite. The size is 64 x 128 tile units: a 64x128 texture is drawn at
--- tileScale and a 128x256 one at half of it (@35-126), so both come to
--- 64 * tileScale by 128 * tileScale and the scale below divides back to whichever
--- it was.
--- Returns x, y, width, height, texture; nil when the object has no sprite yet.
+-- less the object's own draw offsets, less the raise that lifts a table-top sprite.
+--
+-- The SIZE is the texture times the scale the renderer draws it at
+-- (renderWidth = texture.getWidthOrig() * scaleX, @496-521), and the scale is not
+-- guessed either: the renderer normalises it, at tileScale 2, to 2 for a 64x128
+-- texture and to 1 for a 128x256 one (@35-126), which is how both end up the same
+-- 128 x 256 on screen. Anything else keeps the sprite instance's own scale, whose
+-- default is 1 -- so a non-standard texture gets its own size and not a 128 x 256
+-- box it does not fill. The instance is only reachable through IsoSprite.def, a
+-- public FIELD with no getter (getSpriteInstance() is private), and no vanilla Lua
+-- reads a Java instance field, so the rule is rebuilt from the texture rather than
+-- read off the object.
+--
+-- Returns x, y, width, height, texture; nil when the object has no sprite yet, or
+-- when the texture has no size to divide the mask index by.
 function CeroSecReach.drawnBox(object)
 	local square = object and object:getSquare()
 	if not square then return nil end
@@ -403,11 +412,17 @@ function CeroSecReach.drawnBox(object)
 	local texture = sprite and sprite:getTextureForCurrentFrame(object:getDir())
 	if not texture then return nil end
 
+	local width, height = texture:getWidthOrig(), texture:getHeightOrig()
+	if not width or not height or width <= 0 or height <= 0 then return nil end
+
 	local tileScale = Core.getTileScale()
+	local scale = 1
+	if tileScale == 2 and width == 64 and height == 128 then scale = 2 end
+
 	local x, y = ISCoordConversion.ToScreen(square:getX(), square:getY(), square:getZ())
 	x = x - object:getOffsetX()
 	y = y - object:getOffsetY() - object:getRenderYOffset() * tileScale
-	return x, y, 64 * tileScale, 128 * tileScale, texture
+	return x, y, width * scale, height * scale, texture
 end
 
 -- Is the mouse on this object's drawn pixels? The box first, then the sprite's
@@ -458,6 +473,8 @@ end
 -- as a staircase.
 function CeroSecReach.pickSquares(mouseX, mouseY, z, zoom)
 	local out = {}
+	local cell = getCell()
+	if not cell then return out end
 	local wx, wy = ISCoordConversion.ToWorld(mouseX * zoom, mouseY * zoom, z)
 	if wx == nil or wy == nil then return out end
 	local tx, ty = math.floor(wx), math.floor(wy)
@@ -465,7 +482,7 @@ function CeroSecReach.pickSquares(mouseX, mouseY, z, zoom)
 	for sum = -CeroSecReach.PICK_BEHIND, CeroSecReach.PICK_AHEAD do
 		for diff = -CeroSecReach.PICK_SIDE, CeroSecReach.PICK_SIDE do
 			if (sum + diff) % 2 == 0 then
-				local square = getCell():getGridSquare(
+				local square = cell:getGridSquare(
 					tx + (sum + diff) / 2, ty + (sum - diff) / 2, z)
 				if square then out[#out + 1] = square end
 			end
@@ -514,6 +531,11 @@ end
 -- are under the mouse wins, chair or no chair -- which is what the game does for
 -- every other object on a table, and what it would have done for this one if a
 -- desk chair did not outscore a computer.
+-- The machines this Lua state has already warned about a graze on, by square. Kept
+-- across right-clicks on purpose (see the warning at the end of pickComputer), and
+-- across a save, because it is a debugging aid and not state.
+CeroSecReach.grazeWarned = CeroSecReach.grazeWarned or {}
+
 function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 	if not mouseX or not mouseY then return nil end
 
@@ -525,13 +547,13 @@ function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 			" (" .. tostring(#candidates) .. " candidates)")
 	end
 
-	local grazed = nil
+	local grazed, grazedAt = nil, nil
 	for _, candidate in ipairs(candidates) do
 		local hit, x, y, width, height, inBox =
 			CeroSecReach.isMouseOn(candidate, mouseX, mouseY, playerIndex)
 		local square = candidate:getSquare()
-		local where = tostring(candidate:getSpriteName()) ..
-			" at " .. tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ()) ..
+		local at = tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ())
+		local where = tostring(candidate:getSpriteName()) .. " at " .. at ..
 			" raise " .. tostring(candidate:getRenderYOffset()) ..
 			" box " .. tostring(x) .. "," .. tostring(y) .. " " .. tostring(width) .. "x" .. tostring(height)
 		if CeroSec.DEBUG then
@@ -539,18 +561,25 @@ function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 				(hit and "HIT" or (inBox and "no mask" or "outside the box")))
 		end
 		if hit then return candidate end
-		if inBox and grazed == nil then grazed = where end
+		if inBox and grazed == nil then grazed, grazedAt = where, at end
 	end
 
-	-- One line, NOT gated on CeroSec.DEBUG, and only for the one no that is worth a
-	-- player's attention: the cursor was inside a computer's own rectangle and its
-	-- mask still said no. That is the shape every miss this section was written for
-	-- had, and it is rare in play -- a click has to land inside a 128 x 256 box to
-	-- earn it -- so the Warnings filter of the debug window's Log tab is the answer
-	-- to "I right-clicked the monitor and got nothing" without anybody having to
-	-- edit a file first and do it again. Everything else above is console noise and
-	-- stays behind the flag (docs/DEBUG.md, "The log").
-	if grazed ~= nil then
+	-- One line, NOT gated on CeroSec.DEBUG, for the one no that is worth a player's
+	-- attention: the cursor was inside a computer's own rectangle and its mask still
+	-- said no. That is the shape every miss this section was written for had, so the
+	-- Warnings filter of the debug window's Log tab answers "I right-clicked the
+	-- monitor and got nothing" without anybody having to edit a file first and do it
+	-- again. Everything else above is console noise and stays behind the flag
+	-- (docs/DEBUG.md, "The log").
+	--
+	-- ONCE PER MACHINE, though, and that part is not decoration. The rectangle is
+	-- 64 x 128 tile units -- two tiles wide and four tall -- so in an office the
+	-- desk, the floor in front of it and the chair are all inside some monitor's
+	-- box, and a line per click would push everything else out of a 200-line ring
+	-- within a minute of ordinary play. A second miss on the same machine is the
+	-- same information as the first.
+	if grazed ~= nil and not CeroSecReach.grazeWarned[grazedAt] then
+		CeroSecReach.grazeWarned[grazedAt] = true
 		CeroSec.log(CeroSec.LOG_WARN, "pick: the cursor was on a computer's box and " ..
 			"not on its pixels: " .. grazed ..
 			" (mouse " .. tostring(mouseX) .. "," .. tostring(mouseY) .. ")")

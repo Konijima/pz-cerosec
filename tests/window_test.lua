@@ -11269,7 +11269,7 @@ do
 	-- An object on a square. mask is the rectangle of opaque TEXTURE pixels
 	-- (x0, y0, x1, y1 in a 64x128 sheet); raise is renderYOffset, which is what
 	-- lifts a sprite standing on a table.
-	local function place(x, y, z, sprite, raise, mask)
+	local function place(x, y, z, sprite, raise, mask, texW, texH)
 		local sq = square(x, y, z)
 		local o
 		o = {
@@ -11282,8 +11282,8 @@ do
 			getRenderYOffset = function() return raise or 0 end,
 			getSprite = function() return {
 				getTextureForCurrentFrame = function() return {
-					getWidthOrig = function() return 64 end,
-					getHeightOrig = function() return 128 end,
+					getWidthOrig = function() return texW or 64 end,
+					getHeightOrig = function() return texH or 128 end,
 				} end,
 				getProperties = function() return {
 					has = function(_, name)
@@ -11320,12 +11320,18 @@ do
 	-- The screen anchor the whole bench is pinned to, so a change to the camera
 	-- arithmetic above shows up as a failure here and not as ten silent misses.
 	do
+		-- A canary, not a proof: every cursor coordinate below was worked out by hand
+		-- off this anchor, so a change to CAM_X/CAM_Y has to fail here rather than
+		-- silently move ten clicks somewhere else.
 		local ax, ay = toScreen(2089, 5832, 0)
 		eq("the desk's anchor x", ax, 600)
 		eq("the desk's anchor y", ay, 400)
-		local wx, wy = toWorld(600, 400, 0)
-		eq("and ToWorld inverts it on x", wx, 2089)
-		eq("and ToWorld inverts it on y", wy, 5832)
+		-- This one is a proof: the bench's ToWorld really does invert its ToScreen,
+		-- on a square that is neither the anchor nor the origin.
+		local sx, sy = toScreen(2091, 5830, 0)
+		local wx, wy = toWorld(sx, sy, 0)
+		eq("ToWorld inverts ToScreen on x", wx, 2091)
+		eq("ToWorld inverts ToScreen on y", wy, 5830)
 	end
 
 	--
@@ -11425,7 +11431,6 @@ do
 		squares = {}
 		local computer = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR)
 		square(2089, 5833, 0)
-		eq("on the floor, no raise", computer:getRenderYOffset(), 0)
 		eq("and it is found", CeroSecReach.pickComputer(0, 601, 401, { computer }), computer)
 		eq("height low", CeroSecReach.height(computer), "low")
 	end
@@ -11451,9 +11456,10 @@ do
 	end
 
 	-- worldobjects carrying the computer itself. The mouse is nowhere near it --
-	-- off the bottom of the world, where no mask can be hit -- so only the pass
-	-- that reads what the game handed over can answer. Remove that pass and this
-	-- goes red.
+	-- off the bottom of the world, where no mask can be hit -- so only the pass that
+	-- reads what the game handed over can answer, and deleting that pass turns this
+	-- red. A computer is on its own square, which is why that pass is ONE scan and
+	-- not a scan behind an "is it the computer itself" branch.
 	do
 		local computer = screenshotWorld()
 		_G.getMouseX = function() return 5 end
@@ -11516,8 +11522,6 @@ do
 		eq("PICK_BEHIND", CeroSecReach.PICK_BEHIND, 2)
 		eq("PICK_AHEAD", CeroSecReach.PICK_AHEAD, 12)
 		eq("PICK_SIDE", CeroSecReach.PICK_SIDE, 1)
-		eq("and the ahead is the sprite, the raise and the two floors",
-			CeroSecReach.PICK_AHEAD, 6 + CeroSecReach.SURFACE_MAX / 16 + 2)
 	end
 
 	-- Past the game's own staircase. A sprite raised the full SURFACE_MAX whose
@@ -11535,8 +11539,6 @@ do
 		local wx, wy = toWorld(600, 110, 0)
 		eq("ten steps of x+y ahead of the mouse's tile",
 			(2089 + 5832) - (math.floor(wx) + math.floor(wy)), 10)
-		check("which is past the game's own last step, 3+3",
-			10 > 3 + 3)
 		eq("still found", CeroSecReach.pickComputer(0, 600, 110, { tall }), tall)
 		eq("and still out of reach", CeroSecReach.height(tall), "mid")
 	end
@@ -11602,6 +11604,7 @@ do
 		local _, chair = screenshotWorld()
 		eq("DEBUG is off for this one", CeroSec.DEBUG, false)
 		CeroSec.logRing = {}
+		CeroSecReach.grazeWarned = {}
 		eq("still nothing found", CeroSecReach.pickComputer(0, 550, 380, { chair }), nil)
 		eq("and exactly one line about it", #CeroSec.logRing, 1)
 		eq("as a warning, so the Warnings filter finds it",
@@ -11610,6 +11613,27 @@ do
 			string.find(CeroSec.logRing[1].text,
 				"on a computer's box and not on its pixels", 1, true) ~= nil)
 		check("and the square", string.find(CeroSec.logRing[1].text, "2089,5832,0", 1, true) ~= nil)
+
+		-- Once per machine, and that is the whole of it. The rectangle is two tiles
+		-- wide and four tall, so in an office the desk, the floor in front of it and
+		-- the chair are all inside some monitor's box; a line per click would empty
+		-- the 200-line ring inside a minute of ordinary play, and a second miss on
+		-- the same machine is the same information as the first.
+		eq("a second miss on the same machine says nothing more",
+			CeroSecReach.pickComputer(0, 551, 381, { chair }), nil)
+		eq("still one line", #CeroSec.logRing, 1)
+
+		-- A different machine gets its own line.
+		local other = place(2089, 5830, 0, CeroSec.SPRITES_OFF.S, 32, CHAIRBACK)
+		square(2089, 5831, 0)
+		local ox, oy, ow, oh = CeroSecReach.drawnBox(other)
+		local inside = { ox + ow / 2, oy + 1 }
+		check("a point inside the other machine's box but off its pixels",
+			CeroSec.pointInBox(inside[1], inside[2], ox, oy, ow, oh)
+				and CeroSecReach.isMouseOn(other, inside[1], inside[2], 0) == false)
+		eq("nothing found on it either",
+			CeroSecReach.pickComputer(0, inside[1], inside[2], { other }), nil)
+		eq("and now there are two lines", #CeroSec.logRing, 2)
 
 		-- A click nowhere near a computer's rectangle says nothing at all. A warning
 		-- that fires when the mod is behaving is a warning nobody reads.
@@ -11635,6 +11659,39 @@ do
 		CeroSec.logRing = {}
 		eq("nothing found there", CeroSecReach.pickComputer(0, 600, 420, { chair }), nil)
 		eq("and still not a word", #CeroSec.logRing, 0)
+	end
+
+	-- The box SIZE, against the renderer's rule rather than against a constant. The
+	-- renderer draws a 64x128 texture at scale 2 when tileScale is 2 and a 128x256 one
+	-- at scale 1, so both come to 128 x 256 -- and anything else keeps the sprite
+	-- instance's own scale, whose default is 1. A box hardcoded to 128 x 256 would
+	-- give a 32x64 sprite four times the rectangle it draws into, and would divide the
+	-- mask index by a scale it was never drawn at.
+	do
+		squares = {}
+		local half = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, { 0, 0, 31, 63 }, 32, 64)
+		local _, _, hw, hh = CeroSecReach.drawnBox(half)
+		eq("a 32x64 texture gets a 32x64 box", hw, 32)
+		eq("and not a doubled one", hh, 64)
+
+		squares = {}
+		local big = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, { 0, 0, 127, 255 }, 128, 256)
+		local _, _, bw, bh = CeroSecReach.drawnBox(big)
+		eq("a 128x256 texture is drawn at scale 1", bw, 128)
+		eq("so its box is 128x256 too", bh, 256)
+
+		squares = {}
+		local std = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR)
+		local _, _, sw, sh = CeroSecReach.drawnBox(std)
+		eq("and a 64x128 one is doubled to the same", sw, 128)
+		eq("the same way", sh, 256)
+
+		-- A texture with no size at all is no box, not a division by zero in the
+		-- middle of building a context menu.
+		squares = {}
+		local empty = place(2089, 5832, 0, CeroSec.SPRITES_OFF.S, 0, MONITOR, 0, 0)
+		eq("no size, no box", CeroSecReach.drawnBox(empty), nil)
+		eq("no size, no hit", CeroSecReach.isMouseOn(empty, 598, 350, 0), false)
 	end
 
 	-- No mouse at all, and an object with no square: neither is an error.

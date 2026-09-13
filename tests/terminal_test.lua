@@ -1028,17 +1028,21 @@ end
 -- square at all. That is why the game's own candidates read as a staircase
 -- (FBORenderObjectPicker.leftSideXy = {0,0} {0,1} {1,1} {1,2} {2,2} {2,3} {3,3})
 -- rather than as a block, and it is the rule pickSquares walks by.
+--
+-- What is asserted is that the pairs pickSquares SKIPS are the ones that name no
+-- square -- that the parity test is the right test and not merely a test. Turning
+-- the condition around (skipping the even pairs instead) makes this red.
 for ahead = -BEHIND, AHEAD do
 	for aside = -SIDE, SIDE do
-		if (ahead + aside) % 2 == 0 then
-			local dx, dy = (ahead + aside) / 2, (ahead - aside) / 2
-			eq("the pair " .. ahead .. "," .. aside .. " sums right", dx + dy, ahead)
-			eq("the pair " .. ahead .. "," .. aside .. " differs right", dx - dy, aside)
-			eq("and lands on a whole square", dx, math.floor(dx))
-		end
+		local dx, dy = (ahead + aside) / 2, (ahead - aside) / 2
+		local whole = dx == math.floor(dx) and dy == math.floor(dy)
+		eq("the pair " .. ahead .. "," .. aside .. " names a whole square exactly when " ..
+			"the parity test keeps it", whole, (ahead + aside) % 2 == 0)
 	end
 end
--- The game's staircase is inside it, step for step.
+-- The game's staircase is inside it, step for step. BEHIND, AHEAD and SIDE here are
+-- the derivation's own numbers; that CeroSecReach uses THESE numbers is asserted in
+-- tests/window_test.lua, which is the one file that can load the module.
 for _, step in ipairs({ { 0, 0 }, { 0, 1 }, { 1, 1 }, { 1, 2 }, { 2, 2 }, { 2, 3 }, { 3, 3 } }) do
 	local ahead, aside = step[1] + step[2], step[1] - step[2]
 	check("the game's own step " .. step[1] .. "," .. step[2] .. " is in the window",

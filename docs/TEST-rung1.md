@@ -223,11 +223,13 @@ console then prints the mouse point and every candidate box that was tested.
     `PICK_BEHIND = 2`, `PICK_AHEAD = 6 + SURFACE_MAX/16 + 2 = 12`, `PICK_SIDE = 1`,
     and `tests/terminal_test.lua` sweeps every raise and every pixel of a box to
     show it is sound and where it is tight.
-- Still only the game can say: whether `getCameraOffX()/getCameraOffY()` are
-  `IsoCamera.frameState.offX/offY` at the moment the menu is built (the algebra
-  agrees, the identity is assumed); whether the chair's back really overlaps the
-  monitor's band on these sprites, i.e. whether the chair beat the computer on
-  score or the computer was never masked at all — the **Log** tab now says which;
-  and the whole of it at a zoom other than 1.
+- Still only the game can say (the full list, with what a second reading of the jar
+  already closed, is [notes/picking.md](notes/picking.md) §4 and §5): a computer
+  carrying a sprite placement offset (`IsoSprite.def.offX/offY/offZ`, reachable only
+  as a Java instance field and therefore left alone) would answer a whole tile off,
+  and **only after being nudged or placed with extended placement**; whether the
+  chair's back really overlaps the monitor's band on these sprites, i.e. whether the
+  chair beat the computer on score or the computer was never masked at all — the
+  **Log** tab now says which; and the whole of it at a zoom other than 1.
 - Step 44 assumes the front-most computer wins. The order is by `x + y` then by
   index in the square; if the wrong one answers, that ordering is the suspect.
