@@ -80,6 +80,7 @@ HEADERS = [
     ("h-network", "THE NETWORK"),
     ("h-world", "WHAT YOU FIND"),
     ("h-multiplayer", "MULTIPLAYER"),
+    ("h-faithful", "TRUE TO 1993"),
     ("h-faq", "QUESTIONS"),
     ("h-credits", "CREDITS"),
 ]

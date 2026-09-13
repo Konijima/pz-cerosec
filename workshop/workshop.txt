@@ -15,62 +15,190 @@
 # version=1 first, then id=, title=, one description= a line, tags= and
 # visibility=. It does NOT keep these comments. Copy them back from git if you
 # want them, and see docs/RELEASE.md for the rest of the checklist.
+#
+# ---------------------------------------------------------------------------
+# THE IMAGES IN HERE, AND WHY THEIR URLS ALREADY WORK
+#
+# Steam renders [img] from a URL and has no idea what is inside the uploaded
+# item, so nothing in the mod's own folder can be shown. Two hosts, and each
+# has a reason:
+#
+#   * the banner and the seven section headers are served out of the GitHub
+#     repository, https://raw.githubusercontent.com/Konijima/pz-cerosec/main/
+#     ..., which answers with access-control-allow-origin: * and therefore
+#     survives the crossorigin="anonymous" Steam puts on a third-party image.
+#     They are versioned with the mod, so the page cannot drift from the build,
+#     and the URLs below are FINAL: no line here has to be edited at upload.
+#     The one thing that has to be true is that the repository is public before
+#     the item is (docs/RELEASE.md steps 16 and 17) and that workshop/img/ is
+#     committed on main.
+#
+#   * the ten screenshots are uploaded to the ITEM, because that is where a
+#     Workshop screenshot belongs -- it shows in the item's own gallery as well
+#     as in the description. Their URLs do not exist until the upload, so each
+#     one has a commented slot below naming the file from workshop/SHOTS.md.
+#     Turning a slot on is one edit: drop the "#", keep the "description=", and
+#     put the image address between the tags.
+#
+# Every image is authored at 630 px wide, which is not a taste: Steam's own
+# stylesheet caps a description image at
+#     .workshopItemDescription img { max-width: 630px; }
+# (public/css/skin_1/workshop.css). Wider is not shown wider, it is scaled
+# down, and a scaled-down bitmap face comes back with grey edges.
+# ---------------------------------------------------------------------------
 version=1
-title=CeroSec
-description=[h1]THE NETWORK NEVER DIED.[/h1]
+title=CeroSec - Unix Network Terminal
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/banner.png[/img]
 description=
-description=CeroSec puts a small Unix on the desktop computers that were already standing in Knox County. Right-click one to switch it on, right-click again to sit down at it, and a green 60x20 terminal opens on a BIOS boot line and a login prompt. Behind the prompt is CeroSec OS 1.0, a 1993 Unix with files, permissions, accounts, an editor, a shell language and cron. The disk belongs to the machine and not to you: walk away and come back to the same session still logged in, and a computer you unplug and carry across the county keeps everything that was on it.
+description=[b]The desktop computers of Knox County still work. This one runs Unix.[/b]
 description=
-description=[b]REAL UNIX TERMINAL. NETWORKING AND REMOTE ACCESS. MULTI-USER SYSTEM. 1993 REALISTIC ENVIRONMENT. FOR PROJECT ZOMBOID.[/b]
+description=CeroSec puts a small 1993 Unix on the vanilla desktop computers already standing in the world. Right-click one to switch it on, right-click again to sit down at it, and a green 60x20 terminal opens on a BIOS line and a login prompt. Behind it: files, permissions, accounts, a shell with pipes and cron, the doors and lights of the building under [b]/dev[/b], and three ways off the machine. The disk belongs to the computer, not to you, so a session you walk away from is still running when you come back and a machine you carry across the county keeps what was on it.
 description=
-description=[hr][/hr]
-description=[h1]Features[/h1]
+description=No dependencies. Build 42. Safe to add to a save you are already playing.
+# SHOT 01 -- workshop/shots/01-boot-login.png, the hero shot
+# description=[img]<url of 01-boot-login.png>[/img]
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-features.png[/img]
+description=
 description=[list]
-description=[*][b]A real terminal.[/b] Sixty columns by twenty, a BIOS that counts the memory, a login prompt, a shell. Two survivors standing at one computer read and type on the same glass.
-description=[*][b]Files, permissions and accounts.[/b] Owner, group and other, three octal digits, symbolic modes, symbolic links. Accounts, groups, [b]su[/b] and [b]sudo[/b] with a real [b]/etc/sudoers[/b] behind it.
-description=[*][b]An editor.[/b] [b]edit[/b] turns the screen into one: Tab saves, Escape leaves and asks first.
-description=[*][b]Shell scripting.[/b] The prompt is the script language, with [b]sh[/b]'s own grammar: [b]if[/b], [b]while[/b], [b]for[/b], variables, [b]$( )[/b], pipes, redirects, background jobs, [b]jobs[/b] and [b]kill[/b]. [b]cron[/b] runs a crontab on the minute hand while nobody is watching.
-description=[*][b]The building, under /dev.[/b] One file per door, light switch, lock and window the machine can reach, worked by name: [b]dev light0 off[/b], [b]dev door1 open[/b], [b]dev lock1 toggle[/b]. Drop a vanilla Motion Sensor in a room and it becomes a [b]sensorN[/b] a script can poll.
-description=[*][b]Three ways out of the case.[/b] Every computer in a map building is on one length of coax with the others, with its own address: [b]arp[/b], [b]ping[/b], [b]ruptime[/b], [b]rlogin[/b], [b]rsh[/b] and [b]rcp[/b], and trust files that spare you the password. Past the building, a modem dials the county at 2400 baud with [b]cu[/b]. Past the county's power, a two-way radio becomes the machine's TNC and [b]call[/b] raises another station by callsign, where anybody tuned to that frequency hears the connect.
-description=[*][b]Floppy disks.[/b] A 3.5 inch disk with a filesystem of its own: [b]newfs[/b], [b]mount[/b], copy your notes onto it, carry it across town.
-description=[*][b]A manual you have to find.[/b] Three volumes, the User's Guide, the System Administrator's Guide and the Programmer's Guide, printed in 1993 and spawning where a book about a computer would have been sold or shelved. They open as a book on your screen and the survivor goes on doing whatever they were doing.
-description=[*][b]Server-safe by construction.[/b] Every script runs on a step budget, the disk is 64 KB, a file is 4096 bytes, and four jobs is four jobs. Nothing a player types is ever handed to Lua.
+description=[*][b]A real terminal.[/b] Sixty columns by twenty, a BIOS that counts the memory and names what it found, a login prompt, a shell. Two survivors at one computer read and type on the same glass.
+description=[*][b]Files, permissions, accounts.[/b] Owner, group and other, three octal digits, symbolic modes, symbolic links. Accounts, groups, [b]su[/b] and [b]sudo[/b] with a real [b]/etc/sudoers[/b] behind it.
+description=[*][b]The prompt is the script language.[/b] [b]sh[/b]'s own grammar: [b]if[/b], [b]while[/b], [b]for[/b], variables, [b]$( )[/b], pipes, redirects, background jobs, [b]jobs[/b] and [b]kill[/b]. [b]cron[/b] runs a crontab on the minute hand while nobody is watching. [b]edit[/b] turns the screen into an editor.
+description=[*][b]The building, under /dev.[/b] A character device for every door, switch, lock and window the machine can reach, worked by name: [b]dev light0 off[/b], [b]dev door1 open[/b], [b]dev lock1 toggle[/b]. A vanilla Motion Sensor in the room becomes a [b]sensorN[/b] a script can poll.
+description=[*][b]Hardware you have to fit.[/b] Nothing is a device because of what it is. A magnetic contact, a relay, an electric strike or a door operator goes on the fixture itself, with a screwdriver and a level of Electricity, and only then is that door on [b]/dev[/b]. Find the boxes in an electrician's van, or read the [b]CeroSec Field Wiring Guide[/b] and build them.
+description=[*][b]Three ways out of the case.[/b] Coax to the other machines on the premises, a modem to the county at 2400 baud, and a two-way radio that outlives both. Details below.
+description=[*][b]Floppy disks.[/b] A 3.5 inch disk with a filesystem of its own: [b]newfs[/b], [b]mount[/b], copy your notes onto it, write on the label, carry it across town.
+description=[*][b]A manual you have to find.[/b] Three volumes, printed in 1993, spawning where a book about a computer would have been shelved. They open as a book on your screen and your survivor goes on doing whatever they were doing.
 description=[/list]
 description=
-description=[hr][/hr]
-description=[h1]Getting started[/h1]
+description=[b]How a session looks.[/b] Nothing here is a mockup; this is the screen.
+description=[code]
+description=CeroSec BIOS 1.0 -- (c) 1993 CeroSec Systems
+description=Memory test: 640K OK
+description=Detecting drives ... hda 64K
+description=Ethernet: eth0 10.109.190.4
+description=Phone line: 555-0417
+description=Callsign: KD4AXR
+description=Booting from hda ...
+description=
+description=acct-12-06 login: admin
+description=Password:
+description=
+description=admin@acct-12-06:~$ ls -l
+description=drwxr-xr-x  admin  admin       3  Jul  8 17:22  bin
+description=-rw-r--r--  admin  admin     412  Jul  8 17:22  handover.txt
+description=-rw-r-----  admin  admin    1104  Jul  6 09:15  ledger.txt
+description=-rw-r--r--  admin  admin     286  Jul  2 11:40  memo.txt
+description=admin@acct-12-06:~$ dev
+description=door0   exterior              1E 0        W  locked
+description=light0  office                1E 0           on
+description=lock0   exterior              1E 0        W  locked
+description=admin@acct-12-06:~$ dev light0 off
+description=admin@acct-12-06:~$ crontab -l
+description=0 21 * * 1-5 sh /home/admin/bin/total.sh
+description=admin@acct-12-06:~$ cu -l /dev/radio0
+description=CeroSec Systems TNC-200 (TNC-2 compatible)
+description=cmd: C KE4QWZ
+description=*** CONNECTED to KE4QWZ
+description=login:
+description=[/code]
+# SHOT 02 -- workshop/shots/02-shell-session.png
+# description=[img]<url of 02-shell-session.png>[/img]
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-getting-started.png[/img]
+description=
 description=The first ten minutes, in order:
 description=[list]
-description=[*]Right-click a desktop computer and choose [b]Turn on computer[/b]. It needs power in the room.
-description=[*]Right-click it again and choose [b]Use computer[/b]. Your survivor walks over and sits down.
-description=[*]At [b]login:[/b] type [b]admin[/b], then press Enter at the password: a shipped machine has [b]admin[/b] and [b]root[/b], both with no password yet.
-description=[*]Type [b]help[/b] for the commands, then [b]dev[/b] to see the doors, lights and locks this machine can reach. Try [b]dev light0 off[/b].
+description=[*]Right-click a desktop computer, [b]Turn on computer[/b]. It needs power in the room.
+description=[*]Right-click it again, [b]Use computer[/b]. Your survivor walks over and sits down.
+description=[*]At [b]login:[/b] try [b]admin[/b] and press Enter at the password. A bare machine has [b]admin[/b] and [b]root[/b], both open. A machine that belonged to somebody has his accounts instead, and some are locked.
+description=[*][b]help[/b] lists the commands. [b]dev[/b] lists the doors, lights and locks this machine can reach.
+description=[*]That list is empty until somebody has screwed a module onto a fixture. Right-click the door, the window or the light switch itself and take [b]CeroSec hardware[/b].
 description=[*]Type [b]exit[/b], or close the window, and walk away. The screen keeps running and is exactly as you left it next time.
 description=[/list]
+# SHOT 03 -- workshop/shots/03-computer-menu.png
+# description=[img]<url of 03-computer-menu.png>[/img]
+# SHOT 04 -- workshop/shots/04-dev-and-a-door.png
+# description=[img]<url of 04-dev-and-a-door.png>[/img]
+# SHOT 05 -- workshop/shots/05-fitting-a-module.png
+# description=[img]<url of 05-fitting-a-module.png>[/img]
+# SHOT 06 -- workshop/shots/06-the-manual.png
+# description=[img]<url of 06-the-manual.png>[/img]
 description=
-description=[hr][/hr]
-description=[h1]Multiplayer[/h1]
-description=Every computer's disk lives on the server, and every command is run there. A client asks; it never decides. Two survivors at one machine share the screen, a third can [b]rlogin[/b] in from the machine next door, and what one of them writes the others read.
-description=The budgets are the reason this is safe to run on a public server. A script is stepped, not looped to the end, so a [b]while true[/b] somebody left running costs that machine its own share and nothing else. A remote session costs the far machine, not yours. Four sessions may come in at once and the fifth is refused.
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-world.png[/img]
 description=
-description=[hr][/hr]
-description=[h1]Early release[/h1]
-description=This is version 0.1.0. Everything listed above is finished, tested and documented. What is being built now:
+description=Knox County had computers in it before the outbreak, and people were using them. A machine nobody has switched on yet comes up as [b]somebody's[/b] machine.
 description=[list]
-description=[*]Hardware modules you install on a door yourself, instead of a building that is wired to the computer from the start.
-description=[*]One phone line per machine, with seven-digit numbers, instead of one line per building.
-description=[*][b]mheard[/b], so a radio station can tell you who it has heard lately.
-description=[*]A debug window for server admins.
+description=[*][b]Ten kinds of premises, ten kinds of machine.[/b] A house, an office, a dispatch room, a bank, a shop, a school, a clinic, a radio station, a military post, and CeroSec Systems' own bench. Each with its own hostname, accounts, files, and a week of [b]/var/log[/b] from the last days anybody came to work. Their crontab lines still run: a shop's lights go off at nine, a bank's vault pulls itself to at six.
+description=[*][b]The password is written down, because everybody wrote it down.[/b] A yellow sticky note in a desk of that same premises. A dead employee with his own login folded in his pocket. The name of the item in your inventory [b]is[/b] the password.
+description=[*][b]And the paper is right before you get there.[/b] The note and the machine both derive the password from one number made once for the life of the save. Find the note on Monday, switch the computer on a week later, and it wants exactly what is in your pocket. The next save answers differently.
+description=[*][b]Disks with something on them.[/b] Seventeen floppies in a hundred are not blank: utilities, a BBS list, games, somebody's backup of his home directory on the 8th of July, a distribution disk. Each has a [b]README.TXT[/b] in DOS capitals saying what the rest of it is.
+description=[*][b]The phone book is a phone book.[/b] Vanilla's own Phonebook item, which until now only relieved boredom, is the Knox County directory. [b]Look up numbers[/b] opens the yellow pages of one exchange, and the copy remembers which town it was picked up in.
 description=[/list]
-description=Bugs and questions go in the comments here. The source, the issue tracker and the full documentation are at [b]github.com/Konijima/pz-cerosec[/b], which opens at release.
+description=All of it is one sandbox option, [b]Prefilled machines and disks[/b], on by default. Turn it off and every computer is bare. Either way, [b]a machine somebody has already switched on is never touched[/b].
+# SHOT 07 -- workshop/shots/07-somebody-elses-machine.png
+# description=[img]<url of 07-somebody-elses-machine.png>[/img]
+# SHOT 08 -- workshop/shots/08-floppy-disk.png
+# description=[img]<url of 08-floppy-disk.png>[/img]
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-network.png[/img]
+description=
+description=[list]
+description=[*][b]Coax, for the premises.[/b] Every computer of one premises shares a segment, with an address of the form [b]10.b.b.n[/b] that comes out of where it stands. A premises is not a building: a house is one, a mall is thirty shops on thirty segments. [b]arp[/b], [b]ping[/b], [b]ruptime[/b], [b]rlogin[/b], [b]rsh[/b], [b]rcp[/b], and [b]/etc/hosts.equiv[/b] and [b].rhosts[/b] to stop typing the password.
+description=[*][b]The telephone, for the county.[/b] One line per premises, one call at a time, a seven-digit number the firmware announces at power-on and nowhere else. [b]cu[/b] dials at 2400 baud. It is a party line, the way a rural exchange really sold one.
+description=[*][b]Packet radio, for after the power.[/b] A two-way radio the machine can reach becomes its TNC on the serial port, and a callsign in [b]/etc/callsign[/b] makes it a station. [b]cu -l /dev/radio0[/b] opens the box's own prompt, with the TNC-2's command set: [b]MYCALL[/b], [b]CONNECT[/b], [b]DISCONNE[/b], [b]CONV[/b], [b]MHEARD[/b]. Anybody tuned to that frequency hears the connect. It is the only link that outlives the county's power.
+description=[/list]
+# SHOT 09 -- workshop/shots/09-the-building-network.png
+# description=[img]<url of 09-the-building-network.png>[/img]
+# SHOT 10 -- workshop/shots/10-telephone-and-radio.png
+# description=[img]<url of 10-telephone-and-radio.png>[/img]
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-multiplayer.png[/img]
+description=
+description=Every disk lives on the server and every command runs there. A client asks; it never decides, and no client is ever told a password. Two survivors at one machine share the screen, a third can [b]rlogin[/b] in from next door, and what one writes the others read.
+description=
+description=[b]The budgets are why it is safe on a public server.[/b] A script is stepped, never looped to the end, so a [b]while true[/b] somebody left running costs that machine its own share and nothing else. A disk is 64 KB, a file 4096 bytes, a directory 96 entries, a machine 512 nodes; four jobs is four jobs and the fifth remote session is refused. [b]Nothing a player types is ever handed to Lua[/b], in either direction.
+description=
+description=Admins get a debug window behind the game's own debug mode: every machine the server holds, the selected one's filesystem, its [b]/dev[/b], the wire, the scheduler and the log. It also hands out a diagnostics floppy that runs twenty-six checks of the shell on the machine in front of you.
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-faithful.png[/img]
+description=
+description=Where a real [b]/bin/sh[/b], a real [b]cron[/b], a real [b]rlogin[/b] or a real Hayes modem would answer a certain way, this machine answers the same way, refusals included. The commands wear the names 1993 gave them: [b]useradd[/b], [b]userdel[/b], [b]usermod -G[/b], and not Debian's [b]adduser[/b].
+description=
+description=Six things have no 1993 model and are kept anyway. Rather than pass them off quietly they are named in the engine and printed on a page of the in-game Volume 1 called [i]What is not Unix here[/i]: [b]help[/b], [b]dev[/b], [b]mkpasswd[/b], [b]edit[/b], [b]sudo[/b], and jobs that belong to the machine rather than to the shell, because this shell can be walked away from.
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-faq.png[/img]
+description=
+description=[b]Does it need any other mod?[/b] No. No dependencies, no bundled libraries, vanilla Lua only.
+description=
+description=[b]Can I add it to a save I am already playing?[/b] Yes. The computers were always there; this gives them a disk the first time you switch one on. Removing it leaves them as furniture, and the manuals, floppies and modules in inventories are lost.
+description=
+description=[b]Will it slow the game down?[/b] It is budgeted rather than trusted. A script runs a fixed number of steps and then waits its turn; a machine nobody is looking at costs one pass on the minute hand. The ceilings above are the whole of what a computer can cost.
+description=
+description=[b]Does it work in multiplayer?[/b] Yes, and it was built that way rather than adapted. Dedicated-server testing is the next thing on the list, so if you run one, the comments are the right place for what you find.
+description=
+description=[b]Will an update break the machines I built?[/b] No. Every release photographs the exact shape it writes to the save, and the next one has to walk that photograph forward and prove the accounts still log in, the files are byte for byte and the disks still mount, or it does not ship.
+description=
+description=[b]Does it conflict with other mods?[/b] Nothing known. It adds its own items and menu entries and overrides no vanilla file. A mod that replaces the desktop computer object itself is the one thing that would collide.
+description=
+description=[b]Build 41?[/b] No, and there will not be one. This is Build 42 only, on 42.20 and up.
+description=
+description=[b]I cannot get into a machine.[/b] [b]last[/b] names the accounts that have been used, and the passwords are a plain word and two digits. Failing that, the 1993 answer is the one the firmware gives: hold the switch through the BIOS and let it repair the system, which reinstalls it and keeps [b]/home[/b].
+description=
+description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec/main/workshop/img/h-credits.png[/img]
+description=
+description=[b]Made by Konijima.[/b]
+description=
+description=Written from scratch in vanilla Lua against Build 42.20.4, with every engine call proven to exist before it was called. English and French are in the box; the files are five small JSON documents, and another language would be welcome.
+description=
+description=Version 0.1.0. A small first release, not a broken one: everything on this page is finished, tested and documented. Next: dedicated-server testing, and more languages.
+description=
+description=Source, issue tracker and full documentation: [b]github.com/Konijima/pz-cerosec[/b], which opens at release. Bugs and questions are welcome in the comments.
+description=
+description=If it earned it, a rating and a favourite put it in front of the next person looking for one of these. Thank you for reading this far.
 description=
 description=[hr][/hr]
-description=[h1]Made by Konijima[/h1]
-description=[list]
-description=[*]No dependencies. Vanilla Lua, nothing bundled, nothing required.
-description=[*]Build 42 only, and there will be no Build 41 version.
-description=[*]Safe to add to a running save. Removing the mod leaves the computers as furniture; the manuals and floppies in inventories are lost.
-description=[/list]
-description=[quote]Faithful to Unix, nothing invented. Where a real /bin/sh, a real cron, a real rlogin or a real Hayes modem would answer a certain way, this machine answers the same way, refusals included. A behaviour with no real-world model is a behaviour we questioned.[/quote]
+description=Workshop ID: (assigned at release)
+description=Mod ID: CeroSec
 tags=Build 42;Interface;Items;Literature;Multiplayer;Realistic
 visibility=unlisted
