@@ -11,9 +11,12 @@ require "CeroSec/CeroSecTerminal"
 --
 -- Six tabs of what the mod is actually doing: every computer the server holds,
 -- the selected machine's filesystem and its /dev, the wire, the scheduler, and
--- the mod's own log. Read-mostly: the only three things it can change are the
--- selected machine's power and where the player is standing, and each of those
--- goes through the ordinary server commands.
+-- the mod's own log. Read-mostly: what it can change is the selected machine's
+-- power, where the player is standing, -- behind two clicks, and only on a
+-- machine that is off -- the machine back into one nobody has ever used
+-- (onReset, and docs/DEBUG.md for why that exists), and what a developer's own
+-- bag holds (onGiveDisk). The self-test writes nothing of its own. Each goes
+-- through the ordinary server commands.
 --
 -- IT LOOKS LIKE THE GAME'S OWN DEBUG WINDOWS and deliberately not like the
 -- terminal beside it. A phosphor screen is a thing in the world that a survivor
@@ -55,6 +58,13 @@ CeroSecDebugUI.instance = nil
 -- up while you are still looking at the window, slow enough that the snapshot is
 -- not the most expensive thing on the server.
 CeroSecDebugUI.REFRESH_MS = 2000
+
+-- How long "Reset machine" stays armed after the first click, in the same wall
+-- clock. Five seconds: long enough to read the sentence the reason line puts up
+-- and click again, short enough that a window left alone is a window whose reset
+-- is not armed any more. Two clicks are the whole guard -- there is no dialog, see
+-- onReset.
+CeroSecDebugUI.ARM_MS = 5000
 
 CeroSecDebugUI.FONT = "Small"
 
@@ -454,9 +464,13 @@ function CeroSecDebugUI:createChildren()
 		CeroSecDebugUI.onTerminal, nil)
 	self.dumpButton = button(getText("IGUI_CeroSec_Debug_Dump"),
 		CeroSecDebugUI.onDump, nil)
-	-- The two of the self-test wave, appended after Dump state and not slotted in
+	-- The three that came after, appended at the END of the row and not slotted in
 	-- among the others: the row is read left to right and a button that moves is a
-	-- button somebody presses by mistake.
+	-- button somebody presses by mistake. The destructive one leads them -- "Reset
+	-- machine" is the only act in this window that cannot be undone, and it sits
+	-- where it was put rather than being pushed along by the two that followed it.
+	self.resetButton = button(getText("IGUI_CeroSec_Debug_Reset"),
+		CeroSecDebugUI.onReset, nil)
 	self.selfTestButton = button(getText("IGUI_CeroSec_Debug_SelfTest"),
 		CeroSecDebugUI.onSelfTest, nil)
 	self.giveDiskButton = button(getText("IGUI_CeroSec_Debug_GiveDisk"),
@@ -505,17 +519,19 @@ function CeroSecDebugUI:createChildren()
 		self.lists[1].itemheight
 
 	-- And the window is OPENED at least that wide, which the floor above does not
-	-- do on its own: the opening width is worked out from the widest tab's columns
-	-- (measure()) and knows nothing about the button row, so a wave that adds a
-	-- button wide enough to pass it -- "Give diagnostics disk" is the widest label
-	-- on the row -- opens a window with its last buttons off the right edge and a
-	-- minimum nobody can drag back to, since a window cannot be made wider by
-	-- dragging its own corner past the screen.
+	-- do on its own: the opening width is worked out from the widest tab's NOMINAL
+	-- columns (measure()) and knows nothing about the button row, which comes off
+	-- the words on the buttons, so the two are free to disagree. A seventh button
+	-- was what first made them, and "Give diagnostics disk" is the widest label on
+	-- the row now: a window that opens with its last buttons over its own right
+	-- edge is a button somebody has to drag the corner to find, and a minimum
+	-- nobody can drag back to, since a window cannot be made wider by dragging its
+	-- own corner past the screen.
 	--
 	-- Widened HERE and not in measure(), because the row's width is a measurement
 	-- of the buttons themselves and they do not exist until now; and reflowed with
-	-- applyLayout, so the lists and their columns come out at the new width rather
-	-- than the old one.
+	-- applyLayout, the only thing that places anything, so the lists and their
+	-- columns come out at the new width rather than the old one.
 	if self:getWidth() < self.minimumWidth then
 		self:setWidth(self.minimumWidth)
 		self:applyLayout()
@@ -617,6 +633,7 @@ function CeroSecDebugUI:onServerCommand(command, args)
 	if args.x == self.cx and args.y == self.cy and args.z == self.cz then
 		self.selection = { on = args.on, loaded = args.loaded,
 			canTurnOn = args.canTurnOn, canTurnOff = args.canTurnOff,
+			canReset = args.canReset, resetReason = args.resetReason,
 			reason = args.reason }
 	end
 	self.snapshots[args.tab] = args
@@ -645,10 +662,18 @@ end
 -- computer sprite any chunk has ever brought in, so a save an hour old answers
 -- forty-four rows of `off away` with nothing in any other column, and the six that
 -- matter are somewhere in the middle of them.
+-- With ONE exception, and it is the reset's: the row a reader has his cursor on is
+-- never filtered away under him. "Reset machine" is the one act that can change the
+-- answer to `used` -- the state goes, so the server's flag goes false -- and a
+-- machine that vanished out of the list the moment it was reset would be a machine
+-- nobody could then switch on to see what the reset did, on a list that looked as
+-- though the computer had been deleted. So the selected machine stays on the glass
+-- whatever the filter says, and the next refresh keeps it there.
 function CeroSecDebugUI:passes(index, row)
 	if CeroSecDebugUI.TABS[index].tab ~= "machines" then return true end
 	if not self.usedOnly then return true end
-	return row.used == true
+	if row.used == true then return true end
+	return row.x == self.cx and row.y == self.cy and row.z == self.cz
 end
 
 -- What a row IS, for keeping the cursor on it across a refresh: a machine row is
@@ -930,6 +955,52 @@ function CeroSecDebugUI:onDump()
 	self:send("debugact", { act = "dump" })
 end
 
+-- Is the reset armed for the machine that is selected RIGHT NOW?
+--
+-- Both halves matter. The machine, because a click that armed the row above and a
+-- click that fires on the row below would be a reset of a computer nobody aimed
+-- at; and the clock, because an arming left standing is a trap somebody walks into
+-- five minutes later when he has forgotten he ever pressed it.
+function CeroSecDebugUI:resetArmed(now)
+	local armed = self.armed
+	if armed == nil then return false end
+	if armed.x ~= self.cx or armed.y ~= self.cy or armed.z ~= self.cz then
+		return false
+	end
+	return (now or getTimestampMs()) - armed.at < CeroSecDebugUI.ARM_MS
+end
+
+-- The one act in this window that cannot be undone: the selected machine's whole
+-- filesystem, gone, so that its first power-on can happen a second time (see
+-- docs/DEBUG.md).
+--
+-- TWO CLICKS ARE THE GUARD, and there is deliberately no dialog: a vanilla modal
+-- would be one more window over a window that is already a tool, and the thing a
+-- reader needs is not a box to click through but to be told what he is about to
+-- do to WHICH machine -- which is what the reason line says between the two
+-- clicks. The arming expires by itself, because a guard that waits for ever is a
+-- guard that is not there.
+function CeroSecDebugUI:onReset()
+	if not self:hasMachine() then return end
+	local sel = self.selection
+	if sel ~= nil and sel.canReset == false then
+		self.refusal = "cannot reset: " .. tostring(sel.resetReason)
+		-- And the arming goes: a machine somebody has just switched on is not a
+		-- machine whose second click may still land.
+		self.armed = nil
+		return
+	end
+	if self:resetArmed() then
+		self.armed = nil
+		self.refusal = nil
+		self:send("debugact", { act = "reset" })
+		self:refresh()
+		return
+	end
+	self.armed = { at = getTimestampMs(), x = self.cx, y = self.cy, z = self.cz }
+	self.refusal = nil
+end
+
 -- Run every vector on the VM the GAME has, and the save path of the selected
 -- machine with them. The verdict comes back as a `note` and goes on the line
 -- under the list; the failing lines go through CeroSec.log and are on the Log
@@ -1037,10 +1108,22 @@ end
 -- The server's own refusal comes first, because it is the one that answers a
 -- button somebody has just pressed; then the reason it is greyed at all.
 function CeroSecDebugUI:reasonLine()
+	-- THREE THINGS COMPETE FOR THE ONE LINE, in this order.
+	--
+	-- The server's refusal first: it is the one that answers a button somebody has
+	-- just pressed, it can arrive at any moment -- including to say the reset
+	-- itself was refused -- and a refusal held back for the five seconds an arming
+	-- lasts is a refusal the reader never sees. Arming clears it (onReset), so the
+	-- two are not normally up together and this order costs the prompt nothing.
 	if self.refusal ~= nil then return self.refusal end
-	-- Under a refusal and over everything the window works out for itself: a
-	-- verdict a developer pressed for is what he is looking at the line for, but a
-	-- machine that cannot be switched on is a thing he needs to know now.
+	-- Then the armed reset, over everything the window works out for itself: it is
+	-- the one line that is about what the next click will DO rather than about what
+	-- a button cannot do, and it has five seconds to be read.
+	if self:resetArmed() then
+		return "Click again to reset " .. self:selectedHost()
+	end
+	-- Then a verdict a developer pressed for. Last of the three because it does not
+	-- expire and can be read again, while the other two are answers to one click.
 	if self.notice ~= nil then return self.notice end
 	if not self:hasMachine() then
 		return "nothing selected: click a row on the Machines tab"
@@ -1053,6 +1136,38 @@ function CeroSecDebugUI:reasonLine()
 	local why = self:terminalWhy()
 	if why ~= nil then return "cannot open the terminal: " .. why end
 	return nil
+end
+
+-- What to CALL the selected machine in a sentence, for the one sentence that has
+-- to name a machine: its hostname and where it stands.
+--
+-- Off the ROWS the Machines list is showing and not off a snapshot, because the
+-- rows are what survive a click on another row (see onRowClicked) -- and off the
+-- column called "host" rather than a number, so a column inserted before it does
+-- not rename somebody's computer. A machine nobody has ever used has no hostname
+-- at all and its coordinates are the only name it has, which is what this answers
+-- for it.
+function CeroSecDebugUI:selectedHost()
+	local where = tostring(self.cx) .. "," .. tostring(self.cy) .. "," ..
+		tostring(self.cz)
+	local column = nil
+	local columns = CeroSecDebugUI.TABS[1].columns
+	for k = 1, #columns do
+		if columns[k][1] == "host" then column = k end
+	end
+	local list = self.lists ~= nil and self.lists[1] or nil
+	local rows = list ~= nil and list.debugRows or nil
+	if column == nil or type(rows) ~= "table" then return where end
+	for i = 1, #rows do
+		local row = rows[i]
+		if row.x == self.cx and row.y == self.cy and row.z == self.cz then
+			local host = type(row.c) == "table" and row.c[column] or nil
+			if type(host) == "string" and host ~= "" and host ~= "-" then
+				return host .. " at " .. where
+			end
+		end
+	end
+	return where
 end
 
 -- The computer tile on the selected square, or nil when its chunk is not in.
@@ -1182,6 +1297,10 @@ function CeroSecDebugUI:prerender()
 	self.gotoButton:setEnable(machine)
 	self.termButton:setEnable(machine and self:terminalWhy() == nil)
 	self.dumpButton:setEnable(machine)
+	-- The reset takes the server's answer like the two power buttons, and it is
+	-- greyed on a machine that is ON -- which is the whole of its rule
+	-- (CeroSecDebug.resetRefusal).
+	self.resetButton:setEnable(machine and (sel == nil or sel.canReset ~= false))
 end
 
 function CeroSecDebugUI:render()

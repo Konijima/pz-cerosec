@@ -1742,9 +1742,11 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
 ## X. La fenêtre de débogage (palier debug)
 
 La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
-Elle ne change que cinq choses : allumer, éteindre, où le personnage se trouve,
-lancer l'autotest, et donner la disquette de diagnostic. Tout le reste est en
-lecture. Détails et protocole dans [DEBUG.md](DEBUG.md).
+Elle ne change que six choses : allumer, éteindre, où le personnage se trouve,
+**réinitialiser la machine** — derrière deux clics, et seulement sur une machine
+éteinte — c'est-à-dire en refaire une que personne n'a jamais utilisée, lancer
+l'autotest, et donner la disquette de diagnostic. Tout le reste est en lecture.
+Détails et protocole dans [DEBUG.md](DEBUG.md).
 
 Les étapes 258b à 258i sont la porte de sortie du mod : ce sont les deux seules
 vérifications qui font tourner le moteur sur la machine virtuelle que le joueur a
@@ -1870,6 +1872,43 @@ un interrupteur dans la pièce.
      la machine, une ligne par clé, et une dernière ligne qui dit où ça a été
      coupé. Attendu : c'est borné (pas plus de 401 lignes), et rien n'apparaît
      dans la fenêtre. [ ]
+250b. **Réinitialiser la machine — les deux clics.** C'est le bouton
+     **Réinitialiser la machine**, après **Vider l'état**, et il existe pour une
+     seule raison : le préremplissage n'arrive qu'au PREMIER allumage, donc une
+     machine dont le premier allumage a planté à moitié est une machine sur laquelle
+     on ne peut plus réessayer. Sur une machine **éteinte** : cliquer une fois.
+     Attendu : rien ne part sur le fil et la première ligne sous la liste dit
+     « Click again to reset <nom d'hôte> at x,y,z ». Attendre plus de **cinq
+     secondes** sans rien faire : la ligne disparaît et le clic suivant ne fait
+     qu'armer de nouveau. Cliquer deux fois de suite : le disque part. Aucune
+     boîte de dialogue, jamais — les deux clics SONT la garde. [ ]
+250c. **Ce que la réinitialisation laisse.** Avant de réinitialiser : noter le nom
+     d'hôte et les comptes de la machine (`cat /etc/passwd`), écrire un fichier à
+     soi, mettre une **disquette** dans le lecteur, et repérer le papier déjà trouvé
+     dans un tiroir de ces lieux. Réinitialiser (machine éteinte), puis rallumer.
+     Attendu : les **mêmes comptes** et le **même nom d'hôte** qu'avant — ils
+     viennent du secret de la sauvegarde et des lieux, que rien de tout ça ne touche
+     — donc **le papier du tiroir ouvre encore la machine** ; le fichier écrit à la
+     main a disparu ; et la **disquette est toujours dans le lecteur**, avec ce qui
+     est écrit dessus (`mount /dev/fd0 /mnt` puis `ls /mnt`). Rien n'est éjecté par
+     terre : une disquette dans un lecteur est dans le lecteur. Et aucun second
+     papier n'apparaît dans les tiroirs de ces lieux. [ ]
+250d. **Les refus.** Sur une machine **allumée** : attendu, le bouton est **grisé**,
+     et cliquer quand même n'envoie rien et écrit « cannot reset: it is on -- switch
+     it off first » sur la première ligne. Puis : armer sur une machine éteinte,
+     l'allumer par le menu de l'ordinateur AVANT le second clic, et cliquer.
+     Attendu : rien n'est réinitialisé, la même phrase s'affiche. Enfin armer sur une
+     machine, cliquer une autre ligne, et cliquer **Réinitialiser la machine** :
+     attendu, ce clic ne fait qu'armer sur la nouvelle machine — un armement ne
+     traverse jamais une sélection. [ ]
+250e. **La ligne qui ne disparaît pas sous le curseur.** Une machine
+     réinitialisée n'a plus d'état, donc le serveur ne la compte plus comme
+     « utilisée ». Filtre sur **Voir les utilisées** (le réglage par défaut),
+     réinitialiser la machine sélectionnée. Attendu : sa ligne **reste** dans la
+     liste et reste surlignée, aux rafraîchissements suivants aussi, pendant que les
+     autres machines jamais utilisées restent cachées — sans quoi l'ordinateur qu'on
+     vient de réinitialiser aurait l'air d'avoir été supprimé. Cliquer **Allumer**
+     dessus : elle revient dans la liste par la porte normale. [ ]
 251. **L'onglet Devices.** Attendu : une ligne par entrée de `/dev` de la machine
      sélectionnée, avec le même nom et le même état que `ls -l /dev` dans son
      terminal, plus ce que le terminal ne montre pas : le carré absolu de l'objet,

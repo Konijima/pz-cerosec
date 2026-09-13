@@ -139,6 +139,10 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	-- again about the state the ITEM brought, which need not be the one the machine
 	-- refused.
 	self.osNewer = nil
+	-- And any reset that was waiting for a power-on. The state this machine has now
+	-- is the one the ITEM brought, and prefilling over somebody's carried filesystem
+	-- is the very thing the bare test exists to prevent (see turnOn).
+	self.osFresh = nil
 	-- The disk that was in the slot travelled with the machine, inside the OS
 	-- state. A computer put down on the other side of town still has it -- and
 	-- nothing is mounted any more, for the reason the power switch has: it was
@@ -630,7 +634,15 @@ function SCeroSecObject:turnOn()
 	-- Whether there was a machine here at all a moment ago. Read BEFORE osState is
 	-- asked, because osState is what makes one: after the call there is always a
 	-- table and nothing can tell the two cases apart any more.
-	local bare = type(self.os) ~= "table"
+	--
+	-- Or the developer's reset said so, which is the one other way in
+	-- (resetMachine below). It has to be a flag and not the absence of a state,
+	-- because the absence does not survive being LOOKED at: osState makes a fresh
+	-- machine out of nothing, so the debug window's own detail block -- which asks
+	-- osState of the selected machine every two seconds -- would give a machine its
+	-- state back between the reset and the press that was meant to prefill it.
+	local bare = type(self.os) ~= "table" or self.osFresh == true
+	self.osFresh = nil
 	local state = self:osState()
 	-- What is already on it, once in the life of the machine (see prefill above).
 	-- Before identify, so that the hostname a profile gives it is the name that
@@ -695,6 +707,94 @@ end
 function SCeroSecObject:toggle()
 	if self.on then return self:turnOff() end
 	return self:turnOn()
+end
+
+--
+-- The developer's reset
+--
+-- A MACHINE THAT HAS NEVER BEEN USED, made out of one that has. It exists for the
+-- one thing nothing else in the mod can do: prefill runs at the FIRST power-on and
+-- at no other moment, so a machine whose first power-on went wrong halfway through
+-- is a machine there is no way to try again on -- it is half filled for ever, and
+-- the bug that half filled it cannot be seen a second time. The debug window's own
+-- button (docs/DEBUG.md), behind CeroSec.debugAllowed and nothing a player can
+-- reach.
+--
+-- OFF ONLY, and the refusal is the window's to print (CeroSecDebug.resetRefusal):
+-- everything below is what turnOff already did, plus the disk, and a machine that
+-- is running would have its jobs stopped and its screen taken away by a button
+-- that says nothing about either.
+--
+-- THE DISK STAYS IN THE DRIVE. What is in the slot is a thing in the WORLD -- a
+-- player carried it here -- and it lives in the machine's state only because that
+-- is where the state serializer can keep it (see the drive section above). So it
+-- is lifted out, the state is thrown away, and it is put back into the fresh one:
+-- the alternative is a reset that destroys somebody's floppy, and there is
+-- deliberately no "eject it to the floor first" here either, for the reason the
+-- pickup path gives -- a disk in a drive is in the drive.
+--
+-- And the NOTE in the drawer is not touched: that bookkeeping is the system's
+-- (CeroSecNotes.premisesMark) and it is about a premises and not about a machine.
+-- The paper that is already in a desk names a password derived from the save's
+-- secret and the premises, both of which this leaves exactly as they are, so the
+-- machine that comes back up is a machine that paper still opens.
+--
+-- true when the machine was reset.
+function SCeroSecObject:resetMachine()
+	if self.on then return false end
+
+	-- Out of the state before the state goes.
+	local floppy, fdtype = nil, nil
+	if type(self.os) == "table" then
+		floppy = self.os.floppy
+		fdtype = self.os.fdtype
+	end
+
+	-- Everything a machine that stopped has stopped, said in the order turnOff says
+	-- it: the jobs and the pending order with them (CeroSecJobs.killAll drops
+	-- self.rebooting and takes the machine off the scheduler's book), then the
+	-- windows, which are told rather than forgotten.
+	CeroSecJobs.killAll(self)
+	if self.luaSystem and self.luaSystem.evictWatchers then
+		self.luaSystem:evictWatchers(self, "off")
+	else
+		self:dropWatchers()
+	end
+	-- No sessions to close: they went when the machine went off, which is the one
+	-- state this is allowed in.
+	self.os = nil
+	-- Both sticky refusals with it. They were about the state that has just gone,
+	-- and a fresh machine that came up "broken" would be a machine nothing could
+	-- explain.
+	self.osBroken = nil
+	self.osNewer = nil
+	self.console = nil
+	self.consoleChecked = nil
+	self.heard = nil
+	self.cron = nil
+	self.upMs = nil
+	-- And the one thing that is not an erasure: what the next power-on is to do
+	-- (see turnOn).
+	self.osFresh = true
+
+	if floppy ~= nil then
+		-- osState on a nil state is what MAKES a fresh machine, so this is the same
+		-- machine the next power-on would have found -- with the drive filled again.
+		local state = self:osState()
+		if state ~= nil then
+			state.floppy = floppy
+			state.fdtype = fdtype
+		end
+	end
+
+	self:syncDisk()
+	self:mirrorOS()
+	self:publishOS()
+	self:updateOnClient()
+	CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
+		.. " was reset to a machine nobody has used"
+		.. (floppy ~= nil and ", disk kept in the drive" or ""))
+	return true
 end
 
 function SCeroSecObject:apply()
