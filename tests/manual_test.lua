@@ -895,7 +895,19 @@ do
 				type(one.why) == "string" and one.why ~= "")
 			check("the deviations page names " .. one.name, said[one.name] == true)
 			-- And the engine agrees about whether it is there at all.
-			if one.gone then
+			if one.world then
+				-- The third kind: not a command, so there is no file and no
+				-- COMMAND_INFO entry to weigh it against, and its NAME is not
+				-- enough either -- `login` is a word this very page uses about the
+				-- login: prompt, so the check above passes on a page that never
+				-- mentioned the deviation. What it has to carry is the SENTENCE.
+				check(one.name .. " is not a command",
+					CeroSecOS.COMMAND_INFO[one.name] == nil)
+				check("deviation " .. one.name .. " carries the phrase it owes",
+					type(one.phrase) == "string" and #one.phrase > 0)
+				check("the deviations page says \"" .. tostring(one.phrase) .. "\"",
+					string.find(page, tostring(one.phrase), 1, true) ~= nil)
+			elseif one.gone then
 				check(one.name .. " really is gone from the machine",
 					CeroSecOS.COMMAND_INFO[one.name] == nil)
 				check("and is one of the names the top-up deletes",

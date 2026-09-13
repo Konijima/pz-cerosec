@@ -70,6 +70,12 @@ not Unix here*. A bench checks the list against the page in **both** directions,
 so a deviation that is not declared is a red, and a declaration with nothing
 behind it is a red too. If your change deviates, add it to both.
 
+A deviation that is **not a command** — the one machine in four found at somebody's
+prompt after a power cut is the worked example — is marked `world = true` and carries
+the `phrase` the page has to say, literally. Its name alone cannot be the check: a
+word like `login` is already on that page for another reason, so the bench would be
+green on a page that never mentioned the deviation at all.
+
 ### The sources of truth, in order
 
 1. **The game's own Lua**, under

@@ -793,6 +793,14 @@ CeroSecOS.COMMAND_INFO = {
 -- this machine and is here because a player may have heard of it or seen it on an
 -- older one -- the page has to say where it went.
 --
+-- And `world` marks the third kind: a deviation that is not a COMMAND at all, so
+-- there is no /bin file and no COMMAND_INFO entry for the bench to weigh it
+-- against. One of those cannot be checked by its name alone -- `login` is a word
+-- the page already uses about the login: prompt -- so an entry marked `world`
+-- carries the `phrase` the page has to say, literally, and the bench looks for
+-- that instead. A sentence is what a reader needs anyway; a word is what a command
+-- needs.
+--
 CeroSecOS.DEVIATIONS = {
 	-- Not a Unix command at all. `man -k` and `apropos` are what a real one had,
 	-- and both want a whatis database this machine has no room for; what is here
@@ -842,6 +850,16 @@ CeroSecOS.DEVIATIONS = {
 	-- when the line opens, a real TNC-2 having printed whatever its vendor's
 	-- firmware printed.
 	{ name = "cu", why = "-l names /dev/radio0, and the TNC's banner line is ours" },
+	-- Not a command: the one machine in four that is found at somebody's prompt
+	-- after the power came back. No Unix can restore a session across a power cut
+	-- and this one cannot either -- a survivor's own machine comes back to `login:`
+	-- every time. What is deviated from is the STORY the prefilled machines tell:
+	-- the console agrees with /var/log/wtmp, which says a man sat down on the
+	-- morning of it and never logged out, instead of agreeing with the boot
+	-- sequence. It happens once in the life of a machine.
+	{ name = "login", world = true,
+		phrase = "was never logged out",
+		why = "a machine found at a prompt is one wtmp says nobody logged out of" },
 	-- And the second name that is GONE: `call CALLSIGN` was this machine's own
 	-- command for the radio until SYSTEM_VERSION 17. No Unix had one -- a TNC was
 	-- a box on a serial line -- and a player who used it last week will type it.

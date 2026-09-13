@@ -8,6 +8,9 @@ date.
 
 ## Unreleased
 
+- The manual's *What is not Unix here* page now also owns up to the one thing on
+  it that is not a command: a machine nobody logged out of comes back at that
+  person's prompt after the power returns, where a real Unix would ask again.
 - A `$( )` that catches more than a word will hold now says `word too large` and
   nothing else. It used to say that and then spill the rest of the command's output
   across the screen, in the middle of the line you were typing.

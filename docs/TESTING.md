@@ -84,7 +84,10 @@ The suites, in the order they run:
   `CeroSecOS.RETIRED_BIN` deletes whose replacement is not itself a command the book
   teaches by name. It is checked in both directions: an entry that is not marked
   `gone` has to be a command the engine really has, and one that is marked `gone`
-  has to be a command it really has not.
+  has to be a command it really has not. An entry marked `world` is not a command at
+  all — the machine found still logged in — and is held to the literal `phrase` it
+  carries rather than to its name, because its name is a word the page already uses
+  for something else and would be green on a page that never mentioned it.
 - `hostile_test.lua` — the one that matters to a server owner: an endless loop, a
   script that runs itself, a doubling string, an output flood, a hundred background
   jobs and a substitution bomb, each driven through the real scheduler for a

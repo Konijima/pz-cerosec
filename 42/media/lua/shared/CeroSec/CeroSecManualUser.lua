@@ -246,7 +246,13 @@ opens is ours as well: a real one printed whatever its maker chose.
 There was a call CALLSIGN command here until this release. If you type it
 you will get command not found. It was never Unix -- a packet box was a
 peripheral on a serial line, and the way to one is cu -l /dev/radio0, which
-Volume 2 chapter 8 teaches.]],
+Volume 2 chapter 8 teaches.
+
+And one thing that is not a command. A machine that was never logged out
+comes back at that prompt after the power returns and asks you for
+nothing: the record says the last man sat down and never left, and the
+screen agrees with the record. A real Unix would ask again, and so does
+yours: log out and login: is what you get.]],
 
 [[And two shapes are cut rather than changed. A line here is sixty columns,
 so uptime says "load" where 4.4BSD says "load averages:", and w prints the

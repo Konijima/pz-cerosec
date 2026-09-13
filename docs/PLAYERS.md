@@ -1191,7 +1191,11 @@ whoever sat at it, and none of it is decoration:
 **And about one machine in four you will find still logged in.** Nobody ever typed
 `exit`, so it comes up at that man's prompt and asks you for nothing — his home, his
 shell, his history under your fingers. `last` on such a machine says `still logged
-in` against the last name on it. That never happens at a military post.
+in` against the last name on it. That never happens at a military post. It is a
+**declared deviation** — no Unix can restore a session across a power cut, and the
+manual's *What is not Unix here* page says so in the machine's own words; what is
+deviated from is the story those machines tell, where the screen agrees with `wtmp`
+instead of with the boot sequence.
 
 **Some of them do things while you are not there.** A shop's lights go off at nine,
 a bank's vault door pulls itself to at six on weekdays, the cells in a dispatch

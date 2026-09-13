@@ -2485,6 +2485,13 @@ sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à re
      - `exit` → l'écran retombe sur `login:` et il faudra son mot de passe pour
        revenir. [ ]
 
+306a. **Et le manuel le dit.** Toujours sur cette machine (ou n'importe laquelle) :
+     ouvrir le Volume 1, chapitre 1, la page **What is not Unix here, and the end
+     of the list** → le dernier paragraphe dit qu'une machine qui n'a jamais été
+     déconnectée revient à cette invite quand le courant revient, et qu'un vrai
+     Unix redemanderait. C'est la seule chose déclarée sur cette page qui n'est pas
+     une commande. [ ]
+
 307. **Le poste militaire n'est jamais laissé ouvert.** Allumer tous les
      ordinateurs de poste militaire qu'on trouve : aucun n'affiche jamais une
      invite de shell au démarrage, toujours `login:`. [ ]
