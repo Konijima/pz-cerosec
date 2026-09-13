@@ -889,6 +889,175 @@ do
 end
 
 --
+-- 4d. THE THREE TELLINGS: every one of them, read
+--
+-- Section 4 builds ONE machine of each profile, so it reads one telling of each
+-- file and the other two are never looked at. That is exactly the shape in which a
+-- text with a line eighty columns wide, or a {staff4} nothing fills, sits in the
+-- tree for a wave and turns up on a player's screen in the one office in three
+-- that got it.
+--
+-- So this walks the CATALOGUE and not a machine: every entry, every telling, with
+-- names put in, held to the same rules section 4 holds the one it built to. And it
+-- asserts the shape of the format as well as the text -- three tellings and not
+-- two, never `text` and `texts` together, and PROSE MUST HAVE THREE. That last one
+-- is the requirement of this wave, and it is the only assertion here that a
+-- forgetful next wave could fail.
+--
+
+-- What a file may be, read at sixty columns. A thousand two hundred bytes is
+-- twenty lines of sixty, which is the screen -- a file longer than that is a file
+-- a survivor scrolls, and nothing here needs scrolling.
+local FILE_CHARS = 1200
+
+-- The DATA tables, by their own text, so an entry carrying one can be told from a
+-- prose file that happens to have one telling.
+local IS_DATA = {}
+for _, text in pairs(CeroSecContent.DATA) do IS_DATA[text] = true end
+
+do
+	local names = {
+		owner = "pcoleman", staff1 = "torres", staff2 = "walker",
+		staff3 = "dhensley", host = "acct-04-11",
+	}
+	local entries, prose, told = 0, 0, 0
+	local function judge(where, entry)
+		entries = entries + 1
+		check(where .. " does not carry both text and texts",
+			entry.text == nil or entry.texts == nil)
+		if entry.texts ~= nil then
+			prose = prose + 1
+			eq(where .. " has CeroSecContent.VARIANTS tellings", #entry.texts,
+				CeroSecContent.VARIANTS)
+		else
+			-- A file with one telling is a DATA table and nothing else. The rule of
+			-- this wave in one assertion: prose varies, and the tables the scripts are
+			-- proved against do not.
+			check(where .. " has one telling only because it is a data table the "
+				.. "scripts are proved against", IS_DATA[entry.text] == true)
+			if entry.extra ~= nil then
+				eq(where .. " has CeroSecContent.VARIANTS tails", #entry.extra,
+					CeroSecContent.VARIANTS)
+			end
+		end
+		local tellings = entry.texts or { entry.text }
+		for v = 1, #tellings do
+			told = told + 1
+			local w = where .. " telling " .. v
+			local text = CeroSecContent.fillNames(tellings[v], names)
+			check(w .. " is a string", type(text) == "string" and text ~= "")
+			check(w .. " is inside " .. FILE_CHARS .. " characters (" .. #text .. ")",
+				#text <= FILE_CHARS)
+			check(w .. " is inside MAX_FILE_BYTES", #text <= CeroSecOS.MAX_FILE_BYTES)
+			-- Not one brace left. A placeholder nothing fills is a bug on a screen.
+			check(w .. " has no placeholder left in it",
+				string.find(text, "[{}]") == nil)
+			for i = 1, #text do
+				local b = string.byte(text, i)
+				check(w .. " byte " .. i .. " is printable ASCII (" .. b .. ")",
+					b == 10 or (b >= 32 and b <= 126))
+			end
+			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+				check(w .. ' line fits 60 columns: "' .. line .. '" (' .. #line .. ")",
+					#line <= CeroSecOS.COLS)
+			end
+			-- And the names really went in: a telling that names a placeholder names
+			-- one of the five, and every one of the five is a login the bench chose.
+			for who in string.gmatch(tellings[v], "{(%a+%d*)}") do
+				local known = false
+				for p = 1, #CeroSecContent.PLACEHOLDERS do
+					if CeroSecContent.PLACEHOLDERS[p] == who then known = true end
+				end
+				check(w .. " names a placeholder the filler knows ({" .. who .. "})",
+					known)
+			end
+		end
+	end
+
+	for i = 1, #CeroSecContent.PROFILE_IDS do
+		local id = CeroSecContent.PROFILE_IDS[i]
+		local profile = CeroSecContent.PROFILES[id]
+		if profile ~= nil then
+			if type(profile.accounts) == "table" then
+				for a = 1, #profile.accounts do
+					local files = profile.accounts[a].files
+					if type(files) == "table" then
+						for f = 1, #files do
+							judge(id .. " slot " .. a .. " " .. tostring(files[f].path), files[f])
+						end
+					end
+				end
+			end
+			if type(profile.files) == "table" then
+				for f = 1, #profile.files do
+					local file = profile.files[f]
+					if not file.dir then
+						judge(id .. " " .. tostring(file.path), file)
+					end
+				end
+			end
+		end
+	end
+	check("there are prose files with three tellings each (" .. prose .. ")",
+		prose >= 25)
+	check("and every entry was read (" .. entries .. " entries, " .. told
+		.. " tellings)", told >= entries * 2)
+
+	-- EVERY TELLING IS REACHABLE, which is the other half of writing three of them:
+	-- a chooser that answered 1 and 2 and never 3 would leave a third of the county's
+	-- prose unread for ever and nothing above would notice.
+	local seen = {}
+	for b1 = 0, 15 do
+		for b2 = 0, 15 do
+			seen[CeroSecContent.variantOf(SECRET_A, b1, b2, "memo.txt")] = true
+		end
+	end
+	for v = 1, CeroSecContent.VARIANTS do
+		check("telling " .. v .. " is reached by some premises", seen[v] == true)
+	end
+	eq("and the same premises asks for the same telling for ever",
+		CeroSecContent.variantOf(SECRET_A, 12, 34, "memo.txt"),
+		CeroSecContent.variantOf(SECRET_A, 12, 34, "memo.txt"))
+	check("while another save tells it differently somewhere",
+		CeroSecContent.variantOf(SECRET_B, 12, 34, "memo.txt")
+			~= CeroSecContent.variantOf(SECRET_A, 12, 34, "memo.txt")
+		or CeroSecContent.variantOf(SECRET_B, 12, 35, "memo.txt")
+			~= CeroSecContent.variantOf(SECRET_A, 12, 35, "memo.txt"))
+
+	-- TWO OFFICES ARE TWO STORIES. Asked of built machines and not of the chooser,
+	-- because what a player meets is a file on a disk: the same profile in two
+	-- premises, and somewhere in the county the files differ. Walked until it is
+	-- found, and the walk is bounded so that "never found" is a red.
+	local function officeText(b1, b2)
+		local state = CeroSecOS.newState("ksp-4-b")
+		local _, _, logins = CeroSecContent.prefill(state,
+			opts(SECRET_A, { premises = "Office", b1 = b1, b2 = b2 }))
+		local out = {}
+		for slot = 1, 3 do
+			local login = logins[slot]
+			if login ~= nil then
+				local home = CeroSecOS.systemNode(state, "/home/" .. login)
+				if home ~= nil and home.type == "dir" then
+					local kids = CeroSecOS.childNames(home)
+					for k = 1, #kids do
+						local node = home.children[kids[k]]
+						if node.type == "file" then out[#out + 1] = node.data or "" end
+					end
+				end
+			end
+		end
+		table.sort(out)
+		return table.concat(out, "\n@@\n")
+	end
+	local base = officeText(12, 34)
+	local differs = false
+	for b2 = 35, 60 do
+		if officeText(12, b2) ~= base then differs = true end
+	end
+	check("two offices in the county do not read the same", differs)
+end
+
+--
 -- 5. The same secret twice is the same machine, and another secret is another one
 --
 

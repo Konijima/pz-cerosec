@@ -2587,14 +2587,44 @@ end
 --
 -- THE PROFILES
 --
--- Two written, eight named and empty. The texts are SHORT PLACEHOLDERS in the
--- manual's voice: wave 7b writes the library and the lore, and it writes it into
--- these tables without touching a line of code above.
+-- Ten places in Knox County, each a story in three or four files, each carrying
+-- at least one script a survivor can copy and use on a building of his own.
 --
 -- Every line of every text is inside 60 columns, because a survivor reads it with
 -- `cat` on a 60 column screen and the terminal does not wrap. The bench holds
 -- every one of them to it.
 --
+-- AND EVERY PROSE FILE HAS THREE TELLINGS (wave 7c). Which one a premises reads
+-- is the premises' own (CeroSecContent.variantOf), so the office in the next town
+-- tells the same kind of story in another voice, with its own people's names in it
+-- where the text writes {owner}, {staff1}, {staff2}, {staff3} or {host}.
+--
+-- FOUR RULES THE THREE ARE WRITTEN TO, and none of them is obvious:
+--
+--   1. A TELLING IS PICKED PER FILE. Telling 2 of the handover note stands beside
+--      telling 1 of the ledger, so any three may be read together -- which means
+--      anything one file depends on another for (the column that is cents, the
+--      name of a script, the number of a device) is the SAME in all three
+--      tellings of both. What varies is the voice, the person writing, the detail
+--      and the complaint. Never the machine underneath.
+--   2. NOTHING NAMES A DATE THE SAVE MIGHT NOT HAVE, unless the file is a log
+--      somebody typed in by hand -- those carry July because the outbreak is
+--      July, and they are the same two files that already did.
+--   3. NOBODY SIGNS HIS OWN NAME AS SOMEBODY ELSE'S. A file in slot 1's home is
+--      written BY slot 1, so it names {staff2} and {staff3} and never {staff1};
+--      {owner} is for a file that is about whoever's desk it is rather than about
+--      the man who wrote it.
+--   4. NO TOWN. See the head of CeroSecContent.PLACEHOLDERS: a town name would
+--      have to be invented, and an invented town is a town that is not on the
+--      map a player is standing on.
+--
+
+-- Three tellings, each a list of lines. A shorthand and nothing more: without it
+-- every file in this table would be three calls to table.concat side by side and
+-- the shape of a file would be lost in them.
+local function three(a, b, c)
+	return { table.concat(a, "\n"), table.concat(b, "\n"), table.concat(c, "\n") }
+end
 
 CeroSecContent.PROFILES = {}
 
@@ -2606,14 +2636,29 @@ CeroSecContent.PROFILES.residential = {
 	}, "\n"),
 	accounts = {
 		{ pass = false, files = {
-			{ path = "notes.txt", text = table.concat({
+			{ path = "notes.txt", texts = three({
 				"Things to do before the weekend:",
 				"",
 				"- ring the bank about the cheque",
 				"- the porch light is on a timer now, ask Dad",
 				"- FIND THE MANUAL",
-			}, "\n") },
-			{ path = "porch.txt", text = table.concat({
+			}, {
+				"List, because otherwise I will forget all of it.",
+				"",
+				"- the gutter, before it rains again",
+				"- two more tins of lamp oil",
+				"- ask {staff2} about the trailer on Saturday",
+				"- the porch light. Read porch.txt. Stop asking me.",
+			}, {
+				"Nobody is answering at the office and the radio has",
+				"said the same four sentences since Tuesday.",
+				"",
+				"- fill everything in the house that holds water",
+				"- the good padlock, on the shed",
+				"- if {staff2} gets back, the keys are where they were",
+				"- we are not driving north. They have that road.",
+			}) },
+			{ path = "porch.txt", texts = three({
 				"How the porch light works, since nobody believes me.",
 				"",
 				"There is a little box wired to the switch and the",
@@ -2622,12 +2667,36 @@ CeroSecContent.PROFILES.residential = {
 				"  cat /dev/light0",
 				"  echo off > /dev/light0",
 				"",
-				"That is all a timer is. The script in my bin does the",
-				"kitchen one at the same time.",
-			}, "\n") },
+				"That is all a timer is. If there is a script in my",
+				"bin, it does the same thing and saves the typing.",
+			}, {
+				"The porch light. Read this before you touch the",
+				"switch on the wall.",
+				"",
+				"The switch has a box on it and the box is on the",
+				"computer. The computer calls it light0 and calls",
+				"nothing else light0.",
+				"",
+				"  cat /dev/light0        what it is doing now",
+				"  echo on > /dev/light0",
+				"  echo off > /dev/light0",
+				"",
+				"It is not a timer. A timer is somebody writing the",
+				"third line down and the machine typing it at ten.",
+			}, {
+				"{owner}'s porch light, written down because I am",
+				"tired of explaining it at the table.",
+				"",
+				"  cat /dev/light0",
+				"  echo off > /dev/light0",
+				"",
+				"light0 is the porch and that is the whole of it.",
+				"The kitchen was never wired. The man was paid for",
+				"both and came back for neither.",
+			}) },
 		} },
 		{ pass = false, files = {
-			{ path = "report.txt", text = table.concat({
+			{ path = "report.txt", texts = three({
 				"THE COUNTY IN 1830 -- by me, for Tuesday",
 				"",
 				"In 1830 there was nothing here but the river and",
@@ -2636,7 +2705,27 @@ CeroSecContent.PROFILES.residential = {
 				"",
 				"I have three pages and it has to be four. Dad says",
 				"do not pad it. I am going to pad it.",
-			}, "\n") },
+			}, {
+				"THE RIVER -- {staff2}, fourth period",
+				"",
+				"The river is the only reason anybody is here. Coal",
+				"went down it before there was a rail bed, and the",
+				"rail bed only went in because the river freezes.",
+				"",
+				"Miss wants four pages. I have two and a map, and I",
+				"am counting the map.",
+			}, {
+				"WHAT A COMPUTER IS -- for Thursday, and it is not",
+				"due until Thursday",
+				"",
+				"It is a box with a disk in it. You type a word and",
+				"press the key and it does the word. There are about",
+				"sixty words. I have found forty of them and written",
+				"them on the back of this page.",
+				"",
+				"Dad says put in what it cost. I am not putting in",
+				"what it cost.",
+			}) },
 		} },
 	},
 	bin = { { script = "lights.sh", chance = 35 } },
@@ -2656,7 +2745,7 @@ CeroSecContent.PROFILES.office = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "handover.txt", text = table.concat({
+			{ path = "handover.txt", texts = three({
 				"Whoever is covering for me:",
 				"",
 				"The nightly job mails the totals to me at two in",
@@ -2665,29 +2754,96 @@ CeroSecContent.PROFILES.office = {
 				"",
 				"The ledger is ledger.txt and the second column is",
 				"cents. Never dollars. It has never been dollars.",
-			}, "\n") },
-			{ path = "ledger.txt", text = table.concat({
+			}, {
+				"Covering this desk, in the order it matters.",
+				"",
+				"1. crontab -l. One line, at two in the morning. It",
+				"   adds up the second column of ledger.txt and mails",
+				"   the number to me.",
+				"2. That column is CENTS. Every argument this office",
+				"   has ever had began by forgetting it.",
+				"3. No mail at two means the job did not run. Read the",
+				"   line before you read the figures.",
+				"",
+				"{staff2} has a key to the cabinet. I have not.",
+			}, {
+				"Notes for {staff3}, since you asked and I am out on",
+				"Friday and Monday both.",
+				"",
+				"The machine adds the ledger up by itself at two in",
+				"the morning and mails me the number. crontab -l shows",
+				"you the line. It is one line and I would rather you",
+				"did not edit it while I am not here.",
+				"",
+				"ledger.txt is a name and then cents. Yes, the coffee",
+				"fund is a real line of the ledger.",
+			}) },
+			{ path = "ledger.txt", texts = three({
 				"freight:41200",
 				"paper and toner:8875",
 				"telephone:12340",
 				"the coffee fund:1500",
-			}, "\n") },
+			}, {
+				"freight:38650",
+				"telephone:11980",
+				"paper and toner:6240",
+				"postage:2075",
+				"the coffee fund:1500",
+			}, {
+				"freight:44100",
+				"telephone:12610",
+				"paper and toner:9330",
+				"the machine, monthly:22500",
+				"the coffee fund:1500",
+			}) },
 		}, cron = { "0 2 * * * sh $HOME/bin/total.sh $HOME/ledger.txt 2" } },
 		{ pass = false, files = {
-			{ path = "readme.txt", text = table.concat({
+			{ path = "readme.txt", texts = three({
 				"My password is my own business. Ask me and I will",
 				"type it for you.",
-			}, "\n") },
+			}, {
+				"This account is open on purpose.",
+				"",
+				"There is nothing in here worth locking, and I would",
+				"rather you used it than sat down at {staff1}'s desk",
+				"and made a mess of his.",
+			}, {
+				"Left open. If you need the machine, use the machine.",
+				"",
+				"What I will not do is write my own password on a",
+				"square of yellow paper and put it in the top drawer",
+				"like everybody else on this floor.",
+			}) },
 		} },
 		{ pass = true, files = {
-			{ path = "memo.txt", text = table.concat({
+			{ path = "memo.txt", texts = three({
 				"To the three of you, and I am not saying it again:",
 				"",
 				"The machine is not a filing cabinet. Anything that",
 				"has to survive this office goes on a disk and the",
 				"disk goes in the cabinet. Sixty-four thousand bytes",
 				"is a week of work, not a career.",
-			}, "\n") },
+			}, {
+				"{staff1}, {staff2}: the disk.",
+				"",
+				"Sixty-four thousand bytes. That is the whole machine",
+				"and not the whole of your share of it. When it fills,",
+				"the next thing anybody types is refused, and it will",
+				"be refused at the worst hour of the worst day.",
+				"",
+				"Anything that has to survive goes on a floppy and the",
+				"floppy goes in the cabinet. df says where we are.",
+			}, {
+				"Read this before the audit and not during it.",
+				"",
+				"Nothing on this machine is a record. The record is",
+				"the paper in the cabinet and it always has been. What",
+				"is on the disk is a convenience, and a convenience",
+				"somebody has to type back in is not one.",
+				"",
+				"In writing, so that nobody can say afterwards that",
+				"he was not told.",
+			}) },
 		} },
 	},
 	bin = {
@@ -2709,12 +2865,6 @@ CeroSecContent.PROFILES.office = {
 	},
 }
 
---
--- THE EIGHT wave 7b wrote. Each one is a place in Knox County, each is a story in
--- THREE files, and each carries at least one script a survivor can copy and use
--- on a building of his own.
---
-
 CeroSecContent.PROFILES.police = {
 	host = "disp",
 	motd = table.concat({
@@ -2729,7 +2879,7 @@ CeroSecContent.PROFILES.police = {
 		-- nobody remembers at four in the morning. It carries a password because
 		-- the desk did.
 		{ name = "dispatch", pass = true, admin = true, files = {
-			{ path = "handover.txt", text = table.concat({
+			{ path = "handover.txt", texts = three({
 				"Whoever sits down next:",
 				"",
 				"The cell doors are on the computer now. locks.sh in",
@@ -2741,8 +2891,34 @@ CeroSecContent.PROFILES.police = {
 				"on the back cell sticks and reads locked when it is",
 				"not. The log is /var/log/dispatch. Write in it. It",
 				"is the only thing anybody upstairs ever reads.",
-			}, "\n") },
-			{ path = "bolo.txt", text = table.concat({
+			}, {
+				"Handover. Four things and then you are on your own.",
+				"",
+				"  sh ~/bin/locks.sh lock lock0 lock1",
+				"  dev lock",
+				"",
+				"The first line bolts both cells. The second reads",
+				"them back, and you read them back because the strike",
+				"on the back one sticks and says locked when it is",
+				"standing open.",
+				"",
+				"Everything that happens goes in /var/log/dispatch,",
+				"in your own hand. Nobody upstairs reads anything",
+				"else and nobody upstairs ever will.",
+			}, {
+				"{staff2}, {staff3}: read this once.",
+				"",
+				"This login is all of ours. Do not make yourself one",
+				"of your own -- the county wants one name on the desk",
+				"and this is the name.",
+				"",
+				"  sh ~/bin/locks.sh lock lock0 lock1",
+				"",
+				"That is both cells. dev lock afterwards, every time,",
+				"because the back strike lies. /var/log/dispatch is",
+				"the log and it is the only thing that leaves here.",
+			}) },
+			{ path = "bolo.txt", texts = three({
 				"BE ON THE LOOKOUT -- standing list, 8 July",
 				"",
 				"Grey pickup, no plate, on the Muldraugh road three",
@@ -2753,17 +2929,98 @@ CeroSecContent.PROFILES.police = {
 				"",
 				"Anybody in a hospital gown outside the fence. The",
 				"state people want to be told. We do not go in.",
-			}, "\n") },
+			}, {
+				"BE ON THE LOOKOUT -- standing, read at every shift",
+				"",
+				"A flatbed with the tailgate wired shut, seen at the",
+				"co-op twice after dark. Two men in it. Do not stop",
+				"it without somebody behind you.",
+				"",
+				"A woman, forties, walking the rail bed both ways for",
+				"three days. Not wanted. Somebody talk to her.",
+				"",
+				"Anybody coming out of the hospital grounds on foot.",
+				"The state people want to hear about every one and",
+				"they have told us twice not to go in after them.",
+			}, {
+				"BE ON THE LOOKOUT -- and the list is shorter than it",
+				"was, which is not good news.",
+				"",
+				"The grey pickup is off the list. We found it.",
+				"",
+				"Two men out of West Point, north on the rail bed,",
+				"still wanted for the break-in and by now probably",
+				"for worse. On foot.",
+				"",
+				"And this is the standing order as of the 8th: nobody",
+				"goes inside the hospital fence for any reason. Not",
+				"for a call, not for one of ours. It is in writing",
+				"because somebody is going to want to argue with it.",
+			}) },
 		}, cron = { "0 22 * * * sh $HOME/bin/locks.sh lock lock0 lock1" } },
 		{ pass = false, files = {
-			{ path = "shifts.txt", text = table.concat({
+			{ path = "shifts.txt", texts = three({
 				"Nights, this week and next. Nobody has swapped and",
 				"nobody is going to, so stop asking me.",
 				"",
 				"There are four of us for seven nights. Work it out.",
-			}, "\n") },
+			}, {
+				"The board, since somebody keeps rubbing out the real",
+				"one.",
+				"",
+				"Four of us. Seven nights. Two of those four are on",
+				"the road for the county on Thursday and Friday.",
+				"",
+				"I have stopped writing names on it. Ask {staff1}",
+				"who is on and believe what he says.",
+			}, {
+				"Nights.",
+				"",
+				"There is no schedule any more. There are four of us",
+				"and there is the telephone, and whoever answers it",
+				"is on.",
+				"",
+				"That is not a complaint. It is what to expect when",
+				"you come in.",
+			}) },
 		} },
-		{ pass = true },
+		{ pass = true, files = {
+			{ path = "keys.txt", texts = three({
+				"What is on the ring, because the tags fell off and",
+				"nobody has replaced them since I have been here.",
+				"",
+				"  long brass       the back door",
+				"  short brass      the cabinet in the hall",
+				"  the flat one     the gate, and it sticks",
+				"",
+				"The cells are not on the ring. The cells are on the",
+				"computer, which is the whole argument this office",
+				"had last spring.",
+			}, {
+				"The ring, from the fob outwards:",
+				"",
+				"  1  back door",
+				"  2  hall cabinet",
+				"  3  the gate. Lift, then turn.",
+				"  4  nothing. It has opened nothing in two years and",
+				"     I am keeping it anyway.",
+				"",
+				"Cell doors are not keys any more, they are the",
+				"computer. Ask {staff1} to show you once.",
+			}, {
+				"Keys. Read it and put the ring back on the hook.",
+				"",
+				"  long brass   back door",
+				"  short brass  hall cabinet",
+				"  flat         gate",
+				"",
+				"The gate one is bent and it will go in wrong way up",
+				"and feel right. If it will not turn, take it out and",
+				"look at it before you force it.",
+				"",
+				"The cells are the computer's. Not this ring's.",
+			}) },
+		} },
 	},
 	bin = {
 		{ script = "locks.sh" },
@@ -2774,8 +3031,13 @@ CeroSecContent.PROFILES.police = {
 		-- THE SPINE OF THE STORY, and it is in /var/log because that is where a
 		-- log lives: root's, at the mode the machine's own logs wear, so an
 		-- account in the sudo group reads it and a stranger does not.
+		--
+		-- One of the two files in the catalogue that carries July in as many words,
+		-- and it may: a hand-kept log of what happened is about the days it is
+		-- about. All three tellings end in the middle of a line on the morning of
+		-- the 9th, because whatever a deputy was writing then, he did not finish it.
 		{ path = "/var/log/dispatch", owner = "root", mode = 640,
-			text = table.concat({
+			texts = three({
 				"Jul 05 0710 traffic, 31 at the line, cleared",
 				"Jul 06 2240 alarm at the co-op, nobody there",
 				"Jul 07 0155 fight outside the tavern, two in",
@@ -2785,7 +3047,28 @@ CeroSecContent.PROFILES.police = {
 				"Jul 08 2335 lost contact with unit 2",
 				"Jul 09 0402 nobody answering the desk telephone",
 				"Jul 09 0505",
-			}, "\n") },
+			}, {
+				"Jul 04 1130 fireworks call, Elm, spoke to them",
+				"Jul 05 1620 co-op, shoplift, released",
+				"Jul 06 0840 two vehicles at the line, both turned",
+				"Jul 06 2115 domestic, one in, released 0200",
+				"Jul 07 1105 hospital asks for a unit at the doors",
+				"Jul 07 2340 hospital asks again. Sent 3 and 4.",
+				"Jul 08 0515 unit 3 not answering",
+				"Jul 08 0640 unit 4 not answering",
+				"Jul 08 2050 the state people took the telephone",
+				"Jul 09 0447 whoever is reading this, the keys are in",
+			}, {
+				"Jul 05 0925 traffic, cleared",
+				"Jul 05 2200 cells locked, both, checked by hand",
+				"Jul 06 1315 assist the fire service, the mill road",
+				"Jul 07 0340 fight, tavern, two in, one to hospital",
+				"Jul 07 1750 hospital will not take him",
+				"Jul 08 0800 nine calls in an hour and four of us",
+				"Jul 08 1240 told to hold at the county line",
+				"Jul 08 2317 unit 2 off the air, last at the bridge",
+				"Jul 09 0510 I am going to look for him. If nobody",
+			}) },
 	},
 	-- NO HALT ON THE END OF THIS ONE, and that is not a detail: the dispatch log
 	-- above is a file people TYPED in, and its last line is at five in the morning
@@ -2820,8 +3103,20 @@ CeroSecContent.PROFILES.bank = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "accounts.dat", text = CeroSecContent.DATA["accounts.dat"] },
-			{ path = "audit.txt", text = table.concat({
+			-- The table itself is ONE telling, and it has to be: it is the very file
+			-- audit.sh and total.sh are proved against (CeroSecContent.DATA), and a
+			-- table that came out different on every machine would be a bench proving
+			-- one of three. What varies is the ROWS UNDER IT -- this branch's own
+			-- accounts -- which is `extra`, and the six the bench adds up are still
+			-- the six the bench adds up.
+			{ path = "accounts.dat", text = CeroSecContent.DATA["accounts.dat"],
+				extra = {
+					{ "1047:checking:1989:3300", "1048:savings:1986:24175" },
+					{ "1051:checking:1993:118", "1052:checking:1988:7640",
+						"1053:savings:1990:41200" },
+					{ "1062:savings:1985:9015" },
+				} },
+			{ path = "audit.txt", texts = three({
 				"The examiner comes on the second Tuesday and wants",
 				"the same three answers every time.",
 				"",
@@ -2835,10 +3130,36 @@ CeroSecContent.PROFILES.bank = {
 				"",
 				"The fourth column has been cents since 1987 and he",
 				"knows it. Do not convert it for him.",
-			}, "\n") },
+			}, {
+				"For the examiner. Second Tuesday, every month, and",
+				"he has asked the same two questions for six years.",
+				"",
+				"  sh ~/bin/audit.sh accounts.dat checking",
+				"  sh ~/bin/total.sh accounts.dat 4",
+				"",
+				"The first prints the checking accounts. The second",
+				"adds the fourth column up, which is CENTS and has",
+				"been cents since 1987.",
+				"",
+				"He will ask you to read it to him in dollars. Read",
+				"him the number that is on the screen.",
+			}, {
+				"{staff2}: this is the whole of the audit and I am",
+				"writing it down because I am due to retire.",
+				"",
+				"Two commands. Nothing else on this machine is part",
+				"of it.",
+				"",
+				"  sh ~/bin/audit.sh accounts.dat checking",
+				"  sh ~/bin/total.sh accounts.dat 4",
+				"",
+				"Column four is cents. If a figure looks a hundred",
+				"times too big, it is not, and you are the hundredth",
+				"person to think so.",
+			}) },
 		}, cron = { "0 18 * * 1-5 sh $HOME/bin/lockup.sh door0 lock0" } },
 		{ pass = true, files = {
-			{ path = "vault.txt", text = table.concat({
+			{ path = "vault.txt", texts = three({
 				"The vault door is on the computer now and it is not",
 				"a lock anybody picks. It is also not a lock the",
 				"computer can force: lockup.sh pulls the door to and",
@@ -2848,9 +3169,69 @@ CeroSecContent.PROFILES.bank = {
 				"Read it before you trust it:",
 				"",
 				"  cat ~/bin/lockup.sh",
-			}, "\n") },
+			}, {
+				"The door, and why the script is written the way it",
+				"is written.",
+				"",
+				"  sh ~/bin/lockup.sh door0 lock0",
+				"",
+				"It closes door0. Then it READS door0 back. Only",
+				"then does it turn lock0. A bolt thrown at a door",
+				"that did not close is a bolt across a gap, and the",
+				"screen would have said it worked.",
+				"",
+				"  cat ~/bin/lockup.sh",
+				"",
+				"Nine lines. Read them once and you will never trust",
+				"a program that does not read its own work back.",
+			}, {
+				"Closing the vault.",
+				"",
+				"  sh ~/bin/lockup.sh door0 lock0",
+				"",
+				"door0 is the door and lock0 is the bolt, and they",
+				"are two separate pieces of iron whatever the panel",
+				"upstairs looks like.",
+				"",
+				"The script stops and says so if the door did not",
+				"come to. When it says so, go and look at the door",
+				"with your own eyes. Every time. {owner} has had to",
+				"do it twice this year.",
+			}) },
 		} },
-		{ pass = false },
+		{ pass = false, files = {
+			{ path = "counter.txt", texts = three({
+				"The counter, opening and closing.",
+				"",
+				"The drawer count goes in the book and not in here.",
+				"The book is the record. This machine is where the",
+				"month's figures get added up and nowhere else.",
+				"",
+				"Two of the three lamps over the counter are on the",
+				"same switch and it is not the switch you expect.",
+			}, {
+				"Notes for a new teller, in the order you will need",
+				"them.",
+				"",
+				"1. Count into the book. Always the book.",
+				"2. The machine is for adding a column up, and there",
+				"   is a program for that in {staff1}'s bin.",
+				"3. The examiner is nobody's problem but {staff1}'s.",
+				"4. If the front door will not lock, do not force it.",
+				"   Tell somebody and go home the back way.",
+			}, {
+				"Counter.",
+				"",
+				"Nothing about a customer goes on this machine. Not",
+				"a name, not a number, not a note about either. The",
+				"book is the record and the book stays behind the",
+				"counter.",
+				"",
+				"Everything anybody has ever got in trouble for here",
+				"began with somebody thinking a computer was a quiet",
+				"place to write something down.",
+			}) },
+		} },
 	},
 	bin = {
 		{ script = "audit.sh" },
@@ -2884,10 +3265,10 @@ CeroSecContent.PROFILES.store = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "inventory.txt", text = table.concat({
-				"What is on the floor, counted 6 July. Anything not",
-				"on this list went out the door in the first three",
-				"days and is not coming back.",
+			{ path = "inventory.txt", texts = three({
+				"What is on the floor, counted the day before the",
+				"road shut. Anything not on this list went out the",
+				"door in the first three days and is not coming back.",
 				"",
 				"  nails 3in      4 boxes",
 				"  rope 50ft      2",
@@ -2900,9 +3281,43 @@ CeroSecContent.PROFILES.store = {
 				"The machine adds the column up:",
 				"",
 				"  sh ~/bin/total.sh prices.txt 2",
-			}, "\n") },
-			{ path = "prices.txt", text = CeroSecContent.DATA["prices.txt"] },
-			{ path = "closing.txt", text = table.concat({
+			}, {
+				"Counted by hand, twice, because the first count was",
+				"wrong and I am not signing a wrong one.",
+				"",
+				"  nails 3in      1 box, opened",
+				"  rope 50ft      none",
+				"  lamp oil       3 tins",
+				"  tarp 8x10      6",
+				"  batteries      none, and none coming",
+				"  padlock        none. Somebody took the good one.",
+				"",
+				"prices.txt is in cents. To add the column:",
+				"",
+				"  sh ~/bin/total.sh prices.txt 2",
+			}, {
+				"The floor, as of this morning.",
+				"",
+				"  nails 3in      7 boxes",
+				"  rope 50ft      1",
+				"  lamp oil       none",
+				"  tarp 8x10      2, both torn",
+				"  batteries      none",
+				"  padlock        3",
+				"",
+				"Lamp oil and batteries went in one afternoon and",
+				"there is no point writing them on the order sheet",
+				"again. Nobody is filling an order sheet.",
+				"",
+				"  sh ~/bin/total.sh prices.txt 2",
+			}) },
+			{ path = "prices.txt", text = CeroSecContent.DATA["prices.txt"],
+				extra = {
+					{ "work gloves:550", "kerosene lamp:1875" },
+					{ "hose 25ft:990", "duct tape:325", "wheelbarrow:4250" },
+					{ "shovel:1450" },
+				} },
+			{ path = "closing.txt", texts = three({
 				"Closing up, in this order, every night:",
 				"",
 				"  sh ~/bin/lights.sh light0 light1",
@@ -2912,14 +3327,54 @@ CeroSecContent.PROFILES.store = {
 				"front door is door0. The back door is not on the",
 				"computer at all -- do that one by hand and pull it",
 				"to you until it clicks.",
-			}, "\n") },
+			}, {
+				"Closing. Lights first, then the door, and never the",
+				"other way round: you cannot see the door in the dark",
+				"and you will bolt it on the catch.",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"  sh ~/bin/lockup.sh door0 lock0",
+				"",
+				"light0 floor. light1 sign. door0 front.",
+				"",
+				"The back door is iron and is nobody's computer. Pull",
+				"it until it clicks and then pull it again.",
+			}, {
+				"{owner}: closing up.",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"  sh ~/bin/lockup.sh door0 lock0",
+				"",
+				"The machine does the nine o'clock lights on its own",
+				"whether anybody is here or not, so do not be",
+				"surprised in the back room. The bolt it does not do",
+				"on its own, which is why the second line is here.",
+				"",
+				"Back door by hand. It has never been on anything.",
+			}) },
 		}, cron = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
 		{ pass = false, files = {
-			{ path = "note.txt", text = table.concat({
+			{ path = "note.txt", texts = three({
 				"The number for the padlock on the gate is not",
 				"written down anywhere and it is not going to be.",
 				"Ask me, or ask whoever is on after me.",
-			}, "\n") },
+			}, {
+				"Three things and then I am going home.",
+				"",
+				"The gate padlock number is not on this machine and",
+				"will not be. Ask {staff1}.",
+				"",
+				"The till tape is behind the register, not in here.",
+				"",
+				"Whoever keeps switching the sign on at six in the",
+				"morning: it is on the computer now. Stop.",
+			}, {
+				"Left open so that anybody on shift can use it.",
+				"",
+				"Nothing on this account is worth a password. The",
+				"gate number is in my head, the orders are on paper",
+				"and the money is not here at night.",
+			}) },
 		} },
 	},
 	bin = {
@@ -2947,7 +3402,7 @@ CeroSecContent.PROFILES.school = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "grades.txt", text = table.concat({
+			{ path = "grades.txt", texts = three({
 				"Fourth period, term ending. Numbers only -- the",
 				"names are in the paper file in the cabinet, which",
 				"is where they are staying.",
@@ -2959,10 +3414,39 @@ CeroSecContent.PROFILES.school = {
 				"  1121  B",
 				"  1127  incomplete",
 				"",
-				"Two incompletes. Both were absent from the 4th and",
+				"Two incompletes. Both were absent all week and",
 				"neither house answers the telephone.",
-			}, "\n") },
-			{ path = "bells.txt", text = table.concat({
+			}, {
+				"Second period. Student numbers, and only student",
+				"numbers: the names live in the cabinet and a machine",
+				"anybody can sit down at is not a cabinet.",
+				"",
+				"  2201  A",
+				"  2204  B",
+				"  2208  B",
+				"  2213  D, and he knows why",
+				"  2216  A",
+				"  2219  withdrawn",
+				"  2224  incomplete",
+				"",
+				"2219 moved in May. 2224 has not been in since the",
+				"4th and the office has stopped ringing the house.",
+			}, {
+				"Sixth period, final, and this is the last one I am",
+				"putting on the computer.",
+				"",
+				"  3302  C",
+				"  3305  B",
+				"  3311  A",
+				"  3314  C",
+				"  3318  incomplete",
+				"  3320  incomplete",
+				"  3321  incomplete",
+				"",
+				"Three incompletes out of seven. I am not going to",
+				"write down why. Everybody in this building knows why.",
+			}) },
+			{ path = "bells.txt", texts = three({
 				"The bells are on a clockwork timer in the boiler",
 				"room. The lights are on this machine. They are not",
 				"the same thing and the timer does not care what the",
@@ -2972,10 +3456,34 @@ CeroSecContent.PROFILES.school = {
 				"",
 				"That is the corridor and the gymnasium. Every",
 				"classroom is a switch on the wall, as it always was.",
-			}, "\n") },
+			}, {
+				"Bells: boiler room, clockwork, a key on a nail.",
+				"Lights: this machine. Nobody has ever managed to",
+				"keep those two facts apart for a whole term.",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"",
+				"light0 corridor, light1 gymnasium. The machine does",
+				"them at ten at night by itself.",
+				"",
+				"If the bells are wrong, it is the timer, and the",
+				"timer is a man with a screwdriver and not a command.",
+			}, {
+				"For {staff2}, who asked why the computer will not fix",
+				"the bells.",
+				"",
+				"Because the bells are a clock with gears in it in the",
+				"boiler room, and there is no wire between that room",
+				"and this one. The computer has the corridor and the",
+				"gymnasium lights and nothing else in the building.",
+				"",
+				"  sh ~/bin/lights.sh light0 light1",
+				"",
+				"Classroom switches are switches. They are fine.",
+			}) },
 		}, cron = { "0 22 * * * sh $HOME/bin/lights.sh light0 light1" } },
 		{ pass = true, files = {
-			{ path = "detention.txt", text = table.concat({
+			{ path = "detention.txt", texts = three({
 				"Detention, Friday, two of them.",
 				"",
 				"I am not writing the names in here. The last time I",
@@ -2983,9 +3491,58 @@ CeroSecContent.PROFILES.school = {
 				"shoulder while I was typing it.",
 				"",
 				"Ask me. I remember.",
-			}, "\n") },
+			}, {
+				"Friday. Three.",
+				"",
+				"No names on this machine. The office is a corridor",
+				"with a door that does not shut and a screen that",
+				"faces it, and I have learned that twice.",
+				"",
+				"The list is in my drawer, in pencil, and it is short.",
+			}, {
+				"Nobody is in detention this week and nobody is going",
+				"to be.",
+				"",
+				"Half the register is empty, two of the staff are not",
+				"coming in, and I am not keeping a boy behind for",
+				"being late to a school that is barely open.",
+				"",
+				"{staff1} disagrees. {staff1} can write his own file.",
+			}) },
 		} },
-		{ pass = false },
+		{ pass = false, files = {
+			{ path = "library.txt", texts = three({
+				"Books out and not back, by number. The names are in",
+				"the card tray where they belong.",
+				"",
+				"  0411  since March",
+				"  0455  since March",
+				"  0502  since April, and it is the atlas",
+				"",
+				"Three in a term is not bad. The atlas is the one I",
+				"would like back.",
+			}, {
+				"The tray is the record. This is only my list of what",
+				"has been out longest.",
+				"",
+				"  1120  the county history, since February",
+				"  1204  since April",
+				"  1233  since May",
+				"",
+				"Nobody is fined anything. They are books.",
+			}, {
+				"Out and not back. I have stopped counting the days.",
+				"",
+				"  0388",
+				"  0412",
+				"  0455",
+				"  0501",
+				"  0502",
+				"",
+				"If somebody comes in with an armful of them, take",
+				"them and say thank you and do not ask anything.",
+			}) },
+		} },
 	},
 	bin = {
 		{ script = "lights.sh" },
@@ -3011,8 +3568,14 @@ CeroSecContent.PROFILES.clinic = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "patients.txt", text = CeroSecContent.DATA["patients.txt"] },
-			{ path = "rounds.txt", text = table.concat({
+			{ path = "patients.txt", text = CeroSecContent.DATA["patients.txt"],
+				extra = {
+					{ "115:a:waiting on a bed" },
+					{ "103:b:for discharge", "117:a:two more days" },
+					{ "109:a:transferred out", "110:a:waiting on a bed",
+						"118:b:for discharge" },
+				} },
+			{ path = "rounds.txt", texts = three({
 				"Rounds, in room order. The machine sorts them so",
 				"nobody has to read my handwriting:",
 				"",
@@ -3023,21 +3586,97 @@ CeroSecContent.PROFILES.clinic = {
 				"",
 				"NOTHING MEDICAL GOES IN THIS FILE. That is the",
 				"chart, and the chart stays on the trolley.",
-			}, "\n") },
+			}, {
+				"How the round list is made, for whoever is on nights.",
+				"",
+				"  sh ~/bin/rounds.sh patients.txt",
+				"",
+				"That prints the rooms in order and nothing else. It",
+				"is the order to walk in, not a list of people.",
+				"",
+				"Room, ward, what happens next. Three columns and no",
+				"fourth. Anything clinical is on the chart on the",
+				"trolley and it has never been in here.",
+				"",
+				"The machine mails me the list at seven every day.",
+			}, {
+				"{staff2}, {staff3}: the round list.",
+				"",
+				"  sh ~/bin/rounds.sh patients.txt",
+				"",
+				"Rooms in order. Walk it in that order and you will",
+				"not cross the corridor nine times.",
+				"",
+				"Three columns: room, ward, next thing. If you find",
+				"yourself wanting a fourth, you want the chart, and",
+				"the chart is on the trolley where it lives.",
+			}) },
 		}, cron = { "0 7 * * * sh $HOME/bin/rounds.sh $HOME/patients.txt" } },
 		{ pass = false, files = {
-			{ path = "supplies.txt", text = table.concat({
-				"What we are out of, 7 July:",
+			{ path = "supplies.txt", texts = three({
+				"What we are out of:",
 				"",
 				"  saline, everything above 500ml",
 				"  gloves, small",
 				"  the good tape",
 				"",
-				"Ordered on the 2nd. Nobody has telephoned back and",
+				"Ordered a week ago. Nobody has telephoned back and",
 				"the switchboard rings out now.",
-			}, "\n") },
+			}, {
+				"Out, short, and not coming.",
+				"",
+				"  saline          none of any size",
+				"  gloves          large only",
+				"  tape            none",
+				"  the blue trays  two, and one is cracked",
+				"",
+				"Two orders in, no answer to either. The number for",
+				"the depot rings and rings.",
+			}, {
+				"Supplies. I am writing it down so that the next",
+				"person does not spend an hour looking.",
+				"",
+				"There is nothing in the store room. Not low. Nothing.",
+				"",
+				"What is left is in the two cupboards by the sluice",
+				"and on the second trolley, and {staff1} has the key",
+				"to the second cupboard.",
+			}) },
 		} },
-		{ pass = true },
+		{ pass = true, files = {
+			{ path = "nights.txt", texts = three({
+				"Nights, and the two things nobody tells you.",
+				"",
+				"The corridor lights are on this machine and the ward",
+				"lights are not. Do not switch anything off looking",
+				"for the corridor.",
+				"",
+				"And the telephone at this desk rings for the whole",
+				"floor. Answer it even if you are in the middle of",
+				"something, because nobody else will.",
+			}, {
+				"For whoever is on tonight.",
+				"",
+				"Two of us. That is not a mistake on the board, it is",
+				"two of us.",
+				"",
+				"The list the machine mails at seven is the round",
+				"list and it is right. Walk it in the order it is in.",
+				"",
+				"If somebody comes to the doors, do not open them on",
+				"your own. Find {staff1} first. That is not my rule.",
+			}, {
+				"Nights. Read once, then put it back.",
+				"",
+				"  the corridor lights are the computer's",
+				"  the ward lights are the switch by the door",
+				"  the telephone is the whole floor's",
+				"",
+				"And this, which is new: nobody goes out to the car",
+				"park after dark, for any reason, alone. In writing",
+				"because two people have argued with me about it.",
+			}) },
+		} },
 	},
 	bin = {
 		{ script = "rounds.sh" },
@@ -3072,8 +3711,13 @@ CeroSecContent.PROFILES.radio = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "sched.txt", text = CeroSecContent.DATA["sched.txt"] },
-			{ path = "notes.txt", text = table.concat({
+			{ path = "sched.txt", text = CeroSecContent.DATA["sched.txt"],
+				extra = {
+					{ "23 the network feed, nobody in the building" },
+					{ "03 records, unattended", "23 the network feed" },
+					{ "00 the state frequency, relayed", "05 the farm report again" },
+				} },
+			{ path = "notes.txt", texts = three({
 				"The sheet is sched.txt: the hour, then what goes out",
 				"in it. The machine reads the clock and mails me the",
 				"line for the hour it is:",
@@ -3085,14 +3729,58 @@ CeroSecContent.PROFILES.radio = {
 				"edited the sheet into something it cannot read.",
 				"",
 				"Keep the hours two digits. 06, never 6.",
-			}, "\n") },
+			}, {
+				"How the sheet works, and the one way to break it.",
+				"",
+				"sched.txt is an hour and then what is on in it. The",
+				"machine looks at its own clock and prints the line",
+				"for the hour it is now:",
+				"",
+				"  sh ~/bin/announce.sh sched.txt",
+				"",
+				"Five past the hour, every hour, on cron, into my",
+				"mail. No mail means the sheet will not read, and the",
+				"sheet will not read the moment somebody types 6 for",
+				"six. It is 06. It has always been 06.",
+			}, {
+				"{staff2}: the sheet, since you are on Saturday.",
+				"",
+				"  sh ~/bin/announce.sh sched.txt",
+				"",
+				"That prints what is meant to be on the air right now",
+				"according to the sheet. It is not the transmitter and",
+				"it cannot put anything on the air -- nothing on this",
+				"machine can, which is worth knowing.",
+				"",
+				"Two digits on every hour or the whole thing stops.",
+			}) },
 		}, cron = { "5 * * * * sh $HOME/bin/announce.sh $HOME/sched.txt" } },
 		{ pass = false, files = {
-			{ path = "readme.txt", text = table.concat({
+			{ path = "readme.txt", texts = three({
 				"If you are on at midnight and the tone is still on",
 				"the state frequency, do not say so on the air. Say",
 				"the time and the weather and put a record on.",
-			}, "\n") },
+			}, {
+				"For whoever is in the chair at midnight.",
+				"",
+				"If the state frequency is still a tone, that is not",
+				"news and you are not to make it news. Time, weather,",
+				"a record, and again in an hour.",
+				"",
+				"If somebody telephones the studio asking about the",
+				"roads, tell them what the county told us and not one",
+				"word past it.",
+			}, {
+				"Read before you open the microphone.",
+				"",
+				"We have three things to say and we say only those",
+				"three: the time, the weather, and what the county",
+				"has told us in the county's own words.",
+				"",
+				"Everything else is a rumour with a transmitter",
+				"behind it. {staff1} put that on the wall in Studio A",
+				"nine years ago and it has never been wrong.",
+			}) },
 		} },
 	},
 	bin = {
@@ -3104,8 +3792,12 @@ CeroSecContent.PROFILES.radio = {
 		-- what the rest of it sounded like. 644 and root's: a log of the air is
 		-- not a secret, and somebody who gets onto this machine at all should be
 		-- able to read it.
+		--
+		-- The other file that carries July in as many words, and for the reason the
+		-- dispatch log does: it is a hand-kept log of particular nights. All three
+		-- tellings end the same way, on nothing at all.
 		{ path = "/var/log/heard", owner = "root", mode = 644,
-			text = table.concat({
+			texts = three({
 				"Jul 04 1150 the fire service, asking for help",
 				"Jul 05 0940 a man reading a list of names, on 40m",
 				"Jul 06 1815 the state frequency, a tone and nothing",
@@ -3113,7 +3805,25 @@ CeroSecContent.PROFILES.radio = {
 				"Jul 08 1420 a woman west of here, asking for a doctor",
 				"Jul 08 2200 the tone again",
 				"Jul 09 0000 nothing on any of them",
-			}, "\n") },
+			}, {
+				"Jul 04 2015 two stations talking about the bridge",
+				"Jul 05 1130 a net on 40m, eleven callsigns, then six",
+				"Jul 06 0450 the same net, three callsigns",
+				"Jul 06 1900 the state frequency went to a tone",
+				"Jul 07 1240 somebody reading road numbers, twice",
+				"Jul 08 0730 a man asking anybody to answer. Nobody",
+				"Jul 08 2340 the tone",
+				"Jul 09 0130 the tone stopped. Nothing since.",
+			}, {
+				"Jul 04 0900 the county board, live, as usual",
+				"Jul 05 1615 a woman north of the river, clear as day",
+				"Jul 06 1100 her again, weaker",
+				"Jul 07 0215 a carrier with nobody on it, four hours",
+				"Jul 07 2100 the state frequency, a tone",
+				"Jul 08 1005 three stations at once, all of them fast",
+				"Jul 08 2250 one station, counting, in a whisper",
+				"Jul 09 0300 I have listened to all of it twice",
+			}) },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -3150,7 +3860,7 @@ CeroSecContent.PROFILES.military = {
 	},
 	files = {
 		{ path = "/root/memo-01.txt", owner = "root", mode = 600,
-			text = table.concat({
+			texts = three({
 				"MEMORANDUM 1 -- 4 July",
 				"",
 				"The line is the river to the west, the county road",
@@ -3159,9 +3869,32 @@ CeroSecContent.PROFILES.military = {
 				"",
 				"Vehicles are turned at the first checkpoint and are",
 				"not to be searched at the second.",
-			}, "\n") },
+			}, {
+				"MEMORANDUM 1 -- 4 July",
+				"",
+				"The cordon as of this morning: the river west, the",
+				"county road north, the rail bed east. It is not a",
+				"fence and it is not going to be one. It is us.",
+				"",
+				"Nobody on foot crosses in either direction, and that",
+				"includes people with papers. Turn vehicles at the",
+				"first point and do not open them at the second.",
+			}, {
+				"MEMORANDUM 1 -- 4 July",
+				"",
+				"Boundaries: river, county road, rail bed. West,",
+				"north, east.",
+				"",
+				"No foot traffic through, either way, no exceptions,",
+				"and the word exceptions is in this memorandum",
+				"because somebody asked. Vehicles turned at the first",
+				"point, not searched at the second.",
+				"",
+				"Anybody who argues with a checkpoint is somebody",
+				"else's problem and not the checkpoint's.",
+			}) },
 		{ path = "/root/memo-02.txt", owner = "root", mode = 600,
-			text = table.concat({
+			texts = three({
 				"MEMORANDUM 2 -- 6 July",
 				"",
 				"The line has moved twice in two days and both times",
@@ -3170,9 +3903,31 @@ CeroSecContent.PROFILES.military = {
 				"Until somebody tells us otherwise, the line is where",
 				"we are standing. The road south is open for us and",
 				"for nobody else.",
-			}, "\n") },
+			}, {
+				"MEMORANDUM 2 -- 6 July",
+				"",
+				"Twice in two days the boundary has been redrawn and",
+				"twice we have read about it afterwards.",
+				"",
+				"So: the boundary is where this post is standing. It",
+				"will go on being where this post is standing until",
+				"somebody with a name on it says otherwise in writing.",
+				"",
+				"The road south is ours. It is nobody else's.",
+			}, {
+				"MEMORANDUM 2 -- 6 July",
+				"",
+				"Two changes to the line in two days, both of them",
+				"announced after they happened.",
+				"",
+				"I am done redrawing it. The line is here. The road",
+				"south is open for us and closed to everybody, and",
+				"the men are to be told that in those words so that",
+				"nobody has to decide anything at three in the",
+				"morning.",
+			}) },
 		{ path = "/root/memo-03.txt", owner = "root", mode = 600,
-			text = table.concat({
+			texts = three({
 				"MEMORANDUM 3 -- 8 July",
 				"",
 				"Two of the checkpoints did not report this morning.",
@@ -3182,7 +3937,31 @@ CeroSecContent.PROFILES.military = {
 				"If you are reading this and you are not one of us:",
 				"the road south was open on the 8th of July. It will",
 				"not be open now.",
-			}, "\n") },
+			}, {
+				"MEMORANDUM 3 -- 8 July",
+				"",
+				"Two points silent since before first light. We are",
+				"not to send anybody to either of them. I have asked",
+				"twice and the answer was the same twice, so it is",
+				"written down here where it cannot be denied.",
+				"",
+				"To whoever finds this and is not one of us: on the",
+				"8th of July the road south was open. Take that for",
+				"what it is worth now, which may be nothing.",
+			}, {
+				"MEMORANDUM 3 -- 8 July",
+				"",
+				"Two checkpoints have not reported since last night",
+				"and we are ordered not to go and find out why.",
+				"",
+				"I have put that order in this file rather than only",
+				"in my own head, because a man is going to want to",
+				"go, and he is going to be right, and the order will",
+				"still be the order.",
+				"",
+				"Anybody reading this later: the road south was open",
+				"on the 8th. Nothing here says it stayed open.",
+			}) },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -3211,7 +3990,7 @@ CeroSecContent.PROFILES.cerosec = {
 	root = true,
 	accounts = {
 		{ pass = true, admin = true, files = {
-			{ path = "bench.txt", text = table.concat({
+			{ path = "bench.txt", texts = three({
 				"Whatever comes in, the same four things and in this",
 				"order:",
 				"",
@@ -3223,14 +4002,44 @@ CeroSecContent.PROFILES.cerosec = {
 				"The library is /usr/local/src and every one of them",
 				"is commented. Copy what you want into your own bin.",
 				"Leave the originals where they are.",
-			}, "\n") },
+			}, {
+				"Bench procedure. Four commands before you open the",
+				"case, every time, no exceptions for a machine you",
+				"think you remember.",
+				"",
+				"  sh /usr/local/src/sweep.sh /",
+				"  last",
+				"  df",
+				"  cat /var/log/messages",
+				"",
+				"What is on it, who used it, how full it is, what it",
+				"says about itself. The BIOS repair is the fifth and",
+				"only when the first four say the disk is the fault.",
+				"",
+				"/usr/local/src is the library. Copy, never edit.",
+			}, {
+				"For {staff2} and {staff3}, taped to the bench in",
+				"Studio order because {owner} keeps moving it.",
+				"",
+				"  sh /usr/local/src/sweep.sh /",
+				"  last",
+				"  df",
+				"",
+				"Those three, written on the ticket, before anything.",
+				"Half the machines that come in here are somebody's",
+				"full disk and the customer has been told it is",
+				"broken.",
+				"",
+				"The library in /usr/local/src is read-only by habit",
+				"and not by mode. Keep the habit.",
+			}) },
 		} },
 		-- NAMED, and for the reason the dispatch desk's is: a support line was
 		-- answered by whoever picked it up, and the mailbox has to be findable by
 		-- somebody who has never seen this machine. Open, deliberately: what is
 		-- in it is a shelf of answers and not anybody's business.
 		{ name = "support", pass = false, files = {
-			{ path = "answers.txt", text = table.concat({
+			{ path = "answers.txt", texts = three({
 				"What people telephone about, and what to tell them.",
 				"",
 				"It will not take the disk. It is not formatted:",
@@ -3243,9 +4052,68 @@ CeroSecContent.PROFILES.cerosec = {
 				"the switch. That is an electrician, not us.",
 				"",
 				"It is slow. Something is running. ps, then kill.",
-			}, "\n") },
+			}, {
+				"The five calls, in the order we get them.",
+				"",
+				"1. The drive will not read the disk. It is a blank",
+				"   disk. newfs /dev/fd0 and then mount it.",
+				"2. Nobody knows the password. We cannot help and we",
+				"   do not pretend to. The BIOS repair puts the system",
+				"   back and leaves /home alone.",
+				"3. The lights do nothing. There is no module on the",
+				"   fitting. Electrician.",
+				"4. It has got slow. ps. Something is running.",
+				"5. The disk is full. It is 65536 bytes and it always",
+				"   was. df, then a floppy.",
+			}, {
+				"Answers. Read this before you pick the telephone up",
+				"and you will not have to put anybody on hold.",
+				"",
+				"  disk will not read     newfs /dev/fd0",
+				"  lost the password      BIOS repair, /home is kept",
+				"  lights do nothing      no module. Electrician.",
+				"  gone slow              ps, then kill",
+				"  disk full              df. It is 65536 bytes.",
+				"",
+				"Nobody at this company can read anybody's password",
+				"off anything. Say so plainly. They always ask.",
+			}) },
 		} },
-		{ pass = true },
+		{ pass = true, files = {
+			{ path = "tickets.txt", texts = three({
+				"On the bench, oldest first.",
+				"",
+				"  411  full disk. Customer says broken.",
+				"  418  drive belt. Parts, two weeks, no chance.",
+				"  423  works. Brought in twice. Works.",
+				"",
+				"423 goes back with a note this time and the note",
+				"says what I tested and in what order.",
+			}, {
+				"Bench queue.",
+				"",
+				"  502  no boot. Disk. Repaired, /home kept.",
+				"  505  modem. No dial tone at the customer and a",
+				"       dial tone here. It is the line and not us.",
+				"  509  keyboard, liquid. Not a repair.",
+				"  512  full disk.",
+				"",
+				"Two full disks this month and both customers were",
+				"told the machine was failing by somebody else.",
+			}, {
+				"What is on the bench and what I have stopped doing",
+				"about it.",
+				"",
+				"  601  no boot, no spare disk in the building",
+				"  604  full disk",
+				"  607  full disk",
+				"  611  came in on Monday, nobody has been back",
+				"",
+				"There are no parts coming. I have written that on",
+				"every ticket so that it is on the ticket and not",
+				"only in this file.",
+			}) },
+		} },
 	},
 	-- THE LIBRARY ITSELF, by reference, in the one place on any machine in the
 	-- county where the whole of it stands together. Every entry is the same file
@@ -3266,12 +4134,15 @@ CeroSecContent.PROFILES.cerosec = {
 		{ script = "hangman.sh", to = "/usr/local/src" },
 		{ script = "adventure.sh", to = "/usr/local/src" },
 	},
+	-- ROOT'S AND NOT THE OWNER'S, because nothing in the line names a home: the
+	-- weekly sweep of /var is the machine's own housekeeping and runs whoever's
+	-- desk the bench machine is this week.
 	cron = {
 		{ to = "root", lines = { "0 4 * * 0 sh /usr/local/src/sweep.sh /var" } },
 	},
 	files = {
 		{ path = "/usr/local/src/CHANGES", owner = "root", mode = 644,
-			text = table.concat({
+			texts = three({
 				"CeroSec OS -- what changed, newest first.",
 				"",
 				"1.0  The shell learned pipes, cron and job control.",
@@ -3288,7 +4159,42 @@ CeroSecContent.PROFILES.cerosec = {
 				"0.9  /dev, and the building on the end of it.",
 				"0.8  Accounts, groups and sudo, in that order.",
 				"0.7  The first shell. There were no pipes in it.",
-			}, "\n") },
+			}, {
+				"CeroSec OS -- what changed, newest first. The",
+				"bench copy, with the four names customers still type",
+				"marked up the side.",
+				"",
+				"1.0  Pipes, cron, job control. The drive became a",
+				"     filesystem.",
+				"     hash      -> mkpasswd",
+				"     call      -> cu -l /dev/radio0",
+				"     readlink  -> ls -l, and read the arrow",
+				"     write     -> echo text > file",
+				"     restart   -> reboot",
+				"",
+				"0.9  /dev, and the building behind it.",
+				"0.8  Accounts, groups, sudo.",
+				"0.7  The first shell, with no pipes in it.",
+				"0.6  The editor. Before that there was cat.",
+			}, {
+				"CeroSec OS -- what changed, newest first.",
+				"",
+				"1.0  The shell learned pipes, cron and job control,",
+				"     and the floppy drive stopped being a place to",
+				"     keep one file in.",
+				"     Four commands were taken away and the four that",
+				"     replace them are the ones Unix always had:",
+				"     mkpasswd, cu, echo into a file, reboot.",
+				"",
+				"0.9  /dev.",
+				"0.8  Accounts and sudo.",
+				"0.7  A shell.",
+				"",
+				"Anybody who wants to know why a command went away",
+				"can read the manual page for the one that replaced",
+				"it. That is the whole of the answer and it is a",
+				"better answer than this file is.",
+			}) },
 	},
 	logs = {
 		"login: root logged in on console",
