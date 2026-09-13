@@ -115,6 +115,22 @@ local function digest(text, rounds)
 	return hex8(l1) .. hex8(l2) .. hex8(l3) .. hex8(l4)
 end
 
+-- The mixer, in public, under its own name. The same construction and the same
+-- function -- not a second one: a mod that hashed its content with one mixer and
+-- its passwords with another would be a mod with two answers to "what is a hash
+-- here", and the note in the drawer agreeing with the machine on the desk rests
+-- on there being one.
+--
+-- Everything above this line is the password construction and is NOT what this
+-- is for: CeroSecContent asks for a few rounds to choose a surname with, and
+-- hashPassword asks for four thousand to store a password with. The rounds are
+-- the caller's to name, exactly as they already were inside this file.
+function CeroSecOS.digest(text, rounds)
+	if type(text) ~= "string" then return nil end
+	if type(rounds) ~= "number" or rounds < 0 then return nil end
+	return digest(text, math.floor(rounds))
+end
+
 -- A salt is six base 36 digits: printable, no "$", and short enough that the
 -- whole stored string fits a screen line. Six because 36^6 is just under 2^32,
 -- so every digit carries something and none is a wasted leading zero.
