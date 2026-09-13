@@ -289,39 +289,112 @@ end
 --
 -- Picking a computer under the mouse
 --
--- The game's picker only ever hands the menu ONE object, and it never even
--- considers ours when the click lands high on the monitor. Its candidate
--- squares come from a fixed diagonal walk out of the clicked point
--- (FBORenderObjectPicker.getObjectsAt: for each z it steps through
--- leftSideXy/rightSideXy, {0,0} {0,1} {1,1} {1,2} {2,2} {2,3} {3,3}), which
--- budgets three tiles -- 192 screen pixels at zoom 1 -- for a sprite that
--- overhangs the square it belongs to. A table-top computer is drawn a further
--- renderYOffset * tileScale pixels up (IsoObject.setRenderInfo:
--- sy -= offsetY + renderYOffset * Core.tileScale), so on a crate its top pixels
--- climb out of that budget and its square is never even looked at. Below the
--- cut-off the option appears, above it the square behind wins: exactly what the
--- screenshots show.
+-- What the game hands the menu, proved out of the jar (offsets are javap -c
+-- offsets, B42 42.20.4, and the whole walk is written out in
+-- docs/notes/picking.md):
 --
--- So we redo the picking ourselves, for computers only: gather the computers of
--- the squares near the ones the picker did attribute the click to, rebuild each
--- one's drawn box the way vanilla does, and ask the sprite's own click mask.
+--   UIManager.update, on every mouse MOVE, calls
+--   IsoObjectPicker.ContextPick(mx, my) and stores the one ClickObject it gets
+--   in UIManager.picked (@1078-1086). The right-click release fires
+--   OnObjectRightMouseButtonUp with picked.tile -- ONE IsoObject (@783-802).
+--   ISObjectClickHandler.doRClick then builds `objects` out of that single
+--   object plus whatever PickDoor/PickWindow/PickWindowFrame/PickThumpable/
+--   PickHoppable/PickTree add, and hands it to the world menu, which triggers
+--   OnFillWorldObjectContextMenu with it. So `worldobjects` is ONE object, and
+--   the other six are never a computer.
+--
+--   ContextPick itself (FBORenderObjectPicker.ContextPick, @43-620) is not a
+--   square walk at all: it asks getClickObjects for every object drawn near the
+--   point, tests each against the box the RENDERER recorded for it
+--   (ObjectRenderInfo.renderX/renderY/renderWidth/renderHeight, @167-224) and
+--   then against that object's own alpha mask (IsoObject.isMaskClicked,
+--   @333/@429). Every survivor is scored (ClickObject.calculateScore) and the
+--   HIGHEST score wins (@601-620, the comparator sorts ascending and the last
+--   is taken). So the game picks by per-object mask over every rendered object,
+--   and a raised sprite is handled exactly right: renderY already carries the
+--   raise (IsoObject.updateRenderInfoForObjectPicker, @297-315:
+--   sy -= offsetY + renderYOffset * Core.tileScale).
+--
+-- Which kills the story this code used to be written on. The old comment here
+-- said the picker "budgets three tiles" and never looks at a raised sprite's
+-- square. The staircase is real (getObjectsAt, @246-288, walks
+-- leftSideXy/rightSideXy = {0,0} {0,1} {1,1} {1,2} {2,2} {2,3} {3,3} out of the
+-- mouse's own iso tile) but three diagonal steps is SIX steps of x+y, and six is
+-- exactly the height of a sprite box measured in steps -- see PICK_AHEAD below.
+-- A monitor's own pixels sit low in its texture, so a monitor on a desk lands
+-- one or two steps out, nowhere near the edge of the budget. The game sees it.
+--
+-- What actually happened in the screenshot, then, is the score: the chair on the
+-- front square carries IsoFlagType.bed, which is +2 on calculateScore (@417-435)
+-- where a plain computer gets nothing, and it stands on the square the player is
+-- on, which costs it less of the Manhattan penalty (@656-693). When the two
+-- masks overlap the chair wins, the menu is built for the chair, and
+-- `worldobjects` is {chair} -- one square SOUTH of the desk.
+--
+-- Hence the two things this section now does differently.
+--
+--   The candidate squares are taken from the MOUSE's own iso tile, the way
+--   getObjectsAt takes them, and not from the square of the object the game
+--   picked. The picked object is itself somewhere inside that staircase, so
+--   walking the staircase again out of IT lands nowhere near the start: from the
+--   chair at 2089,5833 the old scan of (+0..2, +0..2) covered 2089..2091 x
+--   5833..5835 and the desk at 2089,5832 -- dy = -1 -- was never looked at once.
+--   That is the "something invisible in front": nothing was in front, the search
+--   was simply pointed the wrong way.
+--
+--   The box is the one the renderer drew, offsets and all. drawnBox used to take
+--   ISCoordConversion.ToScreen as the box's top-left, but IsoObject carries
+--   offsetX = 32 * tileScale and offsetY = 96 * tileScale (IsoObject.<init>,
+--   @38-57) and the renderer SUBTRACTS both. At tileScale 2 the old box sat 64
+--   pixels right and 192 pixels low -- three quarters of a sprite height -- so
+--   the mask was read three quarters of a sprite below the pixels it was meant
+--   to read, and the only way to hit a monitor was to click most of a tile below
+--   it. Which is the other half of the report: "sometimes I almost have to click
+--   the ground".
 --
 
--- How many squares toward the viewer to look. A raised sprite moves straight up
--- the screen by renderYOffset * tileScale pixels, and renderYOffset never
--- exceeds SURFACE_MAX (64), so the shift is at most 64 * tileScale = 128 pixels
--- at zoom 1. One step of (+1,+1) is 32 * tileScale = 64 pixels down
--- (IsoUtils.YToScreen), so two steps cover the whole raise. We scan the square
--- block (0..2, 0..2) rather than just the diagonal because the sprite is a full
--- tile wide, so the half-overlapping neighbours (+1,0) and (0,+1) can be the
--- square the picker names too.
-CeroSecReach.PICK_REACH = 2
+-- How far the candidate squares run, in steps of x + y. Derived, not measured:
+--
+-- A square's screen anchor is YToScreen = 16 * tileScale * (x + y) plus the
+-- level term, so one step of x + y is 16 * tileScale pixels down. The object's
+-- box starts offsetY + renderYOffset * tileScale ABOVE that anchor and is
+-- 128 * tileScale tall, so with s = x + y and raise = renderYOffset:
+--
+--   anchor(s) - 96*ts - raise*ts  <=  mouse  <=  anchor(s) + 32*ts - raise*ts
+--   s - 6 - raise/16              <=  s(mouse)  <=  s + 2 - raise/16
+--   s(mouse) - 2 + raise/16       <=  s         <=  s(mouse) + 6 + raise/16
+--
+-- raise is a render offset and never exceeds SURFACE_MAX, so raise/16 runs 0..4
+-- and s - s(mouse) runs -2..10. Six of those ten are the game's own staircase;
+-- the other four are the raise, which is the part a table-top computer needs and
+-- the part the game itself would miss on a tall enough stack.
+--
+-- Then two more, because the tile is not the point. The window is measured from
+-- the mouse's FRACTIONAL iso position, but a square is named by integers, so the
+-- two coordinates are each floored and each loses up to one whole step of its
+-- own -- up to two off the sum, always in the same direction. Behind is
+-- unaffected (flooring can only move the anchor back, never forward), ahead
+-- takes both.
+CeroSecReach.PICK_BEHIND = 2
+CeroSecReach.PICK_AHEAD = 6 + CeroSecReach.SURFACE_MAX / 16 + 2
 
--- The drawn box of an object in the picker's screen space -- that is, screen
--- pixels multiplied by the zoom. Same construction vanilla uses for the water
--- shader's own click box (FBORenderObjectPicker.handleWaterShader): the
--- square's screen position less the camera offset, a box of 64 x 128 tile
--- units, and the render offset that raises a table-top sprite.
+-- And how far sideways. Screen X is 32 * tileScale * (x - y), the box is
+-- 64 * tileScale wide and centred on the anchor, so x - y can differ from the
+-- mouse's own by one either way; the flooring moves the difference by strictly
+-- less than one more, so one step each way still covers it.
+CeroSecReach.PICK_SIDE = 1
+
+-- The box the renderer drew this object into, in the picker's own space -- world
+-- screen units, which is screen pixels multiplied by the zoom (ContextPick
+-- multiplies the mouse by getZoom to enter it, @11-23).
+--
+-- The same three terms the renderer uses (IsoObject.updateRenderInfoForObjectPicker):
+-- the square's screen position less the camera offset (ISCoordConversion.ToScreen),
+-- less the object's own draw offsets, less the raise that lifts a table-top
+-- sprite. The size is 64 x 128 tile units: a 64x128 texture is drawn at
+-- tileScale and a 128x256 one at half of it (@35-126), so both come to
+-- 64 * tileScale by 128 * tileScale and the scale below divides back to whichever
+-- it was.
 -- Returns x, y, width, height, texture; nil when the object has no sprite yet.
 function CeroSecReach.drawnBox(object)
 	local square = object and object:getSquare()
@@ -332,15 +405,16 @@ function CeroSecReach.drawnBox(object)
 
 	local tileScale = Core.getTileScale()
 	local x, y = ISCoordConversion.ToScreen(square:getX(), square:getY(), square:getZ())
-	y = y - object:getRenderYOffset() * tileScale
+	x = x - object:getOffsetX()
+	y = y - object:getOffsetY() - object:getRenderYOffset() * tileScale
 	return x, y, 64 * tileScale, 128 * tileScale, texture
 end
 
 -- Is the mouse on this object's drawn pixels? The box first, then the sprite's
 -- click mask, which is the very test the picker settles on
--- (IsoObjectPicker.ContextPick -> IsoObject.isMaskClicked). The mask is indexed
--- in texture pixels, so a box drawn bigger than its texture is divided back
--- down the way ContextPick divides by scaleX/scaleY.
+-- (FBORenderObjectPicker.ContextPick -> IsoObject.isMaskClicked). The mask is
+-- indexed in texture pixels, so a box drawn bigger than its texture is divided
+-- back down the way ContextPick divides by scaleX/scaleY.
 -- Returns hit, x, y, width, height so the caller can log the box it tested.
 function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
 	local x, y, width, height, texture = CeroSecReach.drawnBox(object)
@@ -358,26 +432,51 @@ function CeroSecReach.isMouseOn(object, mouseX, mouseY, playerIndex)
 	return hit == true, x, y, width, height
 end
 
--- Every computer on the squares that could be drawn under the cursor, nearest
--- to the viewer first.
-local function pickCandidates(worldobjects)
-	local seen, candidates = {}, {}
+-- Every square whose sprite can be drawn over the mouse point, on one level.
+-- The mouse's own iso tile, the way getObjectsAt takes it
+-- (IsoUtils.XToIso/YToIso on the mouse multiplied by the zoom), and then the
+-- (x + y, x - y) window PICK_BEHIND/PICK_AHEAD/PICK_SIDE derive above. x + y and
+-- x - y always have the same parity, so a sideways step only exists for half the
+-- forward steps -- which is precisely why the game's own candidates read as a
+-- staircase.
+function CeroSecReach.pickSquares(mouseX, mouseY, z, zoom)
+	local out = {}
+	local wx, wy = ISCoordConversion.ToWorld(mouseX * zoom, mouseY * zoom, z)
+	if wx == nil or wy == nil then return out end
+	local tx, ty = math.floor(wx), math.floor(wy)
+
+	for sum = -CeroSecReach.PICK_BEHIND, CeroSecReach.PICK_AHEAD do
+		for diff = -CeroSecReach.PICK_SIDE, CeroSecReach.PICK_SIDE do
+			if (sum + diff) % 2 == 0 then
+				local square = getCell():getGridSquare(
+					tx + (sum + diff) / 2, ty + (sum - diff) / 2, z)
+				if square then out[#out + 1] = square end
+			end
+		end
+	end
+	return out
+end
+
+-- Every computer that could be drawn under the cursor, nearest to the viewer
+-- first. The levels looked at are the ones the game itself resolved the click
+-- to -- the z of the objects it handed over -- because the mouse's iso tile
+-- depends on the level and a computer on another floor is out of reach anyway.
+local function pickCandidates(worldobjects, mouseX, mouseY, zoom)
+	local levels, seen, candidates = {}, {}, {}
 	for _, object in ipairs(worldobjects) do
 		local square = object:getSquare()
-		if square then
-			local x0, y0, z0 = square:getX(), square:getY(), square:getZ()
-			for dy = 0, CeroSecReach.PICK_REACH do
-				for dx = 0, CeroSecReach.PICK_REACH do
-					local near = getCell():getGridSquare(x0 + dx, y0 + dy, z0)
-					if near and not seen[near] then
-						seen[near] = true
-						local objects = near:getObjects()
-						for i = 0, objects:size() - 1 do
-							local candidate = objects:get(i)
-							if CeroSec.isComputerSprite(candidate:getSpriteName()) then
-								table.insert(candidates, candidate)
-							end
-						end
+		if square then levels[square:getZ()] = true end
+	end
+
+	for z in pairs(levels) do
+		for _, square in ipairs(CeroSecReach.pickSquares(mouseX, mouseY, z, zoom)) do
+			if not seen[square] then
+				seen[square] = true
+				local objects = square:getObjects()
+				for i = 0, objects:size() - 1 do
+					local candidate = objects:get(i)
+					if CeroSec.isComputerSprite(candidate:getSpriteName()) then
+						table.insert(candidates, candidate)
 					end
 				end
 			end
@@ -392,14 +491,18 @@ local function pickCandidates(worldobjects)
 	return candidates
 end
 
--- The computer the mouse is really on, or nil. Purely a screen test: whether
--- the player may touch it is still the caller's business.
+-- The computer the mouse is really on, or nil. Purely a screen test: whether the
+-- player may touch it is still the caller's business, and NOTHING here refuses a
+-- hit on account of what else is under the cursor. A computer whose own pixels
+-- are under the mouse wins, chair or no chair -- which is what the game does for
+-- every other object on a table, and what it would have done for this one if a
+-- desk chair did not outscore a computer.
 function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 	if not mouseX or not mouseY then return nil end
 
-	local candidates = pickCandidates(worldobjects)
+	local zoom = getCore():getZoom(playerIndex or 0)
+	local candidates = pickCandidates(worldobjects, mouseX, mouseY, zoom)
 	if CeroSec.DEBUG then
-		local zoom = getCore():getZoom(playerIndex or 0)
 		CeroSec.log("pick: mouse " .. tostring(mouseX) .. "," .. tostring(mouseY) ..
 			" zoom " .. tostring(zoom) .. " -> " .. tostring(mouseX * zoom) .. "," .. tostring(mouseY * zoom) ..
 			" (" .. tostring(#candidates) .. " candidates)")
@@ -413,7 +516,7 @@ function CeroSecReach.pickComputer(playerIndex, mouseX, mouseY, worldobjects)
 				" at " .. tostring(square:getX()) .. "," .. tostring(square:getY()) .. "," .. tostring(square:getZ()) ..
 				" raise " .. tostring(candidate:getRenderYOffset()) ..
 				" box " .. tostring(x) .. "," .. tostring(y) .. " " .. tostring(width) .. "x" .. tostring(height) ..
-				" -> " .. tostring(hit))
+				" -> " .. (hit and "HIT" or "no mask"))
 		end
 		if hit then return candidate end
 	end
