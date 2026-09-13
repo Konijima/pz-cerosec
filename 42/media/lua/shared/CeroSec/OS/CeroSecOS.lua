@@ -303,6 +303,35 @@ function CeroSecOS.padLeft(s, width)
 	return string.rep(" ", width - #s) .. s
 end
 
+-- The value of a string of hex digits, by hand, because tonumber(s, 16) is not
+-- the same function under the two VMs. Kahlua's base-16 path is
+-- Integer.parseInt(s, 16) (proven with javap on se.krka.kahlua.vm.KahluaUtil),
+-- so anything from "80000000" up throws NumberFormatException and comes back
+-- NIL -- half of every eight-digit hash -- while lua5.1 hands back the 32-bit
+-- value. Digits multiplied out one at a time give lua5.1's answer on both, so
+-- the numbers a save already holds stay the numbers they were.
+--
+-- nil for anything that is not one or more hex digits, which is what
+-- tonumber(s, 16) does too. Up to thirteen digits stay exact in a double; the
+-- mod never asks for more than eight.
+local HEX_DIGITS = {}
+for i = 0, 9 do HEX_DIGITS[string.sub("0123456789", i + 1, i + 1)] = i end
+for i = 0, 5 do
+	HEX_DIGITS[string.sub("abcdef", i + 1, i + 1)] = 10 + i
+	HEX_DIGITS[string.sub("ABCDEF", i + 1, i + 1)] = 10 + i
+end
+
+function CeroSecOS.hexValue(s)
+	if type(s) ~= "string" or #s == 0 then return nil end
+	local v = 0
+	for i = 1, #s do
+		local d = HEX_DIGITS[string.sub(s, i, i)]
+		if d == nil then return nil end
+		v = v * 16 + d
+	end
+	return v
+end
+
 -- Text the OS stores must be printable: every byte below 0x20 is refused except
 -- newline and tab. This is what keeps a file's contents from ever being taken
 -- for anything but text on the way to the screen.

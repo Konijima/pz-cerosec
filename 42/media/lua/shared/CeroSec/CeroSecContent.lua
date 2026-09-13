@@ -140,11 +140,13 @@ end
 -- A whole number in 1..n, out of the hash. The top eight hex digits, which is
 -- 32 bits held exactly by a double, taken modulo n: the bias against the last
 -- few values of n is one part in fifty million and this is choosing a surname.
+-- CeroSecOS.hexValue and not tonumber(s, 16): Kahlua returns nil above
+-- 0x7fffffff, which is half of all hashes, and the caller then adds to nil.
 function CeroSecContent.number(secret, key, n)
 	if type(n) ~= "number" or n < 1 then return nil end
 	local hash = CeroSecContent.derive(secret, key)
 	if hash == nil then return nil end
-	local v = tonumber(string.sub(hash, 1, 8), 16)
+	local v = CeroSecOS.hexValue(string.sub(hash, 1, 8))
 	if v == nil then return nil end
 	return math.floor(math.fmod(v, math.floor(n))) + 1
 end

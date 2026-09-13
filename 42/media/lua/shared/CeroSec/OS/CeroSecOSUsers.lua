@@ -162,7 +162,9 @@ function CeroSecOS.newSalt(state, extra)
 	-- Sixteen rounds, not four thousand: this is not the slow part and must not
 	-- be, or making a user would cost as much as checking one.
 	local short = digest(seed, 16)
-	local n = tonumber(string.sub(short, 1, 8), 16) or 0
+	-- hexValue and not tonumber(s, 16): Kahlua gives nil over 0x7fffffff, and
+	-- the "or 0" here would have quietly made every second salt the same one.
+	local n = CeroSecOS.hexValue(string.sub(short, 1, 8)) or 0
 	return base36(n % 2176782336, CeroSecOS.SALT_DIGITS)
 end
 
