@@ -21,7 +21,7 @@
 --     one that is merely slow is not,
 --   * a pass costs less than WALL_MS_PER_PASS milliseconds of real time under
 --     lua5.1 on an ordinary machine -- every millisecond ceiling in here being
---     scaled to the speed this box actually has, measured in this process right
+--     scaled to the speed this machine actually has, measured in this process right
 --     before the first timed section (see CALIB_REF_MS).
 --
 -- The scheduler here is the real SCeroSecJobs.lua. What is faked is the game
@@ -235,11 +235,12 @@ local function flat(what, result)
 end
 
 --
--- The box's own speed, measured here, in this process, before anything is timed.
+-- The machine's own speed, measured here, in this process, before anything is
+-- timed.
 --
 -- Every millisecond ceiling below used to be a bare number, and a bare number
--- says as much about who else is on the box as it does about the engine: on a
--- bench machine that is also running the game and a few agents (load average 5
+-- says as much about who else is on the machine as it does about the engine: on
+-- a machine that is also running the game and other heavy work (load average 5
 -- to 9) the ceilings went red two runs in three at 4.1 to 5.5 ms, on the
 -- untouched base as much as on a branch that changed no engine file. A red that
 -- says nothing about the code is noise, and noise is worse than no ceiling at
@@ -249,21 +250,22 @@ end
 -- allocation that grows, nothing of the engine in it -- sized to take a few tens
 -- of milliseconds. It is run three times and the CHEAPEST run is kept, because
 -- the cheapest is the one that got the most of the cpu. Divided by the value
--- below it gives a scale factor: 1 on an idle box, 2 on a box that is half
--- taken, and every ceiling is multiplied by max(1, scale). An idle box therefore
--- keeps exactly the strict number it always had; a loaded box gets an allowance
--- in proportion to how slow IT is, not a free pass -- and past 3x the bench
--- refuses to pretend it measured anything.
+-- below it gives a scale factor: 1 on an idle machine, 2 on one that is half
+-- taken, and every ceiling is multiplied by max(1, scale). An idle machine
+-- therefore keeps exactly the strict number it always had; a loaded one gets an
+-- allowance in proportion to how slow IT is, not a free pass -- and past 3x the
+-- bench refuses to pretend it measured anything.
 --
--- CALIB_REF_MS is the idle value, measured on this box (Blackstar, lua5.1,
--- 12 threads) on 2026-09-12: min-of-3 run three times in a row from the shell,
+-- CALIB_REF_MS is the idle value, measured on one machine (lua5.1, 12 hardware
+-- threads) on 2026-09-12: min-of-3 run three times in a row from the shell,
 -- giving 23.24, 23.74 and 24.12 ms, and 23.0 taken as the floor under those.
--- Honest caveat: the box was NOT idle while that was measured -- the game and
--- other agents were on it, load average 4.5 -- so the true idle figure is a
+-- Honest caveat: that machine was NOT idle while it was measured -- the game and
+-- other heavy work were on it, load average 4.5 -- so the true idle figure is a
 -- little lower than 23 and this reference is a little high, which makes the
 -- scale it derives a little low, i.e. the ceilings a little stricter than
--- intended rather than looser. Re-measure it on a genuinely quiet box and it
--- should only come down.
+-- intended rather than looser. Re-measure it on a genuinely quiet machine and it
+-- should only come down. It is a measurement of ONE machine: if the ceilings
+-- read wrong on yours, re-measure rather than guess.
 local CALIB_REF_MS = 23.0
 local CALIB_MAX_SCALE = 3
 local CALIB_N = 500000
@@ -295,12 +297,12 @@ local CALIB_SCALE = CALIB_MS / CALIB_REF_MS
 if CALIB_SCALE < 1 then CALIB_SCALE = 1 end
 if CALIB_SCALE > CALIB_MAX_SCALE then
 	error(string.format(
-		"FAIL: box too loaded to measure: rerun idle (calibration %.2f ms against a " ..
+		"FAIL: machine too loaded to measure: rerun idle (calibration %.2f ms against a " ..
 		"reference of %.2f ms is a scale of %.2fx, past the %dx cap)",
 		CALIB_MS, CALIB_REF_MS, CALIB_SCALE, CALIB_MAX_SCALE), 0)
 end
 
--- A ceiling in milliseconds, as this box may be held to it.
+-- A ceiling in milliseconds, as this machine may be held to it.
 local function ceiling(ms)
 	return ms * CALIB_SCALE
 end
@@ -2611,7 +2613,7 @@ do
 	-- machine is about five milliseconds, half a percent of it, for a county
 	-- nobody will ever build. Twenty is the ceiling and it is generous on purpose,
 	-- the way WALL_MS_PER_PASS is: this is a floor under "the server is not being
-	-- hurt" and a bench box under load must not turn it red -- and it is scaled by
+	-- hurt" and a loaded machine must not turn it red -- and it is scaled by
 	-- the calibration, like every other ms ceiling here.
 	local sensorCeiling = ceiling(20)
 	check(string.format("and costs %.3f ms a second for 48 heads and 960 bodies (under %.3f)",

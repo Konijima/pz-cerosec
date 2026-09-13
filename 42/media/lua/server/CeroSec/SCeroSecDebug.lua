@@ -9,7 +9,7 @@ require "CeroSec/OS/CeroSecOS"
 -- The debug window (client/CeroSec/CeroSecDebugUI.lua) draws these and works
 -- nothing out: every row here is built by asking the function that OWNS the
 -- answer -- CeroSecOS.hostname, CeroSecOS.address, CeroSecNet.lineOf,
--- CeroSecDevices.snapshot, CeroSecOS.usage, CeroSecOS.cronDue -- so a wave that
+-- CeroSecDevices.snapshot, CeroSecOS.usage, CeroSecOS.cronDue -- so a change that
 -- moves one of those rules moves what this window shows with it and nobody has
 -- to remember to come back here. A debug window that had a copy of a rule in it
 -- would be a debug window that tells you what the code used to do.
@@ -158,7 +158,7 @@ end
 -- asked of a SQUARE -- so a button greyed in the window is a button whose act the
 -- server would refuse, and the day the rule moves the window moves with it.
 --
--- This is the hole Mathieu fell into: "Turn on" was enabled on a machine whose
+-- This is the hole found in play: "Turn on" was enabled on a machine whose
 -- chunk was away, the press went out on the wire, turnOn refused for want of a
 -- square to ask about the wire, the boolean was dropped, and nothing at all
 -- happened on the glass.
@@ -331,7 +331,7 @@ end
 --
 -- The building's footprint, the room, and every zone the square is inside. Three
 -- facts about a place and not about a computer, and they are here because the
--- telephone wave's rules are about to be written against them: a survivor standing
+-- telephone work's rules are about to be written against them: a survivor standing
 -- at a computer in a mall has to be able to see that the named zone he is in is
 -- SMALLER than the building around it, and no command of the machine's says so.
 --
@@ -419,7 +419,7 @@ function CeroSecDebug.premises(luaObject)
 
 	-- The zones. A square can be inside several at once -- a town, a district, a
 	-- story, a loot zone -- and which of them is the SMALLEST is the question the
-	-- telephone wave is going to ask.
+	-- telephone work is going to ask.
 	if getWorld == nil then return out end
 	local world = getWorld()
 	if world == nil then return out end

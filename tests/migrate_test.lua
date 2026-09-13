@@ -122,7 +122,7 @@ do
 		check("there is a step for v" .. n, type(CeroSecOS.MIGRATIONS[n]) == "function")
 	end
 	-- And no step ABOVE this build's shape, which would be a step nothing runs: a
-	-- wave that wrote the migration and forgot to move the number.
+	-- change that wrote the migration and forgot to move the number.
 	for n = CeroSecOS.STATE_VERSION + 1, CeroSecOS.STATE_VERSION + 8 do
 		eq("no step for v" .. n .. ", which nothing would run", CeroSecOS.MIGRATIONS[n], nil)
 	end
@@ -283,7 +283,7 @@ for i = 1, #fixtures do
 	local net = CeroSecOS.netRecord(state)
 	check(at .. "the wire record is still there", net ~= nil)
 	eq(at .. "with its address", CeroSecOS.address(state), "10.10.4.17")
-	eq(at .. "and the exchange the phone wave added", net.ex, 555)
+	eq(at .. "and the exchange the telephone work added", net.ex, 555)
 	eq(at .. "and what the premises is called", net.pz, "Coffee Shop")
 	local call = CeroSecOS.callsignOf(state)
 	check(at .. "and the callsign is on the disk", type(call) == "string" and call ~= "")

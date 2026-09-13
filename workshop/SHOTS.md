@@ -1,7 +1,7 @@
 # CeroSec -- the ten screenshots
 
-What the Workshop page needs, in the order the description uses them. Mathieu
-takes them; `workshop/workshop.txt` already carries a commented slot for each,
+What the Workshop page needs, in the order the description uses them. The
+maintainer takes them; `workshop/workshop.txt` already carries a commented slot for each,
 named with the filename below, and the slot becomes a `description=[img]...[/img]`
 line once the shot is uploaded and has a URL ([RELEASE.md](../docs/RELEASE.md)).
 

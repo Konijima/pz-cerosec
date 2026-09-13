@@ -1256,8 +1256,8 @@ end
 --
 -- 13. Why a button cannot be pressed
 --
--- The window Mathieu opened had "Turn on" enabled on a machine whose chunk was
--- away. He pressed it; the server refused, because the wire is asked of a square
+-- The window opened in play had "Turn on" enabled on a machine whose chunk was
+-- away. The button was pressed; the server refused, because the wire is asked of a square
 -- and there was nobody to ask; and nothing at all happened on the glass.
 --
 

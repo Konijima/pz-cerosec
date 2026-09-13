@@ -1490,7 +1490,7 @@ end
 --
 -- A door with boxes screwed to it and a phone book with an edition written on it are
 -- save files as much as the machine is: what is in them comes back with the chunk
--- and with the item, and a wave that changes their shape is owed the same promise.
+-- and with the item, and a change that changes their shape is owed the same promise.
 -- Both carry a version now, both are walked in the ONE place they are read, and both
 -- refuse to READ a table a later build wrote rather than guessing at it.
 --
@@ -1734,7 +1734,7 @@ end
 --
 -- reboot: the machine goes dark, and the window comes back
 --
--- Mathieu, in the game: "reboot should also turn the screen off, and the
+-- Reported from play: "reboot should also turn the screen off, and the
 -- terminal UI should open again once it booted." It used to be turnOff and
 -- turnOn in the same breath, which left the sprite lit and the boot typing
 -- itself out inside a window that had never shut -- a machine that never went
@@ -4120,7 +4120,7 @@ end
 -- The prompt IS the shell (rung 5a.1)
 --
 -- os_test drives the engine and hostile_test the scheduler. What is here is the
--- round trip Mathieu's screenshot was of: a loop typed at the glass.
+-- round trip the screenshot from play was of: a loop typed at the glass.
 --
 
 -- The line from the screenshot.
@@ -5228,7 +5228,7 @@ local function newNet()
 	end
 	system.getIsoObjectAt = function() return nil end
 
-	-- Explicit on every call, because the two waves that met here wanted different
+	-- Explicit on every call, because the two changes that met here wanted different
 	-- defaults: the debug benches read the size and the area back out of the office
 	-- (10x10, area 100, 3 rooms), and the premises benches need the building to be
 	-- strictly bigger than the zones they put inside it.
@@ -7032,7 +7032,7 @@ do
 end
 
 --
--- THE TELEPHONE DIRECTORY (the phone book wave)
+-- THE TELEPHONE DIRECTORY (the phone book work)
 --
 -- Base.Phonebook is the yellow pages of the region it was found in, and the whole
 -- of what this bench is about is that the BOOK and the LINE cannot disagree: a
@@ -7138,7 +7138,7 @@ do
 
 	-- THE BOOK AND THE LINE. A computer in the coffee shop the map drew at 210,310
 	-- must read the book's own number off its BIOS. This is the assertion the whole
-	-- wave rests on: derive the number any other way and it goes red.
+	-- change rests on: derive the number any other way and it goes red.
 	local shop = net.machine(212, 312, 0, mall)
 	shop:turnOn()
 	local tel = telOf(shop)
@@ -10460,7 +10460,7 @@ end
 
 
 --
--- 45. The debug snapshots (the debug wave)
+-- 45. The debug snapshots (the debug window's work)
 --
 -- What the debug window is handed, built by the server: the machine list, the
 -- file tree, /dev, the wire and the scheduler. The window itself is
@@ -10839,7 +10839,7 @@ end
 --
 -- Where the machine stands: the building's footprint, the room, and the zones
 --
--- Three facts about a PLACE and not about a computer, and the telephone wave's
+-- Three facts about a PLACE and not about a computer, and the telephone work's
 -- rules are going to be written against them: a survivor at a computer in a mall
 -- has to be able to see that the named zone he is in is SMALLER than the building
 -- around it.
@@ -11886,7 +11886,7 @@ do
 	net.login("admin")
 
 	-- The machine in the shed is on and its chunk is away, which is the state
-	-- Mathieu's row was in but the other way round: switch it off first.
+	-- the row reported from play was in but the other way round: switch it off first.
 	local away = net.far
 	eq("the far machine has no chunk", away:isLoaded(), false)
 	eq("switching it off works even so", away:turnOff(), true)
@@ -11946,7 +11946,7 @@ end
 do
 	local net = newNet()
 	-- A computer sprite a chunk brought in and nobody ever touched, which is what
-	-- forty-four of Mathieu's rows were. The system makes one for every valid iso
+	-- forty-four of the reported rows were. The system makes one for every valid iso
 	-- object of every loaded square, so this is not a rare case at all.
 	local idle = net.machine(300, 220, 0, net.shed)
 	eq("it is off", idle.on, false)
@@ -12464,7 +12464,7 @@ end
 --
 -- WHAT IS ALREADY ON A MACHINE NOBODY HAS SWITCHED ON
 --
--- The world half of the content wave. What each profile PUTS on a machine is
+-- The world half of the world-content work. What each profile PUTS on a machine is
 -- tests/content_test.lua's -- it builds every one of them and runs every script --
 -- and this is the other half, which only the world can answer:
 --
@@ -12654,7 +12654,7 @@ end
 --
 -- THE PAPERS A PASSWORD IS FOUND ON
 --
--- The other half of the same wave: the note in the drawer and the note in a dead
+-- The other half of the same change: the note in the drawer and the note in a dead
 -- man's pocket, both fired through the engine's own event with the engine's own
 -- three arguments (Events.OnFillContainer, LootLog.lua:7).
 --
@@ -12921,12 +12921,12 @@ do
 	--
 	-- The profile is taken out of the catalogue HERE, for the length of this block,
 	-- and this is the fix to a bench that went stale: it used to name the bank,
-	-- which was an empty slot until wave 7b filled it, and it then asserted that a
+	-- which was an empty slot until the world-content work filled it, and it then asserted that a
 	-- bank in Knox County has no password in its drawer -- which had become false.
 	-- What is under test is the MECHANISM (prefill answers nil for an id nobody has
 	-- written, and CeroSecNotes writes nothing for it), and a mechanism has to be
 	-- tested by provoking the state it is for rather than by borrowing a gap in the
-	-- catalogue that the next wave will close.
+	-- catalogue that the next change will close.
 	do
 		local net5 = newNet()
 		SCeroSecSystem.instance = net5.system
@@ -13027,7 +13027,7 @@ do
 		SCeroSecSystem.instance = net.system
 	end
 
-	-- THE SAVE'S OWN KEYS. The one line this whole wave rests on, and until it was
+	-- THE SAVE'S OWN KEYS. The one line this whole change rests on, and until it was
 	-- written down here nothing in the suite could see it: setModDataKeys(nil) --
 	-- neither the secret nor the notes persisted -- left every bench green. What
 	-- that regression costs is a re-rolled secret on every reload, so every password
@@ -13090,7 +13090,7 @@ do
 end
 
 --
--- 53. The developer's reset (the debug wave's one irreversible act)
+-- 53. The developer's reset (the debug window's one irreversible act)
 --
 -- A machine whose FIRST power-on went wrong halfway through is a machine there is
 -- no second try on: prefill runs once in the life of a computer and never again, so

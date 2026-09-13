@@ -4,7 +4,7 @@
 
 **THE NETWORK NEVER DIED.**
 
-A small 1993 Unix on the vanilla desktop computers of Knox County: switch one on,
+A small 1993 Unix on the vanilla desktop computers of Knox County. Switch one on,
 sit down at it, and a green 60x20 terminal opens on a BIOS line and a login
 prompt. Behind it are files, permissions, accounts, an editor, shell scripts,
 cron, the doors and lights of the building under `/dev` once somebody has screwed
@@ -17,46 +17,31 @@ password written down on a paper in the building, because everybody wrote it
 down. Ten kinds of premises, six labelled floppies, and vanilla's own Phonebook
 turned into the Knox County directory.
 
-From scratch, vanilla Lua only, server-authoritative, Build 42.
+Project Zomboid **Build 42** (42.20.0+). Written from scratch, vanilla Lua only,
+no dependencies, server-authoritative. Made by Konijima.
 
-Made by Konijima.
+## Install
 
-## Status
+**From the Steam Workshop.** Subscribe to *CeroSec* (item `3801094056`) and
+enable **CeroSec** in the mod list when you start or load a game.
 
-Build 42.20.4. From scratch, vanilla Lua only, no dependencies.
+**From source, for playing or for working on it.** Clone the repository so that
+the repository root *is* the mod folder:
 
-Done: the OS engine (filesystem, permissions, accounts, groups, a real shell
-language with pipes and job control), cron, the manual as a three-volume in-game
-documentation set, floppy disks with their own filesystem, the device network
-under `/dev` (doors, switches, motion sensors) and the four hardware modules a
-survivor has to fit before a computer reaches any of it, three links out to
-the rest of the county — coax to the other machines of a premises, the telephone, and radio —
-and the world content: ten premises profiles, the papers that carry the passwords,
-six labelled floppies, and the phone book.
-See "Documentation" below for where each of those is written up.
+```
+git clone https://github.com/Konijima/pz-cerosec ~/Zomboid/mods/CeroSec
+```
 
-What's next: two testing aids in `42/media/lua/shared/CeroSec/CeroSecDefs.lua` are
-still `true`, and **both have to be set to `false` before the Workshop release**.
-`CeroSec.DEV_MANUAL_MENU` puts a manual reader on every computer's right-click menu
-regardless of whether anyone has found a book. `CeroSec.DEV_DEBUG_MENU` puts the
-debug window there — every computer the server holds, the selected machine's
-filesystem, its `/dev`, the wire, the scheduler and the mod's own log — and once it
-is `false` that window is offered only in the game's own debug mode. See
-[docs/DEBUG.md](docs/DEBUG.md).
+It must be a **real directory, never a symlink.** That is not a preference:
+Build 42's `ScriptManager` resolves each `media/scripts` file against the mod's
+canonical, symlink-resolved path while it is *found* through the link, so the
+relative path degenerates into the full absolute path and every script fails with
+`FileNotFoundException`. Lua and translations load fine through a link; scripts
+do not, so the whole mod has to sit where the game loads it from.
 
-## Install (local play)
+Then enable **CeroSec** in the mod list.
 
-Clone or drop this repo at `~/Zomboid/mods/CeroSec` — as a real directory, **never**
-a symlink — and enable **CeroSec** in the mod list when starting or loading a game.
-
-The real-directory rule is not a preference: Build 42's `ScriptManager` resolves
-each `media/scripts` file against the mod's canonical, symlink-resolved path while
-it is *found* through the link, so the relative path degenerates into the full
-absolute path and every script fails with `FileNotFoundException`. Lua and
-translations are unaffected; scripts are not, so the whole mod has to sit where it
-is loaded from. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#repository-layout).
-
-## Quick start (players)
+## Quick start
 
 1. Right-click a desktop computer and choose **Turn on computer** (needs power).
 2. Right-click again for **Use computer** to sit down and open the terminal.
@@ -68,7 +53,51 @@ is loaded from. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#repository-layou
 5. Click the window's close button, or type `exit`, to walk away — the screen
    keeps running and is exactly as you left it next time.
 
-Full player reference: [docs/PLAYERS.md](docs/PLAYERS.md).
+## Documentation
+
+Start with [docs/PLAYERS.md](docs/PLAYERS.md) if you are playing, and with
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) if you are changing anything.
+
+| Document | What is in it |
+| --- | --- |
+| [docs/PLAYERS.md](docs/PLAYERS.md) | The whole thing from a player's chair: accounts, commands, the editor, devices, the network, floppies, the manual. |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to work on this mod: the project's rules, the three test layers, how to report a bug, how to send a change. |
+| [CLAUDE.md](CLAUDE.md) | The same rules as operating instructions, for contributors working with Claude Code. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The engine, the server, the client, the system files, the BIOS, persistence, the manual reader. |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | The client/server wire: messages, the screen shape, control markers, completion, device highlighting, remote sessions. |
+| [docs/DEVICES.md](docs/DEVICES.md) | How `/dev` is built, the sync calls proven against the jar, motion sensors, the floppy's own filesystem. |
+| [docs/NETWORK.md](docs/NETWORK.md) | Coax, the telephone and the radio: their identities, their rules and rates, and the sessions they carry. |
+| [docs/SCRIPTING.md](docs/SCRIPTING.md) | The shell language, pipes, cron, job control, and the step machine and scheduler underneath. |
+| [docs/CONTENT.md](docs/CONTENT.md) | What is already on the machines, the disks and the papers: the per-save secret, the catalogues, where a password is found. |
+| [docs/SECURITY.md](docs/SECURITY.md) | The password hash, what root can and cannot undo, what the server guarantees against a hostile script. |
+| [docs/DEBUG.md](docs/DEBUG.md) | The debug window: the dev flags and the release gating, the six tabs, what it costs the server, the three things it can change. |
+| [docs/TESTING.md](docs/TESTING.md) | `sh tests/run.sh`, what each suite proves, the calibrated millisecond ceilings, and what no headless test can reach. |
+| [docs/RELEASE.md](docs/RELEASE.md) | The ordered Workshop release checklist: the images, the flags, the upload, the tag, the visibility. |
+| [docs/PARCOURS-TEST.md](docs/PARCOURS-TEST.md) | The in-game checklist, in French, walked on the glass before a release. |
+| [docs/TEST-rung1.md](docs/TEST-rung1.md), [rung2](docs/TEST-rung2.md), [rung4](docs/TEST-rung4.md) | Older in-game checklists, kept as they were read at the time. |
+| [docs/notes/](docs/notes/README.md) | Engineering notes: the bytecode proofs out of the game's jar behind the rules, kept so a rule can be checked rather than believed. |
+| [workshop/SHOTS.md](workshop/SHOTS.md) | The screenshots the Workshop page needs, with the in-game settings for each. |
+
+The in-game manual's own text is three Lua files:
+[`CeroSecManualUser.lua`](42/media/lua/shared/CeroSec/CeroSecManualUser.lua),
+[`CeroSecManualAdmin.lua`](42/media/lua/shared/CeroSec/CeroSecManualAdmin.lua) and
+[`CeroSecManualProgrammer.lua`](42/media/lua/shared/CeroSec/CeroSecManualProgrammer.lua).
+
+## The tests
+
+From the repository root, with `lua5.1` on the `PATH`:
+
+```
+sh tests/run.sh
+echo $?
+```
+
+The exit code is the verdict, not the last line printed. It runs every headless
+suite, then the guards: the Kahlua greps, every file loaded on the game's own
+Kahlua VM out of the jar, the self-call resolver, the generated self-test
+vectors, the Workshop page against Steam's ceilings, and
+[`tests/public-check.sh`](tests/public-check.sh). Details, and what each suite
+proves, in [docs/TESTING.md](docs/TESTING.md).
 
 ## Design rules (non-negotiable)
 
@@ -89,10 +118,9 @@ Full player reference: [docs/PLAYERS.md](docs/PLAYERS.md).
   machine rather than to the shell — are listed in `CeroSecOS.DEVIATIONS` and
   declared on a page of the in-game Volume 1, *What is not Unix here*, which a
   bench checks against that list in both directions.
-- **Waves in worktrees.** Each wave of work happens in its own git worktree
-  branched from a named base commit, is proven by `sh tests/run.sh` and never by
-  starting the game, and merges only after a verifier reads the diff and Mathieu
-  says `go`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+- **A mod update never costs a player what he built.** Nothing is ever deleted:
+  not a state key, not an item, not a recipe, not a sandbox option. The
+  replacement is always *obsolete, and migrate*.
 - **Never `eval`, in either direction.** Not Lua evaluated from a file, and not
   a player-supplied string reaching Lua's own pattern matching unescaped.
 
@@ -103,7 +131,7 @@ Three lessons this codebase paid for and does not intend to relearn:
   because `ScriptManager` resolves through the link before it matters. See
   "Install" above.
 - **`MeasureStringX` measures a glyph's ink, not its advance** — the manual
-  reader sized its monospaced column on the *ink* of `"M"` until a wave that
+  reader sized its monospaced column on the *ink* of `"M"` until a change that
   measured the gap between two of them instead, because `"M"` in the game's own
   font is a pixel wider in ink than the cell it is drawn in. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-manual-reader).
@@ -112,44 +140,19 @@ Three lessons this codebase paid for and does not intend to relearn:
   a remote shell and is refused, in `rlogin`'s own words, exactly as real
   `rlogin(1)` refuses one. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## Documentation
+## How to help
 
-- [docs/PLAYERS.md](docs/PLAYERS.md) — everything a player needs out of game:
-  accounts, commands, the editor, devices, the network, floppies, the manual.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the engine, the server, the
-  client, the system files, the BIOS, persistence, the manual reader.
-- [docs/PROTOCOL.md](docs/PROTOCOL.md) — the client/server wire: messages, the
-  screen shape, control markers, completion, device highlighting, remote sessions.
-- [docs/DEVICES.md](docs/DEVICES.md) — how `/dev` is built, the sync calls proven
-  against the jar, motion sensors, and the floppy's own filesystem.
-- [docs/NETWORK.md](docs/NETWORK.md) — coax, the telephone and the radio: their
-  identities, their rules and rates, and the sessions they carry.
-- [docs/SCRIPTING.md](docs/SCRIPTING.md) — the shell language, pipes, cron, job
-  control, and the step machine and scheduler underneath.
-- [docs/CONTENT.md](docs/CONTENT.md) — what is already on the machines, the disks
-  and the papers: the per-save secret, the profile and disk catalogues, and where
-  a password is found.
-- [docs/DEBUG.md](docs/DEBUG.md) — the debug window: the two dev flags and the
-  release gating to come, the six tabs, the protocol, what it costs the server,
-  and the three things it can change.
-- [docs/TESTING.md](docs/TESTING.md) — `sh tests/run.sh`, what each suite proves,
-  and the manual checklists for what no headless test can reach.
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — the wave process, repository
-  layout, and coding and security rules.
-- [docs/SECURITY.md](docs/SECURITY.md) — the password hash, what root can and
-  cannot undo, and what the server guarantees against a hostile script.
-- [docs/RELEASE.md](docs/RELEASE.md) — the ordered Workshop release checklist:
-  the images, the flags, the upload, the tag, the visibility.
-- [workshop/SHOTS.md](workshop/SHOTS.md) — the ten screenshots and two GIFs the
-  Workshop page needs, with the in-game settings for each.
-- [docs/notes/workshop-study.md](docs/notes/workshop-study.md) — how the five
-  most subscribed Project Zomboid pages are built, and Steam's own rules for
-  images in a description.
+Bug reports, in-game test passes, translations and code are all welcome.
 
-The in-game manual's own text lives in
-[`42/media/lua/shared/CeroSec/CeroSecManualUser.lua`](42/media/lua/shared/CeroSec/CeroSecManualUser.lua),
-[`CeroSecManualAdmin.lua`](42/media/lua/shared/CeroSec/CeroSecManualAdmin.lua) and
-[`CeroSecManualProgrammer.lua`](42/media/lua/shared/CeroSec/CeroSecManualProgrammer.lua).
-The in-game (not headless) test checklists are
-[docs/PARCOURS-TEST.md](docs/PARCOURS-TEST.md), [docs/TEST-rung1.md](docs/TEST-rung1.md),
-[docs/TEST-rung2.md](docs/TEST-rung2.md) and [docs/TEST-rung4.md](docs/TEST-rung4.md).
+- **A bug**: open an issue with the build number, your mod list and the
+  `console.txt` lines around it — the template asks for exactly what is needed.
+- **A translation**: copy `42/media/lua/shared/Translate/EN/` to your language
+  code and translate the values. No code changes needed.
+- **A change**: read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) first. Every
+  change comes with its benches, and `sh tests/run.sh` has to exit 0.
+- Everyone taking part is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Licence
+
+Not chosen yet — see [LICENSE](LICENSE). Until it is, assume all rights are
+reserved and ask before redistributing.

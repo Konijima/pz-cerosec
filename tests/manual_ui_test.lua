@@ -1083,7 +1083,7 @@ do
 end
 
 --
--- THE TELEPHONE DIRECTORY (the phone book wave)
+-- THE TELEPHONE DIRECTORY (the phone book work)
 --
 -- Base.Phonebook gets one entry on the inventory menu and vanilla's Read keeps its
 -- own; the copy is stamped with the region it was first opened in and with the
@@ -2297,7 +2297,7 @@ do
 	-- The module, the three books, the four disks, the four hardware modules, the book
 	-- that teaches them, the RETIRED single book -- which is declared and is not
 	-- loot, because dropping an item block deletes every copy of it in every save --
-	-- and, since the content wave, the sticky note a password is written on.
+	-- and, since the world-content work, the sticky note a password is written on.
 	eq("fifteen blocks: the module, the three books, the retired one, the four "
 		.. "disks, the four hardware modules, the Field Wiring Guide and the note",
 		opens, 15)
@@ -2328,8 +2328,8 @@ do
 	-- And the retired one, which is DECLARED and is not one of the set.
 	--
 	-- Asserted here rather than left out, because the two halves of the promise are
-	-- easy to half-keep: a wave that dropped the block would delete every copy in
-	-- every save (the reasoning is in the script, traced through the jar), and a wave
+	-- easy to half-keep: a change that dropped the block would delete every copy in
+	-- every save (the reasoning is in the script, traced through the jar), and a change
 	-- that put it back into BOOKS or into the loot tables would be printing a book
 	-- CeroSec Systems stopped printing.
 	check("the retired single-volume item is still declared", blocks.Manual ~= nil)

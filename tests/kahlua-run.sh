@@ -11,18 +11,21 @@
 # nothing in tests/ could say whether the files even loaded.
 #
 # Two details of the setup, both forced:
-#   - The compiler is the JDK on the box (javac), but the game's classes are
-#     Java 25 class files and that javac is 21, so KahluaRun reaches Kahlua by
+#   - The compiler is whatever JDK is on your PATH (javac; override with
+#     JAVAC=...), but the game's classes are Java 25 class files and a javac
+#     older than that cannot read them, so KahluaRun reaches Kahlua by
 #     reflection and RUNS on the game's bundled jre64.
 #   - Kahlua's setupEnvironment() reads stdlib.lua as a path relative to the
 #     working directory, so the java process runs in the game folder and gets
 #     the repo root as its argument.
 #
 
-GAME="$HOME/.local/share/Steam/steamapps/common/ProjectZomboid/projectzomboid"
+# The Steam install on Linux. Override GAME if the game lives elsewhere, and
+# JAVAC if the javac to use is not the one on your PATH.
+GAME="${GAME:-$HOME/.local/share/Steam/steamapps/common/ProjectZomboid/projectzomboid}"
 JAR="$GAME/projectzomboid.jar"
 JAVA="$GAME/jre64/bin/java"
-JAVAC="$HOME/.sdkman/candidates/java/current/bin/javac"
+JAVAC="${JAVAC:-$(command -v javac 2> /dev/null || echo javac)}"
 
 ROOT=$(pwd)
 SRC="$ROOT/tools/KahluaRun.java"

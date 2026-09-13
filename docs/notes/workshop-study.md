@@ -2,7 +2,7 @@
 
 How the most subscribed Project Zomboid Workshop pages are written and laid out, read from the live pages. Structure claims below were checked against the raw HTML of each item description, not only against the rendered text, so the BBCode counts are exact.
 
-Method note. The item IDs supplied in the brief did not all match the mod names given. The IDs resolve as follows: 2458631365 is Expanded Helicopter Events (not Superb Survivors), 2648779556 is True Actions Act 3 Dancing (not Act 1 Sitting), 2619072426 is Weapon Condition Indicator (not Autotsar Tuning Atelier), 2875848298 is Common Sense (not Snake's Traits). Two IDs could not be fetched at all: 2860193166 and 2713136832 both return the Steam error page "There was a problem accessing the item", both through WebFetch and through a direct request. So the five pages studied are the five that returned content.
+Method note. The item IDs this study started from did not all match the mod names they were given with. The IDs resolve as follows: 2458631365 is Expanded Helicopter Events (not Superb Survivors), 2648779556 is True Actions Act 3 Dancing (not Act 1 Sitting), 2619072426 is Weapon Condition Indicator (not Autotsar Tuning Atelier), 2875848298 is Common Sense (not Snake's Traits). Two IDs could not be fetched at all: 2860193166 and 2713136832 both return the Steam error page "There was a problem accessing the item", both through a fetching tool and through a direct request. So the five pages studied are the five that returned content.
 
 Steam renders BBCode into classed HTML (`bb_h1`, `bb_h2`, `bb_h3`, `bb_ul`, `bb_code`, `bb_hr`, `blockquote bb_blockquote`, `bb_table`, `bb_spoiler`). Counting those classes tells us which tags the author actually typed.
 

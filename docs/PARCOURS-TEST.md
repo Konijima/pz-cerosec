@@ -1,5 +1,10 @@
 # Parcours de test CeroSec
 
+> **In English:** this is the in-game test checklist — every step that has to be
+> walked on the glass, in order, because no headless suite can reach it. It is
+> written in French because that is the maintainer's working language; an English
+> translation is very welcome as its own pull request.
+
 Voir aussi [TESTING.md](TESTING.md) pour les suites headless (`sh tests/run.sh`)
 et les rungs [TEST-rung1.md](TEST-rung1.md), [TEST-rung2.md](TEST-rung2.md) et
 [TEST-rung4.md](TEST-rung4.md).
@@ -668,7 +673,7 @@ dessus.
 
 Les étapes 140 à 148 ne passent par aucun fichier : elles se tapent à l'invite,
 parce que l'invite **est** le langage de script depuis le palier 5a.1. C'est la
-capture d'écran de Mathieu qui les a fait écrire (`while: command not found`).
+capture d'écran prise en jeu qui les a fait écrire (`while: command not found`).
 
 127. `edit compte.sh`, taper les quatre lignes ci-dessous, `Tab` pour
      enregistrer, `Échap` pour sortir. Puis `cat compte.sh` → les quatre lignes
@@ -1244,7 +1249,7 @@ passait dans un seul bâtiment. Les deux doivent avoir du courant. Dans ce qui
 suit, `ici` est la machine devant laquelle on est assis et `là-bas` celle de
 l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
 
-Depuis cette vague, la ligne appartient au **local** (« premises ») et non au
+Depuis ce changement, la ligne appartient au **local** (« premises ») et non au
 bâtiment : une maison est un local, un centre commercial en est trente. Les pas
 215b et 215c sont là pour ça, et ils demandent un mall (le mall de Louisville ou
 celui de West Point) avec deux boutiques différentes.
@@ -1340,7 +1345,7 @@ celui de West Point) avec deux boutiques différentes.
      ne comptent pas. Vérifier au passage qu'un appel vers ce numéro sonne sur la
      machine à l'adresse la plus basse (`who` là-bas), et que pendant ce temps
      l'autre machine de la maison ne peut pas appeler (`BUSY`). [ ]
-215d. **Une sauvegarde d'avant cette vague.** Sur un monde créé avec une version
+215d. **Une sauvegarde d'avant ce changement.** Sur un monde créé avec une version
      précédente du mod, où un ordinateur avait déjà été allumé : le rallumer. Le
      BIOS doit afficher l'adresse `Ethernet:` comme avant **et** une ligne
      `Phone line:` (le central est calculé au moment où la machine revoit son
@@ -1692,7 +1697,7 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      le contact ne touche pas à la gâche : `lockN` répond toujours. [ ]
 235. **Le guide, et ce qu'il débloque.** Nouvelle partie, Électricité 1,
      **sans avoir rien lu** : ouvrir l'établi, onglet **Électrique** → aucun
-     des quatre modules n'est proposé. C'est le changement de cette vague ;
+     des quatre modules n'est proposé. C'est le changement apporté ici ;
      s'ils sont déjà là, la recette s'auto-apprend encore au niveau qui la
      fabrique. Se donner un `CeroSec.WiringGuide` : il s'appelle **Guide de
      câblage CeroSec**, il pèse 0,5, il est rangé sous **Ressource de recette**
@@ -1791,7 +1796,7 @@ un interrupteur dans la pièce.
      le mode (`used only`). Le bouton **Voir toutes les machines** montre tout :
      attendu, beaucoup plus de lignes — une par sprite d'ordinateur que le streamer
      a chargé depuis le début de la partie, éteinte, avec des colonnes vides (c'est
-     ce que Mathieu a vu : 44 lignes pour 6 machines qui comptent) — et `N` monte
+     ce qu'on a vu en jeu : 44 lignes pour 6 machines qui comptent) — et `N` monte
      jusqu'à `M`. Le bouton devient **Voir les utilisées** et revient en arrière. Le
      filtre ne change rien à la sélection ni aux autres onglets, et il ne demande
      rien au serveur (aucun délai). [ ]

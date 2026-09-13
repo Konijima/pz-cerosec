@@ -76,6 +76,18 @@ else
 	exit 1
 fi
 
+# The repository is public, so nothing in it says anything about the machine it
+# was written on. Not piped, for the same reason as the blocks above.
+log=$(mktemp)
+if sh tests/public-check.sh > "$log" 2>&1; then
+	tail -1 "$log"
+	rm -f "$log"
+else
+	cat "$log"
+	rm -f "$log"
+	exit 1
+fi
+
 # The Workshop item against Steam's own ceilings and the jar's own preview
 # rules. Here rather than in tools/ because it is the one failure in this
 # project that is completely silent: on 2026-09-13 an update to item

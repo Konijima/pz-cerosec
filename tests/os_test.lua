@@ -866,7 +866,7 @@ do
 	bad(state, admin, 'echo "' .. string.rep("x", 1025) .. '" > w.txt', "sh: word too large")
 
 	-- The entries one directory holds, whatever the ceiling is set to: read off
-	-- the engine rather than typed here, so the wave that moved it from 64 to 96
+	-- the engine rather than typed here, so the change that moved it from 64 to 96
 	-- (to leave room in /bin) moved this with it and did not have to be noticed.
 	local full = CeroSecOS.MAX_DIR_ENTRIES
 	for i = 1, full do
@@ -1247,7 +1247,7 @@ do
 	check("migrate passes a current state through", CeroSecOS.migrate(live) == live)
 
 	-- A state of a version migrate CAN read is KEPT even when the gate then
-	-- refuses it, and this is the whole point of the wave: the filesystem stays on
+	-- refuses it, and this is the whole point of the change: the filesystem stays on
 	-- the disk and the way back is the BIOS, which keeps /home. It used to be
 	-- replaced with a brand new machine here.
 	local broken = fresh()
@@ -2838,7 +2838,7 @@ end
 --
 
 -- A machine as rung 2c left it: no system version, none of the executables that
--- wave added, no /etc/sudoers -- and a command its owner deleted on purpose.
+-- change added, no /etc/sudoers -- and a command its owner deleted on purpose.
 local function rung2cState()
 	local state = fresh()
 	state.sysv = nil
@@ -2861,7 +2861,7 @@ do
 	eq("and the machine is at this build's contents", state.sysv, CeroSecOS.SYSTEM_VERSION)
 	eq("it validates now", CeroSecOS.validate(state), true)
 
-	-- Every standard executable is back, this wave's four included.
+	-- Every standard executable is back, this change's four included.
 	local names = CeroSecOS.binNames()
 	for i = 1, #names do
 		local node = state.fs.children.bin.children[names[i]]
@@ -6336,7 +6336,7 @@ do
 			state = job.state, job = job }
 	end
 
-	-- 1. The script Mathieu wrote, in the shape every usage message has: a
+	-- 1. The script reported from play, in the shape every usage message has: a
 	-- refusal, a status, and a prompt to come back to.
 	script(state, "/home/admin/usage.sh",
 		'if [ "$1" != on ]; then\n  echo "usage: usage.sh on"\n  exit 1\nfi\necho did $1\n')
@@ -9155,7 +9155,7 @@ end
 
 -- Trust is a question about an ADDRESS, and a name only through /etc/hosts
 --
--- The security rule of the two trust files, and the one this wave came to fix: a
+-- The security rule of the two trust files, and the one this change came to fix: a
 -- machine's own /etc/hostname is a 644 file its own root may write to anything, so
 -- a far machine that matched a trust line against the name a caller ANNOUNCED
 -- would let anybody with root on any computer in the building type
@@ -12714,10 +12714,10 @@ do
 	table.sort(retired)
 	check("there are names to retire (" .. #retired .. ")", #retired >= 4)
 	-- Named one by one and not left to the loop above, which derives its work from
-	-- the very table a wave can forget to add a name to: a build that retired a
+	-- the very table a change can forget to add a name to: a build that retired a
 	-- command in the engine and not in RETIRED_BIN leaves a file in /bin that
 	-- `help` offers and the shell refuses, and a bench walking the table would be
-	-- green on it. `call` is this wave's (SYSTEM_VERSION 17).
+	-- green on it. `call` is this change's (SYSTEM_VERSION 17).
 	check("call is one of the names this build retires",
 		CeroSecOS.RETIRED_BIN.call ~= nil)
 	check("and it really is gone from the engine",

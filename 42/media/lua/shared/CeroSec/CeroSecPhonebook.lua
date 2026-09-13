@@ -51,9 +51,9 @@ CeroSecPhonebook.REGION_KEY = "region"
 -- And the shape of that one table, with a chain beside it, on exactly the terms the
 -- door modules have (see the head of CeroSecModules.lua): a stamp on an item is a
 -- save file, and the edition written on a copy is a thing a survivor found and
--- carried, so a wave that changes what is written there does not cost him the book
+-- carried, so a change that changes what is written there does not cost him the book
 -- he is holding. Empty today; an absent number is the oldest shape, because the two
--- coordinates in a table written before this wave are the two coordinates version 1
+-- coordinates in a table written before this change are the two coordinates version 1
 -- has. Stamped when the edition is (CeroSecPhonebook.stampRegion).
 CeroSecPhonebook.VERSION = 1
 CeroSecPhonebook.VERSION_KEY = "v"

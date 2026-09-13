@@ -424,7 +424,7 @@ end
 -- FAIL are the other four:
 --
 --   * the mirror is THERE at all, under the key vanilla's pickup reads
---     (CeroSec.MOVABLE_DATA_KEY). A wave that renames it or drops the write
+--     (CeroSec.MOVABLE_DATA_KEY). A change that renames it or drops the write
 --     leaves every computer carried across town blank, and nothing else notices.
 --   * the mirror carries every field toModData writes -- v, on, facing, os. Drop
 --     `facing` and a computer picked up and put down faces the wrong way; drop

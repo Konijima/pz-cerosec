@@ -2,7 +2,7 @@
 
 See also [TESTING.md](TESTING.md) for the headless suites and the other rungs.
 
-Build 42.20.4. Nothing here can be driven from a headless agent, so it needs a pair
+Build 42.20.4. Nothing here can be driven headlessly, so it needs a pair
 of eyes. Enable **CeroSec** in the mod list of a **new** game each time (rung 1 adds a
 GlobalObject system; an existing save has no `gos_cerosec.bin`, which is handled, but
 a fresh world keeps the runs comparable).

@@ -64,7 +64,7 @@ CeroSecModules.DATA_KEY = "cerosec"
 --
 -- A door is a save file too. What is screwed to it is written into the CHUNK and
 -- comes back when the chunk does, so the four ids in there are as persistent as the
--- machine's filesystem and are owed the same promise: a wave that renames one, or
+-- machine's filesystem and are owed the same promise: a change that renames one, or
 -- drops one, or changes what one MEANS does not cost a survivor the hardware he
 -- climbed up to fit.
 --
@@ -74,7 +74,7 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- somewhere for the first step to go.
 --
 -- A table with NO version is version 1, not version 0, and that is not a guess: the
--- ids in a table written before this wave are the ids version 1 has, so an absent
+-- ids in a table written before this change are the ids version 1 has, so an absent
 -- number reads as the shape it really is. The number is stamped on the next write
 -- (CeroSecModules.setOn) rather than on every read, because a read happens on a
 -- client -- the right-click menu asks what is fitted -- and a client writing into a

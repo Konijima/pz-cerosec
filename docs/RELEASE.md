@@ -39,6 +39,7 @@ the files and the state shape are all unaffected.
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
+| 5b | Close the changelog: rename **Unreleased** to the version and date in `CHANGELOG.md`, print the Steam text | `python3 tools/changelog-steam.py` |
 | 5a | **Photograph the save shape this build writes**, and commit it — see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
 | 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
@@ -48,6 +49,7 @@ the files and the state shape are all unaffected.
 | 8a | **The item against Steam's own ceilings.** Also run by `sh tests/run.sh`, so this is a reminder rather than a second gate | `python3 tools/check-workshop.py` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
+| 10a | Paste the change note on the item (Steam item page, **Change Notes**) | output of `tools/changelog-steam.py` |
 | 11 | Copy the `id=` Steam wrote back into the repo (the game appends its own `Workshop ID` and `Mod ID` lines to every description at upload, so the description carries none) | `grep '^id=' ~/Zomboid/Workshop/CeroSec/workshop.txt` then paste it after `version=1` in `workshop/workshop.txt` |
 | 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images** — see below |
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
@@ -55,7 +57,7 @@ the files and the state shape are all unaffected.
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
 | 17 | Open the item's own page in a browser and check the nine media-repo images actually rendered | Steam item page |
-| 17a | **Mathieu confirms the credit line** for the reused assets, below | by hand |
+| 17a | **The maintainer confirms the credit line** for the reused assets, below | by hand |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
 ### Step 17a: the one line in the description nobody here can verify

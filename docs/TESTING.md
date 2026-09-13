@@ -7,8 +7,8 @@ verdict, never the human-readable tail of the log.
 See also: [PARCOURS-TEST.md](PARCOURS-TEST.md), [TEST-rung1.md](TEST-rung1.md),
 [TEST-rung2.md](TEST-rung2.md) and [TEST-rung4.md](TEST-rung4.md) for what no
 headless suite can reach — the sprite, the context menu, sitting down, the glow,
-what is actually on screen. [CONTRIBUTING.md](CONTRIBUTING.md) for when a wave is
-done enough to run this and ask for `go`.
+what is actually on screen. [CONTRIBUTING.md](CONTRIBUTING.md) for when a change is
+done enough to run this and open a pull request.
 
 The suites, in the order they run:
 
@@ -62,10 +62,10 @@ The suites, in the order they run:
   then accepts — fired through the engine's own `Events.OnFillContainer` with the
   engine's own three arguments; that **a paper written from a drawer in one room
   opens the machine in another room of the same building**, which is the regression
-  a review caught in this wave; that the event's third argument being *not* a
+  a review caught in this change; that the event's third argument being *not* a
   container is never read (the bench hands over an object that raises on any field
   read); and that `setModDataKeys` really names both persisted fields while the
-  client sync list names neither — the one line the whole wave rests on, and until
+  client sync list names neither — the one line the whole change rests on, and until
   it was written down there the suite stayed green with the save persisting nothing
   at all.
 - `manual_test.lua` — the documentation set against the engine it describes: the
@@ -115,7 +115,7 @@ The suites, in the order they run:
   used-only filter with its `showing N of M`, a cursor that follows its machine
   through a reordered county, and every button greyed with the reason under the list
   — a refusal from the server included, which is the one that used to be swallowed.
-- `debug_ui_test.lua` also holds the two buttons of the self-test wave and the
+- `debug_ui_test.lua` also holds the two buttons of the self-test work and the
   `note` they answer with: a verdict on the line under the list, a refusal
   outranking it, a verdict after a refusal replacing it, and both going when
   another machine is selected.
@@ -183,7 +183,7 @@ same name is a no-op. A `require` of one of the game's own files (`Map/SGlobalOb
 rather than hiding them.
 
 Two bits of plumbing, both forced and both in the script's header: the game's classes
-are Java 25 class files and the `javac` on this box is 21, so `KahluaRun` reaches
+are Java 25 class files and a `javac` older than 25 cannot read them, so `KahluaRun` reaches
 Kahlua by **reflection** and *runs* on the game's bundled `jre64`; and Kahlua's
 `setupEnvironment()` reads `stdlib.lua` as a path relative to the working directory,
 so the java process runs **in the game folder** and takes the repo root as its
@@ -400,8 +400,8 @@ reason:
 ## The millisecond ceilings are calibrated, not fixed
 
 `hostile_test.lua` is the only suite that asserts on real time, and a bare
-millisecond number says as much about who else is on the box as it does about the
-engine. On a bench machine that is also running the game and a few coding agents
+millisecond number says as much about who else is on the machine as it does about
+the engine. On a machine that is also running the game and other heavy work
 (load average 5 to 9) the 4 ms ceiling went red two runs in three at 4.1 to 5.5 ms
 — on the untouched base as much as on a branch that touched no engine file. A red
 that says nothing about the code is noise, and noise trains a reader to ignore the
@@ -411,23 +411,25 @@ So the ceilings stay and the yardstick moves. Right before the first timed secti
 in the same process, the bench times a fixed pure-Lua workload (arithmetic and table
 writes, nothing of the engine in it, a few tens of milliseconds), three times, and
 keeps the cheapest run — the cheapest is the one that got the most of the processor.
-That over `CALIB_REF_MS`, the value the same workload costs on an idle box, is a
+That over `CALIB_REF_MS`, the value the same workload costs on an idle machine, is a
 scale factor, and every millisecond ceiling in the file becomes `limit * max(1,
 scale)`:
 
-- an idle box scales by 1 and is held to exactly the strict number it always was,
-- a box that is half taken gets an allowance in proportion to how slow **it** is,
-- past **3×** there is no allowance at all: the bench refuses with `box too loaded
+- an idle machine scales by 1 and is held to exactly the strict number it always was,
+- a machine that is half taken gets an allowance in proportion to how slow **it** is,
+- past **3×** there is no allowance at all: the bench refuses with `machine too loaded
   to measure: rerun idle` rather than pretend it measured something.
 
 The scale and the raw milliseconds are printed on the bench's `calibration` report
-line, so any figure below it can be read back against the box that produced it.
+line, so any figure below it can be read back against the machine that produced it.
 `CALIB_REF_MS` is a measurement of one machine and belongs to it: its comment in
-the file says when, how and on what it was taken, and it is re-measured — on a box
-with nothing else on it — not guessed at.
+the file says when, how and on what it was taken, and it is re-measured — on a
+machine with nothing else on it — not guessed at. If the ceilings read wrong on
+yours, re-measure and say so in the change; do not raise a ceiling to make a red
+go away.
 
 What is **not** scaled: every step-count assertion. Steps are the real budget proof
-and a step costs the same on a loaded box as on a quiet one; a loaded box is no
+and a step costs the same on a loaded machine as on a quiet one; a loaded machine is no
 reason to let a program spend more of them. Only the wall-clock ceilings move.
 
 ## The mutation habit

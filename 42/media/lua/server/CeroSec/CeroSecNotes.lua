@@ -213,7 +213,7 @@ function CeroSecNotes.zombieNote(system, container, profile, b1, b2)
 	if login == nil or password == nil then return nil end
 	-- The one thing this must never write. A profile that named an account "root"
 	-- would otherwise hand out the machine on a corpse, and the check is here
-	-- rather than trusted to the catalogue because the catalogue is what wave 7b
+	-- rather than trusted to the catalogue because the catalogue is what the world-content work
 	-- rewrites.
 	if login == "root" then return nil end
 	return CeroSecNotes.write(container,
@@ -254,7 +254,7 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	local rooms = CeroSecNet.premisesRooms(square, zone)
 
 	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(zone, rooms)]
-	-- A premises whose profile wave 7b has not written yet: no machine is prefilled
+	-- A premises whose profile the world-content work has not written yet: no machine is prefilled
 	-- there, so there is no password to find and nothing to write.
 	if type(profile) ~= "table" then return end
 

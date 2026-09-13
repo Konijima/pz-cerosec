@@ -556,7 +556,7 @@ end
 --
 -- Called from turnOn and from nowhere else, for a machine whose state was made a
 -- moment ago and never for one that already had one: a computer somebody has used
--- is HIS, and a wave that prefilled an existing machine would be a wave that wrote
+-- is HIS, and a change that prefilled an existing machine would be a change that wrote
 -- over somebody's accounts and somebody's files. The test is the one thing that
 -- cannot lie about it -- whether self.os was a table before osState was asked --
 -- and it is made in turnOn, before the call.
