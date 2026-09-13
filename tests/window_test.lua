@@ -12563,6 +12563,74 @@ do
 			CeroSecOS.readUsers(bare).root, ""))
 	end
 
+	-- A MACHINE SOMEBODY NEVER LOGGED OUT OF (wave 7c)
+	--
+	-- One machine in four, and the catalogue's half of it -- the wtmp record with no
+	-- logout behind it, the history that does not end on a shutdown -- is
+	-- tests/content_test.lua's. THIS is the half only the world can answer: that the
+	-- console the power-on made really comes up at that man's prompt, with no
+	-- password asked, and that the machine is otherwise an ordinary prefilled one.
+	--
+	-- Which square is a SEARCH and not a number: the roll is one in four and it is
+	-- keyed on the machine, so the bench walks the room until it finds a desk that
+	-- was left logged in. The walk is bounded, and not finding one is a red.
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+		local found, state, login = nil, nil, nil
+		for x = 9, 13 do
+			for y = 9, 13 do
+				if found == nil then
+					local one = net.machine(x, y, 0, net.office)
+					one:turnOn()
+					local console = one:consoleState()
+					if type(console) == "table" and type(console.user) == "string" then
+						found, state, login = one, one:osState(), console.user
+					end
+				end
+			end
+		end
+		check("some desk in the office was left logged in", found ~= nil)
+		if found ~= nil then
+			local console = found:consoleState()
+			-- What the WINDOW is told, which is the thing a player meets: a shell and
+			-- not a login prompt, and nothing masked.
+			eq("and the console is at a shell", CeroSec.consoleWaiting(console), "shell")
+			eq("so the window types commands and not answers",
+				CeroSec.consoleMode(console), "shell")
+			check("and nothing on it is masked", not CeroSec.consoleMask(console))
+			-- His own home, his own environment: a session restored without those is a
+			-- prompt in the wrong directory with no PATH on it.
+			local user = CeroSecOS.getUser(state, login)
+			check("the account is really on the machine", user ~= nil)
+			eq("and the prompt is standing in his home", console.cwd, user.home)
+			check("with the environment a login hands a shell",
+				type(console.shvars) == "table" and console.shvars.PATH ~= nil
+					and console.shvars.HOME == user.home)
+			check("and when he sat down", type(console.loginAt) == "number")
+			-- THE BIOS STILL PRINTS. `booted` is deliberately left alone, so the first
+			-- window on this machine sees the firmware and the motd above the prompt
+			-- rather than a bare prompt on a blank screen.
+			check("the machine has not been booted onto a screen yet", not console.booted)
+			-- And `last` says the same thing the console does, which is the pair this
+			-- wave is built on.
+			local wtmp = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+			check("there are login records on it", wtmp ~= nil)
+			local recs = CeroSecOS.parseWtmp(wtmp.data or "")
+			check("and the newest is his, with no logout behind it",
+				#recs > 0 and recs[#recs].kind == "in" and recs[#recs].user == login)
+			eq("and the console agrees with it about when", console.loginAt,
+				recs[#recs].at)
+			-- His history is there and does not end on a halt.
+			local hist = CeroSecOS.systemNode(state,
+				user.home .. "/" .. CeroSecOS.HISTORY_NAME)
+			check("his history is on the disk", hist ~= nil)
+			local lines = CeroSecOS.splitLines(hist.data or "")
+			check("and it does not end on a shutdown (" .. tostring(lines[#lines]) .. ")",
+				lines[#lines] ~= CeroSecContent.HIST_HALT)
+			check("and the machine boots", (CeroSecOS.validate(state)))
+		end
+	end
+
 	-- THE OPTION OFF, which is the control and is the world this mod shipped with.
 	do
 		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }

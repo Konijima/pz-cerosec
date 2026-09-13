@@ -956,11 +956,13 @@ do
 			-- Not one brace left. A placeholder nothing fills is a bug on a screen.
 			check(w .. " has no placeholder left in it",
 				string.find(text, "[{}]") == nil)
-			for i = 1, #text do
-				local b = string.byte(text, i)
-				check(w .. " byte " .. i .. " is printable ASCII (" .. b .. ")",
-					b == 10 or (b >= 32 and b <= 126))
-			end
+			-- ONE CHECK AND NOT ONE PER BYTE. A pattern says the same thing about the
+			-- whole text and names the offender when there is one; a check per byte over
+			-- ninety-three tellings was forty thousand assertions and eighteen seconds of
+			-- the suite, which is a bench measuring the same fact forty thousand times.
+			local bad = string.find(text, "[^\010\032-\126]")
+			check(w .. " is printable ASCII (byte " .. tostring(bad) .. ": "
+				.. tostring(bad and string.byte(text, bad)) .. ")", bad == nil)
 			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
 				check(w .. ' line fits 60 columns: "' .. line .. '" (' .. #line .. ")",
 					#line <= CeroSecOS.COLS)
@@ -1056,9 +1058,602 @@ do
 	local base = officeText(12, 34)
 	local differs = false
 	for b2 = 35, 60 do
-		if officeText(12, b2) ~= base then differs = true end
+		if officeText(12, b2) ~= base then
+			differs = true
+			-- The first one that differs answers the question. Walking the rest would
+			-- prefill twenty-five more machines to learn nothing.
+			break
+		end
 	end
 	check("two offices in the county do not read the same", differs)
+
+	-- AND NEITHER DOES THEIR MAIL, which is a separate assertion because the mail
+	-- has a chooser of its own (mailStory) and the walk above reads only the homes.
+	-- Pinning that chooser to telling 1 left everything above green, which is a
+	-- mutation that passed and is the reason this block exists.
+	-- THE SUBJECTS AND NOTHING ELSE, and that is the point of this reading. Compared
+	-- whole, two offices' mailboxes differ because the LOGINS differ -- every To:
+	-- line carries a different man's name -- so the assertion was satisfied by the
+	-- people and went green with the telling pinned to 1. A subject line comes out
+	-- of the catalogue and out of nothing else, so it is the one part of a mailbox
+	-- that can only differ if the telling did.
+	local function mailOf(b1, b2)
+		local state = CeroSecOS.newState("ksp-4-b")
+		local _, _, logins = CeroSecContent.prefill(state,
+			opts(SECRET_A, { premises = "Office", b1 = b1, b2 = b2 }))
+		local out, read = {}, {}
+		for slot = 1, 3 do
+			local login = logins[slot]
+			-- ONE MAILBOX READ ONCE. Two slots can generate one login -- the name
+			-- collided and the second slot kept it, which makes them one account -- and
+			-- reading that box twice put a duplicate subject in the list. The telling
+			-- was pinned to 1 and this walk still found a "difference": the collision,
+			-- not the story. A witness satisfied by the wrong thing.
+			if login ~= nil and not read[login] then
+				read[login] = true
+				local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath(login))
+				if box ~= nil then
+					local lines = CeroSecOS.splitLines(box.data or "")
+					for l = 1, #lines do
+						if string.sub(lines[l], 1, 9) == "Subject: " then
+							out[#out + 1] = lines[l]
+						end
+					end
+				end
+			end
+		end
+		table.sort(out)
+		return table.concat(out, " | ")
+	end
+	local mailBase = mailOf(12, 34)
+	check("and the office in the next town had other mail in it", mailBase ~= "")
+	local mailDiffers = false
+	for b2 = 35, 60 do
+		if mailOf(12, b2) ~= mailBase then
+			mailDiffers = true
+			break
+		end
+	end
+	check("two offices in the county do not hold the same mail", mailDiffers)
+end
+
+--
+-- 4e. THE HISTORY: what he typed, who logged in, and what was in the mail
+--
+-- Three files that have to agree with each other and with the save's own clock,
+-- and every one of them is read back through the COMMAND a survivor would use --
+-- `last` out of CeroSecOSNet, `mail` out of CeroSecOSCron, CeroSecOS.historyLines
+-- for what Up and Down walk -- rather than off the node. A bench that read the
+-- bytes it had just written would prove the writer and nothing else; what has to
+-- be true is that the machine's own programs can read them.
+--
+-- What is NOT here is the one thing this bench cannot hold: that a machine left
+-- logged in really comes up at that man's prompt. That is the console's, the
+-- console is the server's, and it is tests/window_test.lua's section on prefilling.
+--
+
+-- Every minute of the week before the save begins, as the machine would PRINT it.
+-- Built once: a message's Date: header is proved by finding it in here, which is
+-- the same question as "is this a moment before the save" asked in the one shape a
+-- header carries -- and asking it by walking ten thousand formatDate calls per
+-- header was thirty seconds of the suite.
+local BEFORE_START = {}
+for second = START - CeroSecContent.LOG_DAYS * 86400, START - 60, 60 do
+	BEFORE_START[CeroSecOS.formatDate(second)] = true
+end
+
+-- A session for one slot of a built machine, by the credential a paper would name:
+-- the derived password for a locked account and the empty one for an open account,
+-- which is exactly what a survivor types.
+local function sessionFor(state, profile, slot, login, b1, b2)
+	local password = ""
+	if profile.accounts[slot].pass then
+		password = CeroSecContent.accountPassword(SECRET_A, b1 or 12, b2 or 34, slot,
+			login)
+	end
+	return CeroSecOS.login(state, login, password)
+end
+
+-- Build one machine of a profile at a named square, and answer everything the
+-- sections below ask of it.
+local function build(id, secret, where)
+	local state = CeroSecOS.newState("ksp-4-b")
+	local o = opts(secret, where)
+	o.premises = WORD_FOR[id]
+	o.numbers = { "418-0100", "418-4477", "555-9012" }
+	local got, password, logins, live = CeroSecContent.prefill(state, o)
+	local mkey = CeroSecContent.machineKey(o.b1, o.b2, o.x, o.y, o.z)
+	local slot = CeroSecContent.ownerSlot(secret, mkey, CeroSecContent.PROFILES[id])
+	local owner = nil
+	if slot ~= nil then owner = logins[slot] end
+	return { state = state, id = got, password = password, logins = logins,
+		live = live, mkey = mkey, slot = slot, owner = owner, opts = o }
+end
+
+do
+	local liveSeen, deadSeen, dialled = 0, 0, 0
+	for i = 1, #CeroSecContent.PROFILE_IDS do
+		local id = CeroSecContent.PROFILE_IDS[i]
+		local profile = CeroSecContent.PROFILES[id]
+		if profile ~= nil then
+			-- WHICH SQUARES, and it is a search and not a handful of numbers. The first
+			-- draft walked four squares of an arithmetic progression and every one of
+			-- them came back halted -- the roll is one in four and eight samples in a
+			-- row missed it, which is a thing that happens one time in two hundred and
+			-- fifty-six and had happened. A bench that then says "some machines were
+			-- left logged in" is a bench that is red for no fault.
+			--
+			-- So the squares are chosen by what they ARE: one machine that was left
+			-- logged in, two that were shut down, found by walking until they turn up.
+			-- A profile that forbids an open session (the post) contributes none of the
+			-- first, which is asserted below rather than worked around.
+			local machines = {}
+			local live, dead = 0, 0
+			-- The post forbids an open session, so the walk must not go on looking for
+			-- one: without this it walked all two hundred squares for that one profile
+			-- and prefilled two hundred machines to find nothing, which is most of a
+			-- minute of the suite spent proving a field is false.
+			local wantLive = 1
+			if profile.session == false then wantLive = 0 end
+			for n = 0, 199 do
+				if live >= wantLive and dead >= 2 then break end
+				local m = build(id, SECRET_A, { x = 8130 + n, y = 9254 + n * 3 })
+				if m.live ~= nil and live < 1 then
+					live = live + 1
+					machines[#machines + 1] = m
+				elseif m.live == nil and dead < 2 then
+					dead = dead + 1
+					machines[#machines + 1] = m
+				end
+			end
+			eq(id .. " is found logged in as often as its profile allows", live,
+				wantLive)
+			eq(id .. " is found shut down too", dead, 2)
+
+			for n = 1, #machines do
+				local m = machines[n]
+				local where = id .. " machine " .. n
+				local env = { now = START, devices = devicesFor(nil) }
+
+				-- THE HISTORIES. Read through CeroSecOS.historyLines, as the account, which
+				-- is what the window is handed when it opens: a history at the wrong mode or
+				-- under the wrong owner reads as no history at all and this is what says so.
+				if type(profile.accounts) == "table" then
+					for a = 1, #profile.accounts do
+						local login = m.logins[a]
+						if login ~= nil then
+							local session = sessionFor(m.state, profile, a, login)
+							check(where .. " slot " .. a .. " (" .. login .. ") can log in",
+								session ~= nil)
+							local lines = CeroSecOS.historyLines(m.state, session)
+							local path = "/home/" .. login .. "/" .. CeroSecOS.HISTORY_NAME
+							local node = CeroSecOS.systemNode(m.state, path)
+							check(where .. " " .. login .. " has a history", node ~= nil)
+							eq(where .. " and it is his", node.owner, login)
+							eq(where .. " at the history mode", node.mode,
+								CeroSecOS.HISTORY_MODE)
+							if login == m.owner then
+								check(where .. " the owner's history is "
+									.. CeroSecContent.HISTORY_MIN .. " to "
+									.. (CeroSecContent.HISTORY_MIN + CeroSecContent.HISTORY_SPAN)
+									.. " lines (" .. #lines .. ")",
+									#lines >= CeroSecContent.HISTORY_MIN
+										and #lines <= CeroSecContent.HISTORY_MIN
+											+ CeroSecContent.HISTORY_SPAN)
+								-- The tail, and the one place the two halves of "he never logged
+								-- out" are held against each other.
+								local last = lines[#lines]
+								if m.live ~= nil then
+									check(where .. " a machine left logged in did not halt itself ("
+										.. tostring(last) .. ")", last ~= CeroSecContent.HIST_HALT)
+								else
+									eq(where .. " and a machine nobody was at was halted", last,
+										CeroSecContent.HIST_HALT)
+								end
+							else
+								check(where .. " a visitor's history is short (" .. #lines .. ")",
+									#lines >= 1 and #lines <= 4)
+							end
+							-- EVERY LINE IS A COMMAND THIS MACHINE HAS. The shell's own lookup,
+							-- on this machine, as this account: a word the shell has no file for
+							-- and no word of its own is a line that prints "command not found"
+							-- on the day a player presses Up.
+							for l = 1, #lines do
+								local line = lines[l]
+								check(where .. ' history line fits 60 columns: "' .. line .. '"',
+									#line <= CeroSecOS.COLS)
+								check(where .. " history line is printable",
+									not CeroSecOS.hasControlBytes(line))
+								local word = string.match(line, "^([^%s]+)")
+								check(where .. " history line " .. l .. " has a first word",
+									word ~= nil)
+								if word ~= nil and not CeroSecOS.isShellWord(word) then
+									local why = CeroSecOS.whyNotRun(m.state, session, word,
+										CeroSecOS.DEFAULT_PATH)
+									eq(where .. ' history line ' .. l .. ' runs "' .. word
+										.. '" (' .. line .. ")", why, nil)
+								end
+								-- A `cu` with a NUMBER after it is the telephone call, and the
+								-- number has to be one this county really has: `cu -l /dev/radio0`
+								-- is the radio station reaching its own TNC and is not a call at
+								-- all, which is why the test is on the shape of the argument.
+								local number = string.match(line, "^cu (%d%d%d%-%d%d%d%d)$")
+								if number ~= nil then
+									dialled = dialled + 1
+									check(where .. " and the number it rang is a real one ("
+										.. number .. ")", CeroSecOS.isPhoneNumber(number))
+								end
+								if string.sub(line, 1, 3) == "cu " and number == nil then
+									check(where .. " and a cu with no number is a device (" .. line
+										.. ")", string.find(line, "^cu %-l /dev/") ~= nil)
+								end
+							end
+						end
+					end
+				end
+
+				-- `last`, THE COMMAND. Root's, because /var/log/wtmp is 644 and root's and
+				-- an ordinary account may read it -- but root is the account that certainly
+				-- can, and what is under test here is the file and not the mode.
+				local root = CeroSecOS.rootSession()
+				local ok, out = run(m.state, root, "last", env)
+				check(where .. " last runs", ok)
+				check(where .. " and prints sessions (" .. #out .. ")", #out >= 4)
+				eq(where .. " and its last line is where wtmp begins",
+					string.sub(out[#out], 1, 12), "wtmp begins ")
+				-- The records, read back through the machine's own parser, in the order
+				-- the file has them: every one before the save begins, and at most one
+				-- login with no logout behind it.
+				local wtmp = CeroSecOS.systemNode(m.state, CeroSecOS.WTMP_PATH)
+				check(where .. " has a wtmp", wtmp ~= nil)
+				local recs = CeroSecOS.parseWtmp(wtmp.data or "")
+				check(where .. " every wtmp line parses (" .. #recs .. ")",
+					#recs == #CeroSecOS.splitLines(wtmp.data or ""))
+				local open, opened, previous = 0, nil, 0
+				for r = 1, #recs do
+					check(where .. " wtmp record " .. r .. " is before the save begins",
+						recs[r].at < START)
+					check(where .. " wtmp record " .. r .. " is in order",
+						recs[r].at >= previous)
+					previous = recs[r].at
+					eq(where .. " and it is on the console", recs[r].line,
+						CeroSecOS.CONSOLE_LINE)
+					if recs[r].kind == "in" then
+						open = open + 1
+						opened = recs[r].user
+					else
+						open = open - 1
+					end
+					check(where .. " and no two sessions are open at once on one console",
+						open <= 1)
+				end
+				-- STILL LOGGED IN, and `last` is what a survivor reads it with. Exactly one
+				-- such line on a machine somebody left, and none at all on one that was
+				-- shut down.
+				local still = 0
+				for r = 1, #out do
+					if string.find(out[r], "still logged in", 1, true) ~= nil then
+						still = still + 1
+					end
+				end
+				if m.live ~= nil then
+					liveSeen = liveSeen + 1
+					eq(where .. " last prints one open session", still, 1)
+					eq(where .. " and it is the owner's", m.live.user, m.owner)
+					eq(where .. " and wtmp's open record is his", opened, m.owner)
+					eq(where .. " and the moment is the one wtmp holds", m.live.at,
+						recs[#recs].at)
+					check(where .. " and it is before the save begins", m.live.at < START)
+					check(where .. " and the profile allows one at all",
+						profile.session ~= false)
+				else
+					deadSeen = deadSeen + 1
+					eq(where .. " last prints no open session", still, 0)
+				end
+
+				-- `mail`, THE COMMAND, as the owner. It is his mailbox at mode 600, so a
+				-- mailbox written with the wrong owner is "permission denied" and a mailbox
+				-- written in some other shape is a screenful of nothing.
+				if m.owner ~= nil then
+					local session = sessionFor(m.state, profile, m.slot, m.owner)
+					local box = CeroSecOS.systemNode(m.state, CeroSecOS.mailPath(m.owner))
+					check(where .. " the owner has mail", box ~= nil)
+					if box ~= nil then
+						eq(where .. " and the mailbox is his", box.owner, m.owner)
+						eq(where .. " at the mail mode", box.mode, CeroSecOS.MAIL_MODE)
+						check(where .. " and inside the mailbox ceiling ("
+							.. #(box.data or "") .. ")",
+							#(box.data or "") <= CeroSecOS.MAIL_BYTES)
+						local mok, mout = run(m.state, session, "mail", env)
+						check(where .. " mail runs", mok)
+						local messages, subjects, dates = 0, 0, 0
+						for l = 1, #mout do
+							local line = mout[l]
+							check(where .. ' mail line fits 60 columns: "' .. line .. '"',
+								#line <= CeroSecOS.COLS)
+							if string.sub(line, 1, 5) == "From " then messages = messages + 1 end
+							if string.sub(line, 1, 4) == "To: " then
+								eq(where .. " and every message is addressed to him",
+									string.sub(line, 5), m.owner)
+							end
+							if string.sub(line, 1, 9) == "Subject: " then
+								subjects = subjects + 1
+							end
+							if string.sub(line, 1, 6) == "Date: " then
+								dates = dates + 1
+								-- The date, in the shape `date` writes and the machine reads --
+								-- and it has to be one of the days BEFORE the save begins, which
+								-- is proved by finding it among them rather than by parsing it
+								-- back: a message from after the outbreak started is the one
+								-- thing in this file that could not have arrived.
+								local when = string.sub(line, 7)
+								check(where .. " message " .. dates
+									.. " is dated in the week before the save (" .. when .. ")",
+									BEFORE_START[when] == true)
+							end
+						end
+						check(where .. " the owner's mailbox holds 3 to 6 messages ("
+							.. messages .. ")", messages >= 3 and messages <= 6)
+						-- One envelope line, one From:, one To:, one Date: and one Subject:
+						-- per message, which is what makes `mail` readable at all.
+						eq(where .. " every message has a subject", subjects, messages)
+						eq(where .. " every message has a date", dates, messages)
+						-- And the mailbox is emptied by reading it, which is what `mail` does.
+						eq(where .. " and reading it empties the spool",
+							CeroSecOS.systemNode(m.state, CeroSecOS.mailPath(m.owner)).data, "")
+					end
+				end
+			end
+		end
+	end
+	-- THE OUTBREAK WEEK IS REALLY IN THE LOG, and it is asked by the HOUR and not by
+	-- counting lines against CeroSecContent.LOG_EVENT_COUNT: a count derived from the
+	-- constant under test cannot fail when the constant goes to zero, which is a
+	-- mutation that passed. The premises' own lines are written between seven in the
+	-- morning and four in the afternoon and the outbreak's between midnight and five,
+	-- so a line before six is a line only this wave can have put there.
+	do
+		local nights = 0
+		for i = 1, #CeroSecContent.PROFILE_IDS do
+			local id = CeroSecContent.PROFILE_IDS[i]
+			if CeroSecContent.PROFILES[id] ~= nil then
+				local m = build(id, SECRET_A, { x = 8130, y = 9254 })
+				local log = CeroSecOS.systemNode(m.state,
+					CeroSecOS.LOG_PATH .. "/messages")
+				if log ~= nil then
+					local lines = CeroSecOS.splitLines(log.data or "")
+					local night = 0
+					for l = 1, #lines do
+						local hour = tonumber(string.match(lines[l], "^%a%a%a%s+%d+ (%d%d):"))
+						if hour ~= nil and hour < 6 then night = night + 1 end
+					end
+					check(id .. " has something in its log from the hours nobody was there ("
+						.. night .. ")", night > 0)
+					nights = nights + night
+				end
+			end
+		end
+		check("the county's own week is in every log (" .. nights .. ")", nights >= 10)
+	end
+
+	-- AND THE DRAFT IS ON SOME MACHINES AND NOT OTHERS, which is the whole of what
+	-- "about half" means and is a roll rather than a rule. Nothing above could catch
+	-- the roll being pinned to 100.
+	do
+		local with, without = 0, 0
+		for n = 0, 19 do
+			local m = build("office", SECRET_A, { x = 8130 + n, y = 9254 + n * 3 })
+			if m.owner ~= nil then
+				if CeroSecOS.systemNode(m.state, "/home/" .. m.owner .. "/draft.txt") ~= nil
+					then with = with + 1
+				else without = without + 1 end
+			end
+		end
+		check("some desks have a half written page on them (" .. with .. ")", with > 0)
+		check("and some do not (" .. without .. ")", without > 0)
+	end
+
+	check("some machines in the walk were left logged in (" .. liveSeen .. ")",
+		liveSeen > 0)
+	check("and most were not (" .. deadSeen .. ")", deadSeen > liveSeen)
+	check("and somebody rang a number of his own region (" .. dialled .. ")",
+		dialled > 0)
+end
+
+--
+-- 4f. EVERY DATE IN THE MAIL IS BEFORE THE SAVE BEGINS, in every telling
+--
+-- Section 4e reads one telling of each profile's mail per machine. The `back`,
+-- `hour` and `min` of every message of every telling are what decide whether it
+-- could have arrived at all, so they are walked here off the catalogue -- and
+-- against the same arithmetic the writer uses, which is the start DAY's midnight
+-- and not the start moment.
+--
+do
+	local messages, tellings = 0, 0
+	local midnight = math.floor(START / 86400) * 86400
+	for i = 1, #CeroSecContent.PROFILE_IDS do
+		local id = CeroSecContent.PROFILE_IDS[i]
+		local profile = CeroSecContent.PROFILES[id]
+		if profile ~= nil and type(profile.mail) == "table" then
+			eq(id .. " has CeroSecContent.VARIANTS tellings of its mail", #profile.mail,
+				CeroSecContent.VARIANTS)
+			for v = 1, #profile.mail do
+				tellings = tellings + 1
+				local story = profile.mail[v]
+				local where = id .. " mail telling " .. v
+				check(where .. " has 3 to 6 messages (" .. #story .. ")",
+					#story >= 3 and #story <= 6)
+				local previous = nil
+				for n = 1, #story do
+					messages = messages + 1
+					local item = story[n]
+					local at = midnight - (item.back or 0) * 86400
+						+ (item.hour or 9) * 3600 + (item.min or 0) * 60
+					check(where .. " message " .. n .. " is dated before the save begins ("
+						.. CeroSecOS.formatDate(at) .. ")", at < START)
+					check(where .. " message " .. n .. " is inside the outbreak week",
+						(item.back or 0) <= CeroSecContent.LOG_DAYS)
+					-- IN ORDER, because a mailbox is read from the top and a story whose
+					-- third message came before its second is not a story.
+					if previous ~= nil then
+						check(where .. " message " .. n .. " is after the one before it",
+							at > previous)
+					end
+					previous = at
+					-- Every line of it, with names in, at sixty columns -- the headers are
+					-- composed around it and add nothing to a body line's width.
+					check(where .. " message " .. n .. " has a sender",
+						type(item.from) == "string" and item.from ~= "")
+					check(where .. " message " .. n .. " has a subject",
+						type(item.subj) == "string" and item.subj ~= "")
+					check(where .. " message " .. n .. " has a body",
+						type(item.body) == "table" and #item.body > 0)
+					local names = { owner = "pcoleman", staff1 = "torres",
+						staff2 = "walker", staff3 = "dhensley", host = "acct-04-11" }
+					local parts = { item.from, item.subj }
+					for b = 1, #(item.body or {}) do parts[#parts + 1] = item.body[b] end
+					for p = 1, #parts do
+						local text = CeroSecContent.fillNames(parts[p], names)
+						check(where .. ' message ' .. n .. ' line fits 60 columns: "'
+							.. text .. '"', #text <= CeroSecOS.COLS)
+						check(where .. " message " .. n .. " has no placeholder left",
+							string.find(text, "[{}]") == nil)
+						local bad = string.find(text, "[^\032-\126]")
+						check(where .. " message " .. n .. " is printable ASCII (byte "
+							.. tostring(bad) .. ")", bad == nil)
+					end
+					-- NOBODY WRITES TO HIMSELF. A sender that is a placeholder and a
+					-- recipient that is a slot can be one man twice over, which is how the
+					-- first draft of these stories read on one machine in three.
+					if type(item.to) == "number" then
+						check(where .. " message " .. n
+							.. " is not from a placeholder to a slot",
+							string.find(item.from, "{", 1, true) == nil)
+					end
+				end
+			end
+		end
+	end
+	check("every profile's mail is a story in three tellings (" .. tellings .. ")",
+		tellings >= 30)
+	check("and there are messages in them (" .. messages .. ")", messages >= 90)
+
+	-- THE DRAFT, the same way: three tellings, and it stops in the middle of
+	-- something. Held to ending without a full stop, because a draft that reads as a
+	-- finished page is not a draft.
+	local drafts = 0
+	for i = 1, #CeroSecContent.PROFILE_IDS do
+		local id = CeroSecContent.PROFILE_IDS[i]
+		local profile = CeroSecContent.PROFILES[id]
+		if profile ~= nil and type(profile.draft) == "table" then
+			drafts = drafts + 1
+			eq(id .. " has CeroSecContent.VARIANTS drafts", #profile.draft,
+				CeroSecContent.VARIANTS)
+			for v = 1, #profile.draft do
+				local text = CeroSecContent.fillNames(profile.draft[v],
+					{ owner = "pcoleman", staff1 = "torres", staff2 = "walker",
+						staff3 = "dhensley", host = "acct-04-11" })
+				check(id .. " draft " .. v .. " is inside the screen and the file",
+					#text <= 1200)
+				check(id .. " draft " .. v .. " has no placeholder left",
+					string.find(text, "[{}]") == nil)
+				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+					check(id .. ' draft ' .. v .. ' line fits 60 columns: "' .. line .. '"',
+						#line <= CeroSecOS.COLS)
+				end
+				check(id .. " draft " .. v .. " stops in the middle of something ("
+					.. string.sub(text, -20) .. ")",
+					string.find(text, "[%.%?!]$") == nil)
+			end
+		end
+	end
+	eq("every profile carries a draft", drafts, 10)
+end
+
+--
+-- 4g. TWO MACHINES OF ONE OFFICE
+--
+-- The whole wave in one section, and it is asked of built machines because what a
+-- player meets is two computers in one room: the same company, the same people,
+-- the same passwords, and two different men's desks with two different weeks on
+-- them.
+--
+do
+	local profile = CeroSecContent.PROFILES.office
+	local first = deskFor("office", SECRET_A, 1)
+	local second = deskFor("office", SECRET_A, 3)
+	check("a square exists for the bookkeeper's desk", first ~= nil)
+	check("and one for the third man's", second ~= nil)
+	local a = build("office", SECRET_A, first)
+	local b = build("office", SECRET_A, second)
+
+	check("two machines of one office have two different owners ("
+		.. tostring(a.owner) .. ", " .. tostring(b.owner) .. ")",
+		a.owner ~= nil and b.owner ~= nil and a.owner ~= b.owner)
+
+	-- THE SAME PEOPLE AND THE SAME PASSWORDS, which is what makes a paper in a
+	-- dead man's pocket mean anything in either room.
+	for slot = 1, #profile.accounts do
+		eq("and the same person in slot " .. slot, a.logins[slot], b.logins[slot])
+		local login = a.logins[slot]
+		if login ~= nil and profile.accounts[slot].pass then
+			local password =
+				CeroSecContent.accountPassword(SECRET_A, 12, 34, slot, login)
+			check("and his password opens both (" .. login .. ")",
+				CeroSecOS.checkPassword(CeroSecOS.getUser(a.state, login), password)
+					and CeroSecOS.checkPassword(CeroSecOS.getUser(b.state, login),
+						password))
+		end
+	end
+	eq("and the same root password", a.password, b.password)
+
+	-- AND TWO DIFFERENT WEEKS.
+	local function historyOf(m)
+		local node = CeroSecOS.systemNode(m.state,
+			"/home/" .. m.owner .. "/" .. CeroSecOS.HISTORY_NAME)
+		if node == nil then return "" end
+		return node.data or ""
+	end
+	check("two desks of one office hold two different histories",
+		historyOf(a) ~= historyOf(b) and historyOf(a) ~= "")
+	local function wtmpOf(m)
+		local node = CeroSecOS.systemNode(m.state, CeroSecOS.WTMP_PATH)
+		if node == nil then return "" end
+		return node.data or ""
+	end
+	check("and two different sets of logins", wtmpOf(a) ~= wtmpOf(b))
+	-- The files, which is where a player notices first.
+	local function homeOf(m)
+		local home = CeroSecOS.systemNode(m.state, "/home/" .. m.owner)
+		local out = {}
+		if home ~= nil and home.type == "dir" then
+			local kids = CeroSecOS.childNames(home)
+			for k = 1, #kids do out[#out + 1] = kids[k] end
+		end
+		return table.concat(out, " ")
+	end
+	check("and two different desks (" .. homeOf(a) .. " / " .. homeOf(b) .. ")",
+		homeOf(a) ~= homeOf(b))
+
+	-- THE MILITARY POST IS NEVER FOUND LOGGED IN, over a long walk of squares and
+	-- both secrets: the rule is `session = false` and this is what says the rule
+	-- holds rather than that it is written down.
+	local posts = 0
+	for _, secret in ipairs({ SECRET_A, SECRET_B }) do
+		for n = 0, 59 do
+			local mkey = CeroSecContent.machineKey(12, 34, 8130 + n, 9254 + n * 7, 0)
+			check("the post at square " .. n .. " is not left logged in",
+				not CeroSecContent.liveSession(secret, mkey,
+					CeroSecContent.PROFILES.military))
+			if CeroSecContent.liveSession(secret, mkey,
+					CeroSecContent.PROFILES.office) then
+				posts = posts + 1
+			end
+		end
+	end
+	-- And the rule is a ROLL and not "never": an office somewhere in that walk was.
+	check("while offices in the same walk were (" .. posts .. ")", posts > 0)
 end
 
 --

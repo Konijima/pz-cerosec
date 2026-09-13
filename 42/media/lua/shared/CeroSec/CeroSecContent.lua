@@ -2672,9 +2672,17 @@ local function historyText(profile, secret, mkey, who, work, live, number)
 		+ CeroSecContent.number(secret, CeroSecContent.key(mkey, "hn"),
 			CeroSecContent.HISTORY_SPAN) - 1
 	local tail = CeroSecContent.HIST_TAIL
-	-- The tail is fixed and the body fills whatever is left, so a short history is
-	-- a short WEEK and never a story with the end cut off.
-	local body = want - #tail - 1
+	-- THE WHOLE FILE IS `want` LINES, and the body is what is left after everything
+	-- that is not negotiable: the two typos, the tail, the call, the last thing he
+	-- locked and the halt. Counted here rather than added afterwards, because a body
+	-- of `want` with nine lines appended to it is a history of `want` plus nine --
+	-- which is what the first draft of this was, and the bench found it at 33 lines
+	-- against a ceiling of 31.
+	local fixed = 2 + #tail
+	if type(number) == "string" and number ~= "" then fixed = fixed + 1 end
+	if type(profile.lockup) == "string" then fixed = fixed + 1 end
+	if not live then fixed = fixed + 1 end
+	local body = want - fixed
 	if body < 2 then body = 2 end
 	for i = 1, body do
 		local from = common
