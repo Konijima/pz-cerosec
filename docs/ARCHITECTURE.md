@@ -732,11 +732,20 @@ write adds. That matters for the modules in particular: a read happens on a clie
 a client writing into a door's `modData` writes into nothing anybody else will ever
 see.
 
-`CeroSecOS.DISK_LEGACY_KEYS` is what stops the closed-key rule and the chain
-contradicting each other. `diskFieldsOk` refuses any key a disk does not own, and it
-runs at the slot *before a byte is copied* — so a step that renamed a key could never
-have seen the old name. The old name goes on that list and the step takes it off. A
-migration is the one thing allowed to rename or drop a key.
+`CeroSecOS.DISK_LEGACY_KEYS` is what stops the closed namespace and the chain
+contradicting each other. At the slot, only the keys in `DISK_KEYS` and that list are
+taken off the item at all (`ownKeysOf`), and the pick happens *before a byte is
+copied* — so a step that renamed a key could never have seen the old name. The old
+name goes on that list and the step takes it off. A migration is the one thing allowed
+to rename or drop a key.
+
+What the slot does with a key that is **nobody's**, on the other hand, is leave it:
+an item's modData is the game's table, not ours. `item:setCustomName(true)` rawsets a
+`customName` key on it (javap `zombie.inventory.InventoryItem`, offsets 5-24), which is
+how a label is written on a disk — and while the rule refused a fourth key, every
+labelled disk in the world was refused at the slot with nothing on the glass to say so.
+`diskFieldsOk` judges a disk **record**, a table this engine made; the item's own keys
+never reach it.
 
 ### Proving it
 

@@ -30,12 +30,20 @@ require "CeroSec/CeroSecDefs"
 --     a disk RECORD owns for it (CeroSecOS.DISK_KEYS) and it is what an eject
 --     writes back. It is not a second truth: the slot takes the name.
 --
--- The item's modData top level is a CLOSED namespace, which is why the label is
--- not tucked into a `cerosec` table of our own in there: CeroSecOS.diskFieldsOk
--- refuses a disk carrying any key that is not v, fs or label, so a table of ours
--- beside them would make every labelled disk refused at the slot with
--- "floppy: unknown field" -- the disk would go nowhere and no screen would say
--- why.
+-- The item's modData top level is NOT ours and it is not a closed namespace: the
+-- engine writes in it itself. `setCustomName(true)` -- the very call two lines up --
+-- rawsets a `customName` key on that same table (javap -c
+-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). That is
+-- what the slot's closed-key rule met in a real save: every disk anybody had
+-- written a label on, the diagnostics disk included, was refused at the slot for a
+-- key the GAME had put there, the gesture did nothing and no screen said why.
+-- The slot now takes the keys a disk owns off the item and judges those alone
+-- (ownKeysOf in CeroSecOSDisk), so the label goes on the shell the way vanilla puts
+-- one on a bag, and what the game keeps beside it is the game's business.
+--
+-- What has not changed is where the label is kept: one string, in the item's own
+-- name, and a `cerosec` table of ours in that modData would still be a second
+-- truth to go stale.
 --
 
 CeroSecFloppyMenu = {}

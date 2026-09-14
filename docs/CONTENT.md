@@ -548,8 +548,8 @@ exactly one roll and would carry exactly one telling for ever. Every entry has a
 three whatever its share of the box is.
 
 **Where the choice persists: in `disk.fs`, as the bytes themselves.** A disk owns
-three keys and only three (`CeroSecOS.DISK_KEYS`) and the gate at the slot refuses a
-fourth, so there is nowhere to write a variant number — and nothing to write, because
+three keys and only three (`CeroSecOS.DISK_KEYS`) and the slot takes those three off
+the item and no others, so there is nowhere of ours to write a variant number — and nothing to write, because
 what a telling produces is a filesystem, and the filesystem is what goes into the
 item's modData and comes back out of the save with it. **Nothing rolls at read
 time.** A disk read twice is the same disk and a disk read in the next save is still
@@ -701,9 +701,9 @@ position, and the bench caught it: two copies of one disk must be the same page,
 for byte.
 
 **Where the "has it been filled" mark lives: nowhere.** A disk owns three keys and only
-three (`CeroSecOS.DISK_KEYS`) and the gate at the slot refuses a disk carrying a
-fourth, which is what keeps a payload out of the save file — so there is nowhere on a
-disk to write a flag and nothing that would survive being written there. The mark is
+three (`CeroSecOS.DISK_KEYS`) and the slot takes those three off the item and copies
+nothing else, which is what keeps a payload out of the save file — so there is nowhere
+on a disk to write a flag and nothing that would survive being written there. The mark is
 **the file**: `CeroSecContent.lateEntryFor` answers the entry only while the late file
 still holds, byte for byte, the stub the catalogue shipped, and the stub it compares
 against *is* the catalogue's own text, so a change that edited the stub and forgot the

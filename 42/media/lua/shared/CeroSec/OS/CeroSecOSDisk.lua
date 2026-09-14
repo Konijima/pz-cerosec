@@ -105,14 +105,21 @@ CeroSecOS.FD_MOUNTED = "mounted"
 -- because it sends the player to a `df` that shows him nothing wrong.
 CeroSecOS.FD_KEPT = "fd0: cannot eject -- "
 
-function CeroSecOS.fdKeptLine(reason)
+-- The gate's reasons are spelled "floppy: ..." because that is what the gate is
+-- about. Wherever one is shown to somebody the thing being talked about has
+-- already been named -- the drive on its own glass below, the disk in the halo
+-- when a slot would not take it (CeroSecTerminal.driveNotice) -- so the word comes
+-- off. One strip, one place: two would drift the day a reason changes shape.
+function CeroSecOS.diskReasonWords(reason)
 	local why = tostring(reason)
-	-- The gate's reasons are spelled "floppy: ..." because that is what the gate is
-	-- about. On the glass the drive is talking about itself and has already said
-	-- its own name, so the word comes off.
 	local cut = string.match(why, "^floppy[^:]*:%s*(.+)$")
-	if cut ~= nil then why = cut end
-	return CeroSecOS.truncate(CeroSecOS.FD_KEPT .. why, CeroSecOS.COLS)
+	if cut ~= nil then return cut end
+	return why
+end
+
+function CeroSecOS.fdKeptLine(reason)
+	return CeroSecOS.truncate(
+		CeroSecOS.FD_KEPT .. CeroSecOS.diskReasonWords(reason), CeroSecOS.COLS)
 end
 
 -- Where a disk is mounted on a machine nobody has told otherwise. Shipped empty
@@ -277,18 +284,56 @@ local function copyPlain(value, depth)
 	return out
 end
 
+-- The keys a disk OWNS, lifted off the item's table into one of ours, and nothing
+-- else taken and nothing else looked at.
+--
+-- An item's modData top level is NOT ours, and the engine is the one that proves
+-- it: `item:setCustomName(true)` rawsets a `customName` key on that very table
+-- with the item's name in it (javap -c zombie.inventory.InventoryItem,
+-- setCustomName(boolean): getModData at 6, ldc "customName" at 9, getfield name
+-- at 13, String.valueOf at 16, KahluaTable.rawset at 19). Those are the three
+-- calls that write a label on a disk -- so every disk a survivor had written on,
+-- the diagnostics disk included, arrived at the slot carrying a fourth key and
+-- was refused by the closed-key rule with nothing on the glass to say so. Another
+-- mod that touches the same item writes its own names there too.
+--
+-- So the rule judges OUR keys and leaves the rest alone: what is not ours is not
+-- refused, not copied, not weighed and never carried into state.floppy -- which is
+-- the whole of what refusing was protecting. Top level only and no descent, so a
+-- megabyte hung on a name nobody here declared costs one index and is left on the
+-- item where its owner put it.
+local function ownKeysOf(data)
+	local out = {}
+	for i = 1, #CeroSecOS.DISK_KEYS do
+		local key = CeroSecOS.DISK_KEYS[i]
+		out[key] = data[key]
+	end
+	-- And a name an OLDER disk owned, which a migration is on its way to taking
+	-- off: picked as well, or the step that renames it would never see it
+	-- (CeroSecOS.DISK_LEGACY_KEYS).
+	for i = 1, #CeroSecOS.DISK_LEGACY_KEYS do
+		local key = CeroSecOS.DISK_LEGACY_KEYS[i]
+		out[key] = data[key]
+	end
+	return out
+end
+
 -- A plain, private, validated disk, or nil plus the reason. Asked of an item's
 -- modData on the way IN, so a forged or damaged disk is refused at the slot
 -- rather than three commands later by a gate that then calls the whole machine
 -- broken.
 function CeroSecOS.diskFromData(data)
-	-- What it is made of, read off the game's own table and before any of it is
-	-- copied: the copy walks every table on the disk, and a payload hidden in a
-	-- field nobody here has ever written is paid for by that walk whether it is
-	-- refused afterwards or not (see CeroSecOS.diskFieldsOk).
-	local fOk, fReason = CeroSecOS.diskFieldsOk(data)
+	if type(data) ~= "table" then return nil, "floppy: not a disk" end
+	-- Ours, picked off the game's table first: everything below -- the field rules,
+	-- the copy, the chain, the ceilings -- is asked of a table this engine made out
+	-- of the keys a disk owns, and never of the item's own (see ownKeysOf).
+	local own = ownKeysOf(data)
+	-- What it is made of, before a byte of it is copied: the copy walks every table
+	-- on the disk, and a payload hidden under one of OUR names is paid for by that
+	-- walk whether it is refused afterwards or not (see CeroSecOS.diskFieldsOk).
+	local fOk, fReason = CeroSecOS.diskFieldsOk(own)
 	if not fOk then return nil, fReason end
-	local disk, reason = copyPlain(data, CeroSecOS.DISK_COPY_DEPTH)
+	local disk, reason = copyPlain(own, CeroSecOS.DISK_COPY_DEPTH)
 	if disk == nil then return nil, "floppy: " .. tostring(reason) end
 	-- The disk's own chain, on OUR copy and never on the game's table: a disk written
 	-- by an older build is brought up to this one here, which is the moment it enters
@@ -327,14 +372,15 @@ CeroSecOS.DISK_KEYS = { "v", "fs", "label" }
 -- And the keys an OLDER disk owned and this one does not: a name a migration is on
 -- its way to renaming or dropping.
 --
--- Empty, and it exists because the closed-key rule and the chain would otherwise
--- contradict each other. CeroSecOS.diskFieldsOk refuses a disk carrying any key that
--- is not one of ours -- which is what keeps a payload from riding into the save file
--- under a name nothing weighs -- and it is asked at the SLOT, before a byte is
--- copied and therefore before any migration could run. So the day a step renames a
--- key, the old name goes in here: accepted by the gate, and taken off by the step
--- that replaces it. A migration is the one thing allowed to rename or drop a key,
--- and this is how it is allowed to.
+-- Empty, and it exists because the closed namespace and the chain would otherwise
+-- contradict each other. At the slot, only the keys named here and in DISK_KEYS are
+-- taken off the item at all (ownKeysOf) and only they are weighed -- which is what
+-- keeps a payload from riding into the save file under a name nothing looks at --
+-- and that pick happens before a byte is copied and therefore before any migration
+-- could run. So the day a step renames a key, the old name goes in here: picked up
+-- with the rest, let past CeroSecOS.diskFieldsOk, and taken off by the step that
+-- replaces it. A migration is the one thing allowed to rename or drop a key, and
+-- this is how it is allowed to.
 CeroSecOS.DISK_LEGACY_KEYS = {}
 
 -- Write one onto an item's modData, in place. The table is the game's; what is

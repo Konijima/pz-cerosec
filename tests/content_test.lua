@@ -2707,7 +2707,15 @@ do
 		item.getModData = function() return item.data end
 		item.setName = function(_, text) item.name = text end
 		item.getName = function() return item.name end
-		item.setCustomName = function(_, flag) item.custom = flag end
+		-- The engine does not only move a flag: setCustomName rawsets `customName` on
+		-- the item's own modData with its name (javap -c
+		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
+		-- slot reads the keys a disk owns off that table and leaves the rest, so this
+		-- is here to prove the leaving and not only the writing.
+		item.setCustomName = function(_, flag)
+			item.custom = flag
+			item.data.customName = tostring(item.name)
+		end
 		item.isCustomName = function() return item.custom end
 		item.syncItemFields = function() end
 
@@ -2736,11 +2744,17 @@ do
 			dump(CeroSecContent.diskData(entry, nil, 3).fs))
 		check("and not another one", dump(first.fs)
 			~= dump(CeroSecContent.diskData(entry, nil, 1).fs))
-		-- Nothing on it says which telling it is. Three keys, and a fourth would be
-		-- refused at the slot -- which is the reason the telling is kept as bytes.
+		-- Nothing on it says which telling it is, which is the reason the telling is
+		-- kept as bytes: the DISK owns three keys and a fourth of ours would be refused
+		-- at the slot. Counted on the disk the slot read back and not on the item's
+		-- table, because that table is the game's: the engine's own `customName` is on
+		-- it too (setCustomName, javap), and what the slot does with a name that is not
+		-- ours is leave it there.
 		local keys = 0
-		for _ in pairs(item.data) do keys = keys + 1 end
+		for _ in pairs(first) do keys = keys + 1 end
 		eq("and the disk owns three keys and no more", keys, 3)
+		check("the game's own key is on the item", item.data.customName ~= nil)
+		eq("and did not come in on the disk", first.customName, nil)
 
 		-- Now the second creation, with a generator that would answer differently.
 		telling = 1
@@ -2771,7 +2785,15 @@ do
 		item.getModData = function() return item.data end
 		item.setName = function(_, text) item.name = text end
 		item.getName = function() return item.name end
-		item.setCustomName = function(_, flag) item.custom = flag end
+		-- The engine does not only move a flag: setCustomName rawsets `customName` on
+		-- the item's own modData with its name (javap -c
+		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
+		-- slot reads the keys a disk owns off that table and leaves the rest, so this
+		-- is here to prove the leaving and not only the writing.
+		item.setCustomName = function(_, flag)
+			item.custom = flag
+			item.data.customName = tostring(item.name)
+		end
 		item.isCustomName = function() return item.custom end
 		item.syncItemFields = function() item.synced = item.synced + 1 end
 		return item

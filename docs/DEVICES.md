@@ -510,8 +510,11 @@ is a place to hide things. `CeroSecOS.DISK_KEYS` is everything a disk owns and
 `CeroSecOS.NODE_FIELDS` everything a node is, so junk hung on the disk, on its root,
 on any node, or a whole subtree hung under a *file* node — which the quota walk never
 descends into and the node count never sees — is refused rather than carried
-unweighed, saved and published. It is asked of the table the game handed over and
-before a byte of it is copied: the copy is what a payload is paid for in, and four
+unweighed, saved and published. It is asked of a disk **record**, before a byte of it
+is copied, and the record is built out of the keys a disk owns and nothing else
+(`ownKeysOf`): a name nobody here declared is left on the item, where the game and
+other mods write their own (`customName` among them). The copy is what a payload is
+paid for in, and four
 hundred thousand keys under a name nobody here has ever written cost half a second
 to walk and one comparison to refuse.
 
