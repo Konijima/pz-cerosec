@@ -77,6 +77,22 @@ The suites, in the order they run:
   worth its own line because a square answering no room at all would have left every
   bench in `content_test.lua` green while putting the shop's ledger on a machine the
   public types at.
+- `window_test.lua` also holds the **automation** benches, and they run over a whole
+  building: the two `MapObjects` maps told apart (the fake keeps both and fires each
+  through the engine's own per-object walk, so what each path does and does not do is
+  asserted, counts included); the decision written once on the system and then
+  asserted not to move when a second computer of the same premises turns up; the
+  fixtures fitted through the real module writer and found by the real discovery;
+  **nine o'clock and seven o'clock asserted on the light switch object itself**,
+  through the real cron pass, the real shell and the real `/dev`; the display model
+  that never carries it; no power; the option off; a house, which has no nightly job
+  to leave running; a room whose chunks are away and then arrive; and a survivor who
+  unscrews a pre-fitted relay, gets the item, and does not find it back on the plate.
+  Three of these were green for the wrong reason when first written, and the note at
+  the head of the section says which and why — the worst was a desk searched for with
+  the wrong hash, so the machine stood on a square the bench had no reason to believe
+  anything about. It also names the one rule here carried three times over, because
+  breaking any single carrier of it leaves the suite green.
 - `manual_test.lua` — the documentation set against the engine it describes: the
   shape of every volume (8..13 chapters, 3..14 pages each, 50..84 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every

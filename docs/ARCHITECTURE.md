@@ -519,8 +519,15 @@ node's owner, so nothing has to walk the disk. `validate` accepts a missing
 
 ## Persistence
 
-The GlobalObject saves `v`, `on`, `facing`, `os` and `console` to `gos_cerosec.bin`.
-`os` and `console` are nested tables the save serializer recurses into. Only `v`,
+The GlobalObject saves `v`, `on`, `facing`, `os`, `console` and `born` to
+`gos_cerosec.bin`.
+`os` and `console` are nested tables the save serializer recurses into. `born` is one
+bit — this computer's square was created for the first time in this save and nobody has
+settled the automation question about its premises yet — and it is *saved* rather than
+kept in memory so that a player who quits in the minute between the chunk arriving and
+the sweep does not lose the question (see
+[CONTENT.md](CONTENT.md#the-premises-that-were-already-automated)). Absent on every
+machine saved before it, and absent reads as "nothing to settle". Only `v`,
 `on`, `facing` and `os` are mirrored into the `IsoObject`'s `movableData`, which is
 what vanilla pickup and placement copy — so a computer carried across town keeps its
 files **and the disk in its drive**, and only `v`, `on`, `facing` are sent to clients on add or update. The console
