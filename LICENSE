@@ -1,22 +1,28 @@
-CeroSec — licence not yet chosen
-================================
+CeroSec, a Project Zomboid mod
+Copyright (c) 2026 Konijima. All rights reserved.
 
-The licence for this mod has **not been decided yet**. The author (Konijima) is
-choosing it, and this file will be replaced by the full text of that licence.
+This repository is published so that players can read how the mod works and
+so that people can help improve it. It is not free software.
 
-Until then, treat the work as **all rights reserved**:
+You may:
+- clone this repository, read it, build it and play with it on your own
+  machines and servers;
+- open issues, and send changes as pull requests from a fork of this
+  repository, which is the only distribution of a modified copy that is
+  allowed.
 
-- You may clone this repository, read it, run it, and play with it.
-- You may open issues and pull requests; by sending a contribution you agree it
-  may be released under whatever licence the author chooses for this file.
-- Do **not** redistribute it, and do not reupload the mod to the Steam Workshop
-  or anywhere else, without asking first.
+You may not, without written permission from the author:
+- redistribute this mod or any modified version of it, including uploading it
+  or a derivative to the Steam Workshop or any other service;
+- sell it or include it in a paid product;
+- use its name, logo or art for another project.
 
-Ask through the repository: https://github.com/Konijima/pz-cerosec
+By sending a pull request you grant the author a perpetual, irrevocable,
+royalty-free right to use, modify and distribute your contribution as part of
+this mod, under this licence or any licence the author later chooses for it.
+You keep the copyright on what you wrote.
 
-Third-party material
---------------------
+The Project Zomboid game assets this mod refers to (tile names, sprites,
+sounds of the game) belong to The Indie Stone and are not part of this work.
 
-Some art and sounds shipped in `common/media/` are reused rather than original.
-The credit line on the Steam Workshop page names them; anything reused stays
-under whatever terms it came with, and this file's licence does not extend to it.
+Contact: https://github.com/Konijima/pz-cerosec

@@ -370,3 +370,11 @@ builds a doubled path and loses every script file (items, sounds). At publicatio
 time run `sh tools/workshop-sync.sh sync`, upload from the game's Workshop screen,
 then `sh tools/workshop-sync.sh clean` so the game loads the real folder again.
 The ordered checklist is [RELEASE.md](RELEASE.md).
+
+## Licence and contributions
+
+The mod is all rights reserved (see `LICENSE`). Contributions are welcome
+the GitHub way: fork the repository, work on a branch, send a pull request.
+By sending one you grant the author the right to ship your change as part of
+the mod; you keep the copyright on what you wrote. Do not redistribute the mod
+or a fork of it as a playable mod anywhere.

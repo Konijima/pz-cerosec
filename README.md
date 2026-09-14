@@ -154,5 +154,5 @@ Bug reports, in-game test passes, translations and code are all welcome.
 
 ## Licence
 
-Not chosen yet — see [LICENSE](LICENSE). Until it is, assume all rights are
-reserved and ask before redistributing.
+All rights reserved, see [LICENSE](LICENSE): read it, play it, send pull
+requests from a fork; do not redistribute it or reupload it to the Workshop.
