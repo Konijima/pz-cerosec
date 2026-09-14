@@ -1657,6 +1657,314 @@ do
 end
 
 --
+-- 4h. MORE MACHINES THAN PEOPLE: the shop floor and the spare desk
+--
+-- The two complaints this answers were made of one save: a shop that sells
+-- computers had six of them in a row and every one came up as the same back office
+-- with the same two people, and an office with three people in it gave the fourth
+-- and fifth desk an owner who already had one.
+--
+-- What decides is the REGISTER (CeroSecContent.deskRole) -- a table of what the
+-- other machines of this premises already turned out to be -- and it is a table the
+-- server keeps and saves. This bench is the register's own, so it hands it over
+-- itself: a fresh one per premises, machine after machine, exactly as a player
+-- switching them on one at a time hands it over.
+--
+-- THE HONEST COST, asserted rather than hidden: the ORDER decides which desk is
+-- whose. What must not depend on the order is that no two machines share an owner
+-- and that the people who do get a desk are the premises' own, and that is what the
+-- two orders below are compared on.
+--
+
+-- One machine of a premises, switched on with the register in its hand. `room` is
+-- the room the machine stands in, which is what tells a shop's sales floor from its
+-- back room.
+local function switchOn(id, secret, entry, n, room, b1, b2)
+	local state = CeroSecOS.newState("ksp-4-b")
+	local o = opts(secret, { premises = WORD_FOR[id], b1 = b1 or 12, b2 = b2 or 34,
+		x = 8130 + n * 3, y = 9254 + n * 5, z = 0, desks = entry, room = room })
+	local got, password, logins, live, role = CeroSecContent.prefill(state, o)
+	local owner = nil
+	if type(logins) == "table" then
+		for slot = 1, 9 do
+			-- WHOSE machine it is, read off the disk and not off the answer: the owner
+			-- is the account whose home has work in it, which is what a player sees.
+			local login = logins[slot]
+			if login ~= nil then
+				local home = CeroSecOS.systemNode(state, "/home/" .. login)
+				if home ~= nil and home.type == "dir" then
+					local kids = CeroSecOS.childNames(home)
+					for k = 1, #kids do
+						if string.sub(kids[k], 1, 1) ~= "." then owner = login end
+					end
+				end
+			end
+		end
+	end
+	return { state = state, id = got, password = password, logins = logins,
+		live = live, role = role, owner = owner, opts = o }
+end
+
+do
+	local DEMO = CeroSecContent.DEMO
+
+	-- THE SHOP. Six machines: five on the sales floor, the sixth in the back room,
+	-- and the back one is switched on LAST so that "the shop's own" cannot be an
+	-- accident of being first.
+	local entry = { desks = {} }
+	local floors, staff = {}, nil
+	for n = 1, 5 do
+		floors[n] = switchOn("showroom", SECRET_A, entry, n, "electronicsstore")
+	end
+	staff = switchOn("showroom", SECRET_A, entry, 6, "electronicsstorage")
+
+	eq("the shop's own machine is a desk", staff.role, "desk")
+	check("and somebody's work is on it", staff.owner ~= nil)
+	for n = 1, 5 do
+		local m = floors[n]
+		eq("display model " .. n .. " is a floor model", m.role, "floor")
+		-- THE DEMO ACCOUNT, open, which is what a customer finds waiting.
+		local demo = CeroSecOS.getUser(m.state, DEMO.login)
+		check("display model " .. n .. " has the demo account", demo ~= nil)
+		check("and it is open", CeroSecOS.checkPassword(demo, ""))
+		-- AND THE SHOP'S PEOPLE ARE NOT ON IT. It is stock: the shop has not sold it,
+		-- and a machine the public types at is not a machine with the staff on it.
+		local _, ord = CeroSecOS.readUsers(m.state)
+		eq("and the only accounts on it are root, admin and demo (" ..
+			table.concat(ord, " ") .. ")", #ord, 3)
+		for slot = 1, #CeroSecContent.PROFILES.showroom.accounts do
+			local login = CeroSecContent.accountLogin(SECRET_A, 12, 34, slot)
+			eq("and the shop's slot " .. slot .. " is not on it (" .. login .. ")",
+				CeroSecOS.getUser(m.state, login), nil)
+		end
+		-- The three files in capitals, and nothing of anybody's work.
+		for f = 1, #DEMO.files do
+			local at = CeroSecOS.systemNode(m.state,
+				"/home/" .. DEMO.login .. "/" .. DEMO.files[f].path)
+			check("display model " .. n .. " carries " .. DEMO.files[f].path,
+				at ~= nil and at.type == "file")
+		end
+		-- WHAT A CUSTOMER TYPED: two or three lines, and no week of anybody's work.
+		local hist = CeroSecOS.systemNode(m.state,
+			"/home/" .. DEMO.login .. "/" .. CeroSecOS.HISTORY_NAME)
+		check("and a history somebody typed at it", hist ~= nil)
+		local lines = CeroSecOS.splitLines(hist.data or "")
+		check("of two or three lines (" .. #lines .. ")", #lines >= 2 and #lines <= 3)
+		check("and nothing of the outbreak in it (" .. #lines .. ")",
+			#lines < CeroSecContent.HISTORY_MIN)
+		-- NO MAIL AND NOBODY LEFT LOGGED IN: none of that happened to this machine.
+		eq("no mail box on a display model",
+			CeroSecOS.systemNode(m.state, CeroSecOS.mailPath(DEMO.login)), nil)
+		eq("and nobody was left logged in at it", m.live, nil)
+		-- The dealer's card, and the dealer's name on the machine.
+		eq("it carries the dealer's motd",
+			CeroSecOS.systemNode(m.state, CeroSecOS.MOTD_PATH).data, DEMO.motd)
+		eq("and the dealer's name on it", string.match(m.state.hostname, "^[a-z0-9]+"),
+			DEMO.host)
+		-- THE BOOT GATE, on a machine built by the other branch of the prefill.
+		local ok, why = CeroSecOS.validate(m.state)
+		check("and a display model passes the boot gate: " .. tostring(why), ok)
+		-- AND THE PAPER IN THE DRAWER OPENS IT. Root is the PREMISES' on every
+		-- machine of the shop, which is the whole reason a display model may be
+		-- stock and still be openable by the note in the back-room drawer.
+		local note = CeroSecContent.password(SECRET_A, CeroSecContent.rootKey(12, 34))
+		check("and the drawer's paper opens root on it",
+			CeroSecOS.checkPassword(CeroSecOS.getUser(m.state, "root"), note))
+		eq("which is the same password the shop's own machine has", m.password,
+			staff.password)
+	end
+	-- ONE STAFF MACHINE AND FIVE MODELS, counted, because a count is the assertion
+	-- that cannot be satisfied by the wrong machine.
+	local desks, models = 0, 0
+	for _, v in pairs(entry.desks) do
+		if type(v) == "number" then desks = desks + 1 end
+		if v == CeroSecContent.DESK_FLOOR then models = models + 1 end
+	end
+	eq("six machines in the shop are one desk", desks, 1)
+	eq("and five display models", models, 5)
+
+	-- THE SAME SHOP, SWITCHED ON THE OTHER WAY ROUND: the back room first. The
+	-- register cannot change what a room IS, so the answer is the same.
+	local other = { desks = {} }
+	local first = switchOn("showroom", SECRET_A, other, 6, "electronicsstorage")
+	eq("the back room is the shop's own however early it is switched on", first.role,
+		"desk")
+	for n = 1, 5 do
+		eq("and the floor is still the floor (" .. n .. ")",
+			switchOn("showroom", SECRET_A, other, n, "electronicsstore").role, "floor")
+	end
+
+	-- A SHOP WHOSE ONLY COMPUTERS STAND ON THE FLOOR is a shop of display models,
+	-- and the paper in its drawer still opens every one of them.
+	local allFloor = { desks = {} }
+	local only = switchOn("showroom", SECRET_A, allFloor, 1, "electronicsstore")
+	eq("a shop with nothing in the back has display models only", only.role, "floor")
+	check("and the drawer's paper still opens root on it",
+		CeroSecOS.checkPassword(CeroSecOS.getUser(only.state, "root"),
+			CeroSecContent.password(SECRET_A, CeroSecContent.rootKey(12, 34))))
+
+	-- AND A MACHINE IN A ROOM THE MAP DID NOT NAME is stock too, which is the safe
+	-- way round: the shop's ledger does not go on a machine the public types at.
+	local unnamed = { desks = {} }
+	eq("a machine in an unnamed room of a shop is stock",
+		switchOn("showroom", SECRET_A, unnamed, 1, nil).role, "floor")
+end
+
+do
+	-- THE SPARE DESK. An office has three people in it; this one has five machines,
+	-- and they are switched on one at a time the way a player walks a building.
+	local id = "office"
+	local profile = CeroSecContent.PROFILES[id]
+	eq("the office has three people in it", #profile.accounts, 3)
+
+	local function walkOffice(order, secret)
+		local entry = { desks = {} }
+		local out, owners = {}, {}
+		for i = 1, #order do
+			local n = order[i]
+			local m = switchOn(id, secret or SECRET_A, entry, n, "office")
+			out[n] = m
+			if m.role == "desk" then owners[#owners + 1] = m.owner end
+		end
+		table.sort(owners)
+		return out, owners, entry
+	end
+
+	local machines, owners, entry = walkOffice({ 1, 2, 3, 4, 5 })
+	local desks, spares = 0, 0
+	for _, v in pairs(entry.desks) do
+		if type(v) == "number" then desks = desks + 1 end
+		if v == CeroSecContent.DESK_SPARE then spares = spares + 1 end
+	end
+	eq("five machines in a three-person office are three desks", desks, 3)
+	eq("and two spare desks", spares, 2)
+	eq("and three men with a desk each (" .. table.concat(owners, " ") .. ")",
+		#owners, 3)
+	-- NO TWO DESKS SHARE A MAN, which is the complaint in one assertion.
+	for i = 2, #owners do
+		check("and no two desks are the same man's (" .. owners[i] .. ")",
+			owners[i] ~= owners[i - 1])
+	end
+	-- And they are the premises' own three people and not three of anything else.
+	local staff = {}
+	for slot = 1, 3 do
+		staff[#staff + 1] = CeroSecContent.accountLogin(SECRET_A, 12, 34, slot)
+	end
+	table.sort(staff)
+	eq("and they are the office's own three", table.concat(owners, " "),
+		table.concat(staff, " "))
+
+	-- WHATEVER THE ORDER. Four more orders, and what is compared is the SET of men
+	-- with a desk -- which is the promise -- and not which machine each got, which
+	-- is what the order really decides and is written down as costing that.
+	local orders = {
+		{ 5, 4, 3, 2, 1 }, { 3, 1, 5, 2, 4 }, { 2, 5, 1, 4, 3 }, { 4, 3, 1, 5, 2 },
+	}
+	for o = 1, #orders do
+		local _, got, reg = walkOffice(orders[o])
+		eq("the same three men have a desk in order " .. o .. " ("
+			.. table.concat(got, " ") .. ")", table.concat(got, " "),
+			table.concat(owners, " "))
+		local d, s = 0, 0
+		for _, v in pairs(reg.desks) do
+			if type(v) == "number" then d = d + 1 end
+			if v == CeroSecContent.DESK_SPARE then s = s + 1 end
+		end
+		eq("and still three desks in order " .. o, d, 3)
+		eq("and still two spares in order " .. o, s, 2)
+	end
+
+	-- WHAT A SPARE DESK IS: the company's machine with nobody's work on it. The
+	-- staff are on it, with their passwords -- it is the company's machine and a
+	-- paper in a pocket has to open it -- and nobody's home has anything in it.
+	local spare = nil
+	for n = 1, 5 do
+		if machines[n].role == CeroSecContent.DESK_SPARE then spare = machines[n] end
+	end
+	check("some machine of the office is a spare desk", spare ~= nil)
+	eq("the company's name is still on it",
+		string.match(spare.state.hostname, "^[a-z0-9]+"), profile.host)
+	eq("and the company's own motd",
+		CeroSecOS.systemNode(spare.state, CeroSecOS.MOTD_PATH).data, profile.motd)
+	eq("and nobody's work is on it", spare.owner, nil)
+	local demo = CeroSecOS.getUser(spare.state, CeroSecContent.DEMO.login)
+	check("it came up on the dealer's disk", demo ~= nil)
+	check("with the demo account open", CeroSecOS.checkPassword(demo, ""))
+	for slot = 1, #profile.accounts do
+		local login = spare.logins[slot]
+		check("the office's slot " .. slot .. " is on the spare desk", login ~= nil)
+		if login ~= nil and profile.accounts[slot].pass then
+			local want = CeroSecContent.accountPassword(SECRET_A, 12, 34, slot, login)
+			check("and his own password opens it (" .. login .. ")",
+				CeroSecOS.checkPassword(CeroSecOS.getUser(spare.state, login), want))
+		end
+		if login ~= nil then
+			local home = CeroSecOS.systemNode(spare.state, "/home/" .. login)
+			if home ~= nil and home.type == "dir" then
+				local kids = CeroSecOS.childNames(home)
+				for k = 1, #kids do
+					check("and his home on it holds only dot-files (" .. kids[k] .. ")",
+						string.sub(kids[k], 1, 1) == ".")
+				end
+			end
+		end
+	end
+	local ok, why = CeroSecOS.validate(spare.state)
+	check("and a spare desk passes the boot gate: " .. tostring(why), ok)
+
+	-- ASKED TWICE, ANSWERED THE SAME. A machine prefilled a second time -- the
+	-- developer's reset, a machine carried out of the room and put back -- must not
+	-- take a second slot, or the office runs out of people for the desks it has.
+	local again = { desks = {} }
+	local one = switchOn(id, SECRET_A, again, 1, "office")
+	local twice = switchOn(id, SECRET_A, again, 1, "office")
+	eq("a machine prefilled twice keeps its role", twice.role, one.role)
+	eq("and its man", twice.owner, one.owner)
+	local n = 0
+	for _ in pairs(again.desks) do n = n + 1 end
+	eq("and the register holds one machine, not two", n, 1)
+end
+
+do
+	-- THE DEALER'S DISK IS A DIFFERENT DISK IN THE NEXT SAVE. Which telling of the
+	-- three a premises reads is hashed on the secret, so a player who has read the
+	-- pitch in one save has not read the one in the next.
+	local function pitch(secret, b2)
+		local entry = { desks = {} }
+		local m = switchOn("showroom", secret, entry, 1, "electronicsstore", 12, b2)
+		local at = CeroSecOS.systemNode(m.state, "/home/"
+			.. CeroSecContent.DEMO.login .. "/DEMO.TXT")
+		if at == nil then return "" end
+		return at.data or ""
+	end
+	local base = pitch(SECRET_A, 34)
+	check("a display model carries a sales pitch", base ~= "")
+	local differs = false
+	for b2 = 34, 60 do
+		if pitch(SECRET_B, b2) ~= pitch(SECRET_A, b2) then differs = true break end
+	end
+	check("and the next save's shops sell it in other words", differs)
+
+	-- AND TWO MODELS IN ONE WINDOW DO NOT CARRY ONE CUSTOMER'S HISTORY, which is
+	-- the machine's own roll and not the premises'.
+	local entry = { desks = {} }
+	local seen, same = {}, 0
+	for n = 1, 12 do
+		local m = switchOn("showroom", SECRET_A, entry, n, "electronicsstore")
+		local at = CeroSecOS.systemNode(m.state, "/home/"
+			.. CeroSecContent.DEMO.login .. "/" .. CeroSecOS.HISTORY_NAME)
+		local text = ""
+		if at ~= nil then text = at.data or "" end
+		if seen[text] then same = same + 1 end
+		seen[text] = true
+	end
+	local kinds = 0
+	for _ in pairs(seen) do kinds = kinds + 1 end
+	check("twelve display models carry more than one history (" .. kinds .. ")",
+		kinds > 1)
+end
+
+--
 -- 5. The same secret twice is the same machine, and another secret is another one
 --
 

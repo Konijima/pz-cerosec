@@ -5380,13 +5380,23 @@ local function newNet()
 		return { getDef = function() return def end }
 	end
 
-	local function machine(x, y, z, building)
+	-- `room` is the name of the room the MACHINE stands in, which is a different
+	-- question from what the building's rooms are called: the profile is the
+	-- premises' and must be one answer from every square of it, and whether a
+	-- computer in a shop that sells computers is stock is a fact about its own
+	-- corner of the floor (CeroSecContent.isFloorRoom). nil is a machine in no named
+	-- room, which is every other bench in this file and is the engine's own answer
+	-- for a square whose room has no name.
+	local function machine(x, y, z, building, room)
 		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
 		local square = {
 			getX = function() return x end,
 			getY = function() return y end,
 			getZ = function() return z end,
-			getRoom = function() return nil end,
+			getRoom = function()
+				if room == nil then return nil end
+				return { getName = function() return room end }
+			end,
 			getBuilding = function() return building end,
 			getObjects = function() return { size = function() return 0 end } end,
 		}
@@ -12982,6 +12992,80 @@ do
 			nil)
 	end
 
+	-- THE SHOP THAT SELLS COMPUTERS, on the wire
+	--
+	-- The catalogue's half of this -- what a display model is, and that five of them
+	-- and one back-room machine come out one desk and five models -- is
+	-- tests/content_test.lua section 4h. THIS is the half only the world can answer:
+	-- that the room the machine stands in really reaches the catalogue. The wire is
+	-- the whole risk here, because a square that answered no room at all would leave
+	-- every bench in section 4h green while putting the shop's ledger on a machine
+	-- the public types at.
+	do
+		_G.__zones = {}
+		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+		local shop = net.buildingAt(5000, 6000, 20, 20, 2,
+			{ "electronicsstore", "electronicsstorage" })
+		local model = net.machine(5005, 6005, 0, shop, "electronicsstore")
+		model:turnOn()
+		local onFloor = model:osState()
+		eq("a machine on the shop floor comes up on the dealer's disk",
+			string.match(onFloor.hostname, "^[a-z0-9]+"), CeroSecContent.DEMO.host)
+		local demo = CeroSecOS.getUser(onFloor, CeroSecContent.DEMO.login)
+		check("with the demo account waiting", demo ~= nil)
+		check("and open", CeroSecOS.checkPassword(demo, ""))
+		eq("and the dealer's card on it",
+			CeroSecOS.systemNode(onFloor, CeroSecOS.MOTD_PATH).data,
+			CeroSecContent.DEMO.motd)
+		local _, ord = CeroSecOS.readUsers(onFloor)
+		eq("and the shop's people are not on stock (" .. table.concat(ord, " ") .. ")",
+			#ord, 3)
+
+		local back = net.machine(5006, 6006, 0, shop, "electronicsstorage")
+		back:turnOn()
+		local inBack = back:osState()
+		eq("and the machine in the back room is the shop's own",
+			string.match(inBack.hostname, "^[a-z0-9]+"),
+			CeroSecContent.PROFILES.showroom.host)
+		local _, backOrd = CeroSecOS.readUsers(inBack)
+		check("with the shop's people on it (" .. table.concat(backOrd, " ") .. ")",
+			#backOrd > 3)
+
+		-- AND THE PAPER IN THE BACK-ROOM DRAWER OPENS BOTH OF THEM, which is the
+		-- reason a display model keeps the premises' root and not a factory password:
+		-- one note, one premises, every machine of it.
+		local b1, b2 = CeroSecNet.premisesOf(model)
+		check("the shop is a premises", b1 ~= nil)
+		local paper = CeroSecContent.password(net.system:secret(),
+			CeroSecContent.rootKey(b1, b2))
+		check("the drawer's paper opens the display model",
+			CeroSecOS.checkPassword(CeroSecOS.getUser(onFloor, "root"), paper))
+		check("and the shop's own machine",
+			CeroSecOS.checkPassword(CeroSecOS.getUser(inBack, "root"), paper))
+
+		-- AND THE REGISTER IS ON THE SYSTEM, which is where the save will take it.
+		local page = CeroSecContent.deskEntry(net.system.desks, b1, b2)
+		check("the shop has a page in the register", type(page) == "table")
+		local desks, models = 0, 0
+		for _, v in pairs(page.desks) do
+			if type(v) == "number" then desks = desks + 1 end
+			if v == CeroSecContent.DESK_FLOOR then models = models + 1 end
+		end
+		eq("holding the one desk", desks, 1)
+		eq("and the one display model", models, 1)
+		-- AND IT IS A SHAPE THE SAVE CAN WRITE. gos_cerosec.bin is KahluaTable.save
+		-- walking the system's modData, which carries strings, numbers and tables and
+		-- nothing else -- so a register that held a machine object, or a key that was
+		-- not a string, would be a save that does not come back. The page is walked
+		-- rather than the declaration read: this is the table that really got written.
+		for tag, v in pairs(page.desks) do
+			eq("the register's key is a string (" .. tostring(tag) .. ")", type(tag),
+				"string")
+			check("and its value is a slot or a word (" .. tostring(v) .. ")",
+				type(v) == "number" or v == CeroSecContent.DESK_FLOOR
+					or v == CeroSecContent.DESK_SPARE)
+		end
+	end
 	_G.__zones = {}
 	_G.getWorld = nil
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
