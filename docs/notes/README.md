@@ -15,6 +15,7 @@ edit the note into agreement.
 | --- | --- |
 | [modules-proofs.md](modules-proofs.md) | Every engine call the hardware modules make, and — offset by offset in `IsoObject.save`/`load` — that a module written into an object's modData is really saved with the chunk. |
 | [picking.md](picking.md) | What the game's right-click actually hands a context menu: the whole pick pipeline through `UIManager.update`, `IsoObjectPicker` and `FBORenderObjectPicker`, and the two real defects a guess about it was hiding. |
+| [tenancies.md](tenancies.md) | What geometry a `RoomDef` really exposes, why `RoomDef.getID()` cannot be a persistence key (the low 32 bits are a per-cell load counter, and a basement spawned in play advances it), how a region's buildings are enumerated for the cost of sixteen cells — and what five candidate "which rooms are separate shops" rules each did to all 9546 buildings of the shipped county. |
 | [workshop-study.md](workshop-study.md) | How the most subscribed Project Zomboid Workshop pages are built, counted from the raw HTML of their descriptions, and Steam's own rules for images in one. |
 
 The command, for a note of your own:
