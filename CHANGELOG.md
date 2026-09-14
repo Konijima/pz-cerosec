@@ -8,6 +8,21 @@ date.
 
 ## Unreleased
 
+- **A shop that sells computers is a shop that sells computers.** An electronics
+  store used to come up as six copies of one back office. Now every machine on the
+  sales floor is stock: it is switched on, logged in as `demo` with no password, and
+  carries the three files a 1993 demonstration disk had -- a welcome, the pitch, and
+  the whole model line with the prices. The shop's own machine is the one in the
+  back room, and that one is somebody's desk like any other.
+- **A spare desk is a spare desk.** Switch on more computers in one building than the
+  place had people, and the ones left over no longer hand a second machine to
+  somebody who already has one: they come up as the disk the dealer delivered, with
+  the company's name and greeting on them, everybody's account and password present,
+  and nobody's work anywhere. Which desk is whose is decided by the order you switch
+  them on, once, and never changes afterwards.
+- The sticky note in the drawer still opens **every** machine of the premises, the
+  display models in the window included.
+
 - **`at`**, for the thing you want done once: `echo halt | at 04:00` and the machine
   switches itself off at four. `atq` says what is waiting, `atrm` takes one out, and
   what the job prints goes to your mail like a nightly job's. It does not forget

@@ -2660,6 +2660,77 @@ sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à re
      `CONNECT 2400` s'il y a un ordinateur allumé au bout, `NO CARRIER` sinon.
      Ce n'est jamais le numéro de la premises où l'on est. [ ]
 
+## AD. Le magasin d'électronique et le bureau en trop (4e partie)
+
+Même condition qu'aux sections AA à AC : option bac à sable **Machines et
+disquettes garnies** sur **Activé**. Les mots de passe et les noms sont propres à la
+sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à recopier.
+
+Le magasin d'électronique se reconnaît de l'extérieur : une devanture avec des
+ordinateurs allumés dedans, plusieurs en rang. Dans la carte livrée, ces pièces
+s'appellent `electronicsstore` et `electronicstore`, avec un `electronicsstorage`
+derrière.
+
+312. **Une machine en vitrine est de la marchandise.** Allumer un ordinateur posé
+     sur le plancher de vente d'un magasin d'électronique jamais visité :
+     - le nom de la machine commence par `demo-` et non par `sales-` ;
+     - le message d'accueil est celui du vendeur (« demonstration machine »), pas
+       celui d'un arrière-boutique ;
+     - `whoami` → `demo`, et on est déjà au shell : rien n'a été demandé ;
+     - `ls` → `WELCOME.TXT`, `DEMO.TXT`, `PRICES.TXT` ;
+     - `cat PRICES.TXT` → la gamme complète avec les prix, trois modèles ;
+     - `cat /etc/passwd` → **trois** comptes seulement : `root`, `admin`, `demo`.
+       Aucun employé du magasin. [ ]
+
+313. **Et personne n'y a travaillé.** Sur la même machine :
+     - `wc -l .sh_history` → **2 ou 3** lignes, pas douze ;
+     - ces lignes sont celles d'un client : il a lu un fichier et il est parti ;
+     - `mail` → `No mail.` ;
+     - `last` ne montre aucune session encore ouverte ;
+     - `cat draft.txt` → `no such file`. [ ]
+
+314. **Les autres machines du plancher ne sont pas des copies.** Allumer deux ou
+     trois autres modèles d'exposition du même magasin :
+     - chacun a bien les trois fichiers en capitales, avec le **même** texte de
+       vente (c'est le même magasin, donc la même version de l'argumentaire) ;
+     - mais le `.sh_history` n'est pas le même partout : au moins deux modèles du
+       magasin portent des lignes différentes. [ ]
+
+315. **La machine du magasin est dans l'arrière-boutique.** Dans le même bâtiment,
+     trouver l'ordinateur de la réserve ou du bureau du fond et l'allumer :
+     - le nom commence par `sales-` ;
+     - `cat /etc/passwd` → les employés du magasin en plus de `root` et `admin` ;
+     - un seul dossier personnel est garni ;
+     - `cat floor.txt` (dans ce dossier) dit comment une machine part en
+       exposition, et dit que `root` y est celui du magasin. [ ]
+
+316. **Le papier du tiroir ouvre aussi la vitrine.** Trouver la note collante dans
+     un tiroir du magasin (`Sticky note: root / ...`), puis, sur un modèle
+     d'exposition du plancher :
+     - `su root` avec ce mot de passe → ça passe ;
+     - et ça passe aussi sur la machine de l'arrière-boutique. Un seul papier, une
+       seule premises, toutes ses machines. [ ]
+
+317. **Le bureau en trop.** Trouver une premises garnie avec **plus** d'ordinateurs
+     jamais touchés que la premises n'a d'employés (un bureau a trois personnes :
+     il faut donc quatre machines ou plus). Les allumer un par un :
+     - les trois premiers allumés sont trois bureaux de trois personnes
+       différentes : sur chacun, `ls /home/*` montre **un seul** dossier garni, et
+       ce n'est pas le même compte d'une machine à l'autre ;
+     - à partir du quatrième, la machine garde le nom et l'accueil de la premises,
+       mais `whoami` → `demo`, `ls /home/*` ne montre **aucun** dossier garni, et
+       `cat /etc/passwd` contient quand même tous les employés ;
+     - le mot de passe d'un employé (papier de poche) ouvre son compte sur cette
+       machine-là aussi. [ ]
+
+318. **Et l'ordre est celui où on les allume.** Sur une sauvegarde neuve du même
+     monde (ou une autre premises du même type), allumer les machines dans un ordre
+     différent : ce n'est pas la même machine qui porte le même employé. Ce qui ne
+     change pas : jamais deux machines de la même premises avec le **même**
+     propriétaire, et jamais un employé de la premises qui n'existe pas dans
+     `/etc/passwd`. Une fois allumée, une machine ne change plus jamais de
+     propriétaire, même après sauvegarde et rechargement. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

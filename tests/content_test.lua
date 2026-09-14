@@ -1004,6 +1004,14 @@ do
 			end
 		end
 	end
+	-- AND THE DEALER'S DISK, which is not a profile and is read by every display
+	-- model and every spare desk in the county -- so a telling of it that nobody
+	-- walked would be the widest-read unread file there is.
+	for f = 1, #CeroSecContent.DEMO.files do
+		judge("demo " .. tostring(CeroSecContent.DEMO.files[f].path),
+			CeroSecContent.DEMO.files[f])
+	end
+
 	check("there are prose files with three tellings each (" .. prose .. ")",
 		prose >= 25)
 	check("and every entry was read (" .. entries .. " entries, " .. told

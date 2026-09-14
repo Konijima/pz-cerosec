@@ -97,11 +97,13 @@ premises a machine stands in is a question about a *square*, and most machines i
 save have no chunk loaded. `turnOn` is the moment the chunk is certainly there,
 because the power check has just proved it.
 
-`prefill` answers **four** things since the world-content work, part 3: the profile id, the root password,
-the logins by slot, and the session that was still open at the glass as
-`{ user =, at = }` or nil. It takes one new input, `opts.numbers` — telephone numbers
-of the machine's own region, for the `cu` line in somebody's history — because the
-catalogue has no world and may not invent one.
+`prefill` answers **five** things: the profile id, the root password, the logins by
+slot, the session that was still open at the glass as `{ user =, at = }` or nil, and
+what the machine turned out to **be** — `desk`, `floor` or `spare` (see *The shop
+floor and the spare desk*). Two of its inputs are the world's and the catalogue may
+not invent either: `opts.numbers`, telephone numbers of the machine's own region for
+the `cu` line in somebody's history, and `opts.room` with `opts.desks` — the room
+this machine stands in and the premises' page of the register.
 
 **Everything goes through the engine's own write path** — `CeroSecOS.createNode`,
 `CeroSecOS.setPassword` — so the quota, the modes, the owners, the 96 entries to a
@@ -246,6 +248,7 @@ column names the file and not the words in it.
 | `police` | `disp` | yes | 3, one named `dispatch` | `handover.txt` + `bolo.txt` + the cells crontab; `shifts.txt`; `keys.txt`; and `/var/log/dispatch`, which stops in the middle of a line on the morning of the 9th |
 | `bank` | `vault` | yes | 3 | `accounts.dat` in four plain columns, `audit.txt` (the examiner's answers, as two commands), `vault.txt`, `counter.txt` |
 | `store` | `till` | yes | 2 | `inventory.txt`, `prices.txt` in cents, `closing.txt`, `note.txt` |
+| `showroom` | `sales` | yes | 2 | the electronics dealer's own machine: `stock.txt` by model, `tickets.txt` (what is on the bench), `floor.txt` (how a display model is set up, and why root on one is the shop's), `counter.txt`. Every **other** machine of such a premises is stock — see below |
 | `school` | `bell` | yes | 3 | `grades.txt` by student number, `bells.txt`, a `detention.txt` that will not write the names down, `library.txt` |
 | `clinic` | `ward` | yes | 3 | `patients.txt` (rooms and wards, nothing medical), `rounds.txt`, `supplies.txt`, `nights.txt` |
 | `radio` | `studio` | yes | 2 | `sched.txt`, `notes.txt`, `readme.txt`, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
@@ -304,12 +307,110 @@ in the drawer — and two different men's desks, two different weeks in
 `~/.sh_history`, two different sets of logins in `last`, and only one of them
 running the nightly job.
 
+## The shop floor and the spare desk
+
+Two things a hash cannot do, and they were one complaint each.
+
+A shop that **sells** computers had six of them — five in a row on the floor and one
+at the counter — and every one came up as the same back office, with the same two
+people and the same ledger. And an office with **three** people in it and five
+machines in the room gave the fourth and fifth desk an owner who already had one,
+because `ownerSlot` is a hash of the machine into the number of accounts and a hash
+of five things into three repeats.
+
+Both need one fact: **what the other machines of this premises already are.**
+
+### Why the computers are not counted
+
+The obvious answer is to enumerate the premises' computers at prefill and rank this
+one among them. It cannot be made to hold. A premises' computers can only be found
+by walking its rooms' squares, and a room answers its squares only while its chunks
+are loaded — `RoomDef.getIsoRoom()` is **nil** for a room the streamer has not
+brought in, which is written down at `CeroSecDevices.find` and is why `/dev` is
+rescanned once a minute instead of remembered. A prefill is written **once and for
+ever**. So a count taken through a half-loaded building — a player switching a
+machine on from the wrong doorway — would hand two desks one owner permanently, in
+the save, with nothing able to notice afterwards.
+
+### The register
+
+So there is a register: `system.desks`, saved with the save
+(`CeroSec.SYSTEM_SAVE_KEYS`), keyed by the premises' own two bytes exactly as the
+note bookkeeping is, and holding one entry per machine — a **slot number** for a desk
+somebody sat at, or the word `floor` or `spare`.
+
+```lua
+system.desks["d.120.12"] = { desks = { ["8130.9254.0"] = 2,
+                                       ["8133.9259.0"] = "floor" } }
+```
+
+It is on the system and not in memory for the reason `notes` is: the machines of one
+premises are switched on over many sessions.
+
+`CeroSecContent.deskRole(entry, tag, secret, mkey, profile, showroom, floor)` is the
+whole rule, and it writes its answer down:
+
+- a **showroom's sales floor** is stock, whatever else is known;
+- otherwise the owner slot is picked out of the slots **not already taken**, by the
+  machine's own hash among the free ones — so two premises with the same people fill
+  their desks in different orders;
+- **no free slot** is a spare desk;
+- asked **twice** about one machine it answers the same thing and does not take a
+  second slot, which is what a developer's reset and a machine carried out and put
+  back need;
+- **no register at all** — a bench, any caller without a system — is a desk with
+  `ownerSlot`'s own answer, which is what every machine was before this existed.
+
+**What it costs, plainly: the order the player switches the machines on is what
+decides which desk is whose.** It is decided once, written down, and never revisited.
+What does *not* depend on the order is the thing that was wrong: no two machines of
+one premises share an owner, and the men who get a desk are the premises' own.
+
+### Which machine is the shop's, and which is stock
+
+A showroom machine's own **room** decides, and the room is a fact about its own
+corner of the floor rather than about the premises — so it is asked of the machine's
+square (`IsoGridSquare.getRoom()` → `IsoRoom.getName()`, answerable because the power
+check has just proved that chunk is in) and never of the building's room list.
+
+`electronicsstore` and `electronicstore` are the **sales floor**
+(`CeroSecContent.FLOOR_ROOMS`); any other room of the premises — `electronicsstorage`,
+an office, a storage room — is the **shop's own**, and the first back-room machine
+switched on is the one that gets the staff image. A room the map did not name reads as
+the floor, which is the safe way round: the shop's ledger does not go on a machine the
+public types at. A shop whose only computers stand on the floor is a shop of display
+models and nothing else, which is a true thing about such a shop.
+
+### What is on a machine that is nobody's
+
+One image for both, `CeroSecContent.DEMO`, because it is one thing — the disk the
+dealer put on it before it went out of the door:
+
+| | |
+| --- | --- |
+| **`floor`** | a display model. The dealer's hostname and the dealer's card for a motd, an open `demo` account, `WELCOME.TXT`, `DEMO.TXT` (the 1993 pitch, three tellings) and `PRICES.TXT` (the model line) in its home, and two or three lines in `.sh_history` where somebody who was not buying it typed at it. **No staff accounts at all** — it is stock, and the shop's people are not on a machine the shop has not sold. |
+| **`spare`** | the desk in the corner nobody was given. The same disk, with the **premises'** hostname and motd, and the staff **are** on it with their passwords, because the machine is the company's. What is not on it is anybody's work. |
+
+Neither carries mail, a week of log, a crontab, a draft or a session somebody left
+open: none of that happened to this machine, and a file saying it had would be the one
+kind of lie this catalogue is not allowed to tell. The open `demo` account needs no
+declared deviation — an account with no password is a thing a 1993 machine had, and
+the store's second account is already one.
+
+**Root is the premises' on every machine of a premises, display models included.**
+That is deliberate and it is what keeps the paper honest: there is one sticky note per
+premises and it names root's password for the *premises*, so a display model with a
+factory password of its own would be a paper that opens one machine in six. The shop
+says so itself in `floor.txt` — it set them all up the same, because it is the shop
+that has to fix them.
+
 ## Three tellings of every file
 
 Every prose file of every profile is written **three** times
 (`CeroSecContent.VARIANTS`), and which telling a premises reads is the
 **premises'** own: `number(secret, premisesKey .. "/v/" .. file, 3)`, spelt
-`CeroSecContent.variantOf`. Thirty-one prose files, ninety-three tellings.
+`CeroSecContent.variantOf`. Forty-two prose files, a hundred and twenty-six
+tellings: thirty-nine in the profiles and three on the dealer's disk.
 
 An entry carries one of:
 
@@ -881,9 +982,11 @@ Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **4** as of the change that gave every loot disk that is
+`CeroSecContent.VERSION` is **5** as of the change that gave the electronics shop a
+profile of its own and put the dealer's demonstration disk on every machine that is
+nobody's desk. (**4** gave every loot disk that is
 somebody's own writing three tellings and added `LEDGER`, `PERSONAL` and `RADIO LOG`
-out of the same seventeen shares. (**3** gave every machine an owner,
+out of the same seventeen shares; **3** gave every machine an owner,
 every prose file three tellings, and every desk a week of history behind it; **2**
 was the world-content work, part 2, which filled the eight empty profiles and the five empty disk slots.) It
 is the catalogue's own number and **must

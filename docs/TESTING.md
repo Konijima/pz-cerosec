@@ -55,7 +55,11 @@ The suites, in the order they run:
   README is held to naming every file beside it **and only** files that are on the
   disk, every generated login is pushed through a `passwd` line and read back, and
   two machines generated from one secret are compared byte for byte while a second
-  secret must differ. See [CONTENT.md](CONTENT.md).
+  secret must differ. Section 4h switches a whole premises on one machine at a time
+  with the desk register in its hand -- a shop of six comes out one desk and five
+  display models, an office of five comes out three desks and two spares, and the
+  three men with a desk are the same three in every order the machines are switched
+  on in. See [CONTENT.md](CONTENT.md).
 - `window_test.lua` holds the halves of that only the world can answer: that a
   machine is prefilled at its **first** power-on and never when it already had a
   state; that the papers in a drawer and in a pocket carry a password the machine
@@ -67,7 +71,12 @@ The suites, in the order they run:
   read); and that `setModDataKeys` really names both persisted fields while the
   client sync list names neither — the one line the whole change rests on, and until
   it was written down there the suite stayed green with the save persisting nothing
-  at all.
+  at all. It also holds the wire the desk register hangs on: that the room a machine
+  stands in really reaches the catalogue, so a computer on a shop's sales floor comes
+  up as stock and the one in its back room comes up as the shop's own. That one is
+  worth its own line because a square answering no room at all would have left every
+  bench in `content_test.lua` green while putting the shop's ledger on a machine the
+  public types at.
 - `manual_test.lua` — the documentation set against the engine it describes: the
   shape of every volume (8..13 chapters, 3..14 pages each, 50..84 pages, plain ASCII,
   nothing over a thousand characters, example lines inside sixty columns), every

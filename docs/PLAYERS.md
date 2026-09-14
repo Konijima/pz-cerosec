@@ -1173,7 +1173,7 @@ handover, every list is written three ways, and which one a premises keeps is th
 premises' own for the life of the save — with its own people's names in it. Reading
 one office does not mean you have read them all.
 
-**Whose machine it was depends on the building**, and there are ten kinds:
+**Whose machine it was depends on the building**, and there are eleven kinds:
 
 | | |
 | --- | --- |
@@ -1182,11 +1182,30 @@ one office does not mean you have read them all.
 | **a sheriff's dispatch** | a shared `dispatch` login, a standing lookout list, and `/var/log/dispatch`, which stops in the middle of a line on the morning of the 9th |
 | **a bank** | `accounts.dat` in four plain columns and the audit the examiner asks for, written down as two commands you can type |
 | **a shop** | what was on the floor when somebody last counted it, the prices in cents, and the order to close up in |
+| **a shop that sells computers** | the dealer's own machine in the back: the stock by model, what is on the repair bench, and how a machine was set up before it went out on the floor. Every machine **on the floor** is stock — see below |
 | **a school** | grades by student number, because the names are in the cabinet; the bells on a clockwork timer the computer cannot reach |
 | **a clinic** | rooms and wards and what has to happen next. Nothing medical: that is the chart, and the chart stays on the trolley |
 | **a radio station** | the hour-by-hour sheet the machine reads off its own clock, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
 | **a military post** | `root` and **nothing else**. No open account, and nothing in anybody's pocket. Three memoranda on the exclusion zone, and the last one tells whoever is reading it that the road south was open on the 8th of July |
 | **CeroSec Systems** | the vendor's own bench: the whole script library standing together in `/usr/local/src`, a `CHANGES` that says why `hash` became `mkpasswd`, and the support mailbox |
+
+**A machine nobody worked at.** Two of them, and both are worth recognising because
+there is nothing to find on either and you can stop looking:
+
+- **a display model.** In an electronics shop, every computer on the sales floor is
+  stock. It comes up on an open `demo` account with nobody's files on it — a
+  `WELCOME.TXT` telling you to try it, a `DEMO.TXT` selling it to you and a
+  `PRICES.TXT` with the whole model line and the prices — and two or three lines in
+  the history where a customer looked at one file and walked away. No staff, no mail,
+  no log. The shop's **own** machine is the one in the back room, and that one is
+  somebody's desk like any other.
+- **a spare desk.** A premises has as many people as it has people: switch on more
+  machines than that and the ones left over come up as the disk the dealer delivered
+  — the company's name and greeting on it, the staff accounts and their passwords all
+  present, and not one populated home.
+
+**Root is still the premises' on both of them**, so the sticky note out of the back
+drawer opens every machine in the building, the display models included.
 
 **What they were doing before it happened.** Every desk carries the last week of
 whoever sat at it, and none of it is decoration:
