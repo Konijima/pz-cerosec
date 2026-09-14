@@ -275,10 +275,10 @@ function CeroSecAuto.settle(system, luaObject)
 	-- decides on has to be the profile the prefill then builds
 	-- (SCeroSecObject:prefill). A machine in no building is in no premises: a
 	-- player's own base is never automated and never asked again.
-	local b1, b2, _, zone = CeroSecNet.premisesOf(luaObject)
+	local b1, b2, _, pz, pk = CeroSecNet.premisesOf(luaObject)
 	if b1 == nil then return false end
-	local id = CeroSecContent.profileFor(zone,
-		CeroSecNet.premisesRooms(luaObject:getSquare(), zone))
+	local id = CeroSecContent.profileFor(pz,
+		CeroSecNet.premisesRooms(luaObject:getSquare(), pz, pk))
 
 	local page = CeroSecAuto.page(system)
 	local key = CeroSecContent.premisesKey(b1, b2)

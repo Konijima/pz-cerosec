@@ -417,6 +417,24 @@ function CeroSecDebug.premises(luaObject)
 		out[#out + 1] = "room: " .. cell(name)
 	end
 
+	-- THE TENANCIES, which is the one thing a mall cannot be walked without. A named
+	-- zone still wins over all of them (CeroSecNet.premisesOfSquare), so the line says
+	-- how many the building holds and which one this square is in -- and "1" or "0" is
+	-- a building that is one premises, which is every house in the county.
+	if def ~= nil then
+		local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+		local names = ""
+		for g = 1, #groups do
+			if g > 1 then names = names .. ", " end
+			names = names .. groups[g][1].name
+		end
+		out[#out + 1] = "tenancies: " .. cell(#groups) ..
+			(names ~= "" and ("  " .. names) or "")
+		local _, _, _, pz, pk = CeroSecNet.premisesOfSquare(square)
+		out[#out + 1] = "premises: " .. cell(pk or "building") ..
+			(pz ~= nil and ("  " .. pz) or "")
+	end
+
 	-- The zones. A square can be inside several at once -- a town, a district, a
 	-- story, a loot zone -- and which of them is the SMALLEST is the question the
 	-- telephone work is going to ask.

@@ -230,7 +230,237 @@ function CeroSecNet.isPremisesZone(zone)
 	return area
 end
 
--- The premises: two bytes, the exchange behind them, and what it is called.
+--
+-- THE ROOMS OF A BUILDING, AND WHICH OF THEM ARE SEPARATE SHOPS
+--
+-- A zone is the map's own word for a tenancy and it wins wherever there is one. The
+-- malls that ship have none, which is the whole of the report this was written for:
+-- one BuildingDef, eleven shops, one premises. So where there is no zone the rooms
+-- are asked instead.
+--
+-- Which names mean a shop is CeroSecContent's and pure (isTenancyName). Where the
+-- rooms are is here, and it is four getters and no more:
+--
+--   zombie.iso.BuildingDef.getRooms()    -> ArrayList<zombie.iso.RoomDef>
+--   zombie.iso.RoomDef.getName()         -> String
+--   zombie.iso.RoomDef.getX/getY/getX2/getY2/getZ/getArea() -> int
+--
+-- All six of the ints are plain field reads (javap: getW is `getfield x2; getfield
+-- x; isub`, getZ is `getfield level`, getArea is `getfield area`), so x2 and y2 are
+-- EXCLUSIVE the way a BuildingDef's are, getZ is the FLOOR and not a world z, and
+-- getArea is the sum of the room's rectangles rather than its box.
+--
+-- ONE SHOP IS OFTEN SEVERAL RoomDefs. A furniture shop is eight rooms, a gas
+-- station four one-tile kiosks, a farm tool shed two. So a tenancy is a maximal
+-- group of SAME-NAMED rooms on ONE FLOOR that touch each other -- while the seven
+-- rooms called `clothesstore` in seven corners of one mall are seven shops, which
+-- is the case that makes the name alone useless.
+--
+-- TOUCHING is measured on the bounding box and not on the rectangles, and that is a
+-- deliberate approximation with a measurement behind it: against the whole shipped
+-- county the box test groups identically to RoomDef.isAdjacent's rect walk -- 159
+-- multi-tenant buildings either way, 45 and 40 tenancies in the two big malls
+-- against 45 and 41 -- and it costs four getters instead of two rect lists. The
+-- count is docs/notes/tenancies.md, and so is the level check: isAdjacent takes no
+-- level at all (javap), so a mezzanine would be adjacent to the floor under it.
+--
+-- The same measure answers the second question, which is what a back room belongs
+-- to: how long a wall two rooms share.
+--
+
+-- The rooms of a building, as an array of plain tables. Read once per question and
+-- passed around, because getRooms is an ArrayList walk and there are 736 rooms in
+-- one of the shipped malls.
+--
+-- nil for a def that will not list them, which is a building this rule cannot ask
+-- anything about and is therefore one premises -- the answer this rung had before
+-- there were tenancies in it.
+function CeroSecNet.buildingRooms(def)
+	if def == nil or def.getRooms == nil then return nil end
+	local list = def:getRooms()
+	if list == nil then return nil end
+	local out = {}
+	for i = 0, list:size() - 1 do
+		local room = list:get(i)
+		if room ~= nil and room.getName ~= nil and room.getX ~= nil then
+			local name = room:getName()
+			local x, y, x2, y2 = room:getX(), room:getY(), room:getX2(), room:getY2()
+			if type(name) == "string" and name ~= ""
+					and type(x) == "number" and type(y) == "number"
+					and type(x2) == "number" and type(y2) == "number" then
+				local level = room.getZ ~= nil and room:getZ() or 0
+				local area = room.getArea ~= nil and room:getArea() or nil
+				-- A def that will not give the summed area is asked for the box
+				-- instead, which is the same number for the rectangular room almost
+				-- every shop is and never zero for a room that covers something.
+				if type(area) ~= "number" then area = (x2 - x) * (y2 - y) end
+				if type(level) ~= "number" then level = 0 end
+				out[#out + 1] = { name = name, x = x, y = y, x2 = x2, y2 = y2,
+					level = level, area = area }
+			end
+		end
+	end
+	return out
+end
+
+-- How many tiles of wall two rooms share, on the boxes and on one floor. 0 for two
+-- rooms that do not touch, which is what "not the same shop" and "not the back room
+-- of that shop" both mean.
+local function wallBetween(a, b)
+	if a.level ~= b.level then return 0 end
+	local ox = math.min(a.x2, b.x2) - math.max(a.x, b.x)
+	local oy = math.min(a.y2, b.y2) - math.max(a.y, b.y)
+	-- Their left and right walls meet: the wall is as long as they overlap in y.
+	if ox == 0 and oy > 0 then return oy end
+	-- Their top and bottom walls meet.
+	if oy == 0 and ox > 0 then return ox end
+	-- And the boxes OVERLAP, which is what an L-shaped room's box does around the
+	-- room in its corner. They share a wall somewhere inside that overlap, and the
+	-- shorter side of it is the most it can be.
+	if ox > 0 and oy > 0 then return math.min(ox, oy) end
+	return 0
+end
+
+-- The tenancies of a building, as an array of arrays of rooms. Empty for a building
+-- with no shopfront room in it, which is a house, a school, a police station and
+-- every other building in the county that is one premises.
+--
+-- The grouping is by the rooms and not by the walk: every PAIR of shopfront rooms
+-- that shares a name and a wall is joined, and the groups fall out of that. Written
+-- that way rather than as "join each room to the first group it fits" because one
+-- room can bridge two rooms that do not touch each other, and the one-pass version
+-- would leave those as two shops where the map drew one -- an answer that would then
+-- depend on the order the engine happened to list the rooms in. Two chains of
+-- lookups per pair, which is the loop below.
+function CeroSecNet.tenancies(rooms)
+	local out = {}
+	if rooms == nil then return out end
+	local shops = {}
+	for i = 1, #rooms do
+		if CeroSecContent.isTenancyName(rooms[i].name, rooms[i].area) then
+			shops[#shops + 1] = rooms[i]
+		end
+	end
+	-- Each room starts as its own shop and is joined to another's as walls are found.
+	local owner = {}
+	for i = 1, #shops do owner[i] = i end
+	local function rootOf(i)
+		while owner[i] ~= i do
+			owner[i] = owner[owner[i]]
+			i = owner[i]
+		end
+		return i
+	end
+	for i = 1, #shops do
+		for j = i + 1, #shops do
+			if shops[i].name == shops[j].name
+					and wallBetween(shops[i], shops[j]) > 0 then
+				local a, b = rootOf(i), rootOf(j)
+				if a ~= b then owner[a] = b end
+			end
+		end
+	end
+	local at = {}
+	for i = 1, #shops do
+		local root = rootOf(i)
+		if at[root] == nil then
+			out[#out + 1] = { shops[i] }
+			at[root] = #out
+		else
+			local group = out[at[root]]
+			group[#group + 1] = shops[i]
+		end
+	end
+	return out
+end
+
+-- A tenancy's ANCHOR: the room of it nearest the map's origin, smallest y and then
+-- smallest x. What it is for is the key, and the requirement is that it cannot
+-- depend on the order the engine listed the rooms in -- two computers of one shop
+-- that disagreed about which room is the anchor would be two shops.
+function CeroSecNet.tenancyAnchor(group)
+	local best = group[1]
+	for i = 2, #group do
+		local room = group[i]
+		if room.y < best.y or (room.y == best.y and room.x < best.x) then
+			best = room
+		end
+	end
+	return best
+end
+
+-- WHICH TENANCY A SQUARE BELONGS TO, and it is the one question a machine, a drawer
+-- and a dead man's pocket all ask. nil is nobody's: the building answers for it.
+--
+--   * the square's own room is a shopfront room -> that shop, obviously;
+--   * it is one of the common parts -- a mall's corridor, its lifts, its stairs --
+--     -> nobody's. A corridor is not the shop it happens to share its longest wall
+--     with, and every shop of the mall is off it;
+--   * anything else -- a stock room, a bathroom, a break room, an office over the
+--     shops -> the tenancy it shares its LONGEST WALL with, on its own floor, which
+--     is the shop whose back room it is. A tie goes to the anchor nearest the
+--     origin, so that two shops with an equal claim do not get one by iteration
+--     order;
+--   * and nothing at all when it touches no tenancy, which is every room of a
+--     building that has no shops in it.
+function CeroSecNet.tenantOfRoom(groups, room)
+	if room == nil then return nil end
+	for g = 1, #groups do
+		for m = 1, #groups[g] do
+			local other = groups[g][m]
+			if other.x == room.x and other.y == room.y and other.level == room.level
+					and other.name == room.name then
+				return groups[g]
+			end
+		end
+	end
+	if CeroSecContent.isCommonName(room.name) then return nil end
+	local best, bestWall, bestAnchor = nil, 0, nil
+	for g = 1, #groups do
+		local wall = 0
+		for m = 1, #groups[g] do
+			local one = wallBetween(groups[g][m], room)
+			if one > wall then wall = one end
+		end
+		if wall > 0 then
+			local anchor = CeroSecNet.tenancyAnchor(groups[g])
+			if wall > bestWall
+					or (wall == bestWall and bestAnchor ~= nil
+						and (anchor.y < bestAnchor.y
+							or (anchor.y == bestAnchor.y and anchor.x < bestAnchor.x))) then
+				best, bestWall, bestAnchor = groups[g], wall, anchor
+			end
+		end
+	end
+	return best
+end
+
+-- The room a square stands in, as the same plain table roomsOf builds, or nil for a
+-- square in no room at all.
+--
+-- The DEF and not the live room, because the live room's name is all a square can
+-- give and this needs the outline as well:
+--
+--   zombie.iso.IsoGridSquare.getRoomDef() -> zombie.iso.RoomDef
+--     (javap: getRoom() and then IsoRoom.getRoomDef(), null without a room)
+function CeroSecNet.roomDefAt(square)
+	if square == nil or square.getRoomDef == nil then return nil end
+	local room = square:getRoomDef()
+	if room == nil or room.getName == nil or room.getX == nil then return nil end
+	local name = room:getName()
+	local x, y, x2, y2 = room:getX(), room:getY(), room:getX2(), room:getY2()
+	if type(name) ~= "string" or name == "" then return nil end
+	if type(x) ~= "number" or type(y) ~= "number" then return nil end
+	if type(x2) ~= "number" or type(y2) ~= "number" then return nil end
+	local level = room.getZ ~= nil and room:getZ() or 0
+	if type(level) ~= "number" then level = 0 end
+	local area = room.getArea ~= nil and room:getArea() or nil
+	if type(area) ~= "number" then area = (x2 - x) * (y2 - y) end
+	return { name = name, x = x, y = y, x2 = x2, y2 = y2, level = level, area = area }
+end
+
+-- The premises: two bytes, the exchange behind them, what it is called and which
+-- KIND of premises it is.
 -- nil for a computer in no building at all, which is what a player-built base is.
 --
 -- Asked of a SQUARE, so that the one rule about what a premises is answers every
@@ -238,6 +468,21 @@ end
 -- which profile a machine gets, and which premises a note in a drawer or a note in
 -- a dead man's pocket belongs to -- and a second copy of the rule for the papers
 -- would be papers that named a premises the telephone did not agree with.
+--
+-- THE RULE, in order, and only the last two lines of it are new:
+--
+--   1. the named ZombiesType zone containing the square whose area is strictly
+--      smaller than the building's footprint -- the smallest when several qualify.
+--      The map's own word for a tenancy, and it wins wherever the map said one.
+--   2. else, if the building holds TWO OR MORE tenancies, the square's own tenancy
+--      (CeroSecNet.tenancies): the shop in the mall.
+--   3. else the building, which is a house, a school, a shop with a back office and
+--      everything else the county is made of.
+--
+-- A building with ONE tenancy is the building and not that one shop, deliberately:
+-- a gun shop with a back office and a stock room is one business, and splitting the
+-- stock room off it would be the bug this rule exists to avoid rather than the one
+-- it fixes.
 function CeroSecNet.premisesOfSquare(square)
 	if square == nil then return nil end
 	local building = square:getBuilding()
@@ -271,15 +516,34 @@ function CeroSecNet.premisesOfSquare(square)
 		end
 	end
 
-	if best == nil then
-		local b1, b2 = CeroSecOS.buildingKey(bx, by)
+	if best ~= nil then
+		local zx, zy = best:getX(), best:getY()
+		local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
 		if b1 == nil then return nil end
-		return b1, b2, CeroSecOS.phoneExchange(bx, by), nil
+		return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName(),
+			CeroSecOS.PREMISES_ZONE
 	end
-	local zx, zy = best:getX(), best:getY()
-	local b1, b2 = CeroSecOS.premisesKey(zx, zy, best:getWidth(), best:getHeight())
+
+	-- No zone, so the rooms. A building with fewer than two tenancies in it is one
+	-- premises and is not asked anything else.
+	local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+	if #groups >= 2 then
+		local mine = CeroSecNet.tenantOfRoom(groups, CeroSecNet.roomDefAt(square))
+		if mine ~= nil then
+			local anchor = CeroSecNet.tenancyAnchor(mine)
+			local b1, b2 = CeroSecOS.roomKey(bx, by, anchor.x, anchor.y, anchor.level)
+			if b1 ~= nil then
+				-- The exchange is the BUILDING's corner: every shop of one mall is
+				-- wired back to one central office. See CeroSecOS.phoneOfRoom.
+				return b1, b2, CeroSecOS.phoneExchange(bx, by),
+					CeroSecContent.tenancyLabel(anchor.name), CeroSecOS.PREMISES_ROOM
+			end
+		end
+	end
+
+	local b1, b2 = CeroSecOS.buildingKey(bx, by)
 	if b1 == nil then return nil end
-	return b1, b2, CeroSecOS.phoneExchange(zx, zy), best:getName()
+	return b1, b2, CeroSecOS.phoneExchange(bx, by), nil, nil
 end
 
 -- The same question about a COMPUTER, which is the caller this started as: the
@@ -307,6 +571,11 @@ end
 --
 --   * a premises that is a named ZONE is called by its zone's name, and by nothing
 --     else. The rooms are the mall's and belong to thirty other shops.
+--   * a premises that is a ROOM of a multi-tenant building is called by ITS OWN
+--     ROOMS, which is the one name the whole tenancy wears -- `musicstore` for every
+--     square of the music store and `dentist` for every square of the dentist. Which
+--     is the fix the report asked for: the same two halves of one rule, asked one
+--     level down.
 --   * a premises that is a BUILDING is called by the names of ALL its rooms --
 --     BuildingDef.getRooms(), which is a fact about the building and is the same
 --     list whichever square asked. Which of them decides is CeroSecContent's, and
@@ -318,11 +587,33 @@ end
 --   zombie.iso.BuildingDef.getRooms() -> java.util.ArrayList<zombie.iso.RoomDef>
 --   zombie.iso.RoomDef.getName()      -> String
 --
+-- `kind` is what premisesOfSquare decided the premises IS, and it is passed rather
+-- than worked out again for the reason the whole of this file exists: two answers to
+-- one question is how a note comes to name a password no machine has. A caller with
+-- only a name and no kind is a caller from before there were rooms, and a name with
+-- no kind is a zone -- which is what such a caller meant.
+--
 -- An array of names, or nil: a zone premises, a square in no building, and a def
 -- that will not list its rooms all answer nothing, and nothing is a house.
-function CeroSecNet.premisesRooms(square, zoneName)
-	if zoneName ~= nil then return nil end
+function CeroSecNet.premisesRooms(square, premisesName, kind)
 	if square == nil then return nil end
+	if kind == CeroSecOS.PREMISES_ROOM then
+		-- The tenancy's own rooms. Derived again from the square rather than carried,
+		-- because this is the seam the prefill and the papers both come through and
+		-- there must be no path where one of them got the building's list.
+		local building = square:getBuilding()
+		if building == nil then return nil end
+		local def = building:getDef()
+		if def == nil then return nil end
+		local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+		if #groups < 2 then return nil end
+		local mine = CeroSecNet.tenantOfRoom(groups, CeroSecNet.roomDefAt(square))
+		if mine == nil then return nil end
+		local out = {}
+		for i = 1, #mine do out[#out + 1] = mine[i].name end
+		return out
+	end
+	if premisesName ~= nil then return nil end
 	local building = square:getBuilding()
 	if building == nil then return nil end
 	local def = building:getDef()
@@ -402,6 +693,29 @@ end
 -- The listings of region rx,ry: a list of { name, number } and whether the cap
 -- bit. An empty list for a region with nothing named in it, and for a bench with
 -- no world -- there is no world to ask, so there is nothing in the book.
+--
+-- TWO SWEEPS, because there are two kinds of business premises and a book that
+-- carried one of them is a book a survivor dials a shop out of and gets nothing. The
+-- ZONES first, which is what the book was; then the TENANTS of every multi-tenant
+-- building of the region, which is how the shops of a mall get printed at all -- the
+-- shipped malls having no zones, which is the whole complaint.
+--
+-- The buildings of a region come off
+--
+--   zombie.iso.IsoMetaGrid.getBuildingsIntersecting(int x, int y, int w, int h,
+--       java.util.ArrayList<zombie.iso.BuildingDef>)
+--
+-- and it is BOUNDED: javap shows it walk `x / 256` and `y / 256` clamped to
+-- minX/maxX/minY/maxY, take getCell for each and let the cell do its own walk --
+-- the same shape as getZonesIntersecting, which this already used. A PHONE_REGION of
+-- 1024 tiles is four cells by four, so a book costs sixteen cell visits and it is
+-- paid once, when a copy of the book is opened. getBuildings() is the other
+-- accessor on that class and is every building in Knox County; it is not used here
+-- for that reason.
+--
+-- A building with ONE tenancy is listed by neither sweep, exactly as it is one
+-- premises: a gun shop with a back office is a residence as far as the yellow pages
+-- go, which is the shape this book has always had -- a number, and no line printed.
 function CeroSecNet.directory(rx, ry)
 	local out = {}
 	if type(rx) ~= "number" or type(ry) ~= "number" then return out, false end
@@ -418,6 +732,22 @@ function CeroSecNet.directory(rx, ry)
 
 	local capped = false
 	local seen = {}
+	local zoneSeen = {}
+	-- The one place a listing is added, so that the cap cannot be counted twice and
+	-- the two sweeps cannot print one premises twice. Keyed on the NAME AND THE
+	-- NUMBER: two shops of one chain in one region are two listings with one name,
+	-- which is what a directory printed, and it is the number that tells them apart.
+	local function listing(name, number)
+		if type(name) ~= "string" or type(number) ~= "string" then return end
+		local key = name .. " " .. number
+		if seen[key] then return end
+		seen[key] = true
+		if #out >= CeroSecPhonebook.MAX_ENTRIES then
+			capped = true
+			return
+		end
+		out[#out + 1] = { name = name, number = number }
+	end
 	for i = 0, list:size() - 1 do
 		local zone = list:get(i)
 		local area = CeroSecNet.isPremisesZone(zone)
@@ -429,21 +759,59 @@ function CeroSecNet.directory(rx, ry)
 			-- listed once, in the book of the region its number belongs to.
 			local cx, cy = CeroSecOS.phoneRegionOf(zx, zy)
 			if cx == math.floor(rx) and cy == math.floor(ry) then
-				-- One zone is one entry however many cells the sweep found it in.
+				-- One zone is one entry however many cells the sweep found it in. Its
+				-- own book, keyed on the outline: two zones of one name and one number
+				-- are one listing to the reader but two premises to the map, and this
+				-- half of the dedupe is about not probing the same zone twice.
 				local key = zx .. "," .. zy .. "," .. zw .. "," .. zh
-				if not seen[key] then
-					seen[key] = true
+				if not zoneSeen[key] then
+					zoneSeen[key] = true
 					local footprint = footprintAt(grid,
 						zx + math.floor(zw / 2), zy + math.floor(zh / 2))
 					if footprint ~= nil and area < footprint then
-						local number = CeroSecOS.phoneOfZone(zx, zy, zw, zh)
-						local name = CeroSecPhonebook.spaced(zone:getName())
-						if number ~= nil and name ~= nil then
-							if #out >= CeroSecPhonebook.MAX_ENTRIES then
-								capped = true
-							else
-								out[#out + 1] = { name = name, number = number }
-							end
+						listing(CeroSecPhonebook.spaced(zone:getName()),
+							CeroSecOS.phoneOfZone(zx, zy, zw, zh))
+					end
+				end
+			end
+		end
+	end
+
+	-- AND THE TENANTS, by the same rule premisesOfSquare uses one building down: a
+	-- building holding two or more tenancies is that many premises, each with its own
+	-- line, and the book is the only way a survivor learns the number of a shop he is
+	-- not standing in.
+	--
+	-- It is an OUT PARAMETER -- the engine fills a list it is handed and returns
+	-- nothing -- so the list has to be made here. `ArrayList.new()` is the game's own
+	-- Lua doing exactly that (media/lua/server/Foraging/forageServer.lua:367,
+	-- client/ISUI/ISWorldObjectContextMenu.lua:1016), which is the only reason it is
+	-- called on faith-free terms. A world that will not give either is a world with
+	-- no tenants to print, which is what a bench without one is.
+	if grid.getBuildingsIntersecting == nil then return out, capped end
+	if ArrayList == nil then return out, capped end
+	local defs = ArrayList.new()
+	if defs == nil then return out, capped end
+	grid:getBuildingsIntersecting(x0, y0, size, size, defs)
+	if defs.size == nil then return out, capped end
+	for i = 0, defs:size() - 1 do
+		local def = defs:get(i)
+		if def ~= nil and def.getX ~= nil then
+			local bx, by = def:getX(), def:getY()
+			if type(bx) == "number" and type(by) == "number" then
+				-- The building's CORNER decides which book it is in, for the reason a
+				-- zone's does: the corner is what its tenants' exchange comes from, so
+				-- a mall straddling two regions is printed once, in the book of the
+				-- region its numbers belong to.
+				local cx, cy = CeroSecOS.phoneRegionOf(bx, by)
+				if cx == math.floor(rx) and cy == math.floor(ry) then
+					local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+					if #groups >= 2 then
+						for g = 1, #groups do
+							local anchor = CeroSecNet.tenancyAnchor(groups[g])
+							listing(CeroSecContent.tenancyLabel(anchor.name),
+								CeroSecOS.phoneOfRoom(bx, by, anchor.x, anchor.y,
+									anchor.level))
 						end
 					end
 				end
@@ -631,7 +999,7 @@ function CeroSecNet.identify(system, luaObject, state)
 	-- the key is two bytes of a hash and a region is a coordinate, which is the whole
 	-- reason the exchange is a FIELD in the record (see the note over
 	-- CeroSecOS.phoneExchange).
-	local b1, b2, ex, pz = CeroSecNet.premisesOf(luaObject)
+	local b1, b2, ex, pz, pk = CeroSecNet.premisesOf(luaObject)
 	if b1 == nil then return false end
 
 	local net = CeroSecOS.netRecord(state)
@@ -645,16 +1013,31 @@ function CeroSecNet.identify(system, luaObject, state)
 		--
 		-- A machine whose bytes already match is a machine whose PREMISES has not
 		-- moved, so only the two labels can have: the exchange and the name.
-		if net.ex ~= nil and net.pz == pz then return false end
+		if net.ex ~= nil and net.pz == pz and net.pk == pk then return false end
 		if ex == nil then return false end
-		if CeroSecOS.setNetRecord(state, b1, b2, net.n, ex, pz) == nil then return false end
+		if CeroSecOS.setNetRecord(state, b1, b2, net.n, ex, pz, pk) == nil then
+			return false
+		end
 		luaObject:mirrorOS()
 		return true
 	end
 
+	-- THE MACHINE IN A MALL, and this is the whole migration there is. Its record
+	-- carries the BUILDING's two bytes, because that is what a mall was, so the bytes
+	-- no longer match and it is renumbered here -- a new address on the shop's own
+	-- coax and a new telephone number on the shop's own line -- the very moment its
+	-- square is answerable again. Which is the same path a machine carried into
+	-- another building has always taken, and it needs no step in MIGRATIONS for the
+	-- reason a step could not do it: a step is handed a table and no world, and which
+	-- shop a computer stands in is a question only the world can answer.
+	--
+	-- What does NOT change is what is already written on the disk: the accounts, the
+	-- passwords and the papers in the drawers were derived at prefill and are stored
+	-- hashed, so the root note somebody found in that mall still opens the machine it
+	-- was written for.
 	local n = freeNumber(system, luaObject, b1, b2)
 	if n == nil then return false end
-	if CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz) == nil then return false end
+	if CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz, pk) == nil then return false end
 	-- And the machine's own line in /etc/hosts, once. After this the file is the
 	-- player's: a name he added stays, a line he deleted stays deleted.
 	CeroSecOS.writeOwnHost(state, CeroSecOS.clockOf(system:clockEnv()))

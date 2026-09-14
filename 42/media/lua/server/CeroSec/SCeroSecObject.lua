@@ -592,7 +592,7 @@ function SCeroSecObject:prefill(state)
 	-- (CeroSecNet.premisesOfSquare). nil is a computer in no building at all, which
 	-- is what a player-built base is: it gets a bare machine, exactly as it gets no
 	-- address and no telephone line.
-	local b1, b2, _, zone = CeroSecNet.premisesOf(self)
+	local b1, b2, _, pz, pk = CeroSecNet.premisesOf(self)
 	if b1 == nil then return nil end
 
 	-- And what the BUILDING's rooms are called, which is the second question and is
@@ -605,7 +605,7 @@ function SCeroSecObject:prefill(state)
 	-- square, a house with a study in it answered "office" to the desk in the study
 	-- and "residential" to the computer in the living room, and the note named a
 	-- password no machine had. See the head of CeroSecNet.premisesRooms.
-	local rooms = CeroSecNet.premisesRooms(self:getSquare(), zone)
+	local rooms = CeroSecNet.premisesRooms(self:getSquare(), pz, pk)
 
 	-- AND THE ONE ROOM THIS MACHINE ITSELF STANDS IN, which is a different question
 	-- from the one above and is asked for a different thing: the profile is the
@@ -646,7 +646,7 @@ function SCeroSecObject:prefill(state)
 	local id, _, _, live, role = CeroSecContent.prefill(state, {
 		secret = system:secret(),
 		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
-		premises = zone, rooms = rooms, room = room, desks = desks,
+		premises = pz, rooms = rooms, room = room, desks = desks,
 		-- IS THIS THE MACHINE ITS PREMISES LEFT RUNNING (SCeroSecAuto)? Two things
 		-- follow on the disk and both are the catalogue's: the desk is the one whose
 		-- crontab does the nightly job -- or the job would be in the catalogue and on

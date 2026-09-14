@@ -241,7 +241,7 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 
 	local square = container:getSourceGrid()
 	if square == nil then return end
-	local b1, b2, _, zone = CeroSecNet.premisesOfSquare(square)
+	local b1, b2, _, pz, pk = CeroSecNet.premisesOfSquare(square)
 	-- No building at all: the street, a car park, a player's own base. Nothing is
 	-- written there, which is the same answer a machine standing there gets.
 	if b1 == nil then return end
@@ -251,9 +251,9 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	-- CeroSecNet.premisesRooms. Asked of the drawer's own room, the desk in a study
 	-- answered "office" and the computer in the living room of the same house
 	-- answered "residential", and the paper named a password nothing had.
-	local rooms = CeroSecNet.premisesRooms(square, zone)
+	local rooms = CeroSecNet.premisesRooms(square, pz, pk)
 
-	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(zone, rooms)]
+	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(pz, rooms)]
 	-- A premises whose profile the world-content work has not written yet: no machine is prefilled
 	-- there, so there is no password to find and nothing to write.
 	if type(profile) ~= "table" then return end
