@@ -5368,13 +5368,47 @@ end
 -- way net.buildingAt below says it is.
 _G.__buildings = {}
 local function fakeBuildingDef(b)
-	return {
+	local def = {
 		getX = function() return b.x end,
 		getY = function() return b.y end,
 		getX2 = function() return b.x + b.w end,
 		getY2 = function() return b.y + b.h end,
 	}
+	-- And its rooms, for the one caller that has to measure a building it has no
+	-- machine in: the phone book's tenant sweep. An entry with no `rooms` is a
+	-- building nothing can be measured about, which is every zone bench above.
+	if b.rooms ~= nil then
+		local defs = {}
+		for i = 1, #b.rooms do
+			local room = b.rooms[i]
+			local level = room.level or 0
+			defs[i] = {
+				getName = function() return room.name end,
+				getX = function() return room.x end,
+				getY = function() return room.y end,
+				getX2 = function() return room.x + room.w end,
+				getY2 = function() return room.y + room.h end,
+				getZ = function() return level end,
+				getArea = function() return room.area or room.w * room.h end,
+			}
+		end
+		def.getRooms = function() return javaList(defs) end
+	end
+	return def
 end
+
+-- java.util.ArrayList, for the one engine call that takes an out parameter
+-- (IsoMetaGrid.getBuildingsIntersecting). The game's own Lua makes one with
+-- ArrayList.new() -- media/lua/server/Foraging/forageServer.lua:367 -- and this is
+-- the same thing with the three methods that are used on it.
+_G.ArrayList = { new = function()
+	local items = {}
+	return {
+		add = function(_, item) items[#items + 1] = item return true end,
+		size = function() return #items end,
+		get = function(_, i) return items[i + 1] end,
+	}
+end }
 -- Kept in a local as well as in the global, because one section below sets
 -- _G.getWorld to NIL on purpose -- "a machine whose chunk is away" -- and every
 -- section after it would otherwise be running on a map with no zones on it
@@ -5418,6 +5452,22 @@ _G.getWorld = function()
 				end
 				return nil
 			end,
+			-- getBuildingsIntersecting(x, y, w, h, out): every building whose box
+			-- overlaps the rectangle, APPENDED to a list the caller hands in. An out
+			-- parameter and no return value, which is the signature javap gives it,
+			-- and the reason the fake fills the list instead of building one.
+			--
+			-- A building whose entry carries `rooms` hands them over the way
+			-- buildingAt's do, so the book's tenant sweep has geometry to measure.
+			getBuildingsIntersecting = function(_, x, y, w, h, out)
+				for i = 1, #_G.__buildings do
+					local b = _G.__buildings[i]
+					if x + w > b.x and x < b.x + b.w
+							and y + h > b.y and y < b.y + b.h then
+						out:add(fakeBuildingDef(b))
+					end
+				end
+			end,
 		}
 	end }
 end
@@ -5460,11 +5510,36 @@ local function newNet()
 			getArea = function() return w * h end,
 			getRoomsNumber = function() return rooms end,
 		}
+		-- An entry of `names` is either a bare string -- a room with a name and no
+		-- outline, which is every bench written before a room could be a premises --
+		-- or a table { name, x, y, w, h, level }, which is a room the tenancy rule can
+		-- measure. A bare string is the case a def that will not give geometry is, and
+		-- getArea answers nil for it on purpose: CeroSecContent.isTenancyName refuses a
+		-- room whose area it was not told, so an old bench's building holds no
+		-- tenancies and is one premises exactly as it was.
 		if names ~= nil then
 			local defs = {}
 			for i = 1, #names do
-				local name = names[i]
-				defs[i] = { getName = function() return name end }
+				local entry = names[i]
+				if type(entry) == "string" then
+					defs[i] = { getName = function() return entry end }
+				else
+					local level = entry.level or 0
+					defs[i] = {
+						getName = function() return entry.name end,
+						getX = function() return entry.x end,
+						getY = function() return entry.y end,
+						getX2 = function() return entry.x + entry.w end,
+						getY2 = function() return entry.y + entry.h end,
+						getZ = function() return level end,
+						-- The SUM of the room's rectangles, which is what
+						-- RoomDef.getArea answers (javap: `getfield area`, filled by
+						-- CalculateBounds). A bench room is one rectangle, so it is the
+						-- box -- and `area` overrides it, for the one-tile pump island
+						-- and for a room drawn as an L.
+						getArea = function() return entry.area or entry.w * entry.h end,
+					}
+				end
 			end
 			def.getRooms = function() return javaList(defs) end
 		end
@@ -5478,15 +5553,37 @@ local function newNet()
 	-- corner of the floor (CeroSecContent.isFloorRoom). nil is a machine in no named
 	-- room, which is every other bench in this file and is the engine's own answer
 	-- for a square whose room has no name.
+	-- `room` is a bare NAME as it always was, or a table { name, x, y, w, h, level }
+	-- for a bench that needs the square's own RoomDef to have an outline -- which the
+	-- tenancy rule does, because which shop a back room belongs to is decided by the
+	-- wall it shares (CeroSecNet.tenantOfRoom). A bare name answers getRoom and no
+	-- getRoomDef, which is what a square in a building this rule cannot measure is.
 	local function machine(x, y, z, building, room)
+		local roomName = type(room) == "table" and room.name or room
 		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
 		local square = {
 			getX = function() return x end,
 			getY = function() return y end,
 			getZ = function() return z end,
 			getRoom = function()
-				if room == nil then return nil end
-				return { getName = function() return room end }
+				if roomName == nil then return nil end
+				return { getName = function() return roomName end }
+			end,
+			-- The def, which is the door CeroSecNet.roomDefAt goes through:
+			-- IsoGridSquare.getRoomDef is getRoom() and then IsoRoom.getRoomDef(),
+			-- null without a room.
+			getRoomDef = function()
+				if type(room) ~= "table" then return nil end
+				local level = room.level or 0
+				return {
+					getName = function() return room.name end,
+					getX = function() return room.x end,
+					getY = function() return room.y end,
+					getX2 = function() return room.x + room.w end,
+					getY2 = function() return room.y + room.h end,
+					getZ = function() return level end,
+					getArea = function() return room.area or room.w * room.h end,
+				}
 			end,
 			getBuilding = function() return building end,
 			getObjects = function() return { size = function() return 0 end } end,
@@ -7491,6 +7588,409 @@ do
 
 	_G.__zones = {}
 	_G.__buildings = {}
+end
+
+--
+-- A MALL IS NOT ONE PREMISES (premises v2)
+--
+-- The report, in the words it came in: they all share the same no matter what the
+-- store is, because it's all one big building; the music store computer and the
+-- dentist one have no specifics. They did, because a premises was a named zone or
+-- else a whole BuildingDef and the shipped malls have no zones -- so eleven shops
+-- were one profile, one staff, one telephone line and one length of coax.
+--
+-- The fake mall below is the shipped 12809,1294 in miniature, laid out so that every
+-- branch of the rule has a square in it:
+--
+--   200,300 .. 260,350    the building, 60 by 50
+--   musicstore     200,300  20x15   a shop
+--   clothesstore   220,300  20x15   another shop, wall to wall with it -- two names
+--                                   are two tenancies however long the wall is
+--   dentist        200,325  20x10   a third, and a different trade
+--   clothesstorage 200,335  10x8    touching the dentist and no other shop
+--   breakroom      210,315  25x5    touching BOTH shops: 10 tiles of the music
+--                                   store's wall and 15 of the clothes shop's, so
+--                                   which one it belongs to is a question the
+--                                   LENGTH decides and nothing else
+--   hall           240,300   8x50   touching a shop, and nobody's all the same
+--
+-- What is asserted is the STATE on the machines and the papers -- the address, the
+-- number, the hostname, the root password -- and not that premisesOfSquare was
+-- called: the profile, the staff, the coax and the line each come through their own
+-- caller, and a bench on the rule alone would leave any of those four wired to the
+-- building without going red.
+--
+do
+	local net = newNet()
+	_G.__zones = {}
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+
+	local ROOMS = {
+		musicstore = { name = "musicstore", x = 200, y = 300, w = 20, h = 15 },
+		clothes = { name = "clothesstore", x = 220, y = 300, w = 20, h = 15 },
+		dentist = { name = "dentist", x = 200, y = 325, w = 20, h = 10 },
+		storage = { name = "clothesstorage", x = 200, y = 335, w = 10, h = 8 },
+		breakroom = { name = "breakroom", x = 210, y = 315, w = 25, h = 5 },
+		hall = { name = "hall", x = 240, y = 300, w = 8, h = 50 },
+	}
+	local roomList = { ROOMS.musicstore, ROOMS.clothes, ROOMS.dentist,
+		ROOMS.storage, ROOMS.breakroom, ROOMS.hall }
+	-- The shape CeroSecNet.buildingRooms hands out -- corners and not sizes, x2 and
+	-- y2 exclusive, with the floor and the summed area -- for the two functions a
+	-- bench calls directly with a room instead of through a def.
+	local function asRoom(r)
+		return { name = r.name, x = r.x, y = r.y, x2 = r.x + r.w, y2 = r.y + r.h,
+			level = r.level or 0, area = r.area or r.w * r.h }
+	end
+	local mall = net.buildingAt(200, 300, 60, 50, 6, roomList)
+
+	-- FIRST, THE RULE ITSELF, as a partition of the rooms. Three shops and not five
+	-- and not one: the count is asserted because an assertion that "the dentist is a
+	-- tenancy" would be green on a rule that made every room one.
+	local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(mall:getDef()))
+	eq("the mall holds three tenancies (" .. #groups .. ")", #groups, 3)
+	local byName = {}
+	for g = 1, #groups do byName[groups[g][1].name] = groups[g] end
+	check("the music store is one", byName.musicstore ~= nil)
+	check("the dentist is one", byName.dentist ~= nil)
+	check("the clothes shop is one", byName.clothesstore ~= nil)
+	eq("the stock room is not a shop", byName.clothesstorage, nil)
+	eq("nor is the hall", byName.hall, nil)
+
+	-- A ROOM THAT IS NOBODY'S SHOP goes to the one whose back room it is, by the
+	-- longest wall -- and the hall, which touches all three, goes to nobody.
+	local mine = CeroSecNet.tenantOfRoom(groups, asRoom(ROOMS.storage))
+	check("the stock room belongs to the shop it shares a wall with", mine ~= nil)
+	eq("which is the dentist and not the shop whose name it wears",
+		mine[1].name, "dentist")
+	-- AND WHERE TWO SHOPS BOTH HAVE A CLAIM, the LENGTH of the wall decides and
+	-- nothing else: the break room shows 10 tiles of wall to the music store and 15
+	-- to the clothes shop. A rule that took the first shop it found touching, or the
+	-- shortest wall, gets the music store here.
+	local shared = CeroSecNet.tenantOfRoom(groups, asRoom(ROOMS.breakroom))
+	check("a room touching two shops belongs to one of them", shared ~= nil)
+	eq("the one it shares the longer wall with", shared[1].name, "clothesstore")
+	eq("and the hall belongs to nobody",
+		CeroSecNet.tenantOfRoom(groups, asRoom(ROOMS.hall)), nil)
+
+	-- THREE PREMISES, THREE OF EVERYTHING. One machine in each shop, one in the
+	-- dentist's stock room and one in the hall.
+	local music = net.machine(205, 305, 0, mall, ROOMS.musicstore)
+	local dentist = net.machine(205, 330, 0, mall, ROOMS.dentist)
+	local clothes = net.machine(230, 305, 0, mall, ROOMS.clothes)
+	local back = net.machine(203, 338, 0, mall, ROOMS.storage)
+	local hall = net.machine(243, 310, 0, mall, ROOMS.hall)
+	for _, one in ipairs({ music, dentist, clothes, back, hall }) do one:turnOn() end
+
+	local function keyOf(object)
+		local rec = CeroSecOS.netRecord(object:osState())
+		if rec == nil then return nil end
+		return rec.b1 .. "." .. rec.b2
+	end
+
+	-- THREE SEGMENTS. The two bytes are the segment and the line both, so three
+	-- different pairs is three of each -- which is the one number everything else in
+	-- this section follows from.
+	local segments = {}
+	for _, one in ipairs({ music, dentist, clothes }) do segments[keyOf(one)] = true end
+	local count = 0
+	for _ in pairs(segments) do count = count + 1 end
+	eq("the three shops are on three segments", count, 3)
+	eq("and the stock room is on the dentist's", keyOf(back), keyOf(dentist))
+	check("while the hall is on the building's",
+		keyOf(hall) ~= keyOf(dentist) and keyOf(hall) ~= keyOf(music))
+	eq("which is the building key it always was", keyOf(hall),
+		(function() local b1, b2 = CeroSecOS.buildingKey(200, 300) return b1 .. "." .. b2 end)())
+
+	-- THREE LINES. The complaint's other half: only the lowest-numbered computer of
+	-- the whole mall could ever be rung, the rest being unreachable by telephone.
+	local tels = {}
+	for _, one in ipairs({ music, dentist, clothes }) do tels[telOf(one)] = true end
+	count = 0
+	for _ in pairs(tels) do count = count + 1 end
+	eq("and on three telephone lines", count, 3)
+	eq("the stock room answers on the dentist's line", telOf(back), telOf(dentist))
+	-- One mall, one central office: every shop of it is wired back to the same
+	-- switch, which is the exchange of the BUILDING's corner.
+	local ex = CeroSecOS.phoneExchange(200, 300)
+	for _, one in ipairs({ music, dentist, clothes, hall }) do
+		eq("every shop of the mall is on one exchange",
+			tonumber(string.sub(telOf(one), 1, 3)), ex)
+	end
+
+	-- THE BIOS SAYS WHICH SHOP IT IS. A survivor in a mall with three lines in it
+	-- needs to know which one he is sitting at, and the record carries the words.
+	eq("the music store's firmware names the music store",
+		CeroSecOS.premisesName(music:osState()), "Music Store")
+	eq("the dentist's names the dentist",
+		CeroSecOS.premisesName(dentist:osState()), "Dentist")
+	eq("and the kind it was worked out from is written down",
+		CeroSecOS.netRecord(music:osState()).pk, CeroSecOS.PREMISES_ROOM)
+	eq("the machine in the hall is on the building and says nothing",
+		CeroSecOS.premisesName(hall:osState()), nil)
+	eq("and carries no kind either", CeroSecOS.netRecord(hall:osState()).pk, nil)
+
+	-- THE PROFILES, which is the report in six words. The dentist gets the clinic's
+	-- disk and the shops get the till's, and all three root passwords differ --
+	-- the last being what "no specifics" meant.
+	eq("the dentist's machine is the clinic's",
+		string.match(dentist:osState().hostname, "^[a-z]+"),
+		CeroSecContent.PROFILES.clinic.host)
+	eq("the music store's is the shop's",
+		string.match(music:osState().hostname, "^[a-z]+"),
+		CeroSecContent.PROFILES.store.host)
+	eq("and the clothes shop's is too",
+		string.match(clothes:osState().hostname, "^[a-z]+"),
+		CeroSecContent.PROFILES.store.host)
+	-- AND THE PASSWORD ON THE PAPER IN THE DRAWER, which is the report's "no
+	-- specifics" and is the assertion this whole section is really about. It is asked
+	-- the way CeroSecNotes asks it -- derive the premises from a SQUARE, then the
+	-- profile, then the account's password -- and checked against the machine, never
+	-- by comparing two stored hashes: those are salted per machine, so two of them
+	-- differ even when the password is the same and an inequality would be green on a
+	-- mall that had one password for all of it.
+	local secret = net.system:secret()
+	-- What CeroSecNotes.deskNote writes on the paper: root's password, derived from
+	-- the save's secret and the PREMISES the drawer's own square is in.
+	local function paperFoundIn(square)
+		local b1, b2 = CeroSecNet.premisesOfSquare(square)
+		if b1 == nil then return nil end
+		return CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+	end
+	local function opens(object, password)
+		if password == nil then return false end
+		local user = CeroSecOS.getUser(object:osState(), "root")
+		if user == nil then return false end
+		return CeroSecOS.checkPassword(user, password) and true or false
+	end
+	local musicPaper = paperFoundIn(music:getSquare())
+	local clothesPaper = paperFoundIn(clothes:getSquare())
+	local dentPaper = paperFoundIn(dentist:getSquare())
+	local backPaper = paperFoundIn(back:getSquare())
+	local hallPaper = paperFoundIn(hall:getSquare())
+	check("a paper found in the music store opens the music store's machine",
+		opens(music, musicPaper))
+	check("and does NOT open the clothes shop next door",
+		not opens(clothes, musicPaper))
+	check("the clothes shop's own paper opens the clothes shop",
+		opens(clothes, clothesPaper))
+	check("and not the music store", not opens(music, clothesPaper))
+	check("the dentist's paper opens his machine", opens(dentist, dentPaper))
+	check("and not the music store's", not opens(music, dentPaper))
+	-- The stock room is the dentist's, so the paper in ITS drawer is his: one
+	-- premises, one note, every machine of it.
+	eq("the paper in the dentist's stock room carries the dentist's own password",
+		backPaper, dentPaper)
+	check("which opens the machine standing in that stock room",
+		opens(back, backPaper))
+	-- And the machine in the HALL is the building's, so neither shop's paper opens
+	-- it -- the old behaviour, for the one part of a mall that is nobody's.
+	check("the paper in the hall opens the hall's machine", opens(hall, hallPaper))
+	check("and the music store's paper does not", not opens(hall, musicPaper))
+
+	-- THE WIRE IS THE SHOP'S. What ruptime prints is env.peers (the bench for the
+	-- printing itself is the ruptime section above), and the shop next door must not
+	-- be on it: `ping bakery` from the coffee shop is 100% packet loss.
+	local peers = CeroSecNet.envFor(net.system, music, music:osState()).peers()
+	eq("the music store's wire carries the music store and nothing else", #peers, 1)
+	eq("which is its own machine",
+		peers[1].addr, CeroSecOS.address(music:osState()))
+	local backPeers = CeroSecNet.envFor(net.system, dentist, dentist:osState()).peers()
+	eq("and the dentist's carries his surgery and his stock room", #backPeers, 2)
+	-- Not reachable either, which is the other half of the same wire and the half a
+	-- filtered list would not prove.
+	eq("the shop next door is off the wire entirely",
+		CeroSecNet.reachable(net.system, music, CeroSecOS.address(clothes:osState())), nil)
+
+	-- A BUILDING WITH ONE SHOP IS THE BUILDING, and this is the regression the rule
+	-- is shaped around: a gun shop with a back office and a stock room is ONE
+	-- business, and splitting its stock room off would be a worse bug than the one
+	-- being fixed. 240 buildings of the shipped county are this shape.
+	local gun = net.buildingAt(700, 700, 20, 20, 3, {
+		{ name = "gunstore", x = 700, y = 700, w = 14, h = 20 },
+		{ name = "gunstorestorage", x = 714, y = 700, w = 6, h = 10 },
+		{ name = "office", x = 714, y = 710, w = 6, h = 10 },
+	})
+	local floor = net.machine(705, 705, 0, gun,
+		{ name = "gunstore", x = 700, y = 700, w = 14, h = 20 })
+	local backOffice = net.machine(716, 715, 0, gun,
+		{ name = "office", x = 714, y = 710, w = 6, h = 10 })
+	floor:turnOn()
+	backOffice:turnOn()
+	eq("a shop with a back office holds one tenancy",
+		#CeroSecNet.tenancies(CeroSecNet.buildingRooms(gun:getDef())), 1)
+	eq("so its two machines are on one segment", keyOf(floor), keyOf(backOffice))
+	eq("and one line", telOf(floor), telOf(backOffice))
+	eq("which is the building's, exactly as it was", keyOf(floor),
+		(function() local b1, b2 = CeroSecOS.buildingKey(700, 700) return b1 .. "." .. b2 end)())
+	eq("and its record carries no kind", CeroSecOS.netRecord(floor:osState()).pk, nil)
+
+	-- A HOUSE IS A HOUSE. No shopfront room in it at all, and a study does not make
+	-- one: `office` is 3977 rooms in the county and a tenancy word there would have
+	-- split a house in two.
+	local house = net.buildingAt(800, 800, 12, 12, 4, {
+		{ name = "livingroom", x = 800, y = 800, w = 8, h = 12 },
+		{ name = "kitchen", x = 808, y = 800, w = 4, h = 6 },
+		{ name = "office", x = 808, y = 806, w = 4, h = 6 },
+	})
+	local study = net.machine(809, 808, 0, house,
+		{ name = "office", x = 808, y = 806, w = 4, h = 6 })
+	study:turnOn()
+	eq("a house holds no tenancies",
+		#CeroSecNet.tenancies(CeroSecNet.buildingRooms(house:getDef())), 0)
+	eq("and the desk in the study is on the building",
+		keyOf(study),
+		(function() local b1, b2 = CeroSecOS.buildingKey(800, 800) return b1 .. "." .. b2 end)())
+
+	-- A GAS STATION IS ONE PREMISES. Its `gasstore` rooms are the pump islands, one
+	-- tile each and no two of them touching, and there are thirteen stations of this
+	-- exact shape in the shipped county -- every one of them four premises with four
+	-- telephone lines until a single tile stopped being a shop. Two of the four are
+	-- the canopy over the pumps, on the floor above.
+	local pumps = net.buildingAt(900, 900, 14, 14, 4, {
+		{ name = "gasstore", x = 901, y = 901, w = 1, h = 1 },
+		{ name = "gasstore", x = 911, y = 901, w = 1, h = 1 },
+		{ name = "gasstore", x = 901, y = 901, w = 1, h = 1, level = 1 },
+		{ name = "gasstore", x = 911, y = 901, w = 1, h = 1, level = 1 },
+	})
+	eq("a room of one tile is not a shop, so a gas station holds no tenancies",
+		#CeroSecNet.tenancies(CeroSecNet.buildingRooms(pumps:getDef())), 0)
+	local pump = net.machine(901, 901, 0, pumps,
+		{ name = "gasstore", x = 901, y = 901, w = 1, h = 1 })
+	local kiosk = net.machine(911, 901, 0, pumps,
+		{ name = "gasstore", x = 911, y = 901, w = 1, h = 1 })
+	pump:turnOn()
+	kiosk:turnOn()
+	eq("so its two machines are on one segment", keyOf(pump), keyOf(kiosk))
+	eq("which is the building's", keyOf(pump),
+		(function() local b1, b2 = CeroSecOS.buildingKey(900, 900) return b1 .. "." .. b2 end)())
+
+	-- A SHOP WITH A MEZZANINE IS TWO TENANCIES, because the grouping is per floor:
+	-- the shipped mall at 12809,1294 has `cafe` at 12858,1329 on levels 0 and 1. One
+	-- dentist on two lines is the honest cost of that, and the thing that must NOT
+	-- happen is the two floors landing on ONE key -- which is what a key that left the
+	-- floor out would do, two rooms of one name starting on the same corner.
+	local twoFloors = net.buildingAt(1000, 1000, 30, 30, 2, {
+		{ name = "cafe", x = 1000, y = 1000, w = 12, h = 12 },
+		{ name = "cafe", x = 1000, y = 1000, w = 12, h = 12, level = 1 },
+	})
+	eq("a shop on two floors is two tenancies",
+		#CeroSecNet.tenancies(CeroSecNet.buildingRooms(twoFloors:getDef())), 2)
+	local ground = net.machine(1005, 1005, 0, twoFloors,
+		{ name = "cafe", x = 1000, y = 1000, w = 12, h = 12 })
+	local upstairs = net.machine(1005, 1005, 1, twoFloors,
+		{ name = "cafe", x = 1000, y = 1000, w = 12, h = 12, level = 1 })
+	ground:turnOn()
+	upstairs:turnOn()
+	check("and the two floors are two segments, not one",
+		keyOf(ground) ~= keyOf(upstairs))
+	check("on two telephone lines", telOf(ground) ~= telOf(upstairs))
+	eq("the upstairs key is the room key of level one", keyOf(upstairs),
+		(function() local k1, k2 = CeroSecOS.roomKey(1000, 1000, 1000, 1000, 1)
+			return k1 .. "." .. k2 end)())
+
+	-- A ZONE STILL WINS. The map's own word for a tenancy beats the rooms wherever
+	-- the map said one, which is what keeps every save of the shipped county where it
+	-- was: put a named zone over the music store and the machine in it moves onto the
+	-- zone's key.
+	local before = keyOf(music)
+	_G.__zones = { { name = "CoffeeShop", x = 200, y = 300, w = 17, h = 11 } }
+	CeroSecNet.identify(net.system, music, music:osState())
+	check("a named zone over the shop takes the premises over", keyOf(music) ~= before)
+	eq("and it is the zone's key", keyOf(music),
+		(function() local b1, b2 = CeroSecOS.premisesKey(200, 300, 17, 11)
+			return b1 .. "." .. b2 end)())
+	eq("with the zone's own name on the firmware",
+		CeroSecOS.premisesName(music:osState()), "CoffeeShop")
+	eq("and the zone's kind", CeroSecOS.netRecord(music:osState()).pk,
+		CeroSecOS.PREMISES_ZONE)
+	-- And taking the zone away again puts it back on the room's key, which is the
+	-- same renumbering in the other direction and is what a map mod added and removed
+	-- would do to a save.
+	_G.__zones = {}
+	check("taking the zone away renumbers it again",
+		CeroSecNet.identify(net.system, music, music:osState()))
+	eq("back onto the music store's own key", keyOf(music), before)
+
+	-- A MACHINE SAVED UNDER v1 carries the BUILDING's two bytes, because that is what
+	-- a mall was. It is renumbered the next time its square is answerable -- a new
+	-- address and a new number -- and what is already written on the disk is
+	-- untouched: the accounts, and therefore the paper somebody found in that mall.
+	do
+		local old = net.machine(206, 306, 0, mall, ROOMS.musicstore)
+		old:turnOn()
+		local state = old:osState()
+		local b1, b2 = CeroSecOS.buildingKey(200, 300)
+		-- Written the way a v1 save has it: the building's bytes, its exchange, and no
+		-- premises name and no kind.
+		CeroSecOS.setNetRecord(state, b1, b2, 9, CeroSecOS.phoneExchange(200, 300))
+		local rootWas = CeroSecOS.getUser(state, "root").password
+		local usersWere = select(2, CeroSecOS.readUsers(state))
+		eq("a v1 machine in a mall is on the building's key", keyOf(old),
+			b1 .. "." .. b2)
+		check("and has no premises name", CeroSecOS.premisesName(state) == nil)
+
+		check("loading it re-keys it", CeroSecNet.identify(net.system, old, state))
+		eq("onto the music store's own segment", keyOf(old), keyOf(music) and
+			(function() local k1, k2 = CeroSecOS.roomKey(200, 300, 200, 300, 0)
+				return k1 .. "." .. k2 end)())
+		eq("with the shop's name on the firmware now",
+			CeroSecOS.premisesName(state), "Music Store")
+		eq("and the shop's kind", CeroSecOS.netRecord(state).pk,
+			CeroSecOS.PREMISES_ROOM)
+		-- WHAT DID NOT CHANGE, which is the whole compatibility claim: the accounts
+		-- were derived at prefill and are stored hashed, so the root note written for
+		-- this machine still opens it.
+		eq("root's password is the one it was prefilled with",
+			CeroSecOS.getUser(state, "root").password, rootWas)
+		eq("and the accounts are the accounts",
+			table.concat(select(2, CeroSecOS.readUsers(state)), " "),
+			table.concat(usersWere, " "))
+		-- And a second load changes nothing more, which is what a renumbering that
+		-- ran every power-on would break.
+		local settled = keyOf(old)
+		check("and a second load leaves it alone",
+			not CeroSecNet.identify(net.system, old, state))
+		eq("on the same segment", keyOf(old), settled)
+	end
+
+	-- THE BOOK LISTS THE SHOPS. Before this the malls were in no book at all, having
+	-- no zones, so a survivor could not find the number of a shop he was not standing
+	-- in -- and the shops are the only businesses in a mall.
+	_G.__buildings = {
+		{ x = 200, y = 300, w = 60, h = 50, rooms = roomList },
+		{ x = 700, y = 700, w = 20, h = 20, rooms = {
+			{ name = "gunstore", x = 700, y = 700, w = 14, h = 20 },
+			{ name = "gunstorestorage", x = 714, y = 700, w = 6, h = 10 },
+			{ name = "office", x = 714, y = 710, w = 6, h = 10 } } },
+	}
+	local listings, capped = CeroSecNet.directory(0, 0)
+	local printed = {}
+	local numbers = {}
+	for i = 1, #listings do
+		printed[#printed + 1] = listings[i].name
+		numbers[listings[i].name] = listings[i].number
+	end
+	table.sort(printed)
+	check("nothing was cut", capped == false)
+	eq("the book lists the three shops of the mall and nothing else",
+		table.concat(printed, "|"), "Clothes Store|Dentist|Music Store")
+	-- AND THE BOOK AND THE LINE AGREE, which is the assertion the whole sweep is
+	-- for: derive the number either side its own way and this goes red.
+	eq("the dentist's listing is the number his machine answers on",
+		numbers["Dentist"], telOf(dentist))
+	eq("and the music store's is the music store's",
+		numbers["Music Store"], telOf(music))
+	check("the hall is not a business", numbers["Hall"] == nil)
+	check("nor is the stock room", numbers["Clothes Storage"] == nil)
+	check("and the gun shop, being one business in its building, is not listed",
+		numbers["Gun Store"] == nil)
+
+	_G.__zones = {}
+	_G.__buildings = {}
+	-- Put the world back the way the sections below it expect: a prefilled machine is
+	-- this section's business and nobody else's.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
 -- A call, end to end: the modem, cu, the far machine's login, the work, and the
