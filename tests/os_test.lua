@@ -13439,6 +13439,60 @@ do
 	badAt(state, admin, "cat src | tee /etc/motd", "tee: /etc/motd: permission denied")
 end
 
+--
+-- 4. What SYSTEM_VERSION 18 puts on an older machine, and what it leaves alone.
+--
+-- The top-up's rule is the whole of the compatibility contract for a file: it puts
+-- in what is MISSING and never replaces what root has changed or removed. This
+-- version seeds five executables and one directory and takes nothing away, so a
+-- machine off a save from the version before it gains exactly those.
+--
+do
+	local state = fresh()
+	-- A machine as SYSTEM_VERSION 17 left it: the five new names are not in /bin and
+	-- at's queue is not in /var, because neither existed yet.
+	state.sysv = 17
+	local bin = state.fs.children.bin
+	local ADDED = { "at", "atq", "atrm", "env", "tar" }
+	for i = 1, #ADDED do bin.children[ADDED[i]] = nil end
+	state.fs.children.var.children.spool.children.at = nil
+	-- And something of the owner's at one of those names, plus a file of his own:
+	-- neither is the top-up's business.
+	bin.children.tar = CeroSecOS.newFile("admin", 755, "mine, not yours")
+	local own = CeroSecOS.newFile("admin", 600, "keep me")
+	state.fs.children.home.children.admin.children["notes.txt"] = own
+
+	check("the top-up did something", CeroSecOS.upgradeSystem(state) == true)
+	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	eq("which is 18", CeroSecOS.SYSTEM_VERSION, 18)
+	for i = 1, #ADDED do
+		local name = ADDED[i]
+		if name == "tar" then
+			-- His file, at a name this version happens to seed: left exactly as it is.
+			eq("the owner's own " .. name .. " is his", bin.children[name].owner, "admin")
+			eq("with his own contents", bin.children[name].data, "mine, not yours")
+		else
+			local node = bin.children[name]
+			check("/bin/" .. name .. " was put in", node ~= nil)
+			eq("owner root", node.owner, "root")
+			eq("mode 755", node.mode, 755)
+			eq("and it describes itself", node.data, CeroSecOS.commandDesc(name))
+		end
+	end
+	-- at's queue, which is a directory and not a file: root's at 700, and empty.
+	local queue = CeroSecOS.systemNode(state, CeroSecOS.AT_PATH)
+	check("at's queue was put in", queue ~= nil and queue.type == "dir")
+	eq("root's", queue.owner, "root")
+	eq("and 700", queue.mode, CeroSecOS.AT_DIR_MODE)
+	eq("and empty", CeroSecOS.countEntries(queue), 0)
+	-- And what it did NOT do: touch his file.
+	eq("his own file is untouched",
+		state.fs.children.home.children.admin.children["notes.txt"], own)
+	-- Once, and never again: the number has moved, so a second call does nothing.
+	eq("a second top-up finds nothing to do", CeroSecOS.upgradeSystem(state), false)
+	check("and the machine still boots", CeroSecOS.validate(state) == true)
+end
+
 -- 49d. find: the order, the two tests, and the glob.
 do
 	local state = fresh()

@@ -533,7 +533,7 @@ small. (96 and not 64 since rung 6b: the shipped `/bin` was 64 files at a ceilin
 its own 64 — how many commands ship is no reason to mount more of the world.)
 
 The state also carries `sysv`, the *contents* it was built with (`CeroSecOS.SYSTEM_VERSION`
-is 17 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 2 today — see
+is 18 today) as opposed to `v`, the schema (`CeroSecOS.STATE_VERSION`, 2 today — see
 [Migration](#migration) below). A change that adds a command adds a file to
 `/bin`, so on load `CeroSecOS.upgradeSystem` tops a machine behind on that number up —
 the standard executables that are missing, and `/etc/sudoers` when there is nothing at
@@ -548,6 +548,17 @@ fresh machine alike, on the same "only where the name is free" terms. The
 version-by-version history below (8 through 12) is kept because each of those
 changes really did add exactly what it says; read it as history, not as a claim that
 12 is current.
+`SYSTEM_VERSION` 18 seeds the things a 1993 sh and a 1993 desk had and this
+machine had not: `/bin/env`, `/bin/tar`, `/bin/at`, `/bin/atq` and `/bin/atrm`, plus
+`/var/spool/at` for at's queue (through `ensureVar`, on the same "only where the name
+is free" terms as the rest of `/var`). `export` and `.` are words the shell **is** and
+have no file, like `cd`; `find -exec` is a flag on a command that was already there.
+Nothing is deleted. The one thing a save gains beside those is on the **console** and
+not on the disk: `console.shexport`, the set of variables that are in the
+environment, kept by `repairConsole` like `console.shvars` beside it and **absent on
+every console saved before this build** — which reads as "all of them", because that
+is what a script saw before there was an environment here (see the variables section
+of `CeroSecOSVM.lua`).
 `SYSTEM_VERSION` 12 seeds `/bin/mount`, `/bin/umount` and `/bin/newfs`, and the one
 directory a disk is mounted on: `/mnt`, root's at 755 and shipped empty. The device
 it is mounted *from* is not seeded and never could be — `/dev/fd0` exists for the

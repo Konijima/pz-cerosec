@@ -96,7 +96,13 @@ The suites, in the order they run:
   fidelity A it also holds the two new commands a hostile player would reach for: a
   `more` standing at its `--More--` prompt for a thousand passes, which must cost
   **nought** steps (a pager that spun would be one), and a `find` over a disk filled
-  to its node ceiling, which must be one command and not two.
+  to its node ceiling, which must be one command and not two. And since the debts
+  wave, the three things that do more work than a command's worth: a loop of
+  `find -exec` over a hundred matches and a loop of `tar cf` over a full home, both
+  of which must stay inside the budget by taking a turn at a time (turn them into
+  one call and the ms a pass climbs tenfold), and six machines with a queue of at
+  jobs as full as a directory gets, waiting for a hundred minutes, which must cost
+  **nought** steps a pass -- a waiting job is not a running one.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, opening each of three volumes
   off a fake shelf and opening blank paper for an id nothing answers to, a bookmark
