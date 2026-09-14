@@ -5393,6 +5393,10 @@ local function fakeBuildingDef(b)
 			}
 		end
 		def.getRooms = function() return javaList(defs) end
+		-- One ArrayList.size() on the real class, and what the tenancy cache is
+		-- invalidated against: a building whose rooms grew (a basement spawned in
+		-- play) answers a different number and its entry is thrown away.
+		def.getRoomsNumber = function() return #defs end
 	end
 	return def
 end
@@ -7850,6 +7854,88 @@ do
 	eq("and the desk in the study is on the building",
 		keyOf(study),
 		(function() local b1, b2 = CeroSecOS.buildingKey(800, 800) return b1 .. "." .. b2 end)())
+
+	-- THE ANSWER IS CACHED PER BUILDING, and it has to be: measured on the biggest
+	-- mall the county has -- 498 rooms, 70 of them shopfronts -- the rule cost 2.5 ms
+	-- a call, and Events.OnFillContainer asks it once for every container as loot is
+	-- generated. A mall's chunk load would have spent most of a second in it.
+	--
+	-- What is asserted is that the cache ANSWERS THE SAME THING and that it is thrown
+	-- away when the building's rooms grow, which is the one thing that can happen to a
+	-- building during play (a basement). Not the milliseconds: a timing here would be
+	-- a ceiling somebody raises one day, and the state is the thing that can be wrong.
+	do
+		CeroSecNet.forgetTenancies()
+		local first = CeroSecNet.tenanciesOf(mall:getDef())
+		local again = CeroSecNet.tenanciesOf(mall:getDef())
+		eq("asked twice the building gives the same tenancies", #again, #first)
+		check("and it is the very same table", again == first)
+
+		-- FORGETTING IS FORGETTING, asked before anything else touches this entry: a
+		-- clear that did nothing would hand the same table back, and the assertion has
+		-- to be able to see that.
+		CeroSecNet.forgetTenancies()
+		local fresh = CeroSecNet.tenanciesOf(mall:getDef())
+		eq("after a clear the answer is the same", #fresh, #first)
+		check("and it was computed again", fresh ~= first)
+
+		-- ONE ENTRY PER BUILDING, and the two buildings below have the SAME NUMBER OF
+		-- ROOMS on purpose. The room count is what a stale entry is thrown away on, so
+		-- a cache keyed on anything but the building would be *caught* by that count on
+		-- any other pair and would quietly hand one building's shops to the other on
+		-- this one -- which is the pair a county of look-alike houses really is.
+		local sixShops = { ROOMS.musicstore, ROOMS.clothes, ROOMS.dentist,
+			ROOMS.storage, ROOMS.breakroom, ROOMS.hall }
+		local twin = net.buildingAt(300, 900, 60, 50, #sixShops, {
+			{ name = "livingroom", x = 300, y = 900, w = 20, h = 15 },
+			{ name = "kitchen", x = 320, y = 900, w = 20, h = 15 },
+			{ name = "bedroom", x = 300, y = 925, w = 20, h = 10 },
+			{ name = "bathroom", x = 300, y = 935, w = 10, h = 8 },
+			{ name = "garage", x = 310, y = 915, w = 25, h = 5 },
+			{ name = "hall", x = 340, y = 900, w = 8, h = 50 },
+		})
+		eq("the twin really has as many rooms as the mall",
+			twin:getDef():getRoomsNumber(), mall:getDef():getRoomsNumber())
+		eq("and it is a house all the same",
+			#CeroSecNet.tenanciesOf(twin:getDef()), 0)
+		eq("while the mall is still the mall",
+			#CeroSecNet.tenanciesOf(mall:getDef()), #first)
+
+		-- A BUILDING THAT GAINS A ROOM gives a new answer. Faked the way a basement
+		-- arrives: the def's room list grows, so getRoomsNumber moves with it.
+		local grown = { ROOMS.musicstore, ROOMS.clothes, ROOMS.dentist,
+			ROOMS.storage, ROOMS.breakroom, ROOMS.hall,
+			{ name = "liquorstore", x = 200, y = 341, w = 18, h = 8 } }
+		local after = net.buildingAt(200, 300, 60, 50, #grown, grown)
+		local grownGroups = CeroSecNet.tenanciesOf(after:getDef())
+		eq("a building that gains a shop is asked again (" .. #grownGroups .. ")",
+			#grownGroups, 4)
+		check("which is not the answer it had", grownGroups ~= first)
+
+		-- THE BOUND empties the cache rather than growing without end. Asserted on the
+		-- SIZE and not only on the answers, because a cache that grew for ever would
+		-- answer every question correctly to the end of the session -- there would be
+		-- nothing to see except a table nobody measured.
+		local before = CeroSecNet.tenancyCacheSize()
+		check("the cache holds what has been asked about (" .. before .. ")",
+			before > 0 and before <= CeroSecNet.TENANCY_CACHE_MAX)
+		local peak = before
+		for i = 1, CeroSecNet.TENANCY_CACHE_MAX + 2 do
+			CeroSecNet.tenanciesOf(net.buildingAt(20000 + i * 40, 20000, 20, 20, 1,
+				{ { name = "livingroom", x = 20000 + i * 40, y = 20000, w = 18, h = 18 } })
+				:getDef())
+			local now = CeroSecNet.tenancyCacheSize()
+			if now > peak then peak = now end
+		end
+		check("and never more than its ceiling (" .. peak .. " of "
+			.. CeroSecNet.TENANCY_CACHE_MAX .. ")",
+			peak <= CeroSecNet.TENANCY_CACHE_MAX)
+		check("having really been filled past it", peak > 1)
+		eq("and a building asked after the cache filled is still right",
+			#CeroSecNet.tenanciesOf(mall:getDef()), #first)
+		CeroSecNet.forgetTenancies()
+		eq("a clear leaves nothing behind", CeroSecNet.tenancyCacheSize(), 0)
+	end
 
 	-- AND THE DEBUG WINDOW SAYS WHICH SHOP, which is the tool the in-game walk uses
 	-- when one of the steps above does not answer what it should

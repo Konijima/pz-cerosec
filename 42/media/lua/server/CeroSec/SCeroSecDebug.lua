@@ -422,7 +422,7 @@ function CeroSecDebug.premises(luaObject)
 	-- how many the building holds and which one this square is in -- and "1" or "0" is
 	-- a building that is one premises, which is every house in the county.
 	if def ~= nil then
-		local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+		local groups = CeroSecNet.tenanciesOf(def)
 		local names = ""
 		for g = 1, #groups do
 			if g > 1 then names = names .. ", " end

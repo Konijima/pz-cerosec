@@ -374,6 +374,89 @@ function CeroSecNet.tenancies(rooms)
 	return out
 end
 
+--
+-- THE TENANCIES OF A BUILDING, CACHED, AND WHY THEY HAVE TO BE
+--
+-- Measured before this was written, on the biggest mall the county has (13515,1261:
+-- 498 rooms, 70 of them shopfronts): CeroSecNet.premisesOfSquare cost 2.5 ms a call
+-- under lua5.1, and Kahlua is slower. That is fine for switching a machine on, which
+-- happens once. It is not fine for the caller nobody thinks of:
+-- Events.OnFillContainer fires for EVERY container as loot is generated, and
+-- CeroSecNotes asks the rule on each one -- so a mall's chunk load would have spent
+-- most of a second in here, twice over, because premisesRooms asks again.
+--
+-- So the answer is kept per building, for the session. It is DERIVED from the map and
+-- nothing else, so it is never saved and losing it costs a recomputation.
+--
+-- WHAT INVALIDATES IT, and it is not "nothing". BuildingDef.rooms GROWS during play:
+-- NewMapBinaryFile.SpawnBasement adds a basement's rooms to the building it is under
+-- (offsets 272-282, see docs/notes/tenancies.md). So the entry carries the room COUNT
+-- it was built from and is thrown away when the building's own count has moved --
+-- BuildingDef.getRoomsNumber() is one ArrayList.size() (javap), which is what makes
+-- that check cheap enough to do on every call.
+--
+-- Keyed on the building's CORNER, which is two integers. The def object would in fact
+-- do -- IsoBuilding.getDef() is `getfield def` and IsoMetaGrid.getBuildingAt returns
+-- the instance out of its own `buildings` list, so one building really is one object
+-- (javap) -- and the corner is used anyway for two reasons: it is the identity this
+-- whole rung already runs on (CeroSecOS.buildingKey, and the record on every disk),
+-- and a table key that is a Java object handed across the Kahlua boundary is an
+-- identity nobody here has proved, while two integers are.
+local tenancyCache = {}
+local tenancyCacheCount = 0
+
+-- How many buildings the cache holds before it is emptied. It is a cache and not a
+-- register, so the bound is enforced by throwing the whole thing away rather than by
+-- choosing a victim: the county has 9546 buildings and a long session walks through
+-- a few hundred, so a clear costs one rebuild of whatever is being looked at.
+CeroSecNet.TENANCY_CACHE_MAX = 512
+
+function CeroSecNet.tenanciesOf(def)
+	if def == nil then return {} end
+	local bx, by = def:getX(), def:getY()
+	if type(bx) ~= "number" or type(by) ~= "number" then return {} end
+	-- The count the entry was built from, or nil for a def that will not say -- and a
+	-- def that will not say is one nothing can be invalidated against, so it is not
+	-- cached at all rather than cached for ever.
+	local n = nil
+	if def.getRoomsNumber ~= nil then
+		n = def:getRoomsNumber()
+		if type(n) ~= "number" then n = nil end
+	end
+	local key = bx .. "," .. by
+	local entry = tenancyCache[key]
+	if entry ~= nil and n ~= nil and entry.n == n then return entry.groups end
+
+	local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+	if n ~= nil then
+		if entry == nil then
+			if tenancyCacheCount >= CeroSecNet.TENANCY_CACHE_MAX then
+				tenancyCache = {}
+				tenancyCacheCount = 0
+			end
+			tenancyCacheCount = tenancyCacheCount + 1
+		end
+		tenancyCache[key] = { n = n, groups = groups }
+	end
+	return groups
+end
+
+-- Forget everything. For a bench, and for a world being unloaded: a cache keyed on
+-- map coordinates that survived into another save would be answering about a county
+-- that is not there any more.
+function CeroSecNet.forgetTenancies()
+	tenancyCache = {}
+	tenancyCacheCount = 0
+end
+
+-- How many buildings it holds. Here so the ceiling is a thing a bench can watch
+-- rather than a comment: a cache that grew without bound would answer every question
+-- correctly all the way to the end of the session, which is exactly the kind of fault
+-- nothing notices.
+function CeroSecNet.tenancyCacheSize()
+	return tenancyCacheCount
+end
+
 -- A tenancy's ANCHOR: the room of it nearest the map's origin, smallest y and then
 -- smallest x. What it is for is the key, and the requirement is that it cannot
 -- depend on the order the engine listed the rooms in -- two computers of one shop
@@ -526,7 +609,7 @@ function CeroSecNet.premisesOfSquare(square)
 
 	-- No zone, so the rooms. A building with fewer than two tenancies in it is one
 	-- premises and is not asked anything else.
-	local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+	local groups = CeroSecNet.tenanciesOf(def)
 	if #groups >= 2 then
 		local mine = CeroSecNet.tenantOfRoom(groups, CeroSecNet.roomDefAt(square))
 		if mine ~= nil then
@@ -605,7 +688,7 @@ function CeroSecNet.premisesRooms(square, premisesName, kind)
 		if building == nil then return nil end
 		local def = building:getDef()
 		if def == nil then return nil end
-		local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+		local groups = CeroSecNet.tenanciesOf(def)
 		if #groups < 2 then return nil end
 		local mine = CeroSecNet.tenantOfRoom(groups, CeroSecNet.roomDefAt(square))
 		if mine == nil then return nil end
@@ -805,7 +888,7 @@ function CeroSecNet.directory(rx, ry)
 				-- region its numbers belong to.
 				local cx, cy = CeroSecOS.phoneRegionOf(bx, by)
 				if cx == math.floor(rx) and cy == math.floor(ry) then
-					local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
+					local groups = CeroSecNet.tenanciesOf(def)
 					if #groups >= 2 then
 						for g = 1, #groups do
 							local anchor = CeroSecNet.tenancyAnchor(groups[g])
