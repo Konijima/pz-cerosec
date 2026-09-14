@@ -1312,15 +1312,15 @@ written in the same `sh` you write in, so `cat` one and read it — that is how 
 learn what this machine can do. Copy one off a disk with `cp /mnt/thing.sh ~/bin`
 and it is yours.
 
-There are thirteen of them in the county and **every one is a template**: none names
+There are fourteen of them in the county and **every one is a template**: none names
 a device or a file of its own, so a script off a shop's machine works on your own
-base once you have wired it. Lights off, locks either way, close a door and bolt it
+base once you have wired it. Lights off and lights on, locks either way, close a door and bolt it
 (reading the door back first, because bolting a door that would not close bolts
 nothing), which door is open, grep a columns file, add a column up, sort a list to
 work down, print the line of a table for the hour it is, list everything under a
 tree, write a line in a log — and three games.
 
-The one place all thirteen stand together is `/usr/local/src` on the bench machine of
+The one place all fourteen stand together is `/usr/local/src` on the bench machine of
 a CeroSec Systems service department. The distribution disk says so, and it is true.
 
 **And the phone book.** A vanilla phone book picked up in Knox County lists the

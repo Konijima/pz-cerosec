@@ -2420,7 +2420,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
 292. **La machine du vendeur porte toute la bibliothèque.** Cette étape demande
      une carte de mod avec une zone nommée `CeroSec...` : la carte livrée avec le
      jeu n'en a aucune. À défaut, la faire en mode debug en nommant une zone.
-     Machine allumée : `ls /usr/local/src` montre treize `.sh` et un `CHANGES`,
+     Machine allumée : `ls /usr/local/src` montre quatorze `.sh` et un `CHANGES`,
      et `sh /usr/local/src/sweep.sh /etc` liste les fichiers de `/etc` et les
      compte. [ ]
 

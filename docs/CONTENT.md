@@ -939,11 +939,12 @@ script that takes none — a game — is not held to it, there being no wrong wa
 one; and it cannot get out of the rule by declaring `args = {}`, because the bench
 also reads the text for `$1`.
 
-### The thirteen as shipped
+### The fourteen as shipped
 
 | | |
 | --- | --- |
 | `lights.sh <light>...` | switch the lights you name off |
+| `lamps.sh <light>...` | and the other direction: switch them on |
 | `locks.sh lock` or `unlock`, then `<lock>...` | both directions of a row of locks |
 | `lockup.sh <door> <lock>` | close the door, **read it back**, then bolt it |
 | `check.sh <door>...` | which of them is standing open, and how many |
@@ -982,9 +983,12 @@ Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **5** as of the change that gave the electronics shop a
+`CeroSecContent.VERSION` is **6** as of the change that made about one premises in
+three automated before the outbreak: `lamps.sh`, a morning line in the three
+crontabs that put lights out, and the roll in `CeroSecContent.automated`.
+(**5** gave the electronics shop a
 profile of its own and put the dealer's demonstration disk on every machine that is
-nobody's desk. (**4** gave every loot disk that is
+nobody's desk; **4** gave every loot disk that is
 somebody's own writing three tellings and added `LEDGER`, `PERSONAL` and `RADIO LOG`
 out of the same seventeen shares; **3** gave every machine an owner,
 every prose file three tellings, and every desk a week of history behind it; **2**

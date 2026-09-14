@@ -57,7 +57,7 @@ CeroSecContent = CeroSecContent or {}
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
 -- about a machine somebody has already switched on. Bumped when a change adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
-CeroSecContent.VERSION = 5
+CeroSecContent.VERSION = 6
 
 --
 -- Is there anything already on the machines at all?
@@ -513,8 +513,9 @@ end
 -- held to it, there being no wrong way to run it; and it cannot get out of the rule
 -- by declaring so, because the bench also asks whether the text mentions `$1`.
 --
--- WHAT IS IN HERE, and the rule the world-content work, part 2 wrote it to. Thirteen scripts: four that
--- work the building (lights, lockup, unlock, check), five that work a file
+-- WHAT IS IN HERE, and the rule the world-content work, part 2 wrote it to.
+-- Fourteen scripts: five that work the building (lights and lamps -- the two
+-- directions a row of switches goes -- lockup, unlock, check), five that work a file
 -- (audit, total, rounds, announce, sweep), one that keeps a log (log.sh), and
 -- three that are games. Every one of them is a TEMPLATE and not a tool -- the
 -- point is that a survivor reads it with `cat`, sees how the trick is done, and
@@ -595,6 +596,36 @@ CeroSecContent.SCRIPTS["lights.sh"] = {
 		"while [ $# -gt 0 ]; do",
 		"  echo off > /dev/$1",
 		"  echo \"$1 off\"",
+		"  shift",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["lamps.sh"] = {
+	-- The other end of the night, and it exists because the automation does: a
+	-- premises whose machine switches the lights off at nine switches them back on
+	-- in the morning, so the crontab needs a line for the other direction. It is
+	-- lights.sh with the other word in it rather than a flag on lights.sh, because
+	-- a survivor who learnt `lights.sh light0` last week must not find that the
+	-- usage has changed under him -- and because two short scripts that each do one
+	-- thing are the shape everything else in this library is.
+	mode = 755,
+	args = { "light0", "light1" },
+	needs = { devices = {
+		{ id = "light0", kind = "light", state = "off" },
+		{ id = "light1", kind = "light", state = "off" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# lamps.sh -- switch the lights you name on, one by one.",
+		"# usage: lamps.sh <light> [<light> ...]",
+		"if [ $# -eq 0 ]; then",
+		"  echo \"usage: lamps.sh <light> [<light> ...]\"",
+		"  exit 1",
+		"fi",
+		"while [ $# -gt 0 ]; do",
+		"  echo on > /dev/$1",
+		"  echo \"$1 on\"",
 		"  shift",
 		"done",
 	}, "\n"),
@@ -3068,7 +3099,16 @@ end
 -- ASKED TWICE, ANSWERED THE SAME. A machine prefilled a second time -- the
 -- developer's reset, a machine carried out and put back -- gets the role it was
 -- given, and its slot is not counted twice.
-function CeroSecContent.deskRole(entry, tag, secret, mkey, profile, showroom, floor)
+--
+-- `want` IS A SLOT THE CALLER WOULD RATHER HAVE, and it is honoured only when that
+-- slot is still free. The automation is the one caller: the machine a premises left
+-- running has to be the desk of the person whose crontab does the nightly job, or
+-- the job is written on no machine in the county (CeroSecContent.jobSlot). It is a
+-- preference and not an order on purpose -- a premises whose job slot has already
+-- been handed to an earlier machine falls through to the ordinary walk, because
+-- taking it twice is the bug the register exists to stop.
+function CeroSecContent.deskRole(entry, tag, secret, mkey, profile, showroom, floor,
+		want)
 	if type(profile) ~= "table" then return nil end
 	local n = 0
 	if type(profile.accounts) == "table" then n = #profile.accounts end
@@ -3100,6 +3140,11 @@ function CeroSecContent.deskRole(entry, tag, secret, mkey, profile, showroom, fl
 	local taken = {}
 	for _, v in pairs(entry.desks) do
 		if type(v) == "number" then taken[v] = true end
+	end
+	-- The slot the caller asked for, if it is a real one and nobody has it.
+	if type(want) == "number" and want >= 1 and want <= n and not taken[want] then
+		entry.desks[tag] = want
+		return "desk", want
 	end
 	local free = {}
 	for i = 1, n do
@@ -3812,11 +3857,99 @@ CeroSecContent.WTMP_SPAN = 9
 -- fidelity is written there too.
 CeroSecContent.LIVE_ONE_IN = 4
 
-function CeroSecContent.liveSession(secret, mkey, profile)
+-- And one in TWO on the machine a premises left running on purpose (see the
+-- automation block below). A machine that was still doing the nine o'clock lights
+-- is a machine nobody shut down, so the odds that somebody also walked away from
+-- his own prompt at it are better than at a desk somebody switched off and went
+-- home from. Not one in one: a night operator who logged out and left the machine
+-- to its crontab is exactly as true a story.
+CeroSecContent.LIVE_AUTO_ONE_IN = 2
+
+-- `oneIn` is the odds, and it is a parameter rather than a second function because
+-- the decision is one decision: a caller that knows this machine is the premises'
+-- automated one passes the better odds, and everybody else passes nothing and gets
+-- LIVE_ONE_IN. A number that is not a whole one above zero is not odds and reads as
+-- the default.
+function CeroSecContent.liveSession(secret, mkey, profile, oneIn)
 	if type(profile) ~= "table" then return false end
 	if profile.session == false then return false end
+	if type(oneIn) ~= "number" or oneIn ~= math.floor(oneIn) or oneIn < 1 then
+		oneIn = CeroSecContent.LIVE_ONE_IN
+	end
 	return CeroSecContent.number(secret, CeroSecContent.key(mkey, "live"),
-		CeroSecContent.LIVE_ONE_IN) == 1
+		oneIn) == 1
+end
+
+--
+-- WHICH PREMISES WAS AUTOMATED BEFORE THE OUTBREAK
+--
+-- Some places really were. A shop with a timer on its lights, a bank whose vault
+-- bolted itself at six, a station that read its own schedule out on the hour: the
+-- relays were screwed on by an electrician in 1991 and the computer was left
+-- running with a crontab on it. When a survivor walks into one of those at five to
+-- nine, the lights go out in front of him and nobody threw a switch.
+--
+-- ABOUT ONE PREMISES IN THREE, and only among premises that have a nightly job to
+-- run at all. That last part is DERIVED and never a list: a premises is a candidate
+-- because the catalogue really wrote it a crontab, so the day a profile gains one
+-- it becomes a candidate and the day one loses its crontab it stops being one --
+-- and a house, which has no crontab in it, can never be automated by a change that
+-- forgot to take it off a list.
+--
+-- The roll is on the PREMISES and on nothing else (the premises' own key and the
+-- word "auto"), so every machine of one shop agrees about it, and the shop next
+-- door rolls for itself. WHERE THE ANSWER IS KEPT is the server's business and is
+-- the whole of what makes this happen once: SCeroSecAuto writes it on the system,
+-- beside `notes` and `desks`, the first time a computer of that premises is created
+-- in the save.
+--
+CeroSecContent.AUTO_ONE_IN = 3
+
+-- Has this profile got a nightly job at all? Either kind counts: a job of the
+-- MACHINE's (`profile.cron`, root's -- the military post's hourly door check) and a
+-- job of a PERSON's (`cron` inside an account entry -- the shop's nine o'clock
+-- lights). See placeCron for what the two are and why they are not one thing.
+function CeroSecContent.hasJob(id)
+	local profile = CeroSecContent.PROFILES[id]
+	if type(profile) ~= "table" then return false end
+	if type(profile.cron) == "table" and #profile.cron > 0 then return true end
+	if type(profile.accounts) ~= "table" then return false end
+	for i = 1, #profile.accounts do
+		local cron = profile.accounts[i].cron
+		if type(cron) == "table" and #cron > 0 then return true end
+	end
+	return false
+end
+
+-- WHOSE DESK THE NIGHTLY JOB IS, as a slot of profile.accounts, or nil when the job
+-- belongs to the machine rather than to a person.
+--
+-- This is what stops the automation from being a decoration. An account's crontab is
+-- written only on the machine that account OWNS (placeCron), so a shop whose
+-- automated machine happened to be the second man's desk would come up with the
+-- lights job on no machine at all -- the crontab would be in the catalogue and
+-- nowhere in the county. The automated machine is therefore given the desk of the
+-- person whose job it is, which is also the true story: the machine left running is
+-- the one with the timer on it.
+--
+-- The FIRST such slot and not a roll: a profile with two people who each have a
+-- crontab would need a rule for which of them stayed on, and no profile has two.
+function CeroSecContent.jobSlot(profile)
+	if type(profile) ~= "table" or type(profile.accounts) ~= "table" then return nil end
+	for i = 1, #profile.accounts do
+		local cron = profile.accounts[i].cron
+		if type(cron) == "table" and #cron > 0 then return i end
+	end
+	return nil
+end
+
+-- The roll itself. Pure: a secret, a premises and the profile it turned out to be.
+function CeroSecContent.automated(secret, b1, b2, id)
+	if not CeroSecContent.hasJob(id) then return false end
+	local n = CeroSecContent.number(secret,
+		CeroSecContent.key(CeroSecContent.premisesKey(b1, b2), "auto"),
+		CeroSecContent.AUTO_ONE_IN)
+	return n == 1
 end
 
 -- Answers the moment of the last login, for the console that is going to be left
@@ -4019,9 +4152,18 @@ function CeroSecContent.prefill(state, opts)
 	-- on the machine depends on it. See CeroSecContent.deskRole: the register is the
 	-- server's and a caller with none gets a desk, which is the answer this had
 	-- before there was a register.
+	--
+	-- `opts.auto` is the server saying that THIS is the machine its premises left
+	-- running (SCeroSecAuto). Two things follow from it and both are here rather than
+	-- at the caller, because both are decisions about what is written on the disk:
+	-- the desk is the one whose crontab does the nightly job, and the odds that
+	-- somebody was still logged in at it are the better ones.
+	local auto = opts.auto == true
+	local want = nil
+	if auto then want = CeroSecContent.jobSlot(profile) end
 	local role, slot = CeroSecContent.deskRole(opts.desks,
 		CeroSecContent.deskTag(opts.x, opts.y, opts.z), secret, mkey, profile,
-		id == CeroSecContent.SHOWROOM, CeroSecContent.isFloorRoom(opts.room))
+		id == CeroSecContent.SHOWROOM, CeroSecContent.isFloorRoom(opts.room), want)
 
 	-- The name on the machine. The head is the profile's -- or the dealer's, on a
 	-- machine that is still stock -- and the tail is the coordinates the engine
@@ -4144,7 +4286,11 @@ function CeroSecContent.prefill(state, opts)
 	-- WHO WAS STILL LOGGED IN, decided first because both of the other two depend on
 	-- it: a man who never logged out did not type `shutdown -h now`, and his session
 	-- in wtmp has no logout behind it.
-	local live = owner ~= nil and CeroSecContent.liveSession(secret, mkey, profile)
+	-- The odds are the automated machine's if this is one: see LIVE_AUTO_ONE_IN.
+	local oneIn = nil
+	if auto then oneIn = CeroSecContent.LIVE_AUTO_ONE_IN end
+	local live = owner ~= nil
+		and CeroSecContent.liveSession(secret, mkey, profile, oneIn)
 	local number = dialled(secret, mkey, opts.numbers)
 
 	-- ~/.sh_history, the owner's in full and a couple of lines for everybody else
@@ -5577,7 +5723,15 @@ CeroSecContent.PROFILES.store = {
 				"",
 				"Back door by hand. It has never been on anything.",
 			}) },
-		}, cron = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
+		}, cron = {
+			"0 21 * * * sh $HOME/bin/lights.sh light0 light1",
+			-- AND BACK ON IN THE MORNING, which is the other half of a timer and the
+			-- reason lamps.sh is in the library. A shop that put its lights out on cron
+			-- put them on again on cron: the one line on its own is a premises that went
+			-- dark on the first night and stayed dark, which is not what the note in its
+			-- own drawer says happens.
+			"0 7 * * * sh $HOME/bin/lamps.sh light0 light1",
+		} },
 		{ pass = false, files = {
 			{ path = "note.txt", texts = three({
 				"The number for the padlock on the gate is not",
@@ -5605,6 +5759,10 @@ CeroSecContent.PROFILES.store = {
 	bin = {
 		{ script = "total.sh" },
 		{ script = "lights.sh" },
+		-- Not behind a chance, unlike most of a bin: the crontab below names it, and
+		-- a crontab line calling a script a roll did not write is a line that mails
+		-- "not found" once a day for ever.
+		{ script = "lamps.sh" },
 		{ script = "lockup.sh" },
 	},
 	logs = {
@@ -5874,7 +6032,15 @@ CeroSecContent.PROFILES.showroom = {
 				"files are the whole of it and they are enough to",
 				"sell it with.",
 			}) },
-		}, cron = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
+		}, cron = {
+			"0 21 * * * sh $HOME/bin/lights.sh light0 light1",
+			-- AND BACK ON IN THE MORNING, which is the other half of a timer and the
+			-- reason lamps.sh is in the library. A shop that put its lights out on cron
+			-- put them on again on cron: the one line on its own is a premises that went
+			-- dark on the first night and stayed dark, which is not what the note in its
+			-- own drawer says happens.
+			"0 7 * * * sh $HOME/bin/lamps.sh light0 light1",
+		} },
 		{ pass = false, files = {
 			{ path = "counter.txt", texts = three({
 				"Left open so that anybody on the counter can use",
@@ -5904,6 +6070,8 @@ CeroSecContent.PROFILES.showroom = {
 	},
 	bin = {
 		{ script = "lights.sh" },
+		-- Named by the crontab, so it is written and not rolled for (see the store).
+		{ script = "lamps.sh" },
 		{ script = "lockup.sh" },
 	},
 	logs = {
@@ -6122,7 +6290,15 @@ CeroSecContent.PROFILES.school = {
 				"",
 				"Classroom switches are switches. They are fine.",
 			}) },
-		}, cron = { "0 22 * * * sh $HOME/bin/lights.sh light0 light1" } },
+		}, cron = {
+			"0 22 * * * sh $HOME/bin/lights.sh light0 light1",
+			-- AND BACK ON IN THE MORNING, which is the other half of a timer and the
+			-- reason lamps.sh is in the library. A shop that put its lights out on cron
+			-- put them on again on cron: the one line on its own is a premises that went
+			-- dark on the first night and stayed dark, which is not what the note in its
+			-- own drawer says happens.
+			"0 7 * * * sh $HOME/bin/lamps.sh light0 light1",
+		} },
 		{ pass = true, files = {
 			{ path = "detention.txt", texts = three({
 				"Detention, Friday, two of them.",
@@ -6187,6 +6363,8 @@ CeroSecContent.PROFILES.school = {
 	},
 	bin = {
 		{ script = "lights.sh" },
+		-- Named by the crontab, so it is written and not rolled for (see the store).
+		{ script = "lamps.sh" },
 		{ script = "check.sh", chance = 70 },
 	},
 	logs = {
@@ -7200,6 +7378,7 @@ CeroSecContent.PROFILES.cerosec = {
 	-- CeroSecContent.SCRIPTS).
 	bin = {
 		{ script = "lights.sh", to = "/usr/local/src" },
+		{ script = "lamps.sh", to = "/usr/local/src" },
 		{ script = "locks.sh", to = "/usr/local/src" },
 		{ script = "lockup.sh", to = "/usr/local/src" },
 		{ script = "check.sh", to = "/usr/local/src" },
