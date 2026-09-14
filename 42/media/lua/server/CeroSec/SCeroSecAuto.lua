@@ -69,7 +69,8 @@ require "CeroSec/SCeroSecNet"
 -- every world question and where the chunk is settled. That is not caution for its
 -- own sake: not one of vanilla's own fourteen MapObjects handlers asks a square for
 -- its room or its building, so there is no proof that either answers during
--- newGridSquare, and an unproven call is a nil call in a callback (CLAUDE.md).
+-- newGridSquare, and an unproven call is a nil call in a callback (see the
+-- sources-of-truth rule in docs/CONTRIBUTING.md).
 --
 -- WHERE THE ANSWER LIVES. On the system, in `auto`, saved with the save exactly as
 -- `notes` and `desks` are and for the same reason: the computers of one premises are

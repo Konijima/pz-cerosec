@@ -194,7 +194,49 @@ _G.getSpecificPlayer = function(num) return _G.__players[num] end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
-_G.MapObjects = { OnNewWithSprite = function() end, OnLoadWithSprite = function() end }
+-- MapObjects, RECORDING, because the game's own answer to "created for the first
+-- time in this save" is which of its two maps a closure was put in: OnNewWithSprite
+-- fills `onNew`, which IsoChunk.doLoadGridsquare walks only for a chunk built out of
+-- the map, and OnLoadWithSprite fills `onLoad`, which it walks for every chunk there
+-- is. A fake that threw both closures away could not tell the two paths apart, and
+-- the whole of the automation hangs on them being told apart.
+--
+-- __mapObjects.new[spriteName] and .load[spriteName] are the two maps, and
+-- __fireSquare below is the engine's own walk of a square: every object on it, by
+-- its OWN sprite name. The bytecode this copies, offset by offset, is at the head
+-- of 42/media/lua/server/CeroSec/SCeroSecAuto.lua.
+_G.__mapObjects = { new = {}, load = {} }
+local function mapRegister(map)
+	return function(spriteName, fn)
+		if type(spriteName) ~= "string" or type(fn) ~= "function" then return end
+		if map[spriteName] == nil then map[spriteName] = {} end
+		map[spriteName][#map[spriteName] + 1] = fn
+	end
+end
+_G.MapObjects = {
+	OnNewWithSprite = mapRegister(_G.__mapObjects.new),
+	OnLoadWithSprite = mapRegister(_G.__mapObjects.load),
+}
+-- `which` is "new" or "load". Answers how many closures were called, so a bench can
+-- assert that the hook fired at all and not only what it did: a fire that reached
+-- nothing is the shape of every green-for-nothing assertion there is.
+_G.__fireSquare = function(which, square)
+	local map = _G.__mapObjects[which]
+	local calls = 0
+	local objects = square:getObjects()
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		local name = object.getSpriteName ~= nil and object:getSpriteName() or nil
+		local list = type(name) == "string" and map[name] or nil
+		if list ~= nil then
+			for k = 1, #list do
+				list[k](object)
+				calls = calls + 1
+			end
+		end
+	end
+	return calls
+end
 -- The handlers are KEPT, so that a bench can fire one. The mod hangs two things
 -- on an event and nothing else can reach them: the client drops a computer's glow
 -- from Events.OnObjectAboutToBeRemoved, which is what a pickup fires, and a fake
@@ -2387,14 +2429,41 @@ function FakeWorld.new()
 		return room
 	end
 
+	-- The building's footprint, for the one question that needs it: which PREMISES a
+	-- square is in (CeroSecNet.premisesOfSquare reads getX/getY/getX2/getY2 off the
+	-- def). nil is a def that will not say, which is every bench written before the
+	-- automation and is why premisesOfSquare answers nothing for them -- a device
+	-- bench has no premises in it and wants none.
+	world.box = nil
+
 	world.building = {
 		getDef = function()
 			local defs = {}
 			for i = 1, #world.roomOrder do
 				local room = world.roomOrder[i]
-				defs[i] = { getIsoRoom = function() return world.loaded ~= false and room or nil end }
+				-- A room whose chunks are away answers NO live room, which is what a
+				-- RoomDef does (getIsoRoom -> nil). `world.loaded = false` takes the whole
+				-- building away; `room.away = true` takes one room, which is the state a
+				-- building half streamed in is really in.
+				defs[i] = {
+					getName = function() return room.name end,
+					getIsoRoom = function()
+						if world.loaded == false or room.away == true then return nil end
+						return room
+					end,
+				}
 			end
-			return { getRooms = function() return javaList(defs) end }
+			local def = { getRooms = function() return javaList(defs) end }
+			if world.box ~= nil then
+				local b = world.box
+				def.getX = function() return b.x end
+				def.getY = function() return b.y end
+				def.getX2 = function() return b.x + b.w end
+				def.getY2 = function() return b.y + b.h end
+				def.getArea = function() return b.w * b.h end
+				def.getRoomsNumber = function() return #world.roomOrder end
+			end
+			return def
 		end,
 	}
 
@@ -2418,6 +2487,13 @@ function FakeWorld.new()
 		sq.getObjects = function() return javaList(sq.objects) end
 		sq.getWorldObjects = function() return javaList(sq.items) end
 		sq.getMovingObjects = function() return javaList(sq.bodies) end
+		-- The wire, asked the way the game's own Lua asks it
+		-- (ISWorldObjectContextMenu.lua:460, and SCeroSecObject:hasPower). A world
+		-- with `power = false` in it is a county whose grid has gone, which is the one
+		-- thing that stops a premises' machine coming up on its own.
+		sq.haveElectricity = function() return world.power ~= false end
+		sq.hasGridPower = function() return world.power ~= false end
+		sq.playSound = function() end
 		world.squares[key] = sq
 		return sq
 	end
@@ -13716,6 +13792,637 @@ do
 	eq("a reset through a shut door answers nothing", #answers, 0)
 	eq("and resets nothing", net.gate.os, gateState)
 	CeroSec.DEV_DEBUG_MENU = hadFlag
+end
+
+
+--
+-- THE PREMISES THAT WERE ALREADY AUTOMATED (wave 7e)
+--
+-- A shop whose lights go out at nine as a survivor walks up to it, before he has
+-- touched anything. Three things have to be true at the same time for that and they
+-- were each true separately already: the relays are on the switches, the crontab is
+-- on the right desk, and the machine is ON. This is the section that proves the
+-- three are true AT ONCE, in a real building, through the real hooks.
+--
+-- WHAT IS ASSERTED, and why each one is here rather than the obvious thing beside
+-- it:
+--
+--   * the hook that FIRES is the NEW one. The game's own distinction between "this
+--     square has just been made" and "this square has been read back out of the
+--     save" is which of MapObjects' two maps a closure sits in, so the bench fires
+--     each map by hand, through the engine's own per-object walk (__fireSquare at
+--     the head of this file), and asserts what each one did and did not do.
+--   * the decision is in the SAVE and is made once. Asserted on the system's own
+--     table, and then asserted again not to move when a second computer of the same
+--     premises is created.
+--   * the lights are asserted on the SWITCH OBJECT and not on the crontab: a
+--     crontab that parses is not a light that went out. The cron pass, the shell,
+--     /dev, the discovery and the module modData are all the real ones.
+--
+do
+	local hadZones, hadWorld, hadCell = _G.__zones, _G.getWorld, _G.__world
+	local hadSandbox = _G.SandboxVars
+	local hadInstance = SCeroSecSystem.instance
+	local clock = _G.__gameTime
+	local hadHour, hadMin, hadDay = clock.hour, clock.minutes, clock.day
+	_G.getWorld = zonedWorld
+	_G.__zones = {}
+	_G.Perks = { Electricity = "Electricity" }
+
+	-- The rooms of the shop, and they are the map's own words: "clothsstore" reaches
+	-- the `store` profile through CeroSecContent.PREMISES_WORDS and "storageroom"
+	-- reaches nothing, so the building is a shop with a back room. Named here rather
+	-- than inline because the profile the roll is made against has to be the profile
+	-- the prefill then builds, and both come off this list.
+	local SHOP_ROOMS = { "clothsstore", "storageroom" }
+	local SECRET = SCeroSecSystem.BENCH_SECRET
+
+	-- A building corner whose premises rolls the way the bench wants. A SEARCH and
+	-- not a number: the roll is a hash of the premises and of the word "auto", so the
+	-- honest way to get one of each is to walk the county until one turns up -- which
+	-- is what a player walking Knox County does. Not finding one is a red.
+	local function cornerRolling(want)
+		for i = 0, 400 do
+			local bx, by = 7000 + i * 20, 4000 + i * 7
+			local b1, b2 = CeroSecOS.buildingKey(bx, by)
+			if b1 ~= nil and CeroSecContent.automated(SECRET, b1, b2, "store") == want then
+				return bx, by, b1, b2
+			end
+		end
+		return nil
+	end
+
+	-- The shop itself. Two rooms, two light switches, the front door onto the street,
+	-- a window, and squares for the computers in the back room. Laid out so that the
+	-- two lights are the only lights there are, which is what makes them light0 and
+	-- light1 -- the very names the store profile's crontab was written with.
+	local function newShop(bx, by)
+		local world = FakeWorld.new()
+		world.box = { x = bx, y = by, w = 10, h = 10 }
+		local kit = { world = world, bx = bx, by = by }
+		kit.floor = world.room(SHOP_ROOMS[1], { { bx + 1, by + 1, 0 }, { bx + 2, by + 1, 0 } })
+		kit.back = world.room(SHOP_ROOMS[2],
+			{ { bx + 1, by + 2, 0 }, { bx + 2, by + 2, 0 }, { bx + 3, by + 2, 0 } })
+		-- The street: no room, so the door onto it is the way out of the building and
+		-- its lock is a lock that stops somebody (CeroSecModules.doorLocks).
+		local street = world.square(bx + 1, by, 0, nil)
+		kit.light0 = world.put(world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"],
+			fakeLight(true, true))
+		kit.light1 = world.put(world.squares[(bx + 2) .. "," .. (by + 1) .. ",0"],
+			fakeLight(true, true))
+		kit.front = world.put(world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"],
+			fakeDoor(true, false, street))
+		kit.win0 = world.put(world.squares[(bx + 2) .. "," .. (by + 1) .. ",0"],
+			fakeWindow(true, true))
+		-- The interior door between the two rooms: a room on both sides, so its lock
+		-- stops nobody and a strike on it would be a box that does nothing.
+		kit.inner = world.put(world.squares[(bx + 1) .. "," .. (by + 2) .. ",0"],
+			fakeDoor(false, true, world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"]))
+		return kit
+	end
+
+	-- A vanilla computer, as the chunk brings it in: off, facing south, and carrying
+	-- the modData an IsoObject carries. The sprite is real and is what MapObjects
+	-- dispatches on, and setSpriteFromName is real too, so a machine the server
+	-- switches on is a machine whose SPRITE changed -- which is the whole of what a
+	-- player sees from the doorway.
+	local function fakeComputer()
+		local o = fittable({ __class = "IsoObject" })
+		o.sprite = CeroSec.SPRITES_OFF["S"]
+		o.sprites = 0
+		o.getSpriteName = function() return o.sprite end
+		o.setSpriteFromName = function(_, name) o.sprite = name end
+		o.transmitUpdatedSpriteToClients = function() o.sprites = o.sprites + 1 end
+		return o
+	end
+
+	-- One county: a real SCeroSecSystem with a real object registry over the fake
+	-- world, and the machines put into it the way newNet does -- the GlobalObject
+	-- first, because the fake SGlobalObjectSystem.loadIsoObject takes the branch for a
+	-- square the server already knows and says so loudly when it cannot.
+	local function newCounty(kit)
+		CeroSecJobs.machines = {}
+		local system = SCeroSecSystem:new()
+		-- The save's secret, WRITTEN rather than left to be made: SCeroSecSystem:secret
+		-- mixes the millisecond clock into ZombRand, so a fresh system in this file
+		-- answers a different sixteen digits every time it is asked and the roll this
+		-- whole section searches for could not be searched for. Written the way a LOADED
+		-- SAVE hands one over -- the field is what the file holds -- so nothing here
+		-- reaches past the door the game uses.
+		system.seed = SECRET
+		local objects = {}
+		system.getLuaObjectCount = function() return #objects end
+		system.getLuaObjectByIndex = function(_, i) return objects[i] end
+		system.getLuaObjectAt = function(_, x, y, z)
+			for i = 1, #objects do
+				local o = objects[i]
+				if o.x == x and o.y == y and o.z == z then return o end
+			end
+			return nil
+		end
+		system.getIsoObjectAt = function() return nil end
+		system.newLuaObjectOnClient = function() end
+		system.reply = function() end
+		SCeroSecSystem.instance = system
+
+		local county = { system = system, objects = objects, kit = kit }
+
+		function county.machine(x, y, z)
+			local square = kit.world.squares[x .. "," .. y .. "," .. (z or 0)]
+			local iso = fakeComputer()
+			kit.world.put(square, iso)
+			local object = SCeroSecObject:new(system, { x = x, y = y, z = z or 0 })
+			object.getIsoObject = function() return iso end
+			object.getSquare = function() return square end
+			object.updateOnClient = function() end
+			object:initNew()
+			objects[#objects + 1] = object
+			object.iso = iso
+			object.square = square
+			return object
+		end
+
+		-- The game's minute hand, which is the only clock the automation and cron have:
+		-- Events.EveryOneMinute calls checkPower and then checkCron, in that order, and
+		-- the scheduler is what actually steps the jobs cron made.
+		function county.minute(times)
+			for _ = 1, (times or 1) do
+				clock.minutes = clock.minutes + 1
+				if clock.minutes >= 60 then
+					clock.minutes = 0
+					clock.hour = clock.hour + 1
+					if clock.hour >= 24 then
+						clock.hour = 0
+						clock.day = clock.day + 1
+					end
+				end
+				system:checkPower()
+				system:checkCron()
+				for _ = 1, 8 do
+					_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+					CeroSecJobs.tick()
+				end
+			end
+		end
+
+		-- Wind the clock to a time of day. FORWARD only: cron's pass keeps the minute
+		-- it last saw and does nothing when the clock has not moved past it
+		-- (CeroSecJobs.cronPass, `if minute <= last`), which is right on a real machine
+		-- and would make a bench that asked for seven in the morning after nine at
+		-- night silently prove nothing. So an earlier hour is the NEXT day, which is
+		-- what the morning after nine o'clock is.
+		function county.at(hour, minute)
+			if hour * 60 + minute <= clock.hour * 60 + clock.minutes then
+				clock.day = clock.day + 1
+			end
+			clock.hour, clock.minutes = hour, minute
+		end
+
+		return county
+	end
+
+	local function pageOf(system, b1, b2)
+		if type(system.auto) ~= "table" then return nil end
+		return system.auto[CeroSecContent.premisesKey(b1, b2)]
+	end
+
+	--
+	-- 1. THE HOOK: which of the two maps the mod is on, and what each one does
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		-- The registration itself, which is what the automation is built on: all four
+		-- computer sprites of a facing on BOTH maps, and the closure on `onNew` is not
+		-- the closure on `onLoad` -- a mod that registered one function on both could
+		-- not tell a new square from a reloaded one at all.
+		local news, loads = 0, 0
+		for f = 1, #CeroSec.FACINGS do
+			local facing = CeroSec.FACINGS[f]
+			local off, on = CeroSec.SPRITES_OFF[facing], CeroSec.SPRITES_ON[facing]
+			for _, name in ipairs({ off, on }) do
+				local newList = _G.__mapObjects.new[name]
+				local loadList = _G.__mapObjects.load[name]
+				check("the sprite " .. name .. " is registered on OnNewWithSprite",
+					type(newList) == "table" and #newList == 1)
+				check("and on OnLoadWithSprite",
+					type(loadList) == "table" and #loadList == 1)
+				check("and the two are not the same closure (" .. name .. ")",
+					newList[1] ~= loadList[1])
+				news = news + #newList
+				loads = loads + #loadList
+			end
+		end
+		eq("eight sprites on each map, no more and no less", news, 8)
+		eq("and eight on the other", loads, 8)
+
+		local bx, by, b1, b2 = cornerRolling(true)
+		check("some shop in the county rolled automated", bx ~= nil)
+		local kit = newShop(bx, by)
+		_G.__world = kit.world
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+
+		-- THE LOAD PATH FIRST, which is a chunk read back out of the save. It fires
+		-- per object -- the count says so, because a fire that reached nothing would
+		-- satisfy every assertion under it -- and it decides nothing and wires nothing.
+		eq("the load hook fired once for the one computer on the square",
+			_G.__fireSquare("load", machine.square), 1)
+		eq("a chunk read back out of the save marks nothing", machine.born, nil)
+		eq("and decides nothing about the premises", pageOf(county.system, b1, b2), nil)
+		eq("and wires no fixture", CeroSecModules.preFitted(kit.light0), false)
+		eq("and leaves the machine off", machine.on, false)
+		county.minute()
+		eq("and a minute later it has still decided nothing",
+			pageOf(county.system, b1, b2), nil)
+		eq("and the machine is still off", machine.on, false)
+
+		-- THE NEW PATH, which is the square being made for the first time. One bit, and
+		-- ONLY one bit: nothing about the world is asked inside the callback.
+		eq("the new hook fires per object too",
+			_G.__fireSquare("new", machine.square), 1)
+		eq("a square made in this save is marked", machine.born, true)
+		eq("and the callback itself decided nothing", pageOf(county.system, b1, b2), nil)
+		eq("and wired nothing", CeroSecModules.preFitted(kit.light0), false)
+		eq("and switched nothing on", machine.on, false)
+		check("and the bit is saved with the machine",
+			CeroSecSelfTest.holds(CeroSec.OBJECT_SAVE_KEYS, "born"))
+
+		--
+		-- 2. THE SWEEP: the decision, the hardware, and the machine
+		--
+		county.at(20, 55)
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		check("the sweep wrote the premises' page", type(record) == "table")
+		eq("and it says the shop was automated", record.on, true)
+		check("and which of its computers was left running",
+			type(record.machine) == "table" and record.machine.x == bx + 2
+				and record.machine.y == by + 2 and record.machine.z == 0)
+		eq("the question is not asked again", machine.born, nil)
+		eq("and the page is in the save", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS,
+			"auto"), true)
+
+		-- THE HARDWARE. Every fixture of the premises, through the same modData the
+		-- install command writes, so the discovery cannot tell it from a player's own.
+		eq("the floor switch has its relay",
+			CeroSecModules.installedOn(kit.light0).relay, true)
+		eq("and so has the sign switch", CeroSecModules.installedOn(kit.light1).relay, true)
+		eq("the front door has its contact",
+			CeroSecModules.installedOn(kit.front).contact, true)
+		eq("and its strike, because its lock stops somebody",
+			CeroSecModules.installedOn(kit.front).strike, true)
+		eq("the interior door has a contact", CeroSecModules.installedOn(kit.inner).contact,
+			true)
+		eq("and NO strike, because a lock on it would stop nobody",
+			CeroSecModules.installedOn(kit.inner).strike, nil)
+		eq("and no operator anywhere: a shop did not open its own doors",
+			CeroSecModules.installedOn(kit.front).operator, nil)
+		eq("the window has its contact", CeroSecModules.installedOn(kit.win0).contact, true)
+		eq("and no strike, there being no lock on a window a machine works",
+			CeroSecModules.installedOn(kit.win0).strike, nil)
+		eq("every one of them is marked as wired before the outbreak",
+			CeroSecModules.preFitted(kit.light0) and CeroSecModules.preFitted(kit.front)
+				and CeroSecModules.preFitted(kit.win0), true)
+		eq("and the walk knows it saw the whole building", record.wired, true)
+
+		-- THE MACHINE. On, prefilled as the shop, and its SPRITE says so -- which is
+		-- the only part of this a player sees before he walks in.
+		eq("the machine is on", machine.on, true)
+		eq("and the sprite a player sees from the doorway is the lit one",
+			machine.iso:getSpriteName(), CeroSec.SPRITES_ON["S"])
+		local state = machine:osState()
+		check("it has a filesystem", state ~= nil)
+		eq("and it came up as the shop", string.match(state.hostname, "^[a-z0-9]+"),
+			CeroSecContent.PROFILES.store.host)
+
+		-- THE CRONTAB, and whose it is: the desk of the person whose job the nightly
+		-- lights are. Derived here the way a paper in the drawer derives it, so a
+		-- prefill that gave the machine somebody else's desk is a red.
+		local slot = CeroSecContent.jobSlot(CeroSecContent.PROFILES.store)
+		eq("the store's nightly job is the first account's", slot, 1)
+		local login = CeroSecContent.accountLogin(SECRET, b1, b2, slot)
+		check("that account is on the machine", CeroSecOS.getUser(state, login) ~= nil)
+		local tab = CeroSecOS.systemNode(state, CeroSecOS.cronPath(login))
+		check("and the nightly job is in HIS crontab", tab ~= nil)
+		check("with the nine o'clock line in it",
+			string.find(tab.data or "", "0 21 * * * sh $HOME/bin/lights.sh light0 light1",
+				1, true) ~= nil)
+		check("and the morning line beside it",
+			string.find(tab.data or "", "0 7 * * * sh $HOME/bin/lamps.sh light0 light1",
+				1, true) ~= nil)
+		check("and crontab(1) itself accepts the file",
+			CeroSecOS.checkCrontab(CeroSecOS.cronPath(login), tab.data) == nil)
+
+		--
+		-- 3. NINE O'CLOCK. The lights are asserted on the SWITCH, through the real cron
+		-- pass, the real shell, the real /dev and the real discovery.
+		--
+		eq("the lights are on at five to nine", kit.light0.activated, true)
+		county.at(20, 59)
+		county.minute()
+		eq("at nine the floor light goes out on its own", kit.light0.activated, false)
+		eq("and the sign with it", kit.light1.activated, false)
+		check("and the world was told about it", kit.light0.syncs > 0)
+
+		-- AND BACK ON IN THE MORNING, which is the other half of a timer.
+		county.at(6, 59)
+		county.minute()
+		eq("at seven the floor light comes back on", kit.light0.activated, true)
+		eq("and the sign with it", kit.light1.activated, true)
+
+		--
+		-- 4. THE RELAY COMES OFF, AND STAYS OFF
+		--
+		-- A pre-fitted module is real hardware: it comes off into a survivor's hands and
+		-- gives him the item, because the uninstall asks nothing about where it came
+		-- from. And the light then stops answering -- which is the reading a player gets
+		-- and the reason the mark on the fixture has to outlive the module.
+		do
+			local inv = newInventory()
+			local player = {
+				getPlayerNum = function() return 0 end,
+				getOnlineID = function() return -1 end,
+				isDead = function() return false end,
+				playSoundLocal = function() end,
+				getCurrentSquare = function() return { getZ = function() return 0 end } end,
+				getX = function() return bx + 1.5 end,
+				getY = function() return by + 1.5 end,
+				getInventory = function() return inv end,
+				getPerkLevel = function() return 5 end,
+			}
+			inv:add("Base.Screwdriver")
+			-- The light switch is the SECOND object on that square (the switch went down
+			-- before the door), so the index is what tells the two apart.
+			local index = nil
+			local objects = kit.world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"].objects
+			for i = 1, #objects do
+				if objects[i] == kit.light0 then index = i - 1 end
+			end
+			check("the bench can name the floor switch", index ~= nil)
+			county.system:OnClientCommand("uninstallmodule", player,
+				{ x = bx + 1, y = by + 1, z = 0, index = index, module = "relay" })
+			eq("the relay came off", CeroSecModules.installedOn(kit.light0).relay, nil)
+			check("and it is a relay in his bag",
+				inv:getFirstTypeRecurse("CeroSec.Relay") ~= nil)
+			check("and the fixture still remembers it was wired before the outbreak",
+				CeroSecModules.preFitted(kit.light0))
+
+			-- The light no longer answers: nine o'clock comes round and the switch with no
+			-- relay on it is not a device at all.
+			kit.light0.activated = true
+			kit.light1.activated = true
+			local was = kit.light0.syncs
+			county.at(20, 59)
+			county.minute()
+			eq("the stripped switch is not touched again", kit.light0.activated, true)
+			eq("and nothing was broadcast about it", kit.light0.syncs, was)
+			eq("while the one still wired goes out", kit.light1.activated, false)
+
+			-- AND THE WALK DOES NOT PUT IT BACK, which is the whole point of the mark: a
+			-- second computer of the same shop is created, the sweep walks the building
+			-- again, and the switch the survivor stripped is left exactly as he left it.
+			local second = county.machine(bx + 3, by + 2, 0)
+			record.wired = nil
+			eq("the second computer is marked new",
+				_G.__fireSquare("new", second.square) > 0 and second.born, true)
+			county.minute()
+			eq("the shop's page still says what it said", record.on, true)
+			check("and still names the FIRST computer",
+				record.machine.x == bx + 2 and record.machine.y == by + 2)
+			eq("and the stripped switch has no relay back on it",
+				CeroSecModules.installedOn(kit.light0).relay, nil)
+			eq("nor is the second machine switched on", second.on, false)
+		end
+	end
+
+	--
+	-- 5. A SHOP THAT ROLLED THE OTHER WAY
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local bx, by, b1, b2 = cornerRolling(false)
+		check("some shop in the county rolled the other way", bx ~= nil)
+		local kit = newShop(bx, by)
+		_G.__world = kit.world
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+		_G.__fireSquare("new", machine.square)
+		county.at(20, 59)
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		check("the premises was asked", type(record) == "table")
+		eq("and the answer is written down as a no", record.on, false)
+		eq("no fixture is wired", CeroSecModules.preFitted(kit.light0), false)
+		eq("no module went on", CeroSecModules.installedOn(kit.light0).relay, nil)
+		eq("the machine stays off", machine.on, false)
+		eq("and the lights stay on", kit.light0.activated, true)
+		eq("and the question is not asked again", machine.born, nil)
+	end
+
+	--
+	-- 6. A SHOP WITH NO POWER. No grid, no automation -- and the hardware is fitted
+	-- anyway, because a grid that went down does not unscrew a relay.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local bx, by = cornerRolling(true)
+		local kit = newShop(bx, by)
+		kit.world.power = false
+		_G.__world = kit.world
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+		_G.__fireSquare("new", machine.square)
+		county.at(20, 59)
+		county.minute()
+		eq("a machine with no wire at its square stays off", machine.on, false)
+		eq("it has no filesystem at all", machine.os, nil)
+		eq("and nothing fired at nine", kit.light0.activated, true)
+		eq("but the relay is on the switch", CeroSecModules.installedOn(kit.light0).relay,
+			true)
+	end
+
+	--
+	-- 7. THE OPTION OFF, which is the control: the world this mod shipped with.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+		local bx, by, b1, b2 = cornerRolling(true)
+		local kit = newShop(bx, by)
+		_G.__world = kit.world
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+		_G.__fireSquare("new", machine.square)
+		county.at(20, 59)
+		county.minute()
+		eq("with PrefilledMachines off no premises is asked at all",
+			pageOf(county.system, b1, b2), nil)
+		eq("nothing is wired", CeroSecModules.preFitted(kit.light0), false)
+		eq("the machine stays off", machine.on, false)
+		eq("the lights stay on", kit.light0.activated, true)
+		eq("and the question is not asked again", machine.born, nil)
+	end
+
+	--
+	-- 8. A HOUSE IS NEVER AUTOMATED, and it is not on a list of exceptions: a
+	-- residential profile has no crontab in it, so there is no nightly job to leave
+	-- running (CeroSecContent.hasJob). Asked of every profile the catalogue ships, so
+	-- that a profile which loses its crontab stops being a candidate on its own.
+	--
+	do
+		eq("a house has no nightly job", CeroSecContent.hasJob("residential"), false)
+		local ids = CeroSecContent.PROFILE_IDS
+		local with, without = 0, 0
+		for i = 1, #ids do
+			local id = ids[i]
+			if CeroSecContent.hasJob(id) then with = with + 1 else without = without + 1 end
+			-- And the roll can only ever say yes to one that has a job. Walked over a
+			-- spread of premises, because one pair of bytes proves nothing about a hash.
+			for n = 0, 40 do
+				local b1, b2 = CeroSecOS.buildingKey(6000 + n * 13, 3000 + n * 29)
+				if CeroSecContent.automated(SECRET, b1, b2, id) then
+					check("only a profile with a nightly job is ever automated (" .. id .. ")",
+						CeroSecContent.hasJob(id))
+				end
+			end
+		end
+		check("most of the catalogue has a job (" .. with .. ")", with >= 9)
+		eq("and the house is the one that has none", without, 1)
+
+		-- ABOUT ONE IN THREE, counted over the county rather than asserted as a
+		-- constant: a roll that always said yes and a roll that always said no would
+		-- both satisfy every "the shop was automated" assertion above, one of them by
+		-- automating Knox County entirely.
+		local yes, total = 0, 0
+		for n = 0, 299 do
+			local b1, b2 = CeroSecOS.buildingKey(5000 + n * 17, 8000 + n * 11)
+			total = total + 1
+			if CeroSecContent.automated(SECRET, b1, b2, "store") then yes = yes + 1 end
+		end
+		check("about a third of the shops are automated (" .. yes .. " of " .. total .. ")",
+			yes > total / 6 and yes < total / 2)
+	end
+
+	--
+	-- 9. A DISPLAY MODEL IS NEVER THE MACHINE THAT WAS LEFT RUNNING, and the shop's
+	-- own back-room machine takes the slot when it turns up -- in either order, which
+	-- is what "as their chunks arrive" means.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		-- A shop that SELLS computers: the sales floor and the back room, as the map
+		-- spells them (CeroSecContent.FLOOR_ROOMS).
+		local bx, by, b1, b2 = nil, nil, nil, nil
+		for i = 0, 400 do
+			local x, y = 9000 + i * 20, 2000 + i * 9
+			local k1, k2 = CeroSecOS.buildingKey(x, y)
+			if k1 ~= nil and CeroSecContent.automated(SECRET, k1, k2, "showroom") then
+				bx, by, b1, b2 = x, y, k1, k2
+				break
+			end
+		end
+		check("some electronics shop rolled automated", bx ~= nil)
+
+		local world = FakeWorld.new()
+		world.box = { x = bx, y = by, w = 10, h = 10 }
+		world.room("electronicsstore", { { bx + 1, by + 1, 0 } })
+		world.room("electronicsstorage", { { bx + 1, by + 2, 0 } })
+		local kit = { world = world }
+		kit.light0 = world.put(world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"],
+			fakeLight(true, true))
+		_G.__world = world
+		local county = newCounty(kit)
+
+		-- The machine in the WINDOW first, which is the order that matters: it must not
+		-- take the slot, and the premises must still be decided.
+		local model = county.machine(bx + 1, by + 1, 0)
+		_G.__fireSquare("new", model.square)
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		check("the shop was asked", type(record) == "table")
+		eq("and it was automated", record.on, true)
+		eq("but no machine carries it yet", record.machine, nil)
+		eq("the display model stays off", model.on, false)
+
+		-- Then the one in the back room, which is the shop's own.
+		local back = county.machine(bx + 1, by + 2, 0)
+		_G.__fireSquare("new", back.square)
+		county.minute()
+		check("the back-room machine takes the slot",
+			type(record.machine) == "table" and record.machine.y == by + 2)
+		eq("and it is the one that was left running", back.on, true)
+		eq("the display model is still off", model.on, false)
+		eq("and it came up as the shop and not as the dealer's disk",
+			string.match(back:osState().hostname, "^[a-z0-9]+"),
+			CeroSecContent.PROFILES.showroom.host)
+	end
+
+	--
+	-- 10. IN ANY CHUNK ORDER. A room of the building whose chunks are away answers no
+	-- live room at all, so the walk cannot see its fixtures -- and has to come back for
+	-- them, once, and then stop coming back.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local bx, by, b1, b2 = cornerRolling(true)
+		local kit = newShop(bx, by)
+		_G.__world = kit.world
+		-- The shop floor is not in the world yet: the survivor came in the back way.
+		kit.floor.away = true
+		local county = newCounty(kit)
+		local machine = county.machine(bx + 2, by + 2, 0)
+		_G.__fireSquare("new", machine.square)
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		eq("the shop was automated", record.on, true)
+		eq("the back room's door got its contact",
+			CeroSecModules.installedOn(kit.inner).contact, true)
+		eq("the floor's switch did not, its room being away",
+			CeroSecModules.installedOn(kit.light0).relay, nil)
+		eq("and the walk does not call itself finished", record.wired, nil)
+
+		-- The floor arrives.
+		kit.floor.away = nil
+		county.minute()
+		eq("the floor switch gets its relay when its chunks come in",
+			CeroSecModules.installedOn(kit.light0).relay, true)
+		eq("and the sign switch with it", CeroSecModules.installedOn(kit.light1).relay,
+			true)
+		eq("and now the walk is finished", record.wired, true)
+
+		-- And finished means finished: a module taken off after that is a module that
+		-- stays off, which is the state a survivor leaves a building in.
+		CeroSecModules.setOn(kit.light1, "relay", false)
+		county.minute(2)
+		eq("a relay taken off a finished premises is not put back",
+			CeroSecModules.installedOn(kit.light1).relay, nil)
+	end
+
+	--
+	-- 11. A MACHINE IN NO BUILDING -- a player's own base -- is never automated, and
+	-- is never asked twice about it.
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local world = FakeWorld.new()
+		-- No room, so no building: the square is the outdoors.
+		local square = world.square(3000, 3000, 0, nil)
+		local kit = { world = world }
+		_G.__world = world
+		local county = newCounty(kit)
+		local machine = county.machine(3000, 3000, 0)
+		_G.__fireSquare("new", square)
+		eq("the computer is marked new", machine.born, true)
+		county.minute()
+		eq("a base is not a premises and is not asked again", machine.born, nil)
+		eq("nothing was written for it", county.system.auto ~= nil
+			and next(county.system.auto) or nil, nil)
+		eq("and it stays off", machine.on, false)
+	end
+
+	_G.__zones, _G.getWorld, _G.__world = hadZones, hadWorld, hadCell
+	_G.SandboxVars = hadSandbox
+	SCeroSecSystem.instance = hadInstance
+	clock.hour, clock.minutes, clock.day = hadHour, hadMin, hadDay
 end
 
 print("window_test: " .. count .. " checks passed")

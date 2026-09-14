@@ -3323,6 +3323,29 @@ local function makeAccounts(state, session, profile, secret, b1, b2, mkey, now)
 			if CeroSecOS.addUser(state, name, home, account.admin and true or false,
 					mkey .. ":" .. i, now) == nil then
 				name = nil
+			elseif account.admin then
+				-- AND INTO THE DEVICE GROUP, which is the half of `admin = true` that was
+				-- missing and the reason nothing in this catalogue that works a building
+				-- had ever worked.
+				--
+				-- A device is root:sudo 660 (CeroSecOS.DEV_GROUP), so the group line in
+				-- /etc/group is what decides whether anybody but root may throw a relay.
+				-- addUser above writes the WHEEL flag on the /etc/passwd line and that
+				-- flag is only a mirror of a group line nothing was writing -- so the
+				-- shop's own administrator was an ordinary user as far as /dev was
+				-- concerned, his nightly `lights.sh light0 light1` answered "light0:
+				-- permission denied" twice and mailed it, and the note in his own drawer
+				-- telling him to run it was telling him to run something that could not
+				-- work. It had never shown because no prefilled machine was ever ON
+				-- (wave 7e is the change that switches some of them on).
+				--
+				-- The group and NOT /etc/sudoers, and the difference is the whole of what
+				-- root's password is worth: /etc/sudoers says who may BECOME root and this
+				-- account is not in it, so a paper in a dead man's pocket naming him is
+				-- still a foothold and never the keys. He may work the building he was
+				-- responsible for; he may not open the machine. Which is what an
+				-- administrator of a shop's computer was.
+				CeroSecOS.setGroupMember(state, name, CeroSecOS.DEV_GROUP, true, now)
 			end
 		end
 		if name ~= nil then
