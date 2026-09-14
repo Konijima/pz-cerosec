@@ -841,6 +841,117 @@ do
 end
 
 --
+-- 4b2. WHICH PREMISES COULD HAVE BEEN AUTOMATED, and whose crontab would drive it
+--
+-- The pure half of wave 7e; the world half -- the roll being made once, the fixtures
+-- wired, the machine switched on and the lights really going out at nine -- is
+-- tests/window_test.lua's, because only a world can answer it.
+--
+-- What is asserted here is the catalogue's own three facts, and each is asked of
+-- EVERY profile rather than of the ones the change had in mind: a candidate is a
+-- profile that really writes a crontab, so the day one gains or loses one it joins
+-- or leaves the list on its own and nothing here has to be edited.
+--
+do
+	local ids = CeroSecContent.PROFILE_IDS
+	local candidates = 0
+	for i = 1, #ids do
+		local id = ids[i]
+		local profile = CeroSecContent.PROFILES[id]
+		-- Derived from the SAME table placeCron writes from, walked here by hand, so a
+		-- hasJob that started answering out of a list of its own would disagree with it.
+		local machineJob = type(profile.cron) == "table" and #profile.cron > 0
+		local slot = nil
+		if type(profile.accounts) == "table" then
+			for a = 1, #profile.accounts do
+				local cron = profile.accounts[a].cron
+				if slot == nil and type(cron) == "table" and #cron > 0 then slot = a end
+			end
+		end
+		eq(id .. ": hasJob agrees with the crontabs the profile really writes",
+			CeroSecContent.hasJob(id), machineJob or slot ~= nil)
+		eq(id .. ": jobSlot is the first account with a crontab",
+			CeroSecContent.jobSlot(profile), slot)
+		-- A job of the MACHINE's is root's and needs no desk; a job of a PERSON's has to
+		-- have one, or the automation could stand its machine at somebody else's desk
+		-- and the line would be in the catalogue and on no machine in the county.
+		if CeroSecContent.hasJob(id) then
+			candidates = candidates + 1
+			check(id .. ": its nightly job is either root's or somebody's desk",
+				machineJob or slot ~= nil)
+		end
+		-- And the roll can never say yes to a profile with nothing to run. Over a spread
+		-- of premises, because one pair of bytes proves nothing about a hash.
+		for n = 0, 60 do
+			local b1, b2 = CeroSecOS.buildingKey(4000 + n * 23, 7000 + n * 37)
+			if CeroSecContent.automated(SECRET_A, b1, b2, id) then
+				check(id .. ": only a profile with a nightly job is ever automated",
+					CeroSecContent.hasJob(id))
+			end
+		end
+	end
+	-- AND THE RULE ITSELF, on a profile made up here, because no profile the catalogue
+	-- ships has TWO accounts with a crontab -- so "the first" and "the last" are the
+	-- same answer on all eleven of them and the loop above is green either way. A pure
+	-- function with no world behind it may be asked a question the world has not posed
+	-- yet, and this is the one worth asking: the rule is a decision and not an accident
+	-- of iteration.
+	eq("jobSlot answers the FIRST account with a crontab, not the last",
+		CeroSecContent.jobSlot({ accounts = {
+			{ pass = true },
+			{ pass = true, cron = { "0 21 * * * true" } },
+			{ pass = true, cron = { "0 22 * * * true" } },
+		} }), 2)
+	eq("and nothing at all when no account has one",
+		CeroSecContent.jobSlot({ accounts = { { pass = true }, { pass = true } } }), nil)
+	eq("nor when there are no accounts", CeroSecContent.jobSlot({}), nil)
+
+	eq("a house is the one profile with nothing to run",
+		#ids - candidates, 1)
+	eq("and it is residential", CeroSecContent.hasJob("residential"), false)
+
+	-- THE ODDS. Asserted as a count over the county and not as the constant, because a
+	-- roll that always said yes and a roll that always said no would both satisfy every
+	-- assertion above -- one of them by automating Knox County entirely.
+	local yes, total = 0, 0
+	for n = 0, 399 do
+		local b1, b2 = CeroSecOS.buildingKey(3000 + n * 19, 9000 + n * 13)
+		total = total + 1
+		if CeroSecContent.automated(SECRET_A, b1, b2, "store") then yes = yes + 1 end
+	end
+	check("about one premises in three is automated (" .. yes .. " of " .. total .. ")",
+		yes > total / 6 and yes < total / 2)
+	eq("and the declared share is what that is", CeroSecContent.AUTO_ONE_IN, 3)
+
+	-- SOMEBODY STILL LOGGED IN, at the better odds. Both readings of one function, over
+	-- the same machines: the automated machine's roll is its own and is more often a
+	-- yes. A bench that only asked for one number could not see an `oneIn` that was
+	-- being ignored.
+	local plain, auto = 0, 0
+	local profile = CeroSecContent.PROFILES.store
+	for n = 0, 299 do
+		local mkey = CeroSecContent.machineKey(12, 34, 2000 + n * 7, 5000 + n * 11, 0)
+		if CeroSecContent.liveSession(SECRET_A, mkey, profile) then plain = plain + 1 end
+		if CeroSecContent.liveSession(SECRET_A, mkey, profile,
+				CeroSecContent.LIVE_AUTO_ONE_IN) then auto = auto + 1 end
+	end
+	check("about one ordinary desk in four was left logged in (" .. plain .. " of 300)",
+		plain > 40 and plain < 120)
+	check("and about one automated machine in two (" .. auto .. " of 300)",
+		auto > 100 and auto < 200)
+	check("which is more of them", auto > plain)
+	-- And the military post is never one, whatever the odds asked for: session = false.
+	local post = CeroSecContent.PROFILES.military
+	local everLive = false
+	for n = 0, 60 do
+		local mkey = CeroSecContent.machineKey(12, 34, 900 + n, 900 + n * 3, 0)
+		if CeroSecContent.liveSession(SECRET_A, mkey, post, 1) then everLive = true end
+	end
+	eq("a military post is never found at somebody's prompt, at any odds", everLive,
+		false)
+end
+
+--
 -- 4c. Every data file a script was proved on is a file some premises really keeps
 --
 -- CeroSecContent.DATA is named twice on purpose: once by the script that reads it

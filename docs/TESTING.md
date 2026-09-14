@@ -59,7 +59,15 @@ The suites, in the order they run:
   with the desk register in its hand -- a shop of six comes out one desk and five
   display models, an office of five comes out three desks and two spares, and the
   three men with a desk are the same three in every order the machines are switched
-  on in. See [CONTENT.md](CONTENT.md).
+  on in. Section 4b2 owns the pure half of the automation: that "has a nightly job"
+  is derived from the crontabs a profile really writes (walked by hand from the same
+  table `placeCron` writes from, so a `hasJob` that grew a list of its own would
+  disagree with it), that the roll can never say yes to a profile with nothing to run,
+  that about one premises in three comes out yes over four hundred of them, and that
+  the still-logged-in odds really move when the better ones are handed over. Two of its
+  assertions are made on a profile invented in the bench, because no profile the
+  catalogue ships has two accounts with a crontab and the rule about which of them wins
+  would otherwise be green either way. See [CONTENT.md](CONTENT.md).
 - `window_test.lua` holds the halves of that only the world can answer: that a
   machine is prefilled at its **first** power-on and never when it already had a
   state; that the papers in a drawer and in a pocket carry a password the machine
