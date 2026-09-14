@@ -23,6 +23,18 @@ The suites, in the order they run:
   uses the same two buildings four hundred squares apart -- where not one
   r-command reaches and `cu` does -- with a fake `getSandboxOptions` and a world
   age, so the grid can be killed under a call that is up.
+- `window_test.lua` also holds the **mall** bench (premises v2): one building with a
+  music store, a dentist, a clothes shop, the dentist's stock room, a break room and
+  a hall, laid out so that every branch of the premises rule has a square in it. It
+  asserts three segments, three lines, three profiles and three passwords that do not
+  open each other, that the stock room is the dentist's and the hall the building's,
+  that a machine keyed under v1 re-keys on load and keeps its accounts, and that the
+  phone book prints the three shops under the numbers their own machines answer on.
+  Beside it: a gun shop with a back office that must stay ONE premises, a house, a gas
+  station of one-tile pump islands, and a shop with a mezzanine. Eight mutations are
+  recorded against it, and two of its rooms exist only because a mutation walked
+  through the first draft -- see the commit and
+  [notes/tenancies.md](notes/tenancies.md).
 - `window_test.lua` also holds the unload bench: one machine of that same system with
   everything the world owns behind a single switch -- its square, its `IsoObject`, the
   room its devices are in and the cell that answers for its tiles -- so the streamer

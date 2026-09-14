@@ -1333,27 +1333,42 @@ answer on this machine, not a formality: that line is where the memory
 runs out.]],
 
 [[ONE LINE PER PREMISES: a shop, or a whole house. A house is one building and
-one line; a mall is one building and thirty shops, each with its own. Seven
-digits, announced under the card.
+one line; a mall is one building and one line per shop. Seven digits,
+announced under the card.
 
   Detecting drives ... hda 64K
   Ethernet: eth0 10.4.17.3
   Phone line: 555-0417 (CoffeeShop)
   Booting from hda ...
 
-The first three digits are the exchange, and that is the TOWN's: every
+The first three digits are the exchange, and that is the TOWN's: everything
 around here shares them and the next town is on another switch. The last
 four are the premises; the name in brackets is the shop. None of it is on
 the disk: there is no /etc/phone.
-
-A machine with no line prints none and cu says so: a base you built, or a
-save older than this firmware until it is switched on where it stands.
 
 Every computer of one premises is on that ONE line and the lowest address
 answers. Two premises can land on one number too: a PARTY LINE either way.
 
 The exchange is a building full of switches on the county's power, and when
 that goes the telephone goes with it: everywhere, at once, for good.]],
+
+[[AND WHAT COUNTS AS A SHOP, because the answer decides four things: your
+number, your wire, the people on your machine and the password on the paper
+in the drawer. A shop is one the map drew an outline round -- the name in
+brackets above -- or one that is a room of a TRADE in a building holding two
+or more of them.
+
+A stock room or a back office goes with the shop it shares its longest wall
+with. A mall's corridors, lifts and stairs belong to nobody, and go with the
+building.
+
+A building with ONE business in it is ONE premises, back office and stock
+room included: a gun shop, a house with a study, a school, a filling station.
+
+A machine with no line prints none and cu says so: a base you built, or a
+save older than this firmware until it is switched on where it stands. One
+that stood in a mall before the shops were told apart takes its own shop's
+number the same moment -- once, and its disk is untouched.]],
 
 [[cu dials, and then nothing happens for a while. That is the ring.
 

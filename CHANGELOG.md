@@ -8,6 +8,30 @@ date.
 
 ## Unreleased
 
+- **Every shop in a mall is its own business now.** A shopping mall is one building,
+  and until now that made it one business: one telephone number for thirty shops, one
+  staff on every computer in it, and one password on one paper that opened all of them.
+  The music store's computer and the dentist's were the same machine. They are not any
+  more. Each shop has its own number, its own length of coax, its own people, and its
+  own password on the paper in its own drawer -- so the dentist's machine is a clinic's
+  and the music store's is a shop's.
+- Which shop a computer is in is on its BIOS screen beside the number,
+  `Phone line: 555-2260 (Music Store)`, and the shops of a mall are in the phone book
+  now under their trades -- which is how you find the number of the one two floors up
+  without walking the building.
+- **A shop's stock room and its back office belong to that shop**, by the wall they
+  share with it. A mall's corridors, lifts and stairs belong to nobody and are the
+  building's, the way they were.
+- A building with **one** business in it is still one business. A gun shop with a back
+  office and a stock room keeps one number and one wire, and so does a house with a
+  study in it, a school, a gas station and a police station.
+- A restaurant, a cafe, a bakery, a butcher's and a diner used to be prefilled as
+  somebody's house. They are shops, and they get a shop's machine.
+- **Numbers in a mall change once.** A computer that has been standing in a mall since
+  before this is given its own shop's number and address the next time it is switched
+  on or looked at -- one change, and then never again. Nothing on its disk moves: the
+  accounts are the accounts, the files you wrote are where you left them, and the old
+  paper you found in that mall still opens it.
 - **Some places were already automated, and they do not wait for you.** About one
   premises in three that had a nightly job to run was set up for it before the
   outbreak: the relays and the door contacts are on its fixtures, its computer was

@@ -1344,9 +1344,17 @@ suit, `ici` est la machine devant laquelle on est assis et `là-bas` celle de
 l'autre bâtiment ; noter les deux numéros de téléphone au premier BIOS.
 
 Depuis ce changement, la ligne appartient au **local** (« premises ») et non au
-bâtiment : une maison est un local, un centre commercial en est trente. Les pas
-215b et 215c sont là pour ça, et ils demandent un mall (le mall de Louisville ou
+bâtiment : une maison est un local, un centre commercial en est une douzaine. Les
+pas 215b et 215c sont là pour ça, et ils demandent un mall (le mall de Louisville ou
 celui de West Point) avec deux boutiques différentes.
+
+Et depuis **premises v2**, une boutique est un local même quand la carte n'a dessiné
+**aucune zone** autour d'elle : c'est le cas de tous les malls livrés, et c'est ce
+que les pas 215j à 215n vérifient. Le mall à retenir pour ça est celui de
+**12809,1294** : un dentiste, une pharmacie, un café, une librairie, deux magasins de
+vêtements et trois étages de bureaux au-dessus. Le magasin de musique
+(`musicstore`) est dans les malls de **13515,1261**, **13868,5745** et
+**12165,1563**.
 
 210. **Le numéro.** Allumer les deux et regarder le BIOS de chacun : sous la
      ligne `Ethernet: eth0 10.x.y.z` il doit y avoir une ligne
@@ -1490,6 +1498,65 @@ celui de West Point) avec deux boutiques différentes.
      temps dans deux régions différentes : chacun voit **son** central et ses
      propres inscriptions, et la fenêtre de l'un ne change pas quand l'autre
      ouvre la sienne. [ ]
+215j. **Le dentiste et le magasin de musique (premises v2).** C'est le pas qui
+     répond au rapport de jeu — « ils partagent tous la même chose peu importe le
+     commerce ». Aller dans le mall de **12809,1294** (ou n'importe quel mall).
+     Poser un ordinateur dans le **cabinet du dentiste** et un autre dans un
+     **magasin** du même mall (vêtements, librairie, pharmacie), les allumer, et
+     comparer les deux BIOS :
+     - deux `Phone line:` **différents**, chacun avec un nom entre parenthèses en
+       **mots** : `(Dentist)`, `(Clothes Store)`, `(Music Store)` ;
+     - deux adresses `10.x.y.z` dont **les deux octets du milieu** diffèrent ;
+     - les **trois premiers** chiffres du numéro sont les **mêmes** des deux côtés :
+       un mall, un central.
+     Puis se connecter sur chacune (`admin`, Entrée) et regarder ce qu'il y a
+     dessus : `hostname` commence par `ward` chez le dentiste et par `till` dans le
+     magasin ; `ls /home` ne donne **pas** les mêmes gens ; `cat /etc/motd` ne dit
+     pas la même chose. C'est ça, « avoir ses spécificités ». [ ]
+215k. **Le papier du tiroir n'ouvre que sa boutique.** Dans le mall, fouiller les
+     tiroirs du bureau **du dentiste** jusqu'à trouver le papier `root` (un
+     `Notebook` nommé). Le mot de passe dessus doit ouvrir `root` sur la machine du
+     dentiste — et **échouer** sur celle du magasin d'à côté. Refaire dans l'autre
+     sens. Avant ce changement un seul papier ouvrait tout le mall. [ ]
+215l. **L'arrière-boutique appartient à sa boutique, le couloir à personne.** Poser
+     un ordinateur dans une **réserve** collée à une boutique (`...storage`) : même
+     numéro, même segment et même nom entre parenthèses que la boutique devant
+     elle, et le papier de cette boutique l'ouvre. Poser un autre ordinateur dans
+     le **couloir** du mall : numéro différent des deux, **aucun** nom entre
+     parenthèses — le couloir est au bâtiment. Sur la machine de la boutique,
+     `ruptime` doit lister **sa** machine et celle de sa réserve, et **pas** celles
+     des autres boutiques ; `ping <adresse d'une autre boutique>` → 100 % de perte,
+     `rlogin` → `No route to host`, et `cu <son numéro>` → l'appel passe. [ ]
+215m. **L'annuaire liste les boutiques du mall.** Rouvrir un `Phonebook` de la
+     région du mall : les boutiques doivent y être **sous leur métier en mots** —
+     `Dentist`, `Music Store`, `Pharmacy`, `Book Store` — avec **exactement** les
+     numéros lus au BIOS. `cu` sur une inscription dont on n'a pas posé
+     d'ordinateur : `NO CARRIER` après quinze secondes (l'inscription est bonne, le
+     local est vide). Vérifier aussi ce qui n'y est **pas** : ni `Hall`, ni une
+     réserve, ni un bureau des étages. [ ]
+215n. **Ce qui ne doit PAS avoir changé.** Trois cas, et c'est le vrai risque de ce
+     changement :
+     - une **quincaillerie ou une armurerie isolée** (un commerce, un bureau au
+       fond, une réserve) : ses deux ordinateurs gardent **un** numéro et **un**
+       segment, et aucun nom entre parenthèses ;
+     - une **maison avec un bureau** dedans : un seul local (pas 215c) ;
+     - une **station-service** : les quatre îlots de pompes portent le même nom de
+       pièce, et la station reste **un** local, un numéro. Idem une **école** (les
+       salles de classe ne sont pas des commerces) et un **poste de police**. [ ]
+215o. **Une machine qui était déjà dans un mall.** Sur un monde d'avant premises v2
+     où un ordinateur avait déjà été allumé **dans un mall** : le rallumer. Le
+     numéro et l'adresse **changent une fois** (le mall était un seul local, la
+     boutique en est un), et le BIOS montre maintenant le nom de la boutique. Mais
+     ce qui est sur le disque ne bouge pas : `ls /home` donne les mêmes gens,
+     l'ancien papier `root` trouvé dans ce mall **ouvre toujours** cette machine, et
+     les fichiers écrits à la main sont là. Rallumer une deuxième fois : plus rien
+     ne change. [ ]
+215p. **La fenêtre de débogage le dit.** Sur une machine du mall, ouvrir la fenêtre
+     de débogage (section X) et lire le bloc du local : une ligne
+     `tenancies: <n>  <noms>` avec le compte des boutiques du bâtiment, et une ligne
+     `premises: room  <Nom>` (ou `zone`, ou `building`). Dans une maison :
+     `tenancies: 0` et `premises: building`. C'est l'outil à utiliser si un des pas
+     ci-dessus ne répond pas ce qu'il devrait. [ ]
 
 ## T. La radio (palier 6c)
 

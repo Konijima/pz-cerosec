@@ -626,8 +626,16 @@ for vi = 1, #volumes do
 		-- in is the one the other three answers are in. Thirteen was exactly where
 		-- this chapter already stood, which is a bound forbidding the next honest page
 		-- rather than catching a chapter that has swallowed a book.
-		check(cwhere .. " (" .. ch.title .. ") has 3..14 pages (" .. n .. ")",
-			n >= 3 and n <= 14)
+		--
+		-- FIFTEEN for premises v2, and the same volume again for the same reason a
+		-- fourth time. What counts as a shop stopped being one sentence: it decides
+		-- the number, the wire, the people on the machine and the password in the
+		-- drawer, and a mall now holds a dozen of each. The whole of it was on the
+		-- telephone page and came to 1433 characters against a 1000-character page, so
+		-- the choice was a page cut in half or a rule told in half. The chapter it
+		-- belongs in is the one all four answers are in.
+		check(cwhere .. " (" .. ch.title .. ") has 3..15 pages (" .. n .. ")",
+			n >= 3 and n <= 15)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -676,8 +684,12 @@ for vi = 1, #volumes do
 	-- and eighty was exactly where Volume 2 then stood. A bound resting on the
 	-- current number forbids the next honest page instead of catching a volume that
 	-- has lost half of itself.
-	check(where .. " has 50..84 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 84)
+	-- Eighty-five since premises v2, and a fourth time for the same reason: what
+	-- counts as a shop is one page of chapter 8, and eighty-four was exactly where
+	-- Volume 2 then stood. The LOWER bound is the half that catches a volume losing
+	-- chapters, and it has not moved once.
+	check(where .. " has 50..85 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 85)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 

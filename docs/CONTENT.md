@@ -155,22 +155,36 @@ a premises whose profile id the catalogue has no table for all come to the same 
 `CeroSecOS.FACTORY_USER` and `CeroSecOS.FACTORY_HOME`, which is where
 `defaultPasswd`, `defaultSudoers`, `defaultGroup` and `newState` build them from too.
 
-Which profile a machine gets: the **named zone** of its premises
-(`CeroSecNet.premisesOfSquare`, the same rule the telephone line uses), else the
-names of **all the rooms in its building** (`CeroSecNet.premisesRooms` →
-`BuildingDef.getRooms()` → `RoomDef.getName()`), else **residential**. They are
-matched against `CeroSecContent.PREMISES_WORDS` — because map data is all there is
-to go on: a premises zone is named by whoever drew the map and a `RoomDef`'s name
-is a *loot type* and says nothing about tenancy.
+Which profile a machine gets is the same one rule the telephone line and the coax
+use (`CeroSecNet.premisesOfSquare`), asked for what the premises is *called* and
+then matched against `CeroSecContent.PREMISES_WORDS` — because map data is all there
+is to go on: a premises zone is named by whoever drew the map and a `RoomDef`'s name
+is a *loot type* and says nothing about tenancy. The three cases are the rule's own
+three (see [NETWORK.md](NETWORK.md#ethernet-and-the-machines-of-a-premises)):
 
-**The whole building, and never the caller's own square.** This is the fix to a bug
-that shipped in this change and was caught in review. The profile used to come from
+| the premises is | what is matched | so |
+| --- | --- | --- |
+| a named **zone** | the zone's name | `CoffeeShop` → `store` |
+| a **tenancy** of a multi-tenant building | that tenancy's own room name, and only its own | the mall's `musicstore` → `store`, its `dentist` → `clinic` |
+| the **building** | the names of **all** its rooms (`CeroSecNet.premisesRooms` → `BuildingDef.getRooms()` → `RoomDef.getName()`) | a house with a kitchen and a study → `residential` |
+| no building at all | nothing | bare |
+
+**The tenancy's own rooms, and never the mall's.** A tenancy asked for the
+building's room list would be back where this started: eleven shops matching one
+word list and getting one profile. So the music store's machine sees `musicstore`
+and the dentist's sees `dentist`, which is what the report from play asked for in six
+words — *the music store computer and the dentist one have no specifics.*
+
+**Otherwise the whole building, and never the caller's own square.** This is the fix
+to a bug that shipped once and was caught in review. The profile used to come from
 the room the *caller* stood in, so in a house with a study in it the desk in the
 study answered `office` — a profile with a root password, so a note was written —
 while the computer in the living room of the same house answered `residential`,
 which has none: the paper named a password no machine in the county had. Two squares
 of one premises are one premises, and anything a premises *is* must be answered the
-same way from every one of them.
+same way from every one of them. Which is also why the *tenancy* is re-derived from
+the square at every call rather than carried: there must be no path where the drawer
+got one answer and the computer the other.
 
 The scan walks the **word list** in its order and asks every name about each word in
 turn, so the order the engine hands a building's rooms over in cannot change the

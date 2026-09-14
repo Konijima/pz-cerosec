@@ -633,12 +633,19 @@ bytes come from where the premises is and the last is which computer of it
 this is.
 
 **A premises is not a building.** A house is one building and one premises; a
-shopping mall is one building and thirty shops, and each shop is its own -- its own
-wire and its own telephone number. What tells them apart is the map's own zones: a
-named zone smaller than the building it sits in is a shop, and the zones a house
-sits in are suburbs and districts, all bigger than the house. So on the map that
-ships, almost nothing changes -- and a mall stops being one telephone for thirty
-businesses. The BIOS announces it between the drive and the login, `ifconfig`
+shopping mall is one building and a dozen shops, and each shop is its own -- its own
+wire, its own telephone number, its own staff and its own password on the paper in
+its drawer. Two things tell them apart, and the second one is new: a named map zone
+smaller than the building it sits in is a shop, and a *room* whose name is a trade is
+a shop where no zone says otherwise -- so the mall's music store and the dentist two
+doors down are two businesses now instead of one. The zones a house sits in are
+suburbs and districts, all bigger than the house, so a house is still a house; and a
+shop with a back office and a stock room is still one business, because it takes two
+trades in a building to make it a mall.
+
+The parts of a mall that belong to nobody -- the corridors, the lifts, the stairs --
+are the building's, and a stock room or a break room belongs to the shop it shares
+its longest wall with. The BIOS announces it between the drive and the login, `ifconfig`
 prints it any time, and nothing sets it -- the address is a fact about the card
 the way the hostname is a fact about the machine. A computer in a base **you**
 built is on no premises the map knows about, so it has no wire at all and says
@@ -800,7 +807,7 @@ The coax reaches one premises. The telephone reaches the county.
 
 A premises has **one line**, and the number belongs to the line and not to a
 machine: every computer on that premises answers on it, one call at a time. So a
-house is one number and a mall is thirty.
+house is one number and a mall is one for every shop in it.
 
 The number is seven digits, `NNN-NNNN`, which is how a call inside one area code
 was dialled in 1993. The first three are the **exchange** and they belong to the
@@ -810,15 +817,20 @@ stands, exactly as the address is, so nobody can type a new one.
 
 The firmware announces it under the card, and that BIOS screen is the **only**
 place it is written -- there is no `/etc/phone` -- with the shop's name behind it
-where the map gave it one:
+where there is one, from the map's zone or from the room the shop is:
 
 ```
 Phone line: 555-0417 (CoffeeShop)
+Phone line: 555-2260 (Music Store)
 ```
 
 A computer in a base you built is on no premises, so it has no line:
 `cu: no phone line`. Neither has a machine off a save older than this firmware,
-until somebody switches it on or opens a window on it where it stands.
+until somebody switches it on or opens a window on it where it stands -- and a
+machine that has been sitting in a mall since before the shops were told apart is
+given its shop's own number at that same moment, so the number on its BIOS changes
+once. Whatever is on its disk does not: the password on the paper in its drawer still
+opens it.
 
 **A party line.** Several machines of one premises are all on that one line and
 the lowest address is the one that picks up -- a house has one line and one modem
@@ -910,7 +922,12 @@ exchange, a name and a number a line:
 
 ```
   Coffee Shop ................................ 555-0416
+  Dentist .................................... 555-3841
+  Music Store ................................ 555-2260
 ```
+
+The shops of a mall are in it now, each under its own trade, which is how you find
+the number of the one two floors up without walking the whole building.
 
 Dial it with `cu` from any machine in the county -- it is the same seven digits
 everywhere, and `NO CARRIER` after fifteen seconds is a shop with no computer
@@ -924,7 +941,9 @@ leaves the way you turn the manual's.
 
 **Houses are not listed.** A house has a line like anything else, and nobody wrote
 the family names down: an unlisted number is an unlisted number. Neither is where a
-shop stands -- a directory prints names and numbers, and the rest is walking.
+shop stands -- a directory prints names and numbers, and the rest is walking. A shop
+that is the only business in its building is not listed either: it is one premises,
+and as far as the yellow pages go it keeps to itself.
 
 ## The radio
 

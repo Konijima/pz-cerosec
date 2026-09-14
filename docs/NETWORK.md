@@ -19,44 +19,111 @@ come from where the premises is and the last is which computer of it this is.
 **A premises is not a building.** A house is one building and one premises; a
 shopping mall is one building and thirty shops, and each shop is its own -- its own
 segment and its own telephone line. Which it is comes out of the map data and is
-decided in one place (`CeroSecNet.premisesOf`):
+decided in one place (`CeroSecNet.premisesOfSquare`), in this order:
 
-> the premises is the named `ZombiesType` zone containing the machine's square
-> whose area (`w*h`) is strictly smaller than the building's own footprint
-> (`(x2-x)*(y2-y)` of its `BuildingDef`); the **smallest** such zone when several
-> qualify; and otherwise the building itself.
+> 1. the named `ZombiesType` zone containing the machine's square whose area
+>    (`w*h`) is strictly smaller than the building's own footprint
+>    (`(x2-x)*(y2-y)` of its `BuildingDef`) -- the **smallest** such zone when
+>    several qualify;
+> 2. else, if the building holds **two or more tenancies**, the square's own
+>    tenancy;
+> 3. else the building itself.
 
-Map designers tag the shops inside a mall with small named `ZombiesType` zones --
-`CoffeeShop`, 17 by 11, at 12858,1329 -- because that is how the spawner is told
-what kind of dead belongs in a shop, and it is the only place the shipped map data
-gives a shop an outline of its own (a `RoomDef`'s name is a **loot type**,
-`clothsstore`, and says nothing about tenancy). The area test is the whole of what
-tells a tenancy from a region: the named zones a *house* sits in are the other kind
--- a suburb, a district, a whole town -- all of them bigger than the house. A zone
-exactly the building's size is the building under another name and loses on the
-same test. So on the map that ships, almost every machine is where it was and only
-a mall changes.
+**Rule 1: the zone, which is the map's own word for a tenancy.** Map designers tag
+some shops with small named `ZombiesType` zones -- `CoffeeShop`, 17 by 11, at
+12858,1329 -- because that is how the spawner is told what kind of dead belongs in
+a shop. The area test is the whole of what tells a tenancy from a region: the named
+zones a *house* sits in are the other kind -- a suburb, a district, a whole town --
+all of them bigger than the house. A zone exactly the building's size is the
+building under another name and loses on the same test.
 
-The two bytes come from `CeroSecOS.buildingKey(bx, by)` for a building, unchanged,
-so **existing saves keep their addresses**; and from
+**Rule 2: the rooms, because the shipped malls have no zones.** This is what a
+report from play said, in the words it came in: *they all share the same no matter
+what the store is, because it's all one big building; the music store computer and
+the dentist one have no specifics.* They did. So where no zone says otherwise, the
+rooms are asked instead.
+
+A `RoomDef`'s name is a **loot type** (`clothsstore`, `kitchen`) and says nothing
+about tenancy, so which names mean a shop is a short and deliberate list
+(`CeroSecContent.TENANCY_WORDS` and `TENANCY_TRADES`) rather than a guess:
+
+> a **shopfront room** is one whose name carries `store`, `shop` or `market`, or is
+> one of the trades the map spells out instead (`dentist`, `optometrist`,
+> `pharmacy`, `bakery`, `butcher`, `cafe`, `diner`, `restaurant`, `bank`,
+> `pawnshop`) -- never one whose name carries `storage` or `counter`, and never a
+> room of a single tile.
+>
+> a **tenancy** is a maximal group of shopfront rooms with the **same name**, on
+> **one floor**, that share a wall.
+
+One shop is very often several `RoomDef`s -- a furniture shop in eight rooms, a gas
+station's four pump islands -- while the seven rooms called `clothesstore` in seven
+corners of one mall are seven shops, which is why the name alone will not do. And a
+building with **one** tenancy is the building, deliberately: a gun shop with a back
+office and a stock room is one business, and splitting its stock room off it would
+be a worse bug than the one this fixes.
+
+A square that is not in a shopfront room gets the tenancy it shares its **longest
+wall** with -- the shop whose stock room, bathroom or break room it is -- except for
+the common parts (`hall`, `corridor`, `lobby`, `elevator`, `stairwell`...), which
+are nobody's: a mall corridor is not the shop it happens to share its longest wall
+with, and every shop is off it.
+
+**Every one of those rules was counted against the shipped county before it was
+written**, and four earlier candidates were thrown out for what they did to it --
+the numbers, the four rules and the `javap` behind `RoomDef` are
+[docs/notes/tenancies.md](notes/tenancies.md). The one that ships calls 143 of the
+county's 9546 buildings multi-tenant, and they are the malls and the strip malls.
+
+**The two bytes** come from `CeroSecOS.buildingKey(bx, by)` for a building,
+unchanged, so **existing saves keep their addresses**; from
 `CeroSecOS.premisesKey(zx, zy, zw, zh)` for a zone, which is the same arithmetic
 over four numbers -- the corner hashed as a building corner is, the size hashed the
-same way, and the two added. The size has to be in it: a zone's corner is very
-often the building's own, and a key made of the corner alone would *be* the
-building's.
+same way, and the two added; and from
+`CeroSecOS.roomKey(bx, by, rx, ry, level)` for a tenancy, which is the same
+arithmetic again over the building's corner, the tenancy's own corner and the
+floor. The size has to be in the zone's key: a zone's corner is very often the
+building's own, and a key made of the corner alone would *be* the building's. The
+floor has to be in the room's, for the same reason one floor up: a shop with a
+mezzanine is one name on one corner on two floors.
+
+**Not `RoomDef.getID()`**, which is right there and looks made for this. The low 32
+bits of that id are how many rooms were already registered in the map cell when the
+lot header was read, so it moves if a map mod touches the cell -- and
+`NewMapBinaryFile.SpawnBasement` advances the same counter *during play*. The
+offsets are in the note. A save whose addresses moved because somebody installed a
+map is exactly what this rung must not do.
 
 Every engine call this needs is `javap`'d on `projectzomboid.jar` 42.20.4:
 `IsoWorld.getMetaGrid()`, `IsoMetaGrid.getZonesAt(int,int,int)` (an
 `ArrayList<zombie.iso.zones.Zone>`), `Zone.getName/getType/getX/getY/getWidth/getHeight`
-(plain `getfield` on `name`, `type`, `x`, `y`, `w`, `h`) and
-`BuildingDef.getX/getY/getX2/getY2`. The getters and not the public fields, which
-is what the game's own Lua does (`shared/Traps/TrapSystem.lua:12-17`).
+(plain `getfield` on `name`, `type`, `x`, `y`, `w`, `h`),
+`BuildingDef.getX/getY/getX2/getY2/getRooms`,
+`RoomDef.getName/getX/getY/getX2/getY2/getZ/getArea` (all six ints plain field
+reads, so `x2`/`y2` are exclusive and `getZ` is the floor) and
+`IsoGridSquare.getRoomDef`. The getters and not the public fields, which is what
+the game's own Lua does (`shared/Traps/TrapSystem.lua:12-17`).
 
-**Migration.** A net record written before this change carries the *building* bytes
-and no exchange. It is rebuilt when the machine's square is loaded -- the two
-moments `CeroSecNet.identify` is called, switching on and opening a window -- and
-until then such a machine has an address and **no telephone at all**: an empty
-BIOS phone line and `cu: no phone line`.
+**Migration, and there is no step for it.** A net record written before the line
+belonged to the premises carries the *building* bytes and no exchange; one written
+in a mall carries the building's bytes because that is what a mall was. Either way
+it is rebuilt when the machine's square is loaded -- the two moments
+`CeroSecNet.identify` is called, switching on and opening a window -- and the
+machine is renumbered onto its shop's own segment and its shop's own line. That is
+the same path a machine carried into another building has always taken, and it
+cannot be a step in `CeroSecOS.MIGRATIONS`: a step is handed a table and no world,
+and which shop a computer stands in is a question only the world can answer.
+
+Until the square is answerable such a machine has an address and **no telephone at
+all**: an empty BIOS phone line and `cu: no phone line`. What does *not* change is
+anything already written on the disk -- the accounts, the passwords and the papers
+in the drawers were derived at prefill and are stored hashed -- so **the root note
+somebody found in that mall still opens the machine it was written for.** The
+numbers in a mall change once, and the release notes say so.
+
+The record carries which of the three the bytes came off (`pk`, one of `zone`,
+`room`, or absent for the building) beside what the premises is called (`pz`). Both
+are labels: no link reads either, and nothing is keyed by them.
 
 The BIOS announces the address between the drive and the login, `ifconfig` prints
 it any time, and nothing sets it -- the address is a fact about the card the way
@@ -412,6 +479,24 @@ zone's **middle tile** (`getBuildingAt(int, int)`) instead. The corner is very
 often a wall or the pavement, and probing there would drop real shops. Without the
 test the spawner's region-sized named zones would be listed as businesses --
 `Farm` is 262 by 226, `StreetPoor` covers a suburb -- and neither has a telephone.
+
+**And a second sweep, for the tenants.** The zones are one of the two kinds of
+business premises and the malls that ship are the other, so a book that carried only
+zones is a book a survivor dials a shop out of and gets nothing. Every building of
+the region is asked for its tenancies by the same rule one building down, and each
+one is a listing named from its room name in words -- `musicstore` becomes
+`Music Store`, `dentist` becomes `Dentist` -- with the number
+`CeroSecOS.phoneOfRoom` composes out of the same three facts the machine's own key
+comes off. A building with **one** tenancy is listed by neither sweep, exactly as it
+is one premises.
+
+The buildings come from `IsoMetaGrid.getBuildingsIntersecting(x, y, w, h, out)`,
+which walks only the **cells** the rectangle touches (`javap`: `x / 256` and
+`y / 256` clamped to `minX`/`maxX`/`minY`/`maxY`, then `getCell`) -- the same shape
+as `getZonesIntersecting`. A `PHONE_REGION` of 1024 tiles is four cells by four, so
+a book costs sixteen cell visits, paid once when a copy is opened. `getBuildings()`
+is the other accessor on that class and is every building in Knox County; it is
+deliberately not used.
 
 **No residences, and no coordinates.** A house is a premises and has a line; the
 map gives it no name to print, and a white-pages line needs a family name Knox

@@ -5560,6 +5560,23 @@ local function newNet()
 	-- getRoomDef, which is what a square in a building this rule cannot measure is.
 	local function machine(x, y, z, building, room)
 		local roomName = type(room) == "table" and room.name or room
+		-- The square's own RoomDef, or nil for a square in no room the rule can
+		-- measure. A local ahead of the table, because the IsoRoom the square also
+		-- hands out reads the def through the very same function and a reference to
+		-- `square` inside its own constructor is not `square` yet.
+		local function roomDefOf()
+			if type(room) ~= "table" then return nil end
+			local level = room.level or 0
+			return {
+				getName = function() return room.name end,
+				getX = function() return room.x end,
+				getY = function() return room.y end,
+				getX2 = function() return room.x + room.w end,
+				getY2 = function() return room.y + room.h end,
+				getZ = function() return level end,
+				getArea = function() return room.area or room.w * room.h end,
+			}
+		end
 		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
 		local square = {
 			getX = function() return x end,
@@ -5567,24 +5584,16 @@ local function newNet()
 			getZ = function() return z end,
 			getRoom = function()
 				if roomName == nil then return nil end
-				return { getName = function() return roomName end }
+				-- An IsoRoom has getRoomDef() as well as getName(), and the debug
+				-- window reads the def through it the way the engine lets it
+				-- (zombie.iso.areas.IsoRoom.getRoomDef() -> zombie.iso.RoomDef).
+				return { getName = function() return roomName end,
+					getRoomDef = roomDefOf }
 			end,
 			-- The def, which is the door CeroSecNet.roomDefAt goes through:
 			-- IsoGridSquare.getRoomDef is getRoom() and then IsoRoom.getRoomDef(),
 			-- null without a room.
-			getRoomDef = function()
-				if type(room) ~= "table" then return nil end
-				local level = room.level or 0
-				return {
-					getName = function() return room.name end,
-					getX = function() return room.x end,
-					getY = function() return room.y end,
-					getX2 = function() return room.x + room.w end,
-					getY2 = function() return room.y + room.h end,
-					getZ = function() return level end,
-					getArea = function() return room.area or room.w * room.h end,
-				}
-			end,
+			getRoomDef = roomDefOf,
 			getBuilding = function() return building end,
 			getObjects = function() return { size = function() return 0 end } end,
 		}
@@ -7841,6 +7850,31 @@ do
 	eq("and the desk in the study is on the building",
 		keyOf(study),
 		(function() local b1, b2 = CeroSecOS.buildingKey(800, 800) return b1 .. "." .. b2 end)())
+
+	-- AND THE DEBUG WINDOW SAYS WHICH SHOP, which is the tool the in-game walk uses
+	-- when one of the steps above does not answer what it should
+	-- (docs/PARCOURS-TEST.md step 215p). Benched because nothing else in this suite
+	-- calls CeroSecDebug.premises at all: every line of it is engine calls, and an
+	-- unreached one is a nil call in a window nobody can read afterwards.
+	do
+		local function block(object)
+			return table.concat(CeroSecDebug.premises(object), "\n")
+		end
+		local said = block(dentist)
+		check("the debug block counts the building's tenancies",
+			string.find(said, "tenancies: 3", 1, true) ~= nil)
+		check("and names them", string.find(said, "dentist", 1, true) ~= nil)
+		check("and says which premises this square is in",
+			string.find(said, "premises: room  Dentist", 1, true) ~= nil)
+		check("the machine in the hall is on the building",
+			string.find(block(hall), "premises: building", 1, true) ~= nil)
+		-- And a machine in no building at all does not reach any of it.
+		local outdoors = net.machine(9000, 9000, 0, nil)
+		check("a machine outdoors says so and stops there",
+			string.find(block(outdoors), "building: outdoors", 1, true) ~= nil)
+		check("with no tenancy line at all",
+			string.find(block(outdoors), "tenancies:", 1, true) == nil)
+	end
 
 	-- A GAS STATION IS ONE PREMISES. Its `gasstore` rooms are the pump islands, one
 	-- tile each and no two of them touching, and there are thirteen stations of this
