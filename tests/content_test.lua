@@ -1568,7 +1568,7 @@ do
 			end
 		end
 	end
-	eq("every profile carries a draft", drafts, 10)
+	eq("every profile carries a draft", drafts, 11)
 end
 
 --

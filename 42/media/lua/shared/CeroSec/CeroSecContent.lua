@@ -371,9 +371,15 @@ end
 --
 
 CeroSecContent.PROFILE_IDS = {
-	"residential", "office", "police", "bank", "store", "school", "clinic",
-	"radio", "military", "cerosec",
+	"residential", "office", "police", "bank", "store", "showroom", "school",
+	"clinic", "radio", "military", "cerosec",
 }
+
+-- The one id the prefill asks about by name, because a premises that SELLS
+-- computers is the only one where a machine is stock rather than somebody's desk
+-- (CeroSecContent.deskRole). A literal at the two call sites would be a rule
+-- written twice.
+CeroSecContent.SHOWROOM = "showroom"
 
 -- The profile a machine in no building at all gets, and the one an unknown
 -- premises falls back to: somebody's house.
@@ -404,6 +410,27 @@ CeroSecContent.PREMISES_WORDS = {
 	-- bench asserts. An id nothing resolves to is a profile the world-content work, part 2 would write and
 	-- nobody would ever see.
 	{ "cerosec", "cerosec" },
+	-- THE ELECTRONICS SHOP, and every word here was read off the shipped map
+	-- rather than guessed at. The map gives such a shop no premises ZONE at all --
+	-- the only zone names in the county with an electronics word in them are
+	-- "lectromax" and "Lectromax", and all eight of them are ParkingStall, which is
+	-- a car park and not a tenancy -- so this premises is reached by its ROOMS. The
+	-- room names really in the map's own string tables are `electronicsstore` (52 of
+	-- them), `electronicstore` (4 -- both spellings shipped) and
+	-- `electronicsstorage` (15, the back room). Two of the three are loot keys as
+	-- well (Distributions.lua `electronicstore` and `electronicsstorage`); the
+	-- commonest spelling is not, which is the map's typo and still a room name. One
+	-- word covers all three.
+	--
+	-- ABOVE `office` on purpose: the shop has a back office and a storage room, and
+	-- an electronics shop with a desk in the back is still an electronics shop. And
+	-- below `radio` on purpose too: a station with an electronics room in it is a
+	-- radio station, which is the trade the building is for.
+	--
+	-- `lectromax` is the chain's own name, and it is here for the map that names the
+	-- shop itself rather than its car park.
+	{ "lectromax", "showroom" }, { "electronic", "showroom" },
+	{ "computerstore", "showroom" }, { "computershop", "showroom" },
 	{ "office", "office" }, { "warehouse", "office" }, { "factory", "office" },
 	{ "store", "store" }, { "shop", "store" }, { "market", "store" },
 	{ "kitchen", "residential" }, { "bedroom", "residential" },
@@ -5271,6 +5298,309 @@ CeroSecContent.PROFILES.store = {
 				back = 0, hour = 4, min = 50, body = {
 					"Answer if you are there. I have nine shops on this",
 					"list and you are the seventh I have written to this",
+					"morning.",
+				} },
+		},
+	},
+}
+
+--
+-- THE ELECTRONICS DEALER, and the one premises in the county where a computer is
+-- STOCK and not somebody's desk.
+--
+-- The complaint this answers, in the words it came in: a shop with five machines
+-- in a row on the floor and one at the counter came up as six copies of one back
+-- office, with the same two people and the same story on every one of them. A
+-- display machine has nobody's files on it, because nobody works at it -- it is a
+-- thing for sale, and what is on it is what the dealer put on it to sell it.
+--
+-- So this table is the shop's OWN machine, which is a shop's machine like any
+-- other. What a machine on the floor comes up as is CeroSecContent.DEMO, and which
+-- of the two a machine gets is CeroSecContent.deskRole.
+--
+-- ROOT IS THE SHOP'S ON EVERY MACHINE IN THE SHOP, display models included, and
+-- floor.txt below is where the shop says so in its own words. It is not decoration:
+-- the paper in the drawer names root's password for the PREMISES, and a display
+-- machine that answered to some factory password of its own would be a paper that
+-- opens one machine in six. The shop set them all up the same, which is what a shop
+-- with a service department really did.
+--
+CeroSecContent.PROFILES.showroom = {
+	host = "sales",
+	motd = table.concat({
+		"Back of the shop. This one is the shop's: the ledger",
+		"is on it and the tickets are on it. The machines on",
+		"the floor are stock and come up on the demo account.",
+	}, "\n"),
+	root = true,
+	accounts = {
+		{ pass = true, admin = true, files = {
+			{ path = "stock.txt", texts = three({
+				"What is on the floor, by model, counted Friday.",
+				"",
+				"  CS-40   two, one of them the window model",
+				"  CS-80   four",
+				"  CS-120  one, and it is sold, do not sell it",
+				"  drives  eleven belts, no motors",
+				"  floppy  three boxes of ten",
+				"",
+				"The prices are on the machines themselves. Read",
+				"PRICES.TXT on any one of them on the floor.",
+			}, {
+				"Stock, counted twice, because the first count had",
+				"the window model in it twice.",
+				"",
+				"  CS-40   none until the truck comes",
+				"  CS-80   three, one with a soft key",
+				"  CS-120  two",
+				"  drives  no belts at all",
+				"  floppy  one box, opened",
+				"",
+				"Every machine on the floor carries its own price",
+				"list. Do not quote off this file, quote off the",
+				"machine the customer is standing at.",
+			}, {
+				"The floor this morning.",
+				"",
+				"  CS-40   one",
+				"  CS-80   two",
+				"  CS-120  none, and none coming",
+				"  drives  four belts",
+				"  floppy  none",
+				"",
+				"Nobody has asked the price of a computer in nine",
+				"days. Two people have asked whether we have a",
+				"radio that works, which we do not sell.",
+			}) },
+			{ path = "tickets.txt", texts = three({
+				"Repairs booked in. The machine, what it does, who",
+				"brought it.",
+				"",
+				"  1. will not boot, drive belt, {staff2} rang the",
+				"     owner Tuesday",
+				"  2. full disk and the customer has been told it",
+				"     is broken, which it is not",
+				"  3. keyboard, soft on the k, no parts",
+				"",
+				"A machine on the bench is not a machine on the",
+				"floor. Do not put a customer's disk in a display",
+				"model to test it.",
+			}, {
+				"Tickets. Three in, nothing out, no parts since the",
+				"road shut.",
+				"",
+				"  1. no picture. It is the monitor and we do not",
+				"     do monitors.",
+				"  2. full disk. df said so in front of him and he",
+				"     did not believe df either.",
+				"  3. dropped. Do not open it in front of anybody.",
+				"",
+				"Whatever comes in stays on the bench. The bench is",
+				"not the floor.",
+			}, {
+				"For whoever is on the bench after me.",
+				"",
+				"  1. belt, done, uncollected",
+				"  2. belt, done, uncollected",
+				"  3. will not boot at all and I have not looked",
+				"",
+				"The two that are done are behind the counter with",
+				"the tickets taped to them. If nobody comes for them",
+				"they are not ours to sell and I have written that",
+				"here so nobody sells them.",
+			}) },
+			{ path = "floor.txt", texts = three({
+				"How a machine goes out on the floor. The same four",
+				"things, every time, or a customer sits down at one",
+				"and finds the ledger.",
+				"",
+				"  1. the demo account, open, no password",
+				"  2. WELCOME.TXT, DEMO.TXT and PRICES.TXT in it",
+				"  3. root the same as it is on this one. All of",
+				"     them. Ours, not the factory's.",
+				"  4. nothing of ours anywhere else on the disk",
+				"",
+				"Four, and the third is the one people forget.",
+			}, {
+				"Setting up a display model.",
+				"",
+				"The demo account is open on purpose: a customer who",
+				"has to ask for a password does not sit down, and a",
+				"customer who does not sit down does not buy it.",
+				"",
+				"root on every machine on the floor is the shop's",
+				"own, the same as on this one. I set them all up the",
+				"same because I am the one who has to fix them, and",
+				"a floor full of machines with a different password",
+				"each is a floor nobody can work on.",
+				"",
+				"Nothing of the shop's goes on a display disk.",
+			}, {
+				"{owner}: what goes on a machine before it goes out.",
+				"",
+				"  demo, open, and the three capital files in it",
+				"  root, ours, the same on all of them",
+				"  nothing else",
+				"",
+				"A customer will type anything. He will type rm and",
+				"he will type shutdown and he will find whatever is",
+				"on the disk, so put nothing on the disk. The three",
+				"files are the whole of it and they are enough to",
+				"sell it with.",
+			}) },
+		}, cron = { "0 21 * * * sh $HOME/bin/lights.sh light0 light1" } },
+		{ pass = false, files = {
+			{ path = "counter.txt", texts = three({
+				"Left open so that anybody on the counter can use",
+				"it. There is nothing on this account and there is",
+				"not going to be.",
+				"",
+				"If a customer wants to try one, put him on a floor",
+				"machine. Not this one.",
+			}, {
+				"Two things, on the counter, all day:",
+				"",
+				"The display models are for sitting at. This one is",
+				"not, and the difference is that this one has the",
+				"tickets on it.",
+				"",
+				"If a machine on the floor comes up asking for a",
+				"login, it has been meddled with. Tell {staff1} and",
+				"do not sell it until he has looked at it.",
+			}, {
+				"Open account, counter machine, nothing on it.",
+				"",
+				"The window model is switched off at night and the",
+				"rest are left on, which is how it has always been",
+				"done and is why the sign is on the computer.",
+			}) },
+		} },
+	},
+	bin = {
+		{ script = "lights.sh" },
+		{ script = "lockup.sh" },
+	},
+	logs = {
+		"login: root logged in on console",
+		"cron: lights out",
+		"login: root logged in on console",
+		"cron: lights out",
+		"login: failed login on console",
+		"cron: no such device: light1",
+	},
+
+	history = {
+		"cat stock.txt",
+		"edit stock.txt",
+		"cat tickets.txt",
+		"cat floor.txt",
+		"sh bin/lights.sh light0 light1",
+		"sh bin/lockup.sh door0 lock0",
+		"dev light",
+		"df",
+		"crontab -l",
+	},
+	lockup = "sh bin/lockup.sh door0 lock0",
+	draft = three({
+		"Card for the window, and I will letter it properly.",
+		"",
+		"TRY ONE. THEY ARE SWITCHED ON. THE PRICE IS ON THE",
+		"MACHINE AND THE ANSWER ABOUT DELIVERY IS THAT I DO",
+		"NOT",
+	}, {
+		"Order, and there is nobody at the depot to read it.",
+		"",
+		"  drive belts     twenty",
+		"  drive motors    four",
+		"  floppy boxes    as many as there are",
+		"  CS-40           two, if there are two",
+		"",
+		"I have telephoned Louisville every morning this week.",
+		"This morning it rang and then it",
+	}, {
+		"To whoever opens the shop after me.",
+		"",
+		"The two repaired machines behind the counter are not",
+		"ours and are not for sale. The tickets are taped to",
+		"them with the names on. If somebody comes for one,",
+		"give it to him and do not take money for it, and I am",
+		"writing that here because I may not be the one who",
+	}),
+	mail = {
+		{
+			{ to = "owner", from = "cerosec!orders", subj = "your order",
+				back = 5, hour = 9, min = 20, body = {
+					"Belts are on the truck for Thursday. Motors are not",
+					"and there is no date for motors. Two CS-40 held for",
+					"you against the order, not shipped.",
+				} },
+			{ to = "owner", from = "knox!bpearson", subj = "the one on the bench",
+				back = 4, hour = 11, min = 45, body = {
+					"Is mine the one with the soft key or is mine the one",
+					"with the belt. I have telephoned twice and been told",
+					"both.",
+				} },
+			{ to = 2, from = "the manager", subj = "the floor machines",
+				back = 2, hour = 7, min = 30, body = {
+					"Leave them switched on. A customer will not press a",
+					"switch on a machine he does not own, and a dark",
+					"machine in a window sells nothing.",
+				} },
+			{ to = "owner", from = "cerosec!orders", subj = "(no subject)",
+				back = 0, hour = 5, min = 40, body = {
+					"There is no truck Thursday. The yard is shut and I",
+					"am writing from my house. Do not hold the CS-40 for",
+					"anybody, sell them.",
+				} },
+		},
+		{
+			{ to = "owner", from = "county!clerk", subj = "posted prices",
+				back = 5, hour = 10, min = 10, body = {
+					"Retailers within the affected area are reminded that",
+					"the price on the goods is the price that applies.",
+					"Complaints have been received about computers.",
+				} },
+			{ to = "owner", from = "cerosec!support", subj = "the disk is 64K",
+				back = 4, hour = 14, min = 25, body = {
+					"The disk is 65536 bytes and always was, and df will",
+					"show the customer. A floppy holds 4096. A machine",
+					"that is full is not a machine that is broken.",
+				} },
+			{ to = "owner", from = "knox!bpearson", subj = "not coming for it",
+				back = 2, hour = 8, min = 5, body = {
+					"Keep it until next week. I am not driving in for a",
+					"computer with what is on the road at the moment.",
+				} },
+			{ to = "owner", from = "wknx!news", subj = "your advertisement",
+				back = 0, hour = 6, min = 15, body = {
+					"We are not reading advertisements today and I do not",
+					"know when we will be. Telephone the desk if you are",
+					"still open, because we are asking who is.",
+				} },
+		},
+		{
+			{ to = "owner", from = "cerosec!support", subj = "display models",
+				back = 5, hour = 13, min = 0, body = {
+					"A machine on a shop floor is a machine the public",
+					"types at. Put the demonstration files on it, put",
+					"nothing else on it, and keep root your own.",
+				} },
+			{ to = "owner", from = "the depot", subj = "counted?",
+				back = 3, hour = 15, min = 35, body = {
+					"Send a count of what is on the floor and not what",
+					"is on the shelf card. There is a difference and we",
+					"both know there is a difference.",
+				} },
+			{ to = 2, from = "knox!school", subj = "a machine for the class",
+				back = 1, hour = 12, min = 40, body = {
+					"What is the price of the small one, and does it come",
+					"with the manual. The school will want three if it is",
+					"the price I was told in the spring.",
+				} },
+			{ to = "owner", from = "cerosec!orders", subj = "are you open",
+				back = 0, hour = 4, min = 55, body = {
+					"Answer if you are open. I have nine dealers on this",
+					"list and you are the sixth I have written to this",
 					"morning.",
 				} },
 		},
