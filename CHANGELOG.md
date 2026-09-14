@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+- Fixed: a disk with a label written on it could not be inserted. The drive took
+  blank disks and refused every disk anybody had written on, the diagnostics disk
+  included, and said nothing about it. It takes them now.
+- A floppy gesture that does nothing now says why, over the survivor's head: the
+  drive already has a disk in it, what you offered is not in your hands any more,
+  or the disk itself is one this machine will not read, with the machine's own
+  reason after it. A refusal nobody can read looks exactly like a broken mod.
+
 - Two computers in one office now belong to two different people. Each machine
   has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
   passwords, and empty homes. A building with two computers is worth walking

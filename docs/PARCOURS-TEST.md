@@ -1989,7 +1989,13 @@ un interrupteur dans la pièce.
      l'étiquette porte ce nom. Elle ne se trouve **jamais** en butin : le seul
      chemin vers elle est ce bouton. [ ]
 258f. **La suite du shell, dans le jeu.** Insérer la disquette dans un ordinateur
-     allumé, s'asseoir devant, ouvrir une session et taper :
+     allumé. Attendu d'abord : elle entre. C'est le geste qui ne marchait pas, et
+     il portait sur **toutes** les disquettes étiquetées, pas seulement celle-ci :
+     écrire une étiquette appelle `setCustomName`, qui écrit une clé `customName`
+     dans le modData de l'objet, et la fente refusait la disquette pour une clé que
+     le jeu avait posée. Vérifier aussi qu'une disquette étiquetée à la main
+     (menu de l'inventaire, `Écrire sur l'étiquette`) entre elle aussi. Puis
+     s'asseoir devant, ouvrir une session et taper :
 
          mount /dev/fd0 /mnt
          sh /mnt/selftest.sh
@@ -2005,6 +2011,12 @@ un interrupteur dans la pièce.
      en avait et s'il restait de la place sur la disquette. Puis `ls -l ~` :
      attendu, **aucun** fichier commençant par `st.` — la suite range ses fichiers
      de travail derrière elle. Et `df` : le disque n'a pas bougé. [ ]
+258g-bis. **Un refus d'insertion se lit.** Avec la disquette encore dans le
+     lecteur, en insérer une deuxième : attendu, `Éjectez d'abord la disquette.`
+     au-dessus de la tête du survivant, et rien dans le lecteur qui ait changé.
+     Puis éjecter, s'éloigner de l'ordinateur pendant que l'action joue : attendu,
+     `Cet ordinateur n'est plus là.` Aucun geste sur le lecteur ne doit finir en
+     silence : un refus qu'on ne lit pas est le bogue derrière le bogue. [ ]
 258h. **Le crontab, à la main.** La suite ne fait pas ce tour-là et ne peut pas :
      un crontab ne s'écrit que par `crontab -e`, qui veut un terminal, et un script
      n'en a pas. Donc ici : `crontab -e`, écrire `0 4 * * * echo minuit`, sauver,

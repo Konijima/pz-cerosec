@@ -1651,6 +1651,13 @@ function CeroSecTerminal.onServerAnswer(command, args)
 		CeroSecTerminal.reopen(args)
 		return
 	end
+	-- Nor is this one: the floppy drive is mechanical and a disk goes into a machine
+	-- with no window open at all, so what it has to say goes over the survivor's own
+	-- head and not onto a screen.
+	if command == "drive" then
+		CeroSecTerminal.driveNotice(args)
+		return
+	end
 	for _, window in pairs(CeroSecTerminal.instances) do
 		window:onServerCommand(command, args)
 	end
@@ -1705,6 +1712,55 @@ function CeroSecTerminal.reopen(args)
 		CeroSecReach.height(computer), args.token)
 	if window == nil then return end
 	window:onServerCommand("opened", args)
+end
+
+--
+-- What the drive had to say about a gesture that did nothing
+--
+-- One code, one sentence, and the sentences live in the translation files where
+-- every other thing this mod says TO A PLAYER lives -- the machine's own output is
+-- English because the machine is, but a refusal of a gesture is the game talking.
+--
+-- The halo is the door, because it is the door this mod already uses for a refusal
+-- with no screen behind it (CeroSecFloppyMenu's label that is too long) and the
+-- door vanilla uses for the same thing. A drive works with the computer dark and
+-- with no window open, so a console line could not be read and a window could not
+-- be found.
+--
+-- A code nobody here declared is nothing on the glass rather than a guess: the
+-- codes are one list on the server (SCeroSecSystem's driveNotice) and this one.
+CeroSecTerminal.DRIVE_NOTICES = {
+	-- The machine went away between the walk and the push.
+	gone = "IGUI_CeroSec_Drive_Gone",
+	-- One slot, and something is in it. The menu's own wording for it, because a
+	-- survivor should not read two sentences for one rule.
+	occupied = "Tooltip_CeroSec_DriveFull",
+	-- What he offered is not a disk in his hands.
+	nodisk = "IGUI_CeroSec_Drive_NoDisk",
+	-- The disk itself, with the gate's reason after the colon.
+	refused = "IGUI_CeroSec_Drive_Refused",
+	-- The computer, not the disk.
+	broken = "IGUI_CeroSec_Drive_Broken",
+}
+
+function CeroSecTerminal.driveNotice(args)
+	if type(args.player) ~= "number" then return end
+	local key = CeroSecTerminal.DRIVE_NOTICES[args.why]
+	if key == nil then return end
+	local playerObj = getSpecificPlayer(args.player)
+	if not playerObj or playerObj:isDead() then return end
+	-- Like every other engine global this mod reaches for, asked for and not
+	-- assumed: a missing HaloTextHelper is a line nobody reads and never an error in
+	-- a gesture that has already done what it could.
+	if HaloTextHelper == nil then return end
+	local text
+	if args.why == "refused" then
+		text = getText(key, CeroSecOS.diskReasonWords(args.detail))
+	else
+		text = getText(key)
+	end
+	-- One line over a head, held to the width the rest of this mod holds a line to.
+	HaloTextHelper.addBadText(playerObj, CeroSecOS.truncate(text, CeroSecOS.COLS))
 end
 
 -- Shut whatever terminal is open on this computer, wherever the news came from.

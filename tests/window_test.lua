@@ -107,7 +107,28 @@ end
 -- itself and puts it back, and that section is where the option being ON is
 -- proved.
 _G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
-_G.getText = function(key) return key end
+-- The key stands in for the sentence, because no translation table is loaded in a
+-- headless harness -- plus the PARAMETERS, written after it. A refusal a player
+-- reads is a sentence with the machine's own reason inside it
+-- (CeroSecTerminal.driveNotice), and a fake that dropped the parameter would let a
+-- bench call that sentence proved while the reason never reached the glass. That
+-- the shipped string has a %1 to put it in is asserted against the EN and FR files
+-- themselves, in the drive block below.
+_G.getText = function(key, ...)
+	local n = select("#", ...)
+	if n == 0 then return key end
+	local out = key
+	for i = 1, n do out = out .. " " .. tostring(select(i, ...)) end
+	return out
+end
+
+-- The halo over a survivor's head: the mod's door for a refusal with no screen
+-- behind it, and vanilla's for the same thing. Kept in a list, because what is
+-- being asserted is that a gesture which did nothing SAID so.
+_G.__halos = {}
+_G.HaloTextHelper = { addBadText = function(who, text)
+	_G.__halos[#_G.__halos + 1] = { who = who, text = text }
+end }
 _G.UIFont = { Code = "Code", Small = "Small" }
 _G.Keyboard = { KEY_ESCAPE = 1, KEY_TAB = 15 }
 -- Class-aware, because the device layer tells a light switch from a door with
@@ -795,7 +816,13 @@ local function newBench()
 			if command == "closed" then
 				bench.closed[#bench.closed + 1] = args.reason
 			end
-			if command == "reopened" then
+			-- The other answer that is not addressed to a window: the drive's refusal,
+			-- which goes over a survivor's head because a drive works with the machine
+			-- dark and no window open. Through the client's own door, so what is
+			-- asserted is the door and not a call this bench made itself.
+			if command == "drive" then
+				CeroSecTerminal.onServerAnswer(command, args)
+			elseif command == "reopened" then
 				CeroSecTerminal.onServerAnswer(command, args)
 				adopt()
 			else
@@ -8878,7 +8905,18 @@ local function newInventory()
 			getName = function(self) return self.name end,
 			setName = function(self, s) self.name = s end,
 			isCustomName = function(self) return self.customName end,
-			setCustomName = function(self, b) self.customName = b end,
+			-- And it writes on the item's modData while it is at it, which is the whole
+			-- of why a labelled disk could not be inserted in a real save while this
+			-- bench was green: the engine rawsets `customName` on that very table with
+			-- the item's name in it (javap -c zombie.inventory.InventoryItem,
+			-- setCustomName(boolean): getModData at 6, ldc "customName" at 9, getfield
+			-- name at 13, String.valueOf at 16, KahluaTable.rawset at 19). It is written
+			-- for false as well as true -- the call is one unconditional rawset -- so
+			-- taking a label off leaves the key there too.
+			setCustomName = function(self, b)
+				self.customName = b
+				self.data.customName = tostring(self.name)
+			end,
 			syncItemFields = function(self) self.synced = self.synced + 1 end,
 		}
 		self.items[#self.items + 1] = item
@@ -8921,8 +8959,21 @@ local function wireDrive(bench)
 	function bench.send(command, args)
 		args = args or {}
 		args.x, args.y, args.z = 10, 10, 0
+		-- Cleared on the way IN, so what bench.told answers is this gesture's own
+		-- sentence and never the one before it.
+		_G.__halos = {}
 		CCeroSecSystem.instance:sendCommand(bench.player, command, args)
 		bench.frame()
+	end
+
+	-- What the survivor was told about the last gesture, and who was told: the
+	-- string that reached the halo, or "nothing" -- which is the shape the defect
+	-- had. Read off the client's own door, so a sentence here has been all the way
+	-- round (deliver -> CeroSecTerminal.onServerAnswer -> driveNotice).
+	function bench.told()
+		local last = _G.__halos[#_G.__halos]
+		if last == nil then return "nothing", nil end
+		return tostring(last.text), last.who
 	end
 	return inv
 end
@@ -9254,17 +9305,30 @@ do
 	local inv = wireDrive(bench)
 	bench.login("admin")
 
-	-- An id that names nothing.
+	-- An id that names nothing. AND HE IS TOLD: every refusal below used to be a
+	-- bare return, which is the defect behind the defect -- the diagnostics disk was
+	-- refused at the gate, the action played, and the only trace was a warn line
+	-- behind a debug flag. A gesture that does nothing and says nothing is a mod that
+	-- looks broken.
 	bench.send("insertfloppy", { item = 999 })
 	eq("an id that names nothing inserts nothing", bench.object:hasDisk(), false)
+	eq("and he is told the disk is not in his hands", bench.told(),
+		"IGUI_CeroSec_Drive_NoDisk")
+	local _, who = bench.told()
+	eq("over his own head and nobody else's", who, bench.player)
 	-- An id that names something that is not a disk.
 	local book = inv:add("CeroSec.ManualUser")
 	bench.send("insertfloppy", { item = book:getID() })
 	eq("a book is not a disk", bench.object:hasDisk(), false)
 	eq("and it is still in his hands", #inv.items, 1)
-	-- No id at all.
+	eq("and the same sentence for it, because it is the same thing to him",
+		bench.told(), "IGUI_CeroSec_Drive_NoDisk")
+	-- No id at all. The one refusal that stays silent: the client always sends the
+	-- id of the disk it offered, so a packet without one is a packet nobody typed
+	-- and there is no survivor waiting on an answer to it.
 	bench.send("insertfloppy", {})
 	eq("a packet with no item in it inserts nothing", bench.object:hasDisk(), false)
+	eq("and answers nothing at all", bench.told(), "nothing")
 
 	-- A disk whose contents will not pass the engine's own gate: refused at the
 	-- slot, and left in his hands rather than eaten. What arrives there is a table
@@ -9278,10 +9342,32 @@ do
 	bench.send("insertfloppy", { item = forged:getID() })
 	eq("a forged disk is refused", bench.object:hasDisk(), false)
 	eq("and stays in his hands", #inv.items, 2)
+	-- And the REASON reaches him, in the machine's own words, with the gate's
+	-- "floppy: " off the front because the sentence has already named the disk.
+	eq("with the gate's own reason over his head", bench.told(),
+		"IGUI_CeroSec_Drive_Refused disk full")
 	-- A disk of a version this machine does not know.
 	local future = inv:add("CeroSec.FloppyBlue", { v = 99 })
 	bench.send("insertfloppy", { item = future:getID() })
 	eq("so is one from a version nobody here knows", bench.object:hasDisk(), false)
+	eq("and that reason is a different sentence", bench.told(),
+		"IGUI_CeroSec_Drive_Refused newer than this mod")
+	-- One slot, and something in it. The menu greys this case out, so reaching it is a
+	-- second push made before the news of the first came back -- and the answer is
+	-- the wording the MENU uses for it, because a survivor should not read two
+	-- sentences for one rule.
+	local first = inv:add("CeroSec.FloppyBlue")
+	bench.send("insertfloppy", { item = first:getID() })
+	eq("an honest disk goes in", bench.object:hasDisk(), true)
+	eq("with nothing said about it", bench.told(), "nothing")
+	local second = inv:add("CeroSec.FloppyRed")
+	bench.send("insertfloppy", { item = second:getID() })
+	eq("the second one does not", CeroSec.floppyTypeOr(bench.object:osState().fdtype),
+		"CeroSec.FloppyBlue")
+	eq("and he is told to eject the first", bench.told(), "Tooltip_CeroSec_DriveFull")
+	-- Out again, so what follows meets the empty drive it was written for.
+	bench.send("ejectfloppy")
+	eq("the drive is empty again", bench.object:hasDisk(), false)
 
 	-- Ejecting an empty drive gives him nothing.
 	local had = #inv.items
@@ -9296,9 +9382,92 @@ do
 	local good = inv:add("CeroSec.FloppyBlue")
 	bench.send("insertfloppy", { item = good:getID() })
 	eq("a player across the room inserts nothing", bench.object:hasDisk(), false)
+	eq("and reads that the machine is not there for him",
+		bench.told(), "IGUI_CeroSec_Drive_Gone")
 	bench.player.getX = away
 	bench.send("insertfloppy", { item = good:getID() })
 	eq("and the same player standing at it does", bench.object:hasDisk(), true)
+	eq("with nothing over his head about it", bench.told(), "nothing")
+end
+
+--
+-- THE DISK THE DEBUG WINDOW HANDS OVER GOES IN (rung 4e)
+--
+-- The bug this is here for: `debugact givedisk` handed over a disk with a label on
+-- it, the insert action played, and nothing happened -- no disk in the drive, no
+-- sentence anywhere. The cause was two files apart from each other. Writing the
+-- label calls `item:setCustomName(true)`, and that call rawsets a `customName` key
+-- on the ITEM's modData (javap -c zombie.inventory.InventoryItem,
+-- setCustomName(boolean), offsets 5-24), so the slot's closed-key rule met a fourth
+-- key on the table and refused the disk -- every labelled disk in the world, not
+-- just this one. It stayed green here because the fake only moved a flag.
+--
+-- So this walks the whole of it through the real paths: the debug act that makes
+-- the disk, the command the client sends for it, the drive, and `mount`.
+--
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	local answers = {}
+	bench.system.reply = function(_, _, _, args) answers[#answers + 1] = args end
+	bench.system:OnClientCommand("debugact", bench.player,
+		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "givedisk" })
+	eq("the disk is in his bag", #inv.items, 1)
+	local item = inv.items[1]
+	eq("with the sticker on the shell", item:getName(), "CEROSEC DIAGNOSTICS")
+	check("and the game's own key on the item beside ours",
+		item:getModData().customName ~= nil)
+	check("and the receipt is a note and not a refusal",
+		answers[1] ~= nil and answers[1].error == nil)
+
+	-- The id the CLIENT would send for that item, which is the one thing
+	-- ISCeroSecDiskAction puts in the packet (item:getID()).
+	bench.login("admin")
+	bench.send("insertfloppy", { item = item:getID() })
+	eq("the drive took it", bench.object:hasDisk(), true)
+	eq("it left his hands", #inv.items, 0)
+	eq("and nothing was said, because nothing was refused", bench.told(), "nothing")
+
+	-- And it is the diagnostics disk, by its own label and its own file.
+	eq("the sticker is the disk's label in the drive",
+		CeroSecOS.floppyOf(bench.object:osState()).label, "CEROSEC DIAGNOSTICS")
+	bench.enter("mount /dev/fd0 /mnt")
+	bench.enter("mount")
+	bench.frame()
+	check("and mount names it on the glass",
+		bench.painted("/dev/fd0 on /mnt type ufs (rw) (CEROSEC DIAGNOSTICS)"))
+	bench.enter("ls /mnt")
+	bench.frame()
+	check("with the self-test on it", bench.painted("selftest.sh"))
+end
+
+--
+-- Every sentence the drive can put over a survivor's head is one the mod ships, in
+-- both languages: a code whose string is missing comes out on the glass as the key.
+--
+do
+	local files = { IGUI = "IG_UI.json", Tooltip = "Tooltip.json" }
+	for why, key in pairs(CeroSecTerminal.DRIVE_NOTICES) do
+		local prefix = string.match(key, "^([^_]+)_")
+		local file = files[prefix]
+		check("the drive's " .. why .. " names a key of a file that exists: " .. key,
+			file ~= nil)
+		for _, lang in ipairs({ "EN", "FR" }) do
+			local handle = assert(io.open(
+				"42/media/lua/shared/Translate/" .. lang .. "/" .. file, "r"))
+			local strings = handle:read("*a")
+			handle:close()
+			check(lang .. "/" .. file .. " defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+			-- The one sentence that carries the machine's own reason has somewhere to
+			-- put it. A translation without the %1 is a reason nobody reads.
+			if why == "refused" then
+				local line = string.match(strings, '"' .. key .. '"%s*:%s*"([^"]*)"')
+				check(lang .. " puts the reason in it: " .. tostring(line),
+					line ~= nil and string.find(line, "%1", 1, true) ~= nil)
+			end
+		end
+	end
 end
 
 
