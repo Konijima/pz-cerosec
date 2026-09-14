@@ -2271,8 +2271,9 @@ qu'on lit sur le papier soit celui que la machine demande.
        du commerce (`acct-`), et la queue reste les coordonnées ;
      - se connecter sur un compte **ouvert** (un des noms trouvés plus bas) : le
        message d'accueil n'est pas celui d'usine, il nomme l'entreprise ;
-     - `cat /etc/passwd` montre **plus de deux** comptes : `root`, `admin` et des
-       gens avec des noms de personnes ;
+     - `cat /etc/passwd` montre **plus de deux** comptes : `root` et des gens avec
+       des noms de personnes. Et **pas** `admin` : une machine que quelqu'un avait
+       installée a rendu le compte d'usine (voir l'étape 330) ;
      - `cat /var/log/messages` montre une semaine de lignes datées **avant** le
        premier jour de la partie (juillet 1993 sur une partie par défaut), chaque
        ligne tient dans les 60 colonnes ;
@@ -2362,8 +2363,8 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      ordinateur vanilla jamais touché. L'allumer :
      - l'invite commence par `disp-` et la queue reste les coordonnées ;
      - le message d'accueil dit `KNOX COUNTY SHERIFF -- DISPATCH` ;
-     - `cat /etc/passwd` montre un compte nommé **`dispatch`** en plus de `root`,
-       `admin` et deux personnes ;
+     - `cat /etc/passwd` montre un compte nommé **`dispatch`** en plus de `root` et
+       de deux personnes, et aucun `admin` ;
      - fouiller les tiroirs, comptoirs et casiers du **même** poste jusqu'à
        trouver `Sticky note: root / <mot>`, puis `su root` avec ce mot : ça passe ;
      - `cat /var/log/dispatch` montre huit ou neuf lignes de juillet et la
@@ -2407,8 +2408,8 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      ordinateur dedans :
      - l'invite dit `post-` ;
      - le message d'accueil finit par `KEEP OUT.` ;
-     - `cat /etc/passwd` montre **exactement** `root` et `admin` et personne
-       d'autre : aucun nom de personne ;
+     - `cat /etc/passwd` montre **exactement** `root` et personne d'autre : aucun
+       nom de personne, et pas `admin` non plus ;
      - `su root` avec un mot de passe vide est refusé ;
      - fouiller les tiroirs du même bâtiment jusqu'au papier `root`, puis
        `su root` avec ce mot ;
@@ -2679,8 +2680,9 @@ derrière.
      - `whoami` → `demo`, et on est déjà au shell : rien n'a été demandé ;
      - `ls` → `WELCOME.TXT`, `DEMO.TXT`, `PRICES.TXT` ;
      - `cat PRICES.TXT` → la gamme complète avec les prix, trois modèles ;
-     - `cat /etc/passwd` → **trois** comptes seulement : `root`, `admin`, `demo`.
-       Aucun employé du magasin. [ ]
+     - `cat /etc/passwd` → **deux** comptes seulement : `root` et `demo`. Aucun
+       employé du magasin, et pas de compte d'usine : un modèle d'exposition est
+       une machine que le magasin a installée comme les autres. [ ]
 
 313. **Et personne n'y a travaillé.** Sur la même machine :
      - `wc -l .sh_history` → **2 ou 3** lignes, pas douze ;
@@ -2699,7 +2701,8 @@ derrière.
 315. **La machine du magasin est dans l'arrière-boutique.** Dans le même bâtiment,
      trouver l'ordinateur de la réserve ou du bureau du fond et l'allumer :
      - le nom commence par `sales-` ;
-     - `cat /etc/passwd` → les employés du magasin en plus de `root` et `admin` ;
+     - `cat /etc/passwd` → les employés du magasin en plus de `root`, et pas
+       d'`admin` ;
      - un seul dossier personnel est garni ;
      - `cat floor.txt` (dans ce dossier) dit comment une machine part en
        exposition, et dit que `root` y est celui du magasin. [ ]
@@ -2826,6 +2829,27 @@ tiré avant que le joueur ne regarde.
      garnies** sur **Désactivé** : parcourir cinq commerces jamais visités. Aucun
      écran allumé de lui-même, aucun module posé sur aucun interrupteur, et rien ne
      s'éteint à neuf heures. [ ]
+
+330. **Le compte d'usine n'est pas sur la machine de quelqu'un.** C'est la seule
+     chose qui rendait le papier du tiroir facultatif : tant qu'`admin` restait
+     ouvert, il suffisait de taper `admin` puis `sudo su` pour être `root` sur
+     n'importe quelle machine du comté. Sur un ordinateur garni (n'importe quel
+     commerce, modèle d'exposition compris) :
+     - à `login:`, taper `admin` et Entrée au mot de passe → `login incorrect` ;
+     - se connecter avec un compte de la premises (papier du tiroir, papier d'une
+       poche) puis `cat /etc/passwd` → aucune ligne `admin` ;
+     - `ls /home` → un dossier par employé, aucun `admin` ;
+     - `cat /etc/sudoers` → la ligne `%wheel` est là, aucune ligne `admin` ;
+     - sur le compte **administrateur** de la premises (celui dont l'invite finit
+       par `$` mais qui commande le bâtiment) : `echo off > /dev/light0` **passe**,
+       et `sudo whoami` est refusé (`not in the sudoers file`) ;
+     - `su root` avec le mot du papier **passe**. [ ]
+
+331. **Et sur une machine que personne n'a installée, il est toujours là.** Un
+     ordinateur posé par le joueur dans sa base, ou n'importe lequel avec l'option
+     **Désactivé** : `admin` avec un mot de passe vide passe, `sudo whoami` donne
+     `root`, et `ls /home` montre `admin`. C'est le témoin : ce compte décrit une
+     machine que personne n'a jamais installée, et rien d'autre. [ ]
 
 ## Rapport
 

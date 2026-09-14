@@ -158,19 +158,23 @@ print, and nobody wrote those down.]],
   password:
   admin@ksp-04-11:~$
 
-Type a name, press Enter, and the machine asks for a password. Every
-machine ships with two accounts. admin is the ordinary one and is the one
-you want. root can do absolutely anything to the machine, including break
-it, and Volume 2 is where we hand you that key. Neither has a password to
-begin with, so at password: you simply press Enter again.
+Type a name, press Enter, and the machine asks for a password.
+
+A machine nobody ever set up ships with two accounts and no passwords at
+all: admin, the ordinary one and the one you want, and root, which can do
+anything to the machine including break it. Volume 2 hands you that key.
+At password: you press Enter again. Try it now, and you are in when you
+see a line ending in a dollar sign.
+
+A machine somebody was using is not that machine. Its accounts are the
+people who worked there, admin is not among them, and every one of them
+was given a password. Look for the name and the letters where people
+wrote them in 1993: a paper in a desk drawer, a paper in a pocket.
 
 Get either half wrong and the machine says only "login incorrect" and
 starts over. It never tells you which half was wrong. That is deliberate:
 a stranger typing names at your keyboard should learn nothing, not even
-whether the name he tried exists.
-
-Try it. Type admin, Enter, then Enter again at password:. You are in when
-you see a line ending in a dollar sign.]],
+whether the name he tried exists.]],
 
 [[The screen belongs to the machine, not to you.
 
@@ -462,9 +466,9 @@ Seven drawers there, on every machine.
   bin   dev   etc   home  mnt   root  var
 
 bin holds the commands, every one a real file. dev, etc, root and var
-belong to the machine; Volume 2 opens them. home holds one directory per
-account, and yours is /home/admin. mnt stays empty: a floppy is mounted
-there, chapter 11.
+belong to the machine; Volume 2 opens them. home holds a directory per
+account, each named after it: /home/admin here, your own name on
+anybody else's. mnt is empty: a floppy goes there, chapter 11.
 
 pwd prints where you are standing. ls lists what is there. Try both.
 
@@ -474,8 +478,7 @@ pwd prints where you are standing. ls lists what is there. Try both.
   admin@ksp-04-11:~$
 
 ls printed nothing, the right answer on a fresh machine: your directory is
-empty. The squiggle in the prompt stands for it, written there instead of
-/home/admin to keep the line short.]],
+empty. The squiggle in the prompt stands for it, to keep the line short.]],
 
 [[Moving about.
 

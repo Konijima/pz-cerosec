@@ -15,15 +15,21 @@ Once it is on, right-click again for **Use computer**: the character walks to th
 front of the machine, sits down if there is a chair pulled up to it, and the
 terminal opens.
 
-At the `login:` prompt, use one of the two accounts that ship on every fresh
-machine, both with an empty password — just press Enter when asked:
+At the `login:` prompt, **it depends whose machine it is**. A machine **nobody ever
+set up** — one you built, or any computer at all with **Prefilled machines and disks**
+turned off — ships with two accounts, both with an empty password, so just press
+Enter when asked:
 
 | user | password |
 | --- | --- |
 | `admin` | (empty) |
 | `root` | (empty) |
 
-**Accounts.** Every machine ships with those two and root can make more:
+On **somebody's** machine there is no `admin` at all: the accounts are the people who
+worked there, and the name and the password are on a paper in a desk drawer or in a
+dead man's pocket. See *[What you may find](#what-you-may-find)*.
+
+**Accounts.** A machine nobody set up ships with those two and root can make more:
 `sudo useradd bob` writes the account, makes `/home/bob` for it and says out loud
 that it has no password yet — set one with `passwd bob` before somebody else does.
 `sudo useradd -G wheel bob` makes him an **administrator**, and that means one
@@ -1208,6 +1214,14 @@ greeting on the screen, a handful of staff accounts in `/etc/passwd`, a week of
 passwords. A computer in a house is a quieter thing and usually has nothing locked at
 all. The name on the machine changes with it: the front-office machine is not `ksp-`
 anything.
+
+**And the factory `admin` is not on it.** A machine somebody set up gave that account
+up the way any office would have: the dealer's own login is off `/etc/passwd`, its
+home is gone and it is out of `/etc/sudoers`. So `admin` with no password is not a way
+into somebody's machine, and **root's password really is the paper in the drawer**.
+What such a machine has instead is the company's own administrator, who has a password
+like the rest of the staff and can work the building he was responsible for — the
+lights, the doors, the locks — and who **cannot** `sudo` his way to root either.
 
 **But it is one person's desk, not the whole office's.** The accounts are the
 company's and every machine in the building has all of them — but only **one** of

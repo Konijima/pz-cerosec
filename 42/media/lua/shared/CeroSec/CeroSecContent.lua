@@ -4170,6 +4170,38 @@ function CeroSecContent.prefill(state, opts)
 	local now = opts.now
 	local session = CeroSecOS.rootSession()
 
+	-- AND THE FACTORY ACCOUNT COMES OFF, first of all, because this machine turns out
+	-- to be somebody's.
+	--
+	-- It is the one thing that made every password on this page a decoration. A
+	-- prefilled machine had root hashed and a paper in a drawer naming the letters --
+	-- and it also still had `admin`, OPEN, named in /etc/sudoers, so `admin` at the
+	-- login prompt and then `sudo su` was root on any machine in the county without
+	-- reading anything. The drawer, the pocket, the corpse: all optional.
+	--
+	-- A real office machine does not have the dealer's own account on it either. What
+	-- it has is the company's people (makeAccounts below), one of whom is the
+	-- administrator and has a password like the rest of them.
+	--
+	-- The same four gestures `userdel -r admin` makes and in the same order, through
+	-- the same four functions, so there is one way an account leaves a machine: the
+	-- home while the account still owns it, the /etc/passwd line, the /etc/sudoers
+	-- line, and every group line naming it. A name left in `sudo` or in a file that
+	-- grants it is a line waiting for whoever is given that name next.
+	--
+	-- Every refusal is passed over in silence, like every other write on this page: a
+	-- machine that would not give up its factory account is a machine with one account
+	-- too many on it, which is a world that is a little wrong, and never a crash.
+	do
+		local home = CeroSecOS.getNode(state, session, CeroSecOS.FACTORY_HOME)
+		if home ~= nil then
+			CeroSecOS.removeNode(state, session, CeroSecOS.FACTORY_HOME, true, now)
+		end
+		CeroSecOS.removeUser(state, CeroSecOS.FACTORY_USER, now)
+		CeroSecOS.removeSudoer(state, CeroSecOS.FACTORY_USER, now)
+		CeroSecOS.removeGroupMember(state, CeroSecOS.FACTORY_USER, now)
+	end
+
 	-- WHAT THIS MACHINE IS -- somebody's desk, a display model on a shop floor, or
 	-- a desk with nobody left to give it -- and it is decided FIRST because the name
 	-- on the machine depends on it. See CeroSecContent.deskRole: the register is the

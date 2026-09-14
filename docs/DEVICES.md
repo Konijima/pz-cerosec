@@ -449,12 +449,18 @@ that **nothing about such a module is special**.
   on the plate at the top of the next minute, which is a mod undoing a player's own
   work. A table this build cannot read — one a *later* build wrote — answers "already
   done" for the same reason: the last thing to write into is somebody else's shape.
-- **`CeroSecModules.VERSION` does not move for it.** An absent mark reads as "not
-  pre-fitted", which is the old behaviour on every fixture in every save, and there is
-  nothing in an older table for a step to convert. Bumping the number would be worse
-  than useless: `migrate` stamps the new number on the table it walks and a table is
-  walked on every *read*, including on a client, where a write into a door's modData
-  goes nowhere anybody will ever see.
+- **`CeroSecModules.VERSION` moves to 2 for it**, with a step that converts nothing.
+  Strictly it did not have to: an absent mark reads as "not pre-fitted", which is the
+  old behaviour on every fixture in every save. It moves for the reader — a table that
+  has grown a key which is not one of the four ids and does not behave like one is a
+  shape nothing can be held to afterwards — and the step is *written* rather than
+  absent, because a gap in the chain is what `migrate` refuses to walk. One consequence
+  is worth knowing and is written down at the constant: the walk has always ended each
+  step with `fitted[v] = n`, so the moment the number moved past 1, the first **read**
+  of an older table became the thing that stamps it, on a client as well as on the
+  server. Harmless in both places — on a client it lands in a table nobody else sees,
+  on the server it lands in the chunk, which is where the answer belongs — and it is
+  the stamp that stops a step which does real work from running twice.
 - **Never an operator.** A relay, a contact and a strike; no motors. A 1993 shop had a
   magnetic contact on the stockroom frame to know the door was shut and an electric
   strike to bolt it, and a building that opened its own doors would open them for the

@@ -952,6 +952,158 @@ do
 end
 
 --
+-- 4b3. THE FACTORY ACCOUNT IS OFF A MACHINE SOMEBODY SET UP
+--
+-- The reason this section exists, in the words the hole was found in: a prefilled
+-- machine had root hashed and a paper in a drawer naming the letters -- and it also
+-- still had `admin`, open, with a line of its own in /etc/sudoers. So `admin` at the
+-- login prompt and then `sudo su` was root on any machine in the county without
+-- reading anything, and the drawer, the pocket and the corpse were all decoration.
+--
+-- What is asserted is the whole of the way in, from four directions, because "the
+-- account is gone" on its own is an assertion that a passwd file which failed to be
+-- written at all would satisfy:
+--
+--   * the account, its home and every line that names it are off the machine;
+--   * the STAFF administrator is not a way to root either -- he is in the device
+--     group and not in /etc/sudoers, which is the line this change is drawn on;
+--   * root's password is the one the paper in the drawer derives;
+--   * and a BARE machine still has `admin`, open, because that is the one machine
+--     the account describes: one nobody ever set up.
+--
+do
+	local ids = CeroSecContent.PROFILE_IDS
+	for i = 1, #ids do
+		local id = ids[i]
+		local word = WORD_FOR[id]
+		if word ~= nil then
+			local state = CeroSecOS.newState("ksp-4-b")
+			-- The account IS there on the machine the prefill is handed, which is what
+			-- makes the assertions below about its absence mean anything: a bench that
+			-- never saw it there is a bench that cannot tell removal from never-was.
+			check(id .. ": the machine starts with the factory account on it",
+				CeroSecOS.getUser(state, CeroSecOS.FACTORY_USER) ~= nil)
+			check(id .. ": and its home",
+				CeroSecOS.systemNode(state, CeroSecOS.FACTORY_HOME) ~= nil)
+			local _, _, logins = CeroSecContent.prefill(state, opts(SECRET_A,
+				{ premises = word }))
+
+			eq(id .. ": the factory account is off /etc/passwd",
+				CeroSecOS.getUser(state, CeroSecOS.FACTORY_USER), nil)
+			eq(id .. ": its home is gone",
+				CeroSecOS.systemNode(state, CeroSecOS.FACTORY_HOME), nil)
+			eq(id .. ": and it may not sudo, there being nothing left to ask about",
+				CeroSecOS.sudoer(state, CeroSecOS.FACTORY_USER), nil)
+			eq(id .. ": nor is it in the device group",
+				CeroSecOS.inGroup(state, CeroSecOS.FACTORY_USER, CeroSecOS.DEV_GROUP),
+				false)
+			-- Read off the FILE as well, by line, because sudoer() answering nil is also
+			-- what a missing /etc/sudoers answers -- and a machine with no sudoers file
+			-- would satisfy the line above while being a different bug.
+			local sudoers = CeroSecOS.systemNode(state, CeroSecOS.SUDOERS_PATH)
+			check(id .. ": /etc/sudoers is still there", sudoers ~= nil)
+			local lines = CeroSecOS.splitLines((sudoers or {}).data or "")
+			local named = 0
+			for l = 1, #lines do
+				local entry = CeroSecOS.parseSudoersLine(lines[l])
+				if entry ~= nil and entry.name == CeroSecOS.FACTORY_USER then
+					named = named + 1
+				end
+			end
+			eq(id .. ": and no line in it names the factory account", named, 0)
+			-- The wheel line is untouched: it grants nothing (the group ships empty) and
+			-- it is what `useradd -G wheel bob` means. Taking it out would cost root a
+			-- door he never opened.
+			check(id .. ": while %wheel is still the line it was",
+				string.find((sudoers or {}).data or "",
+					"%%" .. CeroSecOS.WHEEL_GROUP) ~= nil)
+			-- And no group line anywhere still names it.
+			local groups, order = CeroSecOS.readGroups(state)
+			for g = 1, #order do
+				eq(id .. ": no group still names it (" .. order[g] .. ")",
+					groups[order[g]].set[CeroSecOS.FACTORY_USER], nil)
+			end
+
+			-- THE STAFF ADMINISTRATOR: the building, yes; root, no.
+			local profile = CeroSecContent.PROFILES[id]
+			if type(profile.accounts) == "table" then
+				for a = 1, #profile.accounts do
+					local login = logins[a]
+					if login ~= nil and profile.accounts[a].admin then
+						check(id .. ": the staff administrator may throw a relay (" .. login
+							.. ")", CeroSecOS.inGroup(state, login, CeroSecOS.DEV_GROUP))
+						eq(id .. ": and may not become root", CeroSecOS.sudoer(state, login),
+							nil)
+						-- Through the command a player would type, not only through the
+						-- function behind it: sudo is the wire, and the refusal is what he
+						-- reads.
+						local password =
+							CeroSecContent.accountPassword(SECRET_A, 12, 34, a, login)
+						local session = CeroSecOS.login(state, login, password)
+						check(id .. ": he can log in with the password a paper names",
+							session ~= nil)
+						if session ~= nil then
+							session.shvars = CeroSecOS.loginVars("/home/" .. login)
+							local ok, out = run(state, session, "sudo whoami")
+							eq(id .. ": and sudo refuses him", ok, false)
+							check(id .. ": in sudo's own words (" ..
+								tostring((out or {})[1]) .. ")",
+								string.find(tostring((out or {})[1]),
+									"not in the sudoers file", 1, true) ~= nil)
+						end
+					end
+				end
+			end
+
+			-- AND ROOT IS WHAT THE PAPER SAYS, which is the way in that is left.
+			if profile.root then
+				local note = CeroSecContent.password(SECRET_A,
+					CeroSecContent.rootKey(12, 34))
+				check(id .. ": the drawer's paper opens root",
+					CeroSecOS.checkPassword(CeroSecOS.getUser(state, "root"), note))
+				check(id .. ": and root is not open", not CeroSecOS.checkPassword(
+					CeroSecOS.getUser(state, "root"), ""))
+			end
+			local vok, vwhy = CeroSecOS.validate(state)
+			check(id .. ": and the machine still boots: " .. tostring(vwhy), vok)
+		end
+	end
+
+	-- A BARE MACHINE, which is the control and is the one machine the factory account
+	-- describes: nobody ever set it up. Nothing is prefilled here at all, which is
+	-- what the option being off and a premises with no profile both come to.
+	do
+		local bare = CeroSecOS.newState("ksp-4-b")
+		local factory = CeroSecOS.getUser(bare, CeroSecOS.FACTORY_USER)
+		check("a bare machine keeps the factory account", factory ~= nil)
+		check("and it is open", CeroSecOS.checkPassword(factory, ""))
+		check("and may sudo, exactly as it always could",
+			CeroSecOS.sudoer(bare, CeroSecOS.FACTORY_USER) ~= nil)
+		check("and its home is there",
+			CeroSecOS.systemNode(bare, CeroSecOS.FACTORY_HOME) ~= nil)
+		check("and root is open on it too",
+			CeroSecOS.checkPassword(CeroSecOS.getUser(bare, "root"), ""))
+		-- A premises with no profile at all is the other way to be bare: prefill leaves
+		-- the machine exactly as it found it and answers nothing.
+		local unknown = CeroSecOS.newState("ksp-4-b")
+		eq("a premises with no profile prefills nothing",
+			CeroSecContent.prefill(unknown, opts(SECRET_A, { premises = "nosuchword",
+				rooms = { "nosuchroom" } })), CeroSecContent.DEFAULT_PROFILE)
+		-- ...and residential IS a profile, so that one is prefilled and gives the
+		-- account up like the rest. The case that is really bare is an id the catalogue
+		-- has no table for, which is what a future profile id looks like from here.
+		local none = CeroSecOS.newState("ksp-4-b")
+		local had = CeroSecContent.PROFILES.residential
+		CeroSecContent.PROFILES.residential = nil
+		eq("an id the catalogue has no table for prefills nothing",
+			CeroSecContent.prefill(none, opts(SECRET_A, { premises = "nosuchword" })), nil)
+		CeroSecContent.PROFILES.residential = had
+		check("and such a machine keeps the factory account",
+			CeroSecOS.getUser(none, CeroSecOS.FACTORY_USER) ~= nil)
+	end
+end
+
+--
 -- 4c. Every data file a script was proved on is a file some premises really keeps
 --
 -- CeroSecContent.DATA is named twice on purpose: once by the script that reads it
@@ -1849,8 +2001,12 @@ do
 		-- AND THE SHOP'S PEOPLE ARE NOT ON IT. It is stock: the shop has not sold it,
 		-- and a machine the public types at is not a machine with the staff on it.
 		local _, ord = CeroSecOS.readUsers(m.state)
-		eq("and the only accounts on it are root, admin and demo (" ..
-			table.concat(ord, " ") .. ")", #ord, 3)
+		eq("and the only accounts on it are root and demo (" ..
+			table.concat(ord, " ") .. ")", #ord, 2)
+		-- And not the factory account: a prefilled machine gives that one up, display
+		-- models included, or root's hashed password has a way round it.
+		eq("the factory account is off it too",
+			CeroSecOS.getUser(m.state, CeroSecOS.FACTORY_USER), nil)
 		for slot = 1, #CeroSecContent.PROFILES.showroom.accounts do
 			local login = CeroSecContent.accountLogin(SECRET_A, 12, 34, slot)
 			eq("and the shop's slot " .. slot .. " is not on it (" .. login .. ")",

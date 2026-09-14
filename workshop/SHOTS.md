@@ -51,7 +51,10 @@ short and obviously real.
   `ls -l /dev | head`, then leave the prompt sitting empty with the cursor on.
 - **Must be visible:** an `ls -l` line with real modes, owner and group; at
   least one `c` device line in `/dev`; the `$` prompt with the hostname in it.
-- Do it as `admin`, not `root`. A `#` prompt invites the wrong question.
+- Do it as an ordinary account, not `root`. A `#` prompt invites the wrong
+  question. On a prefilled machine there is no `admin` to use — it is one of the
+  premises' own staff logins, off the paper in the drawer — so either shoot it on a
+  bare machine or log in as the shop's own man.
 
 ### 03 `03-computer-menu.png` -- how you get in
 
@@ -156,7 +159,8 @@ the ceiling Steam shows them at anyway.
 ### G1 `g1-power-on.gif` -- six seconds, the whole loop of using one
 
 Right-click, **Turn on computer**, right-click, **Use computer**, the survivor
-walks over and sits, the BIOS counts down, the login prompt arrives, `admin`,
+walks over and sits, the BIOS counts down, the login prompt arrives, the login
+typed (`admin` on a bare machine, the premises' own man on a prefilled one),
 Enter, the motd. Nothing typed after that. It answers "what do I actually do
 with this" before anybody asks it in the comments.
 

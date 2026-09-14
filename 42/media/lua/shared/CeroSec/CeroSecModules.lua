@@ -69,20 +69,43 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- climbed up to fit.
 --
 -- So the table carries a version, and a chain beside it:
--- CeroSecModules.MIGRATIONS[n] takes the table at n - 1 and leaves it at n. Empty
--- today, because nothing has changed shape yet; what matters is that there is
--- somewhere for the first step to go.
+-- CeroSecModules.MIGRATIONS[n] takes the table at n - 1 and leaves it at n.
 --
 -- A table with NO version is version 1, not version 0, and that is not a guess: the
 -- ids in a table written before this change are the ids version 1 has, so an absent
--- number reads as the shape it really is. The number is stamped on the next write
--- (CeroSecModules.setOn) rather than on every read, because a read happens on a
--- client -- the right-click menu asks what is fitted -- and a client writing into a
--- door's modData writes into nothing anybody else will ever see.
+-- number reads as the shape it really is.
 --
-CeroSecModules.VERSION = 1
+-- WHERE THE NUMBER GETS WRITTEN, corrected 2026-09-14. This used to say the stamp
+-- goes on at the next WRITE (setOn) and never on a read. That was true only because
+-- VERSION was 1 and the walk in `migrate` therefore had no iteration to make: the
+-- walk has always ended each step with `fitted[VERSION_KEY] = n`, so the moment
+-- VERSION moved to 2 the first READ of an older table became the thing that stamps
+-- it -- on a client as well as on the server. That is harmless in both places and is
+-- left as it is: on a client the write lands in a table nobody else will ever see,
+-- and on the server it lands in the chunk, which is where the answer belongs. What
+-- would NOT be harmless is a step that did real work being run twice, and the stamp
+-- is exactly what stops that.
+--
+-- VERSION 2 as of the change that added the `pre` key below. Strictly it did not have
+-- to move -- an absent mark reads as "not pre-fitted", which is the old behaviour on
+-- every fixture in every save, and the step below therefore has nothing to convert.
+-- It moves anyway, and the reason is a reader and not the code: this table now has a
+-- key in it that is not one of the four ids and does not behave like one, and a shape
+-- that changed without its number moving is a shape nothing can be held to afterwards.
+-- The cost of moving it is one write of one number into a table that was going to be
+-- read anyway.
+CeroSecModules.VERSION = 2
 CeroSecModules.VERSION_KEY = "v"
+-- MIGRATIONS[n] takes the table at n - 1 and leaves it at n.
+--
+-- [2] has nothing to do and says so out loud rather than being absent: a gap in the
+-- chain is what `migrate` refuses to walk (it answers false and the fixture reads as
+-- bare), so "no conversion needed" has to be written as a step that converts nothing.
+-- What version 1 lacked is the `pre` mark, and the absence of it is already the right
+-- answer for every fixture written before this change -- none of them was fitted by
+-- anybody but a player.
 CeroSecModules.MIGRATIONS = {}
+CeroSecModules.MIGRATIONS[2] = function(_fitted) end
 CeroSecModules.OLDEST_VERSION = 1
 
 -- AND ONE KEY THAT IS NOT A MODULE: was this fixture wired before the outbreak?

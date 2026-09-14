@@ -1586,16 +1586,27 @@ do
 	-- what every door in every save carries today.
 	local door = thing()
 	door:getModData()[CeroSecModules.DATA_KEY] = { strike = true, contact = true }
+	-- Asked BEFORE anything reads the table, which is the order that matters now that
+	-- VERSION is 2: the walk in `migrate` stamps what it walks, so the first read of an
+	-- older table is what moves the number on it, and a bench that asked afterwards
+	-- would be asking about its own reading.
+	eq("no number reads as the oldest shape",
+		CeroSecModules.versionOf(door:getModData()[CeroSecModules.DATA_KEY]),
+		CeroSecModules.OLDEST_VERSION)
 	local fitted = CeroSecModules.installedOn(door)
 	eq("an unstamped door keeps its strike", fitted.strike, true)
 	eq("and its contact", fitted.contact, true)
-	eq("because no number reads as the oldest shape",
-		CeroSecModules.versionOf(door:getModData()[CeroSecModules.DATA_KEY]),
-		CeroSecModules.OLDEST_VERSION)
+	eq("and the read walked it up to this build and stamped it",
+		door:getModData()[CeroSecModules.DATA_KEY][CeroSecModules.VERSION_KEY],
+		CeroSecModules.VERSION)
+	eq("without inventing a pre-fitted mark on it",
+		door:getModData()[CeroSecModules.DATA_KEY][CeroSecModules.PRE_KEY], nil)
+	eq("so a door an older build wired is not one this one wired",
+		CeroSecModules.preFitted(door), false)
 
-	-- The next write stamps it, and the boxes are still there afterwards.
+	-- The next write stamps it too, and the boxes are still there afterwards.
 	eq("the server fits one more", CeroSecModules.setOn(door, "operator", true), true)
-	eq("and the shape is written down now",
+	eq("and the shape is written down",
 		door:getModData()[CeroSecModules.DATA_KEY][CeroSecModules.VERSION_KEY],
 		CeroSecModules.VERSION)
 	fitted = CeroSecModules.installedOn(door)
@@ -12918,6 +12929,15 @@ do
 		#order > 2)
 	check("and root is not open any more",
 		not CeroSecOS.checkPassword(users.root, ""))
+	-- AND THE FACTORY ACCOUNT IS OFF IT, through the real power-on and not only in the
+	-- catalogue's own bench: it is the one way into a machine that needs nothing found,
+	-- so root's hashed password is worth nothing while it is there.
+	eq("the factory account is gone",
+		CeroSecOS.getUser(state, CeroSecOS.FACTORY_USER), nil)
+	eq("and it cannot sudo any more",
+		CeroSecOS.sudoer(state, CeroSecOS.FACTORY_USER), nil)
+	eq("and its home went with it",
+		CeroSecOS.systemNode(state, CeroSecOS.FACTORY_HOME), nil)
 	check("its name says which premises it is", state.hostname ~= "ksp-7t-jc"
 		and string.find(state.hostname, "^acct%-") ~= nil)
 	eq("and /etc/hostname agrees with it",
@@ -13066,6 +13086,14 @@ do
 		local _, ord = CeroSecOS.readUsers(bare)
 		eq("with the option off a machine comes up with two accounts", #ord, 2)
 		check("root open", CeroSecOS.checkPassword(CeroSecOS.readUsers(bare).root, ""))
+		-- AND THE FACTORY ACCOUNT IS STILL THERE, open, which is the other half of the
+		-- rule a prefilled machine follows: the account describes a machine nobody ever
+		-- set up, and with the option off that is every machine in the county.
+		local factory = CeroSecOS.getUser(bare, CeroSecOS.FACTORY_USER)
+		check("the factory account is on it", factory ~= nil)
+		check("and open", CeroSecOS.checkPassword(factory, ""))
+		check("and may still sudo",
+			CeroSecOS.sudoer(bare, CeroSecOS.FACTORY_USER) ~= nil)
 		eq("and the name the coordinates give it", bare.hostname,
 			CeroSec.hostnameFor(12, 10))
 		eq("and no log", CeroSecOS.systemNode(bare, CeroSecOS.LOG_PATH .. "/messages"),
@@ -13098,8 +13126,13 @@ do
 			CeroSecOS.systemNode(onFloor, CeroSecOS.MOTD_PATH).data,
 			CeroSecContent.DEMO.motd)
 		local _, ord = CeroSecOS.readUsers(onFloor)
+		-- root and demo, and nobody else: not the shop's people, because it is stock --
+		-- and not the factory `admin` either, because this is a machine somebody set up
+		-- and a prefilled machine gives that account up (CeroSecContent.prefill).
 		eq("and the shop's people are not on stock (" .. table.concat(ord, " ") .. ")",
-			#ord, 3)
+			#ord, 2)
+		eq("nor is the factory account", CeroSecOS.getUser(onFloor,
+			CeroSecOS.FACTORY_USER), nil)
 
 		local back = net.machine(5006, 6006, 0, shop, "electronicsstorage")
 		back:turnOn()
@@ -13108,8 +13141,12 @@ do
 			string.match(inBack.hostname, "^[a-z0-9]+"),
 			CeroSecContent.PROFILES.showroom.host)
 		local _, backOrd = CeroSecOS.readUsers(inBack)
+		-- root and the showroom's two people: more than the demo image's two, and the
+		-- factory account is not among them on this machine either.
 		check("with the shop's people on it (" .. table.concat(backOrd, " ") .. ")",
-			#backOrd > 3)
+			#backOrd > 2)
+		eq("and not the factory account",
+			CeroSecOS.getUser(inBack, CeroSecOS.FACTORY_USER), nil)
 
 		-- AND THE PAPER IN THE BACK-ROOM DRAWER OPENS BOTH OF THEM, which is the
 		-- reason a display model keeps the premises' root and not a factory password:

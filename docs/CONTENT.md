@@ -16,7 +16,9 @@ underneath.
 - **On** — a vanilla computer switched on for the first time comes up as
   somebody's machine: his accounts, his files, a motd, a week of log, sometimes a
   password. A floppy off a shelf sometimes has a program and a `README.TXT` on it.
-  Papers with passwords on them turn up in desks and in pockets.
+  Papers with passwords on them turn up in desks and in pockets. **The factory
+  `admin` account is not on such a machine** — see *The factory account, and why it
+  comes off*.
 - **Off** — the bare machine this mod shipped with: `root` and `admin`, both open,
   an empty disk, blank floppies.
 
@@ -119,6 +121,39 @@ first and then prefills it.
 **Nothing generated is stored in clear.** A root password is derived, hashed
 through `setPassword` and forgotten; the only place the letters appear is on the
 paper, and the paper derives them again for itself.
+
+### The factory account, and why it comes off
+
+**A prefilled machine gives `admin` up.** First thing `prefill` does, before a single
+account or file is written: the home, the `/etc/passwd` line, the `/etc/sudoers` line
+and every `/etc/group` line naming it — the same four gestures `userdel -r admin`
+makes, in the same order, through the same four functions
+(`removeNode`, `removeUser`, `removeSudoer`, `removeGroupMember`). Every refusal is
+passed over in silence like every other write on this page.
+
+**The reason is that without it every password here was a decoration.** A prefilled
+machine had root hashed and a paper in a drawer naming the letters — and it also still
+had `admin`, open, with a line of its own in `/etc/sudoers`. So `admin` at the login
+prompt and then `sudo su` was root on any machine in the county with nothing found and
+nothing read. The drawer, the pocket and the corpse were all optional. It is also
+simply untrue of an office: a real one does not keep the dealer's own account on its
+books.
+
+**What is left is the company's own administrator.** A profile account with
+`admin = true` has a password derived like the rest of the staff, is in the **device
+group** (`CeroSecOS.DEV_GROUP`) so he can work the building he was responsible for,
+and is **not** in `/etc/sudoers`, so he cannot become root. That is the line this is
+drawn on: a paper in a dead man's pocket naming him is a foothold — his files, and the
+lights and locks of his premises — and root is still the paper in the drawer.
+`%wheel` is left in `/etc/sudoers` untouched: the group ships empty and grants nobody
+anything, and it is what `useradd -G wheel bob` means.
+
+**A bare machine keeps it, open, and that is the only machine it describes:** one
+nobody ever set up. The option off, a machine in no building, a player's own base, and
+a premises whose profile id the catalogue has no table for all come to the same thing —
+`prefill` answers nothing and touches nothing. The name and the home are
+`CeroSecOS.FACTORY_USER` and `CeroSecOS.FACTORY_HOME`, which is where
+`defaultPasswd`, `defaultSudoers`, `defaultGroup` and `newState` build them from too.
 
 Which profile a machine gets: the **named zone** of its premises
 (`CeroSecNet.premisesOfSquare`, the same rule the telephone line uses), else the
@@ -522,7 +557,8 @@ because no prefilled machine was ever switched on. He goes into the **device gro
 (`CeroSecOS.DEV_GROUP`, which is what `root:sudo 660` on a device means) and **not**
 into `/etc/sudoers`: he may work the building he was responsible for and he may not
 become root, so a paper in a dead man's pocket naming him is still a foothold and
-never the keys.
+never the keys. The other half of that same decision — the factory `admin` coming off
+a prefilled machine altogether — is under *The factory account, and why it comes off*.
 
 ### And the machine that was left running
 

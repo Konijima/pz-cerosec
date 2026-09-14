@@ -25,10 +25,19 @@ date.
   dark and does nothing, which is what a 1993 timer with no power does. Houses are
   never automated, nor are the display models in an electronics shop's window. All of
   it follows **Prefilled machines and disks** in the sandbox options.
-- The administrator's account on a prefilled machine can work the building it belongs
+- **Somebody's machine no longer keeps the factory admin account open; the paper in
+  the drawer is the way in.** A computer that turns out to be an office's, a shop's or
+  a clinic's now gives that account up the way any real office would have: it is off
+  `/etc/passwd`, its home is gone, and it is out of `/etc/sudoers`. Until now `admin`
+  with no password and then `sudo su` was `root` on any machine in the county without
+  finding or reading anything, which made every password in the world decoration. A
+  machine **nobody ever set up** -- one you built, or any computer with the option off
+  -- still has `admin` and `root`, both open, exactly as before.
+- The administrator's account on somebody's machine can work the building it belongs
   to. It could not before: its own nightly job answered `permission denied` and
   mailed it to itself. It still cannot become `root` -- that is what the paper in the
-  drawer is for.
+  drawer is for, and a login found in a dead man's pocket is a foothold and not the
+  keys.
 - **A shop that sells computers is a shop that sells computers.** An electronics
   store used to come up as six copies of one back office. Now every machine on the
   sales floor is stock: it is switched on, logged in as `demo` with no password, and

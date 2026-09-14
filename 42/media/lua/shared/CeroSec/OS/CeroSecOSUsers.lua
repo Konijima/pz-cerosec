@@ -474,11 +474,26 @@ function CeroSecOS.setPassword(state, name, password, extra, now)
 	return CeroSecOS.writePasswd(state, users, order, name, stored, now)
 end
 
+-- THE ACCOUNT A MACHINE SHIPS WITH, by name, in one place.
+--
+-- It is a name three files and one directory are built from, and it is a constant
+-- because a FOURTH thing now names it: a machine that turns out to be somebody's --
+-- an office, a shop, a clinic -- takes it off, home and sudoers line and group lines
+-- and all (CeroSecContent.prefill). A factory account left open on a machine with a
+-- hashed root password is a machine whose password nobody needs to find, which makes
+-- the paper in the drawer a decoration.
+--
+-- It stays on a BARE machine, which is the only machine it describes: one nobody ever
+-- set up.
+CeroSecOS.FACTORY_USER = "admin"
+CeroSecOS.FACTORY_HOME = "/home/admin"
+
 -- The two accounts a machine ships with, as the file has them. Both open: an
 -- account that ships open is one whose stored hash is the hash of "".
 function CeroSecOS.defaultPasswd()
 	return CeroSecOS.passwdLine(CeroSecOS.newUser("root", "", "/root", true))
-		.. "\n" .. CeroSecOS.passwdLine(CeroSecOS.newUser("admin", "", "/home/admin", false))
+		.. "\n" .. CeroSecOS.passwdLine(
+			CeroSecOS.newUser(CeroSecOS.FACTORY_USER, "", CeroSecOS.FACTORY_HOME, false))
 end
 
 -- A machine saved before /etc/passwd carries its accounts in a table on the
@@ -780,7 +795,7 @@ function CeroSecOS.defaultSudoers()
 	return "# who may run a command as root, and whether he is asked for his password\n"
 		.. "# a bare word is an account; %word is a group -- 4.4BSD gates su on wheel\n"
 		.. "%" .. CeroSecOS.WHEEL_GROUP .. "\n"
-		.. "admin"
+		.. CeroSecOS.FACTORY_USER
 end
 
 --
@@ -1077,7 +1092,7 @@ function CeroSecOS.defaultGroup()
 	return "# name:member,member,... -- one group a line\n"
 		.. "# every account is also in a group of its own name\n"
 		.. "root:\n"
-		.. "sudo:admin\n"
-		.. "users:admin\n"
+		.. "sudo:" .. CeroSecOS.FACTORY_USER .. "\n"
+		.. "users:" .. CeroSecOS.FACTORY_USER .. "\n"
 		.. CeroSecOS.WHEEL_GROUP .. ":"
 end
