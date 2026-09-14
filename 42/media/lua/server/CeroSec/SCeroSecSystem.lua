@@ -298,6 +298,15 @@ end
 --             active, edit }
 --   closed  { x, y, z, token, reason }
 --   history { x, y, z, token, lines }
+--   drive   { x, y, z, player, why, detail }
+--                                   -- a floppy gesture that did nothing. why is
+--                                      a code and not a sentence ("gone",
+--                                      "occupied", "nodisk", "refused",
+--                                      "broken"); detail is the machine's own
+--                                      reason when there is one. Carries no
+--                                      token: the drive is mechanical and works
+--                                      with no window open, so it is addressed
+--                                      to a PLAYER and lands in his halo.
 --   completed { x, y, z, token, line, at, start, replacement, cursor,
 --             candidates }
 --
@@ -1218,10 +1227,42 @@ function SCeroSecSystem:driveFor(playerObj, x, y, z)
 	return luaObject
 end
 
+-- A DRIVE GESTURE THAT DID NOTHING, SAID SO.
+--
+-- Every refusal below used to be a bare `return`, and that is the defect this
+-- answers: the diagnostics disk was refused at the gate for a key the ENGINE puts
+-- on the item (ownKeysOf in CeroSecOSDisk), the timed action played, the disk
+-- stayed in the bag, and the only trace anywhere was a warn line that prints to
+-- the console solely under CeroSec.DEBUG. Six tries, no sentence. A silent return
+-- on a gesture a player made is a mod that looks broken, which is worse than a
+-- mod that says no.
+--
+-- The wire carries a CODE and never a translated sentence: the words belong to the
+-- client, which has getText and knows the survivor's language (CeroSecTerminal's
+-- driveNotice). `detail` is the machine's own reason where there is one, in the
+-- machine's own English, the way every other line this machine prints is.
+--
+-- args.player is which of the local players on the connection asked, the same
+-- field `reopened` carries and for the same reason: there is no window to route
+-- this by, and the halo goes over ONE survivor's head.
+local function driveNotice(system, playerObj, x, y, z, why, detail)
+	system:reply(playerObj, "drive", { x = x, y = y, z = z,
+		player = playerObj:getPlayerNum(), why = why, detail = detail })
+end
+
 Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 	local luaObject = self:driveFor(playerObj, x, y, z)
-	if not luaObject then return end
-	if luaObject:hasDisk() then return end
+	if not luaObject then
+		driveNotice(self, playerObj, x, y, z, "gone")
+		return
+	end
+	if luaObject:hasDisk() then
+		driveNotice(self, playerObj, x, y, z, "occupied")
+		return
+	end
+	-- The one refusal that stays silent, and the only one that is not a gesture: the
+	-- client always sends the id of the disk it offered, so a packet without one is
+	-- a packet nobody typed and there is no survivor waiting for an answer to it.
 	if type(args) ~= "table" or type(args.item) ~= "number" then return end
 
 	-- His own inventory and nobody else's, by the id he sent: the same lookup
@@ -1229,8 +1270,14 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 	-- recursive form, because a survivor keeps his disks in a bag like everything
 	-- else.
 	local item = playerObj:getInventory():getItemWithIDRecursiv(math.floor(args.item))
-	if not item then return end
-	if not CeroSec.isFloppyType(item:getFullType()) then return end
+	if not item or not CeroSec.isFloppyType(item:getFullType()) then
+		-- One sentence for the two of them, because they are the same thing from
+		-- where the survivor stands: what he offered the drive is not a disk in his
+		-- hands any more. He dropped it, somebody took it, or the id names something
+		-- else entirely.
+		driveNotice(self, playerObj, x, y, z, "nodisk")
+		return
+	end
 
 	-- What is written on it, copied out of the item into a plain table of our own
 	-- and put through the engine's gate before it is anywhere near the machine.
@@ -1244,6 +1291,9 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 		if read == nil then
 			CeroSec.log(CeroSec.LOG_WARN, "refused a disk at " .. x .. "," .. y .. "," .. z
 				.. ": " .. tostring(reason))
+			-- And to the survivor, not only to the log: the log is behind a debug flag
+			-- and a debug window, and he is standing at the machine holding the disk.
+			driveNotice(self, playerObj, x, y, z, "refused", tostring(reason))
 			return
 		end
 		disk = read
@@ -1288,8 +1338,15 @@ Commands.insertfloppy = function(self, playerObj, x, y, z, token, args)
 	-- the county and nothing happens twice for this one.
 	CeroSecNet.fillLateDisk(disk, x, y, nil)
 
-	local done = luaObject:insertDisk(disk, item:getFullType())
-	if not done then return end
+	local done, refusal = luaObject:insertDisk(disk, item:getFullType())
+	if not done then
+		-- The drive's own two: something else got in between (occupied), or the
+		-- machine's state will not pass its gate at all (broken), which is a computer
+		-- the firmware has to mend and not a disk to keep trying.
+		driveNotice(self, playerObj, x, y, z,
+			refusal == "occupied" and "occupied" or "broken")
+		return
+	end
 
 	-- Out of the container it was really in, which is the bag and not the pockets
 	-- when that is where he was keeping it.

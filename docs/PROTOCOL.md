@@ -58,7 +58,7 @@ client-side. The window talks to the server over the global object channel:
 
     client -> server: open, exec, close, input, interrupt,
                       editbuf, editsave, editexit, histtail
-    server -> client: opened, screen, closed, history
+    server -> client: opened, screen, closed, history, drive
 
 `closed` carries the reason the window is shutting: `off`, `power`, `reach`, `gone`,
 `broken`, `exit` — and `reboot`, which is the only one that says the machine is
@@ -78,6 +78,18 @@ same character at the keyboard, no second walk and no second seat. A player who
 wandered off in those seconds is sent nothing and uses the computer by hand. In
 multiplayer each one is a `sendServerCommand(player, ...)` of its own, like every
 other answer.
+
+`drive` is the other answer with no window behind it, and the drive is why: a disk
+goes into a machine that is switched off, with nothing open to draw a line on. It is
+sent when an `insertfloppy` did **nothing** — the machine is not there (`gone`), the
+slot is full (`occupied`), what was offered is not a disk in the sender's hands
+(`nodisk`), the disk itself will not pass the engine's gate (`refused`, with the
+machine's own reason in `detail`), or the machine's state will not (`broken`) — and
+it carries the local player number, like `reopened`, because it lands over ONE
+survivor's head. What travels is the code and never the sentence: the client owns the
+words, and they are in `Translate/EN` and `Translate/FR` with the rest of what this
+mod says to a player. The only refusal that stays silent is a packet with no item id
+in it, which no client sends and no survivor is waiting on.
 
 A screen is sent whole: the lines, the prompt, the mode (`prompt`, `shell` or
 `edit`), whether the answer is masked, whether the machine is in the middle of

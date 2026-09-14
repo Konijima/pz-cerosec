@@ -479,10 +479,12 @@ telephone book does when a player opens it.
 CeroSecContent.DISKS[i] = {
   id     = "UTILITIES",   -- what the entry is called here and in the bench
   label  = "UTILITIES",   -- what is written on the disk; capitals, labelOk
-  weight = 4,             -- out of 100; the remainder is a blank disk
+  weight = 3,             -- out of 100; the remainder is a blank disk
   late   = "NUMBERS.TXT", -- one file is a stub until the disk is first inserted
   files  = { { name = "lights.sh", script = "lights.sh" },
              { name = "README.TXT", mode = 644, text = "..." },
+             { name = "DIARY.TXT", mode = 644,
+               texts = { "...", "...", "..." } },   -- three tellings
              { name = "MAN", dir = true },
              { name = "MAN/CU.TXT", mode = 644, text = "..." } },
 }
@@ -491,7 +493,9 @@ CeroSecContent.DISKS[i] = {
 Five things to know:
 
 - a file entry carries **either** `script` (a name in `CeroSecContent.SCRIPTS`,
-  which brings its own mode) **or** `text` and `mode`. Never both. An entry marked
+  which brings its own mode) **or** `text` and `mode`, **or** `texts` and `mode`
+  for a file written three ways (see *Three tellings of a disk* below). An entry
+  marked
   `dir` is a **directory**, and a `name` may then be two components with a slash
   between them — `MAN`, then `MAN/CU.TXT`. Two is all the depth a floppy gets: a
   deeper tree on 4096 bytes read at sixty columns is a tree nobody would walk. The
@@ -506,19 +510,82 @@ Five things to know:
 - `BLANK` is in the table with no files on purpose: naming the entry a roll lands
   on when nothing is written lets the bench say so out loud.
 
-### The six as shipped
+### The nine as shipped
 
-| label | share | what is on it |
-| --- | --- | --- |
-| `UTILITIES` | 4 | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
-| `BBS LIST` | 3 | `NUMBERS.TXT` (**late**, see below), `CALLS.TXT` — packet stations somebody heard, by callsign — and how to reach either |
-| `WARDIALER` | 2 | `RANGE.TXT`, `log.sh`, and a README whose first screen says there is no wardialer and why |
-| `GAMES` | 3 | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
-| `BACKUP` | 3 | somebody's home directory on 8 July: `DIARY.TXT` in four entries, `LETTERS.TXT`, `FAMILY.TXT` |
-| `CEROSEC OS 1.0 DIST` | 2 | `INSTALL.TXT`, `MAN/` with six pages, three scripts |
+| label | share | tellings | what is on it |
+| --- | --- | --- | --- |
+| `UTILITIES` | 3 | one | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
+| `BBS LIST` | 2 | one | `NUMBERS.TXT` (**late**, see below), `CALLS.TXT` — packet stations somebody heard, by callsign — and how to reach either |
+| `WARDIALER` | 1 | one | `RANGE.TXT`, `log.sh`, and a README whose first screen says there is no wardialer and why |
+| `GAMES` | 2 | one | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
+| `BACKUP` | 2 | **three** | somebody's home directory on 8 July: `DIARY.TXT`, `LETTERS.TXT`, `FAMILY.TXT` |
+| `CEROSEC OS 1.0 DIST` | 2 | one | `INSTALL.TXT`, `MAN/` with six pages, three scripts |
+| `LEDGER` | 2 | **three** | a shop's books: `SALES.TXT` (a line a day, in cents), `SUPPLIERS.TXT`, `total.sh` |
+| `PERSONAL` | 2 | **three** | `LETTERS.TXT` (never sent, the last one dated the 8th or 9th of July), `TODO.TXT`, `RECIPE.TXT`, `POEM.TXT`, `NUMBERS.TXT` |
+| `RADIO LOG` | 1 | **three** | a ham club's `HEARD.LOG` of the week before, `NETS.TXT`, `MYCALL.TXT`, and a README on `cu -l /dev/radio0` and `MHEARD` |
 
-Seventeen shares of a hundred; the other eighty-three are a blank disk, which is what
-a box of disks is.
+**Still seventeen shares of a hundred.** `LEDGER`, `PERSONAL` and `RADIO LOG` were
+paid for out of the six that were already there and not out of the blank remainder:
+`UTILITIES` went from 4 to 3, `BBS LIST` from 3 to 2, `WARDIALER` from 2 to 1,
+`GAMES` from 3 to 2 and `BACKUP` from 3 to 2, which is five shares for three new
+disks at 2, 2 and 1. So the other eighty-three are still a blank disk, which is what
+a box of disks is, and what changed is only what a written one says.
+
+### Three tellings of a disk
+
+**The complaint, in the words it was made in:** the loot floppies have one content
+per kind, so the `BACKUP` diary is the same all over the county. A profile already
+answers that — three tellings of every prose file, chosen by the premises — and a
+disk cannot borrow that answer: **a disk has no premises.** It is in a drawer in a
+town nobody has walked into, which is the same hole `late` was dug for.
+
+So a disk's telling is **a second roll at creation**, `ZombRand(VARIANTS)` beside
+the roll that chose the kind, in `CeroSecContent.onCreateFloppy`.
+
+**Not derived from the kind's roll**, and that is the part worth stating: the kind's
+roll is 1..100 spent against a weight, so an entry with a share of one is reached by
+exactly one roll and would carry exactly one telling for ever. Every entry has all
+three whatever its share of the box is.
+
+**Where the choice persists: in `disk.fs`, as the bytes themselves.** A disk owns
+three keys and only three (`CeroSecOS.DISK_KEYS`) and the slot takes those three off
+the item and no others, so there is nowhere of ours to write a variant number — and nothing to write, because
+what a telling produces is a filesystem, and the filesystem is what goes into the
+item's modData and comes back out of the save with it. **Nothing rolls at read
+time.** A disk read twice is the same disk and a disk read in the next save is still
+the disk it was written as, which is exactly the shape the hook already had for which
+*kind* of disk this is: roll once, keep the answer, never ask again. The bench asserts
+it through the hook, called a second time on the same item with a generator that
+would answer a different telling.
+
+**Which files vary.** The four disks that are somebody's **own writing** —
+`BACKUP`, `LEDGER`, `PERSONAL`, `RADIO LOG` — carry `texts` on every file including
+the README, because a shopkeeper's note to himself is his and the shop in the next
+town had another shopkeeper in it. The other five are a vendor's or a program's
+documentation and keep **one shape**: three voices of one manual page would be three
+manual pages. And two kinds of file keep one shape wherever they are:
+
+- **data a script is proved against.** `SALES.TXT` is the column the bench adds up
+  (158244 cents, and 346 tickets), so it is the column every copy carries — the same
+  rule a profile's `CeroSecContent.DATA` table obeys. `RANGE.TXT` and `WORDS.TXT` are
+  the same case.
+- **a `late` stub.** The fill decides whether a disk is still waiting by comparing
+  the file byte for byte against the catalogue's own stub, so three stubs would be
+  two disks in three that never get their listings. `CeroSecContent.lateFile` only
+  ever answers a `text`, so this one is refused by construction and asserted anyway.
+
+**The names go in at build time**, out of `CeroSecContent.NAMES`, and they are the
+**telling's**: `CeroSecContent.diskNames` walks the first-name list at a stride per
+placeholder and a stride per telling, so telling one is always the same four people.
+It cannot be a hash of the save's secret the way a profile's staff are — the hook
+runs wherever an item is instanced, a client included, and the secret is the
+server's. There is no `{host}` on a disk: a disk that named a machine would name the
+wrong one on every machine but the first. A placeholder with nobody behind it becomes
+`somebody`, and the bench asserts no brace survives in any telling of any file.
+
+`LEDGER` carries `total.sh` out of the shared library rather than a copy of its own,
+which is the same one-copy-named-twice rule the profiles follow: the script the shop
+runs on its own books is the script the bench runs.
 
 ### And a seventh that is not loot: `CEROSEC DIAGNOSTICS`
 
@@ -634,9 +701,9 @@ position, and the bench caught it: two copies of one disk must be the same page,
 for byte.
 
 **Where the "has it been filled" mark lives: nowhere.** A disk owns three keys and only
-three (`CeroSecOS.DISK_KEYS`) and the gate at the slot refuses a disk carrying a
-fourth, which is what keeps a payload out of the save file — so there is nowhere on a
-disk to write a flag and nothing that would survive being written there. The mark is
+three (`CeroSecOS.DISK_KEYS`) and the slot takes those three off the item and copies
+nothing else, which is what keeps a payload out of the save file — so there is nowhere
+on a disk to write a flag and nothing that would survive being written there. The mark is
 **the file**: `CeroSecContent.lateEntryFor` answers the entry only while the late file
 still holds, byte for byte, the stub the catalogue shipped, and the stub it compares
 against *is* the catalogue's own text, so a change that edited the stub and forgot the
@@ -814,8 +881,10 @@ Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **3** as of the world-content work, part 3, which gave every machine an owner,
-every prose file three tellings, and every desk a week of history behind it. (**2**
+`CeroSecContent.VERSION` is **4** as of the change that gave every loot disk that is
+somebody's own writing three tellings and added `LEDGER`, `PERSONAL` and `RADIO LOG`
+out of the same seventeen shares. (**3** gave every machine an owner,
+every prose file three tellings, and every desk a week of history behind it; **2**
 was the world-content work, part 2, which filled the eight empty profiles and the five empty disk slots.) It
 is the catalogue's own number and **must
 never become a save-shape number**: nothing a profile writes is marked as having come from one, so

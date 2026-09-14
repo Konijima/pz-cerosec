@@ -57,7 +57,7 @@ CeroSecContent = CeroSecContent or {}
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
 -- about a machine somebody has already switched on. Bumped when a change adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
-CeroSecContent.VERSION = 3
+CeroSecContent.VERSION = 4
 
 --
 -- Is there anything already on the machines at all?
@@ -1008,16 +1008,20 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --   DISKS[i] = {
 --     id     = "UTILITIES",  what the entry is called in here and in the bench
 --     label  = "UTILITIES",  what is written on the disk, CeroSecOS.labelOk
---     weight = 4,            out of 100; what is left over is a blank disk
+--     weight = 3,            out of 100; what is left over is a blank disk
 --     late   = "NUMBERS.TXT" one file is a stub until the disk is first inserted
 --     files  = { { name="lights.sh", script="lights.sh" },
---                { name="README.TXT", mode=644, text="..." } },
+--                { name="README.TXT", mode=644, text="..." },
+--                { name="DIARY.TXT", mode=644, texts={ "...", "...", "..." } } },
 --   }
 --
 -- Five things to know:
 --
 --   * a file entry carries EITHER `script` (a name in CeroSecContent.SCRIPTS,
---     which brings its own mode) or `text` and `mode`. Never both. An entry marked
+--     which brings its own mode) or `text` and `mode`, or `texts` and `mode` for
+--     one file written three ways -- see the note over CeroSecContent.diskData for
+--     which of a disk's files get three tellings and where the choice is kept. An
+--     entry marked
 --     `dir` is a directory, and a `name` may then be two components with a slash
 --     between them ("MAN", then "MAN/CU.TXT") -- two is all the depth a floppy
 --     gets, and the entry that makes a directory has to come before the entries
@@ -1032,6 +1036,14 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --     colours share one box of disks, and a disk with something on it is meant
 --     to be a find: most of them are blank, which is also what the floppy loot
 --     file has always said (see CeroSecFloppyLoot).
+--
+--     SEVENTEEN of the hundred, and it stayed seventeen when LEDGER, PERSONAL and
+--     RADIO LOG were added: the three shares came out of the six that were already
+--     there rather than off the blank remainder, so a box of disks is as blank as
+--     it has always been and what changed is only what a written one says. The
+--     split is 3 UTILITIES, 2 BBS LIST, 1 WARDIALER, 2 GAMES, 2 BACKUP, 2 for the
+--     distribution media, 2 LEDGER, 2 PERSONAL, 1 RADIO LOG. The bench adds them
+--     up and holds the remainder to being the larger half.
 --   * BLANK is in the table with no files on purpose: it is the entry the roll
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
@@ -1081,7 +1093,7 @@ CeroSecContent.DISKS = {
 	{
 		id = "UTILITIES",
 		label = "UTILITIES",
-		weight = 4,
+		weight = 3,
 		files = {
 			{ name = "lights.sh", script = "lights.sh" },
 			{ name = "check.sh", script = "check.sh" },
@@ -1109,7 +1121,7 @@ CeroSecContent.DISKS = {
 	{
 		id = "BBS LIST",
 		label = "BBS LIST",
-		weight = 3,
+		weight = 2,
 		-- THE ONE LATE ENTRY, and the sixth note over this table is the whole of
 		-- why: the numbers on it are the numbers of the exchange the disk is first
 		-- put into a machine in, because a disk in a drawer in a town nobody has
@@ -1163,7 +1175,7 @@ CeroSecContent.DISKS = {
 	{
 		id = "WARDIALER",
 		label = "WARDIALER",
-		weight = 2,
+		weight = 1,
 		files = {
 			-- THE DECISION, said on the disk itself in the plainest words there
 			-- are. See the WARDIALER paragraph in docs/CONTENT.md for the proof.
@@ -1215,7 +1227,7 @@ CeroSecContent.DISKS = {
 	{
 		id = "GAMES",
 		label = "GAMES",
-		weight = 3,
+		weight = 2,
 		files = {
 			{ name = "README.TXT", mode = 644, text = table.concat({
 				"GAMES",
@@ -1241,74 +1253,221 @@ CeroSecContent.DISKS = {
 	{
 		id = "BACKUP",
 		label = "BACKUP",
-		weight = 3,
+		-- One share of the box went to LEDGER and PERSONAL: see the weight note
+		-- over this table. Three tellings, which is what the change that wrote them
+		-- was for -- the same disk in two towns was the same man's diary.
+		weight = 2,
 		files = {
-			{ name = "README.TXT", mode = 644, text = table.concat({
-				"BACKUP",
-				"",
-				"Everything out of my home directory, 8 July.",
-				"",
-				"DIARY.TXT    what I have been writing since the 4th.",
-				"LETTERS.TXT  the two I wrote and did not send.",
-				"FAMILY.TXT   everybody's numbers.",
-				"",
-				"If you have found this and you can still telephone",
-				"anybody, ring them and tell them where you got it.",
-			}, "\n") },
-			{ name = "DIARY.TXT", mode = 644, text = table.concat({
-				"4 July",
-				"The plant shut at noon and nobody said why. Half of",
-				"them went straight to the bar from the gate. I came",
-				"home and put the radio on and there was nothing on",
-				"the radio either.",
-				"",
-				"5 July",
-				"Drove in for bread. The road at the trestle is shut",
-				"and there is a soldier standing on it, a young one,",
-				"who would not look at me while he turned me round.",
-				"",
-				"6 July",
-				"Earl came by. He says the hospital is not taking",
-				"anybody at all and that the line on the map moved",
-				"north in the night. We put the shutters up. It felt",
-				"stupid doing it in the daylight.",
-				"",
-				"8 July",
-				"The telephone has been ringing all morning and it is",
-				"not ringing here. It is ringing next door and nobody",
-				"has picked it up. I am putting this on a disk",
-				"because the machine is the only thing in this house",
-				"still doing what it did last week.",
-			}, "\n") },
-			{ name = "LETTERS.TXT", mode = 644, text = table.concat({
-				"To Mother, not sent:",
-				"",
-				"We are all right and the house is all right. Do not",
-				"try to drive down. If the road is open they will",
-				"tell you it is shut, and if it is shut they will",
-				"tell you nothing at all.",
-				"",
-				"To the county, not sent:",
-				"",
-				"I have telephoned four times about the water and",
-				"been told four times that somebody will come out.",
-				"Nobody has come out. I am writing it down so that",
-				"when this is over there is a piece of paper with a",
-				"date on it.",
-			}, "\n") },
-			{ name = "FAMILY.TXT", mode = 644, text = table.concat({
-				"EVERYBODY'S NUMBERS",
-				"",
-				"  Mother          418-0233",
-				"  Earl and Wanda  418-1147",
-				"  the plant       418-4400",
-				"  the doctor      418-0180",
-				"  next door       418-1162",
-				"",
-				"The first three are this exchange. If you are",
-				"reading this somewhere else in the county then they",
-				"are somebody else's numbers now, and I am sorry.",
-			}, "\n") },
+			{ name = "README.TXT", mode = 644, texts = {
+				table.concat({
+					"BACKUP",
+					"",
+					"Everything out of my home directory, 8 July.",
+					"",
+					"DIARY.TXT    what I have been writing since the 4th.",
+					"LETTERS.TXT  the two I wrote and did not send.",
+					"FAMILY.TXT   everybody's numbers.",
+					"",
+					"If you have found this and you can still telephone",
+					"anybody, ring them and tell them where you got it.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+				table.concat({
+					"BACKUP",
+					"",
+					"My home directory off the machine, the 8th of",
+					"July, because the power keeps going off.",
+					"",
+					"DIARY.TXT    the week, what I wrote down of it.",
+					"LETTERS.TXT  two letters I never posted.",
+					"FAMILY.TXT   the numbers, if the book is gone.",
+					"",
+					"Whoever you are: the letters are not private any",
+					"more. Read them. Somebody should have.",
+				}, "\n"),
+				table.concat({
+					"BACKUP",
+					"",
+					"Copied off the machine on the 8th before we go,",
+					"and left on the desk on purpose.",
+					"",
+					"DIARY.TXT    the 4th to the 8th, a page a night.",
+					"LETTERS.TXT  what I wrote and could not send.",
+					"FAMILY.TXT   telephone numbers. Try them.",
+					"",
+					"Nothing on here is worth anything to you except",
+					"the numbers, and those may be worth a great deal.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+			} },
+			{ name = "DIARY.TXT", mode = 644, texts = {
+				table.concat({
+					"4 July",
+					"The plant shut at noon and nobody said why. Half of",
+					"them went straight to the bar from the gate. I came",
+					"home and put the radio on and there was nothing on",
+					"the radio either.",
+					"",
+					"5 July",
+					"Drove in for bread. The road at the trestle is shut",
+					"and there is a soldier standing on it, a young one,",
+					"who would not look at me while he turned me round.",
+					"",
+					"6 July",
+					"{staff1} came by. He says the hospital is not",
+					"taking anybody at all and that the line on the map",
+					"moved north in the night. We put the shutters up.",
+					"It felt stupid doing it in the daylight.",
+					"",
+					"8 July",
+					"The telephone has been ringing all morning and it is",
+					"not ringing here. It is ringing next door and nobody",
+					"has picked it up. I am putting this on a disk",
+					"because the machine is the only thing in this house",
+					"still doing what it did last week.",
+				}, "\n"),
+				table.concat({
+					"4 July",
+					"No holiday. {staff1} came up from the road to say",
+					"the plant had shut at noon and to ask whether our",
+					"line was working. It was. That is not much use",
+					"when nobody on the other end of it answers.",
+					"",
+					"5 July",
+					"Sirens twice in the night, going north both times.",
+					"I counted them the way you count thunder.",
+					"",
+					"6 July",
+					"{staff2} would not come out of the back room all",
+					"day. I told her that was sensible and I meant it.",
+					"The water went brown for an hour and cleared.",
+					"",
+					"7 July",
+					"The radio said stay indoors, then said nothing for",
+					"six hours, then said it again word for word in the",
+					"same voice. It is a tape and it has been a tape",
+					"since yesterday.",
+					"",
+					"8 July",
+					"Onto a disk, because {staff3} says the exchange is",
+					"a building with people in it and people are",
+					"leaving buildings.",
+				}, "\n"),
+				table.concat({
+					"4 July",
+					"Shut the gate at the top field and left the cattle",
+					"in it. Whatever is on the road is on the road and",
+					"it is not up here.",
+					"",
+					"6 July",
+					"Drove down as far as the bridge. There is a truck",
+					"across it, army, and a boy of nineteen on the truck",
+					"who told me to go home. I went home.",
+					"",
+					"7 July",
+					"{staff1} walked up. Sixteen years at the plant and",
+					"he does not know why it shut either. We sat on the",
+					"step and did not say a great deal.",
+					"",
+					"8 July",
+					"The dogs will not go past the gate. I have never",
+					"seen them do that in nine years. I am putting the",
+					"numbers and the letters on a disk and leaving the",
+					"machine switched on for whoever comes up the lane.",
+				}, "\n"),
+			} },
+			{ name = "LETTERS.TXT", mode = 644, texts = {
+				table.concat({
+					"To Mother, not sent:",
+					"",
+					"We are all right and the house is all right. Do not",
+					"try to drive down. If the road is open they will",
+					"tell you it is shut, and if it is shut they will",
+					"tell you nothing at all.",
+					"",
+					"To the county, not sent:",
+					"",
+					"I have telephoned four times about the water and",
+					"been told four times that somebody will come out.",
+					"Nobody has come out. I am writing it down so that",
+					"when this is over there is a piece of paper with a",
+					"date on it.",
+				}, "\n"),
+				table.concat({
+					"To {staff1}, not sent:",
+					"",
+					"You were right about the road and I was not, and I",
+					"am putting that in writing because there may not",
+					"be another chance to be fair about it.",
+					"",
+					"To the water board, not sent:",
+					"",
+					"Four telephone calls and four promises that",
+					"somebody would come out. Nobody came out. I am",
+					"writing it down so that when this is over there",
+					"is a piece of paper with a date on it.",
+				}, "\n"),
+				table.concat({
+					"To my brother, not sent:",
+					"",
+					"Do not drive down here. I know what you are like",
+					"and I know you will read that and get in the",
+					"truck anyway. Do not.",
+					"",
+					"To {staff2}, not sent:",
+					"",
+					"I owe you for the hay and I have not forgotten",
+					"it. If you are reading this instead of me then",
+					"take what is in the barn and call it square.",
+				}, "\n"),
+			} },
+			-- The numbers go FIRST on the line in every telling, because a name in
+			-- the left column is a name of a length nobody knows here: it is put in
+			-- at fill time and a column lined up against a placeholder is a column
+			-- that is crooked on the glass.
+			{ name = "FAMILY.TXT", mode = 644, texts = {
+				table.concat({
+					"EVERYBODY'S NUMBERS",
+					"",
+					"  418-0233  Mother",
+					"  418-1147  {staff1} and {staff2}",
+					"  418-4400  the plant",
+					"  418-0180  the doctor",
+					"  418-1162  next door",
+					"",
+					"The first three are this exchange. If you are",
+					"reading this somewhere else in the county then they",
+					"are somebody else's numbers now, and I am sorry.",
+				}, "\n"),
+				table.concat({
+					"NUMBERS, AND WHOSE THEY ARE",
+					"",
+					"  418-0233  the house at the bottom of the hill",
+					"  418-1147  {staff1}, days",
+					"  418-4400  the plant, switchboard",
+					"  418-0180  the doctor",
+					"  418-1162  {staff2}",
+					"",
+					"These are this exchange. Read somewhere else in",
+					"the county they are somebody else's numbers now,",
+					"and I am sorry about that.",
+				}, "\n"),
+				table.concat({
+					"THE NUMBERS OFF THE WALL BY THE DOOR",
+					"",
+					"  418-0233  my brother",
+					"  418-1147  {staff3}, who has the tractor",
+					"  418-4400  the plant",
+					"  418-0180  the vet, and he is a doctor too",
+					"  418-1162  the feed store",
+					"",
+					"This is our exchange and no other. Somewhere else",
+					"in the county these ring five strangers, and if",
+					"one of them answers, be kind about it.",
+				}, "\n"),
+			} },
 		},
 	},
 	{
@@ -1445,6 +1604,609 @@ CeroSecContent.DISKS = {
 			{ name = "lights.sh", script = "lights.sh" },
 			{ name = "locks.sh", script = "locks.sh" },
 			{ name = "sweep.sh", script = "sweep.sh" },
+		},
+	},
+	--
+	-- THE THREE the same change added, and all three are somebody's OWN writing
+	-- rather than a vendor's: that is what makes them the disks with three tellings
+	-- on them. A README that documents a program is the program's documentation and
+	-- is one shape in every copy -- three voices of one manual page would be three
+	-- manual pages -- but a shopkeeper's note to himself is his, and the shop in the
+	-- next town had another shopkeeper in it.
+	--
+	{
+		id = "LEDGER",
+		label = "LEDGER",
+		weight = 2,
+		files = {
+			{ name = "README.TXT", mode = 644, texts = {
+				table.concat({
+					"LEDGER",
+					"",
+					"The books off the machine in the back room.",
+					"Everything on here is in CENTS. There is not a",
+					"dollar sign anywhere on this disk and that is on",
+					"purpose: the machine adds whole numbers.",
+					"",
+					"SALES.TXT      day, tickets, cents. A line a day.",
+					"SUPPLIERS.TXT  who we buy from, and on what terms.",
+					"total.sh       adds one column of a file up.",
+					"",
+					"  mount /dev/fd0 /mnt",
+					"  sh /mnt/total.sh /mnt/SALES.TXT 3",
+					"",
+					"That is the week. Divide by a hundred in your own",
+					"head; the machine will not do it for you.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+				table.concat({
+					"LEDGER",
+					"",
+					"{staff1} set this up and I have kept it going. A",
+					"line a day, and never anything but whole cents --",
+					"the one time somebody put a decimal point in it",
+					"the total came out as nothing at all.",
+					"",
+					"SALES.TXT      the week: day, tickets, cents.",
+					"SUPPLIERS.TXT  the accounts and what we owe on",
+					"               them.",
+					"total.sh       the adder. Name the file and the",
+					"               column.",
+					"",
+					"  sh /mnt/total.sh /mnt/SALES.TXT 3   the money",
+					"  sh /mnt/total.sh /mnt/SALES.TXT 2   the tickets",
+					"",
+					"If the two ever disagree with the till, the till",
+					"is right and one of us wrote the line down wrong.",
+				}, "\n"),
+				table.concat({
+					"LEDGER",
+					"",
+					"Copy of the books, kept on a disk because the",
+					"machine in the back room is nineteen years old and",
+					"one day it will not come on.",
+					"",
+					"SALES.TXT      a line a day: day, tickets, cents.",
+					"SUPPLIERS.TXT  the four we buy from.",
+					"total.sh       adds a column up. Nothing else.",
+					"",
+					"  sh /mnt/total.sh /mnt/SALES.TXT 3",
+					"",
+					"{staff2} asks every month why it is in cents and",
+					"every month I say the same thing: because a whole",
+					"number cannot be rounded and a fraction can.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+			} },
+			-- ONE SHAPE, and it is the same reason a profile's data table has one:
+			-- this is the very column the bench adds up, and a file that came out
+			-- different on every disk would be a bench proving one disk in three.
+			-- Column 3 is cents and it totals 158244, which content_test.lua asserts
+			-- by RUNNING total.sh on it under the engine.
+			{ name = "SALES.TXT", mode = 644, text = table.concat({
+				"mon:41:18734",
+				"tue:38:16050",
+				"wed:52:24115",
+				"thu:44:19880",
+				"fri:71:33420",
+				"sat:88:41255",
+				"sun:12:4790",
+			}, "\n") },
+			{ name = "SUPPLIERS.TXT", mode = 644, texts = {
+				table.concat({
+					"WHO WE BUY FROM",
+					"",
+					"  the wholesaler, Thursdays, thirty days",
+					"  the dairy, every other morning, cash",
+					"  the bread man, Tuesday and Friday, cash",
+					"  the hardware place, when we ask, thirty days",
+					"",
+					"The dairy will not take a cheque from us any more",
+					"and I do not blame them. Pay them first.",
+				}, "\n"),
+				table.concat({
+					"ACCOUNTS",
+					"",
+					"  wholesaler      thirty days, and they mean it",
+					"  dairy           cash, every other morning",
+					"  bread           cash, Tuesday and Friday",
+					"  hardware        thirty days, never chased us",
+					"",
+					"{staff1} handles the wholesaler and I handle the",
+					"rest. Nobody has been up the road since the 3rd.",
+				}, "\n"),
+				table.concat({
+					"THE FOUR",
+					"",
+					"  wholesaler   Thursdays, thirty days",
+					"  dairy        cash on the doorstep",
+					"  bread        Tuesday and Friday, cash",
+					"  hardware     thirty days",
+					"",
+					"None of the four came this week. I left the money",
+					"for the dairy on the step on the 6th and on the",
+					"7th it was still there, so I brought it in.",
+				}, "\n"),
+			} },
+			{ name = "total.sh", script = "total.sh" },
+		},
+	},
+	{
+		id = "PERSONAL",
+		label = "PERSONAL",
+		weight = 2,
+		files = {
+			{ name = "README.TXT", mode = 644, texts = {
+				table.concat({
+					"PERSONAL",
+					"",
+					"Mine, and none of it is any use to anybody.",
+					"",
+					"LETTERS.TXT  three I wrote and never sent.",
+					"TODO.TXT     what I was going to do.",
+					"RECIPE.TXT   my mother's, and I have it right now.",
+					"POEM.TXT     do not laugh.",
+					"NUMBERS.TXT  the numbers I could not remember.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+				table.concat({
+					"PERSONAL",
+					"",
+					"Do not read this if you knew me. Read it if you",
+					"did not.",
+					"",
+					"LETTERS.TXT  the ones I did not post.",
+					"TODO.TXT     a list, mostly unticked.",
+					"RECIPE.TXT   the only thing on here worth having.",
+					"POEM.TXT     eight lines, written at two in the",
+					"             morning, which shows.",
+					"NUMBERS.TXT  telephone numbers.",
+				}, "\n"),
+				table.concat({
+					"PERSONAL",
+					"",
+					"Everything I did not want left on the machine",
+					"where {staff1} could find it.",
+					"",
+					"LETTERS.TXT  what I could not say out loud.",
+					"TODO.TXT     the list. It is a joke now.",
+					"RECIPE.TXT   the bread. Make it.",
+					"POEM.TXT     it is not finished and it will not be.",
+					"NUMBERS.TXT  numbers, and whose they are.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+			} },
+			-- THE LAST LETTER IS DATED, and it is dated inside the week the outbreak
+			-- is in -- the 8th or the 9th of July -- which is the one exception the
+			-- three tellings are allowed: see the second of the four rules over
+			-- CeroSecContent.textFor. Every other date on a disk is a day of a week,
+			-- never a day of a month the save might not have reached.
+			{ name = "LETTERS.TXT", mode = 644, texts = {
+				table.concat({
+					"To {staff1}, never sent, 21 May:",
+					"",
+					"I am not angry about the money. I am angry that",
+					"you asked {staff2} before you asked me.",
+					"",
+					"To my father, never sent, 14 June:",
+					"",
+					"You were right about the job and I am not going",
+					"to tell you so on the telephone.",
+					"",
+					"To {staff3}, never sent, 8 July:",
+					"",
+					"They are saying on the radio to stay where you",
+					"are. I am staying where I am. If you get down",
+					"the hill and the house is empty, the key is where",
+					"it has always been and there is food in it.",
+				}, "\n"),
+				table.concat({
+					"To {staff2}, never sent, 3 March:",
+					"",
+					"Eleven years and I have never once asked you for",
+					"anything. I am asking now and you know what for.",
+					"",
+					"To the school, never sent, 2 June:",
+					"",
+					"He is not lazy. He is bored, and there is a",
+					"difference, and one of them is your fault.",
+					"",
+					"To {staff1}, never sent, 9 July:",
+					"",
+					"The road is shut both ways and the telephone",
+					"rings and rings at your end. I am writing this",
+					"because writing it is the only thing left that",
+					"feels like doing something.",
+				}, "\n"),
+				table.concat({
+					"To my sister, never sent, 12 April:",
+					"",
+					"Come for a week in the summer. Bring nothing, the",
+					"house is full of everything already.",
+					"",
+					"To {staff3}, never sent, 27 June:",
+					"",
+					"I saw you at the gate and I did not stop and I",
+					"have thought about it every day since.",
+					"",
+					"To whoever, never sent, 9 July:",
+					"",
+					"I have written three letters this week and posted",
+					"none of them, because there is nobody at the post",
+					"office and there has not been since Tuesday. So",
+					"this one is for whoever finds the disk.",
+				}, "\n"),
+			} },
+			{ name = "TODO.TXT", mode = 644, texts = {
+				table.concat({
+					"THINGS TO DO",
+					"",
+					"  [x] gutter at the back",
+					"  [ ] gutter at the front",
+					"  [ ] ring the dentist",
+					"  [x] tyres",
+					"  [ ] write to my father",
+					"  [ ] learn this machine properly",
+					"  [ ] the fence, before the winter",
+					"",
+					"Two of seven. It has been that list for a year.",
+				}, "\n"),
+				table.concat({
+					"LIST",
+					"",
+					"  [x] the roof, patched",
+					"  [ ] the roof, properly",
+					"  [ ] {staff1}'s ladder, give it back",
+					"  [ ] stop putting this off",
+					"  [x] the car",
+					"  [ ] the other thing",
+					"",
+					"The other thing is still the other thing.",
+				}, "\n"),
+				table.concat({
+					"TO DO, AND I AM NOT GOING TO",
+					"",
+					"  [ ] paint the kitchen",
+					"  [ ] the shed door",
+					"  [x] firewood, four ricks",
+					"  [ ] apologise to {staff2}",
+					"  [ ] the tax thing",
+					"  [x] the fence",
+					"",
+					"The firewood and the fence were this week, which",
+					"tells you what sort of week it was.",
+				}, "\n"),
+			} },
+			{ name = "RECIPE.TXT", mode = 644, texts = {
+				table.concat({
+					"MY MOTHER'S CORNBREAD",
+					"",
+					"  two cups of meal, one of flour",
+					"  a spoon of soda, a spoon of salt",
+					"  two eggs, buttermilk until it pours slow",
+					"",
+					"Heat the iron pan in the oven with the grease in",
+					"it until it smokes. Pour the batter into the hot",
+					"pan, not the pan into the batter. Twenty-five",
+					"minutes.",
+					"",
+					"She never wrote it down. I wrote it down.",
+				}, "\n"),
+				table.concat({
+					"THE BREAD",
+					"",
+					"  flour, water, salt, a spoon of yeast",
+					"  knead it ten minutes, no less",
+					"  let it stand until it doubles",
+					"  knock it back, shape it, stand it again",
+					"  a hot oven, forty minutes, and knock the",
+					"  bottom to hear if it is done",
+					"",
+					"That is all of it. {staff2} makes it better than",
+					"I do and uses exactly the same four things.",
+				}, "\n"),
+				table.concat({
+					"SOUP, FOR WHEN THERE IS NOTHING",
+					"",
+					"  an onion, whatever fat there is",
+					"  a potato for each person and one over",
+					"  water, salt, pepper",
+					"  anything green at the end, off the heat",
+					"",
+					"Cook the onion slowly until it is sweet. That is",
+					"the whole trick and everything else is potatoes.",
+					"",
+					"It keeps three days cold and it is better on the",
+					"second one.",
+				}, "\n"),
+			} },
+			{ name = "POEM.TXT", mode = 644, texts = {
+				table.concat({
+					"UNTITLED",
+					"",
+					"  The lane goes down and the lane comes back",
+					"  and neither end of it is mine.",
+					"  I have a gate I did not hang",
+					"  and a field I did not clear,",
+					"  and a name on a card in a drawer",
+					"  in an office in a town",
+					"  where nobody knows the lane at all.",
+					"",
+					"I said do not laugh.",
+				}, "\n"),
+				table.concat({
+					"TWO IN THE MORNING",
+					"",
+					"  The house makes four sounds in the night",
+					"  and I know three of them.",
+					"  The fourth one is the one I lie and wait for",
+					"  and it is always the furnace,",
+					"  and it is always the furnace,",
+					"  and one night it will not be.",
+					"",
+					"Eight lines and I only got six. That is the sort",
+					"of poet I am.",
+				}, "\n"),
+				table.concat({
+					"FOR NOBODY",
+					"",
+					"  Whoever reads this had to break a lock",
+					"  or was handed a key,",
+					"  and either way the house is yours now",
+					"  and the lane is yours,",
+					"  and the fourth sound in the night",
+					"  is yours to lie and listen for.",
+					"",
+					"  Do not fix the gate. Nobody ever does.",
+				}, "\n"),
+			} },
+			{ name = "NUMBERS.TXT", mode = 644, texts = {
+				table.concat({
+					"NUMBERS I COULD NEVER REMEMBER",
+					"",
+					"  418-0233  my father",
+					"  418-1147  {staff1}",
+					"  418-0180  the doctor",
+					"  418-2201  the machine at the shop",
+					"",
+					"The last one is a computer and not a person. It",
+					"answers CONNECT 2400 and then it waits for you.",
+				}, "\n"),
+				table.concat({
+					"TELEPHONE",
+					"",
+					"  418-0233  the house I grew up in",
+					"  418-1147  {staff2}, evenings only",
+					"  418-4400  where I work, or worked",
+					"  418-0180  the doctor",
+					"",
+					"Four numbers is not very many for a whole life.",
+					"I noticed that writing them out.",
+				}, "\n"),
+				table.concat({
+					"NUMBERS, AND WHOSE THEY ARE",
+					"",
+					"  418-0233  my sister",
+					"  418-1147  {staff3}",
+					"  418-1162  next door, who has a key",
+					"  418-0180  the doctor, who does not answer",
+					"",
+					"These are this exchange only. Somewhere else in",
+					"the county they are four strangers.",
+				}, "\n"),
+			} },
+		},
+	},
+	{
+		id = "RADIO LOG",
+		label = "RADIO LOG",
+		weight = 1,
+		files = {
+			{ name = "README.TXT", mode = 644, texts = {
+				table.concat({
+					"RADIO LOG",
+					"",
+					"The club's log off my own machine. Packet, not",
+					"voice: the set is wired to the machine and the",
+					"machine writes down what it hears.",
+					"",
+					"HEARD.LOG   every station the box logged, with",
+					"            the day and the time.",
+					"NETS.TXT    when the nets are, and on what.",
+					"MYCALL.TXT  my own call and how it is set.",
+					"",
+					"  cu -l /dev/radio0",
+					"",
+					"That opens the line to the set itself and the",
+					"screen is the box's until Escape. Type MHEARD at",
+					"it and it lists what IT has heard since the power",
+					"came on, which is not what is in HEARD.LOG -- the",
+					"box forgets, and the file does not.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+				table.concat({
+					"RADIO LOG",
+					"",
+					"{staff1} keeps the voice log in a book. This is",
+					"the packet side, and the machine keeps it because",
+					"the machine is awake when I am not.",
+					"",
+					"HEARD.LOG   the week: day, time, callsign.",
+					"NETS.TXT    the schedule. It has not changed in",
+					"            four years.",
+					"MYCALL.TXT  the station's own call.",
+					"",
+					"  cu -l /dev/radio0",
+					"  MHEARD",
+					"",
+					"The box answers MHEARD with what is in ITS memory,",
+					"which it loses every time the power drops. The",
+					"file is the one that remembers. Escape hangs up.",
+				}, "\n"),
+				table.concat({
+					"RADIO LOG",
+					"",
+					"Everything the TNC wrote down, and the schedule,",
+					"and my call. That is all that is on here.",
+					"",
+					"HEARD.LOG   who was on the air and when.",
+					"NETS.TXT    the nets. Tuesday is the one that",
+					"            matters.",
+					"MYCALL.TXT  the call, and what to do if the box",
+					"            has forgotten it.",
+					"",
+					"  cu -l /dev/radio0",
+					"",
+					"Escape gets the screen back. MHEARD inside the",
+					"box lists the stations it has heard since it was",
+					"switched on and nothing older than that, so a",
+					"machine that has just booted lists nobody.",
+					"",
+					"-- {owner}",
+				}, "\n"),
+			} },
+			-- The callsigns are INVENTED and they are invented to the shape the
+			-- engine's own rule takes: prefix K, N or W, an optional second letter,
+			-- the fourth district's digit, then two or three letters
+			-- (CeroSecOS.isCallsign). The bench reads every callsign out of every
+			-- telling of these files and puts it through that rule, so a made-up call
+			-- that a survivor's own set would refuse cannot ship.
+			{ name = "HEARD.LOG", mode = 644, texts = {
+				table.concat({
+					"HEARD -- the week before, off the TNC",
+					"",
+					"  MON 1912  K4RJT   the Monday traffic net",
+					"  MON 2240  WD4MLE  strong, as always",
+					"  TUE 1858  K4RJT",
+					"  TUE 1904  N4SQB   checked in and went",
+					"  TUE 1930  KB4TYN  running the net",
+					"  WED 0412  W4HJ    nobody answered him",
+					"  WED 2101  WD4MLE",
+					"  THU 1846  N4PXC   first time I have heard him",
+					"  FRI 1955  KB4TYN  asking after {staff1}",
+					"  SAT 0730  KE4DVM  a beacon and not a man",
+					"  SAT 0830  KE4DVM  the same beacon",
+					"  SUN 1802  K4RJT   two words and then nothing",
+				}, "\n"),
+				table.concat({
+					"STATIONS HEARD, AND WHAT OF IT",
+					"",
+					"  MON 2015  KB4TYN",
+					"  MON 2016  N4SQB   answering him",
+					"  TUE 1900  KB4TYN  the net, and eleven of us",
+					"  TUE 2144  W4HJ    weak, and would not repeat",
+					"  WED 1837  K4RJT",
+					"  WED 2350  KE4DVM  the beacon again",
+					"  THU 0505  N4PXC   at five in the morning",
+					"  THU 1922  WD4MLE",
+					"  FRI 1901  KB4TYN  net, four of us",
+					"  SAT 1414  N4SQB   a relay for somebody unheard",
+					"  SUN 0900  KE4DVM",
+					"  SUN 2130  K4RJT   said he was going off the air",
+				}, "\n"),
+				table.concat({
+					"HEARD LOG",
+					"",
+					"  MON 0630  KE4DVM  beacon",
+					"  MON 1930  KB4TYN  net as usual",
+					"  TUE 1900  KB4TYN  net. Long one.",
+					"  TUE 1947  N4PXC   third night running",
+					"  WED 1823  WD4MLE  loud and never quiet",
+					"  WED 1826  K4RJT   telling him so",
+					"  THU 2011  N4SQB",
+					"  FRI 0155  W4HJ    calling and calling",
+					"  FRI 1900  KB4TYN  net. Two of us.",
+					"  SAT 1100  KE4DVM  beacon",
+					"  SUN 1740  N4PXC   asked whether anybody was",
+					"                    still keeping a log",
+					"  SUN 1742  K4RJT   said he was",
+				}, "\n"),
+			} },
+			{ name = "NETS.TXT", mode = 644, texts = {
+				table.concat({
+					"THE NETS",
+					"",
+					"  Monday    1900  traffic, and it runs late",
+					"  Tuesday   1900  the club net. Be on it.",
+					"  Friday    1900  whoever turns up",
+					"  Sunday    0900  the beacon test, nobody talks",
+					"",
+					"All local time and none of it has moved in four",
+					"years. If a net does not start, wait ten minutes",
+					"and then it is not going to.",
+				}, "\n"),
+				table.concat({
+					"SCHEDULE",
+					"",
+					"  Mon 1900  traffic",
+					"  Tue 1900  club net -- the one that matters",
+					"  Fri 1900  informal",
+					"  Sun 0900  beacons only",
+					"",
+					"{staff2} runs Tuesday and {staff1} runs Monday.",
+					"Nobody runs Friday, which is why it is the good",
+					"one.",
+				}, "\n"),
+				table.concat({
+					"NETS, AND WHO RUNS THEM",
+					"",
+					"  Monday 1900     traffic. {staff1}.",
+					"  Tuesday 1900    the club net. Eleven of us on",
+					"                  a good night.",
+					"  Friday 1900     no net, and everybody comes",
+					"  Sunday 0900     beacon test",
+					"",
+					"Nothing has run since Tuesday the 6th. I have sat",
+					"here at seven o'clock three nights for nobody.",
+				}, "\n"),
+			} },
+			{ name = "MYCALL.TXT", mode = 644, texts = {
+				table.concat({
+					"MY CALL",
+					"",
+					"  K4RJT",
+					"",
+					"It is written on the machine's own disk and the",
+					"box is told it when the line opens. If the box",
+					"has forgotten it, open the line and set it there:",
+					"",
+					"  cu -l /dev/radio0",
+					"",
+					"A station with no call is a station that may",
+					"listen and may not transmit, which is the law and",
+					"is also what this box will tell you.",
+				}, "\n"),
+				table.concat({
+					"THIS STATION",
+					"",
+					"  WD4MLE",
+					"",
+					"Licensed 1979, fourth district, and the digit is",
+					"the only part of a call that means anything: it",
+					"says where the station is and not who it is.",
+					"",
+					"The box will not transmit without it. It will",
+					"listen all day.",
+				}, "\n"),
+				table.concat({
+					"CALLSIGN",
+					"",
+					"  N4SQB",
+					"",
+					"Mine since 1984. {staff3} has the club call and",
+					"that one lives on the set at the hall, not here.",
+					"",
+					"If you have this disk and a machine and a set,",
+					"the call on it is not yours and you should not",
+					"send with it. Listening is another matter: listen",
+					"to everything.",
+				}, "\n"),
+			} },
 		},
 	},
 	--
@@ -1608,6 +2370,7 @@ CeroSecContent.DISKS = {
 -- is a catalogue nobody wrote down.
 CeroSecContent.DISK_SLOTS = {
 	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS 1.0 DIST",
+	"LEDGER", "PERSONAL", "RADIO LOG",
 }
 
 
@@ -1651,14 +2414,112 @@ function CeroSecContent.diskByLabel(label)
 	return nil
 end
 
+--
+-- THREE TELLINGS OF A DISK, AND WHERE THE CHOICE LIVES
+--
+-- The complaint, in the words it was made in: the loot floppies have one content
+-- per kind, so the BACKUP diary is the same all over the county. A profile
+-- already answers that with three tellings of every prose file
+-- (CeroSecContent.textFor), and a disk could not borrow that answer, because a
+-- telling there is the PREMISES' -- and a disk in a drawer has no premises. It has
+-- no square, no region and no exchange either, which is the same hole `late` was
+-- dug for.
+--
+-- So a disk's telling comes off a roll of the item's own, and the choice is kept
+-- WHERE THE DISK IS KEPT: in disk.fs. A disk owns three keys and only three
+-- (CeroSecOS.DISK_KEYS) and the gate at the slot refuses a fourth, so there is
+-- nowhere to write a variant number -- and there is no need to, because what the
+-- telling produces is BYTES, and the bytes are in the filesystem that goes into the
+-- item's modData and comes back out of the save with it. Nothing rolls at read
+-- time, so a disk read twice is the same disk, and a disk read in the next save is
+-- still the disk it was written as. That is the same shape the item hook already
+-- has for which KIND of disk this is: roll once, keep the answer, never ask again.
+--
+-- WHY NOT DERIVE THE TELLING FROM THE ROLL THAT CHOSE THE KIND. Because the kind's
+-- roll is 1..100 against a weight, so an entry of weight 1 is reached by exactly
+-- one roll and would carry exactly one telling for ever -- and an entry of weight 2
+-- would carry two. The telling is therefore a second roll of its own, of
+-- CeroSecContent.VARIANTS, and every entry has all three of them whatever its
+-- share of the box is.
+
+-- The telling a disk carries, held inside 1..VARIANTS. Never nil and never out of
+-- range: a disk with no telling is a file that is not there, and this is called
+-- with whatever the engine's own generator answered.
+function CeroSecContent.diskTelling(variant)
+	local v = tonumber(variant)
+	if v == nil then return 1 end
+	v = math.floor(v)
+	if v < 1 then return 1 end
+	if v > CeroSecContent.VARIANTS then
+		return math.floor(math.fmod(v - 1, CeroSecContent.VARIANTS)) + 1
+	end
+	return v
+end
+
+-- The people in a disk's prose, and they come out of the telling and nothing else.
+--
+-- A profile's names are the premises' staff, hashed against the save's secret. A
+-- disk has neither: the hook runs on whichever machine instanced the item -- a
+-- client among them -- and the secret is the server's and stays there. So the cast
+-- is the TELLING's: telling one is always the same four people, which is honest
+-- about what it is (three written stories, not a generator) and is what lets the
+-- bench read all three of every file and find no brace left in any of them.
+--
+-- Strides rather than a hash, and both are chosen against the list's length of 44
+-- so that no two of the four placeholders land on one name and no two tellings
+-- share a cast: 9 per slot gives 0, 9, 18, 27 and 7 per telling moves the whole set
+-- along.
+function CeroSecContent.diskNames(variant)
+	local v = CeroSecContent.diskTelling(variant)
+	local first = CeroSecContent.NAMES.first
+	local out = {}
+	local list = CeroSecContent.PLACEHOLDERS
+	for i = 1, #list do
+		-- {host} is the last of them and a disk has no machine to name, so it is
+		-- left out: a disk that named a host would name the wrong one on every
+		-- machine but the first.
+		if list[i] ~= "host" then
+			local at = math.floor(math.fmod((v - 1) * 7 + (i - 1) * 9, #first)) + 1
+			local name = first[at]
+			out[list[i]] = string.upper(string.sub(name, 1, 1)) .. string.sub(name, 2)
+		end
+	end
+	return out
+end
+
+-- The text of one file of one disk entry, in this copy's telling, with its people
+-- in it. The disk side of CeroSecContent.textFor, and separate from it for one
+-- reason: that one is handed a premises and a secret, and this one has neither.
+--
+-- `texts` is three tellings, `text` is one shape. A file a script is proved
+-- against keeps one shape for the same reason a profile's data table does -- the
+-- column the bench adds up has to be the column every copy carries -- and so does
+-- a `late` stub, which is compared byte for byte against the catalogue's own copy
+-- (CeroSecContent.lateFile only ever answers a `text`).
+function CeroSecContent.diskTextOf(file, variant, names)
+	if type(file) ~= "table" then return nil end
+	local text = file.text
+	if type(file.texts) == "table" and #file.texts > 0 then
+		local v = CeroSecContent.diskTelling(variant)
+		if v > #file.texts then v = #file.texts end
+		text = file.texts[v]
+	end
+	if type(text) ~= "string" then return nil end
+	return CeroSecContent.fillNames(text, names)
+end
+
 -- One catalogue entry -> the table that goes in an item's modData: v, fs and
 -- label, which is the whole of what a disk owns (CeroSecOS.DISK_KEYS). Built
 -- through CeroSecOS.newFloppy and CeroSecOS.createNode, so the disk's own
 -- ceilings are what decide how much of an entry fits, and a file that does not
 -- fit is left out rather than making a disk no slot will take.
 --
+-- `variant` is which telling this copy carries, 1..VARIANTS; nothing at all is
+-- telling one, which is what the diagnostics disk asks for and what every entry
+-- with no `texts` on it gets anyway.
+--
 -- disk, written  -- `written` is how many of the entry's files landed.
-function CeroSecContent.diskData(entry, now)
+function CeroSecContent.diskData(entry, now, variant)
 	if type(entry) ~= "table" then return nil, 0 end
 	local disk = CeroSecOS.newFloppy(entry.label)
 	if disk == nil then return nil, 0 end
@@ -1678,11 +2539,16 @@ function CeroSecContent.diskData(entry, now)
 		return disk, 0
 	end
 	local session = CeroSecOS.rootSession()
+	local names = CeroSecContent.diskNames(variant)
 	local written = 0
 	for i = 1, #entry.files do
 		local file = entry.files[i]
-		local text, mode = file.text, file.mode
+		local text, mode = CeroSecContent.diskTextOf(file, variant, names), file.mode
 		if type(file.script) == "string" then
+			-- A script goes on the disk exactly as the library holds it. No names go
+			-- into one: a program is the same program in every telling, which is the
+			-- first of the four rules the tellings are written to -- what varies is
+			-- the voice, never the machine underneath.
 			local script = CeroSecContent.SCRIPTS[file.script]
 			if script ~= nil then
 				text = script.text
@@ -1929,7 +2795,14 @@ function CeroSecContent.onCreateFloppy(item)
 	local entry = CeroSecContent.diskForRoll(roll)
 	if entry == nil then return end
 
-	local disk = CeroSecContent.diskData(entry, nil)
+	-- AND A SECOND ROLL, for which telling of the disk this copy is. Its own roll
+	-- and not a rearrangement of the first, because the first is spent against a
+	-- weight: an entry with a share of one is reached by one roll in a hundred and
+	-- would carry one telling for ever. See the note over diskData for where the
+	-- answer to this one is kept, which is the filesystem it writes and not a field.
+	local variant = math.floor(ZombRand(CeroSecContent.VARIANTS)) + 1
+
+	local disk = CeroSecContent.diskData(entry, nil, variant)
 	if disk == nil then return end
 	if not CeroSecOS.writeDiskTo(data, disk) then return end
 

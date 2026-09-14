@@ -11345,8 +11345,12 @@ do
 	-- The copy refuses what it cannot carry, rather than dropping it quietly.
 	eq("a function on a disk is not a disk",
 		CeroSecOS.diskFromData({ v = 1, fs = print }), nil)
-	local deep = { v = 1 }
-	local at = deep
+	-- Hung on `fs`, which is one of the three keys the slot takes off an item at all:
+	-- a chain under a name nobody here declared is not refused any more, it is left
+	-- on the item and never copied (ownKeysOf), so it would prove nothing about the
+	-- copy's own bound.
+	local deep = { v = 1, fs = {} }
+	local at = deep.fs
 	for i = 1, CeroSecOS.DISK_COPY_DEPTH + 2 do
 		at.down = {}
 		at = at.down
@@ -11454,16 +11458,31 @@ do
 	eq("and the planted step is gone", CeroSecOS.DISK_MIGRATIONS[shipped + 1], nil)
 
 	eq("no legacy key today", #CeroSecOS.DISK_LEGACY_KEYS, 0)
-	local forged = { v = CeroSecOS.FLOPPY_VERSION, payload = "x" }
-	eq("a name no disk owns is refused", CeroSecOS.diskFromData(forged), nil)
-	-- And the same name, declared legacy, is let past the gate. Put back at once: the
-	-- list is the shipped one and a bench that left a name on it would be a bench
-	-- that widened the closed namespace for every bench after it.
+	-- A name NOBODY here declared, on the table an item hands over. It is left where
+	-- it is: that table is the game's, the engine writes `customName` in it itself,
+	-- and refusing what is not ours cost a player every disk he had labelled.
+	local beside = { v = CeroSecOS.FLOPPY_VERSION, label = "WORK", payload = "x" }
+	local kept = CeroSecOS.diskFromData(beside)
+	check("a name no disk owns does not refuse the disk", kept ~= nil)
+	eq("the disk itself comes through whole", kept.label, "WORK")
+	eq("and the stranger's name did not ride in with it", kept.payload, nil)
+	eq("nor was it taken off the item", beside.payload, "x")
+	-- And the same name, DECLARED as one an older disk owned: picked up with ours and
+	-- let past the gate, or the step that renames it would never see it. Put back at
+	-- once -- the list is the shipped one, and a bench that left a name on it would
+	-- widen the namespace for every bench after it.
 	CeroSecOS.DISK_LEGACY_KEYS = { "payload" }
-	check("a declared legacy name is let through to the chain",
-		CeroSecOS.diskFieldsOk(forged) == true)
+	local legacy = CeroSecOS.diskFromData(beside)
+	eq("a declared legacy name is carried in for the chain", legacy.payload, "x")
 	CeroSecOS.DISK_LEGACY_KEYS = {}
 	eq("and the list is back to the shipped one", #CeroSecOS.DISK_LEGACY_KEYS, 0)
+	-- The rule itself has not gone soft: what it judges is a disk RECORD, a table
+	-- this engine made, and a stranger's name on one of those is still a refusal --
+	-- and it NAMES the key now, because the one that cost a release was read off a
+	-- log line that did not.
+	local ok, why = CeroSecOS.diskFieldsOk(beside)
+	eq("a record carrying a name no disk owns is refused", ok, false)
+	eq("with the key in the sentence", why, "floppy: unknown field 'payload'")
 end
 
 -- 47l3. A disk in the DRIVE is walked with the machine, and a newer one refuses it.
@@ -12008,14 +12027,29 @@ do
 	-- or somebody's payload, and either way it is not ours to carry unweighed.
 	eq("a disk is its own three keys",
 		table.concat(CeroSecOS.DISK_KEYS, " "), "v fs label")
-	eq("and a fourth is a refusal",
+	eq("and a fourth on a RECORD is a refusal that names it",
 		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, junk = "x" }, true)),
-		"floppy: unknown field")
+		"floppy: unknown field 'junk'")
 	eq("a numeric one too",
 		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [3] = "x" }, true)),
-		"floppy: unknown field")
-	eq("and the slot is where it is asked",
-		CeroSecOS.diskFromData({ v = 1, fs = tiny, junk = string.rep("x", 100000) }), nil)
+		"floppy: unknown field '3'")
+	-- A key that is not a name a screen can carry is said by what it is, and never
+	-- quoted onto the glass: the sentence goes in a halo and on a console, and
+	-- nothing shapes a line there except this machine.
+	eq("a key of the wrong type is named by its type",
+		select(2, CeroSecOS.validateDisk({ v = 1, fs = tiny, [true] = "x" }, true)),
+		"floppy: unknown field of type boolean")
+	eq("and one carrying control bytes by its size",
+		select(2, CeroSecOS.validateDisk(
+			{ v = 1, fs = tiny, ["a\1b"] = "x" }, true)),
+		"floppy: unknown field of 3 bytes")
+	-- At the SLOT it is not a refusal at all: what arrives there is an item's
+	-- modData, which is the game's table and not a record of ours, so a name nobody
+	-- here declared is left on the item -- unread, uncopied, and not paid for.
+	local payload = { v = 1, fs = tiny, junk = string.rep("x", 100000) }
+	local taken = CeroSecOS.diskFromData(payload)
+	check("the slot takes the disk beside a stranger's key", taken ~= nil)
+	eq("and the payload is not on what it took", taken.junk, nil)
 	-- The three themselves still go in, label and all.
 	check("an honest disk is untouched by the rule",
 		CeroSecOS.diskFromData({ v = 1, fs = tiny, label = "WORK" }) ~= nil)
@@ -12047,9 +12081,14 @@ do
 	-- The blank disk is the shape the rule was half a rule on: a floppy off a shelf
 	-- has no filesystem, so the gate used to answer "nothing to check" and take
 	-- whatever else was written on it -- and then one `newfs` gave it a filesystem
-	-- and the disk could never come out of the drive again.
-	eq("a blank disk is asked the same question",
-		CeroSecOS.diskFromData({ v = 1, junk = string.rep("x", 100000) }), nil)
+	-- and the disk could never come out of the drive again. The trap is shut at the
+	-- other end now: the junk is not refused, it is simply not taken.
+	local blank = CeroSecOS.diskFromData({ v = 1, junk = string.rep("x", 100000) })
+	check("a blank disk beside somebody's payload still goes in", blank ~= nil)
+	eq("and the payload did not come in with it", blank.junk, nil)
+	blank.fs = CeroSecOS.newFloppyRoot("root")
+	eq("so the newfs that follows cannot trap it in the drive",
+		CeroSecOS.validateDisk(blank, true), true)
 	check("and an honest blank one still goes in",
 		CeroSecOS.diskFromData({ v = 1 }) ~= nil)
 
@@ -12258,13 +12297,14 @@ do
 			CeroSecOS.validateDisk(biggest.floppy, true), true)
 	end
 
-	-- None of it is paid for before it is refused: the field rules are asked of the
-	-- table the game handed over, and the copy that walks every byte of a disk comes
-	-- after them.
+	-- None of it is paid for: a name of its own is never taken off the item at all
+	-- (ownKeysOf), and a payload under one of OUR names is refused by the field rules
+	-- before the copy that would walk every byte of it.
 	local wide = {}
 	for i = 1, 20000 do wide["k" .. i] = i end
-	eq("a payload under a name of its own is refused without being copied",
-		CeroSecOS.diskFromData({ v = 1, deep = wide }), nil)
+	local past = CeroSecOS.diskFromData({ v = 1, deep = wide })
+	check("a payload under a name of its own is left where it is", past ~= nil)
+	eq("and never copied", past.deep, nil)
 	local onIt = CeroSecOS.newDir("root", 755)
 	onIt.wide = wide
 	eq("and one hung on a node, likewise",

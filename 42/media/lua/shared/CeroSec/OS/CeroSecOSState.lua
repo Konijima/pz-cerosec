@@ -321,6 +321,14 @@ end
 --     time: a floppy off a shelf has no filesystem, the gate answered "nothing to
 --     check" and took whatever else was written on it, and then one `newfs` gave it
 --     a filesystem and the disk could never come out again.
+--
+--     This is asked of a disk RECORD -- a table this engine made, out of the keys a
+--     disk owns. It is NOT asked of an item's modData: that table belongs to the
+--     game, which writes `customName` in it itself, and the keys of ours are picked
+--     out of it before anything here sees them (CeroSecOS.diskFromData's ownKeysOf).
+--     So a stranger's key reaching this rule is a record somebody built wrong, and
+--     the refusal names the key, because the one that cost a release was read off a
+--     log line that did not.
 --   * the SHAPE of its tree -- how deep it goes, how wide one directory is, and
 --     what every node on it is made of (CeroSecOS.diskShape). That last is where
 --     the other half of the first rule was hiding: checkNode reads the fields it
@@ -329,6 +337,20 @@ end
 --     so junk on a node, and a whole tree hung under a FILE node, were
 --     unvalidated, unweighed and uncounted.
 --
+-- A key, as a refusal may print it. The name is what makes the next one of these
+-- readable off a log line instead of reproducible only in game, and it goes onto a
+-- screen -- so a key that is not a short printable name is named by what it is and
+-- not quoted at all: nothing shapes a line on this machine's glass except the
+-- machine.
+local function fieldName(key)
+	if type(key) == "number" then return "'" .. tostring(key) .. "'" end
+	if type(key) ~= "string" then return "of type " .. type(key) end
+	if #key > CeroSecOS.LABEL_MAX or CeroSecOS.hasControlBytes(key) then
+		return "of " .. #key .. " bytes"
+	end
+	return "'" .. key .. "'"
+end
+
 -- ok, reason.
 function CeroSecOS.diskFieldsOk(disk)
 	if type(disk) ~= "table" then return false, "floppy: not a disk" end
@@ -344,7 +366,9 @@ function CeroSecOS.diskFieldsOk(disk)
 		for i = 1, #CeroSecOS.DISK_LEGACY_KEYS do
 			if key == CeroSecOS.DISK_LEGACY_KEYS[i] then known = true end
 		end
-		if not known then return false, "floppy: unknown field" end
+		if not known then
+			return false, "floppy: unknown field " .. fieldName(key)
+		end
 	end
 	if type(disk.fs) ~= "table" then return true end
 	local at, why = CeroSecOS.diskShape(disk.fs)

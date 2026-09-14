@@ -11,13 +11,13 @@ date.
 - **`at`**, for the thing you want done once: `echo halt | at 04:00` and the machine
   switches itself off at four. `atq` says what is waiting, `atrm` takes one out, and
   what the job prints goes to your mail like a nightly job's. It does not forget
-  either — a job queued for four o'clock on a machine that was off at four runs when
+  either: a job queued for four o'clock on a machine that was off at four runs when
   the machine comes back on.
 - **`tar`**, so a home can go onto a floppy in one piece: `tar cf /mnt/home.tar ~`,
   `tar tf` to see what is on a disk you found, `tar xf` to put it back. Folders,
   modes and times come back with the files; root also puts the owner back. An
   archive is an ordinary file, so it counts against the disk and cannot be bigger
-  than one file — 4096 bytes.
+  than one file: 4096 bytes.
 - `find` can do something to what it finds: `find . -name "*.log" -exec rm {} \;`
   runs a command for every name, and `-exec ... {} +` hands them all to one command.
   A long sweep takes its time and prints as it goes, so nothing on the machine
@@ -26,11 +26,11 @@ date.
   whatever you had typed at the prompt. `x=5` is yours; `export x` puts it where a
   script can see it; `env` prints the set as it will be handed over. What a script
   sets no longer leaks back out to your prompt either.
-- New: `export NAME[=value]`, `env`, and `.` — the dot, which reads a file **in the
+- New: `export NAME[=value]`, `env`, and `.`: the dot, which reads a file **in the
   shell you are standing in**, so a file of settings is worth keeping again. That is
   how `.profile` is read.
 - The manual now says why `ln` here always wants `-s`: a 1993 `ln a b` made a second
-  name for one and the same file, and this machine cannot hold one — a computer that
+  name for one and the same file, and this machine cannot hold one: a computer that
   can be picked up and carried is a disk copied name by name, so the second name
   would quietly become a second file. The page prints the answer you get without the
   flag.
@@ -40,15 +40,23 @@ date.
 - A `$( )` that catches more than a word will hold now says `word too large` and
   nothing else. It used to say that and then spill the rest of the command's output
   across the screen, in the middle of the line you were typing.
-- Tab now finishes a command of your own. It looks where the machine looks — every
-  directory on `PATH` — so a program in `~/bin` is completed as soon as `PATH`
+- Tab now finishes a command of your own. It looks where the machine looks: every
+  directory on `PATH`: so a program in `~/bin` is completed as soon as `PATH`
   names that directory, instead of only the ones in `/bin`.
 - `sudo cd /root` used to do nothing and say nothing. It now answers
   `sudo: cd: command not found`, which is what sudo says about a word the shell
-  itself is — it runs programs, and there is no program called `cd`.
+  itself is: it runs programs, and there is no program called `cd`.
 - A sum may now count with what a script was handed: `$((5 % $1))`, `$(($# * 2))`
   and `$((${n} + 1))` all work inside the double brackets, where a dollar sign in
   front of a number used to answer `bad arithmetic`.
+- Fixed: a disk with a label written on it could not be inserted. The drive took
+  blank disks and refused every disk anybody had written on, the diagnostics disk
+  included, and said nothing about it. It takes them now.
+- A floppy gesture that does nothing now says why, over the survivor's head: the
+  drive already has a disk in it, what you offered is not in your hands any more,
+  or the disk itself is one this machine will not read, with the machine's own
+  reason after it. A refusal nobody can read looks exactly like a broken mod.
+
 - Two computers in one office now belong to two different people. Each machine
   has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
   passwords, and empty homes. A building with two computers is worth walking
@@ -75,6 +83,20 @@ date.
   military post.
 - Five kinds of premises gained a file for the member of staff who had none, so
   no desk comes up empty.
+- Three new floppy labels to find. **LEDGER** is a small shop's books, kept in
+  whole cents: a line a day, who the shop buys from, and the program that adds a
+  column up. **PERSONAL** is somebody's own disk and none of it is any use to you:
+  letters he never sent, a list of things he was going to do, his mother's recipe,
+  a poem he asks you not to laugh at. **RADIO LOG** is a ham club's packet log,
+  every station the machine heard over the week before the outbreak, the schedule
+  of the nets, and the station's own callsign.
+- The disks that are somebody's own writing are written three ways now, with three
+  different sets of people in them. The BACKUP diary you find across town is
+  another person's week, not the same one again. Which telling a disk carries is
+  decided when the disk is made and never changes afterwards, through any number
+  of reloads.
+- A box of floppies is as blank as it always was: the three new labels were paid
+  for out of the shares the six already had, not out of the blank ones.
 - Fixed: the military post's hourly door check named a program that was never
   put on the machine, so it mailed `not found` once an hour instead of checking
   the door.

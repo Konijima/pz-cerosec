@@ -2430,6 +2430,346 @@ do
 end
 
 --
+-- 7d. THREE TELLINGS OF A DISK
+--
+-- Section 7 weighs and reads every entry in the telling it gets by default, which
+-- is the first. This one reads ALL THREE of every entry, because a telling nobody
+-- built is a telling that ships broken: a line four characters longer than the
+-- glass, a README naming a file that is only on one of them, a disk that fits in
+-- 4096 bytes in one voice and not in another.
+--
+-- And it proves the two things the mechanism rests on. The tellings really DIFFER
+-- -- three copies of one text is one text with extra work in front of it -- and the
+-- choice is STABLE once the disk is written: what persists is the bytes in disk.fs,
+-- so nothing rolls again at read time and a disk read twice is the same disk. That
+-- is asserted through the item hook, which is where the roll is really made.
+--
+
+do
+	-- Every path on a disk and what is in it, as one string, so two disks can be
+	-- compared byte for byte in one assertion and a difference can be printed.
+	local function dump(root)
+		local nodes = walk(root)
+		local paths = {}
+		for path in pairs(nodes) do paths[#paths + 1] = path end
+		table.sort(paths)
+		local out = {}
+		for i = 1, #paths do
+			out[#out + 1] = paths[i] .. "\1" .. tostring(nodes[paths[i]].data)
+		end
+		return table.concat(out, "\2")
+	end
+
+	local told = 0
+	for i = 1, #CeroSecContent.DISKS do
+		local entry = CeroSecContent.DISKS[i]
+		local where = "disk " .. tostring(entry.id)
+		local varies = false
+		for f = 1, #entry.files do
+			local file = entry.files[f]
+			if type(file.texts) == "table" then
+				varies = true
+				-- Exactly three, and the same number for every file there is: a file
+				-- somebody wrote two tellings of is a file two disks in three share,
+				-- which is the whole of what this was for.
+				eq(where .. "/" .. file.name .. " has every telling", #file.texts,
+					CeroSecContent.VARIANTS)
+				check(where .. "/" .. file.name .. " carries no second shape",
+					file.text == nil)
+				for v = 1, #file.texts do
+					for w = v + 1, #file.texts do
+						check(where .. "/" .. file.name .. " telling " .. v .. " is not "
+							.. "telling " .. w, file.texts[v] ~= file.texts[w])
+					end
+				end
+			end
+			-- A LATE file is one shape and can only be one shape: the fill decides
+			-- whether a disk is still waiting by comparing the file byte for byte
+			-- against the catalogue's own stub (CeroSecContent.lateFile), and three
+			-- stubs would be two disks in three that never get their listings.
+			if entry.late ~= nil and file.name == entry.late then
+				check(where .. "'s late file is one shape", type(file.text) == "string"
+					and file.texts == nil)
+			end
+		end
+
+		-- All three, built, weighed and read. The disk the catalogue makes for a
+		-- telling is the disk a player finds, so every question section 7 asks of
+		-- the first is asked of the other two as well.
+		local seen = {}
+		for v = 1, CeroSecContent.VARIANTS do
+			local at = where .. " telling " .. v
+			local disk, written = CeroSecContent.diskData(entry, START, v)
+			check(at .. " makes a disk", type(disk) == "table")
+			eq(at .. " wrote every one of its files", written, #entry.files)
+			local ok, why = CeroSecOS.validateDisk(disk, true)
+			check(at .. " passes the slot's gate: " .. tostring(why), ok)
+			if #entry.files > 0 then
+				local root = disk.fs
+				local nodes, bytes = CeroSecOS.subtreeUsage(root)
+				check(at .. " is inside FLOPPY_BYTES (" .. bytes .. ")",
+					bytes <= CeroSecOS.FLOPPY_BYTES)
+				check(at .. " is inside FLOPPY_NODES (" .. nodes .. ")",
+					nodes <= CeroSecOS.FLOPPY_NODES)
+				-- NO PLACEHOLDER SURVIVES, in any telling of any file. A survivor
+				-- reading "ask {staff3} about it" is reading a bug; the names are put
+				-- in at build time (CeroSecContent.diskNames) and a brace on the glass
+				-- means one was spelt wrong in the catalogue.
+				for path, node in pairs(walk(root)) do
+					if path ~= "/" then
+						local data = node.data or ""
+						check(at .. path .. " has no brace left in it",
+							string.find(data, "{", 1, true) == nil
+								and string.find(data, "}", 1, true) == nil)
+						for line in (data .. "\n"):gmatch("([^\n]*)\n") do
+							check(at .. path .. ' line fits 60 columns: "' .. line .. '" ('
+								.. #line .. ")", #line <= CeroSecOS.COLS)
+						end
+					end
+				end
+				-- And the README of THIS telling names exactly what is beside it in
+				-- THIS telling. Both directions, as section 7 asks it of the first:
+				-- a README that names a file nobody shipped and a file no README names
+				-- are the same lie read from the two ends.
+				local names = CeroSecOS.childNames(root)
+				local readme = nil
+				for n = 1, #names do
+					if string.find(names[n], "^README") ~= nil then
+						readme = root.children[names[n]]
+					end
+				end
+				check(at .. " has a README.TXT", readme ~= nil)
+				for n = 1, #names do
+					if root.children[names[n]] ~= readme then
+						check(at .. "'s README names " .. names[n],
+							string.find(readme.data or "", names[n], 1, true) ~= nil)
+					end
+				end
+				for named in string.gmatch(readme.data or "", "[A-Za-z0-9_%-]+%.[A-Za-z]+") do
+					check(at .. "'s README names only files that are on it: " .. named,
+						root.children[named] ~= nil)
+				end
+				-- The tellings are not the same disk. Held over the WHOLE tree rather
+				-- than over one file, because what a player meets is the disk.
+				local text = dump(root)
+				for w = 1, #seen do
+					if varies then
+						check(at .. " is not telling " .. w, text ~= seen[w])
+					else
+						-- And an entry with no `texts` on it is the SAME disk in every
+						-- telling, which is the other half of the rule: a program and a
+						-- data file do not vary, and an entry that quietly started
+						-- varying would be a bench proving one disk in three.
+						eq(at .. " is telling " .. w .. " over again", text, seen[w])
+					end
+				end
+				seen[#seen + 1] = text
+			end
+		end
+		if varies then told = told + 1 end
+
+		-- EVERY SCRIPT ON THE DISK RUNS, OFF THE DISK. Section 6 runs every script in
+		-- the library out of a home directory, which proves the script; this runs the
+		-- copy the disk carries, through the mount, with the files and the lines the
+		-- library says it wants. A name on a disk that is not in SCRIPTS writes
+		-- nothing at all (diskData leaves the entry out), so a script that fell out
+		-- of the library would be a file the README names and the disk has not got --
+		-- and the README walk above is what catches that.
+		for f = 1, #entry.files do
+			local file = entry.files[f]
+			local script = CeroSecContent.SCRIPTS[file.script or ""]
+			if script ~= nil then
+				local at = where .. "/" .. file.name .. " off the disk"
+				local state = CeroSecOS.newState("ksp-4-b")
+				local session = CeroSecOS.login(state, "admin", "")
+				state.floppy = CeroSecContent.diskData(entry, START, 1)
+				local env = { now = START, devices = devicesFor(script.needs) }
+				local mounted = run(state, session, "mount /dev/fd0 /mnt", env)
+				check(at .. ": the disk mounts", mounted)
+				if type(script.needs) == "table" and type(script.needs.files) == "table" then
+					for n = 1, #script.needs.files do
+						local put = CeroSecOS.writeFile(state, session,
+							"/home/admin/" .. script.needs.files[n].path,
+							script.needs.files[n].text, false, START)
+						check(at .. " gets " .. script.needs.files[n].path, put ~= nil)
+					end
+				end
+				local line = "sh " .. CeroSecOS.MNT_PATH .. "/" .. file.name
+				for a = 1, #script.args do line = line .. " " .. script.args[a] end
+				local ran, lines, turns, job =
+					run(state, session, line, env, script.input)
+				check(at .. " runs: " .. table.concat(lines, " / "), ran)
+				check(at .. " printed something", #lines > 0)
+				check(at .. " is over and not still asking", CeroSecOS.jobIsOver(job))
+				check(at .. " finishes in a handful of turns (" .. turns .. ")",
+					turns < 50)
+				local vok, vwhy = CeroSecOS.validate(state)
+				check(at .. " leaves a machine that still boots: " .. tostring(vwhy),
+					vok)
+			end
+		end
+	end
+	check("four disks are written three ways (" .. told .. ")", told == 4)
+
+	-- THE SHOP'S BOOKS ADD UP, and the number is the point of the disk. total.sh is
+	-- run off the LEDGER disk against the LEDGER disk's own SALES.TXT, from inside
+	-- /mnt, which is the line the README prints and the step the parcours walks --
+	-- and the total is written down here rather than computed, because a bench that
+	-- adds the column up itself proves that two additions agree and not that the
+	-- shop's week is 1582 dollars and 44 cents.
+	do
+		local entry = CeroSecContent.diskById("LEDGER")
+		check("the LEDGER disk is in the catalogue", entry ~= nil)
+		local state = CeroSecOS.newState("ksp-4-b")
+		local session = CeroSecOS.login(state, "admin", "")
+		state.floppy = CeroSecContent.diskData(entry, START, 1)
+		local env = { now = START, devices = devicesFor(nil) }
+		check("the LEDGER disk mounts", run(state, session, "mount /dev/fd0 /mnt", env))
+		-- Stood in /mnt by writing the session's own cwd, which is the field `cd`
+		-- writes (commands.cd) and the field every relative path is resolved against
+		-- (CeroSecOS.absPath). Not by running `cd`: this bench's loop steps one job
+		-- and drops it, and what carries a cwd out of a finished job back onto the
+		-- session is the server's own turn -- so a `cd` here would come back true and
+		-- leave the bench standing in the home directory, which is exactly how the
+		-- first draft of this block passed while proving the wrong path.
+		session.cwd = CeroSecOS.MNT_PATH
+		eq("and the bench is standing in it",
+			(select(2, run(state, session, "pwd", env)))[1], CeroSecOS.MNT_PATH)
+		local ran, lines = run(state, session, "sh /mnt/total.sh SALES.TXT 3", env)
+		check("total.sh runs off the disk: " .. table.concat(lines, " / "), ran)
+		eq("and the week in cents is the week in cents", lines[1],
+			"column 3 of SALES.TXT adds up to 158244")
+		-- The other column, because one number agreeing could be one number agreeing
+		-- with a script that ignores its second argument.
+		local tran, tlines = run(state, session, "sh /mnt/total.sh SALES.TXT 2", env)
+		check("and the tickets too: " .. table.concat(tlines, " / "), tran)
+		eq("and they add up to their own number", tlines[1],
+			"column 2 of SALES.TXT adds up to 346")
+		-- SALES.TXT is ONE shape, which is what lets the two numbers above be numbers
+		-- rather than one of three possible numbers.
+		for v = 2, CeroSecContent.VARIANTS do
+			local other = CeroSecContent.diskData(entry, START, v)
+			eq("SALES.TXT is the same file in telling " .. v,
+				other.fs.children["SALES.TXT"].data,
+				state.floppy.fs.children["SALES.TXT"].data)
+		end
+	end
+
+	-- THE CALLSIGNS ARE THE SHAPE A SET WILL TAKE. They are invented -- there is no
+	-- station on the air to ask -- so the one thing that can be held is the rule the
+	-- engine itself applies to a callsign before it lets a station transmit
+	-- (CeroSecOS.isCallsign). A made-up call the player's own set would refuse is a
+	-- disk teaching him something that is not true of this machine.
+	do
+		local entry = CeroSecContent.diskById("RADIO LOG")
+		check("the RADIO LOG disk is in the catalogue", entry ~= nil)
+		local calls = {}
+		local found = 0
+		for v = 1, CeroSecContent.VARIANTS do
+			local disk = CeroSecContent.diskData(entry, START, v)
+			for path, node in pairs(walk(disk.fs)) do
+				if path ~= "/" then
+					-- A capitals-and-digits word that opens with one of the three
+					-- prefixes the fourth district handed out and has a digit in it. The
+					-- times and the numbers on those pages are digits alone and the
+					-- other words have no digit in them, so what is left is the calls.
+					for word in string.gmatch(node.data or "", "[A-Z0-9]+") do
+						if string.find(word, "^[KNW]") ~= nil
+							and string.find(word, "%d") ~= nil then
+							found = found + 1
+							check("RADIO LOG telling " .. v .. path .. ": " .. word
+								.. " is a callsign this machine would take",
+								CeroSecOS.isCallsign(word))
+							calls[word] = true
+						end
+					end
+				end
+			end
+		end
+		check("there are callsigns on the disk (" .. found .. ")", found > 20)
+		local distinct = 0
+		for _ in pairs(calls) do distinct = distinct + 1 end
+		check("and more than one station was on the air (" .. distinct .. ")",
+			distinct >= 6)
+	end
+
+	-- THE ROLL IS MADE ONCE AND THE ANSWER IS THE BYTES.
+	--
+	-- A disk owns three keys and only three, so there is nowhere to write which
+	-- telling this copy is -- and there is no need to, because the telling is spent
+	-- at creation and what it produces is a filesystem. So: the hook is called with
+	-- a roll that picks BACKUP and telling three, and then called again on the same
+	-- item with a generator that would answer telling one. Nothing moves. A disk
+	-- read out of its own modData twice is the same disk, which is what a save
+	-- reload is.
+	do
+		local item = { data = {}, name = "3.5\" Floppy Disk", custom = false }
+		item.getModData = function() return item.data end
+		item.setName = function(_, text) item.name = text end
+		item.getName = function() return item.name end
+		-- The engine does not only move a flag: setCustomName rawsets `customName` on
+		-- the item's own modData with its name (javap -c
+		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
+		-- slot reads the keys a disk owns off that table and leaves the rest, so this
+		-- is here to prove the leaving and not only the writing.
+		item.setCustomName = function(_, flag)
+			item.custom = flag
+			item.data.customName = tostring(item.name)
+		end
+		item.isCustomName = function() return item.custom end
+		item.syncItemFields = function() end
+
+		local entry = CeroSecContent.diskById("BACKUP")
+		local at = 0
+		for i = 1, #CeroSecContent.DISKS do
+			if CeroSecContent.DISKS[i] == entry then break end
+			at = at + (tonumber(CeroSecContent.DISKS[i].weight) or 0)
+		end
+		-- ZombRand(n) answers 0..n-1, and the hook adds one to both of its rolls.
+		-- Which roll this is is told by the bound the hook asked for, which is the
+		-- only thing the engine's own generator is told either.
+		local telling = 3
+		local hadRand = _G.ZombRand
+		_G.ZombRand = function(n)
+			if n == 100 then return at end
+			return telling - 1
+		end
+		CeroSecContent.onCreateFloppy(item)
+		eq("a rolled disk carries the label it rolled", item.data.label, "BACKUP")
+		local first = CeroSecOS.diskFromData(item.data)
+		check("and the slot takes it", (CeroSecOS.validateDisk(first, true)))
+		-- The telling really is the one the roll asked for: the disk the item carries
+		-- is byte for byte the catalogue's third telling and not its first.
+		eq("and it is the telling the roll asked for", dump(first.fs),
+			dump(CeroSecContent.diskData(entry, nil, 3).fs))
+		check("and not another one", dump(first.fs)
+			~= dump(CeroSecContent.diskData(entry, nil, 1).fs))
+		-- Nothing on it says which telling it is, which is the reason the telling is
+		-- kept as bytes: the DISK owns three keys and a fourth of ours would be refused
+		-- at the slot. Counted on the disk the slot read back and not on the item's
+		-- table, because that table is the game's: the engine's own `customName` is on
+		-- it too (setCustomName, javap), and what the slot does with a name that is not
+		-- ours is leave it there.
+		local keys = 0
+		for _ in pairs(first) do keys = keys + 1 end
+		eq("and the disk owns three keys and no more", keys, 3)
+		check("the game's own key is on the item", item.data.customName ~= nil)
+		eq("and did not come in on the disk", first.customName, nil)
+
+		-- Now the second creation, with a generator that would answer differently.
+		telling = 1
+		CeroSecContent.onCreateFloppy(item)
+		eq("a disk already written is not rolled again", dump(
+			CeroSecOS.diskFromData(item.data).fs), dump(first.fs))
+		-- And read back twice out of the same modData, which is what a reload is.
+		eq("and reading a disk does not roll it", dump(
+			CeroSecOS.diskFromData(item.data).fs),
+			dump(CeroSecOS.diskFromData(item.data).fs))
+		_G.ZombRand = hadRand
+	end
+end
+
+--
 -- 8. The item hook: a floppy off a shelf
 --
 -- What `OnCreate = CeroSecContent.onCreateFloppy` does when the game calls it with
@@ -2445,7 +2785,15 @@ do
 		item.getModData = function() return item.data end
 		item.setName = function(_, text) item.name = text end
 		item.getName = function() return item.name end
-		item.setCustomName = function(_, flag) item.custom = flag end
+		-- The engine does not only move a flag: setCustomName rawsets `customName` on
+		-- the item's own modData with its name (javap -c
+		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
+		-- slot reads the keys a disk owns off that table and leaves the rest, so this
+		-- is here to prove the leaving and not only the writing.
+		item.setCustomName = function(_, flag)
+			item.custom = flag
+			item.data.customName = tostring(item.name)
+		end
 		item.isCustomName = function() return item.custom end
 		item.syncItemFields = function() item.synced = item.synced + 1 end
 		return item
