@@ -2844,6 +2844,78 @@ do
 		" (" .. many .. " matches, " .. batches .. " to a sweep)")
 end
 
+-- 22b2. tar, which reads a whole tree and writes it as one file.
+--
+-- The archive is a FILE, so what tar can be asked to do is bounded by the disk
+-- twice over: it cannot read more than 64K and it cannot write more than the 4096
+-- bytes a file holds. What this drives is the dearest legal `tar cf` there is --
+-- a home filled until the disk refuses another byte -- in a loop, for a thousand
+-- passes. One command, and it has to stay one: a walk that needed two passes
+-- would be a `tar` a player could never finish.
+do
+	local machine, state, console = newMachine()
+	local root = CeroSecOS.rootSession()
+	-- A home as big as the disk will take, in files as big as a file gets: what a
+	-- survivor who has been living on the machine for a week has.
+	local made, bytes = 0, 0
+	for i = 1, 64 do
+		local text = string.rep("x", 900)
+		if CeroSecOS.writeFile(state, root, "/home/admin/f" .. i .. ".txt", text,
+				false, 100) == nil then
+			break
+		end
+		made = made + 1
+		bytes = bytes + #text
+	end
+	local used = select(2, CeroSecOS.usage(state))
+	check("the home really is most of the disk (" .. used .. " of "
+		.. CeroSecOS.MAX_TOTAL_BYTES .. " bytes in " .. made .. " files)",
+		bytes > CeroSecOS.MAX_TOTAL_BYTES / 4)
+	put(state, "/home/admin/back.sh",
+		"while true; do tar cf /home/admin/home.tar /home/admin; done\n")
+
+	typeLine(system, machine, state, console, "sh /home/admin/back.sh")
+	local backed = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("tar of a full home", backed)
+	timely("tar of a full home", backed)
+	-- It is the DISK that refuses it and not tar: an archive is a file, and the
+	-- whole home does not fit in one. The refusal is the point -- the walk happened,
+	-- every byte of it, and the write was weighed like any other.
+	local refused = false
+	for i = 1, #console.lines do
+		if string.find(console.lines[i], "file too large", 1, true) ~= nil then
+			refused = true
+		end
+	end
+	check("a home bigger than a file is refused by the disk, not by tar", refused)
+	note("tar of a full home", backed, " (" .. made .. " files, " .. bytes .. " bytes)")
+
+	-- And the archive that DOES fit, in a loop: the same walk, and a write of
+	-- nearly a whole file every pass it gets.
+	local machine2, state2, console2 = newMachine()
+	CeroSecOS.createNode(state2, root, "/home/admin/keep",
+		CeroSecOS.newDir("admin", 755), 100)
+	local kept = 0
+	for i = 1, 20 do
+		if CeroSecOS.writeFile(state2, root, "/home/admin/keep/f" .. i .. ".txt",
+				string.rep("y", 100), false, 100) == nil then
+			break
+		end
+		kept = kept + 1
+	end
+	put(state2, "/home/admin/back.sh",
+		"while true; do tar cf /home/admin/keep.tar /home/admin/keep; done\n")
+	typeLine(system, machine2, state2, console2, "sh /home/admin/back.sh")
+	local wrote = drive(machine2, PASSES, CeroSec.JOB_PASS_MS)
+	flat("tar of a home that fits", wrote)
+	timely("tar of a home that fits", wrote)
+	local archive = CeroSecOS.getNode(state2, root, "/home/admin/keep.tar")
+	check("and the archive is there, weighing what it holds (" ..
+		#(archive and archive.data or "") .. " bytes for " .. kept .. " files)",
+		archive ~= nil and #archive.data > kept * 100)
+	note("tar of a home that fits", wrote, " (" .. kept .. " files an archive)")
+end
+
 -- 22c. The per-character filters, on the widest line a file can hold.
 --
 -- `cut -c` and `tr` walk every byte of every line, and a line on this machine may

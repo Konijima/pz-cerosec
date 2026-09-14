@@ -7627,7 +7627,7 @@ do
 		.. " mv newfs passwd ping"
 		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
-		.. " sleep sort su sudo tail tee test touch tr true umount uniq uptime"
+		.. " sleep sort su sudo tail tar tee test touch tr true umount uniq uptime"
 		.. " useradd userdel usermod w wc which who whoami"
 
 	eq("/bin holds exactly these",
@@ -13462,6 +13462,217 @@ do
 	-- the whole reason POSIX added it -- two turns here, the batch and the end.
 	eq("a gathered exec is one", steps("find tree -name '*.log' -exec cat {} +"),
 		CeroSecOS.STEP_COST_COMMAND * 2)
+end
+
+--
+-- 49d2. tar: many files in one file, and back again byte for byte.
+--
+-- The container is this machine's own -- 512-byte blocks would cost a ten-byte note
+-- a quarter of a floppy -- and everything else is tar's: three keys, one modifier,
+-- no dash in front of them, the name stored as it was typed, and root the only
+-- account that puts an owner back.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	local env = { now = FIXED, nowMs = 1000, jobs = {} }
+
+	okAt(state, admin, "mkdir work", {}, env)
+	put(state, admin, "/home/admin/notes.txt", "hello\nthere")
+	put(state, admin, "/home/admin/work/deep.txt", "deeper")
+	put(state, admin, "/home/admin/empty.txt", "")
+	okAt(state, admin, "ln -s notes.txt short", {}, env)
+	okAt(state, admin, "chmod 600 notes.txt", {}, env)
+
+	-- c, and v names every member as it goes, in the walk's own order: the
+	-- directory before what is in it, because a member whose directory came after
+	-- it could not be put back.
+	okAt(state, admin, "tar cvf home.tar /home/admin/work /home/admin/notes.txt", {
+		"/home/admin/work", "/home/admin/work/deep.txt", "/home/admin/notes.txt",
+	}, env)
+	-- t lists what is in it and nothing else.
+	okAt(state, admin, "tar tf home.tar", {
+		"/home/admin/work", "/home/admin/work/deep.txt", "/home/admin/notes.txt",
+	}, env)
+	-- tv carries the mode, the owner and the size, in ls -l's columns.
+	local listed = okAt(state, admin, "tar tvf home.tar", nil, env)
+	eq("tv has a line a member", #listed, 3)
+	eq("with the mode, the owner, the size and the name", listed[3],
+		"-rw-------  admin      11  /home/admin/notes.txt")
+
+	-- The archive is an ordinary FILE and weighs what it holds: the disk moved.
+	local before = CeroSecOS.usage(state)
+	local archive = CeroSecOS.getNode(state, admin, "/home/admin/home.tar")
+	check("the archive is a file", archive ~= nil and archive.type == "file")
+	check("and it holds the magic line",
+		string.sub(archive.data, 1, #CeroSecOS.TAR_MAGIC) == CeroSecOS.TAR_MAGIC)
+	check("and it weighs what it holds (" .. #archive.data .. ")", #archive.data > 40)
+
+	-- The round trip, byte for byte, mode and time and all. Everything goes first.
+	okAt(state, root, "rm -r /home/admin/work", {}, env)
+	okAt(state, root, "rm /home/admin/notes.txt", {}, env)
+	okAt(state, admin, "tar xf home.tar", {}, env)
+	okAt(state, admin, "cat notes.txt", { "hello", "there" }, env)
+	okAt(state, admin, "cat work/deep.txt", { "deeper" }, env)
+	local back = CeroSecOS.getNode(state, admin, "/home/admin/notes.txt")
+	eq("the bytes came back whole", back.data, "hello\nthere")
+	eq("and the mode with them", back.mode, 600)
+	eq("and the time", CeroSecOS.mtimeOf(back), FIXED)
+	local dir = CeroSecOS.getNode(state, admin, "/home/admin/work")
+	eq("a directory came back a directory", dir.type, "dir")
+	eq("with its own mode", dir.mode, 755)
+
+	-- An empty file costs its header and nothing else, and comes back empty.
+	okAt(state, admin, "tar cf empty.tar /home/admin/empty.txt", {}, env)
+	okAt(state, root, "rm /home/admin/empty.txt", {}, env)
+	okAt(state, admin, "tar xf empty.tar", {}, env)
+	local blank = CeroSecOS.getNode(state, admin, "/home/admin/empty.txt")
+	check("the empty file came back", blank ~= nil and blank.type == "file")
+	eq("and is still empty", blank.data, "")
+
+	-- A link is stored as a LINK and not as what it points at, which is what tar
+	-- does with one: the arrow comes back saying the same thing.
+	okAt(state, admin, "tar cf link.tar /home/admin/short", {}, env)
+	okAt(state, root, "rm /home/admin/short", {}, env)
+	okAt(state, admin, "tar xf link.tar", {}, env)
+	local link = CeroSecOS.getNode(state, admin, "/home/admin/short", true)
+	check("the link came back a link", CeroSecOS.isLink(link))
+	eq("pointing where it did", link.target, "notes.txt")
+
+	-- Who owns what comes out. root puts the owner back; anybody else owns what he
+	-- extracts, which is tar's rule everywhere and the reason an archive off a
+	-- floppy cannot hand a survivor a file of root's.
+	put(state, root, "/home/admin/rootly.txt", "of root's")
+	local owned = CeroSecOS.getNode(state, root, "/home/admin/rootly.txt")
+	owned.owner = "root"
+	owned.mode = 644
+	okAt(state, root, "tar cf /home/admin/r.tar /home/admin/rootly.txt", {}, env)
+	okAt(state, root, "chmod 644 /home/admin/r.tar", {}, env)
+	okAt(state, root, "rm /home/admin/rootly.txt", {}, env)
+	okAt(state, admin, "tar xf r.tar", {}, env)
+	eq("an ordinary account owns what it extracts",
+		CeroSecOS.getNode(state, admin, "/home/admin/rootly.txt").owner, "admin")
+	eq("and the mode still came back",
+		CeroSecOS.getNode(state, admin, "/home/admin/rootly.txt").mode, 644)
+	okAt(state, root, "rm /home/admin/rootly.txt", {}, env)
+	okAt(state, root, "tar xf /home/admin/r.tar", {}, env)
+	eq("root puts the owner back",
+		CeroSecOS.getNode(state, root, "/home/admin/rootly.txt").owner, "root")
+
+	-- A file it may not read is named and the walk goes on, and find's own rule
+	-- about an unsuccessful command applies: the refusals are the lines.
+	local shut = expect(state, admin, "tar cvf etc.tar /etc", false, nil, nil)
+	local saidPasswd = false
+	for i = 1, #shut do
+		if shut[i] == "tar: /etc/passwd: permission denied" then saidPasswd = true end
+	end
+	check("a file it may not read is refused by name", saidPasswd)
+	check("and the rest of the tree went in", #shut > 3)
+
+	-- What it refuses. A key that is not one, two keys, no `f`, no archive, no
+	-- path to store, and a file that is not an archive.
+	local USAGE = "tar: usage: tar c|x|t[v]f <archive> [path]..."
+	badAt(state, admin, "tar zcf a.tar /etc/motd", "tar: z: unknown option", env)
+	badAt(state, admin, "tar cxf a.tar /etc/motd", USAGE, env)
+	badAt(state, admin, "tar c a.tar /etc/motd", USAGE, env)
+	badAt(state, admin, "tar cf", USAGE, env)
+	badAt(state, admin, "tar cf a.tar", USAGE, env)
+	badAt(state, admin, "tar tf /etc/motd", "tar: /etc/motd: not a tar archive", env)
+	badAt(state, admin, "tar tf nosuch.tar", "tar: nosuch.tar: no such file", env)
+	badAt(state, admin, "tar tf /etc", "tar: /etc: is a directory", env)
+	badAt(state, admin, "tar cf home.tar /home/admin/nosuch",
+		"tar: /home/admin/nosuch: no such file", env)
+
+	-- An archive of a tree that does not fit is the disk's refusal and not tar's
+	-- own: an archive is a file, and a file is 4096 bytes.
+	put(state, admin, "/home/admin/big.txt", string.rep("x", CeroSecOS.MAX_FILE_BYTES))
+	badAt(state, admin, "tar cf big.tar /home/admin/big.txt",
+		"tar: big.tar: file too large", env)
+end
+
+-- What a tar COSTS: a member is a file read or a file written, which is a
+-- command's worth of work, so tar takes a member a turn and hands the machine back
+-- -- measured at 0.9 ms for twenty files in one call against the 0.2 ms a command
+-- is charged, which is a pass's whole wall clock spent by one command.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "mkdir tree", {}, { now = FIXED, nowMs = 1000, jobs = {} })
+	put(state, admin, "/home/admin/tree/a.txt", "one")
+	put(state, admin, "/home/admin/tree/b.txt", "two")
+	local function steps(line)
+		local _, _, _, _, job = exec(state, admin, line, { jobs = {} })
+		return job.steps
+	end
+	-- Three members -- the directory and its two files -- and the write of the
+	-- archive itself: four commands' worth, one turn each.
+	eq("a tar is a member a turn plus the write",
+		steps("tar cf home.tar /home/admin/tree"), CeroSecOS.STEP_COST_COMMAND * 4)
+	-- A listing is one command: it reads the file and writes nothing.
+	eq("a listing is one command", steps("tar tf home.tar"),
+		CeroSecOS.STEP_COST_COMMAND)
+	okAt(state, admin, "rm -r tree", {}, { now = FIXED, nowMs = 1000, jobs = {} })
+	-- And putting it back is a member a turn, with no write at the end: the members
+	-- ARE the writes.
+	eq("an extraction is a member a turn", steps("tar xf home.tar"),
+		CeroSecOS.STEP_COST_COMMAND * 3)
+	okAt(state, admin, "cat tree/a.txt", { "one" }, { now = FIXED, nowMs = 1000, jobs = {} })
+end
+
+-- The container, on its own: the two pure halves, and the round trip through them.
+do
+	local members = {
+		{ kind = "d", mode = 755, owner = "admin", group = "users", mtime = 7, name = "work" },
+		{ kind = "f", mode = 600, owner = "admin", group = "users", mtime = 8,
+			name = "work/two.txt", data = "first\nsecond" },
+		{ kind = "f", mode = 644, owner = "root", group = "root", mtime = 0,
+			name = "empty", data = "" },
+		{ kind = "l", mode = 777, owner = "admin", group = "users", mtime = 9,
+			name = "short", data = "work/two.txt" },
+	}
+	local text = CeroSecOS.tarText(members)
+	-- Written out, because the format is a fact about what a floppy carries between
+	-- two machines and a change to it is a change to what an older disk means.
+	eq("the container is what it is", text,
+		"CeroSec tar 1\n"
+		.. "d 755 admin users 7 0 work\n"
+		.. "f 600 admin users 8 12 work/two.txt\n"
+		.. "first\nsecond\n"
+		.. "f 644 root root 0 0 empty\n"
+		.. "l 777 admin users 9 12 short\n"
+		.. "work/two.txt\n")
+	-- And back: every field, and the data taken by its byte count -- which is the
+	-- only thing that can find the end of a file with newlines in it.
+	local read = CeroSecOS.tarMembers(text)
+	check("it reads back", read ~= nil)
+	eq("with every member", #read, #members)
+	for i = 1, #members do
+		eq("member " .. i .. " kind", read[i].kind, members[i].kind)
+		eq("member " .. i .. " mode", read[i].mode, members[i].mode)
+		eq("member " .. i .. " owner", read[i].owner, members[i].owner)
+		eq("member " .. i .. " group", read[i].group, members[i].group)
+		eq("member " .. i .. " mtime", read[i].mtime, members[i].mtime)
+		eq("member " .. i .. " name", read[i].name, members[i].name)
+		eq("member " .. i .. " data", read[i].data, members[i].data or "")
+	end
+	-- What is not an archive. Anything without the first line, a header that is not
+	-- one, a size no file could have, and a member cut off in the middle.
+	check("a file with no magic line is not one", CeroSecOS.tarMembers("hello\n") == nil)
+	check("nor is an empty file", CeroSecOS.tarMembers("") == nil)
+	check("nor is nothing at all", CeroSecOS.tarMembers(nil) == nil)
+	check("a header that is not one", CeroSecOS.tarMembers(
+		CeroSecOS.TAR_MAGIC .. "\nf 644 admin\n") == nil)
+	check("a kind that is not one", CeroSecOS.tarMembers(
+		CeroSecOS.TAR_MAGIC .. "\nq 644 a b 0 0 x\n") == nil)
+	check("a size no file could hold", CeroSecOS.tarMembers(
+		CeroSecOS.TAR_MAGIC .. "\nf 644 a b 0 99999 x\n") == nil)
+	check("and a member cut off in the middle", CeroSecOS.tarMembers(
+		CeroSecOS.TAR_MAGIC .. "\nf 644 a b 0 20 x\nshort\n") == nil)
+	-- An archive of nothing is still an archive: `tar cf a.tar` of a path that is
+	-- not there leaves a file with a magic line and no members in it.
+	local none = CeroSecOS.tarMembers(CeroSecOS.tarText({}))
+	check("an archive with nothing in it reads as none", none ~= nil and #none == 0)
 end
 
 -- 49e. The glob -name matches on, on its own.

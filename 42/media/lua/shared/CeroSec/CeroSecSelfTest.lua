@@ -253,6 +253,53 @@ function CeroSecSelfTest.probe(say)
 	say("arith argument count", CeroSecSelfTest.arith("$# * 10", { "a", "b" }))
 	say("arith argument missing", CeroSecSelfTest.arith("$2 + 1", { "3" }))
 	say("arith braces", CeroSecSelfTest.arith("${nothing} + 1", { "3" }))
+
+	--
+	-- The tar container, which is what a floppy carries between two machines.
+	--
+	-- Here because it is written and read as TEXT with a byte count in it: a VM
+	-- whose string.sub or # answered differently at an edge would write archives
+	-- one machine could make and another could not read, and the disk would be
+	-- carried across town before anybody found out. The round trip is asserted as
+	-- well as the bytes, so a reader that lost a member is not green for having
+	-- written one.
+	local members = {
+		{ kind = "d", mode = 755, owner = "admin", group = "users", mtime = 7, name = "work" },
+		{ kind = "f", mode = 600, owner = "admin", group = "users", mtime = 8,
+			name = "work/two.txt", data = "first\nsecond" },
+		{ kind = "f", mode = 644, owner = "root", group = "root", mtime = 0,
+			name = "empty", data = "" },
+		{ kind = "l", mode = 777, owner = "admin", group = "users", mtime = 9,
+			name = "short", data = "work/two.txt" },
+	}
+	local archive = CeroSecSelfTest.tar(members)
+	say("tar container bytes", #archive)
+	say("tar container", (string.gsub(archive, "\n", "|")))
+	say("tar round trip", CeroSecSelfTest.tarBack(archive))
+	say("tar not an archive", CeroSecOS.tarMembers("hello\n") == nil)
+	say("tar cut short", CeroSecOS.tarMembers(
+		CeroSecOS.TAR_MAGIC .. "\nf 644 a b 0 20 x\nshort\n") == nil)
+end
+
+-- The archive of a fixed member list, as text. A function of nothing, like every
+-- vector: the members are written above and no disk is looked at.
+function CeroSecSelfTest.tar(members)
+	return CeroSecOS.tarText(members)
+end
+
+-- And what reading it back says about every field, as ONE line: a vector is one
+-- value, and what has to agree between two VMs is the whole of what came out.
+function CeroSecSelfTest.tarBack(text)
+	local members = CeroSecOS.tarMembers(text)
+	if members == nil then return "NOT AN ARCHIVE" end
+	local out = {}
+	for i = 1, #members do
+		local m = members[i]
+		out[#out + 1] = m.kind .. ":" .. tostring(m.mode) .. ":" .. m.owner .. ":"
+			.. m.group .. ":" .. tostring(m.mtime) .. ":" .. m.name .. ":"
+			.. tostring(#m.data) .. ":" .. (string.gsub(m.data, "\n", "|"))
+	end
+	return table.concat(out, " ")
 end
 
 -- One `$(( ))` expression, evaluated the way the shell evaluates one: through a

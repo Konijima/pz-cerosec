@@ -761,6 +761,12 @@ CeroSecOS.COMMAND_INFO = {
 	sort     = { desc = "sort lines", usage = "sort [-r] [-n] [-u] [file]..." },
 	su       = { desc = "become another user", usage = "su [name]" },
 	sudo     = { desc = "run a command as root", usage = "sudo <command> [args]" },
+	-- The three keys and the one modifier tar(1) had in 1993, called the way tar was
+	-- called then: one word of letters, no dash in front of it. No `z` (compress was
+	-- a program of its own), no -C and no -p. The CONTAINER is this machine's own
+	-- and the deviations page says so -- see the head of commands.tar.
+	tar      = { desc = "store files in one archive",
+		usage = "tar c|x|t[v]f <archive> [path]..." },
 	tail     = { desc = "print the last lines of a file",
 		usage = "tail [-n N|-N] [file]" },
 	tee      = { desc = "copy the input to the screen and to files",
@@ -824,6 +830,12 @@ CeroSecOS.COMMAND_INFO = {
 -- that instead. A sentence is what a reader needs anyway; a word is what a command
 -- needs.
 --
+-- ANY entry may carry a `phrase` and one that does is held to it, which is how a
+-- declaration is kept from being a word on a page that says nothing about it. It
+-- has to fit on ONE line of the page: the pages are wrapped prose and the bench
+-- looks for the phrase literally, so a sentence broken across two lines is a
+-- sentence it will not find.
+--
 CeroSecOS.DEVIATIONS = {
 	-- Not a Unix command at all. `man -k` and `apropos` are what a real one had,
 	-- and both want a whatis database this machine has no room for; what is here
@@ -873,6 +885,15 @@ CeroSecOS.DEVIATIONS = {
 	-- when the line opens, a real TNC-2 having printed whatever its vendor's
 	-- firmware printed.
 	{ name = "cu", why = "-l names /dev/radio0, and the TNC's banner line is ours" },
+	-- The CONTAINER a tar makes, and nothing else about tar: the three keys, the one
+	-- modifier, what a member carries and who may put an owner back are all tar's
+	-- own. But a real archive is 512-byte blocks with a 512-byte header in front of
+	-- every member, and on a machine whose floppy holds 4096 bytes that would cost a
+	-- ten-line note a quarter of the disk it was being carried on. So the container
+	-- is TEXT -- a header line and the bytes after it -- and it is honest about what
+	-- it costs (see the head of commands.tar).
+	{ name = "tar", phrase = "the archive is a text file",
+		why = "512-byte blocks would cost one note a quarter of the floppy" },
 	-- ln, which a 1993 one made a HARD link with: `ln a b` was a second NAME for
 	-- one file, and this machine cannot hold one -- two names for one node would
 	-- be one table under two keys, and the game copies the state table by
@@ -3178,6 +3199,370 @@ commands.find = function(state, session, args, env, stdin, sh)
 		return true, out
 	end
 	return carry.ok, out
+end
+
+--
+-- tar: many files in one file
+--
+-- `tar cf <archive> <path>...` stores, `tar xf <archive>` puts back, and
+-- `tar tf <archive>` lists; `v` names every member as it is handled. Three keys
+-- and one modifier, which is what tar(1) had in 1993, called the way tar was
+-- called then: one word of letters with no dash in front of it, tar being older
+-- than getopt. There is no `z` -- compress(1) was a program of its own and this
+-- machine has neither -- and no `-C`, no `-p`, no wildcards.
+--
+-- What it is FOR on a machine this size: a home on a floppy. A floppy holds one
+-- maximal file (4096 bytes), and `tar cf /mnt/home.tar ~` is how a survivor
+-- carries his notes to the machine next door.
+--
+-- WHAT IS OURS, and it is on the manual's deviations page: the container. A real
+-- tar is 512-byte blocks with a 512-byte header in front of every member, so a
+-- ten-byte note would cost a kilobyte of the floppy it was being carried on -- a
+-- quarter of the disk for one note, on a machine whose whole drive is 64K. So the
+-- container here is TEXT: a header line, and the bytes after it.
+--
+-- What it is NOT is dishonest about the price. The archive is an ordinary file,
+-- written through the ordinary write path, and every byte of it counts against
+-- the disk it lands on: `tar cf` of a home that does not fit answers
+-- "disk full" exactly as `cp` would, and `df` moves by what the archive weighs.
+-- And what a real tar and this one agree about is everything a member CARRIES --
+-- the name, the mode, the owner, the group, the size, the time -- and about who
+-- may put each of those back: root restores the owner, anybody else owns what he
+-- extracts, which is tar's rule everywhere.
+--
+
+-- The first line of an archive, and the one thing that says it is one.
+CeroSecOS.TAR_MAGIC = "CeroSec tar 1"
+
+-- The three kinds of member. A device is none of them: there is nothing in a
+-- /dev entry to carry and a real tar writes a header with no data for one, which
+-- would be a promise this machine could not keep on the way back.
+CeroSecOS.TAR_KINDS = { f = "file", d = "dir", l = "link" }
+
+-- members -> the text of an archive. Pure: the members are plain tables
+--   { kind = "f"|"d"|"l", mode = 644, owner = "admin", group = "users",
+--     mtime = 0, name = "notes.txt", data = "..." }
+-- and nothing here looks at a disk. A member with no data has no line for it,
+-- which is what makes an empty file and a directory cost their header and
+-- nothing more.
+function CeroSecOS.tarText(members)
+	local out = { CeroSecOS.TAR_MAGIC }
+	for i = 1, #(members or {}) do
+		local m = members[i]
+		local data = m.data or ""
+		out[#out + 1] = m.kind .. " " .. tostring(m.mode) .. " " .. tostring(m.owner)
+			.. " " .. tostring(m.group) .. " " .. tostring(m.mtime or 0)
+			.. " " .. tostring(#data) .. " " .. tostring(m.name)
+		if #data > 0 then out[#out + 1] = data end
+	end
+	return table.concat(out, "\n") .. "\n"
+end
+
+-- And back: the text of an archive -> its members, or nil for a file that is not
+-- one. The data is taken by its BYTE COUNT and never by looking for the next
+-- line, because a file's contents may have newlines in it and the count is the
+-- only thing that says where it ends -- which is the whole reason the header
+-- carries a size, here as in a real tar.
+function CeroSecOS.tarMembers(text)
+	if type(text) ~= "string" then return nil end
+	local head = CeroSecOS.TAR_MAGIC .. "\n"
+	if string.sub(text, 1, #head) ~= head then return nil end
+	local at = #head + 1
+	local members = {}
+	while at <= #text do
+		local nl = string.find(text, "\n", at, true)
+		if nl == nil then return nil end
+		local line = string.sub(text, at, nl - 1)
+		at = nl + 1
+		if line ~= "" then
+			local kind, mode, owner, group, mtime, bytes, name =
+				string.match(line, "^(%a) (%d+) (%S+) (%S+) (%d+) (%d+) (%S+)$")
+			if kind == nil or CeroSecOS.TAR_KINDS[kind] == nil then return nil end
+			local n = tonumber(bytes)
+			if n == nil or n > CeroSecOS.MAX_FILE_BYTES then return nil end
+			local data = ""
+			if n > 0 then
+				data = string.sub(text, at, at + n - 1)
+				if #data < n then return nil end
+				-- Past the data AND past the newline that closes it.
+				at = at + n + 1
+			end
+			members[#members + 1] = { kind = kind, mode = tonumber(mode),
+				owner = owner, group = group, mtime = tonumber(mtime),
+				name = name, data = data }
+		end
+	end
+	return members
+end
+
+-- What `tar tv` prints for one member: the mode, who will own it, how big it is,
+-- and the name -- in `ls -l`'s own columns and widths, so there is one long
+-- listing on this machine and not two.
+--
+-- ONE cut from a real tar's tv line, and it is the sixty columns': tar(1) prints
+-- the date as well, and a member's name here is a whole PATH rather than a name in
+-- a directory -- the two together leave nothing for the path. The date is what
+-- goes; the manual page says so, beside the command, the way `uptime`'s cut is
+-- said beside uptime.
+local function tarLine(m)
+	local node = { type = CeroSecOS.TAR_KINDS[m.kind] or "file", owner = m.owner,
+		group = m.group, mode = m.mode, mtime = m.mtime }
+	if node.type == "dir" then node.children = {} end
+	local head = CeroSecOS.permString(node)
+		.. "  " .. CeroSecOS.padRight(CeroSecOS.truncate(m.owner or "?", L_OWNER), L_OWNER)
+		.. "  " .. CeroSecOS.padLeft(tostring(#(m.data or "")), L_SIZE) .. "  "
+	return head .. CeroSecOS.truncate(m.name, CeroSecOS.COLS - #head)
+end
+
+-- How many members tar handles before it hands the machine back. One, for the
+-- reason `find -exec` does one exec: reading a file and building a header is a
+-- command's worth of work, a tar of a full home is sixty of them, and a command
+-- that did all sixty in one call would spend a pass's whole wall clock -- measured
+-- at 0.9 ms for twenty files, against the 0.2 ms a command is charged. So a tar
+-- trickles, a member a turn, and the pass it is in costs what any command costs.
+CeroSecOS.TAR_TURN = 1
+
+-- One member of the walk `c` makes, and the children of a directory pushed in
+-- behind it so the order is pre-order: the directory before what is in it, exactly
+-- as find walks and for the same reason -- a member whose directory came after it
+-- could not be put back.
+--
+-- The NAME stored is the path as it was typed, which is what a 1993 tar stored:
+-- `tar cf t.tar ~` stores /home/admin/... and puts it back there, `tar cf t.tar .`
+-- stores ./... and puts it back wherever you are standing. The manual says which,
+-- because the difference is the difference between restoring a home and restoring
+-- it somewhere else.
+local function tarGather(state, session, carry, verbose)
+	local path = carry.queue[carry.i]
+	carry.i = carry.i + 1
+	local node, reason = CeroSecOS.getNode(state, session, path, true)
+	if node == nil then
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": " .. reason
+		return
+	end
+	if node.dead then
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": no such file"
+		return
+	end
+	local kind = nil
+	if node.type == "dir" then kind = "d"
+	elseif node.type == "file" then kind = "f"
+	elseif CeroSecOS.isLink(node) then kind = "l" end
+	if kind == nil then
+		carry.problems[#carry.problems + 1] =
+			"tar: " .. path .. ": " .. CeroSecOS.notAFile(node)
+		return
+	end
+
+	local data = ""
+	if kind == "f" then
+		if not CeroSecOS.can(state, session, node, "r") then
+			carry.problems[#carry.problems + 1] = "tar: " .. path .. ": permission denied"
+			return
+		end
+		data = node.data or ""
+	elseif kind == "l" then
+		data = node.target or ""
+	end
+	carry.members[#carry.members + 1] = { kind = kind, mode = node.mode,
+		owner = node.owner or "root", group = CeroSecOS.groupOf(node),
+		mtime = CeroSecOS.mtimeOf(node), name = path, data = data }
+	if verbose then carry.said[#carry.said + 1] = path end
+
+	if kind ~= "d" then return end
+	if not CeroSecOS.can(state, session, node, "r") then
+		carry.problems[#carry.problems + 1] = "tar: " .. path .. ": permission denied"
+		return
+	end
+	local names = CeroSecOS.listedNames(node, true)
+	local prefix = path
+	if string.sub(prefix, -1) ~= "/" then prefix = prefix .. "/" end
+	-- In behind this one, in order: the queue is the walk, so what is inserted here
+	-- is what the next turns will do.
+	for k = #names, 1, -1 do
+		table.insert(carry.queue, carry.i, prefix .. names[k])
+	end
+end
+
+-- One member, put back. nil when it went in, or the line that says why not.
+--
+-- The write is the ORDINARY one, on the account's own authority: an archive
+-- cannot put a file where its owner could not have written one, which is the
+-- whole of what keeps an archive off a floppy from being a way into a machine.
+-- What is restored on top of it is the mode and the time always, and the owner
+-- and the group only for root -- tar's rule on every Unix, and the reason a
+-- survivor's own extraction leaves him owning what came out.
+local function tarPut(state, session, m, now)
+	local path = m.name
+	local who = CeroSecOS.userOf(session)
+	if m.kind == "d" then
+		local node = CeroSecOS.getNode(state, session, path, true)
+		if node == nil then
+			local made, reason = CeroSecOS.createNode(state, session, path,
+				CeroSecOS.newDir(who, m.mode, now), now)
+			if made == nil then return "tar: " .. path .. ": " .. reason end
+		elseif node.type ~= "dir" then
+			return "tar: " .. path .. ": file exists"
+		end
+	elseif m.kind == "l" then
+		-- A link already at that name is REPLACED, which is what tar does with one:
+		-- it unlinks and makes it again. Anything else at that name is not a link
+		-- and is not something an archive may quietly write over.
+		local node = CeroSecOS.getNode(state, session, path, true)
+		if node ~= nil then
+			if not CeroSecOS.isLink(node) then return "tar: " .. path .. ": file exists" end
+			local gone, why = CeroSecOS.removeNode(state, session, path, false, now)
+			if gone == nil then return "tar: " .. path .. ": " .. why end
+		end
+		local made, reason = CeroSecOS.createNode(state, session, path,
+			CeroSecOS.newLink(who, m.data, now), now)
+		if made == nil then return "tar: " .. path .. ": " .. reason end
+	else
+		local done, reason = CeroSecOS.writeFile(state, session, path, m.data, false, now)
+		if done == nil then return "tar: " .. path .. ": " .. reason end
+	end
+	-- And what the member carried about itself, onto the node that is there now.
+	local node = CeroSecOS.getNode(state, session, path, true)
+	if node == nil then return nil end
+	if m.kind ~= "l" then node.mode = m.mode end
+	node.mtime = m.mtime
+	if who == "root" then
+		node.owner = m.owner
+		node.group = m.group
+	end
+	return nil
+end
+
+commands.tar = function(state, session, args, env, stdin, sh)
+	local key = args[2]
+	if key == nil or #args < 3 then return usage("tar") end
+	local kind, verbose, wantFile = nil, false, false
+	for i = 1, #key do
+		local c = string.sub(key, i, i)
+		if c == "c" or c == "x" or c == "t" then
+			-- One key and not two: `tar cx` is two orders in one word and a real tar
+			-- takes the first it meets, which is a line nobody meant to type.
+			if kind ~= nil then return usage("tar") end
+			kind = c
+		elseif c == "v" then
+			verbose = true
+		elseif c == "f" then
+			wantFile = true
+		else
+			return fail("tar", c, "unknown option")
+		end
+	end
+	if kind == nil or not wantFile then return usage("tar") end
+
+	local archive = args[3]
+	local now = CeroSecOS.clockOf(env)
+
+	-- Where the last turn had got to, or nothing at all on the first one. Both `c`
+	-- and `x` take a member at a time (TAR_TURN) and hand the machine back, the way
+	-- `find -exec` takes one exec: a member is a file read or a file written, which
+	-- is a command's worth of work, and a tar of a home is sixty of them.
+	local carry = nil
+	if type(sh) == "table" and type(sh.carry) == "table" then carry = sh.carry end
+
+	local function another(out, ok)
+		if carry.phase ~= "done" and type(sh) == "table" then
+			sh.again = true
+			sh.carry = carry
+			return true, out
+		end
+		return ok, out
+	end
+
+	if kind == "c" then
+		if #args < 4 then return usage("tar") end
+		if carry == nil then
+			carry = { phase = "gather", queue = {}, i = 1, members = {}, said = {},
+				problems = {} }
+			for i = 4, #args do carry.queue[#carry.queue + 1] = args[i] end
+		end
+		local out = {}
+		local did = 0
+		while carry.phase == "gather" and did < CeroSecOS.TAR_TURN do
+			if carry.queue[carry.i] == nil then
+				carry.phase = "write"
+				break
+			end
+			local before = #carry.said
+			tarGather(state, session, carry, verbose)
+			-- What this turn found out, said now rather than at the end: a tar of a
+			-- home prints as it goes, the way `tar v` has always printed.
+			for k = before + 1, #carry.said do out[#out + 1] = carry.said[k] end
+			did = did + 1
+		end
+		if carry.phase ~= "write" then return another(out, true) end
+
+		-- The archive itself, written through the ordinary write path on the
+		-- account's own authority: one file, weighed against the disk like any other.
+		carry.phase = "done"
+		local text = CeroSecOS.tarText(carry.members)
+		local done, reason = CeroSecOS.writeFile(state, session, archive, text, false, now)
+		if done == nil then
+			out[#out + 1] = "tar: " .. archive .. ": " .. reason
+			return false, out
+		end
+		for i = 1, #carry.problems do out[#out + 1] = carry.problems[i] end
+		return #carry.problems == 0, out
+	end
+
+	-- Both of the others read the archive first, on the account's own authority.
+	-- Read on the FIRST turn only: an archive somebody rewrote under an extraction
+	-- would be two archives in one command.
+	local members = carry ~= nil and carry.members or nil
+	if members == nil then
+		local node, reason = CeroSecOS.getNode(state, session, archive)
+		if node == nil then return fail("tar", archive, reason) end
+		if node.type ~= "file" then return fail("tar", archive, CeroSecOS.notAFile(node)) end
+		if not CeroSecOS.can(state, session, node, "r") then
+			return fail("tar", archive, "permission denied")
+		end
+		members = CeroSecOS.tarMembers(node.data or "")
+		if members == nil then return fail("tar", archive, "not a tar archive") end
+	end
+
+	-- A listing is one command's worth whatever is in the archive: it reads the
+	-- file it has already read and writes nothing.
+	if kind == "t" then
+		local out = {}
+		for i = 1, #members do
+			if verbose then
+				out[#out + 1] = tarLine(members[i])
+			else
+				out[#out + 1] = members[i].name
+			end
+		end
+		return true, out
+	end
+
+	if carry == nil then
+		carry = { phase = "put", members = members, i = 1, ok = true }
+	end
+	local out = {}
+	local did = 0
+	while carry.phase == "put" and did < CeroSecOS.TAR_TURN do
+		local m = carry.members[carry.i]
+		if m == nil then
+			carry.phase = "done"
+			break
+		end
+		carry.i = carry.i + 1
+		did = did + 1
+		local refusal = tarPut(state, session, m, now)
+		if refusal ~= nil then
+			carry.ok = false
+			out[#out + 1] = refusal
+		elseif verbose then
+			out[#out + 1] = m.name
+		end
+	end
+	if carry.queue == nil and carry.phase == "put" and carry.members[carry.i] == nil then
+		carry.phase = "done"
+	end
+	return another(out, carry.ok)
 end
 
 --

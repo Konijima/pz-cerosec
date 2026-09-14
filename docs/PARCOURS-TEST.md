@@ -1289,7 +1289,21 @@ coques.
      `cat /mnt/notes.txt` → la note est là, entière. Vérifier aussi les droits :
      un fichier écrit par `bob` là-bas est encore à `bob` (`ls -l /mnt`), et
      `root` le lit partout. [ ]
-208. **Reprendre la machine avec la disquette dedans.** Disquette insérée et
+207a. **Le home entier sur la disquette : `tar`.** Disquette montée sur `/mnt`.
+     Dans le home : `mkdir travail`, `echo un > travail/a.txt`,
+     `echo deux > notes.txt`, `chmod 600 notes.txt`. Puis
+     `tar cvf /mnt/home.tar /home/admin` → chaque nom s'affiche au fil des
+     passes (une ligne à la fois, pas d'un bloc), et `ls -l /mnt` montre
+     `home.tar` avec sa taille. `tar tvf /mnt/home.tar` → une ligne par membre
+     avec le mode, le propriétaire, la taille et le chemin. Ensuite
+     `rm -r travail`, `rm notes.txt`, `tar xvf /mnt/home.tar` → tout revient,
+     `cat notes.txt` → `deux`, et `ls -l notes.txt` → le mode `600` est revenu
+     aussi. Enfin `df` avant et après un `tar cf` : l'archive **compte** sur le
+     disque, et un home trop gros répond `tar: /mnt/home.tar: file too large`.
+     Pendant un `tar` d'un gros home, marcher et ouvrir une porte : le jeu ne
+     saccade pas. [ ]
+208. **Reprendre la machine avec la disquette dedans.**
+ Disquette insérée et
      montée, ramasser l'ordinateur (clic droit → Pick up / prendre le meuble),
      le reposer ailleurs, le rallumer et se connecter : `ls /dev` → `fd0` est
      toujours là, rien n'est monté (`mount` ne liste que `hda`), et un seul

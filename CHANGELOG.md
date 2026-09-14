@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- **`tar`**, so a home can go onto a floppy in one piece: `tar cf /mnt/home.tar ~`,
+  `tar tf` to see what is on a disk you found, `tar xf` to put it back. Folders,
+  modes and times come back with the files; root also puts the owner back. An
+  archive is an ordinary file, so it counts against the disk and cannot be bigger
+  than one file — 4096 bytes.
 - `find` can do something to what it finds: `find . -name "*.log" -exec rm {} \;`
   runs a command for every name, and `-exec ... {} +` hands them all to one command.
   A long sweep takes its time and prints as it goes, so nothing on the machine

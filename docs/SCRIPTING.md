@@ -416,6 +416,13 @@ the form POSIX gives you for doing it in one. A resumed command's redirect appen
 from the second turn on, through the same door a stage's does, so `find … -exec cat
 {} \; > all.txt` does not truncate the file it is filling.
 
+`tar` takes another turn the same way, and for the same reason measured: a member
+is a file read or a file written, twenty of them in one call cost 0.9 ms against
+the 0.2 ms a command is charged, and a loop of `tar cf` was a machine spending most
+of a pass's wall clock on one command. It does one member a turn — `c` gathers,
+then writes the archive on a turn of its own; `x` puts one member back a turn;
+`t` reads the file it has already read and is one command.
+
 **Where a link is followed.** `CeroSecOS.getNode` and nowhere else, which is why no
 command had to learn about links: a link in the middle of a path is the directory it
 names, a link at the end of one is the file it names, and the absolute path that

@@ -278,6 +278,12 @@ so uptime says "load" where 4.4BSD says "load averages:", and w prints the
 clock where a real one prints a weekday. Every other cut in the book is
 named beside the command it belongs to.
 
+And one FILE FORMAT is ours: what tar makes. A real archive is 512-byte
+blocks with a header in front of every member, which on a four-kilobyte
+floppy would cost a ten-line note a quarter of the disk. Here instead
+the archive is a text file, honest about its size and weighing what it
+holds.
+
 That is the whole list. If something else on this machine surprises you, it
 is a fault and not a decision, and the three volumes are where to look for
 what it should have done.
@@ -1643,8 +1649,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2593  62943    4%
-  nodes         512     97    415   19%
+  hda         65536   2619  62917    4%
+  nodes         512     98    414   20%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 
@@ -1690,6 +1696,27 @@ go wrong separately.
 
 Classic mistake. Walking off with the disk while the window is open.
 Eject it from the menu; that is what the menu is for.]],
+
+[[Your whole home on one disk: tar.
+
+A floppy holds thirty-two files, and copying them one at a time loses the
+folders they were in. tar puts a tree in ONE file and takes it out again.
+
+  admin@ksp-04-11:~$ tar cf /mnt/home.tar /home/admin
+  admin@ksp-04-11:~$ tar tf /mnt/home.tar
+  admin@ksp-04-11:~$ tar xvf /mnt/home.tar
+
+c makes one, t lists what is in one, x puts it back, and f says the next
+word is the archive. Add v and every name is printed as it goes by. No dash
+in front of the letters: tar is older than that.
+
+Two things before you trust it. The names are stored exactly as you typed
+them, so an archive of /home/admin puts it BACK there, over whatever is in
+the way; and an archive is a file, so 4096 bytes is all it can hold. Store
+a folder at a time once a home has outgrown that.
+
+Classic mistake. Naming the archive second. The first word after the
+letters is always the archive; the paths come after it.]],
 
 [[A machine that is not new.
 
@@ -1745,6 +1772,7 @@ The floppy drive.
   newfs <device>
   mount [<device> <dir>]
   umount <dir>
+  tar c|x|t[v]f <archive> [path]...
 
 Making, copying, destroying.
 
@@ -1994,7 +2022,9 @@ The three new filters, from chapter 7.
   mv: /mnt/notes.txt: cross-device link
       mv cannot cross two disks; use cp and rm
   rm: /mnt: Device busy
-      something is mounted there; umount it first]],
+      something is mounted there; umount it first
+  tar: home.tar: not a tar archive
+      that file is not one; tar tf is how you look]],
 
 [[The editor, whose messages sit on its own bottom line rather than at a
 prompt.
