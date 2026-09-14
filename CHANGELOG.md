@@ -8,6 +8,27 @@ date.
 
 ## Unreleased
 
+- **Some places were already automated, and they do not wait for you.** About one
+  premises in three that had a nightly job to run was set up for it before the
+  outbreak: the relays and the door contacts are on its fixtures, its computer was
+  left running, and the crontab on it is still being read. Walk up to such a shop at
+  five to nine and the lights go out in front of you at nine, with nobody near the
+  switch. They come back on at seven. A bank bolts its vault at six on a weekday, a
+  station reads its own schedule out on the hour, and a school puts its lights out at
+  ten.
+- Find the machine, log in, `crontab -l`, and the line is right there to change or
+  take out. `dev` lists the fixtures it can reach. Unscrew the relay for the item and
+  that light stops answering it -- and nothing puts the relay back: the building is
+  yours to rewire.
+- Whether a premises was automated is decided **once**, the first time you ever come
+  near one of its computers, and never revisited. A place whose grid has gone stays
+  dark and does nothing, which is what a 1993 timer with no power does. Houses are
+  never automated, nor are the display models in an electronics shop's window. All of
+  it follows **Prefilled machines and disks** in the sandbox options.
+- The administrator's account on a prefilled machine can work the building it belongs
+  to. It could not before: its own nightly job answered `permission denied` and
+  mailed it to itself. It still cannot become `root` -- that is what the paper in the
+  drawer is for.
 - **A shop that sells computers is a shop that sells computers.** An electronics
   store used to come up as six copies of one back office. Now every machine on the
   sales floor is stock: it is switched on, logged in as `demo` with no password, and

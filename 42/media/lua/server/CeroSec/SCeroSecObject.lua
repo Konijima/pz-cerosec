@@ -669,8 +669,9 @@ function SCeroSecObject:prefill(state)
 
 	-- SOMEBODY WHO NEVER LOGGED OUT.
 	--
-	-- About one machine in four (CeroSecContent.liveSession), and never the military
-	-- post. The console was made a moment ago by turnOn, so this is the one place
+	-- About one machine in four (CeroSecContent.liveSession) -- one in TWO on a machine
+	-- its premises left running, which is a machine nobody shut down -- and never the
+	-- military post. The console was made a moment ago by turnOn, so this is the one place
 	-- where what the catalogue decided about the last fortnight reaches the glass:
 	-- the account, his home as the working directory, the moment wtmp says he sat
 	-- down, and the environment a login hands a shell. A player who opens this

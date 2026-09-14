@@ -424,6 +424,54 @@ the world: the device *is* the item lying on the floor.
   millisecond, because the pass over an empty book does nothing at all.
 
 
+### Hardware that was already fitted
+
+Some premises were wired before the outbreak, and about one in three that had a
+nightly job to run really was: relays on the light switches, contacts on the doors and
+windows, a strike where the lock stops somebody. The decision, the roll and where it is
+written down are in
+[CONTENT.md](CONTENT.md#the-premises-that-were-already-automated); what matters here is
+that **nothing about such a module is special**.
+
+- **The same writer.** `CeroSecAuto.fit` goes through `CeroSecModules.setOn`, the one
+  function that writes a fixture's modData, so the discovery, `/dev`, `dev`, the
+  right-click menu and the Devices tab of the debug window see exactly what they see
+  for a module a survivor screwed on. There is no second table and no flag that says
+  "the mod put this here".
+- **It comes off into his hands.** `Commands.uninstallmodule` asks nothing about where
+  a module came from, so a pre-fitted relay is a relay in his bag — it is real
+  hardware, and pretending otherwise would be a box he can see and cannot have.
+- **And it stays off.** This is the one thing the shape had to gain.
+  `CeroSecModules.PRE_KEY` (`pre`) is written beside the ids, it **outlives every
+  module coming off** (`setOn` keeps the table alive for it, where it would otherwise
+  take the last empty one away), and the pre-fitting walk skips any fixture that
+  carries it. Without that, a survivor who unscrews a relay for the item finds it back
+  on the plate at the top of the next minute, which is a mod undoing a player's own
+  work. A table this build cannot read — one a *later* build wrote — answers "already
+  done" for the same reason: the last thing to write into is somebody else's shape.
+- **`CeroSecModules.VERSION` does not move for it.** An absent mark reads as "not
+  pre-fitted", which is the old behaviour on every fixture in every save, and there is
+  nothing in an older table for a step to convert. Bumping the number would be worse
+  than useless: `migrate` stamps the new number on the table it walks and a table is
+  walked on every *read*, including on a client, where a write into a door's modData
+  goes nowhere anybody will ever see.
+- **Never an operator.** A relay, a contact and a strike; no motors. A 1993 shop had a
+  magnetic contact on the stockroom frame to know the door was shut and an electric
+  strike to bolt it, and a building that opened its own doors would open them for the
+  dead.
+- **Fitted whether or not the option needs it.** With `HardwareRequired` off nothing
+  needs fitting, and the walk fits anyway: the modules are then items a survivor can
+  take off a wall, and a world where they are there is truer than one where the shop
+  was automated by magic.
+
+Which fixtures: the ones the machine can act on, sifted back down to its own premises.
+`CeroSecDevices.fixtures` walks the building's rooms — the same walk `find` does, and
+it also says whether **every** room answered, which is how the pre-fitting knows to
+come back next minute for a room whose chunks were away and to stop coming back once
+they all arrived. Each fixture is then asked `CeroSecNet.premisesOfSquare` for itself,
+so a shop inside a mall wires its own tenancy and not the other twenty-nine.
+
+
 ## The floppy drive, and the second filesystem
 
 The disk is an **item**, and what is written on it lives in the item's modData and

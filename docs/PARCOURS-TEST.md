@@ -2731,6 +2731,102 @@ derrière.
      `/etc/passwd`. Une fois allumée, une machine ne change plus jamais de
      propriétaire, même après sauvegarde et rechargement. [ ]
 
+## AE. Un lieu qui tourne déjà tout seul (5e partie)
+
+Même condition qu'aux sections AA à AD : option bac à sable **Machines et disquettes
+garnies** sur **Activé**. Les mots de passe et les noms sont propres à la sauvegarde ;
+rien de ce qui est écrit ici n'est un nom ou un mot de passe à recopier.
+
+Environ une premises sur trois qui avait un travail de nuit à faire était équipée
+avant l'épidémie : les relais et les contacts sont déjà posés, sa machine a été
+laissée allumée, et sa crontab est toujours lue. Comme c'est un tirage, il faut
+plusieurs commerces avant d'en trouver un : les deux premières étapes sont une
+recherche, pas un échec.
+
+**La décision se prend une seule fois**, au moment où le premier ordinateur de la
+premises apparaît dans la sauvegarde. Donc toute cette section se fait sur des
+commerces **jamais visités** : un magasin où on est déjà entré a déjà tiré, et il a
+tiré avant que le joueur ne regarde.
+
+319. **Trouver un commerce qui tourne encore.** Sortir vers un quartier commerçant
+     jamais visité et marcher jusqu'à voir, de la rue, un écran allumé dans une
+     boutique fermée : un ordinateur dont la tuile est la tuile allumée, sans que
+     personne n'y ait touché. Compter les commerces visités avant d'en trouver un :
+     ce doit être de l'ordre de trois, pas vingt. [ ]
+
+320. **Les lumières s'éteignent à neuf heures, devant soi.** Se placer dans ce
+     magasin vers **20 h 55** (montre en main, l'heure du jeu). Ne rien toucher.
+     - à **21 h 00** pile, les lumières de la boutique s'éteignent ;
+     - personne n'a actionné d'interrupteur et aucune fenêtre de terminal n'est
+       ouverte ;
+     - l'écran de la machine est toujours allumé. [ ]
+
+     Si le magasin est une école, l'heure est **22 h 00** ; une banque verrouille sa
+     chambre forte à **18 h 00** du lundi au vendredi ; une station de radio dit sa
+     ligne d'horaire à **5 minutes** de chaque heure.
+
+321. **Et elles se rallument le matin.** Rester sur place (ou revenir avant sept
+     heures) : à **7 h 00**, les mêmes lumières se rallument, toujours sans personne
+     à l'interrupteur. [ ]
+
+322. **La ligne est dans la crontab.** Trouver la machine du magasin, l'ouvrir. Elle
+     est souvent restée à l'invite de quelqu'un : dans ce cas on est déjà au shell.
+     - `crontab -l` → la ligne de nuit, avec l'heure vue à l'étape 320 ;
+     - si le compte au clavier n'est pas celui du travail, `su root` avec le mot de
+       passe du papier du tiroir, puis `crontab -l -u <le compte>` ;
+     - `dev` → les luminaires, les portes et les fenêtres du magasin, avec leurs
+       numéros ;
+     - les numéros nommés dans la ligne de crontab (`light0 light1`) sont bien dans
+       cette liste. [ ]
+
+323. **La ligne se change.** Toujours sur cette machine :
+     - `crontab -r` puis `crontab -l` → `no crontab for <compte>` ;
+     - le soir suivant à l'heure vue à l'étape 320, **rien** ne s'éteint ;
+     - réécrire une ligne à soi (`echo "0 22 * * * sh $HOME/bin/lights.sh light0" |
+       crontab`) et vérifier le lendemain à 22 h 00 que c'est bien celle-là qui
+       s'exécute. [ ]
+
+324. **Le relais s'enlève, et la lumière ne répond plus.** Clic droit sur
+     l'interrupteur que la machine commande (pas sur l'ordinateur) → **Matériel
+     CeroSec** → **Retirer le relais**. Il faut un tournevis et Électricité 1.
+     - le relais est dans le sac après le geste ;
+     - `dev light0` → `light0: no such device` ;
+     - et surtout : attendre **deux ou trois minutes de jeu** et revérifier. Le
+       relais **ne revient pas** tout seul sur la plaque. [ ]
+
+325. **Rien ne se rejoue au rechargement.** Sauvegarder, quitter, recharger, revenir
+     dans le même magasin :
+     - la machine est toujours allumée ;
+     - les modules retirés à l'étape 324 sont toujours retirés ;
+     - les modules laissés en place sont toujours en place ;
+     - la crontab est celle laissée à l'étape 323. [ ]
+
+326. **Pas de courant, pas d'automatisme.** Sur une sauvegarde où le réseau
+     électrique est tombé (ou après la coupure, dans une partie longue), entrer dans
+     un commerce jamais visité :
+     - aucun écran allumé en vitrine ;
+     - mais en clic droit sur un interrupteur du magasin, le menu **Matériel
+       CeroSec** propose bien **Retirer le relais** sur certains d'entre eux : le
+       matériel est posé, c'est le courant qui manque ;
+     - brancher un générateur et allumer la machine à la main : `dev` montre les
+       luminaires, et une ligne de crontab écrite à la main fonctionne. [ ]
+
+327. **Une maison ne s'automatise jamais.** Entrer dans une maison jamais visitée :
+     aucun ordinateur allumé de lui-même, et les interrupteurs de la maison
+     n'offrent pas **Retirer** (rien n'y a été posé). [ ]
+
+328. **Ni un modèle d'exposition.** Dans un magasin d'électronique (section AD) qui
+     tourne tout seul : la machine allumée d'elle-même est celle de
+     l'**arrière-boutique**, pas une de la vitrine. Les machines de la vitrine sont
+     allumées parce que ce sont des machines de démonstration (étape 312) — ce qui se
+     vérifie, c'est laquelle porte la crontab : `crontab -l` ne donne une ligne de
+     nuit que sur celle du fond. [ ]
+
+329. **L'option coupée coupe tout.** Nouveau monde, **Machines et disquettes
+     garnies** sur **Désactivé** : parcourir cinq commerces jamais visités. Aucun
+     écran allumé de lui-même, aucun module posé sur aucun interrupteur, et rien ne
+     s'éteint à neuf heures. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

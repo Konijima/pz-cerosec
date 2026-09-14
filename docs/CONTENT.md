@@ -103,7 +103,10 @@ what the machine turned out to **be** — `desk`, `floor` or `spare` (see *The s
 floor and the spare desk*). Two of its inputs are the world's and the catalogue may
 not invent either: `opts.numbers`, telephone numbers of the machine's own region for
 the `cu` line in somebody's history, and `opts.room` with `opts.desks` — the room
-this machine stands in and the premises' page of the register.
+this machine stands in and the premises' page of the register. A third, `opts.auto`,
+says this is the machine its premises left running (see *The premises that were
+already automated*): the desk becomes the one whose crontab does the nightly job, and
+the still-logged-in roll uses the better odds.
 
 **Everything goes through the engine's own write path** — `CeroSecOS.createNode`,
 `CeroSecOS.setPassword` — so the quota, the modes, the owners, the 96 entries to a
@@ -404,6 +407,143 @@ factory password of its own would be a paper that opens one machine in six. The 
 says so itself in `floor.txt` — it set them all up the same, because it is the shop
 that has to fix them.
 
+## The premises that were already automated
+
+A shop whose lights go out at nine as a survivor walks up to it. A bank whose vault
+bolts itself at six. A station that reads its own schedule out on the hour. Nobody
+threw a switch: an electrician screwed the relays on in 1991, somebody put a crontab
+on the machine, and when the road shut the machine was left running.
+
+Every piece of that already existed separately — the modules that put a fixture under
+`/dev` ([DEVICES.md](DEVICES.md#the-hardware-modules)), the crontab the catalogue
+writes onto the right desk, and a cron pass that walks every machine that is **on**
+once a game minute and needs nothing of the world. The change is a premises where all
+three are true *before the player touches anything*. The server side is
+`SCeroSecAuto.lua`; it is gated by **`PrefilledMachines`** like everything else on
+this page.
+
+### About one premises in three, and only one that has a job to run
+
+`CeroSecContent.automated(secret, b1, b2, id)`:
+`number(secret, premisesKey .. "/auto", CeroSecContent.AUTO_ONE_IN)` is 1, and the
+profile has a nightly job at all.
+
+"Has a nightly job" is **derived** and is never a list: `CeroSecContent.hasJob` asks
+the profile whether the catalogue really writes it a crontab — `profile.cron`, or a
+`cron` inside any account entry. So a profile that gains one becomes a candidate on
+its own, a profile that loses one stops being one, and **a house can never be
+automated by a change that forgot to take it off a list**: `residential` is the one
+profile with no crontab in it, and that is the whole of why it is excluded.
+
+The roll is on the **premises** and on nothing else, so every computer of one shop
+agrees about it and the shop next door rolls for itself.
+
+### When it is decided, and the hook that says "first time"
+
+The first time a computer sprite of that premises is **created in the save**, and
+never again.
+
+The game has its own word for that, and it is which of `MapObjects`' two maps a
+closure sits in. Proved on `projectzomboid.jar` 42.20.4:
+
+- `MapObjects.newGridSquare(IsoGridSquare)` walks **every object** on the square (the
+  loop at offsets 60–306), takes that object's own sprite name (119–143), looks it up
+  in `onNew` (158–165) and calls every closure registered for it with that **one
+  object** as the single argument (178–219). A registration is per sprite *name*; a
+  call is per *object*.
+- `IsoChunk.doLoadGridsquare` calls `newGridSquare` only `if (this.addZombies)`
+  (offsets 851–859) and `loadGridSquare` unconditionally (862–864). `addZombies` is
+  set on the `LoadFromMap` path — the chunk built out of the map for the first time —
+  and `isNewChunk()` is a getter for that field. A chunk read back out of the save has
+  it false.
+- **The one caveat:** `addZombies` is only set when `Core.addZombieOnCellLoad` is true,
+  and `Core.setGameMode` clears it for the game modes `Tutorial` and `LastStand`. In
+  those two, nothing here ever happens.
+
+So the mod registers **two** closures where it used to register one:
+`OnNewWithSprite` gets a closure that adopts the object *and* writes one bit,
+`OnLoadWithSprite` gets the one that only adopts it.
+
+**The callback is asked for that one bit and nothing else.** `born = true` on the
+machine, which is a *saved* field so a player who quits in the minute afterwards does
+not lose the question. Everything that needs the world — which premises this is, what
+its rooms are called, whether there is a wire at the square — is asked one game minute
+later on the sweep (`SCeroSecSystem:checkPower`), where this mod already asks every
+world question and where the chunk is settled. Not one of vanilla's own fourteen
+`MapObjects` handlers asks a square for its room or its building, so there is no proof
+that either answers inside `newGridSquare`.
+
+### The page it is written on
+
+`system.auto`, saved with the save (`CeroSec.SYSTEM_SAVE_KEYS`), keyed by the
+premises' own key exactly as `notes` and `desks` are and for the same reason: the
+computers of one premises are created over many sessions.
+
+```lua
+system.auto["p.120.12"] = { on = true,
+                            machine = { x = 8132, y = 9256, z = 0 },
+                            wired = true }
+```
+
+| | |
+| --- | --- |
+| **`on`** | was this premises automated. `false` is **written and kept**: a premises with no entry has never been asked, and the two have to be told apart or a change to the odds would re-roll a county somebody is already living in. |
+| **`machine`** | which of its computers was left running. The first one created that may carry it — in a showroom, the first one that is **not** on the sales floor: the machine with the timer on it is the shop's own machine in the back, not a display model in the window. |
+| **`wired`** | its fixtures have all been fitted, and the walk never comes back. |
+
+### The hardware, and whose crontab drives it
+
+The fixtures of the premises get their modules through `CeroSecModules.setOn` — the
+same writer the install command uses, so the discovery cannot tell them from a
+player's own. A relay on every light switch, a contact on every door and window, and a
+strike on a door whose lock stops somebody. **Never an operator:** a 1993 shop had a
+contact on the stockroom frame and a strike to bolt it, not a motor, and a building
+that opened its own doors would open them for the dead. The rest — what is fitted once
+and never again, and what a survivor who unscrews one gets — is in
+[DEVICES.md](DEVICES.md#hardware-that-was-already-fitted).
+
+**The crontab is the owner's**, and the automated machine is deliberately given the
+desk of the account that carries it (`CeroSecContent.jobSlot`, handed to `deskRole`
+as the slot it would rather have). Without that the machine could be the *second*
+man's desk, and the job would be in the catalogue and on no machine in the county.
+Where a profile's nightly job is the machine's own instead — the military post, the
+vendor's weekly sweep — it is root's and is written whoever owns the machine, exactly
+as before.
+
+**And an `admin = true` account is now really an administrator of its machine.** This
+was a bug older than the automation and it is why nothing in this catalogue that
+worked a building had ever worked: `addUser` wrote the wheel flag on the
+`/etc/passwd` line and that flag is only a mirror of a line in `/etc/group` that
+nothing was writing — so the shop's own administrator was an ordinary user as far as
+a device was concerned, his nightly `lights.sh light0 light1` answered `light0:
+permission denied` twice and mailed it, and the note in his own drawer telling him to
+run it was telling him to run something that could not work. It had never shown
+because no prefilled machine was ever switched on. He goes into the **device group**
+(`CeroSecOS.DEV_GROUP`, which is what `root:sudo 660` on a device means) and **not**
+into `/etc/sudoers`: he may work the building he was responsible for and he may not
+become root, so a paper in a dead man's pocket naming him is still a foothold and
+never the keys.
+
+### And the machine that was left running
+
+`turnOn`, through the ordinary power check and no other door. **No grid, no
+automation:** a premises whose wire has gone stays dark and nothing fires, and it is
+not retried. The hardware is fitted anyway — a grid that went down does not unscrew a
+relay — so a survivor who brings a generator to a dead shop finds a building that
+answers.
+
+It is also more often the machine somebody never logged out of:
+`CeroSecContent.LIVE_AUTO_ONE_IN` is **2** against the ordinary 4, because a machine
+that was still doing the nine o'clock lights is a machine nobody shut down.
+
+### What a player sees, and what he does not
+
+`/dev` needs the chunk loaded and cron runs on the server clock, so the lights really
+do go off at 21:00 **when the player is around**, and when nobody is, nothing happens
+— exactly like a timer nobody is watching. The fixtures are fitted as their chunks
+arrive, in any order, and the walk stops coming back the minute every room of the
+building has answered (`CeroSecDevices.fixtures` says whether it saw the whole of it).
+
 ## Three tellings of every file
 
 Every prose file of every profile is written **three** times
@@ -494,7 +634,9 @@ next man sat down.
 
 ### Somebody who never logged out
 
-**About one machine in four** (`CeroSecContent.LIVE_ONE_IN`), and **never** the
+**About one machine in four** (`CeroSecContent.LIVE_ONE_IN`), or **one in two** on the
+machine its premises left running (`LIVE_AUTO_ONE_IN`, see *The premises that were
+already automated*), and **never** the
 military post, which carries `session = false`: a post was a room a man was let
 into, and he was relieved or he left. `CeroSecContent.liveSession` decides it,
 `prefill` answers it as a fourth return value `{ user =, at = }`, and

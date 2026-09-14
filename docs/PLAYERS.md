@@ -525,6 +525,13 @@ unaided (Electricity 7, 7, 8 and 9), which is what the game does with every
 magazine recipe it ships: the magazine is the way you get there early, not the
 only way.
 
+**Some buildings are already wired.** About one shop, bank, school, clinic, station
+or office in three had all this done before the outbreak, and you will find its relays
+and contacts already on its fixtures with nobody to thank for them. They are ordinary
+modules: `dev` lists them, the right-click menu offers **Remove**, and taking one off
+puts the box in your bag. Nothing puts it back afterwards — the building is yours to
+rewire from there. See *[A place that is still running itself](#a-place-that-is-still-running-itself)*.
+
 **With the option off**, none of this exists: every door, window, lock and light
 of the building is in `/dev` the way it was before the modules, the right-click
 menu is not there at all, and a module already fitted is simply not consulted.
@@ -569,6 +576,48 @@ script polls a sensor instead of reading it once.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
 running: log back in later and it is exactly as it was left.
+
+## A place that is still running itself
+
+Walk up to a shop at five to nine and watch the lights go out at nine, with nobody
+near the switch. About one premises in three that had a nightly job to run was set up
+for it before the outbreak: the relays and the contacts are on its fixtures, its
+computer was **left running**, and the crontab on it is still being read. A bank bolts
+its vault at six on a weekday. A station reads its own schedule out on the hour. A
+school puts its lights out at ten, a shop at nine, and both put them back on at seven
+in the morning.
+
+It is not a script waiting for you to arrive. `cron` on those machines runs on the
+county's clock whether anybody is there or not — but a computer can only reach the
+building around it while that part of the map is loaded, so what actually happens is
+that the lights go out **while you are standing there** and nothing happens at all
+while nobody is. Which is what a timer nobody is watching does.
+
+**What to do with one.** The machine is on, so there is a screen already. Find it, log
+in, and:
+
+```
+crontab -l                     the line, exactly as it was left
+dev                            the fixtures it can reach
+crontab -r                     take the job out
+echo "0 22 * * * sh $HOME/bin/lights.sh light0" | crontab
+```
+
+The crontab belongs to whoever's job it was — often the machine is still sitting at
+his prompt — so `crontab -l` as him shows it, and as `root` you can read and write
+anybody's. Unscrew the relay out of a light switch and that light stops answering: it
+is not a device any more, and `dev light0` says `no such device` until you put a relay
+back.
+
+**And where there is no power there is nothing.** A premises whose grid has gone has a
+dark computer and does nothing at all on a schedule, exactly like a 1993 timer with no
+mains. The hardware is still on the walls, so a generator is all it wants.
+
+A house is never one of these — a house had nothing to run — and neither is a display
+model in an electronics shop's window. Whether a premises was set up this way is
+decided **once**, the first time you ever come near one of its computers, and it never
+changes afterwards. It follows **Prefilled machines and disks** in the sandbox options like
+everything else already on the machines.
 
 ## The other computers on the premises
 
@@ -1218,7 +1267,8 @@ whoever sat at it, and none of it is decoration:
 | `cat /var/log/messages` | the premises' own week, and then the nights at the end of it: a machine that came back up at four in the morning, a login that was refused, a call that got no carrier. |
 | `cat draft.txt` | on about half of them: a page he was writing. It stops in the middle of a sentence. |
 
-**And about one machine in four you will find still logged in.** Nobody ever typed
+**And about one machine in four you will find still logged in** — better odds still on
+a machine its premises left running, which is a machine nobody shut down. Nobody ever typed
 `exit`, so it comes up at that man's prompt and asks you for nothing — his home, his
 shell, his history under your fingers. `last` on such a machine says `still logged
 in` against the last name on it. That never happens at a military post. It is a
