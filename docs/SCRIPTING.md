@@ -393,6 +393,29 @@ belt on the walk itself, so a value off a save file nobody can explain is slow f
 nobody. `tests/hostile_test.lua` drives the worst legal `PATH` and a forged
 340-field one.
 
+**A command that runs other commands, and one that needs another turn.**
+`find -exec` is the only command on this machine that runs commands of its own, and
+it is the reason the shell's little table carries two more fields. Every exec goes
+through `CeroSecOS.runArgs` like any other command — the `PATH` walk, the
+permission, a script in `~/bin`, all of it — with `tty` and `keys` false, because
+nobody is standing behind one; an out-of-band order (`edit`) is refused there with
+the line the engine gives a command in that position, since a marker must never
+travel out through find. A word the *shell* is gets sudo's answer,
+`cd: command not found`: find execs a program.
+
+An exec is a **command's** worth of work, and find runs `FIND_EXEC_TURN` of them
+before handing the machine back — so the turn is charged the one command every
+command is charged, which is the honest price of it: the exec is the work in the
+turn and the rest is find looking up where it had got to. Two fields carry that:
+`sh.again` asks for another turn and `sh.carry` is what it wants handed back,
+kept on the frame (`f.rd.carry`) exactly as a pipe reader's carry is. That is what
+keeps the invariant every `jobStep` call is held to — *a pass may go over its budget
+by at most one command* — with a sweep of five hundred files behind it: it trickles
+at a command a turn, printing as it goes, and `-exec … +` (64 names to a command) is
+the form POSIX gives you for doing it in one. A resumed command's redirect appends
+from the second turn on, through the same door a stage's does, so `find … -exec cat
+{} \; > all.txt` does not truncate the file it is filling.
+
 **Where a link is followed.** `CeroSecOS.getNode` and nowhere else, which is why no
 command had to learn about links: a link in the middle of a path is the directory it
 names, a link at the end of one is the file it names, and the absolute path that

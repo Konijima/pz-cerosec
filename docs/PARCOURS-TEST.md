@@ -1146,6 +1146,25 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
      qu'un vrai `ln` sans drapeau faisait un lien DUR, pourquoi cette machine
      n'en a pas (l'ordinateur se transporte, le disque est recopié nom par nom),
      et elle imprime mot pour mot la réponse de l'étape 196. [ ]
+196b. **`find -exec`, les deux formes.** Dans le home : `mkdir tas`,
+     `echo un > tas/a.log`, `echo deux > tas/b.log`, `echo trois > tas/c.txt`.
+     Puis `find tas -name '*.log' -exec cat {} \;` → `un` puis `deux`, et
+     **aucun** chemin affiché (nommer une action retire l'affichage). Ajouter
+     `-print` : `find tas -name '*.log' -print -exec cat {} \;` → le chemin
+     puis le contenu, deux fois. La forme groupée :
+     `find tas -name '*.log' -exec cat {} +` → même résultat en une seule
+     commande. Oublier le backslash (`-exec cat {} ;`) → la ligne d'usage
+     `find: usage: find <path>... [expression]`. Un mot du shell n'est pas un
+     programme : `find tas -exec cd {} \;` → `cd: command not found`. Enfin
+     `find tas -name '*.log' -exec rm {} \;` puis `find tas` → il ne reste que
+     `tas` et `tas/c.txt`. [ ]
+196c. **Un balayage qui prend du temps le prend proprement.** `mkdir gros`, puis
+     une trentaine de fichiers (`edit` ou une boucle
+     `i=0; while [ $i -lt 30 ]; do echo x > gros/f$i.log; i=$((i+1)); done`).
+     `find gros -name '*.log' -exec chmod 644 {} \;` → les lignes arrivent au
+     fil des passes, l'invite ne revient qu'à la fin, et **pendant** ce temps
+     marcher et ouvrir une porte : le jeu ne saccade pas. Refaire avec `+` → la
+     même chose en un instant. [ ]
 197. `/dev/null`. `cat /dev/null` → **rien du tout** (pas même une ligne vide).
      `echo bruit > /dev/null` → rien, et `cat /dev/null` toujours rien.
      `df` avant et après doit donner exactement les mêmes nombres.

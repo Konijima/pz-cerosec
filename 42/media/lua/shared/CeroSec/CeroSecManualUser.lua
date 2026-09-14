@@ -1182,6 +1182,30 @@ costs nothing here.
 Classic mistake. find with no path. It does not guess at the directory you
 are in; name it, even if that is just a dot.]],
 
+[[Doing something to every file find found.
+
+-exec is the rest of find: it runs a command on each name. Write the
+command, put {} where the name goes, and end it with a backslash and a
+semicolon -- the backslash keeps the semicolon away from the shell:
+
+  admin@ksp-04-11:~$ find . -name "*.old" -exec rm {} \;
+  admin@ksp-04-11:~$ find . -name "*.log" -exec cat {} \;
+
+Once for every name found, in find's own order. The names themselves are no
+longer printed: naming an action takes the printing away. Add -print if you
+want both and it happens where you wrote it.
+
+The other ending is a plus sign, and it hands the names over in one command
+instead of one at a time:
+
+  admin@ksp-04-11:~$ find . -name "*.log" -exec wc -l {} +
+
+Use it where you can. A sweep of a hundred names takes a few seconds the
+first way and prints as it goes; the plus sign is one command.
+
+Classic mistake. Forgetting the backslash. The semicolon then ends the
+line, find never sees it, and the usage line comes back.]],
+
 [[Three filters worth knowing.
 
 cut takes pieces out of every line. Characters, with -c:
@@ -1776,10 +1800,13 @@ Second names, and where commands come from.
 
 Finding things, and cutting them up.
 
-  find <path>... [-name <glob>] [-type f|d]
+  find <path>... [expression]
   cut -c <list> | -d <delim> -f <list> [file]...
   tr [-d] <set1> [<set2>]
   tee [-a] <file>...
+
+find's expression: -name <glob>, -type f|d, -print, and -exec <cmd> {} \;
+(once for each name) or -exec <cmd> {} + (all of them in one command).
 
 A glob for -name: * is any run of characters, ? is exactly one, and
 [abc] or [a-z] is one of a set -- put ! first to mean "none of these".

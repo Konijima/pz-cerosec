@@ -2776,6 +2776,74 @@ do
 	note("find at the glass", flood)
 end
 
+-- 22b1. find -exec, which is the one command that runs other commands.
+--
+-- Every exec is a command's worth of work -- a PATH walk, a file read, a file
+-- written -- and a command that ran sixty of them in one call would overspend the
+-- pass sixty times over. The whole step machine exists to stop that, and the
+-- invariant at the head of this file holds every call to "the budget and one
+-- command": so find does FIND_EXEC_TURN of them and hands the machine back,
+-- keeping where it had got to in the frame's own carry, exactly as `sort` does
+-- while it reads a pipe.
+--
+-- What this drives is a loop of the dearest legal line there is: a find whose
+-- every match runs a command, over a tree of a hundred of them, for a thousand
+-- passes. It has to stay flat, stay under the wall-clock ceiling, and -- the
+-- point -- never spend more in one call than a pass may.
+do
+	local machine, state, console = newMachine()
+	local root = CeroSecOS.rootSession()
+	CeroSecOS.createNode(state, root, "/home/admin/tree",
+		CeroSecOS.newDir("admin", 755), 100)
+	local matches = 0
+	for i = 1, 100 do
+		if CeroSecOS.writeFile(state, root, "/home/admin/tree/f" .. i .. ".log",
+				"x", false, 100) == nil then
+			break
+		end
+		matches = matches + 1
+	end
+	check("the tree holds a hundred matches (" .. matches .. ")", matches >= 64)
+	put(state, "/home/admin/sweep.sh",
+		"while true; do find /home/admin/tree -name '*.log' -exec chmod 644 {} ';' ; done\n")
+
+	typeLine(system, machine, state, console, "sh /home/admin/sweep.sh")
+	local swept = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	-- flat() is what says the call never went past the budget by more than one
+	-- command, on top of the invariant every jobStep call is held to.
+	flat("find -exec in a loop", swept)
+	timely("find -exec in a loop", swept)
+	-- And it really ran them: a sweep that refused to start would be flat too.
+	local mode = CeroSecOS.getNode(state, root, "/home/admin/tree/f1.log").mode
+	eq("the exec'd command really ran", mode, 644)
+	note("find -exec in a loop", swept, " (" .. matches .. " matches a sweep)")
+
+	-- The gathered form beside it: the same sweep, FIND_EXEC_BATCH names to a
+	-- command, which is two turns instead of a hundred.
+	local machine2, state2, console2 = newMachine()
+	CeroSecOS.createNode(state2, root, "/home/admin/tree",
+		CeroSecOS.newDir("admin", 755), 100)
+	local many = 0
+	for i = 1, 100 do
+		if CeroSecOS.writeFile(state2, root, "/home/admin/tree/f" .. i .. ".log",
+				"x", false, 100) == nil then
+			break
+		end
+		many = many + 1
+	end
+	put(state2, "/home/admin/gather.sh",
+		"while true; do find /home/admin/tree -name '*.log' -exec chmod 644 {} + ; done\n")
+	typeLine(system, machine2, state2, console2, "sh /home/admin/gather.sh")
+	local gathered = drive(machine2, PASSES, CeroSec.JOB_PASS_MS)
+	flat("find -exec gathered", gathered)
+	timely("find -exec gathered", gathered)
+	local batches = math.ceil(many / CeroSecOS.FIND_EXEC_BATCH)
+	check("a gathered sweep of " .. many .. " names is " .. batches ..
+		" commands and not " .. many, batches * 4 < many)
+	note("find -exec gathered", gathered,
+		" (" .. many .. " matches, " .. batches .. " to a sweep)")
+end
+
 -- 22c. The per-character filters, on the widest line a file can hold.
 --
 -- `cut -c` and `tr` walk every byte of every line, and a line on this machine may

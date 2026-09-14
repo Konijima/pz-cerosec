@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- `find` can do something to what it finds: `find . -name "*.log" -exec rm {} \;`
+  runs a command for every name, and `-exec ... {} +` hands them all to one command.
+  A long sweep takes its time and prints as it goes, so nothing on the machine
+  stutters while it works.
 - A script now gets the **environment**, the way it does on a real Unix, and not
   whatever you had typed at the prompt. `x=5` is yours; `export x` puts it where a
   script can see it; `env` prints the set as it will be handed over. What a script

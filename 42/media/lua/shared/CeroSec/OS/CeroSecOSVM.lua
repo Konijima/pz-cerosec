@@ -1901,11 +1901,42 @@ local function runSimple(state, job, f, env)
 	-- up, and whether what it writes is going to a screen. A redirect is the third
 	-- thing that takes the screen away and is the shell's own half of the line, so
 	-- it is answered here rather than inside toScreen.
+	--
+	-- And the other kind of command that runs more than once: one that has more
+	-- work than a pass's budget and hands the machine back rather than doing it
+	-- all. `find -exec` is the one there is: it runs COMMANDS, and a command that
+	-- ran sixty of them in one call would overspend the budget sixty times over --
+	-- the one thing the whole step machine is built to prevent, and the invariant
+	-- tests/hostile_test.lua holds every call to.
+	--
+	-- Two fields say it, on the table the shell already hands down: `again` asks
+	-- for another turn and `carry` is what the command wants handed back when it
+	-- gets one. Nothing is allocated for a command that asks for neither, which is
+	-- every command but that one.
+	local resumed = f.rd ~= nil and f.rd.carry ~= nil
 	local sh = { path = CeroSecOS.pathValue(job.vars), tty = redirect == nil and toScreen(job),
 		keys = jobHasKeyboard(job) }
+	if resumed then sh.carry = f.rd.carry end
+	-- A resumed command has already written what the redirect named, on the turn
+	-- that opened it, so from the second turn on the write is made HERE and
+	-- appends -- the door a pipe reader's redirect goes through, and for the same
+	-- reason: a target must not be truncated twice by one command.
+	local hold = stdin ~= nil or (f.rd ~= nil and f.rd.wrote == true)
+	-- Written out and not as `hold and nil or redirect`: that reads like a choice
+	-- and is not one -- `and nil` is false, so the `or` hands the redirect back
+	-- every time. It cost a pipeline's redirect an afternoon.
+	local handOver = redirect
+	if hold then handOver = nil end
 	local ok, lines, control, data =
-		CeroSecOS.runArgs(state, job.session, args, stdin == nil and redirect or nil,
-			env, stdin, sh)
+		CeroSecOS.runArgs(state, job.session, args, handOver, env, stdin, sh)
+	if sh.again == true and job.state == "running" then
+		if f.rd == nil then f.rd = {} end
+		f.rd.carry = sh.carry
+		job.again = true
+		-- What it wrote this turn went through the redirect above; the turns after
+		-- it add to the file rather than replacing it.
+		if redirect ~= nil then f.rd.wrote = true end
+	end
 	if stdin ~= nil and stdin.want then
 		f.rd.want = true
 		-- Everything that was in the pipe has been read: a command is handed
@@ -1917,7 +1948,7 @@ local function runSimple(state, job, f, env)
 		-- turn, on whatever the stage to its left has written by then.
 		if not stdin.done and not job.stdinBuf.eof then job.again = true end
 	end
-	if stdin ~= nil and redirect ~= nil and ok then
+	if (stdin ~= nil or hold) and redirect ~= nil and ok then
 		local wrote = f.rd ~= nil and f.rd.wrote == true
 		if #lines > 0 or not wrote then
 			local target = { path = redirect.path, append = redirect.append or wrote }
@@ -1957,6 +1988,7 @@ local function runSimple(state, job, f, env)
 	-- a filesystem is not a table lookup and the budget has to see it.
 	local walkCost = 0
 	if type(sh.walked) == "number" and sh.walked > 1 then walkCost = sh.walked - 1 end
+
 
 	-- An rsh is the other command that has written nothing yet: it has gone to
 	-- wait for another machine, and the lines it will hand back are the far

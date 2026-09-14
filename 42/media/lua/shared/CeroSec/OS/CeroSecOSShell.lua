@@ -692,8 +692,14 @@ CeroSecOS.COMMAND_INFO = {
 	["false"] = { desc = "do nothing, unsuccessfully", usage = "false" },
 	-- POSIX's own subset: the two tests a survivor needs and the action that is
 	-- implied when he gives none. No -o, no parentheses, no -exec.
+	-- POSIX's own subset, and the synopsis 4.4BSD's find(1) carries: a path and an
+	-- EXPRESSION. The expression is the two tests a survivor needs, the action that
+	-- is implied when he names none, and the one that runs something -- `-name`,
+	-- `-type`, `-print` and `-exec`, in both of -exec's forms. No -o, no
+	-- parentheses, no -newer and no -size: the manual page names what is here, and
+	-- the whole of what is here fits on it.
 	find     = { desc = "walk a tree and print what is in it",
-		usage = "find <path>... [-name <glob>] [-type f|d]" },
+		usage = "find <path>... [expression]" },
 	grep     = { desc = "find a string in files",
 		usage = "grep [-c] [-i] [-n] [-v] <text> [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
@@ -2842,84 +2848,336 @@ local function lastComponent(path)
 	return out
 end
 
-commands.find = function(state, session, args, env)
+--
+-- -exec, the one thing find does besides print
+--
+-- POSIX.2's two forms, and both of them are here:
+--
+--   find . -name "*.log" -exec rm {} \;      once per name found
+--   find . -name "*.log" -exec grep x {} +   as few times as it can
+--
+-- An argument that is exactly "{}" is the name found; anything else is passed
+-- through as it was written, which is POSIX's own rule -- so `-exec grep x {} \;`
+-- works and `-exec grep x{} \;` hands grep a name with the braces still in it.
+-- The `\;` a player types is the shell taking the meaning off the semicolon, so
+-- what reaches here is a lone ";" -- and a `+` is a lone "+".
+--
+-- WHAT IT COSTS, which is why this command is written the way it is. Every exec
+-- is a COMMAND: it walks PATH, reads files, writes them. So find runs
+-- FIND_EXEC_TURN of them and hands the machine back, and the turn is charged the
+-- one command the engine charges any command -- which is the honest price of it,
+-- the exec being the work in the turn and the rest of it being find looking up
+-- where it had got to.
+--
+-- A command that ran a hundred of them in one call would overspend a pass's
+-- budget a hundred times over, which is the one thing the whole step machine
+-- exists to prevent: a step is counted once it is taken, so the most a pass may
+-- go over is ONE command's worth, and tests/hostile_test.lua holds every call to
+-- that. So find keeps where it had got to in the frame's own carry and asks for
+-- another turn, exactly as `sort` does when it is reading a pipe a line at a
+-- time. A sweep of a hundred files takes a few seconds of game time and trickles,
+-- like every other long thing on this machine; `+` is what turns it back into one
+-- command, which is the very reason POSIX has that form.
+CeroSecOS.FIND_EXEC_TURN = 1
+
+-- How many names one gathered exec hands over at a time. A real `+` fills the
+-- argument list (ARG_MAX); what bounds one here is the number of them, because a
+-- name is up to MAX_NAME bytes and the line is a table -- so a disk full of
+-- matches is eight commands and not one enormous one.
+CeroSecOS.FIND_EXEC_BATCH = 64
+
+-- What one exec runs in, which is not what find runs in: nobody is standing
+-- behind a command find started, and what it writes is find's output and not a
+-- screen. Same shape the shell hands any command (see the head of shPath).
+local function execShell(sh)
+	return { path = shPath(sh), tty = false, keys = false }
+end
+
+-- One command, with {} replaced by the names it is for. A fresh array every
+-- time, because runArgs is allowed to change what it is handed (the tilde).
+local function execArgs(argv, names)
+	local out = {}
+	for i = 1, #argv do
+		if argv[i] == "{}" then
+			for k = 1, #names do out[#out + 1] = names[k] end
+		else
+			out[#out + 1] = argv[i]
+		end
+	end
+	return out
+end
+
+-- Run it and put what it printed into find's own output. Two answers, because
+-- they are two different questions and find treats them differently:
+--
+--   what the PRIMARY evaluates to -- true when the command finished on nought,
+--     which is what makes `-exec test -f {} \; -exec rm {} \;` read the way it
+--     looks: the expression is AND-ed and the second does not run where the first
+--     was false. A command that merely failed is not an error of find's.
+--   whether find itself met an ERROR, which is a command it could not RUN at all.
+--     That is what puts find's own exit status above nought, exactly as a tree it
+--     could not read does.
+--
+-- A command that asks a QUESTION cannot be answered: there is nobody behind an
+-- exec, and its out-of-band order must not travel out through find. It is refused
+-- with the line the engine already gives a command in that position -- the same
+-- one a cron line and a pipeline stage get -- and nothing of the order goes on.
+local function execRun(state, session, env, sh, argv, names, out)
+	local args = execArgs(argv, names)
+	-- A word the SHELL is, which find cannot run for the reason sudo cannot: find
+	-- execs a PROGRAM, and there is no /bin/cd for it to find. Same answer, in the
+	-- name that was looked up (see sudoRun).
+	if CeroSecOS.isShellWord(args[1]) or CeroSecOS.SHELL_BUILTINS[args[1]] then
+		out[#out + 1] = args[1] .. ": command not found"
+		return false, true
+	end
+	local ok, lines, control = CeroSecOS.runArgs(state, session, args, nil, env, nil,
+		execShell(sh))
+	for i = 1, #(lines or {}) do out[#out + 1] = lines[i] end
+	if control ~= nil then
+		out[#out + 1] = args[1] .. ": not a terminal"
+		return false, true
+	end
+	-- A name nothing answers to is a command find could not run, and the lookup's
+	-- own line is what says so.
+	if not ok and #(lines or {}) == 1
+			and lines[1] == args[1] .. ": command not found" then
+		return false, true
+	end
+	return ok, false
+end
+
+-- The expression, read once: the two tests, and the actions in the order they
+-- were written -- find evaluates left to right and `-print -exec` is not
+-- `-exec -print`. nil for a line find cannot carry out, plus the flag it did not
+-- know where that is what was wrong with it.
+local function findParse(args)
 	local name, kind = nil, nil
-	local paths = {}
+	local paths, actions = {}, {}
 	local i = 2
 	while i <= #args do
 		local a = args[i]
 		if a == "-name" then
 			name = args[i + 1]
-			if name == nil then return usage("find") end
+			if name == nil then return nil end
 			i = i + 2
 		elseif a == "-type" then
 			kind = args[i + 1]
-			if kind ~= "f" and kind ~= "d" then return usage("find") end
+			if kind ~= "f" and kind ~= "d" then return nil end
 			i = i + 2
 		elseif a == "-print" then
-			-- Accepted and does nothing: it is what find does anyway when no
-			-- action is named, which is POSIX's own wording.
+			actions[#actions + 1] = { print = true }
 			i = i + 1
+		elseif a == "-exec" then
+			local argv, term = {}, nil
+			local k = i + 1
+			while k <= #args do
+				if args[k] == ";" or args[k] == "+" then
+					term = args[k]
+					break
+				end
+				argv[#argv + 1] = args[k]
+				k = k + 1
+			end
+			-- A -exec with no terminator, or with nothing to run, is not a line
+			-- this can carry out -- and neither is a `+` whose {} is not the last
+			-- word of it: POSIX puts the names at the end of a gathered line,
+			-- there being no room in one for a second place to put them.
+			if term == nil or #argv == 0 then return nil end
+			if term == "+" and argv[#argv] ~= "{}" then return nil end
+			actions[#actions + 1] = { argv = argv, batch = term == "+" }
+			i = k + 1
 		elseif string.sub(a, 1, 1) == "-" and a ~= "-" then
-			return fail("find", a, "unknown option")
+			return nil, a
 		else
 			paths[#paths + 1] = a
 			i = i + 1
 		end
 	end
-	if #paths == 0 then return usage("find") end
+	if #paths == 0 then return nil end
+	return { name = name, kind = kind, paths = paths, actions = actions }
+end
 
-	local out, okAll = {}, true
+commands.find = function(state, session, args, env, stdin, sh)
+	local plan, unknown = findParse(args)
+	if plan == nil then
+		if unknown ~= nil then return fail("find", unknown, "unknown option") end
+		return usage("find")
+	end
+	local name, kind, actions = plan.name, plan.kind, plan.actions
 
-	-- Does this node answer the tests? Both are AND-ed and either may be absent.
-	local function wanted(path, node)
-		if kind == "f" and node.type ~= "file" then return false end
-		if kind == "d" and node.type ~= "dir" then return false end
-		if name ~= nil and not CeroSecOS.globMatch(lastComponent(path), name) then return false end
-		return true
+	-- Where the last turn had got to, or nothing at all on the first one.
+	local carry = nil
+	if type(sh) == "table" and type(sh.carry) == "table" then carry = sh.carry end
+
+	if carry == nil then
+		-- What the walk found, in walk order: a name, or a refusal about a tree it
+		-- could not read. Kept as items rather than as lines because the actions
+		-- turn a name into whatever they print, while a refusal is already a line.
+		local items, okAll = {}, true
+
+		-- Does this node answer the tests? Both are AND-ed and either may be absent.
+		local function wanted(path, node)
+			if kind == "f" and node.type ~= "file" then return false end
+			if kind == "d" and node.type ~= "dir" then return false end
+			if name ~= nil and not CeroSecOS.globMatch(lastComponent(path), name) then
+				return false
+			end
+			return true
+		end
+
+		-- The walk. Depth-first and PRE-order -- the directory before what is in
+		-- it, which is find's own order and the reason `find /etc` starts with
+		-- "/etc".
+		--
+		-- A directory the account may not read is named and not entered, and find
+		-- says so about it the way it always has: the tree it could not read is a
+		-- refusal, and the rest of the walk goes on. Bounded by the disk: there are
+		-- MAX_NODES nodes on a machine and each is visited once.
+		local function walk(path, node)
+			if wanted(path, node) then items[#items + 1] = { p = path } end
+			if node.type ~= "dir" then return end
+			if not CeroSecOS.can(state, session, node, "r") then
+				okAll = false
+				items[#items + 1] = { e = "find: " .. path .. ": permission denied" }
+				return
+			end
+			local names = CeroSecOS.listedNames(node, true)
+			local prefix = path
+			if string.sub(prefix, -1) ~= "/" then prefix = prefix .. "/" end
+			for k = 1, #names do
+				walk(prefix .. names[k], node.children[names[k]])
+			end
+		end
+
+		for k = 1, #plan.paths do
+			local path = plan.paths[k]
+			-- A link NAMED on the line is not followed: find walks the tree it was
+			-- given, and a link is a leaf of it -- which is find's own default (there
+			-- is no -follow here) and what keeps a loop of links from being a walk
+			-- with no end.
+			local node, reason = CeroSecOS.getNode(state, session, path, true)
+			if node == nil then
+				okAll = false
+				items[#items + 1] = { e = "find: " .. path .. ": " .. reason }
+			elseif node.dead then
+				okAll = false
+				items[#items + 1] = { e = "find: " .. path .. ": no such file" }
+			else
+				walk(path, node)
+			end
+		end
+
+		-- Nothing to do but print, which is what find does when no action is named
+		-- -- POSIX's own wording -- and that answer is one command's worth of work
+		-- and needs no second turn.
+		local runs = 0
+		for a = 1, #actions do
+			if actions[a].argv ~= nil then runs = runs + 1 end
+		end
+		if runs == 0 then
+			local out = {}
+			for k = 1, #items do
+				if items[k].p ~= nil then
+					out[#out + 1] = items[k].p
+				else
+					out[#out + 1] = items[k].e
+				end
+			end
+			return okAll, out
+		end
+
+		-- An action takes the implied -print away, and an explicit one puts it back
+		-- where it was written.
+		carry = { items = items, ok = okAll, i = 1, a = 1, gathered = {}, phase = "names" }
+		for a = 1, #actions do carry.gathered[a] = {} end
 	end
 
-	-- The walk. Depth-first and PRE-order -- the directory before what is in it,
-	-- which is find's own order and the reason `find /etc` starts with "/etc".
-	--
-	-- A directory the account may not read is named and not entered, and find
-	-- says so about it the way it always has: the tree it could not read is a
-	-- refusal, and the rest of the walk goes on. Bounded by the disk: there are
-	-- MAX_NODES nodes on a machine and each is visited once.
-	local function walk(path, node)
-		if wanted(path, node) then out[#out + 1] = path end
-		if node.type ~= "dir" then return end
-		if not CeroSecOS.can(state, session, node, "r") then
-			okAll = false
-			out[#out + 1] = "find: " .. path .. ": permission denied"
-			return
-		end
-		local names = CeroSecOS.listedNames(node, true)
-		local prefix = path
-		if string.sub(prefix, -1) ~= "/" then prefix = prefix .. "/" end
-		for k = 1, #names do
-			walk(prefix .. names[k], node.children[names[k]])
-		end
-	end
+	-- One turn: FIND_EXEC_TURN commands and no more, then the machine gets its
+	-- pass back. Everything else here -- the printing, the gathering -- is free
+	-- and happens on whichever turn it is reached.
+	local out = {}
+	local ran = 0
 
-	for k = 1, #paths do
-		local path = paths[k]
-		-- A link NAMED on the line is not followed: find walks the tree it was
-		-- given, and a link is a leaf of it -- which is find's own default (there
-		-- is no -follow here) and what keeps a loop of links from being a walk
-		-- with no end.
-		local node, reason = CeroSecOS.getNode(state, session, path, true)
-		if node == nil then
-			okAll = false
-			out[#out + 1] = "find: " .. path .. ": " .. reason
-		elseif node.dead then
-			okAll = false
-			out[#out + 1] = "find: " .. path .. ": no such file"
+	while carry.phase == "names" and ran < CeroSecOS.FIND_EXEC_TURN do
+		local item = carry.items[carry.i]
+		if item == nil then
+			carry.phase = "batches"
+			carry.i = 1
+			carry.a = 1
+			break
+		end
+		if item.e ~= nil then
+			out[#out + 1] = item.e
+			carry.i = carry.i + 1
+			carry.a = 1
 		else
-			walk(path, node)
+			local action = actions[carry.a]
+			if action == nil then
+				carry.i = carry.i + 1
+				carry.a = 1
+			elseif action.print then
+				out[#out + 1] = item.p
+				carry.a = carry.a + 1
+			elseif action.batch then
+				local names = carry.gathered[carry.a]
+				names[#names + 1] = item.p
+				carry.a = carry.a + 1
+			else
+				local ok, problem =
+					execRun(state, session, env, sh, action.argv, { item.p }, out)
+				ran = ran + 1
+				if problem then carry.ok = false end
+				-- False stops the actions after it for this name, and that is all it
+				-- does: a command that answered "no" is not an error.
+				if ok then
+					carry.a = carry.a + 1
+				else
+					carry.i = carry.i + 1
+					carry.a = 1
+				end
+			end
 		end
 	end
-	return okAll, out
+
+	-- The gathered forms, once the walk's own actions are done with: the names
+	-- FIND_EXEC_BATCH at a time, in the order the actions were written. A `+` is
+	-- always true in find's expression, so a command that failed still leaves the
+	-- rest of them to run -- but find itself has met an error and says so.
+	while carry.phase == "batches" and ran < CeroSecOS.FIND_EXEC_TURN do
+		local names = carry.gathered[carry.a]
+		if names == nil then
+			carry.phase = "done"
+			break
+		end
+		if actions[carry.a].batch ~= true or carry.i > #names then
+			carry.a = carry.a + 1
+			carry.i = 1
+		else
+			local batch = {}
+			while #batch < CeroSecOS.FIND_EXEC_BATCH and carry.i <= #names do
+				batch[#batch + 1] = names[carry.i]
+				carry.i = carry.i + 1
+			end
+			local _, problem = execRun(state, session, env, sh, actions[carry.a].argv,
+				batch, out)
+			ran = ran + 1
+			if problem then carry.ok = false end
+		end
+	end
+
+	-- What this turn cost, for the shell to charge: one command apiece.
+
+	if carry.phase ~= "done" then
+		-- Another turn. What it has printed so far goes out now, the way a stage of
+		-- a pipeline writes as it goes: a sweep is not silent until it ends.
+		if type(sh) == "table" then
+			sh.again = true
+			sh.carry = carry
+		end
+		return true, out
+	end
+	return carry.ok, out
 end
 
 --
@@ -4663,8 +4921,17 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		if fn == nil then return false, CeroSecOS.fit({ name .. ": command not found" }) end
 	end
 
-	local ok, lines, control, data = fn(state, session, args, env, stdin,
-		{ path = path, tty = tty, keys = keys })
+	local inner = { path = path, tty = tty, keys = keys }
+	-- What the command may keep between one turn and the next, where it has asked
+	-- for another (see the head of the `again` block in CeroSecOSVM.runSimple):
+	-- handed down, and handed back with the flag, because the table above is built
+	-- fresh here and nothing left on it would reach the shell otherwise.
+	if type(sh) == "table" then inner.carry = sh.carry end
+	local ok, lines, control, data = fn(state, session, args, env, stdin, inner)
+	if type(sh) == "table" and inner.again == true then
+		sh.again = true
+		sh.carry = inner.carry
+	end
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

@@ -13331,11 +13331,10 @@ do
 	okAt(state, admin, "find tree/top.txt tree/inner/deep.log",
 		{ "tree/top.txt", "tree/inner/deep.log" })
 
-	badAt(state, admin, "find", "find: usage: find <path>... [-name <glob>] [-type f|d]")
-	badAt(state, admin, "find tree -type x",
-		"find: usage: find <path>... [-name <glob>] [-type f|d]")
-	badAt(state, admin, "find tree -name",
-		"find: usage: find <path>... [-name <glob>] [-type f|d]")
+	local USAGE = "find: usage: find <path>... [expression]"
+	badAt(state, admin, "find", USAGE)
+	badAt(state, admin, "find tree -type x", USAGE)
+	badAt(state, admin, "find tree -name", USAGE)
 	badAt(state, admin, "find tree -depth 2", "find: -depth: unknown option")
 	badAt(state, admin, "find nosuch", "find: nosuch: no such file")
 
@@ -13354,6 +13353,115 @@ do
 	-- which is find's own default and what keeps a loop of links finite.
 	okAt(state, admin, "ln -s tree/inner shortcut", {})
 	okAt(state, admin, "find shortcut", { "shortcut" })
+end
+
+-- 49d1. find -exec, in both of POSIX.2's forms.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local USAGE = "find: usage: find <path>... [expression]"
+	okAt(state, admin, "mkdir tree", {})
+	put(state, admin, "/home/admin/tree/a.log", "one")
+	put(state, admin, "/home/admin/tree/b.log", "two")
+	put(state, admin, "/home/admin/tree/c.txt", "three")
+
+	-- Once per name found, in walk order, and the command's output is find's.
+	okAt(state, admin, "find tree -name '*.log' -exec cat {} ';'", { "one", "two" })
+	okAt(state, admin, "find tree -name '*.log' -exec echo got {} ';'",
+		{ "got tree/a.log", "got tree/b.log" })
+	-- {} is only an argument that is EXACTLY that, which is POSIX's rule.
+	okAt(state, admin, "find tree -name a.log -exec echo x{} ';'", { "x{}" })
+	-- Gathered: one command, the names at the end of it.
+	okAt(state, admin, "find tree -name '*.log' -exec cat {} +", { "one", "two" })
+	-- An action means -print is NOT implied, and an explicit -print prints where
+	-- it is written: find evaluates an expression left to right.
+	okAt(state, admin, "find tree -name a.log -exec cat {} ';'", { "one" })
+	okAt(state, admin, "find tree -name a.log -print -exec cat {} ';'",
+		{ "tree/a.log", "one" })
+	okAt(state, admin, "find tree -name a.log -exec cat {} ';' -print",
+		{ "one", "tree/a.log" })
+	-- Two of them, AND-ed for each name: the second does not run where the first
+	-- failed. `test -d` is false for a file, so nothing is echoed.
+	okAt(state, admin,
+		"find tree -name a.log -exec test -d {} ';' -exec echo never {} ';'", {})
+	okAt(state, admin,
+		"find tree -name a.log -exec test -f {} ';' -exec echo yes {} ';'",
+		{ "yes tree/a.log" })
+
+	-- It really runs the command: the files go.
+	okAt(state, admin, "find tree -name '*.log' -exec rm {} ';'", {})
+	okAt(state, admin, "find tree", { "tree", "tree/c.txt" })
+
+	-- What it refuses. No terminator, nothing to run, and a gathered form whose
+	-- {} is not the last word of it -- POSIX puts the names at the end of one.
+	badAt(state, admin, "find tree -exec", USAGE)
+	badAt(state, admin, "find tree -exec cat {}", USAGE)
+	badAt(state, admin, "find tree -exec ';'", USAGE)
+	badAt(state, admin, "find tree -exec cat {} extra +", USAGE)
+
+	-- A command nothing answers to: the lookup's own line, once per name, and
+	-- find has met an error.
+	local bad = expect(state, admin, "find tree -name c.txt -exec nosuch {} ';'",
+		false, { "nosuch: command not found" })
+	-- A word the SHELL is is not a program, so find cannot run one either -- the
+	-- same answer sudo gives, in the name that was looked up.
+	badAt(state, admin, "find tree -name c.txt -exec cd {} ';'",
+		"cd: command not found")
+	-- A command that wants a pair of HANDS has none: there is no terminal behind an
+	-- exec, and the order it hands back must not travel out through find. The line
+	-- is the one the engine already gives a command in that position -- a cron line
+	-- and a pipeline stage get the same one.
+	badAt(state, admin, "find tree -name c.txt -exec edit {} ';'",
+		"edit: not a terminal")
+	-- A command that RAN and merely said no is not an error of find's: the primary
+	-- is false, the actions after it are skipped, and find still finished its walk.
+	okAt(state, admin, "find tree -name c.txt -exec passwd {} ';'",
+		{ "passwd: no such user" })
+
+	-- A sweep bigger than a pass: there is no ceiling on how many names find may
+	-- run a command on -- POSIX has none -- because find hands the machine back
+	-- after FIND_EXEC_TURN of them and is run again, exactly as `sort` is while it
+	-- reads a pipe. Sixty-four files, one command each, and every one of them ran.
+	local many = 64
+	for i = 1, many do
+		put(state, admin, "/home/admin/tree/m" .. i .. ".log", "x")
+	end
+	okAt(state, admin, "find tree -name 'm*.log' -exec rm {} ';'", {})
+	okAt(state, admin, "find tree -name 'm*.log'", {})
+	-- And the gathered form is the same sweep in a handful of commands: the names
+	-- go over FIND_EXEC_BATCH at a time.
+	for i = 1, many do
+		put(state, admin, "/home/admin/tree/m" .. i .. ".log", "x")
+	end
+	okAt(state, admin, "find tree -name 'm*.log' -exec rm {} +", {})
+	okAt(state, admin, "find tree -name 'm*.log'", {})
+end
+
+-- What an exec COSTS, in steps: a command each, charged on the job that asked.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "mkdir tree", {})
+	put(state, admin, "/home/admin/tree/a.log", "one")
+	put(state, admin, "/home/admin/tree/b.log", "two")
+	local function steps(line)
+		local _, _, _, _, job = exec(state, admin, line, { jobs = {} })
+		return job.steps
+	end
+	local plain = steps("find tree -name '*.log'")
+	eq("a find is one command", plain, CeroSecOS.STEP_COST_COMMAND)
+	-- Two names, two execs -- and find takes a TURN for each of them, handing the
+	-- machine back in between, so a sweep is one command per exec plus the turn
+	-- that finds nothing left to do. A turn is ONE command's worth and not two: the
+	-- exec is the work in it, and that is what keeps a pass from going over the
+	-- budget by more than the one command the machine allows anywhere.
+	eq("an exec is a turn, and a turn is one command",
+		steps("find tree -name '*.log' -exec cat {} ';'"),
+		CeroSecOS.STEP_COST_COMMAND * 3)
+	-- The gathered form is ONE command however many names it hands over, which is
+	-- the whole reason POSIX added it -- two turns here, the batch and the end.
+	eq("a gathered exec is one", steps("find tree -name '*.log' -exec cat {} +"),
+		CeroSecOS.STEP_COST_COMMAND * 2)
 end
 
 -- 49e. The glob -name matches on, on its own.
