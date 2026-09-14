@@ -528,6 +528,74 @@ local function withTnc(found, seen, x, y, z)
 	return found
 end
 
+-- Every square of a building, handed over one at a time, and whether the walk saw
+-- ALL OF IT.
+--
+-- Every room of the building, through its definition: BuildingDef getRooms() is an
+-- ArrayList of RoomDef (the way media/lua/shared/Util/BuildingHelper.lua reads it),
+-- and a RoomDef answers getIsoRoom() with the live room -- nil while its chunks are
+-- not loaded, which is a room the machine cannot act on.
+--
+-- The second answer is what a room like that costs, and it has a caller: the
+-- pre-fitting walk (CeroSecAuto.wire) has to come back next minute if any room of
+-- the building was away, and must never come back again once every one of them
+-- answered. `false` therefore means "a room of this building was not in the world",
+-- which is a different thing from "the building has no rooms".
+local function eachBuildingSquare(building, fn)
+	local def = building:getDef()
+	local rooms = nil
+	if def ~= nil then rooms = def:getRooms() end
+	if rooms == nil then return false end
+	local whole = true
+	for i = 0, rooms:size() - 1 do
+		local room = rooms:get(i):getIsoRoom()
+		if room == nil then
+			whole = false
+		else
+			local squares = room:getSquares()
+			if squares == nil then
+				whole = false
+			else
+				for j = 0, squares:size() - 1 do
+					fn(squares:get(j))
+				end
+			end
+		end
+	end
+	return whole
+end
+
+-- Every FIXTURE a module of ours could go on in the building the machine at x, y, z
+-- stands in, and whether every room of it was in the world for the walk.
+--
+-- Here rather than in the automation that wants it because the walk is this file's
+-- rule: what a machine can act on is the building it stands in, and there is one
+-- place that says so. The BUILDING branch and no other -- a machine in no building
+-- is in no premises either (CeroSecNet.premisesOfSquare), so there is nothing for
+-- the automation to have decided about it.
+function CeroSecDevices.fixtures(x, y, z)
+	local out = {}
+	if getCell == nil then return out, false end
+	local cell = getCell()
+	if cell == nil then return out, false end
+	local square = cell:getGridSquare(x, y, z)
+	if square == nil then return out, false end
+	local building = square:getBuilding()
+	if building == nil then return out, false end
+	local whole = eachBuildingSquare(building, function(sq)
+		if sq == nil then return end
+		local objects = sq:getObjects()
+		if objects == nil then return end
+		for i = 0, objects:size() - 1 do
+			local object = objects:get(i)
+			if CeroSecModules.isFittable(object) then
+				out[#out + 1] = { object = object, square = sq }
+			end
+		end
+	end)
+	return out, whole
+end
+
 -- Every device the machine at x, y, z can reach right now, unnumbered.
 function CeroSecDevices.find(x, y, z)
 	local found, seen = {}, {}
@@ -548,27 +616,11 @@ function CeroSecDevices.find(x, y, z)
 	local building = square:getBuilding()
 
 	if building ~= nil then
-		-- Every room of the building, through its definition: BuildingDef
-		-- getRooms() is an ArrayList of RoomDef (the way
-		-- media/lua/shared/Util/BuildingHelper.lua reads it), and a RoomDef
-		-- answers getIsoRoom() with the live room -- nil while its chunks are
-		-- not loaded, which is a room the machine cannot act on.
-		local def = building:getDef()
-		local rooms = nil
-		if def ~= nil then rooms = def:getRooms() end
-		if rooms ~= nil then
-			for i = 0, rooms:size() - 1 do
-				local room = rooms:get(i):getIsoRoom()
-				if room ~= nil then
-					local squares = room:getSquares()
-					if squares ~= nil then
-						for j = 0, squares:size() - 1 do
-							scanSquare(squares:get(j), found, seen)
-						end
-					end
-				end
-			end
-		end
+		-- Every room of the building, and a room whose chunks are away is a room the
+		-- machine cannot act on: eachBuildingSquare above is the whole of that rule.
+		eachBuildingSquare(building, function(sq)
+			scanSquare(sq, found, seen)
+		end)
 		return withTnc(found, seen, x, y, z)
 	end
 

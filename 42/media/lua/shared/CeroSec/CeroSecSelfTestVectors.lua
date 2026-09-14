@@ -149,9 +149,11 @@ CeroSecSelfTest.VECTORS = {
 	{ name = "saved has console", want = "true" },
 	{ name = "saved has no disk", want = "false" },
 	{ name = "saved has no seed", want = "false" },
-	{ name = "saved count", want = "5" },
+	{ name = "saved count", want = "6" },
 	{ name = "system saves seed", want = "true" },
 	{ name = "system saves notes", want = "true" },
 	{ name = "system saves desks", want = "true" },
-	{ name = "system count", want = "3" },
+	{ name = "system saves auto", want = "true" },
+	{ name = "system count", want = "4" },
+	{ name = "saved has born", want = "true" },
 }

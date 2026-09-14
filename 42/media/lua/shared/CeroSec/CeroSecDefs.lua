@@ -151,8 +151,18 @@ CeroSec.STATE_VERSION = 1
 -- Kahlua in a real save, and tests/window_test.lua asserts that these very tables
 -- are what reaches the engine.
 --
-CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes", "desks" }
-CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console" }
+-- `auto` is which premises were automated before the outbreak and which of their
+-- computers was left running (SCeroSecAuto): a decision made once in the life of a
+-- premises, so a table that did not survive a reload would roll again. `born` is
+-- one bit on one machine -- its square was created for the first time in this save
+-- and the question has not been settled yet -- and it is SAVED rather than kept in
+-- memory so that a player who quits in the minute between the chunk arriving and
+-- the sweep does not lose it. Both are absent from every machine and every system
+-- saved before this change, and absent reads as the old behaviour: no premises
+-- decided, no machine waiting to be asked.
+--
+CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes", "desks", "auto" }
+CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console", "born" }
 CeroSec.OBJECT_SYNC_KEYS = { "v", "on", "facing", "disk" }
 
 --

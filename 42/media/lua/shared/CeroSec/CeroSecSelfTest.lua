@@ -373,7 +373,15 @@ function CeroSecSelfTest.keys(say)
 	-- reload gives the second desk of an office the owner the first one has, and a
 	-- display model on a shop floor comes up as the shop's own back office.
 	say("system saves desks", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS, "desks"))
+	-- And which premises were automated before the outbreak, which is a decision
+	-- made once in the life of a premises: without it a reload rolls again, and a
+	-- shop's fixtures are wired a second time over the survivor who stripped them.
+	say("system saves auto", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS, "auto"))
 	say("system count", #CeroSec.SYSTEM_SAVE_KEYS)
+	-- The one bit on a machine that says its square was created in this save and
+	-- nobody has settled the question yet. Saved, so a quit in the minute between
+	-- the chunk arriving and the sweep does not lose it.
+	say("saved has born", CeroSecSelfTest.holds(CeroSec.OBJECT_SAVE_KEYS, "born"))
 end
 
 -- Is that name on that list? A walk and not a set, because the lists are three

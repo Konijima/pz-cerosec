@@ -16,6 +16,7 @@ require "CeroSec/CeroSecNotes"
 require "CeroSec/CeroSecModules"
 require "CeroSec/SCeroSecDebug"
 require "CeroSec/SCeroSecDevices"
+require "CeroSec/SCeroSecAuto"
 require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
 require "CeroSec/SCeroSecObject"
@@ -193,6 +194,26 @@ function SCeroSecSystem:OnObjectAdded(isoObject)
 		luaObject:initNew()
 	end
 	luaObject:resetForPlacement(isoObject)
+end
+
+-- THIS COMPUTER'S SQUARE HAS JUST BEEN MADE, for the first time in this save.
+--
+-- One bit written down and nothing else. Which premises it is in, what the premises
+-- is called and whether there is a wire at the square are all questions about the
+-- world, and they are asked one minute later on the sweep -- see the head of
+-- SCeroSecAuto.lua for why they are not asked here and for the bytecode that says
+-- this only ever runs on a chunk built out of the map.
+--
+-- NOT resetForPlacement and nothing like it: a computer created with the chunk is
+-- whatever the map made it, and OnObjectAdded above is the other thing entirely --
+-- a computer a survivor put down out of his hands.
+function SCeroSecSystem:markBorn(isoObject)
+	if not self:isValidIsoObject(isoObject) then return end
+	local square = isoObject:getSquare()
+	if not square then return end
+	local luaObject = self:getLuaObjectOnSquare(square)
+	if not luaObject then return end
+	luaObject.born = true
 end
 
 -- The client walks the player to the square in front of the screen before it
@@ -2445,6 +2466,21 @@ function SCeroSecSystem:checkPower()
 	for i = 1, self:getLuaObjectCount() do
 		local luaObject = self:getLuaObjectByIndex(i)
 		local loaded = luaObject:isLoaded()
+		-- WAS THIS PREMISES AUTOMATED BEFORE THE OUTBREAK, for a computer whose square
+		-- was made in this save and whose chunk is in so the question is answerable at
+		-- all. FIRST in the sweep, and therefore ahead of cron's pass in the same
+		-- minute (the event below calls checkPower and then checkCron): a crontab line
+		-- that comes due this very minute has to find its lights already under /dev.
+		--
+		-- The square and not isLoaded(): what is wanted is a world to ask, and a
+		-- machine on its way out of the system is one the answer would not survive.
+		if luaObject.born == true and luaObject:getSquare() ~= nil then
+			CeroSecAuto.settle(self, luaObject)
+		elseif luaObject.on then
+			-- And the rest of an automated premises' fixtures as their chunks arrive.
+			-- Two table lookups for a machine this is not about (CeroSecAuto.wire).
+			CeroSecAuto.wire(self, luaObject)
+		end
 		-- A machine that has been running since before this rung, or one carried
 		-- into a building while it was switched on, has no address yet. Asked only
 		-- of a machine that has not got one, so the sweep costs nothing on a
@@ -2528,9 +2564,24 @@ local function LoadComputer(isoObject)
 	SCeroSecSystem.instance:loadIsoObject(isoObject)
 end
 
+-- And the same object, the FIRST time this save has ever seen it. Two closures and
+-- not one flag, because the two maps in MapObjects are what tells them apart and
+-- nothing in the callback can: `onNew` is walked only for a chunk built out of the
+-- map (IsoChunk.doLoadGridsquare, `if (this.addZombies)` at offsets 851-859) and
+-- `onLoad` for every chunk there is, new or read back out of the save. The bytecode
+-- and the one game-mode caveat are at the head of SCeroSecAuto.lua.
+--
+-- The adoption first and the bit afterwards, in that order: markBorn writes on the
+-- GlobalObject and there is not one until loadIsoObject has made it.
+local function NewComputer(isoObject)
+	LoadComputer(isoObject)
+	if not SCeroSecSystem.instance then return end
+	SCeroSecSystem.instance:markBorn(isoObject)
+end
+
 for _, facing in ipairs(CeroSec.FACINGS) do
-	MapObjects.OnNewWithSprite(CeroSec.SPRITES_OFF[facing], LoadComputer, PRIORITY)
+	MapObjects.OnNewWithSprite(CeroSec.SPRITES_OFF[facing], NewComputer, PRIORITY)
 	MapObjects.OnLoadWithSprite(CeroSec.SPRITES_OFF[facing], LoadComputer, PRIORITY)
-	MapObjects.OnNewWithSprite(CeroSec.SPRITES_ON[facing], LoadComputer, PRIORITY)
+	MapObjects.OnNewWithSprite(CeroSec.SPRITES_ON[facing], NewComputer, PRIORITY)
 	MapObjects.OnLoadWithSprite(CeroSec.SPRITES_ON[facing], LoadComputer, PRIORITY)
 end

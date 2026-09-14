@@ -18,6 +18,7 @@ require "CeroSec/OS/CeroSecOSComplete"
 require "CeroSec/OS/CeroSecOSVM"
 require "CeroSec/SCeroSecNet"
 require "CeroSec/SCeroSecJobs"
+require "CeroSec/SCeroSecAuto"
 
 SCeroSecObject = SGlobalObject:derive("SCeroSecObject")
 
@@ -646,6 +647,14 @@ function SCeroSecObject:prefill(state)
 		secret = system:secret(),
 		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
 		premises = zone, rooms = rooms, room = room, desks = desks,
+		-- IS THIS THE MACHINE ITS PREMISES LEFT RUNNING (SCeroSecAuto)? Two things
+		-- follow on the disk and both are the catalogue's: the desk is the one whose
+		-- crontab does the nightly job -- or the job would be in the catalogue and on
+		-- no machine in the county -- and somebody was more likely to have been left
+		-- logged in at it. Read out of the system's own page rather than passed down
+		-- from the caller, because the answer is written in the save and a flag handed
+		-- through turnOn would be a second copy of it.
+		auto = CeroSecAuto.isMachineAt(system, b1, b2, self.x, self.y, self.z),
 		start = system:startTime(),
 		now = CeroSecOS.clockOf(system:clockEnv()),
 		-- The numbers a man at this desk could have rung, for the `cu` line in his

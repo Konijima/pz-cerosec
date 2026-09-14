@@ -599,6 +599,10 @@ local FILES = {
 	"server/CeroSec/SCeroSecRadio.lua",
 	"server/CeroSec/SCeroSecDevices.lua",
 	"server/CeroSec/SCeroSecNet.lua",
+	-- The premises that were automated before the outbreak. After the net layer,
+	-- which it asks what a premises is, and before the object and the system, which
+	-- both call into it.
+	"server/CeroSec/SCeroSecAuto.lua",
 	"server/CeroSec/SCeroSecDebug.lua",
 	"server/CeroSec/SCeroSecJobs.lua",
 	"server/CeroSec/SCeroSecObject.lua",

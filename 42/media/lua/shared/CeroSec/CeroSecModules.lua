@@ -85,6 +85,28 @@ CeroSecModules.VERSION_KEY = "v"
 CeroSecModules.MIGRATIONS = {}
 CeroSecModules.OLDEST_VERSION = 1
 
+-- AND ONE KEY THAT IS NOT A MODULE: was this fixture wired before the outbreak?
+--
+-- The automation needs to fit a building's hardware ONCE and never again, and
+-- "once" cannot be "when the modules are not there": a survivor who unscrews the
+-- relay out of a light switch for the item would find it back on the plate the next
+-- minute, which is a mod undoing a player's own work. So a pre-fitted fixture
+-- remembers that it was pre-fitted, the mark outlives every module coming off, and
+-- the walk never touches that fixture again.
+--
+-- It costs a handful of bytes in the chunk for the rest of the save on a fixture a
+-- survivor has stripped bare, and that is the price of the promise. The last module
+-- off takes the table with it exactly as before on every fixture a PLAYER wired: the
+-- mark is the only thing that keeps one alive (setOn).
+--
+-- ADDING THIS KEY IS NOT A SHAPE CHANGE and CeroSecModules.VERSION does not move
+-- for it. An absent mark reads as "not pre-fitted", which is the old behaviour
+-- everywhere, and there is nothing in an older table for a step to convert. Bumping
+-- the number would be worse than useless here: `migrate` stamps the new number on
+-- the table it walks, and a table is walked on every READ -- including on a client,
+-- where a write into a door's modData goes nowhere anybody will ever see.
+CeroSecModules.PRE_KEY = "pre"
+
 -- Which shape this table is in. A number that is not a whole one in range is not a
 -- version anything here wrote, and it reads as the oldest -- the same answer an
 -- absent one gets, for the same reason: the ids are what they are.
@@ -236,6 +258,41 @@ function CeroSecModules.installedIn(fitted, id)
 end
 
 --
+-- WAS THIS FIXTURE WIRED BEFORE THE OUTBREAK? (see PRE_KEY)
+--
+-- true also for a table this build cannot read -- one a LATER build wrote. That is
+-- not a shortcut: the answer is what the pre-fitting walk uses to decide whether to
+-- LEAVE A FIXTURE ALONE, and a table whose ids may mean something this build does not
+-- know is the last thing to write into. So "unreadable" reads as "already done",
+-- which is the safe direction for both readings of the question.
+function CeroSecModules.preFitted(object)
+	if object == nil then return false end
+	if type(object.hasModData) ~= "function" or not object:hasModData() then return false end
+	local data = object:getModData()
+	if data == nil then return false end
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if type(fitted) ~= "table" then return false end
+	if not CeroSecModules.migrate(fitted) then return true end
+	return fitted[CeroSecModules.PRE_KEY] == true
+end
+
+-- The mark, and only the mark: the modules themselves go on through setOn, which is
+-- the one writer. The server's, like every other write into a fixture's modData.
+-- false when there is nothing there to mark, which is a fixture nothing was fitted
+-- to and therefore nothing to remember.
+function CeroSecModules.markPreFitted(object)
+	if object == nil then return false end
+	local data = object:getModData()
+	if data == nil then return false end
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if type(fitted) ~= "table" then return false end
+	if not CeroSecModules.migrate(fitted) then return false end
+	fitted[CeroSecModules.PRE_KEY] = true
+	object:transmitModData()
+	return true
+end
+
+--
 -- Screwing one on, and taking it off
 --
 -- The server's, and only the server's: what reaches a client is the object's
@@ -277,7 +334,13 @@ function CeroSecModules.setOn(object, id, on)
 		-- stamp existed. IsoObject.save skips an EMPTY modData and a table holding only
 		-- a number is not empty, so leaving one behind would be a few bytes in every
 		-- chunk for the rest of the save.
-		if not left then data[CeroSecModules.DATA_KEY] = nil end
+		--
+		-- UNLESS THE FIXTURE WAS WIRED BEFORE THE OUTBREAK, in which case the mark is
+		-- the whole point of it and outlives every module (see PRE_KEY): a survivor who
+		-- strips a pre-fitted switch must not find the relay back on it a minute later.
+		if not left and fitted[CeroSecModules.PRE_KEY] ~= true then
+			data[CeroSecModules.DATA_KEY] = nil
+		end
 	end
 	object:transmitModData()
 	return true
