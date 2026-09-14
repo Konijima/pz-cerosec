@@ -13861,8 +13861,13 @@ do
 		world.box = { x = bx, y = by, w = 10, h = 10 }
 		local kit = { world = world, bx = bx, by = by }
 		kit.floor = world.room(SHOP_ROOMS[1], { { bx + 1, by + 1, 0 }, { bx + 2, by + 1, 0 } })
-		kit.back = world.room(SHOP_ROOMS[2],
-			{ { bx + 1, by + 2, 0 }, { bx + 2, by + 2, 0 }, { bx + 3, by + 2, 0 } })
+		-- A row of eight squares in the back room, and the row is that long for one
+		-- reason: whose desk a machine is is a hash of its own square
+		-- (CeroSecContent.ownerSlot), so a bench that wants a desk the hash would NOT
+		-- have picked has to have somewhere to look for one.
+		local back = {}
+		for n = 1, 8 do back[n] = { bx + n, by + 2, 0 } end
+		kit.back = world.room(SHOP_ROOMS[2], back)
 		-- The street: no room, so the door onto it is the way out of the building and
 		-- its lock is a lock that stops somebody (CeroSecModules.doorLocks).
 		local street = world.square(bx + 1, by, 0, nil)
@@ -14020,7 +14025,39 @@ do
 		local kit = newShop(bx, by)
 		_G.__world = kit.world
 		local county = newCounty(kit)
-		local machine = county.machine(bx + 2, by + 2, 0)
+
+		-- THE DESK THE OWNER HASH WOULD NOT HAVE PICKED, and the bench stands the
+		-- machine on it deliberately. The store has two accounts and the nightly job is
+		-- the FIRST one's, so a square whose hash picks the second is the only square
+		-- where "the job is in his crontab" can tell the automation's own choice of desk
+		-- (CeroSecContent.prefill, `want`) from a coincidence -- and on any other square
+		-- that assertion is green whether the code asks for the job's desk or not.
+		local store = CeroSecContent.PROFILES.store
+		local jobSlot = CeroSecContent.jobSlot(store)
+		eq("the store's nightly job is the first account's", jobSlot, 1)
+		--
+		-- Asked of deskRole ITSELF, with a register of its own and no preference in it,
+		-- because that is the function the automation then asks with one: a bench that
+		-- searched with CeroSecContent.ownerSlot would be searching with the wrong hash
+		-- -- deskRole hands out a free slot by key(mkey, "desk") and never calls
+		-- ownerSlot at all once there is a register -- and would find a square it had no
+		-- reason to believe anything about. (It did, and every mutation of the
+		-- preference stayed green on it.)
+		local mx, otherSlot = nil, nil
+		for n = 1, 8 do
+			if mx == nil then
+				local mkey = CeroSecContent.machineKey(b1, b2, bx + n, by + 2, 0)
+				local probe = CeroSecContent.deskEntry({}, b1, b2)
+				local _, had = CeroSecContent.deskRole(probe,
+					CeroSecContent.deskTag(bx + n, by + 2, 0), SECRET, mkey, store,
+					false, false)
+				if had ~= jobSlot then mx, otherSlot = bx + n, had end
+			end
+		end
+		check("a square in the back room is somebody else's desk by the hash", mx ~= nil)
+		check("and it is the other account (" .. tostring(otherSlot) .. ")",
+			otherSlot ~= nil and otherSlot ~= jobSlot)
+		local machine = county.machine(mx, by + 2, 0)
 
 		-- THE LOAD PATH FIRST, which is a chunk read back out of the save. It fires
 		-- per object -- the count says so, because a fire that reached nothing would
@@ -14056,7 +14093,7 @@ do
 		check("the sweep wrote the premises' page", type(record) == "table")
 		eq("and it says the shop was automated", record.on, true)
 		check("and which of its computers was left running",
-			type(record.machine) == "table" and record.machine.x == bx + 2
+			type(record.machine) == "table" and record.machine.x == mx
 				and record.machine.y == by + 2 and record.machine.z == 0)
 		eq("the question is not asked again", machine.born, nil)
 		eq("and the page is in the save", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS,
@@ -14098,8 +14135,7 @@ do
 		-- THE CRONTAB, and whose it is: the desk of the person whose job the nightly
 		-- lights are. Derived here the way a paper in the drawer derives it, so a
 		-- prefill that gave the machine somebody else's desk is a red.
-		local slot = CeroSecContent.jobSlot(CeroSecContent.PROFILES.store)
-		eq("the store's nightly job is the first account's", slot, 1)
+		local slot = jobSlot
 		local login = CeroSecContent.accountLogin(SECRET, b1, b2, slot)
 		check("that account is on the machine", CeroSecOS.getUser(state, login) ~= nil)
 		local tab = CeroSecOS.systemNode(state, CeroSecOS.cronPath(login))
@@ -14181,14 +14217,14 @@ do
 			-- AND THE WALK DOES NOT PUT IT BACK, which is the whole point of the mark: a
 			-- second computer of the same shop is created, the sweep walks the building
 			-- again, and the switch the survivor stripped is left exactly as he left it.
-			local second = county.machine(bx + 3, by + 2, 0)
+			local second = county.machine(bx + 8, by + 2, 0)
 			record.wired = nil
 			eq("the second computer is marked new",
 				_G.__fireSquare("new", second.square) > 0 and second.born, true)
 			county.minute()
 			eq("the shop's page still says what it said", record.on, true)
 			check("and still names the FIRST computer",
-				record.machine.x == bx + 2 and record.machine.y == by + 2)
+				record.machine.x == mx and record.machine.y == by + 2)
 			eq("and the stripped switch has no relay back on it",
 				CeroSecModules.installedOn(kit.light0).relay, nil)
 			eq("nor is the second machine switched on", second.on, false)
@@ -14217,6 +14253,20 @@ do
 		eq("the machine stays off", machine.on, false)
 		eq("and the lights stay on", kit.light0.activated, true)
 		eq("and the question is not asked again", machine.born, nil)
+
+		-- AND THE SURVIVOR SWITCHES IT ON HIMSELF, which is what he does with every
+		-- computer he finds. From that minute on it is a machine that is ON in a
+		-- premises nobody automated, which is the one case the sweep's own walk has to
+		-- refuse -- and the only case that reaches the question it asks, every other
+		-- machine in this section being dark.
+		machine:turnOn()
+		eq("the machine he found comes up", machine.on, true)
+		county.minute(2)
+		eq("a shop nobody automated grows no relays",
+			CeroSecModules.installedOn(kit.light0).relay, nil)
+		eq("nor contacts on its doors", CeroSecModules.installedOn(kit.front).contact, nil)
+		eq("and it is still not marked as wired", record.wired, nil)
+		eq("and its lights are his to throw", kit.light0.activated, true)
 	end
 
 	--

@@ -220,7 +220,16 @@ function CeroSecAuto.wire(system, luaObject)
 	local net = CeroSecOS.netRecord(luaObject.os)
 	if net == nil then return 0 end
 	local record = CeroSecAuto.recordOf(system, net.b1, net.b2)
-	if record == nil or record.on ~= true or record.wired == true then return 0 end
+	if record == nil or record.wired == true then return 0 end
+	-- "A premises that rolled no is left alone" is carried THREE times -- here, in
+	-- isMachineAt, and by settle never filling the machine slot under a `no` -- and
+	-- that is written down because it changes what a green mutation means: breaking any
+	-- ONE of the three leaves the suite green, and a reader who did not know would go
+	-- looking for a hole in the bench instead of a second carrier. Breaking all three
+	-- turns tests/window_test.lua's "no fixture is wired" red, which is the assertion
+	-- that owns the rule. All three are kept: the cost is a comparison and the failure
+	-- they stand against is a building that wires itself behind the player.
+	if record.on ~= true then return 0 end
 	if not CeroSecAuto.isMachineAt(system, net.b1, net.b2,
 			luaObject.x, luaObject.y, luaObject.z) then
 		return 0
