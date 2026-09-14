@@ -269,14 +269,15 @@ do
 	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
 
-	-- The skeleton is nine nodes plus the five of the /var tree, plus one
+	-- The skeleton is nine nodes plus the seven of the /var tree, plus one
 	-- executable per command plus /etc/passwd, /etc/sudoers and /etc/group, and
 	-- every byte of it is accounted for: the machine's name, the motd, the
 	-- accounts file, the sudoers file, the groups file, the two network files,
-	-- and the one-line description in each executable. The /var tree is six
-	-- directories and no bytes at all: what goes in it is written when something
-	-- asks for it. /dev/null is a DEVICE and costs neither a node nor a byte --
-	-- it is a hole, not a file.
+	-- and the one-line description in each executable. The /var tree is seven
+	-- directories and no bytes at all -- /var, spool, spool/cron, spool/at, log,
+	-- mail and tmp: what goes in them is written when something asks for it.
+	-- /dev/null is a DEVICE and costs neither a node nor a byte -- it is a hole,
+	-- not a file.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
@@ -286,7 +287,7 @@ do
 	local hosts = state.fs.children.etc.children.hosts
 	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 10 + 6 + #binNames + 5)
+	eq("skeleton node count", nodes, 10 + 7 + #binNames + 5)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
@@ -968,10 +969,10 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	-- The skeleton (/mnt included), the /var tree, plus one executable per command,
-	-- plus /etc/passwd, /etc/sudoers, /etc/group and the two network files.
+	-- The skeleton (/mnt included), the /var tree of seven, plus one executable per
+	-- command, plus /etc/passwd, /etc/sudoers, /etc/group and the two network files.
 	-- /dev/null is a device and is not a node the disk counts.
-	eq("starting node count", nodes, 10 + 6 + #CeroSecOS.binNames() + 5)
+	eq("starting node count", nodes, 10 + 7 + #CeroSecOS.binNames() + 5)
 	local made = 0
 	local dir = 0
 	while true do
@@ -7621,7 +7622,7 @@ do
 	local state = fresh()
 	local root = open(state, "root")
 	local env = { now = FIXED, nowMs = 1000, jobs = {} }
-	local WANT = "[ arp cat chgrp chmod chown clear cp crontab cu cut date dev df"
+	local WANT = "[ arp at atq atrm cat chgrp chmod chown clear cp crontab cu cut date dev df"
 		.. " echo edit env false find grep groupadd groupdel groups halt head"
 		.. " help hostname id ifconfig kill last ln ls mail man mkdir mkpasswd more mount"
 		.. " mv newfs passwd ping"
@@ -8651,6 +8652,149 @@ do
 
 	-- Mail with nothing in it is not a delivery at all.
 	eq("no lines, no mail", CeroSecOS.mailAppend(state, "admin", "ksp", nil, {}, FIXED), false)
+end
+
+--
+--
+-- 40a. at: one job, at one time, in a queue that survives the machine
+--
+-- The commands come off a PIPE, because standard input on this machine is a pipe
+-- and nothing else. The queue is a file per job under /var/spool/at, root's at 600
+-- in a directory that is root's at 700, so it is nobody's to read or forge and it
+-- survives a reload because the filesystem does. What a player sees is at(1)'s,
+-- atq(1)'s and atrm(1)'s: the line at prints, the listing, the numbers.
+--
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local root = open(state, "root")
+	-- Thursday 8 July 1993, a quarter past nine in the morning.
+	local NOW = CeroSecOS.timeFromParts(1993, 7, 8, 9, 15, 0)
+	local env = { now = NOW, nowMs = 1000, jobs = {} }
+
+	-- The spool is there on a fresh machine, root's and 700.
+	local spool = CeroSecOS.systemNode(state, CeroSecOS.AT_PATH)
+	check("the queue is a directory", spool ~= nil and spool.type == "dir")
+	eq("root's", spool.owner, "root")
+	eq("and 700", spool.mode, CeroSecOS.AT_DIR_MODE)
+
+	-- One job, and at's own line about it.
+	okAt(state, admin, "echo halt | at 04:00",
+		{ "job 1 at Fri Jul  9 04:00:00 1993" }, env)
+	-- Four in the morning has gone by, so it means tomorrow. Half past eleven
+	-- tonight has not, so it means today.
+	okAt(state, admin, "echo 'echo one' | at 23:30",
+		{ "job 2 at Thu Jul  8 23:30:00 1993" }, env)
+
+	-- The file, and who may read it.
+	local job = CeroSecOS.systemNode(state, CeroSecOS.atJobPath(1))
+	check("the job is a file in the queue", job ~= nil and job.type == "file")
+	eq("root's", job.owner, "root")
+	eq("and 600", job.mode, CeroSecOS.AT_JOB_MODE)
+	eq("with the account and the second on its first line",
+		CeroSecOS.splitLines(job.data)[1], "at admin 742190400")
+	eq("and the commands after it", CeroSecOS.splitLines(job.data)[2], "halt")
+	badAt(state, admin, "cat /var/spool/at/1",
+		"cat: /var/spool/at/1: permission denied", env)
+
+	-- The listing, which is at -l and atq and the same thing twice.
+	local WANT = { "1  Fri Jul  9 04:00:00 1993", "2  Thu Jul  8 23:30:00 1993" }
+	okAt(state, admin, "at -l", WANT, env)
+	okAt(state, admin, "atq", WANT, env)
+
+	-- Somebody else's jobs are not in his listing, and are in root's.
+	addUser(state, "bob", "", "/home/bob", false)
+	local bob = open(state, "bob")
+	okAt(state, bob, "echo 'echo bob' | at 07:00",
+		{ "job 3 at Fri Jul  9 07:00:00 1993" }, env)
+	okAt(state, bob, "atq", { "3  Fri Jul  9 07:00:00 1993" }, env)
+	okAt(state, admin, "atq", WANT, env)
+	local all = okAt(state, root, "atq", nil, env)
+	eq("root sees every job", #all, 3)
+
+	-- And nobody else's is his to remove. root's rule is root's, in kill's words.
+	badAt(state, bob, "atrm 1", "atrm: 1: Operation not permitted", env)
+	badAt(state, bob, "at -r 1", "at: 1: Operation not permitted", env)
+	check("and it is still there", CeroSecOS.systemNode(state, CeroSecOS.atJobPath(1)) ~= nil)
+	badAt(state, admin, "atrm 9", "atrm: 9: no such job", env)
+	badAt(state, admin, "atrm x", "atrm: x: no such job", env)
+	okAt(state, admin, "atrm 2", {}, env)
+	check("a removed job is gone from the queue",
+		CeroSecOS.systemNode(state, CeroSecOS.atJobPath(2)) == nil)
+	okAt(state, root, "atrm 3", {}, env)
+	eq("and the queue is what is left", #CeroSecOS.atJobs(state), 1)
+
+	-- The number is the lowest that is free, which is what makes it a number a
+	-- survivor can type: job 2 went, so the next job is 2 again.
+	okAt(state, admin, "echo 'echo two' | at 12:00",
+		{ "job 2 at Thu Jul  8 12:00:00 1993" }, env)
+
+	-- What it refuses. A time that is not one, a time out of the clock, no pipe to
+	-- read from -- which is the answer every command that reads a pipe gives in
+	-- that position -- and a pipe that closed with nothing in it.
+	local USAGE = "at: usage: at HH:MM | at -l | at -r <job>..."
+	badAt(state, admin, "echo x | at noon", USAGE, env)
+	badAt(state, admin, "echo x | at 25:00", USAGE, env)
+	badAt(state, admin, "echo x | at 04:60", USAGE, env)
+	badAt(state, admin, "echo x | at 0400", USAGE, env)
+	badAt(state, admin, "at 04:00", USAGE, env)
+	badAt(state, admin, "at", USAGE, env)
+	badAt(state, admin, "at -l extra", USAGE, env)
+	badAt(state, admin, "at -r", "at: usage: at HH:MM | at -l | at -r <job>...", env)
+	badAt(state, admin, "printf '' | at 04:00", "at: no commands", env)
+	badAt(state, admin, "atq extra", "atq: usage: atq", env)
+	-- A machine with no clock cannot be told when.
+	badAt(state, admin, "echo x | at 04:00", "at: no clock", { nowMs = 1000, jobs = {} })
+
+	-- Several lines are one job: what came down the pipe is the job's commands,
+	-- whole.
+	okAt(state, admin, "atrm 1", {}, env)
+	okAt(state, admin, "atrm 2", {}, env)
+	put(state, admin, "/home/admin/plan", "echo one\necho two")
+	okAt(state, admin, "cat plan | at 05:00",
+		{ "job 1 at Fri Jul  9 05:00:00 1993" }, env)
+	local many = CeroSecOS.systemNode(state, CeroSecOS.atJobPath(1))
+	eq("the whole pipe is the job", CeroSecOS.splitLines(many.data)[2] .. "|"
+		.. CeroSecOS.splitLines(many.data)[3], "echo one|echo two")
+end
+
+-- The queue's own two halves, and the clock: pure functions, asked directly.
+do
+	local NOW = CeroSecOS.timeFromParts(1993, 7, 8, 9, 15, 0)
+	-- A time later today is today; one that has gone by is tomorrow; the same
+	-- minute is tomorrow too, because "at 09:15" at 09:15 has already happened.
+	eq("later today", CeroSecOS.atWhen("23:30", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 8, 23, 30, 0))
+	eq("earlier today means tomorrow", CeroSecOS.atWhen("04:00", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 9, 4, 0, 0))
+	eq("this very minute means tomorrow", CeroSecOS.atWhen("09:15", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 9, 9, 15, 0))
+	eq("a minute from now is today", CeroSecOS.atWhen("09:16", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 8, 9, 16, 0))
+	eq("midnight is tomorrow's", CeroSecOS.atWhen("00:00", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 9, 0, 0, 0))
+	eq("one digit of hour is a time", CeroSecOS.atWhen("4:00", NOW),
+		CeroSecOS.timeFromParts(1993, 7, 9, 4, 0, 0))
+	check("and these are not times", CeroSecOS.atWhen("24:00", NOW) == nil
+		and CeroSecOS.atWhen("04:60", NOW) == nil
+		and CeroSecOS.atWhen("0400", NOW) == nil
+		and CeroSecOS.atWhen("4pm", NOW) == nil
+		and CeroSecOS.atWhen("", NOW) == nil
+		and CeroSecOS.atWhen(nil, NOW) == nil
+		and CeroSecOS.atWhen("04:00", nil) == nil)
+
+	-- The file a job is kept in, there and back.
+	local text = CeroSecOS.atText("admin", 742190400, "echo one\necho two")
+	eq("the job file is what it is", text, "at admin 742190400\necho one\necho two")
+	local user, when, cmd = CeroSecOS.atParse(text)
+	eq("the account comes back", user, "admin")
+	eq("the second comes back", when, 742190400)
+	eq("and the commands, whole", cmd, "echo one\necho two")
+	check("a file that is not one is not read as one",
+		CeroSecOS.atParse("halt\n") == nil)
+	check("nor is one with no commands in it", CeroSecOS.atParse("at admin 1\n") == nil)
+	check("nor one with no time", CeroSecOS.atParse("at admin\nhalt") == nil)
+	check("nor nothing at all", CeroSecOS.atParse(nil) == nil)
 end
 
 --

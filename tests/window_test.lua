@@ -4067,6 +4067,88 @@ do
 	check("the dot reads it into this shell", bench.painted("[inside]"))
 end
 
+-- at, end to end: the queue, the minute it comes round, and the mail.
+--
+-- The engine's half is pinned in os_test. This is the other half: the file in
+-- /var/spool/at, the sweep that reads it (the same one that reads the crontabs),
+-- the job it makes, where the output goes, and -- the thing that is at's and not
+-- cron's -- that a job whose time PASSED while the machine was off still runs.
+do
+	local bench = newBench()
+	bench.login("admin")
+	-- The commands go in from a FILE and not from an echo on the line: the glass
+	-- keeps what has scrolled past, so a line typed with the command in it would
+	-- satisfy every assertion below about what did NOT reach the screen.
+	CeroSecOS.writeFile(bench.object:osState(), CeroSecOS.rootSession(),
+		"/home/admin/plan", "echo lamps-out", false, 100)
+	-- The bench's clock says 14:32, so 14:33 is a minute away.
+	-- A pipeline takes a few passes: the stage on the right reads what the stage on
+	-- the left has written, and `at` cannot answer until the pipe has closed.
+	bench.enter("cat plan | at 14:33")
+	bench.tick(3)
+	check("at says which job and when", bench.painted("job 1 at"))
+	-- The queue is a file, root's and 600, which is what makes it nobody's to read.
+	local spooled = bench.fileText("/var/spool/at/1")
+	check("the job is a file in the spool", spooled ~= nil)
+	check("with the account and the time on its first line",
+		spooled ~= nil and string.find(spooled, "^at admin %d+\n") ~= nil)
+	check("and the commands after it",
+		spooled ~= nil and string.find(spooled, "echo lamps-out", 1, true) ~= nil)
+	bench.enter("cat /var/spool/at/1")
+	bench.frame()
+	check("an ordinary account cannot read it",
+		bench.painted("/var/spool/at/1: permission denied"))
+
+	-- atq lists it, and it is still there: a listing runs nothing.
+	bench.enter("atq")
+	bench.frame()
+	check("atq lists the job", bench.painted("1  "))
+	check("the queue still holds it", bench.fileText("/var/spool/at/1") ~= nil)
+
+	-- The minute comes round. The sweep is the game's own EveryOneMinute, which is
+	-- the power check and the cron pass -- and now the at pass with them.
+	bench.minute()
+	bench.tick(4)
+	eq("the job is out of the queue", bench.fileText("/var/spool/at/1"), nil)
+	local mail = bench.fileText("/var/mail/admin")
+	check("and what it printed went to the account's mail", mail ~= nil)
+	check("which is where a job nobody is watching prints",
+		mail ~= nil and string.find(mail, "lamps-out", 1, true) ~= nil)
+	check("nothing of it reached the glass", not bench.painted("lamps-out"))
+	-- And the queue is empty, asked of the queue and not of the glass: what has
+	-- scrolled past is still painted, so an atq that printed nothing looks exactly
+	-- like the atq above that printed something.
+	eq("and the queue is empty", #CeroSecOS.atJobs(bench.object:osState()), 0)
+
+	-- A job whose time passed while nobody was sweeping. cron would let the minute
+	-- go -- there is no anacron here -- but an at job is a thing somebody asked
+	-- for, and it sits in the queue until it has been done.
+	CeroSecOS.writeFile(bench.object:osState(), CeroSecOS.rootSession(),
+		"/home/admin/plan2", "echo caught-up", false, 100)
+	bench.enter("cat plan2 | at 14:35")
+	bench.tick(3)
+	check("the second job is queued", bench.fileText("/var/spool/at/1") ~= nil)
+	-- Ten minutes of game clock with no sweep at all: the chunk was away.
+	local clock = _G.__gameTime
+	clock.minutes = clock.minutes + 10
+	bench.minute()
+	bench.tick(4)
+	eq("a late job still ran", bench.fileText("/var/spool/at/1"), nil)
+	check("and its output is in the mail too",
+		string.find(bench.fileText("/var/mail/admin"), "caught-up", 1, true) ~= nil)
+
+	-- atrm takes one out, and then there is nothing to run.
+	bench.enter("cat plan | at 16:00")
+	bench.tick(3)
+	bench.enter("atrm 1")
+	bench.frame()
+	eq("atrm took it out of the queue", bench.fileText("/var/spool/at/1"), nil)
+	local before = bench.fileText("/var/mail/admin")
+	bench.minute(200)
+	bench.tick(4)
+	eq("so nothing ever ran it", bench.fileText("/var/mail/admin"), before)
+end
+
 -- ps, jobs and kill, from the prompt, on a job that is running.
 do
 	local bench = newBench()

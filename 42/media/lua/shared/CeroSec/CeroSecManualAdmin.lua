@@ -1080,6 +1080,31 @@ What RAN, and what could not, is /var/log/cron, root's at 640:
 That second line is the machine full: four jobs at once is all it has, and
 a line that comes due with no slot free is skipped and logged.]],
 
+[[One thing, once: at.
+
+cron is a line that comes round again. at is a job you want done ONCE, at a
+time you name, and then forgotten. It reads the commands from its standard
+input, which on this machine means a pipe:
+
+  admin@ksp-04-11:~$ echo halt | at 04:00
+  job 1 at Fri Jul  9 04:00:00 1993
+  admin@ksp-04-11:~$ cat plan | at 23:30
+  job 2 at Thu Jul  8 23:30:00 1993
+
+A time is HH:MM and nothing else here -- no "now + 1 hour", no "4am" -- and
+one that has gone by today means tomorrow. atq lists what waits and atrm
+takes one out; at -l and at -r are the same two.
+
+  admin@ksp-04-11:~$ atq
+  1  Fri Jul  9 04:00:00 1993
+  admin@ksp-04-11:~$ atrm 1
+
+The output goes to your mail, as a crontab line's does and for the same
+reason. Where the two differ is the clock: a minute cron slept through is
+gone, while a job queued for four o'clock on a machine that was off at four
+runs when the machine comes back. It waits in /var/spool/at until it is
+done.]],
+
 [[Three things cron will not do, and each of them has cost somebody a
 night's work.
 
@@ -1779,6 +1804,9 @@ The building.
 Work with nobody standing there.
 
   crontab -e|-l|-r
+  at HH:MM | at -l | at -r <job>...
+  atq
+  atrm <job>...
   mail
 
 The wire.
@@ -1937,6 +1965,26 @@ refused whole, and the refusal names the file, the line and the field:
 And what the log says about a minute the machine had no room for:
 
   (CRON) error (can't fork)]],
+
+[[at, chapter 7, which queues one job instead of a line that comes round.
+Its refusals are its own and the queue's:
+
+  at: usage: at HH:MM | at -l | at -r <job>...
+      a time it could not read, or no pipe to read the
+      commands from -- at reads them from its standard
+      input and standard input here is a pipe
+  at: no commands
+      the pipe closed with nothing in it
+  at: queue full
+      ninety-six waiting jobs is a full directory
+  at: <job>: no such job
+  at: <job>: Operation not permitted
+      somebody else's job. root's rule, as kill's is
+  at: no clock
+      the machine cannot tell the time, so it cannot be
+      told when
+
+atq and atrm sign their own the same way, in their own names.]],
 
 [[The wire, chapter 8. rlogin, rsh and rcp sign their own, and the words
 are the ones a real one prints for the same trouble.

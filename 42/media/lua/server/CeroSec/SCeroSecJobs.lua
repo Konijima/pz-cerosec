@@ -491,6 +491,64 @@ function CeroSecJobs.cronPass(system, luaObject, now)
 	return fired
 end
 
+-- at: the one job, at the one time
+--
+-- The same machinery, read by the same sweep a minute: the queue is
+-- /var/spool/at, a job is a file in it, and a job whose time has come becomes an
+-- ordinary background job of that account's with its output going to that
+-- account's mail -- cronFire does all of it, because there is nothing about an at
+-- job that is different once it is running.
+--
+-- What IS different is the clock. cron's minute is either due or it is gone; an at
+-- job is a thing somebody asked for and it sits in the queue until it has been
+-- done, so a job whose time passed while the machine was off runs when the machine
+-- comes back. That is what atrun does on a real one, and it is why there is no
+-- "minute it last looked at" here: the question is whether the time has COME, not
+-- whether this is the minute.
+--
+-- The file goes when the job starts, and only then: a job the machine had no room
+-- for (four is the ceiling) is still in the queue next minute, which is the whole
+-- difference between a queue and a crontab. cron SKIPS a line it cannot fork and
+-- says so in the log, because the line will come round again; an at job would be
+-- lost.
+function CeroSecJobs.atPass(system, luaObject, now)
+	if type(now) ~= "number" then return 0 end
+	if not luaObject.on then return 0 end
+	local state = luaObject:osState()
+	local console = luaObject:consoleState()
+	if state == nil or console == nil then return 0 end
+
+	local jobs = CeroSecOS.atJobs(state)
+	local fired = 0
+	for i = 1, #jobs do
+		local job = jobs[i]
+		if job.when <= now then
+			local account = CeroSecOS.getUser(state, job.user)
+			if account == nil then
+				-- An account that is not on the machine any more. Vixie's word for a
+				-- crontab in that state, and his behaviour: it is not run -- and the
+				-- job goes, because nothing will ever run it and a queue full of jobs
+				-- belonging to nobody is a queue nobody can read.
+				cronSay(state, job.user, "ORPHAN (no passwd entry)", now)
+				CeroSecOS.removeNode(state, CeroSecOS.rootSession(),
+					CeroSecOS.atJobPath(job.n), false, now)
+			else
+				local entry = { cmd = job.cmd }
+				if cronFire(system, luaObject, console, state, job.user,
+						account.home, entry, now) ~= nil then
+					-- Started: the job is out of the queue. Before this line it was
+					-- started once a minute for ever.
+					CeroSecOS.removeNode(state, CeroSecOS.rootSession(),
+						CeroSecOS.atJobPath(job.n), false, now)
+					fired = fired + 1
+				end
+			end
+		end
+	end
+	if fired > 0 then luaObject:mirrorOS() end
+	return fired
+end
+
 -- @reboot, which is the one line that is not a time. Run when the machine comes
 -- up -- the switch at the back of the case, or a `reboot` -- and never caught up
 -- afterwards: a machine that was off at four in the morning did not reboot at

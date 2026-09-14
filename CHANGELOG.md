@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- **`at`**, for the thing you want done once: `echo halt | at 04:00` and the machine
+  switches itself off at four. `atq` says what is waiting, `atrm` takes one out, and
+  what the job prints goes to your mail like a nightly job's. It does not forget
+  either — a job queued for four o'clock on a machine that was off at four runs when
+  the machine comes back on.
 - **`tar`**, so a home can go onto a floppy in one piece: `tar cf /mnt/home.tar ~`,
   `tar tf` to see what is on a disk you found, `tar xf` to put it back. Folders,
   modes and times come back with the files; root also puts the owner back. An

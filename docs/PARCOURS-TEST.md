@@ -975,7 +975,27 @@ en observant le jeu réel, pas par un banc de test.
      `dev`), sauver, sortir de la fenêtre du terminal et s'éloigner de deux
      carrés en regardant l'ampoule. À la minute suivante la lumière doit
      s'allumer sans que personne n'ait tapé quoi que ce soit. [ ]
-175. `sh watch.sh &` (n'importe quel script qui dort et écrit), puis `jobs`,
+174a. **`at` : une fois, à l'heure dite.** Regarder l'heure (`date`), puis
+     `echo 'echo la nuit tombe' | at HH:MM` avec la minute suivante →
+     `job 1 at <la date complète>`. `atq` → `1  <la même date>`.
+     `cat /var/spool/at/1` → `permission denied` (la file est à `root`),
+     `sudo cat /var/spool/at/1` → la ligne d'en-tête `at admin <secondes>` puis
+     la commande. Attendre la minute : **rien** n'apparaît à l'écran, `atq` ne
+     montre plus rien, et `mail` livre `la nuit tombe`. [ ]
+174b. **`at` n'oublie pas, contrairement à `cron`.** `echo halt | at HH:MM` avec
+     une minute qui tombe dans deux minutes, puis **éteindre** l'ordinateur
+     (Turn off) et attendre que l'heure passe. Rallumer, se connecter :
+     à la minute suivante la machine s'éteint — le travail attendait dans la
+     file. Refaire avec `crontab -e` et `* * * * *` pour comparer : une minute
+     manquée par `cron` est perdue. [ ]
+174c. **`atrm`, et les droits.** `echo halt | at 23:59`, `atq` (noter le
+     numéro), `atrm <numéro>` → rien à l'écran, `atq` est vide, et l'heure
+     passe sans rien faire. Puis `sudo useradd bob`, `su bob`,
+     `echo x | at 23:58`, `exit` : en `admin`, `atq` ne montre pas le travail de
+     `bob`, `atrm <son numéro>` → `atrm: N: Operation not permitted`, et en
+     `root` `atq` montre les deux. [ ]
+175. `sh watch.sh &`
+ (n'importe quel script qui dort et écrit), puis `jobs`,
      puis `fg %1` : la ligne de commande doit se réafficher, l'invite doit
      devenir occupée, et Échap doit tuer le travail (`^C` puis `killed`).
      Vérifier ensuite que `fg` seul, sans travail en arrière-plan, répond

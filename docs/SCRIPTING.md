@@ -302,6 +302,31 @@ his words:
 
     Cannot save: "/var/spool/cron/admin":1: bad minute
 
+**at** is the other half of the same machinery: one job, at one time, and then
+forgotten. It reads its commands from standard input — which on this machine is a
+**pipe** and nothing else, so `echo halt | at 04:00` is the shape, and `at 04:00`
+with nothing on its left answers its usage line like every other command that reads
+a pipe. `atq` lists what is waiting and `atrm` takes one out; `at -l` and `at -r`
+are the same two, as they are on a real BSD. A time is `HH:MM` (no `now + 1 hour`,
+no `4am`) and one that has gone by today means tomorrow.
+
+The queue is `/var/spool/at`, one **file** per job named by its number, root's and
+`600` in a directory that is root's and `700`, and `at` is the program that reaches
+it on an account's behalf — the shape `crontab` has here and for the same reason. So
+the queue survives a save because the filesystem does, and the file's header line
+(`at <user> <second>`) is what says whose job it is and when. The number handed out
+is the lowest that is free, so `atrm 1` is a line a survivor can type.
+
+**Where at differs from cron, and it is the clock.** A minute cron slept through is
+gone; an at job is a thing somebody asked for and it sits in the queue until it has
+been **done**, so a job queued for four o'clock on a machine that was off at four
+runs when the machine comes back — which is what `atrun` does on a real one. The
+file goes when the job **starts**, and only then: a job the machine had no room for
+(four is the ceiling) is still in the queue next minute, where a cron line is skipped
+because it will come round again. `CeroSecJobs.atPass` fires them, through the very
+`cronFire` a crontab line goes through, so the output goes to the account's mail for
+the same reason.
+
 **What cron will not do.** It does not catch up: a machine that was switched off at
 four in the morning, or whose part of the world nobody was near, does not run four
 o'clock's line when it comes back. A minute cron slept through is a minute that is

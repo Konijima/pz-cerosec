@@ -752,8 +752,15 @@ do
 	-- the reworked debug window are more source read at the top of the file too.
 	-- 1280 still holds it with room, and it still catches a heap that has doubled,
 	-- so the number did not move a fourth time.
-	check("and the whole bench holds well under 1280K (" ..
-		string.format("%.0f", late) .. "K)", late < 1280)
+	--
+	-- A fourth time, and the same reason a fourth time: the wave that paid the
+	-- debts put `env`, `export`, `.`, `find -exec`, `tar` and `at` into the engine
+	-- files, and the source of them is in the heap before a machine exists.
+	-- Measured at 1299K, which is what 1280 was catching. 1440 holds it with the
+	-- same room the last three numbers held theirs, and `late - early` -- growth
+	-- over nine hundred passes, which is what catches a LEAK -- did not move at all.
+	check("and the whole bench holds well under 1440K (" ..
+		string.format("%.0f", late) .. "K)", late < 1440)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
@@ -1304,6 +1311,133 @@ do
 
 	report[#report + 1] = string.format("  %-22s worst %4d steps/pass, %6.3f ms/minute",
 		"192 cron jobs/minute", worst, msPerMinute)
+end
+
+--
+-- 19a. A queue full of at jobs, waiting
+--
+-- A waiting job is not a running one and must cost NOTHING: it is a file in a
+-- spool, and the only work it makes is the sweep that reads the queue once a game
+-- minute. What this drives is the fullest queue a directory can hold, on six
+-- machines, for a hundred minutes -- with every job due far enough away that none
+-- of them ever runs, so what is measured is the WAITING and nothing else.
+--
+-- Then the other end of it: a queue where every job is due at once. Four jobs is
+-- all a machine has, and an at job that cannot start is left in the queue and tried
+-- again -- unlike a cron line, which is skipped because it will come round again --
+-- so the queue drains four at a time and never loses one.
+--
+do
+	-- The scheduler needs a system to ask the clock of, exactly as the cron bench
+	-- above builds one: these benches are not the server and there is no world here.
+	local NOW = 740000000
+	local atMinute = 0
+	local system3 = {}
+	function system3:execEnv() return { now = NOW + atMinute * 60, nowMs = _G.__now } end
+	function system3:clockEnv() return { now = NOW + atMinute * 60 } end
+	function system3:sessionOf(console)
+		return { user = console.user or "admin", cwd = "/home/admin", stamp = 1 }
+	end
+	function system3:writeSession() end
+	function system3:pushScreen() end
+	function system3:applyPower() end
+
+	local machines, states = {}, {}
+	local queued = 0
+	for m = 1, 6 do
+		local state = CeroSecOS.newState("ksp")
+		local console = CeroSec.newConsole()
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		local machine = { on = true, console = console, x = m, y = 0, z = 0 }
+		function machine:osState() return state end
+		function machine:consoleState() return self.console end
+		function machine:mirrorOS() end
+		-- As many as the spool will hold, every one of them due a day away.
+		local n = 1
+		while true do
+			local made = CeroSecOS.createNode(state, CeroSecOS.rootSession(),
+				CeroSecOS.atJobPath(n),
+				CeroSecOS.newFile("root", CeroSecOS.AT_JOB_MODE,
+					CeroSecOS.atText("admin", NOW + 86400, "echo job" .. n)), 100)
+			if made == nil then break end
+			n = n + 1
+		end
+		queued = n - 1
+		machines[m], states[m] = machine, state
+	end
+	check("the queue is as full as a directory gets (" .. queued .. ")",
+		queued >= CeroSecOS.MAX_DIR_ENTRIES - 1)
+
+	local worst, worstMinuteMs = 0, 0
+	local clockStart = os.clock()
+	for minute = 1, 100 do
+		atMinute = minute
+		local at = os.clock()
+		for m = 1, 6 do CeroSecJobs.atPass(system3, machines[m], NOW + minute * 60) end
+		local ms = (os.clock() - at) * 1000
+		if ms > worstMinuteMs then worstMinuteMs = ms end
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			for m = 1, 6 do
+				CeroSecJobs.runMachine(system3, machines[m],
+					CeroSec.STEP_BUDGET_PER_MACHINE, _G.__now, nil, nil, true, nil)
+			end
+			if tickSteps > worst then worst = tickSteps end
+		end
+	end
+	local msPerMinute = (os.clock() - clockStart) * 1000 / 100
+	-- NOTHING ran, so nothing was spent: a waiting job costs no step at all.
+	eq("a hundred minutes of waiting cost not one step", worst, 0)
+	for m = 1, 6 do
+		eq("and no job was made on machine " .. m,
+			#CeroSecJobs.book(machines[m]).list, 0)
+		eq("and the queue is where it was", #CeroSecOS.atJobs(states[m]), queued)
+	end
+	-- And what the sweep itself costs. It happens once a game MINUTE -- six seconds
+	-- of wall clock at ten passes a second -- so the room here is not a pass's but
+	-- sixty of them; ten times the per-pass ceiling is still three orders of
+	-- magnitude of it, and the number is printed so a reader can check the claim.
+	check("a minute of the sweep over six full queues is far under a pass's own " ..
+		"ceiling times ten (" .. string.format("%.3f", worstMinuteMs) .. " ms)",
+		worstMinuteMs < ceiling(WALL_MS_PER_PASS) * 10)
+	report[#report + 1] = string.format(
+		"  %-22s worst %4d steps/pass, %6.3f ms/minute (%d jobs x 6 machines)",
+		"at queues waiting", worst, msPerMinute, queued)
+
+	-- And now every one of them is due. The machine has four job slots, so it takes
+	-- them four at a time -- and loses none: a job that could not start is still in
+	-- the queue next minute.
+	local machine = machines[1]
+	local state = states[1]
+	local drained = 0
+	for minute = 101, 400 do
+		atMinute = minute + 1440
+		CeroSecJobs.atPass(system3, machine, NOW + 86400 + minute * 60)
+		for _ = 1, 10 do
+			_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+			tickSteps = 0
+			CeroSecJobs.runMachine(system3, machine,
+				CeroSec.STEP_BUDGET_PER_MACHINE, _G.__now, nil, nil, true, nil)
+		end
+		check("never more than four jobs at once (" ..
+			CeroSecOS.liveJobs(CeroSecJobs.book(machine).list) .. ")",
+			CeroSecOS.liveJobs(CeroSecJobs.book(machine).list) <= CeroSecOS.MAX_JOBS)
+		if #CeroSecOS.atJobs(state) == 0 then
+			drained = minute
+			break
+		end
+	end
+	check("the whole queue drained (" .. tostring(drained) .. " minutes for "
+		.. queued .. " jobs)", drained > 0)
+	-- Every one of them ran: what they printed is in the mail, and the mailbox is
+	-- bounded like cron's because it is cron's.
+	local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin"))
+	check("and every one of them was mailed", box ~= nil and #box.data > 0)
+	check("a hundred lines at most (" .. #CeroSecOS.splitLines(box.data) .. ")",
+		#CeroSecOS.splitLines(box.data) <= CeroSecOS.MAIL_LINES)
+	check("the machine still boots", CeroSecOS.validate(state) == true)
 end
 
 --

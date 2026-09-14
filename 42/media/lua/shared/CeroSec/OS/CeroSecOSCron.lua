@@ -110,6 +110,11 @@ function CeroSecOS.ensureVar(state)
 	if type(spool.children.cron) ~= "table" or spool.children.cron.type ~= "dir" then
 		spool.children.cron = CeroSecOS.newDir("root", CeroSecOS.CRON_DIR_MODE)
 	end
+	-- And at's queue beside cron's, on the same terms and for the same reason: a
+	-- job that will run AS somebody is not a file anybody else may read or write.
+	if type(spool.children.at) ~= "table" or spool.children.at.type ~= "dir" then
+		spool.children.at = CeroSecOS.newDir("root", CeroSecOS.AT_DIR_MODE)
+	end
 	under("log", 755)
 	under("mail", 755)
 	-- The scratch directory. Written to by everybody, emptied by nobody but the
@@ -492,6 +497,148 @@ commands.crontab = function(state, session, args, env)
 	end
 
 	return false, { "crontab: usage: " .. CeroSecOS.commandUsage("crontab") }
+end
+
+--
+-- at: the one job, at the one time
+--
+-- cron is a line that comes round again; at is a thing to do ONCE, at a time you
+-- name, and then forget. Both are 1993's, both run through the same machinery
+-- here -- the queue is read once a game minute by the same sweep that reads the
+-- crontabs, a job becomes an ordinary background job of the account's, and what it
+-- prints goes to that account's mail because nobody is standing at the screen.
+--
+-- ONE difference from cron, and it is at's own: a job whose time has PASSED still
+-- runs. cron's minute is either due or it is gone -- there is no anacron here and a
+-- machine that was off at four in the morning did not run four o'clock's line --
+-- but an at job is a thing somebody asked for, it sits in the spool until it has
+-- been done, and atrun on a real machine catches up on it the same way when the
+-- machine comes back.
+--
+-- The queue is /var/spool/at, one FILE per job, named by the job number: root's at
+-- 600 like a crontab, in a directory that is root's at 700, and `at` is the
+-- program that reaches them on an account's behalf -- the same setuid-root shape
+-- crontab(1) has here and for the same reason. So the queue survives a save
+-- because the filesystem does, and `sudo cat /var/spool/at/1` is how an
+-- administrator reads what somebody queued.
+--
+-- The FILE's shape is this machine's own, like the tar container: a header line
+-- and the commands after it.
+--
+--   at admin 742122960
+--   echo the lights are off > /home/admin/night.log
+--
+-- A real at wrote a shell script with the whole environment in it, which on a
+-- machine with a 4096-byte file would be a header longer than anything anybody
+-- queues. What is not ours is anything a player sees: the times, the numbers, the
+-- listing and the refusals are at(1)'s, atq(1)'s and atrm(1)'s.
+--
+
+CeroSecOS.AT_PATH = "/var/spool/at"
+-- The directory is root's and 700 for the crontab's reason: a queued job is a
+-- thing that will run AS somebody, so nobody reads anybody else's and nobody
+-- writes his own except through at(1).
+CeroSecOS.AT_DIR_MODE = 700
+CeroSecOS.AT_JOB_MODE = 600
+-- The first word of a job file, so a file that is not one is not read as one.
+CeroSecOS.AT_MAGIC = "at"
+
+function CeroSecOS.atJobPath(n)
+	return CeroSecOS.AT_PATH .. "/" .. tostring(n)
+end
+
+-- The text of a job file. Pure, like the tar container's two halves.
+function CeroSecOS.atText(user, when, cmd)
+	return CeroSecOS.AT_MAGIC .. " " .. tostring(user) .. " " .. tostring(math.floor(when))
+		.. "\n" .. tostring(cmd)
+end
+
+-- And back: the account, the second it is due, and the commands. nil for a file
+-- that is not a job file at all -- one root wrote by hand, or something else that
+-- ended up at that name.
+function CeroSecOS.atParse(text)
+	if type(text) ~= "string" then return nil end
+	local nl = string.find(text, "\n", 1, true)
+	if nl == nil then return nil end
+	local user, when = string.match(string.sub(text, 1, nl - 1),
+		"^" .. CeroSecOS.AT_MAGIC .. " (%S+) (%d+)$")
+	if user == nil then return nil end
+	local cmd = string.sub(text, nl + 1)
+	if cmd == "" then return nil end
+	return user, tonumber(when), cmd
+end
+
+-- Every job in the queue, by number: { n =, user =, when =, cmd = }. Read with no
+-- session, the way the kernel reads /etc/passwd -- the directory is root's and this
+-- is what makes `at -l` able to answer at all.
+function CeroSecOS.atJobs(state)
+	local out = {}
+	local dir = CeroSecOS.systemNode(state, CeroSecOS.AT_PATH)
+	if type(dir) ~= "table" or dir.type ~= "dir" then return out end
+	local names = CeroSecOS.childNames(dir)
+	for i = 1, #names do
+		local n = tonumber(names[i])
+		local node = dir.children[names[i]]
+		-- A name that is not a number is not a job of ours, and neither is anything
+		-- that is not a file: both are left exactly where they are.
+		if n ~= nil and string.find(names[i], "^%d+$") ~= nil
+				and type(node) == "table" and node.type == "file" then
+			local user, when, cmd = CeroSecOS.atParse(node.data or "")
+			if user ~= nil then
+				out[#out + 1] = { n = n, user = user, when = when, cmd = cmd }
+			end
+		end
+	end
+	-- By number, which is by the order they were queued in: the numbers are handed
+	-- out lowest-free-first, so this is not the order they will RUN in and `at -l`
+	-- says the time beside each one for that reason.
+	for i = 2, #out do
+		local hold = out[i]
+		local k = i - 1
+		while k >= 1 and out[k].n > hold.n do
+			out[k + 1] = out[k]
+			k = k - 1
+		end
+		out[k + 1] = hold
+	end
+	return out
+end
+
+-- The number the next job gets: the lowest that is free. A real at counts up for
+-- ever; this one reuses a number the moment its job has run, because the number is
+-- the file's NAME here and a name is 32 characters -- and because a survivor who
+-- queues one job a day for a year should not be typing `atrm 365`.
+function CeroSecOS.atFree(state)
+	local taken = {}
+	local jobs = CeroSecOS.atJobs(state)
+	for i = 1, #jobs do taken[jobs[i].n] = true end
+	local dir = CeroSecOS.systemNode(state, CeroSecOS.AT_PATH)
+	local n = 1
+	while taken[n] do n = n + 1 end
+	-- The spool is a directory and a directory holds MAX_DIR_ENTRIES: a queue that
+	-- is full is a queue at said so, not a job quietly lost.
+	if type(dir) == "table" and dir.type == "dir"
+			and CeroSecOS.countEntries(dir) >= CeroSecOS.MAX_DIR_ENTRIES then
+		return nil
+	end
+	return n
+end
+
+-- "at HH:MM" -> the second that time next comes round, counting from `now`. Today
+-- if it has not happened yet, tomorrow if it has, which is what at(1) does with a
+-- time and no date: `at 04:00` at nine in the morning means four tomorrow.
+-- nil for anything that is not a time.
+function CeroSecOS.atWhen(text, now)
+	if type(text) ~= "string" or type(now) ~= "number" then return nil end
+	local hh, mm = string.match(text, "^(%d%d?):(%d%d)$")
+	if hh == nil then return nil end
+	local hour, min = tonumber(hh), tonumber(mm)
+	if hour > 23 or min > 59 then return nil end
+	local parts = CeroSecOS.dateParts(now)
+	local midnight = now - (parts.hour * 3600 + parts.min * 60 + parts.sec)
+	local when = midnight + hour * 3600 + min * 60
+	if when <= now then when = when + 86400 end
+	return when
 end
 
 --

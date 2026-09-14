@@ -2439,7 +2439,12 @@ function SCeroSecSystem:checkCron()
 	if now == nil then return end
 	for i = 1, self:getLuaObjectCount() do
 		local luaObject = self:getLuaObjectByIndex(i)
-		if luaObject.on then CeroSecJobs.cronPass(self, luaObject, now) end
+		if luaObject.on then
+			CeroSecJobs.cronPass(self, luaObject, now)
+			-- And the at queue, on the same sweep and the same minute: one walk of
+			-- the list, because the two ask the same question of the same machines.
+			CeroSecJobs.atPass(self, luaObject, now)
+		end
 	end
 end
 

@@ -131,6 +131,9 @@ Commands:
 | `export NAME[=value]...` | put a name in the **environment**, which is the set of variables a program you run is handed. `x=5` is a variable of the shell's own and a script does not see it; `export x` puts it in, and the value follows the name afterwards. With no name at all it lists what is in the environment, one `export NAME=value` a line |
 | `env` | the environment as it will be handed over, `NAME=value` a line, sorted. Not the shell's variables: `env` shows what a script of yours can actually see |
 | `. <file>` | read the file **in this shell**, so what it sets is still set afterwards — the one way in, because `sh <file>` and `./<file>` run it as a program and a program is handed a copy. It wants `r` on the file and not `x`. This is how `.profile` is read. `source` is csh's and bash's word for it and is not here |
+| `at HH:MM` | queue one job for a time you name, reading the commands from a **pipe**: `echo halt \| at 04:00`, `cat plan \| at 23:30`. It answers `job 1 at Fri Jul  9 04:00:00 1993`. A time that has gone by today means tomorrow; `HH:MM` and nothing else (no `now + 1 hour`). The output goes to your **mail**, as a crontab line's does. Unlike cron it does **not** forget: a job queued for four o'clock on a machine that was off at four runs when the machine comes back |
+| `at -l` / `atq` | what is waiting: the job number and when it is due, yours only (root sees every account's) |
+| `at -r <job>...` / `atrm <job>...` | take a waiting job out of the queue. Somebody else's is not yours to remove — root's rule, as `kill`'s is |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |

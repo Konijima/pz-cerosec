@@ -646,6 +646,14 @@ CeroSecOS.COMMAND_INFO = {
 	-- is derived and stored nowhere: see the head of arp in CeroSecOSNet.lua.
 	arp      = { desc = "show the cards on the wire",
 		usage = "arp -a | arp <host|address>" },
+	-- at(1) and its two other names, which are the same programs under the names
+	-- 1993 had them under: atq is `at -l` and atrm is `at -r`, and POSIX.2 gives at
+	-- those two flags as well. The commands come from the standard input, which is
+	-- at's own rule and on this machine is a pipe -- see the head of commands.at.
+	at       = { desc = "run commands once, at a time you name",
+		usage = "at HH:MM | at -l | at -r <job>..." },
+	atq      = { desc = "list the jobs waiting to run", usage = "atq" },
+	atrm     = { desc = "take a waiting job out of the queue", usage = "atrm <job>..." },
 	cat      = { desc = "print a file", usage = "cat [file]..." },
 	-- The five words the SHELL is, and so the five with no file in /bin: a
 	-- program cannot move the shell that ran it, and cannot own its jobs either
@@ -2754,9 +2762,10 @@ end
 -- it, and a find that refused it would be a find that argued.
 --
 -- The tests are AND-ed, which is the only way this one combines them: there is
--- no -o, no -a, no parentheses and no -exec. What is here is what a survivor
--- needs to find a file on a disk with five hundred nodes on it, and the manual
--- says exactly that.
+-- no -o, no -a and no parentheses. What is here is the two tests, the action that
+-- is implied when none is named, and -exec -- what a survivor needs to find a file
+-- on a disk with five hundred nodes on it and then do something to it, and the
+-- manual says exactly that.
 --
 -- One consequence worth knowing, and it is the MACHINE's rule rather than find's:
 -- a walk that met a directory it may not read comes back UNSUCCESSFUL, and an
@@ -3199,6 +3208,146 @@ commands.find = function(state, session, args, env, stdin, sh)
 		return true, out
 	end
 	return carry.ok, out
+end
+
+--
+-- at, atq, atrm: one thing, once, at a time you name
+--
+-- The three programs 1993 had, under the three names it had them under -- atq is
+-- `at -l` and atrm is `at -r`, which is how the two of them were built on every
+-- BSD, and POSIX.2 gives at those two flags as well. The queue, the file a job is
+-- kept in and the reason a late job still runs are in CeroSecOSCron.lua, beside
+-- cron's; what is here is the command.
+--
+-- WHERE THE COMMANDS COME FROM. From the standard input, which is at's own rule --
+-- "at reads commands from standard input" -- and on this machine standard input is
+-- a PIPE and nothing else: there is no keyboard behind a command here (see the
+-- head of stdinOf). So it is
+--
+--   admin@ksp-04-11:~$ echo halt | at 04:00
+--   job 1 at Fri Jul  9 04:00:00 1993
+--   admin@ksp-04-11:~$ cat plan.sh | at 23:30
+--
+-- and `at 04:00` with nothing on its left prints its usage line, which is the
+-- answer every other command that reads a pipe gives in that position. The manual
+-- page says so in those words.
+--
+-- The FILE is written as root, on this account's behalf, exactly as `crontab -e`
+-- writes a crontab and for the same reason: a queued job runs AS somebody, so the
+-- queue is root's and this is the one program that reaches into it.
+--
+
+-- What at prints when it has queued one. at(1)'s own line, with the machine's own
+-- date in it.
+local function atQueued(n, when)
+	return "job " .. tostring(n) .. " at " .. CeroSecOS.formatDate(when)
+end
+
+-- The listing `at -l` and `atq` print: the number and when it is due, one a line,
+-- and only the account's own jobs unless it is root looking -- which is what atq
+-- does everywhere.
+local function atList(state, session)
+	local me = CeroSecOS.userOf(session)
+	local jobs = CeroSecOS.atJobs(state)
+	local out = {}
+	for i = 1, #jobs do
+		if me == "root" or jobs[i].user == me then
+			out[#out + 1] = tostring(jobs[i].n) .. "  " .. CeroSecOS.formatDate(jobs[i].when)
+		end
+	end
+	return true, out
+end
+
+-- And `at -r` / `atrm`: the job goes. Somebody else's is not yours to remove, and
+-- root's rule is root's everywhere -- the same rule `kill` runs on, in the same
+-- words.
+local function atRemove(state, session, args, from, who, env)
+	if args[from] == nil then return usage(who) end
+	local me = CeroSecOS.userOf(session)
+	local jobs = CeroSecOS.atJobs(state)
+	local out, okAll = {}, true
+	for i = from, #args do
+		local n = tonumber(args[i])
+		local found = nil
+		for k = 1, #jobs do
+			if n ~= nil and jobs[k].n == n then found = jobs[k] end
+		end
+		if found == nil then
+			okAll = false
+			out[#out + 1] = who .. ": " .. args[i] .. ": no such job"
+		elseif me ~= "root" and found.user ~= me then
+			okAll = false
+			out[#out + 1] = who .. ": " .. args[i] .. ": Operation not permitted"
+		else
+			local gone, reason = CeroSecOS.removeNode(state, CeroSecOS.rootSession(),
+				CeroSecOS.atJobPath(found.n), false, CeroSecOS.clockOf(env))
+			if gone == nil then
+				okAll = false
+				out[#out + 1] = who .. ": " .. args[i] .. ": " .. reason
+			end
+		end
+	end
+	return okAll, out
+end
+
+commands.at = function(state, session, args, env, stdin)
+	if args[2] == nil then return usage("at") end
+	if args[2] == "-l" then
+		if #args > 2 then return usage("at") end
+		return atList(state, session)
+	end
+	if args[2] == "-r" then return atRemove(state, session, args, 3, "at", env) end
+	if #args ~= 2 then return usage("at") end
+
+	local now = CeroSecOS.clockOf(env)
+	if now == nil then return fail("at", nil, "no clock") end
+	local when = CeroSecOS.atWhen(args[2], now)
+	if when == nil then return usage("at") end
+
+	-- The commands, off the pipe. Nothing can be queued before the end of it: the
+	-- last line may still be coming, so what has arrived is kept -- under the
+	-- ceiling a pipe itself has -- until the pipe closes. Exactly `sort`'s shape,
+	-- and for the same reason.
+	if type(stdin) ~= "table" then return usage("at") end
+	stdin.want = true
+	local carry = stdin.carry
+	for i = 1, #stdin.lines do
+		if not holdLine(carry, stdin.lines[i]) then carry.over = true end
+	end
+	if carry.over then
+		stdin.done = true
+		return fail("at", nil, "input too large")
+	end
+	if not stdin.eof then return true, {} end
+
+	local cmd = table.concat(carry.lines or {}, "\n")
+	-- A job with nothing in it is not a job: at reads its commands and there were
+	-- none. Real at queues an empty script and runs it to no effect; this says so
+	-- instead, because a queue with an empty job in it is a line a survivor cannot
+	-- read the point of.
+	if cmd == "" then return fail("at", nil, "no commands") end
+
+	local n = CeroSecOS.atFree(state)
+	if n == nil then return fail("at", nil, "queue full") end
+	local path = CeroSecOS.atJobPath(n)
+	local file = CeroSecOS.newFile("root", CeroSecOS.AT_JOB_MODE,
+		CeroSecOS.atText(CeroSecOS.userOf(session), when, cmd))
+	local made, reason = CeroSecOS.createNode(state, CeroSecOS.rootSession(), path, file,
+		CeroSecOS.clockOf(env))
+	if made == nil then return fail("at", path, reason) end
+	return true, { atQueued(n, when) }
+end
+
+-- The two other names, which are the same programs: atq(1) is `at -l` and atrm(1)
+-- is `at -r`, and they are separate files in /bin because they were separate files
+-- in /bin.
+commands.atq = function(state, session, args, env)
+	if #args > 1 then return usage("atq") end
+	return atList(state, session)
+end
+
+commands.atrm = function(state, session, args, env)
+	return atRemove(state, session, args, 2, "atrm", env)
 end
 
 --
