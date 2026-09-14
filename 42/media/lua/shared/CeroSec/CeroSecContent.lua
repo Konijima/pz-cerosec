@@ -402,6 +402,14 @@ CeroSecContent.PREMISES_WORDS = {
 	{ "police", "police" }, { "prison", "police" },
 	{ "bank", "bank" },
 	{ "school", "school" }, { "classroom", "school" }, { "university", "school" },
+	-- The two health words the shipped map spells out for a practice rather than a
+	-- ward: `dentist` (15 rooms in the county) and `optometrist` (8). They are here
+	-- because a tenancy in a mall is named by its ROOM and a mall's dentist would
+	-- otherwise fall through to residential -- which is the complaint this list was
+	-- re-read for. `doctor` is not a room name the county has and is here for a mod
+	-- map that spells it.
+	{ "dentist", "clinic" }, { "optometrist", "clinic" }, { "doctor", "clinic" },
+	{ "pharmacy", "clinic" },
 	{ "clinic", "clinic" }, { "medical", "clinic" }, { "hospital", "clinic" },
 	{ "radio", "radio" }, { "broadcast", "radio" },
 	{ "military", "military" }, { "army", "military" },
@@ -476,6 +484,135 @@ function CeroSecContent.profileFor(premisesName, rooms)
 		end
 	end
 	return CeroSecContent.DEFAULT_PROFILE
+end
+
+--
+-- WHICH ROOMS ARE SEPARATE SHOPS
+--
+-- A premises was a named zone or else a whole building, and the shipped map's malls
+-- have no zones in them -- so thirty shops were one premises, one profile, one
+-- staff, one telephone line. The report that started this said it in six words: the
+-- music store computer and the dentist one have no specifics.
+--
+-- A tenancy therefore has to be read off the ROOMS, and the whole difficulty is
+-- that a RoomDef's name is a LOOT TYPE and says nothing about tenancy. The rule
+-- below is the one that survived being counted against all 9546 buildings of the
+-- shipped county -- the count, the four rules it beat and why each of those is
+-- wrong is docs/notes/tenancies.md, and the numbers are worth reading before
+-- changing a word here.
+--
+-- A SHOPFRONT ROOM is a room whose name carries a word below, and the list is
+-- short and deliberate rather than "PREMISES_WORDS without the residential ones":
+--
+--   * `office` is 3977 rooms in the county and nearly every business has one, so
+--     an office is somebody's back room and never a second business.
+--   * `classroom` is 89 and `prisoncells` is 540: a tenancy word there would break
+--     every school into twenty premises with a telephone line each.
+--   * a `storage` is never a second shop -- `gunstorestorage`, `bookstorage`,
+--     `pharmacystorage` all carry a shopfront word and all of them are the back of
+--     the shop in front of them. Same for a `counter`, which is the shop's till.
+--
+CeroSecContent.TENANCY_WORDS = { "store", "shop", "market" }
+
+-- And the trades the map spells out instead of calling them a shop. Every one of
+-- these is a room name the shipped county really has, and a bench holds the list to
+-- it: a word nothing on the map wears is a tenancy nobody would ever stand in.
+CeroSecContent.TENANCY_TRADES = {
+	"dentist", "optometrist", "pharmacy", "bakery", "butcher", "knoxbutcher",
+	"cafe", "diner", "restaurant", "bank", "pawnshop",
+}
+
+-- What disqualifies a name that carries one of the words above.
+CeroSecContent.TENANCY_NOT = { "storage", "counter" }
+
+-- The common parts of a mall, which belong to nobody: a corridor is not the shop it
+-- happens to share its longest wall with. Anything else that is not a shopfront --
+-- a stock room, a bathroom, a break room, an office over the shops -- goes to the
+-- tenancy it shares its longest wall with (CeroSecNet.tenantOfSquare), because that
+-- is the shop whose back room it is.
+CeroSecContent.TENANCY_COMMON = {
+	"hall", "corridor", "lobby", "foyer", "elevator", "stairwell", "catwalk",
+	"balcony", "empty", "emptyoutside", "derelict", "vacated", "construction",
+}
+
+-- Is a room of this name and this floor area a shop somebody traded in?
+--
+-- The AREA is in the question and it is not a calibrated number: a room of ONE TILE
+-- is a gas station's pump island, and there were thirteen gas stations in the county
+-- coming out as four premises each because their four `gasstore` kiosks never touch
+-- one another. A single tile is not somewhere a counter stands.
+--
+-- Pure, and that is the seam: which names mean a shop is decided here with no world
+-- in sight, and where the rooms are is the server's (CeroSecNet.tenancies).
+function CeroSecContent.isTenancyName(name, area)
+	if type(name) ~= "string" or name == "" then return false end
+	if type(area) ~= "number" or area < 2 then return false end
+	local low = string.lower(name)
+	for i = 1, #CeroSecContent.TENANCY_NOT do
+		if string.find(low, CeroSecContent.TENANCY_NOT[i], 1, true) ~= nil then
+			return false
+		end
+	end
+	for i = 1, #CeroSecContent.TENANCY_TRADES do
+		if low == CeroSecContent.TENANCY_TRADES[i] then return true end
+	end
+	for i = 1, #CeroSecContent.TENANCY_WORDS do
+		if string.find(low, CeroSecContent.TENANCY_WORDS[i], 1, true) ~= nil then
+			return true
+		end
+	end
+	return false
+end
+
+-- Is a room of this name one of the common parts, which is nobody's?
+function CeroSecContent.isCommonName(name)
+	if type(name) ~= "string" or name == "" then return false end
+	local low = string.lower(name)
+	for i = 1, #CeroSecContent.TENANCY_COMMON do
+		if string.find(low, CeroSecContent.TENANCY_COMMON[i], 1, true) ~= nil then
+			return true
+		end
+	end
+	return false
+end
+
+-- A room name as a person reads it: "musicstore" -> "Music Store", "dentist" ->
+-- "Dentist". It is the label the firmware prints beside the telephone number and
+-- the line the phone book carries, so a survivor in a mall knows which of the
+-- eleven shops he is sitting in.
+--
+-- A room name is one lower-case word because it is a loot key, so there is no case
+-- to split on the way CeroSecPhonebook.spaced splits a zone name. THE RULE: split
+-- once, in front of the trade word the name ends on, and capitalise both halves.
+-- Deliberately that and nothing cleverer -- "leatherclothesstore" comes out
+-- "Leatherclothes Store" and that is the honest reading of a word the map wrote as
+-- one, where guessing at a second break would be inventing a shop name.
+function CeroSecContent.tenancyLabel(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local low = string.lower(name)
+	local cut = nil
+	for i = 1, #CeroSecContent.TENANCY_WORDS do
+		local word = CeroSecContent.TENANCY_WORDS[i]
+		-- The LAST occurrence, so "cornerstore" breaks before "store" and not
+		-- inside a name that carries the word twice.
+		local at = nil
+		local from = 1
+		while true do
+			local found = string.find(low, word, from, true)
+			if found == nil then break end
+			at = found
+			from = found + 1
+		end
+		-- Only a break that leaves something in front of it: "store" on its own is
+		-- one word and "Store" is what it reads as.
+		if at ~= nil and at > 1 and (cut == nil or at > cut) then cut = at end
+	end
+	local function title(part)
+		if part == "" then return "" end
+		return string.upper(string.sub(part, 1, 1)) .. string.sub(part, 2)
+	end
+	if cut == nil then return title(low) end
+	return title(string.sub(low, 1, cut - 1)) .. " " .. title(string.sub(low, cut))
 end
 
 --

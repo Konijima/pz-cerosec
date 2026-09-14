@@ -170,6 +170,40 @@ function CeroSecOS.premisesKey(zx, zy, zw, zh)
 	return math.floor(h / 256), math.fmod(h, 256)
 end
 
+-- And the two bytes for a premises that is a ROOM of a building, which is what a
+-- shop in a mall is when the map drew no zone around it: the same arithmetic again
+-- over the corner of the BUILDING, the corner of the ROOM, and which floor it is on.
+--
+-- WHY NOT RoomDef.getID(), which is right there and looks made for this. Because it
+-- is a load counter: the low 32 bits of the id are how many rooms were already
+-- registered in that map cell when the lot header was read, so the id of a room
+-- depends on which lot headers reached the cell first -- and a basement spawned
+-- during play advances the same counter while adding its rooms to the building. A
+-- save whose addresses moved because somebody added a map mod is exactly the kind of
+-- thing this rung must not do. The offsets are in docs/notes/tenancies.md.
+--
+-- The corner of the ROOM and its LEVEL are what identify it, and both are needed:
+-- rooms do not overlap on one floor, but a shop with a mezzanine is the same corner
+-- on two floors and they are two rooms. The BUILDING's corner is in it as well, so
+-- that a room premises can never hash onto its own building's key.
+--
+-- Deterministic and nothing else, exactly as the two keys above are, and a collision
+-- is what it is for them: two premises with no wire between them and a party line.
+function CeroSecOS.roomKey(bx, by, rx, ry, level)
+	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
+	if type(rx) ~= "number" or type(ry) ~= "number" then return nil end
+	if type(level) ~= "number" then return nil end
+	local corner = math.fmod(math.floor(bx) * 40503 + math.floor(by) * 12289, 65536)
+	local room = math.fmod(math.floor(rx) * 40503 + math.floor(ry) * 12289, 65536)
+	-- The floor goes through the generator rather than being added raw: level 1 and
+	-- level 0 of one shop have to land nowhere near each other, and an increment of
+	-- one on a sum of two hashes is a neighbour.
+	local floor = math.fmod(math.floor(level) * 25173 + 13849, 65536)
+	local h = math.fmod(corner + room + floor, 65536)
+	if h < 0 then h = h + 65536 end
+	return math.floor(h / 256), math.fmod(h, 256)
+end
+
 -- The address as it is written and as it is read. One place, so that ifconfig,
 -- the BIOS line, /etc/hosts and ping cannot drift into four spellings.
 function CeroSecOS.addressText(b1, b2, n)
@@ -197,6 +231,13 @@ function CeroSecOS.isAddress(text)
 	end
 	return true
 end
+
+-- The two kinds of premises that are smaller than the building they are in, as the
+-- words the record carries: a named zone the map drew round a shop, and a room of a
+-- building that holds more than one shop. A machine whose premises IS the building
+-- carries neither.
+CeroSecOS.PREMISES_ZONE = "zone"
+CeroSecOS.PREMISES_ROOM = "room"
 
 -- The machine's own record: which building it is on and which computer of it
 -- this is. Kept in the state and therefore saved, because an address has to
@@ -245,7 +286,21 @@ function CeroSecOS.netRecord(state)
 		if #pz > CeroSecOS.COLS then return nil end
 		if CeroSecOS.hasControlBytes(pz) then return nil end
 	end
-	return { b1 = b1, b2 = b2, n = n, ex = ex, pz = pz,
+	-- And WHAT KIND of premises the two bytes were worked out from, which is optional
+	-- for the third time and for a third reason: it is a label like pz, nothing is
+	-- keyed by it -- the key is derived from the world again every time the square is
+	-- answerable -- and every save written before a building could hold more than one
+	-- premises carries none. Absent reads as "the building", which is what such a
+	-- machine was on. A value that IS there has to be one of the two words this build
+	-- writes, because a forged save must be a machine with no record rather than a
+	-- machine the debug window prints a made-up kind for.
+	local pk = net.pk
+	if pk ~= nil then
+		if pk ~= CeroSecOS.PREMISES_ZONE and pk ~= CeroSecOS.PREMISES_ROOM then
+			return nil
+		end
+	end
+	return { b1 = b1, b2 = b2, n = n, ex = ex, pz = pz, pk = pk,
 		wrote = net.wrote and true or false }
 end
 
@@ -267,7 +322,10 @@ end
 -- until the server sees the building again.
 -- pz is what the premises is called, and may be left out: a machine whose premises
 -- is the building it stands in has nothing to be called.
-function CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz)
+-- pk is which KIND of premises those bytes came off, and it travels with pz for the
+-- same reason: a name with no kind behind it would leave the debug window and the
+-- book guessing which rule wrote the record.
+function CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz, pk)
 	if type(state) ~= "table" then return nil end
 	if CeroSecOS.addressText(b1, b2, n) == nil then return nil end
 	local record = { b1 = math.floor(b1), b2 = math.floor(b2), n = math.floor(n) }
@@ -286,6 +344,12 @@ function CeroSecOS.setNetRecord(state, b1, b2, n, ex, pz)
 	if type(pz) == "string" and pz ~= "" and #pz <= CeroSecOS.COLS
 			and not CeroSecOS.hasControlBytes(pz) then
 		record.pz = pz
+	end
+	-- The kind is dropped with the name and never without it: a record with a kind
+	-- and no name to print would say a machine is in a shop and not say which.
+	if record.pz ~= nil
+			and (pk == CeroSecOS.PREMISES_ZONE or pk == CeroSecOS.PREMISES_ROOM) then
+		record.pk = pk
 	end
 	state.net = record
 	return CeroSecOS.netRecord(state)
@@ -462,6 +526,22 @@ function CeroSecOS.phoneOfZone(zx, zy, zw, zh)
 	local b1, b2 = CeroSecOS.premisesKey(zx, zy, zw, zh)
 	if b1 == nil then return nil end
 	return CeroSecOS.phoneText(CeroSecOS.phoneExchange(zx, zy), CeroSecOS.phoneKey(b1, b2))
+end
+
+-- And the line a ROOM of a multi-tenant building is the premises of, for the same
+-- one caller and the same one reason: the book lists the shops of a mall nobody has
+-- ever put a computer in.
+--
+-- The exchange is the BUILDING's corner and not the room's, which is the one place
+-- this differs from phoneOfZone and is deliberate: every shop of one mall is wired
+-- back to one central office, exactly as every computer of one building is (see the
+-- note over phoneExchange), and a mall that straddled a region boundary would
+-- otherwise have shops on two switches.
+function CeroSecOS.phoneOfRoom(bx, by, rx, ry, level)
+	local b1, b2 = CeroSecOS.roomKey(bx, by, rx, ry, level)
+	if b1 == nil then return nil end
+	return CeroSecOS.phoneText(CeroSecOS.phoneExchange(bx, by),
+		CeroSecOS.phoneKey(b1, b2))
 end
 
 -- Which central office's region a coordinate falls in, as the two cell numbers.
