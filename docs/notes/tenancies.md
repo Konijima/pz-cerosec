@@ -247,18 +247,18 @@ list to being a room name the shipped map really has.
 ## The cost, measured
 
 The rule walks a building's rooms, and a mall has a lot of them. Measured on the
-biggest one the county has -- 13515,1261, 498 rooms, 70 of them shopfronts --
+biggest one the county has — 13515,1261, 498 rooms, 70 of them shopfronts --
 `CeroSecNet.premisesOfSquare` cost **2.5 ms a call** under `lua5.1`, and Kahlua is
 slower than that.
 
 That is nothing for switching a machine on, which happens once. It is a great deal
 for the caller nobody thinks of: `Events.OnFillContainer` fires for **every
 container** as loot is generated, and the papers in the drawers ask the rule on each
-one -- so a mall's chunk load would have spent most of a second in here, twice over,
+one — so a mall's chunk load would have spent most of a second in here, twice over,
 because the profile asks again for the tenancy's own room names.
 
 So the answer is cached per building for the session (`CeroSecNet.tenanciesOf`), which
-takes it to **0.010 ms a call** -- a chunk load of three hundred containers goes from
+takes it to **0.010 ms a call** — a chunk load of three hundred containers goes from
 about 750 ms to 3 ms. It is derived from the map and never saved.
 
 **What invalidates it**, and it is not "nothing": `BuildingDef.rooms` grows during
@@ -275,7 +275,7 @@ public int getRoomsNumber();
 
 Keyed on the building's **corner**. The def object would in fact do --
 `IsoBuilding.getDef()` is `getfield def` and `IsoMetaGrid.getBuildingAt` returns the
-instance out of its own `buildings` list, so one building really is one object -- and
+instance out of its own `buildings` list, so one building really is one object — and
 the corner is used anyway because it is the identity this whole rung already runs on,
 and because a table key that is a Java object across the Kahlua boundary is an
 identity nobody here has proved.
