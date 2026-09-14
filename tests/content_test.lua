@@ -1034,6 +1034,12 @@ do
 							.. ")", CeroSecOS.inGroup(state, login, CeroSecOS.DEV_GROUP))
 						eq(id .. ": and may not become root", CeroSecOS.sudoer(state, login),
 							nil)
+						-- The passwd flag is a mirror of wheel, and he is not in wheel:
+						-- his prompt ends in $, as the parcours says.
+						eq(id .. ": and carries no admin flag (" .. login .. ")",
+							CeroSecOS.getUser(state, login).admin and true or false, false)
+						eq(id .. ": and is not in wheel",
+							CeroSecOS.inGroup(state, login, CeroSecOS.WHEEL_GROUP), false)
 						-- Through the command a player would type, not only through the
 						-- function behind it: sudo is the wire, and the refusal is what he
 						-- reads.

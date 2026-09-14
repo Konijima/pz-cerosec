@@ -3320,7 +3320,10 @@ local function makeAccounts(state, session, profile, secret, b1, b2, mkey, now)
 			if not placeDir(state, session, home, name, CeroSecOS.HOME_MODE, now) then
 				home = "/"
 			end
-			if CeroSecOS.addUser(state, name, home, account.admin and true or false,
+			-- The passwd flag mirrors membership of wheel and nothing else (it is
+			-- what puts the # on a prompt); the staff administrator is never in
+			-- wheel, so the flag stays down and his prompt ends in $.
+			if CeroSecOS.addUser(state, name, home, false,
 					mkey .. ":" .. i, now) == nil then
 				name = nil
 			elseif account.admin then
