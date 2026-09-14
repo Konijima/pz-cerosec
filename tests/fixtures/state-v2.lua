@@ -1,5 +1,5 @@
 --
--- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 17.
+-- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 18.
 --
 -- Written by tools/capture-fixture.sh and never by hand: it is what a build
 -- really wrote, and tests/migrate_test.lua walks it up to whatever the code is
@@ -92,6 +92,27 @@ return {
 						},
 						arp = {
 							data = "show the cards on the wire",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
+						at = {
+							data = "run commands once, at a time you name",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
+						atq = {
+							data = "list the jobs waiting to run",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
+						atrm = {
+							data = "take a waiting job out of the queue",
 							group = "root",
 							mode = 755,
 							owner = "root",
@@ -190,6 +211,13 @@ return {
 						},
 						edit = {
 							data = "edit a file",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
+						env = {
+							data = "print the environment",
 							group = "root",
 							mode = 755,
 							owner = "root",
@@ -496,6 +524,13 @@ return {
 							owner = "root",
 							type = "file",
 						},
+						tar = {
+							data = "store files in one archive",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
 						tee = {
 							data = "copy the input to the screen and to files",
 							group = "root",
@@ -782,6 +817,13 @@ return {
 						},
 						spool = {
 							children = {
+								at = {
+									children = {},
+									group = "root",
+									mode = 700,
+									owner = "root",
+									type = "dir",
+								},
 								cron = {
 									children = {
 										admin = {
@@ -833,9 +875,9 @@ return {
 			pz = "Coffee Shop",
 		},
 		sessions = {},
-		sysv = 17,
+		sysv = 18,
 		v = 2,
 	},
-	sysv = 17,
+	sysv = 18,
 	v = 2,
 }

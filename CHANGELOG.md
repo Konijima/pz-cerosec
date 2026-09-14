@@ -8,167 +8,45 @@ date.
 
 ## Unreleased
 
-- **Every shop in a mall is its own business now.** A shopping mall is one building,
-  and until now that made it one business: one telephone number for thirty shops, one
-  staff on every computer in it, and one password on one paper that opened all of them.
-  The music store's computer and the dentist's were the same machine. They are not any
-  more. Each shop has its own number, its own length of coax, its own people, and its
-  own password on the paper in its own drawer -- so the dentist's machine is a clinic's
-  and the music store's is a shop's.
-- Which shop a computer is in is on its BIOS screen beside the number,
-  `Phone line: 555-2260 (Music Store)`, and the shops of a mall are in the phone book
-  now under their trades -- which is how you find the number of the one two floors up
-  without walking the building.
-- **A shop's stock room and its back office belong to that shop**, by the wall they
-  share with it. A mall's corridors, lifts and stairs belong to nobody and are the
-  building's, the way they were.
-- A building with **one** business in it is still one business. A gun shop with a back
-  office and a stock room keeps one number and one wire, and so does a house with a
-  study in it, a school, a gas station and a police station.
-- A restaurant, a cafe, a bakery, a butcher's and a diner used to be prefilled as
-  somebody's house. They are shops, and they get a shop's machine.
-- **Numbers in a mall change once.** A computer that has been standing in a mall since
-  before this is given its own shop's number and address the next time it is switched
-  on or looked at -- one change, and then never again. Nothing on its disk moves: the
-  accounts are the accounts, the files you wrote are where you left them, and the old
-  paper you found in that mall still opens it.
-- **Some places were already automated, and they do not wait for you.** About one
-  premises in three that had a nightly job to run was set up for it before the
-  outbreak: the relays and the door contacts are on its fixtures, its computer was
-  left running, and the crontab on it is still being read. Walk up to such a shop at
-  five to nine and the lights go out in front of you at nine, with nobody near the
-  switch. They come back on at seven. A bank bolts its vault at six on a weekday, a
-  station reads its own schedule out on the hour, and a school puts its lights out at
-  ten.
-- Find the machine, log in, `crontab -l`, and the line is right there to change or
-  take out. `dev` lists the fixtures it can reach. Unscrew the relay for the item and
-  that light stops answering it -- and nothing puts the relay back: the building is
-  yours to rewire.
-- Whether a premises was automated is decided **once**, the first time you ever come
-  near one of its computers, and never revisited. A place whose grid has gone stays
-  dark and does nothing, which is what a 1993 timer with no power does. Houses are
-  never automated, nor are the display models in an electronics shop's window. All of
-  it follows **Prefilled machines and disks** in the sandbox options.
-- **Somebody's machine no longer keeps the factory admin account open; the paper in
-  the drawer is the way in.** A computer that turns out to be an office's, a shop's or
-  a clinic's now gives that account up the way any real office would have: it is off
-  `/etc/passwd`, its home is gone, and it is out of `/etc/sudoers`. Until now `admin`
-  with no password and then `sudo su` was `root` on any machine in the county without
-  finding or reading anything, which made every password in the world decoration. A
-  machine **nobody ever set up** -- one you built, or any computer with the option off
-  -- still has `admin` and `root`, both open, exactly as before.
-- The administrator's account on somebody's machine can work the building it belongs
-  to. It could not before: its own nightly job answered `permission denied` and
-  mailed it to itself. It still cannot become `root` -- that is what the paper in the
-  drawer is for, and a login found in a dead man's pocket is a foothold and not the
-  keys.
-- **A shop that sells computers is a shop that sells computers.** An electronics
-  store used to come up as six copies of one back office. Now every machine on the
-  sales floor is stock: it is switched on, logged in as `demo` with no password, and
-  carries the three files a 1993 demonstration disk had -- a welcome, the pitch, and
-  the whole model line with the prices. The shop's own machine is the one in the
-  back room, and that one is somebody's desk like any other.
-- **A spare desk is a spare desk.** Switch on more computers in one building than the
-  place had people, and the ones left over no longer hand a second machine to
-  somebody who already has one: they come up as the disk the dealer delivered, with
-  the company's name and greeting on them, everybody's account and password present,
-  and nobody's work anywhere. Which desk is whose is decided by the order you switch
-  them on, once, and never changes afterwards.
-- The sticky note in the drawer still opens **every** machine of the premises, the
-  display models in the window included.
+## 0.2.0 - 2026-09-14
 
-- **`at`**, for the thing you want done once: `echo halt | at 04:00` and the machine
-  switches itself off at four. `atq` says what is waiting, `atrm` takes one out, and
-  what the job prints goes to your mail like a nightly job's. It does not forget
-  either: a job queued for four o'clock on a machine that was off at four runs when
-  the machine comes back on.
-- **`tar`**, so a home can go onto a floppy in one piece: `tar cf /mnt/home.tar ~`,
-  `tar tf` to see what is on a disk you found, `tar xf` to put it back. Folders,
-  modes and times come back with the files; root also puts the owner back. An
-  archive is an ordinary file, so it counts against the disk and cannot be bigger
-  than one file: 4096 bytes.
-- `find` can do something to what it finds: `find . -name "*.log" -exec rm {} \;`
-  runs a command for every name, and `-exec ... {} +` hands them all to one command.
-  A long sweep takes its time and prints as it goes, so nothing on the machine
-  stutters while it works.
-- A script now gets the **environment**, the way it does on a real Unix, and not
-  whatever you had typed at the prompt. `x=5` is yours; `export x` puts it where a
-  script can see it; `env` prints the set as it will be handed over. What a script
-  sets no longer leaks back out to your prompt either.
-- New: `export NAME[=value]`, `env`, and `.`: the dot, which reads a file **in the
-  shell you are standing in**, so a file of settings is worth keeping again. That is
-  how `.profile` is read.
-- The manual now says why `ln` here always wants `-s`: a 1993 `ln a b` made a second
-  name for one and the same file, and this machine cannot hold one: a computer that
-  can be picked up and carried is a disk copied name by name, so the second name
-  would quietly become a second file. The page prints the answer you get without the
-  flag.
-- The manual's *What is not Unix here* page now also owns up to the one thing on
-  it that is not a command: a machine nobody logged out of comes back at that
-  person's prompt after the power returns, where a real Unix would ask again.
-- A `$( )` that catches more than a word will hold now says `word too large` and
-  nothing else. It used to say that and then spill the rest of the command's output
-  across the screen, in the middle of the line you were typing.
-- Tab now finishes a command of your own. It looks where the machine looks: every
-  directory on `PATH`: so a program in `~/bin` is completed as soon as `PATH`
-  names that directory, instead of only the ones in `/bin`.
-- `sudo cd /root` used to do nothing and say nothing. It now answers
-  `sudo: cd: command not found`, which is what sudo says about a word the shell
-  itself is: it runs programs, and there is no program called `cd`.
-- A sum may now count with what a script was handed: `$((5 % $1))`, `$(($# * 2))`
-  and `$((${n} + 1))` all work inside the double brackets, where a dollar sign in
-  front of a number used to answer `bad arithmetic`.
-- Fixed: a disk with a label written on it could not be inserted. The drive took
-  blank disks and refused every disk anybody had written on, the diagnostics disk
-  included, and said nothing about it. It takes them now.
-- A floppy gesture that does nothing now says why, over the survivor's head: the
-  drive already has a disk in it, what you offered is not in your hands any more,
-  or the disk itself is one this machine will not read, with the machine's own
-  reason after it. A refusal nobody can read looks exactly like a broken mod.
+The world update. Nothing here needs a new save: computers you already
+switched on keep everything; the new behaviour shows on machines nobody has
+touched yet. Numbers of computers standing in a mall change once.
 
-- Two computers in one office now belong to two different people. Each machine
-  has one person's files, their own command history, their own mail and their own nightly job; the other staff still have accounts on it, with the same
-  passwords, and empty homes. A building with two computers is worth walking
-  twice.
-- Every note, handover, ledger, memo and list is written three ways now, and
-  which one an office keeps is that office's own for the life of the save, with
-  its own people's names in it. The office down the road tells the same kind of
-  story in another voice.
-- Every desk carries the last week of whoever sat at it. `cat .sh_history` is
-  every line they typed, and Up at the prompt walks the same list; the last few
-  are the morning it started.
-- `last` now tells you who logged in at that keyboard over the fortnight before
-  the outbreak, the owner most, with how long each session lasted.
-- `mail` holds three to six messages from the outbreak week: work, family,
-  somebody who is not coming in, the county or the radio station about the roads
-  and the cordon, a reply from CeroSec Systems support. The last one was never
-  answered.
-- `/var/log/messages` has the nights in it as well as the working days: a
-  machine that came back up at four in the morning, a login that was refused, a
-  call that got no carrier.
-- About half the machines have a page somebody was writing, `draft.txt`, that
-  stops in the middle of a sentence.
-- About one machine in four is found still logged in. It comes up at that person's prompt and asks you for nothing, because they never typed `exit`. Never at a
-  military post.
-- Five kinds of premises gained a file for the member of staff who had none, so
-  no desk comes up empty.
-- Three new floppy labels to find. **LEDGER** is a small shop's books, kept in
-  whole cents: a line a day, who the shop buys from, and the program that adds a
-  column up. **PERSONAL** is somebody's own disk and none of it is any use to you:
-  letters he never sent, a list of things he was going to do, his mother's recipe,
-  a poem he asks you not to laugh at. **RADIO LOG** is a ham club's packet log,
-  every station the machine heard over the week before the outbreak, the schedule
-  of the nets, and the station's own callsign.
-- The disks that are somebody's own writing are written three ways now, with three
-  different sets of people in them. The BACKUP diary you find across town is
-  another person's week, not the same one again. Which telling a disk carries is
-  decided when the disk is made and never changes afterwards, through any number
-  of reloads.
-- A box of floppies is as blank as it always was: the three new labels were paid
-  for out of the shares the six already had, not out of the blank ones.
-- Fixed: the military post's hourly door check named a program that was never
-  put on the machine, so it mailed `not found` once an hour instead of checking
-  the door.
+- Every shop in a mall is its own business: its own profile, staff,
+  passwords, sticky note, phone line and network segment. The stock room
+  belongs to its shop, the corridor to nobody. A building with one business
+  stays one business.
+- Some places were automated before the outbreak and do not wait for you:
+  relays and contacts already on the fixtures, a computer already on, and a
+  crontab that puts the lights out at nine and back at seven. Decided once per
+  place, the first time you come near it. Log in and change the line.
+- Somebody's machine no longer keeps the factory admin account open. The
+  paper in the drawer, or in a pocket, is the way in.
+- Electronics stores sell computers: the floor models come up as demo units;
+  the shop's own machine is in the back. More computers than staff in a
+  building, and the extra desks come up as unassigned.
+- Two computers in one office belong to two different people: their own files,
+  command history, mail and nightly job. Every memo, ledger and list is written
+  three ways, so the office down the road tells another story.
+- Every desk carries its owner's last week: `.sh_history` with the last lines
+  of the morning it started, `last` with the fortnight's logins, `mail` with
+  the outbreak week, `/var/log/messages` with the nights, a `draft.txt` that
+  stops mid-sentence, and about one machine in four found still logged in.
+- Three new floppies to find: LEDGER, a shop's books with `total.sh`; PERSONAL,
+  letters never sent; RADIO LOG, a ham club's heard list. The disks that are
+  somebody's own writing come in three tellings. Blank disks stay as common.
+- The shell owes nothing to 1993 any more: `at`, `atq`, `atrm`; `tar cf`,
+  `tf`, `xf`; `find -exec`; `export`, `env` and the dot; `$1` and `$#` inside
+  `$(( ))`; Tab completes over `PATH`; `sudo cd` says what sudo says; a `$( )`
+  that overflows says so and nothing else. The manual explains why `ln` here
+  wants `-s`, and owns up to the machine found logged in.
+- Restaurants, cafes, bakeries, butchers and diners are prefilled as the
+  businesses they are, not as houses.
+- Fixed: a floppy with a label written on it could not be inserted; any floppy
+  gesture that does nothing now says why. Fixed: the military post's hourly
+  door check called a program that was never installed.
 
 ## 0.1.0 - 2026-09-13
 
