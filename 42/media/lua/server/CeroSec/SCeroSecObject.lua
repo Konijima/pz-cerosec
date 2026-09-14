@@ -606,10 +606,46 @@ function SCeroSecObject:prefill(state)
 	-- password no machine had. See the head of CeroSecNet.premisesRooms.
 	local rooms = CeroSecNet.premisesRooms(self:getSquare(), zone)
 
-	local id, _, _, live = CeroSecContent.prefill(state, {
+	-- AND THE ONE ROOM THIS MACHINE ITSELF STANDS IN, which is a different question
+	-- from the one above and is asked for a different thing: the profile is the
+	-- premises' and must be the same from every square of it, but whether a computer
+	-- in a shop that sells computers is STOCK or the shop's own is a fact about this
+	-- machine's own corner of the floor (CeroSecContent.isFloorRoom).
+	--
+	-- Proved on projectzomboid.jar 42.20.4:
+	--
+	--   zombie.iso.IsoGridSquare.getRoom() -> zombie.iso.areas.IsoRoom
+	--   zombie.iso.areas.IsoRoom.getName() -> String
+	--
+	-- The live room and not the def, and it is answerable here for the one reason
+	-- the whole prefill is here: the power check has just proved this machine's own
+	-- chunk is in, and a square's room is set when its chunk is loaded.
+	-- (IsoGridSquare.getRoomDef goes through getRoom at offset 1 and answers null
+	-- without one, so there is no colder door to use.) A machine in no room at all
+	-- answers nothing, which isFloorRoom reads as the floor.
+	local room = nil
+	do
+		local square = self:getSquare()
+		if square ~= nil and square.getRoom ~= nil then
+			local at = square:getRoom()
+			if at ~= nil and at.getName ~= nil then
+				local name = at:getName()
+				if type(name) == "string" and name ~= "" then room = name end
+			end
+		end
+	end
+
+	-- The premises' page of the register: what the OTHER machines of this premises
+	-- already are. It is the system's and it is saved with the save, because a
+	-- hash cannot know it and a chunk-bounded walk of the building cannot be trusted
+	-- to -- the head of CeroSecContent.deskRole is the whole argument.
+	if type(system.desks) ~= "table" then system.desks = {} end
+	local desks = CeroSecContent.deskEntry(system.desks, b1, b2)
+
+	local id, _, _, live, role = CeroSecContent.prefill(state, {
 		secret = system:secret(),
 		b1 = b1, b2 = b2, x = self.x, y = self.y, z = self.z,
-		premises = zone, rooms = rooms,
+		premises = zone, rooms = rooms, room = room, desks = desks,
 		start = system:startTime(),
 		now = CeroSecOS.clockOf(system:clockEnv()),
 		-- The numbers a man at this desk could have rung, for the `cu` line in his
@@ -657,7 +693,8 @@ function SCeroSecObject:prefill(state)
 	end
 	self:mirrorOS()
 	CeroSec.log("computer at " .. self.x .. "," .. self.y .. "," .. self.z
-		.. " came up prefilled as " .. id)
+		.. " came up prefilled as " .. id .. " (" .. tostring(role)
+		.. ", room " .. tostring(room) .. ")")
 	return id
 end
 

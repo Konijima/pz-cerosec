@@ -152,5 +152,6 @@ CeroSecSelfTest.VECTORS = {
 	{ name = "saved count", want = "5" },
 	{ name = "system saves seed", want = "true" },
 	{ name = "system saves notes", want = "true" },
-	{ name = "system count", want = "2" },
+	{ name = "system saves desks", want = "true" },
+	{ name = "system count", want = "3" },
 }

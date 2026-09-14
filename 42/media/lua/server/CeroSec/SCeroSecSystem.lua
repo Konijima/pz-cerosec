@@ -41,6 +41,11 @@ function SCeroSecSystem:initSystem()
 	--
 	--   seed   the per-save secret, sixteen hex digits (CeroSecContent).
 	--   notes  which premises have already had their desk note (CeroSecNotes).
+	--   desks  what the machines of each premises already ARE -- whose desk, a
+	--          display model, a spare (CeroSecContent.deskRole). Here for the same
+	--          reason `notes` is: the computers of one premises are switched on over
+	--          many sessions, and a table that lived in memory would give the second
+	--          desk the owner the first one already has.
 	--
 	-- Proved at the bytecode level on projectzomboid.jar 42.20.4, because "it
 	-- probably persists" is not a thing to bet a player's save on:

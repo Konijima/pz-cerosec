@@ -12898,24 +12898,34 @@ do
 	-- password asked, and that the machine is otherwise an ordinary prefilled one.
 	--
 	-- Which square is a SEARCH and not a number: the roll is one in four and it is
-	-- keyed on the machine, so the bench walks the room until it finds a desk that
+	-- keyed on the machine, so the bench walks the county until it finds a desk that
 	-- was left logged in. The walk is bounded, and not finding one is a red.
+	--
+	-- ONE MACHINE PER OFFICE, and that is not tidiness: an office has three people
+	-- in it, so the fourth machine of ONE premises is a SPARE DESK, and nobody was
+	-- ever logged in at a spare desk (CeroSecContent.deskRole). Twenty-five machines
+	-- inside the FrontOffice zone are one premises -- three desks and twenty-two
+	-- spares -- so the walk would have three rolls to find a live session among, and
+	-- a one-in-four roll missing three times is a red for no fault.
+	--
+	-- So each machine gets an office of its OWN: its own building, away from the
+	-- zone, with an office room in it so the profile is still the office's.
 	do
 		_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
 		local found, state, login = nil, nil, nil
-		for x = 9, 13 do
-			for y = 9, 13 do
-				if found == nil then
-					local one = net.machine(x, y, 0, net.office)
-					one:turnOn()
-					local console = one:consoleState()
-					if type(console) == "table" and type(console.user) == "string" then
-						found, state, login = one, one:osState(), console.user
-					end
+		for n = 1, 25 do
+			if found == nil then
+				local bx, by = 2000 + n * 20, 3000
+				local one = net.machine(bx + 2, by + 2, 0,
+					net.buildingAt(bx, by, 10, 10, 1, { "office" }))
+				one:turnOn()
+				local console = one:consoleState()
+				if type(console) == "table" and type(console.user) == "string" then
+					found, state, login = one, one:osState(), console.user
 				end
 			end
 		end
-		check("some desk in the office was left logged in", found ~= nil)
+		check("some desk in an office was left logged in", found ~= nil)
 		if found ~= nil then
 			local console = found:consoleState()
 			-- What the WINDOW is told, which is the thing a player meets: a shell and

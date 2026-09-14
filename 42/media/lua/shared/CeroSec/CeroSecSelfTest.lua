@@ -369,6 +369,10 @@ function CeroSecSelfTest.keys(say)
 	-- has stopped saving the secret at all.
 	say("system saves seed", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS, "seed"))
 	say("system saves notes", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS, "notes"))
+	-- And the register of what each premises' machines already are. Without it a
+	-- reload gives the second desk of an office the owner the first one has, and a
+	-- display model on a shop floor comes up as the shop's own back office.
+	say("system saves desks", CeroSecSelfTest.holds(CeroSec.SYSTEM_SAVE_KEYS, "desks"))
 	say("system count", #CeroSec.SYSTEM_SAVE_KEYS)
 end
 

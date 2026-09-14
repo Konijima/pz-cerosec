@@ -2977,6 +2977,149 @@ function CeroSecContent.ownerSlot(secret, mkey, profile)
 end
 
 --
+-- WHAT A MACHINE IS, when a premises has more machines than it has people
+--
+-- Two complaints, one answer. A shop that sells computers had six of them and
+-- every one came up as the back office; and an office with three people in it and
+-- five desks in the room gave two of the desks a second copy of somebody who
+-- already had one, because the owner slot is a hash of the machine and a hash of
+-- five things into three repeats.
+--
+-- Both need to know something a hash cannot know: WHAT THE OTHER MACHINES OF THIS
+-- PREMISES ALREADY ARE. So there is a register, it lives on the system and it is
+-- saved with the save (CeroSec.SYSTEM_SAVE_KEYS `desks`, exactly as
+-- CeroSecNotes' `notes` does and for the same reason -- the machines of one
+-- premises are switched on over many sessions).
+--
+-- WHY NOT COUNT THE COMPUTERS INSTEAD, which was the first design and is the one
+-- that cannot be made to work. A premises' computers can only be found by walking
+-- its rooms' squares, and a room answers its squares only while its chunks are
+-- loaded -- `RoomDef.getIsoRoom()` is nil for a room the streamer has not brought
+-- in, which is written down at CeroSecDevices.find and is why /dev is rescanned
+-- once a minute instead of remembered. A prefill is written ONCE and for ever, so
+-- a count taken through a half-loaded building would hand two desks one owner
+-- permanently, on a machine somebody switched on from the wrong doorway. The
+-- register knows only what has really been prefilled, which is a fact and not a
+-- guess.
+--
+-- WHAT IT COSTS, said plainly: the order the player switches the machines on is
+-- what decides which desk is whose. It is decided once, written down, and never
+-- revisited. Two machines never share an owner, which is the thing that was wrong.
+--
+-- The register is the premises' own entry: desks[machine] is that machine's role,
+-- a SLOT NUMBER for a desk somebody sat at and the word for the other two.
+CeroSecContent.DESK_SPARE = "spare"
+CeroSecContent.DESK_FLOOR = "floor"
+
+-- The rooms of a showroom that are the SALES FLOOR, as the map spells them. A
+-- machine standing in one of these is stock; a machine in any other room of the
+-- premises -- the storage room, the back office -- is the shop's own.
+--
+-- The names are the map's own (see PREMISES_WORDS above): `electronicsstore` and
+-- `electronicstore` are the floor, and `electronicsstorage` deliberately matches
+-- neither -- it has the double s of the first and the tail of nothing, so no
+-- substring of it is either word, and the back room is a back room.
+CeroSecContent.FLOOR_ROOMS = { "electronicsstore", "electronicstore" }
+
+-- Is the room this machine stands in the sales floor? A name nobody gave, or a
+-- room the machine has no name for, answers TRUE: an unnamed room on a premises
+-- that sells computers is the floor, which is the answer that puts stock on the
+-- floor rather than the shop's ledger on a machine the public types at.
+function CeroSecContent.isFloorRoom(room)
+	if type(room) ~= "string" or room == "" then return true end
+	local name = string.lower(room)
+	local list = CeroSecContent.FLOOR_ROOMS
+	for i = 1, #list do
+		if string.find(name, list[i], 1, true) ~= nil then return true end
+	end
+	return false
+end
+
+-- The premises' own entry in the register, made if it is not there. `reg` is the
+-- system's `desks` table and nothing else is allowed to key it: the key is the
+-- premises' two bytes, the same key everything else about a premises has.
+function CeroSecContent.deskEntry(reg, b1, b2)
+	if type(reg) ~= "table" then return nil end
+	local key = CeroSecContent.key("d", b1, b2)
+	if type(reg[key]) ~= "table" then reg[key] = { desks = {} } end
+	if type(reg[key].desks) ~= "table" then reg[key].desks = {} end
+	return reg[key]
+end
+
+-- One machine's own name in the register: its square, which is what tells two
+-- machines of one premises apart and is the only thing that does.
+function CeroSecContent.deskTag(x, y, z)
+	return CeroSecContent.key(x, y, z)
+end
+
+-- WHAT THIS MACHINE IS, and it writes the answer down. Answers a role and, for a
+-- desk, the slot of profile.accounts whose man sat at it.
+--
+--   "desk"   somebody's machine, as every prefilled machine was before this
+--   "floor"  a display model on a showroom's sales floor: the demo image
+--   "spare"  a desk with no person left to give it: the demo image too
+--
+-- NO REGISTER, NO WORLD: a bench and a call from anywhere that has no system hand
+-- nothing over, and the answer is the one the catalogue always gave -- a desk,
+-- with the owner slot hashed out of the machine's key. That is deliberate: what
+-- the register adds is a fact about the OTHER machines, and where there is no
+-- register there is no such fact to have.
+--
+-- ASKED TWICE, ANSWERED THE SAME. A machine prefilled a second time -- the
+-- developer's reset, a machine carried out and put back -- gets the role it was
+-- given, and its slot is not counted twice.
+function CeroSecContent.deskRole(entry, tag, secret, mkey, profile, showroom, floor)
+	if type(profile) ~= "table" then return nil end
+	local n = 0
+	if type(profile.accounts) == "table" then n = #profile.accounts end
+	if type(entry) ~= "table" or type(entry.desks) ~= "table"
+			or type(tag) ~= "string" or tag == "" then
+		return "desk", CeroSecContent.ownerSlot(secret, mkey, profile)
+	end
+
+	local had = entry.desks[tag]
+	if type(had) == "number" then return "desk", had end
+	if type(had) == "string" then return had, nil end
+
+	-- A SHOWROOM'S SALES FLOOR IS STOCK. Whether the shop's own machine has been
+	-- found yet does not come into it: a machine in the window is a machine in the
+	-- window on the first morning as much as on the last, and the shop's own is
+	-- whichever back-room machine is switched on first. A shop whose only computers
+	-- stand on the floor is a shop of display models and nothing else, which is a
+	-- true thing about such a shop -- and the paper in its drawer still opens root
+	-- on every one of them, because root is the premises' on the demo image too.
+	if showroom and floor then
+		entry.desks[tag] = CeroSecContent.DESK_FLOOR
+		return CeroSecContent.DESK_FLOOR, nil
+	end
+
+	-- A profile with no ordinary account at all -- the military post -- has no slot
+	-- to hand out and no slot to run out of, so every machine of it is a desk.
+	if n == 0 then return "desk", nil end
+
+	local taken = {}
+	for _, v in pairs(entry.desks) do
+		if type(v) == "number" then taken[v] = true end
+	end
+	local free = {}
+	for i = 1, n do
+		if not taken[i] then free[#free + 1] = i end
+	end
+	-- MORE MACHINES THAN PEOPLE. The spare desk in the corner: the disk the dealer
+	-- delivered, with the company's name on it and nobody's work.
+	if #free == 0 then
+		entry.desks[tag] = CeroSecContent.DESK_SPARE
+		return CeroSecContent.DESK_SPARE, nil
+	end
+	-- Which of the free ones is still the MACHINE's own hash, so that two premises
+	-- with the same people fill their desks in different orders.
+	local pick = CeroSecContent.number(secret, CeroSecContent.key(mkey, "desk"), #free)
+	local slot = free[pick or 1]
+	entry.desks[tag] = slot
+	return "desk", slot
+end
+
+--
 -- The names in the text
 --
 -- A file of a profile is written once and read in every office in the county, so
@@ -3765,6 +3908,61 @@ local function placeWtmp(state, profile, secret, mkey, logins, owner, live, star
 	return lastAt
 end
 
+-- THE DEMONSTRATION DISK, onto a machine that is nobody's desk (see
+-- CeroSecContent.DEMO). The open account, its three files in capitals, and the two
+-- or three lines a customer typed.
+--
+-- The motd is NOT set here and that is the whole difference between the two
+-- machines this writes: a display model carries the dealer's card and a spare desk
+-- carries the company's own motd, so the caller sets it.
+--
+-- Answers the login it made, or nil for a machine that would not take it -- a full
+-- disk, which is the trimming rule, and not an error.
+local function placeDemo(state, session, secret, b1, b2, mkey, now)
+	local login = CeroSecContent.DEMO.login
+	if not CeroSecOS.isValidUserName(login) then return nil end
+	if CeroSecOS.getUser(state, login) ~= nil then return nil end
+	local home = "/home/" .. login
+	if not placeDir(state, session, home, login, CeroSecOS.HOME_MODE, now) then
+		home = "/"
+	end
+	if CeroSecOS.addUser(state, login, home, false, mkey .. ":demo", now) == nil then
+		return nil
+	end
+
+	-- No password, and it is not an oversight: the account is open the way the
+	-- store's second account is open, which is a thing a 1993 machine did and
+	-- needs no deviation. The shop's reason is written on the disk itself.
+	local names = { owner = login, host = state.hostname }
+	local files = CeroSecContent.DEMO.files
+	for i = 1, #files do
+		local file = files[i]
+		place(state, session, home .. "/" .. file.path, login, file.mode or 644,
+			CeroSecContent.textFor(file, secret, b1, b2, file.path, names), now)
+	end
+
+	-- WHAT A CUSTOMER TYPED. The MACHINE's own roll and not the premises', so two
+	-- models standing side by side in one window do not carry one history.
+	local lines = CeroSecContent.pick(CeroSecContent.DEMO.history, secret,
+		CeroSecContent.key(mkey, "demo"))
+	if type(lines) == "table" and #lines > 0 then
+		place(state, session, home .. "/" .. CeroSecOS.HISTORY_NAME, login,
+			CeroSecOS.HISTORY_MODE, table.concat(lines, "\n"), now)
+	end
+	return login
+end
+
+-- Root's own password, which is the PREMISES' on every machine of it -- the desk,
+-- the display model and the spare alike. One function because the two branches of
+-- the prefill both end on it and a second copy would be a second rule.
+local function setRoot(state, session, profile, secret, b1, b2, mkey, now)
+	if not profile.root then return nil end
+	local password = CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+	if password == nil then return nil end
+	CeroSecOS.setPassword(state, "root", password, mkey .. ":root", now)
+	return password
+end
+
 --
 -- PREFILL ONE MACHINE. The one entry point the server calls, and it is called in
 -- exactly one place: SCeroSecObject:turnOn, for a machine whose state was nil a
@@ -3773,13 +3971,20 @@ end
 --
 --   state       a state CeroSecOS.newState has just made
 --   opts        { secret=, b1=, b2=, x=, y=, z=, premises=, rooms=, start=, now=,
---                 numbers= }
+--                 numbers=, desks=, room= }
 --
--- Answers FOUR things now: the profile id it used, the root password it derived,
--- the logins by slot, and -- the world-content work, part 3 -- the session that was still open at the
--- glass, as { user =, at = }, or nil. The password is answered for the BENCH and
--- for the sticky note's sake and is written nowhere: the caller may not keep it.
--- Answers nil for a machine it left alone.
+-- Answers FIVE things: the profile id it used, the root password it derived, the
+-- logins by slot, the session that was still open at the glass as { user =, at = }
+-- or nil, and what the machine turned out to BE -- "desk", "floor" or "spare"
+-- (CeroSecContent.deskRole). The password is answered for the BENCH and for the
+-- sticky note's sake and is written nowhere: the caller may not keep it. Answers
+-- nil for a machine it left alone.
+--
+-- `desks` is the premises' entry in the register the server keeps
+-- (CeroSecContent.deskEntry) and `room` the name of the room this machine stands
+-- in; the two are what a display model and a spare desk are decided from, and a
+-- caller that hands over neither gets a desk, which is what every machine was
+-- before there was a register.
 --
 -- `numbers` is a list of telephone numbers of the machine's own region, or nil.
 -- The catalogue cannot ask for one -- it has no world and does not want one -- so
@@ -3809,25 +4014,63 @@ function CeroSecContent.prefill(state, opts)
 	local now = opts.now
 	local session = CeroSecOS.rootSession()
 
-	-- The name on the machine. The head is the profile's and the tail is the
-	-- coordinates the engine already derived, so the name still says where the
-	-- machine is and /etc/hosts, the prompt and ruptime all agree with each other.
-	if type(profile.host) == "string" then
+	-- WHAT THIS MACHINE IS -- somebody's desk, a display model on a shop floor, or
+	-- a desk with nobody left to give it -- and it is decided FIRST because the name
+	-- on the machine depends on it. See CeroSecContent.deskRole: the register is the
+	-- server's and a caller with none gets a desk, which is the answer this had
+	-- before there was a register.
+	local role, slot = CeroSecContent.deskRole(opts.desks,
+		CeroSecContent.deskTag(opts.x, opts.y, opts.z), secret, mkey, profile,
+		id == CeroSecContent.SHOWROOM, CeroSecContent.isFloorRoom(opts.room))
+
+	-- The name on the machine. The head is the profile's -- or the dealer's, on a
+	-- machine that is still stock -- and the tail is the coordinates the engine
+	-- already derived, so the name still says where the machine is and /etc/hosts,
+	-- the prompt and ruptime all agree with each other.
+	local host = profile.host
+	if role == CeroSecContent.DESK_FLOOR then host = CeroSecContent.DEMO.host end
+	if type(host) == "string" then
 		local tail = string.match(state.hostname or "", "^[a-z0-9]+(%-.*)$")
 		if tail ~= nil then
-			local hostname = string.sub(profile.host .. tail, 1, CeroSecOS.HOSTNAME_MAX)
+			local hostname = string.sub(host .. tail, 1, CeroSecOS.HOSTNAME_MAX)
 			if CeroSecOS.isValidHostname(hostname) then
 				CeroSecOS.setHostname(state, hostname, now)
 			end
 		end
 	end
 
+	-- A MACHINE THAT IS NOT ANYBODY'S. The dealer's disk, and the order is the
+	-- order the branch below keeps: the accounts first, because everything else is
+	-- addressed to them, then the files, then the motd, then root's password last.
+	--
+	--   floor  a display model. NO staff accounts at all -- it is stock, and the
+	--          shop's people are not on a machine the shop has not sold -- and the
+	--          dealer's card for a motd.
+	--   spare  a desk in the company's own office that nobody was given. The staff
+	--          ARE on it, with their passwords, because the machine is the
+	--          company's; what is not on it is anybody's work.
+	if role ~= "desk" then
+		local logins = {}
+		if role == CeroSecContent.DESK_SPARE then
+			logins = makeAccounts(state, session, profile, secret, opts.b1, opts.b2,
+				mkey, now)
+		end
+		placeDemo(state, session, secret, opts.b1, opts.b2, mkey, now)
+		local motd = CeroSecContent.DEMO.motd
+		if role == CeroSecContent.DESK_SPARE and type(profile.motd) == "string" then
+			motd = profile.motd
+		end
+		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, motd, now)
+		local password =
+			setRoot(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
+		return id, password, logins, nil, role
+	end
+
 	local logins =
 		makeAccounts(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
 
-	-- WHOSE DESK THIS IS. One slot, off the machine's key, and the only home this
-	-- machine has anything in.
-	local slot = CeroSecContent.ownerSlot(secret, mkey, profile)
+	-- WHOSE DESK THIS IS. One slot, decided above, and the only home this machine
+	-- has anything in.
 	local owner = nil
 	if slot ~= nil then owner = logins[slot] end
 	-- A slot whose login collided with one the machine already had: the desk is
@@ -3942,17 +4185,11 @@ function CeroSecContent.prefill(state, opts)
 	-- And root's own password, LAST, so that everything above it happened as root
 	-- on a machine whose root account was still open -- and so that a refusal
 	-- anywhere above cannot leave a machine locked with nothing on it.
-	local password = nil
-	if profile.root then
-		password = CeroSecContent.password(secret,
-			CeroSecContent.rootKey(opts.b1, opts.b2))
-		if password ~= nil then
-			CeroSecOS.setPassword(state, "root", password, mkey .. ":root", now)
-		end
-	end
+	local password =
+		setRoot(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
 	local session4 = nil
 	if live and liveAt ~= nil then session4 = { user = owner, at = liveAt } end
-	return id, password, logins, session4
+	return id, password, logins, session4, role
 end
 
 --
@@ -3996,6 +4233,195 @@ end
 local function three(a, b, c)
 	return { table.concat(a, "\n"), table.concat(b, "\n"), table.concat(c, "\n") }
 end
+
+--
+-- THE DEALER'S DEMONSTRATION DISK
+--
+-- What a machine comes up as when it is not anybody's desk: a display model on a
+-- shop floor, and the spare desk in the corner of an office that has more desks
+-- than people. One image for both, because it is one thing -- the disk the dealer
+-- put on it before it went out of the door, with nobody's week on it.
+--
+-- WHAT IS ON IT AND WHAT IS NOT. An open `demo` account, three files in capitals
+-- the way a 1993 demonstration disk had them, a card of a motd, and two or three
+-- lines in the history where somebody who was not buying it typed at it. No mail,
+-- no log of the last week, no crontab, nobody left logged in, and no home with
+-- work in it: none of those things happened to this machine, and a file that said
+-- they had would be the story this whole catalogue exists not to tell.
+--
+-- ROOT IS STILL THE PREMISES'. The paper in the drawer names root's password for
+-- the premises, and a display model with a password of its own would be a paper
+-- that opens one machine in six. The shop's own words for why are in the showroom
+-- profile's floor.txt.
+--
+CeroSecContent.DEMO = {
+	-- The name on a machine that is stock. The coordinate tail is still the
+	-- machine's, so /etc/hosts and the prompt agree with the rest of the county.
+	host = "demo",
+	-- The account a customer finds waiting, open, because a customer who has to ask
+	-- for a password does not sit down.
+	login = "demo",
+	motd = table.concat({
+		"CeroSec Systems -- demonstration machine",
+		"This one is for sale. Type help and try anything you",
+		"like: the shop puts the disk back the way it was",
+		"before the machine goes out of the door.",
+	}, "\n"),
+	files = {
+		{ path = "WELCOME.TXT", texts = three({
+			"THIS MACHINE IS SWITCHED ON FOR YOU TO TRY.",
+			"",
+			"You are logged in already, as demo. Three things",
+			"worth typing first:",
+			"",
+			"  help            what this machine can do",
+			"  cat DEMO.TXT    what it is",
+			"  cat PRICES.TXT  what it costs",
+			"",
+			"Ask at the counter for anything else. The man at the",
+			"counter has had one of these at home for two years.",
+		}, {
+			"WELCOME. THIS IS A WORKING MACHINE AND IT IS FOR",
+			"SALE.",
+			"",
+			"Nothing you type can hurt it. Type help for the list",
+			"of commands, DEMO.TXT for what it is and PRICES.TXT",
+			"for what it costs.",
+			"",
+			"If the screen fills up, type clear. If you would",
+			"rather somebody showed you, ask at the counter.",
+		}, {
+			"TRY IT. IT IS SWITCHED ON AND IT IS FOR SALE.",
+			"",
+			"  help",
+			"  cat DEMO.TXT",
+			"  cat PRICES.TXT",
+			"",
+			"Those three, in that order, and you will know more",
+			"about this machine than most people who own one.",
+			"",
+			"The machine is {host}. That name is on the back of",
+			"the case as well as on the screen.",
+		}) },
+		{ path = "DEMO.TXT", texts = three({
+			"WHAT THIS IS",
+			"",
+			"A whole computer: the machine, the screen, the disk",
+			"and the software, on one desk, running on a wall",
+			"socket. 640K of memory and a 64K disk. It takes a",
+			"floppy, and a box of ten is not expensive.",
+			"",
+			"It does what an office does. It keeps files, it adds",
+			"a column up, it prints a schedule, it sends mail to",
+			"the machine in the next room over a wire, and it",
+			"will telephone another machine if you want it to.",
+			"",
+			"It is not a toy and it is not a terminal. There is",
+			"nothing it needs down the road to work.",
+			"",
+			"The shop sets it up for you and shows you how, and",
+			"that is in the price and not extra.",
+		}, {
+			"WHAT YOU ARE LOOKING AT",
+			"",
+			"One machine, one disk, one screen, one plug. 640K of",
+			"memory, 64K on the disk, a floppy drive, and the",
+			"software is on it already -- there is nothing else to",
+			"buy before it does something useful.",
+			"",
+			"What people use them for, in this county: stock and",
+			"prices, a shift rota, the night lights and the door",
+			"bolt, a week of what happened written down where it",
+			"cannot be lost.",
+			"",
+			"It writes what you tell it and nothing else, and you",
+			"can read every file on it with one command.",
+			"",
+			"The shop delivers it, sets it up and teaches whoever",
+			"is going to use it. That is included.",
+		}, {
+			"THE MACHINE ON THIS DESK",
+			"",
+			"640K of memory. A 64K disk. A floppy drive that",
+			"takes a 4096 byte disk, and a box of ten costs less",
+			"than a tank of petrol.",
+			"",
+			"It will hold your files, add up a column, keep a",
+			"list, run a job at nine at night whether anybody is",
+			"in or not, and talk to the machine in the next room.",
+			"",
+			"Every command on it is written down in the manual and",
+			"the manual is in plain words.",
+			"",
+			"We set it up in your office, with your names on it,",
+			"and we show two people how to use it. In the price.",
+		}) },
+		{ path = "PRICES.TXT", texts = three({
+			"THE LINE, AND WHAT EACH ONE COSTS",
+			"",
+			"  CS-40    the machine on this desk      895.00",
+			"  CS-80    the same, twice the memory   1495.00",
+			"  CS-120   and a second disk            2250.00",
+			"",
+			"  floppy disks, box of ten                18.00",
+			"  drive belt, fitted                      24.00",
+			"  the manual, all three volumes           12.00",
+			"",
+			"Delivery, setting up and two people taught: in the",
+			"price. Ask at the counter about paying monthly.",
+		}, {
+			"PRICES. THESE ARE THE PRICES ON THE GOODS.",
+			"",
+			"  CS-40                                  895.00",
+			"  CS-80                                 1495.00",
+			"  CS-120                                2250.00",
+			"",
+			"  box of ten floppy disks                 18.00",
+			"  drive belt, fitted while you wait       24.00",
+			"  manual, three volumes                   12.00",
+			"",
+			"The price includes delivery and setting up. It does",
+			"not include a desk and it does not include a",
+			"telephone line.",
+		}, {
+			"WHAT THEY COST",
+			"",
+			"  CS-40    895.00",
+			"  CS-80   1495.00",
+			"  CS-120  2250.00",
+			"",
+			"  floppies, ten     18.00",
+			"  belt, fitted      24.00",
+			"  manual            12.00",
+			"",
+			"Delivered, set up and shown to two of your people,",
+			"and that is in the figure and not on top of it.",
+			"",
+			"The CS-120 is the one with the second disk in it and",
+			"it is the one the offices buy.",
+		}) },
+	},
+	-- WHAT SOMEBODY TYPED AT IT. Two or three lines, and they are a customer's and
+	-- not an employee's: he looked at the file he was told to look at, he tried the
+	-- one command everybody tries, and he walked away. Which set a machine carries
+	-- is the MACHINE's own roll, so two models in a row do not read the same.
+	history = {
+		{
+			"cat WELCOME.TXT",
+			"cat PRICES.TXT",
+			"ls",
+		},
+		{
+			"help",
+			"cat DEMO.TXT",
+		},
+		{
+			"cat WELCOME.TXT",
+			"df",
+			"who",
+		},
+	},
+}
 
 CeroSecContent.PROFILES = {}
 

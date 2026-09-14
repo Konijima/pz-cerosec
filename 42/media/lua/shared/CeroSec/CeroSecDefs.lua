@@ -151,7 +151,7 @@ CeroSec.STATE_VERSION = 1
 -- Kahlua in a real save, and tests/window_test.lua asserts that these very tables
 -- are what reaches the engine.
 --
-CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes" }
+CeroSec.SYSTEM_SAVE_KEYS = { "seed", "notes", "desks" }
 CeroSec.OBJECT_SAVE_KEYS = { "v", "on", "facing", "os", "console" }
 CeroSec.OBJECT_SYNC_KEYS = { "v", "on", "facing", "disk" }
 
