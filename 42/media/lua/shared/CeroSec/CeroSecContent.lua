@@ -441,6 +441,16 @@ CeroSecContent.PREMISES_WORDS = {
 	{ "computerstore", "showroom" }, { "computershop", "showroom" },
 	{ "office", "office" }, { "warehouse", "office" }, { "factory", "office" },
 	{ "store", "store" }, { "shop", "store" }, { "market", "store" },
+	-- THE FOOD TRADES, and they are here because a tenancy is named by its ROOM: a
+	-- mall's `cafe` and `bakery` carry no shopfront word, so before this they read as
+	-- somebody's house and the shop got a house's disk. A till and a price list is
+	-- what they have in common with a shop, which is why they answer `store` and not
+	-- an id of their own. Every one is a room name the shipped county really has --
+	-- `cafe` 70, `bakery` 36, `restaurant` 25, `butcher` 22, `diner` 20 -- and
+	-- `bakerykitchen` and `restaurantkitchen` land here as well, above `kitchen`,
+	-- which is right: the kitchen of a bakery is the bakery.
+	{ "bakery", "store" }, { "butcher", "store" }, { "cafe", "store" },
+	{ "diner", "store" }, { "restaurant", "store" },
 	{ "kitchen", "residential" }, { "bedroom", "residential" },
 	{ "livingroom", "residential" }, { "house", "residential" },
 }

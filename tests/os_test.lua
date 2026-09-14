@@ -12398,6 +12398,67 @@ do
 	-- Their NUMBERS differ too, which is the fact that matters: two shops in a mall
 	-- are two telephone lines.
 	check("and two lines", CeroSecOS.phoneKey(z1, z2) ~= CeroSecOS.phoneKey(w1, w2))
+
+	-- A PREMISES THAT IS A ROOM, which is what a shop in a mall the map drew no zone
+	-- around is. The key is three facts about where the room is drawn -- the
+	-- building's corner, the room's corner and the floor -- and never RoomDef.getID(),
+	-- whose low 32 bits are a per-cell load counter that a map mod or a basement
+	-- spawned in play moves (docs/notes/tenancies.md has the offsets).
+	local r1, r2 = CeroSecOS.roomKey(12809, 1294, 12853, 1294, 0)
+	check("a room has a premises key", r1 ~= nil)
+	eq("asked twice it is the same one",
+		select(2, CeroSecOS.roomKey(12809, 1294, 12853, 1294, 0)), r2)
+	check("and both bytes are bytes", r1 >= 0 and r1 < 256 and r2 >= 0 and r2 < 256)
+	eq("junk is no key", CeroSecOS.roomKey("x", 1294, 12853, 1294, 0), nil)
+	eq("nor is a room with no floor", CeroSecOS.roomKey(12809, 1294, 12853, 1294), nil)
+	-- The two shops of one mall are two premises, which is the whole point.
+	local s1, s2 = CeroSecOS.roomKey(12809, 1294, 12831, 1294, 0)
+	check("two rooms of one building are two premises", r1 ~= s1 or r2 ~= s2)
+	check("and two telephone lines",
+		CeroSecOS.phoneKey(r1, r2) ~= CeroSecOS.phoneKey(s1, s2))
+	-- And a room on the BUILDING'S OWN CORNER is not the building, which is the shop
+	-- in the corner of the mall and is the trap premisesKey was given a size for.
+	local m1, m2 = CeroSecOS.buildingKey(12809, 1294)
+	local c3, c4 = CeroSecOS.roomKey(12809, 1294, 12809, 1294, 0)
+	check("a room on the building's own corner is not the building",
+		c3 ~= m1 or c4 ~= m2)
+	-- A SHOP WITH A MEZZANINE is the same name on the same corner one floor up, so
+	-- the floor has to be in the key or the two are one premises.
+	local up1, up2 = CeroSecOS.roomKey(12809, 1294, 12853, 1294, 1)
+	check("one floor up is another premises", r1 ~= up1 or r2 ~= up2)
+	check("on another line", CeroSecOS.phoneKey(r1, r2) ~= CeroSecOS.phoneKey(up1, up2))
+	-- And the same room in ANOTHER building is another premises, which is what keeps
+	-- the two malls of a town apart when the map drew their shops on one grid.
+	local other1, other2 = CeroSecOS.roomKey(13515, 1261, 12853, 1294, 0)
+	check("the same room corner in another building is another premises",
+		r1 ~= other1 or r2 ~= other2)
+
+	-- THE NUMBER A ROOM PREMISES ANSWERS ON, which the phone book derives without a
+	-- machine to ask. The EXCHANGE is the building's corner and not the room's: every
+	-- shop of one mall is wired back to one central office, and a mall straddling a
+	-- region boundary would otherwise have shops on two switches.
+	local tel = CeroSecOS.phoneOfRoom(12809, 1294, 12853, 1294, 0)
+	check("a room premises has a number", CeroSecOS.isPhoneNumber(tel))
+	eq("on the exchange of the building's corner",
+		tonumber(string.sub(tel, 1, 3)), CeroSecOS.phoneExchange(12809, 1294))
+	eq("and the four digits of its own key", tel,
+		CeroSecOS.phoneText(CeroSecOS.phoneExchange(12809, 1294),
+			CeroSecOS.phoneKey(r1, r2)))
+	eq("junk is no number", CeroSecOS.phoneOfRoom("x", 1294, 12853, 1294, 0), nil)
+	-- AND A MALL THAT STRADDLES A REGION BOUNDARY has all its shops on ONE switch,
+	-- which is the assertion the building corner is there for and the only one that
+	-- can see it: a room corner on the far side of the line would put the shop on the
+	-- next town's exchange. The two corners below are deliberately in different
+	-- regions -- PHONE_REGION is 1024 tiles, so 12280 is region 11 and 12300 is 12.
+	local R = CeroSecOS.PHONE_REGION
+	local nearCorner, farCorner = 12 * R - 8, 12 * R + 12
+	check("the bench's two corners really are in two regions",
+		CeroSecOS.phoneExchange(nearCorner, 1294)
+			~= CeroSecOS.phoneExchange(farCorner, 1294))
+	eq("a shop on the far side of a region line is on its mall's exchange",
+		tonumber(string.sub(
+			CeroSecOS.phoneOfRoom(nearCorner, 1294, farCorner, 1294, 0), 1, 3)),
+		CeroSecOS.phoneExchange(nearCorner, 1294))
 	check("neither of them the mall's own",
 		CeroSecOS.phoneKey(z1, z2) ~= CeroSecOS.phoneKey(c1, c2))
 
@@ -12520,6 +12581,36 @@ do
 	-- of it already runs on.
 	state.net = { b1 = b1, b2 = b2, n = 1, ex = ex, pz = 42 }
 	eq("a name that is not a string is no record at all",
+		CeroSecOS.netRecord(state), nil)
+
+	-- WHICH KIND of premises the bytes came off, which travels with the name and is
+	-- read WITH A DEFAULT: every save written before a building could hold more than
+	-- one premises carries no kind, and absent has to read as the building -- which is
+	-- what such a machine was on.
+	state = fresh()
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex)
+	eq("a machine on its building carries no kind",
+		CeroSecOS.netRecord(state).pk, nil)
+	check("and is still a record", CeroSecOS.address(state) ~= nil)
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "CoffeeShop", CeroSecOS.PREMISES_ZONE)
+	eq("a shop the map named carries the zone's kind",
+		CeroSecOS.netRecord(state).pk, CeroSecOS.PREMISES_ZONE)
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "Music Store", CeroSecOS.PREMISES_ROOM)
+	eq("a shop read off the rooms carries the room's kind",
+		CeroSecOS.netRecord(state).pk, CeroSecOS.PREMISES_ROOM)
+	-- A kind with no name to print is a record that would say a machine is in a shop
+	-- and not say which, so the two are written together or not at all.
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, nil, CeroSecOS.PREMISES_ROOM)
+	eq("a kind with no name behind it is dropped",
+		CeroSecOS.netRecord(state).pk, nil)
+	CeroSecOS.setNetRecord(state, b1, b2, 1, ex, "Shop", "attic")
+	eq("and a kind this build does not write is dropped too",
+		CeroSecOS.netRecord(state).pk, nil)
+	check("while the name and the line stay", CeroSecOS.phoneOf(state) ~= nil)
+	-- One found in a SAVE is a forged record, exactly as a bad name is: a machine
+	-- with no record and never a machine the debug window prints an invented kind for.
+	state.net = { b1 = b1, b2 = b2, n = 1, ex = ex, pz = "Shop", pk = "attic" }
+	eq("a kind that is not one of the two is no record at all",
 		CeroSecOS.netRecord(state), nil)
 end
 

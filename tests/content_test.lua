@@ -313,6 +313,116 @@ do
 	for id in pairs(CeroSecContent.PROFILES) do
 		check('the profile "' .. id .. '" has a declared id', known[id] == true)
 	end
+
+	--
+	-- WHICH ROOMS ARE SEPARATE SHOPS (premises v2)
+	--
+	-- The pure half of the tenancy rule. Where the rooms are is the server's and has
+	-- its own bench (tests/window_test.lua); what a NAME means is here, with no world
+	-- in sight, and every case below is a room name the shipped county really has --
+	-- the counts are in docs/notes/tenancies.md.
+	--
+
+	-- THE SHOPFRONTS. A word, and a trade the map spells out instead of a word.
+	for _, name in ipairs({ "musicstore", "clothesstore", "gunstore", "toolstore",
+			"bookstore", "conveniencestore", "cornerstore", "pawnshop", "metalshop",
+			"dentist", "optometrist", "pharmacy", "bakery", "cafe", "bank" }) do
+		check('"' .. name .. '" is a shop', CeroSecContent.isTenancyName(name, 100))
+	end
+
+	-- AND WHAT IS NOT, which is the half that keeps this from splitting the county.
+	-- `office` is 3977 rooms and nearly every business has one; `classroom` is 89 and
+	-- `prisoncells` 540, so a tenancy word there would break every school and every
+	-- prison into premises with a telephone line each.
+	for _, name in ipairs({ "office", "officestorage", "classroom",
+			"elementaryclassroom", "prisoncells", "policeoffice", "hospitalroom",
+			"motelroom", "medical", "medicaloffice", "warehouse", "factory",
+			"kitchen", "bedroom", "livingroom", "bathroom", "hall", "hallway",
+			"breakroom", "janitor", "garagestorage", "laundry" }) do
+		check('"' .. name .. '" is not a shop',
+			not CeroSecContent.isTenancyName(name, 100))
+	end
+
+	-- A STORAGE IS THE BACK OF THE SHOP IN FRONT OF IT and never a second shop, and a
+	-- COUNTER is its till. Both carry a shopfront word, which is why they need saying.
+	for _, name in ipairs({ "gunstorestorage", "clothesstorage", "bookstorage",
+			"pharmacystorage", "toolstorestorage", "cornerstorestorage",
+			"cornerstorecounter" }) do
+		check('"' .. name .. '" is the back of a shop and not one',
+			not CeroSecContent.isTenancyName(name, 100))
+	end
+
+	-- A ROOM OF ONE TILE is a gas station's pump island. Thirteen stations in the
+	-- county are four of these and no two of them touch, so every one of them was four
+	-- premises with four telephone lines until the area was in the question.
+	check("a one-tile shopfront is not a shop",
+		not CeroSecContent.isTenancyName("gasstore", 1))
+	check("two tiles is", CeroSecContent.isTenancyName("gasstore", 2))
+	check("and an area nobody measured is not",
+		not CeroSecContent.isTenancyName("gasstore", nil))
+	check("nor is a name that is not one", not CeroSecContent.isTenancyName(7, 100))
+	check("nor an empty one", not CeroSecContent.isTenancyName("", 100))
+
+	-- EVERY TRADE ON THE LIST IS A ROOM NAME THE SHIPPED MAP HAS. A word nothing on
+	-- the map wears is a tenancy nobody could ever stand in, and the list is short
+	-- enough to hold to that. The map's own spellings, read off the lot headers.
+	local MAP_ROOMS = {}
+	for _, name in ipairs({ "dentist", "optometrist", "pharmacy", "bakery",
+			"butcher", "knoxbutcher", "cafe", "diner", "restaurant", "bank",
+			"pawnshop" }) do
+		MAP_ROOMS[name] = true
+	end
+	for i = 1, #CeroSecContent.TENANCY_TRADES do
+		local trade = CeroSecContent.TENANCY_TRADES[i]
+		check('the trade "' .. trade .. '" is a room name the shipped map has',
+			MAP_ROOMS[trade] == true)
+		check('and it is read as a shop', CeroSecContent.isTenancyName(trade, 100))
+		-- And it resolves to a profile that is not the default, or a shop would be
+		-- prefilled as somebody's house -- which is the report's "no specifics".
+		check('and to a profile of its own',
+			CeroSecContent.profileFor(CeroSecContent.tenancyLabel(trade), { trade })
+				~= CeroSecContent.DEFAULT_PROFILE)
+	end
+
+	-- THE COMMON PARTS, which belong to nobody: a mall corridor is not the shop it
+	-- happens to share its longest wall with, and every shop is off it.
+	for _, name in ipairs({ "hall", "hallway", "corridor", "lobby", "foyer",
+			"elevator", "stairwell", "empty", "emptyoutside", "secondaryhall" }) do
+		check('"' .. name .. '" is nobody\'s', CeroSecContent.isCommonName(name))
+	end
+	for _, name in ipairs({ "musicstore", "dentist", "clothesstorage", "office",
+			"bathroom", "breakroom" }) do
+		check('"' .. name .. '" is not a common part',
+			not CeroSecContent.isCommonName(name))
+	end
+
+	-- THE WORDS ON THE FIRMWARE, which is what a survivor in a mall reads to know
+	-- which of eleven lines he is sitting at. A room name is one lower-case word
+	-- because it is a loot key, so it is split in front of the trade word it ends on
+	-- and nothing cleverer is attempted.
+	eq("a shop name is split at the trade word",
+		CeroSecContent.tenancyLabel("musicstore"), "Music Store")
+	eq("and so is a longer one",
+		CeroSecContent.tenancyLabel("conveniencestore"), "Convenience Store")
+	eq("a trade with no word in it is just capitalised",
+		CeroSecContent.tenancyLabel("dentist"), "Dentist")
+	eq("and so is a one-word shop", CeroSecContent.tenancyLabel("pharmacy"),
+		"Pharmacy")
+	-- A name the map wrote as one word that a second break would have to GUESS at is
+	-- left as the map wrote it: guessing is inventing a shop name.
+	eq("a name with two words run together keeps them",
+		CeroSecContent.tenancyLabel("leatherclothesstore"), "Leatherclothes Store")
+	eq("a name that IS the word is the word",
+		CeroSecContent.tenancyLabel("store"), "Store")
+	eq("and junk is nothing", CeroSecContent.tenancyLabel(7), nil)
+	-- The label reaches a profile, which is the line the whole thing hangs from: the
+	-- dentist's machine is the clinic's and the music store's is the shop's.
+	eq("the dentist's label resolves to the clinic",
+		CeroSecContent.profileFor(CeroSecContent.tenancyLabel("dentist"),
+			{ "dentist" }), "clinic")
+	eq("and the music store's to the shop",
+		CeroSecContent.profileFor(CeroSecContent.tenancyLabel("musicstore"),
+			{ "musicstore" }), "store")
 end
 
 --
