@@ -107,10 +107,17 @@ end
 local function exec(state, session, line, env)
 	env = env or {}
 	if type(session) == "table" and session.shvars == nil then session.shvars = {} end
-	local vars = nil
-	if type(session) == "table" then vars = session.shvars end
+	-- The shell's functions, the way the console keeps them (CeroSec.newConsole): a
+	-- table of its own, by reference, so a definition on one line is there on the
+	-- next. Without it every bench below would be a shell that had forgotten.
+	if type(session) == "table" and session.shfuncs == nil then session.shfuncs = {} end
+	local vars, funcs = nil, nil
+	if type(session) == "table" then
+		vars = session.shvars
+		funcs = session.shfuncs
+	end
 	local job, refusal = CeroSecOS.promptJob(state, session, line, vars,
-		type(session) == "table" and session.status or nil)
+		type(session) == "table" and session.status or nil, nil, nil, funcs)
 	if job == nil then return false, CeroSecOS.fit({ refusal }) end
 
 	-- The machine's job book, if the caller keeps one: the prompt's own job is
@@ -15175,6 +15182,184 @@ do
 	-- And the shell says what they are.
 	okAt(state, admin, "type case", { "case is a shell keyword" })
 	okAt(state, admin, "type esac", { "esac is a shell keyword" })
+end
+
+-- 50f. Shell functions (debts 2).
+--
+-- POSIX.2's `name() { list; }`, and the four things about one that matter: the
+-- positional parameters inside it are the CALL's, `return` leaves it, there is no
+-- `local` in a 1993 sh so a variable it sets is the shell's, and it lives in the
+-- SHELL -- a script gets none, and `. file` is what brings them in.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	ok(state, admin, "greet() { echo hi $1; }", {})
+	okAt(state, admin, "type greet", { "greet is a function" })
+	okAt(state, admin, "greet bob", { "hi bob" })
+	-- Called with nothing, $1 is nothing -- not the caller's own first argument.
+	okAt(state, admin, "greet", { "hi" })
+	-- The other spelling POSIX allows, with a blank between the name and the
+	-- brackets.
+	ok(state, admin, "spaced () { echo spaced; }", {})
+	okAt(state, admin, "spaced", { "spaced" })
+
+	-- $#, $@ and $1 are the CALL's, and the caller's come back afterwards -- which
+	-- is the assertion that holds the restore: a function that swapped them and did
+	-- not put them back would leave the script with the wrong arguments.
+	ok(state, admin, "inner() { echo \"inner $1 $# $@\"; }", {})
+	ok(state, admin, "outer() { inner a b; echo \"outer $1 $#\"; }", {})
+	put(state, admin, "/home/admin/call.sh",
+		"inner() { echo \"inner $1 $# $@\"; }\n" ..
+		"outer() { inner a b; echo \"outer $1 $#\"; }\n" ..
+		"outer x y z\necho \"script $1 $#\"\n")
+	okAt(state, admin, "sh call.sh p q",
+		{ "inner a 2 a b", "outer x 3", "script p 2" })
+
+	-- return, with a number and without.
+	ok(state, admin, "r() { return 3; }", {})
+	do
+		local res = runAt(state, admin, "r", ENV)
+		eq("return hands its number up", res.ok, false)
+	end
+	okAt(state, admin, "echo $?", { "3" })
+	ok(state, admin, "g() { echo one; return; echo two; }", {})
+	okAt(state, admin, "g", { "one" })
+	okAt(state, admin, "echo $?", { "0" })
+
+	-- There is NO local scope in a 1993 sh: a variable a function sets is the
+	-- shell's, and the manual says so out loud.
+	ok(state, admin, "x=outside", {})
+	ok(state, admin, "setter() { x=inside; }", {})
+	ok(state, admin, "setter", {})
+	okAt(state, admin, "echo $x", { "inside" })
+
+	-- The redirect on a call is the FUNCTION's, the way it is a script's.
+	ok(state, admin, "pair() { echo one; echo two; }", {})
+	okAt(state, admin, "pair > fout", {})
+	okAt(state, admin, "cat fout", { "one", "two" })
+	-- And it works as a pipeline stage and inside a catch, because a subshell is
+	-- handed the functions its parent held.
+	okAt(state, admin, "pair | wc -l", { "     2" })
+	okAt(state, admin, "echo $(greet zoe)", { "hi zoe" })
+
+	-- A definition inside a SUBSHELL dies with it.
+	okAt(state, admin, "echo $( sub() { echo in; }; sub )", { "in" })
+	badAt(state, admin, "sub", "sub: command not found")
+
+	-- A function is found before /bin, so one may shadow a command -- and `type`
+	-- says what WOULD run, which is the same question in the same order.
+	ok(state, admin, "ls() { echo mine; }", {})
+	okAt(state, admin, "ls", { "mine" })
+	okAt(state, admin, "type ls", { "ls is a function" })
+	-- But never before a word the SHELL is: `cd` moves the shell and nothing may
+	-- stand in front of it.
+	ok(state, admin, "cd() { echo nope; }", {})
+	ok(state, admin, "cd /etc", {})
+	okAt(state, admin, "pwd", { "/etc" })
+	ok(state, admin, "cd", {})
+	okAt(state, admin, "type cd", { "cd is a shell builtin" })
+end
+
+-- 50g. Where a function lives: the shell, not a script (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	-- A script is a new sh and has none of the shell's.
+	ok(state, admin, "hello() { echo from the shell; }", {})
+	put(state, admin, "/home/admin/child.sh", "hello\n")
+	badAt(state, admin, "sh child.sh", "hello: command not found")
+	-- And what a script defines does not come back out of it.
+	put(state, admin, "/home/admin/defs.sh", "mine() { echo from the file; }\nmine\n")
+	okAt(state, admin, "sh defs.sh", { "from the file" })
+	badAt(state, admin, "mine", "mine: command not found")
+	-- The dot is the one that brings them in, being the shell reading the file into
+	-- itself -- which is the whole reason the dot exists.
+	okAt(state, admin, ". defs.sh", { "from the file" })
+	okAt(state, admin, "mine", { "from the file" })
+	okAt(state, admin, "type mine", { "mine is a function" })
+	-- And the shell's own are still there underneath.
+	okAt(state, admin, "hello", { "from the shell" })
+
+	-- `exit` inside a function ends the SCRIPT, `return` ends the function: the one
+	-- difference between the two words, and POSIX's.
+	put(state, admin, "/home/admin/ex.sh",
+		"q() { echo in q; exit 5; echo never; }\nq\necho after\n")
+	do
+		local res = runAt(state, admin, "sh ex.sh", ENV)
+		eq("exit in a function ended the script", res.ok, false)
+		eq("and said only what ran", #res.lines, 1)
+		eq("which is the line before it", res.lines[1], "in q")
+	end
+	okAt(state, admin, "echo $?", { "5" })
+	put(state, admin, "/home/admin/ret.sh",
+		"q() { echo in q; return 5; echo never; }\nq\necho \"after $?\"\n")
+	okAt(state, admin, "sh ret.sh", { "in q", "after 5" })
+
+	-- `return` with no function and no dotted file around it is what it was before
+	-- there were functions at all: the end of the script. Every script already
+	-- written on every machine in the county uses it that way.
+	put(state, admin, "/home/admin/bare.sh", "echo one\nreturn 4\necho two\n")
+	do
+		local res = runAt(state, admin, "sh bare.sh", ENV)
+		eq("return at the top of a script ends it", res.lines[1], "one")
+		eq("and nothing after it ran", #res.lines, 1)
+	end
+	okAt(state, admin, "echo $?", { "4" })
+end
+
+-- 50h. The ceilings on a function, and the refusals (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	for i = 1, CeroSecOS.MAX_FUNCS do
+		ok(state, admin, "f" .. i .. "() { echo " .. i .. "; }", {})
+	end
+	okAt(state, admin, "f" .. CeroSecOS.MAX_FUNCS, { tostring(CeroSecOS.MAX_FUNCS) })
+	badAt(state, admin, "f99() { echo 99; }", "sh: too many functions")
+	-- One MORE of a name already held is not one more: redefining is free.
+	ok(state, admin, "f1() { echo redefined; }", {})
+	okAt(state, admin, "f1", { "redefined" })
+
+	-- And the text of one is bounded like a variable's value, because that is what
+	-- the console keeps.
+	badAt(state, admin, "huge() { echo " .. string.rep("y", CeroSecOS.MAX_FUNC_BYTES) ..
+		"; }", "sh: function too large")
+
+	-- The two refusals the parser has for a body.
+	badAt(state, admin, "bad() { echo unclosed", "sh: syntax error: missing '}'")
+	badAt(state, admin, "bad2() echo x; }", "sh: syntax error: missing '{'")
+	-- A reserved word is not a name, so `if()` is not a definition at all: it is a
+	-- word with no command behind it, which is what a real sh refuses too.
+	do
+		local res = runAt(state, admin, "if() { echo no; }", ENV)
+		eq("a reserved word is not a function name", res.ok, false)
+		eq("and nothing was defined", res.lines[1], "if(): command not found")
+	end
+	okAt(state, admin, "type if", { "if is a shell keyword" })
+end
+
+-- 50i. A function that calls itself is bounded by the frame stack (debts 2).
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/deep.sh",
+		"f() { echo \"level $1\"; f $(( $1 + 1 )); }\nf 1\n")
+	local _, lines, _, _, job = exec(state, admin, "sh deep.sh")
+	eq("a recursion ends", job.state, "error")
+	eq("on the frame stack's own ceiling", lines[#lines],
+		"deep.sh: line 1: too deeply nested")
+	-- It got somewhere first, and it stopped where the frames run out and not at
+	-- some other number: one frame a level, so the levels reached are the frames
+	-- there are, less the handful the script and the loop already hold.
+	local levels = 0
+	for i = 1, #lines do
+		if string.find(lines[i], "^level ") ~= nil then levels = levels + 1 end
+	end
+	check("and went " .. levels .. " levels deep, under the frame ceiling",
+		levels > 8 and levels < CeroSecOS.MAX_FRAMES)
 end
 
 print("os_test: " .. count .. " assertions passed")

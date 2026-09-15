@@ -69,6 +69,45 @@ refusal with nothing catching them: a file's contents spilled across the middle 
 line being built. A job that has ended writes nowhere, which is one test in `outLine`
 and what a dead process does.
 
+**Shell functions.** `name() { list; }` — POSIX.2's shape, and `name ()` with a
+blank is read too. Positional parameters inside the body are the **call's** (`$1`,
+`$#`, `$@`), and the caller's come back when it returns; `$0` stays the script's, as
+POSIX says. `return [n]` leaves the function and hands `n` up as `$?`; `exit` inside
+one ends the **shell or the script**, which is the whole difference between the two
+words. **There is no `local` in a 1993 sh** — a variable a function sets is the
+shell's, and the manual says so out loud. A function is found *before* `/bin` and
+before the builtins that are files there, and *after* the words the shell itself is,
+so `ls() { … }` shadows `/bin/ls` and `cd() { … }` shadows nothing. `type name`
+answers `name is a function`.
+
+A function runs **in the shell that holds it**: no job, no new variables, no new
+depth — one frame a call, so what bounds a recursion is `MAX_FRAMES` and a
+`f() { f; }` reaches it and stops with `too deeply nested`. The call costs one step
+and the body is charged line by line, like any other line. A redirect on the call is
+the function's, the way it is a script's (`greet > log`).
+
+**Where a function lives.** `job.funcs` is name → **the source text of the
+definition**, and the body is parsed out of it once per job and cached in `job.fprog`.
+The text and not the program, because the console *keeps* a function between one line
+and the next and the console is written to the save file: a body is nested tables, and
+a nested table handed back out of modData and then run is the one thing this machine
+will not do. `CeroSec.repairConsole` bounds `console.shfuncs` the way it bounds a
+variable's value — a real name, printable text under `MAX_FUNC_BYTES`, no more than
+`MAX_FUNCS` of them — plus one check of its own: the text has to declare the very name
+it is filed under, or a `greet` whose text defined `rm` would answer to the wrong word.
+
+It travels the way `job.vars` travels: **by reference** for the prompt, a **copy** for
+a subshell (a stage, an `&`, a `$( )` — a fork inherits its parent's functions and what
+it defines afterwards is its own), and **none** for a script, which is a new `sh`.
+`. file` is the one that brings them in, being the shell reading a file into itself —
+which is the whole reason the dot exists. A logout takes them, as it takes the
+variables.
+
+The braces are **not** reserved words here. `{` and `}` are POSIX reserved words, and
+making them so would mean a brace group (`{ list; }` as a command) this machine has not
+got, plus a refusal for every `echo {` already written. What is needed is that `}`
+*stops the body*, and that falls out of the stops table `parseProgram` already takes.
+
 **`case` and the bracket.** `)` is **not** an operator on this machine — there is no
 subshell grouping here, and making one of it now would turn every `echo (hi)` a
 survivor has already written into a syntax error — so the `)` that closes a pattern is
@@ -183,7 +222,7 @@ The language is the one you already know from a 1993 `/bin/sh`, cut to what fits
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
 `$$`; single and double quotes and backslash; `#` comments; `;`, `&&`, `||` and a
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
-`continue`, `exit`, `return`; `case word in pattern) … ;; esac` with `|` between
+`continue`, `exit`, `return`; `name() { list; }`; `case word in pattern) … ;; esac` with `|` between
 alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
 default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep

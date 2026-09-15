@@ -529,7 +529,7 @@ every time: [ "$who" = kate ].]],
 
 		} },
 
-		{ title = "4. Deciding", pages = {
+		{ title = "4. Deciding, and naming a block", pages = {
 
 [[Asking a question about the world.
 
@@ -731,6 +731,58 @@ is not a loop. That is what makes the useful shape below work:
 Classic mistake. Writing esac on the same line as the last command:
 echo done esac prints both words, because esac only means esac where a
 command starts. Put a semicolon or a new line in front of it.]],
+
+[[Giving a name to a handful of lines.
+
+A FUNCTION is a name and a block. Write it once and type the name after
+that, as if it were a command of its own:
+
+  admin@ksp-04-11:~$ greet() { echo hello $1; }
+  admin@ksp-04-11:~$ greet world
+  hello world
+
+The brackets are empty and always are: they say "this is a function", not
+what it takes. What it takes is $1 to $9, $# and $@, exactly as a script
+has them -- and inside the body they are the CALL's, not the shell's:
+
+  lamp() { echo $2 > /dev/$1; }
+  lamp light0 off
+
+$0 is still the script's name, not the function's, which is what every sh
+does. return leaves it, with a number if you give one:
+
+  ok() { if [ -f "$1" ]; then return 0; fi; return 1; }
+  if ok notes.txt; then echo it is there; fi
+
+exit is not return. exit inside a function ends the whole script, the way
+it would anywhere else; return ends the function and nothing more.]],
+
+[[Two things about functions that catch everybody.
+
+There is no local. A 1993 sh has no such word, so a variable a function
+sets is the SHELL's, and is still set afterwards:
+
+  admin@ksp-04-11:~$ x=outside
+  admin@ksp-04-11:~$ f() { x=inside; }
+  admin@ksp-04-11:~$ f; echo $x
+  inside
+
+Not a limitation of this machine: it is what sh was. Use it on purpose -- a
+function that leaves its answer in a variable is the 1993 way of handing
+one back -- and pick names nothing else uses.
+
+And a function belongs to the SHELL, not to a file. sh yours.sh is a new
+shell and knows none of yours; the dot reads a file into this one:
+
+  admin@ksp-04-11:~$ . ~/lib.sh
+  admin@ksp-04-11:~$ type greet
+  greet is a function
+
+A logout takes them. Put the dot line in ~/.profile and they are there
+every time you log in. Sixteen of them, a thousand bytes each.
+
+Classic mistake. Forgetting the semicolon before the closing brace.
+{ echo hi } has no end to the echo, so the brace is a word it printed.]],
 
 		} },
 
@@ -2042,7 +2094,6 @@ every menu in this book for a reason.]],
 [[The whole language, on this page and the next.
 
 A program is a list of commands, separated by a semicolon or a new line.
-An ampersand behind one runs it behind the prompt.
 
   cmd ; cmd        one after the other
   cmd && cmd       the second only if the first worked
@@ -2066,6 +2117,7 @@ The shapes they build:
   while LIST; do LIST; done
   until LIST; do LIST; done
   case WORD in PAT|PAT) LIST;; PAT) LIST;; esac
+  NAME() { LIST; }
 
 Sixteen deep is as far as these nest, and eight is as long as a pipeline
 may be.]],
@@ -2128,49 +2180,65 @@ own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
       a loop never closed; also 'fi', 'then', 'do',
       'esac', 'in', ';;' and ')'
   syntax error: not a name
-      for wants a variable name after it
+      for wants a name after it
   syntax error: unterminated quote
       a quote opened and never closed
   syntax error: bad substitution
-      a $( ) in a $( ), an unclosed ${ or $(( , or a
-      name in braces that is not one
+      a $( ) in a $( ), an unclosed ${ or $(( , or
+      braces round something that is not a name
   syntax error: bad redirect
       two redirects on one command
   syntax error: missing redirect target
       a > or >> with no file after it
+  syntax error: missing '{'
+      a NAME() with no block after it; also '}']],
+
+[[And what the shell says about a script that is too BIG, which is also said
+before anything runs: these are the machine's own ceilings and not sh's, and
+every one of them is a number this book names where it belongs.
+
   too deeply nested
-      past sixteen levels
+      past sixteen levels of if, for, while or case,
+      or eight of sh running sh
   too many stages
-      more than eight in one pipeline]],
+      more than eight in one pipeline
+  function too large
+      past 1024 bytes of text in one definition
+
+A file is 4096 bytes, so the widest of these is reachable in one and none
+of them is reachable by accident. A script that meets one is a script that
+never ran, exactly like a script with a missing done: fix the line and
+nothing of what it would have done has happened.]],
 
 [[What stops a script while it is running. These happen on a line, so the
-line is named, and the script ends there.
+line is named and the script ends there.
 
   too many variables
       a sixty-fifth name
+  too many functions
+      a seventeenth
   variable too large
   word too large
-      past 1024 bytes: written, built, or caught
+      past 1024 bytes: written, built or caught
   bad arithmetic
       the thing in $(( )) is not a sum
   divide by zero
   ambiguous redirect
       the name after > came out as two words, or none
   sort: input too large
-      sort and uniq must see all their input before they
-      answer, so they hold a hundred lines and four
-      kilobytes of it and no more
+      sort and uniq must see all their input before
+      they answer, so they hold a hundred lines and
+      four kilobytes of it and no more
   test: integer expected
-      -eq and its five friends were handed something
-      that is not a number
-  test: unknown operator
-  test: missing ']'
-  test: argument expected
+      -eq and its five friends, handed something that
+      is not a number
+  test: unknown operator, missing ']', argument
+      expected
   read: not a name
   sleep: invalid interval
   sleep: no clock
   edit: not a terminal
-      also signed su:, passwd:, sudo: and rlogin:; all
+      also su:, passwd:, sudo: and rlogin:; all
       five want a pair of hands, and a cron line, an
       ampersand and a pipeline stage have none]],
 

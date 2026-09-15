@@ -156,8 +156,14 @@ function CeroSecJobs.startPrompt(system, luaObject, console, line, name)
 	-- console saved before this build, whose variables a script shared whole, so
 	-- the engine reads it as all of them (the variables section of
 	-- CeroSecOSVM.lua). It is passed as it stands for exactly that reason.
+	-- The functions the shell holds, by reference like the variables: a definition
+	-- typed on one line is there on the next, and it is the console that keeps it.
+	-- Made here rather than at the login, because a console saved before there were
+	-- functions on this machine has no such table and a shell with none is a shell
+	-- that has defined none.
+	if type(console.shfuncs) ~= "table" then console.shfuncs = {} end
 	local job, refusal = CeroSecOS.promptJob(state, system:sessionOf(console), line,
-		console.shvars, console.status, name, console.shexport)
+		console.shvars, console.status, name, console.shexport, console.shfuncs)
 	if job == nil then return nil, refusal end
 	return enrol(system, luaObject, console, job, false)
 end

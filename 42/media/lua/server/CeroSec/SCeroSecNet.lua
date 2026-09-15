@@ -2434,6 +2434,7 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.stack = nil
 	console.shvars = CeroSecOS.loginVars(account.home)
 	console.shexport = CeroSecOS.loginExported()
+	console.shfuncs = {}
 	console.status = nil
 	console.loginAt = now or 0
 	-- No greeting on an rsh (pty.quiet): rshd prints none of it, login prints all

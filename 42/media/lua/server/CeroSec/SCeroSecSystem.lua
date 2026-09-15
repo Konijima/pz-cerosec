@@ -1678,6 +1678,8 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- And which of them a program it runs is handed: a login exports what
 			-- it sets, so a script finds PATH and HOME without an export line.
 			console.shexport = CeroSecOS.loginExported()
+			-- And no functions: a function belongs to the shell it was told about.
+			console.shfuncs = {}
 			console.status = nil
 			-- When, and on which line: what `who` prints and what `last` reads
 			-- back out of /var/log/wtmp. The console's own line is "console" --

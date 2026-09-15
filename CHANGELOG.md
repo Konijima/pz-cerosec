@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+- Shell functions. `greet() { echo hello $1; }` and then `greet world`, the way
+  every sh has done it: the arguments inside are the call's, `return` hands a
+  number back, and `type greet` says what it is. There is no `local` in a 1993
+  sh, so a variable a function sets is the shell's -- the manual says so out
+  loud. A function belongs to the shell that was told about it: `sh yours.sh` is
+  a new shell and knows none of yours, `. yours.sh` reads them into this one
+  (put that line in ~/.profile), and a logout takes them. Sixteen of them, a
+  thousand bytes of text each.
 - `case` is here. `case $1 in start) ... ;; stop|halt) ... ;; *) ... esac`, with
   a bar between patterns, the shell's own `*`, `?` and `[...]` in them, and `*)`
   as the catch-all -- the one shape every start-up script of the era is written

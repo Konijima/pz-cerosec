@@ -3107,6 +3107,16 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      marche aussi (`case $1 in`, une clause par bloc, `esac` seul sur sa
      ligne). Et `echo a;;` → `sh: syntax error: unexpected ';;'`. [ ]
 
+339g. **Les fonctions du shell.** Au prompt : `greet() { echo hello $1; }` puis
+     `greet world` → `hello world` ; `type greet` → `greet is a function` ;
+     `help` liste `case` et `esac`. `r() { return 3; }`, `r`, `echo $?` → `3`.
+     `x=outside`, `f() { x=inside; }`, `f`, `echo $x` → `inside` (pas de
+     `local` en 1993). Fermer la fenêtre du terminal et la rouvrir : `greet bob`
+     marche encore (c'est la machine qui garde la fonction). `exit` puis se
+     reconnecter : `greet` → `greet: command not found`. Et dans un fichier
+     `lib.sh` avec une définition dedans : `sh lib.sh` ne laisse rien,
+     `. lib.sh` la laisse (`type` le dit). [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

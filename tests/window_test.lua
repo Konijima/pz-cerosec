@@ -15431,4 +15431,91 @@ do
 		bench.fileText("/home/admin/eout"), "good")
 end
 
+--
+-- Shell functions at the glass: the console keeps one, and keeps it as TEXT
+-- (debts 2).
+--
+-- os_test proves what a function does; this proves that the CONSOLE holds it -- a
+-- definition typed on one line is found by the next, and survives the window being
+-- closed and opened again, because it is the machine that keeps it and not the
+-- window.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+
+	bench.enter("greet() { echo hello $1; }")
+	bench.tick(10)
+	bench.frame()
+	-- Kept as the TEXT of the definition, which is what may be written to a save
+	-- file: a body is nested tables, and nothing player-controlled is handed back out
+	-- of modData and then run.
+	eq("the console holds the text of it",
+		bench.object:consoleState().shfuncs.greet, "greet() { echo hello $1; }")
+
+	bench.enter("greet world")
+	bench.tick(10)
+	bench.frame()
+	eq("and the next line finds it", bench.painted("hello world"), true)
+
+	-- The window closed and opened again is a different window on the same machine,
+	-- so the function is still there.
+	local fresh = bench.reopen()
+	bench.enterOn(fresh, "greet again")
+	bench.tick(10)
+	bench.frame()
+	eq("a new window on the same machine still has it",
+		bench.paintedOn(fresh, "hello again"), true)
+
+	-- A logout takes it, the way it takes the variables: somebody walking up to a
+	-- logged-out machine gets a shell, not the last one's.
+	bench.enterOn(fresh, "exit")
+	bench.tick(5)
+	bench.frame()
+	eq("a logout took the functions with the session",
+		bench.object:consoleState().shfuncs, nil)
+end
+
+--
+-- The console handed back by the game: a function survives the round trip, and a
+-- forged one cannot smuggle anything through it.
+--
+do
+	local held = CeroSec.repairConsole({
+		lines = {},
+		shfuncs = {
+			greet = "greet() { echo hi; }",
+			spaced = "spaced () { echo hi; }",
+			-- Every one of these is dropped, and each for its own reason.
+			["not a name"] = "x() { :; }",
+			wrong = "other() { echo no; }",
+			bell = "bell() { echo " .. string.char(7) .. "; }",
+			big = "big() { echo " .. string.rep("y", CeroSecOS.MAX_FUNC_BYTES) .. "; }",
+			notext = 7,
+		},
+	})
+	eq("the two that are functions survive", #CeroSecOS.funcNames(held.shfuncs), 2)
+	eq("kept as the text they were written as", held.shfuncs.greet,
+		"greet() { echo hi; }")
+	eq("the blank-before-brackets spelling too", held.shfuncs.spaced,
+		"spaced () { echo hi; }")
+	eq("a name that is not a name is dropped", held.shfuncs["not a name"], nil)
+	-- The one check that is this table's own: text that declares another name would
+	-- be a function answering to the wrong word.
+	eq("text that declares another name is dropped", held.shfuncs.wrong, nil)
+	eq("a control byte in the text is dropped", held.shfuncs.bell, nil)
+	eq("text past the ceiling is dropped", held.shfuncs.big, nil)
+	eq("a value that is not text is dropped", held.shfuncs.notext, nil)
+
+	-- A forged console cannot hand back a thousand of them.
+	local many = { lines = {}, shfuncs = {} }
+	for i = 1, CeroSecOS.MAX_FUNCS * 4 do
+		many.shfuncs["f" .. i] = "f" .. i .. "() { echo " .. i .. "; }"
+	end
+	eq("and no more of them than a shell may hold",
+		#CeroSecOS.funcNames(CeroSec.repairConsole(many).shfuncs), CeroSecOS.MAX_FUNCS)
+	eq("a fresh console holds none, and a table to put them in",
+		#CeroSecOS.funcNames(CeroSec.newConsole().shfuncs), 0)
+end
+
 print("window_test: " .. count .. " checks passed")

@@ -163,12 +163,13 @@ end
 -- The job whose turn it is, left on the machine's env by the walker below.
 --
 -- A command is handed the env and never the job it runs in -- a command is not
--- allowed to reach into the shell -- and three of them nevertheless have to know
+-- allowed to reach into the shell -- and four of them nevertheless have to know
 -- where they stand: `sh` and `wait` ask whether the machine has room for what
--- they would start, and `env` asks what the ENVIRONMENT is, which is a fact about
--- the shell that started it and about nothing else. All three only read. This is
--- the one thing they may ask, and nil is the honest answer for a command run
--- straight off runArgs by a bench or by the server, with no job around it at all.
+-- they would start, `env` asks what the ENVIRONMENT is, and `type` asks whether a
+-- name is a FUNCTION the shell holds. All four are facts about the shell that
+-- started them and about nothing else, and all four only read. This is the one
+-- thing they may ask, and nil is the honest answer for a command run straight off
+-- runArgs by a bench or by the server, with no job around it at all.
 function CeroSecOS.jobOf(env)
 	if type(env) ~= "table" or type(env.job) ~= "table" then return nil end
 	return env.job
@@ -552,6 +553,80 @@ function CeroSecOS.envNames(vars, exported)
 end
 
 --
+-- Functions
+--
+-- A shell function is the shell's own, like a variable, and what the shell holds is
+-- the SOURCE of it: `job.funcs` is name -> the text of the definition. The body is
+-- read out of that text by the parser, once per job, and cached in `job.fprog` --
+-- which is the job's alone and never travels anywhere, because a parsed program is
+-- nested tables and nothing player-controlled is handed back out of a save file as
+-- one. The console keeps the text (CeroSec.repairConsole bounds it exactly as it
+-- bounds a variable's value), so `greet` still works after a reload.
+--
+-- job.funcs travels the way job.vars travels: BY REFERENCE for the prompt, so a
+-- definition on one line is there on the next; a COPY for a subshell -- a stage, an
+-- `&`, a $( ) -- because a fork inherits its parent's functions and what it defines
+-- afterwards is its own; and NONE for a script, which is a new sh. `. file` is the
+-- one that brings them in, being the shell reading a file into itself.
+
+function CeroSecOS.copyFuncs(funcs)
+	if type(funcs) ~= "table" then return nil end
+	local out = {}
+	for name, src in pairs(funcs) do
+		if type(src) == "string" then out[name] = src end
+	end
+	return out
+end
+
+-- The body of one, parsed. nil plus the reason for a text that will not parse, which
+-- can only be a console handed back with something in it that was never a function.
+local function funcBody(job, name)
+	if type(job.fprog) == "table" and job.fprog[name] ~= nil then return job.fprog[name] end
+	local src = job.funcs[name]
+	if type(src) ~= "string" then return nil, "not a function" end
+	local prog, reason, where = CeroSecOS.parseScript(src)
+	if prog == nil then return nil, CeroSecOS.scriptError(name, reason, where) end
+	-- The definition parsed on its own is one statement, and that statement is the
+	-- definition: what is wanted is the body inside it.
+	local node = prog[1]
+	if type(node) ~= "table" or node.k ~= "func" or type(node.body) ~= "table" then
+		return nil, "not a function"
+	end
+	if job.fprog == nil then job.fprog = {} end
+	job.fprog[name] = node.body
+	return node.body
+end
+
+-- A definition carried out. nil, or the reason it may not be.
+local function defineFunc(job, node)
+	if type(node.src) ~= "string" or #node.src > CeroSecOS.MAX_FUNC_BYTES then
+		return "function too large"
+	end
+	if job.funcs == nil then job.funcs = {} end
+	if job.funcs[node.name] == nil then
+		local n = 0
+		for _, _ in pairs(job.funcs) do n = n + 1 end
+		if n >= CeroSecOS.MAX_FUNCS then return "too many functions" end
+	end
+	job.funcs[node.name] = node.src
+	-- Redefined: the body cached from the old text is not this one's.
+	if type(job.fprog) == "table" then job.fprog[node.name] = nil end
+	return nil
+end
+
+-- Every function a shell holds, sorted: what `type` asks about and what a bench
+-- counts. Sorted for the reason envNames is -- pairs is not an order.
+function CeroSecOS.funcNames(funcs)
+	local names = {}
+	if type(funcs) ~= "table" then return names end
+	for name, src in pairs(funcs) do
+		if type(src) == "string" then names[#names + 1] = name end
+	end
+	table.sort(names)
+	return names
+end
+
+--
 -- The job
 --
 
@@ -569,7 +644,7 @@ function CeroSecOS.copyVars(vars)
 end
 
 -- opts: prog, args (args[1] is $1), name, cmd, session, id, bg, vars, exported,
--- status.
+-- funcs, status.
 --
 -- vars, when given, is taken BY REFERENCE and is the caller's to keep: it is
 -- how the prompt has an environment that outlives one line. Anything that is a
@@ -618,6 +693,9 @@ function CeroSecOS.newJob(opts)
 		vars = vars,
 		nvars = nvars,
 		exported = exported,
+		-- The shell's functions, by reference like the variables and for the same
+		-- reason: a definition on one line is still there on the next.
+		funcs = opts.funcs,
 		-- A session of the job's OWN. `cd` inside a script moves the script and
 		-- not the console it was started from, the way a real shell's child
 		-- cannot move its parent.
@@ -724,13 +802,19 @@ local function popFrame(job)
 			-- Only the directory, because that is the whole of what `cd` moves; `su`
 			-- pushes on the CONSOLE's stack and is the console's to pop.
 			job.session.cwd = f.oldCwd
+			-- And the functions: a subshell inherits them and what it defines is its
+			-- own, exactly as a stage of a pipeline's are.
+			job.funcs = f.oldFuncs
 		end
-	elseif f.deep then
-		-- A file that has finished: the shell that ran it comes back exactly as it
-		-- was. `deep` and not "it kept some arguments", because the dot command
-		-- keeps the caller's arguments AND its variables and is still one level
-		-- deeper -- a file that dots itself has to meet the depth ceiling.
-		job.depth = job.depth - 1
+	elseif f.deep or f.func then
+		-- A file -- or a FUNCTION -- that has finished: the shell that ran it comes
+		-- back exactly as it was. `deep` and not "it kept some arguments", because the
+		-- dot command keeps the caller's arguments AND its variables and is still one
+		-- level deeper -- a file that dots itself has to meet the depth ceiling. A
+		-- function is not one level deeper, because it is not another shell: what
+		-- bounds a recursion is the frame stack (MAX_FRAMES), the way it bounds
+		-- everything else the walker pushes.
+		if f.deep then job.depth = job.depth - 1 end
 		-- The name is put back whichever kind of file it was: a refusal inside a
 		-- dotted file names THAT file and the line in it, because that is where
 		-- the line is, and the shell that dotted it is itself again afterwards.
@@ -742,6 +826,11 @@ local function popFrame(job)
 			-- nil is a value here: a shell that said nothing about its environment
 			-- gets that back, and not the set the child was handed.
 			job.exported = f.oldExported
+		end
+		if f.hadFuncs then
+			job.funcs = f.oldFuncs
+			-- The bodies cached from the child's own definitions go with them.
+			job.fprog = f.oldFprog
 		end
 		-- And the file the shell had opened for it is closed: what the script wrote
 		-- and nobody has written yet goes on the queue the pass empties, IN ORDER,
@@ -930,10 +1019,11 @@ end
 local function pushCapture(job, prog)
 	local frame = { k = "capture", prog = prog, i = 1,
 		oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
-		oldCwd = job.session.cwd }
+		oldCwd = job.session.cwd, oldFuncs = job.funcs }
 	if not pushFrame(job, frame) then return false end
 	job.vars = CeroSecOS.copyVars(job.vars)
 	job.exported = CeroSecOS.copyExported(job.exported)
+	job.funcs = CeroSecOS.copyFuncs(job.funcs)
 	job.caps[#job.caps + 1] = {}
 	return true
 end
@@ -1398,9 +1488,19 @@ builtins.exit = function(job, args)
 	job.sig = { k = "exit", n = n }
 	return n
 end
--- `return` inside a script is the same door: this machine has no functions to
--- return from, so the only thing it can mean is the end of the script.
-builtins["return"] = builtins.exit
+-- `return` leaves a FUNCTION, and the file a `.` read: POSIX's own two places for
+-- it. Its own signal since there are functions to return from -- it was `exit` under
+-- another name while there were none.
+--
+-- With neither around it, it is `exit`: POSIX leaves that case unspecified, a real
+-- sh of 1993 took it as the end of the script, and so does every script already
+-- written on every machine in the county.
+builtins["return"] = function(job, args)
+	local n = 0
+	if args[2] ~= nil then n = math.floor(tonumber(args[2]) or 0) end
+	job.sig = { k = "return", n = n }
+	return n
+end
 
 local function loopSignal(job, args, kind)
 	local n = 1
@@ -1975,6 +2075,56 @@ local function runSimple(state, job, f, env)
 	CeroSecOS.expandTilde(state, job.session, args, redirect)
 
 	local name = args[1]
+
+	-- A FUNCTION the shell holds. Looked for before /bin and before the builtins that
+	-- are files there (echo, printf, test), which is POSIX's order -- a function is
+	-- found after the special built-ins and before everything else -- and AFTER the
+	-- words the shell itself is, because `cd`, `exit`, `export` and `read` change the
+	-- shell and nothing may stand in front of them.
+	--
+	-- It runs in THIS shell: no new job, no new variables, no new depth. What is
+	-- swapped is the positional parameters, and nothing else at all -- there is no
+	-- `local` in a 1993 sh, so a variable a function sets is the shell's.
+	if type(job.funcs) == "table" and job.funcs[name] ~= nil
+			and not CeroSecOS.isShellWord(name) and not CeroSecOS.SHELL_BUILTINS[name] then
+		local body, reason = funcBody(job, name)
+		if body == nil then
+			errLines(job, CeroSecOS.fit({ name .. ": " .. tostring(reason) }))
+			job.status = 1
+			return 1
+		end
+		-- The redirect on the call is the FUNCTION's, the way it is a script's: one
+		-- sign catches everything the whole of it prints. Opened here, where a shell
+		-- opens it, and handed to the frame.
+		local target = nil
+		if redirect ~= nil then
+			local openOk, openLines =
+				CeroSecOS.openRedirect(state, job.session, name, redirect, env)
+			if not openOk then
+				errLines(job, openLines)
+				job.status = 1
+				return 1
+			end
+			target = { path = redirect.path, who = name }
+		end
+		local kept = {}
+		for i = 2, #args do kept[#kept + 1] = args[i] end
+		local frame = { k = "block", prog = body, i = 1, func = true, ret = true,
+			oldArgs = job.args }
+		if target ~= nil then
+			frame.hadRdto = true
+			frame.oldRdto = job.rdto
+		end
+		if not pushFrame(job, frame) then return 1 end
+		if target ~= nil then
+			job.rdto = { path = target.path, who = target.who, buf = {} }
+		end
+		job.args = kept
+		-- $0 is NOT the function's name: POSIX leaves it the script's, and so does
+		-- every sh -- which is why job.name is untouched here.
+		return 1
+	end
+
 	local builtin = builtins[name]
 	-- `exit` at a prompt is not `exit` in a script. In a file, in a $(...) or in
 	-- a stage it ends that and nothing else, which is the builtin above; at the
@@ -2250,6 +2400,10 @@ local function newStage(job, node, out, into, last)
 		prog = { node }, args = job.args, name = job.name, cmd = job.cmd,
 		session = job.session, status = job.status,
 		vars = CeroSecOS.copyVars(job.vars),
+		-- A stage is a subshell, so it is handed a COPY of the functions the way it
+		-- is handed a copy of the variables: `greet | cat` calls the greet the shell
+		-- holds, and a definition inside a stage dies with the stage.
+		funcs = CeroSecOS.copyFuncs(job.funcs),
 	})
 	stage.pipe = out
 	stage.stdinBuf = into
@@ -2605,6 +2759,17 @@ local function pushNode(job, node)
 		return pushFrame(job, { k = "for", node = node, line = node.line,
 			phase = "expand", ex = newExpansion(node.words or {}, false) })
 	end
+	if node.k == "func" then
+		-- A DEFINITION, which makes no frame and runs nothing: it puts the text of the
+		-- function in the shell and answers 0, exactly as an assignment does.
+		local reason = defineFunc(job, node)
+		if reason ~= nil then
+			jobError(job, reason)
+			return false
+		end
+		job.status = 0
+		return true
+	end
 	if node.k == "case" then
 		-- The subject is expanded WITHOUT field splitting, which is POSIX's rule for
 		-- it: `case $file in` is one word however many blanks are in the value, or a
@@ -2895,6 +3060,27 @@ handleSignal = function(job)
 	local sig = job.sig
 	job.sig = nil
 
+	-- `return`: out of the nearest FUNCTION, or the nearest file a `.` read, and no
+	-- further. With neither around it, it is an `exit` -- see the builtin.
+	if sig.k == "return" then
+		local at = nil
+		for i = #job.frames, 1, -1 do
+			local f = job.frames[i]
+			if f.func or f.ret then
+				at = i
+				break
+			end
+			-- A subshell is a wall: `$(return)` returns from nothing outside itself.
+			if f.k == "capture" then break end
+		end
+		if at ~= nil then
+			while #job.frames >= at do popFrame(job) end
+			job.status = sig.n
+			return
+		end
+		sig = { k = "exit", n = sig.n }
+	end
+
 	if sig.k == "exit" then
 		-- `exit` ends the INNERMOST thing there is to end, which is POSIX: the
 		-- script it is written in, or the subshell it is written in, whichever
@@ -2911,7 +3097,11 @@ handleSignal = function(job)
 		if not sig.all then
 			for i = #job.frames, 1, -1 do
 				local f = job.frames[i]
-				if f.k == "capture" or f.oldArgs ~= nil then
+				-- A FUNCTION frame is not one of them, though it keeps the caller's
+				-- arguments like a script's: `exit` inside a function ends the shell or
+				-- the script it is in, which is POSIX and is the whole difference between
+				-- it and `return`.
+				if f.k == "capture" or (f.oldArgs ~= nil and not f.func) then
 					at = i
 					break
 				end
@@ -3337,8 +3527,11 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 		return false
 	end
 	job.depth = job.depth + 1
+	-- `ret` marks the frame `return` may leave: POSIX gives it a function and the file
+	-- a dot read, and a file run as a PROGRAM is neither -- `return` in one is the end
+	-- of the script, which is what `exit` does there too.
 	local frame = { k = "block", prog = prog, i = 1, deep = true,
-		oldName = job.name }
+		oldName = job.name, ret = inPlace == true }
 	if target ~= nil then
 		frame.hadRdto = true
 		frame.oldRdto = job.rdto
@@ -3351,6 +3544,13 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 		frame.oldVars = job.vars
 		frame.oldNvars = job.nvars
 		frame.oldExported = job.exported
+		-- And the FUNCTIONS: a script is a new sh, and a new sh has none. POSIX is
+		-- plain about it -- a function is not in the environment, so nothing carries
+		-- one to a child -- and `. file` is the one way a file's definitions land in
+		-- the shell that asked for them, which is the whole reason the dot exists.
+		frame.oldFuncs = job.funcs
+		frame.oldFprog = job.fprog
+		frame.hadFuncs = true
 	end
 	if not pushFrame(job, frame) then
 		job.depth = job.depth - 1
@@ -3362,6 +3562,8 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 	job.name = name
 	if not inPlace then
 		job.args = kept
+		job.funcs = nil
+		job.fprog = nil
 		local child = CeroSecOS.exportedVars(job.vars, job.exported)
 		local n = 0
 		for _, _ in pairs(child) do n = n + 1 end

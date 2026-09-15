@@ -281,6 +281,21 @@ function CeroSecSelfTest.probe(say)
 	say("case missing bracket", noParen == nil and tostring(noParenWhy) or "PARSED")
 	local loose, looseWhy = CeroSecOS.parseScript("echo a;;")
 	say("two semicolons alone", loose == nil and tostring(looseWhy) or "PARSED")
+	-- Shell functions, which are parser work of a shape nothing else here has: the
+	-- brackets after the name are found with string.match on the word, and the SOURCE
+	-- of the definition is cut out of the text with string.sub on offsets the
+	-- tokenizer recorded -- so a VM that counted a byte differently would hand the
+	-- console a function it could not read back.
+	say("function call", CeroSecSelfTest.sh("greet() { echo hi $1; }; greet bob"))
+	say("function spaced", CeroSecSelfTest.sh("g () { echo spaced; }; g"))
+	say("function return", CeroSecSelfTest.sh("r() { return 3; }; r; echo $?"))
+	say("function args", CeroSecSelfTest.sh("c() { echo \"$# $@\"; }; c a b"))
+	local fnSrc = CeroSecOS.parseScript("pair() { echo one; echo two; }")
+	say("function source kept",
+		type(fnSrc) == "table" and type(fnSrc[1]) == "table" and tostring(fnSrc[1].src)
+			or "NO NODE")
+	local noBrace, noBraceWhy = CeroSecOS.parseScript("bad() echo x; }")
+	say("function missing brace", noBrace == nil and tostring(noBraceWhy) or "PARSED")
 
 	--
 	-- The tar container, which is what a floppy carries between two machines.

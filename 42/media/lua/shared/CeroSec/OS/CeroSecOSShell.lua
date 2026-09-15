@@ -5282,6 +5282,13 @@ commands.type = function(state, session, args, env, stdin, sh)
 	if CeroSecOS.SHELL_BUILTINS[name] or CeroSecOS.isShellWord(name) then
 		return true, { name .. " is a shell builtin" }
 	end
+	-- A FUNCTION the shell holds, named after the words the shell IS and before PATH,
+	-- which is the order the shell looks a name up in (CeroSecOSVM.runSimple). `type`
+	-- says what WOULD run, so it has to ask the same questions in the same order.
+	local job = CeroSecOS.jobOf(env)
+	if job ~= nil and type(job.funcs) == "table" and type(job.funcs[name]) == "string" then
+		return true, { name .. " is a function" }
+	end
 	local found = CeroSecOS.lookupPath(state, session, name, shPath(sh))
 	if found == nil then return fail("type", name, "not found") end
 	return true, { name .. " is " .. found }
@@ -5373,7 +5380,9 @@ end
 -- is a shell that has not said which of its variables are the environment, and
 -- the engine reads that as all of them (see the variables section of
 -- CeroSecOSVM.lua) -- which is what a machine saved before this build means.
-function CeroSecOS.promptJob(state, session, line, vars, status, name, exported)
+-- funcs is the console's own table of function SOURCES and travels by reference for
+-- the same reason: `greet() { ...; }` on one line is still there on the next.
+function CeroSecOS.promptJob(state, session, line, vars, status, name, exported, funcs)
 	if type(state) ~= "table" or state.fs == nil then return nil, "no filesystem" end
 	if type(session) ~= "table" or type(session.user) ~= "string" then
 		return nil, "not logged in"
@@ -5393,7 +5402,7 @@ function CeroSecOS.promptJob(state, session, line, vars, status, name, exported)
 	if name ~= nil then cmd = name end
 	local job = CeroSecOS.newJob({
 		prog = prog, name = name or "sh", cmd = cmd, session = session,
-		vars = vars, status = status, exported = exported,
+		vars = vars, status = status, exported = exported, funcs = funcs,
 	})
 	-- What makes it the PROMPT's job rather than a script's: `cd` moves the
 	-- console, `exit` logs out instead of ending the script, `edit` may open on

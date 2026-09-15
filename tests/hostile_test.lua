@@ -804,6 +804,57 @@ do
 end
 
 --
+-- 8e. A function that calls itself, and a loop that calls one (debts 2).
+--
+-- A function runs in the shell that holds it: no job, no new shell, one frame a
+-- call. So what bounds a recursion is the frame stack and nothing else, and a
+-- recursion that never ends has to reach that ceiling and STOP -- inside the budget,
+-- with a line saying which ceiling it was, and without spending a pass climbing back
+-- up. `f() { f; }` is the shortest program there is that never ends, and it is two
+-- words shorter than the script that runs itself.
+--
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/rec.sh", "f() { f; }\nf\n")
+	local job = typeLine(system, machine, state, console, "sh rec.sh")
+
+	local result = drive(machine, 200)
+	flat("runaway recursion", result)
+	timely("runaway recursion", result)
+	eq("the recursion is over", CeroSecOS.jobIsOver(job), true)
+	local said = false
+	for i = 1, #console.lines do
+		if string.find(console.lines[i], "too deeply nested", 1, true) ~= nil then
+			said = true
+		end
+	end
+	check("and the screen says which ceiling it was", said)
+	note("runaway recursion", result)
+end
+
+do
+	local machine, state, console = newMachine()
+	-- A function called every time round a loop, doing a command's worth of work in
+	-- it: the call is a step and the body is charged as any other line is, so this
+	-- has to be as flat as the same loop written without the function.
+	put(state, "/home/admin/fnloop.sh",
+		"each() { x=$1; }\nwhile true; do each 1; done\n")
+	local job = typeLine(system, machine, state, console, "sh fnloop.sh")
+
+	local result = drive(machine, PASSES)
+	flat("function in a loop", result)
+	timely("function in a loop", result)
+	check("it is still running and still bounded", not CeroSecOS.jobIsOver(job))
+	check("the loop went round (" .. job.steps .. " steps)", job.steps > PASSES)
+	-- And the frame stack did NOT grow: a call that forgot to pop would climb one
+	-- frame a turn and hit "too deeply nested" in sixty, which is the bug this is
+	-- here to catch.
+	check("the frame stack stayed shallow (" .. #job.frames .. ")",
+		#job.frames < 12)
+	note("function in a loop", result)
+end
+
+--
 -- 9. Four of the worst of them at once, on four machines, sharing one budget.
 -- What is being watched here is the ceiling on the WHOLE county: no pass may
 -- spend more than CeroSec.STEP_BUDGET_PER_TICK however many machines there are.

@@ -788,7 +788,10 @@ end
 -- A console at power-on: nothing on the screen, nobody logged in, and the BIOS
 -- still to come.
 function CeroSec.newConsole()
-	return { booted = false, lines = {} }
+	-- shfuncs from the start, empty: a shell holds functions the way it holds
+	-- variables, and the table has to be on the console BEFORE a line is typed or a
+	-- definition would land in a table the job made and the next line would not find.
+	return { booted = false, lines = {}, shfuncs = {} }
 end
 
 -- One stored screen line. A line is text and only text: every byte below 0x20
@@ -843,6 +846,10 @@ function CeroSec.consoleLogout(console)
 	console.shvars = nil
 	-- And the note of which of them were the environment, for the same reason.
 	console.shexport = nil
+	-- The shell's functions go the same way, and on a real machine so do they: a
+	-- function belongs to the shell that was told about it and nothing outlives the
+	-- login.
+	console.shfuncs = nil
 	-- Who the glass would have come back to through su, with it: an account
 	-- logs out of the machine and not out of its own last switch.
 	console.stack = nil
@@ -988,6 +995,35 @@ function CeroSec.repairConsole(console)
 			end
 		end
 		if n > 0 then out.shvars = kept end
+	end
+	-- The shell's FUNCTIONS, which are kept as the text of the definition and not as
+	-- a parsed program: a body is nested tables, and a nested table handed back out of
+	-- modData and then run is the one thing this machine will not do. So what comes
+	-- back through here is a string, checked the way a variable's value is checked --
+	-- printable, under its own ceiling, and not more of them than a shell may hold --
+	-- and the parser reads the body out of it when the function is called.
+	--
+	-- The NAME has to be a name, and the text has to start by declaring that name:
+	-- anything else is a console nobody's shell wrote, and a `greet` whose text
+	-- defines `rm` would be a function that answers to the wrong word.
+	local shfuncs = console.shfuncs
+	if type(shfuncs) == "table" then
+		local kept, n = {}, 0
+		for name, src in pairs(shfuncs) do
+			if type(name) == "string" and type(src) == "string"
+					and CeroSecOS.isVarName(name)
+					and #src <= CeroSecOS.MAX_FUNC_BYTES
+					and not CeroSecOS.hasControlBytes(src)
+					-- The name is safe in a pattern by construction: isVarName above lets
+					-- through letters, digits and the underscore and nothing else, so
+					-- there is no metacharacter in it to escape.
+					and string.find(src, "^" .. name .. "[ \t]*%(%)") ~= nil
+					and n < CeroSecOS.MAX_FUNCS then
+				kept[name] = src
+				n = n + 1
+			end
+		end
+		if n > 0 then out.shfuncs = kept end
 	end
 	-- And which of them are the ENVIRONMENT: the set `export` marks, kept the same
 	-- way and bounded by the same ceiling. A name may be marked without being set,

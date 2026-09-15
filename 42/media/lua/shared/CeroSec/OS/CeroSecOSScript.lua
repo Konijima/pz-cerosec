@@ -20,7 +20,7 @@
 --   statement := andor [ "&" ]
 --   andor     := pipeline (( "&&" | "||" ) pipeline)*
 --   pipeline  := piece ( "|" piece )*
---   piece     := if | for | while | until | case | simple
+--   piece     := if | for | while | until | case | func | simple
 --   if        := "if" program "then" program
 --                ("elif" program "then" program)* [ "else" program ] "fi"
 --   for       := "for" NAME [ "in" word* ] (";"|newline) "do" program "done"
@@ -28,6 +28,7 @@
 --   until     := "until" program "do" program "done"
 --   case      := "case" word "in" clause* "esac"
 --   clause    := [ "(" ] word ( "|" word )* ")" program [ ";;" ]
+--   func      := NAME "()" "{" program "}"
 --   simple    := word* [ (">"|">>") word ]
 --
 -- A word is an array of PARTS, because what a word means is only known when
@@ -64,6 +65,17 @@ CeroSecOS = CeroSecOS or {}
 -- anything a person writes at a terminal and shallow enough that the walker's
 -- own frame stack cannot run away.
 CeroSecOS.MAX_NEST = 16
+
+-- The text of one function definition, and how many a shell may hold.
+--
+-- What a shell keeps between one line and the next is the SOURCE of a function, so
+-- the ceiling is on a string and is the one a variable's value already meets -- a
+-- kilobyte is a page of shell and more than anything anybody types at a glass sixty
+-- columns wide. Sixteen of them, because they are kept on the console and the
+-- console is written to the save file; a shell that could hold a thousand would be a
+-- way to fill it.
+CeroSecOS.MAX_FUNC_BYTES = 1024
+CeroSecOS.MAX_FUNCS = 16
 
 -- Stages in one pipeline. A pipeline runs every stage of it at once, so each one
 -- is a shell of its own with its own frames and its own variables; eight is more
@@ -291,6 +303,7 @@ local function tokenize(text, depth)
 	local i, n, line = 1, #text, 1
 
 	while i <= n do
+		local at = i
 		local c = string.sub(text, i, i)
 		if c == "\n" then
 			tokens[#tokens + 1] = { t = "op", v = "\n", line = line }
@@ -443,7 +456,13 @@ local function tokenize(text, depth)
 			local plain = nil
 			if #parts == 1 and parts[1].t == "lit" and parts[1].bare then plain = parts[1].s end
 			if #parts == 0 then parts[1] = { t = "lit", s = "", q = true, bare = false } end
-			tokens[#tokens + 1] = { t = "word", parts = parts, plain = plain, line = startLine }
+			-- Where the word sits in the text. Only a WORD carries it, and only one
+			-- thing asks: a function definition has to be able to hand back its own
+			-- SOURCE, because that is what the console keeps (a body is a program --
+			-- nested tables -- and nothing player-controlled is handed back out of a
+			-- save file as one; the text is re-read by this very parser instead).
+			tokens[#tokens + 1] = { t = "word", parts = parts, plain = plain,
+				line = startLine, at = at, stop = i - 1 }
 		end
 	end
 
@@ -776,6 +795,70 @@ local function parseCase(P, depth)
 	end
 end
 
+--
+-- A function definition
+--
+-- `name() { list; }`, POSIX.2's shape and the one every sh has taken since the
+-- seventh edition. Two spellings are read, which are the two a pair of hands types:
+-- `name()` as one word, and `name ()` as two.
+--
+-- The braces are NOT made reserved words. `{` and `}` are POSIX reserved words, and
+-- making them so here would mean a brace group (`{ list; }` as a command) this
+-- machine has not got and a refusal for every `echo {` already written. What is
+-- needed instead is that `}` stops the body, and that falls out of the stops table
+-- parseProgram already takes: a reserved word is only one where a command starts, so
+-- `echo done }` prints the brace exactly as a real sh does and the body ends at the
+-- `}` that begins a statement.
+--
+-- The SOURCE of the definition travels with it (`src`). The console keeps a
+-- function between one line and the next, and what it keeps has to survive being
+-- written to a save file and handed back -- so what it keeps is the text, bounded
+-- and checked like a variable's value, and the body is read out of it by this
+-- parser. A parsed program handed back out of modData is the one thing this machine
+-- will not do.
+local function parseFunc(P, depth, name, tokens)
+	local line = P.tokens[P.i].line
+	local at = P.tokens[P.i].at
+	P.i = P.i + tokens
+	skipNewlines(P)
+	local open = wordAt(P)
+	if open == nil or open.plain ~= "{" then
+		return nil, "syntax error: missing '{'", peek(P).line
+	end
+	P.i = P.i + 1
+	local body, reason, where = parseProgram(P, { ["}"] = true }, depth + 1)
+	if body == nil then return nil, reason, where end
+	local close = wordAt(P)
+	if close == nil or close.plain ~= "}" then
+		return nil, "syntax error: missing '}'", peek(P).line
+	end
+	P.i = P.i + 1
+	local src = string.sub(P.text or "", at, close.stop or at)
+	if #src > CeroSecOS.MAX_FUNC_BYTES then
+		return nil, "function too large", line
+	end
+	return { k = "func", line = line, name = name, body = body, src = src }
+end
+
+-- Is what is next a function definition, and what is its name? nil when it is not
+-- one, so the caller goes on to read an ordinary command.
+--
+-- A reserved word is not a name: `if() { :; }` is a syntax error on a real sh and is
+-- one here, because `if` is grammar and cannot be a command.
+local function funcAhead(P)
+	local t = wordAt(P)
+	if t == nil or t.plain == nil then return nil end
+	local bare = string.match(t.plain, "^([A-Za-z_][A-Za-z0-9_]*)%(%)$")
+	if bare ~= nil then
+		if CeroSecOS.RESERVED[bare] then return nil end
+		return bare, 1
+	end
+	if not CeroSecOS.isVarName(t.plain) or CeroSecOS.RESERVED[t.plain] then return nil end
+	local nx = P.tokens[P.i + 1]
+	if nx == nil or nx.t ~= "word" or nx.plain ~= "()" then return nil end
+	return t.plain, 2
+end
+
 local function parsePiece(P, depth)
 	if depth > CeroSecOS.MAX_NEST then
 		return nil, "too deeply nested", peek(P).line
@@ -787,6 +870,8 @@ local function parsePiece(P, depth)
 		if t.plain == "while" or t.plain == "until" then return parseLoop(P, depth) end
 		if t.plain == "case" then return parseCase(P, depth) end
 	end
+	local fname, fwords = funcAhead(P)
+	if fname ~= nil then return parseFunc(P, depth, fname, fwords) end
 	return parseSimple(P)
 end
 
@@ -891,7 +976,7 @@ function CeroSecOS.parseScript(text, depth)
 	local tokens, reason, line = tokenize(text, depth)
 	if tokens == nil then return nil, reason, line end
 
-	local P = { tokens = tokens, i = 1 }
+	local P = { tokens = tokens, i = 1, text = text }
 	local prog, preason, pline = parseProgram(P, {}, 1)
 	if prog == nil then return nil, preason, pline end
 
