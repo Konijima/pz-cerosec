@@ -2918,6 +2918,61 @@ tiré avant que le joueur ne regarde.
      `root`, et `ls /home` montre `admin`. C'est le témoin : ce compte décrit une
      machine que personne n'a jamais installée, et rien d'autre. [ ]
 
+## AF. La bannière, et ce que `login` dit (fidélité)
+
+Rien à régler dans le bac à sable : ces étapes marchent sur n'importe quelle
+machine, garnie ou non. Ce qui est vérifié ici est l'ORDRE des lignes sur un seul
+écran -- le message du jour était imprimé deux fois, au-dessus de `login:` et
+en dessous, et aucune vraie machine ne faisait ça.
+
+331a. **La bannière est au-dessus de `login:`, le message du jour n'y est pas.**
+     Allumer un ordinateur froid et lire l'écran du haut vers le bas, sans rien
+     taper :
+     - les lignes du micrologiciel (`CeroSec BIOS`, la mémoire, `hda`) ;
+     - **une** ligne qui nomme le système, la machine et `(console)` ;
+     - puis `login:`.
+     La phrase `unauthorized access is prohibited` (ou le message du jour de la
+     premises) ne doit **pas** être sur cet écran. [ ]
+
+331b. **Ce que `login` dit, une fois le mot de passe bon.** Se connecter avec un
+     compte ouvert. Dans l'ordre, sous `password:` :
+     - rien du tout au sujet d'une dernière connexion, **la première fois** ;
+     - le message du jour, **une seule fois** sur tout l'écran ;
+     - puis l'invite. [ ]
+
+331c. **La deuxième connexion nomme la première.** `exit`, puis se reconnecter avec
+     le même compte : `Last login: <date> on console`, avec la date et l'heure de
+     la connexion précédente. Vérifier avec `last` que c'est bien la même ligne
+     que le fichier a gardée. [ ]
+
+331d. **Le courrier.** Poser une crontab qui écrit quelque chose
+     (`crontab -e`, une ligne `* * * * * echo bonjour`), attendre une minute, puis
+     `exit` et se reconnecter : `You have mail.` après le message du jour. `mail`
+     montre le message, et jamais `You have new mail.` [ ]
+
+331e. **`touch ~/.hushlogin` et la machine se tait.** Toujours sur ce compte :
+     `touch ~/.hushlogin`, `exit`, se reconnecter → **aucune** des trois lignes.
+     Se connecter avec un autre compte → les lignes sont là. Puis
+     `rm ~/.hushlogin`, se reconnecter → elles reviennent. [ ]
+
+331f. **Par le fil, c'est la machine d'où on vient qui est nommée.** Avec deux
+     ordinateurs sur le même segment (section N) : `rlogin <voisine>`, se
+     connecter, `exit`, puis `rlogin` une deuxième fois → `Last login: <date> from
+     <nom de la machine d'ici>`, et pas `on ttyp0`. [ ]
+
+331g. **La banque et le poste militaire préviennent avant la connexion.** Sur un
+     ordinateur garni d'une banque ou d'un poste militaire (option **Machines et
+     disquettes garnies** sur **Activé**), lire l'écran avant de taper quoi que ce
+     soit : la ligne au-dessus de `login:` parle d'usage autorisé. [ ]
+
+331h. **Une sauvegarde d'avant la mise à jour gagne le fichier, sans rien perdre.**
+     Charger une sauvegarde faite avec la version précédente et ouvrir un
+     ordinateur qui y tournait : `cat /etc/issue` nomme la machine **avec son nom
+     actuel**, la bannière est au-dessus de `login:`, et tout ce qui était sur le
+     disque est toujours là (`ls -l /home`, la crontab, l'historique). Sur une
+     machine où l'on avait écrit soi-même dans `/etc/issue` avant, c'est ce qu'on
+     avait écrit qui reste. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

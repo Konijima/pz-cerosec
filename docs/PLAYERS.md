@@ -29,6 +29,16 @@ On **somebody's** machine there is no `admin` at all: the accounts are the peopl
 worked there, and the name and the password are on a paper in a desk drawer or in a
 dead man's pocket. See *[What you may find](#what-you-may-find)*.
 
+**What the machine says, and when.** Over the `login:` prompt it prints
+`/etc/issue`, which names the system and the machine — a bank and an army post put
+their "authorized use only" there, where somebody who is not in yet reads it. Once
+the password is right, `login` prints three things in order: `Last login: Jul  8
+14:32 on console` (or `from <machine>` for a session that came in over the wire, and
+nothing at all the first time an account is used), then `/etc/motd`, then
+`You have mail.` if there is anything in `/var/mail/<you>`. `touch ~/.hushlogin` and
+a login says none of the three; delete the file and it all comes back. Either file
+emptied is a machine that greets nobody there, which is a choice and not damage.
+
 **Accounts.** A machine nobody set up ships with those two and root can make more:
 `sudo useradd bob` writes the account, makes `/home/bob` for it and says out loud
 that it has no password yet — set one with `passwd bob` before somebody else does.

@@ -8,6 +8,19 @@ date.
 
 ## Unreleased
 
+- The greeting is where a 1993 machine put it. Over the login prompt the
+  machine now names itself, out of a new file, /etc/issue; the message of the
+  day is what you are met with once you are in, and it is printed once instead
+  of twice. A bank and an army post warn you before you log in, not after.
+- Logging in tells you what a real one told you: when this account was last
+  used and at which terminal, or which machine it came in from over the wire,
+  and whether there is mail waiting for you. The first time an account is used
+  there is no last time, so nothing is said about one.
+- touch ~/.hushlogin if you want a machine that says nothing at all when you
+  log in. Delete the file and the greeting is back.
+- Machines already in your save gain /etc/issue on load, unless you had put
+  something at that name yourself. Nothing you wrote is overwritten.
+
 ## 0.2.0 - 2026-09-14
 
 The world update. Nothing here needs a new save: computers you already
