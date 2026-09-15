@@ -1048,12 +1048,13 @@ do
 	-- window and the world content -- because the county block at the foot of it
 	-- benches the minute sweep and the watcher table, and neither can be reached
 	-- through the three-table fake the scheduler benches run on. That is another
-	-- eight files of source in the heap before a machine exists. Measured at 2091K,
-	-- which is what 1440 was catching; 2304 holds it with the room the four numbers
-	-- before it held theirs, and `late - early` -- growth over nine hundred passes,
-	-- which is the assertion that catches a LEAK -- did not move at all.
-	check("and the whole bench holds well under 2304K (" ..
-		string.format("%.0f", late) .. "K)", late < 2304)
+	-- eight files of source in the heap before a machine exists. Measured at 2119K,
+	-- which is what 1440 was catching; 2560 holds it with the room the four numbers
+	-- before it held theirs -- a fifth clear, the way 1440 stood a fifth over 1299 --
+	-- and `late - early`, growth over nine hundred passes, which is the assertion
+	-- that catches a LEAK, did not move at all.
+	check("and the whole bench holds well under 2560K (" ..
+		string.format("%.0f", late) .. "K)", late < 2560)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
