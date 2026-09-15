@@ -2103,6 +2103,43 @@ do
 		SCeroSecObject.WATCHERS_MAX - 1)
 	eq("and says nothing to anybody", #bench.closed, 0)
 
+	-- SPLIT SCREEN: TWO SURVIVORS ON ONE CLIENT, which is the one case the online id
+	-- alone gets wrong. The id is the CONNECTION -- two players sharing a couch share
+	-- it -- so a rule keyed on it would read the second man's window as the first
+	-- man's asking twice and shut the first one, and two people at one keyboard would
+	-- be left with one terminal between them. "The same player" is the id AND the
+	-- player number (SCeroSecSystem.watcherIdOf, idOf).
+	--
+	-- Asserted as the COUNT and then as WHOSE window survived: a bench that only
+	-- counted would be green on a rule that kept two windows belonging to the same
+	-- man.
+	local function splitPlayer(num)
+		local who = {}
+		for key, value in pairs(bench.player) do who[key] = value end
+		who.getOnlineID = function() return -5 end
+		who.getPlayerNum = function() return num end
+		return who
+	end
+	local couch = { splitPlayer(0), splitPlayer(1) }
+	bench.object:dropWatchers()
+	bench.closed = {}
+	openAs(couch[1], "couch-a")
+	openAs(couch[2], "couch-b")
+	eq("two survivors on one client keep two windows", bench.object:watcherCount(), 2)
+	eq("and neither was told to shut", #bench.closed, 0)
+
+	-- And the rule still holds for each of them on his own: the first man opening
+	-- again replaces HIS window and leaves the second man's alone.
+	bench.closed = {}
+	openAs(couch[1], "couch-a2")
+	eq("the first man's second window replaced his first", bench.object:watcherCount(), 2)
+	eq("and exactly one window was told to shut", #bench.closed, 1)
+	local tokens = {}
+	for _, watcher in pairs(bench.object.watchers) do tokens[watcher.token] = true end
+	check("his new one is there", tokens["couch-a2"] == true)
+	check("his old one is gone", tokens["couch-a"] == nil)
+	check("and the other survivor's is untouched", tokens["couch-b"] == true)
+
 	-- The clock put back where the file's other blocks left it: this one wound it
 	-- forward by a quarter of an hour to get past the rate limit, and the benches
 	-- below measure boot animations and reboot delays against it.
