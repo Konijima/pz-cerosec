@@ -321,10 +321,15 @@ is no open account to walk in through and no note in anybody's pocket — the on
 in is the paper in the drawer or the firmware's repair, which is the same cost every
 locked machine has and which the manual states.
 
-**The vendor's own machine carries the whole library** in `/usr/local/src`, by
-reference, which is the one place in the county where all of it stands together — and
-the distribution disk says so in as many words, which is true because this profile is
-what makes it true.
+**The vendor's own machine carries the whole of the building library** — the
+fourteen tools — in `/usr/local/src`, by reference, which is the one place in the
+county where all of them stand together, and the distribution disk says so in as many
+words, which is true because this profile is what makes it true. The `BBS` disk's five
+programs are deliberately **not** on it: they are a caller's own work off his own
+disk, in his own voice in the README, and a dealer's bench does not stock a hobbyist's
+scripts. Which is why the phrase in the prose is *the building library* and not *the
+library* — a sentence that meant every entry in `SCRIPTS` would be a sentence a new
+disk could make false without anybody noticing.
 
 A machine whose premises resolves to an id nobody had written was prefilled with
 nothing at all, which is exactly a bare machine. That path is still there and is
@@ -805,11 +810,11 @@ Five things to know:
 - `BLANK` is in the table with no files on purpose: naming the entry a roll lands
   on when nothing is written lets the bench say so out loud.
 
-### The nine as shipped
+### The ten as shipped
 
 | label | share | tellings | what is on it |
 | --- | --- | --- | --- |
-| `UTILITIES` | 3 | one | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
+| `UTILITIES` | 2 | one | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
 | `BBS LIST` | 2 | one | `NUMBERS.TXT` (**late**, see below), `CALLS.TXT` — packet stations somebody heard, by callsign — and how to reach either |
 | `WARDIALER` | 1 | one | `RANGE.TXT`, `log.sh`, and a README whose first screen says there is no wardialer and why |
 | `GAMES` | 2 | one | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
@@ -818,13 +823,16 @@ Five things to know:
 | `LEDGER` | 2 | **three** | a shop's books: `SALES.TXT` (a line a day, in cents), `SUPPLIERS.TXT`, `total.sh` |
 | `PERSONAL` | 2 | **three** | `LETTERS.TXT` (never sent, the last one dated the 8th or 9th of July), `TODO.TXT`, `RECIPE.TXT`, `POEM.TXT`, `NUMBERS.TXT` |
 | `RADIO LOG` | 1 | **three** | a ham club's `HEARD.LOG` of the week before, `NETS.TXT`, `MYCALL.TXT`, and a README on `cu -l /dev/radio0` and `MHEARD` |
+| `BBS` | 1 | one | the sysop's kit: `bbs.sh`, `read.sh`, `post.sh`, `board.sh`, `setup.sh` and the README that says how to run a board on the machine — see below |
 
 **Still seventeen shares of a hundred.** `LEDGER`, `PERSONAL` and `RADIO LOG` were
 paid for out of the six that were already there and not out of the blank remainder:
 `UTILITIES` went from 4 to 3, `BBS LIST` from 3 to 2, `WARDIALER` from 2 to 1,
 `GAMES` from 3 to 2 and `BACKUP` from 3 to 2, which is five shares for three new
-disks at 2, 2 and 1. So the other eighty-three are still a blank disk, which is what
-a box of disks is, and what changed is only what a written one says.
+disks at 2, 2 and 1. **`BBS` was paid for the same way**, out of `UTILITIES` again —
+3 down to 2 — because that is the disk it is nearest to: two programs and a README
+saying how to copy them. So the other eighty-three are still a blank disk, which is
+what a box of disks is, and what changed is only what a written one says.
 
 ### Three tellings of a disk
 
@@ -856,7 +864,7 @@ would answer a different telling.
 **Which files vary.** The four disks that are somebody's **own writing** —
 `BACKUP`, `LEDGER`, `PERSONAL`, `RADIO LOG` — carry `texts` on every file including
 the README, because a shopkeeper's note to himself is his and the shop in the next
-town had another shopkeeper in it. The other five are a vendor's or a program's
+town had another shopkeeper in it. The other six are a vendor's or a program's
 documentation and keep **one shape**: three voices of one manual page would be three
 manual pages. And two kinds of file keep one shape wherever they are:
 
@@ -881,6 +889,86 @@ wrong one on every machine but the first. A placeholder with nobody behind it be
 `LEDGER` carries `total.sh` out of the shared library rather than a copy of its own,
 which is the same one-copy-named-twice rule the profiles follow: the script the shop
 runs on its own books is the script the bench runs.
+
+### `BBS`: the sysop's kit
+
+**The scenario it was written for, in the words it was asked in:** three players,
+three houses, one computer as a central server. They call it with `cu`, log in to
+their own accounts, and want *a kind of messaging app* — pre-written, found on a
+floppy, ready to copy and use.
+
+Everything underneath already existed. `mail [-s subject] user` posts locally and
+takes its body from a pipe or from a pair of hands a line at a time until a lone
+`.`; a mailbox is an mbox and `CeroSecOS.mailAppend` writes the envelope line;
+`rsh` carries standard input; `who`, `last`, `read`, `cron`, `at` and `tar` are all
+there. What was missing was the **front** of it, which in 1993 was a shell script
+somebody had on a disk. So this is that disk, and not one line of the engine moved
+for it.
+
+**Five programs and a README in 4023 of the floppy's 4096 bytes**, seven nodes of
+thirty-two, no program over 1200:
+
+| | |
+| --- | --- |
+| `bbs.sh` | the menu: `[N]ew`, `[R]ead all`, `[P]ost`, `[B]oard`, `[W]ho`, `[L]ast`, `[U]sers`, `[Q]uit`, over and over until Q. `cd` first, so everything it keeps for a caller is a dot file in that caller's own home |
+| `read.sh <box> [new]` | a mailbox, eighteen lines at a time behind a `-- more --`. With `new`, only what has come in since `.bbs_seen` — the **lastread pointer**, holding the number of messages read, which is what a board has kept since boards began |
+| `post.sh <name>\|all [<board>]` | the subject, then the body a line at a time until a lone `.`, into a file; then one `mail` per recipient off that file. `all` is every account with a home, and puts a copy on the board under `From:`/`Date:`/`Subject:` the script writes itself |
+| `board.sh <board>` | the board's last page |
+| `setup.sh <dir>` | root's, once: the `/usr` chain, the board's directory at 777, the board file at 666, and the four programs into `/usr/local/bin` |
+
+The README carries the whole of it in 1993 words — what a board is, `cu 555-1234`,
+the sysop's three steps, the `.profile` line (`sh /usr/local/bin/bbs.sh` last in
+each caller's), every key, and the nightly `tar cf /mnt/backup /var/mail` out of
+root's crontab or through `at`.
+
+**Four things this shell has not got shaped every one of those decisions**, and
+they are the part worth reading. Each was measured on the engine before anything
+was written on top of it:
+
+- **No functions and no `case`.** So the menu is a ladder of `elif` on one
+  variable, and the pager — eight lines — is written out **twice**, in `read.sh`
+  and in `board.sh`'s stead. A shared pager would have to be a program the other
+  two call by absolute path, and a program that stops working the day it is copied
+  on its own is not a template.
+- **`sh prog > file` does not catch the script's output.** The redirect belongs to
+  the `sh` command, which prints nothing of its own, so the lines of the script it
+  ran go to the glass. That is why each program pages what it prints itself instead
+  of `bbs.sh` collecting a child's output and paging it in one place — the first
+  design, and it does not work.
+- **`grep` has no regex** (it says so over `commands.grep`) and `^` is a character.
+  So the messages in a box are counted with `grep -c "From "`, the plain string,
+  which finds the envelope line and not the `From:` header under it — the colon is
+  the whole of what keeps the two apart. A body line beginning `From ` would be
+  counted as a message, which is the oldest bug in mbox and is why a real mailer
+  writes `>From `; nothing here writes a body.
+- **`/etc/passwd` is 600 and root's on this machine**, so a caller cannot read the
+  accounts out of it. `ls /home` is the answer — `/home` is 755 — and it is the same
+  answer to the same question: an account with a home is an account somebody can
+  post to. It is also why root is **not** on the `all` list, root's home being
+  `/root`.
+
+And one thing nothing here can do: **turn a file back to front.** There is no `tac`,
+and `sort -r` would sort the lines of the messages apart from each other. So the
+board is a log, appended to, and its newest posting is at the **end** — said on the
+disk in as many words, because a caller who expects the newest line at the top has
+to be told where it really is.
+
+The board being **one file everybody may write** is declared on the disk as the
+sysop's own choice, and it is the only public shape this machine has: there is no
+setgid bit here and no group a caller could be put in for the purpose.
+
+**What the bench does with it** is `content_test.lua` section 6b, and it is there
+because the menu is the only program in this mod that **runs other programs** —
+section 6 runs each script once, alone, and cannot see a nested `sh` at all. So 6b
+mounts the floppy, makes two accounts with `useradd`, runs `setup.sh` as root, and
+then types at the menu as a caller: every key, a post to `all` landing in every box
+with a home and one posting on the board, the pointer moving by one and not to the
+top, and the pager stopping once for every page but the last — asserted on the
+**prompt**, because a screen that was not paged prints exactly the same text. And
+every line any of the five ever printed is held to carrying none of the four
+refusals a script can carry for ever without failing: `command not found` first of
+all, a script being a list of commands and a word that is not one of them being no
+syntax error at all.
 
 ### And a seventh that is not loot: `CEROSEC DIAGNOSTICS`
 
@@ -1133,7 +1221,7 @@ script that takes none — a game — is not held to it, there being no wrong wa
 one; and it cannot get out of the rule by declaring `args = {}`, because the bench
 also reads the text for `$1`.
 
-### The fourteen as shipped
+### The nineteen as shipped
 
 | | |
 | --- | --- |
@@ -1151,11 +1239,23 @@ also reads the text for `$1`.
 | `guess.sh <top>` | it picks one, you find it |
 | `hangman.sh <file>` | a word out of a file, a letter at a time |
 | `adventure.sh` | five rooms and one locked door |
+| `bbs.sh` | the board's menu, run at a caller's login |
+| `read.sh <box> [new]` | a mailbox, eighteen lines at a time |
+| `post.sh <name>\|all [<board>]` | write one: to a caller, or to everybody |
+| `board.sh <board>` | the public board's last page |
+| `setup.sh <dir>` | root's, once: the board's directory and the programs |
 
 Every one of them is a **template and not a tool**: each does one thing, takes its
 devices and its files on the command line rather than naming any, and is short enough
 to read on one screen. A script that hard-coded `light0` would work on exactly one
 building in Knox County and teach nothing.
+
+**`bbs.sh` is the one that names paths of its own**, and it has to: it is run out of a
+`.profile`, which can pass it nothing, so the two directories the board lives in are
+two assignments at the top of the file. They are the first two lines under the comment
+for exactly that reason — a sysop who put the board somewhere else changes them and
+nothing else. The other four take what they work on as arguments like everything else
+here, which is also what lets the bench run each of them alone.
 
 Two of them are worth reading for the trick. `lockup.sh` reads the door back before
 it bolts it, because bolting a door that would not close bolts nothing and says it
@@ -1177,10 +1277,11 @@ Every script here assigns it to a name first.
 
 ## Versions
 
-`CeroSecContent.VERSION` is **6** as of the change that made about one premises in
+`CeroSecContent.VERSION` is **7** as of the BBS floppy: five programs, one share off
+`UTILITIES`, and no engine change at all. (**6** made about one premises in
 three automated before the outbreak: `lamps.sh`, a morning line in the three
 crontabs that put lights out, and the roll in `CeroSecContent.automated`.
-(**5** gave the electronics shop a
+**5** gave the electronics shop a
 profile of its own and put the dealer's demonstration disk on every machine that is
 nobody's desk; **4** gave every loot disk that is
 somebody's own writing three tellings and added `LEDGER`, `PERSONAL` and `RADIO LOG`

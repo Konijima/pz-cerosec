@@ -1369,7 +1369,7 @@ files on the disk are and how to run them.
     admin@acct-04-11:~$ mount /dev/fd0 /mnt
     admin@acct-04-11:~$ cat /mnt/README.TXT
 
-There are nine labels:
+There are ten labels:
 
 | | |
 | --- | --- |
@@ -1381,6 +1381,7 @@ There are nine labels:
 | **CEROSEC OS 1.0 DIST** | the distribution media the machine was sold with. How the firmware puts the system back, six manual pages in `MAN/`, and three programs |
 | **LEDGER** | a small shop's books, kept in whole cents because the machine adds whole numbers: a line a day, who the shop buys from, and `total.sh` to add a column up. `sh /mnt/total.sh /mnt/SALES.TXT 3` is the week |
 | **PERSONAL** | somebody's own disk, and none of it is any use to you: letters never sent, a list of things he was going to do, his mother's recipe, a poem he asks you not to laugh at, and four telephone numbers |
+| **BBS** | somebody's kit for running a board of his own: five programs and a README. See *Running a board of your own*, below |
 | **RADIO LOG** | a ham club's packet log — every station the machine heard over the week before, when the nets are, and the station's own callsign — with a README on `cu -l /dev/radio0` and why `MHEARD` inside the box says less than the file does |
 
 **The four disks that are somebody's own writing are written three ways.** `BACKUP`,
@@ -1401,13 +1402,47 @@ typed.
     admin@acct-04-11:~$ cat /mnt/NUMBERS.TXT
     admin@acct-04-11:~$ cu 418-2201
 
+### Running a board of your own
+
+If there are several of you and one machine with a telephone line on it, the `BBS`
+floppy is the whole of what you need to turn it into somewhere you can leave each
+other messages. It is five shell programs and a README, and it was written by
+somebody who ran a board out of his own front room in 1993.
+
+The sysop — whoever the machine belongs to — does it once:
+
+    root@disp-04-11:~$ mount /dev/fd0 /mnt
+    root@disp-04-11:~$ sh /mnt/setup.sh /usr/local/lib/bbs
+    root@disp-04-11:~$ useradd alice
+    root@disp-04-11:~$ passwd alice
+
+and then puts one line at the end of each caller's `.profile`:
+
+    sh /usr/local/bin/bbs.sh
+
+After that, somebody who rings the number with `cu`, logs in as `alice` and gets a
+menu instead of a prompt: **N** for what has come in since she last looked, **R** for
+her whole mailbox eighteen lines at a time, **P** to write one — to a name, or the
+word `all`, which mails everybody with an account and puts a copy on the board —
+**B** for the board, **W** for who is on right now, **L** for the last callers,
+**U** for the accounts there are, and **Q** to hang up.
+
+Nothing about it is magic and that is the point: it is `mail`, `who`, `last` and a
+`read` loop, in files you can read on one screen and change. The board itself is one
+file in `/usr/local/lib/bbs` that everybody may write, with the newest posting at the
+bottom — there is nothing on this machine that turns a file back to front, and the
+README says so rather than pretending otherwise. Keep the mail with a line in root's
+crontab and a floppy left in the drive:
+
+    0 3 * * * tar cf /mnt/backup /var/mail
+
 **Programs somebody wrote.** Some machines have a script or two in their owner's
 `~/bin`, which is already on your path once you are logged in as him. They are
 written in the same `sh` you write in, so `cat` one and read it — that is how you
 learn what this machine can do. Copy one off a disk with `cp /mnt/thing.sh ~/bin`
 and it is yours.
 
-There are fourteen of them in the county and **every one is a template**: none names
+There are nineteen of them in the county and **every one is a template**: none names
 a device or a file of its own, so a script off a shop's machine works on your own
 base once you have wired it. Lights off and lights on, locks either way, close a door and bolt it
 (reading the door back first, because bolting a door that would not close bolts
@@ -1415,8 +1450,10 @@ nothing), which door is open, grep a columns file, add a column up, sort a list 
 work down, print the line of a table for the hour it is, list everything under a
 tree, write a line in a log — and three games.
 
-The one place all fourteen stand together is `/usr/local/src` on the bench machine of
-a CeroSec Systems service department. The distribution disk says so, and it is true.
+The one place the **fourteen building tools** stand together is `/usr/local/src` on
+the bench machine of a CeroSec Systems service department. The distribution disk says
+so, and it is true. The five programs of the `BBS` disk are not there and never were:
+they are a caller's own work, off his own disk, and a dealer did not stock them.
 
 **And the phone book.** A vanilla phone book picked up in Knox County lists the
 premises of that region with the number a computer standing in one would answer on

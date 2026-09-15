@@ -1566,13 +1566,13 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 --     to be a find: most of them are blank, which is also what the floppy loot
 --     file has always said (see CeroSecFloppyLoot).
 --
---     SEVENTEEN of the hundred, and it stayed seventeen when LEDGER, PERSONAL and
---     RADIO LOG were added: the three shares came out of the six that were already
---     there rather than off the blank remainder, so a box of disks is as blank as
---     it has always been and what changed is only what a written one says. The
---     split is 3 UTILITIES, 2 BBS LIST, 1 WARDIALER, 2 GAMES, 2 BACKUP, 2 for the
---     distribution media, 2 LEDGER, 2 PERSONAL, 1 RADIO LOG. The bench adds them
---     up and holds the remainder to being the larger half.
+--     SEVENTEEN of the hundred, and it has stayed seventeen through every entry
+--     added since: LEDGER, PERSONAL and RADIO LOG came out of the six that were
+--     already there, and BBS came out of UTILITIES again -- so a box of disks is as
+--     blank as it has always been and what changed is only what a written one says.
+--     The split is 2 UTILITIES, 2 BBS LIST, 1 WARDIALER, 2 GAMES, 2 BACKUP, 2 for
+--     the distribution media, 2 LEDGER, 2 PERSONAL, 1 RADIO LOG, 1 BBS. The bench
+--     adds them up and holds the remainder to being the larger half.
 --   * BLANK is in the table with no files on purpose: it is the entry the roll
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
