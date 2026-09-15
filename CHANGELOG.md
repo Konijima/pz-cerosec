@@ -15,6 +15,9 @@ date.
   his own things on is named in his own hand instead: books 93, do not read,
   home dir 8 july. Two copies of the same kind of disk found in two towns were
   two different men and do not say the same thing.
+- A blank disk comes out of the drive blank. Ejecting one that had nothing
+  written on it could hand it back named for a program it has not got a byte
+  of, and that name stayed on it for the rest of the save.
 - A pen is a pen. Labelling a disk yourself is handwriting whatever you write,
   and relabelling a printed disk takes the printed sticker off it.
 - `mail` sends as well as reads. `mail [-s subject] bob` posts a message to

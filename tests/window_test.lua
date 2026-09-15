@@ -9997,6 +9997,15 @@ local function newInventory()
 			-- file keeps, and this bench can count it.
 			setTooltip = function(self, key) self.data.Tooltip = key end,
 			getTooltip = function(self) return self.data.Tooltip end,
+			-- The script behind the item, which is where the engine itself goes when
+			-- it has to put an item's own name back (javap -p -c
+			-- zombie.inventory.InventoryItem, setRecordedMediaIndex: getScriptItem at
+			-- 69, Item.getDisplayName at 72, putfield name at 75). It answers the
+			-- DisplayName in items_cerosec.txt, which is what a disk nobody has
+			-- written on is called.
+			getScriptItem = function()
+				return { getDisplayName = function() return "3.5 inch Floppy Disk" end }
+			end,
 		}
 		self.items[#self.items + 1] = item
 		return item
@@ -10012,6 +10021,16 @@ local function newInventory()
 		local item = self:add(fullType, {})
 		if CeroSec.isFloppyType(fullType) then
 			CeroSecContent.onCreateFloppy(item)
+		end
+		-- AND ONE NAME THE BENCH CAN FORCE ON, for the belt. The hook is told to
+		-- stand down on the paths that write a disk onto a fresh shell, so on those
+		-- paths nothing ever names it -- which leaves the code that puts the name
+		-- back with nothing to do and no way to be caught not doing it. This is that
+		-- flag being MISSED, which is the only thing the belt is there for.
+		if self.nameNext ~= nil then
+			item:setName(self.nameNext)
+			item:setCustomName(true)
+			self.nameNext = nil
 		end
 		return item
 	end
@@ -10247,11 +10266,11 @@ do
 	check("and it really is a new item, not the one that went in", back ~= labelled)
 	eq("wearing the label", back:getName(), "PAYROLL 93")
 	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
-	-- TWICE, and both of them are real: the shell is a new item, so the creation
-	-- hook ran on it and labelled it with a roll of its own, and then the eject put
-	-- the sticker that was actually in the drive on top. Take the eject's three
-	-- calls away and this is one.
-	eq("synced, so the other side of a multiplayer game sees it", back.synced, 2)
+	-- ONCE, and once is the whole of it: the shell is a new item and the creation
+	-- hook stood down for it (CeroSecContent.ejecting), so the only name ever
+	-- written on it is the sticker that was really in the drive. A second sync here
+	-- would be the hook having rolled one of its own first.
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
 	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
 
 	-- Back in, and the label is still the label: it lives on the disk and survives
@@ -10599,9 +10618,45 @@ do
 	eq("and came back out", #inv.items, 1)
 	local out = inv.items[1]
 	eq("with nothing written on it", out:getModData().label, nil)
+	-- THE NAME, which is the mark the roll leaves that everything else here would
+	-- have missed: the item the drive made is a real floppy and the hook would have
+	-- named it for whatever it rolled. It comes back called what every disk out of
+	-- the box is called, and not as a custom name -- a custom one is what the game
+	-- saves, and it would follow the disk for the rest of the save.
+	eq("and the name it came with", out:getName(), "3.5 inch Floppy Disk")
+	eq("which is not a custom name", out:isCustomName(), false)
+	-- And nothing was written on it either: the hook builds a whole filesystem
+	-- before writeDiskTo clears it, and a shell that arrives blank never built one.
+	eq("no filesystem on it", out:getModData().fs, nil)
+	-- It does carry a version, and that is right: what came out is a disk record
+	-- the drive made, and every disk has one. What it has not got is the tree the
+	-- hook would have built on it.
+	eq("only the version every disk carries", out:getModData().v,
+		CeroSecOS.FLOPPY_VERSION)
 	eq("nothing said about its label", out:getTooltip(), nil)
 	eq("and no printed look on the shell",
 		out:getModData()[CeroSecContent.ICON_KEY], nil)
+
+	-- THE BELT, with the flag missed on purpose: a shell that arrives named anyway
+	-- still comes back out of the drive called what a disk out of the box is
+	-- called. Put back off the SCRIPT, because the name a custom one replaced
+	-- cannot be asked of the item any more (CeroSecContent.unname).
+	bench.send("insertfloppy", { item = out:getID() })
+	eq("the blank disk went back in", bench.object:hasDisk(), true)
+	inv.nameNext = "CeroSec UTILITIES 1.0"
+	bench.send("ejectfloppy")
+	local belted = inv.items[1]
+	eq("a shell that arrived named comes back unnamed", belted:getName(),
+		"3.5 inch Floppy Disk")
+	eq("and not as a custom name", belted:isCustomName(), false)
+
+	-- And the flag is down again afterwards, or the next floppy the world made
+	-- would come out of a drawer blank for ever.
+	eq("the hook is listening again", CeroSecContent.ejecting, false)
+	local after = inv:AddItem("CeroSec.FloppyBlue")
+	eq("and the next floppy the game makes is rolled as usual", after:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	inv:Remove(after)
 	_G.ZombRand = hadRand
 end
 

@@ -859,6 +859,18 @@ Neither key is a key a **disk** owns: the slot lifts the three a disk owns off t
 item and judges those alone (`ownKeysOf`), exactly as it leaves the engine's own
 `customName` where it is.
 
+**The drive's own shell is not rolled.** `inv:AddItem` instances a real floppy, so
+the creation hook fired on the item the drive was about to write a known disk
+onto: it built a filesystem nobody would read and named the shell for it, and when
+the disk coming out had no label that name stayed — a blank disk came back out of
+the drive called `CeroSec UTILITIES 1.0`. The two places that do this now set
+`CeroSecContent.ejecting` around the `AddItem` call and the hook stands down;
+server Lua is one thread, the flag is set and cleared either side of the one call,
+and the hook consumes it as well, so an `AddItem` that threw in between costs the
+next floppy in the world its contents rather than every floppy after it. The name
+is put back as a belt (`CeroSecContent.unname`) off the script item, which is
+where the engine itself goes when it has to restore an item's own name.
+
 **A pen is a pen.** A label written in the inventory is handwritten whatever it
 says, even word for word a product's line — and relabelling a printed disk takes
 the printed look off it. Coming back **out** of a drive is the one place the kind

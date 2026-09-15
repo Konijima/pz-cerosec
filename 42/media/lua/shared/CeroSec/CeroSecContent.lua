@@ -3101,8 +3101,35 @@ end
 -- therefore in a SHARED file and it asks the world for nothing but a random
 -- number: nothing here reads the per-save secret, which is the server's and must
 -- stay there.
+-- STAND DOWN: an item the machine is about to write a disk onto.
+--
+-- The drive makes its item with inv:AddItem, which instances a real floppy, which
+-- runs this hook on it -- so the shell the survivor gets his disk back on has
+-- already been rolled a disk of somebody else's and named for it. writeDiskTo then
+-- overwrites the three keys a disk owns, and what is left behind is the NAME: a
+-- blank disk came out of the drive called CeroSec UTILITIES 1.0, and the work of
+-- building a filesystem nobody would ever read was done for every eject in the
+-- county.
+--
+-- So the two places that make an item in order to write a known disk onto it say
+-- so first (SCeroSecSystem's ejectfloppy and its diagnostics disk). Server Lua is
+-- one thread and the flag is set immediately before the call and cleared
+-- immediately after it, so there is no second item in between to take it by
+-- mistake -- and this CONSUMES it as well, so an AddItem that threw between the
+-- two (the error unwinds into the game's own pcall and never reaches the clear)
+-- costs the next floppy in the world its contents and not every floppy after it.
+--
+-- It is not the only guard. The name is put back by the caller as well, because a
+-- flag that is ever missed must not be the only thing standing between a survivor
+-- and a blank disk wearing a product's label.
+CeroSecContent.ejecting = false
+
 function CeroSecContent.onCreateFloppy(item)
 	if item == nil then return end
+	if CeroSecContent.ejecting then
+		CeroSecContent.ejecting = false
+		return
+	end
 	if ZombRand == nil then return end
 	-- A disk that somehow already has something written on it is left alone: this
 	-- is a hook on creation and not a hook on every touch, but an item made by
@@ -3231,6 +3258,45 @@ function CeroSecContent.markLabel(item, printed)
 	end
 	item:setTooltip(CeroSecContent.HAND_TOOLTIP)
 	data[CeroSecContent.ICON_KEY] = nil
+end
+
+-- Take a name off a shell that should not be wearing one: a disk with nothing
+-- written on it is called what every other disk out of the box is called.
+--
+-- Only a CUSTOM name is taken off. The name a floppy is made with is the engine's
+-- and is the translated one out of ItemName.json; touching it would be replacing a
+-- French client's words with ours.
+--
+-- The name to put back cannot be ASKED of the item -- getDisplayName() is one
+-- getfield on the very field setName writes (javap -p -c
+-- zombie.inventory.InventoryItem, getDisplayName at 8637-8641), so once a custom
+-- name is on there the old one is gone. It comes off the SCRIPT instead, which is
+-- where the engine itself goes when it has to put an item's own name back:
+-- setRecordedMediaIndex writes `name` from scriptItem.getDisplayName() at offsets
+-- 67-75 of that same class. getScriptItem() is a getfield on scriptItem (9893) and
+-- Item.getDisplayName() answers the script's DisplayName, or getFullName() when
+-- there is none (javap -p -c zombie.scripting.objects.Item, offsets 0-16).
+--
+-- That is the script's fallback and not the translation, which the client's own
+-- erase gets through getItemNameFromFullType (CeroSecFloppyMenu). This runs on the
+-- SERVER, where that vanilla client function is not answerable, so the translated
+-- name is asked for when it is there and the script's is what is left otherwise --
+-- and both of them say 3.5 inch Floppy Disk on an English client.
+function CeroSecContent.unname(item)
+	if item == nil then return end
+	if not item:isCustomName() then return end
+	local name = nil
+	if getItemNameFromFullType ~= nil then
+		name = getItemNameFromFullType(item:getFullType())
+	end
+	if type(name) ~= "string" or name == "" then
+		local script = item:getScriptItem()
+		if script ~= nil then name = script:getDisplayName() end
+	end
+	if type(name) ~= "string" or name == "" then return end
+	item:setName(name)
+	item:setCustomName(false)
+	item:syncItemFields()
 end
 
 -- And the same, asked of the STICKER, for the two places a disk comes back out of
