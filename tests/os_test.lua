@@ -8581,7 +8581,7 @@ do
 	-- mail: nothing, then something, then nothing again -- reading is what
 	-- empties it.
 	okAt(state, admin, "mail", { "No mail for admin" })
-	badAt(state, admin, "mail -f", "mail: usage: mail")
+	badAt(state, admin, "mail -f", "mail: usage: mail [-s subject] [user...]")
 	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo hi", { "hi" }, FIXED)
 	okAt(state, admin, "mail", {
 		"From cron  Thu Jul  8 14:32:00 1993",
@@ -8652,6 +8652,219 @@ do
 
 	-- Mail with nothing in it is not a delivery at all.
 	eq("no lines, no mail", CeroSecOS.mailAppend(state, "admin", "ksp", nil, {}, FIXED), false)
+end
+
+--
+-- 40e. mail, sending: the pipe, the typed body, and who may be sent to
+--
+-- Berkeley Mail's other half. The envelope and the headers are read back out of
+-- the RECIPIENT's box rather than off the return of the command, because what a
+-- reader will see is the file and not what the sender was told.
+--
+
+-- The lines in an account's mailbox, read the way the machine wrote them.
+local function boxLines(state, who)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.mailPath(who))
+	if node == nil then return nil end
+	return CeroSecOS.splitLines(node.data or "")
+end
+
+local function boxHas(state, who, text)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.mailPath(who))
+	if node == nil then return false end
+	return string.find(node.data or "", text, 1, true) ~= nil
+end
+
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob", "")
+
+	-- A pipe, with a subject. Read back as bob would read it: the envelope line
+	-- that separates one message from the next, then the four headers.
+	okAt(state, admin, "echo hi | mail -s Hello bob", {})
+	local box = boxLines(state, "bob")
+	eq("the envelope names the sender and the date", box[1],
+		"From admin  Thu Jul  8 14:32:00 1993")
+	eq("From: carries the account and the host", box[2], "From: admin@ksp-front-01")
+	eq("To: is the recipient", box[3], "To: bob")
+	eq("Date: is the moment it was sent", box[4], "Date: Thu Jul  8 14:32:00 1993")
+	eq("Subject: is what -s said", box[5], "Subject: Hello")
+	eq("a blank line ends the headers", box[6], "")
+	eq("and then the body", box[7], "hi")
+	eq("and nothing else", #box, 7)
+	-- The spool keeps its modes: the privilege is the engine's writer and never a
+	-- mode somebody loosened. admin wrote this file and still cannot read it.
+	local node = CeroSecOS.systemNode(state, CeroSecOS.mailPath("bob"))
+	eq("the box belongs to the recipient", node.owner, "bob")
+	eq("at 600", node.mode, CeroSecOS.MAIL_MODE)
+	badAt(state, admin, "cat " .. CeroSecOS.mailPath("bob"),
+		"cat: " .. CeroSecOS.mailPath("bob") .. ": permission denied")
+	-- And bob reads it exactly as he reads cron's, which is the whole point of
+	-- going through mailAppend: one file, one reader.
+	okAt(state, bob, "mail", box)
+	eq("reading emptied it", #(boxLines(state, "bob") or {}), 0)
+
+	-- No -s is no Subject header at all, rather than an empty one.
+	okAt(state, admin, "echo plain | mail bob", {})
+	local plain = boxLines(state, "bob")
+	eq("the headers stop at Date:", plain[4], "Date: Thu Jul  8 14:32:00 1993")
+	eq("with no Subject line", plain[5], "")
+	eq("and the body under it", plain[6], "plain")
+	okAt(state, bob, "mail", nil)
+
+	-- The body typed at the terminal, a line at a time, until a single ".".
+	local step = runAt(state, admin, "mail -s Typed bob")
+	eq("it asks", step.control, "prompt")
+	eq("with no prompt of its own", step.data.text, "")
+	eq("and a token that names mail", step.data.cont.cmd, "mail")
+	local cont = step.data.cont
+	local r = { CeroSecOS.continue(state, admin, cont, "first", ENV) }
+	eq("a line of the body is taken", r[1], true)
+	eq("and it asks for the next", r[3], "prompt")
+	-- NOTHING is in the mailbox yet: the message is not sent until the dot.
+	eq("nothing is delivered part way through", #(boxLines(state, "bob") or {}), 0)
+	cont = r[4].cont
+	r = { CeroSecOS.continue(state, admin, cont, ".", ENV) }
+	eq("the dot ends it", r[1], true)
+	eq("and it says nothing", #r[2], 0)
+	eq("and nothing is left to answer", r[3], nil)
+	local typed = boxLines(state, "bob")
+	eq("the typed body arrived", typed[7], "first")
+	eq("and the dot is not part of it", #typed, 7)
+	okAt(state, bob, "mail", nil)
+
+	-- A ".x" and a " ." are text: only a line holding exactly one dot ends it.
+	step = runAt(state, admin, "mail bob")
+	cont = step.data.cont
+	r = { CeroSecOS.continue(state, admin, cont, ".x", ENV) }
+	eq("\".x\" is a line of the body", r[3], "prompt")
+	r = { CeroSecOS.continue(state, admin, r[4].cont, " .", ENV) }
+	eq("\" .\" is a line of the body too", r[3], "prompt")
+	r = { CeroSecOS.continue(state, admin, r[4].cont, ".", ENV) }
+	eq("and the bare dot ends it", r[1], true)
+	local dots = boxLines(state, "bob")
+	eq("both lines are in the body", dots[6], ".x")
+	eq("both of them", dots[7], " .")
+	eq("and nothing more", #dots, 7)
+	okAt(state, bob, "mail", nil)
+
+	-- THE INTERRUPT. Escape drops the question and the job (Commands.interrupt in
+	-- SCeroSecSystem.lua); what this proves is the half that lives here -- there
+	-- is nothing to undo, because a body being typed is carried in the token and
+	-- in no mailbox. Three lines typed and then abandoned, and the box is absent.
+	step = runAt(state, admin, "mail -s Abandoned bob")
+	cont = step.data.cont
+	for _, text in ipairs({ "one", "two", "three" }) do
+		r = { CeroSecOS.continue(state, admin, cont, text, ENV) }
+		cont = r[4].cont
+	end
+	eq("three lines typed and nothing written", #(boxLines(state, "bob") or {}), 0)
+	eq("and the token still holds them", #cont.body, 3)
+
+	-- Who may be sent to. Sendmail's wording for a name that is not an account,
+	-- and the line is refused whole: the second name is good and gets nothing.
+	local r2 = runAt(state, admin, "echo hi | mail ghost")
+	eq("an unknown name is refused", r2.ok, false)
+	eq("in sendmail's words", r2.lines[1], "ghost... User unknown")
+	r2 = runAt(state, admin, "echo hi | mail ghost bob")
+	eq("one bad name refuses the line", r2.ok, false)
+	eq("nothing was delivered to the good one", #(boxLines(state, "bob") or {}), 0)
+
+	-- A remote address: the declared deviation. Both spellings 1993 had.
+	r2 = runAt(state, admin, "echo hi | mail bob@gate")
+	eq("a domain address is refused", r2.ok, false)
+	eq("with no mailer to send it", r2.lines[1],
+		"bob@gate... Cannot send mail: no mailer")
+	r2 = runAt(state, admin, "echo hi | mail gate!bob")
+	eq("and a bang path the same way", r2.lines[1],
+		"gate!bob... Cannot send mail: no mailer")
+
+	-- Several recipients: one copy each, both boxes their own.
+	addUser(state, "kate", "", "/home/kate")
+	okAt(state, admin, "echo team | mail -s Standup bob kate", {})
+	check("bob has his copy", boxHas(state, "bob", "Subject: Standup"))
+	check("and kate hers", boxHas(state, "kate", "Subject: Standup"))
+	eq("addressed to him", boxLines(state, "bob")[3], "To: bob")
+	eq("and to her", boxLines(state, "kate")[3], "To: kate")
+	okAt(state, bob, "mail", nil)
+
+	-- A body with nothing in it is sent, with the line real mail prints.
+	r2 = runAt(state, admin, "printf '' | mail -s Empty bob")
+	eq("an empty body is not a refusal", r2.ok, true)
+	eq("and it says so", r2.lines[1], CeroSecOS.MAIL_NULL_BODY)
+	eq("in one line", #r2.lines, 1)
+	check("and the message went", boxHas(state, "bob", "Subject: Empty"))
+	okAt(state, bob, "mail", nil)
+end
+
+-- What a cron line writes: `echo done | mail bob` delivered as a job with no
+-- keyboard behind it, which is the case the null-body rule is for.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	addUser(state, "bob", "", "/home/bob")
+
+	-- A job with no keyboard: the shell's own answer, handed the way the engine
+	-- hands it. `keys = false` is a crontab line and a `&` alike.
+	local NOKEYS = { path = CeroSecOS.DEFAULT_PATH, tty = false, keys = false }
+	local ok2, lines = CeroSecOS.runArgs(state, admin, { "mail", "bob" }, nil, ENV, nil, NOKEYS)
+	eq("mail with nobody there sends", ok2, true)
+	eq("and says the body was empty", lines[1], CeroSecOS.MAIL_NULL_BODY)
+	check("the message is in the box", boxHas(state, "bob", "To: bob"))
+
+	-- And the pipe a crontab really writes, end to end through the shell.
+	local r = runAt(state, admin, "echo done | mail bob")
+	eq("the cron line is delivered", r.ok, true)
+	check("with what echo printed in it", boxHas(state, "bob", "done"))
+end
+
+-- The disk. A message a person sends is not the machine writing about itself, so
+-- it is charged to the drive -- and a full drive refuses with nothing written.
+do
+	local state = fresh()
+	local root = open(state, "root")
+	local admin = open(state, "admin")
+	addUser(state, "bob", "", "/home/bob")
+
+	-- Every byte of it, the way section 20's disk bench fills one.
+	local _, used = CeroSecOS.usage(state)
+	local block = string.rep("y", CeroSecOS.MAX_FILE_BYTES)
+	local blocks = math.floor((CeroSecOS.DISK_BYTES - used) / CeroSecOS.MAX_FILE_BYTES)
+	for i = 1, blocks do
+		if not CeroSecOS.writeFile(state, root, "/b" .. i, block, false, nil) then
+			error("write /b" .. i .. " failed")
+		end
+	end
+	local _, now = CeroSecOS.usage(state)
+	if not CeroSecOS.writeFile(state, root, "/last",
+			string.rep("z", CeroSecOS.DISK_BYTES - now), false, nil) then
+		error("write /last failed")
+	end
+	local _, full = CeroSecOS.usage(state)
+	eq("the disk is exactly full", full, CeroSecOS.DISK_BYTES)
+
+	local r = runAt(state, admin, "echo hi | mail bob")
+	eq("a full disk refuses the send", r.ok, false)
+	eq("in the words the machine uses for a full disk", r.lines[1],
+		"mail: " .. CeroSecOS.mailPath("bob") .. ": disk full")
+	eq("and nothing was written", boxLines(state, "bob"), nil)
+	local _, after = CeroSecOS.usage(state)
+	eq("the drive did not move", after, full)
+
+	-- Room made, and the same line goes through.
+	okAt(state, root, "rm /last", {})
+	okAt(state, admin, "echo hi | mail bob", {})
+	check("the message is there now", boxHas(state, "bob", "hi"))
+
+	-- What cron mails is still exempt: the machine writing about itself does not
+	-- fill the drive, which is the rule the send deliberately does not inherit.
+	okAt(state, root, "rm /b1", {})
+	local _, was = CeroSecOS.usage(state)
+	eq("cron's mail is written", CeroSecOS.mailAppend(state, "admin", "ksp",
+		"echo tick", { "tick" }, FIXED), true)
+	eq("and costs the disk nothing", select(2, CeroSecOS.usage(state)), was)
 end
 
 --

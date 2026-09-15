@@ -273,10 +273,16 @@ end
 -- somebody just typed will (see jobHasKeyboard in CeroSecOSVM.lua, which is where
 -- the answer is worked out). Same rule as above: false only when the shell said
 -- so, so a bench calling straight in is a person standing at the keyboard.
-local function shKeys(sh)
+--
+-- On CeroSecOS rather than local to this file: `mail` reads its input the same
+-- way and lives with the mailbox (CeroSecOSCron.lua), and a second copy of a
+-- rule about standard input is a second answer to it. The file-local names below
+-- are kept so that no call site here had to change.
+function CeroSecOS.shKeys(sh)
 	if type(sh) ~= "table" then return true end
 	return sh.keys ~= false
 end
+local shKeys = CeroSecOS.shKeys
 
 -- The one usage line there is for a command: the string in COMMAND_INFO. `man
 -- ls` prints it and a wrong `ls` prints it, so the two can never drift into
@@ -304,12 +310,13 @@ end
 -- on whatever the stage to its left has written by then. `carry` is the
 -- command's own scratch table, kept between one call and the next, which is what
 -- lets `wc` count a pipe it will never see the end of in one pass.
-local function stdinOf(stdin, paths)
+function CeroSecOS.stdinOf(stdin, paths)
 	if #paths > 0 then return nil end
 	if type(stdin) ~= "table" then return nil end
 	stdin.want = true
 	return stdin
 end
+local stdinOf = CeroSecOS.stdinOf
 
 -- What a command that cannot answer before it has seen ALL of its input may
 -- hold while it waits for the end of it. `sort` cannot print a line until it
@@ -324,7 +331,7 @@ end
 -- reader -- cat, grep, head, wc, uniq -- keeps nothing at all and has no ceiling
 -- to meet: they answer a line at a time, which is why `yes | wc -l` counts for
 -- ever on this machine exactly as it does on a real one.
-local function holdLine(carry, line)
+function CeroSecOS.holdLine(carry, line)
 	if carry.lines == nil then
 		carry.lines = {}
 		carry.bytes = 0
@@ -333,6 +340,7 @@ local function holdLine(carry, line)
 	carry.bytes = carry.bytes + #line + 1
 	return #carry.lines <= CeroSecOS.PIPE_LINES and carry.bytes <= CeroSecOS.PIPE_BYTES
 end
+local holdLine = CeroSecOS.holdLine
 
 -- The paths on a command line, with args[1] -- the command's own name -- left
 -- where it is.
@@ -732,7 +740,12 @@ CeroSecOS.COMMAND_INFO = {
 	-- CeroSecOS.newLink for why this machine has no hard links.
 	ln       = { desc = "make a symbolic link", usage = "ln -s <target> <name>" },
 	ls       = { desc = "list a directory", usage = "ls [-1laACF] [path]" },
-	mail     = { desc = "read the mail cron left you", usage = "mail" },
+	-- Berkeley Mail's two halves under one name, which is what mail(1) is: no
+	-- recipient is reading your own box, and a recipient is sending. The body
+	-- comes from the standard input either way -- a pipe, or the terminal until a
+	-- line holding a single "." -- because that is where mail has always read it.
+	mail     = { desc = "read your mail, or send a message",
+		usage = "mail [-s subject] [user...]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
 	-- CeroSec Systems' own, and the manual's deviations page says so: no Unix of
@@ -913,6 +926,15 @@ CeroSecOS.DEVIATIONS = {
 	{ name = "ln", phrase = "ln: usage: ln -s <target> <name>",
 		why = "no hard links: the state is copied by recursion, so the second name" ..
 			" would become a second file" },
+	-- mail can only reach an account ON THIS MACHINE. A 4.4BSD mail handed
+	-- `bob@gate` or `gate!bob` would have tried -- sendmail would have looked the
+	-- host up and uucp would have queued the file -- and there is no uucp on this
+	-- disk and no mailer behind the wire, so both spellings are refused where they
+	-- are typed. The page carries the answer a player gets, because a declaration
+	-- that does not say what happens is not one; the wire itself is reached with
+	-- `rsh <host> mail <user>`, which is the LAN mail a script writes.
+	{ name = "mail", phrase = "Cannot send mail: no mailer",
+		why = "no uucp and no mailer on the wire: a remote address is refused" },
 	-- Not a command: the one machine in four that is found at somebody's prompt
 	-- after the power came back. No Unix can restore a session across a power cut
 	-- and this one cannot either -- a survivor's own machine comes back to `login:`

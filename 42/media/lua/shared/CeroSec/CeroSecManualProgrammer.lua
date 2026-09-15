@@ -1453,6 +1453,30 @@ a pipeline: neither has anybody in front of it either.
   admin@ksp-04-11:~$ echo hi | su root
   su: not a terminal]],
 
+[[Posting mail yourself.
+
+mail with a name after it SENDS, and the body is its standard input --
+which is where mail has always read one. So a script posts a report with a
+pipe:
+
+  admin@ksp-04-11:~$ echo copied | mail -s Backup bob
+  admin@ksp-04-11:~$ df | mail -s "disk today" admin bob
+
+Two names is two copies, each addressed to its own reader. Typed at the
+prompt with nothing piped in, mail reads the body a line at a time and a
+line holding one dot ends it; Escape gives up and sends nothing at all.
+
+A line with nobody behind it -- a crontab line, a job behind an ampersand
+-- has no input, so the message goes with an empty body and says so:
+
+  Null message body; hope that's ok
+
+A name that is no account here is refused before anything is delivered,
+and so is an address on another machine:
+
+  ghost... User unknown
+  bob@gate... Cannot send mail: no mailer]],
+
 [[Two things cron will not do.
 
 It does not catch up. A machine that was switched off at four does not run

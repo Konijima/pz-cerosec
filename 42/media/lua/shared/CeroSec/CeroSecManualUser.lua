@@ -258,24 +258,24 @@ nothing: the record says the last man sat down and never left, and the
 screen agrees with the record. A real Unix would ask again, and so does
 yours: log out and login: is what you get.]],
 
-[[One command is narrower here than you remember it: ln.
+[[Two commands are narrower here than you remember them: ln, and mail.
 
 On a real machine ln with no flag makes a HARD link -- a second name for
-one and the same file, with no signpost in between and no way to tell
-which name came first. This machine has none, and cannot: a computer here
-can be picked up and carried, and what is carried is a copy of the whole
-disk taken name by name, so the second name would quietly become a second
-FILE the first time somebody moved the desk. A link that stops being a
-link is worse than no hard links at all.
-
-So the flag is not optional, and leaving it off makes nothing:
+one and the same file, with no signpost in between. This machine has none,
+and cannot: a computer here can be picked up and carried, and what is
+carried is a copy of the whole disk taken name by name, so the second name
+would become a second FILE the first time somebody moved the desk. So the
+flag is not optional, and leaving it off makes nothing:
 
   admin@ksp-04-11:~$ ln a b
   ln: usage: ln -s <target> <name>
 
-Symbolic links are the whole of what is here, and chapter 8 is where they
-are taught. If you wanted two names for one file, copy it with cp and
-remember which one is which.]],
+Symbolic links are the whole of what is here; chapter 8 teaches them.
+
+And mail reaches accounts on THIS machine only. bob@gate and gate!bob
+both answer Cannot send mail: no mailer -- there is no uucp on this disk
+and nothing on the wire answers for mail. rsh <host> mail <user> is how a
+message crosses it.]],
 
 [[And two shapes are cut rather than changed. A line here is sixty columns,
 so uptime says "load" where 4.4BSD says "load averages:", and w prints the
@@ -1652,7 +1652,7 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2719  62817    5%
+  hda         65536   2725  62811    5%
   nodes         512    102    410   20%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%

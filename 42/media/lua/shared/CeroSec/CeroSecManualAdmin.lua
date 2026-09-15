@@ -1071,14 +1071,17 @@ The second time is not a fault: reading the mail IS emptying the mailbox,
 which is what mail has always done. A hundred lines and four kilobytes to
 a mailbox, oldest dropped.
 
+mail with a NAME after it SENDS instead: Volume 3 chapter 9 has that
+half.
+
 What RAN, and what could not, is /var/log/cron, root's at 640:
 
   root@ksp-04-11:~# cat /var/log/cron
   Jun 27 13:12 (admin) CMD (echo tick)
   Jun 27 13:12 (CRON) error (can't fork)
 
-That second line is the machine full: four jobs at once is all it has, and
-a line that comes due with no slot free is skipped and logged.]],
+That second line is the machine full: four jobs is all it has, and a line
+with no slot free is skipped and logged.]],
 
 [[One thing, once: at.
 
@@ -1822,7 +1825,7 @@ Work with nobody standing there.
   at HH:MM | at -l | at -r <job>...
   atq
   atrm <job>...
-  mail
+  mail [-s subject] [user...]
 
 The wire.
 
@@ -1962,8 +1965,7 @@ refused whole, and the refusal names the file, the line and the field:
 
   "/var/spool/cron/admin":1: bad minute
       also bad hour, bad month, bad day-of-month and
-      bad day-of-week: a field that will not read, or
-      one that was never there
+      bad day-of-week
   "/var/spool/cron/admin":1: bad command
       five fields and nothing after them
   "/var/spool/cron/admin":1: bad time specifier
@@ -1971,13 +1973,21 @@ refused whole, and the refusal names the file, the line and the field:
   "/var/spool/cron/admin":33: too many entries
 
   no crontab for <name>
-      -l or -r with nothing in the spool for you
   No mail for <name>
       an empty mailbox, which is not an error
   mail: <path>: permission denied
   crontab: <path>: disk full
 
-And what the log says about a minute the machine had no room for:
+And sending:
+
+  <name>... User unknown
+  <name>@<host>... Cannot send mail: no mailer
+      and <host>!<name> too: no mailer off this machine
+  Null message body; hope that's ok
+      an empty message, and it is SENT anyway
+  mail: <path>: disk full
+
+And the log, for a minute the machine had no room for:
 
   (CRON) error (can't fork)]],
 

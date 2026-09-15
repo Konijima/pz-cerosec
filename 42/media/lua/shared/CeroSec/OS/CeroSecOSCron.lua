@@ -644,16 +644,203 @@ end
 --
 -- mail
 --
--- What the machine has to say to an account that was not standing there. It
--- shows the mailbox and empties it, which is what mail does when you read your
--- mail and quit: the spool is the account's own, 600, so reading it needs no
--- privilege at all.
+-- Berkeley Mail -- mail(1) of 4.4BSD -- in the two halves a survivor uses. With
+-- no name after it, it is READING: it shows the mailbox and empties it, which is
+-- what mail does when you read your mail and quit, and the spool is the
+-- account's own at 600 so reading it needs no privilege at all. With a name
+-- after it, it is SENDING, and the whole of that half is below.
+--
+-- WHERE THE BODY COMES FROM, and it is mail(1)'s own rule: standard input. Three
+-- ways of having one here and they are the three the machine has --
+--
+--   * a pipe: `echo hi | mail -s Hello bob`, which is the line a script writes;
+--   * the terminal, a line at a time, until a line holding a single "." -- which
+--     is how mail has ended a message since the seventh edition. It goes through
+--     the same prompt-and-continuation machinery `more` and `cu` use, so Escape
+--     is the interrupt key and drops the question: nothing has been written to
+--     anybody's mailbox until the "." arrives, so an interrupted message is a
+--     message that was never sent;
+--   * neither of those, which is a cron line or a `&`: there is no keyboard
+--     behind it and its input is at end of file, so the body is EMPTY. Real mail
+--     prints "Null message body; hope that's ok" and posts it anyway, and so
+--     does this one -- a job that mails a report and printed nothing is a job
+--     whose report is that it printed nothing.
+--
+-- WHAT IS NOT HERE, said out loud rather than half-built: no "Subject:" question
+-- when -s was not given (this console reads a line at a time and a question with
+-- no prompt in front of it would be indistinguishable from the body), no ~
+-- escapes, no -c, no -b, no mailrc, and no mailbox to reply FROM -- reading is
+-- still read-and-empty. And no remote address: see below.
 --
 
-commands.mail = function(state, session, args, env)
-	if #args ~= 1 then
-		return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
+CeroSecOS.continuations = CeroSecOS.continuations or {}
+local continuations = CeroSecOS.continuations
+
+-- What mail says about a message with nothing in it, and it still sends it.
+CeroSecOS.MAIL_NULL_BODY = "Null message body; hope that's ok"
+
+local function askBody(cont)
+	-- No prompt text at all: mail(1) prints nothing while you are typing a body,
+	-- and the cursor on a bare line is the whole of what it shows you.
+	return true, {}, "prompt", { text = "", mask = false, cont = cont }
+end
+
+-- The envelope and the headers, the way the machine's own mailboxes already
+-- carry them: the "From <who>  <date>" separator mailAppend writes, which is
+-- what lets `mail` tell one message from the next, and under it the four headers
+-- a real message has (CeroSecContent's mailLines seeds the prefilled boxes with
+-- exactly these). Subject is ABSENT and not empty when there was no -s: an mbox
+-- header that is there with nothing after it is a header, and mail does not
+-- write one.
+local function mailHeaders(from, to, host, subject, now)
+	local when = ""
+	if now ~= nil then when = "  " .. CeroSecOS.formatDate(now) end
+	local out = {}
+	out[#out + 1] = "From " .. tostring(from) .. when
+	out[#out + 1] = "From: " .. tostring(from) .. "@" .. tostring(host)
+	out[#out + 1] = "To: " .. tostring(to)
+	if now ~= nil then out[#out + 1] = "Date: " .. CeroSecOS.formatDate(now) end
+	if subject ~= nil then out[#out + 1] = "Subject: " .. subject end
+	out[#out + 1] = ""
+	return out
+end
+
+-- One message into one account's mailbox, on an ordinary account's authority.
+--
+-- THE PRIVILEGE, and why it is the engine's and not the file's. A mailbox is the
+-- recipient's own file at 600 in a directory that is root's, so an ordinary
+-- account cannot write it -- and on a real machine it did not have to: mail was
+-- setgid to the spool's group and the DELIVERY ran with that privilege while the
+-- sender did not. Here the equivalent is mailAppend, the machine's own writer,
+-- which reaches /var/mail by absolute path with no session and no permission
+-- check (see the two-bounded-files section above). So the modes never move: the
+-- box stays 600 and the recipient's, and `cat /var/mail/bob` is still permission
+-- denied to everybody but bob.
+--
+-- AND IT PAYS THE DISK, which is the one thing a cron line's mail does not. The
+-- exemption above is for what the MACHINE writes about itself: a job at four in
+-- the morning must not cost the player his drive. A message somebody TYPED is
+-- not that, and an account that could fill another account's spool for nothing
+-- would be an account that could fill the machine. So what the append really
+-- added is charged against the disk, after the fact and with the bytes put back
+-- when it does not fit -- the shape setData already uses, because the trimming
+-- in appendBounded is what decides how much a message finally costs.
+--
+-- true, or nil and the bare reason for the caller to put its own name in front of.
+function CeroSecOS.mailSend(state, to, from, host, subject, body, now)
+	local path = CeroSecOS.mailPath(to)
+	local lines = mailHeaders(from, to, host, subject, now)
+	for i = 1, #body do lines[#lines + 1] = body[i] end
+
+	-- What the quota counts today, and the box exactly as it stands: both read
+	-- before the write, because the write is what they are being compared to.
+	local _, before = CeroSecOS.usage(state)
+	local node = CeroSecOS.systemNode(state, path)
+	local had, hadStamp = nil, nil
+	if type(node) == "table" and node.type == "file" then
+		had = node.data
+		hadStamp = node.mtime
 	end
+
+	if not CeroSecOS.mailAppend(state, to, host, nil, lines, now) then
+		-- No box and none to be made: /var deleted, or a disk mounted over it (see
+		-- CeroSecOS.onOwnDrive). The spool is not there, in the words the rest of
+		-- the machine uses for a path that is not there.
+		return nil, "no such file"
+	end
+
+	node = CeroSecOS.systemNode(state, path)
+	local grew = #(node.data or "")
+	if had ~= nil then grew = grew - #had end
+	if grew > 0 and before + grew > CeroSecOS.MAX_TOTAL_BYTES then
+		if had == nil then
+			CeroSecOS.removeNode(state, CeroSecOS.rootSession(), path, false)
+		else
+			node.data = had
+			node.mtime = hadStamp
+		end
+		return nil, "disk full"
+	end
+	return true
+end
+
+-- The line and the recipients on it. nil when the line is not one mail can be
+-- given: an option it has not got, or a -s with nothing behind it.
+local function mailArgs(args)
+	local subject, to, i = nil, {}, 2
+	while i <= #args do
+		local a = args[i]
+		if a == "-s" then
+			if args[i + 1] == nil then return nil end
+			subject = args[i + 1]
+			i = i + 2
+		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
+			return nil
+		else
+			to[#to + 1] = a
+			i = i + 1
+		end
+	end
+	return subject, to
+end
+
+-- Is this an address on ANOTHER machine? Both spellings 1993 had: the domain
+-- form and the uucp bang path. Either one is a mailer this disk has not got.
+local function isRemote(who)
+	return string.find(who, "@", 1, true) ~= nil
+		or string.find(who, "!", 1, true) ~= nil
+end
+
+-- Every recipient judged before anything is delivered, so a line with one bad
+-- name on it writes into nobody's mailbox. That is this machine's rule
+-- everywhere -- nothing is half-written -- and it is the honest half of what
+-- real sendmail does: it, too, refuses the address rather than the message.
+--
+-- The wording is Sendmail's, which is what a survivor would have read: the
+-- address, three dots, and what went wrong with it.
+local function mailRecipients(state, to)
+	local bad = {}
+	for i = 1, #to do
+		local who = to[i]
+		if isRemote(who) then
+			-- UUCP is not on this disk. Declared in CeroSecOS.DEVIATIONS with the
+			-- phrase the manual has to carry, because 4.4BSD would have TRIED.
+			bad[#bad + 1] = who .. "... Cannot send mail: no mailer"
+		elseif CeroSecOS.getUser(state, who) == nil then
+			bad[#bad + 1] = who .. "... User unknown"
+		end
+	end
+	if #bad > 0 then return nil, bad end
+	return true
+end
+
+-- The delivery, once the body is in hand: one copy per recipient, which is what
+-- several names on a mail line have always meant.
+--
+-- The names were all judged before this is reached, so the only refusal left is
+-- the disk, and it is per-copy: three names on a line and a drive that fills on
+-- the second is two messages delivered and a line saying where it stopped. That
+-- is what a real delivery does with a queue -- the copies are separate
+-- deliveries -- and the alternative would be asking the disk for room for three
+-- copies before writing one, which would refuse a line that fits.
+local function mailDeliver(state, session, to, subject, body, env, nullBody)
+	local from = CeroSecOS.userOf(session)
+	local host = CeroSecOS.hostname(state)
+	local now = CeroSecOS.clockOf(env)
+	local out = {}
+	if nullBody then out[#out + 1] = CeroSecOS.MAIL_NULL_BODY end
+	for i = 1, #to do
+		local done, reason = CeroSecOS.mailSend(state, to[i], from, host, subject, body, now)
+		if done == nil then
+			out[#out + 1] = "mail: " .. CeroSecOS.mailPath(to[i]) .. ": " .. reason
+			return false, out
+		end
+	end
+	return true, out
+end
+
+-- Reading: the mailbox, shown and emptied.
+local function mailRead(state, session, env)
 	local user = CeroSecOS.userOf(session)
 	local path = CeroSecOS.mailPath(user)
 	local node, reason = CeroSecOS.getNode(state, session, path)
@@ -677,4 +864,84 @@ commands.mail = function(state, session, args, env)
 	local done, why = CeroSecOS.setData(state, session, path, "", CeroSecOS.clockOf(env))
 	if done == nil then return false, { "mail: " .. path .. ": " .. why } end
 	return true, lines
+end
+
+commands.mail = function(state, session, args, env, stdin, sh)
+	local subject, to = mailArgs(args)
+	if subject == nil and to == nil then
+		return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
+	end
+	-- No name to send to is the reading half, and -s with nothing to send to is
+	-- neither half: a subject on a message with no recipient is a line that was
+	-- typed wrong.
+	if #to == 0 then
+		if subject ~= nil then
+			return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
+		end
+		return mailRead(state, session, env)
+	end
+
+	local ok, bad = mailRecipients(state, to)
+	if ok == nil then return false, bad end
+
+	-- The pipe, read to its END before anything is delivered: a message is one
+	-- thing and a message half in a mailbox is not one. Bounded by the pipe's own
+	-- ceiling, which is the ceiling the whole machine reads an input under.
+	local input = CeroSecOS.stdinOf(stdin, {})
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			if not CeroSecOS.holdLine(carry, input.lines[i]) then carry.over = true end
+		end
+		if carry.over then
+			input.done = true
+			return false, { "mail: input too large" }
+		end
+		if not input.eof then return true, {} end
+		input.done = true
+		local body = carry.lines or {}
+		return mailDeliver(state, session, to, subject, body, env, #body == 0)
+	end
+
+	-- A pair of hands: the body is typed, a line at a time, and the token carries
+	-- what has been typed so far. Nothing is written until the ".".
+	if CeroSecOS.shKeys(sh) then
+		return askBody({ cmd = "mail", to = to, subj = subject, body = {} })
+	end
+
+	-- Nobody there and no pipe: end of file on the first read, which is the empty
+	-- message real mail sends with a line to say so.
+	return mailDeliver(state, session, to, subject, {}, env, true)
+end
+
+-- One line of the body, or the "." that ends it. The token lives in the machine's
+-- console and the console is written to the save file, so what it carries is
+-- bounded by the mailbox's own two ceilings -- a message that cannot fit in a
+-- mailbox is a message there is no point in collecting.
+continuations.mail = function(state, session, cont, line, env)
+	local to, body = cont.to, cont.body
+	if type(to) ~= "table" or #to == 0 or type(body) ~= "table" then
+		return false, { "mail: nothing to answer" }
+	end
+	for i = 1, #to do
+		if type(to[i]) ~= "string" then return false, { "mail: nothing to answer" } end
+	end
+	local bytes = 0
+	for i = 1, #body do
+		if type(body[i]) ~= "string" then return false, { "mail: nothing to answer" } end
+		bytes = bytes + #body[i] + 1
+	end
+
+	-- The one line that is not a line of the body. A single dot and nothing else:
+	-- ".x" is text, and so is " .".
+	if line == "." then
+		return mailDeliver(state, session, to, cont.subj, body, env, #body == 0)
+	end
+
+	body[#body + 1] = tostring(line)
+	bytes = bytes + #line + 1
+	if #body > CeroSecOS.MAIL_LINES or bytes > CeroSecOS.MAIL_BYTES then
+		return false, { "mail: input too large" }
+	end
+	return askBody({ cmd = "mail", to = to, subj = cont.subj, body = body })
 end
