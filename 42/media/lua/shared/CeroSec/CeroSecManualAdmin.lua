@@ -167,8 +167,7 @@ you have decided not to have. Chapter 10 has our advice.]],
 about.
 
 It does not move you. The command runs as root in the directory you were
-standing in, and the session at the glass is untouched: whoami afterwards
-still says admin.
+standing in; whoami afterwards still says admin.
 
 It cannot run a word the shell itself is. sudo runs a PROGRAM, and cd,
 exit, fg, jobs and wait have no file in /bin for it to find:
@@ -177,16 +176,16 @@ exit, fg, jobs and wait have no file in /bin for it to find:
   [sudo] password for admin:
   sudo: cd: command not found
 
-which is what a real sudo says about one. sudo exit says the same.
+sudo exit says the same, and so does a name the machine has not got:
+sudo: lights: command not found. sudo went looking, so sudo signs it.
 
 And it does not give out a root prompt -- except where you ask for one
 on purpose. sudo su is a root shell at this glass, on the same stack exit
 pops; sudo su bob is bob's shell without knowing bob's password.
 
-Classic mistake. Typing sudo su first thing in the morning and working
-there all day. You now have every hazard of being root and none of the
-protection sudo was bought for. Type sudo in front of the six lines that
-need it instead.]],
+Classic mistake. sudo su first thing in the morning and working there all
+day: every hazard of being root, none of the protection sudo was bought
+for. Type sudo in front of the six lines that need it.]],
 
 		} },
 

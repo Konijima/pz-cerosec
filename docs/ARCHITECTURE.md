@@ -673,7 +673,11 @@ asked for nobody's password: `sudo su` is root, `sudo su bob` is bob.
 `sudo cd`, `sudo jobs`, `sudo read` and every other word the shell **is**: there is
 no file in `/bin` for sudo to look up and nothing for it to run, which is what real
 sudo says about one, in its own name. The test is the shell's own
-(`isShellWord`, `SHELL_BUILTINS`) rather than a list beside it. Until
+(`isShellWord`, `SHELL_BUILTINS`) rather than a list beside it. A name this
+machine has no command for at all is signed the same way — `sudo: lights: command
+not found` — because sudo is the program that went looking; what stays signed with
+the command's own name is the **PATH lookup's** refusal (`whyNotRun`), so `sudo ls`
+on a machine whose `/bin/ls` root deleted is still `ls: command not found`. Until
 `SYSTEM_VERSION 18` only `exit` was named, so `sudo cd /root` fell through to
 `commands.cd`, moved the borrowed session sudo had just made, and printed nothing
 at all — a line that said nothing and did nothing, on a page of the manual that

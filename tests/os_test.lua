@@ -2765,9 +2765,12 @@ do
 	ok(state, admin, "sudo sudo sudo whoami", { "root" })
 	bad(state, admin, "sudo sudo", "sudo: usage: sudo <command> [args]")
 
-	-- A command that is not one, and one whose executable is gone: sudo says
-	-- what the shell would say, under the command's own name.
-	bad(state, admin, "sudo nosuch", "nosuch: command not found")
+	-- A name sudo has nothing at all to run: SUDO is what went looking, so sudo
+	-- is what signs the refusal -- real sudo prints its own name in front of a
+	-- "command not found" and so does the shell-word refusal above it.
+	bad(state, admin, "sudo nosuch", "sudo: nosuch: command not found")
+	-- A command whose EXECUTABLE is gone is the PATH lookup answering, and that
+	-- refusal is signed the command's own name everywhere on this machine.
 	ok(state, rootSession, "rm /bin/ls", {})
 	bad(state, admin, "sudo ls", "ls: command not found")
 	CeroSecOS.restoreSystem(state)
@@ -4165,10 +4168,9 @@ do
 	badAt(state, admin, "sudo jobs", "sudo: jobs: command not found")
 	badAt(state, admin, "sudo read x", "sudo: read: command not found")
 	badAt(state, admin, "sudo type ls", "sudo: type: command not found")
-	-- A name that is nothing at all is still the shell's own refusal and not
-	-- sudo's: nothing was looked up as a shell word, so what answers is the
-	-- lookup, exactly as it does without sudo in front of it.
-	badAt(state, admin, "sudo nosuchthing", "nosuchthing: command not found")
+	-- And a name that is nothing at all, signed the same way: sudo is the program
+	-- that could not find it.
+	badAt(state, admin, "sudo nosuchthing", "sudo: nosuchthing: command not found")
 end
 
 -- The same, through the password: the authority travels in the token and the

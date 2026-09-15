@@ -4566,8 +4566,14 @@ local function sudoRun(state, session, args, from, env, sh)
 		return false, { "sudo: " .. name .. ": command not found" }
 	end
 
+	-- A name with nothing behind it, signed the way the line above signs one:
+	-- SUDO is the program that went looking, so sudo is what says it could not
+	-- find it. Real sudo prints "sudo: <name>: command not found" for a word that
+	-- is not on its PATH -- the shell's own refusal has no sudo in front of it
+	-- because the shell is what looked. This said `nosuchthing: command not
+	-- found`, which reads as a refusal from a program that was never run.
 	local fn = commands[name]
-	if fn == nil then return false, { name .. ": command not found" } end
+	if fn == nil then return false, { "sudo: " .. name .. ": command not found" } end
 
 	-- Looked up on the caller's own PATH, as root: the authority sudo lends is
 	-- root's rights on the file, not a second PATH of its own -- real sudo of

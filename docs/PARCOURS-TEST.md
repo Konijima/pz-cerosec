@@ -3059,6 +3059,17 @@ tourner sans jeu ; ce qui se vérifie ici, c'est l'écran.
      attendre, puis `tar tf /mnt/backup` nomme les boîtes. La même ligne dans
      `crontab -e` à `0 3 * * *` se relit avec `crontab -l`. [ ]
 
+## AH. Les dettes du shell (2e partie)
+
+Tout se tape au prompt d'une seule machine allumée, en `admin`. Les bancs
+`os_test.lua`, `hostile_test.lua` et `window_test.lua` ont déjà tout fait tourner
+sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
+
+339a. **`sudo` signe ce qu'il ne trouve pas.** `sudo lights on` → une seule ligne,
+     `sudo: lights: command not found`, et non `lights: command not found` : c'est
+     `sudo` qui a cherché. `sudo cd /root` répond pareil
+     (`sudo: cd: command not found`). [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- `sudo` owns up to a name it could not find. `sudo lights on` used to answer
+  `lights: command not found`, which reads like a refusal from a program that
+  was never run; it now says `sudo: lights: command not found`, the way it
+  already does for `sudo cd`.
 - `mail` sends as well as reads. `mail [-s subject] bob` posts a message to
   another account on the machine: the body comes from a pipe
   (`echo hi | mail -s Hello bob`) or is typed at the prompt a line at a time
