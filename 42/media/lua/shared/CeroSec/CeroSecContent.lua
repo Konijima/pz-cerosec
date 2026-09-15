@@ -1111,7 +1111,7 @@ CeroSecContent.SCRIPTS["hangman.sh"] = {
 		"    shown=$(echo $w | tr $got $up)",
 		"    shown=$(echo $shown | tr a-z .)",
 		"  fi",
-		"  if [ $(echo $shown | grep -c .) -eq 0 ]; then",
+		"  if [ $(echo $shown | grep -c '[.]') -eq 0 ]; then",
 		"    echo \"$w. You have it.\"",
 		"    exit 0",
 		"  fi",
@@ -1228,17 +1228,22 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --     read.sh and in board.sh. A shared pager would have to be a fifth program
 --     that the other two call by absolute path, and a script that stops working
 --     the day it is copied on its own is not a template.
---   * `sh prog > file` DOES NOT CATCH THE SCRIPT'S OUTPUT. The redirect belongs
---     to the `sh` command, which prints nothing of its own, so the lines of the
---     script it ran go to the glass. Measured here before anything was written on
---     it: that is why each program pages what it prints itself, rather than bbs.sh
---     collecting a child's output and paging it in one place.
---   * grep HAS NO REGEX (it says so over commands.grep) and `^` is just a
---     character. So the messages in a mailbox are counted with `grep -c "From "`,
---     the plain string, which finds the envelope line and not the `From:` header
---     under it -- the colon is what keeps the two apart. A body line beginning
---     "From " would be counted as a message, which is the oldest bug in mbox and
---     is why a real mailer writes ">From "; nothing here writes a body.
+--   * `sh prog > file` did not catch the script's output when this kit was
+--     written: the redirect belonged to the `sh` command, which prints nothing of
+--     its own, so the script's lines went to the glass. That is why each program
+--     pages what it prints itself rather than bbs.sh collecting a child's output
+--     and paging it in one place. It catches it now (a script inherits the
+--     redirect of the line that started it), and the kit is left as it was --
+--     what it does is right either way, and a disk in somebody's save is not
+--     rewritten because the shell grew a capability.
+--   * grep took a PLAIN STRING when this was written, so the messages in a
+--     mailbox are counted with `grep -c "From "` -- which finds the envelope line
+--     and not the `From:` header under it, the colon being what keeps the two
+--     apart. grep reads a basic regular expression now and `grep -c '^From '` is
+--     the line a survivor would write; the plain string still counts the same
+--     messages, so the kit is left alone. A body line beginning "From " is
+--     counted as a message either way, which is the oldest bug in mbox and is why
+--     a real mailer writes ">From "; nothing here writes a body.
 --   * /etc/passwd IS 600 AND ROOT'S on this machine, so a caller cannot read the
 --     list of accounts out of it. `ls /home` is the answer -- /home is 755 -- and
 --     it is the same answer to the same question: an account with a home is an

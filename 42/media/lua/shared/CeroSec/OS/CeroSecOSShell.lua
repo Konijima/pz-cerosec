@@ -716,8 +716,11 @@ CeroSecOS.COMMAND_INFO = {
 	-- the whole of what is here fits on it.
 	find     = { desc = "walk a tree and print what is in it",
 		usage = "find <path>... [expression]" },
-	grep     = { desc = "find a string in files",
-		usage = "grep [-c] [-i] [-n] [-v] <text> [file]..." },
+	-- A basic regular expression, POSIX.2's: `^ $ . * [...]` and the backslash, and
+	-- not `\( \)` or `\{ \}` -- the manual's page names the two that are missing.
+	-- `-e` because a pattern that starts with a dash has no other spelling.
+	grep     = { desc = "find a pattern in files",
+		usage = "grep [-cinv] [-e pattern] [pattern] [file]..." },
 	groupadd = { desc = "make a group", usage = "groupadd <name>" },
 	groupdel = { desc = "remove a group", usage = "groupdel <name>" },
 	groups   = { desc = "print an account's groups", usage = "groups [name]" },
@@ -1998,39 +2001,375 @@ local function fileLines(state, session, cmd, path)
 	return CeroSecOS.splitLines(node.data or ""), nil, node
 end
 
+--
+-- Basic regular expressions, for grep
+--
+-- POSIX.2's BRE, cut to the six pieces a survivor types: `^` and `$` where they
+-- anchor, `.` for one character, `*` for any number of the thing in front of it,
+-- `[...]` and `[^...]` for a set, and `\` to take the meaning off any of them.
+-- What is NOT here is `\(...\)` and `\{m,n\}` -- the back-reference and the
+-- interval -- and the manual's page says so: both want a matcher that remembers
+-- where a group started, which is a different machine from the one below.
+--
+-- Read by hand, never turned into a Lua pattern. A pattern is a string a player
+-- typed, and handing one to string.find would be handing him Lua's own matcher --
+-- the rule this whole engine is built on (see docs/SECURITY.md), and the reason
+-- globMatch is walked rather than translated too.
+--
+-- Simulated as an NFA and not by backtracking, which is the one design decision in
+-- here that matters. A backtracking matcher on `a*a*a*a*b` against a line of a's is
+-- exponential, and a player types the pattern -- so the walk below carries a SET of
+-- positions through the line, one pass, and costs the length of the line times the
+-- length of the pattern whatever the pattern says. Thompson's construction, 1968,
+-- and the same reason grep(1) itself was written that way.
+--
+
+-- One piece of a pattern: a character, any character, or a set -- each of which may
+-- carry a `*`. nil plus the refusal for a pattern that is not one.
+--
+-- head and tail are the two anchors, and both are only anchors WHERE POSIX says: a
+-- `^` that is not the first character is a circumflex, and a `$` that is not the
+-- last is a dollar sign. `*` is the same kind of rule the other way: at the front of
+-- a pattern there is nothing for it to repeat, so it is a star.
+--
+-- plain is the pattern's LITERAL text when every piece of it is an unstarred
+-- character. That is the pattern a survivor types nine times in ten -- `grep From`,
+-- `grep '^From '` -- and it is matched by string.find and string.sub instead of by
+-- the walk, which is the difference between a C call and a loop over every byte.
+-- Pieces in one pattern. The walk below costs the length of the LINE times the
+-- number of pieces, and a line may be a whole file -- four kilobytes with no
+-- newline in it -- so this number is the other half of what that costs: measured at
+-- a third of a microsecond a piece a character, thirty-two pieces over the widest
+-- line a file can hold is forty-odd milliseconds, and two hundred pieces is a third
+-- of a second. Thirty-two is longer than any pattern anybody types (the longest one
+-- in this file's own benches is twenty) and short enough that the worst a crafted
+-- one can cost is one dear command, which is what the step debt is for.
+CeroSecOS.MAX_BRE_ITEMS = 32
+
+function CeroSecOS.breCompile(pattern)
+	if type(pattern) ~= "string" then return nil, "bad expression" end
+	local re = { items = {}, head = false, tail = false }
+	local items = re.items
+	local i, n = 1, #pattern
+	if string.sub(pattern, 1, 1) == "^" then
+		re.head = true
+		i = 2
+	end
+	local literal = true
+	while i <= n do
+		local c = string.sub(pattern, i, i)
+		if c == "$" and i == n then
+			re.tail = true
+			i = i + 1
+		elseif c == "\\" then
+			local nx = string.sub(pattern, i + 1, i + 1)
+			if nx == "" then return nil, "trailing backslash" end
+			items[#items + 1] = { c = nx, b = string.byte(nx) }
+			i = i + 2
+		elseif c == "." then
+			items[#items + 1] = { any = true }
+			literal = false
+			i = i + 1
+		elseif c == "*" and #items > 0 then
+			-- Onto the piece in front of it, and never onto another star: `a**` is
+			-- `a*`, which is what every BRE does with it.
+			items[#items].star = true
+			literal = false
+			i = i + 1
+		elseif c == "[" then
+			local j = i + 1
+			local set, neg = {}, false
+			if string.sub(pattern, j, j) == "^" then
+				neg = true
+				j = j + 1
+			end
+			-- A "]" as the FIRST character of a set is a "]" in the set, which is the
+			-- only way of putting one there and is POSIX's rule.
+			if string.sub(pattern, j, j) == "]" then
+				set[string.byte("]")] = true
+				j = j + 1
+			end
+			local closed = false
+			while j <= n do
+				local ch = string.sub(pattern, j, j)
+				if ch == "]" then
+					closed = true
+					j = j + 1
+					break
+				end
+				-- A range, unless the "-" is the last character before the "]", where it
+				-- is a hyphen.
+				if string.sub(pattern, j + 1, j + 1) == "-"
+						and string.sub(pattern, j + 2, j + 2) ~= "]"
+						and j + 2 <= n then
+					local last = string.sub(pattern, j + 2, j + 2)
+					local a, b = string.byte(ch), string.byte(last)
+					if b < a then return nil, "bad range" end
+					for k = a, b do set[k] = true end
+					j = j + 3
+				else
+					set[string.byte(ch)] = true
+					j = j + 1
+				end
+			end
+			if not closed then return nil, "unmatched [" end
+			items[#items + 1] = { set = set, neg = neg }
+			literal = false
+			i = j
+		else
+			items[#items + 1] = { c = c, b = string.byte(c) }
+			i = i + 1
+		end
+	end
+	if #items > CeroSecOS.MAX_BRE_ITEMS then return nil, "expression too long" end
+	if literal then
+		local text = {}
+		for k = 1, #items do text[k] = items[k].c end
+		re.plain = table.concat(text)
+	end
+	-- The piece a match must START on, when the pattern begins with one that cannot
+	-- be skipped. A pattern is tried at every character of the line, and that is what
+	-- the walk costs; where the first piece is not starred, a match beginning at a
+	-- character REQUIRES that piece to match it, so every other character is a
+	-- character the walk need not start at. `grep l.ghts` over a line with no "l" in
+	-- it then costs one byte read a character and nothing else.
+	if not re.head and items[1] ~= nil and not items[1].star then re.lead = items[1] end
+	return re
+end
+
+-- Does this piece match this BYTE? Bytes and not one-character strings: the walk
+-- below asks this once per character of every line, and string.sub(line, k, k)
+-- allocates a string every time it is asked -- measured as more than half the cost
+-- of matching a four-kilobyte line. string.byte allocates nothing.
+local function breItemHit(item, b)
+	if item.any then return true end
+	if item.set ~= nil then
+		if item.neg then return item.set[b] ~= true end
+		return item.set[b] == true
+	end
+	return item.b == b
+end
+
+-- Every position the walk may be at, once the stars in front of it have been
+-- allowed to swallow nothing. n + 1 is "the whole pattern has matched".
+--
+-- The set is a LIST of positions plus a stamp saying which pass put each one in it,
+-- and not a fresh table a character: a table per character of a four-kilobyte line
+-- is four thousand allocations for one grep, and the stamp is how a set is emptied
+-- without walking it.
+local function breAdd(set, items, i, n, gen)
+	while i <= n do
+		if set.mark[i] == gen then return end
+		set.mark[i] = gen
+		set.n = set.n + 1
+		set[set.n] = i
+		if not items[i].star then return end
+		i = i + 1
+	end
+	if set.mark[n + 1] ~= gen then
+		set.mark[n + 1] = gen
+		set.accept = true
+	end
+end
+
+local function breClear(set)
+	set.n = 0
+	set.accept = false
+end
+
+-- How many state-visits a STEP is worth, for charging the walk to the job's budget.
+--
+-- A command out of /bin is charged STEP_COST_COMMAND (32) steps, and a machine's pass
+-- is a hundred steps meant to cost about four milliseconds of real time -- forty
+-- microseconds a step. A state-visit below was measured at a third of a microsecond,
+-- so a step at that exchange rate buys about a hundred and twenty of them.
+--
+-- Sixty-four, which is half of that, and the half is deliberate: charged at the exact
+-- rate, a loop over the dearest pattern the ceiling allows averaged 3.97 ms a pass
+-- against a ceiling of 4 -- correct by construction and with no margin at all. At
+-- twice the rate the same loop averages two, and an honest pattern over a whole file
+-- still costs about one command and a half.
+--
+-- Without this, grep was the one command that could cost far more than the budget
+-- believes a command costs: a plain substring is a C call whatever the file, but a
+-- pattern is a walk of every byte of it for every piece of the pattern -- five
+-- milliseconds for an honest regular expression over the widest line a file can
+-- hold, twenty-two for a crafted one. Charged, a loop of those runs slowly instead of
+-- making a machine slow, which is the whole bargain the step budget is.
+CeroSecOS.BRE_STEPS_PER = 64
+
+-- Does this line hold a match? One pass over it, carrying the set of positions.
+-- Answers the match and what the walk COST, in state-visits.
+function CeroSecOS.breMatch(line, re)
+	local items = re.items
+	local n = #items
+	if re.plain ~= nil then
+		-- The literal paths, which are the patterns anybody actually types: nine
+		-- greps in ten, and `^From ` among them. A C call instead of the walk, and one
+		-- visit's worth of cost however long the line is.
+		if re.head and re.tail then return line == re.plain, 1 end
+		if re.head then return string.sub(line, 1, #re.plain) == re.plain, 1 end
+		if re.tail then
+			if #line < #re.plain then return false, 1 end
+			return string.sub(line, #line - #re.plain + 1) == re.plain, 1
+		end
+		return string.find(line, re.plain, 1, true) ~= nil, 1
+	end
+	local len = #line
+	local act = { n = 0, accept = false, mark = {} }
+	local nxt = { n = 0, accept = false, mark = {} }
+	local gen = 1
+	local visits = 1
+	if re.lead == nil or (len > 0 and breItemHit(re.lead, string.byte(line, 1))) then
+		breAdd(act, items, 1, n, gen)
+	end
+	if act.accept and (not re.tail or len == 0) then return true, visits end
+	for k = 1, len do
+		local b = string.byte(line, k)
+		gen = gen + 1
+		breClear(nxt)
+		visits = visits + act.n + 1
+		for j = 1, act.n do
+			local i = act[j]
+			if i <= n and breItemHit(items[i], b) then
+				-- A starred piece may swallow this character and stay where it is, or
+				-- hand over to the piece after it.
+				if items[i].star then breAdd(nxt, items, i, n, gen) end
+				breAdd(nxt, items, i + 1, n, gen)
+			end
+		end
+		act, nxt = nxt, act
+		-- An unanchored pattern may start at any character, so the first position is
+		-- put back at every one of them. This is what makes the walk linear instead of
+		-- one pass per starting point -- and where the first piece cannot be skipped,
+		-- only at the characters that piece could match (re.lead).
+		if not re.head and k < len then
+			if re.lead == nil then
+				breAdd(act, items, 1, n, gen)
+			elseif breItemHit(re.lead, string.byte(line, k + 1)) then
+				breAdd(act, items, 1, n, gen)
+			end
+		end
+		if act.accept and (not re.tail or k == len) then return true, visits end
+	end
+	return false, visits
+end
+
 -- Is this line one of the ones grep was asked for? -v is the whole of the
--- difference between "holds the string" and "is a line grep prints": the flag
+-- difference between "holds the pattern" and "is a line grep prints": the flag
 -- does not change what a hit is, it changes which lines are wanted.
 --
--- The needle is already lowered by the caller when -i is on, because it is
--- lowered once for a file and not once for a line.
-local function grepHit(line, needle, ignore, invert)
+-- Several patterns is several -e, and a hit on any of them is a hit: that is what
+-- POSIX.2 says of -e and what a list of them has always meant.
+--
+-- The line is lowered when -i is on, and the patterns were lowered before they were
+-- compiled -- once for a file, not once for a line.
+local function grepHit(line, res, ignore, invert, work)
 	local hay = line
 	if ignore then hay = string.lower(hay) end
-	local held = string.find(hay, needle, 1, true) ~= nil
+	local held = false
+	for i = 1, #res do
+		local hit, cost = CeroSecOS.breMatch(hay, res[i])
+		work.n = work.n + cost
+		if hit then
+			held = true
+			break
+		end
+	end
 	if invert then return not held end
 	return held
 end
 
--- grep. A plain substring and not a pattern: string.find's fourth argument is
--- what makes "a.b" mean the three characters and not "a, anything, b". There is
--- no regex on this machine and none is promised.
-commands.grep = function(state, session, args, env, stdin)
-	local flags, rest = flagsOf(args, "cinv")
-	if flags == nil then return fail("grep", rest, "unknown option") end
+-- grep, with a basic regular expression.
+--
+-- POSIX.2's BRE, as far as CeroSecOS.breCompile reads one, and `-e` to give the
+-- pattern as an option-argument -- which is the only way of looking for a pattern
+-- that starts with a dash, and is POSIX's own reason for the flag. Several -e is
+-- several patterns and a hit on any of them is a hit.
+--
+-- The options are read here rather than through flagsOf, because -e takes a value
+-- and may take it attached (`-eFrom`), which is getopt(3)'s rule and cut's.
+--
+-- It was a plain substring until this: `grep -c '^From '` on a mailbox -- the first
+-- line anybody writes about mail -- counted nought, because the circumflex was a
+-- character to look for.
+local function grepOptions(args)
+	local flags, pats, rest = {}, {}, {}
+	local i = 2
+	while i <= #args do
+		local a = args[i]
+		if #rest == 0 and string.sub(a, 1, 2) == "-e" then
+			local text
+			if #a > 2 then
+				text = string.sub(a, 3)
+				i = i + 1
+			else
+				text = args[i + 1]
+				i = i + 2
+			end
+			if text == nil then return nil, nil, "-e" end
+			pats[#pats + 1] = text
+		elseif #rest == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
+			for c = 2, #a do
+				local flag = string.sub(a, c, c)
+				if string.find("cinv", flag, 1, true) == nil then return nil, nil, a end
+				flags[flag] = true
+			end
+			i = i + 1
+		else
+			rest[#rest + 1] = a
+			i = i + 1
+		end
+	end
+	return flags, pats, rest
+end
+
+commands.grep = function(state, session, args, env, stdin, sh)
+	local flags, pats, bad = grepOptions(args)
+	if flags == nil then return fail("grep", bad, "unknown option") end
 	local ignore, numbered = flags.i == true, flags.n == true
 	local counting, invert = flags.c == true, flags.v == true
-	if #rest < 1 then return usage("grep") end
+	local rest = bad
+	-- With no -e, the first operand is the pattern, which is grep's oldest shape.
+	if #pats == 0 then
+		if #rest < 1 then return usage("grep") end
+		pats[1] = rest[1]
+		local kept = {}
+		for i = 2, #rest do kept[#kept + 1] = rest[i] end
+		rest = kept
+	else
+		local kept = {}
+		for i = 1, #rest do kept[#kept + 1] = rest[i] end
+		rest = kept
+	end
 
-	local needle = rest[1]
-	if ignore then needle = string.lower(needle) end
+	-- Compiled once for the whole call, because a pattern is the same pattern on
+	-- every line of every file. -i lowers it here, once, for the same reason.
+	local res = {}
+	for i = 1, #pats do
+		local text = pats[i]
+		if ignore then text = string.lower(text) end
+		local re, reason = CeroSecOS.breCompile(text)
+		if re == nil then return fail("grep", pats[i], reason) end
+		res[i] = re
+	end
+	-- What the walk costs, gathered here and handed back to the shell so the budget
+	-- pays for it (CeroSecOS.BRE_STEPS_PER, and the `cost` field of the shell's little
+	-- table). A literal pattern is a C call and costs nothing worth charging; a
+	-- pattern is every byte of every line, and that is real work.
+	local work = { n = 0 }
+	local function charge()
+		if type(sh) == "table" then
+			sh.cost = math.floor(work.n / CeroSecOS.BRE_STEPS_PER)
+		end
+	end
 
 	-- With a string and no file, the pipe. The line numbers are the PIPE's --
 	-- counted from the first line that came down it, not restarted every time
 	-- grep is called -- and whether anything was found is carried the same way,
 	-- so `... | grep x` answers 0 for a hit that came down in an earlier turn.
 	local files = {}
-	for i = 2, #rest do files[#files + 1] = rest[i] end
+	for i = 1, #rest do files[#files + 1] = rest[i] end
 	local input = stdinOf(stdin, files)
 	if input ~= nil then
 		local carry = input.carry
@@ -2039,7 +2378,7 @@ commands.grep = function(state, session, args, env, stdin)
 		local out = {}
 		for i = 1, #input.lines do
 			carry.n = carry.n + 1
-			if grepHit(input.lines[i], needle, ignore, invert) then
+			if grepHit(input.lines[i], res, ignore, invert, work) then
 				carry.found = true
 				carry.hits = carry.hits + 1
 				if not counting then
@@ -2049,6 +2388,7 @@ commands.grep = function(state, session, args, env, stdin)
 				end
 			end
 		end
+		charge()
 		-- -c has one line to say and cannot say it before the end of the pipe:
 		-- a count of what has arrived so far is not a count of anything.
 		if counting then
@@ -2073,7 +2413,7 @@ commands.grep = function(state, session, args, env, stdin)
 		else
 			local hits = 0
 			for n = 1, #lines do
-				if grepHit(lines[n], needle, ignore, invert) then
+				if grepHit(lines[n], res, ignore, invert, work) then
 					found = true
 					hits = hits + 1
 					if not counting then
@@ -2095,6 +2435,7 @@ commands.grep = function(state, session, args, env, stdin)
 		end
 	end
 
+	charge()
 	-- grep answers "did you find anything". Nothing found is a refusal even
 	-- when every file was read without trouble -- and a -c that counted nothing
 	-- is nothing found, however many zeroes it printed.
@@ -5519,6 +5860,10 @@ function CeroSecOS.runArgs(state, session, args, redirect, env, stdin, sh)
 		sh.again = true
 		sh.carry = inner.carry
 	end
+	-- And what the command says its own work COST, on top of what a command costs:
+	-- the same road `walked` takes and for the same reason -- the budget has to see
+	-- work a table lookup does not account for (see CeroSecOS.BRE_STEPS_PER).
+	if type(sh) == "table" and type(inner.cost) == "number" then sh.cost = inner.cost end
 	if lines == nil then lines = {} end
 
 	-- Output goes to the file only when the command succeeded; errors stay on

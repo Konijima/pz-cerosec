@@ -8,6 +8,16 @@ date.
 
 ## Unreleased
 
+- `grep` reads a pattern. `grep -c '^From ' mbox` counts the messages in a
+  mailbox now, which is the first line anybody writes about mail and used to
+  count nothing: the circumflex was a character to look for. What it takes is
+  the old, plain kind of regular expression -- `^` and `$` for the ends of a
+  line, `.` for any character, `*` for any number of the thing in front of it,
+  `[abc]` and `[a-z]` and `[^abc]` for a set, and a backslash to take the
+  meaning off any of them. `\( \)` and `\{2,5\}` are not here, and the manual
+  says so. `-e` gives the pattern as a flag, which is the only way to look for
+  one starting with a dash, and twice means either of two. Quote your patterns:
+  the shell would eat the star otherwise.
 - Shell functions. `greet() { echo hello $1; }` and then `greet world`, the way
   every sh has done it: the arguments inside are the call's, `return` hands a
   number back, and `type greet` says what it is. There is no `local` in a 1993

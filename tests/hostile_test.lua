@@ -3285,6 +3285,50 @@ do
 	note("tr, 4096 cols in a loop", translated)
 end
 
+--
+-- 22d. grep with a PATTERN, on the widest line a file can hold (debts 2).
+--
+-- A plain substring is one C call whatever the file is; a basic regular expression
+-- is a walk of every byte of every line for every piece of the pattern. Measured on
+-- one four-kilobyte line: five milliseconds for an honest pattern, twenty-two for
+-- the dearest one the piece ceiling allows -- against a per-pass budget of four.
+--
+-- So grep hands the shell what its walk cost and the shell charges it in steps
+-- (CeroSecOS.BRE_STEPS_PER), and the pass DEBT is what turns that into an average
+-- the machine can afford: one dear command may still overspend a pass, which is the
+-- bargain the debt was written for, and the next passes are that much shorter. What
+-- this bench holds is the average and the flatness -- and that the loop still gets
+-- somewhere, because a charge nobody can pay would be a grep that never runs.
+--
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/wide", string.rep("abcdefgh", 512))
+	put(state, "/home/admin/grind.sh",
+		"while true; do grep -c 'a.*q' /home/admin/wide > /dev/null; done\n")
+	local job = typeLine(system, machine, state, console, "sh /home/admin/grind.sh")
+	local hunted = drive(machine, PASSES, CeroSec.JOB_PASS_MS)
+	flat("grep over a maximal line", hunted)
+	timely("grep over a maximal line", hunted)
+	check("and the loop went round (" .. job.steps .. " steps)", job.steps > PASSES)
+	note("grep pattern, 4096 cols", hunted)
+
+	-- The dearest pattern the ceiling allows, in the same loop. This is the one a
+	-- crafted line would use, and what makes it affordable is the charge and not the
+	-- matcher: without it the average pass is five times the budget.
+	local machine2, state2, console2 = newMachine()
+	put(state2, "/home/admin/wide", string.rep("a", 4096))
+	put(state2, "/home/admin/grind.sh",
+		"while true; do grep -c '" .. string.rep("a*", 15) ..
+		"q' /home/admin/wide > /dev/null; done\n")
+	local job2 = typeLine(system, machine2, state2, console2, "sh /home/admin/grind.sh")
+	local crafted = drive(machine2, PASSES, CeroSec.JOB_PASS_MS)
+	flat("the dearest pattern", crafted)
+	timely("the dearest pattern", crafted)
+	note("grep worst pattern", crafted)
+	check("and it is still running (" .. job2.steps .. " steps)",
+		not CeroSecOS.jobIsOver(job2))
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

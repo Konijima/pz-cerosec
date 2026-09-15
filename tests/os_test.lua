@@ -3480,9 +3480,12 @@ do
 	local miss = runAt(state, admin, "grep zebra a.txt", ENV)
 	eq("no hit is a refusal", miss.ok, false)
 	eq("and says nothing", #miss.lines, 0)
-	-- A pattern is not a pattern: the dot is a dot.
+	-- A dot is a PATTERN now, so it matches both lines; the escape is what makes it
+	-- a dot again (the BRE benches below walk the whole grammar).
 	okAt(state, admin, 'echo "a.b\naxb" > dots.txt', {})
-	okAt(state, admin, "grep a.b dots.txt", { "a.b" })
+	okAt(state, admin, "grep a.b dots.txt", { "a.b", "axb" })
+	okAt(state, admin, "grep 'a\\.b' dots.txt", { "a.b" })
+	okAt(state, admin, "grep 'a[.]b' dots.txt", { "a.b" })
 	-- Two files, so the name goes in front.
 	okAt(state, admin, "cp a.txt b.txt", {})
 	okAt(state, admin, "grep gamma a.txt b.txt", { "a.txt:gamma", "b.txt:gamma" })
@@ -3490,8 +3493,8 @@ do
 
 	-- -v: the lines that do NOT hold the string. The flag does not change what a
 	-- hit is, it changes which lines are wanted.
-	okAt(state, admin, "grep -v a.b dots.txt", { "axb" })
-	okAt(state, admin, "grep -vn a.b dots.txt", { "2:axb" })
+	okAt(state, admin, "grep -v 'a\\.b' dots.txt", { "axb" })
+	okAt(state, admin, "grep -vn 'a\\.b' dots.txt", { "2:axb" })
 	okAt(state, admin, "grep -v alpha dots.txt", { "a.b", "axb" })
 	-- Nothing left over is nothing found, exactly as nothing matched is.
 	local allmatch = runAt(state, admin, "grep -v a dots.txt", ENV)
@@ -3514,9 +3517,10 @@ do
 	okAt(state, admin, "grep -c gamma a.txt dots.txt", { "a.txt:1", "dots.txt:0" })
 	okAt(state, admin, "grep -c gamma a.txt b.txt", { "a.txt:1", "b.txt:1" })
 
-	badAt(state, admin, "grep", "grep: usage: grep [-c] [-i] [-n] [-v] <text> [file]...")
+	badAt(state, admin, "grep",
+		"grep: usage: grep [-cinv] [-e pattern] [pattern] [file]...")
 	badAt(state, admin, "grep alpha",
-		"grep: usage: grep [-c] [-i] [-n] [-v] <text> [file]...")
+		"grep: usage: grep [-cinv] [-e pattern] [pattern] [file]...")
 	badAt(state, admin, "grep -q alpha a.txt", "grep: -q: unknown option")
 	badAt(state, admin, "grep alpha /nope", "grep: /nope: no such file")
 	badAt(state, admin, "grep alpha /etc", "grep: /etc: is a directory")
@@ -15360,6 +15364,152 @@ do
 	end
 	check("and went " .. levels .. " levels deep, under the frame ceiling",
 		levels > 8 and levels < CeroSecOS.MAX_FRAMES)
+end
+
+-- 50j. grep with a basic regular expression (debts 2).
+--
+-- POSIX.2's BRE, cut to the six pieces: `^`, `$`, `.`, `*`, `[...]`, `[^...]` and
+-- the backslash. It was a plain substring, which is why `grep -c '^From '` on a
+-- mailbox -- the first line anybody writes about mail -- counted nought.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/mbox",
+		"From bob Thu Jul  8 10:00 1993\nSubject: hello\nthe lights are out\n" ..
+		"From kate Thu Jul  8 11:00 1993\nSubject: reply\nFrom me it looks fine")
+
+	-- THE CLASSIC. The circumflex is an anchor, so the envelope lines are counted
+	-- and the `From:` header is not -- which is the whole of what mbox is read by.
+	okAt(state, admin, "grep -c '^From ' mbox", { "3" })
+	okAt(state, admin, "grep '^From ' mbox",
+		{ "From bob Thu Jul  8 10:00 1993", "From kate Thu Jul  8 11:00 1993",
+			"From me it looks fine" })
+	-- And it is an ANCHOR and not a character: a line with "From " in the middle of
+	-- it is not counted, which is the difference from the plain string.
+	put(state, admin, "/home/admin/letter", "he wrote From bob and then stopped")
+	local mid = runAt(state, admin, "grep '^From ' letter", ENV)
+	eq("a From in the middle of a line is not an envelope", mid.ok, false)
+	okAt(state, admin, "grep 'From ' letter", { "he wrote From bob and then stopped" })
+
+	-- `$` at the end, and a circumflex that is not first is a circumflex.
+	okAt(state, admin, "grep 'fine$' mbox", { "From me it looks fine" })
+	put(state, admin, "/home/admin/hats", "a^b\nab")
+	okAt(state, admin, "grep 'a^b' hats", { "a^b" })
+	-- A dollar that is not last is a dollar.
+	put(state, admin, "/home/admin/money", "a$b\nab")
+	okAt(state, admin, "grep 'a$b' money", { "a$b" })
+
+	-- `.` is one character, and the backslash takes the meaning off it.
+	put(state, admin, "/home/admin/dots", "a.b\naxb\nab")
+	okAt(state, admin, "grep 'a.b' dots", { "a.b", "axb" })
+	okAt(state, admin, "grep 'a\\.b' dots", { "a.b" })
+	okAt(state, admin, "grep 'a[.]b' dots", { "a.b" })
+
+	-- `*` is any number of the piece in front of it, INCLUDING none.
+	put(state, admin, "/home/admin/runs", "ab\naxb\naxxb\nb")
+	okAt(state, admin, "grep 'ax*b' runs", { "ab", "axb", "axxb" })
+	okAt(state, admin, "grep 'axx*b' runs", { "axb", "axxb" })
+	okAt(state, admin, "grep 'a.*b' runs", { "ab", "axb", "axxb" })
+	-- A star on the FIRST piece, which is the one shape that cannot be used to skip
+	-- ahead: `x*ab` matches a line with no x in it at all, because the star may
+	-- swallow nothing.
+	okAt(state, admin, "grep 'x*ab' runs", { "ab" })
+	-- A star with nothing in front of it is a star, which is POSIX's rule for one
+	-- at the head of a pattern.
+	put(state, admin, "/home/admin/stars", "*star\nstar")
+	okAt(state, admin, "grep '*star' stars", { "*star" })
+	okAt(state, admin, "grep '\\*star' stars", { "*star" })
+
+	-- A set, a range, and a negated set.
+	okAt(state, admin, "grep '[Ff]rom me' mbox", { "From me it looks fine" })
+	put(state, admin, "/home/admin/letters", "abc\nmno\nxyz\n123")
+	okAt(state, admin, "grep '^[a-c][a-c][a-c]$' letters", { "abc" })
+	okAt(state, admin, "grep '^[^0-9]' letters", { "abc", "mno", "xyz" })
+	-- A "]" first in a set is a "]" in the set, and a "-" last is a hyphen: POSIX's
+	-- two rules for getting those two characters in at all.
+	put(state, admin, "/home/admin/brackets", "a]b\na-b\naxb")
+	okAt(state, admin, "grep 'a[]]b' brackets", { "a]b" })
+	okAt(state, admin, "grep 'a[x-]b' brackets", { "a-b", "axb" })
+
+	-- The whole line, anchored both ends -- and the empty pattern, which every
+	-- grep matches every line with.
+	put(state, admin, "/home/admin/exact", "abc\nabcd\nxabc")
+	okAt(state, admin, "grep '^abc$' exact", { "abc" })
+	okAt(state, admin, "grep '' exact", { "abc", "abcd", "xabc" })
+	put(state, admin, "/home/admin/blank", "one\n\ntwo")
+	okAt(state, admin, "grep -n '^$' blank", { "2:" })
+
+	-- -i lowers both sides, so a range written in capitals still reads.
+	okAt(state, admin, "grep -i '^FROM BOB' mbox", { "From bob Thu Jul  8 10:00 1993" })
+	-- -v and -n and -c all work on the pattern and not on a string.
+	okAt(state, admin, "grep -c -v '^From ' mbox", { "3" })
+	okAt(state, admin, "grep -n 'l.ghts' mbox", { "3:the lights are out" })
+
+	-- -e: the pattern as an option-argument, which is the only spelling for one
+	-- that starts with a dash -- and twice means either of two.
+	put(state, admin, "/home/admin/dashed", "-x here\nplain")
+	okAt(state, admin, "grep -e '-x' dashed", { "-x here" })
+	okAt(state, admin, "grep -e-x dashed", { "-x here" })
+	okAt(state, admin, "grep -e '^From ' -e 'lights' mbox",
+		{ "From bob Thu Jul  8 10:00 1993", "the lights are out",
+			"From kate Thu Jul  8 11:00 1993", "From me it looks fine" })
+	okAt(state, admin, "grep -c -e '^From ' -e lights mbox", { "4" })
+	-- With -e given, the first operand is a FILE and not the pattern.
+	okAt(state, admin, "grep -e lights mbox", { "the lights are out" })
+
+	-- Down a pipe, which is where grep is usually typed.
+	okAt(state, admin, "cat mbox | grep -c '^From '", { "3" })
+
+	-- The refusals a pattern can have, each naming what is wrong with it.
+	badAt(state, admin, "grep '[abc' mbox", "grep: [abc: unmatched [")
+	badAt(state, admin, "grep 'a\\' mbox", "grep: a\\: trailing backslash")
+	badAt(state, admin, "grep '[z-a]' mbox", "grep: [z-a]: bad range")
+	-- A pattern with more pieces in it than the walk may be asked to carry: the
+	-- ceiling is the other half of what the walk costs (CeroSecOS.MAX_BRE_ITEMS).
+	local long = string.rep(".", CeroSecOS.MAX_BRE_ITEMS + 1)
+	badAt(state, admin, "grep '" .. long .. "' mbox",
+		"grep: " .. long .. ": expression too long")
+	-- And the pattern that is exactly the ceiling is not too long: it runs, and it
+	-- matches, which is what tells a refusal apart from a line that was not found.
+	local wideLine = string.rep("w", CeroSecOS.MAX_BRE_ITEMS + 4)
+	put(state, admin, "/home/admin/atcap", wideLine .. "\nshort")
+	okAt(state, admin, "grep '" .. string.rep(".", CeroSecOS.MAX_BRE_ITEMS) ..
+		"' atcap", { wideLine })
+end
+
+-- 50k. What the walk COSTS, charged to the job (debts 2).
+--
+-- A plain substring is one C call whatever the file; a pattern is every byte of
+-- every line for every piece of it. A budget that could not see that would not be a
+-- budget, so grep hands the shell what its walk cost and the shell charges it -- the
+-- same road the PATH walk's own cost takes.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local wide = {}
+	for i = 1, 60 do wide[i] = string.rep("z", 60) end
+	put(state, admin, "/home/admin/wide", table.concat(wide, "\n"))
+
+	-- A literal pattern costs what a command costs and not a step more.
+	local plainJob = select(5, exec(state, admin, "grep -c zzz wide"))
+	eq("a literal grep is a command and nothing else", plainJob.steps,
+		CeroSecOS.STEP_COST_COMMAND)
+	-- A pattern over the same file costs more, and the difference is the walk.
+	local reJob = select(5, exec(state, admin, "grep -c 'z*q' wide"))
+	check("a pattern over the same file costs more (" .. reJob.steps .. " against " ..
+		plainJob.steps .. ")", reJob.steps > plainJob.steps)
+	-- And what it costs is the work and not a flat surcharge: twice the pattern is
+	-- about twice the walk.
+	local bigJob = select(5, exec(state, admin, "grep -c 'z*z*z*z*q' wide"))
+	check("a longer pattern costs more again (" .. bigJob.steps .. ")",
+		bigJob.steps > reJob.steps)
+	-- The arithmetic, read out loud: the steps over a command's own price are the
+	-- state-visits divided by BRE_STEPS_PER, and a file of 3659 bytes with a
+	-- five-piece pattern is a few hundred of them.
+	check("and the charge is in the right order of magnitude (" ..
+		(bigJob.steps - CeroSecOS.STEP_COST_COMMAND) .. ")",
+		bigJob.steps - CeroSecOS.STEP_COST_COMMAND > 20 and
+		bigJob.steps - CeroSecOS.STEP_COST_COMMAND < 2000)
 end
 
 print("os_test: " .. count .. " assertions passed")

@@ -3117,6 +3117,16 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `lib.sh` avec une définition dedans : `sh lib.sh` ne laisse rien,
      `. lib.sh` la laisse (`type` le dit). [ ]
 
+339h. **`grep` lit une expression régulière.** Dans une boîte aux lettres
+     (`mail` en a laissé une, ou `cat /var/mail/admin`) :
+     `grep -c '^From ' /var/mail/admin` compte les messages (les lignes
+     d'enveloppe) et pas les en-têtes `From:`. Puis, sur un fichier à soi :
+     `grep 'l.ghts' fic`, `grep '[Ff]rom' fic`, `grep 'out$' fic`,
+     `grep 'a\.b' fic` (le point littéral). `grep -e '-x' fic` cherche un motif
+     qui commence par un tiret, et deux `-e` cherchent l'un ou l'autre. Les
+     refus : `grep '[abc' fic` → `grep: [abc: unmatched [`. Et `man grep` donne
+     la nouvelle ligne d'usage. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

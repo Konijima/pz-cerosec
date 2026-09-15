@@ -299,6 +299,27 @@ rebooting, picking the computer up or reloading the world leaves it running noth
         55     55    323
     admin@ksp-04-11:~$ cat log | sort | uniq -c
 
+**grep reads a pattern, and the walk is charged.** `grep` takes POSIX.2's basic
+regular expression (`^ $ . * [...] [^...]` and the backslash; not `\( \)` and not
+`\{m,n\}`) — see [PLAYERS.md](PLAYERS.md) for the grammar. The matcher is an NFA
+simulation and not a backtracker: a backtracking matcher on `a*a*a*a*b` against a
+line of a's is exponential and the pattern is a string a *player* typed, so the walk
+carries a set of positions through the line in one pass and costs the length of the
+line times the number of pieces whatever the pattern says. Two ceilings go with that:
+32 pieces (`MAX_BRE_ITEMS`), and a pattern whose first piece cannot be skipped starts
+the walk only at the characters that piece could match.
+
+It is also the first command whose real cost is far from `STEP_COST_COMMAND`: a
+literal pattern is one C call whatever the file, a pattern with a piece in it was
+measured at five milliseconds over the widest line a file can hold and twenty-two for
+the dearest one the ceiling allows, against a per-pass wall budget of four. So grep
+reports what its walk cost on the shell's little table (`sh.cost`) and `runSimple`
+adds it to the job's **debt** — not to the steps spent on that pass, because the
+pass's invariant is that it may overspend by at most one command and a command
+reporting five hundred steps would break it. The debt is exactly the machinery for
+this: the work is paid for on the passes after it, and the average is the budget
+again. `CeroSecOS.BRE_STEPS_PER` carries the arithmetic and the measurements.
+
 Nine commands read the pipe, and only when they were given **no file**: `cat`,
 `grep`, `head`, `tail`, `wc`, `sort [-r] [-n] [-u]`, `uniq [-c]`, and the two
 fidelity A added — `cut` and `more`. A file named on the line always wins. There is

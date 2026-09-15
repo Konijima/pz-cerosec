@@ -2322,6 +2322,22 @@ local function runSimple(state, job, f, env)
 	-- a filesystem is not a table lookup and the budget has to see it.
 	local walkCost = 0
 	if type(sh.walked) == "number" and sh.walked > 1 then walkCost = sh.walked - 1 end
+	-- And what the command itself says its work cost, where a command does work the
+	-- price of a command does not cover: `grep` with a real pattern walks every byte
+	-- of every line for every piece of it, and a budget that could not see that would
+	-- not be a budget (CeroSecOS.BRE_STEPS_PER carries the arithmetic).
+	-- Charged as DEBT and not as steps spent on this pass, which is the one thing that
+	-- had to be got right: the pass's own invariant is that it may overspend by at
+	-- most ONE COMMAND (tests/hostile_test.lua holds every call to it), and a command
+	-- reporting five hundred steps of work would break it. The debt is exactly the
+	-- machinery for this -- what is overspent is carried and the next passes are that
+	-- much shorter -- so the work is paid for afterwards and the average over any run
+	-- of passes is still the budget. Counted in job.steps as well, because `ps` shows
+	-- that column and a runaway is recognised by it.
+	if type(sh.cost) == "number" and sh.cost > 0 then
+		job.debt = (job.debt or 0) + sh.cost
+		job.steps = job.steps + sh.cost
+	end
 
 
 	-- An rsh is the other command that has written nothing yet: it has gone to

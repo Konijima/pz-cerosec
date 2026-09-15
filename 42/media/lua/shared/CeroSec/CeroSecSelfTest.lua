@@ -298,6 +298,40 @@ function CeroSecSelfTest.probe(say)
 	say("function missing brace", noBrace == nil and tostring(noBraceWhy) or "PARSED")
 
 	--
+	-- grep's basic regular expressions, which are walked byte by byte with
+	-- string.byte and a table keyed by byte value. Here for the reason globMatch's
+	-- ranges are: a VM that answered differently about string.byte or about a range
+	-- would turn a pattern into a silence, and a silence is the one answer a search
+	-- must never give.
+	--
+	local function bre(pattern, line)
+		local re, why = CeroSecOS.breCompile(pattern)
+		if re == nil then return "refused: " .. tostring(why) end
+		local hit = CeroSecOS.breMatch(line, re)
+		return tostring(hit)
+	end
+	say("bre literal", bre("From", "From bob"))
+	say("bre anchored", bre("^From ", "From bob"))
+	say("bre anchored miss", bre("^From ", "  From bob"))
+	say("bre end", bre("bob$", "From bob"))
+	say("bre any", bre("F.om", "From bob"))
+	say("bre star", bre("Fr*om", "Fom"))
+	say("bre star none", bre("Fx*om", "Fom"))
+	say("bre set", bre("[Ff]rom", "from bob"))
+	say("bre range", bre("^[a-z][a-z]*$", "frombob"))
+	say("bre negated", bre("^[^0-9]", "From bob"))
+	say("bre negated miss", bre("^[^0-9]", "7 bob"))
+	say("bre escape", bre("a\\.b", "axb"))
+	say("bre escape hit", bre("a\\.b", "a.b"))
+	say("bre bracket in set", bre("a[]]b", "a]b"))
+	say("bre empty", bre("", "anything"))
+	say("bre blank line", bre("^$", ""))
+	say("bre unmatched", bre("[abc", "abc"))
+	say("bre bad range", bre("[z-a]", "abc"))
+	say("bre trailing backslash", bre("a\\", "a"))
+	say("bre too long", bre(string.rep(".", CeroSecOS.MAX_BRE_ITEMS + 1), "x"))
+
+	--
 	-- The tar container, which is what a floppy carries between two machines.
 	--
 	-- Here because it is written and read as TEXT with a byte count in it: a VM

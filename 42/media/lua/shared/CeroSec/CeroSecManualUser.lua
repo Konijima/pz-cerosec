@@ -1063,10 +1063,37 @@ Try it on the note from chapter 3.
   admin@ksp-04-11:~$ grep hello note.txt
   hello
 
-grep looks for plain text and nothing cleverer: a period means a period
-here. Its useful flags are -i to ignore capitals, -n to number the lines
-it prints, -c to print how many it found instead of printing them, and -v
-to print the lines that do NOT hold the text.]],
+grep takes a PATTERN, not a plain string: a period means "any one
+character", and the next page has the rest of them. Its useful flags are -i
+to ignore capitals, -n to number the lines it prints, -c to print how many
+it found instead of printing them, and -v to print the lines that do NOT
+match.]],
+
+[[grep's patterns, all six of them.
+
+  .        any one character
+  *        any number of the thing in front of it
+  [abc]    one of these; [a-z] is a range
+  [^abc]   one character that is NOT one of these
+  ^        the start of the line, written first
+  $        the end of the line, written last
+
+A backslash takes the meaning off any, so a\.b is a full stop. Quote a
+pattern: the shell would eat the star otherwise.
+
+  admin@ksp-04-11:~$ grep -c '^From ' mbox
+  7
+  admin@ksp-04-11:~$ grep '[Ff]rom' note.txt
+
+That first line counts the messages in a mailbox, and is the reason
+patterns are worth a page: the plain string "From " finds a line in the
+middle of a letter too.
+
+Two spellings a bigger grep has are not here: \( \) round a group and
+\{2,5\} for a count. -e gives the pattern as a flag, the only way to look
+for one starting with a dash; twice means either of two.
+
+Classic mistake. grep *.txt meaning the files. The star is the pattern's.]],
 
 [[Putting lines in order.
 
@@ -1655,7 +1682,7 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2761  62775    5%
+  hda         65536   2762  62774    5%
   nodes         512    103    409   21%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
@@ -1795,7 +1822,7 @@ Reading a file without opening it.
   head [-n N|-N] [file]
   tail [-n N|-N] [file]
   wc [-clw] [file]...
-  grep [-c] [-i] [-n] [-v] <text> [file]...
+  grep [-cinv] [-e pattern] [pattern] [file]...
   sort [-r] [-n] [-u] [file]...
   uniq [-c] [file]
   more [file]...]==],

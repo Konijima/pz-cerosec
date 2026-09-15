@@ -114,7 +114,7 @@ Commands:
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
 | `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own — no 1993 Unix had this) |
-| `grep [-c] [-i] [-n] [-v] <text> <file>...` | find a plain string in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines without it, `-c` prints how many instead of which); there is no regex on this machine |
+| `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument — the only spelling for one starting with a dash — and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `bad range`. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
 | `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
 | `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
 | `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
