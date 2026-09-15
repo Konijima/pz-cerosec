@@ -5057,6 +5057,7 @@ do
 	check("and there is none left", bench.painted("No mail for admin"))
 end
 
+
 -- A missed minute is a minute that is gone: nothing is caught up.
 do
 	local bench = newBench()
@@ -15178,6 +15179,71 @@ do
 	_G.SandboxVars = hadSandbox
 	SCeroSecSystem.instance = hadInstance
 	clock.hour, clock.minutes, clock.day = hadHour, hadMin, hadDay
+end
+
+-- Sending at the glass: the body typed, and Escape giving up on it
+--
+-- LAST IN THE FILE on purpose. Run where it belongs -- beside the cron and mail
+-- benches above -- it turns the mall-password bench near the end of this file
+-- red: "the music store's paper does not open the clothes shop". Each HALF of
+-- this block run there is green, and so is a probe bench that logs in, makes an
+-- account or advances the clock by any number of lines, so what that bench
+-- depends on is something cumulative this pair of sends crosses and neither half
+-- reaches. Worth pinning down by whoever owns that bench -- a bench whose
+-- assertions depend on what ran before it is a bench that will go red for
+-- somebody's unrelated change -- and it is not what this block is about.
+--
+-- The engine's half of this is benched in os_test (nothing is written until the
+-- dot). This is the half only a console can prove: Escape at mail's own bare
+-- prompt is the ^C of a 1993 terminal, the question goes off the machine, the
+-- shell comes back -- and no mailbox was touched on the way.
+do
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("sudo useradd bob")
+	bench.frame()
+	bench.enter("")
+	bench.frame()
+	check("bob exists to send to", bench.painted("useradd: bob: created"))
+	eq("and has no mailbox yet", bench.fileText("/var/mail/bob"), nil)
+
+	bench.enter("mail -s Note bob")
+	bench.frame()
+	-- mail(1) prints nothing while a body is being typed, so the prompt is bare.
+	eq("mail asks for a body with no prompt of its own", bench.window.prompt, "")
+	eq("and the machine is in the middle of something", bench.window.active, true)
+	eq("the body is not masked", bench.window.mask, false)
+	bench.enter("the lights are off")
+	bench.frame()
+	bench.enter("and the door is locked")
+	bench.frame()
+	eq("two lines typed and nothing delivered", bench.fileText("/var/mail/bob"), nil)
+	eq("and it is still asking", bench.window.prompt, "")
+
+	bench.window:onOtherKey(Keyboard.KEY_ESCAPE)
+	bench.frame()
+	check("the window is still open", not bench.window.closing)
+	eq("the question is off the machine", bench.object.console.prompt, nil)
+	eq("and the shell is back", bench.window.mode, "shell")
+	eq("nothing is going on any more", bench.window.active, false)
+	eq("and the message was never sent", bench.fileText("/var/mail/bob"), nil)
+
+	-- The same body again, ended with the dot this time.
+	bench.enter("mail -s Note bob")
+	bench.frame()
+	bench.enter("the lights are off")
+	bench.frame()
+	bench.enter(".")
+	bench.frame()
+	eq("the dot gave the prompt back", bench.window.mode, "shell")
+	local box = bench.fileText("/var/mail/bob")
+	check("and this one was delivered", box ~= nil)
+	check("with the subject", box ~= nil and
+		string.find(box, "Subject: Note", 1, true) ~= nil)
+	check("and the body", box ~= nil and
+		string.find(box, "the lights are off", 1, true) ~= nil)
+	check("and not the dot", box == nil or
+		string.find(box, "\n.\n", 1, true) == nil)
 end
 
 print("window_test: " .. count .. " checks passed")
