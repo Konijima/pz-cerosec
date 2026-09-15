@@ -868,6 +868,26 @@ end
 -- field at all, which is why `rm $nothing` is `rm` and not `rm ""`.
 --
 
+-- A $(...) opened: the frame that runs it, and the SUBSHELL it runs in.
+--
+-- POSIX.2 executes a command substitution in a subshell environment, so it is
+-- handed a copy of the shell's variables, of its exported set and of its working
+-- directory, and popFrame puts all three back. One function, because a capture is
+-- opened from two places now -- a word, and the inside of a $(( )) -- and two
+-- copies of a rule about what a subshell inherits would be two rules.
+--
+-- false when the frame stack is full, the job already failed by then.
+local function pushCapture(job, prog)
+	local frame = { k = "capture", prog = prog, i = 1,
+		oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
+		oldCwd = job.session.cwd }
+	if not pushFrame(job, frame) then return false end
+	job.vars = CeroSecOS.copyVars(job.vars)
+	job.exported = CeroSecOS.copyExported(job.exported)
+	job.caps[#job.caps + 1] = {}
+	return true
+end
+
 -- words is an array of parsed words; nosplit is set for the right-hand side of
 -- an assignment, which a shell never splits into fields.
 local function newExpansion(words, nosplit)
@@ -926,7 +946,39 @@ local function expandStep(job, state, ex, env)
 			elseif part.t == "job" then
 				text = tostring(job.id)
 			elseif part.t == "arith" then
-				local v, err = arithEval(job, part.expr)
+				-- The expansions in POSIX.2's order: command substitution first, the
+				-- sum afterwards. A sum with no $( ) in it has no `parts` and is read
+				-- straight, which is every sum anybody writes.
+				local expr = part.expr
+				if part.parts ~= nil then
+					if ex.ai == nil then
+						ex.ai = 1
+						ex.abuf = ""
+					end
+					while ex.ai <= #part.parts do
+						local piece = part.parts[ex.ai]
+						if piece.t == "sub" then
+							if not job.hasCap then
+								if not pushCapture(job, piece.prog) then return nil, nil end
+								return "sub"
+							end
+							ex.abuf = ex.abuf .. job.capval
+							job.hasCap = false
+							job.capval = nil
+						else
+							ex.abuf = ex.abuf .. piece.s
+						end
+						ex.ai = ex.ai + 1
+						-- The same ceiling the word meets, met on the way in: what a
+						-- capture inside a sum hands back is a string being built, and a
+						-- string being built has one ceiling on this machine.
+						if #ex.abuf > CeroSecOS.MAX_VAR_BYTES then return nil, "word too large" end
+					end
+					expr = ex.abuf
+					ex.ai = nil
+					ex.abuf = nil
+				end
+				local v, err = arithEval(job, expr)
 				if v == nil then return nil, err end
 				text = v
 			elseif part.t == "all" then
@@ -941,19 +993,7 @@ local function expandStep(job, state, ex, env)
 				text = nil
 			elseif part.t == "sub" then
 				if not job.hasCap then
-					-- A COPY of the shell's variables, because a $(...) is a SUBSHELL:
-					-- POSIX.2 runs a command substitution in a subshell environment, so
-					-- what it sets dies with it. Taken here, at the entry, and put back
-					-- in popFrame -- the same pair a stage of a pipeline gets from
-					-- newStage, written the other way round because a capture runs in the
-					-- job that asked for it instead of in a job of its own.
-					local frame = { k = "capture", prog = part.prog, i = 1,
-						oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
-						oldCwd = job.session.cwd }
-					if not pushFrame(job, frame) then return nil, nil end
-					job.vars = CeroSecOS.copyVars(job.vars)
-					job.exported = CeroSecOS.copyExported(job.exported)
-					job.caps[#job.caps + 1] = {}
+					if not pushCapture(job, part.prog) then return nil, nil end
 					return "sub"
 				end
 				text = job.capval
@@ -2753,13 +2793,19 @@ local function frameKey(job)
 		tostring(f.i) .. " " .. tostring(f.node)
 	-- A word being expanded is a turn's worth of progress that costs no step, so
 	-- where the expansion has got to is part of where the shell stands.
+	-- A sum with a $( ) in it stands still at one part while its pieces are run,
+	-- so where THAT has got to is part of where the shell stands too (ex.ai, and
+	-- the text it has gathered). Without it two turns inside `$(($(date +%s) + 1))`
+	-- read the same, and the pass would end on a job that was getting somewhere.
 	if f.ex ~= nil then
 		key = key .. " " .. tostring(f.ex.wi) .. " " .. tostring(f.ex.pi) ..
-			" " .. #f.ex.fields .. " " .. #f.ex.buf
+			" " .. #f.ex.fields .. " " .. #f.ex.buf ..
+			" " .. tostring(f.ex.ai) .. " " .. #(f.ex.abuf or "")
 	end
 	if f.exA ~= nil then
 		key = key .. " " .. tostring(f.exA.wi) .. " " .. tostring(f.exA.pi) ..
-			" " .. #f.exA.fields .. " " .. #f.exA.buf
+			" " .. #f.exA.fields .. " " .. #f.exA.buf ..
+			" " .. tostring(f.exA.ai) .. " " .. #(f.exA.abuf or "")
 	end
 	return key
 end

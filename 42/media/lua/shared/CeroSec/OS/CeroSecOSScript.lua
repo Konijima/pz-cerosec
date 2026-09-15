@@ -38,6 +38,11 @@
 --   { t = "sub",    prog = <program>,     q }   $(command)
 --   { t = "arith",  expr = "1 + $x",      q }   $((expression))
 --
+-- An "arith" part also carries `parts` when the expression holds a $( ): the
+-- command substitutions in it, lifted out so the walker can run them before the
+-- sum is read, which is the order POSIX.2 puts the expansions in. It is nil for
+-- every ordinary sum, and the text is then the whole of it.
+--
 -- q is "this part was quoted": a quoted part is one field whatever is in it,
 -- an unquoted expansion is split on blanks the way a real shell splits it.
 -- Literal text is q = true even when it was typed bare, because a literal
@@ -102,6 +107,97 @@ local function addLit(parts, c, quoted, bare)
 	parts[#parts + 1] = { t = "lit", s = c, q = true, bare = bare }
 end
 
+-- $(command), from the "$" to the ")" that closes it: the program inside, and
+-- the index just past the bracket. nil plus a reason for a line that is not one.
+--
+-- Its own function because it is read from TWO places now -- a word, and the
+-- inside of a $(( )) -- and a second scanner would be a second answer to "where
+-- does this bracket close".
+--
+-- One level deep and no further: a substitution inside a substitution is the
+-- shape that lets a short line ask for an unbounded amount of work, and there is
+-- no script worth writing on a 1993 desk machine that needs two.
+local function readCommandSub(text, i, depth)
+	if depth > 0 then return nil, "syntax error: bad substitution" end
+	local n = #text
+	local j, level, quote = i + 2, 0, nil
+	while j <= n do
+		local ch = string.sub(text, j, j)
+		if quote ~= nil then
+			if ch == quote then quote = nil
+			elseif ch == "\\" and quote == "\"" then j = j + 1 end
+		elseif ch == "'" or ch == "\"" then
+			quote = ch
+		elseif ch == "\\" then
+			j = j + 1
+		-- A $(( )) is NOT a second command substitution and must not be refused as
+		-- one. POSIX.2 puts arithmetic expansion inside a command substitution --
+		-- `x=$(echo $((2 + 3)))` is an ordinary line -- and the two wear the same
+		-- first two characters, which is why this used to answer "bad substitution"
+		-- for a sum. Its brackets are balanced, so the level count below carries it.
+		elseif ch == "$" and string.sub(text, j + 1, j + 1) == "("
+				and string.sub(text, j + 2, j + 2) ~= "(" then
+			return nil, "syntax error: bad substitution"
+		elseif ch == "(" then
+			level = level + 1
+		elseif ch == ")" then
+			if level == 0 then
+				local inner = string.sub(text, i + 2, j - 1)
+				local prog, reason = CeroSecOS.parseScript(inner, depth + 1)
+				if prog == nil then return nil, reason end
+				return prog, j + 1
+			end
+			level = level - 1
+		end
+		j = j + 1
+	end
+	return nil, "syntax error: bad substitution"
+end
+
+-- The inside of a $(( )) as an array of PARTS, when it holds a command
+-- substitution; nil when it is plain text and the arithmetic reader can have it
+-- whole.
+--
+-- POSIX.2 orders the expansions: parameter expansion and command substitution
+-- happen first, arithmetic expansion afterwards -- so `stop=$(($(date +%s) + 300))`
+-- is a sum on what date printed, and it is the line a survivor writes when he
+-- wants a deadline. It answered "bad arithmetic" here, because the expression
+-- reached the reader with the brackets still in it and the reader knows variables
+-- and arguments, not programs.
+--
+-- Only the command substitutions are lifted out. Everything else the reader
+-- already does for itself -- `$1`, `$#`, `$?`, `$$`, `${NAME}` and a bare name --
+-- and moving those here would be two readers for one grammar.
+--
+-- parts, or nil, or nil plus a reason.
+local function arithParts(text, depth)
+	if string.find(text, "$(", 1, true) == nil then return nil end
+	local parts, lit, i, n = {}, "", 1, #text
+	local function keepLit()
+		if lit ~= "" then
+			parts[#parts + 1] = { t = "lit", s = lit }
+			lit = ""
+		end
+	end
+	while i <= n do
+		local c = string.sub(text, i, i)
+		if c == "$" and string.sub(text, i + 1, i + 1) == "("
+				and string.sub(text, i + 2, i + 2) ~= "(" then
+			local prog, second = readCommandSub(text, i, depth)
+			if prog == nil then return nil, second end
+			keepLit()
+			parts[#parts + 1] = { t = "sub", prog = prog }
+			i = second
+		else
+			lit = lit .. c
+			i = i + 1
+		end
+	end
+	keepLit()
+	if #parts == 0 then return nil end
+	return parts
+end
+
 -- Everything from "$" onwards. Returns the part and the index just past it,
 -- or nil plus a reason.
 local function readDollar(text, i, quoted, depth)
@@ -123,7 +219,13 @@ local function readDollar(text, i, quoted, depth)
 						if string.sub(text, j + 1, j + 1) ~= ")" then
 							return nil, "syntax error: bad substitution"
 						end
-						return { t = "arith", expr = string.sub(text, i + 3, j - 1), q = quoted },
+						local expr = string.sub(text, i + 3, j - 1)
+						-- The command substitutions in it, lifted out to be run
+						-- BEFORE the sum is read (arithParts above). nil is the
+						-- ordinary case and keeps the text alone.
+						local pieces, reason = arithParts(expr, depth)
+						if pieces == nil and reason ~= nil then return nil, reason end
+						return { t = "arith", expr = expr, parts = pieces, q = quoted },
 							j + 2
 					end
 					level = level - 1
@@ -133,37 +235,9 @@ local function readDollar(text, i, quoted, depth)
 			return nil, "syntax error: bad substitution"
 		end
 
-		-- $(command). One level deep and no further: a substitution inside a
-		-- substitution is the shape that lets a short line ask for an
-		-- unbounded amount of work, and there is no script worth writing on a
-		-- 1993 desk machine that needs two.
-		if depth > 0 then return nil, "syntax error: bad substitution" end
-		local j, level, quote = i + 2, 0, nil
-		while j <= n do
-			local ch = string.sub(text, j, j)
-			if quote ~= nil then
-				if ch == quote then quote = nil
-				elseif ch == "\\" and quote == "\"" then j = j + 1 end
-			elseif ch == "'" or ch == "\"" then
-				quote = ch
-			elseif ch == "\\" then
-				j = j + 1
-			elseif ch == "$" and string.sub(text, j + 1, j + 1) == "(" then
-				return nil, "syntax error: bad substitution"
-			elseif ch == "(" then
-				level = level + 1
-			elseif ch == ")" then
-				if level == 0 then
-					local inner = string.sub(text, i + 2, j - 1)
-					local prog, reason = CeroSecOS.parseScript(inner, depth + 1)
-					if prog == nil then return nil, reason end
-					return { t = "sub", prog = prog, q = quoted }, j + 1
-				end
-				level = level - 1
-			end
-			j = j + 1
-		end
-		return nil, "syntax error: bad substitution"
+		local prog, second = readCommandSub(text, i, depth)
+		if prog == nil then return nil, second end
+		return { t = "sub", prog = prog, q = quoted }, second
 	end
 
 	if c == "{" then

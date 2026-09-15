@@ -253,6 +253,18 @@ function CeroSecSelfTest.probe(say)
 	say("arith argument count", CeroSecSelfTest.arith("$# * 10", { "a", "b" }))
 	say("arith argument missing", CeroSecSelfTest.arith("$2 + 1", { "3" }))
 	say("arith braces", CeroSecSelfTest.arith("${nothing} + 1", { "3" }))
+	-- And the two NESTINGS, which are parser work on both sides of the same two
+	-- characters: a $( ) inside a sum has to be run before the sum is read, a
+	-- $(( )) inside a catch must not be mistaken for a second catch, and a second
+	-- catch is still refused. Here because all three are decided by scanning text
+	-- for brackets with string.sub and string.find, and a VM that answered
+	-- differently about either would turn a line a survivor types into a refusal.
+	say("arith holds a catch", CeroSecSelfTest.arith("$(echo 5) + 1"))
+	say("arith holds two catches", CeroSecSelfTest.arith("$(echo 6) * $(echo 7)"))
+	say("catch holds a sum", CeroSecSelfTest.sh("echo $( echo $(( 2 + 3 )) )"))
+	local twice, twiceWhy = CeroSecOS.parseScript("echo $(echo $(echo deep))")
+	say("catch in catch", twice == nil and tostring(twiceWhy) or "PARSED")
+	say("catch inside quotes", CeroSecSelfTest.sh("echo \"[$(echo \"a b\")]\""))
 
 	--
 	-- The tar container, which is what a floppy carries between two machines.
@@ -300,6 +312,35 @@ function CeroSecSelfTest.tarBack(text)
 			.. tostring(#m.data) .. ":" .. (string.gsub(m.data, "\n", "|"))
 	end
 	return table.concat(out, " ")
+end
+
+-- One LINE, run the way the prompt runs one, and the first line it printed.
+--
+-- The general form of CeroSecSelfTest.arith below, and it is here for the same
+-- reason: the parser and the walker are what a player's own typing goes through,
+-- and nothing else on this list would notice either of them answering differently
+-- on the other VM. A line that printed nothing answers "no output" and a line
+-- that would not parse answers its own refusal, so a broken shell is a LINE here
+-- and not an error out of the middle of the probe.
+--
+-- Pure, as every vector has to be: no clock is handed in (env.now is 0), no path
+-- is named and nothing is read back out of the filesystem, so two runs of one VM
+-- answer the same thing.
+function CeroSecSelfTest.sh(line)
+	local state = CeroSecOS.newState("selftest")
+	local session = CeroSecOS.login(state, "root", "")
+	if session == nil then return "no session" end
+	local job, refusal = CeroSecOS.promptJob(state, session, line, {}, 0)
+	if job == nil then return tostring(refusal) end
+	local env = { now = 0 }
+	local turns = 0
+	while not CeroSecOS.jobIsOver(job) and turns < 64 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, job, env, 1000)
+		if job.state == "waiting" or job.state == "sleeping" then break end
+	end
+	if #job.out == 0 then return "no output" end
+	return job.out[1]
 end
 
 -- One `$(( ))` expression, evaluated the way the shell evaluates one: through a

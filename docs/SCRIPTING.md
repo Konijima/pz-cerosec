@@ -164,7 +164,16 @@ trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
 and `$((1 + 2 * 3))` on whole numbers — with `$1`, `$#`, `$?`, `$$` and `${NAME}`
 read inside the double brackets as POSIX.2 reads them, the expansion first and the
-sum afterwards, so `$((5 % $1))` is a sum on the first argument; and `echo [-n]`,
+sum afterwards, so `$((5 % $1))` is a sum on the first argument. **The two kinds
+of bracket nest**, in POSIX.2's own order: every command substitution is run first
+and the sum is read on what came back, so `stop=$(($(date +%s) + 300))` is a
+deadline and `echo $(echo $((2 + 3)))` is a catch round a sum. What is one level
+deep is *command substitutions*, and a `$(( ))` between two of them does not buy a
+second one — `$(( $(echo $(date)) ))` is still `bad substitution`. A catch inside a
+sum meets the **word's** ceiling, at the write, exactly as one inside a word does;
+what comes back and is not a number is nought, the rule an empty variable already
+follows. A `$(( ))` inside a `$(( ))` is not read (write the brackets plainly
+instead); and `echo [-n]`,
 `printf`, `read`, `sleep`
 and `shift` as builtins that work even on a machine whose `/bin` has been emptied.
 

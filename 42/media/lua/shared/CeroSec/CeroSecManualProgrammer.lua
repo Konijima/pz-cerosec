@@ -984,13 +984,12 @@ every file's date is kept in underneath.
   admin@ksp-04-11:~$ start=$(date +%s); echo $((start + 60))
   742122960
 
-So "a minute from now" is a number you can compare against, which is how
-you write a loop that gives up:
+So "a minute from now" is a number you can compare against, and one line
+writes it -- the catch runs first, the sum is read on what it printed:
 
   stop=$(($(date +%s) + 300))
 
--- except that you cannot, because that is a $( ) inside a $(( )) and this
-machine allows one level. Write it in two lines, which is clearer anyway:
+Two lines say the same and read better in a long script:
 
   now=$(date +%s)
   stop=$((now + 300))
@@ -1008,6 +1007,31 @@ Then a loop that waits and gives up. This one was run with 30 instead of
   echo gave up
   admin@ksp-04-11:~$ ./give.sh
   gave up]],
+
+[[One inside the other.
+
+The two kinds of brackets nest, and the shell does them in an order: every
+catch is run first, and the sum is read on what came back. So a catch in a
+sum is a sum on what a command printed:
+
+  admin@ksp-04-11:~$ echo $(( $(date +%s) % 60 ))
+  47
+
+and a sum in a catch is just a sum:
+
+  admin@ksp-04-11:~$ echo $( echo $(( 2 + 3 )) )
+  5
+
+What is still one level deep is CATCHES, and only catches. A $( ) inside a
+$( ) is refused where it is typed, and putting a sum between them does not
+buy you a second one:
+
+  admin@ksp-04-11:~$ echo $(( $(echo $(date)) ))
+  sh: syntax error: bad substitution
+
+A catch inside a sum meets the word's ceiling like any other catch, and a
+catch that comes back as something that is not a number counts as nought,
+which is the rule an empty variable follows.]],
 
 [[Two refusals, and a habit worth having.
 

@@ -652,6 +652,38 @@ do
 end
 
 --
+-- 8b. The same bomb INSIDE A SUM (debts 2).
+--
+-- `$(( $(cmd) + 1 ))` is a command substitution the ARITHMETIC asks for, and it
+-- is a second door into the same capture frame: the sum stands still at one part
+-- while the program inside it runs. So it has to be charged and bounded exactly as
+-- the door above is, and it has to keep moving -- a loop like this must go round
+-- thousands of times over a thousand passes and not stall on the pass's own spin
+-- guard. (What that guard reads of the sum's own position -- ex.ai, ex.abuf in
+-- progressKey -- is not what carries this bench: the capture's FRAME is pushed and
+-- popped, which the guard already sees. It is in the key because it is state a
+-- turn moves without spending a step, which is the rule that key is built on.)
+--
+do
+	local machine, state, console = newMachine()
+	put(state, "/home/admin/sumbomb.sh",
+		"while true; do y=$(( $(ls /bin | wc -l) + 1 )); done\n")
+	local job = typeLine(system, machine, state, console, "sh sumbomb.sh")
+
+	local result = drive(machine, PASSES)
+	flat("sum substitution bomb", result)
+	timely("sum substitution bomb", result)
+	check("it is still running and still bounded", not CeroSecOS.jobIsOver(job))
+	-- And it is really COMPUTING, not standing still: the sum came out as a number
+	-- and came out more than once. A bench that only watched the cost would be
+	-- green on a loop that never finished one turn.
+	check("the sum was worked out (" .. tostring(job.vars.y) .. ")",
+		job.vars.y ~= nil and tonumber(job.vars.y) ~= nil)
+	check("and many times over (" .. job.steps .. " steps)", job.steps > PASSES)
+	note("sum substitution bomb", result)
+end
+
+--
 -- 9. Four of the worst of them at once, on four machines, sharing one budget.
 -- What is being watched here is the ceiling on the WHOLE county: no pass may
 -- spend more than CeroSec.STEP_BUDGET_PER_TICK however many machines there are.

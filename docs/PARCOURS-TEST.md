@@ -3081,6 +3081,13 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `/etc` et `pwd` juste après affiche encore `/home/admin`. Et
      `export P=a`, `z=$(export P=b; echo $P)`, `env | grep P` → `P=a`. [ ]
 
+339d. **Les deux imbrications que POSIX permet.** `echo $( echo $(( 2 + 3 )) )` →
+     `5`. `echo $(( $(echo 3) + 1 ))` → `4`. Et la ligne que le manuel disait
+     impossible : `stop=$(( $(date +%s) + 300 ))`, puis `now=$(date +%s)`, puis
+     `echo $(( stop - now ))` → `300` (ou 299/300 selon la seconde qui passe).
+     Deux prises restent refusées : `echo $(echo $(date))` →
+     `sh: syntax error: bad substitution`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

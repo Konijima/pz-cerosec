@@ -14849,4 +14849,89 @@ do
 	ok(state, admin, "echo $w", { "shell" })
 end
 
+-- 50b. The two nestings POSIX allows: a sum inside a catch, a catch inside a
+-- sum (debts 2).
+--
+-- POSIX.2 orders the expansions -- parameter expansion and command substitution,
+-- then arithmetic -- so `$(($(date +%s) + 300))` is a sum on what date printed,
+-- and `$(echo $((2 + 3)))` is a catch round a sum. Both were refused here: the
+-- catch's own scanner read the `$(` of a `$((` as a second catch, and the
+-- arithmetic reader was handed an expression with a program still in it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local env = { now = 741139200 }
+
+	-- A sum inside a catch. The scanner has to tell `$((` from `$(`.
+	okAt(state, admin, "echo $( echo $(( 2 + 3 )) )", { "5" })
+	okAt(state, admin, "echo $(echo $((7 % 3)))", { "1" })
+	-- And a catch inside a sum, which is the one a survivor writes.
+	okAt(state, admin, "echo $(( $(echo 3) + 1 ))", { "4" })
+	okAt(state, admin, "echo $(( $(echo 6) * $(echo 7) ))", { "42" })
+	okAt(state, admin, "echo $(( $(echo 10) ))", { "10" })
+	-- The catch is expanded FIRST and the sum read afterwards, which is what makes
+	-- the value come from the command and not from the text: a reader that treated
+	-- the brackets as text could not tell 3 from 30.
+	ok(state, admin, "n=30", {})
+	okAt(state, admin, "echo $(( $(echo $n) / 3 ))", { "10" })
+	-- What the reader already did for itself still works beside it: a variable, an
+	-- argument and a brace form in the same sum as a catch.
+	put(state, admin, "/home/admin/sum.sh", "echo $(( $(echo 2) * $1 + ${n} ))\n")
+	ok(state, admin, "n=1", {})
+	okAt(state, admin, "sh sum.sh 5", { "11" })
+
+	-- The line the manual used to say could not be written. `date +%s` twice, five
+	-- minutes apart in the sum, is a deadline -- and the difference is what is
+	-- asserted, because the clock itself is the bench's and not the assertion's.
+	do
+		local _, lines = exec(state, admin, "stop=$(( $(date +%s) + 300 ))", env)
+		eq("the deadline sum printed nothing", #lines, 0)
+		local _, out = exec(state, admin, "now=$(date +%s)", env)
+		eq("and neither did the clock", #out, 0)
+		local _, diff = exec(state, admin, "echo $(( stop - now ))", env)
+		eq("the deadline is five minutes out", diff[1], "300")
+	end
+
+	-- A catch in a sum that comes back as something that is not a number is nought,
+	-- which is the rule an empty variable already meets in the same reader.
+	okAt(state, admin, "echo $(( 1 + $(echo notanumber) ))", { "1" })
+	-- A capture that FAILS to be a sum at all still names the sum and not the
+	-- catch: `date` with no format prints words.
+	badAt(state, admin, "echo $(( $(echo a b) + 1 ))", "sh: bad arithmetic")
+
+	-- Two catches is still two catches, whichever brackets they are written in:
+	-- the one-level rule is what keeps a short line from asking for unbounded work.
+	badAt(state, admin, "echo $(echo $(echo deep))", "sh: syntax error: bad substitution")
+	badAt(state, admin, "echo $(( $(echo $(echo deep)) ))",
+		"sh: syntax error: bad substitution")
+	-- A sum inside a catch inside a sum is ONE catch, so it is allowed: what the
+	-- one-level rule counts is command substitutions, and a sum is not one.
+	okAt(state, admin, "echo $(( $(echo $(( 1 + 1 ))) * 3 ))", { "6" })
+
+	-- Nested quoting, one level, which is the other half of POSIX's rule about
+	-- what may sit inside a $( ): the inner quotes are the inner command's.
+	okAt(state, admin, "echo \"[$(echo \"a b\")]\"", { "[a b]" })
+	ok(state, admin, "q=\"$(echo \"a  b\")\"", {})
+	-- The run of blanks the INNER quotes kept is still there: the catch folds
+	-- newlines and nothing else, and the outer quotes keep the value one field.
+	okAt(state, admin, "echo \"[$q]\"", { "[a  b]" })
+	-- Unquoted, the same value is split on blanks like any other expansion, which
+	-- is the difference the outer quotes are there to make.
+	okAt(state, admin, "echo [$q]", { "[a b]" })
+
+	-- The word's ceiling is met inside a sum too: a catch handing back more than a
+	-- word may hold is the same refusal it is in a word.
+	-- The ceiling is met AT THE WRITE, the way a capture in a word meets it, so
+	-- the job is stopped rather than handed a value too big to hold.
+	local big = {}
+	for i = 1, 60 do big[#big + 1] = string.rep("9", 30) end
+	put(state, admin, "/home/admin/big", table.concat(big, "\n"))
+	do
+		local _, lines, _, _, job = exec(state, admin, "echo $(( $(cat big) + 1 ))", env)
+		eq("a catch in a sum meets the word's ceiling", job.state, "error")
+		eq("with the word's own reason", lines[1], "sh: word too large")
+		eq("and the sum never printed anything", #lines, 1)
+	end
+end
+
 print("os_test: " .. count .. " assertions passed")

@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- The two kinds of brackets nest now, the way they do on every other machine.
+  `stop=$(($(date +%s) + 300))` is a deadline in one line -- the command runs
+  first and the sum is read on what it printed -- and `echo $(echo $((2 + 3)))`
+  is a catch round a sum. Both answered a refusal before. What is still one
+  level deep is catches: `$(echo $(date))` is refused as it always was.
 - A `$( )` is a shell of its own, the way it is on every other machine. What
   you set inside one stays inside: `x=1; y=$(x=2; echo $x); echo $x` prints
   `1`, an `export` inside a catch marks nobody else's environment, and
