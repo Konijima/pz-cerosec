@@ -467,6 +467,14 @@ mailboxes are bounded by lines and by bytes and are exempt from the 64 KB by the
 path, the same way `~/.sh_history` is — a machine must not fill its own disk with
 what it said about itself while nobody was looking.
 
+Reading mail does not destroy it. `mail` shows what is in the spool and **moves** it
+to `~/mbox` as it goes -- 4.4BSD Mail's own pair, where the spool is what has arrived
+and `~/mbox` is what has been read -- and `mail -f` reads `~/mbox` and moves nothing.
+The move is an ordinary write in an ordinary home, so it pays the disk; a drive with
+no room leaves the spool exactly as it was and says so, having shown the messages
+anyway, because they have been read and what failed is the keeping. `You have mail.`
+at the login is still about the spool alone.
+
 A script can **post** mail as well as read it: `mail [-s subject] user...` takes
 its body from the standard input, which is a pipe (`echo copied | mail -s Backup
 bob`) or, with a pair of hands behind it, the terminal a line at a time until a

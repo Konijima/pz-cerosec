@@ -1055,30 +1055,28 @@ again.
 
 Blank lines and lines beginning with # are neither entries nor errors.]],
 
-[[Where the output goes, and it is not the screen. There is nobody at the
-screen at four in the morning.
+[[Where the output goes, and it is not the screen. Nobody is at the screen
+at four in the morning.
 
-It is mailed to the account, with the two lines a mailbox has always
-carried in front of it, and mail shows it and empties it:
+It is mailed to the account, with the two lines a mailbox carries:
 
   admin@ksp-04-11:~$ mail
   From cron  Sun Jun 27 13:12:00 1993
   Subject: Cron <admin@ksp-04-11> echo tick
 
   tick
-  admin@ksp-04-11:~$ mail
-  No mail for admin
 
-The second time is not a fault: reading the mail IS emptying the mailbox,
-which is what mail has always done. A hundred lines and four kilobytes to
-a mailbox, oldest dropped.
+Ask again and it says No mail for admin, which is not a fault: reading
+MOVES the mail. /var/mail/<name> is what has ARRIVED, ~/mbox in your home
+is what you have read, and mail puts it there as it shows it. mail -f
+reads that one and moves nothing. ~/mbox is a file at 600 and costs the
+drive what any file does; no room leaves the mail in the spool and says
+so. You have mail. is about the spool.
 
-mail with a NAME after it SENDS instead: Volume 3 chapter 9 has that
-half.
+mail with a NAME after it SENDS: Volume 3 has that half.
 
-What RAN, and what could not, is /var/log/cron, root's at 640:
+What ran, and what did not, is /var/log/cron, root's at 640:
 
-  root@ksp-04-11:~# cat /var/log/cron
   Jun 27 13:12 (admin) CMD (echo tick)
   Jun 27 13:12 (CRON) error (can't fork)
 
@@ -1827,7 +1825,7 @@ Work with nobody standing there.
   at HH:MM | at -l | at -r <job>...
   atq
   atrm <job>...
-  mail [-s subject] [user...]
+  mail [-f] [-s subject] [user...]
 
 The wire.
 

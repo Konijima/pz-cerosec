@@ -8,6 +8,13 @@ date.
 
 ## Unreleased
 
+- Reading your mail no longer destroys it. `mail` shows what has arrived and
+  moves it to `mbox` in your home as it goes, which is what Mail has always done
+  on the way out; `mail -f` reads that file and moves nothing, so the address in
+  last week's message is still there. `mbox` is an ordinary file of yours at
+  mode 600 and costs your drive what any file costs -- a drive with no room
+  leaves the mail where it was and says so, having shown it to you anyway.
+  `You have mail.` at the login still means something has ARRIVED.
 - `grep` reads a pattern. `grep -c '^From ' mbox` counts the messages in a
   mailbox now, which is the first line anybody writes about mail and used to
   count nothing: the circumflex was a character to look for. What it takes is

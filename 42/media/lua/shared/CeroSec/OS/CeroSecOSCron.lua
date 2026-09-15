@@ -90,6 +90,23 @@ function CeroSecOS.mailPath(user)
 	return CeroSecOS.MAIL_PATH .. "/" .. tostring(user)
 end
 
+-- And the other mailbox, which is the account's own: ~/mbox.
+--
+-- 4.4BSD Mail keeps what has ARRIVED in the spool (/var/mail/<name>) and what has
+-- been READ in the user's home, and moves a message from the first to the second
+-- when you quit -- which is the whole of what "mbox" is, and why `mail` on a real
+-- machine shows you a message once and then cannot find it again in the spool. The
+-- name is Mail's own and has no dot in front of it.
+--
+-- nil for an account with no home, which is nobody on this machine but is what a
+-- forged /etc/passwd line is.
+function CeroSecOS.mboxPath(state, user)
+	local account = CeroSecOS.getUser(state, user)
+	if type(account) ~= "table" or type(account.home) ~= "string" then return nil end
+	if account.home == "" then return nil end
+	return account.home .. "/mbox"
+end
+
 -- /var and the three directories under it, made where they are missing and left
 -- exactly as they are where they are not. Used by a fresh machine, by the
 -- migration that tops an older one up, and by the BIOS repair -- and by nothing
@@ -768,12 +785,18 @@ end
 -- given: an option it has not got, or a -s with nothing behind it.
 local function mailArgs(args)
 	local subject, to, i = nil, {}, 2
+	local file = false
 	while i <= #args do
 		local a = args[i]
 		if a == "-s" then
 			if args[i + 1] == nil then return nil end
 			subject = args[i + 1]
 			i = i + 2
+		elseif a == "-f" then
+			-- Mail's own flag for "read a mailbox that is not the spool", and the one
+			-- it means with no file after it is ~/mbox.
+			file = true
+			i = i + 1
 		elseif string.sub(a, 1, 1) == "-" and #a > 1 then
 			return nil
 		else
@@ -781,7 +804,7 @@ local function mailArgs(args)
 			i = i + 1
 		end
 	end
-	return subject, to
+	return subject, to, file
 end
 
 -- Is this an address on ANOTHER machine? Both spellings 1993 had: the domain
@@ -839,7 +862,24 @@ local function mailDeliver(state, session, to, subject, body, env, nullBody)
 	return true, out
 end
 
--- Reading: the mailbox, shown and emptied.
+-- Reading.
+--
+-- 4.4BSD Mail shows what is in the spool and, on `q`, MOVES it to ~/mbox: the spool
+-- is what has arrived and ~/mbox is what has been read, and that is why a message
+-- you have seen once is not in the spool the next time you look. This console reads a
+-- line at a time and has no `q` to give it, so the read IS the quit -- the messages
+-- are shown and moved in one act, which is what a real Mail does with `mail` and an
+-- immediate `q` and is the only shape a one-shot command can have. (`x` is the other
+-- half of that pair, and what stands in for it here is not reading at all.)
+--
+-- It DESTROYED them before this: the spool was emptied and the messages existed
+-- nowhere afterwards, so a survivor who read his mail and wanted the address in it
+-- had lost it.
+--
+-- The move pays the disk, because ~/mbox is an ordinary file in an ordinary home: it
+-- is written through the ordinary write path, on the account's own authority, and a
+-- drive with no room for it leaves the spool exactly as it was and says so. The
+-- messages are still shown -- they have been read, and what failed is the keeping.
 local function mailRead(state, session, env)
 	local user = CeroSecOS.userOf(session)
 	local path = CeroSecOS.mailPath(user)
@@ -858,27 +898,81 @@ local function mailRead(state, session, env)
 		return false, { "mail: " .. path .. ": permission denied" }
 	end
 	local lines = CeroSecOS.splitLines(text)
-	-- Read is read: the mailbox is emptied through the ordinary write path, on
-	-- the account's own authority, so a mailbox that cannot be emptied is a
-	-- mailbox that is not shown as read.
-	local done, why = CeroSecOS.setData(state, session, path, "", CeroSecOS.clockOf(env))
+	local now = CeroSecOS.clockOf(env)
+
+	-- Into ~/mbox first, and only then out of the spool: a move that emptied the
+	-- spool before it had somewhere to put what was in it would be a move that loses
+	-- the mail the moment the drive is full.
+	local box = CeroSecOS.mboxPath(state, user)
+	if box ~= nil then
+		local kept, why = CeroSecOS.writeFile(state, session, box, text, true, now)
+		if kept == nil then
+			-- The disk, or a directory that is not there any more. The messages stay in
+			-- the spool and are shown anyway: they have been read.
+			local out = { "mail: " .. box .. ": " .. why }
+			for i = 1, #lines do out[#out + 1] = lines[i] end
+			return false, out
+		end
+		-- 600, which is the mode a mailbox wears: a box in a home other accounts may
+		-- read into is a box other accounts may read. Set on the node once it exists,
+		-- because writeFile makes an ordinary 644 file like every other write.
+		local made = CeroSecOS.getNode(state, session, box)
+		if type(made) == "table" and made.mode ~= CeroSecOS.MAIL_MODE then
+			made.mode = CeroSecOS.MAIL_MODE
+		end
+	end
+
+	-- Read is read: the spool is emptied through the ordinary write path, on the
+	-- account's own authority, so a spool that cannot be emptied is a spool that is
+	-- not shown as read.
+	local done, why = CeroSecOS.setData(state, session, path, "", now)
 	if done == nil then return false, { "mail: " .. path .. ": " .. why } end
 	return true, lines
 end
 
+-- mail -f: ~/mbox, read and left exactly as it is.
+--
+-- Mail's own flag -- `mail -f [file]` reads a mailbox other than the spool, and the
+-- file it means when you give it none is ~/mbox. Nothing is moved: there is nowhere
+-- for it to go, mbox being where read mail already lives.
+local function mailFile(state, session)
+	local user = CeroSecOS.userOf(session)
+	local box = CeroSecOS.mboxPath(state, user)
+	if box == nil then return true, { "No mail for " .. tostring(user) } end
+	local node, reason = CeroSecOS.getNode(state, session, box)
+	if node == nil then
+		if reason == "no such file" then return true, { "No mail for " .. tostring(user) } end
+		return false, { "mail: " .. box .. ": " .. reason }
+	end
+	if node.type ~= "file" then
+		return false, { "mail: " .. box .. ": " .. CeroSecOS.notAFile(node) }
+	end
+	if not CeroSecOS.can(state, session, node, "r") then
+		return false, { "mail: " .. box .. ": permission denied" }
+	end
+	local text = node.data or ""
+	if text == "" then return true, { "No mail for " .. tostring(user) } end
+	return true, CeroSecOS.splitLines(text)
+end
+
 commands.mail = function(state, session, args, env, stdin, sh)
-	local subject, to = mailArgs(args)
+	local subject, to, file = mailArgs(args)
 	if subject == nil and to == nil then
 		return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
 	end
 	-- No name to send to is the reading half, and -s with nothing to send to is
 	-- neither half: a subject on a message with no recipient is a line that was
-	-- typed wrong.
+	-- typed wrong. -f is the reading half too, and a -f with a recipient after it is
+	-- the same kind of nonsense as a subject with none.
 	if #to == 0 then
 		if subject ~= nil then
 			return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
 		end
+		if file then return mailFile(state, session) end
 		return mailRead(state, session, env)
+	end
+	if file then
+		return false, { "mail: usage: " .. CeroSecOS.commandUsage("mail") }
 	end
 
 	local ok, bad = mailRecipients(state, to)

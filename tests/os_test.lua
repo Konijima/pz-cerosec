@@ -47,6 +47,17 @@ local function addUser(state, name, password, home, admin)
 	local done, reason = CeroSecOS.setData(state, CeroSecOS.rootSession(),
 		CeroSecOS.PASSWD_PATH, text .. CeroSecOS.passwdLine(user))
 	if done == nil then error("cannot add " .. name .. ": " .. tostring(reason), 2) end
+	-- And the HOME, which `useradd` makes and which an account without one is not a
+	-- machine anybody could have: a line in /etc/passwd naming a directory that is
+	-- not there is a forged file, and the commands that write in a home -- `mail`
+	-- keeping read mail in ~/mbox is the one that found this -- would be benched
+	-- against a machine no useradd ever built.
+	if type(user.home) == "string" and user.home ~= ""
+			and CeroSecOS.getNode(state, CeroSecOS.rootSession(), user.home) == nil then
+		local made = CeroSecOS.createNode(state, CeroSecOS.rootSession(), user.home,
+			CeroSecOS.newDir(name, 750))
+		if made == nil then error("cannot make a home for " .. name, 2) end
+	end
 	return user
 end
 
@@ -7161,7 +7172,6 @@ do
 	-- And inside an su it pops instead.
 	local bob = addUser(state, "bob", "", "/home/bob")
 	local root = open(state, "root")
-	okAt(state, root, "mkdir /home/bob", {}, env)
 	okAt(state, root, "su bob", {}, env)
 	eq("root became bob", root.user, "bob")
 	r = runAt(state, root, "exit", env)
@@ -7254,8 +7264,7 @@ do
 	local bob = addUser(state, "bob", "", "/home/bob")
 	check("bob exists", bob ~= nil)
 	local rootSession = CeroSecOS.rootSession()
-	eq("bob has a home", CeroSecOS.createNode(state, rootSession, "/home/bob",
-		CeroSecOS.newDir("bob", CeroSecOS.HOME_MODE), nil) ~= nil, true)
+	eq("bob has a home", CeroSecOS.getNode(state, rootSession, "/home/bob") ~= nil, true)
 	local bobs = open(state, "bob")
 	eq("bob's own history starts empty", #CeroSecOS.historyLines(state, bobs), 0)
 	CeroSecOS.historyAppend(state, bobs, "id", FIXED)
@@ -7401,8 +7410,7 @@ do
 	-- A home somewhere else entirely: the exemption reads /etc/passwd and not
 	-- /home.
 	addUser(state, "x", "", "/home/x")
-	check("x has a home", CeroSecOS.createNode(state, rootSession, "/home/x",
-		CeroSecOS.newDir("x", CeroSecOS.HOME_MODE), nil) ~= nil)
+	check("x has a home", CeroSecOS.getNode(state, rootSession, "/home/x") ~= nil)
 	local xs = open(state, "x")
 	eq("x's history goes in", CeroSecOS.historyAppend(state, xs, "id", FIXED), true)
 	eq("and it is exempt where his passwd line says his home is",
@@ -7425,8 +7433,8 @@ do
 	local names = { "a", "b", "c", "d", "e" }
 	for i = 1, #names do
 		addUser(state, names[i], "", "/home/" .. names[i])
-		check(names[i] .. " has a home", CeroSecOS.createNode(state, rootSession,
-			"/home/" .. names[i], CeroSecOS.newDir(names[i], CeroSecOS.HOME_MODE), nil) ~= nil)
+		check(names[i] .. " has a home",
+			CeroSecOS.getNode(state, rootSession, "/home/" .. names[i]) ~= nil)
 		sessions[#sessions + 1] = open(state, names[i])
 	end
 	local grown, refused = 0, 0
@@ -8645,9 +8653,9 @@ do
 	eq("and it is not admin's", CeroSecOS.systemNode(state, spool), nil)
 
 	-- mail: nothing, then something, then nothing again -- reading is what
-	-- empties it.
+	-- empties the spool.
 	okAt(state, admin, "mail", { "No mail for admin" })
-	badAt(state, admin, "mail -f", "mail: usage: mail [-s subject] [user...]")
+	badAt(state, admin, "mail -q", "mail: usage: mail [-f] [-s subject] [user...]")
 	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo hi", { "hi" }, FIXED)
 	okAt(state, admin, "mail", {
 		"From cron  Thu Jul  8 14:32:00 1993",
@@ -15510,6 +15518,116 @@ do
 		(bigJob.steps - CeroSecOS.STEP_COST_COMMAND) .. ")",
 		bigJob.steps - CeroSecOS.STEP_COST_COMMAND > 20 and
 		bigJob.steps - CeroSecOS.STEP_COST_COMMAND < 2000)
+end
+
+-- 50l. Reading mail does not destroy it: the spool and ~/mbox (debts 2).
+--
+-- 4.4BSD Mail keeps what has ARRIVED in the spool and what has been READ in ~/mbox,
+-- and moves a message from the first to the second when you quit. This machine
+-- emptied the spool and the messages existed nowhere afterwards -- a survivor who
+-- read his mail and wanted the address in it had lost it.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	local box = "/home/admin/mbox"
+
+	eq("the path is the account's own home", CeroSecOS.mboxPath(state, "admin"), box)
+	eq("and there is none until something has been read",
+		CeroSecOS.getNode(state, admin, box), nil)
+	okAt(state, admin, "mail", { "No mail for admin" })
+	okAt(state, admin, "mail -f", { "No mail for admin" })
+
+	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo one", { "one" }, FIXED)
+	local first = {
+		"From cron  Thu Jul  8 14:32:00 1993",
+		"Subject: Cron <admin@ksp-front-01> echo one",
+		"",
+		"one",
+	}
+	okAt(state, admin, "mail", first)
+	-- The spool is empty and the message is in ~/mbox, which is the whole of it.
+	eq("the spool is empty",
+		(CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin")) or {}).data, "")
+	okAt(state, admin, "mail", { "No mail for admin" })
+	okAt(state, admin, "mail -f", first)
+	-- And -f does NOT move it: read it twice and it is still there.
+	okAt(state, admin, "mail -f", first)
+
+	-- 600 and the account's own, which is the mode a mailbox wears: a home other
+	-- accounts may read into would otherwise be a mailbox they may read.
+	local node = CeroSecOS.getNode(state, admin, box)
+	eq("the box is the account's", node.owner, "admin")
+	eq("at 600", node.mode, CeroSecOS.MAIL_MODE)
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob", "")
+	badAt(state, bob, "cat " .. box, "cat: " .. box .. ": permission denied")
+
+	-- A second message is APPENDED, so the box is the account's whole history.
+	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo two", { "two" }, FIXED)
+	okAt(state, admin, "mail", {
+		"From cron  Thu Jul  8 14:32:00 1993",
+		"Subject: Cron <admin@ksp-front-01> echo two",
+		"",
+		"two",
+	})
+	local both = ok(state, admin, "mail -f", nil)
+	eq("both messages are in the box", #both, 8)
+	eq("the first one first", both[2], "Subject: Cron <admin@ksp-front-01> echo one")
+	eq("and the second under it", both[6], "Subject: Cron <admin@ksp-front-01> echo two")
+
+	-- What a message costs the DRIVE it costs in the home, like any other file: the
+	-- spool is exempt because the machine writes it, and ~/mbox is the player's.
+	local _, used = CeroSecOS.usage(state)
+	check("the box is charged to the disk (" .. used .. ")", used > 0)
+
+	-- "You have mail." at the login is about the SPOOL and not about ~/mbox: what it
+	-- means is "something has arrived", which is login.c's own question. A box full of
+	-- read mail must not announce itself every time somebody logs in.
+	eq("nothing has arrived", CeroSecOS.hasMail(state, "admin"), false)
+	local greeting = CeroSecOS.loginLines(state, "admin")
+	local said = false
+	for i = 1, #greeting do
+		if greeting[i] == "You have mail." then said = true end
+	end
+	eq("so the login says nothing about mail", said, false)
+	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo three", { "three" }, FIXED)
+	eq("something has arrived", CeroSecOS.hasMail(state, "admin"), true)
+	greeting = CeroSecOS.loginLines(state, "admin")
+	said = false
+	for i = 1, #greeting do
+		if greeting[i] == "You have mail." then said = true end
+	end
+	eq("and the login says so", said, true)
+end
+
+-- 50m. A drive with no room for it keeps the mail in the spool and says so.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	-- ~/mbox at its own ceiling, so the move cannot fit.
+	put(state, admin, "/home/admin/mbox", string.rep("x", CeroSecOS.MAX_FILE_BYTES))
+	CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo one", { "one" }, FIXED)
+	local res = runAt(state, admin, "mail", ENV)
+	eq("the read failed", res.ok, false)
+	eq("and said where it could not put them", res.lines[1],
+		"mail: /home/admin/mbox: file too large")
+	-- The messages are still SHOWN -- they have been read -- and still in the spool,
+	-- which is the half that matters: nothing is lost.
+	eq("the messages came out behind the refusal", res.lines[3],
+		"Subject: Cron <admin@ksp-front-01> echo one")
+	local spool = CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin"))
+	check("and the spool still holds them",
+		string.find(spool.data or "", "echo one", 1, true) ~= nil)
+	-- Room made, and the same read moves them.
+	okAt(state, admin, "rm mbox", {})
+	okAt(state, admin, "mail", {
+		"From cron  Thu Jul  8 14:32:00 1993",
+		"Subject: Cron <admin@ksp-front-01> echo one",
+		"",
+		"one",
+	})
+	eq("now the spool is empty",
+		(CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin")) or {}).data, "")
 end
 
 print("os_test: " .. count .. " assertions passed")

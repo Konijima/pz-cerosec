@@ -748,7 +748,7 @@ CeroSecOS.COMMAND_INFO = {
 	-- comes from the standard input either way -- a pipe, or the terminal until a
 	-- line holding a single "." -- because that is where mail has always read it.
 	mail     = { desc = "read your mail, or send a message",
-		usage = "mail [-s subject] [user...]" },
+		usage = "mail [-f] [-s subject] [user...]" },
 	man      = { desc = "describe a command", usage = "man <command>" },
 	mkdir    = { desc = "make a directory", usage = "mkdir <dir>" },
 	-- CeroSec Systems' own, and the manual's deviations page says so: no Unix of

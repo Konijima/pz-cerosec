@@ -3127,6 +3127,15 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      refus : `grep '[abc' fic` → `grep: [abc: unmatched [`. Et `man grep` donne
      la nouvelle ligne d'usage. [ ]
 
+339i. **Lire son courrier ne le détruit plus.** `echo "essai" | mail -s Test admin`
+     puis `mail` → le message s'affiche. `ls -l ~/mbox` → le fichier existe, en
+     `-rw-------`. `mail` → `No mail for admin` (la boîte d'arrivée est vide),
+     mais `mail -f` → le message est encore là, et deux `mail -f` de suite le
+     montrent deux fois (rien n'est déplacé). Se déconnecter et se reconnecter :
+     pas de `You have mail.` (c'est la boîte d'arrivée qui le dit, pas
+     `~/mbox`). Puis un deuxième message, `mail`, `mail -f` → les deux messages
+     dans l'ordre. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |
