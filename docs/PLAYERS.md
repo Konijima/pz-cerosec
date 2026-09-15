@@ -279,6 +279,15 @@ glass. What `>` names is **opened** where a shell opens it — before the comman
 runs — so a password answered wrongly leaves the empty file behind, exactly as a
 real one does, and `>>` adds to what is there.
 
+A redirect on a line that runs a **script** belongs to the script, the way a
+process's standard output belongs to the process: `sh nightly.sh > log` puts
+everything the script prints in `log` and nothing on the glass, `>>` adds to it, and
+a script the script runs writes there too. `./nightly.sh`, a script of your own on
+`PATH`, and `. nightly.sh` all do the same. What still comes to the screen is a
+**refusal** — `ls: /nope: no such file` is not output, here as on any Unix — and a
+script whose output fills the file to its 4096 bytes is stopped there with
+`sh: log: file too large`.
+
 `shutdown` and `reboot` are the power button typed instead of pressed, and they are
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
 gone, and every terminal open on it closes.

@@ -10319,7 +10319,9 @@ do
 	-- looked up at all.
 	ok(state, admin, "/home/admin/bin/hello", { "hello from bin" })
 
-	ok(state, admin, "PATH=$PATH:/home/admin/bin", {})
+	-- Written out and not `PATH=$PATH:...`: the prompt this bench types at holds no
+	-- PATH of its own, so `$PATH` there is empty and the colon would be a leading one.
+	ok(state, admin, "PATH=/bin:/home/admin/bin", {})
 	ok(state, admin, "echo $PATH", { "/bin:/home/admin/bin" })
 	-- A file found outside /bin is a FILE, so what runs is its text: that is
 	-- what makes ~/bin an account's own commands.
@@ -14932,6 +14934,127 @@ do
 		eq("with the word's own reason", lines[1], "sh: word too large")
 		eq("and the sum never printed anything", #lines, 1)
 	end
+end
+
+-- 50c. A script's output follows the redirect of the command that started it
+-- (debts 2).
+--
+-- A process's standard output is the process's. `sh a.sh > out` opens `out` and
+-- hands it to what it starts, so everything the script prints goes in the file --
+-- and here the redirect belonged to the WORD `sh`, which prints nothing: `out`
+-- came back empty and the script's lines went on the glass. The pipe and the
+-- capture were never wrong, because those are doors on the JOB and a script runs
+-- in the job that asked for it; they are benched here anyway, beside the one that
+-- was broken, so a fix that moved the wrong door goes red.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/two.sh", "echo one\necho two\n")
+
+	-- `>`: nothing on the screen, everything in the file.
+	okAt(state, admin, "sh two.sh > out", {})
+	okAt(state, admin, "cat out", { "one", "two" })
+	-- `>>` adds, and does not truncate what the first run left.
+	okAt(state, admin, "sh two.sh >> out", {})
+	okAt(state, admin, "cat out", { "one", "two", "one", "two" })
+	-- And a second `>` truncates, so the file is the last run's and not both.
+	okAt(state, admin, "sh two.sh > out", {})
+	okAt(state, admin, "cat out", { "one", "two" })
+
+	-- `./thing`, which is the same door under another name.
+	ok(state, admin, "chmod 755 two.sh", {})
+	okAt(state, admin, "./two.sh > own", {})
+	okAt(state, admin, "cat own", { "one", "two" })
+	-- A name found on PATH that turns out to be a script is the third spelling.
+	ok(state, admin, "mkdir bin", {})
+	ok(state, admin, "cp two.sh bin/mine", {})
+	ok(state, admin, "chmod 755 bin/mine", {})
+	-- Written out and not `PATH=$PATH:...`: the prompt this bench types at holds no
+	-- PATH of its own, so `$PATH` there is empty and the colon would be a leading one.
+	ok(state, admin, "PATH=/bin:/home/admin/bin", {})
+	okAt(state, admin, "mine > path.out", {})
+	okAt(state, admin, "cat path.out", { "one", "two" })
+
+	-- The pipe and the capture, which already worked: the count is the script's
+	-- lines and the word is the script's output.
+	okAt(state, admin, "./two.sh | wc -l", { "     2" })
+	ok(state, admin, "z=$(sh two.sh)", {})
+	okAt(state, admin, "echo \"[$z]\"", { "[one two]" })
+
+	-- A NESTED script inherits it, because nothing closed the file: the shell that
+	-- opened it is still the one running.
+	put(state, admin, "/home/admin/outer.sh",
+		"echo outer\nsh /home/admin/two.sh\necho back\n")
+	okAt(state, admin, "sh outer.sh > nest", {})
+	okAt(state, admin, "cat nest", { "outer", "one", "two", "back" })
+	-- And an inner redirect of its own takes over for the length of that file and
+	-- hands the outer one back afterwards.
+	put(state, admin, "/home/admin/mid.sh",
+		"echo before\nsh /home/admin/two.sh > /home/admin/inner\necho after\n")
+	okAt(state, admin, "sh mid.sh > midout", {})
+	okAt(state, admin, "cat inner", { "one", "two" })
+	okAt(state, admin, "cat midout", { "before", "after" })
+
+	-- A redirect is not a screen, so a command inside the script prints the way it
+	-- prints into a file: `ls` one name a line, not in columns. That is the shell's
+	-- own half of the line (toScreen), and it has to know about the file.
+	put(state, admin, "/home/admin/list.sh", "ls /\n")
+	okAt(state, admin, "sh list.sh > lsout", {})
+	okAt(state, admin, "cat lsout",
+		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
+
+	-- A REFUSAL is not output and never was: it goes on the screen and not in the
+	-- file, exactly as `ls /nope > f` puts it there.
+	put(state, admin, "/home/admin/err.sh", "echo good\nls /nope\necho after\n")
+	okAt(state, admin, "sh err.sh > eout", { "ls: /nope: no such file" })
+	okAt(state, admin, "cat eout", { "good", "after" })
+
+	-- Part of a row, held with no newline behind it, still belongs to the file: the
+	-- redirect is closed when the script ends, so what it was holding goes in
+	-- before the target is handed back.
+	put(state, admin, "/home/admin/nonl.sh", "printf aaaa\nprintf bb\n")
+	okAt(state, admin, "sh nonl.sh > held", {})
+	okAt(state, admin, "cat held", { "aaaabb" })
+	-- And it is not folded at sixty columns on the way in: a file is not a screen.
+	put(state, admin, "/home/admin/wide.sh", "echo " .. string.rep("w", 70) .. "\n")
+	okAt(state, admin, "sh wide.sh > wideout", {})
+	do
+		local node = CeroSecOS.getNode(state, admin, "/home/admin/wideout")
+		eq("the file holds the whole line, unwrapped", #(node.data or ""), 70)
+	end
+
+	-- A target that cannot be opened is a script that does not run at all -- it
+	-- must not start and print on the glass instead.
+	badAt(state, admin, "sh two.sh > /etc/nope", "sh: /etc/nope: permission denied")
+	eq("and nothing was made there", CeroSecOS.getNode(state, admin, "/etc/nope"), nil)
+	badAt(state, admin, "sh two.sh > /home/admin", "sh: /home/admin: is a directory")
+
+	-- The dot is the fourth spelling of "run this file", and its redirect is the
+	-- file's too: it prints nothing itself, so catching what the WORD printed would
+	-- catch nothing and leave the file writing to the glass.
+	okAt(state, admin, ". two.sh > dotout", {})
+	okAt(state, admin, "cat dotout", { "one", "two" })
+	okAt(state, admin, ". ./two.sh | wc -l", { "     2" })
+end
+
+-- 50d. A redirected script that floods meets the FILE's ceiling, once, and stops.
+--
+-- The flood limiter counts lines in job.out, and a redirected script puts none
+-- there -- so the ceiling that ends this is the file's own 4096 bytes, met at the
+-- write. What must not happen is a buffer that grows for a whole pass, or a
+-- refusal said once a line.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/flood.sh",
+		"while true; do echo " .. string.rep("x", 50) .. "; done\n")
+	local _, lines, _, _, job = exec(state, admin, "sh flood.sh > f")
+	eq("the flood ended", CeroSecOS.jobIsOver(job), true)
+	eq("with the file's own refusal, once", #lines, 1)
+	eq("and it names the file", lines[1], "sh: f: file too large")
+	local node = CeroSecOS.getNode(state, admin, "/home/admin/f")
+	check("and the file holds what fitted (" .. #(node.data or "") .. ")",
+		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
 end
 
 print("os_test: " .. count .. " assertions passed")

@@ -684,6 +684,94 @@ do
 end
 
 --
+-- 8c. A flood REDIRECTED INTO A FILE (debts 2).
+--
+-- `sh flood.sh > f` points the script's standard output at a file, and the flood
+-- limiter that bounds every other flood counts lines in job.out -- which a
+-- redirected script never touches. So the buffer the lines wait in meets the same
+-- forty, and the pass ends there so the pass's own write can empty it; and the
+-- runaway clock must NOT be stopped while it waits, because a target with no
+-- contents to fill (a device) would otherwise run for ever.
+--
+-- The program is a `cat` of a hundred lines in a loop, and not an `echo`: one echo
+-- is one line and the step budget alone already holds a pass to about thirty of
+-- them, so an echo loop could never reach the ceiling this is about. A command that
+-- writes a hundred lines for its thirty-two steps can, three times over in a pass
+-- -- and what the ceiling does is end the pass after the first.
+--
+-- What is measured is the size of the chunk each write actually carries, taken at
+-- CeroSecOS.writeRedirect: the pass empties the buffer before it returns, so reading
+-- the buffer after a tick would read nought and prove nothing.
+--
+do
+	local machine, state, console = newMachine()
+	local LINES = 100
+	put(state, "/home/admin/lines", string.rep("y\n", LINES - 1) .. "y")
+	put(state, "/home/admin/flood.sh",
+		"while true; do cat /home/admin/lines; done\n")
+
+	local realWrite = CeroSecOS.writeRedirect
+	local worstChunk, writes = 0, 0
+	CeroSecOS.writeRedirect = function(st, session, who, redirect, text, env)
+		writes = writes + 1
+		local n, at = 1, 1
+		while true do
+			local p = string.find(text, "\n", at, true)
+			if p == nil then break end
+			n = n + 1
+			at = p + 1
+		end
+		if n > worstChunk then worstChunk = n end
+		return realWrite(st, session, who, redirect, text, env)
+	end
+
+	local job = typeLine(system, machine, state, console, "sh flood.sh > f")
+
+	-- Read at the door of every step call and not after the tick: the scheduler
+	-- steps a job more than once in a pass, and what `blocked` says after the tick
+	-- is only what the LAST of those calls left behind.
+	local outerStep = CeroSecOS.jobStep
+	local sawHeld, clockHeld = false, true
+	CeroSecOS.jobStep = function(st, j, env, budget)
+		local status, used = outerStep(st, j, env, budget)
+		if j == job and j.blocked == "output" and j.rdto ~= nil then
+			sawHeld = true
+			-- Held back by the DISK is not held back by the screen: nothing but the
+			-- end of the pass is stopping this job, so the cpu clock goes on running.
+			if j.cpuSince == nil then clockHeld = false end
+		end
+		return status, used
+	end
+
+	for _ = 1, 80 do
+		_G.__now = _G.__now + CeroSec.JOB_PASS_MS
+		tickSteps = 0
+		CeroSecJobs.tick()
+		check("the console never holds more than its hundred lines",
+			#machine.console.lines <= CeroSec.CONSOLE_MAX)
+	end
+	CeroSecOS.jobStep = outerStep
+	CeroSecOS.writeRedirect = realWrite
+
+	check("the flood really did write (" .. writes .. " writes)", writes > 0)
+	-- The ceiling plus ONE command's worth, which is the same shape the step budget
+	-- is overspent by and for the same reason: the buffer is looked at before a
+	-- command runs, never in the middle of one. Without the ceiling a pass carries a
+	-- command's worth for every command its budget affords -- three of them here.
+	check("no write carried more than the ceiling and one command (" ..
+		worstChunk .. " lines)", worstChunk <= CeroSecOS.JOB_OUT_MAX + LINES)
+	check("the job was held back by the file at least once", sawHeld)
+	check("and the runaway clock was not stopped while it was", clockHeld)
+	-- It ends on the FILE's own ceiling, not on a buffer that grew for ever.
+	eq("the flood is over", CeroSecOS.jobIsOver(job), true)
+	local node = CeroSecOS.getNode(state, CeroSecOS.rootSession(), "/home/admin/f")
+	check("and the file holds what fitted (" .. #(node.data or "") .. " bytes)",
+		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
+	report[#report + 1] = string.format("  %-22s worst %4d lines/write, %d writes",
+		"redirected flood", worstChunk, writes)
+end
+
+--
 -- 9. Four of the worst of them at once, on four machines, sharing one budget.
 -- What is being watched here is the ceiling on the WHOLE county: no pass may
 -- spend more than CeroSec.STEP_BUDGET_PER_TICK however many machines there are.

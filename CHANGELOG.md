@@ -8,6 +8,13 @@ date.
 
 ## Unreleased
 
+- What a script prints follows the redirect of the line that started it.
+  `sh nightly.sh > log` used to leave log empty and print the script on the
+  screen; now everything it prints goes in the file, `>>` adds to it, and a
+  script that script runs writes there too. `./nightly.sh` and `. nightly.sh`
+  are the same. A refusal still comes to the screen, because a refusal is not
+  output, and `ls` inside such a script prints one name a line, the way it does
+  into any file.
 - The two kinds of brackets nest now, the way they do on every other machine.
   `stop=$(($(date +%s) + 300))` is a deadline in one line -- the command runs
   first and the sum is read on what it printed -- and `echo $(echo $((2 + 3)))`

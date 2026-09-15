@@ -1219,6 +1219,35 @@ Classic mistake. Writing cmd > file inside a loop and wondering why the
 file holds one line. Each turn replaces the lot. Inside a loop you almost
 always want two signs.]],
 
+[[A whole script's output at once.
+
+A redirect on a line that runs a SCRIPT belongs to the script, not to the
+word that started it. So one sign catches everything the file prints:
+
+  admin@ksp-04-11:~$ sh nightly.sh > log
+  admin@ksp-04-11:~$ cat log
+
+Nothing appears on the screen while it runs. ./nightly.sh and . nightly.sh
+do the same, and so does a script that script runs: nothing closed the
+file.
+
+Two things still come to the glass. A REFUSAL, because a refusal is not
+output and never goes where output was going:
+
+  admin@ksp-04-11:~$ sh nightly.sh > log
+  ls: /nope: no such file
+
+That line is on the screen; log holds only what was printed. And the end of
+it if the file fills, a file being 4096 bytes:
+
+  sh: log: file too large
+
+Use it for the nightly job you want a record of, and >> to make the records
+add up instead of replacing each other.
+
+Classic mistake. sh report.sh > report.txt where report.sh writes
+report.txt itself. One write wins and it is not the one you meant.]],
+
 		} },
 
 		{ title = "8. Jobs", pages = {

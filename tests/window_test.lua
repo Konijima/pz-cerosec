@@ -15389,4 +15389,46 @@ do
 		string.find(box, "\n.\n", 1, true) == nil)
 end
 
+--
+-- A script's output follows the redirect of the line that started it, ON THE
+-- GLASS (debts 2).
+--
+-- os_test proves the file; this proves the SCREEN, which is the half that was
+-- wrong: the redirect belonged to the word `sh`, so the script's lines came out on
+-- the console while the file stayed empty. A bench that only read the file would be
+-- green on a machine that wrote it AND printed it.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+	-- Words nothing else on the glass carries: `painted` looks for a substring, and
+	-- a script called two.sh would match its own name in the echoed command line.
+	bench.script("/home/admin/pair.sh", "echo alpha\necho beta\n")
+
+	bench.enter("sh pair.sh > out")
+	bench.tick(30)
+	bench.frame()
+	eq("nothing of the script reached the glass", bench.painted("alpha"), false)
+	eq("and neither did its second line", bench.painted("beta"), false)
+	eq("the file has it", bench.fileText("/home/admin/out"), "alpha\nbeta")
+
+	-- And with no redirect on the line the very same script paints, so the
+	-- assertion above is about the redirect and not about a script that never ran.
+	bench.enter("sh pair.sh")
+	bench.tick(30)
+	bench.frame()
+	eq("the same script paints when nothing took the screen away",
+		bench.painted("alpha"), true)
+
+	-- A refusal inside a redirected script still reaches the glass, because a
+	-- refusal is not output.
+	bench.script("/home/admin/err.sh", "echo good\nls /nope\n")
+	bench.enter("sh err.sh > eout")
+	bench.tick(30)
+	bench.frame()
+	eq("the refusal is on the screen", bench.painted("/nope: no such file"), true)
+	eq("and the file holds only what was printed",
+		bench.fileText("/home/admin/eout"), "good")
+end
+
 print("window_test: " .. count .. " checks passed")

@@ -206,16 +206,19 @@ end
 -- command -- `ls` in columns at the glass, one name a line down a pipe, exactly
 -- as every ls has done since isatty existed.
 --
--- Three things take the screen away, and they are the three doors outLine writes
+-- FOUR things take the screen away, and they are the four doors outLine writes
 -- through: a $(...) catching the output, a pipe carrying it to another command,
--- and cron carrying it to somebody's mail. A stage is the one that needs care: a
--- pipeline's LAST stage writes into a pipe too, and that pipe is drained onto
--- whatever is running the pipeline (drainTail), so its answer is its parent's --
--- which is what `stage.screen` remembers, worked out where the stages are made.
+-- cron carrying it to somebody's mail, and a FILE the shell opened for the script
+-- this job is running (`job.rdto` -- see CeroSecOS.jobRun). A stage is the one
+-- that needs care: a pipeline's LAST stage writes into a pipe too, and that pipe
+-- is drained onto whatever is running the pipeline (drainTail), so its answer is
+-- its parent's -- which is what `stage.screen` remembers, worked out where the
+-- stages are made.
 local function toScreen(job)
 	if capturing(job) then return false end
 	if job.mailTo ~= nil then return false end
 	if job.pipe ~= nil then return job.screen == true end
+	if job.rdto ~= nil then return false end
 	return true
 end
 
@@ -251,7 +254,12 @@ local function captureTooLarge(job)
 	jobError(job, "word too large")
 end
 
-local function outLine(job, text)
+-- notFile is a line that is NOT output: a refusal, or something the machine has to
+-- say about the job. It skips the redirect door below the way a refusal already
+-- skips the pipe -- `ls /nope > f` puts the refusal on the screen and not in the
+-- file, and a script whose standard output the shell pointed at a file is the same
+-- rule one level up.
+local function outLine(job, text, notFile)
 	-- A job that has ENDED writes nowhere. One door, because a dead process has
 	-- one: whatever was still being handed over when it died is not something
 	-- anybody is owed.
@@ -299,6 +307,19 @@ local function outLine(job, text)
 		buf.bytes = buf.bytes + #text + 1
 		return
 	end
+	-- The FILE the shell opened for the script this job is running. A redirect is
+	-- not a screen either, so the line goes over whole -- uncut, unwrapped -- the
+	-- way it goes down a pipe, and for the same reason: what reads it is a file and
+	-- not a person. It is held in a buffer and written by the pass (jobFlush below),
+	-- because outLine is handed a job and nothing else -- no filesystem, no clock --
+	-- and a write needs both. What bounds the buffer is the SCREEN's own limiter,
+	-- asked of it in jobStep: forty lines, then the job is made to stop and let them
+	-- drain, exactly as a flood onto the glass is.
+	if job.rdto ~= nil and not notFile then
+		local to = job.rdto
+		to.buf[#to.buf + 1] = text
+		return
+	end
 	-- The screen's own rule, applied once, here: a job's line is at most sixty
 	-- columns and carries no control byte, exactly like a command's.
 	local fitted = CeroSecOS.fit({ text })
@@ -312,10 +333,10 @@ end
 -- same one, written once, in both places.
 local function errLine(job, text)
 	if job.errTo ~= nil then
-		outLine(job.errTo, text)
+		outLine(job.errTo, text, true)
 		return
 	end
-	outLine(job, text)
+	outLine(job, text, true)
 end
 
 -- The row a job is part way through, wrapped the way a screen sixty columns
@@ -353,6 +374,18 @@ local function wrapPartial(job)
 	-- bytes is held with no newline, that much goes down the pipe, which is
 	-- exactly what a full kernel buffer does to a writer that never ends a line.
 	if job.pipe ~= nil then
+		while #job.partial >= CeroSecOS.PIPE_BYTES do
+			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
+			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
+		end
+		return
+	end
+	-- Into the FILE the shell opened for this script, the pipe's reasoning again: a
+	-- file is not sixty columns wide, so a row's worth of text with no newline in
+	-- it must not be folded as if it were -- `printf %s` into a file writes what it
+	-- was given -- and it cannot be held for ever either. Same ceiling as the pipe,
+	-- because the thing that is full is a buffer either way.
+	if job.rdto ~= nil then
 		while #job.partial >= CeroSecOS.PIPE_BYTES do
 			outLine(job, string.sub(job.partial, 1, CeroSecOS.PIPE_BYTES))
 			job.partial = string.sub(job.partial, CeroSecOS.PIPE_BYTES + 1)
@@ -709,6 +742,23 @@ local function popFrame(job)
 			-- nil is a value here: a shell that said nothing about its environment
 			-- gets that back, and not the set the child was handed.
 			job.exported = f.oldExported
+		end
+		-- And the file the shell had opened for it is closed: what the script wrote
+		-- and nobody has written yet goes on the queue the pass empties, IN ORDER,
+		-- before the target changes back -- flushing it here is not possible, because
+		-- popFrame has no filesystem and no clock to write with.
+		if f.hadRdto then
+			-- The row it was part way through goes in the FILE, like the rest of what
+			-- it wrote: the redirect is closed here, and a partial flushed afterwards
+			-- would find the target gone and land on the glass instead. `printf aaa`
+			-- with no newline in a redirected script printed on the screen and left an
+			-- empty file, which is the whole of what this line is for.
+			flushPartial(job)
+			if job.rdto ~= nil then
+				if job.rdDone == nil then job.rdDone = {} end
+				job.rdDone[#job.rdDone + 1] = job.rdto
+			end
+			job.rdto = f.oldRdto
 		end
 	end
 end
@@ -1124,6 +1174,15 @@ end
 
 local builtins = {}
 
+-- The one builtin whose redirect is NOT a capture round what it printed.
+--
+-- runSimple catches a builtin's own lines and writes them through the redirect
+-- door, which is right for every word that prints something. The dot prints
+-- nothing: it RUNS A FILE, in this shell, and what `>` names is where that file's
+-- output goes -- so the dot is handed the redirect and opens it itself, exactly as
+-- the shell does for `sh` and for `./thing`.
+local BUILTIN_TAKES_REDIRECT = { ["."] = true }
+
 builtins["true"] = function() return 0 end
 builtins["false"] = function() return 1 end
 
@@ -1286,7 +1345,12 @@ end
 --
 -- No operand after the file. The 1993 form takes none; the arguments form is
 -- later.
-builtins["."] = function(job, args, state, env)
+-- redirect, when the line carried one, is the dot's own to carry out, and not the
+-- caps wrapper runSimple puts round every other builtin's: the dot RUNS A FILE, so
+-- what `>` names belongs to the lines that file prints and not to the nothing the
+-- word itself prints. `. setup > log` wrote an empty log and put the file's output
+-- on the glass. Same door `sh` uses, one argument along (BUILTIN_TAKES_REDIRECT).
+builtins["."] = function(job, args, state, env, redirect)
 	if #args ~= 2 then
 		writeText(job, ".: usage: " .. (CeroSecOS.commandUsage(".") or ". <file>") .. "\n")
 		return 1
@@ -1307,9 +1371,22 @@ builtins["."] = function(job, args, state, env)
 		writeText(job, CeroSecOS.scriptError(CeroSecOS.baseNameOf(path), reason, where) .. "\n")
 		return 1
 	end
+	-- What `>` named, opened where a shell opens it: before the file runs, so a
+	-- target that cannot be opened is a dot that does not read anything.
+	local target = nil
+	if redirect ~= nil then
+		local openOk, openLines =
+			CeroSecOS.openRedirect(state, job.session, ".", redirect, env)
+		if not openOk then
+			errLines(job, openLines)
+			return 1
+		end
+		target = { path = redirect.path, who = "." }
+	end
 	-- In place: the caller's arguments, the caller's variables, and everything
 	-- the file sets left behind in them.
-	if not CeroSecOS.jobRun(job, prog, job.args, CeroSecOS.baseNameOf(path), true) then
+	if not CeroSecOS.jobRun(job, prog, job.args, CeroSecOS.baseNameOf(path), true,
+			target) then
 		return nil
 	end
 	return 0
@@ -1637,8 +1714,14 @@ local function applyControl(job, control, data, env)
 	-- runs here, one level deeper, the way a shell's child would -- so a script
 	-- that runs itself meets the depth ceiling in eight lines instead of
 	-- filling the machine's four job slots in four.
+	--
+	-- data.rd is the redirect the line carried, when it carried one, already opened
+	-- by the shell (runSimple): the file the script's standard output goes to, which
+	-- is the process's and not the word `sh`'s.
 	if control == "job" and type(data) == "table" then
-		if CeroSecOS.jobRun(job, data.prog, data.args, data.name) then job.status = 0 end
+		if CeroSecOS.jobRun(job, data.prog, data.args, data.name, false, data.rd) then
+			job.status = 0
+		end
 		return true
 	end
 	-- The editor opens on a SCREEN, and a script has none: a job running in the
@@ -1922,9 +2005,17 @@ local function runSimple(state, job, f, env)
 		-- A builtin writes to the job's own output, so a redirect on one is a
 		-- capture: its lines are caught the way $(...) catches them and then
 		-- written through the very same door a command's redirect goes through.
-		if redirect ~= nil then job.caps[#job.caps + 1] = {} end
-		local status, fatal = builtin(job, args, state, env)
-		if redirect ~= nil then
+		--
+		-- Except the dot, which runs a FILE and takes its redirect itself
+		-- (BUILTIN_TAKES_REDIRECT): catching what the word printed would catch
+		-- nothing and leave the file writing to the glass.
+		local ownRedirect = false
+		if redirect ~= nil and BUILTIN_TAKES_REDIRECT[name] == true then ownRedirect = true end
+		if redirect ~= nil and not ownRedirect then job.caps[#job.caps + 1] = {} end
+		local handRedirect = nil
+		if ownRedirect then handRedirect = redirect end
+		local status, fatal = builtin(job, args, state, env, handRedirect)
+		if redirect ~= nil and not ownRedirect then
 			flushPartial(job)
 			local buf = job.caps[#job.caps]
 			job.caps[#job.caps] = nil
@@ -2035,6 +2126,31 @@ local function runSimple(state, job, f, env)
 	else
 		errLines(job, lines)
 		job.status = 1
+	end
+
+	-- A command that hands back a JOB -- `sh a.sh`, `./a.sh`, a name on PATH that
+	-- turned out to be a script -- has printed nothing and never will: what the
+	-- redirect names belongs to the PROCESS it started, exactly as it does on a real
+	-- machine. So the file is opened here, where a shell opens it, and handed to the
+	-- frame the script runs in (applyControl's "job", CeroSecOS.jobRun). A command
+	-- that FAILED never reaches this, which is the rule the whole machine already
+	-- runs on: `cat nosuch > f` leaves no f here either (see openRedirect).
+	--
+	-- Opened BEFORE the order is carried out, because a target that cannot be opened
+	-- is a command that does not run: the script must not start and write onto the
+	-- glass instead.
+	if control == "job" and redirect ~= nil and type(data) == "table" then
+		local openOk, openLines =
+			CeroSecOS.openRedirect(state, job.session, name, redirect, env)
+		if not openOk then
+			errLines(job, openLines)
+			job.status = 1
+			return CeroSecOS.STEP_COST_COMMAND
+		end
+		-- No `append` on it: the open above has just truncated (or made) the file, so
+		-- every write from here on ADDS -- which is what a process writing to an open
+		-- file does, and what keeps a script's second line from replacing its first.
+		data.rd = { path = redirect.path, who = name }
 	end
 	applyControl(job, control, data, env)
 
@@ -2811,8 +2927,13 @@ local function frameKey(job)
 end
 
 local function progressKey(job)
+	-- The redirect's buffer counts with job.out: a script whose output the shell
+	-- pointed at a file is writing there instead of onto the glass, and a turn that
+	-- put a line in it is a turn that got somewhere.
+	local held = #job.out
+	if job.rdto ~= nil then held = held + #job.rdto.buf end
 	local key = tostring(job.state) .. " " .. tostring(job.blocked) ..
-		" " .. #job.out .. " " .. #(job.partial or "") .. " " .. frameKey(job)
+		" " .. held .. " " .. #(job.partial or "") .. " " .. frameKey(job)
 	local frames = job.frames
 	local f = frames[#frames]
 	if f ~= nil and f.stages ~= nil then
@@ -2828,6 +2949,50 @@ end
 
 --
 -- The one entry point the scheduler uses.
+-- What a redirected script has written, onto the disk. Called at the end of the
+-- pass, because that is where a filesystem and a clock are to be had: outLine is
+-- handed a job and nothing else, so it buffers and this writes.
+--
+-- Every write APPENDS. The shell truncated the target when it opened it (runSimple)
+-- so the first pass adds to an empty file, and a pass that replaced instead of
+-- adding would lose everything the pass before it wrote.
+--
+-- A write that cannot be made -- the file at its 4096 bytes, the disk at its 64K,
+-- root having taken the directory away under the job -- is the end of the output,
+-- so it is the end of the job: 4.4BSD sends SIGXFSZ for the first of those and the
+-- default action is to terminate, and a script that went on running with nowhere to
+-- write would be doing work nobody can ever read. The refusal goes to the SCREEN,
+-- where every other refusal about a redirect goes.
+local function flushOne(state, job, to, env)
+	if #to.buf == 0 then return true end
+	local text = table.concat(to.buf, "\n")
+	to.buf = {}
+	local ok, lines = CeroSecOS.writeRedirect(state, job.session, to.who,
+		{ path = to.path, append = true }, text, env)
+	if ok then return true end
+	errLines(job, lines)
+	return false
+end
+
+local function jobFlush(state, job, env)
+	local bad = false
+	local done = job.rdDone
+	if done ~= nil then
+		job.rdDone = nil
+		for i = 1, #done do
+			if not flushOne(state, job, done[i], env) then bad = true end
+		end
+	end
+	if job.rdto ~= nil then
+		if not flushOne(state, job, job.rdto, env) then bad = true end
+	end
+	if bad and not CeroSecOS.jobIsOver(job) then
+		job.rdto = nil
+		job.status = 1
+		finish(job, "done")
+	end
+end
+
 --
 -- Runs at most `budget` steps and answers with the job's status and what it
 -- cost. Re-entrant by construction: everything it needs is on the job.
@@ -2854,6 +3019,7 @@ function CeroSecOS.jobStep(state, job, env, budget)
 			if job.timer then
 				job.timer = nil
 				resumeCont(state, job, "", env)
+				jobFlush(state, job, env)
 				return job.state, 1
 			end
 		else
@@ -2918,11 +3084,23 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	while used < budget and job.state == "running" and turns < maxTurns do
 		turns = turns + 1
 		if job.spawn ~= nil then break end
-		if #job.out >= CeroSecOS.JOB_OUT_MAX then
+		-- The flood limiter, and the file's own half of it. A script whose output
+		-- the shell pointed at a file is not writing onto the glass, so #job.out
+		-- stays at nought for ever and the limiter that bounds every other flood
+		-- would never fire: `while true; do echo x; done > f` would grow one Lua
+		-- table without a ceiling for the whole pass. The buffer meets the same
+		-- forty lines and the pass ends so that jobFlush can empty it.
+		local screenFull = #job.out >= CeroSecOS.JOB_OUT_MAX
+		local fileFull = job.rdto ~= nil and #job.rdto.buf >= CeroSecOS.JOB_OUT_MAX
+		if screenFull or fileFull then
 			job.blocked = "output"
 			-- Waiting on the screen is not spending the processor, so the
-			-- runaway clock starts again when it runs again.
-			job.cpuSince = nil
+			-- runaway clock starts again when it runs again. Waiting on the DISK is
+			-- different: nothing is holding the job back but the end of this pass, and
+			-- a loop redirected at a device -- which never fills up, having no
+			-- contents -- would otherwise run for ever with the clock stopped. So the
+			-- clock is only stopped for the screen.
+			if screenFull then job.cpuSince = nil end
 			break
 		end
 		job.blocked = nil
@@ -2959,6 +3137,11 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	if job.state == "waiting" or job.state == "sleeping" then job.cpuSince = nil end
 	if job.state == "done" or job.state == "error" then flushPartial(job) end
 
+	-- And what a redirected script wrote goes on the disk, after the pass rather
+	-- than at every line: a write is a walk of the filesystem and a job that wrote
+	-- forty lines this pass must not do forty of them.
+	jobFlush(state, job, env)
+
 	CeroSecOS.unmountDev(state, env)
 	return job.state, used
 end
@@ -2968,8 +3151,10 @@ end
 -- straight onto the screen, so it drains at the same twenty lines a second as
 -- everything else and a loop full of refusals is as quiet as a loop full of
 -- echoes.
+-- It is a line ABOUT the job and not the job's output, so it goes where a refusal
+-- goes: the screen, never the file a redirected script is writing into.
 function CeroSecOS.jobSay(job, line)
-	outLine(job, line)
+	outLine(job, line, true)
 end
 
 -- Has this job been on the processor without a break for longer than it may
@@ -3058,7 +3243,15 @@ end
 -- environment: the exported names and their values, and nothing else the shell
 -- was holding. What it sets never comes back, which is the rule the dot command
 -- exists to get round -- on this machine as on the one it is copied from.
-function CeroSecOS.jobRun(job, prog, args, name, inPlace)
+-- target, when the line that started the file carried a redirect, is where its
+-- STANDARD OUTPUT goes: { path, append, who }. A process's redirect belongs to the
+-- process, so a script started by `sh a.sh > out` writes into `out` and not onto
+-- the glass -- and a script started from inside that one inherits it, because
+-- nothing closed it. Before this the redirect belonged to the word `sh`, which
+-- prints nothing, so `out` came out empty and the script's own lines went to the
+-- screen. The pipe and the capture were never wrong: those are doors on the JOB,
+-- and a script runs in the job that asked for it.
+function CeroSecOS.jobRun(job, prog, args, name, inPlace, target)
 	if job.depth >= CeroSecOS.SCRIPT_DEPTH_MAX then
 		jobError(job, "too deeply nested")
 		return false
@@ -3066,6 +3259,10 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace)
 	job.depth = job.depth + 1
 	local frame = { k = "block", prog = prog, i = 1, deep = true,
 		oldName = job.name }
+	if target ~= nil then
+		frame.hadRdto = true
+		frame.oldRdto = job.rdto
+	end
 	local kept = nil
 	if not inPlace then
 		kept = {}
@@ -3078,6 +3275,9 @@ function CeroSecOS.jobRun(job, prog, args, name, inPlace)
 	if not pushFrame(job, frame) then
 		job.depth = job.depth - 1
 		return false
+	end
+	if target ~= nil then
+		job.rdto = { path = target.path, who = target.who, buf = {} }
 	end
 	job.name = name
 	if not inPlace then

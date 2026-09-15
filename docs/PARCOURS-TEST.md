@@ -3088,6 +3088,15 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      Deux prises restent refusées : `echo $(echo $(date))` →
      `sh: syntax error: bad substitution`. [ ]
 
+339e. **La sortie d'un script suit la redirection de la ligne.** Avec
+     `edit deux.sh` contenant `echo un` et `echo deux`, Tab pour enregistrer :
+     `sh deux.sh > out` → **rien** à l'écran, puis `cat out` → `un` et `deux`.
+     `sh deux.sh >> out` → `cat out` en montre quatre lignes. `chmod 755 deux.sh`
+     puis `./deux.sh > out2` → pareil, et `./deux.sh | wc -l` → `2`. Un script
+     qui contient `ls /nope` sous un `> fic` : le refus est à l'écran, le fichier
+     ne contient que ce qui a été imprimé. Et `sh deux.sh > /etc/nope` →
+     `sh: /etc/nope: permission denied`, le script ne tourne pas. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

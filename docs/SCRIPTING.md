@@ -450,6 +450,30 @@ from whatever is running the pipeline (its pipe is drained onto that). `ls` is t
 one command that reads it today, and it reads it exactly as every `ls` reads
 `isatty`.
 
+**A script inherits the redirect of the command that started it.** A process's
+standard output is the process's, so `sh a.sh > out` opens `out` and everything the
+script prints goes in it — nested scripts and all, because nothing closed the file.
+Until this the redirect belonged to the *word* `sh`, which prints nothing: `out` came
+back empty and the script's own lines went on the glass. The pipe and the capture
+were never wrong, because those are doors on the **job** and a script runs in the job
+that asked for it (`CeroSecOS.jobRun`), which is why `./a.sh | wc -l` and
+`x=$(sh a.sh)` always worked. `./thing`, a name on `PATH` that turns out to be a
+script, and the dot all go the same way.
+
+It is a fourth door in `outLine` (`job.rdto`), and everything else about it follows
+the three that were already there: `tty` is false through it, so `ls` inside the
+script prints one name a line; a **refusal** is not output and goes to the screen, as
+`ls /nope > f` already does; the line goes over whole, unwrapped, because a file is
+not sixty columns; and the lines wait in a buffer the **pass** writes, because
+`outLine` is handed a job and a write needs a filesystem and a clock. The buffer
+meets the screen's own forty-line limiter — a redirected script puts nothing in
+`job.out`, so without that the limiter that bounds every other flood would never
+fire — but the runaway clock is *not* stopped while it waits: nothing is holding the
+job back except the end of the pass, and a target with no contents to fill (a device)
+would otherwise run for ever. A write that cannot be made — the file at its 4096
+bytes — is the end of the output and so the end of the job, with the refusal on the
+screen; 4.4BSD sends `SIGXFSZ` for that and the default action is to terminate.
+
 **What the walk costs.** `CeroSecOS.lookupPath` walks `PATH` left to right and
 answers where it found the name, why it did not, **how many directories it looked
 in**, and whether what answered was a link. The count is charged in steps by
