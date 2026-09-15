@@ -1847,7 +1847,10 @@ CeroSecContent.DISKS = {
 		-- the number, which is the same refusal BBS LIST's stub makes -- the numbers
 		-- of somewhere else are the one lie this catalogue may not tell.
 		id = "BBS",
-		label = "BBS",
+		-- Software, so the label is printed: the sysop's kit as it was sold.
+		printed = true,
+		label = "BBS SYSOP KIT 1.0",
+		version = "1.0",
 		weight = 1,
 		files = {
 			{ name = "README.TXT", mode = 644, text = table.concat({
