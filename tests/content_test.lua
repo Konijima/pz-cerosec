@@ -638,6 +638,7 @@ do
 			for path, node in pairs(all) do
 				local isOurs = shipped[path] == nil
 					or path == CeroSecOS.MOTD_PATH or path == CeroSecOS.HOSTNAME_PATH
+					or path == CeroSecOS.ISSUE_PATH
 				-- Counted only for a path the machine did NOT already have. /etc/motd
 				-- and /etc/hostname are on every fresh machine, so counting those made
 				-- the "wrote something" check below true whatever a profile did -- an
@@ -754,6 +755,23 @@ do
 				eq(id .. " asks for no root password", password, nil)
 				check(id .. " leaves root open", CeroSecOS.checkPassword(root, ""))
 			end
+
+			-- The banner, which is what getty prints over the login prompt. A profile
+			-- that names one wrote it; a profile that does not keeps the seeded line,
+			-- and that line names THIS machine -- the hostname went in before the
+			-- content did, so a banner naming "cerosec" would be a banner nobody
+			-- rewrote.
+			local banner = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
+			check(id .. " has a banner over its login prompt",
+				banner ~= nil and banner.type == "file")
+			if type(profile.issue) == "string" then
+				eq(id .. " writes the banner", banner.data, profile.issue)
+			else
+				eq(id .. " keeps the seeded banner, naming itself",
+					banner.data, CeroSecOS.issueText(state.hostname))
+			end
+			eq(id .. " and a login prompt has exactly one line over it",
+				#CeroSecOS.issueLines(state), 1)
 
 			-- The motd, inside what a login will print.
 			if type(profile.motd) == "string" then
