@@ -1610,7 +1610,103 @@ Commands.uninstallmodule = function(self, playerObj, x, y, z, token, args)
 	CeroSec.log(module.id .. " taken off at " .. x .. "," .. y .. "," .. z)
 end
 
+--
+-- HOW OFTEN ONE PLAYER MAY OPEN A WINDOW
+--
+-- `open` is the dearest packet in this mod and the only one that is dear on the
+-- way OUT as well: it identifies the machine, decides the boot, builds the screen,
+-- and then ships the console's history lines to the client (sendHistory). Bounding
+-- the watcher table stopped a flood costing the server memory; it did not stop the
+-- flood itself. Measured on the 300-machine rig, five thousand opens from one
+-- client: 9.4 seconds of server time before the validator was memoised
+-- (SCeroSecObject:osState), 0.41 after -- better, and still not something one
+-- client gets to ask for.
+--
+-- FOUR A SECOND, IN REAL TIME, and the packets past that are dropped with no
+-- answer at all. Four because a window is a box a survivor opens with the mouse:
+-- the client shuts its own previous terminal before it sends (CeroSecTerminal.open),
+-- so a player who walks up to a computer sends one, and a reboot's reopen is the
+-- server's own doing and comes through no packet. Nothing legitimate sends a second
+-- one in the same quarter second.
+--
+-- NO REPLY, so a flooder learns nothing: an answer -- even a refusal -- is a
+-- confirmation that the packet arrived and a second thing for the server to send.
+-- It goes in CeroSec.log instead, once per second per player, which is what a
+-- server owner reads.
+--
+-- REAL TIME AND NOT GAME TIME. getTimestampMs() is the wall clock in
+-- milliseconds (zombie.Lua.LuaManager$GlobalObject.getTimestampMs, a long), and
+-- vanilla throttles a client command with it on the server in exactly this shape:
+-- forageServer.onRequestZone keeps lastReqMs per player and RETURNS without a word
+-- when the gap is under minReqMs = 250 (media/lua/server/Foraging/
+-- forageServer.lua:295-308). getGameTime() would be the wrong clock twice over --
+-- it runs at the world's speed, which a sandbox option sets, and it stops when
+-- nobody is on the server.
+--
+-- AND THE BOOK IS BOUNDED. Keyed on the online id, which is not ours, so entries
+-- older than the window are dropped on the way in -- the size is the number of ids
+-- that have opened a window in the last few seconds, which is the number of people
+-- playing. There is no vanilla event for a player LEAVING: OnDisconnect exists
+-- (LuaEventManager's event list on 42.20.4) but vanilla only ever adds to it on the
+-- client, for its own connection failing (ConnectToServer.lua:386,
+-- ISMPEditAccount.lua:480), and there is no OnPlayerDisconnect at all. Vanilla's
+-- own answer to the same problem is to poll getOnlinePlayers() on a timer and drop
+-- what is not there (forageServer.relevanceTick:455-493); age alone is cheaper and
+-- is enough, because an entry is worth two numbers and expires on its own.
+--
+SCeroSecSystem.OPEN_PER_SECOND = 4
+
+-- One real second, which is the window the cap is counted over.
+local OPEN_WINDOW_MS = 1000
+-- And how long an entry is kept for a player who has stopped asking. Four windows:
+-- long enough that the walk below is not the common case, short enough that a
+-- player who logs off is out of the book before the minute is.
+local OPEN_BOOK_MS = 4 * OPEN_WINDOW_MS
+
+-- May this player open a window right now? Counted here rather than in Commands.open
+-- so the number and the rule live together, the way the cpu ceiling does.
+function SCeroSecSystem:mayOpen(playerObj)
+	-- A short (IsoPlayer.getOnlineID, javap'd on 42.20.4), so it is a whole number
+	-- small enough to be a table key exactly and no string has to be built per
+	-- packet -- which is the point of a gate a flood goes through.
+	local id = playerObj:getOnlineID()
+	if type(self.openBook) ~= "table" then self.openBook = {} end
+	local book = self.openBook
+	local now = getTimestampMs()
+
+	local entry = book[id]
+	-- A window of its own, whenever the last one is over -- or whenever the clock
+	-- has gone backwards, which is a server that came back up under a book that
+	-- cannot be about this session: a negative gap read as "not a second yet" would
+	-- throttle a player for one window for no reason he could ever see.
+	if entry == nil or now - entry.at >= OPEN_WINDOW_MS or now < entry.at then
+		-- On the way in, because this is the one moment the book grows: everything
+		-- whose own window is long over, whoever it belongs to.
+		for other, old in pairs(book) do
+			if now - old.at >= OPEN_BOOK_MS or now < old.at then book[other] = nil end
+		end
+		entry = { at = now, n = 0 }
+		book[id] = entry
+	end
+
+	entry.n = entry.n + 1
+	if entry.n <= SCeroSecSystem.OPEN_PER_SECOND then return true end
+	-- Once per window and not once per packet: five thousand dropped packets are
+	-- one line, or the log a server owner reads is the flood.
+	if not entry.said then
+		entry.said = true
+		CeroSec.log(CeroSec.LOG_WARN,
+			"dropping window openings from player " .. tostring(id) .. ": more than "
+				.. SCeroSecSystem.OPEN_PER_SECOND .. " a second")
+	end
+	return false
+end
+
 Commands.open = function(self, playerObj, x, y, z, token)
+	-- Before the machine is even looked up: what this refuses is the PACKET, and a
+	-- flooder must not get a square's worth of work out of one either.
+	if not self:mayOpen(playerObj) then return end
+
 	local luaObject, console = self:biosConsoleFor(playerObj, x, y, z, token)
 	if not luaObject then return end
 

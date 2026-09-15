@@ -64,6 +64,37 @@ holds the processor with no wait in it for longer than the CPU ceiling is killed
 outright. See [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)
 for the constants and the scheduler that enforces them.
 
+## What the server guarantees against a flood of packets
+
+A script is bounded by the scheduler; a **client** is bounded at the door. `open` is the
+dearest packet this mod has and the only one that is dear on the way back out too: it
+identifies the machine, decides the boot, builds the screen and then ships the console's
+history lines to the sender, so a flood of them is a network amplifier as well as server
+time. Two bounds, and they are different things:
+
+- **The watcher table is bounded** (`SCeroSecObject:addWatcher`): one live window per
+  player per machine, eight per machine whatever the online ids say. The key is the
+  token the *client* picked, so without this an `open` with a fresh token each time
+  bought one permanent entry apiece — and every entry is a `sendServerCommand` on every
+  later screen of that machine, paid by whoever types at it next.
+- **And the packet itself is rate-limited** (`SCeroSecSystem:mayOpen`): at most
+  `SCeroSecSystem.OPEN_PER_SECOND` = 4 openings per player per real second, counted on
+  `getTimestampMs()` — the same clock and the same shape vanilla throttles a client
+  command with server-side (`forageServer.onRequestZone`). Past the cap the packet is
+  dropped with **no reply at all**, because a refusal is a confirmation that the packet
+  arrived and a second thing for the server to send; the drop goes in `CeroSec.log`
+  once per second per player instead, which is what a server owner reads. The book of
+  timestamps is keyed on the online id, which is not ours, so entries older than a few
+  seconds are dropped on the way in — there is no vanilla event for a player leaving
+  (`OnPlayerDisconnect` does not exist, and `OnDisconnect` is the client's own
+  connection failing), so age is the whole of the bound.
+
+Four is far above anything a survivor does: the client shuts its own previous terminal
+before it sends one (`CeroSecTerminal.open`), and the reopen after a reboot is the
+server's own doing and comes through no packet. Both bounds are walked on the wire in
+`tests/hostile_test.lua` (26c and 26d) and in `tests/window_test.lua`, against five
+thousand packets from one client.
+
 ## Remote sessions: a password every time
 
 Neither the telephone nor the radio consults a trust file, ever: `/etc/hosts.equiv`

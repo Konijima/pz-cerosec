@@ -2017,7 +2017,16 @@ do
 	-- around it. The window the reply is addressed to does not exist, which is
 	-- exactly what a client that never builds one looks like.
 	--
+	-- A REAL SECOND BETWEEN EACH, and it is not decoration. The server drops an
+	-- `open` past the fourth in a second and says nothing (SCeroSecSystem:mayOpen),
+	-- so a flood sent in one instant never reaches addWatcher at all -- and this
+	-- block is about what happens when it DOES. Paced past the throttle, every
+	-- packet below is one the server accepted, and the bounds asserted are the
+	-- watcher table's own and not the rate limit's standing in for them. The
+	-- throttle has its own block, on its own clock (the head of `open`'s section).
+	local hadNow = _G.__now
 	local function openAs(who, token)
+		_G.__now = _G.__now + 1000
 		CCeroSecSystem.instance:sendCommand(who, "open",
 			{ x = 10, y = 10, z = 0, token = token })
 	end
@@ -2094,6 +2103,10 @@ do
 		SCeroSecObject.WATCHERS_MAX - 1)
 	eq("and says nothing to anybody", #bench.closed, 0)
 
+	-- The clock put back where the file's other blocks left it: this one wound it
+	-- forward by a quarter of an hour to get past the rate limit, and the benches
+	-- below measure boot animations and reboot delays against it.
+	_G.__now = hadNow
 end
 
 -- A second survivor standing at the same desk who never opened a terminal. The

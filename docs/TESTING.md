@@ -165,9 +165,15 @@ The suites, in the order they run:
   machines in the file, that every path a machine comes on by puts it in the sweep's
   index and every path it goes off by takes it out, and that five thousand `open`
   packets with a fresh token each leave ONE window open and a screen costing one
-  answer. The milliseconds are printed beside them and the ceiling on them is
-  deliberately generous: what it has to catch is the county coming back into the
-  walk, not a box that is also running a game.
+  answer. Those five thousand are **paced a second apart** on the fake clock (26c):
+  the server drops an `open` past the fourth in a real second, so a flood sent in one
+  instant would make every one of those assertions green for the rate limit's reason
+  instead of the watcher table's. The rate limit has its own block on its own clock
+  (26d), and what it asserts is a COUNT too -- four full opens of five thousand,
+  counted at `sendHistory`, one line in the log and one entry in the book. The
+  milliseconds are printed beside them and the ceiling on them is deliberately
+  generous: what it has to catch is the county coming back into the walk or the state
+  validator coming back onto the read path, not a box that is also running a game.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, opening each of three volumes
   off a fake shelf and opening blank paper for an id nothing answers to, a bookmark

@@ -3769,6 +3769,13 @@ do
 	-- whoever types at it next. One live window per player per machine, and eight
 	-- per machine whatever the online ids say (SCeroSecObject.WATCHERS_MAX).
 	--
+	-- PACED PAST THE RATE LIMIT, one real second per packet on the fake clock. The
+	-- server now drops an `open` past the fourth in a second and answers nothing
+	-- (SCeroSecSystem:mayOpen, and 26d below for that bound), so a flood sent in one
+	-- instant would never reach addWatcher and every assertion here would be green
+	-- for the throttle's reason and not for the watcher table's. What this block is
+	-- about is the worst a client the throttle is NOT stopping can do.
+	--
 	do
 		local target = objects[1]
 		local function playerAt(id)
@@ -3785,8 +3792,15 @@ do
 		local one = playerAt(-11)
 		local FLOOD = 5000
 		answers = {}
+		local hadNow = _G.__now
+		-- The clock moved OUTSIDE the timed section: what is being measured is the
+		-- server's own work per packet, and a `+ 1000` in the middle of it would be
+		-- in the milliseconds reported below.
+		local stamps = {}
+		for i = 1, FLOOD do stamps[i] = hadNow + i * 1000 end
 		local before = nowMs()
 		for i = 1, FLOOD do
+			_G.__now = stamps[i]
 			system:OnClientCommand("open", one,
 				{ x = target.x, y = target.y, z = target.z, token = "f" .. i .. "-" .. ZombRand(9) })
 		end
@@ -3834,8 +3848,117 @@ do
 			string.format("%.3f", after) .. " ms against " ..
 			string.format("%.2f", limit) .. ")", after < limit)
 		report[#report + 1] = string.format(
-			"  %-22s %6.3f ms for %d opens, %d watcher(s) left",
-			"5000 open packets", floodMs, FLOOD, target:watcherCount())
+			"  %-22s %6.3f ms for %d opens (%.4f ms each), %d watcher(s) left",
+			"5000 paced opens", floodMs, FLOOD, floodMs / FLOOD, target:watcherCount())
+
+		-- Put back where the file's other blocks left it: this one wound it forward
+		-- by five thousand seconds to get past the rate limit.
+		_G.__now = hadNow
+	end
+
+	--
+	-- 26d. THE SAME FLOOD IN ONE SECOND: THE RATE LIMIT
+	--
+	-- 26c is what the server pays for an `open` it accepts, and after the validator's
+	-- memo that is 0.08 ms rather than 1.9 -- but a client can still send five
+	-- thousand of them in one tick, and the dearest half of one is on the way OUT:
+	-- sendHistory ships the console's history lines to the client on every open, so
+	-- the packet is a network amplifier and not only server time.
+	--
+	-- WHAT IS ASSERTED IS THE NUMBER OF FULL OPENS, counted at sendHistory, which is
+	-- the last thing a completed open does. A count and not a clock: "four of five
+	-- thousand went through" is a fact about the gate, and it is the same number on
+	-- any machine.
+	--
+	do
+		local target = objects[2]
+		local function playerAt(id)
+			return {
+				getPlayerNum = function() return 0 end,
+				getOnlineID = function() return id end,
+				isDead = function() return false end,
+				playSoundLocal = function() end,
+				getCurrentSquare = function() return { getZ = function() return 0 end } end,
+				getX = function() return target.x + 0.5 end,
+				getY = function() return target.y + 0.5 end,
+			}
+		end
+		local realHistory = SCeroSecSystem.sendHistory
+		local histories = 0
+		SCeroSecSystem.sendHistory = function(self, luaObject, state, console, playerObj, token)
+			histories = histories + 1
+			return realHistory(self, luaObject, state, console, playerObj, token)
+		end
+
+		local FLOOD = 5000
+		local one = playerAt(-21)
+		local hadNow = _G.__now
+		answers, histories = {}, 0
+		-- The log is the only thing the drop leaves behind, so the ring is emptied
+		-- first: what is counted afterwards is this flood's lines and no other bench's.
+		CeroSec.logRing = {}
+		local before = nowMs()
+		for i = 1, FLOOD do
+			system:OnClientCommand("open", one,
+				{ x = target.x, y = target.y, z = target.z, token = "r" .. i })
+		end
+		local burstMs = nowMs() - before
+		eq("five thousand opens in one second cost four full opens",
+			histories, SCeroSecSystem.OPEN_PER_SECOND)
+		eq("and one window is left on the machine", target:watcherCount(), 1)
+		-- NOTHING WENT BACK for the ones that were dropped. Three "closed" is the
+		-- four accepted opens replacing each other, and not one word about the 4996:
+		-- a refusal is a confirmation that the packet arrived, so there is none.
+		eq("only the accepted opens were answered at all",
+			(answers["opened"] or 0) + (answers["closed"] or 0),
+			SCeroSecSystem.OPEN_PER_SECOND + (SCeroSecSystem.OPEN_PER_SECOND - 1))
+
+		-- AND THE LOG IS ONE LINE. A line per dropped packet would make the log the
+		-- flood -- CeroSec.LOG_MAX lines of it, the whole ring a server owner reads
+		-- overwritten by one client -- so it is once per second per player.
+		local said = 0
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "dropping window openings", 1, true) then
+				said = said + 1
+			end
+		end
+		eq("and the flood is one line in the log, not five thousand", said, 1)
+
+		-- AND THE BOOK IS ONE ENTRY. The key is the online id, which is the client's
+		-- and not ours, so a flood must not be able to grow the table it is counted in.
+		local entries = 0
+		for _ in pairs(system.openBook) do entries = entries + 1 end
+		eq("and the book it was counted in holds one entry", entries, 1)
+
+		-- A REAL PLAYER, who opens a window and reads it: one a second for a minute,
+		-- and not one of them is dropped. This is the half that says the cap is not
+		-- in anybody's way -- the client shuts its own box before it sends, so this
+		-- is already more opens than a survivor makes in a minute.
+		histories = 0
+		for i = 1, 60 do
+			_G.__now = hadNow + i * 1000
+			system:OnClientCommand("open", playerAt(-22),
+				{ x = target.x, y = target.y, z = target.z, token = "slow" .. i })
+		end
+		eq("a window a second for a minute is never throttled", histories, 60)
+
+		-- And an entry for a player who has stopped asking does not stay: the book is
+		-- keyed on an id nobody here controls, so it is bounded by AGE and not by
+		-- trust. Nothing in vanilla says a player has left (no OnPlayerDisconnect --
+		-- see the head of `open`'s section), so this is the whole of the bound.
+		_G.__now = hadNow + 60 * 1000 + 60000
+		system:OnClientCommand("open", playerAt(-23),
+			{ x = target.x, y = target.y, z = target.z, token = "later" })
+		entries = 0
+		for _ in pairs(system.openBook) do entries = entries + 1 end
+		eq("a minute later the book holds only the player still asking", entries, 1)
+
+		report[#report + 1] = string.format(
+			"  %-22s %6.3f ms for %d opens, %d full open(s) served",
+			"5000 opens in 1 second", burstMs, FLOOD, SCeroSecSystem.OPEN_PER_SECOND)
+
+		SCeroSecSystem.sendHistory = realHistory
+		_G.__now = hadNow
 	end
 
 	SCeroSecObject.checkPower = realCheckPower

@@ -28,6 +28,10 @@ date.
   Forty running computers cost a game minute about three milliseconds where they
   cost a hundred, and the same check still refuses a filesystem that came back
   damaged.
+- A flood of window openings from one client is ignored past four a second. Four
+  is far more than a survivor opening terminals with his mouse ever sends, and
+  the server no longer does the work -- or sends the screen back -- for the other
+  four thousand nine hundred and ninety-six.
 - A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
   terminal of the machine: the glass in front of you and every session that
   came in over the wire: with the banner a 1993 machine put on it. Anybody may
