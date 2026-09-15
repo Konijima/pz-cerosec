@@ -458,7 +458,7 @@ is the client's own:
 
   Why it exists at all: [TESTING.md](TESTING.md), "Three layers". It is a release
   gate, steps 6a and 6b of [RELEASE.md](RELEASE.md).
-- **Give diagnostics disk** puts `CEROSEC DIAGNOSTICS` in the survivor's inventory:
+- **Give diagnostics disk** puts `CeroSec DIAGNOSTICS 1.0` in the survivor's inventory:
   a floppy built from `CeroSecContent.DISKS` at the moment it is asked for, through
   the same `CeroSecContent.diskData` loot builds one with, so what he is handed is
   the disk the bench weighed. The item grant is `Commands.ejectfloppy`'s own path and

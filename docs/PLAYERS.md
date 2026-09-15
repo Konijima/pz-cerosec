@@ -1106,6 +1106,25 @@ reads the disk's label if it has one and its shell colour in brackets — *PAYRO
 drive is full or you cannot reach the machine there is nothing to choose between, so
 the entry goes back to a single greyed line with the reason on it.
 
+### Printed, or somebody's handwriting
+
+A disk you find is one of two things, and you can see which without reading it.
+
+A disk that came with **software** has a label printed at the factory and is named
+for the product on it: *CeroSec UTILITIES 1.0*, *SHAREWARE GAMES 2.1*,
+*NIGHTLINE DIALER 1.2*, *CeroSec OS 1.0 DIST*. Its sticker is white with two lines
+of print on it, which is what the icon in your bag shows, and its tooltip says
+**Printed label**.
+
+A disk somebody kept his own things on is named in **his** words, in his own
+hand — *books 93*, *do not read*, *home dir 8 july*, *heard log jul*. Plain
+sticker, and the tooltip says **Handwritten label**. Two copies of the same kind of
+disk found in different towns were two different men, so they do not say the same
+thing.
+
+Most of the box is blank, and a blank disk is neither: it reads *3.5" Floppy Disk*
+and has nothing written on it at all.
+
 ### Writing on the label
 
 Four disks in a bag look identical, so do what anybody with four disks did: write on
@@ -1117,7 +1136,9 @@ label is printed on the machine's own screen.
 
 The label becomes the disk's name in your inventory, so you can tell your disks apart
 without inserting them, and it stays on the disk through the drive and out the other
-side. **Change the floppy's label** rewrites it and **Erase the floppy's label**
+side. **What you write is handwriting** — a pen is a pen, so a disk you label says
+*Handwritten label*, and labelling a printed disk over the top of its own line takes
+the printed sticker off it. **Change the floppy's label** rewrites it and **Erase the floppy's label**
 takes it off; both need the same pen in hand. A label is written on the disk and not
 on the machine, so it travels across town with it.
 

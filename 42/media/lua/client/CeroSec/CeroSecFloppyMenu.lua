@@ -90,12 +90,18 @@ function CeroSecFloppyMenu.labelOn(item)
 end
 
 -- Write it on. The label has already been through CeroSecOS.labelOk.
+--
+-- A label written HERE is handwritten, whatever it says. This is a survivor with a
+-- pen, and a pen cannot print: a disk he has just relabelled says so on its tooltip
+-- and goes back to the plain sticker in his bag, even if what he wrote on it is
+-- word for word a product's own line (CeroSecContent.markLabel).
 function CeroSecFloppyMenu.writeLabel(item, label)
 	item:setName(label)
 	item:setCustomName(true)
 	item:syncItemFields()
 	local data = item:getModData()
 	if data ~= nil then data.label = label end
+	CeroSecContent.markLabel(item, false)
 end
 
 -- And take it off. Back to the name the disk came with -- which cannot be ASKED
@@ -113,6 +119,9 @@ function CeroSecFloppyMenu.eraseLabel(item)
 	item:syncItemFields()
 	local data = item:getModData()
 	if data ~= nil then data.label = nil end
+	-- Nothing written on it is nothing to say about the writing: the tooltip line
+	-- and the printed look come off with the label.
+	CeroSecContent.markLabel(item, nil)
 end
 
 -- The one item out of a menu entry, whether it is an item or a stack of them

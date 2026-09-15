@@ -27,6 +27,15 @@ for i = 1, #FILES do
 	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
 	chunk()
 end
+-- And the mod's own defs, for the four floppy types and the four printed icons:
+-- the item hook puts one of those icon names on a printed disk, and a bench with
+-- its own copy of the names would be a bench that could not see one go wrong.
+do
+	local path = "42/media/lua/shared/CeroSec/CeroSecDefs.lua"
+	local chunk, err = loadfile(path)
+	if not chunk then error("cannot load " .. path .. ": " .. tostring(err)) end
+	chunk()
+end
 do
 	local path = "42/media/lua/shared/CeroSec/CeroSecContent.lua"
 	local chunk, err = loadfile(path)
@@ -2940,21 +2949,62 @@ do
 		check(where .. " has a weight of nothing or more", weight >= 0)
 		total = total + weight
 
-		if entry.label ~= nil then
-			check(where .. " has a label the machine will take",
-				CeroSecOS.labelOk(entry.label))
-			check(where .. " has a unique label", labels[entry.label] == nil)
-			labels[entry.label] = true
-			-- Upper case, because a 1993 disk came out of a DOS machine.
-			eq(where .. " is labelled in capitals", entry.label,
-				string.upper(entry.label))
+		-- PRINTED, OR WRITTEN BY HAND, and an entry is one or the other or is the
+		-- blank disk. The two shapes are checked against each other in BOTH
+		-- directions -- a printed entry with a `hand` on it and a handwritten one
+		-- with a `label` are both a catalogue saying two things about one disk, and
+		-- the hook would have to choose between them.
+		local stickers = {}
+		if entry.printed == true then
+			check(where .. " prints one label", type(entry.label) == "string")
+			eq(where .. " is not handwritten as well", entry.hand, nil)
+			check(where .. " names the version on the sticker",
+				type(entry.version) == "string" and entry.version ~= "")
+			-- The version FIELD and the version ON the label are the same version.
+			-- A field nothing on the glass agrees with is a field that goes stale.
+			check(where .. " prints the version it names (" .. tostring(entry.label)
+				.. " / " .. tostring(entry.version) .. ")",
+				string.find(tostring(entry.label), tostring(entry.version), 1, true)
+					~= nil)
+			stickers[1] = entry.label
+		elseif entry.hand ~= nil then
+			eq(where .. " says it is handwritten", entry.printed, false)
+			eq(where .. " has no printed label", entry.label, nil)
+			eq(where .. " has no version -- nobody prints one in biro",
+				entry.version, nil)
+			check(where .. " has a sticker per telling",
+				type(entry.hand) == "table")
+			eq(where .. " has one for each of them", #entry.hand,
+				CeroSecContent.VARIANTS)
+			for h = 1, #entry.hand do stickers[h] = entry.hand[h] end
+		else
+			-- Nothing written on it at all, which is one entry and is named.
+			eq(where .. " is the blank disk", entry.id, "BLANK")
+			eq("and the blank disk has no printed flag", entry.printed, nil)
+		end
+
+		-- Every sticker any copy of this entry can be carrying: the machine will
+		-- take it, no two disks in the county say the same thing, and the catalogue
+		-- can be found again BY it -- which is what `late` is looked up with.
+		for s = 1, #stickers do
+			local sticker = stickers[s]
+			check(where .. " sticker `" .. tostring(sticker)
+				.. "` is one the machine will take", CeroSecOS.labelOk(sticker))
+			check(where .. " sticker `" .. tostring(sticker) .. "` is unique",
+				labels[sticker] == nil)
+			labels[sticker] = true
+			eq(where .. " is found by `" .. tostring(sticker) .. "`",
+				CeroSecContent.diskByLabel(sticker), entry)
 		end
 
 		local disk, written = CeroSecContent.diskData(entry, START)
 		check(where .. " makes a disk", type(disk) == "table")
 		eq(where .. " is at this build's floppy version", disk.v,
 			CeroSecOS.FLOPPY_VERSION)
-		eq(where .. " carries its label onto the disk", disk.label, entry.label)
+		-- diskData with no telling is telling one, so the sticker it carries is the
+		-- first one -- the printed line, or the first man's handwriting.
+		eq(where .. " carries its label onto the disk", disk.label,
+			CeroSecContent.diskLabel(entry, 1))
 		-- THE SLOT'S OWN GATE, ceilings included, which is the one that says the
 		-- disk can be put in a machine at all.
 		local ok, why = CeroSecOS.validateDisk(disk, true)
@@ -3309,7 +3359,12 @@ end
 do
 	local entry = CeroSecContent.diskById(CeroSecContent.DIAG_DISK)
 	check("the diagnostics disk is in the catalogue", entry ~= nil)
-	eq("it is labelled for the drive", entry.label, "CEROSEC DIAGNOSTICS")
+	-- Printed like the rest of the company's media, and the id it is asked for by
+	-- is NOT the sticker any more: givedisk asks diskById for CEROSEC DIAGNOSTICS
+	-- and what goes on the shell is the printed line.
+	eq("it is asked for by its id", entry.id, "CEROSEC DIAGNOSTICS")
+	eq("and it is labelled for the drive", entry.label, "CeroSec DIAGNOSTICS 1.0")
+	eq("printed, like everything else out of the factory", entry.printed, true)
 	-- NEVER IN LOOT, asserted over the whole box and not off the field: weight 0
 	-- is the mechanism, "no roll lands on it" is the requirement, and it is the
 	-- requirement that is checked.
@@ -3724,10 +3779,20 @@ do
 	-- read out of its own modData twice is the same disk, which is what a save
 	-- reload is.
 	do
-		local item = { data = {}, name = "3.5\" Floppy Disk", custom = false }
+		local item = { data = {}, name = "3.5\" Floppy Disk", custom = false,
+			type = CeroSec.FLOPPY_TYPES[1] }
 		item.getModData = function() return item.data end
 		item.setName = function(_, text) item.name = text end
 		item.getName = function() return item.name end
+		item.getFullType = function() return item.type end
+		-- setTooltip is not a field on the item either: the engine rawsets the key
+		-- "Tooltip" on the item's own modData and getTooltip reads it back from
+		-- there first (javap -p -c zombie.inventory.InventoryItem, setTooltip:
+		-- getModData at 1, rawset at 8; getTooltip: rawget at 7). The fake does what
+		-- the engine does, so the key the save file would carry is the key this
+		-- bench counts.
+		item.setTooltip = function(_, key) item.data.Tooltip = key end
+		item.getTooltip = function() return item.data.Tooltip end
 		-- The engine does not only move a flag: setCustomName rawsets `customName` on
 		-- the item's own modData with its name (javap -c
 		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
@@ -3756,7 +3821,23 @@ do
 			return telling - 1
 		end
 		CeroSecContent.onCreateFloppy(item)
-		eq("a rolled disk carries the label it rolled", item.data.label, "BACKUP")
+		-- THE THIRD MAN'S HANDWRITING, and not the catalogue's word for the entry:
+		-- a handwritten disk is labelled by the telling it carries, so the sticker
+		-- and the prose inside are the same man's.
+		eq("a rolled disk carries the label it rolled", item.data.label,
+			"my files - july")
+		eq("which is the telling's own sticker", item.data.label,
+			CeroSecContent.diskLabel(entry, 3))
+		check("and not another telling's",
+			item.data.label ~= CeroSecContent.diskLabel(entry, 1))
+		eq("and the item wears it", item.name, "my files - july")
+		-- Written by somebody, so it says so on the tooltip and it keeps the plain
+		-- sticker: a printed look on a man's own disk would be the lie the whole
+		-- change is against.
+		eq("a handwritten disk says so on its tooltip", item:getTooltip(),
+			CeroSecContent.HAND_TOOLTIP)
+		eq("and wears no printed icon",
+			item.data[CeroSecContent.ICON_KEY], nil)
 		local first = CeroSecOS.diskFromData(item.data)
 		check("and the slot takes it", (CeroSecOS.validateDisk(first, true)))
 		-- The telling really is the one the roll asked for: the disk the item carries
@@ -3791,6 +3872,170 @@ do
 end
 
 --
+-- 7e. THE STICKER: printed at a factory, or written by somebody
+--
+-- A found disk that holds a program has to be tellable from a found disk that
+-- holds somebody's letters, before either is read. Three things say so and this
+-- block is about all three: the NAME (the printed line, or the owner's own words),
+-- the TOOLTIP line, and the ICON of a printed disk.
+--
+-- The name is the one that reaches the machine as well as the bag: it is what the
+-- slot writes onto the disk record and therefore what `mount` and `df` print. So
+-- the sticker is not checked as a string here and left at that -- each telling's
+-- is put in a drive and read back off the glass.
+--
+
+do
+	local printedCount, handCount = 0, 0
+	for i = 1, #CeroSecContent.DISKS do
+		local entry = CeroSecContent.DISKS[i]
+		local where = "disk " .. tostring(entry.id)
+
+		if entry.printed == true then
+			printedCount = printedCount + 1
+			-- Printed is printed: the same line on every copy, whichever telling it
+			-- is. There is no third telling of a factory sticker.
+			for t = 1, CeroSecContent.VARIANTS do
+				eq(where .. " prints the same label in telling " .. t,
+					CeroSecContent.diskLabel(entry, t), entry.label)
+			end
+		elseif entry.hand ~= nil then
+			handCount = handCount + 1
+			local seen = {}
+			for t = 1, CeroSecContent.VARIANTS do
+				local sticker = CeroSecContent.diskLabel(entry, t)
+				local at = where .. " telling " .. t
+				eq(at .. " is labelled in the telling's own hand", sticker,
+					entry.hand[t])
+				check(at .. " fits the drive (" .. tostring(sticker) .. ")",
+					CeroSecOS.labelOk(sticker))
+				check(at .. " is within " .. CeroSecOS.LABEL_MAX .. " characters",
+					#sticker <= CeroSecOS.LABEL_MAX)
+				-- THREE HANDS AND NOT ONE. Two tellings sharing a sticker would be two
+				-- men who wrote the same words on the same disk, which is the thing
+				-- the tellings exist to stop.
+				check(at .. " is not another telling's words", seen[sticker] == nil)
+				seen[sticker] = true
+
+				-- And that is the sticker the MACHINE reads. Written onto the disk at
+				-- build time, put in a drive, and read back off `mount`'s own line --
+				-- not off the record, because what a player sees is the line.
+				local disk = CeroSecContent.diskData(entry, START, t)
+				eq(at .. " carries it onto the disk", disk.label, sticker)
+				local state = CeroSecOS.newState("ksp-4-b")
+				local session = CeroSecOS.login(state, "admin", "")
+				state.floppy = disk
+				local env = { now = START, devices = devicesFor(nil) }
+				check(at .. " mounts", run(state, session, "mount /dev/fd0 /mnt", env))
+				local said = table.concat(
+					select(2, run(state, session, "mount", env)), " / ")
+				check(at .. " is what mount prints (" .. said .. ")",
+					string.find(said, "(" .. sticker .. ")", 1, true) ~= nil)
+			end
+		end
+	end
+	-- Both kinds are really in the box. A catalogue that had quietly become all
+	-- printed or all handwritten would pass every check above and prove nothing.
+	check("the box holds printed disks (" .. printedCount .. ")", printedCount >= 4)
+	check("and disks somebody wrote himself (" .. handCount .. ")", handCount >= 4)
+
+	--
+	-- The marks, on an item
+	--
+	local function newItem(fullType)
+		local item = { data = {}, type = fullType or CeroSec.FLOPPY_TYPES[1] }
+		item.getModData = function() return item.data end
+		item.getFullType = function() return item.type end
+		item.setTooltip = function(_, key) item.data.Tooltip = key end
+		item.getTooltip = function() return item.data.Tooltip end
+		return item
+	end
+
+	local item = newItem()
+	CeroSecContent.markLabel(item, true)
+	eq("a printed mark says printed", item:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	eq("and puts the printed look on the shell",
+		item.data[CeroSecContent.ICON_KEY],
+		CeroSec.floppyPrintedIcon(CeroSec.FLOPPY_TYPES[1]))
+
+	-- And a pen takes the look off again. This is the relabel: the icon has to GO,
+	-- not merely be left as it was.
+	CeroSecContent.markLabel(item, false)
+	eq("a handwritten mark says handwritten", item:getTooltip(),
+		CeroSecContent.HAND_TOOLTIP)
+	eq("and takes the printed look off", item.data[CeroSecContent.ICON_KEY], nil)
+
+	CeroSecContent.markLabel(item, true)
+	CeroSecContent.markLabel(item, nil)
+	eq("and an erased label says nothing at all", item:getTooltip(), nil)
+	eq("and wears nothing", item.data[CeroSecContent.ICON_KEY], nil)
+
+	-- By the sticker, which is how a disk coming back OUT of a drive is marked: the
+	-- drive has the label and the catalogue knows which of its labels are printed.
+	local byLabel = newItem()
+	CeroSecContent.markByLabel(byLabel, "CeroSec UTILITIES 1.0")
+	eq("a printed sticker is marked printed", byLabel:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	CeroSecContent.markByLabel(byLabel, "my files - july")
+	eq("and one of the three hands is marked handwritten", byLabel:getTooltip(),
+		CeroSecContent.HAND_TOOLTIP)
+	eq("with no printed look left on it",
+		byLabel.data[CeroSecContent.ICON_KEY], nil)
+	CeroSecContent.markByLabel(byLabel, "PAYROLL 93")
+	eq("a sticker out of nobody's catalogue is handwritten", byLabel:getTooltip(),
+		CeroSecContent.HAND_TOOLTIP)
+	CeroSecContent.markByLabel(byLabel, nil)
+	eq("and no sticker at all is nothing", byLabel:getTooltip(), nil)
+
+	-- Junk, because this runs wherever a disk is made or handed over.
+	CeroSecContent.markLabel(nil, true)
+	CeroSecContent.markByLabel(nil, "x")
+	do
+		local noData = { getModData = function() return nil end }
+		CeroSecContent.markLabel(noData, true)
+	end
+	check("nothing threw", true)
+
+	-- THE TWO TOOLTIP KEYS ARE KEYS AND NOT PROSE, and the mod ships a string for
+	-- each in both languages. The engine puts what it finds through
+	-- Translator.getText before it draws it (javap -p -c
+	-- zombie.inventory.InventoryItem, DoTooltip: getTooltip at 4184, getText at
+	-- 4191), and a key nothing translates is drawn as the key -- so a survivor would
+	-- read "Tooltip_item_CeroSecFloppyPrinted" off his disk.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/Tooltip.json", "r")
+		check(lang .. " has a Tooltip.json", handle ~= nil)
+		local strings = handle:read("*a")
+		handle:close()
+		for _, key in ipairs({ CeroSecContent.PRINTED_TOOLTIP,
+				CeroSecContent.HAND_TOOLTIP }) do
+			check(lang .. "/Tooltip.json defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+		end
+	end
+
+	-- THE FOUR FILES ARE THERE. A printed icon that does not resolve is a disk that
+	-- draws its ordinary one (javap -p -c zombie.inventory.InventoryItem,
+	-- getTexture(): the fallback getfield at 52), so a name spelled wrong here is
+	-- silent in game and this is the only thing that can say it out loud.
+	for t = 1, #CeroSec.FLOPPY_TYPES do
+		local name = CeroSec.floppyPrintedIcon(CeroSec.FLOPPY_TYPES[t])
+		check(CeroSec.FLOPPY_TYPES[t] .. " names a printed icon",
+			type(name) == "string" and name ~= "")
+		local png = io.open("common/media/textures/" .. name .. ".png", "r")
+		check("and " .. name .. ".png is in the mod", png ~= nil)
+		if png ~= nil then png:close() end
+	end
+	-- One per colour and not one more: a fifth name in that table would be a look
+	-- no disk in the game can be wearing and a file nobody would ever repaint.
+	local looks = 0
+	for _ in pairs(CeroSec.FLOPPY_PRINTED_ICONS) do looks = looks + 1 end
+	eq("one printed look per colour and no more", looks, #CeroSec.FLOPPY_TYPES)
+end
+
+--
 -- 8. The item hook: a floppy off a shelf
 --
 -- What `OnCreate = CeroSecContent.onCreateFloppy` does when the game calls it with
@@ -3800,12 +4045,18 @@ end
 --
 
 do
-	local function newFloppy(data)
+	local function newFloppy(data, fullType)
 		local item = { data = data or {}, name = "3.5\" Floppy Disk", custom = false,
-			synced = 0 }
+			synced = 0, type = fullType or CeroSec.FLOPPY_TYPES[1] }
 		item.getModData = function() return item.data end
 		item.setName = function(_, text) item.name = text end
 		item.getName = function() return item.name end
+		item.getFullType = function() return item.type end
+		-- The tooltip goes in the item's own modData, because that is where the
+		-- engine puts it (javap -p -c zombie.inventory.InventoryItem, setTooltip:
+		-- getModData at 1, ldc "Tooltip" at 4, rawset at 8).
+		item.setTooltip = function(_, key) item.data.Tooltip = key end
+		item.getTooltip = function() return item.data.Tooltip end
 		-- The engine does not only move a flag: setCustomName rawsets `customName` on
 		-- the item's own modData with its name (javap -c
 		-- zombie.inventory.InventoryItem, setCustomName(boolean), offsets 5-24). The
@@ -3843,7 +4094,40 @@ do
 		item.data.v, CeroSecOS.FLOPPY_VERSION)
 	check("and has a filesystem on it", type(item.data.fs) == "table")
 	eq("and carries the label", item.data.label, entry.label)
+	eq("which is the printed line and not the entry's id", item.data.label,
+		"CeroSec UTILITIES 1.0")
 	eq("which is written on the item's name", item:getName(), entry.label)
+	-- PRINTED, AND IT LOOKS PRINTED. The name says what the disk is; the tooltip
+	-- says which kind of label that is; the icon says it without being read at all.
+	eq("a printed disk says so on its tooltip", item:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	eq("and wears the printed look of its own colour",
+		item.data[CeroSecContent.ICON_KEY],
+		"Item_CeroSecFloppyBluePrinted")
+	eq("which is the name the defs give that shell",
+		item.data[CeroSecContent.ICON_KEY],
+		CeroSec.floppyPrintedIcon(CeroSec.FLOPPY_TYPES[1]))
+	-- And NEITHER of the engine's two keys rides onto the disk. They are on the
+	-- item's own table beside `customName`, and the slot takes the keys a disk owns
+	-- off that table and judges those alone (ownKeysOf).
+	do
+		local read = CeroSecOS.diskFromData(item.data)
+		eq("the tooltip does not come in on the disk", read.Tooltip, nil)
+		eq("nor does the icon", read[CeroSecContent.ICON_KEY], nil)
+		local owned = 0
+		for _ in pairs(read) do owned = owned + 1 end
+		eq("and the disk still owns three keys and no more", owned, 3)
+	end
+	-- The other three shells get their own printed look and not the blue one.
+	for t = 2, #CeroSec.FLOPPY_TYPES do
+		local coloured = newFloppy(nil, CeroSec.FLOPPY_TYPES[t])
+		CeroSecContent.onCreateFloppy(coloured)
+		eq(CeroSec.FLOPPY_TYPES[t] .. " wears its own printed look",
+			coloured.data[CeroSecContent.ICON_KEY],
+			CeroSec.floppyPrintedIcon(CeroSec.FLOPPY_TYPES[t]))
+		check("which is not the blue one",
+			coloured.data[CeroSecContent.ICON_KEY] ~= "Item_CeroSecFloppyBluePrinted")
+	end
 	check("as a custom name, or the translated name would win", item:isCustomName())
 	eq("and it was sent", item.synced, 1)
 	local ok, why = CeroSecOS.validateDisk(CeroSecOS.diskFromData(item.data), true)
@@ -3863,6 +4147,11 @@ do
 	eq("and no label", blank.data.label, nil)
 	eq("and keeps the name it came with", blank:getName(), "3.5\" Floppy Disk")
 	check("and is not a custom name", not blank:isCustomName())
+	-- Nothing is written on it, so there is nothing to say about the writing: no
+	-- tooltip line and no printed look. A blank disk wearing either would be a disk
+	-- claiming a label it has not got.
+	eq("a blank disk says nothing about its label", blank:getTooltip(), nil)
+	eq("and wears no printed look", blank.data[CeroSecContent.ICON_KEY], nil)
 
 	-- A disk that ALREADY has something written on it is left alone. An item made
 	-- by cloning a written one arrives here with its modData filled in, and a hook

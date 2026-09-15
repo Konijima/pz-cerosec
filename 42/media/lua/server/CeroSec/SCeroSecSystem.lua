@@ -1416,7 +1416,12 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 	-- the item is announced to the clients, or what they would be handed is a
 	-- blank disk with the right colour on it.
 	local inv = playerObj:getInventory()
+	-- And the creation hook stands down for it. AddItem instances a REAL floppy, so
+	-- the hook rolls a disk and a name onto this shell before the disk that is
+	-- actually in the drive is written over it -- see CeroSecContent.ejecting.
+	CeroSecContent.ejecting = true
 	local item = inv:AddItem(fullType)
+	CeroSecContent.ejecting = false
 	-- Nowhere to put it: the survivor is carrying too much, which is a thing he can
 	-- fix. Nothing has happened to the machine.
 	if not item then return end
@@ -1442,6 +1447,21 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		item:setName(disk.label)
 		item:setCustomName(true)
 		item:syncItemFields()
+		CeroSecContent.markByLabel(item, disk.label)
+	else
+		-- AND THIS BRANCH IS NOT BELT AND BRACES. inv:AddItem above makes a REAL
+		-- floppy, so the creation hook ran on it and rolled it a disk of its own
+		-- (CeroSecContent.onCreateFloppy) -- writeDiskTo has just overwritten the
+		-- three keys that roll wrote, but the LOOK it put on the shell is the
+		-- engine's own modData and is not a key a disk owns. A disk with nothing
+		-- written on it that came out of the drive wearing a printed sticker would be
+		-- the roll showing through, so the marks come off with the label -- and so
+		-- does the NAME, which is the one the hook is likeliest to have left. The
+		-- flag above is what stops it being written in the first place; this is the
+		-- belt, because a flag that is ever missed must not be the only thing
+		-- between a survivor and a blank disk called CeroSec UTILITIES 1.0.
+		CeroSecContent.markLabel(item, nil)
+		CeroSecContent.unname(item)
 	end
 
 	-- And only now does it come out. If it somehow does not, the item goes with it:
@@ -2270,7 +2290,11 @@ local function giveDiagnosticsDisk(playerObj, now)
 
 	local inv = playerObj:getInventory()
 	if inv == nil then return "there is nowhere to put it" end
+	-- Same as the eject, and for the same reason: this shell is about to be written
+	-- over with a disk that is already built (CeroSecContent.ejecting).
+	CeroSecContent.ejecting = true
 	local item = inv:AddItem(CeroSec.FLOPPY_TYPES[1])
+	CeroSecContent.ejecting = false
 	if not item then return "he is carrying too much" end
 	if not CeroSecOS.writeDiskTo(item:getModData(), disk) then
 		inv:Remove(item)
@@ -2284,6 +2308,13 @@ local function giveDiagnosticsDisk(playerObj, now)
 		item:setName(disk.label)
 		item:setCustomName(true)
 		item:syncItemFields()
+		-- Printed, like the rest of the company's media, and the look says so. Asked
+		-- of the sticker rather than of the entry beside it, so this path and an
+		-- eject answer the same question the same way (CeroSecContent.markByLabel).
+		CeroSecContent.markByLabel(item, disk.label)
+	else
+		CeroSecContent.markLabel(item, nil)
+		CeroSecContent.unname(item)
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
 	return nil

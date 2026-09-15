@@ -1281,6 +1281,28 @@ coques.
      ne change pas. Annuler la boîte → rien ne change. **Effacer l'étiquette** →
      le nom revient à `3.5" Floppy Disk`. Poser le stylo par terre → les entrées
      disparaissent du menu. [ ]
+199e-bis. **Imprimée ou écrite à la main.** Se faire apparaître des disquettes de
+     butin jusqu'à en trouver deux écrites (la plupart sont vierges : c'est
+     voulu). Attendu, dans le sac, SANS rien lire : une disquette de logiciel
+     porte un nom de produit avec sa version -- `CeroSec UTILITIES 1.0`,
+     `SHAREWARE GAMES 2.1`, `NIGHTLINE DIALER 1.2`, `CeroSec OS 1.0 DIST` --,
+     son étiquette dessinée est blanche avec deux lignes d'impression dessus, et
+     l'infobulle dit **Printed label**. Une disquette de quelqu'un porte SES mots
+     en minuscules -- `books 93`, `do not read`, `home dir 8 july`,
+     `club net log` --, garde l'étiquette nue, et l'infobulle dit
+     **Handwritten label**. Une disquette vierge ne dit ni l'un ni l'autre et
+     s'appelle `3.5" Floppy Disk`. Deux disquettes du même genre trouvées dans
+     deux villes ne portent pas forcément les mêmes mots : chaque récit a son
+     écriture. Insérer une disquette imprimée : le sous-menu la nomme par son
+     produit, et `mount` écrit exactement la même ligne entre parenthèses. [ ]
+199e-ter. **Le stylo ne peut pas imprimer.** Prendre la disquette imprimée de
+     l'étape précédente, stylo en main, **Changer l'étiquette** → taper
+     `mes affaires`. Attendu : le nom change, l'étiquette imprimée disparaît de
+     l'icône (elle redevient nue) et l'infobulle passe à **Handwritten label**.
+     Recommencer en retapant exactement `CeroSec UTILITIES 1.0` : c'est toujours
+     écrit à la main -- l'icône reste nue et l'infobulle ne change pas. Puis
+     **Effacer l'étiquette** → le nom revient à `3.5" Floppy Disk` et
+     l'infobulle ne dit plus rien du tout. [ ]
 199f. **L'étiquette, la machine et l'aller-retour.** Étiqueter une disquette
      `PAYROLL 93`, l'insérer : le sous-menu la nommait bien `PAYROLL 93 (verte)`.
      `newfs /dev/fd0`, `mount /dev/fd0 /mnt`, puis `mount` sans rien → la ligne de
@@ -2177,8 +2199,11 @@ un interrupteur dans la pièce.
 258e. **La disquette de diagnostic.** Presser **Donner la disquette de
      diagnostic**, sans rien sélectionner si on veut (c'est un geste sur le sac et
      pas sur une machine). Attendu : une ligne sous la liste qui dit que
-     `CEROSEC DIAGNOSTICS` est dans l'inventaire, et dans le sac une disquette dont
-     l'étiquette porte ce nom. Elle ne se trouve **jamais** en butin : le seul
+     `CeroSec DIAGNOSTICS 1.0` est dans l'inventaire, et dans le sac une disquette
+     dont l'étiquette porte ce nom, imprimée (icône à deux lignes, infobulle
+     **Printed label**) comme le reste des supports de la maison. L'éjecter après
+     l'avoir insérée : elle ressort en portant toujours son nom ET son étiquette
+     imprimée. Elle ne se trouve **jamais** en butin : le seul
      chemin vers elle est ce bouton. [ ]
 258f. **La suite du shell, dans le jeu.** Insérer la disquette dans un ordinateur
      allumé. Attendu d'abord : elle entre. C'est le geste qui ne marchait pas, et

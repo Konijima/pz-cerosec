@@ -9,5 +9,7 @@
     "Tooltip_CeroSec_NoLock": "This door has no lock worth wiring.",
     "Tooltip_CeroSec_ManyDoors": "A computer cannot work a double or garage door.",
     "Tooltip_CeroSec_Fitted": "One is already fitted.",
+    "Tooltip_item_CeroSecFloppyPrinted": "Printed label.",
+    "Tooltip_item_CeroSecFloppyHand": "Handwritten label.",
     "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator."
 }

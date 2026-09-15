@@ -9,8 +9,8 @@ date.
 ## Unreleased
 
 - A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
-  terminal of the machine -- the glass in front of you and every session that
-  came in over the wire -- with the banner a 1993 machine put on it. Anybody may
+  terminal of the machine: the glass in front of you and every session that
+  came in over the wire: with the banner a 1993 machine put on it. Anybody may
   send one: telling people is not a privilege, and the real wall was never
   root's. It reads a file too (`wall /etc/motd`). The warning `shutdown` has
   always broadcast goes out through the same door.
@@ -20,13 +20,13 @@ date.
   moves it to `mbox` in your home as it goes, which is what Mail has always done
   on the way out; `mail -f` reads that file and moves nothing, so the address in
   last week's message is still there. `mbox` is an ordinary file of yours at
-  mode 600 and costs your drive what any file costs -- a drive with no room
+  mode 600 and costs your drive what any file costs: a drive with no room
   leaves the mail where it was and says so, having shown it to you anyway.
   `You have mail.` at the login still means something has ARRIVED.
 - `grep` reads a pattern. `grep -c '^From ' mbox` counts the messages in a
   mailbox now, which is the first line anybody writes about mail and used to
   count nothing: the circumflex was a character to look for. What it takes is
-  the old, plain kind of regular expression -- `^` and `$` for the ends of a
+  the old, plain kind of regular expression: `^` and `$` for the ends of a
   line, `.` for any character, `*` for any number of the thing in front of it,
   `[abc]` and `[a-z]` and `[^abc]` for a set, and a backslash to take the
   meaning off any of them. `\( \)` and `\{2,5\}` are not here, and the manual
@@ -36,14 +36,14 @@ date.
 - Shell functions. `greet() { echo hello $1; }` and then `greet world`, the way
   every sh has done it: the arguments inside are the call's, `return` hands a
   number back, and `type greet` says what it is. There is no `local` in a 1993
-  sh, so a variable a function sets is the shell's -- the manual says so out
+  sh, so a variable a function sets is the shell's: the manual says so out
   loud. A function belongs to the shell that was told about it: `sh yours.sh` is
   a new shell and knows none of yours, `. yours.sh` reads them into this one
   (put that line in ~/.profile), and a logout takes them. Sixteen of them, a
   thousand bytes of text each.
 - `case` is here. `case $1 in start) ... ;; stop|halt) ... ;; *) ... esac`, with
   a bar between patterns, the shell's own `*`, `?` and `[...]` in them, and `*)`
-  as the catch-all -- the one shape every start-up script of the era is written
+  as the catch-all: the one shape every start-up script of the era is written
   in, and five lines of `if` before now. `help` and `type` know the two new
   words. One thing that changed with it: `;;` is an operator now, so a stray
   `echo a;;` is a syntax error instead of quietly running.
@@ -55,8 +55,8 @@ date.
   output, and `ls` inside such a script prints one name a line, the way it does
   into any file.
 - The two kinds of brackets nest now, the way they do on every other machine.
-  `stop=$(($(date +%s) + 300))` is a deadline in one line -- the command runs
-  first and the sum is read on what it printed -- and `echo $(echo $((2 + 3)))`
+  `stop=$(($(date +%s) + 300))` is a deadline in one line: the command runs
+  first and the sum is read on what it printed: and `echo $(echo $((2 + 3)))`
   is a catch round a sum. Both answered a refusal before. What is still one
   level deep is catches: `$(echo $(date))` is refused as it always was.
 - A `$( )` is a shell of its own, the way it is on every other machine. What
@@ -71,6 +71,18 @@ date.
   `lights: command not found`, which reads like a refusal from a program that
   was never run; it now says `sudo: lights: command not found`, the way it
   already does for `sudo cd`.
+- You can see which floppies hold a program. A disk that came with software
+  wears its printed label and is named for the product on it: CeroSec
+  UTILITIES 1.0, SHAREWARE GAMES 2.1, NIGHTLINE DIALER 1.2: with a printed
+  sticker on its icon and "Printed label" on its tooltip. A disk somebody kept
+  his own things on is named in his own hand instead: books 93, do not read,
+  home dir 8 july. Two copies of the same kind of disk found in two towns were
+  two different men and do not say the same thing.
+- A blank disk comes out of the drive blank. Ejecting one that had nothing
+  written on it could hand it back named for a program it has not got a byte
+  of, and that name stayed on it for the rest of the save.
+- A pen is a pen. Labelling a disk yourself is handwriting whatever you write,
+  and relabelling a printed disk takes the printed sticker off it.
 - `mail` sends as well as reads. `mail [-s subject] bob` posts a message to
   another account on the machine: the body comes from a pipe
   (`echo hi | mail -s Hello bob`) or is typed at the prompt a line at a time
