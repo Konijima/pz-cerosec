@@ -1442,6 +1442,16 @@ Commands.ejectfloppy = function(self, playerObj, x, y, z, token, args)
 		item:setName(disk.label)
 		item:setCustomName(true)
 		item:syncItemFields()
+		CeroSecContent.markByLabel(item, disk.label)
+	else
+		-- AND THIS BRANCH IS NOT BELT AND BRACES. inv:AddItem above makes a REAL
+		-- floppy, so the creation hook ran on it and rolled it a disk of its own
+		-- (CeroSecContent.onCreateFloppy) -- writeDiskTo has just overwritten the
+		-- three keys that roll wrote, but the LOOK it put on the shell is the
+		-- engine's own modData and is not a key a disk owns. A disk with nothing
+		-- written on it that came out of the drive wearing a printed sticker would be
+		-- the roll showing through, so the marks come off with the label.
+		CeroSecContent.markLabel(item, nil)
 	end
 
 	-- And only now does it come out. If it somehow does not, the item goes with it:
@@ -2282,6 +2292,12 @@ local function giveDiagnosticsDisk(playerObj, now)
 		item:setName(disk.label)
 		item:setCustomName(true)
 		item:syncItemFields()
+		-- Printed, like the rest of the company's media, and the look says so. Asked
+		-- of the sticker rather than of the entry beside it, so this path and an
+		-- eject answer the same question the same way (CeroSecContent.markByLabel).
+		CeroSecContent.markByLabel(item, disk.label)
+	else
+		CeroSecContent.markLabel(item, nil)
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
 	return nil

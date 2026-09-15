@@ -1932,6 +1932,21 @@ do
 	eq("and a labelled disk puts the handwriting first",
 		sub.labels[3], "PAYROLL (IGUI_CeroSec_ColourGreen)")
 
+	-- AND THE TWO KINDS OF STICKER READ AS THEMSELVES on this menu, which is the
+	-- one screen where a survivor chooses between disks. A found program names its
+	-- product and its version; a found man's disk says what he wrote on it. The two
+	-- strings are written out rather than asked of the catalogue: what is proved
+	-- here is that the submenu prints the item's NAME, and a bench that fetched the
+	-- same name the code fetches could not see that stop happening.
+	carried = { newDisk(CeroSec.FLOPPY_TYPES[1], "CeroSec UTILITIES 1.0"),
+		newDisk(CeroSec.FLOPPY_TYPES[2], "my files - july") }
+	menu = fullMenuOn(computer)
+	parent, sub = insertSub(menu)
+	eq("a printed disk names its product on the insert menu", sub.labels[1],
+		"CeroSec UTILITIES 1.0 (IGUI_CeroSec_ColourBlue)")
+	eq("and a handwritten one says what he wrote", sub.labels[2],
+		"my files - july (IGUI_CeroSec_ColourYellow)")
+
 	-- Two disks of the SAME colour: still two entries. A survivor keeps three blue
 	-- disks as readily as one of each, and a lookup that asked for the first of each
 	-- type would offer him one.
@@ -3410,6 +3425,18 @@ do
 		return verdict
 	end
 
+	-- AND THE OTHER HALF OF A LABEL, spied on for the same reason the gate is.
+	-- CeroSecContent.markLabel is what puts the tooltip line and the printed look
+	-- on an item, it is benched against the real catalogue in content_test.lua, and
+	-- the catalogue is not loaded here. So what stands in for it records what it was
+	-- asked -- which is what lets the checks below be about the PEN calling it with
+	-- the right answer rather than about what the mark itself writes.
+	local marks = {}
+	_G.CeroSecContent = _G.CeroSecContent or {}
+	CeroSecContent.markLabel = function(item, printed)
+		marks[#marks + 1] = { item = item, printed = printed }
+	end
+
 	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecFloppyMenu.lua"))
 	chunk()
 
@@ -3508,11 +3535,26 @@ do
 
 	-- OK writes it: the name, the flag, the sync, and the disk's own field.
 	box = boxes[1]
+	marks = {}
 	box:press("OK", "BACKUP 93")
 	eq("the name is the label", disk.name, "BACKUP 93")
 	eq("and it is a custom name, or the game would not save it", disk.customName, true)
 	eq("synced once, the way Rename Bag syncs", disk.synced, 1)
 	eq("and the record carries it too", disk.data.label, "BACKUP 93")
+	-- A PEN CANNOT PRINT. Whatever he wrote, what he has written is handwriting,
+	-- and the item is marked as such: the tooltip line and -- on a disk that came
+	-- out of a box printed -- the loss of the printed look.
+	eq("the pen marks the disk", #marks, 1)
+	eq("as handwritten", marks[1].printed, false)
+	eq("and on the disk he wrote on", marks[1].item, disk)
+
+	-- Even when what he wrote is word for word a product's own line. The pen is
+	-- what decides this and not the string: a survivor with a biro cannot make a
+	-- factory sticker.
+	marks = {}
+	CeroSecFloppyMenu.writeLabel(disk, "CeroSec UTILITIES 1.0")
+	eq("a printed line written in biro is still handwriting", marks[1].printed, false)
+	CeroSecFloppyMenu.writeLabel(disk, "BACKUP 93")
 
 	-- Now the menu says something different: change it, or take it off.
 	menu = fill({ disk })
@@ -3578,7 +3620,11 @@ do
 	--
 	CeroSecFloppyMenu.writeLabel(disk, "GONE")
 	local synced = disk.synced
+	marks = {}
 	CeroSecFloppyMenu.eraseLabel(disk)
+	eq("the erase marks the disk too", #marks, 1)
+	eq("as having nothing written on it at all", marks[1].printed, nil)
+	eq("on the disk he rubbed out", marks[1].item, disk)
 	eq("the name goes back to the item's own, looked up by full type",
 		disk.name, "name-of:" .. disk.type)
 	eq("it is not a custom name any more", disk.customName, false)

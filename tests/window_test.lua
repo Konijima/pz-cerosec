@@ -9988,11 +9988,33 @@ local function newInventory()
 				self.data.customName = tostring(self.name)
 			end,
 			syncItemFields = function(self) self.synced = self.synced + 1 end,
+			-- And the tooltip is on that same table, because the engine puts it there
+			-- rather than on a field of its own: setTooltip rawsets the key "Tooltip"
+			-- on the item's modData and getTooltip reads it back from there first
+			-- (javap -p -c zombie.inventory.InventoryItem, setTooltip: getModData at
+			-- 1, ldc "Tooltip" at 4, rawset at 8; getTooltip: rawget at 7). So what a
+			-- disk coming out of the drive is marked with is in the table the save
+			-- file keeps, and this bench can count it.
+			setTooltip = function(self, key) self.data.Tooltip = key end,
+			getTooltip = function(self) return self.data.Tooltip end,
 		}
 		self.items[#self.items + 1] = item
 		return item
 	end
-	function inv:AddItem(fullType) return self:add(fullType, {}) end
+	-- AddItem MAKES AN ITEM, and making an item in this game runs the creation hook
+	-- on it: Item.InstanceItem calls InventoryItem.initialiseItem() at 4059 and that
+	-- is what reaches `OnCreate` (the whole chain is over
+	-- CeroSecContent.onCreateFloppy). A fake that quietly handed back an undressed
+	-- item was a fake in which the drive could not be caught handing a survivor a
+	-- blank disk wearing a product's label -- the hook rolls one onto every floppy
+	-- the game makes, the eject's own one included.
+	function inv:AddItem(fullType)
+		local item = self:add(fullType, {})
+		if CeroSec.isFloppyType(fullType) then
+			CeroSecContent.onCreateFloppy(item)
+		end
+		return item
+	end
 	function inv:Remove(item)
 		for i = #self.items, 1, -1 do
 			if self.items[i] == item then table.remove(self.items, i) end
@@ -10225,7 +10247,11 @@ do
 	check("and it really is a new item, not the one that went in", back ~= labelled)
 	eq("wearing the label", back:getName(), "PAYROLL 93")
 	eq("as a custom name, or the game would not save it", back:isCustomName(), true)
-	eq("synced, so the other side of a multiplayer game sees it", back.synced, 1)
+	-- TWICE, and both of them are real: the shell is a new item, so the creation
+	-- hook ran on it and labelled it with a roll of its own, and then the eject put
+	-- the sticker that was actually in the drive on top. Take the eject's three
+	-- calls away and this is one.
+	eq("synced, so the other side of a multiplayer game sees it", back.synced, 2)
 	eq("and the record on it says the same thing", back:getModData().label, "PAYROLL 93")
 
 	-- Back in, and the label is still the label: it lives on the disk and survives
@@ -10484,7 +10510,16 @@ do
 		{ x = 0, y = 0, z = 0, token = "dbg-0-1", act = "givedisk" })
 	eq("the disk is in his bag", #inv.items, 1)
 	local item = inv.items[1]
-	eq("with the sticker on the shell", item:getName(), "CEROSEC DIAGNOSTICS")
+	eq("with the sticker on the shell", item:getName(), "CeroSec DIAGNOSTICS 1.0")
+	-- And the sticker is PRINTED, which the survivor can see without reading it:
+	-- the company's own service disk came out of the same factory as its software.
+	-- Marked off the label and not off the entry beside it, so this path and an
+	-- eject answer the question the same way (CeroSecContent.markByLabel).
+	eq("and the tooltip says it was printed", item:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	eq("and the shell wears the printed look",
+		item:getModData()[CeroSecContent.ICON_KEY],
+		CeroSec.floppyPrintedIcon(item:getFullType()))
 	check("and the game's own key on the item beside ours",
 		item:getModData().customName ~= nil)
 	check("and the receipt is a note and not a refusal",
@@ -10500,15 +10535,74 @@ do
 
 	-- And it is the diagnostics disk, by its own label and its own file.
 	eq("the sticker is the disk's label in the drive",
-		CeroSecOS.floppyOf(bench.object:osState()).label, "CEROSEC DIAGNOSTICS")
+		CeroSecOS.floppyOf(bench.object:osState()).label, "CeroSec DIAGNOSTICS 1.0")
 	bench.enter("mount /dev/fd0 /mnt")
 	bench.enter("mount")
 	bench.frame()
 	check("and mount names it on the glass",
-		bench.painted("/dev/fd0 on /mnt type ufs (rw) (CEROSEC DIAGNOSTICS)"))
+		bench.painted("/dev/fd0 on /mnt type ufs (rw) (CeroSec DIAGNOSTICS 1.0)"))
 	bench.enter("ls /mnt")
 	bench.frame()
 	check("with the self-test on it", bench.painted("selftest.sh"))
+
+	-- AND IT COMES BACK OUT LOOKING LIKE ITSELF. An insert DESTROYS the item and an
+	-- eject makes a NEW one, so everything the shell was wearing has to be put back
+	-- on the new one -- and that new one was made by inv:AddItem, which means the
+	-- creation hook ran on it and rolled it a disk of its own before the eject
+	-- overwrote the three keys a disk owns. The look the roll left behind is NOT one
+	-- of those three, so it is written over here on purpose and this is what says so.
+	bench.enter("umount /mnt")
+	bench.frame()
+	bench.send("ejectfloppy")
+	eq("the disk is back in his hands", #inv.items, 1)
+	local out = inv.items[1]
+	eq("with the printed sticker still on it", out:getName(),
+		"CeroSec DIAGNOSTICS 1.0")
+	eq("and still saying it was printed", out:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	eq("and still wearing the printed look",
+		out:getModData()[CeroSecContent.ICON_KEY],
+		CeroSec.floppyPrintedIcon(out:getFullType()))
+end
+
+--
+-- AND A DISK WITH NOTHING WRITTEN ON IT COMES OUT WEARING NOTHING (rung 4e)
+--
+-- The other half of the eject, and the one the roll can lie about: the item the
+-- drive hands back is made by inv:AddItem, the creation hook fires on it, and a
+-- roll that landed on a printed entry would have dressed the shell before the disk
+-- was written over it. A blank disk coming out with a product's icon on it is a
+-- disk claiming to be something it has not got a byte of.
+--
+do
+	local bench = newBench()
+	local inv = wireDrive(bench)
+	bench.login("admin")
+	-- A disk with nothing on it, made the way the bench makes one -- inv:add, which
+	-- is the container filling itself and not the game instancing an item, so
+	-- nothing has been rolled onto this one.
+	local blank = inv:add("CeroSec.FloppyBlue")
+	eq("it went in blank", blank:getModData().v, nil)
+	-- And the roll the EJECT's own item will meet, nailed to a printed entry rather
+	-- than left to the box: this is the case the guard exists for, and a bench that
+	-- took whatever the generator answered would be green for the wrong reason four
+	-- times in five.
+	local hadRand = _G.ZombRand
+	_G.ZombRand = function() return 0 end
+	local rolled = inv:AddItem("CeroSec.FloppyBlue")
+	eq("a fresh shell really is dressed by the hook", rolled:getTooltip(),
+		CeroSecContent.PRINTED_TOOLTIP)
+	inv:Remove(rolled)
+	bench.send("insertfloppy", { item = blank:getID() })
+	eq("the blank disk went in", bench.object:hasDisk(), true)
+	bench.send("ejectfloppy")
+	eq("and came back out", #inv.items, 1)
+	local out = inv.items[1]
+	eq("with nothing written on it", out:getModData().label, nil)
+	eq("nothing said about its label", out:getTooltip(), nil)
+	eq("and no printed look on the shell",
+		out:getModData()[CeroSecContent.ICON_KEY], nil)
+	_G.ZombRand = hadRand
 end
 
 --
@@ -13560,7 +13654,7 @@ do
 		eq("a disk is handed over with no machine selected", #inv.items, 1)
 		local item = inv.items[1]
 		check("it is one of our floppy items", CeroSec.isFloppyType(item:getFullType()))
-		eq("with the sticker on the shell", item:getName(), "CEROSEC DIAGNOSTICS")
+		eq("with the sticker on the shell", item:getName(), "CeroSec DIAGNOSTICS 1.0")
 		check("and the custom name flag set, so the game keeps it",
 			item:isCustomName())
 		check("and the fields synced", item.synced > 0)
