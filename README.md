@@ -45,7 +45,10 @@ Then enable **CeroSec** in the mod list.
 
 1. Right-click a desktop computer and choose **Turn on computer** (needs power).
 2. Right-click again for **Use computer** to sit down and open the terminal.
-3. At `login:`, use `admin` or `root`, both with an empty password — press Enter.
+3. At `login:`: on a machine nobody ever set up, `admin` with an empty password.
+   On somebody's machine (most of them), the accounts are the owner's: the root
+   password is on a sticky note in a drawer of that place, a staff login
+   sometimes on a paper in a zombie's pocket.
 4. `dev` lists what the machine can reach; `help` lists the commands. A door,
    window or light is only on that list once somebody has screwed a CeroSec
    module to it — right-click the fixture itself, **CeroSec hardware** — unless

@@ -925,7 +925,7 @@ en observant le jeu réel, pas par un banc de test.
      dossier où le compte a `x` sans `r` (`chmod 300 secret`), vérifier que Tab
      n'offre rien du tout et n'affiche aucune erreur. [ ]
 
-## L. Tubes, cron et `fg` (palier 5b)
+## L2. Tubes, cron et `fg` (palier 5b)
 
 166. Au shell : `ls /bin | wc` puis `ls /bin | grep sort`. La première ligne doit
      donner trois nombres (lignes, mots, octets) sans nom de fichier derrière,
