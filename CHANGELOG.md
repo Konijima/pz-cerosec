@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- A `$( )` is a shell of its own, the way it is on every other machine. What
+  you set inside one stays inside: `x=1; y=$(x=2; echo $x); echo $x` prints
+  `1`, an `export` inside a catch marks nobody else's environment, and
+  `echo $(cd /etc; pwd)` no longer leaves your prompt standing in /etc.
 - `cut` takes its flags the way you type them. `cut -d: -f1 /etc/passwd` used
   to answer a usage line; the value may now be stuck to the flag or stand
   apart, for `-d`, `-f` and `-c` alike, which is how every Unix has read that

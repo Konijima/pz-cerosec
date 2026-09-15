@@ -891,6 +891,35 @@ Note the quotes round $n there. Without them the value is split on blanks
 like anything else, which matters the day a catch comes back with a space
 in it.]],
 
+[[A catch is a machine of its own.
+
+What is inside the brackets runs in a SUBSHELL: a shell of its own, born
+with a copy of everything this one holds, and gone when the catch closes.
+So it may set what it likes and none of it comes back.
+
+  admin@ksp-04-11:~$ x=1
+  admin@ksp-04-11:~$ y=$(x=2; echo $x)
+  admin@ksp-04-11:~$ echo "$y $x"
+  2 1
+
+The subshell really did see the 2 -- that is what came out in y. The shell
+you are typing at never had it.
+
+The working directory goes the same way. cd inside a catch moves the
+subshell and nobody else:
+
+  admin@ksp-04-11:~$ echo $(cd /etc; pwd)
+  /etc
+  admin@ksp-04-11:~$ pwd
+  /home/admin
+
+Same rule as a pipe stage in chapter 7, and for the same reason: both are
+a shell that is not this one. Use it. A catch is where a line that has to
+move about belongs.
+
+Classic mistake. Writing x=1 inside a catch and expecting it outside. Put
+the value in the catch instead: x=$(...) is how it gets out.]],
+
 [[Arithmetic, in double round brackets.
 
 Dollar sign and two round brackets is a sum. It works on whole numbers

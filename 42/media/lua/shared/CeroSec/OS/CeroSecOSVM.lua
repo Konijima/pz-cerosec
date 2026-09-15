@@ -673,6 +673,25 @@ local function popFrame(job)
 		-- Newlines become spaces, the way every shell folds a substitution.
 		job.capval = trim(table.concat(buf or {}, " "))
 		job.hasCap = true
+		-- And the shell it was a SUBSHELL of comes back with its own variables.
+		-- POSIX.2: a command substitution is executed in a subshell environment,
+		-- so `x=1; y=$(x=2; echo $x); echo $x` prints 1 on every sh there has ever
+		-- been -- the 2 belonged to a process that is gone. It leaked here, because
+		-- a capture is a frame on the very job that asked for it and the job has one
+		-- table of variables.
+		if f.oldVars ~= nil then
+			job.vars = f.oldVars
+			job.nvars = f.oldNvars
+			-- nil is a value: a shell that never said which of its variables are the
+			-- environment gets that back and not the set the subshell was handed.
+			job.exported = f.oldExported
+			-- The working directory is the subshell's too. `cd` inside a $(...) moved
+			-- the shell that asked -- `echo $(cd /etc; pwd)` left the prompt standing
+			-- in /etc -- and on a real machine it cannot: the chdir was the child's.
+			-- Only the directory, because that is the whole of what `cd` moves; `su`
+			-- pushes on the CONSOLE's stack and is the console's to pop.
+			job.session.cwd = f.oldCwd
+		end
 	elseif f.deep then
 		-- A file that has finished: the shell that ran it comes back exactly as it
 		-- was. `deep` and not "it kept some arguments", because the dot command
@@ -922,9 +941,18 @@ local function expandStep(job, state, ex, env)
 				text = nil
 			elseif part.t == "sub" then
 				if not job.hasCap then
-					if not pushFrame(job, { k = "capture", prog = part.prog, i = 1 }) then
-						return nil, nil
-					end
+					-- A COPY of the shell's variables, because a $(...) is a SUBSHELL:
+					-- POSIX.2 runs a command substitution in a subshell environment, so
+					-- what it sets dies with it. Taken here, at the entry, and put back
+					-- in popFrame -- the same pair a stage of a pipeline gets from
+					-- newStage, written the other way round because a capture runs in the
+					-- job that asked for it instead of in a job of its own.
+					local frame = { k = "capture", prog = part.prog, i = 1,
+						oldVars = job.vars, oldNvars = job.nvars, oldExported = job.exported,
+						oldCwd = job.session.cwd }
+					if not pushFrame(job, frame) then return nil, nil end
+					job.vars = CeroSecOS.copyVars(job.vars)
+					job.exported = CeroSecOS.copyExported(job.exported)
 					job.caps[#job.caps + 1] = {}
 					return "sub"
 				end

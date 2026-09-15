@@ -3075,6 +3075,12 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `cut -c1-8 /etc/passwd` marche pareil, et `cut -d: -f-2 /etc/passwd` donne
      les deux premiers champs (le `-2` est la liste, pas une option). [ ]
 
+339c. **Un `$( )` est un sous-shell.** `x=1`, puis `y=$(x=2; echo $x)`, puis
+     `echo "$y $x"` → `2 1` : le sous-shell a bien vu le 2, le shell ne l'a
+     jamais eu. Pareil pour le répertoire : `echo $(cd /etc; pwd)` affiche
+     `/etc` et `pwd` juste après affiche encore `/home/admin`. Et
+     `export P=a`, `z=$(export P=b; echo $P)`, `env | grep P` → `P=a`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

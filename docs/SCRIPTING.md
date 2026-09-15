@@ -243,6 +243,18 @@ died with it, so `echo $x` after it prints nothing. Every shell behaves this way
 `x=$(cat notes | head -n 1)` is how you keep it. `$?` after a pipeline is the last
 stage's status, and `|` works inside `$(...)`.
 
+**And so is a `$( )`.** POSIX.2 runs a command substitution in a subshell
+environment, so what it sets dies with it: `x=1; y=$(x=2; echo $x); echo $x` prints
+`1`, and an `export` inside one marks the subshell's environment and not the
+shell's. A capture is a *frame on the job that asked for it* and not a job of its
+own — that is what makes its steps the asker's and its output the asker's word — so
+the copy is taken at the frame and put back when the frame pops (`expandStep`,
+`popFrame`), which is the same pair `newStage` gives a pipeline's stage written the
+other way round. The working directory goes with them, so `echo $(cd /etc; pwd)`
+prints `/etc` and leaves the prompt where it was standing. What a capture still
+shares is the `su` **stack**: that one belongs to the console, and popping it is the
+console's.
+
 A stage has no screen of its own, so `edit` in one is refused as it is in a
 background job, and a `read` whose input is not a pipe reads end of file. A command
 that has to *ask* something (`sudo`, `passwd`) is answered where an answer can reach

@@ -14786,4 +14786,67 @@ do
 	badAt(state, admin, "cat flood | more", "more: input too large")
 end
 
+-- 50a. A $(...) is a SUBSHELL, so what it sets dies with it (debts 2).
+--
+-- POSIX.2 runs a command substitution in a subshell environment. The classic
+-- line is `x=1; y=$(x=2; echo $x); echo $x`, which prints 1 on every sh there
+-- has ever been: the 2 belonged to a process that is gone. Here a capture is a
+-- frame on the job that asked for it, so it shared the job's one table of
+-- variables and the 2 came back out.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	ok(state, admin, "x=1", {})
+	ok(state, admin, "y=$(x=2; echo $x)", {})
+	-- Both halves in one line, so a reader can see that the SUBSHELL saw the 2 and
+	-- the shell did not: an assertion that only read $x could be green on a capture
+	-- that never ran at all.
+	ok(state, admin, "echo \"y=$y x=$x\"", { "y=2 x=1" })
+
+	-- A variable the subshell MAKES does not come back either -- the ceiling
+	-- counts it inside and not outside.
+	ok(state, admin, "echo $(fresh=1; echo $fresh)", { "1" })
+	ok(state, admin, "echo \"after=[$fresh]\"", { "after=[]" })
+
+	-- And the ENVIRONMENT is the same subshell: `export` inside one marks the
+	-- subshell's set, which is what a fork gives a child.
+	ok(state, admin, "export P=a", {})
+	ok(state, admin, "z=$(export P=b; echo $P)", {})
+	ok(state, admin, "echo \"z=$z P=$P\"", { "z=b P=a" })
+	-- The name is still exported out here and the VALUE is still the shell's.
+	local lines = ok(state, admin, "env", nil)
+	local sawP = false
+	for i = 1, #lines do
+		if lines[i] == "P=a" then sawP = true end
+		eq("no subshell's value reached the environment", lines[i] == "P=b", false)
+	end
+	eq("and the shell's own export survived the subshell", sawP, true)
+
+	-- Two captures in one word: the second is a subshell of the SHELL and not of
+	-- the first, so it cannot see what the first set.
+	ok(state, admin, "n=$(n=9; echo $n)-$(echo $n)", {})
+	ok(state, admin, "echo $n", { "9-" })
+
+	-- A capture inside a LOOP, run twice: the restore has to happen every time
+	-- round, not once. `k` is set inside and read outside on both turns.
+	ok(state, admin, "k=out", {})
+	ok(state, admin, "for i in 1 2; do v=$(k=in; echo $k); echo $v $k; done",
+		{ "in out", "in out" })
+
+	-- The working directory is the subshell's too, and the assertion reads BOTH
+	-- sides: the capture really did move (it printed /etc) and the shell did not.
+	ok(state, admin, "cd", {})
+	ok(state, admin, "echo $(cd /etc; pwd)", { "/etc" })
+	ok(state, admin, "pwd", { "/home/admin" })
+
+	-- A capture inside a SCRIPT, whose variables are its own: the script's `w`
+	-- survives its own capture and nothing reaches the shell that ran it.
+	put(state, admin, "/home/admin/sub.sh",
+		"w=file\nr=$(w=inner; echo $w)\necho $r $w\n")
+	ok(state, admin, "w=shell", {})
+	ok(state, admin, "sh sub.sh", { "inner file" })
+	ok(state, admin, "echo $w", { "shell" })
+end
+
 print("os_test: " .. count .. " assertions passed")
