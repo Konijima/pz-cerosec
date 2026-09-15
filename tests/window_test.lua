@@ -2531,6 +2531,23 @@ local FakeWorld = {}
 
 function FakeWorld.new()
 	local world = { squares = {}, rooms = {}, roomOrder = {} }
+	-- WHAT A WALK COSTS, in the only two things it is made of: the squares the
+	-- engine handed over and the objects looked at on them. A bench that timed the
+	-- pre-fitting would be timing this machine; the number of engine calls is the
+	-- thing the mall bench below is really about, so the fake counts them.
+	world.visits = { squares = 0, objects = 0 }
+	local function counted(items, field)
+		return {
+			size = function() return #items end,
+			get = function(_, i)
+				world.visits[field] = world.visits[field] + 1
+				return items[i + 1]
+			end,
+		}
+	end
+	world.forgetVisits = function()
+		world.visits.squares, world.visits.objects = 0, 0
+	end
 
 	world.getGridSquare = function(_, x, y, z)
 		return world.squares[x .. "," .. y .. "," .. z]
@@ -2538,12 +2555,28 @@ function FakeWorld.new()
 
 	-- A room, and the squares in it. The building is every room there is: a
 	-- square that belongs to a room belongs to the building.
+	--
+	-- It has an OUTLINE too, worked out from the squares put in it, because a real
+	-- RoomDef has one: the corner and the floor are what the tenancy rule groups
+	-- rooms by and what the pre-fitting names a room in a save by
+	-- (CeroSecNet.buildingRooms). x2 and y2 are exclusive, as the engine's are.
 	world.room = function(name, coords)
 		local room = { name = name, squares = {} }
 		world.rooms[name] = room
 		world.roomOrder[#world.roomOrder + 1] = room
 		room.getName = function() return name end
-		room.getSquares = function() return javaList(room.squares) end
+		room.getSquares = function() return counted(room.squares, "squares") end
+		for i = 1, #coords do
+			local x, y, z = coords[i][1], coords[i][2], coords[i][3]
+			if room.x == nil or x < room.x then room.x = x end
+			if room.y == nil or y < room.y then room.y = y end
+			if room.x2 == nil or x + 1 > room.x2 then room.x2 = x + 1 end
+			if room.y2 == nil or y + 1 > room.y2 then room.y2 = y + 1 end
+			if room.level == nil then room.level = z end
+		end
+		-- The SUM of the room's tiles, which is what RoomDef.getArea answers, and
+		-- not the box: a bench room is a handful of squares in a corner of it.
+		room.area = #coords
 		for i = 1, #coords do
 			local sq = world.square(coords[i][1], coords[i][2], coords[i][3], room)
 			room.squares[#room.squares + 1] = sq
@@ -2558,22 +2591,33 @@ function FakeWorld.new()
 	-- bench has no premises in it and wants none.
 	world.box = nil
 
+	-- A RoomDef, as the engine hands one over: the outline, the floor, the summed
+	-- area, and the LIVE room -- nil while its chunks are away, which is what
+	-- getIsoRoom answers (IsoMetaGrid.getRoomByID on the def's own id).
+	-- `world.loaded = false` takes the whole building away; `room.away = true` takes
+	-- one room, which is the state a building half streamed in is really in.
+	local function roomDef(room)
+		return {
+			getName = function() return room.name end,
+			getIsoRoom = function()
+				if world.loaded == false or room.away == true then return nil end
+				return room
+			end,
+			getX = function() return room.x end,
+			getY = function() return room.y end,
+			getX2 = function() return room.x2 end,
+			getY2 = function() return room.y2 end,
+			getZ = function() return room.level end,
+			getArea = function() return room.area end,
+		}
+	end
+	world.roomDef = roomDef
+
 	world.building = {
 		getDef = function()
 			local defs = {}
 			for i = 1, #world.roomOrder do
-				local room = world.roomOrder[i]
-				-- A room whose chunks are away answers NO live room, which is what a
-				-- RoomDef does (getIsoRoom -> nil). `world.loaded = false` takes the whole
-				-- building away; `room.away = true` takes one room, which is the state a
-				-- building half streamed in is really in.
-				defs[i] = {
-					getName = function() return room.name end,
-					getIsoRoom = function()
-						if world.loaded == false or room.away == true then return nil end
-						return room
-					end,
-				}
+				defs[i] = roomDef(world.roomOrder[i])
 			end
 			local def = { getRooms = function() return javaList(defs) end }
 			if world.box ~= nil then
@@ -2605,8 +2649,16 @@ function FakeWorld.new()
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
 		sq.getRoom = function() return room end
+		-- The square's own RoomDef, which is the door CeroSecNet.roomDefAt goes
+		-- through: IsoGridSquare.getRoomDef is getRoom() and then
+		-- IsoRoom.getRoomDef(), null without a room. It is what decides WHICH
+		-- tenancy of a mall a square belongs to.
+		sq.getRoomDef = function()
+			if room == nil then return nil end
+			return roomDef(room)
+		end
 		sq.getBuilding = function() if room ~= nil then return world.building end return nil end
-		sq.getObjects = function() return javaList(sq.objects) end
+		sq.getObjects = function() return counted(sq.objects, "objects") end
 		sq.getWorldObjects = function() return javaList(sq.items) end
 		sq.getMovingObjects = function() return javaList(sq.bodies) end
 		-- The wire, asked the way the game's own Lua asks it
@@ -14963,6 +15015,13 @@ do
 	-- two lights are the only lights there are, which is what makes them light0 and
 	-- light1 -- the very names the store profile's crontab was written with.
 	local function newShop(bx, by)
+		-- A new world is a new county, and the building cache is keyed on the
+		-- building's CORNER: every shop in this section is searched for and the
+		-- search answers the same corner every time, so without this the second
+		-- shop would be handed the first shop's rooms -- and its RoomDefs, which
+		-- answer with the first world's squares. The game does the same thing at
+		-- the same moment, for the same reason (CeroSecNet.forgetTenancies).
+		CeroSecNet.forgetTenancies()
 		local world = FakeWorld.new()
 		world.box = { x = bx, y = by, w = 10, h = 10 }
 		local kit = { world = world, bx = bx, by = by }
@@ -15573,6 +15632,209 @@ do
 		eq("nothing was written for it", county.system.auto ~= nil
 			and next(county.system.auto) or nil, nil)
 		eq("and it stays off", machine.on, false)
+	end
+
+	--
+	-- 12. A FIVE-HUNDRED-ROOM MALL, WHOSE CHUNKS NEVER ALL ARRIVE AT ONCE
+	--
+	-- The defect this bench owns, in one sentence: the pre-fitting walked the WHOLE
+	-- building every game minute and only ever called itself finished on a pass where
+	-- every room of it answered a live room TOGETHER -- which on a mall no player's
+	-- chunk radius covers is a pass that never comes, so the mall was re-walked room
+	-- by room, square by square, object by object, every minute for as long as the
+	-- carrier machine was on, and independently for every automated premises in it.
+	--
+	-- The mall here is the shape of the shipped ones in miniature: thirty shops of
+	-- sixteen rooms each and twenty halls, five hundred rooms, a thousand squares, a
+	-- light switch on every one of them. The streamer rolls -- twenty rooms in the
+	-- world at a time and twenty DIFFERENT ones every minute -- so the old walk could
+	-- not finish here at all and the new one has to finish without ever seeing the
+	-- building whole.
+	--
+	-- What is asserted is the COUNT OF ENGINE CALLS and not a clock: what was wrong
+	-- was the number of squares and objects handed over, a bench that timed it would
+	-- be timing this machine, and the fake counts both (FakeWorld's `visits`).
+	--
+	do
+		_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = true } }
+		local SHOPS, PER_SHOP, HALLS = 30, 16, 20
+		local SQUARES_PER_ROOM = 2
+		local CARRIER = 3
+		-- Every shop wears the same name, and they are still thirty tenancies: two
+		-- rooms of one name are one shop only where they share a WALL, and the shops
+		-- are laid out a tile apart (CeroSecNet.tenancies).
+		local TRADE = "clothsstore"
+
+		-- The corner of the shop that carries the timer is its room nearest the
+		-- origin, which is the tenancy's anchor and therefore the premises' own key
+		-- (CeroSecNet.tenancyAnchor). Searched for, like every other roll in this
+		-- section: the honest way to get a mall whose third shop was automated is to
+		-- walk the county until one turns up.
+		local function mallRolling()
+			for i = 0, 400 do
+				local bx, by = 9000 + i * 23, 5000 + i * 11
+				local b1, b2 = CeroSecOS.roomKey(bx, by, bx + CARRIER * 3, by, 0)
+				if b1 ~= nil and CeroSecContent.automated(SECRET, b1, b2, "store") then
+					return bx, by, b1, b2
+				end
+			end
+			return nil
+		end
+		local bx, by, b1, b2 = mallRolling()
+		check("some mall in the county has an automated shop in it", bx ~= nil)
+
+		CeroSecNet.forgetTenancies()
+		local world = FakeWorld.new()
+		world.box = { x = bx, y = by, w = 200, h = 200 }
+		-- Nothing is in the world to begin with: the survivor is walking up to it.
+		world.loaded = true
+		local lights = {}
+		for s = 0, SHOPS - 1 do
+			lights[s] = {}
+			for r = 0, PER_SHOP - 1 do
+				local x0, y0 = bx + s * 3, by + r
+				local room = world.room(TRADE, { { x0, y0, 0 }, { x0 + 1, y0, 0 } })
+				room.away = true
+				-- A switch on each of its two squares, so what a walked room costs is
+				-- two squares and two objects and the arithmetic below is the room's.
+				lights[s][r] = {
+					world.put(world.squares[x0 .. "," .. y0 .. ",0"], fakeLight(true, true)),
+					world.put(world.squares[(x0 + 1) .. "," .. y0 .. ",0"],
+						fakeLight(true, true)),
+				}
+			end
+		end
+		-- The common parts, which are nobody's and are never any premises' rooms.
+		for h = 1, HALLS do
+			local x0, y0 = bx + 150, by + h
+			local room = world.room("hall" .. h, { { x0, y0, 0 }, { x0 + 1, y0, 0 } })
+			room.away = true
+			world.put(world.squares[x0 .. "," .. y0 .. ",0"], fakeLight(true, true))
+			world.put(world.squares[(x0 + 1) .. "," .. y0 .. ",0"], fakeLight(true, true))
+		end
+		local order = world.roomOrder
+		eq("the mall has five hundred rooms", #order, SHOPS * PER_SHOP + HALLS)
+
+		-- THE RULE FIRST: thirty shops and not one, and not five hundred. Asserted
+		-- because every count below would be green on a mall the rule read as one
+		-- premises -- which is the bug premises v2 was written for.
+		local groups = CeroSecNet.tenanciesOf(world.building:getDef())
+		eq("and thirty tenancies in it", #groups, SHOPS)
+
+		_G.__world = world
+		local county = newCounty({ world = world })
+		-- The carrier's own machine, on the second square of its shop's first room.
+		local machine = county.machine(bx + CARRIER * 3 + 1, by, 0)
+
+		-- The streamer: twenty rooms live, rolling by twenty a minute, so the mall is
+		-- never in the world at once and each room comes back only after a full turn
+		-- of the building. The shops were created one after the other, so a window
+		-- lands mostly inside ONE shop -- which is what makes a minute where more of
+		-- this premises' rooms are live than the cap allows, and that minute is the
+		-- one the per-minute assertion below is about.
+		local LIVE = 20
+		local function stream(minute)
+			local n = #order
+			for i = 1, n do order[i].away = true end
+			local first = ((minute - 1) * LIVE) % n
+			for k = 0, LIVE - 1 do order[(first + k) % n + 1].away = nil end
+		end
+
+		-- A quiet hour: the store's crontab fires at nine at night and seven in the
+		-- morning, and a line that reaches for /dev walks the building itself
+		-- (CeroSecDevices.find) -- which would be a second walk in the counts below.
+		county.at(2, 0)
+		stream(1)
+		_G.__fireSquare("new", machine.square)
+		world.forgetVisits()
+		county.minute()
+		local record = pageOf(county.system, b1, b2)
+		check("the mall's third shop was automated", type(record) == "table"
+			and record.on == true)
+		eq("and its machine is the one that was left running", record.machine.x,
+			bx + CARRIER * 3 + 1)
+		eq("the first minute did not call the premises finished", record.wired, nil)
+
+		-- THE MINUTES. Every one of them measured on its own, so the assertion is
+		-- about the worst minute and not about an average that a cheap minute pays for.
+		local worstSquares, worstObjects = 0, 0
+		local totalSquares, totalObjects = world.visits.squares, world.visits.objects
+		local wiredAt = record.wired and 1 or nil
+		local seenAt5 = nil
+		for m = 2, 40 do
+			stream(m)
+			world.forgetVisits()
+			county.minute()
+			local sq, ob = world.visits.squares, world.visits.objects
+			if sq > worstSquares then worstSquares = sq end
+			if ob > worstObjects then worstObjects = ob end
+			totalSquares, totalObjects = totalSquares + sq, totalObjects + ob
+			if m == 5 then seenAt5 = record.wired end
+			if wiredAt == nil and record.wired == true then wiredAt = m end
+		end
+
+		-- (i) NO MINUTE COSTS MORE THAN THE CAP, which is the whole of the fix.
+		-- Equality and not "under": a bench where the cap was never reached would be
+		-- green on a walk with no cap in it at all, and the streaming above is
+		-- arranged so that one minute really does have more of this premises' rooms
+		-- in the world than it is allowed to walk.
+		eq("the worst minute walks exactly the cap's worth of rooms (" ..
+			worstSquares .. " squares)",
+			worstSquares, CeroSecAuto.ROOMS_PER_MINUTE * SQUARES_PER_ROOM)
+		check("and no minute looked at more objects than that (" .. worstObjects .. ")",
+			worstObjects <= CeroSecAuto.ROOMS_PER_MINUTE * SQUARES_PER_ROOM + 1)
+
+		-- (ii) NO ROOM IS WALKED TWICE. The premises has sixteen rooms of two squares,
+		-- so the whole of the wiring costs thirty-two squares -- ONCE, over the forty
+		-- minutes -- and one object per square plus the computer standing on its own.
+		eq("the whole wiring cost the premises' rooms and no more (" ..
+			totalSquares .. " squares over " .. #order .. " rooms of mall)",
+			totalSquares, PER_SHOP * SQUARES_PER_ROOM)
+		eq("and one object a square, plus the computer on its own square (" ..
+			totalObjects .. ")", totalObjects, PER_SHOP * SQUARES_PER_ROOM + 1)
+
+		-- (iii) IT CONVERGES, in a bounded number of minutes, and not on the first
+		-- one: a premises that called itself finished before its rooms had arrived
+		-- would leave a shop with half its relays for ever. More than one turn of the
+		-- streamer, because the cap defers rooms it saw and may not walk and the set
+		-- is what brings it back to them.
+		check("the premises finishes wiring itself (minute " .. tostring(wiredAt) .. ")",
+			wiredAt ~= nil)
+		check("and it took more than one turn of the streamer to do it",
+			wiredAt ~= nil and wiredAt > 5)
+		eq("so it was not finished at minute five", seenAt5, nil)
+		eq("and the room set is dropped the minute it is", record.rooms, nil)
+
+		-- (iv) AND THE OTHER TWENTY-NINE SHOPS ARE UNTOUCHED. The premises' own
+		-- sixteen rooms are wired, and nothing else in the mall is: a mall wired
+		-- because one shop of it had a timer would be relays in twenty-nine other
+		-- people's premises.
+		local mineFitted, mineBare = 0, 0
+		for r = 0, PER_SHOP - 1 do
+			for i = 1, SQUARES_PER_ROOM do
+				if CeroSecModules.installedOn(lights[CARRIER][r][i]).relay == true then
+					mineFitted = mineFitted + 1
+				else
+					mineBare = mineBare + 1
+				end
+			end
+		end
+		eq("every switch of the automated shop has its relay",
+			mineFitted, PER_SHOP * SQUARES_PER_ROOM)
+		eq("and not one of them was missed", mineBare, 0)
+		local elsewhere = 0
+		for s = 0, SHOPS - 1 do
+			if s ~= CARRIER then
+				for r = 0, PER_SHOP - 1 do
+					for i = 1, SQUARES_PER_ROOM do
+						if CeroSecModules.installedOn(lights[s][r][i]).relay ~= nil then
+							elsewhere = elsewhere + 1
+						end
+					end
+				end
+			end
+		end
+		eq("and no other shop in the mall grew one", elsewhere, 0)
 	end
 
 	_G.__zones, _G.getWorld, _G.__world = hadZones, hadWorld, hadCell

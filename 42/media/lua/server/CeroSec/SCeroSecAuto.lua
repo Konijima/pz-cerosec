@@ -80,6 +80,8 @@ require "CeroSec/SCeroSecNet"
 --     on      = true / false   -- was this premises automated at all
 --     machine = { x=, y=, z= } -- which of its computers was left running
 --     wired   = true           -- and its fixtures have all been fitted
+--     rooms   = { [tag] = true } -- the rooms already walked, while it is not
+--                                -- finished; dropped the minute it is
 --   }
 --
 -- `on = false` is written and kept, and that is deliberate: the roll is a hash and
@@ -170,27 +172,84 @@ function CeroSecAuto.fit(object)
 	return CeroSecModules.markPreFitted(object)
 end
 
+-- How many rooms of one premises the sweep walks in one game minute. The bound
+-- on the whole of this, and it is a bound on ENGINE calls: a room costs its
+-- squares and their objects, and eight rooms is the biggest shop in the county
+-- twice over. A premises of more rooms than this takes several minutes to finish
+-- and that is invisible -- the relays were screwed on in 1991 and nothing a
+-- player can see happens at the moment one is written.
+CeroSecAuto.ROOMS_PER_MINUTE = 8
+
+-- WHICH ROOMS ARE THIS PREMISES', asked of the machine's own square through the
+-- one rule there is about what a premises is (CeroSecNet.premisesOfSquare), and
+-- narrowed to the TENANCY only where the premises really is a tenancy: a shop in
+-- a mall is the rooms of its own group, and everything else -- a house, a school,
+-- a shop with a back office, and a named ZONE inside a bigger building -- is the
+-- building's rooms. A zone is not narrowed because its rooms are not a group the
+-- room rule knows about, and walking the building's is the conservative answer:
+-- more rooms, walked once each, and the fixtures still sifted one by one below.
+--
+-- nil when the world cannot say, which is a machine whose premises has moved out
+-- from under it and a minute where nothing is walked.
+local function premisesRoomsOf(square, b1, b2)
+	local q1, q2, _, _, kind = CeroSecNet.premisesOfSquare(square)
+	if q1 ~= b1 or q2 ~= b2 then return nil end
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
+	if def == nil then return nil end
+	if kind == CeroSecOS.PREMISES_ROOM then
+		return CeroSecNet.tenantOfRoom(CeroSecNet.tenanciesOf(def),
+			CeroSecNet.roomDefAt(square))
+	end
+	return CeroSecNet.roomsOf(def)
+end
+
 -- Fit whatever of this premises' fixtures the world can answer for right now, and
--- write down that it is finished when the world could answer for all of them.
+-- write down that it is finished when every room of it has been walked once.
 --
--- THE WALK IS THE BUILDING'S, because that is what a machine can act on
--- (CeroSecDevices.fixtures), and the fixtures are then sifted back down to THIS
--- premises: a shop inside a mall is one tenancy of thirty, and wiring the mall
--- because one shop of it had a timer would put relays in twenty-nine other
--- people's premises. The sift asks the one rule there is about what a premises is,
--- of each fixture's own square (CeroSecNet.premisesOfSquare) -- and of fixtures
--- only, never of every square of the building, because that question costs a zone
--- lookup and there are four hundred squares to a shop and a dozen fixtures.
+-- THE WALK IS THE PREMISES' ROOMS, a few of them per minute, and each room is
+-- walked ONCE IN THE LIFE OF THE PREMISES (CeroSecDevices.fixturesInRooms). The
+-- fixtures are then sifted back down to this premises all the same: the sift asks
+-- the one rule there is about what a premises is, of each fixture's own square
+-- (CeroSecNet.premisesOfSquare) -- and of fixtures only, never of every square of
+-- the building, because that question costs a zone lookup and there are four
+-- hundred squares to a shop and a dozen fixtures. A room of the building that is
+-- nobody's, or another tenancy's, therefore grows no relays even where the room
+-- list is the building's.
 --
--- IN ANY CHUNK ORDER. A building's rooms come into the world as the streamer
--- brings their chunks in, and a RoomDef whose chunks are away answers no live room
--- at all. So this comes back next minute while any room of the building was
--- missing, and never comes back once every one of them answered -- which is the
--- second thing CeroSecDevices.fixtures answers and the only reason it answers it.
+-- IN ANY CHUNK ORDER, and that is what this is for. A building's rooms come into
+-- the world as the streamer brings their chunks in, and a RoomDef whose chunks are
+-- away answers no live room at all. This used to walk the WHOLE building every
+-- minute and only finish on a pass where every room of it answered at once -- which
+-- on a five-hundred-room mall is a pass no player's chunk radius ever gives, so the
+-- mall was re-walked room by room, square by square, object by object, every game
+-- minute for as long as the carrier machine was on. Now a room that answered is
+-- written down (`record.rooms`, the set of tags) and never asked again, and the
+-- premises is finished when the set covers it -- which happens whatever order the
+-- chunks arrive in and cannot fail to happen.
+--
+-- THE SET IS SPENT WHEN IT IS FULL and is dropped then, so what a finished premises
+-- costs in gos_cerosec.bin is the three fields it always cost. It is read with a
+-- default and written only under a record that is not `wired` (CeroSecAuto.wire
+-- returns before this for one that is), so a save from before this change -- which
+-- has no set and may have `wired` already -- reads exactly as it did.
 --
 -- Answers how many fixtures were fitted.
 local function wirePremises(luaObject, b1, b2, record)
-	local list, whole = CeroSecDevices.fixtures(luaObject.x, luaObject.y, luaObject.z)
+	-- No square, no world to ask: a machine whose chunk is away costs the two table
+	-- lookups in CeroSecAuto.wire and this one test, and is asked again next minute.
+	local square = luaObject:getSquare()
+	if square == nil then return 0 end
+	local rooms = premisesRoomsOf(square, b1, b2)
+	if rooms == nil or #rooms == 0 then return 0 end
+
+	if type(record.rooms) ~= "table" then record.rooms = {} end
+	local done = record.rooms
+	local list, walked = CeroSecDevices.fixturesInRooms(rooms, done,
+		CeroSecAuto.ROOMS_PER_MINUTE)
+	for i = 1, #walked do done[walked[i]] = true end
+
 	local fitted = 0
 	for i = 1, #list do
 		local object = list[i].object
@@ -201,7 +260,18 @@ local function wirePremises(luaObject, b1, b2, record)
 			end
 		end
 	end
-	if whole then record.wired = true end
+
+	-- Finished only when the SET covers the premises. Counted over the room list
+	-- and not over the set: a basement spawned under the building after the fact
+	-- adds a room, and a count of tags would have said "done" with it unwalked.
+	local whole = true
+	for i = 1, #rooms do
+		if rooms[i].tag == nil or not done[rooms[i].tag] then whole = false end
+	end
+	if whole then
+		record.wired = true
+		record.rooms = nil
+	end
 	if fitted > 0 then
 		CeroSec.log("the premises " .. b1 .. "." .. b2 .. " was already wired: "
 			.. fitted .. " fixture(s) got their modules")

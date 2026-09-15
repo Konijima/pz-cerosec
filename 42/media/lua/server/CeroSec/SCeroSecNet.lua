@@ -275,6 +275,24 @@ end
 -- nil for a def that will not list them, which is a building this rule cannot ask
 -- anything about and is therefore one premises -- the answer this rung had before
 -- there were tenancies in it.
+--
+-- Each entry carries two things beside its geometry, for the one caller that has
+-- to come back to the SAME room in a later minute (CeroSecAuto's pre-fitting):
+--
+--   tag  the room's name in a save, which is its corner, its floor and its own
+--        name -- the four fields tenantOfRoom compares to decide two rooms are
+--        one room. NOT RoomDef.getID(): that `id` field is filled by
+--        NewMapBinaryFile with RoomID.makeID(cellX, cellY, rooms.size()), an
+--        INDEX into the cell's room map at the moment it was read (javap on
+--        42.20.4), and zombie.basements.Basements builds RoomDefs of its own into
+--        the same cell -- so the number names a position in a list and not a
+--        room, and a set of them written into a save would be a set about
+--        somebody else's rooms on the next load.
+--   def  the RoomDef itself, which is the only way to ask whether the room is in
+--        the world right now (getIsoRoom -> IsoMetaGrid.getRoomByID, null while
+--        its chunks are away). Held for the session like the rest of the entry:
+--        the metagrid holds the same object for as long as the map is loaded, and
+--        the cache below is emptied when a world goes.
 function CeroSecNet.buildingRooms(def)
 	if def == nil or def.getRooms == nil then return nil end
 	local list = def:getRooms()
@@ -295,8 +313,11 @@ function CeroSecNet.buildingRooms(def)
 				-- every shop is and never zero for a room that covers something.
 				if type(area) ~= "number" then area = (x2 - x) * (y2 - y) end
 				if type(level) ~= "number" then level = 0 end
+				-- The name LAST, so a room whose name holds the separator cannot
+				-- shift the three numbers in front of it.
 				out[#out + 1] = { name = name, x = x, y = y, x2 = x2, y2 = y2,
-					level = level, area = area }
+					level = level, area = area, def = room,
+					tag = level .. ":" .. x .. ":" .. y .. ":" .. name }
 			end
 		end
 	end
@@ -402,6 +423,11 @@ end
 -- whole rung already runs on (CeroSecOS.buildingKey, and the record on every disk),
 -- and a table key that is a Java object handed across the Kahlua boundary is an
 -- identity nobody here has proved, while two integers are.
+--
+-- THREE ANSWERS, ONE ENTRY. Everything derived from BuildingDef.rooms hangs on the
+-- same entry -- the room list, the tenancies, the names -- because all three go
+-- stale on the same event and against the same cheap test, and one entry per
+-- building is one ceiling to keep rather than three to keep in step.
 local tenancyCache = {}
 local tenancyCacheCount = 0
 
@@ -411,33 +437,54 @@ local tenancyCacheCount = 0
 -- a few hundred, so a clear costs one rebuild of whatever is being looked at.
 CeroSecNet.TENANCY_CACHE_MAX = 512
 
-function CeroSecNet.tenanciesOf(def)
-	if def == nil then return {} end
+-- The entry for one building, empty on the first question and rebuilt whenever the
+-- room count has moved. nil for a def nothing can be invalidated against -- no
+-- corner, or no count -- which is a def that is answered fresh every time rather
+-- than cached for ever.
+local function cacheEntry(def)
+	if def.getX == nil or def.getY == nil then return nil end
 	local bx, by = def:getX(), def:getY()
-	if type(bx) ~= "number" or type(by) ~= "number" then return {} end
-	-- The count the entry was built from, or nil for a def that will not say -- and a
-	-- def that will not say is one nothing can be invalidated against, so it is not
-	-- cached at all rather than cached for ever.
-	local n = nil
-	if def.getRoomsNumber ~= nil then
-		n = def:getRoomsNumber()
-		if type(n) ~= "number" then n = nil end
-	end
+	if type(bx) ~= "number" or type(by) ~= "number" then return nil end
+	if def.getRoomsNumber == nil then return nil end
+	local n = def:getRoomsNumber()
+	if type(n) ~= "number" then return nil end
 	local key = bx .. "," .. by
 	local entry = tenancyCache[key]
-	if entry ~= nil and n ~= nil and entry.n == n then return entry.groups end
-
-	local groups = CeroSecNet.tenancies(CeroSecNet.buildingRooms(def))
-	if n ~= nil then
-		if entry == nil then
-			if tenancyCacheCount >= CeroSecNet.TENANCY_CACHE_MAX then
-				tenancyCache = {}
-				tenancyCacheCount = 0
-			end
-			tenancyCacheCount = tenancyCacheCount + 1
+	if entry ~= nil and entry.n == n then return entry end
+	-- A building already in the cache whose count has moved takes its own place
+	-- back; only a building that was not in it costs a place.
+	if entry == nil then
+		if tenancyCacheCount >= CeroSecNet.TENANCY_CACHE_MAX then
+			tenancyCache = {}
+			tenancyCacheCount = 0
 		end
-		tenancyCache[key] = { n = n, groups = groups }
+		tenancyCacheCount = tenancyCacheCount + 1
 	end
+	entry = { n = n }
+	tenancyCache[key] = entry
+	return entry
+end
+
+-- The rooms of a building, cached. The one walk of getRooms there is: 736 rooms in
+-- one of the shipped malls, and the tenancies, the names and the pre-fitting all
+-- want the same list.
+function CeroSecNet.roomsOf(def)
+	if def == nil then return nil end
+	local entry = cacheEntry(def)
+	if entry ~= nil and entry.rooms ~= nil then return entry.rooms end
+	local rooms = CeroSecNet.buildingRooms(def)
+	-- nil is not cached: it is the answer for a def that will not list its rooms,
+	-- which costs nothing to give again.
+	if entry ~= nil and rooms ~= nil then entry.rooms = rooms end
+	return rooms
+end
+
+function CeroSecNet.tenanciesOf(def)
+	if def == nil then return {} end
+	local entry = cacheEntry(def)
+	if entry ~= nil and entry.groups ~= nil then return entry.groups end
+	local groups = CeroSecNet.tenancies(CeroSecNet.roomsOf(def))
+	if entry ~= nil then entry.groups = groups end
 	return groups
 end
 

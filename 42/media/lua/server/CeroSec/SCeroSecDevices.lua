@@ -536,11 +536,11 @@ end
 -- and a RoomDef answers getIsoRoom() with the live room -- nil while its chunks are
 -- not loaded, which is a room the machine cannot act on.
 --
--- The second answer is what a room like that costs, and it has a caller: the
--- pre-fitting walk (CeroSecAuto.wire) has to come back next minute if any room of
--- the building was away, and must never come back again once every one of them
--- answered. `false` therefore means "a room of this building was not in the world",
--- which is a different thing from "the building has no rooms".
+-- The second answer is what a room like that costs, and its caller is the device
+-- walk below: /dev is what the machine can reach RIGHT NOW, so a room that was
+-- away is a room whose doors are not on the machine. `false` therefore means "a
+-- room of this building was not in the world", which is a different thing from
+-- "the building has no rooms".
 local function eachBuildingSquare(building, fn)
 	local def = building:getDef()
 	local rooms = nil
@@ -565,35 +565,54 @@ local function eachBuildingSquare(building, fn)
 	return whole
 end
 
--- Every FIXTURE a module of ours could go on in the building the machine at x, y, z
--- stands in, and whether every room of it was in the world for the walk.
+-- Every FIXTURE a module of ours could go on in at most `max` of these rooms, and
+-- the tags of the rooms it actually walked.
 --
 -- Here rather than in the automation that wants it because the walk is this file's
--- rule: what a machine can act on is the building it stands in, and there is one
--- place that says so. The BUILDING branch and no other -- a machine in no building
--- is in no premises either (CeroSecNet.premisesOfSquare), so there is nothing for
--- the automation to have decided about it.
-function CeroSecDevices.fixtures(x, y, z)
-	local out = {}
-	if getCell == nil then return out, false end
-	local cell = getCell()
-	if cell == nil then return out, false end
-	local square = cell:getGridSquare(x, y, z)
-	if square == nil then return out, false end
-	local building = square:getBuilding()
-	if building == nil then return out, false end
-	local whole = eachBuildingSquare(building, function(sq)
-		if sq == nil then return end
-		local objects = sq:getObjects()
-		if objects == nil then return end
-		for i = 0, objects:size() - 1 do
-			local object = objects:get(i)
-			if CeroSecModules.isFittable(object) then
-				out[#out + 1] = { object = object, square = sq }
+-- rule: a fixture is a thing on a square of a room, and there is one place that
+-- says how to find one. WHICH rooms is the caller's, and it is the premises' own
+-- (CeroSecAuto) -- a shop in a mall is one tenancy of thirty and the other
+-- twenty-nine are somebody else's rooms.
+--
+-- `done` is the set of room tags already walked in an earlier minute and `max` is
+-- how many may be walked in this one. A room whose chunks are away answers no live
+-- room and is simply left for a later minute: it costs nothing and does NOT count
+-- against `max`, because nothing was walked. That is the whole of what makes the
+-- pre-fitting converge -- a five-hundred-room mall is never in the world at once,
+-- so "every room answered in one pass" never happened and the mall was re-walked
+-- every game minute for ever (see the head of CeroSecAuto.wire).
+function CeroSecDevices.fixturesInRooms(rooms, done, max)
+	local out, walked = {}, {}
+	if rooms == nil or done == nil then return out, walked end
+	for i = 1, #rooms do
+		if #walked >= max then return out, walked end
+		local room = rooms[i]
+		local tag = room.tag
+		if tag ~= nil and not done[tag] and room.def ~= nil and room.def.getIsoRoom ~= nil then
+			local live = room.def:getIsoRoom()
+			local squares = live ~= nil and live:getSquares() or nil
+			if squares ~= nil then
+				for j = 0, squares:size() - 1 do
+					local sq = squares:get(j)
+					if sq ~= nil then
+						local objects = sq:getObjects()
+						if objects ~= nil then
+							for k = 0, objects:size() - 1 do
+								local object = objects:get(k)
+								if CeroSecModules.isFittable(object) then
+									out[#out + 1] = { object = object, square = sq }
+								end
+							end
+						end
+					end
+				end
+				-- Walked, and never walked again: the tag goes into the premises'
+				-- own record and the caller writes it there.
+				walked[#walked + 1] = tag
 			end
 		end
-	end)
-	return out, whole
+	end
+	return out, walked
 end
 
 -- Every device the machine at x, y, z can reach right now, unnumbered.
