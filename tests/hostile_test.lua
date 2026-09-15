@@ -65,6 +65,19 @@ local FILES = {
 	"42/media/lua/server/CeroSec/SCeroSecJobs.lua",
 	"42/media/lua/server/CeroSec/SCeroSecSensors.lua",
 	"42/media/lua/server/CeroSec/SCeroSecRadio.lua",
+	-- And the SERVER itself, for the county block at the foot of this file: the
+	-- minute sweep and the watcher table are the two things in this mod whose cost
+	-- is paid by every machine in Knox County at once, and neither of them can be
+	-- reached through the three-table fake the scheduler benches run on. Loaded in
+	-- the game's own order, after the OS core and the layers they call into.
+	"42/media/lua/shared/CeroSec/CeroSecModules.lua",
+	"42/media/lua/shared/CeroSec/CeroSecContent.lua",
+	"42/media/lua/shared/CeroSec/CeroSecPhonebook.lua",
+	"42/media/lua/server/CeroSec/SCeroSecDevices.lua",
+	"42/media/lua/server/CeroSec/SCeroSecAuto.lua",
+	"42/media/lua/server/CeroSec/SCeroSecDebug.lua",
+	"42/media/lua/server/CeroSec/SCeroSecObject.lua",
+	"42/media/lua/server/CeroSec/SCeroSecSystem.lua",
 }
 -- What the sensor pass asks of the game, and nothing else: a cell to look squares
 -- up in, and a class test. Both nil-safe, so every bench in this file that is not
@@ -74,6 +87,73 @@ _G.getCell = function() return _G.__world end
 _G.instanceof = function(object, class)
 	return type(object) == "table" and object.__class == class
 end
+
+--
+-- The two base classes the server's own files derive from, and the handful of
+-- engine calls their top level makes. Vanilla's, copied rather than approximated,
+-- because the county block below is about what the system does with the objects it
+-- holds: SGlobalObject.new hands back the GlobalObject's OWN modData table -- which
+-- is what the save file was read into -- and that is the whole reason a machine
+-- loaded from a save arrives with `on` already set (media/lua/server/Map/
+-- SGlobalObject.lua:63-79 and SGlobalObjectSystem.lua:11-53 on 42.20.4).
+--
+local function derive(base, name)
+	local o = {}
+	for key, value in pairs(base) do o[key] = value end
+	o.Type = name
+	o.__index = o
+	o.derive = base.derive
+	return o
+end
+
+SGlobalObject = { derive = function(self, name) return derive(self, name) end }
+SGlobalObject.new = function(self, luaSystem, globalObject)
+	local o = globalObject:getModData()
+	setmetatable(o, self)
+	self.__index = self
+	o.luaSystem = luaSystem
+	o.globalObject = globalObject
+	o.x, o.y, o.z = globalObject:getX(), globalObject:getY(), globalObject:getZ()
+	return o
+end
+SGlobalObject.aboutToRemoveFromSystem = function() end
+
+SGlobalObjectSystem = { derive = function(self, name) return derive(self, name) end }
+SGlobalObjectSystem.new = function(self, name)
+	local o = setmetatable({}, self)
+	o.systemName = name
+	o.system = {
+		setModDataKeys = function(s, keys) s.modDataKeys = keys end,
+		setObjectModDataKeys = function(s, keys) s.objectModDataKeys = keys end,
+		setObjectSyncKeys = function(s, keys) s.syncKeys = keys end,
+		sendCommand = function() end,
+	}
+	o:initSystem()
+	return o
+end
+SGlobalObjectSystem.initSystem = function() end
+SGlobalObjectSystem.RegisterSystemClass = function() end
+SGlobalObjectSystem.newLuaObjectOnClient = function() end
+-- The sprite registrations the server makes at load, recorded and not run: which
+-- of the two maps a closure sits in is what the automation hangs on, and that is
+-- window_test's subject, not this file's.
+_G.MapObjects = { OnNewWithSprite = function() end, OnLoadWithSprite = function() end }
+_G.sendServerCommand = function() end
+_G.ZombRand = function(n) return n and 0 or 0 end
+-- The world's clock, as the sweep reads it (SCeroSecSystem:clockEnv). Two in the
+-- morning: cron's minute hand is walked below and a crontab due in the minute
+-- being measured would be a second thing in the measurement.
+_G.__hour, _G.__minute = 2, 0
+_G.getGameTime = function()
+	return {
+		getYear = function() return 1993 end,
+		getMonth = function() return 6 end,
+		getDay = function() return 7 end,
+		getHour = function() return _G.__hour end,
+		getMinutes = function() return _G.__minute end,
+	}
+end
+
 for i = 1, #FILES do
 	local chunk, err = loadfile(FILES[i])
 	if not chunk then error("cannot load " .. FILES[i] .. ": " .. tostring(err)) end
@@ -962,8 +1042,18 @@ do
 	-- Measured at 1299K, which is what 1280 was catching. 1440 holds it with the
 	-- same room the last three numbers held theirs, and `late - early` -- growth
 	-- over nine hundred passes, which is what catches a LEAK -- did not move at all.
-	check("and the whole bench holds well under 1440K (" ..
-		string.format("%.0f", late) .. "K)", late < 1440)
+	--
+	-- And a fifth time, for the same reason and a bigger one: this file now loads
+	-- the SERVER -- the object, the system, the devices, the automation, the debug
+	-- window and the world content -- because the county block at the foot of it
+	-- benches the minute sweep and the watcher table, and neither can be reached
+	-- through the three-table fake the scheduler benches run on. That is another
+	-- eight files of source in the heap before a machine exists. Measured at 2091K,
+	-- which is what 1440 was catching; 2304 holds it with the room the four numbers
+	-- before it held theirs, and `late - early` -- growth over nine hundred passes,
+	-- which is the assertion that catches a LEAK -- did not move at all.
+	check("and the whole bench holds well under 2304K (" ..
+		string.format("%.0f", late) .. "K)", late < 2304)
 	report[#report + 1] = string.format("  %-22s %.0fK after 100 passes, %.0fK after 1000",
 		"memory", early, late)
 	local _ = before
@@ -3327,6 +3417,422 @@ do
 	note("grep worst pattern", crafted)
 	check("and it is still running (" .. job2.steps .. " steps)",
 		not CeroSecOS.jobIsOver(job2))
+end
+
+--
+-- 26. THE COUNTY: the minute sweep, and the windows open on one machine
+--
+-- Every bench above is about one player's script on one machine. These two are
+-- about the other axis, which is the one a server operator feels: gos_cerosec.bin
+-- holds EVERY computer in Knox County -- nine thousand five hundred buildings'
+-- worth, all of them in memory whether their chunks are loaded or not -- and two
+-- pieces of this mod used to scale with that number instead of with what is
+-- actually happening.
+--
+-- Measured here before the change, at 300 machines with 40 of them on, under
+-- lua5.1: the power check cost 25 ms a call and cron's minute 48 ms, every game
+-- minute, on the main thread, and 580 ms on the first minute of a fresh county.
+-- Almost all of it was spent on machines that are DARK, which have nothing to
+-- answer: no power question, no window, no /dev, no crontab.
+--
+-- WHAT IS ASSERTED IS THE NUMBER OF MACHINES VISITED, and the milliseconds are
+-- the second assertion and not the first. A timing says as much about this box as
+-- about the code -- which is what the calibration at the head of this file is for
+-- -- while "the sweep touched forty machines and not three hundred" is a fact
+-- about the sweep. Both are here; the count is the one that cannot drift.
+--
+do
+	local N, ON, CRON = 300, 40, 10
+	local LOADED = 60
+	-- The world content off, and put back at the end of the block: what a machine
+	-- comes up carrying is four other rungs' worth of behaviour and this block is
+	-- about the cost of the sweep. A world with no sandbox group at all reads as
+	-- prefilling ON (CeroSecContent.enabled fails open on the option, closed on the
+	-- hardware), so it is said here rather than left to the file's other benches.
+	local hadSandbox = _G.SandboxVars
+	_G.SandboxVars = { CeroSec = { PrefilledMachines = false, HardwareRequired = false } }
+
+	-- The engine's own doors into the system, which is how the machines get in:
+	-- newLuaObject is what SGlobalObjectSystem:initLuaObjects calls for every
+	-- object in the save file, with the saved fields already in the table. So a
+	-- county that was left running is a county of modData tables with `on` in
+	-- them, exactly as the file on disk has it.
+	local system = SCeroSecSystem:new()
+	local objects = {}
+	system.getLuaObjectCount = function() return #objects end
+	-- Counted: this is the county walk's own door, and a sweep that goes through it
+	-- is a sweep with no index (26a).
+	local byIndex = 0
+	system.getLuaObjectByIndex = function(_, i)
+		byIndex = byIndex + 1
+		return objects[i]
+	end
+	system.getLuaObjectAt = function(_, x, y, z)
+		for i = 1, #objects do
+			local o = objects[i]
+			if o.x == x and o.y == y and o.z == z then return o end
+		end
+		return nil
+	end
+	system.getIsoObjectAt = function() return nil end
+	system.newLuaObjectOnClient = function() end
+	local answers = {}
+	system.reply = function(_, _, command)
+		answers[command] = (answers[command] or 0) + 1
+	end
+	system.seed = "0123456789abcdef"
+
+	-- One machine, as the save file hands it over. `saved` is what is written in
+	-- gos_cerosec.bin for it, and nothing else is: a machine that was left running
+	-- carries `on` and a console, one that was not carries neither.
+	local function place(i, saved, forceLoaded)
+		local x, y, z = i, 1, 0
+		-- The tile itself, with the modData the mirror is written into: a machine
+		-- that runs a job mirrors its state onto the object (SCeroSecObject:mirrorOS).
+		local iso = { __class = "IsoObject", modData = {} }
+		iso.getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end
+		iso.setSpriteFromName = function() end
+		iso.transmitUpdatedSpriteToClients = function() end
+		iso.hasModData = function() return true end
+		iso.getModData = function() return iso.modData end
+		iso.transmitModData = function() end
+		local square = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getRoom = function() return nil end,
+			getBuilding = function() return nil end,
+			getObjects = function() return { size = function() return 0 end } end,
+			getWorldObjects = function() return { size = function() return 0 end } end,
+			getMovingObjects = function() return { size = function() return 0 end } end,
+			haveElectricity = function() return true end,
+			hasGridPower = function() return true end,
+			playSound = function() end,
+		}
+		local globalObject = {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return z end,
+			getModData = function() return saved end,
+		}
+		local luaObject = system:newLuaObject(globalObject)
+		-- Most of the county is not in the world: the server holds the disk and
+		-- nobody is standing anywhere near the square. A minority answer isLoaded()
+		-- -- and one machine is forced into the world, because the developer's own
+		-- "Turn on" refuses a machine whose chunk is away and says so
+		-- (CeroSecDebug.turnOnRefusal).
+		local loaded = forceLoaded == true or i <= LOADED
+		luaObject.getIsoObject = function() return loaded and iso or nil end
+		luaObject.getSquare = function() return loaded and square or nil end
+		luaObject.playSound = function() end
+		luaObject.syncSprite = function() end
+		luaObject.updateOnClient = function() end
+		luaObject.hasPower = function() return true end
+		objects[#objects + 1] = luaObject
+		return luaObject
+	end
+
+	local function newSaved(on, name)
+		local saved = { v = CeroSec.STATE_VERSION, facing = "S" }
+		if not on then return saved end
+		saved.on = true
+		saved.os = CeroSecOS.newState(name)
+		local console = CeroSec.newConsole()
+		console.booted = true
+		console.user = "admin"
+		console.cwd = "/home/admin"
+		saved.console = console
+		return saved
+	end
+
+	local crontab = "* * * * * echo tick\n0 21 * * * echo lights\n"
+	for i = 1, N do
+		local on = i <= ON
+		local saved = newSaved(on, "ksp" .. i)
+		if on and i <= CRON then
+			local done, reason = CeroSecOS.writeFile(saved.os, CeroSecOS.rootSession(),
+				CeroSecOS.cronPath("admin"), crontab, false, 100)
+			if done == nil then error("cannot write the crontab: " .. tostring(reason)) end
+		end
+		place(i, saved)
+	end
+	eq("three hundred machines in the county", system:getLuaObjectCount(), N)
+	eq("and forty of them were left running", #system:onMachineList(), ON)
+
+	--
+	-- 26a. THE MINUTE SWEEP VISITS THE MACHINES THAT ARE ON, AND NO OTHERS
+	--
+	-- Counted at the two doors the sweep goes through per machine: the power
+	-- decision, which is the object's own (SCeroSecObject:checkPower), and cron's
+	-- pass. A machine that is off reaches neither, so the two counts ARE the number
+	-- of machines each half of the sweep looked at.
+	--
+	local powerVisits, cronVisits = 0, 0
+	local realCheckPower = SCeroSecObject.checkPower
+	SCeroSecObject.checkPower = function(self)
+		powerVisits = powerVisits + 1
+		return realCheckPower(self)
+	end
+	local realCronPass = CeroSecJobs.cronPass
+	CeroSecJobs.cronPass = function(sys, luaObject, now)
+		cronVisits = cronVisits + 1
+		return realCronPass(sys, luaObject, now)
+	end
+
+	local function nowMs() return os.clock() * 1000 end
+
+	-- ONE CAVEAT, said plainly, because it is the difference between this rig and a
+	-- real county: these three hundred machines stand in no building, so the one
+	-- walk left in the sweep that IS the county's never runs here -- a machine
+	-- without an address gets one from CeroSecNet.identify, and the lowest free
+	-- number on its wire is worked out by walking every machine the server holds
+	-- (freeNumber, in SCeroSecNet.lua). That is once in the life of each machine and
+	-- it is what made the first minute of a fresh county cost 580 ms when this was
+	-- measured. It is not what the index below is about and it is not fixed by it.
+	_G.__minute = 1
+	system:checkPower()
+	system:checkCron()
+
+	-- THE MINUTES A SERVER SPENDS ITS LIFE IN.
+	powerVisits, cronVisits, byIndex = 0, 0, 0
+	local worstMinute = 0
+	local minutes = 2
+	local at = nowMs()
+	for m = 2, minutes + 1 do
+		_G.__minute = m
+		local before = nowMs()
+		system:checkPower()
+		system:checkCron()
+		local cost = nowMs() - before
+		if cost > worstMinute then worstMinute = cost end
+	end
+	local perMinute = (nowMs() - at) / minutes
+
+	-- THE ASSERTION THIS BLOCK IS FOR, and it is a count and not a clock: the sweep
+	-- never asks the system for a machine by index, which is the county walk's only
+	-- door. Three hundred machines in the file, forty decided about.
+	eq("the steady sweep never walks the county", byIndex, 0)
+	eq("the power check visited the machines that are on and no others",
+		powerVisits, ON * minutes)
+	eq("and cron's minute visited the same ones", cronVisits, ON * minutes)
+
+	-- AND THE MILLISECONDS, PER MACHINE THAT IS ON and not per minute, because that
+	-- is what the cost is made of once the county is out of the walk -- and the
+	-- honest measurement is worth writing down, because it is not where the index
+	-- was expected to help. Each half of the sweep reads the machine's state, and
+	-- every read goes through the validator, the gate that keeps a half-mounted
+	-- /dev out of a save (SCeroSecObject:osState), which walks the filesystem:
+	-- about 0.9 ms on a machine with a full one, three reads to a game minute,
+	-- measured at 2.5 ms a running machine here. The 260 DARK machines the walk
+	-- used to visit cost about 0.014 ms each -- four field tests and no state --
+	-- so taking them out of the walk is worth 3 ms of the 105 at this scale. What
+	-- it is really worth is that the number does not move when the county grows,
+	-- which is the block below: gos_cerosec.bin holds nine thousand five hundred
+	-- buildings' worth.
+	--
+	-- The ceiling is GENEROUS on purpose, like WALL_MS_PER_PASS at the head of this
+	-- file: it is a floor under "the server is not being hurt" and not a performance
+	-- target, and what it has to catch is the county coming back into the walk or the
+	-- validator doubling -- not a box that is also running a game. Eight against a
+	-- measured two and a half, and the calibration scales it like every other one
+	-- here; the number that cannot drift is the visit count above, and this one is
+	-- second to it on purpose.
+	local limit = ceiling(8) * ON
+	check("a game minute over three hundred machines costs under " ..
+		string.format("%.2f", limit) .. " ms (" .. string.format("%.3f", perMinute) ..
+		" average, " .. string.format("%.3f", worstMinute) .. " worst, " ..
+		string.format("%.3f", perMinute / ON) .. " a running machine)",
+		perMinute < limit)
+	report[#report + 1] = string.format(
+		"  %-22s %6.2f ms/minute avg, %.2f worst, %d of %d machines visited",
+		"county sweep", perMinute, worstMinute, powerVisits / minutes, N)
+
+	-- AND IT DOES NOT GROW WITH THE COUNTY, which is the whole of what the index
+	-- buys: the same forty running machines with seven hundred more dark ones behind
+	-- them in the file. gos_cerosec.bin really is that shape -- every computer that
+	-- has ever been switched on in Knox County is in it, loaded chunk or not, and a
+	-- long-running server's file grows all session. At three hundred the county walk
+	-- was worth only about three of the hundred milliseconds a minute costs; at a
+	-- thousand it would be four times that, and at the county's own scale it is the
+	-- sweep.
+	for i = 1, 700 do place(N + 100 + i, newSaved(false, "dark" .. i)) end
+	eq("a thousand machines in the county", system:getLuaObjectCount(), N + 700)
+	powerVisits, cronVisits, byIndex = 0, 0, 0
+	_G.__minute = 20
+	local bigBefore = nowMs()
+	system:checkPower()
+	system:checkCron()
+	local bigMs = nowMs() - bigBefore
+	eq("the sweep over a thousand machines still visits forty", powerVisits, ON)
+	eq("and still never walks the county", byIndex, 0)
+	check("and the minute costs what it cost at three hundred (" ..
+		string.format("%.2f", bigMs) .. " ms against " ..
+		string.format("%.2f", perMinute) .. ")", bigMs < limit)
+	report[#report + 1] = string.format(
+		"  %-22s %6.2f ms/minute, %d of %d machines visited",
+		"county of a thousand", bigMs, powerVisits, N + 700)
+
+	--
+	-- 26b. EVERY WAY A MACHINE COMES ON IS A WAY INTO THE INDEX
+	--
+	-- The index is written by the writers of `on` and by nobody else, so a path
+	-- that switched a machine on without telling it would be a machine the sweep
+	-- never visits again -- a crontab that stops running, and nothing in the log.
+	-- Each path is walked here, and what is asserted is the INDEX and not the
+	-- field: a bench that read `.on` back would be green on no index at all.
+	--
+	local function indexed(luaObject)
+		local list = system:onMachineList()
+		for i = 1, #list do
+			if list[i] == luaObject then return true end
+		end
+		return false
+	end
+
+	do
+		-- The one every player uses: the context menu, which is a `toggle` packet.
+		local spare = place(N + 1, newSaved(false, "menu"), true)
+		local player = {
+			getPlayerNum = function() return 0 end,
+			getOnlineID = function() return -1 end,
+			isDead = function() return false end,
+			playSoundLocal = function() end,
+			getCurrentSquare = function() return { getZ = function() return 0 end } end,
+			getX = function() return spare.x + 0.5 end,
+			getY = function() return spare.y + 0.5 end,
+		}
+		check("a machine nobody switched on is not in the index", not indexed(spare))
+		system:OnClientCommand("toggle", player, { x = spare.x, y = spare.y, z = spare.z })
+		eq("the context menu switched it on", spare.on, true)
+		check("and it is in the sweep's index", indexed(spare))
+		system:OnClientCommand("toggle", player, { x = spare.x, y = spare.y, z = spare.z })
+		eq("switched off again", spare.on, false)
+		check("and out of the index", not indexed(spare))
+
+		-- The developer's own button, which goes through the debug channel and the
+		-- window's own refusal before it reaches turnOn.
+		local hadFlag = CeroSec.DEV_DEBUG_MENU
+		CeroSec.DEV_DEBUG_MENU = true
+		system:OnClientCommand("debugact", player,
+			{ x = spare.x, y = spare.y, z = spare.z, token = "t", act = "on" })
+		CeroSec.DEV_DEBUG_MENU = hadFlag
+		eq("the debug window switched it on", spare.on, true)
+		check("and that path indexes it too", indexed(spare))
+
+		-- A REBOOT, which is the one power cycle that comes back on its own: the
+		-- machine goes down now and the scheduler brings it up three seconds later.
+		system:reboot(spare)
+		eq("a rebooting machine is down", spare.on, false)
+		check("and out of the index while it is dark", not indexed(spare))
+		_G.__now = _G.__now + CeroSec.REBOOT_DARK_MS + 1
+		CeroSecJobs.checkReboot(system, spare, _G.__now)
+		eq("and comes back up by itself", spare.on, true)
+		check("and is in the index when it does", indexed(spare))
+
+		-- A computer picked up and put down again: off, and out.
+		local iso = { __class = "IsoObject", modData = {},
+			getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end,
+			hasModData = function() return true end }
+		iso.getModData = function() return iso.modData end
+		iso.transmitModData = function() end
+		spare:resetForPlacement(iso)
+		eq("a computer put down out of somebody's hands is off", spare.on, false)
+		check("and is not swept", not indexed(spare))
+
+		-- And a machine LEAVING the system altogether, which is the engine's own
+		-- hook: an entry pointing at a machine nothing holds would be swept for ever.
+		spare.on = true
+		spare:reindex()
+		check("on again for the last case", indexed(spare))
+		spare:aboutToRemoveFromSystem()
+		check("a machine out of the system is out of the index", not indexed(spare))
+		for i = #objects, 1, -1 do
+			if objects[i] == spare then table.remove(objects, i) end
+		end
+	end
+
+	--
+	-- 26c. A FLOOD OF `open` PACKETS FROM ONE PLAYER
+	--
+	-- The watcher table is keyed on the token the CLIENT picked, so five thousand
+	-- opens with a fresh token each used to leave five thousand permanent entries
+	-- on that machine -- server memory that is never given back, and one
+	-- sendServerCommand per entry on every later screen of the machine, paid by
+	-- whoever types at it next. One live window per player per machine, and eight
+	-- per machine whatever the online ids say (SCeroSecObject.WATCHERS_MAX).
+	--
+	do
+		local target = objects[1]
+		local function playerAt(id)
+			return {
+				getPlayerNum = function() return 0 end,
+				getOnlineID = function() return id end,
+				isDead = function() return false end,
+				playSoundLocal = function() end,
+				getCurrentSquare = function() return { getZ = function() return 0 end } end,
+				getX = function() return target.x + 0.5 end,
+				getY = function() return target.y + 0.5 end,
+			}
+		end
+		local one = playerAt(-11)
+		local FLOOD = 5000
+		answers = {}
+		local before = nowMs()
+		for i = 1, FLOOD do
+			system:OnClientCommand("open", one,
+				{ x = target.x, y = target.y, z = target.z, token = "f" .. i .. "-" .. ZombRand(9) })
+		end
+		local floodMs = nowMs() - before
+		eq("five thousand opens from one player leave one window",
+			target:watcherCount(), 1)
+		eq("and every window they replaced was told so", answers["closed"] or 0, FLOOD - 1)
+
+		-- WHAT IT COSTS EVERYBODY ELSE, which is the whole of the defect: a screen
+		-- on that machine is one answer per window open on it.
+		answers = {}
+		system:pushScreen(target, target:osState(), target:consoleState())
+		eq("a screen after the flood is one answer", answers["screen"] or 0, 1)
+
+		-- NINE PLAYERS AT ONE KEYBOARD, which no room holds and a forged online id
+		-- costs nothing to invent.
+		answers = {}
+		for i = 1, 9 do
+			system:OnClientCommand("open", playerAt(-100 - i),
+				{ x = target.x, y = target.y, z = target.z, token = "crowd" .. i })
+		end
+		eq("nine players leave eight windows", target:watcherCount(),
+			SCeroSecObject.WATCHERS_MAX)
+		local oldest = false
+		for _, watcher in pairs(target.watchers) do
+			if watcher.token == "crowd1" then oldest = true end
+		end
+		check("and the one that went is the oldest of them", not oldest)
+		answers = {}
+		system:pushScreen(target, target:osState(), target:consoleState())
+		eq("and a screen costs eight answers and never more",
+			answers["screen"] or 0, SCeroSecObject.WATCHERS_MAX)
+
+		-- And the sweep is no dearer for having been flooded.
+		answers = {}
+		powerVisits = 0
+		local sweepBefore = nowMs()
+		_G.__minute = 30
+		system:checkPower()
+		system:checkCron()
+		local after = nowMs() - sweepBefore
+		eq("the flooded county still visits the machines that are on",
+			powerVisits, ON)
+		check("and a minute after the flood costs no more than any other (" ..
+			string.format("%.3f", after) .. " ms against " ..
+			string.format("%.2f", limit) .. ")", after < limit)
+		report[#report + 1] = string.format(
+			"  %-22s %6.3f ms for %d opens, %d watcher(s) left",
+			"5000 open packets", floodMs, FLOOD, target:watcherCount())
+	end
+
+	SCeroSecObject.checkPower = realCheckPower
+	CeroSecJobs.cronPass = realCronPass
+	_G.SandboxVars = hadSandbox
 end
 
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",

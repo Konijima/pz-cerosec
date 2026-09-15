@@ -99,7 +99,14 @@ function SCeroSecSystem:initSystem()
 end
 
 function SCeroSecSystem:newLuaObject(globalObject)
-	return SCeroSecObject:new(self, globalObject)
+	local luaObject = SCeroSecObject:new(self, globalObject)
+	-- Every machine in the save file comes through here once, at load
+	-- (SGlobalObjectSystem:initLuaObjects), with its saved fields already in the
+	-- table -- SGlobalObject.new hands back the GlobalObject's own modData, which is
+	-- what gos_cerosec.bin was read into. So this is where a county that was left
+	-- running gets into the sweep's index, and the only place it could be.
+	self:indexMachine(luaObject)
+	return luaObject
 end
 
 --
@@ -214,6 +221,9 @@ function SCeroSecSystem:markBorn(isoObject)
 	local luaObject = self:getLuaObjectOnSquare(square)
 	if not luaObject then return end
 	luaObject.born = true
+	-- And into the sweep's list of machines with a question outstanding, which is
+	-- how the sweep finds it next minute without walking the county.
+	luaObject:reindex()
 end
 
 -- The client walks the player to the square in front of the screen before it
@@ -2503,6 +2513,84 @@ end
 -- Housekeeping
 --
 
+--
+-- THE MACHINES THE MINUTE SWEEP HAS TO LOOK AT
+--
+-- gos_cerosec.bin holds every computer in Knox County -- nine thousand five
+-- hundred buildings' worth, all of them in memory whether their chunks are loaded
+-- or not (the head of SCeroSecNet.lua) -- and the sweep used to walk all of them
+-- twice a game minute. Measured under lua5.1 at the scale a server really has
+-- (300 machines, 40 of them on): checkPower 25 ms a call, checkCron 48 ms, and
+-- 580 ms on the first minute. Every one of those milliseconds was spent on a
+-- machine that is DARK, which has nothing to answer: the power question returns at
+-- once for a machine that is off (SCeroSecObject:checkPower), a dark machine has
+-- no windows, no /dev to refresh and no crontab to run.
+--
+-- So two indexes, both on the system and neither of them saved -- setModDataKeys
+-- names the four keys that are (initSystem above), so anything else here is
+-- session state:
+--
+--   onMachines   every machine that is ON. The power check, the watchers, /dev and
+--                cron's minute are all about those and only those.
+--   newMachines  every machine whose square was made in this save and has not been
+--                settled yet (`born`). These may be OFF and still have to be
+--                visited: the automation's question is what switches one on.
+--
+-- WHERE THEY ARE WRITTEN, and it is every place the two fields are, through one
+-- function that reads the machine rather than being told what changed
+-- (SCeroSecObject:reindex): turnOn, turnOff, the sprite a chunk with no
+-- GlobalObject is adopted from, a computer put down out of somebody's hands, and
+-- the two bits the automation writes. A machine ARRIVING comes through
+-- newLuaObject -- which the engine calls for every object in the save file at
+-- load (SGlobalObjectSystem:initLuaObjects) with the saved fields already in the
+-- table, so a county left running is in the index before the first minute -- and
+-- one LEAVING through aboutToRemoveFromSystem, which removeLuaObject calls.
+--
+-- AND THEY HEAL. An entry that is neither `on` nor `born` when the sweep reaches
+-- it is dropped there and then, so a transition nobody reported costs one visit
+-- and never a machine that is swept for ever. The other direction cannot be
+-- healed cheaply and is not guessed at: a machine whose `on` was written behind
+-- these calls' back is a machine the sweep does not know about, which is why the
+-- index is written by the field's own writers and by nothing else.
+--
+
+local function machineKey(luaObject)
+	return luaObject.x .. "," .. luaObject.y .. "," .. luaObject.z
+end
+
+function SCeroSecSystem:indexMachine(luaObject)
+	if luaObject == nil then return end
+	if type(self.onMachines) ~= "table" then self.onMachines = {} end
+	if type(self.newMachines) ~= "table" then self.newMachines = {} end
+	local key = machineKey(luaObject)
+	self.onMachines[key] = luaObject.on == true and luaObject or nil
+	self.newMachines[key] = luaObject.born == true and luaObject or nil
+end
+
+-- Out of both, for a machine that has left the system: picked up, smashed, or its
+-- square destroyed.
+function SCeroSecSystem:forgetMachine(luaObject)
+	if luaObject == nil then return end
+	local key = machineKey(luaObject)
+	if type(self.onMachines) == "table" then self.onMachines[key] = nil end
+	if type(self.newMachines) == "table" then self.newMachines[key] = nil end
+end
+
+-- One index as an array, taken BEFORE the walk that uses it: a machine switched on
+-- or off inside the walk writes the index, and a table walked with `pairs` while it
+-- is being written to is a table Kahlua makes no promise about.
+local function machineList(index)
+	local out = {}
+	if type(index) ~= "table" then return out end
+	for _, luaObject in pairs(index) do out[#out + 1] = luaObject end
+	return out
+end
+
+-- The machines that are on, for the sweeps that are only about those.
+function SCeroSecSystem:onMachineList()
+	return machineList(self.onMachines)
+end
+
 -- Tell every window open on this machine that it is over, then forget them.
 function SCeroSecSystem:evictWatchers(luaObject, reason)
 	if not luaObject.watchers then return end
@@ -2520,67 +2608,85 @@ end
 -- the screen is lost by either: the console belongs to the machine, and only a
 -- machine going dark clears it.
 --
--- This list is every computer in the county and not only the ones in memory
--- (getLuaObjectCount is the whole of gos_cerosec.bin -- the head of
--- SCeroSecNet.lua), so everything here that needs the WORLD is asked only of a
--- machine the world still has: the address, the power and the book of device
--- numbers all go through a square. A machine whose chunk is away keeps the state
--- it had and is asked again the moment the chunk comes back
--- (SCeroSecObject:stateToIsoObject). What the machine's own DISK answers is not
--- in here at all and goes on regardless -- cron's pass below, and the jobs the
+-- The two lists are the sweep's indexes and not every computer in the county (the
+-- head of this section): a dark machine has no power question, no window and no
+-- /dev, so it is not visited at all. Everything here that needs the WORLD is asked
+-- only of a machine the world still has: the address, the power and the book of
+-- device numbers all go through a square. A machine whose chunk is away keeps the
+-- state it had and is asked again the moment the chunk comes back
+-- (SCeroSecObject:stateToIsoObject). What the machine's own DISK answers is not in
+-- here at all and goes on regardless -- cron's pass below, and the jobs the
 -- scheduler steps.
 function SCeroSecSystem:checkPower()
-	for i = 1, self:getLuaObjectCount() do
-		local luaObject = self:getLuaObjectByIndex(i)
-		local loaded = luaObject:isLoaded()
-		-- WAS THIS PREMISES AUTOMATED BEFORE THE OUTBREAK, for a computer whose square
-		-- was made in this save and whose chunk is in so the question is answerable at
-		-- all. FIRST in the sweep, and therefore ahead of cron's pass in the same
-		-- minute (the event below calls checkPower and then checkCron): a crontab line
-		-- that comes due this very minute has to find its lights already under /dev.
-		--
-		-- The square and not isLoaded(): what is wanted is a world to ask, and a
-		-- machine on its way out of the system is one the answer would not survive.
-		if luaObject.born == true and luaObject:getSquare() ~= nil then
+	-- The machines that are on, taken before anything below settles one: a machine
+	-- the automation switches on this minute has had everything done for it by
+	-- settle and joins this list next minute, which is the order the single walk
+	-- this replaces had too.
+	local live = self:onMachineList()
+
+	-- WAS THIS PREMISES AUTOMATED BEFORE THE OUTBREAK, for a computer whose square
+	-- was made in this save and whose chunk is in so the question is answerable at
+	-- all. FIRST in the sweep, and therefore ahead of cron's pass in the same
+	-- minute (the event below calls checkPower and then checkCron): a crontab line
+	-- that comes due this very minute has to find its lights already under /dev.
+	--
+	-- The square and not isLoaded(): what is wanted is a world to ask, and a
+	-- machine on its way out of the system is one the answer would not survive.
+	local fresh = machineList(self.newMachines)
+	for i = 1, #fresh do
+		local luaObject = fresh[i]
+		if luaObject.born ~= true then
+			-- Settled by somebody else since the index was written. One visit, and out.
+			self:indexMachine(luaObject)
+		elseif luaObject:getSquare() ~= nil then
 			CeroSecAuto.settle(self, luaObject)
-		elseif luaObject.on then
-			-- And the rest of an automated premises' fixtures as their chunks arrive.
+		end
+	end
+
+	for i = 1, #live do
+		local luaObject = live[i]
+		if luaObject.on ~= true then
+			-- Dark since the index was written, and the index heals here.
+			self:indexMachine(luaObject)
+		else
+			local loaded = luaObject:isLoaded()
+			-- The rest of an automated premises' fixtures as their chunks arrive.
 			-- Two table lookups for a machine this is not about (CeroSecAuto.wire).
 			CeroSecAuto.wire(self, luaObject)
-		end
-		-- A machine that has been running since before this rung, or one carried
-		-- into a building while it was switched on, has no address yet. Asked only
-		-- of a machine that has not got one, so the sweep costs nothing on a
-		-- county where every computer is already numbered.
-		if luaObject.on and loaded and CeroSecOS.netRecord(luaObject.os) == nil then
-			CeroSecNet.identify(self, luaObject, luaObject:osState())
-		end
-		-- The power decision is the machine's own, so that the sweep and a chunk
-		-- coming back cannot disagree about it, and it is where the rule about an
-		-- unloaded chunk lives: no square, no decision.
-		local wentDark = luaObject:checkPower()
-		if not wentDark and luaObject.watchers then
-			for key, watcher in pairs(luaObject.watchers) do
-				local playerObj = watcher.player
-				if not playerObj or playerObj:isDead()
-						or not isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
-					luaObject.watchers[key] = nil
-					if playerObj then
-						self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z,
-							"reach", watcher.token)
-					end
-					luaObject:publishOS()
-				end
+			-- A machine that has been running since before this rung, or one carried
+			-- into a building while it was switched on, has no address yet. Asked only
+			-- of a machine that has not got one, so the sweep costs nothing on a
+			-- county where every computer is already numbered.
+			if loaded and CeroSecOS.netRecord(luaObject.os) == nil then
+				CeroSecNet.identify(self, luaObject, luaObject:osState())
 			end
-			-- And the devices, for a machine somebody is standing at. Nothing on
-			-- the glass moves -- a line already printed stays printed, here as on
-			-- any terminal -- but the book of numbers catches up, so a window
-			-- that was smashed or a door that was built while the screen was open
-			-- already has its number by the time `ls /dev` is typed. A machine out
-			-- of the world is skipped: /dev is the squares around it and there are
-			-- none, so the walk would cost a chunk's worth of nothing.
-			if loaded and luaObject.watchers then
-				CeroSecDevices.refresh(luaObject, luaObject:osState())
+			-- The power decision is the machine's own, so that the sweep and a chunk
+			-- coming back cannot disagree about it, and it is where the rule about an
+			-- unloaded chunk lives: no square, no decision.
+			local wentDark = luaObject:checkPower()
+			if not wentDark and luaObject.watchers then
+				for key, watcher in pairs(luaObject.watchers) do
+					local playerObj = watcher.player
+					if not playerObj or playerObj:isDead()
+							or not isAdjacent(playerObj, luaObject.x, luaObject.y, luaObject.z) then
+						luaObject.watchers[key] = nil
+						if playerObj then
+							self:replyClosed(playerObj, luaObject.x, luaObject.y, luaObject.z,
+								"reach", watcher.token)
+						end
+						luaObject:publishOS()
+					end
+				end
+				-- And the devices, for a machine somebody is standing at. Nothing on
+				-- the glass moves -- a line already printed stays printed, here as on
+				-- any terminal -- but the book of numbers catches up, so a window
+				-- that was smashed or a door that was built while the screen was open
+				-- already has its number by the time `ls /dev` is typed. A machine out
+				-- of the world is skipped: /dev is the squares around it and there are
+				-- none, so the walk would cost a chunk's worth of nothing.
+				if loaded and luaObject.watchers then
+					CeroSecDevices.refresh(luaObject, luaObject:osState())
+				end
 			end
 		end
 	end
@@ -2588,7 +2694,7 @@ end
 
 -- cron's own minute hand.
 --
--- Every machine that is ON, once a game minute: the same sweep the power check
+-- Every machine that is ON, once a game minute: the same index the power check
 -- walks, because the two ask the same question of the same list and a second walk
 -- would only be a second chance to disagree about it.
 --
@@ -2602,9 +2708,12 @@ end
 function SCeroSecSystem:checkCron()
 	local now = CeroSecOS.clockOf(self:clockEnv())
 	if now == nil then return end
-	for i = 1, self:getLuaObjectCount() do
-		local luaObject = self:getLuaObjectByIndex(i)
-		if luaObject.on then
+	local live = self:onMachineList()
+	for i = 1, #live do
+		local luaObject = live[i]
+		if luaObject.on ~= true then
+			self:indexMachine(luaObject)
+		else
 			CeroSecJobs.cronPass(self, luaObject, now)
 			-- And the at queue, on the same sweep and the same minute: one walk of
 			-- the list, because the two ask the same question of the same machines.

@@ -334,6 +334,10 @@ end
 -- true when this machine was switched on as its premises' automated one.
 function CeroSecAuto.settle(system, luaObject)
 	luaObject.born = nil
+	-- And out of the sweep's list of machines with a question outstanding: the
+	-- question is being answered here, whatever the answer turns out to be
+	-- (SCeroSecSystem:indexMachine).
+	luaObject:reindex()
 	if system == nil then return false end
 	-- The same gate the prefill and the papers wear, and read through the same
 	-- function: a world with PrefilledMachines off has nothing already on its

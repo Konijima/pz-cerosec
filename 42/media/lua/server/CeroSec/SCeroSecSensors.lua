@@ -418,11 +418,13 @@ end
 
 -- The discovery: every machine that is on, every sensor it can reach.
 --
--- The walk is the same one the power check and cron make
--- (SCeroSecSystem:checkPower), because it is the same list and a second walk
--- would only be a second chance to disagree with it. A machine that is OFF is
--- not walked at all, which is the whole of "a sensor is wired to a computer": no
--- machine on, no pass, no cost.
+-- It asks the same question the power check and cron ask -- which machines are on
+-- -- and a machine that is OFF costs nothing here, which is the whole of "a sensor
+-- is wired to a computer": no machine on, no pass, no cost. The two sweeps walk an
+-- index of the machines that are on rather than the county (the head of the
+-- housekeeping section in SCeroSecSystem.lua); this one filters the county itself,
+-- because what it spends on a machine that is off is one field test and it is
+-- handed a system by callers that are not the minute hand.
 --
 -- And a machine whose chunk nobody has loaded costs nothing either: its own
 -- square is not in the world, so the find below answers an empty list at once

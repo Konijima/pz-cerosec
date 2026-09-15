@@ -26,6 +26,27 @@ function SCeroSecObject:new(luaSystem, globalObject)
 	return SGlobalObject.new(self, luaSystem, globalObject)
 end
 
+-- What the minute sweep's two indexes hold about this machine, written again from
+-- the machine itself. Called wherever `on` or `born` is -- and the index is DERIVED
+-- rather than incremented, so a caller cannot get it out of step by remembering
+-- one half of a transition (the head of the housekeeping section in
+-- SCeroSecSystem.lua).
+function SCeroSecObject:reindex()
+	local system = self.luaSystem
+	if system == nil or system.indexMachine == nil then return end
+	system:indexMachine(self)
+end
+
+-- The engine's own word for "this machine is leaving the system": removeLuaObject
+-- calls it before the GlobalObject goes (SGlobalObjectSystem.lua:94). An index
+-- entry for a machine nothing holds any more would be a machine the sweep visits
+-- for ever.
+function SCeroSecObject:aboutToRemoveFromSystem()
+	local system = self.luaSystem
+	if system == nil or system.forgetMachine == nil then return end
+	system:forgetMachine(self)
+end
+
 function SCeroSecObject:initNew()
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
@@ -91,6 +112,9 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	self.v = CeroSec.STATE_VERSION
 	self.facing = CeroSec.facingOf(spriteName) or "S"
 	self.on = CeroSec.isOnSprite(spriteName)
+	-- The sprite says it was left running, so the sweep has to know about it: this
+	-- is a machine the save file had no GlobalObject for.
+	self:reindex()
 	self.os = self:osFromIsoObject(isoObject)
 	self:syncDisk()
 	-- No console in the mirror, so a machine adopted from its sprite starts
@@ -131,6 +155,7 @@ end
 function SCeroSecObject:resetForPlacement(isoObject)
 	self.v = CeroSec.STATE_VERSION
 	self.on = false
+	self:reindex()
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
 	self.os = self:osFromIsoObject(isoObject) or self.os
 	self.osBroken = nil
@@ -810,6 +835,7 @@ function SCeroSecObject:turnOn()
 	if self.on then return false end
 	if not self:hasPower() then return false end
 	self.on = true
+	self:reindex()
 	-- A fresh screen, with the BIOS still to be typed on it. It was just made
 	-- here, so there is nothing to repair and nothing to check.
 	self.console = CeroSec.newConsole()
@@ -865,6 +891,7 @@ function SCeroSecObject:turnOff()
 	-- machine comes up.
 	if state ~= nil then CeroSecOS.unmountAll(state) end
 	self.on = false
+	self:reindex()
 	-- Everything that was running is gone with the power, which is what a
 	-- switch at the back of the case does. reboot goes through here too, so a
 	-- machine that comes back comes back running nothing.

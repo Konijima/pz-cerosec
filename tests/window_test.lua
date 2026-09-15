@@ -745,13 +745,22 @@ local function newBench()
 	object.syncSprite = function() end
 	object:initNew()
 	object.hasPower = function() return true end
+	-- On, and with a screen, without going through turnOn: a bench that booted the
+	-- machine for real would also prefill it, sound it and identify it, which is
+	-- four other rungs' worth of behaviour inside every window bench there is.
+	-- reindex() is the one thing turnOn does that this has to do too -- the minute
+	-- sweep walks an index of the machines that are on, so a machine whose `on` was
+	-- written by hand is a machine no sweep would ever visit (the head of the
+	-- housekeeping section in SCeroSecSystem.lua). The REAL paths into that index
+	-- are benched on their own, in the county block of hostile_test.lua.
 	object.on = true
+	object:reindex()
 	object.console = CeroSec.newConsole()
 	object.consoleChecked = true
 	system.getLuaObjectAt = function() return object end
 	system.getIsoObjectAt = function() return nil end
-	-- The sweep Events.EveryOneMinute walks: the power check and cron's own pass
-	-- ask the system for every machine there is, and on this bench there is one.
+	-- Every machine there is, for the walks that are not the minute sweep's: on
+	-- this bench there is one.
 	system.getLuaObjectCount = function() return 1 end
 	system.getLuaObjectByIndex = function() return object end
 
@@ -10563,6 +10572,7 @@ do
 
 	-- Switched back on, one `mount` is the whole of the way back.
 	bench.object.on = true
+	bench.object:reindex()
 	bench.object.console = CeroSec.newConsole()
 	bench.object.consoleChecked = true
 	bench.login("admin")
