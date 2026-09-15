@@ -1,5 +1,5 @@
 --
--- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 18.
+-- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 20.
 --
 -- Written by tools/capture-fixture.sh and never by hand: it is what a build
 -- really wrote, and tests/migrate_test.lua walks it up to whatever the code is
@@ -238,7 +238,7 @@ return {
 							type = "file",
 						},
 						grep = {
-							data = "find a string in files",
+							data = "find a pattern in files",
 							group = "root",
 							mode = 755,
 							owner = "root",
@@ -336,7 +336,7 @@ return {
 							type = "file",
 						},
 						mail = {
-							data = "read the mail cron left you",
+							data = "read your mail, or send a message",
 							group = "root",
 							mode = 755,
 							owner = "root",
@@ -615,6 +615,13 @@ return {
 							owner = "root",
 							type = "file",
 						},
+						wall = {
+							data = "write a line to every terminal",
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "file",
+						},
 						wc = {
 							data = "count lines, words and bytes",
 							group = "root",
@@ -702,6 +709,13 @@ return {
 						},
 						["hosts.equiv"] = {
 							data = "# host [user] -- one a line; a bare host trusts the same name on it\n# a name has to be in /etc/hosts here; an address needs no line\n# nothing is trusted until somebody writes a line here",
+							group = "root",
+							mode = 644,
+							owner = "root",
+							type = "file",
+						},
+						issue = {
+							data = "CeroSec OS 1.0 (ksp-front-01) (console)",
 							group = "root",
 							mode = 644,
 							owner = "root",
@@ -875,9 +889,9 @@ return {
 			pz = "Coffee Shop",
 		},
 		sessions = {},
-		sysv = 18,
+		sysv = 20,
 		v = 2,
 	},
-	sysv = 18,
+	sysv = 20,
 	v = 2,
 }
