@@ -8296,6 +8296,43 @@ do
 			#CeroSecNet.tenanciesOf(mall:getDef()), #first)
 		CeroSecNet.forgetTenancies()
 		eq("a clear leaves nothing behind", CeroSecNet.tenancyCacheSize(), 0)
+
+		-- AND THE ROOM NAMES ARE ON THE SAME ENTRY, for the same caller and the same
+		-- reason: what a premises is CALLED comes off the building's room names
+		-- (CeroSecNet.premisesRooms), and Events.OnFillContainer asks it once per
+		-- container as loot is generated. Counted on the def itself, because "it was
+		-- not walked again" is a fact about the engine call and not about the answer.
+		do
+			local walks = 0
+			local names = { "livingroom", "kitchen", "bedroom" }
+			local rooms = #names
+			local function countingDef()
+				local def = net.buildingAt(700, 400, 20, 20, rooms, names):getDef()
+				local real = def.getRooms
+				def.getRooms = function(self)
+					walks = walks + 1
+					return real(self)
+				end
+				return def
+			end
+			CeroSecNet.forgetTenancies()
+			local first = CeroSecNet.roomNamesOf(countingDef())
+			eq("the building's rooms are named", #first, 3)
+			eq("and getRooms was walked once", walks, 1)
+			local again = CeroSecNet.roomNamesOf(countingDef())
+			eq("asked again it walks nothing", walks, 1)
+			check("and hands back the very same list", again == first)
+
+			-- A basement arrives: the count moves and the entry is rebuilt, names and
+			-- all. The one thing that really happens to a building during play, and the
+			-- assertion that keeps the cache from outliving the fact it was built from.
+			rooms = 4
+			names = { "livingroom", "kitchen", "bedroom", "basement" }
+			local grown = CeroSecNet.roomNamesOf(countingDef())
+			eq("a building that gained a room is walked again", walks, 2)
+			eq("and its names are the new ones", #grown, 4)
+			CeroSecNet.forgetTenancies()
+		end
 	end
 
 	-- AND THE DEBUG WINDOW SAYS WHICH SHOP, which is the tool the in-game walk uses

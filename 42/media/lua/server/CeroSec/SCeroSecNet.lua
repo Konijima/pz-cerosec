@@ -488,6 +488,36 @@ function CeroSecNet.tenanciesOf(def)
 	return groups
 end
 
+-- The NAMES of a building's rooms, on the same entry, for the caller nobody thinks
+-- of: Events.OnFillContainer fires for EVERY container as loot is generated and
+-- CeroSecNotes asks the premises rule of each one, so this walked getRooms once per
+-- container of a mall's chunk load. It is a fact about the building and the same
+-- list whichever square asked, which is the whole reason premisesRooms exists.
+--
+-- Its own walk and not roomsOf's: this one keeps every room that HAS a name, and
+-- roomsOf keeps only the rooms a def gave an outline for -- the profile of a
+-- building is its room names, and a def that will not give geometry still has them.
+--
+-- The array is handed out as it is kept. Every caller reads it and nothing more
+-- (CeroSecContent.profileFor walks its word list against it).
+function CeroSecNet.roomNamesOf(def)
+	if def == nil or def.getRooms == nil then return nil end
+	local entry = cacheEntry(def)
+	if entry ~= nil and entry.names ~= nil then return entry.names end
+	local list = def:getRooms()
+	if list == nil then return nil end
+	local out = {}
+	for i = 0, list:size() - 1 do
+		local room = list:get(i)
+		if room ~= nil and room.getName ~= nil then
+			local name = room:getName()
+			if type(name) == "string" and name ~= "" then out[#out + 1] = name end
+		end
+	end
+	if entry ~= nil then entry.names = out end
+	return out
+end
+
 -- Forget everything. For a bench, and for a world being unloaded: a cache keyed on
 -- map coordinates that survived into another save would be answering about a county
 -- that is not there any more.
@@ -747,18 +777,8 @@ function CeroSecNet.premisesRooms(square, premisesName, kind)
 	local building = square:getBuilding()
 	if building == nil then return nil end
 	local def = building:getDef()
-	if def == nil or def.getRooms == nil then return nil end
-	local list = def:getRooms()
-	if list == nil then return nil end
-	local out = {}
-	for i = 0, list:size() - 1 do
-		local room = list:get(i)
-		if room ~= nil and room.getName ~= nil then
-			local name = room:getName()
-			if type(name) == "string" and name ~= "" then out[#out + 1] = name end
-		end
-	end
-	return out
+	if def == nil then return nil end
+	return CeroSecNet.roomNamesOf(def)
 end
 
 --
