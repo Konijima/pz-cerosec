@@ -4499,6 +4499,111 @@ do
 	end)())
 end
 
+-- THE LOGIN SEQUENCE, on the glass and through the protocol.
+--
+-- What a 1993 machine printed, in order: getty's banner (/etc/issue) under the
+-- firmware's lines and over the prompt, then -- once the password is right --
+-- login's own three lines, which are the last login, /etc/motd and the mail.
+-- The motd used to be printed in BOTH places, which is the bug this proves gone.
+do
+	local bench = newBench()
+	local state = bench.object:osState()
+	local BANNER = CeroSecOS.issueText(CeroSecOS.hostname(state))
+
+	bench.window:askForScreen()
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+	eq("the machine ends at the login prompt", bench.window.prompt, "login: ")
+	check("the firmware counted itself out", bench.painted("Memory test"))
+	check("the banner is over the prompt", bench.painted(BANNER))
+	check("and the motd is NOT on a screen nobody has logged in on",
+		not bench.painted(CeroSecOS.MOTD))
+	-- The ORDER, off the glass itself: the banner is under the firmware's lines,
+	-- which is where getty printed it.
+	local glass = bench.glass()
+	local firmware, banner = nil, nil
+	for i = 1, #glass do
+		if string.find(glass[i], "Booting from hda", 1, true) then firmware = i end
+		if string.find(glass[i], BANNER, 1, true) then banner = i end
+	end
+	check("the firmware printed first", firmware ~= nil)
+	check("and the banner under it", banner ~= nil and banner > firmware)
+
+	-- THE FIRST LOGIN. Nothing to say about a last one -- this account has never
+	-- been in -- and the motd once.
+	bench.enter("admin")
+	bench.enter("")
+	bench.frame()
+	eq("admin is at a shell", bench.window.mode, "shell")
+	check("the first login says nothing about a last one",
+		not bench.painted("Last login:"))
+	check("and the motd greets him", bench.painted(CeroSecOS.MOTD))
+	-- Once and not twice: the banner is still further up the same screen, so a motd
+	-- printed in both places would be two copies of it here. Counted on the
+	-- console's own rows and not on the glass -- the terminal paints every row twice
+	-- for the phosphor behind it, so a count off bench.glass() is two of everything
+	-- and could never be one.
+	local function rowsSaying(text)
+		local seen = 0
+		local rows = bench.object.console.lines
+		for i = 1, #rows do
+			if rows[i] == text then seen = seen + 1 end
+		end
+		return seen
+	end
+	eq("exactly one motd on the screen", rowsSaying(CeroSecOS.MOTD), 1)
+
+	-- THE SECOND LOGIN, at the same keyboard: the first one is named, with the date
+	-- it happened and the line it was at.
+	local at = bench.object.console.loginAt
+	bench.enter("exit")
+	bench.frame()
+	eq("the machine is back at login", bench.window.prompt, "login: ")
+	bench.enter("admin")
+	bench.enter("")
+	bench.frame()
+	check("the second login names the first",
+		bench.painted("Last login: " .. CeroSecOS.formatStamp(at) .. " on console"))
+	check("and the motd is still printed", bench.painted(CeroSecOS.MOTD))
+	check("and there is no mail to announce", not bench.painted("You have mail."))
+
+	-- THE MAIL. Put in the spool the only way anything puts mail on this machine:
+	-- cron, writing to the account whose line it ran.
+	check("cron wrote to the spool", CeroSecOS.mailAppend(state, "admin",
+		CeroSecOS.hostname(state), "echo hi", { "hi" }, 100))
+	check("there is mail in the spool now",
+		(bench.fileText(CeroSecOS.mailPath("admin")) or "") ~= "")
+	bench.enter("exit")
+	bench.frame()
+	bench.enter("admin")
+	bench.enter("")
+	bench.frame()
+	check("so the next login says so", bench.painted("You have mail."))
+	check("and never in the new-mail wording", not bench.painted("You have new mail."))
+
+	-- ~/.hushlogin: a login that says nothing at all. Made with `touch`, which is
+	-- the whole of the gesture on a real machine too.
+	bench.enter("touch .hushlogin")
+	bench.frame()
+	bench.enter("exit")
+	bench.frame()
+	bench.enter("admin")
+	bench.enter("")
+	bench.frame()
+	eq("he is in", bench.window.mode, "shell")
+	check("the motd is silenced", not bench.painted(CeroSecOS.MOTD))
+	check("and so is the last login", not bench.painted("Last login:"))
+	check("and so is the mail", not bench.painted("You have mail."))
+	-- And it is HIS silence and not the machine's: root at the same keyboard is
+	-- greeted exactly as before.
+	bench.enter("exit")
+	bench.frame()
+	bench.enter("root")
+	bench.enter("")
+	bench.frame()
+	check("another account is greeted", bench.painted(CeroSecOS.MOTD))
+end
+
 -- ~/.profile, at login.
 do
 	local bench = newBench()
@@ -6102,6 +6207,41 @@ do
 	eq("the far machine has no pty left", CeroSecOS.ptyCount(net.gate.ptys), 0)
 	check("and the local console is looking at nothing",
 		net.here:consoleState().remote == nil)
+end
+
+-- A session that came down the wire is named by where it came FROM, and never by
+-- the line it was on: login.c prints the host INSTEAD of the terminal when the
+-- record carries one, which is an if/else and not two lines.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+	local from = net.host(net.here)
+
+	net.enter("rlogin gate")
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the far machine let him in", net.glass("admin@" .. net.host(net.gate)))
+	check("and says nothing about a last login, because there was none",
+		not net.glass("Last login:"))
+
+	net.enter("exit")
+	net.tick(3)
+	net.forget()
+	net.enter("rlogin gate")
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the second call names the first", net.glass("Last login:"))
+	check("by the machine it came from", net.glass("from " .. from))
+	check("and not by the pty it was on", not net.glass("on ttyp0"))
+	-- The record it read is the one `last` reads: the far machine's wtmp.
+	local wtmp = net.text(net.gate, CeroSecOS.WTMP_PATH)
+	check("and that is what the far machine wrote down",
+		wtmp ~= nil and string.find(wtmp, "in admin ttyp0 " .. from, 1, true) ~= nil)
 end
 
 -- A wrong password is one answer and no session.
@@ -13677,7 +13817,7 @@ do
 					and console.shvars.HOME == user.home)
 			check("and when he sat down", type(console.loginAt) == "number")
 			-- THE BIOS STILL PRINTS. `booted` is deliberately left alone, so the first
-			-- window on this machine sees the firmware and the motd above the prompt
+			-- window on this machine sees the firmware and the banner above the prompt
 			-- rather than a bare prompt on a blank screen.
 			check("the machine has not been booted onto a screen yet", not console.booted)
 			-- And `last` says the same thing the console does, which is the pair this
