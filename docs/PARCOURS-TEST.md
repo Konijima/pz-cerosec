@@ -3178,6 +3178,17 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      où l'on avait mis un fichier à soi au nom `wall`, c'est le sien qui
      reste. [ ]
 
+339l. **Un ordre n'arrête pas la ligne.** Au prompt :
+     `wall /etc/motd; echo envoye` → la diffusion s'affiche, **puis** `envoye`
+     en dessous (avant, la ligne mourait sur son propre `wall` et `envoye` ne
+     sortait jamais). Pareil pour l'écran : `echo a; clear; echo b` → l'écran
+     se vide et il reste `b` dessous, pas un écran vide. Dans un script
+     (`echo a`, `wall /etc/motd`, `echo b` dans un fichier lancé au prompt) →
+     les deux lignes sortent et la diffusion est entre elles. Enfin par
+     crontab, `* * * * * wall /etc/motd; echo fini` → à la minute suivante la
+     diffusion arrive sur l'écran et `fini` est dans le courrier
+     (`mail`). [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

@@ -338,6 +338,25 @@ line on a screen that is not this job's: `CeroSecJobs.wall` walks the machine's 
 console and every `pty.console`, and `shutdown`'s minute-out warning has always gone
 out through that same door.
 
+**An order is a program, and a program is not a full stop.** Every control name a
+command can hand back is in `CeroSecOS.KNOWN_ORDERS`, against one of three words.
+`"vm"` is one the engine deals with itself and the job goes on — a wait, a question,
+a script one level deeper, a link on the radio. `"machine"` is one only the server
+can carry out with the job going **on past it**, the way a caller goes on past any
+other program: it is queued on the job (`job.orders`), the job does not step again
+until the pass has taken it (`CeroSecJobs.runMachine`), and the next statement runs
+after the machine has done the deed — `wall` and `clear` are the two.
+`"exit"` ends the whole job, because there is nothing left for it to do: the machine
+is going dark (`shutdown`, `reboot`, a pending order), the account is being logged
+out (`exit`), or a buffer or a session has taken the glass (`edit`, `fg`, `rlogin`,
+`cu`). A name that is in none of the three is **refused out loud** —
+`sh: <name>: unknown order`, and the job runs on. That refusal is there because
+`wall` arrived without a case of its own and fell to the `"exit"` end of
+`applyControl`: `echo before; wall f; echo after` printed `before` and stopped, a
+crontab line died at its own broadcast, and every bench stayed green because the
+only shape they wrote was `echo hi | wall`, where the order is the job's last word
+anyway. `tests/os_test.lua` walks the table in both directions.
+
 Every stage is a **subshell** — its own variables, its own working directory — so
 what a stage changes is gone when the pipeline is over. That is the quirk everybody
 meets once: `echo hi | read x` really does read the pipe, in the subshell whose `x`

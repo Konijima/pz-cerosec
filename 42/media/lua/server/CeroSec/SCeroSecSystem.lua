@@ -1978,19 +1978,28 @@ function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, 
 	end
 	if type(stdin) == "table" then job.stdinBuf = stdin end
 	-- Passes, in his own hand, while the line is still asking the MACHINE for
-	-- something only a pass can give it: a job, because it ended in "&". The
-	-- pass that makes one is not the pass the line finishes in, and a prompt
-	-- held for a tick after `sh spin.sh &` would swallow the next thing typed.
+	-- something only a pass can give it: a job, because it ended in "&", or an
+	-- order it has to carry out with the line running on past it -- a `clear`, a
+	-- `wall`. The pass that does the machine's half is not the pass the line
+	-- finishes in, and a prompt held for a tick after `sh spin.sh &` or after
+	-- `clear; ls` would swallow the next thing typed.
 	--
-	-- Bounded by the job slots there are: every answer costs one and the
-	-- refusal after the last is final, so this cannot run away.
+	-- Bounded, and the two bounds are different things. An "&" is bounded by the
+	-- job slots there are -- every answer costs one and the refusal after the last
+	-- is final -- and an order by nothing at all, since a loop may broadcast as
+	-- often as it likes. So the ceiling is the larger of the two, and a line that
+	-- reaches it simply finishes on the scheduler's own passes with the prompt
+	-- coming back when it does: the job is on the book and running, which is what
+	-- a long line looks like anyway.
 	local turns = 0
 	while true do
 		job.spawned = nil
+		job.ordered = nil
 		CeroSecJobs.runMachine(self, luaObject, CeroSec.STEP_BUDGET_PER_MACHINE,
 			getTimestampMs(), playerObj, token, true, console)
 		turns = turns + 1
-		if job.spawned == nil or CeroSecOS.jobIsOver(job) or turns > CeroSecOS.MAX_JOBS then
+		if (job.spawned == nil and job.ordered == nil) or CeroSecOS.jobIsOver(job)
+				or turns > CeroSecOS.MAX_LINE_TURNS then
 			break
 		end
 	end

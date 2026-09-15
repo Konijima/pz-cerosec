@@ -15704,6 +15704,72 @@ do
 		end
 	end
 	eq("the text is on the machine's screen exactly once", seen, 1)
+
+	-- And the shape this whole fix is about: a broadcast with a statement AFTER
+	-- it. wall(1) is an ordinary program and the line goes on past it, so the
+	-- order is queued on the job and the pass carries it out (CeroSecOSVM's
+	-- machineOrder, SCeroSecJobs.runMachine). Until this, the order was the job's
+	-- LAST word -- which is exactly why every broadcast benched above is written
+	-- at the end of its line, and why nothing here went red while `echo before;
+	-- wall f; echo after` printed only `before`.
+	bench.enter("echo save your work | wall; echo sent")
+	bench.tick(10)
+	bench.frame()
+	eq("the statement after the broadcast ran", bench.painted("sent"), true)
+	eq("and the broadcast went out all the same",
+		bench.painted("save your work"), true)
+	eq("on the other window at the same glass too",
+		bench.paintedOn(second, "save your work"), true)
+
+	-- A file named on the line, with a statement after it, and the order STILL
+	-- in its place: the broadcast is on the screen above the line that follows it,
+	-- because the job does not step again until the pass has taken the order.
+	bench.enter("clear")
+	bench.tick(4)
+	CeroSecOS.writeFile(bench.object:osState(), CeroSecOS.rootSession(),
+		"/home/admin/notice", "the doors lock at six", false, 100)
+	bench.enter("wall /home/admin/notice; echo after")
+	bench.tick(10)
+	bench.frame()
+	local lines = bench.object:consoleState().lines
+	local broadcastAt, afterAt = nil, nil
+	for i = 1, #lines do
+		if lines[i] == "the doors lock at six" then broadcastAt = i end
+		if lines[i] == "after" then afterAt = i end
+	end
+	check("the broadcast is on the screen", broadcastAt ~= nil)
+	check("and so is the line after it", afterAt ~= nil)
+	check("in that order, which is the order they were written in",
+		broadcastAt ~= nil and afterAt ~= nil and broadcastAt < afterAt)
+end
+
+-- A CRONTAB line that broadcasts, and the statement after it (debts 2).
+--
+-- The case with nobody in front of it, and the one the defect hurt most: a
+-- broadcast from cron is 4.4BSD's own way of warning a machine, and until this
+-- the line died at its own `wall` -- everything after it was thrown away, in
+-- silence, on a machine nobody was watching.
+do
+	local bench = newBench()
+	bench.login("admin")
+	CeroSecOS.writeFile(bench.object:osState(), CeroSecOS.rootSession(),
+		"/var/spool/cron/admin", "* * * * * wall /etc/motd; echo done", false, 100)
+	bench.enter("clear")
+	bench.frame()
+
+	-- The minute the machine came into view is not a minute it was there for.
+	bench.minute()
+	eq("nothing ran for the minute it arrived in", bench.fileText("/var/mail/admin"), nil)
+
+	bench.minute()
+	bench.frame()
+	check("the broadcast reached the glass nobody is at",
+		bench.painted("Broadcast Message from admin@"))
+	local mail = bench.fileText("/var/mail/admin")
+	check("the line after the broadcast ran", mail ~= nil)
+	check("and what it printed is in the mail, where a cron line's output goes",
+		mail ~= nil and string.find(mail, "done", 1, true) ~= nil)
+	check("and not on the glass", not bench.painted("done"))
 end
 
 do
@@ -15738,6 +15804,27 @@ do
 	end
 	check("and the far machine's own console has it too", onOwn)
 	check("with the text", onGlass)
+
+	-- The same thing with a statement AFTER it, which is the shape that used to
+	-- cost the rest of the line. Down a session it costs more than a line: the pty
+	-- is a shell somebody is holding, and a job that ended at its own broadcast
+	-- left the far prompt to come back with everything after the `wall` unrun.
+	net.forget()
+	net.enter("wall /etc/motd; echo after")
+	net.tick(4)
+	net.frame()
+	check("the statement after the broadcast ran in the session",
+		net.glass("after"))
+	check("and the broadcast is on the session's screen",
+		net.glass("Broadcast Message from admin@" .. net.host(net.gate)))
+	local second = net.gate:consoleState()
+	local againOnOwn = false
+	for i = 1, #second.lines do
+		if string.find(second.lines[i], "Broadcast Message from admin@", 1, true) then
+			againOnOwn = true
+		end
+	end
+	check("and on the far machine's own console, as a broadcast must be", againOnOwn)
 end
 
 print("window_test: " .. count .. " checks passed")

@@ -1637,7 +1637,9 @@ Five commands want a pair of hands and refuse:
   edit: not a terminal
 
 and the same line signed su:, passwd:, sudo: and rlogin:. clear runs and
-clears nothing. exit ends the line and never a session.
+clears nothing. exit ends the line and never a session. wall DOES
+broadcast -- warning people is what it is for -- and the line runs on to its
+next command.
 
 The same is true of a job you started with an ampersand, and of a stage of
 a pipeline: neither has anybody in front of it either.

@@ -980,6 +980,39 @@ function CeroSecJobs.runMachine(system, luaObject, budget, now, playerObj, token
 	local kept, orders = {}, {}
 	for i = 1, #book.list do
 		local job = book.list[i]
+		-- Orders the job gave that the MACHINE carries out with the job still
+		-- running: a `wall` on every terminal, a `clear` on its own glass. They are
+		-- taken whether or not the job is over -- a script broadcasts in the middle
+		-- of itself -- and the job does not step again until they are gone from
+		-- here (CeroSecOS.jobStep), so what the line after the broadcast writes is
+		-- written after the broadcast went out and not before it.
+		--
+		-- Queued in order and carried out in order, with the other orders, after
+		-- every screen has gone out: a broadcast paints screens that are not this
+		-- job's, and a clear takes one away.
+		--
+		-- A session that has GONE takes its `clear` with it: the screen the order
+		-- was for is not there any more, and the machine's own glass is somebody
+		-- else's. A broadcast is the exception and needs no screen of its own --
+		-- it walks every terminal there is -- so it goes out whatever became of
+		-- the one it was written at.
+		if job.orders ~= nil then
+			local screen = screenOf(job)
+			for k = 1, #job.orders do
+				local control = job.orders[k].control
+				if screen ~= nil or control == "wall" then
+					orders[#orders + 1] = { console = screen or own, control = control,
+						data = job.orders[k].data, forJob = job }
+				end
+			end
+			job.orders = nil
+			-- What tells the caller this pass carried one out, for the same reason
+			-- `job.spawned` tells it about an `&`: the pass that does the machine's
+			-- half of a line is never the pass the line finishes in, so a prompt
+			-- held after it would swallow the next thing typed
+			-- (SCeroSecSystem:startPrompt).
+			job.ordered = true
+		end
 		-- An rsh a job is WAITING on, and a far session a job that has died left
 		-- open. Both are collected with the orders below and carried out after
 		-- every screen has gone out, because dialling paints the far machine's

@@ -138,10 +138,20 @@ local function exec(state, session, line, env)
 	if book ~= nil then book[#book + 1] = job end
 
 	local out = {}
+	-- The orders the line gave that the MACHINE carries out while the job runs on
+	-- past them -- a `clear`, a `wall`. They are queued on the job and the
+	-- scheduler is what empties the queue (SCeroSecJobs.runMachine); here the
+	-- scheduler is this loop, and emptying it is not optional: a job with an order
+	-- still on it does not step again, which is the whole point of the queue.
+	local orders = {}
 	local turns = 0
 	while not CeroSecOS.jobIsOver(job) and turns < 500 do
 		turns = turns + 1
 		CeroSecOS.jobStep(state, job, env, 1000)
+		if job.orders ~= nil then
+			for k = 1, #job.orders do orders[#orders + 1] = job.orders[k] end
+			job.orders = nil
+		end
 		-- What the scheduler does between passes: take what the job wrote off
 		-- its hands, so a command with more than forty lines in it is not
 		-- blocked on a screen this bench does not have.
@@ -152,6 +162,10 @@ local function exec(state, session, line, env)
 	end
 	for k = 1, #job.out do out[#out + 1] = job.out[k] end
 	job.out = {}
+	if job.orders ~= nil then
+		for k = 1, #job.orders do orders[#orders + 1] = job.orders[k] end
+		job.orders = nil
+	end
 
 	if book ~= nil then
 		for i = #book, 1, -1 do
@@ -169,6 +183,14 @@ local function exec(state, session, line, env)
 	end
 
 	local control, data = job.control, job.controlData
+	-- An order for the machine that the job went on past. The FIRST of them is
+	-- the one the line gave -- a bench types one line at a time -- and it is
+	-- answered here under the same name it used to be answered under, back when
+	-- such an order was the last word of the job that gave it.
+	if control == nil and orders[1] ~= nil then
+		control = orders[1].control
+		data = orders[1].data
+	end
 	-- A job that stopped on a question is a command that asked one: the console
 	-- cannot tell a script's `read` from passwd's, and neither can this.
 	if control == nil and job.state == "waiting" and job.ask ~= nil then
@@ -181,7 +203,7 @@ local function exec(state, session, line, env)
 		control = "job"
 		data = { prog = { job.spawn }, args = job.args, name = job.name, cmd = line, bg = true }
 	end
-	return job.status == 0, CeroSecOS.fit(out), control, data, job
+	return job.status == 0, CeroSecOS.fit(out), control, data, job, orders
 end
 
 -- Runs a line and pins the whole result: the ok flag, the line count, every
@@ -3093,11 +3115,14 @@ local ENV2 = { now = LATER }
 
 -- The same shape as ok()/bad() above, with a clock in it.
 local function runAt(state, session, line, env)
-	local execOk, lines, control, data = exec(state, session, line, env)
+	local execOk, lines, control, data, job, orders = exec(state, session, line, env)
 	for i = 1, #lines do
 		check("`" .. line .. "` line " .. i .. " fits 60 columns", #lines[i] <= CeroSecOS.COLS)
 	end
-	return { ok = execOk, lines = lines, control = control, data = data }
+	return { ok = execOk, lines = lines, control = control, data = data, job = job,
+		-- Every order the line gave the machine and ran on past, in order: a line
+		-- may broadcast twice.
+		orders = orders }
 end
 
 local function okAt(state, session, line, wantLines, env)
@@ -5977,7 +6002,7 @@ local function runScript(state, session, text, args, answers, options)
 	local job = CeroSecOS.newJob({ id = JOB_ID, prog = data.prog, args = data.args,
 		name = data.name, cmd = data.cmd, session = session, bg = options.bg })
 	jobs[1] = job
-	local out, asked = {}, {}
+	local out, asked, orders = {}, {}, {}
 	local answerAt = 1
 	local passes = 0
 	while not CeroSecOS.jobIsOver(job) and passes < (options.passes or 400) do
@@ -5990,6 +6015,20 @@ local function runScript(state, session, text, args, answers, options)
 		CeroSecOS.jobStep(state, job, env, options.budget or 100)
 		for i = 1, #job.out do out[#out + 1] = job.out[i] end
 		job.out = {}
+		-- The machine's own half of a line -- a broadcast, a clear -- taken off the
+		-- job the way the scheduler takes it (SCeroSecJobs.runMachine). It is not
+		-- optional here either: a job with an order still on it does not step
+		-- again, which is what keeps the machine's act between the lines either
+		-- side of it.
+		if job.orders ~= nil then
+			for i = 1, #job.orders do
+				orders[#orders + 1] = job.orders[i]
+				-- Which line of output the order landed between, so a bench can say
+				-- the broadcast went out before the line after it was written.
+				orders[#orders].after = #out
+			end
+			job.orders = nil
+		end
 		if job.state == "waiting" and job.ask ~= nil then
 			asked[#asked + 1] = job.ask.text
 			CeroSecOS.jobInput(state, job, (answers or {})[answerAt] or "", env)
@@ -6001,7 +6040,15 @@ local function runScript(state, session, text, args, answers, options)
 	end
 	for i = 1, #job.out do out[#out + 1] = job.out[i] end
 	job.out = {}
-	return { started = true, job = job, out = out, asked = asked, passes = passes }
+	if job.orders ~= nil then
+		for i = 1, #job.orders do
+			orders[#orders + 1] = job.orders[i]
+			orders[#orders].after = #out
+		end
+		job.orders = nil
+	end
+	return { started = true, job = job, out = out, asked = asked, orders = orders,
+		passes = passes }
 end
 
 local function prints(state, session, text, wantLines, what)
@@ -15707,6 +15754,154 @@ do
 	-- It is a file in /bin like every other command, so root may take it away.
 	okAt(state, open(state, "root"), "rm /bin/wall", {})
 	badAt(state, admin, "wall notice", "wall: command not found")
+end
+
+-- 50o. An order the machine carries out is a PROGRAM, and a program is not a
+-- full stop (debts 2).
+--
+-- `wall notice; echo sent` prints `sent` on every Unix there has ever been:
+-- wall(1) is an ordinary program and the caller goes on past it. Here the name
+-- arrived with nothing in applyControl to catch it, so it fell to the generic end
+-- of that function -- which ends the whole job and hands the name to the server's
+-- power switch. `echo before; wall f; echo after` printed `before` and stopped,
+-- and a crontab line died at its own broadcast.
+--
+-- The reason every bench stayed green is worth as much as the fix: the only shape
+-- they wrote was `echo hi | wall`, where the order is the LAST thing the job does
+-- and ending the job costs nothing at all. So what is walked here is the order
+-- with A LINE AFTER IT, every way a line can be given -- at the prompt, in a
+-- script, out of a pipeline, from a crontab -- and the audit table that says
+-- which orders end a job and which do not.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/notice", "lights out")
+
+	-- In a script, which is the shape the defect was found in.
+	local run = runScript(state, admin, "echo a\nwall notice\necho b")
+	eq("the line before the broadcast", run.out[1], "a")
+	eq("and the line AFTER it, which used to be lost", run.out[2], "b")
+	eq("and nothing else", #run.out, 2)
+	check("the script ran to its end", CeroSecOS.jobIsOver(run.job))
+	eq("with the status of a program that worked", run.job.status, 0)
+	eq("one broadcast was ordered", #run.orders, 1)
+	eq("and it is the broadcast", run.orders[1].control, "wall")
+	eq("with wall's own banner in it", run.orders[1].data.lines[1],
+		"Broadcast Message from admin@ksp-front-01")
+	eq("and the text under it", run.orders[1].data.lines[4], "lights out")
+	-- WHERE it went out, which is the half a queue is for: after the line before
+	-- it and before the line after it. The job does not step again until the pass
+	-- has taken the order (CeroSecOS.jobStep), so `b` cannot be written first.
+	eq("the broadcast went out between the two lines", run.orders[1].after, 1)
+
+	-- Twice in one script is two broadcasts. A field would have kept one of them.
+	local twice = runScript(state, admin, "wall notice\necho middle\nwall notice")
+	eq("two broadcasts", #twice.orders, 2)
+	eq("the first before the line between them", twice.orders[1].after, 0)
+	eq("and the second after it", twice.orders[2].after, 1)
+	eq("the line between them was printed", twice.out[1], "middle")
+
+	-- At the PROMPT, where the line is a job like any other.
+	local typed = runAt(state, admin, "echo a; wall notice; echo b", ENV)
+	eq("the prompt's line printed both of its echoes", #typed.lines, 2)
+	eq("the first", typed.lines[1], "a")
+	eq("the second", typed.lines[2], "b")
+	eq("and broadcast once in the middle", #typed.orders, 1)
+	eq("the order is the broadcast", typed.orders[1].control, "wall")
+
+	-- Out of a PIPELINE with a statement after it. This is the shape that used to
+	-- escape -- the order was the job's last word -- and it must not lose the
+	-- broadcast now that it is not.
+	local piped = runAt(state, admin, "echo hurry | wall; echo b", ENV)
+	eq("the statement after the pipeline ran", piped.lines[1], "b")
+	eq("and the pipeline broadcast", #piped.orders, 1)
+	eq("with what came down the pipe in it", piped.orders[1].data.lines[4], "hurry")
+
+	-- A CRONTAB line, which is the case with nobody in front of it: a broadcast
+	-- from cron is 4.4BSD's own way of warning a machine, and what the line prints
+	-- after it is mail. `sent` is the assertion; before the fix the job was over
+	-- before it.
+	local cron = CeroSecOS.newJob({
+		prog = CeroSecOS.parseScript("wall /home/admin/notice\necho sent"),
+		session = admin, name = "cron",
+	})
+	cron.mailTo = "admin"
+	local mailed, orders, turns = {}, {}, 0
+	while not CeroSecOS.jobIsOver(cron) and turns < 50 do
+		turns = turns + 1
+		CeroSecOS.jobStep(state, cron, { now = FIXED, nowMs = 1000 }, 100)
+		for i = 1, #cron.out do mailed[#mailed + 1] = cron.out[i] end
+		cron.out = {}
+		if cron.orders ~= nil then
+			for i = 1, #cron.orders do orders[#orders + 1] = cron.orders[i] end
+			cron.orders = nil
+		end
+	end
+	eq("a crontab line broadcast", #orders, 1)
+	eq("and went on to its next statement", mailed[1], "sent")
+	eq("which is the only thing it mails", #mailed, 1)
+
+	-- `clear` is the same kind of program -- `clear; ls` lists on a fresh screen
+	-- -- and it ended a job the same way until this. At the prompt the order is
+	-- given; in a script there is no screen to give it for, and the only thing
+	-- withheld is the order.
+	local mid = runAt(state, admin, "echo a; clear; echo b", ENV)
+	eq("the line before the clear", mid.lines[1], "a")
+	eq("and the line after it", mid.lines[2], "b")
+	eq("nothing else", #mid.lines, 2)
+	eq("the screen was ordered clear once", #mid.orders, 1)
+	eq("and that is the order", mid.orders[1].control, "clear")
+	local blind = runScript(state, admin, "echo a\nclear\necho b")
+	eq("a script's clear prints what comes after it", blind.out[2], "b")
+	eq("and orders nothing: there is no screen it could be for", #blind.orders, 0)
+
+	-- THE AUDIT. Every order a command can hand back, and what it does to the job
+	-- that gave it. The table is the engine's (CeroSecOS.KNOWN_ORDERS) and this is
+	-- the list it is checked against, in both directions: a new order that is not
+	-- written down falls to the loud refusal below instead of switching the
+	-- machine off, and one that IS written down has to say which of the three
+	-- kinds it is here as well, where a reader can see the reason.
+	local audit = {
+		-- The VM deals with it and the job goes on: a wait, a question, a script
+		-- one level deeper, a link on the radio.
+		sleep = "vm", prompt = "vm", job = "vm", tnc = "vm", rsh = "vm",
+		-- Only the machine can do it, and the job goes on past it like a caller
+		-- goes on past any other program.
+		wall = "machine", clear = "machine",
+		-- And the ones that end the job, each because there is nothing left for
+		-- the job to do: the machine is going dark (shutdown, reboot, a pending
+		-- order), the account is being logged out (exit), or a buffer or a session
+		-- has taken the glass (edit, fg, rlogin, cu).
+		edit = "exit", exit = "exit", fg = "exit", schedule = "exit",
+		shutdown = "exit", reboot = "exit", rlogin = "exit", cu = "exit",
+	}
+	for name, kind in pairs(audit) do
+		eq("the order `" .. name .. "` is written down as " .. kind,
+			CeroSecOS.KNOWN_ORDERS[name], kind)
+	end
+	for name, kind in pairs(CeroSecOS.KNOWN_ORDERS) do
+		eq("and the engine knows no order this bench has not audited (" .. name .. ")",
+			audit[name], kind)
+	end
+
+	-- The loud refusal. An order nobody here knows is refused where it was given,
+	-- in the job's own error stream, and the job runs ON: what used to happen to
+	-- one was the rest of the line thrown away in silence and the name handed to
+	-- the server's power switch. Driven by giving an existing command an order
+	-- that is not in the table -- there is no other way to make one, which is the
+	-- point of the table.
+	local kept = CeroSecOS.commands.clear
+	CeroSecOS.commands.clear = function()
+		return true, {}, "fanfare"
+	end
+	local unknown = runScript(state, admin, "echo a\nclear\necho b")
+	CeroSecOS.commands.clear = kept
+	eq("the line before the unknown order", unknown.out[1], "a")
+	eq("the refusal says what it could not do", unknown.out[2],
+		"sh: fanfare: unknown order")
+	eq("and the script ran on to the line after it", unknown.out[3], "b")
+	eq("nothing else", #unknown.out, 3)
+	eq("and nothing was asked of the machine", #unknown.orders, 0)
 end
 
 print("os_test: " .. count .. " assertions passed")

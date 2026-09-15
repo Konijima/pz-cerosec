@@ -196,7 +196,8 @@ CeroSecOS.MAX_LINK_HOPS = 8
 -- value ("clear", "exit", "prompt", "edit", "shutdown" or "reboot"), never as a
 -- line inside the output array: a line of text and an order to the terminal
 -- must not be the same kind of thing, or a file's contents can be made to look
--- like an order.
+-- like an order. Every name there is, and what each does to the job that gave
+-- it, is CeroSecOS.KNOWN_ORDERS in CeroSecOSVM.lua.
 CeroSecOS.DEFAULT_HOSTNAME = "cerosec"
 
 -- The operating system's own version, and the ONLY place it is written down.

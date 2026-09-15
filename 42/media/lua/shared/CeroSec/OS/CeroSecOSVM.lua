@@ -1718,6 +1718,72 @@ local function jobHasKeyboard(job)
 	return owner.interactive == true
 end
 
+-- EVERY order a command can hand back, and what it does to the job that gave
+-- it. Three dispositions and no fourth:
+--
+--   "vm"       the VM itself deals with it and the job goes on -- a wait, a
+--              question, a script one level deeper, a link on the radio.
+--   "machine"  only the machine can do it, and the job goes on PAST it the way
+--              a caller goes on past any other program: the order is queued on
+--              the job (job.orders) and the pass carries it out.
+--   "exit"     the order ends the whole job, because there is nothing left for
+--              the job to do -- the machine is going dark, the account is being
+--              logged out, a session or a buffer has taken the glass.
+--
+-- It is a table and not a comment because of `wall`. wall(1) is an ordinary
+-- program -- `wall notice; echo sent` prints `sent` on every Unix there has
+-- been -- and it arrived here as a name applyControl had no case for, so it
+-- fell to the generic end of this function, which ends the job with `all`:
+-- `echo before; wall f; echo after` printed `before` and stopped, and a crontab
+-- line died at its own broadcast. Every bench stayed green because the only
+-- shape they wrote was `echo hi | wall`, where the order is the LAST thing the
+-- job does and the end of it costs nothing. So the generic end refuses a name
+-- that is not written down here instead of obeying it (see the foot of this
+-- function), and tests/os_test.lua walks the table against the dispositions it
+-- expects -- a new order has to say which of the three it is, in this table, or
+-- the machine says so out loud.
+CeroSecOS.KNOWN_ORDERS = {
+	sleep = "vm",
+	prompt = "vm",
+	job = "vm",
+	tnc = "vm",
+	rsh = "vm",
+	wall = "machine",
+	clear = "machine",
+	edit = "exit",
+	exit = "exit",
+	fg = "exit",
+	schedule = "exit",
+	shutdown = "exit",
+	reboot = "exit",
+	rlogin = "exit",
+	cu = "exit",
+}
+
+-- How many passes one typed line may have IN THE HAND of whoever typed it,
+-- while it asks the machine for a job of its own or for an order carried out
+-- (SCeroSecSystem:startPrompt). Four is the job book, which bounds the "&" half
+-- of it; sixteen leaves room for a line that clears its screen and broadcasts a
+-- few times, and a line that wants more finishes on the scheduler's own passes
+-- like any other long one.
+CeroSecOS.MAX_LINE_TURNS = 16
+
+-- An order for the MACHINE, queued on the job that gave it, with the job left
+-- running.
+--
+-- A list and not a field: a script can broadcast twice before a pass gets round
+-- to it, and an order that overwrote the one before it would be a broadcast
+-- nobody ever read. The pass drains the list and empties it
+-- (CeroSecJobs.runMachine); until it does, jobStep will not step this job
+-- again, which is what puts the machine's own act BETWEEN the lines either side
+-- of it -- `echo a; clear; echo b` clears the glass after `a` and not after `b`.
+-- That is exactly how an `&` waits for the machine to make its job (job.spawn),
+-- and for the same reason.
+local function machineOrder(job, control, data)
+	if job.orders == nil then job.orders = {} end
+	job.orders[#job.orders + 1] = { control = control, data = data }
+end
+
 -- The order every control the core can hand back is dealt with. A script is
 -- not a screen: an editor cannot open on it, so `edit` is refused where it was
 -- typed rather than half-opened somewhere nobody is looking.
@@ -1936,11 +2002,26 @@ local function applyControl(job, control, data, env)
 	-- nobody is standing at: `* * * * * clear` took the screen a survivor was
 	-- reading, once a minute, and left no sign of why.
 	--
-	-- The job still ends here, exactly as it does when the order IS given: the
-	-- only thing withheld is the order.
+	-- The job runs ON, exactly as it does when the order IS given: the only thing
+	-- withheld is the order. `clear` is a program like any other -- `clear; ls`
+	-- lists on a fresh screen -- and until SYSTEM_VERSION 20 both halves of this
+	-- ended the job instead, so a script's `clear` was the last line of it ever
+	-- run.
 	if control == "clear" and not jobHasTerminal(job) then
 		flushPartial(job)
-		job.sig = { k = "exit", n = job.status, all = true }
+		return true
+	end
+	-- An order the machine carries out with the job still running: `clear` on the
+	-- glass it was typed at, and `wall` on every terminal of the machine. Both are
+	-- ordinary programs -- nothing about either of them ends the thing that ran it
+	-- -- and both have to be done by whoever owns the screens, so what is left
+	-- here is the queue and the pass is what empties it.
+	--
+	-- The output goes first (flushPartial), because a broadcast that landed in
+	-- front of the line the job was still holding would read as the job's own.
+	if CeroSecOS.KNOWN_ORDERS[control] == "machine" then
+		flushPartial(job)
+		machineOrder(job, control, data)
 		return true
 	end
 	-- clear, edit, shutdown, reboot and exit are the machine's, and whoever is
@@ -1955,6 +2036,25 @@ local function applyControl(job, control, data, env)
 	-- machine going dark, and unwinding to the file it was written in would
 	-- leave the outer one running on a machine that is off. That is what `all`
 	-- says, and it is the one exit that does not stop at a script's edge.
+	--
+	-- And an order NOBODY here knows is refused rather than obeyed. What used to
+	-- happen to one was the worst of the three answers at once: the job was ended
+	-- with `all` -- the rest of the script gone, silently -- and the name went on
+	-- to the server's applyPower, which is the machine's power switch. A `wall`
+	-- that belongs in the queue above, a name misspelt in a command, a new order
+	-- nobody wired up: all three read as "switch the machine off, and never mind
+	-- the rest of the line". The line below is what says so out loud, in the job's
+	-- own error stream where a bench and a player both see it.
+	if CeroSecOS.KNOWN_ORDERS[control] ~= "exit" then
+		flushPartial(job)
+		errLine(job, "sh: " .. tostring(control) .. ": unknown order")
+		job.status = 1
+		if CeroSec ~= nil and CeroSec.log ~= nil then
+			CeroSec.log(CeroSec.LOG_WARN,
+				"applyControl: unknown order " .. tostring(control))
+		end
+		return true
+	end
 	job.control = control
 	job.controlData = data
 	flushPartial(job)
@@ -2618,6 +2718,22 @@ local function pipeStep(state, job, f, env)
 	-- reaches the screen at the same rate everything else does.
 	drainTail(job, pipes[n])
 
+	-- An order for the machine a stage GAVE AND WENT ON PAST -- a broadcast, a
+	-- clear. It travels up to the job at once, and not when the stage is over the
+	-- way the orders that end a job do below: the queue is what holds the machine's
+	-- act in its place, and a queue left on a stage is a broadcast the pass cannot
+	-- see. Every stage, in stage order, so a pipeline with two of them broadcasts
+	-- twice.
+	for i = 1, n do
+		local stage = stages[i]
+		if stage.orders ~= nil then
+			for k = 1, #stage.orders do
+				machineOrder(job, stage.orders[k].control, stage.orders[k].data)
+			end
+			stage.orders = nil
+		end
+	end
+
 	-- An rsh a stage has asked for. The machine knows nothing of stages, so the
 	-- order travels up to the job and the frame remembers which stage it belongs
 	-- to (CeroSecOS.jobRemote sends the answer back down). One at a time: a
@@ -2647,7 +2763,8 @@ local function pipeStep(state, job, f, env)
 			-- An order the machine has to carry out -- shutdown, clear -- given
 			-- inside a stage is still an order: it travels up to the job the
 			-- machine is holding, because a stage is not something the machine
-			-- knows about.
+			-- knows about. An order the stage went ON past is not one of these: it
+			-- is in the queue, which is emptied at the head of every turn.
 			if stage.control ~= nil and job.control == nil then
 				job.control = stage.control
 				job.controlData = stage.controlData
@@ -3314,6 +3431,11 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	end
 	if job.state == "waiting" then return "waiting", 0 end
 	if job.spawn ~= nil then return "running", 0 end
+	-- An order for the machine that the machine has not carried out yet. The job
+	-- is not over and not asleep -- it has simply called a program that the server
+	-- runs -- and it waits here for the same reason an `&` waits: what comes after
+	-- the line must not be written before the machine has done the line.
+	if job.orders ~= nil then return "running", 0 end
 
 	if type(budget) ~= "number" or budget < 1 then budget = 1 end
 	if job.cpuSince == nil then job.cpuSince = now end
@@ -3370,6 +3492,7 @@ function CeroSecOS.jobStep(state, job, env, budget)
 	while used < budget and job.state == "running" and turns < maxTurns do
 		turns = turns + 1
 		if job.spawn ~= nil then break end
+		if job.orders ~= nil then break end
 		-- The flood limiter, and the file's own half of it. A script whose output
 		-- the shell pointed at a file is not writing onto the glass, so #job.out
 		-- stays at nought for ever and the limiter that bounds every other flood
