@@ -3189,6 +3189,48 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      diffusion arrive sur l'écran et `fini` est dans le courrier
      (`mail`). [ ]
 
+339m. **Une seule fenêtre par survivant sur une machine.** Ouvrir le terminal sur
+     un ordinateur, se connecter, taper `echo un`. Ouvrir la fenêtre de débogage
+     (**CeroSec (dev)** → la fenêtre de débogage), sélectionner cette machine :
+     l'onglet machine affiche `windows 1`. Revenir au jeu et rouvrir le terminal
+     sur le **même** ordinateur : l'écran montre la même session et la ligne
+     `echo un` (l'écran appartient à la machine), et la fenêtre de débogage
+     affiche toujours `windows 1`, jamais 2. Ouvrir et refermer dix fois de
+     suite, puis regarder : toujours `windows 1`. En écran partagé, chaque
+     survivant compte pour un : `windows 2` avec les deux terminaux ouverts,
+     `windows 1` après avoir fermé celui du joueur 2, et `windows 0` quand les
+     deux sont fermés.
+
+     Ce qu'on ne peut **pas** provoquer à la main, et c'est voulu : le client
+     ferme toujours sa fenêtre précédente avant d'en ouvrir une autre (une
+     fenêtre par joueur), donc le serveur n'a normalement rien à remplacer. La
+     règle qui remplace la fenêtre d'un joueur et celle qui plafonne une machine
+     à huit fenêtres sont là pour un client qui ne ferme rien, et ce sont les
+     bancs qui les prouvent (`tests/hostile_test.lua`, le bloc du comté). Ce que
+     cette étape vérifie sur le verre, c'est que ces règles ne cassent pas
+     l'ouverture normale. [ ]
+
+339n. **Un centre commercial finit par se câbler, et le dit.** Dans un des grands
+     centres commerciaux du comté (Louisville en a de plus de cent pièces),
+     trouver une boutique automatisée : un ordinateur allumé tout seul dans
+     l'arrière-boutique. Sélectionner cette machine dans la fenêtre de débogage :
+     l'onglet machine montre `tenancies: N` (plusieurs dizaines dans un centre
+     commercial), `premises: room <nom de la boutique>` et la ligne
+     `automated: yes  machine x,y,z  wired no  rooms walked K`. Faire le tour de
+     la boutique et du couloir, de façon à charger ses pièces les unes après les
+     autres, et regarder `rooms walked` monter de quelques pièces par minute de
+     jeu jusqu'à ce que la ligne devienne `wired yes` **sans compteur** : le
+     câblage est fini et le serveur ne repasse plus jamais dessus. Avant ce
+     changement la ligne `wired` d'un centre commercial ne passait jamais à yes
+     et le bâtiment entier était relu chaque minute de jeu.
+
+     Puis vérifier que c'est bien la boutique et pas le centre : `dev` sur cette
+     machine liste ses lampes et ses portes (option `HardwareRequired` activée,
+     donc seules les pièces équipées apparaissent), et sur un ordinateur d'une
+     boutique voisine `dev` ne montre aucune lampe -- ses interrupteurs n'ont pas
+     de relais. Attendre 21:00 sur place : les lampes de la boutique s'éteignent,
+     celles des voisines restent allumées. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

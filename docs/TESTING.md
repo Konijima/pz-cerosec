@@ -97,6 +97,14 @@ The suites, in the order they run:
   worth its own line because a square answering no room at all would have left every
   bench in `content_test.lua` green while putting the shop's ledger on a machine the
   public types at.
+- `window_test.lua` also holds the **mall-scale** automation bench: a fake mall of
+  thirty shops of sixteen rooms each and twenty halls, five hundred rooms, whose
+  chunks arrive twenty rooms at a time and never all at once, so the premises has to
+  finish wiring itself without ever seeing its building whole. It counts the squares
+  and objects the fake handed over -- not milliseconds -- and asserts that no minute
+  walks more than `CeroSecAuto.ROOMS_PER_MINUTE` rooms' worth, that no room is walked
+  twice over forty minutes, that the record converges to `wired` and drops its room
+  set, and that not one of the other twenty-nine shops grows a relay.
 - `window_test.lua` also holds the **automation** benches, and they run over a whole
   building: the two `MapObjects` maps told apart (the fake keeps both and fires each
   through the engine's own per-object walk, so what each path does and does not do is
@@ -147,7 +155,19 @@ The suites, in the order they run:
   of which must stay inside the budget by taking a turn at a time (turn them into
   one call and the ms a pass climbs tenfold), and six machines with a queue of at
   jobs as full as a directory gets, waiting for a hundred minutes, which must cost
-  **nought** steps a pass -- a waiting job is not a running one.
+  **nought** steps a pass -- a waiting job is not a running one. And the **county**
+  block, which is the other axis -- not one player's script on one machine but three
+  hundred machines in one save, forty of them on, ten with crontabs. It is the only
+  suite that loads the server's own files (the object, the system, the devices, the
+  automation) and it asserts COUNTS before clocks: that the minute sweep never asks
+  the system for a machine by index (the county walk's one door), that it decides
+  about the forty that are on and no others, that the same is true with a thousand
+  machines in the file, that every path a machine comes on by puts it in the sweep's
+  index and every path it goes off by takes it out, and that five thousand `open`
+  packets with a fresh token each leave ONE window open and a screen costing one
+  answer. The milliseconds are printed beside them and the ceiling on them is
+  deliberately generous: what it has to catch is the county coming back into the
+  walk, not a box that is also running a game.
 - `manual_ui_test.lua` — the manual: wrapping against a proportional font,
   pagination, the contents page, turning the leaves, opening each of three volumes
   off a fake shelf and opening blank paper for an id nothing answers to, a bookmark

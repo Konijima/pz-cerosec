@@ -471,11 +471,16 @@ that **nothing about such a module is special**.
   was automated by magic.
 
 Which fixtures: the ones the machine can act on, sifted back down to its own premises.
-`CeroSecDevices.fixtures` walks the building's rooms — the same walk `find` does, and
-it also says whether **every** room answered, which is how the pre-fitting knows to
-come back next minute for a room whose chunks were away and to stop coming back once
-they all arrived. Each fixture is then asked `CeroSecNet.premisesOfSquare` for itself,
-so a shop inside a mall wires its own tenancy and not the other twenty-nine.
+`CeroSecDevices.fixturesInRooms` is handed the rooms of the **premises** — its
+tenancy's in a mall, the building's anywhere else — and walks at most
+`CeroSecAuto.ROOMS_PER_MINUTE` of the ones whose chunks are in. A room it walked is
+written into the premises' record and **never walked again**, which is how the
+pre-fitting comes back for a room whose chunks were away, finishes in any chunk order,
+and stops coming back: a five-hundred-room mall is never in the world all at once, so a
+walk that waited for every room to answer together waited for ever and re-walked the
+mall every game minute while it did. Each fixture is then asked
+`CeroSecNet.premisesOfSquare` for itself, so a shop inside a mall wires its own tenancy
+and not the other twenty-nine.
 
 
 ## The floppy drive, and the second filesystem

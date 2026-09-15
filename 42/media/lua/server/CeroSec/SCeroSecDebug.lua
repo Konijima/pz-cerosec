@@ -2,6 +2,7 @@ if isClient() then return end
 
 require "CeroSec/CeroSecDefs"
 require "CeroSec/OS/CeroSecOS"
+require "CeroSec/SCeroSecAuto"
 
 --
 -- What the server knows about itself, as rows of text.
@@ -430,9 +431,34 @@ function CeroSecDebug.premises(luaObject)
 		end
 		out[#out + 1] = "tenancies: " .. cell(#groups) ..
 			(names ~= "" and ("  " .. names) or "")
-		local _, _, _, pz, pk = CeroSecNet.premisesOfSquare(square)
+		local b1, b2, _, pz, pk = CeroSecNet.premisesOfSquare(square)
 		out[#out + 1] = "premises: " .. cell(pk or "building") ..
 			(pz ~= nil and ("  " .. pz) or "")
+
+		-- And what the automation decided about this premises, which is the one line
+		-- on this tab that is not read off the map: it is in the SAVE
+		-- (CeroSecAuto.recordOf, `system.auto`). "wired" means every room of the
+		-- premises has been walked once and the minute sweep has stopped coming back;
+		-- a count beside it is a premises still being walked, a few rooms a game
+		-- minute, which is what a mall looks like while a survivor is still in it.
+		local record = nil
+		if b1 ~= nil and CeroSecAuto ~= nil then
+			record = CeroSecAuto.recordOf(luaObject.luaSystem, b1, b2)
+		end
+		if record == nil then
+			out[#out + 1] = "automated: not asked yet"
+		else
+			local walked = 0
+			if type(record.rooms) == "table" then
+				for _ in pairs(record.rooms) do walked = walked + 1 end
+			end
+			local at = record.machine
+			out[#out + 1] = "automated: " .. cell(record.on == true) ..
+				(type(at) == "table" and ("  machine " .. cell(at.x) .. "," ..
+					cell(at.y) .. "," .. cell(at.z)) or "") ..
+				"  wired " .. cell(record.wired == true) ..
+				(walked > 0 and ("  rooms walked " .. walked) or "")
+		end
 	end
 
 	-- The zones. A square can be inside several at once -- a town, a district, a

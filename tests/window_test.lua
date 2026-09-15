@@ -8358,6 +8358,28 @@ do
 			string.find(block(outdoors), "building: outdoors", 1, true) ~= nil)
 		check("with no tenancy line at all",
 			string.find(block(outdoors), "tenancies:", 1, true) == nil)
+
+		-- AND WHAT THE AUTOMATION DECIDED, which is the one line on that tab that is
+		-- read out of the save and not off the map. It is what the in-game walk has to
+		-- look at for a mall: whether this premises is finished being wired, and how
+		-- many of its rooms have been walked while it is not
+		-- (docs/PARCOURS-TEST.md step 339n).
+		check("a premises nothing has decided about says so",
+			string.find(block(dentist), "automated: not asked yet", 1, true) ~= nil)
+		local b1, b2 = CeroSecNet.premisesOfSquare(dentist:getSquare())
+		local page = CeroSecAuto.page(net.system)
+		page[CeroSecContent.premisesKey(b1, b2)] = { on = true,
+			machine = { x = dentist.x, y = dentist.y, z = dentist.z },
+			rooms = { ["0:1:2:musicstore"] = true, ["0:1:3:musicstore"] = true } }
+		local walking = block(dentist)
+		check("one still being walked says how far it has got",
+			string.find(walking, "automated: yes  machine 205,330,0  wired no  rooms walked 2", 1, true) ~= nil)
+		page[CeroSecContent.premisesKey(b1, b2)].rooms = nil
+		page[CeroSecContent.premisesKey(b1, b2)].wired = true
+		check("and a finished one says so with no count beside it",
+			string.find(block(dentist), "wired yes", 1, true) ~= nil
+				and string.find(block(dentist), "rooms walked", 1, true) == nil)
+		net.system.auto = nil
 	end
 
 	-- A GAS STATION IS ONE PREMISES. Its `gasstore` rooms are the pump islands, one

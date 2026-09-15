@@ -205,6 +205,33 @@ re-applies the sprite and announces the object to the client, which is what puts
 screen's glow back (`newLuaObjectOnClient` → `CCeroSecSystem:newLuaObjectAt` →
 `CCeroSecObject:syncLight`).
 
+### What the minute sweep walks
+
+`gos_cerosec.bin` holds **every** computer in the county — every one that has ever
+been switched on, its chunk loaded or not — and the sweep does not walk it. The system
+keeps two indexes, neither of them saved (`setModDataKeys` names the four fields that
+are):
+
+| | |
+| --- | --- |
+| `onMachines` | every machine that is **on**. The power question, the watcher eviction, `/dev`'s refresh, cron's minute and the `at` queue are about those and only those: a dark machine answers nothing to any of them. |
+| `newMachines` | every machine whose square was made in this save and has not been settled yet (`born`). These may be **off** and still have to be visited — the automation's question is what switches one on. |
+
+They are written by every place `on` and `born` are written, through one function that
+reads the machine rather than being told what changed (`SCeroSecObject:reindex`); a
+machine arriving is caught by `newLuaObject`, which the engine calls for every object
+in the save file at load with the saved fields already in the table, and one leaving by
+`aboutToRemoveFromSystem`. An entry that is neither `on` nor `born` when the sweep
+reaches it is **dropped there and then**, so a transition nobody reported costs one
+visit and never a machine that is swept for ever.
+
+What it is worth, measured: at 300 machines with 40 on, the county walk was about 3 ms
+of the 100 a game minute costs — a dark machine cost four field tests — and what the
+index buys is that the number does not move as the file grows (40 of 1000 visited for
+the same milliseconds; `tests/hostile_test.lua`, the county block). The 100 ms is the
+state validator, once per running machine per read of its state, and that is the next
+thing to look at rather than the walk.
+
 **The glow is the cell's, not ours.** The light is one `IsoLightSource` on the cell's
 lamppost stack (`getCell():addLamppost`), and the engine takes it off that stack
 whenever the square leaves the loaded window: `LightingJNI.checkLights` walks

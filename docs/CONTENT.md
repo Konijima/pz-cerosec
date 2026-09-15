@@ -546,6 +546,47 @@ system.auto["p.120.12"] = { on = true,
 | **`on`** | was this premises automated. `false` is **written and kept**: a premises with no entry has never been asked, and the two have to be told apart or a change to the odds would re-roll a county somebody is already living in. |
 | **`machine`** | which of its computers was left running. The first one created that may carry it — in a showroom, the first one that is **not** on the sales floor: the machine with the timer on it is the shop's own machine in the back, not a display model in the window. |
 | **`wired`** | its fixtures have all been fitted, and the walk never comes back. |
+| **`rooms`** | the rooms already walked, while it is **not** finished: a set of room tags, each one a room's floor, its corner and its name. It is how the wiring comes back for a room whose chunks were away without ever walking one twice, and it is **dropped** the minute `wired` goes on. |
+
+#### What the three registers cost a save
+
+`notes`, `desks` and `auto` are the only tables in this mod that grow with the MAP
+rather than with a machine, and unlike everything else here they have no ceiling of
+their own — so it is worth saying what the ceiling the map gives them is.
+
+The serializer's format is exact (`KahluaTableImpl.save` and
+`GameWindow$StringUTF.save`, `javap`'d on 42.20.4): a table is four bytes and then,
+per entry, one byte of key tag, the key, one byte of value tag and the value; a
+string is two bytes of length and its bytes; a double is eight; a boolean is one.
+By that reckoning, per premises:
+
+| entry | bytes |
+| --- | --- |
+| `notes["120.12"] = true` | 12 |
+| `auto` for a premises that rolled **no** | 24 |
+| `auto` for one that rolled yes and is wired | 88 |
+| `auto` mid-walk, carrying a sixteen-room set | 555, until `wired` |
+| `desks` with one machine in it | 54 |
+| `desks` with two | 77 |
+
+So a premises that has had everything happen to it — a note, an automated machine,
+two computers switched on — is **about 180 bytes**.
+
+And the number of premises is the map's. 9546 buildings, each of them at least one
+premises; 143 of them multi-tenant, the two biggest with 45 and 40 tenancies
+(`notes/tenancies.md`, which counted them); no named premises zones in the shipped
+malls at all. Taking the biggest mall's count as the bound for every one of the 143
+gives 9546 + 143 × 45 ≈ **16 000 premises**, which is a generous upper bound and not
+an estimate.
+
+**16 000 × 180 bytes is under 3 MB, and that is the ceiling.** It is reached only by
+a save where every premises in Knox County has been visited, decided about and had
+two computers switched on in it; two thirds of the `auto` entries are the 24-byte
+kind, and a premises nobody has found a computer in has no `desks` entry and no note
+at all. It does not grow with play time: a second visit to a premises writes nothing
+a first visit did not. For scale, one machine's own filesystem is up to 64 KB in the
+same file, so fifty computers somebody has really used cost more than all three
+registers at their worst.
 
 ### The hardware, and whose crontab drives it
 
@@ -598,8 +639,19 @@ that was still doing the nine o'clock lights is a machine nobody shut down.
 `/dev` needs the chunk loaded and cron runs on the server clock, so the lights really
 do go off at 21:00 **when the player is around**, and when nobody is, nothing happens
 — exactly like a timer nobody is watching. The fixtures are fitted as their chunks
-arrive, in any order, and the walk stops coming back the minute every room of the
-building has answered (`CeroSecDevices.fixtures` says whether it saw the whole of it).
+arrive, in any order, and the walk stops coming back the minute every room **of the
+premises** has been walked once.
+
+**A few rooms a minute, and each room once.** The walk is the premises' own rooms —
+its tenancy's in a mall, the building's anywhere else — and at most
+`CeroSecAuto.ROOMS_PER_MINUTE` of them whose chunks are in are walked in one game
+minute (`CeroSecDevices.fixturesInRooms`). A room that answered is written into
+`record.rooms` and never asked again, so a five-hundred-room mall finishes wiring
+itself over some minutes and in any chunk order. It used to walk the WHOLE building
+every minute and only call itself finished on a pass where every room answered at
+once, which on a mall no player's chunk radius covers is a pass that never comes: the
+mall was re-walked square by square, object by object, every game minute for as long
+as the carrier machine was on, and once per automated premises in it.
 
 ## Three tellings of every file
 

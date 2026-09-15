@@ -8,6 +8,20 @@ date.
 
 ## Unreleased
 
+- One terminal per computer per survivor. Opening the same machine again closes
+  the window you had on it instead of leaving it behind, and a computer holds
+  eight windows at once: nothing you can do at a keyboard reaches either rule,
+  and a server no longer pays for windows nobody is looking at.
+- The shops that were already automated finish wiring themselves in big
+  buildings, and the server stops reading the whole building every minute while
+  they do. A mall's rooms come into the world a few at a time as you walk it, so
+  the relays and contacts are now fitted a few rooms a game minute and the shop
+  is written down as done -- where before the wiring never called itself
+  finished in a mall and every minute re-read all five hundred rooms of it
+  looking for what it had already fitted.
+- The minute the server spends on the county now goes on the computers that are
+  actually running. A county of dark machines in your save costs nothing, however
+  many of them there are.
 - A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
   terminal of the machine: the glass in front of you and every session that
   came in over the wire: with the banner a 1993 machine put on it. Anybody may

@@ -121,6 +121,19 @@ singleplayer where there is only one), because the server addresses a connection
 and split screen puts several players on one. The server keeps a watcher list per
 computer and answers every open window with the new screen under its own token.
 
+**That list is bounded, both ways, and it has to be:** the key is the online id and
+the token the CLIENT picked, so one `open` per fresh random token used to add one
+permanent entry apiece — and every entry is one `sendServerCommand` on every later
+screen of that machine, paid by whoever types at it next. So a second `open` from the
+same player replaces his first, which is told `closed` with the reason `replaced`, and
+one machine holds at most `SCeroSecObject.WATCHERS_MAX` windows whatever the online
+ids say, the oldest going first. Both rules live in `SCeroSecObject:addWatcher`, the
+one place a watcher is ever inserted, and the same player is the same by online id
+**and** player number, because split screen is two survivors on one connection. In
+play neither rule ever fires: the client already shuts its own previous box (one
+terminal per player, `CeroSecTerminal.open`). The debug window's machine tab prints
+the count as `windows`.
+
 ## The device highlight, addressed to one window
 
 `dev find` answers the question a listing cannot: **which** of the thirty-five it
