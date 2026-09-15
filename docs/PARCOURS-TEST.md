@@ -3070,6 +3070,11 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `sudo` qui a cherché. `sudo cd /root` répond pareil
      (`sudo: cd: command not found`). [ ]
 
+339b. **`cut` prend sa valeur collée.** `cut -d: -f1 /etc/passwd` → la liste des
+     comptes, une ligne chacun, exactement comme `cut -d : -f 1 /etc/passwd`.
+     `cut -c1-8 /etc/passwd` marche pareil, et `cut -d: -f-2 /etc/passwd` donne
+     les deux premiers champs (le `-2` est la liste, pas une option). [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

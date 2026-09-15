@@ -1229,19 +1229,20 @@ or fields, with a separator and -f:
   root
   admin
 
-A list is 1, or 1,4, or 3-5, or 2- for "the second one to the end". A line
-with no separator in it comes through whole, untouched.
+A list is 1, or 1,4, or 3-5, or 2- for "the second to the end". A line with
+no separator comes through whole. cut -d: -f1 is that same line without the
+spaces: all three flags take their value stuck on.
 
 tr changes characters, one for one, and reads a pipe only:
 
   admin@ksp-04-11:~$ cat note.txt | tr a-z A-Z
   HELLO
 
-Give it -d and one set and it deletes those characters instead. Ranges
-like a-z work; the [:alpha:] spellings a bigger Unix has do not.
+Give it -d and one set and it deletes those instead. Ranges like a-z work;
+the [:alpha:] spellings a bigger Unix has do not.
 
 tee is a T-piece: it copies the pipe onto the glass AND into the files you
-name, so you can watch something and keep it. -a adds instead of replacing.
+name, so you can watch and keep at once. -a adds instead of replacing.
 
   admin@ksp-04-11:~$ ls /bin | tee list | wc -l
 

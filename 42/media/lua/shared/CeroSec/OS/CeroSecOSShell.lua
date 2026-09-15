@@ -2568,24 +2568,40 @@ end
 
 -- cut -c <list>, or cut -d <delim> -f <list>. The default delimiter is a TAB,
 -- which is cut(1)'s own default and the reason -d exists at all.
+--
+-- ATTACHED OR APART, for all three. POSIX.2's utility syntax guidelines say an
+-- option-argument may be written in the same word as its option, and cut(1) reads
+-- its line with getopt(3), which is where that rule comes from -- so `cut -d: -f1`
+-- and `cut -d : -f 1` are the same line, and `cut -d:` is the form every mbox and
+-- /etc/passwd one-liner of the era is written in. Only the separated form was
+-- taken here, so the line a survivor actually types answered a usage line.
+--
+-- The remainder of the word is the argument WHATEVER it looks like: `-f-3` is the
+-- list "-3" (up to the third field) and not an option, because getopt stops
+-- reading options at the letter it was given.
+local function cutArg(args, i, a)
+	if #a > 2 then return string.sub(a, 3), i + 1 end
+	return args[i + 1], i + 2
+end
+
 commands.cut = function(state, session, args, env, stdin)
 	local mode, list, delim = nil, nil, "\t"
 	local paths = {}
 	local i = 2
 	while i <= #args do
 		local a = args[i]
-		if a == "-c" or a == "-f" then
+		local head = string.sub(a, 1, 2)
+		if head == "-c" or head == "-f" then
 			if #paths > 0 then return usage("cut") end
 			mode = string.sub(a, 2, 2)
-			list = args[i + 1]
+			list, i = cutArg(args, i, a)
 			if list == nil then return usage("cut") end
-			i = i + 2
-		elseif a == "-d" then
+		elseif head == "-d" then
 			if #paths > 0 then return usage("cut") end
-			local d = args[i + 1]
+			local d
+			d, i = cutArg(args, i, a)
 			if d == nil or #d ~= 1 then return usage("cut") end
 			delim = d
-			i = i + 2
 		elseif #paths == 0 and string.sub(a, 1, 1) == "-" and a ~= "-" then
 			return fail("cut", a, "unknown option")
 		else

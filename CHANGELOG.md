@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- `cut` takes its flags the way you type them. `cut -d: -f1 /etc/passwd` used
+  to answer a usage line; the value may now be stuck to the flag or stand
+  apart, for `-d`, `-f` and `-c` alike, which is how every Unix has read that
+  line.
 - `sudo` owns up to a name it could not find. `sudo lights on` used to answer
   `lights: command not found`, which reads like a refusal from a program that
   was never run; it now says `sudo: lights: command not found`, the way it

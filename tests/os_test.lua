@@ -13858,6 +13858,33 @@ do
 
 	-- And down a pipe, which is what cut is usually on the right of.
 	okAt(state, admin, "cat rows | cut -d , -f 1", { "one", "plain line", "alpha" })
+
+	-- THE ATTACHED FORM, which is the one a pair of hands types. POSIX.2's utility
+	-- syntax guidelines let an option-argument sit in the same word as its option
+	-- and cut(1) reads its line with getopt(3), so `cut -d: -f1` is `cut -d : -f 1`.
+	-- Every one of the three, because all three take an argument.
+	put(state, admin, "/home/admin/passwd", "root:x:0\nbob:x:1000")
+	okAt(state, admin, "cut -d: -f1 passwd", { "root", "bob" })
+	okAt(state, admin, "cut -d: -f1,3 passwd", { "root:0", "bob:1000" })
+	okAt(state, admin, "cut -c1 wide", { "a" })
+	okAt(state, admin, "cut -c2-4 wide", { "bcd" })
+	-- Mixed, because getopt does not care which way each one was written.
+	okAt(state, admin, "cut -d: -f 1 passwd", { "root", "bob" })
+	okAt(state, admin, "cut -d : -f1 passwd", { "root", "bob" })
+	-- The classic, down a pipe: the field list of a passwd file.
+	okAt(state, admin, "cat passwd | cut -d: -f1", { "root", "bob" })
+	-- The remainder of the word is the ARGUMENT whatever it looks like, because
+	-- getopt stops reading options at the letter it was given: `-f-2` is the list
+	-- "-2" and not an option nobody has.
+	okAt(state, admin, "cut -d: -f-2 passwd", { "root:x", "bob:x" })
+	okAt(state, admin, "cut -c-3 wide", { "abc" })
+	-- And an attached delimiter longer than one character is still one character
+	-- short of a delimiter.
+	badAt(state, admin, "cut -d,, -f1 rows",
+		"cut: usage: cut -c <list> | -d <delim> -f <list> [file]...")
+	-- An attached list that is not one is judged as a list and named as one, which
+	-- is the answer the separated form already gives.
+	badAt(state, admin, "cut -cx wide", "cut: x: invalid list")
 end
 
 -- 49b. tr: the ranges, the short second set, and -d.
