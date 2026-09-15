@@ -2436,12 +2436,17 @@ function CeroSecNet.logIn(system, object, far, pty, account, now)
 	console.shexport = CeroSecOS.loginExported()
 	console.status = nil
 	console.loginAt = now or 0
-	-- No motd on an rsh (pty.quiet): rshd does not print one, login does, and an
-	-- rsh is not a login. It matters more than the flavour of it -- what comes back
-	-- from an rsh is the far command's output and goes into a pipe, a $(...) or
-	-- somebody's mail, and a greeting in there is a line the far command did not
-	-- write.
-	if not pty.quiet then CeroSec.consolePushAll(console, CeroSecOS.motdLines(far)) end
+	-- No greeting on an rsh (pty.quiet): rshd prints none of it, login prints all
+	-- three, and an rsh is not a login. It matters more than the flavour of it --
+	-- what comes back from an rsh is the far command's output and goes into a pipe,
+	-- a $(...) or somebody's mail, and a greeting in there is a line the far command
+	-- did not write.
+	--
+	-- Read before the record goes in, because the first of those lines is the login
+	-- BEFORE this one (CeroSecOS.loginLines).
+	if not pty.quiet then
+		CeroSec.consolePushAll(console, CeroSecOS.loginLines(far, account.name))
+	end
 	if now ~= nil then
 		CeroSecOS.wtmpAppend(far, "in", account.name, pty.line, pty.fromHost, now)
 		object:mirrorOS()

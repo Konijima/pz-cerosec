@@ -1399,9 +1399,12 @@ do
 	bench.enter("y")
 	bench.frame()
 	eq("the machine boots", bench.window.prompt, "login: ")
-	-- The greeting, read off the constant it is built from: a version typed
-	-- into a bench is a second place the number lives.
-	check("and greets whoever is standing there", bench.painted(CeroSecOS.MOTD))
+	-- The BANNER over the prompt, which is getty's and is built from the file the
+	-- repair has just put back. Not the motd: that one is login's, and it is not
+	-- printed until somebody has got in (CeroSecOS.loginLines).
+	check("and names itself over the prompt",
+		bench.painted(CeroSecOS.issueText(CeroSecOS.hostname(bench.object:osState()))))
+	check("and does not greet him twice", not bench.painted(CeroSecOS.MOTD))
 
 	bench.enter("root")
 	bench.enter("")

@@ -103,7 +103,12 @@ CeroSecOS.STATE_VERSION = 2
 --    sake. `export` and `.` are words the shell IS and have no file, like cd;
 --    `find -exec` is a flag on a command that was already there. Nothing is
 --    deleted.
-CeroSecOS.SYSTEM_VERSION = 18
+-- 19: /etc/issue, the banner getty printed before the login prompt. The motd was
+--    being printed there AND after the login, which is one file doing two jobs
+--    and neither of them the way a real machine did it: getty prints the issue
+--    file at the top of the screen, and /etc/motd belongs to login, after it.
+--    Seeded, root's, 644, with the machine's own name in it. Nothing deleted.
+CeroSecOS.SYSTEM_VERSION = 19
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -240,6 +245,7 @@ CeroSecOS.PASSWD_PATH = "/etc/passwd"
 CeroSecOS.GROUP_PATH = "/etc/group"
 CeroSecOS.SUDOERS_PATH = "/etc/sudoers"
 CeroSecOS.MOTD_PATH = "/etc/motd"
+CeroSecOS.ISSUE_PATH = "/etc/issue"
 CeroSecOS.HOSTNAME_PATH = "/etc/hostname"
 
 -- /etc/passwd holds the hashes, so it is root's and nobody else reads it. The
@@ -283,6 +289,35 @@ CeroSecOS.HOSTNAME_MAX = 16
 -- 4096 bytes and the console keeps a hundred lines; a motd is a greeting, not a
 -- book.
 CeroSecOS.MOTD_MAX_LINES = 10
+-- And of /etc/issue, which getty prints BEFORE the login prompt. Bounded for
+-- the same reason and by the same number: the file is 4096 bytes and a banner
+-- is a line or two, not a notice board.
+CeroSecOS.ISSUE_MAX_LINES = 10
+
+-- What /etc/issue holds on a machine nobody has edited it on.
+--
+-- 4.4BSD's getty prints the banner from gettytab: `im` is the initial message
+-- and `if` names an issue file, and the default entry's im is
+-- "\r\n4.4 BSD UNIX (%h) (%t)\r\n\r\n" -- the machine's name and the line the
+-- terminal is on, each in its own brackets. This is that line with this
+-- machine's own name and version in it, and the line is always "console" here:
+-- the banner is what the survivor at the keyboard reads, and a caller down the
+-- wire never meets getty at all (see CeroSecNet.logIn).
+--
+-- The hostname is written in at SEED time and not expanded when it is printed.
+-- Nothing on this machine expands a token in a file on its way to the glass --
+-- the prefilled content's own placeholders are filled in as it is written
+-- (CeroSecContent.textFor) -- so a "%h" left in the file would be the one string
+-- in the world that means something other than what it says. What keeps it true
+-- afterwards is CeroSecOS.setHostname, which rewrites the line it seeded when
+-- the machine is renamed and leaves anything else exactly as it lies.
+function CeroSecOS.issueText(hostname)
+	if not CeroSecOS.isValidHostname(hostname) then
+		hostname = CeroSecOS.DEFAULT_HOSTNAME
+	end
+	return "CeroSec OS " .. CeroSecOS.VERSION .. " (" .. hostname .. ") ("
+		.. CeroSecOS.CONSOLE_LINE .. ")"
+end
 
 -- Every command table lives here; the shell looks up args[1] in it.
 CeroSecOS.commands = CeroSecOS.commands or {}

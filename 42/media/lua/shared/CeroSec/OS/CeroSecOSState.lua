@@ -30,6 +30,11 @@ function CeroSecOS.newState(hostname)
 	root.children.etc = CeroSecOS.newDir("root", 755)
 	root.children.etc.children.hostname = CeroSecOS.newFile("root", 644, hostname)
 	root.children.etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
+	-- The banner over the login prompt, with the machine's own name written into
+	-- it: nothing expands a token on its way to the glass, so the name goes in
+	-- here and setHostname keeps it true (CeroSecOS.issueText).
+	root.children.etc.children.issue =
+		CeroSecOS.newFile("root", 644, CeroSecOS.issueText(hostname))
 	root.children.etc.children.passwd =
 		CeroSecOS.newFile("root", CeroSecOS.PASSWD_MODE, CeroSecOS.defaultPasswd())
 	root.children.etc.children.group =

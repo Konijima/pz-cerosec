@@ -243,6 +243,26 @@ function CeroSecOS.upgradeSystem(state)
 			end
 		end
 
+		-- /etc/issue, for a machine saved before there was a banner over its login
+		-- prompt, and on the same terms as the two above: only where there is
+		-- nothing at all at that name. A file root wrote himself is his, and so is an
+		-- EMPTY one -- a silent login prompt is what most machines had. A machine
+		-- below this version has no banner because none existed, which is why a
+		-- missing one is filled here exactly once; after the number has moved, an
+		-- `rm /etc/issue` stays done.
+		--
+		-- The name written in is the one the machine answers to now, not the default:
+		-- this runs on a machine that has been standing somewhere for a year.
+		if etc.children.issue == nil then
+			local text = CeroSecOS.issueText(CeroSecOS.hostname(state))
+			if nodes + 1 <= CeroSecOS.MAX_NODES and bytes + #text <= CeroSecOS.MAX_TOTAL_BYTES
+					and CeroSecOS.countEntries(etc) < CeroSecOS.MAX_DIR_ENTRIES then
+				etc.children.issue = CeroSecOS.newFile("root", 644, text)
+				nodes = nodes + 1
+				bytes = bytes + #text
+			end
+		end
+
 		-- The one thing here that adds a LINE to a file a player may have edited,
 		-- and it is the pair of lines `wheel` is: a group with nobody in it, and the
 		-- /etc/sudoers line that grants it. Neither gives anybody anything -- the
@@ -333,11 +353,46 @@ end
 -- the file has actually taken it.
 function CeroSecOS.setHostname(state, name, now)
 	if not CeroSecOS.isValidHostname(name) then return nil, "invalid name" end
+	local old = CeroSecOS.hostname(state)
 	local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
 		CeroSecOS.HOSTNAME_PATH, name, false, now)
 	if done == nil then return nil, reason end
 	state.hostname = name
+	-- And the banner over the login prompt, which carries the name because nothing
+	-- expands a token when a file is printed (CeroSecOS.issueText). Rewritten only
+	-- where it is still EXACTLY the line that was seeded for the old name: anything
+	-- else in /etc/issue is somebody's own notice, and a rename is not a licence to
+	-- overwrite it. A machine renamed twice is renamed twice, because each rewrite
+	-- leaves the seeded line again.
+	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
+	if type(issue) == "table" and issue.type == "file"
+			and (issue.data or "") == CeroSecOS.issueText(old) then
+		CeroSecOS.writeFile(state, CeroSecOS.rootSession(), CeroSecOS.ISSUE_PATH,
+			CeroSecOS.issueText(name), false, now)
+	end
 	return true, nil
+end
+
+--
+-- /etc/issue
+--
+
+-- What getty puts on the screen BEFORE the login prompt: the file, capped at
+-- ISSUE_MAX_LINES. A missing or empty file prints nothing, on exactly the motd's
+-- rule below -- root emptied it on purpose, and a machine that says nothing over
+-- its login prompt is what most of them said.
+function CeroSecOS.issueLines(state)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
+	if node == nil or node.type ~= "file" or (node.data or "") == "" then
+		return {}
+	end
+	local lines = CeroSecOS.splitLines(node.data)
+	local out = {}
+	for i = 1, #lines do
+		if i > CeroSecOS.ISSUE_MAX_LINES then return out end
+		out[i] = lines[i]
+	end
+	return out
 end
 
 --
@@ -358,6 +413,68 @@ function CeroSecOS.motdLines(state)
 		if i > CeroSecOS.MOTD_MAX_LINES then return out end
 		out[i] = lines[i]
 	end
+	return out
+end
+
+--
+-- What login itself says
+--
+-- 4.4BSD's login.c prints three things after the password is right and before
+-- the shell starts, in this order and all three only when the login is not a
+-- quiet one: the last login out of lastlog, the motd, and whether there is mail
+-- in the spool. Written here, once, because two paths log somebody in -- the
+-- keyboard (SCeroSecSystem Commands.input) and the wire (CeroSecNet.logIn) --
+-- and a greeting that came out different down the telephone would be two
+-- machines.
+--
+-- Called BEFORE the "in" record goes into wtmp: the line is the login BEFORE
+-- this one, which is what lastlog holds at the moment login reads it.
+--
+
+-- The name of the file whose presence makes a login quiet. login.c stats
+-- ~/.hushlogin and prints nothing at all if it is there; the file's CONTENTS are
+-- never read, so `touch ~/.hushlogin` is the whole of it.
+CeroSecOS.HUSHLOGIN = ".hushlogin"
+
+-- Whether this account asked for a silent login. The home is the account's own
+-- (/etc/passwd says where), read by the kernel and not through the bits -- login
+-- runs as root when it looks, exactly as it does when it reads the hashes.
+function CeroSecOS.isHushLogin(state, user)
+	local account = CeroSecOS.getUser(state, user)
+	if type(account) ~= "table" or type(account.home) ~= "string" then return false end
+	local node = CeroSecOS.systemNode(state,
+		account.home .. "/" .. CeroSecOS.HUSHLOGIN)
+	return node ~= nil
+end
+
+-- Whether there is anything in this account's mailbox. login.c stats it and
+-- prints on a size that is not zero.
+function CeroSecOS.hasMail(state, user)
+	local node = CeroSecOS.systemNode(state, CeroSecOS.mailPath(user))
+	if node == nil or node.type ~= "file" then return false end
+	return (node.data or "") ~= ""
+end
+
+-- The greeting, in order, for an account that has just logged in.
+--
+-- ~/.hushlogin silences all three and not only the motd, because that is where
+-- login.c tests it: the file sets `quietlog` and the whole block -- last login,
+-- motd, mail -- is inside `if (!quietlog)`. A hush that still announced the mail
+-- would be a hush this machine invented.
+--
+-- "You have mail." and never "You have new mail.": login.c prints the "new" only
+-- when the mailbox's mtime is past its atime, and nothing on this machine has an
+-- atime -- a node carries mtime and no more (see the persistence section of
+-- ARCHITECTURE.md). An access time invented for one greeting would be a field
+-- every write on the machine then has to keep honest.
+function CeroSecOS.loginLines(state, user)
+	local out = {}
+	if CeroSecOS.isHushLogin(state, user) then return out end
+	local last = CeroSecOS.lastLoginLine(state, user)
+	if last ~= nil then out[#out + 1] = last end
+	local motd = CeroSecOS.motdLines(state)
+	for i = 1, #motd do out[#out + 1] = motd[i] end
+	if CeroSecOS.hasMail(state, user) then out[#out + 1] = "You have mail." end
 	return out
 end
 
@@ -416,6 +533,12 @@ function CeroSecOS.restoreSystem(state)
 	end
 	if etc.children.motd == nil then
 		etc.children.motd = CeroSecOS.newFile("root", 644, CeroSecOS.MOTD)
+	end
+	-- /etc/issue on the same terms, and with the name the machine answers to now:
+	-- a repair is not a rename.
+	if etc.children.issue == nil then
+		etc.children.issue =
+			CeroSecOS.newFile("root", 644, CeroSecOS.issueText(CeroSecOS.hostname(state)))
 	end
 	local passwd = etc.children.passwd
 	local keep = false

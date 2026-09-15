@@ -719,7 +719,9 @@ function SCeroSecSystem:answerBios(luaObject, console, playerObj, token, text)
 		self:sayNoSystem(luaObject, console)
 	else
 		console.halted = nil
-		CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
+		-- The banner and not the motd: this is a machine coming up to its login
+		-- prompt, which is getty's screen (see bootScreen).
+		CeroSec.consolePushAll(console, CeroSecOS.issueLines(state))
 	end
 	self:pushScreen(luaObject, state, console)
 end
@@ -1018,7 +1020,12 @@ function SCeroSecSystem:bootScreen(console, state)
 		call = CeroSecOS.callsignOf(state)
 	end
 	CeroSec.consolePushAll(console, CeroSec.bootLines(addr, tel, call))
-	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.motdLines(state)) end
+	-- And /etc/issue under the firmware's lines, which is where getty printed its
+	-- banner: 4.4BSD's getty prints `im` (or the `if` issue file) and THEN the
+	-- login prompt. The motd used to be here, and it was the same greeting twice
+	-- on one screen -- /etc/motd is login's and is printed once the password is
+	-- right (CeroSecOS.loginLines).
+	if state ~= nil then CeroSec.consolePushAll(console, CeroSecOS.issueLines(state)) end
 	return true
 end
 
@@ -1678,9 +1685,13 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 			-- with the machine it came from beside it.
 			local now = CeroSecOS.clockOf(self:clockEnv())
 			console.loginAt = now or 0
+			-- What login says, worked out BEFORE the arrival is written down: the
+			-- "Last login" line is the login before this one, and a record already in
+			-- the file would make it this one (CeroSecOS.lastLoginRecord).
+			local greeting = CeroSecOS.loginLines(state, session.user)
 			CeroSecOS.wtmpAppend(state, "in", session.user,
 				console.line or CeroSecOS.CONSOLE_LINE, console.fromHost, now)
-			CeroSec.consolePushAll(console, CeroSecOS.motdLines(state))
+			CeroSec.consolePushAll(console, greeting)
 			-- ~/.profile, after the greeting and before the first prompt, the
 			-- way sh has run it since the seventh edition. It runs as the
 			-- SHELL's own job, so what it sets is still set at the prompt.
