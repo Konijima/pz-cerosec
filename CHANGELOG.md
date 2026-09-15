@@ -8,6 +8,15 @@ date.
 
 ## Unreleased
 
+- You can see which floppies hold a program. A disk that came with software
+  wears its printed label and is named for the product on it -- CeroSec
+  UTILITIES 1.0, SHAREWARE GAMES 2.1, NIGHTLINE DIALER 1.2 -- with a printed
+  sticker on its icon and "Printed label" on its tooltip. A disk somebody kept
+  his own things on is named in his own hand instead: books 93, do not read,
+  home dir 8 july. Two copies of the same kind of disk found in two towns were
+  two different men and do not say the same thing.
+- A pen is a pen. Labelling a disk yourself is handwriting whatever you write,
+  and relabelling a printed disk takes the printed sticker off it.
 - `mail` sends as well as reads. `mail [-s subject] bob` posts a message to
   another account on the machine: the body comes from a pipe
   (`echo hi | mail -s Hello bob`) or is typed at the prompt a line at a time
