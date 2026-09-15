@@ -300,9 +300,11 @@ including an 8001-byte description, an `Interfaces` tag and a 1187287-byte
 preview. It is run unpiped in `tests/run.sh`, because a pipe would hide its exit
 status from `set -e` and a guard whose status is swallowed is decoration.
 
-**The running budget.** The description is 6795 bytes with ten screenshot slots
-still to fill, so 7795 of 8000 once they are in. That is 205 bytes of headroom:
-adding a paragraph to this page means taking one out.
+**The running budget.** The description is 6994 bytes with ten screenshot slots
+still to fill, so 7994 of 8000 once they are in (measured at 0.3.0; it was 6795
+and 205 bytes of headroom at 0.1.0). That is **6 bytes** of headroom: a sentence
+added to the description now has to come out of another one, and the guard is
+the thing that will say so.
 
 ## What the sizes are, and why
 
