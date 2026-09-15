@@ -772,6 +772,38 @@ do
 end
 
 --
+-- 8d. A `case` of forty patterns, in a loop (debts 2).
+--
+-- A case of forty alternatives does forty comparisons every time round, and each
+-- one is an expansion and a walk of two strings. Charged a step each, which is what
+-- the same thing written as forty `[ "$x" = p ]` would cost -- and it has to be:
+-- with the comparison counted as free work (which is how the frame was written
+-- first) a pass over this cost 7.6 ms against a ceiling of 4, because a hundred
+-- loop iterations were four thousand comparisons the budget could not see.
+--
+-- The last pattern is the one that matches, so every one of them is walked.
+--
+do
+	local machine, state, console = newMachine()
+	local pats = {}
+	for i = 1, 39 do pats[#pats + 1] = "p" .. i end
+	pats[#pats + 1] = "hit"
+	put(state, "/home/admin/sw.sh",
+		"while true; do case hit in " .. table.concat(pats, "|") ..
+		") x=1;; esac; done\n")
+	local job = typeLine(system, machine, state, console, "sh sw.sh")
+
+	local result = drive(machine, PASSES)
+	flat("case of forty", result)
+	timely("case of forty", result)
+	check("it is still running and still bounded", not CeroSecOS.jobIsOver(job))
+	-- And really going round: the loop iteration is the one step a turn of this
+	-- costs, so the steps are the turns and there have to be thousands of them.
+	check("the loop went round (" .. job.steps .. " steps)", job.steps > PASSES)
+	note("case of forty", result)
+end
+
+--
 -- 9. Four of the worst of them at once, on four machines, sharing one budget.
 -- What is being watched here is the ceiling on the WHOLE county: no pass may
 -- spend more than CeroSec.STEP_BUDGET_PER_TICK however many machines there are.

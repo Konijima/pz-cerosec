@@ -69,6 +69,29 @@ refusal with nothing catching them: a file's contents spilled across the middle 
 line being built. A job that has ended writes nowhere, which is one test in `outLine`
 and what a dead process does.
 
+**`case` and the bracket.** `)` is **not** an operator on this machine — there is no
+subshell grouping here, and making one of it now would turn every `echo (hi)` a
+survivor has already written into a syntax error — so the `)` that closes a pattern is
+taken off the *end* of the pattern word instead (`takeClose`). That is not a shortcut:
+only an **unquoted** `)` closes a pattern on a real sh, and the test is whether the
+last piece of the word was bare literal text, so `"a)"` is a pattern with a bracket in
+it and `[)]` is a set holding one. `;;` **is** one operator now (it was two separators,
+so `echo a;;` quietly ran as `echo a`), and `parseProgram` stops at it the way it stops
+at a reserved word. POSIX's optional `(` in front of a pattern is taken off the front
+the same way. `case` and `esac` joined the reserved words, so `help`, `type` and Tab
+know them.
+
+The patterns are expanded and compared **one at a time, in order, and no further than
+the match** — POSIX's rule, and the reason a `$( )` in a clause below the one that
+matched never runs. Each comparison costs **one step**: a case of forty alternatives
+really does forty expansions and forty string walks, the same thing written as forty
+`[ "$x" = p ]` would cost forty steps, and with the comparison counted as free work a
+loop over a forty-pattern case cost 7.6 ms a pass against a ceiling of 4
+(`tests/hostile_test.lua`, "case of forty"). The subject is expanded *without* field
+splitting, which is POSIX's rule for it: a value with a blank in it is one word, or a
+name with a space could not be matched at all. Nothing matched is a status of nought,
+and a clause that ran hands its own status up.
+
 **Tab completes.** In the first word of a line it offers command names — every
 executable the account may run in the directories `PATH` names, walked left to right
 and bounded by the same `MAX_PATH_DIRS` the lookup is bounded by, plus the words the
@@ -160,7 +183,9 @@ The language is the one you already know from a 1993 `/bin/sh`, cut to what fits
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,
 `$$`; single and double quotes and backslash; `#` comments; `;`, `&&`, `||` and a
 trailing `&`; `if`/`elif`/`else`/`fi`, `for`/`in`, `while`, `until`, `break`,
-`continue`, `exit`, `return`; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
+`continue`, `exit`, `return`; `case word in pattern) … ;; esac` with `|` between
+alternatives, the shell's own globs (`*`, `?`, `[…]`) in the patterns and `*)` as the
+default; `test` and `[ ... ]` with `-f -d -e -r -w -x -z -n`,
 `=`, `!=`, `-eq -ne -lt -le -gt -ge`, `!`, `-a`, `-o`; `$(command)` one level deep
 and `$((1 + 2 * 3))` on whole numbers — with `$1`, `$#`, `$?`, `$$` and `${NAME}`
 read inside the double brackets as POSIX.2 reads them, the expansion first and the

@@ -198,7 +198,7 @@ before — a completion that offered a name the shell would not then find would 
 Tab that lies about what the machine can do.
 
 Two kinds of word are **not** files, and could not be. The reserved words
-(`if then elif else fi for while until do done`) are grammar. The shell's own words
+(`if then elif else fi for while until do done case esac`) are grammar. The shell's own words
 (`. cd export exit fg jobs wait read shift break continue history`) change the shell
 itself or own what it started, which no separate program could do — `cd` cannot be a
 file in Unix and is not one here, `export` marks the shell's own variables and `.`

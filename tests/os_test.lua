@@ -15057,4 +15057,124 @@ do
 		#(node.data or "") > 0 and #(node.data or "") <= CeroSecOS.MAX_FILE_BYTES)
 end
 
+-- 50e. case, with the shell's own globs (debts 2).
+--
+-- POSIX.2's `case word in pattern) ... ;; esac`, with `|` between alternatives and
+-- the three patterns sh has always had -- `*`, `?` and a `[...]` set -- plus `*)`
+-- as the default. The matcher is CeroSecOS.globMatch, the very call `find -name`
+-- uses, so a glob means one thing on this machine wherever it is written.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+
+	okAt(state, admin, "case abc in a*) echo star;; esac", { "star" })
+	okAt(state, admin, "case abc in x) echo no;; abc) echo exact;; esac", { "exact" })
+	-- The clauses are tried IN ORDER and the first match wins, so a later clause
+	-- that also matches never runs.
+	okAt(state, admin, "case abc in a*) echo first;; abc) echo second;; esac",
+		{ "first" })
+	okAt(state, admin, "case abc in x|abc|y) echo alt;; esac", { "alt" })
+	okAt(state, admin, "case abc in z*) echo no;; *) echo default;; esac",
+		{ "default" })
+	okAt(state, admin, "case abc in a?c) echo quest;; esac", { "quest" })
+	okAt(state, admin, "case b in [abc]) echo set;; esac", { "set" })
+	okAt(state, admin, "case d in [abc]) echo set;; *) echo notset;; esac",
+		{ "notset" })
+	-- A set with a range and a negated one, which is the rest of globMatch's
+	-- grammar and is the same grammar `find -name` matches on.
+	okAt(state, admin, "case m in [a-z]) echo lower;; esac", { "lower" })
+	okAt(state, admin, "case 7 in [!0-9]) echo nondigit;; *) echo digit;; esac",
+		{ "digit" })
+	-- POSIX's optional "(" in front of a pattern.
+	okAt(state, admin, "case abc in (abc) echo paren;; esac", { "paren" })
+	-- A clause of several commands, and a clause that is empty.
+	okAt(state, admin, "case abc in *) echo one; echo two;; esac", { "one", "two" })
+	okAt(state, admin, "case abc in abc) ;; esac", {})
+
+	-- Nothing matched is not a failure: POSIX gives that a status of nought.
+	okAt(state, admin, "case abc in q) echo no;; esac", {})
+	okAt(state, admin, "echo $?", { "0" })
+	-- And a case with no clauses at all is the same nothing.
+	okAt(state, admin, "case abc in esac", {})
+	okAt(state, admin, "echo $?", { "0" })
+	-- What the clause left behind IS the case's status, which is the other half of
+	-- POSIX's rule about it.
+	do
+		local r = runAt(state, admin, "case abc in *) false;; esac", ENV)
+		eq("a case takes the status of the clause that ran", r.ok, false)
+		eq("and says nothing about it", #r.lines, 0)
+	end
+	okAt(state, admin, "echo $?", { "1" })
+
+	-- The subject is expanded, and expanded WITHOUT field splitting: a value with a
+	-- blank in it is one word, or a name with a space could not be matched at all.
+	ok(state, admin, "f=notes.txt", {})
+	okAt(state, admin, "case $f in *.txt) echo text;; *.sh) echo script;; esac",
+		{ "text" })
+	ok(state, admin, "two=\"a b\"", {})
+	okAt(state, admin, "case $two in \"a b\") echo whole;; *) echo split;; esac",
+		{ "whole" })
+
+	-- A pattern is expanded too, and only as far as the match: a $( ) in a clause
+	-- BELOW the one that matched never runs, which is POSIX's order and is also what
+	-- keeps a case from costing the job steps it never asked for.
+	put(state, admin, "/home/admin/ran", "")
+	okAt(state, admin,
+		"case abc in abc) echo hit;; $(echo abc > /home/admin/ran; echo abc)) echo late;; esac",
+		{ "hit" })
+	do
+		local node = CeroSecOS.getNode(state, admin, "/home/admin/ran")
+		eq("the pattern below the match never ran", node.data, "")
+	end
+	-- And one at or above the match does run.
+	okAt(state, admin, "case abc in $(echo abc)) echo caught;; esac", { "caught" })
+
+	-- An unquoted ")" is what closes a pattern, so a QUOTED one is a bracket in the
+	-- pattern and a "[)]" set is a set holding one. Both fall out of asking whether
+	-- the last piece of the word was bare literal text.
+	okAt(state, admin, "case \"a)\" in \"a)\") echo quoted;; esac", { "quoted" })
+	okAt(state, admin, "case \")\" in [)]) echo inset;; esac", { "inset" })
+	-- And a quoted bracket does not CLOSE one either, so a pattern that ends in one
+	-- and has no bracket after it is a pattern list that was never closed. This is
+	-- the assertion that holds the "bare" test in takeClose: without it the quoted
+	-- bracket would be read as the closer and the line would quietly run.
+	badAt(state, admin, "case \"a)\" in \"a)\" echo x;; esac",
+		"sh: syntax error: missing ')'")
+
+	-- The last clause may drop its ";;" before the esac, and only the last one --
+	-- with something ending the statement in front of it, because `esac` is only a
+	-- word of the grammar where a command starts: `echo bare esac` prints both words
+	-- here exactly as it does on a real sh, and the case is then the one with no end.
+	okAt(state, admin, "case abc in abc) echo bare; esac", { "bare" })
+	badAt(state, admin, "case abc in abc) echo bare esac",
+		"sh: syntax error: missing 'esac'")
+
+	-- break and continue reach through a case to the loop round it, because a case
+	-- is not a loop -- which is what lets the idiom below be written at all.
+	okAt(state, admin,
+		"for i in 1 2 3; do case $i in 2) break;; *) echo $i;; esac; done", { "1" })
+	okAt(state, admin,
+		"for i in 1 2 3; do case $i in 2) continue;; *) echo $i;; esac; done",
+		{ "1", "3" })
+	-- And a case inside a case, which is the nesting the frame stack has to take.
+	okAt(state, admin, "case a in a) case b in b) echo nested;; esac;; esac",
+		{ "nested" })
+
+	-- The refusals, each naming what is missing.
+	badAt(state, admin, "case abc in abc echo x;; esac", "sh: syntax error: missing ')'")
+	badAt(state, admin, "case abc in abc) echo x;;", "sh: syntax error: missing 'esac'")
+	badAt(state, admin, "case in", "sh: syntax error: missing 'in'")
+	badAt(state, admin, "case abc abc) echo x;; esac", "sh: syntax error: missing 'in'")
+	-- ";;" is one operator now and is only a word of the grammar inside a case: it
+	-- used to be two separators, so `echo a;;` quietly ran as `echo a`.
+	badAt(state, admin, "echo a;;", "sh: syntax error: unexpected ';;'")
+	-- The words are reserved where a command starts and ordinary anywhere else,
+	-- exactly as `done` is.
+	badAt(state, admin, "esac", "sh: syntax error: unexpected 'esac'")
+	okAt(state, admin, "echo case esac", { "case esac" })
+	-- And the shell says what they are.
+	okAt(state, admin, "type case", { "case is a shell keyword" })
+	okAt(state, admin, "type esac", { "esac is a shell keyword" })
+end
+
 print("os_test: " .. count .. " assertions passed")

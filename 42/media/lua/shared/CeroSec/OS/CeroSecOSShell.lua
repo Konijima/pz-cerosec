@@ -1073,7 +1073,7 @@ CeroSecOS.BUILTIN_FILES = {
 
 -- The words that are the shell's own, for `help` to list under the table of
 -- files. Reserved words first, then the builtins that change the shell.
-CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done"
+CeroSecOS.HELP_RESERVED = "if then elif else fi for while until do done case esac"
 CeroSecOS.HELP_BUILTINS =
 	"cd . export exit fg jobs wait read shift break continue history type"
 

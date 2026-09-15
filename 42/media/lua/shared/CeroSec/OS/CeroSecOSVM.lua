@@ -2605,6 +2605,13 @@ local function pushNode(job, node)
 		return pushFrame(job, { k = "for", node = node, line = node.line,
 			phase = "expand", ex = newExpansion(node.words or {}, false) })
 	end
+	if node.k == "case" then
+		-- The subject is expanded WITHOUT field splitting, which is POSIX's rule for
+		-- it: `case $file in` is one word however many blanks are in the value, or a
+		-- name with a space in it could not be matched at all.
+		return pushFrame(job, { k = "case", node = node, line = node.line,
+			phase = "word", ci = 1, pi = 1, ex = newExpansion({ node.word }, true) })
+	end
 	jobError(job, "syntax error")
 	return false
 end
@@ -2772,6 +2779,73 @@ stepOnce = function(state, job, env)
 		return 0
 	end
 
+	-- case: the subject expanded once, then the patterns one at a time until one of
+	-- them matches -- and not one pattern further. POSIX expands a pattern when it
+	-- comes to it, so a $( ) in a clause below the one that matched never runs, and
+	-- never costs the job a step.
+	if f.k == "case" then
+		if f.phase == "word" then
+			local how, reason = expandStep(job, state, f.ex, env)
+			if how == nil then
+				if reason ~= nil then jobError(job, reason) end
+				return 0
+			end
+			if how == "sub" then return 0 end
+			f.subject = f.ex.out[1] or ""
+			f.ex = nil
+			f.phase = "pat"
+			return 0
+		end
+		if f.phase == "pat" then
+			local clause = f.node.clauses[f.ci]
+			if clause == nil then
+				-- No pattern matched, which is not a failure: POSIX gives a case that
+				-- decided nothing a status of nought, exactly as an `if` gets one.
+				job.status = 0
+				popFrame(job)
+				return 0
+			end
+			local pat = clause.pats[f.pi]
+			if pat == nil then
+				f.ci = f.ci + 1
+				f.pi = 1
+				return 0
+			end
+			if f.ex == nil then f.ex = newExpansion({ pat }, true) end
+			local how, reason = expandStep(job, state, f.ex, env)
+			if how == nil then
+				if reason ~= nil then jobError(job, reason) end
+				return 0
+			end
+			if how == "sub" then return 0 end
+			local text = f.ex.out[1] or ""
+			f.ex = nil
+			-- The shell's own three, and the shell's own matcher: `*`, `?` and a
+			-- `[...]` set, walked rather than turned into a Lua pattern -- the very
+			-- call `find -name` matches with, so a glob means one thing on this
+			-- machine wherever it is written.
+			-- ONE STEP for the comparison, and that is the whole reason a case is not
+			-- free work like an `if`'s frame. A case of forty alternatives really does
+			-- forty comparisons, each one an expansion and a walk of two strings, and
+			-- the same thing written as forty `[ "$x" = p ]` would cost forty steps --
+			-- so this costs forty too, or a loop of them would do forty times the work
+			-- the budget believes it is buying. Measured: with the comparison free, a
+			-- loop over a forty-pattern case cost 7.6 ms a pass against a ceiling of 4.
+			-- Expanding the pattern is still free, like every other expansion; what is
+			-- charged is the comparison the expansion was for.
+			if CeroSecOS.globMatch(f.subject, text) then
+				f.phase = "body"
+				pushFrame(job, { k = "block", prog = clause.body, i = 1 })
+				return 1
+			end
+			f.pi = f.pi + 1
+			return 1
+		end
+		-- The clause has run; its status is the case's, which is POSIX's rule.
+		popFrame(job)
+		return 0
+	end
+
 	if f.k == "cmd" then
 		if f.phase == "assign" or f.phase == "expand" then
 			local ex = f.ex
@@ -2923,6 +2997,12 @@ local function frameKey(job)
 			" " .. #f.exA.fields .. " " .. #f.exA.buf ..
 			" " .. tostring(f.exA.ai) .. " " .. #(f.exA.abuf or "")
 	end
+	-- Which clause it is on, and which pattern of it: a `case` walks its patterns a
+	-- turn at a time and spends no step doing it, and an `if` walks its elifs the
+	-- same way. Without this a case of forty patterns looked the same on two turns
+	-- running and the pass ended on a job that was getting somewhere -- so it took
+	-- three passes to do what one should.
+	if f.ci ~= nil then key = key .. " c" .. f.ci .. " " .. tostring(f.pi) end
 	return key
 end
 

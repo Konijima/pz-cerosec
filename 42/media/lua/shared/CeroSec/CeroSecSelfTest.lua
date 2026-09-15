@@ -265,6 +265,22 @@ function CeroSecSelfTest.probe(say)
 	local twice, twiceWhy = CeroSecOS.parseScript("echo $(echo $(echo deep))")
 	say("catch in catch", twice == nil and tostring(twiceWhy) or "PARSED")
 	say("catch inside quotes", CeroSecSelfTest.sh("echo \"[$(echo \"a b\")]\""))
+	-- case, which is parser work and MATCHER work: the bracket that closes a pattern
+	-- is found with string.sub on the last piece of a word, and a `[a-c]` set is
+	-- walked with string.byte -- a VM that answered differently about either would
+	-- turn a working script into a refusal or, worse, into a clause that never runs.
+	say("case match", CeroSecSelfTest.sh("case abc in a*) echo star;; esac"))
+	say("case alternatives", CeroSecSelfTest.sh("case abc in x|abc) echo alt;; esac"))
+	say("case default",
+		CeroSecSelfTest.sh("case abc in z*) echo no;; *) echo other;; esac"))
+	say("case set", CeroSecSelfTest.sh("case b in [a-c]) echo set;; esac"))
+	say("case negated set",
+		CeroSecSelfTest.sh("case 7 in [!0-9]) echo no;; *) echo digit;; esac"))
+	say("case no match", CeroSecSelfTest.sh("case abc in q) echo no;; esac"))
+	local noParen, noParenWhy = CeroSecOS.parseScript("case abc in abc echo x;; esac")
+	say("case missing bracket", noParen == nil and tostring(noParenWhy) or "PARSED")
+	local loose, looseWhy = CeroSecOS.parseScript("echo a;;")
+	say("two semicolons alone", loose == nil and tostring(looseWhy) or "PARSED")
 
 	--
 	-- The tar container, which is what a floppy carries between two machines.

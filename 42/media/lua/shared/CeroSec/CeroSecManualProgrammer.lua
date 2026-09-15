@@ -674,6 +674,64 @@ and answers with a refusal instead of a no. Put the quotes on:
 [ "$x" = 5 ]. It costs two characters and removes a whole family of
 afternoons.]],
 
+[[Deciding on the SHAPE of a word.
+
+An if chain of five tests against one variable is five lines that all say
+the same thing. case says it once: a word, and a list of patterns it might
+look like.
+
+  admin@ksp-04-11:~$ cat lights.sh
+  #!/bin/sh
+  case $1 in
+      on|up)
+          echo on > /dev/light0
+          ;;
+      off|down)
+          echo off > /dev/light0
+          ;;
+      *)
+          echo "usage: lights.sh on|off"
+          exit 2
+          ;;
+  esac
+
+Read it as: for the word after case, find the first pattern it matches and
+run what follows the bracket. A bar puts several patterns on one clause,
+two semicolons end a clause, and esac ends the lot.
+
+The patterns are the three the shell uses for filenames: a star for any run
+of characters, a question mark for one, and square brackets for a set. So
+*) is "anything", which is why it goes last -- the first match wins.
+
+  case $f in *.txt) echo text;; *.sh) echo script;; esac]],
+
+[[Three things worth knowing about case.
+
+Nothing matched is not a failure. A case that fell through every clause
+finishes on 0, the way an if with no else does; if you want it to be a
+failure, write a *) clause that says so and exits.
+
+The word is not split on blanks, so a value with a space in it is still one
+word and can be matched:
+
+  admin@ksp-04-11:~$ two="a b"
+  admin@ksp-04-11:~$ case $two in "a b") echo whole;; esac
+  whole
+
+break and continue reach past a case to the loop around it, because a case
+is not a loop. That is what makes the useful shape below work:
+
+  for f in $(ls); do
+      case $f in
+          *.tmp) continue;;
+          *) echo keeping $f;;
+      esac
+  done
+
+Classic mistake. Writing esac on the same line as the last command:
+echo done esac prints both words, because esac only means esac where a
+command starts. Put a semicolon or a new line in front of it.]],
+
 		} },
 
 		{ title = "5. Repeating", pages = {
@@ -1984,7 +2042,7 @@ every menu in this book for a reason.]],
 [[The whole language, on this page and the next.
 
 A program is a list of commands, separated by a semicolon or a new line.
-A command may be followed by an ampersand to run it behind the prompt.
+An ampersand behind one runs it behind the prompt.
 
   cmd ; cmd        one after the other
   cmd && cmd       the second only if the first worked
@@ -1994,11 +2052,12 @@ A command may be followed by an ampersand to run it behind the prompt.
   cmd >> file      output onto the end of a file
   cmd &            run it behind the prompt
 
-The eleven reserved words. They mean this only where a command starts, so
-echo done prints "done":
+The thirteen reserved words. They mean this only where a command starts,
+so echo done prints "done":
 
   if then elif else fi
   for in while until do done
+  case esac
 
 The shapes they build:
 
@@ -2006,6 +2065,7 @@ The shapes they build:
   for NAME in WORDS; do LIST; done
   while LIST; do LIST; done
   until LIST; do LIST; done
+  case WORD in PAT|PAT) LIST;; PAT) LIST;; esac
 
 Sixteen deep is as far as these nest, and eight is as long as a pipeline
 may be.]],
@@ -2057,31 +2117,31 @@ program, which is handed a copy of the environment and can change nothing
 of yours. Chapter 1 has the pair side by side and chapter 3 has export.]],
 
 [[What the shell says before anything runs. A script that meets one never
-becomes a job: not one line of it happens.
-
-A script signs these with its own name and line -- broken.sh: line 3: --
-and a typed line is signed sh:, with no number.
+becomes a job: not one line of it happens. A script signs these with its
+own name and line -- broken.sh: line 3: -- a typed line with sh: alone.
 
   syntax error: unexpected 'fi'
       a closing word where a command should be; also
-      'done', 'then', 'else', 'elif', 'do' and '<'
+      'done', 'then', 'else', 'elif', 'do', 'esac',
+      ';;' and '<'
   syntax error: missing 'done'
-      a loop never closed; also 'fi', 'then' and 'do'
+      a loop never closed; also 'fi', 'then', 'do',
+      'esac', 'in', ';;' and ')'
   syntax error: not a name
-      for wants a variable name straight after it
+      for wants a variable name after it
   syntax error: unterminated quote
       a quote opened and never closed
   syntax error: bad substitution
       a $( ) in a $( ), an unclosed ${ or $(( , or a
-      name in braces that is not a name
+      name in braces that is not one
   syntax error: bad redirect
       two redirects on one command
   syntax error: missing redirect target
-      a > or >> with no file named after it
+      a > or >> with no file after it
   too deeply nested
       past sixteen levels
   too many stages
-      more than eight stages in one pipeline]],
+      more than eight in one pipeline]],
 
 [[What stops a script while it is running. These happen on a line, so the
 line is named, and the script ends there.

@@ -8,6 +8,12 @@ date.
 
 ## Unreleased
 
+- `case` is here. `case $1 in start) ... ;; stop|halt) ... ;; *) ... esac`, with
+  a bar between patterns, the shell's own `*`, `?` and `[...]` in them, and `*)`
+  as the catch-all -- the one shape every start-up script of the era is written
+  in, and five lines of `if` before now. `help` and `type` know the two new
+  words. One thing that changed with it: `;;` is an operator now, so a stray
+  `echo a;;` is a syntax error instead of quietly running.
 - What a script prints follows the redirect of the line that started it.
   `sh nightly.sh > log` used to leave log empty and print the script on the
   screen; now everything it prints goes in the file, `>>` adds to it, and a

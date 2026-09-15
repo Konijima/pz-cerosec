@@ -3097,6 +3097,16 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      ne contient que ce qui a été imprimé. Et `sh deux.sh > /etc/nope` →
      `sh: /etc/nope: permission denied`, le script ne tourne pas. [ ]
 
+339f. **`case`.** Au prompt : `case abc in a*) echo star;; esac` → `star` ;
+     `case abc in x|abc|y) echo alt;; esac` → `alt` ;
+     `case abc in z*) echo no;; *) echo default;; esac` → `default` ;
+     `case b in [a-c]) echo set;; esac` → `set`. Rien qui correspond ne rate
+     pas : `case abc in q) echo no;; esac` puis `echo $?` → `0`. `type case` →
+     `case is a shell keyword`, et `help` liste `case` et `esac` parmi les mots
+     du shell. Dans un fichier avec `edit`, la forme sur plusieurs lignes
+     marche aussi (`case $1 in`, une clause par bloc, `esac` seul sur sa
+     ligne). Et `echo a;;` → `sh: syntax error: unexpected ';;'`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

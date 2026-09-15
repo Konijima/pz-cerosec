@@ -20,12 +20,14 @@
 --   statement := andor [ "&" ]
 --   andor     := pipeline (( "&&" | "||" ) pipeline)*
 --   pipeline  := piece ( "|" piece )*
---   piece     := if | for | while | until | simple
+--   piece     := if | for | while | until | case | simple
 --   if        := "if" program "then" program
 --                ("elif" program "then" program)* [ "else" program ] "fi"
 --   for       := "for" NAME [ "in" word* ] (";"|newline) "do" program "done"
 --   while     := "while" program "do" program "done"
 --   until     := "until" program "do" program "done"
+--   case      := "case" word "in" clause* "esac"
+--   clause    := [ "(" ] word ( "|" word )* ")" program [ ";;" ]
 --   simple    := word* [ (">"|">>") word ]
 --
 -- A word is an array of PARTS, because what a word means is only known when
@@ -75,6 +77,7 @@ CeroSecOS.RESERVED = {
 	["if"] = true, ["then"] = true, ["elif"] = true, ["else"] = true, ["fi"] = true,
 	["for"] = true, ["in"] = true, ["while"] = true, ["until"] = true,
 	["do"] = true, ["done"] = true,
+	["case"] = true, ["esac"] = true,
 }
 
 local function isNameStart(c)
@@ -298,8 +301,18 @@ local function tokenize(text, depth)
 		elseif c == "#" then
 			while i <= n and string.sub(text, i, i) ~= "\n" do i = i + 1 end
 		elseif c == ";" then
-			tokens[#tokens + 1] = { t = "op", v = ";", line = line }
-			i = i + 1
+			-- ";;" is one operator and not two separators: it is what ends a case
+			-- clause, and sh has read it as a single token since the Bourne shell.
+			-- Two of them where a case is not being parsed is a syntax error, exactly
+			-- as it is on a real one -- `echo a;;` used to run as `echo a` here,
+			-- because skipSeparators swallowed the empty statement between them.
+			if string.sub(text, i + 1, i + 1) == ";" then
+				tokens[#tokens + 1] = { t = "op", v = ";;", line = line }
+				i = i + 2
+			else
+				tokens[#tokens + 1] = { t = "op", v = ";", line = line }
+				i = i + 1
+			end
 		elseif c == "&" then
 			if string.sub(text, i + 1, i + 1) == "&" then
 				tokens[#tokens + 1] = { t = "op", v = "&&", line = line }
@@ -462,6 +475,15 @@ local function describe(t)
 	end
 	if t.plain ~= nil then return "'" .. t.plain .. "'" end
 	return "word"
+end
+
+-- Is this token one the caller asked to be left alone? A reserved word in `stops`,
+-- or the ";;" that ends a case clause -- which is an OPERATOR and not a word, and
+-- is the one operator any caller has ever needed to stop at.
+local function stopsHere(t, stops)
+	if t.t == "word" and t.plain ~= nil and stops[t.plain] then return true end
+	if t.t == "op" and t.v == ";;" and stops[";;"] then return true end
+	return false
 end
 
 local function skipSeparators(P)
@@ -645,6 +667,115 @@ local function parseLoop(P, depth)
 		cond = cond, body = body }
 end
 
+--
+-- case
+--
+-- `case word in pattern) ... ;; esac`, POSIX.2's own shape, and the one construct
+-- whose grammar needs a bracket. ")" is NOT an operator on this machine -- it never
+-- was, there being no subshell grouping here, and making one of it now would turn
+-- every `echo (hi)` a survivor has already written into a syntax error -- so the
+-- ")" that closes a pattern is taken off the END of the pattern word instead.
+--
+-- That reading is not a shortcut, it is the right one: only an UNQUOTED ")" closes a
+-- pattern, so `"a)"` is a pattern with a bracket in it and `[)]` is a set holding
+-- one, and both come out right because the strip asks whether the last piece of the
+-- word was bare literal text (`bare`, which the tokenizer already records for
+-- exactly this kind of question).
+--
+-- The leading "(" POSIX allows before a pattern is taken off the front the same way.
+
+-- The ")" at the end of a pattern word, removed. false when the word does not end
+-- in one, which is how the caller knows to go on looking.
+local function takeClose(parts)
+	local last = parts[#parts]
+	if last == nil or last.t ~= "lit" or not last.bare then return false end
+	if string.sub(last.s, #last.s) ~= ")" then return false end
+	last.s = string.sub(last.s, 1, #last.s - 1)
+	-- A part that is nothing but the bracket goes with it, unless it is the whole
+	-- word: `)` on its own is the pattern that matches an empty word.
+	if last.s == "" and #parts > 1 then parts[#parts] = nil end
+	return true
+end
+
+-- And the "(" POSIX allows in front of one.
+local function takeOpen(parts)
+	local first = parts[1]
+	if first == nil or first.t ~= "lit" or not first.bare then return end
+	if string.sub(first.s, 1, 1) ~= "(" then return end
+	first.s = string.sub(first.s, 2)
+	if first.s == "" and #parts > 1 then table.remove(parts, 1) end
+end
+
+local function parseCase(P, depth)
+	local line = take(P).line
+	local subject = wordAt(P)
+	if subject == nil then
+		return nil, "syntax error: unexpected " .. describe(peek(P)), peek(P).line
+	end
+	P.i = P.i + 1
+	local inWord = wordAt(P)
+	if inWord == nil or inWord.plain ~= "in" then
+		return nil, "syntax error: missing 'in'", peek(P).line
+	end
+	P.i = P.i + 1
+
+	local clauses = {}
+	while true do
+		skipSeparators(P)
+		local t = wordAt(P)
+		if t ~= nil and t.plain == "esac" then
+			P.i = P.i + 1
+			return { k = "case", line = line, word = subject.parts, clauses = clauses }
+		end
+		-- The file ran out where a pattern or the esac should be, and what is missing
+		-- is the esac -- not the bracket the pattern loop below would name.
+		if peek(P).t == "eof" then
+			return nil, "syntax error: missing 'esac'", peek(P).line
+		end
+
+		-- The patterns of one clause: words with "|" between them, the last of them
+		-- carrying the ")" that closes the list.
+		local pats = {}
+		local closed = false
+		while true do
+			local w = wordAt(P)
+			if w == nil then
+				return nil, "syntax error: missing ')'", peek(P).line
+			end
+			P.i = P.i + 1
+			if #pats == 0 then takeOpen(w.parts) end
+			closed = takeClose(w.parts)
+			pats[#pats + 1] = w.parts
+			if closed then break end
+			local sep = peek(P)
+			if not (sep.t == "op" and sep.v == "|") then
+				return nil, "syntax error: missing ')'", sep.line
+			end
+			P.i = P.i + 1
+			skipNewlines(P)
+		end
+
+		local body, reason, where =
+			parseProgram(P, { [";;"] = true, ["esac"] = true }, depth + 1)
+		if body == nil then return nil, reason, where end
+		clauses[#clauses + 1] = { pats = pats, body = body }
+
+		local nx = peek(P)
+		if nx.t == "op" and nx.v == ";;" then
+			P.i = P.i + 1
+		elseif not (nx.t == "word" and nx.plain == "esac") then
+			-- POSIX lets the LAST clause drop its ";;" before the esac, and only the
+			-- last one: anything else here is a clause that never ended. The end of the
+			-- file is the other way of getting here and it is a different mistake --
+			-- what is missing there is the esac.
+			if nx.t == "eof" then
+				return nil, "syntax error: missing 'esac'", nx.line
+			end
+			return nil, "syntax error: missing ';;'", nx.line
+		end
+	end
+end
+
 local function parsePiece(P, depth)
 	if depth > CeroSecOS.MAX_NEST then
 		return nil, "too deeply nested", peek(P).line
@@ -654,6 +785,7 @@ local function parsePiece(P, depth)
 		if t.plain == "if" then return parseIf(P, depth) end
 		if t.plain == "for" then return parseFor(P, depth) end
 		if t.plain == "while" or t.plain == "until" then return parseLoop(P, depth) end
+		if t.plain == "case" then return parseCase(P, depth) end
 	end
 	return parseSimple(P)
 end
@@ -726,7 +858,7 @@ parseProgram = function(P, stops, depth)
 		skipSeparators(P)
 		local t = peek(P)
 		if t.t == "eof" then break end
-		if t.t == "word" and t.plain ~= nil and stops[t.plain] then break end
+		if stopsHere(t, stops) then break end
 
 		P.terminated = false
 		local st, reason, where = parseAndOr(P, depth)
@@ -735,7 +867,7 @@ parseProgram = function(P, stops, depth)
 
 		local nx = peek(P)
 		if nx.t == "eof" then break end
-		if nx.t == "word" and nx.plain ~= nil and stops[nx.plain] then break end
+		if stopsHere(nx, stops) then break end
 		if P.terminated then
 			-- nothing: "&" already closed the statement
 		elseif not (nx.t == "op" and (nx.v == ";" or nx.v == "\n")) then
