@@ -1488,6 +1488,14 @@ do
 	saved.v = CeroSecOS.STATE_VERSION - 1
 	saved.sysv = 1
 	bench.object.osBroken = nil
+	-- And the two session flags a LOAD would arrive without, because that is what
+	-- this is standing in for: the table is wound back where it lies, which nothing
+	-- in the game can do, while a real older save reaches the object through
+	-- gos_cerosec.bin with neither the refusal nor the validator's memo on it
+	-- (osChecked is not in CeroSec.OBJECT_SAVE_KEYS). Left set, the memo would say
+	-- this very table had already been through the gate -- which in this session it
+	-- had, one version ago -- and the chain below would have nothing to walk.
+	bench.object.osChecked = nil
 
 	local state = bench.object:osState()
 	check("the machine came back at all", state ~= nil)
@@ -1535,6 +1543,10 @@ do
 	saved.sysv = CeroSecOS.SYSTEM_VERSION + 1
 	bench.object.osBroken = nil
 	bench.object.osNewer = nil
+	-- And the validator's memo, for the reason the block above gives: a version
+	-- moved where the table lies is a thing only a bench can do, and a real save
+	-- from a later build reaches the object with no memo on it at all.
+	bench.object.osChecked = nil
 
 	local state, why = bench.object:osState()
 	eq("the machine is refused", state, nil)
@@ -2004,6 +2016,7 @@ do
 	-- One `open` packet, from whoever, with whatever token: the wire and nothing
 	-- around it. The window the reply is addressed to does not exist, which is
 	-- exactly what a client that never builds one looks like.
+	--
 	local function openAs(who, token)
 		CCeroSecSystem.instance:sendCommand(who, "open",
 			{ x = 10, y = 10, z = 0, token = token })
@@ -2080,6 +2093,7 @@ do
 	eq("a close takes exactly one window off", bench.object:watcherCount(),
 		SCeroSecObject.WATCHERS_MAX - 1)
 	eq("and says nothing to anybody", #bench.closed, 0)
+
 end
 
 -- A second survivor standing at the same desk who never opened a terminal. The
@@ -3472,6 +3486,178 @@ do
 	eq("and the state still validates", CeroSecOS.validate(reloaded.object.os), true)
 
 	_G.__world = nil
+end
+
+--
+-- ONCE PER STATE, NOT ONCE PER READ: the gate, and the belts under it
+--
+-- validate walks every node of the filesystem and every table of the disk in the
+-- drive, and osState used to run it on every read -- three times a game minute for
+-- every machine that is on, and once per packet. Measured on the 300-machine rig it
+-- was 0.887 of the 0.894 ms a read cost, and 104 of the 104 ms a game minute cost
+-- (tests/hostile_test.lua, the county block).
+--
+-- So it is remembered against the TABLE it was asked about. What this block is for
+-- is the other half of that sentence: the memo must never let a table nobody
+-- validated through, and the two belts must go on sweeping whether the memo hit or
+-- not -- because what they keep out of the save file is not a refusal, it is a
+-- machine somebody loses on his next load.
+--
+-- WHAT IS COUNTED IS CALLS TO validate, through a wrapper, because "once" is the
+-- whole claim and a bench that only read the state back would be green on a gate
+-- that ran a hundred times.
+--
+do
+	local kit = mockupWorld()
+	local hadWorld = _G.__world
+	_G.__world = kit.world
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("mkdir /home/admin/keep")
+	bench.frame()
+
+	local realValidate = CeroSecOS.validate
+	local validations = 0
+	CeroSecOS.validate = function(state)
+		validations = validations + 1
+		return realValidate(state)
+	end
+
+	-- A HUNDRED READS, ONE WALK.
+	local first = bench.object:osState()
+	check("the machine reads at all", first ~= nil)
+	validations = 0
+	for _ = 1, 100 do
+		local again = bench.object:osState()
+		if again ~= first then check("every read is the same table", false) end
+	end
+	eq("a hundred reads of one machine validate nothing", validations, 0)
+
+	-- A STATE REPLACED IS A STATE VALIDATED AGAIN, and by the real paths that
+	-- replace one rather than by writing the memo away. First the developer's reset,
+	-- which throws the state out and makes a fresh machine of it.
+	eq("it goes off for the reset", bench.object:turnOff(), true)
+	validations = 0
+	eq("the reset went through", bench.object:resetMachine(), true)
+	-- And the memo went with the state, which is what setOS is for. Identity alone
+	-- would already be safe -- a fresh table is not the one the memo names -- so what
+	-- this asserts is the OTHER half: the memo must not go on holding the filesystem
+	-- that was thrown away. A server that reset a hundred machines would be holding a
+	-- hundred dead filesystems of up to 32 KB each, for no reason anybody could find.
+	check("the reset let go of the state it threw away",
+		bench.object.osChecked ~= first)
+	local afterReset = bench.object:osState()
+	check("and there is a machine again", afterReset ~= nil)
+	check("a different table from the one before", afterReset ~= first)
+	check("which was validated", validations > 0)
+
+	-- AND THE MEMO IS THE TABLE, NEVER A FLAG, which is what makes the line above
+	-- true of a path nobody has written yet. Every writer in the mod today goes
+	-- through setOS and clears it, so a boolean would behave exactly the same on
+	-- every one of them -- and the day one writer forgets, a boolean is a table
+	-- nothing ever validated being run on, while identity is a different table and
+	-- says so. Written straight onto the field here BECAUSE no shipped path does:
+	-- that is the mistake being guarded, and a bench that went through the setter
+	-- would be proving the setter instead.
+	local behindTheSetter = CeroSecOS.newState("sneaked")
+	bench.object.os = behindTheSetter
+	validations = 0
+	eq("a state written behind the setter's back still reads",
+		bench.object:osState(), behindTheSetter)
+	check("and it was walked by the gate, memo or no memo", validations > 0)
+
+	-- And a computer put down out of somebody's hands, carrying the state the ITEM
+	-- brought: the movableData mirror is the road a state comes in by on a server,
+	-- and what is in it came off a client.
+	local carried = CeroSecOS.newState("carried")
+	local iso = { modData = { movableData = { [CeroSec.MOVABLE_DATA_KEY] = { os = carried } } } }
+	iso.getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end
+	iso.hasModData = function() return true end
+	iso.getModData = function() return iso.modData end
+	iso.transmitModData = function() end
+	validations = 0
+	bench.object:resetForPlacement(iso)
+	check("the carried state was validated on the way in", validations > 0)
+	eq("and it is the machine now", bench.object:osState(), carried)
+
+	-- A FORGED ONE IS STILL REFUSED. Same road, and the table in the mirror is what
+	-- a client on a server can write: the memo must not be what lets it past.
+	local forged = { v = CeroSecOS.STATE_VERSION, sysv = CeroSecOS.SYSTEM_VERSION,
+		hostname = "forged", fs = "not a filesystem" }
+	iso.modData.movableData[CeroSec.MOVABLE_DATA_KEY].os = forged
+	validations = 0
+	bench.object:resetForPlacement(iso)
+	check("the forged state was walked by the gate and not waved through",
+		validations > 0)
+	local refused, why = bench.object:osState()
+	eq("a forged state is refused", refused, nil)
+	eq("and the refusal is sticky", bench.object.osBroken, true)
+	-- "refused" and not the validator's own words, because the placement above is
+	-- what asked the gate and it is the gate that logged the reason: from here on the
+	-- machine answers the sticky refusal, which is the behaviour and not a shortcut.
+	eq("and every read after it says so", why, "refused")
+
+	-- THE BELTS, WHICH ARE NOT MEMOISED, and the reason they are not: `os` is a saved
+	-- key, so a device node left on /dev by a pass that died mid-command would go into
+	-- gos_cerosec.bin and be refused on the next load -- where the memo starts empty.
+	-- Provoked with the REAL mount and no unmount after it, which is exactly what an
+	-- error thrown between CeroSecOS.mountDev and CeroSecOS.unmountDev leaves behind.
+	local bench2 = newBench()
+	bench2.login("admin")
+	bench2.frame()
+	local live = bench2.object:osState()
+	check("the machine reads", live ~= nil)
+	local env = bench2.system:execEnv(bench2.object, live, bench2.player, nil)
+	CeroSecOS.mountDev(live, env)
+	local devDir = CeroSecOS.systemNode(live, CeroSecOS.DEV_PATH)
+	local mounted = 0
+	for _, node in pairs(devDir.children) do
+		if CeroSecOS.isDev(node) and not CeroSecOS.isNull(node) then mounted = mounted + 1 end
+	end
+	check("the office's switches really are on /dev now (" .. mounted .. ")", mounted > 0)
+
+	-- And the read after it. The STATE and not the call: what matters is that there is
+	-- no device of the world left in the table the save file would be written from.
+	validations = 0
+	local swept = bench2.object:osState()
+	check("the machine still reads after a pass that died mid-command", swept ~= nil)
+	eq("and it is the same table, so the memo held", swept, live)
+	eq("nothing was validated a second time", validations, 0)
+	local left = 0
+	for _, node in pairs(CeroSecOS.systemNode(swept, CeroSecOS.DEV_PATH).children) do
+		if CeroSecOS.isDev(node) and not CeroSecOS.isNull(node) then left = left + 1 end
+	end
+	eq("and not one device of the world is left in the state", left, 0)
+	check("while the machine's own /dev/null is still there",
+		CeroSecOS.systemNode(swept, CeroSecOS.DEV_PATH).children["null"] ~= nil)
+
+	-- The mount table gets the same belt, on the same read: a mount naming a drive
+	-- with no disk in it is one a save file can hold.
+	swept.mounts = { { dir = "/mnt", dev = CeroSecOS.FD_NAME } }
+	bench2.object:osState()
+	eq("a mount with nothing behind it is dropped on the way out", swept.mounts, nil)
+
+	-- AND THE ONE PATH THAT REWRITES A STATE WITHOUT REPLACING IT: the BIOS repair.
+	-- restoreSystem remakes /etc, /bin and the filesystem root where the table LIES,
+	-- so identity alone would say it had already been through the gate. Reached on a
+	-- machine that is not refused at all, which is the case that has a memo on it: an
+	-- empty /bin is "no operating system" to systemOk and a perfectly valid state to
+	-- the gate, so this is the state the BIOS asks its question about with the memo
+	-- set.
+	local repaired = bench2.object:osState()
+	repaired.fs.children.bin.children = {}
+	eq("an empty /bin is no operating system", CeroSecOS.systemOk(repaired), false)
+	eq("and the state is still one the core can run on",
+		CeroSecOS.validate(repaired), true)
+	validations = 0
+	eq("the firmware repaired it", bench2.object:restoreOS(), true)
+	check("and the state it rewrote went through the gate again", validations > 0)
+	check("with /bin back on it",
+		CeroSecOS.countEntries(repaired.fs.children.bin) > 0)
+
+	CeroSecOS.validate = realValidate
+	_G.__world = hadWorld
 end
 
 --

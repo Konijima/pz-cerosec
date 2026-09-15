@@ -738,11 +738,47 @@ walks the rest on the next load. Then `upgradeSystem` tops the *contents* up, wh
 the other number and is not part of the chain.
 
 It is called from **one place**: `SCeroSecObject:osState`. Everything that hands the
-object a state writes `self.os` and then asks there — a chunk coming back
-(`stateToIsoObject`), a machine adopted from its sprite (`stateFromIsoObject`), a
-computer put down out of somebody's hands (`resetForPlacement`, both through
-`osFromIsoObject`) — so the chain runs on every road in and on none of them twice: at
-the current version the loop has no steps to walk.
+object a state writes it through `SCeroSecObject:setOS` and then asks there — a chunk
+coming back (`stateToIsoObject`), a machine adopted from its sprite
+(`stateFromIsoObject`), a computer put down out of somebody's hands
+(`resetForPlacement`, both through `osFromIsoObject`), the developer's reset
+(`resetMachine`) and the firmware repair (`restoreOS`) — so the chain runs on every road
+in and on none of them twice: at the current version the loop has no steps to walk.
+
+### The gate is asked once per state, not once per read
+
+`CeroSecOS.validate` walks every node of the filesystem and every table of the disk in
+the drive. It used to run on **every** read of the state, and the sweep reads the state
+three times a game minute for every machine that is on, plus once per packet: measured
+on the 300-machine rig at 0.887 of the 0.894 ms a read cost, and 104 of the 104 ms a
+game minute cost with forty machines running (`tests/hostile_test.lua`, the county
+block). It is now asked once per state table.
+
+The memo is `self.osChecked`, and it holds the **table** and never a flag: a flag goes
+stale the moment a state is replaced, and a stale flag here is a table nothing ever
+validated being run on. `setOS` drops it with the state it replaces — which also stops
+the memo holding a filesystem that was thrown away — and `restoreOS` drops it by hand,
+because that is the one path that remakes `/etc`, `/bin` and the filesystem root of a
+table it does **not** replace. `osChecked` is not in `CeroSec.OBJECT_SAVE_KEYS`, so
+every machine in a save is validated once per session, on its first read.
+
+What this is safe against is written out beside the code: `validate` is a gate on what
+comes in from **outside** — a save file, an item's `movableData`, a client's packet — and
+every other writer in the mod writes *inside* a table the gate has already passed,
+under the write path's own rules (`setData` for the bytes and the printable characters,
+`isValidFileName` for a name, `MAX_DIR_ENTRIES`, `MAX_NODES`). The one writer that puts
+a whole subtree in at once is the disk going into the drive, and it arrives already
+migrated and validated against the **slot's** stricter bound (`diskFromData` →
+`insertDisk`), which is a superset of what the gate asks.
+
+The two sweeps below it are **not** memoised, and the reason is the save file and not
+the gate: `os` is a saved key, so a `/dev` node left behind by a pass that died
+mid-command would go into `gos_cerosec.bin` and be refused on the next load, where the
+memo starts empty. They cost 0.0044 and 0.0005 ms — half a percent of a read between
+them — so they stay where they are. The three mount windows
+(`CeroSecOS.jobStep`, `CeroSecOS.continue`, `Commands.complete`) each hold their pair of
+calls in one block with no early return between them, so the only thing that leaves a
+node behind is an error thrown inside one, which is exactly what no `end` can catch.
 
 `migrate` deliberately does **not** validate. A state of a version it can *read* is
 kept even when the gate then refuses it, because the way back from a filesystem the

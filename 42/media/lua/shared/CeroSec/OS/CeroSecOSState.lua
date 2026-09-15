@@ -102,9 +102,9 @@ local PLAIN_DEPTH = 4 * CeroSecOS.MAX_DEPTH
 -- rather than for a shared subtree -- two names for one table are not a loop, and
 -- calling them one would be a false refusal. The price is that a shared table is
 -- walked once per PATH to it, so twenty tables each pointing twice at the next are
--- a million paths: twenty-three tables took sixty-eight seconds here, and validate
--- runs on every read of the state. The depth bound does not help, because the
--- shape is shallow; only counting the walk does.
+-- a million paths: twenty-three tables took sixty-eight seconds here, on a gate a
+-- forged state reaches on its way in (SCeroSecObject:osState). The depth bound
+-- does not help, because the shape is shallow; only counting the walk does.
 --
 -- Eight times what the two disks can hold between them. A state at every ceiling
 -- with a full floppy in the drive visits 576 tables, measured, so this is seven

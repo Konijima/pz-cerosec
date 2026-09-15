@@ -22,6 +22,12 @@ date.
 - The minute the server spends on the county now goes on the computers that are
   actually running. A county of dark machines in your save costs nothing, however
   many of them there are.
+- And a server spends far less of that minute on the machines that ARE running:
+  the check a computer's filesystem goes through when it comes back from the save
+  file is now done once, when it comes back, instead of on every reading of it.
+  Forty running computers cost a game minute about three milliseconds where they
+  cost a hundred, and the same check still refuses a filesystem that came back
+  damaged.
 - A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
   terminal of the machine: the glass in front of you and every session that
   came in over the wire: with the banner a 1993 machine put on it. Anybody may

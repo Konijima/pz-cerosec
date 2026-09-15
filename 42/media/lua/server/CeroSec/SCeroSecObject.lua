@@ -115,7 +115,7 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	-- The sprite says it was left running, so the sweep has to know about it: this
 	-- is a machine the save file had no GlobalObject for.
 	self:reindex()
-	self.os = self:osFromIsoObject(isoObject)
+	self:setOS(self:osFromIsoObject(isoObject))
 	self:syncDisk()
 	-- No console in the mirror, so a machine adopted from its sprite starts
 	-- with a blank screen even when the sprite says it is lit.
@@ -157,7 +157,10 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	self.on = false
 	self:reindex()
 	self.facing = CeroSec.facingOf(isoObject:getSpriteName()) or "S"
-	self.os = self:osFromIsoObject(isoObject) or self.os
+	-- Through the setter even where the item brought nothing and the machine keeps
+	-- the table it had: this is the path that asks every question again -- both
+	-- sticky refusals go below -- and the validator's memo is one of them.
+	self:setOS(self:osFromIsoObject(isoObject) or self.os)
 	self.osBroken = nil
 	-- And the other sticky refusal. A state a later build wrote is still one after
 	-- it has been carried across town, so this does not make it readable -- osState
@@ -394,6 +397,20 @@ function SCeroSecObject:hostname()
 	return CeroSec.hostnameFor(self.x, self.y)
 end
 
+-- The state put in place, and the ONE road it goes in by: every path that hands
+-- this machine a table writes it here so that the memo under the validator
+-- (osState below) is dropped with it.
+--
+-- self.osChecked is the memo and it holds the TABLE, never a flag. A flag would
+-- go stale the moment a state was replaced -- a fresh machine, a computer put
+-- down out of somebody's hands, a chain that walked -- and a stale flag here is a
+-- table nothing ever validated being run on. Identity cannot go stale: a
+-- different table is a different table.
+function SCeroSecObject:setOS(state)
+	self.os = state
+	self.osChecked = nil
+end
+
 -- The state, or nil plus a reason when it is not something the core can run on.
 -- The refusal is sticky and logged once: a state the validator rejects is a
 -- state we would rather stop touching than repair blindly.
@@ -404,12 +421,48 @@ end
 -- computer put down out of somebody's hands (resetForPlacement, both through
 -- osFromIsoObject) -- so the migration chain runs on every one of them and on none
 -- of them twice: at the current version it has no steps to walk.
+--
+-- ONCE PER STATE, NOT ONCE PER READ.
+--
+-- Measured on the 300-machine rig (tests/hostile_test.lua, the county block) at
+-- 104 ms a game minute with 40 machines running, and the validator was 0.887 of
+-- the 0.894 ms one read costs -- 99%: it walks every node of the filesystem and
+-- every table of the disk in the drive, and the sweep reads the state three times
+-- a minute for every machine that is on, plus once per packet. So the answer is
+-- remembered against the table it was given about, and a read whose table has not
+-- been replaced returns it without walking anything.
+--
+-- WHAT THAT IS SAFE AGAINST, said plainly, because the memo must never let a
+-- table nobody validated through. validate is a gate on what comes in from
+-- OUTSIDE -- a save file, an item's modData, a client's packet -- and there are
+-- five paths that hand this object one, all of them through setOS above
+-- (stateToIsoObject, resetForPlacement, the chain and the BIOS repair below, and
+-- the developer's reset). What every other writer in the mod does is write INSIDE
+-- the table the gate already passed, through the write path's own rules: a file is
+-- held to its bytes and its printable characters by setData, a name to
+-- isValidFileName, a directory to MAX_DIR_ENTRIES, the tree to MAX_NODES. There is
+-- no write in this engine that makes a state validate would refuse -- grepped, key
+-- by key -- and the one that writes a whole subtree at once is the disk going into
+-- the drive, which arrives already migrated and validated against the SLOT's
+-- stricter bound (CeroSecOS.diskFromData -> insertDisk).
+--
+-- The two belts below stay on the read path and are not memoised: measured at
+-- 0.0044 and 0.0005 ms, half a percent of the read between them, and what they
+-- guard is the state as it will be SAVED (see below).
 function SCeroSecObject:osState()
 	if self.osBroken then return nil, "refused" end
 	-- A state a LATER build wrote, which nothing here can read. Sticky like the
 	-- refusal above, and for a stronger reason: those bytes are somebody else's and
 	-- are not ours to repair (see the migration section of CeroSecOSState.lua).
 	if self.osNewer then return nil, "newer" end
+
+	-- This very table has been through the gate. The two belts still run -- they
+	-- are cheap and they are not the validator -- and nothing else has to.
+	if self.osChecked ~= nil and self.osChecked == self.os then
+		CeroSecOS.unmountDev(self.os)
+		CeroSecOS.checkMounts(self.os)
+		return self.os
+	end
 
 	-- The chain. It used to be here that a version that was not the current one
 	-- became a FRESH MACHINE -- self.os was replaced wholesale and the filesystem,
@@ -430,7 +483,7 @@ function SCeroSecObject:osState()
 	-- or a state the chain walked -- because this runs on every command and the
 	-- mirror holds the very same table the rest of the time (see mirrorOS).
 	if migrated ~= was or migrated.v ~= wasV then
-		self.os = migrated
+		self:setOS(migrated)
 		self:mirrorOS()
 	end
 
@@ -441,6 +494,17 @@ function SCeroSecObject:osState()
 	-- a working machine turned "broken" by a light switch -- so the gate every
 	-- read of the state goes through sweeps them first. On a healthy machine
 	-- there is nothing to sweep and this walks an empty /dev.
+	--
+	-- ON EVERY READ AND NOT ONCE PER STATE, unlike the validator under it, and for
+	-- a reason that is about the SAVE and not about the gate: `os` is a saved key
+	-- (CeroSec.OBJECT_SAVE_KEYS), so a node left on /dev by a command that died
+	-- mid-pass would go into gos_cerosec.bin, and the next load -- where the memo
+	-- starts empty -- would validate it and refuse the machine. Sweeping it here is
+	-- what stops that, and it has to happen whether this table has been through
+	-- the gate before or not. The three mount windows are all in one pair of braces
+	-- with no early return between them (CeroSecOS.jobStep, CeroSecOS.continue,
+	-- Commands.complete), so the only thing that leaves a node behind is an error
+	-- thrown inside one -- and an error is exactly what no `end` can catch.
 	CeroSecOS.unmountDev(self.os)
 	-- And the same belt under the mount table: a mount naming a drive with nothing
 	-- in it is a mount nothing can walk through, and it is dropped rather than left
@@ -456,6 +520,10 @@ function SCeroSecObject:osState()
 				.. ": " .. tostring(reason))
 		return nil, reason
 	end
+	-- Through the gate, and remembered against the table it was asked about. After
+	-- the refusal above and never before it: a memo set on the way in would be a
+	-- memo standing for a walk that then said no.
+	self.osChecked = self.os
 	return self.os
 end
 
@@ -484,9 +552,14 @@ function SCeroSecObject:restoreOS()
 	end
 	if migrated ~= self.os then
 		-- A fresh machine: it ships with everything restoreSystem would put back.
-		self.os = migrated
+		self:setOS(migrated)
 	else
 		CeroSecOS.restoreSystem(self.os)
+		-- Rewritten WHERE IT LIES, so the table is the same one and identity alone
+		-- would say it had already been through the gate. This is the one path in
+		-- the mod that remakes /etc, /bin and the filesystem root of a table it does
+		-- not replace, so the memo is dropped by hand rather than by the setter.
+		self.osChecked = nil
 	end
 	-- The refusal was sticky on purpose; the repair is the one thing that lifts
 	-- it, and osState below is what decides whether it stays lifted.
@@ -975,7 +1048,7 @@ function SCeroSecObject:resetMachine()
 	end
 	-- No sessions to close: they went when the machine went off, which is the one
 	-- state this is allowed in.
-	self.os = nil
+	self:setOS(nil)
 	-- Both sticky refusals with it. They were about the state that has just gone,
 	-- and a fresh machine that came up "broken" would be a machine nothing could
 	-- explain.

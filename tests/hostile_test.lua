@@ -3621,24 +3621,31 @@ do
 	-- is what the cost is made of once the county is out of the walk -- and the
 	-- honest measurement is worth writing down, because it is not where the index
 	-- was expected to help. Each half of the sweep reads the machine's state, and
-	-- every read goes through the validator, the gate that keeps a half-mounted
-	-- /dev out of a save (SCeroSecObject:osState), which walks the filesystem:
-	-- about 0.9 ms on a machine with a full one, three reads to a game minute,
-	-- measured at 2.5 ms a running machine here. The 260 DARK machines the walk
-	-- used to visit cost about 0.014 ms each -- four field tests and no state --
-	-- so taking them out of the walk is worth 3 ms of the 105 at this scale. What
-	-- it is really worth is that the number does not move when the county grows,
-	-- which is the block below: gos_cerosec.bin holds nine thousand five hundred
-	-- buildings' worth.
+	-- the read used to go through the validator every time -- the gate that keeps a
+	-- forged state out of the engine, which walks every node of the filesystem:
+	-- 0.887 of the 0.894 ms one read cost, three reads to a game minute, 2.5 ms a
+	-- running machine and 104 a minute here. The validator is now asked once per
+	-- STATE and not once per read (SCeroSecObject:osState), which is what the
+	-- numbers below are: 2.67, 3.30 and 3.24 ms a minute over three runs, 0.067 to
+	-- 0.083 ms a running machine, worst single minute 4.39. The 260 DARK machines
+	-- the walk used to visit cost about 0.014 ms each -- four field tests and no
+	-- state -- so taking them out of the walk was worth 3 ms of the 105 at this
+	-- scale. What it is really worth is that the number does not move when the
+	-- county grows, which is the block below: gos_cerosec.bin holds nine thousand
+	-- five hundred buildings' worth.
 	--
 	-- The ceiling is GENEROUS on purpose, like WALL_MS_PER_PASS at the head of this
 	-- file: it is a floor under "the server is not being hurt" and not a performance
 	-- target, and what it has to catch is the county coming back into the walk or the
-	-- validator doubling -- not a box that is also running a game. Eight against a
-	-- measured two and a half, and the calibration scales it like every other one
-	-- here; the number that cannot drift is the visit count above, and this one is
-	-- second to it on purpose.
-	local limit = ceiling(8) * ON
+	-- validator coming back onto the read path -- not a box that is also running a
+	-- game. ONE against a measured 0.083, down from the eight it was when the same
+	-- read cost 2.5: a ceiling comes down from a measurement and never up, and the
+	-- memo breaking puts the read back at 2.5, which this refuses with room to
+	-- spare. Measured on a machine at load average 4 to 6, so the true idle figure
+	-- is lower than the numbers quoted, and the calibration scales the ceiling like
+	-- every other one here. The number that cannot drift is the visit count above,
+	-- and this one is second to it on purpose.
+	local limit = ceiling(1) * ON
 	check("a game minute over three hundred machines costs under " ..
 		string.format("%.2f", limit) .. " ms (" .. string.format("%.3f", perMinute) ..
 		" average, " .. string.format("%.3f", worstMinute) .. " worst, " ..
