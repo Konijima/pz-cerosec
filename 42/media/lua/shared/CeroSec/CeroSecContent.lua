@@ -1214,7 +1214,10 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --
 --   DISKS[i] = {
 --     id     = "UTILITIES",  what the entry is called in here and in the bench
---     label  = "UTILITIES",  what is written on the disk, CeroSecOS.labelOk
+--     printed = true,        the sticker was printed at a factory, not written
+--     label  = "CeroSec UTILITIES 1.0",  the PRINTED sticker, CeroSecOS.labelOk
+--     version = "1.0",       the version that sticker names, said as a field too
+--     hand   = { "...", ... } a HANDWRITTEN entry's sticker, one per telling
 --     weight = 3,            out of 100; what is left over is a blank disk
 --     late   = "NUMBERS.TXT" one file is a stub until the disk is first inserted
 --     files  = { { name="lights.sh", script="lights.sh" },
@@ -1254,6 +1257,36 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --   * BLANK is in the table with no files on purpose: it is the entry the roll
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
+--
+-- PRINTED, OR WRITTEN BY HAND. Half of what a disk in 1993 told you, it told you
+-- before you read a word of it. Software came with a label printed at the factory
+-- -- the product, its version, whoever published it -- and the disk somebody wrote
+-- himself had his own hand on it, in his own words, usually in biro and usually
+-- shorter than it should have been. You could tell the two apart across a desk.
+--
+-- So an entry says which it is, and the sticker follows from that:
+--
+--   * `printed = true` carries ONE `label`, the printed line, and a `version`
+--     field beside it saying the version that line names. The publisher comes
+--     first on CeroSec Systems' own media, the way a company puts its name on its
+--     own product, and the two third-party disks look like what they are.
+--   * `printed = false` carries `hand`, which is CeroSecContent.VARIANTS
+--     handwritten stickers -- one per TELLING, because the telling is the man
+--     whose disk it was and the sticker is his handwriting. The same three
+--     tellings that write the prose write the sticker over it, so the man who
+--     kept a shop's books called the disk what a shopkeeper calls it.
+--   * BLANK carries neither: nothing is written on a disk nobody wrote on.
+--
+-- Both are held to CeroSecOS.labelOk, which is what `mount` and `df` will print:
+-- 24 characters of the printable set and no more, printed label included. That
+-- ceiling is not raised here and does not need to be -- the longest sticker in the
+-- catalogue is CeroSec DIAGNOSTICS 1.0 at twenty-three.
+--
+-- WHAT THE SURVIVOR SEES, and this is the whole point of the distinction: the
+-- sticker is the item's NAME, so a printed disk reads as a product in his bag and
+-- a found one reads as a stranger's handwriting. The look goes with it -- a line
+-- on the tooltip and, for a printed disk, its own icon -- and that is
+-- CeroSecContent.markLabel.
 --
 -- AND A SIXTH, which the world-content work, part 2 needed and which is the one piece of mechanics it
 -- added: `late`.
@@ -1299,7 +1332,10 @@ CeroSecContent.DIAG_DISK = "CEROSEC DIAGNOSTICS"
 CeroSecContent.DISKS = {
 	{
 		id = "UTILITIES",
-		label = "UTILITIES",
+		-- CeroSec Systems' own utilities, so the publisher is on the label first.
+		printed = true,
+		label = "CeroSec UTILITIES 1.0",
+		version = "1.0",
 		weight = 3,
 		files = {
 			{ name = "lights.sh", script = "lights.sh" },
@@ -1327,7 +1363,10 @@ CeroSecContent.DISKS = {
 	--
 	{
 		id = "BBS LIST",
-		label = "BBS LIST",
+		-- His own list, off his own machine, so it is his own handwriting: the
+		-- numbers a man who called boards wrote on the disk he kept them on.
+		printed = false,
+		hand = { "bbs numbers", "boards to call", "numbers to try" },
 		weight = 2,
 		-- THE ONE LATE ENTRY, and the sixth note over this table is the whole of
 		-- why: the numbers on it are the numbers of the exchange the disk is first
@@ -1381,7 +1420,12 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "WARDIALER",
-		label = "WARDIALER",
+		-- Somebody else's software and it looks like it: a product name and a
+		-- version, and not a word of CeroSec Systems on the sticker. Invented, the
+		-- way every name in this catalogue is -- there was no Nightline.
+		printed = true,
+		label = "NIGHTLINE DIALER 1.2",
+		version = "1.2",
 		weight = 1,
 		files = {
 			-- THE DECISION, said on the disk itself in the plainest words there
@@ -1433,7 +1477,12 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "GAMES",
-		label = "GAMES",
+		-- A shareware compilation, which is what a disk of games on a 1993 desk
+		-- was: somebody's collection sold on for the price of the disk, with a
+		-- printed sticker and a version number on it.
+		printed = true,
+		label = "SHAREWARE GAMES 2.1",
+		version = "2.1",
 		weight = 2,
 		files = {
 			{ name = "README.TXT", mode = 644, text = table.concat({
@@ -1459,7 +1508,11 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "BACKUP",
-		label = "BACKUP",
+		-- His own handwriting, and it says what the telling under it says: the
+		-- first man wrote down what he copied, the second what the disk is for,
+		-- the third neither and only whose it was.
+		printed = false,
+		hand = { "home dir 8 july", "backup jul 8", "my files - july" },
 		-- One share of the box went to LEDGER and PERSONAL: see the weight note
 		-- over this table. Three tellings, which is what the change that wrote them
 		-- was for -- the same disk in two towns was the same man's diary.
@@ -1679,7 +1732,13 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "CEROSEC OS 1.0 DIST",
-		label = "CEROSEC OS 1.0 DIST",
+		-- Distribution media, and the sticker it left the factory with. The version
+		-- is IN the printed line here because that is where a distribution disk
+		-- puts it -- the field beside it is the same number said as data, which is
+		-- what the bench holds the line to.
+		printed = true,
+		label = "CeroSec OS 1.0 DIST",
+		version = "1.0",
 		weight = 2,
 		files = {
 			{ name = "README.TXT", mode = 644, text = table.concat({
@@ -1823,7 +1882,9 @@ CeroSecContent.DISKS = {
 	--
 	{
 		id = "LEDGER",
-		label = "LEDGER",
+		-- A shopkeeper's hand, and a shopkeeper calls it the books.
+		printed = false,
+		hand = { "books 93", "shop - sales", "weekly totals" },
 		weight = 2,
 		files = {
 			{ name = "README.TXT", mode = 644, texts = {
@@ -1942,7 +2003,10 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "PERSONAL",
-		label = "PERSONAL",
+		-- Three men, three ways of not saying what is on it. The second telling is
+		-- the one that says it out loud, and its sticker says it too.
+		printed = false,
+		hand = { "letters", "do not read", "mine" },
 		weight = 2,
 		files = {
 			{ name = "README.TXT", mode = 644, texts = {
@@ -2210,7 +2274,10 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "RADIO LOG",
-		label = "RADIO LOG",
+		-- The club's, then his own, then the machine's: the three tellings in the
+		-- order they are written, and the sticker follows each one.
+		printed = false,
+		hand = { "club net log", "heard log jul", "packet log 93" },
 		weight = 1,
 		files = {
 			{ name = "README.TXT", mode = 644, texts = {
@@ -2446,7 +2513,13 @@ CeroSecContent.DISKS = {
 	--
 	{
 		id = CeroSecContent.DIAG_DISK,
-		label = "CEROSEC DIAGNOSTICS",
+		-- The company's own service disk, printed like the rest of its media. The
+		-- id keeps the shape it has always had -- it is what givedisk asks for and
+		-- what the save-nothing rule is written against -- and only the STICKER
+		-- changed.
+		printed = true,
+		label = "CeroSec DIAGNOSTICS 1.0",
+		version = "1.0",
 		-- Never in loot. The gate is diskForRoll's `weight > 0`, and the bench
 		-- walks all hundred rolls to say so out loud.
 		weight = 0,
@@ -2565,6 +2638,9 @@ CeroSecContent.DISKS = {
 	},
 	{
 		id = "BLANK",
+		-- Neither printed nor written on: nothing is on the sticker of a disk
+		-- nobody has written on, which is why both fields are absent rather than
+		-- empty.
 		label = nil,
 		weight = 0,
 		files = {},
@@ -2613,10 +2689,25 @@ end
 -- label: the two are the same string for every entry there is, and a lookup that
 -- leaned on that would be a lookup that broke the day an entry is labelled in words
 -- and identified by a word.
+-- AND IT IS NOW A WALK OF THE HANDWRITTEN ONES TOO, which is the day the comment
+-- over it said was coming: a printed entry has one sticker and a handwritten entry
+-- has one PER TELLING (`hand`), so an entry is found by any of the stickers a copy
+-- of it can be carrying and not only by the first.
+--
+-- This is not a convenience. It is what keeps `late` working: a BBS list is found
+-- by its sticker and by nothing else (CeroSecContent.lateEntryFor), and a disk
+-- labelled in the second telling's words would otherwise never have been filled in
+-- with the region's numbers.
 function CeroSecContent.diskByLabel(label)
 	if type(label) ~= "string" then return nil end
 	for i = 1, #CeroSecContent.DISKS do
-		if CeroSecContent.DISKS[i].label == label then return CeroSecContent.DISKS[i] end
+		local entry = CeroSecContent.DISKS[i]
+		if entry.label == label then return entry end
+		if type(entry.hand) == "table" then
+			for h = 1, #entry.hand do
+				if entry.hand[h] == label then return entry end
+			end
+		end
 	end
 	return nil
 end
@@ -2661,6 +2752,26 @@ function CeroSecContent.diskTelling(variant)
 		return math.floor(math.fmod(v - 1, CeroSecContent.VARIANTS)) + 1
 	end
 	return v
+end
+
+-- WHAT IS WRITTEN ON THE STICKER of this copy, or nil for a disk with nothing on
+-- it. A printed entry answers the same line for every copy there is -- that is
+-- what printed means -- and a handwritten one answers the telling's own, because
+-- the telling is whose disk it was.
+--
+-- Held inside the array by diskTelling rather than indexed by whatever came in, so
+-- a telling this build does not have cannot take the sticker off a disk that has
+-- one. A `hand` short of VARIANTS entries is a bench failure and not a nil here:
+-- the last one it has is what a copy past its end carries.
+function CeroSecContent.diskLabel(entry, variant)
+	if type(entry) ~= "table" then return nil end
+	if type(entry.hand) == "table" and #entry.hand > 0 then
+		local at = CeroSecContent.diskTelling(variant)
+		if at > #entry.hand then at = #entry.hand end
+		return entry.hand[at]
+	end
+	if type(entry.label) == "string" then return entry.label end
+	return nil
 end
 
 -- The people in a disk's prose, and they come out of the telling and nothing else.
@@ -2728,7 +2839,9 @@ end
 -- disk, written  -- `written` is how many of the entry's files landed.
 function CeroSecContent.diskData(entry, now, variant)
 	if type(entry) ~= "table" then return nil, 0 end
-	local disk = CeroSecOS.newFloppy(entry.label)
+	-- The sticker of THIS telling, so the label the machine prints in `mount` and
+	-- the words on the item in his bag are one string and not two.
+	local disk = CeroSecOS.newFloppy(CeroSecContent.diskLabel(entry, variant))
 	if disk == nil then return nil, 0 end
 	if type(entry.files) ~= "table" or #entry.files == 0 then return disk, 0 end
 	-- A disk with files on it has a filesystem on it. newFloppy leaves a blank
@@ -3016,12 +3129,129 @@ function CeroSecContent.onCreateFloppy(item)
 	-- And the label, on the item's NAME, which is where a label lives and the
 	-- only place it lives (see the head of CeroSecFloppyMenu). Written the way
 	-- the menu writes it so a found disk and a labelled one are one thing.
-	if type(entry.label) == "string" and CeroSecOS.labelOk(entry.label) then
-		item:setName(entry.label)
+	--
+	-- The sticker of THIS telling: a handwritten entry has one per telling and the
+	-- roll above has already chosen which (CeroSecContent.diskLabel).
+	--
+	-- syncItemFields IS SAFE HERE, and it is worth saying why, because this runs on
+	-- an item that is in nothing yet -- InventoryItem.initialiseItem, before the
+	-- caller has put it anywhere. javap -p -c zombie.inventory.InventoryItem,
+	-- syncItemFields(): getOutermostContainer at 1, and a null container jumps
+	-- straight to 83 (the whole player-packet branch is behind that null check and
+	-- behind the container's parent being an IsoPlayer); the client branch at 83
+	-- needs the item to be an InventoryContainer; the server branch at 116 reads
+	-- getWorldItem and a null one jumps to the return at 188. Every path off a
+	-- container-less item is a no-op, so there is nothing here to guard and nothing
+	-- that can throw. A disk that shows up called "3.5 inch Floppy Disk" is not this
+	-- call failing.
+	local label = CeroSecContent.diskLabel(entry, variant)
+	if type(label) == "string" and CeroSecOS.labelOk(label) then
+		item:setName(label)
 		item:setCustomName(true)
 		item:syncItemFields()
-		data.label = entry.label
+		data.label = label
+		-- And what the sticker LOOKS like, which is the other half of a label: a
+		-- printed disk is a product in his bag and a handwritten one is a stranger's
+		-- pen. See CeroSecContent.markLabel.
+		CeroSecContent.markLabel(item, entry.printed == true)
 	end
+end
+
+--
+-- PRINTED OR HANDWRITTEN, ON THE GLASS
+--
+-- A name in a list is not enough on its own: four disks in a bag are four lines,
+-- and the survivor who has just picked one up wants to know what he has without
+-- reading it. So the difference is said twice more -- on the tooltip, and on the
+-- icon of a printed disk.
+--
+-- BOTH ARE PER-ITEM AND BOTH ARE THE ENGINE'S OWN, which is the thing that had to
+-- be proven before any of it was written. javap -p -c on projectzomboid.jar
+-- 42.20.4, zombie.inventory.InventoryItem:
+--
+--   setTooltip(String) does not set a field and stop: it rawsets the key "Tooltip"
+--       on the item's OWN modData (getModData at 1, ldc "Tooltip" at 4,
+--       KahluaTable.rawset at 8) and only then writes the private field (putfield
+--       tooltip at 15). getTooltip() reads that modData key FIRST and falls back to
+--       the field (rawget at 7, instanceof String at 14, the getfield at 28 only
+--       when it is not one). So a tooltip set on one item is that item's, and it is
+--       in the modData the save file keeps -- it survives a reload without a line
+--       of ours to put it back.
+--   DoTooltip(ObjectTooltip, Layout) puts it on the screen itself, with no UI hook
+--       of ours anywhere near it: getTooltip at 4168, null and there is no line at
+--       all (ifnull 4203), otherwise addItem and setLabel with the string put
+--       through Translator.getText (4184-4200). It is therefore a translation KEY
+--       and not prose -- the same way the item script's own `Tooltip =
+--       Tooltip_item_CeroSecWiringGuide` is one -- so the two keys below are in
+--       Translate/EN and Translate/FR beside it. No ISToolTipInv hook was added and
+--       none is needed.
+--   getTexture() reads the key "customInventoryIcon" off the item's modData, as a
+--       STRING, and resolves it through Texture.getSharedTexture (getModData at 13,
+--       ldc "customInventoryIcon" at 16, getSharedTexture at 41); anything that is
+--       not a string, and a name that resolves to nothing, falls back to the
+--       script's own texture (the getfield at 33 and at 52). getIcon() and getTex()
+--       are that same method (getTexture at 7246 and at 1688), and getTex is what
+--       the inventory pane draws. So an item's icon can be changed at runtime, it
+--       is changed with a string and not a Texture, it is in the modData and
+--       therefore in the save, and a name we spell wrong is a disk that looks
+--       ordinary rather than a disk with no icon.
+--
+-- There is no setter for customInventoryIcon on the class, so the modData key IS
+-- the engine's path for it; the tooltip has one and it is used.
+--
+-- The item's modData top level is not ours and these two keys are not ours either
+-- -- they are the engine's, on the engine's table, exactly like the `customName`
+-- setCustomName writes there. The slot takes the keys a DISK owns off that table
+-- and judges those alone (ownKeysOf in CeroSecOSDisk), so neither of them can
+-- reach a floppy's record or the save's disk gate.
+CeroSecContent.PRINTED_TOOLTIP = "Tooltip_item_CeroSecFloppyPrinted"
+CeroSecContent.HAND_TOOLTIP = "Tooltip_item_CeroSecFloppyHand"
+CeroSecContent.ICON_KEY = "customInventoryIcon"
+
+-- Say on the item which kind of label is on it. `printed` true for a factory
+-- sticker, false for somebody's pen, and nil for a disk with nothing written on it
+-- at all -- which takes both marks off, because an erased label is an ordinary
+-- disk again and not a printed disk with no name.
+function CeroSecContent.markLabel(item, printed)
+	if item == nil then return end
+	local data = item:getModData()
+	if data == nil then return end
+	if printed == nil then
+		item:setTooltip(nil)
+		data[CeroSecContent.ICON_KEY] = nil
+		return
+	end
+	if printed then
+		item:setTooltip(CeroSecContent.PRINTED_TOOLTIP)
+		-- One printed look per colour, and the shell keeps its own: a printed disk
+		-- is the same disk with a printed sticker on it.
+		data[CeroSecContent.ICON_KEY] =
+			CeroSec.floppyPrintedIcon(item:getFullType())
+		return
+	end
+	item:setTooltip(CeroSecContent.HAND_TOOLTIP)
+	data[CeroSecContent.ICON_KEY] = nil
+end
+
+-- And the same, asked of the STICKER, for the two places a disk comes back out of
+-- a machine as a NEW item (SCeroSecSystem's eject and givedisk): the drive holds a
+-- disk record and a disk owns three keys, so what kind of label it was is not on
+-- the disk to be read back -- the label itself is, and the catalogue knows which
+-- of its stickers are printed.
+--
+-- What that costs: a survivor who writes a catalogue disk's printed line on a blank
+-- disk in biro, puts it in a machine and takes it out again gets the printed look.
+-- He has to copy a product's sticker word for word to get it, which is the same
+-- curiosity the `late` stub already carries and not a way in -- and the disk he
+-- gets back is still blank.
+function CeroSecContent.markByLabel(item, label)
+	if item == nil then return end
+	if type(label) ~= "string" then
+		CeroSecContent.markLabel(item, nil)
+		return
+	end
+	local entry = CeroSecContent.diskByLabel(label)
+	CeroSecContent.markLabel(item, entry ~= nil and entry.printed == true)
 end
 
 --

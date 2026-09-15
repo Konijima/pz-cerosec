@@ -209,6 +209,30 @@ function CeroSec.floppyColourKey(fullType)
 	return CeroSec.FLOPPY_COLOURS[fullType]
 end
 
+-- And the icon of a disk with a PRINTED label on it, keyed by full type: the same
+-- four shells, with a printed sticker on the front instead of a blank one.
+--
+-- Written out rather than built out of the type's name, for the same reason the
+-- colours above are: these are the names of files in common/media/textures, the
+-- item script's own `Icon =` lines name the plain ones the same way, and a name
+-- assembled out of pieces is a name nothing checks. A disk whose look is asked for
+-- and does not resolve is a disk that draws its ordinary icon (javap -p -c
+-- zombie.inventory.InventoryItem, getTexture(): Texture.getSharedTexture at 41 and
+-- the fallback getfield at 52), so a typo here is quiet -- the bench opens each of
+-- these files instead of trusting the string.
+CeroSec.FLOPPY_PRINTED_ICONS = {
+	["CeroSec.FloppyBlue"] = "Item_CeroSecFloppyBluePrinted",
+	["CeroSec.FloppyYellow"] = "Item_CeroSecFloppyYellowPrinted",
+	["CeroSec.FloppyRed"] = "Item_CeroSecFloppyRedPrinted",
+	["CeroSec.FloppyGreen"] = "Item_CeroSecFloppyGreenPrinted",
+}
+
+-- That look's texture name, or nil for anything that is not one of the four.
+function CeroSec.floppyPrintedIcon(fullType)
+	if type(fullType) ~= "string" then return nil end
+	return CeroSec.FLOPPY_PRINTED_ICONS[fullType]
+end
+
 -- Is that full type one of ours? A name and nothing else: an item is a floppy
 -- because of what it IS and never because of what is written in its modData --
 -- a blank disk is a floppy, and so is one somebody has forged the contents of.
