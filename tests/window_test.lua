@@ -6592,6 +6592,54 @@ do
 	eq("and no line was left open", CeroSecOS.ptyCount(net.gate.ptys), 0)
 end
 
+-- LAN mail: the message goes THROUGH the rsh, into the far machine's spool
+--
+-- `cat note | rsh gate mail -s <subject> bob` is the line a survivor writes to
+-- leave somebody a note on another machine, and it is the whole of the input half
+-- of an rsh: the near machine drains the pipe before it dials, and the far
+-- command reads what came over. Asserted on the far machine's MAILBOX, because
+-- what a reader over there will see is the file and not what the sender was told.
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.put(net.gate, "/etc/hosts.equiv", net.host(net.here), 644, "root")
+	local far = net.gate:osState()
+	CeroSecOS.addUser(far, "bob", "/home/bob", false, 1, 100)
+	net.login("admin")
+	net.put(net.here, "/home/admin/note", "the lights are off", 644, "admin")
+
+	net.forget()
+	net.enter("cat note | rsh gate mail -s Lights bob")
+	net.tick(10)
+	local box = net.text(net.gate, "/var/mail/bob")
+	check("the message landed in the far machine's spool", box ~= nil)
+	check("with the body that went down the near machine's pipe",
+		box ~= nil and string.find(box, "the lights are off", 1, true) ~= nil)
+	check("the subject crossed with it",
+		box ~= nil and string.find(box, "Subject: Lights", 1, true) ~= nil)
+	-- From: carries the FAR machine's name, because the far mail is what wrote it:
+	-- the message was posted on gate and not carried there.
+	check("and From: names the machine it was posted on",
+		box ~= nil and string.find(box, "admin@" .. net.host(net.gate), 1, true) ~= nil)
+	check("nothing of it was delivered on the near machine",
+		net.text(net.here, "/var/mail/bob") == nil)
+	eq("and no line was left open", CeroSecOS.ptyCount(net.gate.ptys), 0)
+
+	-- The same line with nothing piped in. An rsh hands the far command an input
+	-- that is already at end of file -- this machine cannot pass a terminal
+	-- through one -- so mail posts the empty message and says so.
+	net.forget()
+	net.enter("rsh gate mail bob")
+	net.tick(10)
+	check("an rsh with no input sends the null-body message",
+		net.glass(CeroSecOS.MAIL_NULL_BODY))
+	local second = net.text(net.gate, "/var/mail/bob")
+	check("and the second message is in the box too",
+		second ~= nil and #second > #box)
+	check("with no body under its headers",
+		second ~= nil and string.find(second, "To: bob", 1, true) ~= nil)
+end
+
 -- In a $(...), and in a script that goes on afterwards with the far command's
 -- own status in $?.
 do

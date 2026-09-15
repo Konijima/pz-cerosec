@@ -2902,7 +2902,25 @@ function CeroSecNet.answerDial(system, luaObject, console, control, data, player
 		-- The line it was given, as the pty's own foreground job. The shell is a
 		-- file over there like everything else, so a machine whose /bin/sh has
 		-- been deleted answers an rsh the way it answers a survivor.
-		local farJob = system:startPrompt(object, pty.console, data.cmd, playerObj, nil)
+		-- What the caller piped in, as the far command's standard input. Put on the
+		-- job BEFORE it is started, because startPrompt runs it: a job handed its
+		-- input after its first step would have read end of file already.
+		--
+		-- One pipe buffer, the shape a pipeline's stages share (CeroSecOSVM's
+		-- newPipe): eof is true because the whole of what was piped in was drained
+		-- on the near machine before the dial, and closed is false because the far
+		-- command has not read it yet. The lines are COPIED -- the order table
+		-- belongs to the near machine's job and the far command is allowed to
+		-- consume what it reads.
+		local sent = { lines = {}, bytes = 0, eof = true, closed = false }
+		if type(data.stdin) == "table" then
+			for i = 1, #data.stdin do
+				sent.lines[i] = data.stdin[i]
+				sent.bytes = sent.bytes + #data.stdin[i] + 1
+			end
+		end
+		local farJob = system:startPrompt(object, pty.console, data.cmd, playerObj, nil,
+			nil, sent)
 		-- And a machine that could not start it at all -- no shell, no room on its
 		-- own job book -- is a session with nothing in it. It is closed here rather
 		-- than left open: what the far machine said about it is on that console and

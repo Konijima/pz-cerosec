@@ -1922,7 +1922,12 @@ end
 -- the scheduler takes it from there.
 --
 -- Shared with the login path, which runs ~/.profile exactly this way.
-function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, name)
+-- stdin, when the caller has one to hand over: the pipe buffer the job reads its
+-- standard input out of. Only an rsh brings one (CeroSecNet's rsh order) -- a
+-- line typed at a glass has no pipe behind it -- and it is attached before the
+-- job takes its first step, because a job that has stepped once has already read
+-- end of file.
+function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, name, stdin)
 	local state = luaObject:osState()
 	if state == nil then return nil end
 	-- When this session last did something, which is what `w` prints in its IDLE
@@ -1938,6 +1943,7 @@ function SCeroSecSystem:startPrompt(luaObject, console, line, playerObj, token, 
 		self:pushScreen(luaObject, state, console)
 		return nil
 	end
+	if type(stdin) == "table" then job.stdinBuf = stdin end
 	-- Passes, in his own hand, while the line is still asking the MACHINE for
 	-- something only a pass can give it: a job, because it ended in "&". The
 	-- pass that makes one is not the pass the line finishes in, and a prompt

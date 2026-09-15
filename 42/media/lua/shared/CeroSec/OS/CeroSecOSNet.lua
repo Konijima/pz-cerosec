@@ -2044,7 +2044,21 @@ commands.rlogin = function(state, session, args, env)
 		from = CeroSecOS.userOf(session), hops = hopsOf(session) + 1 }
 end
 
-commands.rsh = function(state, session, args, env)
+-- rsh carries the STANDARD INPUT across, which is the half of "one command and a
+-- pipe back" that was missing: rsh(1) connects its own input to the remote
+-- command's, so `cat note | rsh gate mail bob` is how a message crosses a wire
+-- and `rsh gate wc -l < file` is how a real one was counted. Read to its END
+-- before the dial, under the pipe's own ceiling -- a dial is a wait and a stage
+-- cannot be resumed after one, so what is going over has to be in hand when the
+-- order is given.
+--
+-- And the far command gets an input even when there was no pipe: an input already
+-- at end of file. That is what an rsh with nothing on its own input IS, and it is
+-- what makes `rsh gate mail bob` post an empty message rather than stand there
+-- waiting for a body nobody can type -- this machine cannot hand a terminal
+-- through an rsh (that is rlogin's job here), and the comment over the rsh order
+-- in CeroSecOSVM.lua has said so since it was written.
+commands.rsh = function(state, session, args, env, stdin, sh)
 	local words, want, bad = takeLoginFlag(args, 2)
 	if bad or words == nil or #words < 2 then return usage("rsh") end
 	if want == nil then want = CeroSecOS.userOf(session) end
@@ -2056,11 +2070,32 @@ commands.rsh = function(state, session, args, env)
 
 	local host, addr = reach(state, session, env, "rsh", words[1])
 	if host == nil then return false, addr end
+
+	-- The pipe, drained before the dial. An empty table and not nil when there was
+	-- no pipe: the far command is handed an input at end of file either way, and
+	-- the difference between "no pipe" and "a pipe with nothing in it" is not a
+	-- difference rsh has ever made.
+	local body = {}
+	local input = CeroSecOS.stdinOf(stdin, {})
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			if not CeroSecOS.holdLine(carry, input.lines[i]) then carry.over = true end
+		end
+		if carry.over then
+			input.done = true
+			return false, { "rsh: input too large" }
+		end
+		if not input.eof then return true, {} end
+		input.done = true
+		body = carry.lines or {}
+	end
+
 	local line = {}
 	for i = 2, #words do line[#line + 1] = words[i] end
 	return true, { }, "rsh", { host = host, addr = addr, user = want,
 		from = CeroSecOS.userOf(session), cmd = table.concat(line, " "),
-		hops = hopsOf(session) + 1 }
+		stdin = body, hops = hopsOf(session) + 1 }
 end
 
 --

@@ -1475,7 +1475,11 @@ A name that is no account here is refused before anything is delivered,
 and so is an address on another machine:
 
   ghost... User unknown
-  bob@gate... Cannot send mail: no mailer]],
+  bob@gate... Cannot send mail: no mailer
+
+rsh hands the far mail whatever you pipe into it:
+
+  admin@ksp-04-11:~$ cat note | rsh gate mail -s Hi bob]],
 
 [[Two things cron will not do.
 
