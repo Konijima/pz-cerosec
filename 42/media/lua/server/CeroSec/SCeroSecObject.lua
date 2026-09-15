@@ -528,10 +528,107 @@ end
 -- objects in here are never saved (they are not in the object's modData keys)
 -- and they are pruned on close, on eviction and by the sweep.
 --
+-- AND THE TABLE IS BOUNDED, both ways, because the key is not ours: it is the
+-- online id and the TOKEN THE CLIENT PICKED (SCeroSecSystem.watcherKeyOf), so
+-- one `open` per fresh random token used to add one permanent entry apiece.
+-- Every entry is a sendServerCommand on every later screen of that machine --
+-- paid by everybody who types at it afterwards, not by whoever sent the
+-- packets -- and the minute sweep only drops an entry whose player has walked
+-- off, which somebody standing at the keyboard never does.
+--
+-- Two rules, and the first is the one that matters:
+--
+--   * ONE LIVE WINDOW PER PLAYER PER MACHINE. A second `open` from the same
+--     player is the same man at the same keyboard, so his earlier window goes
+--     and is TOLD it has gone. The client already shuts its own previous box
+--     (CeroSecTerminal.open, one terminal per player), so in play this
+--     replaces nothing; what it bounds is a client that never closes.
+--   * and WATCHERS_MAX of them per machine whatever the players, oldest first,
+--     so a crowd of forged online ids cannot do by numbers what one cannot do
+--     by tokens.
+--
+-- The same player is the same by idOf and not by the online id alone: split
+-- screen is two survivors on one connection (SCeroSecSystem.watcherIdOf).
+--
+
+-- Eight windows at one computer. Twice what a room holds standing up, and
+-- twice the four sessions the machine will take (CeroSecOS.PTY_MAX), so a
+-- ceiling nothing legitimate reaches.
+SCeroSecObject.WATCHERS_MAX = 8
+
+-- The identity the two rules are keyed on, asked of the system rather than
+-- worked out here: two answers to "the same player" is two rules.
+function SCeroSecObject:watcherIdOf(playerObj)
+	if playerObj == nil then return nil end
+	local system = self.luaSystem
+	if system == nil or system.watcherIdOf == nil then return nil end
+	return system:watcherIdOf(playerObj)
+end
+
+function SCeroSecObject:watcherCount()
+	if not self.watchers then return 0 end
+	local n = 0
+	for _ in pairs(self.watchers) do n = n + 1 end
+	return n
+end
+
+-- One window told why it is over, and forgotten. The reason word reaches the
+-- client's closedByServer, which shuts the box whatever the word is.
+function SCeroSecObject:closeWatcher(key, reason)
+	if not self.watchers then return end
+	local watcher = self.watchers[key]
+	if watcher == nil then return end
+	self.watchers[key] = nil
+	if watcher.player ~= nil and self.luaSystem ~= nil
+			and self.luaSystem.replyClosed ~= nil then
+		self.luaSystem:replyClosed(watcher.player, self.x, self.y, self.z,
+			reason, watcher.token)
+	end
+end
+
+-- The entry that goes when the machine is full: the oldest, by the counter each
+-- one is stamped with as it goes in. `pairs` is no order at all, and a victim
+-- chosen by it would be a victim chosen by the hash of somebody's token.
+local function oldestKey(watchers)
+	local key, seq = nil, nil
+	for k, watcher in pairs(watchers) do
+		local at = watcher.seq or 0
+		if seq == nil or at < seq then key, seq = k, at end
+	end
+	return key
+end
 
 function SCeroSecObject:addWatcher(key, playerObj, token)
 	if not self.watchers then self.watchers = {} end
-	self.watchers[key] = { player = playerObj, token = token }
+	-- The same window asking again is not a second window: it overwrites, and
+	-- neither rule below is asked anything about it.
+	if self.watchers[key] == nil then
+		-- His own earlier windows. Collected before any is dropped, because a
+		-- table walked while it is being written to is a table Kahlua makes no
+		-- promise about.
+		local id = self:watcherIdOf(playerObj)
+		if id ~= nil then
+			local mine = nil
+			for other, watcher in pairs(self.watchers) do
+				if watcher.id == id then
+					if mine == nil then mine = {} end
+					mine[#mine + 1] = other
+				end
+			end
+			if mine ~= nil then
+				for i = 1, #mine do self:closeWatcher(mine[i], "replaced") end
+			end
+		end
+		-- And the machine's ceiling, counting the one about to go in.
+		while self:watcherCount() >= SCeroSecObject.WATCHERS_MAX do
+			local victim = oldestKey(self.watchers)
+			if victim == nil then break end
+			self:closeWatcher(victim, "replaced")
+		end
+	end
+	self.watcherSeq = (self.watcherSeq or 0) + 1
+	self.watchers[key] = { player = playerObj, token = token, id = self:watcherIdOf(playerObj),
+		seq = self.watcherSeq }
 end
 
 function SCeroSecObject:removeWatcher(key)

@@ -798,6 +798,12 @@ local function newBench()
 	-- wire: "off" is a machine somebody switched off, "reboot" is one that is
 	-- coming back, and the client tells them apart by nothing else.
 	bench.closed = {}
+	-- Every answer the server made, counted by its command word. What a screen
+	-- COSTS is that number: pushScreen is one sendServerCommand per window open on
+	-- the machine, so "the flood left one window" and "a screen costs one answer"
+	-- are the same fact read from the two ends -- and the second is the one a
+	-- player pays for.
+	bench.sent = {}
 	local function record(a)
 		if type(a) ~= "table" or type(a.lines) ~= "table" then return end
 		for i = 1, #a.lines do bench.said[#bench.said + 1] = a.lines[i] end
@@ -817,7 +823,11 @@ local function newBench()
 
 	CCeroSecSystem = { instance = { sendCommand = function(_, sender, command, args)
 		local replies = {}
-		system.reply = function(_, _, cmd, a) replies[#replies + 1] = { cmd, a }; record(a) end
+		system.reply = function(_, _, cmd, a)
+			replies[#replies + 1] = { cmd, a }
+			bench.sent[cmd] = (bench.sent[cmd] or 0) + 1
+			record(a)
+		end
 		system:OnClientCommand(command, sender, args)
 		deliver(replies)
 	end } }
@@ -1963,6 +1973,104 @@ do
 	check("each on its own token", first.token ~= second.token)
 	eq("one for each survivor", first.playerNum ~= second.playerNum, true)
 	eq("both replaying the boot", first.revealing and second.revealing, true)
+end
+
+-- ONE WINDOW PER PLAYER PER MACHINE, AND EIGHT PER MACHINE
+--
+-- A watcher is keyed on the token the CLIENT picked, so an `open` with a fresh
+-- token each time used to add one permanent entry apiece: unbounded server
+-- memory, and one sendServerCommand per entry on every later screen of that
+-- machine -- paid by whoever types at it next and not by whoever sent the
+-- packets. Both bounds live in SCeroSecObject:addWatcher and both are walked
+-- here through the real `open` command, because a rule proved on the function
+-- is not a rule on the packet.
+--
+-- The cost is asserted as a COUNT of answers and not in milliseconds: what is
+-- wrong with a thousand watchers is a thousand packets, and a bench that timed
+-- it would be measuring this machine.
+do
+	local bench = newBench()
+	bench.login("root")
+
+	-- One `open` packet, from whoever, with whatever token: the wire and nothing
+	-- around it. The window the reply is addressed to does not exist, which is
+	-- exactly what a client that never builds one looks like.
+	local function openAs(who, token)
+		CCeroSecSystem.instance:sendCommand(who, "open",
+			{ x = 10, y = 10, z = 0, token = token })
+	end
+
+	-- A player of his own, standing where the first one stands. His online id is
+	-- what the server keys him on, and the player number goes with it because
+	-- split screen is two survivors on one connection (SCeroSecSystem.watcherIdOf).
+	local function otherPlayer(id)
+		local who = {}
+		for key, value in pairs(bench.player) do who[key] = value end
+		who.getOnlineID = function() return id end
+		who.getPlayerNum = function() return 0 end
+		return who
+	end
+
+	-- The first window is the one bench.login opened, and it is his.
+	eq("one window on the machine to begin with", bench.object:watcherCount(), 1)
+
+	-- A THOUSAND OPENS FROM ONE PLAYER. Every one of them a token the server has
+	-- never seen, which is the whole of the defect: the key was the client's to
+	-- choose and nothing else bounded the table.
+	bench.closed = {}
+	for i = 1, 1000 do openAs(bench.player, "flood-" .. i) end
+	eq("a thousand opens from one player leave one window",
+		bench.object:watcherCount(), 1)
+	eq("and every window they replaced was told so", #bench.closed, 1000)
+	local everyReason = true
+	for i = 1, #bench.closed do
+		if bench.closed[i] ~= "replaced" then everyReason = false end
+	end
+	check("with the one word the client shuts a box on", everyReason)
+
+	-- AND A SCREEN STILL COSTS ONE ANSWER. The count and not the clock: the
+	-- flood's cost to everybody else was one packet per entry, so one entry is
+	-- one packet.
+	bench.sent = {}
+	local state = bench.object:osState()
+	bench.system:pushScreen(bench.object, state, bench.object:consoleState())
+	eq("a screen after the flood is one answer, not a thousand",
+		bench.sent["screen"] or 0, 1)
+
+	-- NINE PLAYERS AT ONE KEYBOARD, which no room holds and a forged online id
+	-- costs nothing. Eight stay, and the one that went is the one that had been
+	-- there longest.
+	bench.closed = {}
+	local crowd = {}
+	for i = 1, 9 do
+		crowd[i] = otherPlayer(-100 - i)
+		openAs(crowd[i], "crowd-" .. i)
+	end
+	eq("nine players leave eight windows", bench.object:watcherCount(),
+		SCeroSecObject.WATCHERS_MAX)
+	-- Ten opens, nine of them new players and the first one replacing the window
+	-- login left: eight survive, so two were told to shut.
+	eq("two windows were told to shut", #bench.closed, 2)
+	local firstToken = nil
+	for _, watcher in pairs(bench.object.watchers) do
+		if watcher.token == "crowd-1" then firstToken = watcher.token end
+	end
+	eq("and the first of the crowd is not one of the eight", firstToken, nil)
+	bench.sent = {}
+	bench.system:pushScreen(bench.object, state, bench.object:consoleState())
+	eq("a screen costs eight answers and never more",
+		bench.sent["screen"] or 0, SCeroSecObject.WATCHERS_MAX)
+
+	-- HIS OWN WINDOW, CLOSED BY HIM, is still his own and nobody else's: the cap
+	-- and the replacement both work by dropping entries, and a `close` that
+	-- dropped somebody else's would be a player shutting another man's terminal.
+	local mine = crowd[9]
+	bench.closed = {}
+	CCeroSecSystem.instance:sendCommand(mine, "close",
+		{ x = 10, y = 10, z = 0, token = "crowd-9" })
+	eq("a close takes exactly one window off", bench.object:watcherCount(),
+		SCeroSecObject.WATCHERS_MAX - 1)
+	eq("and says nothing to anybody", #bench.closed, 0)
 end
 
 -- A second survivor standing at the same desk who never opened a terminal. The

@@ -828,6 +828,14 @@ local function idOf(playerObj)
 	return tostring(playerObj:getOnlineID()) .. ":" .. tostring(playerObj:getPlayerNum())
 end
 
+-- The same answer, for the machine's own watcher rules: one live window per
+-- player per machine is a rule about who "the same player" is, and there is one
+-- function that says (SCeroSecObject, the head of the watcher section).
+function SCeroSecSystem:watcherIdOf(playerObj)
+	if playerObj == nil then return nil end
+	return idOf(playerObj)
+end
+
 function SCeroSecSystem:hasWatcherWithId(luaObject, id)
 	if not luaObject.watchers then return false end
 	for _, watcher in pairs(luaObject.watchers) do
