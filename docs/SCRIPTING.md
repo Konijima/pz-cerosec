@@ -330,6 +330,14 @@ Two more read the pipe and **only** the pipe, because the real tools take no fil
 operand either: `tr [-d] <set1> [<set2>]` and `tee [-a] <file>...`. Both want
 something on their left, and a `tr` typed on its own prints its usage line.
 
+`wall [file]` joins the nine: a file named on the line, or the pipe. The real one
+reads its *terminal* when given neither, and this machine has no keyboard behind a
+command — so `wall` alone prints its usage line, which is the same answer `cat` gives.
+What it hands back is an **order** and not output, because only the machine can put a
+line on a screen that is not this job's: `CeroSecJobs.wall` walks the machine's own
+console and every `pty.console`, and `shutdown`'s minute-out warning has always gone
+out through that same door.
+
 Every stage is a **subshell** — its own variables, its own working directory — so
 what a stage changes is gone when the pipeline is over. That is the quirk everybody
 meets once: `echo hi | read x` really does read the pipe, in the subshell whose `x`

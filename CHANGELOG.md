@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+- A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
+  terminal of the machine -- the glass in front of you and every session that
+  came in over the wire -- with the banner a 1993 machine put on it. Anybody may
+  send one: telling people is not a privilege, and the real wall was never
+  root's. It reads a file too (`wall /etc/motd`). The warning `shutdown` has
+  always broadcast goes out through the same door.
+- Machines already in your save gain /bin/wall on load. If you had put a file of
+  your own at that name, yours is left alone.
 - Reading your mail no longer destroys it. `mail` shows what has arrived and
   moves it to `mbox` in your home as it goes, which is what Mail has always done
   on the way out; `mail -f` reads that file and moves nothing, so the address in

@@ -1309,31 +1309,38 @@ means "everybody", does not parse here: it trusts nobody.
 Check that mode after you edit it. A file the machine ignores looks exactly
 like one it honours.]],
 
-[[Who is here, and who has been. who is this machine only, and it is the
-command to type before a shutdown:
+[[Who is here, and who has been. who is this machine only, and the command to
+type before a shutdown:
 
   admin@ksp-04-11:~$ who
   admin    console  Jun 27 13:12
   kate     ttyp0    Jun 27 13:07  (office)
 
-The console is the survivor at the keyboard. ttyp0 to ttyp3 are sessions
-that came in over the wire, with the machine they came from in brackets.
-who am i prints just the line you asked it on.
+The console is the keyboard; ttyp0 to ttyp3 came in over the wire, with the
+machine in brackets. who am i prints your line alone.
 
-last reads /var/log/wtmp, newest first, and it is the machine's memory of
-who was here:
+Then the one to type after it: wall puts a line on EVERY one of those
+screens, kate's included.
+
+  admin@ksp-04-11:~$ echo "lights out in 5" | wall
+  Broadcast Message from admin@ksp-04-11
+          (console) at 13:12 ...
+
+  lights out in 5
+
+Anybody may: the real wall is setgid tty, not setuid root -- telling people
+is not a privilege. It reads a file or a pipe, and shutdown warns the same
+way.
+
+last reads /var/log/wtmp, newest first:
 
   admin@ksp-04-11:~$ last
-  admin    console             Jun 27 13:12  still logged in
-  kate     ttyp0    office     Jun 27 13:07  still logged in
-  admin    console             Jun 27 11:12 - 11:17  (00:05)
+  admin    console    Jun 27 13:12  still logged in
+  admin    console    Jun 27 11:12 - 11:17  (00:05)
 
   wtmp begins Jun 27 11:12
 
-Two hundred lines deep with the oldest dropped, root's and 644, so
-everybody may read it and only root may change it. wtmp begins is a real
-answer on this machine, not a formality: that line is where the memory
-runs out.]],
+Root's and 644, oldest dropped. That line is where memory runs out.]],
 
 [[ONE LINE PER PREMISES: a shop, or a whole house. A house is one building and
 one line; a mall is one building and one line per shop. Seven digits,
@@ -1835,6 +1842,7 @@ The wire.
   ruptime
   rwho
   who [am i]
+  wall [file]
   last [name]
   rlogin <host|address> [-l user]
   rsh <host|address> [-l user] <command>...

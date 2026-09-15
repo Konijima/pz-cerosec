@@ -326,6 +326,31 @@ local function broadcast(system, luaObject, line)
 	system:pushScreen(luaObject, luaObject:osState(), console)
 end
 
+-- wall(1): lines onto EVERY terminal of the machine.
+--
+-- Which is more than the one above reaches. The machine's own console is one
+-- terminal; every inbound session has one of its own (pty.console), on somebody
+-- else's glass, and a broadcast that missed those would be a broadcast that missed
+-- the people most likely to be caught out by it -- a survivor logged in from the
+-- gate does not see the lights go off through the window.
+--
+-- The lines go through CeroSec.consolePush like everything else, so each one meets
+-- the console's own rules once: sixty columns, no control byte, a hundred lines kept.
+function CeroSecJobs.wall(system, luaObject, state, lines)
+	if type(lines) ~= "table" or #lines == 0 then return end
+	local screens = {}
+	local own = luaObject:consoleState()
+	if own ~= nil then screens[#screens + 1] = own end
+	local ptys = CeroSecOS.ptyList(luaObject.ptys)
+	for i = 1, #ptys do
+		if type(ptys[i].console) == "table" then screens[#screens + 1] = ptys[i].console end
+	end
+	for i = 1, #screens do
+		CeroSec.consolePushAll(screens[i], lines)
+		system:pushScreen(luaObject, state, screens[i])
+	end
+end
+
 -- The warning a minute out, and then the deed. Run for every machine that has a
 -- pending order, on every pass, before any job is stepped: a machine with a
 -- shutdown pending and nothing running must still go down at the minute it was
@@ -1094,6 +1119,8 @@ function CeroSecJobs.applyControl(system, luaObject, state, book, order, playerO
 		-- has nobody left to read it.
 		local object = system:getLuaObjectAt(data.x, data.y, data.z)
 		if object ~= nil then CeroSecNet.tearDown(system, object, data.line) end
+	elseif control == "wall" and type(data) == "table" then
+		CeroSecJobs.wall(system, luaObject, state, data.lines)
 	elseif control == "endsession" then
 		CeroSecNet.endSession(system, luaObject, console)
 	elseif control ~= nil then

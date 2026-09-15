@@ -7703,7 +7703,7 @@ do
 		.. " printf ps pwd rcp reboot rlogin rm rsh ruptime rwho"
 		.. " sh shutdown"
 		.. " sleep sort su sudo tail tar tee test touch tr true umount uniq uptime"
-		.. " useradd userdel usermod w wc which who whoami"
+		.. " useradd userdel usermod w wall wc which who whoami"
 
 	eq("/bin holds exactly these",
 		table.concat(CeroSecOS.childNames(state.fs.children.bin), " "), WANT)
@@ -13996,7 +13996,7 @@ do
 
 	check("the top-up did something", CeroSecOS.upgradeSystem(state) == true)
 	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
-	eq("which is 19", CeroSecOS.SYSTEM_VERSION, 19)
+	eq("which is 20", CeroSecOS.SYSTEM_VERSION, 20)
 	-- The banner, with the name the machine answers to NOW and not the default: a
 	-- machine being topped up has been standing somewhere for a year.
 	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
@@ -15628,6 +15628,85 @@ do
 	})
 	eq("now the spool is empty",
 		(CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin")) or {}).data, "")
+end
+
+-- 50n. wall: a line to every terminal on the machine (debts 2).
+--
+-- 4.4BSD's wall(1), and anybody may run it: the real one is setgid tty rather than
+-- setuid root, because a broadcast is not a privilege -- a machine with four people
+-- on it is a machine where somebody has to be able to say the lights are going off.
+-- What the engine can do is make the ORDER; only the machine can put a line on a
+-- screen that is not this job's, and tests/window_test.lua walks that half.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	put(state, admin, "/home/admin/notice", "lights out in five\nsave your work")
+
+	-- From a FILE, which is wall(1)'s own operand.
+	local res = runAt(state, admin, "wall notice", ENV)
+	eq("wall makes an order and not output", res.control, "wall")
+	eq("and prints nothing where it was typed", #res.lines, 0)
+	local said = res.data.lines
+	-- 4.4BSD's wording, over two lines because wall.c writes it over two -- and
+	-- because one line of it would not fit sixty columns.
+	eq("the banner names the account and the host", said[1],
+		"Broadcast Message from admin@ksp-front-01")
+	eq("and the line and the time under it", said[2],
+		"        (console) at 14:32 ...")
+	eq("a blank line ends the banner", said[3], "")
+	eq("then the text", said[4], "lights out in five")
+	eq("all of it", said[5], "save your work")
+	eq("and nothing else", #said, 5)
+	for i = 1, #said do
+		check("every line of a broadcast fits the screen (" .. #said[i] .. ")",
+			#said[i] <= CeroSecOS.COLS)
+	end
+
+	-- From a PIPE, which is the other half of wall(1)'s pair and the way a script
+	-- writes it.
+	local piped = runAt(state, admin, "echo hurry | wall", ENV)
+	eq("a pipe is the other way in", piped.control, "wall")
+	eq("with the same banner", piped.data.lines[1],
+		"Broadcast Message from admin@ksp-front-01")
+	eq("and the line off the pipe", piped.data.lines[4], "hurry")
+
+	-- ANYBODY may, which is the whole of wall's permission model.
+	addUser(state, "bob", "", "/home/bob")
+	local bob = open(state, "bob", "")
+	local his = runAt(state, bob, "echo mine | wall", ENV)
+	eq("an ordinary account may broadcast", his.control, "wall")
+	eq("signed with his own name", his.data.lines[1],
+		"Broadcast Message from bob@ksp-front-01")
+
+	-- Nothing to say is nothing said: a banner over an empty message on four
+	-- screens is the one thing a broadcast must not be.
+	okAt(state, admin, "echo -n \"\" | wall", {})
+	do
+		local empty = runAt(state, admin, "echo -n \"\" | wall", ENV)
+		eq("an empty pipe broadcasts nothing at all", empty.control, nil)
+	end
+
+	-- The refusals: no file and no pipe is a usage line, like every other reader;
+	-- a file that is not readable is the file's own refusal.
+	badAt(state, admin, "wall",
+		"wall: usage: wall [file]")
+	badAt(state, admin, "wall notice extra", "wall: usage: wall [file]")
+	badAt(state, admin, "wall nosuch", "wall: nosuch: no such file")
+	badAt(state, admin, "wall /root", "wall: /root: is a directory")
+	ok(state, admin, "chmod 600 notice", {})
+	badAt(state, bob, "wall /home/admin/notice",
+		"wall: /home/admin/notice: permission denied")
+
+	-- And the pipe's own ceiling, which is what `mail` meets too: what goes on four
+	-- screens at once has to be something a screen can hold.
+	local flood = {}
+	for i = 1, CeroSecOS.PIPE_LINES + 5 do flood[#flood + 1] = "x" end
+	put(state, admin, "/home/admin/flood", table.concat(flood, "\n"))
+	badAt(state, admin, "cat flood | wall", "wall: input too large")
+
+	-- It is a file in /bin like every other command, so root may take it away.
+	okAt(state, open(state, "root"), "rm /bin/wall", {})
+	badAt(state, admin, "wall notice", "wall: command not found")
 end
 
 print("os_test: " .. count .. " assertions passed")

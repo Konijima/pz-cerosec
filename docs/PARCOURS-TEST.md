@@ -3136,6 +3136,23 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      `~/mbox`). Puis un deuxième message, `mail`, `mail -f` → les deux messages
      dans l'ordre. [ ]
 
+339j. **`wall`, sur tous les écrans.** Ouvrir **deux** fenêtres de terminal sur la
+     même machine (clic droit → CeroSec sur l'ordinateur, deux fois). Dans la
+     première, connecté : `echo "lights out in 5" | wall` → les deux écrans
+     montrent `Broadcast Message from admin@<nom>`, puis
+     `        (console) at hh:mm ...`, une ligne vide et le texte. Rien n'est
+     imprimé en plus dans la fenêtre où on a tapé. Puis, depuis une autre
+     machine, `rlogin <cette machine>` : refaire le `wall` → la session le reçoit
+     aussi. `wall` tout seul → `wall: usage: wall [file]`, et `wall /etc/motd`
+     diffuse le fichier. Un compte ordinaire (pas root) peut le faire. [ ]
+
+339k. **`/bin/wall` arrive sur une sauvegarde existante.** Charger une
+     sauvegarde faite avec la version précédente, ouvrir un ordinateur qui y
+     tournait : `ls -l /bin/wall` → le fichier est là, `root`, `755`, et `help`
+     le liste. Tout ce qui était sur le disque est toujours là. Sur une machine
+     où l'on avait mis un fichier à soi au nom `wall`, c'est le sien qui
+     reste. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

@@ -108,7 +108,11 @@ CeroSecOS.STATE_VERSION = 2
 --    and neither of them the way a real machine did it: getty prints the issue
 --    file at the top of the screen, and /etc/motd belongs to login, after it.
 --    Seeded, root's, 644, with the machine's own name in it. Nothing deleted.
-CeroSecOS.SYSTEM_VERSION = 19
+-- 20: /bin/wall, a line to every terminal on the machine. 4.4BSD's wall(1), and
+--    anybody may run it -- the real one is setgid tty and not setuid root, because
+--    a broadcast is not a privilege. The `shutdown` warning already went out
+--    through that door; this is the door with a person behind it. Nothing deleted.
+CeroSecOS.SYSTEM_VERSION = 20
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.

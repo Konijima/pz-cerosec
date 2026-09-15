@@ -822,6 +822,10 @@ CeroSecOS.COMMAND_INFO = {
 		usage = "usermod -G group[,group...] login" },
 	["true"]  = { desc = "do nothing, successfully", usage = "true" },
 	w        = { desc = "show who is logged in and what they are doing", usage = "w" },
+	-- wall(1), and anybody may: the real one is setgid tty and not setuid root,
+	-- because a broadcast is not a privilege. The operand is a file, which is
+	-- wall(1)'s own, and with none it reads the standard input -- a pipe here.
+	wall     = { desc = "write a line to every terminal", usage = "wall [file]" },
 	wait     = { desc = "wait for the background jobs", usage = "wait [id]...", shell = true },
 	wc       = { desc = "count lines, words and bytes", usage = "wc [-clw] [file]..." },
 	which    = { desc = "find a command on PATH", usage = "which <name>" },
@@ -3075,6 +3079,78 @@ end
 -- what one open file looks like from here: tee is called once per turn of the
 -- pipe and the file is not held open between them. -a appends from the first
 -- call, which is what -a has always meant.
+--
+-- wall
+--
+-- A line to every terminal on the machine. 4.4BSD's wall(1), and ANYBODY may run
+-- it: the program is setgid tty rather than setuid root, because a broadcast is not
+-- a privilege -- a machine with four people on it is a machine where somebody has
+-- to be able to say the lights are going off in five minutes -- and root is only
+-- the account that usually has the reason. `shutdown` already broadcasts through
+-- this same door (CeroSecJobs.wall); this is the door with a person behind it.
+--
+-- The banner is wall.c's own, and over TWO lines because wall.c writes it over two:
+--
+--   Broadcast Message from admin@ksp-front-01
+--           (console) at 14:32 ...
+--
+-- One line of it would not fit sixty columns either, so the two are the same
+-- decision twice. A blank line under it, then the text, which is what a real one
+-- sends. No bell: the console strips control bytes off every line it takes
+-- (CeroSecOS.fit), and a \007 nothing can carry is not worth writing.
+--
+-- The text comes from a FILE named on the line or from the standard input, which is
+-- wall(1)'s own pair (`wall [file]`) and on this machine means a pipe -- there is
+-- no keyboard behind a command, so `wall` with neither prints its usage line the way
+-- every other reader does.
+--
+-- Bounded by the pipe's own ceiling, like `mail`: what goes on four screens at once
+-- has to be something a screen can hold.
+commands.wall = function(state, session, args, env, stdin, sh)
+	local paths = operands(args)
+	if #paths > 1 then return usage("wall") end
+	local body = nil
+	local input = stdinOf(stdin, paths)
+	if input ~= nil then
+		local carry = input.carry
+		for i = 1, #input.lines do
+			if not holdLine(carry, input.lines[i]) then carry.over = true end
+		end
+		if carry.over then
+			input.done = true
+			return fail("wall", nil, "input too large")
+		end
+		if not input.eof then return true, {} end
+		input.done = true
+		body = carry.lines or {}
+	else
+		if #paths == 0 then return usage("wall") end
+		local read, refusal = fileLines(state, session, "wall", paths[1])
+		if read == nil then return false, { refusal } end
+		body = read
+	end
+	if #body == 0 then
+		-- Nothing to say is nothing said, and no banner either: a wall of one blank
+		-- banner on four screens is the one thing a broadcast must not be.
+		return true, {}
+	end
+	local now = CeroSecOS.clockOf(env)
+	local when = "??:??"
+	if now ~= nil then when = CeroSecOS.formatTime(now, "%H:%M") end
+	local out = {
+		"Broadcast Message from " .. CeroSecOS.userOf(session) .. "@"
+			.. CeroSecOS.hostname(state),
+		"        (" .. (session.line or CeroSecOS.CONSOLE_LINE) .. ") at " .. when
+			.. " ...",
+		"",
+	}
+	for i = 1, #body do out[#out + 1] = body[i] end
+	-- Only the MACHINE can put a line on a screen that is not this job's, so what
+	-- comes back is an order and not output. Nothing is printed where it was typed:
+	-- the console it was typed at is one of the screens it reaches.
+	return true, {}, "wall", { lines = out }
+end
+
 commands.tee = function(state, session, args, env, stdin)
 	local flags, paths = flagsOf(args, "a")
 	if flags == nil then return fail("tee", paths, "unknown option") end

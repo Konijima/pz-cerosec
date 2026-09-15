@@ -15518,4 +15518,77 @@ do
 		#CeroSecOS.funcNames(CeroSec.newConsole().shfuncs), 0)
 end
 
+--
+-- wall: a line on EVERY terminal of the machine (debts 2).
+--
+-- os_test proves the order and its wording; this proves the delivery, which is the
+-- half only the machine can do. Two windows at the same glass, and then a session
+-- that came in over the wire -- a survivor logged in from the gate is exactly the
+-- person a "lights out in five" is for, and a broadcast that missed him would be a
+-- broadcast that missed the one who cannot see the room.
+--
+do
+	local bench = newBench()
+	bench.login("admin")
+	local second = bench.addWindow()
+	second:askForScreen()
+	_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
+	bench.frame()
+
+	bench.enter("echo lights out in five | wall")
+	bench.tick(10)
+	bench.frame()
+	eq("the banner is on the glass it was typed at",
+		bench.painted("Broadcast Message from admin@"), true)
+	eq("with the line and the time", bench.painted("(console) at"), true)
+	eq("and the text under it", bench.painted("lights out in five"), true)
+	-- The SECOND window is the half that says it is a broadcast: it typed nothing.
+	eq("and on the other window at the same glass",
+		bench.paintedOn(second, "Broadcast Message from admin@"), true)
+	eq("with the text", bench.paintedOn(second, "lights out in five"), true)
+	-- wall itself printed nothing where it was typed: what reached the glass is the
+	-- broadcast, once, and not a copy beside it.
+	local seen = 0
+	for i = 1, #bench.object:consoleState().lines do
+		if bench.object:consoleState().lines[i] == "lights out in five" then
+			seen = seen + 1
+		end
+	end
+	eq("the text is on the machine's screen exactly once", seen, 1)
+end
+
+do
+	local net = newNet()
+	net.name(net.here, net.gate, "gate")
+	net.login("admin")
+	net.enter("rlogin gate")
+	net.tick(2)
+	net.enter("admin")
+	net.enter("")
+	net.tick(2)
+	check("the session is up", net.glass("admin@" .. net.host(net.gate)))
+	eq("and the far machine has a pty", CeroSecOS.ptyCount(net.gate.ptys), 1)
+
+	-- Broadcast on the FAR machine, from the session. It has to reach the pty's own
+	-- screen -- which is this window -- and the far machine's own console, where
+	-- nobody is standing at all.
+	net.forget()
+	net.enter("echo the lights go off | wall")
+	net.tick(4)
+	net.frame()
+	check("the broadcast reached the session's screen",
+		net.glass("Broadcast Message from admin@" .. net.host(net.gate)))
+	check("with the text", net.glass("the lights go off"))
+	local own = net.gate:consoleState()
+	local onGlass, onOwn = false, false
+	for i = 1, #own.lines do
+		if string.find(own.lines[i], "Broadcast Message from admin@", 1, true) then
+			onOwn = true
+		end
+		if own.lines[i] == "the lights go off" then onGlass = true end
+	end
+	check("and the far machine's own console has it too", onOwn)
+	check("with the text", onGlass)
+end
+
 print("window_test: " .. count .. " checks passed")

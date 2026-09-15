@@ -1015,7 +1015,7 @@ do
 		"hostname", "df", "ps", "jobs", "kill", "fg",
 		"shutdown", "halt", "reboot",
 		"dev", "crontab", "mail",
-		"ifconfig", "ping", "ruptime", "rwho", "who", "last", "rlogin", "rsh", "rcp",
+		"ifconfig", "ping", "ruptime", "rwho", "who", "wall", "last", "rlogin", "rsh", "rcp",
 	}
 	for i = 1, #IS_VOLUME_TWO do
 		check("Volume 2's card carries " .. IS_VOLUME_TWO[i],
