@@ -8,145 +8,116 @@ date.
 
 ## Unreleased
 
+## 0.3.0 - 2026-09-15
+
+The shell update. Nothing here needs a new save: machines you already switched
+on keep everything. A server spends far less of its minute on the county.
+
 - One terminal per computer per survivor. Opening the same machine again closes
-  the window you had on it instead of leaving it behind, and a computer holds
-  eight windows at once: nothing you can do at a keyboard reaches either rule,
-  and a server no longer pays for windows nobody is looking at.
+  the window you had on it, a computer holds eight windows at once, and a flood
+  of openings from one client is ignored past four a second. Nothing you can do
+  at a keyboard reaches any of the three, and a server no longer pays for
+  windows nobody looks at.
+- The server's minute on the county goes on the computers that are actually
+  running: a county of dark machines costs nothing, however many. And a running
+  computer's filesystem is now checked once, when it comes back from the save
+  file, instead of on every reading of it: forty running computers cost a game
+  minute three milliseconds where they cost a hundred, and the check still
+  refuses a filesystem that came back damaged.
 - The shops that were already automated finish wiring themselves in big
-  buildings, and the server stops reading the whole building every minute while
-  they do. A mall's rooms come into the world a few at a time as you walk it, so
-  the relays and contacts are now fitted a few rooms a game minute and the shop
-  is written down as done -- where before the wiring never called itself
-  finished in a mall and every minute re-read all five hundred rooms of it
-  looking for what it had already fitted.
-- The minute the server spends on the county now goes on the computers that are
-  actually running. A county of dark machines in your save costs nothing, however
-  many of them there are.
-- And a server spends far less of that minute on the machines that ARE running:
-  the check a computer's filesystem goes through when it comes back from the save
-  file is now done once, when it comes back, instead of on every reading of it.
-  Forty running computers cost a game minute about three milliseconds where they
-  cost a hundred, and the same check still refuses a filesystem that came back
-  damaged.
-- A flood of window openings from one client is ignored past four a second. Four
-  is far more than a survivor opening terminals with his mouse ever sends, and
-  the server no longer does the work -- or sends the screen back -- for the other
-  four thousand nine hundred and ninety-six.
+  buildings, and the server stops re-reading the whole building every minute
+  while they do. A mall's rooms arrive a few at a time as you walk it, so relays
+  and contacts are fitted a few rooms a game minute and the shop is then written
+  down as done: before this the wiring never called itself finished in a mall.
 - A new command: `wall`. `echo "lights out in five" | wall` puts a line on every
-  terminal of the machine: the glass in front of you and every session that
-  came in over the wire: with the banner a 1993 machine put on it. Anybody may
-  send one: telling people is not a privilege, and the real wall was never
-  root's. It reads a file too (`wall /etc/motd`). The warning `shutdown` has
-  always broadcast goes out through the same door.
-- Machines already in your save gain /bin/wall on load. If you had put a file of
-  your own at that name, yours is left alone.
+  terminal of the machine, the glass in front of you and every session that came
+  in over the wire, with a 1993 machine's banner on it. Anybody may send
+  one, and it reads a file too (`wall /etc/motd`). What `shutdown` broadcasts
+  goes out through the same door.
 - Reading your mail no longer destroys it. `mail` shows what has arrived and
-  moves it to `mbox` in your home as it goes, which is what Mail has always done
-  on the way out; `mail -f` reads that file and moves nothing, so the address in
-  last week's message is still there. `mbox` is an ordinary file of yours at
-  mode 600 and costs your drive what any file costs: a drive with no room
-  leaves the mail where it was and says so, having shown it to you anyway.
-  `You have mail.` at the login still means something has ARRIVED.
-- `grep` reads a pattern. `grep -c '^From ' mbox` counts the messages in a
-  mailbox now, which is the first line anybody writes about mail and used to
-  count nothing: the circumflex was a character to look for. What it takes is
-  the old, plain kind of regular expression: `^` and `$` for the ends of a
-  line, `.` for any character, `*` for any number of the thing in front of it,
-  `[abc]` and `[a-z]` and `[^abc]` for a set, and a backslash to take the
-  meaning off any of them. `\( \)` and `\{2,5\}` are not here, and the manual
-  says so. `-e` gives the pattern as a flag, which is the only way to look for
-  one starting with a dash, and twice means either of two. Quote your patterns:
-  the shell would eat the star otherwise.
-- Shell functions. `greet() { echo hello $1; }` and then `greet world`, the way
-  every sh has done it: the arguments inside are the call's, `return` hands a
-  number back, and `type greet` says what it is. There is no `local` in a 1993
-  sh, so a variable a function sets is the shell's: the manual says so out
-  loud. A function belongs to the shell that was told about it: `sh yours.sh` is
-  a new shell and knows none of yours, `. yours.sh` reads them into this one
-  (put that line in ~/.profile), and a logout takes them. Sixteen of them, a
-  thousand bytes of text each.
-- `case` is here. `case $1 in start) ... ;; stop|halt) ... ;; *) ... esac`, with
-  a bar between patterns, the shell's own `*`, `?` and `[...]` in them, and `*)`
-  as the catch-all: the one shape every start-up script of the era is written
-  in, and five lines of `if` before now. `help` and `type` know the two new
-  words. One thing that changed with it: `;;` is an operator now, so a stray
-  `echo a;;` is a syntax error instead of quietly running.
-- What a script prints follows the redirect of the line that started it.
-  `sh nightly.sh > log` used to leave log empty and print the script on the
-  screen; now everything it prints goes in the file, `>>` adds to it, and a
-  script that script runs writes there too. `./nightly.sh` and `. nightly.sh`
-  are the same. A refusal still comes to the screen, because a refusal is not
-  output, and `ls` inside such a script prints one name a line, the way it does
-  into any file.
-- The two kinds of brackets nest now, the way they do on every other machine.
-  `stop=$(($(date +%s) + 300))` is a deadline in one line: the command runs
-  first and the sum is read on what it printed: and `echo $(echo $((2 + 3)))`
-  is a catch round a sum. Both answered a refusal before. What is still one
-  level deep is catches: `$(echo $(date))` is refused as it always was.
-- A `$( )` is a shell of its own, the way it is on every other machine. What
-  you set inside one stays inside: `x=1; y=$(x=2; echo $x); echo $x` prints
-  `1`, an `export` inside a catch marks nobody else's environment, and
-  `echo $(cd /etc; pwd)` no longer leaves your prompt standing in /etc.
-- `cut` takes its flags the way you type them. `cut -d: -f1 /etc/passwd` used
-  to answer a usage line; the value may now be stuck to the flag or stand
-  apart, for `-d`, `-f` and `-c` alike, which is how every Unix has read that
-  line.
-- `sudo` owns up to a name it could not find. `sudo lights on` used to answer
-  `lights: command not found`, which reads like a refusal from a program that
-  was never run; it now says `sudo: lights: command not found`, the way it
-  already does for `sudo cd`.
-- You can see which floppies hold a program. A disk that came with software
-  wears its printed label and is named for the product on it: CeroSec
-  UTILITIES 1.0, SHAREWARE GAMES 2.1, NIGHTLINE DIALER 1.2: with a printed
-  sticker on its icon and "Printed label" on its tooltip. A disk somebody kept
-  his own things on is named in his own hand instead: books 93, do not read,
-  home dir 8 july. Two copies of the same kind of disk found in two towns were
-  two different men and do not say the same thing.
-- A blank disk comes out of the drive blank. Ejecting one that had nothing
-  written on it could hand it back named for a program it has not got a byte
-  of, and that name stayed on it for the rest of the save.
-- A pen is a pen. Labelling a disk yourself is handwriting whatever you write,
-  and relabelling a printed disk takes the printed sticker off it.
+  moves it to `mbox` in your home as it goes; `mail -f` reads that file and
+  moves nothing, so the address in last week's message is still there. `mbox` is
+  an ordinary file of yours at mode 600 and costs your drive like any other: a
+  drive with no room leaves the mail where it was and says so, having shown it
+  to you. `You have mail.` at the login still means something has ARRIVED.
 - `mail` sends as well as reads. `mail [-s subject] bob` posts a message to
   another account on the machine: the body comes from a pipe
-  (`echo hi | mail -s Hello bob`) or is typed at the prompt a line at a time
-  until a line holding a single `.`, and Escape gives up without sending
-  anything. Several names means a copy each; the recipient reads it exactly as
-  he reads what cron left him. A name that is no account here answers
-  `bob... User unknown`, and an address on another machine answers
-  `bob@gate... Cannot send mail: no mailer`: there is no uucp on this disk yet,
-  and the manual's list of what is not Unix here says so.
+  (`echo hi | mail -s Hello bob`) or is typed a line at a time until a line
+  holding a single `.`, and Escape gives up without sending. Several names means
+  a copy each. A name that is no account here answers `bob... User unknown`, and
+  an address on another machine answers `bob@gate... Cannot send mail: no
+  mailer`: there is no uucp on this disk yet. What you send costs your drive; a
+  message cron mails you does not, so a job at four in the morning cannot fill
+  it.
 - Mail crosses the wire: `cat note | rsh gate mail -s Hi bob` leaves somebody a
   note on another machine. `rsh` now hands the far command what you piped into
-  it, which is what a real one has always done: so `rsh gate wc -l` counts
-  what you feed it too, instead of counting nothing.
-- What you send costs the drive. A message cron mails you does not, as before:
-  a job at four in the morning must not fill your disk, but an account that
-  could fill somebody else's mailbox for nothing could fill the machine.
-- The greeting is where a 1993 machine put it. Over the login prompt the
-  machine now names itself, out of a new file, /etc/issue; the message of the
-  day is what you are met with once you are in, and it is printed once instead
-  of twice. A bank and an army post warn you before you log in, not after.
-- Logging in tells you what a real one told you: when this account was last
-  used and at which terminal, or which machine it came in from over the wire,
-  and whether there is mail waiting for you. The first time an account is used
-  there is no last time, so nothing is said about one.
-- touch ~/.hushlogin if you want a machine that says nothing at all when you
-  log in. Delete the file and the greeting is back.
-- Machines already in your save gain /etc/issue on load, unless you had put
-  something at that name yourself. Nothing you wrote is overwritten.
+  it, so `rsh gate wc -l` counts what you feed it instead of nothing.
+- `grep` reads a pattern. `grep -c '^From ' mbox` counts the messages in a
+  mailbox now, where the circumflex used to be a character to look for. It takes
+  the old, plain kind of regular expression: `^` and `$` for the ends of a line,
+  `.`, `*`, `[abc]`, `[a-z]` and `[^abc]` sets, and a backslash to take the
+  meaning off any of them. `\( \)` and `\{2,5\}` are not here, and the manual
+  says so. `-e` gives the pattern as a flag, the only way to look for one
+  starting with a dash, and twice means either of two.
+- Shell functions. `greet() { echo hello $1; }` and then `greet world`: the
+  arguments inside are the call's, `return` hands a number back, `type greet`
+  says what it is, and there is no `local` in a 1993 sh, so a variable a
+  function sets is the shell's. A function belongs to the shell it was told
+  about: `sh yours.sh` knows none of yours, `. yours.sh` reads them into this
+  one (put that line in ~/.profile), and a logout takes them. Sixteen of them,
+  a thousand bytes of text each.
+- `case` is here. `case $1 in start) ... ;; stop|halt) ... ;; *) ... esac`, with
+  a bar between patterns, the shell's own `*`, `?` and `[...]` in them, and `*)`
+  as the catch-all; `help` and `type` know the two new words. One change: `;;`
+  is an operator now, so a stray `echo a;;` is a syntax error instead of quietly
+  running.
+- What a script prints follows the redirect of the line that started it.
+  `sh nightly.sh > log` left log empty and printed the script on the screen; now
+  everything it prints goes in the file, `>>` adds to it, and a script that
+  script runs writes there too. `./nightly.sh` and `. nightly.sh` are the same.
+  A refusal still comes to the screen, and `ls` in such a script prints one name
+  a line.
+- The two kinds of brackets nest now. `stop=$(($(date +%s) + 300))` is a
+  deadline in one line, and a catch round a sum works too; both answered a
+  refusal before. Catches are still one level deep:
+  `$(echo $(date))` is refused as it always was. And a `$( )` is a shell of its
+  own: `y=$(x=2; echo $x)` leaves your own `x` alone, an `export` there marks
+  nobody else's environment, and
+  `echo $(cd /etc; pwd)` no longer leaves your prompt in /etc.
+- `cut` takes its flags the way you type them. `cut -d: -f1 /etc/passwd`
+  answered a usage line before; the value may now be stuck to the flag or stand
+  apart, for `-d`, `-f` and `-c` alike.
+- `sudo` owns up to a name it could not find. `sudo lights on` answered
+  `lights: command not found`, as if it had run and refused; it now
+  says `sudo: lights: command not found`.
+- You can see which floppies hold a program. A disk that came with software
+  wears its printed label and is named for the product on it, CeroSec
+  UTILITIES 1.0 or SHAREWARE GAMES 2.1, with a sticker on its icon and
+  "Printed label" on its tooltip. A disk somebody kept his own things on is
+  named in his own hand instead, and two such disks found in two towns were two
+  different men. Labelling a disk yourself is handwriting whatever you write,
+  and relabelling a printed disk takes the sticker off it. Fixed: ejecting a
+  disk with nothing written on it could hand it back named for a program it has
+  not got a byte of, and that name stayed on it for good.
+- The greeting is where a 1993 machine put it. Over the login prompt the machine
+  names itself, out of a new file, /etc/issue; the message of the day greets you
+  once you are in, printed once instead of twice. Logging in then tells you when
+  this account was last used and at which
+  terminal, or which machine it came in from over the wire, and whether there is
+  mail waiting; the first time an account is used nothing is said about a last
+  time. touch ~/.hushlogin for a machine that says nothing at all, and delete
+  the file to have the greeting back.
+- Machines already in your save gain /bin/wall and /etc/issue on load; a file of
+  your own at either name is left alone.
 - A new floppy to find: BBS, somebody's kit for running a board of his own. Put
   it in, read the README, and one command as root turns the machine into
   somewhere the people who ring it can leave each other messages: a menu at
-  login with new mail, the whole mailbox a screenful at a time, a message to one
+  login with new mail, the mailbox a screenful at a time, a message to one
   caller or to everybody, a public board, who is on, the last callers, and the
-  accounts there are. Five short programs you can read on one screen and change,
-  because all of it is mail, who, last and a read loop.
-- The kit remembers where you were up to. Its count of what you have read lives
-  in .bbs_seen in your own home, so New means new, and reading it all again does
-  not cost you the difference.
-- One share of the box of disks moved from UTILITIES to the new one: a written
-  disk is still one in six, and the other five in six are still blank.
+  accounts there are. Five short programs you can read and change, because all
+  of it is mail, who, last and a read loop. Its count of what you have read
+  lives in .bbs_seen in your own home, so New means new. One share of the box of
+  disks moved from UTILITIES to it; a written disk is still one in six.
 
 ## 0.2.0 - 2026-09-14
 
