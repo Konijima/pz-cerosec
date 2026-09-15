@@ -1142,6 +1142,59 @@ function CeroSecOS.lastLine(rec, out)
 		.. CeroSecOS.spanText(out - rec.at) .. ")"
 end
 
+-- login(1)'s own first line, off the records last(1) reads.
+--
+-- 4.4BSD's login.c prints it out of lastlog, and the shape is that printf and
+-- nothing else:
+--
+--     printf("Last login: %.*s ", 24 - 5, ctime(&lastlog.ll_time));
+--     if (*lastlog.ll_host != '\0') printf("from %s\n", ...);
+--     else                         printf("on %s\n", ...);
+--
+-- So the host REPLACES the line and never stands beside it -- a session that came
+-- down the wire says where it came from, and one at the keyboard says which
+-- terminal it was at:
+--
+--     Last login: Jul  8 14:32 on console
+--     Last login: Jul  8 14:35 from gate
+--
+-- The date is this machine's own twelve-character stamp, which is the cut `last`
+-- already made and for the same two reasons: the weekday is four columns of sixty
+-- (see lastLine above), and nothing here keeps seconds to print.
+function CeroSecOS.lastLoginText(rec)
+	local out = "Last login: " .. CeroSecOS.formatStamp(rec.at)
+	if type(rec.host) == "string" and rec.host ~= "" then
+		return out .. " from " .. rec.host
+	end
+	return out .. " on " .. rec.line
+end
+
+-- The line for this account, or nil when there is nothing to say. Read out of
+-- wtmp, which is what this machine has instead of a lastlog: the most recent
+-- record of somebody arriving under that name.
+--
+-- nil on the FIRST login, because login prints nothing when lastlog is empty --
+-- there is no date to name, and a machine that made one up would be a machine
+-- inventing a session nobody had. Which means this is read BEFORE the arrival
+-- being greeted is written (see CeroSecOS.loginLines).
+function CeroSecOS.lastLoginRecord(state, user)
+	if type(user) ~= "string" then return nil end
+	local node = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+	if node == nil or node.type ~= "file" then return nil end
+	local recs = CeroSecOS.parseWtmp(node.data or "")
+	for i = #recs, 1, -1 do
+		local rec = recs[i]
+		if rec.kind == "in" and rec.user == user then return rec end
+	end
+	return nil
+end
+
+function CeroSecOS.lastLoginLine(state, user)
+	local rec = CeroSecOS.lastLoginRecord(state, user)
+	if rec == nil then return nil end
+	return CeroSecOS.lastLoginText(rec)
+end
+
 -- A number as two digits, zero-padded. The clock halves of every line below use
 -- it, and so does the span; there is no second spelling of "02" in this file.
 function CeroSecOS.twoDigits(n)

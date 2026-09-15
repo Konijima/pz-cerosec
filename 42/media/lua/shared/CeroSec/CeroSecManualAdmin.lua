@@ -535,11 +535,12 @@ root's rm /bin/ls a deletion rather than a suggestion.]],
   hostname
   hosts
   hosts.equiv
+  issue
   motd
   passwd
   sudoers
 
-Seven files, and that is the whole machine's own account of itself. Add ls
+Eight files, and that is the whole machine's own account of itself. Add ls
 -l to see the modes: every one of them is 644 except passwd, which is 600,
 and sudoers, which is 440 -- root may not write that one without meaning
 to, which is a small brake worth having on the file that hands out root.
@@ -556,13 +557,14 @@ lower-case letters, digits and hyphens.
 Root only, and the name is in the prompt of every screen at the machine
 the moment it changes. Give it a name you can shout across an office.]],
 
-[[/etc/motd is what greets a login, after the firmware's lines and before
-the first prompt. Ten lines at most. Put the machine's own name, the room
-it stands in, and whatever the office needs to read every morning.
+[[/etc/issue is printed OVER the login prompt and /etc/motd under it, and
+the difference is who reads them: the issue is read by a man who is not
+in yet, the motd only by an account that got in. A bank and an army post
+warn in the first for that reason.
 
-An EMPTY /etc/motd is a silent login. Not a broken one -- a file with
-nothing in it falls back on the greeting the machine ships with, and one
-holding a single blank line is how you have no greeting at all.
+The issue ships naming the system and the machine, and `hostname`
+rewrites that line until you edit it yourself. /etc/motd is ten lines at
+most. An empty one is a silent login, and so is an empty issue.
 
 /var is what the machine writes about itself, and there are four
 directories in it:
@@ -635,7 +637,8 @@ description.
 What it puts back only when it is missing or names nobody at all:
 /etc/passwd, /etc/sudoers and /etc/group. A passwd file that still names
 one account is left as it lies, hashes and all -- no password is reset by a
-repair. /etc/hostname and /etc/motd are made if absent and never touched.
+repair. /etc/hostname, /etc/motd and /etc/issue are made if absent and
+never touched.
 
 What it never touches: /home and /root. Not the files, not a history, not
 a .profile, not a thing.

@@ -129,7 +129,7 @@ network card and its address, Phone line: 555-0417, and Callsign: KD4AXR,
 what it calls itself on the radio. The first two are fixed; the third is a
 file root may write. Volume 2 has all three.
 
-Then a greeting naming this system, and then it asks who you are.]],
+Then /etc/issue, which names this system, and then it asks who you are.]],
 
 [[Other people's numbers: the phone book.
 
@@ -156,25 +156,27 @@ print, and nobody wrote those down.]],
 
   login: admin
   password:
+  Last login: Jul  8 14:32 on console
+  Front desk. Do not switch this machine off.
+  You have mail.
   admin@ksp-04-11:~$
 
-Type a name, press Enter, and the machine asks for a password.
+Type a name, press Enter, type a password. Then three things, in that
+order: when this account was last used and where, the office's own
+lines out of /etc/motd, and whether anything is waiting in your
+mailbox. The first time an account is used there is no last time, so
+that line is missing. To be met by none of it: touch ~/.hushlogin.
 
-A machine nobody ever set up ships with two accounts and no passwords at
-all: admin, the ordinary one and the one you want, and root, which can do
-anything to the machine including break it. Volume 2 hands you that key.
-At password: you press Enter again. Try it now, and you are in when you
-see a line ending in a dollar sign.
+A machine nobody set up ships with two accounts and no passwords at
+all: admin, the ordinary one and the one you want, and root, which can
+break it. At password: press Enter again.
 
-A machine somebody was using is not that machine. Its accounts are the
-people who worked there, admin is not among them, and every one of them
-was given a password. Look for the name and the letters where people
-wrote them in 1993: a paper in a desk drawer, a paper in a pocket.
+A machine somebody was using is not that machine: its accounts are the
+people who worked there, admin is not among them, and each had a
+password. Look where people wrote them in 1993: a drawer, a pocket.
 
-Get either half wrong and the machine says only "login incorrect" and
-starts over. It never tells you which half was wrong. That is deliberate:
-a stranger typing names at your keyboard should learn nothing, not even
-whether the name he tried exists.]],
+Get either half wrong and it says only "login incorrect", never which
+half.]],
 
 [[The screen belongs to the machine, not to you.
 
@@ -1652,8 +1654,8 @@ df says so once one is mounted:
 
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
-  hda         65536   2725  62811    5%
-  nodes         512    102    410   20%
+  hda         65536   2761  62775    5%
+  nodes         512    103    409   21%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 

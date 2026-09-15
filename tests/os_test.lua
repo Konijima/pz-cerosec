@@ -268,11 +268,24 @@ do
 	eq("/etc/hostname data", state.fs.children.etc.children.hostname.data, "ksp-front-01")
 	eq("/etc/motd data", state.fs.children.etc.children.motd.data, CeroSecOS.MOTD)
 	eq("/etc/motd fits the screen", #CeroSecOS.MOTD <= 60, true)
+	-- The banner over the login prompt, with this machine's own name written into
+	-- it: the file is static, so the name is in the bytes and not in a token.
+	local issue = state.fs.children.etc.children.issue
+	eq("/etc/issue data", issue.data,
+		"CeroSec OS " .. CeroSecOS.VERSION .. " (ksp-front-01) (console)")
+	eq("/etc/issue owner", issue.owner, "root")
+	eq("/etc/issue mode", issue.mode, 644)
+	eq("/etc/issue fits the screen", #issue.data <= 60, true)
+	-- The longest name a machine can have, on the widest version string there is:
+	-- the banner is a line on a sixty column screen and it has to stay one.
+	eq("a banner for the longest hostname fits too",
+		#CeroSecOS.issueText(string.rep("m", CeroSecOS.HOSTNAME_MAX)) <= 60, true)
 
 	-- The skeleton is nine nodes plus the seven of the /var tree, plus one
-	-- executable per command plus /etc/passwd, /etc/sudoers and /etc/group, and
-	-- every byte of it is accounted for: the machine's name, the motd, the
-	-- accounts file, the sudoers file, the groups file, the two network files,
+	-- executable per command plus /etc/passwd, /etc/sudoers, /etc/group and
+	-- /etc/issue, and every byte of it is accounted for: the machine's name, the
+	-- motd, the banner, the accounts file, the sudoers file, the groups file, the
+	-- two network files,
 	-- and the one-line description in each executable. The /var tree is seven
 	-- directories and no bytes at all -- /var, spool, spool/cron, spool/at, log,
 	-- mail and tmp: what goes in them is written when something asks for it.
@@ -287,9 +300,9 @@ do
 	local hosts = state.fs.children.etc.children.hosts
 	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 10 + 7 + #binNames + 5)
+	eq("skeleton node count", nodes, 10 + 7 + #binNames + 6)
 	eq("skeleton byte count", bytes,
-		#"ksp-front-01" + #CeroSecOS.MOTD + #passwd.data + #sudoers.data
+		#"ksp-front-01" + #CeroSecOS.MOTD + #issue.data + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
 
 	eq("default hostname", CeroSecOS.newState().hostname, CeroSecOS.DEFAULT_HOSTNAME)
@@ -511,6 +524,19 @@ do
 		eq("empty motd prints nothing", #CeroSecOS.motdLines(quiet), 0)
 		quiet.fs.children.etc.children.motd = nil
 		eq("missing motd prints nothing", #CeroSecOS.motdLines(quiet), 0)
+	end
+	-- /etc/issue, on exactly the same rule: getty prints the file, and a file that
+	-- is not there or holds nothing is a login prompt with nothing over it.
+	ok(state, admin, "cat /etc/issue", { CeroSecOS.issueText("ksp-front-01") })
+	do
+		local quiet = CeroSecOS.newState("quiet")
+		eq("the banner is one line", #CeroSecOS.issueLines(quiet), 1)
+		eq("and it names the machine", CeroSecOS.issueLines(quiet)[1],
+			"CeroSec OS " .. CeroSecOS.VERSION .. " (quiet) (console)")
+		CeroSecOS.systemNode(quiet, CeroSecOS.ISSUE_PATH).data = ""
+		eq("an empty banner prints nothing", #CeroSecOS.issueLines(quiet), 0)
+		quiet.fs.children.etc.children.issue = nil
+		eq("a missing banner prints nothing", #CeroSecOS.issueLines(quiet), 0)
 	end
 	ok(state, admin, "cat /etc/hostname", { "ksp-front-01" })
 
@@ -970,9 +996,9 @@ do
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
 	-- The skeleton (/mnt included), the /var tree of seven, plus one executable per
-	-- command, plus /etc/passwd, /etc/sudoers, /etc/group and the two network files.
-	-- /dev/null is a device and is not a node the disk counts.
-	eq("starting node count", nodes, 10 + 7 + #CeroSecOS.binNames() + 5)
+	-- command, plus /etc/passwd, /etc/sudoers, /etc/group, /etc/issue and the two
+	-- network files. /dev/null is a device and is not a node the disk counts.
+	eq("starting node count", nodes, 10 + 7 + #CeroSecOS.binNames() + 6)
 	local made = 0
 	local dir = 0
 	while true do
@@ -1049,16 +1075,23 @@ do
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultEquiv()), 5)
 			.. "  " .. EPOCH .. "  hosts.equiv")
-	eq("ls -l motd",
+	-- issue sorts between the dotted name and the motd.
+	eq("ls -l issue",
 		etc[5],
+		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  "
+			.. CeroSecOS.padLeft(
+				tostring(#CeroSecOS.issueText(CeroSecOS.hostname(state))), 5)
+			.. "  " .. EPOCH .. "  issue")
+	eq("ls -l motd",
+		etc[6],
 		"-rw-r--r--" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "   52"
 			.. "  " .. EPOCH .. "  motd")
 	eq("ls -l sudoers",
-		etc[7],
+		etc[8],
 		"-r--r-----" .. "  " .. "root  " .. " " .. "root  " .. "  "
 			.. CeroSecOS.padLeft(tostring(#CeroSecOS.defaultSudoers()), 5)
 			.. "  " .. EPOCH .. "  sudoers")
-	eq("ls -l /etc has 7 lines", #etc, 7)
+	eq("ls -l /etc has 8 lines", #etc, 8)
 
 	-- The group column is the node's group and not its owner once they differ.
 	ok(state, rootSession, "chgrp users /etc/motd", {})
@@ -2404,6 +2437,21 @@ do
 	ok(state, admin, "cat /etc/hostname", { "ksp-back-02" })
 	eq("the state's own copy follows", state.hostname, "ksp-back-02")
 	eq("and the state still validates", CeroSecOS.validate(state), true)
+	-- And the banner over the login prompt, which carries the name in its bytes
+	-- because nothing expands a token when a file is printed. Renamed with the
+	-- machine, and renamed AGAIN on the second rename -- a rewrite that only worked
+	-- once would be a banner naming the middle name for ever.
+	ok(state, admin, "cat /etc/issue", { CeroSecOS.issueText("ksp-back-02") })
+	ok(state, rootSession, "hostname ksp-back-03", {})
+	ok(state, admin, "cat /etc/issue", { CeroSecOS.issueText("ksp-back-03") })
+	-- But a banner of somebody's own is NOT a line to overwrite: a rename is not a
+	-- licence to throw away what root put over his own login prompt.
+	ok(state, rootSession, 'echo "KEEP OUT" > /etc/issue', {})
+	ok(state, rootSession, "hostname ksp-back-04", {})
+	ok(state, admin, "cat /etc/issue", { "KEEP OUT" })
+	eq("and the rename itself still happened", CeroSecOS.hostname(state), "ksp-back-04")
+	-- Put back the way this bench found it, because everything below reads the name.
+	ok(state, rootSession, "hostname ksp-back-02", {})
 
 	-- Every way a name can be wrong.
 	local badNames = {
@@ -2470,6 +2518,11 @@ do
 	eq("with its contents", kept.data, "keep me")
 	eq("the name survived", CeroSecOS.hostname(state), "ksp-mine")
 	check("and the root password survived", holds(state, "root", "hunter2"))
+	-- A banner deleted with /etc is put back, naming the machine as it stands now
+	-- and not as it shipped: a repair is not a rename.
+	eq("the banner is back and names this machine",
+		CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH).data,
+		CeroSecOS.issueText("ksp-mine"))
 	check("the empty one does not work", not holds(state, "root", ""))
 
 	-- The commands are back, all of them, and runnable.
@@ -9530,6 +9583,88 @@ do
 	eq("and the exemption is root's", exempt[CeroSecOS.WTMP_PATH].owner, "root")
 end
 
+-- What login itself says, and the order it says it in: the last login, the motd,
+-- the mail. 4.4BSD's login.c prints those three and nothing else, all of them
+-- inside `if (!quietlog)`.
+do
+	local state = fresh()
+
+	-- THE FIRST LOGIN SAYS NOTHING ABOUT A LAST ONE. login reads lastlog and
+	-- prints only when it holds a time; an empty one is an account that has never
+	-- been in, and there is no date to name.
+	eq("no record, no line", CeroSecOS.lastLoginLine(state, "admin"), nil)
+	local first = CeroSecOS.loginLines(state, "admin")
+	eq("so the first login is greeted by the motd alone", #first, 1)
+	eq("and that is the motd", first[1], CeroSecOS.MOTD)
+
+	-- The second one names the first, on the line it was at.
+	CeroSecOS.wtmpAppend(state, "in", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED)
+	eq("the second login names the first",
+		CeroSecOS.lastLoginLine(state, "admin"), "Last login: Jul  8 14:32 on console")
+	-- And it is the NEWEST arrival that is named, not the first one in the file.
+	CeroSecOS.wtmpAppend(state, "out", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED + 60)
+	CeroSecOS.wtmpAppend(state, "in", "admin", CeroSecOS.CONSOLE_LINE, nil, FIXED + 600)
+	eq("the newest arrival is the one named",
+		CeroSecOS.lastLoginLine(state, "admin"), "Last login: Jul  8 14:42 on console")
+	-- Somebody else's records are somebody else's.
+	eq("another account's arrivals are not his",
+		CeroSecOS.lastLoginLine(state, "root"), nil)
+
+	-- A session that came down the wire says where it came FROM instead of which
+	-- line it was on, which is login.c's own if/else and not a line of its own.
+	CeroSecOS.wtmpAppend(state, "in", "root", "ttyp0", "gate", FIXED + 700)
+	eq("a remote login is named by its origin",
+		CeroSecOS.lastLoginLine(state, "root"), "Last login: Jul  8 14:43 from gate")
+	eq("and never by both",
+		string.find(CeroSecOS.lastLoginLine(state, "root"), "ttyp0", 1, true), nil)
+
+	-- THE WHOLE GREETING, in order.
+	local lines = CeroSecOS.loginLines(state, "admin")
+	eq("two things are said on a machine with no mail", #lines, 2)
+	eq("the last login first", lines[1], "Last login: Jul  8 14:42 on console")
+	eq("then the motd", lines[2], CeroSecOS.MOTD)
+
+	-- THE MAIL. login stats the spool and prints on a size that is not zero.
+	eq("no mailbox at all is not announced", CeroSecOS.hasMail(state, "admin"), false)
+	check("cron writes to the spool",
+		CeroSecOS.mailAppend(state, "admin", "ksp-front-01", "echo hi",
+			{ "hi" }, FIXED))
+	eq("a mailbox with something in it is", CeroSecOS.hasMail(state, "admin"), true)
+	-- And one emptied is not: the size is what login stats, not the name.
+	local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath("admin"))
+	local held = box.data
+	box.data = ""
+	eq("an emptied mailbox is not announced", CeroSecOS.hasMail(state, "admin"), false)
+	box.data = held
+	lines = CeroSecOS.loginLines(state, "admin")
+	eq("so the greeting is three lines", #lines, 3)
+	eq("and the mail is the last of them", lines[3], "You have mail.")
+	-- "You have NEW mail." is lastlog-dependent -- login prints it when the
+	-- mailbox's mtime is past its atime -- and nothing here has an atime.
+	eq("and it is never the new-mail line",
+		string.find(lines[3], "new", 1, true), nil)
+
+	-- ~/.hushlogin SILENCES ALL THREE, which is where login.c tests it: the file
+	-- sets quietlog and the whole block is inside `if (!quietlog)`.
+	local home = (CeroSecOS.getUser(state, "admin") or {}).home
+	-- Made the way a player makes it, in his own home: `touch ~/.hushlogin`, which
+	-- is the whole of the gesture on a real machine too -- the contents are never
+	-- read.
+	ok(state, open(state, "admin"), "touch " .. CeroSecOS.HUSHLOGIN, {})
+	eq("the file is what is looked at", CeroSecOS.isHushLogin(state, "admin"), true)
+	eq("and it is empty", CeroSecOS.systemNode(state,
+		home .. "/" .. CeroSecOS.HUSHLOGIN).data, "")
+	eq("and a hushed login says nothing at all",
+		#CeroSecOS.loginLines(state, "admin"), 0)
+	-- Only that account's, and only in that account's own home.
+	eq("another account is greeted as before",
+		#CeroSecOS.loginLines(state, "root") > 0, true)
+	-- And it is gone with the home, which is what `userdel -r` takes away.
+	CeroSecOS.removeNode(state, CeroSecOS.rootSession(), home, true, FIXED)
+	eq("a home that is gone takes the hush with it",
+		CeroSecOS.isHushLogin(state, "admin"), false)
+end
+
 -- The shape of every line the listing commands print. Pinned to the character,
 -- because a column that moves is a column somebody's eye has to hunt for.
 do
@@ -13788,14 +13923,17 @@ end
 --
 -- The top-up's rule is the whole of the compatibility contract for a file: it puts
 -- in what is MISSING and never replaces what root has changed or removed. This
--- version seeds five executables and one directory and takes nothing away, so a
--- machine off a save from the version before it gains exactly those.
+-- version seeds /etc/issue and takes nothing away; the one before it seeded five
+-- executables and a directory, and a machine off a save older than both gains
+-- exactly those.
 --
 do
 	local state = fresh()
-	-- A machine as SYSTEM_VERSION 17 left it: the five new names are not in /bin and
-	-- at's queue is not in /var, because neither existed yet.
+	-- A machine as SYSTEM_VERSION 17 left it: the five new names are not in /bin,
+	-- at's queue is not in /var and there is no banner over the login prompt,
+	-- because none of them existed yet.
 	state.sysv = 17
+	state.fs.children.etc.children.issue = nil
 	local bin = state.fs.children.bin
 	local ADDED = { "at", "atq", "atrm", "env", "tar" }
 	for i = 1, #ADDED do bin.children[ADDED[i]] = nil end
@@ -13808,7 +13946,16 @@ do
 
 	check("the top-up did something", CeroSecOS.upgradeSystem(state) == true)
 	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
-	eq("which is 18", CeroSecOS.SYSTEM_VERSION, 18)
+	eq("which is 19", CeroSecOS.SYSTEM_VERSION, 19)
+	-- The banner, with the name the machine answers to NOW and not the default: a
+	-- machine being topped up has been standing somewhere for a year.
+	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
+	check("/etc/issue was put in", issue ~= nil and issue.type == "file")
+	eq("root's", issue.owner, "root")
+	eq("and 644", issue.mode, 644)
+	eq("naming this machine", issue.data, CeroSecOS.issueText("ksp-front-01"))
+	eq("and a login prompt now has a banner over it",
+		#CeroSecOS.issueLines(state), 1)
 	for i = 1, #ADDED do
 		local name = ADDED[i]
 		if name == "tar" then
@@ -13835,6 +13982,27 @@ do
 	-- Once, and never again: the number has moved, so a second call does nothing.
 	eq("a second top-up finds nothing to do", CeroSecOS.upgradeSystem(state), false)
 	check("and the machine still boots", CeroSecOS.validate(state) == true)
+end
+
+-- And the other half of that rule, for the file this version seeds: a banner root
+-- has written, or emptied, is root's. Two machines, because the top-up runs once
+-- and the two answers must not be read off the same one.
+do
+	local mine = fresh()
+	mine.sysv = 18
+	CeroSecOS.systemNode(mine, CeroSecOS.ISSUE_PATH).data = "PROPERTY OF THE COUNTY"
+	check("the top-up ran", CeroSecOS.upgradeSystem(mine) == true)
+	eq("a banner of root's own is left where it is",
+		CeroSecOS.systemNode(mine, CeroSecOS.ISSUE_PATH).data, "PROPERTY OF THE COUNTY")
+
+	local quiet = fresh()
+	quiet.sysv = 18
+	CeroSecOS.systemNode(quiet, CeroSecOS.ISSUE_PATH).data = ""
+	check("the top-up ran here too", CeroSecOS.upgradeSystem(quiet) == true)
+	eq("and an EMPTY banner stays empty -- a silent prompt is a choice",
+		CeroSecOS.systemNode(quiet, CeroSecOS.ISSUE_PATH).data, "")
+	eq("so nothing is printed over the login prompt",
+		#CeroSecOS.issueLines(quiet), 0)
 end
 
 -- 49d. find: the order, the two tests, and the glob.

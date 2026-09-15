@@ -292,6 +292,8 @@ end
 --   PROFILES[id] = {
 --     host     = "acct",     head of the hostname; the coordinate tail is kept
 --     motd     = "...",      /etc/motd, at most MOTD_MAX_LINES lines of 60 cols
+--     issue    = "...",      /etc/issue, the banner OVER the login prompt;
+--                            absent leaves the seeded one, which names the machine
 --     accounts = { { name=, admin=, pass=, files={ {path,mode,texts} } }, ... },
 --     root     = true,       a root password to derive, hash and never store
 --     logs     = { "..." },  lines for /var/log/messages, dated before day one
@@ -4408,6 +4410,12 @@ function CeroSecContent.prefill(state, opts)
 			motd = profile.motd
 		end
 		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, motd, now)
+		-- The banner over the login prompt, on the same terms as the motd: a spare
+		-- desk in the company's own office carries the company's, and a machine the
+		-- shop has not sold carries the one it was built with.
+		if role == CeroSecContent.DESK_SPARE and type(profile.issue) == "string" then
+			CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
+		end
 		local password =
 			setRoot(state, session, profile, secret, opts.b1, opts.b2, mkey, now)
 		return id, password, logins, nil, role
@@ -4478,6 +4486,12 @@ function CeroSecContent.prefill(state, opts)
 
 	if type(profile.motd) == "string" then
 		CeroSecOS.setData(state, session, CeroSecOS.MOTD_PATH, profile.motd, now)
+	end
+	-- And the banner, for the two kinds of building that put a warning over the
+	-- login prompt rather than under it. A profile with none keeps the seeded line,
+	-- which setHostname has already rewritten with this machine's own name.
+	if type(profile.issue) == "string" then
+		CeroSecOS.setData(state, session, CeroSecOS.ISSUE_PATH, profile.issue, now)
 	end
 
 	placeLog(state, session, profile, secret, mkey, opts.start, now)
@@ -5570,6 +5584,9 @@ CeroSecContent.PROFILES.police = {
 
 CeroSecContent.PROFILES.bank = {
 	host = "vault",
+	-- Over the login prompt, where a bank put it: the warning is for whoever is
+	-- standing there, and a man who has not logged in has not read the motd.
+	issue = "Authorized use only. Every login is recorded.",
 	motd = table.concat({
 		"This terminal records every login and every figure",
 		"typed at it. Do not leave it logged in and do not",
@@ -7195,6 +7212,9 @@ CeroSecContent.PROFILES.radio = {
 
 CeroSecContent.PROFILES.military = {
 	host = "post",
+	-- The same, in the words a post used: capitals, and the thing a man in the room
+	-- needs to know before he touches the keyboard.
+	issue = "AUTHORIZED USE ONLY. This terminal is monitored.",
 	motd = table.concat({
 		"RESTRICTED. Authorised personnel only.",
 		"Everything on this terminal is classified at the",

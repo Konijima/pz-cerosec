@@ -475,8 +475,17 @@ tests it with `isValidName`). `hostname <name>` is root only. A file that does n
 hold a name falls back to `state.hostname` and then to `CeroSecOS.DEFAULT_HOSTNAME`.
 The server reads the file for the window title and for every prompt.
 
-**`/etc/motd`** — what greets a login and ends the boot, capped at 10 lines; a
-missing or empty file falls back to the built-in `CeroSecOS.MOTD`.
+**`/etc/motd`** — what `login` greets an account with once the password is right,
+capped at 10 lines. A missing or empty file greets nobody: the built-in
+`CeroSecOS.MOTD` seeds a fresh disk and never speaks for a file root emptied.
+
+**`/etc/issue`** — what `getty` printed OVER the login prompt, capped at 10 lines
+and read by the same rule (`CeroSecOS.issueLines`). Seeded 644 and root's with the
+machine's own name written into the bytes -- nothing on this machine expands a token
+on the way to the glass, so `CeroSecOS.setHostname` rewrites the line it seeded, and
+only while the file still holds exactly that line. A profile may write one of its
+own (`CeroSecContent.PROFILES.<id>.issue`), which is where the bank's and the post's
+"authorized use only" goes.
 
 **The BIOS.** On `open`, before a line is put on the screen, the machine has no
 operating system when the state does not validate, or `/bin` is missing, not a
@@ -555,6 +564,15 @@ fresh machine alike, on the same "only where the name is free" terms. The
 version-by-version history below (8 through 12) is kept because each of those
 changes really did add exactly what it says; read it as history, not as a claim that
 12 is current.
+`SYSTEM_VERSION` 19 seeds `/etc/issue`, the banner `getty` printed before the login
+prompt, root's at 644 and naming the machine as it stands now rather than as it
+shipped. Only where there is nothing at all at that name: an empty one is a silent
+prompt somebody chose, and once the number has moved an `rm /etc/issue` stays done.
+Nothing is deleted. What moved with it is where the greeting is printed -- `/etc/motd`
+was being put on the screen over the login prompt AND after the password, and it is
+now `login`'s alone (`CeroSecOS.loginLines`: the last login out of `/var/log/wtmp`,
+the motd unless `~/.hushlogin` is there, and `You have mail.` off the spool).
+
 `SYSTEM_VERSION` 18 seeds the things a 1993 sh and a 1993 desk had and this
 machine had not: `/bin/env`, `/bin/tar`, `/bin/at`, `/bin/atq` and `/bin/atrm`, plus
 `/var/spool/at` for at's queue (through `ensureVar`, on the same "only where the name

@@ -15,15 +15,27 @@ date.
   anything. Several names means a copy each; the recipient reads it exactly as
   he reads what cron left him. A name that is no account here answers
   `bob... User unknown`, and an address on another machine answers
-  `bob@gate... Cannot send mail: no mailer` — there is no uucp on this disk yet,
+  `bob@gate... Cannot send mail: no mailer`: there is no uucp on this disk yet,
   and the manual's list of what is not Unix here says so.
 - Mail crosses the wire: `cat note | rsh gate mail -s Hi bob` leaves somebody a
   note on another machine. `rsh` now hands the far command what you piped into
-  it, which is what a real one has always done — so `rsh gate wc -l` counts
+  it, which is what a real one has always done: so `rsh gate wc -l` counts
   what you feed it too, instead of counting nothing.
 - What you send costs the drive. A message cron mails you does not, as before:
   a job at four in the morning must not fill your disk, but an account that
   could fill somebody else's mailbox for nothing could fill the machine.
+- The greeting is where a 1993 machine put it. Over the login prompt the
+  machine now names itself, out of a new file, /etc/issue; the message of the
+  day is what you are met with once you are in, and it is printed once instead
+  of twice. A bank and an army post warn you before you log in, not after.
+- Logging in tells you what a real one told you: when this account was last
+  used and at which terminal, or which machine it came in from over the wire,
+  and whether there is mail waiting for you. The first time an account is used
+  there is no last time, so nothing is said about one.
+- touch ~/.hushlogin if you want a machine that says nothing at all when you
+  log in. Delete the file and the greeting is back.
+- Machines already in your save gain /etc/issue on load, unless you had put
+  something at that name yourself. Nothing you wrote is overwritten.
 
 ## 0.2.0 - 2026-09-14
 

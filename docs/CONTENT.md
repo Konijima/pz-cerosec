@@ -200,6 +200,8 @@ as it gets no address and no telephone line.
 CeroSecContent.PROFILES.office = {
   host     = "acct",     -- head of the hostname; the coordinate tail is kept
   motd     = "...",      -- /etc/motd, at most MOTD_MAX_LINES lines of 60 columns
+  issue    = "...",      -- /etc/issue, the banner OVER the login prompt; absent
+                         -- keeps the seeded line, which names the machine
   root     = true,       -- a root password to derive, hash, and never store
   session  = false,      -- and never found with somebody still logged in
   accounts = { { name =, admin =, pass =, cron = { "0 2 * * * ..." },
