@@ -8,6 +8,23 @@ date.
 
 ## Unreleased
 
+- `mail` sends as well as reads. `mail [-s subject] bob` posts a message to
+  another account on the machine: the body comes from a pipe
+  (`echo hi | mail -s Hello bob`) or is typed at the prompt a line at a time
+  until a line holding a single `.`, and Escape gives up without sending
+  anything. Several names means a copy each; the recipient reads it exactly as
+  he reads what cron left him. A name that is no account here answers
+  `bob... User unknown`, and an address on another machine answers
+  `bob@gate... Cannot send mail: no mailer` — there is no uucp on this disk yet,
+  and the manual's list of what is not Unix here says so.
+- Mail crosses the wire: `cat note | rsh gate mail -s Hi bob` leaves somebody a
+  note on another machine. `rsh` now hands the far command what you piped into
+  it, which is what a real one has always done — so `rsh gate wc -l` counts
+  what you feed it too, instead of counting nothing.
+- What you send costs the drive. A message cron mails you does not, as before:
+  a job at four in the morning must not fill your disk, but an account that
+  could fill somebody else's mailbox for nothing could fill the machine.
+
 ## 0.2.0 - 2026-09-14
 
 The world update. Nothing here needs a new save: computers you already

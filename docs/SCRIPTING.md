@@ -361,6 +361,29 @@ mailboxes are bounded by lines and by bytes and are exempt from the 64 KB by the
 path, the same way `~/.sh_history` is — a machine must not fill its own disk with
 what it said about itself while nobody was looking.
 
+A script can **post** mail as well as read it: `mail [-s subject] user...` takes
+its body from the standard input, which is a pipe (`echo copied | mail -s Backup
+bob`) or, with a pair of hands behind it, the terminal a line at a time until a
+line holding a single `.`. A line with nobody behind it — a crontab line, a `&` —
+has no input at all, so the body is empty and `mail` says `Null message body;
+hope that's ok` and posts it anyway. Delivery goes through the same `mailAppend`,
+so the spool keeps its modes: the box stays the recipient's own at `600` in
+root's directory, and the privilege is the engine's writer rather than a mode
+somebody loosened (which is the `setgid mail` of a real spool, done the way this
+machine can do it). What it does **not** inherit is the quota exemption above:
+that exemption is for the machine writing about *itself*, so the bytes a message
+somebody typed really adds are charged to the drive and put back when they do not
+fit — `mail: /var/mail/bob: disk full`, and nothing written.
+
+Across the wire it is `cat note | rsh gate mail -s Hi bob`: `rsh` drains its own
+standard input before it dials and hands it to the far command as an ordinary
+pipe buffer, and a far command with no pipe behind it is handed one already at
+end of file — which is why `rsh gate mail bob` posts the empty message instead of
+waiting for a body nobody can type. An address off the machine (`bob@gate`,
+`gate!bob`) is refused where it is typed: `bob@gate... Cannot send mail: no
+mailer`, a declared deviation, because 4.4BSD would have tried and there is no
+uucp on this disk.
+
 **Waiting on a device** is a loop, not a command. Unix has never had a "wait until
 this happens", and this machine does not invent one:
 
@@ -577,7 +600,8 @@ and `stdin.done` closes the pipe behind it, which is how `head -n 1` ends a floo
 `CeroSecOSCron.lua` knows what a crontab *means* and nothing about the game:
 `parseCronLine`, `parseCrontab`, `checkCrontab` (the refusal crontab(1) prints),
 `cronDue(entry, parts)` against `CeroSecOS.dateParts`, and the two bounded writes —
-`cronLog` and `mailAppend`. `commands.crontab` and `commands.mail` live there too.
+`cronLog` and `mailAppend`. `commands.crontab` and `commands.mail` live there too,
+and so does the sending half — `CeroSecOS.mailSend` and `continuations.mail`.
 
 `CeroSecJobs.cronPass(system, luaObject, now)` is the daemon, and there is no process
 for it: `SCeroSecSystem:checkCron()` walks every machine that is **on** on

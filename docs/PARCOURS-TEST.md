@@ -994,6 +994,37 @@ en observant le jeu réel, pas par un banc de test.
      `echo x | at 23:58`, `exit` : en `admin`, `atq` ne montre pas le travail de
      `bob`, `atrm <son numéro>` → `atrm: N: Operation not permitted`, et en
      `root` `atq` montre les deux. [ ]
+174d. **`mail` envoie, et pas seulement lit.** `sudo useradd bob`, puis
+     `echo salut | mail -s Bonjour bob`. Rien à l'écran. `su bob`, `mail` → la
+     ligne d'enveloppe `From admin  <date>`, puis `From: admin@<machine>`,
+     `To: bob`, `Date: <la même>`, `Subject: Bonjour`, une ligne vide et
+     `salut`. `exit`. En `admin`, `cat /var/mail/bob` → `permission denied` :
+     la boîte reste à `bob` en `600` même si c'est `admin` qui a écrit
+     dedans. [ ]
+174e. **Le corps tapé à la main, et l'interruption.** `mail -s Note bob` sans
+     rien avant le tuyau : l'invite devient vide (le curseur seul). Taper
+     `ligne un`, Entrée, `ligne deux`, Entrée, puis `.` seul et Entrée → rien à
+     l'écran, et `sudo cat /var/mail/bob` montre les deux lignes. Refaire,
+     taper deux lignes, puis **Échap** : `^C`, l'invite revient, et
+     `sudo cat /var/mail/bob` n'a rien de nouveau — un message interrompu est
+     un message jamais parti. [ ]
+174f. **Les refus, mot pour mot.** `echo x | mail fantome` →
+     `fantome... User unknown`. `echo x | mail fantome bob` → le même refus, et
+     `sudo cat /var/mail/bob` n'a rien de neuf : une seule mauvaise adresse
+     refuse toute la ligne. `echo x | mail bob@gate` →
+     `bob@gate... Cannot send mail: no mailer`, et `echo x | mail gate!bob`
+     pareil. `mail bob` depuis un `crontab -e` avec `* * * * * mail bob` :
+     attendre une minute, puis `sudo cat /var/mail/bob` montre un message au
+     corps vide (personne devant l'écran, donc `Null message body`). [ ]
+174g. **Le courrier sur le câble.** Deux machines nommées l'une l'autre dans
+     `/etc/hosts` et un `/etc/hosts.equiv` sur la seconde (voir les étapes du
+     chapitre réseau), un compte `bob` sur la seconde. Sur la première :
+     `echo 'les lumières sont éteintes' > note`, puis
+     `cat note | rsh gate mail -s Lumieres bob`. Rien à l'écran. Sur la
+     seconde, en `bob` : `mail` montre le message, et `From:` porte le nom de
+     la **seconde** machine — c'est là qu'il a été posté. Puis
+     `rsh gate mail bob` tout seul → `Null message body; hope that's ok` à
+     l'écran de la première, et un message au corps vide dans la boîte. [ ]
 175. `sh watch.sh &`
  (n'importe quel script qui dort et écrit), puis `jobs`,
      puis `fg %1` : la ligne de commande doit se réafficher, l'invite doit
