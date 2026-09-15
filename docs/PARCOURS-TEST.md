@@ -3029,6 +3029,61 @@ en dessous, et aucune vraie machine ne faisait ça.
      machine où l'on avait écrit soi-même dans `/etc/issue` avant, c'est ce qu'on
      avait écrit qui reste. [ ]
 
+## AG. Le babillard sur la disquette BBS (6e partie)
+
+Deux comptes sur une **même** machine suffisent : un joueur peut les prendre l'un
+après l'autre. La disquette `BBS` se donne par la fenêtre de débogage (section X)
+ou se trouve dans un tiroir. Le banc 6b de `content_test.lua` a déjà tout fait
+tourner sans jeu ; ce qui se vérifie ici, c'est l'écran.
+
+332. **Le sysop installe le babillard.** Sur un ordinateur allumé, mettre la
+     disquette `BBS` dans le lecteur, puis, en `root` :
+     - `mount /dev/fd0 /mnt` puis `cat /mnt/README.TXT` → la page se lit en
+       entier, aucune ligne ne dépasse le bord droit ;
+     - `sh /mnt/setup.sh /usr/local/lib/bbs` → il dit que le babillard est
+       `/usr/local/lib/bbs/board`, que les quatre programmes sont dans
+       `/usr/local/bin`, et quoi faire ensuite ;
+     - `ls -l /usr/local/lib/bbs` → le répertoire est en `777` et `board` en
+       `666` ; `ls -l /usr/local/bin` → les quatre en `755` ;
+     - relancer la **même** commande → rien ne casse et rien n'est écrasé : le
+       babillard existant est laissé tel quel. [ ]
+
+333. **Deux comptes, et la ligne dans `.profile`.** Toujours en `root` :
+     `useradd alice`, `passwd alice`, `useradd bob`, `passwd bob`. Puis, pour
+     chacun : `edit /home/alice/.profile`, une seule ligne
+     `sh /usr/local/bin/bbs.sh`, Tab pour enregistrer, et
+     `chown alice /home/alice/.profile`. `exit`, se connecter comme `alice` → le
+     menu s'affiche **tout seul**, sans avoir rien tapé. [ ]
+
+334. **Écrire à tout le monde, et le babillard.** Dans le menu, comme `alice` :
+     `P`, puis `all` comme destinataire, un sujet, deux lignes de texte, puis une
+     ligne qui ne contient qu'un point `.` → il dit `Posted to all.` et
+     `On the board too.` Puis `B` → le message est là, avec `From: alice`, une
+     date et le sujet. `Q` pour sortir, `exit`. [ ]
+
+335. **Le compte de messages non lus.** Se connecter comme `bob` → le menu.
+     `N` → le message d'alice s'affiche. `Q`, `exit`, se reconnecter, `N` →
+     `No new mail. 1 read.` Puis `cat ~/.bbs_seen` → **1**. Se faire envoyer un
+     deuxième message (en `root` sur une autre console, ou par `at`) et refaire
+     `N` → **seul** le nouveau s'affiche, et `.bbs_seen` passe à **2**. [ ]
+
+336. **Une page à la fois.** Toujours comme `bob`, avec une boîte de plus de
+     dix-huit lignes (trois ou quatre messages suffisent) : `R` → l'écran
+     s'arrête sur `-- more -- `. Entrée continue, `q` arrête. Rien ne défile
+     au-delà du bord de l'écran. [ ]
+
+337. **Les quatre autres touches, et la sortie.** `W` → la ligne d'`alice` si elle
+     est encore connectée ailleurs, sinon la sienne ; `L` → les dernières
+     connexions, dix au plus ; `U` → `alice`, `bob` et `admin`, et **pas** `root` ;
+     une touche qui n'est pas du menu → `N R P B W L U Q?` ; `Q` → `Goodbye.` et on
+     retombe au prompt. Un `Ctrl`-`Échap` n'est pas nécessaire pour sortir. [ ]
+
+338. **La sauvegarde du courrier.** En `root`, mettre une disquette vierge dans le
+     lecteur, `mount /dev/fd0 /mnt`, puis
+     `echo "tar cf /mnt/backup /var/mail" | at <l'heure dans deux minutes>` →
+     attendre, puis `tar tf /mnt/backup` nomme les boîtes. La même ligne dans
+     `crontab -e` à `0 3 * * *` se relit avec `crontab -l`. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

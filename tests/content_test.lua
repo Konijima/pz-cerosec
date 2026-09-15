@@ -2630,6 +2630,310 @@ do
 end
 
 --
+-- 6b. THE SYSOP'S KIT: the board, set up as root and then CALLED
+--
+-- Section 6 runs every script once, alone, on a bare machine. That is not a
+-- board. A board is five programs in /usr/local/bin, two accounts with homes, a
+-- file in /usr/local/lib that both of them may write, and a caller working the
+-- menu -- and every one of those is a thing the five programs do to EACH OTHER.
+-- So this section builds the whole of it the way the README says to, out of the
+-- floppy, and then types at it.
+--
+-- What it is really for, in one line: the menu is the only program in this mod
+-- that RUNS OTHER PROGRAMS, and nothing in section 6 can see a nested `sh` at
+-- all.
+--
+
+do
+	local entry = CeroSecContent.diskById("BBS")
+	check("the BBS disk is in the catalogue", entry ~= nil)
+
+	-- The README names the five programs, by name. Section 7 already holds every
+	-- README to naming everything beside it and only what is beside it; this says
+	-- the same thing the other way round for the one disk whose files are a KIT --
+	-- a program a caller is never told about is a program nobody will run.
+	local readme = nil
+	for i = 1, #entry.files do
+		if entry.files[i].name == "README.TXT" then readme = entry.files[i].text end
+	end
+	check("the disk carries a README", type(readme) == "string")
+	local PROGRAMS = { "bbs.sh", "read.sh", "post.sh", "board.sh", "setup.sh" }
+	for i = 1, #PROGRAMS do
+		check("the README names " .. PROGRAMS[i],
+			string.find(readme, PROGRAMS[i], 1, true) ~= nil)
+		check(PROGRAMS[i] .. " is in the seed library",
+			CeroSecContent.SCRIPTS[PROGRAMS[i]] ~= nil)
+		check(PROGRAMS[i] .. " is under 1200 bytes ("
+			.. #CeroSecContent.SCRIPTS[PROGRAMS[i]].text .. ")",
+			#CeroSecContent.SCRIPTS[PROGRAMS[i]].text <= 1200)
+	end
+	-- The line the sysop is told to put in a .profile has to be the path the
+	-- programs really end up at, which is setup.sh's own P and nothing else.
+	check("the README gives the .profile line",
+		string.find(readme, "sh /usr/local/bin/bbs.sh", 1, true) ~= nil)
+	check("and the one command that sets the machine up",
+		string.find(readme, "sh /mnt/setup.sh /usr/local/lib/bbs", 1, true) ~= nil)
+	check("and the nightly tar of the mail",
+		string.find(readme, "tar cf /mnt/backup /var/mail", 1, true) ~= nil)
+
+	-- A driver that remembers the QUESTIONS as well as the answers. `run` above
+	-- hands back what was printed, and a pager's whole existence is a question --
+	-- "-- more -- " is not output, it is the prompt on a waiting job -- so a bench
+	-- that only read the lines could not tell a paged screen from an unpaged one.
+	-- Everything every program in this section ever printed, in one place. A
+	-- script is a list of commands and a line that is not one of them is not a
+	-- syntax error: the shell says `command not found`, the line does nothing, and
+	-- the script runs on to its last `echo` and exits 0. So a bench that reads only
+	-- the status of these five would be green with a dead line in the middle of the
+	-- menu. This is what catches that, and it is asked of every line of output the
+	-- section produced rather than of any one run.
+	local said = {}
+	local function drive(state, session, line, env, answers)
+		if session.shvars == nil then session.shvars = {} end
+		local job = CeroSecOS.promptJob(state, session, line, session.shvars,
+			session.status)
+		if job == nil then return false, {}, {} end
+		-- `marks` is how many lines had been printed when each question went up,
+		-- which is the only way to say "the first screenful was a screenful": the
+		-- prompt is not a line of output and never appears among them.
+		local out, asks, marks, turns, at = {}, {}, {}, 0, 1
+		while not CeroSecOS.jobIsOver(job) and turns < 4000 do
+			turns = turns + 1
+			CeroSecOS.jobStep(state, job, env, 1000)
+			for k = 1, #job.out do out[#out + 1] = job.out[k] end
+			job.out = {}
+			if job.state == "waiting" and job.ask ~= nil then
+				asks[#asks + 1] = tostring(job.ask.text)
+				marks[#marks + 1] = #out
+				if answers == nil or at > #answers then break end
+				CeroSecOS.jobInput(state, job, answers[at], env)
+				at = at + 1
+			elseif job.state == "sleeping" then
+				break
+			end
+		end
+		for k = 1, #job.out do out[#out + 1] = job.out[k] end
+		session.status = job.status
+		for k = 1, #out do said[#said + 1] = out[k] end
+		return job.status == 0, out, asks, job, at - 1, marks
+	end
+
+	local function found(lines, want)
+		return string.find(table.concat(lines, "\n"), want, 1, true) ~= nil
+	end
+	local function countOf(list, want)
+		local n = 0
+		for i = 1, #list do if list[i] == want then n = n + 1 end end
+		return n
+	end
+
+	local state = CeroSecOS.newState("bbs-4-b")
+	local env = { now = START, nowMs = 0, devices = devicesFor(nil) }
+	local rootSession = CeroSecOS.login(state, "root", "")
+	check("the bench can be root", rootSession ~= nil)
+
+	-- THE SYSOP'S OWN THREE STEPS, in his order and through the shell, because
+	-- the point of a kit is that the steps in the README are the steps that work.
+	state.floppy = CeroSecContent.diskData(entry, START)
+	local ok, lines = drive(state, rootSession, "mount /dev/fd0 /mnt", env)
+	check("the disk mounts: " .. table.concat(lines, " / "), ok)
+	for _, who in ipairs({ "alice", "bob" }) do
+		local made, why = drive(state, rootSession, "useradd " .. who, env)
+		check("useradd " .. who .. ": " .. table.concat(why, " / "), made)
+	end
+
+	local ranSetup, setupOut = drive(state, rootSession,
+		"sh /mnt/setup.sh /usr/local/lib/bbs", env)
+	check("setup.sh runs as root: " .. table.concat(setupOut, " / "), ranSetup)
+	local dir = CeroSecOS.getNode(state, rootSession, "/usr/local/lib/bbs")
+	check("setup.sh made the board's directory", dir ~= nil and dir.type == "dir")
+	eq("and left it open to everybody", dir.mode, 777)
+	local board = CeroSecOS.getNode(state, rootSession, "/usr/local/lib/bbs/board")
+	check("setup.sh made the board file", board ~= nil and board.type == "file")
+	eq("and left it writable by everybody", board.mode, 666)
+	eq("and it is root's", board.owner, "root")
+	for i = 1, #PROGRAMS do
+		local name = PROGRAMS[i]
+		local node = CeroSecOS.getNode(state, rootSession, "/usr/local/bin/" .. name)
+		-- setup.sh copies the four a caller runs and not itself: an installer that
+		-- installed itself would be a fifth program in everybody's PATH that only
+		-- root can do anything with.
+		if name == "setup.sh" then
+			eq("setup.sh does not copy itself into the path", node, nil)
+		else
+			check("setup.sh copied " .. name .. " into /usr/local/bin", node ~= nil)
+			eq(name .. " is executable there", node.mode, 755)
+		end
+	end
+	check("the machine still boots after setup.sh",
+		(CeroSecOS.validate(state)))
+
+	-- AND NOW A CALLER. Everything below is alice at the menu, with the answers
+	-- she types, which is the only way any of this is ever used.
+	local alice = CeroSecOS.login(state, "alice", "")
+	check("alice can log in", alice ~= nil)
+	local MENU = "sh /usr/local/bin/bbs.sh"
+
+	-- P, to `all`: one copy in every mailbox and one posting on the board.
+	local ranP, outP, asksP = drive(state, alice, MENU, env,
+		{ "P", "all", "the water", "It is back on at my end.", ".", "q" })
+	check("the menu runs: " .. table.concat(outP, " / "), ranP)
+	check("it asked who to post to", countOf(asksP, "to (a name, or all): ") == 1)
+	check("and for a subject", countOf(asksP, "subject: ") == 1)
+	check("and took the body a line at a time", countOf(asksP, "> ") >= 3)
+	check("and said where it went: " .. table.concat(outP, " / "),
+		found(outP, "Posted to all.") and found(outP, "On the board too."))
+	-- EVERY account with a home, which is what `all` means and what the README
+	-- says: a caller left out is a caller who never hears from the board again.
+	-- The rule the script really uses is `ls /home`, because /etc/passwd is 600
+	-- and root's on this machine and a caller cannot read it -- so the list is
+	-- every account whose home is UNDER /home, which is admin and the two callers.
+	for _, who in ipairs({ "admin", "alice", "bob" }) do
+		local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath(who))
+		check("all put a copy in " .. who .. "'s mailbox",
+			box ~= nil and string.find(box.data or "", "It is back on at my end.",
+				1, true) ~= nil)
+		check("and it is from alice, with her subject",
+			box ~= nil and string.find(box.data or "", "Subject: the water", 1, true) ~= nil)
+	end
+	-- And root is NOT on that list, root's home being /root. Asserted rather than
+	-- left to be noticed: the board is the callers', the sysop reads his own mail,
+	-- and the day somebody writes that line another way this says which it was.
+	eq("and none in root's, root's home not being under /home",
+		CeroSecOS.systemNode(state, CeroSecOS.mailPath("root")), nil)
+	-- The board itself: the three headers the script writes, then the body.
+	board = CeroSecOS.getNode(state, rootSession, "/usr/local/lib/bbs/board")
+	local text = board.data or ""
+	check("the board carries the poster's name",
+		string.find(text, "From: alice", 1, true) ~= nil)
+	check("and a date", string.find(text, "Date: ", 1, true) ~= nil)
+	check("and the subject", string.find(text, "Subject: the water", 1, true) ~= nil)
+	check("and the body under them",
+		string.find(text, "It is back on at my end.", 1, true) ~= nil)
+
+	-- B: the board, read back through the menu by somebody who is not alice.
+	local bobSession = CeroSecOS.login(state, "bob", "")
+	local ranB, outB = drive(state, bobSession, MENU, env, { "b", "q" })
+	check("bob can read the board: " .. table.concat(outB, " / "), ranB)
+	check("and it is alice's posting on it", found(outB, "From: alice"))
+
+	-- N, twice: the new messages, and then none, which is the whole of what the
+	-- lastread pointer is for.
+	local ranN, outN = drive(state, bobSession, MENU, env, { "n", "q" })
+	check("bob's new mail: " .. table.concat(outN, " / "), ranN)
+	check("the board's own posting is in it", found(outN, "It is back on at my end."))
+	local seen = CeroSecOS.getNode(state, bobSession, "/home/bob/.bbs_seen")
+	check("and .bbs_seen was written", seen ~= nil and seen.type == "file")
+	eq("with the number of messages read", (string.gsub(seen.data or "", "%s", "")), "1")
+	local again = select(2, drive(state, bobSession, MENU, env, { "n", "q" }))
+	check("and a second look says there is nothing new: "
+		.. table.concat(again, " / "), found(again, "No new mail. 1 read."))
+
+	-- One more message, and the pointer moves by one and not to the top.
+	drive(state, rootSession, "echo the bridge | mail -s roads bob", env)
+	local third = select(2, drive(state, bobSession, MENU, env, { "n", "q" }))
+	check("the next message shows: " .. table.concat(third, " / "),
+		found(third, "the bridge"))
+	check("and the first one does not come round again",
+		not found(third, "It is back on at my end."))
+	seen = CeroSecOS.getNode(state, bobSession, "/home/bob/.bbs_seen")
+	eq("the pointer is two now", (string.gsub(seen.data or "", "%s", "")), "2")
+
+	-- R, W, L, U and a key that is none of them. Every one of those is a branch
+	-- of the ladder, and a menu whose keys have been proved one at a time is a
+	-- menu: `ps`, `who` and `last` all answer through the same nested `sh`.
+	local ranR, outR = drive(state, bobSession, MENU, env, { "r", "q" })
+	check("R reads the whole box: " .. table.concat(outR, " / "), ranR)
+	check("which is both messages", found(outR, "the bridge")
+		and found(outR, "It is back on at my end."))
+	local ranU, outU = drive(state, bobSession, MENU, env, { "u", "q" })
+	check("U lists the accounts with homes: " .. table.concat(outU, " / "), ranU)
+	check("alice among them", found(outU, "alice"))
+	check("and bob", found(outU, "bob"))
+	local ranL = drive(state, bobSession, MENU, env, { "l", "q" })
+	check("L asks last and comes back", ranL)
+	local ranW = drive(state, bobSession, MENU, env, { "w", "q" })
+	check("W asks who and comes back", ranW)
+	local ranZ, outZ = drive(state, bobSession, MENU, env, { "z", "q" })
+	check("a key that is not one of them is answered: "
+		.. table.concat(outZ, " / "), ranZ and found(outZ, "N R P B W L U Q?"))
+	-- Quitting, which is what the loop is held by: a menu that could not be left
+	-- is a caller who has to be cut off at the exchange.
+	local ranQ, outQ, asksQ, job = drive(state, bobSession, MENU, env, { "Q" })
+	check("Q leaves the menu", ranQ and found(outQ, "Goodbye."))
+	check("and the job is over", CeroSecOS.jobIsOver(job))
+	eq("with nothing left asking", #asksQ, 1)
+
+	-- THE PAGER, and it is asserted on the PROMPT and not on the lines: a screen
+	-- that was not paged prints exactly the same text, all at once, and a bench
+	-- reading the text could not tell the difference. Nineteen messages of seven
+	-- lines is a hundred and thirty-three lines, so the prompt comes up seven
+	-- times over -- and eighteen of them at a time is what says the page is the
+	-- page the terminal has (CeroSecOS.ROWS is 20, two of them the prompt's).
+	do
+		for i = 1, 19 do
+			drive(state, rootSession,
+				"echo line " .. i .. " | mail -s n" .. i .. " alice", env)
+		end
+		local answers = {}
+		for i = 1, 30 do answers[i] = "" end
+		answers[#answers + 1] = "q"
+		local ranPage, outPage, asksPage, _, _, marks =
+			drive(state, alice, "sh /usr/local/bin/read.sh /var/mail/alice", env,
+				answers)
+		check("a long mailbox reads: " .. tostring(ranPage), ranPage)
+		local pages = countOf(asksPage, "-- more -- ")
+		-- Not "more than a few": the number of prompts is the number of pages the
+		-- file really has, less the last one, and the file is whatever is left of
+		-- the box after the spool's own trimming (MAIL_LINES) has had it. Written
+		-- as the arithmetic so that a pager that showed the wrong number of lines
+		-- per page is red here rather than merely different.
+		local box = CeroSecOS.systemNode(state, CeroSecOS.mailPath("alice"))
+		local held = #CeroSecOS.splitLines(box.data or "")
+		local want = math.ceil(held / 18) - 1
+		check("the box is longer than a screen (" .. held .. " lines)", held > 18)
+		eq("and it stopped once for every page but the last", pages, want)
+		-- The first page is a page and not the whole file: the last message cannot
+		-- be on the glass before the first prompt. Nineteen lines and not eighteen,
+		-- because read.sh says how many are new above the first page of them.
+		check("the first screenful is one screenful (" .. tostring(marks[1]) .. ")",
+			marks[1] ~= nil and marks[1] <= 20)
+		check("and the whole box was not printed before the first question",
+			marks[1] < #outPage)
+	end
+
+	-- AND A MAILBOX WITH NOTHING IN IT, which is the machine a board starts on:
+	-- read.sh must not divide by the absence of a file.
+	do
+		local fresh = CeroSecOS.newState("bbs-4-c")
+		local fenv = { now = START, nowMs = 0, devices = devicesFor(nil) }
+		local froot = CeroSecOS.login(fresh, "root", "")
+		fresh.floppy = CeroSecContent.diskData(entry, START)
+		drive(fresh, froot, "mount /dev/fd0 /mnt", fenv)
+		drive(fresh, froot, "useradd carol", fenv)
+		drive(fresh, froot, "sh /mnt/setup.sh /usr/local/lib/bbs", fenv)
+		local carol = CeroSecOS.login(fresh, "carol", "")
+		local ranC, outC = drive(fresh, carol, MENU, fenv, { "n", "r", "b", "q" })
+		check("a caller with no mail is answered: " .. table.concat(outC, " / "),
+			ranC)
+		check("and told so in the words read.sh uses",
+			found(outC, "usage: read.sh") or found(outC, "No new mail")
+				or found(outC, "message"))
+		check("the machine still boots after all of it", (CeroSecOS.validate(fresh)))
+	end
+
+	-- AND NOTHING IN ANY OF IT WENT WRONG QUIETLY. The four refusals a script can
+	-- carry for ever without failing: a word that is not a command, a file it may
+	-- not touch, a line the parser would not take, and a nil call in the engine.
+	local whole = table.concat(said, "\n")
+	for _, bad in ipairs({ "command not found", "permission denied",
+			"syntax error", "attempt to", "no such file" }) do
+		check("nothing the board printed says \"" .. bad .. "\"",
+			string.find(whole, bad, 1, true) == nil)
+	end
+end
+
+--
 -- 7. The disk catalogue
 --
 

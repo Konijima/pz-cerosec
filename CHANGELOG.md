@@ -48,6 +48,18 @@ date.
   log in. Delete the file and the greeting is back.
 - Machines already in your save gain /etc/issue on load, unless you had put
   something at that name yourself. Nothing you wrote is overwritten.
+- A new floppy to find: BBS, somebody's kit for running a board of his own. Put
+  it in, read the README, and one command as root turns the machine into
+  somewhere the people who ring it can leave each other messages: a menu at
+  login with new mail, the whole mailbox a screenful at a time, a message to one
+  caller or to everybody, a public board, who is on, the last callers, and the
+  accounts there are. Five short programs you can read on one screen and change,
+  because all of it is mail, who, last and a read loop.
+- The kit remembers where you were up to. Its count of what you have read lives
+  in .bbs_seen in your own home, so New means new, and reading it all again does
+  not cost you the difference.
+- One share of the box of disks moved from UTILITIES to the new one: a written
+  disk is still one in six, and the other five in six are still blank.
 
 ## 0.2.0 - 2026-09-14
 

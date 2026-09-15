@@ -57,7 +57,7 @@ CeroSecContent = CeroSecContent or {}
 -- catalogue changes what the NEXT untouched machine gets and changes nothing
 -- about a machine somebody has already switched on. Bumped when a change adds or
 -- rewrites entries, and read by nothing but the bench and docs/CONTENT.md.
-CeroSecContent.VERSION = 6
+CeroSecContent.VERSION = 7
 
 --
 -- Is there anything already on the machines at all?
@@ -1210,6 +1210,328 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 }
 
 --
+-- THE SYSOP'S KIT -- the four programs and the installer on the BBS floppy.
+--
+-- WHAT THIS IS FOR. Three houses, three accounts, one machine with a telephone
+-- line on it: the callers ring it with `cu`, log in, and want somewhere to leave
+-- each other messages. Everything underneath already exists -- `mail` posts
+-- locally, a mailbox is an mbox, `who` and `last` say who has been on -- so what
+-- was missing was the front of it, which in 1993 was a shell script somebody had
+-- on a disk. This is that disk.
+--
+-- FOUR THINGS THE SHELL HAS NOT GOT, and what is done instead. Each one is a
+-- fact about this engine, measured, and none of them is worked around by changing
+-- the engine in a content change:
+--
+--   * NO FUNCTIONS and no `case`. So the menu is a ladder of `elif` on one
+--     variable, and the pager -- eight lines of it -- is written out twice, in
+--     read.sh and in board.sh. A shared pager would have to be a fifth program
+--     that the other two call by absolute path, and a script that stops working
+--     the day it is copied on its own is not a template.
+--   * `sh prog > file` DOES NOT CATCH THE SCRIPT'S OUTPUT. The redirect belongs
+--     to the `sh` command, which prints nothing of its own, so the lines of the
+--     script it ran go to the glass. Measured here before anything was written on
+--     it: that is why each program pages what it prints itself, rather than bbs.sh
+--     collecting a child's output and paging it in one place.
+--   * grep HAS NO REGEX (it says so over commands.grep) and `^` is just a
+--     character. So the messages in a mailbox are counted with `grep -c "From "`,
+--     the plain string, which finds the envelope line and not the `From:` header
+--     under it -- the colon is what keeps the two apart. A body line beginning
+--     "From " would be counted as a message, which is the oldest bug in mbox and
+--     is why a real mailer writes ">From "; nothing here writes a body.
+--   * /etc/passwd IS 600 AND ROOT'S on this machine, so a caller cannot read the
+--     list of accounts out of it. `ls /home` is the answer -- /home is 755 -- and
+--     it is the same answer to the same question: an account with a home is an
+--     account somebody can post to.
+--
+-- And one thing nothing can do: turn a file back to front. There is no `tac`, and
+-- `sort -r` would sort the lines of the messages apart from each other. So the
+-- board is a log, appended to, and board.sh shows the newest END of it with
+-- `tail`. Said on the disk in as many words, because a player who expects the
+-- newest line at the top has to be told where it really is.
+
+CeroSecContent.SCRIPTS["bbs.sh"] = {
+	-- The menu, and the only one of the five a caller ever types the name of --
+	-- usually not even that, the sysop having put it at the end of his .profile.
+	--
+	-- `cd` with no argument first, because everything the board keeps for a caller
+	-- is a dot file in his own home (.bbs_seen, and the two scratch files the
+	-- pagers write) and a caller who was standing somewhere else would leave them
+	-- there. `cd` bare reads the home out of /etc/passwd through the kernel's own
+	-- read, so it works for an account that cannot read the file.
+	--
+	-- W, L and U are NOT paged, and that is not an oversight: `last | head` is ten
+	-- lines, `ls /home | head` is ten, and `who` is however many people are on one
+	-- machine. What can be longer than a screen is a mailbox and the board, and
+	-- those two programs page themselves.
+	mode = 755,
+	args = {},
+	-- The three keys that need nothing installed beside it: the accounts, a key
+	-- that is not one of the eight, and the way out. The full walk of the menu --
+	-- every key, with the other programs really in /usr/local/bin -- is section 6b
+	-- of tests/content_test.lua, where there is no fifty-turn ceiling.
+	input = { "u", "x", "q" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# bbs.sh -- the board: one menu, run at login.",
+		"B=/usr/local/bin",
+		"D=/usr/local/lib/bbs",
+		"cd",
+		"u=$(whoami)",
+		"k=x",
+		"while [ \"$k\" != q ]; do",
+		"  echo \"-- KNOX COUNTY BOARD --\"",
+		"  echo \"[N]ew [R]ead all [P]ost [B]oard\"",
+		"  echo \"[W]ho [L]ast [U]sers [Q]uit\"",
+		"  read -p \"> \" k",
+		"  k=$(echo $k | tr A-Z a-z)",
+		"  if [ \"$k\" = n ]; then sh $B/read.sh /var/mail/$u new",
+		"  elif [ \"$k\" = r ]; then sh $B/read.sh /var/mail/$u",
+		"  elif [ \"$k\" = p ]; then",
+		"    read -p \"to (a name, or all): \" w",
+		"    sh $B/post.sh $w $D/board",
+		"  elif [ \"$k\" = b ]; then sh $B/board.sh $D/board",
+		"  elif [ \"$k\" = w ]; then who",
+		"  elif [ \"$k\" = l ]; then last | head",
+		"  elif [ \"$k\" = u ]; then ls /home | head",
+		"  elif [ \"$k\" = q ]; then echo \"Goodbye.\"",
+		"  else echo \"N R P B W L U Q?\"",
+		"  fi",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["read.sh"] = {
+	-- A mailbox, a screenful at a time, and the lastread pointer a board has kept
+	-- since boards began: .bbs_seen holds the NUMBER of messages this caller has
+	-- read, and "new" is everything past it.
+	--
+	-- Why a count and not a byte offset: a mailbox is trimmed from the FRONT when
+	-- it fills (appendBounded), so an offset into it would walk backwards through
+	-- somebody else's message the first time the box was cut. A count is wrong in
+	-- the same case -- the oldest messages go and the count is then too high, which
+	-- reads as "nothing new" -- and that is the safe direction: it never shows a
+	-- message twice and never claims one that is gone.
+	mode = 755,
+	args = { "BOX", "new" },
+	needs = { files = { { path = "BOX", text = table.concat({
+		"From dispatch  Thu Jul  8 08:12:00 1993",
+		"From: dispatch@disp-4-b",
+		"To: admin",
+		"Date: Thu Jul  8 08:12:00 1993",
+		"Subject: the road",
+		"",
+		"Nothing is moving on 31 north of the bridge.",
+		"From clerk  Thu Jul  8 09:40:00 1993",
+		"From: clerk@county",
+		"To: admin",
+		"Date: Thu Jul  8 09:40:00 1993",
+		"Subject: the meeting",
+		"",
+		"Put off until the week after next.",
+		"From wknx  Thu Jul  8 21:05:00 1993",
+		"From: wknx@wknx",
+		"To: admin",
+		"Date: Thu Jul  8 21:05:00 1993",
+		"Subject: nine o'clock",
+		"",
+		"We are reading the county board's notice again.",
+	}, "\n") } } },
+	-- Twenty-one lines against a page of eighteen, so the -- more -- prompt really
+	-- comes up and is really answered: the Return that asks for the second page.
+	input = { "" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# read.sh -- a mailbox, 18 lines at a time.",
+		"# usage: read.sh <mailbox> [new]",
+		"if [ ! -f \"$1\" ]; then",
+		"  echo \"usage: read.sh <mailbox> [new]\"",
+		"  exit 1",
+		"fi",
+		"c=$(grep -c \"From \" $1)",
+		"s=0",
+		"if [ -f .bbs_seen ]; then s=$(cat .bbs_seen); fi",
+		"echo $c > .bbs_seen",
+		"f=$1",
+		"if [ \"$2\" = new ]; then",
+		"  if [ $s -ge $c ]; then",
+		"    echo \"No new mail. $c read.\"",
+		"    exit 0",
+		"  fi",
+		"  m=$((s + 1))",
+		"  g=$(grep -n \"From \" $1 | head -n $m | tail -n 1)",
+		"  L=$(echo $g | cut -d : -f 1)",
+		"  t=$(cat $1 | wc -l)",
+		"  k=$((t - L + 1))",
+		"  tail -n $k $1 > .bbs_new",
+		"  f=.bbs_new",
+		"  echo \"$c in the box, $s of them read.\"",
+		"fi",
+		"n=$(cat $f | wc -l)",
+		"i=0",
+		"while [ $i -lt $n ]; do",
+		"  r=$((n - i))",
+		"  if [ $r -gt 18 ]; then r=18; fi",
+		"  i=$((i + r))",
+		"  head -n $i $f | tail -n $r",
+		"  if [ $i -lt $n ]; then read -p \"-- more -- \" x; fi",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["post.sh"] = {
+	-- Writing one. The body is typed a line at a time and a single dot ends it,
+	-- which is what `mail` itself does with a pair of hands behind it -- the same
+	-- shape, because a caller who has used one has used the other.
+	--
+	-- It is not `mail` with the terminal doing the collecting, and the reason is
+	-- the word `all`: the body has to go to several boxes AND onto the board, so it
+	-- is collected into a file first and then handed to `mail` down a pipe, once
+	-- per account. A file is also what makes the copy on the board the same text as
+	-- the copy in the mailboxes rather than a second thing typed twice.
+	mode = 755,
+	args = { "admin" },
+	input = { "a test", "This is a line.", "." },
+	text = table.concat({
+		"#!/bin/sh",
+		"# post.sh -- write one. A name, or all of them.",
+		"# usage: post.sh <name>|all [<board file>]",
+		"if [ -z \"$1\" ]; then",
+		"  echo \"usage: post.sh <name>|all [<board file>]\"",
+		"  exit 1",
+		"fi",
+		"read -p \"subject: \" s",
+		"echo \"A line at a time. A . ends it.\"",
+		"read -p \"> \" l",
+		"if [ \"$l\" = . ]; then",
+		"  echo \"Nothing to post.\"",
+		"  exit 1",
+		"fi",
+		"echo \"$l\" > .bbs_body",
+		"while [ \"$l\" != . ]; do",
+		"  read -p \"> \" l",
+		"  if [ \"$l\" != . ]; then echo \"$l\" >> .bbs_body; fi",
+		"done",
+		"if [ \"$1\" != all ]; then",
+		"  cat .bbs_body | mail -s \"$s\" $1",
+		"  echo \"Posted to $1.\"",
+		"  exit 0",
+		"fi",
+		"for w in $(ls /home); do",
+		"  cat .bbs_body | mail -s \"$s\" $w",
+		"done",
+		"echo \"Posted to all.\"",
+		"if [ ! -f \"$2\" ]; then exit 0; fi",
+		"echo \"From: $(whoami)\" >> $2",
+		"echo \"Date: $(date)\" >> $2",
+		"echo \"Subject: $s\" >> $2",
+		"cat .bbs_body >> $2",
+		"echo \"--\" >> $2",
+		"echo \"On the board too.\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["board.sh"] = {
+	-- The public board. The newest postings are at the END of it, and the comment
+	-- in the file says so: `tail` is what shows them, there being nothing on this
+	-- machine that turns a file back to front (see the head of this section).
+	--
+	-- Sixty lines is the tail it takes, which is three pages: enough to be worth
+	-- reading and bounded, so a board a year old is not a program that pages for
+	-- ten minutes.
+	mode = 755,
+	args = { "BOARD" },
+	needs = { files = { { path = "BOARD", text = table.concat({
+		"THE BOARD",
+		"From alice",
+		"Date: Thu Jul  8 08:00:00 1993",
+		"Subject: the water",
+		"It is back on at my end. Try your taps.",
+		"--",
+		"From bob",
+		"Date: Thu Jul  8 12:30:00 1993",
+		"Subject: the bridge",
+		"Still shut. I went down and looked at it myself.",
+		"--",
+		"From alice",
+		"Date: Thu Jul  8 18:45:00 1993",
+		"Subject: batteries",
+		"I have a box of D cells nobody is using.",
+		"--",
+		"From bob",
+		"Date: Thu Jul  8 20:10:00 1993",
+		"Subject: nine o'clock",
+		"The station is reading the notice again tonight.",
+		"--",
+	}, "\n") } } },
+	text = table.concat({
+		"#!/bin/sh",
+		"# board.sh -- the board's last page. It is a log.",
+		"# usage: board.sh <board file>",
+		"if [ -z \"$1\" ]; then",
+		"  echo \"usage: board.sh <board file>\"",
+		"  exit 1",
+		"fi",
+		"if [ ! -f $1 ]; then",
+		"  echo \"board.sh: $1: no board here yet\"",
+		"  exit 1",
+		"fi",
+		"tail -n 18 $1",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["setup.sh"] = {
+	-- Root's, once. It takes the board's directory on the command line like every
+	-- other script in this library takes what it works on, which is also what lets
+	-- the bench run it as an ordinary account in a directory of its own.
+	--
+	-- IT MAKES THE /usr CHAIN A DIRECTORY AT A TIME, because `mkdir` on this
+	-- machine takes one path and has no `-p`: a fresh machine has no /usr at all,
+	-- so `mkdir /usr/local/lib/bbs` on its own is `no such file` and a board that
+	-- was never made. The loop is tried by whoever runs it and not guarded by a
+	-- test on `whoami`, which is the honest way round -- an ordinary account sees
+	-- four `permission denied` lines, which is what a real installer told somebody
+	-- who had forgotten the sudo, and then one line naming the cure. The copying
+	-- IS guarded, on the directory it copies into, so the failure is said once
+	-- rather than four times over.
+	--
+	-- The board's directory is 777 and the board file 666, which is the sysop's own
+	-- choice and is declared on the disk as one: this machine has no setgid bit and
+	-- no group a caller could be put in for the purpose, so a file everybody may
+	-- write is the only shape a public board has here.
+	mode = 755,
+	args = { "bbsdir" },
+	text = table.concat({
+		"#!/bin/sh",
+		"# setup.sh -- the sysop's one-time job. As root:",
+		"#   sudo sh /mnt/setup.sh /usr/local/lib/bbs",
+		"# usage: setup.sh <dir>",
+		"if [ -z \"$1\" ]; then",
+		"  echo \"usage: setup.sh <dir>\"",
+		"  exit 1",
+		"fi",
+		"P=/usr/local/bin",
+		"for d in /usr /usr/local /usr/local/lib $P $1; do",
+		"  if [ ! -d $d ]; then mkdir $d; fi",
+		"done",
+		"chmod 777 $1",
+		"if [ ! -f $1/board ]; then echo \"THE BOARD\" > $1/board; fi",
+		"chmod 666 $1/board",
+		"echo \"$1/board: the board, writable by all.\"",
+		"if [ ! -d $P ]; then",
+		"  echo \"No $P -- you are not root. Try sudo.\"",
+		"  exit 0",
+		"fi",
+		"for f in bbs.sh read.sh post.sh board.sh; do",
+		"  cp /mnt/$f $P/$f",
+		"  chmod 755 $P/$f",
+		"done",
+		"echo \"The four are in $P. Now useradd and passwd\"",
+		"echo \"each caller. Then see README.TXT.\"",
+	}, "\n"),
+}
+
+--
 -- THE DISK CATALOGUE -- the other half of what the world-content work, part 2 writes.
 --
 --   DISKS[i] = {
@@ -1247,13 +1569,13 @@ CeroSecContent.SCRIPTS["adventure.sh"] = {
 --     to be a find: most of them are blank, which is also what the floppy loot
 --     file has always said (see CeroSecFloppyLoot).
 --
---     SEVENTEEN of the hundred, and it stayed seventeen when LEDGER, PERSONAL and
---     RADIO LOG were added: the three shares came out of the six that were already
---     there rather than off the blank remainder, so a box of disks is as blank as
---     it has always been and what changed is only what a written one says. The
---     split is 3 UTILITIES, 2 BBS LIST, 1 WARDIALER, 2 GAMES, 2 BACKUP, 2 for the
---     distribution media, 2 LEDGER, 2 PERSONAL, 1 RADIO LOG. The bench adds them
---     up and holds the remainder to being the larger half.
+--     SEVENTEEN of the hundred, and it has stayed seventeen through every entry
+--     added since: LEDGER, PERSONAL and RADIO LOG came out of the six that were
+--     already there, and BBS came out of UTILITIES again -- so a box of disks is as
+--     blank as it has always been and what changed is only what a written one says.
+--     The split is 2 UTILITIES, 2 BBS LIST, 1 WARDIALER, 2 GAMES, 2 BACKUP, 2 for
+--     the distribution media, 2 LEDGER, 2 PERSONAL, 1 RADIO LOG, 1 BBS. The bench
+--     adds them up and holds the remainder to being the larger half.
 --   * BLANK is in the table with no files on purpose: it is the entry the roll
 --     lands on when nothing is written, and naming it makes the bench able to say
 --     so out loud.
@@ -1336,7 +1658,9 @@ CeroSecContent.DISKS = {
 		printed = true,
 		label = "CeroSec UTILITIES 1.0",
 		version = "1.0",
-		weight = 3,
+		-- Three down to two: the share the BBS disk is paid for with, and the
+		-- reason is written over that entry.
+		weight = 2,
 		files = {
 			{ name = "lights.sh", script = "lights.sh" },
 			{ name = "check.sh", script = "check.sh" },
@@ -1504,6 +1828,56 @@ CeroSecContent.DISKS = {
 			{ name = "hangman.sh", script = "hangman.sh" },
 			{ name = "adventure.sh", script = "adventure.sh" },
 			{ name = "WORDS.TXT", mode = 644, text = CeroSecContent.DATA["WORDS.TXT"] },
+		},
+	},
+	{
+		-- THE SYSOP'S KIT. One telling, because it is software and not somebody's
+		-- writing: three voices of one manual page would be three manual pages, and
+		-- the five programs beside it are one shape whoever found the disk.
+		--
+		-- Its share came out of UTILITIES, 3 down to 2, so the box is still
+		-- SEVENTEEN written disks in a hundred and the other eighty-three are still
+		-- blank. UTILITIES is the disk this one is nearest to -- two scripts and a
+		-- README that says how to copy them -- and a survivor who finds either has
+		-- found the same kind of thing.
+		--
+		-- No `late` file and no telephone number on it anywhere: the one number a
+		-- board has is its own, and a disk in a drawer has no premises to be the
+		-- board OF. The README says "cu 555-1234" where a real one would have had
+		-- the number, which is the same refusal BBS LIST's stub makes -- the numbers
+		-- of somewhere else are the one lie this catalogue may not tell.
+		id = "BBS",
+		label = "BBS",
+		weight = 1,
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"BBS -- A BOARD ON THIS MACHINE",
+				"Callers ring it, log in, and get the menu:",
+				"  cu 555-1234",
+				"",
+				"bbs.sh menu. read.sh a mailbox, paged. post.sh write",
+				"one. board.sh the board. setup.sh root's, once.",
+				"",
+				"SYSOP: sudo sh /mnt/setup.sh /usr/local/lib/bbs;",
+				"useradd and passwd each caller; and last in his",
+				".profile: sh /usr/local/bin/bbs.sh",
+				"",
+				"KEYS. N what is new, counted in .bbs_seen at home. R",
+				"the whole box, 18 lines a page. P write one: the word",
+				"all in place of a name mails every account with a",
+				"home and copies it to the board. B the board, newest",
+				"at the END. W who is on. L callers. U accounts.",
+				"Q hangs up.",
+				"The board is one file all may write: the sysop's",
+				"choice. Page it all with read.sh.",
+				"KEEP THE MAIL. Root's crontab, or the same via at:",
+				"  0 3 * * * tar cf /mnt/backup /var/mail",
+			}, "\n") },
+			{ name = "bbs.sh", script = "bbs.sh" },
+			{ name = "read.sh", script = "read.sh" },
+			{ name = "post.sh", script = "post.sh" },
+			{ name = "board.sh", script = "board.sh" },
+			{ name = "setup.sh", script = "setup.sh" },
 		},
 	},
 	{
@@ -2653,7 +3027,7 @@ CeroSecContent.DISKS = {
 -- is a catalogue nobody wrote down.
 CeroSecContent.DISK_SLOTS = {
 	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS 1.0 DIST",
-	"LEDGER", "PERSONAL", "RADIO LOG",
+	"LEDGER", "PERSONAL", "RADIO LOG", "BBS",
 }
 
 
