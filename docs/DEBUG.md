@@ -14,8 +14,9 @@ the in-game walk.
 ## The two flags, and the one before release
 
 `CeroSec.DEV_DEBUG_MENU` (`42/media/lua/shared/CeroSec/CeroSecDefs.lua`) is
-`true` and **has to be set to `false` before the Workshop release**, exactly like
-`CeroSec.DEV_MANUAL_MENU` beside it. It is a plain constant in the shared defs and
+`false` in every shipped build and is only ever set to `true` on a developer's
+own tree, exactly like `CeroSec.DEV_MANUAL_MENU` beside it; the release checklist
+checks both. It is a plain constant in the shared defs and
 not a sandbox option, for the reason the manual flag is one: an option is
 something a server owner turns on, and this is not for them.
 
@@ -555,8 +556,12 @@ Four of them are worth a sentence more than the table gives:
   in. Nothing derived is stored in clear anywhere, so the letters are worked out again
   here the way the paper works them out; an account the catalogue did not make says
   `derived -`, because there is nothing to read off a salted hash. The lines go to the
-  server's log and to the ASKING window's note, through `reply`, and to nowhere else
-  -- the save's own secret is on neither.
+  game's own log by `print`, unconditionally, the way the dump and the self-test do
+  (`CeroSec.log` prints only under `CeroSec.DEBUG`, and its ring is one Lua state's,
+  so on a dedicated server an admin's Log tab shows his client's ring: the letters
+  are read in `console.txt` on a client, or in the server's log); the ASKING window's
+  note, through `reply`, carries the count and says where the lines are; nothing goes
+  to any other client -- the save's own secret is on none of them.
 - **Clear password** is `passwd -d`, and on this machine there is nothing to invent:
   an open account is one whose stored hash is the hash of the empty string
   (`CeroSecOS.newUser`), and `login` lets an empty answer straight through. So the act

@@ -2699,9 +2699,17 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 			local lines = CeroSecDebug.accounts(self, luaObject)
 			for i = 1, #lines do
 				CeroSec.log(CeroSec.LOG_INFO, lines[i])
+				-- And to the game's own log, unconditionally, like the dump and
+				-- the self-test: CeroSec.log only prints under CeroSec.DEBUG and
+				-- the ring is this Lua state's, so on a dedicated server with the
+				-- shipped flags an admin's Log tab shows his CLIENT's ring and the
+				-- server's ring is read by nobody. console.txt (a client) or the
+				-- server's log is where the letters can actually be read.
+				print("CeroSec " .. lines[i])
 			end
 			noteAct(self, playerObj, token, x, y, z,
-				tostring(lines[1]) .. " -- the lines are on the Log tab")
+				tostring(lines[1]) .. " -- the lines are in the game log"
+					.. " (console.txt, or the server's), and on the Log tab in debug mode")
 		end
 	elseif args.act == "clearpass" then
 		-- passwd -d, which on this machine is a password of NO LETTERS: an open
