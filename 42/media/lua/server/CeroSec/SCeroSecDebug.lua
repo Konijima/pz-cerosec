@@ -16,8 +16,11 @@ require "CeroSec/SCeroSecAuto"
 -- would be a debug window that tells you what the code used to do.
 --
 -- It is READ-ONLY, with no exception. Nothing in this file writes a field, makes
--- a node, starts a job or touches the world; the three buttons the window has go
--- through the ordinary server commands like anything else (SCeroSecSystem).
+-- a node, starts a job or touches the world; every button the window has goes
+-- through the ordinary server commands like anything else (SCeroSecSystem). What
+-- IS here for the buttons that write is the RULE each of them refuses on, because a
+-- rule is a reading -- one rule, one place, one wording, greyed by the window and
+-- refused by the server out of the same function.
 --
 -- EVERY LIST IS BOUNDED, because a snapshot goes on the wire and a county is not
 -- a fixed size: a thousand-computer save must not put a thousand rows through
@@ -52,6 +55,14 @@ CeroSecDebug.NET_MAX = 64
 -- can be inside a town zone, a district zone, a story zone and a handful of loot
 -- zones at once, and sixteen is more than any square in the shipped map has.
 CeroSecDebug.ZONE_MAX = 16
+
+-- Passes of the automation's walk one "Force wire" is allowed to spend. The walk is
+-- ROOMS_PER_MINUTE rooms a pass (CeroSecAuto.ROOMS_PER_MINUTE, eight), so this is
+-- room for a premises of a thousand rooms -- more than the biggest mall on the
+-- shipped map -- and it is a ceiling and not the plan: the loop stops on the first
+-- pass that makes no progress, and this is what stops it when the walk cannot
+-- finish at all because half the building's chunks are away.
+CeroSecDebug.WIRE_PASS_MAX = 128
 
 -- Characters in one cell. A hostname is validated and short; a path is not
 -- (CeroSecOS.MAX_DEPTH components of CeroSecOS.MAX_NAME), and neither is a cron
@@ -202,6 +213,232 @@ function CeroSecDebug.resetRefusal(luaObject)
 	return nil
 end
 
+--
+-- THE ADMIN'S AND THE TESTER'S ACTS, and what each of them refuses on
+--
+-- Eight more things the window may ask for, and every one of them has its rule
+-- HERE for the reason the three above do: the window greys a button with it and the
+-- server refuses the act with it, so one rule, one place, one wording -- and the day
+-- a rule moves, the button moves with it. The act itself is in
+-- SCeroSecSystem's Commands.debugact, because this file writes nothing.
+--
+-- nil for no refusal, exactly as above.
+--
+
+-- THE PREMISES AND THE PROFILE a machine's people come out of.
+--
+-- Asked the way prefill asks it and by the same three calls -- premisesOf, then the
+-- BUILDING's rooms, then profileFor (SCeroSecObject:prefill) -- because the paper
+-- this hands over has to name what the machine really has, and the one rule about
+-- what a premises is is the only thing that keeps the two agreeing
+-- (CeroSecNotes.onFillContainer says the same thing from the drawer's side).
+--
+-- IT WANTS THE CHUNK IN, and that is not this file being lazy: the profile id is
+-- nowhere in the save. It is derived from the square every time it is needed, which
+-- is why prefill runs at the first power-on and not as a migration step -- a
+-- premises is a question about a SQUARE.
+--
+-- b1, b2, profile, nil  --  or nil, nil, nil, why
+function CeroSecDebug.profileOf(luaObject)
+	if luaObject == nil then return nil, nil, nil, "nothing is selected" end
+	local square = luaObject:getSquare()
+	if square == nil then
+		return nil, nil, nil, "its chunk is away, so there is nobody to ask what" ..
+			" its premises is -- teleport to it first"
+	end
+	local b1, b2, _, pz, pk = CeroSecNet.premisesOf(luaObject)
+	if b1 == nil then
+		return nil, nil, nil, "it stands in no building, so it has no premises"
+	end
+	local rooms = CeroSecNet.premisesRooms(square, pz, pk)
+	local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(pz, rooms)]
+	if type(profile) ~= "table" then
+		return nil, nil, nil, "no profile is written for its premises"
+	end
+	return b1, b2, profile, nil
+end
+
+-- The paper the premises' own desk would hold. Refused where there is no premises
+-- to derive it from, and on a premises whose profile has no root password at all --
+-- which is a premises with no note anywhere in it (CeroSecContent, "the profile
+-- format": `root = true` is what puts a paper in the drawers).
+function CeroSecDebug.rootNoteRefusal(luaObject)
+	local _, _, profile, why = CeroSecDebug.profileOf(luaObject)
+	if why ~= nil then return why end
+	if not profile.root then return "its premises has no root password" end
+	return nil
+end
+
+-- And a member of staff's own. The locked slots are the ones a paper may name
+-- (CeroSecContent.lockedSlots); a profile whose people are all open accounts has
+-- nothing to write, which is what the empty list means.
+function CeroSecDebug.staffNoteRefusal(luaObject)
+	local _, _, profile, why = CeroSecDebug.profileOf(luaObject)
+	if why ~= nil then return why end
+	if #CeroSecContent.lockedSlots(profile) == 0 then
+		return "every account of its premises is open -- there is nothing to write"
+	end
+	return nil
+end
+
+-- A machine that has a disk to read at all.
+--
+-- luaObject.os RAW and never osState(), and that is the whole of this function: a
+-- machine nobody has ever used has no state, and osState MAKES one out of nothing --
+-- so a refusal written against osState would never fire and the act behind it would
+-- be reading a filesystem it had just invented (the same trap the reset's osFresh
+-- flag was written for, docs/DEBUG.md).
+function CeroSecDebug.diskRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if type(luaObject.os) ~= "table" then
+		return "it has never been switched on, so it has no disk to read"
+	end
+	return nil
+end
+
+-- Reading the accounts is reading /etc/passwd, so it is the disk's rule and no
+-- other: the chunk may be away, the machine may be off.
+function CeroSecDebug.accountsRefusal(luaObject)
+	return CeroSecDebug.diskRefusal(luaObject)
+end
+
+-- Clearing a password WRITES /etc/passwd, so it is the same rule again. WHICH
+-- account is not a question about the machine and is not asked here: it comes off a
+-- box the reader types in, so it is refused where it arrives (Commands.debugact),
+-- and this is what greys the button.
+function CeroSecDebug.clearPassRefusal(luaObject)
+	return CeroSecDebug.diskRefusal(luaObject)
+end
+
+-- Root, straight onto the glass. It wants a machine that is ON and sitting at its
+-- login prompt: the BIOS is a question about whether there is a filesystem at all
+-- and a session already up belongs to whoever is in it.
+function CeroSecDebug.rootLoginRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if not luaObject.on then return "it is off" end
+	local console = luaObject.console
+	if type(console) ~= "table" then return "it has no screen" end
+	-- The BIOS test is the SYSTEM's own (SCeroSecSystem:atBios), asked of the system
+	-- the machine belongs to rather than copied here: a second copy of it is a second
+	-- answer to "is this machine at the firmware's question".
+	local system = luaObject.luaSystem
+	if system ~= nil and system.atBios ~= nil and system:atBios(console) then
+		return "it is at the BIOS -- there is no system on it to log in to"
+	end
+	if type(console.user) == "string" and console.user ~= "" then
+		return "somebody is already logged in as " .. console.user
+	end
+	local state = luaObject.os
+	if type(state) ~= "table" or CeroSecOS.getUser(state, "root") == nil then
+		return "it has no root account"
+	end
+	return nil
+end
+
+-- cron's minute, by hand. A crontab is the machine's own business and needs nothing
+-- of the world -- which is why the daemon's own sweep does not ask about the chunk
+-- either (SCeroSecSystem:checkCron) -- so being ON is the whole of the rule.
+function CeroSecDebug.cronNowRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if not luaObject.on then return "it is off" end
+	return nil
+end
+
+-- The automation's walk, run to the end. Both refusals are the walk's own
+-- (CeroSecAuto.wire): a premises nobody has asked about yet has no record, and one
+-- that rolled no is left alone -- and a "force" that wired a premises the roll said
+-- no to would be this window inventing a world rather than hurrying one up.
+function CeroSecDebug.forceWireRefusal(luaObject)
+	if luaObject == nil then return "nothing is selected" end
+	if CeroSecAuto == nil then return "there is no automation on this build" end
+	local system = luaObject.luaSystem
+	if system == nil then return "nothing is selected" end
+	local net = CeroSecOS.netRecord(luaObject.os)
+	if net == nil then return "it has no address yet, so its premises is unknown" end
+	local record = CeroSecAuto.recordOf(system, net.b1, net.b2)
+	if record == nil then return "its premises has not been asked yet" end
+	if record.on ~= true then return "its premises rolled no" end
+	if record.wired == true then return "its premises is already wired" end
+	return nil
+end
+
+--
+-- WHO IS ON THIS MACHINE, AND WHAT THE PAPERS WOULD SAY
+--
+-- Every account in /etc/passwd, one line each, and for the ones the CATALOGUE put
+-- there the password in clear. It is the same derivation the papers use and not a
+-- crack of the stored hash: nothing generated is ever stored in clear, so the letters
+-- are worked out again here exactly as the drawer's own paper works them out
+-- (CeroSecNotes.deskNote and zombieNote, and CONTENT.md, "the per-save secret").
+--
+-- WHY IT IS ALLOWED TO SAY THEM. This is behind the same door as the reset, and an
+-- admin who may empty a machine may certainly read its passwords -- which is the
+-- half of "remove a password" that a tester actually wants, because what he wants is
+-- to get IN. What it must not become is a packet: the lines go to the server's log
+-- and to the note the ASKING window gets, and to nothing else. The secret itself is
+-- never on either.
+--
+-- An account the catalogue did not make -- root on a bare machine, one a player
+-- typed `useradd` for -- has no derivation and says so, which is the honest answer:
+-- there is no password anywhere to be read off a salted hash.
+--
+-- Answers an array of lines.
+function CeroSecDebug.accounts(system, luaObject)
+	local out = {}
+	local state = luaObject ~= nil and luaObject.os or nil
+	if type(state) ~= "table" then return out end
+
+	-- What the catalogue would have derived, by login. Built from the PROFILE and
+	-- the premises, which is the pair everything about the people is keyed on: a
+	-- machine whose premises cannot be asked simply has no derivations and every
+	-- line below says "derived: -".
+	local clear = {}
+	local b1, b2, profile = CeroSecDebug.profileOf(luaObject)
+	if profile ~= nil then
+		local secret = system ~= nil and system.secret ~= nil and system:secret() or nil
+		if CeroSecContent.isSecret(secret) then
+			if profile.root then
+				clear.root =
+					CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+			end
+			local accounts = profile.accounts or {}
+			for i = 1, #accounts do
+				-- The very name makeAccounts gives the slot: the profile's own when it
+				-- names one, and the generated login otherwise.
+				local name = accounts[i].name
+				if type(name) ~= "string" then
+					name = CeroSecContent.accountLogin(secret, b1, b2, i)
+				end
+				if type(name) == "string" and accounts[i].pass then
+					clear[name] = CeroSecContent.accountPassword(secret, b1, b2, i, name)
+				end
+			end
+		end
+	end
+
+	local users, order = CeroSecOS.readUsers(state)
+	out[#out + 1] = "accounts on " .. cell(CeroSecOS.hostname(state)) .. ": " .. #order
+	for i = 1, #order do
+		local user = users[order[i]]
+		-- There is no uid on this machine and there never was: /etc/passwd here has
+		-- four fields -- name, hash, home, admin|user (CeroSecOSUsers) -- so the home
+		-- and the wheel flag are what stands where a uid would be on a real one.
+		--
+		-- OPEN is not a missing password, it is the hash of the empty string
+		-- (CeroSecOS.newUser), so the question is asked of checkPassword and not of
+		-- the field.
+		local open = CeroSecOS.checkPassword(user, "")
+		local groups = CeroSecOS.groupsOf(state, user.name)
+		out[#out + 1] = "  " .. cell(user.name) ..
+			"  home " .. cell(user.home) ..
+			"  " .. (user.admin and "wheel" or "user") ..
+			"  groups " .. cell(table.concat(groups, ",")) ..
+			"  password " .. (open and "OPEN (empty)" or "set") ..
+			"  derived " .. cell(clear[user.name])
+	end
+	return out
+end
+
 -- The fields every snapshot carries about the SELECTED machine, whatever tab was
 -- asked for -- because the buttons under the list are the same seven on every tab.
 function CeroSecDebug.selection(snap, luaObject)
@@ -217,6 +454,36 @@ function CeroSecDebug.selection(snap, luaObject)
 	snap.resetReason = noReset
 	snap.on = luaObject ~= nil and luaObject.on and true or false
 	snap.loaded = luaObject ~= nil and luaObject:isLoaded() and true or false
+
+	-- And the admin's and the tester's eight, each with its OWN reason for the same
+	-- reason the reset has one: a window that printed "it is off" for a refused note
+	-- would be blaming a rule that has nothing to do with it. One pair of fields an
+	-- act, built by the very functions the act itself goes through.
+	--
+	-- Written out rather than looped over a table, because the names travel on the
+	-- wire: a loop would put the field names in one place and the window's reading of
+	-- them in another, and a typo would be a button that is never greyed.
+	local noteWhy = CeroSecDebug.rootNoteRefusal(luaObject)
+	snap.canRootNote = noteWhy == nil
+	snap.rootNoteReason = noteWhy
+	local staffWhy = CeroSecDebug.staffNoteRefusal(luaObject)
+	snap.canStaffNote = staffWhy == nil
+	snap.staffNoteReason = staffWhy
+	local acctWhy = CeroSecDebug.accountsRefusal(luaObject)
+	snap.canAccounts = acctWhy == nil
+	snap.accountsReason = acctWhy
+	local clearWhy = CeroSecDebug.clearPassRefusal(luaObject)
+	snap.canClearPass = clearWhy == nil
+	snap.clearPassReason = clearWhy
+	local loginWhy = CeroSecDebug.rootLoginRefusal(luaObject)
+	snap.canRootLogin = loginWhy == nil
+	snap.rootLoginReason = loginWhy
+	local cronWhy = CeroSecDebug.cronNowRefusal(luaObject)
+	snap.canCronNow = cronWhy == nil
+	snap.cronNowReason = cronWhy
+	local wireWhy = CeroSecDebug.forceWireRefusal(luaObject)
+	snap.canForceWire = wireWhy == nil
+	snap.forceWireReason = wireWhy
 	return snap
 end
 
@@ -448,10 +715,7 @@ function CeroSecDebug.premises(luaObject)
 		if record == nil then
 			out[#out + 1] = "automated: not asked yet"
 		else
-			local walked = 0
-			if type(record.rooms) == "table" then
-				for _ in pairs(record.rooms) do walked = walked + 1 end
-			end
+			local walked = CeroSecDebug.roomsWalked(record)
 			local at = record.machine
 			out[#out + 1] = "automated: " .. cell(record.on == true) ..
 				(type(at) == "table" and ("  machine " .. cell(at.x) .. "," ..
@@ -690,6 +954,18 @@ function CeroSecDebug.devices(system, luaObject)
 	}
 	for i = 1, #sensors do info[#info + 1] = sensors[i] end
 	return { rows = rows, info = info }
+end
+
+-- How many rooms of a premises the automation's walk has written down. The set is
+-- spent and dropped when it is full (CeroSecAuto.wirePremises), so a finished
+-- premises answers zero -- which is why this is only ever read beside
+-- `record.wired` and never instead of it.
+function CeroSecDebug.roomsWalked(record)
+	local n = 0
+	if type(record) == "table" and type(record.rooms) == "table" then
+		for _ in pairs(record.rooms) do n = n + 1 end
+	end
+	return n
 end
 
 -- How many device numbers this machine has ever spent.

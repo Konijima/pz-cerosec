@@ -15259,6 +15259,692 @@ end
 
 
 --
+-- 54. The admin's and the tester's eight acts (the debug window's tools)
+--
+-- Eight more things the window may ask the server for, and every one of them is
+-- driven HERE through the real OnClientCommand door, because the wire from the button
+-- to the state is what the window is: a bench that called the act's function would
+-- prove the function and nothing about the command that reaches it.
+--
+-- What is asserted is the STATE each act leaves behind -- the paper in the bag with
+-- the words the drawer would have carried, the digest of an account really cleared,
+-- the disk with the sticker the world puts on one, the session logged in as root, a
+-- crontab line's own mail on the disk, the premises' record really `wired` -- and then
+-- every refusal in the server's own words, and then the door shut, which answers
+-- nothing and does nothing.
+--
+do
+	local net = newNet()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = true } }
+	_G.getWorld = zonedWorld
+	_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+
+	-- THE MACHINE THE HARNESS ALREADY HAS at 10,10,0 and not a second one on the same
+	-- square: getLuaObjectAt walks the list and answers the FIRST, so a bench that
+	-- stood a second computer there would drive every command into the first one and
+	-- assert about the other -- which is a bench that passes while nothing it names is
+	-- what it touched.
+	--
+	-- It is switched on already and therefore not prefilled (the zones and the sandbox
+	-- option are set above, after newNet ran), so it is reset and switched on again --
+	-- which is the one thing that makes a first power-on happen twice
+	-- (SCeroSecObject:resetMachine, and section 53).
+	local machine = net.here
+	machine:turnOff()
+	eq("the machine was reset", machine:resetMachine(), true)
+	eq("and comes back on", machine:turnOn(), true)
+	local state = machine:osState()
+	local b1, b2 = CeroSecNet.premisesOf(machine)
+	local secret = net.system:secret()
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+	local inv = newInventory()
+	net.player.getInventory = function() return inv end
+
+	local function ask(act, extra)
+		answers = {}
+		local args = { x = 10, y = 10, z = 0, token = "dbg-0-1", act = act }
+		if type(extra) == "table" then
+			for key, value in pairs(extra) do args[key] = value end
+		end
+		net.system:OnClientCommand("debugact", net.player, args)
+		return answers[1]
+	end
+	local function noteOf(answer)
+		if answer == nil then return nil end
+		return answer.args.note
+	end
+	local function errorOf(answer)
+		if answer == nil then return nil end
+		return answer.args.error
+	end
+
+	-- The witness, and it is not a formality: this machine has to have come up with
+	-- somebody's accounts on it, or every assertion below is about an empty disk.
+	local users, order = CeroSecOS.readUsers(state)
+	check("the machine came up prefilled (" .. #order .. " accounts)", #order > 2)
+	-- WHICH premises, and whose people, through the very function the acts go through
+	-- -- and then held to being the same premises the paper is keyed on, which is what
+	-- makes the words below assertable at all.
+	local pb1, pb2, profile, pwhy = CeroSecDebug.profileOf(machine)
+	eq("the premises can be asked", pwhy, nil)
+	eq("and it is the premises the note is keyed on", pb1, b1)
+	eq("in both bytes", pb2, b2)
+	check("and its profile has a root password",
+		type(profile) == "table" and profile.root == true)
+
+	--
+	-- 1. GIVE ROOT NOTE: the paper the drawer would hold, and the drawer keeps its own
+	--
+	do
+		local paper = CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+		local wanted = string.format(CeroSecNotes.ROOT_FORM, "root", paper)
+		eq("no paper has been placed for this premises yet",
+			CeroSecNotes.hasNote(net.system, b1, b2), false)
+
+		local answer = ask("rootnote")
+		eq("one item went into the bag", #inv.items, 1)
+		local item = inv.items[1]
+		eq("and it is a sticky note", item:getFullType(), CeroSecNotes.ITEM)
+		-- THE EXACT WORDS the drawer would have carried, derived here by the bench out
+		-- of the secret and the premises the way the drawer derives them
+		-- (CeroSecNotes.deskNote): a note that named any other password would be a
+		-- paper that does not open the machine in front of it.
+		eq("with the very words a desk of this premises would carry",
+			item:getName(), wanted)
+		check("and the custom-name flag, so the game keeps them", item:isCustomName())
+		check("and the fields synced", item.synced > 0)
+		-- And the password on it really is the machine's.
+		check("the letters on it open root on that machine",
+			CeroSecOS.checkPassword(CeroSecOS.getUser(state, "root"), paper))
+		-- THE BOOKKEEPING IS UNTOUCHED, which is the one thing this act must not do:
+		-- the mark says a premises' one paper has been placed in a real container, and
+		-- setting it here would take the note out of the next drawer a player opens.
+		eq("the premises is still unmarked, so its drawer still carries one",
+			CeroSecNotes.hasNote(net.system, b1, b2), false)
+		check("and the receipt is a note and not an error: " .. tostring(noteOf(answer)),
+			type(noteOf(answer)) == "string" and errorOf(answer) == nil)
+		check("with the words on it, so the reader need not open his bag",
+			string.find(tostring(noteOf(answer)), paper, 1, true) ~= nil)
+	end
+
+	--
+	-- 2. GIVE STAFF NOTE: one locked account's own login, and never root's
+	--
+	do
+		local slot = CeroSecContent.lockedSlots(profile)[1]
+		check("the profile has a locked account", slot ~= nil)
+		local login = profile.accounts[slot].name
+		if type(login) ~= "string" then
+			login = CeroSecContent.accountLogin(secret, b1, b2, slot)
+		end
+		local password = CeroSecContent.accountPassword(secret, b1, b2, slot, login)
+		local wanted = string.format(CeroSecNotes.USER_FORM, login, password)
+
+		local before = #inv.items
+		local answer = ask("staffnote")
+		eq("a second paper went into the bag", #inv.items, before + 1)
+		local item = inv.items[#inv.items]
+		eq("in the pocket's own shape and not the drawer's", item:getName(), wanted)
+		check("it never names root",
+			string.find(item:getName(), "root", 1, true) == nil)
+		-- And that login really is on the machine, with that password.
+		local user = CeroSecOS.getUser(state, login)
+		check("the login on it is an account the machine has: " .. tostring(login),
+			user ~= nil)
+		check("and the letters open it", CeroSecOS.checkPassword(user, password))
+		check("and the slot is named in the receipt: " .. tostring(noteOf(answer)),
+			string.find(tostring(noteOf(answer)), "slot " .. slot, 1, true) ~= nil)
+	end
+
+	--
+	-- 3. SHOW ACCOUNTS: every account, and the letters for the ones the catalogue made
+	--
+	do
+		CeroSec.logRing = {}
+		local answer = ask("accounts")
+		check("it answered with a note and not a refusal: " .. tostring(noteOf(answer)),
+			type(noteOf(answer)) == "string" and errorOf(answer) == nil)
+		-- The LINES are on the log, at info, which is the level the Log tab's All
+		-- button shows: a note is one line and this is one line per account.
+		local logged = {}
+		for i = 1, #CeroSec.logRing do
+			if CeroSec.logRing[i].level == CeroSec.LOG_INFO then
+				logged[#logged + 1] = CeroSec.logRing[i].text
+			end
+		end
+		-- One line for the machine and one per account, and the COUNT is asserted
+		-- because a list that quietly held one name would pass every test below.
+		eq("one line for the machine and one an account", #logged, #order + 1)
+		local all = table.concat(logged, "\n")
+		for i = 1, #order do
+			check("the line for " .. order[i] .. " is there",
+				string.find(all, order[i], 1, true) ~= nil)
+		end
+		-- THE LETTERS, for root, which is the half of this a tester is actually after.
+		local paper = CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+		check("root's password is on the log in clear",
+			string.find(all, paper, 1, true) ~= nil)
+		-- And the SECRET itself never is: it is the server's and the one number every
+		-- password in the county comes out of.
+		eq("and the save's own secret is not",
+			string.find(all, tostring(secret), 1, true), nil)
+		-- An OPEN account is said to be open rather than given letters it has not got.
+		local openName = nil
+		for i = 1, #order do
+			if CeroSecOS.checkPassword(users[order[i]], "") then openName = order[i] end
+		end
+		if openName ~= nil then
+			check("an open account says so",
+				string.find(all, "OPEN", 1, true) ~= nil)
+		end
+	end
+
+	--
+	-- 4. CLEAR PASSWORD: passwd -d, which on this machine is the hash of ""
+	--
+	do
+		local before = CeroSecOS.getUser(state, "root").password
+		check("root has a password nobody has typed",
+			not CeroSecOS.checkPassword(CeroSecOS.getUser(state, "root"), ""))
+
+		local answer = ask("clearpass", { login = "root" })
+		check("it worked: " .. tostring(noteOf(answer)),
+			type(noteOf(answer)) == "string" and errorOf(answer) == nil)
+		-- THE STATE: the stored digest is a new one and it is the digest of nothing, so
+		-- login lets an empty answer through -- which is what an account that ships
+		-- open has always been (CeroSecOS.newUser).
+		local now = CeroSecOS.getUser(state, "root")
+		check("the stored digest changed", now.password ~= before)
+		check("and it is the digest of no letters at all",
+			CeroSecOS.checkPassword(now, ""))
+		check("so login takes an empty password", CeroSecOS.login(state, "root", "") ~= nil)
+		-- And the paper in the drawer no longer opens it, which is the honest
+		-- consequence and is worth pinning: this act really did take a password off.
+		local paper = CeroSecContent.password(secret, CeroSecContent.rootKey(b1, b2))
+		eq("and the old letters do not open it any more",
+			CeroSecOS.checkPassword(now, paper), false)
+
+		-- A login the machine has not got, and a string that is not a name at all.
+		check("an account that is not there is refused",
+			string.find(tostring(errorOf(ask("clearpass", { login = "nobody" }))),
+				"no such user", 1, true) ~= nil)
+		check("and a string no /etc/passwd line could carry is refused before that",
+			string.find(tostring(errorOf(ask("clearpass", { login = "a/b:c" }))),
+				"not an account name", 1, true) ~= nil)
+		check("and so is no login at all",
+			string.find(tostring(errorOf(ask("clearpass", {}))),
+				"not an account name", 1, true) ~= nil)
+	end
+
+	--
+	-- 5. GIVE DISK: any entry of the catalogue, built the way the world builds one
+	--
+	do
+		local entry = CeroSecContent.diskById("UTILITIES")
+		check("the catalogue has the entry", entry ~= nil)
+		local before = #inv.items
+		local answer = ask("anydisk", { disk = "UTILITIES" })
+		eq("a disk went into the bag", #inv.items, before + 1)
+		local item = inv.items[#inv.items]
+		check("it is one of our floppy items", CeroSec.isFloppyType(item:getFullType()))
+		-- THE STICKER THE WORLD PUTS ON ONE, asked of the catalogue by the LABEL: a
+		-- handwritten entry has one per telling and the act rolls which, so what is
+		-- asserted is that the name on the shell is a sticker THIS entry can wear and
+		-- not a string of the act's own (CeroSecContent.diskByLabel).
+		eq("with a sticker of that very entry",
+			CeroSecContent.diskByLabel(item:getName()), entry)
+		check("and the custom-name flag", item:isCustomName())
+		local disk = CeroSecOS.diskFromData(item:getModData())
+		check("the modData carries a disk", type(disk) == "table")
+		check("which the slot would take", CeroSecOS.validateDisk(disk, true))
+		eq("labelled the same thing the shell is", disk.label, item:getName())
+		-- Every file of the entry really is on it: a disk handed over half written is
+		-- a disk the bench never weighed.
+		local children = type(disk.fs) == "table" and disk.fs.children or {}
+		local made = 0
+		for _ in pairs(children) do made = made + 1 end
+		check("with files on it (" .. made .. ")", made > 0)
+		check("and the receipt names the label: " .. tostring(noteOf(answer)),
+			string.find(tostring(noteOf(answer)), "UTILITIES", 1, true) ~= nil)
+
+		-- A LATE DISK gets its stub, exactly as a found one does: nothing is filled in
+		-- until it is first inserted, which is the hole `late` was dug for.
+		local bbs = CeroSecContent.diskById("BBS LIST")
+		if bbs ~= nil then
+			ask("anydisk", { disk = "BBS LIST" })
+			local late = CeroSecOS.diskFromData(inv.items[#inv.items]:getModData())
+			local stub = late ~= nil and type(late.fs) == "table"
+				and late.fs.children[CeroSecContent.lateFile(bbs)] or nil
+			check("the late file is on it as a stub", stub ~= nil)
+		end
+
+		-- An id the catalogue has not got, and an id that is not a string.
+		local held = #inv.items
+		check("an id nothing answers to is refused",
+			string.find(tostring(errorOf(ask("anydisk", { disk = "NO SUCH DISK" }))),
+				"no such disk", 1, true) ~= nil)
+		check("and naming no disk at all is refused",
+			string.find(tostring(errorOf(ask("anydisk", {}))),
+				"no disk was named", 1, true) ~= nil)
+		eq("and neither handed anything over", #inv.items, held)
+	end
+
+	--
+	-- 6. LOGIN AS ROOT: the password check skipped and nothing else
+	--
+	do
+		local console = machine.console
+		eq("nobody is logged in at the glass", console.user, nil)
+		local wtmpBefore = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+		local before = wtmpBefore ~= nil and #(wtmpBefore.data or "") or 0
+
+		local answer = ask("rootlogin")
+		check("it worked: " .. tostring(noteOf(answer)),
+			type(noteOf(answer)) == "string" and errorOf(answer) == nil)
+		-- THE SESSION, on the machine's own console: who it is, where he is standing,
+		-- and the environment a login hands a shell -- every one of them the login's
+		-- own gestures (SCeroSecSystem:beginSession), because this is a shortcut past
+		-- the keyboard and past nothing else.
+		eq("root is at the glass", console.user, "root")
+		eq("in root's own home", console.cwd, "/root")
+		check("with a login shell's variables set", type(console.shvars) == "table")
+		check("and PATH among them", console.shvars.PATH ~= nil)
+		eq("and no su stack under him", console.stack, nil)
+		check("and the moment he sat down", type(console.loginAt) == "number")
+		-- AND /var/log/wtmp KNOWS, which is what `last` and `who` read: a session that
+		-- left no record would be a session the machine itself cannot account for.
+		local wtmp = CeroSecOS.systemNode(state, CeroSecOS.WTMP_PATH)
+		check("wtmp grew", wtmp ~= nil and #(wtmp.data or "") > before)
+		check("and names root",
+			string.find(tostring(wtmp.data), "root", 1, true) ~= nil)
+
+		-- Asked again, it is refused: the glass belongs to whoever is in it.
+		check("a second login is refused while somebody is in the session",
+			string.find(tostring(errorOf(ask("rootlogin"))),
+				"already logged in as root", 1, true) ~= nil)
+	end
+
+	--
+	-- 7. RUN CRON NOW: a crontab line, without waiting for the minute
+	--
+	do
+		-- A line of root's own that mails a word. MAIL and not a redirection, because
+		-- what cron does with a job's output is mail it (CeroSecJobs, `job.mailTo`), so
+		-- the effect on the disk is /var/mail/root growing -- and the effect is the
+		-- assertion.
+		local now = CeroSecOS.clockOf(net.system:clockEnv())
+		-- writeFile and not setData: root may have no crontab at all on this premises
+		-- -- the office's nightly line is an ACCOUNT's and lives in his own file
+		-- (docs/CONTENT.md) -- and setData writes over a file that is already there.
+		local made = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("root"), "* * * * * echo cronranhere", false, now)
+		check("root's crontab was installed", made ~= nil)
+		local mailBefore = CeroSecOS.systemNode(state, CeroSecOS.mailPath("root"))
+		local before = mailBefore ~= nil and #(mailBefore.data or "") or 0
+
+		-- The daemon's own sweep would do nothing right now: it has already looked at
+		-- this minute, which is exactly what the button has to get past.
+		eq("the daemon's own pass fires nothing this minute",
+			CeroSecJobs.cronPass(net.system, machine, now), 0)
+
+		local answer = ask("cronnow")
+		check("the act says what it did: " .. tostring(noteOf(answer)),
+			type(noteOf(answer)) == "string" and errorOf(answer) == nil)
+		-- At least one, and the number is read off the note rather than pinned at one:
+		-- a prefilled office has a crontab of its own and the line this bench added is
+		-- not the only one that can be due in the same minute (docs/CONTENT.md, the
+		-- nightly total).
+		local fired = tonumber(string.match(tostring(noteOf(answer)),
+			"cron fired (%d+) line")) or 0
+		check("and it fired at least the line this bench installed (" .. fired .. ")",
+			fired >= 1)
+		-- The job cron made is on the scheduler's book, and stepping it is what puts
+		-- the output in the mail: a bench that stopped at the note would have proved
+		-- that a number was printed.
+		net.tick(20)
+		local mail = CeroSecOS.systemNode(state, CeroSecOS.mailPath("root"))
+		check("root's mailbox grew", mail ~= nil and #(mail.data or "") > before)
+		check("with what the line printed",
+			string.find(tostring(mail.data), "cronranhere", 1, true) ~= nil)
+	end
+	_G.__zones = {}
+	_G.getWorld = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+--
+-- 8. FORCE WIRE: the automation's walk, run to the end
+--
+-- The walk is ROOMS_PER_MINUTE rooms a game minute (CeroSecAuto.ROOMS_PER_MINUTE),
+-- so a premises of more rooms than that takes several minutes and a tester cannot see
+-- the end of it. This act calls the very same function over and over until the record
+-- says `wired`, and the bench gives the premises MORE rooms than one pass can walk --
+-- which is the only shape in which "it loops" can be told from "one call was enough".
+--
+do
+	local net = newNet()
+
+	-- A building of twenty rooms, built here rather than off net.buildingAt: the walk
+	-- reads each room's live IsoRoom to find its squares
+	-- (CeroSecDevices.fixturesInRooms, `room.def:getIsoRoom()`), and the shared
+	-- harness's buildings have no live rooms at all. Every room answers a live one
+	-- with no squares in it, so nothing is FITTED here -- what a fixture getting its
+	-- modules costs and proves is CeroSecAuto's own bench -- and what this proves is
+	-- the walk being driven to the end.
+	local ROOMS = 20
+	local defs = {}
+	for i = 1, ROOMS do
+		local at = i
+		defs[i] = {
+			getName = function() return "room" .. at end,
+			getX = function() return 400 + at end,
+			getY = function() return 700 end,
+			getX2 = function() return 401 + at end,
+			getY2 = function() return 701 end,
+			getZ = function() return 0 end,
+			getArea = function() return 1 end,
+			getIsoRoom = function()
+				return { getSquares = function()
+					return { size = function() return 0 end,
+						get = function() return nil end }
+				end }
+			end,
+		}
+	end
+	local def = {
+		getX = function() return 400 end,
+		getY = function() return 700 end,
+		getX2 = function() return 430 end,
+		getY2 = function() return 730 end,
+		getArea = function() return 900 end,
+		getRoomsNumber = function() return ROOMS end,
+		getRooms = function() return javaList(defs) end,
+	}
+	local building = { getDef = function() return def end }
+	local machine = net.machine(20, 20, 0, building)
+	machine:turnOn()
+	local b1, b2 = CeroSecNet.premisesOf(machine)
+	check("the machine has a premises", b1 ~= nil)
+	check("and it has more rooms than one pass walks",
+		ROOMS > CeroSecAuto.ROOMS_PER_MINUTE)
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+	local function ask()
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 20, y = 20, z = 0, token = "dbg-0-1", act = "forcewire" })
+		return answers[1]
+	end
+
+	-- A premises nobody has asked about has no record at all.
+	check("with no record it is refused",
+		string.find(tostring(ask().args.error), "not been asked yet", 1, true) ~= nil)
+
+	-- A premises that rolled NO is left alone, and a "force" that wired one would be
+	-- this window inventing a world rather than hurrying one up.
+	net.system.auto = {}
+	net.system.auto[CeroSecContent.premisesKey(b1, b2)] =
+		{ on = false, machine = { x = 20, y = 20, z = 0 } }
+	check("a premises that rolled no is refused",
+		string.find(tostring(ask().args.error), "rolled no", 1, true) ~= nil)
+
+	-- And one that rolled yes is walked to the end.
+	local record = { on = true, machine = { x = 20, y = 20, z = 0 } }
+	net.system.auto[CeroSecContent.premisesKey(b1, b2)] = record
+	eq("it is not wired to begin with", record.wired, nil)
+	-- One pass of the walk on its own cannot finish it, which is what makes the loop
+	-- the thing under test.
+	CeroSecAuto.wire(net.system, machine)
+	eq("one pass of the walk leaves it unfinished", record.wired, nil)
+	eq("having walked exactly one pass of rooms",
+		CeroSecDebug.roomsWalked(record), CeroSecAuto.ROOMS_PER_MINUTE)
+
+	local answer = ask()
+	eq("the act answered", answer ~= nil, true)
+	eq("with a note and no refusal", answer.args.error, nil)
+	-- THE STATE: the record says the premises is finished.
+	eq("the premises is wired", record.wired, true)
+	check("and the note says so: " .. tostring(answer.args.note),
+		string.find(tostring(answer.args.note), "finished", 1, true) ~= nil)
+	check("and how many passes it spent",
+		string.find(tostring(answer.args.note), "pass(es)", 1, true) ~= nil)
+
+	-- Asked again, there is nothing left to do and it says so rather than looping.
+	check("a premises already wired is refused",
+		string.find(tostring(ask().args.error), "already wired", 1, true) ~= nil)
+	net.system.auto = nil
+end
+
+--
+-- 9. THE REFUSALS THE EIGHT WEAR, and the door shut over all of them
+--
+do
+	local net = newNet()
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+	local inv = newInventory()
+	net.player.getInventory = function() return inv end
+
+	-- A machine nobody has ever used: no state, and the three acts that read or write
+	-- a disk say so rather than reading a filesystem osState would have INVENTED for
+	-- them -- which is the trap the reset's own flag was written for.
+	local idle = net.machine(300, 220, 0, net.shed)
+	eq("it has no state at all", idle.os, nil)
+	local disky = { "accounts", "clearpass" }
+	for i = 1, #disky do
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 300, y = 220, z = 0, token = "dbg-0-1", act = disky[i],
+				login = "root" })
+		eq(disky[i] .. " was answered", #answers, 1)
+		check("with the disk's own refusal: " .. tostring(answers[1].args.error),
+			string.find(tostring(answers[1].args.error), "never been switched on",
+				1, true) ~= nil)
+	end
+	eq("and the machine still has no state", idle.os, nil)
+
+	-- Off: root cannot be logged in and cron cannot run.
+	local off = { rootlogin = "it is off", cronnow = "it is off" }
+	for act, why in pairs(off) do
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 300, y = 220, z = 0, token = "dbg-0-1", act = act })
+		check(act .. " on a machine that is off says so: "
+			.. tostring(answers[1] and answers[1].args.error),
+			answers[1] ~= nil and
+				string.find(tostring(answers[1].args.error), why, 1, true) ~= nil)
+	end
+
+	-- A machine in no building at all -- a player's own base -- has no premises, so
+	-- neither paper can be derived.
+	local outdoors = net.machine(500, 500, 0, nil)
+	outdoors:turnOn()
+	local papers = { "rootnote", "staffnote" }
+	for i = 1, #papers do
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 500, y = 500, z = 0, token = "dbg-0-1", act = papers[i] })
+		check(papers[i] .. " outdoors says there is no premises: "
+			.. tostring(answers[1] and answers[1].args.error),
+			answers[1] ~= nil and
+				string.find(tostring(answers[1].args.error), "no building", 1, true) ~= nil)
+	end
+	eq("and nothing went into the bag", #inv.items, 0)
+
+	-- A machine whose CHUNK is away cannot be asked what its premises is at all, and
+	-- the sentence names the chunk and not the building -- the distinction the power
+	-- sweep once got wrong.
+	local away = net.far
+	away.getSquare = function() return nil end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 60, y = 60, z = 0, token = "dbg-0-1", act = "rootnote" })
+	check("a chunk that is away is named as the reason: "
+		.. tostring(answers[1] and answers[1].args.error),
+		answers[1] ~= nil and
+			string.find(tostring(answers[1].args.error), "chunk is away", 1, true) ~= nil)
+
+	-- Every snapshot carries all eight answers, whatever tab it is for, because the
+	-- buttons are on every tab's window.
+	local fields = {
+		{ "canRootNote", "rootNoteReason" },
+		{ "canStaffNote", "staffNoteReason" },
+		{ "canAccounts", "accountsReason" },
+		{ "canClearPass", "clearPassReason" },
+		{ "canRootLogin", "rootLoginReason" },
+		{ "canCronNow", "cronNowReason" },
+		{ "canForceWire", "forceWireReason" },
+	}
+	local tabs = { "machines", "files", "devices", "network", "scheduler" }
+	for t = 1, #tabs do
+		local snap = CeroSecDebug.snapshotOf(net.system, tabs[t], idle)
+		for f = 1, #fields do
+			local can, reason = fields[f][1], fields[f][2]
+			eq(tabs[t] .. " says whether " .. can, type(snap[can]), "boolean")
+			-- A no always has a sentence and a yes never does, which is what the
+			-- window prints and what greys the button: a field that said no with
+			-- nothing to say would be a button greyed for no readable reason.
+			if snap[can] == false then
+				check(tabs[t] .. ": " .. can .. " carries its own reason",
+					type(snap[reason]) == "string")
+			else
+				eq(tabs[t] .. ": " .. can .. " has nothing to say", snap[reason], nil)
+			end
+		end
+		-- The three that want a machine that is ON are refused on this one, whatever
+		-- the window has asked about it.
+		eq(tabs[t] .. " refuses cron on a machine that is off", snap.canCronNow, false)
+		eq("and root at its glass", snap.canRootLogin, false)
+	end
+
+	-- AND ONE SEAM WORTH WRITING DOWN, because it is surprising and it is not this
+	-- rule's doing: the disk acts are refused on a machine nobody has ever used, and
+	-- the WINDOW'S OWN REFRESH stops that being true. Every snapshot of the Machines
+	-- tab asks osState of the selected machine for its detail block, and osState MAKES
+	-- a state out of nothing -- which is the same fact the reset's osFresh flag exists
+	-- for (docs/DEBUG.md). So after one refresh these two read the fresh machine's own
+	-- two factory accounts, which is what the computer would have if somebody switched
+	-- it on, and is harmless. What must never happen is the act inventing one ITSELF,
+	-- which is why the refusal reads luaObject.os raw and never osState.
+	do
+		local pristine = net.machine(301, 220, 0, net.shed)
+		eq("it has no state", pristine.os, nil)
+		check("so the act refuses it",
+			CeroSecDebug.accountsRefusal(pristine) ~= nil)
+		eq("and asking again did not make one", pristine.os, nil)
+		CeroSecDebug.snapshotOf(net.system, "machines", pristine)
+		eq("the window's own refresh made one for it", type(pristine.os), "table")
+		eq("after which the act is allowed",
+			CeroSecDebug.accountsRefusal(pristine), nil)
+	end
+
+	-- THE DOOR SHUT. Every one of the eight asks CeroSec.debugAllowed, and with the
+	-- flag off and no debug mode around it a forged command is not a refusal: it is
+	-- nothing at all.
+	local hadFlag = CeroSec.DEV_DEBUG_MENU
+	CeroSec.DEV_DEBUG_MENU = false
+	eq("the door really is shut", CeroSec.debugAllowed(), false)
+	local acts = { "rootnote", "staffnote", "accounts", "clearpass", "anydisk",
+		"rootlogin", "cronnow", "forcewire" }
+	answers = {}
+	for i = 1, #acts do
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = acts[i],
+				login = "root", disk = "UTILITIES" })
+	end
+	eq("not one of the eight answered anything", #answers, 0)
+	eq("and nothing was handed over", #inv.items, 0)
+	CeroSec.DEV_DEBUG_MENU = hadFlag
+end
+
+--
+-- 10. THE DOOR AN ADMIN COMES THROUGH (multiplayer)
+--
+-- A dedicated server has no debug mode -- it is a thing a CLIENT is started with --
+-- so with the release flag off nobody could reach this window on a server at all,
+-- admin or not. The third condition is the access level of the player the ENGINE
+-- handed OnClientCommand, and it is asked of him and never of anything a client sent.
+--
+do
+	local net = newNet()
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+	local hadFlag = CeroSec.DEV_DEBUG_MENU
+	CeroSec.DEV_DEBUG_MENU = false
+
+	-- The engine's own comparison: IsoPlayer.isAccessLevel is getAccessLevel() and
+	-- String.equalsIgnoreCase (javap, offsets 0-8), so a role spelled "Admin" answers
+	-- the same as one spelled "admin".
+	local function playerAt(level)
+		local who = {}
+		for key, value in pairs(net.player) do who[key] = value end
+		who.getAccessLevel = function() return level end
+		who.isAccessLevel = function(_, want)
+			return string.lower(level) == string.lower(want)
+		end
+		return who
+	end
+
+	local admin = playerAt("admin")
+	eq("an admin is allowed with the flag off and no debug mode",
+		CeroSec.debugAllowed(admin), true)
+	eq("a player with no role at all is not",
+		CeroSec.debugAllowed(playerAt("none")), false)
+	eq("and neither is a moderator, which is the narrower of vanilla's two rules",
+		CeroSec.debugAllowed(playerAt("moderator")), false)
+	eq("a role spelled with a capital is still the admin role",
+		CeroSec.debugAllowed(playerAt("Admin")), true)
+
+	-- And the commands answer him. A snapshot for the admin, nothing for the other.
+	answers = {}
+	net.system:OnClientCommand("debug", admin,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", tab = "machines" })
+	eq("the admin gets his snapshot", #answers, 1)
+	eq("on the machines tab", answers[1].args.tab, "machines")
+
+	answers = {}
+	net.system:OnClientCommand("debug", playerAt("none"),
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", tab = "machines" })
+	eq("and an ordinary player gets nothing", #answers, 0)
+
+	-- An ACT, not only a read: the machine really goes off for the admin and really
+	-- does not for anybody else.
+	eq("the machine is on", net.here.on, true)
+	net.system:OnClientCommand("debugact", playerAt("none"),
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "off" })
+	eq("an ordinary player's press does nothing", net.here.on, true)
+	net.system:OnClientCommand("debugact", admin,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "off" })
+	eq("the admin's press switches it off", net.here.on, false)
+
+	-- AND A CLIENT CANNOT SAY SO ITSELF. The level is read off the player object the
+	-- engine handed over; a field on args claiming it is not read at all, and this is
+	-- the assertion that says so -- an ordinary player sending every spelling of it.
+	local liar = playerAt("none")
+	net.here:turnOn()
+	answers = {}
+	net.system:OnClientCommand("debugact", liar,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "off",
+			admin = true, accessLevel = "admin", access = "admin",
+			level = "admin", isAdmin = true })
+	eq("a client that says it is an admin is not one", net.here.on, true)
+	eq("and is answered nothing at all", #answers, 0)
+
+	CeroSec.DEV_DEBUG_MENU = hadFlag
+end
+
+--
 -- THE PREMISES THAT WERE ALREADY AUTOMATED (wave 7e)
 --
 -- A shop whose lights go out at nine as a survivor walks up to it, before he has

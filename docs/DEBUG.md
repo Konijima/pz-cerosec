@@ -34,25 +34,55 @@ Both ends ask that question — the menu that offers the window and the two serv
 commands that answer it — because a client is not to be trusted about whether it
 was allowed to ask.
 
-**What the release gating still needs, and deliberately is not wired yet.** On a
-dedicated server, debug mode is not an access level: a player who launched his own
-client with `-debug` would pass `isDebugEnabled()` there. The check that belongs
-beside it is the one vanilla puts in front of its own admin menu:
+**And a third condition, which is what a dedicated server needed.** With only the
+two above, the window was unreachable on a server for everybody: debug mode is a
+thing a CLIENT is started with, the server has none, so `isDebugEnabled()` answered
+false there for every admin there has ever been. Which also says why debug mode
+alone could not be the rule the other way round -- on a server it is the *client's*
+own flag, so a player who launched his own game with `-debug` would pass it.
 
-    AdminContextMenu.lua:23
-    if not (isClient() and (isAdmin() or getAccessLevel() == "moderator")) then return true end
+So the rule is now:
 
-Both are globals on the same class (javap: `public static java.lang.String
-getAccessLevel();`, `public static boolean isAccessLevel(java.lang.String);`).
-Adding it is one line in `CeroSec.debugAllowed()`, and it is not in this change
-because nothing in this change can be tested against a real server.
+    the flag, OR the game's own debug mode, OR the asking player is an ADMIN
+
+`CeroSec.debugAllowed(playerObj)` takes a player, and the two server commands pass
+the one **the engine handed `OnClientCommand`** -- never a field on `args`, which
+would be a client answering a question about itself. What is asked of him is the
+engine's own comparison:
+
+    zombie.characters.IsoPlayer  public java.lang.String getAccessLevel();
+                                 public boolean isAccessLevel(java.lang.String);
+
+`getAccessLevel()` is `role.getName()`, or the string `none` for a character with no
+role (javap: `getfield role`, `ifnonnull`, `Role.getName()`), and `isAccessLevel` is
+that string through `String.equalsIgnoreCase` (offsets 0-8) -- so a role spelled
+`Admin` answers the same as one spelled `admin`.
+
+With **no** player named -- which is how the context menu asks, about this client's
+own connection -- the answer is vanilla's own pair, `isClient() and isAdmin()`
+(`client/DebugUIs/AdminContextMenu.lua:22`). `isAdmin()` compares the connection's
+role against `Roles.getDefaultForAdmin()` by identity (javap, `if_acmpne` at 15), so
+it does not depend on a spelling either.
+
+**Admin and not moderator**, and vanilla draws that line in both places. Its admin
+context menu takes either (`isAdmin() or getAccessLevel() == "moderator"`), but the
+tools that CHANGE the world take the narrower one: editing the world map is
+`isClient() and (getAccessLevel() == "admin")`
+(`client/ISUI/Maps/ISWorldMap.lua:36`, `:166`, `:911`). This window resets a machine,
+clears a password and hands out root, so it wears the second rule.
+
+**Singleplayer is unchanged.** A character there has no role, `getAccessLevel()`
+answers `none`, `isClient()` is false, and the flag or debug mode is the whole
+answer.
 
 ## The door
 
 A **CeroSec (dev)** submenu, last on a computer's right-click menu, holding the
 three manual volumes and then **Debug window**. One submenu for the mod's two
 testing doors rather than one each, and it is there when EITHER flag is on, so
-turning one off leaves the other's entries where they were.
+turning one off leaves the other's entries where they were. On a server the debug
+entry is there for an **admin** without any flag, because that is what
+`CeroSec.debugAllowed()` answers about this client's own connection (above).
 
 The computer that was right-clicked is the machine the window opens **selected**,
 because the survivor asking about a computer is standing at one.
@@ -81,6 +111,17 @@ one header row down inside it**, which is what vanilla's own column list does
 (`ISItemsListTable.lua:76` puts the list at `BUTTON_HGT` and `:79` sets its
 `itemheight` to the same number; the extra pixel here is the list's own top border,
 `:486-491`).
+
+**Two rows of buttons.** The row this window shipped with sets the window's minimum
+width all by itself, and the admin's and the tester's eight would have made it
+seventeen buttons and a row wider than a screen -- so they are on a SECOND row under
+it, with the login box and the disk list on that row with them. `layout()` answers
+`rowY`, one top per row, and a button asks for the row it was given; the window's
+opening height and its floor both count every row, because a height that had not
+heard of the second would open with nineteen list rows and then eighteen. The second
+row is on the **Machines** tab and nowhere else: all eight are about the machine that
+is SELECTED, and that is the tab a machine is selected on -- the same rule the filter
+already wears.
 
 Every number comes out of one `layout()`, and `applyLayout()` is what both
 `createChildren` and `onResize` call — because two copies of this arithmetic that
@@ -348,7 +389,12 @@ the block under the list.
 
 `canTurnOn`, `canTurnOff`, `canReset`, `on`, `loaded`, `reason` and `resetReason`
 are about the **selected** machine and ride on every tab's snapshot, because the
-buttons under the list are the same nine on every tab. The reset carries its own
+buttons under the list are the same nine on every tab. So do the eight pairs the
+SECOND row needs -- `canRootNote`/`rootNoteReason`, `canStaffNote`/`staffNoteReason`,
+`canAccounts`/`accountsReason`, `canClearPass`/`clearPassReason`,
+`canRootLogin`/`rootLoginReason`, `canCronNow`/`cronNowReason`,
+`canForceWire`/`forceWireReason`. A pair each and never one shared reason, for the
+reason the reset's own pair exists. The reset carries its own
 reason and does not borrow `reason`: that one is `turnOn`'s, and a window printing
 "it is already on" for a refused reset would be blaming the wrong rule. They are built by `CeroSecDebug.selection` off the very
 readings the act itself goes through, so a button greyed in the window is a button
@@ -390,9 +436,10 @@ machine only, and none of them for the two hundred rows above it.
 
 ## The things it can change
 
-Everything else is a read. There are six: the two power buttons, the teleport, the
-reset, the self-test and the disk. Five of them go to the server and the teleport
-is the client's own:
+Everything else is a read. There are fourteen: the two power buttons, the teleport,
+the reset, the self-test, the diagnostics disk, and then the admin's and the tester's
+eight on the second row. Thirteen go to the server and the teleport is the client's
+own:
 
 - **Turn on** / **Turn off** go through `Commands.debugact`, which calls the
   object's own `turnOn`/`turnOff`. Same path, same sprite, same sound, same
@@ -472,6 +519,66 @@ is the client's own:
   `selftest.sh` — twenty-six checks of the shell, the text tools, the filesystem and
   the clock, which is the half of the mod no pure-function vector can reach. See
   [CONTENT.md](CONTENT.md).
+
+And then the eight of the second row, for a **server admin** or somebody walking the
+in-game checklist. Every one of them is behind `CeroSec.debugAllowed()` on the
+server, every one of them refuses through a rule in `SCeroSecDebug.lua` that also
+greys its button, and every one of them answers the window -- a `note` when it worked
+and an `error` when it did not -- because the old silent **Turn on** is the defect
+this window has already paid for once. **What each one WRITES is the column that
+matters**:
+
+| act | what it writes | refused when |
+| --- | --- | --- |
+| **Give root note** | nothing on any disk: one `CeroSec.StickyNote` into the survivor's own inventory | the chunk is away (the premises cannot be asked), the machine is in no building, no profile is written for its premises, or that profile has no root password |
+| **Give staff note** | the same, one paper into his inventory | the same three, plus a profile whose accounts are all open |
+| **Show accounts** | nothing at all: lines to the server's log and one line back to the asking window | the machine has never been switched on, so it has no disk to read |
+| **Clear password** | `/etc/passwd` on the selected machine, through `CeroSecOS.setPassword` | the same, plus a `login` that is not a name or an account the machine has not got |
+| **Give disk** | nothing on any disk: one floppy item into his inventory | a `disk` id the catalogue has not got, a bag that will not take it |
+| **Login as root** | the machine's **console**, and `/var/log/wtmp` on its disk (the login's own record) | the machine is off, it has no screen, it is at the BIOS, somebody is already logged in, or it has no root account |
+| **Run cron now** | whatever the crontab lines that are due write -- which is the point | the machine is off |
+| **Force wire** | the premises' automation record (`system.auto`) and the fixtures' own modules | the machine has no address yet, its premises has not been asked, it rolled no, or it is already wired |
+
+Four of them are worth a sentence more than the table gives:
+
+- **Give root note** and **Give staff note** derive the letters exactly as the world
+  derives them -- the save's own secret and the premises' two bytes, through
+  `CeroSecContent.rootKey` and `accountPassword` -- so the paper opens the machine in
+  front of it. And `CeroSecNotes.premisesMark` is **left alone**: that mark says a
+  premises' one paper has really been placed in a container, and setting it here would
+  take the note out of the next drawer a player opens. The staff note is the FIRST
+  locked slot every time and never a roll, so the button can be used twice, and it can
+  never name root.
+- **Show accounts** says the PLAINTEXT of every password the catalogue put on the
+  machine. It is allowed to: an admin who may empty a machine may read its passwords,
+  and this is the half of "remove a password" a tester actually wants, which is to get
+  in. Nothing derived is stored in clear anywhere, so the letters are worked out again
+  here the way the paper works them out; an account the catalogue did not make says
+  `derived -`, because there is nothing to read off a salted hash. The lines go to the
+  server's log and to the ASKING window's note, through `reply`, and to nowhere else
+  -- the save's own secret is on neither.
+- **Clear password** is `passwd -d`, and on this machine there is nothing to invent:
+  an open account is one whose stored hash is the hash of the empty string
+  (`CeroSecOS.newUser`), and `login` lets an empty answer straight through. So the act
+  is `setPassword(state, login, "")` and the paper in the drawer stops opening it.
+- **Login as root** skips the PASSWORD CHECK and nothing else. The session is the very
+  table `CeroSecOS.login` answers with, built off the account record, and every gesture
+  after it is the login's own: `SCeroSecSystem:beginSession`, which the `input` command
+  now calls too -- the shell's variables, the greeting, the `wtmp` line. So `who`,
+  `last` and the prompt read exactly as they read for somebody who typed the letters.
+  The window then opens the terminal through its own **Open terminal** path, so the
+  three conditions a window has to meet are the ones it already checks.
+- **Run cron now** winds the minute hand back one and calls the daemon's own
+  `cronPass` and `atPass`. It has to: `cronPass` runs a line only on a minute it has
+  not already looked at, which is right for the daemon and is exactly what a tester
+  needs to get past. Nothing else about the pass changes -- the lines that fire are the
+  ones `cronDue` says are due at the clock the world has.
+- **Force wire** calls `CeroSecAuto.wire` over and over. It has to: the walk covers
+  `ROOMS_PER_MINUTE` rooms a game minute, so a mall takes many minutes. It stops on
+  the first of three things -- the record says `wired`, a pass fitted nothing and
+  walked no new room, or `CeroSecDebug.WIRE_PASS_MAX` passes have gone by -- and the
+  ceiling is there for the case the walk cannot finish at all because half the
+  building's chunks are away.
 
 **Dump state** writes nothing: it prints. And the self-test writes only through the
 save path it is testing: `CeroSecSelfTest.runSave` calls `stateToIsoObject`, which
@@ -587,6 +694,45 @@ the state, `osFresh` never set (so the next power-on does not prefill), the sele
 row filtered away, and the shut door ignored — eight more, each one red. And a
 ninth on the layout: the window opened at its nominal width with the button row
 wider than it, which puts the last button over the edge.
+
+**Section 54 is the admin's and the tester's eight**, every one of them driven through
+the real `OnClientCommand` door and asserted on the STATE it leaves: the paper in the
+bag with the words the drawer would have carried and the premises still unmarked, the
+staff paper's login really on the machine with really that password, one log line per
+account with root's letters in clear and the save's own secret on none of them, a
+digest really replaced by the digest of nothing so that `login` takes an empty answer,
+a floppy wearing a sticker the catalogue can prove is that entry's with a disk the
+slot would take on it, root at the glass with a login shell's variables and a `wtmp`
+line naming him, a crontab line's own output in `/var/mail/root` after the scheduler
+has stepped the job it made, and a premises of twenty rooms walked to `wired` in
+several passes where one pass of the walk leaves it unfinished. Then every refusal in
+the server's own words, and then the door shut over all eight, which answers nothing
+and does nothing.
+
+It also writes down one seam: the disk acts are refused on a machine nobody has ever
+used, and the WINDOW'S OWN REFRESH stops that being true, because the Machines tab
+asks `osState` of the selected machine and `osState` makes a state out of nothing --
+the same fact the reset's `osFresh` flag exists for. What must never happen is the act
+inventing one itself, which is why the refusal reads `luaObject.os` raw.
+
+**Its last block is the door an admin comes through**: a fake player at `admin` is
+allowed with the flag off and no debug mode and his press really switches a machine
+off, a player at `none` is answered nothing and changes nothing, a moderator is
+refused (the narrower of vanilla's two rules), `Admin` with a capital is still the
+admin role, and a client sending `admin = true`, `accessLevel = "admin"` and three
+more spellings of it is still not one.
+
+`tests/debug_ui_test.lua`'s block 16 is the second row's: the eight buttons are there
+on the Machines tab and gone on every other, each sends its own act on the selected
+machine under this window's token and asks for no snapshot, the login box opens on
+`root` and travels as it is typed and falls back to `root` when it is emptied, the
+disk list is built off `CeroSecContent.DISKS` and sends the entry's ID and not the
+words on it, each of the seven is greyed by ITS OWN field while the other six stay
+usable, a press the window knows cannot work sends nothing and prints the server's own
+sentence, and **Login as root** opens the terminal when it worked and opens nothing
+when it was refused. Its block 10 now asserts TWO button rows in pixels: every button
+on the row it was given, no row reaching into the one above it, the login box and the
+disk list on the second, and the detail block under the LAST row.
 
 The in-game half — what is actually on the glass, whether the columns line up,
 whether the buttons do what they say — is

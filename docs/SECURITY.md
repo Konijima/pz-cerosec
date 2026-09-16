@@ -119,3 +119,35 @@ rule is what makes a caller with no address — a call, a radio link — trusted
 neither file, and what `who`, `last` and `/var/log/wtmp` record: the name the
 receiving machine's own `/etc/hosts` gives the caller's address, else the bare
 address.
+
+## The debug window is not a player's door
+
+The debug window can reset a machine, clear an account's password, hand out root at
+the glass and print every derived password on a computer in clear (see
+[DEBUG.md](DEBUG.md), *The things it can change*). None of that is a thing a player
+may do, so both ends of every one of its commands ask the same question and the
+server's answer is the only one that counts.
+
+`CeroSec.debugAllowed(playerObj)` is the whole door: the release flag
+(`CeroSec.DEV_DEBUG_MENU`, `false` in a shipped build), OR the game's own debug mode,
+OR the asking player's access level being **admin**.
+
+Three rules keep it a door rather than a suggestion:
+
+- **The level is read off the player the ENGINE handed `OnClientCommand`.** Never a
+  field on the command's `args`, which would be a client answering a question about
+  itself. `tests/window_test.lua` sends `admin = true`, `accessLevel = "admin"` and
+  three more spellings of it from a player at `none` and the machine does not move.
+- **Admin, not moderator.** Vanilla's admin context menu takes either; the vanilla
+  tools that CHANGE the world take admin alone (`ISWorldMap.lua:36`), and this window
+  changes more than the map does.
+- **A refused command is silence and not a refusal.** With the door shut, nothing is
+  answered and nothing is acted on -- a released build does not tell a client what it
+  would have said, because a refusal that names an act is a list of acts.
+
+**What the window can read is not a security boundary, and never was.** The save's
+own secret is in the save file, so a single-player player who reads his own save can
+derive every password in the county with or without this window (see
+[CONTENT.md](CONTENT.md), *The per-save secret*). On a server the save is on the
+server, which is the whole of the difference -- and the secret itself is never put in
+any reply, any log line or any packet.

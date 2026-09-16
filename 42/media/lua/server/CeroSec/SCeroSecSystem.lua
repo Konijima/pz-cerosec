@@ -1702,6 +1702,51 @@ function SCeroSecSystem:mayOpen(playerObj)
 	return false
 end
 
+-- WHAT A LOGIN DOES TO A CONSOLE, in one place.
+--
+-- Everything that happens once CeroSecOS.login has said yes: who the glass is, where
+-- he is standing, the shell he is handed, when he sat down and what /var/log/wtmp is
+-- told about it. It is a method and not eleven lines inside Commands.input because a
+-- second caller wants exactly these gestures and no others -- the debug window's
+-- "Login as root", which is the one path allowed to skip the PASSWORD and is not
+-- allowed to skip anything else (docs/DEBUG.md). Two copies of this would be two
+-- answers to "what is a session", and the one that drifted would be the one nobody
+-- types at.
+--
+-- The session is CeroSecOS.login's own return: { user, cwd }.
+function SCeroSecSystem:beginSession(state, console, session)
+	console.user = session.user
+	console.cwd = session.cwd
+	-- A login is a session that has just begun: nobody has su'd yet,
+	-- and a stack left behind by anything is not this one's.
+	console.stack = nil
+	-- A login is a fresh shell: nothing the last account set at this
+	-- glass is still set, exactly as nothing of his session is. What it
+	-- does start with is what a login shell has always set -- PATH, so a
+	-- bare name is looked up in /bin, and HOME.
+	console.shvars = CeroSecOS.loginVars(
+		(CeroSecOS.getUser(state, session.user) or {}).home)
+	-- And which of them a program it runs is handed: a login exports what
+	-- it sets, so a script finds PATH and HOME without an export line.
+	console.shexport = CeroSecOS.loginExported()
+	-- And no functions: a function belongs to the shell it was told about.
+	console.shfuncs = {}
+	console.status = nil
+	-- When, and on which line: what `who` prints and what `last` reads
+	-- back out of /var/log/wtmp. The console's own line is "console" --
+	-- the survivor is at the keyboard -- and a pty's is its own name,
+	-- with the machine it came from beside it.
+	local now = CeroSecOS.clockOf(self:clockEnv())
+	console.loginAt = now or 0
+	-- What login says, worked out BEFORE the arrival is written down: the
+	-- "Last login" line is the login before this one, and a record already in
+	-- the file would make it this one (CeroSecOS.lastLoginRecord).
+	local greeting = CeroSecOS.loginLines(state, session.user)
+	CeroSecOS.wtmpAppend(state, "in", session.user,
+		console.line or CeroSecOS.CONSOLE_LINE, console.fromHost, now)
+	CeroSec.consolePushAll(console, greeting)
+end
+
 Commands.open = function(self, playerObj, x, y, z, token)
 	-- Before the machine is even looked up: what this refuses is the PACKET, and a
 	-- flooder must not get a square's worth of work out of one either.
@@ -1798,36 +1843,7 @@ Commands.input = function(self, playerObj, x, y, z, token, args)
 		CeroSec.consolePush(console, CeroSec.maskedLine("password: ", text))
 		local session, reason = CeroSecOS.login(state, name, text)
 		if session then
-			console.user = session.user
-			console.cwd = session.cwd
-			-- A login is a session that has just begun: nobody has su'd yet,
-			-- and a stack left behind by anything is not this one's.
-			console.stack = nil
-			-- A login is a fresh shell: nothing the last account set at this
-			-- glass is still set, exactly as nothing of his session is. What it
-			-- does start with is what a login shell has always set -- PATH, so a
-			-- bare name is looked up in /bin, and HOME.
-			console.shvars = CeroSecOS.loginVars(
-				(CeroSecOS.getUser(state, session.user) or {}).home)
-			-- And which of them a program it runs is handed: a login exports what
-			-- it sets, so a script finds PATH and HOME without an export line.
-			console.shexport = CeroSecOS.loginExported()
-			-- And no functions: a function belongs to the shell it was told about.
-			console.shfuncs = {}
-			console.status = nil
-			-- When, and on which line: what `who` prints and what `last` reads
-			-- back out of /var/log/wtmp. The console's own line is "console" --
-			-- the survivor is at the keyboard -- and a pty's is its own name,
-			-- with the machine it came from beside it.
-			local now = CeroSecOS.clockOf(self:clockEnv())
-			console.loginAt = now or 0
-			-- What login says, worked out BEFORE the arrival is written down: the
-			-- "Last login" line is the login before this one, and a record already in
-			-- the file would make it this one (CeroSecOS.lastLoginRecord).
-			local greeting = CeroSecOS.loginLines(state, session.user)
-			CeroSecOS.wtmpAppend(state, "in", session.user,
-				console.line or CeroSecOS.CONSOLE_LINE, console.fromHost, now)
-			CeroSec.consolePushAll(console, greeting)
+			self:beginSession(state, console, session)
 			-- ~/.profile, after the greeting and before the first prompt, the
 			-- way sh has run it since the seventh edition. It runs as the
 			-- SHELL's own job, so what it sets is still set at the prompt.
@@ -2346,7 +2362,10 @@ end
 
 Commands.debug = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
-	if not CeroSec.debugAllowed() then return end
+	-- The player the ENGINE handed OnClientCommand, and never a field on args: the
+	-- question is whether HE was allowed to ask, and a client answering that about
+	-- itself is not a door (CeroSec.debugAllowed).
+	if not CeroSec.debugAllowed(playerObj) then return end
 	if type(args) ~= "table" then return end
 	local tab = args.tab
 	if not CeroSecDebug.isTab(tab) then return end
@@ -2389,26 +2408,37 @@ local function noteAct(system, playerObj, token, x, y, z, text)
 		{ token = token, note = text, x = x, y = y, z = z })
 end
 
--- THE DEVELOPER'S DISK, into his hands.
+-- ANY DISK OF THE CATALOGUE, into his hands.
 --
--- A write, and the only one on this whole window -- which is why it is here and
--- not in SCeroSecDebug.lua, that file being read-only with no exception. It is
--- ejectfloppy's own path and not a shorter one: AddItem, the modData written
--- BEFORE the item is announced to the clients, the sticker put on with vanilla's
--- own three calls, and sendAddItemToContainer last. A disk handed over any other
--- way is a disk a multiplayer client never sees.
+-- A write -- which is why it is here and not in SCeroSecDebug.lua, that file being
+-- read-only with no exception. It is ejectfloppy's own path and not a shorter one:
+-- AddItem, the modData written BEFORE the item is announced to the clients, the
+-- sticker put on with vanilla's own three calls, and sendAddItemToContainer last. A
+-- disk handed over any other way is a disk a multiplayer client never sees.
+--
+-- THE TELLING IS ROLLED, the way the world rolls one (CeroSecContent.onCreateFloppy):
+-- a handwritten entry has a sticker per telling and three contents, so a disk handed
+-- over with no roll would be the first telling for ever -- and what this button is for
+-- is looking at the disk a player finds. A bench with no ZombRand gets the
+-- catalogue's own default, which is telling one.
 --
 -- nil when he has it, or the sentence to put on the glass.
-local function giveDiagnosticsDisk(playerObj, now)
-	local entry = CeroSecContent.diskById(CeroSecContent.DIAG_DISK)
-	if entry == nil then return "there is no diagnostics disk in the catalogue" end
+local function giveDisk(playerObj, entry, now)
+	if entry == nil then return "there is no such disk in the catalogue" end
+	local variant = nil
+	if ZombRand ~= nil then
+		variant = math.floor(ZombRand(CeroSecContent.VARIANTS)) + 1
+	end
 	-- Built from the catalogue at the moment it is asked for, through the very
 	-- function loot builds a disk with, so the floppy in his hand is the floppy the
 	-- bench weighed -- ceilings, modes, printable rule and all.
-	local disk, written = CeroSecContent.diskData(entry, now)
+	local disk, written = CeroSecContent.diskData(entry, now, variant)
 	if disk == nil then return "the catalogue would not make the disk" end
-	if written < #entry.files then
-		return "only " .. written .. " of " .. #entry.files .. " files fitted on it"
+	-- BLANK is an entry with no files on purpose, so the count it has to match is
+	-- zero and not the length of a table that is not there.
+	local total = type(entry.files) == "table" and #entry.files or 0
+	if written < total then
+		return "only " .. written .. " of " .. total .. " files fitted on it"
 	end
 
 	local inv = playerObj:getInventory()
@@ -2443,9 +2473,36 @@ local function giveDiagnosticsDisk(playerObj, now)
 	return nil
 end
 
+-- The self-test disk, which is the one entry of weight 0: no drawer in the county
+-- has one and this is the only way to it (docs/CONTENT.md).
+local function giveDiagnosticsDisk(playerObj, now)
+	local entry = CeroSecContent.diskById(CeroSecContent.DIAG_DISK)
+	if entry == nil then return "there is no diagnostics disk in the catalogue" end
+	return giveDisk(playerObj, entry, now)
+end
+
+-- A PAPER, into his hands: the very sticky note a drawer or a pocket of that
+-- premises would hold.
+--
+-- CeroSecNotes.write and not a second AddItem of our own, because the words on a
+-- note are put on with three calls in an order that matters (the head of
+-- CeroSecNotes.write) -- and the container is the survivor's own inventory, which is
+-- a container like any drawer. The announce goes last, exactly as the disk's does: a
+-- paper a multiplayer client never hears about is a paper he cannot read.
+--
+-- nil when he has it, or the sentence to put on the glass.
+local function givePaper(playerObj, text)
+	local inv = playerObj:getInventory()
+	if inv == nil then return "there is nowhere to put it" end
+	local item = CeroSecNotes.write(inv, text)
+	if item == nil then return "he is carrying too much" end
+	if isServer() then sendAddItemToContainer(inv, item) end
+	return nil
+end
+
 Commands.debugact = function(self, playerObj, x, y, z, token, args)
 	if token == nil then return end
-	if not CeroSec.debugAllowed() then return end
+	if not CeroSec.debugAllowed(playerObj) then return end
 	if type(args) ~= "table" or type(args.act) ~= "string" then return end
 
 	-- The one act that is about a survivor's BAG and not about a machine, so it is
@@ -2461,6 +2518,32 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 			noteAct(self, playerObj, token, x, y, z,
 				"CEROSEC DIAGNOSTICS is in your inventory -- insert it, then" ..
 				" mount /dev/fd0 /mnt and sh /mnt/selftest.sh")
+		end
+		return
+	end
+
+	-- And the same thing for ANY entry of the catalogue, chosen off a combo. About a
+	-- bag again, so it is answered in the same place and for the same reason.
+	--
+	-- The id is a string a client sent, so it is not believed: it is looked up in the
+	-- catalogue, and a lookup that finds nothing is a refusal. Nothing is built out of
+	-- it -- the entry the lookup answers is what the disk is made from
+	-- (CeroSecContent.diskById).
+	if args.act == "anydisk" then
+		local id = args.disk
+		if type(id) ~= "string" or #id > CeroSecDebug.CELL_MAX then
+			refuseAct(self, playerObj, token, x, y, z, "no disk: no disk was named")
+			return
+		end
+		local entry = CeroSecContent.diskById(id)
+		local why = giveDisk(playerObj, entry,
+			CeroSecOS.clockOf(self:clockEnv()))
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no disk: " .. why)
+		else
+			noteAct(self, playerObj, token, x, y, z, id ..
+				" is in your inventory, labelled " ..
+				tostring(CeroSecContent.diskLabel(entry, nil) or "nothing at all"))
 		end
 		return
 	end
@@ -2529,6 +2612,218 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		print("CeroSec " .. summary)
 		noteAct(self, playerObj, token, x, y, z, summary ..
 			(result.fail > 0 and " -- the lines are on the Log tab" or ""))
+	elseif args.act == "rootnote" then
+		-- THE PAPER THE DRAWER WOULD HOLD, and it is derived here exactly as the
+		-- drawer derives it: the save's own secret and the premises' two bytes
+		-- through CeroSecContent.rootKey (CeroSecNotes.deskNote is the same four
+		-- lines). So what he is handed opens the machine in front of him.
+		--
+		-- AND THE PREMISES IS NOT MARKED. CeroSecNotes.premisesMark is about a
+		-- PREMISES and says whether its one paper has been placed in a real
+		-- container; marking it here would take the note out of the next drawer
+		-- somebody opens, which is a developer's button quietly changing the world
+		-- a player walks through.
+		local why = CeroSecDebug.rootNoteRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no root note: " .. why)
+		else
+			local b1, b2 = CeroSecDebug.profileOf(luaObject)
+			local password = CeroSecContent.password(self:secret(),
+				CeroSecContent.rootKey(b1, b2))
+			if password == nil then
+				refuseAct(self, playerObj, token, x, y, z,
+					"no root note: the secret would not derive one")
+			else
+				local text = string.format(CeroSecNotes.ROOT_FORM, "root", password)
+				local said = givePaper(playerObj, text)
+				if said ~= nil then
+					refuseAct(self, playerObj, token, x, y, z, "no root note: " .. said)
+				else
+					noteAct(self, playerObj, token, x, y, z,
+						text .. " -- the drawer of this premises still has its own")
+				end
+			end
+		end
+	elseif args.act == "staffnote" then
+		-- A member of staff's own login, on the paper a pocket would hold
+		-- (CeroSecNotes.zombieNote). THE FIRST locked slot and never a roll: a
+		-- button that handed out a different account every press would be a button
+		-- nobody could use twice, and the tooltip says which one it is.
+		local why = CeroSecDebug.staffNoteRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no staff note: " .. why)
+		else
+			local b1, b2, profile = CeroSecDebug.profileOf(luaObject)
+			local slot = CeroSecContent.lockedSlots(profile)[1]
+			local secret = self:secret()
+			local login = CeroSecContent.accountLogin(secret, b1, b2, slot)
+			-- A profile may NAME an account, and then the login is the name it
+			-- gave: the same choice makeAccounts makes, or the paper names a
+			-- login the machine has not got.
+			local named = profile.accounts[slot].name
+			if type(named) == "string" then login = named end
+			local password =
+				CeroSecContent.accountPassword(secret, b1, b2, slot, login)
+			-- The one thing a staff paper must never carry, and the check is here
+			-- and not trusted to the catalogue for the reason zombieNote gives:
+			-- the catalogue is what a content wave rewrites.
+			if login == "root" then
+				refuseAct(self, playerObj, token, x, y, z,
+					"no staff note: slot " .. tostring(slot) .. " is root")
+			elseif login == nil or password == nil then
+				refuseAct(self, playerObj, token, x, y, z,
+					"no staff note: the secret would not derive one")
+			else
+				local text = string.format(CeroSecNotes.USER_FORM, login, password)
+				local said = givePaper(playerObj, text)
+				if said ~= nil then
+					refuseAct(self, playerObj, token, x, y, z, "no staff note: " .. said)
+				else
+					noteAct(self, playerObj, token, x, y, z,
+						text .. " -- slot " .. tostring(slot) .. " of its premises")
+				end
+			end
+		end
+	elseif args.act == "accounts" then
+		-- WHO IS ON IT, with the letters. To the server's log, where a line that
+		-- size belongs and where an operator would look for it, and back to the
+		-- ONE window that asked -- never broadcast, and never to any other client:
+		-- reply is the asking connection's (see the head of this section).
+		local why = CeroSecDebug.accountsRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no accounts: " .. why)
+		else
+			local lines = CeroSecDebug.accounts(self, luaObject)
+			for i = 1, #lines do
+				CeroSec.log(CeroSec.LOG_INFO, lines[i])
+			end
+			noteAct(self, playerObj, token, x, y, z,
+				tostring(lines[1]) .. " -- the lines are on the Log tab")
+		end
+	elseif args.act == "clearpass" then
+		-- passwd -d, which on this machine is a password of NO LETTERS: an open
+		-- account is one whose stored hash is the hash of "" and has been since the
+		-- first machine shipped (CeroSecOS.newUser), so there is nothing to invent
+		-- -- setPassword with "" is what login then lets straight through.
+		local why = CeroSecDebug.clearPassRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no password cleared: " .. why)
+			return
+		end
+		-- The login is a string a client sent, so it is held to the machine's own
+		-- rule for a name in /etc/passwd before it reaches anything
+		-- (CeroSecOS.parsePasswdLine's own isValidName) -- and it never reaches a
+		-- Lua pattern: getUser is a table lookup.
+		local login = args.login
+		if not CeroSecOS.isValidName(login) then
+			refuseAct(self, playerObj, token, x, y, z,
+				"no password cleared: that is not an account name")
+			return
+		end
+		local state = luaObject:osState()
+		if state == nil or CeroSecOS.getUser(state, login) == nil then
+			refuseAct(self, playerObj, token, x, y, z,
+				"no password cleared: no such user " .. login)
+			return
+		end
+		local now = CeroSecOS.clockOf(self:clockEnv())
+		local done, reason = CeroSecOS.setPassword(state, login, "",
+			"debug" .. tostring(now), now)
+		if done == nil then
+			refuseAct(self, playerObj, token, x, y, z,
+				"no password cleared: " .. tostring(reason))
+		else
+			luaObject:mirrorOS()
+			noteAct(self, playerObj, token, x, y, z, login ..
+				" has no password now -- log in and press return at the password")
+		end
+	elseif args.act == "rootlogin" then
+		-- ROOT ON THE GLASS, with the password check and nothing else skipped.
+		--
+		-- The session is the very table CeroSecOS.login answers with, built off the
+		-- account record the way that function builds it, and every gesture after
+		-- it is the login's own (SCeroSecSystem:beginSession) -- the shell, the
+		-- greeting, the wtmp line. So `who`, `last` and the prompt all read exactly
+		-- as they read for somebody who typed the letters, which is the point: this
+		-- is a shortcut past the KEYBOARD and past nothing else.
+		local why = CeroSecDebug.rootLoginRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no root login: " .. why)
+		else
+			local state = luaObject:osState()
+			local console = luaObject.console
+			local user = CeroSecOS.getUser(state, "root")
+			-- Echoed on the glass, because a session nobody can see arriving reads
+			-- as a machine that logged itself in.
+			CeroSec.consolePush(console, "login: root")
+			console.pending = nil
+			self:beginSession(state, console, { user = user.name,
+				cwd = user.home or "/" })
+			luaObject:mirrorOS()
+			self:pushScreen(luaObject, state, console)
+			noteAct(self, playerObj, token, x, y, z,
+				"root is logged in at its console")
+		end
+	elseif args.act == "cronnow" then
+		-- cron's minute, by hand.
+		--
+		-- The minute hand is WOUND BACK and the daemon's own pass is then called:
+		-- cronPass runs a line only on a minute it has not already looked at
+		-- (`luaObject.cron.minute`), so a second call in the same game minute does
+		-- nothing at all -- which is right for the daemon and is exactly what this
+		-- button has to get past. Nothing else about the pass is changed: the lines
+		-- that fire are the lines cronDue says are due at the clock the world has.
+		local why = CeroSecDebug.cronNowRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "cron did not run: " .. why)
+		else
+			local now = CeroSecOS.clockOf(self:clockEnv())
+			if now == nil then
+				refuseAct(self, playerObj, token, x, y, z,
+					"cron did not run: the world has no clock")
+			else
+				if type(luaObject.cron) ~= "table" then luaObject.cron = {} end
+				luaObject.cron.minute = math.floor(now / 60) - 1
+				local fired = CeroSecJobs.cronPass(self, luaObject, now)
+				local queued = CeroSecJobs.atPass(self, luaObject, now)
+				noteAct(self, playerObj, token, x, y, z,
+					"cron fired " .. fired .. " line(s) and at started " ..
+					queued .. " job(s)")
+			end
+		end
+	elseif args.act == "forcewire" then
+		-- THE AUTOMATION'S WALK, run to the end.
+		--
+		-- CeroSecAuto.wire walks ROOMS_PER_MINUTE rooms a game minute, so a mall
+		-- takes many minutes and a tester cannot see the end of it. This calls the
+		-- very same function over and over -- never a copy of the walk -- and stops
+		-- on the first of two things: the record says `wired`, or a pass fitted
+		-- nothing and walked nothing new. The bound is the ROOM COUNT of the
+		-- premises and never "until it finishes": a walk that cannot finish must
+		-- cost this command a known number of passes and not the server's frame.
+		local why = CeroSecDebug.forceWireRefusal(luaObject)
+		if why ~= nil then
+			refuseAct(self, playerObj, token, x, y, z, "no wiring: " .. why)
+		else
+			local net = CeroSecOS.netRecord(luaObject.os)
+			local record = CeroSecAuto.recordOf(self, net.b1, net.b2)
+			local fitted, passes = 0, 0
+			while passes < CeroSecDebug.WIRE_PASS_MAX do
+				passes = passes + 1
+				local walkedBefore = CeroSecDebug.roomsWalked(record)
+				local got = CeroSecAuto.wire(self, luaObject)
+				fitted = fitted + got
+				if record.wired == true then break end
+				-- No progress is no progress: a pass that fitted nothing and
+				-- reached no new room will answer the same next time, and looping
+				-- on it is the server standing still.
+				if got == 0 and CeroSecDebug.roomsWalked(record) == walkedBefore then break end
+			end
+			noteAct(self, playerObj, token, x, y, z,
+				"wired " .. fitted .. " fixture(s) in " .. passes .. " pass(es); " ..
+				(record.wired == true and "the premises is finished"
+					or "the premises is not finished -- rooms whose chunks are away"))
+		end
 	end
 end
 

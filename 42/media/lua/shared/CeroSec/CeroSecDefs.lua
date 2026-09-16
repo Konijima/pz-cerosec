@@ -78,7 +78,22 @@ CeroSec.DEV_MANUAL_MENU = false
 -- of the release change and not the start of one.
 CeroSec.DEV_DEBUG_MENU = false
 
--- May the debug window be opened at all? The flag, or the game's own debug mode.
+-- The access level the window is opened to on a server. The role's own name, which
+-- is what the engine compares against: zombie.characters.Role.getName(), reached
+-- through IsoPlayer.getAccessLevel() (javap: `getfield role`, `Role.getName()`, and
+-- the string "none" for a character with no role at all).
+--
+-- ADMIN AND NOT MODERATOR, and vanilla draws the line in both places. Its admin
+-- CONTEXT MENU takes either -- `isClient() and (isAdmin() or getAccessLevel() ==
+-- "moderator")`, client/DebugUIs/AdminContextMenu.lua:22 -- but the tools that
+-- CHANGE the world take the narrower one: `isClient() and (getAccessLevel() ==
+-- "admin")` is what gates editing the world map (client/ISUI/Maps/ISWorldMap.lua:36,
+-- :166, :911). This window resets a machine, clears a password and hands out root,
+-- so it is the second rule it wears.
+CeroSec.ADMIN_LEVEL = "admin"
+
+-- May the debug window be opened at all? The flag, the game's own debug mode, or a
+-- server ADMIN.
 --
 -- isDebugEnabled is zombie.Lua.LuaManager$GlobalObject.isDebugEnabled()
 -- (javap: `public static boolean isDebugEnabled();`), which is what vanilla's own
@@ -86,13 +101,49 @@ CeroSec.DEV_DEBUG_MENU = false
 -- outright because this file is pure Lua and is loaded by benches with no game
 -- around it at all: no game, no debug mode, and the flag is the whole answer.
 --
--- Both ends ask this -- the menu that offers the window and the server command
--- that answers it -- because a client is not to be trusted about whether it was
+-- THE THIRD CONDITION IS WHAT A DEDICATED SERVER NEEDED, and without it the window
+-- was unreachable there for everybody: debug mode is a thing a client is STARTED
+-- with, the server has none, so `isDebugEnabled()` on the server answered false for
+-- every admin there has ever been. Which also says why debug mode alone could not be
+-- the rule: on a server it is the CLIENT's own flag, so a player who launched his own
+-- game with -debug would pass it.
+--
+-- WHICH PLAYER, and this is the whole of what makes it a door. With a player named,
+-- the answer is about HIM and is asked of the object the engine handed
+-- OnClientCommand -- never of anything a client sent, which is a client answering a
+-- question about itself:
+--
+--   zombie.characters.IsoPlayer  public java.lang.String getAccessLevel();
+--                                public boolean isAccessLevel(java.lang.String);
+--
+-- isAccessLevel is getAccessLevel() and String.equalsIgnoreCase (javap, offsets
+-- 0-8), so it is the engine's own comparison and a role spelled "Admin" answers the
+-- same as one spelled "admin".
+--
+-- With NO player named, the question is about this client's own connection and the
+-- answer is vanilla's: `isClient() and isAdmin()`, which is the pair
+-- AdminContextMenu.lua:22 opens its own menu with. isAdmin() compares the
+-- connection's role against Roles.getDefaultForAdmin() by IDENTITY (javap,
+-- if_acmpne at offset 15), so it does not depend on the spelling either.
+--
+-- Singleplayer is unchanged: a character there has no role, getAccessLevel answers
+-- "none", isClient is false, and the flag or debug mode is the whole answer.
+--
+-- Both ends ask this -- the menu that offers the window and the server commands
+-- that answer it -- because a client is not to be trusted about whether it was
 -- allowed to ask.
-function CeroSec.debugAllowed()
+function CeroSec.debugAllowed(playerObj)
 	if CeroSec.DEV_DEBUG_MENU then return true end
-	if isDebugEnabled == nil then return false end
-	return isDebugEnabled() and true or false
+	if isDebugEnabled ~= nil and isDebugEnabled() then return true end
+	if playerObj ~= nil then
+		-- A player object with no such method is not a player this may be asked of,
+		-- and the honest answer for one is no.
+		if playerObj.isAccessLevel == nil then return false end
+		return playerObj:isAccessLevel(CeroSec.ADMIN_LEVEL) and true or false
+	end
+	if isClient == nil or not isClient() then return false end
+	if isAdmin == nil then return false end
+	return isAdmin() and true or false
 end
 
 -- Vanilla desktop computer tiles, tileset appliances_com_01.
