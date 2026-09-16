@@ -59,9 +59,12 @@ cache*, below):
 - The square's `getBuilding()`, when it has one → `getDef():getRooms()`
   (an `ArrayList<RoomDef>`, read the way `shared/Util/BuildingHelper.lua` reads
   it) → `getIsoRoom()` per room — `nil` while its chunks are not loaded — →
-  `getSquares()` → `getObjects()`.
+  `getSquares()` → `getObjects()`, **plus the far edge of every one of those
+  squares** (below).
 - No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
-  the same z. A `nil` square is an unloaded chunk and is skipped.
+  the same z. A `nil` square is an unloaded chunk and is skipped. No far edge
+  here: that walk visits every square of its block, room or not, so a base's south
+  wall is already standing on a square it goes to.
 
 Before either: the machine's **own** square. No square there is a chunk the streamer
 has not brought in, and a machine that is not in the world reaches nothing — `find`
@@ -71,6 +74,57 @@ you have walked away from lists no devices and answers `no such device` about th
 numbers in its own book, and its sensors fall out of the sampling book on the usual two
 scans of grace. It is not switched off for it and it keeps running: the rule is
 [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away).
+
+**A fixture on the far edge of a room belongs to the room.** A wall object belongs
+to ONE square and sits on that square's NORTH or WEST edge:
+`IsoDoor.getOppositeSquare` is `getNorth()` then `getGridSquare(x, y - 1, z)`, else
+`getGridSquare(x - 1, y, z)` (`javap -c`, offsets 0—56); `IsoWindow`'s and
+`IsoThumpable`'s are `getInsideSquare()` off the same `north` field (offsets 9—77 of
+each); `IsoCurtain`'s reads its sprite type and answers all four — curtainN north,
+curtainS south, curtainW west, curtainE east, `null` for a sprite that is none of
+them (offsets 0—141). So a door in a room's north or west wall stands on the room's
+own square and the walk above finds it, while a door in the room's **south or east**
+wall stands on the neighbouring square — the pavement, in no room at all, and a
+square the walk of the building's rooms never visited. Every south and east door,
+window and sheet of every building was invisible to `/dev` until 0.4.1, while the
+north and west ones were listed: a module fitted to a front door that never became
+a device.
+
+So each room square's **south and east neighbours** are looked at too, and what is
+taken off one is:
+
+- a **door, window or curtain** whose own `getOppositeSquare()` is that room square
+  — the engine's answer to which boundary the object is on, which is why a curtain's
+  four types need no reading of `north`;
+- a **light switch or lamp** whose sprite carries the `attached` property pointing
+  at that room square. A light is not the wall, it hangs on one, and the property is
+  what says which: vanilla reads `attachedN`, `attachedS`, `attachedW`, `attachedE`
+  in that order to work out where a survivor must stand to pull the chain
+  (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`). The *Round Outdoor
+  Lamp* is `MoveType = WallObject` with `attachedN` (`newtiledefinitions.tiles.txt`,
+  tileset `lighting_outdoor_01`, tile 24), so a porch lamp stands on the pavement
+  and hangs on the house's wall — and a **lamppost** has no `attached` property at
+  all and carries `streetlight` instead (tile 0 of the same tileset). That is how a
+  lamp on the building is told from the county's street lighting, and it is the
+  engine's own distinction rather than a guess about a sprite name.
+
+Nothing else is taken off a neighbour: a generator on the sidewalk is not the
+building's, and neither is a sensor dropped there (the far-edge walk does not read
+`getWorldObjects()` at all). And **only where the neighbour is in no room**: a
+neighbour that has a room is a square the walk visits in its own right, so an
+interior door is found from the other side and must not be found twice — the ordinal
+in an entry's key is handed out per square, so one object reached twice would be two
+devices with two numbers. It is the lock's own rule — exactly one of a door's two
+sides has a room — read from the room's end. The one fixture this does not reach is a
+wall shared by two **buildings**: the neighbour is the other building's room, so it
+is that building's machine that lists the door.
+
+**The numbers a save already has do not move for it.** A number hangs on where the
+device is (`os.devmap`, keyed `kind:x:y:z:side:n`) and is spent for the life of the
+machine, so a door the walk could never reach before takes the next free number and
+never anybody else's — even where it sorts ahead of them, which a south door does.
+The alternative, renumbering so that the ids follow the `(kind, x, y, z, side)`
+order, would move `door0` under a script that was written for it, and is not done.
 
 Classification is `instanceof`, and it answers a **list**, because one object can
 be two devices — or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
@@ -311,7 +365,7 @@ is what the first rule exists to stop.
 | television, radio set | off | `running` | `IsoWaveSignal.getDeviceData()` then `DeviceData.getIsTurnedOn()` |
 | generator | off | `running` | `IsoGenerator.isActivated()` |
 | light switch | — | — | a relay goes behind a plate whose only state is the light it works |
-| everything but a generator | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
+| door, window, curtain (map or built) | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
 | in a safehouse, with the option on | a player the safehouse allows | `safehouse` | `SafeHouse.getSafeHouse(square)`, then `SafeHouse.playerAllowed(IsoPlayer)` |
 
 The state asked for is the state of what the MODULE is screwed to and not of the
@@ -333,9 +387,19 @@ of them has a room* — and he stands on one side of it or the other. The inside
 side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
-**The generator is the one exemption.** It is an outdoor machine by
-construction, so a check that wanted a room round it would be a module nobody
-could ever fit.
+**The inside rule is the ENVELOPE's, and the envelope is three classes** — the
+door, the window and the curtain, which are what a stranger would strip to get in
+or to blind the alarm. That is what the rule was written for, and a module anybody
+could unscrew from the pavement is what it exists to stop.
+
+Nothing else is asked about a room. A **porch lamp** is the case a relay is FOR —
+an outdoor light on a timer, screwed to the outside of the house, reached from the
+pavement because there is nowhere else to stand — and a rule that wanted a room
+round it was a `relay` greyed out on the one fixture it was made for (reported in
+game on 0.4.0, a *Round Outdoor Lamp*). The same goes for an appliance, a set or a
+generator a survivor has dragged outside: they are fitted where they stand. The
+generator used to be the one exemption and is now one of five, for its own reason
+read wider — it is an outdoor machine by construction, and so is a porch lamp.
 
 **The safehouse gate is a sandbox option and it is OFF by default** —
 `SandboxVars.CeroSec.SafehouseModules`, read the way vanilla reads a grouped

@@ -922,11 +922,13 @@ Remove gives the box back whole, and the NUMBER stays.]],
 
 [[With the door open, and from inside.
 
-A box goes on -- and comes off -- only from INSIDE. Stand on the
-pavement and every entry is greyed: otherwise anybody walking past
-strips the hardware off your front door without coming in. An interior
-door has rooms on both sides and is wired from either. A generator is
-the one exception and takes its switch outdoors, where it belongs.
+A box goes on the building's SKIN -- a door, a window, a curtain -- only
+from INSIDE, or anybody walking past strips the hardware off your front
+door without coming in. On the pavement those entries are greyed. An
+interior door has a room on both sides and is wired from either.
+
+Nothing else asks where you stand: a porch lamp, a generator, an oven in
+the yard are fitted from where they are.
 
 And the thing has to be at rest:
 
@@ -934,10 +936,9 @@ And the thing has to be at rest:
   a curtain, a door's sheet drawn back
   a stove, a washer, a set  switched off
   a generator               stopped
-  a light switch            nothing at all
 
-Taking a box off asks the same. The light switch asks nothing at all:
-the plate comes off with the light burning.
+Taking a box off asks the same. A light switch asks nothing at all: the
+plate comes off with the light burning.
 
 If your server turned SAFEHOUSE MEMBERS ONLY on, a fixture inside a
 safehouse takes a box, and gives one back, only for its owner, its

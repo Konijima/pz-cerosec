@@ -8,6 +8,28 @@ date.
 
 ## Unreleased
 
+- **A door or window on the south or east wall of a building was invisible to
+  `/dev`. Every exterior door is found now.** A module fitted to the front door of
+  a house that faces south did nothing at all: the machine listed the doors of the
+  north and west walls and never saw the others, because a south wall stands on the
+  tile *outside* the room and the computer only ever walked the rooms. Doors,
+  windows and the sheets on them are all found from either side now, on every wall
+  of the building, and so are the shop's back door in the alley and the window over
+  the yard. Numbers you already have do not move: a door that turns up for the first
+  time takes the next free number, so `door0` in a script you wrote last week is
+  still the door you wrote it for, and the newly found ones are on the end of the
+  list.
+- **An outdoor lamp on the wall of the building is a `light` like any other.** The
+  porch lamp, the lamp over the back door, the neon sign on a shop front: fitted
+  with a relay, they are on the machine and on a timer with the rest. A lamppost on
+  the street is not the building's and is not listed.
+- **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
+  the pavement is refused for the building's skin -- a door, a window, a curtain --
+  and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into
+  the yard or a radio on the step are fitted where they stand, because the pavement
+  is the only place there is to stand in front of one. Nothing about the door, the
+  window and the curtain has changed.
+
 ## 0.4.0 - 2026-09-16
 
 The automation update. Nothing here needs a new save: machines you already

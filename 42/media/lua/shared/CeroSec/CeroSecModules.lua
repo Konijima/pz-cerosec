@@ -839,9 +839,23 @@ function CeroSecModules.safehouseGated()
 	return group[CeroSecModules.SANDBOX_SAFEHOUSE] == true
 end
 
--- Which square's room decides, or nil for a fixture nobody has to be inside for.
+-- Does a survivor have to be standing INSIDE to work on this fixture?
+--
+-- THE ENVELOPE, and only the envelope: the door, the window and the curtain -- the
+-- things a stranger would strip to get in or to blind the alarm. That is what the
+-- rule was written for, and a module anybody could unscrew from the pavement is
+-- what it exists to stop.
+--
+-- Nothing else is asked. A PORCH LAMP is the case a relay is for -- an outdoor
+-- light on a timer, screwed to the outside of the house, reached from the pavement
+-- because there is nowhere else to stand -- and a rule that wanted a room round it
+-- would be a module nobody could fit to the thing it was made for. The same goes
+-- for an appliance, a set or a generator a survivor has dragged outside: they are
+-- fitted where they stand. The generator used to be the one exemption and it is
+-- now one of five, for its own reason read wider.
 local function needsInside(object)
-	return not CeroSecModules.isGenerator(object)
+	return CeroSecModules.isDoor(object) or CeroSecModules.isWindow(object)
+		or CeroSecModules.isCurtain(object)
 end
 
 -- The state the fixture has to be in for THIS module, or nil when the module has
