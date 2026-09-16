@@ -2435,6 +2435,26 @@ qu'on lit sur le papier soit celui que la machine demande.
      - `su <compte>` sur la machine du même commerce, avec ce mot : ça passe ;
      - un zombie tué **dehors** (rue, stationnement, champ) n'en porte jamais. [ ]
 
+282b. **Pas d'ordinateur, pas de papier.** Le rapport de jeu : « un papier avec un
+     mot de passe dans une maison qui n'a aucun ordinateur ». Trouver une **maison**
+     avec une pièce que la carte appelle `office` (un bureau à l'étage, un coin
+     travail) et **aucun ordinateur vanilla** dans tout le bâtiment. Fouiller les
+     bureaux, commodes, tables de chevet et classeurs de cette maison :
+     - **aucun** papier `Sticky note: root / <mot>` nulle part ;
+     - tuer les zombies à l'intérieur : **aucun** papier `Note: <compte> / <mot>`
+       dans leurs poches non plus.
+     Puis **poser un ordinateur** ramassé ailleurs dans n'importe quelle pièce de
+     cette maison et fouiller de **nouveaux** contenants du même bâtiment : cette
+     fois le papier `root` finit par sortir. (Le mot dessus n'ouvre pas la machine
+     qu'on vient de poser : une machine portée à la main garde le disque qu'elle
+     avait et n'est jamais garnie — étape 250c. Il ouvre celle qu'on trouverait
+     déjà debout dans ce bâtiment.)
+
+     L'autre moitié de la règle, à constater dans une **maison avec un coin travail
+     ET un ordinateur vanilla jamais touché** : le papier est bien dans un tiroir, et
+     son mot de passe ouvre cette machine (étape 280). Un mot de passe sur un papier
+     appartient toujours à une machine qui est là. [ ]
+
 283. **Une disquette avec quelque chose dessus.** Fouiller les endroits à
      disquettes (bureau de cybercafé, classeur, étagère d'électronique) jusqu'à
      en trouver une dont le nom dans l'inventaire n'est pas le nom ordinaire d'une

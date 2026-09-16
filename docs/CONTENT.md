@@ -226,7 +226,9 @@ Five things to know:
   account, which is what most 1993 desk machines had and is what lets a survivor in
   without finding anything.
 - `root = true` is what puts a paper in that premises' drawers, because the note's
-  derivation is the same one. A profile with no root password has no note anywhere.
+  derivation is the same one. A profile with no root password has no note anywhere —
+  and neither has a premises no computer stands in, whatever its profile says (see
+  *The papers*).
 - a `bin` entry names a script in `CeroSecContent.SCRIPTS` and never carries its
   text: one script, one copy, so the disks and the homes cannot drift into two
   versions of one file — and the bench runs every script once.
@@ -1280,11 +1282,45 @@ one it is is in the name the item carries, and nothing else about it differs.
 
 | | |
 | --- | --- |
-| **`Sticky note: root / falcon12`** | in a desk, counter, filing cabinet, locker, dresser, side table or school desk of a premises whose profile has a root password. **One per premises, at most.** |
+| **`Sticky note: root / falcon12`** | in a desk, counter, filing cabinet, locker, dresser, side table or school desk of a premises whose profile has a root password **and in which a computer stands**. **One per premises, at most.** |
 | **`Note: rmiller / thunder07`** | in the pocket of about **one zombie in twenty** killed inside such a premises. His **own** login — never root's, which he was never given. |
 
 Nothing is ever dropped on the floor: a note on the ground is a note under a
 bookshelf nobody will look at.
+
+**A paper always belongs to a machine that is really there.** A report off the
+glass: a sticky note with root's password in a house with no computer in it at
+all — a house with a study in it is a premises whose profile has a root password,
+so a paper went into a drawer for a machine that does not exist. So both notes
+ask the world first, and nothing is written for a premises no computer stands in.
+
+It is decided at fill time, because nothing about a premises' machines is in the
+save: the premises' rooms are walked — the **tenancy's** rooms for a shop in a
+mall and the **building's** otherwise, out of the same cached lists the wiring
+uses (`CeroSecNet.roomsOf` / `tenanciesOf`), so a mall costs here what it costs
+there — then each room's live `IsoRoom`, its squares, and their objects. A
+computer is an object wearing one of the computer sprites (`CeroSec.SPRITES_OFF`
+or `SPRITES_ON`), which is the very test the `MapObjects` registration keys on,
+and the walk stops at the first one.
+
+**By the sprite and not by asking the GlobalObject system.** Adoption is a chunk
+event, and within one chunk the order does favour us — `IsoChunk.doLoadGridsquare`
+calls `MapObjects.newGridSquare`/`loadGridSquare` at offsets 859 and 864, inside
+the loop over the chunk's squares, while the loot fill that raises
+`OnFillContainer` is a later loop entirely (1350–1408, `loadGridSquareIfNeeded` →
+`LoadGridsquarePerformanceWorkaround.LoadGridsquare`) — but a premises is not one
+chunk. The drawer's chunk comes in while the room the computer stands in is still
+away, and then that computer has no global object and never had one. A sprite is
+true of a machine nobody has switched on and nobody has adopted.
+
+**Three answers and not two:** yes, no, and *the world cannot say* — a room whose
+chunks are away, and a walk that hit its ceiling of `CeroSecNotes.SQUARES_MAX`
+(4096 squares, for the whole-building branch of a school or a hospital). Cannot-say
+writes nothing **and leaves the premises unmarked**, so the next container filled
+in it asks again; one chunk being out while a drawer was filled must not cost the
+premises its paper for ever. The answer *yes* is memoised per premises for the
+session and never saved — only yes, because a premises with no computer today may
+have one tomorrow.
 
 **The hook is `Events.OnFillContainer`**, and it covers both. It carries three
 arguments — roomName, containerType, and a container — vanilla's own `LootLog.lua:7`
