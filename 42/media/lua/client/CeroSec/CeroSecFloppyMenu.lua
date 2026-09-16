@@ -1,5 +1,6 @@
 require "ISUI/ISTextBox"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecMenu"
 
 --
 -- Writing on a floppy, from the inventory menu.
@@ -228,12 +229,12 @@ function CeroSecFloppyMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 	if not CeroSecFloppyMenu.canWrite(playerObj) then return end
 
 	if CeroSecFloppyMenu.labelOn(disk) == nil then
-		context:addOption(getText("ContextMenu_CeroSec_LabelFloppy"), disk,
+		CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_LabelFloppy"), disk,
 			CeroSecFloppyMenu.onLabel, playerObj)
 	else
-		context:addOption(getText("ContextMenu_CeroSec_RelabelFloppy"), disk,
+		CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_RelabelFloppy"), disk,
 			CeroSecFloppyMenu.onLabel, playerObj)
-		context:addOption(getText("ContextMenu_CeroSec_EraseLabel"), disk,
+		CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_EraseLabel"), disk,
 			CeroSecFloppyMenu.onErase, playerObj)
 	end
 end

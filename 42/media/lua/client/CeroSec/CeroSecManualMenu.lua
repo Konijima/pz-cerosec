@@ -1,4 +1,5 @@
 require "ISUI/ISInventoryPane"
+require "CeroSec/CeroSecMenu"
 require "CeroSec/CeroSecManualUI"
 require "CeroSec/CeroSecPhonebookUI"
 
@@ -188,8 +189,10 @@ function CeroSecManualMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 		if copy then
 			-- addOption(label, target, callback, ...) calls callback(target, ...),
 			-- the way the vanilla debug menu adds its own option to this same
-			-- event (ISRemoveItemTool.lua:369).
-			context:addOption(getText(book.label), copy,
+			-- event (ISRemoveItemTool.lua:369) -- through CeroSecMenu.addTop, so it
+			-- lands above vanilla's Equip and Drop: a book a survivor is holding is
+			-- a book to read.
+			CeroSecMenu.addTop(context, getText(book.label), copy,
 				CeroSecManualMenu.onRead, playerObj, book.volume)
 		end
 	end
@@ -200,7 +203,7 @@ function CeroSecManualMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 	-- turns it into the Guide (CeroSecManualMenu.LEGACY).
 	local legacy = CeroSecManualMenu.findManual(items, CeroSecManualMenu.LEGACY.item)
 	if legacy then
-		context:addOption(getText(CeroSecManualMenu.LEGACY.label), legacy,
+		CeroSecMenu.addTop(context, getText(CeroSecManualMenu.LEGACY.label), legacy,
 			CeroSecManualMenu.onRead, playerObj, CeroSecManualMenu.LEGACY.volume)
 	end
 
@@ -208,8 +211,8 @@ function CeroSecManualMenu.OnFillInventoryObjectContextMenu(playerNum, context, 
 	-- goes under the volumes a survivor is carrying rather than in among them.
 	local phonebook = CeroSecManualMenu.findManual(items, CeroSecManualMenu.PHONEBOOK.item)
 	if phonebook then
-		context:addOption(getText(CeroSecManualMenu.PHONEBOOK.label), phonebook,
-			CeroSecManualMenu.onLookUp, playerObj)
+		CeroSecMenu.addTop(context, getText(CeroSecManualMenu.PHONEBOOK.label),
+			phonebook, CeroSecManualMenu.onLookUp, playerObj)
 	end
 end
 

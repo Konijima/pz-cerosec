@@ -1508,8 +1508,9 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
 215e. **L'annuaire : le trouver et le lire.** Ramasser un `Phonebook` (table
      d'entrée, comptoir de magasin, tiroir de bureau — l'objet vanilla) et faire
-     un clic droit dessus dans le sac : sous l'option vanilla **Lire** (qui doit
-     toujours être là) il y a **Chercher un numéro**. Cliquer : une fenêtre de
+     un clic droit dessus dans le sac : **Chercher un numéro** est la première
+     entrée du menu, au-dessus de l'option vanilla **Lire** (qui doit toujours
+     être là). Cliquer : une fenêtre de
      livre s'ouvre, comme le manuel, titrée `Knox County Telephone Directory`.
      Le premier feuillet est la page de titre, le deuxième la table des matières
      avec une seule ligne `Exchange NNN`, et ensuite la préface (deux lignes) puis
@@ -3335,6 +3336,42 @@ de la machine cliquée dans la liste.
      débogage** du tout dans le sous-menu **CeroSec (dev)**. En solo c'est toute la
      règle ; sur un serveur dédié, un joueur **admin** la retrouve et un joueur
      ordinaire non. [ ]
+
+## AJ. Nos entrées en haut du clic droit (menus)
+
+Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
+(Grab, Equip, Place...). Une seule exception, voulue et écrite : le sous-menu
+**CeroSec (dev)**, qui reste la dernière entrée du menu (étape 101).
+
+350. **Un ordinateur allumé.** Clic droit sur un ordinateur allumé posé sur un
+     bureau, au milieu d'un décor qui donne des entrées au jeu (une chaise, un
+     meuble, un objet au sol). Attendu, du haut vers le bas : **Use computer**,
+     **Turn off computer**, puis — s'il y a de quoi — **Insert floppy** et
+     **Eject floppy**, et SEULEMENT ensuite les entrées du jeu. L'action
+     principale d'abord : sur une machine allumée c'est s'en servir, pas
+     l'éteindre. [ ]
+351. **Un ordinateur éteint.** Même clic droit sur une machine éteinte. Attendu :
+     **Turn on computer** est la PREMIÈRE entrée du menu (il n'y a rien à
+     utiliser sur un écran noir), le lecteur derrière elle si une disquette est
+     en jeu, les entrées du jeu ensuite. [ ]
+352. **Une entrée grisée reste en haut.** Se placer hors de portée (derrière un
+     comptoir) et refaire l'étape 350. Attendu : les mêmes entrées, dans le même
+     ordre et à la même place, grisées avec leur infobulle — une entrée refusée
+     se lit là où on la cherche. [ ]
+353. **Le sous-menu du matériel.** Électricité 1, tournevis et un module en main,
+     clic droit sur un interrupteur. Attendu : **CeroSec hardware** est en haut
+     du menu, au-dessus du **Turn on/off** de la lampe qui est au jeu et non à
+     nous, et le sous-menu s'ouvre normalement. [ ]
+354. **Les objets dans le sac.** Clic droit sur un volume du manuel dans
+     l'inventaire → **Read the User's Guide** est la première entrée, au-dessus
+     de **Équiper** et de **Déposer**. Même chose pour une disquette avec un
+     stylo sur soi (**Étiqueter la disquette**), et pour un `Phonebook`
+     (**Chercher un numéro**, au-dessus de l'option vanilla **Lire**, qui doit
+     toujours être là). [ ]
+355. **Le sous-menu dev reste en bas.** Avec `CeroSec.DEV_DEBUG_MENU = true`,
+     clic droit sur un ordinateur : **CeroSec (dev)** est la DERNIÈRE entrée du
+     menu, sous les entrées du jeu. C'est l'exception voulue : un outil de
+     développeur ne pousse pas les entrées de la machine vers le bas. [ ]
 
 ## Rapport
 

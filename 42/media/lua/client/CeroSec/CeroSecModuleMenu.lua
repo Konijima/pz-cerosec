@@ -1,4 +1,5 @@
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecMenu"
 require "CeroSec/CeroSecModules"
 require "CeroSec/ISCeroSecModuleAction"
 
@@ -147,8 +148,12 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 	if #rows == 0 then return end
 
 	-- getNew, addSubMenu, then fill it: the order every vanilla submenu is built
-	-- in (ISWorldObjectContextMenu.lua:1167-1169).
-	local parent = context:addOption(getText("ContextMenu_CeroSec_Modules"))
+	-- in (ISWorldObjectContextMenu.lua:1167-1169). The parent goes at the TOP of the
+	-- menu, which is where every entry of this mod goes and which is how vanilla's
+	-- own top submenus are built too (ISHutchMenu.lua:20-22) -- see CeroSecMenu.
+	-- A light switch's own Turn on is the game's and stays where the game puts it;
+	-- what a survivor came to the switch with a screwdriver for is this.
+	local parent = CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_Modules"))
 	local sub = ISContextMenu:getNew(context)
 	context:addSubMenu(parent, sub)
 

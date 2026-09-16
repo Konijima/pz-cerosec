@@ -1,4 +1,5 @@
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecMenu"
 require "CeroSec/CeroSecReach"
 require "CeroSec/ISCeroSecToggleAction"
 require "CeroSec/ISCeroSecUseAction"
@@ -185,7 +186,8 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 	if inDrive then insertReason = "Tooltip_CeroSec_DriveFull" end
 
 	if #disks == 1 then
-		local insert = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"),
+		local insert = CeroSecMenu.addTop(context,
+			getText("ContextMenu_CeroSec_InsertFloppy"),
 			worldobjects, CeroSecContextMenu.onInsertFloppy, computer, playerObj, height,
 			disks[1])
 		grey(insert, insertReason)
@@ -198,14 +200,16 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 		-- No callback on it either -- label only, the way the dev submenu's own parent
 		-- is added -- so there is nothing there to fire even if a greyed entry were
 		-- ever clickable.
-		local insert = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"))
+		local insert = CeroSecMenu.addTop(context,
+			getText("ContextMenu_CeroSec_InsertFloppy"))
 		grey(insert, insertReason)
 	elseif #disks > 1 then
 		-- getNew, addSubMenu, then fill it: the order every vanilla submenu is built
 		-- in (ISWorldObjectContextMenu.lua:1167-1169), and the order addDevMenu below
 		-- builds its own in. addSubMenu copies the child's number onto the parent
 		-- option, so the child has to exist first.
-		local parent = context:addOption(getText("ContextMenu_CeroSec_InsertFloppy"))
+		local parent = CeroSecMenu.addTop(context,
+			getText("ContextMenu_CeroSec_InsertFloppy"))
 		local sub = ISContextMenu:getNew(context)
 		context:addSubMenu(parent, sub)
 		for d = 1, #disks do
@@ -216,7 +220,8 @@ function CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj,
 
 	-- And nothing to eject is not an entry either.
 	if inDrive then
-		local eject = context:addOption(getText("ContextMenu_CeroSec_EjectFloppy"),
+		local eject = CeroSecMenu.addTop(context,
+			getText("ContextMenu_CeroSec_EjectFloppy"),
 			worldobjects, CeroSecContextMenu.onEjectFloppy, computer, playerObj, height)
 		grey(eject, reason)
 	end
@@ -314,8 +319,40 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 
 	-- The sprite is the truth for the menu label: it is what the player sees.
 	local isOn = CeroSec.isOnSprite(computer:getSpriteName())
+
+	-- THE PRIMARY ACTION LEADS, and which one that is depends on the screen: a lit
+	-- machine is there to be used and a dark one to be switched on. So "Use
+	-- computer" goes above "Turn off computer" on a machine that is running --
+	-- using it is what a survivor came to the desk for and switching it off is the
+	-- rarer gesture -- and on a dark one there is nothing to use and "Turn on
+	-- computer" is the first entry there is. Every entry below is under it, and all
+	-- of them are above the game's own (CeroSecMenu.addTop).
+	--
+	-- Nothing to use on a dark screen: the terminal option only exists once the
+	-- machine is on. Out of reach and no access grey it out exactly as the toggle
+	-- below is greyed -- the same two reasons, in the same order -- because it is
+	-- the same walk.
+	if isOn then
+		local use = CeroSecMenu.addTop(context, getText("ContextMenu_CeroSec_Use"),
+			worldobjects, CeroSecContextMenu.onUse, computer, playerObj, height)
+
+		local useReason
+		if height == "high" then
+			useReason = "Tooltip_CeroSec_TooHigh"
+		elseif not CeroSecReach.canStandInFront(playerObj, computer) then
+			useReason = "Tooltip_CeroSec_NoAccess"
+		end
+
+		if useReason then
+			use.notAvailable = true
+			use.toolTip = ISWorldObjectContextMenu.addToolTip()
+			use.toolTip:setVisible(false)
+			use.toolTip.description = getText(useReason)
+		end
+	end
+
 	local label = isOn and "ContextMenu_CeroSec_TurnOff" or "ContextMenu_CeroSec_TurnOn"
-	local option = context:addOption(getText(label), worldobjects,
+	local option = CeroSecMenu.addTop(context, getText(label), worldobjects,
 		CeroSecContextMenu.onToggle, computer, playerObj, height)
 
 	-- One reason at a time, cheapest first: out of reach beats no access beats no
@@ -334,28 +371,6 @@ function CeroSecContextMenu.OnFillWorldObjectContextMenu(player, context, worldo
 		option.toolTip = ISWorldObjectContextMenu.addToolTip()
 		option.toolTip:setVisible(false)
 		option.toolTip.description = getText(reason)
-	end
-
-	-- Nothing to use on a dark screen: the terminal option only exists once the
-	-- machine is on. Out of reach and no access grey it out exactly as above --
-	-- the same two reasons, in the same order -- because it is the same walk.
-	if isOn then
-		local use = context:addOption(getText("ContextMenu_CeroSec_Use"), worldobjects,
-			CeroSecContextMenu.onUse, computer, playerObj, height)
-
-		local useReason
-		if height == "high" then
-			useReason = "Tooltip_CeroSec_TooHigh"
-		elseif not CeroSecReach.canStandInFront(playerObj, computer) then
-			useReason = "Tooltip_CeroSec_NoAccess"
-		end
-
-		if useReason then
-			use.notAvailable = true
-			use.toolTip = ISWorldObjectContextMenu.addToolTip()
-			use.toolTip:setVisible(false)
-			use.toolTip.description = getText(useReason)
-		end
 	end
 
 	CeroSecContextMenu.addDrive(context, worldobjects, computer, playerObj, height)
@@ -383,6 +398,15 @@ end
 -- front of it -- because they are not about the computer at all. The debug entry
 -- does take the computer, but only as the machine it opens SELECTED: it is the one
 -- the survivor right-clicked, which is the one he is asking about.
+--
+-- SO IT IS THE ONE ENTRY OF THIS MOD THAT DOES NOT GO TO THE TOP, and it is the
+-- only declared exception to CeroSecMenu.addTop. Plain addOption, which appends: it
+-- goes under the game's own Grab and Equip as well as under ours. Nobody who is
+-- not a developer ever sees it -- both flags are false in a shipped build and the
+-- third condition is an admin's connection (docs/DEBUG.md) -- so the one reader it
+-- has is somebody who knows it is at the bottom, and a testing door above "Use
+-- computer" would push the machine's own entries down the menu for the sake of a
+-- tool.
 --
 -- With both flags off this adds nothing and there is not an entry to be seen.
 function CeroSecContextMenu.addDevMenu(context, playerObj, computer)

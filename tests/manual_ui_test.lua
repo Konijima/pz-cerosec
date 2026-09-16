@@ -152,6 +152,25 @@ end }
 -- built and filled but never attached is an entry that leads nowhere -- and
 -- the entries inside it would look perfectly right to a test that only counted
 -- them.
+--
+-- AND IT MODELS WHERE AN OPTION LANDS, because that is now part of what the mod
+-- decides: every entry of this mod goes at the TOP of the menu (CeroSecMenu), so a
+-- fake that appended everything and kept its labels in the order it was CALLED
+-- could not tell the menu the glass shows from the order the file happens to be
+-- written in. The three the game gives a mod are written here exactly as the engine
+-- writes them:
+--
+--   * addOption appends -- `self.options[self.numOptions] = option` (:873-887).
+--   * addOptionOnTop shifts every id up by one and puts the new option at index 1
+--     (:914-930), which is why calling it N times reverses the N.
+--   * insertOptionBefore finds an option BY NAME, shifts the tail down from there
+--     and renumbers every id (:965-1001); an empty menu or a name nothing answers
+--     to falls through to addOption (:967-969, :979-981), and index 1 is
+--     addOptionOnTop itself (:982-984).
+--
+-- `labels` is a POSITIONAL mirror of options, rebuilt after every insertion: it is
+-- what the blocks below read the menu off, and a mirror kept by appending would be
+-- the very thing this fake exists to stop being green.
 local ContextMenu = {}
 ContextMenu.__index = ContextMenu
 function ContextMenu.new()
@@ -164,15 +183,72 @@ end
 -- could not tell a submenu entry that inserts the yellow disk from one that
 -- inserts the blue. arg and arg2 stay beside args because the blocks below read
 -- them by those names.
-function ContextMenu:addOption(label, target, callback, ...)
+--
+-- `name` is the engine's own field for the words on an option (allocOption,
+-- :849-856) and `label` is the name this bench has always read it by; both are set
+-- to the one string, because insertOptionBefore looks an option up by `name` and a
+-- fake that had only `label` would send the mod down its fallback every time.
+function ContextMenu:allocOption(label, target, callback, ...)
 	local n = select("#", ...)
 	local args = { ... }
-	local option = { label = label, target = target, callback = callback,
+	return { label = label, name = label, target = target, callback = callback,
 		args = args, argCount = n, arg = args[1], arg2 = args[2] }
-	self.labels[#self.labels + 1] = label
+end
+-- The ids and the label mirror, after any insertion. The engine renumbers ids in
+-- insertOptionBefore (:996-998) and the window draws a submenu off `option.id`
+-- (:780-781), so an id left pointing at the old row is a submenu drawn at the wrong
+-- height.
+function ContextMenu:resync()
+	self.labels = {}
+	for i = 1, #self.options do
+		self.options[i].id = i
+		self.labels[i] = self.options[i].label
+	end
+end
+function ContextMenu:addOption(label, target, callback, ...)
+	local option = self:allocOption(label, target, callback, ...)
 	self.options[#self.options + 1] = option
+	self:resync()
 	return option
 end
+function ContextMenu:addOptionOnTop(label, target, callback, ...)
+	local option = self:allocOption(label, target, callback, ...)
+	table.insert(self.options, 1, option)
+	self:resync()
+	return option
+end
+function ContextMenu:insertOptionBefore(nextName, label, target, callback, ...)
+	if #self.options == 0 then
+		return self:addOption(label, target, callback, ...)
+	end
+	local index, found = 1, false
+	for i = 1, #self.options do
+		index = i
+		if self.options[i].name == nextName then found = true; break end
+	end
+	if not found then return self:addOption(label, target, callback, ...) end
+	if index == 1 then return self:addOptionOnTop(label, target, callback, ...) end
+	local option = self:allocOption(label, target, callback, ...)
+	table.insert(self.options, index, option)
+	self:resync()
+	return option
+end
+function ContextMenu:insertOptionAfter(prevName, label, target, callback, ...)
+	if #self.options == 0 then
+		return self:addOption(label, target, callback, ...)
+	end
+	local index, found = 1, false
+	for i = 1, #self.options do
+		index = i
+		if self.options[i].name == prevName then found = true; break end
+	end
+	if not found then return self:addOption(label, target, callback, ...) end
+	local option = self:allocOption(label, target, callback, ...)
+	table.insert(self.options, index + 1, option)
+	self:resync()
+	return option
+end
+
 function ContextMenu:addSubMenu(option, menu)
 	self.subs[#self.subs + 1] = { option = option, menu = menu }
 	menu.hungOff = option
@@ -228,6 +304,9 @@ local FILES = {
 	"shared/CeroSec/CeroSecPhonebook.lua",
 	"client/CeroSec/CeroSecPhonebookUI.lua",
 	"client/CeroSec/CeroSecManualUI.lua",
+	-- Where every entry of this mod goes on a menu, which the three menu files
+	-- below all go through (CeroSecMenu.addTop).
+	"client/CeroSec/CeroSecMenu.lua",
 	"client/CeroSec/CeroSecManualMenu.lua",
 }
 for i = 1, #FILES do
@@ -252,6 +331,53 @@ local function eq(what, got, want)
 	count = count + 1
 	if got ~= want then
 		error("FAIL: " .. what .. ": got " .. tostring(got) .. ", want " .. tostring(want), 2)
+	end
+end
+
+-- Two entries of the GAME's own, put on before ours. The engine fills the world
+-- menu in zombie.iso.ISWorldObjectContextMenuLogic.createMenuEntries -- called at
+-- ISWorldObjectContextMenu.lua:209 -- and fires the event a mod listens on four
+-- lines later at :213, so Grab and Equip are already on the menu when our own go
+-- on. Without them "ours are first" would be an assertion about a menu with
+-- nothing else in it, which is green whatever the mod does.
+local VANILLA_ENTRIES = { "Grab", "Equip" }
+local function withVanilla(menu)
+	for i = 1, #VANILLA_ENTRIES do menu:addOption(VANILLA_ENTRIES[i]) end
+	return menu
+end
+
+-- The leading run of OUR entries, by the mark CeroSecMenu.addTop leaves on each
+-- one. Read off the mark and not off a list of labels typed here, so an entry
+-- somebody adds without going through addTop is an entry this run does not count
+-- and the assertions below go red on.
+local function ourOptions(menu)
+	local out = {}
+	for i = 1, #menu.options do
+		if menu.options[i].cerosec ~= true then break end
+		out[#out + 1] = menu.options[i]
+	end
+	return out
+end
+
+local function ourLabels(menu)
+	local out = {}
+	local ours = ourOptions(menu)
+	for i = 1, #ours do out[i] = ours[i].label end
+	return out
+end
+
+-- Our block is the first N, in the order given, and the game's own entries are
+-- still under it in their own order. Both halves: a menu that dropped vanilla's
+-- entries would pass the first on its own.
+local function checkTop(what, menu, want)
+	local got = ourLabels(menu)
+	eq(what .. ": " .. #want .. " of our entries lead the menu", #got, #want)
+	for i = 1, #want do
+		eq(what .. ": entry " .. i .. " is " .. want[i], got[i], want[i])
+	end
+	for i = 1, #VANILLA_ENTRIES do
+		eq(what .. ": the game's " .. VANILLA_ENTRIES[i] .. " is under them",
+			menu.labels[#want + i], VANILLA_ENTRIES[i])
 	end
 end
 
@@ -981,22 +1107,31 @@ end
 --
 
 do
-	local options = {}
-	local context = { addOption = function(_, label, target, callback, arg, arg2)
-		options[#options + 1] = { label = label, target = target,
-			callback = callback, arg = arg, arg2 = arg2 }
-		return {}
-	end }
+	-- A fresh menu per selection, with the game's OWN entries already on it: the
+	-- inventory menu is fully built when the event a mod listens on is fired
+	-- (ISInventoryPaneContextMenu.lua:935, after Equip, Drop and the More submenu
+	-- at :932), so Grab and Equip stand in for what our entries have to be above.
+	--
+	-- `options` is the leading run of OURS, in the order the glass shows them, which
+	-- is what every assertion below reads; `menu` is the whole thing, for the ones
+	-- about where the run sits.
+	local menu, options
+	local function fill(items)
+		menu = withVanilla(ContextMenu.new())
+		CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, menu, items)
+		options = ourOptions(menu)
+		return options
+	end
 	local player = newPlayer()
 	_G.getSpecificPlayer = function() return player end
 
 	local manual = newItem()
 	local other = newItem("Base.Book")
 
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { other })
+	fill({ other })
 	eq("no option for a book that is not ours", #options, 0)
 
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { other, manual })
+	fill({ other, manual })
 	eq("one option when the manual is in the selection", #options, 1)
 	eq("named the way the menu names it", options[1].label, "ContextMenu_CeroSec_ReadUser")
 	eq("carrying the manual itself", options[1].target, manual)
@@ -1006,9 +1141,8 @@ do
 	-- it is volume one's own label -- a second "Read the manual" beside "Read the
 	-- User's Guide" would be the menu offering the same book twice under two names,
 	-- which is the duplicate the set replaced.
-	options = {}
 	local legacy = newItem("CeroSec.Manual")
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { legacy })
+	fill({ legacy })
 	eq("the retired book is on the menu", #options, 1)
 	eq("under volume one's own label", options[1].label, "ContextMenu_CeroSec_ReadUser")
 	eq("carrying that very copy", options[1].target, legacy)
@@ -1016,18 +1150,20 @@ do
 
 	-- And the two together are two entries, in the order the set is printed in: the
 	-- Guide first, the book it replaced under it.
-	options = {}
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { legacy, manual })
+	fill({ legacy, manual })
 	eq("both books, both entries", #options, 2)
 	eq("the Guide first", options[1].target, manual)
 	eq("and the retired book under it", options[2].target, legacy)
+	-- AND BOTH OF THEM ABOVE THE GAME'S OWN. A book in a survivor's hands is a book
+	-- to read, and an entry under Equip and Drop is an entry he scrolls past.
+	checkTop("two books", menu,
+		{ "ContextMenu_CeroSec_ReadUser", "ContextMenu_CeroSec_ReadUser" })
 
 	-- A stack of identical items arrives as one table with an items array
 	-- inside it, not as an InventoryItem. That is the shape that would slip
 	-- through a naive loop, so it is the shape the test insists on.
-	options = {}
 	local stack = { items = { manual, newItem() } }
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { stack })
+	fill({ stack })
 	eq("a stack of manuals is still one option", #options, 1)
 	eq("and it carries the first of the stack", options[1].target, manual)
 
@@ -1049,9 +1185,8 @@ do
 	}
 	local copies = {}
 	for v = 1, #VOLUMES do
-		options = {}
 		copies[v] = newItem(VOLUMES[v].item)
-		CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { other, copies[v] })
+		fill({ other, copies[v] })
 		eq(VOLUMES[v].item .. " is one option", #options, 1)
 		eq("named after its own volume", options[1].label, VOLUMES[v].label)
 		eq("carrying that copy", options[1].target, copies[v])
@@ -1060,15 +1195,17 @@ do
 
 	-- All three in one selection: three options, in the order the set is
 	-- printed in and not in whatever order a hash walked them.
-	options = {}
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
-		{ copies[3], copies[1], copies[2] })
+	fill({ copies[3], copies[1], copies[2] })
 	eq("the whole set is three options", #options, 3)
 	for v = 1, #VOLUMES do
 		eq("option " .. v .. " is volume " .. v, options[v].arg2, VOLUMES[v].volume)
 		eq("option " .. v .. " carries volume " .. v .. "'s own copy",
 			options[v].target, copies[v])
 	end
+	-- The three of them lead the menu, in the order the set is printed in, with the
+	-- game's own entries under all three.
+	checkTop("the whole set", menu,
+		{ VOLUMES[1].label, VOLUMES[2].label, VOLUMES[3].label })
 
 	-- Every label the menu can print is a key the mod ships a string for. A
 	-- label nobody translated comes out on the menu as the key itself.
@@ -1141,17 +1278,20 @@ do
 	--
 	-- The menu entry
 	--
-	local options = {}
-	local context = { addOption = function(_, label, target, callback, arg, arg2)
-		options[#options + 1] = { label = label, target = target,
-			callback = callback, arg = arg, arg2 = arg2 }
-		return {}
-	end }
+	-- Same menu as the volumes' own bench above: the game's entries already on it,
+	-- and ours read off the leading run.
+	local menu, options
+	local function fill(items)
+		menu = withVanilla(ContextMenu.new())
+		CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, menu, items)
+		options = ourOptions(menu)
+		return options
+	end
 	local reader = newReader(300.5, 700.5)
 	_G.getSpecificPlayer = function() return reader end
 
 	local book = newPhonebook()
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context, { book })
+	fill({ book })
 	eq("a phone book is one option", #options, 1)
 	eq("named the way the menu names it", options[1].label,
 		"ContextMenu_CeroSec_LookUpNumbers")
@@ -1159,12 +1299,13 @@ do
 	eq("and it is the look-up and not the reader", options[1].callback,
 		CeroSecManualMenu.onLookUp)
 	eq("with the survivor behind it", options[1].arg, reader)
+	-- And it leads the menu, above vanilla's own Read: looking a number up is what a
+	-- survivor opens a phone book for on this mod's machines.
+	checkTop("a phone book", menu, { "ContextMenu_CeroSec_LookUpNumbers" })
 
 	-- And nothing else gets it. A manual is not a phone book and a phone book is
 	-- not one of the volumes: the entry is on Base.Phonebook and on nothing else.
-	options = {}
-	CeroSecManualMenu.OnFillInventoryObjectContextMenu(0, context,
-		{ newItem("Base.Book"), newItem("CeroSec.ManualUser") })
+	fill({ newItem("Base.Book"), newItem("CeroSec.ManualUser") })
 	for i = 1, #options do
 		check("only the volume is offered here",
 			options[i].label ~= "ContextMenu_CeroSec_LookUpNumbers")
@@ -1643,9 +1784,14 @@ do
 	chunk()
 
 	-- The whole menu a right-click on one computer builds.
+	-- The whole menu a right-click builds, the game's own entries included: the
+	-- engine has already filled the menu when the event this listens on is fired
+	-- (withVanilla, above), so what the blocks below read is a menu with something
+	-- else in it -- which is the only kind of menu "ours are first" means anything
+	-- about.
 	local function fullMenuOn(target)
 		picked = target
-		local context = ContextMenu.new()
+		local context = withVanilla(ContextMenu.new())
 		CeroSecContextMenu.OnFillWorldObjectContextMenu(0, context, {}, false)
 		return context
 	end
@@ -1654,42 +1800,52 @@ do
 		return fullMenuOn(target).labels
 	end
 
-	-- On, with both flags: the two options that belong to the machine, and the
-	-- dev submenu LAST behind them.
+	-- On, with both flags: the machine's own two entries at the TOP of the menu --
+	-- the terminal first, because a lit machine is there to be used -- then the
+	-- game's own, and the dev submenu LAST of everything.
 	CeroSec.DEV_MANUAL_MENU = true
 	CeroSec.DEV_DEBUG_MENU = true
-	local labels = menuOn(computer)
-	eq("a lit computer offers three entries", #labels, 3)
-	eq("the machine's own first", labels[1], "ContextMenu_CeroSec_TurnOff")
-	eq("then its terminal", labels[2], "ContextMenu_CeroSec_Use")
-	eq("and the dev submenu last", labels[3], "ContextMenu_CeroSec_Dev")
+	local menu = fullMenuOn(computer)
+	local labels = menu.labels
+	checkTop("a lit computer", menu,
+		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff" })
+	eq("a lit computer with both doors is five entries", #labels, 5)
+	eq("and the dev submenu is the last of them", labels[#labels],
+		"ContextMenu_CeroSec_Dev")
 
-	-- Off: no terminal, and the submenu is still there and still last, because
-	-- neither door asks anything of the computer.
-	labels = menuOn(off)
-	eq("a dark computer offers two entries", #labels, 2)
-	eq("no terminal on a dark screen", labels[1], "ContextMenu_CeroSec_TurnOn")
-	eq("the submenu is still last", labels[2], "ContextMenu_CeroSec_Dev")
+	-- Off: no terminal, so the toggle IS the primary action and leads; and the
+	-- submenu is still there and still last, because neither door asks anything of
+	-- the computer.
+	menu = fullMenuOn(off)
+	labels = menu.labels
+	checkTop("a dark computer", menu, { "ContextMenu_CeroSec_TurnOn" })
+	eq("a dark computer with both doors is four entries", #labels, 4)
+	eq("the submenu is still last", labels[#labels], "ContextMenu_CeroSec_Dev")
 
 	-- Without BOTH flags: not an entry to be seen, on either machine. Both,
 	-- because either one on is a submenu with something in it.
 	CeroSec.DEV_MANUAL_MENU = false
 	CeroSec.DEV_DEBUG_MENU = false
-	labels = menuOn(computer)
-	eq("with both flags off a lit computer is back to two", #labels, 2)
+	menu = fullMenuOn(computer)
+	labels = menu.labels
+	checkTop("a lit computer with both flags off", menu,
+		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff" })
+	eq("with both flags off a lit computer is back to four", #labels, 4)
 	for i = 1, #labels do
 		check("and none of them is the submenu",
 			labels[i] ~= "ContextMenu_CeroSec_Dev")
 	end
-	labels = menuOn(off)
-	eq("and a dark one back to one", #labels, 1)
-	eq("its own option and nothing else", labels[1], "ContextMenu_CeroSec_TurnOn")
+	menu = fullMenuOn(off)
+	labels = menu.labels
+	checkTop("a dark computer with both flags off", menu,
+		{ "ContextMenu_CeroSec_TurnOn" })
+	eq("and a dark one back to three", #labels, 3)
 
 	-- One flag on is a submenu with only that flag's doors in it. The manual's
 	-- first: one volume on the bench's shelf, so one entry and nothing else.
 	CeroSec.DEV_MANUAL_MENU = true
 	CeroSec.DEV_DEBUG_MENU = false
-	local menu = fullMenuOn(computer)
+	menu = fullMenuOn(computer)
 	eq("the manual flag alone is still a submenu", #menu.subs, 1)
 	eq("with the volume in it and nothing else", #menu.subs[1].menu.options, 1)
 
@@ -1716,8 +1872,8 @@ do
 	-- nothing behind the shelf for a door onto "the manual in general" to open.
 	menu = fullMenuOn(computer)
 	eq("the dev door is the only submenu on the menu", #menu.subs, 1)
-	eq("and it hangs off the dev entry",
-		menu.subs[1].option, menu.options[3])
+	eq("and it hangs off the dev entry, which is the last option on the menu",
+		menu.subs[1].option, menu.options[#menu.options])
 	local sub = menu.subs[1].menu
 	eq("one volume and the window, so two entries", #sub.options, 2)
 	eq("which opens the reader", sub.options[1].callback,
@@ -1730,7 +1886,7 @@ do
 	-- And the door's own entry does nothing itself: a parent that both opens a
 	-- submenu and fires a callback fires it on the way past.
 	eq("the door's own entry has no callback of its own",
-		menu.options[3].callback, nil)
+		menu.options[#menu.options].callback, nil)
 
 
 --
@@ -1767,6 +1923,11 @@ do
 	check("a disk in the pocket offers Insert", insert ~= nil)
 	eq("which is the insert action", insert.callback, CeroSecContextMenu.onInsertFloppy)
 	eq("and it is not greyed out", insert.notAvailable, nil)
+	-- WHERE the three of them sit: the terminal, the switch, then the drive, all
+	-- above the game's own entries and in the order the mod wants them.
+	checkTop("a lit machine with a disk in his pocket", menu,
+		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff",
+			"ContextMenu_CeroSec_InsertFloppy" })
 	for i = 1, #menu.labels do
 		check("and there is nothing to eject", menu.labels[i] ~= "ContextMenu_CeroSec_EjectFloppy")
 	end
@@ -1782,6 +1943,9 @@ do
 	check("a disk in the drive offers Eject", eject ~= nil)
 	eq("which is the eject action", eject.callback, CeroSecContextMenu.onEjectFloppy)
 	eq("and it is not greyed out", eject.notAvailable, nil)
+	checkTop("a lit machine with a disk in the drive", menu,
+		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff",
+			"ContextMenu_CeroSec_EjectFloppy" })
 	for i = 1, #menu.labels do
 		check("and nothing to insert", menu.labels[i] ~= "ContextMenu_CeroSec_InsertFloppy")
 	end
@@ -1814,6 +1978,12 @@ do
 		if menu.labels[i] == "ContextMenu_CeroSec_EjectFloppy" then eject = menu.options[i] end
 	end
 	check("both entries are there", insert ~= nil and eject ~= nil)
+	-- Four of ours, in the order the mod wants, and a GREYED one is at the top with
+	-- the rest: a refusal a survivor can read is a refusal he can read where he is
+	-- looking.
+	checkTop("one of each", menu,
+		{ "ContextMenu_CeroSec_Use", "ContextMenu_CeroSec_TurnOff",
+			"ContextMenu_CeroSec_InsertFloppy", "ContextMenu_CeroSec_EjectFloppy" })
 	eq("the full drive greys the insert", insert.notAvailable, true)
 	eq("with the one sentence that says what to do", insert.toolTip.description,
 		"Tooltip_CeroSec_DriveFull")
@@ -1893,7 +2063,12 @@ do
 	eq("and the option itself inserts it", parent.callback,
 		CeroSecContextMenu.onInsertFloppy)
 	eq("carrying that one disk", parent.args[4], only)
-	eq("with the four arguments the action takes", parent.argCount, 4)
+	-- FOUR arguments and nothing after them. Not a count of them any more: every
+	-- entry of this mod goes on through CeroSecMenu.addTop, which passes vanilla's
+	-- whole param1..param10 tail along because ISContextMenu:addOption spells the
+	-- ten out itself (:873) and any of them may be nil. So what is asserted is that
+	-- the fifth slot is empty -- the disk is the last thing the option carries.
+	eq("and nothing after the disk", parent.args[5], nil)
 
 	-- THREE disks: one parent, three entries, each carrying its OWN disk. An entry
 	-- that carried the wrong one would be a menu that inserts a disk the survivor
@@ -2268,10 +2443,10 @@ do
 		CeroSec.DEV_MANUAL_MENU = true
 		CeroSec.DEV_DEBUG_MENU = true
 		local menu = worldMenuOn()
-		eq("the door is still one entry on the machine's own menu", #menu.labels, 3)
-		eq("and still last", menu.labels[3], "ContextMenu_CeroSec_Dev")
+		eq("the door is still one entry on the machine's own menu", #menu.labels, 5)
+		eq("and still last", menu.labels[#menu.labels], "ContextMenu_CeroSec_Dev")
 		eq("still exactly one submenu", #menu.subs, 1)
-		eq("hung off the door", menu.subs[1].option, menu.options[3])
+		eq("hung off the door", menu.subs[1].option, menu.options[#menu.options])
 
 		local sub = menu.subs[1].menu
 		eq("three volumes and the window, so four entries", #sub.options, 4)
@@ -3458,10 +3633,17 @@ do
 		}
 	end
 
+	-- The game's own entries first, then ours: the menu is fully built before the
+	-- event this file listens on is fired (ISInventoryPaneContextMenu.lua:935), so
+	-- what "one entry" means below is one entry of OURS at the top of a menu with
+	-- Grab and Equip under it -- which is what `ours` counts.
 	local function fill(items)
-		local context = ContextMenu.new()
+		local context = withVanilla(ContextMenu.new())
 		CeroSecFloppyMenu.OnFillInventoryObjectContextMenu(0, context, items)
 		return context
+	end
+	local function ours(items)
+		return ourLabels(fill(items))
 	end
 
 	--
@@ -3469,7 +3651,7 @@ do
 	--
 	local disk = newFloppy()
 	tags = {}
-	eq("no pen, no entry at all", #fill({ disk }).labels, 0)
+	eq("no pen, no entry at all", #ours({ disk }), 0)
 	eq("and canWrite says so", CeroSecFloppyMenu.canWrite(player), false)
 
 	-- Each of the six tags on its own is enough. One at a time, because a test that
@@ -3480,7 +3662,7 @@ do
 	for i = 1, #SIX do
 		tags = { [SIX[i]] = true }
 		eq(SIX[i] .. " alone is enough to write", CeroSecFloppyMenu.canWrite(player), true)
-		eq("and it puts the entry on the menu", #fill({ disk }).labels, 1)
+		eq("and it puts the entry on the menu", #ours({ disk }), 1)
 	end
 	-- A tag that is not one of the six is not a pen.
 	tags = { ["t.SCREWDRIVER"] = true }
@@ -3492,13 +3674,15 @@ do
 	--
 	-- The entries
 	--
-	eq("nothing on a menu with no disk in the selection", #fill({}).labels, 0)
+	eq("nothing on a menu with no disk in the selection", #ours({}), 0)
 	local other = newFloppy("Base.Hammer")
-	eq("and nothing for an item that is not a disk", #fill({ other }).labels, 0)
+	eq("and nothing for an item that is not a disk", #ours({ other }), 0)
 
 	local menu = fill({ other, disk })
-	eq("an unlabelled disk offers one entry", #menu.labels, 1)
+	eq("an unlabelled disk offers one entry", #ourLabels(menu), 1)
 	eq("named for writing on it", menu.labels[1], "ContextMenu_CeroSec_LabelFloppy")
+	-- And it is the FIRST entry on the menu, above vanilla's own.
+	checkTop("an unlabelled disk", menu, { "ContextMenu_CeroSec_LabelFloppy" })
 	eq("carrying the disk", menu.options[1].target, disk)
 	eq("and the box is what it opens", menu.options[1].callback,
 		CeroSecFloppyMenu.onLabel)
@@ -3508,7 +3692,7 @@ do
 	-- which is the shape a naive loop walks straight past.
 	local stack = { items = { disk, newFloppy() } }
 	local stacked = fill({ stack })
-	eq("a stack of disks is still one entry", #stacked.labels, 1)
+	eq("a stack of disks is still one entry", #ourLabels(stacked), 1)
 	eq("and the pen lands on the first of it", stacked.options[1].target, disk)
 
 	--
@@ -3558,7 +3742,10 @@ do
 
 	-- Now the menu says something different: change it, or take it off.
 	menu = fill({ disk })
-	eq("a labelled disk offers two entries", #menu.labels, 2)
+	eq("a labelled disk offers two entries", #ourLabels(menu), 2)
+	-- The two of them, in this order, and both above the game's own entries.
+	checkTop("a labelled disk", menu,
+		{ "ContextMenu_CeroSec_RelabelFloppy", "ContextMenu_CeroSec_EraseLabel" })
 	eq("change it first", menu.labels[1], "ContextMenu_CeroSec_RelabelFloppy")
 	eq("then take it off", menu.labels[2], "ContextMenu_CeroSec_EraseLabel")
 	eq("the first opens the same box", menu.options[1].callback,
@@ -3631,7 +3818,7 @@ do
 	eq("synced again, so the erase reaches the other side", disk.synced, synced + 1)
 	eq("and the record's label is gone", disk.data.label, nil)
 	eq("so labelOn reads nothing", CeroSecFloppyMenu.labelOn(disk), nil)
-	eq("and the menu is back to one entry", #fill({ disk }).labels, 1)
+	eq("and the menu is back to one entry", #ours({ disk }), 1)
 
 	-- onErase is the menu's own door onto that.
 	CeroSecFloppyMenu.writeLabel(disk, "AGAIN")
