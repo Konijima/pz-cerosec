@@ -98,6 +98,24 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- that changed without its number moving is a shape nothing can be held to afterwards.
 -- The cost of moving it is one write of one number into a table that was going to be
 -- read anyway.
+--
+-- AND IT DID NOT MOVE FOR THE MOTOR RUNG'S FOUR IDS, which is worth writing down
+-- because the rule above says a shape change moves it and four new keys look
+-- like one.
+--
+-- They are not. A key whose absence reads as the OLD BEHAVIOUR is not a shape
+-- change, and an absent `curtain` reads as "no curtain motor on this fixture",
+-- which is true of every fixture in every save written before this rung --
+-- nobody had one to fit. There is nothing for a step to convert, and a step that
+-- converted nothing would be a number moved to say something that did not
+-- happen.
+--
+-- It is the `pre` key read the other way round. That one moved the number
+-- although it had nothing to convert either, and the reason was a reader: `pre`
+-- is a key in this table that is NOT one of the ids and does not behave like
+-- one. These four are ids and behave exactly like the four beside them, so
+-- there is nothing for a reader to be surprised by and nothing to hold the
+-- shape to.
 CeroSecModules.VERSION = 2
 CeroSecModules.VERSION_KEY = "v"
 -- MIGRATIONS[n] takes the table at n - 1 and leaves it at n.
