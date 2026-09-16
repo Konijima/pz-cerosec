@@ -8,6 +8,10 @@ date.
 
 ## Unreleased
 
+- **A server admin gets the debug window again.** The entry `CeroSec (dev)` on a
+  computer's menu asked the game whether this connection was THE admin role, which
+  answered no to an admin on his own server; it now asks the access level by name,
+  the way the game's own map editor does. What the server answers has not changed.
 - **A door or window on the south or east wall of a building was invisible to
   `/dev`. Every exterior door is found now.** A module fitted to the front door of
   a house that faces south did nothing at all: the machine listed the doors of the

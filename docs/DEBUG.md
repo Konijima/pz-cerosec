@@ -60,10 +60,15 @@ that string through `String.equalsIgnoreCase` (offsets 0-8) -- so a role spelled
 `Admin` answers the same as one spelled `admin`.
 
 With **no** player named -- which is how the context menu asks, about this client's
-own connection -- the answer is vanilla's own pair, `isClient() and isAdmin()`
-(`client/DebugUIs/AdminContextMenu.lua:22`). `isAdmin()` compares the connection's
-role against `Roles.getDefaultForAdmin()` by identity (javap, `if_acmpne` at 15), so
-it does not depend on a spelling either.
+own connection -- the answer is the one vanilla's world-editing tools use,
+`isClient()` and the access level **by name** (`isAccessLevel("admin")`, the global
+being `getRole().getName().equals(arg)`; `ISWorldMap.lua:36`, `:166`, `:911` ask
+`getAccessLevel() == "admin"`). It used to be `isClient() and isAdmin()`, the pair
+`client/DebugUIs/AdminContextMenu.lua:22` opens with; `isAdmin()` compares the
+connection's role against `Roles.getDefaultForAdmin()` by identity (javap,
+`if_acmpne` at 15), and on the author's own server, as admin, it answered no --
+a role that arrived over the wire is not that object. `isAdmin()` is kept as a
+second door behind the name test.
 
 **Admin and not moderator**, and vanilla draws that line in both places. Its admin
 context menu takes either (`isAdmin() or getAccessLevel() == "moderator"`), but the

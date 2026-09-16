@@ -19164,6 +19164,24 @@ do
 	local hadFlag = CeroSec.DEV_DEBUG_MENU
 	CeroSec.DEV_DEBUG_MENU = false
 	eq("the door really is shut", CeroSec.debugAllowed(), false)
+	-- THE CLIENT'S OWN DOOR, by the access level's NAME. isAdmin() compares the
+	-- role by identity and answered false to the author on his own server; the
+	-- name test is the one vanilla's world map trusts (CeroSecDefs.debugAllowed).
+	do
+		local hadClient, hadAdmin, hadLevel = _G.isClient, _G.isAdmin, _G.isAccessLevel
+		_G.isClient = function() return true end
+		_G.isAdmin = function() return false end
+		_G.isAccessLevel = function(level) return level == "admin" end
+		eq("a client whose role is NAMED admin gets the door, isAdmin or not",
+			CeroSec.debugAllowed(), true)
+		_G.isAccessLevel = function(level) return false end
+		eq("and one whose role is named anything else does not",
+			CeroSec.debugAllowed(), false)
+		_G.isAdmin = function() return true end
+		eq("while the identity test still opens it on its own",
+			CeroSec.debugAllowed(), true)
+		_G.isClient, _G.isAdmin, _G.isAccessLevel = hadClient, hadAdmin, hadLevel
+	end
 	local acts = { "rootnote", "staffnote", "accounts", "clearpass", "anydisk",
 		"rootlogin", "cronnow", "forcewire" }
 	answers = {}
