@@ -3858,6 +3858,47 @@ le **même mot**. Le tableau complet est dans
      (un poteau, pas un mur) : il ne paraît **jamais** dans `dev` — il n'est
      accroché à aucun mur du bâtiment. [ ]
 
+## AP. Le module reste sur place quand le support s'en va (palier chute)
+
+Un module vit dans le modData du **support** (la porte, le poste, l'interrupteur).
+Avant ce palier, le support partait et le boîtier partait avec lui : c'était le seul
+geste qu'un survivant ne pouvait pas défaire. Maintenant, quand le support quitte le
+monde — ramassé, démonté, défoncé — **chaque module posé dessus tombe par terre sur
+la case où la chose se tenait**, à côté de la poignée et des charnières que la porte
+laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dans
+[notes/modules-proofs.md](notes/modules-proofs.md), section 10.
+
+419. **Ramasser un téléviseur avec un contrôle de tuner dessus.** Poser un
+     **contrôle de tuner** sur un téléviseur (étape 372), vérifier qu'il est dans
+     `dev` comme `tvN`. Puis ramasser le téléviseur : clic droit → **Ramasser**.
+     Attendu : le poste est dans le sac, et le **contrôle de tuner est par terre sur
+     la case** où il était — un objet au sol, ramassable, le même item qu'à la
+     fabrication. Le reposer ailleurs : il arrive **nu**, `dev` ne montre aucun
+     `tvN` tant qu'on n'a pas revissé le boîtier dessus. Revisser le tuner
+     ramassé : le poste redevient un `tvN`. [ ]
+420. **Défoncer une porte avec un contact et une gâche.** Sur une porte extérieure
+     avec un **contact magnétique** et une **gâche électrique** dessus (étapes 229 à
+     233), à la masse : clic droit → **Détruire**. Attendu : la porte disparaît, et
+     **les deux boîtiers sont au sol dans l'embrasure**, avec la poignée, les
+     planches et les charnières que le jeu y laisse. `dev` ne liste plus ni `doorN`
+     ni `lockN`, et `dev doorN` répond `doorN: no such device` — le numéro reste
+     dépensé, comme toujours. Même chose avec une porte **construite** (IsoThumpable)
+     et avec un mur démonté au tournevis (**Démonter**). [ ]
+421. **Une fenêtre BRISÉE garde son contact.** Poser un contact sur une fenêtre,
+     puis la **briser** (la ramasser et échouer le jet, ou la casser à la main).
+     Attendu : la fenêtre est toujours là, **rien n'est tombé**, et `dev winN` répond
+     `winN: smashed`. C'est voulu : un châssis brisé est un châssis, et le contact
+     est encore vissé dessus. [ ]
+422. **Le voisinage qui se décharge ne retire rien.** Avec deux ou trois modules
+     posés, s'éloigner assez pour décharger le quartier (section V), revenir :
+     **aucun boîtier par terre**, tous encore en place, `dev` identique avec les
+     mêmes numéros. Un support que le streamer a rangé n'a pas quitté le monde. [ ]
+423. **En multijoueur (si testé).** L'hôte pose un contact sur une porte ; le client
+     défonce la porte. Attendu : **les deux** voient le contact tomber au sol dans
+     l'embrasure (il est créé par le serveur et diffusé), et sur les deux machines
+     `dev` ne liste plus la porte. Le client ramasse le contact : il est dans son
+     sac. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

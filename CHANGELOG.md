@@ -8,6 +8,18 @@ date.
 
 ## Unreleased
 
+- **A module comes off when its fixture is picked up, taken apart or broken: it is
+  on the floor, or in your bag.** Before this, a television carried to the next
+  house took its tuner control with it into nothing, and a door a zombie broke down
+  took the contact and the strike you had climbed up to fit. Now the boxes are lying
+  on the tile where the thing stood -- in the doorway, beside the doorknob and the
+  hinges the door drops itself -- and you pick them up and screw them on somewhere
+  else. It counts for every way a fixture can go: picked up, sledged, dismantled,
+  broken down by a zombie, and the wall it was on coming down with it. Two things
+  deliberately drop nothing: a window somebody **smashes** is still a window and
+  keeps its contact (it reads `smashed`), and a neighbourhood unloading while you
+  walk away takes nothing off anything.
+
 - **Every machine has `/usr/local/bin` now, and it is on the PATH.** The `HOME
   AUTOMATION` floppy tells you to `sudo cp /mnt/curtains.sh /usr/local/bin`, and
   that directory was not on any machine -- the copy answered `no such file` and

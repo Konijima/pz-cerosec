@@ -662,6 +662,11 @@ local FILES = {
 	-- game's own question.
 	"server/CeroSec/CeroSecNotes.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
+	-- What happens to a module when the thing it is screwed to leaves the world.
+	-- Loaded for real, and it REGISTERS on Events.OnObjectAboutToBeRemoved at its
+	-- top level, which is the only way in: the fake Events above keeps handlers and
+	-- can fire them, so the benches ask the engine's own question.
+	"server/CeroSec/SCeroSecFixtures.lua",
 	-- The client's mirror and the glow on it. Loaded for real, and not stubbed like
 	-- the CCeroSecSystem the window benches talk to: the light is the one thing in
 	-- this mod that only the client has, so a stub in its place is a bench that
@@ -2760,6 +2765,28 @@ function FakeWorld.new()
 		sq.haveElectricity = function() return world.power ~= false end
 		sq.hasGridPower = function() return world.power ~= false end
 		sq.playSound = function() end
+		-- The FLOOR, as a place something lands on. The engine's String overload
+		-- makes the item itself and files an IsoWorldInventoryObject under the
+		-- square's world objects (AddWorldInventoryItem(String, float, float, float)
+		-- -> InventoryItemFactory.CreateItem then the IsoWorldInventoryObject
+		-- constructor, offsets 0-85), which is the list getWorldObjects answers --
+		-- not getObjects -- so a module dropped here is on the same list a dropped
+		-- sensor is on and a walk that read the fixtures instead would go red.
+		--
+		-- It answers the ITEM, as the engine does, and nil for a type the game does
+		-- not know (offsets 6-12): `world.floorRefuses = true` is that answer, which
+		-- is the one case where a module must NOT come off its fixture.
+		sq.AddWorldInventoryItem = function(_, fullType, ox, oy, oz)
+			if world.floorRefuses == true then return nil end
+			local item = { __class = "InventoryItem" }
+			item.getFullType = function() return fullType end
+			local dropped = { __class = "IsoWorldInventoryObject", item = item,
+				ox = ox, oy = oy, oz = oz }
+			dropped.getItem = function() return dropped.item end
+			dropped.getSquare = function() return sq end
+			sq.items[#sq.items + 1] = dropped
+			return item
+		end
 		world.squares[key] = sq
 		return sq
 	end
@@ -13481,6 +13508,241 @@ do
 		string.find(options, "option CeroSec.SafehouseModules%s*{[^}]*default = false") ~= nil)
 
 	_G.SafeHouse = nil
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
+-- 43c-2. A fixture that leaves the world drops its modules
+--
+-- The third way a module comes off, and the eight gestures nobody had thought
+-- about: a television carried to the next house, a door a zombie broke down, a
+-- wall dismantled. The box was hardware a minute ago and the fixture's modData is
+-- the only place it lived, so before this it simply stopped existing.
+--
+-- The rule is one rule and it lives in SCeroSecFixtures: the engine's own
+-- Events.OnObjectAboutToBeRemoved, which fires with the object still ON its
+-- square, and every module on it becomes an item on that square. The event is
+-- what is FIRED here -- not the function -- because the wire from the engine to
+-- the rule is the half that a call to the rule cannot prove.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	-- The doorway is the office tile the door stands on; the pavement outside is
+	-- the far side of it, which is where nothing should land.
+	local IN = world.squares["11,10,0"]
+	local pavement = world.square(11, 9, 0, nil)
+
+	-- What is lying on a tile, by item type, in the order it landed. A module on
+	-- the FLOOR is an IsoWorldInventoryObject on getWorldObjects and never a
+	-- fixture on getObjects, which is what the fake's AddWorldInventoryItem files
+	-- it as.
+	local function lying(square)
+		local out = {}
+		for i = 1, #square.items do
+			out[#out + 1] = square.items[i]:getItem():getFullType()
+		end
+		return table.concat(out, " ")
+	end
+	local function bare(object)
+		return object:getModData()[CeroSecModules.DATA_KEY] == nil
+	end
+	-- The world taking an object away, which is the engine firing its event with
+	-- the object still on its square.
+	--
+	-- The fake Events is ONE event for both sides of the mod, and the CLIENT hangs
+	-- a listener on this one too -- the glow it drops when a computer is picked up
+	-- (CCeroSecSystem). The window benches put a stub in place of the client
+	-- system, so the client's listener is taken out of reach for the moment the
+	-- server's runs; the glow has a section of its own, which swaps the real class
+	-- back in for exactly this reason.
+	local function removed(object)
+		local had = CCeroSecSystem.instance
+		CCeroSecSystem.instance = nil
+		Events.OnObjectAboutToBeRemoved.trigger(object)
+		CCeroSecSystem.instance = had
+	end
+
+	--
+	-- A DOOR WITH A CONTACT AND A STRIKE, BROKEN DOWN
+	--
+	local door = world.put(IN, fakeDoor(true, false, pavement, true))
+	fit(door, "contact")
+	fit(door, "strike")
+	local hadTransmits = door.transmits
+	removed(door)
+	eq("both boxes are lying in the doorway",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+	eq("and nothing landed on the pavement on the other side", lying(pavement), "")
+	check("the fixture is bare", bare(door))
+	check("and every write was broadcast", door.transmits > hadTransmits)
+
+	-- A SECOND EVENT FOR THE SAME OBJECT PAYS NOTHING, which is not a corner:
+	-- singleplayer fires this twice for one pickup -- the Lua triggerEvent at
+	-- ISMoveableSpriteProps:1406 and the Java one inside the
+	-- transmitRemoveItemFromSquare on the line after it.
+	removed(door)
+	eq("the second firing hands over nothing",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+
+	-- And the object really does leave, which is what the engine does next.
+	world.remove(door)
+	-- Put back down and taken again: vanilla carries only `movableData` from an
+	-- object's modData into the moveable item (ISMoveableSpriteProps:1298-1299),
+	-- so the fixture that comes back is bare and there is nothing to pay twice.
+	world.put(IN, door)
+	removed(door)
+	eq("a fixture put back down and taken again pays nothing",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+	world.remove(door)
+
+	--
+	-- A TELEVISION WITH A TUNER CONTROL, UNPLUGGED AND CARRIED OFF
+	--
+	local tvSquare = world.squares["10,10,0"]
+	local tv = world.put(tvSquare, fakeWaveSet("IsoTelevision", {}))
+	fit(tv, "tuner")
+	removed(tv)
+	eq("the tuner control is on the floor where the set stood",
+		lying(tvSquare), "CeroSec.TunerControl")
+	check("and the set carries nothing away with it", bare(tv))
+	world.remove(tv)
+
+	--
+	-- A PRE-FITTED RELAY IS REAL HARDWARE, which is the rule uninstallmodule
+	-- already applies: the 1991 walk wrote it and a survivor owns it.
+	--
+	local light = world.put(IN, fakeLight(true, true))
+	check("the walk fits it", CeroSecModules.setOn(light, "relay", true))
+	check("and marks the plate", CeroSecModules.markPreFitted(light))
+	removed(light)
+	eq("a pre-fitted relay lands on the floor like any other",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike CeroSec.Relay")
+	eq("and the plate has no module left on it",
+		CeroSecModules.installedOn(light)["relay"], nil)
+	-- The MARK outlives it, which is the whole point of PRE_KEY: it is what stops
+	-- the walk fitting the same plate again.
+	check("and the mark it was fitted before the outbreak is still there",
+		CeroSecModules.preFitted(light))
+	world.remove(light)
+
+	--
+	-- A FIXTURE WITH NOTHING ON IT, and every other object in the county: this
+	-- handler runs for every tuft of grass and every dropped hammer the world
+	-- takes away, so "nothing, and no error" is the case it is in nearly always.
+	--
+	local plain = world.put(IN, fakeDoor(false, false, pavement, true))
+	local before = lying(IN)
+	removed(plain)
+	eq("a fixture with no module drops nothing", lying(IN), before)
+	removed(fakeSensor())
+	eq("and a dropped item the world takes away is not a fixture at all",
+		lying(IN), before)
+	world.remove(plain)
+
+	--
+	-- A WINDOW SMASHED IS NOT A WINDOW REMOVED
+	--
+	-- ISMoveableSpriteProps:1352-1354 smashes the sash instead of taking it, and
+	-- the branch that would remove the object is then skipped (:1385). So no event
+	-- fires, and the contact is still on a window that reads `smashed`.
+	--
+	local window = world.put(IN, fakeWindow(true, true))
+	fit(window, "contact")
+	window.smashed = true
+	eq("a smashed window keeps its contact",
+		CeroSecModules.installedOn(window)["contact"], true)
+	eq("and nothing was dropped for it", lying(IN), before)
+
+	--
+	-- THE FLOOR REFUSING THE ITEM TAKES NOTHING OFF THE FIXTURE
+	--
+	-- AddWorldInventoryItem answers null for a type the game cannot make (offsets
+	-- 6-12), and a survivor must never be charged for a module that was not made.
+	--
+	world.floorRefuses = true
+	local refused = world.put(IN, fakeDoor(true, false, pavement, true))
+	fit(refused, "operator")
+	removed(refused)
+	eq("nothing new is lying there", lying(IN), before)
+	eq("and the operator is still screwed to the door",
+		CeroSecModules.installedOn(refused)["operator"], true)
+	world.floorRefuses = false
+	removed(refused)
+	eq("with a floor that takes it, it comes off",
+		CeroSecModules.installedOn(refused)["operator"], nil)
+	world.remove(refused)
+
+	--
+	-- A FIXTURE ALREADY OFF ITS SQUARE gives nothing and keeps everything: there
+	-- is no floor to put the box on. The trigger sites say this cannot happen --
+	-- RemoveTileObject throws if a listener removed the object -- and it is not a
+	-- thing to guess at either way.
+	--
+	local gone = fakeDoor(true, false, nil, true)
+	gone.getSquare = function() return nil end
+	fit(gone, "contact")
+	removed(gone)
+	eq("a fixture with no square keeps its contact",
+		CeroSecModules.installedOn(gone)["contact"], true)
+
+	_G.__world = nil
+end
+
+--
+-- 43c-3. And the machine in that building stops listing the device
+--
+-- The listing is the other half: a device whose fixture has left the world is not
+-- a device, and the /dev cache is a second old at the worst
+-- (CeroSecDevices.CACHE_MS). `alive` is what stops one being WORKED; the drop is
+-- what has to stop it being LISTED, and it calls CeroSecDevices.invalidate for
+-- the reason installmodule and uninstallmodule do.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+
+	local bench = newBench()
+	bench.login("admin")
+
+	-- The client's listener on the same fake event, out of reach: see the block
+	-- above.
+	local function removed(object)
+		local had = CCeroSecSystem.instance
+		CCeroSecSystem.instance = nil
+		Events.OnObjectAboutToBeRemoved.trigger(object)
+		CCeroSecSystem.instance = had
+	end
+
+	fit(kit.front, "contact")
+	bench.enter("dev")
+	bench.frame()
+	check("the front door with a contact on it is a device", bench.painted("door0"))
+
+	-- The cache is warm now, and the walk that filled it is the one an answer a
+	-- moment later would come out of.
+	check("and the walk left something in the cache",
+		next(CeroSecDevices.cache) ~= nil)
+
+	-- Broken down. The event first, with the door still on its square, which is
+	-- where the engine fires it -- and then the removal itself.
+	removed(kit.front)
+	eq("the contact is lying in the doorway",
+		#kit.world.squares["11,10,0"].items, 1)
+	eq("and the cache was thrown away with it", next(CeroSecDevices.cache), nil)
+	kit.world.remove(kit.front)
+
+	bench.enter("dev")
+	bench.frame()
+	check("the door is off the listing", not bench.painted("door0   exterior"))
+	bench.enter("dev door0")
+	bench.frame()
+	check("and the number a script wrote down is out of reach",
+		bench.painted("door0: no such device"))
+
 	_G.__world = nil
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end

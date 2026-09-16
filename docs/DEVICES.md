@@ -321,6 +321,56 @@ the floppy drive's rule about duplication. The client half is
 and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
 animation, `150 - perk * 3`-style duration, `addXp` at the end).
 
+**A module comes off when its fixture leaves the world**, and that is the third
+way off — not a screwdriver, and nobody's decision. The rule is one rule, in
+`server/CeroSec/SCeroSecFixtures.lua`, on the engine's own
+`Events.OnObjectAboutToBeRemoved`: when an object carrying our keys is about to be
+taken off its square, every module on it becomes an **item on that square**, at
+`0, 0, 0`, beside the doorknob and the hinges a destroyed door drops itself. So a
+television unplugged and carried to the next house leaves its tuner control on the
+floor, a door a zombie broke down leaves its contact and its strike lying in the
+doorway, and a wall taken apart leaves what was screwed to it. Before this the
+module simply stopped existing, because the fixture's modData is the only place it
+lived.
+
+The nine paths that lead there — a movable picked up, a window picked up, a map
+door destroyed, a built door destroyed, a sledgehammer, a dismantling, a curtain
+taken down, a generator picked up — and the two that must **not**, are the table
+in [notes/modules-proofs.md](notes/modules-proofs.md), section 10, each one with
+the vanilla line or the bytecode offset that removes the object. Four things are
+worth reading off that page here:
+
+- **A smashed window keeps its contact.** Vanilla smashes the sash instead of
+  taking the object (`ISMoveableSpriteProps:1352-1354`, and the removal branch at
+  `:1385` is then skipped), so nothing leaves the world and nothing comes off. The
+  `win` device is still there and reads `smashed`, which is the honest answer:
+  there is a window frame with a magnetic contact on it.
+- **A chunk unloading takes nothing off either.** `IsoChunk` never calls
+  `RemoveTileObject`; a fixture the streamer has taken away has not left the world.
+- **It is the floor, never a bag.** The event carries the object and nothing else,
+  and most of these paths have no character at all behind them — a door a zombie
+  broke down was nobody's gesture. One rule for the nine of them.
+- **Pre-fitted hardware is hardware.** A relay the 1991 walk screwed to a switch
+  plate lands on the floor like any other, for the reason `uninstallmodule` already
+  gives it back; the `pre` mark outlives it, as it outlives every module coming off.
+
+It is paid **per key and not per event**, because singleplayer fires the event
+twice for one pickup (the Lua `triggerEvent` at `ISMoveableSpriteProps:1406` and the
+Java one inside the `transmitRemoveItemFromSquare` on the line after it):
+`CeroSecModules.setOn` clears each key as the item is made, so a second firing
+reads a bare fixture. The item is made **before** the key is cleared —
+`AddWorldInventoryItem` answers `null` for a type the game cannot make — and the
+drop calls `CeroSecDevices.invalidate()` on the way out, for the reason
+`installmodule` and `uninstallmodule` do: which machines could see that fixture is
+not a question that layer can answer without the walk.
+
+And **nothing rides along in the item.** A pickup that keeps identity copies
+exactly one key out of an object's modData (`movableData`, `:1298-1299`), plus the
+container names and `itemCondition`; ours is not one of them, and putting it there
+would mean writing into somebody else's table — the second truth this mod refuses
+to keep. Which is also the answer a survivor expects: a television carried out of
+the building does not take the building's wiring with it.
+
 **What the right-click menu lists, and what it hides.** One line per module that
 could ever go on a fixture of that **sort**, carried or not — and the only thing
 hidden is `fitsOn` answering `fixture`, the module that could never fit. Its

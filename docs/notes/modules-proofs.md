@@ -470,3 +470,148 @@ There is **no** `HardwareStore*` and **no** `Shed*` list in Build 42 at all — 
 hardware store's shelves are the `ToolStore*` and `Electrician*` ones, and a tool
 shed's are `Crate*` and `Garage*`. A list named for a place that does not exist in
 the game is a distribution nothing would ever be found in.
+
+## 10. When the fixture leaves the world: the removal paths
+
+A module lives in the fixture's modData (section 1), so the day the fixture leaves
+the world the module leaves with it. `SCeroSecFixtures` hands it back as an item on
+the square instead, off **one** hook — and this is the proof that one hook is
+enough.
+
+**The event fires from exactly two places in 42.20.4**, both of them Java, both of
+them *before* the object comes off its square:
+
+```
+zombie.iso.IsoGridSquare.RemoveTileObject(zombie.iso.IsoObject, boolean)
+     177: ldc_w  #2857   // String OnObjectAboutToBeRemoved
+     180: aload_1
+     181: invokestatic #1851  // LuaEventManager.triggerEvent:(Ljava/lang/String;Ljava/lang/Object;)V
+     184: getfield #71 / 189: contains / 192: ifne 206
+     195: new    #2859   // class java/lang/IllegalArgumentException
+     199: ldc_w  #2861   // String OnObjectAboutToBeRemoved not allowed to remove the object
+     239: invokevirtual #2869  // IsoObject.removeFromWorld:()V
+     243: invokevirtual #2870  // IsoObject.removeFromSquare:()V
+
+zombie.network.packets.RemoveItemFromSquarePacket.removeItemFromMap(UdpConnection,
+                                                                   int, int, int, int)
+     328: instanceof #131  // class IsoWorldInventoryObject   <- skipped for a dropped item
+     336: ldc_w  #297    // String OnObjectAboutToBeRemoved
+     341: invokestatic #149  // LuaEventManager.triggerEvent
+     361: ldc_w  #305    // String OnObjectAboutToBeRemoved not allowed to remove the object
+     401: invokevirtual #309  // IsoObject.removeFromWorld:()V
+```
+
+So the object is still on the square at the trigger, and a listener that removed
+it would raise — which is why the drop writes modData and never touches the
+square's object list.
+
+**Both trigger sites are reachable on the server, and the dispatch between them is
+`transmitRemoveItemFromSquare(IsoObject, boolean)`** — the call nearly every
+vanilla removal path makes:
+
+```
+  17: getstatic #1775  // GameClient.client:Z
+  44..85                // RemoveItemFromSquarePacket out, then falls through
+  88: getstatic #157   // GameServer.server:Z
+ 189: invokestatic #2933  // GameServer.RemoveItemFromMap:(Lzombie/iso/IsoObject;)I
+ 194: invokevirtual #2825  // RemoveTileObject:(Lzombie/iso/IsoObject;Z)I
+```
+
+- on a **client**: the packet goes out *and* offset 194 removes it locally, so the
+  client fires the event for its own screen;
+- on a **server**: offset 189, and `GameServer.RemoveItemFromMap` broadcasts and
+  then calls the static above itself (offsets 30-55: `INetworkPacket.sendToRelative`
+  then `RemoveItemFromSquarePacket.removeItemFromMap(null, x, y, z, index)`);
+- on **neither** — singleplayer — offset 194.
+
+And the one-argument `RemoveTileObject(IsoObject)` sends a loaded chunk through
+`IsoObjectUtils.safelyRemoveTileObjectFromSquare` (offsets 0-50 pick the boolean
+from `square == null || !chunk.loaded || chunk.preventHotSave`), which comes back
+to `RemoveTileObject(obj, false)` once per part of a multi-tile object (offsets
+84-89 and 136-142). Either way the trigger happens once per object.
+
+**A client's packet reaches the server's handler**: `processServer` calls the same
+static (offsets 0-17) and then `sendToRelativeClients`, so a survivor picking a
+television up on a dedicated server fires the event **on the server**, which is the
+side this mod writes modData on.
+
+### The paths, and what each one really calls
+
+| what happens | what removes the object | fires on the server |
+| --- | --- | --- |
+| a movable picked up (television, radio set, oven, washer, lamp) | `ISMoveableSpriteProps:pickUpMoveableInternal:1406-1407` — `triggerEvent("OnObjectAboutToBeRemoved", _object)` *itself* ("Hack for RainCollectorBarrel, Trap, etc") and then `transmitRemoveItemFromSquare` | yes |
+| a window picked up | the same function, `:1384-1386` — `transmitRemoveItemFromSquare` and **no** Lua trigger | yes, the Java one |
+| the same pickup **smashing** the window | `:1352-1354` sets `windowGotSmashed`, and the branch at `:1385` is then skipped: the object **stays** | **no, and it must not** |
+| a map door destroyed (zombie, sledgehammer) | `IsoDoor.destroy()` — `destroyed = true` and `transmitRemoveItemFromSquare` at offsets 227-240; the garage-door leaf takes the same pair at 23-36 | yes |
+| a player-built door or wall destroyed | `IsoThumpable.destroy()` — `OnDestroyIsoThumpable` at 120-125, `transmitRemoveItemFromSquare` at 146-154 | yes |
+| sledgehammer, from the menu | `ISDestroyStuffAction:complete:276-280` — `sledgeDestroy(obj)` on a client, `transmitRemoveItemFromSquare` otherwise | yes |
+| dismantled / "Disassemble" | `ISMoveableSpriteProps:scrapObjectInternal:3517-3519` — transmit on a client, `transmitRemoveItemFromSquareOnClients` on a server, and `square:RemoveTileObject(object)` on **both** | yes |
+| a curtain taken down | `ISRemoveSheetAction` → `IsoCurtain.removeSheet(IsoGameCharacter)`, offset 5 | yes |
+| a generator picked up | `ISTakeGenerator:complete:53` → `IsoGenerator.remove()`, offsets 8-16 | yes |
+| a chunk unloading | nothing: `IsoChunk` never calls `RemoveTileObject`, it fires `ReuseGridsquare` (`IsoChunk.doReuseGridsquares:3044`) | **no, and it must not** |
+
+`OnDestroyIsoThumpable` is **not** needed beside it. Vanilla's own trap system says
+why in a comment: *"This is called \*before\* self:OnDestroyIsoThumpable() due to
+ISBuildingObject.onDestroy() removing the object"* (`STrapSystem.lua:106-110`) — so
+`OnObjectAboutToBeRemoved` is the earlier of the two on that path, and
+`IsoThumpable.destroy` fires it after its own event anyway (offsets 120-154).
+
+### Fired twice for one gesture, in singleplayer
+
+`pickUpMoveableInternal` triggers the event in Lua at `:1406` and then calls
+`transmitRemoveItemFromSquare` at `:1407`, whose singleplayer branch (offset 194)
+triggers it again in Java. So a survivor picking a television up on his own box
+fires it **twice** for one pickup, which is why the drop is paid per *key* and not
+per event: `CeroSecModules.setOn(object, id, false)` clears the key as each module
+is handed over, and the second firing reads a bare fixture.
+
+### Nothing of ours rides along in the item
+
+A pickup that keeps identity does **not** carry our modData into the moveable item.
+`pickUpMoveableInternal` copies exactly one key out of an object's modData —
+
+```
+1298:  if _object:hasModData() and _object:getModData().movableData then
+1299:      item:getModData().movableData = copyTable(_object:getModData().movableData)
+```
+
+— plus `<containerType>_customContainerName` and `itemCondition` (`:1300-1312`), and
+`IsoThumpable` goes through `saveThumpableParameters` instead (`:1204`). Placement
+copies the item's whole modData back onto the object, but only when there is **no**
+`movableData` on it (`:2273-2275`). `GameEntityFactory.TransferComponents(_object,
+item)` at `:1280` moves components, not modData.
+
+So a ride-along was possible only by writing our key into somebody else's
+`movableData` table, which is the second truth this mod refuses to keep
+(`CeroSecModules`, head). The module comes off instead — which is also the honest
+answer: a television carried out of the building did not take the building's wiring
+with it.
+
+### Putting the item on the floor
+
+`IsoGridSquare.AddWorldInventoryItem(String, float, float, float)` is the one call,
+and it does the two things `uninstallmodule` needs two for:
+
+```
+AddWorldInventoryItem(String, float, float, float)      -> (String,F,F,F,true)
+AddWorldInventoryItem(String, float, float, float, boolean) -> (...,true,false)
+AddWorldInventoryItem(String, float, float, float, boolean, boolean)
+       1: invokestatic  #2968  // InventoryItemFactory.CreateItem:(Ljava/lang/String;)
+       6: ifnonnull 13 / 11: aconst_null / 12: areturn   <- null for a type it cannot make
+      13: new #1981             // class IsoWorldInventoryObject
+      66..85                    // onto square.objects AND square.worldObjects
+     105: getstatic #157        // GameServer.server:Z
+     118: invokevirtual #2998   // IsoWorldInventoryObject.transmitCompleteItemToClients:()V
+```
+
+It makes the item and, **on a server, transmits it by itself** — so there is no
+`sendAddItemToContainer` beside it the way there is in `uninstallmodule`. The
+`null` at offset 12 is why the item is made *before* the key is cleared: a type the
+game cannot make must not cost a survivor the box.
+
+The coordinates are `0, 0, 0`, which is where a door drops its own parts:
+`IsoDoor.destroy` calls `AddWorldInventoryItem` with `fconst_0` three times for the
+planks (offsets 120-133), the doorknob (157-169), the hinges (186-199) and the
+sheet (213-226). Vanilla's server Lua uses the same call the same way
+(`ISBuildingObject.lua:58`, `SCampfireGlobalObject.lua:143`,
+`STrapGlobalObject.lua:603`).
