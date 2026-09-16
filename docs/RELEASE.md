@@ -38,8 +38,8 @@ the files and the state shape are all unaffected.
 | 2a | **Take the ten screenshots and the two GIFs** | [../workshop/SHOTS.md](../workshop/SHOTS.md) |
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
-| 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=0.1.0/' 42/mod.info` |
-| 5b | Close the changelog: rename **Unreleased** to the version and date in `CHANGELOG.md`, print the Steam text | `python3 tools/changelog-steam.py` |
+| 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=<version>/' 42/mod.info` |
+| 5b | Close the changelog, then **write the short Steam note by hand** — see below | `python3 tools/changelog-steam.py` |
 | 5a | **Photograph the save shape this build writes**, and commit it — see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
 | 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
@@ -49,12 +49,12 @@ the files and the state shape are all unaffected.
 | 8a | **The item against Steam's own ceilings.** Also run by `sh tests/run.sh`, so this is a reminder rather than a second gate | `python3 tools/check-workshop.py` |
 | 9 | Make the upload copy | `sh tools/workshop-sync.sh sync` |
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
-| 10a | Paste the change note on the item (Steam item page, **Change Notes**) | output of `tools/changelog-steam.py` |
+| 10a | Paste the change note on the item (Steam item page, **Change Notes**) | `tools/out/steam-note-<version>.txt`, written by hand at 5b |
 | 11 | Copy the `id=` Steam wrote back into the repo (the game appends its own `Workshop ID` and `Mod ID` lines to every description at upload, so the description carries none) | `grep '^id=' ~/Zomboid/Workshop/CeroSec/workshop.txt` then paste it after `version=1` in `workshop/workshop.txt` |
 | 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images** — see below |
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
-| 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
+| 15 | Tag the commit | `git tag -a v<version> -m 'CeroSec <version>' && git push --tags` |
 | 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
 | 17 | Open the item's own page in a browser and check the ten media-repo images actually rendered | Steam item page |
 | 17a | Credit line confirmed by the author on 2026-09-14: everything in `common/media/` was made for this mod by the author, with AI tools; nothing third-party | done |
@@ -129,8 +129,32 @@ with what to look at on the glass.
 
 ## What this release changes in an existing world
 
-One thing, and it has to be said out loud because the compatibility contract only
-allows a new sandbox option to change a world if the release notes say so plainly.
+Said out loud, release by release, because the compatibility contract only allows
+a new sandbox option to change a world if the release notes say so plainly.
+
+### 0.4.0
+
+**The electric strike and the door operator cost more to make.** Each one now
+wants a Small Motor and a Receiver on top of what it wanted before. Nothing
+already built and nothing already screwed to a door changes, and every recipe a
+survivor learned he still knows — it is the price of the *next* one that moved,
+and it is the one thing in this release a player notices on a save he already
+has.
+
+**The new modules and the new disk arrive the way loot does.** The curtain motor,
+the window operator, the appliance switch, the generator switch, the tuner
+control and the Small Motor turn up on the shelves from now on, and the
+`CeroSec HOME 1.0` floppy in the same drawers the other disks come from; nothing
+in an existing container is rewritten.
+
+**Sticky notes already in a save stay as they were.** The note is a sheet of
+paper now, with the password on its page, but a note somebody is already carrying
+is left exactly as it is.
+
+**The new sandbox option is OFF.** `Safehouse members only` defaults to the old
+behaviour, so a world that has one changes nothing until an admin turns it on.
+
+### 0.2.0
 
 **`CeroSec.PrefilledMachines` defaults to ON.** In a save that already exists, every
 computer **nobody has switched on yet** will come up as somebody's machine — his
@@ -144,6 +168,32 @@ have never had a filesystem. A server that wants the old world turns the option 
 and gets it back exactly — two open accounts and an empty disk.
 
 See [CONTENT.md](CONTENT.md).
+
+## Step 5b: the changelog is closed, and the Steam note is written by hand
+
+Two things, and they are not the same text. The author said so after 0.3.0, where
+the whole section was cut to fit Steam's field and the notes lost the sentences
+that explained them.
+
+**Close the changelog.** `## Unreleased` stays, empty, at the top; under it the
+section takes its version and date (`## 0.4.0 - 2026-09-16`) and an intro
+paragraph in the shape every released section has: what sort of update it is,
+whether an existing save needs anything, and the one thing a player notices on a
+save he already has. The bullets keep their full wording — this is the version of
+the notes that goes on GitHub and nothing here has a byte ceiling.
+
+**Then write the Steam note by hand**, into
+`tools/out/steam-note-<version>.txt`, under 8000 bytes: a short, plain,
+player-facing list, grouped **New / Fixed / Servers / Interface**, one line per
+item, ending with the link to the full `CHANGELOG.md` on GitHub. It is written,
+not generated — a subscriber reading the Change Notes wants the list, not the
+reasoning, and cutting the changelog down to the field was how the reasoning got
+lost.
+
+`python3 tools/changelog-steam.py` still prints the newest section as BBCode, and
+it is useful for reading the section back; a section over 8000 bytes only makes
+it warn on stderr now, because the long form is not what goes to Steam any more.
+Its `unreleased` mode is unchanged.
 
 ## Step 5a: every release captures a fixture
 

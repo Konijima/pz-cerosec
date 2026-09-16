@@ -5,8 +5,14 @@
     python3 tools/changelog-steam.py unreleased what is waiting under Unreleased
 
 Steam's change note takes BBCode; a heading becomes [b]...[/b] and the bullets
-stay bullets. The limit is the same 8000 bytes as a description, and this
-script refuses past it rather than let Steam cut the tail.
+stay bullets.
+
+What goes on Steam is NOT this output any more. Since 0.4.0 the note pasted on
+the item is a short, plain, player-facing list written by hand into
+tools/out/steam-note-<version>.txt -- see docs/RELEASE.md step 5b -- and the
+changelog keeps the full notes, which are for GitHub. So a section over Steam's
+8000 bytes is no longer a refusal: it is printed, with a warning on stderr
+saying the long form is not what goes to Steam, and the exit status stays 0.
 """
 import re
 import sys
@@ -34,7 +40,11 @@ for section in sections:
             lines.append(line.strip())
     out = "[b]" + head.strip() + "[/b]\n" + "\n".join(lines).strip("\n") + "\n"
     if len(out.encode("utf-8")) > LIMIT:
-        sys.exit("change note is %d bytes, over Steam's %d" % (len(out.encode("utf-8")), LIMIT))
+        sys.stderr.write(
+            "warning: this section is %d bytes, over Steam's %d -- the long form is"
+            " not what goes to Steam any more; write the short note by hand (RELEASE.md 5b)\n"
+            % (len(out.encode("utf-8")), LIMIT)
+        )
     if want == "unreleased" and not body.strip():
         out = "[b]Unreleased[/b]\n(nothing yet)\n"
     sys.stdout.write(out)
