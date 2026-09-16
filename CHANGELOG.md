@@ -8,6 +8,14 @@ date.
 
 ## Unreleased
 
+## 0.4.0 - 2026-09-16
+
+The automation update. Nothing here needs a new save: machines you already
+switched on keep everything, and the notes and modules already in your bags are
+left exactly as they are. The one thing you will notice on a save you already
+have is the price of the next electric strike and door operator -- both cost a
+Small Motor and a Receiver now, and what you have already built is untouched.
+
 - **The hardware menu tells you what a box is, and what you are missing.** Every
   line now says what the module does, which `/dev` it gives and the Electricity it
   wants -- and the list shows **every** box that could go on that sort of fixture,
