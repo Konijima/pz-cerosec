@@ -965,20 +965,21 @@ his hand is still blank.
 | `PERSONAL` | handwritten `letters` / `do not read` / `mine` | 2 | **three** | `LETTERS.TXT` (never sent, the last one dated the 8th or 9th of July), `TODO.TXT`, `RECIPE.TXT`, `POEM.TXT`, `NUMBERS.TXT` |
 | `RADIO LOG` | handwritten `club net log` / `heard log jul` / `packet log 93` | 1 | **three** | a ham club's `HEARD.LOG` of the week before, `NETS.TXT`, `MYCALL.TXT`, and a README on `cu -l /dev/radio0` and `MHEARD` |
 
-### The ten as shipped
+### The eleven as shipped
 
 | label | share | tellings | what is on it |
 | --- | --- | --- | --- |
-| `UTILITIES` | 2 | one | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
+| `UTILITIES` | 1 | one | `lights.sh`, `check.sh`, and a README saying why neither names a device of its own |
 | `BBS LIST` | 2 | one | `NUMBERS.TXT` (**late**, see below), `CALLS.TXT` — packet stations somebody heard, by callsign — and how to reach either |
 | `WARDIALER` | 1 | one | `RANGE.TXT`, `log.sh`, and a README whose first screen says there is no wardialer and why |
-| `GAMES` | 2 | one | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
+| `GAMES` | 1 | one | `guess.sh`, `hangman.sh`, `adventure.sh`, `WORDS.TXT` — 3651 of the floppy's 4096 bytes spent on the programs |
 | `BACKUP` | 2 | **three** | somebody's home directory on 8 July: `DIARY.TXT`, `LETTERS.TXT`, `FAMILY.TXT` |
 | `CEROSEC OS 1.0 DIST` | 2 | one | `INSTALL.TXT`, `MAN/` with six pages, three scripts |
 | `LEDGER` | 2 | **three** | a shop's books: `SALES.TXT` (a line a day, in cents), `SUPPLIERS.TXT`, `total.sh` |
 | `PERSONAL` | 2 | **three** | `LETTERS.TXT` (never sent, the last one dated the 8th or 9th of July), `TODO.TXT`, `RECIPE.TXT`, `POEM.TXT`, `NUMBERS.TXT` |
 | `RADIO LOG` | 1 | **three** | a ham club's `HEARD.LOG` of the week before, `NETS.TXT`, `MYCALL.TXT`, and a README on `cu -l /dev/radio0` and `MHEARD` |
 | `BBS` | 1 | one | the sysop's kit: `bbs.sh`, `read.sh`, `post.sh`, `board.sh`, `setup.sh` and the README that says how to run a board on the machine — see below |
+| `HOME AUTOMATION` | 2 | one | the home kit: `autoclose.sh`, `curtains.sh`, `tvguide.sh`, `wake.sh`, `alarm.sh`, `genwatch.sh` and the README that says how to copy them and how to put them in a crontab — see below |
 
 **Still seventeen shares of a hundred.** `LEDGER`, `PERSONAL` and `RADIO LOG` were
 paid for out of the six that were already there and not out of the blank remainder:
@@ -986,8 +987,12 @@ paid for out of the six that were already there and not out of the blank remaind
 `GAMES` from 3 to 2 and `BACKUP` from 3 to 2, which is five shares for three new
 disks at 2, 2 and 1. **`BBS` was paid for the same way**, out of `UTILITIES` again —
 3 down to 2 — because that is the disk it is nearest to: two programs and a README
-saying how to copy them. So the other eighty-three are still a blank disk, which is
-what a box of disks is, and what changed is only what a written one says.
+saying how to copy them. **And `HOME AUTOMATION` was paid for out of the same two
+pockets**, `UTILITIES` 2 down to 1 and `GAMES` 2 down to 1: the home kit is the disk
+that supersedes the utilities disk — it is `lights.sh` and `check.sh` written the way
+a building runs them — and a shareware games disk is the least load-bearing thing in
+the catalogue. So the other eighty-three are still a blank disk, which is what a box
+of disks is, and what changed is only what a written one says.
 
 ### Three tellings of a disk
 
@@ -1124,6 +1129,98 @@ every line any of the five ever printed is held to carrying none of the four
 refusals a script can carry for ever without failing: `command not found` first of
 all, a script being a list of commands and a word that is not one of them being no
 syntax error at all.
+
+### `HOME AUTOMATION`: the building runs itself
+
+**The request it was written for, in the words it was made in:** *"auto close doors, a
+program that detects an open door and closes it after 5 seconds; automatic curtains
+day and night; a system that turns the TV on at the hours of the Life and Living
+channel for the duration of the show; and so many possibilities."*
+
+Everything underneath already existed. The motor rung put a door operator, a curtain
+motor, a tuner, a generator switch and a window operator under `/dev`
+([DEVICES.md](DEVICES.md#the-hardware-modules)); `cron` runs a line once a game
+minute, `at` runs one once, `wall` puts a line on every screen and `mail` posts one.
+What was missing was the **front** of it, which in 1993 was a shell script somebody
+had on a disk. So this is that disk, and not one line of the engine moved for it —
+the same sentence the sysop's kit above is built on.
+
+**Six programs and a README in 4058 of the floppy's 4096 bytes**, eight nodes of
+thirty-two, and thirty-eight bytes of room left:
+
+| | |
+| --- | --- |
+| `autoclose.sh start [<secs>] \| stop` | a daemon: every `door*` under `/dev`, once a second, and a door that has read `open` for five rounds is shut through the operator. `start` writes a flag file and loops while it is there; `stop` takes it away |
+| `curtains.sh open\|close\|auto [dawn dusk]` | every `curtain*`. `auto` reads `date +%H` and works out which way, dawn 7 and dusk 20 by default, so both crontab lines are the SAME line |
+| `tvguide.sh [<channel>]` | reads `/dev/tv0`, tunes it to the channel first if the dial is elsewhere, and switches the set on while the reading says `airing` and off when it does not. Default 203, which is Life and Living's frequency |
+| `wake.sh now \| HH:MM` | `rx0` and every `light*` on. With a time it pipes `wake.sh now` into `at`, which is the one way at(1) takes a command here |
+| `alarm.sh start \| stop` | a daemon: every `door*` and `win[0-9]*` contact, and one that reads `open` is named with `wall` and answered by flashing the lights three times |
+| `genwatch.sh [<percent>]` | one crontab line a minute: `gen0`'s fuel against a threshold, and under it one `wall` and one letter to root. A flag file is what makes it one and not sixty an hour |
+
+**Five things this shell has not got shaped every one of them**, and each was measured
+on the engine before a line was written on top of it. They are worth reading before
+touching any of the six, and the same list is over `CeroSecContent.SCRIPTS["autoclose.sh"]`:
+
+- **There is no filename globbing.** `for d in /dev/door*` is one word with a star in
+  it. The list of doors is `ls /dev | grep ^door` caught in a `$( )` and split into
+  fields — `ls` prints one name a line when what it writes is not a screen, and a
+  capture is one of the three doors where that is true. The ceiling on it is the
+  word's, 1024 bytes, which is about a hundred and forty doors; a mall refuses with
+  `word too large` rather than quietly walking half of it.
+- **`date +%s` moves a minute at a time.** The machine's clock is the world's and
+  `SCeroSecSystem:clockEnv` builds it out of `getHour()` and `getMinutes()` with the
+  seconds at nought, so a stamp read twice inside one game minute is the same number.
+  A five-**second** delay cannot be measured against it at all, which is why
+  `autoclose.sh` counts its own `sleep 1` rounds instead.
+- **No associative arrays**, so the per-door count is a file: `/var/tmp/autoclose.door0`.
+  `/var/tmp` and not `/tmp` — there is no `/tmp` on this machine, and `/var/tmp` is the
+  one directory anybody may write in and only the owner of a file may delete from.
+- **`rm` has no `-f`.** Every removal is behind `[ -f ... ]`, because a refusal from a
+  program a daemon runs every second is a refusal on the glass every second.
+- **A pipeline's refusal lands in the capture, not in the pipe.** `f=$(cat /dev/gen0 |
+  cut -d' ' -f3)` on a machine with no generator comes back as the whole of
+  `cat: /dev/gen0: no such file`, and `[ $f -ge 10 ]` on that is
+  `test: argument expected`. So `genwatch.sh` sifts the field through a `case` with
+  `*[!0-9]*` in it before any arithmetic touches it, and its threshold test is written
+  `-lt` rather than `-ge` so that a threshold which is not a number fails **safe**.
+
+**What the polling costs, and it is not what a reader would guess.** The walk of the
+building is not in the loop and not in the sleep: it is in `CeroSecDevices.envFor`,
+which runs once a **pass** (`CeroSec.JOB_PASS_MS`, 100 ms) for any machine with a job
+in its book at all, and `CeroSecDevices.findCached` sits in front of it with a lifetime
+of `CACHE_MS` (1000 ms). So a daemon that sleeps one second and a daemon that sleeps
+five cost the machine the **same** one building walk a second, which is the cache's own
+floor ([DEVICES.md](DEVICES.md#the-dev-cache)). What the cadence buys is only steps, and
+a sleeping job spends none of those either. One second is therefore both the cheapest
+cadence and the most responsive, which is why it is the one on the disk.
+
+**A round is a second and a little more.** `n` is counted in rounds, and a round is
+`sleep 1` plus the work the round costs — the listing of `/dev`, a `cat` per door, the
+counter file — which is charged in steps against `CeroSec.STEP_BUDGET_PER_MACHINE`.
+Measured on a two-door building in `tests/window_test.lua` section 44b, five rounds
+came to between six and seven seconds of the wall clock. The half the request asked
+for is exact and is the one the bench pins: the door is **not** shut before its five
+rounds are up.
+
+**No `-h` flag, and that is deliberate.** Every one of the six prints its usage line on
+an argument it cannot use, which is what the other fourteen scripts in the library do
+and what a 1993 `/bin/sh` script did — `-h` as a help flag is not a convention this
+machine has anywhere. `tvguide.sh` and `genwatch.sh` are the first two entries in the
+library whose argument has a **default**, which they declare with `optional = true` so
+that section 6's bare-run rule asks the right question of them: not *"say the usage and
+fail"* but *"do the default and work"*.
+
+**Where it is prefilled, and where it deliberately is not.** The `cerosec` premises —
+the company that published it — keeps all six in `/usr/local/src` beside every other
+master in the library, and the `showroom` premises keeps `autoclose.sh` and
+`curtains.sh` on the counter machine at a one-in-three roll: the two a salesman would
+really have demonstrated. **No crontab line anywhere runs any of the six**, and that is
+the section above being obeyed rather than an omission: `CeroSecAuto.modulesFor` fits a
+relay, a contact and a strike and **never** an operator, a curtain motor, a tuner or a
+generator switch, so a prefilled line calling one of these would answer
+`no such device` once a minute for ever on a premises no player has walked into. The
+`residential` profile is untouched for the same reason twice over — it is the one
+profile with no crontab in it, which is the whole of why a house is never automated.
 
 ### And a seventh that is not loot: `CEROSEC DIAGNOSTICS`
 

@@ -539,6 +539,49 @@ and nothing in between. The same loop without the `sleep` is the one thing not t
 write: it takes every step the machine will give it and gets nothing done any
 sooner. `sleep` takes whole seconds, as it does everywhere.
 
+**A daemon, and where it keeps what it knows.** "Wait until this happens" is a loop,
+and a loop that has to remember something between two turns has one place to put it:
+a file. There is no `local`, there are no associative arrays, and a variable belongs
+to the job — so the shape a 1993 script used is a **flag file**, and these machines
+have `/var/tmp` for it (root's `/tmp` does not exist here; `/var/tmp` is the one
+directory anybody may write in and only the owner of a file may delete from).
+
+Two uses, and the home kit's programs are both of them (`CeroSecContent.SCRIPTS`,
+docs/CONTENT.md):
+
+    F=/var/tmp/autoclose.on
+    echo run > $F
+    while [ -f $F ]; do ... ; sleep 1; done
+
+That is the **switch**: `start` writes it and loops while it is there, and a second
+run with `stop` removes it and the loop ends at its own next turn. It is not better
+than `kill %1` and it is not instead of it — it is a thing a survivor can see with
+`ls /var/tmp`, a thing a crontab line can touch, and a way to stop a daemon that
+`jobs` on a machine full of other people's work would make awkward.
+
+    t=/var/tmp/autoclose.$d
+    c=0
+    if [ -f $t ]; then c=$(cat $t); fi
+    c=$((c + 1))
+    echo $c > $t
+
+That is **state per thing**, which is the associative array this shell has not got:
+one file per device, named after it. Three rules come with it and every one of them
+was paid for:
+
+- **`rm` has no `-f`**, so a removal is `if [ -f $t ]; then rm $t; fi`. A daemon that
+  removed a file that was not there would print a refusal every second it ran.
+- **Count rounds, not seconds.** `date +%s` is the *world's* clock and moves a minute
+  at a time (`SCeroSecSystem:clockEnv` builds it out of the hour and the minute with
+  the seconds at nought), so two stamps taken inside one game minute are the same
+  number and nothing finer than a minute can be measured against it. What a `sleep 1`
+  loop can count is its own turns.
+- **A round is a second and a little more.** The sleep is a second; the work of the
+  round — a `$( )` per listing, a `cat` per device, the counter file — is charged in
+  steps against `CeroSec.STEP_BUDGET_PER_MACHINE`, so a round costs the sleep plus
+  however many passes that work took. A bench that pinned five rounds to five seconds
+  exactly would be a bench that goes red on a busier machine.
+
 **`fg`** brings a background job back to the front:
 
     admin@ksp-04-11:~$ sh watch.sh &

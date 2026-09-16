@@ -1740,6 +1740,76 @@ Classic mistake. exit in ~/.profile. It is not a file your session runs,
 it IS your session, so exit logs you out the instant you log in, for ever.
 The way back is root, which can edit the file for you.]],
 
+[[A building that runs itself, off one disk.
+
+Somebody sold six of these already written, on a floppy whose printed
+label says CeroSec HOME 1.0. Mount it, read README.TXT, and copy what you
+want into /usr/local/bin. Three take a crontab line and three do not.
+
+  autoclose.sh start [<secs>] | stop
+  curtains.sh open|close|auto [dawn dusk]
+  tvguide.sh [<channel>]
+  wake.sh now | HH:MM
+  alarm.sh start | stop
+  genwatch.sh [<percent>]
+
+autoclose.sh shuts a door that has stood open five rounds. curtains.sh
+draws every curtain, or decides from the hour. tvguide.sh puts the
+television on for the show and off after it. wake.sh brings the radio and
+the lights on in the morning. alarm.sh names a door or window that opens
+on every screen and flashes the lights. genwatch.sh watches the tank.
+
+Classic mistake. Running one on a machine with nothing screwed to the
+fixtures and calling the program broken. ls /dev first.]],
+
+[[The two that sit and watch, and the file that switches them off.
+
+  admin@ksp-04-11:~$ cd /usr/local/bin
+  admin@ksp-04-11:/usr/local/bin$ sh autoclose.sh start 5 &
+  [1] 43
+  admin@ksp-04-11:/usr/local/bin$ sh autoclose.sh stop
+  autoclose: off
+
+What stops it is a FILE. start writes /var/tmp/autoclose.on and loops
+while it is there, stop takes it away, and the loop ends at its own next
+turn. kill %1 works too, and the file is the one a crontab can touch.
+
+It keeps one file per door -- /var/tmp/autoclose.door0, holding how many
+rounds that door has read open -- because there is no array in this shell
+to keep it in. That is the pattern for anything a loop must remember: one
+file, named after the thing.
+
+And it counts ROUNDS, not seconds. date +%s is the world's clock and it
+moves a minute at a time, so nothing shorter can be measured against it.
+A round is one sleep 1 plus the work of the round.
+
+Classic mistake. Writing /tmp. There is none. /var/tmp is the one
+anybody may write in.]],
+
+[[The three that go in a crontab, and the one that queues itself.
+
+  admin@ksp-04-11:~$ crontab -e
+  0 7 * * * sh /usr/local/bin/curtains.sh auto
+  0 20 * * * sh /usr/local/bin/curtains.sh auto
+  * * * * * sh /usr/local/bin/tvguide.sh 203
+  * * * * * sh /usr/local/bin/genwatch.sh 10
+
+Both curtain lines are one line: auto reads the hour and decides. 203 is
+the channel the evening film is on; tvguide.sh turns the set to it, waits
+for cat /dev/tv0 to say airing, and switches it off when it stops.
+genwatch.sh writes to root once and leaves a file saying so.
+
+wake.sh is the other shape: with a time it puts ITSELF in the at queue.
+
+  admin@ksp-04-11:/usr/local/bin$ sh wake.sh 06:30
+  job 1 at Fri Jul  9 06:30:00 1993
+
+A crontab line for every morning, at for one morning.
+
+Classic mistake. A line in root's crontab for a building an ordinary
+account is responsible for. A crontab runs as its own account and a
+device is 660: it has to be an account that may write one.]],
+
 		} },
 
 		{ title = "10. The building, and the wire", pages = {

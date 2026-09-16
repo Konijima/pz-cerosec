@@ -14272,9 +14272,13 @@ do
 		eq("at the block's own minute the set comes on", tv0.data.on, true)
 		eq("and on the channel that is airing", tv0.data.channel, 203)
 
-		-- FOR THE DURATION. A minute line inside the block leaves it on and does not
-		-- tune it a second time: a program that re-tuned every minute would be a
-		-- packet a minute to every client on a server.
+		-- FOR THE DURATION. A minute line inside the block leaves it on and the dial
+		-- is not turned a second time -- a packet a minute to every client on a
+		-- server is what that would cost. The idempotence is the DEVICE layer's
+		-- ("already there is already done", SCeroSecDevices.act), which is what this
+		-- assertion pins; what the program's own test buys on top of it is the write
+		-- and the re-read it does not make, and that saving is two commands a minute
+		-- that no bench here measures.
 		local zaps = tv0.zaps
 		_G.__gameTime.minutes = 30
 		bench.enter("sh " .. B .. "/tvguide.sh 203")
@@ -14319,11 +14323,19 @@ do
 
 	-- And the timed form queues itself, which is the shape at(1) has here: it reads
 	-- its commands from a pipe and from nothing else.
+	--
+	-- THE GLASS IS WIPED FIRST, and it has to be: bench.painted searches every line
+	-- this window has ever drawn, and the command line `sh .../wake.sh 06:30` is
+	-- echoed as it is typed -- so "06:30 is on the screen" was green on the ECHO
+	-- with the `| at $1` taken out of the program altogether. What is looked for is
+	-- what `atq` printed and nothing else.
 	bench.enter("atq")
 	bench.frame()
 	check("nothing is waiting yet", not bench.painted("06:30"))
 	bench.enter("sh " .. B .. "/wake.sh 06:30")
 	seconds(1)
+	bench.enter("clear")
+	bench.window.painted = {}
 	bench.enter("atq")
 	bench.frame()
 	check("the timed form puts a job in the at queue", bench.painted("06:30"))
@@ -14339,15 +14351,31 @@ do
 	eq("a full tank writes no flag", bench.fileText("/var/tmp/genwatch.said"), nil)
 	eq("and posts no letter", bench.fileText("/var/mail/root"), nil)
 
+	-- UNDER A REDIRECT, and that is what tells the broadcast apart from the output.
+	-- A script inherits the redirect of the command that started it (job.rdto), so
+	-- everything it PRINTS goes into the file -- while `wall` is an order to the
+	-- machine and not output, and goes to the screen anyway. Without the redirect
+	-- "the line is on the screen" was green with the `wall` replaced by a plain
+	-- `cat`, which is a warning nobody in the building would ever see.
 	gen0.fuel = 4
-	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	bench.enter("clear")
+	bench.window.painted = {}
+	bench.enter("sh " .. B .. "/genwatch.sh 10 > /var/tmp/genwatch.out")
 	seconds(2)
 	local posted = bench.fileText("/var/mail/root")
 	check("a tank under the mark posts one to root: " .. tostring(posted),
 		posted ~= nil and string.find(posted, "gen0 low on fuel", 1, true) ~= nil)
 	check("with the figure in the body",
 		posted ~= nil and string.find(posted, "4 per cent", 1, true) ~= nil)
-	check("and says it out loud on every screen", bench.heard("gen0 is down to 4"))
+	bench.frame()
+	check("and says it out loud on every screen, past its own redirect",
+		bench.painted("gen0 is down to 4"))
+	-- The file is EMPTY, and that is the other half of the same fact: in the warning
+	-- branch this program prints nothing at all -- what it has to say goes out
+	-- through `wall` and through `mail` -- so the line on the glass above came
+	-- through the broadcast and could not have come through the redirect.
+	eq("while it printed nothing of its own at all",
+		bench.fileText("/var/tmp/genwatch.out"), "")
 	check("and leaves the flag that says it has said it",
 		bench.fileText("/var/tmp/genwatch.said") ~= nil)
 
@@ -14384,14 +14412,34 @@ do
 	check("and armed", bench.fileText("/var/tmp/alarm.on") ~= nil)
 
 	light0.activated = false
+	-- The switch's own count BEFORE, because wake.sh threw it a moment ago and a
+	-- total would be green on that alone.
+	local threwBefore = light0.syncs
 	win0.open = true
-	seconds(3)
+	-- SAMPLED WHILE IT RUNS, three hundred milliseconds at a time, because a flash is
+	-- a state the light passes THROUGH: it is on for a second and off for a second,
+	-- three times over, and a field read at the end of it reads `off` whether it
+	-- flashed or not. A sample once a second could land on the same phase every
+	-- time, so the sampling is finer than the flash.
+	local sawOn = false
+	for _ = 1, 30 do
+		bench.tick(3)
+		if light0.activated then sawOn = true end
+	end
 	check("a window opened is named on every screen", bench.heard("ALARM: win0 open"))
-	-- THE FLASH, counted on the switch and not on its state: three on-and-off pairs
-	-- is six throws, and a field read at the end of it would be the same whether it
-	-- flashed once or not at all.
-	check("and the lights were thrown more than once (" .. light0.syncs .. ")",
-		light0.syncs >= 2)
+	-- AND NAMED ONCE. `win0` is the magnetic contact and `window0` is the operator on
+	-- the same sash, which is why the program greps `^win[0-9]` and not `^win`: a
+	-- bare `^win` matches `window0` too and one open window would be shouted about
+	-- twice, by two names, for one piece of glass.
+	check("and the operator on the same sash is not a second alarm",
+		not bench.heard("ALARM: window0"))
+	check("and the lights really came on", sawOn)
+	-- And they were THROWN, six times for three on-and-off pairs, counted on the
+	-- switch: "more than once" was green with the `lamps on` taken out of the
+	-- program, `lamps off` on its own being three throws of a switch that never
+	-- lights anything.
+	check("and thrown at least six times ("
+		.. (light0.syncs - threwBefore) .. ")", light0.syncs - threwBefore >= 6)
 	win0.open = false
 
 	-- And it stops. Twelve seconds and not three: a round that found a contact open

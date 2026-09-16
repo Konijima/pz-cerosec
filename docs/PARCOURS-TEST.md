@@ -3627,6 +3627,91 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      recharger. Attendu : chaque téléviseur et chaque poste de radio du bâtiment
      est sous `/dev` sans qu'on ait rien vissé. [ ]
 
+## AN. La disquette qui fait tourner le bâtiment (palier automatisation)
+
+Six programmes sur une disquette imprimée, `CeroSec HOME 1.0`. Rien de neuf dans
+le moteur : ce sont des scripts `sh`, les périphériques du palier moteur et `cron`.
+Ce qui se vérifie ici, c'est la seule chose qu'aucun banc ne peut voir — une porte
+qui se referme toute seule sous les yeux du joueur. Option **Matériel requis**
+activée. Règles : [CONTENT.md](CONTENT.md#home-automation-the-building-runs-itself)
+et [SCRIPTING.md](SCRIPTING.md).
+
+Préparation : un bâtiment avec **deux portes** et un **opérateur de porte** sur
+l'une des deux, un **moteur de rideau** sur un rideau, un **relais** sur un
+interrupteur, un **contact** sur une fenêtre, une **commande de tuner** sur un
+téléviseur et un **interrupteur de génératrice** sur une génératrice branchée.
+
+393. **Trouver la disquette, ou se la faire donner.** Fouiller des tiroirs jusqu'à
+     tomber sur une disquette dont l'étiquette **imprimée** dit
+     `CeroSec HOME 1.0` — l'infobulle dit *Étiquette imprimée* et l'icône porte la
+     vignette blanche. Sinon : fenêtre de débogage (section X) → **Give disk** →
+     `HOME AUTOMATION`. Attendu : la disquette arrive dans le sac avec ce nom. [ ]
+394. **La monter et la lire.** `mount /dev/fd0 /mnt` puis `ls /mnt` → sept noms :
+     `README.TXT` et les six programmes. `cat /mnt/README.TXT` → la page tient
+     dans l'écran, sans ligne coupée, et nomme les six. `df` → la ligne `fd0`
+     dit environ **4058 de 4096 octets**. [ ]
+395. **Les copier.** `sudo cp /mnt/curtains.sh /usr/local/bin` (faire d'abord
+     `sudo mkdir` pour `/usr`, `/usr/local` et `/usr/local/bin` — `mkdir` n'a pas
+     de `-p`). Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
+     Attendu : `ls -l /usr/local/bin` les montre tous exécutables. [ ]
+396. **LA PORTE SE REFERME, ET C'EST L'ÉTAPE QUI COMPTE.** Lancer
+     `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`. Aller **ouvrir la
+     porte à la main** dans le monde, et **rester à la regarder**. Attendu : la
+     porte se referme toute seule au bout de cinq tours (six à sept secondes de
+     vrai temps — un tour est un `sleep 1` plus le travail du tour), avec le
+     mouvement et le bruit d'une porte, et la porte **sans opérateur** ne bouge
+     jamais. Rouvrir : ça recommence à zéro. [ ]
+397. **L'arrêter, des deux façons.** `sh /usr/local/bin/autoclose.sh stop` →
+     `autoclose: off`, et `ps` ne montre plus le programme au tour suivant.
+     Relancer avec `&`, puis `kill %1` : ça marche aussi. `ls /var/tmp` montre ce
+     que le programme garde : `autoclose.on` tant qu'il tourne, et un
+     `autoclose.door0` par porte ouverte. [ ]
+398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
+     rideaux se ferment dans le monde. Puis `crontab -e` et les deux lignes du
+     README :
+
+         0 7 * * * sh /usr/local/bin/curtains.sh auto
+         0 20 * * * sh /usr/local/bin/curtains.sh auto
+
+     Laisser tourner jusqu'à 7 h de jeu **en étant dans la pièce**. Attendu : les
+     rideaux s'ouvrent seuls, et se referment seuls à 20 h. `mail` → la sortie de
+     la ligne de cron, `2 curtains: open`. [ ]
+399. **Le téléviseur pour l'émission.** `crontab -e` et
+     `* * * * * sh /usr/local/bin/tvguide.sh 203`. Régler le poste à la main sur
+     une autre chaîne, puis attendre une minute de jeu. Attendu : le poste est
+     **remis sur 203**, puis allumé quand `cat /dev/tv0` dit `airing` et éteint
+     dès que la ligne ne le dit plus. Pendant l'émission, il ne **cligne pas** :
+     la chaîne n'est retournée qu'une fois. [ ]
+400. **Le réveil, des deux façons.** `sh /usr/local/bin/wake.sh now` → le poste de
+     radio s'allume et toutes les lumières avec. Puis
+     `sh /usr/local/bin/wake.sh 06:30` → `atq` montre le travail en attente, et à
+     6 h 30 de jeu tout s'allume seul. `atrm 1` l'enlève. [ ]
+401. **L'alarme.** `sh /usr/local/bin/alarm.sh start &`, puis **ouvrir la fenêtre
+     à la main**. Attendu : `ALARM: win0 open` apparaît sur **tous les écrans** de
+     la machine (à deux joueurs : sur les deux), et les lumières clignotent trois
+     fois dans le monde. Refermer, puis `sh /usr/local/bin/alarm.sh stop` : le
+     programme s'arrête au tour suivant — il peut mettre jusqu'à huit secondes s'il
+     était en train de clignoter. [ ]
+402. **La génératrice.** Vider le réservoir jusque sous 10 %, puis
+     `sh /usr/local/bin/genwatch.sh 10`. Attendu : une ligne sur tous les écrans,
+     **une** lettre dans `mail` pour root, et `ls /var/tmp` montre
+     `genwatch.said`. Le relancer : **rien de plus**. Remplir le réservoir, le
+     relancer : le drapeau disparaît et la prochaine panne sèche redonne une
+     lettre. [ ]
+403. **Ce qu'ils disent quand il n'y a rien.** Sur une machine **sans rien de
+     vissé** : `sh /mnt/curtains.sh open` → `curtains.sh: no curtain in /dev`,
+     `sh /mnt/tvguide.sh` → `tvguide.sh: no tv0 in /dev`, `sh /mnt/genwatch.sh` →
+     `genwatch.sh: gen0 gave no fuel figure`. Et sans argument :
+     `sh /mnt/curtains.sh` → la ligne d'usage. Aucun des six ne dit
+     `syntax error` ni ne laisse une erreur du shell sur l'écran. [ ]
+404. **Sur les machines qui l'avaient déjà.** Dans le magasin d'informatique
+     (`showroom`) : `ls bin` sur la machine du comptoir → une chance sur trois d'y
+     trouver `autoclose.sh` et `curtains.sh`. Chez CeroSec (`cerosec`) :
+     `ls /usr/local/src` → les six, avec les quatorze autres. Attendu :
+     **aucune ligne de crontab** ne les appelle nulle part — vérifier avec
+     `sudo cat /var/spool/cron/*`. Une maison (`residential`) n'a rien de tout ça
+     et n'a pas de crontab du tout. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

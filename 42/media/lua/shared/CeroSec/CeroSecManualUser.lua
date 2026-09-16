@@ -1784,6 +1784,30 @@ writing on the label usually has a README.TXT:
   admin@ksp-04-11:~$ mount /dev/fd0 /mnt
   admin@ksp-04-11:~$ cat /mnt/README.TXT]],
 
+[[A disk somebody paid for.
+
+Not every disk is somebody's notes. Software came on floppies too, with a
+label PRINTED at the factory instead of written in biro, and the tooltip
+on the item in your bag says which you are holding.
+
+One is worth knowing by name: CeroSec HOME 1.0. Six programs that work the
+building for you, and a README.TXT saying what each needs.
+
+  admin@ksp-04-11:~$ mount /dev/fd0 /mnt
+  admin@ksp-04-11:~$ ls /mnt
+  README.TXT   alarm.sh     autoclose.sh curtains.sh
+  genwatch.sh  tvguide.sh   wake.sh
+  admin@ksp-04-11:~$ cat /mnt/README.TXT
+
+autoclose.sh shuts a door somebody left open. curtains.sh draws every
+curtain, or works it out from the hour. tvguide.sh puts the television on
+for the show. wake.sh brings the radio and the lights on. alarm.sh says
+which door just opened. genwatch.sh watches the generator's tank. Volume 3
+has a page on each.
+
+Classic mistake. Running one off /mnt and walking away with the disk. Copy
+them onto the machine first.]],
+
 		} },
 
 		{ title = "12. Quick reference card", pages = {

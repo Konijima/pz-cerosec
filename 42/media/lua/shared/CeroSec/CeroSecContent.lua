@@ -2306,8 +2306,8 @@ CeroSecContent.DISKS = {
 		-- there is nothing on it that a drawer in a town nobody has walked into
 		-- could be wrong about.
 		--
-		-- SIX PROGRAMS AND A README IN 4030 OF THE FLOPPY'S 4096 BYTES, seven nodes
-		-- of thirty-two. That is sixty-six bytes of room, and it is why the README
+		-- SIX PROGRAMS AND A README IN 4058 OF THE FLOPPY'S 4096 BYTES, eight nodes
+		-- of thirty-two. That is thirty-eight bytes of room, and it is why the README
 		-- is as short as it is: a page per program lives in Volume 2 of the manual,
 		-- where there is room for it, and the disk carries what a survivor needs
 		-- with the disk in his hand -- the names, the copy, the crontab lines and

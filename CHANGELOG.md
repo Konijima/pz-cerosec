@@ -8,6 +8,33 @@ date.
 
 ## Unreleased
 
+- **A new disk: `CeroSec HOME 1.0`.** Six programs that run the building instead of
+  you, on a printed floppy with a README that tells you how to copy them and what
+  to put in a crontab. It is a disk somebody paid for in 1993 and it turns up in
+  the same drawers the others do, a little more often than the games.
+- `autoclose.sh` is the one the disk is really for: **a door somebody left open,
+  shut again five seconds later.** Start it with an `&` and it watches every door
+  the computer can reach until you stop it by name. It needs a door operator on
+  the door, so it shuts the doors you have wired and leaves the rest alone.
+- `curtains.sh` draws **every curtain in the building**, or works out which way
+  from the hour -- dawn at seven and dusk at eight in the evening unless you say
+  otherwise. Two crontab lines, and they are the same line twice.
+- `tvguide.sh` **switches the television on for the show and off when it ends.**
+  One crontab line a minute, the Life and Living channel by default: it turns the
+  set to the channel, waits for the schedule to say something is on, and switches
+  it off again after. Somebody else's programme guide, done by the machine.
+- `wake.sh` brings **the radio and every light on in the morning** -- a crontab
+  line, or `wake.sh 06:30` and it puts itself in the at queue for you.
+- `alarm.sh` watches **every door and window contact** and, when one opens, names
+  it on every screen in the building and flashes the lights three times. Stop it
+  by name when you want to walk through your own door.
+- `genwatch.sh` watches **the generator's tank** and writes to root once when it
+  gets low -- once, and not sixty times an hour, which is the difference between a
+  warning and a nuisance. It never starts the generator: that is your decision and
+  your noise.
+- The company that wrote the disk and the computer shop that sold it already have
+  some of it on their own machines, if you find either of them.
+
 - A new part: the **Small Motor**. Knox County never sold one on its own, so you
   take a screwdriver to something that already has one -- a hair dryer, a pair
   of sheep shears, a CD player or a blower fan -- and you get the motor and the
