@@ -8,6 +8,15 @@ date.
 
 ## Unreleased
 
+## 0.4.1 - 2026-09-16
+
+The fixes of the first day of 0.4.0. Nothing here needs a new save: every machine
+you have switched on keeps its accounts, its files and its modules, and the
+computers in your world gain `/usr/local/bin` the moment they load. The one thing
+you will notice on a save you already have is that a program you left running
+with `&` is still running when you come back to it -- there is nothing else for
+you to do.
+
 - **A module comes off when its fixture is picked up, taken apart or broken: it is
   on the floor, or in your bag.** Before this, a television carried to the next
   house took its tuner control with it into nothing, and a door a zombie broke down
