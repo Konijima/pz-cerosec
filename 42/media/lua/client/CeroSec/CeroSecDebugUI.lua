@@ -39,8 +39,10 @@ require "CeroSec/CeroSecTerminal"
 --
 -- IT WORKS NOTHING OUT. Every row on it is a row the server built
 -- (server/CeroSec/SCeroSecDebug.lua), and the window draws the cells it is
--- handed. The one thing it decides for itself is which tab is in front and which
--- machine is selected, because those are facts about a window.
+-- handed. What it decides for itself is which of them are on the GLASS and nothing
+-- about what they say: which tab is in front, which machine is selected, whether the
+-- county list shows the used machines or all of them, whether /bin is folded, and
+-- what the filter box keeps. Every one of those is a fact about a window.
 --
 -- ONE INSTANCE, and it remembers nothing between sessions: no saved position, no
 -- saved tab, no saved selection. A debug window is opened to answer a question
@@ -86,6 +88,11 @@ CeroSecDebugUI.FONT = "Small"
 CeroSecDebugUI.DEFAULT_LOGIN = "root"
 CeroSecDebugUI.LOGIN_MAX = 32
 
+-- And the longest a filter may be, which is CeroSecOS.MAX_NAME's number for the same
+-- reason and with nothing resting on it: a path component cannot be longer, so a
+-- fragment of one cannot either.
+CeroSecDebugUI.FILTER_MAX = 32
+
 -- The gap vanilla's own debug windows use between the window edge and what is in
 -- it (UI_BORDER_SPACING, ISEntitiesDebugWindow.lua:6).
 local BORDER = 10
@@ -114,6 +121,19 @@ local ROW_GAP = 4
 -- the names are shorter than that) and short enough not to push the row it is on
 -- past the disk combo beside it.
 local LOGIN_CELLS = 12
+
+-- Rows of the PANE under the button rows: the block that shows what is in a file
+-- and what an act had to say for itself. Six, because it is a look and not a
+-- reader: `ls -l` on the row above says how big the file is, and a pane that took
+-- twenty rows would take them off the list. What does not fit says so on the last
+-- of the six, the way every list in this window says what it cut.
+local PANE_ROWS = 6
+
+-- Characters wide the filter box in the banner is. Sixteen: long enough for a path
+-- component of any length the machine allows (CeroSecOS.MAX_NAME is thirty-two, and
+-- a filter is a fragment and not a name), short enough to sit beside the machine
+-- list on one banner row.
+local FILTER_CELLS = 16
 
 -- Rows of info under the list. Nine: the two the WINDOW writes -- why a button
 -- cannot be pressed, and how much of the list is showing -- and then seven of the
@@ -176,6 +196,23 @@ CeroSecDebugUI.TABS = {
 		columns = { { "level", 7 }, { "line", 80 } },
 	},
 }
+
+-- The three tabs that are about ONE machine, by the token the server knows them by.
+-- They are the three that carry the selection banner -- the hostname of the machine
+-- whose disk, whose /dev and whose jobs are on the glass, the list that changes it,
+-- and the filter over the rows -- because a reader looking at a filesystem under no
+-- name at all was the whole of the complaint this answers.
+--
+-- The Machines tab is not one of them: it is the county and not a machine, and it
+-- is where a machine is SELECTED. Neither is the Log, which is the client's own ring.
+CeroSecDebugUI.PER_MACHINE = { files = true, devices = true, scheduler = true }
+
+-- The one directory folded by default on the Files tab. Eighty-odd shipped commands
+-- are eighty-odd rows of a list whose cap is five hundred and twelve, and none of
+-- them is what somebody opened this tab to look at: what a reader wants is /etc,
+-- /home and /var, and they are under the fold. One row stands for the lot and says
+-- how many it is standing for; clicking it opens and closes it.
+CeroSecDebugUI.BIN = "/bin"
 
 -- The seven of the second row that act on a MACHINE, as the field the button is kept
 -- in and the field the server's answer about it arrives as. One table, because the
@@ -255,11 +292,16 @@ local function measure()
 		if total > widest then widest = total end
 	end
 	WINDOW_W = widest + BORDER * 4
-	-- Twenty rows of list, the detail block, and room for EVERY button row: the
-	-- second row was added after this line was written and a height that had not
-	-- heard of it would open the window with nineteen rows and then eighteen.
+	-- Twenty rows of list, the detail block, and room for EVERY band that is not the
+	-- list: the second button row was added after this line was written and a height
+	-- that had not heard of it opened the window with nineteen rows and then
+	-- eighteen. The banner over the list and the pane under the buttons are the same
+	-- arithmetic again -- the banner is one button row plus its gap, taken out of the
+	-- list on the three tabs that have one, and the pane is its own rows plus a gap.
 	WINDOW_H = (FONT_H + 6) * 20 + (FONT_H + 2) * INFO_ROWS + BORDER * 6 +
-		(FONT_H + 8 + ROW_GAP) * (BUTTON_ROWS - 1)
+		(FONT_H + 8 + ROW_GAP) * (BUTTON_ROWS - 1) +
+		(FONT_H + 8 + ROW_GAP) +
+		(FONT_H + 2) * PANE_ROWS + ROW_GAP
 end
 
 -- How far the pen moves over a string: what drawText advances by, and so where
@@ -301,6 +343,22 @@ local function fitText(text, room)
 	end
 	if cut <= 0 then return "" end
 	return string.sub(text, 1, cut) .. "~"
+end
+
+-- A string of the server's, as lines. A note is one sentence on the reason line and
+-- three lines on a sticky note, and the pane is where the three fit.
+local function splitLines(text)
+	local out = {}
+	local at = 1
+	while true do
+		local stop = string.find(text, "\n", at, true)
+		if stop == nil then
+			out[#out + 1] = string.sub(text, at)
+			return out
+		end
+		out[#out + 1] = string.sub(text, at, stop - 1)
+		at = stop + 1
+	end
 end
 
 --
@@ -350,10 +408,36 @@ function CeroSecDebugUI:new(x, y, playerObj, cx, cy, cz)
 	-- nothing in any column but their position -- and the six the mod is doing
 	-- something with are somewhere in the middle of that. See passes().
 	o.usedOnly = true
+	-- /bin folded, to begin with: eighty shipped commands are eighty rows of a list
+	-- somebody opened to look at /etc and /home. It is a fact about the WINDOW like
+	-- the county filter beside it, so it survives a change of machine -- a reader who
+	-- opened /bin on one machine is looking at /bin.
+	o.binOpen = false
+	o.filterText = ""
 	o.lastMs = 0
 	o:setResizable(true)
 	o:setTitle(getText("IGUI_CeroSec_Debug_Title"))
 	return o
+end
+
+-- Which column of a tab is called what. By NAME and never by a number, so a column
+-- inserted before it does not make the window read somebody else's cell -- which is
+-- the rule selectedHost already wore for `host` and which the Files tab now needs
+-- twice, for `path` and for `type`.
+local function columnIndex(spec, name)
+	if spec == nil or type(spec.columns) ~= "table" then return nil end
+	for k = 1, #spec.columns do
+		if spec.columns[k][1] == name then return k end
+	end
+	return nil
+end
+
+-- Has this tab a selection banner over its list? The three that are about ONE
+-- machine have; the county and the log have not.
+function CeroSecDebugUI:bannerOn(index)
+	local spec = CeroSecDebugUI.TABS[index]
+	if spec == nil or spec.tab == nil then return false end
+	return CeroSecDebugUI.PER_MACHINE[spec.tab] == true
 end
 
 --
@@ -400,9 +484,19 @@ function CeroSecDebugUI:layout()
 	-- window's minimum width all by itself (see createChildren). A row that runs off
 	-- the right edge is a button nobody finds; a second row costs one button height
 	-- and is read the way a keyboard is.
+	-- And the PANE, which is a band like any other: it comes out of the panel's
+	-- height here, once, so the list is short by exactly the room the pane takes and
+	-- not by a number somebody added twice. The band that had not heard of the second
+	-- button row is the reason this arithmetic lives in one function.
+	out.paneH = (FONT_H + 2) * PANE_ROWS
+	-- The banner over the list on the three per-machine tabs: one button row, so the
+	-- machine list and the filter box fit in it, plus the gap under them. It is taken
+	-- out of the LIST and not out of the panel, because it is only on three tabs of
+	-- six and a panel that shrank would move the buttons under the other three.
+	out.bannerH = out.buttonH + ROW_GAP
 	out.panelH = self:getHeight() - out.th - out.rh -
 		out.buttonH * BUTTON_ROWS - ROW_GAP * (BUTTON_ROWS - 1) - out.infoH -
-		BORDER * 4
+		out.paneH - ROW_GAP - BORDER * 4
 	-- The tab strip's height and the header row's are the panel's and the list's
 	-- own answers, never a second copy of them: the strip is measured off the font
 	-- (ISTabPanel.lua:642) and the header row is one item of the list.
@@ -421,6 +515,24 @@ function CeroSecDebugUI:layout()
 		out.rowY[i] = out.buttonsY + (i - 1) * (out.buttonH + ROW_GAP)
 	end
 	out.infoY = self:getHeight() - out.rh - BORDER - out.infoH
+	-- Between the last button row and the detail block, with a border over it and the
+	-- gap under it: a pane drawn on the buttons would be a pane on top of the things
+	-- that fill it.
+	out.paneY = out.infoY - ROW_GAP - out.paneH
+	-- Where the banner's own two widgets go: inside the panel, under the tab strip
+	-- and over the list's header row. Right-aligned, so the hostname on the left has
+	-- whatever is left and the two never move under each other; clamped to the left
+	-- border, because a window dragged to its floor is still a window whose widgets
+	-- are inside it.
+	out.bannerY = out.panelY + out.tabH + 2
+	out.comboW = advance(string.rep("n", 22)) + 40
+	out.filterW = advance(string.rep("n", FILTER_CELLS)) + 20
+	out.comboX = out.panelX + out.panelW - BORDER - out.comboW
+	out.filterX = out.comboX - 6 - out.filterW
+	if out.filterX < out.panelX + BORDER then out.filterX = out.panelX + BORDER end
+	if out.comboX < out.filterX + out.filterW + 6 then
+		out.comboX = out.filterX + out.filterW + 6
+	end
 	return out
 end
 
@@ -436,9 +548,13 @@ function CeroSecDebugUI:applyLayout()
 		view:setWidth(L.panelW)
 		view:setHeight(L.viewH)
 		local list = self.lists[i]
-		list:setY(L.headerH)
+		-- The banner comes out of the LIST on the three tabs that have one: the list
+		-- starts a banner lower and is a banner shorter, so its header row still has
+		-- its own room above it and nothing reaches into the tab strip.
+		local banner = self:bannerOn(i) and L.bannerH or 0
+		list:setY(L.headerH + banner)
 		list:setWidth(L.panelW)
-		list:setHeight(L.listH)
+		list:setHeight(L.listH - banner)
 		self:fitColumns(i)
 	end
 	for i = 1, #self.buttons do
@@ -449,6 +565,17 @@ function CeroSecDebugUI:applyLayout()
 	-- applyLayout is the only thing in this window that places anything.
 	if self.loginEntry ~= nil then self.loginEntry:setY(L.rowY[2]) end
 	if self.diskCombo ~= nil then self.diskCombo:setY(L.rowY[2]) end
+	-- And the banner's two, which follow the panel rather than a button row.
+	if self.machineCombo ~= nil then
+		self.machineCombo:setX(L.comboX)
+		self.machineCombo:setY(L.bannerY)
+		self.machineCombo:setWidth(L.comboW)
+	end
+	if self.filterEntry ~= nil then
+		self.filterEntry:setX(L.filterX)
+		self.filterEntry:setY(L.bannerY)
+		self.filterEntry:setWidth(L.filterW)
+	end
 	self.numbers = L
 end
 
@@ -489,12 +616,60 @@ function CeroSecDebugUI:createChildren()
 		-- draw it.
 		list.doDrawItem = CeroSecDebugUI.drawRow
 		list:setOnMouseDownFunction(self, CeroSecDebugUI.onRowClicked)
+		-- A double-click asks what is IN the row, which on the Files tab is a file.
+		-- setOnMouseDoubleClick writes the same `self.target` field
+		-- setOnMouseDownFunction writes (ISScrollingListBox.lua:286-296), so the two
+		-- hooks share one target -- which is this window for both, and that is why
+		-- the pair is set here together rather than anywhere else.
+		list:setOnMouseDoubleClick(self, CeroSecDebugUI.onRowDoubleClicked)
 		list.debugTab = spec
 		view:addChild(list)
 		self.views[i] = view
 		self.lists[i] = list
 		self.panel:addView(spec.name, view)
 	end
+
+	--
+	-- THE BANNER over the list, on the three tabs that are about one machine
+	--
+	-- Its text is drawn in render() -- the hostname of the machine whose disk is on
+	-- the glass, where it stands and whether it is on -- and its two widgets are
+	-- here: the machine list, which changes the selection without going back to the
+	-- Machines tab, and the filter over the rows.
+	--
+	-- Children of the WINDOW and not of a tab's view, exactly like the login box and
+	-- the disk list on the second button row: the window is what places everything
+	-- (applyLayout) and what decides every frame whether a widget means anything on
+	-- the tab in front (prerender). Added after the tab panel so they draw over it.
+	--
+	-- The machine list is built off the MACHINES SNAPSHOT and not off a list of its
+	-- own (rebuildMachines), so it holds exactly the machines the county list holds --
+	-- one place that knows what machines there are, which is the server.
+	self.machineCombo = ISComboBox:new(L.comboX, L.bannerY, L.comboW, L.buttonH,
+		self, CeroSecDebugUI.onMachineChosen)
+	self.machineCombo:initialise()
+	self.machineCombo:instantiate()
+	self.machineCombo.font = UIFont[CeroSecDebugUI.FONT]
+	self:addChild(self.machineCombo)
+
+	-- WHAT TO KEEP, typed. A box and not a combo, for the reason the login box is
+	-- one: what a reader is looking for is a fragment of a path and not a choice out
+	-- of a list. It is read every frame rather than through a callback, because
+	-- ISTextEntryBox has no setter for its onTextChangeFunction and writing a field
+	-- a class only ever reads is a bet on a private (see prerender).
+	self.filterEntry = ISTextEntryBox:new("", L.filterX, L.bannerY, L.filterW,
+		L.buttonH)
+	-- The font BEFORE initialise, which is the order the login box below uses and for
+	-- its reason: initialise is what makes the java object.
+	self.filterEntry.font = UIFont[CeroSecDebugUI.FONT]
+	self.filterEntry:initialise()
+	self.filterEntry:instantiate()
+	-- The ceiling written out and not read off CeroSecOS.MAX_NAME, for the reason
+	-- LOGIN_MAX is written out above: this is client Lua and that constant is a shared
+	-- file's. Nothing rests on the number anyway -- a filter is compared with
+	-- string.find and never validated.
+	self.filterEntry:setMaxTextLength(CeroSecDebugUI.FILTER_MAX)
+	self:addChild(self.filterEntry)
 
 	--
 	-- The buttons
@@ -677,8 +852,12 @@ function CeroSecDebugUI:createChildren()
 	reach(self.loginEntry)
 	reach(self.diskCombo)
 	self.minimumWidth = widest + BORDER
+	-- The height at which the SHORTEST list is one row tall, and the shortest is a
+	-- per-machine tab's: the banner comes out of the list on three of the six, so a
+	-- floor worked out from the county's list would be a floor at which those three
+	-- have a list of a negative height.
 	self.minimumHeight = self:getHeight() - self.numbers.listH +
-		self.lists[1].itemheight
+		self.lists[1].itemheight + self.numbers.bannerH
 
 	-- And the window is OPENED at least that wide, which the floor above does not
 	-- do on its own: the opening width is worked out from the widest tab's NOMINAL
@@ -784,6 +963,26 @@ function CeroSecDebugUI:onServerCommand(command, args)
 	if type(args.note) == "string" then
 		self.notice = args.note
 		self.refusal = nil
+		-- And the whole of it in the pane, which is where a note that is a paper with
+		-- three lines on it can actually be read: the reason line has room for one.
+		self.paneTitle = nil
+		self.paneLines = splitLines(args.note)
+		return
+	end
+
+	-- A FILE, for the pane: its own field on the answer and not a note, because a note
+	-- is one sentence and this is a file's bytes as lines (SCeroSecDebug.readFile).
+	--
+	-- Kept only when it is about the machine that is selected NOW, which is the rule
+	-- the selection fields below already wear: a file still in flight from the machine
+	-- before it would be another computer's text under this one's name, which is the
+	-- one mistake this window must not make.
+	if type(args.text) == "table" then
+		if args.x ~= self.cx or args.y ~= self.cy or args.z ~= self.cz then return end
+		self.paneTitle = tostring(args.path)
+		self.paneLines = {}
+		for i = 1, #args.text do self.paneLines[i] = tostring(args.text[i]) end
+		self.refusal = nil
 		return
 	end
 
@@ -853,6 +1052,76 @@ function CeroSecDebugUI:passes(index, row)
 	return row.x == self.cx and row.y == self.cy and row.z == self.cz
 end
 
+-- The rows of the Files tab with /bin folded into the one row that stands for it.
+--
+-- A COPY of that row and never the row itself: the snapshot is what the next fill
+-- reads again, and a window that wrote its own words into the server's answer would
+-- fold a fold that was already folded. Everything under /bin is left out and counted,
+-- and the count goes in the LAST cell -- the one that holds how many nodes a
+-- directory has, which is the cell that was already answering this question -- so the
+-- path cell still says `/bin` and the row is still the row the cursor keeps.
+--
+-- string.find with plain = true and never a pattern, here as everywhere a path is
+-- compared in this mod: a path is a literal.
+function CeroSecDebugUI:foldBin(rows)
+	if self.binOpen then return rows end
+	local under = CeroSecDebugUI.BIN .. "/"
+	local out = {}
+	local folded = nil
+	local hidden = 0
+	for i = 1, #rows do
+		local row = rows[i]
+		local path = type(row) == "table" and type(row.c) == "table" and row.c[1] or nil
+		if type(path) ~= "string" then
+			out[#out + 1] = row
+		elseif path == CeroSecDebugUI.BIN then
+			folded = { c = {}, x = row.x, y = row.y, z = row.z, used = row.used }
+			for k = 1, #row.c do folded.c[k] = row.c[k] end
+			out[#out + 1] = folded
+		elseif string.find(path, under, 1, true) == 1 then
+			hidden = hidden + 1
+		else
+			out[#out + 1] = row
+		end
+	end
+	if folded ~= nil and #folded.c > 0 then
+		folded.c[#folded.c] = hidden .. " files, click to expand"
+	end
+	return out
+end
+
+-- Does a row pass the filter box in the banner?
+--
+-- Case-sensitive, and string.find with plain = true: what a reader types is a
+-- FRAGMENT OF A PATH and never a pattern, which is the same rule every comparison
+-- against a player's string in this mod wears -- a filter that took `.` for "any
+-- character" would be a filter nobody could use on a filename.
+--
+-- Only on the three tabs that have a banner to type in, and against the row's FIRST
+-- cell, which is the path on the Files tab, the device's name on Devices and the
+-- machine on Scheduler -- the cell each of those three lists is read down.
+function CeroSecDebugUI:matchesFilter(index, row)
+	local text = self.filterText
+	if text == nil or text == "" then return true end
+	if not self:bannerOn(index) then return true end
+	local first = type(row.c) == "table" and row.c[1] or nil
+	if type(first) ~= "string" then return false end
+	return string.find(first, text, 1, true) ~= nil
+end
+
+-- Sift the lists again out of the snapshots already in hand, with no round trip:
+-- what the fold and the filter change is which of the rows the window HAS are drawn,
+-- and a question about rows already in hand is not a question for the server. Same
+-- reason the machine filter's own button spends nothing (onFilter).
+function CeroSecDebugUI:refill()
+	for i = 1, #CeroSecDebugUI.TABS do
+		local spec = CeroSecDebugUI.TABS[i]
+		if spec.tab ~= nil and self.snapshots[spec.tab] ~= nil then
+			self:fill(spec.tab)
+		end
+	end
+end
+
 -- What a row IS, for keeping the cursor on it across a refresh: a machine row is
 -- named by its coordinates -- which is also what its first cell says -- and every
 -- other row by its first cell. Never by its INDEX: two seconds later a machine may
@@ -889,24 +1158,36 @@ function CeroSecDebugUI:fill(tab)
 
 	list:clear()
 	local rows = snapshot.rows or {}
+	-- How many the SERVER sent, kept before anything is taken out of them: the line
+	-- under the list says "showing N of M" and M is the county's own number, not what
+	-- is left after a fold and a filter.
+	local total = #rows
+	-- /bin folded into one row, before the filter: what the filter sifts is what is on
+	-- the glass, so a reader looking for `ls` in a folded /bin is told nothing rather
+	-- than shown a row the fold says is not there. Expand it and the filter finds it.
+	if tab == "files" then rows = self:foldBin(rows) end
 	-- The rows the list is SHOWING, kept beside it: the columns are measured off
 	-- them, on every fill and again on every drag of the window's corner.
 	list.debugRows = {}
 	for i = 1, #rows do
 		local row = rows[i]
-		if type(row) == "table" and type(row.c) == "table" and self:passes(index, row) then
+		if type(row) == "table" and type(row.c) == "table" and self:passes(index, row)
+				and self:matchesFilter(index, row) then
 			list.debugRows[#list.debugRows + 1] = row
 			list:addItem(tostring(row.c[1]), row)
 		end
 	end
 	list.debugShown = #list.debugRows
-	list.debugTotal = #rows
+	list.debugTotal = total
 	self:fitColumns(index)
 	if wanted ~= nil then
 		for i = 1, #list.items do
 			if rowKey(list.items[i].item) == wanted then list.selected = i end
 		end
 	end
+	-- The banner's machine list comes off this very snapshot, so it is rebuilt where
+	-- the snapshot lands and nowhere else.
+	if tab == "machines" then self:rebuildMachines() end
 	return list
 end
 
@@ -1007,6 +1288,77 @@ function CeroSecDebugUI:fillLog()
 end
 
 --
+-- The pane under the buttons
+--
+-- Six rows of read-only text, for the two things this window had nowhere to put: what
+-- is IN a file the Files tab lists, and the whole of what an act had to say when that
+-- is more than the one line under it.
+--
+-- READ-ONLY and drawn, not a widget: it is the same drawText the detail block under
+-- it is drawn with, cut to the window with the same fitText every cell is cut with.
+-- An ISRichTextPanel would have brought its own scrollbar, its own margins and its own
+-- font, and a debug window that had two kinds of text block in it would be a window
+-- with two answers to "how is text drawn here".
+--
+-- It CLEARS when the machine changes (selectMachine) and when the tab changes
+-- (prerender): a file's text under another machine's name, or under the Devices tab,
+-- is the one mistake the Files tab must not make, made one band lower.
+--
+
+function CeroSecDebugUI:clearPane()
+	self.paneTitle = nil
+	self.paneLines = nil
+end
+
+-- What the pane draws, at most PANE_ROWS lines of it. The title -- the path of the
+-- file -- is the first of them when there is one, because a reader who double-clicked
+-- two rows has to know which answer he is looking at; and what does not fit spends
+-- the last row saying how much did not, which is the rule every list in this window
+-- wears.
+function CeroSecDebugUI:paneRows()
+	local out = {}
+	local lines = self.paneLines
+	if lines == nil then return out end
+	if self.paneTitle ~= nil then out[1] = self.paneTitle end
+	local room = PANE_ROWS - #out
+	if #lines <= room then
+		for i = 1, #lines do out[#out + 1] = lines[i] end
+		return out
+	end
+	for i = 1, room - 1 do out[#out + 1] = lines[i] end
+	out[#out + 1] = "[... " .. (#lines - (room - 1)) .. " more lines of " ..
+		#lines .. "]"
+	return out
+end
+
+-- Double-clicking a row of the Files tab asks the server what is in that file.
+--
+-- The path and the type are read off the row by the NAME of their column
+-- (columnIndex), so a column inserted before them does not make this ask for a file
+-- called `-rw-r--r--`. A row that is not a file says so here rather than going out on
+-- the wire to be refused, which is the pattern every button in this window wears --
+-- and the server asks the same question again anyway, because a client is not what
+-- decides (CeroSecDebug.readFile).
+function CeroSecDebugUI:onRowDoubleClicked(item)
+	if type(item) ~= "table" or type(item.c) ~= "table" then return end
+	local spec = self:activeSpec()
+	if spec.tab ~= "files" then return end
+	if not self:hasMachine() then return end
+	local pathAt = columnIndex(spec, "path")
+	local typeAt = columnIndex(spec, "type")
+	local path = pathAt ~= nil and item.c[pathAt] or nil
+	if type(path) ~= "string" or path == "" then return end
+	local kind = typeAt ~= nil and item.c[typeAt] or nil
+	if kind ~= "file" then
+		self.refusal = "cannot read: " .. path .. " is a " .. tostring(kind)
+		return
+	end
+	self.refusal = nil
+	self:clearPane()
+	self:send("debugact", { act = "readfile", path = path })
+end
+
+--
 -- Drawing one row
 --
 -- Assigned onto every list box as its doDrawItem, so `self` here is the LIST and
@@ -1059,9 +1411,40 @@ end
 -- because the Files, Devices and Scheduler tabs are answers about ONE computer.
 function CeroSecDebugUI:onRowClicked(item)
 	if type(item) ~= "table" then return end
+	-- The folded /bin row is a SWITCH and not a selection: clicking it opens the
+	-- directory and clicking the open one closes it again. Here and not in a handler
+	-- of its own, because a click on a row is a click on a row and this list has one
+	-- row that is a control (CeroSecDebugUI.BIN).
+	if self:activeSpec().tab == "files" and self:isBinRow(item) then
+		self.binOpen = not self.binOpen
+		self:fill("files")
+		return
+	end
 	if type(item.x) ~= "number" then return end
-	if item.x == self.cx and item.y == self.cy and item.z == self.cz then return end
-	self.cx, self.cy, self.cz = item.x, item.y, item.z
+	self:selectMachine(item.x, item.y, item.z)
+end
+
+-- Is this the /bin row of the Files tab? Its path cell says so and nothing else
+-- does: the fold writes its count into the last cell and leaves the path alone
+-- exactly so that this test is the path and not a decorated string (foldBin).
+function CeroSecDebugUI:isBinRow(row)
+	if type(row) ~= "table" or type(row.c) ~= "table" then return false end
+	return row.c[1] == CeroSecDebugUI.BIN
+end
+
+-- Make a machine the one every per-machine tab is about. The ONE door onto that:
+-- a click on a row of the Machines tab and a choice out of the banner's machine
+-- list both come through here, so the two cannot drift -- and the refresh they
+-- cause is the same refresh.
+--
+-- false for a machine that was already selected, which is a click that changes
+-- nothing and must not throw away the snapshots in hand.
+function CeroSecDebugUI:selectMachine(x, y, z)
+	if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+		return false
+	end
+	if x == self.cx and y == self.cy and z == self.cz then return false end
+	self.cx, self.cy, self.cz = x, y, z
 	-- Everything the window holds about the machine that WAS selected goes: a
 	-- Files tab still showing the last computer's disk under a new machine's name
 	-- is the one mistake this window must not make. Every snapshot, because even
@@ -1079,11 +1462,92 @@ function CeroSecDebugUI:onRowClicked(item)
 	-- machine that WAS selected, so leaving it up under a new one would be the
 	-- Files tab's own mistake made on one line.
 	self.notice = nil
+	-- And the pane with them, for the same reason and more of it: what is in it is a
+	-- file off the machine that WAS selected, or what an act on it had to say.
+	self:clearPane()
 	for i = 1, #self.lists do
 		local spec = CeroSecDebugUI.TABS[i]
 		if spec.tab ~= nil and spec.tab ~= "machines" then self.lists[i]:clear() end
 	end
+	self:syncCombo()
 	self:refresh()
+	return true
+end
+
+-- A machine chosen out of the banner's list. `self` is the window and the combo is
+-- the widget, which is how ISComboBox calls a target back
+-- (ISComboBox.lua:252-253).
+function CeroSecDebugUI:onMachineChosen(combo)
+	if combo == nil then return end
+	local at = combo:getSelectedData()
+	if type(at) ~= "table" then return end
+	self:selectMachine(at.x, at.y, at.z)
+end
+
+-- The banner's machine list, built off the MACHINES SNAPSHOT: the server is the one
+-- thing that knows what machines there are, and a list of the window's own would be
+-- a second county.
+--
+-- Rebuilt only when the set of machines really changed, and never merely because two
+-- seconds went by: a combo rebuilt under a reader's cursor twice a second is a list
+-- he cannot open. The signature is every machine's coordinates in the order they
+-- arrived, which is the order the server built them in.
+--
+-- Every machine the snapshot holds, filter or no filter: the county list's `used only`
+-- is about what is worth LOOKING at and this is how a reader reaches a machine, so a
+-- list that hid the machine he wanted would be a list with a hole in it.
+function CeroSecDebugUI:rebuildMachines()
+	local combo = self.machineCombo
+	if combo == nil then return end
+	local snapshot = self.snapshots["machines"]
+	local rows = snapshot ~= nil and snapshot.rows or nil
+	if type(rows) ~= "table" then return end
+
+	local parts = {}
+	for i = 1, #rows do
+		local row = rows[i]
+		if type(row.x) == "number" then
+			parts[#parts + 1] = row.x .. "," .. row.y .. "," .. row.z
+		end
+	end
+	local signature = table.concat(parts, " ")
+	if signature == self.comboSignature then return end
+	self.comboSignature = signature
+
+	combo:clear()
+	local host = columnIndex(CeroSecDebugUI.TABS[1], "host")
+	for i = 1, #rows do
+		local row = rows[i]
+		if type(row.x) == "number" then
+			local where = row.x .. "," .. row.y .. "," .. row.z
+			local name = host ~= nil and type(row.c) == "table" and row.c[host] or nil
+			local label = where
+			if type(name) == "string" and name ~= "" and name ~= "-" then
+				label = name .. " at " .. where
+			end
+			-- The DATA is the three numbers and never the words: what a selection has
+			-- to hand back is a machine, and a lookup by the label would be a lookup
+			-- that breaks on a hostname somebody changed.
+			combo:addOptionWithData(label, { x = row.x, y = row.y, z = row.z })
+		end
+	end
+	self:syncCombo()
+end
+
+-- The banner's list, put on the machine that is selected. By the three numbers and
+-- never by the row's place in the list, which is the rule the cursor on the county
+-- list already wears: two seconds later a machine may have moved up it.
+function CeroSecDebugUI:syncCombo()
+	local combo = self.machineCombo
+	if combo == nil then return end
+	for i = 1, combo:getOptionCount() do
+		local at = combo:getOptionData(i)
+		if type(at) == "table" and at.x == self.cx and at.y == self.cy
+				and at.z == self.cz then
+			combo:setSelected(i)
+			return
+		end
+	end
 end
 
 --
@@ -1570,6 +2034,28 @@ function CeroSecDebugUI:prerender()
 	-- window right now, and a window that remembered it would be a window that
 	-- forgets.
 	local front = self:activeSpec().name
+	-- THE TAB CHANGED, so the pane goes. What is in it is a file off the Files tab or
+	-- what an act said, and neither is an answer about the tab a reader has just moved
+	-- to. Noticed here rather than hooked onto the tab panel: which tab is in front is
+	-- a question this function already asks every frame, and ISTabPanel's own
+	-- onActivateView is the widget's and not a mod's.
+	if self.frontTab ~= nil and self.frontTab ~= front then self:clearPane() end
+	self.frontTab = front
+
+	-- WHAT IS TYPED IN THE FILTER BOX, read every frame and acted on only when it
+	-- moved. Polled and not hooked: ISTextEntryBox calls its onTextChangeFunction
+	-- (ISTextEntryBox.lua:19-23) but ships no setter for it, and writing a field a
+	-- class only ever reads is a bet on a private. The refill spends no round trip --
+	-- it sifts the rows already in hand (refill).
+	if self.filterEntry ~= nil then
+		local typed = self.filterEntry:getInternalText()
+		if type(typed) ~= "string" then typed = "" end
+		if typed ~= (self.filterText or "") then
+			self.filterText = typed
+			self:refill()
+		end
+	end
+
 	for i = 1, #self.buttons do
 		local entry = self.buttons[i]
 		if entry.onTab ~= nil then entry.button:setVisible(entry.onTab == front) end
@@ -1611,6 +2097,13 @@ function CeroSecDebugUI:prerender()
 		self.loginEntry:setEditable(machine and (sel == nil or sel.canClearPass ~= false))
 	end
 	if self.diskCombo ~= nil then self.diskCombo:setVisible(onMachines) end
+
+	-- And the banner's two, on the three tabs that have a banner and on no other: a
+	-- machine list over the county list would be a second way to do what clicking a
+	-- row does, and a filter over the log would be a box that filters nothing.
+	local onBanner = self:bannerOn(self:activeIndex())
+	if self.machineCombo ~= nil then self.machineCombo:setVisible(onBanner) end
+	if self.filterEntry ~= nil then self.filterEntry:setVisible(onBanner) end
 end
 
 function CeroSecDebugUI:render()
@@ -1651,6 +2144,44 @@ function CeroSecDebugUI:render()
 				0.8, 0.8, 0.8, 1, UIFont[CeroSecDebugUI.FONT])
 		end
 	end
+
+	-- THE BANNER over the list, on the three tabs that are about one machine: whose
+	-- disk, whose /dev, whose jobs. Cut to the room LEFT of the filter box beside it,
+	-- so a long hostname stops short of the widgets instead of being drawn under
+	-- them -- the same fitText every cell of every list is cut with.
+	if self:bannerOn(self:activeIndex()) then
+		local room = L.filterX - 6 - (L.panelX + PAD)
+		self:drawText(fitText(self:bannerLine(), room), L.panelX + PAD, L.bannerY + 3,
+			0.8, 0.8, 0.8, 1, UIFont[CeroSecDebugUI.FONT])
+	end
+
+	-- And the pane, under the button rows: what is in a file, or what an act said.
+	local pane = self:paneRows()
+	for i = 1, #pane do
+		self:drawText(fitText(tostring(pane[i]), self:getWidth() - BORDER * 2),
+			BORDER, L.paneY + (i - 1) * (FONT_H + 2),
+			0.8, 0.8, 0.8, 1, UIFont[CeroSecDebugUI.FONT])
+	end
+end
+
+-- What the banner says: the machine the tab in front is about, where it stands and
+-- whether it is on.
+--
+-- The name is selectedHost's, which is the one place in this window that knows how to
+-- call a machine in a sentence -- off the county list's own `host` column, so a
+-- machine nobody has ever used reads as its coordinates and nothing else.
+--
+-- The power word is the SERVER's `on`, carried on every snapshot, and `?` while no
+-- answer has arrived: a banner that said `off` before the server had spoken would be
+-- the greyed button that lied, one band higher.
+function CeroSecDebugUI:bannerLine()
+	if not self:hasMachine() then
+		return "no machine selected: pick one on the Machines tab"
+	end
+	local word = "?"
+	local sel = self.selection
+	if sel ~= nil and sel.on ~= nil then word = sel.on == true and "on" or "off" end
+	return self:selectedHost() .. "  (" .. word .. ")"
 end
 
 -- The window follows its own edges when the player drags them, exactly as

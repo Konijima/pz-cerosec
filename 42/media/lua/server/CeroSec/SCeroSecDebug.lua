@@ -70,6 +70,20 @@ CeroSecDebug.WIRE_PASS_MAX = 128
 -- was cut says so.
 CeroSecDebug.CELL_MAX = 64
 
+-- Bytes of ONE FILE the window is allowed to read back, and lines of it that fit
+-- on the wire.
+--
+-- Four kilobytes because that is what the pane under the list is for: looking at
+-- what a script or a memo actually says, not reading a whole disk down a socket. A
+-- file that is longer comes back cut with a line saying how many bytes were left,
+-- so a reader is never shown a head he could mistake for the whole file -- the same
+-- rule every list in here wears.
+--
+-- The line cap is the second half of the same bound: four kilobytes of newlines is
+-- four thousand lines, and the pane draws six. It is said on the glass too.
+CeroSecDebug.FILE_BYTES_MAX = 4096
+CeroSecDebug.FILE_LINES_MAX = 64
+
 -- Lines one `print` of a state dump may be. The dump goes to the game log, which
 -- is a file somebody has to read: sixteen hundred lines of one computer's disk is
 -- a dump, four hundred thousand is a denial of service against a text editor.
@@ -819,6 +833,115 @@ function CeroSecDebug.files(system, luaObject)
 			"rows " .. #rows .. " (cap " .. CeroSecDebug.FILE_MAX .. ")",
 		},
 	}
+end
+
+--
+-- ONE FILE, read back for the pane under the list
+--
+-- What the Files tab could not answer: a row says `/etc/rc.local  file  -rwxr-xr-x
+-- root  312`, and the question a developer has at that point is what is IN it. So
+-- a double-click on the row asks for it and the pane under the list shows it.
+--
+-- A READ, which is why it is in this file: nothing here writes, and this does not
+-- either. It is root's read and it does not pretend otherwise -- CeroSecOS.rootSession
+-- is the session the kernel reads /etc/passwd with -- because this window already
+-- prints every password on the machine in clear for an admin (CeroSecDebug.accounts),
+-- and a debug window that refused to show a reader a file he can already reset the
+-- whole machine of would be a lock on the wrong door.
+--
+-- THE PATH IS A STRING A CLIENT SENT, so it is held to the machine's own rule for a
+-- path before it reaches anything: absolute, at most CeroSecOS.MAX_DEPTH components,
+-- every one of them a name the filesystem could really hold
+-- (CeroSecOS.isValidFileName). ".." cannot do anything here -- CeroSecOS.resolve eats
+-- it in pure string work and the tree is a table of ours with no way out of it -- and
+-- it is refused anyway, because a door that is only safe because of what is behind it
+-- is a door that stops being safe when what is behind it moves. And nothing of it
+-- ever reaches a Lua pattern: every test below is string.find with plain = true or a
+-- character class of ours over a name.
+--
+-- Answers an array of lines, or nil and the sentence to put on the glass.
+function CeroSecDebug.readFile(luaObject, path)
+	if luaObject == nil then return nil, "no machine selected" end
+	if type(path) ~= "string" or path == "" then return nil, "no path was named" end
+	if string.sub(path, 1, 1) ~= "/" then
+		return nil, "that is not an absolute path"
+	end
+	local _, parts = CeroSecOS.resolve(nil, path)
+	if #parts == 0 then return nil, "/ is a directory" end
+	if #parts > CeroSecOS.MAX_DEPTH then return nil, "path too deep" end
+	for i = 1, #parts do
+		if not CeroSecOS.isValidFileName(parts[i]) then
+			return nil, "that is not a path this machine could hold"
+		end
+	end
+
+	local state, refusal = luaObject:osState()
+	if state == nil then return nil, "os refused: " .. cell(refusal) end
+	local node, why = CeroSecOS.getNode(state, CeroSecOS.rootSession(), path)
+	if node == nil then return nil, tostring(why) .. ": " .. path end
+	if node.type ~= "file" then
+		return nil, path .. " is a " .. tostring(node.type) .. ", not a file"
+	end
+
+	local data = node.data or ""
+	local total = #data
+	local cut = total > CeroSecDebug.FILE_BYTES_MAX
+	if cut then data = string.sub(data, 1, CeroSecDebug.FILE_BYTES_MAX) end
+
+	local lines = CeroSecDebug.showBytes(data)
+	local over = nil
+	if #lines > CeroSecDebug.FILE_LINES_MAX then
+		over = #lines - CeroSecDebug.FILE_LINES_MAX
+		for i = #lines, CeroSecDebug.FILE_LINES_MAX + 1, -1 do lines[i] = nil end
+		lines[#lines + 1] = "[... " .. over .. " more lines]"
+	end
+	if cut then
+		lines[#lines + 1] = "[... " .. (total - CeroSecDebug.FILE_BYTES_MAX) ..
+			" more bytes]"
+	end
+	return lines
+end
+
+-- A file's bytes as lines a window can draw.
+--
+-- A newline ends a line and is the one byte that is not shown. Everything else that
+-- is not printable is SHOWN and never dropped, in two notations:
+--
+--   * `^X` for a byte under 32 and `^?` for 127, which is the caret notation every
+--     Unix has printed control characters in since `cat -v` (and `ed` before it):
+--     the byte plus 64, so a tab is `^I` and a carriage return `^M`. A file written
+--     on a machine that thought it was DOS reads `line^M` here, which is the answer
+--     to "why does this script not run".
+--   * `\NNN`, three octal digits, for a byte of 128 and over -- what `ls -b` and
+--     `od -b` print for a byte that has no caret name. Deliberately NOT `cat -v`'s
+--     own `M-x` meta notation for the high half: this pane is a developer's tool and
+--     not a 1993 program, and `M-^I` reads as two escapes where `\211` reads as one
+--     byte. (Nothing this mod writes can hold one -- every write goes through the
+--     printable rule -- so a high byte here is a byte something else put there,
+--     which is exactly when a reader needs to see its number.)
+--
+-- A file with no newline at the end is still its last line: a line is what is
+-- between newlines, and an empty file is no lines at all.
+function CeroSecDebug.showBytes(data)
+	local lines = {}
+	local out = ""
+	for i = 1, #data do
+		local byte = string.byte(data, i)
+		if byte == 10 then
+			lines[#lines + 1] = out
+			out = ""
+		elseif byte == 127 then
+			out = out .. "^?"
+		elseif byte < 32 then
+			out = out .. "^" .. string.char(byte + 64)
+		elseif byte > 126 then
+			out = out .. string.format("\\%03o", byte)
+		else
+			out = out .. string.char(byte)
+		end
+	end
+	if out ~= "" then lines[#lines + 1] = out end
+	return lines
 end
 
 -- The whole state table, to the game log, in bounded chunks.

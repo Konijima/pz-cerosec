@@ -124,11 +124,51 @@ row is on the **Machines** tab and nowhere else: all eight are about the machine
 is SELECTED, and that is the tab a machine is selected on -- the same rule the filter
 already wears.
 
+**A banner over the list, on the three tabs that are about ONE machine** (Files,
+Devices, Scheduler — `CeroSecDebugUI.PER_MACHINE`). It says which machine their rows
+belong to, in `selectedHost`'s own words and with the server's own `on` beside them:
+
+    office at 10,10,0  (on)
+
+and `no machine selected: pick one on the Machines tab` when nothing is. `(?)` is a
+machine the server has not answered about yet, deliberately: a banner that printed
+`off` before the server had spoken would be the greyed button that lied, one band
+higher.
+
+In it, two widgets. An **`ISComboBox` of every machine of the snapshot**, by hostname
+and coordinates, which changes the selection **without leaving the tab** — through
+`CeroSecDebugUI:selectMachine`, which is the one door a click on a row of the Machines
+tab comes through too, so the two cannot drift and the refresh is the same refresh. It
+is built off the machines snapshot and not off a list of the window's own (the server
+is what knows what machines there are), it holds every machine whatever the county
+filter says (this is how a reader REACHES one), and it is rebuilt only when the set of
+machines really changed — a combo rebuilt twice a second is a list nobody can open.
+And a **filter box**, which is the tab's own and is described under **Files** below.
+
+The banner's room comes out of the **list** and not out of the panel: it is on three
+tabs of six, and a panel that shrank would move the buttons under the other three.
+The window's opening height and the floor it can be dragged to both count it, and the
+floor is worked out from the SHORTEST list — a per-machine tab's — because a floor
+taken off the county's own list is a floor at which those three have a list of a
+negative height.
+
+**A pane under the button rows.** Six rows of read-only text for the two things this
+window had nowhere to put: what is IN a file the Files tab lists (`readfile`, below)
+and the whole of what an act had to say when that is more than the one line under the
+list — a sticky note is three lines. It is drawn with the same `drawText` and cut with
+the same `fitText` as every cell of every list, and it is not an `ISRichTextPanel`
+because that would have brought its own scrollbar, margins and font and left this
+window with two answers to "how is text drawn here". What does not fit spends the last
+of the six rows saying how much did not. It **clears** when the machine changes and
+when the tab changes: a file's text under another machine's name, or under another
+tab, is the one mistake the Files tab must not make, made one band lower.
+
 Every number comes out of one `layout()`, and `applyLayout()` is what both
 `createChildren` and `onResize` call — because two copies of this arithmetic that
 disagreed is how it went wrong. The bands, top to bottom: title bar, tab strip,
-header row, rows, button row, detail block. `tests/debug_ui_test.lua` asserts in
-pixels that none of them reaches into the next, before and after a resize.
+banner (three tabs), header row, rows, button rows, pane, detail block.
+`tests/debug_ui_test.lua` asserts in pixels that none of them reaches into the next,
+before and after a resize.
 
 ### The columns
 
@@ -255,6 +295,35 @@ is selected, because those are facts about a window.
    `exemptUsage`) — never counted here, because a debug window that added its own
    bytes up would be a second `df`.
 
+   **Whose files.** The banner over the list names the machine (above), and its
+   combo box changes which machine without going back to the Machines tab.
+
+   **`/bin` is folded**, by default and until somebody clicks the row. Eighty-odd
+   shipped commands are eighty-odd rows of a list whose cap is 512 and none of them
+   is what a reader opened this tab for; the one `/bin` row stands for the lot and
+   says how many it is standing for in its **last** cell — the one that already
+   answered "how many nodes has this directory" — so the path cell still reads
+   `/bin` and the row is still the row the cursor keeps. Clicking it opens it and
+   clicking it again closes it, and neither spends a round trip: the rows are
+   already in hand. It is a fact about the WINDOW, like the county filter, so it
+   survives a change of machine.
+
+   **The filter box** in the banner keeps the rows whose first cell holds what is
+   typed — the path here, the device's name on Devices, the machine on Scheduler.
+   Case-sensitive, `string.find` with `plain = true` and never a pattern, which is
+   the rule every comparison against a typed string in this mod wears: a filter that
+   took `.` for "any character" is a filter nobody can use on a filename. It is
+   applied AFTER the fold, so what it sifts is what is on the glass — expand `/bin`
+   to search it — and the `showing N of M` line still names the number the server
+   sent.
+
+   **Double-clicking a file row shows what is in it** in the pane under the buttons,
+   read-only, through the `readfile` act (see **The protocol**). The path and the
+   type are read off the row by the NAME of their column, so a column inserted
+   before them cannot make the window ask for a file called `-rw-r--r--`; a row that
+   is not a file says so on the reason line instead of going out on the wire, and the
+   server asks the same question again anyway.
+
    **Dump state** prints the whole state table to the game log through `print`, in
    bounded chunks (400 lines and one saying where it was cut). It is printed
    SERVER-side: in singleplayer that is the same console, and on a dedicated
@@ -359,6 +428,7 @@ connection is not a window (see [PROTOCOL.md](PROTOCOL.md)).
                                   reason, resetReason }
                       debug     { x, y, z, token, error }        -- a refusal
                       debug     { x, y, z, token, note }         -- it worked
+                      debug     { x, y, z, token, path, text }   -- a file
 
 `x, y, z` is the machine **selected in the window** and not a computer the player
 is standing at — it may be on the far side of the map with its chunk unloaded.
@@ -371,8 +441,8 @@ every other command of this module, and it is deliberate: they are about the
 COUNTY. What is asked instead is `CeroSec.debugAllowed()`.
 
 `tab` is one of `machines`, `files`, `devices`, `network`, `scheduler` — anything
-else is answered with nothing. `act` is `on`, `off`, `dump`, `reset`, `selftest` or
-`givedisk`; the first two are the object's own `turnOn`/`turnOff`, which are the
+else is answered with nothing. `act` is `on`, `off`, `dump`, `reset`, `selftest`,
+`readfile` or `givedisk`; the first two are the object's own `turnOn`/`turnOff`, which are the
 very calls `SCeroSecObject:toggle` makes for the context menu, and `reset` is the
 one act with no survivor's gesture behind it (see **Reset machine** below).
 
@@ -413,9 +483,61 @@ the one line there is, a note after a refusal replaces it, and both go when anot
 machine is selected — half of what the self-test reports is about the machine that
 WAS selected.
 
+An answer with **`path` and `text`** on it and no `tab` is one FILE, for the pane:
+`text` is an array of lines and `path` is the file they came out of, because a reader
+who double-clicked two rows has to be able to tell which answer he is looking at. Its
+own field and not a note, since a note is one sentence and this is a file. It is kept
+only when it names the machine that is selected NOW — the rule the selection fields
+wear — and it goes when the machine or the tab changes.
+
+### `readfile`
+
+`debugact { act = "readfile", path }` answers the bytes of one file of the selected
+machine, and it is the one act of this window that is a **read**: it writes nothing,
+and it lives in `SCeroSecDebug.lua` with the snapshots for that reason.
+
+It is root's read and does not pretend otherwise (`CeroSecOS.rootSession`, the session
+the kernel reads `/etc/passwd` with). This window already prints every password on the
+machine in clear for an admin, so a lock here would be a lock on the wrong door — and
+it is behind `CeroSec.debugAllowed(playerObj)` like every other act, asked of the
+player the ENGINE handed `OnClientCommand`.
+
+**The path is a client's string, so it is validated** before it reaches anything:
+absolute, at most `CeroSecOS.MAX_DEPTH` components, every component a name the
+filesystem could really hold (`CeroSecOS.isValidFileName`), and the node it lands on a
+`file` and not a directory. `..` cannot do anything here — `CeroSecOS.resolve` eats it
+in pure string work and the tree is a table of ours with no way out of it — and it is
+refused all the same, because a door that is only safe because of what is behind it
+stops being safe when what is behind it moves. Nothing of the path ever reaches a Lua
+pattern.
+
+**Bounded twice.** `CeroSecDebug.FILE_BYTES_MAX` (4096) bytes, with a last line
+`[... N more bytes]`, because the pane is for looking at what a script or a memo says
+and not for reading a disk down a socket; and `CeroSecDebug.FILE_LINES_MAX` (64) lines
+with a `[... N more lines]` of its own, because four kilobytes of newlines is four
+thousand lines and the pane draws six.
+
+**What cannot be printed is SHOWN and never dropped**, in two notations
+(`CeroSecDebug.showBytes`):
+
+- `^X` for a byte under 32 and `^?` for 127 — the caret notation every Unix has
+  printed control characters in since `cat -v`, the byte plus 64, so a tab reads `^I`
+  and a carriage return `^M`. A script written on a machine that thought it was DOS
+  reads `line^M` here, which is the answer to "why does this not run".
+- `\NNN`, three octal digits, for a byte of 128 and over — what `ls -b` and `od -b`
+  print for a byte with no caret name. Deliberately **not** `cat -v`'s own `M-x` meta
+  notation for the high half: this pane is a developer's tool and not a 1993 program,
+  and `M-^I` reads as two escapes where `\211` reads as one byte. Nothing this mod
+  writes can hold one (every write goes through the printable rule), so a high byte
+  here is a byte something else put there — which is exactly when a reader needs its
+  number.
+
+A newline ends a line and is the one byte not shown; a file with no newline at the end
+is still its last line, and an empty file is no lines at all.
+
 **Everything is bounded and says so**: 200 machines, 512 file rows, 128 devices,
 128 jobs, 64 rows a network section, 16 zones, 50 wire events, 64 characters a
-cell. A
+cell, 4096 bytes and 64 lines of one file. A
 truncated list reports its own cap in `info`, so a list that was cut says so on
 the glass instead of quietly being the whole truth.
 
@@ -738,6 +860,41 @@ sentence, and **Login as root** opens the terminal when it worked and opens noth
 when it was refused. Its block 10 now asserts TWO button rows in pixels: every button
 on the row it was given, no row reaching into the one above it, the login box and the
 disk list on the second, and the detail block under the LAST row.
+
+**Section 55 of `tests/window_test.lua` is `readfile`'s**, driven through the real
+`OnClientCommand` door and read off the reply: the lines of a file the machine really
+holds, a last line with no newline after it still a line and an empty file no lines at
+all, every one of the two notations on the bytes themselves (`a^Ib^M^@^?\310`), the
+byte cap provoked with a file OVER it and the line cap with one of newlines, and then
+every refusal the path can earn — a file that is not there, a directory, `/`, a
+relative path, no path at all, a component the machine could not hold, a path deeper
+than it allows, and a `..` that resolves and is answered. Then the door shut, which
+answers nothing.
+
+`tests/debug_ui_test.lua`'s blocks 17 to 20 are the banner's, the machine list's, the
+fold's, the filter's and the pane's: the banner's text for a machine that is on, one
+that is off, one nothing has been said about and none at all, and painted on a
+per-machine tab and not on the county's; the list built off the snapshot with the
+coordinates as its data, a choice out of it selecting that machine and asking the
+server again, a row click moving the list, a choice of the machine already selected
+asking nothing, and the list rebuilt only when the county changed; `/bin` folded to one
+row whose last cell counts what it stands for, folded from a COPY so that a second fill
+folds the same three, opened and closed by a click and spending no round trip;
+the filter keeping what is typed and nothing else, case-sensitive, a dot a dot, and not
+touching the county's list; and the pane with a file in it, the path over it, a run
+longer than the band saying how much is not on the glass, a file about another machine
+dropped, a note whole in it and still on the reason line, and cleared by a change of
+tab and by a change of machine. Block 10 asserts the two new bands in pixels: the pane
+under the last button row and clear of the detail block, the banner out of the LIST on
+exactly three tabs with its two widgets inside the panel and clear of the header row,
+and the floor taken off the SHORTEST list.
+
+Mutation-checked, each one red on its own line: no fold, a fold that writes into the
+snapshot, the filter switched off, the filter as a Lua pattern, a combo that selects
+nothing, the pane's room never taken out of the panel, the banner taking no room off
+the list, a pane that survives a change of tab, a file for another machine shown, a
+directory asked for; and on the server, no byte cap, a control byte dropped instead of
+shown, a relative path let in, and `readfile` outside the door.
 
 The in-game half — what is actually on the glass, whether the columns line up,
 whether the buttons do what they say — is

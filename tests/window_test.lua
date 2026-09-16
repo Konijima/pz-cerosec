@@ -17188,4 +17188,138 @@ do
 	check("and on the far machine's own console, as a broadcast must be", againOnOwn)
 end
 
+--
+-- 55. Reading ONE FILE back for the pane (the Files tab's double-click)
+--
+-- The wire from the double-click to the bytes: a `readfile` act through the real
+-- OnClientCommand door, and what comes back read off the reply. What is asserted is
+-- the TEXT -- the lines a file really holds, the cap with its own last line, the two
+-- notations a byte that cannot be printed is shown in -- and then every refusal the
+-- path can earn, and then the door shut, which answers nothing.
+--
+do
+	local net = newNet()
+	-- The machine the harness already has, and its state as the act itself reads it:
+	-- `readfile` is a READ and asks nothing about the power, because a disk is a disk
+	-- whether the screen is lit or not -- which is the same rule the reset wears.
+	local machine = net.here
+	local state = machine:osState()
+	check("the machine has a filesystem", type(state.fs) == "table")
+
+	local answers = {}
+	net.system.reply = function(_, _, cmd, args)
+		answers[#answers + 1] = { cmd = cmd, args = args }
+	end
+	local function ask(path)
+		answers = {}
+		net.system:OnClientCommand("debugact", net.player,
+			{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "readfile", path = path })
+		return answers[1]
+	end
+
+	-- A file of the player's own, written through the machine's own door so that what
+	-- is read back is a file the engine really holds.
+	local session = CeroSecOS.rootSession()
+	eq("a file is written", CeroSecOS.writeFile(state, session, "/root/notes.txt",
+		"one\ntwo\nthree\n", false, 0) ~= nil, true)
+
+	local got = ask("/root/notes.txt")
+	check("the server answered", got ~= nil)
+	eq("on the same command a snapshot comes on", got.cmd, "debug")
+	eq("carrying the window's own token", got.args.token, "dbg-0-1")
+	eq("and no tab, so no list is emptied by it", got.args.tab, nil)
+	eq("it names the file it is about", got.args.path, "/root/notes.txt")
+	eq("three lines", #got.args.text, 3)
+	eq("the first", got.args.text[1], "one")
+	eq("the second", got.args.text[2], "two")
+	eq("the third", got.args.text[3], "three")
+
+	-- A line with no newline after it is still a line, and an empty file is no lines
+	-- at all: a pane showing one blank row for an empty file would be a pane that
+	-- cannot be told from a file holding one empty line.
+	eq("a last line with no newline is a line",
+		#CeroSecDebug.showBytes("a\nb"), 2)
+	eq("and an empty file is no lines", #CeroSecDebug.showBytes(""), 0)
+	eq("while one newline IS one empty line",
+		#CeroSecDebug.showBytes("\n"), 1)
+
+	-- THE TWO NOTATIONS, on the bytes themselves: caret for the low half and its
+	-- DEL, three octal digits for the high. Every one of them asserted, because a
+	-- window that dropped an unprintable byte would be a window that showed a file
+	-- the machine has not got.
+	local shown = CeroSecDebug.showBytes("a" .. string.char(9) .. "b" ..
+		string.char(13) .. string.char(0) .. string.char(127) .. string.char(200))
+	eq("one line, since none of them is a newline", #shown, 1)
+	eq("a tab is ^I, a return ^M, a nul ^@, DEL ^? and 0310 octal",
+		shown[1], "a^Ib^M^@^?\\310")
+
+	-- THE CAP, and the line that says what was left. Provoked with a file OVER it and
+	-- not asserted against the length of a file that fits, which would be an
+	-- assertion no cap has to pass.
+	local big = string.rep("x", CeroSecDebug.FILE_BYTES_MAX + 500)
+	local node = CeroSecOS.getNode(state, session, "/root/notes.txt")
+	node.data = big
+	got = ask("/root/notes.txt")
+	eq("the file comes back in two lines: the bytes and what was cut",
+		#got.args.text, 2)
+	eq("and the bytes are exactly the cap",
+		#got.args.text[1], CeroSecDebug.FILE_BYTES_MAX)
+	eq("with the rest counted on the line under them", got.args.text[2],
+		"[... 500 more bytes]")
+
+	-- AND THE LINE CAP, which is the same bound said the other way: four kilobytes of
+	-- newlines is four thousand lines and the pane draws six.
+	node.data = string.rep("\n", CeroSecDebug.FILE_LINES_MAX + 20)
+	got = ask("/root/notes.txt")
+	eq("the lines are capped", #got.args.text, CeroSecDebug.FILE_LINES_MAX + 1)
+	eq("and the last of them says how many were left", got.args.text[#got.args.text],
+		"[... 20 more lines]")
+
+	-- THE REFUSALS, each in the server's own words and each on the `error` field a
+	-- refusal has always come back on.
+	local function refusal(path)
+		local answer = ask(path)
+		if answer == nil then return nil end
+		return answer.args.error
+	end
+	check("a file that is not there is refused",
+		string.find(tostring(refusal("/root/nope.txt")), "no such file", 1, true) ~= nil)
+	check("a directory is refused for being one",
+		string.find(tostring(refusal("/etc")), "is a dir", 1, true) ~= nil)
+	check("/ is refused for being one too",
+		string.find(tostring(refusal("/")), "directory", 1, true) ~= nil)
+	check("a relative path is refused",
+		string.find(tostring(refusal("notes.txt")), "absolute", 1, true) ~= nil)
+	check("no path at all is refused",
+		string.find(tostring(refusal(nil)), "no path", 1, true) ~= nil)
+	-- A component no filesystem of this machine could hold. It could not resolve to
+	-- anything anyway -- the tree is a table of ours -- and it is refused BEFORE the
+	-- walk, because a door that is only safe because of what is behind it stops being
+	-- safe when what is behind it moves.
+	check("a component the machine could not hold is refused",
+		string.find(tostring(refusal("/root/a b")),
+			"could hold", 1, true) ~= nil)
+	check("and a path deeper than the machine allows",
+		string.find(tostring(refusal("/" .. string.rep("a/", CeroSecOS.MAX_DEPTH + 2))),
+			"too deep", 1, true) ~= nil)
+	-- `..` cannot leave the tree and is refused all the same: CeroSecOS.resolve eats it
+	-- in pure string work, so what reaches the walk here is /root/notes.txt.
+	got = ask("/root/../root/notes.txt")
+	eq("a path with .. in it resolves and is answered", got.args.error, nil)
+	check("with the file's own text on it", type(got.args.text) == "table")
+
+	-- AND THE DOOR SHUT: no flag, no debug mode, no admin. It answers nothing at all,
+	-- which is what every act of this window does behind it.
+	local flag, debugMode = CeroSec.DEV_DEBUG_MENU, _G.isDebugEnabled
+	CeroSec.DEV_DEBUG_MENU = false
+	_G.isDebugEnabled = function() return false end
+	answers = {}
+	net.system:OnClientCommand("debugact", net.player,
+		{ x = 10, y = 10, z = 0, token = "dbg-0-1", act = "readfile",
+			path = "/root/notes.txt" })
+	eq("behind a shut door the read answers nothing", #answers, 0)
+	CeroSec.DEV_DEBUG_MENU = flag
+	_G.isDebugEnabled = debugMode
+end
+
 print("window_test: " .. count .. " checks passed")

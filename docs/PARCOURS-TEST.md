@@ -3373,6 +3373,70 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      menu, sous les entrées du jeu. C'est l'exception voulue : un outil de
      développeur ne pousse pas les entrées de la machine vers le bas. [ ]
 
+## AK. L'onglet Fichiers dit de qui sont les fichiers (fenêtre de débogage)
+
+Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic droit →
+**CeroSec (dev)** → **Fenêtre de débogage**).
+
+356. **La bannière nomme la machine.** Onglet **Files**. Attendu : au-dessus de la
+     liste, une ligne `<hostname> at x,y,z  (on)` avec le nom d'hôte de la machine
+     sélectionnée. Passer à **Devices** puis à **Scheduler** : la même bannière,
+     la même machine. Revenir à **Machines** : pas de bannière (c'est l'onglet où
+     on choisit la machine). [ ]
+357. **Rien de sélectionné.** Fermer la fenêtre, faire un clic droit sur un
+     ordinateur que le mod n'a jamais vu (ou ouvrir la fenêtre puis cliquer une
+     ligne, ce n'est pas pareil) — le plus simple : ouvrir la fenêtre depuis une
+     machine dont le morceau de carte est parti et dont aucune ligne n'est
+     sélectionnée. Attendu : la bannière dit `no machine selected: pick one on the
+     Machines tab`. [ ]
+358. **Changer de machine sans quitter l'onglet.** Onglet **Files**, ouvrir la
+     liste déroulante à droite de la bannière. Attendu : une ligne par machine que
+     le serveur tient, `<hostname> at x,y,z` (une machine jamais allumée n'a que
+     ses coordonnées). En choisir une autre : la bannière change de nom, la liste
+     de fichiers se vide puis se remplit avec le disque de CETTE machine, et le
+     bloc de détail sous la liste parle d'elle. Revenir à l'onglet **Machines** :
+     la ligne sélectionnée est la nouvelle machine, pas l'ancienne. [ ]
+359. **`/bin` est replié.** Onglet **Files** sur une machine allumée. Attendu :
+     UNE ligne `/bin`, type `dir`, dont la dernière colonne dit
+     `82 files, click to expand` (le nombre est celui de la machine), et aucune
+     ligne `/bin/...`. Cliquer la ligne : les quatre-vingts commandes
+     apparaissent et la dernière colonne redevient un nombre. Recliquer : elles
+     disparaissent. Le compteur `showing N of M` sous la liste garde le M du
+     serveur dans les deux cas. [ ]
+360. **Le filtre.** Taper `etc` dans la boîte de la bannière. Attendu : seules les
+     lignes dont le chemin contient `etc` restent, au fur et à mesure de la
+     frappe, sans aller-retour visible. Taper `ETC` : plus rien (c'est sensible à
+     la casse). Taper `.` : seulement les chemins qui contiennent vraiment un
+     point — PAS toutes les lignes (ce n'est pas une expression régulière). Vider
+     la boîte : tout revient, `/bin` toujours replié. Passer à **Devices** : le
+     filtre s'applique aussi au nom du périphérique. [ ]
+361. **Lire un fichier.** Onglet **Files**, double-cliquer la ligne
+     `/etc/passwd`. Attendu : dans le panneau sous les rangées de boutons, le
+     chemin `/etc/passwd` puis les premières lignes du fichier, en lecture seule.
+     Double-cliquer un répertoire (`/etc`) : rien n'est demandé et la ligne sous
+     la liste dit `cannot read: /etc is a dir`. [ ]
+362. **Un fichier plus grand que le panneau.** `cat /var/log/messages` a plus de
+     cinq lignes : double-cliquer sa ligne. Attendu : le panneau montre le chemin,
+     quatre lignes, et une dernière ligne `[... N more lines of M]`. [ ]
+363. **Un octet qu'on ne peut pas imprimer.** Au terminal, sur cette machine :
+     `printf 'a\tb\r\n' > /root/ctl.txt`, puis **Refresh** de la fenêtre et
+     double-clic sur `/root/ctl.txt`. Attendu : le panneau affiche `a^Ib^M` — la
+     tabulation et le retour chariot sont MONTRÉS et non avalés. [ ]
+364. **Le panneau se vide quand il doit.** Avec un fichier affiché : changer
+     d'onglet (**Devices**) → le panneau est vide. Revenir, réafficher un fichier,
+     puis changer de machine par la liste déroulante → vide aussi. Un fichier
+     d'une machine sous le nom d'une autre est exactement ce qu'il ne faut pas
+     voir. [ ]
+365. **Une note tient dans le panneau.** Onglet **Machines**, bouton **Donner le
+     mot de passe root** (2e rangée). Attendu : la ligne sous la liste dit la
+     phrase comme avant, ET le panneau montre les deux ou trois lignes du papier
+     en entier. [ ]
+366. **La liste ne rétrécit pas.** Vérifier à l'ouverture que la liste a bien une
+     vingtaine de rangées sur l'onglet **Machines** et une de moins sur **Files**
+     (la bannière prend la place d'une rangée). Tirer le coin jusqu'au plus petit
+     possible : sur **Files** il reste exactement une rangée, rien ne se chevauche,
+     et le panneau reste sous les boutons et au-dessus du bloc de détail. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

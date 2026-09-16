@@ -2408,6 +2408,18 @@ local function noteAct(system, playerObj, token, x, y, z, text)
 		{ token = token, note = text, x = x, y = y, z = z })
 end
 
+-- And the third door of the same kind: a FILE the window asked to read, back to the
+-- window that asked. Its own field and not a `note`, because a note is one sentence
+-- on one line and this is a file: the pane under the list draws the lines. Like a
+-- refusal and like a note it carries no tab, so no list is emptied by it, and it
+-- carries the path it is about -- the pane names the file over its own text, and a
+-- reader who double-clicked two rows has to be able to tell which answer he is
+-- looking at.
+local function fileAct(system, playerObj, token, x, y, z, path, lines)
+	system:reply(playerObj, "debug",
+		{ token = token, path = path, text = lines, x = x, y = y, z = z })
+end
+
 -- ANY DISK OF THE CATALOGUE, into his hands.
 --
 -- A write -- which is why it is here and not in SCeroSecDebug.lua, that file being
@@ -2591,6 +2603,18 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 		elseif not luaObject:resetMachine() then
 			refuseAct(self, playerObj, token, x, y, z,
 				"reset refused and did not say why")
+		end
+	elseif args.act == "readfile" then
+		-- A READ and the only act in here that is one, so it is behind nothing but the
+		-- door at the top of this function -- which is the door every act is behind
+		-- (CeroSec.debugAllowed, asked of the player the ENGINE handed us). The path is
+		-- a client's string and is validated by the reader itself, in the machine's own
+		-- rule for a path (CeroSecDebug.readFile).
+		local lines, why = CeroSecDebug.readFile(luaObject, args.path)
+		if lines == nil then
+			refuseAct(self, playerObj, token, x, y, z, "cannot read: " .. tostring(why))
+		else
+			fileAct(self, playerObj, token, x, y, z, args.path, lines)
 		end
 	elseif args.act == "dump" then
 		CeroSecDebug.dump(luaObject)

@@ -224,12 +224,22 @@ end
 function List:clear() self.items = {}; self.selected = 1 end
 function List:size() return #self.items end
 function List:setOnMouseDownFunction(target, fn) self.target = target; self.onmousedown = fn end
+-- The game's own pair, and the SAME `self.target` field: ISScrollingListBox's two
+-- setters both write it (:286-296), so a fake that kept two targets would be a fake
+-- where a window could be called back by a handler the game could never reach.
+function List:setOnMouseDoubleClick(target, fn) self.target = target; self.onmousedblclick = fn end
 -- What the game does when a row is clicked (ISScrollingListBox:onMouseDown ->
 -- invokeOnMouseDownFunction): the TARGET is called with the row's item, and the
 -- selection has already moved.
 function List:clickRow(index)
 	self.selected = index
 	self.onmousedown(self.target, self.items[index].item)
+end
+-- And a double-click, which the game dispatches the same way off the same selection
+-- (invokeOnMouseDoubleClick, :298-302).
+function List:dblClickRow(index)
+	self.selected = index
+	self.onmousedblclick(self.target, self.items[index].item)
 end
 function List:drawSelection() end
 function List:drawMouseOverHighlight() end
@@ -377,13 +387,25 @@ function Combo:getSelectedData()
 end
 function Combo:setSelected(value) self.selected = value end
 function Combo:setEnabled(v) self.enabled = v end
-ISComboBox = { new = function(_, x, y, w, h)
+-- What the game does when somebody picks a line out of an open combo: the option is
+-- selected and THEN the target is called back with the widget
+-- (ISComboBox.lua:250-254). Setting the selection in Lua -- setSelected, selectData --
+-- deliberately does not call it, which is how the window follows a row click without
+-- selecting a machine twice.
+function Combo:choose(index)
+	self.selected = index
+	if self.onChange then self.onChange(self.target, self) end
+end
+function Combo:clear() self.options = {}; self.selected = 0 end
+ISComboBox = { new = function(_, x, y, w, h, target, onChange)
 	local o = setmetatable({}, Combo)
 	o.x, o.y, o.width, o.height = x, y, w, h
 	o.options = {}
 	o.selected = 0
 	o.enabled = true
 	o.visible = true
+	o.target = target
+	o.onChange = onChange
 	o.children = {}
 	return o
 end }
@@ -1127,6 +1149,59 @@ local function checkBands(bench, when)
 		L.infoY >= lastRow + L.buttonH)
 	check(when .. ": with the whole of it above the resize widget",
 		L.infoY + L.infoH <= window.height - L.rh)
+
+	-- THE PANE, which is a band like the rest and has to be asserted like one: it is
+	-- not drawn over the buttons that fill it and not drawn over the detail block
+	-- under it, and the whole of it is inside the window. A pane whose room was
+	-- never taken out of the panel's height would sit on the buttons and every
+	-- assertion above would still be perfectly happy.
+	check(when .. ": the pane is under the last button row",
+		L.paneY >= lastRow + L.buttonH)
+	check(when .. ": and the whole of it is above the detail block",
+		L.paneY + L.paneH <= L.infoY)
+	eq(when .. ": the pane is PANE_ROWS tall", L.paneH, 6 * (12 + 2))
+	check(when .. ": and inside the window", L.paneY + L.paneH <= window.height)
+
+	-- THE BANNER, on the three tabs that have one and on no other. It comes out of
+	-- the LIST and not out of the panel, so what has to be true is that the list on
+	-- those three starts a banner lower than the others and its header row still has
+	-- its own room over it -- and that the two widgets in it are inside the banner's
+	-- own rectangle rather than over the header row under them.
+	local bannered = 0
+	for i = 1, #window.lists do
+		local view = window.views[i]
+		local list = window.lists[i]
+		local headerTop = list.y - list.itemheight
+		if window:bannerOn(i) then
+			bannered = bannered + 1
+			check(when .. ": list " .. i .. " leaves room for its banner",
+				headerTop >= L.bannerH)
+			eq(when .. ": and starts exactly a banner and a header down",
+				list.y, L.headerH + L.bannerH)
+		else
+			eq(when .. ": list " .. i .. " has no banner over it",
+				list.y, L.headerH)
+		end
+		check(when .. ": list " .. i .. " still ends inside the panel",
+			view.y + list.y + list.height <= panel.height)
+	end
+	eq(when .. ": three tabs carry a banner", bannered, 3)
+
+	-- The two widgets of the banner, in window coordinates: inside the panel, on the
+	-- banner's own row, and clear of the header row the list draws under them.
+	local widgets = { window.machineCombo, window.filterEntry }
+	for w = 1, #widgets do
+		local made = widgets[w]
+		eq(when .. ": banner widget " .. w .. " is on the banner row", made.y, L.bannerY)
+		check(when .. ": banner widget " .. w .. " starts inside the panel",
+			made.x >= panel.x)
+		check(when .. ": and ends inside it",
+			made.x + made.width <= panel.x + panel.width)
+		check(when .. ": and does not reach into the header row under it",
+			made.y + made.height <= panel.y + L.tabH + L.bannerH + 1)
+	end
+	check(when .. ": the filter box is left of the machine list",
+		window.filterEntry.x + window.filterEntry.width <= window.machineCombo.x)
 end
 
 do
@@ -1185,8 +1260,15 @@ do
 	window:setHeight(window.minimumHeight)
 	window:onResize()
 	checkBands(bench, "at its floor")
-	eq("and at the floor the list is exactly one row tall",
-		window.lists[1].height, window.lists[1].itemheight)
+	-- At the floor the SHORTEST list is exactly one row tall, and the shortest is a
+	-- per-machine tab's: the selection banner comes out of the list on those three, so
+	-- a floor worked out from the county's own list would be a floor at which the
+	-- Files tab has a list of a negative height. The county's list is a banner taller,
+	-- which is the same number said from the other side.
+	eq("and at the floor the Files list is exactly one row tall",
+		window.lists[2].height, window.lists[2].itemheight)
+	eq("with the county's list a banner taller",
+		window.lists[1].height, window.lists[1].itemheight + window.numbers.bannerH)
 	check("with every button still inside it",
 		window.buttons[#window.buttons].button.x +
 			window.buttons[#window.buttons].button.width <= window.width)
@@ -1932,6 +2014,327 @@ do
 	other.frame()
 	check("and says whose session is in the way",
 		other.painted("already logged in as bob"))
+end
+
+--
+-- 17. The banner over the list, on the three tabs that are about one machine
+--
+-- What a reader was handed before this: a filesystem, a /dev and a list of jobs
+-- under no name at all, and one way of changing which machine they belong to --
+-- going back to the Machines tab and clicking a row. So the banner names the
+-- machine, the list in it changes the machine, and the box in it sifts the rows.
+--
+
+-- A tab's own files, in the shape the server sends them (SCeroSecDebug.files): the
+-- seven columns of the Files tab, with `nodes` last, which is the cell the fold
+-- writes its count into.
+local function fileRow(path, kind, nodes)
+	return { c = { path, kind or "file", "-rw-r--r--", "root", "12",
+		"Jul  4 09:12", nodes or "" } }
+end
+
+local function treeRows()
+	return {
+		fileRow("/", "dir", "6"),
+		fileRow("/bin", "dir", "3"),
+		fileRow("/bin/cat"),
+		fileRow("/bin/ls"),
+		fileRow("/bin/sh"),
+		fileRow("/etc", "dir", "2"),
+		fileRow("/etc/passwd"),
+		fileRow("/etc/motd"),
+	}
+end
+
+do
+	local bench = newBench()
+	local window = bench.window
+
+	-- A machine selected and the server's word on it, then its disk.
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token,
+		{ on = true, loaded = true, canTurnOn = false, canTurnOff = true }))
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "files", treeRows(), { "nodes 8 of 512" }))
+
+	-- THE BANNER NAMES THE MACHINE, off the county list's own host column, and says
+	-- whether it is on -- which is the server's `on` and not a guess of the window's.
+	eq("the banner names the selected machine", window:bannerLine(),
+		"office at 10,10,0  (on)")
+	window.panel:activateView("Files")
+	bench.frame()
+	check("and it is painted on the Files tab",
+		bench.painted("office at 10,10,0  (on)"))
+
+	-- On the county's own tab there is no banner to paint: the Machines tab is where
+	-- a machine is selected and a name over the list would be a name over the list
+	-- it is chosen from.
+	window.panel:activateView("Machines")
+	bench.frame()
+	check("and not on the Machines tab", not bench.painted("office at 10,10,0"))
+
+	-- A machine that is OFF says so, and one the server has not answered about yet
+	-- says neither: a banner that read `off` before the server had spoken would be
+	-- the greyed button that lied, one band higher.
+	window.selection = { on = false }
+	eq("an off machine says off", window:bannerLine(), "office at 10,10,0  (off)")
+	window.selection = nil
+	eq("and one nothing has been said about says ?", window:bannerLine(),
+		"office at 10,10,0  (?)")
+end
+
+-- NOTHING SELECTED, which is a window opened from a menu that had no computer under
+-- the cursor: the banner is where the reader is told, and it says where to go.
+do
+	local bench = newBench()
+	bench.window:close()
+	local window = CeroSecDebugUI.open(bench.player)
+	eq("with nothing selected the banner says so", window:bannerLine(),
+		"no machine selected: pick one on the Machines tab")
+	window.panel:activateView("Devices")
+	window.painted = {}
+	window:prerender()
+	window:render()
+	local saw = false
+	for i = 1, #window.painted do
+		if window.painted[i].text ==
+				"no machine selected: pick one on the Machines tab" then
+			saw = true
+		end
+	end
+	check("and it is painted over the list", saw)
+	window:close()
+end
+
+--
+-- 18. The machine list in the banner
+--
+do
+	local bench = newBench()
+	local window = bench.window
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", machineRows(), { "machines: 2 of 2" }))
+
+	local combo = window.machineCombo
+	check("the banner has a machine list", combo ~= nil)
+	eq("with one line per machine of the snapshot", combo:getOptionCount(), 2)
+	eq("named for the machine and where it stands", combo.options[1].text,
+		"office at 10,10,0")
+	eq("and the second the same", combo.options[2].text, "shed at 60,60,0")
+	-- The DATA is the three numbers and never the words: a lookup by the label would
+	-- break on a hostname somebody changed.
+	eq("the data is the machine's own coordinates", combo:getOptionData(2).x, 60)
+	eq("and it is on the machine that is selected", combo.selected, 1)
+
+	-- CHOOSING ONE changes the selection and asks the server again -- the very
+	-- refresh a click on the Machines tab causes, because both come through one door
+	-- (selectMachine).
+	bench.forget()
+	combo:choose(2)
+	eq("choosing a machine selects it", window.cx, 60)
+	local asked = bench.last("debug")
+	check("and asks the server again", asked ~= nil)
+	eq("about that machine", asked.args.x, 60)
+	eq("carrying this window's own token", asked.args.token, window.token)
+
+	-- And a click on a row of the county list moves the LIST, so the two never
+	-- disagree about which machine is selected.
+	window.panel:activateView("Machines")
+	bench.list():clickRow(1)
+	eq("a row click selects the first machine again", window.cx, 10)
+	eq("and the banner's list followed it", combo.selected, 1)
+
+	-- Choosing the machine that is ALREADY selected changes nothing and asks nothing:
+	-- a selection that threw its snapshots away on every frame would be a window that
+	-- never has an answer in hand.
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "files", treeRows(), { "nodes 8 of 512" }))
+	bench.forget()
+	combo:choose(1)
+	eq("choosing the selected machine asks nothing", bench.last("debug"), nil)
+	check("and the files it had are still there", window.snapshots["files"] ~= nil)
+
+	-- The list is NOT rebuilt on every refresh: a combo rebuilt twice a second is a
+	-- list nobody can open. Same machines, same signature, same table.
+	local was = combo.options[1]
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", machineRows(), { "machines: 2 of 2" }))
+	eq("an unchanged county leaves the list alone", combo.options[1], was)
+	-- A county with a machine more is a county the list has to hear about.
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", countyRows(), { "machines: 3 of 3" }))
+	eq("a county that changed rebuilds it", combo:getOptionCount(), 3)
+end
+
+--
+-- 19. /bin folded, and the filter box
+--
+do
+	local bench = newBench()
+	local window = bench.window
+	window.panel:activateView("Files")
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "files", treeRows(), { "nodes 8 of 512" }))
+
+	local list = bench.list()
+	-- Eight rows arrived; three of them are under /bin and are folded away, so five
+	-- are on the glass and the line under the list still says eight.
+	eq("the three under /bin are folded away", #list.items, 5)
+	eq("and the count is the server's own", list.debugTotal, 8)
+	eq("the fold is the /bin row itself", list.debugRows[2].c[1], "/bin")
+	eq("and its last cell says how many it stands for",
+		list.debugRows[2].c[7], "3 files, click to expand")
+	bench.frame()
+	check("which is on the glass", bench.painted("3 files, click to expand"))
+
+	-- And the snapshot is NOT written into: the fold is a copy, so a second fill
+	-- folds the same three and not none.
+	window:fill("files")
+	eq("folding twice folds the same three", #bench.list().items, 5)
+	eq("and the snapshot's own row is untouched",
+		window.snapshots["files"].rows[2].c[7], "3")
+
+	-- CLICKING THE ROW opens it, and clicking it again closes it.
+	bench.forget()
+	bench.list():clickRow(2)
+	eq("clicking /bin opens it", #bench.list().items, 8)
+	eq("and spends no round trip on it", bench.last("debug"), nil)
+	eq("the row says what it holds again", bench.list().debugRows[2].c[7], "3")
+	bench.list():clickRow(2)
+	eq("and clicking it again folds it", #bench.list().items, 5)
+
+	-- THE FILTER: what is typed is kept, plainly, and nothing else is.
+	window.filterEntry:setText("/etc")
+	bench.frame()
+	list = bench.list()
+	eq("the filter keeps the three /etc rows", #list.items, 3)
+	eq("the first is the directory", list.debugRows[1].c[1], "/etc")
+	eq("and the count still names the county's own number", list.debugTotal, 8)
+
+	-- Case-sensitive, and a literal and never a pattern: `.` is a dot.
+	window.filterEntry:setText("/ETC")
+	bench.frame()
+	eq("the filter is case-sensitive", #bench.list().items, 0)
+	window.filterEntry:setText(".")
+	bench.frame()
+	eq("a dot is a dot and not any character", #bench.list().items, 0)
+	window.filterEntry:setText("motd")
+	bench.frame()
+	eq("and a fragment finds its file", #bench.list().items, 1)
+	eq("which one", bench.list().debugRows[1].c[1], "/etc/motd")
+
+	-- Emptied, everything is back -- and the fold is still a fold.
+	window.filterEntry:setText("")
+	bench.frame()
+	eq("an empty filter keeps everything", #bench.list().items, 5)
+
+	-- The filter is the banner's, so it sifts the Devices tab too and leaves the
+	-- county alone: the Machines tab has its own filter button and no banner.
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "machines", machineRows(), { "machines: 2 of 2" }))
+	window.filterEntry:setText("60,60")
+	window.panel:activateView("Machines")
+	bench.frame()
+	eq("the county is not sifted by the banner's box", #bench.list().items, 2)
+end
+
+--
+-- 20. The pane under the buttons, and the file it shows
+--
+do
+	local bench = newBench()
+	local window = bench.window
+	window.panel:activateView("Files")
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token,
+		{ on = true, loaded = true }))
+	CeroSecDebugUI.onServerAnswer("debug",
+		snapshot(window.token, "files", treeRows(), { "nodes 8 of 512" }))
+
+	eq("the pane is empty to begin with", #window:paneRows(), 0)
+
+	-- A DOUBLE-CLICK ON A FILE asks the server for it, by the path in the row and
+	-- under this window's own token.
+	bench.forget()
+	-- The row by its PATH and not by its place in the list: what is on the glass
+	-- depends on the fold above it.
+	local list = bench.list()
+	local at = nil
+	for i = 1, #list.items do
+		if list.items[i].item.c[1] == "/etc/passwd" then at = i end
+	end
+	check("the file is on the glass", at ~= nil)
+	list:dblClickRow(at)
+	local asked = bench.last("debugact")
+	check("a double-click asks the server", asked ~= nil)
+	eq("for a file to be read", asked.args.act, "readfile")
+	eq("naming the path in the row", asked.args.path, "/etc/passwd")
+	eq("under this window's token", asked.args.token, window.token)
+	eq("and about the selected machine", asked.args.x, 10)
+
+	-- A double-click on a DIRECTORY asks nothing and says why: the server would
+	-- refuse it, and a press the window already knows cannot work is explained here.
+	bench.forget()
+	for i = 1, #list.items do
+		if list.items[i].item.c[1] == "/etc" then at = i end
+	end
+	list:dblClickRow(at)
+	eq("a directory is not asked for", bench.last("debugact"), nil)
+	bench.frame()
+	check("and the refusal says what it is", bench.painted("/etc is a dir"))
+
+	-- THE TEXT COMES BACK and the pane shows it, with the path over it.
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token, x = 10, y = 10,
+		z = 0, path = "/etc/passwd", text = { "root:x:0:0", "bob:x:1000:1000" } })
+	local pane = window:paneRows()
+	eq("the pane has the path and both lines", #pane, 3)
+	eq("the path first", pane[1], "/etc/passwd")
+	eq("then the first line", pane[2], "root:x:0:0")
+	eq("then the second", pane[3], "bob:x:1000:1000")
+	bench.frame()
+	check("and the text is painted", bench.painted("bob:x:1000:1000"))
+
+	-- MORE THAN FITS spends the last row saying how much did not, which is the rule
+	-- every list in this window wears. Six rows, one of them the path, so four lines
+	-- and then the count.
+	local many = {}
+	for i = 1, 20 do many[i] = "line " .. i end
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token, x = 10, y = 10,
+		z = 0, path = "/etc/big", text = many })
+	pane = window:paneRows()
+	eq("the pane is never taller than its band", #pane, 6)
+	eq("the last row says what is not on the glass", pane[6],
+		"[... 16 more lines of 20]")
+
+	-- A FILE FOR A MACHINE THAT IS NO LONGER SELECTED is dropped: another computer's
+	-- text under this one's name is the Files tab's own mistake, one band lower.
+	window:clearPane()
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token, x = 60, y = 60,
+		z = 0, path = "/etc/passwd", text = { "somebody else's" } })
+	eq("a file about another machine is not shown", #window:paneRows(), 0)
+
+	-- A NOTE goes in it too, whole: the reason line has room for one line and a
+	-- sticky note is three.
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token, x = 10, y = 10,
+		z = 0, note = "SYSTEM PASSWORD\nroot / lantern40" })
+	pane = window:paneRows()
+	eq("a note is two lines in the pane", #pane, 2)
+	eq("the first", pane[1], "SYSTEM PASSWORD")
+	eq("the second", pane[2], "root / lantern40")
+	eq("and it is still on the reason line", window:reasonLine(),
+		"SYSTEM PASSWORD\nroot / lantern40")
+
+	-- IT CLEARS when the tab changes: what is in it is an answer about the tab it
+	-- was asked from.
+	window.panel:activateView("Devices")
+	bench.frame()
+	eq("changing tab clears the pane", #window:paneRows(), 0)
+
+	-- And when the machine changes.
+	window.panel:activateView("Files")
+	CeroSecDebugUI.onServerAnswer("debug", { token = window.token, x = 10, y = 10,
+		z = 0, path = "/etc/motd", text = { "CeroSec OS" } })
+	eq("the pane is full again", #window:paneRows(), 2)
+	window:selectMachine(60, 60, 0)
+	eq("selecting another machine clears it", #window:paneRows(), 0)
 end
 
 print("debug_ui_test: " .. count .. " checks passed")
