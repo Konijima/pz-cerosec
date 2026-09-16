@@ -23,6 +23,32 @@ the other players never see is worse than a refusal.
 This note writes down what is buildable. It changes no code,
 adds no device and decides no design.
 
+**CORRECTED BY THE RUNG IT WAS WRITTEN FOR.** Nothing below
+is rewritten -- it is the record of what was read, and it
+stays as it was read -- but two of its findings were wrong,
+and the corrections are here at the top where a reader meets
+them before he acts on the note:
+
+1. **The window is buildable, and it is built.** Section 7's
+   three reasons all stand at the bytecode. What does not
+   stand is the note's own aside that the marshalling
+   question "does not matter for the verdict": it is the
+   whole of the verdict, it is proven now (see "What is not
+   proven", last item), and the three side effects that were
+   the argument against a window actuator turned out to be
+   exactly what a motor on a sash does -- so they became the
+   device's rules instead of its refusal.
+2. **A polling daemon walks the building ten times a second
+   and not once every five.** "The shell: what a daemon
+   costs" reasons from jobStep returning above mountDev for a
+   sleeping job, which it does -- and the walk is not in
+   mountDev. It is one layer higher, and it happens before
+   any job is looked at. The note's closing sentence ("that
+   number is the first thing the next rung should put on the
+   glass") is answered: a sixty-room mall, a hundred passes,
+   7,109,900 engine calls and 100 walks with no cache;
+   845,990 and 10 with one (hostile_test.lua, section 27).
+
 ## The table
 
 | object | read | actuate | needs a character? | sync | verdict |
@@ -39,7 +65,7 @@ adds no device and decides no design.
 | `IsoStackedWasherDryer` | `isWasherActivated()`, `isDryerActivated()` | `setWasherActivated(b)`, `setDryerActivated(b)` | no | ours: `sendObjectChange(IsoObjectChange.WASHER_STATE)` | **BUILDABLE**, but no map tile carries it |
 | `IsoCompost` | `getCompost()`, `getHealth()` | nothing to actuate | none | `syncCompost()` has a server branch | **BUILDABLE, read only** |
 | `IsoTelevision` / `IsoRadio` (`IsoWaveSignal`) | `getDeviceData()` -> `getIsTurnedOn()`, `getChannel()`, `getPower()`, `getDeviceVolume()` | `setIsTurnedOn(b)`, `setChannel(n)` | no | **NONE THAT WORKS.** `transmitDeviceDataState(short)` has a **client branch only**; the server one is `private` | **READ YES, WRITE NOT** without a sync of our own |
-| `IsoWindow` sash | `IsOpen()`, `isSmashed()`, `isBarricaded()` | `ToggleWindow(chr)` only | see section 7 | `sync(open)` inside it, so the sync is not the problem | **NOT** -- and the reason needs correcting |
+| `IsoWindow` sash | `IsOpen()`, `isSmashed()`, `isBarricaded()` | `ToggleWindow(chr)` only | see section 7 | `sync(open)` inside it, so the sync is not the problem | **NOT** -- and the reason needs correcting (**and the verdict was corrected too: see the top of this file**) |
 | `IsoTrap` | `getSensorRange()` etc. | detonation | none | none | **NEVER**, and that is already the rule |
 | `IsoJukebox` | `isPlaying` is private | `SetPlaying(b)` | no | **none at all**, and no `save`/`load` | **NOT** |
 | alarm clock | `isAlarmSet()`, `getHour()`, `isRinging()` | `setAlarmSet(b)`, `setHour(n)` | no | `syncAlarmClock_World()` | **UNCERTAIN**, it is an item and not a fixture |
@@ -920,6 +946,12 @@ yet.
 
 ## 7. Windows: the decision stands, the reason does not
 
+**(The decision did not stand. This section's three reasons
+are right and its verdict was overturned by the rung that
+read it: each of the three is what a motor on a sash really
+does, so all three became the device's rules. See the top of
+this file, and docs/DEVICES.md.)**
+
 Re-confirmed on 42.20.4, and the framing needs a correction.
 
 **The `open` field of `IsoWindow` has exactly three
@@ -1199,6 +1231,16 @@ box when it stands in none. A five-second poll makes that
 walk **twelve times a game minute** for that machine, where
 the standing sweep (`CeroSecDevices.refresh`) makes it once.
 
+**AND IT IS WORSE THAN TWELVE A MINUTE, corrected by the
+motor rung.** The walk does not happen in `mountDev`.
+`CeroSecDevices.envFor` does it, `SCeroSecSystem:execEnv`
+calls that, and `CeroSecJobs.runMachine` calls THAT once a
+pass -- before it looks at a single job, so the
+`return "sleeping", 0` quoted above never gets the chance to
+save it. A machine with any job at all in its book gets a
+pass every `CeroSec.JOB_PASS_MS`, which is ten a second, so
+the loop above cost fifty building walks per turn of it.
+
 That walk is Java-side -- `getRooms()`, `getIsoRoom()`,
 `getSquares()`, `getObjects()`, an `instanceof` per object
 -- so `tests/hostile_test.lua` cannot measure it and does
@@ -1207,7 +1249,9 @@ the sensor number in DEVICES.md is the sampling book's. **So
 the honest figure for what a five-second poll costs the
 server is: 34 steps, which is nothing, plus one building
 walk per five seconds per polling machine, which has never
-been measured on Kahlua.** A mall is one `BuildingDef` and
+been measured on Kahlua.** (Corrected by the motor rung:
+fifty walks per five seconds, and measured -- see the note at
+the top of this file.) A mall is one `BuildingDef` and
 its several hundred rooms are one walk. That number is the
 first thing the next rung should put on the glass, and it is
 the argument for giving `/dev` a short-lived cache, or an
@@ -1283,3 +1327,44 @@ Written down so that nobody reads a silence as a yes.
   does not matter for the verdict, which the three side
   effects settle on their own, and it would matter to
   anybody who tried to argue the verdict away.
+
+  **PROVEN, and somebody did argue the verdict away.**
+  `LuaJavaInvoker.prepareCall` pulls each argument off the
+  frame (offsets 295-304) and converts anything the parameter
+  type is not already an instance of (325-347) -- which a
+  null never is, `Class.isInstance` answering false for it.
+  `convert(Object, Class)` answers null for a null before the
+  converter manager is asked anything:
+
+  ```
+  private java.lang.Object convert(java.lang.Object, java.lang.Class<?>);
+     0: aload_1
+     1: ifnonnull     6
+     4: aconst_null
+     5: areturn
+  ```
+
+  And the type check at 349-392 is
+  `if (arg != null && converted == null) fail(...)` -- the
+  failure is GUARDED ON `arg != null` -- so a null argument
+  goes straight into the parameter array at 393-405. The
+  argument COUNT is not exempt (126-137 refuse a short call),
+  so the nil has to be written and cannot be left out.
+
+  And the vanilla call site this note looked for and did not
+  find is there for a different method:
+  `media/lua/shared/TimedActions/ISLockDoor.lua:56`, `:62`
+  and `:69` are `door:syncIsoObject(false, 0, nil, nil)` --
+  `IsoObject.syncIsoObject(boolean, byte, UdpConnection,
+  ByteBufferReader)`, two Java OBJECT parameters handed a Lua
+  nil -- and this mod has made that call on every door write
+  since rung 1.
+
+  **Two silent returns this note did not name**, both above
+  the ones it did, and both refused by the device for the
+  barricaded door's reason -- a `return` that does nothing is
+  an order swallowed: `permaLocked` at offsets 21-28
+  (`window0: sealed`) and `destroyed` at 29-36.
+  `isSmashed()` and `isDestroyed()` read the SAME field #393,
+  three instructions each, so `smashed` covers the second and
+  there is no fourth word.

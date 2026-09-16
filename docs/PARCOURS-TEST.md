@@ -3457,6 +3457,105 @@ Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic dro
      possible : sur **Files** il reste exactement une rangée, rien ne se chevauche,
      et le panneau reste sous les boutons et au-dessus du bloc de détail. [ ]
 
+## AL. Le petit moteur, et les cinq choses qu'un bâtiment sait faire (palier moteur)
+
+Quatre modules de plus, cinq sortes de périphérique de plus, et une pièce que le
+jeu n'avait pas : le **petit moteur**. Rien ici n'existe sans l'avoir fabriqué.
+Option **Matériel requis** activée (la valeur par défaut). Règles et preuves :
+[DEVICES.md](DEVICES.md#the-hardware-modules) et
+[notes/actuators.md](notes/actuators.md).
+
+367. **Démonter un séchoir à cheveux.** Se donner un `Base.HairDryer`, un
+     tournevis, et le **Guide de câblage CeroSec** (`CeroSec.WiringGuide`). Le
+     LIRE. Attendu : dans l'onglet **Électrique** de l'artisanat, deux recettes de
+     démontage apparaissent en plus des six autres. Démonter le séchoir.
+     Attendu : **un petit moteur ET un `Base.ElectronicsScrap`** — la ferraille
+     que la recette vanille aurait donnée, plus le moteur. Refaire avec une
+     tondeuse à moutons et un ventilateur soufflant : même chose. Avec un
+     **lecteur CD** : la seconde recette, et **deux** ferrailles, parce que la
+     recette vanille en donne deux. Personne n'y perd. [ ]
+368. **Fabriquer les quatre modules.** Avec le guide lu, Électricité 3, un
+     tournevis, des pinces, et de quoi faire : fabriquer un **moteur de rideau**,
+     un **contacteur d'appareil**, un **opérateur de fenêtre** et un **inverseur
+     de groupe**. Attendu : les deux qui BOUGENT quelque chose (rideau, fenêtre)
+     demandent un petit moteur et un `Base.Receiver` ; les deux qui commutent
+     n'en demandent pas. Vérifier aussi que la **gâche** et l'**opérateur de
+     porte** demandent maintenant un moteur et un récepteur eux aussi — et que
+     l'opérateur garde ses `Base.EngineParts`. [ ]
+369. **Le rideau.** Trouver une fenêtre avec un rideau, clic droit **sur le
+     rideau** → Matériel CeroSec → Installer Moteur de rideau. Puis à
+     l'ordinateur : `dev` → une ligne `curtainN`. `cat /dev/curtainN` →
+     `closed`. `echo open > /dev/curtainN` → **le rideau s'ouvre dans le monde**
+     et la lumière passe. `dev curtainN toggle` le referme. [ ]
+370. **Le rideau d'une porte.** Poser un drap sur une **porte** (interaction
+     vanille), puis un moteur de rideau **sur la porte**. Attendu : la porte est
+     maintenant `doorN` ET `curtainM` — deux périphériques sur un objet. Ouvrir
+     le rideau ne bouge PAS la porte, et ouvrir la porte ne bouge pas le
+     rideau. [ ]
+371. **La fenêtre : deux périphériques.** Sur une fenêtre, poser un **contact
+     magnétique** puis un **opérateur de fenêtre**. Attendu : `dev` montre
+     `winN` **et** `windowM`. `winN` reste `cr--r-----` et lit le loquet
+     (`locked` / `unlocked`) ; `windowM` est `crw-rw----` et lit le battant
+     (`closed`). [ ]
+372. **Ouvrir la fenêtre, et ce que ça défait.** Verrouiller la fenêtre à la main
+     (clic droit → verrouiller), vérifier `cat /dev/winN` → `locked`. Puis
+     `echo open > /dev/windowM`. Attendu : **le battant s'ouvre** dans le monde,
+     et `cat /dev/winN` répond maintenant `unlocked` — le moteur a défait le
+     loquet en passant. C'est voulu. Retaper le même ordre : rien ne bouge (c'est
+     déjà ouvert). [ ]
+373. **L'ALARME DE MAISON. À faire dans une maison où personne n'est entré.**
+     Trouver une maison dont l'alarme n'a pas encore sonné, y poser l'ordinateur
+     et un opérateur sur une fenêtre, **puis reculer**. `echo open >
+     /dev/windowM`. Attendu : la fenêtre s'ouvre **et l'alarme se déclenche**,
+     exactement comme si on avait cassé le carreau — le bruit, et ce qu'il
+     attire. Ce n'est pas un bogue : c'est écrit dans le Volume 2, chapitre 6, et
+     dans les notes de version. Refermer la fenêtre : **aucun** bruit. [ ]
+374. **Les trois refus d'une fenêtre.** Barricader la fenêtre (planches) :
+     `echo open > /dev/windowM` → `windowM: barricaded`, et le battant ne bouge
+     pas derrière ses planches. Casser le carreau : `windowM: smashed`. Trouver
+     une fenêtre de décor que le jeu n'ouvre jamais (une vitrine) et y poser un
+     opérateur : `windowM: sealed`. [ ]
+375. **La cuisinière, le micro-ondes et la cafetière.** Poser un **contacteur
+     d'appareil** sur un four. `dev` → `stoveN`. `echo on > /dev/stoveN` →
+     le four **s'allume** dans le monde (sprite, et il cuit vraiment : y mettre
+     quelque chose et vérifier que ça chauffe). Couper le courant du quartier ou
+     éteindre la génératrice : `stoveN: no power`. Recommencer sur un
+     **micro-ondes** et sur une **cafetière** : le même module, la même sorte de
+     périphérique. [ ]
+376. **La laveuse.** Poser un contacteur sur une laveuse (ou une sécheuse, ou une
+     machine combinée). `echo on > /dev/washerN` → elle se met en marche.
+     `dev washerN toggle` l'arrête. En multijoueur, vérifier sur le **second
+     client** que la machine tourne bien de son côté : c'est la seule qui a
+     besoin d'un envoi de notre part. [ ]
+377. **La génératrice.** Poser un **inverseur de groupe** sur une génératrice
+     branchée, avec de l'essence. `cat /dev/genN` → une ligne entière :
+     `off fuel 62 condition 80 connected` (les nombres sont ceux de la
+     génératrice). `dev` → la colonne d'état ne montre QUE `off` : la phrase ne
+     tient pas dans un tableau de 60 colonnes. `echo on > /dev/genN` →
+     **elle démarre**, du premier coup, même usée. [ ]
+378. **Les trois refus d'une génératrice.** La débrancher :
+     `echo on > /dev/genN` → `genN: not connected`. La rebrancher et vider le
+     réservoir : `genN: no fuel`. L'abîmer jusqu'à zéro : `genN: broken`.
+     Dans les trois cas, `echo off > /dev/genN` est **accepté** : on ne discute
+     jamais un arrêt. [ ]
+379. **Montrer lequel c'est.** Avec deux fours dans la même cuisine :
+     `dev find stove0`. Attendu : **un seul** des deux s'entoure d'un contour sur
+     VOTRE écran, six secondes. Refaire avec `curtain0`, `washer0` et `gen0`. Le
+     rideau d'une porte (étape 370) doit entourer **la porte**. [ ]
+380. **Le monde sans l'option.** Mettre **Matériel requis** sur désactivé et
+     recharger. Attendu : chaque rideau, four, laveuse et génératrice du bâtiment
+     est sous `/dev` sans qu'on ait rien vissé — c'est plus qu'avant ce palier, et
+     c'est ce que dit la note de version. [ ]
+381. **Cent tours de boucle ne relisent pas le bâtiment cent fois.** Dans un
+     bâtiment avec beaucoup de pièces (un centre commercial), écrire
+     `while true; do cat /dev/door0 > /dev/null; sleep 5; done &` et laisser
+     tourner une dizaine de minutes de jeu. Attendu : **aucune saccade**, et la
+     fenêtre de débogage → **Scheduler** montre les mêmes millisecondes par
+     passe qu'avec la boucle arrêtée. Pendant que ça tourne, ouvrir une porte à
+     la main et faire `cat /dev/door0` : la lecture est **immédiatement** juste.
+     Visser un module sur une autre porte : il apparaît dans `dev` tout de
+     suite, sans attendre la minute. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

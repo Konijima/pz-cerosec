@@ -51,8 +51,10 @@ node keep the filesystem's grammar (`rm: /dev/light0: is a device`,
 `mkdir` and `touch` under `/dev` answer `/dev: read-only`). The listing is
 alphabetical, like every other listing on this machine.
 
-**Discovery** is `SCeroSecDevices.find(x, y, z)`, run afresh at every command,
-because the answer is only true for the moment it is asked:
+**Discovery** is `SCeroSecDevices.find(x, y, z)`, a walk of the world and not a
+book kept up to date, because the answer is only true for the moment it is asked
+— and it is not walked twice inside `CeroSecDevices.CACHE_MS` (see *The `/dev`
+cache*, below):
 
 - The square's `getBuilding()`, when it has one → `getDef():getRooms()`
   (an `ArrayList<RoomDef>`, read the way `shared/Util/BuildingHelper.lua` reads
@@ -71,9 +73,17 @@ scans of grace. It is not switched off for it and it keeps running: the rule is
 [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away).
 
 Classification is `instanceof`, and it answers a **list**, because one object can
-be two devices: `IsoLightSwitch` → `light`, `IsoWindow` → `win`, `IsoDoor` →
-`door` *and* `lock` when the lock bites, `IsoThumpable` with `isDoor()` → `door`
-and `lock` (`built`). A player-built window frame is not a device this rung.
+be two devices — or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
+`window`, `IsoDoor` → `door`, `lock` when the lock bites, *and* `curtain` when a
+sheet is on it, `IsoThumpable` with `isDoor()` → `door` and `lock` (`built`),
+`IsoCurtain` → `curtain`, `IsoStove` → `stove`, `IsoGenerator` → `gen`, and
+`IsoClothingWasher` / `IsoClothingDryer` / `IsoCombinationWasherDryer` → `washer`.
+A player-built window frame is not a device.
+
+The cost of that is per OBJECT and not per device: a plain wall or table on a
+square falls through every one of those tests, which is ten `instanceof` calls
+where it used to be four. It is paid once a second and not ten times, which is
+the cache below.
 
 And it answers **nothing at all** for a fixture nobody has wired, which is the
 hardware-module gate below.
@@ -95,6 +105,37 @@ went back to magic and looks exactly like a working one.
 | `relay` | `CeroSec.Relay` | light switch | `light` | 1 |
 | `strike` | `CeroSec.ElectricStrike` | a door `doorLocks` says yes to | `lock` | 2 |
 | `operator` | `CeroSec.DoorOperator` | door, not a garage or double leaf | `door`, read-write | 3 |
+| `curtain` | `CeroSec.CurtainMotor` | an `IsoCurtain`, or a door whose `HasCurtains()` answers | `curtain` | 2 |
+| `appliance` | `CeroSec.ApplianceSwitch` | `IsoStove`, washer, dryer, combination | `stove` / `washer` | 2 |
+| `window` | `CeroSec.WindowOperator` | window | `window` | 3 |
+| `genset` | `CeroSec.GeneratorSwitch` | `IsoGenerator` | `gen` | 3 |
+
+The four the motor rung added are on the **end** of `CeroSecModules.LIST` and
+not in level order, because that list is the order the right-click menu offers
+them in and a menu that reshuffles itself under a player is worse than one whose
+levels do not run downhill.
+
+**Four of the eight are built round a `CeroSec.SmallMotor`** — the strike, the
+door operator, the curtain motor and the window operator, which are the four that
+move a piece of metal or of cloth — beside a `Base.Receiver`, which is the part
+that tells the motor when to stop. The other four sense or close a circuit and
+take neither; the relay has never had a receiver and still has not.
+
+Build 42 ships **no motor item of any kind**: `grep -rni motor` over the whole of
+`media/scripts` returns ten hits and every one is a motorcycle helmet, a pair of
+motorcycle boots or the Louisville Motor Shop step van. So the part is declared
+in `items_cerosec.txt` and comes out of the four things in the game that really
+have one — `Base.HairDryer`, `Base.SheepElectricShears`, `Base.CDplayer` and
+`Base.BlowerFan` — through two dismantle recipes cut from vanilla's own
+`DismantleElectronics` (`recipes_electrical.txt:37-54`). Two and not one, because
+vanilla already dismantles three of the four and a survivor must never be worse
+off choosing ours: the hair dryer, the shears and the fan pay the one
+`Base.ElectronicsScrap` `DismantleElectronics` pays, and the CD player pays the
+**two** `DismantleMiscElectronics` pays it (its `itemMapper` maps a CD player back
+to scrap). One recipe cannot pay one item for three inputs and two for the fourth,
+and the mapper cannot either — it is keyed by the OUTPUT, so three inputs yielding
+scrap would collide on one key. Both are `NeedToBeLearn` and both are in the
+Field Wiring Guide's `LearnedRecipes` with the other six.
 
 The table, the levels, the fit rules and the modData read/write are
 `shared/CeroSec/CeroSecModules.lua` — **shared**, because the right-click menu
@@ -155,12 +196,47 @@ typed cannot matter to a device that can carry none of them out. The text is
 other reason here is written in. `SCeroSecDevices.act` keeps the same refusal as a
 belt for a caller that reaches the world layer directly.
 
-A **window is always `ro`** when the option is on: the only call in the game that
-moves a sash is `IsoWindow.ToggleWindow(IsoGameCharacter)`, which wants a
-character, so there is no window actuator to build. With the option off the `win`
-device locks and unlocks exactly as it always did. What a contact on a window
-buys is the reading, and that is the point of a magnetic contact: it senses the
-sash.
+**A window is two devices, and the reason `win` is read-only is not the one this
+page used to give.**
+
+It said: *the only call in the game that moves a sash is
+`IsoWindow.ToggleWindow(IsoGameCharacter)`, which wants a character, so there is
+no window actuator to build.* The call is right and the reason was wrong.
+`ToggleWindow` **never dereferences the character**: the barricade test at offsets
+37–49 is skipped when it is null, the `IsoZombie` test at 93–97 is false for null,
+the music-intensity call at 166–197 is behind an `ifnull`, and the sync at offset
+147 is unconditional. A Lua `nil` reaches a Java object parameter as `null` — see
+*the nil argument*, below — so the call can be made, and it is: that is
+`CeroSec.WindowOperator` and the `window` device.
+
+What is true is three side effects, and with a motor on the sash all three are
+what a motor really would do:
+
+- **It throws the catch.** Offsets 50–54, `locked = false`, unconditionally,
+  before the sash moves. So the latch stays `win`'s reading and never becomes the
+  operator's word, and a `winN` that read `locked` reads `unlocked` after the
+  machine opens the window.
+- **It sets off the house alarm.** Offsets 86–118: when the sash ends up open the
+  sandbox check (`lore.triggerHouseAlarm`) is consulted **only** for an
+  `IsoZombie`, so a null character falls straight into `handleAlarm()`. Kept, and
+  documented as a feature rather than argued away — a window opening in an alarmed
+  house is a window opening in an alarmed house. It is on the page of Volume 2 a
+  survivor reads before he fits one, and in the release notes.
+- **It skips the barricade**, because the barricade test is the one thing it asks
+  the character for. So a boarded window would move behind its boards, and the
+  refusal is ours and comes before the call — exactly as a barricaded door's does.
+
+And there are two more silent returns above all of that which the study did not
+name: `permaLocked` at offsets 21–28 (`window0: sealed`) and `destroyed` at 29–36.
+`isSmashed()` and `isDestroyed()` read the **same** field `#393`, both bodies three
+instructions long, so `smashed` covers the second and there is no fourth word.
+
+So `winN` is the magnetic contact and reads the latch, `windowN` is the operator
+and moves the sash. Two vocabularies, so two kinds, exactly as `doorN` and `lockN`
+are two kinds on one door: a node that took `lock`, `unlock`, `open` and `close`
+would be a node whose mode could not say which of them it could carry out. `winN`
+stays `ro` because a magnetic contact is a **sensor and senses**, which is the
+true reason and the one it always should have given.
 
 **Hardware changing under a live device** moves its mode and never its number:
 the key a number hangs on is `kind:x:y:z:side:n` and neither the kind nor the
@@ -243,6 +319,58 @@ told both things. Its values are `open` and `close`. Its refusals are
 `doorN: locked` (the computer is not a key; `unlock` the lock beside it first),
 `doorN: barricaded`, `doorN: blocked` and `doorN: no such device`.
 
+**The motor rung's five kinds**, each with what `cat` reads, what a redirect
+accepts and what it refuses. Every state is read off the object on every answer
+(`stateOf` in `SCeroSecDevices.lua`); the refusals are `act`'s.
+
+| kind | module | reads | accepts | refuses |
+| --- | --- | --- | --- | --- |
+| `curtain` | `curtain` | `open`, `closed` | `open`, `close` | `barricaded` |
+| `window` | `window` | `smashed`, `barricaded`, `sealed`, `open`, `closed` | `open`, `close` | `smashed`, `barricaded`, `sealed` |
+| `stove` | `appliance` | `broken`, `on`, `off` | `on`, `off` | `broken`, `no power` |
+| `washer` | `appliance` | `on`, `off` | `on`, `off` | `no power` |
+| `gen` | `genset` | `on`, `off` + the line below | `on`, `off` | `no fuel`, `broken`, `not connected` |
+
+A `windowN` is read in the order the engine tests it: the glass, the boards, the
+permanent lock, then the sash. `sealed` is `isPermaLocked()`, a window the map
+was built with that never opens. A `stoveN` puts `broken` first for the reason a
+door puts `locked` first: it is the thing a survivor has to do something about,
+and a broken stove is off by construction. No kind has a `no power` **state** —
+power is a fact about the wire and not about the appliance, and a light switch
+has always said it as a refusal.
+
+**A generator says more than a word**, and it is the only kind that does:
+
+```
+root@ksp-04-11:~# cat /dev/gen0
+on fuel 62 condition 80 connected
+```
+
+Both numbers are percentages (`getFuelPercentage()`, `getCondition()`), rounded
+to a whole one and clamped to 0..100; `connected` is a fact and is there or is
+not. It travels as `detail` beside `state` on the entry and on the node, and
+`CeroSecOS.devText` is the one place the two are put back together: `cat` and
+`dev <id>` read the whole line, `ls -l /dev` and the `dev` table read the word,
+because those two have a column for a word and the terminal is 60 wide and does
+not wrap. `dev <id> toggle` therefore looks its opposite up by `node.state` and
+not by what the read printed — a table keyed by that sentence would have no
+entry for anything.
+
+Its three refusals are asked **only of starting one**, and they are vanilla's own
+timed action's (`ISActivateGenerator:isValid`): `not connected`, `no fuel`,
+`broken`. Stopping one is never refused. And `failToStart()` — the coin flip
+that same action makes below half condition — is deliberately **not** copied: a
+shoulder fumbles a cord and an electric starter does not, and a starter is what
+the module is.
+
+**A curtain's barricade is found the only way it can be.** `IsoCurtain` has no
+`isBarricaded()`: `barricaded` is a public field with no getter over it, so there
+is nothing to ask before the call. What there is, is that
+`ToggleDoorSilent`'s first two instructions are `barricaded -> return` (offsets
+0—7) and that is the **only** way out of the method without moving the sheet. So
+the device toggles, reads back, and answers `curtain0: barricaded` when the sheet
+did not move.
+
 **The numbering** is stable for the life of the machine. Candidates are sorted by
 `(kind, x, y, z, side)` and each gets the smallest number its kind has never used;
 the answer is written into the machine's own state at `os.devmap`, keyed by where
@@ -295,6 +423,12 @@ that syncs for a player does not necessarily sync for us.
 | `lock` (built, padlock) | `IsoThumpable:setLockedByPadlock(locked)` | none needed | it calls `syncIsoThumpable()` itself, whose server branch is `INetworkPacket.sendToRelative(SyncThumpable, ...)` |
 | `lock` (built, key) | `IsoThumpable:setLockedByKey(locked)` | `syncIsoThumpable()` | same server skip as the map door's |
 | `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap — **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
+| `curtain` (`IsoCurtain`) | `ToggleDoorSilent()` | **none needed** | the toggle's own last act is `syncIsoObject(false, open, null)` at offsets 85—100, and that override's server branch walks `GameServer.udpEngine.connections`. The one actuator here whose broadcast is the engine's. Vanilla makes the bare call itself on a curtain nobody is holding: `client/DebugUIs/Scenarios/Trailer2Scenario.lua:134` |
+| `curtain` (a door's sheet) | `toggleCurtain()` | **none needed** | on the server it is the whole gesture: `setCurtainOpen` then `transmitSetCurtainOpen(isCurtainOpen())` at offsets 55—60, whose server branch is `sendObjectChange(SET_CURTAIN_OPEN)`. `setCurtainOpen(b)` alone is the half that does not broadcast |
+| `window` | `ToggleWindow(nil)` | **none needed** | `sync(open ? 1 : 0)` at offset 147, unconditional. The character is never dereferenced; see *A window is two devices* and *The nil argument* |
+| `stove` | `Toggle()` | **none needed** | `Toggle()` is `setActivated(!activated)` plus `getContainer().addItemsToProcessItems()` plus `IsoGenerator.updateGenerator(square)` (offsets 0—27), and `setActivated`'s server branch calls `sync()` and `syncSpriteGridObjects(true, true)` at 201—214. The setter alone would switch on an oven that cooked nothing and drew nothing. It is vanilla's own server line: `server/ClientCommands.lua:1049-1062` |
+| `washer` | `setActivated(b)` | `sendObjectChange(IsoObjectChange.WASHER_STATE)` | the setter is a field write plus `updateGenerator` and no sync at all; `saveChange` writes `isActivated()` under that change, and `sendObjectChange` is server-only by construction. The pair is `shared/TimedActions/ISToggleClothingWasher.lua`'s own |
+| `gen` | `setActivated(b)` | `sync()` | idempotent by construction (offsets 0—8 return when the argument is the state it is in) and its server branch calls `sync()` at 113—122; vanilla calls `sync()` again after it (`ISActivateGenerator:complete`) and so does this |
 
 Because `ToggleDoorSilent` **toggles**, a door already in the state it was asked
 for is left alone and nothing is broadcast: two `dev door0 open` in a row are one
@@ -332,6 +466,74 @@ The one-minute sweep (`CeroSecDevices.refresh`) renumbers for a machine somebody
 is standing at. Nothing already on the glass changes — a printed line stays
 printed, here as on any terminal — but a device that appeared since already has
 its number by the time `ls /dev` is typed.
+
+## The `/dev` cache
+
+**The walk is the most expensive thing this mod does and nothing measured it
+until the motor rung.** `notes/actuators.md` put a five-second polling daemon at
+one building walk every five seconds, reasoning from `CeroSecOS.jobStep`
+returning above `CeroSecOS.mountDev` for a sleeping job. It does return there —
+and the walk is not in `mountDev`. It is in `CeroSecDevices.envFor`, reached
+through `SCeroSecSystem:execEnv` from `CeroSecJobs.runMachine`, which runs **once
+a pass** for any machine with a job in its book at all, before a single job is
+looked at. A machine gets a pass every `CeroSec.JOB_PASS_MS` (100 ms), so the
+daemon walked the whole building **ten times a second** — and none of it showed
+in a step count, because a walk costs no steps.
+
+So `CeroSecDevices.findCached(x, y, z, now)` sits in front of it, keyed by where
+the machine **stands**, with a lifetime of `CeroSecDevices.CACHE_MS` (1000 ms,
+which is ten passes).
+
+- **What is remembered** is what a device IS: that there is a door at that square,
+  which way it faces, the rooms it stands between, what is screwed to it. That is
+  a fact about the building.
+- **What is never remembered** is what a device is DOING. Every answer re-reads
+  the state off the object (`stateOf`, and `CeroSecRadio.restate` for the TNC), and
+  the rest of a generator's line with it (`detailOf`) — a door opened by a hand
+  between two passes reads `open` on the second one.
+- **What throws it away**: the clock; the minute sweep, which walks anyway and so
+  drops the entry first and refills it with what its own walk found; a module
+  going on or coming off **any** fixture (`installmodule`, `uninstallmodule` and
+  the pre-fitting walk all call `CeroSecDevices.invalidate`, which empties the
+  whole book — which machines can see a fixture is the question the walk exists
+  to answer); and the machine standing somewhere else, which is a different key.
+- **What it costs is one second, in both directions.** A device that appears — a
+  chunk streaming in, a door somebody builds — is not on `/dev` until the next
+  walk, and a device that is knocked down reads its last state until then too.
+  That is the same second the discovery has always been honest about. What is
+  **not** a second late is a device being *worked*: `envFor`'s `write` and `find`
+  ask `alive` of the one object they are about to touch, so an order to a door
+  somebody has knocked down answers `no such device` and moves nothing. Asking it
+  of the whole list instead would be four engine calls per device per pass — on
+  a mall, sixty thousand a second for one machine — to buy a listing that is
+  right a second sooner, and the listing was never the thing that had to be right.
+
+**Measured**, in engine calls rather than in milliseconds, because the walk is
+Java on the far side of a Kahlua call and a timing says more about the box than
+about the code (`hostile_test.lua` section 27): a sixty-room mall, a hundred
+passes at the scheduler's own cadence. **7,109,900 calls and 100 walks without the
+cache; 845,990 and 10 with it.**
+
+## The nil argument
+
+`IsoWindow.ToggleWindow(IsoGameCharacter)` is called with `nil`, and that a Lua
+`nil` reaches a Java object parameter as `null` is proven twice over.
+
+**At the bytecode.** `LuaJavaInvoker.prepareCall` pulls each argument off the call
+frame (offsets 295—304) and converts anything the parameter type is not already
+an instance of (325—347) — which a null never is, `Class.isInstance` answering
+false for it. `convert(Object, Class)` returns `null` at its first two
+instructions for a null input (offsets 0—5), before the converter manager is
+asked anything. And the type check at 349—392 is
+`if (arg != null && converted == null) fail(...)`: **the failure is guarded on
+`arg != null`**, so a null argument is stored straight into the parameter array at
+393—405. The argument *count* is not exempt — offsets 126—137 refuse a call
+with too few — so the `nil` has to be written and cannot be left out.
+
+**And vanilla's own Lua does it.** `media/lua/shared/TimedActions/ISLockDoor.lua`
+:56, :62 and :69 — `door:syncIsoObject(false, 0, nil, nil)` — passes `nil` into
+a `UdpConnection` and a `ByteBufferReader`, and this mod has made that same call
+on every door write since rung 1.
 
 **Motion sensors, underneath** (`SCeroSecSensors.lua`). Nothing of ours goes into
 the world: the device *is* the item lying on the floor.

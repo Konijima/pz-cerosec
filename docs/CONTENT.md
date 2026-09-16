@@ -597,9 +597,20 @@ same writer the install command uses, so the discovery cannot tell them from a
 player's own. A relay on every light switch, a contact on every door and window, and a
 strike on a door whose lock stops somebody. **Never an operator:** a 1993 shop had a
 contact on the stockroom frame and a strike to bolt it, not a motor, and a building
-that opened its own doors would open them for the dead. The rest — what is fitted once
-and never again, and what a survivor who unscrews one gets — is in
-[DEVICES.md](DEVICES.md#hardware-that-was-already-fitted).
+that opened its own doors would open them for the dead.
+
+**And none of the motor rung's four**, for that same sentence four more times. A
+window that opens itself is a hole in the wall the dead walk through; a curtain that
+opens itself is the same thing for a survivor trying to hide; a stove that lights
+itself is a kitchen fire nobody is standing in; a generator that starts itself is a
+noise in an empty street. Every one of those is a thing a **player** may decide to
+build, with a box he carried and a screwdriver, and none of them is a thing the world
+does to him on a map he has never been to. `CeroSecAuto.modulesFor` is unchanged and
+the new fixtures fall through it: `isFittable` now finds a stove and a generator, so
+the pre-fitting walk sifts them, and `fit` answers false and leaves them alone.
+
+The rest — what is fitted once and never again, and what a survivor who unscrews one
+gets — is in [DEVICES.md](DEVICES.md#hardware-that-was-already-fitted).
 
 **The crontab is the owner's**, and the automated machine is deliberately given the
 desk of the account that carries it (`CeroSecContent.jobSlot`, handed to `deskRole`
