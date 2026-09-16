@@ -8,15 +8,25 @@ date.
 
 ## Unreleased
 
+- **Every machine has `/usr/local/bin` now, and it is on the PATH.** The `HOME
+  AUTOMATION` floppy tells you to `sudo cp /mnt/curtains.sh /usr/local/bin`, and
+  that directory was not on any machine -- the copy answered `no such file` and
+  there was nothing on the disk's README saying to make three directories first.
+  It is there on every machine from now on, and it is the second entry of the
+  PATH a login hands you: copy a program there and call it by its name, at the
+  prompt or in a crontab line, with no `sh /usr/local/bin/` in front of it. The
+  whole path still works exactly as the README writes it. **Machines already in
+  your save gain the directory on load**, and anything you had made at one of
+  those three names is left exactly as it is.
 - **You can hear the building work.** A door the machine opens or shuts, a window
   its motor works and a curtain it draws all make the sound a hand would have
-  made — the door's own sound, wood or metal, the sash, the cloth — and every
+  made -- the door's own sound, wood or metal, the sash, the cloth -- and every
   player in earshot hears it, on a server as well as in a solo game. Until now
   every one of them moved in complete silence, which made an order that worked
   look exactly like one that did nothing: `autoclose.sh` shut the door behind you
   without a sound, cron opened a window at dawn without a sound, and
   `curtains.sh close` drew every curtain in the house without a sound. A device
-  that refuses — a boarded door, a smashed window, a curtain nailed over — stays
+  that refuses -- a boarded door, a smashed window, a curtain nailed over -- stays
   silent, and so does an order for something that is already the way you asked:
   two `close` in a row are one shut door and one sound. Latches, ovens, washers,
   generators and sets are unchanged; they were never the silent ones.

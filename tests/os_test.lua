@@ -252,14 +252,35 @@ do
 	eq("fs root owner", state.fs.owner, "root")
 
 	local names = CeroSecOS.childNames(state.fs)
-	eq("root has 7 entries", #names, 7)
+	eq("root has 8 entries", #names, 8)
 	eq("root entry 1", names[1], "bin")
 	eq("root entry 2", names[2], "dev")
 	eq("root entry 3", names[3], "etc")
 	eq("root entry 4", names[4], "home")
 	eq("root entry 5", names[5], "mnt")
 	eq("root entry 6", names[6], "root")
-	eq("root entry 7", names[7], "var")
+	eq("root entry 7", names[7], "usr")
+	eq("root entry 8", names[8], "var")
+
+	-- /usr/local/bin, the chain every machine has: three directories, root's at
+	-- 755, every one of them empty. A survivor's floppy tells him to copy a
+	-- program into the last of them, so the last of them has to be there.
+	do
+		local at = state.fs
+		for i = 1, #CeroSecOS.LOCAL_BIN_DIRS do
+			local name = CeroSecOS.LOCAL_BIN_DIRS[i]
+			at = at.children[name]
+			check("/" .. table.concat(CeroSecOS.LOCAL_BIN_DIRS, "/", 1, i)
+				.. " is a directory", type(at) == "table" and at.type == "dir")
+			eq("root's", at.owner, "root")
+			eq("at 755", at.mode, CeroSecOS.LOCAL_BIN_MODE)
+			eq("and it holds one entry or none", CeroSecOS.countEntries(at),
+				i < #CeroSecOS.LOCAL_BIN_DIRS and 1 or 0)
+		end
+		eq("and the path names it", CeroSecOS.LOCAL_BIN_PATH, "/usr/local/bin")
+		check("which the engine's own walk reaches",
+			CeroSecOS.systemNode(state, CeroSecOS.LOCAL_BIN_PATH) == at)
+	end
 
 	-- /mnt: a PLACE for a floppy to be mounted on, root's at 755 and empty. Empty
 	-- is the whole of what it is: anything kept in it disappears from view the
@@ -321,7 +342,8 @@ do
 	eq("a banner for the longest hostname fits too",
 		#CeroSecOS.issueText(string.rep("m", CeroSecOS.HOSTNAME_MAX)) <= 60, true)
 
-	-- The skeleton is nine nodes plus the seven of the /var tree, plus one
+	-- The skeleton is nine nodes plus the three of the /usr/local/bin chain and the
+	-- seven of the /var tree, plus one
 	-- executable per command plus /etc/passwd, /etc/sudoers, /etc/group and
 	-- /etc/issue, and every byte of it is accounted for: the machine's name, the
 	-- motd, the banner, the accounts file, the sudoers file, the groups file, the
@@ -330,7 +352,8 @@ do
 	-- directories and no bytes at all -- /var, spool, spool/cron, spool/at, log,
 	-- mail and tmp: what goes in them is written when something asks for it.
 	-- /dev/null is a DEVICE and costs neither a node nor a byte -- it is a hole,
-	-- not a file.
+	-- not a file. The /usr chain is three directories and no bytes either: it is
+	-- the place a survivor installs into, empty until he does.
 	local binNames = CeroSecOS.binNames()
 	local binBytes = 0
 	for i = 1, #binNames do binBytes = binBytes + #CeroSecOS.commandDesc(binNames[i]) end
@@ -340,7 +363,7 @@ do
 	local hosts = state.fs.children.etc.children.hosts
 	local equiv = state.fs.children.etc.children["hosts.equiv"]
 	local nodes, bytes = CeroSecOS.usage(state)
-	eq("skeleton node count", nodes, 10 + 7 + #binNames + 6)
+	eq("skeleton node count", nodes, 10 + 3 + 7 + #binNames + 6)
 	eq("skeleton byte count", bytes,
 		#"ksp-front-01" + #CeroSecOS.MOTD + #issue.data + #passwd.data + #sudoers.data
 			+ #group.data + #hosts.data + #equiv.data + binBytes)
@@ -585,7 +608,7 @@ do
 	eq("help header", helpLines[1], "CeroSec OS commands:")
 
 	-- Packed into columns: five short names fit one row of a 60-column screen.
-	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  usr   var" })
 	ok(state, admin, "ls", {})
 	ok(state, admin, "mkdir sub", {})
 	ok(state, admin, "ls", { "sub" })
@@ -897,11 +920,11 @@ do
 	-- are for somebody reading them, and a name a line is what the next command
 	-- can use (see section 46).
 	ok(state, admin, "cat listing.txt",
-		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
+		{ "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 	-- Asked for outright, the columns go into the file exactly as they would have
 	-- gone onto the glass.
 	ok(state, admin, "ls -C / > packed.txt", {})
-	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  usr   var" })
 	ok(state, admin, "echo x>tight.txt", {})            -- no spaces around >
 	ok(state, admin, "cat tight.txt", { "x" })
 	ok(state, admin, "> empty.txt", {})                 -- bare redirect creates the file
@@ -1035,10 +1058,11 @@ do
 	local state = fresh()
 	local rootSession = open(state, "root")
 	local nodes = CeroSecOS.usage(state)
-	-- The skeleton (/mnt included), the /var tree of seven, plus one executable per
+	-- The skeleton (/mnt included), the /usr/local/bin chain of three, the /var tree
+	-- of seven, plus one executable per
 	-- command, plus /etc/passwd, /etc/sudoers, /etc/group, /etc/issue and the two
 	-- network files. /dev/null is a device and is not a node the disk counts.
-	eq("starting node count", nodes, 10 + 7 + #CeroSecOS.binNames() + 6)
+	eq("starting node count", nodes, 10 + 3 + 7 + #CeroSecOS.binNames() + 6)
 	local made = 0
 	local dir = 0
 	while true do
@@ -1080,7 +1104,7 @@ do
 	-- is still the owner's own name.
 	local EPOCH = "Jan  1 00:00"
 	local lines = ok(state, admin, "ls -l /", nil)
-	eq("ls -l lists 7 entries", #lines, 7)
+	eq("ls -l lists 8 entries", #lines, 8)
 	eq("ls -l bin",
 		lines[1],
 		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  "
@@ -1093,6 +1117,13 @@ do
 		lines[6],
 		"drwx------" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "    0"
 			.. "  " .. EPOCH .. "  root")
+	-- /usr, which holds the one directory below it and says so in the size column:
+	-- the chain is on the glass, root's and world-readable, on a machine nobody has
+	-- installed anything on yet.
+	eq("ls -l usr",
+		lines[7],
+		"drwxr-xr-x" .. "  " .. "root  " .. " " .. "root  " .. "  " .. "    1"
+			.. "  " .. EPOCH .. "  usr")
 	for i = 1, #lines do
 		check("ls -l line " .. i .. " fits 60 columns", #lines[i] <= 60)
 	end
@@ -2821,7 +2852,7 @@ do
 	bad(state, admin, "ls /", "ls: permission denied")
 	local listed = run(state, admin, "sudo ls /")
 	eq("sudo ls runs", listed.ok, true)
-	eq("and lists", listed.lines[1], "bin   dev   etc   home  mnt   root  var")
+	eq("and lists", listed.lines[1], "bin   dev   etc   home  mnt   root  usr   var")
 	ok(state, rootSession, "chmod 755 /bin/ls", {})
 
 	-- The two orders come back out of sudo untouched.
@@ -3414,7 +3445,7 @@ do
 	-- And through the command.
 	local state = fresh()
 	local admin = open(state, "admin")
-	okAt(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
+	okAt(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  usr   var" })
 	okAt(state, admin, "ls", {})
 	okAt(state, admin, "touch only.txt", {})
 	okAt(state, admin, "ls", { "only.txt" })
@@ -3422,9 +3453,9 @@ do
 	okAt(state, admin, "ls", { "only.txt  sub" })
 	-- -F marks the directories and nothing else.
 	okAt(state, admin, "ls -F", { "only.txt  sub/" })
-	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  mnt/   root/  var/" })
+	okAt(state, admin, "ls -F /", { "bin/   dev/   etc/   home/  mnt/   root/  usr/   var/" })
 	-- The mark is part of the name, so it is what the column is measured on.
-	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 46)
+	eq("the marked names are longer", #okAt(state, admin, "ls -F /", nil)[1], 53)
 end
 
 -- 20f. ls -l, with a clock and with the flags together.
@@ -6759,11 +6790,13 @@ do
 	-- 6. env prints the environment, sorted, one NAME=value a line -- and it is
 	-- the environment and not the variables: `y` was set at the prompt and is not
 	-- on it, `x` and `z` were exported and are.
-	says("env", { "HOME=/home/admin", "PATH=/bin", "x=changed", "z=deep" })
+	says("env", { "HOME=/home/admin", "PATH=" .. CeroSecOS.DEFAULT_PATH,
+		"x=changed", "z=deep" })
 	-- 7. export with nothing after it lists the same set in the shape you would
 	-- type back.
 	says("export", {
-		"export HOME=/home/admin", "export PATH=/bin", "export x=changed",
+		"export HOME=/home/admin", "export PATH=" .. CeroSecOS.DEFAULT_PATH,
+		"export x=changed",
 		"export z=deep" })
 
 	-- 8. A name that is not one ends the line, the way `read` does: export is one
@@ -10526,7 +10559,8 @@ do
 		turns = turns + 1
 		CeroSecOS.jobStep(state, profile, {}, 100)
 	end
-	eq("the profile extended the shell's PATH", vars.PATH, "/bin:/home/admin/bin")
+	eq("the profile extended the shell's PATH", vars.PATH,
+		CeroSecOS.DEFAULT_PATH .. ":/home/admin/bin")
 
 	-- And the very next line typed finds the command.
 	admin.shvars = vars
@@ -11016,43 +11050,43 @@ do
 	local admin = open(state, "admin")
 
 	-- At the glass: packed, as it has always been.
-	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "ls /", { "bin   dev   etc   home  mnt   root  usr   var" })
 
 	-- Down a pipe: a name a line. The stage on the left is not writing to a
 	-- screen, and the one on the right is.
-	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
+	ok(state, admin, "ls / | cat", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 	ok(state, admin, "ls / | grep e", { "dev", "etc", "home" })
-	ok(state, admin, "ls / | wc -l", { "     7" })
+	ok(state, admin, "ls / | wc -l", { "     8" })
 	-- Which is the whole point: a loop over a listing gets the names and not the
 	-- rows they were packed into.
 	ok(state, admin, "for f in $(ls /); do echo [$f]; done",
-		{ "[bin]", "[dev]", "[etc]", "[home]", "[mnt]", "[root]", "[var]" })
+		{ "[bin]", "[dev]", "[etc]", "[home]", "[mnt]", "[root]", "[usr]", "[var]" })
 	-- A capture of it is the names, separated the way a capture separates lines.
 	ok(state, admin, "x=$(ls /)", {})
-	ok(state, admin, "echo $x", { "bin dev etc home mnt root var" })
+	ok(state, admin, "echo $x", { "bin dev etc home mnt root usr var" })
 
 	-- Into a file: a name a line as well, because a file is not a screen either.
 	ok(state, admin, "ls / > listed.txt", {})
-	ok(state, admin, "cat listed.txt", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
+	ok(state, admin, "cat listed.txt", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 
 	-- And either can be asked for outright, whoever is reading.
-	ok(state, admin, "ls -1 /", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
-	ok(state, admin, "ls -C / | cat", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "ls -1 /", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
+	ok(state, admin, "ls -C / | cat", { "bin   dev   etc   home  mnt   root  usr   var" })
 	ok(state, admin, "ls -C / > packed.txt", {})
-	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  var" })
+	ok(state, admin, "cat packed.txt", { "bin   dev   etc   home  mnt   root  usr   var" })
 	-- The later of the two wins, exactly as -a and -A do.
-	ok(state, admin, "ls -1C /", { "bin   dev   etc   home  mnt   root  var" })
-	ok(state, admin, "ls -C1 /", { "bin", "dev", "etc", "home", "mnt", "root", "var" })
+	ok(state, admin, "ls -1C /", { "bin   dev   etc   home  mnt   root  usr   var" })
+	ok(state, admin, "ls -C1 /", { "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 	-- -l was always a line each and neither flag has anything to say about it.
 	local long = okAt(state, admin, "ls -l1 /")
-	eq("a long listing is a line each whatever else is asked", #long, 7)
+	eq("a long listing is a line each whatever else is asked", #long, 8)
 	badAt(state, admin, "ls -q /", "ls: -q: unknown option")
 
 	-- The last stage of a pipeline IS writing to the glass, so it packs: `cat`
 	-- hands the lines over and the ls at the end of it is the one in front of a
 	-- person.
 	ok(state, admin, "cat listed.txt | sort | uniq",
-		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
+		{ "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 end
 
 -- The other three doors to the same question, asked of the engine rather than
@@ -11074,7 +11108,7 @@ do
 		for i = 1, #job.out do out[#out + 1] = job.out[i] end
 		job.out = {}
 	end
-	eq("cron's ls is a name a line", #out, 7)
+	eq("cron's ls is a name a line", #out, 8)
 	eq("the first of them", out[1], "bin")
 end
 
@@ -14043,7 +14077,6 @@ do
 
 	check("the top-up did something", CeroSecOS.upgradeSystem(state) == true)
 	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
-	eq("which is 20", CeroSecOS.SYSTEM_VERSION, 20)
 	-- The banner, with the name the machine answers to NOW and not the default: a
 	-- machine being topped up has been standing somewhere for a year.
 	local issue = CeroSecOS.systemNode(state, CeroSecOS.ISSUE_PATH)
@@ -14100,6 +14133,136 @@ do
 		CeroSecOS.systemNode(quiet, CeroSecOS.ISSUE_PATH).data, "")
 	eq("so nothing is printed over the login prompt",
 		#CeroSecOS.issueLines(quiet), 0)
+end
+
+-- 49c2. /usr/local/bin, on a machine that never had a /usr at all.
+--
+-- The chain a 1993 crate came with, and the only instruction the HOME disk has
+-- room for: `sudo cp /mnt/curtains.sh /usr/local/bin`. It answered `no such file`
+-- on every machine in the county until this version, because nothing made the
+-- three directories and `mkdir` here has no -p.
+do
+	local state = fresh()
+	local admin = open(state, "admin")
+	okAt(state, admin, "echo mine > /home/admin/notes.txt", {})
+	-- A machine as SYSTEM_VERSION 20 left it: no /usr, because there was none.
+	state.fs.children.usr = nil
+	state.sysv = 20
+
+	eq("the top-up has something to do", CeroSecOS.upgradeSystem(state), true)
+	eq("and the number moved to this build's", state.sysv, CeroSecOS.SYSTEM_VERSION)
+	eq("which is 21", CeroSecOS.SYSTEM_VERSION, 21)
+	local at = state.fs
+	for i = 1, #CeroSecOS.LOCAL_BIN_DIRS do
+		at = at.children[CeroSecOS.LOCAL_BIN_DIRS[i]]
+		local where = "/" .. table.concat(CeroSecOS.LOCAL_BIN_DIRS, "/", 1, i)
+		check(where .. " was put in", type(at) == "table" and at.type == "dir")
+		eq("root's", at.owner, "root")
+		eq("at 755", at.mode, CeroSecOS.LOCAL_BIN_MODE)
+	end
+	eq("and the last of them is empty", CeroSecOS.countEntries(at), 0)
+	-- What it did NOT touch.
+	okAt(state, admin, "cat /home/admin/notes.txt", { "mine" })
+	eq("a second pass finds nothing to do", CeroSecOS.upgradeSystem(state), false)
+	check("and the machine still boots", CeroSecOS.validate(state) == true)
+
+	-- And root deleting it is root's right and stays done: the number has moved.
+	okAt(state, open(state, "root"), "rm -r /usr", {})
+	eq("the top-up has nothing left to say", CeroSecOS.upgradeSystem(state), false)
+	eq("/usr stays deleted", CeroSecOS.systemNode(state, "/usr"), nil)
+	-- The firmware is the way back, as it is for /mnt and /var.
+	CeroSecOS.restoreSystem(state)
+	local back = CeroSecOS.systemNode(state, CeroSecOS.LOCAL_BIN_PATH)
+	check("the firmware puts the chain back", back ~= nil and back.type == "dir")
+end
+
+-- The other half of the seeding rule, and it is the half that costs somebody his
+-- work if it is wrong: what is ALREADY at one of those three names is his.
+do
+	-- A survivor who made the chain himself, chmod'ed it and installed a program.
+	local mine = fresh()
+	mine.sysv = 20
+	local root = CeroSecOS.rootSession()
+	CeroSecOS.systemNode(mine, "/usr").owner = "admin"
+	CeroSecOS.systemNode(mine, "/usr/local").mode = 700
+	local done = CeroSecOS.writeFile(mine, root,
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh", "echo curtains", false, 100)
+	check("the program was installed", done ~= nil)
+	check("the top-up ran", CeroSecOS.upgradeSystem(mine) == true)
+	eq("a /usr somebody else owns is left his", CeroSecOS.systemNode(mine, "/usr").owner,
+		"admin")
+	eq("a mode root chose is left alone", CeroSecOS.systemNode(mine, "/usr/local").mode, 700)
+	eq("and the program in it is still there",
+		CeroSecOS.systemNode(mine, CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh").data,
+		"echo curtains")
+	eq("with nothing else beside it",
+		CeroSecOS.countEntries(CeroSecOS.systemNode(mine, CeroSecOS.LOCAL_BIN_PATH)), 1)
+
+	-- And a FILE at one of those names, which is the case the seeding of /bin/wall
+	-- already answers for a file: left exactly where it is, nothing made under it,
+	-- and no error -- it is a machine with a file called /usr/local on it.
+	local blocked = fresh()
+	blocked.sysv = 20
+	blocked.fs.children.usr.children["local"] =
+		CeroSecOS.newFile("admin", 600, "not a directory")
+	check("the top-up still ran", CeroSecOS.upgradeSystem(blocked) == true)
+	eq("and the number still moved", blocked.sysv, CeroSecOS.SYSTEM_VERSION)
+	local file = CeroSecOS.systemNode(blocked, "/usr/local")
+	eq("his file is still a file", file.type, "file")
+	eq("still his", file.owner, "admin")
+	eq("with his bytes in it", file.data, "not a directory")
+	eq("nothing was made under it", CeroSecOS.systemNode(blocked, CeroSecOS.LOCAL_BIN_PATH),
+		nil)
+	check("and the machine still boots", CeroSecOS.validate(blocked) == true)
+end
+
+-- 49c3. And the PATH that makes the directory worth having.
+--
+-- A program copied where the README says to copy it has to be a command he can
+-- TYPE afterwards -- `curtains.sh auto`, which is what a 1993 user expected --
+-- and not a full path for ever. So /usr/local/bin is the second entry of the
+-- default PATH, behind /bin: order is what decides which file answers a name, and
+-- nothing installed may quietly replace a command the manual documents.
+do
+	eq("the default names both directories", CeroSecOS.DEFAULT_PATH,
+		"/bin:/usr/local/bin")
+	local dirs = CeroSecOS.pathDirs(CeroSecOS.DEFAULT_PATH)
+	eq("two of them", #dirs, 2)
+	eq("the machine's own first", dirs[1], CeroSecOS.BIN_PATH)
+	eq("and the local one second", dirs[2], CeroSecOS.LOCAL_BIN_PATH)
+	check("which is well inside the ceiling on a walk",
+		#dirs <= CeroSecOS.MAX_PATH_DIRS)
+	eq("a login hands the shell that value", CeroSecOS.loginVars("/home/admin").PATH,
+		CeroSecOS.DEFAULT_PATH)
+	-- And a job nobody handed an environment -- a cron line -- starts with it too.
+	eq("so does a job started with no variables at all",
+		CeroSecOS.newJob({ prog = CeroSecOS.parseScript("echo hi") }).vars.PATH,
+		CeroSecOS.DEFAULT_PATH)
+
+	local state = fresh()
+	local admin = open(state, "admin")
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+	ok(state, admin, "echo $PATH", { "/bin:/usr/local/bin" })
+	-- The disk's own instruction, typed as the README writes it, and then the
+	-- thing it is for: the program answers to its NAME.
+	local rootSession = open(state, "root")
+	ok(state, rootSession, "echo 'echo curtains: open' > /usr/local/bin/curtains.sh", {})
+	ok(state, rootSession, "chmod 755 /usr/local/bin/curtains.sh", {})
+	ok(state, admin, "which curtains.sh", { "/usr/local/bin/curtains.sh" })
+	ok(state, admin, "curtains.sh", { "curtains: open" })
+	ok(state, admin, "type curtains.sh",
+		{ "curtains.sh is /usr/local/bin/curtains.sh" })
+	-- Order: a copy of a shipped command in there does not shadow the real one.
+	ok(state, rootSession, "echo 'echo mine' > /usr/local/bin/ls", {})
+	ok(state, rootSession, "chmod 755 /usr/local/bin/ls", {})
+	ok(state, admin, "which ls", { "/bin/ls" })
+	-- And the walk costs nothing more for a command that IS in /bin: the first
+	-- candidate answers, so one directory was looked in.
+	local found, why, walked = CeroSecOS.lookupPath(state, admin, "ls",
+		CeroSecOS.DEFAULT_PATH)
+	eq("/bin answers for a shipped command", found, "/bin/ls")
+	eq("with no reason beside it", why, nil)
+	eq("having walked one directory", walked, 1)
 end
 
 -- 49d. find: the order, the two tests, and the glob.
@@ -15067,7 +15230,7 @@ do
 	put(state, admin, "/home/admin/list.sh", "ls /\n")
 	okAt(state, admin, "sh list.sh > lsout", {})
 	okAt(state, admin, "cat lsout",
-		{ "bin", "dev", "etc", "home", "mnt", "root", "var" })
+		{ "bin", "dev", "etc", "home", "mnt", "root", "usr", "var" })
 
 	-- A REFUSAL is not output and never was: it goes on the screen and not in the
 	-- file, exactly as `ls /nope > f` puts it there.

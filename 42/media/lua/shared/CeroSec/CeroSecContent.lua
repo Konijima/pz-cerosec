@@ -1490,10 +1490,13 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 	-- other script in this library takes what it works on, which is also what lets
 	-- the bench run it as an ordinary account in a directory of its own.
 	--
-	-- IT MAKES THE /usr CHAIN A DIRECTORY AT A TIME, because `mkdir` on this
-	-- machine takes one path and has no `-p`: a fresh machine has no /usr at all,
-	-- so `mkdir /usr/local/lib/bbs` on its own is `no such file` and a board that
-	-- was never made. The loop is tried by whoever runs it and not guarded by a
+	-- IT MAKES THE BOARD'S CHAIN A DIRECTORY AT A TIME, because `mkdir` on this
+	-- machine takes one path and has no `-p`: /usr/local/lib is on no machine, so
+	-- `mkdir /usr/local/lib/bbs` on its own is `no such file` and a board that
+	-- was never made. The three above it are there on every machine since
+	-- SYSTEM_VERSION 21 (CeroSecOS.ensureLocalBin) and the loop skips what it
+	-- finds, so the list stays as it is: a disk is read on machines older than
+	-- the build that wrote it. The loop is tried by whoever runs it and not guarded by a
 	-- test on `whoami`, which is the honest way round -- an ordinary account sees
 	-- four `permission denied` lines, which is what a real installer told somebody
 	-- who had forgotten the sudo, and then one line naming the cure. The copying

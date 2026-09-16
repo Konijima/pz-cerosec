@@ -112,7 +112,15 @@ CeroSecOS.STATE_VERSION = 2
 --    anybody may run it -- the real one is setgid tty and not setuid root, because
 --    a broadcast is not a privilege. The `shutdown` warning already went out
 --    through that door; this is the door with a person behind it. Nothing deleted.
-CeroSecOS.SYSTEM_VERSION = 20
+-- 21: /usr/local/bin, and the two directories above it. Every Unix of 1993
+--    shipped the chain and this machine had no /usr at all, which made a liar of
+--    the one instruction the HOME disk has room for -- `sudo cp
+--    /mnt/curtains.sh /usr/local/bin` was `no such file` on every machine in the
+--    county. Three directories seeded, root's at 755, and DEFAULT_PATH gains the
+--    last of them so a program installed there is a command you can type (see
+--    CeroSecOS.ensureLocalBin and CeroSecOS.DEFAULT_PATH). A name of somebody's
+--    own anywhere on the chain stops the walk there. Nothing deleted.
+CeroSecOS.SYSTEM_VERSION = 21
 
 -- The screen the terminal will draw is 60 x 20 and wraps nothing, so every
 -- output line the core emits is at most COLS characters.
@@ -218,12 +226,28 @@ CeroSecOS.MOTD = "CeroSec OS " .. CeroSecOS.VERSION ..
 -- does take the commands away.
 CeroSecOS.BIN_PATH = "/bin"
 CeroSecOS.ETC_PATH = "/etc"
--- What PATH holds on a machine nobody has changed it on: the one directory the
--- commands ship in. A login puts it in the shell's environment
--- (CeroSecOS.loginVars), a script and a cron line start with it
--- (CeroSecOS.newJob), and a shell that has no PATH at all falls back on it --
+-- Where the MACHINE's own software goes, as against the vendor's /bin: a program
+-- off a floppy, a script somebody wrote for the building, anything root installs
+-- for everybody. Every Unix of 1993 shipped the chain -- /usr/local/bin was in
+-- the crate empty, waiting -- and a machine without one is the oddity, which is
+-- why CeroSecOS.ensureLocalBin makes it on every machine there is. The three
+-- components are named once, for the walk that makes them a level at a time.
+CeroSecOS.LOCAL_BIN_PATH = "/usr/local/bin"
+CeroSecOS.LOCAL_BIN_DIRS = { "usr", "local", "bin" }
+CeroSecOS.LOCAL_BIN_MODE = 755
+-- What PATH holds on a machine nobody has changed it on: the directory the
+-- commands ship in, and then the one root installs into. A login puts it in the
+-- shell's environment (CeroSecOS.loginVars), a script and a cron line start with
+-- it (CeroSecOS.newJob), and a shell that has no PATH at all falls back on it --
 -- see CeroSecOS.pathValue for why absent and empty are not the same thing.
-CeroSecOS.DEFAULT_PATH = "/bin"
+--
+-- /bin FIRST, which is the order that decides what `ls` means: a copy of a
+-- command in /usr/local/bin is a name behind the machine's own and not in front
+-- of it, so nothing a survivor installs can quietly replace a command the
+-- manual documents. Second and not absent because a program copied where the
+-- README says to copy it has to be a command he can then TYPE -- `curtains.sh
+-- auto`, the way a 1993 user expected -- and not a full path for ever.
+CeroSecOS.DEFAULT_PATH = CeroSecOS.BIN_PATH .. ":" .. CeroSecOS.LOCAL_BIN_PATH
 
 -- How many directories a lookup will walk.
 --

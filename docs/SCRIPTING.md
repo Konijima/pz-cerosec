@@ -215,8 +215,11 @@ A script is a text file with commands in it. Write one with `edit`, run it with
     admin@ksp-04-11:~$ chmod 755 lights.sh
     admin@ksp-04-11:~$ ./lights.sh
 
-A bare name is still a command in `/bin` and only there, so a script in your home
-is never found by typing its name alone.
+A bare name is looked for on `PATH`, which by default is `/bin` and then
+`/usr/local/bin` (`CeroSecOS.DEFAULT_PATH`) -- the machine's own commands and then
+what root installed for everybody -- so a script in your home is never found by
+typing its name alone. `/bin` is first, so nothing installed can shadow a shipped
+command.
 
 The language is the one you already know from a 1993 `/bin/sh`, cut to what fits on
 a desk machine: `NAME=value` and `$NAME`, `${NAME}`, `$1`..`$9`, `$#`, `$@`, `$?`,

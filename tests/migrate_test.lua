@@ -268,6 +268,38 @@ for i = 1, #fixtures do
 	local entries = CeroSecOS.parseCrontab(crontab.data)
 	eq(at .. "and it still parses to one job", #entries, 1)
 
+	-- What the top-up SEEDED on the way in, asked of the photograph rather than of a
+	-- machine this bench built: /usr/local/bin and the two directories above it are
+	-- on every machine now, and a save written before SYSTEM_VERSION 21 has none of
+	-- them. The one instruction the HOME disk has room for names that directory, so
+	-- a machine off an old save that did not gain it is a machine where the disk
+	-- lies.
+	local chain = state.fs
+	for j = 1, #CeroSecOS.LOCAL_BIN_DIRS do
+		chain = chain.children[CeroSecOS.LOCAL_BIN_DIRS[j]]
+		local where = "/" .. table.concat(CeroSecOS.LOCAL_BIN_DIRS, "/", 1, j)
+		check(at .. where .. " is on the machine",
+			type(chain) == "table" and chain.type == "dir")
+		eq(at .. "root's", chain.owner, "root")
+		eq(at .. "at 755", chain.mode, CeroSecOS.LOCAL_BIN_MODE)
+	end
+	-- And it is a directory the shell will look in, which is the half a field check
+	-- cannot ask: a program installed there answers to its name at the prompt.
+	local installed = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh", "echo curtains: open", false, 100)
+	check(at .. "a program installs into it", installed ~= nil)
+	CeroSecOS.getNode(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh").mode = 755
+	admin.shvars = CeroSecOS.loginVars("/home/admin")
+	local typedOk, typedOut = run(state, admin, "curtains.sh")
+	eq(at .. "and answers to its name (" .. tostring(typedOut[1]) .. ")", typedOk, true)
+	eq(at .. "with what it prints", typedOut[1], "curtains: open")
+	local removed = CeroSecOS.removeNode(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh", false)
+	check(at .. "and the bench takes its own program back off the machine",
+		removed ~= nil)
+	admin.shvars = nil
+
 	-- The device numbers. light0 is the same switch tomorrow as today: the book is
 	-- keyed by WHERE the device is, and a migration that rekeyed it would renumber
 	-- every /dev entry under a script somebody wrote.

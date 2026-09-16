@@ -14933,10 +14933,12 @@ do
 	-- The library's own text, never a copy typed here: the program this bench runs
 	-- has to be the program the floppy carries, or the bench proves a program
 	-- nobody will ever find.
-	local B = "/usr/local/bin"
-	bench.enter("mkdir /usr")
-	bench.enter("mkdir /usr/local")
-	bench.enter("mkdir " .. B)
+	-- No mkdir: every machine ships the chain (CeroSecOS.ensureLocalBin), which is
+	-- what makes the README's own `sudo cp /mnt/curtains.sh /usr/local/bin` a line
+	-- that works. This bench used to make the three directories itself.
+	local B = CeroSecOS.LOCAL_BIN_PATH
+	check("the machine came with " .. B,
+		CeroSecOS.systemNode(bench.object:osState(), B) ~= nil)
 	bench.frame()
 	-- Installed as ROOT, because /usr/local/bin is root's -- which is what the
 	-- README's own `sudo cp` says. bench.script writes as admin and could not.
@@ -20979,5 +20981,44 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 
+-- LAST IN THE FILE, and on purpose: this bench moves the game clock two minutes
+-- (bench.minute), and what the prefilled machines of section 54 draw is keyed on
+-- that clock. A bench put in the middle of the file that advances it changes what
+-- a section further down comes up with.
+
+-- A crontab line that names a program by its NAME, with the program in
+-- /usr/local/bin. This is what the HOME disk's own instruction is for: cron hands
+-- a line the default PATH and nothing of the shell's (CeroSecJobs.cronLine), so
+-- the only way a bare name in a crontab can ever work is the default PATH naming
+-- the directory a survivor installed into. The README writes the whole path and
+-- that is still the advice; this is the line somebody writes anyway.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	-- Installed as ROOT, because /usr/local/bin is root's -- which is what the
+	-- README's own `sudo cp` says.
+	local done = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh", "echo curtains: open", false, 100)
+	if done == nil then error("cannot install curtains.sh") end
+	CeroSecOS.getNode(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh").mode = 755
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * curtains.sh", false, 100)
+	bench.enter("clear")
+	bench.frame()
+
+	bench.minute()
+	bench.minute()
+	local mail = bench.fileText("/var/mail/admin")
+	check("the line fired", mail ~= nil)
+	check("and the program it named ran (" .. tostring(mail) .. ")",
+		mail ~= nil and string.find(mail, "curtains: open", 1, true) ~= nil)
+	check("with nothing said about a command not found",
+		mail == nil or string.find(mail, "command not found", 1, true) == nil)
+	local log = bench.fileText("/var/log/cron")
+	check("and the log names the line as it was written",
+		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)
+end
 
 print("window_test: " .. count .. " checks passed")

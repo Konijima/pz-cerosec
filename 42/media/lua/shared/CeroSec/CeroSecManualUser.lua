@@ -458,29 +458,30 @@ forgot Enter. The machine has not read your line yet.]],
 [[A drawer inside a drawer inside a drawer.
 
 Everything the machine keeps is a file, and files live in folders, which
-this machine calls directories. Directories live inside other directories,
-and at the top is one holding all of them. It has no name: it is written
-as a single slash, and everyone calls it the root.
+this machine calls directories. Directories live inside others, and at the
+top is one holding all of them. It has no name: it is written as a single
+slash, and everyone calls it the root.
 
-Seven drawers there, on every machine.
+Eight drawers there, on every machine.
 
   admin@ksp-04-11:~$ ls /
-  bin   dev   etc   home  mnt   root  var
+  bin   dev   etc   home  mnt   root  usr   var
 
 bin holds the commands, every one a real file. dev, etc, root and var
 belong to the machine; Volume 2 opens them. home holds a directory per
-account, each named after it: /home/admin here, your own name on
-anybody else's. mnt is empty: a floppy goes there, chapter 11.
+account: /home/admin here, your own name elsewhere. mnt is empty, for a
+floppy (chapter 11), and so is /usr/local/bin, where a program you
+install goes (chapter 8).
 
-pwd prints where you are standing. ls lists what is there. Try both.
+pwd prints where you stand. ls lists what is there. Try both.
 
   admin@ksp-04-11:~$ pwd
   /home/admin
   admin@ksp-04-11:~$ ls
   admin@ksp-04-11:~$
 
-ls printed nothing, the right answer on a fresh machine: your directory is
-empty. The squiggle in the prompt stands for it, to keep the line short.]],
+ls printed nothing, the right answer on a fresh machine: your directory
+is empty. The squiggle in the prompt stands for it.]],
 
 [[Moving about.
 
@@ -1335,21 +1336,25 @@ and leaves the file standing, which is usually what you want.]],
 [[Where the machine looks for a command.
 
 Now for the sentence that explains chapter 2's "command not found". Every
-command you type is a real file. ls is a file called /bin/ls. You can list
-it and you can read it.
+command you type is a real file. ls is a file called /bin/ls, and you can
+read it.
 
   admin@ksp-04-11:~$ cat /bin/ls
   list a directory
 
 When you type a word, the machine walks a list of directories looking for
 a file by that name, in order, and runs the first one it can. That list is
-called PATH, and on a fresh machine it has exactly one entry. Try it.
+called PATH, and on a fresh machine it has two entries. Try it.
 
   admin@ksp-04-11:~$ echo $PATH
-  /bin
+  /bin:/usr/local/bin
+
+/bin is the machine's commands. /usr/local/bin is yours, empty, and
+already on the list: a program copied in there is a command anybody can
+type.
 
 So "command not found" really means "I walked PATH and there was no such
-file anywhere on it". Nothing more sinister than that.
+file anywhere on it".
 
 Two commands report on the search. which prints where a name would be
 found, and prints nothing at all when it would not. type does the same and
@@ -1364,7 +1369,7 @@ directory called bin inside your own home.
   admin@ksp-04-11:~$ mkdir bin
   admin@ksp-04-11:~$ PATH=$PATH:$HOME/bin
   admin@ksp-04-11:~$ echo $PATH
-  /bin:/home/admin/bin
+  /bin:/usr/local/bin:/home/admin/bin
 
 Read that middle line carefully, because it is the whole recipe. $PATH
 means "whatever PATH is now". $HOME means your own directory. The colon
@@ -1683,7 +1688,7 @@ df says so once one is mounted:
   admin@ksp-04-11:~$ df
   Filesystem   Size   Used  Avail  Use%
   hda         65536   2792  62744    5%
-  nodes         512    104    408   21%
+  nodes         512    107    405   21%
   fd0          4096      5   4091    1%
   fd0 nodes      32      2     30    7%
 

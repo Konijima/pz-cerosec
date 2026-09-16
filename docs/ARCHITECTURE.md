@@ -356,8 +356,10 @@ away. The way back is the BIOS, not a guard rail on the command: root keeps full
 power, and the protection is that root has a password.
 
 **`/bin`** — one file per shell command, owner `root`, mode `755`, contents the
-one-line description. It is the first and, unless somebody widens `PATH`, the only
-directory a bare name is looked for in: nothing there, no `/bin` at all, `/bin` a
+one-line description. It is the **first** directory a bare name is looked for in,
+and `/usr/local/bin` — empty, root's at 755, seeded on every machine by
+`CeroSecOS.ensureLocalBin` at `SYSTEM_VERSION` 21 — is the second and last unless
+somebody widens `PATH`: nothing there, no `/bin` at all, `/bin` a
 file, a directory called `/bin/ls`, or a file with no Lua command behind it are all
 `<name>: command not found`; a file without `x` for this user, or a `/bin` he cannot
 read, is `<name>: permission denied`. A **link** at a name in `/bin` is not one of
