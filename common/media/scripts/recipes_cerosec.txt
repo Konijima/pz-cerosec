@@ -417,6 +417,17 @@ module CeroSec
        electronics tag. A recipe that got a motor out of a teddy bear would be
        this mod inventing a Build 42 that does not exist.
 
+       OURS AND NOT VANILLA'S. The obvious cheaper idea -- add the motor as a
+       second output of vanilla's own DismantleMiscElectronics so this mod adds
+       no menu entry at all -- was taken apart in the jar and it cannot be done
+       cleanly: a second block with the same name BLENDS into vanilla's (bodies
+       accumulate, LoadIO only ever adds), so the motor would fall out of a TV
+       remote and a speaker as well; the itemMapper that could tell the inputs
+       apart can only be attached through `mappers[...]` on the input LINE, and
+       inputs are add-only, so attaching one means demanding a second item; and
+       OnCreate names a Java class from inside the block, with no craft event in
+       Lua to listen for instead. Offsets in docs/notes/modules-proofs.md, 8b.
+
        TWO RECIPES AND NOT ONE, and the reason is the promise: a survivor must
        never be worse off dismantling with ours than with vanilla's.
 
