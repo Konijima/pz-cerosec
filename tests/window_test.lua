@@ -202,6 +202,23 @@ _G.getSpecificPlayer = function(num) return _G.__players[num] end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
+-- A WORLD SOUND, AND THE TWO WAYS IT IS MADE. Vanilla's own server-side pair is
+-- one function with a branch in it -- `if isServer() then playServerSound(name,
+-- square) else square:playSound(name, true) end`,
+-- media/lua/server/Traps/STrapGlobalObject.lua:118-124 -- and the two halves go to
+-- two different places, so the fake records WHICH one was used and not merely that
+-- a sound was made: playServerSound is a broadcast that does nothing off a
+-- dedicated server (GameServer.PlayWorldSound, `if (!server) return` at offsets
+-- 0-10) and the square's own emitter is a sound in one process and nowhere else. A
+-- fake that answered both the same way would let a mod which only ever made the
+-- wrong one pass.
+--
+-- Every entry is { name, how, x, y, z }. `how` is "server" or "square".
+_G.__sounds = {}
+_G.playServerSound = function(name, square)
+	_G.__sounds[#_G.__sounds + 1] = { name = name, how = "server",
+		x = square:getX(), y = square:getY(), z = square:getZ() }
+end
 -- MapObjects, RECORDING, because the game's own answer to "created for the first
 -- time in this save" is which of its two maps a closure was put in: OnNewWithSprite
 -- fills `onNew`, which IsoChunk.doLoadGridsquare walks only for a chunk built out of
@@ -2759,7 +2776,14 @@ function FakeWorld.new()
 		-- thing that stops a premises' machine coming up on its own.
 		sq.haveElectricity = function() return world.power ~= false end
 		sq.hasGridPower = function() return world.power ~= false end
-		sq.playSound = function() end
+		-- The square's own emitter, RECORDED: it is the half of the sound pair a
+		-- solo game hears (IsoGridSquare.playSound takes a free emitter at the
+		-- square, offsets 0-36). Both halves land in one list so a bench can read
+		-- them in the order they happened.
+		sq.playSound = function(_, name)
+			_G.__sounds[#_G.__sounds + 1] = { name = name, how = "square",
+				x = x, y = y, z = z }
+		end
 		world.squares[key] = sq
 		return sq
 	end
@@ -2976,6 +3000,14 @@ local function openable(o)
 	o.IsOpen = function() return o.open end
 	o.isBarricaded = function() return o.barricaded end
 	o.isObstructed = function() return o.obstructed end
+	-- What the door is MADE of, as the sound name says it. Both classes answer
+	-- getSoundPrefix() the same way -- the closedSprite's DoorSound property, or
+	-- "WoodDoor" when the sprite has none (IsoDoor and IsoThumpable, offsets 0-40
+	-- of each) -- and the hand's name is that prefix plus "Open" or "Close". The
+	-- default here is the engine's own default, and a bench that wants to prove the
+	-- prefix is READ rather than written in sets `soundPrefix` to something else.
+	o.soundPrefix = "WoodDoor"
+	o.getSoundPrefix = function() return o.soundPrefix end
 	o.ToggleDoorSilent = function()
 		o.silentToggles = o.silentToggles + 1
 		if o.barricaded then return end
@@ -3099,6 +3131,13 @@ local function fakeCurtain(north)
 	o.getOppositeSquare = function() return o.opposite end
 	o.IsOpen = function() return o.open end
 	o.isCurtainOpen = function() return o.open end
+	-- The cloth, as the sound name says it: IsoCurtain.getSoundPrefix() is
+	-- "Curtain" .. the closedSprite's CurtainSound property, or "CurtainShort" when
+	-- there is no sprite or no property (offsets 0-45). A map curtain is
+	-- CurtainShort and a survivor's bedsheet is CurtainSheet, so a bench that wants
+	-- the sheet sets this.
+	o.soundPrefix = "CurtainShort"
+	o.getSoundPrefix = function() return o.soundPrefix end
 	o.ToggleDoorSilent = function()
 		o.toggles = o.toggles + 1
 		if o.barricaded then return end
@@ -20675,5 +20714,270 @@ do
 	CeroSec.DEV_DEBUG_MENU = flag
 	_G.isDebugEnabled = debugMode
 end
+
+--
+-- 56. WHAT THE BUILDING SOUNDS LIKE WHEN THE MACHINE WORKS IT
+--
+-- Three reports on 0.4.0, in the author's words: a door shut by the script makes
+-- no sound, a window opened by cron makes none, and neither does a curtain. All
+-- three were true and all three were the same hole: every actuator in this mod
+-- uses the SILENT call, because the loud ones play at a survivor's own emitter
+-- and a machine has no survivor -- so nothing was ever heard, and a building
+-- working by itself was a building nobody could tell was working.
+--
+-- What is asserted here is the NAME and the CALL, both, for every direction of
+-- every fixture that moves:
+--
+--   the name, because it is the hand's name and not one of ours. A door is its
+--   sprite's DoorSound property and a curtain is "Curtain" plus its CurtainSound
+--   property, so the prefix is READ off the object -- a device that wrote
+--   "WoodDoorOpen" into itself would pass an assertion about a wooden door and
+--   be wrong about every metal one, which is why the prefixes are moved below.
+--
+--   the call, because there are two and they go to different places.
+--   playServerSound is a broadcast a dedicated server makes and does nothing at
+--   all anywhere else (GameServer.PlayWorldSound, `if (!server) return`); the
+--   square's own emitter is a sound in one process. The author heard nothing on a
+--   server, so a bench that only ever proved the solo call would prove the half
+--   he cannot hear.
+--
+-- And twice over, the two silences that have to stay: a write the world refused
+-- and a write that changed nothing are both mute. A motor that clicked when it
+-- refused would be a motor lying, and one that clicked twice for two `close` in a
+-- row would be a machine with a stutter.
+--
+do
+	local world = FakeWorld.new()
+	local office = world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+	local hall = world.room("hall", { {13,11,0}, {14,11,0} })
+
+	local curtain = world.put(world.squares["11,10,0"], fakeCurtain(true))
+	local win = world.put(world.squares["12,10,0"], fakeWindow(true, true))
+	-- One object, two devices and two sounds: the door swings (door0) and the
+	-- sheet on it draws (curtain1). They must not borrow each other's noise.
+	local sheeted = world.put(world.squares["13,11,0"],
+		fakeDoor(false, true, world.squares["14,11,0"]))
+	sheeted.hasCurtain = true
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	-- Every order through the glass, with the sound book wiped first: what is
+	-- asserted after each line is what THAT line made, and an assertion of silence
+	-- is only worth anything if the book was empty when the line was typed.
+	local function typed(line)
+		_G.__sounds = {}
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+
+	-- The whole book as one line apiece: the name, which call made it, and where.
+	-- The place is in it because a sound at the wrong tile is a sound in the wrong
+	-- room, and the door and its sheet stand on a different square from the curtain.
+	local function heard()
+		local out = {}
+		for i = 1, #_G.__sounds do
+			local s = _G.__sounds[i]
+			out[#out + 1] = s.name .. " " .. s.how .. " "
+				.. s.x .. "," .. s.y .. "," .. s.z
+		end
+		return out
+	end
+	local function once(what, want)
+		local book = heard()
+		if #book ~= 1 then
+			check(what .. " -- one sound and not " .. #book, false)
+			return
+		end
+		eq(what, book[1], want)
+	end
+	local function silent(what)
+		eq(what, table.concat(heard(), " + "), "")
+	end
+
+	--
+	-- THE DOOR, and it is the report's own line: a door shut by a script
+	--
+	typed("echo close > /dev/door0")
+	silent("a door already shut makes no sound")
+	eq("and it did not move either", sheeted.silentToggles, 0)
+
+	typed("echo open > /dev/door0")
+	eq("the door opened", sheeted.open, true)
+	once("and it was heard, at its own tile", "WoodDoorOpen square 13,11,0")
+
+	typed("echo close > /dev/door0")
+	eq("the door shut", sheeted.open, false)
+	once("and the shutting was heard", "WoodDoorClose square 13,11,0")
+
+	typed("echo close > /dev/door0")
+	silent("and shutting a shut door is silent")
+
+	-- THE PREFIX IS THE DOOR'S, not this file's. getSoundPrefix() answers the
+	-- closedSprite's DoorSound property before it falls back to "WoodDoor", so a
+	-- prison door says so itself and a device that wrote the wood in by hand is
+	-- caught here and nowhere else.
+	sheeted.soundPrefix = "PrisonMetalDoor"
+	typed("echo open > /dev/door0")
+	once("a metal door says what it is made of",
+		"PrisonMetalDoorOpen square 13,11,0")
+	sheeted.soundPrefix = "WoodDoor"
+	typed("echo close > /dev/door0")
+
+	-- A REFUSAL IS MUTE. The barricade is refused by us, before the call, because
+	-- ToggleDoorSilent's first two instructions swallow it.
+	sheeted.barricaded = true
+	typed("echo open > /dev/door0")
+	check("a boarded door is refused", bench.painted("door0: barricaded"))
+	silent("and a refused order makes no sound")
+	sheeted.barricaded = false
+
+	--
+	-- THE SASH, which had no sound in the engine to copy: ToggleWindow plays
+	-- nothing and the survivor's noise is an event on his own animation
+	-- (media/AnimSets/player/openwindow/success.xml, `PlaySound` = OpenWindow).
+	--
+	typed("echo open > /dev/window0")
+	eq("the sash opened", win.open, true)
+	once("and the window was heard", "OpenWindow square 12,10,0")
+
+	typed("echo close > /dev/window0")
+	eq("the sash shut", win.open, false)
+	once("and the shutting was heard", "CloseWindow square 12,10,0")
+
+	typed("echo close > /dev/window0")
+	silent("a sash already shut is silent")
+
+	win.smashed = true
+	typed("echo open > /dev/window0")
+	check("a smashed window is refused", bench.painted("window0: smashed"))
+	silent("and says nothing")
+	win.smashed = false
+
+	-- AND THE LATCH IS NOT THE SASH. win0 is the magnetic contact and a contact
+	-- moves nothing, so `lock` and `unlock` on it are as silent as they are
+	-- invisible -- this is the one write in the rung that must stay mute.
+	typed("echo unlock > /dev/win0")
+	eq("the latch came off", win.locked, false)
+	silent("and a latch makes no sound")
+
+	--
+	-- THE CURTAIN, both of them
+	--
+	typed("echo open > /dev/curtain0")
+	eq("the curtain drew back", curtain.open, true)
+	once("and it was heard", "CurtainShortOpen square 11,10,0")
+
+	typed("echo close > /dev/curtain0")
+	eq("it drew across", curtain.open, false)
+	once("and that was heard too", "CurtainShortClose square 11,10,0")
+
+	typed("echo close > /dev/curtain0")
+	silent("a curtain already drawn is silent")
+
+	-- A BEDSHEET IS NOT A CURTAIN ROD, and the engine says which by the sprite:
+	-- getSoundPrefix() is "Curtain" .. the CurtainSound property, which is "Sheet"
+	-- on a survivor's own sheet (IsoCurtain.isSheet reads the same property).
+	curtain.soundPrefix = "CurtainSheet"
+	typed("echo open > /dev/curtain0")
+	once("a sheet sounds like a sheet", "CurtainSheetOpen square 11,10,0")
+	curtain.soundPrefix = "CurtainShort"
+
+	-- The boarded curtain, which is the one refusal in this file that is found by
+	-- toggling and reading back: the sheet did not move, so nothing is heard.
+	curtain.open = true
+	curtain.barricaded = true
+	typed("echo close > /dev/curtain0")
+	check("a boarded curtain is refused", bench.painted("curtain0: barricaded"))
+	silent("and a curtain that did not move is silent")
+	curtain.barricaded = false
+
+	-- AND FROM WHERE THE WORLD REALLY STARTS. The 0.4.0 report -- "the curtains
+	-- script only opens them, they don't close" -- was typed at a curtain that was
+	-- OPEN, because every curtain in the world is born open: CellLoader builds one
+	-- with `open = true` and `sprite = openSprite` whichever tile the map placed
+	-- (offsets 709-740), IsoWindow.addSheet builds the sheet from the open tile
+	-- (192-253) and IsoDoor.addSheet sets `curtainOpen = true` (offset 18) -- which
+	-- is also why a motor will not go on a drawn one. The lines above reached that
+	-- state by opening a shut curtain; this is the state the map hands over, and
+	-- `close` on it draws the cloth and says so.
+	eq("a curtain is open where the world left it", curtain.open, true)
+	typed("echo close > /dev/curtain0")
+	eq("and close draws it across", curtain.open, false)
+	once("and it is heard drawing", "CurtainShortClose square 11,10,0")
+	-- Back where the map had it, by hand and not by an order: the server block
+	-- below draws this curtain again and a curtain already drawn would make it
+	-- prove the silence instead of the sound.
+	curtain.open = true
+
+	-- THE DOOR'S OWN SHEET, which stands on the door's tile and not the curtain's.
+	-- Vanilla plays nothing here at all -- toggleCurtain has no sound in it -- so
+	-- what the mod plays is the curtain's own default, which is what
+	-- IsoCurtain.getSoundPrefix() answers when there is no sprite to ask.
+	typed("echo open > /dev/curtain1")
+	eq("the sheet on the door drew back", sheeted.curtainOpen, true)
+	once("and the door's sheet was heard, at the door",
+		"CurtainShortOpen square 13,11,0")
+
+	typed("echo close > /dev/curtain1")
+	eq("and it drew across", sheeted.curtainOpen, false)
+	once("with the closing sound", "CurtainShortClose square 13,11,0")
+
+	typed("echo close > /dev/curtain1")
+	silent("and a sheet already drawn is silent")
+
+	--
+	-- AND NOW THE SERVER, which is where the reports came from
+	--
+	-- The author heard nothing on a dedicated server, and on one the square's own
+	-- emitter is the wrong call: it plays into a process nobody is listening to.
+	-- playServerSound is the broadcast, and this is the same six orders again with
+	-- GameServer.server true.
+	local hadServer = _G.isServer
+	_G.isServer = function() return true end
+
+	typed("echo open > /dev/door0")
+	once("on a server the door is broadcast", "WoodDoorOpen server 13,11,0")
+	typed("echo close > /dev/door0")
+	once("and so is the shutting", "WoodDoorClose server 13,11,0")
+
+	typed("echo open > /dev/window0")
+	once("and the sash", "OpenWindow server 12,10,0")
+	typed("echo close > /dev/window0")
+	once("both ways", "CloseWindow server 12,10,0")
+
+	typed("echo close > /dev/curtain0")
+	once("and the curtain", "CurtainShortClose server 11,10,0")
+	typed("echo open > /dev/curtain0")
+	once("both ways too", "CurtainShortOpen server 11,10,0")
+
+	typed("echo open > /dev/curtain1")
+	once("and the sheet on the door", "CurtainShortOpen server 13,11,0")
+
+	-- The two silences hold on a server as well, which is not the same assertion:
+	-- the branch that would have made the noise is a different one.
+	typed("echo open > /dev/curtain1")
+	silent("a sheet already back is silent on a server too")
+	win.smashed = true
+	typed("echo open > /dev/window0")
+	silent("and a refusal is silent on a server too")
+	win.smashed = false
+
+	_G.isServer = hadServer
+
+	_G.__world = nil
+	_G.__sounds = {}
+	CeroSecDevices.invalidate()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
 
 print("window_test: " .. count .. " checks passed")

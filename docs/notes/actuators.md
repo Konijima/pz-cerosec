@@ -88,6 +88,71 @@ the note:
    glass") is answered: a sixty-room mall, a hundred passes,
    7,109,900 engine calls and 100 walks with no cache;
    845,990 and 10 with one (hostile_test.lua, section 27).
+4. **THE SILENT CALL IS THE RIGHT CALL AND IT IS HALF THE
+   GESTURE.** Section 1 is right that `ToggleDoor(chr)` "plays
+   a sound at the character" and that `ToggleDoorSilent` is
+   therefore the call; section 5 says the same of a door. What
+   neither drew is the conclusion a player drew for us on
+   0.4.0: a fixture worked in silence is a fixture nobody can
+   tell was worked. So the mod plays the hand's own sound
+   beside the silent toggle, and the three names are the
+   engine's:
+
+   - a door, both classes: `getSoundPrefix()` plus `Open` or
+     `Close`. `playDoorSound(BaseCharacterSoundEmitter, String)`
+     concatenates the two (offsets 0-16, the `\1\1` recipe in
+     the class's BootstrapMethods) and the prefix is the
+     `closedSprite`'s `DoorSound` property or `WoodDoor`
+     (offsets 0-40 of each `getSoundPrefix`). Which word is
+     read off `isOpen()` AFTER the flip (`IsoDoor`
+     `ToggleDoorActual` 701-722, `IsoThumpable` 477-514).
+   - a curtain of its own: `getSoundPrefix()` plus the same two
+     words (`IsoCurtain.ToggleDoor`, 83-129), where the prefix
+     is `"Curtain"` plus the `CurtainSound` property, or
+     `CurtainShort` (offsets 0-45, recipe `Curtain\1`). Every
+     name it can make -- `CurtainShort`, `CurtainLong`,
+     `CurtainShade`, `CurtainSheet`, times `Open` and `Close`
+     -- is declared in
+     `media/scripts/generated/sounds/objects/sounds_object_curtain.txt`.
+   - a sash: **nothing in the class**. Section 7 javap'd
+     `ToggleWindow` whole and there is no sound in it; the
+     noise a survivor makes at a window is an event on his own
+     animation, `PlaySound` with `OpenWindow` in
+     `media/AnimSets/player/openwindow/success.xml` and
+     `CloseWindow` in `closewindow/`, both declared in
+     `sounds_object_window.txt`.
+   - a door's own sheet: nothing anywhere. `toggleCurtain()`
+     has no sound in it and the menu hands it the door, so the
+     mod plays `CurtainShort…` -- which is what
+     `IsoCurtain.getSoundPrefix()` answers when there is no
+     sprite to ask (offsets 0-10) and is a CHOICE, recorded in
+     [DEVICES.md](../DEVICES.md#the-sound-the-machine-makes).
+
+   And who hears it is a second question this note never
+   asked, with vanilla's own answer in a server file
+   (`server/Traps/STrapGlobalObject.lua:118-124`):
+   `playServerSound(name, square)` on a server --
+   `GameServer.PlayWorldSound`, `if (!server) return` at 0-10,
+   then the `udpEngine.connections` walk at 69-171 -- and
+   `square:playSound(name, true)` anywhere else, which is the
+   solo game.
+5. **`IsoCurtain.IsOpen()` IS NOT INVERTED**, which is worth a
+   line because it was suspected of being. `open` true is the
+   cloth drawn BACK: the engine's own menu offers
+   `ContextMenu_Close_curtains` for it
+   (`ISWorldObjectContextMenuLogic`, 1415-1433, and 123-142 for
+   a door's sheet), `IsoDoor.initCurtainSprites` binds
+   `curtainN` to `fixtures_windows_curtains_01_18` and
+   `curtainNopen` to `..._22` -- so 0-3 of each eight is the
+   closed cloth and 4-7 the open one, which is the `% 8 <= 3`
+   `CellLoader` chooses the sprite pair with (678-707) --
+   `ISZoneDisplay.canSeeThroughObject` reads `IsOpen()` as
+   see-through, and every curtain in the world is BORN open
+   (`CellLoader` 709-740, `IsoWindow.addSheet` 192-253 building
+   from the open tile, `IsoDoor.addSheet` setting
+   `curtainOpen = true` at offset 18). Section 1's vocabulary
+   -- `open` and `closed`, `open` and `close` -- reads the
+   field the right way round.
 
 ## The table
 

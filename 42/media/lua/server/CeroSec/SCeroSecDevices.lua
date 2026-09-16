@@ -1544,6 +1544,108 @@ local function blocked(object)
 end
 
 --
+-- THE SOUND A HAND WOULD HAVE MADE
+--
+-- Every actuator here works its fixture with the SILENT call, because the loud
+-- ones play at a SURVIVOR and a machine has none: IsoDoor and IsoThumpable play
+-- through playDoorSound(BaseCharacterSoundEmitter, String), which is the
+-- character's own emitter (IsoDoor.playDoorSound, offsets 0-16), IsoCurtain's
+-- ToggleDoor plays at `chr` too and only when `chr` is not null (offsets 79-129),
+-- and a window's sound is not in the class at all. So the toggle stays silent and
+-- the sound is made HERE, beside it.
+--
+-- It is not decoration. A survivor who cannot hear his building work cannot tell
+-- a door that swung from an order that was swallowed, which is exactly what was
+-- reported of 0.4.0: a door shut by autoclose.sh, a window opened by cron and a
+-- curtain drawn by curtains.sh all happened in silence.
+--
+-- THE NAME IS THE HAND'S NAME, never one of ours, and it is read AFTER the toggle
+-- so that it names the state the world settled in rather than the word that was
+-- typed.
+--
+-- WHO HEARS IT is vanilla's own server-side pair, out of a server file --
+-- media/lua/server/Traps/STrapGlobalObject.lua:118-124:
+--
+--   if isServer() then playServerSound(soundName, square) return end
+--   square:playSound(soundName, true)
+--
+-- and each half is the only one that works where it stands.
+-- playServerSound(String, IsoGridSquare) is GameServer.PlayWorldSoundServer(name,
+-- false, square, 0.2f, 5f, 1.1f, true) -> GameServer.PlayWorldSound, whose first
+-- instructions are `if (!GameServer.server) return` (offsets 0-10) and whose body
+-- walks udpEngine.connections and sends a PlayWorldSoundPacket to every
+-- connection the square is RelevantTo (offsets 69-171). So it is a broadcast on a
+-- dedicated server and nothing at all anywhere else.
+-- IsoGridSquare.playSound(String, boolean) takes a free emitter at the square and
+-- plays there (offsets 0-36), which is what a solo game needs: one process, so
+-- the machine the server wrote is the machine the survivor is listening to.
+local function playAt(object, name)
+	if type(name) ~= "string" or name == "" then return end
+	local square = object:getSquare()
+	-- A fixture the world has taken away makes no sound, and asking a nil square
+	-- where to play would be a nil call in the middle of an order.
+	if square == nil then return end
+	if isServer() then
+		playServerSound(name, square)
+		return
+	end
+	square:playSound(name, true)
+end
+
+-- A DOOR, map or built. Both classes carry a public getSoundPrefix() and both
+-- build the name the same way: playDoorSound(emitter, "Open") / ("Close")
+-- concatenates the prefix and the word (IsoDoor.playDoorSound offsets 0-16, the
+-- recipe "\1\1" in the class's BootstrapMethods), and the prefix is the
+-- closedSprite's DoorSound property or "WoodDoor" when the sprite has none
+-- (offsets 0-40 of each getSoundPrefix). So a map door says WoodDoorOpen and a
+-- prison door says PrisonMetalDoorOpen without this file knowing there is such a
+-- thing.
+--
+-- Which word, at the bytecode: ToggleDoorActual reads isOpen() AFTER the flip and
+-- plays "Open" when it is open (IsoDoor offsets 701-722, IsoThumpable 477-514).
+local function doorSound(object)
+	return object:getSoundPrefix() .. (object:IsOpen() and "Open" or "Close")
+end
+
+-- A CURTAIN of its own. IsoCurtain.ToggleDoor plays getSoundPrefix() .. "Open" /
+-- "Close" at the character (offsets 83-129, the same "\1\1" recipe), and
+-- IsoCurtain.getSoundPrefix() is "Curtain" .. the closedSprite's CurtainSound
+-- property, or "CurtainShort" when there is no sprite or no property (offsets
+-- 0-45, recipe "Curtain\1"). So a map curtain is CurtainShortOpen and a
+-- survivor's bedsheet is CurtainSheetOpen -- both declared, with CurtainLong and
+-- CurtainShade, in media/scripts/generated/sounds/objects/sounds_object_curtain.txt.
+local function curtainSound(object)
+	return object:getSoundPrefix() .. (object:IsOpen() and "Open" or "Close")
+end
+
+-- A DOOR'S OWN SHEET has no IsoCurtain to ask a prefix of, and vanilla plays
+-- NOTHING for it: the menu hands the DOOR to ISOpenCloseCurtain, whose complete()
+-- calls toggleCurtain() for an IsoDoor, and that method is a field write and a
+-- broadcast with no sound anywhere in it (offsets 0-63).
+--
+-- The mod plays the curtain's own default rather than nothing, and that is a
+-- CHOICE written down rather than a guess: the engine is silent there because it
+-- has no object to read a prefix off, which is the very case
+-- IsoCurtain.getSoundPrefix() answers "CurtainShort" for (offsets 0-10, no
+-- closedSprite). The door's own prefix would have been wrong -- a bedsheet on a
+-- door is not a door, and WoodDoorOpen is the sound of the door swinging.
+local function sheetSound(object)
+	return "CurtainShort" .. (object:isCurtainOpen() and "Open" or "Close")
+end
+
+-- A WINDOW. IsoWindow.ToggleWindow plays no sound of any kind: the whole method
+-- is a sprite swap, handleAlarm, sync and triggerMusicIntensityEvent for the
+-- local player (offsets 166-197), and that last one is music and not a sash. The
+-- sash's sound is on the SURVIVOR'S ANIMATION --
+-- media/AnimSets/player/openwindow/success.xml carries a `PlaySound` event whose
+-- parameter is `OpenWindow`, and closewindow's carries `CloseWindow`, both
+-- declared in sounds_object_window.txt. A motor has no animation, so the mod
+-- plays those two names itself.
+local function windowSound(object)
+	return object:IsOpen() and "OpenWindow" or "CloseWindow"
+end
+
+--
 -- THE ONE SYNC IN THIS MOD THAT IS OURS
 --
 -- Every other actuator either broadcasts itself or is broadcast by one engine
@@ -1675,6 +1777,12 @@ local function act(entry, value)
 			-- walks GameServer.udpEngine.connections, and both classes'
 			-- syncIsoObjectSend writes the open flag.
 			object:syncIsoObject(false, 0, nil, nil)
+			-- And it is HEARD, which the silent toggle is named for not doing:
+			-- the same name the hand plays, read off the door after it moved
+			-- (see "the sound a hand would have made"). Inside this branch and
+			-- not below it, so a door already where it was asked to be is one
+			-- open door and one sound, not two.
+			playAt(object, doorSound(object))
 		end
 		return true, nil, doorState(object, entry.locks)
 	end
@@ -1743,6 +1851,10 @@ local function act(entry, value)
 		-- second one does not ring the alarm again.
 		if object:IsOpen() ~= want then
 			object:ToggleWindow(nil)
+			-- The sash is heard. ToggleWindow plays nothing at all -- the sound a
+			-- survivor makes at a window is an event on his own animation -- so
+			-- this is where the motor gets one.
+			playAt(object, windowSound(object))
 		end
 		return true, nil, sashState(object)
 	end
@@ -1773,6 +1885,9 @@ local function act(entry, value)
 				-- so a curtain that did not move is a curtain that is boarded, and
 				-- the machine says so instead of swallowing the order.
 				if object:IsOpen() ~= want then return false, "barricaded" end
+				-- It moved, so it is heard -- and AFTER the barricade test, so a
+				-- boarded curtain that did not move is silent as well as refused.
+				playAt(object, curtainSound(object))
 			end
 			return true, nil, curtainState(object)
 		end
@@ -1785,7 +1900,10 @@ local function act(entry, value)
 		--
 		-- It has one silent return and classify has already answered it: no sheet,
 		-- no device (offsets 0-7, `hasCurtain`).
-		if object:isCurtainOpen() ~= want then object:toggleCurtain() end
+		if object:isCurtainOpen() ~= want then
+			object:toggleCurtain()
+			playAt(object, sheetSound(object))
+		end
 		return true, nil, curtainState(object)
 	end
 
