@@ -11,6 +11,7 @@
     "CeroSec.Relay": "Relay Module",
     "CeroSec.ElectricStrike": "Electric Strike",
     "CeroSec.DoorOperator": "Door Operator",
+    "CeroSec.SmallMotor": "Small Motor",
     "CeroSec.WiringGuide": "CeroSec Field Wiring Guide",
     "CeroSec.StickyNote": "Sticky Note"
 }

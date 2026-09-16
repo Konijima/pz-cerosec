@@ -167,4 +167,105 @@ module CeroSec
             item 1 CeroSec.DoorOperator,
         }
     }
+
+    /* WHERE A SMALL MOTOR COMES FROM: a screwdriver and something that already
+       has one in it.
+
+       Build 42 ships no motor item at all (items_cerosec.txt, item SmallMotor),
+       so the part has to come out of the world rather than off a bench, and the
+       shape of "take a screwdriver to a thing and keep what is inside it" is
+       vanilla's own DismantleElectronics
+       (media/scripts/generated/recipes/recipes_electrical.txt:37-54): a
+       DismantleElectrical timed action, Tags = InHandCraft;Electrical so it is
+       done standing up with no table, category = Electrical, xpAward =
+       Electricity:2, a screwdriver asked for by tag and KEPT with
+       flags[NoBrokenItems], and the thing itself mode:destroy with
+       flags[ItemCount;ResearchInput]. Every one of those keys is copied from
+       that recipe and from DismantleMiscElectronics (:56-81) beside it.
+
+       WHICH ITEMS. Four, and they are the four things in this game that really
+       do have a motor in them (docs/notes/actuators.md, "Which vanilla items
+       actually have a motor in them"): Base.HairDryer (a fan),
+       Base.SheepElectricShears (clippers), Base.CDplayer (a spindle motor and a
+       sled motor) and Base.BlowerFan (a fan with nothing to do). The toys are a
+       dead end and the note says why: B42's toys are DisplayCategory = Memento
+       keepsakes, and the two that carry base:hasmetal -- ToyCar and ToyPlane --
+       are diecast and wind-up, 0.1 weight, no Electric material and no
+       electronics tag. A recipe that got a motor out of a teddy bear would be
+       this mod inventing a Build 42 that does not exist.
+
+       TWO RECIPES AND NOT ONE, and the reason is the promise: a survivor must
+       never be worse off dismantling with ours than with vanilla's.
+
+         Base.HairDryer and Base.SheepElectricShears carry base:miscelectronic,
+         so vanilla's DismantleElectronics already takes them and pays ONE
+         Base.ElectronicsScrap. Base.BlowerFan carries base:blowerfan, a tag
+         used nowhere else in media/scripts, so vanilla dismantles it not at
+         all. Ours pays that same scrap and the motor beside it: strictly more,
+         for all three.
+
+         Base.CDplayer is different, and it is the caveat the study wrote down.
+         It is already an input to DismantleMiscElectronics, whose outputs are
+         one Base.ElectronicsScrap plus a second item chosen by an itemMapper --
+         and the CD player's mapping is Base.ElectronicsScrap again, so vanilla
+         pays TWO. A single recipe cannot pay one item for three inputs and two
+         for the fourth, and the mapper cannot do it either: it is keyed by the
+         OUTPUT (`Base.Amplifier = Base.Speaker`), so three inputs that all
+         yield scrap would collide on one key. So the CD player has its own
+         recipe paying two scrap, and a survivor who chooses ours over vanilla's
+         gets exactly what vanilla would have given him and a motor.
+
+       LEARNED, like the other four, and from the same book: NeedToBeLearn with
+       both names in CeroSec.WiringGuide's LearnedRecipes. A survivor with the
+       guide can fit an operator and make one; a survivor without it cannot do
+       either, which is the whole point of the guide.
+
+       No SkillRequired, because vanilla's three dismantle recipes have none --
+       taking the back off a hair dryer is not a trade. AutoLearnAll =
+       Electricity:3 is the one gate: a working electrician eventually notices
+       there is a motor in there without being told. */
+
+    craftRecipe DismantleCeroSecMotorAppliance
+    {
+        timedAction = DismantleElectrical,
+        time = 60,
+        NeedToBeLearn = true,
+        Tags = InHandCraft;Electrical,
+        category = Electrical,
+        AutoLearnAll = Electricity:3,
+        xpAward = Electricity:2,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[NoBrokenItems],
+            item 1 [Base.HairDryer;Base.SheepElectricShears;Base.BlowerFan] mode:destroy flags[ItemCount;ResearchInput],
+        }
+        outputs
+        {
+            item 1 CeroSec.SmallMotor,
+            item 1 Base.ElectronicsScrap,
+        }
+    }
+
+    /* The CD player on its own, paying the two scrap DismantleMiscElectronics
+       pays, so that choosing this recipe over vanilla's costs nothing. */
+    craftRecipe DismantleCeroSecMotorCDPlayer
+    {
+        timedAction = DismantleElectrical,
+        time = 60,
+        NeedToBeLearn = true,
+        Tags = InHandCraft;Electrical,
+        category = Electrical,
+        AutoLearnAll = Electricity:3,
+        xpAward = Electricity:2,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[NoBrokenItems],
+            item 1 [Base.CDplayer] mode:destroy flags[ItemCount;ResearchInput],
+        }
+        outputs
+        {
+            item 1 CeroSec.SmallMotor,
+            item 2 Base.ElectronicsScrap,
+        }
+    }
 }

@@ -78,6 +78,23 @@ CeroSecModuleLoot.SHARES = {
 	operator = 0.0625,
 }
 
+-- AND THE PART THEY ARE BUILT FROM, which is not a module and is on the same
+-- shelves.
+--
+-- A small motor is the one input none of these recipes can make and the game
+-- ships no item for (items_cerosec.txt, item SmallMotor). The road to one is a
+-- screwdriver and a hair dryer, which is a road through a bathroom and not
+-- through a shop; this is the other road, and it is deliberately the thinner of
+-- the two.
+--
+-- Half the rarest module's share, which is the next power of two down and keeps
+-- every one of these weights exact in a double. The shelves held finished
+-- stock -- that is what a shelf is -- and a loose motor in a crate is something
+-- that fell off a bench, so it is rarer than the operator it goes into. A
+-- survivor who wants one takes the back off an appliance.
+CeroSecModuleLoot.MOTOR = "CeroSec.SmallMotor"
+CeroSecModuleLoot.MOTOR_SHARE = 0.03125
+
 -- The same sandbox option the manual and the disks read, and the same rule: a
 -- value that is not a positive number is not an abundance and is ignored rather
 -- than argued with.
@@ -127,6 +144,14 @@ function CeroSecModuleLoot.add()
 				if CeroSecManualLoot.addTo(list, key, module.item, weight) then
 					count = count + 1
 				end
+			end
+			-- The motor goes on LAST, after the four boxes, so the order one list
+			-- is filled in stays the order a reader can check: the modules in
+			-- CeroSecModules.LIST's own order and then the part.
+			if CeroSecManualLoot.addTo(list, key, CeroSecModuleLoot.MOTOR,
+					CeroSecModuleLoot.WEIGHTS[key] * CeroSecModuleLoot.MOTOR_SHARE
+						* abundance) then
+				count = count + 1
 			end
 		end
 	end

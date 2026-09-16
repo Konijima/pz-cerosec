@@ -2487,10 +2487,12 @@ do
 	-- The module, the three books, the four disks, the four hardware modules, the book
 	-- that teaches them, the RETIRED single book -- which is declared and is not
 	-- loot, because dropping an item block deletes every copy of it in every save --
-	-- and, since the world-content work, the sticky note a password is written on.
-	eq("fifteen blocks: the module, the three books, the retired one, the four "
-		.. "disks, the four hardware modules, the Field Wiring Guide and the note",
-		opens, 15)
+	-- the sticky note a password is written on, and the small motor the modules
+	-- that MOVE something are built around (the game ships no motor item at all).
+	eq("sixteen blocks: the module, the three books, the retired one, the four "
+		.. "disks, the four hardware modules, the Field Wiring Guide, the note "
+		.. "and the small motor",
+		opens, 16)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -2821,6 +2823,54 @@ do
 		if icon ~= nil then icon:close() end
 	end
 
+	-- THE SMALL MOTOR, which is not a module and is checked apart from the four:
+	-- it is the PART they are built from, the game ships no motor item of any
+	-- kind (docs/notes/actuators.md), and the two things it has that a module
+	-- does not are the reason it is here -- a MetalValue, because it is a lump of
+	-- copper and steel and vanilla's two nearest part items both carry one, and a
+	-- Tooltip, because "where do I get one" is the only question a player has
+	-- about it and the answer is four items long.
+	do
+		local body = blocks.SmallMotor
+		check("the script declares item SmallMotor", body ~= nil)
+		local keys = {}
+		for key, value in string.gmatch(body or "", "([A-Za-z]+)%s*=%s*([^,\n]+),") do
+			keys[key] = value
+		end
+		eq("its fallback name", keys.DisplayName, "Small Motor")
+		eq("it files itself under Electronics with the modules",
+			keys.DisplayCategory, "Electronics")
+		eq("a plain item", keys.ItemType, "base:normal")
+		eq("Base.MotionSensor's own weight, the vanilla part nearest to it",
+			keys.Weight, "0.3")
+		eq("its icon", keys.Icon, "CeroSecSmallMotor")
+		eq("a lump of metal is what one looks like on a road",
+			keys.WorldStaticModel, "ScrapMetal")
+		check("no hand model, being a thing in a bag", keys.StaticModel == nil)
+		eq("Base.HairDryer's whole metal value, which is where nearly all of it is",
+			keys.MetalValue, "8.0")
+		eq("and a tooltip key", keys.Tooltip, "Tooltip_item_CeroSecSmallMotor")
+		local icon = io.open("common/media/textures/Item_CeroSecSmallMotor.png", "r")
+		check("and the icon file is there: Item_CeroSecSmallMotor.png", icon ~= nil)
+		if icon ~= nil then icon:close() end
+
+		-- Both names a player reads, in both languages. A DisplayName is the
+		-- fallback and nothing else: an item whose ItemName.json key is missing
+		-- prints the fallback in English to a French player and says nothing about
+		-- it, and an item whose Tooltip key is missing prints the KEY.
+		for _, lang in ipairs({ "EN", "FR" }) do
+			for _, pair in ipairs({ { "ItemName.json", "CeroSec.SmallMotor" },
+					{ "Tooltip.json", "Tooltip_item_CeroSecSmallMotor" } }) do
+				local handle = assert(io.open(
+					"42/media/lua/shared/Translate/" .. lang .. "/" .. pair[1], "r"))
+				local strings = handle:read("*a")
+				handle:close()
+				check(lang .. "/" .. pair[1] .. " defines " .. pair[2],
+					string.find(strings, '"' .. pair[2] .. '"', 1, true) ~= nil)
+			end
+		end
+	end
+
 	-- The Field Wiring Guide, which is the one item in this mod that IS
 	-- base:literature and is checked here for that above everything else. The
 	-- four volumes at the top of the item script are base:normal on purpose --
@@ -3147,22 +3197,34 @@ do
 	SandboxVars = nil
 	CeroSecModuleLoot.added = false
 	local added = CeroSecModuleLoot.add()
-	eq("every list named was found and filled by every module",
-		added, #KEYS * #CeroSecModules.LIST)
+	eq("every list named was found and filled by every module and the motor",
+		added, #KEYS * (#CeroSecModules.LIST + 1))
 
 	for i = 1, #KEYS do
 		local key = KEYS[i]
 		local items = ProceduralDistributions.list[key].items
 		eq(key .. " kept what was already in it", items[1], "Something")
 		eq(key .. " still has an even number of entries", #items % 2, 0)
-		eq(key .. " grew by one name and one weight per module",
-			#items, 2 + 2 * #CeroSecModules.LIST)
+		eq(key .. " grew by one name and one weight per module, and the motor's",
+			#items, 2 + 2 * (#CeroSecModules.LIST + 1))
 		for m = 1, #CeroSecModules.LIST do
 			local module = CeroSecModules.LIST[m]
 			local at = 2 + (m - 1) * 2 + 1
 			eq(key .. " has " .. module.item .. " in place " .. m, items[at], module.item)
 			eq(key .. " gave it its own share of the box", items[at + 1],
 				CeroSecModuleLoot.WEIGHTS[key] * CeroSecModuleLoot.SHARES[module.id])
+		end
+		-- And the part, last, and RARER than the rarest box on the shelf: a shelf
+		-- held finished stock, and the road to a motor is a screwdriver and a hair
+		-- dryer. A share that drifted up to the operator's would be this table
+		-- saying a loose motor was as common as the thing built around one.
+		do
+			local at = 2 + #CeroSecModules.LIST * 2 + 1
+			eq(key .. " has the motor last", items[at], CeroSecModuleLoot.MOTOR)
+			eq(key .. " gave the motor its own share", items[at + 1],
+				CeroSecModuleLoot.WEIGHTS[key] * CeroSecModuleLoot.MOTOR_SHARE)
+			check(key .. ": a motor is rarer than a door operator",
+				items[at + 1] < CeroSecModuleLoot.weightFor(key, "operator", 1))
 		end
 		-- Neither of the other two tables' items is on these shelves.
 		for n = 1, #items, 2 do
@@ -3248,6 +3310,12 @@ do
 			CeroSecModuleLoot.WEIGHTS.ElectricianTools
 				* CeroSecModuleLoot.SHARES[module.id] * 2)
 	end
+	-- The motor reads the same multiplier, and it is a separate call to addTo:
+	-- an abundance read once and then not passed to it would leave every
+	-- assertion above green.
+	eq("and so was the motor's", items[(#CeroSecModules.LIST + 1) * 2],
+		CeroSecModuleLoot.WEIGHTS.ElectricianTools
+			* CeroSecModuleLoot.MOTOR_SHARE * 2)
 	SandboxVars = nil
 end
 
@@ -3493,10 +3561,104 @@ do
 			string.find(body, "tags[base:screwdriver] mode:keep", 1, true) ~= nil)
 	end
 
-	-- Four recipes, no more: a fifth would be a module nothing else knows about.
+	-- Nothing is made here but the four modules and the PART the moving ones are
+	-- built from. `recipes` is keyed by what a block OUTPUTS, so the motor's two
+	-- blocks share one key and five is the count: anything else would be a module
+	-- nothing in the Lua knows about.
 	local made = 0
 	for _ in pairs(recipes) do made = made + 1 end
-	eq("one recipe per module and not one more", made, #CeroSecModules.LIST)
+	eq("four modules and the motor, and nothing else is made", made,
+		#CeroSecModules.LIST + 1)
+	eq("in six blocks, because the motor has two", #names,
+		#CeroSecModules.LIST + 2)
+
+	--
+	-- WHERE A SMALL MOTOR COMES FROM, and the promise that goes with it
+	--
+	-- Build 42 ships no motor item, so the part comes out of the four things in
+	-- the game that really have one (docs/notes/actuators.md). What is asserted
+	-- here is the one thing a player could be cheated by: vanilla ALREADY
+	-- dismantles three of those four, and a recipe of ours that paid less than
+	-- vanilla's for the same item would be a trap -- a survivor picks ours off
+	-- the list, loses the scrap he would have had, and nothing tells him.
+	--
+	-- DismantleElectronics (recipes_electrical.txt:37-54) pays ONE
+	-- Base.ElectronicsScrap for anything tagged base:miscelectronic, which is the
+	-- hair dryer and the shears. DismantleMiscElectronics (:56-81) pays one scrap
+	-- plus an itemMapper output, and the CD player's mapping is scrap again --
+	-- so TWO. The blower fan's only tag is base:blowerfan, which is used nowhere
+	-- else in media/scripts, so vanilla dismantles it not at all.
+	do
+		local MOTOR = "CeroSec.SmallMotor"
+		local SCRAP = "Base.ElectronicsScrap"
+		-- What each recipe pays, by output item: read out of the file rather than
+		-- matched as text, so a `item 1` that became `item 2` is caught here.
+		local function paid(body, item)
+			local n = string.match(body or "",
+				"outputs%s*{[^}]-item%s+(%d+)%s+" .. string.gsub(item, "%.", "%%."))
+			return tonumber(n)
+		end
+		-- Which items one recipe takes, as a set.
+		local function takes(body)
+			local out = {}
+			for list in string.gmatch(body or "", "item%s+1%s+%[([^%]]+)%]") do
+				for one in string.gmatch(list, "[^;]+") do out[one] = true end
+			end
+			return out
+		end
+
+		-- Both found BY NAME and not through `recipes`, which is keyed by output:
+		-- two blocks making a motor share that key and one would answer for the
+		-- other, which is exactly the mistake this block exists to catch.
+		local appliance = string.match(code,
+			"craftRecipe%s+DismantleCeroSecMotorAppliance%s*(%b{})")
+		local cd = string.match(code,
+			"craftRecipe%s+DismantleCeroSecMotorCDPlayer%s*(%b{})")
+		check("a recipe makes " .. MOTOR .. " out of an appliance", appliance ~= nil)
+		check("and a second one makes it out of a CD player", cd ~= nil)
+		check("the output key they share is the motor", recipes[MOTOR] ~= nil)
+
+		-- Vanilla's shape, key for key: the dismantle action, the standing-up
+		-- tags, the electrical tab, the experience, and a screwdriver that is
+		-- KEPT and must not be broken.
+		for name, body in pairs({ appliance = appliance, cdplayer = cd }) do
+			for _, want in ipairs({ "timedAction = DismantleElectrical",
+					"Tags = InHandCraft;Electrical", "category = Electrical",
+					"xpAward = Electricity:2", "NeedToBeLearn = true",
+					"tags[base:screwdriver] mode:keep flags[NoBrokenItems]" }) do
+				check("the motor's " .. name .. " recipe carries vanilla's \""
+					.. want .. "\"", string.find(body or "", want, 1, true) ~= nil)
+			end
+			-- The thing itself is consumed, which is what dismantling is.
+			check("the motor's " .. name .. " recipe destroys what it opens",
+				string.find(body or "", "mode:destroy", 1, true) ~= nil)
+			eq("the motor's " .. name .. " recipe yields exactly one motor",
+				paid(body, MOTOR), 1)
+		end
+
+		-- The four items, and only those four. A fifth would be this mod deciding
+		-- that something has a motor in it which does not.
+		local all = {}
+		for item in pairs(takes(appliance)) do all[item] = true end
+		for item in pairs(takes(cd)) do all[item] = true end
+		local n = 0
+		for _ in pairs(all) do n = n + 1 end
+		eq("four inputs between them and no more", n, 4)
+		for _, item in ipairs({ "Base.HairDryer", "Base.SheepElectricShears",
+				"Base.BlowerFan", "Base.CDplayer" }) do
+			check("one of them is " .. item, all[item] == true)
+		end
+		-- And the CD player is on its OWN recipe, which is the whole reason there
+		-- are two: it is the one input vanilla already pays two scrap for.
+		check("the CD player is not on the appliance recipe",
+			takes(appliance)["Base.CDplayer"] == nil)
+
+		-- The promise, as numbers. Nobody is worse off.
+		eq("a hair dryer, shears or a fan pay vanilla's one scrap and the motor",
+			paid(appliance, SCRAP), 1)
+		eq("and a CD player pays the TWO scrap DismantleMiscElectronics pays",
+			paid(cd, SCRAP), 2)
+	end
 
 	-- The book, against the recipes. LearnedRecipes is a list of craftRecipe
 	-- NAMES and the game matches them as strings: a recipe renamed here and not
@@ -3522,8 +3684,11 @@ do
 			taughtCount = taughtCount + 1
 		end
 	end
-	eq("the guide teaches one recipe per module and not one more",
-		taughtCount, #CeroSecModules.LIST)
+	-- One per module plus the motor's two. The dismantles are NeedToBeLearn like
+	-- the other four and are taught by the same book, which is what stops a
+	-- survivor being able to fit an operator and unable to make the part for one.
+	eq("the guide teaches one recipe per module and the motor's two",
+		taughtCount, #CeroSecModules.LIST + 2)
 	table.sort(names)
 	for n = 1, #names do
 		check("the guide names the recipe " .. names[n], taught[names[n]] == true)

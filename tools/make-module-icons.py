@@ -2,13 +2,14 @@
 #
 # Run from the repo root:  python3 tools/make-module-icons.py
 #
-# The four hardware module icons and the book that teaches them, 32x32, drawn
-# rather than rendered.
+# The hardware module icons, the part they are built from and the book that
+# teaches them, 32x32, drawn rather than rendered.
 #
 #   Item_CeroSecMagneticContact.png   a reed switch and its magnet, on a frame
 #   Item_CeroSecRelay.png             an ice-cube relay, socket pins down
 #   Item_CeroSecElectricStrike.png    a strike plate, keeper cut out of it
 #   Item_CeroSecDoorOperator.png      a motor, its arm folded against it
+#   Item_CeroSecSmallMotor.png        the motor on its own, no arm and no case
 #   Item_CeroSecWiringGuide.png       the magazine the four recipes come out of
 #
 # The language is the one the mod's other icons already speak: a transparent
@@ -197,6 +198,42 @@ def door_operator():
     i.save("DoorOperator")
 
 
+def small_motor():
+    """The motor on its own: the can, the end bell it is bolted through, and the
+    shaft sticking out of it. It has to be told apart from the door operator at
+    a glance, and the thing that does it is the SHAFT -- the operator's arm is
+    folded flat across its body and this one has a bare spindle standing proud
+    of the end, with nothing on it. Narrower than the operator too, and centred
+    rather than filling the tile: it is a part, not a fitting."""
+    i = Icon()
+    # The can, on its side. Ribbed like the operator's body, because it is the
+    # same kind of object -- the difference is what is on the end of it.
+    i.box(5, 10, 21, 22, STEEL)
+    i.rect(6, 11, 20, 12, STEEL_HI)
+    i.rect(6, 20, 20, 21, STEEL_LO)
+    for x in (9, 12, 15, 18):
+        i.vline(x, 13, 19, STEEL_LO)
+    # The end bell: the darker cap the shaft comes out of, and the two through
+    # bolts that hold the can together.
+    i.box(21, 12, 25, 20, CASE)
+    i.rect(22, 13, 24, 14, CASE_HI)
+    i.dot(23, 11, INK)
+    i.dot(23, 21, INK)
+    # The shaft, bare. Two pixels thick so it reads as a rod and not as a wire,
+    # and it is the only thing on this icon that is a highlight all the way out.
+    i.rect(26, 15, 30, 16, STEEL_HI)
+    i.hline(26, 30, 14, INK)
+    i.hline(26, 30, 17, INK)
+    i.dot(31, 15, INK)
+    i.dot(31, 16, INK)
+    # The two leads out of the back of it, the contact's own brass.
+    i.hline(1, 4, 13, BRASS)
+    i.hline(1, 4, 19, BRASS)
+    i.dot(0, 13, INK)
+    i.dot(0, 19, INK)
+    i.save("SmallMotor")
+
+
 def wiring_guide():
     """The magazine the four recipes come out of, lying flat and seen square on:
     a dark cover, the masthead band across the top in the screen green, the
@@ -234,6 +271,7 @@ magnetic_contact()
 relay()
 electric_strike()
 door_operator()
+small_motor()
 wiring_guide()
 
 
@@ -245,7 +283,7 @@ if "--sheet" in sys.argv:
     zoom, pad = 4, 10
     cell = SIZE * zoom
     names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator",
-             "WiringGuide"]
+             "SmallMotor", "WiringGuide"]
     ims = [Image.open(OUT % n).convert("RGBA") for n in names]
     w = pad + len(ims) * (cell + pad)
     h = pad + SIZE + pad + cell + pad

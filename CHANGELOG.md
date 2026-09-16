@@ -8,6 +8,13 @@ date.
 
 ## Unreleased
 
+- A new part: the **Small Motor**. Knox County never sold one on its own, so you
+  take a screwdriver to something that already has one -- a hair dryer, a pair
+  of sheep shears, a CD player or a blower fan -- and you get the motor and the
+  electronics scrap the game would have given you anyway. The CD player pays its
+  usual two. Both recipes are in the Field Wiring Guide with the other four, and
+  a motor turns up on the same shelves the modules do, rarer than any of them.
+
 ## 0.3.0 - 2026-09-15
 
 The shell update. Nothing here needs a new save: machines you already switched

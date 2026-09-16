@@ -346,6 +346,53 @@ module CeroSec
         WorldStaticModel = ScrapMetal,
     }
 
+    /* THE SMALL MOTOR, and why the game needed one.
+
+       Every module that MOVES something is built around a motor, and Build 42
+       has none: a `grep -rni motor` over the whole of media/scripts returns ten
+       hits and every one of them is a motorcycle helmet, a pair of motorcycle
+       boots or the Louisville Motor Shop step van (docs/notes/actuators.md,
+       "The motor, from vanilla data alone"). There is no Base.Motor, no
+       Base.SmallMotor and no Base.ElectricMotor to borrow.
+
+       So it is declared here, and it is NOT a duplicate of the two vanilla
+       parts nearest to it: Base.EngineParts is a car part and stays where it
+       is on the door operator, and Base.ElectronicsScrap is a board. This is
+       the thing with a shaft on it.
+
+       Where one comes from is a recipe and not a shelf -- there are four items
+       in this game that really have a motor in them and a survivor takes a
+       screwdriver to any of them (recipes_cerosec.txt). It is on the same nine
+       shelves the modules are (CeroSecModuleLoot) at half the rarest module's
+       share, because those shelves held finished stock and a loose motor in a
+       crate is something that fell off a bench.
+
+       The keys are the four modules' own, with one addition. MetalValue = 8.0
+       is Base.HairDryer's whole metal value (normal.txt:2787), and the motor is
+       where nearly all of it is: a survivor who smelts one gets what he would
+       have got for the dryer. Base.MotionSensor and Base.Receiver -- the two
+       vanilla part items this one is shaped on -- both carry MetalValue = 7.0
+       beside a Tooltip (normal.txt:4539, :4574), so the pair is vanilla's shape
+       for a part and not an invention.
+
+       WorldStaticModel = ScrapMetal, the strike's and the operator's own: this
+       mod ships no mesh, a made-up name is an item that lies on the floor as
+       nothing at all, and a lump of metal is what a motor looks like on a road.
+
+       DisplayName is the fallback; ItemName.json is what a player reads. */
+
+    item SmallMotor
+    {
+        DisplayName = Small Motor,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.3,
+        Icon = CeroSecSmallMotor,
+        MetalValue = 8.0,
+        Tooltip = Tooltip_item_CeroSecSmallMotor,
+        WorldStaticModel = ScrapMetal,
+    }
+
     /* The book the four recipes come out of.
 
        This is the one item in the mod that IS base:literature, and it is the
@@ -407,7 +454,7 @@ module CeroSec
         Icon = CeroSecWiringGuide,
         BoredomChange = -20,
         StressChange = -15,
-        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator,
+        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator;DismantleCeroSecMotorAppliance;DismantleCeroSecMotorCDPlayer,
         Tooltip = Tooltip_item_CeroSecWiringGuide,
         StaticModel = Magazine,
         WorldStaticModel = MagazineGround,

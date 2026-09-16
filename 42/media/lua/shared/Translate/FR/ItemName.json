@@ -7,6 +7,7 @@
     "CeroSec.Relay": "Module relais",
     "CeroSec.ElectricStrike": "Gâche électrique",
     "CeroSec.DoorOperator": "Opérateur de porte",
+    "CeroSec.SmallMotor": "Petit moteur",
     "CeroSec.WiringGuide": "Guide de câblage CeroSec",
     "CeroSec.StickyNote": "Note autocollante"
 }

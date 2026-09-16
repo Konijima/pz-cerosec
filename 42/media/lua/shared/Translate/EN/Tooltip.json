@@ -11,5 +11,6 @@
     "Tooltip_CeroSec_Fitted": "One is already fitted.",
     "Tooltip_item_CeroSecFloppyPrinted": "Printed label.",
     "Tooltip_item_CeroSecFloppyHand": "Handwritten label.",
+    "Tooltip_item_CeroSecSmallMotor": "A small electric motor. The four things in Knox County<br>that have one are a hair dryer, sheep shears, a CD player<br>and a blower fan.",
     "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator."
 }
