@@ -525,6 +525,16 @@ at **1**, a strike at **2**, an operator at **3**. The job is a few seconds,
 shorter the better an electrician you are, and pays a little Electricity. Remove
 gives the box back whole.
 
+**The menu lists every box that could go on that sort of fixture**, whether you
+are carrying one or not, and each line tells you what the box does, which device
+it gives and the Electricity it wants. A box you have not got is greyed with *You
+are not carrying one* — or, if you have not read the **CeroSec Field Wiring
+Guide**, with the line that sends you to it, because a box you have never heard
+of is a box you would never go and look for. The only thing left off the list is
+a module that could never fit that sort of fixture at all: no curtain motor on a
+light switch. Right-click something this mod has nothing to say about and there
+is no **CeroSec hardware** entry at all.
+
 Two entries come up greyed with the reason on them, and both are about the
 fixture rather than about you: a **strike on an interior door** (a key there
 stops nobody, so the lock would be a device that lies) and an **operator on a

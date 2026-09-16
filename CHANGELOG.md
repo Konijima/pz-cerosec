@@ -8,6 +8,17 @@ date.
 
 ## Unreleased
 
+- **The hardware menu tells you what a box is, and what you are missing.** Every
+  line now says what the module does, which `/dev` it gives and the Electricity it
+  wants — and the list shows **every** box that could go on that sort of fixture,
+  whether you are carrying one or not, so you can find out a curtain motor exists
+  before you own one. A box you have not got is greyed with *You are not carrying
+  one*, or with the line that sends you to the **CeroSec Field Wiring Guide** if
+  you have not read it. What is gone from the list is the noise: a module that
+  could never fit that sort of fixture — a curtain motor on a light switch — is
+  not a greyed line any more, it is no line at all, and a fixture with nothing to
+  offer has no **CeroSec hardware** entry over it.
+
 - **Modules go on from inside, with the door open.** A magnetic contact, a strike,
   an operator, a curtain motor or a window operator is fitted — and taken off —
   only from **inside** the building: stand on the pavement and the entry is greyed

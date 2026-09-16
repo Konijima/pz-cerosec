@@ -899,26 +899,26 @@ have got anyway.]],
 
 [[Fitting a box, and taking it off.
 
-Fitting: right-click the FIXTURE itself -- the door, the window, the light
-switch, the curtain, the oven, the washer, the generator -- and not the
-computer, and take CeroSec hardware. You need the box, a screwdriver, and
-the trade: a contact or a relay at 1, a strike, a curtain motor, an
-appliance switch or a tuner control at 2, the two operators and the
-generator switch at 3.
+Right-click the FIXTURE itself -- the door, the window, the switch, the
+curtain, the oven, the washer, the generator -- and not the computer, and
+take CeroSec hardware. You need the box, a screwdriver and the trade: a
+contact or a relay at 1, a strike, a curtain motor, an appliance switch
+or a tuner control at 2, the two operators and the generator switch at 3.
 
-Remove gives the box back whole. The device goes with it and its NUMBER
-does not: the same doorN answers next week.
+The list names every box that could go on that SORT of thing, whether you
+have one or not, and each line says what it does and which device it
+gives. One you have not got is greyed and says so, or says to go and read
+the Field Wiring Guide. A box that could never fit is not listed.
 
 Two are greyed for what the fixture IS:
 
-  a strike on an interior door
-      a key there stops nobody: the lock would lie
-  an operator on a garage or double door
-      a machine moves one leaf, the rest stay shut
+  a strike on an interior door: a key stops nobody
+  an operator on a garage door: one leaf would move
 
-A boarded window and a broken stove are NOT greyed out. Those are things
-the fixture is doing today, not what it is: the box goes on, and the
-device says so until somebody fixes it.]],
+A boarded window and a broken stove are NOT greyed: that is what the
+fixture does today, not what it is.
+
+Remove gives the box back whole, and the NUMBER stays.]],
 
 [[With the door open, and from inside.
 

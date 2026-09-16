@@ -25,12 +25,29 @@ require "CeroSec/ISCeroSecModuleAction"
 --
 -- What is GREYED and what is not there at all
 --
--- A module the survivor is not carrying is not an entry: he has no business
--- reading about hardware he does not own, which is the same rule the floppy menu
--- runs on. Everything else -- the wrong fixture, a door with no lock worth
--- wiring, a leaf of a garage door, not enough Electricity, no screwdriver -- is
--- an entry with the reason on it, because each of those is a thing he can go and
--- fix.
+-- ONE LINE IS NOT THERE AT ALL: a module that does not fit this SORT of fixture.
+-- A curtain motor has no business on a light switch and never will have, and a
+-- survivor right-clicking a door does not want to read six lines telling him
+-- what a door is not. That is `fitsOn` answering "fixture", and it is the only
+-- answer this menu hides.
+--
+-- EVERYTHING ELSE IS AN ENTRY, greyed, with the reason under the description:
+-- the wrong door for a strike, a leaf of a garage door, the door shut, the oven
+-- cooking, somebody else's safehouse, not enough Electricity, no screwdriver --
+-- and, since this rung, a module he is not carrying at all. That last one used
+-- to be no entry either, and the change is the whole point: a survivor cannot go
+-- and find a box he has never been told exists. So the line is there, it says
+-- what the module does, and it says which of the two things he needs -- one in
+-- his bag, or the book that says how to make one.
+--
+-- AND EVERY ENTRY CARRIES ITS DESCRIPTION, greyed or not: what the box buys,
+-- which device it gives and the level it wants
+-- (Tooltip_CeroSec_ModuleDesc_<id>). The reason, when there is one, goes on the
+-- line UNDER it -- a refusal with no idea what it is refusing is a line a player
+-- reads twice.
+--
+-- If nothing is left after all that, there is no submenu and no parent entry
+-- either: a right-click on a fridge says nothing about this mod at all.
 --
 -- Every one of them is asked again on the server (SCeroSecSystem's
 -- Commands.installmodule), so what this decides is what a player SEES and never
@@ -102,13 +119,22 @@ end
 -- Why this survivor cannot do this job to this thing right now, as a tooltip
 -- key, or nil when he can. The order is cheapest first and most damning first,
 -- which is the same order the computer's own menu greys its entries in: what is
--- wrong with the FIXTURE beats what is wrong with him.
-function CeroSecModuleMenu.refusal(object, playerObj, module)
-	local fits, why = CeroSecModules.fitsOn(object, module.id)
-	if not fits then
-		if why == "nolock" then return "Tooltip_CeroSec_NoLock" end
-		if why == "manydoors" then return "Tooltip_CeroSec_ManyDoors" end
-		return "Tooltip_CeroSec_NoFixture"
+-- wrong with the FIXTURE beats what is wrong with the moment, and both beat what
+-- is wrong with HIM.
+--
+-- `install` false is a module coming off, which asks nothing about whether it
+-- fits -- it is already on -- and nothing about his bag.
+function CeroSecModuleMenu.refusal(object, playerObj, module, install)
+	if install then
+		local fits, why = CeroSecModules.fitsOn(object, module.id)
+		if not fits then
+			if why == "nolock" then return "Tooltip_CeroSec_NoLock" end
+			if why == "manydoors" then return "Tooltip_CeroSec_ManyDoors" end
+			-- The wrong sort of fixture altogether, which the caller has already
+			-- decided not to show. Answered all the same, so this function is
+			-- complete on its own and a caller that did show it is not silent.
+			return "Tooltip_CeroSec_NoFixture"
+		end
 	end
 	-- Whose house it is, where he is standing and what the fixture is doing --
 	-- one function, shared with the server, and the reason word IS the key
@@ -124,18 +150,57 @@ function CeroSecModuleMenu.refusal(object, playerObj, module)
 	if inv == nil or not inv:getFirstTypeRecurse(CeroSecModules.TOOL) then
 		return "Tooltip_CeroSec_NeedScrewdriver"
 	end
+	if not install then return nil end
+
+	-- And last, the box itself. Two answers and not one, because they send him
+	-- to two different places: a survivor who knows the recipe needs to find or
+	-- craft one, and a survivor who does not needs the CeroSec Field Wiring
+	-- Guide, which is the only thing that teaches all nine.
+	--
+	-- isRecipeKnown(String) is vanilla's own question and it is ONE call over
+	-- three: `ScriptManager.getRecipe(name)`, then -- for a name it does not know
+	-- as an old-style Recipe, which is every craftRecipe of ours -- the sandbox
+	-- option seeNotLearntRecipe, isKnowAllRecipes(), and finally
+	-- getKnownRecipes().contains(name) (javap -c
+	-- zombie.characters.IsoGameCharacter.isRecipeKnown(String,boolean), offsets
+	-- 0-53). So a server that shows unlearnt recipes, a debug character and a
+	-- master electrician who auto-learnt it all answer the same yes the book
+	-- does, and none of them is a case written here.
+	if inv:getFirstTypeRecurse(module.item) == nil then
+		if not playerObj:isRecipeKnown(module.recipe) then
+			return "Tooltip_CeroSec_ModuleRecipe"
+		end
+		return "Tooltip_CeroSec_ModuleItem"
+	end
 	return nil
 end
 
-local function grey(option, key, module)
-	if not key then return end
-	option.notAvailable = true
+-- What the box IS, in the survivor's own words: what it buys, which device it
+-- gives and the level it wants. Every entry carries it, greyed or not, and the
+-- level is the module's own rather than a word in the translation -- nine
+-- modules, nine levels, one line of English (the same rule the skill line has
+-- always run on).
+function CeroSecModuleMenu.describe(module)
+	return getText("Tooltip_CeroSec_ModuleDesc_" .. module.id, module.skill)
+end
+
+-- The tooltip every entry gets: the description, and the reason under it when
+-- there is one. A greyed entry is also marked notAvailable, which is what stops
+-- the click.
+--
+-- The skill line is the only reason with a number in it, and the number is the
+-- module's own rather than a word in the translation: nine modules, nine levels,
+-- one line of English.
+local function describe(option, key, module)
+	if type(option) ~= "table" then return end
 	option.toolTip = ISWorldObjectContextMenu.addToolTip()
 	option.toolTip:setVisible(false)
-	-- The skill line is the only one with a number in it, and the number is the
-	-- module's own rather than a word in the translation: four modules, four
-	-- levels, one line of English.
-	option.toolTip.description = getText(key, module.skill)
+	local text = CeroSecModuleMenu.describe(module)
+	if key then
+		option.notAvailable = true
+		text = text .. "<br>" .. getText(key, module.skill)
+	end
+	option.toolTip.description = text
 end
 
 function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldobjects, test)
@@ -149,17 +214,29 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 	if not object then return end
 	local fitted = CeroSecModules.installedOn(object)
 
-	-- What is worth an entry: a module already on this thing (it can come off) or
-	-- one in his bag (it can go on). Counted before anything is added, so a
-	-- submenu is never built with nothing under it.
+	-- What is worth an entry: a module already on this thing (it can come off),
+	-- or one that could ever go on a fixture of this SORT -- whether he is
+	-- carrying it or not, because a box he has never been told about is a box he
+	-- will never go and look for.
+	--
+	-- The one thing left out is the module that does not fit this sort of fixture
+	-- at all: `fitsOn` answering "fixture". Its other two answers -- a door no
+	-- lock bites on, a leaf of a garage door -- are about THIS door and not about
+	-- doors, so they stay and say so.
+	--
+	-- Counted before anything is added, so a submenu is never built with nothing
+	-- under it and a right-click on something this mod has nothing to say about
+	-- gets no parent entry either.
 	local rows = {}
-	local inv = playerObj:getInventory()
 	for i = 1, #CeroSecModules.LIST do
 		local module = CeroSecModules.LIST[i]
 		if fitted[module.id] then
 			rows[#rows + 1] = { module = module, install = false }
-		elseif inv ~= nil and inv:getFirstTypeRecurse(module.item) ~= nil then
-			rows[#rows + 1] = { module = module, install = true }
+		else
+			local _, why = CeroSecModules.fitsOn(object, module.id)
+			if why ~= "fixture" then
+				rows[#rows + 1] = { module = module, install = true }
+			end
 		end
 	end
 	if #rows == 0 then return end
@@ -181,7 +258,9 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 		if row.install then
 			option = sub:addOption(getText("ContextMenu_CeroSec_Install", name), worldobjects,
 				CeroSecModuleMenu.onInstall, object, playerObj, row.module)
-			grey(option, CeroSecModuleMenu.refusal(object, playerObj, row.module), row.module)
+			describe(option,
+				CeroSecModuleMenu.refusal(object, playerObj, row.module, true),
+				row.module)
 		else
 			-- Taking one off asks nothing about whether the module FITS -- it is
 			-- already there -- and everything about the moment: whose house it
@@ -192,16 +271,9 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 			-- rung exists.
 			option = sub:addOption(getText("ContextMenu_CeroSec_Remove", name), worldobjects,
 				CeroSecModuleMenu.onRemove, object, playerObj, row.module)
-			local why = nil
-			local stop = CeroSecModules.fittingRefusal(object, row.module.id, playerObj)
-			if stop ~= nil then
-				why = CeroSecModuleMenu.tooltipFor(stop)
-			elseif playerObj:getPerkLevel(Perks.Electricity) < row.module.skill then
-				why = "Tooltip_CeroSec_NeedSkill"
-			elseif inv == nil or not inv:getFirstTypeRecurse(CeroSecModules.TOOL) then
-				why = "Tooltip_CeroSec_NeedScrewdriver"
-			end
-			grey(option, why, row.module)
+			describe(option,
+				CeroSecModuleMenu.refusal(object, playerObj, row.module, false),
+				row.module)
 		end
 	end
 end

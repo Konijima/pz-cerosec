@@ -245,16 +245,35 @@ CeroSecModules.SANDBOX = "HardwareRequired"
 -- there (it is what every radio in this game is built round --
 -- Base.RadioReceiver, and see the recipe). Nothing in it turns, so it takes no
 -- motor and no receiver of its own.
+--
+-- recipe   the craftRecipe that makes one, in common/media/scripts/
+--          recipes_cerosec.txt, all nine taught by CeroSec.WiringGuide
+--
+-- The recipe name is here so that a survivor who is offered a module he has
+-- never heard of can be told the one thing that would get him one: the book.
+-- The menu asks the engine whether he knows it (IsoGameCharacter.isRecipeKnown,
+-- which is one call over the sandbox option, the cheat and the known list --
+-- see CeroSecModuleMenu). It has nothing to do with FITTING one, which asks for
+-- the box and never for the knowledge: it is what the greyed line SAYS.
 CeroSecModules.LIST = {
-	{ id = "contact",   item = "CeroSec.MagneticContact", skill = 1, time = 80,  xp = 3 },
-	{ id = "relay",     item = "CeroSec.Relay",           skill = 1, time = 100, xp = 3 },
-	{ id = "strike",    item = "CeroSec.ElectricStrike",  skill = 2, time = 120, xp = 5 },
-	{ id = "operator",  item = "CeroSec.DoorOperator",    skill = 3, time = 150, xp = 8 },
-	{ id = "curtain",   item = "CeroSec.CurtainMotor",    skill = 2, time = 100, xp = 5 },
-	{ id = "appliance", item = "CeroSec.ApplianceSwitch", skill = 2, time = 110, xp = 5 },
-	{ id = "window",    item = "CeroSec.WindowOperator",  skill = 3, time = 150, xp = 8 },
-	{ id = "genset",    item = "CeroSec.GeneratorSwitch", skill = 3, time = 140, xp = 8 },
-	{ id = "tuner",     item = "CeroSec.TunerControl",   skill = 2, time = 110, xp = 5 },
+	{ id = "contact",   item = "CeroSec.MagneticContact", skill = 1, time = 80,  xp = 3,
+		recipe = "MakeCeroSecMagneticContact" },
+	{ id = "relay",     item = "CeroSec.Relay",           skill = 1, time = 100, xp = 3,
+		recipe = "MakeCeroSecRelay" },
+	{ id = "strike",    item = "CeroSec.ElectricStrike",  skill = 2, time = 120, xp = 5,
+		recipe = "MakeCeroSecElectricStrike" },
+	{ id = "operator",  item = "CeroSec.DoorOperator",    skill = 3, time = 150, xp = 8,
+		recipe = "MakeCeroSecDoorOperator" },
+	{ id = "curtain",   item = "CeroSec.CurtainMotor",    skill = 2, time = 100, xp = 5,
+		recipe = "MakeCeroSecCurtainMotor" },
+	{ id = "appliance", item = "CeroSec.ApplianceSwitch", skill = 2, time = 110, xp = 5,
+		recipe = "MakeCeroSecApplianceSwitch" },
+	{ id = "window",    item = "CeroSec.WindowOperator",  skill = 3, time = 150, xp = 8,
+		recipe = "MakeCeroSecWindowOperator" },
+	{ id = "genset",    item = "CeroSec.GeneratorSwitch", skill = 3, time = 140, xp = 8,
+		recipe = "MakeCeroSecGeneratorSwitch" },
+	{ id = "tuner",     item = "CeroSec.TunerControl",   skill = 2, time = 110, xp = 5,
+		recipe = "MakeCeroSecTunerControl" },
 }
 
 -- The tool the job needs, whichever module it is. Vanilla's own recipes ask for

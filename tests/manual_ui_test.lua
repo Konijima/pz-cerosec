@@ -4154,11 +4154,15 @@ do
 	local inside = square(11, 10, true)
 	local pavement = square(10, 9, false)
 
-	-- A fixture: its class, its square, and the one state getter its module
-	-- reads. modData is real, because installedOn walks it.
+	-- A fixture: its class, its square, and every getter the nine fitsOn rules
+	-- and the state rules ask of one. ALL of them and not just its own module's,
+	-- because this menu now asks every module about every fixture -- that is what
+	-- decides which lines are there at all -- and a fake with only the getters
+	-- its own module needs would die on the first question somebody else's asks.
+	-- modData is real, because installedOn walks it.
 	local function fixture(class, sq)
 		local o = { __class = class, modData = {}, square = sq, open = false,
-			activated = false }
+			activated = false, curtainOpen = false, deviceOn = false }
 		o.getSquare = function() return o.square end
 		o.hasModData = function() return true end
 		o.getModData = function() return o.modData end
@@ -4168,21 +4172,46 @@ do
 		o.Activated = function() return o.activated end
 		o.isExterior = function() return true end
 		o.isDoor = function() return true end
+		-- A door's sheet: HasCurtains() answers THE DOOR when there is one and
+		-- null otherwise, which is the engine's own shape (IsoDoor, offsets 0-12).
+		o.hasCurtain = false
+		o.HasCurtains = function() if o.hasCurtain then return o end return nil end
+		o.isCurtainOpen = function() return o.curtainOpen end
+		-- A set with no device data is a sprite, so the fake answers one only for
+		-- the two classes that really carry it.
+		o.getDeviceData = function()
+			if class ~= "IsoTelevision" and class ~= "IsoRadio" then return nil end
+			return { getIsTurnedOn = function() return o.deviceOn end }
+		end
 		return o
 	end
 
 	local door = fixture("IsoDoor", inside)
 	local light = fixture("IsoLightSwitch", inside)
 	local stove = fixture("IsoStove", inside)
+	local window = fixture("IsoWindow", inside)
+	local curtain = fixture("IsoCurtain", inside)
+	local washer = fixture("IsoClothingWasher", inside)
+	local generator = fixture("IsoGenerator", inside)
+	local telly = fixture("IsoTelevision", inside)
+	local wireless = fixture("IsoRadio", inside)
+	local fridge = fixture("IsoObject", inside)
 
 	local stand = inside
 	local carried = {}
 	local level = 5
+	local known = true
 	local player = {
 		getVehicle = function() return nil end,
 		getCurrentSquare = function() return stand end,
 		getUsername = function() return "carter" end,
 		getPerkLevel = function() return level end,
+		-- Vanilla's own one-call question, which is what the menu asks before it
+		-- tells a survivor he has no box: isRecipeKnown(String) is the sandbox
+		-- option, the cheat and the known list in one (javap -c, offsets 0-53).
+		isRecipeKnown = function(_, name)
+			return known and type(name) == "string" and name ~= ""
+		end,
 		getInventory = function()
 			return { getFirstTypeRecurse = function(_, fullType)
 				for i = 1, #carried do
@@ -4222,7 +4251,164 @@ do
 		return nil
 	end
 
+	-- Every entry carries its tooltip now, greyed or not: the module's own
+	-- description, and the reason on the line UNDER it when there is one. The
+	-- bench's getText answers the key alone, so the line is two keys with a break
+	-- between them and each half reads on its own -- which is also what makes
+	-- "it has a description and no reason" a thing that can be asserted.
+	local function desc(option)
+		return string.match(option.toolTip.description, "^([^<]*)")
+	end
+	local function reason(option)
+		return string.match(option.toolTip.description, "<br>([^<]*)$")
+	end
+	-- The ids the submenu offers, in the order it offers them.
+	local function idsOn(object)
+		local context = withVanilla(ContextMenu.new())
+		CeroSecModuleMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
+		local out = {}
+		for j = 1, #context.subs do
+			local sub = context.subs[j].menu
+			for i = 1, #sub.options do
+				local module = sub.options[i].args and sub.options[i].args[3]
+				if type(module) == "table" then out[#out + 1] = module.id end
+			end
+		end
+		return table.concat(out, " ")
+	end
+	-- Is there a "CeroSec hardware" parent at all?
+	local function parentOn(object)
+		local context = withVanilla(ContextMenu.new())
+		CeroSecModuleMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
+		for i = 1, #context.labels do
+			if context.labels[i] == "ContextMenu_CeroSec_Modules" then return true end
+		end
+		return false
+	end
+
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	carried = { "CeroSec.MagneticContact", "Base.Screwdriver" }
+
+	--
+	-- 0. WHICH LINES ARE THERE AT ALL, which is what a survivor sees first
+	--
+	-- A module that does not fit this SORT of fixture is not a line. Everything
+	-- that could ever go on one is, carried or not: a box he has never been told
+	-- about is a box he will never look for. Asserted as the WHOLE list and in
+	-- order, because the way this goes wrong is the entry nobody meant to add.
+	--
+	carried = {}
+	door.open = true
+	eq("a door offers the three that go on a door", idsOn(door),
+		"contact strike operator")
+	eq("a light switch offers the relay and nothing else", idsOn(light), "relay")
+	eq("a window offers the contact and the sash operator", idsOn(window),
+		"contact window")
+	eq("a curtain offers the motor", idsOn(curtain), "curtain")
+	eq("an oven offers the appliance switch", idsOn(stove), "appliance")
+	eq("and so does a washer", idsOn(washer), "appliance")
+	eq("a generator offers its own switch", idsOn(generator), "genset")
+	eq("a television offers the tuner control", idsOn(telly), "tuner")
+	eq("and a radio set the same one", idsOn(wireless), "tuner")
+	-- A door with a sheet on it grows a fourth line and loses none.
+	door.hasCurtain = true
+	eq("a door with a sheet on it offers the curtain motor too", idsOn(door),
+		"contact strike operator curtain")
+	door.hasCurtain = false
+	-- And nothing this mod has anything to say about gets no menu at all.
+	eq("a fridge offers nothing", idsOn(fridge), "")
+	check("and has no CeroSec hardware entry over it", not parentOn(fridge))
+	check("while a door does", parentOn(door))
+
+	-- EVERY LINE CARRIES ITS DESCRIPTION, and a survivor carrying nothing at all
+	-- is the case this rung exists for: greyed, with what the box does on the
+	-- first line and how to get one on the second.
+	carried = { "Base.Screwdriver" }
+	local row = entry(door, "operator", true)
+	eq("an entry for a box he has never seen is greyed", row.notAvailable, true)
+	eq("and says what a door operator is", desc(row),
+		"Tooltip_CeroSec_ModuleDesc_operator")
+	eq("with the reason under it", reason(row), "Tooltip_CeroSec_ModuleItem")
+	known = false
+	row = entry(door, "operator", true)
+	eq("and a survivor who has not read the guide is sent to the guide",
+		reason(row), "Tooltip_CeroSec_ModuleRecipe")
+	known = true
+
+	-- Electricity 0: every line greyed with the trade, description and all.
+	carried = { "CeroSec.MagneticContact", "CeroSec.ElectricStrike",
+		"CeroSec.DoorOperator", "Base.Screwdriver" }
+	level = 0
+	for _, id in ipairs({ "contact", "strike", "operator" }) do
+		row = entry(door, id, true)
+		eq(id .. " is greyed at Electricity 0", row.notAvailable, true)
+		eq("with the trade as the reason", reason(row), "Tooltip_CeroSec_NeedSkill")
+		eq("and its own description over it", desc(row),
+			"Tooltip_CeroSec_ModuleDesc_" .. id)
+	end
+	level = 5
+	-- And with everything in hand: a live entry that still says what it is.
+	row = entry(door, "contact", true)
+	eq("a fittable entry is not greyed", row.notAvailable, nil)
+	eq("and still carries its description", desc(row),
+		"Tooltip_CeroSec_ModuleDesc_contact")
+	eq("with nothing under it", reason(row), nil)
+
+	-- The refusals about THIS fixture rather than about fixtures of its sort are
+	-- lines, not silences: the strike on a door no lock bites, and a leaf of a
+	-- garage door.
+	local interior = fixture("IsoDoor", inside)
+	interior.open = true
+	interior.isExterior = function() return false end
+	interior.getOppositeSquare = function() return inside end
+	interior.getSquare = function() return inside end
+	inside.getRoom = function() return { getName = function() return "office" end } end
+	row = entry(interior, "strike", true)
+	check("an interior door still offers the strike", row ~= nil)
+	eq("greyed with the lock's own reason", reason(row), "Tooltip_CeroSec_NoLock")
+
+	-- EVERY MODULE HAS A DESCRIPTION, in both languages, and nothing has one that
+	-- is not a module. Both directions, because a key nobody wrote comes out on
+	-- the glass as its own name and a key left behind by a module that went is a
+	-- line nothing can print.
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/Tooltip.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		local seen = 0
+		for i = 1, #CeroSecModules.LIST do
+			local key = "Tooltip_CeroSec_ModuleDesc_" .. CeroSecModules.LIST[i].id
+			check(lang .. " Tooltip.json defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+			seen = seen + 1
+		end
+		local defined = 0
+		for _ in string.gmatch(strings, '"Tooltip_CeroSec_ModuleDesc_') do
+			defined = defined + 1
+		end
+		eq(lang .. " has a description for the nine modules and nothing else",
+			defined, seen)
+		-- And the recipe and the missing box have their own lines.
+		for _, key in ipairs({ "Tooltip_CeroSec_ModuleItem",
+				"Tooltip_CeroSec_ModuleRecipe" }) do
+			check(lang .. " Tooltip.json defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+		end
+	end
+	-- And every recipe the list names is really in the script file: a name with
+	-- no craftRecipe behind it is a survivor told to read a book that teaches
+	-- nothing.
+	local handle = assert(io.open("common/media/scripts/recipes_cerosec.txt", "r"))
+	local recipes = handle:read("*a")
+	handle:close()
+	for i = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[i]
+		check("a recipe name for " .. module.id, type(module.recipe) == "string")
+		check(module.recipe .. " is a craftRecipe in the scripts",
+			string.find(recipes, "craftRecipe " .. module.recipe, 1, true) ~= nil)
+	end
+
 	carried = { "CeroSec.MagneticContact", "Base.Screwdriver" }
 
 	-- 1. A shut door. The entry is THERE -- he owns the box and can go and fix
@@ -4231,24 +4417,24 @@ do
 	local option = entry(door, "contact", true)
 	check("a shut door still offers the install", option ~= nil)
 	eq("greyed", option.notAvailable, true)
-	eq("with the door's own word", option.toolTip.description,
-		"Tooltip_CeroSec_ModuleClosed")
+	eq("with the door's own word", reason(option), "Tooltip_CeroSec_ModuleClosed")
 	eq("which is the word the server refuses on",
 		CeroSecModuleMenu.tooltipFor(
 			CeroSecModules.fittingRefusal(door, "contact", player)),
-		option.toolTip.description)
+		reason(option))
 
 	-- Open it and the entry comes alive.
 	door.open = true
 	option = entry(door, "contact", true)
 	eq("an open door is not greyed", option.notAvailable, nil)
-	eq("and carries no reason", option.toolTip, nil)
+	eq("and carries no reason", reason(option), nil)
+	eq("only what the box is", desc(option), "Tooltip_CeroSec_ModuleDesc_contact")
 
 	-- 2. From the pavement, with the door open: the other word.
 	stand = pavement
 	option = entry(door, "contact", true)
 	eq("from outside it is greyed", option.notAvailable, true)
-	eq("with the word for where he is standing", option.toolTip.description,
+	eq("with the word for where he is standing", reason(option),
 		"Tooltip_CeroSec_ModuleOutside")
 	stand = inside
 
@@ -4257,7 +4443,7 @@ do
 	stove.activated = true
 	option = entry(stove, "appliance", true)
 	eq("a cooking oven is greyed", option.notAvailable, true)
-	eq("with the word for a machine that is on", option.toolTip.description,
+	eq("with the word for a machine that is on", reason(option),
 		"Tooltip_CeroSec_ModuleRunning")
 	stove.activated = false
 	option = entry(stove, "appliance", true)
@@ -4283,14 +4469,14 @@ do
 	door.open = false
 	option = entry(door, "contact", false)
 	eq("a shut door greys the removal", option.notAvailable, true)
-	eq("with the same word the install got", option.toolTip.description,
+	eq("with the same word the install got", reason(option),
 		"Tooltip_CeroSec_ModuleClosed")
 
 	door.open = true
 	stand = pavement
 	option = entry(door, "contact", false)
 	eq("and so does the pavement", option.notAvailable, true)
-	eq("with its own", option.toolTip.description, "Tooltip_CeroSec_ModuleOutside")
+	eq("with its own", reason(option), "Tooltip_CeroSec_ModuleOutside")
 	stand = inside
 
 	-- 6. Somebody else's safehouse, through the menu. The gate is the option and
@@ -4300,7 +4486,7 @@ do
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
 	option = entry(door, "contact", false)
 	eq("a stranger's safehouse greys the entry", option.notAvailable, true)
-	eq("with the word that says whose it is", option.toolTip.description,
+	eq("with the word that says whose it is", reason(option),
 		"Tooltip_CeroSec_ModuleSafehouse")
 	-- And the option OFF is the default and the control.
 	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
@@ -4319,9 +4505,10 @@ do
 	-- 8. And the fixture's own old refusals still say what they always said: the
 	-- new words must not have swallowed them.
 	carried = { "CeroSec.Relay", "Base.Screwdriver" }
-	option = entry(door, "relay", true)
-	eq("a relay on a door is still the wrong fixture", option.toolTip.description,
-		"Tooltip_CeroSec_NoFixture")
+	eq("a relay on a door is not a line at all", entry(door, "relay", true), nil)
+	eq("and refusal still says so when it is asked",
+		CeroSecModuleMenu.refusal(door, player,
+			CeroSecModules.byId("relay"), true), "Tooltip_CeroSec_NoFixture")
 	-- The box out of the door and into his bag, so that what is offered is an
 	-- Install again: a module already on a fixture is a Remove and would be a
 	-- different line answering a different question.
@@ -4329,7 +4516,7 @@ do
 	carried = { "CeroSec.MagneticContact" }
 	door.open = true
 	option = entry(door, "contact", true)
-	eq("and no screwdriver is still no screwdriver", option.toolTip.description,
+	eq("and no screwdriver is still no screwdriver", reason(option),
 		"Tooltip_CeroSec_NeedScrewdriver")
 
 	_G.SandboxVars = nil

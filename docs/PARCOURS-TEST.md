@@ -3798,6 +3798,26 @@ le **même mot**. Le tableau complet est dans
      de 1991 n'est pas un geste de joueur et ne passe par aucune de ces
      règles. [ ]
 
+414. **Le sous-menu dit ce qu'est chaque boîtier.** Clic droit sur une porte
+     **sans rien dans le sac** : l'entrée « Matériel CeroSec » est là et le
+     sous-menu montre **exactement trois lignes** — contact magnétique, gâche
+     électrique, opérateur de porte — toutes grisées. Chaque infobulle donne
+     d'abord ce que le boîtier fait et le périphérique qu'il donne, puis en
+     dessous la raison : « Vous n'en avez pas sur vous. » (ou, sans avoir lu le
+     manuel de chantier, la ligne qui y renvoie). Aucune ligne pour le relais,
+     le moteur de rideau, l'opérateur de fenêtre, l'interrupteur d'appareil,
+     l'interrupteur de groupe ni le contrôle de tuner. [ ]
+415. **Une ligne par sorte de chose.** Interrupteur → **relais** seulement.
+     Fenêtre → contact + opérateur de fenêtre. Rideau → moteur de rideau. Four
+     ou laveuse → interrupteur d'appareil. Génératrice → interrupteur de groupe.
+     Téléviseur ou poste de radio → contrôle de tuner. Une porte avec un
+     **rideau** dessus → les trois de la porte **plus** le moteur de rideau.
+     Clic droit sur un frigo → **aucune** entrée « Matériel CeroSec ». [ ]
+416. **Électricité 0.** Avec les trois boîtiers de porte et un tournevis en
+     main, à Électricité 0 : les trois lignes sont grisées, chacune avec sa
+     description **et** « Électricité 1/2/3 requise. » en dessous. Monter la
+     compétence : les lignes repartent et gardent leur description. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

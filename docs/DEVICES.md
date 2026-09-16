@@ -267,6 +267,28 @@ the floppy drive's rule about duplication. The client half is
 and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
 animation, `150 - perk * 3`-style duration, `addXp` at the end).
 
+**What the right-click menu lists, and what it hides.** One line per module that
+could ever go on a fixture of that **sort**, carried or not — and the only thing
+hidden is `fitsOn` answering `fixture`, the module that could never fit. Its
+other two answers (`nolock`, `manydoors`) are about *this* door and not about
+doors, so they are lines and they say so. A survivor cannot go and look for a box
+he has never been told exists, which is why the entry is now there before he owns
+one; it is greyed with `Tooltip_CeroSec_ModuleItem` ("you are not carrying one")
+or, when he does not know how one is made,
+`Tooltip_CeroSec_ModuleRecipe` — `IsoGameCharacter.isRecipeKnown(String)`, which
+is one call over the sandbox option `seeNotLearntRecipe`, `isKnowAllRecipes()`
+and `getKnownRecipes().contains(name)` (`javap -c`, offsets 0—53), so a master
+electrician who auto-learnt the recipe answers yes without a case of ours. The
+recipe name per module is `recipe` on `CeroSecModules.LIST`.
+
+**Every entry carries its description**, greyed or not:
+`Tooltip_CeroSec_ModuleDesc_<id>` — what the box buys, which device it gives and
+the level it wants, with the level passed as `%1` off `CeroSecModules.LIST` so
+nine modules are one line of English. The reason, when there is one, goes on the
+line **under** it: a refusal with no idea what it is refusing is a line a player
+reads twice. If nothing is left after the hiding, there is no submenu and no
+"CeroSec hardware" parent either.
+
 **Where he has to be standing, what has to be open, and whose safehouse it is.**
 Three more refusals, all of them about the MOMENT rather than about the shape of
 the fixture, all of them decided in `CeroSecModules.fittingRefusal` — one
