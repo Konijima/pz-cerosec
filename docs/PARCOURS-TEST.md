@@ -2410,12 +2410,45 @@ qu'on lit sur le papier soit celui que la machine demande.
 
 279. **Le papier dans le tiroir.** Dans le **même** commerce, fouiller les
      bureaux, comptoirs, classeurs et casiers jusqu'à trouver un objet dont le nom
-     dans l'inventaire est `Sticky note: root / <mot>`.
-     - l'objet est une note jaune, il pèse presque rien ;
+     dans l'inventaire est `Sticky note (root)`.
+     - l'objet est une note jaune, il pèse ce que pèse une feuille de papier ;
+     - le nom ne donne **que** le compte : le mot de passe n'est pas lisible dans
+       la liste, il faut ouvrir la note ;
      - **un seul** papier `root` par commerce : les autres tiroirs du même
        commerce n'en ont pas d'autre ;
      - rien n'est jamais **par terre** : le papier est toujours dans un contenant ;
      - un bureau d'un **autre** bâtiment donne un autre mot. [ ]
+
+279b. **La note est du vrai papier : la lire.** La prendre dans son sac, clic
+     droit dessus. Sans stylo sur soi, l'entrée du menu est *Lire* ; avec un stylo
+     ou un crayon dans le sac, c'est *Écrire*. Ouvrir : la fenêtre du jeu montre
+     une page qui dit `Sticky note: root / <mot>`, dans la police du jeu. C'est ce
+     mot-là qu'on tape à l'étape 280.
+     - la note garde son icône de note jaune dans la fenêtre comme dans le sac ;
+     - la fenêtre ne coûte **pas** des heures de jeu : ce n'est pas la lecture
+       longue d'un livre, c'est une page qu'on ouvre et qu'on referme ;
+     - dans le noir, le menu refuse et dit pourquoi (règle vanilla). [ ]
+
+279c. **Écrire dessus et l'effacer.** Avec un stylo dans le sac, ouvrir la note :
+     le texte est modifiable. Taper autre chose par-dessus, **OK**, rouvrir : c'est
+     le nouveau texte qui est là. Rouvrir, cliquer la **poubelle** (le bouton sous
+     la zone de texte) : la page se vide ; écrire de nouveau, **OK**. Une note
+     trouvée n'est jamais verrouillée : elle appartient à celui qui la ramasse.
+     (Le mot de passe de la machine, lui, ne change pas : c'est du papier qu'on
+     réécrit, pas la machine.) [ ]
+
+279d. **La brûler.** Poser la note au sol près d'un feu de camp ou la garder sur
+     soi devant une cheminée / un barbecue : clic droit sur le foyer, la note est
+     dans la liste du combustible comme n'importe quelle feuille de papier, et
+     elle sert aussi d'allume-feu. La brûler : elle disparaît, le feu tient un peu
+     plus longtemps. [ ]
+
+279e. **Les vieilles notes d'une sauvegarde d'avant.** Sur une sauvegarde
+     commencée **avant** cette mise à jour, où un papier `Sticky note: root / <mot>`
+     avait déjà été trouvé : il est **toujours là**, avec le même nom qu'avant et le
+     même mot de passe dessus, et ce mot ouvre toujours sa machine. Il ne se lit
+     pas et ne brûle pas — c'est l'ancien objet, et il n'a pas été touché. Les
+     notes **neuves** de la même partie, elles, sont du papier. [ ]
 
 280. **Le mot du papier ouvre la machine.** Revenir à l'ordinateur de l'étape 278,
      `su root`, taper le mot lu sur le papier : ça passe, l'invite devient
@@ -2430,8 +2463,8 @@ qu'on lit sur le papier soit celui que la machine demande.
 
 282. **Le papier dans la poche d'un mort.** Tuer les zombies **à l'intérieur**
      d'un commerce garni et fouiller les corps. Environ un sur vingt porte un
-     objet nommé `Note: <compte> / <mot>`.
-     - le compte nommé n'est **jamais** `root` ;
+     objet nommé `Sticky note (<compte>)` dont la page dit `Note: <compte> / <mot>`.
+     - le compte nommé n'est **jamais** `root`, ni sur la page ni sur le nom ;
      - `su <compte>` sur la machine du même commerce, avec ce mot : ça passe ;
      - un zombie tué **dehors** (rue, stationnement, champ) n'en porte jamais. [ ]
 
@@ -2440,8 +2473,8 @@ qu'on lit sur le papier soit celui que la machine demande.
      avec une pièce que la carte appelle `office` (un bureau à l'étage, un coin
      travail) et **aucun ordinateur vanilla** dans tout le bâtiment. Fouiller les
      bureaux, commodes, tables de chevet et classeurs de cette maison :
-     - **aucun** papier `Sticky note: root / <mot>` nulle part ;
-     - tuer les zombies à l'intérieur : **aucun** papier `Note: <compte> / <mot>`
+     - **aucun** papier `Sticky note (root)` nulle part ;
+     - tuer les zombies à l'intérieur : **aucune** note `Sticky note (<compte>)`
        dans leurs poches non plus.
      Puis **poser un ordinateur** ramassé ailleurs dans n'importe quelle pièce de
      cette maison et fouiller de **nouveaux** contenants du même bâtiment : cette
@@ -2513,7 +2546,8 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      - `cat /etc/passwd` montre un compte nommé **`dispatch`** en plus de `root` et
        de deux personnes, et aucun `admin` ;
      - fouiller les tiroirs, comptoirs et casiers du **même** poste jusqu'à
-       trouver `Sticky note: root / <mot>`, puis `su root` avec ce mot : ça passe ;
+       trouver `Sticky note (root)`, l'ouvrir pour lire le mot, puis `su root`
+       avec ce mot : ça passe ;
      - `cat /var/log/dispatch` montre huit ou neuf lignes de juillet et la
        dernière s'arrête **au milieu d'une ligne**, au petit matin du 9 (le texte
        exact dépend de la premises : il y en a trois versions, voir l'étape 310) ;
@@ -2855,7 +2889,8 @@ derrière.
        exposition, et dit que `root` y est celui du magasin. [ ]
 
 316. **Le papier du tiroir ouvre aussi la vitrine.** Trouver la note collante dans
-     un tiroir du magasin (`Sticky note: root / ...`), puis, sur un modèle
+     un tiroir du magasin (`Sticky note (root)`, ouverte pour lire le mot), puis,
+     sur un modèle
      d'exposition du plancher :
      - `su root` avec ce mot de passe → ça passe ;
      - et ça passe aussi sur la machine de l'arrière-boutique. Un seul papier, une
@@ -3281,8 +3316,9 @@ de la machine cliquée dans la liste.
      Revenir sur **Machines** : tout revient. [ ]
 
 341. **Donner la note de root.** Cliquer **Donner la note de root** → un papier
-     arrive dans l'inventaire du personnage, lisible dans son sac :
-     `Sticky note: root / <mot>NN`. Attendu : la ligne sous la liste répète les mêmes
+     arrive dans l'inventaire du personnage, nommé `Sticky note (root)` et disant,
+     quand on l'ouvre, `Sticky note: root / <mot>NN`. Attendu : la ligne sous la
+     liste répète les mêmes
      lettres, et ces lettres ouvrent vraiment la machine — ouvrir le terminal,
      `login: root`, taper le mot de passe du papier, ça entre. **Puis fouiller un
      bureau ou un classeur du même local** : le papier du tiroir est toujours là (ce

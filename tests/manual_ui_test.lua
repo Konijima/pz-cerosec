@@ -2544,6 +2544,31 @@ do
 	check("and the item it becomes is declared too",
 		blocks[string.match(CeroSecManualMenu.LEGACY.becomes, "^CeroSec%\.(.+)$")] ~= nil)
 
+	--
+	-- AND THE RETIRED STICKY NOTE, which is the second half-kept promise waiting to
+	-- happen. Nothing is written as CeroSec.StickyNote any more -- a note is
+	-- vanilla's Base.SheetPaper2 now, so that the game reads it, a pen overwrites it
+	-- and a fireplace burns it -- but copies of it are lying in drawers of saves
+	-- already played. The block has to still be there, and it has to still be a real
+	-- item: Obsolete = true is a real script key and it stops the type spawning, but
+	-- it also makes DictionaryInfo.isValid() answer false, which is the very test
+	-- that DELETES the saved copy. Retired means kept, not flagged.
+	--
+	check("the retired sticky note is still declared", blocks.StickyNote ~= nil)
+	check("and it is not obsoleted, which would delete every copy in every save",
+		string.find(blocks.StickyNote or "", "Obsolete", 1, true) == nil)
+	eq("with the shape it was saved with, or an old note loads as something else",
+		string.match(blocks.StickyNote, "ItemType%s*=%s*([^,\n]+),"), "base:normal")
+	eq("and its own name", string.match(blocks.StickyNote,
+		"DisplayName%s*=%s*([^,\n]+),"), "Sticky Note")
+	eq("and the icon every note still wears",
+		string.match(blocks.StickyNote, "Icon%s*=%s*([^,\n]+),"), "CeroSecStickyNote")
+	check("which is a file the mod ships",
+		io.open("common/media/textures/Item_CeroSecStickyNote.png", "r") ~= nil)
+	-- And no item block of ours replaced it: the paper a note is written on is the
+	-- GAME's, which is the whole of why it can be read, written on and burnt.
+	check("and no CeroSec note item took its place", blocks.Note == nil)
+
 	for b = 1, #BOOKS do
 		local book = BOOKS[b]
 		local body = blocks[book.item]

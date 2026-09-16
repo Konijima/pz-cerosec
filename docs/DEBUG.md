@@ -653,7 +653,7 @@ matters**:
 
 | act | what it writes | refused when |
 | --- | --- | --- |
-| **Give root note** | nothing on any disk: one `CeroSec.StickyNote` into the survivor's own inventory | the chunk is away (the premises cannot be asked), the machine is in no building, no profile is written for its premises, or that profile has no root password |
+| **Give root note** | nothing on any disk: one sheet of the game's own paper (`Base.SheetPaper2`), named `Sticky note (root)` with the password on its page, into the survivor's own inventory | the chunk is away (the premises cannot be asked), the machine is in no building, no profile is written for its premises, or that profile has no root password |
 | **Give staff note** | the same, one paper into his inventory | the same three, plus a profile whose accounts are all open |
 | **Show accounts** | nothing at all: lines to the server's log and one line back to the asking window | the machine has never been switched on, so it has no disk to read |
 | **Clear password** | `/etc/passwd` on the selected machine, through `CeroSecOS.setPassword` | the same, plus a `login` that is not a name or an account the machine has not got |

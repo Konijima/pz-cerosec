@@ -1378,8 +1378,16 @@ wrote the password down, because everybody did:
 
 | | |
 | --- | --- |
-| **in a drawer** | a yellow sticky note in a desk, a counter, a filing cabinet, a locker, a dresser or a side table **of that same premises**. Its name in your inventory *is* the password: `Sticky note: root / falcon12`. One per premises, at most. |
-| **in a pocket** | about one dead employee in twenty, killed **inside** that premises, has his own login folded in his pocket: `Note: rmiller / thunder07`. Never root's — he was never given it. |
+| **in a drawer** | a yellow sticky note in a desk, a counter, a filing cabinet, a locker, a dresser or a side table **of that same premises**. Your bag calls it `Sticky note (root)`; **read it** and the page says `Sticky note: root / falcon12`. One per premises, at most. |
+| **in a pocket** | about one dead employee in twenty, killed **inside** that premises, has his own login folded in his pocket — `Sticky note (rmiller)`, reading `Note: rmiller / thunder07`. Never root's — he was never given it. |
+
+**A note is a sheet of paper and the game treats it as one.** Right-click it and
+read it; with a pen or a pencil in your bag the same entry lets you write over it,
+and the little bin empties the page first. Nothing you find is locked, so a note is
+yours to reuse. And it burns: it feeds a campfire, a fireplace or a barbecue, and
+it will light one, exactly as any sheet of paper does. Notes already lying in a save
+from before this are the older item and are left exactly as they were — their name
+still carries their password.
 
 A shop in a mall is its own premises, with its own machine, its own staff and its
 own note — the same rule the telephone line uses. A body in the street carries

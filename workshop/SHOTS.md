@@ -108,8 +108,8 @@ A prefilled office or dispatch machine, plus the paper that opens it.
   `tail /var/log/messages`, then `crontab -l`.
 - **Must be visible:** a motd that is clearly somebody's; log lines dated the
   week before the outbreak; a real crontab line. **And the inventory panel open
-  beside it with `Sticky note: root / falcon12` in it** -- the name of the item
-  is the password, and one frame showing both is the whole mechanic.
+  beside it, and the note OPEN on its page reading `Sticky note: root /
+  falcon12`** -- the paper and the prompt in one frame is the whole mechanic.
 - Use an **office** or **police** machine. A residential one has nothing locked
   and nothing to show.
 

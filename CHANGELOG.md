@@ -8,6 +8,15 @@ date.
 
 ## Unreleased
 
+- **Sticky notes are real paper now: read them, write on them with a pen, burn
+  them.** A note used to be an item whose only content was its name, which is why
+  nobody could work out what it was for. It is a sheet of the game's own paper: the
+  password is written on its page, so you open the note to read it, and the row in
+  your bag says whose login it is -- `Sticky note (root)`, `Sticky note (jsmith)`.
+  With a pen or a pencil on you it is a page you can erase and write over, and it
+  feeds a campfire or a fireplace like any other paper. Notes already in your save
+  stay as they were.
+
 - **A new disk: `CeroSec HOME 1.0`.** Six programs that run the building instead of
   you, on a printed floppy with a README that tells you how to copy them and what
   to put in a crontab. It is a disk somebody paid for in 1993 and it turns up in

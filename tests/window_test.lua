@@ -10781,6 +10781,7 @@ local function newInventory()
 			data = data or {},
 			name = "3.5 inch Floppy Disk",
 			customName = false,
+			pages = {},
 			synced = 0,
 			getID = function(self) return self.id end,
 			getFullType = function(self) return self.type end,
@@ -10803,6 +10804,12 @@ local function newInventory()
 				self.data.customName = tostring(self.name)
 			end,
 			syncItemFields = function(self) self.synced = self.synced + 1 end,
+			-- THE PAGES, held the way zombie.inventory.types.Literature holds them:
+			-- addPage(Integer, String) into customPages, seePage(Integer) back out
+			-- (javap -p). A note's words live there now and not on its name, so a
+			-- fake that dropped them would be a fake in which a blank paper passes.
+			addPage = function(self, n, text) self.pages[n] = text end,
+			seePage = function(self, n) return self.pages[n] end,
 			-- And the tooltip is on that same table, because the engine puts it there
 			-- rather than on a field of its own: setTooltip rawsets the key "Tooltip"
 			-- on the item's modData and getTooltip reads it back from there first
@@ -16867,23 +16874,37 @@ do
 	-- A container the game is filling: the three things the handler touches, and
 	-- nothing else. AddItem answers an item the way ItemContainer.AddItem(String)
 	-- does -- javap: it answers the InventoryItem, or null.
+	--
+	-- AND THE PAGES ARE MODELLED THE WAY Literature HOLDS THEM, because the words a
+	-- note carries are on a page now and not on its name: addPage(Integer, String)
+	-- puts one in the customPages map and seePage(Integer) reads it back (javap -p
+	-- zombie.inventory.types.Literature). A fake whose addPage swallowed its text
+	-- would be a fake in which a blank note passes every assertion below.
 	local function newContainer(square, full)
 		local box = { items = {} }
 		box.getSourceGrid = function() return square end
 		box.AddItem = function(_, fullType)
 			if full then return nil end
-			local item = { type = fullType, name = nil, custom = false, synced = 0 }
+			local item = { type = fullType, name = nil, custom = false, synced = 0,
+				pages = {}, data = {} }
 			item.getFullType = function() return item.type end
 			item.setName = function(_, text) item.name = text end
 			item.getName = function() return item.name end
 			item.setCustomName = function(_, flag) item.custom = flag end
 			item.isCustomName = function() return item.custom end
+			item.addPage = function(_, n, text) item.pages[n] = text end
+			item.seePage = function(_, n) return item.pages[n] end
+			item.hasModData = function() return true end
+			item.getModData = function() return item.data end
 			item.syncItemFields = function() item.synced = item.synced + 1 end
 			box.items[#box.items + 1] = item
 			return item
 		end
 		return box
 	end
+
+	-- What is really written on a note, which is what a survivor opens it to read.
+	local function ink(item) return item:seePage(1) end
 
 	local inside = net.machine(10, 10, 0, net.office):getSquare()
 	local street = net.machine(5000, 5000, 0, nil):getSquare()
@@ -16893,11 +16914,26 @@ do
 	Events.OnFillContainer.trigger("office", "desk", desk)
 	eq("a desk in an office gets one paper", #desk.items, 1)
 	local note = desk.items[1]
-	eq("and it is the note item", note:getFullType(), CeroSecNotes.ITEM)
-	check("with the password written on its name (" .. tostring(note:getName()) .. ")",
-		string.find(note:getName(), "^Sticky note: root / %w+$") ~= nil)
+	-- VANILLA'S OWN SHEET OF PAPER and not an item of ours, which is the whole of
+	-- what makes it readable, writable and burnable: CeroSecNotes.ITEM is
+	-- Base.SheetPaper2.
+	eq("and it is the game's own sheet of paper", note:getFullType(), "Base.SheetPaper2")
+	eq("which is the type the module writes", CeroSecNotes.ITEM, "Base.SheetPaper2")
+	-- THE PASSWORD IS ON THE PAGE and nowhere else. A note whose ink said nothing
+	-- would still have a name, so this is asserted on seePage(1) and not on the row.
+	check("with the password written on its page (" .. tostring(ink(note)) .. ")",
+		string.find(tostring(ink(note)), "^Sticky note: root / %w+$") ~= nil)
+	-- AND THE ROW NAMES THE LOGIN AND STOPS THERE: finding out the password is
+	-- opening the note, not skimming a list.
+	eq("and the row names the login and not the password", note:getName(),
+		"Sticky note (root)")
+	check("so the password is not readable off the row",
+		string.find(note:getName(), "/", 1, true) == nil)
 	check("and the name is a custom one, or the translated name would win",
 		note:isCustomName())
+	-- OUR STICKER ON VANILLA'S PAPER, through the engine's own per-item icon key.
+	eq("and it still looks like a sticky note",
+		note:getModData()[CeroSecContent.ICON_KEY], CeroSecNotes.ICON)
 	eq("and it was sent", note.synced, 1)
 
 	-- ONE PER PREMISES. Every other drawer in that office is empty.
@@ -16912,7 +16948,7 @@ do
 	-- which is the order a survivor meets them in.
 	local machine = net.machine(11, 11, 0, net.office)
 	machine:turnOn()
-	local typed = string.match(note:getName(), "/ (%w+)$")
+	local typed = string.match(tostring(ink(note)), "/ (%w+)$")
 	check("the password off the paper logs root in at the machine",
 		CeroSecOS.checkPassword(CeroSecOS.readUsers(machine:osState()).root, typed))
 
@@ -16971,14 +17007,24 @@ do
 		Events.OnFillContainer.trigger("Zombie", "inventorymale", pockets)
 		eq("a body in the office carries a paper", #pockets.items, 1)
 		local paper = pockets.items[1]
-		check("with a login and a password on it (" .. tostring(paper:getName()) .. ")",
-			string.find(paper:getName(), "^Note: %w+ / %w+$") ~= nil)
-		check("and it is NOT root's", string.find(paper:getName(), "root", 1, true) == nil)
+		check("with a login and a password on its page (" .. tostring(ink(paper)) .. ")",
+			string.find(tostring(ink(paper)), "^Note: %w+ / %w+$") ~= nil)
+		check("and it is NOT root's", string.find(tostring(ink(paper)), "root", 1, true) == nil)
+		-- THE ROW NAMES THE VERY LOGIN THAT IS ON THE PAGE, and the assertion is
+		-- built out of the page rather than matched against a shape: a row reading
+		-- "Sticky note (root)" over a page of somebody else's login satisfies any
+		-- shape you can write down and is the one mistake that would hand out the
+		-- machine on a corpse.
+		eq("and the row names him and not his password",
+			tostring(paper:getName()), string.format(CeroSecNotes.NAME_FORM,
+				string.match(tostring(ink(paper)), "^Note: (%w+) /")))
+		check("so the row is not root's either",
+			string.find(tostring(paper:getName()), "root", 1, true) == nil)
 
 		-- AND IT LOGS THAT ACCOUNT IN, on the machine in the same office.
 		local box = net4.machine(12, 12, 0, net4.office)
 		box:turnOn()
-		local who, word = string.match(paper:getName(), "^Note: (%w+) / (%w+)$")
+		local who, word = string.match(tostring(ink(paper)), "^Note: (%w+) / (%w+)$")
 		local user = CeroSecOS.readUsers(box:osState())[who]
 		check("the login on the paper is an account on the machine (" .. tostring(who)
 			.. ")", user ~= nil)
@@ -17064,7 +17110,7 @@ do
 		local drawer = newContainer(study:getSquare())
 		Events.OnFillContainer.trigger("office", "desk", drawer)
 		eq("a study in a house gets a paper", #drawer.items, 1)
-		local word = string.match(drawer.items[1]:getName(), "/ (%w+)$")
+		local word = string.match(tostring(ink(drawer.items[1])), "/ (%w+)$")
 		check("and it names a password", word ~= nil)
 
 		-- AND IT OPENS THE MACHINE IN THE LIVING ROOM.
@@ -17099,7 +17145,7 @@ do
 		local kdrawer2 = newContainer(kitchenDesk:getSquare())
 		Events.OnFillContainer.trigger("kitchen", "counter", kdrawer2)
 		eq("a kitchen drawer in a house with a study gets the paper", #kdrawer2.items, 1)
-		local kword = string.match(kdrawer2.items[1]:getName(), "/ (%w+)$")
+		local kword = string.match(tostring(ink(kdrawer2.items[1])), "/ (%w+)$")
 		kitchenDesk:turnOn()
 		check("and it opens the machine standing in that kitchen",
 			CeroSecOS.checkPassword(CeroSecOS.readUsers(kitchenDesk:osState()).root, kword))
@@ -17194,13 +17240,13 @@ do
 		Events.OnFillContainer.trigger("Zombie", "inventorymale", pocket)
 		eq("with a computer in the kitchen a body carries his login", #pocket.items, 1)
 		check("and it is not root's",
-			string.find(pocket.items[1]:getName(), "^Note: %w+ / %w+$") ~= nil
-				and string.find(pocket.items[1]:getName(), "root", 1, true) == nil)
+			string.find(tostring(ink(pocket.items[1])), "^Note: %w+ / %w+$") ~= nil
+				and string.find(tostring(ink(pocket.items[1])), "root", 1, true) == nil)
 		local second = newContainer(deskSquare)
 		Events.OnFillContainer.trigger("office", "desk", second)
 		eq("and the drawer in the study carries root's paper", #second.items, 1)
 		check("with the password on it",
-			string.find(second.items[1]:getName(), "^Sticky note: root / %w+$") ~= nil)
+			string.find(tostring(ink(second.items[1])), "^Sticky note: root / %w+$") ~= nil)
 		eq("now the premises is marked",
 			CeroSecNotes.hasNote(net10.system, b1, b2), true)
 
@@ -17430,8 +17476,8 @@ do
 		eq("a corpse whose type is an outfit name still carries a paper",
 			#pockets.items, 1)
 		check("and it is a login and not root",
-			string.find(pockets.items[1]:getName(), "^Note: %w+ / %w+$") ~= nil
-				and string.find(pockets.items[1]:getName(), "root", 1, true) == nil)
+			string.find(tostring(ink(pockets.items[1])), "^Note: %w+ / %w+$") ~= nil
+				and string.find(tostring(ink(pockets.items[1])), "root", 1, true) == nil)
 		SCeroSecSystem.instance = net.system
 	end
 
@@ -17793,13 +17839,20 @@ do
 		local answer = ask("rootnote")
 		eq("one item went into the bag", #inv.items, 1)
 		local item = inv.items[1]
-		eq("and it is a sticky note", item:getFullType(), CeroSecNotes.ITEM)
+		eq("and it is the game's own sheet of paper", item:getFullType(),
+			"Base.SheetPaper2")
 		-- THE EXACT WORDS the drawer would have carried, derived here by the bench out
 		-- of the secret and the premises the way the drawer derives them
 		-- (CeroSecNotes.deskNote): a note that named any other password would be a
-		-- paper that does not open the machine in front of it.
+		-- paper that does not open the machine in front of it. On the PAGE, which is
+		-- where the words are -- the act goes through CeroSecNotes.write like the
+		-- drawer and the pocket, so it gets the same paper and not a shape of its own.
 		eq("with the very words a desk of this premises would carry",
-			item:getName(), wanted)
+			item:seePage(1), wanted)
+		eq("and the row names root and not his password", item:getName(),
+			"Sticky note (root)")
+		eq("and it wears the sticky note's own icon",
+			item:getModData()[CeroSecContent.ICON_KEY], CeroSecNotes.ICON)
 		check("and the custom-name flag, so the game keeps them", item:isCustomName())
 		check("and the fields synced", item.synced > 0)
 		-- And the password on it really is the machine's.
@@ -17833,9 +17886,12 @@ do
 		local answer = ask("staffnote")
 		eq("a second paper went into the bag", #inv.items, before + 1)
 		local item = inv.items[#inv.items]
-		eq("in the pocket's own shape and not the drawer's", item:getName(), wanted)
+		eq("in the pocket's own shape and not the drawer's", item:seePage(1), wanted)
+		eq("and the row names him", item:getName(),
+			string.format(CeroSecNotes.NAME_FORM, login))
 		check("it never names root",
-			string.find(item:getName(), "root", 1, true) == nil)
+			string.find(item:seePage(1), "root", 1, true) == nil
+				and string.find(item:getName(), "root", 1, true) == nil)
 		-- And that login really is on the machine, with that password.
 		local user = CeroSecOS.getUser(state, login)
 		check("the login on it is an account the machine has: " .. tostring(login),

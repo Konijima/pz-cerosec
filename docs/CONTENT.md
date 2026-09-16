@@ -1385,13 +1385,61 @@ The four vanilla-shaped floppies and their loot shares are unchanged.
 
 ## The papers
 
-One item, `CeroSec.StickyNote`, for the two places a password was in 1993. Which
-one it is is in the name the item carries, and nothing else about it differs.
+One sheet of paper, for the two places a password was in 1993. Which one it is is
+on the page; the name in the bag says whose login it is and stops there, so
+finding out the password is opening the note and not skimming a list.
 
-| | |
-| --- | --- |
-| **`Sticky note: root / falcon12`** | in a desk, counter, filing cabinet, locker, dresser, side table or school desk of a premises whose profile has a root password **and in which a computer stands**. **One per premises, at most.** |
-| **`Note: rmiller / thunder07`** | in the pocket of about **one zombie in twenty** killed inside such a premises. His **own** login — never root's, which he was never given. |
+| | inventory row | what the page says |
+| --- | --- | --- |
+| **the drawer** | `Sticky note (root)` | `Sticky note: root / falcon12` — in a desk, counter, filing cabinet, locker, dresser, side table or school desk of a premises whose profile has a root password **and in which a computer stands**. **One per premises, at most.** |
+| **the pocket** | `Sticky note (rmiller)` | `Note: rmiller / thunder07` — in the pocket of about **one zombie in twenty** killed inside such a premises. His **own** login — never root's, which he was never given. |
+
+**And it is real paper.** A player asked what he was supposed to do with a sticky
+note, and he was right to: the old item was a `base:normal` thing whose entire
+content was its name — it could not be read, could not be written on, would not
+burn. A note is `Base.SheetPaper2` now, vanilla's own writable sheet, and the game
+does all three for it without a line of ours:
+
+- **Read it.** `CanBeWrite = true` and the Literature category are what put the
+  note on the inventory menu (`ISInventoryPaneContextMenu:245`, then `:566`), and
+  the window that opens is the game's own page — not the hours-long *Read* of a
+  book, which vanilla deliberately keeps a *writable* Literature out of (`:242`).
+  That was the whole objection the old `base:normal` block was written against,
+  and the engine answers it.
+- **Write over it, and erase it.** With a pen, a pencil or any `WRITE`-tagged
+  thing in the bag the same entry is *Write* (`:567`), and the modal's bin button
+  blanks the page (`ISUIWriteJournal`, `DELETEPAGE`). Nothing here ever calls
+  `setLockedBy`, so a note a survivor finds is a note he can reuse.
+- **Burn it.** `ISCampingMenu.isValidFuel` and `isValidTinder` read
+  `campingFuelCategory` / `campingLightFireCategory` by `getCategory()`, and both
+  carry `Literature = 15/60` of an hour (`server/Camping/camping_fuel.lua`). A
+  note lights a fire and feeds one, like any sheet.
+
+It still **looks** like our sticky note: `CeroSecNotes.ICON` puts the mod's own
+texture on that vanilla sheet per item, through the engine's `customInventoryIcon`
+modData key — the same path a printed floppy's sticker uses, and it is on
+`InventoryItem`, so it is as true of vanilla's paper as of ours.
+
+The words are put on **page 1** with `Literature.addPage(1, text)`, which is the
+call vanilla's own write modal makes. They persist and they travel: `Literature.save`
+writes `customPages` into the item's record (header bit 32, the count at offset 241,
+each value through `GameWindow.WriteString` at 284) and `load` re-keys them 1..n at
+257; and `SyncItemFieldsPacket` carries `customPages`, `customName` and `moddata` as
+fields of one packet, so the single `syncItemFields()` call already at the end of
+`CeroSecNotes.write` sends the page, the name and the icon together to a client who
+opens a drawer the server filled.
+
+**Nothing already in a save changed.** `CeroSec.StickyNote` is still declared in
+`items_cerosec.txt`, unobsoleted and with the shape it was saved with — a saved item
+is a registry id, a type no script declares resolves to nothing, and `Obsolete = true`
+makes `DictionaryInfo.isValid()` answer false, which is the very test that deletes
+the copy. Old notes are not converted either: they carry their password on their name,
+which is all they ever carried, and rewriting an item a player may be holding is a
+bigger risk than leaving a paper the way he found it. Changing that block's `ItemType`
+instead would have been worse than either — `InventoryItem.loadItem` length-prefixes
+the record, so the stream survives, but `Literature.load` would read a page count out
+of bytes a `base:normal` item never wrote and the `catch (Exception)` at offsets 64–82
+nulls the item: the saved note dropped, one line in the console.
 
 Nothing is ever dropped on the floor: a note on the ground is a note under a
 bookshelf nobody will look at.
