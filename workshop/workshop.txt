@@ -46,7 +46,7 @@
 # ---------------------------------------------------------------------------
 version=1
 id=3801094056
-title=CeroSec - Unix Network Terminal
+title=CeroSec - Unix Terminal and Home Automation
 description=[img]https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png[/img]
 description=
 description=[b]The desktop computers of Knox County still work. This one runs Unix, and runs the building.[/b]
