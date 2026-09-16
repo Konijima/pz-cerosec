@@ -132,6 +132,34 @@ with what to look at on the glass.
 Said out loud, release by release, because the compatibility contract only allows
 a new sandbox option to change a world if the release notes say so plainly.
 
+### 0.4.1
+
+**Every machine gains `/usr/local/bin` when it loads.** The three directories
+(`/usr`, `/usr/local`, `/usr/local/bin`, root:root 755) are made on a machine
+already in a save the first time it comes up under this build, and the directory
+is the second entry of the PATH a login hands out. Anything a player had already
+made at one of those three names is left exactly as it is.
+
+**A program left running with `&` is saved from now on, not retroactively.** A
+job that was running when the world was last written under 0.4.0 was not saved
+and does not come back; jobs started under this build survive quitting to the
+menu. A save carrying more jobs than the machine's own ceiling of four allows
+takes them in order and leaves the rest out, and a saved job the load cannot read
+is dropped with a line in the log at error naming the machine's coordinates and
+why. Nothing else on the machine is touched either way.
+
+**Modules land on the floor from now on.** A fixture that goes — picked up,
+sledged, dismantled, broken down — drops the boxes that were on it. Modules on
+fixtures that were already destroyed under an earlier build are gone and this
+does not bring them back.
+
+**The building makes noise.** Doors, windows and curtains the machine works are
+audible to every player in earshot. Nothing about what they do changed, only that
+it can be heard.
+
+**Nothing to redo.** No new sandbox option, no migration a player has to ask for,
+and no account, file, module or disk changes shape.
+
 ### 0.4.0
 
 **The electric strike and the door operator cost more to make.** Each one now
