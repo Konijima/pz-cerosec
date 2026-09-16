@@ -49,7 +49,7 @@ on keep everything. A server spends far less of its minute on the county.
   mails you does not, so a job at four in the morning cannot fill it.
 - Mail crosses the wire: `cat note | rsh gate mail -s Hi bob` leaves a note on
   another machine, because `rsh` now hands the far command what you piped into
-  in -- so `rsh gate wc -l` counts what you feed it.
+  it -- so `rsh gate wc -l` counts what you feed it.
 - `grep` reads a pattern: `grep -c '^From ' mbox` counts a mailbox's messages
   now, where the circumflex was a character to look for. The old, plain
   kind of regular expression -- `^` and `$` for the ends of a line, `.`, `*`,
