@@ -683,9 +683,21 @@ not a thing that lies on its disk, so a second load cannot resurrect a job someb
 stopped and the gate never spends its table budget walking one. That it is read
 *there and nowhere else* is what keeps a client out of it — a state also arrives from
 an item's `movableData`, which on a server is a table a client wrote, and that road
-ends in `resetForPlacement`, which switches the machine off and kills the book.
-`CeroSec.JOB_SAVE_BYTES` and `CeroSec.JOB_SAVE_TABLES` bound what may be written, the
-second against `validate`'s own budget; [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)
+ends in `resetForPlacement`, which switches the machine off and kills the book, and
+the other, `stateFromIsoObject` — a machine adopted from its sprite, which *can* come
+up on — strips the key before anything reads the state.
+
+`CeroSec.JOB_SAVE_BYTES` and `CeroSec.JOB_SAVE_TABLES` bound what may be written, and
+the second is the one that binds: it is what is **left of `validate`'s own table
+budget** once the biggest legal filesystem has been paid for. That budget is
+`8 * (MAX_NODES + FLOPPY_NODES)` = 4352, and the worst legal state is the one where
+every node is a **directory**, because a directory is two tables (the node and its
+`children`) where a file is one — 1090 tables, measured, against the 576 a machine of
+files costs. So 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+1212 unspent. `tests/window_test.lua` builds that worst case and asserts the three
+numbers add up, because a state past the budget is refused and `osState`'s refusal is
+sticky: the failure this bounds is not a slow gate, it is a computer the player cannot
+open again. [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)
 has the table of what survives and what does not.
 
 The pending `shutdown` is a job in the ordinary book and is **not** written with the

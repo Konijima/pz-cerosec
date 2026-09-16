@@ -770,18 +770,27 @@ foot of `SCeroSecJobs.lua`, which carries the whole of it. Reboot, shutdown, a r
 that lost its power and a computer picked up all still kill everything; a save and a
 load do not, because a computer the world saved was never switched off.
 
-What survives, and what does not:
+What survives, and what does not. Every "no" below is one test in
+`CeroSecJobs.jobRefused`, and the word in brackets is the one it answers with — the
+table is the function's rows and not a summary of them, and `jobFromData` asks the
+very same function again on the way in, so a forged book cannot hand back what the
+save would not have written:
 
 | | |
 | --- | --- |
 | a background `&` job | **survives** |
 | a cron or `at` child | **survives** — its output goes to a mailbox on the disk |
 | the foreground job of the machine's own glass | **survives**; the console is saved and the note of which job it was is put back by `SCeroSecObject:consoleState` |
-| a job whose terminal came in over the wire (`job.pty`) | no: `luaObject.ptys` is not saved, so its screen is gone |
-| a job that is **waiting** | no: a pending `shutdown`, a `read` with its question up, a `cu` at the TNC's `cmd:`, a `wait`. Each waits on something a reload has not got |
-| a job holding something the world owns | no: a session at the far end, a dial in flight, a radio link |
-| a pipeline in flight | no, and this one is a fact about the shape: a stage carries a link back to the job that owns the pipeline, which makes the job table a cycle, and `CeroSecOS.validate` refuses a cycle. A book written with one in it would cost the player the whole machine and not one job |
-| a job whose saved shape is bigger than `CeroSec.JOB_SAVE_BYTES` | no, and it is **not killed for it**: it goes on running, it is left out of the save, and the log says so |
+| a job that has ended | no (`over`) — it is about to be reaped |
+| a job that is **waiting** | no (`waiting`): a pending `shutdown`, a `read` with its question up, a `cu` at the TNC's `cmd:`, a `wait`. Each waits on something a reload has not got |
+| a job whose terminal came in over the wire (`job.pty`) | no (`a session`): `luaObject.ptys` is not saved, so its screen is gone |
+| a job holding something the world owns (`job.remote`, `job.dial`, `job.ring`) | no (`the wire`): a session at the far end, a dial in flight, a radio link |
+| a job caught between asking the machine for something and being given it (`job.orders`, `job.spawn`, `job.killReq`) | no (`mid-order`): a `wall` or a `clear` the pass has not carried out, an `&` it has asked for and not been given, a `kill` it has been asked for. Each is half of a handshake the scheduler finishes inside one pass, so there is nothing on the far side of a save for the other half to reach |
+| a job with no program or no frames | no (`no program`) |
+| a job table that is not one, or a frame that is not a table | no (`not a job`, `bad frame`) — neither is a state a running job can be in; both are the shape refusals under everything above |
+| a pipeline in flight | no (`a pipeline`), and this one is a fact about the shape: a stage carries a link back to the job that owns the pipeline, which makes the job table a cycle, and `CeroSecOS.validate` refuses a cycle. A book written with one in it would cost the player the whole machine and not one job. The copy that builds a job's saved shape carries its own cycle test as a second porter (`a cycle`), so a shape nobody has thought of cannot put one in the save either |
+| the prompt's own job when it is **not** the one holding the glass (`job.interactive` without the console naming it) | no (`an orphan prompt`), and this one is `jobToData`'s rather than `jobRefused`'s, because whether a job holds the glass is the console's answer and not the job's: only the job the glass names can be given its shell back, so any other interactive job is a shell nobody would be typing at. The console always hands its prompt to the interactive job it makes, so there is no way to build one of these from the glass — it is a belt under a state the wire cannot reach |
+| a job whose saved shape is bigger than `CeroSec.JOB_SAVE_BYTES`, or that does not fit what is left of `CeroSec.JOB_SAVE_TABLES` | no, and it is **not killed for it**: it goes on running, it is left out of the save, and the log says so |
 
 A **sleep keeps what is left of it**, not the moment it was due: a `sleep 3600`
 started a minute before you quit still has fifty-nine minutes on it when you come

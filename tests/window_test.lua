@@ -16063,6 +16063,56 @@ do
 		eq("and the state it is running on carries none", bench.object.os.jobs, nil)
 		eq("which is the state the item brought", bench.object.os, carried)
 
+		-- AND THE OTHER ROAD AN ITEM'S STATE COMES IN BY, which is the one that had
+		-- no bench: stateFromIsoObject, a machine the save file had no GlobalObject
+		-- for -- a fresh world, or a gos_cerosec.bin somebody deleted -- adopted from
+		-- its sprite. That road reads `on` OFF THE SPRITE, so unlike the placement
+		-- above it can end with an ON machine running on a table an item carried, and
+		-- on a server an item's movableData is a table a client wrote. There is no
+		-- killAll behind it either. So the strip is the whole of the guard.
+		-- A book taken off a machine that really is running one, because the bench
+		-- above has just been put down and is running nothing: a bench that smuggled
+		-- an empty book would prove nothing at all.
+		local source = newBench()
+		source.login("admin")
+		source.script("/home/admin/s.sh", "while true; do sleep 1; done\n")
+		source.enter("sh /home/admin/s.sh &")
+		seconds(source, 1)
+		eq("the source machine is running a daemon", jobCount(source), 1)
+		local smuggled = source.save()
+		check("there is a book to smuggle", smuggled.os.jobs ~= nil)
+
+		local adopted = newBench()
+		adopted.object.on = false
+		local brought = adopted.object:osState()
+		brought.jobs = smuggled.os.jobs
+		local sprite = { modData = { movableData = {
+			[CeroSec.MOVABLE_DATA_KEY] = { os = brought } } } }
+		-- The LIT sprite, because that is what makes this road different: the machine
+		-- comes up on and a book on its state would be a book with a scheduler to
+		-- run it.
+		sprite.getSpriteName = function() return CeroSec.SPRITES_ON["S"] end
+		sprite.hasModData = function() return true end
+		sprite.getModData = function() return sprite.modData end
+		sprite.transmitModData = function() end
+		local sawAdopted = false
+		CeroSecOS.validate = function(st)
+			if type(st) == "table" and st.jobs ~= nil then sawAdopted = true end
+			return realValidate(st)
+		end
+		adopted.object:stateFromIsoObject(sprite)
+		CeroSecOS.validate = realValidate
+		eq("a machine adopted from a lit sprite is on", adopted.object.on, true)
+		eq("and it is running nothing", jobCount(adopted), 0)
+		eq("the book the item carried is off its state", adopted.object.os.jobs, nil)
+		eq("and the gate was never handed it", sawAdopted, false)
+		-- And it still works, which is what a strip must not cost.
+		adopted.object.console = CeroSec.newConsole()
+		adopted.open()
+		adopted.enter("echo alive")
+		adopted.frame()
+		check("the adopted machine answers a line", adopted.painted("alive"))
+
 		-- And the predicates, by the word each refusal answers with: the rules above
 		-- are what decides a job's fate and a bench that only ever saw the two ends
 		-- could not say which rule did it.
@@ -16377,6 +16427,114 @@ do
 			back.fileText("/var/tmp/late"), nil)
 		seconds(back, 20)
 		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late")
+	end
+
+	--
+	-- THE THREE NUMBERS ADD UP, and this bench is what says so
+	--
+	-- CeroSec.JOB_SAVE_TABLES is not a taste: it is what is LEFT of the gate's own
+	-- table budget once the biggest legal filesystem has been paid for. Both of
+	-- those are numbers in comments (CeroSecDefs.lua, and PLAIN_VISITS in
+	-- CeroSecOSState.lua) and the first one written there was wrong by a factor of
+	-- two, because it was measured on a machine whose nodes are FILES. A file is one
+	-- table; a DIRECTORY is two, the node and its `children`. So the worst legal
+	-- state is the one where every node is a directory, and it is BUILT here and
+	-- counted rather than asserted from the paragraph.
+	--
+	-- What it guards is not a slow gate, it is a BRICKED COMPUTER: a state past
+	-- PLAIN_VISITS is refused, and osState's refusal is sticky, so a player who left
+	-- a script running would come back to a machine he cannot open and cannot
+	-- repair.
+	--
+	do
+		-- Counted exactly as checkPlain counts: one per table, with `seen` popped on
+		-- the way out, so a shared subtree is counted once per path to it.
+		local function visits(root)
+			local n, seen = 0, {}
+			local function walk(v)
+				if type(v) ~= "table" then return end
+				if seen[v] then return end
+				seen[v] = true
+				n = n + 1
+				for k, sub in pairs(v) do walk(k); walk(sub) end
+				seen[v] = nil
+			end
+			walk(root)
+			return n
+		end
+
+		-- `want` directories under root, wide enough for MAX_DIR_ENTRIES and shallow
+		-- enough for MAX_DEPTH. Written onto the tables rather than through
+		-- createNode, because what is wanted is the biggest thing the gate will
+		-- ACCEPT -- and the gate is asked below, which is what keeps this a legal
+		-- machine and not a forged one.
+		local function fillDirs(root, want, prefix)
+			local made, frontier, depth = 0, { root }, 1
+			while made < want and depth <= CeroSecOS.MAX_DEPTH do
+				local next_ = {}
+				for f = 1, #frontier do
+					local parent = frontier[f]
+					local room = CeroSecOS.MAX_DIR_ENTRIES - CeroSecOS.countEntries(parent)
+					for _ = 1, room do
+						if made >= want then break end
+						made = made + 1
+						local node = CeroSecOS.newDir("root", 755)
+						parent.children[prefix .. made] = node
+						next_[#next_ + 1] = node
+					end
+					if made >= want then break end
+				end
+				if #next_ == 0 then break end
+				frontier, depth = next_, depth + 1
+			end
+			return made
+		end
+
+		local worstState = CeroSecOS.newState("worst")
+		-- Everything a fresh machine ships with, swept away: nothing but directories,
+		-- with /etc/passwd put back because the gate asks for it by name.
+		worstState.fs = CeroSecOS.newDir("root", 755)
+		local etc = CeroSecOS.newDir("root", 755)
+		worstState.fs.children.etc = etc
+		etc.children.passwd = CeroSecOS.newFile("root", 600,
+			"root:$cs1$aa$" .. string.rep("0", 32) .. ":/root:admin")
+		-- The root, /etc and /etc/passwd are three of the nodes; the rest are dirs.
+		local made = fillDirs(worstState.fs, CeroSecOS.MAX_NODES - 3, "d")
+		eq("the worst machine is at the node ceiling", made + 3, CeroSecOS.MAX_NODES)
+		local floppy = { v = CeroSecOS.FLOPPY_VERSION, fs = CeroSecOS.newDir("root", 755) }
+		local dmade = fillDirs(floppy.fs, CeroSecOS.FLOPPY_NODES - 1, "f")
+		eq("and its floppy is at its own", dmade + 1, CeroSecOS.FLOPPY_NODES)
+		worstState.floppy = floppy
+		worstState.fdtype = CeroSec.FLOPPY_TYPES[1]
+
+		-- LEGAL, and that is the whole point: a belt may only be sized against a
+		-- state the gate would take.
+		local ok, why = CeroSecOS.validate(worstState)
+		eq("the gate takes the worst legal machine there is (" .. tostring(why) .. ")",
+			ok, true)
+
+		local worst = visits(worstState)
+		local budget = 8 * (CeroSecOS.MAX_NODES + CeroSecOS.FLOPPY_NODES)
+		-- Two tables for the book itself: `os.jobs` and the list inside it.
+		local total = worst + CeroSec.JOB_SAVE_TABLES + 2
+		print("  worst legal state " .. worst .. " tables + JOB_SAVE_TABLES "
+			.. CeroSec.JOB_SAVE_TABLES .. " + 2 = " .. total
+			.. " of PLAIN_VISITS " .. budget .. " (" .. (budget - total) .. " to spare)")
+		check("the worst legal state really is dearer than a machine of files: "
+			.. worst, worst > 1000)
+		check("and the three numbers fit the gate's budget with room over: " .. total
+			.. " of " .. budget, total < budget)
+		-- And not merely "fits": a belt that fires on a legal machine is a sticky
+		-- refusal, so the room over has to be room and not a rounding.
+		check("with at least a tenth of the budget unspent",
+			budget - total >= math.floor(budget / 10))
+
+		-- The other half of the pair, and it is what stops JOB_SAVE_TABLES being
+		-- quietly cut to nothing to make the line above pass: the ceiling still has
+		-- to take the daemons this change exists for. The home kit's two together
+		-- were measured at 1209 tables.
+		check("and the book's ceiling still holds the home kit's daemons",
+			CeroSec.JOB_SAVE_TABLES >= 1209)
 	end
 
 	--

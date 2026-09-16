@@ -750,21 +750,40 @@ CeroSec.JOB_CPU_LIMIT_S = 300
 --
 -- The TABLE count is the number that binds, and it is why there is a ceiling at
 -- all. CeroSecOS.validate walks everything in the state against a budget of
--- 8 * (MAX_NODES + FLOPPY_NODES), which is 4352, and a machine with a full floppy
--- in the drive already visits 576 of them: a book of long scripts would put the
--- machine past the GATE on the next load and cost the player his computer for
--- having left a script running. So the book is weighed before it is written and
--- what does not fit is NOT WRITTEN -- never killed, which would be taking a
--- running job away from a player at the moment he quits. A job too big to save
--- dies at the reload exactly as every job did before this change, and the manual
--- says so.
+-- 8 * (MAX_NODES + FLOPPY_NODES), which is 4352, and a book of long scripts would
+-- put the machine past that GATE on the next load and cost the player his whole
+-- computer for having left a script running -- osState's refusal is sticky. So the
+-- book is weighed before it is written and what does not fit is NOT WRITTEN --
+-- never killed, which would be taking a running job away from a player at the
+-- moment he quits. A job too big to save dies at the reload exactly as every job
+-- did before this change, and the manual says so.
 --
--- 3072 tables is what is left of the gate's budget with the fullest filesystem
--- and a floppy under it and seven hundred still to spare, and it takes four of
--- the fattest daemon above (4 x 654) with room over. 24576 bytes is twice that
--- daemon, so one job is never refused for a script anybody would really write.
+-- WHAT THE GATE HAS ALREADY SPENT, measured and not guessed, because the first
+-- number written here was the wrong one. A machine at every ceiling with a full
+-- floppy in the drive is 576 tables when its nodes are FILES -- which is what was
+-- measured -- and **1090** when they are all DIRECTORIES, because a directory is
+-- two tables (the node and its `children`) where a file is one: 512 nodes with 511
+-- of them directories is 1023, a 32-node floppy all directories is 65 with the
+-- disk's own table, and the state itself is the rest. It is an absurd machine --
+-- five hundred empty directories -- and it is legal, which is the only thing a
+-- belt may be sized against.
+--
+-- So: 1090 spent, 2 for `os.jobs` and its list, and 2048 for the book leaves
+-- 1212 of the 4352 still unspent. tests/window_test.lua builds that worst case and
+-- asserts the arithmetic rather than trusting this paragraph.
+--
+-- 2048 and not 3072, which was the first number and left 188: four of the fattest
+-- daemon above no longer all fit (4 x 654 is 2616), three do, and the fourth is
+-- left out of the save with a line in the log. That is the right way round to be
+-- wrong. A daemon left out costs a player a program he can start again; a gate
+-- that fires on a legal machine costs him the computer, and there is no way back
+-- from it. In play it binds on nothing: the home kit's two daemons together are
+-- 1209 tables.
+--
+-- 24576 bytes is twice the fattest daemon, so one job is never refused for the
+-- length of a script anybody would really write.
 CeroSec.JOB_SAVE_BYTES = 24576
-CeroSec.JOB_SAVE_TABLES = 3072
+CeroSec.JOB_SAVE_TABLES = 2048
 
 -- How long a motion sensor holds its contact closed after the last movement it
 -- saw, in seconds of wall clock. Five, and it is the mod's own number and not

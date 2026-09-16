@@ -55,7 +55,12 @@ The suites, in the order they run:
   a pending `shutdown` to bring nothing back at all; and a book spoiled eight
   different ways to load as no jobs, a line in the log and a machine that still
   answers a command. The cycle a pipeline's stage makes is proved against
-  `CeroSecOS.validate` itself rather than asserted.
+  `CeroSecOS.validate` itself rather than asserted, and so is the arithmetic behind
+  `CeroSec.JOB_SAVE_TABLES`: the bench BUILDS the worst legal state there is -- every
+  one of 512 nodes a directory, with a 32-node floppy the same -- checks the gate
+  takes it, counts the tables the gate would spend on it, and asserts that number
+  plus the book's ceiling still leaves a tenth of the budget unspent. A comment
+  carrying that arithmetic was wrong by a factor of two before the bench existed.
 - `window_test.lua` also holds the hardware-module benches: the mockup's own
   building with `SandboxVars.CeroSec.HardwareRequired` turned on, so that a bare
   door, window and light switch are absent from `/dev` until a module is written

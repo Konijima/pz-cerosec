@@ -109,10 +109,23 @@ local PLAIN_DEPTH = 4 * CeroSecOS.MAX_DEPTH
 -- forged state reaches on its way in (SCeroSecObject:osState). The depth bound
 -- does not help, because the shape is shallow; only counting the walk does.
 --
--- Eight times what the two disks can hold between them. A state at every ceiling
--- with a full floppy in the drive visits 576 tables, measured, so this is seven
--- times clear of the largest legal thing there is -- chosen the way PLAIN_DEPTH
--- is, to be nowhere near anything real rather than to be exactly right.
+-- Eight times what the two disks can hold between them, which is 4352.
+--
+-- What the largest legal state really costs was written here as 576 and that was
+-- measured on a machine whose nodes are FILES. A file is one table; a DIRECTORY is
+-- two, the node and its `children`. So the worst legal state is the one where every
+-- node is a directory -- 512 of them with 511 directories is 1023 tables, a 32-node
+-- floppy all directories is 65 with the disk's own table, and the state itself is
+-- the rest: **1090**, measured the same way. Four times clear rather than seven,
+-- and still chosen to be nowhere near anything real: a machine as it ships is 128.
+--
+-- The number matters to more than this walk now. The job book is written into the
+-- state under its own key at a save and the gate counts it on the next load, so
+-- what is left of this budget after the worst filesystem is what bounds the book
+-- (CeroSec.JOB_SAVE_TABLES, and the head of "The book across a save" in
+-- SCeroSecJobs.lua). tests/window_test.lua builds the all-directory worst case and
+-- asserts the three numbers add up, so the arithmetic is guarded and not merely
+-- written down here.
 local PLAIN_VISITS = 8 * (CeroSecOS.MAX_NODES + CeroSecOS.FLOPPY_NODES)
 
 local function checkPlain(value, seen, where, depth, budget)
