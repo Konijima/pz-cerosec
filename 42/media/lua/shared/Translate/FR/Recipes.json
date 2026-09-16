@@ -1,0 +1,13 @@
+{
+    "MakeCeroSecMagneticContact": "Fabriquer un contact magnétique",
+    "MakeCeroSecRelay": "Fabriquer un relais",
+    "MakeCeroSecElectricStrike": "Fabriquer une gâche électrique",
+    "MakeCeroSecDoorOperator": "Fabriquer un opérateur de porte",
+    "MakeCeroSecCurtainMotor": "Fabriquer un moteur de rideau",
+    "MakeCeroSecApplianceSwitch": "Fabriquer un contacteur d'appareil",
+    "MakeCeroSecWindowOperator": "Fabriquer un opérateur de fenêtre",
+    "MakeCeroSecGeneratorSwitch": "Fabriquer un inverseur de groupe",
+    "MakeCeroSecTunerControl": "Fabriquer une commande de tuner",
+    "DismantleCeroSecMotorAppliance": "Démonter un appareil pour son moteur",
+    "DismantleCeroSecMotorCDPlayer": "Démonter un lecteur CD pour son moteur"
+}

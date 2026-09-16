@@ -3791,6 +3791,62 @@ do
 	for n = 1, #names do
 		check("the guide names the recipe " .. names[n], taught[names[n]] == true)
 	end
+
+	-- THE NAME A PLAYER READS, in both languages. A craftRecipe has no
+	-- DisplayName key of its own: the menu asks Translator.getRecipeName(name)
+	-- (ISInventoryPaneContextMenu.lua:1236-1238), and that is a lookup in the
+	-- `recipe` map with the RAW recipe name as the key -- no prefix. When the
+	-- lookup misses, the bytecode returns the key it was handed rather than
+	-- nothing, so the menu prints `DismantleCeroSecMotorCDPlayer` and no line is
+	-- logged anywhere:
+	--
+	--   zombie.core.Translator.getRecipeName(String)
+	--      0: getstatic  Field recipe:Ljava/util/Map;
+	--      4: Map.get; 14: ifnull 24; 18: String.isEmpty; 21: ifeq 63
+	--     61: aload_0      <- the KEY
+	--     62: areturn
+	--     63: aload_1      <- the translation
+	--     64: areturn
+	--
+	-- The map is filled from the file called `Recipes` (Translator$1, the BY_NAME
+	-- map: `put("Recipes", Translator.recipe)`), and lambda$loadFiles$1 calls
+	-- tryFillMapFromFile then tryFillMapFromMods for every BY_NAME entry, which is
+	-- how a mod's own Translate/<LANG>/Recipes.json lands in the same map.
+	--
+	-- Both directions. A recipe with no key prints its name at a player; a key
+	-- with no recipe is a rename that left the translation behind, and nothing in
+	-- the game would say so either.
+	local declared = {}
+	for n = 1, #names do declared[names[n]] = true end
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/Recipes.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+
+		local keys = {}
+		local keyCount = 0
+		for key in string.gmatch(strings, '"([%w_]+)"%s*:') do
+			keys[key] = true
+			keyCount = keyCount + 1
+		end
+		eq(lang .. "/Recipes.json holds one name per recipe and no more",
+			keyCount, #names)
+		for n = 1, #names do
+			check(lang .. "/Recipes.json names the recipe " .. names[n],
+				keys[names[n]] == true)
+			-- And it says something: an empty value is a miss too, by the same
+			-- bytecode -- isEmpty at offset 18 falls through to `return the key`.
+			local said = string.match(strings,
+				'"' .. names[n] .. '"%s*:%s*"([^"]*)"')
+			check(lang .. "'s name for " .. names[n] .. " is not empty",
+				said ~= nil and said ~= "")
+		end
+		for key in pairs(keys) do
+			check(lang .. "/Recipes.json's key " .. key .. " is a recipe",
+				declared[key] == true)
+		end
+	end
 end
 
 --

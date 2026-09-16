@@ -323,6 +323,64 @@ in `media/scripts/generated/items/`:
 `Base.Electronics`, `Base.Magnet` and `Base.CopperWire` do **not** exist in B42
 and are in none of these recipes.
 
+### 8a. The name a player reads
+
+A `craftRecipe` carries no display name of its own. The menu asks
+`Translator.getRecipeName(name)`
+(`media/lua/client/ISUI/ISInventoryPaneContextMenu.lua:1236-1238`), and that is a
+lookup in one map with the **raw recipe name** as the key — no `Recipe_` prefix,
+no module prefix:
+
+```
+zombie.core.Translator.getRecipeName(java.lang.String)
+   0: getstatic  #101  // Field recipe:Ljava/util/Map;
+   4: Map.get
+  14: ifnull 24
+  18: String.isEmpty
+  21: ifeq 63
+  61: aload_0       <- the KEY it was handed
+  62: areturn
+  63: aload_1       <- the translation
+  64: areturn
+```
+
+Offsets 61-62 are the whole reason this matters: a miss, **or an empty string**,
+returns the key itself and logs nothing, so the right-click menu prints
+`DismantleCeroSecMotorCDPlayer` at the player and the game looks like it is
+working. That is what shipped before the names were written.
+
+The map is the one the file called `Recipes` fills. `Translator$1` is the
+`BY_NAME` map and its body puts them together:
+
+```
+  24: aload_0
+  25: ldc  #26   // String Recipes
+  27: getstatic  #28  // Field zombie/core/Translator.recipe:Ljava/util/Map;
+  30: put
+  35: ldc  #31   // String RecipeGroups
+  37: getstatic  #33  // Field zombie/core/Translator.recipeGroups:Ljava/util/Map;
+```
+
+and `Translator.lambda$loadFiles$1` calls `tryFillMapFromFile` and then
+`tryFillMapFromMods` for every `BY_NAME` entry (offsets 20 and 26), which is how
+a mod's own `Translate/<LANG>/Recipes.json` lands in the same map as vanilla's.
+So the file is `42/media/lua/shared/Translate/<LANG>/Recipes.json` and the key is
+the bare name, exactly as vanilla writes it:
+
+```
+    "CraftMakeshiftRadio": "Make Makeshift Radio",
+    "DismantleElectronics": "Dismantle Simple Electronic Item",
+    "DismantleMiscElectronics": "Dismantle Electronic Item",
+```
+
+`RecipeGroups.json` is a different map (`getRecipeGroupName`, the same
+return-the-key shape) and vanilla's whole English file is one line,
+`"RecipeGroup_OpenBox"`. Nothing this mod writes is a recipe group: `category =
+Electrical` is the crafting tab, not a group, so there is no file to add.
+
+Forty-seven of vanilla's recipe names begin `Dismantle` and not one contains
+`Salvage`, so the two motor recipes are `Dismantle …` too.
+
 ## 9. The loot lists
 
 Checked by name against `media/lua/server/Items/ProceduralDistributions.lua`:

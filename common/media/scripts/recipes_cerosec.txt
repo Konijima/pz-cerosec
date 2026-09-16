@@ -38,7 +38,13 @@ module CeroSec
          read (items_cerosec.txt, and the engine does the rest:
          IsoGameCharacter.ReadLiterature walks the item's LearnedRecipes and
          calls learnRecipe on each). The recipe NAMES below are therefore load
-         bearing twice over: the guide names them back.
+         bearing three times over: the guide names them back, and each one is
+         also the KEY of the line a player reads in the menu, in
+         42/media/lua/shared/Translate/<LANG>/Recipes.json. There is no
+         DisplayName on a craftRecipe: Translator.getRecipeName returns the key
+         it was handed when the lookup misses, so a name written in one place
+         and not the other prints the identifier on the glass and logs nothing
+         (docs/notes/modules-proofs.md, 8a, with the bytecode).
 
        - AutoLearnAll six levels above SkillRequired, which is vanilla's own
          shape for a recipe a magazine teaches and not a departure from it. The

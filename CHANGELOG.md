@@ -8,6 +8,12 @@ date.
 
 ## Unreleased
 
+- **The crafting recipes have names.** Every one of them used to show its internal
+  name in the menu -- `DismantleCeroSecMotorCDPlayer` beside vanilla's tidy
+  "Dismantle Electronic Item". They now read the way the rest of the game reads:
+  "Make Curtain Motor", "Make Door Operator", "Dismantle Appliance for Motor",
+  "Dismantle CD Player for Motor", in English and in French.
+
 - **Sticky notes are real paper now: read them, write on them with a pen, burn
   them.** A note used to be an item whose only content was its name, which is why
   nobody could work out what it was for. It is a sheet of the game's own paper: the
