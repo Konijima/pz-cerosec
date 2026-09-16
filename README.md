@@ -7,9 +7,11 @@
 A small 1993 Unix on the vanilla desktop computers of Knox County. Switch one on,
 sit down at it, and a green 60x20 terminal opens on a BIOS line and a login
 prompt. Behind it are files, permissions, accounts, an editor, shell scripts,
-cron, the doors and lights of the building under `/dev` once somebody has screwed
-a module onto them, and three ways off the machine: coax to the rest of the
-premises, a modem to the county, a radio past both.
+cron, three ways off the machine -- coax to the rest of the premises, a modem to
+the county, a radio past both -- and the building itself under `/dev` once
+somebody has screwed a module onto it: doors, lights, curtains, windows, the
+oven, the washer, the generator, the television, worked by hand, on a schedule or
+off a sensor.
 
 And the county had computers in it already. A machine nobody has switched on yet
 comes up as somebody's: his accounts, his files, a week of his log, and his
@@ -50,11 +52,41 @@ Then enable **CeroSec** in the mod list.
    password is on a sticky note in a drawer of that place, a staff login
    sometimes on a paper in a zombie's pocket.
 4. `dev` lists what the machine can reach; `help` lists the commands. A door,
-   window or light is only on that list once somebody has screwed a CeroSec
-   module to it — right-click the fixture itself, **CeroSec hardware** — unless
-   the sandbox option `CeroSec.HardwareRequired` is turned off.
+   window, light, curtain, appliance, generator or set is only on that list once
+   somebody has screwed a CeroSec module to it — right-click the fixture itself,
+   **CeroSec hardware** — unless the sandbox option `CeroSec.HardwareRequired` is
+   turned off.
 5. Click the window's close button, or type `exit`, to walk away — the screen
    keeps running and is exactly as you left it next time.
+
+## Automate the building
+
+Nine screw-on modules turn a fixture into a device: a magnetic contact, a relay,
+an electric strike, a door operator, a curtain motor, a window operator, an
+appliance switch, a generator switch and a tuner control. A device is a file, so
+anything that can write a file can work it: a word at the prompt, a script, a
+crontab line.
+
+```
+echo close > /dev/door0
+crontab -e
+0 7 * * * sh /usr/local/bin/curtains.sh auto
+0 20 * * * sh /usr/local/bin/curtains.sh auto
+```
+
+The six programs those lines call live on a printed floppy, `CeroSec HOME 1.0`,
+found in the world like any other disk: `autoclose.sh` (a door that shuts itself
+five seconds after somebody walked through), `curtains.sh` (dawn and dusk, both
+crontab lines the same line), `tvguide.sh` (the set on for its programme and off
+when it ends), `wake.sh` (the radio and every light in the morning), `alarm.sh`
+(the window somebody opened, named on every screen in the building) and
+`genwatch.sh` (the generator's tank, one letter to root and not sixty an hour).
+
+A module goes on from inside the building, with the fixture at rest, and the four
+that move something want a Small Motor. Knox County never sold one, so it comes
+out of a hair dryer. A window operator throws the catch on its way past: in a
+house whose alarm came back with the power, opening a window rings it. See
+[docs/PLAYERS.md](docs/PLAYERS.md).
 
 ## Documentation
 

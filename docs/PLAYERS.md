@@ -396,8 +396,9 @@ The offset is the column that tells two devices apart when the room names do
 not: tiles east or west, tiles north or south, `0 0` for the computer's own
 square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
 and then by number,
-so `light2` comes before `light10`; in a big building `dev door`, `dev light`,
-`dev lock`, `dev sensor` and `dev win` cut it down to one kind. One id reads that one back, an id and a word
+so `light2` comes before `light10`; in a big building a kind's own name --
+`dev door`, `dev light`, `dev curtain` -- cuts it down to that kind. One id reads
+that one back, an id and a word
 works it and answers with the state read back afterwards, and `toggle` is
 whichever of the pair it is not in now:
 
@@ -440,9 +441,12 @@ cat /dev/light0
 echo off > /dev/light0
 ```
 
-`light` takes `on` and `off`; `lock` and `win` take `lock` and `unlock`; `door`
-takes `open` and `close`. No kind has heard of another's words, so anything else
-is `light0: invalid value`. A device answers in its own name, not the
+`light`, `stove`, `washer`, `gen`, `tv` and `rx` take `on` and `off`; `lock` and
+`win` take `lock` and `unlock`; `door`, `window` and `curtain` take `open` and
+`close`; a `tv` or an `rx` takes one thing more, `channel <number>`, which is the
+only value on this machine that carries a number. No kind has heard of another's
+words, so anything else is `light0: invalid value`. A device answers in its own
+name, not the
 command's:
 
 | line | what happened |
@@ -461,7 +465,8 @@ command's:
 | `sensor0: invalid value` | a sensor takes no word at all: every write to one says this |
 
 `dev`'s own two are a command's and are signed like one: `dev: <word>: unknown
-kind` (the kinds are `door`, `light`, `lock`, `sensor` and `win`) and
+kind` (the kinds are `curtain`, `door`, `floppy`, `gen`, `light`, `lock`,
+`radio`, `rx`, `sensor`, `stove`, `tv`, `washer`, `win` and `window`) and
 `dev: <id>: no such device`
 for a name no device of the machine's answers to at all.
 
@@ -490,15 +495,20 @@ walk over and open it.
 
 Nothing is a device because of what it is. It is a device because somebody went
 up to it with a screwdriver and a box, and the sandbox option
-`CeroSec.HardwareRequired` — **on** by default — is what says so. Four boxes,
-each bought with one level of Electricity and one gesture:
+`CeroSec.HardwareRequired` — **on** by default — is what says so. Nine boxes,
+each bought with a level of Electricity and one gesture:
 
-| module | goes on | what the machine gets |
-| --- | --- | --- |
-| `CeroSec.MagneticContact` | a door **or** a window | that `doorN` or `winN`, **read-only** |
-| `CeroSec.Relay` | a light switch | `lightN`, on and off |
-| `CeroSec.ElectricStrike` | a door a lock bites on | `lockN`, lock and unlock |
-| `CeroSec.DoorOperator` | a door | `doorN`, open and close |
+| module | goes on | what the machine gets | level |
+| --- | --- | --- | --- |
+| `CeroSec.MagneticContact` | a door **or** a window | that `doorN` or `winN`, **read-only** | 1 |
+| `CeroSec.Relay` | a light switch | `lightN`, on and off | 1 |
+| `CeroSec.ElectricStrike` | a door a lock bites on | `lockN`, lock and unlock | 2 |
+| `CeroSec.DoorOperator` | a door, not a garage or a double leaf | `doorN`, open and close | 3 |
+| `CeroSec.CurtainMotor` | a curtain, or a door with a sheet over it | `curtainN`, open and close | 2 |
+| `CeroSec.WindowOperator` | a window | `windowN`, open and close | 3 |
+| `CeroSec.ApplianceSwitch` | an oven, a microwave, a coffee machine, a washer, a dryer | `stoveN` or `washerN`, on and off | 2 |
+| `CeroSec.GeneratorSwitch` | a generator | `genN`, on and off, and it reads the tank | 3 |
+| `CeroSec.TunerControl` | a television or a radio set | `tvN` or `rxN`, on, off and the channel | 2 |
 
 So a door with only a contact on it is a `doorN` you can `cat` and cannot write:
 its mode is `cr--r-----`, everybody but root is stopped by the mode, and root is
@@ -506,22 +516,29 @@ stopped by the device — `door1: operation not supported`, which is `write(2)`'
 own `EOPNOTSUPP` in this machine's lower case. Put an operator on that same door
 and the same `doorN` opens; add a strike and the `lockN` appears beside it.
 
-**A window takes a contact and nothing else.** There is no window actuator in
-this mod because there is none in the game: the only call that moves a sash is
-`IsoWindow.ToggleWindow(IsoGameCharacter)` and it wants a survivor standing at
-it. So with the option on, a window is a thing the machine watches and never
-works — which also means the `win` device's `lock` and `unlock` words only ever
-do anything with the option **off**. Watching is what a magnetic contact is for:
-a `winN` reads `smashed`, `barricaded`, `open`, `locked` or `unlocked`, in that
-order — the glass, then the sash, then the catch — so `open` beats the latch the
-way a door's does and `unlocked` means shut. `dev win0 toggle` on an open window
-answers `win0: cannot toggle`: its two words are `lock` and `unlock`, and there
-is nothing that undoes a sash.
+**A window is two devices, and they are two boxes.** `winN` is the magnetic
+contact and it reads the latch: `smashed`, `barricaded`, `open`, `locked` or
+`unlocked`, in that order -- the glass, then the sash, then the catch -- so `open`
+beats the latch the way a door's does and `unlocked` means shut. A contact senses
+and only senses, so `winN` is read-only, and `dev win0 toggle` answers `win0:
+cannot toggle`. `windowN` is the **window operator**, and it moves the sash with a
+door's two words, `open` and `close`.
 
-**Fitting one.** Right-click the door, window or light switch itself — not the
-computer — and take **CeroSec hardware**. It asks for the module in your bag, a
-`Base.Screwdriver`, and Electricity at the module's level: a contact or a relay
-at **1**, a strike at **2**, an operator at **3**. The job is a few seconds,
+**And a window operator sets off a house alarm.** Opening a window is opening a
+window: the motor throws the catch on its way past, and in a house whose alarm was
+still armed when the power came back it rings, every time, exactly as a hand
+through the glass would. `0 6 * * * echo open > /dev/window0` in a house nobody has
+cleared is a horde at six in the morning. Closing one is silent. A boarded window
+is refused before the motor turns (`window0: barricaded`), and a sealed one
+answers `window0: sealed`.
+
+**Fitting one.** Right-click the fixture itself -- the door, window, light switch,
+curtain, oven, washer, generator or set, not the computer -- and take **CeroSec
+hardware**. It asks for the module in your bag, a `Base.Screwdriver`, and
+Electricity at the module's level, which is the column in the table above: **1**
+for a contact or a relay, **2** for a strike, a curtain motor, an appliance switch
+or a tuner control, **3** for a door operator, a window operator or a generator
+switch. The job is a few seconds,
 shorter the better an electrician you are, and pays a little Electricity. Remove
 gives the box back whole.
 
@@ -586,22 +603,26 @@ of an electronics shop, in a warehouse crate, a tool shop, a garage and a crate 
 tools: a contact is the common one and an operator is eight times rarer, in every
 list.
 
-Or **built**, once you have read the book. The four recipes are not something an
+Or **built**, once you have read the book. The recipes are not something an
 electrician works out at the bench: they are printed in the **CeroSec Field
 Wiring Guide** (`CeroSec.WiringGuide`), a trade magazine with the diagrams and the
-parts lists for all four in it. It turns up where the game's own electronics
+parts lists for all nine in it, and the two that take a **Small Motor** out of
+something that already has one -- a hair dryer, a pair of sheep shears, a CD player
+or a blower fan -- because Knox County never sold a motor on its own. It turns up
+where the game's own electronics
 magazines turn up, and at the same rates — likeliest on an **electronics shop's
 magazine rack**, then a bookshop, a tool shop and an electrician's van, then a
 mixed rack, a post office's mail, a warehouse crate of magazines and a library.
-Right-click it, **Read**, and the four appear in the **Electrical** tab.
+Right-click it, **Read**, and the eleven appear in the **Electrical** tab.
 
-After that the *skill* still gates the craft, exactly as it gates the fitting:
-Electricity 1 for a contact or a relay, 2 for a strike, 3 for an operator, out of
-electronics scrap, wire, screws, sheet metal and — for the operator — a box of
-engine parts. A very experienced electrician does eventually work them out
-unaided (Electricity 7, 7, 8 and 9), which is what the game does with every
-magazine recipe it ships: the magazine is the way you get there early, not the
-only way.
+After that the *skill* still gates the craft, exactly as it gates the fitting, and
+at the same level: out of electronics scrap, wire, screws and sheet metal, plus a
+**Small Motor** and a receiver for the four that move a piece of metal or of cloth
+-- the strike, the door operator, the curtain motor and the window operator -- and
+a radio receiver for the tuner control, which has nothing in it that turns. A very experienced electrician does eventually work
+them out unaided, six levels above the level that fits them, which is what the game
+does with every magazine recipe it ships: the magazine is the way you get there
+early, not the only way.
 
 **Some buildings are already wired.** About one shop, bank, school, clinic, station
 or office in three had all this done before the outbreak, and you will find its relays
@@ -1458,7 +1479,7 @@ files on the disk are and how to run them.
     admin@acct-04-11:~$ mount /dev/fd0 /mnt
     admin@acct-04-11:~$ cat /mnt/README.TXT
 
-There are ten labels:
+There are eleven labels:
 
 | | |
 | --- | --- |
@@ -1471,6 +1492,7 @@ There are ten labels:
 | **LEDGER** | a small shop's books, kept in whole cents because the machine adds whole numbers: a line a day, who the shop buys from, and `total.sh` to add a column up. `sh /mnt/total.sh /mnt/SALES.TXT 3` is the week |
 | **PERSONAL** | somebody's own disk, and none of it is any use to you: letters never sent, a list of things he was going to do, his mother's recipe, a poem he asks you not to laugh at, and four telephone numbers |
 | **BBS** | somebody's kit for running a board of his own: five programs and a README. See *Running a board of your own*, below |
+| **HOME AUTOMATION** | the home kit, labelled `CeroSec HOME 1.0`: six programs that run the building for you, and a README saying how to copy them and what to put in a crontab. See *Letting the machine run the building*, below |
 | **RADIO LOG** | a ham club's packet log — every station the machine heard over the week before, when the nets are, and the station's own callsign — with a README on `cu -l /dev/radio0` and why `MHEARD` inside the box says less than the file does |
 
 **The four disks that are somebody's own writing are written three ways.** `BACKUP`,
@@ -1524,6 +1546,32 @@ README says so rather than pretending otherwise. Keep the mail with a line in ro
 crontab and a floppy left in the drive:
 
     0 3 * * * tar cf /mnt/backup /var/mail
+
+### Letting the machine run the building
+
+The `HOME AUTOMATION` floppy -- its printed label reads `CeroSec HOME 1.0` -- is six
+programs and a README, and it is the disk for a base you have wired. Copy them
+where you keep your own, and either start one in the background or give it a
+crontab line:
+
+    admin@house-04-11:~$ mount /dev/fd0 /mnt
+    admin@house-04-11:~$ sudo cp /mnt/curtains.sh /usr/local/bin
+    admin@house-04-11:~$ crontab -e
+    0 7 * * * sh /usr/local/bin/curtains.sh auto
+    0 20 * * * sh /usr/local/bin/curtains.sh auto
+
+| program | what it does |
+| --- | --- |
+| `autoclose.sh start [<secs>] \| stop` | a daemon: every `doorN` the machine can reach, once a second, and one that has read `open` for five rounds is pulled to through its operator. Start it with an `&` and stop it by name |
+| `curtains.sh open\|close\|auto [dawn dusk]` | every `curtainN`. `auto` reads the hour and works out which way, dawn at 7 and dusk at 20 unless you say otherwise, so both crontab lines are the **same line** |
+| `tvguide.sh [<channel>]` | one crontab line a minute: it tunes the set, switches it on while the schedule says something is airing, and off when it is not. 203 is Life and Living |
+| `wake.sh now \| HH:MM` | `rx0` and every `lightN` on. With a time it puts itself in the `at` queue |
+| `alarm.sh start \| stop` | a daemon: every door and window contact, and one that reads `open` is named on every screen in the building with `wall`, and answered by flashing the lights three times |
+| `genwatch.sh [<percent>]` | one crontab line a minute: `gen0`'s fuel against a threshold, and under it one `wall` and one letter to root. Once, not sixty times an hour -- it never starts the generator, which is your decision and your noise |
+
+None of the six names a device or a file of its own, so a copy off somebody else's
+machine works on your base once it is wired. Without the hardware they say so and
+stop: `curtains.sh: no curtain in /dev`, `tvguide.sh: no tv0 in /dev`.
 
 **Programs somebody wrote.** Some machines have a script or two in their owner's
 `~/bin`, which is already on your path once you are logged in as him. They are
