@@ -1,5 +1,5 @@
 --
--- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 20.
+-- A CeroSec save, photographed. STATE_VERSION 2, SYSTEM_VERSION 21.
 --
 -- Written by tools/capture-fixture.sh and never by hand: it is what a build
 -- really wrote, and tests/migrate_test.lua walks it up to whatever the code is
@@ -813,6 +813,29 @@ return {
 					owner = "root",
 					type = "dir",
 				},
+				usr = {
+					children = {
+						["local"] = {
+							children = {
+								bin = {
+									children = {},
+									group = "root",
+									mode = 755,
+									owner = "root",
+									type = "dir",
+								},
+							},
+							group = "root",
+							mode = 755,
+							owner = "root",
+							type = "dir",
+						},
+					},
+					group = "root",
+					mode = 755,
+					owner = "root",
+					type = "dir",
+				},
 				var = {
 					children = {
 						log = {
@@ -889,9 +912,9 @@ return {
 			pz = "Coffee Shop",
 		},
 		sessions = {},
-		sysv = 20,
+		sysv = 21,
 		v = 2,
 	},
-	sysv = 20,
+	sysv = 21,
 	v = 2,
 }
