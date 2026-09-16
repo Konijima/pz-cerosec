@@ -536,13 +536,46 @@ local STATE_AFTER = {
 	on = "on", off = "off",
 }
 
+-- And the REST OF THE LINE, for the two kinds that have one: a generator prints
+-- `on fuel 62 condition 80 connected` and a tuned set prints `on channel 203
+-- airing 1080-1440`, both as the `detail` beside the state (CeroSecOS.devText).
+-- A stub with no detail on it would be a machine where `cat /dev/gen0` says one
+-- word, and the two programs that read a FIELD of that line -- genwatch.sh and
+-- tvguide.sh -- would be proved against a device that does not exist.
+--
+-- A `channel <n>` write moves the detail and not the state, which is what the
+-- world does with it (SCeroSecDevices.act hands detailOf back beside the state),
+-- and it is the whole reason tvguide.sh may tune and then read.
+-- The first {word} in a text that nothing filled in, or nil. `${word}` is a
+-- shell's own parameter expansion and is not one: a program on a disk may carry
+-- it, and a placeholder never has a dollar in front of it
+-- (CeroSecContent.PLACEHOLDERS, put in by fillNames).
+local function placeholderLeft(text)
+	text = text or ""
+	for at, found in string.gmatch(text, "()({[A-Za-z_][A-Za-z0-9_]*})") do
+		if at == 1 or string.sub(text, at - 1, at - 1) ~= "$" then return found end
+	end
+	return nil
+end
+
+do
+	-- The guard above is narrower than "no brace at all", so it is asked of a
+	-- string that really carries one. Both directions: the shape a bug makes, and
+	-- the two shapes a program legitimately makes.
+	eq("a leftover placeholder is found", placeholderLeft("ask {staff3} about it"),
+		"{staff3}")
+	eq("and so is one on its own", placeholderLeft("{owner}"), "{owner}")
+	eq("a shell parameter is not one", placeholderLeft("echo ${HOME}/bin"), nil)
+	eq("nor is a function body", placeholderLeft("f() {\n  echo hi\n}"), nil)
+end
+
 local function devicesFor(needs)
 	local entries = {}
 	if type(needs) == "table" and type(needs.devices) == "table" then
 		for i = 1, #needs.devices do
 			local e = needs.devices[i]
 			entries[#entries + 1] = { id = e.id, kind = e.kind, desc = e.desc or "",
-				side = "", pos = "0 0", state = e.state or "off" }
+				side = "", pos = "0 0", state = e.state or "off", detail = e.detail }
 		end
 	end
 	local byId = {}
@@ -553,7 +586,7 @@ local function devicesFor(needs)
 		for i = 1, #entries do
 			local e = entries[i]
 			out[i] = { id = e.id, kind = e.kind, desc = e.desc, side = e.side,
-				pos = e.pos, state = e.state }
+				pos = e.pos, state = e.state, detail = e.detail }
 		end
 		return out
 	end
@@ -561,8 +594,20 @@ local function devicesFor(needs)
 		devices.writes[#devices.writes + 1] = id .. "=" .. value
 		local e = byId[id]
 		if e == nil then return false, "no such device" end
+		local channel = string.match(value, "^channel (%d+)$")
+		if channel ~= nil then
+			-- The schedule the dial lands on is the caller's to declare: a stub that
+			-- invented one would be a bench inventing a broadcast. What is kept is
+			-- the schedule words the entry came with, under the new number, so a
+			-- program that tunes and re-reads gets a line about the channel it asked
+			-- for.
+			local tail = string.match(e.detail or "", "^channel %d+ (.*)$")
+			e.detail = "channel " .. channel
+			if tail ~= nil and tail ~= "" then e.detail = e.detail .. " " .. tail end
+			return true, nil, e.state, e.detail
+		end
 		e.state = STATE_AFTER[value] or value
-		return true, nil, e.state
+		return true, nil, e.state, e.detail
 	end
 	devices.chmod = function() end
 	return devices
@@ -2505,6 +2550,10 @@ do
 	for name in pairs(CeroSecContent.SCRIPTS) do names[#names + 1] = name end
 	table.sort(names)
 	check("the library has scripts in it", #names > 0)
+	-- How many entries took the `optional` branch below, counted so that the branch
+	-- cannot quietly become the rule: an assertion of a COUNT is what says a flag is
+	-- still the exception it was introduced as.
+	optionalSeen = 0
 
 	for i = 1, #names do
 		local name = names[i]
@@ -2596,19 +2645,42 @@ do
 				string.find(table.concat(bareLines, " "), "syntax error", 1, true) == nil)
 			check(name .. " with no arguments is not a nil call",
 				string.find(table.concat(bareLines, " "), "attempt to", 1, true) == nil)
-			-- A script run with no arguments must SAY SO and must not claim success:
-			-- unconditional, because written as "if it failed, it must print usage" the
-			-- requirement quietly stops being checked the day a script starts exiting 0
-			-- with nothing to do.
-			check(name .. " with no arguments does not claim success", not bare)
-			check(name .. " with no arguments prints a usage line",
-				string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
+			if script.optional then
+				-- A SCRIPT WHOSE ARGUMENT HAS A DEFAULT. The rule below is the right
+				-- rule for a script that cannot do anything without being told what to
+				-- work on, and the wrong one for `tvguide.sh` -- whose default channel
+				-- is the whole of what the disk is about -- so such an entry declares
+				-- `optional` and is held to the OTHER half of the same requirement:
+				-- run bare it does the default and it WORKS. Written as its own branch
+				-- rather than as an exemption, because "it may fail" would let a
+				-- program that silently does nothing past.
+				optionalSeen = optionalSeen + 1
+				check(name .. " with no arguments takes its default: "
+					.. table.concat(bareLines, " / "), bare)
+				-- And the flag is cross-checked against the program's own usage line:
+				-- a script that declared a default while telling a survivor the
+				-- argument was compulsory would be two answers to one question.
+				local usage = string.match(script.text, "\n# usage:([^\n]*)")
+				check(name .. " says in its usage line that the argument is optional ("
+					.. tostring(usage) .. ")",
+					usage ~= nil and string.find(usage, "[<", 1, true) ~= nil)
+			else
+				-- A script run with no arguments must SAY SO and must not claim success:
+				-- unconditional, because written as "if it failed, it must print usage" the
+				-- requirement quietly stops being checked the day a script starts exiting 0
+				-- with nothing to do.
+				check(name .. " with no arguments does not claim success", not bare)
+				check(name .. " with no arguments prints a usage line",
+					string.find(bareLines[1] or "", "usage", 1, true) ~= nil)
+			end
 		end
 
 		-- The machine is still a machine afterwards.
 		local vok, vwhy = CeroSecOS.validate(state)
 		check(name .. " leaves a machine that still boots: " .. tostring(vwhy), vok)
 	end
+
+	eq("and only two scripts in the library have a default argument", optionalSeen, 2)
 
 	-- lights.sh, by name, because what it is FOR is the one thing the loop above
 	-- cannot ask: that it actually reached the devices it was given.
@@ -2930,6 +3002,208 @@ do
 			"syntax error", "attempt to", "no such file" }) do
 		check("nothing the board printed says \"" .. bad .. "\"",
 			string.find(whole, bad, 1, true) == nil)
+	end
+end
+
+--
+-- 6c. THE HOME KIT: what it says when the building is not there
+--
+-- Section 6 runs every script with exactly the devices it declared, which is the
+-- building working. The other half is a survivor who copied the disk onto a
+-- machine with nothing wired to it, and it is the half a player meets first: a
+-- program that answered a refusal from the shell -- or worse, tried to do
+-- arithmetic on one -- would be a program that looks broken on the very machine
+-- somebody is learning it on.
+--
+-- The devices are stubbed EMPTY here, so /dev is a real empty directory and not a
+-- missing one, and every one of the six is held to three things: it says
+-- something, it says nothing about a syntax error or a nil call, and it does not
+-- claim success.
+--
+do
+	local HOME_KIT = { "autoclose.sh", "curtains.sh", "tvguide.sh", "wake.sh",
+		"alarm.sh", "genwatch.sh" }
+	-- What each one is run WITH, because the interesting run is the one that gets
+	-- as far as looking for a device: `autoclose.sh stop` and `alarm.sh stop` never
+	-- do, so the two daemons are asked the question their own loop would ask.
+	local WITH = {
+		["autoclose.sh"] = "start 1",
+		["curtains.sh"] = "open",
+		["tvguide.sh"] = "203",
+		["wake.sh"] = "now",
+		["alarm.sh"] = "start",
+		["genwatch.sh"] = "10",
+	}
+	-- And which of them must REFUSE rather than merely say so. wake.sh is the one
+	-- that may not: it switches on whatever it finds and a morning with no lights
+	-- in it is a morning with nothing to switch, which is not an error -- and
+	-- autoclose.sh and alarm.sh are daemons that would sit there watching an empty
+	-- building, which is also not an error. Written as a table rather than as a
+	-- blanket rule, because "every program refuses" was the first draft and it is
+	-- not true of a program whose job is to watch.
+	local REFUSES = { ["curtains.sh"] = true, ["tvguide.sh"] = true,
+		["genwatch.sh"] = true }
+
+	for i = 1, #HOME_KIT do
+		local name = HOME_KIT[i]
+		local script = CeroSecContent.SCRIPTS[name]
+		check("the home kit's " .. name .. " is in the library", script ~= nil)
+		local state = CeroSecOS.newState("ksp-4-b")
+		local session = CeroSecOS.login(state, "admin", "")
+		CeroSecOS.writeFile(state, session, "/home/admin/" .. name, script.text,
+			false, START)
+		-- An EMPTY device layer and not a missing one: `ls /dev` answers a directory
+		-- with nothing in it, which is what a machine nobody has wired looks like.
+		local env = { now = START, devices = devicesFor(nil) }
+		run(state, session, "chmod 755 " .. name, env)
+		local ok, lines = run(state, session, "./" .. name .. " " .. WITH[name], env)
+		local whole = table.concat(lines, " / ")
+		check(name .. " with no devices says something: " .. whole, #lines > 0)
+		for _, bad in ipairs({ "syntax error", "attempt to", "bad arithmetic",
+				"bad substitution", "test: " }) do
+			check(name .. " with no devices does not say \"" .. bad .. "\": " .. whole,
+				string.find(whole, bad, 1, true) == nil)
+		end
+		if REFUSES[name] then
+			check(name .. " with no devices refuses: " .. whole, not ok)
+			check(name .. " names itself in the refusal: " .. whole,
+				string.find(lines[1] or "", name, 1, true) ~= nil)
+		end
+		local vok, vwhy = CeroSecOS.validate(state)
+		check(name .. " leaves a machine that still boots: " .. tostring(vwhy), vok)
+	end
+	eq("three of the six refuse an empty building", (function()
+		local n = 0
+		for _ in pairs(REFUSES) do n = n + 1 end
+		return n
+	end)(), 3)
+
+	-- AND WHO ALREADY HAS IT. Two profiles are prefilled with it and they are the
+	-- two premises that would have owned it in 1991: the company that published it
+	-- keeps the masters in /usr/local/src beside every other script in the library,
+	-- and the dealer who sold it has the two a salesman would really demonstrate on
+	-- the counter machine. Asserted on the profile's own `bin` table, because that
+	-- is the writer's instruction and a bench that read the built machine would be
+	-- asking a roll (`chance`) whether a catalogue entry exists.
+	--
+	-- NO CRONTAB LINE IS PREFILLED ANYWHERE, and that is the assertion that matters:
+	-- CeroSecAuto.modulesFor fits a relay, a contact and a strike and NEVER an
+	-- operator, a curtain motor, a tuner or a generator switch -- "a building that
+	-- opened its own doors would open them for the dead" (docs/CONTENT.md, "The
+	-- hardware, and whose crontab drives it") -- so a prefilled line calling any of
+	-- these six would answer `no such device` once a minute for ever on a premises
+	-- no player has walked into.
+	do
+		local function binOf(id)
+			local names = {}
+			local profile = CeroSecContent.PROFILES[id]
+			if profile ~= nil and type(profile.bin) == "table" then
+				for i = 1, #profile.bin do names[profile.bin[i].script] = true end
+			end
+			return names
+		end
+		local vendor = binOf("cerosec")
+		for i = 1, #HOME_KIT do
+			check("the publisher's own machine keeps " .. HOME_KIT[i],
+				vendor[HOME_KIT[i]] == true)
+		end
+		local dealer = binOf("showroom")
+		check("the dealer's counter machine has autoclose.sh",
+			dealer["autoclose.sh"] == true)
+		check("and curtains.sh", dealer["curtains.sh"] == true)
+
+		-- And not one crontab line in the whole catalogue runs any of the six.
+		local lines = 0
+		for id, profile in pairs(CeroSecContent.PROFILES) do
+			local tabs = {}
+			if type(profile.cron) == "table" then
+				for i = 1, #profile.cron do tabs[#tabs + 1] = profile.cron[i].lines end
+			end
+			if type(profile.accounts) == "table" then
+				for i = 1, #profile.accounts do
+					if type(profile.accounts[i].cron) == "table" then
+						tabs[#tabs + 1] = profile.accounts[i].cron
+					end
+				end
+			end
+			for t = 1, #tabs do
+				for l = 1, #tabs[t] do
+					lines = lines + 1
+					for k = 1, #HOME_KIT do
+						check("no prefilled crontab line runs " .. HOME_KIT[k] .. " (" .. id
+							.. ": " .. tabs[t][l] .. ")",
+							string.find(tabs[t][l], HOME_KIT[k], 1, true) == nil)
+					end
+				end
+			end
+		end
+		-- The count, so the walk above cannot be green on a catalogue it never read.
+		check("and there are prefilled crontab lines to have looked at (" .. lines
+			.. ")", lines > 0)
+	end
+
+	-- AND THE DISK IT COMES ON, by name, with the numbers written down. Section 7
+	-- weighs every entry in the catalogue; this says what THIS one costs, because
+	-- the README is as short as it is for exactly this reason and a change that
+	-- quietly spent the last sixty bytes would otherwise only show up as a file
+	-- silently missing from the disk (diskData TRIMS).
+	do
+		local entry = CeroSecContent.diskById("HOME AUTOMATION")
+		check("the home kit's disk is in the catalogue", entry ~= nil)
+		local disk, written = CeroSecContent.diskData(entry, START, 1)
+		eq("every one of its seven files was written", written, #entry.files)
+		eq("which is seven", #entry.files, 7)
+		local nodes, bytes = CeroSecOS.subtreeUsage(disk.fs)
+		check("the home kit is inside FLOPPY_BYTES (" .. bytes .. " of "
+			.. CeroSecOS.FLOPPY_BYTES .. ")", bytes <= CeroSecOS.FLOPPY_BYTES)
+		check("and inside FLOPPY_NODES (" .. nodes .. " of "
+			.. CeroSecOS.FLOPPY_NODES .. ")", nodes <= CeroSecOS.FLOPPY_NODES)
+
+		local readme = nil
+		for i = 1, #entry.files do
+			if entry.files[i].name == "README.TXT" then readme = entry.files[i].text end
+		end
+		check("the disk carries a README", type(readme) == "string")
+		-- THE README IS A SET OF INSTRUCTIONS AND EVERY ONE OF THEM HAS TO WORK.
+		-- Section 7 already holds every README to naming the files beside it; this
+		-- says the same thing about the LINES, which is what a survivor types.
+		check("the README says how to copy one onto the machine",
+			string.find(readme, "cp /mnt/curtains.sh /usr/local/bin", 1, true) ~= nil)
+		check("and gives the dawn crontab line",
+			string.find(readme, "0 7 * * * sh /usr/local/bin/curtains.sh auto", 1, true)
+				~= nil)
+		check("and the dusk one",
+			string.find(readme, "0 20 * * * sh /usr/local/bin/curtains.sh auto", 1, true)
+				~= nil)
+		check("and the minute line for the television",
+			string.find(readme, "* * * * * sh /usr/local/bin/tvguide.sh 203", 1, true)
+				~= nil)
+		check("and wake.sh both ways -- a crontab line",
+			string.find(readme, "sh /usr/local/bin/wake.sh now", 1, true) ~= nil)
+		check("and at(1)", string.find(readme, "at(1)", 1, true) ~= nil)
+		check("and how a daemon is started",
+			string.find(readme, "/autoclose.sh start 5 &", 1, true) ~= nil)
+		check("and how it is stopped",
+			string.find(readme, "/autoclose.sh stop", 1, true) ~= nil)
+		check("and that ls /dev is what says which modules are on",
+			string.find(readme, "ls /dev", 1, true) ~= nil)
+		-- EVERY CRONTAB LINE ON IT REALLY PARSES, through the very checker
+		-- crontab(1) refuses a file with. A README that printed a line cron would
+		-- not take is a README that teaches a survivor a mistake.
+		local cronLines = {}
+		for line in (readme .. "\n"):gmatch("([^\n]*)\n") do
+			local trimmed = string.match(line, "^%s*(.-)%s*$")
+			if string.find(trimmed, "^[%*%d]") ~= nil
+					and string.find(trimmed, "sh /usr/local/bin/", 1, true) ~= nil then
+				cronLines[#cronLines + 1] = trimmed
+			end
+		end
+		check("the README prints crontab lines (" .. #cronLines .. ")",
+			#cronLines >= 4)
+		for i = 1, #cronLines do
+			eq("crontab(1) takes \"" .. cronLines[i] .. "\"",
+				CeroSecOS.checkCrontab("/var/spool/cron/root", cronLines[i]), nil)
+		end
 	end
 end
 
@@ -3589,14 +3863,24 @@ do
 					nodes <= CeroSecOS.FLOPPY_NODES)
 				-- NO PLACEHOLDER SURVIVES, in any telling of any file. A survivor
 				-- reading "ask {staff3} about it" is reading a bug; the names are put
-				-- in at build time (CeroSecContent.diskNames) and a brace on the glass
-				-- means one was spelt wrong in the catalogue.
+				-- in at build time (CeroSecContent.diskNames) and one left on the glass
+				-- means it was spelt wrong in the catalogue.
+				--
+				-- A PLACEHOLDER AND NOT A BRACE. This asked for no brace of any kind
+				-- until the home kit shipped `alarm.sh`, whose `lamps() { ... }` is a
+				-- shell function and whose braces are the language's -- so the guard
+				-- now asks the question it was always about. `${NAME}` is the other
+				-- brace a script may legitimately carry and is let past by the dollar
+				-- in front of it; anything else of the form {word} is a name nothing
+				-- filled. placeholderLeft is asserted on a known-bad string below, so
+				-- a narrowed guard that had stopped catching anything at all would be
+				-- red rather than quietly green.
 				for path, node in pairs(walk(root)) do
 					if path ~= "/" then
 						local data = node.data or ""
-						check(at .. path .. " has no brace left in it",
-							string.find(data, "{", 1, true) == nil
-								and string.find(data, "}", 1, true) == nil)
+						check(at .. path .. " has no placeholder left in it ("
+							.. tostring(placeholderLeft(data)) .. ")",
+							placeholderLeft(data) == nil)
 						for line in (data .. "\n"):gmatch("([^\n]*)\n") do
 							check(at .. path .. ' line fits 60 columns: "' .. line .. '" ('
 								.. #line .. ")", #line <= CeroSecOS.COLS)

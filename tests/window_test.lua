@@ -14013,6 +14013,453 @@ end
 
 
 --
+-- 44b. THE HOME KIT, RUN ON A BUILDING
+--
+-- Six programs off the HOME AUTOMATION floppy, each one run against real fixtures
+-- with a clock that can be wound. content_test.lua's section 6 runs every script
+-- in the library once and proves it is a program; it cannot prove a DAEMON,
+-- because a bench with no scheduler under it stops at the first `sleep`. This is
+-- the other half: the real server, the real pass, the real minute hand.
+--
+-- What is asserted is the FIXTURE, never the line printed. "The door shut" is a
+-- field on the object; "autoclose: on" is a sentence, and a program that printed
+-- the sentence and moved nothing would pass a bench that read the glass.
+--
+-- The hardware gate is OFF here, as it is for every bench above that is about
+-- what a device DOES: which fixture is a device is section 43d's question and it
+-- has eighty-one assertions of its own. What is under test here is the six
+-- programs.
+--
+do
+	local realSend = _G.sendServerCommand
+	_G.sendServerCommand = function() end
+	local realDebugUI, realPhonebookUI = _G.CeroSecDebugUI, _G.CeroSecPhonebookUI
+	_G.CeroSecDebugUI, _G.CeroSecPhonebookUI = nil, nil
+	-- AND THE WALL CLOCK IS PUT BACK, which no other section in this file has had
+	-- to do and this one does. A daemon is the only thing here that needs minutes
+	-- of getTimestampMs() to pass, and that clock is one of the two things the
+	-- save's own content secret is made out of (SCeroSecSystem:secret) -- so a
+	-- section that left it two hundred seconds further on would re-roll every
+	-- password, every desk and every live session in every bench BELOW it. It cost
+	-- an afternoon: the office's "some desk was left logged in" went red, twenty
+	-- rolls of one in four having landed the other way, and nothing in that bench
+	-- had changed.
+	local hadNow = _G.__now
+
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0}, {11,11,0}, {12,11,0} })
+	-- Two doors, so "every door under /dev" is a list and not a single reading: a
+	-- daemon that shut the first door it found would pass on one.
+	local door0 = world.put(world.squares["10,10,0"],
+		fakeDoor(false, true, world.squares["11,10,0"], true))
+	local door1 = world.put(world.squares["11,10,0"],
+		fakeDoor(false, true, world.squares["12,10,0"], true))
+	local curtain0 = world.put(world.squares["12,10,0"], fakeCurtain(true))
+	local light0 = world.put(world.squares["11,11,0"], fakeLight(false, true))
+	local win0 = world.put(world.squares["12,11,0"], fakeWindow(true, true))
+	local gen0 = world.put(world.squares["12,11,0"],
+		fakeGenerator(true, 62, 80, true))
+	local tv0 = world.put(world.squares["11,11,0"],
+		fakeWaveSet("IsoTelevision", { channel = 203 }))
+	local rx0 = world.put(world.squares["10,10,0"],
+		fakeWaveSet("IsoRadio", { channel = 96500 }))
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	-- The library's own text, never a copy typed here: the program this bench runs
+	-- has to be the program the floppy carries, or the bench proves a program
+	-- nobody will ever find.
+	local B = "/usr/local/bin"
+	bench.enter("mkdir /usr")
+	bench.enter("mkdir /usr/local")
+	bench.enter("mkdir " .. B)
+	bench.frame()
+	-- Installed as ROOT, because /usr/local/bin is root's -- which is what the
+	-- README's own `sudo cp` says. bench.script writes as admin and could not.
+	local function install(name, text)
+		local state = bench.object:osState()
+		local done, reason = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			B .. "/" .. name, text, false, 100)
+		if done == nil then error("cannot install " .. name .. ": " .. tostring(reason), 2) end
+		CeroSecOS.getNode(state, CeroSecOS.rootSession(), B .. "/" .. name).mode = 755
+	end
+	local PROGRAMS = { "autoclose.sh", "curtains.sh", "tvguide.sh", "wake.sh",
+		"alarm.sh", "genwatch.sh" }
+	for i = 1, #PROGRAMS do
+		local script = CeroSecContent.SCRIPTS[PROGRAMS[i]]
+		check("the home kit's " .. PROGRAMS[i] .. " is in the library", script ~= nil)
+		install(PROGRAMS[i], script.text)
+	end
+	-- And they are the disk's, which is where a survivor gets them: the entry names
+	-- the six and nothing else, so a program that fell out of the catalogue is a
+	-- program this bench stops running.
+	do
+		local entry = CeroSecContent.diskById("HOME AUTOMATION")
+		check("the HOME AUTOMATION disk is in the catalogue", entry ~= nil)
+		local onDisk = {}
+		for i = 1, #entry.files do
+			if entry.files[i].script ~= nil then onDisk[entry.files[i].script] = true end
+		end
+		for i = 1, #PROGRAMS do
+			check("and " .. PROGRAMS[i] .. " is on it", onDisk[PROGRAMS[i]] == true)
+		end
+	end
+
+	-- One second of the machine's life, in the passes the scheduler really makes:
+	-- ten of them at CeroSec.JOB_PASS_MS. `sleep` is measured against the WALL
+	-- clock (SCeroSecSystem:execEnv, getTimestampMs) and bench.tick is what moves
+	-- it, so a bench that jumped a second in one pass would be a bench where a
+	-- daemon never slept.
+	local function seconds(n)
+		bench.tick(math.floor((n * 1000) / CeroSec.JOB_PASS_MS))
+	end
+
+	local function running(name)
+		local jobs = bench.object.jobs
+		if jobs == nil or jobs.list == nil then return false end
+		for i = 1, #jobs.list do
+			if string.find(jobs.list[i].cmd or "", name, 1, true) then return true end
+		end
+		return false
+	end
+
+	--
+	-- autoclose.sh: five seconds, and NOT four
+	--
+	bench.enter("sh " .. B .. "/autoclose.sh start 5 &")
+	seconds(1)
+	check("the daemon is a job on the machine", running("autoclose.sh"))
+	check("and it wrote its flag file",
+		bench.fileText("/var/tmp/autoclose.on") ~= nil)
+
+	-- A survivor opens a door. Nothing of ours moved it, which is the point: the
+	-- daemon reads the world and not its own writes.
+	--
+	-- WHAT IS MEASURED, and the number is printed rather than assumed: the second
+	-- of the machine's own wall clock at which the door came shut. `n` is counted
+	-- in ROUNDS and a round is `sleep 1` PLUS the work the round costs -- the
+	-- listing of /dev, a `cat` per door, the counter file -- and that work is
+	-- charged in steps against CeroSec.STEP_BUDGET_PER_MACHINE, so a round on a
+	-- two-door building measures about a second and a third rather than a second
+	-- exactly. The half that matters is exact and is the one the request named:
+	-- the door is NOT shut before its five rounds are up. The upper bound is
+	-- generous on purpose -- it is a budget and not a promise, and a bench that
+	-- pinned it to one second would be a bench that goes red on a busier machine.
+	local function secondDoorShuts(door, limit)
+		for s = 1, limit do
+			seconds(1)
+			if not door.open then return s end
+		end
+		return nil
+	end
+
+	door0.open = true
+	eq("a door is standing open", door0.open, true)
+	seconds(4)
+	check("four seconds later it is still open, because five rounds is five rounds",
+		door0.open == true)
+	local shutAt = 4 + (secondDoorShuts(door0, 8) or 99)
+	check("and it comes shut at second " .. shutAt .. " (five rounds, no sooner)",
+		shutAt >= 5 and shutAt <= 12)
+	eq("the engine was told once", door0.silentToggles, 1)
+	eq("and the door nobody opened was never touched", door1.silentToggles, 0)
+
+	-- The counter file is the per-door state, and there is one because a 1993 sh
+	-- has no associative array to keep it in. It is dropped the round after the
+	-- door is shut again, which is what makes the NEXT time somebody opens it a
+	-- fresh five rounds and not an immediate slam.
+	seconds(3)
+	eq("the counter for the shut door is gone",
+		bench.fileText("/var/tmp/autoclose.door0"), nil)
+	door0.open = true
+	seconds(3)
+	check("so a door opened again is still open three seconds in", door0.open == true)
+	local again = 3 + (secondDoorShuts(door0, 8) or 99)
+	check("and shut at second " .. again .. " of the second opening",
+		again >= 5 and again <= 12)
+	eq("and the engine was told a second time and no more", door0.silentToggles, 2)
+
+	bench.enter("sh " .. B .. "/autoclose.sh stop")
+	seconds(2)
+	eq("stop takes the flag away", bench.fileText("/var/tmp/autoclose.on"), nil)
+	check("and the daemon is off the job book", not running("autoclose.sh"))
+
+	--
+	-- curtains.sh auto: the two crontab lines, at the two hours
+	--
+	local hadHour, hadMin = _G.__gameTime.hour, _G.__gameTime.minutes
+	_G.__gameTime.minutes = 0
+
+	_G.__gameTime.hour = 7
+	bench.enter("sh " .. B .. "/curtains.sh auto")
+	seconds(1)
+	eq("at seven the curtains are drawn back", curtain0.open, true)
+
+	_G.__gameTime.hour = 20
+	bench.enter("sh " .. B .. "/curtains.sh auto")
+	seconds(1)
+	eq("at eight in the evening they are drawn", curtain0.open, false)
+
+	-- And the hour really is what decides, not the last word it was given: six in
+	-- the morning is before dawn and stays shut.
+	_G.__gameTime.hour = 6
+	bench.enter("sh " .. B .. "/curtains.sh auto")
+	seconds(1)
+	eq("and six in the morning is still night", curtain0.open, false)
+
+	-- The two defaults are arguments, so a survivor whose dawn is five says so.
+	bench.enter("sh " .. B .. "/curtains.sh auto 5 22")
+	seconds(1)
+	eq("with dawn at five, six in the morning is day", curtain0.open, true)
+
+	-- And the plain words work with no clock in it at all.
+	bench.enter("sh " .. B .. "/curtains.sh close")
+	seconds(1)
+	eq("close draws them whatever the hour", curtain0.open, false)
+
+	--
+	-- tvguide.sh: on at the block's start, off at its end
+	--
+	do
+		local function block(from, to)
+			return {
+				getStartStamp = function() return from end,
+				getEndStamp = function() return to end,
+			}
+		end
+		-- Life and Living TV's real evening block, out of RadioData.xml:6799.
+		local evening = block(1080, 1440)
+		local channel = {
+			airing = nil,
+			GetFrequency = function() return 203 end,
+			IsTv = function() return true end,
+			getAiringBroadcast = function(self) return self.airing end,
+			getCurrentScript = function()
+				return { getBroadcastList = function() return javaList({ evening }) end }
+			end,
+		}
+		local hadRadio = _G.getZomboidRadio
+		_G.getZomboidRadio = function()
+			return { getScriptManager = function()
+				return { getChannelsList = function() return javaList({ channel }) end }
+			end }
+		end
+		CeroSecRadio.channels, CeroSecRadio.channelCount = nil, -1
+
+		-- BEFORE THE BLOCK. Noon: the channel reads `next 1080-1440` and the minute
+		-- line leaves the set off.
+		tv0.data.on = true
+		_G.__gameTime.hour, _G.__gameTime.minutes = 12, 0
+		bench.enter("sh " .. B .. "/tvguide.sh 203")
+		seconds(1)
+		eq("before the show the set is switched off", tv0.data.on, false)
+
+		-- THE MINUTE THE BLOCK STARTS. 1080 is six in the evening, and that is the
+		-- minute the reading turns to `airing`.
+		channel.airing = evening
+		_G.__gameTime.hour, _G.__gameTime.minutes = 18, 0
+		bench.enter("sh " .. B .. "/tvguide.sh 203")
+		seconds(1)
+		eq("at the block's own minute the set comes on", tv0.data.on, true)
+		eq("and on the channel that is airing", tv0.data.channel, 203)
+
+		-- FOR THE DURATION. A minute line inside the block leaves it on and does not
+		-- tune it a second time: a program that re-tuned every minute would be a
+		-- packet a minute to every client on a server.
+		local zaps = tv0.zaps
+		_G.__gameTime.minutes = 30
+		bench.enter("sh " .. B .. "/tvguide.sh 203")
+		seconds(1)
+		eq("a minute inside the block leaves it on", tv0.data.on, true)
+		eq("and does not turn the dial again", tv0.zaps, zaps)
+
+		-- AND OFF AT THE END. The block is over, so the reading is no longer
+		-- `airing` and the next minute line switches it off.
+		channel.airing = nil
+		_G.__gameTime.hour, _G.__gameTime.minutes = 0, 30
+		bench.enter("sh " .. B .. "/tvguide.sh 203")
+		seconds(1)
+		eq("and the minute after it ends switches it off", tv0.data.on, false)
+
+		-- IT TUNES BEFORE IT READS, which is the one thing that makes the program
+		-- right: `cat /dev/tv0` answers about the channel the set is ON, so a set
+		-- somebody left on another number has to be turned to 203 first or the
+		-- schedule read is somebody else's station.
+		tv0.data.channel = 5000
+		channel.airing = evening
+		_G.__gameTime.hour, _G.__gameTime.minutes = 18, 0
+		bench.enter("sh " .. B .. "/tvguide.sh 203")
+		seconds(1)
+		eq("a set left on another number is turned to the one asked for",
+			tv0.data.channel, 203)
+		eq("and then switched on for the show", tv0.data.on, true)
+
+		_G.getZomboidRadio = hadRadio
+		CeroSecRadio.channels, CeroSecRadio.channelCount = nil, -1
+	end
+
+	--
+	-- wake.sh: now, and at a time through at(1)
+	--
+	rx0.data.on = false
+	light0.activated = false
+	bench.enter("sh " .. B .. "/wake.sh now")
+	seconds(1)
+	eq("the wireless is on", rx0.data.on, true)
+	eq("and so is the light", light0.activated, true)
+
+	-- And the timed form queues itself, which is the shape at(1) has here: it reads
+	-- its commands from a pipe and from nothing else.
+	bench.enter("atq")
+	bench.frame()
+	check("nothing is waiting yet", not bench.painted("06:30"))
+	bench.enter("sh " .. B .. "/wake.sh 06:30")
+	seconds(1)
+	bench.enter("atq")
+	bench.frame()
+	check("the timed form puts a job in the at queue", bench.painted("06:30"))
+	bench.enter("atrm 1")
+	bench.frame()
+
+	--
+	-- genwatch.sh: one warning and not sixty
+	--
+	gen0.fuel = 62
+	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	seconds(1)
+	eq("a full tank writes no flag", bench.fileText("/var/tmp/genwatch.said"), nil)
+	eq("and posts no letter", bench.fileText("/var/mail/root"), nil)
+
+	gen0.fuel = 4
+	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	seconds(2)
+	local posted = bench.fileText("/var/mail/root")
+	check("a tank under the mark posts one to root: " .. tostring(posted),
+		posted ~= nil and string.find(posted, "gen0 low on fuel", 1, true) ~= nil)
+	check("with the figure in the body",
+		posted ~= nil and string.find(posted, "4 per cent", 1, true) ~= nil)
+	check("and says it out loud on every screen", bench.heard("gen0 is down to 4"))
+	check("and leaves the flag that says it has said it",
+		bench.fileText("/var/tmp/genwatch.said") ~= nil)
+
+	-- THE MINUTE AFTER, and this is what the flag is for: a crontab line runs sixty
+	-- times an hour and a warning nobody can turn off is a warning everybody learns
+	-- to ignore. Asserted on the mailbox's BYTES, because a second copy of the same
+	-- message is a mailbox that grew and a mailbox that "contains the subject" would
+	-- be green on ten of them.
+	local was = #posted
+	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	seconds(2)
+	eq("the next minute posts nothing more", #(bench.fileText("/var/mail/root") or ""),
+		was)
+
+	-- AND THE NEXT TIME IT REALLY IS THE NEXT TIME: the tank comes back, the flag
+	-- goes, and a second emptying is a second letter.
+	gen0.fuel = 62
+	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	seconds(1)
+	eq("a tank filled again drops the flag",
+		bench.fileText("/var/tmp/genwatch.said"), nil)
+	gen0.fuel = 3
+	bench.enter("sh " .. B .. "/genwatch.sh 10")
+	seconds(2)
+	check("and the next emptying is a second letter",
+		#(bench.fileText("/var/mail/root") or "") > was)
+
+	--
+	-- alarm.sh: a contact opened, said out loud, with the lights behind it
+	--
+	bench.enter("sh " .. B .. "/alarm.sh start &")
+	seconds(1)
+	check("the alarm is a job on the machine", running("alarm.sh"))
+	check("and armed", bench.fileText("/var/tmp/alarm.on") ~= nil)
+
+	light0.activated = false
+	win0.open = true
+	seconds(3)
+	check("a window opened is named on every screen", bench.heard("ALARM: win0 open"))
+	-- THE FLASH, counted on the switch and not on its state: three on-and-off pairs
+	-- is six throws, and a field read at the end of it would be the same whether it
+	-- flashed once or not at all.
+	check("and the lights were thrown more than once (" .. light0.syncs .. ")",
+		light0.syncs >= 2)
+	win0.open = false
+
+	-- And it stops. Twelve seconds and not three: a round that found a contact open
+	-- is a round that flashed, which is six `sleep 1`s inside it, so the loop does
+	-- not come back to its flag until the flash is over. That is the daemon's own
+	-- shape and not a delay of the bench's.
+	bench.enter("sh " .. B .. "/alarm.sh stop")
+	seconds(1)
+	eq("stop takes the flag away", bench.fileText("/var/tmp/alarm.on"), nil)
+	local gone = nil
+	for s = 1, 12 do
+		seconds(1)
+		if not running("alarm.sh") and gone == nil then gone = s end
+	end
+	check("and the daemon ends, at second " .. tostring(gone), gone ~= nil)
+
+	--
+	-- AND A CRONTAB LINE OUT OF THE README REALLY FIRES
+	--
+	-- The README's own two curtain lines, through crontab and the minute hand: the
+	-- half no script bench can reach, because cron is the server's and a cron line
+	-- has no terminal.
+	do
+		local state = bench.object:osState()
+		local made = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+			CeroSecOS.cronPath("root"),
+			"0 7 * * * sh " .. B .. "/curtains.sh auto\n"
+			.. "0 20 * * * sh " .. B .. "/curtains.sh auto", false, 100)
+		check("root's crontab was installed", made ~= nil)
+		curtain0.open = false
+		-- TWO MINUTES AND NOT ONE, because the minute a machine came into view is
+		-- not a minute it was there for: luaObject.cron.minute is runtime state and
+		-- the first sweep only writes it down (docs/SCRIPTING.md, "What cron will
+		-- not do"). So 6:58 is primed and 7:00 is the line firing.
+		_G.__gameTime.hour, _G.__gameTime.minutes = 6, 58
+		bench.minute()
+		bench.minute()
+		seconds(2)
+		eq("seven o'clock's crontab line draws the curtains back", curtain0.open, true)
+		_G.__gameTime.hour, _G.__gameTime.minutes = 19, 59
+		bench.minute()
+		seconds(2)
+		eq("and eight in the evening's draws them", curtain0.open, false)
+		-- And it went through CRON and not through a screen: a cron line has no
+		-- terminal, so what it printed is in root's mail and nowhere on the glass.
+		local log = bench.fileText("/var/log/cron")
+		check("the log names the line that ran: " .. tostring(log),
+			log ~= nil and string.find(log, "curtains.sh auto", 1, true) ~= nil)
+	end
+
+	_G.__gameTime.hour, _G.__gameTime.minutes = hadHour, hadMin
+	-- And with it CeroSecJobs' own note of when it last made a pass, which is
+	-- module-level and is what the gate at the top of CeroSecJobs.tick compares
+	-- against: a clock wound BACK past it is a scheduler that makes no pass at all
+	-- until the wall catches up, and the bench below this one would sit at a pager
+	-- that never asked. newBench already resets the machine list for the same
+	-- reason.
+	_G.__now = hadNow
+	CeroSecJobs.lastMs = 0
+	_G.sendServerCommand = realSend
+	_G.CeroSecDebugUI, _G.CeroSecPhonebookUI = realDebugUI, realPhonebookUI
+	_G.__world = nil
+	CeroSecDevices.invalidate()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
 -- 45. The debug snapshots (the debug window's work)
 --
 -- What the debug window is handed, built by the server: the machine list, the

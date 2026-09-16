@@ -1537,6 +1537,398 @@ CeroSecContent.SCRIPTS["setup.sh"] = {
 }
 
 --
+-- THE HOME KIT: six programs that drive the building instead of a survivor
+--
+-- The request they were written for, in the words it was made in: "auto close
+-- doors, a program that detects an open door and closes it after 5 seconds;
+-- automatic curtains day and night; a system that turns the TV on at the hours of
+-- the Life and Living channel for the duration of the show".
+--
+-- Nothing in the engine moved for them, exactly as nothing moved for the sysop's
+-- kit: the devices are the motor rung's and the scheduler is cron's. What was
+-- missing was the front of it, which in 1993 was a shell script somebody had on a
+-- disk -- so this is that disk (CeroSecContent.DISKS, "HOME AUTOMATION").
+--
+-- FIVE THINGS THIS SHELL HAS NOT GOT SHAPED EVERY ONE OF THEM, and each was
+-- measured on the engine before a line was written on top of it:
+--
+--   * THERE IS NO FILENAME GLOBBING. `for d in /dev/door*` is one word with a
+--     star in it, so the list of doors is `ls /dev | grep ^door` caught in a
+--     $( ) and split into fields. `ls` prints one name a line when what it
+--     writes is not a screen, and a capture is one of the three doors where that
+--     is true (CeroSecOSVM.runSimple's `tty`), so the capture really is a list.
+--     The ceiling on it is the word's: MAX_VAR_BYTES, 1024 bytes, which is a
+--     hundred and forty doors -- a mall would refuse with `word too large`
+--     rather than quietly walk half of it.
+--
+--   * `date +%s` MOVES A MINUTE AT A TIME. The machine's clock is the world's
+--     and SCeroSecSystem:clockEnv builds it out of getHour() and getMinutes()
+--     with the seconds at nought, so a stamp read twice inside one game minute is
+--     the same number. A five-SECOND delay therefore cannot be measured against
+--     it at all, and autoclose.sh counts its own `sleep 1` rounds instead -- one
+--     counter file per door, which is what a 1993 script kept when it had no
+--     associative array to keep it in.
+--
+--   * NO ASSOCIATIVE ARRAYS, so the per-door state is a file under /var/tmp
+--     (`/var/tmp/autoclose.door0`). /var/tmp and not /tmp: /tmp is not on this
+--     machine, and /var/tmp is the one directory anybody may write in and only
+--     the owner of a file may delete from (SYSTEM_VERSION 11).
+--
+--   * `rm` HAS NO -f. Every removal is behind `[ -f ... ]`, because a refusal
+--     from a program a daemon runs every second is a refusal on the glass every
+--     second.
+--
+--   * A PIPELINE'S REFUSAL LANDS IN THE CAPTURE, not in the pipe. `f=$(cat
+--     /dev/gen0 | cut -d' ' -f3)` on a machine with no generator comes back as
+--     the whole of `cat: /dev/gen0: no such file` -- errLine writes to the job's
+--     door and skips the pipe -- and `[ $f -ge 10 ]` on that is
+--     `test: argument expected`. So genwatch.sh sifts the field through a `case`
+--     with `*[!0-9]*` in it before it does arithmetic on it.
+--
+-- WHAT THE POLLING COSTS, and it is not what a reader would guess. The walk of
+-- the building is not in the loop and not in the sleep: it is in
+-- CeroSecDevices.envFor, which runs once a PASS (CeroSec.JOB_PASS_MS, 100 ms)
+-- for any machine with a job in its book at all -- and CeroSecDevices.findCached
+-- sits in front of it with a lifetime of CACHE_MS (1000 ms). So a daemon that
+-- sleeps one second and a daemon that sleeps five cost the machine the SAME one
+-- building walk a second, which is the cache's own floor; what the cadence buys
+-- is only the steps, and a sleeping job spends none of those either
+-- (docs/DEVICES.md, "The /dev cache"). One second is therefore the cheapest
+-- cadence that is also the most responsive, which is why it is the one here.
+--
+
+CeroSecContent.SCRIPTS["autoclose.sh"] = {
+	-- The one the request was really about: a door somebody left open, shut again.
+	--
+	-- `start` writes a flag file and loops while it is there; `stop` takes it away.
+	-- Not `kill %1`, although that works too: a flag file is a thing a survivor can
+	-- see with `ls /var/tmp` and a thing a crontab can touch, and `jobs` is a
+	-- machine's listing here rather than a session's -- so the two ways of stopping
+	-- it are a choice and not a shortcut. It is also what lets a bench run the
+	-- program to the end.
+	--
+	-- `n` is counted in ROUNDS and a round is one `sleep 1`, which is the second
+	-- the note at the head of this block explains: the clock cannot be asked for
+	-- anything finer. The count is bumped BEFORE it is compared and closed on
+	-- `-gt`, so a door first seen open at round one is shut at round n + 1 --
+	-- which is n seconds after it was seen, and not n - 1.
+	mode = 755,
+	-- `stop`, because `start` does not come back: the loop is the program. What the
+	-- loop does is benched where a clock can be wound -- tests/window_test.lua's
+	-- home-kit section, which fits a real operator on a real door, opens it, and
+	-- asserts the door is still open at four seconds and shut at five.
+	args = { "stop" },
+	needs = { devices = {
+		{ id = "door0", kind = "door", state = "open" },
+		{ id = "door1", kind = "door", state = "closed" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: autoclose.sh start [<secs>] | stop",
+		"F=/var/tmp/autoclose.on",
+		"if [ \"$1\" = stop ]; then",
+		"  if [ -f $F ]; then rm $F; fi",
+		"  echo \"autoclose: off\"",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" != start ]; then",
+		"  echo \"usage: autoclose.sh start [<secs>] | stop\"",
+		"  exit 1",
+		"fi",
+		"n=$2",
+		"if [ -z \"$n\" ]; then n=5; fi",
+		"echo run > $F",
+		"while [ -f $F ]; do",
+		"  for d in $(ls /dev | grep ^door); do",
+		"    t=/var/tmp/autoclose.$d",
+		"    if [ \"$(cat /dev/$d)\" = open ]; then",
+		"      c=0",
+		"      if [ -f $t ]; then c=$(cat $t); fi",
+		"      c=$((c + 1))",
+		"      if [ $c -gt $n ]; then",
+		"        echo close > /dev/$d",
+		"        c=0",
+		"      fi",
+		"      echo $c > $t",
+		"    elif [ -f $t ]; then",
+		"      rm $t",
+		"    fi",
+		"  done",
+		"  sleep 1",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["curtains.sh"] = {
+	-- Two crontab lines and no daemon, which is the whole point of it: dawn and
+	-- dusk happen twice a day and cron is what a machine has for twice a day.
+	-- `auto` reads the hour and works out which way, so both crontab lines are the
+	-- SAME line -- a survivor who moves his dawn moves one number in one place.
+	--
+	-- The hour and not the minute, because `date +%H` is two digits and a leading
+	-- zero is decimal here: the $(( )) reader and `test` both go through tonumber,
+	-- which reads "07" as seven and never as octal.
+	mode = 755,
+	args = { "auto" },
+	needs = { devices = {
+		{ id = "curtain0", kind = "curtain", state = "closed" },
+		{ id = "curtain1", kind = "curtain", state = "closed" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: curtains.sh open|close|auto [dawn dusk]",
+		"w=$1",
+		"if [ \"$w\" = auto ]; then",
+		"  a=$2",
+		"  b=$3",
+		"  if [ -z \"$a\" ]; then a=7; fi",
+		"  if [ -z \"$b\" ]; then b=20; fi",
+		"  h=$(date +%H)",
+		"  w=close",
+		"  if [ $h -ge $a -a $h -lt $b ]; then w=open; fi",
+		"fi",
+		"if [ \"$w\" != open -a \"$w\" != close ]; then",
+		"  echo \"usage: curtains.sh open|close|auto [dawn dusk]\"",
+		"  exit 1",
+		"fi",
+		"n=0",
+		"for c in $(ls /dev | grep ^curtain); do",
+		"  echo $w > /dev/$c",
+		"  n=$((n + 1))",
+		"done",
+		"if [ $n -eq 0 ]; then",
+		"  echo \"curtains.sh: no curtain in /dev\"",
+		"  exit 1",
+		"fi",
+		"echo \"$n curtains: $w\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["tvguide.sh"] = {
+	-- The set on for the show and off after it, off one crontab line a minute.
+	--
+	-- It TUNES FIRST when the dial is somewhere else, and that is not politeness:
+	-- `cat /dev/tv0` reports the schedule of the channel the set is ON
+	-- (CeroSecRadio.scheduleOf asks the channel list for the frequency the dial
+	-- reads), so a program that read the line before it tuned would be reading
+	-- somebody else's station. /dev is built afresh at the top of every command and
+	-- CeroSecOS.devWrite writes the `detail` the world hands back onto the node, so
+	-- the read after the write is the new channel's.
+	--
+	-- 203 is the default because that is Life and Living's frequency, which the
+	-- study found and the manual prints: RadioChannel:GetFrequency() == 203 with
+	-- IsTv() true. The number is the raw dial and not megahertz -- a television
+	-- prints no frequency at all in vanilla's own window, only a channel name --
+	-- so `echo channel 203` and the line `cat` reads are one spelling of one
+	-- number (docs/DEVICES.md, "The dial is raw and not megahertz").
+	--
+	-- Three words and three answers, which is the whole of the schedule vocabulary:
+	-- `airing F-T` puts it on, `next F-T` puts it off and says when, `idle` puts it
+	-- off and says there is nothing more today. So a block that starts at minute
+	-- 1080 is switched on by the minute line that runs at 1080 -- the reading turns
+	-- to `airing` at the same minute -- and off by the one after it ends.
+	mode = 755,
+	args = { "203" },
+	-- A default, and here the default IS the point: 203 is the channel the request
+	-- named. See the note on genwatch.sh's own `optional` for what it buys.
+	optional = true,
+	needs = { devices = {
+		{ id = "tv0", kind = "tv", state = "off",
+			detail = "channel 203 airing 1080-1440" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: tvguide.sh [<channel>]",
+		"c=$1",
+		"if [ -z \"$c\" ]; then c=203; fi",
+		"if [ ! -e /dev/tv0 ]; then",
+		"  echo \"tvguide.sh: no tv0 in /dev\"",
+		"  exit 1",
+		"fi",
+		"s=$(cat /dev/tv0)",
+		"if [ \"$(echo $s | cut -d' ' -f3)\" != \"$c\" ]; then",
+		"  echo channel $c > /dev/tv0",
+		"  s=$(cat /dev/tv0)",
+		"fi",
+		"w=$(echo $s | cut -d' ' -f4)",
+		"b=$(echo $s | cut -d' ' -f5)",
+		"if [ \"$w\" = airing ]; then",
+		"  echo on > /dev/tv0",
+		"  echo \"tv0 on, $c, block $b\"",
+		"  exit 0",
+		"fi",
+		"echo off > /dev/tv0",
+		"if [ \"$w\" = next ]; then",
+		"  echo \"tv0 off, $c next at $(echo $b | cut -d- -f1)\"",
+		"  exit 0",
+		"fi",
+		"echo \"tv0 off, nothing on $c\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["wake.sh"] = {
+	-- The radio and the lights in the morning, and the one program here that
+	-- schedules ITSELF: `wake.sh 06:30` pipes `wake.sh now` into at(1), which is
+	-- the shape at has on this machine -- it reads its commands from a pipe and
+	-- from nothing else. `wake.sh now` is the other half and is what a crontab line
+	-- runs; the README prints both.
+	--
+	-- B is /usr/local/bin and is a variable at the top for the reason setup.sh's P
+	-- is one: the at job runs with cron's environment and nothing of the caller's
+	-- working directory, so the path it queues has to be absolute. A survivor who
+	-- keeps the programs somewhere else changes one line.
+	mode = 755,
+	args = { "now" },
+	needs = { devices = {
+		{ id = "rx0", kind = "rx", state = "off" },
+		{ id = "light0", kind = "light", state = "off" },
+		{ id = "light1", kind = "light", state = "off" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: wake.sh now | HH:MM",
+		"B=/usr/local/bin",
+		"if [ -z \"$1\" ]; then",
+		"  echo \"usage: wake.sh now | HH:MM\"",
+		"  exit 1",
+		"fi",
+		"if [ \"$1\" != now ]; then",
+		"  echo \"sh $B/wake.sh now\" | at $1",
+		"  exit $?",
+		"fi",
+		"if [ -e /dev/rx0 ]; then echo on > /dev/rx0; fi",
+		"for l in $(ls /dev | grep ^light); do",
+		"  echo on > /dev/$l",
+		"done",
+		"echo \"Good morning.\"",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["alarm.sh"] = {
+	-- Every contact on the building, and a line on every screen when one opens.
+	--
+	-- `wall` and not `echo`: a daemon has no screen of its own, and only the
+	-- machine can put a line on a screen that is not this job's. That makes the
+	-- broadcast a "machine" order -- queued on the job, taken by the pass, and the
+	-- statement after it runs (CeroSecOS.KNOWN_ORDERS), which is why the flash
+	-- below really happens after the shout.
+	--
+	-- `^win[0-9]` and not `^win`, because `window0` starts with the same three
+	-- letters and is the OPERATOR on the same sash: a contact and the motor beside
+	-- it are two devices of one window (docs/DEVICES.md, "A window is two
+	-- devices"), and an alarm that watched both would ring twice for one window.
+	--
+	-- It keeps shouting while the contact is open, once every two seconds, which is
+	-- what an alarm is for. `lamps` is a shell function -- there is no `local` in a
+	-- 1993 sh and none is wanted here -- so the light list is written once.
+	mode = 755,
+	args = { "stop" },
+	needs = { devices = {
+		{ id = "door0", kind = "door", state = "closed" },
+		{ id = "win0", kind = "win", state = "unlocked" },
+		{ id = "light0", kind = "light", state = "off" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: alarm.sh start | stop",
+		"lamps() {",
+		"  for x in $(ls /dev | grep ^light); do",
+		"    echo $1 > /dev/$x",
+		"  done",
+		"}",
+		"F=/var/tmp/alarm.on",
+		"if [ \"$1\" = stop ]; then",
+		"  if [ -f $F ]; then rm $F; fi",
+		"  echo \"alarm: off\"",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" != start ]; then",
+		"  echo \"usage: alarm.sh start | stop\"",
+		"  exit 1",
+		"fi",
+		"echo on > $F",
+		"while [ -f $F ]; do",
+		"  for d in $(ls /dev | grep -e ^door -e ^win[0-9]); do",
+		"    if [ \"$(cat /dev/$d)\" = open ]; then",
+		"      echo \"ALARM: $d open\" | wall",
+		"      i=3",
+		"      while [ $i -gt 0 ]; do",
+		"        lamps on",
+		"        sleep 1",
+		"        lamps off",
+		"        sleep 1",
+		"        i=$((i - 1))",
+		"      done",
+		"    fi",
+		"  done",
+		"  sleep 2",
+		"done",
+	}, "\n"),
+}
+
+CeroSecContent.SCRIPTS["genwatch.sh"] = {
+	-- The tank, off a crontab line a minute, and ONE warning: the flag file is what
+	-- keeps a generator that is low from mailing root sixty times an hour, and
+	-- taking the flag away when the tank is full again is what lets the next
+	-- warning through. A warning nobody can turn off is a warning everybody learns
+	-- to ignore.
+	--
+	-- The fuel is the third field of the generator's own line -- `on fuel 62
+	-- condition 80 connected`, the one kind that says more than a word
+	-- (docs/DEVICES.md) -- and it is sifted through a `case` before any arithmetic
+	-- touches it, for the reason at the head of this block: a machine with no
+	-- generator puts `cat`'s whole refusal in the capture, and `[ $f -ge 10 ]` on
+	-- that is `test: argument expected` rather than a clean line.
+	--
+	-- It does not START the generator, deliberately. A generator that starts itself
+	-- is a noise in an empty street, which is the same sentence CeroSecAuto.lua is
+	-- written to (docs/CONTENT.md, "The hardware, and whose crontab drives it").
+	--
+	-- THE THRESHOLD TEST IS WRITTEN `-lt` AND NOT `-ge`, and that is the one line in
+	-- here that is about failing safe. `test` on a threshold that is not a number
+	-- answers `test: integer expected` and FALSE, so `-ge` would have dropped a
+	-- `genwatch.sh -h` straight into the warning -- a broadcast on every screen and
+	-- a letter to root because somebody typed a flag this shell has not got. Round
+	-- this way the same mistake prints the tank and says the threshold was not a
+	-- number, which is what a survivor needs to read.
+	mode = 755,
+	args = { "10" },
+	-- ITS ARGUMENT HAS A DEFAULT, which is what `optional` declares: run bare it
+	-- watches for ten per cent and succeeds, so the bare-run rule section 6 holds
+	-- every other script to -- say the usage and do not claim success -- is the
+	-- wrong rule for this one. The usage line's brackets are what the bench cross-
+	-- checks the flag against.
+	optional = true,
+	needs = { devices = {
+		{ id = "gen0", kind = "gen", state = "on",
+			detail = "fuel 62 condition 80 connected" },
+	} },
+	text = table.concat({
+		"#!/bin/sh",
+		"# usage: genwatch.sh [<percent>]",
+		"n=$1",
+		"if [ -z \"$n\" ]; then n=10; fi",
+		"F=/var/tmp/genwatch.said",
+		"s=$(cat /dev/gen0)",
+		"f=$(echo $s | cut -d' ' -f3)",
+		"case \"$f\" in",
+		"\"\" | *[!0-9]*)",
+		"  echo \"genwatch.sh: gen0 gave no fuel figure\"",
+		"  exit 1 ;;",
+		"esac",
+		"if [ $f -lt $n ]; then",
+		"  if [ -f $F ]; then exit 0; fi",
+		"  echo \"gen0 is down to $f per cent.\" > $F",
+		"  wall $F",
+		"  cat $F | mail -s \"gen0 low on fuel\" root",
+		"  exit 0",
+		"fi",
+		"if [ -f $F ]; then rm $F; fi",
+		"echo \"gen0 fuel $f per cent\"",
+	}, "\n"),
+}
+
+--
 -- THE DISK CATALOGUE -- the other half of what the world-content work, part 2 writes.
 --
 --   DISKS[i] = {
@@ -1663,9 +2055,10 @@ CeroSecContent.DISKS = {
 		printed = true,
 		label = "CeroSec UTILITIES 1.0",
 		version = "1.0",
-		-- Three down to two: the share the BBS disk is paid for with, and the
-		-- reason is written over that entry.
-		weight = 2,
+		-- Three down to two for the BBS disk, and two down to ONE for the home
+		-- kit: both reasons are written over those entries, and this is the disk
+		-- the home kit supersedes.
+		weight = 1,
 		files = {
 			{ name = "lights.sh", script = "lights.sh" },
 			{ name = "check.sh", script = "check.sh" },
@@ -1812,7 +2205,9 @@ CeroSecContent.DISKS = {
 		printed = true,
 		label = "SHAREWARE GAMES 2.1",
 		version = "2.1",
-		weight = 2,
+		-- Three down to two for the three tellings, and two down to ONE for the
+		-- home kit's second share: the note over that entry has the arithmetic.
+		weight = 1,
 		files = {
 			{ name = "README.TXT", mode = 644, text = table.concat({
 				"GAMES",
@@ -1886,6 +2281,77 @@ CeroSecContent.DISKS = {
 			{ name = "post.sh", script = "post.sh" },
 			{ name = "board.sh", script = "board.sh" },
 			{ name = "setup.sh", script = "setup.sh" },
+		},
+	},
+	{
+		-- THE HOME KIT. CeroSec Systems' own flagship for the motor rung: six
+		-- programs that drive the building instead of a survivor, and the disk the
+		-- wave was asked for. The programs themselves, and the five things about
+		-- this shell that shaped them, are over CeroSecContent.SCRIPTS["autoclose.sh"].
+		--
+		-- One telling, for the reason the sysop's kit has one: it is a vendor's
+		-- software and not somebody's writing, and three voices of one manual page
+		-- would be three manual pages.
+		--
+		-- ITS TWO SHARES CAME OUT OF UTILITIES (2 down to 1) AND GAMES (2 down to
+		-- 1), so the box is still SEVENTEEN written disks in a hundred and the other
+		-- eighty-three are still blank -- which is what a box of disks is. UTILITIES
+		-- paid the larger half of it because this is the disk that supersedes it: a
+		-- survivor who finds this one has found lights.sh and check.sh written the
+		-- way a building runs them, and a box with two of each is a box with one
+		-- fewer blank disk for no reason. GAMES paid the other half because a
+		-- shareware games disk is the least load-bearing thing in the catalogue.
+		--
+		-- No `late` file: nothing on it names a place, a number or a person, so
+		-- there is nothing on it that a drawer in a town nobody has walked into
+		-- could be wrong about.
+		--
+		-- SIX PROGRAMS AND A README IN 4030 OF THE FLOPPY'S 4096 BYTES, seven nodes
+		-- of thirty-two. That is sixty-six bytes of room, and it is why the README
+		-- is as short as it is: a page per program lives in Volume 2 of the manual,
+		-- where there is room for it, and the disk carries what a survivor needs
+		-- with the disk in his hand -- the names, the copy, the crontab lines and
+		-- which module each one wants. Section 7's byte assertions are what say so.
+		id = "HOME AUTOMATION",
+		printed = true,
+		label = "CeroSec HOME 1.0",
+		version = "1.0",
+		weight = 2,
+		files = {
+			{ name = "README.TXT", mode = 644, text = table.concat({
+				"CeroSec HOME 1.0",
+				"",
+				"autoclose.sh  a door left open, shut again",
+				"curtains.sh   every curtain, or the hour",
+				"tvguide.sh    the set on for the show",
+				"wake.sh       the radio and the lights",
+				"alarm.sh      a contact opened, said aloud",
+				"genwatch.sh   the tank, and one warning",
+				"",
+				"Copy what you want, then crontab -e:",
+				"",
+				"  sudo cp /mnt/curtains.sh /usr/local/bin",
+				"  0 7 * * * sh /usr/local/bin/curtains.sh auto",
+				"  0 20 * * * sh /usr/local/bin/curtains.sh auto",
+				"  * * * * * sh /usr/local/bin/tvguide.sh 203",
+				"  0 6 * * * sh /usr/local/bin/wake.sh now",
+				"",
+				"genwatch.sh too. wake.sh 06:30 uses at(1) instead.",
+				"The other two watch. Start with &, stop by name:",
+				"",
+				"  sh /usr/local/bin/autoclose.sh start 5 &",
+				"  sh /usr/local/bin/autoclose.sh stop",
+				"",
+				"Each wants a module under /dev: an operator on the",
+				"door, a motor on the curtain, a tuner, a switch on",
+				"the generator, relays, contacts. ls /dev says which.",
+			}, "\n") },
+			{ name = "autoclose.sh", script = "autoclose.sh" },
+			{ name = "curtains.sh", script = "curtains.sh" },
+			{ name = "tvguide.sh", script = "tvguide.sh" },
+			{ name = "wake.sh", script = "wake.sh" },
+			{ name = "alarm.sh", script = "alarm.sh" },
+			{ name = "genwatch.sh", script = "genwatch.sh" },
 		},
 	},
 	{
@@ -3035,7 +3501,7 @@ CeroSecContent.DISKS = {
 -- is a catalogue nobody wrote down.
 CeroSecContent.DISK_SLOTS = {
 	"BBS LIST", "WARDIALER", "GAMES", "BACKUP", "CEROSEC OS 1.0 DIST",
-	"LEDGER", "PERSONAL", "RADIO LOG", "BBS",
+	"LEDGER", "PERSONAL", "RADIO LOG", "BBS", "HOME AUTOMATION",
 }
 
 
@@ -6973,6 +7439,16 @@ CeroSecContent.PROFILES.showroom = {
 		-- Named by the crontab, so it is written and not rolled for (see the store).
 		{ script = "lamps.sh" },
 		{ script = "lockup.sh" },
+		-- THE TWO OFF THE HOME KIT, and they are rolled for rather than written:
+		-- a dealer who had the disk on the counter is a dealer who had it, and one
+		-- shop in three has it somewhere else. They are the two a salesman would
+		-- really have demonstrated -- a door that shuts itself and a curtain on the
+		-- hour -- and no crontab line is written for either, because the automation
+		-- never fits an operator or a curtain motor on a premises the player has
+		-- not been to (docs/CONTENT.md, "The hardware, and whose crontab drives
+		-- it"): a line that ran here would answer `no such device` once a minute.
+		{ script = "autoclose.sh", chance = 35 },
+		{ script = "curtains.sh", chance = 35 },
 	},
 	logs = {
 		"login: root logged in on console",
@@ -8294,6 +8770,15 @@ CeroSecContent.PROFILES.cerosec = {
 		{ script = "guess.sh", to = "/usr/local/src" },
 		{ script = "hangman.sh", to = "/usr/local/src" },
 		{ script = "adventure.sh", to = "/usr/local/src" },
+		-- The home kit. Six more masters, for the reason the fourteen above are
+		-- here: this is the premises that WROTE them, and the head of
+		-- CeroSecContent.SCRIPTS is the one-script-one-copy rule they all follow.
+		{ script = "autoclose.sh", to = "/usr/local/src" },
+		{ script = "curtains.sh", to = "/usr/local/src" },
+		{ script = "tvguide.sh", to = "/usr/local/src" },
+		{ script = "wake.sh", to = "/usr/local/src" },
+		{ script = "alarm.sh", to = "/usr/local/src" },
+		{ script = "genwatch.sh", to = "/usr/local/src" },
 	},
 	-- ROOT'S AND NOT THE OWNER'S, because nothing in the line names a home: the
 	-- weekly sweep of /var is the machine's own housekeeping and runs whoever's
