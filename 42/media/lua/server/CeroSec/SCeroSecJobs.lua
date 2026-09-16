@@ -1354,7 +1354,7 @@ end
 -- table. One rule does it, and it was checked against every program this parser
 -- makes -- every script the world content ships, plus one line of every shape the
 -- grammar has, each made into a job and handed back through the gate
--- (tests/window_test.lua, section 44c): every value at an integer key is a table,
+-- (tests/window_test.lua, section 44d): every value at an integer key is a table,
 -- `k` and `t` are strings where they appear, and the one exception is `ops` -- a
 -- list node's `&&`, `||` and `;`, which really are strings in an array.
 local function programOk(value, depth)

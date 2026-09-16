@@ -243,7 +243,7 @@ The repository root **is** the mod folder, at a real non-symlinked path under
 - A control marker (`clear`, `exit`, `prompt`, `edit`, ...) never travels in the
   same channel as text output — see [PROTOCOL.md](PROTOCOL.md).
 - `SYSTEM_VERSION` bumps whenever a change adds a file to `/bin` or seeds a new
-  system file, and `sysv` (the *contents* a machine was built with) is what
+  system file or directory, and `sysv` (the *contents* a machine was built with) is what
   `CeroSecOS.upgradeSystem` tops an older machine up against on load — see
   [ARCHITECTURE.md](ARCHITECTURE.md#persistence). It puts in what is missing and
   never replaces what root has already changed or removed.
@@ -280,14 +280,18 @@ sandbox option.** The replacement is always the same pair: *obsolete, and migrat
 
 | what changed | number | what it does |
 | --- | --- | --- |
-| a file the machine ships in `/bin` or `/etc` | `CeroSecOS.SYSTEM_VERSION` | `upgradeSystem` puts in what is **missing**, once, and never replaces what root changed or deleted |
+| a file or directory the machine ships — `/bin`, `/etc`, `/var`, `/usr/local/bin` | `CeroSecOS.SYSTEM_VERSION` | `upgradeSystem` puts in what is **missing**, once, and never replaces what root changed or deleted |
 | the **shape** of the state: a key renamed, dropped, or whose meaning changed | `CeroSecOS.STATE_VERSION` | a step in `CeroSecOS.MIGRATIONS`, walked on the way in |
 | the shape of what is written on a **floppy** | `CeroSecOS.FLOPPY_VERSION` | a step in `CeroSecOS.DISK_MIGRATIONS` |
 | the shape of a door's **modules** | `CeroSecModules.VERSION` | a step in `CeroSecModules.MIGRATIONS` |
 | the shape of the **phone book** stamp | `CeroSecPhonebook.VERSION` | a step in `CeroSecPhonebook.MIGRATIONS` |
 
 Seeding a file is *not* a shape change and must not move `STATE_VERSION`: the two
-numbers exist precisely so that adding a command costs a machine nothing.
+numbers exist precisely so that adding a command costs a machine nothing. Seeding a
+**directory** is the same kind of thing and obeys the same rule as a file does: what
+is already at that name is the player's, whatever it is. A *file* where the seeding
+wants a directory stops the seeding there and is left alone (`/usr/local/bin` at
+version 21 is the worked example, as `/bin/wall` is for a file).
 
 **Nor is adding a key**, and it is worth saying out loud because it is the commonest
 change there is. A key a change puts inside the state is absent on every machine

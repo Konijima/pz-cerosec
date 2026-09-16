@@ -202,6 +202,23 @@ _G.getSpecificPlayer = function(num) return _G.__players[num] end
 _G.isClient = function() return false end
 _G.isServer = function() return false end
 _G.sendServerCommand = function() end
+-- A WORLD SOUND, AND THE TWO WAYS IT IS MADE. Vanilla's own server-side pair is
+-- one function with a branch in it -- `if isServer() then playServerSound(name,
+-- square) else square:playSound(name, true) end`,
+-- media/lua/server/Traps/STrapGlobalObject.lua:118-124 -- and the two halves go to
+-- two different places, so the fake records WHICH one was used and not merely that
+-- a sound was made: playServerSound is a broadcast that does nothing off a
+-- dedicated server (GameServer.PlayWorldSound, `if (!server) return` at offsets
+-- 0-10) and the square's own emitter is a sound in one process and nowhere else. A
+-- fake that answered both the same way would let a mod which only ever made the
+-- wrong one pass.
+--
+-- Every entry is { name, how, x, y, z }. `how` is "server" or "square".
+_G.__sounds = {}
+_G.playServerSound = function(name, square)
+	_G.__sounds[#_G.__sounds + 1] = { name = name, how = "server",
+		x = square:getX(), y = square:getY(), z = square:getZ() }
+end
 -- MapObjects, RECORDING, because the game's own answer to "created for the first
 -- time in this save" is which of its two maps a closure was put in: OnNewWithSprite
 -- fills `onNew`, which IsoChunk.doLoadGridsquare walks only for a chunk built out of
@@ -679,6 +696,11 @@ local FILES = {
 	-- game's own question.
 	"server/CeroSec/CeroSecNotes.lua",
 	"server/CeroSec/SCeroSecSystem.lua",
+	-- What happens to a module when the thing it is screwed to leaves the world.
+	-- Loaded for real, and it REGISTERS on Events.OnObjectAboutToBeRemoved at its
+	-- top level, which is the only way in: the fake Events above keeps handlers and
+	-- can fire them, so the benches ask the engine's own question.
+	"server/CeroSec/SCeroSecFixtures.lua",
 	-- The client's mirror and the glow on it. Loaded for real, and not stubbed like
 	-- the CCeroSecSystem the window benches talk to: the light is the one thing in
 	-- this mod that only the client has, so a stub in its place is a bench that
@@ -2857,7 +2879,36 @@ function FakeWorld.new()
 		-- thing that stops a premises' machine coming up on its own.
 		sq.haveElectricity = function() return world.power ~= false end
 		sq.hasGridPower = function() return world.power ~= false end
-		sq.playSound = function() end
+		-- The square's own emitter, RECORDED: it is the half of the sound pair a
+		-- solo game hears (IsoGridSquare.playSound takes a free emitter at the
+		-- square, offsets 0-36). Both halves land in one list so a bench can read
+		-- them in the order they happened.
+		sq.playSound = function(_, name)
+			_G.__sounds[#_G.__sounds + 1] = { name = name, how = "square",
+				x = x, y = y, z = z }
+		end
+		-- The FLOOR, as a place something lands on. The engine's String overload
+		-- makes the item itself and files an IsoWorldInventoryObject under the
+		-- square's world objects (AddWorldInventoryItem(String, float, float, float)
+		-- -> InventoryItemFactory.CreateItem then the IsoWorldInventoryObject
+		-- constructor, offsets 0-85), which is the list getWorldObjects answers --
+		-- not getObjects -- so a module dropped here is on the same list a dropped
+		-- sensor is on and a walk that read the fixtures instead would go red.
+		--
+		-- It answers the ITEM, as the engine does, and nil for a type the game does
+		-- not know (offsets 6-12): `world.floorRefuses = true` is that answer, which
+		-- is the one case where a module must NOT come off its fixture.
+		sq.AddWorldInventoryItem = function(_, fullType, ox, oy, oz)
+			if world.floorRefuses == true then return nil end
+			local item = { __class = "InventoryItem" }
+			item.getFullType = function() return fullType end
+			local dropped = { __class = "IsoWorldInventoryObject", item = item,
+				ox = ox, oy = oy, oz = oz }
+			dropped.getItem = function() return dropped.item end
+			dropped.getSquare = function() return sq end
+			sq.items[#sq.items + 1] = dropped
+			return item
+		end
 		world.squares[key] = sq
 		return sq
 	end
@@ -2905,6 +2956,73 @@ function FakeWorld.new()
 		object.getSquare = function() return object.square end
 		square.objects[#square.objects + 1] = object
 		return object
+	end
+
+	-- A WALL OBJECT, which belongs to ONE square and stands on one of its edges --
+	-- and therefore has a square on the far side of it.
+	--
+	-- `facing` is which edge, and the opposite square is the engine's own answer
+	-- for one: `IsoDoor.getOppositeSquare` is getGridSquare(x, y - 1, z) when
+	-- `getNorth()` and (x - 1, y, z) when not (javap -c, offsets 0-56);
+	-- `IsoWindow`'s and `IsoThumpable`'s are `getInsideSquare()`, the same pair off
+	-- the `north` field (offsets 9-77 of each); and `IsoCurtain`'s reads its sprite
+	-- TYPE and answers all four -- curtainN north, curtainS south, curtainW west,
+	-- curtainE east, nil for a sprite that is none of them (offsets 0-141). So
+	-- `facing` defaults to the pair a door knows and takes all four for a curtain.
+	--
+	-- Which means a fixture in a room's SOUTH wall goes on the square south of the
+	-- room facing "N" -- where the map really has it, and where the walk of the
+	-- building's rooms does not go (SCeroSecDevices' far-edge rule).
+	--
+	-- Looked up when it is ASKED for and not now, because a bench builds its world
+	-- in the order that reads best and the square on the far side may not be there
+	-- yet.
+	-- A HUNG fixture: a lamp, a neon sign, a light plate -- screwed to a wall and
+	-- not part of one, so it has no opposite square and says which wall it is on
+	-- with a SPRITE PROPERTY. `facing` is the edge of its own square it hangs on
+	-- and the property is `attached` plus that letter, which is what vanilla reads
+	-- to work out where a survivor has to stand to pull the chain
+	-- (`ISWorldObjectContextMenu.lua:1348-1352`, onToggleLight).
+	--
+	-- `facing` nil is the OTHER outdoor light there is: a lamppost, which carries
+	-- `streetlight` and no attached property of any kind
+	-- (newtiledefinitions.tiles.txt, lighting_outdoor_01 tile 0, against tile 24's
+	-- `MoveType = WallObject` + `attachedN` for the Round Outdoor Lamp).
+	world.hung = function(square, object, facing)
+		local flags = {}
+		if facing == nil then
+			flags.streetlight = true
+		else
+			flags["attached" .. facing] = true
+		end
+		local props = {
+			has = function(_, name) return flags[name] == true end,
+			get = function() return nil end,
+		}
+		local sprite = { getProperties = function() return props end }
+		object.getSprite = function() return sprite end
+		return world.put(square, object)
+	end
+
+	world.wall = function(square, object, facing)
+		if facing == nil then
+			if object.north then facing = "N" else facing = "W" end
+		end
+		local x, y, z = square:getX(), square:getY(), square:getZ()
+		local dx, dy = 0, 0
+		if facing == "N" then
+			dy = -1
+		elseif facing == "S" then
+			dy = 1
+		elseif facing == "W" then
+			dx = -1
+		else
+			dx = 1
+		end
+		object.getOppositeSquare = function()
+			return world.squares[(x + dx) .. "," .. (y + dy) .. "," .. z]
+		end
+		return world.put(square, object)
 	end
 
 	-- Take a device off its square, the way a survivor with a sledgehammer does.
@@ -2956,6 +3074,13 @@ end
 -- server-side write that a state field cannot show.
 local function fakeLight(on, powered)
 	local o = fittable({ __class = "IsoLightSwitch", activated = on, powered = powered, syncs = 0 })
+	-- Every object in the world answers getSprite, and a plain switch plate carries
+	-- no `attached` property: it is the wall lamp that does, and `world.hung` is what
+	-- puts one on. A fake with no getSprite at all would let a walk that asked the
+	-- wrong square for a lamp's wall die on a nil call instead of going red.
+	local props = { has = function() return false end, get = function() return nil end }
+	local sprite = { getProperties = function() return props end }
+	o.getSprite = function() return sprite end
 	o.isActivated = function() return o.activated end
 	o.canSwitchLight = function() return o.powered end
 	o.setActive = function(_, want)
@@ -3000,6 +3125,14 @@ local function openable(o)
 	o.IsOpen = function() return o.open end
 	o.isBarricaded = function() return o.barricaded end
 	o.isObstructed = function() return o.obstructed end
+	-- What the door is MADE of, as the sound name says it. Both classes answer
+	-- getSoundPrefix() the same way -- the closedSprite's DoorSound property, or
+	-- "WoodDoor" when the sprite has none (IsoDoor and IsoThumpable, offsets 0-40
+	-- of each) -- and the hand's name is that prefix plus "Open" or "Close". The
+	-- default here is the engine's own default, and a bench that wants to prove the
+	-- prefix is READ rather than written in sets `soundPrefix` to something else.
+	o.soundPrefix = "WoodDoor"
+	o.getSoundPrefix = function() return o.soundPrefix end
 	o.ToggleDoorSilent = function()
 		o.silentToggles = o.silentToggles + 1
 		if o.barricaded then return end
@@ -3076,6 +3209,10 @@ local function fakeWindow(locked, north)
 		alarmed = false, alarms = 0, toggles = 0, syncs = 0 })
 	highlightable(o)
 	o.getNorth = function() return o.north end
+	-- The class has one (`getInsideSquare()`, offsets 9-77) and it answers NULL for a
+	-- square that is not in the world, which is what a fake nobody has put on an edge
+	-- is: `world.wall` is what gives it the square on the far side.
+	o.getOppositeSquare = function() return o.opposite end
 	o.IsOpen = function() return o.open end
 	o.isLocked = function() return o.locked end
 	o.isSmashed = function() return o.smashed end
@@ -3113,8 +3250,19 @@ local function fakeCurtain(north)
 		barricaded = false, toggles = 0, syncs = 0 })
 	highlightable(o)
 	o.getNorth = function() return o.north end
+	-- All four of the class's sprite types answer one and the fifth case answers
+	-- NULL (offsets 0-141), which is what this is until `world.wall` hangs the
+	-- curtain on an edge.
+	o.getOppositeSquare = function() return o.opposite end
 	o.IsOpen = function() return o.open end
 	o.isCurtainOpen = function() return o.open end
+	-- The cloth, as the sound name says it: IsoCurtain.getSoundPrefix() is
+	-- "Curtain" .. the closedSprite's CurtainSound property, or "CurtainShort" when
+	-- there is no sprite or no property (offsets 0-45). A map curtain is
+	-- CurtainShort and a survivor's bedsheet is CurtainSheet, so a bench that wants
+	-- the sheet sets this.
+	o.soundPrefix = "CurtainShort"
+	o.getSoundPrefix = function() return o.soundPrefix end
 	o.ToggleDoorSilent = function()
 		o.toggles = o.toggles + 1
 		if o.barricaded then return end
@@ -3302,9 +3450,12 @@ local function fakeWaveSet(class, opts)
 	return o
 end
 
--- No getOppositeSquare on this one, deliberately: the exterior rule is a map
--- door's business and a built door never has it asked. A fake that answers a
--- call nothing makes is a fake that claims a call we make.
+-- The exterior rule is a map door's business and a built door is never asked which
+-- side of it is outdoors -- but the FAR-EDGE rule asks any wall fixture standing on
+-- a neighbouring square which boundary it is on, this class included, so the getter
+-- is here. It answers nil until `world.wall` hangs the door on an edge, which is
+-- what the engine's own answers for a square that is not in the world
+-- (`IsoThumpable.getOppositeSquare` is `getInsideSquare()`, offsets 9-77).
 local function fakeThumpable(padlock, north)
 	local o = fittable({ __class = "IsoThumpable", lockedByPadlock = padlock, canPadlock = true,
 		lockedByKey = false, keyId = 0, north = north, syncs = 0 })
@@ -3312,6 +3463,7 @@ local function fakeThumpable(padlock, north)
 	openable(o)
 	o.isDoor = function() return true end
 	o.getNorth = function() return o.north end
+	o.getOppositeSquare = function() return o.opposite end
 	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
 	o.isLockedByPadlock = function() return o.lockedByPadlock end
 	o.canBeLockByPadlock = function() return o.canPadlock end
@@ -3441,18 +3593,18 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
-		"crw-rw----  root  sudo  door0   exterior       W  locked",
-		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
-		"crw-rw----  root  sudo  door2   built          N  closed",
-		"crw-rw----  root  sudo  light0  office            on",
-		"crw-rw----  root  sudo  light1  hallway           off",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   built          N  padlock",
-		"crw-rw----  root  sudo  win0    office         N  locked",
+		"crw-rw----  root  sudo  door0    exterior      W  locked",
+		"crw-rw----  root  sudo  door1    kitchen-hal~  N  closed",
+		"crw-rw----  root  sudo  door2    built         N  closed",
+		"crw-rw----  root  sudo  light0   office           on",
+		"crw-rw----  root  sudo  light1   hallway          off",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
+		"crw-rw----  root  sudo  lock1    built         N  padlock",
+		"crw-rw----  root  sudo  win0     office        N  locked",
 	}
 	-- The interior door is a door and NOT a lock: a key on it stops nobody, so
 	-- there is no lock device for it to lie through.
-	check("no lock device for the interior door", not bench.painted("kitchen-hall~  N  unlocked"))
+	check("no lock device for the interior door", not bench.painted("kitchen-hal~  N  unlocked"))
 	for i = 1, #want do
 		check("the glass shows: " .. want[i], bench.painted(want[i]))
 	end
@@ -3498,14 +3650,14 @@ do
 	-- The offsets are the real ones: the computer stands at 10,10,0 and every
 	-- one of these was walked out of the fake world by SCeroSecDevices.
 	local table60 = {
-		"door0   exterior              1E 0        W  closed",
-		"door1   kitchen-hallway       1E 1S       N  closed",
-		"door2   built                 2E 1S       N  closed",
-		"light0  office                1E 0           on",
-		"light1  hallway               3E 1S          on",
-		"lock0   exterior              1E 0        W  unlocked",
-		"lock1   built                 2E 1S       N  unlocked",
-		"win0    office                2E 0        N  unlocked",
+		"door0    exterior              1E 0        W  closed",
+		"door1    kitchen-hallway       1E 1S       N  closed",
+		"door2    built                 2E 1S       N  closed",
+		"light0   office                1E 0           on",
+		"light1   hallway               3E 1S          on",
+		"lock0    exterior              1E 0        W  unlocked",
+		"lock1    built                 2E 1S       N  unlocked",
+		"win0     office                2E 0        N  unlocked",
 	}
 	for i = 1, #table60 do
 		check("dev's table shows: " .. table60[i], bench.painted(table60[i]))
@@ -3658,7 +3810,7 @@ do
 	check("a lock's word is not a door's", bench.painted("door0: invalid value"))
 	bench.enter("dev door")
 	bench.frame()
-	check("door is a kind", bench.painted("door0   exterior"))
+	check("door is a kind", bench.painted("door0    exterior"))
 	bench.enter("dev door9")
 	bench.frame()
 	check("and a number never handed out is the command's refusal",
@@ -3678,7 +3830,7 @@ do
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("and the listing says so too",
-		bench.painted("crw-rw----  root  sudo  win0    office         N  open"))
+		bench.painted("crw-rw----  root  sudo  win0     office        N  open"))
 	-- Open beats the latch, the way a door's open beats its lock: the word is
 	-- about the hole in the wall and not about the catch on it.
 	eq("the latch is untouched and unasked", kit.win0.locked, false)
@@ -3711,7 +3863,7 @@ do
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("the smashed window shows",
-		bench.painted("crw-rw----  root  sudo  win0    office         N  smashed"))
+		bench.painted("crw-rw----  root  sudo  win0     office        N  smashed"))
 	-- Broken beats the sash: there is no window left to be open, so the word a
 	-- survivor needs is the one about the glass.
 	check("and not what the sash is doing", not bench.painted("N  open"))
@@ -3857,12 +4009,12 @@ do
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 
-	check("light0 kept its number", reloaded.painted("light0  office"))
-	check("light1 kept its number", reloaded.painted("light1  hallway"))
-	check("door1 kept its number", reloaded.painted("door1   kitchen-hall~"))
-	check("door2 kept its number", reloaded.painted("door2   built"))
-	check("lock1 kept its number", reloaded.painted("lock1   built"))
-	check("win0 kept its number", reloaded.painted("win0    office"))
+	check("light0 kept its number", reloaded.painted("light0   office"))
+	check("light1 kept its number", reloaded.painted("light1   hallway"))
+	check("door1 kept its number", reloaded.painted("door1    kitchen-hal~"))
+	check("door2 kept its number", reloaded.painted("door2    built"))
+	check("lock1 kept its number", reloaded.painted("lock1    built"))
+	check("win0 kept its number", reloaded.painted("win0     office"))
 	-- The one that is gone leaves TWO gaps: nothing moved up into either.
 	check("the gone door is not listed", not reloaded.painted("door0 "))
 	check("nor its lock", not reloaded.painted("lock0 "))
@@ -3882,9 +4034,9 @@ do
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 	check("the new door took the next number, not the gap",
-		reloaded.painted("crw-rw----  root  sudo  door3   built          W  closed"))
+		reloaded.painted("crw-rw----  root  sudo  door3    built         W  closed"))
 	check("and so did its lock",
-		reloaded.painted("crw-rw----  root  sudo  lock2   built          W  unlocked"))
+		reloaded.painted("crw-rw----  root  sudo  lock2    built         W  unlocked"))
 	check("and the gaps are still gaps", not reloaded.painted("door0 "))
 	check("both of them", not reloaded.painted("lock0 "))
 
@@ -3912,6 +4064,266 @@ do
 	eq("and the state still validates", CeroSecOS.validate(reloaded.object.os), true)
 
 	_G.__world = nil
+end
+
+--
+-- THE FAR EDGE OF A ROOM, which is the square the room does not stand on
+--
+-- A wall object belongs to ONE square and sits on that square's NORTH or WEST
+-- edge. `IsoDoor.getOppositeSquare` is the whole of it -- `getNorth()` then
+-- getGridSquare(x, y - 1, z), else getGridSquare(x - 1, y, z) (javap -c, offsets
+-- 0-56) -- `IsoWindow`'s and `IsoThumpable`'s are `getInsideSquare()` off the same
+-- `north` field (offsets 9-77 of each), and `IsoCurtain`'s reads its sprite type
+-- and answers all four (offsets 0-141).
+--
+-- So a door in a room's north or west wall stands on the room's own square, and a
+-- door in its SOUTH or EAST wall stands on the neighbouring square -- the
+-- pavement, in no room at all, and a square the walk of a building's rooms never
+-- visited. Every south and east door, window and sheet of every building on the
+-- map was therefore invisible to /dev while the north and west ones were listed:
+-- a module fitted to a front door that never became a device.
+--
+-- The world here is one building with the four of them, the interior door that
+-- must be found ONCE and not twice, and the pavement's own furniture, which is
+-- nobody's: a generator wired with a genset, three tiles from the office.
+--
+do
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	-- The hardware gate ON, which is the world the author was standing in: a
+	-- fixture is a device because somebody screwed a module to it, so the bench
+	-- fits one on every fixture and the generator on the pavement carries a
+	-- genset like the rest. A world with the gate off would answer the same
+	-- question with every fixture a device and the sidewalk one refused for its
+	-- class alone; with it on, both halves are asked at once.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+	world.room("store", { {11,11,0} })
+	world.room("hall", { {10,12,0} })
+	-- The outdoors, which is what a room on exactly one side of a wall means.
+	world.square(10, 9, 0, nil)
+	world.square(9, 10, 0, nil)
+	world.square(10, 11, 0, nil)
+	local windowWall = world.square(12, 11, 0, nil)
+	local eastWall = world.square(13, 10, 0, nil)
+
+	-- The two that always worked: a door on the office's north wall and one on its
+	-- west wall both stand on the office's own square.
+	local north = fit(world.wall(world.squares["10,10,0"], fakeDoor(false, true), "N"),
+		"contact")
+	local west = fit(world.wall(world.squares["10,10,0"], fakeDoor(false, false), "W"),
+		"contact")
+	-- And the two that never did. The south door of the office stands on the
+	-- pavement at 10,11 and its opposite square is the office; the east door of the
+	-- office stands on the pavement at 13,10 and faces west into it.
+	local south = fit(world.wall(world.squares["10,11,0"], fakeDoor(false, true), "N"),
+		"contact")
+	local east = fit(world.wall(eastWall, fakeDoor(false, false), "W"), "contact")
+	-- The hall's own north door, which is what makes the numbering below a
+	-- question: it stands on the hall's square at 10,12 and the south door above
+	-- stands at 10,11, so the newly found one sorts BEFORE a device that already
+	-- has a number.
+	local hallDoor = fit(world.wall(world.squares["10,12,0"], fakeDoor(false, true), "N"),
+		"contact")
+	-- The INTERIOR door, between the store and the office: it stands on the
+	-- store's square, so the store's own walk finds it -- and the office's far edge
+	-- must not find it a second time. The ordinal in a key is handed out per
+	-- square, so one object reached twice would be two devices with two numbers.
+	local inner = fit(world.wall(world.squares["11,11,0"], fakeDoor(false, true), "N"),
+		"contact")
+	-- And a door a SURVIVOR built, in the store's south wall: a player-built door
+	-- is an IsoThumpable and the class has a getOppositeSquare of its own
+	-- (`getInsideSquare()`, offsets 9-77), which nothing in this mod had ever
+	-- called before the far edge did.
+	local built = fit(world.wall(world.square(11, 12, 0, nil), fakeThumpable(false, true), "N"),
+		"contact")
+
+	-- A GATE ON THE PAVEMENT, on the same square as the south door and facing the
+	-- other way: its own opposite square is the tile further west, so it is a
+	-- neighbour's fence and not this building's wall. The walk reaches it and the
+	-- opposite-square test is the only thing that leaves it alone.
+	local fence = fit(world.wall(world.squares["10,11,0"], fakeDoor(false, false), "W"),
+		"contact")
+
+	-- A window in the south wall, on the pavement square with the office behind it.
+	local win = fit(world.wall(windowWall, fakeWindow(true, true), "N"), "contact")
+	-- And the two places a curtain can be. A sheet a survivor hangs goes on the
+	-- INSIDE square: IsoWindow.addSheet moves to (x, y - 1) and switches the type
+	-- to curtainS when the character is north of the window, and does the same for
+	-- a null character over a square with no room (offsets 16-94). So this one was
+	-- always found, and it is here to say so.
+	local sheet = fit(world.wall(world.squares["12,10,0"], fakeCurtain(true), "S"),
+		"curtain")
+	-- A curtain the MAP put on the wall square itself, facing the room: found
+	-- only by the far edge, and the one fixture whose opposite square cannot be
+	-- worked out from `north` at all -- IsoCurtain has four types.
+	local mapSheet = fit(world.wall(windowWall, fakeCurtain(true), "N"), "curtain")
+
+	-- THE PORCH LAMP, which is what a relay is for. A wall lamp stands on the
+	-- pavement square and hangs on that square's NORTH edge, which is the house's
+	-- south wall: `MoveType = WallObject` with `attachedN`, tile 24 of
+	-- lighting_outdoor_01 in newtiledefinitions.tiles.txt, the Round Outdoor Lamp
+	-- of the report. So it is on the building and nowhere near any room.
+	local porch = fit(world.hung(world.squares["10,11,0"], fakeLight(false, true), "N"),
+		"relay")
+	-- And the switch inside, which is what a light has always been -- here so that
+	-- the lamp outside is a SECOND light and not the only one. It stands west of the
+	-- lamp, so it is numbered first.
+	local inside = fit(world.put(world.squares["10,10,0"], fakeLight(true, true)),
+		"relay")
+	-- A LAMPPOST on the pavement, on the very square the east door stands on: the
+	-- county's street lighting, wired by this bench like everything else. It has no
+	-- `attached` property at all and it is nobody's wall, so the walk reaches it and
+	-- leaves it. (A post two tiles further out is not even looked at: the far edge
+	-- is one square deep.)
+	local post = fit(world.hung(eastWall, fakeLight(true, true), nil), "relay")
+
+	-- The pavement's own machine, wired: a generator three tiles from the office
+	-- on the very square the east door stands on. It is not the building's and it
+	-- is not on an edge -- the class gate is what keeps it out, and with the
+	-- hardware gate on and a genset on it, nothing else would.
+	local streetGen = fit(world.put(eastWall, fakeGenerator(false, 62, 80, true)),
+		"genset")
+	-- And one INSIDE, so that "the street's is not listed" is an absence measured
+	-- against a presence and not against a kind the machine never had.
+	local officeGen = fit(world.put(world.squares["11,10,0"],
+		fakeGenerator(false, 62, 80, true)), "genset")
+
+	_G.__world = world
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+	local state = bench.object:osState()
+	local found = CeroSecDevices.number(state,
+		CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z))
+
+	-- By the OBJECT, because that is the only thing a bench can name a place by:
+	-- an id is what the machine hands out and the object is what the world has.
+	local at = {}
+	for i = 1, #found do at[found[i].object] = found[i] end
+
+	local function device(what, object, wantId, wantDesc, wantState)
+		local entry = at[object]
+		check(what .. " is on the list", entry ~= nil)
+		if entry ~= nil then
+			eq(what .. " is " .. wantId, entry.id, wantId)
+			eq(what .. " is described as " .. wantDesc, entry.desc, wantDesc)
+			eq(what .. " reads " .. wantState, entry.state, wantState)
+		end
+	end
+
+	device("the north door", north, "door0", "exterior", "closed")
+	device("the west door", west, "door1", "exterior", "closed")
+	-- The bug, named: a door in the SOUTH wall of the office.
+	device("the south door", south, "door2", "exterior", "closed")
+	device("the hall's north door", hallDoor, "door3", "exterior", "closed")
+	device("the interior door", inner, "door4", "store-office", "closed")
+	-- And the other half of it, which is the east wall.
+	device("the built door in the store's south wall", built, "door5", "built",
+		"closed")
+	device("the east door", east, "door6", "exterior", "closed")
+	device("the south window", win, "win0", "exterior", "locked")
+	device("the sheet hung from inside", sheet, "curtain0", "office", "closed")
+	device("the map's own sheet on the wall square", mapSheet, "curtain1",
+		"exterior", "closed")
+	-- The state is the WORD; the fuel and the condition ride beside it in `detail`,
+	-- because a table has a column for a word (CeroSecOS.devText).
+	device("the office generator", officeGen, "gen0", "office", "off")
+	device("the switch inside the office", inside, "light0", "office", "on")
+	-- The porch lamp: on the building's skin, in no room, and a device.
+	device("the porch lamp on the south wall", porch, "light1", "exterior", "off")
+
+	-- THE PAVEMENT IS NOT THE BUILDING'S. A generator on the square the east door
+	-- stands on is reached by the far-edge walk and refused for its class.
+	check("the generator on the pavement is not a device", at[streetGen] == nil)
+	local ids = {}
+	for i = 1, #found do ids[found[i].id] = true end
+	check("so there is no second generator at all", not ids.gen1)
+	-- AND A LAMPPOST IS NOT A PORCH LAMP. Same class, same wiring, same square as
+	-- the east door -- and no wall of this building under it.
+	check("the lamppost on the street is not a device", at[post] == nil)
+	check("and the gate facing away from the building is not one either",
+		at[fence] == nil)
+	check("so there is no third light", not ids.light2)
+
+	-- AND NOTHING WAS FOUND TWICE. Thirteen devices for thirteen fixtures: an interior door
+	-- reached from the store's square and again from the office's far edge would be
+	-- an eleventh row with a number of its own.
+	eq("thirteen fixtures, thirteen devices and no more", #found, 13)
+
+	-- Through the glass, which is the wire this bug was reported on: the machine's
+	-- own table, with the room, the offset and the side the survivor reads.
+	bench.enter("dev")
+	bench.frame()
+	check("the table shows the south door where it really is",
+		bench.painted("door2    exterior              0 1S        N  closed"))
+	check("and the east one",
+		bench.painted("door6    exterior              3E 0        W  closed"))
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
+end
+
+--
+-- AND THE NUMBERS A SAVE ALREADY HAS DO NOT MOVE FOR IT
+--
+-- The book of numbers hangs on WHERE a device is (os.devmap, keyed
+-- kind:x:y:z:side:n) and a number is spent for the life of the machine, so a
+-- device the walk never used to reach takes the next free number and never
+-- anybody else's -- even where it sorts ahead of them, which a south door does:
+-- it stands one tile north of the hall door whose own square carries it.
+--
+-- Walked twice on ONE state, with the south door put into the world in between,
+-- which is exactly what the update is to a save: the first walk is the machine's
+-- book as it stands today.
+do
+	local hadWorld, hadSandbox = _G.__world, _G.SandboxVars
+	-- The hardware gate on, and a contact and nothing else on each door: one
+	-- device per door, so what the numbers do is the only thing moving here.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0} })
+	world.room("hall", { {10,12,0} })
+	world.square(10, 11, 0, nil)
+	local hallDoor = fit(world.wall(world.squares["10,12,0"], fakeDoor(false, true), "N"),
+		"contact")
+
+	_G.__world = world
+	CeroSecDevices.invalidate()
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+
+	local before = CeroSecDevices.number(state,
+		CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z))
+	eq("the machine's book starts with one door", #before, 1)
+	eq("and it is the hall's", before[1].object, hallDoor)
+	eq("numbered door0", before[1].id, "door0")
+
+	-- The south door of the office, which the walk before this change could not
+	-- see -- and which sorts ahead of the hall's by y.
+	local south = fit(world.wall(world.squares["10,11,0"], fakeDoor(false, true), "N"),
+		"contact")
+	CeroSecDevices.invalidate()
+	local after = CeroSecDevices.number(state,
+		CeroSecDevices.find(bench.object.x, bench.object.y, bench.object.z))
+	local at = {}
+	for i = 1, #after do at[after[i].object] = after[i] end
+	eq("now there are two", #after, 2)
+	check("the south door is found", at[south] ~= nil)
+	-- The whole of the compatibility question: a script that writes to door0 still
+	-- writes to the door it was written for.
+	eq("and the door that was door0 is still door0", at[hallDoor].id, "door0")
+	eq("the newly found one takes the next free number", at[south].id, "door1")
+
+	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
+	CeroSecDevices.invalidate()
 end
 
 --
@@ -4162,7 +4574,7 @@ do
 	kit.world.loaded = false
 	bench.enter("ls -l /dev")
 	bench.frame()
-	check("and nothing is when they are not", not bench.painted("light0  office"))
+	check("and nothing is when they are not", not bench.painted("light0   office"))
 	bench.enter("echo off > /dev/light0")
 	bench.frame()
 	check("a device out of reach cannot be worked",
@@ -4194,7 +4606,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the door in the base is a device",
-		bench.painted("crw-rw----  root  sudo  lock0   built          N  padlock"))
+		bench.painted("crw-rw----  root  sudo  lock0    built         N  padlock"))
 	check("the far switch is not", not bench.painted("light0"))
 	eq("nor the one upstairs", far ~= upstairs, true)
 
@@ -4203,7 +4615,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a switch exactly at the radius is a device",
-		bench.painted("crw-rw----  root  sudo  light0  exterior          off"))
+		bench.painted("crw-rw----  root  sudo  light0   exterior         off"))
 	_G.__world = nil
 end
 
@@ -4228,7 +4640,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a garage door leaf is a lock",
-		bench.painted("crw-rw----  root  sudo  lock0   exterior       W  locked"))
+		bench.painted("crw-rw----  root  sudo  lock0    exterior      W  locked"))
 	check("and is not a door", not bench.painted("door0"))
 
 	-- A double door reads exactly the same way.
@@ -4237,7 +4649,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a double door leaf is no door either", not bench.painted("door0"))
-	check("and still locks", bench.painted("lock0   exterior"))
+	check("and still locks", bench.painted("lock0    exterior"))
 
 	-- So there is nothing there to open, and the refusal is the command's.
 	bench.enter("dev door0 open")
@@ -4265,9 +4677,9 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the game's own exterior flag makes the lock",
-		bench.painted("crw-rw----  root  sudo  lock0   porch          W  locked"))
+		bench.painted("crw-rw----  root  sudo  lock0    porch         W  locked"))
 	check("and the door is there beside it",
-		bench.painted("crw-rw----  root  sudo  door0   porch          W  locked"))
+		bench.painted("crw-rw----  root  sudo  door0    porch         W  locked"))
 	_G.__world = nil
 end
 
@@ -4355,11 +4767,11 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("sensor0 is the head in the office",
-		bench.painted("cr--r-----  root  sudo  sensor0 office            clear"))
+		bench.painted("cr--r-----  root  sudo  sensor0  office           clear"))
 	check("sensor1 is the one beside it",
-		bench.painted("cr--r-----  root  sudo  sensor1 office            clear"))
+		bench.painted("cr--r-----  root  sudo  sensor1  office           clear"))
 	check("sensor2 is the one in the store",
-		bench.painted("cr--r-----  root  sudo  sensor2 store             clear"))
+		bench.painted("cr--r-----  root  sudo  sensor2  store            clear"))
 	-- Three heads and no fourth: the hammer is not a device and NEITHER IS THE
 	-- PIPE BOMB, which is the one refusal this whole rung turns on.
 	check("a hammer on the floor is not a device", not bench.painted("sensor3"))
@@ -4368,11 +4780,11 @@ do
 	bench.enter("dev sensor")
 	bench.frame()
 	check("the table gives sensor0 its place",
-		bench.painted("sensor0 office                1E 0           clear"))
+		bench.painted("sensor0  office                1E 0           clear"))
 	check("and sensor1 its own",
-		bench.painted("sensor1 office                3E 0           clear"))
+		bench.painted("sensor1  office                3E 0           clear"))
 	check("and sensor2 in the next room",
-		bench.painted("sensor2 store                 4E 0           clear"))
+		bench.painted("sensor2  store                 4E 0           clear"))
 
 	-- Read one. Nothing has moved and nothing ever has, so it is clear.
 	bench.enter("cat /dev/sensor0")
@@ -4457,7 +4869,7 @@ do
 	world.drop(world.squares["10,10,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("while the module beside them is sensor0", bench.painted("sensor0 office"))
+	check("while the module beside them is sensor0", bench.painted("sensor0  office"))
 	_G.__world = nil
 end
 
@@ -4629,8 +5041,8 @@ do
 	-- The row and not the id: the refusal printed a second ago has the id in it
 	-- and is still in the scrollback, so a needle of "sensor0" would find the
 	-- machine's own words about it being gone.
-	check("and it is off the table", not bench.painted("sensor0 office"))
-	check("while the other two are still on it", bench.painted("sensor1 office"))
+	check("and it is off the table", not bench.painted("sensor0  office"))
+	check("while the other two are still on it", bench.painted("sensor1  office"))
 
 	-- A fresh head dropped on the same tile takes sensor0 BACK, and that is the
 	-- numbering doing what it has always done rather than a special case: a number
@@ -4641,11 +5053,11 @@ do
 	kit.world.drop(kit.world.squares["11,10,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("a new head on the same tile is sensor0 again", bench.painted("sensor0 office"))
+	check("a new head on the same tile is sensor0 again", bench.painted("sensor0  office"))
 	kit.world.drop(kit.world.squares["12,11,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("and one on a new tile takes the next number", bench.painted("sensor3 office"))
+	check("and one on a new tile takes the next number", bench.painted("sensor3  office"))
 	_G.__world = nil
 end
 
@@ -4682,7 +5094,7 @@ do
 
 	bench.enter("dev sensor")
 	bench.frame()
-	check("a head in a base reads built", bench.painted("sensor0 built"))
+	check("a head in a base reads built", bench.painted("sensor0  built"))
 
 	-- Two tiles from it and no room between them: seen.
 	local chr = fakeBody("IsoPlayer")
@@ -12387,7 +12799,7 @@ do
 	fit(kit.light0, "relay")
 	bench.enter("dev")
 	bench.frame()
-	check("the switch with a relay on it is a device", bench.painted("light0  office"))
+	check("the switch with a relay on it is a device", bench.painted("light0   office"))
 	check("the one without is still not", not bench.painted("hallway"))
 	bench.enter("echo off > /dev/light0")
 	bench.frame()
@@ -12415,9 +12827,9 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("and wears a mode that promises nothing",
-		bench.painted("cr--r-----  root  sudo  door1   exterior"))
+		bench.painted("cr--r-----  root  sudo  door1    exterior")) 
 	check("while the one with an operator wears rw",
-		bench.painted("crw-rw----  root  sudo  door0   kitchen-hall~"))
+		bench.painted("crw-rw----  root  sudo  door0    kitchen-hal~"))
 
 	-- admin is in the sudo group, so 440 lets him read it and stops him there.
 	bench.enter("echo open > /dev/door1")
@@ -12483,7 +12895,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the same device wears rw once an operator is on it",
-		bench.painted("crw-rw----  root  sudo  door1   exterior"))
+		bench.painted("crw-rw----  root  sudo  door1    exterior")) 
 	bench.enter("echo open > /dev/door1")
 	bench.frame()
 	eq("and now it opens", kit.front.open, true)
@@ -12543,14 +12955,14 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
-		"crw-rw----  root  sudo  door0   exterior       W  locked",
-		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
-		"crw-rw----  root  sudo  door2   built          N  closed",
-		"crw-rw----  root  sudo  light0  office            on",
-		"crw-rw----  root  sudo  light1  hallway           off",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   built          N  padlock",
-		"crw-rw----  root  sudo  win0    office         N  locked",
+		"crw-rw----  root  sudo  door0    exterior      W  locked",
+		"crw-rw----  root  sudo  door1    kitchen-hal~  N  closed",
+		"crw-rw----  root  sudo  door2    built         N  closed",
+		"crw-rw----  root  sudo  light0   office           on",
+		"crw-rw----  root  sudo  light1   hallway          off",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
+		"crw-rw----  root  sudo  lock1    built         N  padlock",
+		"crw-rw----  root  sudo  win0     office        N  locked",
 	}
 	for i = 1, #want do
 		check("with the option off, the glass still shows: " .. want[i],
@@ -12696,7 +13108,7 @@ do
 	-- The machine can see it now, end to end.
 	bench.enter("dev")
 	bench.frame()
-	check("and the switch is a device", bench.painted("light0  office"))
+	check("and the switch is a device", bench.painted("light0   office"))
 
 	-- A second one buys nothing and eats nothing.
 	inv:add("CeroSec.Relay")
@@ -12850,8 +13262,10 @@ end
 --   outside    a module on a building's skin comes off from the pavement
 --              otherwise, which is an enemy stripping somebody's front door
 --              without ever coming in. Asked of HIS square (isInARoom), so an
---              interior door is allowed from both sides and a generator, which
---              is an outdoor machine by construction, is exempt.
+--              interior door is allowed from both sides -- and asked only of the
+--              ENVELOPE: the door, the window and the curtain. The wiring is
+--              fitted where it stands, which is what a porch lamp and an outdoor
+--              generator both are.
 --   closed     nobody screws an operator to a door while it is shut, and
 --   drawn      nobody reaches behind a sheet he has not pulled back
 --   running    and nobody puts a contactor in an oven that is cooking
@@ -12884,6 +13298,10 @@ do
 	local sheeted = world.put(IN, fakeDoor(false, true, pavement, true))
 	sheeted.hasCurtain = true
 	local gen = world.put(pavement, fakeGenerator(false, 60, 80, true))
+	-- A PORCH LAMP on the same pavement, hung on that square's SOUTH edge, which
+	-- is the office's north wall: the Round Outdoor Lamp of the report, and the
+	-- fixture the inside rule must not be asked about.
+	local porch = world.hung(pavement, fakeLight(false, true), "S")
 
 	local function indexOf(square, object)
 		local list = square.objects
@@ -12966,9 +13384,12 @@ do
 	send("uninstallmodule", IN, door, "contact")
 	eq("and from inside it does", fittedOn(door, "contact"), false)
 
-	-- THE GENERATOR IS THE ONE EXEMPTION. It is an outdoor machine by
-	-- construction, so a rule that wanted a room round it would be a module
-	-- nobody could ever fit.
+	-- THE RULE IS THE ENVELOPE'S, AND THE ENVELOPE IS THREE CLASSES. The door, the
+	-- window and the curtain are what a stranger would strip to get in or to blind
+	-- the alarm; the wiring is fitted where it stands. So a generator is not the one
+	-- exemption any more, it is one of five -- and the case that made the rule wrong
+	-- is the PORCH LAMP, which is the very thing a relay is for: an outdoor light on
+	-- a timer, on the outside of the house, reachable from nowhere but the pavement.
 	stand = pavement
 	check("a generator takes its switch out on the pavement",
 		tryFit(pavement, gen, "genset"))
@@ -12976,6 +13397,37 @@ do
 		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
 	send("uninstallmodule", pavement, gen, "genset")
 	eq("and gives it back out there too", fittedOn(gen, "genset"), false)
+
+	check("a porch lamp takes its relay out on the pavement",
+		tryFit(pavement, porch, "relay"))
+	eq("and asks nothing about a room either",
+		CeroSecModules.fittingRefusal(porch, "relay", bench.player), nil)
+	-- The removal too: a lamp nobody could unscrew from the pavement is a lamp
+	-- nobody could ever have screwed on.
+	send("uninstallmodule", pavement, porch, "relay")
+	eq("and gives it back out there", fittedOn(porch, "relay"), false)
+
+	-- The whole list, in one place, asked from the pavement: three refusals and
+	-- four silences. Every fixture is in the state its own module wants, so the only
+	-- rule left to answer is where the survivor is standing.
+	window.open = true
+	curtain.open = true
+	eq("the front door is refused from outside",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), "outside")
+	eq("a window too",
+		CeroSecModules.fittingRefusal(window, "contact", bench.player), "outside")
+	eq("and a sheet",
+		CeroSecModules.fittingRefusal(curtain, "curtain", bench.player), "outside")
+	eq("a light is not asked",
+		CeroSecModules.fittingRefusal(light, "relay", bench.player), nil)
+	eq("nor an oven",
+		CeroSecModules.fittingRefusal(stove, "appliance", bench.player), nil)
+	eq("nor a television",
+		CeroSecModules.fittingRefusal(tv, "tuner", bench.player), nil)
+	eq("nor a generator",
+		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
+	window.open = false
+	curtain.open = false
 	stand = world.squares["10,10,0"]
 
 	--
@@ -13199,6 +13651,241 @@ end
 
 
 --
+-- 43c-2. A fixture that leaves the world drops its modules
+--
+-- The third way a module comes off, and the eight gestures nobody had thought
+-- about: a television carried to the next house, a door a zombie broke down, a
+-- wall dismantled. The box was hardware a minute ago and the fixture's modData is
+-- the only place it lived, so before this it simply stopped existing.
+--
+-- The rule is one rule and it lives in SCeroSecFixtures: the engine's own
+-- Events.OnObjectAboutToBeRemoved, which fires with the object still ON its
+-- square, and every module on it becomes an item on that square. The event is
+-- what is FIRED here -- not the function -- because the wire from the engine to
+-- the rule is the half that a call to the rule cannot prove.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	-- The doorway is the office tile the door stands on; the pavement outside is
+	-- the far side of it, which is where nothing should land.
+	local IN = world.squares["11,10,0"]
+	local pavement = world.square(11, 9, 0, nil)
+
+	-- What is lying on a tile, by item type, in the order it landed. A module on
+	-- the FLOOR is an IsoWorldInventoryObject on getWorldObjects and never a
+	-- fixture on getObjects, which is what the fake's AddWorldInventoryItem files
+	-- it as.
+	local function lying(square)
+		local out = {}
+		for i = 1, #square.items do
+			out[#out + 1] = square.items[i]:getItem():getFullType()
+		end
+		return table.concat(out, " ")
+	end
+	local function bare(object)
+		return object:getModData()[CeroSecModules.DATA_KEY] == nil
+	end
+	-- The world taking an object away, which is the engine firing its event with
+	-- the object still on its square.
+	--
+	-- The fake Events is ONE event for both sides of the mod, and the CLIENT hangs
+	-- a listener on this one too -- the glow it drops when a computer is picked up
+	-- (CCeroSecSystem). The window benches put a stub in place of the client
+	-- system, so the client's listener is taken out of reach for the moment the
+	-- server's runs; the glow has a section of its own, which swaps the real class
+	-- back in for exactly this reason.
+	local function removed(object)
+		local had = CCeroSecSystem.instance
+		CCeroSecSystem.instance = nil
+		Events.OnObjectAboutToBeRemoved.trigger(object)
+		CCeroSecSystem.instance = had
+	end
+
+	--
+	-- A DOOR WITH A CONTACT AND A STRIKE, BROKEN DOWN
+	--
+	local door = world.put(IN, fakeDoor(true, false, pavement, true))
+	fit(door, "contact")
+	fit(door, "strike")
+	local hadTransmits = door.transmits
+	removed(door)
+	eq("both boxes are lying in the doorway",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+	eq("and nothing landed on the pavement on the other side", lying(pavement), "")
+	check("the fixture is bare", bare(door))
+	check("and every write was broadcast", door.transmits > hadTransmits)
+
+	-- A SECOND EVENT FOR THE SAME OBJECT PAYS NOTHING, which is not a corner:
+	-- singleplayer fires this twice for one pickup -- the Lua triggerEvent at
+	-- ISMoveableSpriteProps:1406 and the Java one inside the
+	-- transmitRemoveItemFromSquare on the line after it.
+	removed(door)
+	eq("the second firing hands over nothing",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+
+	-- And the object really does leave, which is what the engine does next.
+	world.remove(door)
+	-- Put back down and taken again: vanilla carries only `movableData` from an
+	-- object's modData into the moveable item (ISMoveableSpriteProps:1298-1299),
+	-- so the fixture that comes back is bare and there is nothing to pay twice.
+	world.put(IN, door)
+	removed(door)
+	eq("a fixture put back down and taken again pays nothing",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike")
+	world.remove(door)
+
+	--
+	-- A TELEVISION WITH A TUNER CONTROL, UNPLUGGED AND CARRIED OFF
+	--
+	local tvSquare = world.squares["10,10,0"]
+	local tv = world.put(tvSquare, fakeWaveSet("IsoTelevision", {}))
+	fit(tv, "tuner")
+	removed(tv)
+	eq("the tuner control is on the floor where the set stood",
+		lying(tvSquare), "CeroSec.TunerControl")
+	check("and the set carries nothing away with it", bare(tv))
+	world.remove(tv)
+
+	--
+	-- A PRE-FITTED RELAY IS REAL HARDWARE, which is the rule uninstallmodule
+	-- already applies: the 1991 walk wrote it and a survivor owns it.
+	--
+	local light = world.put(IN, fakeLight(true, true))
+	check("the walk fits it", CeroSecModules.setOn(light, "relay", true))
+	check("and marks the plate", CeroSecModules.markPreFitted(light))
+	removed(light)
+	eq("a pre-fitted relay lands on the floor like any other",
+		lying(IN), "CeroSec.MagneticContact CeroSec.ElectricStrike CeroSec.Relay")
+	eq("and the plate has no module left on it",
+		CeroSecModules.installedOn(light)["relay"], nil)
+	-- The MARK outlives it, which is the whole point of PRE_KEY: it is what stops
+	-- the walk fitting the same plate again.
+	check("and the mark it was fitted before the outbreak is still there",
+		CeroSecModules.preFitted(light))
+	world.remove(light)
+
+	--
+	-- A FIXTURE WITH NOTHING ON IT, and every other object in the county: this
+	-- handler runs for every tuft of grass and every dropped hammer the world
+	-- takes away, so "nothing, and no error" is the case it is in nearly always.
+	--
+	local plain = world.put(IN, fakeDoor(false, false, pavement, true))
+	local before = lying(IN)
+	removed(plain)
+	eq("a fixture with no module drops nothing", lying(IN), before)
+	removed(fakeSensor())
+	eq("and a dropped item the world takes away is not a fixture at all",
+		lying(IN), before)
+	world.remove(plain)
+
+	--
+	-- A WINDOW SMASHED IS NOT A WINDOW REMOVED
+	--
+	-- ISMoveableSpriteProps:1289-1291 smashes the sash instead of taking it, and
+	-- the branch that would remove the object is then skipped (:1385). So no event
+	-- fires, and the contact is still on a window that reads `smashed`.
+	--
+	local window = world.put(IN, fakeWindow(true, true))
+	fit(window, "contact")
+	window.smashed = true
+	eq("a smashed window keeps its contact",
+		CeroSecModules.installedOn(window)["contact"], true)
+	eq("and nothing was dropped for it", lying(IN), before)
+
+	--
+	-- THE FLOOR REFUSING THE ITEM TAKES NOTHING OFF THE FIXTURE
+	--
+	-- AddWorldInventoryItem answers null for a type the game cannot make (offsets
+	-- 6-12), and a survivor must never be charged for a module that was not made.
+	--
+	world.floorRefuses = true
+	local refused = world.put(IN, fakeDoor(true, false, pavement, true))
+	fit(refused, "operator")
+	removed(refused)
+	eq("nothing new is lying there", lying(IN), before)
+	eq("and the operator is still screwed to the door",
+		CeroSecModules.installedOn(refused)["operator"], true)
+	world.floorRefuses = false
+	removed(refused)
+	eq("with a floor that takes it, it comes off",
+		CeroSecModules.installedOn(refused)["operator"], nil)
+	world.remove(refused)
+
+	--
+	-- A FIXTURE ALREADY OFF ITS SQUARE gives nothing and keeps everything: there
+	-- is no floor to put the box on. The trigger sites say this cannot happen --
+	-- RemoveTileObject throws if a listener removed the object -- and it is not a
+	-- thing to guess at either way.
+	--
+	local gone = fakeDoor(true, false, nil, true)
+	gone.getSquare = function() return nil end
+	fit(gone, "contact")
+	removed(gone)
+	eq("a fixture with no square keeps its contact",
+		CeroSecModules.installedOn(gone)["contact"], true)
+
+	_G.__world = nil
+end
+
+--
+-- 43c-3. And the machine in that building stops listing the device
+--
+-- The listing is the other half: a device whose fixture has left the world is not
+-- a device, and the /dev cache is a second old at the worst
+-- (CeroSecDevices.CACHE_MS). `alive` is what stops one being WORKED; the drop is
+-- what has to stop it being LISTED, and it calls CeroSecDevices.invalidate for
+-- the reason installmodule and uninstallmodule do.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+
+	local bench = newBench()
+	bench.login("admin")
+
+	-- The client's listener on the same fake event, out of reach: see the block
+	-- above.
+	local function removed(object)
+		local had = CCeroSecSystem.instance
+		CCeroSecSystem.instance = nil
+		Events.OnObjectAboutToBeRemoved.trigger(object)
+		CCeroSecSystem.instance = had
+	end
+
+	fit(kit.front, "contact")
+	bench.enter("dev")
+	bench.frame()
+	check("the front door with a contact on it is a device", bench.painted("door0"))
+
+	-- The cache is warm now, and the walk that filled it is the one an answer a
+	-- moment later would come out of.
+	check("and the walk left something in the cache",
+		next(CeroSecDevices.cache) ~= nil)
+
+	-- Broken down. The event first, with the door still on its square, which is
+	-- where the engine fires it -- and then the removal itself.
+	removed(kit.front)
+	eq("the contact is lying in the doorway",
+		#kit.world.squares["11,10,0"].items, 1)
+	eq("and the cache was thrown away with it", next(CeroSecDevices.cache), nil)
+	kit.world.remove(kit.front)
+
+	bench.enter("dev")
+	bench.frame()
+	check("the door is off the listing", not bench.painted("door0   exterior"))
+	bench.enter("dev door0")
+	bench.frame()
+	check("and the number a script wrote down is out of reach",
+		bench.painted("door0: no such device"))
+
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
 -- 43d. Where each module may go, as a table
 --
 -- Nine modules and nine kinds of fixture is eighty-one answers, and the way a
@@ -13396,10 +14083,28 @@ do
 	-- The listing the mockup would print
 	--
 	typed("dev")
-	for _, want in ipairs({ "curtain0", "curtain1", "door0", "gen0", "stove0",
-			"washer0", "win0", "window0" }) do
-		check("the table has " .. want, bench.painted(want))
+	-- THE WHOLE ROW AND NOT THE ID, for every kind on the machine: the room it is
+	-- in, how far it is from the desk, which wall it is on and what it is doing. A
+	-- listing that named a device and left its room or its state blank would pass an
+	-- assertion about the id, and both columns come from a different layer than the
+	-- id does (the discovery's `desc` and `stateOf`, the engine's `pos`).
+	for _, want in ipairs({
+			"curtain1 hall                  3E 1S       N  closed",
+			"door0    hall                  3E 1S       N  closed",
+			"gen0     hall                  4E 1S          off",
+			"stove0   kitchen               1E 1S          off",
+			"washer0  kitchen               2E 1S          off",
+			"win0     office                2E 0        N  locked",
+			"window0  office                2E 0        N  closed" }) do
+		check("the table shows: " .. want, bench.painted(want))
 	end
+	-- AND THE WIDEST ID THERE IS, which is the row that was wrong: `curtain0` fills
+	-- eight characters, the column was eight wide, and the room name printed against
+	-- the name of the device (`curtain0office`). The column is nine now -- what the
+	-- manual's own page for this table always showed -- so the first curtain of the
+	-- first house reads like every other row.
+	check("the widest id still keeps a space before its room",
+		bench.painted("curtain0 office                1E 0        N  closed"))
 
 	--
 	-- THE WINDOW OPERATOR, and the three things it does besides open a window
@@ -14077,8 +14782,12 @@ do
 	-- THE READING
 	--
 	alone("dev")
-	check("the table has the television", bench.painted("tv0"))
-	check("and the radio set beside it", bench.painted("rx0"))
+	-- The whole row for both, because a set's room and its switch are as much of
+	-- the table as its name is.
+	check("the table has the television",
+		bench.painted("tv0      lounge                1E 0           off"))
+	check("and the radio set beside it",
+		bench.painted("rx0      lounge                2E 0           off"))
 	check("and the set with no device data on it is not a device at all",
 		not bench.painted("tv1"))
 	check("nothing fits one", not CeroSecModules.isFittable(husk))
@@ -14584,10 +15293,12 @@ do
 	-- The library's own text, never a copy typed here: the program this bench runs
 	-- has to be the program the floppy carries, or the bench proves a program
 	-- nobody will ever find.
-	local B = "/usr/local/bin"
-	bench.enter("mkdir /usr")
-	bench.enter("mkdir /usr/local")
-	bench.enter("mkdir " .. B)
+	-- No mkdir: every machine ships the chain (CeroSecOS.ensureLocalBin), which is
+	-- what makes the README's own `sudo cp /mnt/curtains.sh /usr/local/bin` a line
+	-- that works. This bench used to make the three directories itself.
+	local B = CeroSecOS.LOCAL_BIN_PATH
+	check("the machine came with " .. B,
+		CeroSecOS.systemNode(bench.object:osState(), B) ~= nil)
 	bench.frame()
 	-- Installed as ROOT, because /usr/local/bin is root's -- which is what the
 	-- README's own `sudo cp` says. bench.script writes as admin and could not.
@@ -15033,7 +15744,7 @@ end
 
 
 --
--- 44c. WHAT IS STILL RUNNING WHEN YOU COME BACK
+-- 44d. WHAT IS STILL RUNNING WHEN YOU COME BACK
 --
 -- A computer the world saved and loaded again was never switched off, so what it
 -- was running it is still running. Every bench here goes through bench.reload(),
@@ -15569,7 +16280,11 @@ do
 			end
 			copy = dup(one)
 			copy.id = 100 + i
-			copy.n = i
+			-- A LEGAL slot on every one of them, and it matters: the gate refuses a
+			-- slot no machine has (`bad slot`), so numbering these 1..7 would have
+			-- them capped by that rule and the ceiling below would be guarding
+			-- nothing. Reused round the four, which a book of seven could not be.
+			copy.n = math.fmod(i - 1, CeroSecOS.MAX_JOBS) + 1
 			many.os.jobs.list[i] = copy
 		end
 		eq("the forged book really holds more than a machine takes",
@@ -19762,6 +20477,19 @@ do
 		-- stops nobody and a strike on it would be a box that does nothing.
 		kit.inner = world.put(world.squares[(bx + 1) .. "," .. (by + 2) .. ",0"],
 			fakeDoor(false, true, world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"]))
+		-- AND THE SHOP'S BACK DOOR, in the SOUTH wall of the back room: it stands on
+		-- the alley behind the shop and not on the room's own square, which is where
+		-- the map puts a south wall (the far-edge rule at SCeroSecDevices). A shop
+		-- fitted before the outbreak had that door wired like every other; the walk
+		-- that never went to the alley left it bare.
+		-- At bx + 3 and not bx + 1, so that the lamp in the alley is the LAST light of
+		-- the shop by the numbering (kind, x, y, z) and the two inside keep light0 and
+		-- light1: the nightly crontab the prefill writes names the lights it found, and
+		-- a bench fixture that renumbered them would be rewriting another rung's page.
+		local alley = world.square(bx + 3, by + 3, 0, nil)
+		kit.backDoor = world.wall(alley, fakeDoor(true, true), "N")
+		-- And the lamp over it, on the alley square too, hung on the wall it lights.
+		kit.porch = world.hung(alley, fakeLight(true, true), "N")
 		return kit
 	end
 
@@ -19996,6 +20724,14 @@ do
 		eq("the window has its contact", CeroSecModules.installedOn(kit.win0).contact, true)
 		eq("and no strike, there being no lock on a window a machine works",
 			CeroSecModules.installedOn(kit.win0).strike, nil)
+		-- THE BACK DOOR, which stands in the alley and not in the room: the walk goes
+		-- to the far edge of a room square for the same reason /dev does.
+		eq("the back door in the south wall has its contact",
+			CeroSecModules.installedOn(kit.backDoor).contact, true)
+		eq("and its strike, its lock being a lock that stops somebody",
+			CeroSecModules.installedOn(kit.backDoor).strike, true)
+		eq("and the lamp over it has its relay",
+			CeroSecModules.installedOn(kit.porch).relay, true)
 		eq("every one of them is marked as wired before the outbreak",
 			CeroSecModules.preFitted(kit.light0) and CeroSecModules.preFitted(kit.front)
 				and CeroSecModules.preFitted(kit.win0), true)
@@ -21048,6 +21784,310 @@ do
 	eq("behind a shut door the read answers nothing", #answers, 0)
 	CeroSec.DEV_DEBUG_MENU = flag
 	_G.isDebugEnabled = debugMode
+end
+
+--
+-- 56. WHAT THE BUILDING SOUNDS LIKE WHEN THE MACHINE WORKS IT
+--
+-- Three reports on 0.4.0, in the author's words: a door shut by the script makes
+-- no sound, a window opened by cron makes none, and neither does a curtain. All
+-- three were true and all three were the same hole: every actuator in this mod
+-- uses the SILENT call, because the loud ones play at a survivor's own emitter
+-- and a machine has no survivor -- so nothing was ever heard, and a building
+-- working by itself was a building nobody could tell was working.
+--
+-- What is asserted here is the NAME and the CALL, both, for every direction of
+-- every fixture that moves:
+--
+--   the name, because it is the hand's name and not one of ours. A door is its
+--   sprite's DoorSound property and a curtain is "Curtain" plus its CurtainSound
+--   property, so the prefix is READ off the object -- a device that wrote
+--   "WoodDoorOpen" into itself would pass an assertion about a wooden door and
+--   be wrong about every metal one, which is why the prefixes are moved below.
+--
+--   the call, because there are two and they go to different places.
+--   playServerSound is a broadcast a dedicated server makes and does nothing at
+--   all anywhere else (GameServer.PlayWorldSound, `if (!server) return`); the
+--   square's own emitter is a sound in one process. The author heard nothing on a
+--   server, so a bench that only ever proved the solo call would prove the half
+--   he cannot hear.
+--
+-- And twice over, the two silences that have to stay: a write the world refused
+-- and a write that changed nothing are both mute. A motor that clicked when it
+-- refused would be a motor lying, and one that clicked twice for two `close` in a
+-- row would be a machine with a stutter.
+--
+do
+	local world = FakeWorld.new()
+	local office = world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+	local hall = world.room("hall", { {13,11,0}, {14,11,0} })
+
+	local curtain = world.put(world.squares["11,10,0"], fakeCurtain(true))
+	local win = world.put(world.squares["12,10,0"], fakeWindow(true, true))
+	-- One object, two devices and two sounds: the door swings (door0) and the
+	-- sheet on it draws (curtain1). They must not borrow each other's noise.
+	local sheeted = world.put(world.squares["13,11,0"],
+		fakeDoor(false, true, world.squares["14,11,0"]))
+	sheeted.hasCurtain = true
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	-- Every order through the glass, with the sound book wiped first: what is
+	-- asserted after each line is what THAT line made, and an assertion of silence
+	-- is only worth anything if the book was empty when the line was typed.
+	local function typed(line)
+		_G.__sounds = {}
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+
+	-- The whole book as one line apiece: the name, which call made it, and where.
+	-- The place is in it because a sound at the wrong tile is a sound in the wrong
+	-- room, and the door and its sheet stand on a different square from the curtain.
+	local function heard()
+		local out = {}
+		for i = 1, #_G.__sounds do
+			local s = _G.__sounds[i]
+			out[#out + 1] = s.name .. " " .. s.how .. " "
+				.. s.x .. "," .. s.y .. "," .. s.z
+		end
+		return out
+	end
+	local function once(what, want)
+		local book = heard()
+		if #book ~= 1 then
+			check(what .. " -- one sound and not " .. #book, false)
+			return
+		end
+		eq(what, book[1], want)
+	end
+	local function silent(what)
+		eq(what, table.concat(heard(), " + "), "")
+	end
+
+	--
+	-- THE DOOR, and it is the report's own line: a door shut by a script
+	--
+	typed("echo close > /dev/door0")
+	silent("a door already shut makes no sound")
+	eq("and it did not move either", sheeted.silentToggles, 0)
+
+	typed("echo open > /dev/door0")
+	eq("the door opened", sheeted.open, true)
+	once("and it was heard, at its own tile", "WoodDoorOpen square 13,11,0")
+
+	typed("echo close > /dev/door0")
+	eq("the door shut", sheeted.open, false)
+	once("and the shutting was heard", "WoodDoorClose square 13,11,0")
+
+	typed("echo close > /dev/door0")
+	silent("and shutting a shut door is silent")
+
+	-- THE PREFIX IS THE DOOR'S, not this file's. getSoundPrefix() answers the
+	-- closedSprite's DoorSound property before it falls back to "WoodDoor", so a
+	-- prison door says so itself and a device that wrote the wood in by hand is
+	-- caught here and nowhere else.
+	sheeted.soundPrefix = "PrisonMetalDoor"
+	typed("echo open > /dev/door0")
+	once("a metal door says what it is made of",
+		"PrisonMetalDoorOpen square 13,11,0")
+	sheeted.soundPrefix = "WoodDoor"
+	typed("echo close > /dev/door0")
+
+	-- A REFUSAL IS MUTE. The barricade is refused by us, before the call, because
+	-- ToggleDoorSilent's first two instructions swallow it.
+	sheeted.barricaded = true
+	typed("echo open > /dev/door0")
+	check("a boarded door is refused", bench.painted("door0: barricaded"))
+	silent("and a refused order makes no sound")
+	sheeted.barricaded = false
+
+	--
+	-- THE SASH, which had no sound in the engine to copy: ToggleWindow plays
+	-- nothing and the survivor's noise is an event on his own animation
+	-- (media/AnimSets/player/openwindow/success.xml, `PlaySound` = OpenWindow).
+	--
+	typed("echo open > /dev/window0")
+	eq("the sash opened", win.open, true)
+	once("and the window was heard", "OpenWindow square 12,10,0")
+
+	typed("echo close > /dev/window0")
+	eq("the sash shut", win.open, false)
+	once("and the shutting was heard", "CloseWindow square 12,10,0")
+
+	typed("echo close > /dev/window0")
+	silent("a sash already shut is silent")
+
+	win.smashed = true
+	typed("echo open > /dev/window0")
+	check("a smashed window is refused", bench.painted("window0: smashed"))
+	silent("and says nothing")
+	win.smashed = false
+
+	-- AND THE LATCH IS NOT THE SASH. win0 is the magnetic contact and a contact
+	-- moves nothing, so `lock` and `unlock` on it are as silent as they are
+	-- invisible -- this is the one write in the rung that must stay mute.
+	typed("echo unlock > /dev/win0")
+	eq("the latch came off", win.locked, false)
+	silent("and a latch makes no sound")
+
+	--
+	-- THE CURTAIN, both of them
+	--
+	typed("echo open > /dev/curtain0")
+	eq("the curtain drew back", curtain.open, true)
+	once("and it was heard", "CurtainShortOpen square 11,10,0")
+
+	typed("echo close > /dev/curtain0")
+	eq("it drew across", curtain.open, false)
+	once("and that was heard too", "CurtainShortClose square 11,10,0")
+
+	typed("echo close > /dev/curtain0")
+	silent("a curtain already drawn is silent")
+
+	-- A BEDSHEET IS NOT A CURTAIN ROD, and the engine says which by the sprite:
+	-- getSoundPrefix() is "Curtain" .. the CurtainSound property, which is "Sheet"
+	-- on a survivor's own sheet (IsoCurtain.isSheet reads the same property).
+	curtain.soundPrefix = "CurtainSheet"
+	typed("echo open > /dev/curtain0")
+	once("a sheet sounds like a sheet", "CurtainSheetOpen square 11,10,0")
+	curtain.soundPrefix = "CurtainShort"
+
+	-- The boarded curtain, which is the one refusal in this file that is found by
+	-- toggling and reading back: the sheet did not move, so nothing is heard.
+	curtain.open = true
+	curtain.barricaded = true
+	typed("echo close > /dev/curtain0")
+	check("a boarded curtain is refused", bench.painted("curtain0: barricaded"))
+	silent("and a curtain that did not move is silent")
+	curtain.barricaded = false
+
+	-- AND FROM WHERE THE WORLD REALLY STARTS. The 0.4.0 report -- "the curtains
+	-- script only opens them, they don't close" -- was typed at a curtain that was
+	-- OPEN, because every curtain in the world is born open: CellLoader builds one
+	-- with `open = true` and `sprite = openSprite` whichever tile the map placed
+	-- (offsets 709-740), IsoWindow.addSheet builds the sheet from the open tile
+	-- (192-253) and IsoDoor.addSheet sets `curtainOpen = true` (offset 18) -- which
+	-- is also why a motor will not go on a drawn one. The lines above reached that
+	-- state by opening a shut curtain; this is the state the map hands over, and
+	-- `close` on it draws the cloth and says so.
+	eq("a curtain is open where the world left it", curtain.open, true)
+	typed("echo close > /dev/curtain0")
+	eq("and close draws it across", curtain.open, false)
+	once("and it is heard drawing", "CurtainShortClose square 11,10,0")
+	-- Back where the map had it, by hand and not by an order: the server block
+	-- below draws this curtain again and a curtain already drawn would make it
+	-- prove the silence instead of the sound.
+	curtain.open = true
+
+	-- THE DOOR'S OWN SHEET, which stands on the door's tile and not the curtain's.
+	-- Vanilla plays nothing here at all -- toggleCurtain has no sound in it -- so
+	-- what the mod plays is the curtain's own default, which is what
+	-- IsoCurtain.getSoundPrefix() answers when there is no sprite to ask.
+	typed("echo open > /dev/curtain1")
+	eq("the sheet on the door drew back", sheeted.curtainOpen, true)
+	once("and the door's sheet was heard, at the door",
+		"CurtainShortOpen square 13,11,0")
+
+	typed("echo close > /dev/curtain1")
+	eq("and it drew across", sheeted.curtainOpen, false)
+	once("with the closing sound", "CurtainShortClose square 13,11,0")
+
+	typed("echo close > /dev/curtain1")
+	silent("and a sheet already drawn is silent")
+
+	--
+	-- AND NOW THE SERVER, which is where the reports came from
+	--
+	-- The author heard nothing on a dedicated server, and on one the square's own
+	-- emitter is the wrong call: it plays into a process nobody is listening to.
+	-- playServerSound is the broadcast, and this is the same six orders again with
+	-- GameServer.server true.
+	local hadServer = _G.isServer
+	_G.isServer = function() return true end
+
+	typed("echo open > /dev/door0")
+	once("on a server the door is broadcast", "WoodDoorOpen server 13,11,0")
+	typed("echo close > /dev/door0")
+	once("and so is the shutting", "WoodDoorClose server 13,11,0")
+
+	typed("echo open > /dev/window0")
+	once("and the sash", "OpenWindow server 12,10,0")
+	typed("echo close > /dev/window0")
+	once("both ways", "CloseWindow server 12,10,0")
+
+	typed("echo close > /dev/curtain0")
+	once("and the curtain", "CurtainShortClose server 11,10,0")
+	typed("echo open > /dev/curtain0")
+	once("both ways too", "CurtainShortOpen server 11,10,0")
+
+	typed("echo open > /dev/curtain1")
+	once("and the sheet on the door", "CurtainShortOpen server 13,11,0")
+
+	-- The two silences hold on a server as well, which is not the same assertion:
+	-- the branch that would have made the noise is a different one.
+	typed("echo open > /dev/curtain1")
+	silent("a sheet already back is silent on a server too")
+	win.smashed = true
+	typed("echo open > /dev/window0")
+	silent("and a refusal is silent on a server too")
+	win.smashed = false
+
+	_G.isServer = hadServer
+
+	_G.__world = nil
+	_G.__sounds = {}
+	CeroSecDevices.invalidate()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+-- LAST IN THE FILE, and on purpose: this bench moves the game clock two minutes
+-- (bench.minute), and what the prefilled machines of section 54 draw is keyed on
+-- that clock. A bench put in the middle of the file that advances it changes what
+-- a section further down comes up with.
+
+-- A crontab line that names a program by its NAME, with the program in
+-- /usr/local/bin. This is what the HOME disk's own instruction is for: cron hands
+-- a line the default PATH and nothing of the shell's (CeroSecJobs.cronLine), so
+-- the only way a bare name in a crontab can ever work is the default PATH naming
+-- the directory a survivor installed into. The README writes the whole path and
+-- that is still the advice; this is the line somebody writes anyway.
+do
+	local bench = newBench()
+	bench.login("admin")
+	local state = bench.object:osState()
+	-- Installed as ROOT, because /usr/local/bin is root's -- which is what the
+	-- README's own `sudo cp` says.
+	local done = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh", "echo curtains: open", false, 100)
+	if done == nil then error("cannot install curtains.sh") end
+	CeroSecOS.getNode(state, CeroSecOS.rootSession(),
+		CeroSecOS.LOCAL_BIN_PATH .. "/curtains.sh").mode = 755
+	CeroSecOS.writeFile(state, CeroSecOS.rootSession(), "/var/spool/cron/admin",
+		"* * * * * curtains.sh", false, 100)
+	bench.enter("clear")
+	bench.frame()
+
+	bench.minute()
+	bench.minute()
+	local mail = bench.fileText("/var/mail/admin")
+	check("the line fired", mail ~= nil)
+	check("and the program it named ran (" .. tostring(mail) .. ")",
+		mail ~= nil and string.find(mail, "curtains: open", 1, true) ~= nil)
+	check("with nothing said about a command not found",
+		mail == nil or string.find(mail, "command not found", 1, true) == nil)
+	local log = bench.fileText("/var/log/cron")
+	check("and the log names the line as it was written",
+		string.find(log, "(admin) CMD (curtains.sh)", 1, true) ~= nil)
 end
 
 print("window_test: " .. count .. " checks passed")

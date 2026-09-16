@@ -489,7 +489,7 @@ end
 --
 -- Every kind but one has one word for what it is doing, and the two listings
 -- have a column for exactly that: `ls -l /dev` puts the widest state on column
--- 60 and `dev` on column 55, on a terminal 60 wide that does not wrap.
+-- 60 and `dev` on column 56, on a terminal 60 wide that does not wrap.
 --
 -- A generator has more to say than a word. Whether it is running is the thing a
 -- survivor can hear from the yard; what he cannot hear is how long it will go on
@@ -621,16 +621,23 @@ end
 -- at a time -- so those two columns are what it IS instead: what it is fixed
 -- to, which way it faces, and what it is doing.
 --
---   crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked
+--   crw-rw----  root  sudo  lock1    kitchen-hal~  N  unlocked
 --
--- 10 perm + 2 + 4 owner + 2 + 4 group + 2 + 8 id + 13 desc + 2 + 1 side + 2 +
+-- 10 perm + 2 + 4 owner + 2 + 4 group + 2 + 9 id + 12 desc + 2 + 1 side + 2 +
 -- state, which puts the widest state ("barricaded") exactly on column 60. The
 -- owner is always "root" and the group always "sudo", so four is the whole of
--- either; what paid for the group column is the description, cut from 15 to 13.
--- /dev holds nothing but devices -- creating in it is refused -- so these
--- columns never have to line up with an ordinary file's.
+-- either; what paid for the group column is the description, cut from 15 to 13
+-- and now to 12. /dev holds nothing but devices -- creating in it is refused --
+-- so these columns never have to line up with an ordinary file's.
 --
-local V_OWNER, V_GROUP, V_ID, V_DESC, V_SIDE = 4, 4, 8, 13, 1
+-- THE ID IS 9 AND THE ROOM PAID FOR IT, because eight is the widest id there is
+-- and a column exactly as wide as its content has no gap left in it: `curtain0`
+-- ran into its room name here exactly as it did in `dev`'s own table. There is
+-- nothing else to take it from -- the line already ends on column 60 -- so a room
+-- pair now truncates one character earlier (`kitchen-hal~`), which is the column
+-- that already had a tilde in it.
+--
+local V_OWNER, V_GROUP, V_ID, V_DESC, V_SIDE = 4, 4, 9, 12, 1
 
 function CeroSecOS.devLine(node)
 	local head = CeroSecOS.permString(node)

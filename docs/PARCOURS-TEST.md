@@ -1162,14 +1162,16 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 
 ## O. PATH, liens, `/dev/null` et `/var/tmp` (palier 6b)
 
-193. `PATH`. À l'invite : `echo $PATH` → `/bin`. Puis `echo $HOME` →
+193. `PATH`. À l'invite : `echo $PATH` → `/bin:/usr/local/bin`, et
+     `ls /usr/local/bin` → vide. Puis `echo $HOME` →
      `/home/admin`. `type ls` → `ls is /bin/ls`, `type cd` →
      `cd is a shell builtin`, `type if` → `if is a shell keyword`,
      `which ls` → `/bin/ls`, et `which frobnicate` → **aucune ligne** (et rien
      d'autre non plus). [ ]
 194. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
      `echo salut`, sauver, `chmod 755 bin/hello`. Puis `hello` →
-     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` et `hello` →
+     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` → `echo $PATH`
+     dit `/bin:/usr/local/bin:/home/admin/bin`, et `hello` →
      `salut`. `which hello` → `/home/admin/bin/hello`. Enfin mettre la même
      ligne `PATH=$PATH:$HOME/bin` dans `edit .profile`, `exit`, se reconnecter,
      et `hello` doit marcher dès la première invite. [ ]
@@ -2377,7 +2379,12 @@ table qu'il avait écrite.
        écrite avant la mise à jour ;
      - les modules vissés sur une porte avant la mise à jour répondent encore :
        `dev` les liste, et en `root` (`su root`)
-       `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231). [ ]
+       `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231) ;
+     - et ce que la mise à jour AJOUTE est là : `ls /usr/local/bin` répond (vide),
+       sans `no such file`, et `echo $PATH` dit `/bin:/usr/local/bin` — une
+       machine d'une vieille sauvegarde gagne la chaîne au chargement. Si on
+       avait fabriqué soi-même un `/usr` sous l'ancienne version, il est intact,
+       avec ce qu'il y avait dedans. [ ]
 
 ## AA. Ce qui est déjà sur les machines (contenu du monde, 1re partie)
 
@@ -3523,10 +3530,15 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      porte** demandent maintenant un moteur et un récepteur eux aussi — et que
      l'opérateur garde ses `Base.EngineParts`. [ ]
 369. **Le rideau.** Trouver une fenêtre avec un rideau, clic droit **sur le
-     rideau** → Matériel CeroSec → Installer Moteur de rideau. Puis à
-     l'ordinateur : `dev` → une ligne `curtainN`. `cat /dev/curtainN` →
-     `closed`. `echo open > /dev/curtainN` → **le rideau s'ouvre dans le monde**
-     et la lumière passe. `dev curtainN toggle` le referme. [ ]
+     rideau** → Matériel CeroSec → Installer Moteur de rideau. Le moteur ne se
+     pose que sur un rideau **ouvert** (« le rideau est tiré » sinon), et tous les
+     rideaux du monde naissent ouverts — donc juste après la pose, à
+     l'ordinateur : `dev` → une ligne `curtainN`, et `cat /dev/curtainN` →
+     `open`. `echo close > /dev/curtainN` → **le rideau se tire dans le monde**,
+     la pièce s'assombrit, **on entend le tissu**, et `cat` répond `closed`.
+     `echo open > /dev/curtainN` le rouvre, avec son bruit lui aussi.
+     `dev curtainN toggle` fait l'aller-retour. Retaper deux fois le même mot :
+     le rideau ne bouge qu'une fois et on ne l'entend qu'une fois. [ ]
 370. **Le rideau d'une porte.** Poser un drap sur une **porte** (interaction
      vanille), puis un moteur de rideau **sur la porte**. Attendu : la porte est
      maintenant `doorN` ET `curtainM` — deux périphériques sur un objet. Ouvrir
@@ -3540,6 +3552,8 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
 372. **Ouvrir la fenêtre, et ce que ça défait.** Verrouiller la fenêtre à la main
      (clic droit → verrouiller), vérifier `cat /dev/winN` → `locked`. Puis
      `echo open > /dev/windowM`. Attendu : **le battant s'ouvre** dans le monde,
+     **on l'entend s'ouvrir** (et se refermer, avec `close`) comme si une main
+     l'avait fait,
      et `cat /dev/winN` répond maintenant `unlocked` — le moteur a défait le
      loquet en passant. C'est voulu. Retaper le même ordre : rien ne bouge (c'est
      déjà ouvert). [ ]
@@ -3690,16 +3704,26 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `README.TXT` et les six programmes. `cat /mnt/README.TXT` → la page tient
      dans l'écran, sans ligne coupée, et nomme les six. `df` → la ligne `fd0`
      dit environ **4058 de 4096 octets**. [ ]
-395. **Les copier.** `sudo cp /mnt/curtains.sh /usr/local/bin` (faire d'abord
-     `sudo mkdir` pour `/usr`, `/usr/local` et `/usr/local/bin` — `mkdir` n'a pas
-     de `-p`). Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
+395. **Les copier, sans rien créer d'abord.** `ls -l /usr` → `local` est là, et
+     `ls /usr/local/bin` → vide : la machine livre la chaîne. Puis exactement la
+     ligne du README, `sudo cp /mnt/curtains.sh /usr/local/bin` — **aucun
+     `mkdir`**. Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
      Attendu : `ls -l /usr/local/bin` les montre tous exécutables. [ ]
+395a. **Et ils répondent à leur nom.** `echo $PATH` → `/bin:/usr/local/bin`.
+     `which curtains.sh` → `/usr/local/bin/curtains.sh`, puis `curtains.sh close`
+     **sans `sh` ni chemin** → les rideaux se ferment. Dans un crontab, la ligne
+     `* * * * * genwatch.sh 10` (nom nu, sans chemin) doit partir aussi : attendre
+     une minute de jeu, `mail` → la sortie du programme et **jamais**
+     `genwatch.sh: command not found`. Les lignes du README avec le chemin complet
+     marchent toujours telles quelles. [ ]
 396. **LA PORTE SE REFERME, ET C'EST L'ÉTAPE QUI COMPTE.** Lancer
      `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`. Aller **ouvrir la
      porte à la main** dans le monde, et **rester à la regarder**. Attendu : la
      porte se referme toute seule au bout de cinq tours (six à sept secondes de
      vrai temps — un tour est un `sleep 1` plus le travail du tour), avec le
-     mouvement et le bruit d'une porte, et la porte **sans opérateur** ne bouge
+     mouvement et le bruit d'une porte — **le bruit de CETTE porte** : une porte
+     de bois et une porte de métal ne claquent pas pareil, et une porte déjà
+     fermée ne fait aucun bruit du tout — et la porte **sans opérateur** ne bouge
      jamais. Rouvrir : ça recommence à zéro. [ ]
 397. **L'arrêter, des deux façons.** `sh /usr/local/bin/autoclose.sh stop` →
      `autoclose: off`, et `ps` ne montre plus le programme au tour suivant.
@@ -3730,7 +3754,9 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      a emporté le travail au moment où elle a eu lieu, et rien ne le ramène. Même
      chose pour une machine **ramassée** puis reposée. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
-     rideaux se ferment dans le monde. Puis `crontab -e` et les deux lignes du
+     rideaux se ferment dans le monde, **et on les entend**, un par rideau.
+     Relancer la même ligne tout de suite : le script dit la même chose et plus
+     rien ne bouge ni ne se fait entendre. Puis `crontab -e` et les deux lignes du
      README :
 
          0 7 * * * sh /usr/local/bin/curtains.sh auto
@@ -3797,10 +3823,15 @@ le **même mot**. Le tableau complet est dans
      d'appareil → grisé, « Éteignez-le d'abord. ». Téléviseur allumé + contrôle
      de tuner → même mot. Génératrice en marche + interrupteur de groupe → même
      mot. Éteindre chaque chose : chaque entrée repart. [ ]
-408. **L'interrupteur ne demande rien, la génératrice non plus.** Poser un relais
-     sur un interrupteur **avec la lumière allumée** : ça passe. Poser un
-     interrupteur de groupe sur une génératrice **dehors, sur le trottoir** : ça
-     passe aussi — c'est la seule exception à la règle du dedans. [ ]
+408. **La règle du dedans ne vaut que pour l'enveloppe.** Poser un relais sur un
+     interrupteur **avec la lumière allumée** : ça passe. Poser un interrupteur de
+     groupe sur une génératrice **dehors, sur le trottoir** : ça passe. Poser un
+     relais sur une **lampe de galerie** (une *Round Outdoor Lamp* vissée sur le
+     mur extérieur d'une maison), **debout sur le trottoir** : ça passe aussi, et
+     c'est le cas pour lequel le relais existe — une lumière extérieure sur une
+     minuterie. Un four ou un poste de radio qu'un survivant a traîné dehors :
+     pareil. Seules la porte, la fenêtre et le rideau demandent qu'on soit
+     dedans. [ ]
 409. **Retirer demande la même chose.** Avec un module posé sur une porte
      intérieure ouverte : clic droit → Retirer fonctionne. Refermer la porte →
      Retirer est grisé, « Ouvrez-la d'abord. ». Sortir sur le trottoir avec la
@@ -3844,6 +3875,63 @@ le **même mot**. Le tableau complet est dans
      main, à Électricité 0 : les trois lignes sont grisées, chacune avec sa
      description **et** « Électricité 1/2/3 requise. » en dessous. Monter la
      compétence : les lignes repartent et gardent leur description. [ ]
+
+417. **La porte du mur sud est un périphérique.** Dans une maison, choisir une
+     porte extérieure du mur **sud** (ou **est**) — celle qui donne sur la cour ou
+     la ruelle derrière, pas celle de la façade nord. Se placer dedans, la porte
+     ouverte, poser un **contact magnétique** dessus. Retourner au terminal et
+     taper `dev` : la porte est **dans la liste**, avec « exterior », son décalage
+     (`0 1S` pour une porte une case au sud du bureau) et son mur (`N`). Poser
+     ensuite un contact sur une porte du mur **nord** : les deux sont là. Avant
+     0.4.1 seules les portes des murs nord et ouest apparaissaient : une porte de
+     mur sud se tient sur la case **dehors**, et la machine n'y allait jamais. [ ]
+418. **La lampe de galerie aussi, et pas le lampadaire.** Avec le relais posé à
+     l'étape 408 sur la lampe du mur extérieur : `dev` la montre comme un `light`
+     de plus, « exterior », sur le mur qu'elle éclaire, et `dev light1 off`
+     l'éteint depuis le clavier. Poser un relais sur un **lampadaire** de la rue
+     (un poteau, pas un mur) : il ne paraît **jamais** dans `dev` — il n'est
+     accroché à aucun mur du bâtiment. [ ]
+
+## AP. Le module reste sur place quand le support s'en va (palier chute)
+
+Un module vit dans le modData du **support** (la porte, le poste, l'interrupteur).
+Avant ce palier, le support partait et le boîtier partait avec lui : c'était le seul
+geste qu'un survivant ne pouvait pas défaire. Maintenant, quand le support quitte le
+monde — ramassé, démonté, défoncé — **chaque module posé dessus tombe par terre sur
+la case où la chose se tenait**, à côté de la poignée et des charnières que la porte
+laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dans
+[notes/modules-proofs.md](notes/modules-proofs.md), section 10.
+
+419. **Ramasser un téléviseur avec un contrôle de tuner dessus.** Poser un
+     **contrôle de tuner** sur un téléviseur (étape 372), vérifier qu'il est dans
+     `dev` comme `tvN`. Puis ramasser le téléviseur : clic droit → **Ramasser**.
+     Attendu : le poste est dans le sac, et le **contrôle de tuner est par terre sur
+     la case** où il était — un objet au sol, ramassable, le même item qu'à la
+     fabrication. Le reposer ailleurs : il arrive **nu**, `dev` ne montre aucun
+     `tvN` tant qu'on n'a pas revissé le boîtier dessus. Revisser le tuner
+     ramassé : le poste redevient un `tvN`. [ ]
+420. **Défoncer une porte avec un contact et une gâche.** Sur une porte extérieure
+     avec un **contact magnétique** et une **gâche électrique** dessus (étapes 229 à
+     233), à la masse : clic droit → **Détruire**. Attendu : la porte disparaît, et
+     **les deux boîtiers sont au sol dans l'embrasure**, avec la poignée, les
+     planches et les charnières que le jeu y laisse. `dev` ne liste plus ni `doorN`
+     ni `lockN`, et `dev doorN` répond `doorN: no such device` — le numéro reste
+     dépensé, comme toujours. Même chose avec une porte **construite** (IsoThumpable)
+     et avec un mur démonté au tournevis (**Démonter**). [ ]
+421. **Une fenêtre BRISÉE garde son contact.** Poser un contact sur une fenêtre,
+     puis la **briser** (la ramasser et échouer le jet, ou la casser à la main).
+     Attendu : la fenêtre est toujours là, **rien n'est tombé**, et `dev winN` répond
+     `winN: smashed`. C'est voulu : un châssis brisé est un châssis, et le contact
+     est encore vissé dessus. [ ]
+422. **Le voisinage qui se décharge ne retire rien.** Avec deux ou trois modules
+     posés, s'éloigner assez pour décharger le quartier (section V), revenir :
+     **aucun boîtier par terre**, tous encore en place, `dev` identique avec les
+     mêmes numéros. Un support que le streamer a rangé n'a pas quitté le monde. [ ]
+423. **En multijoueur (si testé).** L'hôte pose un contact sur une porte ; le client
+     défonce la porte. Attendu : **les deux** voient le contact tomber au sol dans
+     l'embrasure (il est créé par le serveur et diffusé), et sur les deux machines
+     `dev` ne liste plus la porte. Le client ramasse le contact : il est dans son
+     sac. [ ]
 
 ## Rapport
 

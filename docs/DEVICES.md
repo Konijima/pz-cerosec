@@ -59,9 +59,12 @@ cache*, below):
 - The square's `getBuilding()`, when it has one → `getDef():getRooms()`
   (an `ArrayList<RoomDef>`, read the way `shared/Util/BuildingHelper.lua` reads
   it) → `getIsoRoom()` per room — `nil` while its chunks are not loaded — →
-  `getSquares()` → `getObjects()`.
+  `getSquares()` → `getObjects()`, **plus the far edge of every one of those
+  squares** (below).
 - No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
-  the same z. A `nil` square is an unloaded chunk and is skipped.
+  the same z. A `nil` square is an unloaded chunk and is skipped. No far edge
+  here: that walk visits every square of its block, room or not, so a base's south
+  wall is already standing on a square it goes to.
 
 Before either: the machine's **own** square. No square there is a chunk the streamer
 has not brought in, and a machine that is not in the world reaches nothing — `find`
@@ -71,6 +74,57 @@ you have walked away from lists no devices and answers `no such device` about th
 numbers in its own book, and its sensors fall out of the sampling book on the usual two
 scans of grace. It is not switched off for it and it keeps running: the rule is
 [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away).
+
+**A fixture on the far edge of a room belongs to the room.** A wall object belongs
+to ONE square and sits on that square's NORTH or WEST edge:
+`IsoDoor.getOppositeSquare` is `getNorth()` then `getGridSquare(x, y - 1, z)`, else
+`getGridSquare(x - 1, y, z)` (`javap -c`, offsets 0—56); `IsoWindow`'s and
+`IsoThumpable`'s are `getInsideSquare()` off the same `north` field (offsets 9—77 of
+each); `IsoCurtain`'s reads its sprite type and answers all four — curtainN north,
+curtainS south, curtainW west, curtainE east, `null` for a sprite that is none of
+them (offsets 0—141). So a door in a room's north or west wall stands on the room's
+own square and the walk above finds it, while a door in the room's **south or east**
+wall stands on the neighbouring square — the pavement, in no room at all, and a
+square the walk of the building's rooms never visited. Every south and east door,
+window and sheet of every building was invisible to `/dev` until 0.4.1, while the
+north and west ones were listed: a module fitted to a front door that never became
+a device.
+
+So each room square's **south and east neighbours** are looked at too, and what is
+taken off one is:
+
+- a **door, window or curtain** whose own `getOppositeSquare()` is that room square
+  — the engine's answer to which boundary the object is on, which is why a curtain's
+  four types need no reading of `north`;
+- a **light switch or lamp** whose sprite carries the `attached` property pointing
+  at that room square. A light is not the wall, it hangs on one, and the property is
+  what says which: vanilla reads `attachedN`, `attachedS`, `attachedW`, `attachedE`
+  in that order to work out where a survivor must stand to pull the chain
+  (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`). The *Round Outdoor
+  Lamp* is `MoveType = WallObject` with `attachedN` (`newtiledefinitions.tiles.txt`,
+  tileset `lighting_outdoor_01`, tile 24), so a porch lamp stands on the pavement
+  and hangs on the house's wall — and a **lamppost** has no `attached` property at
+  all and carries `streetlight` instead (tile 0 of the same tileset). That is how a
+  lamp on the building is told from the county's street lighting, and it is the
+  engine's own distinction rather than a guess about a sprite name.
+
+Nothing else is taken off a neighbour: a generator on the sidewalk is not the
+building's, and neither is a sensor dropped there (the far-edge walk does not read
+`getWorldObjects()` at all). And **only where the neighbour is in no room**: a
+neighbour that has a room is a square the walk visits in its own right, so an
+interior door is found from the other side and must not be found twice — the ordinal
+in an entry's key is handed out per square, so one object reached twice would be two
+devices with two numbers. It is the lock's own rule — exactly one of a door's two
+sides has a room — read from the room's end. The one fixture this does not reach is a
+wall shared by two **buildings**: the neighbour is the other building's room, so it
+is that building's machine that lists the door.
+
+**The numbers a save already has do not move for it.** A number hangs on where the
+device is (`os.devmap`, keyed `kind:x:y:z:side:n`) and is spent for the life of the
+machine, so a door the walk could never reach before takes the next free number and
+never anybody else's — even where it sorts ahead of them, which a south door does.
+The alternative, renumbering so that the ids follow the `(kind, x, y, z, side)`
+order, would move `door0` under a script that was written for it, and is not done.
 
 Classification is `instanceof`, and it answers a **list**, because one object can
 be two devices — or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
@@ -267,6 +321,56 @@ the floppy drive's rule about duplication. The client half is
 and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
 animation, `150 - perk * 3`-style duration, `addXp` at the end).
 
+**A module comes off when its fixture leaves the world**, and that is the third
+way off — not a screwdriver, and nobody's decision. The rule is one rule, in
+`server/CeroSec/SCeroSecFixtures.lua`, on the engine's own
+`Events.OnObjectAboutToBeRemoved`: when an object carrying our keys is about to be
+taken off its square, every module on it becomes an **item on that square**, at
+`0, 0, 0`, beside the doorknob and the hinges a destroyed door drops itself. So a
+television unplugged and carried to the next house leaves its tuner control on the
+floor, a door a zombie broke down leaves its contact and its strike lying in the
+doorway, and a wall taken apart leaves what was screwed to it. Before this the
+module simply stopped existing, because the fixture's modData is the only place it
+lived.
+
+The nine paths that lead there — a movable picked up, a window picked up, a map
+door destroyed, a built door destroyed, a sledgehammer, a dismantling, a curtain
+taken down, a generator picked up — and the two that must **not**, are the table
+in [notes/modules-proofs.md](notes/modules-proofs.md), section 10, each one with
+the vanilla line or the bytecode offset that removes the object. Four things are
+worth reading off that page here:
+
+- **A smashed window keeps its contact.** Vanilla smashes the sash instead of
+  taking the object (`ISMoveableSpriteProps:1289-1291`, and the removal branch at
+  `:1385` is then skipped), so nothing leaves the world and nothing comes off. The
+  `win` device is still there and reads `smashed`, which is the honest answer:
+  there is a window frame with a magnetic contact on it.
+- **A chunk unloading takes nothing off either.** `IsoChunk` never calls
+  `RemoveTileObject`; a fixture the streamer has taken away has not left the world.
+- **It is the floor, never a bag.** The event carries the object and nothing else,
+  and most of these paths have no character at all behind them — a door a zombie
+  broke down was nobody's gesture. One rule for the nine of them.
+- **Pre-fitted hardware is hardware.** A relay the 1991 walk screwed to a switch
+  plate lands on the floor like any other, for the reason `uninstallmodule` already
+  gives it back; the `pre` mark outlives it, as it outlives every module coming off.
+
+It is paid **per key and not per event**, because singleplayer fires the event
+twice for one pickup (the Lua `triggerEvent` at `ISMoveableSpriteProps:1406` and the
+Java one inside the `transmitRemoveItemFromSquare` on the line after it):
+`CeroSecModules.setOn` clears each key as the item is made, so a second firing
+reads a bare fixture. The item is made **before** the key is cleared —
+`AddWorldInventoryItem` answers `null` for a type the game cannot make — and the
+drop calls `CeroSecDevices.invalidate()` on the way out, for the reason
+`installmodule` and `uninstallmodule` do: which machines could see that fixture is
+not a question that layer can answer without the walk.
+
+And **nothing rides along in the item.** A pickup that keeps identity copies
+exactly one key out of an object's modData (`movableData`, `:1298-1299`), plus the
+container names and `itemCondition`; ours is not one of them, and putting it there
+would mean writing into somebody else's table — the second truth this mod refuses
+to keep. Which is also the answer a survivor expects: a television carried out of
+the building does not take the building's wiring with it.
+
 **What the right-click menu lists, and what it hides.** One line per module that
 could ever go on a fixture of that **sort**, carried or not — and the only thing
 hidden is `fitsOn` answering `fixture`, the module that could never fit. Its
@@ -311,7 +415,7 @@ is what the first rule exists to stop.
 | television, radio set | off | `running` | `IsoWaveSignal.getDeviceData()` then `DeviceData.getIsTurnedOn()` |
 | generator | off | `running` | `IsoGenerator.isActivated()` |
 | light switch | — | — | a relay goes behind a plate whose only state is the light it works |
-| everything but a generator | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
+| door, window, curtain (map or built) | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
 | in a safehouse, with the option on | a player the safehouse allows | `safehouse` | `SafeHouse.getSafeHouse(square)`, then `SafeHouse.playerAllowed(IsoPlayer)` |
 
 The state asked for is the state of what the MODULE is screwed to and not of the
@@ -333,9 +437,19 @@ of them has a room* — and he stands on one side of it or the other. The inside
 side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
-**The generator is the one exemption.** It is an outdoor machine by
-construction, so a check that wanted a room round it would be a module nobody
-could ever fit.
+**The inside rule is the ENVELOPE's, and the envelope is three classes** — the
+door, the window and the curtain, which are what a stranger would strip to get in
+or to blind the alarm. That is what the rule was written for, and a module anybody
+could unscrew from the pavement is what it exists to stop.
+
+Nothing else is asked about a room. A **porch lamp** is the case a relay is FOR —
+an outdoor light on a timer, screwed to the outside of the house, reached from the
+pavement because there is nowhere else to stand — and a rule that wanted a room
+round it was a `relay` greyed out on the one fixture it was made for (reported in
+game on 0.4.0, a *Round Outdoor Lamp*). The same goes for an appliance, a set or a
+generator a survivor has dragged outside: they are fitted where they stand. The
+generator used to be the one exemption and is now one of five, for its own reason
+read wider — it is an outdoor machine by construction, and so is a porch lamp.
 
 **The safehouse gate is a sandbox option and it is OFF by default** —
 `SandboxVars.CeroSec.SafehouseModules`, read the way vanilla reads a grouped
@@ -468,6 +582,37 @@ that same action makes below half condition — is deliberately **not** copied: 
 shoulder fumbles a cord and an electric starter does not, and a starter is what
 the module is.
 
+**Which way round `open` is, and it was asked twice.** `IsoCurtain.IsOpen()` is
+one instruction — `getfield open` (offsets 0—4) — and `isCurtainOpen()` is that
+method forwarded, so the device reads the field and nothing else. That the field
+means *drawn back* and not *drawn across* was reported the other way round once
+(0.4.0, "the script only opens them, they don't close"), so it is written down
+here with what proves it:
+
+- **the engine's own menu.** `ISWorldObjectContextMenuLogic` offers
+  `ContextMenu_Close_curtains` when `IsOpen()` is true and
+  `ContextMenu_Open_curtains` when it is false — for an `IsoCurtain` (offsets
+  1415—1433) and for a door's sheet through `ICurtain.isCurtainOpen()` (offsets
+  123—142). `client/Tutorial/Tutorial1.lua:125-127` reads the same way.
+- **the sprite names.** `IsoDoor.initCurtainSprites` binds `curtainN` to
+  `fixtures_windows_curtains_01_18` and `curtainNopen` to `..._22`, so within each
+  group of eight the tiles ending 0—3 are the closed cloth and 4—7 the open one.
+  `IsoCurtain`'s constructor derives the pair with that same ±4
+  (`getSprite(sprite, 4)` / `(sprite, -4)`) and `CellLoader` picks which way from
+  `index % 8 <= 3` (offsets 678—707).
+- **what the engine can see through.** `client/Foraging/ISZoneDisplay.lua:346-360`
+  treats a window as see-through exactly when its curtain `IsOpen()`.
+- **where a curtain starts.** Every map curtain is built `open = true` with
+  `sprite = openSprite` (`CellLoader`, offsets 709—740, and the constructor at
+  124—136), `IsoWindow.addSheet` builds the sheet from the *open* tile
+  (`16 + facing + 4`, offsets 192—253) and `IsoDoor.addSheet` sets
+  `curtainOpen = true` (offset 18). So a fresh curtain is **open**, which is also
+  why a curtain motor will not go on a drawn one: there is nothing to do to it.
+
+So `closed` on the glass is the cloth across the window, and `echo close` draws
+it. A bench walks that exact sequence from the state the world really starts in
+(`window_test.lua`, section 56).
+
 **A curtain's barricade is found the only way it can be.** `IsoCurtain` has no
 `isBarricaded()`: `barricaded` is a public field with no getter over it, so there
 is nothing to ask before the call. What there is, is that
@@ -527,7 +672,7 @@ that syncs for a player does not necessarily sync for us.
 | `win` | `IsoWindow:setIsLocked(locked)` | `syncIsoObject(false, 0, nil, nil)` | `setIsLocked` is a bare field write with no sync at all; `IsoWindow:syncIsoObjectSend` writes `locked` into the packet |
 | `lock` (built, padlock) | `IsoThumpable:setLockedByPadlock(locked)` | none needed | it calls `syncIsoThumpable()` itself, whose server branch is `INetworkPacket.sendToRelative(SyncThumpable, ...)` |
 | `lock` (built, key) | `IsoThumpable:setLockedByKey(locked)` | `syncIsoThumpable()` | same server skip as the map door's |
-| `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap — **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
+| `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound of its own (the mod plays it beside the toggle — see *The sound the machine makes*) and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap — **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
 | `curtain` (`IsoCurtain`) | `ToggleDoorSilent()` | **none needed** | the toggle's own last act is `syncIsoObject(false, open, null)` at offsets 85—100, and that override's server branch walks `GameServer.udpEngine.connections`. The one actuator here whose broadcast is the engine's. Vanilla makes the bare call itself on a curtain nobody is holding: `client/DebugUIs/Scenarios/Trailer2Scenario.lua:134` |
 | `curtain` (a door's sheet) | `toggleCurtain()` | **none needed** | on the server it is the whole gesture: `setCurtainOpen` then `transmitSetCurtainOpen(isCurtainOpen())` at offsets 55—60, whose server branch is `sendObjectChange(SET_CURTAIN_OPEN)`. `setCurtainOpen(b)` alone is the half that does not broadcast |
 | `window` | `ToggleWindow(nil)` | **none needed** | `sync(open ? 1 : 0)` at offset 147, unconditional. The character is never dereferenced; see *A window is two devices* and *The nil argument* |
@@ -535,6 +680,57 @@ that syncs for a player does not necessarily sync for us.
 | `washer` | `setActivated(b)` | `sendObjectChange(IsoObjectChange.WASHER_STATE)` | the setter is a field write plus `updateGenerator` and no sync at all; `saveChange` writes `isActivated()` under that change, and `sendObjectChange` is server-only by construction. The pair is `shared/TimedActions/ISToggleClothingWasher.lua`'s own |
 | `gen` | `setActivated(b)` | `sync()` | idempotent by construction (offsets 0—8 return when the argument is the state it is in) and its server branch calls `sync()` at 113—122; vanilla calls `sync()` again after it (`ISActivateGenerator:complete`) and so does this |
 | `tv` / `rx` | `DeviceData:setIsTurnedOn(b)`, `DeviceData:setChannel(n)` | **ours, and the mod's own packet** | there is no engine call that broadcasts either field from the server; see *The sync the mod writes itself*, below |
+
+### The sound the machine makes
+
+Every actuator above uses the **silent** call, and for one reason: the loud ones
+play at a survivor's own emitter and a machine has no survivor.
+`IsoDoor.playDoorSound` and `IsoThumpable`'s take a
+`BaseCharacterSoundEmitter`; `IsoCurtain.ToggleDoor` plays only when its character
+is not null (offsets 79—129); and a window's sound is not in `IsoWindow` at all.
+
+A building that works in silence is a building nobody can tell is working — three
+reports on 0.4.0 said so about a door shut by `autoclose.sh`, a window opened by
+cron and a curtain drawn by `curtains.sh` — so the mod plays the sound itself,
+beside the toggle, **with the name the hand would have played**, read off the
+object *after* it moved:
+
+| kind | name | where it comes from |
+| --- | --- | --- |
+| `door` (both classes) | `getSoundPrefix() .. "Open"` / `"Close"` | `playDoorSound(emitter, "Open"/"Close")` concatenates the two (offsets 0—16, recipe `\1\1`); the prefix is the `closedSprite`'s `DoorSound` property or `WoodDoor` (offsets 0—40). So `WoodDoorOpen`, and a metal door says so itself |
+| `window` | `OpenWindow` / `CloseWindow` | `ToggleWindow` plays nothing; the survivor's noise is an anim event — `media/AnimSets/player/openwindow/success.xml` carries `PlaySound` with `OpenWindow`, `closewindow/` with `CloseWindow`, both declared in `sounds_object_window.txt` |
+| `curtain` (`IsoCurtain`) | `getSoundPrefix() .. "Open"` / `"Close"` | `ToggleDoor` builds it that way (offsets 83—129); `IsoCurtain.getSoundPrefix()` is `"Curtain"` plus the `CurtainSound` property, or `CurtainShort` (offsets 0—45). So `CurtainShortOpen`, and a bedsheet is `CurtainSheetOpen` |
+| `curtain` (a door's sheet) | `CurtainShortOpen` / `CurtainShortClose` | **a choice, not a copy.** Vanilla plays nothing here: the menu hands the door to `ISOpenCloseCurtain`, whose `complete()` calls `toggleCurtain()`, which has no sound in it. `CurtainShort` is what `IsoCurtain.getSoundPrefix()` answers when there is no sprite to ask (offsets 0—10), and a door's sheet is exactly that case. The door's own prefix would be wrong: a bedsheet is not a door |
+
+Nothing else makes a sound. A `lock`, a `win` latch, a stove, a washer, a
+generator and a set are all silent, because the first two move nothing a room can
+hear and the other four carry their own noise in the engine
+(`IsoStove.PlayToggleSound` is a survivor's hands and `setChannel`'s zap is inside
+the setter).
+
+**Who hears it** is vanilla's own server-side pair, out of a server file —
+`server/Traps/STrapGlobalObject.lua:118-124`:
+
+```lua
+if isServer() then playServerSound(soundName, square) return end
+square:playSound(soundName, true)
+```
+
+and each half is the only one that works where it stands.
+`playServerSound(String, IsoGridSquare)` is
+`GameServer.PlayWorldSoundServer(name, false, square, 0.2f, 5f, 1.1f, true)` →
+`GameServer.PlayWorldSound`, whose first instructions are
+`if (!GameServer.server) return` (offsets 0—10) and whose body walks
+`udpEngine.connections` and sends a `PlayWorldSoundPacket` to every connection the
+square is `RelevantTo` (offsets 69—171): a broadcast on a dedicated server and
+nothing anywhere else. `IsoGridSquare.playSound(String, boolean)` takes a free
+emitter at the square (offsets 0—36), which is what a solo game needs — one
+process, so the machine the server wrote is the machine the survivor hears.
+
+**A refused write is mute, and so is one that changed nothing.** The call sits
+inside the branch that moved the fixture, after every guard: two `echo close` in a
+row are one shut door and one sound, `curtain0: barricaded` is silent, and the
+curtain's is played only after the read-back that proves the sheet moved.
 
 ### The sync the mod writes itself
 

@@ -1487,11 +1487,22 @@ end
 -- where the machine stands (see SCeroSecDevices.offset). Room ids repeat and an
 -- offset does not.
 --
--- 8 id + 20 desc + 2 + 10 pos + 2 + 1 side + 2 + state, which puts the widest
--- state ("barricaded") on column 55. The description is 20 against `ls -l`'s
--- 13: wider than the listing that has a mode and an owner in front of it, and
--- narrower than it would be if the offset were not the better name.
-local D_ID, D_DESC, D_POS, D_SIDE = 8, 20, 10, 1
+-- 9 id + 20 desc + 2 + 10 pos + 2 + 1 side + 2 + state, which puts the widest
+-- state ("barricaded") on column 56 of the glass's 60. The description is 20
+-- against `ls -l`'s 12: wider than the listing that has a mode and an owner in
+-- front of it, and narrower than it would be if the offset were not the better
+-- name.
+--
+-- NINE AND NOT EIGHT, because eight is the widest id this machine hands out and a
+-- column exactly as wide as its content has no gap left in it: `curtain0` -- the
+-- first curtain of the first house -- printed as `curtain0office`, with the room
+-- name against the name of the device, and `window10` and `sensor10` would have
+-- done the same. The page in the admin's manual always showed the space; the
+-- column is what was wrong. Nine leaves one for an id of eight and none for one of
+-- nine (`curtain10`, which is eleven curtains in one building), and a tenth
+-- character would have to come out of `ls -l`'s room column, which is at 12
+-- already.
+local D_ID, D_DESC, D_POS, D_SIDE = 9, 20, 10, 1
 
 local function devRow(node)
 	return CeroSecOS.padRight(CeroSecOS.truncate(node.id or "?", D_ID), D_ID)

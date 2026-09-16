@@ -8,6 +8,41 @@ date.
 
 ## Unreleased
 
+- **A module comes off when its fixture is picked up, taken apart or broken: it is
+  on the floor, or in your bag.** Before this, a television carried to the next
+  house took its tuner control with it into nothing, and a door a zombie broke down
+  took the contact and the strike you had climbed up to fit. Now the boxes are lying
+  on the tile where the thing stood -- in the doorway, beside the doorknob and the
+  hinges the door drops itself -- and you pick them up and screw them on somewhere
+  else. It counts for every way a fixture can go: picked up, sledged, dismantled,
+  broken down by a zombie, and the wall it was on coming down with it. Two things
+  deliberately drop nothing: a window somebody **smashes** is still a window and
+  keeps its contact (it reads `smashed`), and a neighbourhood unloading while you
+  walk away takes nothing off anything.
+
+- **Every machine has `/usr/local/bin` now, and it is on the PATH.** The `HOME
+  AUTOMATION` floppy tells you to `sudo cp /mnt/curtains.sh /usr/local/bin`, and
+  that directory was not on any machine -- the copy answered `no such file` and
+  there was nothing on the disk's README saying to make three directories first.
+  It is there on every machine from now on, and it is the second entry of the
+  PATH a login hands you: copy a program there and call it by its name, at the
+  prompt or in a crontab line, with no `sh /usr/local/bin/` in front of it. The
+  whole path still works exactly as the README writes it. **Machines already in
+  your save gain the directory on load**, and anything you had made at one of
+  those three names is left exactly as it is.
+- **You can hear the building work.** A door the machine opens or shuts, a window
+  its motor works and a curtain it draws all make the sound a hand would have
+  made -- the door's own sound, wood or metal, the sash, the cloth -- and every
+  player in earshot hears it, on a server as well as in a solo game. Until now
+  every one of them moved in complete silence, which made an order that worked
+  look exactly like one that did nothing: `autoclose.sh` shut the door behind you
+  without a sound, cron opened a window at dawn without a sound, and
+  `curtains.sh close` drew every curtain in the house without a sound. A device
+  that refuses -- a boarded door, a smashed window, a curtain nailed over -- stays
+  silent, and so does an order for something that is already the way you asked:
+  two `close` in a row are one shut door and one sound. Latches, ovens, washers,
+  generators and sets are unchanged; they were never the silent ones.
+
 - **A program you left running with `&` is still running when you come back to your
   save.** A computer you never switched off is a computer that never stopped: quit to
   the menu, come back tomorrow, and `jobs` shows the daemon you started, the door it
@@ -18,11 +53,38 @@ date.
   something a reload has not got -- a question a script had put on your screen, a
   call or a radio link it was holding, a `shutdown +N` you had ordered for later, and
   a shell you had logged in from another machine. `man jobs` and Volume 3 say so.
-
 - **A server admin gets the debug window again.** The entry `CeroSec (dev)` on a
   computer's menu asked the game whether this connection was THE admin role, which
   answered no to an admin on his own server; it now asks the access level by name,
   the way the game's own map editor does. What the server answers has not changed.
+- **A door or window on the south or east wall of a building was invisible to
+  `/dev`. Every exterior door is found now.** A module fitted to the front door of
+  a house that faces south did nothing at all: the machine listed the doors of the
+  north and west walls and never saw the others, because a south wall stands on the
+  tile *outside* the room and the computer only ever walked the rooms. Doors,
+  windows and the sheets on them are all found from either side now, on every wall
+  of the building, and so are the shop's back door in the alley and the window over
+  the yard. Numbers you already have do not move: a door that turns up for the first
+  time takes the next free number, so `door0` in a script you wrote last week is
+  still the door you wrote it for, and the newly found ones are on the end of the
+  list.
+- **An outdoor lamp on the wall of the building is a `light` like any other.** The
+  porch lamp, the lamp over the back door, the neon sign on a shop front: fitted
+  with a relay, they are on the machine and on a timer with the rest. A lamppost on
+  the street is not the building's and is not listed.
+- **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
+  the pavement is refused for the building's skin -- a door, a window, a curtain --
+  and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into
+  the yard or a radio on the step are fitted where they stand, because the pavement
+  is the only place there is to stand in front of one. Nothing about the door, the
+  window and the curtain has changed.
+- **The device tables line up again.** A name exactly eight characters wide ran
+  straight into the room beside it -- `curtain0office` in `dev` and in
+  `ls -l /dev`, and `curtain0` is the first curtain of the first house you wire.
+  The name column is one wider now, which the manual's page always showed; in
+  `ls -l` the room column paid for it, so a long pair of rooms reads
+  `kitchen-hal~` there. Nothing else moved, and both tables still end inside the
+  screen's 60 columns.
 
 ## 0.4.0 - 2026-09-16
 

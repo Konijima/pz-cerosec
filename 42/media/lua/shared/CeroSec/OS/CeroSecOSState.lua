@@ -64,6 +64,9 @@ function CeroSecOS.newState(hostname)
 	-- fresh machine has an empty drive, and so does every machine until somebody
 	-- puts a disk in the slot.
 	CeroSecOS.ensureMnt(state)
+	-- And /usr/local/bin with the two directories above it, empty: where the
+	-- machine's own software goes, and what the second half of DEFAULT_PATH names.
+	CeroSecOS.ensureLocalBin(state)
 	return state
 end
 
