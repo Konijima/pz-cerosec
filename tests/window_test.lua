@@ -14144,22 +14144,40 @@ do
 	-- A survivor opens a door. Nothing of ours moved it, which is the point: the
 	-- daemon reads the world and not its own writes.
 	--
-	-- WHAT IS MEASURED, and the number is printed rather than assumed: the second
-	-- of the machine's own wall clock at which the door came shut. `n` is counted
-	-- in ROUNDS and a round is `sleep 1` PLUS the work the round costs -- the
-	-- listing of /dev, a `cat` per door, the counter file -- and that work is
+	-- WHAT IS MEASURED, and the numbers are printed rather than assumed.
+	--
+	-- Two clocks are in play and only one of them can be pinned tight. The WALL
+	-- clock cannot: `n` is counted in ROUNDS, and a round is `sleep 1` PLUS the work
+	-- the round costs -- the listing of /dev, a `cat` per door, the counter file --
 	-- charged in steps against CeroSec.STEP_BUDGET_PER_MACHINE, so a round on a
-	-- two-door building measures about a second and a third rather than a second
-	-- exactly. The half that matters is exact and is the one the request named:
-	-- the door is NOT shut before its five rounds are up. The upper bound is
-	-- generous on purpose -- it is a budget and not a promise, and a bench that
-	-- pinned it to one second would be a bench that goes red on a busier machine.
-	local function secondDoorShuts(door, limit)
-		for s = 1, limit do
-			seconds(1)
-			if not door.open then return s end
+	-- two-door building measures about a second and a third. A bench that pinned
+	-- five rounds to five seconds would go red on a busier machine.
+	--
+	-- THE ROUND COUNTER CAN, and it is the number the program actually decides on.
+	-- /var/tmp/autoclose.door0 holds how many rounds that door has read open, and
+	-- the program's own test is `-gt $n`: the counter is bumped, compared, and the
+	-- door is shut on the round where it goes PAST n. So with n = 5 the highest
+	-- value that file ever holds while the door is still open is exactly 5 -- the
+	-- door is shut on the round that would have written 6, and that round writes 0
+	-- instead. Written `-ge` the program shuts the door a round early and the file
+	-- never reaches 5 at all, which is the whole difference between "after five
+	-- seconds" and "after four", and it is what this assertion is for: the bench
+	-- read the wall clock alone until a mutation to `-ge` sailed through it.
+	--
+	-- Sampled every pass, because the counter changes once a round and a sample
+	-- coarser than a round would step over a value.
+	local function watchDoor(door, passes)
+		local peak, shutAt = 0, nil
+		for p = 1, passes do
+			bench.tick(1)
+			local c = tonumber(bench.fileText("/var/tmp/autoclose.door0") or "")
+			if door.open then
+				if c ~= nil and c > peak then peak = c end
+			elseif shutAt == nil then
+				shutAt = p * CeroSec.JOB_PASS_MS
+			end
 		end
-		return nil
+		return peak, shutAt
 	end
 
 	door0.open = true
@@ -14167,9 +14185,10 @@ do
 	seconds(4)
 	check("four seconds later it is still open, because five rounds is five rounds",
 		door0.open == true)
-	local shutAt = 4 + (secondDoorShuts(door0, 8) or 99)
-	check("and it comes shut at second " .. shutAt .. " (five rounds, no sooner)",
-		shutAt >= 5 and shutAt <= 12)
+	local peak, shutAt = watchDoor(door0, 80)
+	eq("the counter reached five with the door still open, and no further", peak, 5)
+	check("and the door was shut " .. tostring(shutAt) .. " ms later, on the round "
+		.. "after that", shutAt ~= nil)
 	eq("the engine was told once", door0.silentToggles, 1)
 	eq("and the door nobody opened was never touched", door1.silentToggles, 0)
 
@@ -14183,9 +14202,9 @@ do
 	door0.open = true
 	seconds(3)
 	check("so a door opened again is still open three seconds in", door0.open == true)
-	local again = 3 + (secondDoorShuts(door0, 8) or 99)
-	check("and shut at second " .. again .. " of the second opening",
-		again >= 5 and again <= 12)
+	local peak2, shutAt2 = watchDoor(door0, 80)
+	eq("the second opening counted its own five rounds", peak2, 5)
+	check("and was shut " .. tostring(shutAt2) .. " ms after that", shutAt2 ~= nil)
 	eq("and the engine was told a second time and no more", door0.silentToggles, 2)
 
 	bench.enter("sh " .. B .. "/autoclose.sh stop")

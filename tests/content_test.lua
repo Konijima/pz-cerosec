@@ -3364,6 +3364,28 @@ do
 	check("the weights are a share of a hundred (" .. total .. ")",
 		total > 0 and total <= 100)
 
+	-- AND THE SHARES THEMSELVES, BY ID AND BY NUMBER. "A share of a hundred" is
+	-- true of almost any mistake: the home kit's two could be moved to three, or
+	-- taken out of the blank remainder instead of out of the two disks that paid
+	-- for them, and every assertion above stays green. The arithmetic written over
+	-- those three entries -- UTILITIES 2 down to 1 and GAMES 2 down to 1 for the
+	-- home kit's two, so the box is still SEVENTEEN written disks in a hundred --
+	-- is a claim in a comment until it is a number here.
+	--
+	-- Three ids and the total, because either half alone is loose: the three
+	-- numbers without the total would not see a fourth disk's share moving, and the
+	-- total without the three would not see two of them swapping shares.
+	do
+		local PAID = { { "UTILITIES", 1 }, { "GAMES", 1 }, { "HOME AUTOMATION", 2 } }
+		for i = 1, #PAID do
+			local entry = CeroSecContent.diskById(PAID[i][1])
+			check("the catalogue still has " .. PAID[i][1], entry ~= nil)
+			eq(PAID[i][1] .. " is worth " .. PAID[i][2] .. " of the box",
+				tonumber(entry.weight) or 0, PAID[i][2])
+		end
+		eq("and the written disks are seventeen of a hundred", total, 17)
+	end
+
 	-- The roll, at both ends and over the whole range. What is left over is blank,
 	-- and that is asserted rather than assumed: a weighting error that made every
 	-- disk in the county a UTILITIES disk would otherwise be invisible.

@@ -83,6 +83,20 @@ do
 	require = realRequire
 end
 
+-- The world catalogue, for the one thing the manual quotes out of IT: the usage
+-- line of every program on the home-automation floppy. The book tells a survivor
+-- how to run a program it does not itself ship, so a usage line that moved in the
+-- library has to break a PAGE, exactly as a module's level does.
+local contentPath = "42/media/lua/shared/CeroSec/CeroSecContent.lua"
+do
+	local realRequire = require
+	require = function() end
+	local cchunk, cerr = loadfile(contentPath)
+	if not cchunk then error("cannot load " .. contentPath .. ": " .. tostring(cerr)) end
+	cchunk()
+	require = realRequire
+end
+
 local MANUAL_DIR = "42/media/lua/shared/CeroSec/"
 
 local chunk, err = loadfile(MANUAL_DIR .. "CeroSecManual.lua")
@@ -1412,6 +1426,73 @@ do
 		string.find(flat, NUMBER[CeroSecOS.MAX_NEST] ..
 			" deep is as far as these nest, and " .. NUMBER[CeroSecOS.MAX_STAGES] ..
 			" is as long as a pipeline may be", 1, true) ~= nil)
+end
+
+--
+-- THE HOME KIT'S USAGE LINES, PINNED TO THE LIBRARY
+--
+-- The six programs on the HOME AUTOMATION floppy are not commands, so they are in
+-- none of COMMAND_INFO and none of the reference cards -- and until this section
+-- the book's account of them was tied to nothing at all. A typo in Volume 3
+-- chapter 9, or a usage line changed in CeroSecContent, left the two disagreeing
+-- and every suite green.
+--
+-- What is compared is the program's OWN `# usage:` header, which is the line the
+-- program prints when it is run wrongly, so the book, the header and the refusal
+-- are one string in three places and not three strings.
+--
+-- BOTH DIRECTIONS. Every program's line is in the book; and every line in the book
+-- that starts with one of the six names IS that program's line, character for
+-- character -- which is what catches a page describing a shape the program has
+-- not got.
+--
+do
+	local HOME_KIT = { "autoclose.sh", "curtains.sh", "tvguide.sh", "wake.sh",
+		"alarm.sh", "genwatch.sh" }
+	local want = {}
+	for i = 1, #HOME_KIT do
+		local name = HOME_KIT[i]
+		local script = CeroSecContent.SCRIPTS[name]
+		check("the home kit's " .. name .. " is in the library", script ~= nil)
+		-- The header, minus the two words that make it a comment and a usage line:
+		-- what is left is the shape a survivor types.
+		local usage = string.match(script.text, "\n# usage: ([^\n]*)")
+		check(name .. " carries a usage header (" .. tostring(usage) .. ")",
+			type(usage) == "string" and usage ~= "")
+		-- And it names the program, or the book would be pinned to a line that does
+		-- not say what it is about.
+		check(name .. "'s usage line names it", usage ~= nil
+			and string.sub(usage, 1, #name) == name)
+		want[name] = usage
+		check("the book carries " .. name .. "'s exact usage line: \"" .. tostring(usage)
+			.. "\"", usage ~= nil and string.find(wholeBook, usage, 1, true) ~= nil)
+	end
+
+	-- The other way round, off the book's own indented lines. A screen line in
+	-- these pages is indented; the ones that begin with one of the six names are
+	-- the signatures, and every one of them has to be the library's.
+	local found = 0
+	for line in (wholeBook .. "\n"):gmatch("([^\n]*)\n") do
+		if string.sub(line, 1, 2) == "  " then
+			local body = string.match(line, "^%s*(.-)%s*$")
+			local first, second = string.match(body, "^(%S+)%s*(%S*)")
+			-- A SIGNATURE AND NOT A LISTING. Volume 1 prints what `ls /mnt` draws on
+			-- the glass, which is these very names in columns -- so a line whose
+			-- SECOND word is another of the six is a directory listing and not a
+			-- usage line. Without this the walk held "genwatch.sh  tvguide.sh
+			-- wake.sh" to being genwatch.sh's shape.
+			if first ~= nil and want[first] ~= nil and want[second] == nil then
+				found = found + 1
+				check("a book line starting " .. first .. " is its exact usage line: \""
+					.. body .. "\" against \"" .. want[first] .. "\"",
+					body == want[first])
+			end
+		end
+	end
+	-- Counted, because a walk that matched nothing would be green for having looked
+	-- at no line at all -- six signatures, one per program.
+	check("and the book really prints the six signatures (" .. found .. ")",
+		found == #HOME_KIT)
 end
 
 print(count .. " manual checks passed")
