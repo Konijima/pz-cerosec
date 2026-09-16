@@ -3559,6 +3559,32 @@ do
 		-- made.
 		check(module.item .. "'s recipe asks for a screwdriver and keeps it",
 			string.find(body, "tags[base:screwdriver] mode:keep", 1, true) ~= nil)
+
+		-- THE MOTOR AND THE RECEIVER, on exactly the modules that MOVE a piece
+		-- of a fixture and on no others. A contact senses and a relay sits in a
+		-- lighting circuit; a strike moves a keeper and an operator moves a
+		-- door, and each does it because a machine across the building said so.
+		--
+		-- Asserted in BOTH directions, because only one of the two is a bug
+		-- anybody would notice: a moving module that lost its motor is a recipe
+		-- a survivor can suddenly build out of scrap, and nothing in the game
+		-- would tell him it used to cost more.
+		local MOVES = { strike = true, operator = true }
+		for _, part in ipairs({ "CeroSec.SmallMotor", "Base.Receiver" }) do
+			local has = string.find(body, "[" .. part .. "]", 1, true) ~= nil
+			if MOVES[module.id] then
+				check(module.item .. " is built round " .. part, has)
+			else
+				check(module.item .. " senses rather than moves, so no " .. part,
+					not has)
+			end
+		end
+		-- And the box of motor and gearing is still on the door operator: an
+		-- input is added to one of these, never taken off.
+		if module.id == "operator" then
+			check("the door operator still takes Base.EngineParts",
+				string.find(body, "[Base.EngineParts]", 1, true) ~= nil)
+		end
 	end
 
 	-- Nothing is made here but the four modules and the PART the moving ones are

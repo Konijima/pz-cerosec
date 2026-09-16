@@ -65,7 +65,32 @@ module CeroSec
          it.
 
        - xpAward is set against the vanilla recipes above, which pay 10 for a
-         flashlight and 6 to 14 for a remote controller. */
+         flashlight and 6 to 14 for a remote controller.
+
+       - THE ONES THAT MOVE SOMETHING TAKE A MOTOR AND A RECEIVER, and the two
+         that do not, do not. A magnetic contact is two reed switches and a
+         magnet -- it senses, it actuates nothing -- and a relay is a coil and a
+         set of contacts sitting in a lighting circuit. The strike and the
+         operator each move a piece of metal on a door and each does it because
+         a computer across the building told it to, so each is built round the
+         part that does the moving (CeroSec.SmallMotor) and the part that hears
+         the order (Base.Receiver, which is the very item vanilla's own
+         DismantleMiscElectronics gets out of a remote control). The window
+         operator is the third and it is the same three inputs.
+
+         NOTHING IS TAKEN OFF for this. Base.EngineParts stays on the door
+         operator exactly where it was, and the two new lines go beside it. The
+         compatibility contract is about what a save HOLDS -- an item block, a
+         recipe a character has learned, a state key -- and neither the recipe
+         names nor the item blocks moved, so a survivor who read the guide still
+         knows all six recipes and every module already screwed to a door is
+         untouched. What did change is the price of building a NEW strike or a
+         new operator, and that is a world changing rather than a save
+         breaking: it is in the release notes in those words (CHANGELOG.md),
+         which is what the contract asks of a change like this one. There is no
+         half-finished craft for it to interrupt either -- a craftRecipe is a
+         timed action and the game persists nothing between its start and its
+         end. */
 
     craftRecipe MakeCeroSecMagneticContact
     {
@@ -127,6 +152,8 @@ module CeroSec
         {
             item 1 tags[base:screwdriver] mode:keep flags[Prop1],
             item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 1 [CeroSec.SmallMotor],
+            item 1 [Base.Receiver],
             item 2 [Base.ElectronicsScrap],
             item 1 [Base.ElectricWire],
             item 1 [Base.SmallSheetMetal],
@@ -138,10 +165,11 @@ module CeroSec
         }
     }
 
-    /* The one with a motor in it, which is the one part of this a survivor
-       cannot wind himself: Base.EngineParts is what the game already calls a
+    /* The biggest of the three that move something, and the only one that
+       needs gearing as well: Base.EngineParts is what the game already calls a
        box of motor and gearing, and it is what a garage door opener was made of
-       in 1993 too. */
+       in 1993 too. It STAYS -- an input is never taken off one of these -- and
+       the motor and the receiver go on beside it. */
     craftRecipe MakeCeroSecDoorOperator
     {
         timedAction = MakingElectrical,
@@ -157,6 +185,8 @@ module CeroSec
             item 1 tags[base:screwdriver] mode:keep flags[Prop1],
             item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
             item 1 [Base.EngineParts],
+            item 1 [CeroSec.SmallMotor],
+            item 1 [Base.Receiver],
             item 2 [Base.ElectronicsScrap],
             item 2 [Base.ElectricWire],
             item 1 [Base.ScrapMetal],

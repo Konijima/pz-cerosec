@@ -14,6 +14,12 @@ date.
   electronics scrap the game would have given you anyway. The CD player pays its
   usual two. Both recipes are in the Field Wiring Guide with the other four, and
   a motor turns up on the same shelves the modules do, rarer than any of them.
+- **The electric strike and the door operator now cost a Small Motor and a
+  Receiver each**, on top of everything they cost before. Nothing you have
+  already built or already screwed to a door changes, and you still know every
+  recipe you learned -- it is the price of the NEXT one that moved. The two
+  modules that only watch a fixture, the magnetic contact and the relay, are
+  untouched: a motor is for the ones that move something.
 
 ## 0.3.0 - 2026-09-15
 
