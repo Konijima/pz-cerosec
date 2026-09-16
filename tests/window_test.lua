@@ -13645,7 +13645,7 @@ do
 	--
 	-- A WINDOW SMASHED IS NOT A WINDOW REMOVED
 	--
-	-- ISMoveableSpriteProps:1352-1354 smashes the sash instead of taking it, and
+	-- ISMoveableSpriteProps:1289-1291 smashes the sash instead of taking it, and
 	-- the branch that would remove the object is then skipped (:1385). So no event
 	-- fires, and the contact is still on a window that reads `smashed`.
 	--

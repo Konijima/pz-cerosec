@@ -70,7 +70,7 @@ require "CeroSec/CeroSecModules"
 --     the same function, :1384-1386: transmitRemoveItemFromSquare and NO Lua
 --     trigger, so the Java one is the whole of it
 --   a window SMASHED instead
---     :1352-1354 sets windowGotSmashed and the branch at :1385 is then skipped:
+--     :1289-1291 sets windowGotSmashed and the branch at :1385 is then skipped:
 --     the object STAYS on the square. Nothing fires and nothing should -- a
 --     smashed window is a window with a contact on it, and the contact reads
 --     `smashed` (DEVICES.md)

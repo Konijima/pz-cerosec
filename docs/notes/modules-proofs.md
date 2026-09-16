@@ -541,7 +541,7 @@ side this mod writes modData on.
 | --- | --- | --- |
 | a movable picked up (television, radio set, oven, washer, lamp) | `ISMoveableSpriteProps:pickUpMoveableInternal:1406-1407` — `triggerEvent("OnObjectAboutToBeRemoved", _object)` *itself* ("Hack for RainCollectorBarrel, Trap, etc") and then `transmitRemoveItemFromSquare` | yes |
 | a window picked up | the same function, `:1384-1386` — `transmitRemoveItemFromSquare` and **no** Lua trigger | yes, the Java one |
-| the same pickup **smashing** the window | `:1352-1354` sets `windowGotSmashed`, and the branch at `:1385` is then skipped: the object **stays** | **no, and it must not** |
+| the same pickup **smashing** the window | `:1289-1291` sets `windowGotSmashed`, and the branch at `:1385` is then skipped: the object **stays** | **no, and it must not** |
 | a map door destroyed (zombie, sledgehammer) | `IsoDoor.destroy()` — `destroyed = true` and `transmitRemoveItemFromSquare` at offsets 227-240; the garage-door leaf takes the same pair at 23-36 | yes |
 | a player-built door or wall destroyed | `IsoThumpable.destroy()` — `OnDestroyIsoThumpable` at 120-125, `transmitRemoveItemFromSquare` at 146-154 | yes |
 | sledgehammer, from the menu | `ISDestroyStuffAction:complete:276-280` — `sledgeDestroy(obj)` on a client, `transmitRemoveItemFromSquare` otherwise | yes |
@@ -575,8 +575,8 @@ A pickup that keeps identity does **not** carry our modData into the moveable it
 1299:      item:getModData().movableData = copyTable(_object:getModData().movableData)
 ```
 
-— plus `<containerType>_customContainerName` and `itemCondition` (`:1300-1312`), and
-`IsoThumpable` goes through `saveThumpableParameters` instead (`:1204`). Placement
+— plus `<containerType>_customContainerName` and `itemCondition` (`:1302-1312`), and
+`IsoThumpable` goes through `saveThumpableParameters` instead (`:1296`). Placement
 copies the item's whole modData back onto the object, but only when there is **no**
 `movableData` on it (`:2273-2275`). `GameEntityFactory.TransferComponents(_object,
 item)` at `:1280` moves components, not modData.

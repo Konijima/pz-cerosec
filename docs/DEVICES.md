@@ -341,7 +341,7 @@ the vanilla line or the bytecode offset that removes the object. Four things are
 worth reading off that page here:
 
 - **A smashed window keeps its contact.** Vanilla smashes the sash instead of
-  taking the object (`ISMoveableSpriteProps:1352-1354`, and the removal branch at
+  taking the object (`ISMoveableSpriteProps:1289-1291`, and the removal branch at
   `:1385` is then skipped), so nothing leaves the world and nothing comes off. The
   `win` device is still there and reads `smashed`, which is the honest answer:
   there is a window frame with a magnetic contact on it.
