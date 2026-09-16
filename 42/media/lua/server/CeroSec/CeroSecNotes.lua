@@ -313,6 +313,12 @@ end
 -- The live room is the one way to ask what is in a room right now
 -- (RoomDef.getIsoRoom -> IsoMetaGrid.getRoomByID, null while its chunks are away),
 -- and the walk stops at the FIRST computer: one is the whole question.
+--
+-- The rooms' own squares and NOT their far edges, which is the one place this walk
+-- and the device walk differ (SCeroSecDevices, the far edge of a room). A computer
+-- is a thing on a desk: it stands in the middle of a square, not on the boundary
+-- between two, so it is never on the neighbouring square's list the way a south
+-- wall's door is. There is nothing out there for this question to find.
 function CeroSecNotes.computerStands(square, kind, b1, b2)
 	local key = CeroSecContent.key(b1, b2)
 	if computerSeen[key] == true then return true end

@@ -3789,10 +3789,15 @@ le **même mot**. Le tableau complet est dans
      d'appareil → grisé, « Éteignez-le d'abord. ». Téléviseur allumé + contrôle
      de tuner → même mot. Génératrice en marche + interrupteur de groupe → même
      mot. Éteindre chaque chose : chaque entrée repart. [ ]
-408. **L'interrupteur ne demande rien, la génératrice non plus.** Poser un relais
-     sur un interrupteur **avec la lumière allumée** : ça passe. Poser un
-     interrupteur de groupe sur une génératrice **dehors, sur le trottoir** : ça
-     passe aussi — c'est la seule exception à la règle du dedans. [ ]
+408. **La règle du dedans ne vaut que pour l'enveloppe.** Poser un relais sur un
+     interrupteur **avec la lumière allumée** : ça passe. Poser un interrupteur de
+     groupe sur une génératrice **dehors, sur le trottoir** : ça passe. Poser un
+     relais sur une **lampe de galerie** (une *Round Outdoor Lamp* vissée sur le
+     mur extérieur d'une maison), **debout sur le trottoir** : ça passe aussi, et
+     c'est le cas pour lequel le relais existe — une lumière extérieure sur une
+     minuterie. Un four ou un poste de radio qu'un survivant a traîné dehors :
+     pareil. Seules la porte, la fenêtre et le rideau demandent qu'on soit
+     dedans. [ ]
 409. **Retirer demande la même chose.** Avec un module posé sur une porte
      intérieure ouverte : clic droit → Retirer fonctionne. Refermer la porte →
      Retirer est grisé, « Ouvrez-la d'abord. ». Sortir sur le trottoir avec la
@@ -3836,6 +3841,22 @@ le **même mot**. Le tableau complet est dans
      main, à Électricité 0 : les trois lignes sont grisées, chacune avec sa
      description **et** « Électricité 1/2/3 requise. » en dessous. Monter la
      compétence : les lignes repartent et gardent leur description. [ ]
+
+417. **La porte du mur sud est un périphérique.** Dans une maison, choisir une
+     porte extérieure du mur **sud** (ou **est**) — celle qui donne sur la cour ou
+     la ruelle derrière, pas celle de la façade nord. Se placer dedans, la porte
+     ouverte, poser un **contact magnétique** dessus. Retourner au terminal et
+     taper `dev` : la porte est **dans la liste**, avec « exterior », son décalage
+     (`0 1S` pour une porte une case au sud du bureau) et son mur (`N`). Poser
+     ensuite un contact sur une porte du mur **nord** : les deux sont là. Avant
+     0.4.1 seules les portes des murs nord et ouest apparaissaient : une porte de
+     mur sud se tient sur la case **dehors**, et la machine n'y allait jamais. [ ]
+418. **La lampe de galerie aussi, et pas le lampadaire.** Avec le relais posé à
+     l'étape 408 sur la lampe du mur extérieur : `dev` la montre comme un `light`
+     de plus, « exterior », sur le mur qu'elle éclaire, et `dev light1 off`
+     l'éteint depuis le clavier. Poser un relais sur un **lampadaire** de la rue
+     (un poteau, pas un mur) : il ne paraît **jamais** dans `dev` — il n'est
+     accroché à aucun mur du bâtiment. [ ]
 
 ## Rapport
 

@@ -824,44 +824,178 @@ local function scanWorldItems(square, found, seen, x, y, z)
 	end
 end
 
+-- One object, as the devices it is, onto the walk's own list. Its place is the
+-- square it STANDS on and not the square it was reached from: that is what the
+-- key hangs on and what `alive` re-asks the engine for.
+local function addDevices(object, index, x, y, z, found, seen)
+	-- A list, because one object can be two devices: an exterior door is
+	-- what opens AND what locks.
+	local entries = CeroSecDevices.classify(object) or {}
+	for k = 1, #entries do
+		local entry = entries[k]
+		entry.x, entry.y, entry.z = x, y, z
+		entry.object = object
+		-- WHICH of the square's objects it is, kept for one kind of device and
+		-- one only: a television or a radio set whose state this mod has to
+		-- broadcast itself, because the far end has to find the same object
+		-- again and two identical televisions on one tile are the one case a
+		-- class and a sprite name cannot tell apart (CCeroSecDevices.objectAt).
+		-- It is not a key and cannot be one -- the object index is not stable
+		-- across a reload, which is why `seen` counts ordinals instead -- and it
+		-- is not asked of anything else.
+		entry.index = index
+		-- Where it is, as a string, and that is the key its number hangs
+		-- on. Two devices of one kind facing the same way on one square are
+		-- told apart by an ordinal -- the object index would have done it
+		-- too, and it is not stable across a reload. The kind is in the key,
+		-- so door3 and lock1 on the same door hang on two keys and neither
+		-- number moves when the other kind's numbering changes.
+		local base = entry.kind .. ":" .. x .. ":" .. y .. ":" .. z .. ":" .. entry.side
+		local n = 0
+		while seen[base .. ":" .. n] do n = n + 1 end
+		entry.key = base .. ":" .. n
+		seen[entry.key] = true
+		found[#found + 1] = entry
+	end
+end
+
+-- Everything on one square, and the square's own place answered back: the
+-- far-edge walk below needs those three numbers to find the two neighbours, and
+-- there is no reason to ask the square twice. nil for a square that is not there.
 local function scanSquare(square, found, seen)
 	if square == nil then return end
 	local x, y, z = square:getX(), square:getY(), square:getZ()
 	scanWorldItems(square, found, seen, x, y, z)
 	local objects = square:getObjects()
+	if objects == nil then return x, y, z end
+	for i = 0, objects:size() - 1 do
+		addDevices(objects:get(i), i, x, y, z, found, seen)
+	end
+	return x, y, z
+end
+
+--
+-- The far edge of a room, which is a fixture standing on somebody else's square
+--
+-- A WALL OBJECT BELONGS TO ONE SQUARE AND SITS ON THAT SQUARE'S NORTH OR WEST
+-- EDGE. `IsoDoor.getOppositeSquare` is the whole of it: `getNorth()` then
+-- getGridSquare(x, y - 1, z), else getGridSquare(x - 1, y, z) (javap -c, offsets
+-- 0-56). `IsoWindow`'s and `IsoThumpable`'s are `getInsideSquare()`, the same
+-- pair off the `north` field (offsets 9-77 of each), and `IsoCurtain`'s reads its
+-- sprite TYPE and answers all four -- curtainN north, curtainS south, curtainW
+-- west, curtainE east, nil for a sprite that is none of them (offsets 0-141).
+--
+-- So a door in a room's north or west wall stands on the room's OWN square and
+-- the walk above finds it, while a door in the room's south or east wall stands
+-- on the NEIGHBOURING square -- which for an exterior wall is the pavement, in no
+-- room at all, and a square the walk of the building's rooms never visits. That
+-- was every south and east door, window and sheet of every building on the map,
+-- invisible to /dev while the north and west ones were listed: a machine that saw
+-- the back door and not the front one.
+--
+-- WHAT IS TAKEN OFF A NEIGHBOUR is a fixture that is ON THAT WALL: a door, a
+-- window or a curtain, which IS the wall, and a light switch or lamp, which hangs
+-- on it. A generator on the sidewalk is not the building's and neither is a sensor
+-- dropped there, so the class gate and the boundary test below are what keep the
+-- pavement out; and the far side of the next wall along is kept out by the second
+-- of the two, which is the engine's own answer to which wall a thing is on.
+--
+-- AND ONLY WHERE THE NEIGHBOUR IS IN NO ROOM. A neighbour that is in a room is a
+-- square the walk visits in its own right, so an INTERIOR door is found from the
+-- other side and must not be found here as well: the ordinal in a key is handed
+-- out per square, so one object reached twice would be two devices with two
+-- numbers. It is the same rule the lock reads -- exactly one of a door's two sides
+-- has a room -- read from the room's end.
+--
+-- That is also why this belongs to the building branch and not to scanSquare: the
+-- no-building branch walks every square of its block, room or not, so a base's
+-- south wall already stands on a square that walk visits.
+--
+-- The one fixture it does not reach is a wall shared by two BUILDINGS -- the
+-- neighbour is the other building's room, so it is that building's machine that
+-- lists the door. See docs/DEVICES.md.
+local function isWallFixture(object)
+	return CeroSecModules.isDoor(object) or CeroSecModules.isWindow(object)
+		or CeroSecModules.isCurtain(object) or CeroSecModules.isLightSwitch(object)
+end
+
+-- Which of the four `attached` properties of a HUNG fixture would point at
+-- `square`, given the square it stands on. nil for anything that is not one of the
+-- four neighbours.
+--
+-- A light does not have an opposite square: it is not the wall, it is screwed to
+-- one, and the sprite is what says which. Vanilla reads exactly these four
+-- properties in exactly this order to work out where a survivor has to stand to
+-- reach a light (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`:
+-- attachedN -> IsoDirections.N and so on, then AdjacentFreeTileFinder.FindEdge).
+--
+-- AND IT IS WHAT TELLS A PORCH LAMP FROM A LAMPPOST. The Round Outdoor Lamp of the
+-- screenshot is `MoveType = WallObject` with `attachedN` and `Facing = S` --
+-- newtiledefinitions.tiles.txt, tileset lighting_outdoor_01, tile 24 -- so it
+-- stands on the pavement square and hangs on that square's north edge, which is
+-- the house's south wall. The county's street lighting has no `attached` property
+-- of any kind and carries `streetlight` instead (tile 0 of the same tileset), and
+-- the flood lights have neither. So a lamp on the building is found and a lamp on
+-- a post two tiles away is not, and neither answer is a guess about a sprite name.
+local function attachedFlag(x, y, z, square)
+	if square:getZ() ~= z then return nil end
+	local dx, dy = square:getX() - x, square:getY() - y
+	if dx == 0 and dy == -1 then return "attachedN" end
+	if dx == 0 and dy == 1 then return "attachedS" end
+	if dx == -1 and dy == 0 then return "attachedW" end
+	if dx == 1 and dy == 0 then return "attachedE" end
+	return nil
+end
+
+-- Is this fixture on the boundary between the square it stands on (x, y, z) and
+-- `square`? Two questions, because the engine keeps the answer in two places.
+--
+-- A door, a window and a curtain ARE the wall, and their own getOppositeSquare
+-- says which boundary that is -- the engine deciding rather than a reading of
+-- `north` of ours, which is what a curtain's four types are about. Compared by
+-- PLACE and not by handle: two Lua values for one Java square need not be one
+-- value, and x, y and z are what every key in this file is made of.
+--
+-- A light HANGS on the wall, has no opposite square at all -- there is no
+-- getOppositeSquare on IsoObject, and IsoLightSwitch has no `north` either -- and
+-- carries one of the four properties above instead.
+local function faces(object, x, y, z, square)
+	if CeroSecModules.isLightSwitch(object) then
+		local flag = attachedFlag(x, y, z, square)
+		if flag == nil then return false end
+		local sprite = object:getSprite()
+		local props = nil
+		if sprite ~= nil then props = sprite:getProperties() end
+		if props == nil then return false end
+		return props:has(flag) == true
+	end
+	local opposite = object:getOppositeSquare()
+	if opposite == nil then return false end
+	return opposite:getX() == square:getX()
+		and opposite:getY() == square:getY()
+		and opposite:getZ() == square:getZ()
+end
+
+local function scanFarEdge(square, neighbour, found, seen)
+	if neighbour == nil then return end
+	if neighbour:getRoom() ~= nil then return end
+	local objects = neighbour:getObjects()
 	if objects == nil then return end
+	local x, y, z = neighbour:getX(), neighbour:getY(), neighbour:getZ()
 	for i = 0, objects:size() - 1 do
 		local object = objects:get(i)
-		-- A list, because one object can be two devices: an exterior door is
-		-- what opens AND what locks.
-		local entries = CeroSecDevices.classify(object) or {}
-		for k = 1, #entries do
-			local entry = entries[k]
-			entry.x, entry.y, entry.z = x, y, z
-			entry.object = object
-			-- WHICH of the square's objects it is, kept for one kind of device and
-			-- one only: a television or a radio set whose state this mod has to
-			-- broadcast itself, because the far end has to find the same object
-			-- again and two identical televisions on one tile are the one case a
-			-- class and a sprite name cannot tell apart (CCeroSecDevices.objectAt).
-			-- It is not a key and cannot be one -- the object index is not stable
-			-- across a reload, which is why `seen` counts ordinals instead -- and it
-			-- is not asked of anything else.
-			entry.index = i
-			-- Where it is, as a string, and that is the key its number hangs
-			-- on. Two devices of one kind facing the same way on one square are
-			-- told apart by an ordinal -- the object index would have done it
-			-- too, and it is not stable across a reload. The kind is in the key,
-			-- so door3 and lock1 on the same door hang on two keys and neither
-			-- number moves when the other kind's numbering changes.
-			local base = entry.kind .. ":" .. x .. ":" .. y .. ":" .. z .. ":" .. entry.side
-			local n = 0
-			while seen[base .. ":" .. n] do n = n + 1 end
-			entry.key = base .. ":" .. n
-			seen[entry.key] = true
-			found[#found + 1] = entry
+		if isWallFixture(object) and faces(object, x, y, z, square) then
+			addDevices(object, i, x, y, z, found, seen)
 		end
 	end
+end
+
+-- The two edges a room square owns and does not stand on: the square to the
+-- SOUTH carries this one's south wall on its north edge, and the square to the
+-- EAST carries its east wall on its west edge.
+local function scanFarEdges(cell, square, x, y, z, found, seen)
+	scanFarEdge(square, cell:getGridSquare(x, y + 1, z), found, seen)
+	scanFarEdge(square, cell:getGridSquare(x + 1, y, z), found, seen)
 end
 
 -- The machine's TNC, added to whatever the walk found. It is not discovered by
@@ -920,6 +1054,37 @@ local function eachBuildingSquare(building, fn)
 	return whole
 end
 
+--
+-- The far edge again, for the pre-fitting walk
+--
+-- The same rule the device walk reads (scanFarEdges, above) and the same reason
+-- read one rung earlier: a pre-apocalypse premises' front door stands on the
+-- pavement south of the hall as often as on the hall's own square, and one of the
+-- two was never wired at all.
+--
+-- The square handed back is the ROOM's and not the one the door stands on,
+-- because what the caller does with it is ask which PREMISES the fixture belongs
+-- to (SCeroSecAuto's sift, through CeroSecNet.premisesOfSquare): a front door
+-- belongs to the premises it opens into, and its own square is the street.
+--
+-- `isWallFixture` is a narrower gate than the walk's `isFittable` and lies inside
+-- it: every door, window, curtain and light switch is fittable, and the stove, the
+-- laundry, the generator and the sets are on nobody's wall -- a fridge a survivor
+-- dragged onto the pavement is not part of the premises.
+local function fittableFarEdge(square, neighbour, out)
+	if neighbour == nil then return end
+	if neighbour:getRoom() ~= nil then return end
+	local objects = neighbour:getObjects()
+	if objects == nil then return end
+	local x, y, z = neighbour:getX(), neighbour:getY(), neighbour:getZ()
+	for i = 0, objects:size() - 1 do
+		local object = objects:get(i)
+		if isWallFixture(object) and faces(object, x, y, z, square) then
+			out[#out + 1] = { object = object, square = square }
+		end
+	end
+end
+
 -- Every FIXTURE a module of ours could go on in at most `max` of these rooms, and
 -- the tags of the rooms it actually walked.
 --
@@ -939,6 +1104,10 @@ end
 function CeroSecDevices.fixturesInRooms(rooms, done, max)
 	local out, walked = {}, {}
 	if rooms == nil or done == nil then return out, walked end
+	-- No cell is a world that cannot be asked about a neighbouring square at all,
+	-- which is a bench and never a game: the rooms' own squares are still walked.
+	local cell = nil
+	if getCell ~= nil then cell = getCell() end
 	for i = 1, #rooms do
 		if #walked >= max then return out, walked end
 		local room = rooms[i]
@@ -958,6 +1127,11 @@ function CeroSecDevices.fixturesInRooms(rooms, done, max)
 									out[#out + 1] = { object = object, square = sq }
 								end
 							end
+						end
+						if cell ~= nil then
+							local sx, sy, sz = sq:getX(), sq:getY(), sq:getZ()
+							fittableFarEdge(sq, cell:getGridSquare(sx, sy + 1, sz), out)
+							fittableFarEdge(sq, cell:getGridSquare(sx + 1, sy, sz), out)
 						end
 					end
 				end
@@ -994,8 +1168,12 @@ function CeroSecDevices.find(x, y, z)
 	if building ~= nil then
 		-- Every room of the building, and a room whose chunks are away is a room the
 		-- machine cannot act on: eachBuildingSquare above is the whole of that rule.
+		--
+		-- And the far edge of every one of those squares, which is where a south or
+		-- east door stands: scanFarEdges above is the whole of THAT rule.
 		eachBuildingSquare(building, function(sq)
-			scanSquare(sq, found, seen)
+			local sx, sy, sz = scanSquare(sq, found, seen)
+			if sx ~= nil then scanFarEdges(cell, sq, sx, sy, sz, found, seen) end
 		end)
 		return withTnc(found, seen, x, y, z)
 	end

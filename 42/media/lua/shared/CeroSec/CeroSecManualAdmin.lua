@@ -734,24 +734,25 @@ who first. It takes two seconds and it lists everybody.]],
 [[This is the chapter that makes the machine worth having.
 
 The building it stands in is wired to it, and wired is the word: under
-/dev there is one file for every fixture somebody has screwed a module
-to, and writing a word into one of them works the thing itself. The
-modules are the next page.
+/dev there is a file for every fixture somebody has screwed a module to,
+and writing a word into one works the thing itself. The modules are the
+next page.
 
-The reach is the BUILDING: every room of it, upstairs and down; ten tiles
-of its own floor every way where the map knows none. 256 at the outside.
+The reach is the BUILDING: every room, upstairs and down, and all four
+of its walls; ten tiles of its floor where the map knows none. 256 at
+the outside.
 
   root@ksp-04-11:~# dev
-  curtain0 office               1E 0        N  closed
-  door0   exterior              0 5S        W  locked
-  door1   kitchen-hallway       2W 1N       N  closed
-  gen0    exterior              6E 3S          off
-  light0  office                0 0            on
-  lock0   exterior              0 5S        W  locked
-  stove0  kitchen               2W 2N          off
-  tv0     office                2E 1N          on
-  win0    office                1E 0        N  locked
-  window0 office                1E 0        N  closed]],
+  curtain0 office                1E 0        N  closed
+  door0    exterior              0 5S        W  locked
+  door1    kitchen-hallway       2W 1N       N  closed
+  gen0     exterior              6E 3S          off
+  light0   office                0 0            on
+  lock0    exterior              0 5S        W  locked
+  stove0   kitchen               2W 2N          off
+  tv0      office                2E 1N          on
+  win0     office                1E 0        N  locked
+  window0  office                1E 0        N  closed]],
 
 [[The nine modules, and what each one buys.
 
@@ -922,11 +923,13 @@ Remove gives the box back whole, and the NUMBER stays.]],
 
 [[With the door open, and from inside.
 
-A box goes on -- and comes off -- only from INSIDE. Stand on the
-pavement and every entry is greyed: otherwise anybody walking past
-strips the hardware off your front door without coming in. An interior
-door has rooms on both sides and is wired from either. A generator is
-the one exception and takes its switch outdoors, where it belongs.
+A box goes on the building's SKIN -- a door, a window, a curtain -- only
+from INSIDE, or anybody walking past strips the hardware off your front
+door without coming in. On the pavement those entries are greyed. An
+interior door has a room on both sides and is wired from either.
+
+Nothing else asks where you stand: a porch lamp, a generator, an oven in
+the yard are fitted from where they are.
 
 And the thing has to be at rest:
 
@@ -934,10 +937,9 @@ And the thing has to be at rest:
   a curtain, a door's sheet drawn back
   a stove, a washer, a set  switched off
   a generator               stopped
-  a light switch            nothing at all
 
-Taking a box off asks the same. The light switch asks nothing at all:
-the plate comes off with the light burning.
+Taking a box off asks the same. A light switch asks nothing at all: the
+plate comes off with the light burning.
 
 If your server turned SAFEHOUSE MEMBERS ONLY on, a fixture inside a
 safehouse takes a box, and gives one back, only for its owner, its
@@ -964,8 +966,8 @@ A mall is ONE building, so /dev is the one directory the 96-entry rule
 does not hold for. In a big building one kind at a time is easier to read:
 
   root@ksp-04-11:~# dev light
-  light0  office                0 0            on
-  light1  hallway               3E 2N          off]],
+  light0   office                0 0            on
+  light1   hallway               3E 2N          off]],
 
 [[Working one. An id on its own reads it back; an id and a word works it
 and then reads back what it became.
@@ -1030,8 +1032,8 @@ shelf. DROP one on the floor of a room this machine can reach and it
 becomes a sensorN. Pick it up and the device is gone.
 
   root@ksp-04-11:~# dev sensor
-  sensor0 office                1E 0           clear
-  sensor1 store                 4E 2S          motion
+  sensor0  office                1E 0           clear
+  sensor1  store                 4E 2S          motion
   root@ksp-04-11:~# cat /dev/sensor0
   clear
 
@@ -1060,8 +1062,8 @@ write to, and chapter 7 depends on it.
 ls -l shows them as files, with no room left for the offset column:
 
   root@ksp-04-11:~# ls -l /dev
-  crw-rw----  root  sudo  door0   exterior       W  locked
-  crw-rw----  root  sudo  light0  office            on
+  crw-rw----  root  sudo  door0    exterior      W  locked
+  crw-rw----  root  sudo  light0   office           on
   crw-rw-rw-  root  root  null
 
 Owner root, group sudo, mode 660. So root and anybody /etc/sudoers names
@@ -1835,7 +1837,7 @@ Classic mistake. Keeping a file in /mnt. It is a place, not a drawer.]],
 [[Who may mount one is the mode on the drive and nothing else.
 
   admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  sudo  fd0     WORK         ready
+  crw-rw----  root  sudo  fd0      WORK        ready
 
 /dev/fd0 is root's, group sudo, at 660, like every other device here --
 and on this one both bits are read. mount reads the super block, so it

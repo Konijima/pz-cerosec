@@ -4504,15 +4504,15 @@ do
 	-- on this machine is -- childNames sorts, and a directory whose order
 	-- depended on the order the world was walked in would not be the same twice.
 	okAt(state, session, "ls -l /dev", {
-		"crw-rw----  root  sudo  light0  office            on",
-		"crw-rw----  root  sudo  light1  hallway           off",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked",
-		"crw-rw----  root  sudo  lock2   built          N  padlock",
+		"crw-rw----  root  sudo  light0   office           on",
+		"crw-rw----  root  sudo  light1   hallway          off",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
+		"crw-rw----  root  sudo  lock1    kitchen-hal~  N  unlocked",
+		"crw-rw----  root  sudo  lock2    built         N  padlock",
 		-- The hole in the disk, which is the one device on it: no description, no
 		-- place in the building, no state, so the line ends at the name.
 		"crw-rw-rw-  root  root  null",
-		"crw-rw----  root  sudo  win0    office         N  locked",
+		"crw-rw----  root  sudo  win0     office        N  locked",
 	}, env)
 
 	-- The short form is names, columnized like any other directory.
@@ -4529,7 +4529,7 @@ do
 	-- what this is about.
 	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[2]
 	eq("the widest device line", line,
-		"crw-rw----  root  sudo  win12   kitchen-hall~  N  barricaded")
+		"crw-rw----  root  sudo  win12    kitchen-hal~  N  barricaded")
 	check("and it fits the screen", #line <= CeroSecOS.COLS)
 
 	-- A device is a character device and wears the letter for one.
@@ -4537,7 +4537,7 @@ do
 
 	-- Named straight rather than listed.
 	okAt(state, session, "ls -l /dev/lock1",
-		{ "crw-rw----  root  sudo  lock1   kitchen-hall~  N  unlocked" }, env)
+		{ "crw-rw----  root  sudo  lock1    kitchen-hal~  N  unlocked" }, env)
 	okAt(state, session, "ls /dev/lock1", { "lock1" }, env)
 end
 
@@ -4696,7 +4696,7 @@ do
 	okAt(state, bob, "cat /dev/light0", { "off" }, env)
 	eq("the mode shows in the listing",
 		okAt(state, root, "ls -l /dev/light0", nil, env)[1],
-		"crw-rw-rw-  root  sudo  light0  office            off")
+		"crw-rw-rw-  root  sudo  light0   office           off")
 
 	-- A mode nobody moved is not handed over again.
 	local before = #devices.chmods
@@ -4851,12 +4851,12 @@ do
 	-- plus the offset -- which is what tells two doors of one room apart and
 	-- which `ls -l` has no room left for.
 	okAt(state, session, "dev", {
-		"light0  office                0 0            on",
-		"light1  hallway               3E 2N          off",
-		"lock0   exterior              0 5S        W  locked",
-		"lock1   kitchen-hallway       2W 1N       N  unlocked",
-		"lock2   built                 4E 9S +1    N  padlock",
-		"win0    office                1E 0        N  locked",
+		"light0   office                0 0            on",
+		"light1   hallway               3E 2N          off",
+		"lock0    exterior              0 5S        W  locked",
+		"lock1    kitchen-hallway       2W 1N       N  unlocked",
+		"lock2    built                 4E 9S +1    N  padlock",
+		"win0     office                1E 0        N  locked",
 	}, env)
 
 	-- By KIND and then by NUMBER, which is what a listing sorted by name -- every
@@ -4875,25 +4875,25 @@ do
 			pos = "1W 0", state = "smashed" },
 	})
 	local lines = okAt(state, session, "dev", {
-		"light2  office                0 0            on",
-		"light10 warehouse-loading     12W 30S        off",
-		"win3    a description of tw~  1W 0        W  smashed",
-		"win12   kitchen-hallway-pant  10E 10N -1  N  barricaded",
+		"light2   office                0 0            on",
+		"light10  warehouse-loading     12W 30S        off",
+		"win3     a description of tw~  1W 0        W  smashed",
+		"win12    kitchen-hallway-pant  10E 10N -1  N  barricaded",
 	}, devEnv(wide))
-	eq("the widest line there is", #lines[4], 55)
+	eq("the widest line there is", #lines[4], 56)
 	check("and it fits the screen", #lines[4] <= CeroSecOS.COLS)
 
 	-- One kind at a time.
 	okAt(state, session, "dev light", {
-		"light0  office                0 0            on",
-		"light1  hallway               3E 2N          off",
+		"light0   office                0 0            on",
+		"light1   hallway               3E 2N          off",
 	}, env)
 	okAt(state, session, "dev lock", {
-		"lock0   exterior              0 5S        W  locked",
-		"lock1   kitchen-hallway       2W 1N       N  unlocked",
-		"lock2   built                 4E 9S +1    N  padlock",
+		"lock0    exterior              0 5S        W  locked",
+		"lock1    kitchen-hallway       2W 1N       N  unlocked",
+		"lock2    built                 4E 9S +1    N  padlock",
 	}, env)
-	okAt(state, session, "dev win", { "win0    office                1E 0        N  locked" },
+	okAt(state, session, "dev win", { "win0     office                1E 0        N  locked" },
 		env)
 
 	-- A kind nothing answers to right now is an empty table, not a refusal: the
@@ -4914,7 +4914,7 @@ do
 			state = "on" },
 		{ id = "lock9", kind = "lock", dead = true },
 	})
-	okAt(state, session, "dev", { "light0  office                0 0            on" },
+	okAt(state, session, "dev", { "light0   office                0 0            on" },
 		devEnv(withDead))
 	okAt(state, session, "dev lock", {}, devEnv(withDead))
 end
@@ -5184,10 +5184,10 @@ do
 	-- `ls -l /dev`, to the character. The columns did not move: "barricaded" is
 	-- still the widest state there is and an id of eight still holds door127.
 	okAt(state, session, "ls -l /dev", {
-		"crw-rw----  root  sudo  door0   exterior       W  locked",
-		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
-		"crw-rw----  root  sudo  door2   built          N  open",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
+		"crw-rw----  root  sudo  door0    exterior      W  locked",
+		"crw-rw----  root  sudo  door1    kitchen-hal~  N  closed",
+		"crw-rw----  root  sudo  door2    built         N  open",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
 		"crw-rw-rw-  root  root  null",
 	}, env)
 	okAt(state, session, "ls /dev", { "door0  door1  door2  lock0  null" }, env)
@@ -5199,21 +5199,21 @@ do
 	-- The first line: "door127" sorts before "null".
 	local line = okAt(state, session, "ls -l /dev", nil, devEnv(wide))[1]
 	eq("the widest door line", line,
-		"crw-rw----  root  sudo  door127 kitchen-hall~  N  barricaded")
+		"crw-rw----  root  sudo  door127  kitchen-hal~  N  barricaded")
 	check("and it fits the screen", #line <= CeroSecOS.COLS)
 
 	-- `dev`, whole and by kind. door sorts before light, lock and win, being a
 	-- kind like any other and sorted like one.
 	okAt(state, session, "dev", {
-		"door0   exterior              0 5S        W  locked",
-		"door1   kitchen-hallway       2W 1N       N  closed",
-		"door2   built                 4E 9S +1    N  open",
-		"lock0   exterior              0 5S        W  locked",
+		"door0    exterior              0 5S        W  locked",
+		"door1    kitchen-hallway       2W 1N       N  closed",
+		"door2    built                 4E 9S +1    N  open",
+		"lock0    exterior              0 5S        W  locked",
 	}, env)
 	okAt(state, session, "dev door", {
-		"door0   exterior              0 5S        W  locked",
-		"door1   kitchen-hallway       2W 1N       N  closed",
-		"door2   built                 4E 9S +1    N  open",
+		"door0    exterior              0 5S        W  locked",
+		"door1    kitchen-hallway       2W 1N       N  closed",
+		"door2    built                 4E 9S +1    N  open",
 	}, env)
 
 	-- Reading one, through cat and through dev: the same node either way.
@@ -5287,9 +5287,9 @@ do
 	badAt(state, session, "dev door9 open", "door9: no such device", env)
 	badAt(state, session, "dev find door9", "door9: no such device", env)
 	okAt(state, session, "dev door", {
-		"door0   exterior                          W  locked",
-		"door1   office-hall                       N  closed",
-		"door2   built                             N  closed",
+		"door0    exterior                          W  locked",
+		"door1    office-hall                       N  closed",
+		"door2    built                             N  closed",
 	}, env)
 
 	-- A number never handed out is the COMMAND's refusal, being a name nothing
@@ -5343,10 +5343,10 @@ do
 	-- column -- a head lying on a floor does not face a way -- so the state sits
 	-- where a window's does with two blanks in front of it.
 	okAt(state, session, "ls -l /dev", {
-		"crw-rw----  root  sudo  light0  office            on",
+		"crw-rw----  root  sudo  light0   office           on",
 		"crw-rw-rw-  root  root  null",
-		"cr--r-----  root  sudo  sensor0 office            clear",
-		"cr--r-----  root  sudo  sensor1 store             motion",
+		"cr--r-----  root  sudo  sensor0  office           clear",
+		"cr--r-----  root  sudo  sensor1  store            motion",
 	}, env)
 
 	-- Reading one, both ways round, and both words.
@@ -5357,8 +5357,8 @@ do
 
 	-- The kind filters, which it can only do because the kind is in DEV_VALUES.
 	okAt(state, session, "dev sensor", {
-		"sensor0 office                1E 0           clear",
-		"sensor1 store                 4E 2S          motion",
+		"sensor0  office                1E 0           clear",
+		"sensor1  store                 4E 2S          motion",
 	}, env)
 
 	-- And every word there is refused, in the sensor's own name. Root included:
@@ -5449,8 +5449,8 @@ do
 	local env = devEnv(devices)
 
 	okAt(state, root, "ls -l /dev", {
-		"cr--r-----  root  sudo  door0   exterior       W  closed",
-		"crw-rw----  root  sudo  door1   office         N  closed",
+		"cr--r-----  root  sudo  door0    exterior      W  closed",
+		"crw-rw----  root  sudo  door1    office        N  closed",
 		"crw-rw-rw-  root  root  null",
 	}, env)
 
@@ -11155,7 +11155,7 @@ do
 	-- The drive's own line: root's, the sudo group's, 660, with the sticker in
 	-- the column a device keeps for what it is fixed to and what is in it last.
 	okAt(state, admin, "ls -l /dev",
-		{ "crw-rw----  root  sudo  fd0     WORK              blank",
+		{ "crw-rw----  root  sudo  fd0      WORK             blank",
 			"crw-rw-rw-  root  root  null" })
 	okAt(state, admin, "cat /dev/fd0", { "blank" })
 	-- There is no word a survivor can write to a raw disk, so every one of them

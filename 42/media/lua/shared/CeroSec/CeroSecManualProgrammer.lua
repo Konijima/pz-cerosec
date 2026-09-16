@@ -1859,9 +1859,9 @@ can loop over:
   admin@ksp-04-11:~$ ./off.sh
   light2: no power
   admin@ksp-04-11:~$ dev light
-  light0  office                2E 1N          off
-  light1  hall                  5E 0N          off
-  light2  yard                  9E 4N          on
+  light0   office                2E 1N          off
+  light1   hall                  5E 0N          off
+  light2   yard                  9E 4N          on
 
 Two lights went off and the third answered for itself. The loop did not
 stop, and it never needed to know how many lights the building has.
