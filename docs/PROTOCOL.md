@@ -134,6 +134,54 @@ play neither rule ever fires: the client already shuts its own previous box (one
 terminal per player, `CeroSecTerminal.open`). The debug window's machine tab prints
 the count as `windows`.
 
+## The `device` packet: the one sync the mod writes itself
+
+    server -> every client: device { x, y, z, index, class, sprite, on, channel }
+
+Every other actuator in the mod is broadcast by the engine. A television or a
+radio set is not: `DeviceData.transmitDeviceDataState(short)` is a client branch
+and nothing else, the server's own broadcaster is `private`, and the one public
+wrapper spends its `short` on the battery — so a server-side `setIsTurnedOn(true)`
+moves the field on the server and leaves every client's copy dark. The full
+bytecode is in [DEVICES.md](DEVICES.md#the-sync-the-mod-writes-itself).
+
+It is the only server→client message in the mod that is **not addressed to a
+window**, and the only one sent with the three-argument
+`sendServerCommand(module, command, args)` — the broadcast form, which walks
+`GameServer.udpEngine.connections` and is what vanilla's own server Lua uses for a
+world change nobody in particular asked for
+(`server/BuildingObjects/ISWoodenFloor.lua:21`). A survivor's screen is his own
+business; a television coming on in a room is everybody's. It carries no token for
+the same reason: there is no window to route it to.
+
+It lands on `Events.OnServerCommand` and not on the global object channel, and the
+two doors are not interchangeable here. The global object channel is what
+singleplayer answers on, and in singleplayer there is nothing to sync — one
+process means the object the server wrote is the object the survivor is looking
+at, and `sendServerCommand` is a no-op with no `GameServer` behind it anyway.
+
+`x, y, z` is the square; `class` is what the far end asks `instanceof` for and
+`sprite` is `getSpriteName()`, which is the same pair `dev find` travels on
+(`CeroSecDevices.handleOf`, the one place either is worked out). `index` is which
+of that square's objects it was, and it is there for the one case a class and a
+sprite name cannot tell apart: two identical televisions on one tile. It is
+believed only when the object at it is the right class and sprite, and a scan of
+the square is what answers when it is not — the index agrees on both sides for as
+long as nobody has added or taken away an object there, both lists being built
+from the same chunk.
+
+`on` and `channel` are **both** sent on every packet, whichever field the order
+was about, and they are read off the object *after* the write rather than taken
+from the order: `setIsTurnedOn` refuses an unpowerable set by turning it off
+instead, so what was asked and what happened are two facts. Sending both also
+means a client that missed one packet is put right by the next.
+
+The far end applies them with `setTurnedOnRaw` and `setChannelRaw` and answers
+nothing — the public setters would transmit, the server would relay that to
+everybody, and one crontab line would cost a round trip per client. A packet about
+a square the client has not got does nothing, and nothing is lost by that: the
+chunk asks the server for its objects' state on the way in.
+
 ## The device highlight, addressed to one window
 
 `dev find` answers the question a listing cannot: **which** of the thirty-five it

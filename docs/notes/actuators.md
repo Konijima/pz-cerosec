@@ -23,11 +23,12 @@ the other players never see is worse than a refusal.
 This note writes down what is buildable. It changes no code,
 adds no device and decides no design.
 
-**CORRECTED BY THE RUNG IT WAS WRITTEN FOR.** Nothing below
+**CORRECTED BY THE RUNGS IT WAS WRITTEN FOR.** Nothing below
 is rewritten -- it is the record of what was read, and it
-stays as it was read -- but two of its findings were wrong,
-and the corrections are here at the top where a reader meets
-them before he acts on the note:
+stays as it was read -- but some of its findings were wrong
+and one of its open questions is now closed, and all of that
+is here at the top where a reader meets it before he acts on
+the note:
 
 1. **The window is buildable, and it is built.** Section 7's
    three reasons all stand at the bytecode. What does not
@@ -38,7 +39,46 @@ them before he acts on the note:
    the argument against a window actuator turned out to be
    exactly what a motor on a sash does -- so they became the
    device's rules instead of its refusal.
-2. **A polling daemon walks the building ten times a second
+2. **THE TELEVISION IS WRITTEN, AND THE SYNC IS OURS.**
+   Section 2's reading is right in every line and its verdict
+   -- READ YES, WRITE NOT *without a sync of our own* -- was
+   the conditional it looks like. The condition is met: the
+   mod carries the sync, and what "what is not proven" called
+   "designed nowhere and measured nowhere" is designed in
+   [DEVICES.md](../DEVICES.md#the-sync-the-mod-writes-itself),
+   on the wire in [PROTOCOL.md](../PROTOCOL.md) and benched in
+   `tests/window_test.lua` section 44c. Three things this note
+   did not have:
+
+   - the far end's calls. A client must NOT use the public
+     setters -- they transmit, and the server relays it -- so
+     it uses `setTurnedOnRaw` and `setChannelRaw`, which are
+     the public names of what `receiveDeviceDataStatePacket`
+     does on a client (`setIsTurnedOnInternal` at 124-129, a
+     bare `putfield channel` at 179-182) and what
+     `IsoWaveSignal.loadState` does at 116-154.
+   - **LATE JOINERS ARE THE ENGINE'S, not ours.** Every chunk a
+     client loads queues a request for that chunk's object
+     state (`IsoChunk.doLoadGridsquare`, 1650-1675), and the
+     server answers out of the live object
+     (`ChunkObjectStateRequestPacket.parse` ->
+     `saveObjectState` at 99 -> `IsoObject.saveState` at
+     124-127), where `IsoWaveSignal.saveState` writes
+     `getIsTurnedOn()` at 73-93 and `getChannel()` at 94-105.
+     No chunk hook of ours is needed.
+   - **both setters swallow**, which the note read and did not
+     draw the conclusion from: `setIsTurnedOn` turns an
+     unpowerable set OFF whatever was asked (0-4, 44-58) and
+     `setChannel` returns at 105 outside the span (0-13), so
+     both refusals are the device's own and come before the
+     call, exactly as the barricaded door's does.
+
+   So the table's `tv0` row reads 660 now, its `values` column
+   is `on`, `off` and `channel <n>`, and `radio0` stays what it
+   is -- the receiver a tuner control buys is a SECOND device
+   (`rx0`) beside the TNC and does not touch it.
+
+3. **A polling daemon walks the building ten times a second
    and not once every five.** "The shell: what a daemon
    costs" reasons from jobStep returning above mountDev for a
    sleeping job, which it does -- and the walk is not in
@@ -1350,6 +1390,20 @@ Written down so that nobody reads a silence as a yes.
   goes straight into the parameter array at 393-405. The
   argument COUNT is not exempt (126-137 refuse a short call),
   so the nil has to be written and cannot be left out.
+
+  **And the preamble is inert too**, which the rung's verifier
+  asked for and which this note never named: `ToggleWindow`'s
+  first eleven instructions are
+  `Type.tryCastTo(arg, IsoPlayer.class)`, `checkcast IsoPlayer`,
+  `astore_2` -- before `DirtySlice()` and before any of the
+  returns. `Type.tryCastTo` is three tests long and answers
+  null for a null at its first branch
+  (`arg1.isInstance(arg0)` is false for null, so offsets 14-15
+  `aconst_null; areturn`), a `checkcast` on null succeeds by
+  the JVM spec, and the local it is stored in is read nowhere
+  but behind the ifnull guards this note already counted. So
+  the cast at the top of the method is not a fourth thing a
+  null argument has to survive.
 
   And the vanilla call site this note looked for and did not
   find is there for a different method:

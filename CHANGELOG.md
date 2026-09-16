@@ -41,6 +41,34 @@ date.
 - If your server has **Hardware modules required turned off**, the new fixtures
   answer with no module fitted like everything else does -- so a world that was
   every door and light is now every curtain, stove, washer and generator too.
+- **The television, and the radio on the shelf.** A new module, the **Tuner
+  Control**, goes on a television or a radio set and gives the computer its
+  switch and its dial: `cat /dev/tv0` reads `on channel 203 airing 1080-1440`,
+  `echo on > /dev/tv0` lights the screen, and `dev tv0 channel 210` changes the
+  channel. It is the first order on this machine that is not a single word, so
+  it is four words at `dev` where everything else takes three. The recipe is in
+  the Field Wiring Guide with the rest, it takes a radio receiver and no motor --
+  nothing in it turns -- and it turns up on the same shelves.
+- **The set says what is on and when the next programme starts**, which is the
+  whole reason the device is worth having: `airing 1080-1440` is a broadcast on
+  the air and the hours it runs, `next 360-720` is when the following one
+  begins, and `idle` is a channel with nothing left today. The numbers are
+  minutes since midnight -- 360 is six in the morning, 720 is noon, 1080 is six
+  in the evening -- so a crontab line can switch the set on for Life and Living
+  and off again after it.
+- **On a server, everybody in the room sees it.** The game itself has no way to
+  tell the other players that a television was switched on by something other
+  than a hand, so the mod now sends that message itself. A player who joins later
+  or walks back into the room finds the set on and on the right channel. If you
+  were expecting your machine to be able to do this before now, it could not: a
+  set switched on by a script was only ever on for the server.
+- A ham radio the machine uses as its TNC keeps its `/dev/radio0` exactly as it
+  was -- the frequency it TRANSMITS on is still yours to turn by hand. A tuner
+  control on the same set adds an `rx0` beside it, which is the receiver, and
+  the two do not get in each other's way.
+- Two refusals worth knowing: `tv0: out of range` is a dial asked for a frequency
+  that set cannot reach, and `tv0: no power` is a dead grid or a flat battery.
+  The volume stays the survivor's, at the set.
 - A computer running a script no longer reads the whole building ten times a
   second. It reads it once a second and asks each door, light and window what it
   is doing every single time, so nothing you can see on the glass changed and a

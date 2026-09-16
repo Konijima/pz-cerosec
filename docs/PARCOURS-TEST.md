@@ -3556,6 +3556,77 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      Visser un module sur une autre porte : il apparaît dans `dev` tout de
      suite, sans attendre la minute. [ ]
 
+## AM. La télévision, le poste de radio, et la seule synchro que le mod écrit lui-même (palier tuner)
+
+Un module de plus, deux sortes de périphérique de plus, et **la première fois
+qu'un ordre du serveur voyage dans un paquet à nous** : le moteur du jeu ne
+transmet jamais un changement d'état de téléviseur fait côté serveur, alors le mod
+s'en charge. L'étape 386 est celle qui compte, et elle se fait **à deux clients**.
+Option **Matériel requis** activée (la valeur par défaut). Règles et preuves :
+[DEVICES.md](DEVICES.md#the-hardware-modules), [PROTOCOL.md](PROTOCOL.md) et
+[notes/actuators.md](notes/actuators.md) section 2.
+
+382. **Fabriquer la commande de tuner.** Avec le **Guide de câblage CeroSec** lu,
+     Électricité 2, un tournevis, des pinces, un `Base.RadioReceiver`, deux
+     ferrailles électroniques, un fil et des vis : fabriquer une **Commande de
+     tuner**. Attendu : la recette est dans l'onglet **Électrique**, elle ne
+     demande **aucun petit moteur** (rien ne tourne là-dedans), et l'icône se
+     distingue des huit autres boîtes dans le sac. [ ]
+383. **Rien n'est câblé tant que rien n'est vissé.** À l'ordinateur, sans rien
+     avoir posé : `dev` — aucune ligne `tv` ni `rx`, même avec un téléviseur dans
+     la pièce. Clic droit sur le **téléviseur** → Matériel CeroSec → Installer
+     Commande de tuner. `dev` → une ligne `tv0`. [ ]
+384. **Lire le poste.** `cat /dev/tv0` → une ligne entière, par exemple
+     `off channel 203 airing 1080-1440`. `dev` → la colonne d'état ne montre QUE
+     `off` : la phrase ne tient pas dans un tableau de 60 colonnes, exactement
+     comme pour la génératrice. [ ]
+385. **L'allumer et changer de poste.** `echo on > /dev/tv0` → **l'écran
+     s'allume** dans le monde (l'image, la lueur sur les murs, le son). Puis
+     `dev tv0 channel 210` → l'image change de chaîne et la ligne répond
+     `tv0: on channel 210`. `echo channel 203 > /dev/tv0` fait la même chose par
+     l'autre chemin — c'est celui-là qu'une ligne de crontab écrit. [ ]
+386. **LA SYNCHRO, ET IL FAUT DEUX CLIENTS.** Sur un serveur, avec un second
+     joueur **dans la même pièce** et qui regarde le téléviseur : depuis
+     l'ordinateur, `echo on > /dev/tv0`. Attendu : le poste s'allume **sur les
+     deux écrans**, l'image et le son compris. `dev tv0 channel 210` : la chaîne
+     change **sur les deux**. C'est l'étape qui prouve le palier — sans le paquet
+     que le mod envoie, le second joueur verrait un poste éteint pour toujours.
+     Vérifier aussi qu'il n'y a **pas de rebond** : personne ne voit l'écran
+     clignoter ni le son se couper à chaque ordre. [ ]
+387. **Celui qui arrive après.** Toujours à deux : allumer le poste, puis faire
+     **déconnecter et reconnecter** le second joueur (ou le faire partir assez
+     loin pour que le morceau de carte se décharge, puis revenir). Attendu : il
+     retrouve le poste **allumé et sur la bonne chaîne**. Ça, c'est le moteur du
+     jeu qui le fait tout seul et pas nous ; l'étape est là pour le constater. [ ]
+388. **Le poste de radio est un second périphérique, pas un remplaçant.** Poser
+     une commande de tuner sur un **poste de radio** (pas un émetteur) :
+     `dev` → `rx0`, qui s'allume et se règle comme le téléviseur, avec les
+     fréquences d'un poste (88000 à 108000). Puis, sur une **radio amateur** qui
+     sert déjà de TNC à la machine : poser une commande de tuner dessus.
+     Attendu : `/dev/radio0` est **toujours là**, toujours `cr--r-----`, et un
+     `rx1` apparaît à côté. La fréquence d'émission reste celle que vous tournez
+     à la main ; c'est le poste de réception que la machine commande. [ ]
+389. **Les deux refus.** `echo channel 199 > /dev/tv0` → `tv0: out of range` (le
+     cadran du poste ne descend pas si bas) et l'image ne bouge pas. Couper le
+     courant du quartier et éteindre la génératrice, puis `echo on > /dev/tv0` →
+     `tv0: no power`, et l'écran reste noir. Sur un poste à piles, retirer la
+     pile : même mot. Rallumer le courant : l'ordre repasse. [ ]
+390. **L'horaire, et la ligne de crontab qui en sort.** `cat /dev/tv0` sur la
+     chaîne 203 (Life and Living TV) à différentes heures du jour. Attendu :
+     `airing 1080-1440` quand une émission passe, `next 360-720` quand il n'y en a
+     pas et qu'une autre suit, `idle` quand il ne reste rien aujourd'hui. Les
+     nombres sont des **minutes depuis minuit** : 360 = 6 h, 720 = midi,
+     1080 = 18 h. Se régler sur une fréquence que personne n'émet (par exemple
+     5000) : la ligne s'arrête au cadran, sans mot d'horaire. [ ]
+391. **Le poste s'allume pour l'émission, tout seul.** Écrire avec `crontab -e` :
+     `0 18 * * * echo on > /dev/tv0` et `0 0 * * * echo off > /dev/tv0`. Laisser
+     tourner jusqu'à 18 h de jeu, en étant **dans la pièce**. Attendu : le poste
+     s'allume seul à l'heure dite, sur la chaîne où il était. C'est l'exemple que
+     tout ce palier existe pour rendre possible. [ ]
+392. **Le monde sans l'option.** Mettre **Matériel requis** sur désactivé et
+     recharger. Attendu : chaque téléviseur et chaque poste de radio du bâtiment
+     est sous `/dev` sans qu'on ait rien vissé. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

@@ -54,6 +54,24 @@ The suites, in the order they run:
   closed; and the two install commands end to end against a fake inventory, a
   perk level and a screwdriver — every refusal proved by what did NOT happen,
   since those commands answer nothing.
+- `window_test.lua` also holds the **television** bench, and it is the one bench
+  in the mod with **two fake worlds in it**. Every other actuator's sync is the
+  engine's, so a bench can assert it by counting calls on one object; a
+  television's is the mod's own packet, and a bench where the server's write and
+  the client's apply land on the same table cannot tell a sync that happened from
+  one that did not — it would be green on a mod that sent nothing. So a second
+  world with a second television on the same square receives the packet through
+  the client's real `Events.OnServerCommand` door, and what is asserted is that
+  the far set moved, that it moved through the **raw** setters, and that the
+  public ones — which would transmit and bounce — were never called. Beside it:
+  both swallowed orders refused before the engine is asked (a dead grid, a flat
+  battery, a dial outside the set's span), a refused write sending no packet at
+  all, a stale object index falling through to the scan behind it, and the
+  schedule read against a faked channel list whose blocks are deliberately **out
+  of order**, because nothing in the engine sorts them. That fake's
+  `getValidAirBroadcast` raises rather than answering: it is not a reader, and a
+  fake that simply lacked it would make the mistake a crash instead of a
+  sentence.
 - `os_test.lua` section 21r is the engine's own half of that: a `ro` entry from a
   fake caller that would happily have carried the write out, so the refusal is
   proved to be the engine's and not the server's.

@@ -76,14 +76,21 @@ Classification is `instanceof`, and it answers a **list**, because one object ca
 be two devices — or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
 `window`, `IsoDoor` → `door`, `lock` when the lock bites, *and* `curtain` when a
 sheet is on it, `IsoThumpable` with `isDoor()` → `door` and `lock` (`built`),
-`IsoCurtain` → `curtain`, `IsoStove` → `stove`, `IsoGenerator` → `gen`, and
-`IsoClothingWasher` / `IsoClothingDryer` / `IsoCombinationWasherDryer` → `washer`.
-A player-built window frame is not a device.
+`IsoCurtain` → `curtain`, `IsoStove` → `stove`, `IsoGenerator` → `gen`,
+`IsoClothingWasher` / `IsoClothingDryer` / `IsoCombinationWasherDryer` → `washer`,
+and `IsoWaveSignal` → `tv` for an `IsoTelevision` and `rx` for an `IsoRadio`, each
+only when `getDeviceData()` answers. A player-built window frame is not a device.
 
 The cost of that is per OBJECT and not per device: a plain wall or table on a
-square falls through every one of those tests, which is ten `instanceof` calls
-where it used to be four. It is paid once a second and not ten times, which is
-the cache below.
+square falls through every one of those tests, which is eleven `instanceof` calls
+where it used to be four. **Eleven and not twelve**, because the television and
+the radio set are asked as the one base they share: `instanceof(object,
+"IsoWaveSignal")` gates the pair, and only inside it is the object asked which of
+the two it is. That is the test vanilla's own Lua makes of a world object, on the
+server included (`server/ISObjectClickHandler.lua:240`,
+`client/ISUI/ISRadioAndTvMenu.lua:7`). It is paid once a second and not ten times,
+which is the cache below — `hostile_test.lua`'s mall bench is where the number is
+printed.
 
 And it answers **nothing at all** for a fixture nobody has wired, which is the
 hardware-module gate below.
@@ -109,6 +116,7 @@ went back to magic and looks exactly like a working one.
 | `appliance` | `CeroSec.ApplianceSwitch` | `IsoStove`, washer, dryer, combination | `stove` / `washer` | 2 |
 | `window` | `CeroSec.WindowOperator` | window | `window` | 3 |
 | `genset` | `CeroSec.GeneratorSwitch` | `IsoGenerator` | `gen` | 3 |
+| `tuner` | `CeroSec.TunerControl` | `IsoTelevision`, `IsoRadio`, each with a `DeviceData` | `tv` / `rx` | 2 |
 
 The four the motor rung added are on the **end** of `CeroSecModules.LIST` and
 not in level order, because that list is the order the right-click menu offers
@@ -330,6 +338,7 @@ accepts and what it refuses. Every state is read off the object on every answer
 | `stove` | `appliance` | `broken`, `on`, `off` | `on`, `off` | `broken`, `no power` |
 | `washer` | `appliance` | `on`, `off` | `on`, `off` | `no power` |
 | `gen` | `genset` | `on`, `off` + the line below | `on`, `off` | `no fuel`, `broken`, `not connected` |
+| `tv` / `rx` | `tuner` | `on`, `off` + the dial and the schedule | `on`, `off`, `channel <n>` | `no power`, `out of range` |
 
 A `windowN` is read in the order the engine tests it: the glass, the boards, the
 permanent lock, then the sash. `sealed` is `isPermaLocked()`, a window the map
@@ -429,6 +438,112 @@ that syncs for a player does not necessarily sync for us.
 | `stove` | `Toggle()` | **none needed** | `Toggle()` is `setActivated(!activated)` plus `getContainer().addItemsToProcessItems()` plus `IsoGenerator.updateGenerator(square)` (offsets 0—27), and `setActivated`'s server branch calls `sync()` and `syncSpriteGridObjects(true, true)` at 201—214. The setter alone would switch on an oven that cooked nothing and drew nothing. It is vanilla's own server line: `server/ClientCommands.lua:1049-1062` |
 | `washer` | `setActivated(b)` | `sendObjectChange(IsoObjectChange.WASHER_STATE)` | the setter is a field write plus `updateGenerator` and no sync at all; `saveChange` writes `isActivated()` under that change, and `sendObjectChange` is server-only by construction. The pair is `shared/TimedActions/ISToggleClothingWasher.lua`'s own |
 | `gen` | `setActivated(b)` | `sync()` | idempotent by construction (offsets 0—8 return when the argument is the state it is in) and its server branch calls `sync()` at 113—122; vanilla calls `sync()` again after it (`ISActivateGenerator:complete`) and so does this |
+| `tv` / `rx` | `DeviceData:setIsTurnedOn(b)`, `DeviceData:setChannel(n)` | **ours, and the mod's own packet** | there is no engine call that broadcasts either field from the server; see *The sync the mod writes itself*, below |
+
+### The sync the mod writes itself
+
+Every row above is the engine's packet. The television and the radio set are the
+one pair where there is none, and this is the only place in the mod where a
+server-side write is followed by a message of our own.
+
+**Why there is none.** Everything a set has lives on `zombie.radio.devices.DeviceData`,
+and the only method that puts a change of `isTurnedOn` or `channel` on the wire is
+
+```
+private void transmitDeviceDataState(short);
+   0: getstatic  #276   // GameClient.client:Z
+   3: ifeq       37                       <- not a client: return
+  15-20: sendDeviceDataStatePacket(GameClient.connection, arg)
+```
+
+a **client branch and nothing else**. The server's own broadcaster exists and is
+`private` — `transmitDeviceDataStateServer(short, UdpConnection)` — and every
+caller of it is inside the class. The one public wrapper,
+`transmitBatteryChangeServer()`, passes the short `2`, and the `tableswitch 0..10`
+in `sendDeviceDataStatePacket` (offset 345) spends `2` on `hasBattery` and
+`powerDelta`: `0` is `isTurnedOn`, `1` is the channel, and nothing public reaches
+either. So a server-side `setIsTurnedOn(true)` moves the field on the server and
+leaves every client's copy dark and silent.
+
+**What the mod sends.** One `device` command on `CeroSec.MODULE`, broadcast to
+every connection (`PROTOCOL.md` has the fields). It carries the square, the class,
+the sprite name and the object's index on that square, plus **both** fields as
+they read *after* the write — not what was asked for, because `setIsTurnedOn`
+refuses an unpowerable set by turning it off instead.
+
+**What the far end does with it** (`client/CeroSec/CCeroSecDevices.lua`):
+`setTurnedOnRaw(b)` and `setChannelRaw(n)`, and nothing else. Those are the public
+names of exactly what the engine itself does on this path — a client receiving
+vanilla's own state-0 packet calls the private `setIsTurnedOnInternal` (offsets
+124—129) and writes `channel` with a bare `putfield` (179—182), and
+`IsoWaveSignal.loadState` uses `setTurnedOnRaw` / `setChannelRaw` /
+`setDeviceVolumeRaw` (116—154). Using the **public** setters on a client would
+transmit, the server would relay that to everybody, and one crontab line would
+cost a round trip per client.
+
+The screen, the glow and the sound all follow that field with nothing else called:
+`IsoTelevision.update()` ends on `updateTvScreen()` (offsets 57—58), whose first
+test is `getIsTurnedOn()`; `IsoWaveSignal.update()`'s not-a-server branch
+(48—105) picks `updateLightSource()` or `removeLightSourceFromWorld()` by the same
+field; and the same method sends a client to `DeviceData.updateSimple()`, which
+calls `updateEmitter()` (118—125), which reads `isTurnedOn` at 45—49 to decide
+whether the loop sound plays.
+
+**Single player sends nothing and needs nothing**, and that is the engine's doing
+rather than a branch of ours: `LuaManager$GlobalObject.sendServerCommand(String,
+String, KahluaTable)` opens on `getstatic GameServer.server; ifeq return`. One
+process means the object the server wrote is the object the survivor is looking
+at. One code path, two games.
+
+**Late joiners are correct by the engine, and no chunk hook is needed.** Every
+chunk a client loads asks the server for that chunk's object state —
+`IsoChunk.doLoadGridsquare`, offsets 1650—1675, `if (GameClient.client)
+connection.addChunkObjectState(wx)` and the same for `wy` — and the server answers
+out of the **live** object: `ChunkObjectStateRequestPacket.parse` →
+`IsoChunk.saveObjectState` (offset 99) → `IsoObject.saveState` per object
+(124—127), where `IsoWaveSignal.saveState` writes `getIsTurnedOn()` at 73—93,
+`getChannel()` at 94—105 and `getDeviceVolume()` at 106—117. The client applies
+them through `loadState`'s three raw setters. So a player who connects an hour
+after cron switched the television on sees it on, and a player who walks back into
+a chunk that was unloaded sees what it is doing now.
+
+**The refusals are ours and come before the call**, because both setters swallow
+an order they cannot carry out instead of refusing it:
+
+- `setIsTurnedOn(Z)` — `canBePoweredHere()` false takes the 44—58 branch, which
+  turns the set **off** whatever was asked (offsets 0—4); battery-powered with
+  `powerDelta <= 0` calls `setIsTurnedOnInternal(false)` at 31—33 (7—20). Both are
+  `no power`, the word the light switch and the stove already use. It also ends on
+  `IsoGenerator.updateGenerator` (118—130), which is the third of the gesture that
+  makes a generator feel the load.
+- `setChannel(I)` → `setChannel(I, true)` returns at offset 105 outside
+  `minChannelRange..maxChannelRange`, having done nothing at all (0—13). That is
+  `out of range`. A frequency nobody **broadcasts** on is *not* refused: vanilla's
+  own window tunes anywhere in the span and prints "Unknown channel", a television
+  on a dead frequency shows the test card (`updateTvScreen`, 79—83), and a refusal
+  the game does not make is a refusal we would have invented.
+
+**The dial is raw and not megahertz.** `/dev/radio0` prints megahertz and can
+afford to — it is read-only, so its reading is the only spelling of that number
+anybody meets. A dial a survivor can *write* cannot: `echo channel 203` beside a
+line reading `0.203` would be one number under two names. It is also the game's
+own split — `RWMGeneral:setInfoLines` prints megahertz for a radio and, for a
+television, prints no frequency at all, only the channel's name (`:66-81`).
+
+**What is airing, and when the next block starts**, rides in the same `detail` the
+generator's fuel does: `on channel 203 airing 1080-1440`. The reading is
+`CeroSecRadio.scheduleOf` — `getZomboidRadio():getScriptManager():getChannelsList()`,
+then `RadioChannel.GetFrequency()` / `IsTv()` to pick the station, then
+`getAiringBroadcast()` for what is on and `getCurrentScript():getBroadcastList()`
+for the nearest block still to come. The channel list is memoised and rebuilt when
+its **size** changes, which is vanilla's own staleness test for that list
+(`ZomboidRadioDebug:populateList`, `:103-105`). `getValidAirBroadcast()` is
+**never** called: offsets 42—44 set `currentHasAired = true` on the way out, so
+asking it would take a broadcast away from the radio's own simulation. The stamps
+are minutes of the day and are printed as minutes of the day, because a program
+compares the first of them with the clock; `RadioData.loadBroadcast` reads only
+`ID`, `timestamp` and `endstamp`, so a stamp carries no date and there is no wrap
+to tomorrow.
 
 Because `ToggleDoorSilent` **toggles**, a door already in the state it was asked
 for is left alone and nothing is broadcast: two `dev door0 open` in a row are one
