@@ -20,7 +20,7 @@ date.
   offer has no **CeroSec hardware** entry over it.
 
 - **Modules go on from inside, with the door open.** A magnetic contact, a strike,
-  an operator, a curtain motor or a window operator is fitted -- and taken off —
+  an operator, a curtain motor or a window operator is fitted -- and taken off --
   only from **inside** the building: stand on the pavement and the entry is greyed
   with *This has to be done from inside*. Otherwise anybody walking past could
   strip the hardware off your front door without ever coming in, which is what
