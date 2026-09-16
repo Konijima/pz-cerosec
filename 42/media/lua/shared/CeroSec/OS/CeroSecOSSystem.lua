@@ -96,6 +96,53 @@ function CeroSecOS.ensureMnt(state)
 	return node
 end
 
+-- /usr, /usr/local and /usr/local/bin: the chain every machine has, root's at
+-- 755 and shipped empty.
+--
+-- A 1993 Unix came with it made -- /usr/local is where the site's own software
+-- went, as against the vendor's /bin -- and this machine had no /usr at all
+-- until SYSTEM_VERSION 21. That made a liar of the HOME disk's README, which has
+-- room for one instruction and spends it on `sudo cp /mnt/curtains.sh
+-- /usr/local/bin`: the copy answered `no such file`, because `mkdir` here has no
+-- -p and nobody was told to make three directories first.
+--
+-- One level at a time, because that is the only shape the tree can be made in,
+-- and the walk STOPS at the first name that is taken by something that is not a
+-- directory: a FILE called /usr is somebody's own and nothing below it could be
+-- made anyway. That is not an error and nothing is said about it -- it is a
+-- machine with a file called /usr on it, and it keeps the file.
+--
+-- A directory already there is walked INTO and left exactly as it is, mode and
+-- owner and contents: a machine where the BBS disk's setup.sh made the chain, or
+-- where root chmod'ed it, gains nothing and loses nothing. The deepest directory
+-- comes back, or nil when the chain could not be finished.
+function CeroSecOS.ensureLocalBin(state)
+	if type(state) ~= "table" then return nil end
+	if type(state.fs) ~= "table" or type(state.fs.children) ~= "table" then return nil end
+	-- The ceilings are the disk's and are not suspended for a seeding, exactly as
+	-- they are not in the top-up: a machine filled to the node limit and then given
+	-- three more is a machine validate refuses, which is a working computer made
+	-- unbootable by an upgrade nobody asked for.
+	local nodes = CeroSecOS.usage(state)
+	local at = state.fs
+	for i = 1, #CeroSecOS.LOCAL_BIN_DIRS do
+		local name = CeroSecOS.LOCAL_BIN_DIRS[i]
+		local node = at.children[name]
+		if node == nil then
+			if nodes + 1 > CeroSecOS.MAX_NODES then return nil end
+			if CeroSecOS.countEntries(at) >= CeroSecOS.MAX_DIR_ENTRIES then return nil end
+			node = CeroSecOS.newDir("root", CeroSecOS.LOCAL_BIN_MODE)
+			at.children[name] = node
+			nodes = nodes + 1
+		elseif type(node) ~= "table" or node.type ~= "dir"
+				or type(node.children) ~= "table" then
+			return nil
+		end
+		at = node
+	end
+	return at
+end
+
 -- The `wheel` group and the /etc/sudoers line that grants it, added to whatever
 -- the two files already hold. Each is written only where its own line is
 -- missing, and each write goes through the ordinary filesystem gate, so a full
@@ -292,6 +339,10 @@ function CeroSecOS.upgradeSystem(state)
 	CeroSecOS.ensureDev(state)
 	-- And /mnt, for a machine saved before there was a slot on the front of it.
 	CeroSecOS.ensureMnt(state)
+	-- And /usr/local/bin, for every machine saved before this build: the chain a
+	-- 1993 crate came with, which a survivor's floppy has always told him to copy
+	-- into. Whatever is already at one of those three names is his.
+	CeroSecOS.ensureLocalBin(state)
 
 	state.sysv = CeroSecOS.SYSTEM_VERSION
 	return true
@@ -602,6 +653,10 @@ function CeroSecOS.restoreSystem(state)
 	-- And /mnt. What is IN the drive is not the BIOS's business either: a disk is a
 	-- thing in the world, and repairing a machine has never meant reaching into it.
 	CeroSecOS.ensureMnt(state)
+	-- And /usr/local/bin, which is a directory the machine ships and so is the
+	-- firmware's to put back. What somebody INSTALLED in it is left where it is:
+	-- a repair puts the place back, it does not empty it.
+	CeroSecOS.ensureLocalBin(state)
 
 	-- A repaired machine has everything this build ships, so there is nothing
 	-- left for the upgrade to top up.
