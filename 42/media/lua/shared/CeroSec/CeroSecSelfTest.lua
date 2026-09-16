@@ -176,6 +176,17 @@ function CeroSecSelfTest.probe(say)
 	say("tostring int", tostring(42))
 	say("tostring div", tostring(10 / 2))
 	say("tostring neg zero", tostring(0 - 0))
+	-- A PERCENTAGE OUT OF A JAVA FLOAT, which is the one place the motor rung
+	-- puts a number a survivor reads on the glass: IsoGenerator.getFuelPercentage
+	-- answers a double, and `cat /dev/gen0` has to print `fuel 62` and not
+	-- `fuel 62.399998` on both VMs (SCeroSecDevices' `pct`). The rounding and the
+	-- rendering are probed TOGETHER, because say() is what calls tostring and the
+	-- half that could differ is the rendering: floor answering a whole number is
+	-- worth nothing if tostring then writes it "62.0".
+	say("pct round down", math.floor(62.399998 + 0.5))
+	say("pct round up", math.floor(61.5 + 0.5))
+	say("pct round to nothing", math.floor(0.4 + 0.5))
+	say("pct of a whole one", math.floor(80 + 0.5))
 
 	--
 	-- Bytes and strings at the ends of the range.
