@@ -13,6 +13,7 @@ edit the note into agreement.
 
 | Note | What it proves |
 | --- | --- |
+| [actuators.md](actuators.md) | Which vanilla objects the **server** can read and drive without a character, and which setter broadcasts and which does not: curtains toggle and sync themselves, a coffee machine is an `IsoStove`, a television's `DeviceData` transmitter has a client branch only. Plus what a five-second `sleep` daemon costs, and the three side effects that keep a window sash out. |
 | [modules-proofs.md](modules-proofs.md) | Every engine call the hardware modules make, and — offset by offset in `IsoObject.save`/`load` — that a module written into an object's modData is really saved with the chunk. |
 | [picking.md](picking.md) | What the game's right-click actually hands a context menu: the whole pick pipeline through `UIManager.update`, `IsoObjectPicker` and `FBORenderObjectPicker`, and the two real defects a guess about it was hiding. |
 | [tenancies.md](tenancies.md) | What geometry a `RoomDef` really exposes, why `RoomDef.getID()` cannot be a persistence key (the low 32 bits are a per-cell load counter, and a basement spawned in play advances it), how a region's buildings are enumerated for the cost of sixteen cells — and what five candidate "which rooms are separate shops" rules each did to all 9546 buildings of the shipped county. |
