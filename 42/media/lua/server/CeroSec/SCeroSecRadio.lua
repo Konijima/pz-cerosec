@@ -377,6 +377,23 @@ function CeroSecRadio.entryAt(x, y, z)
 	}
 end
 
+-- The state of a TNC ALREADY FOUND, read again off the very object it was found
+-- on. nil for a set that is no longer a set, and the caller keeps what it had.
+--
+-- Here rather than in SCeroSecDevices because the game's whole API for a radio is
+-- asked in this file and nowhere else (CeroSecRadio.read), and the sentence a
+-- survivor reads is built from it in one place. What it is FOR is the /dev cache
+-- (SCeroSecDevices.findCached): which set a machine's TNC is costs a walk of the
+-- room to work out and holds for a second; which channel the knob is on and
+-- whether anybody switched it off is a fact about this instant and is never
+-- remembered. One object, no walk.
+function CeroSecRadio.restate(entry)
+	if type(entry) ~= "table" or type(entry.set) ~= "table" then return nil end
+	local set = CeroSecRadio.read(entry.set.object)
+	if set == nil then return nil end
+	return CeroSecOS.radioStateText(set.channel, set.on, set.powered)
+end
+
 --
 -- On the air
 --

@@ -20,6 +20,11 @@ date.
   recipe you learned -- it is the price of the NEXT one that moved. The two
   modules that only watch a fixture, the magnetic contact and the relay, are
   untouched: a motor is for the ones that move something.
+- A computer running a script no longer reads the whole building ten times a
+  second. It reads it once a second and asks each door, light and window what it
+  is doing every single time, so nothing you can see on the glass changed and a
+  server in a shopping mall stops paying for the other nine. A module you fit or
+  unscrew reaches every machine in the building at once, as before.
 
 ## 0.3.0 - 2026-09-15
 

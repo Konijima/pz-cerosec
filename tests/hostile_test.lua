@@ -3966,6 +3966,200 @@ do
 	_G.SandboxVars = hadSandbox
 end
 
+--
+-- 27. THE BUILDING WALK, and the cache in front of it (the motor rung)
+--
+-- The most expensive thing this mod does, and until this rung nothing measured
+-- it. docs/notes/actuators.md said so in as many words -- "the honest figure is
+-- 34 steps, which is nothing, plus one building walk per five seconds per
+-- polling machine, which has never been measured on Kahlua" -- and it had the
+-- cadence wrong as well as the measurement missing. The walk is not in
+-- CeroSecOS.mountDev, which a sleeping job returns above. It is in
+-- CeroSecDevices.envFor, reached through SCeroSecSystem:execEnv from
+-- CeroSecJobs.runMachine, which runs ONCE A PASS for any machine with a job in
+-- its book at all. A `sleep 5` daemon walked the whole building every
+-- CeroSec.JOB_PASS_MS, which is ten times a second, and none of it showed in a
+-- step count because a walk costs no steps.
+--
+-- WHAT IS COUNTED IS ENGINE CALLS. Not milliseconds: the walk is Java on the
+-- other side of a Kahlua call and a timing here says more about this box than
+-- about the code, which is exactly why the note left the number blank. Every
+-- method of the fake world below bumps one counter, so what comes out is the
+-- number of times the discovery asked the engine anything -- which is what a
+-- walk IS and what the cache is for.
+--
+-- `instanceof` is counted with the rest, and it is most of the difference.
+-- CeroSecDevices.classify asks it up to four times about EVERY object on every
+-- square of the building -- the walls, the floors, the furniture -- and it is a
+-- real crossing into Java and not a Lua comparison. The file's own fake does not
+-- count it, so it is wrapped for this block and put back afterwards.
+--
+-- The building is one BuildingDef with sixty rooms, which is a small shopping
+-- mall and a big school; the map ships buildings with several hundred rooms and
+-- this mod already has a comment about them (CeroSecOS.DEV_MAX).
+--
+-- Both runs are the same hundred passes of the same daemon on the same world, so
+-- the only difference between the two numbers is the cache. The WALK COUNT is
+-- the assertion and the call count is the second one: ten seconds of passes is
+-- ten walks with a one-second cache and a hundred without, and neither of those
+-- numbers can drift without this going red.
+--
+do
+	local ROOMS, PER_ROOM, PER_SQUARE = 60, 25, 4
+	local PASSES = 100
+
+	local calls = 0
+	local walks = 0
+	local world = { squares = {}, rooms = {} }
+
+	local function list(items)
+		return {
+			size = function() calls = calls + 1; return #items end,
+			get = function(_, i) calls = calls + 1; return items[i + 1] end,
+		}
+	end
+
+	-- A light switch, which is the cheapest device there is and therefore the
+	-- honest one to fill a mall with: anything dearer would flatter the cache.
+	local function switch(n)
+		local o = { __class = "IsoLightSwitch", activated = n % 2 == 0 }
+		o.getSquare = function() calls = calls + 1; return o.square end
+		o.isActivated = function() calls = calls + 1; return o.activated end
+		o.canSwitchLight = function() calls = calls + 1; return true end
+		o.hasModData = function() calls = calls + 1; return false end
+		o.getModData = function() calls = calls + 1; return {} end
+		return o
+	end
+	-- And three things that are not devices, because a real room is mostly
+	-- furniture and the walk asks about every one of them.
+	local function lump()
+		return { __class = "IsoObject" }
+	end
+
+	local function square(x, y, room)
+		local sq = { objects = {} }
+		sq.getX = function() calls = calls + 1; return x end
+		sq.getY = function() calls = calls + 1; return y end
+		sq.getZ = function() calls = calls + 1; return 0 end
+		sq.getRoom = function() calls = calls + 1; return room end
+		sq.getBuilding = function() calls = calls + 1; return world.building end
+		sq.getObjects = function() calls = calls + 1; return list(sq.objects) end
+		sq.getWorldObjects = function() calls = calls + 1; return list({}) end
+		world.squares[x .. "," .. y .. ",0"] = sq
+		return sq
+	end
+
+	local roomDefs = {}
+	for r = 1, ROOMS do
+		local room = { squares = {} }
+		room.getName = function() calls = calls + 1; return "shop" .. r end
+		room.getSquares = function() calls = calls + 1; return list(room.squares) end
+		for i = 1, PER_ROOM do
+			local sq = square(r * 100 + i, r, room)
+			for k = 1, PER_SQUARE do
+				local o = (k == 1) and switch(i) or lump()
+				o.square = sq
+				sq.objects[k] = o
+			end
+			room.squares[i] = sq
+		end
+		roomDefs[r] = {
+			getIsoRoom = function()
+				calls = calls + 1
+				-- Every room in the world, which is the walk at its dearest: a room
+				-- whose chunks are away answers nil and costs nothing, and a bench
+				-- built on those would be measuring an empty mall.
+				walks = walks + 1
+				return room
+			end,
+		}
+	end
+	world.building = {
+		getDef = function()
+			calls = calls + 1
+			return { getRooms = function() calls = calls + 1; return list(roomDefs) end }
+		end,
+	}
+	world.getGridSquare = function(_, x, y, z)
+		calls = calls + 1
+		return world.squares[x .. "," .. y .. "," .. z]
+	end
+
+	local hadWorld, hadNow, hadSandbox = _G.__world, _G.__now, _G.SandboxVars
+	local hadInstanceof = _G.instanceof
+	_G.instanceof = function(object, class)
+		calls = calls + 1
+		return hadInstanceof(object, class)
+	end
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+
+	-- The machine stands on the first square of the first room.
+	local X, Y, Z = 101, 1, 0
+
+	-- getIsoRoom is called once per room per walk, so a walk is ROOMS of them.
+	local function runFor(ms, cached)
+		CeroSecDevices.invalidate()
+		calls, walks = 0, 0
+		local start = 5000000
+		for i = 1, PASSES do
+			local now = start + (i - 1) * ms
+			if cached then
+				CeroSecDevices.findCached(X, Y, Z, now)
+			else
+				CeroSecDevices.find(X, Y, Z)
+			end
+		end
+		return calls, math.floor(walks / ROOMS)
+	end
+
+	-- Ten seconds of the scheduler's own passes (CeroSec.JOB_PASS_MS), which is
+	-- what a daemon that does nothing but sleep costs.
+	local coldCalls, coldWalks = runFor(CeroSec.JOB_PASS_MS, false)
+	local warmCalls, warmWalks = runFor(CeroSec.JOB_PASS_MS, true)
+
+	eq("a hundred passes with no cache are a hundred walks of the mall",
+		coldWalks, PASSES)
+	-- Ten seconds at a one-second lifetime. Written against the constant rather
+	-- than as "10", so a lifetime somebody halves is a number that moves here.
+	local want = math.floor(PASSES * CeroSec.JOB_PASS_MS / CeroSecDevices.CACHE_MS)
+	eq("and with the cache they are one walk a second", warmWalks, want)
+	check("which is fewer engine calls by a factor of " ..
+		string.format("%.1f", coldCalls / warmCalls), warmCalls * 5 < coldCalls)
+
+	-- FLAT, which is the other half: a cache that grew an entry per pass would
+	-- cost more at the end of the run than at the start. The book holds one row
+	-- for the one machine, whatever happens.
+	local entries = 0
+	for _ in pairs(CeroSecDevices.cache) do entries = entries + 1 end
+	eq("and the book holds one row, for the one machine", entries, 1)
+
+	-- A machine carried across the county leaves nothing behind: the row hangs on
+	-- where it STANDS, and the stale ones are pruned on the next miss.
+	CeroSecDevices.invalidate()
+	for i = 1, 50 do
+		CeroSecDevices.findCached(X + i, Y, Z, 6000000 + i)
+	end
+	entries = 0
+	for _ in pairs(CeroSecDevices.cache) do entries = entries + 1 end
+	check("fifty desks in fifty milliseconds is fifty rows (" .. entries .. ")",
+		entries == 50)
+	-- And a second later, one miss takes every one of them away.
+	CeroSecDevices.findCached(X, Y, Z, 6000000 + 50 + CeroSecDevices.CACHE_MS)
+	entries = 0
+	for _ in pairs(CeroSecDevices.cache) do entries = entries + 1 end
+	eq("and one miss a second later leaves only the desk it is standing on",
+		entries, 1)
+
+	report[#report + 1] = string.format(
+		"  %-22s %d engine calls for %d passes, %d walks (no cache: %d calls, %d walks)",
+		"a mall through /dev", warmCalls, PASSES, warmWalks, coldCalls, coldWalks)
+
+	CeroSecDevices.invalidate()
+	_G.instanceof = hadInstanceof
+	_G.__world, _G.__now, _G.SandboxVars = hadWorld, hadNow, hadSandbox
+end
+
 check("no call ever went past its budget by more than one command (" .. worstOver .. ")",
 	worstOver < CeroSecOS.STEP_COST_COMMAND)
 check("and over every pass of every bench the debt was repaid (" .. totalSpent ..

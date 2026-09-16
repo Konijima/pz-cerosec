@@ -169,6 +169,12 @@ function CeroSecAuto.fit(object)
 		if CeroSecModules.setOn(object, ids[i], true) then any = true end
 	end
 	if not any then return false end
+	-- The /dev cache holds what a machine could reach a moment ago, and a fixture
+	-- this walk just wired was not on that list. The sweep runs a room at a time
+	-- through a whole building, so this is dropped per fixture rather than per
+	-- building: the cost is one table thrown away and the alternative is a shop
+	-- whose relays do not answer until the minute turns.
+	CeroSecDevices.invalidate()
 	return CeroSecModules.markPreFitted(object)
 end
 

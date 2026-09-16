@@ -12386,6 +12386,240 @@ do
 	eq("the contact came off", fittedOn(kit.front, "contact"), false)
 	eq("and the strike beside it did not", fittedOn(kit.front, "strike"), true)
 
+	-- AND THE /dev CACHE WENT WITH IT, on the way on and on the way off.
+	--
+	-- A machine two rooms away holds a list of what it could reach a moment ago
+	-- (CeroSecDevices.CACHE_MS) and that list has no relay on it. A survivor who
+	-- climbs down off the chair and types `dev` must not be told his own work is
+	-- not there, and a survivor who has just UNSCREWED one must not find the
+	-- machine still working the door it came off -- which is the worse of the two
+	-- and the reason both are asserted.
+	--
+	-- What is read is the book itself, because forgetting is the whole of what the
+	-- command has to do and there is nothing else to look at. A row is put in
+	-- first, under a key no machine in this bench stands on, so that an empty book
+	-- is a book that was EMPTIED and not one that was empty all along.
+	do
+		local FAR = "9001:9001:0"
+		fit(kit.light0, "relay")
+		CeroSecDevices.cache[FAR] = { at = 0, found = {} }
+		send("uninstallmodule", SQ[1], SQ[2], LIGHT, "relay")
+		eq("taking a module off empties the /dev cache",
+			CeroSecDevices.cache[FAR], nil)
+
+		inv:add("CeroSec.Relay")
+		CeroSecDevices.cache[FAR] = { at = 0, found = {} }
+		send("installmodule", SQ[1], SQ[2], LIGHT, "relay")
+		eq("the relay went on", fittedOn(kit.light0, "relay"), true)
+		eq("and fitting one empties the /dev cache too",
+			CeroSecDevices.cache[FAR], nil)
+	end
+
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
+-- 44b. The /dev cache: one walk a second, and never a stale state
+--
+-- WHAT THIS IS ABOUT, and it is not the cost docs/notes/actuators.md counted.
+-- That note put a five-second polling loop at one building walk every five
+-- seconds, reasoning from CeroSecOS.jobStep returning above CeroSecOS.mountDev
+-- for a sleeping job. It does return there -- and the walk is not in mountDev.
+-- It is in CeroSecDevices.envFor, called from SCeroSecSystem:execEnv, called
+-- from CeroSecJobs.runMachine ONCE A PASS before a single job is looked at. A
+-- machine with any job at all in its book gets a pass every
+-- CeroSec.JOB_PASS_MS, so the daemon cost ten walks a second and not one every
+-- five, and none of it showed in a step count because a walk costs no steps.
+--
+-- So what is measured here is ENGINE CALLS and not milliseconds: FakeWorld
+-- counts every square and every object the discovery asked it for, which is
+-- exactly what a walk is made of and exactly what a cache is for. A bench that
+-- timed this would be timing this machine.
+--
+-- Five things, and the last three are the ones a cache gets wrong:
+--   a hundred passes inside one second do ONE walk
+--   a state read between two of them is the state the world is in NOW
+--   past the lifetime it walks again
+--   a device taken out of the world drops off the answer with no walk at all
+--   the minute sweep walks, and leaves the cache filled behind it
+--
+-- The clock is saved and put back. It is the whole harness's, and a second added
+-- to it here changes what the world-content prefill writes into machines built
+-- three thousand lines below -- which is how this bench was written the first
+-- time and what it cost to find out.
+--
+do
+	local kit = mockupWorld()
+	_G.__world = kit.world
+	-- Every fixture is a device, so the walk is the biggest this world has and
+	-- the counts below are the whole of it.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false } }
+	local hadNow = _G.__now
+	CeroSecDevices.invalidate()
+
+	-- The mockup's computer stands here.
+	local X, Y, Z = 10, 10, 0
+
+	local function visits()
+		return kit.world.visits.squares + kit.world.visits.objects
+	end
+	-- The state of one device, found by the OBJECT it is fitted to rather than by
+	-- an id: ids are handed out by the numbering and this bench never numbers
+	-- anything, so a device is what it is screwed to.
+	local function stateOn(found, object, kind)
+		for i = 1, #found do
+			if found[i].object == object and found[i].kind == kind then
+				return found[i].state
+			end
+		end
+		return nil
+	end
+
+	--
+	-- 1. One walk, a hundred answers
+	--
+	_G.__now = 100000
+	kit.world.forgetVisits()
+	local cold = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	local walked = visits()
+	check("a cold /dev walks the building (" .. walked .. " engine calls)", walked > 0)
+	check("and finds the mockup's devices (" .. #cold .. ")", #cold > 0)
+
+	kit.world.forgetVisits()
+	local last = nil
+	for i = 1, 100 do
+		-- A hundred passes spread over the second, which is ten times what the
+		-- scheduler really makes (CeroSec.JOB_PASS_MS is 100ms).
+		_G.__now = 100000 + math.floor((i - 1) * 1000 / 100)
+		last = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	end
+	eq("a hundred passes inside the second cost NO engine call", visits(), 0)
+	eq("and every one of them answered the same devices", #last, #cold)
+
+	--
+	-- 2. The state is never the cache's
+	--
+	-- The one thing a cache must not remember. A hand turns the key in the front
+	-- door between two passes; the second pass has not walked anything and still
+	-- has to say so.
+	--
+	eq("the front door reads locked", stateOn(last, kit.front, "door"), "locked")
+	kit.front.lockedByKey = false
+	kit.world.forgetVisits()
+	_G.__now = 100000 + 999
+	local after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	eq("reading it again still costs no engine call", visits(), 0)
+	eq("and the door reads what it IS, not what it was",
+		stateOn(after, kit.front, "door"), "closed")
+	-- The same on the other kind that has a state worth getting wrong.
+	eq("and the office switch reads on", stateOn(after, kit.light0, "light"), "on")
+	kit.light0.activated = false
+	after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	eq("a switch thrown by a hand reads off on the next pass",
+		stateOn(after, kit.light0, "light"), "off")
+	eq("and that cost no engine call either", visits(), 0)
+
+	--
+	-- 3. The lifetime really is the lifetime
+	--
+	kit.world.forgetVisits()
+	_G.__now = 100000 + CeroSecDevices.CACHE_MS
+	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	check("one millisecond past the lifetime it walks again (" .. visits() .. ")",
+		visits() > 0)
+
+	--
+	-- 4. A device that leaves the world, which is the cost read backwards
+	--
+	-- A device knocked down inside the second is still on the LISTING, reading the
+	-- last state anybody saw -- the same second a device that appears is missing
+	-- for, and the discovery has always been honest about that direction of it.
+	-- What must NOT be a second late is a device being WORKED, and envFor's write
+	-- asks `alive` of the one device it is about to touch: the order answers "no
+	-- such device" and nothing moves.
+	--
+	_G.__now = 200000
+	local held = #CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	check("the mockup has devices to knock down (" .. held .. ")", held > 1)
+	kit.world.remove(kit.light1)
+	kit.world.forgetVisits()
+	local fewer = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	eq("the listing is a second behind the sledgehammer", #fewer, held)
+	eq("and finding that out cost no engine call", visits(), 0)
+	-- The device being worked is not.
+	local env = CeroSecDevices.envFor({ x = X, y = Y, z = Z }, {})
+	local id = nil
+	for i = 1, #env.list() do
+		if env.list()[i].kind == "light" then id = env.list()[i].id end
+	end
+	check("there is a light to write to", id ~= nil)
+	kit.world.forgetVisits()
+	-- Every light of the mockup, so the one that was knocked down is among them.
+	local refused = 0
+	for i = 1, #env.list() do
+		local row = env.list()[i]
+		if row.kind == "light" then
+			local ok, reason = env.write(row.id, "off")
+			if not ok and reason == "no such device" then refused = refused + 1 end
+		end
+	end
+	eq("a write to the switch that is gone is refused in the engine's own words",
+		refused, 1)
+	-- And past the lifetime it really does come off the listing.
+	_G.__now = 200000 + CeroSecDevices.CACHE_MS
+	eq("and the next walk takes it off the listing",
+		#CeroSecDevices.findCached(X, Y, Z, _G.__now), held - 1)
+
+	--
+	-- 5. The minute sweep, which is the standing invalidation
+	--
+	-- It walks anyway, so it drops the entry first and fills it with what its own
+	-- walk found: one walk, and the freshest answer there is. Both halves are
+	-- asserted, because a sweep that only dropped the entry would be a second walk
+	-- a minute for nothing.
+	--
+	_G.__now = 300000
+	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	kit.world.forgetVisits()
+	CeroSecDevices.refresh({ x = X, y = Y, z = Z }, {})
+	check("the minute sweep walks whatever the cache is holding (" .. visits() .. ")",
+		visits() > 0)
+	kit.world.forgetVisits()
+	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	eq("and it left the book filled, so the pass after it walks nothing", visits(), 0)
+
+	--
+	-- 6. A machine on another desk, and a caller with no clock
+	--
+	kit.world.forgetVisits()
+	CeroSecDevices.findCached(X + 1, Y, Z, _G.__now)
+	check("a machine standing somewhere else walks for itself", visits() > 0)
+
+	-- An answer whose age nobody can tell is an answer to throw away, so a call
+	-- with no clock is a walk every single time.
+	CeroSecDevices.findCached(X, Y, Z, nil)
+	kit.world.forgetVisits()
+	CeroSecDevices.findCached(X, Y, Z, nil)
+	check("and a caller with no clock gets no cache at all", visits() > 0)
+
+	-- And a clock that went BACKWARDS is the same thing said a second way: an
+	-- answer whose age is negative is not a young answer, it is an answer nothing
+	-- can be said about. getTimestampMs does not wind back in a running game, but
+	-- a server that came up again is a fresh process with a fresh clock and this
+	-- book is not saved -- so what this really guards is the one line of code
+	-- between those two facts, and a guard nothing ever goes red on is a guard
+	-- nobody can tell from a comment.
+	_G.__now = 400000
+	CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	kit.world.forgetVisits()
+	CeroSecDevices.findCached(X, Y, Z, _G.__now - 1)
+	check("a clock that went backwards is a miss and not a young answer",
+		visits() > 0)
+
+	CeroSecDevices.invalidate()
+	_G.__now = hadNow
 	_G.__world = nil
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
@@ -12593,9 +12827,22 @@ do
 	-- A sensor: no sprite to be found again by (it is drawn from a model), and a
 	-- record in the sampling book.
 	kit.world.drop(kit.world.squares["10,10,0"], fakeSensor())
+	-- THE COST OF THE /dev CACHE, asserted rather than worked around. A device
+	-- that APPEARS is the one thing CeroSecDevices.CACHE_MS really costs -- a
+	-- chunk streaming in, a door somebody builds, a head somebody drops -- and it
+	-- costs at most that one second.
+	--
+	-- Cleared here with invalidate() rather than by winding this bench's clock on,
+	-- because the clock is the whole harness's: a thousand milliseconds put on it
+	-- here changes what the world-content prefill writes into machines built two
+	-- thousand lines below. What the LIFETIME does is proved on a world of its
+	-- own, with a clock of its own, in the cache section.
+	snap = CeroSecDebug.snapshotOf(bench.system, "devices", bench.object)
+	check("a head dropped this second is not on /dev yet", rowWith(snap, "sensor0") == nil)
+	CeroSecDevices.invalidate()
 	snap = CeroSecDebug.snapshotOf(bench.system, "devices", bench.object)
 	local sensor0 = rowWith(snap, "sensor0")
-	check("a dropped head is a device", sensor0 ~= nil)
+	check("and once the cache is dropped it is", sensor0 ~= nil)
 	-- A world item is drawn from a model and has no sprite name at all, so what
 	-- the server would point a client at is the ITEM -- and that is what the
 	-- column shows, because it shows the handle a highlight carries and not a

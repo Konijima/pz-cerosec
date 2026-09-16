@@ -1586,6 +1586,12 @@ Commands.installmodule = function(self, playerObj, x, y, z, token, args)
 		CeroSec.log("the module would not go onto the fixture at " .. x .. "," .. y .. "," .. z)
 		return
 	end
+	-- What every machine in the building can reach just changed, and the /dev
+	-- cache is a second old at the worst (CeroSecDevices.CACHE_MS). A survivor who
+	-- climbs down off a chair and types `dev` must not be told his own work is not
+	-- there, so the cache goes -- all of it, because which machines can see this
+	-- fixture is the question the walk exists to answer.
+	CeroSecDevices.invalidate()
 	CeroSec.log(module.id .. " fitted at " .. x .. "," .. y .. "," .. z)
 end
 
@@ -1607,6 +1613,10 @@ Commands.uninstallmodule = function(self, playerObj, x, y, z, token, args)
 		return
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
+	-- And the same when one comes OFF, for the stronger half of the reason: a
+	-- device answered out of a cache after its hardware was unscrewed is a
+	-- machine working a door nothing is wired to any more.
+	CeroSecDevices.invalidate()
 	CeroSec.log(module.id .. " taken off at " .. x .. "," .. y .. "," .. z)
 end
 

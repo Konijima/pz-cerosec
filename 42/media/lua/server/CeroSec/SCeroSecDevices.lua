@@ -38,8 +38,15 @@ require "CeroSec/SCeroSecRadio"
 -- around the players (13x13 of 8 tiles) and there is no unload event, so a
 -- device is not "gone", it is simply not found this pass -- and a machine in a
 -- town nobody is standing in cannot act on anything. That is why the discovery
--- runs afresh at every command instead of being remembered: the answer is only
--- true for the moment it is asked.
+-- is a walk of the world and not a book kept up to date: the answer is only true
+-- for the moment it is asked.
+--
+-- It is not walked twice in the same tenth of a second, though, and that is the
+-- one thing remembered about it: the list of what a machine can reach is held
+-- for CeroSecDevices.CACHE_MS, while what each of those things is DOING is read
+-- off the object every single time. The whole of the reasoning, and the cost it
+-- is about -- which is not the cost docs/notes/actuators.md counted -- is at
+-- "Not doing the walk again", below.
 --
 -- The numbers
 --
@@ -324,6 +331,36 @@ local function has(fitted, id)
 	return fitted == nil or fitted[id] == true
 end
 
+--
+-- What one device is DOING, right now
+--
+-- Written apart from classify because it is asked in two places and a rule
+-- written twice is a rule that drifts: once when the walk first finds a device,
+-- and again on every pass that is answered out of the cache below
+-- (CeroSecDevices.findCached). What a device IS -- its kind, which way it faces,
+-- the rooms it stands between, whether there is hardware behind it -- is a fact
+-- about the building and holds for a second. What it is DOING is a fact about
+-- this instant and is read off the object every single time.
+--
+-- nil for a kind with no object to ask, and the caller keeps what it had: a
+-- sensor's state is the sampling book's and is put on in build(), and a radio's
+-- comes with the entry and never goes through the cache at all.
+local function stateOf(kind, object, locks)
+	if object == nil then return nil end
+	if kind == "light" then return object:isActivated() and "on" or "off" end
+	if kind == "door" then return doorState(object, locks) end
+	if kind == "win" then return windowState(object) end
+	if kind == "lock" then
+		-- A map door's key and a built door's padlock are two different
+		-- readings, and classify made the same split when it wrote the first one.
+		if instanceof(object, "IsoDoor") then
+			return object:isLockedByKey() and "locked" or "unlocked"
+		end
+		return thumpState(object)
+	end
+	return nil
+end
+
 function CeroSecDevices.classify(object)
 	if object == nil then return nil end
 
@@ -335,7 +372,7 @@ function CeroSecDevices.classify(object)
 		return { {
 			kind = "light", side = "",
 			desc = roomName(object:getSquare()) or "exterior",
-			state = object:isActivated() and "on" or "off",
+			state = stateOf("light", object),
 		} }
 	end
 
@@ -352,11 +389,11 @@ function CeroSecDevices.classify(object)
 		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
 		if (moves or sees) and not isManyDoors(object) then
 			out[#out + 1] = { kind = "door", side = side, desc = desc,
-				locks = locks, state = doorState(object, locks), ro = not moves }
+				locks = locks, state = stateOf("door", object, locks), ro = not moves }
 		end
 		if locks and has(fitted, "strike") then
 			out[#out + 1] = { kind = "lock", side = side, desc = desc,
-				state = object:isLockedByKey() and "locked" or "unlocked" }
+				state = stateOf("lock", object) }
 		end
 		return out
 	end
@@ -373,7 +410,7 @@ function CeroSecDevices.classify(object)
 			kind = "win",
 			side = object:getNorth() and "N" or "W",
 			desc = roomName(object:getSquare()) or "exterior",
-			state = windowState(object),
+			state = stateOf("win", object),
 			ro = fitted ~= nil,
 		} }
 	end
@@ -388,11 +425,11 @@ function CeroSecDevices.classify(object)
 		local moves, sees = has(fitted, "operator"), has(fitted, "contact")
 		if (moves or sees) and not isManyDoors(object) then
 			out[#out + 1] = { kind = "door", side = side, desc = "built",
-				locks = true, state = doorState(object, true), ro = not moves }
+				locks = true, state = stateOf("door", object, true), ro = not moves }
 		end
 		if has(fitted, "strike") then
 			out[#out + 1] = { kind = "lock", side = side, desc = "built",
-				state = thumpState(object) }
+				state = stateOf("lock", object) }
 		end
 		return out
 	end
@@ -615,7 +652,9 @@ function CeroSecDevices.fixturesInRooms(rooms, done, max)
 	return out, walked
 end
 
--- Every device the machine at x, y, z can reach right now, unnumbered.
+-- Every device the machine at x, y, z can reach right now, unnumbered. THE
+-- WALK ITSELF, with no cache in front of it: the minute sweep and the cache's
+-- own miss are what call it now (CeroSecDevices.findCached).
 function CeroSecDevices.find(x, y, z)
 	local found, seen = {}, {}
 	if getCell == nil then return found end
@@ -652,6 +691,146 @@ function CeroSecDevices.find(x, y, z)
 		end
 	end
 	return withTnc(found, seen, x, y, z)
+end
+
+--
+-- Not doing the walk again, a tenth of a second later
+--
+-- THE COST THIS IS ABOUT, and it is not the one the study wrote down.
+--
+-- docs/notes/actuators.md, "The shell: what a daemon costs", counted a
+-- five-second polling loop as one building walk every five seconds, on the
+-- reasoning that CeroSecOS.jobStep returns above CeroSecOS.mountDev for a
+-- sleeping job -- which it does. But the walk does not happen in mountDev. It
+-- happens one layer higher, in CeroSecDevices.envFor, which is called from
+-- SCeroSecSystem:execEnv, which CeroSecJobs.runMachine calls ONCE A PASS,
+-- before it looks at a single job. A machine with any job at all in its book --
+-- asleep, waiting, anything -- gets a pass every CeroSec.JOB_PASS_MS, and every
+-- one of those passes walked the whole building.
+--
+-- So a `while true; do ...; sleep 5; done` daemon cost ten building walks a
+-- second, not one every five. On a machine standing in a shopping mall -- ONE
+-- BuildingDef, several hundred rooms -- that is the most expensive thing this
+-- mod does, and nothing about it is visible from the step counts the scheduler
+-- prints, because it costs no steps at all.
+--
+-- WHAT IS REMEMBERED, AND WHAT IS NOT. What a device IS -- that there is a door
+-- at that square, which way it faces, the rooms it stands between, whether
+-- somebody has screwed an operator to it -- is a fact about the BUILDING. It is
+-- what the walk is for and it is what is kept. What a device is DOING is a fact
+-- about this instant and is read off the object on every single answer
+-- (stateOf, and CeroSecRadio.restate for the TNC): a door that opened between
+-- two passes reads open on the second one, cache or no cache.
+--
+-- WHAT THROWS IT AWAY, and there are four:
+--
+--   the clock          an entry older than CACHE_MS is not used
+--   the minute sweep   CeroSecDevices.refresh walks anyway, so it drops the
+--                      entry first and fills it with what the walk just found
+--   a module           installmodule and uninstallmodule, and the pre-fitting
+--                      walk, all call CeroSecDevices.invalidate -- a box
+--                      screwed to a door changes what EVERY machine in that
+--                      building can see, and which machines those are is not a
+--                      question this file can answer, so all of it goes
+--   the machine moving an entry hangs on where the machine STANDS, so a
+--                      computer picked up and put down on another desk misses
+--                      and walks afresh
+--
+-- THE ONE THING A CACHE COSTS, and it is a second, in both directions. A device
+-- that APPEARS -- a chunk streaming in, a door a survivor builds -- is not on
+-- /dev until the next walk; a device that LEAVES reads its last state until the
+-- next walk too. That is the same second the discovery has always been honest
+-- about, "a device is not gone, it is simply not found this pass", read forwards
+-- and then backwards.
+--
+-- What is NOT allowed to be a second late is a device being WORKED, and it is
+-- not: envFor's write and find ask `alive` of the one device they are about to
+-- touch, exactly as they did before this cache existed, so an order to a door
+-- somebody has knocked down answers "no such device" and moves nothing. Asking
+-- it of the whole LIST instead would be four engine calls per device per pass --
+-- on a mall that is sixty thousand a second for one machine -- to buy a listing
+-- that is right a second sooner, and the listing was never the thing that had to
+-- be right.
+
+-- One second of the player's own life, which is ten scheduler passes
+-- (CeroSec.JOB_PASS_MS is 100). Long enough that a daemon polling every five
+-- seconds pays for one walk a second instead of ten, short enough that nothing a
+-- survivor does in a room is stale by the time he walks back to the keyboard --
+-- and the two things that really would be stale, a module and the minute sweep,
+-- do not wait for it.
+--
+-- REAL milliseconds and not the game's, because what it is bounding is real
+-- server time: the pass it saves is scheduled on getTimestampMs and so is this.
+CeroSecDevices.CACHE_MS = 1000
+
+-- One entry per machine, by where the machine stands. Never saved: it is an
+-- answer about a moment, and a reload is the end of it.
+CeroSecDevices.cache = {}
+
+local function cacheKey(x, y, z)
+	return x .. ":" .. y .. ":" .. z
+end
+
+-- Everything, forgotten. What a module install calls: which machines can see the
+-- fixture somebody just wired is not a question this file can answer without the
+-- walk it is trying to avoid, so the honest answer is all of them.
+function CeroSecDevices.invalidate()
+	CeroSecDevices.cache = {}
+end
+
+-- One machine's, forgotten.
+function CeroSecDevices.forget(x, y, z)
+	CeroSecDevices.cache[cacheKey(x, y, z)] = nil
+end
+
+-- Old entries out. Nothing else takes one away, so a computer carried across the
+-- county would otherwise leave one behind for every desk it ever stood on.
+-- Walked on a MISS only, which is at most once a second per machine.
+local function prune(now)
+	for key, held in pairs(CeroSecDevices.cache) do
+		if now < held.at or now - held.at >= CeroSecDevices.CACHE_MS then
+			CeroSecDevices.cache[key] = nil
+		end
+	end
+end
+
+-- The same list find() answers, out of the last walk when there was one recently
+-- enough, with every state read afresh and everything that has left the world
+-- dropped.
+--
+-- `now` is the real clock (getTimestampMs). Without one there is no cache at
+-- all and every call is a walk: a caller with no clock cannot be told how old an
+-- answer is, and an answer of unknown age is one to throw away.
+function CeroSecDevices.findCached(x, y, z, now)
+	if type(now) ~= "number" then return CeroSecDevices.find(x, y, z) end
+
+	local held = CeroSecDevices.cache[cacheKey(x, y, z)]
+	-- `now < held.at` is a clock that went backwards, which is a miss: the one
+	-- thing worse than walking again is trusting an answer whose age is negative.
+	if held ~= nil and now >= held.at and now - held.at < CeroSecDevices.CACHE_MS then
+		local out = {}
+		for i = 1, #held.found do
+			local entry = held.found[i]
+			if entry.kind == CeroSecRadio.KIND then
+				-- The radio's state is built by the file that owns every call a
+				-- radio answers, so there is one sentence and not two.
+				local text = CeroSecRadio.restate(entry)
+				if text ~= nil then entry.state = text end
+			else
+				-- A sensor gets nil here and keeps what it has: its state is the
+				-- sampling book's and build() puts it on after the numbering.
+				local fresh = stateOf(entry.kind, entry.object, entry.locks)
+				if fresh ~= nil then entry.state = fresh end
+			end
+			out[i] = entry
+		end
+		return out
+	end
+
+	local found = CeroSecDevices.find(x, y, z)
+	CeroSecDevices.cache[cacheKey(x, y, z)] = { at = now, found = found }
+	prune(now)
+	return found
 end
 
 --
@@ -751,13 +930,16 @@ end
 -- One machine's devices, discovered now. Everything below closes over this one
 -- table, so list() and write() cannot disagree about what is there.
 local function build(luaObject, state)
-	local found = CeroSecDevices.find(luaObject.x, luaObject.y, luaObject.z)
+	-- One clock for the whole pass, read before the discovery because the
+	-- discovery needs it: this is where /dev is answered out of the last walk
+	-- when there was one this second (CeroSecDevices.findCached).
+	local now = getTimestampMs()
+	local found = CeroSecDevices.findCached(luaObject.x, luaObject.y, luaObject.z, now)
 
 	-- A sensor's state is not read off the object: there is nothing on a dropped
 	-- item to read. It is what the sampling book says the contact is doing right
 	-- now, and asking for it is also what puts a head just dropped on the floor
 	-- into that book (see the head of SCeroSecSensors.lua).
-	local now = getTimestampMs()
 	CeroSecSensors.registerFound(found, now)
 
 	local live = CeroSecDevices.number(state, found)
@@ -823,6 +1005,13 @@ end
 -- write() happen inside one command, so nothing should have moved -- but a
 -- Java handle to an object that has been taken off its square is exactly the
 -- kind of thing that answers questions and changes nothing.
+--
+-- It is asked of the device being WORKED and never of the whole list, and the
+-- cache did not change that: see "the one thing a cache costs", above. Four
+-- engine calls per device per pass is what asking it of a mall's worth of them
+-- would be, and the answer it bought -- a device that reads its last state for
+-- up to a second after somebody knocked it down -- is the same second the
+-- discovery has always been honest about in the other direction.
 local function alive(entry)
 	local object = entry.object
 	if object == nil then return false end
@@ -1179,7 +1368,15 @@ end)
 -- is a line already printed -- but the book of numbers is brought up to date,
 -- so a device that appeared since the machine was last used already has its
 -- number by the time somebody types `ls /dev`.
+--
+-- AND IT IS THE STANDING INVALIDATION of the /dev cache. The sweep walks the
+-- building anyway, so the machine's entry is dropped first and then filled with
+-- what this very walk found: one walk, and the freshest answer there is. Leaving
+-- it to age out under the sweep would have been a second walk a minute for
+-- nothing.
 function CeroSecDevices.refresh(luaObject, state)
 	if state == nil then return end
-	CeroSecDevices.number(state, CeroSecDevices.find(luaObject.x, luaObject.y, luaObject.z))
+	CeroSecDevices.forget(luaObject.x, luaObject.y, luaObject.z)
+	CeroSecDevices.number(state, CeroSecDevices.findCached(
+		luaObject.x, luaObject.y, luaObject.z, getTimestampMs()))
 end
