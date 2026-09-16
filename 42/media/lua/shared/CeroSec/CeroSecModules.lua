@@ -15,6 +15,8 @@ require "CeroSec/CeroSecDefs"
 --   window    a window operator    -> it can raise and shut a sash
 --   appliance an appliance switch  -> it can start a stove or a washer
 --   genset    a generator switch   -> it can start and stop a generator
+--   tuner     a tuner control      -> it can switch a television or a radio set
+--                                     on and off and move its dial
 --
 -- Nothing else changed about /dev: a device that is there is the same device it
 -- always was, with the same words and the same refusals. What the modules decide
@@ -116,6 +118,12 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- one. These four are ids and behave exactly like the four beside them, so
 -- there is nothing for a reader to be surprised by and nothing to hold the
 -- shape to.
+--
+-- AND IT DID NOT MOVE FOR `tuner` EITHER, for that same sentence a ninth time.
+-- An absent `tuner` reads as "no tuner control on this fixture", which is true of
+-- every television and every radio set in every save written before the rung that
+-- added it -- nobody had one to fit. A step converting nothing is a number moved
+-- to say something that did not happen.
 CeroSecModules.VERSION = 2
 CeroSecModules.VERSION_KEY = "v"
 -- MIGRATIONS[n] takes the table at n - 1 and leaves it at n.
@@ -226,6 +234,17 @@ CeroSecModules.SANDBOX = "HardwareRequired"
 -- that can kill him -- two. A window operator is an arm, a motor and a sash that
 -- has to stop in the right place -- three, like the door operator it is. A
 -- generator switch is three because of what is on the other side of it.
+--
+-- AND THE NINTH GOES ON THE END OF THE END, by the same rule read a third time: a
+-- survivor knows where the first eight are on the menu and a ninth that pushed
+-- them about would be worse than a list whose levels do not run downhill.
+--
+-- A tuner control is two at the same reading as the appliance switch it sits
+-- beside: a box behind a plate on a set that holds a few hundred volts on its
+-- chassis long after it is unplugged, and a ribbon into a tuner that is already
+-- there (it is what every radio in this game is built round --
+-- Base.RadioReceiver, and see the recipe). Nothing in it turns, so it takes no
+-- motor and no receiver of its own.
 CeroSecModules.LIST = {
 	{ id = "contact",   item = "CeroSec.MagneticContact", skill = 1, time = 80,  xp = 3 },
 	{ id = "relay",     item = "CeroSec.Relay",           skill = 1, time = 100, xp = 3 },
@@ -235,6 +254,7 @@ CeroSecModules.LIST = {
 	{ id = "appliance", item = "CeroSec.ApplianceSwitch", skill = 2, time = 110, xp = 5 },
 	{ id = "window",    item = "CeroSec.WindowOperator",  skill = 3, time = 150, xp = 8 },
 	{ id = "genset",    item = "CeroSec.GeneratorSwitch", skill = 3, time = 140, xp = 8 },
+	{ id = "tuner",     item = "CeroSec.TunerControl",   skill = 2, time = 110, xp = 5 },
 }
 
 -- The tool the job needs, whichever module it is. Vanilla's own recipes ask for
@@ -529,6 +549,47 @@ function CeroSecModules.isGenerator(object)
 	return object ~= nil and instanceof(object, "IsoGenerator")
 end
 
+--
+-- THE TELEVISION AND THE RADIO SET, which are one class twice over
+--
+-- zombie.iso.objects.IsoTelevision and zombie.iso.objects.IsoRadio both extend
+-- IsoWaveSignal, which carries `protected DeviceData deviceData` and answers
+-- getDeviceData() -- and DeviceData is where everything a set has is kept, the
+-- switch and the dial included (javap; the whole list is at the head of
+-- SCeroSecRadio.lua, proof 2). The two classes are SIBLINGS and neither is the
+-- other, so they are asked apart, and they are two kinds under /dev because a
+-- survivor does not think of a television and a radio as one thing.
+--
+-- AND THE DEVICE DATA IS PART OF THE QUESTION. A set with none is a sprite: the
+-- switch and the dial are on the data and there is nothing else to write. A map
+-- tile always has one -- IsoWaveSignal.load makes it when the stream did not
+-- carry one (offsets 7-23) -- and a set a survivor puts down carries the item's
+-- own (ISMoveableSpriteProps.lua:2129-2147, setDeviceData) -- so this is a guard
+-- and not a case. It is asked HERE, once, because the install and the discovery
+-- must not disagree about what a set is: a tuner fitted to something /dev then
+-- refuses to show is a box a survivor cannot get back.
+function CeroSecModules.isTelevision(object)
+	if object == nil then return false end
+	if not instanceof(object, "IsoTelevision") then return false end
+	return object:getDeviceData() ~= nil
+end
+
+-- A radio SET, which is the receiver and not the TNC. The same object can be
+-- both: a ham set in the room is the machine's /dev/radio0, read-only, because
+-- the aerial's frequency is the survivor's (SCeroSecRadio.lua, proof 7), and with
+-- a tuner control screwed to it, it is also an rxN whose switch and dial the
+-- machine works. That is the door's own shape -- doorN opens and lockN keys, one
+-- object, two vocabularies -- and the TNC's own reading does not change for it.
+function CeroSecModules.isRadioSet(object)
+	if object == nil then return false end
+	if not instanceof(object, "IsoRadio") then return false end
+	return object:getDeviceData() ~= nil
+end
+
+function CeroSecModules.isTuneable(object)
+	return CeroSecModules.isTelevision(object) or CeroSecModules.isRadioSet(object)
+end
+
 -- Anything a module of any kind could go on. What the right-click menu asks
 -- first, so that a survivor right-clicking a fridge is offered nothing at all
 -- rather than a menu of eight refusals.
@@ -537,6 +598,7 @@ function CeroSecModules.isFittable(object)
 		or CeroSecModules.isLightSwitch(object)
 		or CeroSecModules.isCurtain(object) or CeroSecModules.isStove(object)
 		or CeroSecModules.isWasher(object) or CeroSecModules.isGenerator(object)
+		or CeroSecModules.isTuneable(object)
 end
 
 -- May this module go on this object? true, or false and the reason in one word,
@@ -582,6 +644,17 @@ function CeroSecModules.fitsOn(object, id)
 
 	if id == "genset" then
 		if CeroSecModules.isGenerator(object) then return true end
+		return false, "fixture"
+	end
+
+	-- A television or a radio set, and nothing else: a tuner control is a box
+	-- behind the back panel of a receiver, wired to the tuner that is already in
+	-- it. A set with no device data on it is not one of these (isTuneable), and it
+	-- is the one refusal here a survivor really cannot do anything about -- which
+	-- is why it reads as the wrong sort of fixture rather than as a fault: from
+	-- where he stands the thing on that tile is not a set the machine can wire.
+	if id == "tuner" then
+		if CeroSecModules.isTuneable(object) then return true end
 		return false, "fixture"
 	end
 
@@ -658,6 +731,10 @@ end
 --   washer   the same switch, on a washer, a dryer or a combination machine
 --   gen      the generator switch
 --   light    the relay
+--   tv       the tuner control, on a television
+--   rx       the same control, on a radio set -- which keeps its own /dev/radio0
+--            beside it when it is the machine's TNC, because a receiver's dial
+--            and an aerial's are two questions
 --
 -- `ro` is carried right through to the device node, which is born 440 for it and
 -- refuses a write in the engine (CeroSecOSDev). A module fitted later moves the

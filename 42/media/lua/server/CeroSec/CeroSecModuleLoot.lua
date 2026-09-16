@@ -97,6 +97,12 @@ CeroSecModuleLoot.SHARES = {
 	curtain = 0.125,
 	window = 0.0625,
 	genset = 0.0625,
+	-- AND THE TUNER CONTROL, at the strike's share. A shop window with the sets
+	-- switching themselves on at nine and a hotel lobby with the news on a timer
+	-- are real 1993 fittings and there were more of them than there were motorised
+	-- blinds -- but a street of houses had a hand on the knob, which is what keeps
+	-- it below the contactor every laundrette had.
+	tuner = 0.125,
 }
 
 -- AND THE PART THEY ARE BUILT FROM, which is not a module and is on the same

@@ -330,6 +330,61 @@ module CeroSec
         }
     }
 
+    /* THE TUNER CONTROL, and the one input that is not a guess.
+
+       Every radio-making recipe in the game is built round ONE part and it is the
+       same part every time -- media/scripts/generated/recipes/recipes_radio.txt:
+
+         CraftMakeshiftRadio      (:22-46)  item 1 [Base.RadioReceiver]
+         CraftMakeshiftHAMRadio   (:48-74)  item 1 [Base.RadioReceiver]
+                                            item 1 [Base.RadioTransmitter]
+         CraftMakeshiftWalkieTalkie (:76-101) item 1 [Base.RadioReceiver]
+                                            item 1 [Base.RadioTransmitter]
+
+       so Base.RadioReceiver is what this game calls the thing that tunes, the
+       transmitter is what it calls the thing that talks, and a control that only
+       changes channels takes the first and not the second. The item exists in this
+       build (generated/items/normal.txt:4550, DisplayCategory = Electronics,
+       Weight 0.1, Icon = Receiver) and it is loot in its own right, so a survivor
+       comes by one the way he comes by a receiver.
+
+       AND NO MOTOR. Nothing in a tuner control turns: in 1993 a set that changed
+       channel without a hand on it did it with a varactor -- a voltage on a diode
+       -- and the mod's own rule for the motor is the one the four that MOVE
+       something wear. It is the appliance switch's parts list with the receiver
+       put in beside them, at the appliance switch's level, which is what it is: a
+       contactor for the mains side and a ribbon into the tuner.
+
+       Base.Receiver is NOT this part, and the two are easy to confuse: that one is
+       what comes out of a remote control (vanilla's own
+       DismantleMiscElectronics maps Base.Receiver = Base.Remote,
+       recipes_electrical.txt:79) and it is what tells a MOTOR when to stop, which
+       is why it is on the strike and the two operators and not here. */
+    craftRecipe MakeCeroSecTunerControl
+    {
+        timedAction = MakingElectrical,
+        time = 120,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:2,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:8,
+        xpAward = Electricity:8,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 1 [Base.RadioReceiver],
+            item 2 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.TunerControl,
+        }
+    }
+
     /* WHERE A SMALL MOTOR COMES FROM: a screwdriver and something that already
        has one in it.
 

@@ -1,6 +1,7 @@
 require "Map/CGlobalObjectSystem"
 require "CeroSec/CeroSecDefs"
 require "CeroSec/CCeroSecObject"
+require "CeroSec/CCeroSecDevices"
 require "CeroSec/CeroSecTerminal"
 require "CeroSec/CeroSecDebugUI"
 require "CeroSec/CeroSecPhonebookUI"
@@ -66,11 +67,20 @@ end
 -- Multiplayer: the server answers one connection. That is not one window --
 -- split screen puts several players on a connection -- so the terminal still
 -- checks the token before it believes a word of it.
+--
+-- And ONE answer that is addressed to no window at all and is not even about a
+-- computer: the `device` packet, which is the sync the engine does not do for a
+-- television or a radio set (CCeroSecDevices.lua). It is a broadcast to every
+-- client and it changes the WORLD, so it is on this door and not on the one
+-- above: the door above is the global object channel, which is what singleplayer
+-- answers on, and in singleplayer there is nothing to sync -- the object the
+-- server wrote is the object the survivor is looking at.
 Events.OnServerCommand.Add(function(module, command, args)
 	if module ~= CeroSec.MODULE then return end
 	CeroSecTerminal.onServerAnswer(command, args)
 	CeroSecDebugUI.onServerAnswer(command, args)
 	CeroSecPhonebookUI.onServerAnswer(command, args)
+	CCeroSecDevices.onServerAnswer(command, args)
 end)
 
 -- There is no sweep. This used to walk every object once a minute, because the

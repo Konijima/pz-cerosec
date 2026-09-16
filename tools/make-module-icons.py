@@ -14,6 +14,7 @@
 #   Item_CeroSecWindowOperator.png    a casement operator: the crank and the arm
 #   Item_CeroSecApplianceSwitch.png   a contactor, three poles and a coil
 #   Item_CeroSecGeneratorSwitch.png   a transfer switch: a box and its handle
+#   Item_CeroSecTunerControl.png      a tuner board: a can, a trimmer and a ribbon
 #   Item_CeroSecWiringGuide.png       the magazine the four recipes come out of
 #
 # The language is the one the mod's other icons already speak: a transparent
@@ -357,6 +358,43 @@ def generator_switch():
     i.save("GeneratorSwitch")
 
 
+def tuner_control():
+    """A tuner board: a shielded can at the top, a trimmer beside it, the ribbon
+    that goes into the set coming out of the bottom edge.
+
+    The RIBBON is what tells it apart from the four grey boxes: it is the one
+    thing on this list that is not metal and not a lever, so it is drawn wide,
+    cream, and running off the edge of the icon like a thing that plugs in."""
+    i = Icon()
+    # The board itself, a dark green-black rectangle standing on its end.
+    i.box(6, 2, 25, 22, CASE)
+    # The shielded can, which is the one piece of a tuner anybody has ever seen:
+    # a bright steel box soldered flat to the board, top left.
+    i.box(8, 4, 18, 13, STEEL)
+    i.rect(9, 5, 17, 6, STEEL_HI)
+    i.rect(9, 11, 17, 12, STEEL_LO)
+    # The solder seam down the middle of the lid.
+    i.hline(9, 17, 9, STEEL_LO)
+    # The trimmer beside it: a brass screw in a round body, which is what a
+    # survivor turns with a jeweller's driver and what this box turns for him.
+    i.box(20, 5, 24, 11, BRASS)
+    i.dot(22, 7, INK)
+    i.dot(22, 8, INK)
+    i.dot(21, 8, INK)
+    # Two rows of components across the bottom half of the board.
+    for y in (16, 19):
+        for x in (8, 12, 16, 20):
+            i.rect(x, y, x + 2, y + 1, STEEL_LO)
+            i.dot(x, y, INK)
+            i.dot(x + 2, y + 1, INK)
+    # The ribbon out of the bottom edge, running off the icon: the cream of a
+    # flat cable, with the ink lines that make it a ribbon and not a strap.
+    i.box(9, 23, 22, 30, CREAM)
+    for x in (11, 13, 15, 17, 19, 21):
+        i.vline(x, 24, 29, CASE_HI)
+    i.save("TunerControl")
+
+
 def wiring_guide():
     """The magazine the four recipes come out of, lying flat and seen square on:
     a dark cover, the masthead band across the top in the screen green, the
@@ -399,6 +437,7 @@ curtain_motor()
 window_operator()
 appliance_switch()
 generator_switch()
+tuner_control()
 wiring_guide()
 
 
@@ -411,7 +450,8 @@ if "--sheet" in sys.argv:
     cell = SIZE * zoom
     names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator",
              "SmallMotor", "CurtainMotor", "WindowOperator",
-             "ApplianceSwitch", "GeneratorSwitch", "WiringGuide"]
+             "ApplianceSwitch", "GeneratorSwitch", "TunerControl",
+             "WiringGuide"]
     ims = [Image.open(OUT % n).convert("RGBA") for n in names]
     w = pad + len(ims) * (cell + pad)
     h = pad + SIZE + pad + cell + pad

@@ -148,6 +148,14 @@ local PARENT = {
 	IsoGameCharacter = "IsoMovingObject",
 	BaseVehicle = "IsoMovingObject",
 	HandWeapon = "InventoryItem",
+	-- The television and the radio set, which the device walk tests as the ONE
+	-- base they share before it asks which of the two it is -- a wall then costs
+	-- one instanceof and not two. Both really do extend it (javap: `class
+	-- zombie.iso.objects.IsoTelevision extends zombie.iso.objects.IsoWaveSignal`,
+	-- and the same for IsoRadio), and a fake that did not know so would make a
+	-- device that found nothing look like one that works.
+	IsoTelevision = "IsoWaveSignal",
+	IsoRadio = "IsoWaveSignal",
 }
 _G.instanceof = function(object, class)
 	if type(object) == "table" and type(object.__class) == "string" then
@@ -659,6 +667,11 @@ local FILES = {
 	-- this mod that only the client has, so a stub in its place is a bench that
 	-- cannot see a glow at all.
 	"client/CeroSec/CCeroSecObject.lua",
+	-- The far end of the one sync this mod writes itself. Loaded for real and not
+	-- stubbed, for CCeroSecObject's reason read the other way round: what it does
+	-- is reach into the WORLD on a client, and a stub in its place is a bench that
+	-- cannot tell a sync that happened from one that did not.
+	"client/CeroSec/CCeroSecDevices.lua",
 	"client/CeroSec/CCeroSecSystem.lua",
 	-- The one under test is loaded from a path the caller may override, so the
 	-- same bench can be pointed at an older window and made to fail.
@@ -3093,6 +3106,95 @@ local function fakeGenerator(on, fuel, condition, connected)
 	-- and never called by the device, so a device that copied vanilla's timed
 	-- action wholesale would show up here.
 	o.failToStart = function() o.failed = (o.failed or 0) + 1 end
+	return o
+end
+
+-- A TELEVISION OR A RADIO SET, and the DeviceData under it.
+--
+-- Written to the bytecode of zombie.radio.devices.DeviceData, and what makes it
+-- worth writing at all is that BOTH public setters SWALLOW an order they cannot
+-- carry out instead of refusing it -- which is the whole reason the device asks
+-- the two questions itself before it calls either:
+--
+--   setIsTurnedOn(Z)   canBePoweredHere() false -> the 44-58 branch turns the set
+--                      OFF whatever was asked (offsets 0-4); battery-powered with
+--                      powerDelta <= 0 -> setIsTurnedOnInternal(FALSE) at 31-33
+--                      (7-20). And it ends on IsoGenerator.updateGenerator at
+--                      118-130, which is the third of the gesture that makes a
+--                      generator feel the load, so the fake counts it.
+--   setChannel(I)      outside minChannelRange..maxChannelRange -> return 105,
+--                      having done NOTHING at all (0-13). Inside, it moves the
+--                      field and plays the zap (21-64), which the fake counts as
+--                      the thing that tells a dial that moved from one that did
+--                      not.
+--
+-- And the RAW pair, which is what a client does with a packet: the field and
+-- nothing else, no transmit and no side effect (setTurnedOnRaw ->
+-- setIsTurnedOnInternal; setChannelRaw is three instructions). They are counted
+-- apart from the public two, because "the far end applied it without answering
+-- back" is the one thing a state field cannot show -- a client that used the
+-- public setters would look identical here and would bounce a packet in the game.
+local function fakeWaveSet(class, opts)
+	opts = opts or {}
+	local o = fittable({ __class = class, generators = 0, zaps = 0, raws = 0 })
+	highlightable(o)
+	local data = {
+		on = opts.on == true,
+		channel = opts.channel or 203,
+		min = opts.min or 200,
+		max = opts.max or 1000000,
+		battery = opts.battery == true,
+		power = opts.power or 0,
+		-- canBePoweredHere()'s answer for a set on the mains: the square's grid.
+		-- Anything battery-powered answers true at its first two instructions
+		-- whatever the square says, which is the branch below.
+		here = opts.here ~= false,
+	}
+	o.data = data
+	data.getIsTelevision = function() return class == "IsoTelevision" end
+	data.getIsTurnedOn = function() return data.on end
+	data.getChannel = function() return data.channel end
+	data.getMinChannelRange = function() return data.min end
+	data.getMaxChannelRange = function() return data.max end
+	data.getIsBatteryPowered = function() return data.battery end
+	data.getPower = function() return data.power end
+	-- The three the TNC layer asks of every IsoRadio the walk goes past
+	-- (CeroSecRadio.read), which this device never reads and which the fake has to
+	-- answer anyway because the walk is the same walk. A receiver is NOT two-way --
+	-- every radio item in media/scripts/generated/items/radio.txt with
+	-- `TwoWay = true` is a walkie or a ham set, and a RadioRed is neither -- so a
+	-- plain set is a radio in the room and never a machine's TNC.
+	data.getIsTwoWay = function() return opts.twoWay == true end
+	data.getIsPortable = function() return opts.portable == true end
+	data.getTransmitRange = function() return opts.range or 0 end
+	data.canBePoweredHere = function()
+		if data.battery then return true end
+		return data.here
+	end
+	data.setIsTurnedOn = function(_, want)
+		if not data.canBePoweredHere() then
+			data.on = false
+		elseif data.battery and data.power <= 0 then
+			data.on = false
+		else
+			data.on = want
+		end
+		o.generators = o.generators + 1
+	end
+	data.setChannel = function(_, want)
+		if want < data.min or want > data.max then return end
+		data.channel = want
+		o.zaps = o.zaps + 1
+	end
+	data.setTurnedOnRaw = function(_, want)
+		data.on = want
+		o.raws = o.raws + 1
+	end
+	data.setChannelRaw = function(_, want)
+		data.channel = want
+		o.raws = o.raws + 1
+	end
+	o.getDeviceData = function() return data end
 	return o
 end
 
@@ -12593,7 +12695,7 @@ end
 --
 -- 43d. Where each module may go, as a table
 --
--- Eight modules and seven kinds of fixture is fifty-six answers, and the way a
+-- Nine modules and nine kinds of fixture is eighty-one answers, and the way a
 -- rule like that goes wrong is never the entry somebody wrote: it is the entry
 -- nobody wrote, where a module quietly fits something it has no business on.
 -- `fitsOn` answering true is a right-click menu offering a survivor a box that
@@ -12616,6 +12718,8 @@ do
 		washer = world.put(world.squares["1,1,0"],
 			fakeWasher("IsoCombinationWasherDryer", false)),
 		gen = world.put(world.squares["1,1,0"], fakeGenerator(false, 50, 50, true)),
+		tv = world.put(world.squares["1,1,0"], fakeWaveSet("IsoTelevision", {})),
+		rx = world.put(world.squares["1,1,0"], fakeWaveSet("IsoRadio", {})),
 	}
 	-- A door with a sheet on it is not an eighth fixture: it is the door above
 	-- with two more fields, which is exactly what the engine does.
@@ -12632,11 +12736,12 @@ do
 		window    = { window = true },
 		appliance = { stove = true, washer = true },
 		genset    = { gen = true },
+		tuner     = { tv = true, rx = true },
 	}
 	local names = {}
 	for name in pairs(fixtures) do names[#names + 1] = name end
 	table.sort(names)
-	eq("seven kinds of fixture in the table", #names, 7)
+	eq("nine kinds of fixture in the table", #names, 9)
 	eq("and a row for every module the mod has", (function()
 		local n = 0
 		for _ in pairs(FITS) do n = n + 1 end
@@ -13360,6 +13465,383 @@ do
 	CeroSecDevices.invalidate()
 	_G.__now = hadNow
 	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
+-- 44c. The television and the radio set, and the sync the mod writes itself
+--
+-- THE ONE DEVICE WHOSE BROADCAST IS OURS. Every other actuator either syncs
+-- itself or is synced by one engine call beside it (section 44a counts those).
+-- A DeviceData has no such call reachable from Lua at all: its transmitter is a
+-- client branch and the server's is private, so a server-side setIsTurnedOn(true)
+-- moves the field on the server and leaves every client's copy dark. The proof is
+-- at the head of client/CeroSec/CCeroSecDevices.lua; what is proved HERE is the
+-- wire, in the only way a wire can be: a packet leaves the server, a SECOND world
+-- with a SECOND television in it receives it, and that second television moves.
+--
+-- The far world is the whole point. One fake world would be one object, and a
+-- bench where the server's write and the client's apply land on the same table
+-- cannot tell a sync that happened from one that did not: it would be green on a
+-- mod that sent no packet at all.
+--
+-- What single player does is the same code path with no wire, and the branch that
+-- makes it so is the ENGINE's and not ours:
+-- LuaManager$GlobalObject.sendServerCommand's first two instructions are
+-- `getstatic GameServer.server; ifeq return`, so the call does nothing with no
+-- server behind it. That is a bytecode fact and it is quoted where the send is;
+-- a Lua bench that stubbed sendServerCommand could only prove its own stub. What
+-- this bench proves about single player is the other half, which is the half that
+-- matters: the object the machine wrote is the object that reads back changed.
+--
+do
+	local world = FakeWorld.new()
+	world.room("lounge", { {10,10,0}, {11,10,0}, {12,10,0} })
+
+	-- A mains television: not battery-powered, so canBePoweredHere() is the
+	-- square's grid, which is `here`.
+	local tv = world.put(world.squares["11,10,0"],
+		fakeWaveSet("IsoTelevision", { channel = 203, min = 200, max = 1000000 }))
+	-- And a radio SET on a battery, which is the other branch of the same
+	-- question: canBePoweredHere() answers true at its first two instructions for
+	-- anything battery-powered, and the charge is the second gate.
+	local rx = world.put(world.squares["12,10,0"],
+		fakeWaveSet("IsoRadio", { channel = 96500, min = 88000, max = 108000,
+			battery = true, power = 1 }))
+
+	-- AND A SET WITH NOTHING ON IT: an IsoWaveSignal whose getDeviceData answers
+	-- null. The switch and the dial both live on that object, so a set without one
+	-- is a sprite and not a device. A map tile always has one -- IsoWaveSignal.load
+	-- makes it when the stream did not carry one, offsets 7-23 -- so this is a
+	-- guard and not a case, and a guard nothing ever goes red on is a guard nobody
+	-- can tell from a comment.
+	--
+	-- On the LOWEST x of the three on purpose: the numbering is (kind, x, y, z), so
+	-- a build that stopped asking this question would hand tv0 to the husk and push
+	-- the real set to tv1, and every line of this bench would say so.
+	local husk = world.put(world.squares["10,10,0"],
+		fittable(highlightable({ __class = "IsoTelevision",
+			getDeviceData = function() return nil end })))
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	CeroSecDevices.invalidate()
+
+	-- Every packet the server put on the wire since the list was last emptied.
+	-- The three-argument sendServerCommand, which is the BROADCAST: vanilla's own
+	-- server Lua uses the same shape for a world change nobody in particular asked
+	-- for (server/BuildingObjects/ISWoodenFloor.lua:21).
+	local sent = {}
+	local realSend = _G.sendServerCommand
+	_G.sendServerCommand = function(module, command, args)
+		sent[#sent + 1] = { module = module, command = command, args = args }
+	end
+
+	-- The other two listeners on that same door are windows, and no window bench
+	-- loads them: the file list above takes the client's world-side files and not
+	-- its panels. They are stood in for here rather than left out, because what is
+	-- under test is the DOOR -- a handler that stopped calling CCeroSecDevices
+	-- would pass a bench that called it directly.
+	local realDebugUI, realPhonebookUI = _G.CeroSecDebugUI, _G.CeroSecPhonebookUI
+	_G.CeroSecDebugUI = { onServerAnswer = function() end }
+	_G.CeroSecPhonebookUI = { onServerAnswer = function() end }
+	local function lastPacket()
+		return sent[#sent]
+	end
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	local function typed(line)
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+	local function alone(line)
+		typed("clear")
+		bench.window.painted = {}
+		typed(line)
+	end
+
+	--
+	-- THE READING
+	--
+	alone("dev")
+	check("the table has the television", bench.painted("tv0"))
+	check("and the radio set beside it", bench.painted("rx0"))
+	check("and the set with no device data on it is not a device at all",
+		not bench.painted("tv1"))
+	check("nothing fits one", not CeroSecModules.isFittable(husk))
+	check("not even the control that fits the other two",
+		CeroSecModules.fitsOn(husk, "tuner") == false)
+	-- The TABLE reads the word and not the sentence, because a dial does not fit
+	-- a column: `dev` puts the state on column 47 of a terminal 60 wide.
+	check("the table reads the switch", bench.painted("off"))
+	check("and not the dial", not bench.painted("channel 203"))
+
+	alone("cat /dev/tv0")
+	check("cat reads the whole line", bench.painted("off channel 203"))
+	alone("cat /dev/rx0")
+	check("and the radio set's own dial, raw and not in megahertz",
+		bench.painted("off channel 96500"))
+	-- Which is the thing /dev/radio0 does differently and on purpose: that device
+	-- is read-only, so its reading is the only spelling of that number anybody
+	-- meets. A dial a survivor can write has one spelling.
+	check("and really not in megahertz", not bench.painted("96.500"))
+
+	--
+	-- THE SWITCH, AND THE PACKET
+	--
+	eq("nothing has been broadcast yet", #sent, 0)
+	typed("echo on > /dev/tv0")
+	eq("the television is on", tv.data.on, true)
+	-- The whole gesture and not the field: setIsTurnedOn ends on
+	-- IsoGenerator.updateGenerator, which is what makes a generator feel the load.
+	eq("and the generator was told it has a load", tv.generators, 1)
+	eq("and one packet went out", #sent, 1)
+	eq("addressed to this mod's own module", lastPacket().module, CeroSec.MODULE)
+	eq("under the device command", lastPacket().command, CeroSecDevices.SYNC)
+	eq("naming the square it is on", lastPacket().args.x, 11)
+	eq("and the y", lastPacket().args.y, 10)
+	eq("and the floor", lastPacket().args.z, 0)
+	eq("and the class the far end asks instanceof for",
+		lastPacket().args.class, "IsoTelevision")
+	eq("and what it looks like", lastPacket().args.sprite, tv.sprite)
+	eq("and WHICH of the square's objects it is", lastPacket().args.index, 0)
+	-- The STATE and not the order: setIsTurnedOn refuses an unpowerable set by
+	-- turning it off instead, so what was asked for and what happened are two
+	-- facts and it is the second one that is anybody's business.
+	eq("and the state it settled on", lastPacket().args.on, true)
+	eq("and the dial, unmoved", lastPacket().args.channel, 203)
+
+	-- Twice is once: a set already where it is asked to be is left alone, and
+	-- nothing is broadcast for it.
+	typed("echo on > /dev/tv0")
+	eq("a second on moves nothing", tv.generators, 1)
+	eq("and broadcasts nothing", #sent, 1)
+
+	--
+	-- AND THE FAR END, which is the only thing that can prove a sync at all
+	--
+	-- A second world, a second television, on the same square, with the same
+	-- sprite: that is what a second machine across the wire really is.
+	do
+		local far = FakeWorld.new()
+		far.room("lounge", { {10,10,0}, {11,10,0}, {12,10,0} })
+		local farTv = far.put(far.squares["11,10,0"],
+			fakeWaveSet("IsoTelevision", { channel = 203, min = 200, max = 1000000 }))
+		farTv.sprite = tv.sprite
+
+		eq("the far television starts dark", farTv.data.on, false)
+		local here = _G.__world
+		_G.__world = far
+		-- Through the client's REAL door, the one CCeroSecSystem.lua hangs on
+		-- Events.OnServerCommand, so what is asserted is the wire and not a call
+		-- this bench made up.
+		local packet = lastPacket()
+		Events.OnServerCommand.trigger(packet.module, packet.command, packet.args)
+		_G.__world = here
+
+		eq("the far television came on", farTv.data.on, true)
+		-- AND IT DID NOT ANSWER BACK. The raw setters are the whole of what a
+		-- client does: setTurnedOnRaw and setChannelRaw write the field and nothing
+		-- else, exactly as IsoWaveSignal.loadState does. A client that used the
+		-- public setters would look identical in the line above and would transmit
+		-- a packet of its own, which the server relays to everybody -- one crontab
+		-- line, a round trip per client.
+		-- TWO raw writes and not one: a packet carries BOTH fields as they read
+		-- after the write, whichever of them the order was about, so a client that
+		-- missed an earlier one is put right by the next.
+		eq("through the raw setters and nothing else", farTv.raws, 2)
+		eq("the public switch was never called", farTv.generators, 0)
+		eq("and the dial was never turned", farTv.zaps, 0)
+
+		-- A packet about a square this client has not got is a packet it does
+		-- nothing with -- and nothing is lost by that: the chunk asks the server
+		-- for its objects' state on the way in (IsoChunk.doLoadGridsquare, offsets
+		-- 1650-1675), which is the late joiner's answer too.
+		local empty = FakeWorld.new()
+		_G.__world = empty
+		Events.OnServerCommand.trigger(packet.module, packet.command, packet.args)
+		_G.__world = here
+		eq("and a client with no such chunk changed nothing", farTv.raws, 2)
+
+		-- A packet naming a class that is not what is on that tile moves nothing.
+		-- The index is believed only when the object at it is the right sort of
+		-- thing; the scan behind it finds nothing either.
+		_G.__world = far
+		Events.OnServerCommand.trigger(packet.module, packet.command,
+			{ x = 11, y = 10, z = 0, index = 0, class = "IsoRadio",
+			  sprite = tv.sprite, on = false })
+		_G.__world = here
+		eq("a packet about the wrong class moves nothing", farTv.data.on, true)
+		eq("and calls nothing", farTv.raws, 2)
+
+		-- AND THE INDEX IS NOT BELIEVED ON ITS OWN. A square with a wall on it
+		-- first is the case that matters: the index the server sent is one object
+		-- out, and the class and the sprite are what catch it.
+		local other = FakeWorld.new()
+		other.room("lounge", { {11,10,0} })
+		other.put(other.squares["11,10,0"], { __class = "IsoObject",
+			getSpriteName = function() return "cerosec_fake_wall" end })
+		local shifted = other.put(other.squares["11,10,0"],
+			fakeWaveSet("IsoTelevision", { channel = 203 }))
+		shifted.sprite = tv.sprite
+		_G.__world = other
+		Events.OnServerCommand.trigger(packet.module, packet.command, packet.args)
+		_G.__world = here
+		eq("a stale index falls through to the scan", shifted.data.on, true)
+		eq("which used the raw setters too", shifted.raws, 2)
+	end
+
+	--
+	-- THE DIAL
+	--
+	typed("dev tv0 channel 210")
+	eq("the dial moved", tv.data.channel, 210)
+	eq("and the zap was the engine's own", tv.zaps, 1)
+	eq("and a second packet went out", #sent, 2)
+	eq("carrying the dial", lastPacket().args.channel, 210)
+	eq("and the switch beside it", lastPacket().args.on, true)
+	alone("dev tv0 channel 210")
+	check("and the answer is the whole line", bench.painted("tv0: on channel 210"))
+	eq("a dial already there broadcasts nothing", #sent, 2)
+
+	-- The redirect is the same order by the other road, which is what makes a
+	-- crontab line able to do it.
+	typed("echo channel 203 > /dev/tv0")
+	eq("a redirect turns the dial too", tv.data.channel, 203)
+	eq("and broadcasts it", #sent, 3)
+
+	--
+	-- THE REFUSALS, AND A REFUSED WRITE SENDS NOTHING
+	--
+	-- setChannel(int, boolean) returns at its fourth instruction outside the set's
+	-- own span, having done nothing at all, so the refusal is ours and comes before
+	-- the call: an order swallowed is a machine reporting the state it already had.
+	alone("dev tv0 channel 199")
+	check("below the set's span is out of range",
+		bench.painted("tv0: out of range"))
+	eq("and the dial did not move", tv.data.channel, 203)
+	eq("and the engine was never asked", tv.zaps, 2)
+	eq("and nothing was broadcast", #sent, 3)
+	alone("echo channel 1000001 > /dev/tv0")
+	check("and above it says the same thing", bench.painted("tv0: out of range"))
+	eq("and still nothing was broadcast", #sent, 3)
+
+	-- A frequency nobody broadcasts on is NOT refused, and must not be: vanilla's
+	-- own window tunes anywhere in the span and prints "Unknown channel" for it.
+	-- A refusal the game does not make is a refusal we would have invented.
+	typed("echo channel 5000 > /dev/tv0")
+	eq("a dead frequency inside the span is tuned like any other",
+		tv.data.channel, 5000)
+	typed("echo channel 203 > /dev/tv0")
+
+	-- The grid, which is the swallow the OTHER setter makes.
+	typed("echo off > /dev/tv0")
+	local hadSent = #sent
+	local hadGenerators = tv.generators
+	tv.data.here = false
+	alone("echo on > /dev/tv0")
+	check("a set with no supply is no power", bench.painted("tv0: no power"))
+	eq("and it stayed dark", tv.data.on, false)
+	eq("and nothing was broadcast for it", #sent, hadSent)
+	-- AND THE ENGINE WAS NEVER ASKED, which is the half the sentence above cannot
+	-- show: setIsTurnedOn swallows this order by turning the set off instead of
+	-- refusing, so a device that leant on reading the field back afterwards would
+	-- print the same line having called into the world for nothing.
+	eq("and the engine was never asked", tv.generators, hadGenerators)
+	tv.data.here = true
+
+	-- A flat battery is the same word by the other gate, which is the one a radio
+	-- set on a shelf really meets.
+	typed("echo on > /dev/rx0")
+	eq("a charged set comes on", rx.data.on, true)
+	typed("echo off > /dev/rx0")
+	local hadRxGenerators = rx.generators
+	rx.data.power = 0
+	alone("echo on > /dev/rx0")
+	check("a flat battery is no power too", bench.painted("rx0: no power"))
+	eq("and it stayed dark", rx.data.on, false)
+	eq("and the engine was never asked for that one either",
+		rx.generators, hadRxGenerators)
+	rx.data.power = 1
+
+	-- A word from the wrong kind, and a dial spelled wrong: both are values this
+	-- device has no meaning for, and both are refused before the world is asked.
+	alone("echo open > /dev/tv0")
+	check("a sash's word is nothing to a television",
+		bench.painted("tv0: invalid value"))
+	alone("echo channel abc > /dev/tv0")
+	check("and a dial with no number in it is a value and not an order",
+		bench.painted("tv0: invalid value"))
+	alone("echo chanel 203 > /dev/tv0")
+	check("and so is a dial spelled wrong", bench.painted("tv0: invalid value"))
+	-- Eight digits is more than the biggest MaxChannel in the game has, so it is
+	-- refused as a VALUE and never reaches tonumber.
+	alone("echo channel 12345678 > /dev/tv0")
+	check("and a run of digits longer than any dial",
+		bench.painted("tv0: invalid value"))
+	-- And a fourth word at `dev` that is not a dial is the COMMAND's mistake and
+	-- gets the command's grammar, exactly as it did before this rung.
+	alone("dev tv0 on now")
+	check("a fourth word that is not a dial is the usage line",
+		bench.painted("usage: dev"))
+
+	--
+	-- TOGGLE, which is the switch and never the dial
+	--
+	typed("echo off > /dev/tv0")
+	typed("dev tv0 toggle")
+	eq("a television toggles on", tv.data.on, true)
+	typed("dev tv0 toggle")
+	eq("and off again", tv.data.on, false)
+
+	--
+	-- POINTING AT ONE
+	--
+	typed("dev find tv0")
+	eq("tv0 outlined the thing it names", tv.outline, true)
+	check("and nothing else", rx.outline ~= true)
+	typed("dev find tv0")
+
+	--
+	-- AND WHAT A HAND DID SINCE IS WHAT THE MACHINE READS
+	--
+	tv.data.on = true
+	tv.data.channel = 210
+	alone("cat /dev/tv0")
+	check("a set switched and tuned by a hand reads as it is",
+		bench.painted("on channel 210"))
+
+	--
+	-- NO BOX, NO DEVICE
+	--
+	-- The hardware gate for the two kinds this rung added, which is the rule every
+	-- fixture in this mod has worn since rung 4f: a television nobody has wired is
+	-- not a television the machine refuses, it is one it has never heard of.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, PrefilledMachines = false } }
+	alone("dev")
+	check("an unwired television is not a device at all", not bench.painted("tv0"))
+	check("nor an unwired radio set", not bench.painted("rx0"))
+	fit(tv, "tuner")
+	fit(rx, "tuner")
+	alone("dev")
+	check("a tuner control makes it one", bench.painted("tv0"))
+	check("and the set beside it", bench.painted("rx0"))
+	-- And the number did not move for the box going on: the key a number hangs on
+	-- is where the device is and which kind it is, and neither of those changed.
+	check("and it is the same tv0 it was before the gate came down",
+		bench.painted("tv0"))
+
+	_G.sendServerCommand = realSend
+	_G.CeroSecDebugUI, _G.CeroSecPhonebookUI = realDebugUI, realPhonebookUI
+	_G.__world = nil
+	CeroSecDevices.invalidate()
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
 

@@ -10,6 +10,10 @@
 --   echo unlock > /dev/lock1
 --   echo open > /dev/door3
 --   cat /dev/sensor0           -> motion
+--   echo channel 203 > /dev/tv0
+--
+-- That last one is the only value on this machine that is not a bare word: a dial
+-- is a name and a number, and the shape is CeroSecOS.DEV_ARGS' business.
 --
 -- One kind is read and never written: a motion sensor dropped on the floor is a
 -- sensorN whose whole vocabulary is nothing (DEV_VALUES.sensor is empty), so
@@ -143,6 +147,11 @@ CeroSecOS.DEV_VALUES = {
 	stove   = { on = true, off = true },
 	washer  = { on = true, off = true },
 	gen     = { on = true, off = true },
+	-- The television and the radio SET, which take a switch's two words like
+	-- everything else that is switched -- and one word more, which is the only
+	-- value on this machine that carries a number (DEV_ARGS, below).
+	tv      = { on = true, off = true },
+	rx      = { on = true, off = true },
 	sensor = {},
 	floppy = {},
 	-- The third empty one, and it is empty for the sensor's reason read yet
@@ -152,6 +161,56 @@ CeroSecOS.DEV_VALUES = {
 	-- machine could write to an aerial.
 	radio = {},
 }
+
+--
+-- THE ONE VALUE ON THIS MACHINE THAT IS NOT A BARE WORD
+--
+-- Every device until this rung had a vocabulary of words: on, off, open, close,
+-- lock, unlock, and a redirect either carried one of them or carried nothing the
+-- kind had a meaning for. A dial is not a word. `echo channel 203 > /dev/tv0` is
+-- a name and a number, and there is no set of words that could hold ten thousand
+-- frequencies.
+--
+-- So a kind may also have a NAMED ARGUMENT, which is that name and one whole
+-- number after it, and this is the whole of that shape: a lower-case name out of
+-- the table below, one space, digits and nothing else. Both sides read it through
+-- CeroSecOS.devArg -- the gate here and the world action on the far side -- so a
+-- rule that is asked twice cannot drift.
+--
+-- SEVEN DIGITS is the ceiling, and it is the engine's own: MaxChannel on
+-- media/scripts/generated/items/radio.txt's own television is 1000000, which is
+-- seven of them, and a longer run of digits is refused as a value rather than
+-- handed to tonumber. Nothing here has to worry about what Kahlua's tonumber does
+-- with a number too big to hold, because it never sees one.
+--
+-- Whether 203 is a frequency that SET can reach is not this table's question. The
+-- engine has no idea what a television is; it judges the shape and the world
+-- judges the number (SCeroSecDevices' `act`, and `tv0: out of range`).
+CeroSecOS.DEV_ARGS = {
+	tv = { channel = true },
+	rx = { channel = true },
+}
+
+CeroSecOS.DEV_ARG_DIGITS = 7
+
+-- "channel 203" -> "channel", 203, for a kind that has such a word. nil for
+-- everything else, which is every other value on this machine.
+--
+-- The pattern is anchored at both ends and holds no character class a player
+-- controls: what is matched is a literal shape and the name is looked up in the
+-- table above rather than believed.
+function CeroSecOS.devArg(kind, value)
+	local allowed = CeroSecOS.DEV_ARGS[kind]
+	if allowed == nil then return nil end
+	if type(value) ~= "string" then return nil end
+	local name, digits = string.match(value, "^([a-z]+) (%d+)$")
+	if name == nil then return nil end
+	if not allowed[name] then return nil end
+	if #digits > CeroSecOS.DEV_ARG_DIGITS then return nil end
+	local number = tonumber(digits)
+	if type(number) ~= "number" then return nil end
+	return name, number
+end
 
 -- The mode a kind is born at, where DEV_MODE is not it. A sensor is read-only by
 -- nature and wears it: 440, cr--r-----, root and the sudo group may read it and
@@ -496,7 +555,15 @@ function CeroSecOS.devWrite(state, session, node, value, env)
 
 	local word = trim(value)
 	local allowed = CeroSecOS.DEV_VALUES[node.kind]
-	if allowed == nil or not allowed[word] then return refuse(node, "invalid value") end
+	-- A bare word out of the kind's vocabulary, or the one shape that is not a
+	-- word: a named argument and a number (CeroSecOS.devArg). Both are refused the
+	-- same way and with the same sentence, because from where a survivor stands
+	-- "chanel 203" and "sideways" are the same mistake -- he wrote something this
+	-- device has no meaning for.
+	if allowed == nil then return refuse(node, "invalid value") end
+	if not allowed[word] and CeroSecOS.devArg(node.kind, word) == nil then
+		return refuse(node, "invalid value")
+	end
 
 	local devices = CeroSecOS.devicesOf(env)
 	if devices == nil then return refuse(node, "no such device") end

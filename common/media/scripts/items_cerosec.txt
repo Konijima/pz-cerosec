@@ -417,6 +417,21 @@ module CeroSec
         WorldStaticModel = ScrapMetal,
     }
 
+    /* The tuner control: the box that switches a television or a radio set on and
+       moves its dial. A board and a ribbon and nothing that turns, so it is the
+       appliance switch's weight and the appliance switch's world model -- a board
+       on the ground is Base.ElectronicsScrap' model, which is what this is. */
+    item TunerControl
+    {
+        DisplayName = Tuner Control,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.5,
+        Icon = CeroSecTunerControl,
+        Tooltip = Tooltip_item_CeroSecTunerControl,
+        WorldStaticModel = ElectronicsScrap,
+    }
+
     /* THE SMALL MOTOR, and why the game needed one.
 
        Every module that MOVES something is built around a motor, and Build 42
@@ -525,7 +540,7 @@ module CeroSec
         Icon = CeroSecWiringGuide,
         BoredomChange = -20,
         StressChange = -15,
-        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator;MakeCeroSecCurtainMotor;MakeCeroSecApplianceSwitch;MakeCeroSecWindowOperator;MakeCeroSecGeneratorSwitch;DismantleCeroSecMotorAppliance;DismantleCeroSecMotorCDPlayer,
+        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator;MakeCeroSecCurtainMotor;MakeCeroSecApplianceSwitch;MakeCeroSecWindowOperator;MakeCeroSecGeneratorSwitch;MakeCeroSecTunerControl;DismantleCeroSecMotorAppliance;DismantleCeroSecMotorCDPlayer,
         Tooltip = Tooltip_item_CeroSecWiringGuide,
         StaticModel = Magazine,
         WorldStaticModel = MagazineGround,

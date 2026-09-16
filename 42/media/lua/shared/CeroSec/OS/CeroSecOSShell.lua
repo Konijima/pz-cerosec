@@ -1570,6 +1570,12 @@ local DEV_OPPOSITE = {
 	stove   = { on = "off", off = "on" },
 	washer  = { on = "off", off = "on" },
 	gen     = { on = "off", off = "on" },
+	-- A television and a radio set toggle on the SWITCH and never on the dial:
+	-- `channel 203` has no opposite, and a set has no state word for what it is
+	-- tuned to -- the dial is in `detail`, beside the generator's fuel, for that
+	-- reason among others (CeroSecOS.devText).
+	tv      = { on = "off", off = "on" },
+	rx      = { on = "off", off = "on" },
 }
 
 -- The table, whole or filtered by kind. A device the machine remembers the
@@ -1602,8 +1608,11 @@ local function devTable(state, session, kind)
 	return true, out
 end
 
+-- Four words and not three, for one shape: a dial is a name and a NUMBER, so
+-- `dev tv0 channel 203` is what `dev light0 off` is for everything else. Nothing
+-- else here takes four, and a fifth is the usage line as it always was.
 commands.dev = function(state, session, args, env)
-	if #args > 3 then return usage("dev") end
+	if #args > 4 then return usage("dev") end
 	if #args == 1 then return devTable(state, session, nil) end
 
 	local word = args[2]
@@ -1635,6 +1644,21 @@ commands.dev = function(state, session, args, env)
 	end
 
 	local value = args[3]
+	-- The two words of a dial, joined back into the one value a redirect would
+	-- have carried: there is one gate and one world action, and neither of them
+	-- knows how the shell split the line (CeroSecOS.devArg reads both).
+	--
+	-- And a fourth word that is NOT one is the usage line, exactly as it was
+	-- before this rung: `dev light0 on now` is a line somebody typed wrong and the
+	-- answer to that is the command's grammar, not a light switch being asked
+	-- about the word "now". A redirect has no such fourth word to judge, so
+	-- `echo on now > /dev/light0` is still the device's own "invalid value" --
+	-- one is a command mistake and the other is a value, and each is answered by
+	-- the layer it belongs to.
+	if #args == 4 then
+		value = args[3] .. " " .. args[4]
+		if CeroSecOS.devArg(node.kind, value) == nil then return usage("dev") end
+	end
 	if value == "toggle" then
 		-- Read first, for the permission and for every refusal a read makes: a
 		-- device nobody may read is not a device anybody may toggle.

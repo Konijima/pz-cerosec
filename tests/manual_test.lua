@@ -356,6 +356,10 @@ local DEVICE_MESSAGES = {
 	"broken",
 	"no fuel",
 	"not connected",
+	-- And the tuner rung's one new word: a dial asked for a frequency outside the
+	-- set's own span, which setChannel(int, boolean) answers by returning at its
+	-- fourth instruction and doing nothing at all.
+	"out of range",
 }
 for i = 1, #DEVICE_MESSAGES do
 	check("error appendix carries the device reason \"" .. DEVICE_MESSAGES[i] .. "\"",
@@ -640,8 +644,18 @@ for vi = 1, #volumes do
 		-- telephone page and came to 1433 characters against a 1000-character page, so
 		-- the choice was a page cut in half or a rule told in half. The chapter it
 		-- belongs in is the one all four answers are in.
-		check(cwhere .. " (" .. ch.title .. ") has 3..15 pages (" .. n .. ")",
-			n >= 3 and n <= 15)
+		--
+		-- SIXTEEN for the television, and this time it is chapter 6 of the same
+		-- volume and the reason is the one the other four were earned for. A tuner
+		-- control is a new fixture with a vocabulary no other kind has: the DIAL,
+		-- which is the one order on this machine that is not a single word, and
+		-- which a reader cannot be told about anywhere but the chapter that is
+		-- /dev. Fifteen was exactly where that chapter already stood, which is a
+		-- bound forbidding the next honest page rather than catching a chapter
+		-- that has swallowed a book. The 1000-character page and the volume's own
+		-- 50..95 are what keep a chapter a chapter, and neither of those moved.
+		check(cwhere .. " (" .. ch.title .. ") has 3..16 pages (" .. n .. ")",
+			n >= 3 and n <= 16)
 		vpages = vpages + n
 
 		for pi = 1, n do
@@ -1124,12 +1138,14 @@ do
 			byId.window.skill == byId.operator.skill)
 		check("and so is a generator switch",
 			byId.genset.skill == byId.operator.skill)
+		check("and a tuner control is a strike's level too",
+			byId.tuner.skill == byId.strike.skill)
 		check("and the page names every module there is (" ..
-			#CeroSecModules.LIST .. ")", #CeroSecModules.LIST == 8)
+			#CeroSecModules.LIST .. ")", #CeroSecModules.LIST == 9)
 		states("what each module asks of an electrician",
 			"a contact or a relay at " .. byId.contact.skill
-			.. ", a strike, a curtain motor or an appliance switch at "
-			.. byId.strike.skill
+			.. ", a strike, a curtain motor, an appliance switch or a tuner"
+			.. " control at " .. byId.strike.skill
 			.. ", the two operators and the generator switch at "
 			.. byId.operator.skill)
 	end
@@ -1178,6 +1194,9 @@ do
 		"curtain0: barricaded",
 		"stove0: broken", "stove0: no power", "washer0: no power",
 		"gen0: no fuel", "gen0: broken", "gen0: not connected",
+		-- The television's two, as whole lines like the rest: "no power" is a word
+		-- four kinds use now, and "out of range" is about a DIAL and nothing else.
+		"tv0: no power", "tv0: out of range",
 	}
 	for i = 1, #DEVICE_LINES do
 		check("Volume 2's appendix carries the whole line \"" .. DEVICE_LINES[i] .. "\"",

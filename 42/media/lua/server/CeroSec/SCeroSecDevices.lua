@@ -414,6 +414,39 @@ end
 -- ISInventoryPaneContextMenu.lua:988, LootWindow/Handlers/StoveToggle.lua:8 and
 -- StoveSettings.lua:8). A fixture with no container answers no, which is the
 -- same answer a survivor clicking it would get.
+--
+-- A TELEVISION OR A RADIO SET, which are one class twice over
+--
+-- Everything a set has is on its zombie.radio.devices.DeviceData: the switch
+-- (getIsTurnedOn), the dial (getChannel), the span the dial can reach
+-- (getMinChannelRange / getMaxChannelRange) and the supply (canBePoweredHere,
+-- getIsBatteryPowered, getPower). The whole list, javap'd, is at the head of
+-- SCeroSecRadio.lua as proof 2, and this rung adds no call to it that is not
+-- already written down there.
+--
+-- Asked through here and nowhere else, so that a set whose data went away between
+-- the walk and the write is a device that simply is not there rather than a nil
+-- call in the middle of an order.
+local function waveData(object)
+	if object == nil then return nil end
+	if type(object.getDeviceData) ~= "function" then return nil end
+	return object:getDeviceData()
+end
+
+-- ON or OFF, and there is no third word.
+--
+-- No `no power` STATE, which is the stove's rule and not the TNC's: power is a
+-- fact about the wire and a set that is simply switched off reads off whether the
+-- county has electricity or not. /dev/radio0 does say it, because that device is
+-- read-only and its whole use is to be read before walking over to the set; a
+-- device a survivor can WRITE says what a switch says, and says `no power` as the
+-- refusal it is.
+local function waveState(object)
+	local data = waveData(object)
+	if data == nil then return nil end
+	return data:getIsTurnedOn() and "on" or "off"
+end
+
 local function appliancePowered(object)
 	local container = object:getContainer()
 	if container == nil then return false end
@@ -441,19 +474,42 @@ local function stateOf(kind, object, locks)
 	if kind == "stove" then return stoveState(object) end
 	if kind == "washer" then return object:isActivated() and "on" or "off" end
 	if kind == "gen" then return object:isActivated() and "on" or "off" end
+	if kind == "tv" or kind == "rx" then return waveState(object) end
 	return nil
 end
 
 -- The REST of the line, for a kind that has more to say than one word, or nil.
 --
--- One kind has: a generator. What a survivor needs of a generator is not whether
--- it is running -- he can hear that -- but how long it will go on running, and
--- that is two numbers and a fact. They do not go in the `state` because the
--- listings have a column for a word and not for a sentence (`ls -l /dev` puts
--- the widest state on column 60), so `cat` gets the whole line and the tables
--- get the word. CeroSecOS.devText is where the two are put back together.
+-- Three kinds have. A generator: what a survivor needs of one is not whether it
+-- is running -- he can hear that -- but how long it will go on running, and that
+-- is two numbers and a fact. And a television or a radio set, whose switch is one
+-- word and whose DIAL is not a word at all.
+--
+-- None of them goes in the `state`, because the listings have a column for a word
+-- and not for a sentence (`ls -l /dev` puts the widest state on column 60), so
+-- `cat` gets the whole line and the tables get the word. CeroSecOS.devText is
+-- where the two are put back together.
 local function detailOf(kind, object)
-	if object == nil or kind ~= "gen" then return nil end
+	if object == nil then return nil end
+
+	-- The dial, as the raw number the engine takes and answers with, and NOT as
+	-- megahertz.
+	--
+	-- /dev/radio0 prints megahertz (CeroSecOS.radioFreqText) and can afford to: it
+	-- is read-only, so its reading is the only spelling of that number a survivor
+	-- ever meets. A dial he can WRITE cannot -- `echo channel 203` and a line
+	-- reading `0.203` would be one number under two names -- and it would be the
+	-- game's own inconsistency copied for nothing: vanilla's radio window prints
+	-- megahertz for a radio and, for a television, prints no frequency at all,
+	-- only the channel's NAME (client/RadioCom/RadioWindowModules/RWMGeneral.lua
+	-- :66-81, the isTv branch against the one below it).
+	if kind == "tv" or kind == "rx" then
+		local data = waveData(object)
+		if data == nil then return nil end
+		return "channel " .. tostring(math.floor(data:getChannel()))
+	end
+
+	if kind ~= "gen" then return nil end
 	-- Percentages, both of them, because a survivor reading `fuel 62` against a
 	-- tank whose size he does not know has been told nothing. getFuelPercentage
 	-- is the engine's own, and getCondition() is already 0 to 100.
@@ -559,6 +615,57 @@ function CeroSecDevices.classify(object)
 			state = stateOf("gen", object),
 			detail = detailOf("gen", object),
 		} }
+	end
+
+	-- The television and the radio SET, which are siblings and not one class:
+	-- IsoTelevision and IsoRadio both extend IsoWaveSignal and neither is the
+	-- other, so they are asked apart and they are two kinds. A survivor does not
+	-- think of a television and a radio as one thing, and the schedule behind them
+	-- is a different list on each (RadioChannel.IsTv).
+	--
+	-- A set with no DeviceData on it is not a device at all: the switch and the
+	-- dial live on that object and there is nothing else to write. The test is
+	-- CeroSecModules.isTuneable's, asked there so the install and the discovery
+	-- cannot disagree about what a set is.
+	-- ONE test for the pair, and the line is worth its own call: classify is asked
+	-- about every object on every square of the building at every command -- the
+	-- walls, the floors, the furniture -- and IsoWaveSignal is the base both
+	-- classes extend, so a wall costs ONE instanceof here instead of two. What
+	-- that is worth is the number hostile_test.lua's mall bench prints. It is the
+	-- same reasoning fittedOn is written on, one branch up.
+	--
+	-- `IsoWaveSignal` is a base class and instanceof answers for a subclass: it is
+	-- the test vanilla's own Lua makes of a world object, on the server included
+	-- (server/ISObjectClickHandler.lua:240, client/ISUI/ISRadioAndTvMenu.lua:7,
+	-- shared/Moveables/ISMoveableSpriteProps.lua:1389).
+	if instanceof(object, "IsoWaveSignal") then
+		local fitted = fittedOn(object)
+		if not has(fitted, "tuner") then return nil end
+		if CeroSecModules.isTelevision(object) then
+			return { {
+				kind = "tv", cls = "IsoTelevision", side = "",
+				desc = roomName(object:getSquare()) or "exterior",
+				state = stateOf("tv", object),
+				detail = detailOf("tv", object),
+			} }
+		end
+		-- And the receiver. It does NOT take the TNC's place: a ham set in the
+		-- machine's own room is still /dev/radio0, read-only, because the frequency
+		-- an aerial TRANSMITS on is the survivor's (SCeroSecRadio.lua, proof 7).
+		-- What a tuner control buys is the set's own switch and its own dial as a
+		-- RECEIVER, and the two hang on two keys -- `radio:x:y:z::0` and
+		-- `rx:x:y:z::0` -- so neither number moves because the other exists.
+		if CeroSecModules.isRadioSet(object) then
+			return { {
+				kind = "rx", cls = "IsoRadio", side = "",
+				desc = roomName(object:getSquare()) or "exterior",
+				state = stateOf("rx", object),
+				detail = detailOf("rx", object),
+			} }
+		end
+		-- An IsoWaveSignal that is neither, or one with no device data on it: a
+		-- sprite with nothing to switch and nothing to tune.
+		return nil
 	end
 
 	-- The laundry, and the class is carried because there are three of them and
@@ -716,6 +823,15 @@ local function scanSquare(square, found, seen)
 			local entry = entries[k]
 			entry.x, entry.y, entry.z = x, y, z
 			entry.object = object
+			-- WHICH of the square's objects it is, kept for one kind of device and
+			-- one only: a television or a radio set whose state this mod has to
+			-- broadcast itself, because the far end has to find the same object
+			-- again and two identical televisions on one tile are the one case a
+			-- class and a sprite name cannot tell apart (CCeroSecDevices.objectAt).
+			-- It is not a key and cannot be one -- the object index is not stable
+			-- across a reload, which is why `seen` counts ordinals instead -- and it
+			-- is not asked of anything else.
+			entry.index = i
 			-- Where it is, as a string, and that is the key its number hangs
 			-- on. Two devices of one kind facing the same way on one square are
 			-- told apart by an ordinal -- the object index would have done it
@@ -1233,6 +1349,75 @@ local function blocked(object)
 	return object:isObstructed()
 end
 
+--
+-- THE ONE SYNC IN THIS MOD THAT IS OURS
+--
+-- Every other actuator either broadcasts itself or is broadcast by one engine
+-- call beside it, and the whole table of them is in docs/DEVICES.md. A
+-- television and a radio set are the pair that cannot be, and the proof --
+-- transmitDeviceDataState(short) being a client branch and nothing else, the
+-- server's broadcaster being private, and the one public wrapper spending its
+-- short on the battery -- is at the head of
+-- 42/media/lua/client/CeroSec/CCeroSecDevices.lua, beside the code that answers
+-- this packet. It is written there rather than here because that is the end that
+-- has to be believed.
+--
+-- WHAT TRAVELS is where the object is, what class it is, what it looks like,
+-- which of the square's objects it was, and the two fields as they READ AFTER the
+-- write. Not what was asked for: setIsTurnedOn refuses an unpowerable device by
+-- turning it off instead (offsets 0-4 and 44-58), so the order and the state are
+-- two different facts and it is the state that is anybody's business.
+--
+-- NOTHING AT ALL IN SINGLE PLAYER, and that is the engine's doing rather than a
+-- branch of ours:
+--
+--   LuaManager$GlobalObject.sendServerCommand(String, String, KahluaTable)
+--      0: getstatic  #349   // GameServer.server:Z
+--      3: ifeq       12                     <- no server: return
+--      6-9: GameServer.sendServerCommand(arg0, arg1, arg2)
+--     12: return
+--
+-- so the call is a no-op in a solo game -- where it has nothing to do anyway, one
+-- process meaning the object the server wrote is the object the survivor is
+-- looking at. One code path, two games.
+--
+-- AND IT IS A BROADCAST and not an answer to one player, which is the other half
+-- of why it is this call and not SCeroSecSystem:reply. A survivor's screen is his
+-- own business; a television coming on in a room is everybody's:
+--
+--   GameServer.sendServerCommand(String, String, KahluaTable) walks
+--   udpEngine.connections from 0 to size() and sends to each (offsets 0-48).
+--
+-- Vanilla's own server Lua makes the same three-argument call --
+-- `sendServerCommand('erosion', 'disableForSquare', args)`,
+-- media/lua/server/BuildingObjects/ISWoodenFloor.lua:21 -- so it is the shape the
+-- game uses for a world change nobody in particular asked for.
+CeroSecDevices.SYNC = "device"
+
+-- The same pair `dev find` travels on, out of the same one place: a class for the
+-- far end's instanceof and a sprite name for what it looks like. nil when there is
+-- none, and a set this mod cannot describe to the other clients is a set it must
+-- not move -- which is why this is asked BEFORE the field is written and not after
+-- (see `act`). A write nobody is told about is worse than a refusal.
+local function waveHandle(entry)
+	local class, sprite = CeroSecDevices.handleOf(entry)
+	if type(class) ~= "string" or type(sprite) ~= "string" or sprite == "" then
+		return nil
+	end
+	return class, sprite
+end
+
+local function syncWave(entry, data, class, sprite)
+	sendServerCommand(CeroSec.MODULE, CeroSecDevices.SYNC, {
+		x = entry.x, y = entry.y, z = entry.z,
+		index = entry.index,
+		class = class, sprite = sprite,
+		-- Read off the object, never assumed from the word that was typed.
+		on = data:getIsTurnedOn() and true or false,
+		channel = math.floor(data:getChannel()),
+	})
+end
+
 -- The world action, per kind. ok, reason, state.
 local function act(entry, value)
 	local object = entry.object
@@ -1498,6 +1683,99 @@ local function act(entry, value)
 		end
 		return true, nil, object:isActivated() and "on" or "off",
 			detailOf("gen", object)
+	end
+
+	--
+	-- THE TELEVISION AND THE RADIO SET, and the sync that is ours
+	--
+	-- THE SWITCH. setIsTurnedOn(boolean) is the whole gesture and the other third
+	-- of it matters: offsets 118-130 are
+	-- IsoGenerator.updateGenerator(getParent().getSquare()), which is what makes a
+	-- generator feel the load -- the same third of Toggle() that is the reason the
+	-- stove calls Toggle and not setActivated.
+	--
+	-- AND IT SWALLOWS AN ORDER IT CANNOT CARRY OUT, twice over, so both gates are
+	-- asked HERE, before the call, for the barricaded door's reason:
+	--
+	--    0-4    canBePoweredHere() false -> the 44-58 branch, which turns the set
+	--           OFF and transmits, whatever was asked. So `on` on a dead grid is
+	--           an order that reads back as off.
+	--    7-20   battery-powered with powerDelta <= 0 -> setIsTurnedOnInternal(
+	--           FALSE) at 31-33, again whatever was asked.
+	--
+	-- canBePoweredHere() is the engine's own supply question and it answers for
+	-- both kinds of set: true at once for anything battery-powered (offsets 0-8),
+	-- and otherwise the SQUARE's -- hasGridPower, haveElectricity, and a room to be
+	-- in at all (40-121). It is the call vanilla's own radio UI leans on
+	-- (getPower() > 0 after it, ISRadioAction:isValidSetChannel), and the mod
+	-- already reads the pair that way for the TNC.
+	--
+	-- One word for both gates, and it is the light switch's and the stove's: a
+	-- survivor told `tv0: no power` has been told the thing to go and fix.
+	--
+	-- THE DIAL. setChannel(int) is setChannel(int, true), and its first four
+	-- instructions are the other swallowed order:
+	--
+	--    0-13   below minChannelRange or above maxChannelRange -> return 105,
+	--           having done nothing at all.
+	--
+	-- so a frequency outside the set's own span is refused here too. A frequency
+	-- nobody BROADCASTS on is not refused and must not be: vanilla's own window
+	-- tunes anywhere in the span and prints "Unknown channel" for it, a television
+	-- on a dead frequency shows the test card (IsoTelevision.updateTvScreen,
+	-- offsets 79-83), and a refusal the game does not make is a refusal we would
+	-- have invented.
+	--
+	-- What setChannel does BESIDE moving the field is kept, like the stove's
+	-- Toggle: the zap (playSoundSend at 21-64, which returns at once on a dedicated
+	-- server -- playSound's first three instructions are `if GameServer.server
+	-- return` -- so the set clicks in a solo game and is silent on a server), the
+	-- loop sound stopped at 65-91, and TriggerPlayerListening(true) at 100-102.
+	--
+	-- AND THEN THE SYNC, which is ours and is the whole reason this device took a
+	-- rung of its own: see CeroSecDevices.SYNC above, and the proof at the head of
+	-- client/CeroSec/CCeroSecDevices.lua.
+	if entry.kind == "tv" or entry.kind == "rx" then
+		local data = waveData(object)
+		-- A set whose data went away between the walk and the write. classify asked
+		-- the same question through CeroSecModules.isTuneable; this is the belt.
+		if data == nil then return false, "no such device" end
+		-- Before anything is written, because the write cannot be taken back and a
+		-- write nobody can be told about must not happen.
+		local class, sprite = waveHandle(entry)
+		if class == nil then return false, "no such device" end
+
+		local name, number = CeroSecOS.devArg(entry.kind, value)
+		if name == "channel" then
+			if number < data:getMinChannelRange() or number > data:getMaxChannelRange() then
+				return false, "out of range"
+			end
+			-- Already there is already done: two `dev tv0 channel 203` in a row are
+			-- one television on channel 203, with one zap and one packet.
+			if data:getChannel() ~= number then
+				data:setChannel(number)
+				syncWave(entry, data, class, sprite)
+			end
+			return true, nil, waveState(object), detailOf(entry.kind, object)
+		end
+
+		local want = value == "on"
+		if want then
+			if not data:canBePoweredHere() then return false, "no power" end
+			if data:getIsBatteryPowered()
+					and (tonumber(data:getPower()) or 0) <= 0 then
+				return false, "no power"
+			end
+		end
+		if data:getIsTurnedOn() ~= want then
+			data:setIsTurnedOn(want)
+			-- Read back and not assumed: the two gates above are ours and the engine
+			-- has a third of its own inside the setter, so a set that did not come on
+			-- says the same thing a light switch that did not throw says.
+			if data:getIsTurnedOn() ~= want then return false, "no power" end
+			syncWave(entry, data, class, sprite)
+		end
+		return true, nil, waveState(object), detailOf(entry.kind, object)
 	end
 
 	-- lock: a map door, or a player-built one.

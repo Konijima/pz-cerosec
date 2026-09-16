@@ -15,6 +15,7 @@
     "CeroSec.WindowOperator": "Window Operator",
     "CeroSec.ApplianceSwitch": "Appliance Switch",
     "CeroSec.GeneratorSwitch": "Generator Switch",
+    "CeroSec.TunerControl": "Tuner Control",
     "CeroSec.SmallMotor": "Small Motor",
     "CeroSec.WiringGuide": "CeroSec Field Wiring Guide",
     "CeroSec.StickyNote": "Sticky Note"

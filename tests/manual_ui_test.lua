@@ -2484,16 +2484,16 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the three books, the four disks, the EIGHT hardware modules, the
+	-- The module, the three books, the four disks, the NINE hardware modules, the
 	-- book that teaches them, the RETIRED single book -- which is declared and is
 	-- not loot, because dropping an item block deletes every copy of it in every
 	-- save -- the sticky note a password is written on, and the small motor the
 	-- modules that MOVE something are built around (the game ships no motor item
 	-- at all).
-	eq("twenty blocks: the module, the three books, the retired one, the four "
-		.. "disks, the eight hardware modules, the Field Wiring Guide, the note "
-		.. "and the small motor",
-		opens, 20)
+	eq("twenty-one blocks: the module, the three books, the retired one, the "
+		.. "four disks, the nine hardware modules, the Field Wiring Guide, the "
+		.. "note and the small motor",
+		opens, 21)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -2810,6 +2810,12 @@ do
 		{ item = "GeneratorSwitch", icon = "CeroSecGeneratorSwitch",
 			name = "Generator Switch", model = "ScrapMetal",
 			tip = "Tooltip_item_CeroSecGeneratorSwitch" },
+		-- And the tuner rung's one, on the end of the end: the appliance switch's
+		-- weight and the appliance switch's world model, because a board on the
+		-- ground is what both of them are.
+		{ item = "TunerControl", icon = "CeroSecTunerControl",
+			name = "Tuner Control", model = "ElectronicsScrap",
+			tip = "Tooltip_item_CeroSecTunerControl" },
 	}
 	eq("one entry here per module the Lua works in", #MODULES, #CeroSecModules.LIST)
 	for m = 1, #MODULES do

@@ -15,6 +15,7 @@
     "Tooltip_item_CeroSecWindowOperator": "Fits a window. The computer opens and shuts the sash --<br>and it throws the catch and sets off a house alarm doing it.",
     "Tooltip_item_CeroSecApplianceSwitch": "Fits an oven, a microwave, a coffee machine, a washer or<br>a dryer. The computer starts it and stops it.",
     "Tooltip_item_CeroSecGeneratorSwitch": "Fits a generator. The computer starts it and stops it --<br>it will not pull a cord, so a healthy generator only.",
+    "Tooltip_item_CeroSecTunerControl": "Fits a television or a radio set. The computer switches it<br>on and off and moves the dial.",
     "Tooltip_item_CeroSecSmallMotor": "A small electric motor. The four things in Knox County<br>that have one are a hair dryer, sheep shears, a CD player<br>and a blower fan.",
     "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator."
 }

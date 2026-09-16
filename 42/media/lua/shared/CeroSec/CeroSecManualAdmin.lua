@@ -734,13 +734,12 @@ who first. It takes two seconds and it lists everybody.]],
 [[This is the chapter that makes the machine worth having.
 
 The building it stands in is wired to it, and wired is the word: under
-/dev there is one file for every door, light switch and window somebody
-has screwed a module to, and writing a word into one of them works the
-thing itself. The modules are the next two pages.
+/dev there is one file for every fixture somebody has screwed a module
+to, and writing a word into one of them works the thing itself. The
+modules are the next page.
 
-The reach is the BUILDING. Every room of it, upstairs and down; ten tiles
-of its own floor every way if the map knows no building there. 256 at the
-outside.
+The reach is the BUILDING: every room of it, upstairs and down; ten tiles
+of its own floor every way where the map knows none. 256 at the outside.
 
   root@ksp-04-11:~# dev
   curtain0 office               1E 0        N  closed
@@ -750,10 +749,11 @@ outside.
   light0  office                0 0            on
   lock0   exterior              0 5S        W  locked
   stove0  kitchen               2W 2N          off
+  tv0     office                2E 1N          on
   win0    office                1E 0        N  locked
   window0 office                1E 0        N  closed]],
 
-[[The eight modules, and what each one buys.
+[[The nine modules, and what each one buys.
 
 Nothing in that table is there because it is a door, but because somebody
 went up to it with a screwdriver and a box:
@@ -766,6 +766,7 @@ went up to it with a screwdriver and a box:
   window operator   it can raise and shut a sash
   appliance switch  it can start a stove or a washer
   generator switch  it can start and stop a generator
+  tuner control     it can work a television or a radio set
 
 A door with only a contact on it is a doorN you can read and cannot move.
 An operator opens it; a strike adds the lockN beside it.
@@ -857,6 +858,31 @@ Stopping one is never refused. And it will not pull a cord: a survivor
 starting a worn generator fails about half the time, and an electric
 starter does not, so a machine starts anything the three refusals let it.]],
 
+[[tvN is a television and rxN is a radio set. A tuner control on either
+gives you its switch and its dial.
+
+  root@ksp-04-11:~# cat /dev/tv0
+  off channel 203
+  root@ksp-04-11:~# echo on > /dev/tv0
+  root@ksp-04-11:~# dev tv0 channel 210
+  tv0: on channel 210
+
+on and off are the switch. channel and a NUMBER is the dial, and it is
+the only order on this machine that is not one word: four words at dev,
+where everything else takes three.
+
+The number is the set's own, the one the game tunes by. 203 is Life and
+Living TV; a kitchen radio reaches 88000 to 108000. /dev/radio0 prints
+megahertz because nothing is ever written to it, and a dial you can
+write has one spelling.
+
+  tv0: no power      no grid, or the battery is flat
+  tv0: out of range  that set's dial does not go there
+
+A ham set your machine is wired to keeps its /dev/radio0 as well. The
+aerial is yours to tune; the receiver is the machine's. So is the
+switch, and the volume never is.]],
+
 [[Where a box comes from.
 
 Nobody works these out at the bench. The diagrams and the parts lists went
@@ -876,8 +902,9 @@ have got anyway.]],
 Fitting: right-click the FIXTURE itself -- the door, the window, the light
 switch, the curtain, the oven, the washer, the generator -- and not the
 computer, and take CeroSec hardware. You need the box, a screwdriver, and
-the trade: a contact or a relay at 1, a strike, a curtain motor or an
-appliance switch at 2, the two operators and the generator switch at 3.
+the trade: a contact or a relay at 1, a strike, a curtain motor, an
+appliance switch or a tuner control at 2, the two operators and the
+generator switch at 3.
 
 Remove gives the box back whole. The device goes with it and its NUMBER
 does not: the same doorN answers next week.
@@ -896,8 +923,8 @@ device says so until somebody fixes it.]],
 [[Reading that table.
 
 The id is what you name the thing by. The kinds are curtain, door, gen,
-light, lock, sensor, stove, washer, win and window, plus fd0 and radio0,
-which are the machine's own. Then the rooms it stands between, in the
+light, lock, rx, sensor, stove, tv, washer, win and window, plus fd0 and
+radio0, which are the machine's own. Then the rooms it stands between, in the
 map's own raw words: exterior where one side is the outdoors, built for
 something a player put up.
 
@@ -930,13 +957,13 @@ Try it.
   root@ksp-04-11:~# dev door1 open
   door1: open
 
-toggle is whichever of the pair it is not in now. Each kind knows two
-words and no others: light, stove, washer and gen take on and off; lock
-and win take lock and unlock; door, window and curtain take open and
-close. A word from the wrong kind is refused before it ever reaches the
-building.
+toggle is whichever of the pair it is not in now. Nearly every kind
+knows two words: light, stove, washer, gen, tv and rx take on and off;
+lock and win take lock and unlock; door, window and curtain take open
+and close. tv and rx know channel as well, which carries a number. A
+word from the wrong kind never reaches the building.
 
-And when you cannot tell which of thirty-five lights is the one in the
+When you cannot tell which of thirty-five lights is the one in the
 listing, ask it to show itself:
 
   root@ksp-04-11:~# dev find light0
@@ -2066,11 +2093,14 @@ answers in its own name.
   gen0: no fuel
   gen0: broken
   gen0: not connected
+  tv0: no power
+  tv0: out of range
 
 The glass gone; boards on it; a window the building was built never to
 open; a sheet somebody has boarded over; a ruined stove; no current at
 the socket, which a washer says the same way; an empty tank; a wrecked
-generator; and one nothing is plugged into.
+generator; one nothing is plugged into; a set with no supply, which rx0
+says the same way; and a dial asked for a frequency it cannot reach.
 
 A generator refuses those three only when it is asked to START. Stopping
 one is always allowed.]],
@@ -2083,7 +2113,7 @@ command's:
   /dev: read-only
       nothing may be created under /dev at all
 
-The kinds are curtain, door, floppy, gen, light, lock, radio, sensor, stove, washer, win and window.]],
+The kinds are curtain, door, floppy, gen, light, lock, radio, rx, sensor, stove, tv, washer, win and window.]],
 
 [[cron and mail, chapter 7. A crontab is judged when it is saved and
 refused whole, and the refusal names the file, the line and the field:
