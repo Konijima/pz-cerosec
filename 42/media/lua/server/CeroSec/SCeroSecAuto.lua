@@ -137,6 +137,17 @@ end
 -- contact on the frame to know the door was shut and an electric strike to bolt it.
 -- A building that opened its own doors would also be a building that opens them for
 -- the dead.
+--
+-- AND NONE OF THE MOTOR RUNG'S FOUR, for that same sentence four more times. A
+-- window that opens itself is a hole in the wall the dead can walk through; a
+-- curtain that opens itself is the same thing for a survivor trying to hide; a
+-- stove that lights itself is a kitchen fire nobody is standing in; and a
+-- generator that starts itself is a noise in an empty street. Every one of those
+-- is a thing a PLAYER may decide to build, with a box he carried and a
+-- screwdriver -- and it is not a thing the world does to him on a map he has
+-- never been to. The list this function answers is therefore unchanged, and the
+-- new fixtures fall through it: isFittable now finds a stove and a generator, so
+-- the pre-fitting walk sifts them, and `fit` answers false and leaves them alone.
 function CeroSecAuto.modulesFor(object)
 	local out = {}
 	if CeroSecModules.isLightSwitch(object) then

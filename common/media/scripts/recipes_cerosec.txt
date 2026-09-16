@@ -67,16 +67,22 @@ module CeroSec
        - xpAward is set against the vanilla recipes above, which pay 10 for a
          flashlight and 6 to 14 for a remote controller.
 
-       - THE ONES THAT MOVE SOMETHING TAKE A MOTOR AND A RECEIVER, and the two
-         that do not, do not. A magnetic contact is two reed switches and a
-         magnet -- it senses, it actuates nothing -- and a relay is a coil and a
-         set of contacts sitting in a lighting circuit. The strike and the
-         operator each move a piece of metal on a door and each does it because
-         a computer across the building told it to, so each is built round the
-         part that does the moving (CeroSec.SmallMotor) and the part that hears
-         the order (Base.Receiver, which is the very item vanilla's own
-         DismantleMiscElectronics gets out of a remote control). The window
-         operator is the third and it is the same three inputs.
+       - THE ONES THAT MOVE SOMETHING TAKE A MOTOR AND A RECEIVER, and the ones
+         that do not, do not. Four and four.
+
+         A magnetic contact is two reed switches and a magnet; a relay is a coil
+         and a set of contacts in a lighting circuit; a contactor is the same
+         thing on a circuit that can kill somebody; a transfer switch is a lever
+         and a busbar. Not one of them has a part that turns.
+
+         An electric strike moves a keeper, a door operator moves a door, a
+         curtain motor turns a tube inside a rail and a window operator winds a
+         sash out of its frame. Each is built round the part that does the
+         moving (CeroSec.SmallMotor) and the part that tells it when to stop
+         (Base.Receiver, the very item vanilla's own DismantleMiscElectronics
+         gets out of a remote control) -- one assembly, and the receiver goes
+         with the motor rather than with "anything that hears an order", which
+         is why the relay has never had one and still has not.
 
          NOTHING IS TAKEN OFF for this. Base.EngineParts stays on the door
          operator exactly where it was, and the two new lines go beside it. The
@@ -195,6 +201,132 @@ module CeroSec
         outputs
         {
             item 1 CeroSec.DoorOperator,
+        }
+    }
+
+    /* THE FOUR THE MOTOR RUNG ADDED. Same keys, same shape, same two numbers
+       checked against CeroSecModules.LIST: SkillRequired is the level the module
+       is FITTED at and AutoLearnAll is six above it, which is the remote
+       controller's own gap and vanilla's shape for a recipe a magazine teaches.
+
+       Two of them MOVE something and two of them switch a circuit, and that is
+       the whole of why their parts lists differ. A curtain motor turns a tube
+       inside a rail and a window operator winds a sash out of its frame: both
+       are a motor and the receiver that tells it when to run, beside the same
+       scrap and wire and screws the first four are made of. A contactor and a
+       transfer switch have nothing that turns -- a contactor is a coil pulling a
+       set of poles together and a transfer switch is a lever and a busbar -- so
+       neither takes a motor, and both are made of the metal a switch is made of.
+
+       Base.SmallSheetMetal is the strike's own, and Base.ScrapMetal the door
+       operator's: a plate for the ones that are bolted to a frame, a lump for the
+       ones that carry a load. */
+
+    craftRecipe MakeCeroSecCurtainMotor
+    {
+        timedAction = MakingElectrical,
+        time = 140,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:2,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:8,
+        xpAward = Electricity:10,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 1 [CeroSec.SmallMotor],
+            item 1 [Base.Receiver],
+            item 1 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.CurtainMotor,
+        }
+    }
+
+    craftRecipe MakeCeroSecApplianceSwitch
+    {
+        timedAction = MakingElectrical,
+        time = 100,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:2,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:8,
+        xpAward = Electricity:8,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 2 [Base.ElectronicsScrap],
+            item 2 [Base.ElectricWire],
+            item 1 [Base.SmallSheetMetal],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.ApplianceSwitch,
+        }
+    }
+
+    /* The sash, and the module the study said could not be built. It could:
+       IsoWindow.ToggleWindow never dereferences the character it is handed, and
+       the three things it really does -- throw the catch, trip the house alarm,
+       skip the barricade -- are what a motor on a window WOULD do and are now
+       the device's own rules (CeroSecModules.fitsOn). */
+    craftRecipe MakeCeroSecWindowOperator
+    {
+        timedAction = MakingElectrical,
+        time = 180,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:9,
+        xpAward = Electricity:12,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 1 [CeroSec.SmallMotor],
+            item 1 [Base.Receiver],
+            item 2 [Base.ElectronicsScrap],
+            item 1 [Base.ElectricWire],
+            item 1 [Base.SmallSheetMetal],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.WindowOperator,
+        }
+    }
+
+    craftRecipe MakeCeroSecGeneratorSwitch
+    {
+        timedAction = MakingElectrical,
+        time = 160,
+        NeedToBeLearn = true,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        AutoLearnAll = Electricity:9,
+        xpAward = Electricity:12,
+        inputs
+        {
+            item 1 tags[base:screwdriver] mode:keep flags[Prop1],
+            item 1 tags[base:pliers] mode:keep flags[MayDegradeVeryLight],
+            item 2 [Base.ElectronicsScrap],
+            item 2 [Base.ElectricWire],
+            item 1 [Base.ScrapMetal],
+            item 1 [Base.Screws],
+        }
+        outputs
+        {
+            item 1 CeroSec.GeneratorSwitch,
         }
     }
 

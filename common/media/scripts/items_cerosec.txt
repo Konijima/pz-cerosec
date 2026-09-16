@@ -346,6 +346,77 @@ module CeroSec
         WorldStaticModel = ScrapMetal,
     }
 
+    /* THE FOUR THE MOTOR RUNG ADDED, and the same keys as the first four for
+       the same reasons: ItemType is base:normal, DisplayCategory is the
+       Electronics the game already ships a name for, the DisplayName here is the
+       fallback and Translate/EN's ItemName.json is what a player reads, and the
+       WorldStaticModel is a VANILLA model because this mod ships no mesh and a
+       made-up name is an item that lies on the floor as nothing at all.
+
+       The weights are set the way the first four were -- against the vanilla
+       items they sit between and not against a feeling. Base.ElectronicsScrap is
+       0.1, Base.MotionSensor 0.3, Base.SmallSheetMetal 0.5, Base.Doorknob 1.0,
+       Base.HomeAlarm 1.0, Base.SheetMetal 2.0, and this mod's own door operator
+       is 2.0 because it is a motor, an arm and a limit switch.
+
+         a curtain motor is a tube and a crown that live inside the rail: a
+         small motor with no arm on it at all, so 1.0
+         a window operator is the same motor with a gearbox and a scissor arm,
+         and it moves a sash and not a door -- 1.5, under the door operator
+         a contactor is a board and a coil in a case, which is the relay's
+         weight and a little more for the poles -- 0.5
+         a transfer switch is a steel box with a lever a survivor puts his whole
+         hand on -- 1.0
+
+       Tooltips on all four, which the first four have not got. They earn one
+       because what each of them FITS is not obvious from its name: a survivor
+       reading "Appliance Switch" has no way to know it goes on an oven and on a
+       washing machine and on nothing else. */
+
+    item CurtainMotor
+    {
+        DisplayName = Curtain Motor,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 1.0,
+        Icon = CeroSecCurtainMotor,
+        Tooltip = Tooltip_item_CeroSecCurtainMotor,
+        WorldStaticModel = ScrapMetal,
+    }
+
+    item WindowOperator
+    {
+        DisplayName = Window Operator,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 1.5,
+        Icon = CeroSecWindowOperator,
+        Tooltip = Tooltip_item_CeroSecWindowOperator,
+        WorldStaticModel = ScrapMetal,
+    }
+
+    item ApplianceSwitch
+    {
+        DisplayName = Appliance Switch,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 0.5,
+        Icon = CeroSecApplianceSwitch,
+        Tooltip = Tooltip_item_CeroSecApplianceSwitch,
+        WorldStaticModel = ElectronicsScrap,
+    }
+
+    item GeneratorSwitch
+    {
+        DisplayName = Generator Switch,
+        DisplayCategory = Electronics,
+        ItemType = base:normal,
+        Weight = 1.0,
+        Icon = CeroSecGeneratorSwitch,
+        Tooltip = Tooltip_item_CeroSecGeneratorSwitch,
+        WorldStaticModel = ScrapMetal,
+    }
+
     /* THE SMALL MOTOR, and why the game needed one.
 
        Every module that MOVES something is built around a motor, and Build 42
@@ -454,7 +525,7 @@ module CeroSec
         Icon = CeroSecWiringGuide,
         BoredomChange = -20,
         StressChange = -15,
-        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator;DismantleCeroSecMotorAppliance;DismantleCeroSecMotorCDPlayer,
+        LearnedRecipes = MakeCeroSecMagneticContact;MakeCeroSecRelay;MakeCeroSecElectricStrike;MakeCeroSecDoorOperator;MakeCeroSecCurtainMotor;MakeCeroSecApplianceSwitch;MakeCeroSecWindowOperator;MakeCeroSecGeneratorSwitch;DismantleCeroSecMotorAppliance;DismantleCeroSecMotorCDPlayer,
         Tooltip = Tooltip_item_CeroSecWiringGuide,
         StaticModel = Magazine,
         WorldStaticModel = MagazineGround,

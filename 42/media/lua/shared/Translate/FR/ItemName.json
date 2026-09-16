@@ -7,6 +7,10 @@
     "CeroSec.Relay": "Module relais",
     "CeroSec.ElectricStrike": "Gâche électrique",
     "CeroSec.DoorOperator": "Opérateur de porte",
+    "CeroSec.CurtainMotor": "Moteur de rideau",
+    "CeroSec.WindowOperator": "Opérateur de fenêtre",
+    "CeroSec.ApplianceSwitch": "Contacteur d'appareil",
+    "CeroSec.GeneratorSwitch": "Inverseur de groupe",
     "CeroSec.SmallMotor": "Petit moteur",
     "CeroSec.WiringGuide": "Guide de câblage CeroSec",
     "CeroSec.StickyNote": "Note autocollante"

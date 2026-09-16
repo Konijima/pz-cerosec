@@ -4,13 +4,17 @@ require "CeroSec/CeroSecDefs"
 -- The hardware modules
 --
 -- A computer does not talk to a door because the door is a door. It talks to it
--- because somebody climbed up with a screwdriver and wired a box to it. Four
+-- because somebody climbed up with a screwdriver and wired a box to it. Eight
 -- boxes, and each one buys exactly one thing:
 --
 --   contact   a magnetic contact   -> the machine can SEE a door or a window
 --   relay     a relay              -> the machine can throw a light switch
 --   strike    an electric strike   -> the machine can work a door's lock
 --   operator  a door operator      -> the machine can open and shut a door
+--   curtain   a curtain motor      -> it can draw and open a curtain
+--   window    a window operator    -> it can raise and shut a sash
+--   appliance an appliance switch  -> it can start a stove or a washer
+--   genset    a generator switch   -> it can start and stop a generator
 --
 -- Nothing else changed about /dev: a device that is there is the same device it
 -- always was, with the same words and the same refusals. What the modules decide
@@ -63,7 +67,7 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- The shape of that table, and how it is changed
 --
 -- A door is a save file too. What is screwed to it is written into the CHUNK and
--- comes back when the chunk does, so the four ids in there are as persistent as the
+-- comes back when the chunk does, so the ids in there are as persistent as the
 -- machine's filesystem and are owed the same promise: a change that renames one, or
 -- drops one, or changes what one MEANS does not cost a survivor the hardware he
 -- climbed up to fit.
@@ -166,7 +170,7 @@ end
 CeroSecModules.SANDBOX = "HardwareRequired"
 
 --
--- The four of them.
+-- The eight of them.
 --
 -- id       what the modData says, and the only name the rest of the mod uses
 -- item     the item a survivor carries and the install takes out of his hands
@@ -179,7 +183,7 @@ CeroSecModules.SANDBOX = "HardwareRequired"
 -- two wires and a magnet on a frame, a relay is the same two wires behind a
 -- plate somebody has to be sure is dead first, a strike replaces the keep of a
 -- lock, and an operator is a motor, an arm and a limit switch. One, one, two,
--- three.
+-- three -- and see the note over the list for the four the motor rung added.
 --
 -- The experience is set against vanilla's own electrical job: repairing a
 -- generator is 5 (shared/TimedActions/ISFixGenerator.lua:71,
@@ -188,11 +192,31 @@ CeroSecModules.SANDBOX = "HardwareRequired"
 --
 -- The order is the order they are OFFERED in on the menu, which is the order a
 -- survivor meets them in: what he can fit at level one first.
+--
+-- THE FOUR ADDED BY THE MOTOR RUNG GO ON THE END, and not in level order.
+--
+-- The first four have been in that order on the right-click menu since rung 4f
+-- and a survivor knows where they are; a menu that reshuffles itself under him
+-- because a fifth box was written is worse than a menu whose levels do not run
+-- downhill. So the rule above is now the rule for each BATCH and not for the
+-- whole list, and it is written down rather than left for somebody to notice.
+--
+-- The levels are the size of the job, like the first four. A curtain motor is a
+-- small motor on a rail and a limit switch, which is the operator's job on a
+-- tenth of the weight -- two. An appliance switch is a contactor behind a plate
+-- somebody has to be sure is dead first, which is the relay's job on a circuit
+-- that can kill him -- two. A window operator is an arm, a motor and a sash that
+-- has to stop in the right place -- three, like the door operator it is. A
+-- generator switch is three because of what is on the other side of it.
 CeroSecModules.LIST = {
-	{ id = "contact",  item = "CeroSec.MagneticContact", skill = 1, time = 80,  xp = 3 },
-	{ id = "relay",    item = "CeroSec.Relay",           skill = 1, time = 100, xp = 3 },
-	{ id = "strike",   item = "CeroSec.ElectricStrike",  skill = 2, time = 120, xp = 5 },
-	{ id = "operator", item = "CeroSec.DoorOperator",    skill = 3, time = 150, xp = 8 },
+	{ id = "contact",   item = "CeroSec.MagneticContact", skill = 1, time = 80,  xp = 3 },
+	{ id = "relay",     item = "CeroSec.Relay",           skill = 1, time = 100, xp = 3 },
+	{ id = "strike",    item = "CeroSec.ElectricStrike",  skill = 2, time = 120, xp = 5 },
+	{ id = "operator",  item = "CeroSec.DoorOperator",    skill = 3, time = 150, xp = 8 },
+	{ id = "curtain",   item = "CeroSec.CurtainMotor",    skill = 2, time = 100, xp = 5 },
+	{ id = "appliance", item = "CeroSec.ApplianceSwitch", skill = 2, time = 110, xp = 5 },
+	{ id = "window",    item = "CeroSec.WindowOperator",  skill = 3, time = 150, xp = 8 },
+	{ id = "genset",    item = "CeroSec.GeneratorSwitch", skill = 3, time = 140, xp = 8 },
 }
 
 -- The tool the job needs, whichever module it is. Vanilla's own recipes ask for
@@ -251,8 +275,8 @@ end
 -- What is fitted to one object
 --
 -- Always a table, never nil: "nothing is fitted" is an answer and not a missing
--- one, and every caller reads it the same way. Nothing but the four ids is
--- looked at and nothing but `true` counts, so somebody else's writing in that
+-- one, and every caller reads it the same way. Nothing but the ids in
+-- CeroSecModules.LIST is looked at and nothing but `true` counts, so somebody else's writing in that
 -- table -- or a forged one out of an old save -- fits no hardware.
 --
 function CeroSecModules.installedOn(object)
@@ -432,12 +456,69 @@ function CeroSecModules.isLightSwitch(object)
 	return object ~= nil and instanceof(object, "IsoLightSwitch")
 end
 
+--
+-- The fixtures the motor rung added, and the ONE thing worth knowing about
+-- curtains: there are two of them and they are not the same object.
+--
+-- A window's curtain and a player-built frame's are an IsoCurtain of their own,
+-- on the square's object list like any other fixture. A DOOR's curtain is a pair
+-- of fields on the door -- `hasCurtain` and `curtainOpen` -- and there is no
+-- second object at all: IsoDoor.HasCurtains() answers THE DOOR when hasCurtain
+-- is set and null otherwise (offsets 0-12), which is why vanilla's own menu
+-- re-fetches before it reads a sprite (ISWorldObjectContextMenu.lua:2238).
+--
+-- So a curtain motor goes on either, and the two are told apart here once
+-- (docs/notes/actuators.md, 1).
+function CeroSecModules.isCurtain(object)
+	return object ~= nil and instanceof(object, "IsoCurtain")
+end
+
+-- A door that has a sheet on it. Never a curtain the module could go on TWICE:
+-- the door carries the fields and the door is what a motor is screwed to.
+function CeroSecModules.doorHasCurtain(object)
+	if object == nil then return false end
+	if not instanceof(object, "IsoDoor") then return false end
+	return object:HasCurtains() ~= nil
+end
+
+function CeroSecModules.hasCurtain(object)
+	return CeroSecModules.isCurtain(object) or CeroSecModules.doorHasCurtain(object)
+end
+
+-- The oven, the microwave AND the coffee machine, which are one class in this
+-- game: isMicrowave() and isStove() read the CONTAINER's type and not the
+-- sprite, and newtiledefinitions.tiles.txt gives every GroupName = Coffee tile
+-- `IsoType = IsoStove` with `container = stove` (actuators.md, 3). So a coffee
+-- machine needs nothing of its own and gets none.
+function CeroSecModules.isStove(object)
+	return object ~= nil and instanceof(object, "IsoStove")
+end
+
+-- The laundry. Three classes and not four: IsoStackedWasherDryer is left out
+-- deliberately and the reason is the study's own -- no tile in any of the game's
+-- five .tiles.txt files carries that IsoType, so nothing on the map makes one,
+-- and it is the one of the four that splits into TWO switches
+-- (setWasherActivated / setDryerActivated). Half a device on an object nobody
+-- has is worse than no device.
+function CeroSecModules.isWasher(object)
+	if object == nil then return false end
+	return instanceof(object, "IsoClothingWasher")
+		or instanceof(object, "IsoClothingDryer")
+		or instanceof(object, "IsoCombinationWasherDryer")
+end
+
+function CeroSecModules.isGenerator(object)
+	return object ~= nil and instanceof(object, "IsoGenerator")
+end
+
 -- Anything a module of any kind could go on. What the right-click menu asks
 -- first, so that a survivor right-clicking a fridge is offered nothing at all
--- rather than a menu of four refusals.
+-- rather than a menu of eight refusals.
 function CeroSecModules.isFittable(object)
 	return CeroSecModules.isDoor(object) or CeroSecModules.isWindow(object)
 		or CeroSecModules.isLightSwitch(object)
+		or CeroSecModules.isCurtain(object) or CeroSecModules.isStove(object)
+		or CeroSecModules.isWasher(object) or CeroSecModules.isGenerator(object)
 end
 
 -- May this module go on this object? true, or false and the reason in one word,
@@ -446,7 +527,11 @@ end
 --
 -- The refusals are the ones a survivor can DO something about, and each is a
 -- fact about the object and not about him: the wrong sort of fixture, a door the
--- lock means nothing on, a leaf of a garage door no machine will work. What he
+-- lock means nothing on, a leaf of a garage door no machine will work. A window
+-- that is boarded or a stove that is broken is NOT one of these: those are facts
+-- about what the fixture is doing today, they are the device's refusals rather
+-- than the install's, and a motor screwed to a boarded window works the day the
+-- boards come off. What he
 -- is carrying, what he knows and whether he is standing there are asked
 -- elsewhere, because those are facts about HIM.
 function CeroSecModules.fitsOn(object, id)
@@ -463,11 +548,65 @@ function CeroSecModules.fitsOn(object, id)
 		return false, "fixture"
 	end
 
-	-- The two that work a door, and neither goes on a window: there is no window
-	-- actuator in this mod and there is none in the game either -- the only call
-	-- that moves a sash is IsoWindow.ToggleWindow(IsoGameCharacter), which wants
-	-- a survivor standing at it (the proofs, 4). A window's module is the contact
-	-- and that is the end of it.
+	if id == "curtain" then
+		if CeroSecModules.hasCurtain(object) then return true end
+		-- A door with no sheet on it is not a refusal a survivor can do anything
+		-- about by arguing: he hangs a sheet and the entry appears.
+		return false, "fixture"
+	end
+
+	if id == "appliance" then
+		if CeroSecModules.isStove(object) or CeroSecModules.isWasher(object) then
+			return true
+		end
+		return false, "fixture"
+	end
+
+	if id == "genset" then
+		if CeroSecModules.isGenerator(object) then return true end
+		return false, "fixture"
+	end
+
+	--
+	-- THE WINDOW OPERATOR, and the sentence that used to be here was not exact.
+	--
+	-- It said: "there is no window actuator in this mod and there is none in the
+	-- game either -- the only call that moves a sash is
+	-- IsoWindow.ToggleWindow(IsoGameCharacter), which wants a survivor standing
+	-- at it". The call is right and the reason was not. ToggleWindow never
+	-- DEREFERENCES the character: every use of the argument is behind a null
+	-- guard (the barricade test at offsets 37-49 is skipped for null, the
+	-- IsoZombie test at 93-97 is false for it, the music call at 166-197 is
+	-- behind an ifnull) and the sync at offset 147 is unconditional. What is true
+	-- is three other things, all in the bytecode and all of them side effects a
+	-- motor really would have:
+	--
+	--   offsets 50-54   `locked = false`, unconditionally, before the sash moves.
+	--                   The motor throws the catch as it opens, which is what an
+	--                   operator does and why `win0` keeps the latch and this
+	--                   keeps the sash.
+	--   offsets 86-118  the house alarm goes off, every time, when the sash ends
+	--                   up open: the sandbox check is consulted only for an
+	--                   IsoZombie, so a null character falls straight into
+	--                   handleAlarm(). Kept, documented, and in the manual.
+	--   offsets 37-49   the barricade test is the one thing it asks the character
+	--                   for, so it is skipped -- and a boarded window would move
+	--                   behind its boards. Refused HERE instead (SCeroSecDevices'
+	--                   `act`), the way a barricaded door already is.
+	--
+	-- And there are two more silent returns above all of that which the study did
+	-- not name: `permaLocked` at offsets 21-28 and `destroyed` at 29-36. Both are
+	-- refused before the call for the door's reason -- a `return` that does
+	-- nothing is an order swallowed.
+	--
+	-- So a window operator is buildable and it is built. It goes on a window and
+	-- on nothing else.
+	if id == "window" then
+		if CeroSecModules.isWindow(object) then return true end
+		return false, "fixture"
+	end
+
+	-- The two that work a door itself, and neither goes on a window.
 	if not CeroSecModules.isDoor(object) then return false, "fixture" end
 
 	if id == "operator" then
@@ -491,7 +630,15 @@ end
 --   door     the operator, and nothing else, gives a door that OPENS
 --   door ro  a contact alone gives a door that can only be read
 --   lock     the strike
---   win  ro  a contact on a window, read-only for want of an actuator
+--   win  ro  a contact on a window: the sash and the latch, READ. The latch
+--            stopped being writable when the hardware gate came in and the
+--            reason it gave was wrong; the reason it is still read-only is that
+--            a contact is a sensor and senses.
+--   window   the window operator, which is what MOVES a sash
+--   curtain  the curtain motor, on an IsoCurtain or on a door's own sheet
+--   stove    the appliance switch, on an oven, a microwave or a coffee machine
+--   washer   the same switch, on a washer, a dryer or a combination machine
+--   gen      the generator switch
 --   light    the relay
 --
 -- `ro` is carried right through to the device node, which is born 440 for it and

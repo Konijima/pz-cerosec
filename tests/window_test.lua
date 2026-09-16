@@ -2902,6 +2902,27 @@ local function fakeDoor(locked, north, opposite, exterior)
 	-- room test beside it is what SCeroSecDevices works out for itself, so both
 	-- halves of doorLocks are reachable here.
 	o.isExterior = function() return o.exterior end
+	-- A DOOR'S CURTAIN IS A PAIR OF FIELDS ON THE DOOR and there is no second
+	-- object: HasCurtains() answers THE DOOR when hasCurtain is set and null
+	-- otherwise (IsoDoor, offsets 0-12), which is exactly what the fake does --
+	-- a fake that answered a curtain object would be a fake claiming a shape the
+	-- engine does not have. `hasCurtain` is off unless a bench hangs one.
+	o.hasCurtain = false
+	o.curtainOpen = false
+	o.HasCurtains = function()
+		if not o.hasCurtain then return nil end
+		return o
+	end
+	o.isCurtainOpen = function() return o.curtainOpen end
+	-- toggleCurtain does nothing at all with no sheet (offsets 0-7) and on the
+	-- server it is the whole gesture: setCurtainOpen plus transmitSetCurtainOpen,
+	-- which is a sendObjectChange. Counted as a sync, because "the other players
+	-- were told" is the half a field cannot show.
+	o.toggleCurtain = function()
+		if not o.hasCurtain then return end
+		o.curtainOpen = not o.curtainOpen
+		o.syncs = o.syncs + 1
+	end
 	o.isLockedByKey = function() return o.lockedByKey end
 	-- The real setter skips its own sync on a server, which is why the sync
 	-- below is a separate call and why this fake does not make one.
@@ -2910,21 +2931,168 @@ local function fakeDoor(locked, north, opposite, exterior)
 	return o
 end
 
+-- A window, with the sash AND its three silent returns AND the two side effects
+-- the motor rung's operator is built on.
+--
+-- ToggleWindow(IsoGameCharacter) is written the way the bytecode is, because
+-- every one of those side effects is the device's own design and a fake that
+-- left one out would be a fake agreeing with the device about what a motor does:
+--
+--   offsets 21-28  permaLocked -> return, silently
+--   offsets 29-36  destroyed -> return, silently (and isSmashed() reads the SAME
+--                  field #393, both bodies three instructions long)
+--   offsets 37-49  the barricade test is the one thing it asks the character
+--                  for, and it is SKIPPED for a null one -- so this fake moves a
+--                  boarded window, and the machine has to refuse before it
+--   offsets 50-54  locked = false, unconditionally, before the sash moves
+--   offsets 86-118 handleAlarm() when the sash ends up open: the sandbox check
+--                  is consulted only for an IsoZombie, so a null character falls
+--                  straight into it
+--   offset  147    sync(open ? 1 : 0), unconditional, which is the broadcast
+--
+-- `alarms` is counted rather than flagged: a window opened twice must ring twice
+-- and a window closed must not ring at all, and a boolean cannot tell those
+-- apart.
 local function fakeWindow(locked, north)
 	local o = fittable({ __class = "IsoWindow", locked = locked, north = north,
-		smashed = false, barricaded = false, open = false, syncs = 0 })
+		smashed = false, barricaded = false, permaLocked = false, open = false,
+		alarmed = false, alarms = 0, toggles = 0, syncs = 0 })
 	highlightable(o)
 	o.getNorth = function() return o.north end
-	-- The sash. NOT openable() above, deliberately: that one also writes a
-	-- ToggleDoorSilent, and there is no call in the game that moves a window
-	-- without a survivor standing at it -- a fake that answered one would be a
-	-- fake claiming a call we could make.
 	o.IsOpen = function() return o.open end
 	o.isLocked = function() return o.locked end
 	o.isSmashed = function() return o.smashed end
+	o.isDestroyed = function() return o.smashed end
 	o.isBarricaded = function() return o.barricaded end
+	o.isPermaLocked = function() return o.permaLocked end
 	o.setIsLocked = function(_, want) o.locked = want end
 	o.syncIsoObject = function() o.syncs = o.syncs + 1 end
+	o.ToggleWindow = function(_, chr)
+		o.toggles = o.toggles + 1
+		o.character = chr
+		if o.permaLocked then return end
+		if o.smashed then return end
+		-- and NOT the barricade: that one is behind `if (chr != null)`.
+		o.locked = false
+		o.open = not o.open
+		if o.open and o.alarmed then o.alarms = o.alarms + 1 end
+		o.syncs = o.syncs + 1
+	end
+	return o
+end
+
+-- A curtain of its own: the object a window's sheet and a built frame's really
+-- are. ToggleDoorSilent is the bytecode: `barricaded -> return` at offsets 0-7
+-- and then the flip, ending on syncIsoObject(false, open, null) at 85-100 --
+-- which is the one actuator in the mod whose broadcast is the ENGINE's, so the
+-- fake counts a sync the toggle made itself.
+--
+-- `barricaded` is a public FIELD and there is deliberately no isBarricaded() on
+-- it, because there is none on the real class either: a fake that answered one
+-- would let a device which asked before the call pass, and there is nothing to
+-- ask.
+local function fakeCurtain(north)
+	local o = fittable({ __class = "IsoCurtain", north = north, open = false,
+		barricaded = false, toggles = 0, syncs = 0 })
+	highlightable(o)
+	o.getNorth = function() return o.north end
+	o.IsOpen = function() return o.open end
+	o.isCurtainOpen = function() return o.open end
+	o.ToggleDoorSilent = function()
+		o.toggles = o.toggles + 1
+		if o.barricaded then return end
+		o.open = not o.open
+		o.syncs = o.syncs + 1
+	end
+	return o
+end
+
+-- The container an appliance hangs its power off. Vanilla asks
+-- `object:getContainer() and object:getContainer():isPowered()` and so does the
+-- device, so the fake answers a container -- or NIL, which is a fixture with no
+-- container at all and must read as no power rather than as an error.
+local function powerBox(o, powered, hasContainer)
+	o.powered = powered
+	o.container = hasContainer ~= false
+	o.getContainer = function()
+		if not o.container then return nil end
+		return { isPowered = function() return o.powered end }
+	end
+	return o
+end
+
+-- An oven, a microwave or a coffee machine: one class in this game.
+--
+-- Toggle() is the whole vanilla gesture and it is three calls -- setActivated,
+-- addItemsToProcessItems on the container, updateGenerator on the square -- so
+-- the fake counts the two that are not the field write: a machine that called
+-- the setter alone would switch on an oven that cooked nothing, and this is
+-- where that shows.
+--
+-- setActivated refuses a broken stove at its own offsets 0-7 and syncs itself
+-- from the server at 201-214, so the fake does both.
+local function fakeStove(on)
+	local o = fittable({ __class = "IsoStove", activated = on, broken = false,
+		syncs = 0, processed = 0, generators = 0 })
+	highlightable(o)
+	powerBox(o, true)
+	o.Activated = function() return o.activated end
+	o.isBroken = function() return o.broken end
+	o.setActivated = function(_, want)
+		if o.broken then return end
+		o.activated = want
+		o.syncs = o.syncs + 1
+	end
+	o.Toggle = function()
+		o.setActivated(o, not o.activated)
+		o.processed = o.processed + 1
+		o.generators = o.generators + 1
+	end
+	return o
+end
+
+-- The laundry. setActivated is a bare field write with NO sync of any kind, so
+-- the fake makes none either -- the broadcast is sendObjectChange(WASHER_STATE)
+-- and it is ours to call, which is what `changes` counts.
+local function fakeWasher(class, on)
+	local o = fittable({ __class = class, activated = on, syncs = 0, changes = {} })
+	highlightable(o)
+	powerBox(o, true)
+	o.isActivated = function() return o.activated end
+	o.setActivated = function(_, want) o.activated = want end
+	o.sendObjectChange = function(_, change)
+		o.changes[#o.changes + 1] = change
+	end
+	return o
+end
+
+-- A generator. setActivated is idempotent by construction (offsets 0-8 return
+-- when the argument is the state it is already in), checks NOTHING -- no fuel,
+-- no condition, no connection -- and syncs itself on the server at 113-122;
+-- vanilla calls sync() again after it and so do we, so the fake counts both.
+--
+-- It checks nothing on purpose: a fake that refused an empty tank would let a
+-- device which forgot vanilla's own gate pass.
+local function fakeGenerator(on, fuel, condition, connected)
+	local o = fittable({ __class = "IsoGenerator", activated = on, fuel = fuel,
+		condition = condition, connected = connected, syncs = 0, started = 0 })
+	highlightable(o)
+	o.isActivated = function() return o.activated end
+	o.getFuel = function() return o.fuel end
+	o.getFuelPercentage = function() return o.fuel end
+	o.getCondition = function() return o.condition end
+	o.isConnected = function() return o.connected end
+	o.setActivated = function(_, want)
+		if o.activated == want then return end
+		o.activated = want
+		o.started = o.started + 1
+		o.syncs = o.syncs + 1
+	end
+	o.sync = function() o.syncs = o.syncs + 1 end
+	-- The coin flip a shoulder makes and a starter does not. Present on the fake
+	-- and never called by the device, so a device that copied vanilla's timed
+	-- action wholesale would show up here.
+	o.failToStart = function() o.failed = (o.failed or 0) + 1 end
 	return o
 end
 
@@ -3465,8 +3633,10 @@ do
 	check("the book has an entry per device", (function()
 		local n = 0
 		for _ in pairs(before) do n = n + 1 end
-		-- Eight, not six: the front door and the built one are each two.
-		return n == 8
+		-- Nine, not six: the front door and the built one are each two, and the
+		-- window is two as well since the motor rung -- win0 is the catch a
+		-- magnetic contact senses and window0 is the sash an operator moves.
+		return n == 9
 	end)())
 
 	-- The front door is torn out -- door0 AND lock0 with it, one object being
@@ -12421,6 +12591,550 @@ end
 
 
 --
+-- 43d. Where each module may go, as a table
+--
+-- Eight modules and seven kinds of fixture is fifty-six answers, and the way a
+-- rule like that goes wrong is never the entry somebody wrote: it is the entry
+-- nobody wrote, where a module quietly fits something it has no business on.
+-- `fitsOn` answering true is a right-click menu offering a survivor a box that
+-- does nothing and an install command that takes it out of his bag.
+--
+-- So the whole matrix, both ways round: every true is named and every other cell
+-- has to be false. The REASON is checked too, because it is the key the menu
+-- greys the entry with and a refusal with the wrong word is a tooltip that says
+-- the wrong thing.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {1,1,0}, {2,1,0} })
+	local fixtures = {
+		door = world.put(world.squares["1,1,0"], fakeDoor(true, false, nil, true)),
+		window = world.put(world.squares["1,1,0"], fakeWindow(false, true)),
+		light = world.put(world.squares["1,1,0"], fakeLight(false, true)),
+		curtain = world.put(world.squares["1,1,0"], fakeCurtain(true)),
+		stove = world.put(world.squares["1,1,0"], fakeStove(false)),
+		washer = world.put(world.squares["1,1,0"],
+			fakeWasher("IsoCombinationWasherDryer", false)),
+		gen = world.put(world.squares["1,1,0"], fakeGenerator(false, 50, 50, true)),
+	}
+	-- A door with a sheet on it is not an eighth fixture: it is the door above
+	-- with two more fields, which is exactly what the engine does.
+	local sheeted = world.put(world.squares["2,1,0"], fakeDoor(false, true, nil, true))
+	sheeted.hasCurtain = true
+
+	-- Which fixtures each module fits, and nothing else fits it.
+	local FITS = {
+		contact   = { door = true, window = true },
+		relay     = { light = true },
+		strike    = { door = true },
+		operator  = { door = true },
+		curtain   = { curtain = true },
+		window    = { window = true },
+		appliance = { stove = true, washer = true },
+		genset    = { gen = true },
+	}
+	local names = {}
+	for name in pairs(fixtures) do names[#names + 1] = name end
+	table.sort(names)
+	eq("seven kinds of fixture in the table", #names, 7)
+	eq("and a row for every module the mod has", (function()
+		local n = 0
+		for _ in pairs(FITS) do n = n + 1 end
+		return n
+	end)(), #CeroSecModules.LIST)
+
+	for m = 1, #CeroSecModules.LIST do
+		local id = CeroSecModules.LIST[m].id
+		local want = FITS[id]
+		check("the table has a row for " .. id, want ~= nil)
+		for i = 1, #names do
+			local name = names[i]
+			local ok, why = CeroSecModules.fitsOn(fixtures[name], id)
+			if want[name] then
+				check(id .. " fits a " .. name, ok == true)
+			else
+				check(id .. " does NOT fit a " .. name, ok == false)
+				-- Every one of these is the same refusal and it is the one the
+				-- menu has a tooltip for: the wrong sort of fixture.
+				eq(id .. " refuses a " .. name .. " as the wrong fixture", why, "fixture")
+			end
+		end
+	end
+
+	-- And the curtain motor's second home, which is the one fixture that is two
+	-- things: a door that somebody has hung a sheet over.
+	check("a curtain motor fits a door with a sheet on it",
+		CeroSecModules.fitsOn(sheeted, "curtain") == true)
+	sheeted.hasCurtain = false
+	local ok, why = CeroSecModules.fitsOn(sheeted, "curtain")
+	check("and not a door with none", ok == false)
+	eq("which is the wrong fixture too", why, "fixture")
+	sheeted.hasCurtain = true
+
+	-- The two refusals that are NOT about the sort of fixture, still said in
+	-- their own words: they were here before this rung and eight modules must not
+	-- have blurred them into the one above.
+	-- Both sides in the same room, which is a door a key on it stops nobody at.
+	local interior = world.put(world.squares["2,1,0"],
+		fakeDoor(false, true, world.squares["1,1,0"], false))
+	local _, nolock = CeroSecModules.fitsOn(interior, "strike")
+	eq("a strike on a door no lock bites is still nolock", nolock, "nolock")
+	local garage = world.put(world.squares["2,1,0"], fakeDoor(false, true, nil, true))
+	garage.garageDoor = 0
+	local _, many = CeroSecModules.fitsOn(garage, "operator")
+	eq("and an operator on a garage leaf is still manydoors", many, "manydoors")
+
+	-- Everything above is a fixture a module could go on at all, which is the
+	-- FIRST question the right-click menu asks: a survivor right-clicking a
+	-- fridge is offered nothing rather than a menu of eight refusals.
+	for i = 1, #names do
+		check("a " .. names[i] .. " is a fixture", CeroSecModules.isFittable(fixtures[names[i]]))
+	end
+	check("and a plain object is not",
+		not CeroSecModules.isFittable({ __class = "IsoObject" }))
+	check("and neither is nothing at all", not CeroSecModules.isFittable(nil))
+
+	-- AND THE FOURTH LAUNDRY CLASS IS LEFT OUT, deliberately, which is a decision
+	-- and therefore a thing to assert rather than a line somebody can quietly put
+	-- back. IsoStackedWasherDryer carries no IsoType in any of the game's five
+	-- .tiles.txt files, so nothing on the map makes one; and it is the one of the
+	-- four that splits into TWO switches, setWasherActivated and
+	-- setDryerActivated, which a kind with one word for on cannot drive. Half a
+	-- device on an object nobody has is worse than no device.
+	local stacked = { __class = "IsoStackedWasherDryer" }
+	check("a stacked washer-dryer is not laundry this mod drives",
+		not CeroSecModules.isWasher(stacked))
+	check("and nothing fits one", not CeroSecModules.isFittable(stacked))
+	check("not even the switch the other three take",
+		CeroSecModules.fitsOn(stacked, "appliance") == false)
+end
+
+
+--
+-- 44a. The motor rung's five kinds, through the whole machine
+--
+-- A curtain, a door with a sheet on it, a window with an operator on it, a
+-- stove, a washer and a generator, laid out in a fake building, walked by the
+-- real SCeroSecDevices, numbered into the real state, mounted by the real engine
+-- and worked from the real glass. What is asserted is the STATE OF THE OBJECT
+-- afterwards and the SYNC beside it, because "the order went out" and "the world
+-- moved and everybody was told" are three different facts.
+--
+-- Every fake is written to the bytecode of the class it stands in for, side
+-- effects and silent returns included (see the fakes at the top of this file):
+-- a fake that refused what the real class does not would let a device which
+-- forgot a gate pass, and a fake that moved when the real class returns would
+-- let a device which swallowed an order pass.
+--
+do
+	local world = FakeWorld.new()
+	local office = world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+	local kitchen = world.room("kitchen", { {11,11,0}, {12,11,0} })
+	local hall = world.room("hall", { {13,11,0}, {14,11,0} })
+
+	local curtain = world.put(world.squares["11,10,0"], fakeCurtain(true))
+	local win = world.put(world.squares["12,10,0"], fakeWindow(true, true))
+	local stove = world.put(world.squares["11,11,0"], fakeStove(false))
+	local washer = world.put(world.squares["12,11,0"],
+		fakeWasher("IsoClothingWasher", false))
+	-- A door with a SHEET on it, which is a curtain with no object of its own:
+	-- the fields live on the door (IsoDoor.HasCurtains answers the door itself).
+	local sheeted = world.put(world.squares["13,11,0"],
+		fakeDoor(false, true, world.squares["14,11,0"]))
+	sheeted.hasCurtain = true
+	local gen = world.put(world.squares["14,11,0"],
+		fakeGenerator(false, 62, 80, true))
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+	-- The game's own enum, which is what a washer's broadcast names. Two DISTINCT
+	-- values, so a device that sent the wrong one cannot pass.
+	_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	bench.login("admin")
+	bench.enter("su root")
+	bench.enter("")
+	bench.frame()
+
+	-- Every order goes through the glass and not through envFor, because the wire
+	-- from a typed line to a Java call is what this rung built. The cache is
+	-- dropped first each time: a bench that typed two lines in the same
+	-- millisecond would be a bench reading one answer twice.
+	local function typed(line)
+		CeroSecDevices.invalidate()
+		bench.enter(line)
+		bench.frame()
+	end
+	-- The same, with the screen cleared and the painted history wiped first.
+	--
+	-- `bench.painted` searches every line this window has ever drawn AND the glass
+	-- redraws every line still on it at every frame, so an assertion that a string
+	-- is NOT there is green only if it was never there at all -- and every
+	-- negative below is about a string that was on this very screen two lines ago.
+	-- `clear` takes it off the glass and the wipe takes it out of the history, and
+	-- it takes both.
+	local function alone(line)
+		typed("clear")
+		bench.window.painted = {}
+		typed(line)
+	end
+
+	--
+	-- The listing the mockup would print
+	--
+	typed("dev")
+	for _, want in ipairs({ "curtain0", "curtain1", "door0", "gen0", "stove0",
+			"washer0", "win0", "window0" }) do
+		check("the table has " .. want, bench.painted(want))
+	end
+
+	--
+	-- THE WINDOW OPERATOR, and the three things it does besides open a window
+	--
+	typed("cat /dev/window0")
+	check("a shut window reads closed", bench.painted("closed"))
+	eq("and the contact beside it reads the latch", win.locked, true)
+
+	win.alarmed = true
+	typed("echo open > /dev/window0")
+	eq("the sash moved", win.open, true)
+	eq("and the engine broadcast it itself", win.syncs, 1)
+	-- The two side effects, which are the module's rules and not accidents.
+	eq("the motor threw the catch on its way past", win.locked, false)
+	eq("and an armed house alarm went off", win.alarms, 1)
+	-- The character parameter really is nil: a device that passed anything else
+	-- would be passing something this mod cannot make (there is no survivor at a
+	-- crontab line), and the marshalling proof is at SCeroSecDevices' `act`.
+	eq("and the call was made with no character at all", win.character, nil)
+
+	-- Twice is once: ToggleWindow TOGGLES, so an open window asked to open again
+	-- is left alone -- and the alarm does not ring a second time, which is the
+	-- half of that a state field cannot show.
+	typed("echo open > /dev/window0")
+	eq("a second open moves nothing", win.toggles, 1)
+	eq("and rings nothing", win.alarms, 1)
+	typed("echo close > /dev/window0")
+	eq("close shuts it", win.open, false)
+	eq("and closing rings nothing ever", win.alarms, 1)
+
+	-- The three silent returns, refused HERE because the engine's own answer to
+	-- each is a `return` that does nothing.
+	win.barricaded = true
+	typed("echo open > /dev/window0")
+	check("a boarded window is refused in its own name",
+		bench.painted("window0: barricaded"))
+	eq("and the engine was never asked", win.toggles, 2)
+	eq("and the sash did not move", win.open, false)
+	win.barricaded = false
+
+	win.smashed = true
+	typed("echo open > /dev/window0")
+	check("a smashed one says so", bench.painted("window0: smashed"))
+	eq("and the engine was still never asked", win.toggles, 2)
+	win.smashed = false
+
+	win.permaLocked = true
+	typed("echo open > /dev/window0")
+	check("and one the building was built never to open is sealed",
+		bench.painted("window0: sealed"))
+	eq("and the engine was still never asked", win.toggles, 2)
+	win.permaLocked = false
+
+	-- And a word from the wrong kind never reaches the world: a window's sash
+	-- knows open and close, and the latch beside it is a different device.
+	typed("echo lock > /dev/window0")
+	check("the sash has no word for the latch",
+		bench.painted("window0: invalid value"))
+
+	--
+	-- THE CURTAIN, both kinds
+	--
+	typed("echo open > /dev/curtain0")
+	eq("the curtain drew back", curtain.open, true)
+	-- The one actuator whose broadcast is the ENGINE's: ToggleDoorSilent ends on
+	-- syncIsoObject itself, so the count is the toggle's own and not a second one
+	-- of ours.
+	eq("and the toggle broadcast it itself, once", curtain.syncs, 1)
+	typed("echo close > /dev/curtain0")
+	eq("and it draws again", curtain.open, false)
+	eq("with one more broadcast and no more", curtain.syncs, 2)
+
+	-- A boarded curtain: there is no isBarricaded() on the class to ask, so the
+	-- refusal is the fact that the toggle did NOT move it.
+	curtain.barricaded = true
+	typed("echo open > /dev/curtain0")
+	check("a boarded curtain is refused in its own name",
+		bench.painted("curtain0: barricaded"))
+	eq("the engine WAS asked, because there is no way to ask first",
+		curtain.toggles, 3)
+	eq("and it did not move", curtain.open, false)
+	eq("and nothing was broadcast", curtain.syncs, 2)
+	curtain.barricaded = false
+
+	-- A door's own sheet is the other kind, and it is a different call.
+	typed("echo open > /dev/curtain1")
+	eq("the sheet on the door drew back", sheeted.curtainOpen, true)
+	eq("and toggleCurtain broadcast it", sheeted.syncs, 1)
+	eq("and the DOOR did not move", sheeted.open, false)
+	typed("echo close > /dev/curtain1")
+	eq("and it draws again", sheeted.curtainOpen, false)
+
+	--
+	-- THE STOVE
+	--
+	typed("echo on > /dev/stove0")
+	eq("the stove is on", stove.activated, true)
+	eq("and it synced itself from the server", stove.syncs, 1)
+	-- Toggle() and not setActivated(): the other two thirds of the gesture are
+	-- what makes an oven cook and what makes the generator feel it.
+	eq("the food in it was put on to process", stove.processed, 1)
+	eq("and the generator was told it has a load", stove.generators, 1)
+	typed("echo off > /dev/stove0")
+	eq("and off again", stove.activated, false)
+
+	stove.powered = false
+	typed("echo on > /dev/stove0")
+	check("no current is no power", bench.painted("stove0: no power"))
+	eq("and the stove did not move", stove.activated, false)
+	stove.powered = true
+
+	stove.broken = true
+	typed("cat /dev/stove0")
+	check("a wrecked stove reads broken", bench.painted("broken"))
+	typed("echo on > /dev/stove0")
+	check("and refuses in its own name", bench.painted("stove0: broken"))
+	eq("and stayed off", stove.activated, false)
+	stove.broken = false
+
+	-- A fixture with no container at all reads as no power rather than as an
+	-- error: vanilla asks `getContainer() and getContainer():isPowered()`.
+	stove.container = false
+	typed("echo on > /dev/stove0")
+	check("and one with no container at all says the same thing",
+		bench.painted("stove0: no power"))
+	stove.container = true
+
+	--
+	-- THE LAUNDRY
+	--
+	typed("echo on > /dev/washer0")
+	eq("the washer is running", washer.activated, true)
+	-- setActivated syncs NOTHING on a washer, so the broadcast is ours and it is
+	-- the one vanilla's own timed action makes.
+	eq("and one object change went out", #washer.changes, 1)
+	eq("and it was the washer's own", washer.changes[1], "chg.WASHER_STATE")
+	typed("echo off > /dev/washer0")
+	eq("and stops", washer.activated, false)
+	eq("with a second change and no more", #washer.changes, 2)
+
+	washer.powered = false
+	typed("echo on > /dev/washer0")
+	check("a dead socket is no power", bench.painted("washer0: no power"))
+	eq("and nothing was broadcast for it", #washer.changes, 2)
+	washer.powered = true
+
+	--
+	-- THE GENERATOR, which is the one device with more to say than a word
+	--
+	typed("cat /dev/gen0")
+	check("cat reads the whole line",
+		bench.painted("off fuel 62 condition 80 connected"))
+
+	-- BOTH NUMBERS ARE WHOLE ONES. getFuelPercentage answers a float, and
+	-- `fuel 62.399998` in a status line is a machine showing its working -- on a
+	-- terminal 60 columns wide that does not wrap, it is also a line that runs
+	-- off the end of the glass.
+	gen.fuel = 62.399998
+	alone("cat /dev/gen0")
+	check("a float tank is rounded to a whole percent",
+		bench.painted("fuel 62 condition 80"))
+	check("and the working is not shown", not bench.painted("62.3"))
+	gen.fuel = 61.5
+	alone("cat /dev/gen0")
+	check("and it rounds rather than truncates", bench.painted("fuel 62 "))
+	-- And a number outside the range is clamped rather than printed. A percentage
+	-- over a hundred is a machine that has stopped being believable, and it is
+	-- also a column wider than the one the listings keep.
+	gen.fuel = 140
+	gen.condition = -5
+	alone("cat /dev/gen0")
+	check("a percentage above a hundred is a hundred", bench.painted("fuel 100"))
+	check("and one below nothing is nothing", bench.painted("condition 0"))
+	gen.fuel = 62
+	gen.condition = 80
+	-- And the TABLES read the word, because a sentence does not fit a column:
+	-- `dev` puts the state on column 47 of a terminal 60 wide that does not wrap.
+	alone("dev gen")
+	check("the table reads the word", bench.painted("gen0"))
+	check("and not the sentence", not bench.painted("fuel 62"))
+
+	typed("echo on > /dev/gen0")
+	eq("the generator started", gen.activated, true)
+	-- setActivated syncs on the server and vanilla calls sync() again after it.
+	eq("and it was broadcast twice, which is what vanilla does", gen.syncs, 2)
+	eq("and nobody pulled a cord", gen.failed, nil)
+
+	typed("echo off > /dev/gen0")
+	eq("and it stops", gen.activated, false)
+
+	-- AND A WORN ONE STARTS FIRST TIME, which is the whole of what a starter is.
+	-- Vanilla's own timed action calls failToStart() on a coin flip below half
+	-- condition (ISActivateGenerator:complete) and a machine must not: a shoulder
+	-- fumbles a cord and an electric starter does not. The fake carries the call
+	-- so that a device which copied that action wholesale would show up here.
+	gen.condition = 30
+	typed("echo on > /dev/gen0")
+	eq("a worn generator started", gen.activated, true)
+	eq("and nothing pulled a cord at it", gen.failed, nil)
+	typed("echo off > /dev/gen0")
+	gen.condition = 80
+
+	-- `dev <id> <word>` reads back what it became, and for this kind that is the
+	-- whole line and not the word: a machine that took the order and then told a
+	-- survivor less than `cat` would have is a machine answering in two voices.
+	alone("dev gen0 on")
+	check("and working one from the dev table answers the whole line",
+		bench.painted("gen0: on fuel 62 condition 80 connected"))
+	typed("echo off > /dev/gen0")
+
+	-- The three refusals, each read off vanilla's own timed action's isValid.
+	gen.connected = false
+	typed("echo on > /dev/gen0")
+	check("nothing plugged in is not connected",
+		bench.painted("gen0: not connected"))
+	eq("and it did not start", gen.activated, false)
+	-- And it still STOPS: a machine that argued about switching something off
+	-- would be a machine nobody would leave running.
+	gen.activated = true
+	typed("echo off > /dev/gen0")
+	eq("but stopping one is never refused", gen.activated, false)
+	gen.connected = true
+
+	gen.fuel = 0
+	typed("echo on > /dev/gen0")
+	check("an empty tank is no fuel", bench.painted("gen0: no fuel"))
+	eq("and it did not start", gen.activated, false)
+	typed("cat /dev/gen0")
+	check("and the line says so in numbers",
+		bench.painted("off fuel 0 condition 80 connected"))
+	gen.fuel = 62
+
+	gen.condition = 0
+	typed("echo on > /dev/gen0")
+	check("a wrecked one is broken", bench.painted("gen0: broken"))
+	eq("and it did not start", gen.activated, false)
+	gen.condition = 80
+
+	-- Nothing plugged in, said in the line as an absence: `connected` is a fact
+	-- and a fact is there or it is not, which is how a status line said a boolean.
+	gen.connected = false
+	alone("cat /dev/gen0")
+	check("and an unplugged one leaves the word off",
+		bench.painted("off fuel 62 condition 80"))
+	check("really off, and not merely earlier in the session",
+		not bench.painted("connected"))
+	gen.connected = true
+
+	--
+	-- TOGGLE, which reads the STATE and not the line
+	--
+	-- A generator whose read is a sentence would have no entry in the opposites
+	-- table at all, and `dev gen0 toggle` would say "cannot toggle" for ever.
+	typed("dev gen0 toggle")
+	eq("a generator toggles on", gen.activated, true)
+	typed("dev gen0 toggle")
+	eq("and off again", gen.activated, false)
+	typed("dev window0 toggle")
+	eq("and a window toggles open", win.open, true)
+	typed("dev curtain0 toggle")
+	eq("and a curtain toggles too", curtain.open, true)
+	typed("dev curtain0 toggle")
+	eq("and back", curtain.open, false)
+	typed("dev stove0 toggle")
+	eq("and a stove", stove.activated, true)
+	typed("dev stove0 toggle")
+	eq("and off again", stove.activated, false)
+	typed("dev washer0 toggle")
+	eq("and the laundry", washer.activated, true)
+	typed("dev washer0 toggle")
+	eq("and off again", washer.activated, false)
+	stove.broken = true
+	typed("dev stove0 toggle")
+	check("a broken stove has no opposite to turn into",
+		bench.painted("stove0: cannot toggle"))
+	stove.broken = false
+	win.smashed = true
+	typed("dev window0 toggle")
+	check("a smashed window has no opposite to turn into",
+		bench.painted("window0: cannot toggle"))
+	win.smashed = false
+
+	--
+	-- POINTING AT ONE, which is where the CLASS the server wrote down matters
+	--
+	-- `dev find` sends the requesting player's client a square and a class, and
+	-- the client asks the engine's own instanceof for the object on that square
+	-- (CeroSecTerminal:objectAt). So a class the server guessed wrong is an
+	-- outline drawn round nothing at all, silently -- and the four kinds this
+	-- rung added cannot be guessed from the kind: a curtain is an IsoCurtain or a
+	-- DOOR depending on whose sheet it is, and the laundry is one of three
+	-- classes with nothing in common but IsoObject.
+	--
+	-- What is asserted is which object lit up, because that is the only thing
+	-- that can tell a right class from a wrong one.
+	local function points(id, at, others)
+		typed("dev find " .. id)
+		eq(id .. " outlined the thing it names", at.outline, true)
+		for i = 1, #others do
+			check(id .. " outlined nothing else", others[i].outline ~= true)
+		end
+		-- And put out again, so the next one is asked of a clean world.
+		typed("dev find " .. id)
+	end
+	points("stove0", stove, { washer, gen, curtain, sheeted })
+	points("washer0", washer, { stove, gen, curtain, sheeted })
+	points("gen0", gen, { stove, washer, curtain, sheeted })
+	points("curtain0", curtain, { stove, washer, gen, sheeted })
+	-- The door's own sheet, which is the case a guess gets wrong: the device is a
+	-- curtain and the object is a DOOR.
+	points("curtain1", sheeted, { curtain, stove, washer, gen })
+	points("window0", win, { curtain, sheeted, stove })
+
+	--
+	-- AND WHAT A HAND DID SINCE IS WHAT THE MACHINE READS
+	--
+	-- Every fixture below is moved by a survivor and not by the machine, and the
+	-- next reading has to be the world rather than the answer the machine gave
+	-- last time. At the glass this is never the /dev cache's business: bench.enter
+	-- puts a second on the clock for every line typed, which is what a player
+	-- costs, and the cache is a second long. What it proves is the READING. The
+	-- cache's own half of it -- the same question asked twice inside one second --
+	-- is section 44b, on a clock that is driven by hand.
+	--
+	alone("cat /dev/gen0")
+	check("the machine read a full tank", bench.painted("fuel 62"))
+	stove.activated = true
+	gen.fuel = 41
+	curtain.open = true
+	alone("cat /dev/gen0")
+	check("a tank somebody siphoned reads down", bench.painted("fuel 41"))
+	check("and not the number the machine read a moment ago",
+		not bench.painted("fuel 62"))
+	alone("cat /dev/stove0")
+	check("a stove switched by a hand reads on", bench.painted("on"))
+	alone("cat /dev/curtain0")
+	check("and a curtain drawn by a hand reads open", bench.painted("open"))
+
+	_G.__world = nil
+	_G.IsoObjectChange = nil
+	CeroSecDevices.invalidate()
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
 -- 44b. The /dev cache: one walk a second, and never a stale state
 --
 -- WHAT THIS IS ABOUT, and it is not the cost docs/notes/actuators.md counted.
@@ -12452,6 +13166,11 @@ end
 --
 do
 	local kit = mockupWorld()
+	-- A generator in the office, which the mockup has not got: it is the one kind
+	-- whose reading is a SENTENCE and not a word, so it is the one that proves a
+	-- cache hit re-reads the whole of what a device says and not just its state.
+	kit.gen = kit.world.put(kit.world.squares["12,10,0"],
+		fakeGenerator(true, 62, 80, true))
 	_G.__world = kit.world
 	-- Every fixture is a device, so the walk is the biggest this world has and
 	-- the counts below are the whole of it.
@@ -12520,6 +13239,26 @@ do
 	eq("a switch thrown by a hand reads off on the next pass",
 		stateOn(after, kit.light0, "light"), "off")
 	eq("and that cost no engine call either", visits(), 0)
+
+	-- AND THE REST OF THE LINE, which is the half of a reading a `state` field
+	-- does not hold. A generator is the one kind with one, and a tank going down
+	-- between two passes is the whole reason anybody cats one -- so a cache that
+	-- refreshed the word and remembered the numbers would be a cache saying a
+	-- running generator still has the fuel it had when the walk went past.
+	local function detailOn(found, object)
+		for i = 1, #found do
+			if found[i].object == object then return found[i].detail end
+		end
+		return nil
+	end
+	eq("the generator's line was read with the walk",
+		detailOn(after, kit.gen), "fuel 62 condition 80 connected")
+	kit.gen.fuel = 41
+	kit.gen.connected = false
+	after = CeroSecDevices.findCached(X, Y, Z, _G.__now)
+	eq("and it is read again on a pass that walked nothing",
+		detailOn(after, kit.gen), "fuel 41 condition 80")
+	eq("really nothing", visits(), 0)
 
 	--
 	-- 3. The lifetime really is the lifetime

@@ -738,21 +738,22 @@ The building it stands in is wired to it, and wired is the word: under
 has screwed a module to, and writing a word into one of them works the
 thing itself. The modules are the next two pages.
 
-The reach is the BUILDING. If the computer's square belongs to a building
-the map knows, it gets every room of it, upstairs and down. If it does not
-it gets ten tiles of its own floor every way. 256 at the outside.
+The reach is the BUILDING. Every room of it, upstairs and down; ten tiles
+of its own floor every way if the map knows no building there. 256 at the
+outside.
 
   root@ksp-04-11:~# dev
+  curtain0 office               1E 0        N  closed
   door0   exterior              0 5S        W  locked
   door1   kitchen-hallway       2W 1N       N  closed
-  door2   built                 4E 9S +1    N  closed
+  gen0    exterior              6E 3S          off
   light0  office                0 0            on
-  light1  hallway               3E 2N          off
   lock0   exterior              0 5S        W  locked
-  lock1   built                 4E 9S +1    N  padlock
-  win0    office                1E 0        N  locked]],
+  stove0  kitchen               2W 2N          off
+  win0    office                1E 0        N  locked
+  window0 office                1E 0        N  closed]],
 
-[[The four modules, and what each one buys.
+[[The eight modules, and what each one buys.
 
 Nothing in that table is there because it is a door, but because somebody
 went up to it with a screwdriver and a box:
@@ -761,32 +762,122 @@ went up to it with a screwdriver and a box:
   relay             it can throw a light switch
   electric strike   it can work a door's lock
   door operator     it can open and shut a door
+  curtain motor     it can draw and open a curtain
+  window operator   it can raise and shut a sash
+  appliance switch  it can start a stove or a washer
+  generator switch  it can start and stop a generator
 
 A door with only a contact on it is a doorN you can read and cannot move.
 An operator opens it; a strike adds the lockN beside it.
 
-A window takes a contact and nothing else, ever: nothing in this game
-opens a sash with nobody standing at it. And a contact is what a window
-wants. A winN reads smashed, barricaded, open, locked or unlocked, in that
-order -- the glass, then the sash, then the catch -- so open beats locked
-the way a door's does, and unlocked means shut.
-
 If your server turned the option Hardware modules required OFF, forget all
-this: every door, window, lock and light is under /dev, fitted or not.]],
+this: every fixture in the building is under /dev, fitted or not.]],
 
-[[Where a box comes from, fitting it, and taking it off.
+[[Windows are two devices and they are not the same device.
 
-Nobody works these four out at the bench. The diagrams and the parts
-lists went out with the fitters, in the CeroSec Field Wiring Guide: look
-on an electronics shop's rack, in a bookshop, a tool shop, an
-electrician's van. Find a copy and READ it: the four appear in the
-Electrical tab. A lifetime electrician gets there in the end. Everybody
-else reads it.
+winN is the magnetic contact. It is a SENSOR and it senses: smashed,
+barricaded, open, locked or unlocked, in that order -- the glass, then the
+sash, then the catch -- so open beats locked the way a door's does, and
+unlocked means shut. Nothing is written to it.
 
-Fitting: right-click the door, window or light switch ITSELF -- not the
-computer -- and take CeroSec hardware. You need the box, a screwdriver,
-and the trade: a contact or a relay at Electricity 1, a strike at 2, an
-operator at 3.
+windowN is the window operator, and it is the sash. It reads smashed,
+barricaded, sealed, open or closed, and it takes open and close.
+
+  root@ksp-04-11:~# dev window0
+  window0: closed
+  root@ksp-04-11:~# dev window0 open
+  window0: open
+
+sealed is a window the building was built never to open, and no motor
+will change that. The operator will not move a boarded window either --
+nothing on this machine takes planks off anything.
+
+An earlier printing of this book said no machine could ever work a sash.
+That was wrong, and the next page says what is true instead.]],
+
+[[THE WINDOW OPERATOR SETS OFF A HOUSE ALARM. Read this before you fit
+one.
+
+A motor on a sash does three things and only one of them is opening the
+window. It also throws the catch -- a window the machine opens comes open
+whether it was latched or not, so a winN that read locked reads unlocked
+afterwards. And in a house whose alarm was still armed when the power
+came back, opening the window RINGS IT, every time, exactly as a hand
+through the glass would.
+
+That is not a fault and it is not something the machine can be told not
+to do: it is what a window opening in an alarmed house does, and this
+machine is a machine and not a burglar with a key.
+
+So: `0 6 * * * echo open > /dev/window0` in a house nobody has cleared is
+a horde at six in the morning. Open one by hand first and find out.
+
+Closing a window never rings anything.]],
+
+[[Curtains, stoves and the laundry.
+
+curtainN is a sheet: open and closed, open and close. Both kinds are the
+same device -- a curtain hanging in a window, and the sheet somebody
+draped over a door, which the game keeps ON the door itself. Boarded over,
+it answers curtain0: barricaded.
+
+stoveN is an oven, a microwave OR a coffee machine, which are one thing as
+far as this building is concerned. It reads on, off or broken and takes on
+and off. No current at the socket is stove0: no power, the same words a
+light switch uses, and a stove somebody has wrecked is broken and stays
+broken.
+
+  0 5 * * * echo on > /dev/stove0
+
+washerN is a washer, a dryer or a machine that is both. on and off, and
+no power when the grid is down.
+
+The timer and the temperature on an oven are the survivor's, set at the
+oven. The machine only throws the switch.]],
+
+[[genN is a generator, and it is the one device that has more to say than
+a word:
+
+  root@ksp-04-11:~# cat /dev/gen0
+  on fuel 62 condition 80 connected
+
+Both numbers are percentages. connected is there when something is
+plugged into it and absent when nothing is. The tables print the first
+word only -- there is no room in them for a sentence -- so cat it, or
+dev gen0, when you want the rest.
+
+It takes on and off. Starting one is refused three ways and each is worth
+knowing before you write the crontab line:
+
+  gen0: not connected    nothing is wired to it
+  gen0: no fuel          the tank is empty
+  gen0: broken           its condition is nothing
+
+Stopping one is never refused. And it will not pull a cord: a survivor
+starting a worn generator fails about half the time, and an electric
+starter does not, so a machine starts anything the three refusals let it.]],
+
+[[Where a box comes from.
+
+Nobody works these out at the bench. The diagrams and the parts lists went
+out with the fitters, in the CeroSec Field Wiring Guide: look on an
+electronics shop's rack, in a bookshop, a tool shop, an electrician's van.
+Find a copy and READ it, and all of it appears in the Electrical tab. A
+lifetime electrician gets there in the end. Everybody else reads it.
+
+Four of the eight are built round a SMALL MOTOR, and Knox County never
+sold one on its own. The guide has the two recipes for that too: take a
+screwdriver to a hair dryer, a pair of sheep shears, a CD player or a
+blower fan and the motor comes out, with the electronics scrap you would
+have got anyway.]],
+
+[[Fitting a box, and taking it off.
+
+Fitting: right-click the FIXTURE itself -- the door, the window, the light
+switch, the curtain, the oven, the washer, the generator -- and not the
+computer, and take CeroSec hardware. You need the box, a screwdriver, and
+the trade: a contact or a relay at 1, a strike, a curtain motor or an
+appliance switch at 2, the two operators and the generator switch at 3.
 
 Remove gives the box back whole. The device goes with it and its NUMBER
 does not: the same doorN answers next week.
@@ -796,16 +887,19 @@ Two entries are greyed out, both about the fixture:
   a strike on an interior door
       a key there stops nobody: the lock would lie
   an operator on a garage or double door
-      a machine moves one leaf, the rest stay shut]],
+      a machine moves one leaf, the rest stay shut
+
+A boarded window and a broken stove are NOT greyed out. Those are things
+the fixture is doing today, not what it is: the box goes on, and the
+device says so until somebody fixes it.]],
 
 [[Reading that table.
 
-The id is what you name the thing by. There are five kinds -- door, light,
-lock, sensor and win -- and the number after the kind is the machine's own,
-handed out once and kept.
-
-Then the rooms it stands between, in the map's own raw words: exterior
-where one side is the outdoors, built for something a player put up.
+The id is what you name the thing by. The kinds are curtain, door, gen,
+light, lock, sensor, stove, washer, win and window, plus fd0 and radio0,
+which are the machine's own. Then the rooms it stands between, in the
+map's own raw words: exterior where one side is the outdoors, built for
+something a player put up.
 
 Then where it is from where the computer stands: tiles east or west, tiles
 north or south, 0 0 for the computer's own square, and +1 or -1 for a
@@ -837,9 +931,10 @@ Try it.
   door1: open
 
 toggle is whichever of the pair it is not in now. Each kind knows two
-words and no others: light takes on and off; lock and win take lock and
-unlock; door takes open and close. A word from the wrong kind is refused
-before it ever reaches the building.
+words and no others: light, stove, washer and gen take on and off; lock
+and win take lock and unlock; door, window and curtain take open and
+close. A word from the wrong kind is refused before it ever reaches the
+building.
 
 And when you cannot tell which of thirty-five lights is the one in the
 listing, ask it to show itself:
@@ -1956,17 +2051,39 @@ No current or bulb; gone, or nobody near it; the glass broken; boarded up;
 neither padlock nor key; held by a key; planks on it; something in the
 way; a word that kind does not know; the mode; no opposite to toggle
 into; a sensor, which takes no word; and a device with no hardware behind
-it to carry one out.
+it to carry one out.]],
 
-dev's own two are signed the way a command signs, because they are a
+[[The motors and the switches, chapter 6 as well. Same rule: the device
+answers in its own name.
+
+  window0: smashed
+  window0: barricaded
+  window0: sealed
+  curtain0: barricaded
+  stove0: broken
+  stove0: no power
+  washer0: no power
+  gen0: no fuel
+  gen0: broken
+  gen0: not connected
+
+The glass gone; boards on it; a window the building was built never to
+open; a sheet somebody has boarded over; a ruined stove; no current at
+the socket, which a washer says the same way; an empty tank; a wrecked
+generator; and one nothing is plugged into.
+
+A generator refuses those three only when it is asked to START. Stopping
+one is always allowed.]],
+
+[[dev's own two are signed the way a command signs, because they are a
 command's:
 
   dev: <word>: unknown kind
-      the kinds are
-      door, floppy, light, lock, radio, sensor and win
   dev: <id>: no such device
   /dev: read-only
-      nothing may be created under /dev at all]],
+      nothing may be created under /dev at all
+
+The kinds are curtain, door, floppy, gen, light, lock, radio, sensor, stove, washer, win and window.]],
 
 [[cron and mail, chapter 7. A crontab is judged when it is saved and
 refused whole, and the refusal names the file, the line and the field:

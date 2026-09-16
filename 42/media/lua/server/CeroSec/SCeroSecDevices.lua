@@ -342,6 +342,84 @@ end
 -- about the building and holds for a second. What it is DOING is a fact about
 -- this instant and is read off the object every single time.
 --
+--
+-- The motor rung's kinds, read
+--
+
+-- A whole number, clamped, for a line a survivor reads. The engine answers a
+-- float for the fuel and an int for the condition, and 62.399998 in a status
+-- line is a machine showing its working.
+local function pct(value)
+	local n = tonumber(value) or 0
+	n = math.floor(n + 0.5)
+	if n < 0 then n = 0 end
+	if n > 100 then n = 100 end
+	return tostring(n)
+end
+
+-- A curtain has ONE fact and it is a boolean, and there are two kinds of curtain
+-- behind this (CeroSecModules.isCurtain): an IsoCurtain of its own, which
+-- answers IsOpen(), and a door with a sheet, whose fields live on the door and
+-- answer isCurtainOpen(). `isCurtainOpen` on an IsoCurtain is `IsOpen` forwarded,
+-- one instruction of it (offsets 0-4), so either name reads a curtain -- but a
+-- DOOR has no IsOpen() that means the sheet, so the two are asked apart.
+--
+-- No `barricaded` word, and that is not an oversight: IsoCurtain has no
+-- isBarricaded() at all -- `barricaded` is a public FIELD with no getter over it
+-- -- so there is nothing to read and the refusal is found the only way it can be
+-- (see `act`).
+local function curtainState(object)
+	if instanceof(object, "IsoCurtain") then
+		return object:IsOpen() and "open" or "closed"
+	end
+	return object:isCurtainOpen() and "open" or "closed"
+end
+
+-- The SASH, which is a different reading from `win`'s: win0 is the magnetic
+-- contact and reports the latch, window0 is the operator and reports the hole in
+-- the wall. The three that come first are the three silent returns at the top of
+-- ToggleWindow -- permaLocked (offsets 21-28), destroyed (29-36) and the
+-- barricade the null character skips (37-49) -- in the order the engine tests
+-- them, because a survivor told the first thing that stops the motor has been
+-- told the thing to go and fix.
+--
+-- isSmashed() and isDestroyed() read the SAME field (#393 `destroyed`, both
+-- bodies are three instructions), so `smashed` covers the second of those three
+-- and there is no fourth word.
+--
+-- `sealed` is isPermaLocked(): a window the map says never opens. The trade word
+-- for a light that does not open is a sealed one, and that is what it is.
+local function sashState(win)
+	if win:isSmashed() then return "smashed" end
+	if win:isBarricaded() then return "barricaded" end
+	if win:isPermaLocked() then return "sealed" end
+	if win:IsOpen() then return "open" end
+	return "closed"
+end
+
+-- An oven, a microwave or a coffee machine. `broken` first, because it is the
+-- one thing the switch itself refuses on (setActivated returns at offsets 0-7)
+-- and the one thing a survivor has to do something about. No `no power` word:
+-- power is a fact about the wire and not about the stove, a light switch already
+-- says it as a REFUSAL and not as a state, and a stove that is simply off reads
+-- off whether the grid is up or not.
+local function stoveState(stove)
+	if stove:isBroken() then return "broken" end
+	return stove:Activated() and "on" or "off"
+end
+
+-- Has this appliance got electricity? Vanilla's own question, asked vanilla's own
+-- guarded way: `object:getContainer() and object:getContainer():isPowered()`
+-- (client/ISUI/ISInventoryPage.lua:216, and the stove's own three call sites at
+-- ISInventoryPaneContextMenu.lua:988, LootWindow/Handlers/StoveToggle.lua:8 and
+-- StoveSettings.lua:8). A fixture with no container answers no, which is the
+-- same answer a survivor clicking it would get.
+local function appliancePowered(object)
+	local container = object:getContainer()
+	if container == nil then return false end
+	return container:isPowered() == true
+end
+
 -- nil for a kind with no object to ask, and the caller keeps what it had: a
 -- sensor's state is the sampling book's and is put on in build(), and a radio's
 -- comes with the entry and never goes through the cache at all.
@@ -358,7 +436,42 @@ local function stateOf(kind, object, locks)
 		end
 		return thumpState(object)
 	end
+	if kind == "curtain" then return curtainState(object) end
+	if kind == "window" then return sashState(object) end
+	if kind == "stove" then return stoveState(object) end
+	if kind == "washer" then return object:isActivated() and "on" or "off" end
+	if kind == "gen" then return object:isActivated() and "on" or "off" end
 	return nil
+end
+
+-- The REST of the line, for a kind that has more to say than one word, or nil.
+--
+-- One kind has: a generator. What a survivor needs of a generator is not whether
+-- it is running -- he can hear that -- but how long it will go on running, and
+-- that is two numbers and a fact. They do not go in the `state` because the
+-- listings have a column for a word and not for a sentence (`ls -l /dev` puts
+-- the widest state on column 60), so `cat` gets the whole line and the tables
+-- get the word. CeroSecOS.devText is where the two are put back together.
+local function detailOf(kind, object)
+	if object == nil or kind ~= "gen" then return nil end
+	-- Percentages, both of them, because a survivor reading `fuel 62` against a
+	-- tank whose size he does not know has been told nothing. getFuelPercentage
+	-- is the engine's own, and getCondition() is already 0 to 100.
+	local text = "fuel " .. pct(object:getFuelPercentage())
+		.. " condition " .. pct(object:getCondition())
+	-- The third word is a fact and not a number, so it is there or it is not --
+	-- which is how a real status line said a boolean.
+	if object:isConnected() then text = text .. " connected" end
+	return text
+end
+
+-- Which of the three the laundry is. Named rather than worked out on the far
+-- side, because the client's outline asks the engine's own instanceof and a
+-- guess between three classes is two wrong answers (see classOf).
+local function washerClass(object)
+	if instanceof(object, "IsoClothingWasher") then return "IsoClothingWasher" end
+	if instanceof(object, "IsoClothingDryer") then return "IsoClothingDryer" end
+	return "IsoCombinationWasherDryer"
 end
 
 function CeroSecDevices.classify(object)
@@ -395,24 +508,97 @@ function CeroSecDevices.classify(object)
 			out[#out + 1] = { kind = "lock", side = side, desc = desc,
 				state = stateOf("lock", object) }
 		end
+		-- A door's curtain is a pair of FIELDS on the door and not a second
+		-- object, so a door with a sheet on it is a third device on one object
+		-- (CeroSecModules.doorHasCurtain). `cls` is what the client is told to
+		-- look for when `dev find` outlines it: a door, because that is what it
+		-- is.
+		if CeroSecModules.doorHasCurtain(object) and has(fitted, "curtain") then
+			out[#out + 1] = { kind = "curtain", cls = "IsoDoor", side = side,
+				desc = desc, state = stateOf("curtain", object) }
+		end
 		return out
+	end
+
+	-- A window's curtain and a built frame's are an object of their OWN, on the
+	-- square's list like any other fixture -- IsoGridSquare.AddSpecialObject puts
+	-- a curtain on `objects` as well as on `specialObjects` (offsets 25-65), so
+	-- the walk that is already here finds it and nothing needs a second scan.
+	if instanceof(object, "IsoCurtain") then
+		local fitted = fittedOn(object)
+		if not has(fitted, "curtain") then return nil end
+		return { {
+			kind = "curtain", cls = "IsoCurtain",
+			side = object:getNorth() and "N" or "W",
+			desc = roomName(object:getSquare()) or "exterior",
+			state = stateOf("curtain", object),
+		} }
+	end
+
+	-- The oven, the microwave and the coffee machine: one class, because
+	-- isMicrowave() and isStove() read the CONTAINER's type and the map's
+	-- GroupName = Coffee tiles carry IsoType = IsoStove with container = stove.
+	if instanceof(object, "IsoStove") then
+		local fitted = fittedOn(object)
+		if not has(fitted, "appliance") then return nil end
+		return { {
+			kind = "stove", cls = "IsoStove", side = "",
+			desc = roomName(object:getSquare()) or "exterior",
+			state = stateOf("stove", object),
+		} }
+	end
+
+	if instanceof(object, "IsoGenerator") then
+		local fitted = fittedOn(object)
+		if not has(fitted, "genset") then return nil end
+		return { {
+			kind = "gen", cls = "IsoGenerator", side = "",
+			-- A generator stands outside more often than in, and a room name is
+			-- the only thing that tells two of them apart on one machine.
+			desc = roomName(object:getSquare()) or "exterior",
+			state = stateOf("gen", object),
+			detail = detailOf("gen", object),
+		} }
+	end
+
+	-- The laundry, and the class is carried because there are three of them and
+	-- `dev find` has to tell the client which to look for.
+	if CeroSecModules.isWasher(object) then
+		local fitted = fittedOn(object)
+		if not has(fitted, "appliance") then return nil end
+		return { {
+			kind = "washer", cls = washerClass(object), side = "",
+			desc = roomName(object:getSquare()) or "exterior",
+			state = stateOf("washer", object),
+		} }
 	end
 
 	if instanceof(object, "IsoWindow") then
 		local fitted = fittedOn(object)
-		-- A contact and nothing else, ever: the only call in the game that moves a
-		-- sash is IsoWindow.ToggleWindow(IsoGameCharacter) and it wants a survivor
-		-- standing at it (docs/notes/modules-proofs.md, 4). So a wired window is a
-		-- window the machine can look at, and the lock a machine used to be able
-		-- to throw from across the building is one more thing that needed a hand.
-		if not has(fitted, "contact") then return nil end
-		return { {
-			kind = "win",
-			side = object:getNorth() and "N" or "W",
-			desc = roomName(object:getSquare()) or "exterior",
-			state = stateOf("win", object),
-			ro = fitted ~= nil,
-		} }
+		local side = object:getNorth() and "N" or "W"
+		local desc = roomName(object:getSquare()) or "exterior"
+		local out = {}
+		-- TWO DEVICES ON ONE WINDOW, and it is the door's own shape: doorN is what
+		-- opens and lockN is the key, and here winN is the catch a magnetic
+		-- contact senses and windowN is the sash a motor moves. Two vocabularies,
+		-- so two kinds -- a window that took `lock`, `unlock`, `open` and `close`
+		-- on one node would be a node whose mode could not say which of them it
+		-- could carry out.
+		--
+		-- winN stays READ-ONLY and the reason is not the one it used to give. It
+		-- is not that no call moves a sash: the corrected version is at
+		-- CeroSecModules.fitsOn, and the short of it is that a magnetic contact is
+		-- a sensor and senses. The latch is the survivor's, or the operator's on
+		-- its way past (ToggleWindow clears `locked` at offsets 50-54).
+		if has(fitted, "contact") then
+			out[#out + 1] = { kind = "win", cls = "IsoWindow", side = side, desc = desc,
+				state = stateOf("win", object), ro = fitted ~= nil }
+		end
+		if has(fitted, "window") then
+			out[#out + 1] = { kind = "window", cls = "IsoWindow", side = side,
+				desc = desc, state = stateOf("window", object) }
+		end
+		return out
 	end
 
 	-- Player-built. A base has no building and no rooms, so there is no room id
@@ -821,6 +1007,11 @@ function CeroSecDevices.findCached(x, y, z, now)
 				-- sampling book's and build() puts it on after the numbering.
 				local fresh = stateOf(entry.kind, entry.object, entry.locks)
 				if fresh ~= nil then entry.state = fresh end
+				-- And the rest of the line, which is a reading like any other: a
+				-- generator's tank going down between two passes is the whole
+				-- reason anybody cats one.
+				local more = detailOf(entry.kind, entry.object)
+				if more ~= nil then entry.detail = more end
 			end
 			out[i] = entry
 		end
@@ -959,6 +1150,10 @@ local function build(luaObject, state)
 		list[#list + 1] = {
 			id = entry.id, kind = entry.kind, desc = entry.desc,
 			side = entry.side, state = entry.state,
+			-- The rest of a line a kind has more than one word for. Absent on
+			-- every kind but the generator, and absent reads as "nothing more to
+			-- say" (CeroSecOS.devText).
+			detail = entry.detail,
 			-- Whether anything is wired behind it. The engine mounts a node that
 			-- says so and refuses every write to it in its own name.
 			ro = entry.ro,
@@ -1113,6 +1308,198 @@ local function act(entry, value)
 		return true, nil, windowState(object)
 	end
 
+	--
+	-- THE SASH, which is the window operator's and not the contact's
+	--
+	-- IsoWindow.ToggleWindow(IsoGameCharacter) is the only call in the game that
+	-- moves one -- javap names the three writers of the `open` field and they are
+	-- load(), this, and syncIsoObjectReceive() -- and it takes a character it
+	-- never dereferences. Every use of the argument is behind a null guard and the
+	-- sync at offset 147 is unconditional, which is why this works at all.
+	--
+	-- A LUA nil REACHES A JAVA OBJECT PARAMETER AS null, and both halves of that
+	-- are proven rather than assumed:
+	--
+	--   the marshalling. LuaJavaInvoker.prepareCall pulls each argument off the
+	--   frame (offsets 295-304), and at 325-347 it converts anything the parameter
+	--   type is not already an instance of -- which a null never is, Class.isInstance
+	--   answering false for it. convert(Object, Class) returns null at its first two
+	--   instructions for a null input (offsets 0-5), before the converter manager is
+	--   asked anything. And the type check at 349-392 is `if (arg != null &&
+	--   converted == null) fail(...)`: the failure is GUARDED ON arg != null, so a
+	--   null argument is stored straight into the parameter array at 393-405. The
+	--   argument COUNT is not exempt (offsets 126-137 refuse a short call), so the
+	--   nil has to be written and cannot be left out.
+	--
+	--   and vanilla's own Lua does it. media/lua/shared/TimedActions/ISLockDoor.lua
+	--   :56, :62 and :69 -- `door:syncIsoObject(false, 0, nil, nil)` -- passes nil
+	--   into a UdpConnection and a ByteBufferReader, and this mod has made that same
+	--   call on every door write since rung 1.
+	--
+	-- WHAT THE MOTOR DOES BESIDES MOVE THE SASH, which is the whole design of this
+	-- device and is written in the bytecode rather than chosen by us:
+	--
+	--   it throws the catch. Offsets 50-54 set `locked = false` unconditionally.
+	--   That is what an operator does -- a motor that stopped at a latch would be a
+	--   motor with a hand -- and it is why the latch stays win0's reading and never
+	--   becomes this device's word.
+	--
+	--   it sets the house alarm off. Offsets 86-118: when the sash ends up open the
+	--   sandbox check (lore.triggerHouseAlarm) is consulted ONLY for an IsoZombie,
+	--   so a null character falls straight into handleAlarm(). It is kept, because
+	--   a window opened in an alarmed house is a window opened in an alarmed house
+	--   and the machine is not a burglar with a key. It is in the manual, in the
+	--   changelog and in the parcours in those words.
+	--
+	-- AND THE THREE SILENT RETURNS ARE REFUSED HERE, before the call, for the
+	-- barricaded door's reason: a `return` that does nothing is an order swallowed
+	-- and a machine reporting the state it already had.
+	if entry.kind == "window" then
+		local want = value == "open"
+		if object:isSmashed() then return false, "smashed" end
+		if object:isBarricaded() then return false, "barricaded" end
+		if object:isPermaLocked() then return false, "sealed" end
+		-- ToggleWindow TOGGLES, so a sash already where it is asked to be is left
+		-- alone: two `dev window0 open` in a row are one open window, and the
+		-- second one does not ring the alarm again.
+		if object:IsOpen() ~= want then
+			object:ToggleWindow(nil)
+		end
+		return true, nil, sashState(object)
+	end
+
+	--
+	-- THE CURTAIN, and there are two of them
+	--
+	if entry.kind == "curtain" then
+		local want = value == "open"
+		if instanceof(object, "IsoCurtain") then
+			-- IsoCurtain.ToggleDoorSilent() takes no character and BROADCASTS
+			-- ITSELF: its last act is syncIsoObject(false, open ? 1 : 0, null) at
+			-- offset 85-100, and that override's server branch walks
+			-- GameServer.udpEngine.connections. This is the one actuator in the mod
+			-- whose sync is the engine's and not ours -- IsoDoor's own
+			-- ToggleDoorSilent syncs nothing -- so nothing is added after it.
+			-- Vanilla makes the same bare call itself, on a curtain nobody is
+			-- holding: client/DebugUIs/Scenarios/Trailer2Scenario.lua:134,
+			-- `window1:HasCurtains():ToggleDoorSilent()`.
+			if object:IsOpen() ~= want then
+				object:ToggleDoorSilent()
+				-- AND THE BARRICADE, found the only way it can be. The toggle's
+				-- first two instructions are `barricaded -> return` (offsets 0-7)
+				-- and IsoCurtain has no isBarricaded(): `barricaded` is a public
+				-- field with no getter over it, so there is nothing to ask before
+				-- the call. What there is, is the fact that those two instructions
+				-- are the ONLY way out of that method without moving the sheet --
+				-- so a curtain that did not move is a curtain that is boarded, and
+				-- the machine says so instead of swallowing the order.
+				if object:IsOpen() ~= want then return false, "barricaded" end
+			end
+			return true, nil, curtainState(object)
+		end
+		-- A door's own sheet. toggleCurtain() sets the field and broadcasts on the
+		-- server in one call -- `transmitSetCurtainOpen(isCurtainOpen())` at
+		-- offsets 55-60, whose server branch is a sendObjectChange of
+		-- SET_CURTAIN_OPEN -- so this is the pair vanilla makes and nothing is
+		-- added after it either. setCurtainOpen(b) alone is the half that does not
+		-- broadcast.
+		--
+		-- It has one silent return and classify has already answered it: no sheet,
+		-- no device (offsets 0-7, `hasCurtain`).
+		if object:isCurtainOpen() ~= want then object:toggleCurtain() end
+		return true, nil, curtainState(object)
+	end
+
+	--
+	-- THE STOVE, THE MICROWAVE AND THE COFFEE MACHINE
+	--
+	-- Toggle() and not setActivated(), because Toggle() is the whole gesture and
+	-- the other two thirds of it matter: offsets 0-27 are setActivated(!activated),
+	-- getContainer().addItemsToProcessItems() and
+	-- IsoGenerator.updateGenerator(square). A machine that called the setter alone
+	-- would switch an oven on that never cooked anything and never drew a watt off
+	-- the generator.
+	--
+	-- It is vanilla's own server-side line, written by vanilla with no character
+	-- anywhere in it: media/lua/server/ClientCommands.lua:1049-1062,
+	-- `Commands.stove.setOvenParamsAndToggle`, which finds the IsoStove on a square
+	-- and calls obj:Toggle(). The timer and the temperature that command also sets
+	-- are a survivor's settings and are left alone.
+	--
+	-- setActivated syncs itself from the server -- offsets 201-214, sync() and
+	-- syncSpriteGridObjects(true, true) -- so nothing is broadcast by us.
+	-- PlayToggleSound() is separate and belongs to a survivor's hands, so a machine
+	-- that works a stove is silent, which is right.
+	if entry.kind == "stove" then
+		local want = value == "on"
+		-- Broken first, and by us: setActivated's own first instructions are
+		-- isBroken -> return (offsets 0-7), so a machine that did not check would
+		-- swallow the order.
+		if object:isBroken() then return false, "broken" end
+		if not appliancePowered(object) then return false, "no power" end
+		if object:Activated() ~= want then object:Toggle() end
+		return true, nil, stoveState(object)
+	end
+
+	--
+	-- THE LAUNDRY
+	--
+	-- setActivated is a field write plus IsoGenerator.updateGenerator and no sync
+	-- at all, and the broadcast is ours: sendObjectChange(WASHER_STATE), which is
+	-- server-only by construction (its first instructions test GameServer.server
+	-- and its client branch logs "sendObjectChange() can only be called on the
+	-- server"). saveChange writes isActivated() under that change.
+	--
+	-- It is exactly the pair vanilla's own timed action makes,
+	-- media/lua/shared/TimedActions/ISToggleClothingWasher.lua:
+	--   self.object:setActivated(not self.object:isActivated())
+	--   self.object:sendObjectChange(IsoObjectChange.WASHER_STATE)
+	if entry.kind == "washer" then
+		local want = value == "on"
+		if not appliancePowered(object) then return false, "no power" end
+		if object:isActivated() ~= want then
+			object:setActivated(want)
+			object:sendObjectChange(IsoObjectChange.WASHER_STATE)
+		end
+		return true, nil, object:isActivated() and "on" or "off"
+	end
+
+	--
+	-- THE GENERATOR
+	--
+	-- setActivated(boolean) is idempotent by construction (offsets 0-8 return when
+	-- the argument is the state it is already in) and its server branch calls
+	-- sync() at offsets 113-122, which is IsoObject.sync() ->
+	-- syncIsoObject(false, 0, null, null) -- the same broadcast the door already
+	-- makes. Vanilla calls sync() again after it and so does this, because
+	-- ISActivateGenerator:complete does.
+	--
+	-- IT CHECKS NOTHING ITSELF: no fuel test, no condition test, no connection
+	-- test. The gate is vanilla's own timed action's (ISActivateGenerator:isValid)
+	-- and it is copied: not connected, no fuel, no condition. All three are asked
+	-- only of STARTING it -- stopping a generator that is out of fuel is stopping
+	-- a generator, and refusing that would be a machine arguing.
+	--
+	-- AND THE COIN FLIP IS NOT OURS. That same complete() calls failToStart() on a
+	-- generator below half condition, one time in two. A shoulder fails to pull a
+	-- cord; an electric starter does not, and a starter is what this module IS.
+	-- Leaving it out is a decision and it is written here rather than left as a
+	-- line somebody deleted.
+	if entry.kind == "gen" then
+		local want = value == "on"
+		if want then
+			if not object:isConnected() then return false, "not connected" end
+			if object:getFuel() <= 0 then return false, "no fuel" end
+			if object:getCondition() <= 0 then return false, "broken" end
+		end
+		if object:isActivated() ~= want then
+			object:setActivated(want)
+			object:sync()
+		end
+		return true, nil, object:isActivated() and "on" or "off",
+			detailOf("gen", object)
+	end
+
 	-- lock: a map door, or a player-built one.
 	if instanceof(object, "IsoDoor") then
 		object:setLockedByKey(value == "lock")
@@ -1243,6 +1630,14 @@ local function classOf(entry)
 	-- another there is the item's full type and not a sprite name (a world item is
 	-- drawn from a model). See CeroSecTerminal:objectAt.
 	if entry.kind == "sensor" then return "IsoWorldInventoryObject" end
+	-- The kinds the motor rung added carry their own class, written down when
+	-- classify made them. It has to be carried and cannot be worked out again
+	-- here: a curtain is an IsoCurtain or a DOOR depending on whose sheet it is,
+	-- and the laundry is one of three classes with nothing in common but
+	-- IsoObject. Guessing between three is two wrong answers, and a wrong class
+	-- is an outline the client draws round nothing (CeroSecTerminal:objectAt asks
+	-- the engine's own instanceof for it).
+	if type(entry.cls) == "string" and entry.cls ~= "" then return entry.cls end
 	if entry.kind == "win" then return "IsoWindow" end
 	-- A radio is a fixture with a sprite like a light switch, so the outline finds
 	-- it the ordinary way: `dev find radio0` is how a survivor with two sets in the
@@ -1298,17 +1693,23 @@ function CeroSecDevices.envFor(luaObject, state, system, playerObj, token)
 			-- NOT put the old state back: the word just typed is the newer of
 			-- the two intentions.
 			CeroSecDevices.dropBlink(id)
-			local ok, reason, after = act(entry, value)
+			local ok, reason, after, detail = act(entry, value)
 			if not ok then return false, reason end
 			-- The list the engine is holding is updated too, so a `cat` in the
-			-- same breath agrees with what was just done.
+			-- same breath agrees with what was just done -- and so is the rest of
+			-- the line for a kind that has one, because a generator that has just
+			-- been started has a tank that is going down from now on.
 			if type(after) == "string" then
 				entry.state = after
+				if type(detail) == "string" then entry.detail = detail end
 				for i = 1, #list do
-					if list[i].id == id then list[i].state = after end
+					if list[i].id == id then
+						list[i].state = after
+						if type(detail) == "string" then list[i].detail = detail end
+					end
 				end
 			end
-			return true, nil, after
+			return true, nil, after, detail
 		end,
 
 		-- Point at one for `seconds`. A light blinks where everybody can see it;

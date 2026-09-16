@@ -10,6 +10,10 @@
 #   Item_CeroSecElectricStrike.png    a strike plate, keeper cut out of it
 #   Item_CeroSecDoorOperator.png      a motor, its arm folded against it
 #   Item_CeroSecSmallMotor.png        the motor on its own, no arm and no case
+#   Item_CeroSecCurtainMotor.png      a tube motor, the rail it lives in beside it
+#   Item_CeroSecWindowOperator.png    a casement operator: the crank and the arm
+#   Item_CeroSecApplianceSwitch.png   a contactor, three poles and a coil
+#   Item_CeroSecGeneratorSwitch.png   a transfer switch: a box and its handle
 #   Item_CeroSecWiringGuide.png       the magazine the four recipes come out of
 #
 # The language is the one the mod's other icons already speak: a transparent
@@ -234,6 +238,125 @@ def small_motor():
     i.save("SmallMotor")
 
 
+def curtain_motor():
+    """A tube motor: the whole thing lives INSIDE the rail, so the icon is the
+    tube lying next to the length of track it drops into, with the crown and the
+    drive wheel on the end. Long and thin, which is the one silhouette no other
+    icon here has."""
+    i = Icon()
+    # The rail, behind and above: a shallow C seen end-on down its length.
+    i.box(2, 5, 29, 10, STEEL_LO)
+    i.rect(3, 6, 28, 7, STEEL)
+    i.hline(3, 28, 9, INK)
+    # The tube itself, long and low.
+    i.box(2, 13, 25, 22, STEEL)
+    i.rect(3, 14, 24, 15, STEEL_HI)
+    i.rect(3, 20, 24, 21, STEEL_LO)
+    # The seam down it, which is what makes a tube read as a tube.
+    i.hline(3, 24, 18, STEEL_LO)
+    # The crown and the drive wheel on the right-hand end.
+    i.box(25, 11, 30, 24, CASE)
+    i.rect(26, 12, 29, 13, CASE_HI)
+    i.rect(26, 16, 29, 19, STEEL)
+    i.rect(27, 17, 28, 18, INK)
+    # The lead out of the other end.
+    i.hline(0, 1, 17, BRASS)
+    i.save("CurtainMotor")
+
+
+def window_operator():
+    """A casement operator: the gearbox with the crank on it, and the scissor arm
+    folded out of it. The ARM is what tells it from a door operator -- it is thin
+    and it is bent, where the door operator's is a straight bar folded flat."""
+    i = Icon()
+    # The base plate, which is what screws to the sill.
+    i.box(1, 21, 22, 28, STEEL)
+    i.rect(2, 22, 21, 23, STEEL_HI)
+    i.dot(4, 25, INK)
+    i.dot(19, 25, INK)
+    # The gearbox on the left of it, standing up.
+    i.box(2, 12, 13, 22, CASE)
+    i.rect(3, 13, 12, 14, CASE_HI)
+    i.rect(5, 16, 10, 19, STEEL)
+    i.rect(7, 17, 8, 18, INK)
+    # The arm: up and to the right, then bent back -- a scissor, drawn as two
+    # straight runs meeting at an elbow, because a diagonal in 32 pixels is a
+    # staircase and a bend is legible where a curve is not.
+    for k in range(0, 10):
+        i.dot(13 + k, 20 - k, STEEL)
+        i.dot(13 + k, 21 - k, INK)
+        i.dot(13 + k, 19 - k, INK)
+    for k in range(0, 8):
+        i.dot(22 + k, 11 + k, STEEL)
+        i.dot(22 + k, 10 + k, INK)
+        i.dot(22 + k, 12 + k, INK)
+    # The elbow pin and the shoe on the end.
+    i.dot(22, 11, BRASS)
+    i.box(28, 16, 31, 21, STEEL)
+    # The crank handle off the bottom of the gearbox.
+    i.vline(7, 23, 27, BRASS)
+    i.hline(7, 10, 27, BRASS)
+    i.dot(11, 27, INK)
+    i.save("WindowOperator")
+
+
+def appliance_switch():
+    """A contactor: a squat block with three poles of terminals down each side
+    and the coil across the middle. It has to read as a SWITCH and not as a box,
+    and what does that is the terminals -- six brass screws, three a side."""
+    i = Icon()
+    i.box(6, 4, 25, 27, CASE)
+    i.rect(7, 5, 24, 7, CASE_HI)
+    # The coil window across the middle.
+    i.rect(9, 13, 22, 18, STEEL_LO)
+    i.hline(10, 21, 15, STEEL)
+    i.hline(10, 21, 16, STEEL)
+    # Three terminals a side, top and bottom, brass and screwed.
+    for y in (9, 22):
+        for x in (9, 14, 19):
+            i.rect(x, y, x + 2, y + 1, BRASS)
+            i.dot(x + 1, y, INK)
+            i.dot(x + 1, y + 1, INK)
+    # The leads out to the wiring chamber.
+    for y in (9, 22):
+        i.hline(2, 5, y, BRASS)
+        i.hline(26, 29, y, BRASS)
+        i.dot(1, y, INK)
+        i.dot(30, y, INK)
+    i.save("ApplianceSwitch")
+
+
+def generator_switch():
+    """A transfer switch: a steel enclosure with a big lever on the front of it.
+    The LEVER is the whole icon -- it is the one thing in the mod a survivor puts
+    his whole hand on -- so it is drawn thick, off-centre and half thrown."""
+    i = Icon()
+    i.box(4, 3, 27, 28, STEEL)
+    i.vline(5, 4, 27, STEEL_HI)
+    i.vline(26, 4, 27, STEEL_LO)
+    # The window cut into the door, with the two positions printed in it.
+    i.box(8, 6, 23, 13, INK, INK)
+    i.rect(9, 7, 22, 12, CASE)
+    i.rect(10, 8, 14, 10, GREEN)
+    i.rect(17, 9, 21, 11, STEEL_LO)
+    # The lever, and it is the whole icon: a thick bar out of a pivot low on the
+    # door, thrown up and to the left, with the grip on the end of it. Drawn as
+    # ONE run of three-pixel blocks rather than as a body plus an arm, because at
+    # this size two pieces with a joint between them read as two objects.
+    i.box(11, 21, 18, 26, CASE)      # the pivot housing
+    i.rect(12, 22, 17, 23, CASE_HI)
+    i.dot(14, 24, INK)
+    i.dot(15, 24, INK)
+    for k in range(0, 7):
+        i.rect(11 - k, 20 - k, 13 - k, 21 - k, STEEL)
+        i.hline(11 - k, 13 - k, 19 - k, INK)
+        i.hline(11 - k, 13 - k, 22 - k, INK)
+    # The grip: brass, on the end, and big enough to be a handle and not a dot.
+    i.box(2, 11, 7, 16, BRASS)
+    i.rect(3, 12, 6, 13, CREAM)
+    i.save("GeneratorSwitch")
+
+
 def wiring_guide():
     """The magazine the four recipes come out of, lying flat and seen square on:
     a dark cover, the masthead band across the top in the screen green, the
@@ -272,6 +395,10 @@ relay()
 electric_strike()
 door_operator()
 small_motor()
+curtain_motor()
+window_operator()
+appliance_switch()
+generator_switch()
 wiring_guide()
 
 
@@ -283,7 +410,8 @@ if "--sheet" in sys.argv:
     zoom, pad = 4, 10
     cell = SIZE * zoom
     names = ["MagneticContact", "Relay", "ElectricStrike", "DoorOperator",
-             "SmallMotor", "WiringGuide"]
+             "SmallMotor", "CurtainMotor", "WindowOperator",
+             "ApplianceSwitch", "GeneratorSwitch", "WiringGuide"]
     ims = [Image.open(OUT % n).convert("RGBA") for n in names]
     w = pad + len(ims) * (cell + pad)
     h = pad + SIZE + pad + cell + pad

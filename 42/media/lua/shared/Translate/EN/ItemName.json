@@ -11,6 +11,10 @@
     "CeroSec.Relay": "Relay Module",
     "CeroSec.ElectricStrike": "Electric Strike",
     "CeroSec.DoorOperator": "Door Operator",
+    "CeroSec.CurtainMotor": "Curtain Motor",
+    "CeroSec.WindowOperator": "Window Operator",
+    "CeroSec.ApplianceSwitch": "Appliance Switch",
+    "CeroSec.GeneratorSwitch": "Generator Switch",
     "CeroSec.SmallMotor": "Small Motor",
     "CeroSec.WiringGuide": "CeroSec Field Wiring Guide",
     "CeroSec.StickyNote": "Sticky Note"

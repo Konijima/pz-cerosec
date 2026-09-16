@@ -11,6 +11,10 @@
     "Tooltip_CeroSec_Fitted": "One is already fitted.",
     "Tooltip_item_CeroSecFloppyPrinted": "Printed label.",
     "Tooltip_item_CeroSecFloppyHand": "Handwritten label.",
+    "Tooltip_item_CeroSecCurtainMotor": "Fits a curtain, or a door with a sheet on it. The<br>computer draws it and opens it.",
+    "Tooltip_item_CeroSecWindowOperator": "Fits a window. The computer opens and shuts the sash --<br>and it throws the catch and sets off a house alarm doing it.",
+    "Tooltip_item_CeroSecApplianceSwitch": "Fits an oven, a microwave, a coffee machine, a washer or<br>a dryer. The computer starts it and stops it.",
+    "Tooltip_item_CeroSecGeneratorSwitch": "Fits a generator. The computer starts it and stops it --<br>it will not pull a cord, so a healthy generator only.",
     "Tooltip_item_CeroSecSmallMotor": "A small electric motor. The four things in Knox County<br>that have one are a hair dryer, sheep shears, a CD player<br>and a blower fan.",
     "Tooltip_item_CeroSecWiringGuide": "CeroSec Systems field handbook. Wiring diagrams and parts<br>lists for the four interface modules: magnetic contact, relay,<br>electric strike and door operator."
 }

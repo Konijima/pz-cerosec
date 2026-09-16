@@ -2484,15 +2484,16 @@ do
 	for _ in string.gmatch(code, "{") do opens = opens + 1 end
 	for _ in string.gmatch(code, "}") do closes = closes + 1 end
 	eq("braces balance", opens, closes)
-	-- The module, the three books, the four disks, the four hardware modules, the book
-	-- that teaches them, the RETIRED single book -- which is declared and is not
-	-- loot, because dropping an item block deletes every copy of it in every save --
-	-- the sticky note a password is written on, and the small motor the modules
-	-- that MOVE something are built around (the game ships no motor item at all).
-	eq("sixteen blocks: the module, the three books, the retired one, the four "
-		.. "disks, the four hardware modules, the Field Wiring Guide, the note "
+	-- The module, the three books, the four disks, the EIGHT hardware modules, the
+	-- book that teaches them, the RETIRED single book -- which is declared and is
+	-- not loot, because dropping an item block deletes every copy of it in every
+	-- save -- the sticky note a password is written on, and the small motor the
+	-- modules that MOVE something are built around (the game ships no motor item
+	-- at all).
+	eq("twenty blocks: the module, the three books, the retired one, the four "
+		.. "disks, the eight hardware modules, the Field Wiring Guide, the note "
 		.. "and the small motor",
-		opens, 16)
+		opens, 20)
 
 	check("it declares the module the loot table names",
 		string.find(code, "module CeroSec", 1, true) ~= nil)
@@ -2794,7 +2795,23 @@ do
 			name = "Electric Strike", model = "ScrapMetal" },
 		{ item = "DoorOperator", icon = "CeroSecDoorOperator",
 			name = "Door Operator", model = "ScrapMetal" },
+		-- And the motor rung's four. Same shape, same keys; what they add is a
+		-- Tooltip each, because what an "Appliance Switch" fits is not something
+		-- its name tells anybody.
+		{ item = "CurtainMotor", icon = "CeroSecCurtainMotor",
+			name = "Curtain Motor", model = "ScrapMetal",
+			tip = "Tooltip_item_CeroSecCurtainMotor" },
+		{ item = "WindowOperator", icon = "CeroSecWindowOperator",
+			name = "Window Operator", model = "ScrapMetal",
+			tip = "Tooltip_item_CeroSecWindowOperator" },
+		{ item = "ApplianceSwitch", icon = "CeroSecApplianceSwitch",
+			name = "Appliance Switch", model = "ElectronicsScrap",
+			tip = "Tooltip_item_CeroSecApplianceSwitch" },
+		{ item = "GeneratorSwitch", icon = "CeroSecGeneratorSwitch",
+			name = "Generator Switch", model = "ScrapMetal",
+			tip = "Tooltip_item_CeroSecGeneratorSwitch" },
 	}
+	eq("one entry here per module the Lua works in", #MODULES, #CeroSecModules.LIST)
 	for m = 1, #MODULES do
 		local want = MODULES[m]
 		local body = blocks[want.item]
@@ -2821,6 +2838,25 @@ do
 		local icon = io.open("common/media/textures/Item_" .. want.icon .. ".png", "r")
 		check("and the icon file is there: Item_" .. want.icon .. ".png", icon ~= nil)
 		if icon ~= nil then icon:close() end
+
+		-- Both names a player reads, in both languages: a missing ItemName key
+		-- prints the English fallback to a French player and says nothing about
+		-- it, and a missing Tooltip key prints the KEY itself on the glass.
+		local keyed = { { "ItemName.json", "CeroSec." .. want.item } }
+		if want.tip ~= nil then
+			eq(want.item .. "'s tooltip key", keys.Tooltip, want.tip)
+			keyed[#keyed + 1] = { "Tooltip.json", want.tip }
+		end
+		for _, lang in ipairs({ "EN", "FR" }) do
+			for _, pair in ipairs(keyed) do
+				local handle = assert(io.open(
+					"42/media/lua/shared/Translate/" .. lang .. "/" .. pair[1], "r"))
+				local strings = handle:read("*a")
+				handle:close()
+				check(lang .. "/" .. pair[1] .. " defines " .. pair[2],
+					string.find(strings, '"' .. pair[2] .. '"', 1, true) ~= nil)
+			end
+		end
 	end
 
 	-- THE SMALL MOTOR, which is not a module and is checked apart from the four:
@@ -3569,7 +3605,11 @@ do
 		-- anybody would notice: a moving module that lost its motor is a recipe
 		-- a survivor can suddenly build out of scrap, and nothing in the game
 		-- would tell him it used to cost more.
-		local MOVES = { strike = true, operator = true }
+		-- The four that move a piece of metal or of cloth, against the four that
+		-- close a circuit. Written out rather than derived, because deriving it
+		-- from anything would be deriving it from the same list twice.
+		local MOVES = { strike = true, operator = true,
+			curtain = true, window = true }
 		for _, part in ipairs({ "CeroSec.SmallMotor", "Base.Receiver" }) do
 			local has = string.find(body, "[" .. part .. "]", 1, true) ~= nil
 			if MOVES[module.id] then
@@ -3593,9 +3633,9 @@ do
 	-- nothing in the Lua knows about.
 	local made = 0
 	for _ in pairs(recipes) do made = made + 1 end
-	eq("four modules and the motor, and nothing else is made", made,
+	eq("one module each and the motor, and nothing else is made", made,
 		#CeroSecModules.LIST + 1)
-	eq("in six blocks, because the motor has two", #names,
+	eq("in one block more, because the motor has two", #names,
 		#CeroSecModules.LIST + 2)
 
 	--
@@ -3715,6 +3755,7 @@ do
 	-- survivor being able to fit an operator and unable to make the part for one.
 	eq("the guide teaches one recipe per module and the motor's two",
 		taughtCount, #CeroSecModules.LIST + 2)
+	eq("which is every craftRecipe in the file", taughtCount, #names)
 	table.sort(names)
 	for n = 1, #names do
 		check("the guide names the recipe " .. names[n], taught[names[n]] == true)

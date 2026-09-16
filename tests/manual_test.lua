@@ -350,6 +350,12 @@ local DEVICE_MESSAGES = {
 	-- and SCeroSecDevices' act for the belt behind it).
 	"operation not supported",
 	CeroSecOS.DEV_PATH .. ": read-only",
+	-- And the motor rung's five. `sealed` is a window the map built never to open
+	-- (isPermaLocked), and the other four are the generator's and the stove's.
+	"sealed",
+	"broken",
+	"no fuel",
+	"not connected",
 }
 for i = 1, #DEVICE_MESSAGES do
 	check("error appendix carries the device reason \"" .. DEVICE_MESSAGES[i] .. "\"",
@@ -688,8 +694,15 @@ for vi = 1, #volumes do
 	-- counts as a shop is one page of chapter 8, and eighty-four was exactly where
 	-- Volume 2 then stood. The LOWER bound is the half that catches a volume losing
 	-- chapters, and it has not moved once.
-	check(where .. " has 50..85 pages (" .. vpages .. ")",
-		vpages >= 50 and vpages <= 85)
+	-- NINETY-FIVE since the motor rung, and it is the biggest of the five moves
+	-- because the rung is: four new modules and five new kinds of device, which is
+	-- six pages of chapter 6 -- the two faces of a window, the alarm warning that
+	-- has to be read before anybody fits an operator, the curtains and the
+	-- appliances, the generator's own line, and where a small motor comes from --
+	-- plus two of the appendix for their refusals. Eighty-five was where Volume 2
+	-- stood before them and ninety-two is where it stands now.
+	check(where .. " has 50..95 pages (" .. vpages .. ")",
+		vpages >= 50 and vpages <= 95)
 	vol.wholeText = table.concat(vwhole, "\n")
 end
 
@@ -1099,10 +1112,26 @@ do
 		end
 		check("a contact and a relay are the same level",
 			byId.contact.skill == byId.relay.skill)
+		-- Eight modules and three levels, so the page names GROUPS -- and a group
+		-- is a lie the moment one of its members moves out of it, which is why
+		-- each membership is its own assertion here rather than a comma in the
+		-- sentence below.
+		check("a curtain motor is a strike's level",
+			byId.curtain.skill == byId.strike.skill)
+		check("and so is an appliance switch",
+			byId.appliance.skill == byId.strike.skill)
+		check("a window operator is a door operator's",
+			byId.window.skill == byId.operator.skill)
+		check("and so is a generator switch",
+			byId.genset.skill == byId.operator.skill)
+		check("and the page names every module there is (" ..
+			#CeroSecModules.LIST .. ")", #CeroSecModules.LIST == 8)
 		states("what each module asks of an electrician",
-			"a contact or a relay at Electricity " .. byId.contact.skill
-			.. ", a strike at " .. byId.strike.skill
-			.. ", an operator at " .. byId.operator.skill)
+			"a contact or a relay at " .. byId.contact.skill
+			.. ", a strike, a curtain motor or an appliance switch at "
+			.. byId.strike.skill
+			.. ", the two operators and the generator switch at "
+			.. byId.operator.skill)
 	end
 
 	states("the devices", CeroSecOS.DEV_MAX .. " devices at most, at mode "
@@ -1142,10 +1171,44 @@ do
 		"door0: operation not supported",
 		"dev: <word>: unknown kind", "dev: <id>: no such device",
 		CeroSecOS.DEV_PATH .. ": read-only",
+		-- The motor rung's, as whole lines for the same reason the rest are:
+		-- "broken" is a word a stove and a generator both use and "barricaded" is
+		-- one three kinds use, so a bare sweep cannot tell which device said it.
+		"window0: smashed", "window0: barricaded", "window0: sealed",
+		"curtain0: barricaded",
+		"stove0: broken", "stove0: no power", "washer0: no power",
+		"gen0: no fuel", "gen0: broken", "gen0: not connected",
 	}
 	for i = 1, #DEVICE_LINES do
 		check("Volume 2's appendix carries the whole line \"" .. DEVICE_LINES[i] .. "\"",
 			string.find(vErr, DEVICE_LINES[i], 1, true) ~= nil)
+	end
+
+	--
+	-- AND THE ONE THING A PAGE HAS TO SAY THAT NO REFUSAL DOES: fitting a window
+	-- operator arms a trap.
+	--
+	-- IsoWindow.ToggleWindow calls handleAlarm() every time the sash ends up open
+	-- and a null character never reaches the sandbox check that would spare it
+	-- (offsets 86-118). That is a horde, on a crontab line, in a house nobody has
+	-- cleared -- and the machine cannot warn anybody at the moment it happens,
+	-- because by then it has happened. So the warning is the BOOK's, it is on the
+	-- page a survivor reads before he fits one, and it is pinned here.
+	--
+	-- Pinned as three separate facts and not as one sentence: a page that
+	-- mentioned the alarm and forgot the catch would still be a page somebody
+	-- acted on.
+	do
+		local vDev = chapterTextMatching(vol.chapters, "through /dev")
+		check("Volume 2 has the chapter on the building", vDev ~= nil)
+		local dflat = string.gsub(vDev or "", "%s+", " ")
+		for _, phrase in ipairs({
+				"SETS OFF A HOUSE ALARM",
+				"It also throws the catch",
+				"opening the window RINGS IT, every time" }) do
+			check('Volume 2 warns about the window operator: "' .. phrase .. '"',
+				string.find(dflat, phrase, 1, true) ~= nil)
+		end
 	end
 
 	-- The kinds, derived from the table the engine judges a value against rather

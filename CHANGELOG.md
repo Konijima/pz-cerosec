@@ -20,6 +20,27 @@ date.
   recipe you learned -- it is the price of the NEXT one that moved. The two
   modules that only watch a fixture, the magnetic contact and the relay, are
   untouched: a motor is for the ones that move something.
+- **Four new modules, and five new things a computer can work.** A **curtain
+  motor** on a curtain or on a door with a sheet over it (`curtain0`, open and
+  close). A **window operator** on a window (`window0`) -- read the warning
+  below. An **appliance switch** on an oven, a microwave, a coffee machine, a
+  washer or a dryer (`stove0`, `washer0`, on and off). A **generator switch** on
+  a generator (`gen0`), which reads `on fuel 62 condition 80 connected` and
+  starts one without pulling a cord -- though not an empty, a wrecked or an
+  unplugged one. All four are in the Field Wiring Guide and on the same shelves
+  the first four are.
+- **A window operator sets off a house alarm.** Opening a window is opening a
+  window: the motor throws the catch on its way past, and in a house whose alarm
+  was still armed when the power came back it rings, every time, exactly as a
+  hand through the glass would. `0 6 * * * echo open > /dev/window0` in a house
+  nobody has cleared is a horde at six in the morning. Closing one is silent.
+  The book says all of this on the page before you fit one.
+- A window is now two devices: `win0` is the magnetic contact and reads the
+  latch, `window0` is the operator and moves the sash. Nothing about `win0`
+  changed.
+- If your server has **Hardware modules required turned off**, the new fixtures
+  answer with no module fitted like everything else does -- so a world that was
+  every door and light is now every curtain, stove, washer and generator too.
 - A computer running a script no longer reads the whole building ten times a
   second. It reads it once a second and asks each door, light and window what it
   is doing every single time, so nothing you can see on the glass changed and a

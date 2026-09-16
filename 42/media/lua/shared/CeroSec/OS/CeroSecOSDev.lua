@@ -130,6 +130,19 @@ CeroSecOS.DEV_VALUES = {
 	lock   = { lock = true, unlock = true },
 	win    = { lock = true, unlock = true },
 	door   = { open = true, close = true },
+	-- The motor rung's five. A window is TWO kinds on one window and not one with
+	-- four words: winN is the catch a magnetic contact senses -- lock, unlock --
+	-- and windowN is the sash a window operator moves, which is a door's pair of
+	-- words because it is a door's job. One node, one vocabulary, one thing its
+	-- mode can promise.
+	window  = { open = true, close = true },
+	curtain = { open = true, close = true },
+	-- An oven, a microwave and a coffee machine are one class and one kind; the
+	-- washer, the dryer and the combination machine are another. Both take a light
+	-- switch's words because both are a switch.
+	stove   = { on = true, off = true },
+	washer  = { on = true, off = true },
+	gen     = { on = true, off = true },
 	sensor = {},
 	floppy = {},
 	-- The third empty one, and it is empty for the sensor's reason read yet
@@ -303,6 +316,9 @@ local function nodeFor(entry)
 		side = "",
 		pos = "",
 		state = "",
+		-- The rest of the line, for a kind that has more than a word to say. Empty
+		-- on every kind but the generator; see CeroSecOS.devText.
+		detail = "",
 	}
 	-- A device with nothing behind it to carry a write out. The caller decides
 	-- which those are -- it is the only side that knows what is wired to what --
@@ -313,9 +329,11 @@ local function nodeFor(entry)
 	if type(entry.side) == "string" then node.side = entry.side end
 	if type(entry.pos) == "string" then node.pos = entry.pos end
 	if type(entry.state) == "string" then node.state = entry.state end
+	if type(entry.detail) == "string" then node.detail = entry.detail end
 	if entry.dead then
 		node.dead = true
 		node.state = ""
+		node.detail = ""
 	end
 	return node
 end
@@ -407,6 +425,30 @@ local function refuse(node, reason)
 	return nil, tostring(node.id) .. ": " .. reason
 end
 
+--
+-- WHAT A DEVICE READS, and why it is not always the same as what a table shows
+--
+-- Every kind but one has one word for what it is doing, and the two listings
+-- have a column for exactly that: `ls -l /dev` puts the widest state on column
+-- 60 and `dev` on column 55, on a terminal 60 wide that does not wrap.
+--
+-- A generator has more to say than a word. Whether it is running is the thing a
+-- survivor can hear from the yard; what he cannot hear is how long it will go on
+-- running, and that is two numbers and a fact -- `on fuel 62 condition 80
+-- connected`. So the word goes in `state`, where the columns are, and the rest
+-- goes in `detail`, and this is the one place they are put back together: `cat`
+-- and `dev <id>` read the whole line, the tables read the word.
+--
+-- A node with no detail reads exactly as it always did, which is every kind but
+-- the generator and every device written before this rung.
+function CeroSecOS.devText(node)
+	local state = node.state or ""
+	local detail = node.detail
+	if type(detail) ~= "string" or detail == "" then return state end
+	if state == "" then return detail end
+	return state .. " " .. detail
+end
+
 -- The state as text, or nil plus the line to print.
 function CeroSecOS.devRead(state, session, node)
 	if node.dead then return refuse(node, "no such device") end
@@ -415,7 +457,7 @@ function CeroSecOS.devRead(state, session, node)
 	end
 	-- The null device has no state and never will: what it reads is nothing at
 	-- all, which is not the same as an empty LINE (see commands.cat).
-	return node.state or "", nil
+	return CeroSecOS.devText(node), nil
 end
 
 -- What a redirect hands over is a line of output, so the blanks around it are
@@ -459,14 +501,16 @@ function CeroSecOS.devWrite(state, session, node, value, env)
 	local devices = CeroSecOS.devicesOf(env)
 	if devices == nil then return refuse(node, "no such device") end
 
-	local ok, reason, after = devices.write(node.id, word)
+	local ok, reason, after, detail = devices.write(node.id, word)
 	if not ok then
 		if type(reason) ~= "string" or reason == "" then reason = "no such device" end
 		return refuse(node, reason)
 	end
 	-- The state comes back from the world and is not assumed from the order: a
-	-- switch that was thrown and did not move says so on the next `cat`.
+	-- switch that was thrown and did not move says so on the next `cat`. And so
+	-- does the rest of the line, for the one kind that has one.
 	if type(after) == "string" then node.state = after end
+	if type(detail) == "string" then node.detail = detail end
 	return true, nil
 end
 

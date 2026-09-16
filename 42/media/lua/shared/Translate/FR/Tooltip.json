@@ -11,6 +11,10 @@
     "Tooltip_CeroSec_Fitted": "Il y en a déjà un.",
     "Tooltip_item_CeroSecFloppyPrinted": "Étiquette imprimée.",
     "Tooltip_item_CeroSecFloppyHand": "Étiquette écrite à la main.",
+    "Tooltip_item_CeroSecCurtainMotor": "Se pose sur un rideau, ou sur une porte qui en porte un.<br>L'ordinateur le tire et l'ouvre.",
+    "Tooltip_item_CeroSecWindowOperator": "Se pose sur une fenêtre. L'ordinateur ouvre et ferme le<br>battant -- il défait le loquet et déclenche l'alarme.",
+    "Tooltip_item_CeroSecApplianceSwitch": "Se pose sur un four, un micro-ondes, une cafetière, une<br>laveuse ou une sécheuse. L'ordinateur la démarre et l'arrête.",
+    "Tooltip_item_CeroSecGeneratorSwitch": "Se pose sur une génératrice. L'ordinateur la démarre et<br>l'arrête -- il ne tire pas sur la corde, donc en bon état.",
     "Tooltip_item_CeroSecSmallMotor": "Un petit moteur électrique. Les quatre choses du comté de<br>Knox qui en ont un : un séchoir à cheveux, une tondeuse à<br>moutons, un lecteur CD et un ventilateur soufflant.",
     "Tooltip_item_CeroSecWiringGuide": "Manuel de chantier CeroSec Systems. Schémas de câblage et<br>nomenclatures des quatre modules d'interface : contact<br>magnétique, relais, gâche électrique et opérateur de porte."
 }

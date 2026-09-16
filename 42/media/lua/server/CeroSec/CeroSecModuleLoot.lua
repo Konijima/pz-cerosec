@@ -71,11 +71,32 @@ CeroSecModuleLoot.WEIGHTS = {
 -- Each module's share of the box. Halves all the way down: a contact is the
 -- everyday one, a relay is the next, a strike is a door fitting and an operator
 -- is the thing one building in sixteen ever had.
+--
+-- AND THE FOUR THE MOTOR RUNG ADDED, on the same halving scale and placed by how
+-- many buildings in Knox County really had one fitted before the outbreak:
+--
+--   a contactor on an oven or a washer is the commonest thing on this list
+--   after a contact -- every laundrette, every restaurant kitchen and every
+--   shop with a coffee machine on a timer had one, so it takes the relay's
+--   share
+--   a curtain motor is a shop window and an office blind, which is fewer
+--   buildings than have a light on a timer -- the strike's share
+--   a generator switch is a hospital, a radio station and a handful of shops
+--   that could not go dark, and a window operator is a high-level opener in an
+--   atrium: neither is a thing a street of houses had, so both sit beside the
+--   door operator
+--
+-- Every one of them is a power of two, which is what makes all sixty-three of
+-- these weights exact in a double rather than nearly what they say.
 CeroSecModuleLoot.SHARES = {
 	contact = 0.5,
 	relay = 0.25,
 	strike = 0.125,
 	operator = 0.0625,
+	appliance = 0.25,
+	curtain = 0.125,
+	window = 0.0625,
+	genset = 0.0625,
 }
 
 -- AND THE PART THEY ARE BUILT FROM, which is not a module and is on the same

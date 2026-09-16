@@ -1554,11 +1554,22 @@ end
 -- toggles to "open" rather than refusing, so the machine goes and asks and the
 -- world answers "door3: locked" in its own name, which tells a survivor which
 -- device to go and turn.
+--
+-- And the motor rung's five, each with the two states a word undoes and nothing
+-- else. A window0 that is smashed, boarded or sealed has no opposite, a stove
+-- that is broken has none, and `dev window0 toggle` on any of them says "cannot
+-- toggle" rather than guessing a direction for a sash that will not move -- while
+-- `dev window0 open` still asks the world, which refuses in its own name.
 local DEV_OPPOSITE = {
 	light = { on = "off", off = "on" },
 	lock  = { locked = "unlock", padlock = "unlock", unlocked = "lock" },
 	win   = { locked = "unlock", unlocked = "lock" },
 	door  = { open = "close", closed = "open", locked = "open" },
+	window  = { open = "close", closed = "open" },
+	curtain = { open = "close", closed = "open" },
+	stove   = { on = "off", off = "on" },
+	washer  = { on = "off", off = "on" },
+	gen     = { on = "off", off = "on" },
 }
 
 -- The table, whole or filtered by kind. A device the machine remembers the
@@ -1625,11 +1636,17 @@ commands.dev = function(state, session, args, env)
 
 	local value = args[3]
 	if value == "toggle" then
+		-- Read first, for the permission and for every refusal a read makes: a
+		-- device nobody may read is not a device anybody may toggle.
 		local text, refusal = CeroSecOS.devRead(state, session, node)
 		if text == nil then return false, { refusal } end
+		-- And then the opposite of the STATE and not of what the read printed.
+		-- They are the same string on every kind but one: a generator reads `on
+		-- fuel 62 condition 80 connected`, and an opposite table keyed by that
+		-- sentence would be a table with no entry for anything.
 		local opposites = DEV_OPPOSITE[node.kind]
 		value = nil
-		if opposites ~= nil then value = opposites[text] end
+		if opposites ~= nil then value = opposites[node.state] end
 		if value == nil then return false, { node.id .. ": cannot toggle" } end
 	end
 
@@ -1638,8 +1655,9 @@ commands.dev = function(state, session, args, env)
 	-- The state the world was re-read for, off the node devWrite put it on --
 	-- not read again through devRead, because a machine that took the order and
 	-- then refused to say what happened would be worse than one that never took
-	-- it.
-	return true, { node.id .. ": " .. (node.state or "") }
+	-- it. The whole line, so that `dev gen0 on` answers the same sentence
+	-- `cat /dev/gen0` would.
+	return true, { node.id .. ": " .. CeroSecOS.devText(node) }
 end
 
 commands.rm = function(state, session, args, env)
