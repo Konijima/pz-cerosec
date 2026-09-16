@@ -3,7 +3,7 @@
 
     python3 tools/make-workshop-headers.py      writes workshop/img/h-*.png
 
-Seven bands, one per section of `workshop/workshop.txt`. Nothing is cut out of
+One band per section of `workshop/workshop.txt`. Nothing is cut out of
 the source art: they are drawn from `tools/cerosec_art.py` -- the phosphor
 sampled off the poster, the scanline field and the pixel text renderer -- so a
 header can be added by putting a line in HEADERS and running this again.
@@ -49,10 +49,10 @@ OUT_DIR = REPO / "workshop" / "img"
 HEADER_W = 630
 HEADER_H = 80
 
-# ONE size for all seven, and it is not negotiable per header. Sizing each
+# ONE size for all of them, and it is not negotiable per header. Sizing each
 # header to its own band is what a first pass of this script did, and the
-# result was FEATURES in letters twice the height of WHAT YOU FIND: seven
-# headers at seven sizes are not a set, they are seven pictures. So the size is
+# result was FEATURES in letters twice the height of WHAT YOU FIND: nine
+# headers at nine sizes are not a set, they are nine pictures. So the size is
 # fixed here and a header whose words do not fit is an error that names itself,
 # because the fix is a shorter header and never a smaller font.
 BASE_PX = 15        # the outline font's size before the threshold
@@ -76,6 +76,7 @@ PROMPT = ">"
 # renaming one here means renaming it there.
 HEADERS = [
     ("h-features", "FEATURES"),
+    ("h-automation", "AUTOMATION"),
     ("h-getting-started", "GETTING STARTED"),
     ("h-network", "THE NETWORK"),
     ("h-world", "WHAT YOU FIND"),
@@ -99,7 +100,7 @@ def header(words, green):
     if text.width > room:
         raise ValueError(
             "%r is %d px wide and the band has %d: shorten the header, do not "
-            "shrink the type -- the seven are one set or they are nothing"
+            "shrink the type -- they are one set or they are nothing"
             % (words, text.width, room))
 
     baseline = (HEADER_H - RULE_PX - text.height) // 2

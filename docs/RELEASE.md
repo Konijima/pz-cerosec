@@ -34,7 +34,7 @@ the files and the state shape are all unaffected.
 | --- | --- | --- |
 | 1 | Drop the two originals in place: `workshop/art/poster.png` (4:3) and `workshop/art/banner.png` (16:5) | by hand |
 | 1a | **Choose the square poster.** Look at the three candidates side by side, at 512 and at 200, then set `POSTER_CANDIDATE` in `tools/make-workshop-images.py` to `A`, `B` or `C` — see "The square poster" below | `tools/out/poster-candidates.png` |
-| 2 | Cut the four published images, and draw the eight section headers | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py` |
+| 2 | Cut the four published images, and draw the nine section headers | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py` |
 | 2a | **Take the ten screenshots and the two GIFs** | [../workshop/SHOTS.md](../workshop/SHOTS.md) |
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
@@ -56,7 +56,7 @@ the files and the state shape are all unaffected.
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
 | 15 | Tag the commit | `git tag -a v0.1.0 -m 'CeroSec 0.1.0' && git push --tags` |
 | 16 | **Make the GitHub repository public** so the `github.com/Konijima/pz-cerosec` link on the page opens. The page images no longer depend on it: the banner and the eight headers are served from the public `Konijima/pz-cerosec-media` (push any changed image there too: `workshop/banner.png` and `workshop/img/*`) | GitHub, repository settings |
-| 17 | Open the item's own page in a browser and check the nine media-repo images actually rendered | Steam item page |
+| 17 | Open the item's own page in a browser and check the ten media-repo images actually rendered | Steam item page |
 | 17a | Credit line confirmed by the author on 2026-09-14: everything in `common/media/` was made for this mod by the author, with AI tools; nothing third-party | done |
 | 18 | Flip the Workshop item to public | Steam item page, **Change visibility** |
 
@@ -197,7 +197,7 @@ and has no idea what is inside the uploaded item, so every image in the descript
 has to be hosted somewhere Steam will fetch it from. There are two hosts and the
 split is on purpose.
 
-**The banner and the eight section headers come out of the GitHub repository.**
+**The banner and the nine section headers come out of the GitHub repository.**
 `https://raw.githubusercontent.com/Konijima/pz-cerosec-media/main/banner.png`
 and `.../workshop/img/h-*.png`. Those URLs are **already written into
 `workshop/workshop.txt`** and no line of it has to be edited at upload time. Three
@@ -209,7 +209,7 @@ things make that safe, and all three were checked rather than assumed:
 - the images are versioned with the mod, so the page cannot drift from the build
   it describes;
 - the repository going public (step 16) comes **before** the item goes public
-  (step 18). Until step 16 those nine images are 404s, which is why step 17 is to
+  (step 18). Until step 16 those ten images are 404s, which is why step 17 is to
   open the page and look.
 
 **The ten screenshots go on the item**, because that is where a Workshop screenshot
@@ -317,7 +317,7 @@ shipped jar or off vanilla Lua.
 | `42/poster.png` | 512x512 | the mod panel draws poster 0 with `drawTextureScaled(tex, ..., 200, 200)`, which does not keep the aspect ratio (`ModInfoPanelDesc.lua:12` and `:14`) |
 | `42/icon.png` | 64x64 | drawn at `BUTTON_HGT` (`ModListBox.lua:8`, `:201`) and at 28x28 (`ModOrderListBox.lua:235`) |
 | `workshop/banner.png` | 630 px wide | Steam's own stylesheet: `.workshopItemDescription img { max-width: 630px }` in `public/css/skin_1/workshop.css` on community.akamai.steamstatic.com. The game never reads this file |
-| `workshop/img/h-*.png` | 630x80 | the same rule. Eight section headers, drawn by `tools/make-workshop-headers.py` |
+| `workshop/img/h-*.png` | 630x80 | the same rule. Nine section headers, drawn by `tools/make-workshop-headers.py` |
 
 **The 630 corrects a 1000 that was in this table and in the script until
 2026-09-13, and was never true.** Steam does not show an `[img]` at 1000 px: it
