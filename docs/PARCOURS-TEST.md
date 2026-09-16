@@ -3530,10 +3530,15 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      porte** demandent maintenant un moteur et un récepteur eux aussi — et que
      l'opérateur garde ses `Base.EngineParts`. [ ]
 369. **Le rideau.** Trouver une fenêtre avec un rideau, clic droit **sur le
-     rideau** → Matériel CeroSec → Installer Moteur de rideau. Puis à
-     l'ordinateur : `dev` → une ligne `curtainN`. `cat /dev/curtainN` →
-     `closed`. `echo open > /dev/curtainN` → **le rideau s'ouvre dans le monde**
-     et la lumière passe. `dev curtainN toggle` le referme. [ ]
+     rideau** → Matériel CeroSec → Installer Moteur de rideau. Le moteur ne se
+     pose que sur un rideau **ouvert** (« le rideau est tiré » sinon), et tous les
+     rideaux du monde naissent ouverts — donc juste après la pose, à
+     l'ordinateur : `dev` → une ligne `curtainN`, et `cat /dev/curtainN` →
+     `open`. `echo close > /dev/curtainN` → **le rideau se tire dans le monde**,
+     la pièce s'assombrit, **on entend le tissu**, et `cat` répond `closed`.
+     `echo open > /dev/curtainN` le rouvre, avec son bruit lui aussi.
+     `dev curtainN toggle` fait l'aller-retour. Retaper deux fois le même mot :
+     le rideau ne bouge qu'une fois et on ne l'entend qu'une fois. [ ]
 370. **Le rideau d'une porte.** Poser un drap sur une **porte** (interaction
      vanille), puis un moteur de rideau **sur la porte**. Attendu : la porte est
      maintenant `doorN` ET `curtainM` — deux périphériques sur un objet. Ouvrir
@@ -3547,6 +3552,8 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
 372. **Ouvrir la fenêtre, et ce que ça défait.** Verrouiller la fenêtre à la main
      (clic droit → verrouiller), vérifier `cat /dev/winN` → `locked`. Puis
      `echo open > /dev/windowM`. Attendu : **le battant s'ouvre** dans le monde,
+     **on l'entend s'ouvrir** (et se refermer, avec `close`) comme si une main
+     l'avait fait,
      et `cat /dev/winN` répond maintenant `unlocked` — le moteur a défait le
      loquet en passant. C'est voulu. Retaper le même ordre : rien ne bouge (c'est
      déjà ouvert). [ ]
@@ -3714,7 +3721,9 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      porte à la main** dans le monde, et **rester à la regarder**. Attendu : la
      porte se referme toute seule au bout de cinq tours (six à sept secondes de
      vrai temps — un tour est un `sleep 1` plus le travail du tour), avec le
-     mouvement et le bruit d'une porte, et la porte **sans opérateur** ne bouge
+     mouvement et le bruit d'une porte — **le bruit de CETTE porte** : une porte
+     de bois et une porte de métal ne claquent pas pareil, et une porte déjà
+     fermée ne fait aucun bruit du tout — et la porte **sans opérateur** ne bouge
      jamais. Rouvrir : ça recommence à zéro. [ ]
 397. **L'arrêter, des deux façons.** `sh /usr/local/bin/autoclose.sh stop` →
      `autoclose: off`, et `ps` ne montre plus le programme au tour suivant.
@@ -3722,7 +3731,9 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      que le programme garde : `autoclose.on` tant qu'il tourne, et un
      `autoclose.door0` par porte ouverte. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
-     rideaux se ferment dans le monde. Puis `crontab -e` et les deux lignes du
+     rideaux se ferment dans le monde, **et on les entend**, un par rideau.
+     Relancer la même ligne tout de suite : le script dit la même chose et plus
+     rien ne bouge ni ne se fait entendre. Puis `crontab -e` et les deux lignes du
      README :
 
          0 7 * * * sh /usr/local/bin/curtains.sh auto
