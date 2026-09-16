@@ -118,6 +118,12 @@ on keep everything. A server spends far less of its minute on the county.
   of it is mail, who, last and a read loop. Its count of what you have read
   lives in .bbs_seen in your own home, so New means new. One share of the box of
   disks moved from UTILITIES to it; a written disk is still one in six.
+- For server owners and testers, the debug window gains a row of tools: the sticky
+  note a drawer would hold and one of its staff papers, every account with the
+  passwords the world gave them, a password taken off, any disk of the catalogue,
+  a root session at the screen, cron run without waiting for the minute, and a
+  shop's wiring finished on the spot. And a server admin has the window in
+  multiplayer, where nobody could reach it before.
 
 ## 0.2.0 - 2026-09-14
 

@@ -1961,10 +1961,13 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
 ## X. La fenêtre de débogage (palier debug)
 
 La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
-Elle ne change que six choses : allumer, éteindre, où le personnage se trouve,
-**réinitialiser la machine** — derrière deux clics, et seulement sur une machine
-éteinte — c'est-à-dire en refaire une que personne n'a jamais utilisée, lancer
-l'autotest, et donner la disquette de diagnostic. Tout le reste est en lecture.
+Elle ne change que six choses sur cette rangée de boutons : allumer, éteindre, où le
+personnage se trouve, **réinitialiser la machine** — derrière deux clics, et seulement
+sur une machine éteinte — c'est-à-dire en refaire une que personne n'a jamais
+utilisée, lancer l'autotest, et donner la disquette de diagnostic. Tout le reste est
+en lecture. Les huit outils de la **deuxième rangée** — les papiers, les comptes, le
+mot de passe enlevé, n'importe quelle disquette, root à l'écran, cron tout de suite,
+le câblage forcé — sont la section [AI](#ai-les-outils-de-ladmin-et-du-testeur-fenêtre-de-débogage-2e-rangée).
 Détails et protocole dans [DEBUG.md](DEBUG.md).
 
 Les étapes 258b à 258i sont la porte de sortie du mod : ce sont les deux seules
@@ -3230,6 +3233,108 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
      boutique voisine `dev` ne montre aucune lampe -- ses interrupteurs n'ont pas
      de relais. Attendre 21:00 sur place : les lampes de la boutique s'éteignent,
      celles des voisines restent allumées. [ ]
+
+## AI. Les outils de l'admin et du testeur (fenêtre de débogage, 2e rangée)
+
+Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la
+première, et seulement sur l'onglet **Machines** : ils parlent tous de la machine
+sélectionnée. Ils existent pour un développeur et pour un admin de serveur, jamais
+pour un joueur — ils sont derrière la même porte que le reste de la fenêtre
+(`CeroSec.debugAllowed`), et sur un serveur cette porte s'ouvre maintenant aussi pour
+un **admin**. Détail de ce que chacun écrit dans [DEBUG.md](DEBUG.md).
+
+Pour cette section : une machine **préremplie** allumée dans un vrai commerce ou
+bureau de la carte (option `PrefilledMachines` activée, et la machine allumée pour la
+première fois dans cette partie), la fenêtre de débogage ouverte dessus, et la ligne
+de la machine cliquée dans la liste.
+
+340. **La deuxième rangée est là, et seulement où il faut.** Onglet **Machines** →
+     sous la rangée de boutons habituelle, une deuxième rangée : **Donner la note de
+     root**, **Donner la note d'un employé**, **Montrer les comptes**, **Effacer le
+     mot de passe**, une petite case de texte contenant `root`, **Donner la
+     disquette**, une liste déroulante de disquettes, **Ouvrir une session root**,
+     **Lancer cron maintenant**, **Forcer le câblage**. Attendu : rien ne dépasse du
+     bord droit de la fenêtre, les deux rangées ne se chevauchent pas, et le bloc de
+     détail est sous la dernière des deux. Cliquer l'onglet **Files** : toute la
+     deuxième rangée disparaît, la case et la liste avec, et la première rangée reste.
+     Revenir sur **Machines** : tout revient. [ ]
+
+341. **Donner la note de root.** Cliquer **Donner la note de root** → un papier
+     arrive dans l'inventaire du personnage, lisible dans son sac :
+     `Sticky note: root / <mot>NN`. Attendu : la ligne sous la liste répète les mêmes
+     lettres, et ces lettres ouvrent vraiment la machine — ouvrir le terminal,
+     `login: root`, taper le mot de passe du papier, ça entre. **Puis fouiller un
+     bureau ou un classeur du même local** : le papier du tiroir est toujours là (ce
+     bouton ne consomme pas la note du lieu). [ ]
+
+342. **Donner la note d'un employé.** Cliquer **Donner la note d'un employé** → un
+     second papier, `Note: <login> / <mot>NN`, avec un login qui n'est pas `root`. La
+     ligne sous la liste dit de quel emplacement il s'agit (`slot 1`). Attendu : au
+     prompt, ce login et ce mot de passe entrent aussi, et le même clic répété donne
+     toujours le même compte (c'est le premier emplacement verrouillé, pas un tirage).
+     Sur une machine d'un local sans mot de passe root (un logement), le bouton est
+     **grisé** et la ligne sous la liste dit pourquoi. [ ]
+
+343. **Montrer les comptes.** Cliquer **Montrer les comptes** → la ligne sous la liste
+     dit `accounts on <hôte>: N`, et l'onglet **Log** (bouton **All**) porte une ligne
+     par compte : le login, son `home`, `wheel` ou `user`, ses groupes, si son mot de
+     passe est mis ou `OPEN (empty)`, et pour les comptes que le catalogue a créés le
+     mot de passe **en clair**. Attendu : le compte `root` y est avec les mêmes lettres
+     que le papier de l'étape 341, et le nombre de lignes correspond bien au nombre de
+     comptes que `cat /etc/passwd` affiche au terminal. [ ]
+
+344. **Effacer le mot de passe.** Laisser `root` dans la case → **Effacer le mot de
+     passe**. Attendu : la ligne sous la liste dit que root n'a plus de mot de passe.
+     Au terminal : `login: root`, puis **Entrée** sur la demande de mot de passe, et
+     la session s'ouvre. Le papier de l'étape 341 ne fonctionne plus (c'est bien un mot
+     de passe enlevé et non un mot de passe changé). Taper ensuite un nom qui n'existe
+     pas dans la case (`personne`) → refus lisible, `no such user personne`, et rien
+     n'a bougé sur la machine. [ ]
+
+345. **Donner la disquette.** Choisir `UTILITIES` dans la liste déroulante →
+     **Donner la disquette**. Attendu : une disquette arrive dans le sac avec
+     l'étiquette **imprimée** `CeroSec UTILITIES 1.0` et l'icône imprimée ; l'insérer,
+     `mount /dev/fd0 /mnt`, `ls /mnt` → les fichiers de cette disquette, exactement
+     comme une disquette trouvée dans un tiroir. Recommencer avec `BBS LIST` : le nom
+     est **manuscrit** (une des trois écritures), et `NUMBERS.TXT` est d'abord le talon
+     puis se remplit des numéros de la région à la première insertion, comme une
+     disquette trouvée. Recommencer trois ou quatre fois avec la même entrée
+     manuscrite : les étiquettes ne sont pas toutes identiques (le récit est tiré au
+     sort, comme dans le monde). [ ]
+
+346. **Ouvrir une session root.** Éteindre la machine, la rallumer, ouvrir le terminal
+     et le laisser au `login:` — puis, sur la fenêtre de débogage, **Ouvrir une session
+     root**. Attendu : le terminal s'ouvre (ou revient) directement sur le prompt de
+     root, avec `login: root` écrit au-dessus, le motd, et un prompt qui finit par `#`.
+     `who` nomme root sur `console`, `last` porte son arrivée, `echo $HOME` répond
+     `/root`. Cliquer le bouton une seconde fois : **refusé**, la ligne dit
+     `somebody is already logged in as root`. Sur une machine éteinte, le bouton est
+     **grisé**. [ ]
+
+347. **Lancer cron maintenant.** Au terminal, en root :
+     `edit /var/spool/cron/root`, écrire la ligne `* * * * * echo bonjour`, sauver.
+     Puis, sans attendre la minute, cliquer **Lancer cron maintenant**. Attendu : la
+     ligne sous la liste dit `cron fired 1 line(s) and at started 0 job(s)`, et
+     quelques secondes plus tard `mail` au terminal montre un message de `root` avec
+     `bonjour` dedans. Sur une machine éteinte, le bouton est **grisé** et la ligne dit
+     `it is off`. [ ]
+
+348. **Forcer le câblage.** Dans un local qui a tiré « déjà automatisé » (voir la
+     section AE : le bloc de détail de l'onglet Machines dit
+     `automated: yes ... wired no  rooms walked K`), cliquer **Forcer le câblage**.
+     Attendu : la ligne sous la liste dit combien d'appareillages ont été posés et en
+     combien de passes, le bloc de détail passe à `wired yes` **sans compteur** sans
+     qu'on ait à faire le tour du bâtiment, et `dev` sur cette machine liste
+     maintenant les lampes et les portes du local. Cliquer une deuxième fois :
+     **refusé**, `its premises is already wired`. Sur une machine d'un local qui a tiré
+     non, le bouton est **grisé** et dit `its premises rolled no`. [ ]
+
+349. **Rien de tout cela pour un joueur.** Mettre `CeroSec.DEV_DEBUG_MENU = false`
+     dans `42/media/lua/shared/CeroSec/CeroSecDefs.lua`, relancer le jeu **sans**
+     `-debug`, clic droit sur un ordinateur. Attendu : plus d'entrée **Fenêtre de
+     débogage** du tout dans le sous-menu **CeroSec (dev)**. En solo c'est toute la
+     règle ; sur un serveur dédié, un joueur **admin** la retrouve et un joueur
+     ordinaire non. [ ]
 
 ## Rapport
 
