@@ -13818,6 +13818,172 @@ do
 	check("a set switched and tuned by a hand reads as it is",
 		bench.painted("on channel 210"))
 
+
+	--
+	-- WHAT IS ON, AND WHEN THE NEXT ONE STARTS
+	--
+	-- The schedule is the LIVE one and this mod carries no copy of
+	-- media/radio/RadioData.xml, so what the bench fakes is the engine's own chain
+	-- at the shape vanilla's debugger reads it through
+	-- (client/DebugUIs/DebugMenu/radio/ZomboidRadioDebug.lua:30, :103, :146-147,
+	-- :172): a channel list, a frequency and an IsTv on each, the airing broadcast
+	-- when there is one, and the day's list of blocks behind it.
+	--
+	-- The blocks are Life and Living TV's real four -- 0, 360, 720 and 1080,
+	-- midnight, six, noon and six in the evening -- out of RadioData.xml:6799, so
+	-- a number this bench prints is a number a player really reads.
+	--
+	-- And getValidAirBroadcast is on the fake and is NEVER answered: it is not a
+	-- reader, offsets 42-44 set currentHasAired on the way out, so a build that
+	-- asked it would take a broadcast away from the radio's own simulation. A fake
+	-- that simply did not have it would make that a nil call and a crash; one that
+	-- answers by failing the bench says what the mistake IS.
+	do
+		local function block(from, to)
+			return {
+				getStartStamp = function() return from end,
+				getEndStamp = function() return to end,
+			}
+		end
+		-- DELIBERATELY OUT OF ORDER, because nothing in the engine puts them in one:
+		-- RadioScript.AddBroadcast appends, and RadioData.loadBroadcast reads the
+		-- entries in file order, so the list is whatever somebody's XML says. A
+		-- bench whose blocks came out sorted would be green on a build that took the
+		-- FIRST block after the clock instead of the nearest one.
+		local blocks = { block(720, 1080), block(0, 360), block(1080, 1440),
+			block(360, 720) }
+		local tvChannel = {
+			airing = nil,
+			GetFrequency = function() return 203 end,
+			IsTv = function() return true end,
+			getAiringBroadcast = function(self) return self.airing end,
+			getCurrentScript = function()
+				return {
+					getBroadcastList = function() return javaList(blocks) end,
+					getValidAirBroadcast = function()
+						error("getValidAirBroadcast WRITES: it must never be asked")
+					end,
+				}
+			end,
+		}
+		-- A RADIO station, on a number a radio set can really reach: a kitchen set's
+		-- span is 88000 to 108000 (media/scripts/generated/items/radio.txt, RadioRed)
+		-- and a television's starts at 200, so 96500 is a frequency BOTH kinds of
+		-- dial can be turned to and only one of them has a station on. That is what
+		-- keeps the two books apart, and it is the case a lookup by frequency alone
+		-- would get wrong in both directions.
+		local radioChannel = {
+			GetFrequency = function() return 96500 end,
+			IsTv = function() return false end,
+			getAiringBroadcast = function() return block(600, 900) end,
+			getCurrentScript = function() return nil end,
+		}
+		local channels = { tvChannel, radioChannel }
+		local hadRadio = _G.getZomboidRadio
+		_G.getZomboidRadio = function()
+			return {
+				getScriptManager = function()
+					return { getChannelsList = function() return javaList(channels) end }
+				end,
+			}
+		end
+		CeroSecRadio.channels, CeroSecRadio.channelCount = nil, -1
+
+		typed("echo channel 203 > /dev/tv0")
+
+		-- NOTHING ON, and the next block of the day. Noon on the clock: the block
+		-- that starts after it is the six-o'clock one.
+		local hadClock = _G.__gameTime.hour
+		local hadMin = _G.__gameTime.minutes
+		_G.__gameTime.hour, _G.__gameTime.minutes = 12, 0
+		alone("cat /dev/tv0")
+		check("with nothing airing the set says when the next block starts",
+			bench.painted("channel 203 next 1080-1440"))
+
+		-- AND IT IS THE NEAREST BLOCK STILL TO COME AND NOT THE FIRST ONE IT MEETS.
+		-- Two in the morning, three blocks still ahead, and the list is in the order
+		-- a file gave it: the answer is six o'clock and not noon.
+		_G.__gameTime.hour, _G.__gameTime.minutes = 2, 0
+		alone("cat /dev/tv0")
+		check("and it is the nearest block still to come",
+			bench.painted("channel 203 next 360-720"))
+
+		-- AND THE NUMBERS ARE MINUTES OF THE DAY, which is the only reason they are
+		-- numbers: a program compares the first one with the clock. 1080 is six in
+		-- the evening, and at half past six there is nothing left to come.
+		_G.__gameTime.hour, _G.__gameTime.minutes = 18, 30
+		alone("cat /dev/tv0")
+		check("and a channel with nothing left today is idle",
+			bench.painted("channel 203 idle"))
+
+		-- SOMETHING ON. getAiringBroadcast is the engine's own answer to "what is
+		-- this channel putting out right now" and it is a bare field read.
+		-- The six-o'clock block, which is blocks[3] in the shuffled list above.
+		tvChannel.airing = blocks[3]
+		alone("cat /dev/tv0")
+		check("and a broadcast that is on says so, with its block",
+			bench.painted("on channel 203 airing 1080-1440"))
+		-- The TABLE still reads the word, because a sentence does not fit a column.
+		alone("dev tv")
+		check("the table reads the switch and nothing else", bench.painted("tv0"))
+		check("and not the schedule", not bench.painted("airing"))
+		tvChannel.airing = nil
+
+		-- A FREQUENCY NOBODY IS ON has no schedule and says nothing about one: the
+		-- line ends at the dial. A set on static is a set on static.
+		typed("echo channel 5000 > /dev/tv0")
+		alone("cat /dev/tv0")
+		check("a dead frequency says only what it is tuned to",
+			bench.painted("channel 5000"))
+		check("and nothing about a schedule at all",
+			not bench.painted("idle") and not bench.painted("next")
+			and not bench.painted("airing"))
+
+		-- AND A TELEVISION IS NOT A WIRELESS. The radio set reads the radio station
+		-- on 96500; the television, turned to the same number, finds no television
+		-- station there and says nothing about a schedule at all. Both directions,
+		-- because a lookup by frequency alone would be wrong in both.
+		typed("echo channel 96500 > /dev/rx0")
+		alone("cat /dev/rx0")
+		check("a radio set reads the radio station on its own number",
+			bench.painted("channel 96500 airing 600-900"))
+		typed("echo channel 96500 > /dev/tv0")
+		alone("cat /dev/tv0")
+		check("and a television on that number finds no television station",
+			bench.painted("channel 96500"))
+		check("and reads none of the wireless' schedule",
+			not bench.painted("600-900"))
+
+		-- AND A CHANNEL LIST THAT GREW IS NOTICED. The book is kept because it is
+		-- built out of RadioData.xml at start-up and does not change in play -- but
+		-- "does not change" is a fact about the game and not about the code, so the
+		-- staleness test is the one vanilla's own debugger uses on this very list:
+		-- its SIZE (ZomboidRadioDebug:populateList, :103-105).
+		--
+		-- Asked of the reading and not through the glass, deliberately: every line
+		-- typed at a window moves this bench's clock on, and what is under test here
+		-- is a table being rebuilt and not a sentence being printed -- which the four
+		-- assertions above have already walked end to end.
+		eq("5000 carries no station", CeroSecRadio.scheduleOf(5000, true), nil)
+		channels[#channels + 1] = {
+			GetFrequency = function() return 5000 end,
+			IsTv = function() return true end,
+			getAiringBroadcast = function() return block(90, 150) end,
+			getCurrentScript = function() return nil end,
+		}
+		local grown = CeroSecRadio.scheduleOf(5000, true)
+		check("a station that was not in the list a moment ago is found",
+			type(grown) == "table")
+		eq("and it is airing", grown ~= nil and grown.airing, true)
+		eq("from", grown ~= nil and grown.from, 90)
+		eq("to", grown ~= nil and grown.to, 150)
+
+		_G.__gameTime.hour, _G.__gameTime.minutes = hadClock, hadMin
+		typed("echo channel 203 > /dev/tv0")
+		_G.getZomboidRadio = hadRadio
+		CeroSecRadio.channels, CeroSecRadio.channelCount = nil, -1
+	end
+
 	--
 	-- NO BOX, NO DEVICE
 	--

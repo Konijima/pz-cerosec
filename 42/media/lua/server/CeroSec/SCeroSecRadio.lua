@@ -395,6 +395,156 @@ function CeroSecRadio.restate(entry)
 end
 
 --
+-- WHAT IS ON, AND WHEN THE NEXT ONE STARTS
+--
+-- The Life and Living schedule is LIVE and the engine will answer it: this mod
+-- carries no copy of media/radio/RadioData.xml and must not, because a copy is a
+-- second truth that goes stale the day a server owner edits the first one.
+--
+-- The chain, all of it javap'd on 42.20.4 and all of it read the way vanilla's
+-- own debugger reads it
+-- (client/DebugUIs/DebugMenu/radio/ZomboidRadioDebug.lua:30, :103, :146-147,
+-- :172):
+--
+--   getZomboidRadio()                       -> zombie.radio.ZomboidRadio
+--     .getScriptManager()                   -> RadioScriptManager
+--       .getChannelsList()                  -> ArrayList<RadioChannel>
+--   RadioChannel.GetFrequency()  int, a bare field read
+--   RadioChannel.IsTv()          boolean, a bare field read
+--   RadioChannel.getAiringBroadcast()       -> RadioBroadCast, a bare field read
+--   RadioChannel.getCurrentScript()         -> RadioScript, a bare field read
+--   RadioScript.getBroadcastList()          -> ArrayList<RadioBroadCast>
+--   RadioBroadCast.getStartStamp() / .getEndStamp()   int
+--
+-- and it runs where this mod runs: ZomboidRadio.UpdateScripts drives the script
+-- manager in GameMode.Server AND GameMode.SinglePlayer (offsets 5-16), which is
+-- the same pair SendTransmission covers and the reason proof 5 above uses it.
+--
+-- NEVER getValidAirBroadcast(). It is not a reader: offsets 42-44 set
+-- `currentHasAired = true` on the way out, so asking it would take a broadcast
+-- away from the radio's own simulation. The pure readers are getAiringBroadcast()
+-- and getValidAirBroadcastDebug(), which is the one vanilla's debugger falls back
+-- on, and only the first is needed here.
+--
+-- THE STAMPS ARE MINUTES OF THE DAY and carry no date. RadioData.loadBroadcast
+-- builds each broadcast out of three attributes and no more -- ID, timestamp,
+-- endstamp, through Integer.parseInt at offsets 44 and 51 -- so the `day`
+-- attribute on a BroadcastEntry is not read at all in this build, and neither are
+-- startdelay or timestampmode. Life and Living TV (freq 203) is four six-hour
+-- blocks at 0, 360, 720 and 1080: midnight, six, noon and six in the evening.
+
+-- The channels the simulation knows, by frequency and by whether they are
+-- television, built on the first question asked.
+--
+-- Kept, because the list is built out of RadioData.xml at start-up and does not
+-- change in play -- and because the alternative is walking thirty-six channels
+-- with two engine calls apiece for every television on every /dev of every
+-- command, which on a mall is the most expensive thing a reading could be.
+--
+-- Rebuilt when the list changes SIZE, which is vanilla's own staleness test for
+-- this very list: ZomboidRadioDebug:populateList keeps a `channelsSize` and
+-- returns early while it matches (:103-105).
+CeroSecRadio.channels = nil
+CeroSecRadio.channelCount = -1
+
+local function channelList()
+	if getZomboidRadio == nil then return nil end
+	local radio = getZomboidRadio()
+	if radio == nil then return nil end
+	if type(radio.getScriptManager) ~= "function" then return nil end
+	local manager = radio:getScriptManager()
+	if manager == nil then return nil end
+	local list = manager:getChannelsList()
+	if list == nil then return nil end
+	return list
+end
+
+-- Two books in one table and not one book: a television and a radio station can
+-- sit on the same number and they are different stations, which is what
+-- DistributeTransmission's own `getIsTelevision() == isTelevision` test is about
+-- (proof 5). The first channel on a number wins, the way the first radio on a
+-- square is the TNC.
+local function channelKey(frequency, isTv)
+	return (isTv and "t" or "r") .. tostring(math.floor(frequency))
+end
+
+function CeroSecRadio.channelAt(frequency, isTv)
+	if type(frequency) ~= "number" then return nil end
+	local list = channelList()
+	if list == nil then return nil end
+	local size = list:size()
+	if CeroSecRadio.channels == nil or CeroSecRadio.channelCount ~= size then
+		local map = {}
+		for i = 0, size - 1 do
+			local channel = list:get(i)
+			if channel ~= nil then
+				local key = channelKey(channel:GetFrequency(), channel:IsTv())
+				if map[key] == nil then map[key] = channel end
+			end
+		end
+		CeroSecRadio.channels = map
+		CeroSecRadio.channelCount = size
+	end
+	return CeroSecRadio.channels[channelKey(frequency, isTv)]
+end
+
+-- Minutes since midnight, which is the unit the stamps are in. nil where there is
+-- no clock to ask, and a caller with no clock is told what is airing and not when
+-- the next one starts -- which is the honest half of the answer rather than a
+-- guess at the other.
+local function minutesNow()
+	if getGameTime == nil then return nil end
+	local gt = getGameTime()
+	if gt == nil then return nil end
+	local hour, minute = gt:getHour(), gt:getMinutes()
+	if type(hour) ~= "number" or type(minute) ~= "number" then return nil end
+	return math.floor(hour) * 60 + math.floor(minute)
+end
+
+-- What is on that frequency, and when. nil for a frequency no station is on at
+-- all, which is a dial on static and has nothing to say.
+--
+--   { airing = true,  from, to }   a broadcast is on now, and its block
+--   { airing = false, from, to }   nothing now; the next block of the day
+--   { airing = false }             nothing now and nothing later today
+--
+-- The `next` search is a walk of the day's own list and compares STARTS with the
+-- clock, so the last block of the day has no next and answers the third shape.
+-- There is no wrap to tomorrow, and that is the parser's doing rather than a
+-- choice: a stamp is a time of day and carries no date.
+function CeroSecRadio.scheduleOf(frequency, isTv)
+	local channel = CeroSecRadio.channelAt(frequency, isTv)
+	if channel == nil then return nil end
+
+	local airing = channel:getAiringBroadcast()
+	if airing ~= nil then
+		return { airing = true,
+			from = airing:getStartStamp(), to = airing:getEndStamp() }
+	end
+
+	local minutes = minutesNow()
+	if minutes == nil then return { airing = false } end
+	local script = channel:getCurrentScript()
+	if script == nil then return { airing = false } end
+	local list = script:getBroadcastList()
+	if list == nil then return { airing = false } end
+
+	local from, to = nil, nil
+	for i = 0, list:size() - 1 do
+		local block = list:get(i)
+		if block ~= nil then
+			local start = block:getStartStamp()
+			if type(start) == "number" and start > minutes
+					and (from == nil or start < from) then
+				from, to = start, block:getEndStamp()
+			end
+		end
+	end
+	if from == nil then return { airing = false } end
+	return { airing = false, from = from, to = to }
+end
+
+--
 -- On the air
 --
 -- The one line the rest of the county reads. Every connect and every disconnect

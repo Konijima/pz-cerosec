@@ -1255,6 +1255,30 @@ And it does not inherit your PATH. Every cron line starts at /bin and only
 /bin, whatever your shell has. It is the oldest trap in cron, and the fix
 is to write the whole path to anything not in /bin.]],
 
+[[The television, and the one line a set can tell you that a clock cannot.
+
+cat a tvN or an rxN and the dial is followed by what that station is
+doing with the day:
+
+  root@ksp-04-11:~# cat /dev/tv0
+  on channel 203 airing 1080-1440
+  root@ksp-04-11:~# dev tv0 channel 210
+  tv0: off channel 210 next 360-720
+
+airing means a broadcast is on that channel now, and the two numbers are
+the block it belongs to. next means nothing is on and those are the
+hours of the one that follows. idle means nothing now and nothing else
+today, and a set tuned where no station is says neither -- the line
+stops at the dial.
+
+THE NUMBERS ARE MINUTES OF THE DAY. 0 is midnight, 360 is six in the
+morning, 720 is noon, 1080 is six in the evening and 1440 is midnight
+again. Life and Living TV, on 203, is four blocks of six hours and a
+different trade in each.
+
+That is what the numbers are FOR: you read them once, and then you write
+the crontab line.]],
+
 [[Putting it together: locking up at night.
 
 Write this with crontab -e, as admin, on a machine whose devices you have

@@ -503,10 +503,26 @@ local function detailOf(kind, object)
 	-- megahertz for a radio and, for a television, prints no frequency at all,
 	-- only the channel's NAME (client/RadioCom/RadioWindowModules/RWMGeneral.lua
 	-- :66-81, the isTv branch against the one below it).
+	--
+	-- AND WHAT THE STATION IS DOING WITH THE DAY, which is the half a program
+	-- needs and a survivor cannot get from the set: `airing 720-1080` is a
+	-- broadcast that is on now and the block it belongs to, `next 1080-1440` is
+	-- when the following one starts, and `idle` is a channel with nothing left
+	-- today. The words and the units are CeroSecOS.tunerDetailText's and the
+	-- reading is CeroSecRadio's, which is the only file that asks the game
+	-- anything about a radio.
+	--
+	-- Why it rides in the DETAIL and not in a column of its own: `dev` prints a
+	-- table on a terminal 60 wide that does not wrap, the state column is a word
+	-- wide, and a TV-only column would be blank on every other row in the
+	-- building. `cat /dev/tv0` and `dev tv0` read the whole line, exactly as a
+	-- generator's has since the motor rung, and no listing grew a column.
 	if kind == "tv" or kind == "rx" then
 		local data = waveData(object)
 		if data == nil then return nil end
-		return "channel " .. tostring(math.floor(data:getChannel()))
+		local channel = math.floor(data:getChannel())
+		return CeroSecOS.tunerDetailText(channel,
+			CeroSecRadio.scheduleOf(channel, kind == "tv"))
 	end
 
 	if kind ~= "gen" then return nil end

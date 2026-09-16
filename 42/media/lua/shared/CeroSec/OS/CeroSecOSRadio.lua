@@ -222,6 +222,52 @@ CeroSecOS.RADIO_OFF = "off"
 CeroSecOS.RADIO_ON = "on"
 CeroSecOS.RADIO_NO_POWER = "no power"
 
+--
+-- WHAT A TUNED SET SAYS BESIDE ITS SWITCH
+--
+-- `cat /dev/tv0` reads `on channel 203 airing 720-1080`: the switch, the dial,
+-- and what the station is doing with the day. The switch is the `state` and
+-- everything after it is the `detail`, for the generator's reason -- the listings
+-- have a column for a word and not for a sentence, and `dev tv0 toggle` looks its
+-- opposite up by the state, which a sentence would have no entry for.
+--
+-- THE THREE WORDS, AND WHY THERE IS NO FOURTH.
+--
+--   airing F-T   a broadcast is on that channel now, and that is its block
+--   next F-T     nothing now; the next block of the day starts at F
+--   idle         nothing now and nothing else today
+--
+-- and a dial on a frequency no station is on at all says neither: the line ends
+-- at the number, because a set on static has nothing to say about a schedule.
+--
+-- F and T are MINUTES OF THE DAY, which is the unit the engine keeps them in and
+-- not a unit of ours: a stamp in RadioData.xml is an integer and the parser reads
+-- no date beside it. 1080-1440 is six in the evening to midnight. A program that
+-- wants the set on for the show compares `next`'s first number with the clock,
+-- which is the whole reason the numbers are here rather than a sentence.
+--
+-- The words are here, beside the radio's own three, because this is where a set's
+-- sentence is built and there is one place for it (CeroSecOS.radioStateText). The
+-- READING behind them is the server's and is in SCeroSecRadio.lua, which is the
+-- only file that asks the game anything about a radio.
+CeroSecOS.TUNER_AIRING = "airing"
+CeroSecOS.TUNER_NEXT = "next"
+CeroSecOS.TUNER_IDLE = "idle"
+
+function CeroSecOS.tunerDetailText(channel, schedule)
+	if type(channel) ~= "number" then return "" end
+	local text = "channel " .. tostring(math.floor(channel))
+	if type(schedule) ~= "table" then return text end
+	local from, to = schedule.from, schedule.to
+	if type(from) ~= "number" or type(to) ~= "number" then
+		return text .. " " .. CeroSecOS.TUNER_IDLE
+	end
+	local word = CeroSecOS.TUNER_NEXT
+	if schedule.airing then word = CeroSecOS.TUNER_AIRING end
+	return text .. " " .. word .. " "
+		.. tostring(math.floor(from)) .. "-" .. tostring(math.floor(to))
+end
+
 function CeroSecOS.radioStateText(channel, on, powered)
 	local freq = CeroSecOS.radioFreqText(channel)
 	if freq == nil then return "" end

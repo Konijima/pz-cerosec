@@ -1153,6 +1153,15 @@ do
 	states("the devices", CeroSecOS.DEV_MAX .. " devices at most, at mode "
 		.. CeroSecOS.DEV_MODE .. ", and dev find shows one for "
 		.. CeroSecOS.DEV_FIND_SECONDS .. " seconds")
+	-- The three words a tuned set says beside its switch, read off the engine
+	-- rather than typed here: a word that moved has to break this page, because a
+	-- program a player writes is written against what the page told him.
+	states("what a set says when a broadcast is on",
+		CeroSecOS.TUNER_AIRING .. " means a broadcast is on")
+	states("and when the next one starts",
+		CeroSecOS.TUNER_NEXT .. " means nothing is on")
+	states("and when there is nothing left today",
+		CeroSecOS.TUNER_IDLE .. " means nothing now and nothing else")
 	states("the job ceiling", CeroSecOS.MAX_JOBS .. " jobs to a machine")
 	states("the cpu limit",
 		(CeroSec.JOB_CPU_LIMIT_S / 60) .. " minutes with nothing to wait for")
