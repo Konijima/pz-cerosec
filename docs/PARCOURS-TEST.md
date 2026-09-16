@@ -1162,14 +1162,16 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 
 ## O. PATH, liens, `/dev/null` et `/var/tmp` (palier 6b)
 
-193. `PATH`. À l'invite : `echo $PATH` → `/bin`. Puis `echo $HOME` →
+193. `PATH`. À l'invite : `echo $PATH` → `/bin:/usr/local/bin`, et
+     `ls /usr/local/bin` → vide. Puis `echo $HOME` →
      `/home/admin`. `type ls` → `ls is /bin/ls`, `type cd` →
      `cd is a shell builtin`, `type if` → `if is a shell keyword`,
      `which ls` → `/bin/ls`, et `which frobnicate` → **aucune ligne** (et rien
      d'autre non plus). [ ]
 194. Une commande à soi. `mkdir bin`, `edit bin/hello` avec une seule ligne
      `echo salut`, sauver, `chmod 755 bin/hello`. Puis `hello` →
-     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` et `hello` →
+     `hello: command not found`. Ensuite `PATH=$PATH:$HOME/bin` → `echo $PATH`
+     dit `/bin:/usr/local/bin:/home/admin/bin`, et `hello` →
      `salut`. `which hello` → `/home/admin/bin/hello`. Enfin mettre la même
      ligne `PATH=$PATH:$HOME/bin` dans `edit .profile`, `exit`, se reconnecter,
      et `hello` doit marcher dès la première invite. [ ]
@@ -2377,7 +2379,12 @@ table qu'il avait écrite.
        écrite avant la mise à jour ;
      - les modules vissés sur une porte avant la mise à jour répondent encore :
        `dev` les liste, et en `root` (`su root`)
-       `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231). [ ]
+       `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231) ;
+     - et ce que la mise à jour AJOUTE est là : `ls /usr/local/bin` répond (vide),
+       sans `no such file`, et `echo $PATH` dit `/bin:/usr/local/bin` — une
+       machine d'une vieille sauvegarde gagne la chaîne au chargement. Si on
+       avait fabriqué soi-même un `/usr` sous l'ancienne version, il est intact,
+       avec ce qu'il y avait dedans. [ ]
 
 ## AA. Ce qui est déjà sur les machines (contenu du monde, 1re partie)
 
@@ -3690,10 +3697,18 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `README.TXT` et les six programmes. `cat /mnt/README.TXT` → la page tient
      dans l'écran, sans ligne coupée, et nomme les six. `df` → la ligne `fd0`
      dit environ **4058 de 4096 octets**. [ ]
-395. **Les copier.** `sudo cp /mnt/curtains.sh /usr/local/bin` (faire d'abord
-     `sudo mkdir` pour `/usr`, `/usr/local` et `/usr/local/bin` — `mkdir` n'a pas
-     de `-p`). Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
+395. **Les copier, sans rien créer d'abord.** `ls -l /usr` → `local` est là, et
+     `ls /usr/local/bin` → vide : la machine livre la chaîne. Puis exactement la
+     ligne du README, `sudo cp /mnt/curtains.sh /usr/local/bin` — **aucun
+     `mkdir`**. Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
      Attendu : `ls -l /usr/local/bin` les montre tous exécutables. [ ]
+395a. **Et ils répondent à leur nom.** `echo $PATH` → `/bin:/usr/local/bin`.
+     `which curtains.sh` → `/usr/local/bin/curtains.sh`, puis `curtains.sh close`
+     **sans `sh` ni chemin** → les rideaux se ferment. Dans un crontab, la ligne
+     `* * * * * genwatch.sh 10` (nom nu, sans chemin) doit partir aussi : attendre
+     une minute de jeu, `mail` → la sortie du programme et **jamais**
+     `genwatch.sh: command not found`. Les lignes du README avec le chemin complet
+     marchent toujours telles quelles. [ ]
 396. **LA PORTE SE REFERME, ET C'EST L'ÉTAPE QUI COMPTE.** Lancer
      `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`. Aller **ouvrir la
      porte à la main** dans le monde, et **rester à la regarder**. Attendu : la

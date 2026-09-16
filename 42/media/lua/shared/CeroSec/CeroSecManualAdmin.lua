@@ -1275,9 +1275,9 @@ commands refuse from cron and each says why:
 clear runs and clears nothing. rsh is the one that works without a
 terminal, which is why a crontab calls rsh and never rlogin.
 
-And it does not inherit your PATH. Every cron line starts at /bin and only
-/bin, whatever your shell has. It is the oldest trap in cron, and the fix
-is to write the whole path to anything not in /bin.]],
+And it does not inherit your PATH. A cron line starts on the default --
+/bin and /usr/local/bin -- whatever your shell has. The oldest trap in
+cron, and the fix is the whole path to anything in neither.]],
 
 [[The television, and the one line a set can tell you that a clock cannot.
 

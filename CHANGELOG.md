@@ -8,6 +8,17 @@ date.
 
 ## Unreleased
 
+- **Every machine has `/usr/local/bin` now, and it is on the PATH.** The `HOME
+  AUTOMATION` floppy tells you to `sudo cp /mnt/curtains.sh /usr/local/bin`, and
+  that directory was not on any machine -- the copy answered `no such file` and
+  there was nothing on the disk's README saying to make three directories first.
+  It is there on every machine from now on, and it is the second entry of the
+  PATH a login hands you: copy a program there and call it by its name, at the
+  prompt or in a crontab line, with no `sh /usr/local/bin/` in front of it. The
+  whole path still works exactly as the README writes it. **Machines already in
+  your save gain the directory on load**, and anything you had made at one of
+  those three names is left exactly as it is.
+
 - **A server admin gets the debug window again.** The entry `CeroSec (dev)` on a
   computer's menu asked the game whether this connection was THE admin role, which
   answered no to an admin on his own server; it now asks the access level by name,

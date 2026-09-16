@@ -155,7 +155,8 @@ Note the difference from the last page. sh wants r. ./ wants x as well.]],
 Volume 1 has this properly; here is the short form. When you type a word,
 the machine walks the directories named in PATH, left to right, looking
 for a file by that name with x on it, and runs the first it finds. Fresh
-out of the crate PATH holds one directory, /bin, which is why a word you
+out of the crate PATH holds two directories -- /bin, the machine's own
+commands, and /usr/local/bin, empty and yours -- which is why a word you
 made up is "command not found".
 
 Make a directory of your own, add it to PATH, and your scripts become
@@ -411,7 +412,7 @@ you arrive.
   admin@ksp-04-11:~$ echo $HOME
   /home/admin
   admin@ksp-04-11:~$ echo $PATH
-  /bin
+  /bin:/usr/local/bin
 
 Writing $HOME/notes instead of /home/admin/notes is the difference between
 a script that works for whoever runs it and one that works for you. Get
@@ -447,7 +448,7 @@ thing in the shape you would type back:
 
   admin@ksp-04-11:~$ env
   HOME=/home/admin
-  PATH=/bin
+  PATH=/bin:/usr/local/bin
   x=5
 
 A login exports PATH and HOME for you, which is why a script has always
@@ -1593,8 +1594,9 @@ not an error; it is an empty shelf.]],
 
 This is the oldest trap in Unix and it catches every programmer once.
 
-A cron line starts with PATH set to /bin and nothing more on it. Your
-own bin is not there, however carefully you added it at your prompt. So:
+A cron line starts with PATH set to the default -- /bin and
+/usr/local/bin -- and nothing more on it. Your own bin is not there,
+however carefully you added it at your prompt. So:
 
   30 4 * * * nightly.sh
   30 4 * * * /home/admin/bin/nightly.sh
@@ -1603,9 +1605,9 @@ The first one is not found at four in the morning and the second one is.
 Write the whole path in a crontab line, always.
 
 It does get HOME, and starts in your own directory. What it does not get
-is your environment: cron builds one of its own with those two names in it
-and nothing else, so a name you exported at a prompt this morning is not
-there at four tomorrow.
+is your environment: cron builds one of its own with those two and
+nothing else, so a name you exported this morning is not there at four
+tomorrow.
 
   admin@ksp-04-11:~$ export x=hi
   admin@ksp-04-11:~$ ./where.sh
@@ -1725,14 +1727,14 @@ It is where the PATH line from chapter 1 goes to become permanent:
   PATH=$PATH:$HOME/bin
   greeting=hello
   admin@ksp-04-11:~$ echo $PATH
-  /bin:/home/admin/bin
+  /bin:/usr/local/bin:/home/admin/bin
 
 It is READ, the way a dot reads a file, and not run as a program: that is
 why a variable it sets is set at your prompt and a cd it does is where you
-are standing. Its mistakes read like any script's.
+stand. Its mistakes read like any script's.
 
-And a script is the right place for a machine to keep a diary. One line
-does it, and date makes every entry findable:
+A script is the right place for a machine to keep a diary. One line does
+it, and date makes every entry findable:
 
   echo "$(date) lights out" >> /home/admin/night.log
 
@@ -1744,7 +1746,8 @@ The way back is root, which can edit the file for you.]],
 
 Somebody sold six of these already written, on a floppy whose printed
 label says CeroSec HOME 1.0. Mount it, read README.TXT, and copy what you
-want into /usr/local/bin. Three take a crontab line and three do not.
+want into /usr/local/bin -- which is on the PATH, so a program in there
+answers to its name. Three take a crontab line and three do not.
 
   autoclose.sh start [<secs>] | stop
   curtains.sh open|close|auto [dawn dusk]
@@ -2061,7 +2064,8 @@ one light at a time, so a light that would not answer is not a silence.]],
   done
   echo "$(date +%H:%M) done" >> $log
 
-And the line that runs it. The whole path, because cron's PATH is /bin:
+And the line that runs it. The whole path, because cron's PATH is the
+default and your own bin is not on it:
 
   0 22 * * * /home/admin/bin/lockup.sh
 
