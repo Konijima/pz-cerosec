@@ -2509,17 +2509,18 @@ end
 -- A PAPER, into his hands: the very sticky note a drawer or a pocket of that
 -- premises would hold.
 --
--- CeroSecNotes.write and not a second AddItem of our own, because the words on a
--- note are put on with three calls in an order that matters (the head of
+-- CeroSecNotes.write and not a second AddItem of our own, because a note is the
+-- game's own sheet of paper with the words on its PAGE, its login on its name and
+-- our sticker on its icon, put on in an order that matters (the head of
 -- CeroSecNotes.write) -- and the container is the survivor's own inventory, which is
 -- a container like any drawer. The announce goes last, exactly as the disk's does: a
 -- paper a multiplayer client never hears about is a paper he cannot read.
 --
 -- nil when he has it, or the sentence to put on the glass.
-local function givePaper(playerObj, text)
+local function givePaper(playerObj, text, login)
 	local inv = playerObj:getInventory()
 	if inv == nil then return "there is nowhere to put it" end
-	local item = CeroSecNotes.write(inv, text)
+	local item = CeroSecNotes.write(inv, text, login)
 	if item == nil then return "he is carrying too much" end
 	if isServer() then sendAddItemToContainer(inv, item) end
 	return nil
@@ -2672,7 +2673,7 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 					"no root note: the secret would not derive one")
 			else
 				local text = string.format(CeroSecNotes.ROOT_FORM, "root", password)
-				local said = givePaper(playerObj, text)
+				local said = givePaper(playerObj, text, "root")
 				if said ~= nil then
 					refuseAct(self, playerObj, token, x, y, z, "no root note: " .. said)
 				else
@@ -2712,7 +2713,7 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 					"no staff note: the secret would not derive one")
 			else
 				local text = string.format(CeroSecNotes.USER_FORM, login, password)
-				local said = givePaper(playerObj, text)
+				local said = givePaper(playerObj, text, login)
 				if said ~= nil then
 					refuseAct(self, playerObj, token, x, y, z, "no staff note: " .. said)
 				else

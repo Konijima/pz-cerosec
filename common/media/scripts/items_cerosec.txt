@@ -172,17 +172,30 @@ module CeroSec
        "CeroSec.FloppyBlue"; the DisplayName here is the fallback, and it is
        spelled out in words because a double quote in a script value is not
        something to bet on. */
-    /* THE PAPER SOMEBODY WROTE A PASSWORD ON.
-       One item for the two places a password is found -- the drawer of a desk and
-       the pocket of a dead employee -- because it IS one thing: a note with a
-       login and a password on it. Which one it is is in the name the item carries
-       (CeroSecNotes writes it with setName), and nothing else about the item
-       differs.
+    /* THE PAPER SOMEBODY WROTE A PASSWORD ON -- RETIRED, AND KEPT.
+       Nothing is written as this type any more. A note is now vanilla's own
+       Base.SheetPaper2, which the game will let a survivor read, write over with a
+       pen, erase and burn -- none of which this block could ever do, because a
+       base:normal item's whole content is its name. The reasoning, the vanilla
+       blocks and the bytecode are at the head of CeroSecNotes.lua.
 
-       base:normal and not base:literature, for the manuals' own reason: a
-       Literature item that cannot be written on is one vanilla's inventory menu
-       offers to READ, and Read is a timed action that burns hours of game time.
-       There is nothing to read here that the item's name does not already say.
+       THE BLOCK STAYS, exactly as it was and WITHOUT Obsolete. Copies of it are
+       lying in drawers and bags of saves already played, and a saved item is a
+       registry id: a type no script declares resolves to nothing and the copy is
+       dropped (the trace is over `item Manual` below), and Obsolete = true makes
+       DictionaryInfo.isValid() answer false, which is the very test that deletes
+       it. An old note still carries its password on its name, which is all it ever
+       carried, and it is not converted into anything -- converting an item a
+       player may be holding is a bigger risk than leaving a paper the way he found
+       it.
+
+       Nothing below this line changed with the retirement. It was base:normal and
+       not base:literature for the manuals' own reason -- a Literature item that
+       cannot be written on is one vanilla's inventory menu offers to READ, and
+       Read is a timed action that burns hours of game time. That objection is what
+       CanBeWrite = true answers on the sheet of paper that replaced it
+       (ISInventoryPaneContextMenu:242 keeps a writable Literature out of that
+       action altogether).
 
        StaticModel and WorldStaticModel are SheetPaper2's own, verbatim
        (media/scripts/generated/items/literature.txt:1839-1840): a sheet of paper
@@ -193,7 +206,10 @@ module CeroSec
 
        DisplayName here is the fallback; the name a player reads comes from
        Translate/EN/ItemName.json, and the name he reads on a note that has been
-       WRITTEN on is neither: it is the custom name CeroSecNotes puts on it. */
+       WRITTEN on is neither: it is the custom name CeroSecNotes puts on it. The
+       Icon is still the one every note wears: CeroSecNotes.ICON puts this very
+       texture on vanilla's sheet, per item, through the engine's own
+       customInventoryIcon key. */
     item StickyNote
     {
         DisplayName = Sticky Note,

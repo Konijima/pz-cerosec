@@ -18,11 +18,12 @@ require "CeroSec/SCeroSecNet"
 --
 --   * ON A PAPER IN THE DESK. One per premises, at most, in a desk, a counter, a
 --     filing cabinet or a drawer of that same premises. It names ROOT, which is
---     the key to the whole machine: `Sticky note: root / falcon12`.
+--     the key to the whole machine: it is called `Sticky note (root)` and it reads
+--     `Sticky note: root / falcon12`.
 --   * IN A DEAD MAN'S POCKET. About one zombie in twenty, killed inside a
 --     premises, carries his OWN login on a paper -- never root's, which he was
---     never given: `Note: rmiller / thunder07`. A corpse gives a foothold; the
---     office gives the keys.
+--     never given: `Sticky note (rmiller)`, reading `Note: rmiller / thunder07`.
+--     A corpse gives a foothold; the office gives the keys.
 --
 -- NOTHING IS EVER DROPPED ON THE FLOOR. A note on the ground is a note under a
 -- bookshelf that nobody will ever look at.
@@ -91,13 +92,86 @@ require "CeroSec/SCeroSecNet"
 
 CeroSecNotes = {}
 
-CeroSecNotes.ITEM = "CeroSec.StickyNote"
+--
+-- A NOTE IS A SHEET OF THE GAME'S OWN PAPER
+--
+-- It was CeroSec.StickyNote, a base:normal item whose only content was its name,
+-- and a player asked what he was supposed to do with it: it could not be read, it
+-- could not be written on, it would not burn. A paper that does none of the three
+-- is not a paper. So a note is now Base.SheetPaper2, vanilla's writable sheet
+-- (media/scripts/generated/items/literature.txt:1831-1843), and it does all three
+-- because the game already does them for its own paper. Base.SheetPaper is not an
+-- item: 1831 is the only SheetPaper block in the whole of scripts/.
+--
+--     item SheetPaper2 { ItemType = base:literature, Weight = 0.1,
+--                        Icon = Paper, CanBeWrite = true, PageToWrite = 1,
+--                        StaticModel = SheetOfPaper, ... ReadType = newspaper }
+--
+--   READ AND WRITE come from those two keys and from nothing else.
+--   ISInventoryPaneContextMenu picks the item up at :245 -- getCategory() ==
+--   "Literature" and canBeWrite() -- and puts the write/read modal on the menu at
+--   :566-577, offering WRITE when the survivor is carrying a pen
+--   (containsTagRecurse over WRITE/PEN/PENCIL/BLUE_PEN/RED_PEN/GREEN_PEN at :567)
+--   and READ when he is not. getCategory() is the Literature class's own answer
+--   (javap -c zombie.inventory.types.Literature, getCategory: the ldc "Literature"
+--   at offset 12 when mainCategory is null), so the base:literature ItemType IS
+--   the qualification. And a writable Literature is deliberately kept OUT of the
+--   hours-long vanilla Read action -- :242 clears isAllLiterature for any item
+--   whose canBeWrite() is true -- which is the very objection the old base:normal
+--   block was written against, answered by the engine itself.
+--
+--   ERASING AND REWRITING need no eraser item and no rule of ours: the modal has
+--   a trash button that blanks the page (ISUIWriteJournal.onClick, "DELETEPAGE")
+--   and the survivor types over it. The one thing that could refuse him is a LOCK
+--   -- getLockedBy() ~= his username at :568 -- and nothing here ever locks one,
+--   so a found note is a note he can rewrite. That is the point.
+--
+--   FUEL comes free with the category too. ISCampingMenu.isValidFuel and
+--   isValidTinder read campingFuelCategory / campingLightFireCategory by
+--   item:getCategory(), and both tables carry Literature = 15/60 hours
+--   (media/lua/server/Camping/camping_fuel.lua). SheetPaper2 is named in the type
+--   tables besides. So a note lights a campfire and feeds a fireplace exactly as
+--   any sheet of paper does.
+--
+-- AND NOTHING IS DELETED. The CeroSec.StickyNote block stays in
+-- common/media/scripts/items_cerosec.txt exactly as it was, unobsoleted: notes
+-- already lying in somebody's save are still that type and still carry their
+-- password on their name, which is all they ever carried. Changing that block's
+-- ItemType instead of leaving it would have been the one unrecoverable move --
+-- javap -p -c zombie.inventory.InventoryItem, loadItem(ByteBuffer,int,boolean,
+-- InventoryItem): the record is length-prefixed (getInt at 1, the reposition to
+-- start+length at 197-206), so the stream would survive, but Literature.load
+-- would read a BitHeader and a page count out of bytes a base:normal item never
+-- wrote, and the load() call is wrapped in `catch (Exception)` at 64-82 which
+-- nulls the item -- the saved note dropped, one line in the console. A player's
+-- paper is not something to bet on a byte pattern.
+CeroSecNotes.ITEM = "Base.SheetPaper2"
 
--- What a survivor reads in his inventory. Two shapes, and they say which kind of
--- note it is in their first word: one was stuck to a desk, the other was folded in
--- a pocket.
+-- What is WRITTEN on the page: the login and the password, in the two shapes that
+-- say which kind of note it is in their first word -- one was stuck to a desk, the
+-- other was folded in a pocket.
 CeroSecNotes.ROOT_FORM = "Sticky note: %s / %s"
 CeroSecNotes.USER_FORM = "Note: %s / %s"
+
+-- What the INVENTORY ROW says, which is now a different thing from what the paper
+-- says. The name names the login and stops there, so that finding out the password
+-- is a gesture -- opening the note and reading it -- and not a line a survivor
+-- skims past in a list. One shape for both papers: which of the two it is, the
+-- page says, and "root" in the name already says the only part a player cares
+-- about at a glance.
+CeroSecNotes.NAME_FORM = "Sticky note (%s)"
+
+-- And it still LOOKS like our sticky note although it is vanilla's sheet, per
+-- item and through the engine's own path. javap -p -c
+-- zombie.inventory.InventoryItem, getTexture(): hasModData at 1, getModData at 13,
+-- ldc_w "customInventoryIcon" at 16, rawget at 19, and Texture.getSharedTexture on
+-- it at 41 when it is a String -- anything else, and a name that resolves to
+-- nothing, falls back to the script's own texture (the getfield at 33, 51). That
+-- is on InventoryItem and Literature does not override it, so it is true of
+-- vanilla's paper exactly as it is true of our floppies (see
+-- CeroSecContent.markLabel). The key is the ENGINE's, on the engine's table,
+-- beside the `customName` setCustomName writes there.
+CeroSecNotes.ICON = "Item_CeroSecStickyNote"
 
 -- The room name the engine uses for a body's pockets. Not a room.
 CeroSecNotes.ZOMBIE_ROOM = "Zombie"
@@ -287,20 +361,64 @@ end
 -- Writing one
 --
 
--- The item, into the container, with the words on its name. nil when the game
--- would not make one, which is a container that is full or a type the game has
--- never heard of -- and that is not an error: it is one note that did not land,
--- and the premises is left unmarked so the next drawer may carry it.
-function CeroSecNotes.write(container, text)
+-- The paper, into the container, with `text` written on its page and `login` on
+-- its name. nil when the game would not make one, which is a container that is
+-- full or a type the game has never heard of -- and that is not an error: it is
+-- one note that did not land, and the premises is left unmarked so the next drawer
+-- may carry it.
+--
+-- THE INK AND THE LABEL ARE TWO DIFFERENT THINGS, and this is the one place both
+-- are put on. The page is what a player opens the note to read; the name is what
+-- the row in his bag says. They are set here together because a paper that had one
+-- without the other is either a note that says nothing or a note whose password is
+-- readable without ever picking it up.
+--
+-- PAGE 1, because PageToWrite = 1 on the sheet: addPage(Integer, String) is the
+-- call vanilla's own write modal makes on OK (ISInventoryPaneContextMenu:2716,
+-- `notebook:addPage(i,v)`), and seePage(1) is what it hands the modal to show
+-- (:2702). Both are public on zombie.inventory.types.Literature -- javap -p:
+-- `public void addPage(java.lang.Integer, java.lang.String)`,
+-- `public java.lang.String seePage(java.lang.Integer)`.
+--
+-- AND IT PERSISTS AND IT TRAVELS, which had to be true or the note would be blank
+-- the moment the drawer's chunk went away again:
+--
+--   SAVE. Literature.save(ByteBuffer, boolean) writes the pages into the item's own
+--   record -- customPages non-null and non-empty sets bit 32 of the header (offsets
+--   208-228), then HashMap.size() as an int (241) and every value through
+--   GameWindow.WriteString (284). load reads the count back (getInt at 217) and
+--   re-keys them 1..n (the Integer.valueOf(i+1) at 257 against ReadString at 261).
+--   One page in, one page out.
+--
+--   AND MULTIPLAYER. A note is written on the SERVER, at loot fill, and the client
+--   who opens the drawer has to get the page with it. syncItemFields() is what
+--   sends it and it was already the call this function ended on for the name:
+--   zombie.network.packets.SyncItemFieldsPacket carries `customPages`,
+--   `customName`/`isCustomName` and `moddata` as fields of the one packet, it fills
+--   customPages from Literature.getCustomPages() at offset 310 of setData, and it
+--   puts them back with Literature.setCustomPages on both the client and the server
+--   side (offsets 267-270 and 133-136). So the page, the name and the icon key all
+--   ride the same call, and there is nothing else to send.
+function CeroSecNotes.write(container, text, login)
 	if container == nil or container.AddItem == nil then return nil end
 	local item = container:AddItem(CeroSecNotes.ITEM)
 	if item == nil then return nil end
+	-- THE WORDS, on the page. Guarded for the same reason every engine call in this
+	-- mod is: a container that handed back something that is not a Literature would
+	-- otherwise be a nil call, and a note with no ink is still a note that names its
+	-- login.
+	if item.addPage ~= nil then item:addPage(1, text) end
 	-- The same three calls the floppy label uses, and for the same reason (see the
 	-- head of CeroSecFloppyMenu): setName is the one reading of a written-on item
 	-- that is true on the server and on every client, the custom-name flag is what
 	-- stops the translated name winning, and syncItemFields is what sends it.
-	item:setName(text)
+	-- setCustomName AFTER setName and never before -- it rawsets `customName` on the
+	-- modData with whatever the name is AT THAT MOMENT.
+	item:setName(string.format(CeroSecNotes.NAME_FORM, tostring(login)))
 	item:setCustomName(true)
+	-- And our own sticker on vanilla's sheet (CeroSecNotes.ICON).
+	local data = item.getModData ~= nil and item:getModData() or nil
+	if data ~= nil then data[CeroSecContent.ICON_KEY] = CeroSecNotes.ICON end
 	if item.syncItemFields ~= nil then item:syncItemFields() end
 	return item
 end
@@ -318,8 +436,8 @@ function CeroSecNotes.deskNote(system, container, containerType, profile, b1, b2
 	local password =
 		CeroSecContent.password(system:secret(), CeroSecContent.rootKey(b1, b2))
 	if password == nil then return nil end
-	local item =
-		CeroSecNotes.write(container, string.format(CeroSecNotes.ROOT_FORM, "root", password))
+	local item = CeroSecNotes.write(container,
+		string.format(CeroSecNotes.ROOT_FORM, "root", password), "root")
 	if item == nil then return nil end
 	-- Marked only once the paper is really in the drawer.
 	CeroSecNotes.markNote(system, b1, b2)
@@ -362,7 +480,7 @@ function CeroSecNotes.zombieNote(system, container, profile, b1, b2, square, kin
 	-- rewrites.
 	if login == "root" then return nil end
 	return CeroSecNotes.write(container,
-		string.format(CeroSecNotes.USER_FORM, login, password))
+		string.format(CeroSecNotes.USER_FORM, login, password), login)
 end
 
 --
