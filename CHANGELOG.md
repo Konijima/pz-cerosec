@@ -8,6 +8,11 @@ date.
 
 ## Unreleased
 
+- **A server admin gets the debug window again.** The entry `CeroSec (dev)` on a
+  computer's menu asked the game whether this connection was THE admin role, which
+  answered no to an admin on his own server; it now asks the access level by name,
+  the way the game's own map editor does. What the server answers has not changed.
+
 ## 0.4.0 - 2026-09-16
 
 The automation update. Nothing here needs a new save: machines you already

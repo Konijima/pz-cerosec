@@ -120,11 +120,17 @@ CeroSec.ADMIN_LEVEL = "admin"
 -- 0-8), so it is the engine's own comparison and a role spelled "Admin" answers the
 -- same as one spelled "admin".
 --
--- With NO player named, the question is about this client's own connection and the
--- answer is vanilla's: `isClient() and isAdmin()`, which is the pair
--- AdminContextMenu.lua:22 opens its own menu with. isAdmin() compares the
+-- With NO player named, the question is about this client's own connection.
+-- It USED to be vanilla's `isClient() and isAdmin()`, the pair
+-- AdminContextMenu.lua:22 opens its own menu with -- and on the author's own
+-- server, as admin, the entry never appeared. isAdmin() compares the
 -- connection's role against Roles.getDefaultForAdmin() by IDENTITY (javap,
--- if_acmpne at offset 15), so it does not depend on the spelling either.
+-- if_acmpne at offset 15), and a role that reached this client over the wire
+-- is not that object. So the answer is the one vanilla's world-editing tools
+-- use instead, `getAccessLevel() == "admin"` (ISWorldMap.lua:36, :166, :911):
+-- the global isAccessLevel(String) is getRole().getName().equals(arg) (javap,
+-- offsets 6-19), the same comparison the server makes on the player object.
+-- isAdmin() is kept as a second door for a role the name test would miss.
 --
 -- Singleplayer is unchanged: a character there has no role, getAccessLevel answers
 -- "none", isClient is false, and the flag or debug mode is the whole answer.
@@ -142,6 +148,8 @@ function CeroSec.debugAllowed(playerObj)
 		return playerObj:isAccessLevel(CeroSec.ADMIN_LEVEL) and true or false
 	end
 	if isClient == nil or not isClient() then return false end
+	if isAccessLevel ~= nil and isAccessLevel(CeroSec.ADMIN_LEVEL) then return true end
+	if getAccessLevel ~= nil and getAccessLevel() == CeroSec.ADMIN_LEVEL then return true end
 	if isAdmin == nil then return false end
 	return isAdmin() and true or false
 end
