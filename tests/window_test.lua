@@ -6018,6 +6018,33 @@ local function newNet()
 	-- (CeroSecNet.premisesRooms -> BuildingDef.getRooms -> RoomDef.getName) because
 	-- the profile of a premises has to be the same answer from every square of it,
 	-- and a def that would not list them is its own case (nil below).
+	-- WHAT A WALK COSTS, in the two things it is made of: the squares a live room
+	-- handed over and the objects looked at on them. The papers ask the world
+	-- whether a computer STANDS in the premises (CeroSecNotes.computerStands), which
+	-- is the only question in this file that walks a room, and a bench that asserted
+	-- the ANSWER alone could not tell a walk that stayed inside one shop of a mall
+	-- from one that read the whole building, nor a memoised second question from a
+	-- second walk. So the fake counts what it handed over.
+	local visits = { squares = 0, objects = 0 }
+	local function counted(items, field)
+		return {
+			size = function() return #items end,
+			get = function(_, i)
+				visits[field] = visits[field] + 1
+				return items[i + 1]
+			end,
+		}
+	end
+
+	-- A COMPUTER TILE, which is what the papers look for and all they look for: the
+	-- sprite the registration itself keys on (MapObjects.OnNewWithSprite over
+	-- CeroSec.SPRITES_OFF and SPRITES_ON, at the foot of SCeroSecSystem.lua), true of
+	-- a machine nobody has switched on and of one nobody has adopted.
+	local function computerTile(on)
+		local sprite = on and CeroSec.SPRITES_ON.S or CeroSec.SPRITES_OFF.S
+		return { getSpriteName = function() return sprite end }
+	end
+
 	local function buildingAt(bx, by, w, h, rooms, names)
 		w, h, rooms = w or 10, h or 10, rooms or 3
 		local def = {
@@ -6057,6 +6084,37 @@ local function newNet()
 						-- and for a room drawn as an L.
 						getArea = function() return entry.area or entry.w * entry.h end,
 					}
+					-- AND THE ROOM AS IT IS IN THE WORLD RIGHT NOW, for the one caller
+					-- that has to look INSIDE it: RoomDef.getIsoRoom answers nil while
+					-- the room's chunks are away (IsoMetaGrid.getRoomByID) and a live
+					-- room hands over its squares. Three fields of the entry say what
+					-- is in it, and they are read on every call so that a bench flips
+					-- one and asks again:
+					--
+					--   squares   how many squares the room has (default one)
+					--   computer  a computer tile on the first of them; "on" for the
+					--             lit sprite, which is the other half of the test
+					--   away      the room the streamer has not brought in
+					--
+					-- The squares answer getObjects and nothing else, which is all the
+					-- walk asks of one; a bench that needs a whole square uses
+					-- net.square.
+					defs[i].getIsoRoom = function()
+						if entry.away == true then return nil end
+						local squares = {}
+						for s = 1, (entry.squares or 1) do
+							local objects = {}
+							if s == 1 and entry.computer then
+								objects[1] = computerTile(entry.computer == "on")
+							end
+							squares[s] = { getObjects = function()
+								return counted(objects, "objects")
+							end }
+						end
+						return { getSquares = function()
+							return counted(squares, "squares")
+						end }
+					end
 				end
 			end
 			def.getRooms = function() return javaList(defs) end
@@ -6076,7 +6134,12 @@ local function newNet()
 	-- tenancy rule does, because which shop a back room belongs to is decided by the
 	-- wall it shares (CeroSecNet.tenantOfRoom). A bare name answers getRoom and no
 	-- getRoomDef, which is what a square in a building this rule cannot measure is.
-	local function machine(x, y, z, building, room)
+	-- ONE SQUARE, with no machine on it. Its own function because a container is
+	-- filled on a square whether anything stands there or not, and the papers' rule
+	-- is about a premises and not about this tile: a bench that had to make a machine
+	-- to get a drawer could not fill a drawer in a house that has no computer, which
+	-- is the world the report came from.
+	local function squareAt(x, y, z, building, room)
 		local roomName = type(room) == "table" and room.name or room
 		-- The square's own RoomDef, or nil for a square in no room the rule can
 		-- measure. A local ahead of the table, because the IsoRoom the square also
@@ -6095,8 +6158,7 @@ local function newNet()
 				getArea = function() return room.area or room.w * room.h end,
 			}
 		end
-		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
-		local square = {
+		return {
 			getX = function() return x end,
 			getY = function() return y end,
 			getZ = function() return z end,
@@ -6115,6 +6177,11 @@ local function newNet()
 			getBuilding = function() return building end,
 			getObjects = function() return { size = function() return 0 end } end,
 		}
+	end
+
+	local function machine(x, y, z, building, room)
+		local object = SCeroSecObject:new(system, { x = x, y = y, z = z })
+		local square = squareAt(x, y, z, building, room)
 		object.getIsoObject = function() return nil end
 		object.getSquare = function() return square end
 		object.updateOnClient = function() end
@@ -6141,10 +6208,22 @@ local function newNet()
 	-- defaults: the debug benches read the size and the area back out of the office
 	-- (10x10, area 100, 3 rooms), and the premises benches need the building to be
 	-- strictly bigger than the zones they put inside it.
-	local office = buildingAt(400, 700, 10, 10, 3)
+	--
+	-- AND THE OFFICE HAS A COMPUTER IN IT, which is a fact the fake has to carry
+	-- since the papers started asking for one (CeroSecNotes.computerStands): three
+	-- machines are put in this world below, so a bench whose drawer is in this office
+	-- is a bench about a premises a computer really stands in and the room list has
+	-- to say so. One room with an outline and a tile on it; the room's NAME changes
+	-- nothing, because a premises that is a zone is called by its zone
+	-- (CeroSecNet.premisesRooms returns nil for one).
+	local officeRoom = { name = "office", x = 400, y = 700, w = 10, h = 10,
+		computer = true }
+	local office = buildingAt(400, 700, 10, 10, 3, { officeRoom })
 	local shed = buildingAt(900, 120, 10, 10, 3)
 	local net = { system = system, objects = objects, machine = machine,
-		office = office, shed = shed, buildingAt = buildingAt }
+		office = office, shed = shed, buildingAt = buildingAt,
+		square = squareAt, officeRoom = officeRoom, visits = visits,
+		forgetVisits = function() visits.squares, visits.objects = 0, 0 end }
 
 	-- Two in the office, one in the shed down the road.
 	net.here = machine(10, 10, 0, office)
@@ -14811,9 +14890,18 @@ do
 		SCeroSecSystem.instance = net7.system
 		_G.__zones = {}
 		-- A house with four rooms, one of which the map calls a study. No zone on it
-		-- at all, which is what the shipped map gives a house.
-		local home = net7.buildingAt(2000, 2000, 12, 12, 4,
-			{ "kitchen", "livingroom", "bedroom", "office" })
+		-- at all, which is what the shipped map gives a house. The rooms carry their
+		-- outlines and the LIVING ROOM carries the computer tile, because the papers
+		-- ask the world for one before they write anything
+		-- (CeroSecNotes.computerStands) -- and it is the machine in the living room
+		-- that this whole section is about, so it is the room that has it.
+		local home = net7.buildingAt(2000, 2000, 12, 12, 4, {
+			{ name = "kitchen", x = 2006, y = 2000, w = 6, h = 6 },
+			{ name = "livingroom", x = 2000, y = 2000, w = 6, h = 12,
+				computer = true },
+			{ name = "bedroom", x = 2006, y = 2006, w = 3, h = 6 },
+			{ name = "office", x = 2009, y = 2006, w = 3, h = 6 },
+		})
 		-- The drawer is in the STUDY; the computer is in the LIVING ROOM. Two
 		-- different rooms of one building, which is the whole point.
 		local study = net7.machine(2004, 2004, 0, home)
@@ -14848,8 +14936,14 @@ do
 		-- is the BUILDING and not the room the drawer stands in. This is the case
 		-- that catches the notes half of the old bug -- the drawer's own room says
 		-- "kitchen", which on its own is a house with no root password at all.
-		local other = net7.buildingAt(2500, 2500, 12, 12, 4,
-			{ "kitchen", "livingroom", "bedroom", "office" })
+		-- Its computer stands in the KITCHEN this time, which is where the drawer is:
+		-- the rule is about the premises and one room of it is as good as another.
+		local other = net7.buildingAt(2500, 2500, 12, 12, 4, {
+			{ name = "kitchen", x = 2500, y = 2500, w = 6, h = 6, computer = true },
+			{ name = "livingroom", x = 2506, y = 2500, w = 6, h = 12 },
+			{ name = "bedroom", x = 2500, y = 2506, w = 3, h = 6 },
+			{ name = "office", x = 2503, y = 2506, w = 3, h = 6 },
+		})
 		local kitchenDesk = net7.machine(2504, 2504, 0, other)
 		kitchenDesk:getSquare().getRoom = function()
 			return { getName = function() return "kitchen" end }
@@ -14875,6 +14969,209 @@ do
 		kitchen:turnOn()
 		check("and its machine is open", CeroSecOS.checkPassword(
 			CeroSecOS.readUsers(kitchen:osState()).root, ""))
+		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
+		SCeroSecSystem.instance = net.system
+	end
+
+	--
+	-- A PASSWORD BELONGS TO A MACHINE THAT STANDS THERE
+	--
+	-- The report off the glass: a sticky note with root's password was found in a
+	-- house with no computer in it at all. Everything above was true of it -- the
+	-- house has a study, so its profile has a root password, so a paper went into a
+	-- drawer -- and the paper named the password of a machine that does not exist.
+	--
+	-- So the rule: a note is written only for a premises a computer STANDS in, asked
+	-- of the WORLD at fill time (CeroSecNotes.computerStands) because nothing about a
+	-- premises' machines is in the save. What is asserted here is the paper, the MARK
+	-- (a premises the world could not answer for must be asked again, or one chunk
+	-- being out costs the premises its note for ever) and the COST -- the squares the
+	-- fake handed over, because a walk that read a whole mall to answer for one shop
+	-- would be right and unshippable.
+	--
+	do
+		local net10 = newNet()
+		SCeroSecSystem.instance = net10.system
+		_G.__zones = {}
+		-- The memo is a session table and this bench is about what it remembers, so
+		-- it starts empty (CeroSecNotes.forgetComputers).
+		CeroSecNotes.forgetComputers()
+
+		-- A HOUSE WITH A STUDY IN IT AND NO COMPUTER ANYWHERE. Four rooms with their
+		-- outlines, all four of them in the world, eight squares each and not a
+		-- computer tile on any of them -- and no machine is made in it either,
+		-- because a world whose room list holds no computer and whose system holds a
+		-- machine is a world that cannot happen, and a bench about one proves nothing.
+		local rooms = {
+			{ name = "kitchen", x = 5200, y = 5200, w = 6, h = 6, squares = 8 },
+			{ name = "livingroom", x = 5206, y = 5200, w = 6, h = 12, squares = 8 },
+			{ name = "bedroom", x = 5200, y = 5206, w = 3, h = 6, squares = 8 },
+			{ name = "office", x = 5203, y = 5206, w = 3, h = 6, squares = 8 },
+		}
+		local house = net10.buildingAt(5200, 5200, 12, 12, 4, rooms)
+		-- A DRAWER AND NO MACHINE: the square is its own thing here (net.square), for
+		-- exactly the world the report came from.
+		local deskSquare = net10.square(5204, 5207, 0, house)
+		local b1, b2 = CeroSecNet.premisesOfSquare(deskSquare)
+		check("the house is a premises", b1 ~= nil)
+		-- THE WITNESS, and without it this section is green on a house that never had
+		-- a password to leak: the profile this premises really gets has one.
+		local profile = CeroSecContent.PROFILES[CeroSecContent.profileFor(nil,
+			CeroSecNet.premisesRooms(deskSquare, nil, nil))]
+		check("and its profile carries a root password",
+			type(profile) == "table" and profile.root == true)
+		check("and staff whose logins could be in a pocket",
+			#CeroSecContent.lockedSlots(profile) > 0)
+
+		local drawer = newContainer(deskSquare)
+		Events.OnFillContainer.trigger("office", "desk", drawer)
+		eq("a drawer in a house with no computer in it carries nothing",
+			#drawer.items, 0)
+		eq("and the premises is left unmarked, so it is asked again",
+			CeroSecNotes.hasNote(net10.system, b1, b2), false)
+
+		-- AND THE DEAD IN IT CARRY NOTHING EITHER. Same rule, same reason: a login
+		-- for a machine nobody can walk up to. ZombRand answers 0 in this file, so
+		-- the roll comes in and the only thing that can refuse is the walk.
+		local body = newContainer(deskSquare)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", body)
+		eq("nor does a body in it", #body.items, 0)
+
+		-- ONE COMPUTER, IN ANOTHER ROOM. The kitchen gets the tile and the drawer is
+		-- still in the study: one machine anywhere in the premises is the whole
+		-- question, because the password is the premises' and every machine of it
+		-- comes up with the same one.
+		rooms[1].computer = true
+		local pocket = newContainer(deskSquare)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", pocket)
+		eq("with a computer in the kitchen a body carries his login", #pocket.items, 1)
+		check("and it is not root's",
+			string.find(pocket.items[1]:getName(), "^Note: %w+ / %w+$") ~= nil
+				and string.find(pocket.items[1]:getName(), "root", 1, true) == nil)
+		local second = newContainer(deskSquare)
+		Events.OnFillContainer.trigger("office", "desk", second)
+		eq("and the drawer in the study carries root's paper", #second.items, 1)
+		check("with the password on it",
+			string.find(second.items[1]:getName(), "^Sticky note: root / %w+$") ~= nil)
+		eq("now the premises is marked",
+			CeroSecNotes.hasNote(net10.system, b1, b2), true)
+
+		-- THE MEMO. This premises has been seen with a computer in it, so the next
+		-- question about it walks nothing at all -- and the second question has to be
+		-- a POCKET, because a second drawer stops at the mark long before it reaches
+		-- the walk.
+		net10.forgetVisits()
+		local body2 = newContainer(deskSquare)
+		Events.OnFillContainer.trigger("Zombie", "inventorymale", body2)
+		eq("a second body in the same house still carries one", #body2.items, 1)
+		eq("and not one square was walked to say so", net10.visits.squares, 0)
+
+		-- THE COMPUTER'S ROOM IS NOT IN THE WORLD YET. A RoomDef whose chunks are
+		-- away answers no live room at all (getIsoRoom -> IsoMetaGrid.getRoomByID,
+		-- null), so the world cannot say whether a computer stands in the premises --
+		-- and cannot-say writes nothing AND LEAVES THE PREMISES UNMARKED, or a chunk
+		-- that happened to be out while a drawer was filled would cost the premises
+		-- its paper for ever.
+		do
+			local awayRooms = {
+				{ name = "kitchen", x = 5600, y = 5600, w = 6, h = 6, squares = 8 },
+				{ name = "livingroom", x = 5606, y = 5600, w = 6, h = 12,
+					squares = 8, computer = true, away = true },
+				{ name = "office", x = 5600, y = 5606, w = 3, h = 6, squares = 8 },
+			}
+			local half = net10.buildingAt(5600, 5600, 12, 12, 3, awayRooms)
+			local sq = net10.square(5601, 5607, 0, half)
+			local h1, h2 = CeroSecNet.premisesOfSquare(sq)
+			check("the half-streamed house is a premises", h1 ~= nil)
+			local first = newContainer(sq)
+			Events.OnFillContainer.trigger("office", "desk", first)
+			eq("a drawer filled while the computer's room is away carries nothing",
+				#first.items, 0)
+			eq("and the premises is NOT marked", CeroSecNotes.hasNote(net10.system,
+				h1, h2), false)
+
+			-- And the streamer brings the room in.
+			awayRooms[2].away = false
+			local next2 = newContainer(sq)
+			Events.OnFillContainer.trigger("office", "desk", next2)
+			eq("once the room is in, the next drawer carries the paper",
+				#next2.items, 1)
+			eq("and the premises is marked at last",
+				CeroSecNotes.hasNote(net10.system, h1, h2), true)
+		end
+
+		-- A MALL: EVERY SHOP ANSWERS FOR ITSELF, and the walk stays INSIDE the
+		-- tenancy -- the same room list the wiring walks, out of the same cache
+		-- (CeroSecNet.tenanciesOf), which is what stops a paper in one shop costing a
+		-- reading of the whole building. The hall is 400 squares here for that
+		-- reason: a walk that went to the building would show up in the count.
+		do
+			local MUSIC = { name = "musicstore", x = 6000, y = 6000, w = 20, h = 15,
+				squares = 6, computer = "on" }
+			local CLOTHES = { name = "clothesstore", x = 6020, y = 6000, w = 20,
+				h = 15, squares = 6 }
+			local HALL = { name = "hall", x = 6040, y = 6000, w = 8, h = 50,
+				squares = 400 }
+			local mall = net10.buildingAt(6000, 6000, 60, 50, 3,
+				{ MUSIC, CLOTHES, HALL })
+			eq("the mall holds two tenancies",
+				#CeroSecNet.tenanciesOf(mall:getDef()), 2)
+			local musicSquare = net10.square(6005, 6005, 0, mall, MUSIC)
+			local clothesSquare = net10.square(6025, 6005, 0, mall, CLOTHES)
+			local m1, m2, _, _, mk = CeroSecNet.premisesOfSquare(musicSquare)
+			local c1, c2 = CeroSecNet.premisesOfSquare(clothesSquare)
+			eq("and each shop is its own premises by the room rule", mk,
+				CeroSecOS.PREMISES_ROOM)
+			check("with its own two bytes", m1 .. "." .. m2 ~= c1 .. "." .. c2)
+
+			net10.forgetVisits()
+			local mdrawer = newContainer(musicSquare)
+			Events.OnFillContainer.trigger("musicstore", "counter", mdrawer)
+			eq("the shop with a computer in it carries its paper", #mdrawer.items, 1)
+			-- The LIT sprite, which is the other half of the test: a machine somebody
+			-- left running is a machine all the same.
+			check("found by the lit sprite as well as the dark one",
+				net10.visits.objects > 0)
+
+			-- THE SHOP NEXT DOOR. Same building, same catalogue profile, no computer
+			-- -- and the count says the walk was its own six squares and not the
+			-- mall's four hundred and twelve.
+			net10.forgetVisits()
+			local cdrawer = newContainer(clothesSquare)
+			Events.OnFillContainer.trigger("clothesstore", "counter", cdrawer)
+			eq("the shop next door without one carries nothing", #cdrawer.items, 0)
+			eq("and the walk was the shop's own squares (" ..
+				net10.visits.squares .. ")", net10.visits.squares, 6)
+			eq("and it is not marked either",
+				CeroSecNotes.hasNote(net10.system, c1, c2), false)
+		end
+
+		-- THE CEILING. The whole-building branch of a school or a hospital is
+		-- thousands of squares and this is asked for every container of a chunk load,
+		-- so the walk stops at CeroSecNotes.SQUARES_MAX and answers cannot-say. The
+		-- computer is in the LAST room on purpose: without the ceiling this premises
+		-- HAS one, so the bench is red for the ceiling and not for an empty building.
+		do
+			local big = {
+				{ name = "classroom", x = 7000, y = 7000, w = 60, h = 60,
+					squares = CeroSecNotes.SQUARES_MAX + 10 },
+				{ name = "office", x = 7060, y = 7000, w = 6, h = 6, squares = 4,
+					computer = true },
+			}
+			local school = net10.buildingAt(7000, 7000, 70, 70, 2, big)
+			local sq = net10.square(7061, 7001, 0, school)
+			local s1, s2 = CeroSecNet.premisesOfSquare(sq)
+			check("the school is a premises", s1 ~= nil)
+			net10.forgetVisits()
+			local far = newContainer(sq)
+			Events.OnFillContainer.trigger("office", "desk", far)
+			eq("a building past the ceiling answers nothing", #far.items, 0)
+			eq("and is not marked, so the next container asks again",
+				CeroSecNotes.hasNote(net10.system, s1, s2), false)
+			eq("the walk stopped at the ceiling", net10.visits.squares,
+				CeroSecNotes.SQUARES_MAX)
+		end
+
 		_G.__zones = { { name = "FrontOffice", x = 8, y = 8, w = 6, h = 6 } }
 		SCeroSecSystem.instance = net.system
 	end

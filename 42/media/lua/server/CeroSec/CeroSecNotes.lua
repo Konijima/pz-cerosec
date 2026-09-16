@@ -11,6 +11,11 @@ require "CeroSec/SCeroSecNet"
 -- of that is that a survivor can get in. So the password is somewhere in the
 -- world, and it is in the two places a password was in 1993:
 --
+-- AND ONLY WHERE THERE IS A MACHINE. Both papers are about a computer, so neither
+-- is written for a premises no computer stands in -- see IS THERE A MACHINE IN HERE
+-- AT ALL below, which is the report a house with no computer and a password in its
+-- drawer produced.
+--
 --   * ON A PAPER IN THE DESK. One per premises, at most, in a desk, a counter, a
 --     filing cabinet or a drawer of that same premises. It names ROOT, which is
 --     the key to the whole machine: `Sticky note: root / falcon12`.
@@ -147,6 +152,138 @@ function CeroSecNotes.markNote(system, b1, b2)
 end
 
 --
+-- IS THERE A MACHINE IN HERE AT ALL
+--
+-- A report off the glass: a sticky note with root's password was found in a house
+-- that has no computer in it anywhere. The two notes above were written for any
+-- premises whose PROFILE has a root password, and a house with a study in it is
+-- such a premises (CeroSecContent.profileFor reads the building's rooms, and
+-- `office` is 3977 rooms of the county) -- so a paper named the password of a
+-- machine that does not exist, which is the one thing the shared derivation was
+-- built to make impossible. A password is a thing about a MACHINE, so a note is
+-- written only where a machine STANDS.
+--
+-- IT IS DECIDED AT FILL TIME FROM THE WORLD and cannot be decided anywhere else:
+-- the profile is derived from the map every time it is needed and nothing about a
+-- premises' machines is in the save. So the premises' rooms are walked, and their
+-- live squares, and the objects on them.
+--
+-- BY THE SPRITE, and not by asking the GlobalObject system whether it holds a
+-- machine here. Adoption is a chunk event -- MapObjects.OnLoadWithSprite ->
+-- SCeroSecSystem:loadIsoObject, the registrations at the foot of
+-- SCeroSecSystem.lua -- and within ONE chunk the order is in our favour: javap on
+-- zombie.iso.IsoChunk.doLoadGridsquare has MapObjects.newGridSquare at offset 859
+-- and loadGridSquare at 864, inside the loop over the chunk's squares, while the
+-- loot fill is a LATER loop entirely (offsets 1350-1408, loadGridSquareIfNeeded ->
+-- LoadGridsquarePerformanceWorkaround.LoadGridsquare, which is what fires
+-- OnFillContainer). But a premises is not one chunk. The drawer's chunk comes in
+-- while the room the computer stands in is still away, and then there is no
+-- GlobalObject for that computer and never has been. The sprite is the very test
+-- the registration itself keys on (CeroSec.isComputerSprite, over SPRITES_OFF and
+-- SPRITES_ON), it is true of a machine nobody has ever switched on, and it needs
+-- nothing adopted.
+--
+-- THREE ANSWERS AND NOT TWO: yes, no, and "the world cannot say" -- a room whose
+-- chunks are away answers nothing about what stands in it, and neither does a walk
+-- that hit its ceiling. Cannot-say writes no note AND LEAVES THE PREMISES
+-- UNMARKED, so the next container filled in it asks the question again, which is
+-- exactly what a full drawer already does.
+--
+
+-- How many squares one question may walk. A house is a few hundred and a mall
+-- tenancy is one shop, but the whole-building branch of a school or a hospital is
+-- thousands of squares -- and this is asked for containers of a chunk load, not
+-- once. Past the ceiling the answer is cannot-say, which costs a re-ask on the
+-- next container and never a paper for a machine that is not there.
+CeroSecNotes.SQUARES_MAX = 4096
+
+-- The premises a computer has already been SEEN in, for the session. Derived from
+-- the map and nothing else, exactly as the tenancy cache is (CeroSecNet's, and
+-- keyed the same way), so it is never saved and losing it costs one walk.
+--
+-- Only `true` is remembered. A premises with no computer in it today may have one
+-- tomorrow -- a survivor puts one down, or the room it is in finally streams in --
+-- and a remembered `no` would be a premises that can never carry a paper again.
+local computerSeen = {}
+
+-- Forget it. For a bench, and for a world being unloaded: a table keyed on
+-- premises that survived into another save would be answering about a county that
+-- is not there any more (CeroSecNet.forgetTenancies is the same rule).
+function CeroSecNotes.forgetComputers()
+	computerSeen = {}
+end
+
+-- THE PREMISES' ROOMS, as the plain tables that carry their RoomDef -- the same
+-- list and the same two cached answers the WIRING walks (SCeroSecAuto's
+-- premisesRoomsOf and CeroSecDevices.fixturesInRooms), so a mall costs here what
+-- it costs there: the tenancy's own rooms for a premises that IS a tenancy, and
+-- the building's rooms for everything else, out of the cache either way.
+--
+-- nil for a def that will not list its rooms, which is a building nothing can be
+-- asked about.
+local function premisesRoomsOf(square, kind)
+	local building = square:getBuilding()
+	if building == nil then return nil end
+	local def = building:getDef()
+	if def == nil then return nil end
+	if kind == CeroSecOS.PREMISES_ROOM then
+		local groups = CeroSecNet.tenanciesOf(def)
+		if #groups < 2 then return nil end
+		return CeroSecNet.tenantOfRoom(groups, CeroSecNet.roomDefAt(square))
+	end
+	return CeroSecNet.roomsOf(def)
+end
+
+-- Does a computer stand in this premises? true, false, or nil for cannot-say.
+--
+-- The live room is the one way to ask what is in a room right now
+-- (RoomDef.getIsoRoom -> IsoMetaGrid.getRoomByID, null while its chunks are away),
+-- and the walk stops at the FIRST computer: one is the whole question.
+function CeroSecNotes.computerStands(square, kind, b1, b2)
+	local key = CeroSecContent.key(b1, b2)
+	if computerSeen[key] == true then return true end
+	if square == nil then return nil end
+	local rooms = premisesRoomsOf(square, kind)
+	if rooms == nil or #rooms == 0 then return nil end
+
+	local walked, away = 0, false
+	for i = 1, #rooms do
+		local room = rooms[i]
+		local live = nil
+		if room.def ~= nil and room.def.getIsoRoom ~= nil then
+			live = room.def:getIsoRoom()
+		end
+		local squares = live ~= nil and live:getSquares() or nil
+		if squares == nil then
+			-- Its chunks are away, and the machine may be standing in this very
+			-- room: the answer is cannot-say and not "no".
+			away = true
+		else
+			for j = 0, squares:size() - 1 do
+				-- The ceiling is counted in SQUARES and checked before each one, so
+				-- a building of a thousand rooms cannot walk past it by a roomful.
+				if walked >= CeroSecNotes.SQUARES_MAX then return nil end
+				walked = walked + 1
+				local sq = squares:get(j)
+				local objects = sq ~= nil and sq:getObjects() or nil
+				if objects ~= nil then
+					for k = 0, objects:size() - 1 do
+						local object = objects:get(k)
+						if object ~= nil and object.getSpriteName ~= nil
+								and CeroSec.isComputerSprite(object:getSpriteName()) then
+							computerSeen[key] = true
+							return true
+						end
+					end
+				end
+			end
+		end
+	end
+	if away then return nil end
+	return false
+end
+
+--
 -- Writing one
 --
 
@@ -169,10 +306,14 @@ function CeroSecNotes.write(container, text)
 end
 
 -- ROOT'S PASSWORD, on a paper in a desk of this premises.
-function CeroSecNotes.deskNote(system, container, containerType, profile, b1, b2)
+function CeroSecNotes.deskNote(system, container, containerType, profile, b1, b2,
+		square, kind)
 	if not profile.root then return nil end
 	if CeroSecNotes.DESK_TYPES[containerType] ~= true then return nil end
 	if CeroSecNotes.hasNote(system, b1, b2) then return nil end
+	-- AND A MACHINE TO OPEN. Asked last of the four: it is the only one of them
+	-- that walks the world, and three cheap noes cost nothing.
+	if CeroSecNotes.computerStands(square, kind, b1, b2) ~= true then return nil end
 
 	local password =
 		CeroSecContent.password(system:secret(), CeroSecContent.rootKey(b1, b2))
@@ -200,11 +341,15 @@ end
 -- world with the words already on it, and nothing rolls again. What is DERIVED --
 -- the login and the password on it -- is derived from the save's secret and the
 -- premises, so the paper and every machine in that office agree for ever.
-function CeroSecNotes.zombieNote(system, container, profile, b1, b2)
+function CeroSecNotes.zombieNote(system, container, profile, b1, b2, square, kind)
 	if ZombRand == nil then return nil end
 	local slots = CeroSecContent.lockedSlots(profile)
 	if #slots == 0 then return nil end
 	if math.floor(ZombRand(CeroSecNotes.ZOMBIE_ODDS)) ~= 0 then return nil end
+	-- And the same rule the drawer obeys, for the same reason and asked in the same
+	-- place -- last, after the roll: a dead employee of a shop with no computer in
+	-- it carries the login of a machine nobody can walk up to.
+	if CeroSecNotes.computerStands(square, kind, b1, b2) ~= true then return nil end
 
 	local slot = slots[math.floor(ZombRand(#slots)) + 1]
 	local secret = system:secret()
@@ -227,7 +372,8 @@ end
 --
 -- Everything is asked in the order that costs least, because this runs for every
 -- container the game fills in the county: the option, then the system, then the
--- square, then the premises, then the profile.
+-- square, then the premises, then the profile -- and, inside the two writers and
+-- after every cheap no, the one question that walks the world.
 --
 function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	if not CeroSecContent.enabled() then return end
@@ -258,10 +404,16 @@ function CeroSecNotes.onFillContainer(roomName, containerType, container)
 	-- there, so there is no password to find and nothing to write.
 	if type(profile) ~= "table" then return end
 
+	-- The square and the KIND travel on, because the last question either writer
+	-- asks is about the world and the kind is what says which rooms are this
+	-- premises' (CeroSecNotes.computerStands). Passed and never worked out again,
+	-- for the reason the head of CeroSecNet.premisesRooms gives: two answers to one
+	-- question is how a note comes to name a password no machine has.
 	if roomName == CeroSecNotes.ZOMBIE_ROOM then
-		CeroSecNotes.zombieNote(system, container, profile, b1, b2)
+		CeroSecNotes.zombieNote(system, container, profile, b1, b2, square, pk)
 	else
-		CeroSecNotes.deskNote(system, container, containerType, profile, b1, b2)
+		CeroSecNotes.deskNote(system, container, containerType, profile, b1, b2,
+			square, pk)
 	end
 end
 
