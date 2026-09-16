@@ -27,12 +27,13 @@ require "CeroSec/SCeroSecNet"
 -- refuses to schedule; the only things that end a job are its own last line,
 -- `kill`, Escape, the cpu ceiling, and the machine going dark.
 --
--- The jobs are RUNTIME state and are deliberately not in the object's saved
--- keys: a reload forgets them, the console's note of a foreground job is
--- dropped by CeroSec.repairConsole, and what a player finds after a server
--- restart is a prompt. A script that must survive a restart is a script the
--- player starts again -- which is the honest thing for a machine that has no
--- process table on its disk.
+-- The book itself lives on the luaObject and is stepped from there. It is not
+-- one of the object's saved keys -- it is written into the machine's own STATE
+-- when the world is saved and read back out of it when the world is loaded, and
+-- the section "The book across a save" at the bottom of this file is the whole
+-- of that. What ends a job is still its own last line, `kill`, Escape, the cpu
+-- ceiling and the machine going dark; leaving the game is not one of them,
+-- because a computer the world saved was never switched off.
 --
 
 CeroSecJobs = CeroSecJobs or {}
@@ -199,6 +200,18 @@ function CeroSecJobs.killAll(luaObject)
 	-- not survive the power going out, and the README and the manual say so.
 	local had = luaObject.jobs ~= nil
 	luaObject.jobs = nil
+	-- And the copy the save file would have carried. Raw and not through osState(),
+	-- because what has to go is whatever is in the table the serializer will reach --
+	-- a machine whose state the gate has refused has one too, and it is exactly the
+	-- machine whose stale book must not come back.
+	--
+	-- The save path clears it as well (writeBook, for a machine with no book), so
+	-- this is the second porter and not the only one. What it buys on its own is the
+	-- state being clean BETWEEN saves: `os` rides into the IsoObject's movableData on
+	-- every mirror and out to the clients on every publish, and a machine somebody
+	-- has just switched off should not be handing anybody a list of what it used to
+	-- be running.
+	if type(luaObject.os) == "table" then luaObject.os.jobs = nil end
 	-- And a dark interval, for the same reason one notch further along: this is
 	-- only ever reached from turnOff, and a machine that has just been switched off
 	-- is not a machine somebody rebooted. The order matters and is the reboot's own
@@ -240,12 +253,18 @@ end
 -- whether the minute's warning has gone out. Everything else about it is what
 -- every other job has.
 --
--- RUNTIME state, like the book it is in: a server restart forgets it and the
--- machine simply stays up, which is the honest answer for a machine with no
--- process table on its disk. It survives a window closing, because a job belongs
--- to the machine and not to anybody standing at it, and it does not survive the
--- power going out or the computer being picked up, because neither of those is a
--- machine any more (CeroSecJobs.killAll).
+-- NOT SAVED with the rest of the book, and the reason is its clock. `at` is a
+-- moment on getTimestampMs -- the wall clock the scheduler counts passes on --
+-- and an order given against it cannot be carried across a save and still mean
+-- what it said: the world stood still while the game was shut and the wall clock
+-- did not. It falls out of the save rule anyway, because a pending order is a
+-- job whose state is "waiting" and only a running or a sleeping job is written
+-- (CeroSecJobs.jobSurvives). So a reload forgets it and the machine stays up,
+-- which is what the README, the manual and docs/PARCOURS-TEST.md have always
+-- said. It survives a window closing, because a job belongs to the machine and
+-- not to anybody standing at it, and it does not survive the power going out or
+-- the computer being picked up, because neither of those is a machine any more
+-- (CeroSecJobs.killAll).
 --
 
 -- The pending order on a machine, or nil. The first one, and there can be two:
@@ -1216,4 +1235,551 @@ end
 
 Events.OnTick.Add(function()
 	CeroSecJobs.tick()
+end)
+
+--
+-- The book across a save
+--
+-- A computer the world saved and loaded again was never switched off. Nobody
+-- pulled the plug, the room still has its wire, and a daemon somebody started
+-- with `&` last week is a daemon that is still running -- exactly as it would be
+-- on a Unix box that nobody powered down. Until this change it was not: the book
+-- was memory and a reload has none, so `sh autoclose.sh start &`, quitting to the
+-- menu and coming back found a machine at its prompt with the doors it was
+-- watching left open. That is the bug this section closes.
+--
+-- WHERE IT GOES. Inside the machine's own state, at `os.jobs`, and not as a
+-- sixth saved key: `os` is already in CeroSec.OBJECT_SAVE_KEYS and the
+-- serializer recurses into it. An added key inside a state is not a shape change
+-- (docs/CONTRIBUTING.md, the compatibility contract), so nothing moves --
+-- not STATE_VERSION, not SYSTEM_VERSION, not the saved keys -- and a build that
+-- has never heard of the key reads a machine with one and ignores it, because
+-- CeroSecOS.validate is not a closed namespace over the state's keys the way a
+-- disk's is (CeroSecOS.diskFieldsOk).
+--
+-- WHEN IT IS WRITTEN. Events.OnSave, and there is one moment and this is it:
+-- zombie.GameWindow.save(boolean) triggers "OnSave" at bytecode offset 302 and
+-- calls zombie.globalObjects.SGlobalObjects.save() at offset 418 of the same
+-- method (javap -p -c on 42.20.4), so the event runs before gos_cerosec.bin is
+-- written and what the handler leaves on the state is what the save carries. A
+-- snapshot on every scheduler pass was the other candidate and was rejected on
+-- the arithmetic: ten copies of four job tables a second for every machine in
+-- the county, for the sake of a thing that happens when a player quits.
+--
+-- WHEN IT IS READ. SCeroSecSystem:newLuaObject, which the engine calls once for
+-- every machine in the save file with its saved fields already in the table
+-- (SGlobalObject.new hands back the GlobalObject's own modData, :63-78). It is
+-- the one road every machine comes in by, chunk loaded or not -- and a machine
+-- out in a county nobody has walked through keeps its jobs the way it keeps its
+-- cron, because neither is a thing in the world.
+--
+-- AND IT IS READ THERE AND NOWHERE ELSE, which is what keeps a CLIENT out of it.
+-- A state also arrives from an ITEM's movableData -- a computer carried across
+-- town, which on a server is a table a client wrote -- and that road ends in
+-- SCeroSecObject:resetForPlacement, which switches the machine off and calls
+-- killAll. So no job is ever built out of a table a client handed over. What is
+-- read here is gos_cerosec.bin, which is the same trust the filesystem in it
+-- already has, and it is still read through a gate (jobFromData below).
+--
+-- WHAT SURVIVES, and it is decided per job rather than for the book:
+--
+--   * a background `&` job, and a cron or `at` child, whose output goes to a
+--     mailbox on the disk. Both survive.
+--   * the foreground job of the machine's OWN glass, because the console is
+--     saved and comes back with it. The console's note of it is put back by
+--     SCeroSecObject:consoleState, once, after the repair -- never by the
+--     repair, so that a console naming a job that did not come back is a
+--     console at its prompt and not a screen with nothing to type at.
+--   * NOT a job whose terminal was a session that came in over the wire
+--     (job.pty). luaObject.ptys is not saved -- a reload has no sessions -- so
+--     its screen is gone, and a job with nowhere to write is one the scheduler
+--     kills anyway (runMachine, screenOf).
+--   * NOT the line a player was in the middle of typing (job.interactive): a
+--     machine comes back at its prompt, which is where the console's repair has
+--     always left it.
+--   * NOT a job that is WAITING. A pending `shutdown`, a `read` with its question
+--     on the glass, a `cu` sitting at the TNC's cmd:, a `wait` -- each of them is
+--     waiting on something a reload does not have: a wall clock that stood still,
+--     a prompt token on a screen, a radio link, another job. One rule covers the
+--     four and leaves no continuation to be handed back out of a save file.
+--   * NOT a job holding something the WORLD owns: a session at the far end
+--     (job.remote), a dial in flight (job.dial), a radio link (job.ring), an
+--     order the machine has not carried out yet (job.orders), an `&` it has asked
+--     for and not been given (job.spawn), a kill it has been asked for.
+--
+-- THE CLOCK. A sleep is saved as the milliseconds it has LEFT and not as the
+-- moment it is due. getTimestampMs is System.currentTimeMillis (javap
+-- zombie.Lua.LuaManager$GlobalObject), so an absolute wake time would survive a
+-- save honestly enough -- but the world stood still while the game was shut, and
+-- a machine that was never switched off did not spend those hours asleep. Left
+-- is what it means: a daemon that had 400 ms of its `sleep 1` to go has 400 ms of
+-- it to go, and a `sleep 3600` started a minute before you quit still has
+-- fifty-nine minutes on it when you come back. The runaway clock (job.cpuSince)
+-- is NOT carried: continuous processor time is what it counts, and a job that has
+-- just been rebuilt has spent none.
+--
+
+-- What a value costs, in one walk: the bytes the serializer writes and the
+-- number of TABLES, which is the budget CeroSecOS.validate spends on the state.
+-- Both are wanted and neither is worth a second walk. The depth guard is not
+-- about legality -- a live job has no cycle in it -- but this walks tables off a
+-- save file too, and an unbounded recursion there is a server that does not come
+-- up.
+local WEIGH_DEPTH = 64
+
+local function weigh(value, tally, depth)
+	local t = type(value)
+	if t == "string" then return #value + 2 end
+	if t == "number" then return 8 end
+	if t == "boolean" then return 1 end
+	if t ~= "table" then return 0 end
+	depth = (depth or 0) + 1
+	tally.tables = tally.tables + 1
+	if tally.tables > tally.max or depth > WEIGH_DEPTH then
+		tally.over = true
+		return 0
+	end
+	local bytes = 0
+	for k, sub in pairs(value) do
+		bytes = bytes + weigh(k, tally, depth) + weigh(sub, tally, depth)
+	end
+	return bytes
+end
+
+-- The parse tree's own shape, asked of a program that came off a save file.
+--
+-- Not the grammar: what the walker does with a node it does not know is already
+-- an answer -- pushNode ends the job with `sh: syntax error` -- so what is needed
+-- here is only that the walker cannot be made to INDEX something that is not a
+-- table. One rule does it, and it was checked against every program this parser
+-- makes -- every script the world content ships, plus one line of every shape the
+-- grammar has, each made into a job and handed back through the gate
+-- (tests/window_test.lua, section 44c): every value at an integer key is a table,
+-- `k` and `t` are strings where they appear, and the one exception is `ops` -- a
+-- list node's `&&`, `||` and `;`, which really are strings in an array.
+local function programOk(value, depth)
+	if type(value) ~= "table" then return false end
+	depth = (depth or 0) + 1
+	if depth > WEIGH_DEPTH then return false end
+	for k, sub in pairs(value) do
+		if type(k) == "number" then
+			if type(sub) ~= "table" then return false end
+		elseif k == "k" or k == "t" then
+			if type(sub) ~= "string" then return false end
+		elseif k == "ops" then
+			if type(sub) ~= "table" then return false end
+			for i = 1, #sub do
+				if type(sub[i]) ~= "string" then return false end
+			end
+		end
+		if type(sub) == "table" and k ~= "ops" then
+			if not programOk(sub, depth) then return false end
+		end
+	end
+	return true
+end
+
+-- Which jobs are written, and the word for why one is not. nil when it survives.
+function CeroSecJobs.jobRefused(job)
+	if type(job) ~= "table" then return "not a job" end
+	if CeroSecOS.jobIsOver(job) then return "over" end
+	if job.state ~= "running" and job.state ~= "sleeping" then return "waiting" end
+	if job.pty ~= nil then return "a session" end
+	if job.remote ~= nil or job.dial ~= nil or job.ring ~= nil then return "the wire" end
+	if job.orders ~= nil or job.spawn ~= nil or job.killReq ~= nil then return "mid-order" end
+	if type(job.prog) ~= "table" or type(job.frames) ~= "table" then return "no program" end
+	for i = 1, #job.frames do
+		local frame = job.frames[i]
+		if type(frame) ~= "table" then return "bad frame" end
+		-- A PIPELINE IN FLIGHT, and this one is not a taste. A stage is a job table
+		-- of its own and it carries `errTo` -- a link back to the job that owns the
+		-- pipeline, so a stage's refusals land in the owner's output -- which makes
+		-- the job table a CYCLE. CeroSecOS.validate refuses a cycle outright
+		-- (checkPlain, "cycle"), so a book written with one in it would not cost the
+		-- player a job: it would cost him the whole machine, refused at the gate on
+		-- the next load. Measured: every one of the home kit's daemons builds a
+		-- pipeline in the middle of a round and none of them is holding one when it
+		-- sleeps, which is where a daemon is found at a save.
+		if frame.stages ~= nil then return "a pipeline" end
+	end
+	return nil
+end
+
+-- The keys of a job that must NOT be written, and it is a deny-list on purpose.
+--
+-- An allow-list would silently drop a field the VM grows next, and a job that
+-- comes back missing one of them is a job that runs subtly wrong -- which is the
+-- failure nobody would ever find. A deny-list fails the other way: a new field
+-- rides along, and it is safe to let it, because the engine's own door rule says
+-- what a job may hold. CeroSecOSVM makes no game call, keeps no coroutine, no
+-- metatable and no function anywhere in a job, so there is nothing in one that
+-- could be a handle to something the save file cannot carry.
+--
+-- fprog is the only thing here, and it is a CACHE: the function bodies parsed out
+-- of the text in job.funcs, rebuilt on the first call after the load. The frames
+-- carry their own copy of it (oldFprog, the caller's, put back on the way out of
+-- a script) and that goes for the same reason.
+local JOB_UNSAVED = { fprog = true, frames = true }
+local FRAME_UNSAVED = { oldFprog = true }
+
+-- The copy, and it is the belt under the pipeline rule above rather than a
+-- convenience: `seen` is kept along the PATH being walked, exactly as
+-- CeroSecOS.validate's own checkPlain keeps it, so a table that leads back to
+-- itself is caught here and the job is refused instead of being copied until the
+-- depth guard gives out. A cycle in the state is a machine the gate refuses on
+-- the next load, so the one thing this must never do is write one.
+--
+-- flags carries what went wrong back up, because the copy answers a table and a
+-- table cannot also say "no".
+local function copyJobData(value, drop, depth, seen, flags)
+	if type(value) ~= "table" then return value end
+	depth = (depth or 0) + 1
+	if depth > WEIGH_DEPTH then
+		flags.deep = true
+		return nil
+	end
+	if seen[value] then
+		flags.cycle = true
+		return nil
+	end
+	seen[value] = true
+	local out = {}
+	for k, sub in pairs(value) do
+		if drop == nil or not drop[k] then
+			out[k] = copyJobData(sub, nil, depth, seen, flags)
+		end
+	end
+	seen[value] = nil
+	return out
+end
+
+-- One job as the save file will hold it, or nil plus the word for why not.
+function CeroSecJobs.jobToData(job, nowMs, fg)
+	local refusal = CeroSecJobs.jobRefused(job)
+	if refusal ~= nil then return nil, refusal end
+	-- The prompt's own job is saved only while it is really the one holding the
+	-- glass, because that is the only thing that can give it its shell back
+	-- (CeroSecJobs.restoreForeground). One that is not is a shell nobody would be
+	-- typing at, and it is left where every job used to be left.
+	if job.interactive and not fg then return nil, "an orphan prompt" end
+	-- The frames are left out of the copy above and taken one at a time, because
+	-- the one thing dropped from a frame is not the one thing dropped from a job.
+	local flags = {}
+	local data = copyJobData(job, JOB_UNSAVED, 0, {}, flags)
+	data.frames = {}
+	for i = 1, #job.frames do
+		data.frames[i] = copyJobData(job.frames[i], FRAME_UNSAVED, 0, {}, flags)
+	end
+	if flags.cycle then return nil, "a cycle" end
+	if flags.deep then return nil, "too deep" end
+	-- The sleep, as what is LEFT of it. Never a negative: a job whose moment went
+	-- by while the machine was busy is a job that is due, and due is nought left.
+	data.wakeMs = nil
+	if job.state == "sleeping" and type(job.wakeMs) == "number"
+			and type(nowMs) == "number" then
+		local left = job.wakeMs - nowMs
+		if left < 0 then left = 0 end
+		data.sleepLeft = left
+	end
+	-- The runaway clock is the machine's and starts again with it.
+	data.cpuSince = nil
+	-- Whether this one was holding the glass. Worked out by the caller, which is
+	-- the only place that has the console to ask.
+	if fg then data.fg = true end
+	return data
+end
+
+-- An array of strings, and nothing else in it. What a job holds under `out` and
+-- `args` reaches the screen and the expansions as text, so a table at one of those
+-- positions is not a wrong value, it is a concatenation that throws.
+local function stringArray(list)
+	if type(list) ~= "table" then return false end
+	for i = 1, #list do
+		if type(list[i]) ~= "string" then return false end
+	end
+	return true
+end
+
+-- A table of name -> text, the shape job.vars and job.funcs are. `want` is what a
+-- value has to be, because job.exported is name -> true.
+local function stringMap(map, want)
+	if type(map) ~= "table" then return false end
+	for name, value in pairs(map) do
+		if type(name) ~= "string" then return false end
+		if want == "boolean" then
+			if value ~= true then return false end
+		elseif type(value) ~= "string" then
+			return false
+		end
+	end
+	return true
+end
+
+-- One job back off the save file, or nil plus the reason. This is the gate: what
+-- comes through it is a table out of gos_cerosec.bin, and the belt every other
+-- thing in the state gets is the belt it gets.
+--
+-- What it asks is DERIVED from what the engine does with a field and not from the
+-- defects anybody has met: a field the walker indexes has to be a table, a field it
+-- prints or concatenates has to be a string, and everything the SAVE refuses to
+-- write is refused again on the way in through the very same rule
+-- (CeroSecJobs.jobRefused), so a forged book cannot hand back a job holding a dial,
+-- a radio link or an order the machine would carry out.
+function CeroSecJobs.jobFromData(data, nowMs)
+	if type(data) ~= "table" then return nil, "not a table" end
+	if type(data.id) ~= "number" then return nil, "no id" end
+	if data.n ~= nil and (type(data.n) ~= "number" or data.n < 1
+			or data.n > CeroSecOS.MAX_JOBS) then
+		return nil, "bad slot"
+	end
+	if data.state ~= "running" and data.state ~= "sleeping" then return nil, "bad state" end
+	if type(data.name) ~= "string" or type(data.cmd) ~= "string" then return nil, "no name" end
+	if type(data.session) ~= "table" or type(data.session.user) ~= "string" then
+		return nil, "no session"
+	end
+	if not stringMap(data.vars) then return nil, "no shell" end
+	if not stringArray(data.out) or not stringArray(data.args) then return nil, "no shell" end
+	if data.exported ~= nil and not stringMap(data.exported, "boolean") then
+		return nil, "no shell"
+	end
+	if data.funcs ~= nil and not stringMap(data.funcs) then return nil, "no shell" end
+	if data.interactive and not data.fg then return nil, "an orphan prompt" end
+	if not programOk(data.prog) then return nil, "bad program" end
+	local frames = data.frames
+	if type(frames) ~= "table" or #frames < 1 or #frames > CeroSecOS.MAX_FRAMES then
+		return nil, "bad frames"
+	end
+	for i = 1, #frames do
+		local frame = frames[i]
+		if type(frame) ~= "table" or type(frame.k) ~= "string" then return nil, "bad frame" end
+		-- The two fields a frame walks into. A frame that carries neither is one
+		-- of the walker's own and is left alone.
+		if frame.prog ~= nil and not programOk(frame.prog) then return nil, "bad frame" end
+		if frame.node ~= nil and not programOk(frame.node) then return nil, "bad frame" end
+	end
+	-- A copy and never the table off the save file itself: what the scheduler steps
+	-- has to be ours, and the state this came out of is cleared behind it. The same
+	-- cycle guard as on the way out, for a table that has been through a file.
+	local flags = {}
+	local job = copyJobData(data, nil, 0, {}, flags)
+	if flags.cycle then return nil, "a cycle" end
+	if flags.deep then return nil, "too deep" end
+	-- The clock again, the other way round.
+	job.sleepLeft = nil
+	job.wakeMs = nil
+	if job.state == "sleeping" then
+		local left = data.sleepLeft
+		if type(left) ~= "number" or left < 0 then left = 0 end
+		job.wakeMs = (nowMs or 0) + left
+	end
+	job.cpuSince = nil
+	-- Whatever the last pass left of the machine's half of a line. The pass that
+	-- rebuilt this job is not the pass that made it, so neither flag means
+	-- anything any more (SCeroSecSystem:startPrompt reads them).
+	job.spawned = nil
+	job.ordered = nil
+	-- And the save's own rule, asked again on the way in. What the writer will not
+	-- write is what the reader will not take -- a job holding a dial, a session at
+	-- the far end, a radio link, an order the machine has not carried out, or a
+	-- pipeline in flight -- so a forged book cannot hand one back by putting on the
+	-- state something no save would ever have made.
+	local refusal = CeroSecJobs.jobRefused(job)
+	if refusal ~= nil then return nil, refusal end
+	return job
+end
+
+-- The machine's book onto its state, at the save. Answers how many jobs went in.
+function CeroSecJobs.writeBook(luaObject, nowMs)
+	local book = luaObject.jobs
+	if book == nil or #book.list == 0 or not luaObject.on then
+		-- Nothing running, so the copy on the state goes -- raw, and without asking
+		-- the gate: what has to go is whatever is in the table the serializer will
+		-- reach, and a machine running nothing is not one to spend a walk of a
+		-- filesystem on at the moment somebody is quitting.
+		if type(luaObject.os) == "table" then luaObject.os.jobs = nil end
+		return 0
+	end
+	local state = luaObject:osState()
+	if state == nil then return 0 end
+	local console = luaObject.console
+	local held = nil
+	if type(console) == "table" and type(console.job) == "number" then held = console.job end
+
+	local list, over, spent = {}, 0, 0
+	for i = 1, #book.list do
+		local job = book.list[i]
+		local data = CeroSecJobs.jobToData(job, nowMs, held ~= nil and job.id == held)
+		if data ~= nil then
+			-- Weighed once, against the machine's own ceiling and against what is
+			-- left of the book's: a job past CeroSec.JOB_SAVE_BYTES is refused on its
+			-- own account, and one that fits is still refused when the jobs before it
+			-- have spent the table budget the state gate is going to count.
+			local one = { tables = 0, max = CeroSec.JOB_SAVE_TABLES }
+			local bytes = weigh(data, one)
+			if one.over or bytes > CeroSec.JOB_SAVE_BYTES
+					or spent + one.tables > CeroSec.JOB_SAVE_TABLES then
+				over = over + 1
+			else
+				spent = spent + one.tables
+				list[#list + 1] = data
+			end
+		end
+	end
+	if #list == 0 then
+		state.jobs = nil
+	else
+		-- seq goes with them, or the ids handed out after the load would be ids
+		-- that are already on the machine.
+		state.jobs = { seq = book.seq, list = list }
+	end
+	if over > 0 then
+		CeroSec.log(CeroSec.LOG_ERROR, "the machine at " .. luaObject.x .. ","
+			.. luaObject.y .. "," .. luaObject.z .. " left " .. over
+			.. " job(s) out of the save: too large")
+	end
+	return #list
+end
+
+-- Every machine in the county, at the save.
+--
+-- The county and not CeroSecJobs.machines, which was the first shape and was
+-- wrong: a machine whose last job ENDED is not one the scheduler holds any more --
+-- runMachine forgets it the pass its book empties -- so a save taken after that
+-- would never reach it and the job it was running at the save BEFORE would still
+-- be on its state, to come back on the next load as a job somebody had already
+-- watched finish. A bench found it.
+--
+-- What makes the walk affordable is that it decides on two raw field reads: a
+-- machine with no book and nothing on its state is passed over without a call.
+-- Three hundred dark machines cost six hundred reads, once, at the moment the game
+-- is saving anyway.
+function CeroSecJobs.saveBooks()
+	local system = CeroSecJobs.system
+	if system == nil then return end
+	local now = 0
+	if getTimestampMs ~= nil then now = getTimestampMs() end
+	local n = system:getLuaObjectCount()
+	for i = 1, n do
+		local luaObject = system:getLuaObjectByIndex(i)
+		if luaObject ~= nil and (luaObject.jobs ~= nil
+				or (type(luaObject.os) == "table" and luaObject.os.jobs ~= nil)) then
+			CeroSecJobs.writeBook(luaObject, now)
+		end
+	end
+end
+
+-- And the way back in, for one machine, at load. Answers how many jobs came
+-- back. The state is read raw and not through osState(): this runs for every
+-- machine in the save file, and walking the validator over a county of them
+-- before anybody has looked at one is the cost that gate exists to avoid -- the
+-- first real read does it, and a machine the gate then refuses is a machine
+-- runMachine kills the book of on its first pass.
+function CeroSecJobs.readBook(system, luaObject)
+	if type(luaObject.os) ~= "table" then return 0 end
+	local saved = luaObject.os.jobs
+	-- Taken off the state whatever comes of it. A book is a thing a machine is
+	-- RUNNING, not a thing that lies on its disk: leaving it there would have the
+	-- next save write it again over a book that has since been killed, and a
+	-- second load resurrect a job somebody stopped.
+	luaObject.os.jobs = nil
+	if type(saved) ~= "table" or type(saved.list) ~= "table" then return 0 end
+	if not luaObject.on then return 0 end
+
+	local now = 0
+	if getTimestampMs ~= nil then now = getTimestampMs() end
+	local book = CeroSecJobs.book(luaObject)
+	if type(saved.seq) == "number" and saved.seq > book.seq then
+		book.seq = math.floor(saved.seq)
+	end
+	local back = 0
+	for i = 1, #saved.list do
+		-- The machine's own ceiling, asked the way enrol asks it: the prompt's own
+		-- job holds no slot and counts against nothing, so a forged list of five
+		-- cannot put a fifth SCRIPT on a machine that takes four.
+		if liveCount(book) >= CeroSecOS.MAX_JOBS then break end
+		local job, why = CeroSecJobs.jobFromData(saved.list[i], now)
+		if job == nil then
+			CeroSec.log(CeroSec.LOG_ERROR, "the machine at " .. luaObject.x .. ","
+				.. luaObject.y .. "," .. luaObject.z .. " dropped a saved job: "
+				.. tostring(why))
+		else
+			book.list[#book.list + 1] = job
+			back = back + 1
+		end
+	end
+	if back == 0 then
+		-- Nothing came back, so there is no book to keep and no machine to
+		-- schedule: killAll puts both back the way they were.
+		CeroSecJobs.killAll(luaObject)
+		return 0
+	end
+	register(luaObject)
+	if system ~= nil then CeroSecJobs.system = system end
+	return back
+end
+
+-- The note the console keeps of the job holding its prompt, put back.
+--
+-- Here and not in CeroSec.repairConsole, and that is the whole safety of it: the
+-- repair knows nothing about jobs, so a console it handed back with `job` still
+-- on it would be a screen with nothing to type at whenever the job it named had
+-- not come back -- and there is no way out of that but the switch. So the repair
+-- goes on dropping it, and the note is put back only for a job that is really on
+-- the book. Called once per machine per session, from SCeroSecObject:consoleState,
+-- after the repair and before anything reads the screen.
+-- And with it the one thing a COPY of a job gets wrong: the shell it runs on.
+--
+-- The prompt's own job holds the console's variables, its exported set and its
+-- functions BY REFERENCE -- that is what makes `x=5` on one line and `echo $x` on
+-- the next the same environment. A save writes two copies of one table and a load
+-- hands back two tables, so a job rebuilt from one would be setting variables
+-- nobody would ever read again.
+--
+-- Which level holds them depends on where the job is. A typed line holds them
+-- itself; a line that went on to run a FILE is a new sh and swapped them for a
+-- copy, keeping the console's on the frame it will pop back through
+-- (CeroSecOS.jobRun: oldVars, oldExported, oldFuncs). So the console's tables go
+-- back at the outermost place they were kept, which is the first frame carrying
+-- them, or the job itself when no frame does. Nothing is merged and nothing is
+-- lost by it: the two copies held the same thing when they were written.
+local function reattachShell(job, console)
+	local holder = job
+	for i = 1, #job.frames do
+		local frame = job.frames[i]
+		if type(frame) == "table" and frame.hadFuncs then
+			holder = frame
+			break
+		end
+	end
+	if holder == job then
+		if type(console.shvars) == "table" then job.vars = console.shvars end
+		if type(console.shexport) == "table" then job.exported = console.shexport end
+		if type(console.shfuncs) == "table" then job.funcs = console.shfuncs end
+	else
+		if type(console.shvars) == "table" then holder.oldVars = console.shvars end
+		if type(console.shexport) == "table" then holder.oldExported = console.shexport end
+		if type(console.shfuncs) == "table" then holder.oldFuncs = console.shfuncs end
+	end
+end
+
+function CeroSecJobs.restoreForeground(luaObject, console)
+	if type(console) ~= "table" or console.job ~= nil then return false end
+	local book = luaObject.jobs
+	if book == nil then return false end
+	for i = 1, #book.list do
+		local job = book.list[i]
+		if job.fg then
+			job.fg = nil
+			if not CeroSecOS.jobIsOver(job) and job.pty == nil then
+				console.job = job.id
+				reattachShell(job, console)
+				return true
+			end
+		end
+	end
+	return false
+end
+
+Events.OnSave.Add(function()
+	CeroSecJobs.saveBooks()
 end)

@@ -289,6 +289,16 @@ sandbox option.** The replacement is always the same pair: *obsolete, and migrat
 Seeding a file is *not* a shape change and must not move `STATE_VERSION`: the two
 numbers exist precisely so that adding a command costs a machine nothing.
 
+**Nor is adding a key**, and it is worth saying out loud because it is the commonest
+change there is. A key a change puts inside the state is absent on every machine
+saved before it, absent has to read as the old behaviour, and `CeroSecOS.validate`
+is not a closed namespace over the state's keys — so an older build reads a machine
+with the new key and ignores it, and nothing has to be migrated. `os.jobs`, what the
+machine was running when the world was saved, is the worked example: no number moved
+for it, and `node.group` and `node.mtime` are the two inside the filesystem. The
+namespace that *is* closed is a **disk's** (`CeroSecOS.diskFieldsOk`), and a key
+added there is a key the gate has to be told about.
+
 ### The rules for a step
 
 - **`MIGRATIONS[n]` takes a state at `n - 1` and leaves it at `n`.** One step per

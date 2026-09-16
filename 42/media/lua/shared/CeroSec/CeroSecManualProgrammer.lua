@@ -1521,9 +1521,8 @@ prints ^C and ends the job that holds the prompt, question and all.
 
 kill %1, when it is behind the prompt. jobs tells you the slot.
 
-And the switch on the case, which ends every job at once. Jobs are never
-written to the disk: a computer switched off, rebooted or carried away
-comes back running nothing at all.
+And the switch on the case, which ends every job at once. A computer
+switched off, rebooted or carried away comes back running nothing at all.
 
 One thing more. A script asleep or waiting for an answer stops its own
 clock, which is why the door-watching loop in chapter 5 can wait a week and
@@ -1534,6 +1533,32 @@ Classic mistake. Starting a background job, walking away, and coming back
 to a machine that seems to have lost your script. It very likely finished.
 Read the screen from the top: [1] done, [1] exit 3 and [1] killed are all
 in the scrollback.]],
+
+[[What a job lives through.
+
+A computer nobody switched off never stopped working. It goes on while you
+are on the other side of the county and it goes on while you are not
+playing at all, so a program you left running with & is a program you will
+find still running: jobs lists it under the same slot, ps gives it the same
+number, and a sleep it was in the middle of has its own seconds left to
+run rather than going off the moment you sit down.
+
+Three things end a job, and they are the three that always did: the
+switch, a reboot, and somebody carrying the computer away.]],
+
+[[And four things that do not come back.
+
+Each of them was waiting on something that is no longer there. A script
+that had put a question on the screen -- nothing holds that question now.
+A call or a radio link it was keeping open -- the line is down. A shutdown
+you had ordered for later -- that clock is the world's, and the world
+stood still. And a shell you had logged in from another machine: the
+session went, and a shell with no terminal has nowhere to write.
+
+One honest gap besides. What the machine writes down about a job it is
+running has a size to it, and a program far longer than anything in this
+book goes over it: that one keeps running now and is not there when you
+come back.]],
 
 		} },
 

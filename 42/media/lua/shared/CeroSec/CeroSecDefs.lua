@@ -731,6 +731,41 @@ CeroSec.RADIO_LINES_PER_S = 2
 -- edit a file.
 CeroSec.JOB_CPU_LIMIT_S = 300
 
+-- What a job may cost the save file, and what the whole book may cost it.
+--
+-- A job is written into the machine's own state when the world is saved
+-- (SCeroSecJobs.lua, "The book across a save"), and what makes it expensive is
+-- the PROGRAM: a parsed script is nested tables, the frames on the stack point
+-- back into it and the serializer writes a table wherever it reaches one, so
+-- one copy of the text is three or four copies of the tree.
+--
+-- Measured under lua5.1, every script the world content ships run as a `&` job
+-- and weighed AT THE MOMENT IT SLEEPS, which is where a daemon spends its life:
+--
+--    autoclose.sh    669 bytes of script   12675 bytes of job    654 tables
+--    alarm.sh        637                   11464                 555
+--
+-- and the widest file this machine will take -- 4034 bytes -- makes 80614 bytes
+-- and 4547 tables on its own.
+--
+-- The TABLE count is the number that binds, and it is why there is a ceiling at
+-- all. CeroSecOS.validate walks everything in the state against a budget of
+-- 8 * (MAX_NODES + FLOPPY_NODES), which is 4352, and a machine with a full floppy
+-- in the drive already visits 576 of them: a book of long scripts would put the
+-- machine past the GATE on the next load and cost the player his computer for
+-- having left a script running. So the book is weighed before it is written and
+-- what does not fit is NOT WRITTEN -- never killed, which would be taking a
+-- running job away from a player at the moment he quits. A job too big to save
+-- dies at the reload exactly as every job did before this change, and the manual
+-- says so.
+--
+-- 3072 tables is what is left of the gate's budget with the fullest filesystem
+-- and a floppy under it and seven hundred still to spare, and it takes four of
+-- the fattest daemon above (4 x 654) with room over. 24576 bytes is twice that
+-- daemon, so one job is never refused for a script anybody would really write.
+CeroSec.JOB_SAVE_BYTES = 24576
+CeroSec.JOB_SAVE_TABLES = 3072
+
 -- How long a motion sensor holds its contact closed after the last movement it
 -- saw, in seconds of wall clock. Five, and it is the mod's own number and not
 -- the game's: a PIR head of 1993 is a relay with an RC network across it, and

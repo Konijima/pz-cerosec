@@ -106,6 +106,13 @@ function SCeroSecSystem:newLuaObject(globalObject)
 	-- what gos_cerosec.bin was read into. So this is where a county that was left
 	-- running gets into the sweep's index, and the only place it could be.
 	self:indexMachine(luaObject)
+	-- And where a machine that was left with something RUNNING on it picks that up
+	-- again. Here for the index's own reason -- every machine in the save comes
+	-- through, chunk loaded or not -- and here and nowhere else, which is what
+	-- keeps a client's movableData out of the job book (the head of "The book
+	-- across a save" in SCeroSecJobs.lua). A machine with nothing saved pays two
+	-- field reads for it.
+	CeroSecJobs.readBook(self, luaObject)
 	return luaObject
 end
 

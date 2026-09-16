@@ -120,6 +120,13 @@ function SCeroSecObject:stateFromIsoObject(isoObject)
 	-- No console in the mirror, so a machine adopted from its sprite starts
 	-- with a blank screen even when the sprite says it is lit.
 	self.console = nil
+	-- And no jobs, for the same reason read one step further: the book is only ever
+	-- taken off a state on the road the SAVE FILE comes in by
+	-- (SCeroSecSystem:newLuaObject), and this is the other one -- a machine built
+	-- out of an item's mirror, which on a server is a table a client wrote. So
+	-- whatever that mirror carries under `jobs` goes, here, before anything reads
+	-- the state.
+	if type(self.os) == "table" then self.os.jobs = nil end
 	self:toModData(isoObject)
 end
 
@@ -161,6 +168,11 @@ function SCeroSecObject:resetForPlacement(isoObject)
 	-- the table it had: this is the path that asks every question again -- both
 	-- sticky refusals go below -- and the validator's memo is one of them.
 	self:setOS(self:osFromIsoObject(isoObject) or self.os)
+	-- Whatever the item's mirror said this machine was running. killAll below takes
+	-- it away too -- a computer picked up is a computer that lost its power -- but
+	-- that is after osState() has been asked, and the gate must never walk a book
+	-- an ITEM brought: on a server that table was written by a client.
+	if type(self.os) == "table" then self.os.jobs = nil end
 	self.osBroken = nil
 	-- And the other sticky refusal. A state a later build wrote is still one after
 	-- it has been carried across town, so this does not make it readable -- osState
@@ -610,6 +622,11 @@ function SCeroSecObject:consoleState()
 	if not self.consoleChecked then
 		self.consoleChecked = true
 		if self.console ~= nil then self.console = CeroSec.repairConsole(self.console) end
+		-- And the note of the job that was holding this glass, put back -- but only
+		-- for a job that really came back off the save (CeroSecJobs.restoreForeground
+		-- has the reason it is not the repair's business). Once per machine per
+		-- session, here, before anything reads the screen.
+		CeroSecJobs.restoreForeground(self, self.console)
 	end
 	if type(self.console) ~= "table" or type(self.console.lines) ~= "table" then
 		-- Never seen, or handed back as something that is not a console.

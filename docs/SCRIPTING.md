@@ -44,6 +44,8 @@ model differs from a real `sh` and it is deliberate: there is one job book per
 computer (`luaObject.jobs`), four is a *computer's* ceiling rather than a session's,
 and `jobs` lists every background job on the machine whoever started it. Walk away
 and they keep running; the next survivor to sit down sees them, and may `fg` them.
+Leave the *game* and they keep running too — the machine was never switched off, so
+the book goes into the save with it.
 On a real Unix a job is a process group the shell owns and `jobs` shows you only
 your own. What is *not* deviated from is `kill(2)`'s rule: root, or the account the
 job belongs to, and anybody else gets
@@ -285,8 +287,10 @@ never waits. Output is held to twenty lines a second, so it trickles instead of
 flooding — for a typed line as much as for a script's, which is why a long `help`
 scrolls out rather than appearing whole. A job that spins for five minutes with no wait in it is taken away with
 `killed: cpu limit`. A string that doubles every turn, or a script that runs itself,
-meets a ceiling and stops with a line naming it. Jobs are not saved: switching off,
-rebooting, picking the computer up or reloading the world leaves it running nothing.
+meets a ceiling and stops with a line naming it. Switching off, rebooting or picking
+the computer up leaves it running nothing — but **leaving the game and coming back
+does not**: a computer the world saved was never switched off, so what you left
+running with `&` is still running when you sit down again.
 
 ## Pipes, cron and job control
 
@@ -756,11 +760,37 @@ wait in it for `CeroSec.JOB_CPU_LIMIT_S` (300 s) is killed with `killed: cpu lim
 — a constant with a comment, not a sandbox option, because a server owner who wants
 a different number should be given a setting rather than asked to edit a file.
 
-`luaObject.jobs` is **runtime state and is deliberately not in the saved keys**: a
-reload forgets jobs, `CeroSec.repairConsole` drops the console's note of a
-foreground one, and a machine that comes back from a save comes back at its prompt.
-Reboot, shutdown, a room that lost its power and a computer picked up all kill
-everything.
+`luaObject.jobs` is the live book and is **not one of the object's saved keys**. It
+is written into the machine's own state, at `os.jobs`, when the world is saved and
+read back out of it when the world is loaded — see "The book across a save" at the
+foot of `SCeroSecJobs.lua`, which carries the whole of it. Reboot, shutdown, a room
+that lost its power and a computer picked up all still kill everything; a save and a
+load do not, because a computer the world saved was never switched off.
+
+What survives, and what does not:
+
+| | |
+| --- | --- |
+| a background `&` job | **survives** |
+| a cron or `at` child | **survives** — its output goes to a mailbox on the disk |
+| the foreground job of the machine's own glass | **survives**; the console is saved and the note of which job it was is put back by `SCeroSecObject:consoleState` |
+| a job whose terminal came in over the wire (`job.pty`) | no: `luaObject.ptys` is not saved, so its screen is gone |
+| a job that is **waiting** | no: a pending `shutdown`, a `read` with its question up, a `cu` at the TNC's `cmd:`, a `wait`. Each waits on something a reload has not got |
+| a job holding something the world owns | no: a session at the far end, a dial in flight, a radio link |
+| a pipeline in flight | no, and this one is a fact about the shape: a stage carries a link back to the job that owns the pipeline, which makes the job table a cycle, and `CeroSecOS.validate` refuses a cycle. A book written with one in it would cost the player the whole machine and not one job |
+| a job whose saved shape is bigger than `CeroSec.JOB_SAVE_BYTES` | no, and it is **not killed for it**: it goes on running, it is left out of the save, and the log says so |
+
+A **sleep keeps what is left of it**, not the moment it was due: a `sleep 3600`
+started a minute before you quit still has fifty-nine minutes on it when you come
+back. A job's cpu accounting starts again — the runaway ceiling counts continuous
+processor time, and a job just rebuilt has spent none.
+
+A book off the save file goes through a gate of its own before a single job is put
+back (`CeroSecJobs.jobFromData`): every field is asked its type, and a program is
+asked the one shape the walker could be made to trip over — every value at an
+integer key is a table, `k` and `t` are strings, a list node's `ops` are strings. A
+job that fails it is dropped with a line in the log, never a crash, and the machine
+comes up with the rest.
 
 ## Pipelines: a shell per stage
 

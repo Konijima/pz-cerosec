@@ -43,6 +43,19 @@ The suites, in the order they run:
   the rule in
   [ARCHITECTURE.md](ARCHITECTURE.md#the-chunk-that-goes-away), and it carries its own
   control: a machine the sweep CAN see still goes off when its room does.
+- `window_test.lua` also holds the **reload** bench: `bench.save()` fires
+  `Events.OnSave` and then walks the object's saved keys the way the game's
+  serializer walks them -- strings, numbers, booleans and nested tables, anything
+  else dropped on the floor -- and `bench.reload()` builds a WHOLE NEW server out of
+  nothing but those bytes, through `SCeroSecSystem:newLuaObject`, which is the road
+  every machine in a save file comes in by. So a daemon started with `&` is asserted
+  to come back and shut a door that was not even open when the save was taken; a
+  foreground job to come back still holding the glass with the console's own
+  variables under it; a killed job, a machine switched off, a computer picked up and
+  a pending `shutdown` to bring nothing back at all; and a book spoiled eight
+  different ways to load as no jobs, a line in the log and a machine that still
+  answers a command. The cycle a pipeline's stage makes is proved against
+  `CeroSecOS.validate` itself rather than asserted.
 - `window_test.lua` also holds the hardware-module benches: the mockup's own
   building with `SandboxVars.CeroSec.HardwareRequired` turned on, so that a bare
   door, window and light switch are absent from `/dev` until a module is written

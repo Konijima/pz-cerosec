@@ -347,9 +347,12 @@ takes the machine down -- and what bounds them is the job book, four to a machin
 
 The timer is the scheduler's pass and lives on the machine, not in the window: close
 the window, walk away, come back, and it is still counting. It is **not** persisted
-— the power going out, the computer being picked up, or a reload all forget it, and
-the machine stays up. That is deliberate and it is in the manual: this machine has
-no process table on its disk.
+— the power going out, the computer being picked up, or leaving the game all forget
+it, and the machine stays up. That is deliberate and it is in the manual, and it is
+the one job that does not come back from a save: the minute it was waiting for is a
+moment on the real clock, and the world stood still while the game was shut. A
+program you left running with `&` does come back, because it was waiting on nothing
+but its own next turn.
 
 **Escape** interrupts what the machine is in the middle of, and closes the window
 when it is not in the middle of anything. At a `passwd` or `sudo` question, or with

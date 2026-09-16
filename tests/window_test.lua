@@ -446,8 +446,25 @@ CeroSecReach = {
 }
 
 SGlobalObject = { derive = function(self, name) return derive(self, name) end }
+-- Vanilla's own, and the one thing about it that matters for a load: the table
+-- for this object IS the GlobalObject's modData, which is what gos_cerosec.bin
+-- was read into -- so a machine arrives at newLuaObject with its saved fields
+-- already on it and nothing has to put them there
+-- (media/lua/server/Map/SGlobalObject.lua:63-78).
+--
+-- A bench that wants a brand-new machine hands over a bare { x, y, z } with no
+-- modData at all and gets a bare table, which is what every bench in this file
+-- written before the reload one does. A bench that wants a machine OFF A SAVE
+-- hands over a globalObject with the saved keys behind getModData, which is the
+-- real road in.
 SGlobalObject.new = function(self, luaSystem, globalObject)
-	local o = setmetatable({}, self)
+	local o
+	if type(globalObject.getModData) == "function" then
+		o = globalObject:getModData()
+		setmetatable(o, self)
+	else
+		o = setmetatable({}, self)
+	end
 	o.luaSystem = luaSystem
 	o.x, o.y, o.z = globalObject.x, globalObject.y, globalObject.z
 	return o
@@ -725,11 +742,20 @@ end
 -- One computer, one player, one window, wired together.
 --
 
-local function newBench()
+-- saved, when there is one, is a machine's own bytes out of gos_cerosec.bin --
+-- bench.save() above one of these makes them -- and the machine is built out of
+-- THEM instead of out of initNew(): a new server, reading a county somebody left
+-- running. It goes in through system:newLuaObject, which is the road the engine
+-- uses for every machine in a save file and the only one the job book is read
+-- on.
+local function newBench(saved)
 	-- The scheduler's list of machines is a module-level one, like the game's:
 	-- a bench that left a job running would otherwise have it stepped by the
 	-- next bench's ticks. One bench, one county.
 	CeroSecJobs.machines = {}
+	-- And the scheduler's note of which system it serves, for the same reason:
+	-- a reload bench must find the one its own load put there.
+	CeroSecJobs.system = nil
 	-- And the client's registry of open windows, for the same reason: a window
 	-- the game itself made -- which is what a reopen after a reboot is -- lives in
 	-- there, and a bench must not inherit the last bench's.
@@ -751,25 +777,44 @@ local function newBench()
 	}
 
 	local system = SCeroSecSystem:new()
-	local object = SCeroSecObject:new(system, { x = 10, y = 10, z = 0 })
-	object.getIsoObject = function() return nil end
-	object.getSquare = function() return nil end
-	object.playSound = function() end
-	object.syncSprite = function() end
-	object:initNew()
-	object.hasPower = function() return true end
-	-- On, and with a screen, without going through turnOn: a bench that booted the
-	-- machine for real would also prefill it, sound it and identify it, which is
-	-- four other rungs' worth of behaviour inside every window bench there is.
-	-- reindex() is the one thing turnOn does that this has to do too -- the minute
-	-- sweep walks an index of the machines that are on, so a machine whose `on` was
-	-- written by hand is a machine no sweep would ever visit (the head of the
-	-- housekeeping section in SCeroSecSystem.lua). The REAL paths into that index
-	-- are benched on their own, in the county block of hostile_test.lua.
-	object.on = true
-	object:reindex()
-	object.console = CeroSec.newConsole()
-	object.consoleChecked = true
+	local object
+	if saved ~= nil then
+		-- The load. newLuaObject is what the engine calls for every machine in the
+		-- save file, and SGlobalObject.new hands back the very table the file was
+		-- read into -- so the machine that comes out of here has its `on`, its
+		-- console and its filesystem already on it, exactly as one does on a server
+		-- coming up.
+		object = system:newLuaObject({ x = 10, y = 10, z = 0,
+			getModData = function() return saved end })
+		object.getIsoObject = function() return nil end
+		object.getSquare = function() return nil end
+		object.playSound = function() end
+		object.syncSprite = function() end
+		object.hasPower = function() return true end
+		-- consoleChecked is deliberately NOT set: a machine off a save has its
+		-- console repaired on the first read, which is where the note of a
+		-- foreground job is put back.
+	else
+		object = SCeroSecObject:new(system, { x = 10, y = 10, z = 0 })
+		object.getIsoObject = function() return nil end
+		object.getSquare = function() return nil end
+		object.playSound = function() end
+		object.syncSprite = function() end
+		object:initNew()
+		object.hasPower = function() return true end
+		-- On, and with a screen, without going through turnOn: a bench that booted the
+		-- machine for real would also prefill it, sound it and identify it, which is
+		-- four other rungs' worth of behaviour inside every window bench there is.
+		-- reindex() is the one thing turnOn does that this has to do too -- the minute
+		-- sweep walks an index of the machines that are on, so a machine whose `on` was
+		-- written by hand is a machine no sweep would ever visit (the head of the
+		-- housekeeping section in SCeroSecSystem.lua). The REAL paths into that index
+		-- are benched on their own, in the county block of hostile_test.lua.
+		object.on = true
+		object:reindex()
+		object.console = CeroSec.newConsole()
+		object.consoleChecked = true
+	end
 	system.getLuaObjectAt = function() return object end
 	system.getIsoObjectAt = function() return nil end
 	-- Every machine there is, for the walks that are not the minute sweep's: on
@@ -1032,11 +1077,18 @@ local function newBench()
 		return false
 	end
 
-	-- Open, let the BIOS finish typing itself out, and log in.
-	function bench.login(name, password)
+	-- A window opened on the machine, with the BIOS let to finish typing itself
+	-- out. On a machine that is already logged in -- which is what a machine off a
+	-- SAVE is -- this is the whole of sitting down at it.
+	function bench.open()
 		window:askForScreen()
 		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
 		bench.frame()
+	end
+
+	-- Open, let the BIOS finish typing itself out, and log in.
+	function bench.login(name, password)
+		bench.open()
 		bench.enter(name)
 		bench.enter(password or "")
 		bench.frame()
@@ -1057,6 +1109,52 @@ local function newBench()
 		_G.__now = _G.__now + CeroSecTerminal.BOOT_MS + 1000
 		bench.frame()
 		return fresh
+	end
+
+	-- THE SAVE, and it is the bytes and not the table.
+	--
+	-- Events.OnSave first, because that is the moment the machine writes what it is
+	-- running into its own state -- the engine triggers it at offset 302 of
+	-- zombie.GameWindow.save(boolean) and writes gos_cerosec.bin at offset 418 of
+	-- the same method. Then the object's saved keys, walked the way
+	-- KahluaTableImpl.save walks a table: strings, numbers, booleans and nested
+	-- tables, and anything else DROPPED ON THE FLOOR. So a function anywhere in
+	-- what a machine saves is a bench that fails on the far side rather than a
+	-- machine that comes back in the game missing a piece, and nothing that
+	-- survives this is a reference to anything the old machine held.
+	function bench.save()
+		Events.OnSave.trigger()
+		local dropped = 0
+		local function bytes(value, depth)
+			if value == nil then return nil end
+			local t = type(value)
+			if t == "string" or t == "number" or t == "boolean" then return value end
+			if t ~= "table" then
+				dropped = dropped + 1
+				return nil
+			end
+			if depth > 64 then error("FAIL: a saved key nests deeper than the serializer", 2) end
+			local out = {}
+			for k, sub in pairs(value) do
+				local kk = bytes(k, depth + 1)
+				local vv = bytes(sub, depth + 1)
+				if kk ~= nil and vv ~= nil then out[kk] = vv end
+			end
+			return out
+		end
+		local out = {}
+		for i = 1, #CeroSec.OBJECT_SAVE_KEYS do
+			local key = CeroSec.OBJECT_SAVE_KEYS[i]
+			out[key] = bytes(bench.object[key], 0)
+		end
+		return out, dropped
+	end
+
+	-- Quit to the menu and come back: the same machine, built again out of nothing
+	-- but what the save file holds. A whole new bench, because a reload is a whole
+	-- new server -- new system, new window, and not one closure of the old one's.
+	function bench.reload()
+		return newBench(bench.save())
 	end
 
 	-- Put a line in the box with the caret at the end, WITHOUT pressing Enter:
@@ -14931,6 +15029,711 @@ do
 	_G.__world = nil
 	CeroSecDevices.invalidate()
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
+-- 44c. WHAT IS STILL RUNNING WHEN YOU COME BACK
+--
+-- A computer the world saved and loaded again was never switched off, so what it
+-- was running it is still running. Every bench here goes through bench.reload(),
+-- which is Events.OnSave, then the object's saved keys walked the way the
+-- serializer walks them -- functions dropped on the floor -- then a WHOLE NEW
+-- server built out of nothing but those bytes. Not one closure of the old one
+-- survives it, which is what makes this a save and not a copy of a table.
+--
+-- What is asserted is the EFFECT and not the listing: "the daemon came back" is
+-- a door that shuts and a file that appears, because a `jobs` that printed a line
+-- for a job the scheduler never stepped again would pass a bench that read the
+-- glass.
+--
+do
+	local realSend = _G.sendServerCommand
+	_G.sendServerCommand = function() end
+	local realDebugUI, realPhonebookUI = _G.CeroSecDebugUI, _G.CeroSecPhonebookUI
+	_G.CeroSecDebugUI, _G.CeroSecPhonebookUI = nil, nil
+	local hadNow = _G.__now
+
+	-- One second of the machine's life, in the passes the scheduler really makes.
+	local function seconds(bench, n)
+		bench.tick(math.floor((n * 1000) / CeroSec.JOB_PASS_MS))
+	end
+
+	local function jobCount(bench)
+		local book = bench.object.jobs
+		if book == nil or book.list == nil then return 0 end
+		return #book.list
+	end
+
+	--
+	-- A `&` job finishes on the far side of the save, and its effect lands
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		-- A script and not a typed `sleep 5; echo ... &`: the semicolon is a
+		-- separator, so that line is a foreground sleep followed by a background
+		-- echo, which is two benches and not this one.
+		bench.script("/home/admin/x.sh", "sleep 5\necho done > /var/tmp/x\n")
+		bench.enter("sh /home/admin/x.sh &")
+		seconds(bench, 1)
+		eq("the job is on the machine", jobCount(bench), 1)
+		eq("and it has not finished", bench.fileText("/var/tmp/x"), nil)
+
+		local saved, dropped = bench.save()
+		eq("nothing in what a machine saves is a function", dropped, 0)
+		check("and the job went onto the state under os.jobs",
+			type(saved.os.jobs) == "table" and #saved.os.jobs.list == 1)
+		-- The one thing a saved job may never carry: the program is nested tables
+		-- and the FUNCTION BODIES parsed out of a shell's text are a cache, rebuilt
+		-- on the first call. A save that carried them would be paying for the same
+		-- tree twice.
+		eq("and not the parsed-function cache", saved.os.jobs.list[1].fprog, nil)
+
+		local realValidate = CeroSecOS.validate
+		local sawBook = false
+		CeroSecOS.validate = function(st)
+			if type(st) == "table" and st.jobs ~= nil then sawBook = true end
+			return realValidate(st)
+		end
+		local back = newBench(saved)
+		eq("the machine comes back with the job still on it", jobCount(back), 1)
+		-- The first read of the state, which is where the gate walks it. The book is
+		-- taken OFF the state as it is read, so what the gate walks is a filesystem
+		-- and not a filesystem plus a process table: a book left lying there would
+		-- be spending the gate's own table budget on every load for the rest of the
+		-- save's life (CeroSec.JOB_SAVE_TABLES has the arithmetic).
+		check("the state still passes the gate", back.object:osState() ~= nil)
+		CeroSecOS.validate = realValidate
+		eq("and the gate was never handed the book that came off it", sawBook, false)
+		back.open()
+		back.enter("jobs")
+		back.frame()
+		check("and `jobs` lists it by the line that started it",
+			back.painted("sh /home/admin/x.sh &"))
+		seconds(back, 8)
+		eq("it wakes, finishes, and the file it was going to write is there",
+			back.fileText("/var/tmp/x"), "done")
+		eq("and the machine is running nothing afterwards", jobCount(back), 0)
+	end
+
+	--
+	-- The home kit's own daemon, and a door that still shuts
+	--
+	-- The program is the floppy's, installed the way the README says; what is
+	-- asserted is the DOOR.
+	--
+	do
+		local world = FakeWorld.new()
+		world.room("office", { {10,10,0}, {11,10,0}, {12,10,0} })
+		local door0 = world.put(world.squares["10,10,0"],
+			fakeDoor(false, true, world.squares["11,10,0"], true))
+		_G.__world = world
+		_G.IsoObjectChange = { STATE = "chg.STATE", WASHER_STATE = "chg.WASHER_STATE" }
+		CeroSecDevices.invalidate()
+
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		local B = "/usr/local/bin"
+		bench.enter("mkdir /usr")
+		bench.enter("mkdir /usr/local")
+		bench.enter("mkdir " .. B)
+		local script = CeroSecContent.SCRIPTS["autoclose.sh"]
+		check("the home kit's autoclose.sh is in the library", script ~= nil)
+		do
+			local state = bench.object:osState()
+			local done = CeroSecOS.writeFile(state, CeroSecOS.rootSession(),
+				B .. "/autoclose.sh", script.text, false, 100)
+			check("and it goes onto the disk", done ~= nil)
+			CeroSecOS.getNode(state, CeroSecOS.rootSession(),
+				B .. "/autoclose.sh").mode = 755
+		end
+		bench.enter("sh " .. B .. "/autoclose.sh start 2 &")
+		seconds(bench, 1)
+		eq("the daemon is running", jobCount(bench), 1)
+
+		local back = newBench(bench.save())
+		eq("and it is still running after the save and the load", jobCount(back), 1)
+		-- The door is opened AFTER the reload, so nothing the old machine ever read
+		-- can be what shuts it: the daemon that answers this is the rebuilt one.
+		door0.open = true
+		eq("a survivor opens a door", door0.open, true)
+		seconds(back, 12)
+		eq("and the daemon that came back off the save shuts it", door0.open, false)
+		eq("the engine was told once", door0.silentToggles, 1)
+
+		_G.__world = nil
+		CeroSecDevices.invalidate()
+	end
+
+	--
+	-- The job holding the glass
+	--
+	-- The console is saved, so the prompt it was holding comes back with it. The
+	-- note of WHICH job is put back by SCeroSecObject:consoleState and never by
+	-- CeroSec.repairConsole, so a console naming a job that did not survive is a
+	-- console at its prompt rather than a screen with nothing to type at.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/slow.sh", "sleep 4\necho back > /var/tmp/fg\n")
+		bench.enter("sh /home/admin/slow.sh")
+		seconds(bench, 1)
+		eq("a foreground script holds the prompt",
+			CeroSec.consoleWaiting(bench.object.console), "job")
+
+		local saved = bench.save()
+		check("it is saved, and marked as the one holding the glass",
+			saved.os.jobs ~= nil and saved.os.jobs.list[1].fg == true)
+
+		local back = newBench(saved)
+		eq("the job comes back", jobCount(back), 1)
+		eq("and it still holds the prompt",
+			CeroSec.consoleWaiting(back.object:consoleState()), "job")
+		seconds(back, 8)
+		eq("it finishes", back.fileText("/var/tmp/fg"), "back")
+		eq("and the prompt comes back to the glass",
+			CeroSec.consoleWaiting(back.object.console), "shell")
+	end
+
+	-- And the other half of that pair, which is the one that could brick a
+	-- machine: a console that names a job nothing brought back must come up AT ITS
+	-- PROMPT. Forged by hand, because there is no legitimate way to make one.
+	do
+		local bench = newBench()
+		bench.login("admin")
+		local saved = bench.save()
+		saved.console.job = 77
+		saved.os.jobs = nil
+		local back = newBench(saved)
+		eq("a console naming a job nobody restored has no job", back.object:consoleState().job, nil)
+		eq("and the machine is at its prompt",
+			CeroSec.consoleWaiting(back.object.console), "shell")
+		back.open()
+		back.enter("echo alive")
+		back.frame()
+		check("and it answers a line", back.painted("alive"))
+	end
+
+	--
+	-- The shell a foreground line runs on is the console's own, still
+	--
+	-- The prompt's job holds the console's variables BY REFERENCE, which is what
+	-- makes `x=5` on one line and `echo $x` on the next one environment. A save
+	-- writes two copies of that one table and a load hands back two tables, so a job
+	-- rebuilt off a save has to be pointed back at the console's
+	-- (CeroSecJobs.restoreForeground -> reattachShell) or it spends the rest of its
+	-- life setting variables nobody will read.
+	--
+	-- The counter is what makes this discriminating: it is bumped AFTER the reload,
+	-- so a bench that only read a variable set before the save would be green on a
+	-- job writing into a copy.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("while [ ! -f /var/tmp/stop ]; do n=$((n + 1)); sleep 1; done")
+		seconds(bench, 2)
+		eq("the typed loop holds the prompt",
+			CeroSec.consoleWaiting(bench.object.console), "job")
+		local atSave = tonumber(bench.object.console.shvars.n or "")
+		check("and it has been round a time or two: " .. tostring(atSave),
+			atSave ~= nil and atSave >= 1)
+
+		local back = newBench(bench.save())
+		back.open()
+		eq("it comes back still holding the prompt",
+			CeroSec.consoleWaiting(back.object:consoleState()), "job")
+		seconds(back, 6)
+		-- Stopped the way the loop's own test is written, and not by typing: the
+		-- prompt belongs to the job.
+		local wrote = CeroSecOS.writeFile(back.object:osState(), CeroSecOS.rootSession(),
+			"/var/tmp/stop", "x", false, 100)
+		check("the flag file goes down", wrote ~= nil)
+		seconds(back, 4)
+		eq("the loop ends and the prompt comes back",
+			CeroSec.consoleWaiting(back.object.console), "shell")
+		local after = tonumber(back.object.console.shvars.n or "")
+		check("and the rounds it went round after the reload are on the CONSOLE's own"
+			.. " variable: " .. tostring(atSave) .. " -> " .. tostring(after),
+			after ~= nil and after > atSave)
+		back.enter("echo $n")
+		back.frame()
+		check("which is what the prompt prints", back.painted(tostring(after)))
+	end
+
+	--
+	-- A pipeline in flight is never written, because a stage is a CYCLE
+	--
+	-- Every other refusal in this section is a judgement. This one is a fact about
+	-- the shape: a pipeline's stage carries `errTo`, a link back to the job that
+	-- owns the pipeline, so the job table leads to itself -- and CeroSecOS.validate
+	-- refuses a cycle outright. A book written with one in it would not cost the
+	-- player a job, it would cost him the machine, refused at the gate on the next
+	-- load. So the cycle is PROVEN here and then the refusal is asserted; a bench
+	-- that only asserted the refusal would be guarding a hypothesis.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+		local prog = CeroSecOS.parseScript("cat /etc/group | grep sudo | wc -l")
+		check("a pipeline parses", prog ~= nil)
+		local job = CeroSecOS.newJob({ prog = prog, name = "p.sh", cmd = "p.sh &",
+			bg = true, session = session })
+		local state = bench.object:osState()
+		local env = { now = 742000000, nowMs = 1000, jobs = { job } }
+		local staged = nil
+		for _ = 1, 40 do
+			CeroSecOS.jobStep(state, job, env, 1)
+			for i = 1, #job.frames do
+				if job.frames[i].stages ~= nil then staged = job.frames[i] end
+			end
+			if staged ~= nil or CeroSecOS.jobIsOver(job) then break end
+		end
+		check("a pipeline in flight is a frame with stages on it", staged ~= nil)
+		eq("and the first stage points back at the job that owns it",
+			staged.stages[1].errTo, job)
+		-- The consequence, asked of the gate itself and not assumed.
+		state.jobs = { seq = 1, list = { job } }
+		local ok, why = CeroSecOS.validate(state)
+		eq("so a state carrying it is refused by the gate", ok, false)
+		check("for being a cycle: " .. tostring(why),
+			string.find(tostring(why), "cycle", 1, true) ~= nil)
+		state.jobs = nil
+		-- Which is why the save will not have it.
+		local data, refusal = CeroSecJobs.jobToData(job, 1000, false)
+		eq("and the save refuses it", data, nil)
+		eq("by name", refusal, "a pipeline")
+	end
+
+	--
+	-- A computer picked up and put down is running nothing, and carries nothing
+	--
+	-- The state an ITEM brings is the one road into this machine that a CLIENT
+	-- writes, so a book must never come off it -- and the gate must never even walk
+	-- one. Both halves: the machine is running nothing, and the state it is running
+	-- on has no book on it for the next save to write back.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.script("/home/admin/d.sh", "while true; do sleep 1; done\n")
+		bench.enter("sh /home/admin/d.sh &")
+		seconds(bench, 1)
+		eq("a daemon is running", jobCount(bench), 1)
+		local saved = bench.save()
+		check("and the save has it", saved.os.jobs ~= nil)
+
+		-- The very bytes a pickup puts on the item, handed back at the placement.
+		local carried = saved.os
+		local iso = { modData = { movableData = { [CeroSec.MOVABLE_DATA_KEY] = { os = carried } } } }
+		iso.getSpriteName = function() return CeroSec.SPRITES_OFF["S"] end
+		iso.hasModData = function() return true end
+		iso.getModData = function() return iso.modData end
+		iso.transmitModData = function() end
+		-- Counted through the gate itself, because "it ends up nil" is also true of a
+		-- machine that cleared it one line too late: killAll takes the book away at
+		-- the end of the placement, and by then osState() has already walked
+		-- whatever the item brought. What is asserted is that the walk never SAW it.
+		local realValidate = CeroSecOS.validate
+		local sawBook = false
+		CeroSecOS.validate = function(state)
+			if type(state) == "table" and state.jobs ~= nil then sawBook = true end
+			return realValidate(state)
+		end
+		bench.object:resetForPlacement(iso)
+		CeroSecOS.validate = realValidate
+		eq("the machine put down is running nothing", jobCount(bench), 0)
+		eq("the gate was never handed the item's book", sawBook, false)
+		eq("and the state it is running on carries none", bench.object.os.jobs, nil)
+		eq("which is the state the item brought", bench.object.os, carried)
+
+		-- And the predicates, by the word each refusal answers with: the rules above
+		-- are what decides a job's fate and a bench that only ever saw the two ends
+		-- could not say which rule did it.
+		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+		local function fresh()
+			local prog = CeroSecOS.parseScript("sleep 1")
+			return CeroSecOS.newJob({ prog = prog, name = "x", cmd = "x", bg = true,
+				session = session })
+		end
+		eq("a plain background job is not refused", CeroSecJobs.jobRefused(fresh()), nil)
+		local down = fresh(); down.pty = "pty0"
+		eq("one whose terminal came in over the wire is", CeroSecJobs.jobRefused(down),
+			"a session")
+		local far = fresh(); far.remote = { x = 1, y = 2, z = 0, line = "pty0" }
+		eq("one holding a session at the far end is", CeroSecJobs.jobRefused(far), "the wire")
+		local dialling = fresh(); dialling.dial = { control = "rsh" }
+		eq("one mid-dial is", CeroSecJobs.jobRefused(dialling), "the wire")
+		local onAir = fresh(); onAir.ring = { abort = "NO CARRIER" }
+		eq("one holding a radio link is", CeroSecJobs.jobRefused(onAir), "the wire")
+		local ordering = fresh(); ordering.orders = { { control = "wall" } }
+		eq("one with an order the machine has not carried out is",
+			CeroSecJobs.jobRefused(ordering), "mid-order")
+		local asking = fresh(); asking.spawn = { k = "list" }
+		eq("one asking for an & it has not been given is",
+			CeroSecJobs.jobRefused(asking), "mid-order")
+		local doomed = fresh(); doomed.killReq = true
+		eq("one somebody has just killed is", CeroSecJobs.jobRefused(doomed), "mid-order")
+		local ended = fresh(); CeroSecOS.killJob(ended, nil)
+		eq("and one that is over is", CeroSecJobs.jobRefused(ended), "over")
+
+		-- The prompt's own job, asked of jobToData rather than of jobRefused,
+		-- because whether it is the one holding the glass is the caller's answer
+		-- and not the job's. Asked of the FUNCTION and not through a machine on
+		-- purpose: the console always hands its prompt to the interactive job it
+		-- makes, so there is no way to build an orphan one from the glass, and this
+		-- is a belt under a state the wire cannot reach.
+		local prompt = fresh(); prompt.interactive = true
+		local orphan, why = CeroSecJobs.jobToData(prompt, 1000, false)
+		eq("a prompt job nothing is typing at is not saved", orphan, nil)
+		eq("by name", why, "an orphan prompt")
+		check("and the same job IS saved when it holds the glass",
+			CeroSecJobs.jobToData(prompt, 1000, true) ~= nil)
+	end
+
+	--
+	-- A job that was killed is not resurrected
+	--
+	-- The world is saved ONCE WHILE IT RUNS first, and that is what makes this a
+	-- test: killAll is what takes the copy off the state, and the save that follows
+	-- a kill never reaches this machine at all -- a machine with nothing running is
+	-- not one the scheduler holds any more, so saveBooks does not walk it. Without
+	-- the first save there is nothing on the state for the kill to have to clear,
+	-- and the bench would be green on a kill that cleared nothing.
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 30 &")
+		seconds(bench, 1)
+		eq("a job is running", jobCount(bench), 1)
+		local while_running = bench.save()
+		check("and a save taken while it ran has it", while_running.os.jobs ~= nil)
+		bench.enter("kill %1")
+		seconds(bench, 1)
+		eq("and it is gone", jobCount(bench), 0)
+		local saved = bench.save()
+		eq("nothing of it is left on the state", saved.os.jobs, nil)
+		local back = newBench(saved)
+		eq("and nothing comes back", jobCount(back), 0)
+	end
+
+	--
+	-- A machine switched off at the save comes back running nothing
+	--
+	-- The power going out is what kills a book, and it already did: killAll takes
+	-- the copy on the state away in the same breath as the book itself, which is
+	-- why there is nothing about the switch in the save path at all.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 30 &")
+		seconds(bench, 1)
+		eq("a job is running", jobCount(bench), 1)
+		bench.object:turnOff()
+		local saved = bench.save()
+		eq("the switch took the saved book with it", saved.os.jobs, nil)
+		eq("and the machine is off", saved.on, false)
+		local back = newBench(saved)
+		eq("so nothing comes back", jobCount(back), 0)
+	end
+
+	--
+	-- A job WAITING is not saved, and a pending shutdown is one of them
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("su root")
+		bench.enter("")
+		bench.enter("shutdown +5")
+		seconds(bench, 1)
+		check("the order is a job on the machine",
+			CeroSecJobs.pendingShutdown(bench.object) ~= nil)
+		local saved = bench.save()
+		eq("and it is not written: an order on the wall clock cannot cross a save",
+			saved.os.jobs, nil)
+		local back = newBench(saved)
+		eq("so the machine comes back with nothing pending",
+			CeroSecJobs.pendingShutdown(back.object), nil)
+		eq("and it is still up", back.object.on, true)
+	end
+
+	--
+	-- A book off the save file that is not what this build makes
+	--
+	-- The belt the state validator gives everything else. Each of these is written
+	-- onto the state by hand and the machine has to come up with NO jobs and a line
+	-- in the log -- never an error, and never a job built out of it.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 30 &")
+		seconds(bench, 1)
+		local good = bench.save()
+		check("there is a job to spoil", good.os.jobs ~= nil)
+
+		local function spoil(what, wreck)
+			local saved = bench.save()
+			wreck(saved.os.jobs)
+			CeroSec.logRing = {}
+			local back = newBench(saved)
+			eq(what .. ": no job comes back", jobCount(back), 0)
+			local said = false
+			for i = 1, #CeroSec.logRing do
+				if string.find(CeroSec.logRing[i].text, "dropped a saved job", 1, true) then
+					said = true
+				end
+			end
+			check(what .. ": and the log says so", said)
+			-- And the machine still works, which is the whole point of a belt.
+			back.open()
+			back.enter("echo alive")
+			back.frame()
+			check(what .. ": the machine is alive", back.painted("alive"))
+		end
+
+		spoil("a program that is a string", function(book) book.list[1].prog = "rm -rf" end)
+		spoil("a statement that is not a table", function(book)
+			book.list[1].prog[1] = "echo"
+		end)
+		spoil("a node whose k is a number", function(book) book.list[1].prog[1].k = 7 end)
+		spoil("a frame with no kind", function(book) book.list[1].frames[1].k = nil end)
+		spoil("a frame pointing at a string", function(book)
+			book.list[1].frames[1].prog = "x"
+		end)
+		spoil("no session", function(book) book.list[1].session = nil end)
+		spoil("a state this build does not run", function(book)
+			book.list[1].state = "waiting"
+		end)
+		spoil("no id", function(book) book.list[1].id = "42" end)
+		spoil("a slot no machine has", function(book) book.list[1].n = 99 end)
+		-- The fields the engine PRINTS or concatenates rather than indexes. A table
+		-- at one of these is not a wrong value, it is a concatenation that throws.
+		spoil("a line of output that is a table", function(book)
+			book.list[1].out = { {} }
+		end)
+		spoil("an argument that is a table", function(book)
+			book.list[1].args = { {} }
+		end)
+		spoil("a shell variable that is a table", function(book)
+			book.list[1].vars = { X = {} }
+		end)
+		spoil("a function kept as a parsed body", function(book)
+			book.list[1].funcs = { greet = { { k = "cmd" } } }
+		end)
+		spoil("an exported name marked with something that is not true", function(book)
+			book.list[1].exported = { PATH = "yes" }
+		end)
+		-- And the save's own rules, asked again on the way IN: a forged book must not
+		-- be able to hand back a job holding something the writer would never write.
+		spoil("a job holding a session at the far end", function(book)
+			book.list[1].remote = { x = 1, y = 2, z = 0, line = "ttyp0" }
+		end)
+		spoil("a job with a dial in flight", function(book)
+			book.list[1].dial = { control = "rsh" }
+		end)
+		spoil("a job with an order the machine would carry out", function(book)
+			book.list[1].orders = { { control = "reboot" } }
+		end)
+		spoil("a prompt job nothing is typing at", function(book)
+			book.list[1].interactive = true
+		end)
+
+		-- And a book that is not a book at all: no list, and the machine comes up
+		-- with nothing and no complaint, because there was no job in it to drop.
+		local saved = bench.save()
+		saved.os.jobs = { seq = 3 }
+		local back = newBench(saved)
+		eq("a book with no list brings nothing back", jobCount(back), 0)
+
+		-- A book of more jobs than a machine takes. The ceiling is the machine's own
+		-- and it is asked on the way in, or a forged file would be how a computer
+		-- ends up running five.
+		local many = bench.save()
+		local one = many.os.jobs.list[1]
+		many.os.jobs.list = {}
+		for i = 1, CeroSecOS.MAX_JOBS + 3 do
+			local copy = {}
+			local function dup(v)
+				if type(v) ~= "table" then return v end
+				local out = {}
+				for k, sub in pairs(v) do out[k] = dup(sub) end
+				return out
+			end
+			copy = dup(one)
+			copy.id = 100 + i
+			copy.n = i
+			many.os.jobs.list[i] = copy
+		end
+		eq("the forged book really holds more than a machine takes",
+			#many.os.jobs.list, CeroSecOS.MAX_JOBS + 3)
+		local capped = newBench(many)
+		eq("and the machine comes up with exactly its four",
+			jobCount(capped), CeroSecOS.MAX_JOBS)
+	end
+
+	--
+	-- The ceiling, and what happens at it
+	--
+	-- A job is not saved when its shape costs more than CeroSec.JOB_SAVE_BYTES,
+	-- and it is NOT killed for it: taking a running job away from a player at the
+	-- moment he quits is worse than the reload he was getting before this change.
+	-- So it goes on running, it is left out of the save, and the log says so.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		-- A program whose parsed tree is past the ceiling. Written as statements a
+		-- survivor could really type, and the size is asserted rather than assumed.
+		local lines = { "F=/var/tmp/big.on", "echo run > $F", "while [ -f $F ]; do" }
+		for i = 1, 40 do
+			lines[#lines + 1] = string.format(
+				"  if [ -f /var/tmp/b%d ]; then c%d=$(cat /var/tmp/b%d); fi", i, i, i)
+		end
+		lines[#lines + 1] = "  sleep 1"
+		lines[#lines + 1] = "done"
+		bench.script("/home/admin/big.sh", table.concat(lines, "\n"))
+		bench.enter("sh /home/admin/big.sh &")
+		seconds(bench, 2)
+		eq("the big daemon is running", jobCount(bench), 1)
+
+		CeroSec.logRing = {}
+		local saved = bench.save()
+		eq("and it is not in the save", saved.os.jobs, nil)
+		local said = false
+		for i = 1, #CeroSec.logRing do
+			if string.find(CeroSec.logRing[i].text, "too large", 1, true) then said = true end
+		end
+		check("the log says why", said)
+		eq("but it is still running on the machine that is still up", jobCount(bench), 1)
+
+		local back = newBench(saved)
+		eq("and the machine that comes back is running nothing", jobCount(back), 0)
+
+		-- The control, and it is what makes the assertion above mean anything: the
+		-- same daemon with three tests instead of forty is under the ceiling and IS
+		-- saved. Without this the bench would pass on a save that wrote nothing at
+		-- all.
+		local small = newBench()
+		small.login("admin")
+		small.script("/home/admin/small.sh", table.concat({
+			"F=/var/tmp/small.on", "echo run > $F", "while [ -f $F ]; do",
+			"  if [ -f /var/tmp/b1 ]; then c1=$(cat /var/tmp/b1); fi",
+			"  sleep 1", "done" }, "\n"))
+		small.enter("sh /home/admin/small.sh &")
+		seconds(small, 2)
+		eq("the small daemon is running", jobCount(small), 1)
+		local kept = small.save()
+		check("and it fits the save", kept.os.jobs ~= nil and #kept.os.jobs.list == 1)
+		eq("so it comes back", jobCount(newBench(kept)), 1)
+	end
+
+	--
+	-- A sleep keeps what is LEFT of it, not the moment it was due
+	--
+	-- getTimestampMs is System.currentTimeMillis, so a moment would survive a save
+	-- honestly enough -- but the world stood still while the game was shut and a
+	-- machine that was never switched off did not spend those hours asleep.
+	--
+	do
+		local bench = newBench()
+		bench.login("admin")
+		bench.enter("sleep 20; echo late > /var/tmp/late &")
+		seconds(bench, 2)
+		local saved = bench.save()
+		local left = saved.os.jobs.list[1].sleepLeft
+		check("what is saved is the milliseconds left: " .. tostring(left),
+			type(left) == "number" and left > 15000 and left <= 20000)
+		eq("and not the moment it is due", saved.os.jobs.list[1].wakeMs, nil)
+
+		-- A week goes by with the game shut. The wall clock moved; the machine did
+		-- not.
+		_G.__now = _G.__now + 7 * 24 * 60 * 60 * 1000
+		local back = newBench(saved)
+		seconds(back, 2)
+		eq("it is still asleep a week later, with its own seconds to go",
+			back.fileText("/var/tmp/late"), nil)
+		seconds(back, 20)
+		eq("and it wakes when they are up", back.fileText("/var/tmp/late"), "late")
+	end
+
+	--
+	-- Every shape the parser makes goes through the gate
+	--
+	-- The gate's rule about a program off a save file is one line -- every value at
+	-- an integer key is a table, `k` and `t` are strings, and a list node's `ops`
+	-- are the exception. This is what says the rule does not refuse a program this
+	-- machine really writes: one line of every shape the grammar has, plus every
+	-- script the world content ships, each made into a job and handed to
+	-- CeroSecJobs.jobFromData.
+	--
+	do
+		local shapes = {
+			"echo hi", "x=5", "x=5 y=6 echo $x", "echo a && echo b || echo c",
+			"if [ -f /a ]; then echo y; elif [ -d /b ]; then echo m; else echo n; fi",
+			"for d in a b c; do echo $d; done",
+			"while true; do sleep 1; done", "until [ -f /a ]; do sleep 1; done",
+			"case $x in a|b) echo ab ;; [0-9]*) echo n ;; *) echo other ;; esac",
+			"greet() { echo hello $1; }", "cat /etc/group | grep sudo | wc -l",
+			"echo $(date +%s)", "x=$(($(date +%s) + 300))", "echo ${HOME}",
+			"sh a.sh > out", "cat a >> b", "echo x > /dev/light0",
+			"echo 'a b' \"c $x\" d", "sh watch.sh &", "echo a; echo b &",
+			"find / -name '*.sh' -exec cat {} \\;", "read -p 'and? ' a",
+			"echo $1 $# $@ $? $$ $((1 + 2 * 3))",
+		}
+		local names = {}
+		for name in pairs(CeroSecContent.SCRIPTS) do names[#names + 1] = name end
+		table.sort(names)
+		for i = 1, #names do
+			shapes[#shapes + 1] = CeroSecContent.SCRIPTS[names[i]].text
+		end
+		check("the world content really ships scripts to walk", #names > 5)
+
+		local session = { user = "admin", cwd = "/home/admin", stamp = 1 }
+		local walked = 0
+		for i = 1, #shapes do
+			local prog, why = CeroSecOS.parseScript(shapes[i])
+			check("shape " .. i .. " parses: " .. tostring(why), prog ~= nil)
+			if prog ~= nil then
+				local job = CeroSecOS.newJob({ prog = prog, name = "s.sh", cmd = "s.sh",
+					bg = true, session = session })
+				local data = CeroSecJobs.jobToData(job, 1000, false)
+				check("shape " .. i .. " is a job the save takes", data ~= nil)
+				local back, reason = CeroSecJobs.jobFromData(data, 1000)
+				check("shape " .. i .. " comes back through the gate: " .. tostring(reason),
+					back ~= nil)
+				walked = walked + 1
+			end
+		end
+		check("and every one of them was walked", walked == #shapes)
+
+		-- And the one exception in the rule, from the other side: `ops` really is an
+		-- array of STRINGS, so the rule lets those through -- and anything else at
+		-- that name is refused rather than waved past with the exception.
+		local listProg = CeroSecOS.parseScript("echo a && echo b || echo c")
+		eq("a list node carries its operators as strings",
+			type(listProg[1].ops[1]), "string")
+		local listJob = CeroSecOS.newJob({ prog = listProg, name = "l.sh", cmd = "l.sh",
+			bg = true, session = session })
+		local listData = CeroSecJobs.jobToData(listJob, 1000, false)
+		check("and the save takes it", listData ~= nil)
+		listData.prog[1].ops[1] = { "not a string" }
+		local refused, reason = CeroSecJobs.jobFromData(listData, 1000)
+		eq("an operator that is not one is refused", refused, nil)
+		eq("as a bad program", reason, "bad program")
+	end
+
+	_G.__now = hadNow
+	CeroSecJobs.lastMs = 0
+	_G.sendServerCommand = realSend
+	_G.CeroSecDebugUI, _G.CeroSecPhonebookUI = realDebugUI, realPhonebookUI
 end
 
 

@@ -3706,6 +3706,29 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      Relancer avec `&`, puis `kill %1` : ça marche aussi. `ls /var/tmp` montre ce
      que le programme garde : `autoclose.on` tant qu'il tourne, et un
      `autoclose.door0` par porte ouverte. [ ]
+397b. **IL TOURNE ENCORE QUAND ON REVIENT DANS LA PARTIE.** C'est l'étape du
+     rangement : une machine que personne n'a éteinte n'a jamais cessé de
+     travailler. Relancer `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`.
+     Laisser la machine **allumée**, fermer le terminal, **quitter vers le menu**
+     (la partie est sauvegardée), puis recharger la sauvegarde et revenir devant
+     le même ordinateur. Attendu : l'écran est celui qu'on avait laissé, `jobs`
+     montre **la même ligne** `[1] running` ou `[1] sleeping` avec
+     `sh /usr/local/bin/autoclose.sh start 5 &` dedans, et `ps` donne le même
+     numéro de travail qu'avant. Ouvrir une porte à la main : elle se **referme
+     toujours** toute seule au bout de cinq tours. `ls /var/tmp` montre
+     `autoclose.on` encore là. [ ]
+397c. **Ce qui ne revient pas, et c'est voulu.** Toujours sur la même machine :
+     `shutdown -h +9`, puis quitter vers le menu et recharger. Attendu : la
+     machine est **encore allumée** et `jobs` ne montre **aucun** `shutdown` en
+     attente — un ordre donné à l'horloge du monde réel ne traverse pas une
+     sauvegarde, et le README le dit déjà. Même essai avec un script qui pose une
+     question (`read`) : au rechargement l'écran est **revenu à l'invite**, pas à
+     la question. Un `&` relancé après ça tourne normalement. [ ]
+397d. **L'interrupteur, lui, arrête tout.** Relancer le démon avec `&`, puis
+     **éteindre** l'ordinateur au bouton (ou couper le générateur), le rallumer,
+     et quitter/recharger. Attendu : `jobs` ne montre rien du tout — l'extinction
+     a emporté le travail au moment où elle a eu lieu, et rien ne le ramène. Même
+     chose pour une machine **ramassée** puis reposée. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
      rideaux se ferment dans le monde. Puis `crontab -e` et les deux lignes du
      README :

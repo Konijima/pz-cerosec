@@ -665,10 +665,34 @@ bigger than the 4096 a write may produce, because a renamed history is exactly t
 Homes are never touched by `restoreSystem`, so the BIOS repair never takes a history
 or a `~/.profile` away.
 
-The pending `shutdown` (`luaObject.shutdown`) is **not** among the saved keys and is
-not meant to be: it is an order given to a running machine, driven by
-`CeroSecJobs.checkShutdown` on each scheduler pass, and a reload forgets it. The
-machine stays up and the README, the manual and `docs/PARCOURS-TEST.md` all say so
+`os.jobs` is what the machine was **running**, and it is a key inside the state
+rather than a seventh saved key on the object: `os` is already saved and the
+serializer recurses into it, so an added key inside it moves no number at all (a
+field a change added, read with a default — the compatibility contract's own rule)
+and a build that has never heard of it reads a machine with one and ignores it,
+`CeroSecOS.validate` not being a closed namespace over the state's keys the way a
+disk is. It is written at **`Events.OnSave`**, which `zombie.GameWindow.save(boolean)`
+triggers at bytecode offset 302 and calls `zombie.globalObjects.SGlobalObjects.save()`
+at offset 418 of the same method (`javap -p -c` on 42.20.4) — so the event is the one
+moment there is, before `gos_cerosec.bin` is written. It is read at
+`SCeroSecSystem:newLuaObject`, the road every machine in the save file comes in by,
+and **taken off the state as it is read**: a book is a thing a machine is running and
+not a thing that lies on its disk, so a second load cannot resurrect a job somebody
+stopped and the gate never spends its table budget walking one. That it is read
+*there and nowhere else* is what keeps a client out of it — a state also arrives from
+an item's `movableData`, which on a server is a table a client wrote, and that road
+ends in `resetForPlacement`, which switches the machine off and kills the book.
+`CeroSec.JOB_SAVE_BYTES` and `CeroSec.JOB_SAVE_TABLES` bound what may be written, the
+second against `validate`'s own budget; [SCRIPTING.md](SCRIPTING.md#underneath-the-step-machine-the-job-and-the-scheduler)
+has the table of what survives and what does not.
+
+The pending `shutdown` is a job in the ordinary book and is **not** written with the
+rest of it, which is deliberate and is about its clock: `at` is a moment on
+`getTimestampMs` — the wall clock the scheduler counts passes on — and the world stood
+still while the game was shut, so an order given against it cannot cross a save and
+still mean what it said. It falls out of the save rule anyway, a pending order being
+a job whose state is `"waiting"` and only a running or a sleeping job being written.
+The machine stays up and the README, the manual and `docs/PARCOURS-TEST.md` all say so
 rather than letting a player discover it by the machine not going down.
 
 `console.stack` is the su stack: `{ { user = "admin", cwd = "/home/admin" }, ... }`,

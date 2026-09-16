@@ -8,6 +8,17 @@ date.
 
 ## Unreleased
 
+- **A program you left running with `&` is still running when you come back to your
+  save.** A computer you never switched off is a computer that never stopped: quit to
+  the menu, come back tomorrow, and `jobs` shows the daemon you started, the door it
+  watches still shuts, and a `sleep` still has its own seconds left to go instead of
+  going off the moment you sit down. Three things still end a job and they are the
+  three that always did: the switch on the case, a reboot, and somebody carrying the
+  computer away. Four things do not come back, because each of them is waiting on
+  something a reload has not got -- a question a script had put on your screen, a
+  call or a radio link it was holding, a `shutdown +N` you had ordered for later, and
+  a shell you had logged in from another machine. `man jobs` and Volume 3 say so.
+
 - **A server admin gets the debug window again.** The entry `CeroSec (dev)` on a
   computer's menu asked the game whether this connection was THE admin role, which
   answered no to an admin on his own server; it now asks the access level by name,

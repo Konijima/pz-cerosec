@@ -312,6 +312,16 @@ for i = 1, #fixtures do
 	check(at .. "somewhere in its listing", named)
 	run(state, admin, "umount /mnt")
 
+	-- The job book, which this shape does not have and must not grow one.
+	--
+	-- Every machine in every save written before this build has no `jobs` key under
+	-- `os`, and absent has to read as "this machine was running nothing" -- which is
+	-- the compatibility contract's own rule for a field a change added (read with a
+	-- default, never with an assumption). So the chain does not invent one, the gate
+	-- takes the machine without one, and a photograph of an older save comes through
+	-- here with the key still absent.
+	eq(at .. "a save from before the job book has none", state.jobs, nil)
+
 	-- The two namespaces that are not the machine's state.
 	local fittedFront = fixture.modules[1]
 	local doorData = { [CeroSecModules.DATA_KEY] = fittedFront }
