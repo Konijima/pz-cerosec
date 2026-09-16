@@ -3,7 +3,10 @@ require "ISUI/ISTabPanel"
 require "ISUI/ISPanel"
 require "ISUI/ISScrollingListBox"
 require "ISUI/ISButton"
+require "ISUI/ISTextEntryBox"
+require "ISUI/ISComboBox"
 require "CeroSec/CeroSecDefs"
+require "CeroSec/CeroSecContent"
 require "CeroSec/CeroSecTerminal"
 
 --
@@ -68,6 +71,21 @@ CeroSecDebugUI.ARM_MS = 5000
 
 CeroSecDebugUI.FONT = "Small"
 
+-- What the login box opens on, and the longest it will hold.
+--
+-- "root" because that is the account somebody clearing a password is nearly always
+-- after, and because a box that opened empty would be a button that refused on its
+-- first press.
+--
+-- The ceiling is CeroSecOS.MAX_NAME's number, written out and not read off it: this
+-- is client Lua and the constant is a shared file's, so reading it at load time
+-- would be betting on a load order -- and the window is not what decides anyway.
+-- What decides is the server, which holds the login to CeroSecOS.isValidName before
+-- it reaches anything (Commands.debugact), so a box that let one character too many
+-- through is a refusal and never a bad write.
+CeroSecDebugUI.DEFAULT_LOGIN = "root"
+CeroSecDebugUI.LOGIN_MAX = 32
+
 -- The gap vanilla's own debug windows use between the window edge and what is in
 -- it (UI_BORDER_SPACING, ISEntitiesDebugWindow.lua:6).
 local BORDER = 10
@@ -83,6 +101,19 @@ local GAP = 6
 -- "here", "away", "jobs" and every other short word these lists hold, so a
 -- column squeezed to the floor still says something.
 local MIN_CELLS = 4
+
+-- Rows of buttons under the list, and the air between them. Two: the nine this
+-- window shipped with, and the eight an admin and a tester were given after it --
+-- which on one row would be seventeen buttons and a window nobody's screen is wide
+-- enough for.
+local BUTTON_ROWS = 2
+local ROW_GAP = 4
+
+-- How wide the login box is, in characters of the cell font. Twelve: long enough for
+-- every generated login the catalogue makes (CeroSecOS.MAX_USERNAME is sixteen and
+-- the names are shorter than that) and short enough not to push the row it is on
+-- past the disk combo beside it.
+local LOGIN_CELLS = 12
 
 -- Rows of info under the list. Nine: the two the WINDOW writes -- why a button
 -- cannot be pressed, and how much of the list is showing -- and then seven of the
@@ -144,6 +175,21 @@ CeroSecDebugUI.TABS = {
 		name = "Log", tab = nil,
 		columns = { { "level", 7 }, { "line", 80 } },
 	},
+}
+
+-- The seven of the second row that act on a MACHINE, as the field the button is kept
+-- in and the field the server's answer about it arrives as. One table, because the
+-- greying and nothing else walks it: the buttons are made one by one in
+-- createChildren, where each has a label and a handler of its own. "Give disk" is
+-- not on it -- it is about a bag and is never greyed.
+CeroSecDebugUI.ACT_BUTTONS = {
+	{ "rootNoteButton", "canRootNote" },
+	{ "staffNoteButton", "canStaffNote" },
+	{ "accountsButton", "canAccounts" },
+	{ "clearPassButton", "canClearPass" },
+	{ "rootLoginButton", "canRootLogin" },
+	{ "cronNowButton", "canCronNow" },
+	{ "forceWireButton", "canForceWire" },
 }
 
 -- The three the Log tab filters by, and the word each button wears.
@@ -209,7 +255,11 @@ local function measure()
 		if total > widest then widest = total end
 	end
 	WINDOW_W = widest + BORDER * 4
-	WINDOW_H = (FONT_H + 6) * 20 + (FONT_H + 2) * INFO_ROWS + BORDER * 6
+	-- Twenty rows of list, the detail block, and room for EVERY button row: the
+	-- second row was added after this line was written and a height that had not
+	-- heard of it would open the window with nineteen rows and then eighteen.
+	WINDOW_H = (FONT_H + 6) * 20 + (FONT_H + 2) * INFO_ROWS + BORDER * 6 +
+		(FONT_H + 8 + ROW_GAP) * (BUTTON_ROWS - 1)
 end
 
 -- How far the pen moves over a string: what drawText advances by, and so where
@@ -344,7 +394,14 @@ function CeroSecDebugUI:layout()
 	out.panelX = BORDER
 	out.panelY = out.th + BORDER
 	out.panelW = self:getWidth() - BORDER * 2
-	out.panelH = self:getHeight() - out.th - out.rh - out.buttonH - out.infoH -
+	-- TWO rows of buttons and not one. The first row is the nine this window opened
+	-- with; the second is the admin's and the tester's eight, which have to go
+	-- SOMEWHERE and would have doubled the width of a row that already sets the
+	-- window's minimum width all by itself (see createChildren). A row that runs off
+	-- the right edge is a button nobody finds; a second row costs one button height
+	-- and is read the way a keyboard is.
+	out.panelH = self:getHeight() - out.th - out.rh -
+		out.buttonH * BUTTON_ROWS - ROW_GAP * (BUTTON_ROWS - 1) - out.infoH -
 		BORDER * 4
 	-- The tab strip's height and the header row's are the panel's and the list's
 	-- own answers, never a second copy of them: the strip is measured off the font
@@ -357,6 +414,12 @@ function CeroSecDebugUI:layout()
 	end
 	out.listH = out.viewH - out.headerH - 1
 	out.buttonsY = out.panelY + out.panelH + BORDER
+	-- Every row's own top, so a widget asks for the row it is on and nothing adds a
+	-- button height to a number for itself.
+	out.rowY = {}
+	for i = 1, BUTTON_ROWS do
+		out.rowY[i] = out.buttonsY + (i - 1) * (out.buttonH + ROW_GAP)
+	end
 	out.infoY = self:getHeight() - out.rh - BORDER - out.infoH
 	return out
 end
@@ -379,8 +442,13 @@ function CeroSecDebugUI:applyLayout()
 		self:fitColumns(i)
 	end
 	for i = 1, #self.buttons do
-		self.buttons[i].button:setY(L.buttonsY)
+		local entry = self.buttons[i]
+		entry.button:setY(L.rowY[entry.row or 1])
 	end
+	-- The two widgets that are not buttons follow the row they were put on, because
+	-- applyLayout is the only thing in this window that places anything.
+	if self.loginEntry ~= nil then self.loginEntry:setY(L.rowY[2]) end
+	if self.diskCombo ~= nil then self.diskCombo:setY(L.rowY[2]) end
 	self.numbers = L
 end
 
@@ -438,18 +506,22 @@ function CeroSecDebugUI:createChildren()
 	-- because they are never both there.
 	--
 	self.buttons = {}
-	local at = BORDER
+	-- One pen per row, because the two rows fill independently: the second is not a
+	-- continuation of the first and a single cursor would start it wherever the first
+	-- happened to end.
+	local at = { BORDER, BORDER }
+	local row = 1
 	-- onTab is the NAME of the tab a button belongs to, or nil for a button that is
 	-- on every tab.
 	local function button(label, fn, onTab)
 		local w = advance(label) + 20
-		local made = ISButton:new(at, L.buttonsY, w, L.buttonH, label, self, fn)
+		local made = ISButton:new(at[row], L.rowY[row], w, L.buttonH, label, self, fn)
 		made:initialise()
 		made:instantiate()
 		made:setFont(UIFont[CeroSecDebugUI.FONT])
 		self:addChild(made)
-		self.buttons[#self.buttons + 1] = { button = made, onTab = onTab }
-		at = at + w + 6
+		self.buttons[#self.buttons + 1] = { button = made, onTab = onTab, row = row }
+		at[row] = at[row] + w + 6
 		return made
 	end
 
@@ -479,7 +551,7 @@ function CeroSecDebugUI:createChildren()
 	-- The filter, on the Machines tab and nowhere else. It is made with the WIDER
 	-- of the two words it wears and then given the one it is showing: a button that
 	-- changed width when it was pressed would move the row under the cursor.
-	local tabStart = at
+	local tabStart = at[row]
 	local showAll = getText("IGUI_CeroSec_Debug_ShowAll")
 	local showUsed = getText("IGUI_CeroSec_Debug_ShowUsed")
 	local wider = showAll
@@ -487,7 +559,7 @@ function CeroSecDebugUI:createChildren()
 	self.filterButton = button(wider, CeroSecDebugUI.onFilter, "Machines")
 	self.filterButton:setTitle(self.usedOnly and showAll or showUsed)
 
-	at = tabStart
+	at[row] = tabStart
 	self.levelButtons = {}
 	for i = 1, #CeroSecDebugUI.LEVELS do
 		local spec = CeroSecDebugUI.LEVELS[i]
@@ -495,6 +567,85 @@ function CeroSecDebugUI:createChildren()
 		made.debugLevel = spec.level
 		self.levelButtons[i] = made
 	end
+
+	--
+	-- THE SECOND ROW: the admin's and the tester's own
+	--
+	-- Eight acts a server owner or somebody walking the checklist wants and a player
+	-- must never have: the papers out of the drawer and the pocket, who is on the
+	-- machine and with what letters, a password taken off, any disk of the catalogue,
+	-- root straight onto the glass, cron's minute by hand, and the automation's walk
+	-- run to the end. Every one of them goes through debugact behind
+	-- CeroSec.debugAllowed, like everything else on this window.
+	--
+	-- ON THE MACHINE TAB AND NOWHERE ELSE. All eight are about the machine that is
+	-- SELECTED, and the Machines tab is where a machine is selected -- so a reader who
+	-- is looking at a filesystem or at the wire is not offered a row of buttons whose
+	-- subject is off screen. It is the same rule the filter already wears.
+	--
+	row = 2
+	self.rootNoteButton = button(getText("IGUI_CeroSec_Debug_RootNote"),
+		CeroSecDebugUI.onRootNote, "Machines")
+	self.staffNoteButton = button(getText("IGUI_CeroSec_Debug_StaffNote"),
+		CeroSecDebugUI.onStaffNote, "Machines")
+	self.accountsButton = button(getText("IGUI_CeroSec_Debug_Accounts"),
+		CeroSecDebugUI.onAccounts, "Machines")
+	self.clearPassButton = button(getText("IGUI_CeroSec_Debug_ClearPass"),
+		CeroSecDebugUI.onClearPass, "Machines")
+
+	-- WHICH ACCOUNT, typed. A box and not a combo: the accounts on a machine are
+	-- whatever /etc/passwd holds, useradd included, and a list of them would be a
+	-- round trip spent on something the reader already read off the Log tab. It opens
+	-- on "root", which is the account somebody is nearly always after.
+	local entryW = advance(string.rep("n", LOGIN_CELLS)) + 20
+	self.loginEntry = ISTextEntryBox:new(CeroSecDebugUI.DEFAULT_LOGIN,
+		at[row], L.rowY[row], entryW, L.buttonH)
+	-- The font BEFORE initialise and never through setFont, which is the terminal's
+	-- own order and for the terminal's own reason: initialise is what makes the java
+	-- object, and setFont writes onto one that does not exist yet
+	-- (ISTextEntryBox.lua:9-12).
+	self.loginEntry.font = UIFont[CeroSecDebugUI.FONT]
+	self.loginEntry:initialise()
+	self.loginEntry:instantiate()
+	-- And the ceiling after it, for the same reason the other way round: it goes
+	-- straight to the java object. CeroSecOS.MAX_NAME is the rule the passwd parser
+	-- holds a name to, so a box cannot hold a login no line could carry.
+	self.loginEntry:setMaxTextLength(CeroSecDebugUI.LOGIN_MAX)
+	self:addChild(self.loginEntry)
+	at[row] = at[row] + entryW + 6
+
+	self.anyDiskButton = button(getText("IGUI_CeroSec_Debug_GiveAnyDisk"),
+		CeroSecDebugUI.onGiveAnyDisk, "Machines")
+
+	-- AND WHICH DISK, off the catalogue itself rather than off a list of our own: a
+	-- combo typed out here would be a second catalogue, and the day an entry is added
+	-- it would be the one place that had not heard of it.
+	local comboW = 0
+	for i = 1, #CeroSecContent.DISKS do
+		local width = advance(tostring(CeroSecContent.DISKS[i].id))
+		if width > comboW then comboW = width end
+	end
+	comboW = comboW + 40
+	self.diskCombo = ISComboBox:new(at[row], L.rowY[row], comboW, L.buttonH)
+	self.diskCombo:initialise()
+	self.diskCombo:instantiate()
+	self.diskCombo.font = UIFont[CeroSecDebugUI.FONT]
+	for i = 1, #CeroSecContent.DISKS do
+		local id = CeroSecContent.DISKS[i].id
+		-- The id as the option's DATA and not only as its text: what travels on the
+		-- wire is the id, and a lookup by the words on a widget is a lookup that
+		-- breaks the day the words are translated.
+		self.diskCombo:addOptionWithData(tostring(id), id)
+	end
+	self:addChild(self.diskCombo)
+	at[row] = at[row] + comboW + 6
+
+	self.rootLoginButton = button(getText("IGUI_CeroSec_Debug_RootLogin"),
+		CeroSecDebugUI.onRootLogin, "Machines")
+	self.cronNowButton = button(getText("IGUI_CeroSec_Debug_CronNow"),
+		CeroSecDebugUI.onCronNow, "Machines")
+	self.forceWireButton = button(getText("IGUI_CeroSec_Debug_ForceWire"),
+		CeroSecDebugUI.onForceWire, "Machines")
 
 	self:applyLayout()
 
@@ -508,12 +659,18 @@ function CeroSecDebugUI:createChildren()
 	-- The height is exactly the one at which the list is ONE row tall: what it is
 	-- now, less the room the list has now, plus one row. The width is the button
 	-- row, which is the one thing in here that does not reflow.
+	-- Over every row AND over the two widgets that are not buttons: the floor is the
+	-- widest thing under the list, and a box left out of the sum is a box the corner
+	-- can be dragged over.
 	local widest = 0
-	for i = 1, #self.buttons do
-		local made = self.buttons[i].button
+	local function reach(made)
+		if made == nil then return end
 		local right = made:getX() + made:getWidth()
 		if right > widest then widest = right end
 	end
+	for i = 1, #self.buttons do reach(self.buttons[i].button) end
+	reach(self.loginEntry)
+	reach(self.diskCombo)
 	self.minimumWidth = widest + BORDER
 	self.minimumHeight = self:getHeight() - self.numbers.listH +
 		self.lists[1].itemheight
@@ -634,7 +791,22 @@ function CeroSecDebugUI:onServerCommand(command, args)
 		self.selection = { on = args.on, loaded = args.loaded,
 			canTurnOn = args.canTurnOn, canTurnOff = args.canTurnOff,
 			canReset = args.canReset, resetReason = args.resetReason,
-			reason = args.reason }
+			reason = args.reason,
+			-- And the admin's and the tester's eight, each with its own reason:
+			-- copied one by one rather than by walking the answer, because what
+			-- comes off the wire is a table a server built and only the fields
+			-- this window knows the names of are read off it.
+			canRootNote = args.canRootNote, rootNoteReason = args.rootNoteReason,
+			canStaffNote = args.canStaffNote,
+			staffNoteReason = args.staffNoteReason,
+			canAccounts = args.canAccounts, accountsReason = args.accountsReason,
+			canClearPass = args.canClearPass,
+			clearPassReason = args.clearPassReason,
+			canRootLogin = args.canRootLogin,
+			rootLoginReason = args.rootLoginReason,
+			canCronNow = args.canCronNow, cronNowReason = args.cronNowReason,
+			canForceWire = args.canForceWire,
+			forceWireReason = args.forceWireReason }
 	end
 	self.snapshots[args.tab] = args
 	self:fill(args.tab)
@@ -1024,6 +1196,119 @@ function CeroSecDebugUI:onGiveDisk()
 	self:send("debugact", { act = "givedisk" })
 end
 
+--
+-- The admin's and the tester's eight
+--
+-- Every one of them is the same three lines: a machine, then the answer the SERVER
+-- gave about this very act, then the act. A press the window already knows cannot
+-- work prints the server's own sentence instead of going out on the wire to be
+-- refused -- which is the pattern the two power buttons and the reset already wear
+-- (onTurnOn) -- and nothing is assumed while no answer has arrived: an unknown is
+-- asked, and the reason comes back with the refusal.
+--
+-- None of them refreshes afterwards. What each of them has to say comes back as a
+-- `note` on the one line there is, and a refresh chasing it would draw over the line
+-- it lands on -- the same reason the self-test asks for no snapshot.
+--
+
+-- Is this act's own answer a no, and if so what does the server say about it? nil
+-- when it may be pressed. One function and not eight copies of the test.
+function CeroSecDebugUI:actWhy(can, reason)
+	local sel = self.selection
+	if sel == nil then return nil end
+	if sel[can] == false then return tostring(sel[reason]) end
+	return nil
+end
+
+-- What every one of the eight does with that answer, so the refusal on the glass and
+-- the refusal on the wire are one sentence in one wording (the server's own).
+function CeroSecDebugUI:sendAct(act, can, reason, prefix, extra)
+	if not self:hasMachine() then return false end
+	local why = self:actWhy(can, reason)
+	if why ~= nil then
+		self.refusal = prefix .. ": " .. why
+		self.notice = nil
+		return false
+	end
+	self.refusal = nil
+	self.notice = nil
+	local args = { act = act }
+	if type(extra) == "table" then
+		for key, value in pairs(extra) do args[key] = value end
+	end
+	self:send("debugact", args)
+	return true
+end
+
+function CeroSecDebugUI:onRootNote()
+	self:sendAct("rootnote", "canRootNote", "rootNoteReason", "no root note")
+end
+
+function CeroSecDebugUI:onStaffNote()
+	self:sendAct("staffnote", "canStaffNote", "staffNoteReason", "no staff note")
+end
+
+function CeroSecDebugUI:onAccounts()
+	self:sendAct("accounts", "canAccounts", "accountsReason", "no accounts")
+end
+
+-- The login is whatever is in the box, sent as it is typed: the window does not
+-- judge a name -- the server holds it to CeroSecOS.isValidName and answers, and a
+-- second rule here would be a second answer to "is that an account name".
+function CeroSecDebugUI:onClearPass()
+	local login = CeroSecDebugUI.DEFAULT_LOGIN
+	if self.loginEntry ~= nil then
+		local typed = self.loginEntry:getInternalText()
+		if type(typed) == "string" and typed ~= "" then login = typed end
+	end
+	self:sendAct("clearpass", "canClearPass", "clearPassReason",
+		"no password cleared", { login = login })
+end
+
+-- Any disk of the catalogue, by the id the combo is on. The DATA and not the words,
+-- so what travels is the catalogue's own id (see the combo in createChildren).
+--
+-- No machine is wanted -- it is about a bag, exactly as the diagnostics disk is --
+-- so it does not go through sendAct, which insists on one.
+function CeroSecDebugUI:onGiveAnyDisk()
+	self.refusal = nil
+	self.notice = nil
+	local id = nil
+	if self.diskCombo ~= nil then id = self.diskCombo:getSelectedData() end
+	if id == nil then
+		self.refusal = "no disk: nothing is chosen in the list"
+		return
+	end
+	self:send("debugact", { act = "anydisk", disk = id })
+end
+
+-- Root at the glass, and then the glass.
+--
+-- The terminal is opened through onTerminal and not through a second path of its
+-- own, so the three conditions a window has to meet are the ones it already checks
+-- (terminalWhy) and this is a shortcut past the KEYBOARD alone.
+--
+-- Opened right after the act and not on the answer, and the order holds: in
+-- singleplayer the command has already been carried out by the time sendCommand
+-- returns -- one Lua state, one thread -- and on a dedicated server both commands
+-- travel this client's own connection, so the `open` the terminal sends reaches the
+-- server after the login and the screen that comes back is the session's.
+function CeroSecDebugUI:onRootLogin()
+	if not self:sendAct("rootlogin", "canRootLogin", "rootLoginReason",
+			"no root login") then
+		return
+	end
+	if self:terminalWhy() == nil then self:onTerminal() end
+end
+
+function CeroSecDebugUI:onCronNow()
+	self:sendAct("cronnow", "canCronNow", "cronNowReason", "cron did not run")
+end
+
+function CeroSecDebugUI:onForceWire()
+	self:sendAct("forcewire", "canForceWire", "forceWireReason", "no wiring")
+end
+
 -- Stand the player on the selected machine's own square.
 --
 -- Vanilla's own debug teleport, both halves of it, copied from the one place
@@ -1301,6 +1586,26 @@ function CeroSecDebugUI:prerender()
 	-- greyed on a machine that is ON -- which is the whole of its rule
 	-- (CeroSecDebug.resetRefusal).
 	self.resetButton:setEnable(machine and (sel == nil or sel.canReset ~= false))
+
+	-- And the second row, every one of them on the server's own answer about that
+	-- one act. A table of pairs rather than seven lines, because these are one rule
+	-- read seven times and the names are the only thing that differs.
+	for i = 1, #CeroSecDebugUI.ACT_BUTTONS do
+		local spec = CeroSecDebugUI.ACT_BUTTONS[i]
+		local made = self[spec[1]]
+		if made ~= nil then
+			made:setEnable(machine and (sel == nil or sel[spec[2]] ~= false))
+		end
+	end
+	-- The box follows the button beside it: a name typed into a box whose button
+	-- cannot be pressed is a name nobody asked for. The disk list is about a BAG and
+	-- is never greyed, exactly like the button it belongs to.
+	local onMachines = self:activeSpec().name == "Machines"
+	if self.loginEntry ~= nil then
+		self.loginEntry:setVisible(onMachines)
+		self.loginEntry:setEditable(machine and (sel == nil or sel.canClearPass ~= false))
+	end
+	if self.diskCombo ~= nil then self.diskCombo:setVisible(onMachines) end
 end
 
 function CeroSecDebugUI:render()

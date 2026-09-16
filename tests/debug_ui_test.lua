@@ -317,6 +317,89 @@ ISButton = { new = function(_, x, y, w, h, title, target, onclick)
 	o.children = {}
 	return o
 end }
+--
+-- ISTextEntryBox: what was typed in it, and whether it may be typed in at all.
+--
+-- getInternalText and not getText, because that is the one the mod reads everywhere
+-- (CeroSecTerminal reads it in eleven places): the java object's getText carries the
+-- cursor's own formatting and getInternalText is the letters.
+--
+-- setMaxTextLength really TRUNCATES here. In the game it goes to the java object and
+-- a box simply refuses the next keystroke; a fake that ignored it would let a bench
+-- type a login longer than any /etc/passwd line could carry and then assert about a
+-- string the glass could never have produced.
+--
+local Entry = {}
+Entry.__index = Entry
+applyElement(Entry)
+function Entry:setMaxTextLength(n) self.maxText = n end
+function Entry:setEditable(v) self.editable = v end
+function Entry:getInternalText() return self.text end
+function Entry:setText(str)
+	local at = tostring(str or "")
+	if self.maxText ~= nil and #at > self.maxText then
+		at = string.sub(at, 1, self.maxText)
+	end
+	self.text = at
+end
+ISTextEntryBox = { new = function(_, title, x, y, w, h)
+	local o = setmetatable({}, Entry)
+	o.x, o.y, o.width, o.height = x, y, w, h
+	o.text = title or ""
+	o.editable = true
+	o.visible = true
+	o.children = {}
+	return o
+end }
+
+--
+-- ISComboBox: the options it was given, with the DATA on each, and which is chosen.
+--
+-- addOptionWithData is the one the window uses, because what travels on the wire is
+-- a catalogue id and not the words on a widget (ISComboBox.lua:435-444, and
+-- getSelectedData at :518).
+--
+local Combo = {}
+Combo.__index = Combo
+applyElement(Combo)
+function Combo:addOptionWithData(option, data, tooltip)
+	self.options[#self.options + 1] = { text = option, data = data, tooltip = tooltip }
+	if self.selected == 0 then self.selected = 1 end
+end
+function Combo:getOptionCount() return #self.options end
+function Combo:getOptionData(index)
+	local at = self.options[index]
+	return at ~= nil and at.data or nil
+end
+function Combo:getSelectedData()
+	local at = self.options[self.selected]
+	return at ~= nil and at.data or nil
+end
+function Combo:setSelected(value) self.selected = value end
+function Combo:setEnabled(v) self.enabled = v end
+ISComboBox = { new = function(_, x, y, w, h)
+	local o = setmetatable({}, Combo)
+	o.x, o.y, o.width, o.height = x, y, w, h
+	o.options = {}
+	o.selected = 0
+	o.enabled = true
+	o.visible = true
+	o.children = {}
+	return o
+end }
+
+-- The disk catalogue, stood in for: the window builds its combo off
+-- CeroSecContent.DISKS and this bench is not loading the eight-thousand-line
+-- catalogue to find out how many entries it has. What matters here is that the combo
+-- is built off the table rather than off a list of the window's own, which is what a
+-- fake with entries of ITS OWN names proves -- a window with a hard-coded list would
+-- come out with the real ids and this bench would go red on them.
+CeroSecContent = { DISKS = {
+	{ id = "BENCH ONE" },
+	{ id = "BENCH TWO" },
+	{ id = "BENCH THREE AND A LONGER ONE" },
+} }
+
 -- What the game does when a button is pressed: the target, then the button.
 local function press(button)
 	button.onclick(button.target, button)
@@ -1012,12 +1095,36 @@ local function checkBands(bench, when)
 	local listBottom = panel.y + window.views[1].y + list.y + list.height
 	local buttonsTop = window.buttons[1].button.y
 	check(when .. ": the buttons are under the list", buttonsTop >= listBottom)
+
+	-- TWO ROWS, and every button on exactly one of them. The second row is the
+	-- admin's and the tester's own eight, which on the one row this window shipped
+	-- with would have been seventeen buttons and a row wider than a screen -- so what
+	-- has to be asserted is not "one row" any more but that each button sits on the
+	-- row it was given, that the rows do not overlap, and that the block under them
+	-- is under the LAST of them.
+	local rows = {}
 	for i = 1, #window.buttons do
-		eq(when .. ": button " .. i .. " is on the same row",
-			window.buttons[i].button.y, buttonsTop)
+		local entry = window.buttons[i]
+		local at = entry.row or 1
+		check(when .. ": button " .. i .. " names a row that exists",
+			at >= 1 and at <= #L.rowY)
+		eq(when .. ": button " .. i .. " is on row " .. at,
+			entry.button.y, L.rowY[at])
+		rows[at] = true
 	end
-	check(when .. ": and the detail block is under the buttons",
-		L.infoY >= buttonsTop + L.buttonH)
+	check(when .. ": both rows are used", rows[1] == true and rows[2] == true)
+	eq(when .. ": the first row is where the buttons begin", L.rowY[1], buttonsTop)
+	for i = 2, #L.rowY do
+		check(when .. ": row " .. i .. " is clear of the one above it",
+			L.rowY[i] >= L.rowY[i - 1] + L.buttonH)
+	end
+	-- And the two widgets that are not buttons are on the second row with them.
+	eq(when .. ": the login box is on the second row", window.loginEntry.y, L.rowY[2])
+	eq(when .. ": and so is the disk list", window.diskCombo.y, L.rowY[2])
+
+	local lastRow = L.rowY[#L.rowY]
+	check(when .. ": and the detail block is under the LAST button row",
+		L.infoY >= lastRow + L.buttonH)
 	check(when .. ": with the whole of it above the resize widget",
 		L.infoY + L.infoH <= window.height - L.rh)
 end
@@ -1587,6 +1694,230 @@ do
 	-- reported was about the machine that WAS selected.
 	window:onRowClicked({ x = 12, y = 10, z = 0 })
 	eq("and selecting another machine drops it", window.notice, nil)
+end
+
+--
+-- 16. The second row: the admin's and the tester's eight
+--
+-- Eight acts a server owner or somebody walking the checklist wants: the two papers,
+-- who is on the machine, a password taken off, any disk of the catalogue, root at the
+-- glass, cron's minute by hand, and the automation's walk run to the end. What this
+-- block is for is the three things the WINDOW decides about them -- which tab they
+-- are on, what goes out on the wire, and whether a press that cannot work is sent
+-- anyway -- and nothing about what the server does with them, which is
+-- tests/window_test.lua's.
+--
+
+-- The eight, as the label the button wears and the act it sends.
+local ACTS = {
+	{ "RootNote", "rootnote", "canRootNote", "rootNoteReason" },
+	{ "StaffNote", "staffnote", "canStaffNote", "staffNoteReason" },
+	{ "Accounts", "accounts", "canAccounts", "accountsReason" },
+	{ "ClearPass", "clearpass", "canClearPass", "clearPassReason" },
+	{ "RootLogin", "rootlogin", "canRootLogin", "rootLoginReason" },
+	{ "CronNow", "cronnow", "canCronNow", "cronNowReason" },
+	{ "ForceWire", "forcewire", "canForceWire", "forceWireReason" },
+}
+
+do
+	local bench = newBench()
+	local window = bench.window
+
+	-- ON THE MACHINE TAB AND NOWHERE ELSE. All eight are about the machine that is
+	-- selected and the Machines tab is where one is selected, so a reader looking at a
+	-- filesystem is not offered a row of buttons whose subject is off screen.
+	bench.frame()
+	for i = 1, #ACTS do
+		local made = bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[i][1])
+		check(ACTS[i][1] .. " is on the row", made ~= nil)
+		eq("and it is there on the Machines tab", made.visible, true)
+	end
+	eq("Give disk is on the row too",
+		bench.buttonNamed("IGUI_CeroSec_Debug_GiveAnyDisk") ~= nil, true)
+	eq("the login box is there", window.loginEntry.visible, true)
+	eq("and the disk list", window.diskCombo.visible, true)
+
+	window.panel:activateView("Files")
+	bench.frame()
+	for i = 1, #ACTS do
+		eq(ACTS[i][1] .. " is gone on another tab",
+			bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[i][1]).visible, false)
+	end
+	eq("and so is the login box", window.loginEntry.visible, false)
+	eq("and the disk list", window.diskCombo.visible, false)
+	-- While the buttons that are about every tab stay.
+	eq("Refresh is on every tab",
+		bench.buttonNamed("IGUI_CeroSec_Debug_Refresh").visible, true)
+	window.panel:activateView("Machines")
+end
+
+-- What each of them puts on the wire.
+do
+	local bench = newBench()
+	local window = bench.window
+	for i = 1, #ACTS do
+		bench.forget()
+		press(bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[i][1]))
+		local act = bench.last("debugact")
+		check(ACTS[i][1] .. " sends an act", act ~= nil)
+		eq("which is '" .. ACTS[i][2] .. "'", act.args.act, ACTS[i][2])
+		eq("on the selected machine", act.args.x, 10)
+		eq("and on its own floor", act.args.z, 0)
+		eq("under this window's token", act.args.token, window.token)
+		-- None of them asks for a snapshot afterwards: what each has to say comes back
+		-- as a note on the one line there is, and a refresh chasing it would draw over
+		-- the line it lands on.
+		eq("and it asks for no snapshot", bench.last("debug"), nil)
+	end
+end
+
+-- The login box, and what Clear password carries.
+do
+	local bench = newBench()
+	local window = bench.window
+	eq("the box opens on root", window.loginEntry:getInternalText(), "root")
+
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_ClearPass"))
+	eq("so the first press names root", bench.last("debugact").args.login, "root")
+
+	-- A name typed in travels as it is typed: the window judges no name, because the
+	-- server holds it to the machine's own rule and answers.
+	window.loginEntry:setText("rmiller")
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_ClearPass"))
+	eq("and a typed one travels as it was typed",
+		bench.last("debugact").args.login, "rmiller")
+
+	-- An empty box is root again and never an empty login: a command carrying "" is a
+	-- refusal the server has to answer for nothing.
+	window.loginEntry:setText("")
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_ClearPass"))
+	eq("an empty box falls back to root",
+		bench.last("debugact").args.login, "root")
+
+	-- And the box cannot hold a login longer than a passwd line could carry.
+	window.loginEntry:setText(string.rep("a", CeroSecDebugUI.LOGIN_MAX + 8))
+	eq("the box is capped at the machine's own name length",
+		#window.loginEntry:getInternalText(), CeroSecDebugUI.LOGIN_MAX)
+end
+
+-- The disk list, built off the CATALOGUE and sending the id and not the words.
+do
+	local bench = newBench()
+	local window = bench.window
+	eq("there is one option per entry of the catalogue",
+		window.diskCombo:getOptionCount(), #CeroSecContent.DISKS)
+	eq("and the first is the catalogue's first",
+		window.diskCombo:getOptionData(1), CeroSecContent.DISKS[1].id)
+
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_GiveAnyDisk"))
+	local act = bench.last("debugact")
+	eq("Give disk sends 'anydisk'", act.args.act, "anydisk")
+	eq("naming the entry the list is on", act.args.disk, CeroSecContent.DISKS[1].id)
+
+	window.diskCombo:setSelected(3)
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_GiveAnyDisk"))
+	eq("and it follows the list", bench.last("debugact").args.disk,
+		CeroSecContent.DISKS[3].id)
+
+	-- No machine is wanted: it is about a bag, exactly as the diagnostics disk is.
+	window.cx, window.cy, window.cz = nil, nil, nil
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_GiveAnyDisk"))
+	eq("with nothing selected it still asks",
+		bench.last("debugact").args.act, "anydisk")
+end
+
+-- Greyed on the server's own answer, one act at a time -- and a press that the window
+-- already knows cannot work is not sent, it is explained.
+do
+	for i = 1, #ACTS do
+		local bench = newBench()
+		local window = bench.window
+		local spec = ACTS[i]
+		local fields = { canTurnOn = true, canTurnOff = true, on = true, loaded = true }
+		-- Every one of the seven said YES except the one under test, so what is
+		-- asserted is that this act's own field greys this act's own button: a window
+		-- that read one field for all of them would be green on a table like this.
+		for k = 1, #ACTS do
+			fields[ACTS[k][3]] = true
+		end
+		fields[spec[3]] = false
+		fields[spec[4]] = "the bench's own reason for " .. spec[1]
+		CeroSecDebugUI.onServerAnswer("debug", selected(window.token, fields))
+		bench.frame()
+
+		eq(spec[1] .. " is greyed when the server says it cannot",
+			bench.buttonNamed("IGUI_CeroSec_Debug_" .. spec[1]).enabled, false)
+		for k = 1, #ACTS do
+			if k ~= i then
+				eq("and " .. ACTS[k][1] .. " is not",
+					bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[k][1]).enabled, true)
+			end
+		end
+
+		bench.forget()
+		press(bench.buttonNamed("IGUI_CeroSec_Debug_" .. spec[1]))
+		eq("a press it knows cannot work sends nothing", #bench.sent, 0)
+		bench.frame()
+		check("and the line under the list carries the SERVER's own reason",
+			bench.painted("the bench's own reason for " .. spec[1]))
+	end
+end
+
+-- With nothing selected all seven are greyed and press to nothing, exactly as the
+-- five above them are.
+do
+	local bench = newBench()
+	local window = bench.window
+	window.cx, window.cy, window.cz = nil, nil, nil
+	bench.frame()
+	for i = 1, #ACTS do
+		eq(ACTS[i][1] .. " is greyed with nothing selected",
+			bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[i][1]).enabled, false)
+		bench.forget()
+		press(bench.buttonNamed("IGUI_CeroSec_Debug_" .. ACTS[i][1]))
+		eq("and pressing it sends nothing", #bench.sent, 0)
+	end
+	eq("and the login box cannot be typed in", window.loginEntry.editable, false)
+end
+
+-- Login as root opens the glass as well, through the terminal's own path: it is a
+-- shortcut past the keyboard and past nothing else.
+do
+	local bench = newBench()
+	local window = bench.window
+	local tile = { __class = "IsoObject",
+		getSpriteName = function() return CeroSec.SPRITES_ON["S"] end }
+	_G.__computers["10,10,0"] = tile
+	CeroSecDebugUI.onServerAnswer("debug", selected(window.token, {
+		canTurnOn = false, canTurnOff = true, on = true, loaded = true,
+		canRootLogin = true }))
+	bench.forget()
+	press(bench.buttonNamed("IGUI_CeroSec_Debug_RootLogin"))
+	eq("the act went out", bench.last("debugact").args.act, "rootlogin")
+	eq("and the terminal was opened on the tile the world has",
+		#CeroSecTerminal.opened, 1)
+	eq("for the player who asked", CeroSecTerminal.opened[1].player, bench.player)
+
+	-- Refused, and the window opens nothing: a terminal on a machine whose login the
+	-- server would not do is a window showing a login prompt and a lie on the line
+	-- under the list.
+	local other = newBench()
+	CeroSecDebugUI.onServerAnswer("debug", selected(other.window.token, {
+		canRootLogin = false, rootLoginReason = "somebody is already logged in as bob",
+		on = true, loaded = true }))
+	_G.__computers["10,10,0"] = tile
+	other.frame()
+	press(other.buttonNamed("IGUI_CeroSec_Debug_RootLogin"))
+	eq("a refused root login opens no terminal", #CeroSecTerminal.opened, 0)
+	other.frame()
+	check("and says whose session is in the way",
+		other.painted("already logged in as bob"))
 end
 
 print("debug_ui_test: " .. count .. " checks passed")
