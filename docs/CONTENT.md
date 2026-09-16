@@ -612,6 +612,15 @@ the pre-fitting walk sifts them, and `fit` answers false and leaves them alone.
 The rest — what is fitted once and never again, and what a survivor who unscrews one
 gets — is in [DEVICES.md](DEVICES.md#hardware-that-was-already-fitted).
 
+**The fitting rules do not apply to this walk**, and they cannot: they are the
+rules a *player's* gesture is held to — inside the building, with the thing open
+or switched off, and not in somebody else's safehouse — and this is not a
+gesture. `CeroSecModules.setOn` is called directly, on a chunk nobody is standing
+in, on doors that are shut, in premises a safehouse may be claimed over later. A
+shop wired in 1991 has its relays whatever any of that says. What a survivor then
+does with them is held to every one of the rules (DEVICES.md, *the hardware
+modules*), including taking one **off**.
+
 **The crontab is the owner's**, and the automated machine is deliberately given the
 desk of the account that carries it (`CeroSecContent.jobSlot`, handed to `deskRole`
 as the slot it would rather have). Without that the machine could be the *second*

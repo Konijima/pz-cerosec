@@ -89,6 +89,16 @@ function CeroSecModuleMenu.onRemove(worldobjects, object, playerObj, module)
 	end
 end
 
+-- A reason word from CeroSecModules.fittingRefusal, as the key of the sentence a
+-- player reads. DERIVED from the word and not looked up in a table beside it:
+-- the words are decided over there, and a list here would be a second list to
+-- keep in step -- which is how a reason nobody added a row for comes out on the
+-- menu as its own key printed at a survivor.
+function CeroSecModuleMenu.tooltipFor(why)
+	return "Tooltip_CeroSec_Module" ..
+		string.upper(string.sub(why, 1, 1)) .. string.sub(why, 2)
+end
+
 -- Why this survivor cannot do this job to this thing right now, as a tooltip
 -- key, or nil when he can. The order is cheapest first and most damning first,
 -- which is the same order the computer's own menu greys its entries in: what is
@@ -100,6 +110,13 @@ function CeroSecModuleMenu.refusal(object, playerObj, module)
 		if why == "manydoors" then return "Tooltip_CeroSec_ManyDoors" end
 		return "Tooltip_CeroSec_NoFixture"
 	end
+	-- Whose house it is, where he is standing and what the fixture is doing --
+	-- one function, shared with the server, and the reason word IS the key
+	-- (CeroSecModules.fittingRefusal). Above the skill and the tool for the
+	-- reason the shape of the fixture is: the trade is the last thing wrong with
+	-- a job that could not be done in that place at that moment anyway.
+	local stop = CeroSecModules.fittingRefusal(object, module.id, playerObj)
+	if stop ~= nil then return CeroSecModuleMenu.tooltipFor(stop) end
 	if playerObj:getPerkLevel(Perks.Electricity) < module.skill then
 		return "Tooltip_CeroSec_NeedSkill"
 	end
@@ -166,13 +183,20 @@ function CeroSecModuleMenu.OnFillWorldObjectContextMenu(player, context, worldob
 				CeroSecModuleMenu.onInstall, object, playerObj, row.module)
 			grey(option, CeroSecModuleMenu.refusal(object, playerObj, row.module), row.module)
 		else
-			-- Taking one off asks for the tool and the trade and nothing else: it
-			-- is already there, so there is nothing left to say about whether it
-			-- fits.
+			-- Taking one off asks nothing about whether the module FITS -- it is
+			-- already there -- and everything about the moment: whose house it
+			-- is, where he is standing and what the fixture is doing. A man
+			-- unscrewing a strike from a door that swings into him is the same
+			-- hand in the same place as a man fitting one, and a module anybody
+			-- could take off a door from the pavement is the whole reason this
+			-- rung exists.
 			option = sub:addOption(getText("ContextMenu_CeroSec_Remove", name), worldobjects,
 				CeroSecModuleMenu.onRemove, object, playerObj, row.module)
 			local why = nil
-			if playerObj:getPerkLevel(Perks.Electricity) < row.module.skill then
+			local stop = CeroSecModules.fittingRefusal(object, row.module.id, playerObj)
+			if stop ~= nil then
+				why = CeroSecModuleMenu.tooltipFor(stop)
+			elseif playerObj:getPerkLevel(Perks.Electricity) < row.module.skill then
 				why = "Tooltip_CeroSec_NeedSkill"
 			elseif inv == nil or not inv:getFirstTypeRecurse(CeroSecModules.TOOL) then
 				why = "Tooltip_CeroSec_NeedScrewdriver"

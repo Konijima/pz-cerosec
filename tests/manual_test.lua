@@ -668,8 +668,19 @@ for vi = 1, #volumes do
 		-- bound forbidding the next honest page rather than catching a chapter
 		-- that has swallowed a book. The 1000-character page and the volume's own
 		-- 50..95 are what keep a chapter a chapter, and neither of those moved.
-		check(cwhere .. " (" .. ch.title .. ") has 3..16 pages (" .. n .. ")",
-			n >= 3 and n <= 16)
+		-- SEVENTEEN for the fitting rules, chapter 6 of the same volume once more
+		-- and for the reason the other five were earned. Where a survivor has to be
+		-- standing, what has to be open and whose safehouse it is are three refusals
+		-- of the SAME gesture, and a reader meeting a greyed entry has one question:
+		-- why. The page that answers it cannot be anywhere but beside the page that
+		-- says how a box goes on. That page was already at 930 characters against a
+		-- ceiling of 1000, so the choice was a page cut in half or a rule told in
+		-- half. Sixteen was exactly where the chapter already stood, which is a bound
+		-- forbidding the next honest page rather than catching a chapter that has
+		-- swallowed a book. The 1000-character page and the volume's own 50..95 are
+		-- what keep a chapter a chapter, and neither of those moved.
+		check(cwhere .. " (" .. ch.title .. ") has 3..17 pages (" .. n .. ")",
+			n >= 3 and n <= 17)
 		vpages = vpages + n
 
 		for pi = 1, n do

@@ -267,6 +267,80 @@ the floppy drive's rule about duplication. The client half is
 and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
 animation, `150 - perk * 3`-style duration, `addXp` at the end).
 
+**Where he has to be standing, what has to be open, and whose safehouse it is.**
+Three more refusals, all of them about the MOMENT rather than about the shape of
+the fixture, all of them decided in `CeroSecModules.fittingRefusal` — one
+function, shared, which the server refuses on and the menu greys with, in the
+`turnOnRefusal` shape (one rule, one place, one wording). The reason word IS the
+tooltip key: `CeroSecModuleMenu.tooltipFor` builds
+`Tooltip_CeroSec_Module<Reason>` from it rather than looking it up in a second
+list. Every one is asked of a REMOVAL exactly as of a fitting — the hand is in
+the same place either way, and a module anybody could unscrew from the pavement
+is what the first rule exists to stop.
+
+| fixture | must be | reason word | the getter, proven |
+| --- | --- | --- | --- |
+| door (map or built) | open | `closed` | `IsoDoor.IsOpen()`, `IsoThumpable.IsOpen()` (proofs, 4) |
+| window | open | `closed` | `IsoWindow.IsOpen()` (proofs, 4) — which already excludes smashed, sealed and barricaded: none of those opens |
+| curtain (`IsoCurtain`) | open | `drawn` | `IsoCurtain.IsOpen()` |
+| a door's own sheet | open | `drawn` | `IsoDoor.isCurtainOpen()` — the fields are on the door and there is no second object |
+| stove, microwave, coffee | off | `running` | `IsoStove.Activated()` (capital A; the laundry's is not) |
+| washer, dryer, combination | off | `running` | `IsoClothingWasher.isActivated()` and its two siblings |
+| television, radio set | off | `running` | `IsoWaveSignal.getDeviceData()` then `DeviceData.getIsTurnedOn()` |
+| generator | off | `running` | `IsoGenerator.isActivated()` |
+| light switch | — | — | a relay goes behind a plate whose only state is the light it works |
+| everything but a generator | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
+| in a safehouse, with the option on | a player the safehouse allows | `safehouse` | `SafeHouse.getSafeHouse(square)`, then `SafeHouse.playerAllowed(IsoPlayer)` |
+
+The state asked for is the state of what the MODULE is screwed to and not of the
+object it sits on, which is the same door twice: a curtain motor on a door asks
+about the sheet, a strike on that same door asks about the door. A rule written
+per fixture could not tell the two apart and one of them would be asked the
+wrong question.
+
+**`isInARoom()` and not `getRoom() ~= nil`**, and the difference is a base: the
+call is `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (`javap -c
+zombie.iso.IsoGridSquare.isInARoom`, offsets 0—31), so four walls a PLAYER put up
+— which the map has no `RoomDef` for — read as inside, and `getRoom()` alone would
+refuse a man standing in the middle of his own base. Vanilla asks it that way
+itself (`server/BuildingObjects/ISEmptyGraves.lua:169`,
+`server/Vehicles/Vehicles.lua:667`). It is asked of **his** square and never of
+the fixture's: a door stands on the room's own square — which is why `doorLocks`
+reads `getSquare()` against `getOppositeSquare()` and calls the pair *exactly one
+of them has a room* — and he stands on one side of it or the other. The inside
+side is in a room; the pavement is not. An interior door has a room on both
+sides, so both sides are allowed.
+
+**The generator is the one exemption.** It is an outdoor machine by
+construction, so a check that wanted a room round it would be a module nobody
+could ever fit.
+
+**The safehouse gate is a sandbox option and it is OFF by default** —
+`SandboxVars.CeroSec.SafehouseModules`, read the way vanilla reads a grouped
+option and failing **open**, which is the opposite direction to
+`CeroSecModules.required()`. That is the compatibility contract and not a
+preference: a new option defaults to the old behaviour, and a sandbox file that
+failed to load must not be a world where nobody may touch his own hardware —
+where the hardware gate failing closed gives a player an empty `/dev`, which he
+can read off the screen. `SafeHouse.getSafeHouse(square)` is asked of the
+**fixture's** square, because what is being protected is somebody's door and a
+man on the pavement outside a safehouse is the case it exists for; it is
+`isSafeHouse(square, null, false)` down to `findSafeHouse`, a walk of
+`safehouseList` comparing the square's x and y against each box (`javap -c`,
+offsets 28—69), so nil for every square in a single-player game.
+`playerAllowed(IsoPlayer)` is vanilla's own membership question and **admins pass
+it without a branch of ours**: `players.contains(getUsername()) ||
+owner.equals(getUsername()) || role.hasCapability(CanGoInsideSafehouses)`
+(offsets 0—46), and that capability is what vanilla's own
+`isSafehouseAllowInteract` reads for the same purpose (offsets 23—44). A
+safehouse's own rule against **looting** is not consulted either way: fitting is
+not looting — nothing leaves the building — so this option is the only gate.
+
+**Pre-fitted hardware is not affected.** The 1991 walk writes the modData itself
+(`CeroSecModules.setOn`, `markPreFitted`) and performs no player action at all,
+so it never comes past any of this: a fixture shut, in a stranger's safehouse,
+with the option on, still gets the hardware the building was built with.
+
 **`dev` and `ls -l` say nothing about which module gave a device**, and that is
 deliberate: both listings are full-width already — `ls -l /dev` puts the widest
 state on column 60 — and a survivor who wants to know goes and looks at the door.

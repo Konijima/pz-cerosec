@@ -713,6 +713,194 @@ function CeroSecModules.fitsOn(object, id)
 end
 
 --
+-- WHERE HE IS STANDING, WHAT THE FIXTURE IS DOING, AND WHOSE HOUSE IT IS
+--
+-- fitsOn answers what a module CAN go on and never changes from one minute to
+-- the next: it is a fact about the fixture's shape. These three are facts about
+-- RIGHT NOW, and they are all three refusals of the same gesture, so they are
+-- asked in one function -- the turnOnRefusal shape the debug window and the
+-- server already share (SCeroSecDebug.turnOnRefusal): one rule, one place, one
+-- wording, and the day a rule moves the greyed entry moves with it.
+--
+-- 1. INSIDE. A module screwed to the skin of a building is a module anybody can
+--    unscrew from the pavement, and a survivor who wired his front door would
+--    find the contact gone and the door opened with it. So the job is done from
+--    inside, and "inside" is asked of the square HE is standing on and never of
+--    the fixture's: a door stands on the room's own square (which is why
+--    doorLocks reads getSquare against getOppositeSquare and calls the pair
+--    "exactly one of them has a room") and he stands on one side of it or the
+--    other. The inside side is in a room; the pavement is not. An interior door
+--    has a room on both sides, so both sides are allowed, which is the answer a
+--    survivor expects.
+--
+--    isInARoom() and not getRoom() ~= nil, and the difference is a base: the
+--    call is `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (javap -c
+--    zombie.iso.IsoGridSquare.isInARoom, offsets 0-31), so a room a PLAYER built
+--    -- four walls the map has no RoomDef for -- reads as inside, and getRoom()
+--    alone would refuse a man standing in the middle of his own base. Vanilla
+--    asks it that way itself (server/BuildingObjects/ISEmptyGraves.lua:169,
+--    server/Vehicles/Vehicles.lua:667).
+--
+--    A GENERATOR IS EXEMPT and it is the only one. It is an outdoor machine by
+--    construction -- a generator indoors poisons the room, which is the game's
+--    own rule -- so a check that asked for a room would be a module nobody could
+--    ever fit. Every other fixture here is reached from inside a building.
+--
+-- 2. OPEN FOR WHAT OPENS, OFF FOR WHAT SWITCHES ON. Nobody fits an operator to a
+--    door while it is shut, a motor to a sash he cannot reach round, or a
+--    contactor to an oven that is cooking. The state asked for is the state of
+--    the thing the MODULE is screwed to, which is why a curtain motor on a door
+--    asks about the sheet and a strike on the same door asks about the door:
+--    one fixture, two jobs, two answers.
+--
+--    Every getter is the one the device layer already reads the state with
+--    (SCeroSecDevices.stateOf), proven by javap against the shipped jar:
+--      IsoDoor.IsOpen()          IsoThumpable.IsOpen()   IsoWindow.IsOpen()
+--      IsoCurtain.IsOpen()       IsoDoor.isCurtainOpen()
+--      IsoStove.Activated()      IsoClothingWasher.isActivated() (and the dryer
+--      and the combination machine)  IsoGenerator.isActivated()
+--      DeviceData.getIsTurnedOn() through IsoWaveSignal.getDeviceData()
+--
+--    A window's IsOpen() is a sash that really moved, so it already excludes a
+--    barricaded, sealed or smashed window: none of those opens. That is why
+--    there is no second word for them here.
+--
+--    IT IS ASKED OF A REMOVAL TOO. Taking a contactor out of a running oven is
+--    the same hand in the same place, and the door a man is unscrewing a strike
+--    from is the door that swings into him.
+--
+--    A PRE-FITTED FIXTURE IS NOT AFFECTED. The 1991 walk writes modData and
+--    performs no player action at all (CeroSecModules.markPreFitted / setOn),
+--    so it never comes past here.
+--
+-- 3. SOMEBODY ELSE'S SAFEHOUSE, and only when the server asked for it
+--    (SandboxVars.CeroSec.SafehouseModules, off by default). A safehouse's own
+--    vanilla rule is about LOOTING and fitting is not looting -- nothing leaves
+--    the building and nothing is taken out of a container -- so that rule is not
+--    borrowed and this option is the only gate. On, a fixture standing in a
+--    safehouse takes a module from the people the safehouse allows and nobody
+--    else; off, it is open to anybody, which is the world as it was before the
+--    option existed.
+--
+--    SafeHouse.getSafeHouse(square) is asked of the FIXTURE's square and not of
+--    his: what is being protected is somebody's door, and a man on the pavement
+--    outside a safehouse is exactly the case this exists for. It is
+--    isSafeHouse(square, null, false) (javap -c, offsets 0-6) down to
+--    findSafeHouse, a walk of safehouseList comparing x/y against each one's
+--    box; nil when no safehouse covers the square, which is every square in
+--    single player.
+--
+--    playerAllowed(IsoPlayer) is vanilla's own membership question and admins
+--    pass it without a branch of ours: the bytecode is `players.contains(
+--    getUsername()) || owner.equals(getUsername()) || role.hasCapability(
+--    CanGoInsideSafehouses)` (javap -c zombie.iso.areas.SafeHouse.playerAllowed,
+--    offsets 0-46), and that capability is the one vanilla's own safehouse
+--    interact check reads for the same purpose (isSafehouseAllowInteract,
+--    offsets 23-44). So the owner, his members and an admin may wire it, and
+--    that is the allowance vanilla gives its own looting rule.
+--
+-- nil for "he may", or the reason in one word, which is the key the menu greys
+-- with: Tooltip_CeroSec_Module<Reason>.
+--
+
+CeroSecModules.SANDBOX_SAFEHOUSE = "SafehouseModules"
+
+-- Does the safehouse gate apply at all?
+--
+-- It fails OPEN, which is the opposite direction to required() above, and the
+-- reason is the compatibility contract rather than a preference: a new sandbox
+-- option defaults to the OLD behaviour, and the old behaviour is a world with no
+-- gate. A sandbox file that failed to load must not be a world where nobody can
+-- touch his own hardware, because that is a refusal a player cannot see the
+-- cause of -- where the hardware gate failing closed gives him an empty /dev,
+-- which he can read off the screen.
+function CeroSecModules.safehouseGated()
+	local group = SandboxVars and SandboxVars.CeroSec
+	if group == nil then return false end
+	return group[CeroSecModules.SANDBOX_SAFEHOUSE] == true
+end
+
+-- Which square's room decides, or nil for a fixture nobody has to be inside for.
+local function needsInside(object)
+	return not CeroSecModules.isGenerator(object)
+end
+
+-- The state the fixture has to be in for THIS module, or nil when the module has
+-- none. A light switch is the one that asks for nothing: a relay goes behind a
+-- plate whose only state is the light it works, and a machine that would not let
+-- a man wire a switch while the light was on would be a rule about nothing.
+local function stateRefusal(object, id)
+	if id == "relay" then return nil end
+
+	if id == "curtain" then
+		-- The two curtains, told apart the way SCeroSecDevices tells them apart:
+		-- an IsoCurtain answers IsOpen(), a door's own sheet answers
+		-- isCurtainOpen() and there is no second object to ask.
+		if CeroSecModules.isCurtain(object) then
+			if not object:IsOpen() then return "drawn" end
+			return nil
+		end
+		if not object:isCurtainOpen() then return "drawn" end
+		return nil
+	end
+
+	if id == "appliance" then
+		-- The oven's getter is Activated() with a capital A and the laundry's is
+		-- isActivated(); they are two classes and two spellings, not one.
+		if CeroSecModules.isStove(object) then
+			if object:Activated() then return "running" end
+			return nil
+		end
+		if object:isActivated() then return "running" end
+		return nil
+	end
+
+	if id == "genset" then
+		if object:isActivated() then return "running" end
+		return nil
+	end
+
+	if id == "tuner" then
+		local data = object:getDeviceData()
+		if data ~= nil and data:getIsTurnedOn() then return "running" end
+		return nil
+	end
+
+	-- contact, strike, operator and window: the thing that opens, whichever of
+	-- the three classes it is. All three answer IsOpen().
+	if not object:IsOpen() then return "closed" end
+	return nil
+end
+
+function CeroSecModules.fittingRefusal(object, id, playerObj)
+	if object == nil or playerObj == nil then return "outside" end
+	if CeroSecModules.byId(id) == nil then return "outside" end
+
+	-- WHOSE HOUSE FIRST. It is the one of the three he cannot change by doing
+	-- anything at the fixture, and it is the one that should not be answered
+	-- round: a stranger told "open it first" has been told what state somebody
+	-- else's door is in.
+	if CeroSecModules.safehouseGated() and SafeHouse ~= nil then
+		local square = object:getSquare()
+		if square ~= nil then
+			local house = SafeHouse.getSafeHouse(square)
+			if house ~= nil and not house:playerAllowed(playerObj) then
+				return "safehouse"
+			end
+		end
+	end
+
+	if needsInside(object) then
+		local square = playerObj:getCurrentSquare()
+		-- No square at all is a survivor the world cannot place, and the honest
+		-- answer for one is the refusal: nothing here is worth guessing at.
+		if square == nil or not square:isInARoom() then return "outside" end
+	end
+
+	return stateRefusal(object, id)
+end
+
+--
 -- What a machine sees through one object's modules
 --
 -- Asked by the discovery, once per object, and the shape of the answer is the

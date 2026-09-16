@@ -39,6 +39,13 @@ function ISCeroSecModuleAction:isValid()
 	-- object is still there (ISWorldObjectContextMenu.lua:1345, the light switch).
 	if self.object:getObjectIndex() == -1 then return false end
 	if not CeroSecModules.fitsOn(self.object, self.module.id) then return false end
+	-- And the moment: the door he started on has swung shut behind him, the oven
+	-- has come on, or the walk put him down on the pavement. The server asks the
+	-- same thing again when the packet lands (SCeroSecSystem:moduleJob), so
+	-- stopping here is what saves him standing through a job that will refuse.
+	if CeroSecModules.fittingRefusal(self.object, self.module.id, self.character) ~= nil then
+		return false
+	end
 
 	local inv = self.character:getInventory()
 	if not inv then return false end

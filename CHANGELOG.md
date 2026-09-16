@@ -8,6 +8,31 @@ date.
 
 ## Unreleased
 
+- **Modules go on from inside, with the door open.** A magnetic contact, a strike,
+  an operator, a curtain motor or a window operator is fitted — and taken off —
+  only from **inside** the building: stand on the pavement and the entry is greyed
+  with *This has to be done from inside*. Otherwise anybody walking past could
+  strip the hardware off your front door without ever coming in, which is what
+  this is really about. An interior door has rooms on both sides and is wired from
+  either. A **generator** is the one exception and takes its switch outdoors,
+  where a generator belongs.
+- **And the thing has to be at rest.** A door or a window has to be **open**, a
+  curtain or a door's sheet **drawn back**, and a stove, a washer, a dryer, a
+  television, a radio set or a generator **switched off** — each with the line
+  that says what to do about it. A light switch asks for nothing: the plate comes
+  off with the light burning. Removing a box asks exactly the same as fitting one.
+- **A new sandbox option: Safehouse members only**, and it is **off**, which is
+  the way it was before. Turn it on and a door, window, light, appliance or set
+  standing inside a safehouse takes a module — and gives one back — only for
+  somebody that safehouse allows: its owner, its members, and an admin. It is for
+  a server where stripping a rival's hardware out of his own hallway was the
+  sabotage nobody wanted. Looting rules are not consulted either way: fitting a
+  module is not looting. Single player has no safehouses, so it does nothing
+  there.
+- A building **already wired** before the outbreak is untouched by all of this:
+  its relays and contacts are written with the world and were never anybody's
+  gesture.
+
 - **Sticky notes are real paper now: read them, write on them with a pen, burn
   them.** A note used to be an item whose only content was its name, which is why
   nobody could work out what it was for. It is a sheet of the game's own paper: the

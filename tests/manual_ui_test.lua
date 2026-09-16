@@ -4115,4 +4115,224 @@ do
 	end
 end
 
+--
+-- The hardware menu on a fixture, and the reason it greys an entry with
+--
+-- The right-click menu on a door, a window, a light switch or an oven. What is
+-- asserted is the WORD: the server decides the same question in one shared
+-- function (CeroSecModules.fittingRefusal) and the entry has to be greyed with
+-- that very answer, or a survivor reads one reason on the menu and meets
+-- another on the wire -- which is the silence this whole rung was written to
+-- avoid, because these commands answer nothing.
+--
+-- The key is BUILT from the reason word (CeroSecModuleMenu.tooltipFor), so what
+-- is checked here is the key a player really gets and not a second list beside
+-- the first.
+--
+
+do
+	_G.Perks = { Electricity = "Electricity" }
+	_G.getItemNameFromFullType = function(fullType) return fullType end
+	_G.luautils = { walkAdj = function() return true end,
+		walkAdjWindowOrDoor = function() return true end }
+	_G.ISTimedActionQueue = { add = function() end }
+	_G.ISCeroSecModuleAction = { new = function() return {} end }
+	_G.SafeHouse = nil
+
+	-- A square, with the two questions the rules ask of one: which room it is in
+	-- (isInARoom, for where HE is standing) and where it is (getX/getY, for the
+	-- safehouse box the FIXTURE stands in).
+	local function square(x, y, inside)
+		return {
+			getX = function() return x end,
+			getY = function() return y end,
+			getZ = function() return 0 end,
+			isInARoom = function() return inside end,
+			getObjects = function() return { size = function() return 0 end } end,
+		}
+	end
+	local inside = square(11, 10, true)
+	local pavement = square(10, 9, false)
+
+	-- A fixture: its class, its square, and the one state getter its module
+	-- reads. modData is real, because installedOn walks it.
+	local function fixture(class, sq)
+		local o = { __class = class, modData = {}, square = sq, open = false,
+			activated = false }
+		o.getSquare = function() return o.square end
+		o.hasModData = function() return true end
+		o.getModData = function() return o.modData end
+		o.transmitModData = function() end
+		o.IsOpen = function() return o.open end
+		o.isActivated = function() return o.activated end
+		o.Activated = function() return o.activated end
+		o.isExterior = function() return true end
+		o.isDoor = function() return true end
+		return o
+	end
+
+	local door = fixture("IsoDoor", inside)
+	local light = fixture("IsoLightSwitch", inside)
+	local stove = fixture("IsoStove", inside)
+
+	local stand = inside
+	local carried = {}
+	local level = 5
+	local player = {
+		getVehicle = function() return nil end,
+		getCurrentSquare = function() return stand end,
+		getUsername = function() return "carter" end,
+		getPerkLevel = function() return level end,
+		getInventory = function()
+			return { getFirstTypeRecurse = function(_, fullType)
+				for i = 1, #carried do
+					if carried[i] == fullType then return { type = fullType } end
+				end
+				return nil
+			end }
+		end,
+	}
+	_G.getSpecificPlayer = function() return player end
+
+	local chunk = assert(loadfile(LUA .. "client/CeroSec/CeroSecModuleMenu.lua"))
+	chunk()
+
+	-- One row of the submenu a right-click on a fixture builds, or nil.
+	--
+	-- Found by the MODULE the option carries and not by its label, because every
+	-- Install line on this menu has the same label key -- the module's name is
+	-- the argument, and the bench's getText answers the key alone. Keyed by the
+	-- label, nine entries would be one and every assertion below would be about
+	-- whichever module happened to come last.
+	local function entry(object, id, install)
+		local want = install and "ContextMenu_CeroSec_Install"
+			or "ContextMenu_CeroSec_Remove"
+		local context = withVanilla(ContextMenu.new())
+		CeroSecModuleMenu.OnFillWorldObjectContextMenu(0, context, { object }, false)
+		for j = 1, #context.subs do
+			local sub = context.subs[j].menu
+			for i = 1, #sub.options do
+				local module = sub.options[i].args and sub.options[i].args[3]
+				if type(module) == "table" and module.id == id
+						and sub.labels[i] == want then
+					return sub.options[i]
+				end
+			end
+		end
+		return nil
+	end
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	carried = { "CeroSec.MagneticContact", "Base.Screwdriver" }
+
+	-- 1. A shut door. The entry is THERE -- he owns the box and can go and fix
+	-- the reason -- and it is greyed with the word the server refuses on.
+	door.open = false
+	local option = entry(door, "contact", true)
+	check("a shut door still offers the install", option ~= nil)
+	eq("greyed", option.notAvailable, true)
+	eq("with the door's own word", option.toolTip.description,
+		"Tooltip_CeroSec_ModuleClosed")
+	eq("which is the word the server refuses on",
+		CeroSecModuleMenu.tooltipFor(
+			CeroSecModules.fittingRefusal(door, "contact", player)),
+		option.toolTip.description)
+
+	-- Open it and the entry comes alive.
+	door.open = true
+	option = entry(door, "contact", true)
+	eq("an open door is not greyed", option.notAvailable, nil)
+	eq("and carries no reason", option.toolTip, nil)
+
+	-- 2. From the pavement, with the door open: the other word.
+	stand = pavement
+	option = entry(door, "contact", true)
+	eq("from outside it is greyed", option.notAvailable, true)
+	eq("with the word for where he is standing", option.toolTip.description,
+		"Tooltip_CeroSec_ModuleOutside")
+	stand = inside
+
+	-- 3. A running oven, which is the other half of the rule: off, not open.
+	carried = { "CeroSec.ApplianceSwitch", "Base.Screwdriver" }
+	stove.activated = true
+	option = entry(stove, "appliance", true)
+	eq("a cooking oven is greyed", option.notAvailable, true)
+	eq("with the word for a machine that is on", option.toolTip.description,
+		"Tooltip_CeroSec_ModuleRunning")
+	stove.activated = false
+	option = entry(stove, "appliance", true)
+	eq("a cold one is not", option.notAvailable, nil)
+
+	-- 4. A light switch asks for nothing at all, lit or not.
+	carried = { "CeroSec.Relay", "Base.Screwdriver" }
+	light.activated = true
+	option = entry(light, "relay", true)
+	eq("a lit switch is not greyed", option.notAvailable, nil)
+
+	-- 5. AND REMOVE IS HELD TO THE SAME RULE. A module anybody could unscrew from
+	-- the pavement is the whole reason the rule exists, so the Remove entry is
+	-- the one that matters most here.
+	carried = { "Base.Screwdriver" }
+	door.modData.cerosec = { contact = true }
+	door.open = true
+	stand = inside
+	option = entry(door, "contact", false)
+	check("a fitted module offers Remove", option ~= nil)
+	eq("and is not greyed from inside with the door open", option.notAvailable, nil)
+
+	door.open = false
+	option = entry(door, "contact", false)
+	eq("a shut door greys the removal", option.notAvailable, true)
+	eq("with the same word the install got", option.toolTip.description,
+		"Tooltip_CeroSec_ModuleClosed")
+
+	door.open = true
+	stand = pavement
+	option = entry(door, "contact", false)
+	eq("and so does the pavement", option.notAvailable, true)
+	eq("with its own", option.toolTip.description, "Tooltip_CeroSec_ModuleOutside")
+	stand = inside
+
+	-- 6. Somebody else's safehouse, through the menu. The gate is the option and
+	-- the fake is the engine's static (see the server bench for the bytecode).
+	local house = { playerAllowed = function() return false end }
+	_G.SafeHouse = { getSafeHouse = function() return house end }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	option = entry(door, "contact", false)
+	eq("a stranger's safehouse greys the entry", option.notAvailable, true)
+	eq("with the word that says whose it is", option.toolTip.description,
+		"Tooltip_CeroSec_ModuleSafehouse")
+	-- And the option OFF is the default and the control.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	option = entry(door, "contact", false)
+	eq("with the option off it is the safehouse of nobody", option.notAvailable, nil)
+	_G.SafeHouse = nil
+
+	-- 7. The reason word IS the key, derived. A word nobody has written a line
+	-- for would come out on the glass as its own name, so the derivation is
+	-- asserted and not just its five answers.
+	eq("the key is built from the word", CeroSecModuleMenu.tooltipFor("safehouse"),
+		"Tooltip_CeroSec_ModuleSafehouse")
+	eq("and from a one-letter one", CeroSecModuleMenu.tooltipFor("x"),
+		"Tooltip_CeroSec_ModuleX")
+
+	-- 8. And the fixture's own old refusals still say what they always said: the
+	-- new words must not have swallowed them.
+	carried = { "CeroSec.Relay", "Base.Screwdriver" }
+	option = entry(door, "relay", true)
+	eq("a relay on a door is still the wrong fixture", option.toolTip.description,
+		"Tooltip_CeroSec_NoFixture")
+	-- The box out of the door and into his bag, so that what is offered is an
+	-- Install again: a module already on a fixture is a Remove and would be a
+	-- different line answering a different question.
+	door.modData.cerosec = nil
+	carried = { "CeroSec.MagneticContact" }
+	door.open = true
+	option = entry(door, "contact", true)
+	eq("and no screwdriver is still no screwdriver", option.toolTip.description,
+		"Tooltip_CeroSec_NeedScrewdriver")
+
+	_G.SandboxVars = nil
+end
+
 print("manual_ui_test: " .. count .. " checks passed")

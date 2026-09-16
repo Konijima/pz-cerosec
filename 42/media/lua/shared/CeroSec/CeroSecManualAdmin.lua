@@ -909,7 +909,7 @@ generator switch at 3.
 Remove gives the box back whole. The device goes with it and its NUMBER
 does not: the same doorN answers next week.
 
-Two entries are greyed out, both about the fixture:
+Two are greyed for what the fixture IS:
 
   a strike on an interior door
       a key there stops nobody: the lock would lie
@@ -919,6 +919,30 @@ Two entries are greyed out, both about the fixture:
 A boarded window and a broken stove are NOT greyed out. Those are things
 the fixture is doing today, not what it is: the box goes on, and the
 device says so until somebody fixes it.]],
+
+[[With the door open, and from inside.
+
+A box goes on -- and comes off -- only from INSIDE. Stand on the
+pavement and every entry is greyed: otherwise anybody walking past
+strips the hardware off your front door without coming in. An interior
+door has rooms on both sides and is wired from either. A generator is
+the one exception and takes its switch outdoors, where it belongs.
+
+And the thing has to be at rest:
+
+  a door, a window          open
+  a curtain, a door's sheet drawn back
+  a stove, a washer, a set  switched off
+  a generator               stopped
+  a light switch            nothing at all
+
+Taking a box off asks the same. The light switch asks nothing at all:
+the plate comes off with the light burning.
+
+If your server turned SAFEHOUSE MEMBERS ONLY on, a fixture inside a
+safehouse takes a box, and gives one back, only for its owner, its
+members or an admin. It is off unless somebody turned it on, and a
+single-player game has no safehouses.]],
 
 [[Reading that table.
 

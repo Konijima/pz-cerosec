@@ -530,6 +530,41 @@ fixture rather than about you: a **strike on an interior door** (a key there
 stops nobody, so the lock would be a device that lies) and an **operator on a
 garage or double door** (a machine moves one leaf and would leave the rest shut).
 
+**With the door open, and from inside.** A box goes on — and comes off — only
+from **inside** the building. Stand on the pavement and every entry is greyed
+with *This has to be done from inside*, because otherwise anybody walking past
+strips the hardware off your front door without ever coming in. An interior door
+has rooms on both sides and is wired from either. A **generator** is the one
+exception: it takes its switch outdoors, where a generator belongs.
+
+And the thing has to be at rest — open for what opens, off for what switches on:
+
+| fixture | must be | what the greyed entry says |
+| --- | --- | --- |
+| a door, a window | open | *Open it first.* |
+| a curtain, or a door's own sheet | drawn back | *Draw the curtain back first.* |
+| a stove, a washer, a dryer | switched off | *Switch it off first.* |
+| a television, a radio set | switched off | *Switch it off first.* |
+| a generator | stopped | *Switch it off first.* |
+| a light switch | nothing at all | — |
+
+**Remove asks exactly the same**, which is the half the first rule is really
+about. A light switch is the one that asks nothing: the plate comes off with the
+light burning.
+
+**Somebody else's safehouse.** There is a sandbox option,
+**Safehouse members only** (`CeroSec.SafehouseModules`), **off** by default. With
+it on, a fixture standing inside a safehouse takes a module — and gives one back
+— only for somebody that safehouse allows: its owner, its members, and an admin.
+It is there for a server where stripping a rival's hardware out of his own
+hallway was the sabotage nobody wanted. A safehouse's own looting rules are not
+consulted either way: fitting a module is not looting, and nothing leaves the
+building. In single player there are no safehouses, so the option does nothing.
+
+None of this touches a building that was **already wired** before the outbreak:
+that hardware is written on at world generation and is not a gesture anybody
+made, so a shut door in a safehouse still has its relays on it.
+
 The **number does not move** for any of this. It hangs on where the device is and
 which kind it is, so a contact taken off and put back a week later is the same
 `doorN` a script wrote down. Only the mode moves — back to what a device of that

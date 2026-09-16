@@ -2735,6 +2735,12 @@ function FakeWorld.new()
 		sq.getY = function() return y end
 		sq.getZ = function() return z end
 		sq.getRoom = function() return room end
+		-- Inside, which is what the fitting rules ask of the square a survivor is
+		-- standing on. The engine's isInARoom() is `getRoom() != null ||
+		-- getIsoWorldRegion().isPlayerRoom()` (javap -c, offsets 0-31); on a MAP
+		-- square the second half is what a player-built base answers and no bench
+		-- room here is one, so the room alone decides.
+		sq.isInARoom = function() return room ~= nil end
 		-- The square's own RoomDef, which is the door CeroSecNet.roomDefAt goes
 		-- through: IsoGridSquare.getRoomDef is getRoom() and then
 		-- IsoRoom.getRoomDef(), null without a room. It is what decides WHICH
@@ -12515,6 +12521,12 @@ do
 		if perk ~= Perks.Electricity then return 0 end
 		return level
 	end
+	-- WHERE HE IS STANDING, for real. The fitting rules ask his own square
+	-- whether it is inside (CeroSecModules.fittingRefusal -> isInARoom), and the
+	-- bench's default player square is a stub with nothing on it but a Z. He is
+	-- at 10.5,10.5, which is the office -- a room, so he is inside, which is what
+	-- every send below assumes. The refusal from the pavement is its own section.
+	bench.player.getCurrentSquare = function() return kit.world.squares["10,10,0"] end
 	bench.login("admin")
 
 	-- One packet, the way a client sends it.
@@ -12536,6 +12548,19 @@ do
 	-- prove nothing about it.
 	local SQ = { 11, 10 }
 	local DOOR, LIGHT = 0, 1
+
+	-- A DOOR HAS TO BE OPEN to take a module or give one back, and that is a
+	-- precondition here and not the thing being proved: the rule has its own
+	-- section below. It matters that the sends about the LEVEL and the TOOL open
+	-- the door first, because the server asks the fitting rules BEFORE either of
+	-- those -- so a shut door would make those assertions green for a reason that
+	-- has nothing to do with what they are named after.
+	local function withOpen(object, fn)
+		local was = object.open
+		object.open = true
+		fn()
+		object.open = was
+	end
 
 	-- Nothing at all: no module in the bag.
 	level = 5
@@ -12591,8 +12616,11 @@ do
 	send("installmodule", 11, 11, 0, "strike")
 	eq("no strike on a door whose lock means nothing", fittedOn(kit.inner, "strike"), false)
 	check("and the strike is still his", carrying("CeroSec.ElectricStrike"))
-	-- The front door is the way out of the building, and that one takes it.
-	send("installmodule", SQ[1], SQ[2], DOOR, "strike")
+	-- The front door is the way out of the building, and that one takes it --
+	-- with the door open, the way a survivor does it.
+	withOpen(kit.front, function()
+		send("installmodule", SQ[1], SQ[2], DOOR, "strike")
+	end)
 	eq("the strike is on the front door", fittedOn(kit.front, "strike"), true)
 	check("and it left his bag", not carrying("CeroSec.ElectricStrike"))
 
@@ -12600,10 +12628,14 @@ do
 	-- MODULE and not for the mod.
 	inv:add("CeroSec.DoorOperator")
 	level = 2
-	send("installmodule", 11, 11, 0, "operator")
+	withOpen(kit.inner, function()
+		send("installmodule", 11, 11, 0, "operator")
+	end)
 	eq("two levels is not enough for an operator", fittedOn(kit.inner, "operator"), false)
 	level = 3
-	send("installmodule", 11, 11, 0, "operator")
+	withOpen(kit.inner, function()
+		send("installmodule", 11, 11, 0, "operator")
+	end)
 	eq("three is", fittedOn(kit.inner, "operator"), true)
 	bench.enter("echo open > /dev/door0")
 	bench.frame()
@@ -12648,20 +12680,28 @@ do
 
 	-- Taking one off asks for the trade and the tool, like fitting one.
 	level = 0
-	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	withOpen(kit.front, function()
+		send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	end)
 	eq("no trade, no removal", fittedOn(kit.front, "strike"), true)
 	level = 5
 	inv:Remove(inv:getFirstTypeRecurse("Base.Screwdriver"))
-	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	withOpen(kit.front, function()
+		send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	end)
 	eq("no tool, no removal", fittedOn(kit.front, "strike"), true)
 	inv:add("Base.Screwdriver")
-	send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	withOpen(kit.front, function()
+		send("uninstallmodule", SQ[1], SQ[2], DOOR, "strike")
+	end)
 	eq("with both, the strike comes off", fittedOn(kit.front, "strike"), false)
 	check("and it is his again", carrying("CeroSec.ElectricStrike"))
 	-- One module off a fixture that carries two leaves the other one alone.
 	fit(kit.front, "contact")
 	fit(kit.front, "strike")
-	send("uninstallmodule", SQ[1], SQ[2], DOOR, "contact")
+	withOpen(kit.front, function()
+		send("uninstallmodule", SQ[1], SQ[2], DOOR, "contact")
+	end)
 	eq("the contact came off", fittedOn(kit.front, "contact"), false)
 	eq("and the strike beside it did not", fittedOn(kit.front, "strike"), true)
 
@@ -12694,6 +12734,367 @@ do
 			CeroSecDevices.cache[FAR], nil)
 	end
 
+	_G.__world = nil
+	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
+end
+
+
+--
+-- 43c-bis. The fitting rules: inside, open or off, and whose safehouse it is
+--
+-- Three refusals on top of the fit, all of them about the MOMENT rather than
+-- about the shape of the fixture, all of them decided server-side in the same
+-- function the right-click menu greys the entry with
+-- (CeroSecModules.fittingRefusal). What is asserted is what did NOT happen --
+-- the module is not on the fixture and the item is still in his bag -- because
+-- these commands answer nothing.
+--
+--   outside    a module on a building's skin comes off from the pavement
+--              otherwise, which is an enemy stripping somebody's front door
+--              without ever coming in. Asked of HIS square (isInARoom), so an
+--              interior door is allowed from both sides and a generator, which
+--              is an outdoor machine by construction, is exempt.
+--   closed     nobody screws an operator to a door while it is shut, and
+--   drawn      nobody reaches behind a sheet he has not pulled back
+--   running    and nobody puts a contactor in an oven that is cooking
+--   safehouse  and on a server that asked for it, nobody wires a door in
+--              somebody else's safehouse
+--
+-- Every one of them is asked of a REMOVAL exactly as it is of a fitting: the
+-- hand is in the same place either way, and the stripping is the half the first
+-- rule exists for.
+--
+do
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	-- No room, so this is the pavement: the far side of the front door.
+	local pavement = world.square(10, 9, 0, nil)
+
+	-- Everything on one square inside, and the generator outside where a
+	-- generator belongs. The index on the square is what names each one to the
+	-- server, so they are read back off the list rather than counted here.
+	local IN = world.squares["11,10,0"]
+	local door = world.put(IN, fakeDoor(false, false, pavement, true))
+	local window = world.put(IN, fakeWindow(false, true))
+	local curtain = world.put(IN, fakeCurtain(true))
+	local stove = world.put(IN, fakeStove(false))
+	local tv = world.put(IN, fakeWaveSet("IsoTelevision", {}))
+	local light = world.put(IN, fakeLight(true, true))
+	-- A door with a SHEET on it: one fixture and two jobs, which is the case
+	-- that proves the state asked for is the state of what the MODULE is screwed
+	-- to and not of the object it happens to sit on.
+	local sheeted = world.put(IN, fakeDoor(false, true, pavement, true))
+	sheeted.hasCurtain = true
+	local gen = world.put(pavement, fakeGenerator(false, 60, 80, true))
+
+	local function indexOf(square, object)
+		local list = square.objects
+		for i = 1, #list do
+			if list[i] == object then return i - 1 end
+		end
+		return nil
+	end
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	_G.Perks = { Electricity = "Electricity" }
+
+	local bench = newBench()
+	local inv = newInventory()
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function() return 5 end
+	bench.player.getUsername = function() return "carter" end
+	inv:add("Base.Screwdriver")
+
+	-- WHERE HE IS STANDING, moved by the bench. The float position follows the
+	-- square, because isAdjacent reads getX/getY and the room test reads the
+	-- square: a bench that moved one and not the other would be a survivor in
+	-- two places.
+	local stand = world.squares["10,10,0"]
+	bench.player.getCurrentSquare = function() return stand end
+	bench.player.getX = function() return stand:getX() + 0.5 end
+	bench.player.getY = function() return stand:getY() + 0.5 end
+	bench.login("admin")
+
+	local function send(command, square, object, id)
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = square:getX(), y = square:getY(), z = 0,
+				index = indexOf(square, object), module = id })
+		bench.frame()
+	end
+	local function fittedOn(object, id)
+		return CeroSecModules.installedOn(object)[id] == true
+	end
+	-- One fitting, tried with the bag stocked afresh each time so that "it did
+	-- not go on" is never "he had nothing to put on".
+	local function tryFit(square, object, id)
+		local module = CeroSecModules.byId(id)
+		if inv:getFirstTypeRecurse(module.item) == nil then inv:add(module.item) end
+		send("installmodule", square, object, id)
+		return fittedOn(object, id)
+	end
+
+	--
+	-- 1. INSIDE, and it is HIS square that decides
+	--
+	-- THE DOOR IS OPEN for this one, deliberately: a shut door is refused by the
+	-- state rule below and the assertion would be green for a rule it is not
+	-- about. Only where he stands is wrong here.
+	door.open = true
+	stand = pavement
+	check("from the pavement the front door takes nothing",
+		not tryFit(IN, door, "contact"))
+	check("and the contact is still his",
+		inv:getFirstTypeRecurse("CeroSec.MagneticContact") ~= nil)
+	eq("and the word is outside",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), "outside")
+
+	-- The same survivor, the same door, one tile the other way.
+	stand = world.squares["10,10,0"]
+	check("from inside, with the door open, it goes on",
+		tryFit(IN, door, "contact"))
+	eq("and nothing is left in his bag",
+		inv:getFirstTypeRecurse("CeroSec.MagneticContact"), nil)
+	eq("and there is no refusal to give",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+
+	-- AND THE REMOVAL IS HELD TO IT TOO, which is the half the rule exists for:
+	-- a module anybody could unscrew from the pavement is a module the pavement
+	-- owns.
+	stand = pavement
+	send("uninstallmodule", IN, door, "contact")
+	eq("the contact does not come off from outside", fittedOn(door, "contact"), true)
+	stand = world.squares["10,10,0"]
+	send("uninstallmodule", IN, door, "contact")
+	eq("and from inside it does", fittedOn(door, "contact"), false)
+
+	-- THE GENERATOR IS THE ONE EXEMPTION. It is an outdoor machine by
+	-- construction, so a rule that wanted a room round it would be a module
+	-- nobody could ever fit.
+	stand = pavement
+	check("a generator takes its switch out on the pavement",
+		tryFit(pavement, gen, "genset"))
+	eq("and asks nothing about a room",
+		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
+	send("uninstallmodule", pavement, gen, "genset")
+	eq("and gives it back out there too", fittedOn(gen, "genset"), false)
+	stand = world.squares["10,10,0"]
+
+	--
+	-- 2. OPEN FOR WHAT OPENS, OFF FOR WHAT SWITCHES ON
+	--
+	door.open = false
+	check("a shut door takes no strike", not tryFit(IN, door, "strike"))
+	eq("and says so as closed",
+		CeroSecModules.fittingRefusal(door, "strike", bench.player), "closed")
+	door.open = true
+	check("an open one takes it", tryFit(IN, door, "strike"))
+	-- And off again, to prove the removal asks the same question.
+	door.open = false
+	send("uninstallmodule", IN, door, "strike")
+	eq("a shut door gives nothing back", fittedOn(door, "strike"), true)
+	door.open = true
+	send("uninstallmodule", IN, door, "strike")
+	eq("an open one does", fittedOn(door, "strike"), false)
+
+	window.open = false
+	check("a shut window takes no operator", not tryFit(IN, window, "window"))
+	eq("closed, the same word a door gives",
+		CeroSecModules.fittingRefusal(window, "window", bench.player), "closed")
+	window.open = true
+	check("an open sash takes it", tryFit(IN, window, "window"))
+
+	curtain.open = false
+	check("a drawn curtain takes no motor", not tryFit(IN, curtain, "curtain"))
+	eq("and the word is its own", 
+		CeroSecModules.fittingRefusal(curtain, "curtain", bench.player), "drawn")
+	curtain.open = true
+	check("an open one takes it", tryFit(IN, curtain, "curtain"))
+
+	-- ONE FIXTURE, TWO JOBS, TWO ANSWERS. The sheet is on the door, so a curtain
+	-- motor asks about the sheet and a strike on that same door asks about the
+	-- door. A rule written per FIXTURE instead of per module could not tell the
+	-- two apart, and one of the two would be asked the wrong question.
+	sheeted.open = true
+	sheeted.curtainOpen = false
+	eq("a door whose sheet is drawn refuses the motor",
+		CeroSecModules.fittingRefusal(sheeted, "curtain", bench.player), "drawn")
+	eq("and takes the strike all the same",
+		CeroSecModules.fittingRefusal(sheeted, "strike", bench.player), nil)
+	sheeted.open = false
+	sheeted.curtainOpen = true
+	eq("shut, with the sheet back, it is the strike that is refused",
+		CeroSecModules.fittingRefusal(sheeted, "strike", bench.player), "closed")
+	eq("and the motor that goes on",
+		CeroSecModules.fittingRefusal(sheeted, "curtain", bench.player), nil)
+
+	stove.activated = true
+	check("a cooking oven takes no contactor", not tryFit(IN, stove, "appliance"))
+	eq("running", CeroSecModules.fittingRefusal(stove, "appliance", bench.player),
+		"running")
+	stove.activated = false
+	check("a cold one takes it", tryFit(IN, stove, "appliance"))
+
+	tv.data.on = true
+	check("a television that is on takes no tuner", not tryFit(IN, tv, "tuner"))
+	eq("running, off the device data and not off the set",
+		CeroSecModules.fittingRefusal(tv, "tuner", bench.player), "running")
+	tv.data.on = false
+	check("switched off it takes it", tryFit(IN, tv, "tuner"))
+
+	gen.activated = true
+	check("a running generator takes no switch", not tryFit(pavement, gen, "genset"))
+	eq("running", CeroSecModules.fittingRefusal(gen, "genset", bench.player),
+		"running")
+	gen.activated = false
+
+	-- AND A LIGHT SWITCH ASKS FOR NOTHING. A relay goes behind a plate whose
+	-- only state is the light it works, and a rule that wanted the light off
+	-- would be a rule about nothing.
+	light.activated = true
+	eq("a lit switch has no state to refuse on",
+		CeroSecModules.fittingRefusal(light, "relay", bench.player), nil)
+	check("and the relay goes on with the light burning",
+		tryFit(IN, light, "relay"))
+
+	--
+	-- 3. SOMEBODY ELSE'S SAFEHOUSE
+	--
+	-- The engine's own static, faked to the bytecode: getSafeHouse(square) is
+	-- isSafeHouse(square, null, false) down to findSafeHouse, a walk of the list
+	-- comparing the SQUARE's x and y against each box (offsets 28-69). It is
+	-- asked of the FIXTURE's square, so a man on the pavement outside a
+	-- safehouse is exactly the case, and that is what the bench moves.
+	--
+	-- playerAllowed(IsoPlayer) is `players.contains(getUsername()) ||
+	-- owner.equals(getUsername()) || role.hasCapability(CanGoInsideSafehouses)`
+	-- (offsets 0-46). The third is a Java field read with nothing in Lua behind
+	-- it, so the fake stands in for it with a flag and the three ways in are all
+	-- three moved below.
+	local house = { x = 11, y = 10, x2 = 12, y2 = 11,
+		owner = "king", members = { hall = true } }
+	house.playerAllowed = function(self, player)
+		if self.members[player:getUsername()] then return true end
+		if self.owner == player:getUsername() then return true end
+		return player.admin == true
+	end
+	_G.SafeHouse = {
+		getSafeHouse = function(square)
+			if square == nil then return nil end
+			local x, y = square:getX(), square:getY()
+			if x < house.x or x >= house.x2 then return nil end
+			if y < house.y or y >= house.y2 then return nil end
+			return house
+		end,
+	}
+
+	local function clear()
+		for i = 1, #CeroSecModules.LIST do
+			CeroSecModules.setOn(door, CeroSecModules.LIST[i].id, false)
+		end
+	end
+	door.open = true
+	clear()
+
+	-- The option OFF is the world as it was: a stranger in the hallway wires the
+	-- door and nobody stops him. That is the DEFAULT, so it is the control.
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	check("with the option off a stranger fits a contact",
+		tryFit(IN, door, "contact"))
+	eq("and there is no refusal to give",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+	clear()
+
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	eq("with it on the same stranger is refused",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), "safehouse")
+	check("and the module stays in his bag", not tryFit(IN, door, "contact"))
+	check("which is still his", inv:getFirstTypeRecurse("CeroSec.MagneticContact") ~= nil)
+
+	-- And a module already there stays there: the gate is both ways, which is
+	-- the sabotage it was asked for.
+	fit(door, "contact")
+	send("uninstallmodule", IN, door, "contact")
+	eq("a stranger takes nothing off it either", fittedOn(door, "contact"), true)
+	clear()
+
+	-- A member, the owner, and an admin: vanilla's own three ways in.
+	house.members = { carter = true }
+	eq("a member of the safehouse is allowed",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+	check("and fits it", tryFit(IN, door, "contact"))
+	clear()
+
+	house.members = {}
+	house.owner = "carter"
+	eq("the owner is allowed",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+	house.owner = "king"
+
+	bench.player.admin = true
+	eq("and an admin passes on the capability vanilla reads",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+	bench.player.admin = nil
+
+	-- A fixture OUTSIDE the box is nobody's: the generator on the pavement is one
+	-- tile west of it, and findSafeHouse answers null for that square.
+	eq("a fixture the safehouse does not cover is open to anybody",
+		CeroSecModules.fittingRefusal(gen, "genset", bench.player), nil)
+
+	-- SINGLE PLAYER. There is no safehouse list to walk, and the guard is on the
+	-- global itself: a nil call here would be a mod that cannot fit a module in a
+	-- single-player game at all.
+	local saved = _G.SafeHouse
+	_G.SafeHouse = nil
+	eq("with no SafeHouse at all the option is nothing",
+		CeroSecModules.fittingRefusal(door, "contact", bench.player), nil)
+	check("and the fitting goes through", tryFit(IN, door, "contact"))
+	_G.SafeHouse = saved
+	clear()
+
+	--
+	-- 4. THE 1991 WALK IS NOT AFFECTED, because it is not a player action: it
+	-- writes the modData itself and never comes past any of this. A fixture shut,
+	-- in a stranger's safehouse, with the option on, still gets its hardware.
+	--
+	door.open = false
+	check("the pre-fitting writes through a shut door in somebody else's house",
+		CeroSecModules.setOn(door, "contact", true))
+	eq("and the module is on it", fittedOn(door, "contact"), true)
+	check("and the mark goes on beside it", CeroSecModules.markPreFitted(door))
+	check("and reads back", CeroSecModules.preFitted(door))
+	clear()
+
+	--
+	-- 5. EVERY REASON WORD IS A STRING THE MOD SHIPS, in both languages. The menu
+	-- builds the key from the word (CeroSecModuleMenu.tooltipFor), so a word
+	-- nobody wrote a line for comes out on the glass as its own key.
+	--
+	local WORDS = { "outside", "closed", "drawn", "running", "safehouse" }
+	for _, lang in ipairs({ "EN", "FR" }) do
+		local handle = assert(io.open(
+			"42/media/lua/shared/Translate/" .. lang .. "/Tooltip.json", "r"))
+		local strings = handle:read("*a")
+		handle:close()
+		for w = 1, #WORDS do
+			local key = "Tooltip_CeroSec_Module" ..
+				string.upper(string.sub(WORDS[w], 1, 1)) .. string.sub(WORDS[w], 2)
+			check(lang .. " Tooltip.json defines " .. key,
+				string.find(strings, '"' .. key .. '"', 1, true) ~= nil)
+		end
+	end
+
+	-- And the option is declared where the game reads it from.
+	local handle = assert(io.open("42/media/sandbox-options.txt", "r"))
+	local options = handle:read("*a")
+	handle:close()
+	check("the safehouse option is declared",
+		string.find(options, "option CeroSec." .. CeroSecModules.SANDBOX_SAFEHOUSE,
+			1, true) ~= nil)
+	check("and it defaults to false, which is the old behaviour",
+		string.find(options, "option CeroSec.SafehouseModules%s*{[^}]*default = false") ~= nil)
+
+	_G.SafeHouse = nil
 	_G.__world = nil
 	_G.SandboxVars = { CeroSec = { HardwareRequired = false, PrefilledMachines = false } }
 end
@@ -18837,7 +19238,12 @@ do
 				getOnlineID = function() return -1 end,
 				isDead = function() return false end,
 				playSoundLocal = function() end,
-				getCurrentSquare = function() return { getZ = function() return 0 end } end,
+				-- His real square, because the fitting rules ask it whether he is
+				-- inside (CeroSecModules.fittingRefusal): he is standing on the
+				-- shop floor, which is a room of this building.
+				getCurrentSquare = function()
+					return kit.world.squares[(bx + 1) .. "," .. (by + 1) .. ",0"]
+				end,
 				getX = function() return bx + 1.5 end,
 				getY = function() return by + 1.5 end,
 				getInventory = function() return inv end,

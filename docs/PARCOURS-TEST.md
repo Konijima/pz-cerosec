@@ -3748,6 +3748,56 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `sudo cat /var/spool/cron/*`. Une maison (`residential`) n'a rien de tout ça
      et n'a pas de crontab du tout. [ ]
 
+## AO. Poser un module : dedans, ouvert, et le refuge (palier pose)
+
+Un module se pose et se retire **de l'intérieur**, sur une chose **ouverte** ou
+**éteinte**, et — si le serveur a activé l'option — seulement par un membre du
+refuge. Les trois refus sont décidés côté serveur et le menu grise l'entrée avec
+le **même mot**. Le tableau complet est dans
+[DEVICES.md](DEVICES.md#the-hardware-modules).
+
+405. **Depuis le trottoir, rien.** Une porte extérieure ouverte, un contact
+     magnétique, un tournevis et Électricité 1. Se placer **dehors**, clic droit
+     sur la porte → Matériel CeroSec → Installer : l'entrée est **grisée**,
+     infobulle « Ça se fait de l'intérieur. ». Faire un pas à l'intérieur, même
+     clic droit : l'entrée est vivante et la pose se fait. [ ]
+406. **Une porte fermée ne prend rien.** Refermer la porte, clic droit →
+     l'entrée est grisée, « Ouvrez-la d'abord. ». Rouvrir : elle repart. Même
+     essai sur une **fenêtre** fermée avec un opérateur de fenêtre en poche :
+     même mot. [ ]
+407. **Un rideau tiré, un appareil qui marche.** Rideau fermé + moteur de rideau
+     → grisé, « Tirez le rideau d'abord. ». Four allumé + interrupteur
+     d'appareil → grisé, « Éteignez-le d'abord. ». Téléviseur allumé + contrôle
+     de tuner → même mot. Génératrice en marche + interrupteur de groupe → même
+     mot. Éteindre chaque chose : chaque entrée repart. [ ]
+408. **L'interrupteur ne demande rien, la génératrice non plus.** Poser un relais
+     sur un interrupteur **avec la lumière allumée** : ça passe. Poser un
+     interrupteur de groupe sur une génératrice **dehors, sur le trottoir** : ça
+     passe aussi — c'est la seule exception à la règle du dedans. [ ]
+409. **Retirer demande la même chose.** Avec un module posé sur une porte
+     intérieure ouverte : clic droit → Retirer fonctionne. Refermer la porte →
+     Retirer est grisé, « Ouvrez-la d'abord. ». Sortir sur le trottoir avec la
+     porte ouverte → grisé, « Ça se fait de l'intérieur. ». C'est la moitié qui
+     compte : sans elle, n'importe qui dévisse le matériel de dehors. [ ]
+410. **Une porte intérieure se câble des deux côtés.** Une porte entre deux
+     pièces, ouverte : le menu est vivant depuis l'une **et** depuis l'autre. [ ]
+411. **L'option du refuge (multijoueur).** Dans le bac à sable, activer
+     **Membres du refuge seulement**. Un joueur revendique un refuge; un autre
+     joueur, non membre, se place devant une porte du refuge avec un contact et
+     un tournevis → l'entrée est grisée, « C'est le refuge de quelqu'un
+     d'autre. », et Retirer l'est aussi. L'ajouter au refuge : les deux entrées
+     repartent. Le propriétaire et un **admin** passent sans rien faire de plus.
+     Une porte **hors** du rectangle du refuge reste ouverte à tout le monde. [ ]
+412. **Et l'option désactivée est la valeur par défaut.** La remettre à
+     désactivé (c'est son état d'origine) : le même non-membre pose et retire le
+     module sans rien demander à personne. En **solo**, l'option activée ne
+     change rien du tout — il n'y a pas de refuge. [ ]
+413. **Le bâtiment déjà câblé n'est pas touché.** Dans un commerce pré-équipé
+     (section AE), avec l'option du refuge activée et les portes fermées : les
+     modules d'avant l'épidémie sont **toujours là** et `dev` les voit. La pose
+     de 1991 n'est pas un geste de joueur et ne passe par aucune de ces
+     règles. [ ]
+
 ## Rapport
 
 | Étape | OK/KO | Note |

@@ -52,3 +52,32 @@ option CeroSec.PrefilledMachines
     page = CeroSec,
     translation = CeroSec_PrefilledMachines,
 }
+
+/* May anybody fit and remove modules on a fixture standing in somebody else's
+ * safehouse?
+ *
+ * OFF, which is the world as it was before this option existed and the default
+ * a new option of ours takes (the compatibility contract): the safehouse is no
+ * gate at all and any survivor with the box, the tool and the trade may wire the
+ * door he is standing at.
+ *
+ * On, a fixture inside a safehouse takes a module only from somebody that
+ * safehouse allows -- its owner, its members, and an admin, which is vanilla's
+ * own answer (SafeHouse.playerAllowed reads the capability
+ * CanGoInsideSafehouses). It is there for a server where stripping a rival's
+ * hardware from his own hallway was the sabotage nobody wanted.
+ *
+ * It has no effect in single player: there are no safehouses, so no fixture
+ * stands in one.
+ *
+ * The safehouse's own vanilla rule about LOOTING is not consulted either way.
+ * Fitting is not looting -- nothing leaves the building -- so this option is the
+ * only gate there is.
+ */
+option CeroSec.SafehouseModules
+{
+    type = boolean,
+    default = false,
+    page = CeroSec,
+    translation = CeroSec_SafehouseModules,
+}

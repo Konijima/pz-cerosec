@@ -1548,6 +1548,15 @@ function SCeroSecSystem:moduleJob(playerObj, x, y, z, args)
 	if object == nil then return nil end
 	if not CeroSecModules.fitsOn(object, module.id) then return nil end
 
+	-- And the three the moment decides: whose safehouse the fixture stands in,
+	-- whether he is inside the building at all, and whether the thing is shut or
+	-- switched off (CeroSecModules.fittingRefusal). The SAME function the menu
+	-- greys the entry with, which is what makes a greyed entry a gesture the
+	-- server would refuse -- and this is where it is DECIDED, because the client
+	-- half of it is a courtesy and this is the rule. Asked here rather than in
+	-- each command so that a removal is held to it exactly as a fitting is.
+	if CeroSecModules.fittingRefusal(object, module.id, playerObj) ~= nil then return nil end
+
 	-- What he knows. Perks.Electricity is the game's own table and the level is
 	-- the module's (CeroSecModules.LIST).
 	if playerObj:getPerkLevel(Perks.Electricity) < module.skill then return nil end
