@@ -1,0 +1,13 @@
+{
+    "MakeCeroSecMagneticContact": "Make Magnetic Contact",
+    "MakeCeroSecRelay": "Make Relay",
+    "MakeCeroSecElectricStrike": "Make Electric Strike",
+    "MakeCeroSecDoorOperator": "Make Door Operator",
+    "MakeCeroSecCurtainMotor": "Make Curtain Motor",
+    "MakeCeroSecApplianceSwitch": "Make Appliance Switch",
+    "MakeCeroSecWindowOperator": "Make Window Operator",
+    "MakeCeroSecGeneratorSwitch": "Make Generator Switch",
+    "MakeCeroSecTunerControl": "Make Tuner Control",
+    "DismantleCeroSecMotorAppliance": "Dismantle Appliance for Motor",
+    "DismantleCeroSecMotorCDPlayer": "Dismantle CD Player for Motor"
+}

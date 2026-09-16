@@ -323,6 +323,130 @@ in `media/scripts/generated/items/`:
 `Base.Electronics`, `Base.Magnet` and `Base.CopperWire` do **not** exist in B42
 and are in none of these recipes.
 
+### 8a. The name a player reads
+
+A `craftRecipe` carries no display name of its own. The menu asks
+`Translator.getRecipeName(name)`
+(`media/lua/client/ISUI/ISInventoryPaneContextMenu.lua:1236-1238`), and that is a
+lookup in one map with the **raw recipe name** as the key — no `Recipe_` prefix,
+no module prefix:
+
+```
+zombie.core.Translator.getRecipeName(java.lang.String)
+   0: getstatic  #101  // Field recipe:Ljava/util/Map;
+   4: Map.get
+  14: ifnull 24
+  18: String.isEmpty
+  21: ifeq 63
+  61: aload_0       <- the KEY it was handed
+  62: areturn
+  63: aload_1       <- the translation
+  64: areturn
+```
+
+Offsets 61-62 are the whole reason this matters: a miss, **or an empty string**,
+returns the key itself and logs nothing, so the right-click menu prints
+`DismantleCeroSecMotorCDPlayer` at the player and the game looks like it is
+working. That is what shipped before the names were written.
+
+The map is the one the file called `Recipes` fills. `Translator$1` is the
+`BY_NAME` map and its body puts them together:
+
+```
+  24: aload_0
+  25: ldc  #26   // String Recipes
+  27: getstatic  #28  // Field zombie/core/Translator.recipe:Ljava/util/Map;
+  30: put
+  35: ldc  #31   // String RecipeGroups
+  37: getstatic  #33  // Field zombie/core/Translator.recipeGroups:Ljava/util/Map;
+```
+
+and `Translator.lambda$loadFiles$1` calls `tryFillMapFromFile` and then
+`tryFillMapFromMods` for every `BY_NAME` entry (offsets 20 and 26), which is how
+a mod's own `Translate/<LANG>/Recipes.json` lands in the same map as vanilla's.
+So the file is `42/media/lua/shared/Translate/<LANG>/Recipes.json` and the key is
+the bare name, exactly as vanilla writes it:
+
+```
+    "CraftMakeshiftRadio": "Make Makeshift Radio",
+    "DismantleElectronics": "Dismantle Simple Electronic Item",
+    "DismantleMiscElectronics": "Dismantle Electronic Item",
+```
+
+`RecipeGroups.json` is a different map (`getRecipeGroupName`, the same
+return-the-key shape) and vanilla's whole English file is one line,
+`"RecipeGroup_OpenBox"`. Nothing this mod writes is a recipe group: `category =
+Electrical` is the crafting tab, not a group, so there is no file to add.
+
+Forty-seven of vanilla's recipe names begin `Dismantle` and not one contains
+`Salvage`, so the two motor recipes are `Dismantle …` too.
+
+### 8b. Why the motor is its own recipe and not an output of vanilla's
+
+The question that keeps coming back: why not simply make `CeroSec.SmallMotor` a
+second output of vanilla's own `DismantleMiscElectronics`, so that taking a CD
+player apart the usual way pays the motor and this mod adds no menu entry at all?
+Three things were looked at in the jar. None of them works.
+
+**A second block with the same name is additive, and that is the problem.** It is
+worth saying exactly, because "the mod replaces vanilla's block" is the usual
+assumption and it is wrong here. `ScriptBucket.CreateFromTokenPP` at offsets
+88-146: when `loadData` already holds the name, the existing script object is
+kept and the new body is **appended** to `LoadData.scriptBodies`.
+`ScriptBucket.LoadScripts` at offsets 157-218 then walks the bodies in order and
+calls `Load` on the one object for each. Between bodies it calls `reset()` only
+if the type carries `ScriptType$Flags.ResetExisting` (offsets 183-205) — and
+`CraftRecipe` does carry it, by the default flag set every `ScriptType` with a
+null `flags` field is given in the enum's static block (offsets 818-832, the set
+built at 644-681). It costs nothing all the same:
+`zombie.scripting.objects.BaseScriptObject.reset()` is `0: return`, and
+`zombie.scripting.entity.components.crafting.CraftRecipe` does not override it.
+So bodies blend. `CraftRecipe.LoadIO` only ever calls `outputs.add` and
+`inputs.add` (offsets 474-479 and 332-337) — there is no `clear` anywhere in it.
+
+A mod could therefore declare `module Base { craftRecipe DismantleMiscElectronics
+{ outputs { item 1 CeroSec.SmallMotor, } } }` and the motor would be added to
+vanilla's list. It would also be added for **every** input of that recipe: a TV
+remote, a speaker and a home alarm all pay a motor. `DismantleElectronics` is
+worse, because its input is a tag query (`tags[base:camera;base:digital;
+base:miscelectronic;base:flashlight]`) and a digital watch would pay one too.
+
+**The mapper can say "nothing", but it cannot be attached.** An `itemMapper` is
+keyed by the OUTPUT and matched against the consumed inputs, and
+`OutputMapper.getOutputItem` returns **null** when no entree matched and
+`defaultOutputEntree` is null (offsets 209-213 falling to 272: `aconst_null;
+areturn`) — so a mapper with no `default` really does yield no item for the
+inputs it does not name. Every `default` vanilla writes is an item type; there is
+no "nothing" token, and none is needed. But a mapper only sees the inputs that
+were **registered** with it, and registration comes from the `mappers[...]` list
+written on the input line itself — `InputScript`, offsets 1590-1602:
+`CraftRecipe.getOrCreateOutputMapper(name)` then
+`OutputMapper.registerInputScript(input)`. Inputs are add-only, so a second body
+cannot put `mappers[ceroMotor]` on vanilla's existing input line; it can only add
+a new input line, and that means the recipe demands a second item out of the
+player's bag. There is no way to express it.
+
+**There is no Lua seam at craft time either.** `OnCreate` is real and it is a
+Lua-resolved call — `CraftRecipeData.initLuaFunctions` hands the script's string
+to `LuaManager.getFunctionObject` (offset 46-53) and
+`CraftRecipeData.luaCallOnCreate` calls it with the recipe data and the
+character, which knows `getAllConsumedItems()`. But the string it resolves is
+written in the script block (`OnCreate = RecipeCodeOnCreate.dismantleMiscElectronics`),
+so pointing it somewhere else means overwriting a scalar key of vanilla's block —
+the thing this section exists to refuse — and the target it names is a Java class
+(`zombie/scripting/logic/RecipeCodeOnCreate.class`), not mod Lua. Nor is there an
+event to listen for: `ISHandcraftAction:performRecipe`
+(`media/lua/shared/Entity/TimedActions/ISHandcraftAction.lua:221-249`) calls
+`luaCallOnCreate` and nothing else — the file contains no `triggerEvent` at all,
+and there is no `OnCraft` in any `LuaEventManager.AddEvent` in `media/lua`.
+
+So: two recipes of our own, named, and vanilla's blocks untouched. What it costs
+a player is one extra line in the Electrical tab beside vanilla's; what it buys
+is that a hair dryer pays a motor and a TV remote does not, that any other mod
+touching `DismantleMiscElectronics` does not collide with us, and that a patch to
+that recipe from the game's own authors arrives intact instead of being blended
+with a copy we took months earlier.
+
 ## 9. The loot lists
 
 Checked by name against `media/lua/server/Items/ProceduralDistributions.lua`:

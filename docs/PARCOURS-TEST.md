@@ -3504,7 +3504,11 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
 367. **Démonter un séchoir à cheveux.** Se donner un `Base.HairDryer`, un
      tournevis, et le **Guide de câblage CeroSec** (`CeroSec.WiringGuide`). Le
      LIRE. Attendu : dans l'onglet **Électrique** de l'artisanat, deux recettes de
-     démontage apparaissent en plus des six autres. Démonter le séchoir.
+     démontage apparaissent en plus des six autres, et elles portent un NOM —
+     **Démonter un appareil pour son moteur** et **Démonter un lecteur CD pour
+     son moteur**, jamais `DismantleCeroSecMotorAppliance` en clair (un nom brut
+     à l'écran veut dire que la clé manque dans
+     `Translate/<LANG>/Recipes.json`). Démonter le séchoir.
      Attendu : **un petit moteur ET un `Base.ElectronicsScrap`** — la ferraille
      que la recette vanille aurait donnée, plus le moteur. Refaire avec une
      tondeuse à moutons et un ventilateur soufflant : même chose. Avec un
