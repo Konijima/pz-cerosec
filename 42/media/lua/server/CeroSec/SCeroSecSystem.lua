@@ -2470,7 +2470,10 @@ local function giveDisk(playerObj, entry, now)
 		CeroSecContent.unname(item)
 	end
 	if isServer() then sendAddItemToContainer(inv, item) end
-	return nil
+	-- The sticker it really came out with, beside the "it worked": the telling was
+	-- rolled in here, so a caller that wanted to name the label in a receipt would
+	-- otherwise have to roll it a second time and name a different one.
+	return nil, disk.label
 end
 
 -- The self-test disk, which is the one entry of weight 0: no drawer in the county
@@ -2536,14 +2539,14 @@ Commands.debugact = function(self, playerObj, x, y, z, token, args)
 			return
 		end
 		local entry = CeroSecContent.diskById(id)
-		local why = giveDisk(playerObj, entry,
+		local why, label = giveDisk(playerObj, entry,
 			CeroSecOS.clockOf(self:clockEnv()))
 		if why ~= nil then
 			refuseAct(self, playerObj, token, x, y, z, "no disk: " .. why)
 		else
 			noteAct(self, playerObj, token, x, y, z, id ..
 				" is in your inventory, labelled " ..
-				tostring(CeroSecContent.diskLabel(entry, nil) or "nothing at all"))
+				tostring(label or "nothing at all"))
 		end
 		return
 	end

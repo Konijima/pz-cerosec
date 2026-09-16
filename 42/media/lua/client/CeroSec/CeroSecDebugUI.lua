@@ -662,6 +662,11 @@ function CeroSecDebugUI:createChildren()
 	-- Over every row AND over the two widgets that are not buttons: the floor is the
 	-- widest thing under the list, and a box left out of the sum is a box the corner
 	-- can be dragged over.
+	--
+	-- The two widgets are a BELT today and are said to be: both sit left of the last
+	-- button of their row, so taking them out of the sum changes nothing and no bench
+	-- can be made to go red on it. They are in it for whatever is put on that row
+	-- next, which is the day a widget IS the widest thing on it.
 	local widest = 0
 	local function reach(made)
 		if made == nil then return end

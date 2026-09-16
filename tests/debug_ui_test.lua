@@ -1141,6 +1141,20 @@ do
 	eq("as wide as the window less both borders", window.panel.width,
 		window.width - 20)
 
+	-- AND THE SECOND BUTTON ROW DOES NOT COME OUT OF THE LIST. The opening height is
+	-- worked out in measure() and has to count EVERY button row; a height that had not
+	-- heard of the second would open the window with a list one whole button row
+	-- shorter -- which every band assertion above is perfectly happy with, because the
+	-- bands still do not overlap, and which nothing else here would notice.
+	--
+	-- The floor is eighteen rows and not the twenty the height aims at: the aim is
+	-- worked out from (FONT_H + 6) and the list's itemheight is its own number, so on
+	-- this bench's font the twenty land in eighteen and a bit. What the eighteen
+	-- guards is one whole button row, which is worth four of them here.
+	check("the window opens with the list it is meant to have (" ..
+		window.lists[1].height .. " px, " .. window.lists[1].itemheight .. " a row)",
+		window.lists[1].height >= window.lists[1].itemheight * 18)
+
 	checkBands(bench, "as opened")
 
 	-- And after the corner is dragged. Same function, same numbers: two copies of
