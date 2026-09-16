@@ -2553,7 +2553,7 @@ do
 	-- How many entries took the `optional` branch below, counted so that the branch
 	-- cannot quietly become the rule: an assertion of a COUNT is what says a flag is
 	-- still the exception it was introduced as.
-	optionalSeen = 0
+	local optionalSeen = 0
 
 	for i = 1, #names do
 		local name = names[i]
