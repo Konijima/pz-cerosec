@@ -3429,18 +3429,18 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
-		"crw-rw----  root  sudo  door0   exterior       W  locked",
-		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
-		"crw-rw----  root  sudo  door2   built          N  closed",
-		"crw-rw----  root  sudo  light0  office            on",
-		"crw-rw----  root  sudo  light1  hallway           off",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   built          N  padlock",
-		"crw-rw----  root  sudo  win0    office         N  locked",
+		"crw-rw----  root  sudo  door0    exterior      W  locked",
+		"crw-rw----  root  sudo  door1    kitchen-hal~  N  closed",
+		"crw-rw----  root  sudo  door2    built         N  closed",
+		"crw-rw----  root  sudo  light0   office           on",
+		"crw-rw----  root  sudo  light1   hallway          off",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
+		"crw-rw----  root  sudo  lock1    built         N  padlock",
+		"crw-rw----  root  sudo  win0     office        N  locked",
 	}
 	-- The interior door is a door and NOT a lock: a key on it stops nobody, so
 	-- there is no lock device for it to lie through.
-	check("no lock device for the interior door", not bench.painted("kitchen-hall~  N  unlocked"))
+	check("no lock device for the interior door", not bench.painted("kitchen-hal~  N  unlocked"))
 	for i = 1, #want do
 		check("the glass shows: " .. want[i], bench.painted(want[i]))
 	end
@@ -3486,14 +3486,14 @@ do
 	-- The offsets are the real ones: the computer stands at 10,10,0 and every
 	-- one of these was walked out of the fake world by SCeroSecDevices.
 	local table60 = {
-		"door0   exterior              1E 0        W  closed",
-		"door1   kitchen-hallway       1E 1S       N  closed",
-		"door2   built                 2E 1S       N  closed",
-		"light0  office                1E 0           on",
-		"light1  hallway               3E 1S          on",
-		"lock0   exterior              1E 0        W  unlocked",
-		"lock1   built                 2E 1S       N  unlocked",
-		"win0    office                2E 0        N  unlocked",
+		"door0    exterior              1E 0        W  closed",
+		"door1    kitchen-hallway       1E 1S       N  closed",
+		"door2    built                 2E 1S       N  closed",
+		"light0   office                1E 0           on",
+		"light1   hallway               3E 1S          on",
+		"lock0    exterior              1E 0        W  unlocked",
+		"lock1    built                 2E 1S       N  unlocked",
+		"win0     office                2E 0        N  unlocked",
 	}
 	for i = 1, #table60 do
 		check("dev's table shows: " .. table60[i], bench.painted(table60[i]))
@@ -3646,7 +3646,7 @@ do
 	check("a lock's word is not a door's", bench.painted("door0: invalid value"))
 	bench.enter("dev door")
 	bench.frame()
-	check("door is a kind", bench.painted("door0   exterior"))
+	check("door is a kind", bench.painted("door0    exterior"))
 	bench.enter("dev door9")
 	bench.frame()
 	check("and a number never handed out is the command's refusal",
@@ -3666,7 +3666,7 @@ do
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("and the listing says so too",
-		bench.painted("crw-rw----  root  sudo  win0    office         N  open"))
+		bench.painted("crw-rw----  root  sudo  win0     office        N  open"))
 	-- Open beats the latch, the way a door's open beats its lock: the word is
 	-- about the hole in the wall and not about the catch on it.
 	eq("the latch is untouched and unasked", kit.win0.locked, false)
@@ -3699,7 +3699,7 @@ do
 	bench.enter("ls -l /dev/win0")
 	bench.frame()
 	check("the smashed window shows",
-		bench.painted("crw-rw----  root  sudo  win0    office         N  smashed"))
+		bench.painted("crw-rw----  root  sudo  win0     office        N  smashed"))
 	-- Broken beats the sash: there is no window left to be open, so the word a
 	-- survivor needs is the one about the glass.
 	check("and not what the sash is doing", not bench.painted("N  open"))
@@ -3845,12 +3845,12 @@ do
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 
-	check("light0 kept its number", reloaded.painted("light0  office"))
-	check("light1 kept its number", reloaded.painted("light1  hallway"))
-	check("door1 kept its number", reloaded.painted("door1   kitchen-hall~"))
-	check("door2 kept its number", reloaded.painted("door2   built"))
-	check("lock1 kept its number", reloaded.painted("lock1   built"))
-	check("win0 kept its number", reloaded.painted("win0    office"))
+	check("light0 kept its number", reloaded.painted("light0   office"))
+	check("light1 kept its number", reloaded.painted("light1   hallway"))
+	check("door1 kept its number", reloaded.painted("door1    kitchen-hal~"))
+	check("door2 kept its number", reloaded.painted("door2    built"))
+	check("lock1 kept its number", reloaded.painted("lock1    built"))
+	check("win0 kept its number", reloaded.painted("win0     office"))
 	-- The one that is gone leaves TWO gaps: nothing moved up into either.
 	check("the gone door is not listed", not reloaded.painted("door0 "))
 	check("nor its lock", not reloaded.painted("lock0 "))
@@ -3870,9 +3870,9 @@ do
 	reloaded.enter("ls -l /dev")
 	reloaded.frame()
 	check("the new door took the next number, not the gap",
-		reloaded.painted("crw-rw----  root  sudo  door3   built          W  closed"))
+		reloaded.painted("crw-rw----  root  sudo  door3    built         W  closed"))
 	check("and so did its lock",
-		reloaded.painted("crw-rw----  root  sudo  lock2   built          W  unlocked"))
+		reloaded.painted("crw-rw----  root  sudo  lock2    built         W  unlocked"))
 	check("and the gaps are still gaps", not reloaded.painted("door0 "))
 	check("both of them", not reloaded.painted("lock0 "))
 
@@ -4097,9 +4097,9 @@ do
 	bench.enter("dev")
 	bench.frame()
 	check("the table shows the south door where it really is",
-		bench.painted("door2   exterior              0 1S        N  closed"))
+		bench.painted("door2    exterior              0 1S        N  closed"))
 	check("and the east one",
-		bench.painted("door6   exterior              3E 0        W  closed"))
+		bench.painted("door6    exterior              3E 0        W  closed"))
 
 	_G.__world, _G.SandboxVars = hadWorld, hadSandbox
 	CeroSecDevices.invalidate()
@@ -4410,7 +4410,7 @@ do
 	kit.world.loaded = false
 	bench.enter("ls -l /dev")
 	bench.frame()
-	check("and nothing is when they are not", not bench.painted("light0  office"))
+	check("and nothing is when they are not", not bench.painted("light0   office"))
 	bench.enter("echo off > /dev/light0")
 	bench.frame()
 	check("a device out of reach cannot be worked",
@@ -4442,7 +4442,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the door in the base is a device",
-		bench.painted("crw-rw----  root  sudo  lock0   built          N  padlock"))
+		bench.painted("crw-rw----  root  sudo  lock0    built         N  padlock"))
 	check("the far switch is not", not bench.painted("light0"))
 	eq("nor the one upstairs", far ~= upstairs, true)
 
@@ -4451,7 +4451,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a switch exactly at the radius is a device",
-		bench.painted("crw-rw----  root  sudo  light0  exterior          off"))
+		bench.painted("crw-rw----  root  sudo  light0   exterior         off"))
 	_G.__world = nil
 end
 
@@ -4476,7 +4476,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a garage door leaf is a lock",
-		bench.painted("crw-rw----  root  sudo  lock0   exterior       W  locked"))
+		bench.painted("crw-rw----  root  sudo  lock0    exterior      W  locked"))
 	check("and is not a door", not bench.painted("door0"))
 
 	-- A double door reads exactly the same way.
@@ -4485,7 +4485,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("a double door leaf is no door either", not bench.painted("door0"))
-	check("and still locks", bench.painted("lock0   exterior"))
+	check("and still locks", bench.painted("lock0    exterior"))
 
 	-- So there is nothing there to open, and the refusal is the command's.
 	bench.enter("dev door0 open")
@@ -4513,9 +4513,9 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the game's own exterior flag makes the lock",
-		bench.painted("crw-rw----  root  sudo  lock0   porch          W  locked"))
+		bench.painted("crw-rw----  root  sudo  lock0    porch         W  locked"))
 	check("and the door is there beside it",
-		bench.painted("crw-rw----  root  sudo  door0   porch          W  locked"))
+		bench.painted("crw-rw----  root  sudo  door0    porch         W  locked"))
 	_G.__world = nil
 end
 
@@ -4603,11 +4603,11 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("sensor0 is the head in the office",
-		bench.painted("cr--r-----  root  sudo  sensor0 office            clear"))
+		bench.painted("cr--r-----  root  sudo  sensor0  office           clear"))
 	check("sensor1 is the one beside it",
-		bench.painted("cr--r-----  root  sudo  sensor1 office            clear"))
+		bench.painted("cr--r-----  root  sudo  sensor1  office           clear"))
 	check("sensor2 is the one in the store",
-		bench.painted("cr--r-----  root  sudo  sensor2 store             clear"))
+		bench.painted("cr--r-----  root  sudo  sensor2  store            clear"))
 	-- Three heads and no fourth: the hammer is not a device and NEITHER IS THE
 	-- PIPE BOMB, which is the one refusal this whole rung turns on.
 	check("a hammer on the floor is not a device", not bench.painted("sensor3"))
@@ -4616,11 +4616,11 @@ do
 	bench.enter("dev sensor")
 	bench.frame()
 	check("the table gives sensor0 its place",
-		bench.painted("sensor0 office                1E 0           clear"))
+		bench.painted("sensor0  office                1E 0           clear"))
 	check("and sensor1 its own",
-		bench.painted("sensor1 office                3E 0           clear"))
+		bench.painted("sensor1  office                3E 0           clear"))
 	check("and sensor2 in the next room",
-		bench.painted("sensor2 store                 4E 0           clear"))
+		bench.painted("sensor2  store                 4E 0           clear"))
 
 	-- Read one. Nothing has moved and nothing ever has, so it is clear.
 	bench.enter("cat /dev/sensor0")
@@ -4705,7 +4705,7 @@ do
 	world.drop(world.squares["10,10,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("while the module beside them is sensor0", bench.painted("sensor0 office"))
+	check("while the module beside them is sensor0", bench.painted("sensor0  office"))
 	_G.__world = nil
 end
 
@@ -4877,8 +4877,8 @@ do
 	-- The row and not the id: the refusal printed a second ago has the id in it
 	-- and is still in the scrollback, so a needle of "sensor0" would find the
 	-- machine's own words about it being gone.
-	check("and it is off the table", not bench.painted("sensor0 office"))
-	check("while the other two are still on it", bench.painted("sensor1 office"))
+	check("and it is off the table", not bench.painted("sensor0  office"))
+	check("while the other two are still on it", bench.painted("sensor1  office"))
 
 	-- A fresh head dropped on the same tile takes sensor0 BACK, and that is the
 	-- numbering doing what it has always done rather than a special case: a number
@@ -4889,11 +4889,11 @@ do
 	kit.world.drop(kit.world.squares["11,10,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("a new head on the same tile is sensor0 again", bench.painted("sensor0 office"))
+	check("a new head on the same tile is sensor0 again", bench.painted("sensor0  office"))
 	kit.world.drop(kit.world.squares["12,11,0"], fakeSensor())
 	bench.enter("dev sensor")
 	bench.frame()
-	check("and one on a new tile takes the next number", bench.painted("sensor3 office"))
+	check("and one on a new tile takes the next number", bench.painted("sensor3  office"))
 	_G.__world = nil
 end
 
@@ -4930,7 +4930,7 @@ do
 
 	bench.enter("dev sensor")
 	bench.frame()
-	check("a head in a base reads built", bench.painted("sensor0 built"))
+	check("a head in a base reads built", bench.painted("sensor0  built"))
 
 	-- Two tiles from it and no room between them: seen.
 	local chr = fakeBody("IsoPlayer")
@@ -12635,7 +12635,7 @@ do
 	fit(kit.light0, "relay")
 	bench.enter("dev")
 	bench.frame()
-	check("the switch with a relay on it is a device", bench.painted("light0  office"))
+	check("the switch with a relay on it is a device", bench.painted("light0   office"))
 	check("the one without is still not", not bench.painted("hallway"))
 	bench.enter("echo off > /dev/light0")
 	bench.frame()
@@ -12663,9 +12663,9 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("and wears a mode that promises nothing",
-		bench.painted("cr--r-----  root  sudo  door1   exterior"))
+		bench.painted("cr--r-----  root  sudo  door1    exterior")) 
 	check("while the one with an operator wears rw",
-		bench.painted("crw-rw----  root  sudo  door0   kitchen-hall~"))
+		bench.painted("crw-rw----  root  sudo  door0    kitchen-hal~"))
 
 	-- admin is in the sudo group, so 440 lets him read it and stops him there.
 	bench.enter("echo open > /dev/door1")
@@ -12731,7 +12731,7 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	check("the same device wears rw once an operator is on it",
-		bench.painted("crw-rw----  root  sudo  door1   exterior"))
+		bench.painted("crw-rw----  root  sudo  door1    exterior")) 
 	bench.enter("echo open > /dev/door1")
 	bench.frame()
 	eq("and now it opens", kit.front.open, true)
@@ -12791,14 +12791,14 @@ do
 	bench.enter("ls -l /dev")
 	bench.frame()
 	local want = {
-		"crw-rw----  root  sudo  door0   exterior       W  locked",
-		"crw-rw----  root  sudo  door1   kitchen-hall~  N  closed",
-		"crw-rw----  root  sudo  door2   built          N  closed",
-		"crw-rw----  root  sudo  light0  office            on",
-		"crw-rw----  root  sudo  light1  hallway           off",
-		"crw-rw----  root  sudo  lock0   exterior       W  locked",
-		"crw-rw----  root  sudo  lock1   built          N  padlock",
-		"crw-rw----  root  sudo  win0    office         N  locked",
+		"crw-rw----  root  sudo  door0    exterior      W  locked",
+		"crw-rw----  root  sudo  door1    kitchen-hal~  N  closed",
+		"crw-rw----  root  sudo  door2    built         N  closed",
+		"crw-rw----  root  sudo  light0   office           on",
+		"crw-rw----  root  sudo  light1   hallway          off",
+		"crw-rw----  root  sudo  lock0    exterior      W  locked",
+		"crw-rw----  root  sudo  lock1    built         N  padlock",
+		"crw-rw----  root  sudo  win0     office        N  locked",
 	}
 	for i = 1, #want do
 		check("with the option off, the glass still shows: " .. want[i],
@@ -12944,7 +12944,7 @@ do
 	-- The machine can see it now, end to end.
 	bench.enter("dev")
 	bench.frame()
-	check("and the switch is a device", bench.painted("light0  office"))
+	check("and the switch is a device", bench.painted("light0   office"))
 
 	-- A second one buys nothing and eats nothing.
 	inv:add("CeroSec.Relay")
@@ -13690,23 +13690,22 @@ do
 	-- assertion about the id, and both columns come from a different layer than the
 	-- id does (the discovery's `desc` and `stateOf`, the engine's `pos`).
 	for _, want in ipairs({
-			"curtain1hall                  3E 1S       N  closed",
-			"door0   hall                  3E 1S       N  closed",
-			"gen0    hall                  4E 1S          off",
-			"stove0  kitchen               1E 1S          off",
-			"washer0 kitchen               2E 1S          off",
-			"win0    office                2E 0        N  locked",
-			"window0 office                2E 0        N  closed" }) do
+			"curtain1 hall                  3E 1S       N  closed",
+			"door0    hall                  3E 1S       N  closed",
+			"gen0     hall                  4E 1S          off",
+			"stove0   kitchen               1E 1S          off",
+			"washer0  kitchen               2E 1S          off",
+			"win0     office                2E 0        N  locked",
+			"window0  office                2E 0        N  closed" }) do
 		check("the table shows: " .. want, bench.painted(want))
 	end
-	-- And the eight-character id, which is the one case the ID COLUMN HAS NO GAP
-	-- LEFT IN IT: `curtain0` fills all eight of it, so the room name begins against
-	-- it. Pinned as it really prints rather than as it ought to look -- the manual's
-	-- own page for this table (CeroSecManualAdmin, "dev") shows a space there, so the
-	-- column is one too narrow for the widest id this machine hands out. Reported,
-	-- not fixed here: widening it moves every row of every page by one column.
-	check("the table shows the curtain, id against room",
-		bench.painted("curtain0office                1E 0        N  closed"))
+	-- AND THE WIDEST ID THERE IS, which is the row that was wrong: `curtain0` fills
+	-- eight characters, the column was eight wide, and the room name printed against
+	-- the name of the device (`curtain0office`). The column is nine now -- what the
+	-- manual's own page for this table always showed -- so the first curtain of the
+	-- first house reads like every other row.
+	check("the widest id still keeps a space before its room",
+		bench.painted("curtain0 office                1E 0        N  closed"))
 
 	--
 	-- THE WINDOW OPERATOR, and the three things it does besides open a window
@@ -14387,9 +14386,9 @@ do
 	-- The whole row for both, because a set's room and its switch are as much of
 	-- the table as its name is.
 	check("the table has the television",
-		bench.painted("tv0     lounge                1E 0           off"))
+		bench.painted("tv0      lounge                1E 0           off"))
 	check("and the radio set beside it",
-		bench.painted("rx0     lounge                2E 0           off"))
+		bench.painted("rx0      lounge                2E 0           off"))
 	check("and the set with no device data on it is not a device at all",
 		not bench.painted("tv1"))
 	check("nothing fits one", not CeroSecModules.isFittable(husk))

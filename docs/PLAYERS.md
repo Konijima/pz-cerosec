@@ -373,14 +373,14 @@ them:
 
 ```
 dev
-door0   exterior              0 5S        W  locked
-door1   kitchen-hallway       2W 1N       N  closed
-door2   built                 4E 9S +1    N  closed
-light0  office                0 0            on
-light1  hallway               3E 2N          off
-lock0   exterior              0 5S        W  locked
-lock1   built                 4E 9S +1    N  padlock
-win0    office                1E 0        N  locked
+door0    exterior              0 5S        W  locked
+door1    kitchen-hallway       2W 1N       N  closed
+door2    built                 4E 9S +1    N  closed
+light0   office                0 0            on
+light1   hallway               3E 2N          off
+lock0    exterior              0 5S        W  locked
+lock1    built                 4E 9S +1    N  padlock
+win0     office                1E 0        N  locked
 ```
 
 `door0` and `lock0` are one door twice over: the thing that opens, and the key
@@ -433,9 +433,9 @@ same words, the same refusals — and `ls -l /dev` is the same devices with the
 mode, the owner and the group in front of them and no room left for the offset:
 
 ```
-crw-rw----  root  sudo  door0   exterior       W  locked
-crw-rw----  root  sudo  light0  office            on
-crw-rw----  root  sudo  lock0   exterior       W  locked
+crw-rw----  root  sudo  door0    exterior      W  locked
+crw-rw----  root  sudo  light0   office           on
+crw-rw----  root  sudo  lock0    exterior      W  locked
 
 cat /dev/light0
 echo off > /dev/light0
@@ -645,8 +645,8 @@ rather than pretending.
 
 ```
 dev sensor
-sensor0 office                1E 0           clear
-sensor1 store                 4E 2S          motion
+sensor0  office                1E 0           clear
+sensor1  store                 4E 2S          motion
 
 cat /dev/sensor0     -> clear
 echo motion > /dev/sensor0

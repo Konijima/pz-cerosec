@@ -33,6 +33,13 @@ date.
   the yard or a radio on the step are fitted where they stand, because the pavement
   is the only place there is to stand in front of one. Nothing about the door, the
   window and the curtain has changed.
+- **The device tables line up again.** A name exactly eight characters wide ran
+  straight into the room beside it -- `curtain0office` in `dev` and in
+  `ls -l /dev`, and `curtain0` is the first curtain of the first house you wire.
+  The name column is one wider now, which the manual's page always showed; in
+  `ls -l` the room column paid for it, so a long pair of rooms reads
+  `kitchen-hal~` there. Nothing else moved, and both tables still end inside the
+  screen's 60 columns.
 
 ## 0.4.0 - 2026-09-16
 

@@ -1626,7 +1626,7 @@ every machine there has ever been.]],
 [[Once a disk is in the slot, the machine grows a file for the drive:
 
   admin@ksp-04-11:~$ ls -l /dev
-  crw-rw----  root  sudo  fd0     WORK         blank
+  crw-rw----  root  sudo  fd0      WORK        blank
   crw-rw-rw-  root  root  null
 
 fd0 is the drive. The column after its name is the label on the sticker,
