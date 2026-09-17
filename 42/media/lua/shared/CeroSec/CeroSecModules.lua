@@ -124,7 +124,16 @@ CeroSecModules.DATA_KEY = "cerosec"
 -- every television and every radio set in every save written before the rung that
 -- added it -- nobody had one to fit. A step converting nothing is a number moved
 -- to say something that did not happen.
-CeroSecModules.VERSION = 2
+--
+-- VERSION 3 as of the LINK key below, and it moves for `pre`'s reason read a
+-- second time rather than for the four ids' reason read a tenth. An absent link
+-- list reads as "no cable runs to this fixture", which is true of every fixture in
+-- every save written before it, so there is nothing for a step to convert -- but
+-- `link` is a key in this table that is not one of the ids and does not behave
+-- like one: it is a LIST and not a boolean, and a shape that has grown a list
+-- without its number moving is a shape nothing can be held to afterwards. The cost
+-- is one write of one number into a table that was going to be read anyway.
+CeroSecModules.VERSION = 3
 CeroSecModules.VERSION_KEY = "v"
 -- MIGRATIONS[n] takes the table at n - 1 and leaves it at n.
 --
@@ -134,8 +143,12 @@ CeroSecModules.VERSION_KEY = "v"
 -- What version 1 lacked is the `pre` mark, and the absence of it is already the right
 -- answer for every fixture written before this change -- none of them was fitted by
 -- anybody but a player.
+--
+-- [3] has nothing to do either, for the same sentence: what version 2 lacked is the
+-- link list, and a fixture written before it is a fixture nobody had run a cable to.
 CeroSecModules.MIGRATIONS = {}
 CeroSecModules.MIGRATIONS[2] = function(_fitted) end
+CeroSecModules.MIGRATIONS[3] = function(_fitted) end
 CeroSecModules.OLDEST_VERSION = 1
 
 -- AND ONE KEY THAT IS NOT A MODULE: was this fixture wired before the outbreak?
@@ -159,6 +172,223 @@ CeroSecModules.OLDEST_VERSION = 1
 -- the table it walks, and a table is walked on every READ -- including on a client,
 -- where a write into a door's modData goes nowhere anybody will ever see.
 CeroSecModules.PRE_KEY = "pre"
+
+--
+-- AND ONE MORE THAT IS NOT A MODULE EITHER: the cables run to this fixture
+--
+-- A fixture in the machine's own building is on its /dev for nothing, because the
+-- building was wired before the outbreak and the walls it is wired through are
+-- still standing. Everything else -- a lamppost on the street, a porch lamp on a
+-- wall the room walk does not reach, a gate at the end of the drive, a shop across
+-- the car park -- is reached the way an electrician would reach it: he runs a
+-- cable to it.
+--
+-- So a LINK is one entry in this list, and it names a MACHINE by where the machine
+-- STANDS:
+--
+--   door:getModData().cerosec.link = { { x = 1024, y = 998, z = 0, wire = 12 } }
+--
+-- By the position and never by the hostname, which is a file its own root may
+-- write to anything (/etc/hostname): a cable is a fact about two places, and a
+-- machine renamed on Tuesday is the same machine at the same desk. The menu SHOWS
+-- the hostname, because that is what a survivor calls it.
+--
+-- `wire` is what the run cost, kept on the entry rather than worked out again from
+-- the two positions, for one reason: it is what comes BACK. An unlink hands the
+-- player that many cables and so does a sledgehammer through the fixture
+-- (SCeroSecFixtures), and a refund that recomputed the distance would pay a
+-- different number the day the arithmetic moved -- or pay nothing at all for a
+-- machine somebody has since picked up.
+--
+-- It is written on BOTH sides: here, so the fixture knows which machines to
+-- answer, and in the machine's own state (os.links), so the discovery knows which
+-- squares to visit without walking the county. Either side alone would be a walk
+-- of every fixture in Knox County or a walk of every machine in it; the pair is
+-- what makes `find` visit exactly the squares somebody paid for. They are kept in
+-- step by the one thing that can: each side drops what the other no longer
+-- carries, on the next walk (see SCeroSecDevices' link walk).
+CeroSecModules.LINK_KEY = "link"
+
+-- How many machines one fixture may answer. Four, which is a terminal block with
+-- four pairs on it: a shared door between two premises is the case this exists
+-- for, and a fixture wired to thirty machines is a fixture whose modData is a
+-- table somebody is filling up for fun.
+CeroSecModules.LINKS_MAX = 4
+
+-- How far a cable goes, in tiles, and it is the WHOLE number paid for: thirty.
+-- Past that the answer is another computer for that part of the building, worked
+-- from the first one down the coax or over the telephone -- which is a machine a
+-- survivor has to find and put on a desk, and is the reason there is a limit at
+-- all.
+CeroSecModules.LINK_RANGE = 30
+
+-- What a floor costs. A cable does not go through a slab where it likes: it goes
+-- up the inside of a wall, through the joists and along the ceiling of the room
+-- below, which is about four tiles of cable for one storey -- a storey being some
+-- ten feet and a tile some two and a half. Whole tiles, so the sum stays whole.
+CeroSecModules.LINK_FLOOR_TILES = 4
+
+-- The timed action, in the game's own ticks: per TILE, capped, before the perk
+-- takes its bite out of it the way the fitting action's does
+-- (ISCeroSecLinkAction). Twelve a tile makes the shortest run about a sixth of
+-- fitting a contact and the cap three times it: paying out a reel is a walk, and
+-- the walk is what the cap is about -- nobody stands still for thirty tiles of it.
+CeroSecModules.LINK_TIME = 12
+CeroSecModules.LINK_TIME_MAX = 240
+
+-- The smallest whole number of tiles that covers a flat distance, and it is worked
+-- out WITHOUT math.sqrt: the smallest n whose square covers dx*dx + dy*dy.
+--
+-- Not an optimisation. A cable is paid for in whole cables, so the answer is a
+-- whole number either way -- and a whole number worked out by integer arithmetic
+-- is the same whole number on Kahlua as on lua5.1, where a float that lands a
+-- millionth under 12 would be eleven cables on one VM and twelve on the other.
+-- Nothing in this mod had ever asked for math.sqrt, and this is not the place to
+-- start (docs/CONTRIBUTING.md, Kahlua purity).
+--
+-- The loop is bounded by the range, because nothing past it is ever paid for: a
+-- fixture further away answers LINK_RANGE + 1, which is the refusal and not a
+-- price.
+local function ceilSqrt(square)
+	local n = 0
+	while n * n < square do
+		n = n + 1
+		if n > CeroSecModules.LINK_RANGE then return n end
+	end
+	return n
+end
+
+-- What a cable from a fixture to a machine costs, in whole tiles of
+-- Base.ElectricWire. Euclidean on x and y -- a cable is run across a floor and not
+-- around the corners of it -- plus LINK_FLOOR_TILES a floor, and never less than
+-- one: a machine on the very square the fixture stands on is still a cable.
+--
+-- ceil(a + k) is ceil(a) + k for a whole k, so adding the floors after the
+-- rounding is the same number as adding them before it, and this way nothing is
+-- ever a float.
+function CeroSecModules.linkWire(fx, fy, fz, mx, my, mz)
+	local dx, dy = fx - mx, fy - my
+	local dz = fz - mz
+	if dz < 0 then dz = -dz end
+	local wire = ceilSqrt(dx * dx + dy * dy) + dz * CeroSecModules.LINK_FLOOR_TILES
+	if wire < 1 then return 1 end
+	return wire
+end
+
+-- Is that entry one this build wrote? The three positions are whole numbers and
+-- the wire is a whole number of tiles inside the range -- which is the same bound
+-- the cost is held to, so a forged entry cannot be a refund of a thousand cables.
+-- An entry that is not one is not READ, which is a cable that was never run.
+local function linkOk(entry)
+	if type(entry) ~= "table" then return false end
+	local x, y, z, wire = entry.x, entry.y, entry.z, entry.wire
+	if type(x) ~= "number" or x ~= math.floor(x) then return false end
+	if type(y) ~= "number" or y ~= math.floor(y) then return false end
+	if type(z) ~= "number" or z ~= math.floor(z) then return false end
+	if type(wire) ~= "number" or wire ~= math.floor(wire) then return false end
+	if wire < 1 or wire > CeroSecModules.LINK_RANGE then return false end
+	return true
+end
+
+-- Every cable run to this fixture, as a list of copies: { x, y, z, wire }.
+--
+-- Always a list, never nil, and never the table the game holds: a caller that
+-- wants to change one calls linkOn or unlinkOn, which are the two writers. Read
+-- through installedOn's own gate -- the migration chain and a table a LATER build
+-- wrote -- so a fixture whose modules this build will not read has no cables
+-- either, which is the same answer to the same question.
+function CeroSecModules.linksOn(object)
+	local out = {}
+	if object == nil then return out end
+	if type(object.hasModData) ~= "function" or not object:hasModData() then return out end
+	local data = object:getModData()
+	if data == nil then return out end
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if type(fitted) ~= "table" then return out end
+	if not CeroSecModules.migrate(fitted) then return out end
+	local links = fitted[CeroSecModules.LINK_KEY]
+	if type(links) ~= "table" then return out end
+	for i = 1, #links do
+		local entry = links[i]
+		if linkOk(entry) and #out < CeroSecModules.LINKS_MAX then
+			out[#out + 1] = { x = entry.x, y = entry.y, z = entry.z, wire = entry.wire }
+		end
+	end
+	return out
+end
+
+-- Which entry of that list names the machine at x, y, z, or nil.
+function CeroSecModules.linkIndexOf(links, x, y, z)
+	if type(links) ~= "table" then return nil end
+	for i = 1, #links do
+		local entry = links[i]
+		if type(entry) == "table" and entry.x == x and entry.y == y and entry.z == z then
+			return i
+		end
+	end
+	return nil
+end
+
+-- What this fixture's cable to that machine cost, or nil when there is none.
+function CeroSecModules.wireOf(object, x, y, z)
+	local links = CeroSecModules.linksOn(object)
+	local at = CeroSecModules.linkIndexOf(links, x, y, z)
+	if at == nil then return nil end
+	return links[at].wire
+end
+
+-- The list, written back and broadcast. The server's, like every other write into
+-- a fixture's modData (transmitModData, the proofs, 2).
+--
+-- An EMPTY list takes itself off the table rather than sitting there as an empty
+-- one, and the table goes with it if nothing else is left -- the same rule the last
+-- module off obeys, and for the same reason: IsoObject.save skips a modData table
+-- that is empty altogether and a table holding one empty list is not empty.
+local function writeLinks(object, links)
+	local data = object:getModData()
+	if data == nil then return false end
+	local fitted = data[CeroSecModules.DATA_KEY]
+	if type(fitted) ~= "table" then
+		if #links == 0 then return true end
+		fitted = {}
+		data[CeroSecModules.DATA_KEY] = fitted
+	end
+	if #links == 0 then
+		fitted[CeroSecModules.LINK_KEY] = nil
+		if CeroSecModules.isBare(fitted) then data[CeroSecModules.DATA_KEY] = nil end
+	else
+		fitted[CeroSecModules.LINK_KEY] = links
+		fitted[CeroSecModules.VERSION_KEY] = CeroSecModules.VERSION
+	end
+	object:transmitModData()
+	return true
+end
+
+-- Run one. true, or false and the reason in one word.
+function CeroSecModules.linkOn(object, x, y, z, wire)
+	if object == nil then return false, "fixture" end
+	local links = CeroSecModules.linksOn(object)
+	if CeroSecModules.linkIndexOf(links, x, y, z) ~= nil then return false, "linked" end
+	if #links >= CeroSecModules.LINKS_MAX then return false, "links" end
+	if type(wire) ~= "number" or wire < 1 or wire > CeroSecModules.LINK_RANGE then
+		return false, "far"
+	end
+	links[#links + 1] = { x = x, y = y, z = z, wire = math.floor(wire) }
+	if not writeLinks(object, links) then return false, "fixture" end
+	return true
+end
+
+-- Take one off. The wire that comes back, or nil when there was no cable.
+function CeroSecModules.unlinkOn(object, x, y, z)
+	if object == nil then return nil end
+	local links = CeroSecModules.linksOn(object)
+	local at = CeroSecModules.linkIndexOf(links, x, y, z)
+	if at == nil then return nil end
+	local wire = links[at].wire
+	table.remove(links, at)
+	if not writeLinks(object, links) then return nil end
+	return wire
+end
 
 -- Which shape this table is in. A number that is not a whole one in range is not a
 -- version anything here wrote, and it reads as the oldest -- the same answer an
@@ -361,6 +591,26 @@ function CeroSecModules.installedIn(fitted, id)
 	return type(fitted) == "table" and fitted[id] == true
 end
 
+-- Is there NOTHING left on this fixture worth keeping a table for? No module, no
+-- pre-fitting mark, and no cable run to it.
+--
+-- Asked of the table itself and not of the object, because the one caller is the
+-- writer that is holding it (setOn): what it decides is whether the last module off
+-- takes the table with it, which IsoObject.save's isEmpty() branch is the whole
+-- reason for. The two keys that are not ids are both asked HERE, so a third one
+-- added some day has one place to be asked in rather than two conditions to be
+-- forgotten at.
+function CeroSecModules.isBare(fitted)
+	if type(fitted) ~= "table" then return true end
+	for i = 1, #CeroSecModules.LIST do
+		if fitted[CeroSecModules.LIST[i].id] == true then return false end
+	end
+	if fitted[CeroSecModules.PRE_KEY] == true then return false end
+	local links = fitted[CeroSecModules.LINK_KEY]
+	if type(links) == "table" and #links > 0 then return false end
+	return true
+end
+
 --
 -- WAS THIS FIXTURE WIRED BEFORE THE OUTBREAK? (see PRE_KEY)
 --
@@ -442,7 +692,11 @@ function CeroSecModules.setOn(object, id, on)
 		-- UNLESS THE FIXTURE WAS WIRED BEFORE THE OUTBREAK, in which case the mark is
 		-- the whole point of it and outlives every module (see PRE_KEY): a survivor who
 		-- strips a pre-fitted switch must not find the relay back on it a minute later.
-		if not left and fitted[CeroSecModules.PRE_KEY] ~= true then
+		--
+		-- OR A CABLE IS STILL RUN TO IT, which is the same rule one key along and for
+		-- the same reason: what a link owes the player is the wire it cost, and a table
+		-- taken away with a link still in it is a refund nobody can ever claim.
+		if not left and CeroSecModules.isBare(fitted) then
 			data[CeroSecModules.DATA_KEY] = nil
 		end
 	end
@@ -931,6 +1185,111 @@ function CeroSecModules.fittingRefusal(object, id, playerObj)
 	end
 
 	return stateRefusal(object, id)
+end
+
+--
+-- RUNNING A CABLE, and the three questions it does NOT ask
+--
+-- A link is not a module: nothing is screwed to the fixture and nothing comes out
+-- of a box. It is a cable from a machine to hardware that is already there, so the
+-- two rules about the MOMENT that the fitting wears are not asked of it:
+--
+--   INSIDE. Not asked, and this is the one that matters: the fixture a cable is
+--   most often run to is on the OUTSIDE of a building -- a porch lamp, a gate, a
+--   lamppost on the street -- and a rule that wanted a room round it would be a
+--   feature that cannot be used on the things it was written for. A cable run is
+--   not a screw in the frame, and nothing about it is easier from indoors.
+--
+--   OPEN, OFF, DRAWN BACK. Not asked either, for the same reason read the other
+--   way: what a cable lands on is the terminals of a box somebody has already
+--   fitted, and a door does not have to swing for a wire to reach it.
+--
+-- WHAT IT DOES ASK is whose house it is, because that rule is not about the hand:
+-- a stranger who may not fit a strike to your door may not re-route your door to
+-- HIS machine either, and of the two that is the worse one. Same option, same
+-- word, same one function it is asked through.
+--
+-- nil for "he may", or the reason in one word, which is the key the menu greys
+-- with (Tooltip_CeroSec_Link<Reason>):
+--
+--   fixture   nothing is wired here at all, so there is nothing to reach
+--   safehouse somebody else's, with the option on
+--   linked    this machine is already on the list
+--   links     the fixture is full (LINKS_MAX)
+--   far       past LINK_RANGE
+--
+-- What he is CARRYING is not asked here, for the reason the module's bag is not
+-- asked in fittingRefusal: it is a fact about him and it is asked by each side in
+-- its own words (the menu greys with the count, the server refuses).
+function CeroSecModules.linkRefusal(object, x, y, z, playerObj)
+	if object == nil or playerObj == nil then return "fixture" end
+	if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+		return "fixture"
+	end
+
+	-- A cable to a bare fixture buys nothing: a link is what carries a MODULE's
+	-- device to a machine, and a fixture with no module on it has no device for
+	-- either of them to argue about.
+	local fitted = CeroSecModules.installedOn(object)
+	local any = false
+	for i = 1, #CeroSecModules.LIST do
+		if fitted[CeroSecModules.LIST[i].id] then any = true end
+	end
+	if not any then return "fixture" end
+
+	-- Whose house, first and for fittingRefusal's own reason.
+	if CeroSecModules.safehouseGated() and SafeHouse ~= nil then
+		local square = object:getSquare()
+		if square ~= nil then
+			local house = SafeHouse.getSafeHouse(square)
+			if house ~= nil and not house:playerAllowed(playerObj) then
+				return "safehouse"
+			end
+		end
+	end
+
+	local square = object:getSquare()
+	if square == nil then return "fixture" end
+	local links = CeroSecModules.linksOn(object)
+	if CeroSecModules.linkIndexOf(links, x, y, z) ~= nil then return "linked" end
+	if #links >= CeroSecModules.LINKS_MAX then return "links" end
+	if CeroSecModules.linkWire(square:getX(), square:getY(), square:getZ(), x, y, z)
+			> CeroSecModules.LINK_RANGE then
+		return "far"
+	end
+	return nil
+end
+
+-- What the trade costs. The HIGHEST level of the modules on that fixture, which is
+-- the one reading that cannot lock a survivor out of his own work: anybody who
+-- could fit the hardware can cable it, and nobody who could not fit it can
+-- re-route somebody else's. A fixture with nothing on it is refused a line earlier
+-- and never reaches here, so 0 is a fixture whose modules this build cannot read.
+function CeroSecModules.linkSkill(object)
+	local fitted = CeroSecModules.installedOn(object)
+	local want = 0
+	for i = 1, #CeroSecModules.LIST do
+		local module = CeroSecModules.LIST[i]
+		if fitted[module.id] and module.skill > want then want = module.skill end
+	end
+	return want
+end
+
+-- The cable itself, which is the game's own item and not one of ours: vanilla's
+-- Base.ElectricWire (media/scripts/generated/items/normal.txt:4518, an
+-- Electronics-category normal item weighing 0.1). Thirty of them is three
+-- kilograms, which is a reel a survivor notices carrying.
+CeroSecModules.WIRE = "Base.ElectricWire"
+
+-- How many he has on him, counted the way vanilla counts an item it is about to
+-- consume: ItemContainer.getCountTypeRecurse(String), which walks the bags inside
+-- the bag -- the call vanilla's own menu makes for exactly this
+-- (ISWorldObjectContextMenu.lua:1895). A name with a dot in it is matched against
+-- getFullType (ItemContainer.compareType, offsets 0-31), which is why the full
+-- type is what is asked for.
+function CeroSecModules.wireCount(inv)
+	if inv == nil or type(inv.getCountTypeRecurse) ~= "function" then return 0 end
+	return tonumber(inv:getCountTypeRecurse(CeroSecModules.WIRE)) or 0
 end
 
 --
