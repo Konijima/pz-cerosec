@@ -151,8 +151,12 @@ premises and set down together in a base somebody built -- keep their wire withi
 length of cable that walk gives a machine in no building rather than a third
 number for one more rule. An unloaded chunk is not a cable coming loose: a machine
 whose square cannot be asked is on the wire its record names, and the record
-stands. Nothing is renumbered by any of this: no address and no subnet changes,
-and `freeNumber` still hands out the lowest number the *record* says is free.
+stands -- indoors. Outdoors the radius is still asked, against the coordinates
+the far machine's own record keeps from the engine regardless of its chunk being
+loaded, so a machine carried out and left on a dedicated server does not regain a
+household's wire just because nobody is standing near it. Nothing is renumbered
+by any of this: no address and no subnet changes, and `freeNumber` still hands
+out the lowest number the *record* says is free.
 
 Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
 machine's own line and the machine never writes in it again, so the first thing
