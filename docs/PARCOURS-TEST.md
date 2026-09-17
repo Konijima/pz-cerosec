@@ -1,6 +1,6 @@
 # Parcours de test CeroSec
 
-> **In English:** this is the in-game test checklist — every step that has to be
+> **In English:** this is the in-game test checklist, every step that has to be
 > walked on the glass, in order, because no headless suite can reach it. It is
 > written in French because that is the maintainer's working language; an English
 > translation is very welcome as its own pull request.
@@ -319,7 +319,7 @@ passé réellement, même quand ça correspond au texte attendu.
 73. `root`, `groupdel crew` → `ls -l /home/admin` montre encore `crew` dans la
     colonne groupe, personne dedans ; `chgrp crew /home/admin/shared` répond
     ensuite `chgrp: crew: no such group`. `groupdel root`, `groupdel wheel`,
-    `groupdel sudo` et `groupdel users` répondent tous `cannot remove` — les
+    `groupdel sudo` et `groupdel users` répondent tous `cannot remove`, les
     quatre groupes livrés, `wheel` inclus parce que `/etc/sudoers` le nomme. [ ]
 
 ## G. Fichiers système et BIOS
@@ -495,16 +495,16 @@ dans des rapports déjà rendus, et les décaler rendrait ces renvois faux.
      garage ou une porte double : elle a un `lockN` et **aucun** `doorN`, et
      `dev door<son numéro> open` répond `dev: ...: no such device`. [ ]
 100f. **Détecteur de mouvement, le posé.** Trouver un **Motion Sensor**
-     (`Base.MotionSensor`) — le module électronique : il se ramasse dans le
+     (`Base.MotionSensor`), le module électronique : il se ramasse dans le
      butin d'électronique, se démonte d'une `HomeAlarm`
-     (`recipes_electrical.txt:78`), ou se donne en debug — et le **laisser
+     (`recipes_electrical.txt:78`), ou se donne en debug, et le **laisser
      tomber par terre** dans la pièce nommée où se trouve l'ordinateur.
      `dev sensor` → une ligne `sensorN`, description = le nom brut de la pièce,
      colonne côté **vide**, position juste, état `clear`. `ls -l /dev` sur cette
      ligne → `cr--r-----` et non `crw-rw----` : mode `440`. Lâcher un marteau à
      côté → il n'apparaît **pas**. [ ]
 100f'. **Et la bombe n'en est pas un.** Fabriquer (ou se donner) un
-     `PipeBombSensorV1` — une bombe artisanale avec un détecteur dessus — et le
+     `PipeBombSensorV1`, une bombe artisanale avec un détecteur dessus, et le
      laisser tomber dans la même pièce. `dev sensor` ne gagne **aucune** ligne,
      et `cat /dev/sensor<numéro suivant>` répond `no such file`. Refaire avec un
      `AerosolbombSensorV2`, un `FlameTrapSensorV3`, un `NoiseTrapSensorV1` et un
@@ -799,7 +799,7 @@ capture d'écran prise en jeu qui les a fait écrire (`while: command not found`
      `shutdown -r +1`, laisser filer →
      `The system is going down for reboot NOW!`, la machine s'éteint et la
      fenêtre se ferme, puis trois secondes de noir, puis le BIOS et `login:`
-     dans une fenêtre rouverte toute seule — un `reboot` programmé est le même
+     dans une fenêtre rouverte toute seule, un `reboot` programmé est le même
      `reboot`. `halt` se comporte comme avant : la machine s'éteint et rien ne
      revient.
      Enfin : `shutdown -r +10`, **sauvegarder et recharger la partie** → le
@@ -985,7 +985,7 @@ en observant le jeu réel, pas par un banc de test.
 174b. **`at` n'oublie pas, contrairement à `cron`.** `echo halt | at HH:MM` avec
      une minute qui tombe dans deux minutes, puis **éteindre** l'ordinateur
      (Turn off) et attendre que l'heure passe. Rallumer, se connecter :
-     à la minute suivante la machine s'éteint — le travail attendait dans la
+     à la minute suivante la machine s'éteint, le travail attendait dans la
      file. Refaire avec `crontab -e` et `* * * * *` pour comparer : une minute
      manquée par `cron` est perdue. [ ]
 174c. **`atrm`, et les droits.** `echo halt | at 23:59`, `atq` (noter le
@@ -1006,7 +1006,7 @@ en observant le jeu réel, pas par un banc de test.
      `ligne un`, Entrée, `ligne deux`, Entrée, puis `.` seul et Entrée → rien à
      l'écran, et `sudo cat /var/mail/bob` montre les deux lignes. Refaire,
      taper deux lignes, puis **Échap** : `^C`, l'invite revient, et
-     `sudo cat /var/mail/bob` n'a rien de nouveau — un message interrompu est
+     `sudo cat /var/mail/bob` n'a rien de nouveau, un message interrompu est
      un message jamais parti. [ ]
 174f. **Les refus, mot pour mot.** `echo x | mail fantome` →
      `fantome... User unknown`. `echo x | mail fantome bob` → le même refus, et
@@ -1022,7 +1022,7 @@ en observant le jeu réel, pas par un banc de test.
      `echo 'les lumières sont éteintes' > note`, puis
      `cat note | rsh gate mail -s Lumieres bob`. Rien à l'écran. Sur la
      seconde, en `bob` : `mail` montre le message, et `From:` porte le nom de
-     la **seconde** machine — c'est là qu'il a été posté. Puis
+     la **seconde** machine, c'est là qu'il a été posté. Puis
      `rsh gate mail bob` tout seul → `Null message body; hope that's ok` à
      l'écran de la première, et un message au corps vide dans la boîte. [ ]
 175. `sh watch.sh &`
@@ -1237,7 +1237,7 @@ courant. Dans ce qui suit, `ici` est la machine devant laquelle on est assis et
 ## R. La disquette (palier 4e)
 
 Il faut une disquette : elle se trouve dans les bureaux, les cybercafés, les
-magasins d'électronique et les caisses d'informatique — ou, en mode debug, par le
+magasins d'électronique et les caisses d'informatique, ou, en mode debug, par le
 menu d'apparition d'objets, sous `CeroSec.FloppyBlue`, `FloppyYellow`,
 `FloppyRed` ou `FloppyGreen`. Les quatre sont la même disquette dans quatre
 coques.
@@ -1252,8 +1252,8 @@ coques.
      et l'infobulle dit *Eject the floppy first.* [ ]
 199b. **Le menu après l'éjection.** Disquette dans la fente, cliquer **Eject
      floppy** → la disquette revient dans l'inventaire. **Refermer le menu et
-     rouvrir le clic droit** : **Insert floppy** est là et n'est PAS grisé — pas
-     d'infobulle *Eject the floppy first* — et **Eject floppy** a disparu. C'est
+     rouvrir le clic droit** : **Insert floppy** est là et n'est PAS grisé, pas
+     d'infobulle *Eject the floppy first*, et **Eject floppy** a disparu. C'est
      la copie du client qui est en cause et non la machine : le menu montrait la
      fente encore pleine alors que la disquette était dans les mains du
      survivant. [ ]
@@ -1317,7 +1317,7 @@ coques.
      `mount` la renomme pareil. Avec une disquette NON étiquetée : la ligne `mount`
      est nue, sans parenthèses vides, et ne dit jamais `3.5" Floppy Disk`. [ ]
 200. **Le lecteur, éteint.** Éteindre l'ordinateur (Turn off), puis clic droit :
-     Insert et Eject sont toujours proposés — une fente est mécanique.
+     Insert et Eject sont toujours proposés, une fente est mécanique.
      Éjecter la disquette machine éteinte, la reprendre, la remettre, rallumer.
      [ ]
 201. **`/dev/fd0`.** Machine allumée, disquette dedans, se connecter et taper
@@ -1342,7 +1342,7 @@ coques.
      disquette ne fait pas bouger la ligne `hda`. [ ]
 204. **Les plafonds sont ceux de la disquette.** Dans l'éditeur, remplir un
      fichier de `/mnt` jusqu'à ce qu'il soit gros (ou répéter
-     `echo ... >> /mnt/gros.txt`) jusqu'à `disk full` — puis vérifier que
+     `echo ... >> /mnt/gros.txt`) jusqu'à `disk full`, puis vérifier que
      `echo ok > /home/admin/ok.txt` passe toujours : la machine, elle, n'est pas
      pleine. `mv /home/admin/ok.txt /mnt` → `mv: /mnt/ok.txt: cross-device
      link` ; `cp` puis `rm` marchent. [ ]
@@ -1413,7 +1413,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
 
 210. **Le numéro.** Allumer les deux et regarder le BIOS de chacun : sous la
      ligne `Ethernet: eth0 10.x.y.z` il doit y avoir une ligne
-     `Phone line: NNN-NNNN` — **sept** chiffres, et le premier des trois premiers
+     `Phone line: NNN-NNNN`, **sept** chiffres, et le premier des trois premiers
      n'est jamais 0 ni 1. Les deux machines d'un **même** local (celles de la
      section N, dans une maison) doivent afficher le **même** numéro ; celle de
      l'autre bâtiment un numéro différent. Si les deux bâtiments sont dans la même
@@ -1424,9 +1424,9 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      pas une interface tant qu'on n'a pas appelé). Éteindre et rallumer : le même
      numéro revient. [ ]
 211. **L'appel, et la sonnerie.** Depuis `ici` : `cu 555-NNNN` (le numéro de
-     `là-bas`). **Rien ne s'affiche pendant environ quatre secondes** — c'est le
+     `là-bas`). **Rien ne s'affiche pendant environ quatre secondes**, c'est le
      modem qui compose et le poste d'en face qui sonne ; compter, ça doit se
-     sentir — puis `CONNECT 2400`, puis `Connected.`, puis le `login:` de l'autre
+     sentir, puis `CONNECT 2400`, puis `Connected.`, puis le `login:` de l'autre
      machine.
      S'y connecter (`admin`, Entrée) : l'invite devient `admin@<là-bas>`,
      `hostname` répond le nom de l'autre machine et `pwd` son `/home/admin`.
@@ -1450,7 +1450,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      appeler le numéro de son **propre** local → `BUSY` aussi. Raccrocher (`~.`),
      puis depuis `ici` appeler le numéro de sa propre machine → `BUSY` (une ligne
      qu'on utilise soi-même). Enfin, éteindre toutes les machines de `là-bas` et
-     appeler son numéro : **rien pendant quinze secondes**, puis `NO CARRIER` —
+     appeler son numéro : **rien pendant quinze secondes**, puis `NO CARRIER`,
      c'est le registre S7 du modem, chronométrer. Même chose pour un numéro que
      personne n'a. [ ]
 213b. **Les deux bouts sont occupés pendant que ça sonne.** Éteindre `là-bas`,
@@ -1484,7 +1484,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      ordinateur dans **une** boutique et un autre dans une **autre** boutique du
      même bâtiment, les allumer, et comparer les BIOS : deux numéros de téléphone
      **différents**, deux adresses `10.x.y.z` dont les deux octets du milieu
-     diffèrent, et sur chacun une ligne `Phone line: NNN-NNNN (NomDeLaZone)` — le
+     diffèrent, et sur chacun une ligne `Phone line: NNN-NNNN (NomDeLaZone)`, le
      nom de la boutique entre parenthèses. Depuis l'une, écrire l'adresse de
      l'autre dans `/etc/hosts` puis `ping <nom>` → 100 % de perte et
      `rlogin <nom>` → `No route to host` : ce n'est pas le même câble. Puis
@@ -1493,11 +1493,11 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      segment, et **aucun** nom entre parenthèses. Enfin, sur cette machine du
      couloir, `dev | wc -l` : le mall entier est **un** bâtiment pour `/dev`, donc
      la liste peut passer 96 entrées (le plafond est 256) et elle doit tenir
-     jusqu'au bout — `dev light`, `dev door`, `dev win` kind par kind pour la
+     jusqu'au bout, `dev light`, `dev door`, `dev win` kind par kind pour la
      lire. [ ]
 215c. **Une maison reste un seul local.** Dans une maison ordinaire (pas un mall),
      poser deux ordinateurs dans deux pièces différentes, les allumer : **même**
-     numéro de téléphone, **même** segment, et aucun nom entre parenthèses — les
+     numéro de téléphone, **même** segment, et aucun nom entre parenthèses, les
      zones nommées qui couvrent une maison sont plus grandes qu'elle, donc elles
      ne comptent pas. Vérifier au passage qu'un appel vers ce numéro sonne sur la
      machine à l'adresse la plus basse (`who` là-bas), et que pendant ce temps
@@ -1509,7 +1509,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      carré). Une machine dont on regarde l'écran sans l'allumer doit aussi
      l'obtenir dès qu'on ouvre la fenêtre dessus. [ ]
 215e. **L'annuaire : le trouver et le lire.** Ramasser un `Phonebook` (table
-     d'entrée, comptoir de magasin, tiroir de bureau — l'objet vanilla) et faire
+     d'entrée, comptoir de magasin, tiroir de bureau, l'objet vanilla) et faire
      un clic droit dessus dans le sac : **Chercher un numéro** est la première
      entrée du menu, au-dessus de l'option vanilla **Lire** (qui doit toujours
      être là). Cliquer : une fenêtre de
@@ -1526,7 +1526,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      `Phone line:` d'un ordinateur du même coin de la carte : **les mêmes**.
      Puis partir à plus de 1024 tuiles (une autre ville) avec ce même livre et
      rouvrir : **même** central, **mêmes** inscriptions, et le nom de l'objet n'a
-     pas changé une deuxième fois — c'est l'annuaire de là où on l'a trouvé.
+     pas changé une deuxième fois, c'est l'annuaire de là où on l'a trouvé.
      Ramasser un **deuxième** `Phonebook` sur place et l'ouvrir : central
      **différent**, inscriptions différentes. [ ]
 215g. **Un numéro de l'annuaire sonne vraiment.** Dans une boutique nommée par la
@@ -1539,15 +1539,15 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      l'ordinateur de la boutique et rappeler le **même** numéro de l'annuaire :
      **rien pendant quinze secondes**, puis `NO CARRIER` (chronométrer). Faire de
      même sur une inscription derrière laquelle personne n'a jamais rien posé :
-     `NO CARRIER` après quinze secondes aussi — l'inscription est bonne, le local
+     `NO CARRIER` après quinze secondes aussi, l'inscription est bonne, le local
      est vide. [ ]
 215h. **Ce qui n'est pas dedans.** Dans une **maison** ordinaire, poser un
      ordinateur, l'allumer, noter son numéro : il n'est **nulle part** dans
-     l'annuaire de la région (aucune ligne ne porte ces sept chiffres) — les
+     l'annuaire de la région (aucune ligne ne porte ces sept chiffres), les
      pages blanches demanderaient un nom de famille que la carte ne donne pas.
      Parcourir ensuite tout l'annuaire feuillet par feuillet : **aucune**
      coordonnée de carte n'y apparaît, et aucun nom de zone de région (`Farm`,
-     `StreetPoor`, `University`) — seulement des commerces. Si la dernière ligne
+     `StreetPoor`, `University`), seulement des commerces. Si la dernière ligne
      du dernier feuillet dit que l'annuaire est plein, c'est le plafond de 400 :
      le noter dans le rapport. [ ]
 215i. **Multijoueur.** Deux joueurs, chacun son `Phonebook`, ouverts en même
@@ -1555,7 +1555,7 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
      propres inscriptions, et la fenêtre de l'un ne change pas quand l'autre
      ouvre la sienne. [ ]
 215j. **Le dentiste et le magasin de musique (premises v2).** C'est le pas qui
-     répond au rapport de jeu — « ils partagent tous la même chose peu importe le
+     répond au rapport de jeu, « ils partagent tous la même chose peu importe le
      commerce ». Aller dans le mall de **12809,1294** (ou n'importe quel mall).
      Poser un ordinateur dans le **cabinet du dentiste** et un autre dans un
      **magasin** du même mall (vêtements, librairie, pharmacie), les allumer, et
@@ -1572,20 +1572,20 @@ vêtements et trois étages de bureaux au-dessus. Le magasin de musique
 215k. **Le papier du tiroir n'ouvre que sa boutique.** Dans le mall, fouiller les
      tiroirs du bureau **du dentiste** jusqu'à trouver le papier `root` (un
      `Notebook` nommé). Le mot de passe dessus doit ouvrir `root` sur la machine du
-     dentiste — et **échouer** sur celle du magasin d'à côté. Refaire dans l'autre
+     dentiste, et **échouer** sur celle du magasin d'à côté. Refaire dans l'autre
      sens. Avant ce changement un seul papier ouvrait tout le mall. [ ]
 215l. **L'arrière-boutique appartient à sa boutique, le couloir à personne.** Poser
      un ordinateur dans une **réserve** collée à une boutique (`...storage`) : même
      numéro, même segment et même nom entre parenthèses que la boutique devant
      elle, et le papier de cette boutique l'ouvre. Poser un autre ordinateur dans
      le **couloir** du mall : numéro différent des deux, **aucun** nom entre
-     parenthèses — le couloir est au bâtiment. Sur la machine de la boutique,
+     parenthèses, le couloir est au bâtiment. Sur la machine de la boutique,
      `ruptime` doit lister **sa** machine et celle de sa réserve, et **pas** celles
      des autres boutiques ; `ping <adresse d'une autre boutique>` → 100 % de perte,
      `rlogin` → `No route to host`, et `cu <son numéro>` → l'appel passe. [ ]
 215m. **L'annuaire liste les boutiques du mall.** Rouvrir un `Phonebook` de la
-     région du mall : les boutiques doivent y être **sous leur métier en mots** —
-     `Dentist`, `Music Store`, `Pharmacy`, `Book Store` — avec **exactement** les
+     région du mall : les boutiques doivent y être **sous leur métier en mots** :
+     `Dentist`, `Music Store`, `Pharmacy`, `Book Store`, avec **exactement** les
      numéros lus au BIOS. `cu` sur une inscription dont on n'a pas posé
      d'ordinateur : `NO CARRIER` après quinze secondes (l'inscription est bonne, le
      local est vide). Vérifier aussi ce qui n'y est **pas** : ni `Hall`, ni une
@@ -1682,7 +1682,7 @@ avant.
      `<indicatif appelé> de <indicatif appelant> *** CONNECTED`. Raccrocher : une
      deuxième ligne, la même avec `*** DISCONNECTED`. Changer la fréquence du
      talkie et refaire un appel : plus rien. C'est la leçon de sécurité du
-     palier — la radio ne peut pas se taire, et la seule défense est de changer de
+     palier, la radio ne peut pas se taire, et la seule défense est de changer de
      fréquence. [ ]
 218a. **MHEARD : ce que les boîtiers ont noté.** Les deux postes accordés et
      allumés. Ouvrir une liaison depuis `ici` puis revenir à `cmd:` (Échap) et
@@ -1698,7 +1698,7 @@ avant.
      portée : régler le talkie de l'étape 218 sur la même fréquence, s'en éloigner
      franchement, refaire une liaison → rien de neuf dans `MH` là-bas. [ ]
 219. **Les six silences.** Chacun de ces six cas doit répondre exactement
-     `*** retry count exceeded`, et rien d'autre — chacun tapé comme `C
+     `*** retry count exceeded`, et rien d'autre, chacun tapé comme `C
      <indicatif>` à l'invite `cmd:` du boîtier : (a) la radio de `là-bas`
      éteinte ; (b) sa pile retirée ; (c) sa fréquence changée (les deux postes
      allumés, mais pas sur la même) ; (d) la machine `là-bas` éteinte ;
@@ -1717,7 +1717,7 @@ avant.
      éteindre la radio d'en face (ou la déplacer hors de la pièce) pendant que la
      session est ouverte, et taper n'importe quoi → `*** retry count exceeded` et
      retour à l'invite locale (et **pas** `*** DISCONNECTED` : la liaison est
-     tombée, personne n'a raccroché) — et l'écran revient à `cmd:` et **pas** au
+     tombée, personne n'a raccroché), et l'écran revient à `cmd:` et **pas** au
      shell : c'est `cu` qui tient la ligne et il est toujours là. Enfin le cas
      propre à la radio : s'éloigner assez pour que le morceau de carte de
      `là-bas` ne soit plus chargé, puis `C <son indicatif>` →
@@ -1731,8 +1731,8 @@ avant.
      vérifier qu'une liaison ne se laisse pas automatiser : `crontab -e` avec
      `* * * * * cu -l /dev/radio0`, attendre une minute → `mail` dit
      `cu: not a terminal`, la bannière du boîtier n'apparaît **pas** (la ligne n'a
-     jamais été ouverte), **aucune** session ne s'est ouverte là-bas, et — le
-     point important — **rien n'est passé sur les ondes** (le talkie de l'étape
+     jamais été ouverte), **aucune** session ne s'est ouverte là-bas, et, le
+     point important, **rien n'est passé sur les ondes** (le talkie de l'étape
      218, accordé et allumé, ne doit rien afficher). Finir par `crontab -r`.
      Vérifier aussi la lenteur : lancer `ls /bin` sur la machine d'en face, les
      lignes doivent arriver **deux par seconde**, visiblement plus lentement
@@ -1741,7 +1741,7 @@ avant.
      machine neuve : `call KD4AXR` → `call: command not found`, `ls /bin` ne montre
      pas `call`, `help` ne le nomme pas, et **Tab** après `cal` ne complète rien.
      Puis la mise à niveau : charger une partie **d'avant** cette version (ou
-     recréer le cas à la main en root — `echo "call another machine on the radio" >
+     recréer le cas à la main en root, `echo "call another machine on the radio" >
      /bin/call` puis `chmod 755 /bin/call`, et dans le débogueur remettre le
      `sysv` de la machine à 16), éteindre et rallumer l'ordinateur → `/bin/call`
      a été **supprimé** par la mise à niveau et `ls /bin` ne le montre plus. Un
@@ -1819,7 +1819,7 @@ rechargement du morceau, jamais avant. La règle est dans
      loin (ou traverser la carte) assez pour que le quartier se décharge, et
      revenir tout de suite. Attendu : la lueur est là **dès que le morceau de
      carte arrive**, sans rien toucher, sans attendre une minute et sans passer
-     par l'interrupteur — une seule lueur, jamais deux. Refaire l'aller-retour
+     par l'interrupteur, une seule lueur, jamais deux. Refaire l'aller-retour
      trois ou quatre fois de suite : c'est toujours une. C'était le bogue
      rapporté (« je me téléporte très loin et je reviens, la lumière n'est plus
      là alors que l'ordinateur est allumé ») : le moteur retire la lueur avec le
@@ -1878,7 +1878,7 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      porte au clic et relire → la lecture suit. [ ]
 231. **L'opérateur sur la même porte.** Poser un `CeroSec.DoorOperator`
      (Électricité 3) sur cette porte. Attendu : **même numéro** qu'à l'étape
-     230 — `doorN` n'a pas changé — mais `ls -l /dev` montre maintenant
+     230, `doorN` n'a pas changé, mais `ls -l /dev` montre maintenant
      `crw-rw----`, et `echo open > /dev/doorN` ouvre la porte pour de bon. Si la
      porte est verrouillée, elle répond `doorN: locked` : c'est la serrure, pas
      le module. [ ]
@@ -1918,26 +1918,26 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
      s'ils sont déjà là, la recette s'auto-apprend encore au niveau qui la
      fabrique. Se donner un `CeroSec.WiringGuide` : il s'appelle **Guide de
      câblage CeroSec**, il pèse 0,5, il est rangé sous **Ressource de recette**
-     et son infobulle nomme les quatre modules. Clic droit → **Lire** — c'est
+     et son infobulle nomme les quatre modules. Clic droit → **Lire**, c'est
      l'entrée *vanilla*, aucune des nôtres, et le personnage s'assoit et lit.
      Attendu : à la fin, les quatre recettes sont apprises d'un coup, et un
      deuxième clic droit propose **Relire**. [ ]
 235b. **Fabriquer les quatre.** Le guide lu, avec Électricité 1 : le contact
      magnétique et le module relais sont dans l'onglet **Électrique** de
-     l'établi. À 2 la gâche apparaît, à 3 l'opérateur — la compétence barre
+     l'établi. À 2 la gâche apparaît, à 3 l'opérateur, la compétence barre
      toujours la fabrication, le livre n'enlève que l'ignorance. Vérifier qu'un
      tournevis est demandé et **rendu** (il est toujours là après la
      fabrication), et que l'opérateur mange bien une boîte de pièces de
      moteur. [ ]
 235c. **L'électricien chevronné s'en passe.** Personnage monté à **Électricité
      7** sans avoir jamais vu le guide : le contact et le relais sont là quand
-     même (la gâche à 8, l'opérateur à 9). C'est la forme vanilla — le
+     même (la gâche à 8, l'opérateur à 9). C'est la forme vanilla, le
      magazine avance l'accès, il n'en est pas la seule porte. [ ]
 236. **Le butin.** Dans une camionnette d'électricien, une boutique
      d'électronique, une caisse d'entrepôt, une quincaillerie ou un garage : on
      trouve des contacts assez souvent, des relais moins, des gâches encore
      moins et un opérateur rarement. Aucun module sur un bureau de bureau ni
-     dans une bibliothèque — ce ne sont pas les mêmes étagères que les
+     dans une bibliothèque, ce ne sont pas les mêmes étagères que les
      disquettes. Le **guide**, lui, se trouve là où le jeu met ses propres
      magazines d'électronique et aux mêmes taux : surtout sur le présentoir
      d'une boutique d'électronique, puis une librairie, une quincaillerie et la
@@ -1965,12 +1965,12 @@ l'opérateur de porte (ouvre et ferme). Règles et preuves :
 
 La fenêtre est un outil de développement, jamais quelque chose qu'un joueur voit.
 Elle ne change que six choses sur cette rangée de boutons : allumer, éteindre, où le
-personnage se trouve, **réinitialiser la machine** — derrière deux clics, et seulement
-sur une machine éteinte — c'est-à-dire en refaire une que personne n'a jamais
+personnage se trouve, **réinitialiser la machine**, derrière deux clics, et seulement
+sur une machine éteinte, c'est-à-dire en refaire une que personne n'a jamais
 utilisée, lancer l'autotest, et donner la disquette de diagnostic. Tout le reste est
-en lecture. Les huit outils de la **deuxième rangée** — les papiers, les comptes, le
+en lecture. Les huit outils de la **deuxième rangée**, les papiers, les comptes, le
 mot de passe enlevé, n'importe quelle disquette, root à l'écran, cron tout de suite,
-le câblage forcé — sont la section [AI](#ai-les-outils-de-ladmin-et-du-testeur-fenêtre-de-débogage-2e-rangée).
+le câblage forcé, sont la section [AI](#ai-les-outils-de-ladmin-et-du-testeur-fenêtre-de-débogage-2e-rangée).
 Détails et protocole dans [DEBUG.md](DEBUG.md).
 
 Les étapes 258b à 258i sont la porte de sortie du mod : ce sont les deux seules
@@ -2009,14 +2009,14 @@ un interrupteur dans la pièce.
      avec un `~`, jamais dessinée par-dessus la suivante. [ ]
 242. **L'onglet Machines.** Attendu : une ligne par ordinateur **utilisé** que le
      serveur tient, y compris celui du bâtiment loin, avec ses colonnes nommées en
-     mots clairs — `x,y,z`, `facing`, `power`, `chunk`, `wire`, `host`, `address`,
+     mots clairs, `x,y,z`, `facing`, `power`, `chunk`, `wire`, `host`, `address`,
      `tel`, `call`, `jobs`, `windows`. La machine devant laquelle on est est déjà
      sélectionnée. [ ]
 242b. **Le filtre, et le compte.** Sous la liste, une ligne `showing N of M` avec
      le mode (`used only`). Le bouton **Voir toutes les machines** montre tout :
-     attendu, beaucoup plus de lignes — une par sprite d'ordinateur que le streamer
+     attendu, beaucoup plus de lignes, une par sprite d'ordinateur que le streamer
      a chargé depuis le début de la partie, éteinte, avec des colonnes vides (c'est
-     ce qu'on a vu en jeu : 44 lignes pour 6 machines qui comptent) — et `N` monte
+     ce qu'on a vu en jeu : 44 lignes pour 6 machines qui comptent), et `N` monte
      jusqu'à `M`. Le bouton devient **Voir les utilisées** et revient en arrière. Le
      filtre ne change rien à la sélection ni aux autres onglets, et il ne demande
      rien au serveur (aucun délai). [ ]
@@ -2025,39 +2025,39 @@ un interrupteur dans la pièce.
      surlignée est toujours la MÊME machine, même si une autre est apparue ou a
      disparu au-dessus d'elle dans la liste. [ ]
 243. **Sous la liste.** Attendu : le détail de la machine sélectionnée sur
-     plusieurs lignes — son sprite, la version de son état, `sysv`, si le système
+     plusieurs lignes, son sprite, la version de son état, `sysv`, si le système
      passe, et sa console (qui est connecté, dans quel répertoire, combien de
      lignes à l'écran). Ouvrir le terminal dessus, taper `ls`, revenir à la
      fenêtre : le nombre de lignes a bougé dans les deux secondes. [ ]
 243b. **Où la machine se trouve.** Toujours sous la liste, après la console :
      l'empreinte du bâtiment (coin, coin opposé, taille, superficie, nombre de
      pièces) ou `outdoors` pour une machine dans une base construite, le nom de la
-     pièce, et une ligne par zone dans laquelle le carré se trouve — son type, son
+     pièce, et une ligne par zone dans laquelle le carré se trouve, son type, son
      nom, sa position, `w x h`, sa boîte (`w*h`) et sa superficie réelle. Faire
      l'essai **dans un centre commercial** : attendu, la zone nommée du magasin est
      plus petite que le bâtiment autour d'elle, et pour une zone de forme
      irrégulière la superficie réelle est plus petite que sa boîte. Sur une machine
      dont le morceau de carte n'est pas chargé : `premises: no square (the chunk is
-     away)` et rien d'autre — personne n'est là pour répondre. [ ]
+     away)` et rien d'autre, personne n'est là pour répondre. [ ]
 244. **Sélectionner une autre machine.** Cliquer la ligne de l'ordinateur du
      bâtiment loin. Attendu : la liste garde ses lignes et la ligne cliquée reste
      surlignée, le détail dessous devient celui de cette machine, et les onglets
      Files et Devices se vident puis se remplissent avec ceux de la nouvelle
-     machine — jamais le disque de l'ancienne sous le nom de la nouvelle. [ ]
+     machine, jamais le disque de l'ancienne sous le nom de la nouvelle. [ ]
 245. **La machine dont le quartier n'est pas chargé.** Sa colonne **chunk** dit
      `away` et sa colonne **wire** dit `-` et pas `no` : personne n'est là pour
      répondre sur le courant. Attendu : elle est quand même **allumée** (`on`), et
      son nom et son adresse sont là, parce que le serveur tient son disque quoi
      que fasse le streamer. [ ]
 246. **Éteindre à distance.** Machine loin sélectionnée, cliquer **Éteindre**.
-     Attendu : sa colonne `power` passe à `off` dans les deux secondes — éteindre ne
+     Attendu : sa colonne `power` passe à `off` dans les deux secondes, éteindre ne
      demande rien au monde, le serveur tient l'état. [ ]
 246b. **Rallumer une machine dont le quartier n'est pas chargé, et savoir
      pourquoi.** C'est l'autre moitié du défaut du 2026-09-12 : le bouton
      **Allumer** était cliquable, on cliquait, et il ne se passait **rien du tout**.
      Machine loin (colonne `chunk` = `away`) sélectionnée. Attendu : le bouton
      **Allumer** est **grisé**, et la PREMIÈRE ligne du bloc sous la liste dit
-     pourquoi — « cannot turn on: its chunk is away, so there is nobody to ask about
+     pourquoi, « cannot turn on: its chunk is away, so there is nobody to ask about
      the wire -- teleport to it first ». Cliquer dessus quand même : rien ne part sur
      le fil et la ligne reste. [ ]
 246c. **Rallumer une machine qu'on peut rallumer.** Se téléporter à la machine
@@ -2068,7 +2068,7 @@ un interrupteur dans la pièce.
      **Éteindre** s'active. [ ]
 246d. **Un refus que le serveur envoie quand même.** Couper le courant de la pièce
      (générateur à l'arrêt / interrupteur du réseau) SANS rafraîchir, puis cliquer
-     **Allumer** dans les deux secondes qui suivent — le bouton était encore
+     **Allumer** dans les deux secondes qui suivent, le bouton était encore
      activé. Attendu : le refus revient du serveur et s'affiche sur la première
      ligne (« cannot turn on: there is no wire at its square »), jamais un clic
      muet. [ ]
@@ -2081,7 +2081,7 @@ un interrupteur dans la pièce.
      terminal s'ouvre comme si on avait utilisé l'ordinateur par devant, sans la
      marche et sans la chaise. [ ]
 248b. **Les trois raisons de ne pas l'ouvrir.** Attendu : le bouton est grisé et la
-     première ligne sous la liste dit laquelle des trois manque — « cannot open the
+     première ligne sous la liste dit laquelle des trois manque, « cannot open the
      terminal: its chunk is away, there is no screen in the world » (machine loin),
      « ... it is off » (machine éteinte devant laquelle on est), « ... the player is
      not standing at it » (machine allumée et chargée, mais on s'est éloigné de trois
@@ -2097,7 +2097,7 @@ un interrupteur dans la pièce.
      la machine, une ligne par clé, et une dernière ligne qui dit où ça a été
      coupé. Attendu : c'est borné (pas plus de 401 lignes), et rien n'apparaît
      dans la fenêtre. [ ]
-250b. **Réinitialiser la machine — les deux clics.** C'est le bouton
+250b. **Réinitialiser la machine, les deux clics.** C'est le bouton
      **Réinitialiser la machine**, après **Vider l'état**, et il existe pour une
      seule raison : le préremplissage n'arrive qu'au PREMIER allumage, donc une
      machine dont le premier allumage a planté à moitié est une machine sur laquelle
@@ -2106,14 +2106,14 @@ un interrupteur dans la pièce.
      « Click again to reset <nom d'hôte> at x,y,z ». Attendre plus de **cinq
      secondes** sans rien faire : la ligne disparaît et le clic suivant ne fait
      qu'armer de nouveau. Cliquer deux fois de suite : le disque part. Aucune
-     boîte de dialogue, jamais — les deux clics SONT la garde. [ ]
+     boîte de dialogue, jamais, les deux clics SONT la garde. [ ]
 250c. **Ce que la réinitialisation laisse.** Avant de réinitialiser : noter le nom
      d'hôte et les comptes de la machine (`cat /etc/passwd`), écrire un fichier à
      soi, mettre une **disquette** dans le lecteur, et repérer le papier déjà trouvé
      dans un tiroir de ces lieux. Réinitialiser (machine éteinte), puis rallumer.
-     Attendu : les **mêmes comptes** et le **même nom d'hôte** qu'avant — ils
-     viennent du secret de la sauvegarde et des lieux, que rien de tout ça ne touche
-     — donc **le papier du tiroir ouvre encore la machine** ; le fichier écrit à la
+     Attendu : les **mêmes comptes** et le **même nom d'hôte** qu'avant, ils
+     viennent du secret de la sauvegarde et des lieux, que rien de tout ça ne touche,
+     donc **le papier du tiroir ouvre encore la machine** ; le fichier écrit à la
      main a disparu ; et la **disquette est toujours dans le lecteur**, avec ce qui
      est écrit dessus (`mount /dev/fd0 /mnt` puis `ls /mnt`). Rien n'est éjecté par
      terre : une disquette dans un lecteur est dans le lecteur. Et aucun second
@@ -2124,27 +2124,27 @@ un interrupteur dans la pièce.
      l'allumer par le menu de l'ordinateur AVANT le second clic, et cliquer.
      Attendu : rien n'est réinitialisé, la même phrase s'affiche. Enfin armer sur une
      machine, cliquer une autre ligne, et cliquer **Réinitialiser la machine** :
-     attendu, ce clic ne fait qu'armer sur la nouvelle machine — un armement ne
+     attendu, ce clic ne fait qu'armer sur la nouvelle machine, un armement ne
      traverse jamais une sélection. [ ]
 250e. **La ligne qui ne disparaît pas sous le curseur.** Une machine
      réinitialisée n'a plus d'état, donc le serveur ne la compte plus comme
      « utilisée ». Filtre sur **Voir les utilisées** (le réglage par défaut),
      réinitialiser la machine sélectionnée. Attendu : sa ligne **reste** dans la
      liste et reste surlignée, aux rafraîchissements suivants aussi, pendant que les
-     autres machines jamais utilisées restent cachées — sans quoi l'ordinateur qu'on
+     autres machines jamais utilisées restent cachées, sans quoi l'ordinateur qu'on
      vient de réinitialiser aurait l'air d'avoir été supprimé. Cliquer **Allumer**
      dessus : elle revient dans la liste par la porte normale. [ ]
 251. **L'onglet Devices.** Attendu : une ligne par entrée de `/dev` de la machine
      sélectionnée, avec le même nom et le même état que `ls -l /dev` dans son
      terminal, plus ce que le terminal ne montre pas : le carré absolu de l'objet,
      la « poignée » qu'un `dev find` enverrait (le nom de sprite d'une porte, le
-     type d'objet d'un détecteur posé par terre, **rien** pour un interrupteur —
+     type d'objet d'un détecteur posé par terre, **rien** pour un interrupteur,
      un interrupteur clignote au lieu d'être entouré), et si l'objet est encore
      là. Sous la liste : le carnet de numéros et un enregistrement par détecteur.
      [ ]
 252. **Un périphérique qui s'en va.** Ramasser le détecteur posé par terre.
      Attendu : au rafraîchissement suivant sa ligne dit que l'objet est parti
-     (`gone`) et son numéro reste dépensé — c'est la différence entre un
+     (`gone`) et son numéro reste dépensé, c'est la différence entre un
      périphérique hors de portée et un chemin mal tapé. [ ]
 253. **L'onglet Network.** Attendu : une ligne `eth` par bâtiment avec ses
      machines et leurs adresses, une ligne `tel` par bâtiment avec libre/occupé,
@@ -2166,7 +2166,7 @@ un interrupteur dans la pièce.
      ligne `evt` : ce refus est celui du résolveur et n'atteint jamais le fil. [ ]
 256. **L'onglet Scheduler.** Lancer `sleep 60 &` sur la machine sélectionnée.
      Attendu : une ligne apparaît avec la machine, l'id que le shell a annoncé,
-     le slot `[1]`, le nom, l'état, les pas, le temps processeur et la dette —
+     le slot `[1]`, le nom, l'état, les pas, le temps processeur et la dette,
      l'état étant le mot que `jobs` imprime pour le même job. Sous la liste : les
      constantes de budget de `CeroSecDefs` et l'horloge du planificateur. [ ]
 257. **Le crontab.** `crontab -e` avec `* * * * * date` sur la machine
@@ -2177,7 +2177,7 @@ un interrupteur dans la pièce.
 258. **L'onglet Log.** Attendu : les lignes que le mod a écrites sur lui-même,
      la plus récente en bas, avec leur niveau. Les boutons **All**, **Warnings**
      et **Errors** filtrent, et les trois boutons ne sont là que sur cet onglet.
-     Attendu aussi : il y a des lignes **même avec `CeroSec.DEBUG = false`** —
+     Attendu aussi : il y a des lignes **même avec `CeroSec.DEBUG = false`** :
      l'impression dans la console est conditionnée par ce réglage, l'anneau non.
      [ ]
 258b. **L'autotest du moteur.** C'est l'étape qui aurait attrapé les deux bogues
@@ -2232,7 +2232,7 @@ un interrupteur dans la pièce.
 258g. **Ce qu'elle laisse.** `cat /mnt/RESULTS.TXT` → la même sentence
      `CEROSEC SELFTEST PASS 26 FAIL 0`, avec les lignes d'échec en dessous s'il y
      en avait et s'il restait de la place sur la disquette. Puis `ls -l ~` :
-     attendu, **aucun** fichier commençant par `st.` — la suite range ses fichiers
+     attendu, **aucun** fichier commençant par `st.`, la suite range ses fichiers
      de travail derrière elle. Et `df` : le disque n'a pas bougé. [ ]
 258g-bis. **Un refus d'insertion se lit.** Avec la disquette encore dans le
      lecteur, en insérer une deuxième : attendu, `Éjectez d'abord la disquette.`
@@ -2259,14 +2259,14 @@ un interrupteur dans la pièce.
      d'onglets, à aucune taille. Vérifier sur deux onglets différents. [ ]
 261. **Fermer, et le rafraîchissement qui s'arrête.** Mettre
      `CeroSec.DEBUG = true`, ouvrir la fenêtre, la fermer par sa croix, et
-     regarder la console pendant une minute. Attendu : plus rien de la fenêtre —
+     regarder la console pendant une minute. Attendu : plus rien de la fenêtre,
      elle ne demande plus rien au serveur. (C'est la fuite que
      `tests/debug_ui_test.lua` garde, mais elle se voit aussi comme ça.) [ ]
 262. **Le drapeau.** Mettre `CeroSec.DEV_DEBUG_MENU = false` et
      `CeroSec.DEV_MANUAL_MENU = false`, recharger la partie. Attendu : plus de
      sous-menu **CeroSec (dev)** du tout sur le menu d'un ordinateur. Relancer le
      jeu avec `-debug` : le sous-menu revient avec **Fenêtre de débogage** dedans
-     et **rien** d'autre — le manuel se trouve ou ne se lit pas. [ ]
+     et **rien** d'autre, le manuel se trouve ou ne se lit pas. [ ]
 
 ## Y. Les outils qui manquaient, et les noms qui s'en vont (fidélité A)
 
@@ -2366,7 +2366,7 @@ table qu'il avait écrite.
      partie proprement (**Enregistrer et quitter**, pas Alt-F4 : la table de
      l'objet part sur un enregistrement). Installer cette version-ci, recharger
      la **même** sauvegarde, revenir devant la même machine, l'allumer :
-     - le BIOS compte sa mémoire et l'écran finit sur `login:` — **pas** sur
+     - le BIOS compte sa mémoire et l'écran finit sur `login:`, **pas** sur
        `No operating system found.` ;
      - `admin` se connecte avec son mot de passe, `cat travail/notes.txt` dit
        `garde-moi` ;
@@ -2381,7 +2381,7 @@ table qu'il avait écrite.
        `dev` les liste, et en `root` (`su root`)
        `echo open > /dev/door0` ouvre la porte pour de bon (comme à l'étape 231) ;
      - et ce que la mise à jour AJOUTE est là : `ls /usr/local/bin` répond (vide),
-       sans `no such file`, et `echo $PATH` dit `/bin:/usr/local/bin` — une
+       sans `no such file`, et `echo $PATH` dit `/bin:/usr/local/bin`, une
        machine d'une vieille sauvegarde gagne la chaîne au chargement. Si on
        avait fabriqué soi-même un `/usr` sous l'ancienne version, il est intact,
        avec ce qu'il y avait dedans. [ ]
@@ -2454,7 +2454,7 @@ qu'on lit sur le papier soit celui que la machine demande.
      commencée **avant** cette mise à jour, où un papier `Sticky note: root / <mot>`
      avait déjà été trouvé : il est **toujours là**, avec le même nom qu'avant et le
      même mot de passe dessus, et ce mot ouvre toujours sa machine. Il ne se lit
-     pas et ne brûle pas — c'est l'ancien objet, et il n'a pas été touché. Les
+     pas et ne brûle pas, c'est l'ancien objet, et il n'a pas été touché. Les
      notes **neuves** de la même partie, elles, sont du papier. [ ]
 
 280. **Le mot du papier ouvre la machine.** Revenir à l'ordinateur de l'étape 278,
@@ -2487,7 +2487,7 @@ qu'on lit sur le papier soit celui que la machine demande.
      cette maison et fouiller de **nouveaux** contenants du même bâtiment : cette
      fois le papier `root` finit par sortir. (Le mot dessus n'ouvre pas la machine
      qu'on vient de poser : une machine portée à la main garde le disque qu'elle
-     avait et n'est jamais garnie — étape 250c. Il ouvre celle qu'on trouverait
+     avait et n'est jamais garnie, étape 250c. Il ouvre celle qu'on trouverait
      déjà debout dans ce bâtiment.)
 
      L'autre moitié de la règle, à constater dans une **maison avec un coin travail
@@ -2528,7 +2528,7 @@ qu'on lit sur le papier soit celui que la machine demande.
 
 286. **Une machine hors de tout bâtiment.** Poser un ordinateur dans une base
      construite par le joueur (aucun bâtiment de la carte dessous), l'allumer avec
-     l'option **activée** : deux comptes, `root` ouvert, aucun journal — comme une
+     l'option **activée** : deux comptes, `root` ouvert, aucun journal, comme une
      machine nue. C'est le même refus que pour l'adresse et la ligne
      téléphonique : pas de bâtiment, pas de commerce. [ ]
 
@@ -2565,7 +2565,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      - `crontab -l -u dispatch` n'existe pas ; faire `sudo cat
        /var/spool/cron/dispatch` → **sur la machine de `dispatch`**, une ligne à
        `0 22 * * *` qui appelle `locks.sh` ; sur la machine d'un autre compte, pas
-       de crontab pour `dispatch` — le travail appartient au bureau où il se fait
+       de crontab pour `dispatch`, le travail appartient au bureau où il se fait
        (étape 302). [ ]
 
 289. **Le script du poste marche vraiment.** Toujours sur la machine de l'étape
@@ -2604,7 +2604,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
      - `ls /root` montre `memo-01.txt`, `memo-02.txt`, `memo-03.txt`, et le
        troisième dit que la route du sud était ouverte le 8 juillet ;
      - tuer des zombies **à l'intérieur** de ce bâtiment : aucun ne porte de
-       note, jamais — il n'y a pas de compte ordinaire à nommer. [ ]
+       note, jamais, il n'y a pas de compte ordinaire à nommer. [ ]
 
 292. **La machine du vendeur porte toute la bibliothèque.** Cette étape demande
      une carte de mod avec une zone nommée `CeroSec...` : la carte livrée avec le
@@ -2679,7 +2679,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un mot de passe à recopier.
 
 300. **Une disquette BACKUP raconte quelqu'un.** Trouver ou faire apparaître
      `BACKUP`, la monter, lire les quatre fichiers : la dernière entrée du
-     journal est datée du **8 juillet** — dans les trois versions — et
+     journal est datée du **8 juillet**, dans les trois versions, et
      `FAMILY.TXT` dit lui-même que ses numéros ne sont pas ceux de votre
      exchange. Aucune accolade nulle part : les prénoms du journal et des
      lettres sont de vrais prénoms. [ ]
@@ -2825,7 +2825,7 @@ sauvegarde ; rien de ce qui est écrit ici n'est un nom ou un mot de passe à re
 308. **Le journal a les nuits de juillet dedans.** Sur n'importe quelle machine
      garnie, `sudo cat /var/log/messages` (ou en root) : sous les lignes de
      travail, datées entre 7h et 16h, il y a deux ou trois lignes datées **entre
-     minuit et 5h** — un redémarrage que personne n'a demandé, une connexion
+     minuit et 5h**, un redémarrage que personne n'a demandé, une connexion
      refusée, un `cu: no carrier`. [ ]
 
 309. **La page qu'il n'a pas finie.** Sur environ une machine sur deux, le dossier
@@ -3010,7 +3010,7 @@ tiré avant que le joueur ne regarde.
 328. **Ni un modèle d'exposition.** Dans un magasin d'électronique (section AD) qui
      tourne tout seul : la machine allumée d'elle-même est celle de
      l'**arrière-boutique**, pas une de la vitrine. Les machines de la vitrine sont
-     allumées parce que ce sont des machines de démonstration (étape 312) — ce qui se
+     allumées parce que ce sont des machines de démonstration (étape 312), ce qui se
      vérifie, c'est laquelle porte la crontab : `crontab -l` ne donne une ligne de
      nuit que sur celle du fond. [ ]
 
@@ -3302,7 +3302,7 @@ sans jeu ; ce qui se vérifie ici, c'est ce que l'écran répond.
 Huit boutons de plus sur la fenêtre de débogage, sur une **deuxième rangée** sous la
 première, et seulement sur l'onglet **Machines** : ils parlent tous de la machine
 sélectionnée. Ils existent pour un développeur et pour un admin de serveur, jamais
-pour un joueur — ils sont derrière la même porte que le reste de la fenêtre
+pour un joueur, ils sont derrière la même porte que le reste de la fenêtre
 (`CeroSec.debugAllowed`), et sur un serveur cette porte s'ouvre maintenant aussi pour
 un **admin**. Détail de ce que chacun écrit dans [DEBUG.md](DEBUG.md).
 
@@ -3326,7 +3326,7 @@ de la machine cliquée dans la liste.
      arrive dans l'inventaire du personnage, nommé `Sticky note (root)` et disant,
      quand on l'ouvre, `Sticky note: root / <mot>NN`. Attendu : la ligne sous la
      liste répète les mêmes
-     lettres, et ces lettres ouvrent vraiment la machine — ouvrir le terminal,
+     lettres, et ces lettres ouvrent vraiment la machine, ouvrir le terminal,
      `login: root`, taper le mot de passe du papier, ça entre. **Puis fouiller un
      bureau ou un classeur du même local** : le papier du tiroir est toujours là (ce
      bouton ne consomme pas la note du lieu). [ ]
@@ -3367,7 +3367,7 @@ de la machine cliquée dans la liste.
      sort, comme dans le monde). [ ]
 
 346. **Ouvrir une session root.** Éteindre la machine, la rallumer, ouvrir le terminal
-     et le laisser au `login:` — puis, sur la fenêtre de débogage, **Ouvrir une session
+     et le laisser au `login:`, puis, sur la fenêtre de débogage, **Ouvrir une session
      root**. Attendu : le terminal s'ouvre (ou revient) directement sur le prompt de
      root, avec `login: root` écrit au-dessus, le motd, et un prompt qui finit par `#`.
      `who` nomme root sur `console`, `last` porte son arrivée, `echo $HOME` répond
@@ -3409,7 +3409,7 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
 350. **Un ordinateur allumé.** Clic droit sur un ordinateur allumé posé sur un
      bureau, au milieu d'un décor qui donne des entrées au jeu (une chaise, un
      meuble, un objet au sol). Attendu, du haut vers le bas : **Use computer**,
-     **Turn off computer**, puis — s'il y a de quoi — **Insert floppy** et
+     **Turn off computer**, puis, s'il y a de quoi, **Insert floppy** et
      **Eject floppy**, et SEULEMENT ensuite les entrées du jeu. L'action
      principale d'abord : sur une machine allumée c'est s'en servir, pas
      l'éteindre. [ ]
@@ -3419,7 +3419,7 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      en jeu, les entrées du jeu ensuite. [ ]
 352. **Une entrée grisée reste en haut.** Se placer hors de portée (derrière un
      comptoir) et refaire l'étape 350. Attendu : les mêmes entrées, dans le même
-     ordre et à la même place, grisées avec leur infobulle — une entrée refusée
+     ordre et à la même place, grisées avec leur infobulle, une entrée refusée
      se lit là où on la cherche. [ ]
 353. **Le sous-menu du matériel.** Électricité 1, tournevis et un module en main,
      clic droit sur un interrupteur. Attendu : **CeroSec hardware** est en haut
@@ -3448,7 +3448,7 @@ Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic dro
      on choisit la machine). [ ]
 357. **Rien de sélectionné.** Fermer la fenêtre, faire un clic droit sur un
      ordinateur que le mod n'a jamais vu (ou ouvrir la fenêtre puis cliquer une
-     ligne, ce n'est pas pareil) — le plus simple : ouvrir la fenêtre depuis une
+     ligne, ce n'est pas pareil), le plus simple : ouvrir la fenêtre depuis une
      machine dont le morceau de carte est parti et dont aucune ligne n'est
      sélectionnée. Attendu : la bannière dit `no machine selected: pick one on the
      Machines tab`. [ ]
@@ -3470,7 +3470,7 @@ Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic dro
      lignes dont le chemin contient `etc` restent, au fur et à mesure de la
      frappe, sans aller-retour visible. Taper `ETC` : plus rien (c'est sensible à
      la casse). Taper `.` : seulement les chemins qui contiennent vraiment un
-     point — PAS toutes les lignes (ce n'est pas une expression régulière). Vider
+     point. PAS toutes les lignes (ce n'est pas une expression régulière). Vider
      la boîte : tout revient, `/bin` toujours replié. Passer à **Devices** : le
      filtre s'applique aussi au nom du périphérique. [ ]
 361. **Lire un fichier.** Onglet **Files**, double-cliquer la ligne
@@ -3483,7 +3483,7 @@ Ouvrir la fenêtre de débogage sur une machine allumée et prefillée (clic dro
      quatre lignes, et une dernière ligne `[... N more lines of M]`. [ ]
 363. **Un octet qu'on ne peut pas imprimer.** Au terminal, sur cette machine :
      `printf 'a\tb\r\n' > /root/ctl.txt`, puis **Refresh** de la fenêtre et
-     double-clic sur `/root/ctl.txt`. Attendu : le panneau affiche `a^Ib^M` — la
+     double-clic sur `/root/ctl.txt`. Attendu : le panneau affiche `a^Ib^M`, la
      tabulation et le retour chariot sont MONTRÉS et non avalés. [ ]
 364. **Le panneau se vide quand il doit.** Avec un fichier affiché : changer
      d'onglet (**Devices**) → le panneau est vide. Revenir, réafficher un fichier,
@@ -3511,12 +3511,12 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
 367. **Démonter un séchoir à cheveux.** Se donner un `Base.HairDryer`, un
      tournevis, et le **Guide de câblage CeroSec** (`CeroSec.WiringGuide`). Le
      LIRE. Attendu : dans l'onglet **Électrique** de l'artisanat, deux recettes de
-     démontage apparaissent en plus des six autres, et elles portent un NOM —
+     démontage apparaissent en plus des six autres, et elles portent un NOM :
      **Démonter un appareil pour son moteur** et **Démonter un lecteur CD pour
      son moteur**, jamais `DismantleCeroSecMotorAppliance` en clair (un nom brut
      à l'écran veut dire que la clé manque dans
      `Translate/<LANG>/Recipes.json`). Démonter le séchoir.
-     Attendu : **un petit moteur ET un `Base.ElectronicsScrap`** — la ferraille
+     Attendu : **un petit moteur ET un `Base.ElectronicsScrap`**, la ferraille
      que la recette vanille aurait donnée, plus le moteur. Refaire avec une
      tondeuse à moutons et un ventilateur soufflant : même chose. Avec un
      **lecteur CD** : la seconde recette, et **deux** ferrailles, parce que la
@@ -3527,12 +3527,12 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      de groupe**. Attendu : les deux qui BOUGENT quelque chose (rideau, fenêtre)
      demandent un petit moteur et un `Base.Receiver` ; les deux qui commutent
      n'en demandent pas. Vérifier aussi que la **gâche** et l'**opérateur de
-     porte** demandent maintenant un moteur et un récepteur eux aussi — et que
+     porte** demandent maintenant un moteur et un récepteur eux aussi, et que
      l'opérateur garde ses `Base.EngineParts`. [ ]
 369. **Le rideau.** Trouver une fenêtre avec un rideau, clic droit **sur le
      rideau** → Matériel CeroSec → Installer Moteur de rideau. Le moteur ne se
      pose que sur un rideau **ouvert** (« le rideau est tiré » sinon), et tous les
-     rideaux du monde naissent ouverts — donc juste après la pose, à
+     rideaux du monde naissent ouverts, donc juste après la pose, à
      l'ordinateur : `dev` → une ligne `curtainN`, et `cat /dev/curtainN` →
      `open`. `echo close > /dev/curtainN` → **le rideau se tire dans le monde**,
      la pièce s'assombrit, **on entend le tissu**, et `cat` répond `closed`.
@@ -3541,7 +3541,7 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      le rideau ne bouge qu'une fois et on ne l'entend qu'une fois. [ ]
 370. **Le rideau d'une porte.** Poser un drap sur une **porte** (interaction
      vanille), puis un moteur de rideau **sur la porte**. Attendu : la porte est
-     maintenant `doorN` ET `curtainM` — deux périphériques sur un objet. Ouvrir
+     maintenant `doorN` ET `curtainM`, deux périphériques sur un objet. Ouvrir
      le rideau ne bouge PAS la porte, et ouvrir la porte ne bouge pas le
      rideau. [ ]
 371. **La fenêtre : deux périphériques.** Sur une fenêtre, poser un **contact
@@ -3554,14 +3554,14 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      `echo open > /dev/windowM`. Attendu : **le battant s'ouvre** dans le monde,
      **on l'entend s'ouvrir** (et se refermer, avec `close`) comme si une main
      l'avait fait,
-     et `cat /dev/winN` répond maintenant `unlocked` — le moteur a défait le
+     et `cat /dev/winN` répond maintenant `unlocked`, le moteur a défait le
      loquet en passant. C'est voulu. Retaper le même ordre : rien ne bouge (c'est
      déjà ouvert). [ ]
 373. **L'ALARME DE MAISON. À faire dans une maison où personne n'est entré.**
      Trouver une maison dont l'alarme n'a pas encore sonné, y poser l'ordinateur
      et un opérateur sur une fenêtre, **puis reculer**. `echo open >
      /dev/windowM`. Attendu : la fenêtre s'ouvre **et l'alarme se déclenche**,
-     exactement comme si on avait cassé le carreau — le bruit, et ce qu'il
+     exactement comme si on avait cassé le carreau, le bruit, et ce qu'il
      attire. Ce n'est pas un bogue : c'est écrit dans le Volume 2, chapitre 6, et
      dans les notes de version. Refermer la fenêtre : **aucun** bruit. [ ]
 374. **Les trois refus d'une fenêtre.** Barricader la fenêtre (planches) :
@@ -3598,7 +3598,7 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      rideau d'une porte (étape 370) doit entourer **la porte**. [ ]
 380. **Le monde sans l'option.** Mettre **Matériel requis** sur désactivé et
      recharger. Attendu : chaque rideau, four, laveuse et génératrice du bâtiment
-     est sous `/dev` sans qu'on ait rien vissé — c'est plus qu'avant ce palier, et
+     est sous `/dev` sans qu'on ait rien vissé, c'est plus qu'avant ce palier, et
      c'est ce que dit la note de version. [ ]
 381. **Cent tours de boucle ne relisent pas le bâtiment cent fois.** Dans un
      bâtiment avec beaucoup de pièces (un centre commercial), écrire
@@ -3627,7 +3627,7 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      demande **aucun petit moteur** (rien ne tourne là-dedans), et l'icône se
      distingue des huit autres boîtes dans le sac. [ ]
 383. **Rien n'est câblé tant que rien n'est vissé.** À l'ordinateur, sans rien
-     avoir posé : `dev` — aucune ligne `tv` ni `rx`, même avec un téléviseur dans
+     avoir posé : `dev`, aucune ligne `tv` ni `rx`, même avec un téléviseur dans
      la pièce. Clic droit sur le **téléviseur** → Matériel CeroSec → Installer
      Commande de tuner. `dev` → une ligne `tv0`. [ ]
 384. **Lire le poste.** `cat /dev/tv0` → une ligne entière, par exemple
@@ -3638,12 +3638,12 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
      s'allume** dans le monde (l'image, la lueur sur les murs, le son). Puis
      `dev tv0 channel 210` → l'image change de chaîne et la ligne répond
      `tv0: on channel 210`. `echo channel 203 > /dev/tv0` fait la même chose par
-     l'autre chemin — c'est celui-là qu'une ligne de crontab écrit. [ ]
+     l'autre chemin, c'est celui-là qu'une ligne de crontab écrit. [ ]
 386. **LA SYNCHRO, ET IL FAUT DEUX CLIENTS.** Sur un serveur, avec un second
      joueur **dans la même pièce** et qui regarde le téléviseur : depuis
      l'ordinateur, `echo on > /dev/tv0`. Attendu : le poste s'allume **sur les
      deux écrans**, l'image et le son compris. `dev tv0 channel 210` : la chaîne
-     change **sur les deux**. C'est l'étape qui prouve le palier — sans le paquet
+     change **sur les deux**. C'est l'étape qui prouve le palier, sans le paquet
      que le mod envoie, le second joueur verrait un poste éteint pour toujours.
      Vérifier aussi qu'il n'y a **pas de rebond** : personne ne voit l'écran
      clignoter ni le son se couper à chaque ordre. [ ]
@@ -3685,7 +3685,7 @@ Option **Matériel requis** activée (la valeur par défaut). Règles et preuves
 
 Six programmes sur une disquette imprimée, `CeroSec HOME 1.0`. Rien de neuf dans
 le moteur : ce sont des scripts `sh`, les périphériques du palier moteur et `cron`.
-Ce qui se vérifie ici, c'est la seule chose qu'aucun banc ne peut voir — une porte
+Ce qui se vérifie ici, c'est la seule chose qu'aucun banc ne peut voir, une porte
 qui se referme toute seule sous les yeux du joueur. Option **Matériel requis**
 activée. Règles : [CONTENT.md](CONTENT.md#home-automation-the-building-runs-itself)
 et [SCRIPTING.md](SCRIPTING.md).
@@ -3697,7 +3697,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
 
 393. **Trouver la disquette, ou se la faire donner.** Fouiller des tiroirs jusqu'à
      tomber sur une disquette dont l'étiquette **imprimée** dit
-     `CeroSec HOME 1.0` — l'infobulle dit *Étiquette imprimée* et l'icône porte la
+     `CeroSec HOME 1.0`, l'infobulle dit *Étiquette imprimée* et l'icône porte la
      vignette blanche. Sinon : fenêtre de débogage (section X) → **Give disk** →
      `HOME AUTOMATION`. Attendu : la disquette arrive dans le sac avec ce nom. [ ]
 394. **La monter et la lire.** `mount /dev/fd0 /mnt` puis `ls /mnt` → sept noms :
@@ -3706,7 +3706,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      dit environ **4058 de 4096 octets**. [ ]
 395. **Les copier, sans rien créer d'abord.** `ls -l /usr` → `local` est là, et
      `ls /usr/local/bin` → vide : la machine livre la chaîne. Puis exactement la
-     ligne du README, `sudo cp /mnt/curtains.sh /usr/local/bin` — **aucun
+     ligne du README, `sudo cp /mnt/curtains.sh /usr/local/bin`, **aucun
      `mkdir`**. Copier les six de la même façon, puis `sudo chmod 755` sur chacun.
      Attendu : `ls -l /usr/local/bin` les montre tous exécutables. [ ]
 395a. **Et ils répondent à leur nom.** `echo $PATH` → `/bin:/usr/local/bin`.
@@ -3720,10 +3720,10 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      `sh /usr/local/bin/autoclose.sh start 5 &` → `[1] 43`. Aller **ouvrir la
      porte à la main** dans le monde, et **rester à la regarder**. Attendu : la
      porte se referme toute seule au bout de cinq tours (six à sept secondes de
-     vrai temps — un tour est un `sleep 1` plus le travail du tour), avec le
-     mouvement et le bruit d'une porte — **le bruit de CETTE porte** : une porte
+     vrai temps, un tour est un `sleep 1` plus le travail du tour), avec le
+     mouvement et le bruit d'une porte, **le bruit de CETTE porte** : une porte
      de bois et une porte de métal ne claquent pas pareil, et une porte déjà
-     fermée ne fait aucun bruit du tout — et la porte **sans opérateur** ne bouge
+     fermée ne fait aucun bruit du tout, et la porte **sans opérateur** ne bouge
      jamais. Rouvrir : ça recommence à zéro. [ ]
 397. **L'arrêter, des deux façons.** `sh /usr/local/bin/autoclose.sh stop` →
      `autoclose: off`, et `ps` ne montre plus le programme au tour suivant.
@@ -3744,13 +3744,13 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
 397c. **Ce qui ne revient pas, et c'est voulu.** Toujours sur la même machine :
      `shutdown -h +9`, puis quitter vers le menu et recharger. Attendu : la
      machine est **encore allumée** et `jobs` ne montre **aucun** `shutdown` en
-     attente — un ordre donné à l'horloge du monde réel ne traverse pas une
+     attente, un ordre donné à l'horloge du monde réel ne traverse pas une
      sauvegarde, et le README le dit déjà. Même essai avec un script qui pose une
      question (`read`) : au rechargement l'écran est **revenu à l'invite**, pas à
      la question. Un `&` relancé après ça tourne normalement. [ ]
 397d. **L'interrupteur, lui, arrête tout.** Relancer le démon avec `&`, puis
      **éteindre** l'ordinateur au bouton (ou couper le générateur), le rallumer,
-     et quitter/recharger. Attendu : `jobs` ne montre rien du tout — l'extinction
+     et quitter/recharger. Attendu : `jobs` ne montre rien du tout, l'extinction
      a emporté le travail au moment où elle a eu lieu, et rien ne le ramène. Même
      chose pour une machine **ramassée** puis reposée. [ ]
 398. **Les rideaux, à l'heure.** `sh /usr/local/bin/curtains.sh close` → tous les
@@ -3779,7 +3779,7 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      à la main**. Attendu : `ALARM: win0 open` apparaît sur **tous les écrans** de
      la machine (à deux joueurs : sur les deux), et les lumières clignotent trois
      fois dans le monde. Refermer, puis `sh /usr/local/bin/alarm.sh stop` : le
-     programme s'arrête au tour suivant — il peut mettre jusqu'à huit secondes s'il
+     programme s'arrête au tour suivant, il peut mettre jusqu'à huit secondes s'il
      était en train de clignoter. [ ]
 402. **La génératrice.** Vider le réservoir jusque sous 10 %, puis
      `sh /usr/local/bin/genwatch.sh 10`. Attendu : une ligne sur tous les écrans,
@@ -3797,14 +3797,14 @@ téléviseur et un **interrupteur de génératrice** sur une génératrice branc
      (`showroom`) : `ls bin` sur la machine du comptoir → une chance sur trois d'y
      trouver `autoclose.sh` et `curtains.sh`. Chez CeroSec (`cerosec`) :
      `ls /usr/local/src` → les six, avec les quatorze autres. Attendu :
-     **aucune ligne de crontab** ne les appelle nulle part — vérifier avec
+     **aucune ligne de crontab** ne les appelle nulle part, vérifier avec
      `sudo cat /var/spool/cron/*`. Une maison (`residential`) n'a rien de tout ça
      et n'a pas de crontab du tout. [ ]
 
 ## AO. Poser un module : dedans, ouvert, et le refuge (palier pose)
 
 Un module se pose et se retire **de l'intérieur**, sur une chose **ouverte** ou
-**éteinte**, et — si le serveur a activé l'option — seulement par un membre du
+**éteinte**, et, si le serveur a activé l'option, seulement par un membre du
 refuge. Les trois refus sont décidés côté serveur et le menu grise l'entrée avec
 le **même mot**. Le tableau complet est dans
 [DEVICES.md](DEVICES.md#the-hardware-modules).
@@ -3828,7 +3828,7 @@ le **même mot**. Le tableau complet est dans
      groupe sur une génératrice **dehors, sur le trottoir** : ça passe. Poser un
      relais sur une **lampe de galerie** (une *Round Outdoor Lamp* vissée sur le
      mur extérieur d'une maison), **debout sur le trottoir** : ça passe aussi, et
-     c'est le cas pour lequel le relais existe — une lumière extérieure sur une
+     c'est le cas pour lequel le relais existe, une lumière extérieure sur une
      minuterie. Un four ou un poste de radio qu'un survivant a traîné dehors :
      pareil. Seules la porte, la fenêtre et le rideau demandent qu'on soit
      dedans. [ ]
@@ -3849,7 +3849,7 @@ le **même mot**. Le tableau complet est dans
 412. **Et l'option désactivée est la valeur par défaut.** La remettre à
      désactivé (c'est son état d'origine) : le même non-membre pose et retire le
      module sans rien demander à personne. En **solo**, l'option activée ne
-     change rien du tout — il n'y a pas de refuge. [ ]
+     change rien du tout, il n'y a pas de refuge. [ ]
 413. **Le bâtiment déjà câblé n'est pas touché.** Dans un commerce pré-équipé
      (section AE), avec l'option du refuge activée et les portes fermées : les
      modules d'avant l'épidémie sont **toujours là** et `dev` les voit. La pose
@@ -3858,8 +3858,8 @@ le **même mot**. Le tableau complet est dans
 
 414. **Le sous-menu dit ce qu'est chaque boîtier.** Clic droit sur une porte
      **sans rien dans le sac** : l'entrée « Matériel CeroSec » est là et le
-     sous-menu montre **exactement trois lignes** — contact magnétique, gâche
-     électrique, opérateur de porte — toutes grisées. Chaque infobulle donne
+     sous-menu montre **exactement trois lignes**, contact magnétique, gâche
+     électrique, opérateur de porte, toutes grisées. Chaque infobulle donne
      d'abord ce que le boîtier fait et le périphérique qu'il donne, puis en
      dessous la raison : « Vous n'en avez pas sur vous. » (ou, sans avoir lu le
      manuel de chantier, la ligne qui y renvoie). Aucune ligne pour le relais,
@@ -3877,7 +3877,7 @@ le **même mot**. Le tableau complet est dans
      compétence : les lignes repartent et gardent leur description. [ ]
 
 417. **La porte du mur sud est un périphérique.** Dans une maison, choisir une
-     porte extérieure du mur **sud** (ou **est**) — celle qui donne sur la cour ou
+     porte extérieure du mur **sud** (ou **est**), celle qui donne sur la cour ou
      la ruelle derrière, pas celle de la façade nord. Se placer dedans, la porte
      ouverte, poser un **contact magnétique** dessus. Retourner au terminal et
      taper `dev` : la porte est **dans la liste**, avec « exterior », son décalage
@@ -3889,7 +3889,7 @@ le **même mot**. Le tableau complet est dans
      l'étape 408 sur la lampe du mur extérieur : `dev` la montre comme un `light`
      de plus, « exterior », sur le mur qu'elle éclaire, et `dev light1 off`
      l'éteint depuis le clavier. Poser un relais sur un **lampadaire** de la rue
-     (un poteau, pas un mur) : il ne paraît **jamais** dans `dev` — il n'est
+     (un poteau, pas un mur) : il ne paraît **jamais** dans `dev`, il n'est
      accroché à aucun mur du bâtiment. C'est le cas que le **câble** existe pour
      (section AQ) ; sans câble, rien ne l'entend. [ ]
 
@@ -3898,7 +3898,7 @@ le **même mot**. Le tableau complet est dans
 Un module vit dans le modData du **support** (la porte, le poste, l'interrupteur).
 Avant ce palier, le support partait et le boîtier partait avec lui : c'était le seul
 geste qu'un survivant ne pouvait pas défaire. Maintenant, quand le support quitte le
-monde — ramassé, démonté, défoncé — **chaque module posé dessus tombe par terre sur
+monde, ramassé, démonté, défoncé, **chaque module posé dessus tombe par terre sur
 la case où la chose se tenait**, à côté de la poignée et des charnières que la porte
 laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dans
 [notes/modules-proofs.md](notes/modules-proofs.md), section 10.
@@ -3907,7 +3907,7 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
      **contrôle de tuner** sur un téléviseur (étape 372), vérifier qu'il est dans
      `dev` comme `tvN`. Puis ramasser le téléviseur : clic droit → **Ramasser**.
      Attendu : le poste est dans le sac, et le **contrôle de tuner est par terre sur
-     la case** où il était — un objet au sol, ramassable, le même item qu'à la
+     la case** où il était, un objet au sol, ramassable, le même item qu'à la
      fabrication. Le reposer ailleurs : il arrive **nu**, `dev` ne montre aucun
      `tvN` tant qu'on n'a pas revissé le boîtier dessus. Revisser le tuner
      ramassé : le poste redevient un `tvN`. [ ]
@@ -3916,7 +3916,7 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
      233), à la masse : clic droit → **Détruire**. Attendu : la porte disparaît, et
      **les deux boîtiers sont au sol dans l'embrasure**, avec la poignée, les
      planches et les charnières que le jeu y laisse. `dev` ne liste plus ni `doorN`
-     ni `lockN`, et `dev doorN` répond `doorN: no such device` — le numéro reste
+     ni `lockN`, et `dev doorN` répond `doorN: no such device`, le numéro reste
      dépensé, comme toujours. Même chose avec une porte **construite** (IsoThumpable)
      et avec un mur démonté au tournevis (**Démonter**). [ ]
 421. **Une fenêtre BRISÉE garde son contact.** Poser un contact sur une fenêtre,
@@ -3937,9 +3937,9 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
      fenêtres motorisées, dont une **barricadée** : `dev window` pour lire le
      tableau, puis `dev window close`. Attendu : une ligne de réponse par
      appareil, **dans l'ordre exact du tableau**, chacune ce que l'appareil aurait
-     répondu seul — les châssis se ferment dans le monde et la barricadée répond
+     répondu seul, les châssis se ferment dans le monde et la barricadée répond
      `windowN: barricaded`. Puis `echo $?` → **autre chose que 0** parce qu'une a
-     refusé ; refaire sans la barricadée (`dev light off`, `dev curtain toggle` —
+     refusé ; refaire sans la barricadée (`dev light off`, `dev curtain toggle`,
      chaque rideau part dans SON sens) → `echo $?` → `0`. `dev nothing close` →
      `dev: nothing: unknown kind`. Depuis un compte hors du groupe `sudo` : une
      ligne `permission denied` par appareil et rien ne bouge dans le monde. [ ]
@@ -3947,7 +3947,7 @@ laisse déjà. Les neuf chemins et les deux qui ne doivent rien lâcher sont dan
 ## AQ. Le câble jusqu'à l'ordinateur (palier lien)
 
 Un module posé sur un lampadaire ne sert à rien tant qu'aucune machine ne l'entend :
-la machine voit son **bâtiment** et rien d'autre. Le câble est la réponse — un fil
+la machine voit son **bâtiment** et rien d'autre. Le câble est la réponse, un fil
 électrique par case, trente cases au plus, rendu quand on le débranche. Le lien est
 écrit sur l'**appareil** (la liste des machines et ce que chaque câble a coûté) et sur
 la **machine** (la liste des cases à visiter) ; les deux se remettent d'accord tout
@@ -3960,13 +3960,13 @@ seuls au tour de ronde suivant. La règle complète est dans
      Électricité 1 et une vingtaine de **fils électriques** dans le sac, clic droit
      sur le lampadaire → **Relier à un ordinateur**. Attendu : un sous-menu avec une
      ligne par machine à portée, la plus proche en haut, écrite
-     « `ksp-front-01, 12 cases, 12 fils` » — le **nom d'hôte** de la machine, la
+     « `ksp-front-01, 12 cases, 12 fils` », le **nom d'hôte** de la machine, la
      distance et le prix. Cliquer : le survivant se tourne vers le poteau, une barre
      de progression, et à la fin **12 fils en moins** dans le sac. Retourner au
      terminal : `dev` liste un `lightN` de plus et `dev lightN off` éteint le
      lampadaire depuis le clavier. [ ]
 425. **Ce que le câble a coûté se lit dans `dev find`.** Sur ce même `lightN` :
-     `dev find lightN` répond `lightN: blinking, linked, 12 tiles of wire` — le
+     `dev find lightN` répond `lightN: blinking, linked, 12 tiles of wire`, le
      lampadaire clignote six secondes comme n'importe quelle lumière, et la ligne
      dit en plus qu'il est au bout d'un câble et ce qu'il a coûté. Sur une lumière
      du bâtiment, **pas** de `linked` : la ligne est celle d'avant. [ ]
@@ -3974,11 +3974,11 @@ seuls au tour de ronde suivant. La règle complète est dans
      entre l'appareil et la machine en diagonale : la ligne du menu annonce la
      **distance arrondie au-dessus** et le même nombre de fils. Recommencer vers une
      machine **à l'étage au-dessus**, trois cases plus loin sur le plan : la ligne dit
-     « `3 cases, 7 fils` » — quatre fils de plus par étage, parce qu'un câble monte
+     « `3 cases, 7 fils` », quatre fils de plus par étage, parce qu'un câble monte
      dans un mur et court dans un plafond. Une machine sur la **case même** de
      l'appareil : 1 fil, jamais 0. [ ]
 427. **Trente cases, et pas une de plus.** Une machine à plus de trente cases n'a
-     **aucune ligne** dans le sous-menu — rien de grisé, rien du tout : c'est la
+     **aucune ligne** dans le sous-menu, rien de grisé, rien du tout : c'est la
      seule chose qu'un survivant ne peut pas corriger d'où il est. Vérifier la
      bordure : à trente cases la ligne est là, à trente et une elle a disparu. Une
      machine à vingt-huit cases mais **un étage plus haut** coûte 32 fils et n'est
@@ -4003,13 +4003,13 @@ seuls au tour de ronde suivant. La règle complète est dans
      du matériel juste au-dessus dit déjà quoi faire. [ ]
 429. **Ce qu'un câble ne demande pas.** Debout **sur le trottoir**, la porte du
      bâtiment **fermée**, l'ordinateur **éteint** : la ligne est vivante et le câble
-     se tire. Aucune des trois règles de la pose (dedans, ouvert, allumé) ne vaut ici
-     — un câble va au dos de la machine, pas à une session, et c'est justement la
+     se tire. Aucune des trois règles de la pose (dedans, ouvert, allumé) ne vaut ici,
+     un câble va au dos de la machine, pas à une session, et c'est justement la
      réponse à « je ne peux pas atteindre cette chose ». [ ]
 430. **Débrancher rend le fil.** Clic droit sur le lampadaire → **Débrancher de
      ksp-front-01** (une ligne par câble déjà tiré). Attendu : les **12 fils
      reviennent dans le sac**, `dev` ne montre plus le `lightN`, et `dev lightN`
-     répond `lightN: no such device` — le numéro reste dépensé, comme toujours.
+     répond `lightN: no such device`, le numéro reste dépensé, comme toujours.
      Débrancher ne demande ni la portée, ni les fils, ni le tournevis : seulement le
      refuge. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
@@ -4041,7 +4041,7 @@ seuls au tour de ronde suivant. La règle complète est dans
      que personne n'ait rien débranché. [ ]
 435. **Renommer la machine ne coupe rien.** Sur la machine au bout du câble :
      `hostname ksp-renommee` (ou éditer `/etc/hostname` et redémarrer). Clic droit
-     sur l'appareil câblé : les deux lignes — **Relier** et **Débrancher de** —
+     sur l'appareil câblé : les deux lignes, **Relier** et **Débrancher de**,
      portent le **nouveau nom**, et le câble n'a pas bougé. Le lien est écrit sur la
      **case** où la machine se tient, jamais sur son nom. Déplacer la machine d'une
      case (la ramasser et la reposer à côté) : le câble ne la suit **pas**, c'est un

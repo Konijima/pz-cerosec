@@ -1,4 +1,4 @@
-# CeroSec — Release
+# CeroSec: Release
 
 The ordered checklist for putting a version on the Steam Workshop. Run it top to
 bottom; nothing here is optional and nothing here is reversible by itself.
@@ -33,14 +33,14 @@ the files and the state shape are all unaffected.
 | # | step | command |
 | --- | --- | --- |
 | 1 | Drop the two originals in place: `workshop/art/poster.png` (4:3) and `workshop/art/banner.png` (16:5) | by hand |
-| 1a | **Choose the square poster.** Look at the three candidates side by side, at 512 and at 200, then set `POSTER_CANDIDATE` in `tools/make-workshop-images.py` to `A`, `B` or `C` — see "The square poster" below | `tools/out/poster-candidates.png` |
+| 1a | **Choose the square poster.** Look at the three candidates side by side, at 512 and at 200, then set `POSTER_CANDIDATE` in `tools/make-workshop-images.py` to `A`, `B` or `C`, see "The square poster" below | `tools/out/poster-candidates.png` |
 | 2 | Cut the four published images, and draw the nine section headers | `python3 tools/make-workshop-images.py && python3 tools/make-workshop-headers.py` |
 | 2a | **Take the ten screenshots and the two GIFs** | [../workshop/SHOTS.md](../workshop/SHOTS.md) |
 | 3 | Turn the two development flags off: `CeroSec.DEV_MANUAL_MENU = false` and `CeroSec.DEV_DEBUG_MENU = false` (the debug window is then offered only in the game's own debug mode -- [DEBUG.md](DEBUG.md)) | `sed -i 's/^CeroSec.DEV_MANUAL_MENU = true$/CeroSec.DEV_MANUAL_MENU = false/; s/^CeroSec.DEV_DEBUG_MENU = true$/CeroSec.DEV_DEBUG_MENU = false/' 42/media/lua/shared/CeroSec/CeroSecDefs.lua` |
 | 4 | Check no other one crept in | `grep -rn 'DEV_MANUAL_MENU\|DEV_DEBUG\|DEV_TEST' 42/media/lua` |
 | 5 | Set the version in `42/mod.info` | `sed -i 's/^modversion=.*/modversion=<version>/' 42/mod.info` |
-| 5b | Close the changelog, then **write the short Steam note by hand** — see below | `python3 tools/changelog-steam.py` |
-| 5a | **Photograph the save shape this build writes**, and commit it — see below | `sh tools/capture-fixture.sh` |
+| 5b | Close the changelog, then **write the short Steam note by hand**, see below | `python3 tools/changelog-steam.py` |
+| 5a | **Photograph the save shape this build writes**, and commit it, see below | `sh tools/capture-fixture.sh` |
 | 6 | The headless suite must exit 0 | `sh tests/run.sh; echo rc=$?` |
 | 6a | **In game, before step 3 takes the door away**: press **Self-test** in the debug window on a machine whose chunk is in. Both halves green, and the summary pasted into the release notes | see below |
 | 6b | **In game**: press **Give diagnostics disk**, put it in a machine, `mount /dev/fd0 /mnt` then `sh /mnt/selftest.sh`. `FAIL 0`, and the summary pasted into the release notes | see below |
@@ -51,7 +51,7 @@ the files and the state shape are all unaffected.
 | 10 | Upload: main menu, **Workshop**, **Submit item**, choose `CeroSec` | in game |
 | 10a | Paste the change note on the item (Steam item page, **Change Notes**) | `tools/out/steam-note-<version>.txt`, written by hand at 5b |
 | 11 | Copy the `id=` Steam wrote back into the repo (the game appends its own `Workshop ID` and `Mod ID` lines to every description at upload, so the description carries none) | `grep '^id=' ~/Zomboid/Workshop/CeroSec/workshop.txt` then paste it after `version=1` in `workshop/workshop.txt` |
-| 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images** — see below |
+| 12 | Upload the twelve item images, **in this order** | Steam item page, **Add images**, see below |
 | 13 | Turn the ten `# SHOT` slots in `workshop/workshop.txt` into `[img]` lines, and commit | see below |
 | 14 | Remove the upload copy so the game loads the repo again | `sh tools/workshop-sync.sh clean` |
 | 15 | Tag the commit | `git tag -a v<version> -m 'CeroSec <version>' && git push --tags` |
@@ -66,7 +66,7 @@ The CREDITS section says:
 
 > Sounds and floppy disk art: from Konijima's earlier Computer mod, reused by their author.
 
-That is what the repository's own history says — the nineteen `.ogg` files and
+That is what the repository's own history says, the nineteen `.ogg` files and
 `common/media/models_X/WorldItems/CeroSecFloppy.FBX` arrived in the first commit
 and are understood to come from Konijima's Computer mod (Steam item 2635550102),
 same author, so reuse is his to make. **Nothing in this repository proves it**:
@@ -148,8 +148,8 @@ takes them in order and leaves the rest out, and a saved job the load cannot rea
 is dropped with a line in the log at error naming the machine's coordinates and
 why. Nothing else on the machine is touched either way.
 
-**Modules land on the floor from now on.** A fixture that goes — picked up,
-sledged, dismantled, broken down — drops the boxes that were on it. Modules on
+**Modules land on the floor from now on.** A fixture that goes, picked up,
+sledged, dismantled, broken down, drops the boxes that were on it. Modules on
 fixtures that were already destroyed under an earlier build are gone and this
 does not bring them back.
 
@@ -165,7 +165,7 @@ and no account, file, module or disk changes shape.
 **The electric strike and the door operator cost more to make.** Each one now
 wants a Small Motor and a Receiver on top of what it wanted before. Nothing
 already built and nothing already screwed to a door changes, and every recipe a
-survivor learned he still knows — it is the price of the *next* one that moved,
+survivor learned he still knows, it is the price of the *next* one that moved,
 and it is the one thing in this release a player notices on a save he already
 has.
 
@@ -185,7 +185,7 @@ behaviour, so a world that has one changes nothing until an admin turns it on.
 ### 0.2.0
 
 **`CeroSec.PrefilledMachines` defaults to ON.** In a save that already exists, every
-computer **nobody has switched on yet** will come up as somebody's machine — his
+computer **nobody has switched on yet** will come up as somebody's machine, his
 accounts, his files, a motd, a week of log, sometimes a root password with a paper
 to find. Floppies generated from now on may carry a program and a README, and papers
 with passwords on them appear in desks and in the pockets of the dead.
@@ -193,7 +193,7 @@ with passwords on them appear in desks and in the pockets of the dead.
 **Nothing a player built is touched.** A machine somebody has already switched on
 keeps its accounts, its files and its name; the option changes only machines that
 have never had a filesystem. A server that wants the old world turns the option off
-and gets it back exactly — two open accounts and an empty disk.
+and gets it back exactly, two open accounts and an empty disk.
 
 See [CONTENT.md](CONTENT.md).
 
@@ -207,14 +207,14 @@ that explained them.
 section takes its version and date (`## 0.4.0 - 2026-09-16`) and an intro
 paragraph in the shape every released section has: what sort of update it is,
 whether an existing save needs anything, and the one thing a player notices on a
-save he already has. The bullets keep their full wording — this is the version of
+save he already has. The bullets keep their full wording, this is the version of
 the notes that goes on GitHub and nothing here has a byte ceiling.
 
 **Then write the Steam note by hand**, into
 `tools/out/steam-note-<version>.txt`, under 8000 bytes: a short, plain,
 player-facing list, grouped **New / Fixed / Servers / Interface**, one line per
 item, ending with the link to the full `CHANGELOG.md` on GitHub. It is written,
-not generated — a subscriber reading the Change Notes wants the list, not the
+not generated, a subscriber reading the Change Notes wants the list, not the
 reasoning, and cutting the changelog down to the field was how the reasoning got
 lost.
 
@@ -225,15 +225,15 @@ Its `unreleased` mode is unchanged.
 
 ## Step 5a: every release captures a fixture
 
-`sh tools/capture-fixture.sh` builds a whole machine with the code as it stands —
+`sh tools/capture-fixture.sh` builds a whole machine with the code as it stands,
 two accounts, a home with files and a script, a cron line, a net record with its
-exchange, the device-number book, a disk in the drive with a label on it — and writes
+exchange, the device-number book, a disk in the drive with a label on it, and writes
 it out as a Lua table literal to `tests/fixtures/state-v<N>.lua`, where `<N>` is read
 out of `CeroSecOS.STATE_VERSION` rather than passed in. **Commit the file.**
 
 It is a photograph, and the point of it is that the *next* release has a real save from
 *this* one to walk. `tests/migrate_test.lua` reads every fixture in that directory,
-walks it up to whatever the code is then, and holds the result to the invariants — the
+walks it up to whatever the code is then, and holds the result to the invariants, the
 accounts still log in, the files are byte for byte, the script still runs, the disk
 still mounts. It refuses to pass without a fixture for the shape one behind the current
 `STATE_VERSION`, which is the save an update actually meets on somebody's disk.
@@ -250,8 +250,8 @@ Three rules:
   commit: `sh tools/capture-fixture.sh <commit>` checks that build's engine out into a
   temporary tree and captures from there. Nothing is checked out over the working tree.
 
-The compatibility contract the chain is held to — which of the five version numbers
-moves for which kind of change, and why an item block is never deleted — is in
+The compatibility contract the chain is held to, which of the five version numbers
+moves for which kind of change, and why an item block is never deleted, is in
 [CONTRIBUTING.md](CONTRIBUTING.md#the-compatibility-contract).
 
 ## Three things that bite
@@ -302,7 +302,7 @@ slot for each, naming its file from [../workshop/SHOTS.md](../workshop/SHOTS.md)
 
 Turning one on is one edit: drop the `#` from the second line, and put the image's
 direct address between the tags. To get that address: open the uploaded screenshot
-on the item page, copy the image location, and **strip the whole query string** —
+on the item page, copy the image location, and **strip the whole query string**,
 the live page serves `.../ugc/<id>/<hash>/?imw=268&imh=268&ima=fit&...`, and the
 bare `.../ugc/<id>/<hash>/` is the full-size original. You cannot invent your own
 resize parameters; `?imw=5000` answers 404.
@@ -325,7 +325,7 @@ text box, or the next upload will put the old description back.
 `tools/make-workshop-images.py` draws three and writes all three to `tools/out/`
 every run, whichever one `POSTER_CANDIDATE` publishes. Look at
 `tools/out/poster-candidates.png` before setting it: it puts A, B and C side by
-side at **512 and at 200** on neutral grey, and 200 is the size that decides it —
+side at **512 and at 200** on neutral grey, and 200 is the size that decides it:
 `ModInfoPanelDesc` draws poster 0 at 200x200, so a composition that only works at
 512 is one most subscribers never see working.
 
@@ -426,7 +426,7 @@ concatenated with **nothing** between them. Line breaks in that description are
 `ISRichTextPanel`'s own `<LINE>`, and no line of it may contain another key's
 spelling (`name=`, `url=`, `poster=`, `icon=`, `id=` and the rest) or that key will
 eat it. **There is therefore no comment syntax in this file and nothing explaining
-itself inside it** — a `#` line saying the word `description=` would be read as a
+itself inside it**, a `#` line saying the word `description=` would be read as a
 description.
 
 **What the description is drawn into, and the two tags it uses.** The panel is

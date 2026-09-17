@@ -53,10 +53,10 @@ Then enable **CeroSec** in the mod list.
    sometimes on a paper in a zombie's pocket.
 4. `dev` lists what the machine can reach; `help` lists the commands. A door,
    window, light, curtain, appliance, generator or set is only on that list once
-   somebody has screwed a CeroSec module to it — right-click the fixture itself,
-   **CeroSec hardware** — unless the sandbox option `CeroSec.HardwareRequired` is
+   somebody has screwed a CeroSec module to it, right-click the fixture itself,
+   **CeroSec hardware**, unless the sandbox option `CeroSec.HardwareRequired` is
    turned off.
-5. Click the window's close button, or type `exit`, to walk away — the screen
+5. Click the window's close button, or type `exit`, to walk away, the screen
    keeps running and is exactly as you left it next time.
 
 ## Automate the building
@@ -144,13 +144,13 @@ proves, in [docs/TESTING.md](docs/TESTING.md).
   `loadstring`. `tests/kahlua-check.sh` greps for the constructs that would
   smuggle one in.
 - **Faithful to Unix; invent nothing.** Where a real `/bin/sh`, `cron`, `rlogin`
-  or a Hayes modem would answer a certain way, this machine answers the same way
-  — refusals included. A behaviour with no real-world model is a behaviour to
+  or a Hayes modem would answer a certain way, this machine answers the same way,
+  refusals included. A behaviour with no real-world model is a behaviour to
   question. The commands wear the names 1993 gave them: `useradd`, `userdel`,
   `usermod -G` (System V, 1989), and not Debian's `adduser` or shadow-utils'
-  `gpasswd`. The handful of things that have no 1993 model and are kept anyway
-  — `help`, `dev`, `mkpasswd`, `edit`, `sudo`, and jobs that belong to the
-  machine rather than to the shell — are listed in `CeroSecOS.DEVIATIONS` and
+  `gpasswd`. The handful of things that have no 1993 model and are kept anyway,
+  `help`, `dev`, `mkpasswd`, `edit`, `sudo`, and jobs that belong to the
+  machine rather than to the shell, are listed in `CeroSecOS.DEVIATIONS` and
   declared on a page of the in-game Volume 1, *What is not Unix here*, which a
   bench checks against that list in both directions.
 - **A mod update never costs a player what he built.** Nothing is ever deleted:
@@ -161,16 +161,16 @@ proves, in [docs/TESTING.md](docs/TESTING.md).
 
 Three lessons this codebase paid for and does not intend to relearn:
 
-- **The mod folder is a real directory, never a symlink** — a symlinked mod
+- **The mod folder is a real directory, never a symlink**, a symlinked mod
   folder loads its Lua fine and fails every script with `FileNotFoundException`,
   because `ScriptManager` resolves through the link before it matters. See
   "Install" above.
-- **`MeasureStringX` measures a glyph's ink, not its advance** — the manual
+- **`MeasureStringX` measures a glyph's ink, not its advance**, the manual
   reader sized its monospaced column on the *ink* of `"M"` until a change that
   measured the gap between two of them instead, because `"M"` in the game's own
   font is a pixel wider in ink than the cell it is drawn in. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-manual-reader).
-- **`rlogin` needs a terminal to hand over** — a job with nobody in front of it
+- **`rlogin` needs a terminal to hand over**, a job with nobody in front of it
   (a cron line, a background job, a pipe stage, a `$(...)`) has nothing to give
   a remote shell and is refused, in `rlogin`'s own words, exactly as real
   `rlogin(1)` refuses one. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
@@ -180,7 +180,7 @@ Three lessons this codebase paid for and does not intend to relearn:
 Bug reports, in-game test passes, translations and code are all welcome.
 
 - **A bug**: open an issue with the build number, your mod list and the
-  `console.txt` lines around it — the template asks for exactly what is needed.
+  `console.txt` lines around it, the template asks for exactly what is needed.
 - **A translation**: copy `42/media/lua/shared/Translate/EN/` to your language
   code and translate the values. No code changes needed.
 - **A change**: read [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) first. Every

@@ -1,4 +1,4 @@
-# CeroSec — Player's Guide
+# CeroSec: Player's Guide
 
 Everything a survivor needs to run a CeroSec computer from inside the game: logging
 in, sharing files, the devices it can reach, the phone and the radio, floppy disks,
@@ -16,8 +16,8 @@ front of the machine, sits down if there is a chair pulled up to it, and the
 terminal opens.
 
 At the `login:` prompt, **it depends whose machine it is**. A machine **nobody ever
-set up** — one you built, or any computer at all with **Prefilled machines and disks**
-turned off — ships with two accounts, both with an empty password, so just press
+set up**, one you built, or any computer at all with **Prefilled machines and disks**
+turned off, ships with two accounts, both with an empty password, so just press
 Enter when asked:
 
 | user | password |
@@ -30,7 +30,7 @@ worked there, and the name and the password are on a paper in a desk drawer or i
 dead man's pocket. See *[What you may find](#what-you-may-find)*.
 
 **What the machine says, and when.** Over the `login:` prompt it prints
-`/etc/issue`, which names the system and the machine — a bank and an army post put
+`/etc/issue`, which names the system and the machine, a bank and an army post put
 their "authorized use only" there, where somebody who is not in yet reads it. Once
 the password is right, `login` prints three things in order: `Last login: Jul  8
 14:32 on console` (or `from <machine>` for a session that came in over the wire, and
@@ -41,11 +41,11 @@ emptied is a machine that greets nobody there, which is a choice and not damage.
 
 **Accounts.** A machine nobody set up ships with those two and root can make more:
 `sudo useradd bob` writes the account, makes `/home/bob` for it and says out loud
-that it has no password yet — set one with `passwd bob` before somebody else does.
+that it has no password yet, set one with `passwd bob` before somebody else does.
 `sudo useradd -G wheel bob` makes him an **administrator**, and that means one
 thing: he is in the group `wheel`, which the shipped `/etc/sudoers` grants with a
 `%wheel` line, so he may `sudo`. The `admin` flag on his `/etc/passwd` line is
-written from that membership and grants nothing by itself — its one visible effect
+written from that membership and grants nothing by itself, its one visible effect
 is the `#` on the prompt instead of the `$`. `id bob` says what the machine knows
 about a name, and
 `sudo userdel bob` takes it away again (`-r` takes his home directory with it;
@@ -53,12 +53,12 @@ without it his files stay, still owned by a name the machine no longer knows).
 
 `su bob` becomes somebody else at the same glass: it asks for **his** password
 (root is asked for nobody's), the prompt changes, and `exit` comes back to who you
-were instead of logging out — up to four deep. Walk away and come back and the
+were instead of logging out, up to four deep. Walk away and come back and the
 machine is still where you left it, four users deep if that is where you left it.
 `sudo su bob` is the same switch without knowing his password (`sudo su` is root's),
 because root is asked for nobody's.
 
-**Sharing a file.** A mode is three digits — you, your group, everybody else — and
+**Sharing a file.** A mode is three digits, you, your group, everybody else, and
 the machine reads exactly one of them: the first if you own the file, the second if
 you are in its group, the third otherwise. Root walks through all three, except
 for running something: a file with no `x` bit at all is one root may not execute
@@ -76,12 +76,12 @@ chmod 660 notes.txt
 Now you and `bob` both read and write `notes.txt` and nobody else can open it.
 `groups` and `id` say what you are in; `ls -l` shows the group beside the owner.
 A shipped machine already has `users`, which `admin` is in. Delete a group and
-files still naming it keep the name — `ls -l` shows it dangling, nobody is in it,
+files still naming it keep the name, `ls -l` shows it dangling, nobody is in it,
 and `chgrp` will not hand that name out again.
 
 `/etc/sudoers` stays the authority on who may `sudo`; the `sudo` group mirrors it,
 so a name in that file is in the group whether a line of `/etc/group` says so or
-not. Joining the group by hand shares the group's files and nothing else — it does
+not. Joining the group by hand shares the group's files and nothing else, it does
 not give out root.
 
 Commands:
@@ -97,9 +97,9 @@ Commands:
 | `mkdir <dir>` | create a directory |
 | `rm [-r] <path>` | remove a file, or a directory tree with `-r` |
 | `mv <src> <dst>` | move or rename; a destination that exists is replaced (the directory's `w`, not the destination's mode, is what decides), an existing directory is moved *into*, and one that is not empty answers `directory not empty` |
-| `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional — `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
+| `ln -s <target> <name>` | make a symbolic link; there are no hard links here, so the `-s` is not optional, `ln a b` answers `ln: usage: ln -s <target> <name>` and makes nothing. It is a **declared deviation**: a 1993 `ln` with no flag made a second name for one file |
 | `cp [-r] <src> <dst>` | copy a file, or a whole tree with `-r` |
-| `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears — `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
+| `chmod <mode> <path>` | set permissions: three octal digits, or letters applied to the mode it already wears, `u+x`, `go-w`, `a=r`, `ug+rw,o-rwx` |
 | `chown <user> <path>` | change the owner |
 | `chgrp <group> <path>` | change the group (owner or root; the group must exist) |
 | `whoami` | print the logged-in user |
@@ -113,29 +113,29 @@ Commands:
 | `userdel [-r] login` | remove an account (root only); `-r` removes its home directory too, and either way its name is swept out of `/etc/sudoers` and every group |
 | `hostname` | print the machine's name |
 | `passwd [user]` | change a password (root may change anyone's) |
-| `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own — no 1993 Unix had this) |
-| `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument — the only spelling for one starting with a dash — and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `bad range`. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
+| `mkpasswd <text> [salt]` | show what a password would hash to (CeroSec Systems' own, no 1993 Unix had this) |
+| `grep [-cinv] [-e pattern] [pattern] <file>...` | find a **basic regular expression** in files (`-i` ignores case, `-n` numbers the lines, `-v` keeps the lines that do *not* match, `-c` prints how many instead of which, `-e` gives the pattern as an option-argument, the only spelling for one starting with a dash, and twice means either of two). POSIX.2's BRE cut to six pieces: `^` and `$` where they anchor (first and last), `.` for one character, `*` for any number of the piece in front of it, `[abc]`/`[a-z]` and `[^abc]` for a set, and `\` to take the meaning off any of them. **Not** here: `\( \)` and `\{m,n\}`. A pattern of more than 32 pieces is `expression too long`, an unclosed set is `unmatched [`, a reversed range is `bad range`. A literal pattern is a C call whatever the file; a pattern with a piece in it is a walk of every byte for every piece, and grep charges the job for that walk in steps (see "Design rules") |
 | `head [-n N\|-N] <file>` | the first N lines, 10 by default; `head -1` is the older spelling and works |
 | `tail [-n N\|-N] <file>` | the last N lines, 10 by default; `tail -5` likewise |
-| `wc [-clw] <file>...` | lines, words and bytes — or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
-| `more [file]...` | a pager: one screenful, then `--More--(NN%)`; **Space** is the next screenful, **Return** one more line, **q** quits. Works as the *last* stage of a pipe (`ls -l \| more`). Where its output is not a screen — a redirect, a `$( )`, a stage that is not the last — it copies through and pages nothing, which is what `more(1)` itself does; where the output *is* a screen but nobody is there (a `&` job, a crontab line) it answers `more: not a terminal`. One deviation, and it is the console's: this machine reads a *line*, so Space is a space and then Enter |
-| `find <path>... [expression]` | walk a tree depth-first, one path a line, the directory before what is in it. The expression is `-name <glob>` (matches the **last component**, with `*`, `?` and `[…]`; a leading `!` or `^` negates a set), `-type f\|d`, `-print` (implied when no action is named, as POSIX says, and accepted anyway) and `-exec`. Both tests together must both be true. A link is a leaf: find does not follow one. A directory it may not read is named and not entered, and the walk goes on **unsuccessfully** — so `find / \| wc -l` as an ordinary account prints the paths instead of counting them, exactly as `cat good bad \| wc -l` does |
-| `find … -exec <cmd> {} \;` | run the command once for every name found, in find's own order, with `{}` replaced by the name — POSIX's rule: only an argument that is *exactly* `{}`. The `\;` is the shell being told to leave the semicolon alone. Naming an action takes the implied `-print` away; an explicit `-print` prints where you wrote it. The expression is AND-ed, so `-exec test -f {} \; -exec rm {} \;` runs the second only where the first was true. find does **one exec per turn** and hands the machine back, so a sweep of a hundred names takes a few seconds of game time and prints as it goes — no command on this machine may spend a whole pass |
-| `find … -exec <cmd> {} +` | the same, with the names gathered into as few commands as it can (64 at a time) — the `{}` must be the last word before the `+`. This is the form for a big sweep: one command instead of a hundred |
+| `wc [-clw] <file>...` | lines, words and bytes, or whichever of the three `-l`, `-w` and `-c` ask for, always printed in that order, with a `total` row for several files |
+| `more [file]...` | a pager: one screenful, then `--More--(NN%)`; **Space** is the next screenful, **Return** one more line, **q** quits. Works as the *last* stage of a pipe (`ls -l \| more`). Where its output is not a screen, a redirect, a `$( )`, a stage that is not the last, it copies through and pages nothing, which is what `more(1)` itself does; where the output *is* a screen but nobody is there (a `&` job, a crontab line) it answers `more: not a terminal`. One deviation, and it is the console's: this machine reads a *line*, so Space is a space and then Enter |
+| `find <path>... [expression]` | walk a tree depth-first, one path a line, the directory before what is in it. The expression is `-name <glob>` (matches the **last component**, with `*`, `?` and `[…]`; a leading `!` or `^` negates a set), `-type f\|d`, `-print` (implied when no action is named, as POSIX says, and accepted anyway) and `-exec`. Both tests together must both be true. A link is a leaf: find does not follow one. A directory it may not read is named and not entered, and the walk goes on **unsuccessfully**, so `find / \| wc -l` as an ordinary account prints the paths instead of counting them, exactly as `cat good bad \| wc -l` does |
+| `find … -exec <cmd> {} \;` | run the command once for every name found, in find's own order, with `{}` replaced by the name. POSIX's rule: only an argument that is *exactly* `{}`. The `\;` is the shell being told to leave the semicolon alone. Naming an action takes the implied `-print` away; an explicit `-print` prints where you wrote it. The expression is AND-ed, so `-exec test -f {} \; -exec rm {} \;` runs the second only where the first was true. find does **one exec per turn** and hands the machine back, so a sweep of a hundred names takes a few seconds of game time and prints as it goes, no command on this machine may spend a whole pass |
+| `find … -exec <cmd> {} +` | the same, with the names gathered into as few commands as it can (64 at a time), the `{}` must be the last word before the `+`. This is the form for a big sweep: one command instead of a hundred |
 | `tee [-a] <file>...` | copy the pipe to the screen **and** into every file named; `-a` adds instead of replacing. It is a filter: it needs a pipe on its left, and it passes the lines on |
 | `cut -c <list>` | keep those character positions of every line |
 | `cut -d <delim> -f <list>` | keep those fields, split on a one-character delimiter (a TAB by default). A list is `1`, `1,4`, `3-5`, `2-` (to the end) or `-3` (from the first). A line with no delimiter in it comes through **whole**, which is what POSIX says. All three flags take their value **attached** as well as apart, the way `getopt(3)` reads a line: `cut -d: -f1 /etc/passwd` is `cut -d : -f 1 /etc/passwd`, and the rest of the word is the value whatever it looks like (`-f-2` is the list `-2`) |
-| `tr [-d] <set1> [<set2>]` | translate characters one for one, or delete them with `-d`. Ranges (`a-z`) only — the `[:alpha:]` classes a bigger Unix has are not here. It reads its standard input and nothing else, like every `tr`, so it wants a pipe |
-| `uptime` | ` 3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05` — the clock, how long since power-on, who is logged in, and the run queue averaged over one, five and fifteen minutes. One cut from 4.4BSD's line and it is the 60 columns': BSD writes `load averages: 0.12, 0.08, 0.05`, which does not fit |
-| `w` | that line, then `USER TTY FROM LOGIN@ IDLE WHAT` — a row a session, with the line it is running in `WHAT`. `LOGIN@` is the clock and not the weekday, and `IDLE` is `hh:mm` since that session last typed (since it **logged in** for one that came back from a save file, which is the honest floor: there is no keystroke clock here) |
-| `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces — `date +%s` is the clock as a plain number |
-| `df` | how much of the 64K disk and the 512 nodes are used — and a `fd0` row of its own while a floppy is mounted |
-| `tar c\|x\|t[v]f <archive> [path]...` | many files in one file, which is how a home goes onto a floppy: `tar cf /mnt/home.tar ~`. `c` makes an archive, `t` lists what is in one, `x` puts it back, `f` says the next word is the archive, and `v` names every member as it goes — one word of letters with no dash in front, the way tar was called in 1993. No `z`. The names are stored **as you typed them**, so an archive of `/home/admin` puts it back there; a member carries its mode, owner, group, size and time, and **root** is the only account that puts an owner back — anybody else owns what he extracts. The container is **this machine's own** and is declared on the deviations page: a real tar is 512-byte blocks with a header in front of every member, which on a 4096-byte floppy would cost one note a quarter of the disk. It is honest about the price — the archive is an ordinary file, it counts against the disk, and a home bigger than 4096 bytes answers `file too large`. tar takes **one member a turn**, so a big archive takes a few seconds and prints as it goes |
+| `tr [-d] <set1> [<set2>]` | translate characters one for one, or delete them with `-d`. Ranges (`a-z`) only, the `[:alpha:]` classes a bigger Unix has are not here. It reads its standard input and nothing else, like every `tr`, so it wants a pipe |
+| `uptime` | ` 3:14PM  up 2 days,  4:03,  2 users,  load 0.12 0.08 0.05`, the clock, how long since power-on, who is logged in, and the run queue averaged over one, five and fifteen minutes. One cut from 4.4BSD's line and it is the 60 columns': BSD writes `load averages: 0.12, 0.08, 0.05`, which does not fit |
+| `w` | that line, then `USER TTY FROM LOGIN@ IDLE WHAT`, a row a session, with the line it is running in `WHAT`. `LOGIN@` is the clock and not the weekday, and `IDLE` is `hh:mm` since that session last typed (since it **logged in** for one that came back from a save file, which is the honest floor: there is no keystroke clock here) |
+| `date [+FORMAT]` | the date and time, from the game's calendar; with a format, the pieces, `date +%s` is the clock as a plain number |
+| `df` | how much of the 64K disk and the 512 nodes are used, and a `fd0` row of its own while a floppy is mounted |
+| `tar c\|x\|t[v]f <archive> [path]...` | many files in one file, which is how a home goes onto a floppy: `tar cf /mnt/home.tar ~`. `c` makes an archive, `t` lists what is in one, `x` puts it back, `f` says the next word is the archive, and `v` names every member as it goes, one word of letters with no dash in front, the way tar was called in 1993. No `z`. The names are stored **as you typed them**, so an archive of `/home/admin` puts it back there; a member carries its mode, owner, group, size and time, and **root** is the only account that puts an owner back, anybody else owns what he extracts. The container is **this machine's own** and is declared on the deviations page: a real tar is 512-byte blocks with a header in front of every member, which on a 4096-byte floppy would cost one note a quarter of the disk. It is honest about the price, the archive is an ordinary file, it counts against the disk, and a home bigger than 4096 bytes answers `file too large`. tar takes **one member a turn**, so a big archive takes a few seconds and prints as it goes |
 | `newfs <device>` | put a filesystem on the disk in the drive, emptying it: `newfs /dev/fd0` prints `/dev/fd0: 4096 bytes, 32 inodes` |
 | `mount` | what is mounted, one line each: `/dev/hda on / type ufs (rw)` |
 | `mount <device> <dir>` | graft the disk onto a directory; from then on that directory **is** the disk, and what was under it is covered |
-| `umount <dir>` | take it off again — refused with `Device busy` while any session's working directory is inside it |
-| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, one worked, or a whole kind worked — `dev door1 open`, `dev light0 off`, `dev lock1 toggle`, and `dev window close` for every window the machine can reach, one answer line each in the table's order, the line failing if any of them refused (no kind means *everything*: `off` means one thing to a light and another to a generator); `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
+| `umount <dir>` | take it off again, refused with `Device busy` while any session's working directory is inside it |
+| `dev [kind\|id [value\|toggle]\|find <id>]` | the devices as a table, one kind of them, one read, one worked, or a whole kind worked, `dev door1 open`, `dev light0 off`, `dev lock1 toggle`, and `dev window close` for every window the machine can reach, one answer line each in the table's order, the line failing if any of them refused (no kind means *everything*: `off` means one thing to a light and another to a generator); `dev find door1` makes it show itself for six seconds; `dev sensor0` reads a motion sensor and no word may be written to one |
 | `which <name>` | where a bare name would be found on `PATH`, and nothing at all when it would not |
 | `type <name>` | which of the three kinds of word it is: `ls is /bin/ls`, `cd is a shell builtin`, `if is a shell keyword` |
 | `man <command>` | what a command does, and how it is spelled |
@@ -146,15 +146,15 @@ Commands:
 | `reboot` | switch it off, wait three seconds, and switch it back on (root only); `shutdown -r now` is the long way |
 | `export NAME[=value]...` | put a name in the **environment**, which is the set of variables a program you run is handed. `x=5` is a variable of the shell's own and a script does not see it; `export x` puts it in, and the value follows the name afterwards. With no name at all it lists what is in the environment, one `export NAME=value` a line |
 | `env` | the environment as it will be handed over, `NAME=value` a line, sorted. Not the shell's variables: `env` shows what a script of yours can actually see |
-| `. <file>` | read the file **in this shell**, so what it sets is still set afterwards — the one way in, because `sh <file>` and `./<file>` run it as a program and a program is handed a copy. It wants `r` on the file and not `x`. This is how `.profile` is read. `source` is csh's and bash's word for it and is not here |
+| `. <file>` | read the file **in this shell**, so what it sets is still set afterwards, the one way in, because `sh <file>` and `./<file>` run it as a program and a program is handed a copy. It wants `r` on the file and not `x`. This is how `.profile` is read. `source` is csh's and bash's word for it and is not here |
 | `at HH:MM` | queue one job for a time you name, reading the commands from a **pipe**: `echo halt \| at 04:00`, `cat plan \| at 23:30`. It answers `job 1 at Fri Jul  9 04:00:00 1993`. A time that has gone by today means tomorrow; `HH:MM` and nothing else (no `now + 1 hour`). The output goes to your **mail**, as a crontab line's does. Unlike cron it does **not** forget: a job queued for four o'clock on a machine that was off at four runs when the machine comes back |
-| `mail` | with no name after it, your own mailbox: what cron and `at` left you and what anybody on the machine sent you, shown once and emptied — reading your mail **is** emptying the box, as it always was |
+| `mail` | with no name after it, your own mailbox: what cron and `at` left you and what anybody on the machine sent you, shown once and emptied, reading your mail **is** emptying the box, as it always was |
 | `wall [file]` | put a line on **every** terminal of this machine -- the glass and every session that came in over the wire -- as `Broadcast Message from <user>@<host>` and, under it, `        (<line>) at hh:mm ...`, a blank line, then the text. 4.4BSD's wording, over two lines because `wall.c` writes it over two (and because one line of it would not fit sixty columns). **Anybody may**: the real one is setgid `tty` and not setuid root, because telling people is not a privilege. The text is a file named on the line or the standard input (a pipe): `echo "lights out in 5" \| wall`. Nothing to say broadcasts nothing, and more than a pipe may hold is `wall: input too large`. `shutdown`'s own warning goes out through the same door |
 | `mail` | read what has arrived, and **move** it to `~/mbox` as it shows it -- the spool (`/var/mail/<name>`) is what has arrived and `~/mbox` in your home is what you have read, which is what 4.4BSD Mail does on `q`. `~/mbox` is an ordinary file at mode 600 and costs your drive what any file costs; a drive with no room for it leaves the mail in the spool and says `mail: ~/mbox: file too large`, having shown it to you anyway. `You have mail.` at the login is about the **spool**: it means something has arrived, and a full `~/mbox` says nothing |
 | `mail -f` | read `~/mbox` and move nothing, so what you read last week is still readable. Mail's own flag for "a mailbox that is not the spool" |
-| `mail [-s subject] user...` | send a message to an account on **this** machine. The body is the standard input: `echo hi \| mail -s Hello bob` from a pipe, or typed at the prompt a line at a time until a line holding a single `.` (Escape gives up and sends nothing). Several names means a copy each. A body with nothing in it is sent anyway, with `Null message body; hope that's ok` — which is what a crontab line's `mail bob` posts, having no keyboard behind it. A name that is no account here answers `bob... User unknown`; an address on another machine (`bob@gate`, `gate!bob`) answers `bob@gate... Cannot send mail: no mailer`, because there is no uucp on this disk. The wire is `cat note \| rsh gate mail -s Hi bob`, which hands the far `mail` what you piped in. What you send costs the **drive**; what cron mails you does not |
+| `mail [-s subject] user...` | send a message to an account on **this** machine. The body is the standard input: `echo hi \| mail -s Hello bob` from a pipe, or typed at the prompt a line at a time until a line holding a single `.` (Escape gives up and sends nothing). Several names means a copy each. A body with nothing in it is sent anyway, with `Null message body; hope that's ok`, which is what a crontab line's `mail bob` posts, having no keyboard behind it. A name that is no account here answers `bob... User unknown`; an address on another machine (`bob@gate`, `gate!bob`) answers `bob@gate... Cannot send mail: no mailer`, because there is no uucp on this disk. The wire is `cat note \| rsh gate mail -s Hi bob`, which hands the far `mail` what you piped in. What you send costs the **drive**; what cron mails you does not |
 | `at -l` / `atq` | what is waiting: the job number and when it is due, yours only (root sees every account's) |
-| `at -r <job>...` / `atrm <job>...` | take a waiting job out of the queue. Somebody else's is not yours to remove — root's rule, as `kill`'s is |
+| `at -r <job>...` / `atrm <job>...` | take a waiting job out of the queue. Somebody else's is not yours to remove, root's rule, as `kill`'s is |
 | `history [-c]` | the last 60 lines of `~/.sh_history` with numbers; `-c` empties it |
 | `!!` / `!<n>` | run the last line again, or line `<n>` |
 | `sleep <seconds>` | wait, costing the machine nothing while it does |
@@ -170,7 +170,7 @@ The commands are files: `/bin/<name>`, owner `root`, mode `755`, and the file's
 contents are the one-line description `help` prints. `cat /bin/ls` prints
 `list a directory`, `rm /bin/ls` really does take `ls` away, and `chmod 644 /bin/ls`
 puts it out of everybody's reach but root's. That holds for the small ones the
-engine runs without leaving the house too — `echo`, `printf`, `test`, `[`, `true`,
+engine runs without leaving the house too, `echo`, `printf`, `test`, `[`, `true`,
 `false` and `sleep` are resolved through `/bin/<name>` first and then executed
 inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 `chmod 600 /bin/echo` gives `echo: permission denied` to an ordinary account.
@@ -180,12 +180,12 @@ inside the engine, so `rm /bin/sleep` gives `sleep: command not found` and
 Which directories a bare name is looked for in is `PATH`, an ordinary shell
 variable. A login sets it to `/bin`, sets `HOME` beside it and **exports** both; a
 `.profile` widens it (`PATH=$PATH:$HOME/bin`); a script is handed a **copy of the
-environment** — the exported names and nothing else the shell was holding — in the
+environment**, the exported names and nothing else the shell was holding, in the
 foreground and behind an `&` alike, while every line `cron` runs starts at `/bin`
 with `HOME` and nothing else, which is the oldest trap in `cron` and is why a
 crontab line spells the whole path. The walk is POSIX's: left to right, the first
 file with `x` on it for whoever typed it wins, and something in the way without `x`
-does not stop the search — found everywhere and runnable nowhere is
+does not stop the search, found everywhere and runnable nowhere is
 `permission denied`, found nowhere at all is `command not found`. A file found in
 `/bin` is the machine's own executable and the engine is behind it; a file found
 anywhere else is run as a **script**, so `~/bin` is where an account's own commands
@@ -197,7 +197,7 @@ called `hello`. A word with a `/` in it is a path and is never looked up.
 command on the machine walks that string, so its length is a price everybody pays
 (see "Design rules"). **Tab** walks the same string, bounded the same way: a name
 of your own in `~/bin` is completed once `PATH` names that directory, and not
-before — a completion that offered a name the shell would not then find would be a
+before, a completion that offered a name the shell would not then find would be a
 Tab that lies about what the machine can do.
 
 Two kinds of word are **not** files, and could not be. The reserved words
@@ -206,26 +206,26 @@ you define (`greet() { echo hi $1; }`) is found before either of the lists below
 before `/bin`, and `type greet` says `greet is a function`; it lasts as long as the
 login. The shell's own words
 (`. cd export exit fg jobs wait read shift break continue history`) change the shell
-itself or own what it started, which no separate program could do — `cd` cannot be a
+itself or own what it started, which no separate program could do, `cd` cannot be a
 file in Unix and is not one here, `export` marks the shell's own variables and `.`
 reads a file into it. The seven of them that carry a description and a usage line
 (`.`, `cd`, `export`, `exit`, `fg`, `jobs`, `wait`) keep both, so `help` lists them
 and `man export` answers;
 what they do not have is an executable to find, to delete or to `chmod`. `help` is
 the one command with a file that is run without it, so that a player who has just
-wiped the machine he is standing at can still ask what happened — and `exit`, being a
+wiped the machine he is standing at can still ask what happened, and `exit`, being a
 shell word, is how he walks away. `help` prints the `/bin` table first and those
 words under it. Real Unix ships `/bin/pwd`, `/bin/su`, `/bin/kill` and `/bin/echo`,
 and so does this machine.
 
 A name beginning with `.` is hidden from `ls` and `ls -l`; `ls -a` shows them with
 `.` and `..`, `ls -A` shows them without. Nothing else treats a dotted name as
-special — there is no globbing here for one to hide from.
+special, there is no globbing here for one to hide from.
 
 **Links.** `ln -s target name` makes a symbolic link: a node holding the path as it
-was typed. Everything that acts on a *file* follows it — `cat`, `cp`, `chmod`, a
-redirect — and the permissions are the target's, so a link to something you may not
-read buys you nothing. The three that act on the *link* do not — `-l` and `-F` are the two flags that ask
+was typed. Everything that acts on a *file* follows it, `cat`, `cp`, `chmod`, a
+redirect, and the permissions are the target's, so a link to something you may not
+read buys you nothing. The three that act on the *link* do not, `-l` and `-F` are the two flags that ask
 `ls` about the link itself, which is POSIX's rule for both: `ls -l` draws it
 (`lrwxrwxrwx  admin  admin   log -> /var/log/cron`) and that arrow is **where you
 read what a link points at**, `ls -F` marks it `@`, `rm` takes the link away and
@@ -237,8 +237,8 @@ state by recursion (`copyTable` on pickup, and the save file), so the second nam
 would become a second file the first time somebody picked the computer up.
 
 **`/dev/null`** reads as nothing at all and swallows anything written to it, so
-`sh nightly.sh > /dev/null` throws output away. It is a device — `rm`, `mv`, `cp`
-and `edit` all answer `is a device` — it is mode `666`, and it costs the disk
+`sh nightly.sh > /dev/null` throws output away. It is a device, `rm`, `mv`, `cp`
+and `edit` all answer `is a device`, it is mode `666`, and it costs the disk
 nothing however much goes into it. Only *output* goes there: this machine has no
 `2>`, and errors always reach the glass.
 
@@ -246,10 +246,10 @@ nothing however much goes into it. Only *output* goes there: this machine has no
 where only the owner of a file, or root, may delete it or rename it out again.
 Everywhere else a directory you may write is a directory you may delete from; real
 machines carry that exception as a fourth mode digit (`1777`) and every mode here is
-three digits, so the rule is the **place's** — decided by the path, exactly as the
+three digits, so the rule is the **place's**, decided by the path, exactly as the
 quota exemptions are.
 
-`edit` turns the screen into a small editor: Tab saves, Esc leaves — and asks
+`edit` turns the screen into a small editor: Tab saves, Esc leaves, and asks
 `Save modified buffer? (y/n)` first when there is something unsaved. Those two are
 the only keys the game hands a focused text box, which is why they are the two the
 key bar names. A file is capped at 4096 bytes and a line at 60 characters; the game's own text
@@ -257,7 +257,7 @@ box stops accepting new keystrokes at 2000 characters typed in one sitting, thou
 bigger file still opens and still saves.
 
 `passwd` asks for the old password (skipped for root), the new one, and a retype.
-Putting text in a file is `echo text > file` — a redirection, the way it has
+Putting text in a file is `echo text > file`, a redirection, the way it has
 always been; there is no command that writes a file for you, and `write(1)` on a
 real Unix is what puts a line on somebody else's terminal.
 
@@ -265,24 +265,24 @@ real Unix is what puts a line on somebody else's terminal.
 can see what a password would look like stored. It is not a Unix command: no 1993
 system shipped one, and the manual's *What is not Unix here* page says so.
 
-`sudo` runs one command as `root`. Who may is `/etc/sudoers`, one name a line — or
-`%group`, which grants every account in that group — and a fresh machine has
+`sudo` runs one command as `root`. Who may is `/etc/sudoers`, one name a line, or
+`%group`, which grants every account in that group, and a fresh machine has
 `admin` and `%wheel` on it. It asks for **your own** password first
 (`[sudo] password for admin: `), and one wrong answer is
-`sudo: authentication failure` — there is no second try, because somebody had to be
+`sudo: authentication failure`, there is no second try, because somebody had to be
 standing at the keyboard to type the first. A name that is not in the file gets
 `<user> is not in the sudoers file.` The command runs with root's powers and the
 working directory you were in; the session at the glass is untouched, so
 `whoami` still says `admin` afterwards. A word the shell **is** cannot be run by
-it at all — sudo runs a program, and `cd`, `exit`, `jobs`, `read` and the rest have
+it at all, sudo runs a program, and `cd`, `exit`, `jobs`, `read` and the rest have
 no file in `/bin` for it to find, so `sudo cd /root` is
 `sudo: cd: command not found`, which is sudo's own line about one. Put
 `NOPASSWD` after a name in `/etc/sudoers` and that account is never asked.
 
 A redirect on a line that asks waits for the answer with the command:
 `sudo cat /etc/passwd > copie.txt` puts the file in the file and nothing on the
-glass. What `>` names is **opened** where a shell opens it — before the command
-runs — so a password answered wrongly leaves the empty file behind, exactly as a
+glass. What `>` names is **opened** where a shell opens it, before the command
+runs, so a password answered wrongly leaves the empty file behind, exactly as a
 real one does, and `>>` adds to what is there.
 
 A redirect on a line that runs a **script** belongs to the script, the way a
@@ -290,7 +290,7 @@ process's standard output belongs to the process: `sh nightly.sh > log` puts
 everything the script prints in `log` and nothing on the glass, `>>` adds to it, and
 a script the script runs writes there too. `./nightly.sh`, a script of your own on
 `PATH`, and `. nightly.sh` all do the same. What still comes to the screen is a
-**refusal** — `ls: /nope: no such file` is not output, here as on any Unix — and a
+**refusal**, `ls: /nope: no such file` is not output, here as on any Unix, and a
 script whose output fills the file to its 4096 bytes is stopped there with
 `sh: log: file too large`.
 
@@ -298,9 +298,9 @@ script whose output fills the file to its 4096 bytes is stopped there with
 root's alone. `shutdown` turns the machine off: the sprite goes dark, the screen is
 gone, and every terminal open on it closes.
 
-`reboot` is a power CYCLE and looks like one. The machine goes off the same way —
+`reboot` is a power CYCLE and looks like one. The machine goes off the same way,
 the tile goes dark, the glow on the wall goes with it, and every terminal open on it
-closes — and about three seconds later it comes back on by itself: the BIOS counts
+closes, and about three seconds later it comes back on by itself: the BIOS counts
 the memory again and lands at `login:`. If you are still standing at the keyboard
 when it comes up, your terminal opens again by itself, in the same place, with no
 walk back to the machine; if you wandered off in those three seconds it comes up
@@ -309,7 +309,7 @@ machine both get their window back.
 
 A machine whose room lost its power while it was dark stays dark, exactly as a real
 one does after an outage: it does not come back by itself, and somebody switches it
-on at the case. What is on the disk survives all of it — a reboot is a power cycle,
+on at the case. What is on the disk survives all of it, a reboot is a power cycle,
 not a repair.
 
 `shutdown` also takes a time. `-h` halts, `-r` reboots, neither halts; `now` and no
@@ -346,8 +346,8 @@ takes the machine down -- and what bounds them is the job book, four to a machin
 `halt` is `shutdown -h now`.
 
 The timer is the scheduler's pass and lives on the machine, not in the window: close
-the window, walk away, come back, and it is still counting. It is **not** persisted
-— the power going out, the computer being picked up, or leaving the game all forget
+the window, walk away, come back, and it is still counting. It is **not** persisted,
+the power going out, the computer being picked up, or leaving the game all forget
 it, and the machine stays up. That is deliberate and it is in the manual, and it is
 the one job that does not come back from a save: the minute it was waiting for is a
 moment on the real clock, and the world stood still while the game was shut. A
@@ -358,21 +358,21 @@ but its own next turn.
 when it is not in the middle of anything. At a `passwd` or `sudo` question, or with
 a login name half typed, it prints `^C` on the line and puts the shell prompt back
 (or `login:`); at an idle shell it shuts the window. In the editor it is still the
-editor's Escape, and at the BIOS' question — which has nothing behind it to give up
-on — it still closes.
+editor's Escape, and at the BIOS' question, which has nothing behind it to give up
+on, it still closes.
 
-If the machine will not boot — no `/bin`, or no account left in `/etc/passwd` — the
+If the machine will not boot, no `/bin`, or no account left in `/etc/passwd`, the
 screen ends on `No operating system found.` and `Restore system? (y/n)`. `y` puts
 the commands, the accounts and the system files back and touches nothing under
 `/home` or `/root`; `n` leaves it sitting there, and anything typed at it brings the
 question back; `exit` or Escape walks away from it.
 
-The building the computer stands in is wired to it — literally, with a
+The building the computer stands in is wired to it, literally, with a
 screwdriver. `/dev` holds one file per door, light switch and window it can reach
 **that somebody has fitted a hardware module to** (see below): its own building
 when its square has one, every room of it; ten tiles of its own floor when it has
-not, which is what a computer in a player-built base gets. Anything further off —
-a lamppost, a gate at the end of the drive — is a cable away, and that is below
+not, which is what a computer in a player-built base gets. Anything further off,
+a lamppost, a gate at the end of the drive, is a cable away, and that is below
 too. `dev` is how you work them:
 
 ```
@@ -389,13 +389,13 @@ win0     office                1E 0        N  locked
 
 `door0` and `lock0` are one door twice over: the thing that opens, and the key
 that holds it shut. Only a door the lock can actually stop somebody at gets that
-second row — in this game a key stops a survivor who is *outside* a building and
+second row, in this game a key stops a survivor who is *outside* a building and
 nobody who is inside, so exterior doors and player-built doors have a `lockN` and
 interior doors do not.
 
-The id you name it by, the rooms it stands between — the map's own raw names,
-`exterior` where one side is the outdoors, `built` for something a player put up
-— where it is from where the computer stands, which way it faces, and its state.
+The id you name it by, the rooms it stands between, the map's own raw names,
+`exterior` where one side is the outdoors, `built` for something a player put up,
+where it is from where the computer stands, which way it faces, and its state.
 The offset is the column that tells two devices apart when the room names do
 not: tiles east or west, tiles north or south, `0 0` for the computer's own
 square, and `+1` / `-1` for a floor that is not this one. The table runs by kind
@@ -417,23 +417,23 @@ dev find door1      -> door1: highlighted
 
 A door opens with nobody's hand on it: no survivor walks over, nothing is
 animated, and everybody on the server sees it swing. The computer is not a key,
-though — a locked door answers `door0: locked` and stays shut until its `lockN`
+though, a locked door answers `door0: locked` and stays shut until its `lockN`
 is unlocked.
 
 `dev find` answers the question a listing cannot: **which** of the thirty-five it
-is. A light blinks for six seconds and goes back exactly as it was found — a
+is. A light blinks for six seconds and goes back exactly as it was found, a
 server-side timer on `Events.OnTick`, gated on `getTimestampMs()` the way
-vanilla's own `forageServer` gets under a minute — and a light with no power
+vanilla's own `forageServer` gets under a minute, and a light with no power
 answers `light0: no power`, the same as a write. A door or a window has nothing
 to blink with, so the server tells the one window that asked where to look and
 that player's client outlines the object with vanilla's `setHighlighted` /
 `setOutlineHighlight`, which take the local player number first: in multiplayer
-only the survivor who typed it sees the outline. It asks for the right it uses —
+only the survivor who typed it sees the outline. It asks for the right it uses,
 a light is switched, so blinking one needs write; a door is only drawn around, so
 reading it is enough.
 
-Underneath, `dev` is `cat` and a redirect on the node — the same permissions, the
-same words, the same refusals — and `ls -l /dev` is the same devices with the
+Underneath, `dev` is `cat` and a redirect on the node, the same permissions, the
+same words, the same refusals, and `ls -l /dev` is the same devices with the
 mode, the owner and the group in front of them and no room left for the offset:
 
 ```
@@ -462,7 +462,7 @@ command's:
 | `lock1: no padlock` | a player-built door with neither padlock nor key on it |
 | `door0: locked` | held by a key the machine has not got: `unlock` its `lockN` first |
 | `door0: barricaded` | planks on it, and no machine takes those off |
-| `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it — the game's own test, so a survivor could not open it by hand either |
+| `door0: blocked` | the doorway is not clear: a solid tile, a tree, or a vehicle across it, the game's own test, so a survivor could not open it by hand either |
 | `light0: invalid value` | that word means nothing to that kind |
 | `light0: permission denied` | the mode says no |
 | `win0: cannot toggle` | smashed or barricaded: no opposite for `toggle` to turn it into |
@@ -475,18 +475,18 @@ kind` (the kinds are `curtain`, `door`, `floppy`, `gen`, `light`, `lock`,
 for a name no device of the machine's answers to at all.
 
 A number belongs to a device for the life of the machine. `light0` is the same
-switch tomorrow as it is today, and one that is torn out leaves a **gap** —
-nothing moves up into it — so a line you wrote into a file still means what it
+switch tomorrow as it is today, and one that is torn out leaves a **gap**,
+nothing moves up into it, so a line you wrote into a file still means what it
 meant. A device that is out of reach is not listed at all; naming it says `no
 such device`, which is the difference between a switch that is off the grid and a
 path you mistyped.
 
-Devices are owner `root`, group `sudo`, mode `660` — so root and anybody
+Devices are owner `root`, group `sudo`, mode `660`, so root and anybody
 `/etc/sudoers` names read and work them, with no `sudo` typed and no password
 asked, and everybody else gets `light0: permission denied` from the device itself.
 A sensor is born `440` instead, `cr--r-----`, because it is read-only by nature
 and the mode says so before anybody tries.
-Root may open one up to everybody with `chmod 666 /dev/light0` — that lasts.
+Root may open one up to everybody with `chmod 666 /dev/light0`, that lasts.
 The group does not move: `chgrp` on a device answers `is a device`, because only
 the mode of one outlives the command it was typed in. Nothing else works on one
 either: `rm`, `mv`, `cp` and `edit` all answer `is a device`, and nothing can be
@@ -499,7 +499,7 @@ walk over and open it.
 
 Nothing is a device because of what it is. It is a device because somebody went
 up to it with a screwdriver and a box, and the sandbox option
-`CeroSec.HardwareRequired` — **on** by default — is what says so. Nine boxes,
+`CeroSec.HardwareRequired`, **on** by default, is what says so. Nine boxes,
 each bought with a level of Electricity and one gesture:
 
 | module | goes on | what the machine gets | level |
@@ -516,7 +516,7 @@ each bought with a level of Electricity and one gesture:
 
 So a door with only a contact on it is a `doorN` you can `cat` and cannot write:
 its mode is `cr--r-----`, everybody but root is stopped by the mode, and root is
-stopped by the device — `door1: operation not supported`, which is `write(2)`'s
+stopped by the device, `door1: operation not supported`, which is `write(2)`'s
 own `EOPNOTSUPP` in this machine's lower case. Put an operator on that same door
 and the same `doorN` opens; add a strike and the `lockN` appears beside it.
 
@@ -549,7 +549,7 @@ gives the box back whole.
 **The menu lists every box that could go on that sort of fixture**, whether you
 are carrying one or not, and each line tells you what the box does, which device
 it gives and the Electricity it wants. A box you have not got is greyed with *You
-are not carrying one* — or, if you have not read the **CeroSec Field Wiring
+are not carrying one*, or, if you have not read the **CeroSec Field Wiring
 Guide**, with the line that sends you to it, because a box you have never heard
 of is a box you would never go and look for. The only thing left off the list is
 a module that could never fit that sort of fixture at all: no curtain motor on a
@@ -561,14 +561,14 @@ fixture rather than about you: a **strike on an interior door** (a key there
 stops nobody, so the lock would be a device that lies) and an **operator on a
 garage or double door** (a machine moves one leaf and would leave the rest shut).
 
-**With the door open, and from inside.** A box goes on — and comes off — only
+**With the door open, and from inside.** A box goes on, and comes off, only
 from **inside** the building. Stand on the pavement and every entry is greyed
 with *This has to be done from inside*, because otherwise anybody walking past
 strips the hardware off your front door without ever coming in. An interior door
 has rooms on both sides and is wired from either. A **generator** is the one
 exception: it takes its switch outdoors, where a generator belongs.
 
-And the thing has to be at rest — open for what opens, off for what switches on:
+And the thing has to be at rest, open for what opens, off for what switches on:
 
 | fixture | must be | what the greyed entry says |
 | --- | --- | --- |
@@ -577,7 +577,7 @@ And the thing has to be at rest — open for what opens, off for what switches o
 | a stove, a washer, a dryer | switched off | *Switch it off first.* |
 | a television, a radio set | switched off | *Switch it off first.* |
 | a generator | stopped | *Switch it off first.* |
-| a light switch | nothing at all | — |
+| a light switch | nothing at all | - |
 
 **Remove asks exactly the same**, which is the half the first rule is really
 about. A light switch is the one that asks nothing: the plate comes off with the
@@ -585,8 +585,8 @@ light burning.
 
 **Somebody else's safehouse.** There is a sandbox option,
 **Safehouse members only** (`CeroSec.SafehouseModules`), **off** by default. With
-it on, a fixture standing inside a safehouse takes a module — and gives one back
-— only for somebody that safehouse allows: its owner, its members, and an admin.
+it on, a fixture standing inside a safehouse takes a module, and gives one back,
+only for somebody that safehouse allows: its owner, its members, and an admin.
 It is there for a server where stripping a rival's hardware out of his own
 hallway was the sabotage nobody wanted. A safehouse's own looting rules are not
 consulted either way: fitting a module is not looting, and nothing leaves the
@@ -598,8 +598,8 @@ made, so a shut door in a safehouse still has its relays on it.
 
 The **number does not move** for any of this. It hangs on where the device is and
 which kind it is, so a contact taken off and put back a week later is the same
-`doorN` a script wrote down. Only the mode moves — back to what a device of that
-shape is born at — because a door that has just grown an operator must not be one
+`doorN` a script wrote down. Only the mode moves, back to what a device of that
+shape is born at, because a door that has just grown an operator must not be one
 nobody may write to.
 
 **Where they come from.** Found ready-made in an electrician's van, on the shelves
@@ -614,7 +614,7 @@ parts lists for all nine in it, and the two that take a **Small Motor** out of
 something that already has one -- a hair dryer, a pair of sheep shears, a CD player
 or a blower fan -- because Knox County never sold a motor on its own. It turns up
 where the game's own electronics
-magazines turn up, and at the same rates — likeliest on an **electronics shop's
+magazines turn up, and at the same rates, likeliest on an **electronics shop's
 magazine rack**, then a bookshop, a tool shop and an electrician's van, then a
 mixed rack, a post office's mail, a warehouse crate of magazines and a library.
 Right-click it, **Read**, and the eleven appear in the **Electrical** tab.
@@ -632,7 +632,7 @@ early, not the only way.
 or office in three had all this done before the outbreak, and you will find its relays
 and contacts already on its fixtures with nobody to thank for them. They are ordinary
 modules: `dev` lists them, the right-click menu offers **Remove**, and taking one off
-puts the box in your bag. Nothing puts it back afterwards — the building is yours to
+puts the box in your bag. Nothing puts it back afterwards, the building is yours to
 rewire from there. See *[A place that is still running itself](#a-place-that-is-still-running-itself)*.
 
 **With the option off**, none of this exists: every door, window, lock and light
@@ -640,7 +640,7 @@ of the building is in `/dev` the way it was before the modules, the right-click
 menu is not there at all, and a module already fitted is simply not consulted.
 
 **Motion sensors** are the one device you supply yourself. The part is a vanilla
-**Motion Sensor** (`Base.MotionSensor`) — the electronics module, out of a house
+**Motion Sensor** (`Base.MotionSensor`), the electronics module, out of a house
 alarm or off an electronics shelf, the same one the game's own sensor recipes eat.
 *Drop* one on the floor of a room the machine can reach and it becomes a
 `sensorN`. Pick it up and the device is gone, and the number it had stays
@@ -659,20 +659,20 @@ sensor0: invalid value
 
 What it watches is **its own room, out to three tiles**. It never sees through a
 wall, so a head in the hall tells you nothing about the kitchen; where there is no
-room at all — a base, a yard — it watches three tiles in every direction and its
+room at all, a base, a yard, it watches three tiles in every direction and its
 description reads `built`. A survivor, a zombie, an animal and a **car** all set it
 off, which is what the game's own sensors trigger on; an invisible character does
 not.
 
 One thing the machine will **not** do: wire up a bomb. The fifteen
-`*SensorV1/V2/V3` items — pipe bomb, aerosol bomb, flame trap, smoke bomb, noise
-trap, each with a motion sensor taped to it — are never devices, whatever they are
+`*SensorV1/V2/V3` items, pipe bomb, aerosol bomb, flame trap, smoke bomb, noise
+trap, each with a motion sensor taped to it, are never devices, whatever they are
 called. A mine that goes off when it detects movement is not a motion sensor, and
 a security system built out of five of them is a security system that kills you.
 
 And it is a **movement** detector, not a proximity fuse. The contact closes the
-moment the picture in front of it changes — somebody moved, walked in, or walked
-out — and it stays closed for five seconds after the last movement. So a zombie
+moment the picture in front of it changes, somebody moved, walked in, or walked
+out, and it stays closed for five seconds after the last movement. So a zombie
 that wanders into the field and **stops** reads `clear` five seconds later, with
 the zombie still standing there. That is what a real one does, and it is why a
 script polls a sensor instead of reading it once.
@@ -681,8 +681,8 @@ script polls a sensor instead of reading it once.
 
 A module on a lamppost does nothing on its own. The computer reaches its own
 building and nothing else, so a light on the street, a gate at the end of the
-drive, a lamp on the far side of the car park — or a shop the other side of the
-wall — is hardware nobody is listening to. What you do about it is what an
+drive, a lamp on the far side of the car park, or a shop the other side of the
+wall, is hardware nobody is listening to. What you do about it is what an
 electrician would do: **run a cable**.
 
 Right-click the fixture, the same menu the box went on with, and take **Link to
@@ -694,8 +694,8 @@ ksp-front-01, 12 tiles, 12 wire
 ksp-back-02, 3 tiles, 7 wire
 ```
 
-One `Base.ElectricWire` a tile, straight across the ground — corners cost
-nothing, the crow's distance is what you pay — and **four tiles more for every
+One `Base.ElectricWire` a tile, straight across the ground, corners cost
+nothing, the crow's distance is what you pay, and **four tiles more for every
 floor between you and it**, which is why the machine on the landing above costs
 seven for three tiles. **Thirty tiles is as far as a cable goes**, floors
 included. Further than that and the answer is a second computer for that end of
@@ -707,8 +707,8 @@ light would be wiring it in the dark. Nothing asks where you stand either, or
 that the door be open, or that you be inside: those are rules about reaching a
 thing with your hands, and this is the answer to not being able to. You need the
 screwdriver, the wire in your bag and the same level of Electricity the box
-itself wanted. The job takes as long as the walk — it is thirty tiles of reel you
-are paying out — and the greyed lines say why:
+itself wanted. The job takes as long as the walk, it is thirty tiles of reel you
+are paying out, and the greyed lines say why:
 
 | the line says | what to do about it |
 | --- | --- |
@@ -721,8 +721,8 @@ are paying out — and the greyed lines say why:
 A machine further away than thirty tiles is not on the list at all, and neither
 is one whose part of the map nobody has loaded.
 
-Then it is in that machine's `/dev` like anything in the building — same kinds,
-same numbers, same words — and `dev find` tells you what the run cost:
+Then it is in that machine's `/dev` like anything in the building, same kinds,
+same numbers, same words, and `dev find` tells you what the run cost:
 
 ```
 dev find light1     -> light1: blinking, linked, 12 tiles of wire
@@ -735,10 +735,10 @@ line above.
 
 **Cutting one gives the wire back.** *Unlink from ksp-front-01* is under the same
 menu, one line per cable already run, and every tile comes back into your bag. It
-asks nothing but the safehouse rule — not the range, not the wire, and not
+asks nothing but the safehouse rule, not the range, not the wire, and not
 whether the box is still on the fixture, because a module that came off a fixture
 you had cabled leaves the cable run and the reel owed. And if the fixture itself
-leaves the world — you pick the light switch up, somebody takes the door down —
+leaves the world, you pick the light switch up, somebody takes the door down,
 the wire drops on the floor where it stood, beside the boxes.
 
 Click the window's close button, or run `exit`, to leave. The screen itself keeps
@@ -755,7 +755,7 @@ school puts its lights out at ten, a shop at nine, and both put them back on at 
 in the morning.
 
 It is not a script waiting for you to arrive. `cron` on those machines runs on the
-county's clock whether anybody is there or not — but a computer can only reach the
+county's clock whether anybody is there or not, but a computer can only reach the
 building around it while that part of the map is loaded, so what actually happens is
 that the lights go out **while you are standing there** and nothing happens at all
 while nobody is. Which is what a timer nobody is watching does.
@@ -770,8 +770,8 @@ crontab -r                     take the job out
 echo "0 22 * * * sh $HOME/bin/lights.sh light0" | crontab
 ```
 
-The crontab belongs to whoever's job it was — often the machine is still sitting at
-his prompt — so `crontab -l` as him shows it, and as `root` you can read and write
+The crontab belongs to whoever's job it was, often the machine is still sitting at
+his prompt, so `crontab -l` as him shows it, and as `root` you can read and write
 anybody's. Unscrew the relay out of a light switch and that light stops answering: it
 is not a device any more, and `dev light0` says `no such device` until you put a relay
 back.
@@ -780,7 +780,7 @@ back.
 dark computer and does nothing at all on a schedule, exactly like a 1993 timer with no
 mains. The hardware is still on the walls, so a generator is all it wants.
 
-A house is never one of these — a house had nothing to run — and neither is a display
+A house is never one of these, a house had nothing to run, and neither is a display
 model in an electronics shop's window. Whether a premises was set up this way is
 decided **once**, the first time you ever come near one of its computers, and it never
 changes afterwards. It follows **Prefilled machines and disks** in the sandbox options like
@@ -928,8 +928,8 @@ one at mode `664` is ignored without a word. `root` is never trusted by
 reason a crontab calls `rsh` and not `rlogin`, and it never takes the screen over:
 the session it opens is for the command's output and not for a pair of hands.
 
-**`rsh` blocks.** The job that gave the order is parked — `ps` shows a `W`, `jobs`
-says `remote`, and it spends nothing at all while it waits — the far machine runs
+**`rsh` blocks.** The job that gave the order is parked, `ps` shows a `W`, `jobs`
+says `remote`, and it spends nothing at all while it waits, the far machine runs
 the command on its own budget, and then what that command printed is delivered
 into the waiting job's own output stream, with the far command's status in `$?`.
 So it goes wherever that job was already writing: the glass for a line typed at
@@ -939,7 +939,7 @@ job runs on, which is why an `rsh` is no longer the last thing a script ever doe
 A remote command that never ends keeps the local job waiting until Escape or
 `kill` (either tears the far session down) or until the far machine's own cpu
 ceiling kills it, which comes back as a status of 130. No greeting is printed on
-an `rsh` session — `rshd` prints none, `login` does — so what comes back is the
+an `rsh` session, `rshd` prints none, `login` does, so what comes back is the
 command's output and nothing else. `rcp` needs the same trust, lands the file as the account you are,
 and is judged by the far machine's own permissions, its 4096-byte file ceiling
 and its own 64K disk. It is not quick: the wire runs at about a kilobyte a
@@ -1229,13 +1229,13 @@ disk, walk the disk across town.
 
 Right-click the computer and the menu offers **Insert floppy** while you are
 carrying one and **Eject floppy** once one is in. Both work on a dark machine as
-well as a lit one — a drive is a spring and a lever, not a circuit — and one disk
+well as a lit one, a drive is a spring and a lever, not a circuit, and one disk
 fits at a time, which is what *Eject the floppy first* on a greyed-out Insert
 means.
 
 Carrying **more than one disk**, Insert floppy becomes a submenu with a line per
 disk, so you pick the one that goes in rather than finding out afterwards. Each line
-reads the disk's label if it has one and its shell colour in brackets — *PAYROLL 93
+reads the disk's label if it has one and its shell colour in brackets, *PAYROLL 93
 (green)*, or *3.5" Floppy Disk (blue)* for one nobody has written on. While the
 drive is full or you cannot reach the machine there is nothing to choose between, so
 the entry goes back to a single greyed line with the reason on it.
@@ -1251,7 +1251,7 @@ of print on it, which is what the icon in your bag shows, and its tooltip says
 **Printed label**.
 
 A disk somebody kept his own things on is named in **his** words, in his own
-hand — *books 93*, *do not read*, *home dir 8 july*, *heard log jul*. Plain
+hand, *books 93*, *do not read*, *home dir 8 july*, *heard log jul*. Plain
 sticker, and the tooltip says **Handwritten label**. Two copies of the same kind of
 disk found in different towns were two different men, so they do not say the same
 thing.
@@ -1263,14 +1263,14 @@ and has nothing written on it at all.
 
 Four disks in a bag look identical, so do what anybody with four disks did: write on
 the sticker. Right-click a disk in your inventory, with **something to write with**
-somewhere on you — a pen, a pencil, a red, blue or green pen, or anything else the
-game counts as a writing implement — and choose **Label floppy**. Up to 24
+somewhere on you, a pen, a pencil, a red, blue or green pen, or anything else the
+game counts as a writing implement, and choose **Label floppy**. Up to 24
 characters: letters, digits, spaces, dashes and dots. Nothing else, because the
 label is printed on the machine's own screen.
 
 The label becomes the disk's name in your inventory, so you can tell your disks apart
 without inserting them, and it stays on the disk through the drive and out the other
-side. **What you write is handwriting** — a pen is a pen, so a disk you label says
+side. **What you write is handwriting**, a pen is a pen, so a disk you label says
 *Handwritten label*, and labelling a printed disk over the top of its own line takes
 the printed sticker off it. **Change the floppy's label** rewrites it and **Erase the floppy's label**
 takes it off; both need the same pen in hand. A label is written on the disk and not
@@ -1301,7 +1301,7 @@ admin@ksp-04-11:~$ umount /mnt
 ```
 
 `/dev/fd0` is the drive and exists only while there is a disk in it. `newfs`
-formats — which empties, every time, on every machine there has ever been — and
+formats, which empties, every time, on every machine there has ever been, and
 `mount` grafts the disk onto `/mnt`, an empty directory the machine ships for
 exactly this. From then on `/mnt` **is** the disk and every command you know works
 through it; whatever was in `/mnt` before is covered, not deleted, and comes back
@@ -1320,19 +1320,19 @@ fd0          4096      5   4091    1%  (PAYROLL 93)
 fd0 nodes      32      2     30    7%
 ```
 
-What travels with the disk is everything on it — the names, the contents, who owns
-each file and what its mode is — so a file that was yours on one machine is yours
+What travels with the disk is everything on it, the names, the contents, who owns
+each file and what its mode is, so a file that was yours on one machine is yours
 on the next, because an account is a name and the name goes with the file.
 
 Three things to know. `umount` refuses while anybody's working directory is inside
-the mount (`umount: /mnt: Device busy`) — including somebody who got there through
+the mount (`umount: /mnt: Device busy`), including somebody who got there through
 a symbolic link, since where he is standing is a place and not a spelling; `cd` out
-and try again. So does `rm -r` or `mv` on the mount point itself, or on any directory with a mount under it —
+and try again. So does `rm -r` or `mv` on the mount point itself, or on any directory with a mount under it,
 unhooking the place a mount is written against would leave the disk in the drive
 and no path to it. Ejecting a mounted
 disk unmounts it first and loses nothing, because every write here is finished by
 the time the command that made it came back. And `mv` will not carry a file between
-the two disks (`cross-device link`) — use `cp` and then `rm`, which are two commands
+the two disks (`cross-device link`), use `cp` and then `rm`, which are two commands
 because they are two things that can go wrong separately.
 
 Who may format and who may mount is the mode on `/dev/fd0` and nothing else: it is
@@ -1343,8 +1343,8 @@ does hand the drive to the whole office.
 ## Finding the manual
 
 CeroSec Systems shipped a **documentation set**, three volumes of it, and it is the
-documentation for everything above — the commands, the files, the accounts, the
-BIOS — written for somebody sitting at one of these machines in 1993.
+documentation for everything above, the commands, the files, the accounts, the
+BIOS, written for somebody sitting at one of these machines in 1993.
 
 | | |
 | --- | --- |
@@ -1363,7 +1363,7 @@ who bought one put it down. Rarest of all, on a **living room shelf** at home.
 CeroSec Systems printed far fewer of the later volumes than of the first, and that
 is what you will feel looking for them: the **User's Guide** at the rate above, the
 **System Administrator's Guide** at half of it, and the **Programmer's Guide** at a
-quarter — except at a university, a bookshop's computer aisle or an electronics
+quarter, except at a university, a bookshop's computer aisle or an electronics
 store, where it comes back up to a half, because that is where the people writing
 anything for these machines were buying their books.
 
@@ -1374,7 +1374,7 @@ exact weights, and the vanilla items each one was measured against, are in
 `42/media/lua/server/CeroSec/CeroSecManualLoot.lua`.
 
 **Reading one.** Right-click the book in your inventory and choose **Read the User's
-Guide** — or the Administrator's, or the Programmer's, whichever you are holding. Or
+Guide**, or the Administrator's, or the Programmer's, whichever you are holding. Or
 just **double-click it**, which opens the same volume the same way. It
 opens as an open book: its own cover, its own contents, two pages side by side, a
 chapter title at the head of each leaf, page numbers at the outer corners.
@@ -1386,7 +1386,7 @@ chapter title at the head of each leaf, page numbers at the outer corners.
 | **Contents** | the table of contents; click a chapter to jump to it |
 | **Escape** | close the book |
 
-The survivor does not read it — **you** do. There is no reading skill, no time
+The survivor does not read it, **you** do. There is no reading skill, no time
 spent, no animation and nothing queued: the book is paper on your screen and the
 character goes on doing whatever he was doing. Walk with it open, fight with it
 open, drive with it open.
@@ -1401,12 +1401,12 @@ Guide is not your place in the User's Guide.
 
 Knox County had computers in it before the outbreak, and people were using them.
 So a vanilla computer you switch on for **the first time** is usually not a machine
-out of a box — it is somebody's machine, and what is on it depends on whose it was.
+out of a box, it is somebody's machine, and what is on it depends on whose it was.
 
 This is the sandbox option **Prefilled machines and disks**, and it is **on** by
 default. Turn it off and every computer is a bare one: `root` and `admin`, both
 open, an empty disk. Either way, **a computer somebody has already switched on is
-never touched** — whatever you built on a machine stays exactly as you left it.
+never touched**, whatever you built on a machine stays exactly as you left it.
 
 **Somebody's machine.** A computer in an office comes up with the office's own
 greeting on the screen, a handful of staff accounts in `/etc/passwd`, a week of
@@ -1421,11 +1421,11 @@ up the way any office would have: the dealer's own login is off `/etc/passwd`, i
 home is gone and it is out of `/etc/sudoers`. So `admin` with no password is not a way
 into somebody's machine, and **root's password really is the paper in the drawer**.
 What such a machine has instead is the company's own administrator, who has a password
-like the rest of the staff and can work the building he was responsible for — the
-lights, the doors, the locks — and who **cannot** `sudo` his way to root either.
+like the rest of the staff and can work the building he was responsible for, the
+lights, the doors, the locks, and who **cannot** `sudo` his way to root either.
 
 **But it is one person's desk, not the whole office's.** The accounts are the
-company's and every machine in the building has all of them — but only **one** of
+company's and every machine in the building has all of them, but only **one** of
 them has files on the computer you are standing at. Two computers in one office are
 two different men's desks: the bookkeeper's has the ledger and the nightly job that
 adds it up, the man at the next desk has his own memo and no job at all, and both
@@ -1434,7 +1434,7 @@ in it is worth walking twice.
 
 **And the office down the road tells the story in other words.** Every note, every
 handover, every list is written three ways, and which one a premises keeps is that
-premises' own for the life of the save — with its own people's names in it. Reading
+premises' own for the life of the save, with its own people's names in it. Reading
 one office does not mean you have read them all.
 
 **Whose machine it was depends on the building**, and there are eleven kinds:
@@ -1442,14 +1442,14 @@ one office does not mean you have read them all.
 | | |
 | --- | --- |
 | **a house** | somebody's notes, a page on how the porch light got put on a timer, a child's history homework. Nothing locked. |
-| **an office** | a handover note, a ledger in cents, and the nightly job that mails the totals — which is a real line in a real crontab and really runs |
+| **an office** | a handover note, a ledger in cents, and the nightly job that mails the totals, which is a real line in a real crontab and really runs |
 | **a sheriff's dispatch** | a shared `dispatch` login, a standing lookout list, and `/var/log/dispatch`, which stops in the middle of a line on the morning of the 9th |
 | **a bank** | `accounts.dat` in four plain columns and the audit the examiner asks for, written down as two commands you can type |
 | **a shop** | what was on the floor when somebody last counted it, the prices in cents, and the order to close up in |
-| **a shop that sells computers** | the dealer's own machine in the back: the stock by model, what is on the repair bench, and how a machine was set up before it went out on the floor. Every machine **on the floor** is stock — see below |
+| **a shop that sells computers** | the dealer's own machine in the back: the stock by model, what is on the repair bench, and how a machine was set up before it went out on the floor. Every machine **on the floor** is stock, see below |
 | **a school** | grades by student number, because the names are in the cabinet; the bells on a clockwork timer the computer cannot reach |
 | **a clinic** | rooms and wards and what has to happen next. Nothing medical: that is the chart, and the chart stays on the trolley |
-| **a radio station** | the hour-by-hour sheet the machine reads off its own clock, and `/var/log/heard` — what the county sounded like from the 4th to the 9th |
+| **a radio station** | the hour-by-hour sheet the machine reads off its own clock, and `/var/log/heard`, what the county sounded like from the 4th to the 9th |
 | **a military post** | `root` and **nothing else**. No open account, and nothing in anybody's pocket. Three memoranda on the exclusion zone, and the last one tells whoever is reading it that the road south was open on the 8th of July |
 | **CeroSec Systems** | the vendor's own bench: the whole script library standing together in `/usr/local/src`, a `CHANGES` that says why `hash` became `mkpasswd`, and the support mailbox |
 
@@ -1457,15 +1457,15 @@ one office does not mean you have read them all.
 there is nothing to find on either and you can stop looking:
 
 - **a display model.** In an electronics shop, every computer on the sales floor is
-  stock. It comes up on an open `demo` account with nobody's files on it — a
+  stock. It comes up on an open `demo` account with nobody's files on it, a
   `WELCOME.TXT` telling you to try it, a `DEMO.TXT` selling it to you and a
-  `PRICES.TXT` with the whole model line and the prices — and two or three lines in
+  `PRICES.TXT` with the whole model line and the prices, and two or three lines in
   the history where a customer looked at one file and walked away. No staff, no mail,
   no log. The shop's **own** machine is the one in the back room, and that one is
   somebody's desk like any other.
 - **a spare desk.** A premises has as many people as it has people: switch on more
-  machines than that and the ones left over come up as the disk the dealer delivered
-  — the company's name and greeting on it, the staff accounts and their passwords all
+  machines than that and the ones left over come up as the disk the dealer delivered,
+  the company's name and greeting on it, the staff accounts and their passwords all
   present, and not one populated home.
 
 **Root is still the premises' on both of them**, so the sticky note out of the back
@@ -1482,12 +1482,12 @@ whoever sat at it, and none of it is decoration:
 | `cat /var/log/messages` | the premises' own week, and then the nights at the end of it: a machine that came back up at four in the morning, a login that was refused, a call that got no carrier. |
 | `cat draft.txt` | on about half of them: a page he was writing. It stops in the middle of a sentence. |
 
-**And about one machine in four you will find still logged in** — better odds still on
+**And about one machine in four you will find still logged in**, better odds still on
 a machine its premises left running, which is a machine nobody shut down. Nobody ever typed
-`exit`, so it comes up at that man's prompt and asks you for nothing — his home, his
+`exit`, so it comes up at that man's prompt and asks you for nothing, his home, his
 shell, his history under your fingers. `last` on such a machine says `still logged
 in` against the last name on it. That never happens at a military post. It is a
-**declared deviation** — no Unix can restore a session across a power cut, and the
+**declared deviation**, no Unix can restore a session across a power cut, and the
 manual's *What is not Unix here* page says so in the machine's own words; what is
 deviated from is the story those machines tell, where the screen agrees with `wtmp`
 instead of with the boot sequence.
@@ -1495,7 +1495,7 @@ instead of with the boot sequence.
 **Some of them do things while you are not there.** A shop's lights go off at nine,
 a bank's vault door pulls itself to at six on weekdays, the cells in a dispatch
 office lock at ten, a clinic mails the morning round list at seven. Those are
-ordinary crontab lines and `crontab -l` shows them to you — and nothing happens at
+ordinary crontab lines and `crontab -l` shows them to you, and nothing happens at
 all unless somebody has wired a module onto the fixture, which is the same rule
 every device follows.
 
@@ -1513,18 +1513,18 @@ wrote the password down, because everybody did:
 | | |
 | --- | --- |
 | **in a drawer** | a yellow sticky note in a desk, a counter, a filing cabinet, a locker, a dresser or a side table **of that same premises**. Your bag calls it `Sticky note (root)`; **read it** and the page says `Sticky note: root / falcon12`. One per premises, at most. |
-| **in a pocket** | about one dead employee in twenty, killed **inside** that premises, has his own login folded in his pocket — `Sticky note (rmiller)`, reading `Note: rmiller / thunder07`. Never root's — he was never given it. |
+| **in a pocket** | about one dead employee in twenty, killed **inside** that premises, has his own login folded in his pocket, `Sticky note (rmiller)`, reading `Note: rmiller / thunder07`. Never root's, he was never given it. |
 
 **A note is a sheet of paper and the game treats it as one.** Right-click it and
 read it; with a pen or a pencil in your bag the same entry lets you write over it,
 and the little bin empties the page first. Nothing you find is locked, so a note is
 yours to reuse. And it burns: it feeds a campfire, a fireplace or a barbecue, and
 it will light one, exactly as any sheet of paper does. Notes already lying in a save
-from before this are the older item and are left exactly as they were — their name
+from before this are the older item and are left exactly as they were, their name
 still carries their password.
 
 A shop in a mall is its own premises, with its own machine, its own staff and its
-own note — the same rule the telephone line uses. A body in the street carries
+own note, the same rule the telephone line uses. A body in the street carries
 nothing: he worked somewhere, but not there.
 
 The two always agree, and they agree **before you ever touch the machine**: find
@@ -1539,9 +1539,9 @@ firmware gives: hold the switch through the BIOS and let it **repair** the syste
 which reinstalls it and keeps `/home`.
 
 **Disks with something on them.** Most floppies you find are blank, exactly as
-before — seventeen disks in a hundred are not. Those come already labelled, and the
+before, seventeen disks in a hundred are not. Those come already labelled, and the
 label is on the item in your inventory. Put one in the drive, mount it, and read the
-`README.TXT` — a 1993 disk had one, in capitals, and it tells you what the other
+`README.TXT`, a 1993 disk had one, in capitals, and it tells you what the other
 files on the disk are and how to run them.
 
     admin@acct-04-11:~$ mount /dev/fd0 /mnt
@@ -1561,7 +1561,7 @@ There are eleven labels:
 | **PERSONAL** | somebody's own disk, and none of it is any use to you: letters never sent, a list of things he was going to do, his mother's recipe, a poem he asks you not to laugh at, and four telephone numbers |
 | **BBS** | somebody's kit for running a board of his own: five programs and a README. See *Running a board of your own*, below |
 | **HOME AUTOMATION** | the home kit, labelled `CeroSec HOME 1.0`: six programs that run the building for you, and a README saying how to copy them and what to put in a crontab. See *Letting the machine run the building*, below |
-| **RADIO LOG** | a ham club's packet log — every station the machine heard over the week before, when the nets are, and the station's own callsign — with a README on `cu -l /dev/radio0` and why `MHEARD` inside the box says less than the file does |
+| **RADIO LOG** | a ham club's packet log, every station the machine heard over the week before, when the nets are, and the station's own callsign, with a README on `cu -l /dev/radio0` and why `MHEARD` inside the box says less than the file does |
 
 **The four disks that are somebody's own writing are written three ways.** `BACKUP`,
 `LEDGER`, `PERSONAL` and `RADIO LOG` each have three tellings with three casts of
@@ -1570,7 +1570,7 @@ the drawer across town is another person's week. The vendor's disks and the prog
 are the same on every copy, which is what a manual page and a program are.
 
 **The BBS list is printed where you first use it.** The numbers on that disk are the
-numbers of *your* exchange — they come out of the same county directory the phone
+numbers of *your* exchange, they come out of the same county directory the phone
 book does, so they ring real premises, and a computer in one of those premises
 answers `CONNECT 2400`. What is written beside each one is the board's name, in the
 handwriting of whoever owned the disk. It is printed the first time you put the disk
@@ -1588,7 +1588,7 @@ floppy is the whole of what you need to turn it into somewhere you can leave eac
 other messages. It is five shell programs and a README, and it was written by
 somebody who ran a board out of his own front room in 1993.
 
-The sysop — whoever the machine belongs to — does it once:
+The sysop, whoever the machine belongs to, does it once:
 
     root@disp-04-11:~$ mount /dev/fd0 /mnt
     root@disp-04-11:~$ sh /mnt/setup.sh /usr/local/lib/bbs
@@ -1601,15 +1601,15 @@ and then puts one line at the end of each caller's `.profile`:
 
 After that, somebody who rings the number with `cu`, logs in as `alice` and gets a
 menu instead of a prompt: **N** for what has come in since she last looked, **R** for
-her whole mailbox eighteen lines at a time, **P** to write one — to a name, or the
-word `all`, which mails everybody with an account and puts a copy on the board —
+her whole mailbox eighteen lines at a time, **P** to write one, to a name, or the
+word `all`, which mails everybody with an account and puts a copy on the board,
 **B** for the board, **W** for who is on right now, **L** for the last callers,
 **U** for the accounts there are, and **Q** to hang up.
 
 Nothing about it is magic and that is the point: it is `mail`, `who`, `last` and a
 `read` loop, in files you can read on one screen and change. The board itself is one
 file in `/usr/local/lib/bbs` that everybody may write, with the newest posting at the
-bottom — there is nothing on this machine that turns a file back to front, and the
+bottom, there is nothing on this machine that turns a file back to front, and the
 README says so rather than pretending otherwise. Keep the mail with a line in root's
 crontab and a floppy left in the drive:
 
@@ -1643,7 +1643,7 @@ stop: `curtains.sh: no curtain in /dev`, `tvguide.sh: no tv0 in /dev`.
 
 **Programs somebody wrote.** Some machines have a script or two in their owner's
 `~/bin`, which is already on your path once you are logged in as him. They are
-written in the same `sh` you write in, so `cat` one and read it — that is how you
+written in the same `sh` you write in, so `cat` one and read it, that is how you
 learn what this machine can do. Copy one off a disk with `cp /mnt/thing.sh ~/bin`
 and it is yours.
 
@@ -1653,7 +1653,7 @@ base once you have wired it. Lights off and lights on, locks either way, close a
 (reading the door back first, because bolting a door that would not close bolts
 nothing), which door is open, grep a columns file, add a column up, sort a list to
 work down, print the line of a table for the hour it is, list everything under a
-tree, write a line in a log — and three games.
+tree, write a line in a log, and three games.
 
 The one place the **fourteen building tools** stand together is `/usr/local/src` on
 the bench machine of a CeroSec Systems service department. The distribution disk says
@@ -1661,6 +1661,6 @@ so, and it is true. The five programs of the `BBS` disk are not there and never 
 they are a caller's own work, off his own disk, and a dealer did not stock them.
 
 **And the phone book.** A vanilla phone book picked up in Knox County lists the
-premises of that region with the number a computer standing in one would answer on
-— which is how you find a machine to dial without walking into the shop. See
+premises of that region with the number a computer standing in one would answer on,
+which is how you find a machine to dial without walking into the shop. See
 [the telephone](#the-telephone).

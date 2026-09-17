@@ -1,4 +1,4 @@
-# CeroSec — Devices
+# CeroSec: Devices
 
 How `/dev` gets built every command from what a computer can actually reach:
 discovery, the lock rule, the cable to a fixture outside the building, sync calls
@@ -25,7 +25,7 @@ It has no `data`, it costs nothing in `CeroSecOS.usage` (so `df` does not move
 because somebody walked past a light switch), and **it is never persisted**.
 `CeroSecOS.mountDev` builds `/dev`'s children from `env.devices.list()` at the
 top of `exec` and `continue`, and `CeroSecOS.unmountDev` takes them away again
-before the answer goes back — so the state the game saves has the same empty
+before the answer goes back, so the state the game saves has the same empty
 `/dev` it has had since rung 1, and `validate` never sees a node type it does not
 know. `SCeroSecObject:osState` sweeps once more before the gate, as the belt to
 that pair of braces: a command that died in the middle must not turn a working
@@ -37,7 +37,7 @@ machine into a broken one.
 | --- | --- | --- |
 | `list()` | array of `{ id, kind, desc, side, state, mode, dead, ro }` | the caller |
 | `write(id, value)` | `ok, reason, state` | the caller |
-| `chmod(id, mode)` | — | the caller, optional |
+| `chmod(id, mode)` | - | the caller, optional |
 | `find(id, seconds)` | `ok, reason, word` | the caller, optional |
 
 The **ids are the caller's**, not the engine's: the engine renders what it is
@@ -52,12 +52,12 @@ node keep the filesystem's grammar (`rm: /dev/light0: is a device`,
 `mkdir` and `touch` under `/dev` answer `/dev: read-only`). The listing is
 alphabetical, like every other listing on this machine.
 
-**A whole kind at once.** `dev <kind> <value|toggle>` — `dev window close`, and
-the dial too (`dev tv channel 203`) — is the shell's own loop over one kind, and
+**A whole kind at once.** `dev <kind> <value|toggle>`, `dev window close`, and
+the dial too (`dev tv channel 203`), is the shell's own loop over one kind, and
 it is a loop and not a second road to a device: the set is exactly what
 `dev <kind>` lists, in the same order (`devSet` in `CeroSecOSShell.lua` answers
 the sorted nodes and both the table and the broadcast read it), and every device
-goes through the same `devOne` that `dev <id> <value>` goes through — the mode,
+goes through the same `devOne` that `dev <id> <value>` goes through, the mode,
 `CeroSecOS.DEV_VALUES`, `devices.write` and the refusal in the device's own name.
 So a broadcast is never a way round a `660`, `toggle` is each device's own
 `DEV_OPPOSITE` entry looked up on its own state, and what is printed is one
@@ -69,13 +69,13 @@ are devices and the budget has to see it. There is **no** kind across kinds: a
 value means a different thing per kind, and `DEV_VALUES` is what a kind is.
 
 **Discovery** is `SCeroSecDevices.find(x, y, z)`, a walk of the world and not a
-book kept up to date, because the answer is only true for the moment it is asked
-— and it is not walked twice inside `CeroSecDevices.CACHE_MS` (see *The `/dev`
+book kept up to date, because the answer is only true for the moment it is asked,
+and it is not walked twice inside `CeroSecDevices.CACHE_MS` (see *The `/dev`
 cache*, below):
 
 - The square's `getBuilding()`, when it has one → `getDef():getRooms()`
   (an `ArrayList<RoomDef>`, read the way `shared/Util/BuildingHelper.lua` reads
-  it) → `getIsoRoom()` per room — `nil` while its chunks are not loaded — →
+  it) → `getIsoRoom()` per room, `nil` while its chunks are not loaded, →
   `getSquares()` → `getObjects()`, **plus the far edge of every one of those
   squares** (below).
 - No building → `getCell():getGridSquare()` over ±`CeroSecDevices.RADIUS` (10) on
@@ -84,7 +84,7 @@ cache*, below):
   wall is already standing on a square it goes to.
 
 Before either: the machine's **own** square. No square there is a chunk the streamer
-has not brought in, and a machine that is not in the world reaches nothing — `find`
+has not brought in, and a machine that is not in the world reaches nothing, `find`
 answers an empty list at once rather than walking four hundred tiles that cannot be
 there, which is the same guard `CeroSecRadio.tncAt` wears one layer down. So a computer
 you have walked away from lists no devices and answers `no such device` about the
@@ -95,13 +95,13 @@ scans of grace. It is not switched off for it and it keeps running: the rule is
 **A fixture on the far edge of a room belongs to the room.** A wall object belongs
 to ONE square and sits on that square's NORTH or WEST edge:
 `IsoDoor.getOppositeSquare` is `getNorth()` then `getGridSquare(x, y - 1, z)`, else
-`getGridSquare(x - 1, y, z)` (`javap -c`, offsets 0—56); `IsoWindow`'s and
-`IsoThumpable`'s are `getInsideSquare()` off the same `north` field (offsets 9—77 of
-each); `IsoCurtain`'s reads its sprite type and answers all four — curtainN north,
+`getGridSquare(x - 1, y, z)` (`javap -c`, offsets 0-56); `IsoWindow`'s and
+`IsoThumpable`'s are `getInsideSquare()` off the same `north` field (offsets 9-77 of
+each); `IsoCurtain`'s reads its sprite type and answers all four, curtainN north,
 curtainS south, curtainW west, curtainE east, `null` for a sprite that is none of
-them (offsets 0—141). So a door in a room's north or west wall stands on the room's
+them (offsets 0-141). So a door in a room's north or west wall stands on the room's
 own square and the walk above finds it, while a door in the room's **south or east**
-wall stands on the neighbouring square — the pavement, in no room at all, and a
+wall stands on the neighbouring square, the pavement, in no room at all, and a
 square the walk of the building's rooms never visited. Every south and east door,
 window and sheet of every building was invisible to `/dev` until 0.5.0, while the
 north and west ones were listed: a module fitted to a front door that never became
@@ -112,8 +112,8 @@ looked at for the same things:
 
 - the **south and east** neighbours carry a wall, so both are read for every wall
   fixture: a **door, window or curtain** whose own `getOppositeSquare()` is that
-  room square — the engine's answer to which boundary the object is on, which is
-  why a curtain's four types need no reading of `north` — and a **light** that
+  room square, the engine's answer to which boundary the object is on, which is
+  why a curtain's four types need no reading of `north`, and a **light** that
   hangs on that wall;
 - the **north and west** neighbours carry no wall of this room (the wall between
   them stands on the room's own square and `scanSquare` has it already), so they
@@ -123,15 +123,15 @@ looked at for the same things:
 
 **One thing that gate costs, written down because it is a real fixture and not a
 hypothesis.** A sheet hung on a north or west window **from the street** lands on
-the far side of that window — `IsoWindow.addSheet` moves to `(x, y - 1)` and
+the far side of that window, `IsoWindow.addSheet` moves to `(x, y - 1)` and
 stamps `curtainS` when the character stands north of it (offsets 32-57), and to
-`(x - 1, y)` with `curtainE` from the west (117-142) — and
+`(x - 1, y)` with `curtainE` from the west (117-142), and
 `IsoCurtain.getOppositeSquare` answers `y + 1` and `x + 1` for those two types
 (offsets 45-69, 115-139), which is the room. So it is this room's curtain, on a
 square the hung-only gate reads for lights alone, and `/dev` does not list it; the
 same sheet on a south or east window is listed, because it stays on the inside
-square. Nothing else can face back from there — a door and a window stand on their
-own square's north or west edge and face away — so closing it is one word in that
+square. Nothing else can face back from there, a door and a window stand on their
+own square's north or west edge and face away, so closing it is one word in that
 gate and a second one in `fittableFarEdge`, which carries the same rule for the
 pre-fitting walk. It is not closed in 0.5.0: it was found while mutating the walk
 for this release, it changes what two walks answer, and a device that appears is a
@@ -140,7 +140,7 @@ change a player should get with a bench of its own.
 **A light is the one fixture that needs both readings, and the porch-lamp report
 is why.** A light does not stand on a wall, it hangs on one, and it hangs on the
 OUTSIDE: a lamp on the house's south wall is on the pavement south of the room,
-and a lamp on the house's **north** wall is on the pavement **north** of it — a
+and a lamp on the house's **north** wall is on the pavement **north** of it, a
 square nothing in this mod visited before 0.5.0. So the far-edge rule of 0.4.1
 fixed the doors and half the lamps, and every north-wall and west-wall porch lamp
 in the county stayed invisible to `/dev` with a relay screwed to it.
@@ -152,8 +152,8 @@ The reading itself is two, for the same reason:
   to pull the chain (`ISWorldObjectContextMenu.lua:1348-1352`, `onToggleLight`).
 - **`Facing`, turned round**, because the tile definitions do not agree with the
   first. Of the twenty `CustomName = Outdoor Lamp` tiles in `lighting_outdoor_01`,
-  twelve carry the `attached` flag opposite their `Facing` — a lamp facing south
-  hangs on the wall to its north — and **eight are crossed**: every Round and
+  twelve carry the `attached` flag opposite their `Facing`, a lamp facing south
+  hangs on the wall to its north, and **eight are crossed**: every Round and
   every Antique lamp drawn facing north carries `attachedW` (tiles 28, 30) and
   every one drawn facing west carries `attachedN` (29, 31), and the Oval pair the
   same way (44, 45). A lamp faces AWAY from what it is screwed to, so the second
@@ -172,21 +172,21 @@ object**, which is what keeps the two lights that are not on the building out:
 | `Facing` | yes | no | yes |
 | `streetlight` | no | yes | no |
 
-A **lamppost** carries neither and is refused by both readings, as it was before —
+A **lamppost** carries neither and is refused by both readings, as it was before,
 it is the county's street lighting and not the building's, and a cable is how a
-machine reaches one (below). A **flood light** carries `Facing` and no `MoveType`
-— a movable light on a tripod, `LightRadius = 24`, `IsMoveAble`, tiles 48—51 — so
+machine reaches one (below). A **flood light** carries `Facing` and no `MoveType`,
+a movable light on a tripod, `LightRadius = 24`, `IsMoveAble`, tiles 48-51, so
 the `MoveType` half refuses it: a floodlight leaning against a wall is not screwed
 to it, and the day somebody carries it away the building has not lost a fixture.
 
 `props:has(name)` is the `String` overload and it really answers: `PropertyContainer`
 has five `has` overloads, Kahlua's `MultiLuaJavaInvoker` picks the one whose argument
-types match (`matchesArgumentTypes`, offsets 42—49), and `has(String)` puts the name
-through `TilePropertyAliasMap.getIDFromPropertyName` — which registers every name the
+types match (`matchesArgumentTypes`, offsets 42-49), and `has(String)` puts the name
+through `TilePropertyAliasMap.getIDFromPropertyName`, which registers every name the
 tile definitions use, and `ATTACHED_N`'s own name is the literal `attachedN`
 (`javap -c zombie.core.properties.IsoPropertyType`, offset 1281). An unknown name
 answers `-1` and `containsKey((short) -1)`, which is false. `propertyEquals` is
-`get(name)` into `StringUtils.equalsIgnoreCase` (offsets 0—9) and `get` answers
+`get(name)` into `StringUtils.equalsIgnoreCase` (offsets 0-9) and `get` answers
 `null` for a property the sprite has not got, so the `has` before it is what makes
 the null impossible rather than a thing to hope about.
 
@@ -194,22 +194,22 @@ Nothing else is taken off a neighbour: a generator on the sidewalk is not the
 building's, and neither is a sensor dropped there (the far-edge walk does not read
 `getWorldObjects()` at all). And **only where the neighbour is in no room**: a
 neighbour that has a room is a square the walk visits in its own right, so an
-interior door is found from the other side and must not be found twice — the ordinal
+interior door is found from the other side and must not be found twice, the ordinal
 in an entry's key is handed out per square, so one object reached twice would be two
-devices with two numbers. It is the lock's own rule — exactly one of a door's two
-sides has a room — read from the room's end. The one fixture this does not reach is a
+devices with two numbers. It is the lock's own rule, exactly one of a door's two
+sides has a room, read from the room's end. The one fixture this does not reach is a
 wall shared by two **buildings**: the neighbour is the other building's room, so it
 is that building's machine that lists the door.
 
 **The numbers a save already has do not move for it.** A number hangs on where the
 device is (`os.devmap`, keyed `kind:x:y:z:side:n`) and is spent for the life of the
 machine, so a door the walk could never reach before takes the next free number and
-never anybody else's — even where it sorts ahead of them, which a south door does.
+never anybody else's, even where it sorts ahead of them, which a south door does.
 The alternative, renumbering so that the ids follow the `(kind, x, y, z, side)`
 order, would move `door0` under a script that was written for it, and is not done.
 
 Classification is `instanceof`, and it answers a **list**, because one object can
-be two devices — or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
+be two devices, or three: `IsoLightSwitch` → `light`, `IsoWindow` → `win` *and*
 `window`, `IsoDoor` → `door`, `lock` when the lock bites, *and* `curtain` when a
 sheet is on it, `IsoThumpable` with `isDoor()` → `door` and `lock` (`built`),
 `IsoCurtain` → `curtain`, `IsoStove` → `stove`, `IsoGenerator` → `gen`,
@@ -225,7 +225,7 @@ the radio set are asked as the one base they share: `instanceof(object,
 the two it is. That is the test vanilla's own Lua makes of a world object, on the
 server included (`server/ISObjectClickHandler.lua:240`,
 `client/ISUI/ISRadioAndTvMenu.lua:7`). It is paid once a second and not ten times,
-which is the cache below — `hostile_test.lua`'s mall bench is where the number is
+which is the cache below, `hostile_test.lua`'s mall bench is where the number is
 printed.
 
 And it answers **nothing at all** for a fixture nobody has wired, which is the
@@ -234,8 +234,8 @@ hardware-module gate below.
 ## The cable, when the fixture is in no building
 
 The two walks above are free: a survivor pays for them by having put the machine
-in the house. What they cannot reach is everything else — the lamppost on the
-street, the gate at the end of the drive, the shop across the car park — and the
+in the house. What they cannot reach is everything else, the lamppost on the
+street, the gate at the end of the drive, the shop across the car park, and the
 answer to all of it is the one an electrician would give. **He runs a cable**,
 and the fixture is in that machine's `/dev` like anything in the building.
 
@@ -245,7 +245,7 @@ hostname is a line in `/etc/hostname` that a player changes in the morning, and 
 machine renamed in the morning is the same machine in the afternoon and keeps
 every cable ever run to it. The menu SHOWS the hostname, because that is what a
 survivor calls his machines by, and reads it out of the state the server already
-mirrors into the computer's own `IsoObject` — no new sync key for it
+mirrors into the computer's own `IsoObject`, no new sync key for it
 (`CeroSecLinkMenu.hostOf`; a machine whose mirror has not arrived is named the
 way a machine with no `/etc/hostname` is named anyway, `ksp-` and its square).
 
@@ -260,7 +260,7 @@ design:
 The cost lives on the FIXTURE because that is the end that pays it back: the day
 the fixture leaves the world, what is owed has to be readable from the thing that
 is leaving. The machine's end is a list of PLACES because what it is for is
-telling the discovery which squares to visit — and a walk of Knox County looking
+telling the discovery which squares to visit, and a walk of Knox County looking
 for fixtures that name this machine is exactly the thing it exists to avoid.
 Either side alone would be that walk, in one direction or the other.
 
@@ -269,8 +269,8 @@ same `modData` table, written by the server, `transmitModData()` after it. That 
 list of tables under a numeric key saves and travels like anything else is proven
 offset by offset in [notes/modules-proofs.md](notes/modules-proofs.md),
 section 11. It is read through `installedOn`'s gate, so a
-fixture whose modules this build will not read has no cables either — the same
-answer to the same question — and an entry that is not the shape this build
+fixture whose modules this build will not read has no cables either, the same
+answer to the same question, and an entry that is not the shape this build
 writes is not READ, which is a cable that was never run
 (`CeroSecModules.linksOn`). An empty list takes itself off the table rather than
 sitting there empty, because `IsoObject.save` skips a modData table that is
@@ -279,7 +279,7 @@ empty altogether and a table holding one empty list is not empty.
 The machine's list is a state key and **moved no `STATE_VERSION`**: absent is
 what every machine saved before this build looks like, absent reads as "no
 cables", and an older build that met the key would ignore it (the contract says
-so out loud — `docs/CONTRIBUTING.md`, "Nor is adding a key"). What `validate`
+so out loud, `docs/CONTRIBUTING.md`, "Nor is adding a key"). What `validate`
 owns is its SHAPE, `CeroSecOS.linksOk`: a bounded list, three whole numbers an
 entry, nothing else looked at. A forged list is a machine with no cables, never
 a machine with half of one.
@@ -290,13 +290,13 @@ a machine with half of one.
 wire = ceilSqrt(dx*dx + dy*dy) + |dz| * LINK_FLOOR_TILES      at least 1
 ```
 
-Euclidean on `x` and `y` — a cable is run across a floor, not around the corners
-of it — rounded UP to whole tiles, plus `LINK_FLOOR_TILES` = 4 a storey, because
+Euclidean on `x` and `y`, a cable is run across a floor, not around the corners
+of it, rounded UP to whole tiles, plus `LINK_FLOOR_TILES` = 4 a storey, because
 a cable does not go through a slab where it likes: it goes up the inside of a
 wall, through the joists and along the ceiling of the room below, which is some
 four tiles for one storey. Never less than one: a machine on the fixture's own
 square is still a cable. The rounding is `ceilSqrt`, the smallest `n` whose
-square covers the sum, **worked out without `math.sqrt`** — a whole number
+square covers the sum, **worked out without `math.sqrt`**, a whole number
 worked out by integer arithmetic is the same whole number on Kahlua as on
 `lua5.1`, where a float landing a millionth under 12 would be eleven cables on
 one VM and twelve on the other (`docs/CONTRIBUTING.md`, Kahlua purity).
@@ -304,8 +304,8 @@ one VM and twelve on the other (`docs/CONTRIBUTING.md`, Kahlua purity).
 `CeroSecModules.LINK_RANGE` = 30 is measured against that PRICE and not against
 the flat distance, so the storeys are inside the range too: a machine 28 tiles
 away and one floor up is 32 tiles of cable and is out of reach. The menu shows
-both numbers because they are different questions — "12 tiles" is what a
-survivor paces out, "12 wire" is what he pays — and one floor up they disagree:
+both numbers because they are different questions, "12 tiles" is what a
+survivor paces out, "12 wire" is what he pays, and one floor up they disagree:
 
 ```
 ksp-front-01, 12 tiles, 12 wire
@@ -327,18 +327,18 @@ believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
 | --- | --- | --- |
 | `fixture` | nothing is wired here at all | no cable from that machine |
 | `safehouse` | somebody else's, with the option on | somebody else's |
-| `linked` | this machine is already on the list | — |
-| `links` | the fixture is full (`LINKS_MAX`) | — |
-| `far` | past `LINK_RANGE` | — |
+| `linked` | this machine is already on the list | - |
+| `links` | the fixture is full (`LINKS_MAX`) | - |
+| `far` | past `LINK_RANGE` | - |
 
 A bare fixture is refused a cable and is NOT refused the cut: a module that came
 off a fixture somebody had cabled leaves the cable run and the reel owed, and
 refusing the unlink would be a survivor who can only get his wire back by taking
-the door down. Nothing else the building asks is asked here — **not where he is
+the door down. Nothing else the building asks is asked here, **not where he is
 standing, not that the door be open, not that he be inside**. Those are rules
 about reaching a thing with your hands, and a cable is the answer to not being
 able to. What he is CARRYING is not in the table for `fittingRefusal`'s own
-reason: it is a fact about him, and each side says it in its own words — the menu
+reason: it is a fact about him, and each side says it in its own words, the menu
 greys with the count ("needs 14 electric wire"), the server refuses.
 
 The trade is the fixture's own: the Electricity level of the HIGHEST module on
@@ -363,15 +363,15 @@ caller writes `kept` into the state). Three rules, and they are the whole of it:
 - A square that is **not loaded is kept exactly as it is**. A cable in a street
   nobody is standing in is still a cable, and a machine that forgot one because
   the chunk was away would be a machine that charged for a cable and then took it
-  away. That is also why `find` answering `nil` for the second value — the walk
-  could not ask the world at all — must never read as an empty list.
+  away. That is also why `find` answering `nil` for the second value, the walk
+  could not ask the world at all, must never read as an empty list.
 - A fixture whose MODULE came off keeps its cable and stays on the list: the wire
   is still run, and what it reaches is a fixture with no device on it.
 
 **A fixture that is both in the building and on a cable is one device, not two.**
 The building walk gets there first and the entries are already numbered; what the
 cable adds to them is the `wire`, which is the one thing only the cable knows.
-The same fixture may be in two machines' `/dev`s at once — four of them, in fact —
+The same fixture may be in two machines' `/dev`s at once, four of them, in fact,
 and each of those machines numbers it in its own `os.devmap` like any other
 device.
 
@@ -386,11 +386,11 @@ light1: blinking, linked, 12 tiles of wire
 ### The refund
 
 Cutting a cable gives the wire back, one item a tile: a reel is not an item in
-this game — `Base.ElectricWire` is one wire — so twelve tiles is twelve of them.
+this game, `Base.ElectricWire` is one wire, so twelve tiles is twelve of them.
 And the fixture leaving the world pays back the cable the way it pays back the
 boxes, on the square it stood on (`SCeroSecFixtures.dropLinks`, beside
 `dropModules`). **One end is all that hook writes**: the machine at the other end
-keeps a square on its list, finds nothing there on its next walk, and drops it —
+keeps a square on its list, finds nothing there on its next walk, and drops it,
 which is the moment that entry was always going to go. Reaching for every machine
 named in the list to correct it there would be the walk the pair of lists exists
 to avoid, done from inside an engine hook that is not allowed to touch the world.
@@ -400,7 +400,7 @@ to avoid, done from inside an engine hook that is not allowed to touch the world
 `SandboxVars.CeroSec.HardwareRequired`, declared in
 `42/media/sandbox-options.txt` and **true by default**: a fixture is only a
 device when a module is installed on it. Read through
-`CeroSecModules.required()`, which **fails closed** — anything that is not the
+`CeroSecModules.required()`, which **fails closed**, anything that is not the
 literal `false`, a group nobody declared included, means the hardware is
 required. A sandbox file that failed to load is then a world with an empty
 `/dev`, which a player sees at once; the other way round is a world that quietly
@@ -423,9 +423,9 @@ not in level order, because that list is the order the right-click menu offers
 them in and a menu that reshuffles itself under a player is worse than one whose
 levels do not run downhill.
 
-**Four of the eight are built round a `CeroSec.SmallMotor`** — the strike, the
+**Four of the eight are built round a `CeroSec.SmallMotor`**, the strike, the
 door operator, the curtain motor and the window operator, which are the four that
-move a piece of metal or of cloth — beside a `Base.Receiver`, which is the part
+move a piece of metal or of cloth, beside a `Base.Receiver`, which is the part
 that tells the motor when to stop. The other four sense or close a circuit and
 take neither; the relay has never had a receiver and still has not.
 
@@ -433,20 +433,20 @@ Build 42 ships **no motor item of any kind**: `grep -rni motor` over the whole o
 `media/scripts` returns ten hits and every one is a motorcycle helmet, a pair of
 motorcycle boots or the Louisville Motor Shop step van. So the part is declared
 in `items_cerosec.txt` and comes out of the four things in the game that really
-have one — `Base.HairDryer`, `Base.SheepElectricShears`, `Base.CDplayer` and
-`Base.BlowerFan` — through two dismantle recipes cut from vanilla's own
+have one, `Base.HairDryer`, `Base.SheepElectricShears`, `Base.CDplayer` and
+`Base.BlowerFan`, through two dismantle recipes cut from vanilla's own
 `DismantleElectronics` (`recipes_electrical.txt:37-54`). Two and not one, because
 vanilla already dismantles three of the four and a survivor must never be worse
 off choosing ours: the hair dryer, the shears and the fan pay the one
 `Base.ElectronicsScrap` `DismantleElectronics` pays, and the CD player pays the
 **two** `DismantleMiscElectronics` pays it (its `itemMapper` maps a CD player back
 to scrap). One recipe cannot pay one item for three inputs and two for the fourth,
-and the mapper cannot either — it is keyed by the OUTPUT, so three inputs yielding
+and the mapper cannot either, it is keyed by the OUTPUT, so three inputs yielding
 scrap would collide on one key. Both are `NeedToBeLearn` and both are in the
 Field Wiring Guide's `LearnedRecipes` with the other six.
 
 The table, the levels, the fit rules and the modData read/write are
-`shared/CeroSec/CeroSecModules.lua` — **shared**, because the right-click menu
+`shared/CeroSec/CeroSecModules.lua`, **shared**, because the right-click menu
 asks the same questions the discovery does and a client cannot load a server
 file. `roomName`, `doorLocks` and `isManyDoors` moved there from
 `SCeroSecDevices.lua` for that reason and are forwarded back under their old
@@ -455,7 +455,7 @@ names, so every call site there reads as it did.
 **Where the recipes come from: a magazine, the vanilla way.** The four
 `craftRecipe` blocks in `common/media/scripts/recipes_cerosec.txt` are
 `NeedToBeLearn` and they are taught by `CeroSec.WiringGuide`, the *CeroSec Field
-Wiring Guide* — a `base:literature` item whose `LearnedRecipes` names all four.
+Wiring Guide*, a `base:literature` item whose `LearnedRecipes` names all four.
 B42 has no `TeachedRecipes` left anywhere in `media/scripts`; `LearnedRecipes` is
 the key (`items/literature.txt:5307-5320`, `Base.ElectronicsMag1`). Reading is
 **entirely engine-side and the mod ships no Lua for it**:
@@ -463,7 +463,7 @@ the key (`items/literature.txt:5307-5320`, `Base.ElectronicsMag1`). Reading is
 what `getKnownRecipes()` already holds and calls `learnRecipe(String)` on the
 rest (`javap -c`, offsets 24–81). The Lua side only *offers* the option
 (`ISInventoryPaneContextMenu.lua:1081` spots the item, `:1107` adds Read) and
-runs the timed action — `ISReadABook:perform()` at `:194` learns nothing, it
+runs the timed action, `ISReadABook:perform()` at `:194` learns nothing, it
 closes the book.
 
 `SkillRequired` stays at the level that *fits* the module, and `AutoLearnAll`
@@ -472,8 +472,8 @@ magazine-taught recipe and not a departure from it: vanilla does **not** drop th
 auto-learn key when a magazine teaches a recipe, it spreads the two apart.
 `MakeImprovisedFlashlight` is `SkillRequired 1` / `AutoLearnAny 3`
 (`recipes/recipes_electrical.txt:101-109`, taught by `Base.ElectronicsMag5`) and
-`MakeRemoteControllerV1` — the vanilla electrical recipe these four are nearest
-to — is `2` / `8` (`recipes/recipes_traps.txt:3-11`, taught by
+`MakeRemoteControllerV1`, the vanilla electrical recipe these four are nearest
+to, is `2` / `8` (`recipes/recipes_traps.txt:3-11`, taught by
 `Base.ElectronicsMag1`). Six is that recipe's own gap. So the skill still gates
 the craft, the book is how a survivor actually comes by the recipe, and a master
 electrician gets there alone in the end.
@@ -484,8 +484,8 @@ shelf and number for number (`CeroSecGuideLoot.lua`): `ElectronicStoreMagazines`
 2; `MagazineRackMixed`, `PostOfficeMagazines`, `CrateMagazines` and
 `LibraryMagazines` 1.
 
-**Where a module lives:** the object's own modData, under the mod's name —
-`object:getModData().cerosec = { strike = true, contact = true }` — written
+**Where a module lives:** the object's own modData, under the mod's name,
+`object:getModData().cerosec = { strike = true, contact = true }`, written
 server-side and broadcast with `transmitModData()`, whose server branch is
 `GameServer.sendObjectModData` and which calls `flagForHotSave()` on the way out.
 `IsoObject` saves modData with the chunk under flag bit `0x4`, and `IsoThumpable`
@@ -495,12 +495,12 @@ table with it, because `IsoObject.save` only skips a modData table that is empty
 altogether.
 
 **Read-only without a kind.** A door with a contact and no operator is a `door`
-like any other — same vocabulary — with nothing behind it to carry a write out.
+like any other, same vocabulary, with nothing behind it to carry a write out.
 That travels as `ro` on the entry, and it means two things: the node is born
 `CeroSecOS.DEV_MODE_RO` (440), so everybody but root is refused by the mode; and
 `CeroSecOS.devWrite` refuses `ro` **before the vocabulary**, because what word was
 typed cannot matter to a device that can carry none of them out. The text is
-`operation not supported` — `write(2)`'s `EOPNOTSUPP`, in the lower case every
+`operation not supported`, `write(2)`'s `EOPNOTSUPP`, in the lower case every
 other reason here is written in. `SCeroSecDevices.act` keeps the same refusal as a
 belt for a caller that reaches the world layer directly.
 
@@ -513,8 +513,8 @@ no window actuator to build.* The call is right and the reason was wrong.
 `ToggleWindow` **never dereferences the character**: the barricade test at offsets
 37–49 is skipped when it is null, the `IsoZombie` test at 93–97 is false for null,
 the music-intensity call at 166–197 is behind an `ifnull`, and the sync at offset
-147 is unconditional. A Lua `nil` reaches a Java object parameter as `null` — see
-*the nil argument*, below — so the call can be made, and it is: that is
+147 is unconditional. A Lua `nil` reaches a Java object parameter as `null`, see
+*the nil argument*, below, so the call can be made, and it is: that is
 `CeroSec.WindowOperator` and the `window` device.
 
 What is true is three side effects, and with a motor on the sash all three are
@@ -527,12 +527,12 @@ what a motor really would do:
 - **It sets off the house alarm.** Offsets 86–118: when the sash ends up open the
   sandbox check (`lore.triggerHouseAlarm`) is consulted **only** for an
   `IsoZombie`, so a null character falls straight into `handleAlarm()`. Kept, and
-  documented as a feature rather than argued away — a window opening in an alarmed
+  documented as a feature rather than argued away, a window opening in an alarmed
   house is a window opening in an alarmed house. It is on the page of Volume 2 a
   survivor reads before he fits one, and in the release notes.
 - **It skips the barricade**, because the barricade test is the one thing it asks
   the character for. So a boarded window would move behind its boards, and the
-  refusal is ours and comes before the call — exactly as a barricaded door's does.
+  refusal is ours and comes before the call, exactly as a barricaded door's does.
 
 And there are two more silent returns above all of that which the study did not
 name: `permaLocked` at offsets 21–28 (`window0: sealed`) and `destroyed` at 29–36.
@@ -549,14 +549,14 @@ true reason and the one it always should have given.
 **Hardware changing under a live device** moves its mode and never its number:
 the key a number hangs on is `kind:x:y:z:side:n` and neither the kind nor the
 place moved. `CeroSecDevices.number` compares the record's `ro` with the entry's
-as booleans — so a devmap written before this rung is not a change — and on a
+as booleans, so a devmap written before this rung is not a change, and on a
 real change puts the mode back to what a device of that shape is born at. A
 `chmod` does not survive the hardware, deliberately: the alternative is a door
 with an operator on it that nobody may write to.
 
 **Install and uninstall** are `installmodule` and `uninstallmodule` in
 `SCeroSecSystem.lua`, naming the fixture by its square plus its index in that
-square's object list — the shape vanilla's own client commands use
+square's object list, the shape vanilla's own client commands use
 (`ISWorldObjectContextMenu.lua:3076`). The server looks the object up itself and
 re-asks the fit, the level, the module and the screwdriver, plus the one thing the
 menu cannot ask: whether the player is standing there. The item leaves the bag
@@ -568,7 +568,7 @@ and `ISCeroSecModuleAction.lua` (vanilla's `ISFixGenerator` shape: the Loot
 animation, `150 - perk * 3`-style duration, `addXp` at the end).
 
 **A module comes off when its fixture leaves the world**, and that is the third
-way off — not a screwdriver, and nobody's decision. The rule is one rule, in
+way off, not a screwdriver, and nobody's decision. The rule is one rule, in
 `server/CeroSec/SCeroSecFixtures.lua`, on the engine's own
 `Events.OnObjectAboutToBeRemoved`: when an object carrying our keys is about to be
 taken off its square, every module on it becomes an **item on that square**, at
@@ -579,9 +579,9 @@ doorway, and a wall taken apart leaves what was screwed to it. Before this the
 module simply stopped existing, because the fixture's modData is the only place it
 lived.
 
-The nine paths that lead there — a movable picked up, a window picked up, a map
+The nine paths that lead there, a movable picked up, a window picked up, a map
 door destroyed, a built door destroyed, a sledgehammer, a dismantling, a curtain
-taken down, a generator picked up — and the two that must **not**, are the table
+taken down, a generator picked up, and the two that must **not**, are the table
 in [notes/modules-proofs.md](notes/modules-proofs.md), section 10, each one with
 the vanilla line or the bytecode offset that removes the object. Four things are
 worth reading off that page here:
@@ -594,7 +594,7 @@ worth reading off that page here:
 - **A chunk unloading takes nothing off either.** `IsoChunk` never calls
   `RemoveTileObject`; a fixture the streamer has taken away has not left the world.
 - **It is the floor, never a bag.** The event carries the object and nothing else,
-  and most of these paths have no character at all behind them — a door a zombie
+  and most of these paths have no character at all behind them, a door a zombie
   broke down was nobody's gesture. One rule for the nine of them.
 - **Pre-fitted hardware is hardware.** A relay the 1991 walk screwed to a switch
   plate lands on the floor like any other, for the reason `uninstallmodule` already
@@ -604,8 +604,8 @@ It is paid **per key and not per event**, because singleplayer fires the event
 twice for one pickup (the Lua `triggerEvent` at `ISMoveableSpriteProps:1406` and the
 Java one inside the `transmitRemoveItemFromSquare` on the line after it):
 `CeroSecModules.setOn` clears each key as the item is made, so a second firing
-reads a bare fixture. The item is made **before** the key is cleared —
-`AddWorldInventoryItem` answers `null` for a type the game cannot make — and the
+reads a bare fixture. The item is made **before** the key is cleared:
+`AddWorldInventoryItem` answers `null` for a type the game cannot make, and the
 drop calls `CeroSecDevices.invalidate()` on the way out, for the reason
 `installmodule` and `uninstallmodule` do: which machines could see that fixture is
 not a question that layer can answer without the walk.
@@ -613,26 +613,26 @@ not a question that layer can answer without the walk.
 And **nothing rides along in the item.** A pickup that keeps identity copies
 exactly one key out of an object's modData (`movableData`, `:1298-1299`), plus the
 container names and `itemCondition`; ours is not one of them, and putting it there
-would mean writing into somebody else's table — the second truth this mod refuses
+would mean writing into somebody else's table, the second truth this mod refuses
 to keep. Which is also the answer a survivor expects: a television carried out of
 the building does not take the building's wiring with it.
 
 **What the right-click menu lists, and what it hides.** One line per module that
-could ever go on a fixture of that **sort**, carried or not — and the only thing
+could ever go on a fixture of that **sort**, carried or not, and the only thing
 hidden is `fitsOn` answering `fixture`, the module that could never fit. Its
 other two answers (`nolock`, `manydoors`) are about *this* door and not about
 doors, so they are lines and they say so. A survivor cannot go and look for a box
 he has never been told exists, which is why the entry is now there before he owns
 one; it is greyed with `Tooltip_CeroSec_ModuleItem` ("you are not carrying one")
 or, when he does not know how one is made,
-`Tooltip_CeroSec_ModuleRecipe` — `IsoGameCharacter.isRecipeKnown(String)`, which
+`Tooltip_CeroSec_ModuleRecipe`, `IsoGameCharacter.isRecipeKnown(String)`, which
 is one call over the sandbox option `seeNotLearntRecipe`, `isKnowAllRecipes()`
-and `getKnownRecipes().contains(name)` (`javap -c`, offsets 0—53), so a master
+and `getKnownRecipes().contains(name)` (`javap -c`, offsets 0-53), so a master
 electrician who auto-learnt the recipe answers yes without a case of ours. The
 recipe name per module is `recipe` on `CeroSecModules.LIST`.
 
 **Every entry carries its description**, greyed or not:
-`Tooltip_CeroSec_ModuleDesc_<id>` — what the box buys, which device it gives and
+`Tooltip_CeroSec_ModuleDesc_<id>`, what the box buys, which device it gives and
 the level it wants, with the level passed as `%1` off `CeroSecModules.LIST` so
 nine modules are one line of English. The reason, when there is one, goes on the
 line **under** it: a refusal with no idea what it is refusing is a line a player
@@ -641,26 +641,26 @@ reads twice. If nothing is left after the hiding, there is no submenu and no
 
 **Where he has to be standing, what has to be open, and whose safehouse it is.**
 Three more refusals, all of them about the MOMENT rather than about the shape of
-the fixture, all of them decided in `CeroSecModules.fittingRefusal` — one
+the fixture, all of them decided in `CeroSecModules.fittingRefusal`, one
 function, shared, which the server refuses on and the menu greys with, in the
 `turnOnRefusal` shape (one rule, one place, one wording). The reason word IS the
 tooltip key: `CeroSecModuleMenu.tooltipFor` builds
 `Tooltip_CeroSec_Module<Reason>` from it rather than looking it up in a second
-list. Every one is asked of a REMOVAL exactly as of a fitting — the hand is in
+list. Every one is asked of a REMOVAL exactly as of a fitting, the hand is in
 the same place either way, and a module anybody could unscrew from the pavement
 is what the first rule exists to stop.
 
 | fixture | must be | reason word | the getter, proven |
 | --- | --- | --- | --- |
 | door (map or built) | open | `closed` | `IsoDoor.IsOpen()`, `IsoThumpable.IsOpen()` (proofs, 4) |
-| window | open | `closed` | `IsoWindow.IsOpen()` (proofs, 4) — which already excludes smashed, sealed and barricaded: none of those opens |
+| window | open | `closed` | `IsoWindow.IsOpen()` (proofs, 4), which already excludes smashed, sealed and barricaded: none of those opens |
 | curtain (`IsoCurtain`) | open | `drawn` | `IsoCurtain.IsOpen()` |
-| a door's own sheet | open | `drawn` | `IsoDoor.isCurtainOpen()` — the fields are on the door and there is no second object |
+| a door's own sheet | open | `drawn` | `IsoDoor.isCurtainOpen()`, the fields are on the door and there is no second object |
 | stove, microwave, coffee | off | `running` | `IsoStove.Activated()` (capital A; the laundry's is not) |
 | washer, dryer, combination | off | `running` | `IsoClothingWasher.isActivated()` and its two siblings |
 | television, radio set | off | `running` | `IsoWaveSignal.getDeviceData()` then `DeviceData.getIsTurnedOn()` |
 | generator | off | `running` | `IsoGenerator.isActivated()` |
-| light switch | — | — | a relay goes behind a plate whose only state is the light it works |
+| light switch | - |, | a relay goes behind a plate whose only state is the light it works |
 | door, window, curtain (map or built) | a survivor standing in a room | `outside` | `IsoGridSquare.isInARoom()` |
 | in a safehouse, with the option on | a player the safehouse allows | `safehouse` | `SafeHouse.getSafeHouse(square)`, then `SafeHouse.playerAllowed(IsoPlayer)` |
 
@@ -672,51 +672,51 @@ wrong question.
 
 **`isInARoom()` and not `getRoom() ~= nil`**, and the difference is a base: the
 call is `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (`javap -c
-zombie.iso.IsoGridSquare.isInARoom`, offsets 0—31), so four walls a PLAYER put up
-— which the map has no `RoomDef` for — read as inside, and `getRoom()` alone would
+zombie.iso.IsoGridSquare.isInARoom`, offsets 0-31), so four walls a PLAYER put up,
+which the map has no `RoomDef` for, read as inside, and `getRoom()` alone would
 refuse a man standing in the middle of his own base. Vanilla asks it that way
 itself (`server/BuildingObjects/ISEmptyGraves.lua:169`,
 `server/Vehicles/Vehicles.lua:667`). It is asked of **his** square and never of
-the fixture's: a door stands on the room's own square — which is why `doorLocks`
+the fixture's: a door stands on the room's own square, which is why `doorLocks`
 reads `getSquare()` against `getOppositeSquare()` and calls the pair *exactly one
-of them has a room* — and he stands on one side of it or the other. The inside
+of them has a room*, and he stands on one side of it or the other. The inside
 side is in a room; the pavement is not. An interior door has a room on both
 sides, so both sides are allowed.
 
-**The inside rule is the ENVELOPE's, and the envelope is three classes** — the
+**The inside rule is the ENVELOPE's, and the envelope is three classes**, the
 door, the window and the curtain, which are what a stranger would strip to get in
 or to blind the alarm. That is what the rule was written for, and a module anybody
 could unscrew from the pavement is what it exists to stop.
 
-Nothing else is asked about a room. A **porch lamp** is the case a relay is FOR —
+Nothing else is asked about a room. A **porch lamp** is the case a relay is FOR,
 an outdoor light on a timer, screwed to the outside of the house, reached from the
-pavement because there is nowhere else to stand — and a rule that wanted a room
+pavement because there is nowhere else to stand, and a rule that wanted a room
 round it was a `relay` greyed out on the one fixture it was made for (reported in
 game on 0.4.0, a *Round Outdoor Lamp*). The same goes for an appliance, a set or a
 generator a survivor has dragged outside: they are fitted where they stand. The
 generator used to be the one exemption and is now one of five, for its own reason
-read wider — it is an outdoor machine by construction, and so is a porch lamp.
+read wider, it is an outdoor machine by construction, and so is a porch lamp.
 
-**The safehouse gate is a sandbox option and it is OFF by default** —
+**The safehouse gate is a sandbox option and it is OFF by default**,
 `SandboxVars.CeroSec.SafehouseModules`, read the way vanilla reads a grouped
 option and failing **open**, which is the opposite direction to
 `CeroSecModules.required()`. That is the compatibility contract and not a
 preference: a new option defaults to the old behaviour, and a sandbox file that
-failed to load must not be a world where nobody may touch his own hardware —
+failed to load must not be a world where nobody may touch his own hardware,
 where the hardware gate failing closed gives a player an empty `/dev`, which he
 can read off the screen. `SafeHouse.getSafeHouse(square)` is asked of the
 **fixture's** square, because what is being protected is somebody's door and a
 man on the pavement outside a safehouse is the case it exists for; it is
 `isSafeHouse(square, null, false)` down to `findSafeHouse`, a walk of
 `safehouseList` comparing the square's x and y against each box (`javap -c`,
-offsets 28—69), so nil for every square in a single-player game.
+offsets 28-69), so nil for every square in a single-player game.
 `playerAllowed(IsoPlayer)` is vanilla's own membership question and **admins pass
 it without a branch of ours**: `players.contains(getUsername()) ||
 owner.equals(getUsername()) || role.hasCapability(CanGoInsideSafehouses)`
-(offsets 0—46), and that capability is what vanilla's own
-`isSafehouseAllowInteract` reads for the same purpose (offsets 23—44). A
+(offsets 0-46), and that capability is what vanilla's own
+`isSafehouseAllowInteract` reads for the same purpose (offsets 23-44). A
 safehouse's own rule against **looting** is not consulted either way: fitting is
-not looting — nothing leaves the building — so this option is the only gate.
+not looting, nothing leaves the building, so this option is the only gate.
 
 **Pre-fitted hardware is not affected.** The 1991 walk writes the modData itself
 (`CeroSecModules.setOn`, `markPreFitted`) and performs no player action at all,
@@ -724,8 +724,8 @@ so it never comes past any of this: a fixture shut, in a stranger's safehouse,
 with the option on, still gets the hardware the building was built with.
 
 **`dev` and `ls -l` say nothing about which module gave a device**, and that is
-deliberate: both listings are full-width already — `ls -l /dev` puts the widest
-state on column 60 — and a survivor who wants to know goes and looks at the door.
+deliberate: both listings are full-width already, `ls -l /dev` puts the widest
+state on column 60, and a survivor who wants to know goes and looks at the door.
 What the listing does show is the consequence: `cr--r-----` on a door is a door
 with a contact and no operator.
 
@@ -749,8 +749,8 @@ item what it is. See **Motion sensors, underneath** below.
   lied.
 - `IsoThumpable` with `isDoor()` → always, unchanged. Its gate is different:
   `ToggleDoorActual` and `couldBeOpen` both test `isLockedByKey()` against
-  `chr:getCurrentSquare():has(IsoFlagType.exterior)` — the square the survivor
-  stands on, not which side of a building it is — and a base door is reachable
+  `chr:getCurrentSquare():has(IsoFlagType.exterior)`, the square the survivor
+  stands on, not which side of a building it is, and a base door is reachable
   from an exterior square by construction.
 - **A padlock does not hold a door.** Neither `IsoThumpable.ToggleDoorActual` nor
   its `couldBeOpen` reads `lockedByPadlock` at all; the only reader is
@@ -758,7 +758,7 @@ item what it is. See **Motion sensors, underneath** below.
   (`server/ISObjectClickHandler.lua:283`, `client/ISUI/ISInventoryPage.lua`) plus
   the pick-up refusal in `shared/Moveables/ISMoveableSpriteProps.lua:1222`. So
   `padlock` is a `lock` state and never a `door` one, and a padlocked base door
-  still opens from the computer — exactly as it does for a survivor clicking it.
+  still opens from the computer, exactly as it does for a survivor clicking it.
 
 **Which doors are not `door` devices.** A leaf of a double or a garage door:
 `IsoDoor.getDoubleDoorIndex(object) ~= -1` or
@@ -769,7 +769,7 @@ while vanilla's own toggle walks every leaf through `forEachDoorObject`, so a
 machine that opened one would leave the rest shut. Those keep their `lock`.
 
 **A window's states** are `smashed`, `barricaded`, `open`, `locked` and
-`unlocked`, read in that order — the glass, then the sash
+`unlocked`, read in that order, the glass, then the sash
 (`IsoWindow.IsOpen()`), then the catch. `open` comes ahead of the latch for the
 reason a door's does, and `unlocked` therefore means shut; a smashed or boarded
 window has no sash worth reporting, so those two still come first. `open` has no
@@ -778,7 +778,7 @@ opposite in `DEV_OPPOSITE.win` (the kind's words are `lock` and `unlock`), so
 guessing a direction for a sash no machine can move.
 
 **A door's states** are `open`, `closed` and `locked`, and `locked` implies
-closed — three words, not four, because a survivor who reads `locked` has been
+closed, three words, not four, because a survivor who reads `locked` has been
 told both things. Its values are `open` and `close`. Its refusals are
 `doorN: locked` (the computer is not a key; `unlock` the lock beside it first),
 `doorN: barricaded`, `doorN: blocked` and `doorN: no such device`.
@@ -800,7 +800,7 @@ A `windowN` is read in the order the engine tests it: the glass, the boards, the
 permanent lock, then the sash. `sealed` is `isPermaLocked()`, a window the map
 was built with that never opens. A `stoveN` puts `broken` first for the reason a
 door puts `locked` first: it is the thing a survivor has to do something about,
-and a broken stove is off by construction. No kind has a `no power` **state** —
+and a broken stove is off by construction. No kind has a `no power` **state**,
 power is a fact about the wire and not about the appliance, and a light switch
 has always said it as a refusal.
 
@@ -818,18 +818,18 @@ not. It travels as `detail` beside `state` on the entry and on the node, and
 `dev <id>` read the whole line, `ls -l /dev` and the `dev` table read the word,
 because those two have a column for a word and the terminal is 60 wide and does
 not wrap. `dev <id> toggle` therefore looks its opposite up by `node.state` and
-not by what the read printed — a table keyed by that sentence would have no
+not by what the read printed, a table keyed by that sentence would have no
 entry for anything.
 
 Its three refusals are asked **only of starting one**, and they are vanilla's own
 timed action's (`ISActivateGenerator:isValid`): `not connected`, `no fuel`,
-`broken`. Stopping one is never refused. And `failToStart()` — the coin flip
-that same action makes below half condition — is deliberately **not** copied: a
+`broken`. Stopping one is never refused. And `failToStart()`, the coin flip
+that same action makes below half condition, is deliberately **not** copied: a
 shoulder fumbles a cord and an electric starter does not, and a starter is what
 the module is.
 
 **Which way round `open` is, and it was asked twice.** `IsoCurtain.IsOpen()` is
-one instruction — `getfield open` (offsets 0—4) — and `isCurtainOpen()` is that
+one instruction, `getfield open` (offsets 0-4), and `isCurtainOpen()` is that
 method forwarded, so the device reads the field and nothing else. That the field
 means *drawn back* and not *drawn across* was reported the other way round once
 (0.4.0, "the script only opens them, they don't close"), so it is written down
@@ -837,21 +837,21 @@ here with what proves it:
 
 - **the engine's own menu.** `ISWorldObjectContextMenuLogic` offers
   `ContextMenu_Close_curtains` when `IsOpen()` is true and
-  `ContextMenu_Open_curtains` when it is false — for an `IsoCurtain` (offsets
-  1415—1433) and for a door's sheet through `ICurtain.isCurtainOpen()` (offsets
-  123—142). `client/Tutorial/Tutorial1.lua:125-127` reads the same way.
+  `ContextMenu_Open_curtains` when it is false, for an `IsoCurtain` (offsets
+  1415-1433) and for a door's sheet through `ICurtain.isCurtainOpen()` (offsets
+  123-142). `client/Tutorial/Tutorial1.lua:125-127` reads the same way.
 - **the sprite names.** `IsoDoor.initCurtainSprites` binds `curtainN` to
   `fixtures_windows_curtains_01_18` and `curtainNopen` to `..._22`, so within each
-  group of eight the tiles ending 0—3 are the closed cloth and 4—7 the open one.
+  group of eight the tiles ending 0-3 are the closed cloth and 4-7 the open one.
   `IsoCurtain`'s constructor derives the pair with that same ±4
   (`getSprite(sprite, 4)` / `(sprite, -4)`) and `CellLoader` picks which way from
-  `index % 8 <= 3` (offsets 678—707).
+  `index % 8 <= 3` (offsets 678-707).
 - **what the engine can see through.** `client/Foraging/ISZoneDisplay.lua:346-360`
   treats a window as see-through exactly when its curtain `IsOpen()`.
 - **where a curtain starts.** Every map curtain is built `open = true` with
-  `sprite = openSprite` (`CellLoader`, offsets 709—740, and the constructor at
-  124—136), `IsoWindow.addSheet` builds the sheet from the *open* tile
-  (`16 + facing + 4`, offsets 192—253) and `IsoDoor.addSheet` sets
+  `sprite = openSprite` (`CellLoader`, offsets 709-740, and the constructor at
+  124-136), `IsoWindow.addSheet` builds the sheet from the *open* tile
+  (`16 + facing + 4`, offsets 192-253) and `IsoDoor.addSheet` sets
   `curtainOpen = true` (offset 18). So a fresh curtain is **open**, which is also
   why a curtain motor will not go on a drawn one: there is nothing to do to it.
 
@@ -863,7 +863,7 @@ it. A bench walks that exact sequence from the state the world really starts in
 `isBarricaded()`: `barricaded` is a public field with no getter over it, so there
 is nothing to ask before the call. What there is, is that
 `ToggleDoorSilent`'s first two instructions are `barricaded -> return` (offsets
-0—7) and that is the **only** way out of the method without moving the sheet. So
+0-7) and that is the **only** way out of the method without moving the sheet. So
 the device toggles, reads back, and answers `curtain0: barricaded` when the sheet
 did not move.
 
@@ -878,12 +878,12 @@ state.devmap["light:1024:998:0::0"] = { id = "light0", kind = "light", n = 0, mo
 
 A new kind's starting mode is `CeroSecOS.DEV_MODES[kind]` through
 `CeroSecOS.devModeFor(kind, ro)`, which is `CeroSecOS.DEV_MODE` (660) for
-everything except `sensor` (440) — and `CeroSecOS.DEV_MODE_RO` (440) for any
+everything except `sensor` (440), and `CeroSecOS.DEV_MODE_RO` (440) for any
 entry marked `ro`, whatever its kind, which is the hardware-module gate above. It is only where a mode *starts*: a `chmod` moves it and the book
 above is what makes that outlive the command.
 
 The trailing `0` is an ordinal that tells two devices of one kind facing the same
-way on one square apart — the object index would have done it and is not stable
+way on one square apart, the object index would have done it and is not stable
 across a reload. An entry is **never removed**: the number is spent, so a device
 that is torn out leaves a gap and nothing is renumbered under a script. The book
 is capped at `CeroSecDevices.MAP_MAX` (512) so a computer carried across the map
@@ -895,7 +895,7 @@ gives every light a second number.
 **The two ceilings.** `CeroSecOS.DEV_MAX` (256) is how many nodes `/dev` may hold
 at once, and it is the only ceiling `/dev` answers to: the 96-entry directory rule
 (`CeroSecOS.MAX_DIR_ENTRIES`) guards the *write* path, and the write path refuses
-`/dev` as read-only one gate earlier — nothing but the mount can put an entry
+`/dev` as read-only one gate earlier, nothing but the mount can put an entry
 there, and the mount is held to `DEV_MAX`. It was 64, and 64 was a computer in one
 store of a shopping mall that could not see half the mall: a mall is **one**
 building as far as `BuildingDef` is concerned, so every store's lights, doors and
@@ -918,13 +918,13 @@ that syncs for a player does not necessarily sync for us.
 | `win` | `IsoWindow:setIsLocked(locked)` | `syncIsoObject(false, 0, nil, nil)` | `setIsLocked` is a bare field write with no sync at all; `IsoWindow:syncIsoObjectSend` writes `locked` into the packet |
 | `lock` (built, padlock) | `IsoThumpable:setLockedByPadlock(locked)` | none needed | it calls `syncIsoThumpable()` itself, whose server branch is `INetworkPacket.sendToRelative(SyncThumpable, ...)` |
 | `lock` (built, key) | `IsoThumpable:setLockedByKey(locked)` | `syncIsoThumpable()` | same server skip as the map door's |
-| `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound of its own (the mod plays it beside the toggle — see *The sound the machine makes*) and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap — **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
-| `curtain` (`IsoCurtain`) | `ToggleDoorSilent()` | **none needed** | the toggle's own last act is `syncIsoObject(false, open, null)` at offsets 85—100, and that override's server branch walks `GameServer.udpEngine.connections`. The one actuator here whose broadcast is the engine's. Vanilla makes the bare call itself on a curtain nobody is holding: `client/DebugUIs/Scenarios/Trailer2Scenario.lua:134` |
-| `curtain` (a door's sheet) | `toggleCurtain()` | **none needed** | on the server it is the whole gesture: `setCurtainOpen` then `transmitSetCurtainOpen(isCurtainOpen())` at offsets 55—60, whose server branch is `sendObjectChange(SET_CURTAIN_OPEN)`. `setCurtainOpen(b)` alone is the half that does not broadcast |
+| `door` (both classes) | `ToggleDoorSilent()` | `syncIsoObject(false, 0, nil, nil)` | Silent needs no character, plays no sound of its own (the mod plays it beside the toggle, see *The sound the machine makes*) and moves one object; it is what vanilla's own scripts call (`client/Tutorial/Steps.lua:1288`, `:1795`, `Tutorial1.lua:331`). Its bytecode is `isBarricaded → return`, path/LOS/light invalidation, `setOpen(!isOpen())`, sprite swap, **and no sync of any kind**. `syncIsoObject` and *not* `syncIsoThumpable` even for a player door: `SyncThumpablePacket` writes `lockedByCode`, `lockedByPadlock` and `keyId` and nothing else, while both classes' `syncIsoObjectSend` writes the open flag (`IsoDoor`: `isOpen()`; `IsoThumpable`: the `open` field) |
+| `curtain` (`IsoCurtain`) | `ToggleDoorSilent()` | **none needed** | the toggle's own last act is `syncIsoObject(false, open, null)` at offsets 85-100, and that override's server branch walks `GameServer.udpEngine.connections`. The one actuator here whose broadcast is the engine's. Vanilla makes the bare call itself on a curtain nobody is holding: `client/DebugUIs/Scenarios/Trailer2Scenario.lua:134` |
+| `curtain` (a door's sheet) | `toggleCurtain()` | **none needed** | on the server it is the whole gesture: `setCurtainOpen` then `transmitSetCurtainOpen(isCurtainOpen())` at offsets 55-60, whose server branch is `sendObjectChange(SET_CURTAIN_OPEN)`. `setCurtainOpen(b)` alone is the half that does not broadcast |
 | `window` | `ToggleWindow(nil)` | **none needed** | `sync(open ? 1 : 0)` at offset 147, unconditional. The character is never dereferenced; see *A window is two devices* and *The nil argument* |
-| `stove` | `Toggle()` | **none needed** | `Toggle()` is `setActivated(!activated)` plus `getContainer().addItemsToProcessItems()` plus `IsoGenerator.updateGenerator(square)` (offsets 0—27), and `setActivated`'s server branch calls `sync()` and `syncSpriteGridObjects(true, true)` at 201—214. The setter alone would switch on an oven that cooked nothing and drew nothing. It is vanilla's own server line: `server/ClientCommands.lua:1049-1062` |
+| `stove` | `Toggle()` | **none needed** | `Toggle()` is `setActivated(!activated)` plus `getContainer().addItemsToProcessItems()` plus `IsoGenerator.updateGenerator(square)` (offsets 0-27), and `setActivated`'s server branch calls `sync()` and `syncSpriteGridObjects(true, true)` at 201-214. The setter alone would switch on an oven that cooked nothing and drew nothing. It is vanilla's own server line: `server/ClientCommands.lua:1049-1062` |
 | `washer` | `setActivated(b)` | `sendObjectChange(IsoObjectChange.WASHER_STATE)` | the setter is a field write plus `updateGenerator` and no sync at all; `saveChange` writes `isActivated()` under that change, and `sendObjectChange` is server-only by construction. The pair is `shared/TimedActions/ISToggleClothingWasher.lua`'s own |
-| `gen` | `setActivated(b)` | `sync()` | idempotent by construction (offsets 0—8 return when the argument is the state it is in) and its server branch calls `sync()` at 113—122; vanilla calls `sync()` again after it (`ISActivateGenerator:complete`) and so does this |
+| `gen` | `setActivated(b)` | `sync()` | idempotent by construction (offsets 0-8 return when the argument is the state it is in) and its server branch calls `sync()` at 113-122; vanilla calls `sync()` again after it (`ISActivateGenerator:complete`) and so does this |
 | `tv` / `rx` | `DeviceData:setIsTurnedOn(b)`, `DeviceData:setChannel(n)` | **ours, and the mod's own packet** | there is no engine call that broadcasts either field from the server; see *The sync the mod writes itself*, below |
 
 ### The sound the machine makes
@@ -933,20 +933,20 @@ Every actuator above uses the **silent** call, and for one reason: the loud ones
 play at a survivor's own emitter and a machine has no survivor.
 `IsoDoor.playDoorSound` and `IsoThumpable`'s take a
 `BaseCharacterSoundEmitter`; `IsoCurtain.ToggleDoor` plays only when its character
-is not null (offsets 79—129); and a window's sound is not in `IsoWindow` at all.
+is not null (offsets 79-129); and a window's sound is not in `IsoWindow` at all.
 
-A building that works in silence is a building nobody can tell is working — three
+A building that works in silence is a building nobody can tell is working, three
 reports on 0.4.0 said so about a door shut by `autoclose.sh`, a window opened by
-cron and a curtain drawn by `curtains.sh` — so the mod plays the sound itself,
+cron and a curtain drawn by `curtains.sh`, so the mod plays the sound itself,
 beside the toggle, **with the name the hand would have played**, read off the
 object *after* it moved:
 
 | kind | name | where it comes from |
 | --- | --- | --- |
-| `door` (both classes) | `getSoundPrefix() .. "Open"` / `"Close"` | `playDoorSound(emitter, "Open"/"Close")` concatenates the two (offsets 0—16, recipe `\1\1`); the prefix is the `closedSprite`'s `DoorSound` property or `WoodDoor` (offsets 0—40). So `WoodDoorOpen`, and a metal door says so itself |
-| `window` | `OpenWindow` / `CloseWindow` | `ToggleWindow` plays nothing; the survivor's noise is an anim event — `media/AnimSets/player/openwindow/success.xml` carries `PlaySound` with `OpenWindow`, `closewindow/` with `CloseWindow`, both declared in `sounds_object_window.txt` |
-| `curtain` (`IsoCurtain`) | `getSoundPrefix() .. "Open"` / `"Close"` | `ToggleDoor` builds it that way (offsets 83—129); `IsoCurtain.getSoundPrefix()` is `"Curtain"` plus the `CurtainSound` property, or `CurtainShort` (offsets 0—45). So `CurtainShortOpen`, and a bedsheet is `CurtainSheetOpen` |
-| `curtain` (a door's sheet) | `CurtainShortOpen` / `CurtainShortClose` | **a choice, not a copy.** Vanilla plays nothing here: the menu hands the door to `ISOpenCloseCurtain`, whose `complete()` calls `toggleCurtain()`, which has no sound in it. `CurtainShort` is what `IsoCurtain.getSoundPrefix()` answers when there is no sprite to ask (offsets 0—10), and a door's sheet is exactly that case. The door's own prefix would be wrong: a bedsheet is not a door |
+| `door` (both classes) | `getSoundPrefix() .. "Open"` / `"Close"` | `playDoorSound(emitter, "Open"/"Close")` concatenates the two (offsets 0-16, recipe `\1\1`); the prefix is the `closedSprite`'s `DoorSound` property or `WoodDoor` (offsets 0-40). So `WoodDoorOpen`, and a metal door says so itself |
+| `window` | `OpenWindow` / `CloseWindow` | `ToggleWindow` plays nothing; the survivor's noise is an anim event, `media/AnimSets/player/openwindow/success.xml` carries `PlaySound` with `OpenWindow`, `closewindow/` with `CloseWindow`, both declared in `sounds_object_window.txt` |
+| `curtain` (`IsoCurtain`) | `getSoundPrefix() .. "Open"` / `"Close"` | `ToggleDoor` builds it that way (offsets 83-129); `IsoCurtain.getSoundPrefix()` is `"Curtain"` plus the `CurtainSound` property, or `CurtainShort` (offsets 0-45). So `CurtainShortOpen`, and a bedsheet is `CurtainSheetOpen` |
+| `curtain` (a door's sheet) | `CurtainShortOpen` / `CurtainShortClose` | **a choice, not a copy.** Vanilla plays nothing here: the menu hands the door to `ISOpenCloseCurtain`, whose `complete()` calls `toggleCurtain()`, which has no sound in it. `CurtainShort` is what `IsoCurtain.getSoundPrefix()` answers when there is no sprite to ask (offsets 0-10), and a door's sheet is exactly that case. The door's own prefix would be wrong: a bedsheet is not a door |
 
 Nothing else makes a sound. A `lock`, a `win` latch, a stove, a washer, a
 generator and a set are all silent, because the first two move nothing a room can
@@ -954,7 +954,7 @@ hear and the other four carry their own noise in the engine
 (`IsoStove.PlayToggleSound` is a survivor's hands and `setChannel`'s zap is inside
 the setter).
 
-**Who hears it** is vanilla's own server-side pair, out of a server file —
+**Who hears it** is vanilla's own server-side pair, out of a server file,
 `server/Traps/STrapGlobalObject.lua:118-124`:
 
 ```lua
@@ -966,11 +966,11 @@ and each half is the only one that works where it stands.
 `playServerSound(String, IsoGridSquare)` is
 `GameServer.PlayWorldSoundServer(name, false, square, 0.2f, 5f, 1.1f, true)` →
 `GameServer.PlayWorldSound`, whose first instructions are
-`if (!GameServer.server) return` (offsets 0—10) and whose body walks
+`if (!GameServer.server) return` (offsets 0-10) and whose body walks
 `udpEngine.connections` and sends a `PlayWorldSoundPacket` to every connection the
-square is `RelevantTo` (offsets 69—171): a broadcast on a dedicated server and
+square is `RelevantTo` (offsets 69-171): a broadcast on a dedicated server and
 nothing anywhere else. `IsoGridSquare.playSound(String, boolean)` takes a free
-emitter at the square (offsets 0—36), which is what a solo game needs — one
+emitter at the square (offsets 0-36), which is what a solo game needs, one
 process, so the machine the server wrote is the machine the survivor hears.
 
 **A refused write is mute, and so is one that changed nothing.** The call sits
@@ -995,7 +995,7 @@ private void transmitDeviceDataState(short);
 ```
 
 a **client branch and nothing else**. The server's own broadcaster exists and is
-`private` — `transmitDeviceDataStateServer(short, UdpConnection)` — and every
+`private`, `transmitDeviceDataStateServer(short, UdpConnection)`, and every
 caller of it is inside the class. The one public wrapper,
 `transmitBatteryChangeServer()`, passes the short `2`, and the `tableswitch 0..10`
 in `sendDeviceDataStatePacket` (offset 345) spends `2` on `hasBattery` and
@@ -1006,25 +1006,25 @@ leaves every client's copy dark and silent.
 **What the mod sends.** One `device` command on `CeroSec.MODULE`, broadcast to
 every connection (`PROTOCOL.md` has the fields). It carries the square, the class,
 the sprite name and the object's index on that square, plus **both** fields as
-they read *after* the write — not what was asked for, because `setIsTurnedOn`
+they read *after* the write, not what was asked for, because `setIsTurnedOn`
 refuses an unpowerable set by turning it off instead.
 
 **What the far end does with it** (`client/CeroSec/CCeroSecDevices.lua`):
 `setTurnedOnRaw(b)` and `setChannelRaw(n)`, and nothing else. Those are the public
-names of exactly what the engine itself does on this path — a client receiving
+names of exactly what the engine itself does on this path, a client receiving
 vanilla's own state-0 packet calls the private `setIsTurnedOnInternal` (offsets
-124—129) and writes `channel` with a bare `putfield` (179—182), and
+124-129) and writes `channel` with a bare `putfield` (179-182), and
 `IsoWaveSignal.loadState` uses `setTurnedOnRaw` / `setChannelRaw` /
-`setDeviceVolumeRaw` (116—154). Using the **public** setters on a client would
+`setDeviceVolumeRaw` (116-154). Using the **public** setters on a client would
 transmit, the server would relay that to everybody, and one crontab line would
 cost a round trip per client.
 
 The screen, the glow and the sound all follow that field with nothing else called:
-`IsoTelevision.update()` ends on `updateTvScreen()` (offsets 57—58), whose first
+`IsoTelevision.update()` ends on `updateTvScreen()` (offsets 57-58), whose first
 test is `getIsTurnedOn()`; `IsoWaveSignal.update()`'s not-a-server branch
-(48—105) picks `updateLightSource()` or `removeLightSourceFromWorld()` by the same
+(48-105) picks `updateLightSource()` or `removeLightSourceFromWorld()` by the same
 field; and the same method sends a client to `DeviceData.updateSimple()`, which
-calls `updateEmitter()` (118—125), which reads `isTurnedOn` at 45—49 to decide
+calls `updateEmitter()` (118-125), which reads `isTurnedOn` at 45-49 to decide
 whether the loop sound plays.
 
 **Single player sends nothing and needs nothing**, and that is the engine's doing
@@ -1034,13 +1034,13 @@ process means the object the server wrote is the object the survivor is looking
 at. One code path, two games.
 
 **Late joiners are correct by the engine, and no chunk hook is needed.** Every
-chunk a client loads asks the server for that chunk's object state —
-`IsoChunk.doLoadGridsquare`, offsets 1650—1675, `if (GameClient.client)
-connection.addChunkObjectState(wx)` and the same for `wy` — and the server answers
+chunk a client loads asks the server for that chunk's object state:
+`IsoChunk.doLoadGridsquare`, offsets 1650-1675, `if (GameClient.client)
+connection.addChunkObjectState(wx)` and the same for `wy`, and the server answers
 out of the **live** object: `ChunkObjectStateRequestPacket.parse` →
 `IsoChunk.saveObjectState` (offset 99) → `IsoObject.saveState` per object
-(124—127), where `IsoWaveSignal.saveState` writes `getIsTurnedOn()` at 73—93,
-`getChannel()` at 94—105 and `getDeviceVolume()` at 106—117. The client applies
+(124-127), where `IsoWaveSignal.saveState` writes `getIsTurnedOn()` at 73-93,
+`getChannel()` at 94-105 and `getDeviceVolume()` at 106-117. The client applies
 them through `loadState`'s three raw setters. So a player who connects an hour
 after cron switched the television on sees it on, and a player who walks back into
 a chunk that was unloaded sees what it is doing now.
@@ -1048,35 +1048,35 @@ a chunk that was unloaded sees what it is doing now.
 **The refusals are ours and come before the call**, because both setters swallow
 an order they cannot carry out instead of refusing it:
 
-- `setIsTurnedOn(Z)` — `canBePoweredHere()` false takes the 44—58 branch, which
-  turns the set **off** whatever was asked (offsets 0—4); battery-powered with
-  `powerDelta <= 0` calls `setIsTurnedOnInternal(false)` at 31—33 (7—20). Both are
+- `setIsTurnedOn(Z)`, `canBePoweredHere()` false takes the 44-58 branch, which
+  turns the set **off** whatever was asked (offsets 0-4); battery-powered with
+  `powerDelta <= 0` calls `setIsTurnedOnInternal(false)` at 31-33 (7-20). Both are
   `no power`, the word the light switch and the stove already use. It also ends on
-  `IsoGenerator.updateGenerator` (118—130), which is the third of the gesture that
+  `IsoGenerator.updateGenerator` (118-130), which is the third of the gesture that
   makes a generator feel the load.
 - `setChannel(I)` → `setChannel(I, true)` returns at offset 105 outside
-  `minChannelRange..maxChannelRange`, having done nothing at all (0—13). That is
+  `minChannelRange..maxChannelRange`, having done nothing at all (0-13). That is
   `out of range`. A frequency nobody **broadcasts** on is *not* refused: vanilla's
   own window tunes anywhere in the span and prints "Unknown channel", a television
-  on a dead frequency shows the test card (`updateTvScreen`, 79—83), and a refusal
+  on a dead frequency shows the test card (`updateTvScreen`, 79-83), and a refusal
   the game does not make is a refusal we would have invented.
 
 **The dial is raw and not megahertz.** `/dev/radio0` prints megahertz and can
-afford to — it is read-only, so its reading is the only spelling of that number
+afford to, it is read-only, so its reading is the only spelling of that number
 anybody meets. A dial a survivor can *write* cannot: `echo channel 203` beside a
 line reading `0.203` would be one number under two names. It is also the game's
-own split — `RWMGeneral:setInfoLines` prints megahertz for a radio and, for a
+own split, `RWMGeneral:setInfoLines` prints megahertz for a radio and, for a
 television, prints no frequency at all, only the channel's name (`:66-81`).
 
 **What is airing, and when the next block starts**, rides in the same `detail` the
 generator's fuel does: `on channel 203 airing 1080-1440`. The reading is
-`CeroSecRadio.scheduleOf` — `getZomboidRadio():getScriptManager():getChannelsList()`,
+`CeroSecRadio.scheduleOf`, `getZomboidRadio():getScriptManager():getChannelsList()`,
 then `RadioChannel.GetFrequency()` / `IsTv()` to pick the station, then
 `getAiringBroadcast()` for what is on and `getCurrentScript():getBroadcastList()`
 for the nearest block still to come. The channel list is memoised and rebuilt when
 its **size** changes, which is vanilla's own staleness test for that list
 (`ZomboidRadioDebug:populateList`, `:103-105`). `getValidAirBroadcast()` is
-**never** called: offsets 42—44 set `currentHasAired = true` on the way out, so
+**never** called: offsets 42-44 set `currentHasAired = true` on the way out, so
 asking it would take a broadcast away from the radio's own simulation. The stamps
 are minutes of the day and are printed as minutes of the day, because a program
 compares the first of them with the clock; `RadioData.loadBroadcast` reads only
@@ -1086,7 +1086,7 @@ to tomorrow.
 Because `ToggleDoorSilent` **toggles**, a door already in the state it was asked
 for is left alone and nothing is broadcast: two `dev door0 open` in a row are one
 open door. And because it returns doing nothing on a barricaded door, the
-`barricaded` refusal is ours and comes *before* the call — otherwise the order
+`barricaded` refusal is ours and comes *before* the call, otherwise the order
 would be swallowed and the machine would report the state it already had.
 
 `doorN: blocked` is the game's own test and nothing of ours: `isObstructed()` →
@@ -1097,8 +1097,8 @@ chunk `isIntersectingSquareWithShadow` of it. It is exactly the test
 the machine refuses is a door nobody could open by hand either.
 
 A survivor **standing** in the doorway is not one of these. Vanilla lets a door
-swing through him — `ISOpenCloseDoor:complete` calls `ToggleDoor` and checks
-nothing first — so the machine does too. A refusal the game does not make is a
+swing through him, `ISOpenCloseDoor:complete` calls `ToggleDoor` and checks
+nothing first, so the machine does too. A refusal the game does not make is a
 refusal we would have invented.
 
 **Migration.** A `devmap` entry made for an interior map door's `lock` device
@@ -1108,7 +1108,7 @@ the number stays spent for the life of the machine, the entry stays mounted so
 `cat /dev/lock4` answers `lock4: no such device` rather than `no such file`, and
 it is **not listed**. Nothing is renumbered and no gap is ever reused.
 
-The power rule for a light is the switch's own: `canSwitchLight()` — a bulb, and
+The power rule for a light is the switch's own: `canSwitchLight()`, a bulb, and
 electricity or a charged battery. A switch with no bulb reads as `no power` too,
 which is what a survivor flicking it would find. `setActive` also *answers* with
 the state it settled on, so the state is read back rather than assumed; the same
@@ -1116,8 +1116,8 @@ goes for every kind, because "the order went out" and "the world moved" are not
 the same fact.
 
 The one-minute sweep (`CeroSecDevices.refresh`) renumbers for a machine somebody
-is standing at. Nothing already on the glass changes — a printed line stays
-printed, here as on any terminal — but a device that appeared since already has
+is standing at. Nothing already on the glass changes, a printed line stays
+printed, here as on any terminal, but a device that appeared since already has
 its number by the time `ls /dev` is typed.
 
 ## The `/dev` cache
@@ -1125,12 +1125,12 @@ its number by the time `ls /dev` is typed.
 **The walk is the most expensive thing this mod does and nothing measured it
 until the motor rung.** `notes/actuators.md` put a five-second polling daemon at
 one building walk every five seconds, reasoning from `CeroSecOS.jobStep`
-returning above `CeroSecOS.mountDev` for a sleeping job. It does return there —
+returning above `CeroSecOS.mountDev` for a sleeping job. It does return there,
 and the walk is not in `mountDev`. It is in `CeroSecDevices.envFor`, reached
 through `SCeroSecSystem:execEnv` from `CeroSecJobs.runMachine`, which runs **once
 a pass** for any machine with a job in its book at all, before a single job is
 looked at. A machine gets a pass every `CeroSec.JOB_PASS_MS` (100 ms), so the
-daemon walked the whole building **ten times a second** — and none of it showed
+daemon walked the whole building **ten times a second**, and none of it showed
 in a step count, because a walk costs no steps.
 
 So `CeroSecDevices.findCached(x, y, z, now)` sits in front of it, keyed by where
@@ -1142,23 +1142,23 @@ which is ten passes).
   a fact about the building.
 - **What is never remembered** is what a device is DOING. Every answer re-reads
   the state off the object (`stateOf`, and `CeroSecRadio.restate` for the TNC), and
-  the rest of a generator's line with it (`detailOf`) — a door opened by a hand
+  the rest of a generator's line with it (`detailOf`), a door opened by a hand
   between two passes reads `open` on the second one.
 - **What throws it away**: the clock; the minute sweep, which walks anyway and so
   drops the entry first and refills it with what its own walk found; a module
   going on or coming off **any** fixture (`installmodule`, `uninstallmodule` and
   the pre-fitting walk all call `CeroSecDevices.invalidate`, which empties the
-  whole book — which machines can see a fixture is the question the walk exists
+  whole book, which machines can see a fixture is the question the walk exists
   to answer); and the machine standing somewhere else, which is a different key.
-- **What it costs is one second, in both directions.** A device that appears — a
-  chunk streaming in, a door somebody builds — is not on `/dev` until the next
+- **What it costs is one second, in both directions.** A device that appears, a
+  chunk streaming in, a door somebody builds, is not on `/dev` until the next
   walk, and a device that is knocked down reads its last state until then too.
   That is the same second the discovery has always been honest about. What is
   **not** a second late is a device being *worked*: `envFor`'s `write` and `find`
   ask `alive` of the one object they are about to touch, so an order to a door
   somebody has knocked down answers `no such device` and moves nothing. Asking it
-  of the whole list instead would be four engine calls per device per pass — on
-  a mall, sixty thousand a second for one machine — to buy a listing that is
+  of the whole list instead would be four engine calls per device per pass, on
+  a mall, sixty thousand a second for one machine, to buy a listing that is
   right a second sooner, and the listing was never the thing that had to be right.
 
 **Measured**, in engine calls rather than in milliseconds, because the walk is
@@ -1175,18 +1175,18 @@ of two, and the ratio the cache buys did not move.)
 `nil` reaches a Java object parameter as `null` is proven twice over.
 
 **At the bytecode.** `LuaJavaInvoker.prepareCall` pulls each argument off the call
-frame (offsets 295—304) and converts anything the parameter type is not already
-an instance of (325—347) — which a null never is, `Class.isInstance` answering
+frame (offsets 295-304) and converts anything the parameter type is not already
+an instance of (325-347), which a null never is, `Class.isInstance` answering
 false for it. `convert(Object, Class)` returns `null` at its first two
-instructions for a null input (offsets 0—5), before the converter manager is
-asked anything. And the type check at 349—392 is
+instructions for a null input (offsets 0-5), before the converter manager is
+asked anything. And the type check at 349-392 is
 `if (arg != null && converted == null) fail(...)`: **the failure is guarded on
 `arg != null`**, so a null argument is stored straight into the parameter array at
-393—405. The argument *count* is not exempt — offsets 126—137 refuse a call
-with too few — so the `nil` has to be written and cannot be left out.
+393-405. The argument *count* is not exempt, offsets 126-137 refuse a call
+with too few, so the `nil` has to be written and cannot be left out.
 
 **And vanilla's own Lua does it.** `media/lua/shared/TimedActions/ISLockDoor.lua`
-:56, :62 and :69 — `door:syncIsoObject(false, 0, nil, nil)` — passes `nil` into
+:56, :62 and :69, `door:syncIsoObject(false, 0, nil, nil)`, passes `nil` into
 a `UdpConnection` and a `ByteBufferReader`, and this mod has made that same call
 on every door write since rung 1.
 
@@ -1197,7 +1197,7 @@ the world: the device *is* the item lying on the floor.
   (`media/scripts/generated/items/normal.txt:4539-4548`), an Electronics-category
   module with a `WorldStaticModel` so it can be dropped and set down. It is named
   in one place, `CeroSecSensors.ITEM`, because the module carries no field that
-  tells it apart from a fuse — a component has no `SensorRange`. The path is
+  tells it apart from a fuse, a component has no `SensorRange`. The path is
   `getWorldObjects()` → `IsoWorldInventoryObject:getItem()` →
   `InventoryItem:getFullType()`, all `javap`'d. It is a findable part, not a boss
   drop: it is in the loot tables (`server/Items/ProceduralDistributions.lua:20424`,
@@ -1206,18 +1206,18 @@ the world: the device *is* the item lying on the floor.
 - **Its reach is `CeroSec.SENSOR_RANGE` (3), and that number is the game's.** One
   `Base.MotionSensor` plus two `ElectronicsScrap` is what the game itself calls a
   V1 sensor (`recipes/recipes_traps.txt:153-181`), and every V1 in the game is
-  `SensorRange = 3` — all five of them, without exception
+  `SensorRange = 3`, all five of them, without exception
   (`items/weapon.txt:306, 487, 662, 838, 1027`). The extra scrap is what buys a V2
   or a V3, so three is the reach the module brings by itself and the smallest the
   game ever grants a motion sensor.
 - **Trap heads are never devices**, and they are excluded *before* the item is
-  named so the refusal cannot be argued around — not by a vanilla trap, not by a
+  named so the refusal cannot be argued around, not by a vanilla trap, not by a
   modded one, and not by one somebody named `Base.MotionSensor`. The test is the
   game's own field and not a list of the fifteen names:
   `instanceof(item, "HandWeapon") and item:getSensorRange() > 0`. `sensorRange`
   lives on `HandWeapon` and on no other `InventoryItem`, and is copied there from
   the script by `zombie.scripting.objects.Item.InstanceItem(String, boolean)`
-  (bytecode offsets 2016–2019), so a positive one means a weapon that senses —
+  (bytecode offsets 2016–2019), so a positive one means a weapon that senses,
   which is a mine. The fifteen are
   `{PipeBomb,Aerosolbomb,NoiseTrap,SmokeBomb,FlameTrap}SensorV{1,2,3}` (V1 = 3,
   V2 = 4, V3 = 5 or 6). *Why:* the whole point of one is that it goes off when a
@@ -1227,14 +1227,14 @@ the world: the device *is* the item lying on the floor.
   exclusion is about. A dropped item is an inert `IsoWorldInventoryObject` on
   `getWorldObjects()`; a **placed** trap is an armed `IsoTrap` on `getObjects()`,
   made through `server/Traps/BuildingObjects/TrapBO.lua` and
-  `IsoTrap.new(item, cell, square)`. So a dropped pipe bomb is not live — and it is
+  `IsoTrap.new(item, cell, square)`. So a dropped pipe bomb is not live, and it is
   one right-click from being, which is exactly why the machine will not call it a
   sensor.
 - **The field of view and the cadence are `IsoTrap.updateVictimsInSensorRange`'s**,
   arithmetic included: `SENSOR_TIMER` is `new OnceEvery(1.0f)` so the sample is
   once a second; `mo:getZi() == square:getZ()` so one floor only;
   `DistanceToSquared(mo:getX(), mo:getY(), getX() + 0.5, getY() + 0.5) <= range *
-  range` — **squared euclidean from the centre of the head's own tile**, not a
+  range`, **squared euclidean from the centre of the head's own tile**, not a
   Chebyshev box, so a body two tiles east and three south of a head is 3.6 tiles
   away and is not seen where a tile count would have said 3 and fired; and an
   `IsoGameCharacter` that `isInvisible()` is skipped while a
@@ -1243,22 +1243,22 @@ the world: the device *is* the item lying on the floor.
 - **The one test not mirrored** is `LosUtil.lineClear`. No vanilla Lua touches
   `LosUtil` anywhere, so whether its nested `TestResults` enum is reachable from
   Lua at all is unproven, and a LOS trace per body per second per sensor is the
-  dearest thing this file could do. The **room** stands in its place — the game's
-  own partition of the inside of a building by its walls — so the field is
+  dearest thing this file could do. The **room** stands in its place, the game's
+  own partition of the inside of a building by its walls, so the field is
   `room:getSquares()` intersected with the range box, and a head with no room
   under it gets the range alone. That is the honest statement and it is the one
   the manual prints: *in a room, the part of that room within range; outside one,
   the range.*
 - **What movement is, and this half is ours.** The game's trap is a proximity fuse
-  that fires on a body standing still; a PIR is not. A sample is a **signature** —
+  that fires on a body standing still; a PIR is not. A sample is a **signature**,
   every body in the field, quantized to `CeroSecSensors.STEP` (10, tenths of a
-  tile), sorted, joined — and a signature differing from the one before it closes
+  tile), sorted, joined, and a signature differing from the one before it closes
   the contact for `CeroSec.SENSOR_HOLD_S` (5) seconds. One comparison covers
   moved, entered *and* left, with no identity followed, because a PIR has no
   identities either. The first sample of a newly discovered head sets the baseline
   and fires nothing: a one-second warm-up, which every PIR ever fitted has had.
 - **Whose state it is.** The sensor's, keyed by where the head is plus its ordinal
-  on that tile — one head, one contact, however many machines watch it, and it is
+  on that tile, one head, one contact, however many machines watch it, and it is
   sampled once however many are watching. Never saved: a contact is five seconds
   long and a reload is the end of it.
 - **When it runs.** `CeroSecSensors.tick` is one `Events.OnTick` handler with two
@@ -1268,13 +1268,13 @@ the world: the device *is* the item lying on the floor.
   A command typed at the glass registers too (`build`), so a head dropped ten
   seconds ago is warm before the next `cat` rather than at the top of the minute.
   A head no live machine has asked about for two scans is forgotten. Ceilings:
-  `FIELD_MAX` (49, the 7×7 box of a reach of three — a ceiling, so a reach somebody
+  `FIELD_MAX` (49, the 7×7 box of a reach of three, a ceiling, so a reach somebody
   widens cannot make a pass cost four thousand squares without this moving too) and
   `SENSOR_MAX` (100).
-- **What it costs.** `hostile_test` section 20 drives the worst county there is —
+- **What it costs.** `hostile_test` section 20 drives the worst county there is,
   six machines, eight heads each, forty squares a field, nine hundred and sixty
   bodies, every one of them moving every second, each body on one of the twenty
-  squares nearest its head so that every one of them counts — for a thousand
+  squares nearest its head so that every one of them counts, for a thousand
   seconds: **1920 squares and about 5 ms per second**, flat, with every contact
   closed. Half a
   percent of one second. An empty county costs under a hundredth of a
@@ -1296,7 +1296,7 @@ that **nothing about such a module is special**.
   for a module a survivor screwed on. There is no second table and no flag that says
   "the mod put this here".
 - **It comes off into his hands.** `Commands.uninstallmodule` asks nothing about where
-  a module came from, so a pre-fitted relay is a relay in his bag — it is real
+  a module came from, so a pre-fitted relay is a relay in his bag, it is real
   hardware, and pretending otherwise would be a box he can see and cannot have.
 - **And it stays off.** This is the one thing the shape had to gain.
   `CeroSecModules.PRE_KEY` (`pre`) is written beside the ids, it **outlives every
@@ -1304,19 +1304,19 @@ that **nothing about such a module is special**.
   take the last empty one away), and the pre-fitting walk skips any fixture that
   carries it. Without that, a survivor who unscrews a relay for the item finds it back
   on the plate at the top of the next minute, which is a mod undoing a player's own
-  work. A table this build cannot read — one a *later* build wrote — answers "already
+  work. A table this build cannot read, one a *later* build wrote, answers "already
   done" for the same reason: the last thing to write into is somebody else's shape.
 - **`CeroSecModules.VERSION` moves to 2 for it**, with a step that converts nothing.
   Strictly it did not have to: an absent mark reads as "not pre-fitted", which is the
-  old behaviour on every fixture in every save. It moves for the reader — a table that
+  old behaviour on every fixture in every save. It moves for the reader, a table that
   has grown a key which is not one of the four ids and does not behave like one is a
-  shape nothing can be held to afterwards — and the step is *written* rather than
+  shape nothing can be held to afterwards, and the step is *written* rather than
   absent, because a gap in the chain is what `migrate` refuses to walk. One consequence
   is worth knowing and is written down at the constant: the walk has always ended each
   step with `fitted[v] = n`, so the moment the number moved past 1, the first **read**
   of an older table became the thing that stamps it, on a client as well as on the
-  server. Harmless in both places — on a client it lands in a table nobody else sees,
-  on the server it lands in the chunk, which is where the answer belongs — and it is
+  server. Harmless in both places, on a client it lands in a table nobody else sees,
+  on the server it lands in the chunk, which is where the answer belongs, and it is
   the stamp that stops a step which does real work from running twice.
 - **Never an operator.** A relay, a contact and a strike; no motors. A 1993 shop had a
   magnetic contact on the stockroom frame to know the door was shut and an electric
@@ -1328,8 +1328,8 @@ that **nothing about such a module is special**.
   was automated by magic.
 
 Which fixtures: the ones the machine can act on, sifted back down to its own premises.
-`CeroSecDevices.fixturesInRooms` is handed the rooms of the **premises** — its
-tenancy's in a mall, the building's anywhere else — and walks at most
+`CeroSecDevices.fixturesInRooms` is handed the rooms of the **premises**, its
+tenancy's in a mall, the building's anywhere else, and walks at most
 `CeroSecAuto.ROOMS_PER_MINUTE` of the ones whose chunks are in. A room it walked is
 written into the premises' record and **never walked again**, which is how the
 pre-fitting comes back for a room whose chunks were away, finishes in any chunk order,
@@ -1354,24 +1354,24 @@ deliberately three (`CeroSecOSDisk.lua`):
   record a player puts there himself: it lives on the ITEM as its custom name
   (`CeroSecFloppyMenu`, on the inventory menu), the slot reads it off the item and
   writes it here, `mount` and `df` print it after the device, and the eject puts it
-  back on the shell — which has to be done deliberately, because an insert destroys
+  back on the shell, which has to be done deliberately, because an insert destroys
   the item and an eject makes a new one. `CeroSecOS.labelOk` is the whole of what may
   be written: up to `CeroSecOS.LABEL_MAX` (24) letters, digits, spaces, dashes and
   dots, never empty and never all spaces. It is held to that at the slot as well as
   in the box, because a forged name with a newline in it would put a second line in
   the mount listing.
 - **The device.** `/dev/fd0` is mounted on `/dev` for the length of one command,
-  exactly as a light switch is, and only while there is a disk in the slot — so a
+  exactly as a light switch is, and only while there is a disk in the slot, so a
   saved machine never carries one. Its kind has an **empty** vocabulary, like a
   motion sensor's: there is no word to write to a raw disk, and every one tried is
-  `fd0: invalid value`. Its `660` is still read twice over — `newfs` wants `w`,
-  `mount` wants `r` — so the mode on that node is the whole of who may format and
+  `fd0: invalid value`. Its `660` is still read twice over, `newfs` wants `w`,
+  `mount` wants `r`, so the mode on that node is the whole of who may format and
   who may mount, and there is no second list of names anywhere. A `chmod` on it is
   the **drive's** and outlives the disk (`state.fdmode`).
 - **The mount.** `state.mounts` is what `mount` with no arguments prints and what
   `CeroSecOS.getNode` crosses: a directory that is a mount point resolves to the
   root of the mounted disk and not to the directory on the hard drive underneath
-  it. The crossing is done in `getNode` and nowhere else — the same place a
+  it. The crossing is done in `getNode` and nowhere else, the same place a
   symbolic link is followed, and for the same reason: not one command in the engine
   had to learn there is a floppy. A mount does not survive the power going off,
   which is what a reboot does anywhere; the disk stays in the slot, because that is
@@ -1380,34 +1380,34 @@ deliberately three (`CeroSecOSDisk.lua`):
 The two filesystems never share a ceiling, and that falls out of the **shape**
 rather than out of a rule: the disk lives beside `state.fs` and not inside it, so
 the quota walk (`CeroSecOS.usage`) physically cannot see it. What picks the ceiling
-for a write is the path — `CeroSecOS.fsFor` answers which filesystem an absolute
-path is on, and `checkAttach` and `setData` ask it — which is why a full floppy is a
+for a write is the path, `CeroSecOS.fsFor` answers which filesystem an absolute
+path is on, and `checkAttach` and `setData` ask it, which is why a full floppy is a
 `df` that has not moved on `hda`.
 
 Across the boundary, a disk is **copied** and never handed over
 (`CeroSecOS.diskFromData` / `diskToData`). An item's modData is a `KahluaTable` the
 game owns, and the engine's own gate runs on whatever goes into the machine's state
-on every command from then on — so what goes in has to be a plain Lua table this
+on every command from then on, so what goes in has to be a plain Lua table this
 engine made. `CeroSecOS.validateDisk` runs at the **slot**, so a forged or damaged
 disk is refused there rather than three commands later by a gate that then calls the
 whole machine broken. An item always *has* a modData table, so nothing written in it
 means a blank disk and not a refusal.
 
-That gate is asked two questions. The **boot gate** asks the *shape* — whether the
-core can run on the disk at all — and deliberately not the ceilings, for the reason
+That gate is asked two questions. The **boot gate** asks the *shape*, whether the
+core can run on the disk at all, and deliberately not the ceilings, for the reason
 the machine's own drive is not asked either: being over a quota is a state a
 filesystem can be *in*, and the answer is that the next write says `disk full` until
 room is made. A boot gate that refused would cost the player his whole computer for
 a disk he could have fixed with one `rm`, because `osState`'s refusal is sticky and
 the firmware repair deliberately does not reach into the drive. The **slot** asks the
-ceilings as well, because what arrives there is a table off a save file — or, on a
-server, off a client — and it is walked on every command from then on: a 4 KB disk
+ceilings as well, because what arrives there is a table off a save file, or, on a
+server, off a client, and it is walked on every command from then on: a 4 KB disk
 costs the boot gate nothing, and a forged 8 MB one is that same walk on every
 keystroke.
 
-Which leaves the obvious trap — a machine that runs on a disk must be able to hand
+Which leaves the obvious trap, a machine that runs on a disk must be able to hand
 it out, or the player ends up holding one nobody will accept with nothing on any
-screen to say why — and that is closed at the **other end**: a disk the slot would
+screen to say why, and that is closed at the **other end**: a disk the slot would
 not take never leaves the drive. It is still in the machine, `df` still says what is
 wrong with it, and one `rm` is the way out. Nothing the write path can do makes such
 a disk; that is the belt under it, not the rule.
@@ -1415,7 +1415,7 @@ a disk; that is the belt under it, not the rule.
 The ceilings a disk is held to are the disk's, per file included: `MAX_FILE_BYTES`
 and not the `HISTORY_BYTES` a node on the hard drive may reach, because that larger
 number belongs to the history exemption and the exemption belongs to the hard drive
-alone. Nothing on a disk is ever exempt from anything — which is also why a disk may
+alone. Nothing on a disk is ever exempt from anything, which is also why a disk may
 carry no **device**: a device costs the quota nothing by design, and that is right
 for the machine's own `/dev`, built afresh every command and swept again, and is a
 hole on a disk where nothing sweeps and the nodes are saved.
@@ -1424,8 +1424,8 @@ Before any ceiling, though, comes what a disk is allowed to be **made of**
 (`CeroSecOS.diskFieldsOk`), because a ceiling is asked of a filesystem and a *field*
 is a place to hide things. `CeroSecOS.DISK_KEYS` is everything a disk owns and
 `CeroSecOS.NODE_FIELDS` everything a node is, so junk hung on the disk, on its root,
-on any node, or a whole subtree hung under a *file* node — which the quota walk never
-descends into and the node count never sees — is refused rather than carried
+on any node, or a whole subtree hung under a *file* node, which the quota walk never
+descends into and the node count never sees, is refused rather than carried
 unweighed, saved and published. It is asked of a disk **record**, before a byte of it
 is copied, and the record is built out of the keys a disk owns and nothing else
 (`ownKeysOf`): a name nobody here declared is left on the item, where the game and
@@ -1435,10 +1435,10 @@ hundred thousand keys under a name nobody here has ever written cost half a seco
 to walk and one comparison to refuse.
 
 Two things stay on the hard drive whatever is mounted. A `~/.sh_history` is exempt
-from the quota because the exemption is the *drive's* — it exists so `df` on `hda`
-does not move because somebody typed — so a history on a mounted disk is an ordinary
+from the quota because the exemption is the *drive's*, it exists so `df` on `hda`
+does not move because somebody typed, so a history on a mounted disk is an ordinary
 file there, written through `setData` and bounded by the disk. And the machine's own
-records — the cron log, a mailbox, `/var/log/wtmp` — are found by a walk that does
+records, the cron log, a mailbox, `/var/log/wtmp`, are found by a walk that does
 not cross a mount and written straight onto the node, so under a mount over `/var`
 the machine stops keeping them until the disk is out rather than leaving them
 somewhere it can never read them again (`CeroSecOS.onOwnDrive`).
@@ -1446,8 +1446,8 @@ somewhere it can never read them again (`CeroSecOS.onOwnDrive`).
 **Logical and physical paths.** `getNode` crosses a mount on the path it really
 took, with every symbolic link already followed, and hands back the path that was
 *typed*, because that is what `cd` keeps and what every shell prints. Those are not
-the same string, and every rule about where a node lives — which disk it is on,
-whether it is a mount point, whether it is under `/dev` — is a fact about the place
+the same string, and every rule about where a node lives, which disk it is on,
+whether it is a mount point, whether it is under `/dev`, is a fact about the place
 and not about the name, so it is asked with the fourth value `getNode` returns and
 never with the third. Asked with the name, as they were when this was first written,
 a symbolic link carried a write past the ceilings of the disk it landed on, a rename

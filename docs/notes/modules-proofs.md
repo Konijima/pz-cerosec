@@ -1,4 +1,4 @@
-# Hardware modules — the proofs
+# Hardware modules: the proofs
 
 Every engine call the hardware modules make, proven against the shipped jar
 (`projectzomboid.jar`, B42.20.4) with
@@ -19,7 +19,7 @@ public boolean hasModData();
 public void transmitModData();
 ```
 
-`getModData()` answers a `KahluaTable` — the Lua table itself, which is why
+`getModData()` answers a `KahluaTable`, the Lua table itself, which is why
 `object:getModData().cerosec = { ... }` is a plain table write and not a call.
 
 **It is saved with the chunk.** The field behind those three methods is
@@ -83,7 +83,7 @@ IsoThumpable.load  425: invokeinterface #369, 2   // BitHeaderRead.hasFlags:(I)Z
 ```
 
 So the same Lua line works on a player-built door as on a map door, and both
-survive a save — through two different fields.
+survive a save, through two different fields.
 
 ## 2. Telling the other players: `transmitModData()`
 
@@ -100,7 +100,7 @@ public void transmitModData();
   45: return
 ```
 
-It has a server branch of its own — `GameServer.sendObjectModData` — so a write
+It has a server branch of its own, `GameServer.sendObjectModData`, so a write
 made on the server reaches every client without anything else being called, which
 is the point that matters for this mod (our writes happen on the server and most
 of vanilla's happen on a client). `flagForHotSave()` at the end is what marks the
@@ -131,7 +131,7 @@ highest one that parses as a game version and is not above the running one, whic
 for this mod is `42`. `getAllModFoldersAux` then registers both
 `<mod>/common/media` and `<mod>/42/media` as content roots.
 
-**So the file goes at `42/media/sandbox-options.txt`** — beside `42/media/lua`,
+**So the file goes at `42/media/sandbox-options.txt`**, beside `42/media/lua`,
 not at the mod root and not under `common/media` (either would work, and the
 versioned one is where the two B42 mods on this machine put theirs:
 `.../workshop/content/108600/3780639614/mods/PushVehicle/42/media/sandbox-options.txt`
@@ -151,11 +151,11 @@ option PushVehicle.AllowSidePushing
 }
 ```
 
-and the names a player reads are JSON now, not `Sandbox_EN.txt` — this install
+and the names a player reads are JSON now, not `Sandbox_EN.txt`, this install
 has no `Sandbox_EN.txt` anywhere. Vanilla ships
 `media/lua/shared/Translate/EN/Sandbox.json`, the two mods above ship one inside
 their own `42/media/lua/shared/Translate/EN/`, and the keys are the old ones:
-`Sandbox_<Page>`, `Sandbox_<Page>_<Option>`, `Sandbox_<Page>_<Option>_tooltip` —
+`Sandbox_<Page>`, `Sandbox_<Page>_<Option>`, `Sandbox_<Page>_<Option>_tooltip`,
 the `translation =` value with `Sandbox_` in front of it.
 
 Read back the way vanilla reads a grouped option
@@ -188,7 +188,7 @@ toggle**: the only call that moves a sash needs a character standing at it. That
 is the engine's own reason there is no window actuator in this mod, and why a
 magnetic contact is all a window can carry (see DEVICES.md).
 
-`IsoLightSwitch` does not override `getModData` — it inherits `IsoObject`'s, the
+`IsoLightSwitch` does not override `getModData`, it inherits `IsoObject`'s, the
 persisted one of proof 1.
 
 ## 5. The perk, and the experience
@@ -214,7 +214,7 @@ this jar; `IsoGameCharacter$XP` is the class.
 
 ## 6. The vanilla action this one is cut from
 
-`media/lua/shared/TimedActions/ISFixGenerator.lua` — electrical work on a world
+`media/lua/shared/TimedActions/ISFixGenerator.lua`, electrical work on a world
 object, whole:
 
 ```lua
@@ -238,19 +238,19 @@ end
 
 So: `setActionAnim("Loot")` and the `LootPosition` variable, a duration that
 comes down with the perk, and the experience awarded in `complete` and not in
-`perform`. There is no screwdriver-specific animation in vanilla — generator
+`perform`. There is no screwdriver-specific animation in vanilla, generator
 repair, the game's own electrical job, uses the generic Loot pose, which is also
 the one this mod's other actions already use (`ISCeroSecToggleAction:start`).
 
 ## 7. Getting the survivor to the thing
 
-`luautils.walkAdjWindowOrDoor(playerObj, square, item)` for a door or a window —
+`luautils.walkAdjWindowOrDoor(playerObj, square, item)` for a door or a window:
 `media/lua/shared/luautils.lua:227`, and it is what the vanilla menu calls before
 it opens a door (`client/ISUI/ISWorldObjectContextMenu.lua:2417-2422`,
 `onOpenCloseDoor`) and before it unbarricades a window (`:2151-2158`). It answers
 true when the walk was queued or the survivor is already there.
 
-`luautils.walkAdj(playerObj, square)` — `luautils.lua:119` — for anything that is
+`luautils.walkAdj(playerObj, square)`, `luautils.lua:119`, for anything that is
 not a door or a window, which is what a light switch is
 (`onFixGenerator`, `ISWorldObjectContextMenu.lua:554-556`).
 
@@ -261,7 +261,7 @@ Vanilla's own classifier for the first case is
 A greyed-out entry with its reason is `option.notAvailable = true` plus
 `ISWorldObjectContextMenu.addToolTip()` with a `description`
 (`ISWorldObjectContextMenu.lua:1303-1309`, the bulb that will not fit in the
-bag) — the same three lines this mod's computer menu already writes.
+bag), the same three lines this mod's computer menu already writes.
 
 `Events.OnFillWorldObjectContextMenu` is the door mods are meant to come in by:
 `ISWorldObjectContextMenu.lua:213` fires it with the comment *"use the event (as
@@ -271,7 +271,7 @@ several vanilla files listen to it themselves (`ISHutchMenu.lua:3` and `:115`,
 
 ## 8. What the recipes are cut from
 
-`media/scripts/generated/recipes/recipes_traps.txt:3-26` — the electrical recipe
+`media/scripts/generated/recipes/recipes_traps.txt:3-26`, the electrical recipe
 that makes a sensor part, whole:
 
 ```
@@ -328,7 +328,7 @@ and are in none of these recipes.
 A `craftRecipe` carries no display name of its own. The menu asks
 `Translator.getRecipeName(name)`
 (`media/lua/client/ISUI/ISInventoryPaneContextMenu.lua:1236-1238`), and that is a
-lookup in one map with the **raw recipe name** as the key — no `Recipe_` prefix,
+lookup in one map with the **raw recipe name** as the key, no `Recipe_` prefix,
 no module prefix:
 
 ```
@@ -395,14 +395,14 @@ assumption and it is wrong here. `ScriptBucket.CreateFromTokenPP` at offsets
 kept and the new body is **appended** to `LoadData.scriptBodies`.
 `ScriptBucket.LoadScripts` at offsets 157-218 then walks the bodies in order and
 calls `Load` on the one object for each. Between bodies it calls `reset()` only
-if the type carries `ScriptType$Flags.ResetExisting` (offsets 183-205) — and
+if the type carries `ScriptType$Flags.ResetExisting` (offsets 183-205), and
 `CraftRecipe` does carry it, by the default flag set every `ScriptType` with a
 null `flags` field is given in the enum's static block (offsets 818-832, the set
 built at 644-681). It costs nothing all the same:
 `zombie.scripting.objects.BaseScriptObject.reset()` is `0: return`, and
 `zombie.scripting.entity.components.crafting.CraftRecipe` does not override it.
 So bodies blend. `CraftRecipe.LoadIO` only ever calls `outputs.add` and
-`inputs.add` (offsets 474-479 and 332-337) — there is no `clear` anywhere in it.
+`inputs.add` (offsets 474-479 and 332-337), there is no `clear` anywhere in it.
 
 A mod could therefore declare `module Base { craftRecipe DismantleMiscElectronics
 { outputs { item 1 CeroSec.SmallMotor, } } }` and the motor would be added to
@@ -415,11 +415,11 @@ base:miscelectronic;base:flashlight]`) and a digital watch would pay one too.
 keyed by the OUTPUT and matched against the consumed inputs, and
 `OutputMapper.getOutputItem` returns **null** when no entree matched and
 `defaultOutputEntree` is null (offsets 209-213 falling to 272: `aconst_null;
-areturn`) — so a mapper with no `default` really does yield no item for the
+areturn`), so a mapper with no `default` really does yield no item for the
 inputs it does not name. Every `default` vanilla writes is an item type; there is
 no "nothing" token, and none is needed. But a mapper only sees the inputs that
 were **registered** with it, and registration comes from the `mappers[...]` list
-written on the input line itself — `InputScript`, offsets 1590-1602:
+written on the input line itself, `InputScript`, offsets 1590-1602:
 `CraftRecipe.getOrCreateOutputMapper(name)` then
 `OutputMapper.registerInputScript(input)`. Inputs are add-only, so a second body
 cannot put `mappers[ceroMotor]` on vanilla's existing input line; it can only add
@@ -427,17 +427,17 @@ a new input line, and that means the recipe demands a second item out of the
 player's bag. There is no way to express it.
 
 **There is no Lua seam at craft time either.** `OnCreate` is real and it is a
-Lua-resolved call — `CraftRecipeData.initLuaFunctions` hands the script's string
+Lua-resolved call, `CraftRecipeData.initLuaFunctions` hands the script's string
 to `LuaManager.getFunctionObject` (offset 46-53) and
 `CraftRecipeData.luaCallOnCreate` calls it with the recipe data and the
 character, which knows `getAllConsumedItems()`. But the string it resolves is
 written in the script block (`OnCreate = RecipeCodeOnCreate.dismantleMiscElectronics`),
-so pointing it somewhere else means overwriting a scalar key of vanilla's block —
-the thing this section exists to refuse — and the target it names is a Java class
+so pointing it somewhere else means overwriting a scalar key of vanilla's block,
+the thing this section exists to refuse, and the target it names is a Java class
 (`zombie/scripting/logic/RecipeCodeOnCreate.class`), not mod Lua. Nor is there an
 event to listen for: `ISHandcraftAction:performRecipe`
 (`media/lua/shared/Entity/TimedActions/ISHandcraftAction.lua:221-249`) calls
-`luaCallOnCreate` and nothing else — the file contains no `triggerEvent` at all,
+`luaCallOnCreate` and nothing else, the file contains no `triggerEvent` at all,
 and there is no `OnCraft` in any `LuaEventManager.AddEvent` in `media/lua`.
 
 So: two recipes of our own, named, and vanilla's blocks untouched. What it costs
@@ -466,7 +466,7 @@ Checked by name against `media/lua/server/Items/ProceduralDistributions.lua`:
 | `ToolCabinetMechanics` | 48633 |
 | `ToolFactoryTools` | 48759 |
 
-There is **no** `HardwareStore*` and **no** `Shed*` list in Build 42 at all — the
+There is **no** `HardwareStore*` and **no** `Shed*` list in Build 42 at all, the
 hardware store's shelves are the `ToolStore*` and `Electrician*` ones, and a tool
 shed's are `Crate*` and `Garage*`. A list named for a place that does not exist in
 the game is a distribution nothing would ever be found in.
@@ -475,7 +475,7 @@ the game is a distribution nothing would ever be found in.
 
 A module lives in the fixture's modData (section 1), so the day the fixture leaves
 the world the module leaves with it. `SCeroSecFixtures` hands it back as an item on
-the square instead, off **one** hook — and this is the proof that one hook is
+the square instead, off **one** hook, and this is the proof that one hook is
 enough.
 
 **The event fires from exactly two places in 42.20.4**, both of them Java, both of
@@ -502,11 +502,11 @@ zombie.network.packets.RemoveItemFromSquarePacket.removeItemFromMap(UdpConnectio
 ```
 
 So the object is still on the square at the trigger, and a listener that removed
-it would raise — which is why the drop writes modData and never touches the
+it would raise, which is why the drop writes modData and never touches the
 square's object list.
 
 **Both trigger sites are reachable on the server, and the dispatch between them is
-`transmitRemoveItemFromSquare(IsoObject, boolean)`** — the call nearly every
+`transmitRemoveItemFromSquare(IsoObject, boolean)`**, the call nearly every
 vanilla removal path makes:
 
 ```
@@ -522,7 +522,7 @@ vanilla removal path makes:
 - on a **server**: offset 189, and `GameServer.RemoveItemFromMap` broadcasts and
   then calls the static above itself (offsets 30-55: `INetworkPacket.sendToRelative`
   then `RemoveItemFromSquarePacket.removeItemFromMap(null, x, y, z, index)`);
-- on **neither** — singleplayer — offset 194.
+- on **neither**, singleplayer, offset 194.
 
 And the one-argument `RemoveTileObject(IsoObject)` sends a loaded chunk through
 `IsoObjectUtils.safelyRemoveTileObjectFromSquare` (offsets 0-50 pick the boolean
@@ -539,20 +539,20 @@ side this mod writes modData on.
 
 | what happens | what removes the object | fires on the server |
 | --- | --- | --- |
-| a movable picked up (television, radio set, oven, washer, lamp) | `ISMoveableSpriteProps:pickUpMoveableInternal:1406-1407` — `triggerEvent("OnObjectAboutToBeRemoved", _object)` *itself* ("Hack for RainCollectorBarrel, Trap, etc") and then `transmitRemoveItemFromSquare` | yes |
-| a window picked up | the same function, `:1384-1386` — `transmitRemoveItemFromSquare` and **no** Lua trigger | yes, the Java one |
+| a movable picked up (television, radio set, oven, washer, lamp) | `ISMoveableSpriteProps:pickUpMoveableInternal:1406-1407`, `triggerEvent("OnObjectAboutToBeRemoved", _object)` *itself* ("Hack for RainCollectorBarrel, Trap, etc") and then `transmitRemoveItemFromSquare` | yes |
+| a window picked up | the same function, `:1384-1386`, `transmitRemoveItemFromSquare` and **no** Lua trigger | yes, the Java one |
 | the same pickup **smashing** the window | `:1289-1291` sets `windowGotSmashed`, and the branch at `:1385` is then skipped: the object **stays** | **no, and it must not** |
-| a map door destroyed (zombie, sledgehammer) | `IsoDoor.destroy()` — `destroyed = true` and `transmitRemoveItemFromSquare` at offsets 227-240; the garage-door leaf takes the same pair at 23-36 | yes |
-| a player-built door or wall destroyed | `IsoThumpable.destroy()` — `OnDestroyIsoThumpable` at 120-125, `transmitRemoveItemFromSquare` at 146-154 | yes |
-| sledgehammer, from the menu | `ISDestroyStuffAction:complete:276-280` — `sledgeDestroy(obj)` on a client, `transmitRemoveItemFromSquare` otherwise | yes |
-| dismantled / "Disassemble" | `ISMoveableSpriteProps:scrapObjectInternal:3517-3519` — transmit on a client, `transmitRemoveItemFromSquareOnClients` on a server, and `square:RemoveTileObject(object)` on **both** | yes |
+| a map door destroyed (zombie, sledgehammer) | `IsoDoor.destroy()`, `destroyed = true` and `transmitRemoveItemFromSquare` at offsets 227-240; the garage-door leaf takes the same pair at 23-36 | yes |
+| a player-built door or wall destroyed | `IsoThumpable.destroy()`, `OnDestroyIsoThumpable` at 120-125, `transmitRemoveItemFromSquare` at 146-154 | yes |
+| sledgehammer, from the menu | `ISDestroyStuffAction:complete:276-280`, `sledgeDestroy(obj)` on a client, `transmitRemoveItemFromSquare` otherwise | yes |
+| dismantled / "Disassemble" | `ISMoveableSpriteProps:scrapObjectInternal:3517-3519`, transmit on a client, `transmitRemoveItemFromSquareOnClients` on a server, and `square:RemoveTileObject(object)` on **both** | yes |
 | a curtain taken down | `ISRemoveSheetAction` → `IsoCurtain.removeSheet(IsoGameCharacter)`, offset 5 | yes |
 | a generator picked up | `ISTakeGenerator:complete:53` → `IsoGenerator.remove()`, offsets 8-16 | yes |
 | a chunk unloading | nothing: `IsoChunk` never calls `RemoveTileObject`, it fires `ReuseGridsquare` (`IsoChunk.doReuseGridsquares:3044`) | **no, and it must not** |
 
 `OnDestroyIsoThumpable` is **not** needed beside it. Vanilla's own trap system says
 why in a comment: *"This is called \*before\* self:OnDestroyIsoThumpable() due to
-ISBuildingObject.onDestroy() removing the object"* (`STrapSystem.lua:106-110`) — so
+ISBuildingObject.onDestroy() removing the object"* (`STrapSystem.lua:106-110`), so
 `OnObjectAboutToBeRemoved` is the earlier of the two on that path, and
 `IsoThumpable.destroy` fires it after its own event anyway (offsets 120-154).
 
@@ -568,14 +568,14 @@ is handed over, and the second firing reads a bare fixture.
 ### Nothing of ours rides along in the item
 
 A pickup that keeps identity does **not** carry our modData into the moveable item.
-`pickUpMoveableInternal` copies exactly one key out of an object's modData —
+`pickUpMoveableInternal` copies exactly one key out of an object's modData:
 
 ```
 1298:  if _object:hasModData() and _object:getModData().movableData then
 1299:      item:getModData().movableData = copyTable(_object:getModData().movableData)
 ```
 
-— plus `<containerType>_customContainerName` and `itemCondition` (`:1302-1312`), and
+plus `<containerType>_customContainerName` and `itemCondition` (`:1302-1312`), and
 `IsoThumpable` goes through `saveThumpableParameters` instead (`:1296`). Placement
 copies the item's whole modData back onto the object, but only when there is **no**
 `movableData` on it (`:2273-2275`). `GameEntityFactory.TransferComponents(_object,
@@ -583,7 +583,7 @@ item)` at `:1280` moves components, not modData.
 
 So a ride-along was possible only by writing our key into somebody else's
 `movableData` table, which is the second truth this mod refuses to keep
-(`CeroSecModules`, head). The module comes off instead — which is also the honest
+(`CeroSecModules`, head). The module comes off instead, which is also the honest
 answer: a television carried out of the building did not take the building's wiring
 with it.
 
@@ -604,7 +604,7 @@ AddWorldInventoryItem(String, float, float, float, boolean, boolean)
      118: invokevirtual #2998   // IsoWorldInventoryObject.transmitCompleteItemToClients:()V
 ```
 
-It makes the item and, **on a server, transmits it by itself** — so there is no
+It makes the item and, **on a server, transmits it by itself**, so there is no
 `sendAddItemToContainer` beside it the way there is in `uninstallmodule`. The
 `null` at offset 12 is why the item is made *before* the key is cleared: a type the
 game cannot make must not cost a survivor the box.
@@ -621,7 +621,7 @@ sheet (213-226). Vanilla's server Lua uses the same call the same way
 A module is a boolean under a string key, and section 1 is the whole of what makes
 one persist. A **cable** is not: `CeroSecModules.LINK_KEY` holds a *list* of
 tables, `{ x = , y = , z = , wire = }` a machine, sitting inside the same
-`cerosec` table on the same fixture. So it wants one thing more proven — that a
+`cerosec` table on the same fixture. So it wants one thing more proven, that a
 table inside a table, reached by a **numeric** key, is written and read back like
 anything else.
 
@@ -655,7 +655,7 @@ save(ByteBuffer, byte, Object)
 `getKeyByte` answers `0` for a String, `1` for a Double and `-1` for everything
 else; `getValueByte` answers those three plus `2` for a `KahluaTableImpl`. **A Lua
 list index is a Double**, so `links[1]` is a savable key, and the table it points at
-is type 2 and saves itself — to any depth, which is the depth this key needs: the
+is type 2 and saves itself, to any depth, which is the depth this key needs: the
 `cerosec` table, the `link` list, one entry.
 
 The read side matches, and it is where the only version gate in this is:
@@ -669,7 +669,7 @@ load(ByteBuffer, int)
   82..109 older saves: every key is read as a String
 ```
 
-Save version 25 is prehistoric — `IsoWorld.WorldVersion` is **249** in B42.20.4 —
+Save version 25 is prehistoric, `IsoWorld.WorldVersion` is **249** in B42.20.4,
 so the numeric keys of a list survive every save this mod will ever meet. Nothing
 was needed for it and nothing was added: a list of tables is what the engine
 already writes.
@@ -696,7 +696,7 @@ server reaches every client with **no call of ours beyond `transmitModData()`**
 (section 2), which is how the right-click menu on another player's screen knows the
 fixture is already linked. And the empty case is **transmitted as absence**: the
 boolean is false, the receiver *wipes*. That is why taking the last cable off takes
-the key away and, if nothing else is left, the table with it — the other side does
+the key away and, if nothing else is left, the table with it, the other side does
 not keep a stale list, and `IsoObject.save` skips an empty table anyway (section 1).
 
 The machine's end of the cable is not here at all. It is a key in the OS state
