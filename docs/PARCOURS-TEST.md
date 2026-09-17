@@ -3493,9 +3493,10 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      ordre et à la même place, grisées avec leur infobulle, une entrée refusée
      se lit là où on la cherche. [ ]
 353. **Le sous-menu du matériel.** Électricité 1, tournevis et un module en main,
-     clic droit sur un interrupteur. Attendu : **CeroSec: Light Switch** est en
-     haut du menu, au-dessus du **Turn on/off** de la lampe qui est au jeu et non
-     à nous, et le sous-menu s'ouvre normalement. [ ]
+     clic droit sur un interrupteur. Attendu (2026-09-17 : en dernière position,
+     après les options vanilla, pas avant) : **CeroSec: Light Switch** est SOUS
+     le **Turn on/off** de la lampe qui est au jeu et non à nous, et le
+     sous-menu s'ouvre normalement. [ ]
 354. **Les objets dans le sac.** Clic droit sur un volume du manuel dans
      l'inventaire → **Read the User's Guide** est la première entrée, au-dessus
      de **Équiper** et de **Déposer**. Même chose pour une disquette avec un
@@ -3508,7 +3509,8 @@ Tout ce que ce mod ajoute à un menu contextuel passe devant les entrées du jeu
      développeur ne pousse pas les entrées de la machine vers le bas. [ ]
 356. **Une porte équipée, un seul parent, un seul survol à la fois.** Poser un
      contact magnétique et le relais sur une porte câblée à un ordinateur.
-     Clic droit sur la porte : une seule entrée en haut du menu, **CeroSec:
+     Clic droit sur la porte : une seule entrée, en dernière position, après
+     les options vanilla de la porte (2026-09-17 : plus en haut du menu), **CeroSec:
      Door**, avec le matériel ET **Link to computer** dedans, rien de deux
      entrées séparées. Survoler **CeroSec: Door** ou une ligne de matériel :
      la porte se surligne. Ouvrir **Link to computer** et survoler une ligne

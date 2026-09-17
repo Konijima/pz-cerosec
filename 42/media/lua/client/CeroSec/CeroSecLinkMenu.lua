@@ -24,6 +24,11 @@ require "CeroSec/ISCeroSecLinkAction"
 -- question about the same object. "Link to computer" nests inside that shared
 -- parent rather than sitting on its own at the top of the menu.
 --
+-- 2026-09-17: this file never called CeroSecMenu.addTop on the root menu, so
+-- when the parent moved to addLast (CeroSecModuleMenu.fixtureParent, and
+-- CeroSecMenu.lua's own header on addLast), "Link to computer" moved with it
+-- for free -- it is still the parent's own submenu, wherever the parent sits.
+--
 -- THE MENU SHOWS THE HOSTNAME AND THE CABLE IS WRITTEN AGAINST THE SQUARE. That
 -- is the whole of the naming rule: a hostname is what a survivor knows his
 -- machines by and is a thing he can change with one line in /etc/hostname, so

@@ -241,6 +241,13 @@ there is nothing else for you to do.
   the way a module is fitted to it or taken off it: open, drawn or from the
   right side. A closed front door can no longer be wired, or unwired, from the
   street.
+- **One CeroSec entry per fixture now comes after that fixture's own options,
+  not before them.** Right-click a door, a window, a light switch or anything
+  else with a module on it and Open, Turn on and the rest of the game's own
+  lines lead the menu the way they always did on everything else; **CeroSec:
+  Door** and its **Link to computer** read after them. The computer itself is
+  unchanged: **Use computer**, **Turn on** and the drive still lead its own
+  menu, and so does everything on a floppy or a manual in your inventory.
 
 ## 0.4.0 - 2026-09-16
 

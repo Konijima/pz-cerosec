@@ -202,6 +202,13 @@ end
 -- included -- before the requiring file runs any of its own top level code, so
 -- this file's listener is always registered, and always fires, first. The
 -- module rows land in the parent before "Link to computer" ever does.
+--
+-- 2026-09-17: addLast, not addTop. The fixture's own action (Open, Turn on, the
+-- rest of its vanilla options) is what a survivor right-clicked it for; the
+-- CeroSec parent goes after it (CeroSecMenu.lua's own header on addLast has the
+-- proof). "Link to computer" never called addTop on this menu to begin with --
+-- it only ever nests inside the submenu this function returns -- so moving
+-- this one call is what carries both.
 function CeroSecModuleMenu.fixtureParent(context, object)
 	local options = context ~= nil and context.options or nil
 	if type(options) == "table" then
@@ -212,7 +219,7 @@ function CeroSecModuleMenu.fixtureParent(context, object)
 			end
 		end
 	end
-	local option = CeroSecMenu.addTop(context,
+	local option = CeroSecMenu.addLast(context,
 		getText("ContextMenu_CeroSec_Fixture", CeroSecModuleMenu.nameOf(object)))
 	CeroSecMenu.setIcon(option)
 	option.cerosecFixture = object

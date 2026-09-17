@@ -1,14 +1,20 @@
 require "ISUI/ISContextMenu"
 
 --
--- Where an option of this mod goes on a right-click menu: FIRST.
+-- Where an option of this mod goes on a right-click menu: FIRST, except a
+-- fixture's, which goes LAST (2026-09-17, see addLast below).
 --
--- Every entry this mod adds -- the computer's own two, the drive's, the labels on
--- a disk, the volumes of the manual, the hardware submenu on a light switch --
--- goes above vanilla's Grab, Equip, Place and the rest of them. A survivor who
--- right-clicks a computer is right-clicking it to use the computer, and an entry
--- he has to read past four of the game's own to find is an entry he does not find
--- at all.
+-- Every entry this mod adds to the computer's own menu -- its two top entries,
+-- the drive's, the labels on a disk, the volumes of the manual -- goes above
+-- vanilla's Grab, Equip, Place and the rest of them. A survivor who right-clicks
+-- a computer is right-clicking it to use the computer, and an entry he has to
+-- read past four of the game's own to find is an entry he does not find at all.
+--
+-- A DOOR, A WINDOW, A LIGHT SWITCH is somebody else's object with a CeroSec part
+-- screwed to it, not the mod's own thing the way the computer is: the hardware
+-- submenu on one of those now goes LAST, after the object's own vanilla action.
+-- addLast's own header carries the proof; this file's addTop discussion below
+-- is unchanged for everything that still uses it.
 --
 -- WHY A HELPER AND NOT addOptionOnTop AT EVERY CALL. The game's own
 -- ISContextMenu:addOptionOnTop puts its option at index 1 (ISContextMenu.lua:914-930:
@@ -93,6 +99,47 @@ function CeroSecMenu.addTop(context, name, target, onSelect,
 	end
 	-- The mark, which is what the next call of this function reads. Nothing else in
 	-- the mod reads it and nothing in the game writes it.
+	if type(option) == "table" then option.cerosec = true end
+	return option
+end
+
+-- 2026-09-17: A FIXTURE'S entries go LAST, not first.
+--
+-- On a door, a window, a light switch -- anything that is vanilla's OWN object
+-- with a CeroSec part screwed to it -- a right-click is a right-click on the
+-- fixture: Open, Turn on, Unequip are the reason his cursor is there, and
+-- "CeroSec: <name>" is the mod's addition to somebody else's thing, not the
+-- thing itself. It reads after the object's own options, not ahead of them.
+--
+-- The COMPUTER keeps addTop, unchanged: there the machine IS the mod's object,
+-- the same way ISHutchMenu (cited above) puts a hutch's own action first on a
+-- hutch. Only CeroSecModuleMenu's fixture parent moved to addLast.
+-- CeroSecLinkMenu never called addTop on the root menu at all -- "Link to
+-- computer" nests inside that same parent's own submenu (CeroSecModuleMenu.
+-- fixtureParent) -- so it moves with the parent for free and needed no call of
+-- its own to change.
+--
+-- WHY A PLAIN addOption IS ALREADY "LAST". Vanilla builds its own entries
+-- BEFORE a mod ever sees the menu -- ISWorldObjectContextMenuLogic.
+-- createMenuEntries runs at ISWorldObjectContextMenu.lua:209, and
+-- OnFillWorldObjectContextMenu -- the event every listener in this file
+-- answers -- fires four lines later at :213, both ahead of any mod code. A
+-- plain ISContextMenu:addOption always appends to context.options
+-- (ISUI/ISContextMenu.lua:873-886: `self.options[self.numOptions] = option`
+-- then `self.numOptions = self.numOptions + 1`, the slot right after the last
+-- one filled), so calling it from inside that listener puts the option after
+-- whatever is already there: the game's own entries, plus any fixture parent
+-- CeroSecModuleMenu already added this same fill. No other file in this mod
+-- calls insertOptionBefore or
+-- addOptionOnTop -- addTop above is the only place that does -- so nothing runs
+-- afterward to move an appended option back off the end.
+function CeroSecMenu.addLast(context, name, target, onSelect,
+		param1, param2, param3, param4, param5, param6, param7, param8, param9, param10)
+	local option = context:addOption(name, target, onSelect, param1, param2,
+		param3, param4, param5, param6, param7, param8, param9, param10)
+	-- Same mark as addTop's, for anything that reads "is this ours" without
+	-- caring which end of the menu it landed on (CeroSecMenu.blockEnd does care,
+	-- and is never asked to walk a menu built with addLast).
 	if type(option) == "table" then option.cerosec = true end
 	return option
 end

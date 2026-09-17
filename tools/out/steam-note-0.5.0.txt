@@ -27,7 +27,7 @@ Safe for existing saves. Nothing to redo.
 [*] The debug window is back for server admins: [b]CeroSec (dev)[/b] at the bottom of a computer's menu.
 
 [b]Interface[/b]
-[*] One CeroSec entry per fixture in the right-click menu, with a small green terminal icon. Hovering a line highlights the right object.
+[*] One CeroSec entry per fixture in the right-click menu, now after the fixture's own options, with a small green terminal icon. Hovering a line highlights the right object.
 [*] A greyed-out menu line says why, in red.
 
 Full notes: github.com/Konijima/pz-cerosec/blob/main/CHANGELOG.md

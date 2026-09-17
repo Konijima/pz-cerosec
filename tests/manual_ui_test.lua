@@ -410,6 +410,44 @@ local function checkTop(what, menu, want)
 	end
 end
 
+-- The trailing run of OUR entries (2026-09-17, CeroSecMenu.addLast): the same
+-- mark as ourOptions, read from the END of the list backward, so it stops at
+-- the first option that is not ours instead of the first one that is.
+local function ourTrailingOptions(menu)
+	local out = {}
+	for i = #menu.options, 1, -1 do
+		if menu.options[i].cerosec ~= true then break end
+		table.insert(out, 1, menu.options[i])
+	end
+	return out
+end
+
+local function ourTrailingLabels(menu)
+	local out = {}
+	local ours = ourTrailingOptions(menu)
+	for i = 1, #ours do out[i] = ours[i].label end
+	return out
+end
+
+-- checkTop's mirror: our block is the LAST N, in the order given, and the
+-- game's own entries lead it, unmoved. The vanilla-count check is what tells
+-- "last" from "first" apart at all -- a menu with nothing foreign in it passes
+-- either reading, which is why withVanilla's two entries are required here and
+-- not optional padding.
+local function checkLast(what, menu, want)
+	eq(what .. ": at least one vanilla entry ahead of our block",
+		#menu.options > #want, true)
+	local got = ourTrailingLabels(menu)
+	eq(what .. ": " .. #want .. " of our entries trail the menu", #got, #want)
+	for i = 1, #want do
+		eq(what .. ": entry " .. i .. " is " .. want[i], got[i], want[i])
+	end
+	for i = 1, #VANILLA_ENTRIES do
+		eq(what .. ": the game's " .. VANILLA_ENTRIES[i] .. " is above them",
+			menu.labels[i], VANILLA_ENTRIES[i])
+	end
+end
+
 --
 -- A manual, for the bench only. THREE chapters, of deliberately different
 -- lengths: one that fits a leaf, one long enough to spill onto a second, and
@@ -4563,7 +4601,12 @@ do
 	do
 		local lone = withVanilla(ContextMenu.new())
 		CeroSecModuleMenu.fixtureParent(lone, door)
-		local parent = lone.options[1]
+		-- 2026-09-17: found by the mark, not lone.options[1] -- addLast puts
+		-- the parent after withVanilla's own two entries now, not before them.
+		local parent
+		for i = 1, #lone.options do
+			if lone.options[i].cerosecFixture == door then parent = lone.options[i] end
+		end
 		local menu = { player = 0 }
 		check("nothing is lit before any hover", door.lit == nil and door.outline == nil)
 		parent.onHighlight(parent, menu, true, unpack(parent.onHighlightParams))
@@ -5048,8 +5091,12 @@ do
 		"ContextMenu_CeroSec_LinkTo(ksp-loft-03,3,7) | "
 		.. "ContextMenu_CeroSec_LinkTo(" .. CeroSec.hostnameFor(16, 14) .. ",8,8) | "
 		.. "ContextMenu_CeroSec_LinkTo(ksp-front-01,12,12)")
-	check("and our entry is at the top of the menu",
-		startsWith(menuOn(post).labels[1], "ContextMenu_CeroSec_Fixture"))
+	-- 2026-09-17: LAST, not first -- the post's own vanilla options (Grab,
+	-- Equip here) are the reason a survivor right-clicked it; the fixture
+	-- parent reads after them now (CeroSecMenu.addLast's own header).
+	local rootLabels = menuOn(post).labels
+	check("and our entry is at the end of the menu",
+		startsWith(rootLabels[#rootLabels], "ContextMenu_CeroSec_Fixture"))
 	local fixSub = fixtureSubOn(post)
 	check("with Link to computer nested inside it",
 		fixSub ~= nil and fixSub.labels[1] == "ContextMenu_CeroSec_Link")
