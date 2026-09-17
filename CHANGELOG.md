@@ -8,16 +8,6 @@ date.
 
 ## Unreleased
 
-- **A line longer than the screen is no longer cut in two when it goes down a
-  pipe, into a file or into a `$( )`.** Sixty columns is what the screen can show,
-  and the machine was applying it to everything a command printed before anything
-  else got to read it. So `grep root /etc/passwd | cut -d: -f1` answered `root` and
-  then `n`, `wc -l` counted two lines where there was one, and a `$(...)` around a
-  long line came back with a break in the middle of it. Now the width is applied
-  where it belongs, on the glass and nowhere else: what a pipe, a redirect, a
-  `tee` and a command substitution carry is the line exactly as the command wrote
-  it, however long. What you see on the screen has not changed.
-
 ## 0.5.0 - 2026-09-16
 
 The fixes of the first day of 0.4.0, and what was built while they were being
@@ -144,6 +134,15 @@ there is nothing else for you to do.
   a refusal in it counts as failed, so a script can test it. There is no word for
   *everything*: `off` means one thing to a light and another to a generator, so two
   kinds is still two lines. `man dev` and the administrator's manual have the page.
+- **A line longer than the screen is no longer cut in two when it goes down a
+  pipe, into a file or into a `$( )`.** Sixty columns is what the screen can show,
+  and the machine was applying it to everything a command printed before anything
+  else got to read it. So `grep root /etc/passwd | cut -d: -f1` answered `root` and
+  then `n`, `wc -l` counted two lines where there was one, and a `$(...)` around a
+  long line came back with a break in the middle of it. Now the width is applied
+  where it belongs, on the glass and nowhere else: what a pipe, a redirect, a
+  `tee` and a command substitution carry is the line exactly as the command wrote
+  it, however long. What you see on the screen has not changed.
 
 ## 0.4.0 - 2026-09-16
 
