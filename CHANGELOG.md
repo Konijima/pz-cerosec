@@ -115,7 +115,9 @@ there is nothing else for you to do.
   fixture for free.** A door, window or curtain the machine's own building
   already lists in `/dev` is greyed on **Link to computer**, with the reason
   in red -- a cable there would have bought you a second entry for the same
-  door, not a new one.
+  door, not a new one. A machine with no building of its own reads the same
+  way: anything already inside its ten-tile radius outdoors is greyed too, not
+  just the pavement version of a wall fixture.
 - **The inside rule was refusing a relay on a porch lamp.** Fitting a module from
   the pavement is refused for the building's skin -- a door, a window, a curtain --
   and for nothing else: an outdoor lamp, a generator, an oven somebody dragged into

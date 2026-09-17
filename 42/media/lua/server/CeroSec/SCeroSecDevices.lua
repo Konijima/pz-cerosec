@@ -181,6 +181,14 @@ require "CeroSec/SCeroSecRadio"
 CeroSecDevices = CeroSecDevices or {}
 
 -- Tiles around the machine, on its own z, when it is not in a building.
+--
+-- reachRefusal (CeroSecModules.lua) mirrors this walk from the client, where
+-- this file never loads, and keeps its own copy, CeroSecModules.OUTDOOR_RADIUS,
+-- for that reason: the load order sorts every relative path lowercased
+-- (docs/ARCHITECTURE.md, "one shelf"), and `server/...scerosecdevices.lua`
+-- sorts before `shared/...cerosecmodules.lua`, so a value read from
+-- CeroSecModules here, at load time, would read a table that does not exist
+-- yet. The two constants move together by hand; change one, change the other.
 CeroSecDevices.RADIUS = 10
 
 -- Pointing at one

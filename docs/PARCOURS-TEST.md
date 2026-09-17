@@ -4143,6 +4143,13 @@ seuls au tour de ronde suivant. La règle complète est dans
      **grisée**, avec la raison en rouge (l'ordinateur voit déjà cette porte
      sans câble). La **même porte**, câble vers un ordinateur d'une **autre
      maison** : la ligne est offerte normalement. [ ]
+430f. **Le rayon, dehors, refuse le câble pour la même raison.** Ordinateur posé
+     dehors, sans bâtiment autour, une génératrice équipée à quelques tuiles
+     (moins de dix) : clic droit sur la génératrice → **Relier à un
+     ordinateur** est visible, mais la ligne vers cet ordinateur est
+     **grisée**, avec la raison en rouge (l'ordinateur la voit déjà sans
+     câble). La même génératrice tirée plus loin que dix tuiles : la ligne
+     est offerte normalement. [ ]
 431. **Un appareil dont le module est parti garde son câble.** Câbler le lampadaire,
      puis **retirer le relais** (clic droit → Retirer). Attendu : le câble est
      toujours là, l'entrée **Débrancher** aussi, et elle rend les fils. Sans ça, le

@@ -5305,6 +5305,71 @@ do
 	eq("(f) building A still reaches it, by its own tile",
 		row.notAvailable, true)
 
+	--
+	-- 2c. REACH, THE RADIUS -- a cable for what CeroSecDevices.find's
+	-- no-building branch already lists for free (SCeroSecDevices.lua:1457-1470)
+	--
+	-- The report this proves: a computer standing outside, wired to nothing,
+	-- already seeing a generator a few tiles off on its own /dev, still offered
+	-- a cable for it (outdoorReachRefusal, CeroSecModules.lua).
+	local outMachineSq = square(50, 50, 0)
+	outMachineSq.getRoom = function() return nil end
+	cells["50,50,0"] = outMachineSq
+	objects = { machine(50, 50, 0, "ksp-radius-01") }
+
+	check("(g) sanity: the machine's own tile really has no room",
+		outMachineSq:getRoom() == nil)
+	local genSq = square(55, 50, 0)
+	genSq.getRoom = function() return nil end
+	local generator = fixture("IsoGenerator", genSq)
+	generator.modData.cerosec = { genset = true }
+	check("(g) sanity: five tiles is the distance believed",
+		math.abs(genSq:getX() - outMachineSq:getX()) == 5)
+	row = rowFor(generator, "ksp-radius-01")
+	eq("(g) a generator 5 tiles off, on a roomless tile: reach",
+		row.notAvailable, true)
+	eq("(g) greyed with the reach word", reason(row),
+		"Tooltip_CeroSec_LinkReach(ksp-radius-01)")
+
+	-- (h) the same generator, past CeroSecModules.OUTDOOR_RADIUS: the cable
+	-- would buy something real.
+	local farSq = square(61, 50, 0)
+	farSq.getRoom = function() return nil end
+	local farGenerator = fixture("IsoGenerator", farSq)
+	farGenerator.modData.cerosec = { genset = true }
+	check("(h) sanity: eleven tiles is past the radius",
+		math.abs(farSq:getX() - outMachineSq:getX())
+			> CeroSecModules.OUTDOOR_RADIUS)
+	row = rowFor(farGenerator, "ksp-radius-01")
+	eq("(h) past the radius: not reach", row.notAvailable, nil)
+
+	-- (i) five tiles again, but the tile now carries a room: it is that room's
+	-- building's device, not the radius's (scanOutdoorSquare skips it,
+	-- SCeroSecDevices.lua:1402).
+	genSq.getRoom = function() return {} end
+	check("(i) sanity: the generator's own tile now has a room",
+		genSq:getRoom() ~= nil)
+	row = rowFor(generator, "ksp-radius-01")
+	eq("(i) a roomed tile inside the radius: not reach", row.notAvailable, nil)
+	genSq.getRoom = function() return nil end
+
+	-- (j) five tiles sideways, one floor up: the radius loop never leaves the
+	-- machine's own z (SCeroSecDevices.lua:1462-1466).
+	local upSq = square(55, 50, 1)
+	upSq.getRoom = function() return nil end
+	local upGenerator = fixture("IsoGenerator", upSq)
+	upGenerator.modData.cerosec = { genset = true }
+	row = rowFor(upGenerator, "ksp-radius-01")
+	eq("(j) same tile, one floor up: not reach", row.notAvailable, nil)
+
+	-- (k) a door, five roomless tiles off: whether it FACES a room is not
+	-- mirrored here (facesARoom, SCeroSecDevices.lua:1370-1379), so a wall
+	-- fixture answers doubt, never reach (outdoorReachRefusal's own comment).
+	local outDoor = fixture("IsoDoor", genSq)
+	outDoor.modData.cerosec = { relay = true }
+	row = rowFor(outDoor, "ksp-radius-01")
+	eq("(k) a door in the radius is doubt, not reach", row.notAvailable, nil)
+
 	_G.getCell = nil
 	objects = { front, loft }
 

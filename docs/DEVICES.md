@@ -344,7 +344,7 @@ believes nothing that arrived (`Commands.linkmodule`, `SCeroSecSystem:linkJob`):
 | `outside` | a door, window or curtain, and he is not inside | same |
 | `closed` | a door or window, and it is shut | same |
 | `drawn` | a curtain, and it is drawn | same |
-| `reach` | the machine's own building walk already lists this fixture, cable-free | - |
+| `reach` | the machine's own walk already lists this fixture, cable-free -- its building, or its ten-tile radius outdoors | - |
 
 A bare fixture is refused a cable and is NOT refused the cut: a module that came
 off a fixture somebody had cabled leaves the cable run and the reel owed, and

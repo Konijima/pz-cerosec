@@ -222,6 +222,15 @@ CeroSecModules.LINKS_MAX = 4
 -- all.
 CeroSecModules.LINK_RANGE = 30
 
+-- Tiles around a machine with no room of its own, on its own floor -- the same
+-- ten SCeroSecDevices.lua's building walk falls back to when the machine has no
+-- building (CeroSecDevices.RADIUS, SCeroSecDevices.lua:~184). A second copy and
+-- not a shared read of that one: this file is shared and that one is
+-- server-only, so a pure dedicated client, greying the cable menu's rows
+-- through reachRefusal below, never loads it at all. The two move together by
+-- hand; change one, change the other.
+CeroSecModules.OUTDOOR_RADIUS = 10
+
 -- What a floor costs. A cable does not go through a slab where it likes: it goes
 -- up the inside of a wall, through the joists and along the ceiling of the room
 -- below, which is about four tiles of cable for one storey -- a storey being some
@@ -1328,12 +1337,50 @@ end
 -- SCeroSecDevices.lua), so it answers nil for a chunk that has not streamed in
 -- as much as for a square with no building at all -- either way, nil is "do
 -- not refuse", never "refuse".
+--
+-- Mirror of CeroSecDevices.find's no-building branch and scanOutdoorSquare
+-- (SCeroSecDevices.lua:1400-1470): the report this answers is a generator five
+-- squares from a computer sitting outside, wired to nothing, already on that
+-- machine's /dev -- and the cable menu still offered to sell a wire for it.
+--
+-- Copies scanOutdoorSquare's own gates, one by one:
+--   same z            the radius loop never changes z (SCeroSecDevices.lua:1462-1466)
+--   a SQUARE           r tiles each way, not a circle, bounds included (:1462-1466)
+--   no room            the fixture's OWN square must have none (:1402) -- a
+--                      square with a room belongs to that room's building,
+--                      radius or not
+--
+-- What it does NOT copy: scanOutdoorSquare also keeps a wall fixture (door,
+-- window, curtain, light switch) whose sprite FACES a room out of the walk
+-- (facesARoom, SCeroSecDevices.lua:1370-1379), which means reading
+-- MoveType/Facing/attachedN off the sprite the way `faces` does
+-- (SCeroSecDevices.lua:1050-1069). That reading is not repeated here, so a
+-- wall fixture answers doubt, not "reach": a cable it did not need costs
+-- wire, but a wrongly claimed "reach" the walk never actually grants would
+-- grey the row AND get refused, leaving the survivor no way to the fixture at
+-- all -- the one mistake this function exists to never make.
+local function outdoorReachRefusal(object, mx, my, mz)
+	if needsInside(object) or CeroSecModules.isLightSwitch(object) then return nil end
+	local ownSquare = object:getSquare()
+	if ownSquare == nil then return nil end
+	if ownSquare:getZ() ~= mz then return nil end
+	if ownSquare:getRoom() ~= nil then return nil end
+	local r = CeroSecModules.OUTDOOR_RADIUS
+	if math.abs(ownSquare:getX() - mx) > r or math.abs(ownSquare:getY() - my) > r then
+		return nil
+	end
+	return "reach"
+end
+
 local function reachRefusal(object, mx, my, mz)
 	if getCell == nil then return nil end
 	local cell = getCell()
 	if cell == nil then return nil end
 	local machineSquare = cell:getGridSquare(mx, my, mz)
-	if machineSquare == nil or machineSquare:getRoom() == nil then return nil end
+	if machineSquare == nil then return nil end
+	if machineSquare:getRoom() == nil then
+		return outdoorReachRefusal(object, mx, my, mz)
+	end
 	local building = machineSquare:getBuilding()
 	if building == nil then return nil end
 
