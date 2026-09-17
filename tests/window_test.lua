@@ -14136,6 +14136,342 @@ end
 
 
 --
+-- 43e. Running a cable to a computer, through the wire
+--
+-- The other way a fixture gets onto a machine, and the only way for one that is
+-- not in the building at all: a survivor runs electric wire from it to a computer.
+-- Two commands, named the way the module pair is -- the fixture's square and its
+-- index on that square -- with the MACHINE's square on the end of them, because a
+-- cable is written against a place and never against a hostname.
+--
+-- WHAT IS ASSERTED, and it is six things rather than one, because a cable is paid
+-- for: the wire leaves his bag, the fixture's own modData carries the run, the
+-- machine's list carries the square, the other players are told, the mirror the
+-- right-click menu reads is written -- and on the way back, the wire comes home.
+-- A refusal is proved the way the module commands' are, by what did NOT happen: a
+-- packet nobody typed answers nothing, so what a bench can see is an unchanged
+-- fixture and a bag with the same number of reels in it.
+--
+-- The world is a shop with a light in it and a LAMPPOST twelve tiles down the
+-- street, which is the fixture the report is about: no room of any building holds
+-- it, the walk can never reach it, and a cable is the whole answer.
+--
+do
+	local hadWorld, hadSandbox, hadPerks = _G.__world, _G.SandboxVars, _G.Perks
+	local world = FakeWorld.new()
+	world.room("office", { {10,10,0}, {11,10,0} })
+	-- The switch inside, wired, so that the street's lamp is a SECOND light and the
+	-- numbering below is a question with an answer.
+	local inside = fit(world.put(world.squares["10,10,0"], fakeLight(true, true)),
+		"relay")
+	-- The pavement he stands on, and the two lamps he cables. The post is twelve
+	-- tiles due east of the machine, which costs twelve; the one on the corner is a
+	-- tile further south, which costs thirteen -- 145 under the root, and a cable
+	-- is bought by the tile.
+	local walk = world.square(21, 10, 0, nil)
+	local street = world.square(22, 10, 0, nil)
+	local corner = world.square(22, 11, 0, nil)
+	local post = fit(world.hung(street, fakeLight(false, true), nil), "relay")
+	local second = fit(world.hung(corner, fakeLight(false, true), nil), "relay")
+	-- And a lamp with nothing on it, which is a cable that buys nothing.
+	local bare = world.hung(world.square(20, 10, 0, nil), fakeLight(false, true), nil)
+
+	_G.__world = world
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	_G.Perks = { Electricity = "Electricity" }
+	CeroSecDevices.invalidate()
+
+	local bench = newBench()
+	local inv = newInventory()
+	local level = 5
+	bench.player.getInventory = function() return inv end
+	bench.player.getPerkLevel = function(_, perk)
+		if perk ~= Perks.Electricity then return 0 end
+		return level
+	end
+	bench.player.getUsername = function() return "carter" end
+	-- WHERE HE STANDS, which is the pavement beside the post: the server asks it of
+	-- every gesture at a fixture (isAdjacent) and a bench standing in the shop would
+	-- be a bench proving nothing about the lamp at the end of the street.
+	local stand = walk
+	bench.player.getCurrentSquare = function() return stand end
+	bench.player.getX = function() return stand:getX() + 0.5 end
+	bench.player.getY = function() return stand:getY() + 0.5 end
+	-- THE MACHINE'S OWN BODY IN THE WORLD, which no other bench in this file needs
+	-- and this one does: the client's copy of a machine's cables is the modData
+	-- mirror (SCeroSecObject:toModData), the right-click menu counts them off it,
+	-- and a server that wrote both ends and told nobody is a menu that still offers
+	-- a cable the fixture already has.
+	local iso = fittable({ __class = "IsoObject" })
+	bench.object.getIsoObject = function() return iso end
+	bench.login("admin")
+	local state = bench.object:osState()
+	inv:add("Base.Screwdriver")
+
+	-- One packet, the way the timed action sends it.
+	local function send(command, square, index, mx, my, mz)
+		CCeroSecSystem.instance:sendCommand(bench.player, command,
+			{ x = square:getX(), y = square:getY(), z = square:getZ(),
+				index = index, mx = mx, my = my, mz = mz })
+		bench.frame()
+	end
+	-- Exactly N reels in his bag and not one more, so that "he could not pay" and
+	-- "he paid" are told apart by the number and not by the bag being empty.
+	local function reel(n)
+		while CeroSecModules.wireCount(inv) > n do
+			inv:Remove(inv:getFirstTypeRecurse(CeroSecModules.WIRE))
+		end
+		while CeroSecModules.wireCount(inv) < n do inv:add(CeroSecModules.WIRE) end
+	end
+	local function wires() return CeroSecModules.wireCount(inv) end
+	-- WHICH reels, and not how many: an item that came out of his bag and went back
+	-- in is a different item with the same name (the fake's AddItem makes one, like
+	-- the engine's), so this is how a bench tells a price ASKED from a price taken
+	-- and refunded. On a server that difference is twenty-two packets.
+	local function reelIds()
+		local ids = {}
+		for i = 1, #inv.items do
+			if inv.items[i].type == CeroSecModules.WIRE then
+				ids[#ids + 1] = inv.items[i].id
+			end
+		end
+		table.sort(ids)
+		return table.concat(ids, ",")
+	end
+	local function cables(object) return #CeroSecModules.linksOn(object) end
+	local function mirrored()
+		local movable = iso.modData.movableData
+		if movable == nil then return nil end
+		local mine = movable[CeroSec.MOVABLE_DATA_KEY]
+		if mine == nil or mine.os == nil then return nil end
+		return mine.os.links
+	end
+
+	local MACHINE = { 10, 10, 0 }
+
+	-- A BARE FIXTURE FIRST, which is the one refusal that is not about the cable: a
+	-- link carries a MODULE's device to a machine and a lamp with nothing screwed to
+	-- it has no device for either end to argue about.
+	reel(30)
+	eq("a lamp with no module on it refuses the cable",
+		CeroSecModules.linkRefusal(bare, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+	stand = world.squares["20,10,0"]
+	send("linkmodule", world.squares["20,10,0"], 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and nothing was written on it", cables(bare), 0)
+	eq("and he still has all thirty reels", wires(), 30)
+	stand = walk
+
+	-- NO WIRE AT ALL, with everything else in hand. The price is worked out here
+	-- and the client's idea of it is never read, so this is the server refusing to
+	-- sell a cable on credit.
+	reel(0)
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("no wire, no cable", cables(post), 0)
+	eq("and the machine's list is still empty", #CeroSecOS.linkSquares(state), 0)
+
+	-- ELEVEN REELS FOR A TWELVE-TILE RUN, which is the case a survivor really meets:
+	-- he has wire, and not enough of it. Nothing is taken -- a run half paid for is
+	-- a survivor out of pocket for a cable he has not got.
+	reel(11)
+	eq("the run is twelve tiles of wire",
+		CeroSecModules.linkWire(22, 10, 0, MACHINE[1], MACHINE[2], MACHINE[3]), 12)
+	local hadReels = reelIds()
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("eleven reels do not buy twelve tiles", cables(post), 0)
+	eq("and none of the eleven were taken", wires(), 11)
+	eq("and they are the very reels he was carrying", reelIds(), hadReels)
+	eq("and the rule itself has nothing against him",
+		CeroSecModules.linkRefusal(post, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), nil)
+
+	-- AND WITH TWELVE, the cable goes in.
+	reel(12)
+	local before = post.transmits
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("twelve reels buy the run", cables(post), 1)
+	eq("the fixture's end says what it cost",
+		CeroSecModules.wireOf(post, MACHINE[1], MACHINE[2], MACHINE[3]), 12)
+	eq("and the reel is spent", wires(), 0)
+	-- The machine's end, which is the one the walk reads: the SQUARE of the fixture
+	-- and nothing else, because the wire is the fixture's business.
+	local book = CeroSecOS.linkSquares(state)
+	eq("the machine's list holds one square", #book, 1)
+	check("and it is the lamppost's", CeroSecOS.linkAt(book, 22, 10, 0) ~= nil)
+	eq("the other players were told about the fixture", post.transmits, before + 1)
+	-- And the client's copy, which is the menu's only source for a machine's cables.
+	local seen = mirrored()
+	check("the machine's mirror carries the cable", seen ~= nil and #seen == 1)
+	eq("and the mirror went out to the clients", iso.transmits, 1)
+
+	-- THE SAME CABLE TWICE is one cable. The word is `linked`, and it is what the
+	-- menu greys the machine's own row with rather than offering a second run to
+	-- the computer at the other end of the one he just laid.
+	reel(12)
+	eq("the same machine again is already linked",
+		CeroSecModules.linkRefusal(post, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "linked")
+	send("linkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and no second run was written", cables(post), 1)
+	eq("nor paid for", wires(), 12)
+	eq("and the machine's list did not grow", #CeroSecOS.linkSquares(state), 1)
+
+	-- TOO FAR, which is the refusal a survivor meets on a big building: thirty tiles
+	-- is the reel, and past it the answer is another computer for that section.
+	-- Asked of a machine fifty tiles south -- the packet a client would send for a
+	-- computer in the next street -- so the range is read from the two squares and
+	-- not from a flag.
+	reel(30)
+	eq("a machine fifty tiles away is out of range",
+		CeroSecModules.linkRefusal(second, 10, 60, 0, bench.player), "far")
+	send("linkmodule", corner, 0, 10, 60, 0)
+	eq("so nothing was run to it", cables(second), 0)
+	eq("and nothing was paid", wires(), 30)
+	-- And the edge of it, on the arithmetic alone: thirty is a cable and
+	-- thirty-one is not.
+	eq("thirty tiles is a cable", CeroSecModules.linkWire(40, 10, 0, 10, 10, 0), 30)
+	eq("and it is the last one", CeroSecModules.linkWire(41, 10, 0, 10, 10, 0), 31)
+
+	-- SOMEBODY ELSE'S SAFEHOUSE. The one rule of the four that is about neither the
+	-- fixture nor the distance, asked of the FIXTURE's square the way the fitting
+	-- rules ask it, and it is the same function underneath: a stranger does not wire
+	-- the lamp on somebody's porch to his own computer.
+	local house = { x = 22, y = 11, x2 = 23, y2 = 12, owner = "king", members = {} }
+	house.playerAllowed = function(self, player)
+		return self.members[player:getUsername()] == true
+	end
+	_G.SafeHouse = { getSafeHouse = function(square)
+		if square == nil then return nil end
+		local x, y = square:getX(), square:getY()
+		if x < house.x or x >= house.x2 then return nil end
+		if y < house.y or y >= house.y2 then return nil end
+		return house
+	end }
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	eq("a stranger cannot cable a lamp in somebody's safehouse",
+		CeroSecModules.linkRefusal(second, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "safehouse")
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("and none went in", cables(second), 0)
+	eq("and he kept his wire", wires(), 30)
+	-- A member of it does, which is the control: the gate is the safehouse and not
+	-- the square.
+	house.members = { carter = true }
+	eq("a member of it is not refused",
+		CeroSecModules.linkRefusal(second, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), nil)
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	_G.SafeHouse = nil
+
+	-- FOUR CABLES IS WHAT A FIXTURE ANSWERS, which is the point of the cap and not
+	-- an arbitrary number: one lamp on four machines is four sections of a building
+	-- sharing a light, and the fifth is a fixture nobody can keep track of.
+	check("three more machines fit on the post",
+		CeroSecModules.linkOn(post, 19, 10, 0, 3)
+			and CeroSecModules.linkOn(post, 21, 11, 0, 2)
+			and CeroSecModules.linkOn(post, 23, 10, 0, 1))
+	eq("which makes four", cables(post), CeroSecModules.LINKS_MAX)
+	eq("and a fifth machine is refused for the fixture being full",
+		CeroSecModules.linkRefusal(post, 20, 10, 0, bench.player), "links")
+	reel(12)
+	send("linkmodule", street, 0, 20, 10, 0)
+	eq("so the post still answers four", cables(post), 4)
+	eq("and the fifth was not paid for", wires(), 12)
+	-- Back to the one real cable, by hand: the three above were never paid for and
+	-- must not be refunded.
+	CeroSecModules.unlinkOn(post, 19, 10, 0)
+	CeroSecModules.unlinkOn(post, 21, 11, 0)
+	CeroSecModules.unlinkOn(post, 23, 10, 0)
+	eq("and the one he really ran is still there", cables(post), 1)
+
+	-- AND THE MACHINE HAS A CAP OF ITS OWN, which the fixture cannot know about:
+	-- thirty-two cable ends per computer (CeroSecOS.LINKS_PER_MACHINE), because the
+	-- list is a walk of squares once a second. It is asked BEFORE anything is spent,
+	-- so a full machine is a cable that did not happen rather than wire that went
+	-- nowhere.
+	local real = state.links
+	local full = {}
+	for i = 1, CeroSecOS.LINKS_PER_MACHINE do
+		full[i] = { x = 100 + i, y = 100, z = 0 }
+	end
+	state.links = full
+	reel(13)
+	eq("the corner lamp is thirteen tiles of wire",
+		CeroSecModules.linkWire(22, 11, 0, MACHINE[1], MACHINE[2], MACHINE[3]), 13)
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("a machine already holding thirty-two cables takes no more",
+		cables(second), 0)
+	eq("and the wire never left his bag", wires(), 13)
+	eq("and the list is the same thirty-two", #CeroSecOS.linkSquares(state),
+		CeroSecOS.LINKS_PER_MACHINE)
+	-- And with room on it, the same packet lands.
+	state.links = real
+	send("linkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("with room, the corner lamp goes on the same machine", cables(second), 1)
+	eq("thirteen tiles of it", CeroSecModules.wireOf(second, 10, 10, 0), 13)
+	eq("and it cost him thirteen reels", wires(), 0)
+	eq("so the machine holds two squares", #CeroSecOS.linkSquares(state), 2)
+
+	--
+	-- CUTTING IT, which is the same walk with the reel going the other way
+	--
+	-- The refund is what the fixture SAYS the run cost and never the distance worked
+	-- out again: a cable paid for under one arithmetic comes back under the same one.
+	local cutBefore = post.transmits
+	reel(0)
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the cable is off the post", cables(post), 0)
+	eq("and the twelve reels are his again", wires(), 12)
+	eq("the machine's list is down to the corner lamp",
+		#CeroSecOS.linkSquares(state), 1)
+	check("and the post is not on it",
+		CeroSecOS.linkAt(CeroSecOS.linkSquares(state), 22, 10, 0) == nil)
+	eq("and the other players were told", post.transmits, cutBefore + 1)
+	-- The MODULE is untouched by any of it: a cable is not a module and cutting one
+	-- does not unscrew the other.
+	check("the relay is still on the post",
+		CeroSecModules.installedOn(post).relay == true)
+
+	-- AND A CABLE THAT IS NOT THERE PAYS NOBODY. `unlinkmodule` on the same post
+	-- again is the double-click, and the answer is no wire out of nothing.
+	send("unlinkmodule", street, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("a second cut makes no wire", wires(), 12)
+	eq("and the word for it is the fixture's",
+		CeroSecModules.unlinkRefusal(post, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "fixture")
+
+	-- The last one off takes the KEY with it, and the table too if the modules are
+	-- gone: an empty list would ride in the save file for the rest of the world's
+	-- life (IsoObject.save only skips modData that is empty altogether).
+	local data = post:getModData()[CeroSecModules.DATA_KEY]
+	eq("and no empty list is left on the fixture",
+		data ~= nil and data[CeroSecModules.LINK_KEY], nil)
+
+	-- AND THE SAFEHOUSE GATE IS BOTH WAYS, which is the sabotage it was asked for: a
+	-- stranger who cannot run a cable cannot cut somebody else's either, and the
+	-- refund is what he would be walking away with.
+	_G.SafeHouse = { getSafeHouse = function(square)
+		if square == nil then return nil end
+		if square:getX() == 22 and square:getY() == 11 then return house end
+		return nil
+	end }
+	house.members = {}
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true, SafehouseModules = true } }
+	reel(0)
+	eq("a stranger is refused the cut too",
+		CeroSecModules.unlinkRefusal(second, MACHINE[1], MACHINE[2], MACHINE[3],
+			bench.player), "safehouse")
+	send("unlinkmodule", corner, 0, MACHINE[1], MACHINE[2], MACHINE[3])
+	eq("the corner lamp keeps its cable", cables(second), 1)
+	eq("and he walks away with nothing", wires(), 0)
+	_G.SandboxVars = { CeroSec = { HardwareRequired = true } }
+	_G.SafeHouse = nil
+
+	_G.__world, _G.SandboxVars, _G.Perks = hadWorld, hadSandbox, hadPerks
+	CeroSecDevices.invalidate()
+end
+
+--
 -- 44a. The motor rung's five kinds, through the whole machine
 --
 -- A curtain, a door with a sheet on it, a window with an operator on it, a
