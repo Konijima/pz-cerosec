@@ -1205,6 +1205,91 @@ end
 -- Reachability
 --
 
+-- WHERE A MACHINE IS PLUGGED IN, which is not the question its address answers.
+-- The address is the record and it never moves, deliberately: a survivor who
+-- wrote 10.4.17.3 in /etc/hosts wrote down a machine (see identify). The COAX is
+-- the premises' own cable, and a machine set down on the pavement is not plugged
+-- into it however near the wall it stands -- which is the rule the /dev walk one
+-- floor down already obeys (SCeroSecDevices, facesARoom and scanOutdoorSquare:
+-- outdoors takes nothing that belongs to a room).
+--
+-- The key two machines are compared on, and there are only three answers:
+--
+--   "<b1>.<b2>"  it stands in that premises, by the one rule there is about what
+--                a premises is (CeroSecNet.premisesOfSquare)
+--   OUTDOORS     it stands in no room at all: the pavement, and a base somebody
+--                built, which the map has no RoomDef for
+--   nil          its chunk is away, so the world cannot be asked at all
+--
+-- getRoom() and not isInARoom(), which premisesOfSquare already asks through
+-- getBuilding() -- javap zombie.iso.IsoGridSquare.getBuilding, offsets 0-15: it
+-- is getRoom() and then IsoRoom.getBuilding, null without a room. That is the
+-- test a base depends on: isInARoom() is
+-- `getRoom() != null || getIsoWorldRegion().isPlayerRoom()` (offsets 0-31), so
+-- four walls a player raised read as inside and would be asked for a premises the
+-- map never drew.
+local OUTDOORS = "out"
+
+local function standOf(luaObject)
+	-- Asked of anything the server holds, including a machine that answers about
+	-- its disk and nothing else -- a job's own carrier in the hostile benches, and
+	-- a registration mid-teardown. No square to ask is the nil case above: the
+	-- record stands. (Volunteered rather than assumed, because a call that is not
+	-- there is not a syntax error and this one is reached from a job pass.)
+	if luaObject.getSquare == nil then return nil end
+	local square = luaObject:getSquare()
+	if square == nil or square.getBuilding == nil then return nil end
+	local b1, b2 = CeroSecNet.premisesOfSquare(square)
+	return { key = b1 ~= nil and (b1 .. "." .. b2) or OUTDOORS,
+		x = square:getX(), y = square:getY(), z = square:getZ() }
+end
+
+-- Are these two machines on one length of coax? The RECORD first, because that is
+-- what an address means and it costs nothing; then where the two of them are
+-- STANDING, which is what keeps a machine carried out onto the street off the
+-- wire it was numbered on. Asked only of a machine whose two bytes already match,
+-- so the world is asked about the machines of one premises and never the county.
+--
+-- `here` is the asking machine's own stand, worked out once by the caller: the
+-- walk below is over every computer the server holds.
+--
+-- OUTDOORS is the one case with a distance in it, and the distance is
+-- CeroSecDevices.RADIUS -- the same length of cable that walk gives a machine in
+-- no building, rather than a third number for one more rule. So two machines a
+-- survivor set down in the base he built are on a wire, the same two at opposite
+-- ends of the street are not, and neither of them is on the wire of the house
+-- they were carried out of.
+--
+-- A chunk that is away is not a cable coming loose: a machine asleep across the
+-- county is still on the wire it was numbered on, and so is this one while its
+-- own room is unloaded. The record is what there is, and the record stands --
+-- except when `here` is OUTDOORS, because OUTDOORS is the one case with a
+-- distance in it. `other` is an SGlobalObject and keeps o.x, o.y, o.z set from
+-- the engine at construction (SGlobalObject.lua:75-77), so its chunk being away
+-- is not a reason to lose the number: the same radius is asked of that stored
+-- position. Missing coordinates never win a cable by ignorance -- refused, not
+-- assumed. A machine standing indoors keeps the older rule (true), because the
+-- dangerous direction, outdoors reaching in, is the one this closes.
+local function oneWire(mine, here, theirs, other)
+	if theirs.b1 ~= mine.b1 or theirs.b2 ~= mine.b2 then return false end
+	if here == nil then return true end
+	local there = standOf(other)
+	if there == nil then
+		if here.key ~= OUTDOORS then return true end
+		if other.x == nil or other.y == nil or other.z == nil then return false end
+		local r = CeroSecDevices.RADIUS
+		return here.z == other.z
+			and math.abs(here.x - other.x) <= r
+			and math.abs(here.y - other.y) <= r
+	end
+	if here.key ~= there.key then return false end
+	if here.key ~= OUTDOORS then return true end
+	local r = CeroSecDevices.RADIUS
+	return here.z == there.z
+		and math.abs(here.x - there.x) <= r
+		and math.abs(here.y - there.y) <= r
+end
+
 -- Can `from` hear the machine at `addr` right now?
 -- the machine, or nil plus which of strerror's words to wear:
 --   "down"    it is on this wire and it is switched off
@@ -1223,8 +1308,11 @@ local function reachableOn(system, from, addr)
 	if mine == nil then return nil, "unreach" end
 	local found = CeroSecNet.at(system, addr)
 	if found == nil then return nil, "unreach" end
-	-- The Ethernet rule, and the whole of it: the same map building.
-	if found.net.b1 ~= mine.b1 or found.net.b2 ~= mine.b2 then return nil, "unreach" end
+	-- The Ethernet rule, and the whole of it: the same premises, and both machines
+	-- standing in it (oneWire).
+	if not oneWire(mine, standOf(from), found.net, found.object) then
+		return nil, "unreach"
+	end
 	if not found.object.on then return nil, "down" end
 	return found.object
 end
@@ -1247,9 +1335,10 @@ local function wire(system, from)
 	local mine = recordOf(from)
 	local out = {}
 	if mine == nil then return out end
+	local here = standOf(from)
 	each(system, function(other)
 		local net = recordOf(other)
-		if net ~= nil and net.b1 == mine.b1 and net.b2 == mine.b2 and other.on then
+		if net ~= nil and other.on and oneWire(mine, here, net, other) then
 			out[#out + 1] = other
 		end
 		return nil

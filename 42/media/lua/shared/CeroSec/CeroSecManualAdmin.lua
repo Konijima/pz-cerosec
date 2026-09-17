@@ -1116,7 +1116,8 @@ becomes a sensorN. Pick it up and the device is gone.
 
 It watches its own room out to THREE TILES, never through a wall, so a head
 in the hall tells you nothing about the kitchen. Where there is no room at
-all it watches three tiles every way and reads built.
+all it watches three tiles every way, and still never into a room. Reads
+built.
 
 Movement closes it for five seconds; then it opens. So a zombie that walks
 in and STOPS reads clear five seconds later. It is movement it sees and not
@@ -1429,10 +1430,31 @@ there is no argument to ifconfig that changes either. The firmware
 announces it between the drive and the login, so you can read a machine's
 address without logging in at all.
 
-A computer in a base YOU built is on no premises the map knows, so it has
-no wire and says so plainly -- eth0 with flags and no address under it.
-Nothing on this chapter's list will do anything on such a machine, and
-that is not a fault to hunt.]],
+A computer in a base YOU built is on no premises the map knows, and one
+that never stood in a building has no address at all -- eth0 with flags
+and nothing under it. Nothing on this chapter's list works on such a
+machine, and that is not a fault to hunt.]],
+
+[[THE COAX IS THE PREMISES' CABLE, and carrying a machine out of the
+door does not bring the cable with it.
+
+A computer you take out of a house keeps the address it was given there.
+Somebody wrote that address in /etc/hosts, and it is a fact about the
+machine. What it loses is the wire: set it down on the pavement five
+tiles from the door, and every machine still inside is gone.
+
+  admin@ksp-04-11:~$ rlogin gate
+  rlogin: gate: No route to host
+
+Two computers carried out of the SAME premises and set down together --
+in a base you built, or on one verge -- are on a wire again, ten tiles
+of it, and on nobody else's. So the camp you made out of two looted
+machines works, and a stranger's computer parked in the street reaches
+nothing of the house beside it.
+
+The radio is the same. A set in a room the map drew belongs to that
+room, and a machine standing outside is not wired to it through the
+wall.]],
 
 [[Names live in /etc/hosts, root's and 644, and the machine writes its own
 line into it exactly once and never again. So the first job on a new

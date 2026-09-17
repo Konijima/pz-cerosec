@@ -127,9 +127,36 @@ are labels: no link reads either, and nothing is keyed by them.
 
 The BIOS announces the address between the drive and the login, `ifconfig` prints
 it any time, and nothing sets it -- the address is a fact about the card the way
-the hostname is a fact about the machine. A computer in a base **you** built is on
-no premises the map knows about, so it has no wire at all and says so:
-`eth0: flags=2<BROADCAST>` with no address under it.
+the hostname is a fact about the machine. A computer that has never stood in a
+building -- one in a base **you** built -- is on no premises the map knows about,
+so it has no address at all and says so: `eth0: flags=2<BROADCAST>` with nothing
+under it.
+
+**The address never moves and the LINK does** (`oneWire`, beside `reachableOn`). A machine carried out of every building keeps the two bytes it was
+numbered with, deliberately: the address is a thing a survivor wrote in
+`/etc/hosts`. The link layer used to read those two bytes and nothing else, so a
+computer looted out of a house was still on its coax from the pavement, and from
+the next county -- a stranger set his machine down in the street and was on the
+household's Ethernet, which is the report this rule was written for. The coax is
+the *premises'* cable, so to be on it a machine has to be **standing** in that
+premises, by the one rule there is about what a premises is
+(`CeroSecNet.premisesOfSquare`), and the test is the `/dev` walk's:
+`getRoom() == nil` is outdoors ([DEVICES.md](DEVICES.md), `scanOutdoorSquare`).
+`getRoom()` and not `isInARoom()`, which answers true for a player-built base off
+`getIsoWorldRegion().isPlayerRoom()`.
+
+Two machines **outdoors** with one pair of bytes -- looted out of the same
+premises and set down together in a base somebody built -- keep their wire within
+`CeroSecDevices.RADIUS` (10) of each other on the same floor, which is the same
+length of cable that walk gives a machine in no building rather than a third
+number for one more rule. An unloaded chunk is not a cable coming loose: a machine
+whose square cannot be asked is on the wire its record names, and the record
+stands -- indoors. Outdoors the radius is still asked, against the coordinates
+the far machine's own record keeps from the engine regardless of its chunk being
+loaded, so a machine carried out and left on a dedicated server does not regain a
+household's wire just because nobody is standing near it. Nothing is renumbered
+by any of this: no address and no subnet changes, and `freeNumber` still hands
+out the lowest number the *record* says is free.
 
 Names live in `/etc/hosts`, root's and `644`. It ships with the loopback and the
 machine's own line and the machine never writes in it again, so the first thing
@@ -529,6 +556,13 @@ mode `440` like the motion sensor: the game has exactly one path that moves a
 radio's channel and it is the radio window's own timed action, so the knob is on
 the set and a survivor turns it by hand. `dev find radio0` outlines it when there
 are two in the room.
+
+**The one tile takes nothing that belongs to a room** (`CeroSecRadio.tncAt`), for
+the reason the `/dev` radius does not and the coax does not: `REACH` is one tile
+and one tile is what a wall is, so a computer set down on a pavement was wired to
+the household's set on the other side of it. A neighbouring square whose
+`getRoom()` is not `nil` is skipped -- `getRoom()` and not `isInARoom()`, so the
+base the fallback exists for keeps its own set.
 
 A station needs a **callsign**, and unlike the address and the number it is a
 FILE:
